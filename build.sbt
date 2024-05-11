@@ -28,9 +28,12 @@ lazy val commonSettings = Seq(
     Libraries.cats,
     Libraries.catsEffect
   )
-) ++ Defaults.itSettings
+)
 
 lazy val commonTestSettings = Seq(
+  scalacOptions ++= commonScalacOptions,
+  semanticdbEnabled := true,
+  semanticdbVersion := scalafixSemanticdb.revision,
   testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
   libraryDependencies ++= Seq(
     Libraries.weaverCats,
@@ -48,17 +51,35 @@ lazy val buildInfoSettings = Seq(
     sbtVersion
   ),
   buildInfoPackage := "xyz.kd5ujc.buildinfo"
-) 
+)
 
+lazy val commonScalacOptions = Seq(
+  "-deprecation",
+  "-feature",
+  "-language:higherKinds",
+  "-language:postfixOps",
+  "-unchecked",
+  "-Ywarn-unused:_",
+  "-Yrangepos",
+  "-Ywarn-macros:after"
+)
 
-lazy val root = (project in file("modules/shared-data"))
+lazy val integrationTest = project
+  .in(file("modules/integration"))
+  .settings(
+    inConfig(Test)(Defaults.testSettings)
+  )
+
+lazy val root = project
+  .in(file("modules/root"))
   .enablePlugins(BuildInfoPlugin)
   .settings(
     name := "dilf4s",
-    idePackagePrefix := Some("xyz.kd5ujc"),
     buildInfoSettings,
     commonSettings,
     commonTestSettings
   )
+  .dependsOn(integrationTest % "test->test")
 
-
+addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll")
+addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll")
