@@ -2,7 +2,9 @@ package xyz.kd5ujc.storage
 
 import java.util.UUID
 
-trait VersionedStore[F[_], Key, Value] {
+trait VersionedStore[F[_], Key, Value] extends VersionedStoreReader[F, Key, Value] with VersionedStoreWriter[F, Key, Value]
+
+trait VersionedStoreReader[F[_], Key, Value] {
 
   // retrieves the current version of a key
   def get(key: Key): F[Option[Value]]
@@ -25,13 +27,18 @@ trait VersionedStore[F[_], Key, Value] {
   // retrieves the diff of a key updated at a specified version
   def getFromVersionDiff(key: Key, ver: UUID): F[Option[Value]]
 
+}
+
+trait VersionedStoreWriter[F[_], Key, Value] {
+
   // Update the database, return true if successful
   def update(version: UUID, toRemove: List[Key], toUpdate: List[(Key, Value)]): F[Boolean]
+
+  // Rollback the database to a previous version, return true if successful
+  def rollback(version: UUID): F[Boolean]
 
   def insert(id: UUID, toInsert: List[(Key, Value)]): F[Boolean] = update(id, List.empty, toInsert)
 
   def remove(id: UUID, toRemove: List[Key]): F[Boolean] = update(id, toRemove, List.empty)
 
-  // Rollback the database to a previous version, return true if successful
-  def rollback(version: UUID): F[Boolean]
 }
