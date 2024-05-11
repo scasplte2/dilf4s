@@ -4,7 +4,7 @@ import sbt.Keys._
 
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / organization := "xyz.kd5ujc"
-ThisBuild / scalaVersion := "2.13.10"
+ThisBuild / scalaVersion := "2.13.11"
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / scalafixDependencies += Libraries.organizeImports
 
@@ -26,7 +26,16 @@ lazy val commonSettings = Seq(
     CompilerPlugin.betterMonadicFor,
     CompilerPlugin.semanticDB,
     Libraries.cats,
-    Libraries.catsEffect
+    Libraries.catsEffect,
+    Libraries.scrypto,
+    Libraries.levelDb,
+    Libraries.levelDbJni,
+    Libraries.circeCore,
+    Libraries.circeGeneric,
+    Libraries.circeParser,
+    Libraries.log4cats,
+    Libraries.derevoCore,
+    Libraries.derevoCirce
   )
 )
 
@@ -64,7 +73,7 @@ lazy val commonScalacOptions = Seq(
   "-Ywarn-macros:after"
 )
 
-lazy val integrationTest = project
+lazy val integration = project
   .in(file("modules/integration"))
   .settings(
     inConfig(Test)(Defaults.testSettings)
@@ -79,7 +88,7 @@ lazy val root = project
     commonSettings,
     commonTestSettings
   )
-  .dependsOn(integrationTest % "test->test")
+  .dependsOn(integration % "test->test")
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll")
