@@ -1,73 +1,41 @@
-package xyz.kd5ujc.level_db
+package xyz.kd5ujc.storage.interpreters
+
+import java.util.UUID
 
 import cats.data.OptionT
-import cats.effect.{Async, Ref, Resource}
-import cats.implicits._
-import derevo.circe.magnolia.{decoder, encoder}
-import derevo.derive
-import io.circe.{Decoder, Encoder}
-import org.typelevel.log4cats.SelfAwareStructuredLogger
-import org.typelevel.log4cats.slf4j.Slf4jLogger
-import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.storage.{Store, VersionedStore}
+import cats.effect.{Ref, Sync}
+import cats.implicits.{toFlatMapOps, toFoldableOps, toFunctorOps, toTraverseOps}
+import cats.syntax.all._
 
-import java.nio.file.Path
-import java.util.UUID
 import scala.collection.immutable.SortedSet
 
-/**
- * A *VersionedStore* implementation that is adopted from a similar imperative approach in Ergo
- * https://github.com/ergoplatform/ergo/blob/master/avldb/src/main/scala/scorex/db/LDBVersionedStore.scala
- */
-object VersionedLevelDbStore {
+import xyz.kd5ujc.storage.algebras.{Store, VersionedStore}
+import xyz.kd5ujc.storage.interpreters.versioned_store.schema.{Catalog, Diff, Meta}
 
-  def make[F[_]: Async: JsonSerializer, Key: Encoder: Decoder, Value: Encoder: Decoder](
-    base: Path
-  ): Resource[F, VersionedStore[F, Key, Value]] = {
-    implicit val logger: SelfAwareStructuredLogger[F] = Slf4jLogger.getLoggerFromClass(VersionedLevelDbStore.getClass)
+import derevo.circe.magnolia.{decoder, encoder}
+import derevo.derive
 
-    for {
-      ldbFactory <- LevelDbStore.makeFactory[F](useJni = true)
-      mainDb     <- LevelDbStore.makeDb[F](Path.of(base.toAbsolutePath.toString, "/main"), ldbFactory)
-      undoDb     <- LevelDbStore.makeDb[F](Path.of(base.toAbsolutePath.toString, "/undo"), ldbFactory)
-      metaDb     <- LevelDbStore.makeDb[F](Path.of(base.toAbsolutePath.toString, "/meta"), ldbFactory)
-      main       <- LevelDbStore.make[F, Key, Value](mainDb)
-      undo       <- LevelDbStore.make[F, Long, Diff[Key, Value]](undoDb)
-      meta       <- LevelDbStore.make[F, UUID, Meta](metaDb)
-      ref <- Resource.liftK(
-        Ref.of[F, State[F, Key, Value]](State(main, undo, meta)).flatTap { ref =>
-          ref.get.flatMap { state =>
-            state.meta.get(Meta.reserved).flatMap {
-              case Some(_) => Async[F].unit
-              case None    => state.meta.put(Meta.reserved, Meta.genesis)
-            }
-          }
-        }
-      )
-      store = VersionedLevelDbStore.make[F, Key, Value](ref)
-    } yield store
-  }
+package object versioned_store {
 
-  def make[F[_]: Async, Key, Value](
-    stateRef: Ref[F, State[F, Key, Value]]
+  def impl[F[_]: Sync, Key, Value](
+    ref: Ref[F, Catalog[F, Key, Value]]
   ): VersionedStore[F, Key, Value] = new VersionedStore[F, Key, Value] {
-
-    override def get(key: Key): F[Option[Value]] = stateRef.get.flatMap(_.main.get(key))
+    override def get(key: Key): F[Option[Value]] = ref.get.flatMap(_.main.get(key))
 
     override def getWithFilter(cond: (Key, Value) => Boolean): F[List[(Key, Value)]] =
-      stateRef.get.flatMap(_.main.getWithFilter(cond))
+      ref.get.flatMap(_.main.getWithFilter(cond))
 
-    override def contains(key: Key): F[Boolean] = stateRef.get.flatMap(_.main.contains(key))
+    override def contains(key: Key): F[Boolean] = ref.get.flatMap(_.main.contains(key))
 
-    override def latest: F[UUID] = stateRef.get.flatMap(_.meta.getOrRaise(Meta.reserved).map(_.id))
+    override def latest: F[UUID] = ref.get.flatMap(_.meta.getOrRaise(Meta.reserved).map(_.id))
 
-    override def listVersions: F[List[UUID]] = stateRef.get.flatMap {
+    override def listVersions: F[List[UUID]] = ref.get.flatMap {
       _.meta.getOrRaise(Meta.reserved).map(_.history)
     }
 
     override def getFromVersionDiff(key: Key, id: UUID): F[Option[Value]] =
       (for {
-        state   <- OptionT.liftF(stateRef.get)
+        state   <- OptionT.liftF(ref.get)
         version <- OptionT(state.meta.get(id))
         diffs   <- OptionT.liftF(state.undo.get(version.diffs.toList))
         value <- OptionT.fromOption[F](diffs.collectFirst {
@@ -76,7 +44,7 @@ object VersionedLevelDbStore {
       } yield value).value
 
     override def dumpVersionDiff(id: UUID): F[List[(Key, Option[Value])]] =
-      stateRef.get.flatMap { state =>
+      ref.get.flatMap { state =>
         for {
           version <- state.meta.getOrRaise(id)
           previousValues <- version.diffs.toList.traverse { lsn =>
@@ -86,7 +54,7 @@ object VersionedLevelDbStore {
       }
 
     override def update(id: UUID, toRemove: List[Key], toUpdate: List[(Key, Value)]): F[Boolean] =
-      stateRef.modify { state =>
+      ref.modify { state =>
         val effect =
           for {
             head <- state.meta.getOrRaise(Meta.reserved)
@@ -104,7 +72,7 @@ object VersionedLevelDbStore {
                     val lsn = lsnRange.next()
                     state.undo.put(lsn, Diff(id, lsn, key, Some(prevValue)))
                   case None =>
-                    Async[F].unit
+                    ().pure[F]
                 }
                 _ <- state.main.remove(key)
               } yield ()
@@ -135,17 +103,17 @@ object VersionedLevelDbStore {
         (state, effect)
       }.flatten
         .as(true)
-        .handleErrorWith(_ => Async[F].pure(false))
+        .handleErrorWith(_ => false.pure[F])
 
     override def rollback(id: UUID): F[Boolean] =
-      stateRef.modify { state =>
+      ref.modify { state =>
         val effect = for {
           head <- state.meta.getOrRaise(Meta.reserved)
           dest <- state.meta.getOrRaise(id)
           ancestorIndex = head.history.indexOf(id)
           _ <-
             if (ancestorIndex == -1) {
-              Async[F].raiseError(new Exception("UUID not found in version history"))
+              new Exception("UUID not found in version history").raiseError
             } else if (ancestorIndex > -1) {
               val toRestore = head.history.slice(0, ancestorIndex)
 
@@ -183,31 +151,33 @@ object VersionedLevelDbStore {
               // restore then remove since remove deletes diffs applied to this id
               restoreEffect *> removeEffect
             } else {
-              Async[F].raiseError(new Exception("Unexpected index"))
+              new Exception("Unexpected index").raiseError
             }
         } yield ()
 
         (state, effect)
       }.flatten
         .as(true)
-        .handleErrorWith(_ => Async[F].pure(false))
+        .handleErrorWith(_ => false.pure[F])
   }
 
-  final case class State[F[_], Key, Value](
-    main: Store[F, Key, Value],
-    undo: Store[F, Long, Diff[Key, Value]],
-    meta: Store[F, UUID, Meta]
-  )
+  object schema {
+    final case class Catalog[F[_], Key, Value](
+      main: Store[F, Key, Value],
+      undo: Store[F, Long, Diff[Key, Value]],
+      meta: Store[F, UUID, Meta]
+    )
 
-  @derive(decoder, encoder)
-  final case class Diff[Key, Value](id: UUID, lsn: Long, key: Key, previous: Option[Value])
+    @derive(decoder, encoder)
+    final case class Diff[Key, Value](id: UUID, lsn: Long, key: Key, previous: Option[Value])
 
-  @derive(decoder, encoder)
-  final case class Meta(id: UUID, diffs: SortedSet[Long], history: List[UUID])
+    @derive(decoder, encoder)
+    final case class Meta(id: UUID, diffs: SortedSet[Long], history: List[UUID])
 
-  object Meta {
-    val reserved: UUID = new UUID(0L, 0L)
+    object Meta {
+      val reserved: UUID = new UUID(0L, 0L)
 
-    val genesis: Meta = Meta(reserved, SortedSet(0L), List(reserved))
+      val genesis: Meta = Meta(reserved, SortedSet(0L), List(reserved))
+    }
   }
 }

@@ -7,6 +7,7 @@ ThisBuild / organization := "xyz.kd5ujc"
 ThisBuild / scalaVersion := "2.13.11"
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / scalafixDependencies += Libraries.organizeImports
+ThisBuild / scalafixScalaBinaryVersion := "2.13"
 
 ThisBuild / assemblyMergeStrategy := {
   case "logback.xml" => MergeStrategy.first

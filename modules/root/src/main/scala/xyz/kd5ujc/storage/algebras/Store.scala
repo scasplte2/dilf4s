@@ -1,4 +1,4 @@
-package xyz.kd5ujc.storage
+package xyz.kd5ujc.storage.algebras
 
 import cats.data.OptionT
 import cats.implicits.showInterpolator

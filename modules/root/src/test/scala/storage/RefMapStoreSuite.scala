@@ -1,0 +1,3 @@
+package storage
+
+object RefMapStoreSuite {}
