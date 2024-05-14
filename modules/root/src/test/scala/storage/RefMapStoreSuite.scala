@@ -2,7 +2,7 @@ package storage
 
 import cats.data.NonEmptyList
 import cats.effect.IO
-import generators.kvGen
+import generators.{kvGen, kvListGenUniqueKeys}
 import org.scalacheck.Gen
 import weaver._
 import weaver.scalacheck.Checkers
@@ -11,28 +11,28 @@ import xyz.kd5ujc.storage.interpreters.store.RefMapStore
 
 object RefMapStoreSuite extends SimpleIOSuite with Checkers {
 
-  val storeIO: IO[Store[IO, Int, String]] = RefMapStore.make[IO, Int, String]
+  private val storeIO: IO[Store[IO, Int, String]] = RefMapStore.make[IO, Int, String]
 
   test("put and get a value") {
-    forall(Gen.listOfN(100, kvGen).map(NonEmptyList.fromListUnsafe)) { kvPairs =>
+    forall(kvListGenUniqueKeys(100).map(NonEmptyList.fromListUnsafe)) { kvPairs =>
       for {
         store <- storeIO
         _ <- kvPairs.traverse(pair => store.put(pair._1, pair._2))
         actual <- kvPairs.traverse(pair => store.get(pair._1))
         expected = kvPairs.map(_._2).toList
       } yield expect(actual.toList.flatten == expected)
-    }.map(_ => Expectations.Helpers.success)
+    }
   }
 
   test("get multiple values") {
-    forall(Gen.listOfN(100, kvGen).map(NonEmptyList.fromListUnsafe)) { kvPairs =>
+    forall(kvListGenUniqueKeys(100).map(NonEmptyList.fromListUnsafe)) { kvPairs =>
       for {
         store <- storeIO
         _ <- kvPairs.traverse(pair => store.put(pair._1, pair._2))
         actual <- store.get(kvPairs.map(_._1).toList)
         expected = kvPairs.map(pair => (pair._1, Some(pair._2))).toList
       } yield expect(actual == expected)
-    }.map(_ => Expectations.Helpers.success)
+    }
   }
 
   test("remove a value") {
@@ -45,17 +45,17 @@ object RefMapStoreSuite extends SimpleIOSuite with Checkers {
   }
 
   test("put and remove batch values") {
-    forall(Gen.listOfN(100, kvGen).map(NonEmptyList.fromListUnsafe)) { kvPairs =>
+    forall(kvListGenUniqueKeys(100).map(NonEmptyList.fromListUnsafe)) { kvPairs =>
       for {
         store <- storeIO
         _ <- store.putBatch(kvPairs.toList)
         valuesBeforeDelete <- store.get(kvPairs.map(_._1).toList)
         _ <- store.removeBatch(kvPairs.map(_._1).toList)
         valuesAfterDelete <- store.get(kvPairs.map(_._1).toList)
-        expectedBeforeDelete = kvPairs.map(pair => (pair._1, Some(pair._2))).toList
-        expectedAfterDelete = kvPairs.map(_ => None).toList
+        expectedBeforeDelete = kvPairs.map(pair => pair._1 -> Some(pair._2)).toList
+        expectedAfterDelete = kvPairs.map(pair => pair._1 -> None).toList
       } yield expect(valuesBeforeDelete == expectedBeforeDelete) and expect(valuesAfterDelete == expectedAfterDelete)
-    }.map(_ => Expectations.Helpers.success)
+    }
   }
 
   test("check if contains a value") {
