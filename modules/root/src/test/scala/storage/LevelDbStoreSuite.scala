@@ -1,3 +1,3 @@
-package level_db
+package storage
 
 object LevelDbStoreSuite {}
