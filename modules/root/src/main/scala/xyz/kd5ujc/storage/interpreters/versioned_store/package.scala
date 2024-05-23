@@ -14,10 +14,11 @@ import xyz.kd5ujc.storage.interpreters.versioned_store.schema.{Catalog, Diff, Me
 
 import derevo.circe.magnolia.{decoder, encoder}
 import derevo.derive
+import org.typelevel.log4cats.Logger
 
 package object versioned_store {
 
-  def impl[F[_]: Sync, Key, Value](
+  def impl[F[_]: Sync: Logger, Key, Value](
     ref: Ref[F, Catalog[F, Key, Value]]
   ): VersionedStore[F, Key, Value] = new VersionedStore[F, Key, Value] {
     override def get(key: Key): F[Option[Value]] = ref.get.flatMap(_.main.get(key))
@@ -103,7 +104,9 @@ package object versioned_store {
         (state, effect)
       }.flatten
         .as(true)
-        .handleErrorWith(_ => false.pure[F])
+        .handleErrorWith { err =>
+          Logger[F].warn(s"Versioned store update failed with error: $err") *> false.pure[F]
+        }
 
     override def rollback(id: UUID): F[Boolean] =
       ref.modify { state =>
@@ -158,7 +161,9 @@ package object versioned_store {
         (state, effect)
       }.flatten
         .as(true)
-        .handleErrorWith(_ => false.pure[F])
+        .handleErrorWith { err =>
+          Logger[F].warn(s"Versioned store rollback failed with error: $err") *> false.pure[F]
+        }
   }
 
   object schema {
