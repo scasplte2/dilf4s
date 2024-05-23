@@ -31,6 +31,7 @@ lazy val commonSettings = Seq(
     Libraries.scrypto,
     Libraries.levelDb,
     Libraries.levelDbJni,
+    Libraries.logback,
     Libraries.circeCore,
     Libraries.circeGeneric,
     Libraries.circeParser,

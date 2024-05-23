@@ -33,24 +33,23 @@ object LevelDbStore {
 
   def make[F[_]: Sync: JsonSerializer, Key: Encoder: Decoder, Value: Encoder: Decoder](
     path: Path
-  ): Resource[F, Store[F, Key, Value]] = {
-    implicit val logger: SelfAwareStructuredLogger[F] = Slf4jLogger.getLoggerFromClass(LevelDbStore.getClass)
+  ): Resource[F, Store[F, Key, Value]] = for {
+    implicit0(logger: SelfAwareStructuredLogger[F]) <- Resource.eval(Slf4jLogger.fromClass[F](LevelDbStore.getClass))
+    ldbFactory                                      <- LevelDbStore.makeFactory[F](useJni = true)
+    db                                              <- LevelDbStore.makeDb[F](path, ldbFactory)
+    store                                           <- LevelDbStore.make[F, Key, Value](db)
+  } yield store
 
-    for {
-      ldbFactory <- LevelDbStore.makeFactory[F](useJni = true)
-      db         <- LevelDbStore.makeDb[F](path, ldbFactory)
-      store      <- LevelDbStore.make[F, Key, Value](db)
-    } yield store
-  }
-
-  def make[F[_]: Sync: JsonSerializer, Key: Encoder: Decoder, Value: Encoder: Decoder](
+  def make[F[_]: Sync: JsonSerializer: Logger, Key: Encoder: Decoder, Value: Encoder: Decoder](
     db: DB
   ): Resource[F, Store[F, Key, Value]] =
     Resource.pure[F, Store[F, Key, Value]] {
       new Store[F, Key, Value] {
 
-        def put(id: Key, t: Value): F[Unit] =
-          (id.toJsonBytes, t.toJsonBytes).tupled.flatMap { case (idB, tB) => useDb(_.put(idB, tB)) }
+        def put(id: Key, t: Value): F[Unit] = for {
+
+          result <- (id.toJsonBytes, t.toJsonBytes).tupled.flatMap { case (idB, tB) => useDb(_.put(idB, tB)) }
+        } yield result
 
         def remove(id: Key): F[Unit] =
           id.toJsonBytes.flatMap(idB => useDb(_.delete(idB)))
@@ -117,7 +116,7 @@ object LevelDbStore {
                   case (id, t) =>
                     (id.toJsonBytes, t.toJsonBytes).tupled.map { case (idB, tB) => batch.put(idB, tB) }
                 }
-                _ <- Sync[F].delay(db.write(batch, wo))
+                _ <- Sync[F].delay(db.write(batch, wo.sync(true)))
               } yield ()
           }
 
@@ -128,7 +127,7 @@ object LevelDbStore {
                 _ <- deletions.traverse_ { id =>
                   id.toJsonBytes.map(idB => batch.delete(idB))
                 }
-                _ <- Sync[F].delay(db.write(batch, wo))
+                _ <- Sync[F].delay(db.write(batch, wo.sync(true)))
               } yield ()
           }
 
@@ -145,19 +144,19 @@ object LevelDbStore {
           }
 
         private def createReadResource: Resource[F, (DBIterator, ReadOptions)] =
-          Resource.make[F, (DBIterator, ReadOptions)] {
-            Sync[F].delay {
-              val ro = new ReadOptions()
-              ro.snapshot(db.getSnapshot)
-              val iter = db.iterator(ro)
-              (iter, ro)
-            }
+          Resource.make {
+            for {
+              snapshot <- Sync[F].delay(db.getSnapshot)
+              ro = new ReadOptions().snapshot(snapshot)
+              iter <- Sync[F].delay(db.iterator(ro))
+              _    <- Sync[F].delay(iter.seekToFirst())
+            } yield (iter, ro)
           } {
             case (iter, ro) =>
-              Sync[F].delay {
-                iter.close()
-                ro.snapshot().close()
-              }
+              for {
+                _ <- Sync[F].delay(iter.close())
+                _ <- Sync[F].delay(ro.snapshot().close())
+              } yield ()
           }
       }
     }

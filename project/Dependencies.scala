@@ -13,6 +13,10 @@ object Dependencies {
     val organizeImports = "0.5.0"
     val scrypto = "2.3.0"
     val weaver = "0.8.1"
+    val logback = "1.3.5"
+    val betterMonadicFor = "0.3.1"
+    val kindProjector = "0.13.2"
+    val semanticDB = "4.8.15"
   }
 
   object Libraries {
@@ -32,20 +36,21 @@ object Dependencies {
     val levelDb = "org.iq80.leveldb" % "leveldb" % V.levelDb
     val levelDbJni = "org.fusesource.leveldbjni" % "leveldbjni-all" % V.levelDbJni
     val log4cats = "org.typelevel" %% "log4cats-slf4j" % V.log4cats
+    val logback = "ch.qos.logback" % "logback-classic" % V.logback
   }
 
   object CompilerPlugin {
 
     val betterMonadicFor = compilerPlugin(
-      "com.olegpy" %% "better-monadic-for" % "0.3.1"
+      "com.olegpy" %% "better-monadic-for" % V.betterMonadicFor
     )
 
     val kindProjector = compilerPlugin(
-      ("org.typelevel" % "kind-projector" % "0.13.2").cross(CrossVersion.full)
+      ("org.typelevel" % "kind-projector" % V.kindProjector).cross(CrossVersion.full)
     )
 
     val semanticDB = compilerPlugin(
-      ("org.scalameta" % "semanticdb-scalac" % "4.7.1").cross(CrossVersion.full)
+      ("org.scalameta" % "semanticdb-scalac" % V.semanticDB).cross(CrossVersion.full)
     )
   }
 }
