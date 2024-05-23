@@ -95,7 +95,7 @@ object LevelDbStoreSuite extends IOSuite with Checkers {
 
   test("put and get a batch of key value pairs") { store =>
     for {
-      kvPairs <- IO.fromOption(kvListGenUniqueKeys(3).sample.map(NonEmptyList.fromListUnsafe))(
+      kvPairs <- IO.fromOption(kvListGenUniqueKeys(10, 100).sample.map(NonEmptyList.fromListUnsafe))(
         new RuntimeException("Failed to generate key-value list")
       )
       (keys, _) = kvPairs.toList.unzip
@@ -107,7 +107,7 @@ object LevelDbStoreSuite extends IOSuite with Checkers {
 
   test("delete a batch of keys") { store =>
     for {
-      kvPairs <- IO.fromOption(kvListGenUniqueKeys(2).sample.map(NonEmptyList.fromListUnsafe))(
+      kvPairs <- IO.fromOption(kvListGenUniqueKeys(10, 200).sample.map(NonEmptyList.fromListUnsafe))(
         new RuntimeException("Failed to generate key-value list")
       )
       (keys, _) = kvPairs.toList.unzip
