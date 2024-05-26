@@ -17,6 +17,10 @@ import weaver.scalacheck.Checkers
 
 object LevelDbStoreSuite extends IOSuite with Checkers {
 
+  // ensure tests are run serially
+  override def maxParallelism = 1
+
+  // tests share the same mutable resource
   override type Res = Store[IO, Int, String]
 
   override def sharedResource: Resource[IO, Res] =
