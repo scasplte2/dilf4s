@@ -1,7 +1,8 @@
 package xyz.kd5ujc.hash
 
-import cats.data.{Validated, ValidatedNec}
+import cats.data.Validated
 import cats.implicits.toBifunctorOps
+
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, DecodingFailure, Encoder, HCursor, Json}
 import org.bouncycastle.util.encoders.Hex
@@ -13,21 +14,22 @@ sealed trait Digest[L] {
 
 object Digest {
 
-  implicit val encodeDigest: Encoder[Digest[_]] = Encoder.instance {
+  implicit def encodeDigest: Encoder[Digest[_]] = Encoder.instance {
     case l256Inst: l256 => l256Inst.asJson
     case l512Inst: l512 => l512Inst.asJson
   }
 
   implicit val decodeDigest: Decoder[Digest[_]] = Decoder.instance { (c: HCursor) =>
-    c.downField("length").as[Int].flatMap {
-      case 32 => c.as[l256]
-      case 64 => c.as[l512]
+    c.downField("value").as[String].map(Hex.decode).map(_.length).flatMap {
+      case 32    => c.as[l256]
+      case 64    => c.as[l512]
+      case l @ _ => Left(DecodingFailure(s"Unsupported digest length: $l", c.history))
     }
   }
 
-  implicit def encodeDigestTyped[L: Digest]: Encoder[Digest[L]] = Digest.encodeDigest.asInstanceOf[Encoder[Digest[L]]]
+  implicit def encodeDigestTyped[L]: Encoder[Digest[L]] = Digest.encodeDigest.asInstanceOf[Encoder[Digest[L]]]
 
-  implicit def decodeDigestTyped[L: Digest]: Decoder[Digest[L]] = Digest.decodeDigest.asInstanceOf[Decoder[Digest[L]]]
+  implicit def decodeDigestTyped[L]: Decoder[Digest[L]] = Digest.decodeDigest.asInstanceOf[Decoder[Digest[L]]]
 
 }
 
@@ -49,8 +51,7 @@ object l256 {
 
   implicit val l256Encoder: Encoder[l256] = (a: l256) =>
     Json.obj(
-      "value" -> Hex.toHexString(a.value).asJson,
-      "size"  -> a.size.asJson
+      "value" -> Hex.toHexString(a.value).asJson
     )
 
   implicit val l256Decoder: Decoder[l256] = (c: HCursor) =>

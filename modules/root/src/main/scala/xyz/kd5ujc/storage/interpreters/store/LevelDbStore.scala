@@ -40,7 +40,7 @@ object LevelDbStore {
     store                                           <- LevelDbStore.make[F, Key, Value](db)
   } yield store
 
-  def make[F[_]: Sync: JsonSerializer: Logger, Key: Encoder: Decoder, Value: Encoder: Decoder](
+  def make[F[_]: Sync: JsonSerializer, Key: Encoder: Decoder, Value: Encoder: Decoder](
     db: DB
   ): Resource[F, Store[F, Key, Value]] =
     Resource.pure[F, Store[F, Key, Value]] {

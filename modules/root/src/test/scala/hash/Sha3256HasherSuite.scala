@@ -1,15 +1,16 @@
 package hash
 
 import cats.effect.IO
-import hash.Blake2b512HasherSuite.{expect, test}
+
+import xyz.kd5ujc.binary.JsonSerializer
+import xyz.kd5ujc.hash.{Sha3256Hasher, l256}
+
 import io.circe.Json
 import io.circe.syntax.EncoderOps
 import org.bouncycastle.util.encoders.Hex
 import org.scalacheck.Gen
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
-import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.hash.{Sha3256Hasher, l256}
 
 object Sha3256HasherSuite extends SimpleIOSuite with Checkers {
   private val hasherIO = for {
@@ -21,7 +22,7 @@ object Sha3256HasherSuite extends SimpleIOSuite with Checkers {
     forall(Gen.alphaNumStr) { str =>
       for {
         hasher <- hasherIO
-        digest <- hasher.hash(str)
+        digest <- hasher.hashJson(str)
       } yield expect(digest.value.nonEmpty)
     }
   }
@@ -29,9 +30,9 @@ object Sha3256HasherSuite extends SimpleIOSuite with Checkers {
   test("Hasher.compare should return true when hash of the data matches the expected hash") {
     forall(Gen.alphaNumStr) { str =>
       for {
-        hasher <- hasherIO
-        expectedHash <- hasher.hash(str)
-        result <- hasher.compare(str, expectedHash)
+        hasher       <- hasherIO
+        expectedHash <- hasher.hashJson(str)
+        result       <- hasher.compare(str, expectedHash)
       } yield expect(result)
     }
   }
@@ -39,9 +40,9 @@ object Sha3256HasherSuite extends SimpleIOSuite with Checkers {
   test("Hasher.compare should return false when hash of the data does not match the expected hash") {
     forall(Gen.alphaNumStr) { str =>
       for {
-        hasher <- hasherIO
-        expectedHash <- hasher.hash(str)
-        result <- hasher.compare(str + "_updated", expectedHash)
+        hasher       <- hasherIO
+        expectedHash <- hasher.hashJson(str)
+        result       <- hasher.compare(str + "_updated", expectedHash)
       } yield expect(!result)
     }
   }
