@@ -6,7 +6,6 @@ object Dependencies {
     val cats = "2.9.0"
     val catsEffect = "3.4.2"
     val circe = "0.14.6"
-    val derevo = "0.13.0"
     val levelDb = "0.12"
     val levelDbJni = "1.8"
     val log4cats = "2.5.0"
@@ -26,8 +25,6 @@ object Dependencies {
     val circeCore = "io.circe" %% "circe-core" % V.circe
     val circeGeneric = "io.circe" %% "circe-generic" % V.circe
     val circeParser = "io.circe" %% "circe-parser" % V.circe
-    val derevoCore = "tf.tofu" %% s"derevo-core" % V.derevo
-    val derevoCirce = "tf.tofu" %% s"derevo-circe-magnolia" % V.derevo
     val weaverCats = "com.disneystreaming" %% "weaver-cats" % V.weaver
     val weaverDiscipline = "com.disneystreaming" %% "weaver-discipline" % V.weaver
     val weaverScalaCheck = "com.disneystreaming" %% "weaver-scalacheck" % V.weaver

@@ -35,9 +35,7 @@ lazy val commonSettings = Seq(
     Libraries.circeCore,
     Libraries.circeGeneric,
     Libraries.circeParser,
-    Libraries.log4cats,
-    Libraries.derevoCore,
-    Libraries.derevoCirce
+    Libraries.log4cats
   )
 )
 

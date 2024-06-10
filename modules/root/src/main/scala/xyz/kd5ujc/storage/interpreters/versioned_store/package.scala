@@ -12,8 +12,8 @@ import scala.collection.immutable.SortedSet
 import xyz.kd5ujc.storage.algebras.{Store, VersionedStore}
 import xyz.kd5ujc.storage.interpreters.versioned_store.schema.{Catalog, Diff, Meta}
 
-import derevo.circe.magnolia.{decoder, encoder}
-import derevo.derive
+import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
+import io.circe.{Decoder, Encoder}
 import org.typelevel.log4cats.Logger
 
 package object versioned_store {
@@ -173,16 +173,22 @@ package object versioned_store {
       meta: Store[F, UUID, Meta]
     )
 
-    @derive(decoder, encoder)
     final case class Diff[Key, Value](id: UUID, lsn: Long, key: Key, previous: Option[Value])
 
-    @derive(decoder, encoder)
+    object Diff {
+      implicit def diffEncoder[K: Encoder, V: Encoder]: Encoder[Diff[K, V]] = deriveEncoder
+      implicit def diffDecoder[K: Decoder, V: Decoder]: Decoder[Diff[K, V]] = deriveDecoder
+    }
+
     final case class Meta(id: UUID, diffs: SortedSet[Long], history: List[UUID])
 
     object Meta {
       val reserved: UUID = new UUID(0L, 0L)
 
       val genesis: Meta = Meta(reserved, SortedSet(0L), List(reserved))
+
+      implicit val metaEncoder: Encoder[Meta] = deriveEncoder
+      implicit val metaDecoder: Decoder[Meta] = deriveDecoder
     }
   }
 }
