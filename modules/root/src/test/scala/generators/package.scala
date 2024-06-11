@@ -12,4 +12,9 @@ package object generators {
     Gen.listOfN(n, Gen.alphaStr.suchThat(_.nonEmpty)).map { values =>
       (start until start + n).toList.zip(values)
     }
+
+  def nonEmptyStringListGen(start: Int, end: Int): Gen[List[String]] = for {
+    size <- Gen.chooseNum(start, end)
+    list <- Gen.listOfN(size, Gen.alphaStr.suchThat(_.nonEmpty))
+  } yield list
 }

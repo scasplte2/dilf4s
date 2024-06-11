@@ -7,9 +7,16 @@ import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, DecodingFailure, Encoder, HCursor, Json}
 import org.bouncycastle.util.encoders.Hex
 
-sealed trait Digest[L] {
+sealed abstract class Digest[L] {
   val value: Array[Byte]
   val size: Int
+
+  override def equals(obj: Any): Boolean = obj match {
+    case digest: Digest[_] => this.size == digest.size && this.value.sameElements(digest.value)
+    case _                 => false
+  }
+
+  override def hashCode(): Int = java.util.Arrays.hashCode(value)
 }
 
 object Digest {

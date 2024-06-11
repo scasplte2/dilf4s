@@ -26,7 +26,7 @@ object MerkleProver {
       def fromLeafDigest(digest: Digest[L]): F[Option[MerkleInclusionProof[L]]] =
         OptionT
           .fromOption[F](tree.leafDigestIndex.get(digest))
-          .flatMapF(index => proofByIndex(index))
+          .flatMapF(proofByIndex)
           .value
 
       private def proofByIndex(index: Int): F[Option[MerkleInclusionProof[L]]] = {
@@ -47,10 +47,10 @@ object MerkleProver {
         ): Option[(LeafNode[_, L], Seq[Option[(Digest[L], Side)]])] =
           node match {
             case Some(n: InternalNode[_]) if ((index >> (maxDepth - depth)) & 1) == 0 =>
-              loop(Some(n.left), n.right.map(_.digest).map((_, MerkleInclusionProof.leftSide)) +: acc, depth + 1)
+              loop(Some(n.left), n.right.map(_.digest).map((_, MerkleInclusionProof.rightSide)) +: acc, depth + 1)
 
             case Some(n: InternalNode[_]) =>
-              loop(n.right, Some((n.left.digest, MerkleInclusionProof.rightSide)) +: acc, depth + 1)
+              loop(n.right, Some((n.left.digest, MerkleInclusionProof.leftSide)) +: acc, depth + 1)
 
             case Some(n: LeafNode[_, _]) =>
               Some((n, acc))
@@ -63,7 +63,7 @@ object MerkleProver {
           if (index < 0 || index >= tree.leafDigestIndex.size) None
           else {
             loop(tree.rootNode.some, Seq(), 0).flatMap { lp =>
-              lp._2.sequence.map(w => MerkleInclusionProof(lp._1.digest, w))
+              lp._2.sequence.map(MerkleInclusionProof(lp._1.digest, _))
             }
           }
         )
