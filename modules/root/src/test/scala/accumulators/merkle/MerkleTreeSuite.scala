@@ -1,4 +1,4 @@
-package accumulators
+package accumulators.merkle
 
 import cats.effect.IO
 

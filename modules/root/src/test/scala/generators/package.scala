@@ -12,5 +12,4 @@ package object generators {
     Gen.listOfN(n, Gen.alphaStr.suchThat(_.nonEmpty)).map { values =>
       (start until start + n).toList.zip(values)
     }
-
 }

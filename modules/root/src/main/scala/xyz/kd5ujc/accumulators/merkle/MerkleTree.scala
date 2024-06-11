@@ -1,7 +1,8 @@
 package xyz.kd5ujc.accumulators.merkle
 
+import cats.MonadError
 import cats.implicits.{toFlatMapOps, toFunctorOps, toTraverseOps}
-import cats.{Monad, MonadError}
+import cats.syntax.applicative._
 
 import xyz.kd5ujc.accumulators.Node
 import xyz.kd5ujc.accumulators.merkle.nodes.{InternalNode, LeafNode}
@@ -19,7 +20,7 @@ object MerkleTree {
   val leafPrefix: Array[Byte] = Array(0: Byte)
   val internalPrefix: Array[Byte] = Array(1: Byte)
 
-  implicit def merkleTreeEncoder[L: Encoder]: Encoder[MerkleTree[L]] = (tree: MerkleTree[L]) =>
+  implicit def merkleTreeEncoder[L]: Encoder[MerkleTree[L]] = (tree: MerkleTree[L]) =>
     Json.obj(
       "rootNode" -> tree.rootNode.asJson,
       "leafDigestIndex" -> tree.leafDigestIndex.toList
@@ -34,7 +35,7 @@ object MerkleTree {
         .asJson
     )
 
-  implicit def merkleTreeDecoder[L: Decoder]: Decoder[MerkleTree[L]] = (c: HCursor) =>
+  implicit def merkleTreeDecoder[L]: Decoder[MerkleTree[L]] = (c: HCursor) =>
     for {
       rootNode        <- c.downField("rootNode").as[Node[L]]
       leafDigestIndex <- c.downField("leafDigestIndex").as[List[(Digest[L], Int)]].map(_.toMap)
@@ -43,7 +44,8 @@ object MerkleTree {
   def create[F[_], A: Encoder, L](data: List[A])(implicit me: MonadError[F, Throwable], hasher: Hasher[F, L]): F[MerkleTree[L]] = {
     def buildNodes(nodes: List[Node[L]]): F[Node[L]] =
       nodes match {
-        case singleNode :: Nil => Monad[F].pure(singleNode)
+        case Nil               => MonadError[F, Throwable].raiseError(new RuntimeException("Input list must be non-empty"))
+        case singleNode :: Nil => singleNode.pure[F]
         case _ =>
           nodes
             .grouped(2)
