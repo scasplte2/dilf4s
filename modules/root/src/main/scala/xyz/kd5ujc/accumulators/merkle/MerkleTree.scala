@@ -3,9 +3,10 @@ package xyz.kd5ujc.accumulators.merkle
 import cats.MonadError
 import cats.implicits.{toFlatMapOps, toFunctorOps, toTraverseOps}
 import cats.syntax.applicative._
+import cats.syntax.either._
 
 import xyz.kd5ujc.accumulators.Node
-import xyz.kd5ujc.accumulators.merkle.nodes.{InternalNode, LeafNode}
+import xyz.kd5ujc.accumulators.merkle.nodes.{InternalNode, MerkleLeafNode}
 import xyz.kd5ujc.hash.{Digest, Hasher}
 
 import io.circe.syntax.EncoderOps
@@ -41,25 +42,30 @@ object MerkleTree {
       leafDigestIndex <- c.downField("leafDigestIndex").as[List[(Digest[L], Int)]].map(_.toMap)
     } yield MerkleTree[L](rootNode, leafDigestIndex)
 
-  def create[F[_], A: Encoder, L](data: List[A])(implicit me: MonadError[F, Throwable], hasher: Hasher[F, L]): F[MerkleTree[L]] = {
+  def create[F[_], A: Encoder, L](data: List[A])(
+    implicit me:                        MonadError[F, Throwable],
+    hasher:                             Hasher[F, L]
+  ): F[MerkleTree[L]] = {
     def buildNodes(nodes: List[Node[L]]): F[Node[L]] =
-      nodes match {
-        case Nil               => MonadError[F, Throwable].raiseError(new RuntimeException("Input list must be non-empty"))
-        case singleNode :: Nil => singleNode.pure[F]
-        case _ =>
-          nodes
-            .grouped(2)
-            .toList
-            .traverse[F, InternalNode[L]] {
-              case Seq(leftNode, rightNode) => InternalNode[F, L](leftNode, Some(rightNode))
-              case Seq(singleNode)          => InternalNode[F, L](singleNode, None)
-              case _                        => MonadError[F, Throwable].raiseError(new RuntimeException("Unexpected input"))
-            }
-            .flatMap(buildNodes)
+      if (nodes.isEmpty) me.raiseError(new RuntimeException("Input list must be non-empty"))
+      else {
+        me.tailRecM[List[Node[L]], Node[L]](nodes) {
+          case singleNode :: Nil => singleNode.asRight[List[Node[L]]].pure[F]
+          case currentNodes @ _ =>
+            currentNodes
+              .grouped(2)
+              .toList
+              .traverse[F, InternalNode[L]] {
+                case Seq(leftNode, rightNode) => InternalNode(leftNode, Some(rightNode))
+                case Seq(singleNode)          => InternalNode(singleNode, None)
+                case _                        => me.raiseError(new RuntimeException("Unexpected input"))
+              }
+              .map(_.asLeft[Node[L]])
+        }
       }
 
     for {
-      leafNodes <- data.traverse(LeafNode(_))
+      leafNodes <- data.traverse(MerkleLeafNode(_))
       rootNode  <- buildNodes(leafNodes)
       leafDigestIndex = leafNodes.zipWithIndex.map { case (node, index) => (node.digest, index) }.toMap
     } yield MerkleTree(rootNode, leafDigestIndex)

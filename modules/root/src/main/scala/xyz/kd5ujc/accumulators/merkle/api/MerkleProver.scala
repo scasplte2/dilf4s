@@ -8,12 +8,12 @@ import scala.annotation.tailrec
 
 import xyz.kd5ujc.accumulators.Node
 import xyz.kd5ujc.accumulators.merkle.MerkleInclusionProof.Side
-import xyz.kd5ujc.accumulators.merkle.nodes.{InternalNode, LeafNode}
+import xyz.kd5ujc.accumulators.merkle.nodes.{InternalNode, MerkleLeafNode}
 import xyz.kd5ujc.accumulators.merkle.{MerkleInclusionProof, MerkleTree}
 import xyz.kd5ujc.hash.Digest
 
 trait MerkleProver[F[_], L] {
-  def fromLeafNode[A](leaf: LeafNode[A, L]): F[Option[MerkleInclusionProof[L]]]
+  def fromLeafNode[A](leaf: MerkleLeafNode[A, L]): F[Option[MerkleInclusionProof[L]]]
 
   def fromLeafDigest(digest: Digest[L]): F[Option[MerkleInclusionProof[L]]]
 }
@@ -21,7 +21,7 @@ trait MerkleProver[F[_], L] {
 object MerkleProver {
   def make[F[_]: Monad, L](tree: MerkleTree[L]): MerkleProver[F, L] =
     new MerkleProver[F, L] {
-      def fromLeafNode[A](leaf: LeafNode[A, L]): F[Option[MerkleInclusionProof[L]]] = fromLeafDigest(leaf.digest)
+      def fromLeafNode[A](leaf: MerkleLeafNode[A, L]): F[Option[MerkleInclusionProof[L]]] = fromLeafDigest(leaf.digest)
 
       def fromLeafDigest(digest: Digest[L]): F[Option[MerkleInclusionProof[L]]] =
         OptionT
@@ -44,7 +44,7 @@ object MerkleProver {
           node:  Option[Node[L]],
           acc:   Seq[Option[(Digest[L], Side)]],
           depth: Int
-        ): Option[(LeafNode[_, L], Seq[Option[(Digest[L], Side)]])] =
+        ): Option[(MerkleLeafNode[_, L], Seq[Option[(Digest[L], Side)]])] =
           node match {
             case Some(n: InternalNode[_]) if ((index >> (maxDepth - depth)) & 1) == 0 =>
               loop(Some(n.left), n.right.map(_.digest).map((_, MerkleInclusionProof.rightSide)) +: acc, depth + 1)
@@ -52,7 +52,7 @@ object MerkleProver {
             case Some(n: InternalNode[_]) =>
               loop(n.right, Some((n.left.digest, MerkleInclusionProof.leftSide)) +: acc, depth + 1)
 
-            case Some(n: LeafNode[_, _]) =>
+            case Some(n: MerkleLeafNode[_, _]) =>
               Some((n, acc))
 
             case _ =>

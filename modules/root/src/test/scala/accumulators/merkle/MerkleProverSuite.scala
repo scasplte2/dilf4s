@@ -5,7 +5,7 @@ import cats.implicits.toTraverseOps
 
 import xyz.kd5ujc.accumulators.merkle.MerkleTree
 import xyz.kd5ujc.accumulators.merkle.api.MerkleProver
-import xyz.kd5ujc.accumulators.merkle.nodes.LeafNode
+import xyz.kd5ujc.accumulators.merkle.nodes.MerkleLeafNode
 import xyz.kd5ujc.binary.JsonSerializer
 import xyz.kd5ujc.hash.{Blake2b256Hasher, l256}
 
@@ -20,7 +20,7 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        leaves                                  <- strings.traverse(LeafNode(_))
+        leaves                                  <- strings.traverse(MerkleLeafNode(_))
         tree                                    <- MerkleTree.create[IO, String, l256](strings)
         prover = MerkleProver.make[IO, l256](tree)
         proof <- prover.fromLeafNode(leaves.head)
@@ -33,7 +33,7 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        leaves                                  <- strings.traverse(LeafNode(_))
+        leaves                                  <- strings.traverse(MerkleLeafNode(_))
         tree                                    <- MerkleTree.create[IO, String, l256](strings)
         prover = MerkleProver.make[IO, l256](tree)
         proof <- prover.fromLeafDigest(leaves.head.digest)
@@ -46,7 +46,7 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        leaves                                  <- strings.traverse(LeafNode(_))
+        leaves                                  <- strings.traverse(MerkleLeafNode(_))
         tree                                    <- MerkleTree.create[IO, String, l256](strings.tail)
         prover = MerkleProver.make[IO, l256](tree)
         proof <- prover.fromLeafNode(leaves.head)
@@ -59,7 +59,7 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        leaves                                  <- strings.traverse(LeafNode(_))
+        leaves                                  <- strings.traverse(MerkleLeafNode(_))
         tree                                    <- MerkleTree.create[IO, String, l256](strings.tail)
         prover = MerkleProver.make[IO, l256](tree)
         proof <- prover.fromLeafDigest(leaves.head.digest)

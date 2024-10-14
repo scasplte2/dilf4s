@@ -5,7 +5,7 @@ import cats.implicits.toTraverseOps
 
 import xyz.kd5ujc.accumulators.merkle.MerkleTree
 import xyz.kd5ujc.accumulators.merkle.api.{MerkleProver, MerkleVerifier}
-import xyz.kd5ujc.accumulators.merkle.nodes.LeafNode
+import xyz.kd5ujc.accumulators.merkle.nodes.MerkleLeafNode
 import xyz.kd5ujc.binary.JsonSerializer
 import xyz.kd5ujc.hash.{Blake2b256Hasher, l256}
 
@@ -20,7 +20,7 @@ object MerkleVerifierSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        leaves                                  <- strings.traverse(LeafNode(_))
+        leaves                                  <- strings.traverse(MerkleLeafNode(_))
         tree                                    <- MerkleTree.create[IO, String, l256](strings)
         prover = MerkleProver.make[IO, l256](tree)
         verifier = MerkleVerifier.make[IO, l256](tree.rootNode.digest)
@@ -35,7 +35,7 @@ object MerkleVerifierSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        leaves                                  <- strings.traverse(LeafNode(_))
+        leaves                                  <- strings.traverse(MerkleLeafNode(_))
         tree1                                   <- MerkleTree.create[IO, String, l256](strings)
         tree2                                   <- MerkleTree.create[IO, String, l256](List("a", "b", "c"))
         prover1 = MerkleProver.make[IO, l256](tree1)
