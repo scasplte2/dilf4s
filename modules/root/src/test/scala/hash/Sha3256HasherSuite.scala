@@ -22,7 +22,7 @@ object Sha3256HasherSuite extends SimpleIOSuite with Checkers {
     forall(Gen.alphaNumStr) { str =>
       for {
         hasher <- hasherIO
-        digest <- hasher.hashJson(str)
+        digest <- hasher.hash(str)
       } yield expect(digest.value.nonEmpty)
     }
   }
@@ -31,7 +31,7 @@ object Sha3256HasherSuite extends SimpleIOSuite with Checkers {
     forall(Gen.alphaNumStr) { str =>
       for {
         hasher       <- hasherIO
-        expectedHash <- hasher.hashJson(str)
+        expectedHash <- hasher.hash(str)
         result       <- hasher.compare(str, expectedHash)
       } yield expect(result)
     }
@@ -41,7 +41,7 @@ object Sha3256HasherSuite extends SimpleIOSuite with Checkers {
     forall(Gen.alphaNumStr) { str =>
       for {
         hasher       <- hasherIO
-        expectedHash <- hasher.hashJson(str)
+        expectedHash <- hasher.hash(str)
         result       <- hasher.compare(str + "_updated", expectedHash)
       } yield expect(!result)
     }

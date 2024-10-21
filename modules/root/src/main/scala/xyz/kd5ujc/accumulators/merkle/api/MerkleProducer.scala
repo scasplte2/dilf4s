@@ -5,7 +5,7 @@ import cats.implicits.{toFlatMapOps, toFunctorOps}
 
 import xyz.kd5ujc.accumulators.merkle.MerkleTree
 import xyz.kd5ujc.accumulators.merkle.nodes.MerkleLeafNode
-import xyz.kd5ujc.hash.Hasher
+import xyz.kd5ujc.hash.JsonHasher
 
 import io.circe.Encoder
 
@@ -26,7 +26,7 @@ trait MerkleProducer[F[_], A, L] {
 object MerkleProducer {
   def make[F[_]: Sync, A: Encoder, L](
     initial:         List[MerkleLeafNode[A, L]]
-  )(implicit hasher: Hasher[F, L]): F[MerkleProducer[F, A, L]] =
+  )(implicit hasher: JsonHasher[F, L]): F[MerkleProducer[F, A, L]] =
     Ref.of[F, Vector[MerkleLeafNode[A, L]]](Vector.from(initial)).map { ref =>
       new MerkleProducer[F, A, L] {
 

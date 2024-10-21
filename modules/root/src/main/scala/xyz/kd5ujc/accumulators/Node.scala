@@ -11,16 +11,18 @@ trait Node[L] {
 
 object Node {
 
-  implicit def encodeNode[L](implicit digestEncoder: Encoder[Digest[L]]): Encoder[Node[L]] = Encoder.instance { node =>
-    digestEncoder(node.digest).asJson
-  }
+  implicit def encodeNode[L](implicit digestEncoder: Encoder[Digest[L]]): Encoder[Node[L]] =
+    Encoder.instance { node =>
+      digestEncoder(node.digest).asJson
+    }
 
-  implicit def decodeNode[L](implicit digestDecoder: Decoder[Digest[L]]): Decoder[Node[L]] = Decoder.instance { hCursor =>
-    for {
-      d <- hCursor.as[Digest[L]]
-    } yield
-      new Node[L] {
-        override def digest: Digest[L] = d
-      }
-  }
+  implicit def decodeNode[L](implicit digestDecoder: Decoder[Digest[L]]): Decoder[Node[L]] =
+    Decoder.instance { hCursor =>
+      for {
+        d <- hCursor.as[Digest[L]]
+      } yield
+        new Node[L] {
+          override def digest: Digest[L] = d
+        }
+    }
 }

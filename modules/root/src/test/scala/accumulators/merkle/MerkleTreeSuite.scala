@@ -54,33 +54,44 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
   }
 
   // to replicate behavior in another environment, make sure to use a hash function that allows for incremental updating
-  /**
-   * NodeJS example
-   * ------------------------------------------
-   * const blake = require('blakejs');
-   *
-   * function computeHash(data, prefix) {
-   * const context = blake.blake2bInit(32, null);
-   * blake.blake2bUpdate(context, prefix);
-   * blake.blake2bUpdate(context, data);
-   * return Buffer.from(blake.blake2bFinal(context))
-   * }
-   *
-   * // const data = Buffer.from(JSON.stringify({"a":1}));
-   * // const data = Buffer.from(JSON.stringify({"b":2}));
-   * // const prefix = Buffer.from([0x00])
-   *
-   * const data = Buffer.from("decc15cf89e2d4b56e2778609a452bcc74f0b73e406f49653a2679f3411aebd11c9ef5a4045965dccaec2c9b476555b7bc9e54035372bf3834d764783de5e830", "hex")
-   * const prefix = Buffer.from([0x01])
-   *
-   * console.log(computeHash(data, prefix));
-   */
+  // ------------------------------------------
+  // NodeJS example
+  // ------------------------------------------
+  //  const blake = require('blakejs');
+  //
+  //  function computeHash(data, prefix) {
+  //    const context = blake.blake2bInit(32, null);
+  //    blake.blake2bUpdate(context, prefix);
+  //    blake.blake2bUpdate(context, data);
+  //    return Buffer.from(blake.blake2bFinal(context))
+  //  }
+  //
+  //  const leafPrefix = Buffer.from([0x00]);
+  //  const internalPrefix = Buffer.from([0x01]);
+  //
+  //  const left = { "a": 1 };
+  //  const leftBinary = Buffer.from(JSON.stringify(left));
+  //  const leftDigest = computeHash(leftBinary, leafPrefix);
+  //
+  //  const right = { "b": 2 };
+  //  const rightBinary = Buffer.from(JSON.stringify(right));
+  //  const rightDigest = computeHash(rightBinary, leafPrefix);
+  //
+  //  const internalHashable = {
+  //    "leftDigest": leftDigest.toString('hex'),
+  //    "rightDigest": rightDigest.toString('hex')
+  //  };
+  //  const internalBinary = Buffer.from(JSON.stringify(internalHashable));
+  //  const internalDigest = computeHash(internalBinary, internalPrefix)
+  //
+  //  console.log(internalDigest.toString('hex'))
+
   test("ensure root of MerkleTree matches expected value for fixed data") {
     for {
       implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
       implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
       tree <- MerkleTree.create[IO, Json, l256](List(Json.obj("a" -> 1.asJson), Json.obj("b" -> 2.asJson)))
-      expectedRootHash = l256.unsafe(Hex.decodeStrict("01e8eee29abca850a2a0c6a3e8d4465d156abafc937d0b91f6922de99f165b69"))
+      expectedRootHash = l256.unsafe(Hex.decodeStrict("b1784feac2b405fc80b56d001f4e2364bc1dec7678622cfdba15b4be3902e873"))
     } yield expect.same(tree.rootNode.digest.asJson, expectedRootHash.asJson)
   }
 }
