@@ -10,7 +10,6 @@ object Dependencies {
     val levelDbJni = "1.8"
     val log4cats = "2.5.0"
     val organizeImports = "0.5.0"
-    val scrypto = "2.3.0"
     val weaver = "0.8.1"
     val logback = "1.3.5"
     val betterMonadicFor = "0.3.1"
@@ -29,7 +28,6 @@ object Dependencies {
     val weaverDiscipline = "com.disneystreaming" %% "weaver-discipline" % V.weaver
     val weaverScalaCheck = "com.disneystreaming" %% "weaver-scalacheck" % V.weaver
     val organizeImports = "com.github.liancheng" %% "organize-imports" % V.organizeImports
-    val scrypto = "org.scorexfoundation" %% "scrypto" % V.scrypto
     val levelDb = "org.iq80.leveldb" % "leveldb" % V.levelDb
     val levelDbJni = "org.fusesource.leveldbjni" % "leveldbjni-all" % V.levelDbJni
     val log4cats = "org.typelevel" %% "log4cats-slf4j" % V.log4cats
