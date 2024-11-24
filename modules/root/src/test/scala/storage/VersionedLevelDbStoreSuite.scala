@@ -9,8 +9,8 @@ import cats.effect.{IO, Resource}
 import cats.implicits.toTraverseOps
 
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.storage.algebras.VersionedStore
-import xyz.kd5ujc.storage.interpreters.versioned_store.VersionedLevelDbStore
+import xyz.kd5ujc.storage.VersionedStore
+import xyz.kd5ujc.storage.versioned_store.VersionedLevelDbStore
 
 import weaver.IOSuite
 import weaver.scalacheck.Checkers

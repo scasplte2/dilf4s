@@ -1,9 +1,9 @@
-package xyz.kd5ujc.storage.interpreters.store
+package xyz.kd5ujc.storage.store
 
 import cats.effect.{Ref, Sync}
 import cats.implicits.toFunctorOps
 
-import xyz.kd5ujc.storage.algebras.Store
+import xyz.kd5ujc.storage.Store
 
 object RefMapStore {
 
@@ -13,7 +13,7 @@ object RefMapStore {
 
         override def get(id: Key): F[Option[Value]] = store.get.map(_.get(id))
 
-        override def get(ids: List[Key]): F[List[(Key, Option[Value])]] =
+        override def getBatch(ids: List[Key]): F[List[(Key, Option[Value])]] =
           store.get.map(m => ids.map(id => (id, m.get(id))))
 
         override def contains(id: Key): F[Boolean] = store.get.map(_.contains(id))

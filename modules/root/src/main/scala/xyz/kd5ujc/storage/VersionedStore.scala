@@ -1,4 +1,4 @@
-package xyz.kd5ujc.storage.algebras
+package xyz.kd5ujc.storage
 
 import java.util.UUID
 

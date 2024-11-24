@@ -1,4 +1,4 @@
-package xyz.kd5ujc.storage.algebras
+package xyz.kd5ujc.storage
 
 import cats.data.OptionT
 import cats.implicits.showInterpolator
@@ -10,7 +10,7 @@ trait StoreReader[F[_], Key, Value] {
 
   def get(id: Key): F[Option[Value]]
 
-  def get(ids: List[Key]): F[List[(Key, Option[Value])]]
+  def getBatch(ids: List[Key]): F[List[(Key, Option[Value])]]
 
   def contains(id: Key): F[Boolean]
 
@@ -19,7 +19,7 @@ trait StoreReader[F[_], Key, Value] {
 
   def getWithFilter(cond: (Key, Value) => Boolean): F[List[(Key, Value)]]
 
-  def getOrRaise(id: Key)(implicit monadThrow: MonadThrow[F], showKey: Show[Key]): F[Value] =
+  def getUnsafe(id: Key)(implicit monadThrow: MonadThrow[F], showKey: Show[Key]): F[Value] =
     OptionT(get(id)).getOrElseF(monadThrow.raiseError(new NoSuchElementException(show"Element not found. id=$id")))
 }
 

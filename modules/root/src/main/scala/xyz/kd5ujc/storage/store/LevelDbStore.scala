@@ -1,4 +1,4 @@
-package xyz.kd5ujc.storage.interpreters.store
+package xyz.kd5ujc.storage.store
 
 import java.nio.file.{Files, Path}
 
@@ -7,7 +7,7 @@ import cats.effect.{Resource, Sync}
 import cats.implicits._
 
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.storage.algebras.Store
+import xyz.kd5ujc.storage.Store
 
 import io.circe.{Decoder, Encoder}
 import org.iq80.leveldb._
@@ -47,68 +47,29 @@ object LevelDbStore {
       new Store[F, Key, Value] {
 
         def put(id: Key, t: Value): F[Unit] = for {
-
-          result <- (id.toJsonBytes, t.toJsonBytes).tupled.flatMap { case (idB, tB) => useDb(_.put(idB, tB)) }
-        } yield result
+          idB <- id.toJsonBytes
+          tB  <- t.toJsonBytes
+          _   <- Sync[F].blocking(db.put(idB, tB))
+        } yield ()
 
         def remove(id: Key): F[Unit] =
-          id.toJsonBytes.flatMap(idB => useDb(_.delete(idB)))
+          id.toJsonBytes.flatMap { idB =>
+            Sync[F].blocking(db.delete(idB))
+          }
 
         def get(id: Key): F[Option[Value]] =
-          id.toJsonBytes
-            .flatMap(idB => useDb(db => Option(db.get(idB))))
-            .flatMap {
-              case Some(raw) => raw.fromJsonBytes[Value].map(_.toOption)
-              case None      => Sync[F].pure(None)
-            }
+          id.toJsonBytes.flatMap { idB =>
+            Sync[F]
+              .blocking(Option(db.get(idB)))
+              .flatMap(_.flatTraverse(_.fromJsonBytes[Value].map(_.toOption)))
+          }
 
         def contains(id: Key): F[Boolean] =
-          id.toJsonBytes
-            .flatMap(idB => useDb(_.get(idB) != null))
-
-        /**
-         * Use the instance of the DB within a blocking F context
-         */
-        private def useDb[R](f: DB => R): F[R] =
-          Sync[F].blocking(f(db))
-
-        private def loopWithConditionAndLimit(
-          cond:  (Key, Value) => Boolean,
-          limit: Int = Int.MaxValue
-        ): F[List[(Key, Value)]] = {
-          def loop(
-            iter:  DBIterator,
-            bf:    List[(Key, Value)],
-            count: Int = 0
-          ): F[List[(Key, Value)]] =
-            if (!iter.hasNext || count >= limit) Sync[F].pure(bf)
-            else
-              for {
-                entry       <- Sync[F].delay(iter.next())
-                key         <- EitherT(entry.getKey.fromJsonBytes[Key]).rethrowT
-                value       <- EitherT(entry.getValue.fromJsonBytes[Value]).rethrowT
-                newBuffer   <- if (cond(key, value)) Sync[F].delay(bf :+ (key, value)) else Sync[F].pure(bf)
-                finalBuffer <- loop(iter, newBuffer, count + 1)
-              } yield finalBuffer
-
-          createReadResource.use {
-            case (iter, _) =>
-              loop(iter, List.empty[(Key, Value)])
-          }
-        }
-
-        override def get(
-          keys: List[Key]
-        ): F[List[(Key, Option[Value])]] =
-          keys.traverse { key =>
-            get(key).map(value => key -> value)
+          id.toJsonBytes.flatMap { idB =>
+            Sync[F].blocking(db.get(idB)).map(_ != null)
           }
 
-        override def getWithFilter(
-          cond: (Key, Value) => Boolean
-        ): F[List[(Key, Value)]] = loopWithConditionAndLimit(cond)
-
-        override def putBatch(updates: List[(Key, Value)]): F[Unit] =
+        def putBatch(updates: List[(Key, Value)]): F[Unit] =
           createWriteResource.use {
             case (batch, wo) =>
               for {
@@ -116,34 +77,87 @@ object LevelDbStore {
                   case (id, t) =>
                     (id.toJsonBytes, t.toJsonBytes).tupled.map { case (idB, tB) => batch.put(idB, tB) }
                 }
-                _ <- Sync[F].delay(db.write(batch, wo.sync(true)))
+                _ <- Sync[F].blocking(db.write(batch, wo.sync(true)))
               } yield ()
           }
 
-        override def removeBatch(deletions: List[Key]): F[Unit] =
+        def removeBatch(deletions: List[Key]): F[Unit] =
           createWriteResource.use {
             case (batch, wo) =>
               for {
                 _ <- deletions.traverse_ { id =>
                   id.toJsonBytes.map(idB => batch.delete(idB))
                 }
-                _ <- Sync[F].delay(db.write(batch, wo.sync(true)))
+                _ <- Sync[F].blocking(db.write(batch, wo.sync(true)))
               } yield ()
+          }
+
+        def getBatch(keys: List[Key]): F[List[(Key, Option[Value])]] =
+          createReadResource.use { readOptions =>
+            keys.traverse { id =>
+              id.toJsonBytes.flatMap { idB =>
+                Sync[F]
+                  .blocking(Option(db.get(idB, readOptions)))
+                  .flatMap(_.flatTraverse(_.fromJsonBytes[Value].map(_.toOption)))
+                  .map((id, _))
+              }
+            }
+          }
+
+        def getWithFilter(
+          cond: (Key, Value) => Boolean
+        ): F[List[(Key, Value)]] = loopWithConditionAndLimit(cond)
+
+        private def loopWithConditionAndLimit(
+          cond:  (Key, Value) => Boolean,
+          limit: Int = Int.MaxValue
+        ): F[List[(Key, Value)]] = {
+          def loop(
+            iter:  DBIterator,
+            buf:   List[(Key, Value)],
+            count: Int = 0
+          ): F[List[(Key, Value)]] =
+            Sync[F].tailRecM((iter, buf, count)) {
+              case (_iter, _buf, _count) =>
+                if (!_iter.hasNext || _count >= limit) Sync[F].pure(Right(_buf))
+                else {
+                  (for {
+                    entry <- EitherT(Sync[F].delay(_iter.next()).attempt)
+                    key   <- EitherT(entry.getKey.fromJsonBytes[Key])
+                    value <- EitherT(entry.getValue.fromJsonBytes[Value])
+                  } yield (key, value)).value.flatMap {
+                    case Left(_) => Sync[F].pure(Right(_buf))
+                    case Right((key, value)) =>
+                      val newBuffer = if (cond(key, value)) _buf :+ (key, value) else _buf
+                      Sync[F].pure(Left((_iter, newBuffer, _count + 1)))
+                  }
+                }
+            }
+
+          createIterResource.use {
+            case (iter, _) =>
+              loop(iter, List.empty[(Key, Value)])
+          }
+        }
+
+        private def createReadResource: Resource[F, ReadOptions] =
+          Resource.make {
+            for {
+              snapshot <- Sync[F].delay(db.getSnapshot)
+              ro = new ReadOptions().snapshot(snapshot)
+            } yield ro
+          } { ro =>
+            Sync[F].delay(ro.snapshot().close())
           }
 
         private def createWriteResource: Resource[F, (WriteBatch, WriteOptions)] =
           Resource.make {
-            Sync[F].delay {
-              (db.createWriteBatch(), new WriteOptions())
-            }
+            Sync[F].delay((db.createWriteBatch(), new WriteOptions()))
           } {
-            case (batch, _) =>
-              Sync[F].delay {
-                batch.close()
-              }
+            case (batch, _) => Sync[F].delay(batch.close())
           }
 
-        private def createReadResource: Resource[F, (DBIterator, ReadOptions)] =
+        private def createIterResource: Resource[F, (DBIterator, ReadOptions)] =
           Resource.make {
             for {
               snapshot <- Sync[F].delay(db.getSnapshot)

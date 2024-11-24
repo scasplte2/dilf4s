@@ -3,8 +3,8 @@ package storage
 import cats.data.NonEmptyList
 import cats.effect.IO
 
-import xyz.kd5ujc.storage.algebras.Store
-import xyz.kd5ujc.storage.interpreters.store.RefMapStore
+import xyz.kd5ujc.storage.Store
+import xyz.kd5ujc.storage.store.RefMapStore
 
 import generators.kvListGenUniqueKeys
 import weaver._
@@ -30,7 +30,7 @@ object RefMapStoreSuite extends SimpleIOSuite with Checkers {
       for {
         store  <- storeIO
         _      <- kvPairs.traverse(pair => store.put(pair._1, pair._2))
-        actual <- store.get(kvPairs.map(_._1).toList)
+        actual <- store.getBatch(kvPairs.map(_._1).toList)
         expected = kvPairs.map(pair => (pair._1, Some(pair._2))).toList
       } yield expect(actual == expected)
     }
@@ -50,9 +50,9 @@ object RefMapStoreSuite extends SimpleIOSuite with Checkers {
       for {
         store              <- storeIO
         _                  <- store.putBatch(kvPairs.toList)
-        valuesBeforeDelete <- store.get(kvPairs.map(_._1).toList)
+        valuesBeforeDelete <- store.getBatch(kvPairs.map(_._1).toList)
         _                  <- store.removeBatch(kvPairs.map(_._1).toList)
-        valuesAfterDelete  <- store.get(kvPairs.map(_._1).toList)
+        valuesAfterDelete  <- store.getBatch(kvPairs.map(_._1).toList)
         expectedBeforeDelete = kvPairs.map(pair => pair._1 -> Some(pair._2)).toList
         expectedAfterDelete = kvPairs.map(pair => pair._1 -> None).toList
       } yield expect(valuesBeforeDelete == expectedBeforeDelete).and(expect(valuesAfterDelete == expectedAfterDelete))
@@ -81,14 +81,14 @@ object RefMapStoreSuite extends SimpleIOSuite with Checkers {
     for {
       store <- storeIO
       _     <- store.put(1, "A")
-      value <- store.getOrRaise(1)
+      value <- store.getUnsafe(1)
     } yield expect(value == "A")
   }
 
   test("getOrRaise value when value does not exist") {
     for {
       store  <- storeIO
-      result <- store.getOrRaise(42).attempt
+      result <- store.getUnsafe(42).attempt
     } yield
       result match {
         case Left(e: NoSuchElementException) => expect(e.getMessage == s"Element not found. id=42")

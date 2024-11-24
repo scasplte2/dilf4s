@@ -8,8 +8,8 @@ import cats.data.NonEmptyList
 import cats.effect.{IO, Resource}
 
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.storage.algebras.Store
-import xyz.kd5ujc.storage.interpreters.store.LevelDbStore
+import xyz.kd5ujc.storage.Store
+import xyz.kd5ujc.storage.store.LevelDbStore
 
 import generators.kvListGenUniqueKeys
 import weaver.IOSuite
@@ -75,21 +75,21 @@ object LevelDbStoreSuite extends IOSuite with Checkers {
   test("getOrRaise value") { store =>
     for {
       _     <- store.put(5, "E")
-      value <- store.getOrRaise(5)
+      value <- store.getUnsafe(5)
     } yield expect(value == "E")
   }
 
   test("get values with filter") { store =>
     for {
       _        <- store.putBatch(List((6, "F"), (7, "G")))
-      values   <- store.get(List(6, 7))
+      values   <- store.getBatch(List(6, 7))
       filtered <- store.getWithFilter((_, v) => v == "F")
     } yield expect(values.toSet == Set((6, Some("F")), (7, Some("G")))) && expect(filtered == List((6, "F")))
   }
 
   test("getOrRaise value when value does not exist") { store =>
     for {
-      result <- store.getOrRaise(42).attempt
+      result <- store.getUnsafe(42).attempt
     } yield
       result match {
         case Left(e: NoSuchElementException) => expect(e.getMessage == s"Element not found. id=42")
@@ -99,23 +99,23 @@ object LevelDbStoreSuite extends IOSuite with Checkers {
 
   test("put and get a batch of key value pairs") { store =>
     for {
-      kvPairs <- IO.fromOption(kvListGenUniqueKeys(10, 100).sample.map(NonEmptyList.fromListUnsafe))(
+      kvPairs <- IO.fromOption(kvListGenUniqueKeys(999, 1000).sample.map(NonEmptyList.fromListUnsafe))(
         new RuntimeException("Failed to generate key-value list")
       )
       (keys, _) = kvPairs.toList.unzip
       _      <- store.putBatch(kvPairs.toList)
-      actual <- store.get(keys).map(_.flatMap { case (i, maybeStr) => maybeStr.map(str => (i, str)) })
+      actual <- store.getBatch(keys).map(_.flatMap { case (i, maybeStr) => maybeStr.map(str => (i, str)) })
       expected = kvPairs.toList
     } yield expect(actual == expected)
   }
 
   test("delete a batch of keys") { store =>
     for {
-      kvPairs <- IO.fromOption(kvListGenUniqueKeys(10, 200).sample.map(NonEmptyList.fromListUnsafe))(
+      kvPairs <- IO.fromOption(kvListGenUniqueKeys(999, 2000).sample.map(NonEmptyList.fromListUnsafe))(
         new RuntimeException("Failed to generate key-value list")
       )
       (keys, _) = kvPairs.toList.unzip
-      actual <- store.get(keys).map(_.flatMap { case (i, maybeStr) => maybeStr.map(str => (i, str)) })
+      actual <- store.getBatch(keys).map(_.flatMap { case (i, maybeStr) => maybeStr.map(str => (i, str)) })
     } yield expect(actual.isEmpty)
   }
 }

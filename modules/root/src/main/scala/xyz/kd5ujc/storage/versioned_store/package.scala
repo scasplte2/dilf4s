@@ -1,16 +1,15 @@
-package xyz.kd5ujc.storage.interpreters
+package xyz.kd5ujc.storage
 
 import java.util.UUID
 
 import cats.data.OptionT
 import cats.effect.{Ref, Sync}
-import cats.implicits.{toFlatMapOps, toFoldableOps, toFunctorOps, toTraverseOps}
+import cats.implicits.{toFlatMapOps, toFoldableOps, toFunctorOps}
 import cats.syntax.all._
 
 import scala.collection.immutable.SortedSet
 
-import xyz.kd5ujc.storage.algebras.{Store, VersionedStore}
-import xyz.kd5ujc.storage.interpreters.versioned_store.schema.{Catalog, Diff, Meta}
+import xyz.kd5ujc.storage.versioned_store.schema.{Catalog, Diff, Meta}
 
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
@@ -28,17 +27,17 @@ package object versioned_store {
 
     override def contains(key: Key): F[Boolean] = ref.get.flatMap(_.main.contains(key))
 
-    override def latest: F[UUID] = ref.get.flatMap(_.meta.getOrRaise(Meta.reserved).map(_.id))
+    override def latest: F[UUID] = ref.get.flatMap(_.meta.getUnsafe(Meta.reserved).map(_.id))
 
     override def listVersions: F[List[UUID]] = ref.get.flatMap {
-      _.meta.getOrRaise(Meta.reserved).map(_.history)
+      _.meta.getUnsafe(Meta.reserved).map(_.history)
     }
 
     override def getFromVersionDiff(key: Key, id: UUID): F[Option[Value]] =
       (for {
         state   <- OptionT.liftF(ref.get)
         version <- OptionT(state.meta.get(id))
-        diffs   <- OptionT.liftF(state.undo.get(version.diffs.toList))
+        diffs   <- OptionT.liftF(state.undo.getBatch(version.diffs.toList))
         value <- OptionT.fromOption[F](diffs.collectFirst {
           case (_, Some(diff)) if diff.key == key => diff.previous
         }.flatten)
@@ -47,9 +46,9 @@ package object versioned_store {
     override def dumpVersionDiff(id: UUID): F[List[(Key, Option[Value])]] =
       ref.get.flatMap { state =>
         for {
-          version <- state.meta.getOrRaise(id)
+          version <- state.meta.getUnsafe(id)
           previousValues <- version.diffs.toList.traverse { lsn =>
-            state.undo.getOrRaise(lsn).map(diff => (diff.key, diff.previous))
+            state.undo.getUnsafe(lsn).map(diff => (diff.key, diff.previous))
           }
         } yield previousValues
       }
@@ -58,7 +57,7 @@ package object versioned_store {
       ref.modify { state =>
         val effect =
           for {
-            head <- state.meta.getOrRaise(Meta.reserved)
+            head <- state.meta.getUnsafe(Meta.reserved)
             headLast = head.diffs.last
             start = 1 + headLast
             end = start + toRemove.size + toUpdate.size
@@ -111,8 +110,8 @@ package object versioned_store {
     override def rollback(id: UUID): F[Boolean] =
       ref.modify { state =>
         val effect = for {
-          head <- state.meta.getOrRaise(Meta.reserved)
-          dest <- state.meta.getOrRaise(id)
+          head <- state.meta.getUnsafe(Meta.reserved)
+          dest <- state.meta.getUnsafe(id)
           ancestorIndex = head.history.indexOf(id)
           _ <-
             if (ancestorIndex == -1) {
@@ -124,9 +123,9 @@ package object versioned_store {
               val restoreEffect = for {
                 _ <- toRestore.foldM(()) { (_, restoreId) =>
                   for {
-                    restorePoint <- state.meta.getOrRaise(restoreId)
+                    restorePoint <- state.meta.getUnsafe(restoreId)
                     allDiffs <- restorePoint.diffs.toList.traverse { lsn =>
-                      state.undo.getOrRaise(lsn).map(diff => (diff.key, diff.previous))
+                      state.undo.getUnsafe(lsn).map(diff => (diff.key, diff.previous))
                     }
                     (diffUpdates, diffRemovals) = allDiffs.foldLeft((List.empty[(Key, Value)], List.empty[Key])) {
                       case ((updates, removals), (key, Some(value))) =>
@@ -144,7 +143,7 @@ package object versioned_store {
               } yield ()
 
               val removeEffect = for {
-                versionsToRemove <- state.meta.get(toRestore)
+                versionsToRemove <- state.meta.getBatch(toRestore)
                 (listId, listMeta) = versionsToRemove.collect { case (id, Some(t)) => (id, t) }.unzip
                 listDiffs = listMeta.flatMap(_.diffs)
                 _ <- state.meta.removeBatch(listId)

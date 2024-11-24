@@ -1,13 +1,15 @@
-package xyz.kd5ujc.storage.interpreters.versioned_store
+package xyz.kd5ujc.storage.versioned_store
 
 import java.util.UUID
 
 import cats.effect.{Ref, Sync}
-import cats.implicits._
+import cats.syntax.applicative._
+import cats.syntax.flatMap._
+import cats.syntax.functor._
 
-import xyz.kd5ujc.storage.algebras.VersionedStore
-import xyz.kd5ujc.storage.interpreters.store.RefMapStore
-import xyz.kd5ujc.storage.interpreters.versioned_store.schema.{Catalog, Diff, Meta}
+import xyz.kd5ujc.storage.VersionedStore
+import xyz.kd5ujc.storage.store.RefMapStore
+import xyz.kd5ujc.storage.versioned_store.schema.{Catalog, Diff, Meta}
 
 import org.typelevel.log4cats.SelfAwareStructuredLogger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
@@ -20,8 +22,8 @@ object VersionedRefStore {
       main                                            <- RefMapStore.make[F, Key, Value]
       undo                                            <- RefMapStore.make[F, Long, Diff[Key, Value]]
       meta                                            <- RefMapStore.make[F, UUID, Meta]
-      ref <- Ref.of[F, Catalog[F, Key, Value]](Catalog(main, undo, meta)).flatTap { ref =>
-        ref.get.flatMap { state =>
+      ref <- Ref.of[F, Catalog[F, Key, Value]](Catalog(main, undo, meta)).flatTap {
+        _.get.flatMap { state =>
           state.meta.get(Meta.reserved).flatMap {
             case Some(_) => ().pure[F]
             case None    => state.meta.put(Meta.reserved, Meta.genesis)

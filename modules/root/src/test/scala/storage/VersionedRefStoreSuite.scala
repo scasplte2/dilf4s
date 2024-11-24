@@ -5,8 +5,8 @@ import java.util.UUID
 import cats.effect.IO
 import cats.implicits.toTraverseOps
 
-import xyz.kd5ujc.storage.algebras.VersionedStore
-import xyz.kd5ujc.storage.interpreters.versioned_store.VersionedRefStore
+import xyz.kd5ujc.storage.VersionedStore
+import xyz.kd5ujc.storage.versioned_store.VersionedRefStore
 
 import generators.kvListGenUniqueKeys
 import org.scalacheck.Gen
