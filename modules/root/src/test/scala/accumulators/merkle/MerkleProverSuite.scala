@@ -3,13 +3,13 @@ package accumulators.merkle
 import cats.effect.IO
 import cats.implicits.toTraverseOps
 
-import xyz.kd5ujc.accumulators.merkle.MerkleTree
 import xyz.kd5ujc.accumulators.merkle.api.MerkleProver
-import xyz.kd5ujc.accumulators.merkle.nodes.MerkleLeafNode
+import xyz.kd5ujc.accumulators.merkle.{MerkleNode, MerkleTree}
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.hash.{Blake2b256Hasher, l256}
+import xyz.kd5ujc.hash.Blake2b256Hasher
 
 import generators.nonEmptyStringListGen
+import io.circe.syntax.EncoderOps
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
 
@@ -20,9 +20,9 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        leaves                                  <- strings.traverse(MerkleLeafNode(_))
-        tree                                    <- MerkleTree.create[IO, String, l256](strings)
-        prover = MerkleProver.make[IO, l256](tree)
+        leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
+        tree                                    <- MerkleTree.create[IO, String](strings)
+        prover = MerkleProver.make[IO](tree)
         proof <- prover.fromLeafNode(leaves.head)
       } yield expect(proof.nonEmpty)
     }
@@ -33,9 +33,9 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        leaves                                  <- strings.traverse(MerkleLeafNode(_))
-        tree                                    <- MerkleTree.create[IO, String, l256](strings)
-        prover = MerkleProver.make[IO, l256](tree)
+        leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
+        tree                                    <- MerkleTree.create[IO, String](strings)
+        prover = MerkleProver.make[IO](tree)
         proof <- prover.fromLeafDigest(leaves.head.digest)
       } yield expect(proof.nonEmpty)
     }
@@ -46,9 +46,9 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        leaves                                  <- strings.traverse(MerkleLeafNode(_))
-        tree                                    <- MerkleTree.create[IO, String, l256](strings.tail)
-        prover = MerkleProver.make[IO, l256](tree)
+        leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
+        tree                                    <- MerkleTree.create[IO, String](strings.tail)
+        prover = MerkleProver.make[IO](tree)
         proof <- prover.fromLeafNode(leaves.head)
       } yield expect(proof.isEmpty)
     }
@@ -59,9 +59,9 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        leaves                                  <- strings.traverse(MerkleLeafNode(_))
-        tree                                    <- MerkleTree.create[IO, String, l256](strings.tail)
-        prover = MerkleProver.make[IO, l256](tree)
+        leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
+        tree                                    <- MerkleTree.create[IO, String](strings.tail)
+        prover = MerkleProver.make[IO](tree)
         proof <- prover.fromLeafDigest(leaves.head.digest)
       } yield expect(proof.isEmpty)
     }

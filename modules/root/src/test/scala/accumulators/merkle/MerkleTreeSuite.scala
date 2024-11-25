@@ -20,7 +20,7 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        merkleTree                              <- MerkleTree.create[IO, String, l256](strings)
+        merkleTree                              <- MerkleTree.create[IO, String](strings)
       } yield expect(merkleTree.rootNode.digest.value.nonEmpty)
     }
   }
@@ -30,8 +30,8 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-        merkleTree1                             <- MerkleTree.create[IO, String, l256](strings)
-        merkleTree2                             <- MerkleTree.create[IO, String, l256](strings)
+        merkleTree1                             <- MerkleTree.create[IO, String](strings)
+        merkleTree2                             <- MerkleTree.create[IO, String](strings)
       } yield expect.same(merkleTree1.asJson, merkleTree2.asJson)
     }
   }
@@ -47,8 +47,8 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
         for {
           implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
           implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-          merkleTree1                             <- MerkleTree.create[IO, String, l256](strings1)
-          merkleTree2                             <- MerkleTree.create[IO, String, l256](strings2)
+          merkleTree1                             <- MerkleTree.create[IO, String](strings1)
+          merkleTree2                             <- MerkleTree.create[IO, String](strings2)
         } yield expect(merkleTree1.asJson != merkleTree2.asJson)
     }
   }
@@ -90,7 +90,7 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
     for {
       implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
       implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-      tree <- MerkleTree.create[IO, Json, l256](List(Json.obj("a" -> 1.asJson), Json.obj("b" -> 2.asJson)))
+      tree                                    <- MerkleTree.create[IO, Json](List(Json.obj("a" -> 1.asJson), Json.obj("b" -> 2.asJson)))
       expectedRootHash = l256.unsafe(Hex.decodeStrict("b1784feac2b405fc80b56d001f4e2364bc1dec7678622cfdba15b4be3902e873"))
     } yield expect.same(tree.rootNode.digest.asJson, expectedRootHash.asJson)
   }

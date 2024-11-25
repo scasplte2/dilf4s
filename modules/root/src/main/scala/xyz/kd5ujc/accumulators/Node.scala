@@ -5,24 +5,24 @@ import xyz.kd5ujc.hash.Digest
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, Encoder}
 
-trait Node[L] {
-  def digest: Digest[L]
+trait Node {
+  def digest: Digest
 }
 
 object Node {
 
-  implicit def encodeNode[L](implicit digestEncoder: Encoder[Digest[L]]): Encoder[Node[L]] =
+  implicit def encodeNode(implicit digestEncoder: Encoder[Digest]): Encoder[Node] =
     Encoder.instance { node =>
       digestEncoder(node.digest).asJson
     }
 
-  implicit def decodeNode[L](implicit digestDecoder: Decoder[Digest[L]]): Decoder[Node[L]] =
+  implicit def decodeNode(implicit digestDecoder: Decoder[Digest]): Decoder[Node] =
     Decoder.instance { hCursor =>
       for {
-        d <- hCursor.as[Digest[L]]
+        d <- hCursor.as[Digest]
       } yield
-        new Node[L] {
-          override def digest: Digest[L] = d
+        new Node {
+          override def digest: Digest = d
         }
     }
 }

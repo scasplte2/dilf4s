@@ -7,13 +7,13 @@ import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, DecodingFailure, Encoder, HCursor}
 import org.bouncycastle.util.encoders.Hex
 
-sealed abstract class Digest[L] {
+sealed abstract class Digest {
   val value: Array[Byte]
   val size: Int
 
   override def equals(obj: Any): Boolean = obj match {
-    case digest: Digest[_] => this.size == digest.size && this.value.sameElements(digest.value)
-    case _                 => false
+    case digest: Digest => this.size == digest.size && this.value.sameElements(digest.value)
+    case _              => false
   }
 
   override def hashCode(): Int = java.util.Arrays.hashCode(value)
@@ -21,26 +21,21 @@ sealed abstract class Digest[L] {
 
 object Digest {
 
-  implicit def encodeDigest: Encoder[Digest[_]] = Encoder.instance {
+  implicit def encodeDigest: Encoder[Digest] = Encoder.instance {
     case l256Inst: l256 => l256Inst.asJson
     case l512Inst: l512 => l512Inst.asJson
   }
 
-  implicit val decodeDigest: Decoder[Digest[_]] = Decoder.instance { (c: HCursor) =>
+  implicit val decodeDigest: Decoder[Digest] = Decoder.instance { (c: HCursor) =>
     c.as[String].map(Hex.decode).map(_.length).flatMap {
       case 32    => c.as[l256]
       case 64    => c.as[l512]
       case l @ _ => Left(DecodingFailure(s"Unsupported digest length: $l", c.history))
     }
   }
-
-  implicit def encodeDigestTyped[L]: Encoder[Digest[L]] = encodeDigest.asInstanceOf[Encoder[Digest[L]]]
-
-  implicit def decodeDigestTyped[L]: Decoder[Digest[L]] = decodeDigest.asInstanceOf[Decoder[Digest[L]]]
-
 }
 
-class l256 private (bytes: Array[Byte]) extends Digest[l256] {
+class l256 private (bytes: Array[Byte]) extends Digest {
   override val value: Array[Byte] = bytes
   override val size: Int = l256.size
 }
@@ -66,7 +61,7 @@ object l256 {
     } yield result
 }
 
-class l512 private (bytes: Array[Byte]) extends Digest[l512] {
+class l512 private (bytes: Array[Byte]) extends Digest {
   override val value: Array[Byte] = bytes
   override val size: Int = l512.size
 }

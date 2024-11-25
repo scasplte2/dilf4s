@@ -1,34 +1,31 @@
 package xyz.kd5ujc.accumulators.merkle.api
 
 import cats.Monad
-import cats.implicits.{catsSyntaxApplicativeId, toFoldableOps, toFunctorOps}
+import cats.syntax.applicative._
+import cats.syntax.foldable._
+import cats.syntax.functor._
+import cats.syntax.option._
 
-import xyz.kd5ujc.accumulators.merkle.{MerkleInclusionProof, MerkleTree}
+import xyz.kd5ujc.accumulators.merkle.{MerkleInclusionProof, MerkleNode}
 import xyz.kd5ujc.hash.{Digest, JsonHasher}
 
-import io.circe.Json
-import io.circe.syntax.EncoderOps
-
-trait MerkleVerifier[F[_], L] {
-  def isValid(proof: MerkleInclusionProof[L]): F[Boolean]
+trait MerkleVerifier[F[_]] {
+  def isValid(proof: MerkleInclusionProof): F[Boolean]
 }
 
 object MerkleVerifier {
-  def make[F[_]: Monad, L](root: Digest[L])(implicit hasher: JsonHasher[F, L]): MerkleVerifier[F, L] =
-    new MerkleVerifier[F, L] {
-      override def isValid(proof: MerkleInclusionProof[L]): F[Boolean] = {
+  def make[F[_]: Monad: JsonHasher](root: Digest): MerkleVerifier[F] =
+    new MerkleVerifier[F] {
+      override def isValid(proof: MerkleInclusionProof): F[Boolean] = {
 
-        def combine(a: Digest[L], b: Digest[L]): F[Digest[L]] =
-          hasher.hash(
-            Json.obj("leftDigest" -> a.asJson, "rightDigest" -> b.asJson),
-            MerkleTree.InternalPrefix
-          )
+        def combine(a: Digest, b: Digest): F[Digest] =
+          MerkleNode.Internal.nodeCommitment(a, b.some)
 
         proof.path
           .foldLeftM(proof.leafDigest) {
             case (acc, (digest, MerkleInclusionProof.leftSide))  => combine(digest, acc)
             case (acc, (digest, MerkleInclusionProof.rightSide)) => combine(acc, digest)
-            case (acc, _)                                        => acc.pure[F] // for single node trees
+            case (acc, _)                                        => acc.pure[F]
           }
           .map(_.value.sameElements(root.value))
       }

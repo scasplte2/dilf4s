@@ -5,23 +5,19 @@ import cats.implicits.{toFlatMapOps, toFunctorOps, toTraverseOps}
 import cats.syntax.applicative._
 import cats.syntax.either._
 
-import xyz.kd5ujc.accumulators.Node
-import xyz.kd5ujc.accumulators.merkle.nodes.{InternalNode, MerkleLeafNode}
-import xyz.kd5ujc.hash.{Digest, Hasher}
+import xyz.kd5ujc.hash.{Digest, JsonHasher}
 
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, Encoder, HCursor, Json}
 
-final case class MerkleTree[L](
-  rootNode:        Node[L],
-  leafDigestIndex: Map[Digest[L], Int]
+final case class MerkleTree(
+  rootNode:        MerkleNode,
+  leafDigestIndex: Map[Digest, Int]
 )
 
 object MerkleTree {
-  val leafPrefix: Array[Byte] = Array(0: Byte)
-  val internalPrefix: Array[Byte] = Array(1: Byte)
 
-  implicit def merkleTreeEncoder[L]: Encoder[MerkleTree[L]] = (tree: MerkleTree[L]) =>
+  implicit def merkleTreeEncoder: Encoder[MerkleTree] = (tree: MerkleTree) =>
     Json.obj(
       "rootNode" -> tree.rootNode.asJson,
       "leafDigestIndex" -> tree.leafDigestIndex.toList
@@ -36,36 +32,37 @@ object MerkleTree {
         .asJson
     )
 
-  implicit def merkleTreeDecoder[L]: Decoder[MerkleTree[L]] = (c: HCursor) =>
+  implicit def merkleTreeDecoder: Decoder[MerkleTree] = (c: HCursor) =>
     for {
-      rootNode        <- c.downField("rootNode").as[Node[L]]
-      leafDigestIndex <- c.downField("leafDigestIndex").as[List[(Digest[L], Int)]].map(_.toMap)
-    } yield MerkleTree[L](rootNode, leafDigestIndex)
+      rootNode        <- c.downField("rootNode").as[MerkleNode]
+      leafDigestIndex <- c.downField("leafDigestIndex").as[List[(Digest, Int)]].map(_.toMap)
+    } yield MerkleTree(rootNode, leafDigestIndex)
 
-  def create[F[_], A: Encoder, L](data: List[A])(
-    implicit me:                        MonadError[F, Throwable],
-    hasher:                             Hasher[F, L]
-  ): F[MerkleTree[L]] = {
-    def buildNodes(nodes: List[Node[L]]): F[Node[L]] =
+  def create[F[_]: JsonHasher, A: Encoder](
+    data: List[A]
+  )(
+    implicit me: MonadError[F, Throwable]
+  ): F[MerkleTree] = {
+    def buildNodes(nodes: List[MerkleNode]): F[MerkleNode] =
       if (nodes.isEmpty) me.raiseError(new RuntimeException("Input list must be non-empty"))
       else {
-        me.tailRecM[List[Node[L]], Node[L]](nodes) {
-          case singleNode :: Nil => singleNode.asRight[List[Node[L]]].pure[F]
+        me.tailRecM[List[MerkleNode], MerkleNode](nodes) {
+          case singleNode :: Nil => singleNode.asRight[List[MerkleNode]].pure[F]
           case currentNodes @ _ =>
             currentNodes
               .grouped(2)
               .toList
-              .traverse[F, InternalNode[L]] {
-                case Seq(leftNode, rightNode) => InternalNode(leftNode, Some(rightNode))
-                case Seq(singleNode)          => InternalNode(singleNode, None)
+              .traverse[F, MerkleNode.Internal] {
+                case Seq(leftNode, rightNode) => MerkleNode.Internal(leftNode, Some(rightNode))
+                case Seq(singleNode)          => MerkleNode.Internal(singleNode, None)
                 case _                        => me.raiseError(new RuntimeException("Unexpected input"))
               }
-              .map(_.asLeft[Node[L]])
+              .map(_.asLeft[MerkleNode])
         }
       }
 
     for {
-      leafNodes <- data.traverse(MerkleLeafNode(_))
+      leafNodes <- data.traverse(el => MerkleNode.Leaf(el.asJson))
       rootNode  <- buildNodes(leafNodes)
       leafDigestIndex = leafNodes.zipWithIndex.map { case (node, index) => (node.digest, index) }.toMap
     } yield MerkleTree(rootNode, leafDigestIndex)

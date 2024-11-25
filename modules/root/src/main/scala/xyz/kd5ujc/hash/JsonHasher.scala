@@ -9,20 +9,24 @@ import io.circe.Encoder
 import org.bouncycastle.crypto.digests.Blake2bDigest
 import org.bouncycastle.jcajce.provider.digest.SHA3.DigestSHA3
 
-sealed trait Hasher[F[_], L] {
-  def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest[L]]
+private[hash] trait Hasher[F[_]] {
+  def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest]
 }
 
-sealed abstract class JsonHasher[F[_]: Sync: JsonSerializer, L] extends Hasher[F, L] {
-  def hash[A: Encoder](data: A, prefix: Array[Byte] = Array()): F[Digest[L]] =
+sealed abstract class JsonHasher[F[_]: Sync: JsonSerializer] extends Hasher[F] {
+  def hash[A: Encoder](data: A, prefix: Array[Byte] = Array()): F[Digest] =
     hashBytes(data, prefix)(JsonSerializer[F].serialize)
 
-  def compare[A: Encoder](data: A, expectedHash: Digest[L]): F[Boolean] =
+  def compare[A: Encoder](data: A, expectedHash: Digest): F[Boolean] =
     hash(data).map(_.value.sameElements(expectedHash.value))
 }
 
-class Blake2b256Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F, l256] {
-  override def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest[l256]] =
+object JsonHasher {
+  def apply[F[_]: JsonHasher]: JsonHasher[F] = implicitly
+}
+
+class Blake2b256Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F] {
+  override def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest] =
     f(data).flatMap { _bytes =>
       val digest = new Blake2bDigest(256)
       val output = new Array[Byte](digest.getDigestSize)
@@ -35,9 +39,9 @@ class Blake2b256Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F, l256] {
     }
 }
 
-class Blake2b512Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F, l512] {
+class Blake2b512Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F] {
 
-  override def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest[l512]] =
+  override def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest] =
     f(data).flatMap { _bytes =>
       val digest = new Blake2bDigest(512)
       val output = new Array[Byte](digest.getDigestSize)
@@ -50,9 +54,9 @@ class Blake2b512Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F, l512] {
     }
 }
 
-class Sha3256Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F, l256] {
+class Sha3256Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F] {
 
-  override def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest[l256]] =
+  override def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest] =
     f(data).flatMap { _bytes =>
       val sha3 = new DigestSHA3(256)
 
@@ -63,9 +67,9 @@ class Sha3256Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F, l256] {
     }
 }
 
-class Sha3512Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F, l512] {
+class Sha3512Hasher[F[_]: Sync: JsonSerializer] extends JsonHasher[F] {
 
-  override def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest[l512]] =
+  override def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest] =
     f(data).flatMap { _bytes =>
       val sha3 = new DigestSHA3(512)
 

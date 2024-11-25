@@ -1,7 +1,6 @@
 package xyz.kd5ujc.binary
 
 import cats.effect.Sync
-import cats.implicits.toFunctorOps
 
 import io.circe.jawn.JawnParser
 import io.circe.syntax.EncoderOps
@@ -28,9 +27,7 @@ object JsonSerializer {
           Sync[F].delay(content.asJson.printWith(printer).getBytes("UTF-8"))
 
         override def deserialize[A: Decoder](content: Array[Byte]): F[Either[Throwable, A]] =
-          Sync[F]
-            .delay(content)
-            .map(JawnParser(false).decodeByteArray[A](_))
+          Sync[F].delay(JawnParser(false).decodeByteArray[A](content))
       }
     }
 }

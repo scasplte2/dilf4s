@@ -7,16 +7,16 @@ import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, Encoder, HCursor, Json}
 
-final case class MerkleInclusionProof[L](
-  leafDigest: Digest[L],
-  path:       Seq[(Digest[L], Side)]
+final case class MerkleInclusionProof(
+  leafDigest: Digest,
+  path:       Seq[(Digest, Side)]
 )
 
 object MerkleInclusionProof {
   val leftSide: Side = Side(0: Byte)
   val rightSide: Side = Side(1: Byte)
 
-  implicit def proofEncoder[L]: Encoder[MerkleInclusionProof[L]] = (mp: MerkleInclusionProof[L]) =>
+  implicit def proofEncoder: Encoder[MerkleInclusionProof] = (mp: MerkleInclusionProof) =>
     Json.obj(
       "leafDigest" -> mp.leafDigest.asJson,
       "path" -> mp.path.map {
@@ -28,11 +28,11 @@ object MerkleInclusionProof {
       }.asJson
     )
 
-  implicit def proofDecoder[L]: Decoder[MerkleInclusionProof[L]] = (c: HCursor) =>
+  implicit def proofDecoder: Decoder[MerkleInclusionProof] = (c: HCursor) =>
     for {
-      leafDigest <- c.downField("leafDigest").as[Digest[L]]
-      witness    <- c.downField("path").as[Seq[(Digest[L], Side)]]
-    } yield MerkleInclusionProof[L](leafDigest, witness)
+      leafDigest <- c.downField("leafDigest").as[Digest]
+      witness    <- c.downField("path").as[Seq[(Digest, Side)]]
+    } yield MerkleInclusionProof(leafDigest, witness)
 
   final case class Side(value: Byte) extends AnyVal
 

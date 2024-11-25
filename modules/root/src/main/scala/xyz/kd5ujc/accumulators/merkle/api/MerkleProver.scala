@@ -1,35 +1,30 @@
 package xyz.kd5ujc.accumulators.merkle.api
 
 import cats.Monad
-import cats.data.OptionT
-import cats.implicits.{catsSyntaxOptionId, toTraverseOps}
+import cats.implicits.toTraverseOps
 
 import scala.annotation.tailrec
 
-import xyz.kd5ujc.accumulators.Node
 import xyz.kd5ujc.accumulators.merkle.MerkleInclusionProof.Side
-import xyz.kd5ujc.accumulators.merkle.nodes.{InternalNode, MerkleLeafNode}
-import xyz.kd5ujc.accumulators.merkle.{MerkleInclusionProof, MerkleTree}
+import xyz.kd5ujc.accumulators.merkle.{MerkleInclusionProof, MerkleNode, MerkleTree}
 import xyz.kd5ujc.hash.Digest
 
-trait MerkleProver[F[_], L] {
-  def fromLeafNode[A](leaf: MerkleLeafNode[A, L]): F[Option[MerkleInclusionProof[L]]]
+trait MerkleProver[F[_]] {
+  def fromLeafNode(leaf: MerkleNode.Leaf): F[Option[MerkleInclusionProof]]
 
-  def fromLeafDigest(digest: Digest[L]): F[Option[MerkleInclusionProof[L]]]
+  def fromLeafDigest(digest: Digest): F[Option[MerkleInclusionProof]]
 }
 
 object MerkleProver {
-  def make[F[_]: Monad, L](tree: MerkleTree[L]): MerkleProver[F, L] =
-    new MerkleProver[F, L] {
-      def fromLeafNode[A](leaf: MerkleLeafNode[A, L]): F[Option[MerkleInclusionProof[L]]] = fromLeafDigest(leaf.digest)
+  def make[F[_]: Monad](tree: MerkleTree): MerkleProver[F] =
+    new MerkleProver[F] {
+      def fromLeafNode(leaf: MerkleNode.Leaf): F[Option[MerkleInclusionProof]] =
+        fromLeafDigest(leaf.digest)
 
-      def fromLeafDigest(digest: Digest[L]): F[Option[MerkleInclusionProof[L]]] =
-        OptionT
-          .fromOption[F](tree.leafDigestIndex.get(digest))
-          .flatMapF(proofByIndex)
-          .value
+      def fromLeafDigest(digest: Digest): F[Option[MerkleInclusionProof]] =
+        tree.leafDigestIndex.get(digest).flatTraverse(proofByIndex)
 
-      private def proofByIndex(index: Int): F[Option[MerkleInclusionProof[L]]] = {
+      private def proofByIndex(index: Int): F[Option[MerkleInclusionProof]] = {
 
         // bitwise shift operation to calculate log2 by counting number of divisions by 2
         @tailrec
@@ -41,29 +36,28 @@ object MerkleProver {
 
         @tailrec
         def loop(
-          node:  Option[Node[L]],
-          acc:   Seq[Option[(Digest[L], Side)]],
+          node:  MerkleNode,
+          acc:   Seq[Option[(Digest, Side)]],
           depth: Int
-        ): Option[(MerkleLeafNode[_, L], Seq[Option[(Digest[L], Side)]])] =
+        ): Option[(MerkleNode.Leaf, Seq[Option[(Digest, Side)]])] =
           node match {
-            case Some(n: InternalNode[_]) if ((index >> (maxDepth - depth)) & 1) == 0 =>
-              loop(Some(n.left), n.right.map(_.digest).map((_, MerkleInclusionProof.rightSide)) +: acc, depth + 1)
+            case MerkleNode.Internal(left, right, _) =>
+              if (((index >> (maxDepth - depth)) & 1) == 0) {
+                loop(left, right.map(_.digest).map((_, MerkleInclusionProof.rightSide)) +: acc, depth + 1)
+              } else {
+                loop(right.get, Some((left.digest, MerkleInclusionProof.leftSide)) +: acc, depth + 1)
+              }
 
-            case Some(n: InternalNode[_]) =>
-              loop(n.right, Some((n.left.digest, MerkleInclusionProof.leftSide)) +: acc, depth + 1)
-
-            case Some(n: MerkleLeafNode[_, _]) =>
+            case n: MerkleNode.Leaf =>
               Some((n, acc))
-
-            case _ =>
-              None
           }
 
         Monad[F].pure(
           if (index < 0 || index >= tree.leafDigestIndex.size) None
           else {
-            loop(tree.rootNode.some, Seq(), 0).flatMap { lp =>
-              lp._2.sequence.map(MerkleInclusionProof(lp._1.digest, _))
+            loop(tree.rootNode, Seq(), 0).flatMap {
+              case (leaf, witness) =>
+                witness.sequence.map(MerkleInclusionProof(leaf.digest, _))
             }
           }
         )
