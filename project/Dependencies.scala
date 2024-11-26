@@ -3,6 +3,7 @@ import sbt.*
 object Dependencies {
 
   object V {
+    val bouncyCastle = "1.70"
     val cats = "2.9.0"
     val catsEffect = "3.4.2"
     val circe = "0.14.6"
@@ -18,6 +19,7 @@ object Dependencies {
   }
 
   object Libraries {
+    val bc = "org.bouncycastle" % "bcprov-jdk15on" % V.bouncyCastle
     val cats = "org.typelevel" %% "cats-core" % V.cats
     val catsEffect = "org.typelevel" %% "cats-effect" % V.catsEffect
     val catsEffectTestkit = "org.typelevel" %% "cats-effect-testkit" % V.catsEffect
