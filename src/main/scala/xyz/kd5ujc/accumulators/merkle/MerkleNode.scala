@@ -2,10 +2,12 @@ package xyz.kd5ujc.accumulators.merkle
 
 import cats.Functor
 import cats.syntax.functor._
-import io.circe.syntax._
-import io.circe.{Decoder, DecodingFailure, Encoder, Json}
+
 import xyz.kd5ujc.accumulators.Node
 import xyz.kd5ujc.hash.{Digest, JsonHasher}
+
+import io.circe.syntax._
+import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 
 sealed trait MerkleNode extends Node
 

@@ -2,6 +2,7 @@ package xyz.kd5ujc.storage.store
 
 import cats.effect.{Ref, Sync}
 import cats.implicits.toFunctorOps
+
 import xyz.kd5ujc.storage.Store
 
 object RefMapStore {

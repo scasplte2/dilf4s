@@ -2,14 +2,16 @@ package accumulators.merkle
 
 import cats.effect.IO
 import cats.implicits.toTraverseOps
-import generators.nonEmptyStringListGen
-import io.circe.syntax.EncoderOps
-import weaver.SimpleIOSuite
-import weaver.scalacheck.Checkers
+
 import xyz.kd5ujc.accumulators.merkle.api.MerkleProver
 import xyz.kd5ujc.accumulators.merkle.{MerkleNode, MerkleTree}
 import xyz.kd5ujc.binary.JsonSerializer
 import xyz.kd5ujc.hash.Blake2b256Hasher
+
+import generators.nonEmptyStringListGen
+import io.circe.syntax.EncoderOps
+import weaver.SimpleIOSuite
+import weaver.scalacheck.Checkers
 
 object MerkleProverSuite extends SimpleIOSuite with Checkers {
 

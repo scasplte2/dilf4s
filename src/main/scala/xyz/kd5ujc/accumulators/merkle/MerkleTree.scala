@@ -4,9 +4,11 @@ import cats.MonadError
 import cats.implicits.{toFlatMapOps, toFunctorOps, toTraverseOps}
 import cats.syntax.applicative._
 import cats.syntax.either._
+
+import xyz.kd5ujc.hash.{Digest, JsonHasher}
+
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, Encoder, HCursor, Json}
-import xyz.kd5ujc.hash.{Digest, JsonHasher}
 
 final case class MerkleTree(
   rootNode:        MerkleNode,

@@ -1,16 +1,19 @@
 package xyz.kd5ujc.storage
 
+import java.util.UUID
+
 import cats.data.OptionT
 import cats.effect.{Ref, Sync}
 import cats.implicits.{toFlatMapOps, toFoldableOps, toFunctorOps}
 import cats.syntax.all._
+
+import scala.collection.immutable.SortedSet
+
+import xyz.kd5ujc.storage.versioned_store.schema.{Catalog, Diff, Meta}
+
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
 import org.typelevel.log4cats.Logger
-import xyz.kd5ujc.storage.versioned_store.schema.{Catalog, Diff, Meta}
-
-import java.util.UUID
-import scala.collection.immutable.SortedSet
 
 package object versioned_store {
 

@@ -5,6 +5,7 @@ import cats.syntax.applicative._
 import cats.syntax.foldable._
 import cats.syntax.functor._
 import cats.syntax.option._
+
 import xyz.kd5ujc.accumulators.merkle.{MerkleInclusionProof, MerkleNode}
 import xyz.kd5ujc.hash.{Digest, JsonHasher}
 

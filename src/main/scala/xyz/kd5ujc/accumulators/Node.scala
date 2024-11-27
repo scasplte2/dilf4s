@@ -1,8 +1,9 @@
 package xyz.kd5ujc.accumulators
 
+import xyz.kd5ujc.hash.Digest
+
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, Encoder}
-import xyz.kd5ujc.hash.Digest
 
 trait Node {
   def digest: Digest

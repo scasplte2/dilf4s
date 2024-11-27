@@ -1,17 +1,19 @@
 package storage
 
-import cats.effect.{IO, Resource}
-import cats.implicits.toTraverseOps
-import weaver.IOSuite
-import weaver.scalacheck.Checkers
-import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.storage.VersionedStore
-import xyz.kd5ujc.storage.versioned_store.VersionedLevelDbStore
-
 import java.io.IOException
 import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.{FileVisitResult, Files, Path, SimpleFileVisitor}
 import java.util.UUID
+
+import cats.effect.{IO, Resource}
+import cats.implicits.toTraverseOps
+
+import xyz.kd5ujc.binary.JsonSerializer
+import xyz.kd5ujc.storage.VersionedStore
+import xyz.kd5ujc.storage.versioned_store.VersionedLevelDbStore
+
+import weaver.IOSuite
+import weaver.scalacheck.Checkers
 
 object VersionedLevelDbStoreSuite extends IOSuite with Checkers {
 

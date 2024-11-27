@@ -2,6 +2,7 @@ package xyz.kd5ujc.accumulators.merkle.api
 
 import cats.effect.{Ref, Sync}
 import cats.implicits.{toFlatMapOps, toFunctorOps}
+
 import xyz.kd5ujc.accumulators.merkle.{MerkleNode, MerkleTree}
 import xyz.kd5ujc.hash.JsonHasher
 

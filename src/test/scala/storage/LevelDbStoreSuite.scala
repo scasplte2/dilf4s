@@ -1,17 +1,19 @@
 package storage
 
+import java.io.IOException
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.{FileVisitResult, Files, Path, SimpleFileVisitor}
+
 import cats.data.NonEmptyList
 import cats.effect.{IO, Resource}
-import generators.kvListGenUniqueKeys
-import weaver.IOSuite
-import weaver.scalacheck.Checkers
+
 import xyz.kd5ujc.binary.JsonSerializer
 import xyz.kd5ujc.storage.Store
 import xyz.kd5ujc.storage.store.LevelDbStore
 
-import java.io.IOException
-import java.nio.file.attribute.BasicFileAttributes
-import java.nio.file.{FileVisitResult, Files, Path, SimpleFileVisitor}
+import generators.kvListGenUniqueKeys
+import weaver.IOSuite
+import weaver.scalacheck.Checkers
 
 object LevelDbStoreSuite extends IOSuite with Checkers {
 

@@ -2,11 +2,12 @@ package xyz.kd5ujc.accumulators.merkle.api
 
 import cats.Monad
 import cats.implicits.toTraverseOps
+
+import scala.annotation.tailrec
+
 import xyz.kd5ujc.accumulators.merkle.MerkleInclusionProof.Side
 import xyz.kd5ujc.accumulators.merkle.{MerkleInclusionProof, MerkleNode, MerkleTree}
 import xyz.kd5ujc.hash.Digest
-
-import scala.annotation.tailrec
 
 trait MerkleProver[F[_]] {
   def fromLeafNode(leaf: MerkleNode.Leaf): F[Option[MerkleInclusionProof]]

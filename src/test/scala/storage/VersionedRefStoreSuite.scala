@@ -1,15 +1,17 @@
 package storage
 
+import java.util.UUID
+
 import cats.effect.IO
 import cats.implicits.toTraverseOps
+
+import xyz.kd5ujc.storage.VersionedStore
+import xyz.kd5ujc.storage.versioned_store.VersionedRefStore
+
 import generators.kvListGenUniqueKeys
 import org.scalacheck.Gen
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
-import xyz.kd5ujc.storage.VersionedStore
-import xyz.kd5ujc.storage.versioned_store.VersionedRefStore
-
-import java.util.UUID
 
 object VersionedRefStoreSuite extends SimpleIOSuite with Checkers {
 

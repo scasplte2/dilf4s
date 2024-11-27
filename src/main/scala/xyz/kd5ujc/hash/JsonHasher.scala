@@ -2,10 +2,12 @@ package xyz.kd5ujc.hash
 
 import cats.effect.Sync
 import cats.implicits.{toFlatMapOps, toFunctorOps}
+
+import xyz.kd5ujc.binary.JsonSerializer
+
 import io.circe.Encoder
 import org.bouncycastle.crypto.digests.Blake2bDigest
 import org.bouncycastle.jcajce.provider.digest.SHA3.DigestSHA3
-import xyz.kd5ujc.binary.JsonSerializer
 
 private[hash] trait Hasher[F[_]] {
   def hashBytes[A](data: A, prefix: Array[Byte])(f: A => F[Array[Byte]]): F[Digest]

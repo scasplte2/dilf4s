@@ -1,16 +1,18 @@
 package xyz.kd5ujc.storage.store
 
+import java.nio.file.{Files, Path}
+
 import cats.data.{EitherT, OptionT}
 import cats.effect.{Resource, Sync}
 import cats.implicits._
+
+import xyz.kd5ujc.binary.JsonSerializer
+import xyz.kd5ujc.storage.Store
+
 import io.circe.{Decoder, Encoder}
 import org.iq80.leveldb._
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.log4cats.{Logger, SelfAwareStructuredLogger}
-import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.storage.Store
-
-import java.nio.file.{Files, Path}
 
 /**
  * A `Store` implementation backed by LevelDB. This code is forked from topl/bifrost (also under MPL 2.0 as of 20240511)

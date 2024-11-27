@@ -1,10 +1,11 @@
 package xyz.kd5ujc.accumulators.merkle
 
+import xyz.kd5ujc.accumulators.merkle.MerkleInclusionProof.Side
+import xyz.kd5ujc.hash.Digest
+
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, Encoder, HCursor, Json}
-import xyz.kd5ujc.accumulators.merkle.MerkleInclusionProof.Side
-import xyz.kd5ujc.hash.Digest
 
 final case class MerkleInclusionProof(
   leafDigest: Digest,

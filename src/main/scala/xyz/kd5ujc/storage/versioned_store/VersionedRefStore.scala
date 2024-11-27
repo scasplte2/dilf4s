@@ -1,16 +1,18 @@
 package xyz.kd5ujc.storage.versioned_store
 
+import java.util.UUID
+
 import cats.effect.{Ref, Sync}
 import cats.syntax.applicative._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
-import org.typelevel.log4cats.SelfAwareStructuredLogger
-import org.typelevel.log4cats.slf4j.Slf4jLogger
+
 import xyz.kd5ujc.storage.VersionedStore
 import xyz.kd5ujc.storage.store.RefMapStore
 import xyz.kd5ujc.storage.versioned_store.schema.{Catalog, Diff, Meta}
 
-import java.util.UUID
+import org.typelevel.log4cats.SelfAwareStructuredLogger
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 object VersionedRefStore {
 

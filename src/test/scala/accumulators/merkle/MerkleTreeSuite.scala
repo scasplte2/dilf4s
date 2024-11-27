@@ -1,15 +1,17 @@
 package accumulators.merkle
 
 import cats.effect.IO
+
+import xyz.kd5ujc.accumulators.merkle.MerkleTree
+import xyz.kd5ujc.binary.JsonSerializer
+import xyz.kd5ujc.hash.{Blake2b256Hasher, l256}
+
 import io.circe.Json
 import io.circe.syntax.EncoderOps
 import org.bouncycastle.util.encoders.Hex
 import org.scalacheck.Gen
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
-import xyz.kd5ujc.accumulators.merkle.MerkleTree
-import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.hash.{Blake2b256Hasher, l256}
 
 object MerkleTreeSuite extends SimpleIOSuite with Checkers {
 

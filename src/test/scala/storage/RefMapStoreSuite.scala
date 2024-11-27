@@ -2,11 +2,13 @@ package storage
 
 import cats.data.NonEmptyList
 import cats.effect.IO
+
+import xyz.kd5ujc.storage.Store
+import xyz.kd5ujc.storage.store.RefMapStore
+
 import generators.kvListGenUniqueKeys
 import weaver._
 import weaver.scalacheck.Checkers
-import xyz.kd5ujc.storage.Store
-import xyz.kd5ujc.storage.store.RefMapStore
 
 object RefMapStoreSuite extends SimpleIOSuite with Checkers {
 

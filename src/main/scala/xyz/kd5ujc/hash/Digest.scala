@@ -2,6 +2,7 @@ package xyz.kd5ujc.hash
 
 import cats.data.Validated
 import cats.implicits.toBifunctorOps
+
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, DecodingFailure, Encoder, HCursor}
 import org.bouncycastle.util.encoders.Hex

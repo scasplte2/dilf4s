@@ -2,14 +2,16 @@ package accumulators.merkle
 
 import cats.effect.IO
 import cats.implicits.toTraverseOps
-import io.circe.syntax.EncoderOps
-import org.scalacheck.Gen
-import weaver.SimpleIOSuite
-import weaver.scalacheck.Checkers
+
 import xyz.kd5ujc.accumulators.merkle.MerkleNode
 import xyz.kd5ujc.accumulators.merkle.api.MerkleProducer
 import xyz.kd5ujc.binary.JsonSerializer
 import xyz.kd5ujc.hash.Blake2b256Hasher
+
+import io.circe.syntax.EncoderOps
+import org.scalacheck.Gen
+import weaver.SimpleIOSuite
+import weaver.scalacheck.Checkers
 
 object MerkleProducerSuite extends SimpleIOSuite with Checkers {
 

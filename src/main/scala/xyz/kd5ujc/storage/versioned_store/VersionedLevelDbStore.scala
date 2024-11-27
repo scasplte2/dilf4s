@@ -1,17 +1,19 @@
 package xyz.kd5ujc.storage.versioned_store
 
+import java.nio.file.Path
+import java.util.UUID
+
 import cats.effect.{Ref, Resource, Sync}
 import cats.implicits._
-import io.circe.{Decoder, Encoder}
-import org.typelevel.log4cats.SelfAwareStructuredLogger
-import org.typelevel.log4cats.slf4j.Slf4jLogger
+
 import xyz.kd5ujc.binary.JsonSerializer
 import xyz.kd5ujc.storage.VersionedStore
 import xyz.kd5ujc.storage.store.LevelDbStore
 import xyz.kd5ujc.storage.versioned_store.schema.{Catalog, Diff, Meta}
 
-import java.nio.file.Path
-import java.util.UUID
+import io.circe.{Decoder, Encoder}
+import org.typelevel.log4cats.SelfAwareStructuredLogger
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 /**
  * A *VersionedStore* implementation that is adopted from a similar imperative approach in Ergo
