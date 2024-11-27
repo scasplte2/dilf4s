@@ -2,10 +2,12 @@ package xyz.kd5ujc.accumulators.mpt
 
 import cats.data.Validated
 import cats.syntax.bifunctor._
-import io.circe.{Decoder, DecodingFailure, Encoder, HCursor, Json, KeyDecoder, KeyEncoder}
-import xyz.kd5ujc.hash.Digest
 
 import scala.collection.immutable.ArraySeq
+
+import xyz.kd5ujc.hash.Digest
+
+import io.circe.{Decoder, DecodingFailure, Encoder, HCursor, Json, KeyDecoder, KeyEncoder}
 
 class Nibble private (val value: Byte) extends AnyVal {
   override def toString: String = {
@@ -19,7 +21,7 @@ object Nibble {
 
   private val hexChars: Array[Char] = "0123456789abcdef".toCharArray
 
-  def apply[L](digest: Digest): Seq[Nibble] =
+  def apply(digest: Digest): Seq[Nibble] =
     apply(digest.value)
 
   def apply(bytes: Array[Byte]): Seq[Nibble] =

@@ -1,101 +1,104 @@
 package xyz.kd5ujc.accumulators.mpt
 
 import cats.MonadError
-import cats.data.NonEmptySet
 import cats.syntax.all._
+
+import xyz.kd5ujc.hash.{Digest, JsonHasher}
+
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, Encoder, HCursor, Json}
-import xyz.kd5ujc.hash.JsonHasher
 
 final case class MerklePatriciaTrie(rootNode: MerklePatriciaNode)
 
 object MerklePatriciaTrie {
-  implicit def merkleTreeEncoder: Encoder[MerklePatriciaTrie] = (tree: MerklePatriciaTrie) => Json.obj("rootNode" -> tree.rootNode.asJson)
+  implicit def merkleTreeEncoder: Encoder[MerklePatriciaTrie] =
+    (tree: MerklePatriciaTrie) => Json.obj("rootNode" -> tree.rootNode.asJson)
 
   implicit def merkleTreeDecoder: Decoder[MerklePatriciaTrie] = (c: HCursor) =>
     c.downField("rootNode").as[MerklePatriciaNode].map(MerklePatriciaTrie(_))
 
-  def create[F[_]: JsonHasher, A: Encoder](data: NonEmptySet[A])(implicit me: MonadError[F, Throwable]): F[MerklePatriciaTrie] = {
-    def singleElement(el: A): F[MerklePatriciaNode] = for {
-      (path, json) <- JsonHasher[F].hash(el).map(digest => Nibble(digest) -> el.asJson)
-      leaf         <- MerklePatriciaNode.Leaf[F](json, path)
-    } yield leaf
-
+  def create[F[_]: JsonHasher, A: Encoder](data: Map[Digest, A])(implicit me: MonadError[F, Throwable]): F[MerklePatriciaTrie] =
     data.toList match {
-      case head :: Nil => singleElement(head).map(MerklePatriciaTrie(_))
-      case head :: _ =>
+      case (path, data) :: Nil => MerklePatriciaNode.Leaf[F](Nibble(path), data.asJson).map(MerklePatriciaTrie(_))
+      case (hPath, hData) :: tail =>
         for {
-          initialNode <- singleElement(head)
-          tailSet     <- NonEmptySet.fromSet(data.tail).liftTo[F](new Exception("Unhandled exception in tail"))
-          trie        <- update(tailSet, initialNode)
-        } yield trie
+          initialNode <- MerklePatriciaNode.Leaf[F](Nibble(hPath), hData.asJson)
+          updatedNode <- tail.foldM(initialNode: MerklePatriciaNode) {
+            case (acc, (tPath, tData)) => insertEncoded(acc, Nibble(tPath), tData.asJson)
+          }
+        } yield MerklePatriciaTrie(updatedNode)
       case _ => me.raiseError(new Exception("Unexpected input"))
     }
-  }
 
-  def update[F[_]: JsonHasher, A: Encoder](
-                                            data:            NonEmptySet[A],
-                                            initialRootNode: MerklePatriciaNode
-                                          )(
-                                            implicit me: MonadError[F, Throwable]
-                                          ): F[MerklePatriciaTrie] =
-    for {
-      jsonPathPairs <- data.toList.traverse { a =>
-        JsonHasher[F].hash(a).map { digest =>
-          Nibble(digest) -> a.asJson
-        }
+  def insert[F[_]: JsonHasher, A: Encoder](
+    current: MerklePatriciaTrie,
+    data:    Map[Digest, A]
+  )(
+    implicit me: MonadError[F, Throwable]
+  ): F[MerklePatriciaTrie] =
+    data.toList
+      .foldM(current.rootNode) {
+        case (acc, (_path, _data)) => insertEncoded(acc, Nibble(_path), _data.asJson)
       }
-      rootNode <- jsonPathPairs.foldM[F, MerklePatriciaNode](initialRootNode) {
-        case (currentNode, (key, data)) => insertEncoded(currentNode, key, data)
-      }
-    } yield MerklePatriciaTrie(rootNode)
+      .map(MerklePatriciaTrie(_))
 
   private def insertEncoded[F[_]: JsonHasher](
-                                               currentNode: MerklePatriciaNode,
-                                               path:        Seq[Nibble],
-                                               data:        Json
-                                             )(
-                                               implicit me: MonadError[F, Throwable]
-                                             ): F[MerklePatriciaNode] = {
+    currentNode: MerklePatriciaNode,
+    path:        Seq[Nibble],
+    data:        Json
+  )(
+    implicit me: MonadError[F, Throwable]
+  ): F[MerklePatriciaNode] = {
 
     def insertForLeafNode(
-                           leafNode:     MerklePatriciaNode.Leaf,
-                           _key:         Seq[Nibble],
-                           updateParent: MerklePatriciaNode => F[MerklePatriciaNode]
-                         ): F[Either[InsertState[F], MerklePatriciaNode]] = {
-      val commonPrefix = Nibble.commonPrefix(leafNode.remaining, _key)
-      val leafSuffixRemaining = leafNode.remaining.drop(commonPrefix.length)
-      val keyRemaining = _key.drop(commonPrefix.length)
+      leafNode:     MerklePatriciaNode.Leaf,
+      key:          Seq[Nibble],
+      updateParent: MerklePatriciaNode => F[MerklePatriciaNode]
+    ): F[Either[InsertState[F], MerklePatriciaNode]] = {
 
-      if (leafSuffixRemaining.isEmpty && keyRemaining.isEmpty) for {
-        newLeaf <- MerklePatriciaNode.Leaf[F](data, Seq.empty)
-        result  <- updateParent(newLeaf)
-      } yield result.asRight[InsertState[F]]
-      else
+      val commonPrefix = Nibble.commonPrefix(leafNode.remaining, key)
+      val leafSuffixRemaining = leafNode.remaining.drop(commonPrefix.length)
+      val keyRemaining = key.drop(commonPrefix.length)
+
+      if (leafSuffixRemaining.isEmpty && keyRemaining.isEmpty) {
+        // If both paths are identical, we replace the existing Leaf with the new one.
         for {
-          leafChild <-
-            if (leafSuffixRemaining.nonEmpty) MerklePatriciaNode.Leaf[F](leafNode.data, leafSuffixRemaining)
-            else leafNode.pure[F]
-          newChild <-
-            if (keyRemaining.nonEmpty) MerklePatriciaNode.Leaf[F](data, keyRemaining)
-            else MerklePatriciaNode.Leaf[F](data, Seq.empty)
-          children = Map[Nibble, MerklePatriciaNode](
-            leafSuffixRemaining.headOption.getOrElse(Nibble.empty) -> leafChild,
-            keyRemaining.headOption.getOrElse(Nibble.empty)        -> newChild
+          newLeaf <- MerklePatriciaNode.Leaf[F](Seq.empty, data)
+          result  <- updateParent(newLeaf)
+        } yield result.asRight[InsertState[F]]
+      } else {
+        // The paths diverge, we need to create a Branch node.
+        for {
+
+          // Create a new Leaf node for the existing data with its updated path.
+          existingLeaf <- MerklePatriciaNode.Leaf[F](leafSuffixRemaining.tail, leafNode.data)
+
+          // Create a new Leaf node for the new data.
+          newLeaf <- MerklePatriciaNode.Leaf[F](keyRemaining.tail, data)
+
+          // Place both leaves in a Branch node
+          branchNode <- MerklePatriciaNode.Branch[F](
+            Map[Nibble, MerklePatriciaNode](
+              leafSuffixRemaining.head -> existingLeaf,
+              keyRemaining.head        -> newLeaf
+            )
           )
-          branchNode <- MerklePatriciaNode.Branch[F](children)
+
+          // If there's a common prefix, we need to create an Extension node as well.
           resultNode <-
             if (commonPrefix.nonEmpty) MerklePatriciaNode.Extension[F](commonPrefix, branchNode)
-            else me.pure(branchNode)
+            else branchNode.pure[F]
+
           updatedNode <- updateParent(resultNode)
         } yield Done(updatedNode).asLeft[MerklePatriciaNode]
+      }
     }
 
     def insertForExtensionNode(
-                                extensionNode: MerklePatriciaNode.Extension,
-                                _key:          Seq[Nibble],
-                                updateParent:  MerklePatriciaNode => F[MerklePatriciaNode]
-                              ): F[Either[InsertState[F], MerklePatriciaNode]] = {
+      extensionNode: MerklePatriciaNode.Extension,
+      _key:          Seq[Nibble],
+      updateParent:  MerklePatriciaNode => F[MerklePatriciaNode]
+    ): F[Either[InsertState[F], MerklePatriciaNode]] = {
       val commonPrefix = Nibble.commonPrefix(extensionNode.shared, _key)
       val prefixRemaining = extensionNode.shared.drop(commonPrefix.length)
       val keyRemaining = _key.drop(commonPrefix.length)
@@ -109,12 +112,12 @@ object MerklePatriciaTrie {
               .Extension[F](extensionNode.shared, updatedChild.asInstanceOf[MerklePatriciaNode.Branch])
               .flatMap(updateParent)
         ): InsertState[F]).asLeft[MerklePatriciaNode].pure[F]
-      } else
+      } else {
         for {
           newExtension <- MerklePatriciaNode.Extension[F](prefixRemaining, extensionNode.child)
           newLeaf <-
-            if (keyRemaining.nonEmpty) MerklePatriciaNode.Leaf[F](data, keyRemaining)
-            else MerklePatriciaNode.Leaf[F](data, Seq.empty)
+            if (keyRemaining.nonEmpty) MerklePatriciaNode.Leaf[F](keyRemaining, data)
+            else MerklePatriciaNode.Leaf[F](Seq.empty, data)
           children = Map[Nibble, MerklePatriciaNode](
             prefixRemaining.head                            -> newExtension,
             keyRemaining.headOption.getOrElse(Nibble.empty) -> newLeaf
@@ -125,13 +128,14 @@ object MerklePatriciaTrie {
             else branchNode.pure[F]
           updatedNode <- updateParent(resultNode)
         } yield Done(updatedNode).asLeft[MerklePatriciaNode]
+      }
     }
 
     def insertForBranchNode(
-                             branchNode:   MerklePatriciaNode.Branch,
-                             _key:         Seq[Nibble],
-                             updateParent: MerklePatriciaNode => F[MerklePatriciaNode]
-                           ): F[Either[InsertState[F], MerklePatriciaNode]] =
+      branchNode:   MerklePatriciaNode.Branch,
+      _key:         Seq[Nibble],
+      updateParent: MerklePatriciaNode => F[MerklePatriciaNode]
+    ): F[Either[InsertState[F], MerklePatriciaNode]] =
       if (_key.isEmpty) {
         me.raiseError(new Exception("Key exhausted at branch node"))
       } else {
@@ -150,7 +154,7 @@ object MerklePatriciaTrie {
 
           case None =>
             for {
-              newLeaf       <- MerklePatriciaNode.Leaf[F](data, keyRemaining)
+              newLeaf       <- MerklePatriciaNode.Leaf[F](keyRemaining, data)
               updatedBranch <- MerklePatriciaNode.Branch[F](branchNode.paths + (nibble -> newLeaf))
               result        <- updateParent(updatedBranch)
             } yield result.asRight[InsertState[F]]
@@ -175,10 +179,10 @@ object MerklePatriciaTrie {
   private sealed trait InsertState[F[_]]
 
   private case class Continue[F[_]](
-                                     currentNode:  MerklePatriciaNode,
-                                     key:          Seq[Nibble],
-                                     updateParent: MerklePatriciaNode => F[MerklePatriciaNode]
-                                   ) extends InsertState[F]
+    currentNode:  MerklePatriciaNode,
+    key:          Seq[Nibble],
+    updateParent: MerklePatriciaNode => F[MerklePatriciaNode]
+  ) extends InsertState[F]
 
   private case class Done[F[_]](node: MerklePatriciaNode) extends InsertState[F]
 }

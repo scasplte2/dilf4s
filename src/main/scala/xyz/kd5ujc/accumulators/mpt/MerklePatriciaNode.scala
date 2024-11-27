@@ -1,11 +1,13 @@
 package xyz.kd5ujc.accumulators.mpt
 
-import cats.{Functor, Monad}
+import cats.Functor
 import cats.syntax.functor._
-import io.circe.{Decoder, DecodingFailure, Encoder, Json}
-import io.circe.syntax.EncoderOps
+
 import xyz.kd5ujc.accumulators.Node
 import xyz.kd5ujc.hash.{Digest, JsonHasher}
+
+import io.circe.syntax.EncoderOps
+import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 
 sealed trait MerklePatriciaNode extends Node
 
@@ -14,18 +16,18 @@ object MerklePatriciaNode {
   private val BranchPrefix: Array[Byte] = Array(1: Byte)
   private val ExtensionPrefix: Array[Byte] = Array(2: Byte)
 
-  final case class Leaf private (data: Json, remaining: Seq[Nibble], digest: Digest) extends MerklePatriciaNode
+  final case class Leaf private (remaining: Seq[Nibble], data: Json, digest: Digest) extends MerklePatriciaNode
   final case class Branch private (paths: Map[Nibble, MerklePatriciaNode], digest: Digest) extends MerklePatriciaNode
   final case class Extension private (shared: Seq[Nibble], child: Branch, digest: Digest) extends MerklePatriciaNode
 
   object Leaf {
-    def apply[F[_]: Monad: JsonHasher](data: Json, remaining: Seq[Nibble]): F[Leaf] =
-      nodeCommitment(data, remaining).map(new Leaf(data, remaining, _))
+    def apply[F[_]: Functor: JsonHasher](remaining: Seq[Nibble], data: Json): F[Leaf] =
+      nodeCommitment(data, remaining).map(new Leaf(remaining, data, _))
 
     def nodeCommitment[F[_]: JsonHasher](
-                                          data:      Json,
-                                          remaining: Seq[Nibble]
-                                        ): F[Digest] = {
+      data:      Json,
+      remaining: Seq[Nibble]
+    ): F[Digest] = {
       val hashableJson = Json.obj(
         "remaining" -> remaining.asJson,
         "data"      -> data.asJson
@@ -37,8 +39,8 @@ object MerklePatriciaNode {
     implicit val leafNodeEncoder: Encoder[Leaf] =
       Encoder.instance { node =>
         Json.obj(
-          "data"      -> node.data.asJson,
           "remaining" -> node.remaining.asJson,
+          "data"      -> node.data.asJson,
           "digest"    -> node.digest.asJson
         )
       }
@@ -46,10 +48,10 @@ object MerklePatriciaNode {
     implicit val leafNodeDecoder: Decoder[Leaf] =
       Decoder.instance { hCursor =>
         for {
-          data      <- hCursor.downField("data").as[Json]
           remaining <- hCursor.downField("remaining").as[Seq[Nibble]]
+          data      <- hCursor.downField("data").as[Json]
           digest    <- hCursor.downField("digest").as[Digest]
-        } yield new Leaf(data, remaining, digest)
+        } yield new Leaf(remaining, data, digest)
       }
   }
 
@@ -90,9 +92,9 @@ object MerklePatriciaNode {
       nodeCommitment(shared, child.digest).map(Extension(shared, child, _))
 
     def nodeCommitment[F[_]: JsonHasher](
-                                          shared:      Seq[Nibble],
-                                          childDigest: Digest
-                                        ): F[Digest] = {
+      shared:      Seq[Nibble],
+      childDigest: Digest
+    ): F[Digest] = {
       val hashableJson = Json.obj(
         "shared"      -> shared.asJson,
         "childDigest" -> childDigest.asJson
