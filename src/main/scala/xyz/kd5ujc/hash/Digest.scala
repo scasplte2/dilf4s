@@ -11,6 +11,8 @@ sealed abstract class Digest {
   val value: Array[Byte]
   val size: Int
 
+  override def toString: String = Hex.toHexString(value)
+
   override def equals(obj: Any): Boolean = obj match {
     case digest: Digest => this.size == digest.size && this.value.sameElements(digest.value)
     case _              => false

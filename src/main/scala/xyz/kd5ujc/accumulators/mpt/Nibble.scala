@@ -1,17 +1,19 @@
 package xyz.kd5ujc.accumulators.mpt
 
 import cats.data.Validated
+import cats.implicits.toTraverseOps
 import cats.syntax.bifunctor._
 
 import scala.collection.immutable.ArraySeq
 
 import xyz.kd5ujc.hash.Digest
 
+import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, DecodingFailure, Encoder, HCursor, Json, KeyDecoder, KeyEncoder}
 
 class Nibble private (val value: Byte) extends AnyVal {
   override def toString: String = {
-    val hexChars = "0123456789abcdef".toCharArray
+    val hexChars = "0123456789ABCDEF".toCharArray
     "" + hexChars(value & 0x0f)
   }
 }
@@ -19,7 +21,7 @@ class Nibble private (val value: Byte) extends AnyVal {
 object Nibble {
   val empty: Nibble = new Nibble(0: Byte)
 
-  private val hexChars: Array[Char] = "0123456789abcdef".toCharArray
+  private val hexChars: Array[Char] = "0123456789ABCDEF".toCharArray
 
   def apply(digest: Digest): Seq[Nibble] =
     apply(digest.value)
@@ -34,6 +36,13 @@ object Nibble {
     )
 
   def unsafe(byte: Byte): Nibble = new Nibble(byte)
+
+  def unsafe(char: Char): Nibble = char match {
+    case c if c >= '0' && c <= '9' => Nibble.unsafe((c - '0').toByte)
+    case c if c >= 'a' && c <= 'f' => Nibble.unsafe((c - 'a' + 10).toByte)
+    case c if c >= 'A' && c <= 'F' => Nibble.unsafe((c - 'A' + 10).toByte)
+    case _                         => throw new IllegalArgumentException("Invalid character: " + char)
+  }
 
   def toBytes(nibbles: Seq[Nibble]): Array[Byte] =
     nibbles
@@ -60,12 +69,20 @@ object Nibble {
       .takeWhile(Function.tupled(_.value == _.value))
       .map(_._1)
 
-  implicit val byteHexEncoder: Encoder[Nibble] = (a: Nibble) => Json.fromString("" + hexChars(a.value & 0x0f))
+  implicit val nibbleEncoder: Encoder[Nibble] = (a: Nibble) => Json.fromString("" + hexChars(a.value & 0x0f))
 
   implicit val nibbleDecoder: Decoder[Nibble] = (c: HCursor) =>
     c.as[String].flatMap { res =>
       if (res.length == 1) validated(res.charAt(0)).toEither.leftMap(err => DecodingFailure(err.toString, c.history))
       else Left(DecodingFailure("Nibble string must be of length 1", c.history))
+    }
+
+  implicit val nibbleSeqEncoder: Encoder[Seq[Nibble]] =
+    (seq: Seq[Nibble]) => seq.map(a => hexChars(a.value & 0x0f)).mkString("").asJson
+
+  implicit val nibbleSeqDecoder: Decoder[Seq[Nibble]] = (c: HCursor) =>
+    c.as[String].flatMap { res =>
+      res.toList.traverse(validated(_).toEither.leftMap(err => DecodingFailure(err.toString, c.history)))
     }
 
   implicit val nibbleKeyEncoder: KeyEncoder[Nibble] = (key: Nibble) => "" + hexChars(key.value & 0x0f)

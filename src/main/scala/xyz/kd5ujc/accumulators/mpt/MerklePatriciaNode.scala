@@ -29,7 +29,7 @@ object MerklePatriciaNode {
       remaining: Seq[Nibble]
     ): F[Digest] = {
       val hashableJson = Json.obj(
-        "remaining" -> remaining.asJson,
+        "remaining" -> remaining.asJson(Nibble.nibbleSeqEncoder),
         "data"      -> data.asJson
       )
 
@@ -39,7 +39,7 @@ object MerklePatriciaNode {
     implicit val leafNodeEncoder: Encoder[Leaf] =
       Encoder.instance { node =>
         Json.obj(
-          "remaining" -> node.remaining.asJson,
+          "remaining" -> node.remaining.asJson(Nibble.nibbleSeqEncoder),
           "data"      -> node.data.asJson,
           "digest"    -> node.digest.asJson
         )
@@ -48,7 +48,7 @@ object MerklePatriciaNode {
     implicit val leafNodeDecoder: Decoder[Leaf] =
       Decoder.instance { hCursor =>
         for {
-          remaining <- hCursor.downField("remaining").as[Seq[Nibble]]
+          remaining <- hCursor.downField("remaining").as[Seq[Nibble]](Nibble.nibbleSeqDecoder)
           data      <- hCursor.downField("data").as[Json]
           digest    <- hCursor.downField("digest").as[Digest]
         } yield new Leaf(remaining, data, digest)
@@ -96,7 +96,7 @@ object MerklePatriciaNode {
       childDigest: Digest
     ): F[Digest] = {
       val hashableJson = Json.obj(
-        "shared"      -> shared.asJson,
+        "shared"      -> shared.asJson(Nibble.nibbleSeqEncoder),
         "childDigest" -> childDigest.asJson
       )
 
@@ -106,7 +106,7 @@ object MerklePatriciaNode {
     implicit val encodeExtensionNode: Encoder[Extension] =
       Encoder.instance { node =>
         Json.obj(
-          "shared" -> node.shared.asJson,
+          "shared" -> node.shared.asJson(Nibble.nibbleSeqEncoder),
           "child"  -> node.child.asJson,
           "digest" -> node.digest.asJson
         )
@@ -115,7 +115,7 @@ object MerklePatriciaNode {
     implicit val decodeExtensionNode: Decoder[Extension] =
       Decoder.instance { hCursor =>
         for {
-          shared <- hCursor.downField("shared").as[Seq[Nibble]]
+          shared <- hCursor.downField("shared").as[Seq[Nibble]](Nibble.nibbleSeqDecoder)
           child  <- hCursor.downField("child").as[Branch]
           digest <- hCursor.downField("digest").as[Digest]
         } yield new Extension(shared, child, digest)

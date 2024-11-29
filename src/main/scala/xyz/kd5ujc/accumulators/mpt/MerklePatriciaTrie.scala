@@ -3,6 +3,8 @@ package xyz.kd5ujc.accumulators.mpt
 import cats.MonadError
 import cats.syntax.all._
 
+import scala.annotation.tailrec
+
 import xyz.kd5ujc.hash.{Digest, JsonHasher}
 
 import io.circe.syntax.EncoderOps
@@ -63,7 +65,7 @@ object MerklePatriciaTrie {
       if (leafSuffixRemaining.isEmpty && keyRemaining.isEmpty) {
         // If both paths are identical, we replace the existing Leaf with the new one.
         for {
-          newLeaf <- MerklePatriciaNode.Leaf[F](Seq.empty, data)
+          newLeaf <- MerklePatriciaNode.Leaf[F](key, data)
           result  <- updateParent(newLeaf)
         } yield result.asRight[InsertState[F]]
       } else {
@@ -174,6 +176,19 @@ object MerklePatriciaTrie {
 
     val initialState = Continue[F](currentNode, path, _.pure[F])
     me.tailRecM[InsertState[F], MerklePatriciaNode](initialState)(step)
+  }
+
+  def collectLeafNodes(trie: MerklePatriciaTrie): List[MerklePatriciaNode.Leaf] = {
+    @tailrec
+    def traverse(nodes: List[MerklePatriciaNode], acc: List[MerklePatriciaNode.Leaf]): List[MerklePatriciaNode.Leaf] =
+      nodes match {
+        case Nil                                               => acc
+        case (head: MerklePatriciaNode.Leaf) :: tail           => traverse(tail, head :: acc)
+        case MerklePatriciaNode.Branch(paths, _) :: tail       => traverse(paths.values.toList ++ tail, acc)
+        case MerklePatriciaNode.Extension(_, child, _) :: tail => traverse(child :: tail, acc)
+      }
+
+    traverse(List(trie.rootNode), List()).reverse
   }
 
   private sealed trait InsertState[F[_]]
