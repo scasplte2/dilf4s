@@ -1,6 +1,8 @@
 package xyz.kd5ujc.accumulators.mpt
 
-import cats.Functor
+import cats.Monad
+import cats.syntax.applicative._
+import cats.syntax.flatMap._
 import cats.syntax.functor._
 
 import xyz.kd5ujc.accumulators.Node
@@ -21,20 +23,11 @@ object MerklePatriciaNode {
   final case class Extension private (shared: Seq[Nibble], child: Branch, digest: Digest) extends MerklePatriciaNode
 
   object Leaf {
-    def apply[F[_]: Functor: JsonHasher](remaining: Seq[Nibble], data: Json): F[Leaf] =
-      nodeCommitment(data, remaining).map(new Leaf(remaining, data, _))
-
-    def nodeCommitment[F[_]: JsonHasher](
-      data:      Json,
-      remaining: Seq[Nibble]
-    ): F[Digest] = {
-      val hashableJson = Json.obj(
-        "remaining" -> remaining.asJson(Nibble.nibbleSeqEncoder),
-        "data"      -> data.asJson
-      )
-
-      JsonHasher[F].hash(hashableJson, LeafPrefix)
-    }
+    def apply[F[_]: Monad: JsonHasher](remaining: Seq[Nibble], data: Json): F[Leaf] = for {
+      dataDigest <- JsonHasher[F].hash(data)
+      commitment <- MerklePatriciaCommitment.Leaf(remaining, dataDigest).pure[F]
+      nodeDigest <- JsonHasher[F].hash(commitment.asJson, LeafPrefix)
+    } yield Leaf(remaining, data, nodeDigest)
 
     implicit val leafNodeEncoder: Encoder[Leaf] =
       Encoder.instance { node =>
@@ -58,17 +51,11 @@ object MerklePatriciaNode {
   object Branch {
     private implicit val nibbleOrdering: Ordering[Nibble] = (x: Nibble, y: Nibble) => x.value.compareTo(y.value)
 
-    def apply[F[_]: Functor: JsonHasher](paths: Map[Nibble, MerklePatriciaNode]): F[Branch] = {
-      val pathDigests = paths.toSeq.sortBy(_._1).map { case (k, v) => k -> v.digest }.toMap
-
-      nodeCommitment(pathDigests).map(Branch(paths, _))
-    }
-
-    def nodeCommitment[F[_]: JsonHasher](pathsDigest: Map[Nibble, Digest]): F[Digest] = {
-      val hashableJson = Json.obj("pathDigests" -> pathsDigest.asJson)
-
-      JsonHasher[F].hash(hashableJson, BranchPrefix)
-    }
+    def apply[F[_]: Monad: JsonHasher](paths: Map[Nibble, MerklePatriciaNode]): F[Branch] = for {
+      pathDigests <- paths.toSeq.sortBy(_._1).map { case (k, v) => k -> v.digest }.toMap.pure[F]
+      commitment  <- MerklePatriciaCommitment.Branch(pathDigests).pure[F]
+      nodeDigest  <- JsonHasher[F].hash(commitment.asJson, BranchPrefix)
+    } yield Branch(paths, nodeDigest)
 
     implicit val encodeBranchNode: Encoder[Branch] =
       Encoder.instance { node =>
@@ -88,26 +75,16 @@ object MerklePatriciaNode {
   }
 
   object Extension {
-    def apply[F[_]: Functor: JsonHasher](shared: Seq[Nibble], child: Branch): F[Extension] =
-      nodeCommitment(shared, child.digest).map(Extension(shared, child, _))
-
-    def nodeCommitment[F[_]: JsonHasher](
-      shared:      Seq[Nibble],
-      childDigest: Digest
-    ): F[Digest] = {
-      val hashableJson = Json.obj(
-        "shared"      -> shared.asJson(Nibble.nibbleSeqEncoder),
-        "childDigest" -> childDigest.asJson
-      )
-
-      JsonHasher[F].hash(hashableJson, ExtensionPrefix)
-    }
+    def apply[F[_]: Monad: JsonHasher](shared: Seq[Nibble], child: Branch): F[Extension] = for {
+      commitment <- MerklePatriciaCommitment.Extension(shared, child.digest).pure[F]
+      nodeDigest <- JsonHasher[F].hash(commitment.asJson, ExtensionPrefix)
+    } yield Extension(shared, child, nodeDigest)
 
     implicit val encodeExtensionNode: Encoder[Extension] =
       Encoder.instance { node =>
         Json.obj(
           "shared" -> node.shared.asJson(Nibble.nibbleSeqEncoder),
-          "child"  -> node.child.asJson,
+          "child"  -> (node.child: MerklePatriciaNode).asJson,
           "digest" -> node.digest.asJson
         )
       }
@@ -116,7 +93,7 @@ object MerklePatriciaNode {
       Decoder.instance { hCursor =>
         for {
           shared <- hCursor.downField("shared").as[Seq[Nibble]](Nibble.nibbleSeqDecoder)
-          child  <- hCursor.downField("child").as[Branch]
+          child  <- hCursor.downField("child").downField("contents").as[Branch]
           digest <- hCursor.downField("digest").as[Digest]
         } yield new Extension(shared, child, digest)
       }
