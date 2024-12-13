@@ -4,7 +4,7 @@ import cats.data.Validated
 import cats.implicits.toBifunctorOps
 
 import io.circe.syntax.EncoderOps
-import io.circe.{Decoder, DecodingFailure, Encoder, HCursor}
+import io.circe.{Decoder, DecodingFailure, Encoder, HCursor, KeyDecoder, KeyEncoder}
 import org.bouncycastle.util.encoders.Hex
 
 sealed abstract class Digest {
@@ -23,16 +23,31 @@ sealed abstract class Digest {
 
 object Digest {
 
-  implicit def encodeDigest: Encoder[Digest] = Encoder.instance {
+  implicit val digestEncoder: Encoder[Digest] = Encoder.instance {
     case l256Inst: l256 => l256Inst.asJson
     case l512Inst: l512 => l512Inst.asJson
   }
 
-  implicit val decodeDigest: Decoder[Digest] = Decoder.instance { (c: HCursor) =>
+  implicit val digestDecoder: Decoder[Digest] = Decoder.instance { (c: HCursor) =>
     c.as[String].map(Hex.decode).map(_.length).flatMap {
       case 32    => c.as[l256]
       case 64    => c.as[l512]
       case l @ _ => Left(DecodingFailure(s"Unsupported digest length: $l", c.history))
+    }
+  }
+
+  implicit val digestKeyEncoder: KeyEncoder[Digest] = {
+    case l256Inst: l256 => l256Inst.toString
+    case l512Inst: l512 => l512Inst.toString
+  }
+
+  implicit val digestKeyDecoder: KeyDecoder[Digest] = (digest: String) => {
+    val bytes = Hex.decode(digest)
+
+    bytes.length match {
+      case 32 => Some(l256.unsafe(bytes))
+      case 64 => Some(l512.unsafe(bytes))
+      case _  => None
     }
   }
 }

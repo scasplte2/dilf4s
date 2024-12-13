@@ -21,7 +21,7 @@ object MerkleVerifier {
         def combine(a: Digest, b: Digest): F[Digest] =
           MerkleNode.Internal.nodeCommitment(a, b.some)
 
-        proof.path
+        proof.witness
           .foldLeftM(proof.leafDigest) {
             case (acc, (digest, MerkleInclusionProof.leftSide))  => combine(digest, acc)
             case (acc, (digest, MerkleInclusionProof.rightSide)) => combine(acc, digest)

@@ -9,7 +9,7 @@ import io.circe.{Decoder, Encoder, HCursor, Json}
 
 final case class MerkleInclusionProof(
   leafDigest: Digest,
-  path:       Seq[(Digest, Side)]
+  witness:    Seq[(Digest, Side)]
 )
 
 object MerkleInclusionProof {
@@ -19,7 +19,7 @@ object MerkleInclusionProof {
   implicit def proofEncoder: Encoder[MerkleInclusionProof] = (mp: MerkleInclusionProof) =>
     Json.obj(
       "leafDigest" -> mp.leafDigest.asJson,
-      "path" -> mp.path.map {
+      "witness" -> mp.witness.map {
         case (digest, side) =>
           Json.obj(
             "digest" -> digest.asJson,
@@ -31,7 +31,7 @@ object MerkleInclusionProof {
   implicit def proofDecoder: Decoder[MerkleInclusionProof] = (c: HCursor) =>
     for {
       leafDigest <- c.downField("leafDigest").as[Digest]
-      witness    <- c.downField("path").as[Seq[(Digest, Side)]]
+      witness    <- c.downField("witness").as[Seq[(Digest, Side)]]
     } yield MerkleInclusionProof(leafDigest, witness)
 
   final case class Side(value: Byte) extends AnyVal
