@@ -13,7 +13,7 @@ import io.circe.{Decoder, DecodingFailure, Encoder, HCursor, Json, KeyDecoder, K
 
 class Nibble private (val value: Byte) extends AnyVal {
   override def toString: String = {
-    val hexChars = "0123456789ABCDEF".toCharArray
+    val hexChars = "0123456789abcdef".toCharArray
     "" + hexChars(value & 0x0f)
   }
 }
@@ -21,7 +21,7 @@ class Nibble private (val value: Byte) extends AnyVal {
 object Nibble {
   val empty: Nibble = new Nibble(0: Byte)
 
-  private val hexChars: Array[Char] = "0123456789ABCDEF".toCharArray
+  private val hexChars: Array[Char] = "0123456789abcdef".toCharArray
 
   def apply(digest: Digest): Seq[Nibble] =
     apply(digest.value)

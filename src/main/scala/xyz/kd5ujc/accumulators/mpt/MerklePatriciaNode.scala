@@ -14,9 +14,9 @@ import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 sealed trait MerklePatriciaNode extends Node
 
 object MerklePatriciaNode {
-  private val LeafPrefix: Array[Byte] = Array(0: Byte)
-  private val BranchPrefix: Array[Byte] = Array(1: Byte)
-  private val ExtensionPrefix: Array[Byte] = Array(2: Byte)
+  private[mpt] val LeafPrefix: Array[Byte] = Array(0: Byte)
+  private[mpt] val BranchPrefix: Array[Byte] = Array(1: Byte)
+  private[mpt] val ExtensionPrefix: Array[Byte] = Array(2: Byte)
 
   final case class Leaf private (remaining: Seq[Nibble], data: Json, digest: Digest) extends MerklePatriciaNode
   final case class Branch private (paths: Map[Nibble, MerklePatriciaNode], digest: Digest) extends MerklePatriciaNode
@@ -49,10 +49,8 @@ object MerklePatriciaNode {
   }
 
   object Branch {
-    private implicit val nibbleOrdering: Ordering[Nibble] = (x: Nibble, y: Nibble) => x.value.compareTo(y.value)
-
     def apply[F[_]: Monad: JsonHasher](paths: Map[Nibble, MerklePatriciaNode]): F[Branch] = for {
-      pathDigests <- paths.toSeq.sortBy(_._1).map { case (k, v) => k -> v.digest }.toMap.pure[F]
+      pathDigests <- paths.toSeq.sortBy(_._1.value).map { case (k, v) => k -> v.digest }.toMap.pure[F]
       commitment  <- MerklePatriciaCommitment.Branch(pathDigests).pure[F]
       nodeDigest  <- JsonHasher[F].hash(commitment.asJson, BranchPrefix)
     } yield Branch(paths, nodeDigest)
@@ -60,7 +58,7 @@ object MerklePatriciaNode {
     implicit val encodeBranchNode: Encoder[Branch] =
       Encoder.instance { node =>
         Json.obj(
-          "paths"  -> node.paths.toSeq.sortBy(_._1).toMap.asJson,
+          "paths"  -> node.paths.toSeq.sortBy(_._1.value).toMap.asJson,
           "digest" -> node.digest.asJson
         )
       }
