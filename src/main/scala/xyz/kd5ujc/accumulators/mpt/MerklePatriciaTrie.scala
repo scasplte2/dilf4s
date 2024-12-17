@@ -19,8 +19,10 @@ object MerklePatriciaTrie {
   implicit def merkleTreeDecoder: Decoder[MerklePatriciaTrie] = (c: HCursor) =>
     c.downField("rootNode").as[MerklePatriciaNode].map(MerklePatriciaTrie(_))
 
-  def create[F[_]: JsonHasher, A: Encoder](data: Map[Digest, A])(
-    implicit me:                                 MonadError[F, Throwable]
+  def create[F[_]: JsonHasher, A: Encoder](
+    data: Map[Digest, A]
+  )(
+    implicit me: MonadError[F, Throwable]
   ): F[MerklePatriciaTrie] =
     data.toList match {
       case (path, data) :: Nil => MerklePatriciaNode.Leaf[F](Nibble(path), data.asJson).map(MerklePatriciaTrie(_))
@@ -46,6 +48,18 @@ object MerklePatriciaTrie {
       }
       .map(MerklePatriciaTrie(_))
 
+  def remove[F[_]: JsonHasher](
+    current: MerklePatriciaTrie,
+    data:    List[Digest]
+  )(
+    implicit me: MonadError[F, Throwable]
+  ): F[MerklePatriciaTrie] =
+    data
+      .foldM(current.rootNode) {
+        case (acc, _path) => removeEncoded(acc, Nibble(_path))
+      }
+      .map(MerklePatriciaTrie(_))
+
   private def insertEncoded[F[_]: JsonHasher](
     currentNode: MerklePatriciaNode,
     path:        Seq[Nibble],
@@ -56,26 +70,25 @@ object MerklePatriciaTrie {
 
     def insertForLeafNode(
       leafNode:     MerklePatriciaNode.Leaf,
-      key:          Seq[Nibble],
+      _key:         Seq[Nibble],
       updateParent: MerklePatriciaNode => F[MerklePatriciaNode]
-    ): F[Either[InsertState[F], MerklePatriciaNode]] = {
-
-      val commonPrefix = Nibble.commonPrefix(leafNode.remaining, key)
-      val leafSuffixRemaining = leafNode.remaining.drop(commonPrefix.length)
-      val keyRemaining = key.drop(commonPrefix.length)
-
-      if (leafSuffixRemaining.isEmpty && keyRemaining.isEmpty) {
-        // If both paths are identical, we replace the existing Leaf with the new one.
+    ): F[Either[InsertState[F], MerklePatriciaNode]] =
+      if (leafNode.remaining == _key) {
+        // partial paths are identical, replace the existing Leaf with the new one.
         for {
-          newLeaf <- MerklePatriciaNode.Leaf[F](key, data)
+          newLeaf <- MerklePatriciaNode.Leaf[F](_key, data)
           result  <- updateParent(newLeaf)
         } yield result.asRight[InsertState[F]]
-      } else {
-        // The paths diverge, we need to create a Branch node.
-        for {
 
+      } else {
+        // partial paths diverge, determine what type of node to replace with
+        val commonPrefix = Nibble.commonPrefix(leafNode.remaining, _key)
+        val leafRemaining = leafNode.remaining.drop(commonPrefix.length)
+        val keyRemaining = _key.drop(commonPrefix.length)
+
+        for {
           // Create a new Leaf node for the existing data with its updated path.
-          existingLeaf <- MerklePatriciaNode.Leaf[F](leafSuffixRemaining.tail, leafNode.data)
+          existingLeaf <- MerklePatriciaNode.Leaf[F](leafRemaining.tail, leafNode.data)
 
           // Create a new Leaf node for the new data.
           newLeaf <- MerklePatriciaNode.Leaf[F](keyRemaining.tail, data)
@@ -83,12 +96,12 @@ object MerklePatriciaTrie {
           // Place both leaves in a Branch node
           branchNode <- MerklePatriciaNode.Branch[F](
             Map[Nibble, MerklePatriciaNode](
-              leafSuffixRemaining.head -> existingLeaf,
-              keyRemaining.head        -> newLeaf
+              leafRemaining.head -> existingLeaf,
+              keyRemaining.head  -> newLeaf
             )
           )
 
-          // If there's a common prefix, we need to create an Extension node as well.
+          // If there's a common prefix, create an Extension node to place the Branch in
           resultNode <-
             if (commonPrefix.nonEmpty) MerklePatriciaNode.Extension[F](commonPrefix, branchNode)
             else branchNode.pure[F]
@@ -96,7 +109,6 @@ object MerklePatriciaTrie {
           updatedNode <- updateParent(resultNode)
         } yield InsertDone(updatedNode).asLeft[MerklePatriciaNode]
       }
-    }
 
     def insertForExtensionNode(
       extensionNode: MerklePatriciaNode.Extension,
@@ -104,10 +116,12 @@ object MerklePatriciaTrie {
       updateParent:  MerklePatriciaNode => F[MerklePatriciaNode]
     ): F[Either[InsertState[F], MerklePatriciaNode]] = {
       val commonPrefix = Nibble.commonPrefix(extensionNode.shared, _key)
-      val prefixRemaining = extensionNode.shared.drop(commonPrefix.length)
+      val sharedRemaining = extensionNode.shared.drop(commonPrefix.length)
       val keyRemaining = _key.drop(commonPrefix.length)
 
-      if (prefixRemaining.isEmpty) {
+      if (_key.isEmpty) me.raiseError(new Exception("Key exhausted at extension node"))
+      else if (sharedRemaining.isEmpty) {
+        // shared path portion is not changing so just update child node with remaining path
         (InsertContinue(
           extensionNode.child,
           keyRemaining,
@@ -115,16 +129,17 @@ object MerklePatriciaTrie {
             case branch: MerklePatriciaNode.Branch =>
               MerklePatriciaNode.Extension[F](extensionNode.shared, branch).flatMap(updateParent)
 
-            case _ => me.raiseError(new Exception("Unexpected exception creating extension node"))
+            case _ => me.raiseError(new Exception("Unexpected node type while creating extension node"))
           }
         ): InsertState[F]).asLeft[MerklePatriciaNode].pure[F]
       } else {
+        // shared path diverges, update Extension node path and remaining path in a Leaf then place within a Branch
         for {
-          newExtension <- MerklePatriciaNode.Extension[F](prefixRemaining.tail, extensionNode.child)
+          newExtension <- MerklePatriciaNode.Extension[F](sharedRemaining.tail, extensionNode.child)
           newLeaf      <- MerklePatriciaNode.Leaf[F](keyRemaining.tail, data)
           branchNode <- MerklePatriciaNode.Branch[F](
             Map(
-              prefixRemaining.head -> newExtension,
+              sharedRemaining.head -> newExtension,
               keyRemaining.head    -> newLeaf
             )
           )
@@ -141,14 +156,12 @@ object MerklePatriciaTrie {
       _key:         Seq[Nibble],
       updateParent: MerklePatriciaNode => F[MerklePatriciaNode]
     ): F[Either[InsertState[F], MerklePatriciaNode]] =
-      if (_key.isEmpty) {
-        me.raiseError(new Exception("Key exhausted at branch node"))
-      } else {
+      if (_key.isEmpty) me.raiseError(new Exception("Key exhausted at branch node"))
+      else {
         val nibble = _key.head
         val keyRemaining = _key.tail
-        val childOpt = branchNode.paths.get(nibble)
 
-        childOpt match {
+        branchNode.paths.get(nibble) match {
           case Some(childNode) =>
             (InsertContinue(
               childNode,
@@ -181,18 +194,6 @@ object MerklePatriciaTrie {
     Monad[F].tailRecM[InsertState[F], MerklePatriciaNode](initialState)(step)
   }
 
-  def remove[F[_]: JsonHasher](
-    current: MerklePatriciaTrie,
-    data:    List[Digest]
-  )(
-    implicit me: MonadError[F, Throwable]
-  ): F[MerklePatriciaTrie] =
-    data
-      .foldM(current.rootNode) {
-        case (acc, _path) => removeEncoded(acc, Nibble(_path))
-      }
-      .map(MerklePatriciaTrie(_))
-
   def removeEncoded[F[_]: JsonHasher](
     currentNode: MerklePatriciaNode,
     path:        Seq[Nibble]
@@ -214,12 +215,12 @@ object MerklePatriciaTrie {
       updateParent:  Option[MerklePatriciaNode] => F[Option[MerklePatriciaNode]]
     ): F[Either[RemoveState[F], Option[MerklePatriciaNode]]] = {
       val commonPrefix = Nibble.commonPrefix(extensionNode.shared, _key)
+
       if (commonPrefix.length == extensionNode.shared.length) {
-        // Shared path fully matches, proceed to child
-        val keyRemaining = _key.drop(commonPrefix.length)
+        // _key contains Extension node shared path, proceed to child
         (RemoveContinue(
           extensionNode.child,
-          keyRemaining,
+          _key.drop(commonPrefix.length),
           {
             case Some(updatedChild) =>
               updatedChild match {
@@ -227,20 +228,22 @@ object MerklePatriciaTrie {
                   MerklePatriciaNode
                     .Extension[F](extensionNode.shared, childBranch)
                     .flatMap(node => updateParent(Some(node)))
+
                 case childLeaf: MerklePatriciaNode.Leaf =>
-                  val newShared = extensionNode.shared ++ childLeaf.remaining
                   MerklePatriciaNode
-                    .Leaf[F](newShared, childLeaf.data)
+                    .Leaf[F](extensionNode.shared ++ childLeaf.remaining, childLeaf.data)
                     .flatMap(node => updateParent(Some(node)))
+
                 case childExtension: MerklePatriciaNode.Extension =>
-                  val newShared = extensionNode.shared ++ childExtension.shared
                   MerklePatriciaNode
-                    .Extension[F](newShared, childExtension.child)
+                    .Extension[F](extensionNode.shared ++ childExtension.shared, childExtension.child)
                     .flatMap(node => updateParent(Some(node)))
               }
+
             case None => updateParent(None)
           }
         ): RemoveState[F]).asLeft[Option[MerklePatriciaNode]].pure[F]
+
       } else {
         // Key does not match, nothing to remove
         me.pure(Right(Some(extensionNode)))
@@ -252,12 +255,10 @@ object MerklePatriciaTrie {
       _key:         Seq[Nibble],
       updateParent: Option[MerklePatriciaNode] => F[Option[MerklePatriciaNode]]
     ): F[Either[RemoveState[F], Option[MerklePatriciaNode]]] =
-      if (_key.isEmpty) {
-        // Key exhausted at branch node, key not found
-        me.pure(Right(Some(branchNode)))
-      } else {
+      if (_key.nonEmpty) {
         val nibble = _key.head
         val keyRemaining = _key.tail
+
         branchNode.paths.get(nibble) match {
           case Some(childNode) =>
             (RemoveContinue(
@@ -270,41 +271,48 @@ object MerklePatriciaTrie {
                     .flatMap(node => updateParent(Some(node)))
                 case None =>
                   val updatedPaths = branchNode.paths - nibble
+
                   updatedPaths.size match {
                     case 0 =>
-                      // No paths left, remove this branch node
+                      // No paths left, remove this Branch node
                       updateParent(None)
+
                     case 1 =>
                       // Only one child left, can compress
                       val (remainingNibble, onlyChild) = updatedPaths.head
                       onlyChild match {
                         case leafNode: MerklePatriciaNode.Leaf =>
-                          val newRemaining = Seq(remainingNibble) ++ leafNode.remaining
                           MerklePatriciaNode
-                            .Leaf[F](newRemaining, leafNode.data)
+                            .Leaf[F](Seq(remainingNibble) ++ leafNode.remaining, leafNode.data)
                             .flatMap(node => updateParent(Some(node)))
+
                         case extensionNode: MerklePatriciaNode.Extension =>
-                          val newShared = Seq(remainingNibble) ++ extensionNode.shared
                           MerklePatriciaNode
-                            .Extension[F](newShared, extensionNode.child)
+                            .Extension[F](Seq(remainingNibble) ++ extensionNode.shared, extensionNode.child)
                             .flatMap(node => updateParent(Some(node)))
+
                         case branchNode: MerklePatriciaNode.Branch =>
                           MerklePatriciaNode
                             .Extension[F](Seq(remainingNibble), branchNode)
                             .flatMap(node => updateParent(Some(node)))
                       }
+
                     case _ =>
-                      // More than one child, keep the branch node
+                      // More than one child, keep the Branch node
                       MerklePatriciaNode
                         .Branch[F](updatedPaths)
                         .flatMap(node => updateParent(Some(node)))
                   }
               }
             ): RemoveState[F]).asLeft[Option[MerklePatriciaNode]].pure[F]
+
           case None =>
-            // Key not found, nothing to remove
+            // Key not found in Branch, nothing to remove
             me.pure(Right(Some(branchNode)))
         }
+      } else {
+        // Key exhausted at Branch node, key not found
+        me.pure(Right(Some(branchNode)))
       }
 
     def step(state: RemoveState[F]): F[Either[RemoveState[F], Option[MerklePatriciaNode]]] = state match {

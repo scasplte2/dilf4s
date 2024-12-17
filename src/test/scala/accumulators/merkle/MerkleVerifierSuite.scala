@@ -24,8 +24,8 @@ object MerkleVerifierSuite extends SimpleIOSuite with Checkers {
         tree                                    <- MerkleTree.create[IO, String](strings)
         prover = MerkleProver.make[IO](tree)
         verifier = MerkleVerifier.make[IO](tree.rootNode.digest)
-        proof   <- prover.fromLeafNode(leaves.head)
-        outcome <- proof.traverse(verifier.isValid)
+        proof   <- prover.attest(leaves.head)
+        outcome <- proof.traverse(verifier.confirm)
       } yield expect(outcome.getOrElse(false))
     }
   }
@@ -40,8 +40,8 @@ object MerkleVerifierSuite extends SimpleIOSuite with Checkers {
         tree2                                   <- MerkleTree.create[IO, String](List("a", "b", "c"))
         prover1 = MerkleProver.make[IO](tree1)
         verifier2 = MerkleVerifier.make[IO](tree2.rootNode.digest)
-        proof   <- prover1.fromLeafNode(leaves.head)
-        outcome <- proof.traverse(verifier2.isValid)
+        proof   <- prover1.attest(leaves.head)
+        outcome <- proof.traverse(verifier2.confirm)
       } yield expect(outcome.nonEmpty) && expect(!outcome.get)
     }
   }

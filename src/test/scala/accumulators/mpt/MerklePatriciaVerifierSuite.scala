@@ -5,7 +5,7 @@ import cats.syntax.applicative._
 import cats.syntax.traverse._
 
 import xyz.kd5ujc.accumulators.mpt.MerklePatriciaTrie
-import xyz.kd5ujc.accumulators.mpt.api.MerklePatriciaProver
+import xyz.kd5ujc.accumulators.mpt.api.{MerklePatriciaProver, MerklePatriciaVerifier}
 import xyz.kd5ujc.binary.JsonSerializer
 import xyz.kd5ujc.hash.{Blake2b256Hasher, l256}
 
@@ -14,7 +14,7 @@ import org.scalacheck.Gen
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
 
-object MerklePatriciaProverSuite extends SimpleIOSuite with Checkers {
+object MerklePatriciaVerifierSuite extends SimpleIOSuite with Checkers {
 
   private val hasherResource: Resource[IO, Blake2b256Hasher[IO]] =
     Resource.eval {
@@ -23,7 +23,7 @@ object MerklePatriciaProverSuite extends SimpleIOSuite with Checkers {
 
   private val toDigest: String => l256 = (str: String) => l256.unsafe(Hex.decode(str))
 
-  test("prover can produce an inclusion proof for a path in the trie") {
+  test("verifier can confirm an inclusion proof for a path in the trie") {
     hasherResource.use { implicit hasher =>
       forall(Gen.listOfN(32, Gen.long).flatMap { list =>
         Gen.choose(0, list.size - 1).map(index => (list, index))
@@ -32,22 +32,29 @@ object MerklePatriciaProverSuite extends SimpleIOSuite with Checkers {
           for {
             leafPairs <- list.traverse(l => hasher.hash(l).map(_ -> l))
             trie      <- MerklePatriciaTrie.create(leafPairs.toMap)
+            verifier  <- MerklePatriciaVerifier.make(trie.rootNode.digest).pure[F]
             prover    <- MerklePatriciaProver.make(trie).pure[F]
             proof     <- prover.attest(leafPairs(randomIndex)._1)
-          } yield expect(proof.nonEmpty)
+            result    <- proof.fold(false.pure[F])(verifier.confirm)
+          } yield expect(proof.nonEmpty && result)
       }
     }
   }
 
-  test("prover fails to produce an inclusion proof for a path not in the trie") {
+  test("verifier fails to confirm an inclusion proof for a fixed root digest") {
     hasherResource.use { implicit hasher =>
-      forall(Gen.listOfN(32, Gen.long)) { list =>
-        for {
-          leafMap <- list.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
-          trie    <- MerklePatriciaTrie.create(leafMap)
-          prover  <- MerklePatriciaProver.make(trie).pure[F]
-          proof   <- prover.attest(toDigest("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
-        } yield expect(proof.isEmpty)
+      forall(Gen.listOfN(32, Gen.long).flatMap { list =>
+        Gen.choose(0, list.size - 1).map(index => (list, index))
+      }) {
+        case (list, randomIndex) =>
+          for {
+            leafPairs <- list.traverse(l => hasher.hash(l).map(_ -> l))
+            trie      <- MerklePatriciaTrie.create(leafPairs.toMap)
+            verifier  <- MerklePatriciaVerifier.make(toDigest("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")).pure[F]
+            prover    <- MerklePatriciaProver.make(trie).pure[F]
+            proof     <- prover.attest(leafPairs(randomIndex)._1)
+            result    <- proof.fold(false.pure[F])(verifier.confirm)
+          } yield expect(!result)
       }
     }
   }

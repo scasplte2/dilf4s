@@ -10,18 +10,18 @@ import xyz.kd5ujc.accumulators.merkle.{MerkleInclusionProof, MerkleNode, MerkleT
 import xyz.kd5ujc.hash.Digest
 
 trait MerkleProver[F[_]] {
-  def fromLeafNode(leaf: MerkleNode.Leaf): F[Option[MerkleInclusionProof]]
+  def attest(leaf: MerkleNode.Leaf): F[Option[MerkleInclusionProof]]
 
-  def fromLeafDigest(digest: Digest): F[Option[MerkleInclusionProof]]
+  def attest(digest: Digest): F[Option[MerkleInclusionProof]]
 }
 
 object MerkleProver {
   def make[F[_]: Monad](tree: MerkleTree): MerkleProver[F] =
     new MerkleProver[F] {
-      def fromLeafNode(leaf: MerkleNode.Leaf): F[Option[MerkleInclusionProof]] =
-        fromLeafDigest(leaf.digest)
+      def attest(leaf: MerkleNode.Leaf): F[Option[MerkleInclusionProof]] =
+        attest(leaf.digest)
 
-      def fromLeafDigest(digest: Digest): F[Option[MerkleInclusionProof]] =
+      def attest(digest: Digest): F[Option[MerkleInclusionProof]] =
         tree.leafDigestIndex.get(digest).flatTraverse(proofByIndex)
 
       private def proofByIndex(index: Int): F[Option[MerkleInclusionProof]] = {

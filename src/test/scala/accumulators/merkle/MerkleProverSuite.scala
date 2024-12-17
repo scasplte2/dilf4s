@@ -23,7 +23,7 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
         leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
         tree                                    <- MerkleTree.create[IO, String](strings)
         prover = MerkleProver.make[IO](tree)
-        proof <- prover.fromLeafNode(leaves.head)
+        proof <- prover.attest(leaves.head)
       } yield expect(proof.nonEmpty)
     }
   }
@@ -36,7 +36,7 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
         leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
         tree                                    <- MerkleTree.create[IO, String](strings)
         prover = MerkleProver.make[IO](tree)
-        proof <- prover.fromLeafDigest(leaves.head.digest)
+        proof <- prover.attest(leaves.head.digest)
       } yield expect(proof.nonEmpty)
     }
   }
@@ -49,7 +49,7 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
         leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
         tree                                    <- MerkleTree.create[IO, String](strings.tail)
         prover = MerkleProver.make[IO](tree)
-        proof <- prover.fromLeafNode(leaves.head)
+        proof <- prover.attest(leaves.head)
       } yield expect(proof.isEmpty)
     }
   }
@@ -62,7 +62,7 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
         leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
         tree                                    <- MerkleTree.create[IO, String](strings.tail)
         prover = MerkleProver.make[IO](tree)
-        proof <- prover.fromLeafDigest(leaves.head.digest)
+        proof <- prover.attest(leaves.head.digest)
       } yield expect(proof.isEmpty)
     }
   }

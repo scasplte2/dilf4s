@@ -19,7 +19,9 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
 
   private val hasherResource: Resource[IO, Blake2b256Hasher[IO]] =
     Resource.eval {
-      JsonSerializer.forSync[IO].map(implicit json2bin => new Blake2b256Hasher[IO])
+      JsonSerializer.forSync[IO].map { implicit json2bin =>
+        new Blake2b256Hasher[IO]
+      }
     }
 
   private val toDigest: String => l256 = (str: String) => l256.unsafe(Hex.decode(str))
@@ -63,8 +65,13 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
   }
 
   test("trie from insert contains all values in leaves") {
+    val gen = for {
+      list1 <- Gen.listOfN(32, Gen.long)
+      list2 <- Gen.listOfN(32, Gen.long)
+    } yield (list1, list2)
+
     hasherResource.use { implicit hasher =>
-      forall(Gen.listOfN(32, Gen.long).flatMap(v1 => Gen.listOfN(32, Gen.long).flatMap(v2 => (v1, v2)))) {
+      forall(gen) {
         case (list1, list2) =>
           for {
             initMap    <- list1.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
@@ -76,18 +83,6 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
             sortedOutputSet = SortedSet.from(listLeaves)
           } yield expect(sortedInputSet == sortedOutputSet)
       }
-    }
-  }
-
-  test("trie can remove some leaves") {
-    hasherResource.use { implicit hasher =>
-      for {
-        createMap   <- (0L to 5L).toList.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
-        removePaths <- (0L to 2L).toList.traverse(hasher.hash(_))
-        trie1       <- MerklePatriciaTrie.create(createMap)
-        trie2       <- MerklePatriciaTrie.remove(trie1, removePaths)
-        listLeaves  <- IO.fromEither(MerklePatriciaTrie.collectLeafNodes(trie2).traverse(_.data.as[Long]))
-      } yield expect(listLeaves.forall(!(0L to 2L).contains(_)))
     }
   }
 
@@ -132,12 +127,12 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
     }
   }
 
-  test("create method produces a trie with a known root digest") {
+  test("create produces a trie with a known root digest") {
     hasherResource.use { implicit hasher =>
       for {
         leafMap <- (0 to 31).toList.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
         trie    <- MerklePatriciaTrie.create[IO, Int](leafMap)
-      } yield expect(trie.rootNode.digest == l256.unsafe(Hex.decode("17f684e8336a239b2d66c7ca41ecd1712fa93e925ceaa52bc1dd575c0c9c6a29")))
+      } yield expect(trie.rootNode.digest == toDigest("fddee3f51499aeb0077ef1ab2dd3756d5083a8912e9a8b83fae2d446e282fd57"))
     }
   }
 
@@ -148,7 +143,7 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
         trie      <- MerklePatriciaTrie.create[IO, Int](leafMap)
         newLeaves <- (-31 to -0).toList.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
         trie2     <- MerklePatriciaTrie.insert(trie, newLeaves)
-      } yield expect(trie2.rootNode.digest == l256.unsafe(Hex.decode("8544363fd05a0bfb3e0b751d1160921c5d15bf7024b5f30902260f5abf022f41")))
+      } yield expect(trie2.rootNode.digest == toDigest("543e932b3a73fba7572d393d733b0400756e8cad163cc32303598e4ccf6395ed"))
     }
   }
 
@@ -157,9 +152,9 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
       for {
         leafMap   <- (0 to 31).toList.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
         trie      <- MerklePatriciaTrie.create[IO, Int](leafMap)
-        remLeaves <- (17 to 31).toList.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
-        trie2     <- MerklePatriciaTrie.insert(trie, remLeaves)
-      } yield expect(trie2.rootNode.digest == l256.unsafe(Hex.decode("17f684e8336a239b2d66c7ca41ecd1712fa93e925ceaa52bc1dd575c0c9c6a29")))
+        remLeaves <- (17 to 31).toList.traverse(l => hasher.hash(l))
+        trie2     <- MerklePatriciaTrie.remove(trie, remLeaves)
+      } yield expect(trie2.rootNode.digest == toDigest("59edbf8dbc3d09a6d4657ab3978971b792318d799e97d100b6a244aa018a2ee9"))
     }
   }
 

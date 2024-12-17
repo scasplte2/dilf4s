@@ -10,13 +10,13 @@ import xyz.kd5ujc.accumulators.merkle.{MerkleInclusionProof, MerkleNode}
 import xyz.kd5ujc.hash.{Digest, JsonHasher}
 
 trait MerkleVerifier[F[_]] {
-  def isValid(proof: MerkleInclusionProof): F[Boolean]
+  def confirm(proof: MerkleInclusionProof): F[Boolean]
 }
 
 object MerkleVerifier {
   def make[F[_]: Monad: JsonHasher](root: Digest): MerkleVerifier[F] =
     new MerkleVerifier[F] {
-      override def isValid(proof: MerkleInclusionProof): F[Boolean] = {
+      override def confirm(proof: MerkleInclusionProof): F[Boolean] = {
 
         def combine(a: Digest, b: Digest): F[Digest] =
           MerkleNode.Internal.nodeCommitment(a, b.some)
