@@ -34,6 +34,8 @@ object Dependencies {
     val levelDbJni = "org.fusesource.leveldbjni" % "leveldbjni-all" % V.levelDbJni
     val log4cats = "org.typelevel" %% "log4cats-slf4j" % V.log4cats
     val logback = "ch.qos.logback" % "logback-classic" % V.logback
+    val jmhCore = "org.openjdk.jmh" % "jmh-core" % "1.37"
+    val jmhGen = "org.openjdk.jmh" % "jmh-generator-annprocess" % "1.37"
   }
 
   object CompilerPlugin {

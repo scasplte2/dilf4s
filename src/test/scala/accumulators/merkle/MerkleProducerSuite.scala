@@ -19,7 +19,7 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
     for {
       implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
       implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
-      producer                                <- MerkleProducer.make[IO, String](List())
+      producer                                <- MerkleProducer.make[IO](List())
       outcome                                 <- producer.build.attempt
     } yield
       outcome match {
@@ -35,7 +35,7 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
         leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
-        producer                                <- MerkleProducer.make[IO, String](leaves)
+        producer                                <- MerkleProducer.make[IO](leaves)
         outcome                                 <- producer.build
       } yield expect(outcome.rootNode.digest.value.nonEmpty)
     }
@@ -47,7 +47,7 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
       implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
       leaves                                  <- List("one", "two", "three", "four").map(_.asJson).traverse(MerkleNode.Leaf(_))
       newLeaf                                 <- List("five").map(_.asJson).traverse(MerkleNode.Leaf(_))
-      producer                                <- MerkleProducer.make[IO, String](leaves)
+      producer                                <- MerkleProducer.make[IO](leaves)
       oldTree                                 <- producer.build
       _                                       <- producer.append(newLeaf)
       newTree                                 <- producer.build
@@ -63,7 +63,7 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
       implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
       leaves                                  <- List("one", "two", "three", "four").map(_.asJson).traverse(MerkleNode.Leaf(_))
       newLeaf                                 <- List("five").map(_.asJson).traverse(MerkleNode.Leaf(_))
-      producer                                <- MerkleProducer.make[IO, String](leaves)
+      producer                                <- MerkleProducer.make[IO](leaves)
       oldTree                                 <- producer.build
       _                                       <- producer.prepend(newLeaf)
       newTree                                 <- producer.build
@@ -79,7 +79,7 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
       implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
       leaves                                  <- List("one", "two", "three", "four").map(_.asJson).traverse(MerkleNode.Leaf(_))
       newLeaf                                 <- MerkleNode.Leaf("five".asJson)
-      producer                                <- MerkleProducer.make[IO, String](leaves)
+      producer                                <- MerkleProducer.make[IO](leaves)
       oldTree                                 <- producer.build
       _                                       <- producer.update(0, newLeaf)
       newTree                                 <- producer.build
@@ -94,7 +94,7 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
       implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
       implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
       leaves                                  <- List("one", "two", "three", "four").map(_.asJson).traverse(MerkleNode.Leaf(_))
-      producer                                <- MerkleProducer.make[IO, String](leaves)
+      producer                                <- MerkleProducer.make[IO](leaves)
       oldTree                                 <- producer.build
       _                                       <- producer.remove(0)
       newTree                                 <- producer.build

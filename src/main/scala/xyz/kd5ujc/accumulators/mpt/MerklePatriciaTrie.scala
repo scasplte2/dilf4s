@@ -1,7 +1,7 @@
 package xyz.kd5ujc.accumulators.mpt
 
+import cats.MonadThrow
 import cats.syntax.all._
-import cats.{Monad, MonadError}
 
 import scala.annotation.tailrec
 
@@ -13,16 +13,14 @@ import io.circe.{Decoder, Encoder, HCursor, Json}
 final case class MerklePatriciaTrie(rootNode: MerklePatriciaNode)
 
 object MerklePatriciaTrie {
-  implicit def merkleTreeEncoder: Encoder[MerklePatriciaTrie] =
+  implicit val merkleTreeEncoder: Encoder[MerklePatriciaTrie] =
     (tree: MerklePatriciaTrie) => Json.obj("rootNode" -> tree.rootNode.asJson)
 
-  implicit def merkleTreeDecoder: Decoder[MerklePatriciaTrie] = (c: HCursor) =>
+  implicit val merkleTreeDecoder: Decoder[MerklePatriciaTrie] = (c: HCursor) =>
     c.downField("rootNode").as[MerklePatriciaNode].map(MerklePatriciaTrie(_))
 
-  def create[F[_]: JsonHasher, A: Encoder](
+  def create[F[_]: JsonHasher: MonadThrow, A: Encoder](
     data: Map[Digest, A]
-  )(
-    implicit me: MonadError[F, Throwable]
   ): F[MerklePatriciaTrie] =
     data.toList match {
       case (path, data) :: Nil => MerklePatriciaNode.Leaf[F](Nibble(path), data.asJson).map(MerklePatriciaTrie(_))
@@ -33,14 +31,12 @@ object MerklePatriciaTrie {
             case (acc, (tPath, tData)) => insertEncoded(acc, Nibble(tPath), tData.asJson)
           }
         } yield MerklePatriciaTrie(updatedNode)
-      case _ => MonadError[F, Throwable].raiseError(new Exception("Unexpected input"))
+      case _ => new Exception("Unexpected input").raiseError
     }
 
-  def insert[F[_]: JsonHasher, A: Encoder](
+  def insert[F[_]: JsonHasher: MonadThrow, A: Encoder](
     current: MerklePatriciaTrie,
     data:    Map[Digest, A]
-  )(
-    implicit me: MonadError[F, Throwable]
   ): F[MerklePatriciaTrie] =
     data.toList
       .foldM(current.rootNode) {
@@ -48,11 +44,9 @@ object MerklePatriciaTrie {
       }
       .map(MerklePatriciaTrie(_))
 
-  def remove[F[_]: JsonHasher](
+  def remove[F[_]: JsonHasher: MonadThrow](
     current: MerklePatriciaTrie,
     data:    List[Digest]
-  )(
-    implicit me: MonadError[F, Throwable]
   ): F[MerklePatriciaTrie] =
     data
       .foldM(current.rootNode) {
@@ -60,12 +54,10 @@ object MerklePatriciaTrie {
       }
       .map(MerklePatriciaTrie(_))
 
-  private def insertEncoded[F[_]: JsonHasher](
+  private def insertEncoded[F[_]: JsonHasher: MonadThrow](
     currentNode: MerklePatriciaNode,
     path:        Seq[Nibble],
     data:        Json
-  )(
-    implicit me: MonadError[F, Throwable]
   ): F[MerklePatriciaNode] = {
 
     def insertForLeafNode(
@@ -119,7 +111,7 @@ object MerklePatriciaTrie {
       val sharedRemaining = extensionNode.shared.drop(commonPrefix.length)
       val keyRemaining = _key.drop(commonPrefix.length)
 
-      if (_key.isEmpty) me.raiseError(new Exception("Key exhausted at extension node"))
+      if (_key.isEmpty) new Exception("Key exhausted at extension node").raiseError
       else if (sharedRemaining.isEmpty) {
         // shared path portion is not changing so just update child node with remaining path
         (InsertContinue(
@@ -129,7 +121,7 @@ object MerklePatriciaTrie {
             case branch: MerklePatriciaNode.Branch =>
               MerklePatriciaNode.Extension[F](extensionNode.shared, branch).flatMap(updateParent)
 
-            case _ => me.raiseError(new Exception("Unexpected node type while creating extension node"))
+            case _ => new Exception("Unexpected node type while creating extension node").raiseError
           }
         ): InsertState[F]).asLeft[MerklePatriciaNode].pure[F]
       } else {
@@ -156,7 +148,7 @@ object MerklePatriciaTrie {
       _key:         Seq[Nibble],
       updateParent: MerklePatriciaNode => F[MerklePatriciaNode]
     ): F[Either[InsertState[F], MerklePatriciaNode]] =
-      if (_key.isEmpty) me.raiseError(new Exception("Key exhausted at branch node"))
+      if (_key.isEmpty) new Exception("Key exhausted at branch node").raiseError
       else {
         val nibble = _key.head
         val keyRemaining = _key.tail
@@ -190,15 +182,13 @@ object MerklePatriciaTrie {
       case InsertDone(node) => node.asRight[InsertState[F]].pure[F]
     }
 
-    val initialState = InsertContinue[F](currentNode, path, _.pure[F])
-    Monad[F].tailRecM[InsertState[F], MerklePatriciaNode](initialState)(step)
+    val initialState: InsertState[F] = InsertContinue[F](currentNode, path, _.pure[F])
+    initialState.tailRecM[F, MerklePatriciaNode](step)
   }
 
-  def removeEncoded[F[_]: JsonHasher](
+  private def removeEncoded[F[_]: JsonHasher: MonadThrow](
     currentNode: MerklePatriciaNode,
     path:        Seq[Nibble]
-  )(
-    implicit me: MonadError[F, Throwable]
   ): F[MerklePatriciaNode] = {
 
     def removeForLeafNode(
@@ -206,8 +196,8 @@ object MerklePatriciaTrie {
       _key:         Seq[Nibble],
       updateParent: Option[MerklePatriciaNode] => F[Option[MerklePatriciaNode]]
     ): F[Either[RemoveState[F], Option[MerklePatriciaNode]]] =
-      if (leafNode.remaining == _key) updateParent(None).map(Right(_))
-      else me.pure(Right(Some(leafNode)))
+      if (leafNode.remaining == _key) updateParent(None).map(_.asRight)
+      else leafNode.some.asRight[RemoveState[F]].pure[F].widen
 
     def removeForExtensionNode(
       extensionNode: MerklePatriciaNode.Extension,
@@ -246,7 +236,7 @@ object MerklePatriciaTrie {
 
       } else {
         // Key does not match, nothing to remove
-        me.pure(Right(Some(extensionNode)))
+        extensionNode.some.asRight[RemoveState[F]].pure[F].widen
       }
     }
 
@@ -308,11 +298,11 @@ object MerklePatriciaTrie {
 
           case None =>
             // Key not found in Branch, nothing to remove
-            me.pure(Right(Some(branchNode)))
+            branchNode.some.asRight[RemoveState[F]].pure[F].widen
         }
       } else {
         // Key exhausted at Branch node, key not found
-        me.pure(Right(Some(branchNode)))
+        branchNode.some.asRight[RemoveState[F]].pure[F].widen
       }
 
     def step(state: RemoveState[F]): F[Either[RemoveState[F], Option[MerklePatriciaNode]]] = state match {
@@ -322,12 +312,12 @@ object MerklePatriciaTrie {
           case node: MerklePatriciaNode.Extension => removeForExtensionNode(node, key, updateParent)
           case node: MerklePatriciaNode.Branch    => removeForBranchNode(node, key, updateParent)
         }
-      case RemoveDone(nodeOpt) => me.pure(Right(nodeOpt))
+      case RemoveDone(nodeOpt) => nodeOpt.asRight[RemoveState[F]].pure[F]
     }
 
-    val initialState = RemoveContinue[F](currentNode, path, _.pure[F])
+    val initialState: RemoveState[F] = RemoveContinue[F](currentNode, path, _.pure[F])
 
-    Monad[F].tailRecM[RemoveState[F], Option[MerklePatriciaNode]](initialState)(step).flatMap {
+    initialState.tailRecM[F, Option[MerklePatriciaNode]](step).flatMap {
       case Some(newRootNode) => newRootNode.pure[F]
       case None              => MerklePatriciaNode.Branch[F](Map.empty).widen
     }

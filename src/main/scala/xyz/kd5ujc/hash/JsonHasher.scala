@@ -1,7 +1,8 @@
 package xyz.kd5ujc.hash
 
 import cats.effect.Sync
-import cats.implicits.{toFlatMapOps, toFunctorOps}
+import cats.syntax.flatMap._
+import cats.syntax.functor._
 
 import xyz.kd5ujc.binary.JsonSerializer
 
