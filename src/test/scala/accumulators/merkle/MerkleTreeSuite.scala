@@ -4,7 +4,8 @@ import cats.effect.IO
 
 import xyz.kd5ujc.accumulators.merkle.MerkleTree
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.hash.{Blake2b256Hasher, l256}
+import xyz.kd5ujc.hash.impl.Blake2b256Hasher
+import xyz.kd5ujc.hash.l256
 
 import io.circe.Json
 import io.circe.syntax.EncoderOps

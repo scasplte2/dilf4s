@@ -6,7 +6,7 @@ import cats.implicits.toTraverseOps
 import xyz.kd5ujc.accumulators.merkle.api.{MerkleProver, MerkleVerifier}
 import xyz.kd5ujc.accumulators.merkle.{MerkleNode, MerkleTree}
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.hash.Blake2b256Hasher
+import xyz.kd5ujc.hash.impl.Blake2b256Hasher
 
 import generators.nonEmptyStringListGen
 import io.circe.syntax.EncoderOps
@@ -24,9 +24,10 @@ object MerkleVerifierSuite extends SimpleIOSuite with Checkers {
         tree                                    <- MerkleTree.create[IO, String](strings)
         prover = MerkleProver.make[IO](tree)
         verifier = MerkleVerifier.make[IO](tree.rootNode.digest)
-        proof   <- prover.attest(leaves.head)
-        outcome <- proof.traverse(verifier.confirm)
-      } yield expect(outcome.getOrElse(false))
+        proofEither <- prover.attestLeaf(leaves.head)
+        proof       <- IO.fromEither(proofEither)
+        outcome     <- verifier.confirm(proof)
+      } yield expect(outcome)
     }
   }
 
@@ -40,9 +41,10 @@ object MerkleVerifierSuite extends SimpleIOSuite with Checkers {
         tree2                                   <- MerkleTree.create[IO, String](List("a", "b", "c"))
         prover1 = MerkleProver.make[IO](tree1)
         verifier2 = MerkleVerifier.make[IO](tree2.rootNode.digest)
-        proof   <- prover1.attest(leaves.head)
-        outcome <- proof.traverse(verifier2.confirm)
-      } yield expect(outcome.nonEmpty) && expect(!outcome.get)
+        proofEither <- prover1.attestLeaf(leaves.head)
+        proof       <- IO.fromEither(proofEither)
+        outcome     <- verifier2.confirm(proof)
+      } yield expect(!outcome)
     }
   }
 }

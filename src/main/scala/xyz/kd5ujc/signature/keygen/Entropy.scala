@@ -1,10 +1,9 @@
-package xyz.kd5ujc.keygen
+package xyz.kd5ujc.signature.keygen
 
 import cats.data.ValidatedNec
 import cats.effect.std.Random
 import cats.effect.{Resource, Sync}
 import cats.syntax.all._
-import cats.{Functor, MonadThrow}
 
 sealed trait Entropy {
   def bytes: Array[Byte]
@@ -12,15 +11,41 @@ sealed trait Entropy {
 }
 
 object Entropy {
-  private final case class EntropyImpl(bytes: Array[Byte], size: EntropySize) extends Entropy
+  private final case class EntropyImpl(bytes: Array[Byte], size: EntropySize) extends Entropy {
+    private def constantTimeEquals(a: Array[Byte], b: Array[Byte]): Boolean = {
+      if (a.length != b.length) return false
+      var result = 0
+      for (i <- a.indices)
+        result |= a(i) ^ b(i)
+      result == 0
+    }
 
-  def generate[F[_]: Functor: Random](size: EntropySize): F[Entropy] =
+    override def equals(obj: Any): Boolean = obj match {
+      case other: EntropyImpl => size == other.size && constantTimeEquals(bytes, other.bytes)
+      case _                  => false
+    }
+
+    override def hashCode(): Int =
+      31 * size.hashCode
+
+    def wipe(): Unit =
+      java.util.Arrays.fill(bytes, 0: Byte)
+
+    def withBytes[A](f: Array[Byte] => A): A = {
+      val copy = bytes.clone()
+      try f(copy)
+      finally java.util.Arrays.fill(copy, 0: Byte)
+    }
+  }
+
+  def generate[F[_]: Sync: Random](size: EntropySize): F[Entropy] =
     Random[F].nextBytes(size.bytes).map(bytes => EntropyImpl(bytes, size))
 
-  def fromBytes[F[_]: MonadThrow](bytes: Array[Byte]): F[Entropy] =
+  def fromBytes[F[_]: Sync](bytes: Array[Byte]): F[Entropy] =
     for {
-      validated <- MonadThrow[F].fromEither(
-        EntropySize.validated(bytes.length * 8)
+      validated <- Sync[F].fromEither(
+        EntropySize
+          .validated(bytes.length * 8)
           .toEither
           .leftMap(errors => EntropyError.ValidationError(errors.iterator.mkString(", ")))
       )
@@ -31,23 +56,18 @@ object Entropy {
     Resource.make(
       acquire = generate[F](size)
     )(
-      release = entropy => Sync[F].delay {
-        java.util.Arrays.fill(entropy.bytes, 0: Byte)
-      }
+      release = entropy =>
+        Sync[F].delay {
+          java.util.Arrays.fill(entropy.bytes, 0: Byte)
+        }
     )
 
-  private def validateBytes(bytes: Array[Byte]): Either[EntropyError, Unit] = {
-    val validSizes = Set(16, 20, 24, 28, 32)
-    if (!validSizes.contains(bytes.length)) {
-      Left(EntropyError.InvalidByteLength(bytes.length))
-    } else {
-      Right(())
-    }
-  }
+  private def validateBytes(bytes: Array[Byte]): Either[EntropyError, Unit] =
+    if (Set(16, 20, 24, 28, 32).contains(bytes.length)) ().asRight
+    else EntropyError.InvalidByteLength(bytes.length).asLeft
 
-  private[keygen] def unsafe(bytes: Array[Byte], size: EntropySize): Entropy = {
+  private[keygen] def unsafe(bytes: Array[Byte], size: EntropySize): Entropy =
     EntropyImpl(bytes.clone(), size)
-  }
 }
 
 sealed trait EntropySize {
@@ -72,6 +92,16 @@ object EntropySize {
     validations.sequence.map(_ => fromBits(bits).getOrElse(Bits128))
   }
 
+  def fromWordCount(wordCount: Int): Either[EntropyError, EntropySize] =
+    wordCount match {
+      case 12 => Right(Bits128)
+      case 15 => Right(Bits160)
+      case 18 => Right(Bits192)
+      case 21 => Right(Bits224)
+      case 24 => Right(Bits256)
+      case _  => Left(EntropyError.InvalidSize(s"Invalid word count: $wordCount"))
+    }
+
   private def validateMultipleOf32(bits: Int): ValidatedNec[EntropyError, Unit] =
     if (bits % 32 == 0) ().validNec
     else EntropyError.InvalidSize(s"Entropy size must be multiple of 32 bits, got: $bits").invalidNec
@@ -86,7 +116,7 @@ object EntropySize {
     case 192 => Right(Bits192)
     case 224 => Right(Bits224)
     case 256 => Right(Bits256)
-    case _ => Left(EntropyError.InvalidSize(s"Invalid entropy size: $bits bits"))
+    case _   => Left(EntropyError.InvalidSize(s"Invalid entropy size: $bits bits"))
   }
 }
 

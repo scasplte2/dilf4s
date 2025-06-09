@@ -6,7 +6,7 @@ import cats.implicits.toTraverseOps
 import xyz.kd5ujc.accumulators.merkle.api.MerkleProver
 import xyz.kd5ujc.accumulators.merkle.{MerkleNode, MerkleTree}
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.hash.Blake2b256Hasher
+import xyz.kd5ujc.hash.impl.Blake2b256Hasher
 
 import generators.nonEmptyStringListGen
 import io.circe.syntax.EncoderOps
@@ -23,8 +23,9 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
         leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
         tree                                    <- MerkleTree.create[IO, String](strings)
         prover = MerkleProver.make[IO](tree)
-        proof <- prover.attest(leaves.head)
-      } yield expect(proof.nonEmpty)
+        proofEither <- prover.attestLeaf(leaves.head)
+        proof       <- IO.fromEither(proofEither)
+      } yield expect(proof.leafDigest == leaves.head.digest)
     }
   }
 
@@ -36,8 +37,9 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
         leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
         tree                                    <- MerkleTree.create[IO, String](strings)
         prover = MerkleProver.make[IO](tree)
-        proof <- prover.attest(leaves.head.digest)
-      } yield expect(proof.nonEmpty)
+        proofEither <- prover.attestDigest(leaves.head.digest)
+        proof       <- IO.fromEither(proofEither)
+      } yield expect(proof.leafDigest == leaves.head.digest)
     }
   }
 
@@ -49,8 +51,8 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
         leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
         tree                                    <- MerkleTree.create[IO, String](strings.tail)
         prover = MerkleProver.make[IO](tree)
-        proof <- prover.attest(leaves.head)
-      } yield expect(proof.isEmpty)
+        proofEither <- prover.attestLeaf(leaves.head)
+      } yield expect(proofEither.isLeft)
     }
   }
 
@@ -62,8 +64,8 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
         leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
         tree                                    <- MerkleTree.create[IO, String](strings.tail)
         prover = MerkleProver.make[IO](tree)
-        proof <- prover.attest(leaves.head.digest)
-      } yield expect(proof.isEmpty)
+        proofEither <- prover.attestDigest(leaves.head.digest)
+      } yield expect(proofEither.isLeft)
     }
   }
 }

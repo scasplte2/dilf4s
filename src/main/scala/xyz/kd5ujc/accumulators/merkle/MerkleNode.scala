@@ -4,7 +4,8 @@ import cats.Functor
 import cats.syntax.functor._
 
 import xyz.kd5ujc.accumulators.Node
-import xyz.kd5ujc.hash.{Digest, JsonHasher}
+import xyz.kd5ujc.hash.Digest
+import xyz.kd5ujc.hash.api.DigestProducer
 
 import io.circe.syntax._
 import io.circe.{Decoder, DecodingFailure, Encoder, Json}
@@ -19,13 +20,13 @@ object MerkleNode {
   final case class Internal private (left: MerkleNode, right: Option[MerkleNode], digest: Digest) extends MerkleNode
 
   object Leaf {
-    def apply[F[_]: Functor: JsonHasher](data: Json): F[Leaf] =
+    def apply[F[_]: Functor: DigestProducer](data: Json): F[Leaf] =
       nodeCommitment(data).map { digest =>
         new Leaf(data, digest)
       }
 
-    def nodeCommitment[F[_]: JsonHasher](data: Json): F[Digest] =
-      JsonHasher[F].hash(data, LeafPrefix)
+    def nodeCommitment[F[_]: DigestProducer](data: Json): F[Digest] =
+      DigestProducer[F].hash(data, LeafPrefix)
 
     implicit val leafNodeEncoder: Encoder[Leaf] = Encoder.instance { node =>
       Json.obj(
@@ -45,7 +46,7 @@ object MerkleNode {
 
   object Internal {
 
-    def apply[F[_]: Functor: JsonHasher](
+    def apply[F[_]: Functor: DigestProducer](
       left:  MerkleNode,
       right: Option[MerkleNode]
     ): F[Internal] =
@@ -53,7 +54,7 @@ object MerkleNode {
         new Internal(left, right, digest)
       }
 
-    def nodeCommitment[F[_]: JsonHasher](
+    def nodeCommitment[F[_]: DigestProducer](
       leftDigest:     Digest,
       rightDigestOpt: Option[Digest]
     ): F[Digest] = {
@@ -62,7 +63,7 @@ object MerkleNode {
         case None     => Json.obj("leftDigest" -> leftDigest.asJson)
       }
 
-      JsonHasher[F].hash(hashableJson, InternalPrefix)
+      DigestProducer[F].hash(hashableJson, InternalPrefix)
     }
 
     implicit val encodeInternalNode: Encoder[Internal] = Encoder.instance { node =>

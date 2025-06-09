@@ -4,18 +4,19 @@ object Dependencies {
 
   object V {
     val bouncyCastle = "1.70"
-    val cats = "2.9.0"
-    val catsEffect = "3.4.2"
+    val cats = "2.13.0"
+    val catsEffect = "3.5.7"
     val circe = "0.14.6"
+    val curve25519 = "0.1.5"
     val levelDb = "0.12"
     val levelDbJni = "1.8"
     val log4cats = "2.5.0"
-    val organizeImports = "0.5.0"
-    val weaver = "0.8.1"
+    val organizeImports = "0.6.0"
+    val weaver = "0.8.4"
     val logback = "1.3.5"
     val betterMonadicFor = "0.3.1"
-    val kindProjector = "0.13.2"
-    val semanticDB = "4.8.15"
+    val kindProjector = "0.13.3"
+    val semanticDB = "4.12.7"
   }
 
   object Libraries {
@@ -26,6 +27,7 @@ object Dependencies {
     val circeCore = "io.circe" %% "circe-core" % V.circe
     val circeGeneric = "io.circe" %% "circe-generic" % V.circe
     val circeParser = "io.circe" %% "circe-parser" % V.circe
+    val curve25519 = "com.weavechain" % "curve25519-elisabeth" % V.curve25519 % "runtime"
     val weaverCats = "com.disneystreaming" %% "weaver-cats" % V.weaver
     val weaverDiscipline = "com.disneystreaming" %% "weaver-discipline" % V.weaver
     val weaverScalaCheck = "com.disneystreaming" %% "weaver-scalacheck" % V.weaver

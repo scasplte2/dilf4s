@@ -4,9 +4,9 @@ import cats.effect.IO
 import cats.implicits.toTraverseOps
 
 import xyz.kd5ujc.accumulators.merkle.MerkleNode
-import xyz.kd5ujc.accumulators.merkle.api.MerkleProducer
+import xyz.kd5ujc.accumulators.merkle.api.{MerkleProducer, TreeBuildError}
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.hash.Blake2b256Hasher
+import xyz.kd5ujc.hash.impl.Blake2b256Hasher
 
 import io.circe.syntax.EncoderOps
 import org.scalacheck.Gen
@@ -20,12 +20,12 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
       implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
       implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
       producer                                <- MerkleProducer.make[IO](List())
-      outcome                                 <- producer.build.attempt
+      outcome                                 <- producer.build
     } yield
       outcome match {
-        case Left(expectedError: RuntimeException) => expect(expectedError.getMessage == "Input list must be non-empty")
-        case Left(_)                               => failure("Unexpected error type")
-        case Right(_)                              => failure("Expecting exception but got successful result")
+        case Left(TreeBuildError(message)) => expect(message == "Cannot build tree with no leaves")
+        case Left(_)                       => failure("Unexpected error type")
+        case Right(_)                      => failure("Expecting error but got successful result")
       }
   }
 
@@ -36,7 +36,8 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
         leaves                                  <- strings.map(_.asJson).traverse(MerkleNode.Leaf(_))
         producer                                <- MerkleProducer.make[IO](leaves)
-        outcome                                 <- producer.build
+        outcomeEither                           <- producer.build
+        outcome                                 <- IO.fromEither(outcomeEither)
       } yield expect(outcome.rootNode.digest.value.nonEmpty)
     }
   }
@@ -48,9 +49,11 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
       leaves                                  <- List("one", "two", "three", "four").map(_.asJson).traverse(MerkleNode.Leaf(_))
       newLeaf                                 <- List("five").map(_.asJson).traverse(MerkleNode.Leaf(_))
       producer                                <- MerkleProducer.make[IO](leaves)
-      oldTree                                 <- producer.build
+      oldTreeEither                           <- producer.build
+      oldTree                                 <- IO.fromEither(oldTreeEither)
       _                                       <- producer.append(newLeaf)
-      newTree                                 <- producer.build
+      newTreeEither                           <- producer.build
+      newTree                                 <- IO.fromEither(newTreeEither)
       newLeaves                               <- producer.leaves.map(_.map(_.data))
     } yield
       expect(newTree.rootNode.digest.asJson != oldTree.rootNode.asJson) &&
@@ -64,9 +67,11 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
       leaves                                  <- List("one", "two", "three", "four").map(_.asJson).traverse(MerkleNode.Leaf(_))
       newLeaf                                 <- List("five").map(_.asJson).traverse(MerkleNode.Leaf(_))
       producer                                <- MerkleProducer.make[IO](leaves)
-      oldTree                                 <- producer.build
+      oldTreeEither                           <- producer.build
+      oldTree                                 <- IO.fromEither(oldTreeEither)
       _                                       <- producer.prepend(newLeaf)
-      newTree                                 <- producer.build
+      newTreeEither                           <- producer.build
+      newTree                                 <- IO.fromEither(newTreeEither)
       newLeaves                               <- producer.leaves.map(_.map(_.data))
     } yield
       expect(newTree.rootNode.digest.asJson != oldTree.rootNode.asJson) &&
@@ -80,9 +85,11 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
       leaves                                  <- List("one", "two", "three", "four").map(_.asJson).traverse(MerkleNode.Leaf(_))
       newLeaf                                 <- MerkleNode.Leaf("five".asJson)
       producer                                <- MerkleProducer.make[IO](leaves)
-      oldTree                                 <- producer.build
-      _                                       <- producer.update(0, newLeaf)
-      newTree                                 <- producer.build
+      oldTreeEither                           <- producer.build
+      oldTree                                 <- IO.fromEither(oldTreeEither)
+      _                                       <- producer.update(0, newLeaf).flatMap(IO.fromEither)
+      newTreeEither                           <- producer.build
+      newTree                                 <- IO.fromEither(newTreeEither)
       newLeaves                               <- producer.leaves.map(_.map(_.data))
     } yield
       expect(newTree.rootNode.digest.asJson != oldTree.rootNode.asJson) &&
@@ -95,9 +102,11 @@ object MerkleProducerSuite extends SimpleIOSuite with Checkers {
       implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
       leaves                                  <- List("one", "two", "three", "four").map(_.asJson).traverse(MerkleNode.Leaf(_))
       producer                                <- MerkleProducer.make[IO](leaves)
-      oldTree                                 <- producer.build
-      _                                       <- producer.remove(0)
-      newTree                                 <- producer.build
+      oldTreeEither                           <- producer.build
+      oldTree                                 <- IO.fromEither(oldTreeEither)
+      _                                       <- producer.remove(0).flatMap(IO.fromEither)
+      newTreeEither                           <- producer.build
+      newTree                                 <- IO.fromEither(newTreeEither)
       newLeaves                               <- producer.leaves.map(_.map(_.data))
     } yield
       expect(newTree.rootNode.digest.asJson != oldTree.rootNode.asJson) &&

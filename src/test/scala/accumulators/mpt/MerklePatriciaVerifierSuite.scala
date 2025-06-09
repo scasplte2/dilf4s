@@ -7,7 +7,8 @@ import cats.syntax.traverse._
 import xyz.kd5ujc.accumulators.mpt.MerklePatriciaTrie
 import xyz.kd5ujc.accumulators.mpt.api.{MerklePatriciaProver, MerklePatriciaVerifier}
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.hash.{Blake2b256Hasher, l256}
+import xyz.kd5ujc.hash.impl.Blake2b256Hasher
+import xyz.kd5ujc.hash.l256
 
 import org.bouncycastle.util.encoders.Hex
 import org.scalacheck.Gen
@@ -30,13 +31,13 @@ object MerklePatriciaVerifierSuite extends SimpleIOSuite with Checkers {
       }) {
         case (list, randomIndex) =>
           for {
-            leafPairs <- list.traverse(l => hasher.hash(l).map(_ -> l))
-            trie      <- MerklePatriciaTrie.create(leafPairs.toMap)
-            verifier  <- MerklePatriciaVerifier.make(trie.rootNode.digest).pure[F]
-            prover    <- MerklePatriciaProver.make(trie).pure[F]
-            proof     <- prover.attest(leafPairs(randomIndex)._1)
-            result    <- proof.fold(false.pure[F])(verifier.confirm)
-          } yield expect(proof.nonEmpty && result)
+            leafPairs    <- list.traverse(l => hasher.hash(l).map(_ -> l))
+            trie         <- MerklePatriciaTrie.create(leafPairs.toMap)
+            verifier     <- MerklePatriciaVerifier.make(trie.rootNode.digest).pure[F]
+            prover       <- MerklePatriciaProver.make(trie).pure[F]
+            proof        <- prover.attestDigest(leafPairs(randomIndex)._1).flatMap(IO.fromEither(_))
+            resultEither <- verifier.confirm(proof)
+          } yield expect(proof.witness.nonEmpty && resultEither.isRight)
       }
     }
   }
@@ -52,9 +53,9 @@ object MerklePatriciaVerifierSuite extends SimpleIOSuite with Checkers {
             trie      <- MerklePatriciaTrie.create(leafPairs.toMap)
             verifier  <- MerklePatriciaVerifier.make(toDigest("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")).pure[F]
             prover    <- MerklePatriciaProver.make(trie).pure[F]
-            proof     <- prover.attest(leafPairs(randomIndex)._1)
-            result    <- proof.fold(false.pure[F])(verifier.confirm)
-          } yield expect(!result)
+            proof     <- prover.attestDigest(leafPairs(randomIndex)._1).flatMap(IO.fromEither(_))
+            resultEither <- verifier.confirm(proof)
+          } yield expect(resultEither.isLeft)
       }
     }
   }

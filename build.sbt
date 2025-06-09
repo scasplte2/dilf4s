@@ -4,7 +4,7 @@ import sbt.Keys.*
 
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / organization := "xyz.kd5ujc"
-ThisBuild / scalaVersion := "2.13.11"
+ThisBuild / scalaVersion := "2.13.16"
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / scalafixDependencies += Libraries.organizeImports
 ThisBuild / scalafixScalaBinaryVersion := "2.13"
@@ -46,6 +46,7 @@ lazy val commonSettings = Seq(
     Libraries.circeCore,
     Libraries.circeGeneric,
     Libraries.circeParser,
+    Libraries.curve25519,
     Libraries.levelDb,
     Libraries.levelDbJni,
     Libraries.logback,

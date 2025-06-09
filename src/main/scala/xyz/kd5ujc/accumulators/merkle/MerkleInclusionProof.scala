@@ -1,22 +1,73 @@
 package xyz.kd5ujc.accumulators.merkle
 
-import xyz.kd5ujc.accumulators.merkle.MerkleInclusionProof.Side
+import cats.data.Validated
+import cats.syntax.either._
+
 import xyz.kd5ujc.hash.Digest
 
-import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.syntax.EncoderOps
-import io.circe.{Decoder, Encoder, HCursor, Json}
+import io.circe.{Decoder, DecodingFailure, Encoder, HCursor, Json}
 
-final case class MerkleInclusionProof(
+sealed trait MerkleProofError
+case class InvalidWitness(message: String) extends MerkleProofError
+case class InvalidSide(value: Byte) extends MerkleProofError
+
+/**
+ * Proof of inclusion for a leaf in a Merkle tree
+ *
+ * @param leafDigest The digest of the leaf being proven
+ * @param witness The path from leaf to root, with sibling digests and their positions
+ */
+final case class MerkleInclusionProof private (
   leafDigest: Digest,
-  witness:    Seq[(Digest, Side)]
+  witness:    Seq[(Digest, MerkleInclusionProof.Side)]
 )
 
 object MerkleInclusionProof {
-  val leftSide: Side = Side(0: Byte)
-  val rightSide: Side = Side(1: Byte)
 
-  implicit def proofEncoder: Encoder[MerkleInclusionProof] = (mp: MerkleInclusionProof) =>
+  /**
+   * Side of a Merkle tree node (left or right child)
+   */
+  sealed trait Side {
+    def value: Byte
+  }
+  case object LeftSide extends Side { val value: Byte = 0 }
+  case object RightSide extends Side { val value: Byte = 1 }
+
+  /**
+   * Create a proof with validation
+   *
+   * @param leafDigest The digest of the leaf being proven
+   * @param witness The path from leaf to root
+   * @return A validated proof or error
+   */
+  def create(
+    leafDigest: Digest,
+    witness:    Seq[(Digest, Side)]
+  ): Validated[MerkleProofError, MerkleInclusionProof] =
+    if (witness.isEmpty) {
+      Validated.invalid(InvalidWitness("Witness path cannot be empty"))
+    } else {
+      Validated.valid(new MerkleInclusionProof(leafDigest, witness))
+    }
+
+  /**
+   * Create a proof for a single leaf with no siblings
+   *
+   * @param leafDigest The digest of the single leaf
+   * @return A proof for a tree with one leaf
+   */
+  def forSingleLeaf(leafDigest: Digest): MerkleInclusionProof =
+    new MerkleInclusionProof(leafDigest, Seq())
+
+  implicit val sideEncoder: Encoder[Side] = Encoder.encodeByte.contramap(_.value)
+  implicit val sideDecoder: Decoder[Side] = Decoder.decodeByte.emap {
+    case 0     => Right(LeftSide)
+    case 1     => Right(RightSide)
+    case other => Left(s"Invalid side value: $other")
+  }
+
+  implicit val proofEncoder: Encoder[MerkleInclusionProof] = (mp: MerkleInclusionProof) =>
     Json.obj(
       "leafDigest" -> mp.leafDigest.asJson,
       "witness" -> mp.witness.map {
@@ -28,16 +79,10 @@ object MerkleInclusionProof {
       }.asJson
     )
 
-  implicit def proofDecoder: Decoder[MerkleInclusionProof] = (c: HCursor) =>
+  implicit val proofDecoder: Decoder[MerkleInclusionProof] = (c: HCursor) =>
     for {
       leafDigest <- c.downField("leafDigest").as[Digest]
       witness    <- c.downField("witness").as[Seq[(Digest, Side)]]
-    } yield MerkleInclusionProof(leafDigest, witness)
-
-  final case class Side(value: Byte) extends AnyVal
-
-  object Side {
-    implicit val sideEncoder: Encoder[Side] = deriveEncoder
-    implicit val sideDecoder: Decoder[Side] = deriveDecoder
-  }
+      proof      <- create(leafDigest, witness).toEither.leftMap(err => DecodingFailure(s"Invalid proof: $err", c.history))
+    } yield proof
 }

@@ -1,11 +1,14 @@
 package xyz.kd5ujc.accumulators.merkle
 
-import cats.MonadError
+import cats.MonadThrow
 import cats.implicits.{toFlatMapOps, toFunctorOps, toTraverseOps}
 import cats.syntax.applicative._
+import cats.syntax.applicativeError._
 import cats.syntax.either._
 
-import xyz.kd5ujc.hash.{Digest, JsonHasher}
+import xyz.kd5ujc.accumulators.merkle.MerkleNode
+import xyz.kd5ujc.hash.Digest
+import xyz.kd5ujc.hash.api.DigestProducer
 
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, Encoder, HCursor, Json}
@@ -38,15 +41,11 @@ object MerkleTree {
       leafDigestIndex <- c.downField("leafDigestIndex").as[List[(Digest, Int)]].map(_.toMap)
     } yield MerkleTree(rootNode, leafDigestIndex)
 
-  def create[F[_]: JsonHasher, A: Encoder](
-    data: List[A]
-  )(
-    implicit me: MonadError[F, Throwable]
-  ): F[MerkleTree] = {
+  def create[F[_]: MonadThrow: DigestProducer, A: Encoder](data: List[A]): F[MerkleTree] = {
     def buildNodes(nodes: List[MerkleNode]): F[MerkleNode] =
-      if (nodes.isEmpty) me.raiseError(new RuntimeException("Input list must be non-empty"))
+      if (nodes.isEmpty) new RuntimeException("Input list must be non-empty").raiseError
       else {
-        me.tailRecM[List[MerkleNode], MerkleNode](nodes) {
+        MonadThrow[F].tailRecM[List[MerkleNode], MerkleNode](nodes) {
           case singleNode :: Nil => singleNode.asRight[List[MerkleNode]].pure[F]
           case currentNodes @ _ =>
             currentNodes
@@ -55,7 +54,7 @@ object MerkleTree {
               .traverse[F, MerkleNode.Internal] {
                 case Seq(leftNode, rightNode) => MerkleNode.Internal(leftNode, Some(rightNode))
                 case Seq(singleNode)          => MerkleNode.Internal(singleNode, None)
-                case _                        => me.raiseError(new RuntimeException("Unexpected input"))
+                case _                        => new RuntimeException("Unexpected input").raiseError
               }
               .map(_.asLeft[MerkleNode])
         }

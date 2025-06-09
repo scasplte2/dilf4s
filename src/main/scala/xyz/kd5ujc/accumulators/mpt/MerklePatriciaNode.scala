@@ -6,7 +6,8 @@ import cats.syntax.flatMap._
 import cats.syntax.functor._
 
 import xyz.kd5ujc.accumulators.Node
-import xyz.kd5ujc.hash.{Digest, JsonHasher}
+import xyz.kd5ujc.hash.Digest
+import xyz.kd5ujc.hash.api.DigestProducer
 
 import io.circe.syntax.EncoderOps
 import io.circe.{Decoder, DecodingFailure, Encoder, Json}
@@ -23,10 +24,10 @@ object MerklePatriciaNode {
   final case class Extension private (shared: Seq[Nibble], child: Branch, digest: Digest) extends MerklePatriciaNode
 
   object Leaf {
-    def apply[F[_]: Monad: JsonHasher](remaining: Seq[Nibble], data: Json): F[Leaf] = for {
-      dataDigest <- JsonHasher[F].hash(data)
+    def apply[F[_]: Monad: DigestProducer](remaining: Seq[Nibble], data: Json): F[Leaf] = for {
+      dataDigest <- DigestProducer[F].hash(data)
       commitment <- MerklePatriciaCommitment.Leaf(remaining, dataDigest).pure[F]
-      nodeDigest <- JsonHasher[F].hash(commitment.asJson, LeafPrefix)
+      nodeDigest <- DigestProducer[F].hash(commitment.asJson, LeafPrefix)
     } yield Leaf(remaining, data, nodeDigest)
 
     implicit val leafNodeEncoder: Encoder[Leaf] =
@@ -49,10 +50,10 @@ object MerklePatriciaNode {
   }
 
   object Branch {
-    def apply[F[_]: Monad: JsonHasher](paths: Map[Nibble, MerklePatriciaNode]): F[Branch] = for {
+    def apply[F[_]: Monad: DigestProducer](paths: Map[Nibble, MerklePatriciaNode]): F[Branch] = for {
       pathDigests <- paths.toSeq.sortBy(_._1.value).map { case (k, v) => k -> v.digest }.toMap.pure[F]
       commitment  <- MerklePatriciaCommitment.Branch(pathDigests).pure[F]
-      nodeDigest  <- JsonHasher[F].hash(commitment.asJson, BranchPrefix)
+      nodeDigest  <- DigestProducer[F].hash(commitment.asJson, BranchPrefix)
     } yield Branch(paths, nodeDigest)
 
     implicit val encodeBranchNode: Encoder[Branch] =
@@ -73,9 +74,9 @@ object MerklePatriciaNode {
   }
 
   object Extension {
-    def apply[F[_]: Monad: JsonHasher](shared: Seq[Nibble], child: Branch): F[Extension] = for {
+    def apply[F[_]: Monad: DigestProducer](shared: Seq[Nibble], child: Branch): F[Extension] = for {
       commitment <- MerklePatriciaCommitment.Extension(shared, child.digest).pure[F]
-      nodeDigest <- JsonHasher[F].hash(commitment.asJson, ExtensionPrefix)
+      nodeDigest <- DigestProducer[F].hash(commitment.asJson, ExtensionPrefix)
     } yield Extension(shared, child, nodeDigest)
 
     implicit val encodeExtensionNode: Encoder[Extension] =

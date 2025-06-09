@@ -4,7 +4,6 @@ import java.util.UUID
 
 import cats.data.OptionT
 import cats.effect.{Ref, Sync}
-import cats.implicits.{toFlatMapOps, toFoldableOps, toFunctorOps}
 import cats.syntax.all._
 
 import scala.collection.immutable.SortedSet

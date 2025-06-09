@@ -2,32 +2,77 @@ package xyz.kd5ujc.accumulators.merkle.api
 
 import cats.effect.{Ref, Sync}
 import cats.syntax.all._
+
+import xyz.kd5ujc.accumulators.merkle.impl.{OptimizedMerkleProducer, SimpleMerkleProducer}
 import xyz.kd5ujc.accumulators.merkle.{MerkleNode, MerkleTree}
-import xyz.kd5ujc.hash.{Digest, JsonHasher}
+import xyz.kd5ujc.hash.api.DigestProducer
 
-import scala.annotation.tailrec
-
+/**
+ * Type class for building and modifying Merkle trees
+ */
 trait MerkleProducer[F[_]] {
+
+  /**
+   * Get current leaves in the tree
+   *
+   * @return List of leaf nodes
+   */
   def leaves: F[List[MerkleNode.Leaf]]
 
-  def build: F[MerkleTree]
+  /**
+   * Build a Merkle tree from current leaves
+   *
+   * @return Built Merkle tree or error
+   */
+  def build: F[Either[TreeBuildError, MerkleTree]]
 
-  def update(index: Int, leaf: MerkleNode.Leaf): F[Unit]
+  /**
+   * Update a leaf at a specific index
+   *
+   * @param index Index to update
+   * @param leaf New leaf node
+   * @return Unit if successful, error if index invalid
+   */
+  def update(index: Int, leaf: MerkleNode.Leaf): F[Either[MerkleProducerError, Unit]]
 
+  /**
+   * Append leaves to the end of the tree
+   *
+   * @param leaves Leaves to append
+   */
   def append(leaves: List[MerkleNode.Leaf]): F[Unit]
 
+  /**
+   * Prepend leaves to the start of the tree
+   *
+   * @param leaves Leaves to prepend
+   */
   def prepend(leaves: List[MerkleNode.Leaf]): F[Unit]
 
-  def remove(index: Int): F[Unit]
+  /**
+   * Remove a leaf at a specific index
+   *
+   * @param index Index to remove
+   * @return Unit if successful, error if index invalid
+   */
+  def remove(index: Int): F[Either[MerkleProducerError, Unit]]
 }
 
 object MerkleProducer {
-  def make[F[_]: Sync: JsonHasher](
+  def apply[F[_]](implicit producer: MerkleProducer[F]): MerkleProducer[F] = producer
+
+  /**
+   * Create an optimized producer instance
+   *
+   * @param initial Initial leaf nodes
+   * @return Optimized producer with caching
+   */
+  def make[F[_]: Sync: DigestProducer](
     initial: List[MerkleNode.Leaf]
   ): F[MerkleProducer[F]] =
     Ref
-      .of[F, ProducerState](
-        ProducerState(
+      .of[F, OptimizedMerkleProducer.ProducerState](
+        OptimizedMerkleProducer.ProducerState(
           leaves = Vector.from(initial),
           nodeCache = Map.empty,
           dirtyNodes = Set.empty,
@@ -36,181 +81,42 @@ object MerkleProducer {
       )
       .map(new OptimizedMerkleProducer[F](_))
 
-  class SimpleMerkleProducer[F[_]: Sync: JsonHasher](
-    stateRef: Ref[F, Vector[MerkleNode.Leaf]]
-  ) extends MerkleProducer[F] {
-    override def leaves: F[List[MerkleNode.Leaf]] =
-      stateRef.get.map(_.toList)
+  /**
+   * Create a simple producer instance
+   *
+   * @param initial Initial leaf nodes
+   * @return Simple producer without caching
+   */
+  def simple[F[_]: Sync: DigestProducer](
+    initial: List[MerkleNode.Leaf]
+  ): F[MerkleProducer[F]] =
+    Ref
+      .of[F, Vector[MerkleNode.Leaf]](Vector.from(initial))
+      .map(new SimpleMerkleProducer[F](_))
 
-    override def build: F[MerkleTree] =
-      stateRef.get.flatMap { leaves =>
-        MerkleTree.create(leaves.toList)
-      }
+  /**
+   * Provides syntax extensions for more ergonomic tree building
+   *
+   * Import xyz.kd5ujc.accumulators.merkle.api.MerkleProducer.syntax._ to use these extensions
+   */
+  object syntax {
+    implicit class MerkleLeafOps(val leaves: List[MerkleNode.Leaf]) extends AnyVal {
 
-    def update(index: Int, leaf: MerkleNode.Leaf): F[Unit] =
-      stateRef.update { leaves =>
-        if (index >= 0 && index < leaves.size) leaves.updated(index, leaf)
-        else leaves
-      }
-
-    def append(newLeaves: List[MerkleNode.Leaf]): F[Unit] =
-      stateRef.update { leaves =>
-        leaves.appendedAll(newLeaves)
-      }
-
-    def prepend(newLeaves: List[MerkleNode.Leaf]): F[Unit] =
-      stateRef.update { leaves =>
-        leaves.prependedAll(newLeaves)
-      }
-
-    def remove(index: Int): F[Unit] =
-      stateRef.update { leaves =>
-        if (index >= 0 && index < leaves.size) leaves.patch(index, Vector(), 1)
-        else leaves
-      }
-  }
-
-  class OptimizedMerkleProducer[F[_]: Sync: JsonHasher](
-    stateRef: Ref[F, ProducerState]
-  ) extends MerkleProducer[F] {
-
-    def leaves: F[List[MerkleNode.Leaf]] =
-      stateRef.get.map(_.leaves.toList)
-
-    def build: F[MerkleTree] =
-      stateRef.get.flatMap { state =>
-        state.currentRoot match {
-          case Some(root) if state.dirtyNodes.isEmpty =>
-            root.pure[F]
-          case _ =>
-            rebuildTree(state).flatMap { tree =>
-              stateRef
-                .update(
-                  _.copy(
-                    currentRoot = Some(tree),
-                    dirtyNodes = Set.empty
-                  )
-                )
-                .as(tree)
-            }
-        }
-      }
-
-    private def rebuildTree(state: ProducerState): F[MerkleTree] = {
-      def getOrBuildNode(left: MerkleNode, rightOpt: Option[MerkleNode]): F[MerkleNode] =
-        state.nodeCache.get(left.digest) match {
-          case Some(cached) if !state.dirtyNodes.contains(left.digest) => cached.pure[F]
-          case _ =>
-            MerkleNode
-              .Internal(left, rightOpt)
-              .flatTap { node =>
-                stateRef.update { s =>
-                  s.copy(nodeCache = s.nodeCache + (left.digest -> node))
-                }
-              }
-              .widen
-        }
-
-      def buildLevel(nodes: List[MerkleNode]): F[MerkleNode] =
-        Sync[F].tailRecM(nodes) { currentLevel =>
-          if (currentLevel.length <= 1) currentLevel.head.asRight[List[MerkleNode]].pure[F]
-          else {
-            currentLevel
-              .grouped(2)
-              .toList
-              .traverse[F, MerkleNode] {
-                case left :: right :: Nil => getOrBuildNode(left, Some(right))
-                case left :: Nil          => getOrBuildNode(left, None)
-                case _                    => new RuntimeException("Unexpected grouping").raiseError
-              }
-              .map(_.asLeft[MerkleNode])
-          }
-        }
-
-      buildLevel(state.leaves.toList).map { rootNode =>
-        MerkleTree(
-          rootNode,
-          state.leaves.zipWithIndex.map {
-            case (leaf, idx) => (leaf.digest, idx)
-          }.toMap
-        )
-      }
-    }
-
-    def update(index: Int, leaf: MerkleNode.Leaf): F[Unit] =
-      stateRef.get.flatMap { state =>
-        if (index < 0 || index >= state.leaves.size) {
-          new IndexOutOfBoundsException(s"Index $index out of bounds for size ${state.leaves.size}").raiseError
-        } else {
-          val dirtyPath = getPathToRoot(state, index)
-          stateRef.update { s =>
-            s.copy(
-              leaves = s.leaves.updated(index, leaf),
-              dirtyNodes = s.dirtyNodes ++ dirtyPath,
-              currentRoot = None
-            )
-          }
-        }
-      }
-
-    def append(newLeaves: List[MerkleNode.Leaf]): F[Unit] =
-      stateRef.update { state =>
-        val startIdx = state.leaves.size
-        val dirtyPath = (startIdx until startIdx + newLeaves.size).flatMap(getPathToRoot(state, _))
-        state.copy(
-          leaves = state.leaves ++ newLeaves,
-          dirtyNodes = state.dirtyNodes ++ dirtyPath,
-          currentRoot = None
-        )
-      }
-
-    def prepend(newLeaves: List[MerkleNode.Leaf]): F[Unit] =
-      stateRef.update { state =>
-        state.copy(
-          leaves = Vector.from(newLeaves) ++ state.leaves,
-          nodeCache = Map.empty,
-          dirtyNodes = Set.empty,
-          currentRoot = None
-        )
-      }
-
-    def remove(index: Int): F[Unit] =
-      stateRef.get.flatMap { state =>
-        if (index < 0 || index >= state.leaves.size) {
-          new IndexOutOfBoundsException(s"Index $index out of bounds for size ${state.leaves.size}").raiseError
-        } else {
-          val dirtyPath = getPathToRoot(state, index)
-          stateRef.update { s =>
-            s.copy(
-              leaves = s.leaves.patch(index, Vector(), 1),
-              dirtyNodes = s.dirtyNodes ++ dirtyPath,
-              currentRoot = None
-            )
-          }
-        }
-      }
-
-    private def getPathToRoot(state: ProducerState, index: Int): Set[Digest] = {
-
-      @tailrec
-      def loop(idx: Int, acc: Set[Digest]): Set[Digest] =
-        if (idx == 0) acc
-        else {
-          val parentIdx = (idx - 1) / 2
-          state.nodeCache.get(state.leaves(parentIdx).digest) match {
-            case Some(parent) => loop(parentIdx, acc + parent.digest)
-            case None         => acc
-          }
-        }
-
-      loop(index, Set.empty)
+      /**
+       * Build a new Merkle tree from these leaves
+       *
+       * @return Built Merkle tree
+       */
+      def buildTree[F[_]: Sync: DigestProducer]: F[Either[TreeBuildError, MerkleTree]] =
+        make[F](leaves).flatMap(_.build)
     }
   }
+}
 
-  case class ProducerState(
-    leaves:      Vector[MerkleNode.Leaf],
-    nodeCache:   Map[Digest, MerkleNode],
-    dirtyNodes:  Set[Digest],
-    currentRoot: Option[MerkleTree]
-  )
+sealed trait MerkleProducerError extends Throwable
+case class InvalidIndex(index: Int, size: Int) extends MerkleProducerError {
+  override def getMessage: String = s"Invalid index $index, size is $size"
+}
+case class TreeBuildError(message: String) extends MerkleProducerError {
+  override def getMessage: String = message
 }

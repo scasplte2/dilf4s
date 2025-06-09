@@ -7,7 +7,8 @@ import scala.collection.immutable.SortedSet
 
 import xyz.kd5ujc.accumulators.mpt.{MerklePatriciaNode, MerklePatriciaTrie, Nibble}
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.hash.{Blake2b256Hasher, Digest, l256}
+import xyz.kd5ujc.hash.impl.Blake2b256Hasher
+import xyz.kd5ujc.hash.{Digest, l256}
 
 import io.circe.syntax.EncoderOps
 import org.bouncycastle.util.encoders.Hex
@@ -25,7 +26,7 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
     }
 
   private val toDigest: String => l256 = (str: String) => l256.unsafe(Hex.decode(str))
-  private val toNibbleSeq: String => IndexedSeq[Nibble] = (str: String) => str.map(Nibble.unsafe)
+  private val toNibbleSeq: String => Seq[Nibble] = (str: String) => scala.collection.immutable.ArraySeq.from(str.map(Nibble.unsafe))
 
   test("trie can be encoded and decoded from json") {
     hasherResource.use { implicit hasher =>
@@ -77,7 +78,7 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
             initMap    <- list1.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
             updMap     <- list2.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
             trie       <- MerklePatriciaTrie.create(initMap)
-            trie2      <- MerklePatriciaTrie.insert(trie, updMap)
+            trie2      <- MerklePatriciaTrie.insert(trie, updMap).flatMap(IO.fromEither(_))
             listLeaves <- IO.fromEither(MerklePatriciaTrie.collectLeafNodes(trie2).traverse(_.data.as[Long]))
             sortedInputSet = SortedSet.from(list1 ++ list2)
             sortedOutputSet = SortedSet.from(listLeaves)
@@ -99,7 +100,7 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
             createMap   <- createList.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
             removePaths <- removeList.traverse(hasher.hash(_))
             trie1       <- MerklePatriciaTrie.create(createMap)
-            trie2       <- MerklePatriciaTrie.remove(trie1, removePaths)
+            trie2       <- MerklePatriciaTrie.remove(trie1, removePaths).flatMap(IO.fromEither(_))
             listLeaves  <- IO.fromEither(MerklePatriciaTrie.collectLeafNodes(trie2).traverse(_.data.as[Long]))
           } yield expect(listLeaves.forall(!removeList.contains(_)))
       }
@@ -113,7 +114,7 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
           for {
             path  <- IO.fromEither(l256.from(Array.fill(32)(1: Byte)).toEither.leftMap(err => new Exception(s"${err.toString}")))
             trie1 <- MerklePatriciaTrie.create[IO, Long](Map(path -> val1))
-            trie2 <- MerklePatriciaTrie.insert[IO, Long](trie1, Map(path -> val2))
+            trie2 <- MerklePatriciaTrie.insert[IO, Long](trie1, Map(path -> val2)).flatMap(IO.fromEither(_))
             (root1, data1, digest1) <- trie1.rootNode match {
               case MerklePatriciaNode.Leaf(_, _data, _digest) => IO.pure((trie1.rootNode.digest, _data, _digest))
               case _                                          => IO.raiseError(new Exception("unexpected root node found"))
@@ -142,7 +143,7 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
         leafMap   <- (0 to 31).toList.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
         trie      <- MerklePatriciaTrie.create[IO, Int](leafMap)
         newLeaves <- (-31 to -0).toList.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
-        trie2     <- MerklePatriciaTrie.insert(trie, newLeaves)
+        trie2     <- MerklePatriciaTrie.insert(trie, newLeaves).flatMap(IO.fromEither(_))
       } yield expect(trie2.rootNode.digest == toDigest("543e932b3a73fba7572d393d733b0400756e8cad163cc32303598e4ccf6395ed"))
     }
   }
@@ -153,7 +154,7 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
         leafMap   <- (0 to 31).toList.traverse(l => hasher.hash(l).map(_ -> l)).map(_.toMap)
         trie      <- MerklePatriciaTrie.create[IO, Int](leafMap)
         remLeaves <- (17 to 31).toList.traverse(l => hasher.hash(l))
-        trie2     <- MerklePatriciaTrie.remove(trie, remLeaves)
+        trie2     <- MerklePatriciaTrie.remove(trie, remLeaves).flatMap(IO.fromEither(_))
       } yield expect(trie2.rootNode.digest == toDigest("59edbf8dbc3d09a6d4657ab3978971b792318d799e97d100b6a244aa018a2ee9"))
     }
   }
@@ -499,6 +500,8 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
         trieActual <- MerklePatriciaTrie
           .create(leafMap)
           .flatMap(MerklePatriciaTrie.remove(_, List(toDigest("FFAFFAFFFFFFFFFFFFFFFFFFFBFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD4"))))
+          .flatMap(IO.fromEither(_))
+
         trieExpected <- for {
           leaf1 <- MerklePatriciaNode
             .Leaf[IO](toNibbleSeq("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA1"), "leaf 1".asJson)
@@ -530,7 +533,11 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
       for {
         trieActual <- MerklePatriciaTrie
           .create(leafMap)
-          .flatMap(MerklePatriciaTrie.remove(_, List(toDigest("FFAFFAFFFFFFFFFFFFFFFFFFFBFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD4"))))
+          .flatMap(trie =>
+            MerklePatriciaTrie.remove(trie, List(toDigest("FFAFFAFFFFFFFFFFFFFFFFFFFBFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD4")))
+          )
+          .flatMap(IO.fromEither(_))
+
         trieExpected <- for {
           leaf1 <- MerklePatriciaNode.Leaf[IO](toNibbleSeq("1"), "leaf 1".asJson)
           leaf2 <- MerklePatriciaNode.Leaf[IO](toNibbleSeq("2"), "leaf 2".asJson)
@@ -560,7 +567,11 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
       for {
         trieActual <- MerklePatriciaTrie
           .create(leafMap)
-          .flatMap(MerklePatriciaTrie.remove(_, List(toDigest("FFAFFAFFFFFFFFFFFFFFFFFFFBFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD4"))))
+          .flatMap(trie =>
+            MerklePatriciaTrie.remove(trie, List(toDigest("FFAFFAFFFFFFFFFFFFFFFFFFFBFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD4")))
+          )
+          .flatMap(IO.fromEither(_))
+
         trieExpected <- for {
           leaf1 <- MerklePatriciaNode
             .Leaf[IO](toNibbleSeq("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA1"), "leaf 1".asJson)
@@ -598,6 +609,8 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
         trieActual <- MerklePatriciaTrie
           .create(leafMap)
           .flatMap(MerklePatriciaTrie.remove(_, List(toDigest("FFAFFAFFFFFFFFFFFFFFFFFFFBFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD4"))))
+          .flatMap(IO.fromEither(_))
+
         trieExpected <- for {
           leaf1 <- MerklePatriciaNode
             .Leaf[IO](toNibbleSeq("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA1"), "leaf 1".asJson)
@@ -623,7 +636,7 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
     }
   }
 
-  test("create then remove method produces a 3-leaf trie in configuration E") {
+  test("create then remove produces a 3-leaf trie in configuration E") {
     val leafMap = Map[Digest, String](
       toDigest("0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA1") -> "leaf 1",
       toDigest("AFF0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB2") -> "leaf 2",
@@ -636,6 +649,8 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
         trieActual <- MerklePatriciaTrie
           .create(leafMap)
           .flatMap(MerklePatriciaTrie.remove(_, List(toDigest("FFAFFAFFFFFFFFFFFFFFFFFFFBFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD4"))))
+          .flatMap(IO.fromEither(_))
+
         trieExpected <- for {
           leaf1 <- MerklePatriciaNode
             .Leaf[IO](toNibbleSeq("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA1"), "leaf 1".asJson)
@@ -674,6 +689,8 @@ object MerklePatriciaTrieSuite extends SimpleIOSuite with Checkers {
         trieActual <- MerklePatriciaTrie
           .create(leafMap)
           .flatMap(MerklePatriciaTrie.remove(_, List(toDigest("FFAFFAFFFFFFFFFFFFFFFFFFFBFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD4"))))
+          .flatMap(IO.fromEither(_))
+
         trieExpected <- for {
           leaf1 <- MerklePatriciaNode
             .Leaf[IO](toNibbleSeq("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA1"), "leaf 1".asJson)
