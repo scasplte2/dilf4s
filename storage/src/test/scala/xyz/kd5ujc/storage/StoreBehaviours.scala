@@ -18,10 +18,14 @@ trait StoreBehaviours { self: SimpleIOSuite with Checkers =>
   /** A fresh, empty raw store for one test. */
   def withRaw[A](use: RawStore[IO] => IO[A])(implicit R: Raise[IO, StoreError]): IO[A]
 
-  def attempt[A](f: Raise[IO, StoreError] => IO[A]): IO[Either[StoreError, A]] =
+  /**
+   * Runs a program with a `Handle` for store errors, installed once at the edge. Inside, recover locally through that
+   * same instance (`h.attempt(fa)`), so algebras built with it report into it.
+   */
+  def attempt[A](f: Handle[IO, StoreError] => IO[A]): IO[Either[StoreError, A]] =
     Handle.allowF[IO, StoreError](h => f(h).map(_.asRight[StoreError])).rescue(e => IO.pure(e.asLeft[A]))
 
-  def expectOk(f: Raise[IO, StoreError] => IO[Expectations]): IO[Expectations] =
+  def expectOk(f: Handle[IO, StoreError] => IO[Expectations]): IO[Expectations] =
     attempt(f).map(_.fold(e => failure(s"unexpected store error $e"), identity))
 
   implicit private val intValue: ValueCodec[Int] = ValueCodec.fromCirce[Int](Encoder[Int], Decoder[Int])
@@ -137,13 +141,11 @@ trait StoreBehaviours { self: SimpleIOSuite with Checkers =>
         if (v == 13) StoreError.Codec("value", "13 is refused").asLeft else intValue.encode(v)
       def decode(b: ByteVector): Either[StoreError, Int] = intValue.decode(b)
     }
-    expectOk { implicit r =>
+    expectOk { implicit h =>
       withRaw { raw =>
-        val kv = KeyValueStore[IO, String, Int](raw, ns("kv"))(implicitly, implicitly, refuse13, r)
-        val failing = attempt(r2 =>
-          KeyValueStore[IO, String, Int](raw, ns("kv"))(implicitly, implicitly, refuse13, r2).commit(Batch.puts(List("a" -> 1, "b" -> 13)))
-        )
-        failing.flatMap(result => kv.get("a").map(a => expect(result.isLeft, "the commit fails").and(expect.same(None, a))))
+        val kv = KeyValueStore[IO, String, Int](raw, ns("kv"))(implicitly, implicitly, refuse13, h)
+        h.attempt(kv.commit(Batch.puts(List("a" -> 1, "b" -> 13))))
+          .flatMap(result => kv.get("a").map(a => expect(result.isLeft, "the commit fails").and(expect.same(None, a))))
       }
     }
   }
@@ -231,18 +233,16 @@ trait StoreBehaviours { self: SimpleIOSuite with Checkers =>
 
   test(s"$backend: prune discards history at or below the floor and keeps the rest") {
     val batches = List(Batch.put[Int, Int](1, 10), Batch.put[Int, Int](1, 20), Batch.put[Int, Int](2, 5), Batch.delete[Int, Int](1))
-    attempt { implicit r =>
+    attempt { implicit h =>
       withRaw { raw =>
         for {
-          store <- VersionedStore.make[IO, Int, Int](raw, "vs")
-          _     <- batches.foldLeftM(Version.Genesis)((v, b) => store.commit(v, b))
-          _     <- store.prune(Version.unsafe(2L))
-          floor <- store.floor
-          at2   <- store.getAt(1, Version.unsafe(2L))
-          at3   <- store.getAt(1, Version.unsafe(3L))
-          pruned <- attempt(r2 =>
-            VersionedStore.make[IO, Int, Int](raw, "vs")(implicitly, implicitly, implicitly, r2).flatMap(_.getAt(1, Version.unsafe(1L)))
-          )
+          store  <- VersionedStore.make[IO, Int, Int](raw, "vs")
+          _      <- batches.foldLeftM(Version.Genesis)((v, b) => store.commit(v, b))
+          _      <- store.prune(Version.unsafe(2L))
+          floor  <- store.floor
+          at2    <- store.getAt(1, Version.unsafe(2L))
+          at3    <- store.getAt(1, Version.unsafe(3L))
+          pruned <- h.attempt(store.getAt(1, Version.unsafe(1L)))
         } yield (floor, at2, at3, pruned)
       }
     }.map {

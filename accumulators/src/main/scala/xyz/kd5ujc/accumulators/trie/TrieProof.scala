@@ -62,6 +62,36 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
   }
 
   /**
+   * Every `(path, valueHash)` with `from <= path < until` (bitwise order, prefixes first), if no stub meets the range;
+   * `None` otherwise. A covered listing is complete, including an empty one.
+   */
+  def range(from: BitVector, until: Option[BitVector]): Option[List[(BitVector, Digest[H])]] = {
+    @tailrec
+    def go(todo: List[(ProofNode[H], BitVector)], acc: List[(BitVector, Digest[H])]): Option[List[(BitVector, Digest[H])]] =
+      todo match {
+        case Nil => Some(acc.reverse)
+        case (node, at) :: rest =>
+          node match {
+            case Stub(_) => None
+            case PLeaf(segment, v) =>
+              val key = at ++ segment
+              go(rest, if (KeyOrder.within(key, from, until)) (key, v) :: acc else acc)
+            case PBranch(segment, value, left, right) =>
+              val here = at ++ segment
+              val own = value.filter(_ => KeyOrder.within(here, from, until)).map(here -> _)
+              val children = List(left.map(_ -> (here :+ false)), right.map(_ -> (here :+ true))).flatten.filter {
+                case (_, p) =>
+                  KeyOrder.intersects(p, from, until)
+              }
+              go(children ++ rest, own.fold(acc)(_ :: acc))
+          }
+      }
+    top.fold[Option[List[(BitVector, Digest[H])]]](Some(Nil)) { t =>
+      if (KeyOrder.intersects(BitVector.empty, from, until)) go(List(t -> BitVector.empty), Nil) else Some(Nil)
+    }
+  }
+
+  /**
    * Every `(path, valueHash)` under `prefix`, in key order, if the proof covers the whole subtree; `None` if any part
    * of it is a stub. A covered listing is complete: no key under the prefix can be missing.
    */
@@ -106,6 +136,26 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
   }
 }
 
+/** Key-interval arithmetic in bitwise lexicographic order, where a proper prefix sorts before its extensions. */
+private[trie] object KeyOrder {
+
+  def lt(a: BitVector, b: BitVector): Boolean = {
+    val c = Bits.commonPrefix(a, b)
+    if (c == a.size) a.size < b.size else if (c == b.size) false else !a(c)
+  }
+
+  def lteq(a: BitVector, b: BitVector): Boolean = a == b || lt(a, b)
+
+  /** Does the subtree of keys starting with `prefix` meet `[from, until)`? */
+  def intersects(prefix: BitVector, from: BitVector, until: Option[BitVector]): Boolean = {
+    val whollyBelow = !from.startsWith(prefix) && lt(prefix, from)
+    val whollyAbove = until.exists(u => lteq(u, prefix))
+    !whollyBelow && !whollyAbove
+  }
+
+  def within(key: BitVector, from: BitVector, until: Option[BitVector]): Boolean = lteq(from, key) && until.forall(lt(key, _))
+}
+
 object TrieProofs {
 
   import ProofNode._
@@ -114,6 +164,9 @@ object TrieProofs {
   sealed trait Query extends Product with Serializable
   final case class Key(path: BitVector) extends Query
   final case class Prefix(path: BitVector) extends Query
+
+  /** Every key in `[from, until)`, bitwise order with prefixes first; `None` is unbounded above. */
+  final case class Range(from: BitVector, until: Option[BitVector]) extends Query
 
   /** Builds the partial trie answering `queries`: gather the nodes to expand, then assemble with `Eval`. */
   def prove[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], root: Option[Digest[H]], queries: List[Query]): F[TrieProof[H]] =
@@ -132,31 +185,63 @@ object TrieProofs {
 
   /** The nodes on every query path, plus whole subtrees under prefix queries. */
   private def expanded[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], root: Digest[H], queries: List[Query]): F[Map[Digest[H], Node[H]]] =
-    queries.foldLeftM(Map.empty[Digest[H], Node[H]]) { (acc, q) =>
-      val (path, isPrefix) = q match {
-        case Key(p)    => (p, false)
-        case Prefix(p) => (p, true)
-      }
-      (root, path, acc).tailRecM {
-        case (hash, remaining, seen) =>
-          lookup(hash).flatMap {
-            case l: Leaf[H] =>
-              seen.updated(hash, l).asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F]
-            case b: Branch[H] =>
-              val withThis = seen.updated(hash, b)
-              if (isPrefix && b.segment.startsWith(remaining)) TrieEngine.collect(lookup, List(hash)).map(sub => (withThis ++ sub).asRight)
-              else {
-                val rest = remaining.drop(b.segment.size)
-                if (!remaining.startsWith(b.segment) || rest.isEmpty)
-                  withThis.asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F]
-                else
-                  b.child(rest.head)
-                    .fold(withThis.asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F])(c =>
-                      (c, rest.tail, withThis).asLeft[Map[Digest[H], Node[H]]].pure[F]
-                    )
-              }
-          }
-      }
+    queries.foldLeftM(Map.empty[Digest[H], Node[H]]) {
+      case (acc, Range(from, until)) =>
+        if (KeyOrder.intersects(BitVector.empty, from, until)) rangeNodes(lookup, root, from, until, acc) else acc.pure[F]
+      case (acc, Key(p))    => pathNodes(lookup, root, p, isPrefix = false, acc)
+      case (acc, Prefix(p)) => pathNodes(lookup, root, p, isPrefix = true, acc)
+    }
+
+  /** The nodes whose key intervals meet `[from, until)`, gathered by a work list from the root. */
+  private def rangeNodes[F[_]: Monad, H](
+    lookup: Digest[H] => F[Node[H]],
+    root:   Digest[H],
+    from:   BitVector,
+    until:  Option[BitVector],
+    seen:   Map[Digest[H], Node[H]]
+  ): F[Map[Digest[H], Node[H]]] =
+    (List((root, BitVector.empty)), seen).tailRecM {
+      case (Nil, acc) => acc.asRight[(List[(Digest[H], BitVector)], Map[Digest[H], Node[H]])].pure[F]
+      case ((h, at) :: rest, acc) =>
+        lookup(h).map {
+          case l: Leaf[H] => (rest, acc.updated(h, l)).asLeft
+          case b: Branch[H] =>
+            val here = at ++ b.segment
+            val next = List(b.left.map(_ -> (here :+ false)), b.right.map(_ -> (here :+ true))).flatten.filter {
+              case (_, p) =>
+                KeyOrder.intersects(p, from, until)
+            }
+            (next ++ rest, acc.updated(h, b)).asLeft
+        }
+    }
+
+  /** The nodes on one key's path, plus the whole subtree under a prefix. */
+  private def pathNodes[F[_]: Monad, H](
+    lookup:   Digest[H] => F[Node[H]],
+    root:     Digest[H],
+    path:     BitVector,
+    isPrefix: Boolean,
+    acc:      Map[Digest[H], Node[H]]
+  ): F[Map[Digest[H], Node[H]]] =
+    (root, path, acc).tailRecM {
+      case (hash, remaining, seen) =>
+        lookup(hash).flatMap {
+          case l: Leaf[H] =>
+            seen.updated(hash, l).asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F]
+          case b: Branch[H] =>
+            val withThis = seen.updated(hash, b)
+            if (isPrefix && b.segment.startsWith(remaining)) TrieEngine.collect(lookup, List(hash)).map(sub => (withThis ++ sub).asRight)
+            else {
+              val rest = remaining.drop(b.segment.size)
+              if (!remaining.startsWith(b.segment) || rest.isEmpty)
+                withThis.asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F]
+              else
+                b.child(rest.head)
+                  .fold(withThis.asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F])(c =>
+                    (c, rest.tail, withThis).asLeft[Map[Digest[H], Node[H]]].pure[F]
+                  )
+            }
+        }
     }
 
   /** Recomputes the root, enforcing the branch invariant, the mode, and the key-length bound. */

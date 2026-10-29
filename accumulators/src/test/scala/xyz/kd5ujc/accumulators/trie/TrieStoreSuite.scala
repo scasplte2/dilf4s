@@ -23,7 +23,9 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
 
   private def run[A](f: (Raise[IO, StoreError], Raise[IO, TrieError]) => IO[A]): IO[Either[Failure, A]] =
     Handle
-      .allowF[IO, StoreError](rs => Handle.allowF[IO, TrieError](rt => f(rs, rt).map(_.asRight[Failure])).rescue(e => IO.pure(Tree(e).asLeft[A])))
+      .allowF[IO, StoreError](rs =>
+        Handle.allowF[IO, TrieError](rt => f(rs, rt).map(_.asRight[Failure])).rescue(e => IO.pure(Tree(e).asLeft[A]))
+      )
       .rescue(e => IO.pure(Store(e).asLeft[A]))
 
   private def ok(f: (Raise[IO, StoreError], Raise[IO, TrieError]) => IO[Expectations]): IO[Expectations] =
@@ -61,43 +63,47 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
           store <- TrieStore.make[IO, Sha256](raw, "trie", mode)
           _     <- commitAll(store, h)
           checks <- snaps.indices.toList.traverse { v =>
-                      val version = Version.unsafe(v.toLong)
-                      val keys = snaps(v).entries.toOption.get.map(_._1) ++ h.flatten.map(_._1).take(4)
-                      (store.root(version), keys.traverse(k => store.get(k, version)), store.prove(keys, Nil, version)).mapN { (root, got, proof) =>
-                        val verified = TrieProofs.verify(mode, root, proof)
-                        expect.same(snaps(v).root, root) and
-                          expect.same(keys.map(k => snaps(v).get(k).toOption.get), got) and
-                          expect(verified.isRight, s"proof at v$v verifies")
-                      }
-                    }
+            val version = Version.unsafe(v.toLong)
+            val keys = snaps(v).entries.toOption.get.map(_._1) ++ h.flatten.map(_._1).take(4)
+            (store.root(version), keys.traverse(k => store.get(k, version)), store.prove(keys, Nil, version)).mapN { (root, got, proof) =>
+              val verified = TrieProofs.verify(mode, root, proof)
+              expect
+                .same(snaps(v).root, root)
+                .and(expect.same(keys.map(k => snaps(v).get(k).toOption.get), got))
+                .and(expect(verified.isRight, s"proof at v$v verifies"))
+            }
+          }
         } yield checks.reduce(_ and _)
       }
     }
   }
 
   test("node storage holds exactly what the retained versions reach, through prune and rollback") {
-    forall(history.flatMap(h => Gen.choose(0, h.size).map(h -> _))) { case (h, cut) =>
-      val snaps = model(h)
-      ok { (rs, rt) =>
-        implicit val (s, t) = (rs, rt)
-        for {
-          raw     <- RawStore.inMemory[IO]
-          store   <- TrieStore.make[IO, Sha256](raw, "trie", mode)
-          _       <- commitAll(store, h)
-          full    <- storedNodes(raw)
-          _       <- store.prune(Version.unsafe(cut.toLong))
-          pruned  <- storedNodes(raw)
-          floor   <- store.floor
-          _       <- store.rollback(Version.unsafe(cut.toLong))
-          rolled  <- storedNodes(raw)
-          latest  <- store.latest
-          rootNow <- store.root(latest)
-        } yield expect.same(reachable(snaps).toLong, full) and
-          expect.same(reachable(snaps.drop(cut)).toLong, pruned) and
-          expect.same(cut.toLong, floor.value) and
-          expect.same(reachable(Seq(snaps(cut))).toLong, rolled) and
-          expect.same(snaps(cut).root, rootNow)
-      }
+    forall(history.flatMap(h => Gen.choose(0, h.size).map(h -> _))) {
+      case (h, cut) =>
+        val snaps = model(h)
+        ok { (rs, rt) =>
+          implicit val (s, t) = (rs, rt)
+          for {
+            raw     <- RawStore.inMemory[IO]
+            store   <- TrieStore.make[IO, Sha256](raw, "trie", mode)
+            _       <- commitAll(store, h)
+            full    <- storedNodes(raw)
+            _       <- store.prune(Version.unsafe(cut.toLong))
+            pruned  <- storedNodes(raw)
+            floor   <- store.floor
+            _       <- store.rollback(Version.unsafe(cut.toLong))
+            rolled  <- storedNodes(raw)
+            latest  <- store.latest
+            rootNow <- store.root(latest)
+          } yield
+            expect
+              .same(reachable(snaps).toLong, full)
+              .and(expect.same(reachable(snaps.drop(cut)).toLong, pruned))
+              .and(expect.same(cut.toLong, floor.value))
+              .and(expect.same(reachable(Seq(snaps(cut))).toLong, rolled))
+              .and(expect.same(snaps(cut).root, rootNow))
+        }
     }
   }
 
@@ -118,13 +124,17 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
     ok { (rs, rt) =>
       implicit val (s, t) = (rs, rt)
       for {
-        raw     <- RawStore.inMemory[IO]
+        raw <- RawStore.inMemory[IO]
         results <- (0 until 6).toList.parTraverse { i =>
-                     run((rs2, rt2) => TrieStore.make[IO, Sha256](raw, "trie", mode)(implicitly, implicitly, rs2, rt2).flatMap(_.commit(Version.Genesis, List(ByteVector(i.toByte) -> Some(value(i))))))
-                   }
-        reader  <- TrieStore.make[IO, Sha256](raw, "trie", mode)
-        latest  <- reader.latest
-      } yield expect.same(1, results.count(_.isRight)) and expect.same(1L, latest.value)
+          run((rs2, rt2) =>
+            TrieStore
+              .make[IO, Sha256](raw, "trie", mode)(implicitly, implicitly, rs2, rt2)
+              .flatMap(_.commit(Version.Genesis, List(ByteVector(i.toByte) -> Some(value(i)))))
+          )
+        }
+        reader <- TrieStore.make[IO, Sha256](raw, "trie", mode)
+        latest <- reader.latest
+      } yield expect.same(1, results.count(_.isRight)).and(expect.same(1L, latest.value))
     }
   }
 
@@ -135,14 +145,16 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
         raw   <- RawStore.inMemory[IO]
         store <- TrieStore.make[IO, Sha256](raw, "trie", mode)
         _     <- store.commit(Version.Genesis, List(ByteVector(1) -> Some(value(1)), ByteVector(2) -> Some(value(2))))
-        nodes <- xyz.kd5ujc.storage.Namespace("trie/node").fold(_ => IO.pure(List.empty[(ByteVector, ByteVector)]), ns => raw.scan(ByteRange.prefix(ns.prefix)).compile.toList)
-        _     <- nodes.headOption.traverse_ { case (k, v) => raw.write(RawBatch.put(k, v.update(v.size - 1, (v(v.size - 1) ^ 0x01).toByte))) }
-        _     <- store.get(ByteVector(1), Version.unsafe(1L))
-        _     <- store.get(ByteVector(2), Version.unsafe(1L))
+        nodes <- xyz.kd5ujc.storage
+          .Namespace("trie/node")
+          .fold(_ => IO.pure(List.empty[(ByteVector, ByteVector)]), ns => raw.scan(ByteRange.prefix(ns.prefix)).compile.toList)
+        _ <- nodes.headOption.traverse_ { case (k, v) => raw.write(RawBatch.put(k, v.update(v.size - 1, (v(v.size - 1) ^ 0x01).toByte))) }
+        _ <- store.get(ByteVector(1), Version.unsafe(1L))
+        _ <- store.get(ByteVector(2), Version.unsafe(1L))
       } yield ()
     }.map {
       case Left(Store(StoreError.Corrupt(_))) => success
-      case other                               => failure(s"expected corruption to be detected, got $other")
+      case other                              => failure(s"expected corruption to be detected, got $other")
     }
   }
 }

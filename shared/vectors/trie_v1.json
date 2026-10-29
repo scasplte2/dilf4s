@@ -1,0 +1,358 @@
+{
+  "spec" : "docs/specs/trie.md",
+  "version" : 1,
+  "hash" : "SHA-256",
+  "emptyRoot" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+  "nodeHashes" : {
+    "leaf" : {
+      "segment" : {
+        "bits" : 11,
+        "bytes" : "ffe0"
+      },
+      "valueHash" : "77e417b20f2e144a7c3a2636e980aaac8b8f6fabba500881b0d9b7cbfc9e2804",
+      "hash" : "04a7c06f57adce2277f6f6a6fa8dadb9b5aa3a3f55850681266afc86e32fa0eb"
+    },
+    "branch" : {
+      "segment" : {
+        "bits" : 0,
+        "bytes" : ""
+      },
+      "valueHash" : "db36a183a731f39c782bf0fd6b6a6e31eaa62c530364466e429e593627abcf8b",
+      "left" : "884e06148684536c02afd0be86490c5b356afaafd4904b901ce6163a173fdeb2",
+      "hash" : "d4854ac6c4e8de30cb517c7c252fa089c8550353811fe583e7420cece779363b"
+    }
+  },
+  "fixtures" : [
+    {
+      "name" : "fixed-2",
+      "mode" : {
+        "fixed" : 2
+      },
+      "entries" : [
+        {
+          "key" : "0000",
+          "value" : "76616c75652d30",
+          "valueHash" : "faef0c6df8356964930df891f6d8e64823837da1600d82562aba3b41dda2b535"
+        },
+        {
+          "key" : "0001",
+          "value" : "76616c75652d31",
+          "valueHash" : "841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57c"
+        },
+        {
+          "key" : "00ff",
+          "value" : "76616c75652d32",
+          "valueHash" : "07d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154"
+        },
+        {
+          "key" : "8000",
+          "value" : "76616c75652d33",
+          "valueHash" : "dcdeb7c9cbe53c0a7a96988f029fb51d76f1ef4e47afb6f66fe0f3db30afe6ab"
+        },
+        {
+          "key" : "ffff",
+          "value" : "76616c75652d34",
+          "valueHash" : "fa1b73acfb336f5b796a015bdfbe3cb204cf440d4bdef38d1514ba3fba734edb"
+        },
+        {
+          "key" : "7f80",
+          "value" : "76616c75652d35",
+          "valueHash" : "1ac4b5a67ab86460c79eeff87f50cde165bfd1e9bd2cc200d26472e277f0395b"
+        }
+      ],
+      "root" : "3906935cd36b79cfb54ff1dba342107c0648817f93dd18b96d74a0678da7745f",
+      "proof" : {
+        "keys" : [
+          "0001",
+          "8001"
+        ],
+        "prefixes" : [
+        ],
+        "cbor" : "8ba26163036173a2616240616e00a26163036173a2616240616e00a26163036173a261624100616e06a26163036173a261624100616e06a1616858209a51dea4f81c55e755c52dc49c92470cbd84987a670bda0bcc991a91cfab92d9a26173a2616240616e0061765820841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57ca161685820729011e9072b930377a0075fce35e6424b8a4e61f7d9e32014e0f90c6fa674eda161685820bd8f3ead43e97b88fabd74679cc44ef5e52d4c98e4151269a6b2610d6a13302ba26163036173a2616240616e00a26173a26162420000616e0e61765820dcdeb7c9cbe53c0a7a96988f029fb51d76f1ef4e47afb6f66fe0f3db30afe6aba161685820b7cdbaf2f231976e22f184d13b15363a50b41b4c04661a246c80bd0dc878f88a",
+        "lookups" : [
+          {
+            "key" : "0001",
+            "result" : {
+              "present" : "841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57c"
+            }
+          },
+          {
+            "key" : "8001",
+            "result" : "absent"
+          },
+          {
+            "key" : "0000",
+            "result" : "notCovered"
+          },
+          {
+            "key" : "ffff",
+            "result" : "notCovered"
+          }
+        ],
+        "prefixListings" : [
+        ]
+      }
+    },
+    {
+      "name" : "fixed-2-prefix",
+      "mode" : {
+        "fixed" : 2
+      },
+      "entries" : [
+        {
+          "key" : "0000",
+          "value" : "76616c75652d30",
+          "valueHash" : "faef0c6df8356964930df891f6d8e64823837da1600d82562aba3b41dda2b535"
+        },
+        {
+          "key" : "0001",
+          "value" : "76616c75652d31",
+          "valueHash" : "841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57c"
+        },
+        {
+          "key" : "00ff",
+          "value" : "76616c75652d32",
+          "valueHash" : "07d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154"
+        },
+        {
+          "key" : "8000",
+          "value" : "76616c75652d33",
+          "valueHash" : "dcdeb7c9cbe53c0a7a96988f029fb51d76f1ef4e47afb6f66fe0f3db30afe6ab"
+        },
+        {
+          "key" : "ffff",
+          "value" : "76616c75652d34",
+          "valueHash" : "fa1b73acfb336f5b796a015bdfbe3cb204cf440d4bdef38d1514ba3fba734edb"
+        },
+        {
+          "key" : "7f80",
+          "value" : "76616c75652d35",
+          "valueHash" : "1ac4b5a67ab86460c79eeff87f50cde165bfd1e9bd2cc200d26472e277f0395b"
+        }
+      ],
+      "root" : "3906935cd36b79cfb54ff1dba342107c0648817f93dd18b96d74a0678da7745f",
+      "proof" : {
+        "keys" : [
+        ],
+        "prefixes" : [
+          "00"
+        ],
+        "cbor" : "89a26163036173a2616240616e00a26163036173a2616240616e00a26163036173a261624100616e06a26163036173a261624100616e06a26173a2616240616e0061765820faef0c6df8356964930df891f6d8e64823837da1600d82562aba3b41dda2b535a26173a2616240616e0061765820841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57ca26173a2616241fe616e076176582007d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154a161685820bd8f3ead43e97b88fabd74679cc44ef5e52d4c98e4151269a6b2610d6a13302ba1616858209910a9187f63404a02eae37ca28ac9603bcb84b1c0292aeff596e4da2c0de3cd",
+        "lookups" : [
+          {
+            "key" : "0000",
+            "result" : {
+              "present" : "faef0c6df8356964930df891f6d8e64823837da1600d82562aba3b41dda2b535"
+            }
+          },
+          {
+            "key" : "00ff",
+            "result" : {
+              "present" : "07d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154"
+            }
+          },
+          {
+            "key" : "ffff",
+            "result" : "notCovered"
+          }
+        ],
+        "prefixListings" : [
+          {
+            "prefix" : "00",
+            "entries" : [
+              {
+                "key" : "0000",
+                "valueHash" : "faef0c6df8356964930df891f6d8e64823837da1600d82562aba3b41dda2b535"
+              },
+              {
+                "key" : "0001",
+                "valueHash" : "841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57c"
+              },
+              {
+                "key" : "00ff",
+                "valueHash" : "07d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name" : "variable-3",
+      "mode" : {
+        "variable" : 3
+      },
+      "entries" : [
+        {
+          "key" : "",
+          "value" : "76616c75652d30",
+          "valueHash" : "faef0c6df8356964930df891f6d8e64823837da1600d82562aba3b41dda2b535"
+        },
+        {
+          "key" : "61",
+          "value" : "76616c75652d31",
+          "valueHash" : "841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57c"
+        },
+        {
+          "key" : "6162",
+          "value" : "76616c75652d32",
+          "valueHash" : "07d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154"
+        },
+        {
+          "key" : "616263",
+          "value" : "76616c75652d33",
+          "valueHash" : "dcdeb7c9cbe53c0a7a96988f029fb51d76f1ef4e47afb6f66fe0f3db30afe6ab"
+        },
+        {
+          "key" : "62",
+          "value" : "76616c75652d34",
+          "valueHash" : "fa1b73acfb336f5b796a015bdfbe3cb204cf440d4bdef38d1514ba3fba734edb"
+        },
+        {
+          "key" : "6100",
+          "value" : "76616c75652d35",
+          "valueHash" : "1ac4b5a67ab86460c79eeff87f50cde165bfd1e9bd2cc200d26472e277f0395b"
+        },
+        {
+          "key" : "ff",
+          "value" : "76616c75652d36",
+          "valueHash" : "48ac58b5e95321823b3e2510b525be046efabdc26aaefd062d2f5a693a97aebb"
+        }
+      ],
+      "root" : "fbae8acb43dddc3126e17f51330a9a809973ca592e97c0f6558509e42d00fb1d",
+      "proof" : {
+        "keys" : [
+          "6162",
+          "6163",
+          ""
+        ],
+        "prefixes" : [
+        ],
+        "cbor" : "89a36163036173a2616240616e0061765820faef0c6df8356964930df891f6d8e64823837da1600d82562aba3b41dda2b535a26163036173a2616241c0616e05a36163016173a261624180616e0161765820841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57ca26163036173a2616240616e00a161685820b5ca6904c9b539be8210de78c6c805bedc7178317b915d5c559f24e389cee67fa36163016173a261624188616e066176582007d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154a16168582080ad72417866cc859e0958abfc8edf97d65a25b236845688d565c95c6fdee4a5a1616858201265ee16b6b46cfda085754f6cfefb37e4025b894a801ddf894bf96e0a3e5b93a16168582060112061a38e54de79b1030f05b0d119280efc7935ecc820b6c82eab14abe583",
+        "lookups" : [
+          {
+            "key" : "6162",
+            "result" : {
+              "present" : "07d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154"
+            }
+          },
+          {
+            "key" : "6163",
+            "result" : "absent"
+          },
+          {
+            "key" : "",
+            "result" : {
+              "present" : "faef0c6df8356964930df891f6d8e64823837da1600d82562aba3b41dda2b535"
+            }
+          },
+          {
+            "key" : "61",
+            "result" : {
+              "present" : "841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57c"
+            }
+          },
+          {
+            "key" : "ff",
+            "result" : "notCovered"
+          }
+        ],
+        "prefixListings" : [
+        ]
+      }
+    },
+    {
+      "name" : "variable-3-prefix",
+      "mode" : {
+        "variable" : 3
+      },
+      "entries" : [
+        {
+          "key" : "",
+          "value" : "76616c75652d30",
+          "valueHash" : "faef0c6df8356964930df891f6d8e64823837da1600d82562aba3b41dda2b535"
+        },
+        {
+          "key" : "61",
+          "value" : "76616c75652d31",
+          "valueHash" : "841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57c"
+        },
+        {
+          "key" : "6162",
+          "value" : "76616c75652d32",
+          "valueHash" : "07d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154"
+        },
+        {
+          "key" : "616263",
+          "value" : "76616c75652d33",
+          "valueHash" : "dcdeb7c9cbe53c0a7a96988f029fb51d76f1ef4e47afb6f66fe0f3db30afe6ab"
+        },
+        {
+          "key" : "62",
+          "value" : "76616c75652d34",
+          "valueHash" : "fa1b73acfb336f5b796a015bdfbe3cb204cf440d4bdef38d1514ba3fba734edb"
+        },
+        {
+          "key" : "6100",
+          "value" : "76616c75652d35",
+          "valueHash" : "1ac4b5a67ab86460c79eeff87f50cde165bfd1e9bd2cc200d26472e277f0395b"
+        },
+        {
+          "key" : "ff",
+          "value" : "76616c75652d36",
+          "valueHash" : "48ac58b5e95321823b3e2510b525be046efabdc26aaefd062d2f5a693a97aebb"
+        }
+      ],
+      "root" : "fbae8acb43dddc3126e17f51330a9a809973ca592e97c0f6558509e42d00fb1d",
+      "proof" : {
+        "keys" : [
+        ],
+        "prefixes" : [
+          "61"
+        ],
+        "cbor" : "89a36163036173a2616240616e0061765820faef0c6df8356964930df891f6d8e64823837da1600d82562aba3b41dda2b535a26163036173a2616241c0616e05a36163016173a261624180616e0161765820841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57ca26163036173a2616240616e00a26173a261624100616e06617658201ac4b5a67ab86460c79eeff87f50cde165bfd1e9bd2cc200d26472e277f0395ba36163016173a261624188616e066176582007d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154a26173a2616241c6616e0761765820dcdeb7c9cbe53c0a7a96988f029fb51d76f1ef4e47afb6f66fe0f3db30afe6aba1616858201265ee16b6b46cfda085754f6cfefb37e4025b894a801ddf894bf96e0a3e5b93a16168582060112061a38e54de79b1030f05b0d119280efc7935ecc820b6c82eab14abe583",
+        "lookups" : [
+          {
+            "key" : "61",
+            "result" : {
+              "present" : "841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57c"
+            }
+          },
+          {
+            "key" : "6100",
+            "result" : {
+              "present" : "1ac4b5a67ab86460c79eeff87f50cde165bfd1e9bd2cc200d26472e277f0395b"
+            }
+          },
+          {
+            "key" : "62",
+            "result" : "notCovered"
+          }
+        ],
+        "prefixListings" : [
+          {
+            "prefix" : "61",
+            "entries" : [
+              {
+                "key" : "61",
+                "valueHash" : "841a417c5463e1848889064309b1a785c988e4f6d939717cc3a2c65fa962a57c"
+              },
+              {
+                "key" : "6100",
+                "valueHash" : "1ac4b5a67ab86460c79eeff87f50cde165bfd1e9bd2cc200d26472e277f0395b"
+              },
+              {
+                "key" : "6162",
+                "valueHash" : "07d53d069d32a349b13cad12f728ac4b2f92cd3072ba31872792e59157b0c154"
+              },
+              {
+                "key" : "616263",
+                "valueHash" : "dcdeb7c9cbe53c0a7a96988f029fb51d76f1ef4e47afb6f66fe0f3db30afe6ab"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

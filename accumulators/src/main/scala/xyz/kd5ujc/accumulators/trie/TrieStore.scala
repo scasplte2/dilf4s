@@ -24,10 +24,15 @@ trait TrieStore[F[_], H] {
   def mode: KeyMode
   def latest: F[Version]
   def floor: F[Version]
-  def root(version: Version): F[Digest[H]]
-  def get(key: ByteVector, version: Version): F[Option[Digest[H]]]
-  def commit(expected: Version, ops: List[(ByteVector, Option[Digest[H]])]): F[Version]
-  def prove(keys: List[ByteVector], prefixes: List[ByteVector], version: Version): F[TrieProof[H]]
+  def root(version:    Version): F[Digest[H]]
+  def get(key:         ByteVector, version: Version): F[Option[Digest[H]]]
+  def commit(expected: Version, ops:        List[(ByteVector, Option[Digest[H]])]): F[Version]
+  def prove(
+    keys:     List[ByteVector],
+    prefixes: List[ByteVector],
+    version:  Version,
+    ranges:   List[(ByteVector, Option[ByteVector])] = Nil
+  ): F[TrieProof[H]]
 
   /** Discards versions after `to`; their nodes are freed unless an older version shares them. */
   def rollback(to: Version): F[Unit]
@@ -38,14 +43,21 @@ trait TrieStore[F[_], H] {
 
 object TrieStore {
 
-  def make[F[_]: Concurrent, H: TrieHashing](raw: RawStore[F], name: String, keyMode: KeyMode)(implicit
-    RS: Raise[F, StoreError],
-    RT: Raise[F, TrieError]
+  def make[F[_]: Concurrent, H: TrieHashing](raw: RawStore[F], name: String, keyMode: KeyMode)(
+    implicit RS: Raise[F, StoreError],
+    RT:          Raise[F, TrieError]
   ): F[TrieStore[F, H]] =
     (Namespace(s"$name/node"), Namespace(s"$name/root"), Namespace(s"$name/meta")).tupled.fold(
       RS.raise[StoreError, TrieStore[F, H]],
-      { case (nodeNs, rootNs, metaNs) =>
-        (new Impl[F, H](raw, keyMode, nodeNs.prefix, KeyValueStore[F, Long, ByteVector](raw, rootNs), metaNs.prefix ++ ByteVector("state".getBytes(UTF_8))): TrieStore[F, H]).pure[F]
+      {
+        case (nodeNs, rootNs, metaNs) =>
+          (new Impl[F, H](
+            raw,
+            keyMode,
+            nodeNs.prefix,
+            KeyValueStore[F, Long, ByteVector](raw, rootNs),
+            metaNs.prefix ++ ByteVector("state".getBytes(UTF_8))
+          ): TrieStore[F, H]).pure[F]
       }
     )
 
@@ -87,9 +99,9 @@ object TrieStore {
     /** The stored root of a version; an absent record means the empty trie (version 0 is always empty). */
     private def rootHash(version: Long): F[Option[Digest[H]]] =
       roots.get(version).flatMap {
-        case None                     => Option.empty[Digest[H]].pure[F]
-        case Some(b) if b.isEmpty     => Option.empty[Digest[H]].pure[F]
-        case Some(b)                  => digest(b).map(Some(_))
+        case None                 => Option.empty[Digest[H]].pure[F]
+        case Some(b) if b.isEmpty => Option.empty[Digest[H]].pure[F]
+        case Some(b)              => digest(b).map(Some(_))
       }
 
     private def digest(b: ByteVector): F[Digest[H]] =
@@ -163,13 +175,20 @@ object TrieStore {
         v    <- TrieEngine.get[F, H](node, r, path)
       } yield v
 
-    def prove(keys: List[ByteVector], prefixes: List[ByteVector], version: Version): F[TrieProof[H]] =
+    def prove(
+      keys:     List[ByteVector],
+      prefixes: List[ByteVector],
+      version:  Version,
+      ranges:   List[(ByteVector, Option[ByteVector])]
+    ): F[TrieProof[H]] =
       for {
         s     <- state
         _     <- checkReadable(s, version)
         paths <- liftT(keys.traverse(mode.path))
         r     <- rootHash(version.value)
-        proof <- TrieProofs.prove[F, H](node, r, paths.map(TrieProofs.Key) ++ prefixes.map(p => TrieProofs.Prefix(p.bits)))
+        queries = paths.map(TrieProofs.Key) ++ prefixes.map(p => TrieProofs.Prefix(p.bits)) ++
+          ranges.map { case (f, u) => TrieProofs.Range(f.bits, u.map(_.bits)) }
+        proof <- TrieProofs.prove[F, H](node, r, queries)
       } yield proof
 
     // ---- writes
@@ -183,7 +202,7 @@ object TrieStore {
             current <- rootHash(s.latest)
             delta   <- TrieEngine.apply[F, H](node, current, trieOps)
             plan    <- RefCounting.plan[F, H](entry, delta, retainNewRoot = true, release = Nil)
-            next     = s.latest + 1
+            next = s.latest + 1
             rootRec <- roots.encodeBatch(Batch.put(next, delta.root.fold(ByteVector.empty)(_.bytes)))
             _       <- guarded(s, next, s.floor, planBatch(plan) ++ rootRec)
           } yield Version.unsafe(next)
@@ -202,6 +221,8 @@ object TrieStore {
       state.flatMap(s => checkReadable(s, to) >> dropVersions(s, ((to.value + 1) to s.latest).toList, to.value, s.floor))
 
     def prune(through: Version): F[Unit] =
-      state.flatMap(s => checkReadable(s, through) >> dropVersions(s, (s.floor until through.value).toList.filter(_ > 0L), s.latest, through.value))
+      state.flatMap(s =>
+        checkReadable(s, through) >> dropVersions(s, (s.floor until through.value).toList.filter(_ > 0L), s.latest, through.value)
+      )
   }
 }

@@ -2,12 +2,6 @@
 object LegacyPurity {
 
   val files: Seq[String] = Seq(
-    "accumulators/src/main/scala/xyz/kd5ujc/accumulators/mpt/api/MerklePatriciaProver.scala",
-    "accumulators/src/main/scala/xyz/kd5ujc/accumulators/mpt/api/MerklePatriciaVerifier.scala",
-    "accumulators/src/main/scala/xyz/kd5ujc/accumulators/mpt/impl/OptimizedMerklePatriciaProducer.scala",
-    "accumulators/src/main/scala/xyz/kd5ujc/accumulators/mpt/impl/SimpleMerklePatriciaProducer.scala",
-    "accumulators/src/main/scala/xyz/kd5ujc/accumulators/mpt/Nibble.scala",
-    "core/src/main/scala/xyz/kd5ujc/hash/HashProof.scala",
     "kes/src/main/scala/xyz/kd5ujc/kes/KesEd25519Blake2b256.scala",
     "kes/src/main/scala/xyz/kd5ujc/kes/models.scala",
     "kes/src/main/scala/xyz/kd5ujc/kes/ProductComposition.scala",

@@ -120,6 +120,25 @@ object TrieSuite extends SimpleIOSuite with Checkers {
     }.sequence.map(_.reduce(_ and _))
   }
 
+  test("bulk builds, sequential and parallel, equal incremental insertion with exact counts") {
+    bothModes { mode =>
+      forall(opsGen(mode)) { ops =>
+        val entries = ops.collect { case (k, Some(v)) => k -> v }
+        val incremental = build(mode, entries.map { case (k, v) => k -> Some(v) })
+        val bulk = Trie.fromEntries[Sha256](mode, entries).toOption.get
+        Trie.fromEntriesPar[cats.effect.IO, Sha256](mode, entries, parallelDepth = 3).map(_.toOption.get).map { par =>
+          val counts = (t: Trie[Sha256]) => t.nodesForTest.view.mapValues(_._2).toMap
+          expect
+            .same(incremental.root, bulk.root)
+            .and(expect.same(incremental.root, par.root))
+            .and(expect.same(counts(incremental), counts(bulk)))
+            .and(expect.same(counts(incremental), counts(par)))
+            .and(expect.same(incremental.entries, par.entries))
+        }
+      }
+    }.sequence.map(_.reduce(_ and _))
+  }
+
   pureTest("keys are validated by mode") {
     expect(Trie.empty[Sha256](fixed2).put(hex"01", value(1)).isLeft, "fixed(2) rejects 1-byte keys")
       .and(expect(Trie.empty[Sha256](variable4).put(hex"0102030405", value(1)).isLeft, "variable(4) rejects 5-byte keys"))
@@ -262,5 +281,139 @@ object TrieSuite extends SimpleIOSuite with Checkers {
       .same(Right(Lookup.Present(T.value(deepest))), result)
       .and(expect.same(Right(Some(T.value(keys(999)))), t.get(keys(999))))
       .and(expect(t.remove(deepest).map(_.get(deepest)) == Right(Right(None)), "deleting the deepest key works"))
+  }
+
+  // ------------------------------------------------------------------ ranges, batches, forgery, shapes, scale
+
+  implicit private val showRange: cats.Show[(List[(ByteVector, Option[Digest[Sha256]])], ByteVector, Option[ByteVector])] =
+    cats.Show.fromToString
+
+  private val bitOrder: Ordering[ByteVector] = (a, b) => if (KeyOrder.lt(a.bits, b.bits)) -1 else if (a == b) 0 else 1
+
+  test("range proofs list exactly the entries in [from, until), and are complete") {
+    forall(Gen.zip(opsGen(variable4), keyGen(variable4), Gen.option(keyGen(variable4)))) {
+      case (ops, from, until) =>
+        val m = model(ops)
+        val t = build(variable4, ops)
+        val expected = m.toList.filter { case (k, _) => KeyOrder.lteq(from.bits, k.bits) && until.forall(u => KeyOrder.lt(k.bits, u.bits)) }
+          .sortBy(_._1)(bitOrder)
+          .map { case (k, v) => (k.bits, v) }
+        val listed = t
+          .prove(Nil, Nil, List(from -> until))
+          .flatMap(p => TrieProofs.verify(variable4, t.root, p))
+          .map(_.range(from.bits, until.map(_.bits)))
+        expect.same(Right(Some(expected)), listed)
+    }
+  }
+
+  test("a range proof with a stub inside the range is reported as not covered") {
+    forall(twoKeyOps) {
+      case (ops, a, _) =>
+        val t = build(fixed2, ops)
+        val keyOnly = t.prove(List(a)).toOption.get
+        val v = TrieProofs.verify(fixed2, t.root, keyOnly).toOption.get
+        val whole = v.range(BitVector.empty, None)
+        expect(whole.isEmpty || model(ops).size == 1, s"a single-key proof cannot certify the whole range: $whole")
+    }
+  }
+
+  test("a batch proof is no larger than the separate proofs combined") {
+    forall(Gen.zip(opsGen(fixed2), Gen.listOfN(4, keyGen(fixed2)))) {
+      case (ops, keys) =>
+        val t = build(fixed2, ops)
+        val size = (p: TrieProof[Sha256]) => TrieProofs.encode(p).map(v => Cbor.encode(v).size).toOption.get
+        val batch = size(t.prove(keys).toOption.get)
+        val separate = keys.map(k => size(t.prove(List(k)).toOption.get)).sum
+        expect(batch <= separate, s"batch $batch > separate $separate")
+    }
+  }
+
+  test("absence cannot be forged for a present key") {
+    forall(twoKeyOps) {
+      case (ops, a, _) =>
+        val t = build(fixed2, ops)
+        val proof = t.prove(List(a)).toOption.get
+        // replace a's leaf by a stub of a different hash, or flip a bit of its segment
+        def edit(f: ProofNode.PLeaf[Sha256] => ProofNode[Sha256]): TrieProof[Sha256] = {
+          def go(n: ProofNode[Sha256], at: BitVector): ProofNode[Sha256] = n match {
+            case l @ ProofNode.PLeaf(seg, _) if (at ++ seg) == a.bits => f(l)
+            case ProofNode.PBranch(seg, v, l, r) =>
+              ProofNode.PBranch(seg, v, l.map(go(_, at ++ seg :+ false)), r.map(go(_, at ++ seg :+ true)))
+            case other => other
+          }
+          TrieProof(proof.top.map(go(_, BitVector.empty)))
+        }
+        val stubbed = edit(_ => ProofNode.Stub(T.value(ByteVector(7))))
+        val flipped = edit(l =>
+          if (l.segment.isEmpty) l.copy(segment = BitVector.one)
+          else l.copy(segment = l.segment.update(l.segment.size - 1, !l.segment(l.segment.size - 1)))
+        )
+        val answers = List(stubbed, flipped).map(p => TrieProofs.verify(fixed2, t.root, p).map(_.lookup(a.bits)))
+        expect(answers.forall(_.isLeft), s"forged proofs must not verify: $answers")
+    }
+  }
+
+  pureTest("small tries have the expected shapes") {
+    val v = value(1)
+    def top(entries: List[(ByteVector, Digest[Sha256])], mode: KeyMode) =
+      Trie.fromEntries[Sha256](mode, entries).flatMap(_.prove(Nil, List(ByteVector.empty))).map(_.top)
+    val fixed1 = KeyMode.fixed(1).toOption.get
+    expect
+      .same(Right(Some(ProofNode.PLeaf[Sha256](hex"a5".bits, v))), top(List(hex"a5" -> v), fixed1))
+      .and(
+        expect.same(
+          Right(
+            Some(
+              ProofNode.PBranch[Sha256](
+                BitVector.empty,
+                None,
+                Some(ProofNode.PLeaf(BitVector.low(7), v)),
+                Some(ProofNode.PLeaf(BitVector.low(7), v))
+              )
+            )
+          ),
+          top(List(hex"00" -> v, hex"80" -> v), fixed1)
+        )
+      )
+      .and(
+        expect.same(
+          Right(
+            Some(
+              ProofNode.PBranch[Sha256](
+                BitVector.low(7),
+                None,
+                Some(ProofNode.PLeaf(BitVector.empty, v)),
+                Some(ProofNode.PLeaf(BitVector.empty, v))
+              )
+            )
+          ),
+          top(List(hex"00" -> v, hex"01" -> v), fixed1)
+        )
+      )
+      .and(
+        expect.same(
+          Right(Some(ProofNode.PBranch[Sha256](hex"61".bits, Some(v), Some(ProofNode.PLeaf(hex"62".bits.tail, v)), None))),
+          top(List(hex"61" -> v, hex"6162" -> v), variable4)
+        )
+      )
+  }
+
+  pureTest("a 5000-key trie builds, proves and deletes consistently") {
+    val mode = KeyMode.fixed(4).toOption.get
+    val rnd = new Random(7L)
+    val keys = List.fill(5000)(ByteVector(rnd.nextBytes(4))).distinct
+    val entries = keys.zipWithIndex.map { case (k, i) => k -> value(i) }
+    val bulk = Trie.fromEntries[Sha256](mode, entries).toOption.get
+    val incremental = Trie.empty[Sha256](mode).update(entries.map { case (k, v) => k -> Some(v) }).toOption.get
+    val sample = keys.take(50)
+    val proved = bulk
+      .prove(sample)
+      .flatMap(p => TrieProofs.verify(mode, bulk.root, p))
+      .map(v => sample.forall(k => v.lookup(k.bits).isInstanceOf[Lookup.Present[_]]))
+    val halved = keys.take(2500).foldLeft(bulk)((t, k) => t.remove(k).toOption.get)
+    expect
+      .same(bulk.root, incremental.root)
+      .and(expect.same(Right(true), proved))
+      .and(expect.same(Trie.fromEntries[Sha256](mode, entries.drop(2500)).map(_.root), Right(halved.root)))
   }
 }
