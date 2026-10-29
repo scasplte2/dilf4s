@@ -80,7 +80,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(models, sharedTest, numerics, core, accumulators, storage, storageRocksDb, signing, vrf, kes, benchmarks)
+  .aggregate(models, sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, signing, vrf, kes, benchmarks)
 
 // ─── Models: cross-cutting value types ───
 lazy val models = project.in(file("models"))
@@ -138,6 +138,26 @@ lazy val core = project.in(file("core"))
     )
   )
   .dependsOn(models, numerics, sharedTest % Test)
+
+// ─── Crypto: typed signature schemes, VRF, KES, BLS, zk primitives ───
+lazy val crypto = project.in(file("crypto"))
+  .settings(
+    name := "dilf4s-crypto",
+    commonSettings,
+    commonTestSettings,
+    libraryDependencies ++= Seq(
+      Libraries.cats,
+      Libraries.catsEffect,
+      Libraries.catsMtl,
+      Libraries.scodecBits,
+      Libraries.bc,
+      Libraries.curve25519Elisabeth,
+      Libraries.secp256k1,
+      Libraries.circeParser % Test,
+      Libraries.catsKernelLaws % Test
+    )
+  )
+  .dependsOn(core, sharedTest % Test)
 
 // ─── Accumulators: Merkle, MPT, Verkle (self-contained) ───
 lazy val accumulators = project.in(file("accumulators"))
