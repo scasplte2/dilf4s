@@ -7,6 +7,8 @@ Adapted files keep their original notices; entries are added as material is port
 
 - Topl Bifrost (https://github.com/Topl/Bifrost), MPL-2.0:
   LevelDB store; KES Sum/Product composition design.
+- Topl Bifrost BloomFilter (co.topl.modifier.block.BloomFilter, 2020, by James Aman), MPL-2.0:
+  accumulators/.../bloom/BloomFilter.scala.
 - Topl BramblSc (https://github.com/Topl/BramblSc), MPL-2.0:
   Ed25519 / ExtendedEd25519 / VRF compatibility test vectors (docs/test-vectors).
 - BIP-39 word lists (https://github.com/bitcoin/bips/tree/master/bip-0039), MIT:

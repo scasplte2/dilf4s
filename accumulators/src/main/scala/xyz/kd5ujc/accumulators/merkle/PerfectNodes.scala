@@ -37,10 +37,10 @@ object PerfectNodes {
     }
 
   /** RFC 9162 §2.1.4.1 SUBPROOF(m, D[start : start + n], complete). */
-  def consistencyPath[F[_]: Monad, H](perfect: Perfect[F, H], m: Long, start: Long, n: Long, complete: Boolean)(implicit
-    M: MerkleHashing[H]
+  def consistencyPath[F[_]: Monad, H](perfect: Perfect[F, H], m: Long, start: Long, n: Long, complete: Boolean)(
+    implicit M: MerkleHashing[H]
   ): F[Vector[Digest[H]]] =
-    if (m == n) (if (complete) Vector.empty[Digest[H]].pure[F] else subtree(perfect, start, n).map(Vector(_)))
+    if (m == n) if (complete) Vector.empty[Digest[H]].pure[F] else subtree(perfect, start, n).map(Vector(_))
     else {
       val k = MerkleTree.splitPoint(n)
       if (m <= k) (consistencyPath(perfect, m, start, k, complete), subtree(perfect, start + k, n - k)).mapN(_ :+ _)

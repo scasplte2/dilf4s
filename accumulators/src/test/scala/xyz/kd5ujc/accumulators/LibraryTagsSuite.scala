@@ -9,7 +9,7 @@ import weaver.SimpleIOSuite
 /** Library tags skip validation at construction (DomainTag.literal); this proves each one is valid and distinct. */
 object LibraryTagsSuite extends SimpleIOSuite {
 
-  private val all = MerkleHashing.Tags ++ TrieHashing.Tags
+  private val all = MerkleHashing.Tags ++ TrieHashing.Tags ++ xyz.kd5ujc.accumulators.bloom.BloomFilter.Tags
 
   pureTest("every library domain tag satisfies the tag grammar") {
     all.map(t => expect(DomainTag(t).isRight, s"$t must be a valid domain tag")).reduce(_ and _)
