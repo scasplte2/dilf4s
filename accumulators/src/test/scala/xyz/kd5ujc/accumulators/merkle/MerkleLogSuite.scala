@@ -90,6 +90,50 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
       }
     }
 
+  test("persistent proofs equal the in-memory tree's after every command") {
+    forall(Gen.listOf(cmd).map(_.take(20))) { cmds =>
+      ok { (rs, rm) =>
+        implicit val (s, t) = (rs, rm)
+        for {
+          raw        <- RawStore.inMemory[IO]
+          persistent <- MerkleLog.persistent[IO, Sha256](raw, "log")
+          memory     <- MerkleLog.inMemory[IO, Sha256]
+          checks <- cmds.traverse { c =>
+            applyBoth(memory, persistent, c) >> persistent.size.flatMap { n =>
+              val idx = (0L until n).toList
+              (
+                idx.traverse(memory.inclusionProof),
+                idx.traverse(persistent.inclusionProof),
+                (0L to n).toList.traverse(memory.consistencyProof),
+                (0L to n).toList.traverse(persistent.consistencyProof),
+                memory.leaves.compile.toList,
+                persistent.leaves.compile.toList
+              ).mapN((mi, pi, mc, pc, ml, pl) => expect.same(mi, pi).and(expect.same(mc, pc)).and(expect.same(ml, pl)))
+            }
+          }
+        } yield checks.foldLeft(success)(_ and _)
+      }
+    }
+  }
+
+  test("a large persistent log opens without loading it and proves with logarithmic reads") {
+    ok { (rs, rm) =>
+      implicit val (s, t) = (rs, rm)
+      for {
+        raw      <- RawStore.inMemory[IO]
+        log      <- MerkleLog.persistent[IO, Sha256](raw, "log")
+        _        <- (0 until 20).toList.traverse_(b => log.append((b * 1000 until (b + 1) * 1000).toList.map(leaf)))
+        reopened <- MerkleLog.persistent[IO, Sha256](raw, "log")
+        root     <- reopened.root
+        proof    <- reopened.inclusionProof(12345)
+        stored   <- raw.scan(xyz.kd5ujc.storage.ByteRange.all).compile.count
+      } yield
+        expect(MerkleVerifier.inclusion(root, leaf(12345), proof).isRight)
+          .and(expect.same(15, proof.path.size))
+          .and(expect(stored < 2L * 20000 + 2, s"stores only perfect nodes: $stored records for 20000 leaves"))
+    }
+  }
+
   test("a second instance over the same store sees the first instance's writes") {
     ok { (rs, rm) =>
       implicit val (s, t) = (rs, rm)
@@ -100,8 +144,8 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
         _     <- a.append(List(leaf(1), leaf(2)))
         seenB <- b.size
         _     <- b.append(List(leaf(3)))
-        seenA <- a.tree
-      } yield expect.same(2L, seenB).and(expect.same(MerkleTree.fromLeafHashes[Sha256](List(leaf(1), leaf(2), leaf(3))).root, seenA.root))
+        seenA <- a.root
+      } yield expect.same(2L, seenB).and(expect.same(MerkleTree.fromLeafHashes[Sha256](List(leaf(1), leaf(2), leaf(3))).root, seenA))
     }
   }
 
