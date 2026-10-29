@@ -208,8 +208,8 @@ lazy val kes = project.in(file("kes"))
   )
   .dependsOn(models, signing, core, sharedTest % Test)
 
-addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll")
-addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll")
+addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll; scalafmtSbtCheck")
+addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll; scalafmtSbt")
 
 // ─── Benchmarks: JMH, never published ───
 lazy val benchmarks = project.in(file("benchmarks"))

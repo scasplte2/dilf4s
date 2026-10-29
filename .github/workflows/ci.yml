@@ -1,0 +1,20 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, unify/base]
+
+jobs:
+  scala:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: sbt
+      - uses: sbt/setup-sbt@v1
+      # clean first: the sbt-scalafmt incremental cache can report false passes
+      - run: sbt clean checkPR test

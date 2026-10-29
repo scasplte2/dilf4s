@@ -1,0 +1,13 @@
+dilf4s
+Copyright (c) James Aman and contributors.
+Licensed under the Mozilla Public License 2.0 (see LICENSE).
+
+This product includes or adapts material from the following projects.
+Adapted files keep their original notices; entries are added as material is ported.
+
+- Topl Bifrost (https://github.com/Topl/Bifrost), MPL-2.0:
+  LevelDB store; KES Sum/Product composition design.
+- Topl BramblSc (https://github.com/Topl/BramblSc), MPL-2.0:
+  Ed25519 / ExtendedEd25519 / VRF compatibility test vectors (docs/test-vectors).
+- BIP-39 word lists (https://github.com/bitcoin/bips/tree/master/bip-0039), MIT:
+  signing/src/main/resources/bip-0039.
