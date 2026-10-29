@@ -21,8 +21,6 @@ object LegacyPurity {
     "signing/src/main/scala/xyz/kd5ujc/signature/keygen/SeedDerivation.scala",
     "signing/src/main/scala/xyz/kd5ujc/signing/Ed25519Signing.scala",
     "signing/src/main/scala/xyz/kd5ujc/signing/Ristretto255.scala",
-    "storage/src/main/scala/xyz/kd5ujc/storage/store/LevelDbStore.scala",
-    "storage/src/main/scala/xyz/kd5ujc/storage/versioned_store/package.scala",
     "vrf/src/main/scala/xyz/kd5ujc/vrf/EcVrf25519.scala"
   )
 }

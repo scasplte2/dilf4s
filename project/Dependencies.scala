@@ -12,8 +12,6 @@ object Dependencies {
     val catsEffect = "3.7.1"
     val circe = "0.14.17"
     val curve25519 = "0.1.5"
-    val levelDb = "0.12"
-    val levelDbJni = "1.8"
     val log4cats = "2.8.0"
     val organizeImports = "0.6.0"
     val weaver = "0.13.0"
@@ -43,8 +41,6 @@ object Dependencies {
     val weaverDiscipline = "org.typelevel"       %% "weaver-discipline"        % V.weaver
     val weaverScalaCheck = "org.typelevel"       %% "weaver-scalacheck"        % V.weaver
     val organizeImports = "com.github.liancheng" %% "organize-imports"         % V.organizeImports
-    val levelDb = "org.iq80.leveldb"              % "leveldb"                  % V.levelDb
-    val levelDbJni = "org.fusesource.leveldbjni"  % "leveldbjni-all"           % V.levelDbJni
     val log4cats = "org.typelevel"               %% "log4cats-slf4j"           % V.log4cats
     val logback = "ch.qos.logback"                % "logback-classic"          % V.logback
     val ed25519Elisabeth = "cafe.cryptography"    % "ed25519-elisabeth"        % V.ed25519Elisabeth

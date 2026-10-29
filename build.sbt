@@ -80,7 +80,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(models, sharedTest, numerics, core, accumulators, storage, signing, vrf, kes, benchmarks)
+  .aggregate(models, sharedTest, numerics, core, accumulators, storage, storageRocksDb, signing, vrf, kes, benchmarks)
 
 // ─── Models: cross-cutting value types ───
 lazy val models = project.in(file("models"))
@@ -164,16 +164,22 @@ lazy val storage = project.in(file("storage"))
     libraryDependencies ++= Seq(
       Libraries.cats,
       Libraries.catsEffect,
-      Libraries.circeCore,
-      Libraries.circeGeneric,
-      Libraries.circeParser,
-      Libraries.levelDb,
-      Libraries.levelDbJni,
-      Libraries.logback,
-      Libraries.log4cats,
+      Libraries.catsMtl,
+      Libraries.fs2Core,
+      Libraries.scodecBits
     )
   )
-  .dependsOn(models, core, sharedTest % Test)
+  .dependsOn(core, sharedTest % Test)
+
+// ─── Storage on RocksDB: separate artifact so the pure core never pulls in native code ───
+lazy val storageRocksDb = project.in(file("storage-rocksdb"))
+  .settings(
+    name := "dilf4s-storage-rocksdb",
+    commonSettings,
+    commonTestSettings,
+    libraryDependencies += Libraries.rocksDb
+  )
+  .dependsOn(storage % "compile->compile;test->test", sharedTest % Test)
 
 // ─── Signing: Ed25519, Extended Ed25519 ───
 lazy val signing = project.in(file("signing"))

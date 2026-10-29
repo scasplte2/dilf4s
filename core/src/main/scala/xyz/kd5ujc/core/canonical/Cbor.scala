@@ -260,7 +260,7 @@ object Cbor {
 }
 
 /** RFC 3629 well-formed UTF-8: shortest form, no surrogates, at most U+10FFFF. */
-private[canonical] object Utf8 {
+object Utf8 {
 
   def isWellFormed(a: Array[Byte]): Boolean = check(a, 0)
 
