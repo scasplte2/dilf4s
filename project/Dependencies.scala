@@ -5,16 +5,19 @@ object Dependencies {
   object V {
     val bouncyCastle = "1.86"
     val scodecBits = "1.2.5"
+    val catsMtl = "1.7.0"
+    val fs2 = "3.14.0"
+    val rocksDb = "11.8.1"
     val cats = "2.13.0"
-    val catsEffect = "3.5.7"
-    val circe = "0.14.6"
+    val catsEffect = "3.7.1"
+    val circe = "0.14.17"
     val curve25519 = "0.1.5"
     val levelDb = "0.12"
     val levelDbJni = "1.8"
-    val log4cats = "2.5.0"
+    val log4cats = "2.8.0"
     val organizeImports = "0.6.0"
-    val weaver = "0.8.4"
-    val logback = "1.3.5"
+    val weaver = "0.13.0"
+    val logback = "1.6.6"
     val betterMonadicFor = "0.3.1"
     val ed25519Elisabeth = "0.1.0"
     val curve25519Elisabeth = "0.1.0"
@@ -25,6 +28,9 @@ object Dependencies {
   object Libraries {
     val bc = "org.bouncycastle"                   % "bcprov-jdk18on"           % V.bouncyCastle
     val scodecBits = "org.scodec"                %% "scodec-bits"              % V.scodecBits
+    val catsMtl = "org.typelevel"                %% "cats-mtl"                 % V.catsMtl
+    val fs2Core = "co.fs2"                       %% "fs2-core"                 % V.fs2
+    val rocksDb = "org.rocksdb"                   % "rocksdbjni"               % V.rocksDb
     val catsKernelLaws = "org.typelevel"         %% "cats-kernel-laws"         % V.cats
     val cats = "org.typelevel"                   %% "cats-core"                % V.cats
     val catsEffect = "org.typelevel"             %% "cats-effect"              % V.catsEffect
@@ -33,9 +39,9 @@ object Dependencies {
     val circeGeneric = "io.circe"                %% "circe-generic"            % V.circe
     val circeParser = "io.circe"                 %% "circe-parser"             % V.circe
     val curve25519 = "com.weavechain"             % "curve25519-elisabeth"     % V.curve25519 % "runtime"
-    val weaverCats = "com.disneystreaming"       %% "weaver-cats"              % V.weaver
-    val weaverDiscipline = "com.disneystreaming" %% "weaver-discipline"        % V.weaver
-    val weaverScalaCheck = "com.disneystreaming" %% "weaver-scalacheck"        % V.weaver
+    val weaverCats = "org.typelevel"             %% "weaver-cats"              % V.weaver
+    val weaverDiscipline = "org.typelevel"       %% "weaver-discipline"        % V.weaver
+    val weaverScalaCheck = "org.typelevel"       %% "weaver-scalacheck"        % V.weaver
     val organizeImports = "com.github.liancheng" %% "organize-imports"         % V.organizeImports
     val levelDb = "org.iq80.leveldb"              % "leveldb"                  % V.levelDb
     val levelDbJni = "org.fusesource.leveldbjni"  % "leveldbjni-all"           % V.levelDbJni

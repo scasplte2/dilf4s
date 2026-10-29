@@ -70,7 +70,7 @@ object CanonicalValue {
 
   /** For the strict decoder, which bounds depth and has verified unique, ordered text keys and non-null values. */
   private[canonical] def decodedArray(values: Vector[CanonicalValue]): CArray = new CArray(values) {}
-  private[canonical] def decodedMap(entries: Vector[(String, CanonicalValue)]): CMap = new CMap(entries.toMap) {}
+  private[canonical] def decodedMap(entries:  Vector[(String, CanonicalValue)]): CMap = new CMap(entries.toMap) {}
 
   private def withinDepth[A <: CanonicalValue](v: A): Either[CanonicalError, A] =
     Either.cond(v.depth <= MaxDepth, v, CanonicalError.DepthExceeded(MaxDepth))

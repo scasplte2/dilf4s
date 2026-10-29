@@ -41,10 +41,10 @@ sealed abstract case class Ratio(numerator: BigInt, denominator: BigInt) {
 
   def compare(that: Ratio): Int = (numerator * that.denominator).compare(that.numerator * denominator)
 
-  def <(that: Ratio): Boolean = compare(that) < 0
-  def <=(that: Ratio): Boolean = compare(that) <= 0
-  def >(that: Ratio): Boolean = compare(that) > 0
-  def >=(that: Ratio): Boolean = compare(that) >= 0
+  def <(that:   Ratio): Boolean = compare(that) < 0
+  def <=(that:  Ratio): Boolean = compare(that) <= 0
+  def >(that:   Ratio): Boolean = compare(that) > 0
+  def >=(that:  Ratio): Boolean = compare(that) >= 0
   def min(that: Ratio): Ratio = if (this <= that) this else that
   def max(that: Ratio): Ratio = if (this >= that) this else that
 

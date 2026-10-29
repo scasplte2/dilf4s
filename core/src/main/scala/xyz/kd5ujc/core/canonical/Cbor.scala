@@ -35,16 +35,16 @@ object Cbor {
       case CBool(false) => Eval.now(ByteVector(0xf4))
       case CBool(true)  => Eval.now(ByteVector(0xf5))
       case CInt(n)      => Eval.now(integer(n))
-      case r: CRational => Eval.now(head(6, TagRational.toLong) ++ head(4, 2L) ++ integer(r.value.numerator) ++ integer(r.value.denominator))
-      case t: CText     => Eval.now(text(t.value))
-      case CBytes(b)    => Eval.now(head(2, b.size) ++ b)
-      case CArray(vs)   => Eval.defer(vs.traverse(encodeEval)).map(parts => parts.foldLeft(head(4, vs.size.toLong))(_ ++ _))
+      case r: CRational =>
+        Eval.now(head(6, TagRational.toLong) ++ head(4, 2L) ++ integer(r.value.numerator) ++ integer(r.value.denominator))
+      case t: CText   => Eval.now(text(t.value))
+      case CBytes(b)  => Eval.now(head(2, b.size) ++ b)
+      case CArray(vs) => Eval.defer(vs.traverse(encodeEval)).map(parts => parts.foldLeft(head(4, vs.size.toLong))(_ ++ _))
       case m: CMap =>
         Eval
           .defer(m.entries.toVector.traverse { case (k, v) => encodeEval(v).map(ev => (text(k), ev)) })
           .map { entries =>
-            entries
-              .sortWith { case ((ka, _), (kb, _)) => compareBytes(ka, kb) < 0 }
+            entries.sortWith { case ((ka, _), (kb, _)) => compareBytes(ka, kb) < 0 }
               .foldLeft(head(5, entries.size.toLong)) { case (acc, (k, v)) => acc ++ k ++ v }
           }
     }
@@ -125,13 +125,13 @@ object Cbor {
     step match {
       case Read(pos, stack, depth) =>
         readItem(in, pos) match {
-          case Left(e)                                   => e.asLeft
-          case Right(Scalar(v, end))                     => run(in, maxDepth, Deliver(v, pos, end, stack, depth))
-          case Right(OpenArray(0L, end))                 => run(in, maxDepth, Deliver(EmptyArray, pos, end, stack, depth))
-          case Right(OpenMap(0L, end))                   => run(in, maxDepth, Deliver(EmptyMap, pos, end, stack, depth))
-          case Right(_) if depth >= maxDepth             => DepthExceeded(maxDepth).asLeft
-          case Right(OpenArray(n, end))                  => run(in, maxDepth, Read(end, ArrayFrame(n, Vector.empty) :: stack, depth + 1))
-          case Right(OpenMap(n, end))                    => run(in, maxDepth, Read(end, MapFrame(n, Vector.empty, None, None) :: stack, depth + 1))
+          case Left(e)                       => e.asLeft
+          case Right(Scalar(v, end))         => run(in, maxDepth, Deliver(v, pos, end, stack, depth))
+          case Right(OpenArray(0L, end))     => run(in, maxDepth, Deliver(EmptyArray, pos, end, stack, depth))
+          case Right(OpenMap(0L, end))       => run(in, maxDepth, Deliver(EmptyMap, pos, end, stack, depth))
+          case Right(_) if depth >= maxDepth => DepthExceeded(maxDepth).asLeft
+          case Right(OpenArray(n, end))      => run(in, maxDepth, Read(end, ArrayFrame(n, Vector.empty) :: stack, depth + 1))
+          case Right(OpenMap(n, end))        => run(in, maxDepth, Read(end, MapFrame(n, Vector.empty, None, None) :: stack, depth + 1))
         }
 
       case Deliver(v, _, end, Nil, _) =>
@@ -180,9 +180,10 @@ object Cbor {
     byteAt(in, pos).flatMap { initial =>
       val (major, info) = (initial >>> 5, initial & 0x1f)
       def sized(len: Int, minimum: BigInt): Either[CanonicalError, Head] =
-        readSpan(in, pos + 1, BigInt(len)).flatMap { case (b, end) =>
-          val n = BigInt(1, b.toArray)
-          Either.cond(n >= minimum, Head(major, n, end), NonCanonical(pos, s"argument $n not in shortest form"))
+        readSpan(in, pos + 1, BigInt(len)).flatMap {
+          case (b, end) =>
+            val n = BigInt(1, b.toArray)
+            Either.cond(n >= minimum, Head(major, n, end), NonCanonical(pos, s"argument $n not in shortest form"))
         }
       if (info < 24) Head(major, BigInt(info), pos + 1).asRight
       else if (major == 7) Unsupported(pos, s"floating point or simple value (additional information $info)").asLeft
@@ -199,31 +200,33 @@ object Cbor {
 
   private def readTagged(in: ByteVector, pos: Long, tag: BigInt, end: Long): Either[CanonicalError, (CanonicalValue, Long)] =
     tag.toInt match {
-      case TagPositiveBignum | TagNegativeBignum if tag.isValidInt => readBignum(in, pos, tag.toInt, end).map { case (n, e) => (CInt(n), e) }
-      case TagRational if tag.isValidInt                          => readRational(in, pos, end)
-      case _                                                      => Unsupported(pos, s"tag $tag").asLeft
+      case TagPositiveBignum | TagNegativeBignum if tag.isValidInt =>
+        readBignum(in, pos, tag.toInt, end).map { case (n, e) => (CInt(n), e) }
+      case TagRational if tag.isValidInt => readRational(in, pos, end)
+      case _                             => Unsupported(pos, s"tag $tag").asLeft
     }
 
   private def readBignum(in: ByteVector, pos: Long, tag: Int, end: Long): Either[CanonicalError, (BigInt, Long)] =
     readHead(in, end).flatMap {
       case Head(2, len, bodyStart) =>
-        readSpan(in, bodyStart, len).flatMap { case (b, e) =>
-          if (b.headOption.forall(_ == 0)) NonCanonical(pos, "bignum magnitude must be non-empty without leading zeros").asLeft
-          else if (b.size <= 8) NonCanonical(pos, "bignum used for a value that fits major type 0/1").asLeft
-          else {
-            val magnitude = BigInt(1, b.toArray)
-            (if (tag == TagPositiveBignum) magnitude else -1 - magnitude, e).asRight
-          }
+        readSpan(in, bodyStart, len).flatMap {
+          case (b, e) =>
+            if (b.headOption.forall(_ == 0)) NonCanonical(pos, "bignum magnitude must be non-empty without leading zeros").asLeft
+            else if (b.size <= 8) NonCanonical(pos, "bignum used for a value that fits major type 0/1").asLeft
+            else {
+              val magnitude = BigInt(1, b.toArray)
+              (if (tag == TagPositiveBignum) magnitude else -1 - magnitude, e).asRight
+            }
         }
       case _ => NonCanonical(pos, "bignum tag must wrap a byte string").asLeft
     }
 
   private def readInteger(in: ByteVector, pos: Long): Either[CanonicalError, (BigInt, Long)] =
     readHead(in, pos).flatMap {
-      case Head(0, n, end)                                         => (n, end).asRight
-      case Head(1, n, end)                                         => (-1 - n, end).asRight
+      case Head(0, n, end)                                                     => (n, end).asRight
+      case Head(1, n, end)                                                     => (-1 - n, end).asRight
       case Head(6, t, end) if t == TagPositiveBignum || t == TagNegativeBignum => readBignum(in, pos, t.toInt, end)
-      case _                                                       => NonCanonical(pos, "expected an integer").asLeft
+      case _                                                                   => NonCanonical(pos, "expected an integer").asLeft
     }
 
   private def readRational(in: ByteVector, pos: Long, end: Long): Either[CanonicalError, (CanonicalValue, Long)] =
@@ -238,10 +241,11 @@ object Cbor {
     } yield (CanonicalValue.number(r), den._2)
 
   private def readText(in: ByteVector, pos: Long, len: BigInt): Either[CanonicalError, (CText, Long)] =
-    readSpan(in, pos, len).flatMap { case (b, end) =>
-      val raw = b.toArray
-      if (!Utf8.isWellFormed(raw)) InvalidUtf8(pos).asLeft
-      else CanonicalValue.text(new String(raw, UTF_8)).map(t => (t, end))
+    readSpan(in, pos, len).flatMap {
+      case (b, end) =>
+        val raw = b.toArray
+        if (!Utf8.isWellFormed(raw)) InvalidUtf8(pos).asLeft
+        else CanonicalValue.text(new String(raw, UTF_8)).map(t => (t, end))
     }
 
   private def readSpan(in: ByteVector, pos: Long, len: BigInt): Either[CanonicalError, (ByteVector, Long)] =
@@ -260,8 +264,8 @@ private[canonical] object Utf8 {
 
   def isWellFormed(a: Array[Byte]): Boolean = check(a, 0)
 
-  private def at(a: Array[Byte], i: Int): Int = if (i < a.length) a(i) & 0xff else -1
-  private def cont(a: Array[Byte], i: Int): Boolean = (at(a, i) & 0xc0) == 0x80 && at(a, i) >= 0
+  private def at(a:     Array[Byte], i: Int): Int = if (i < a.length) a(i) & 0xff else -1
+  private def cont(a:   Array[Byte], i: Int): Boolean = (at(a, i) & 0xc0) == 0x80 && at(a, i) >= 0
   private def within(a: Array[Byte], i: Int, lo: Int, hi: Int): Boolean = at(a, i) >= lo && at(a, i) <= hi
 
   @tailrec

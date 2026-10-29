@@ -15,13 +15,14 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
   private def parse(s: String) = CanonicalJson.parse(s)
 
   pureTest("numbers are read exactly from source text") {
-    expect.same(Right(ratio(1, 10)), parse("0.1")) and
-      expect.same(Right(CInt(1)), parse("1.0")) and
-      expect.same(Right(CInt(1)), parse("100e-2")) and
-      expect.same(Right(CInt(0)), parse("-0")) and
-      expect.same(Right(CInt(1200)), parse("1.2E3")) and
-      expect.same(Right(ratio(-3, 8)), parse("-0.375")) and
-      expect.same(Right(CInt(BigInt("123456789012345678901234567890"))), parse("123456789012345678901234567890"))
+    expect
+      .same(Right(ratio(1, 10)), parse("0.1"))
+      .and(expect.same(Right(CInt(1)), parse("1.0")))
+      .and(expect.same(Right(CInt(1)), parse("100e-2")))
+      .and(expect.same(Right(CInt(0)), parse("-0")))
+      .and(expect.same(Right(CInt(1200)), parse("1.2E3")))
+      .and(expect.same(Right(ratio(-3, 8)), parse("-0.375")))
+      .and(expect.same(Right(CInt(BigInt("123456789012345678901234567890"))), parse("123456789012345678901234567890")))
   }
 
   pureTest("integers above 2^53 stay distinct, with distinct encodings") {
@@ -44,16 +45,18 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("objects drop null members and reject duplicate names") {
-    expect.same(parse("""{"a":1}"""), parse("""{"a":1,"b":null}""")) and
-      expect.same(Left(DuplicateKey("a")), parse("""{"a":1,"a":2}""")) and
-      expect.same(Left(DuplicateKey("a")), parse("""{"a":null,"a":2}""")) and
-      expect(parse("[null, 1]").map(_.depth).contains(1), "array nulls are kept")
+    expect
+      .same(parse("""{"a":1}"""), parse("""{"a":1,"b":null}"""))
+      .and(expect.same(Left(DuplicateKey("a")), parse("""{"a":1,"a":2}""")))
+      .and(expect.same(Left(DuplicateKey("a")), parse("""{"a":null,"a":2}""")))
+      .and(expect(parse("[null, 1]").map(_.depth).contains(1), "array nulls are kept"))
   }
 
   pureTest("escaped surrogates must pair up") {
-    expect.same(parse("\"\\ud83d\\ude00\""), CanonicalValue.text("\ud83d\ude00")) and
-      expect(parse("\"\\ud800\"").left.exists(_.isInstanceOf[UnpairedSurrogate]), "a lone high surrogate is rejected") and
-      expect(parse("{\"\\udc00\":1}").isLeft, "a lone surrogate in a key is rejected")
+    expect
+      .same(parse("\"\\ud83d\\ude00\""), CanonicalValue.text("\ud83d\ude00"))
+      .and(expect(parse("\"\\ud800\"").left.exists(_.isInstanceOf[UnpairedSurrogate]), "a lone high surrogate is rejected"))
+      .and(expect(parse("{\"\\udc00\":1}").isLeft, "a lone surrogate in a key is rejected"))
   }
 
   pureTest("strict RFC 8259 syntax") {
@@ -75,15 +78,16 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
 
   test("the circe bridge agrees with the parser") {
     forall(CanonicalGens.jsonValue(4)) { v =>
-      val viaCirce = CanonicalJson.render(v).flatMap(s => parser.parse(s).left.map(e => JsonSyntax(0, e.message))).flatMap(CanonicalJson.fromCirce(_))
+      val viaCirce =
+        CanonicalJson.render(v).flatMap(s => parser.parse(s).left.map(e => JsonSyntax(0, e.message))).flatMap(CanonicalJson.fromCirce(_))
       expect.same(Right(v), viaCirce)
     }
   }
 
   pureTest("render fails for values JSON cannot represent") {
-    expect(CanonicalJson.render(CBytes(scodec.bits.ByteVector(1, 2))).isLeft, "bytes have no JSON form") and
-      expect(CanonicalJson.render(ratio(1, 3)).isLeft, "1/3 has no exact decimal") and
-      expect.same(Right("0.1"), CanonicalJson.render(ratio(1, 10)))
+    expect(CanonicalJson.render(CBytes(scodec.bits.ByteVector(1, 2))).isLeft, "bytes have no JSON form")
+      .and(expect(CanonicalJson.render(ratio(1, 3)).isLeft, "1/3 has no exact decimal"))
+      .and(expect.same(Right("0.1"), CanonicalJson.render(ratio(1, 10))))
   }
 
   pureTest("typed data derives through its circe Encoder") {
@@ -123,11 +127,12 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
   }
 
   test("encoded-key order is a strict total order on distinct keys") {
-    forall(org.scalacheck.Gen.zip(CanonicalGens.text, CanonicalGens.text)) { case (a, b) =>
-      val enc = (s: String) => Cbor.encode(CanonicalValue.text(s).toOption.get)
-      val (ab, ba) = (Cbor.compareBytes(enc(a), enc(b)), Cbor.compareBytes(enc(b), enc(a)))
-      expect((a == b) == (ab == 0), s"compare($a, $b) = $ab must be 0 exactly when equal") and
-        expect(math.signum(ab) == -math.signum(ba), "the order must be antisymmetric")
+    forall(org.scalacheck.Gen.zip(CanonicalGens.text, CanonicalGens.text)) {
+      case (a, b) =>
+        val enc = (s: String) => Cbor.encode(CanonicalValue.text(s).toOption.get)
+        val (ab, ba) = (Cbor.compareBytes(enc(a), enc(b)), Cbor.compareBytes(enc(b), enc(a)))
+        expect((a == b) == (ab == 0), s"compare($a, $b) = $ab must be 0 exactly when equal")
+          .and(expect(math.signum(ab) == -math.signum(ba), "the order must be antisymmetric"))
     }
   }
 }

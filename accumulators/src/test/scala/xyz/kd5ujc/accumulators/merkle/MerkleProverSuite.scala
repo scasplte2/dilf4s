@@ -44,7 +44,8 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
   }
 
   test("Creating a proof fails when using a Leaf NOT in the tree") {
-    forall(nonEmptyStringListGen(2, 100)) { strings =>
+    // the absent leaf must not also appear in the tail, or it is in the tree after all
+    forall(nonEmptyStringListGen(2, 100).map(_.distinct).suchThat(_.size >= 2)) { strings =>
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
@@ -57,7 +58,8 @@ object MerkleProverSuite extends SimpleIOSuite with Checkers {
   }
 
   test("Creating a proof fails when using a digest of a leaf NOT in the tree") {
-    forall(nonEmptyStringListGen(2, 100)) { strings =>
+    // the absent leaf must not also appear in the tail, or it is in the tree after all
+    forall(nonEmptyStringListGen(2, 100).map(_.distinct).suchThat(_.size >= 2)) { strings =>
       for {
         implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
         implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])

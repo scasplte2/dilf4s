@@ -11,7 +11,10 @@ object CanonicalGens {
   val bigInt: Gen[BigInt] = Gen.oneOf(
     Gen.choose(-30L, 30L).map(BigInt(_)),
     Gen.long.map(BigInt(_)),
-    Gen.choose(60, 200).flatMap(bits => Gen.long.map(seed => BigInt(bits, new scala.util.Random(seed)))).flatMap(n => Gen.oneOf(n, -n, -n - 1))
+    Gen
+      .choose(60, 200)
+      .flatMap(bits => Gen.long.map(seed => BigInt(bits, new scala.util.Random(seed))))
+      .flatMap(n => Gen.oneOf(n, -n, -n - 1))
   )
 
   val ratio: Gen[Ratio] =
@@ -41,7 +44,10 @@ object CanonicalGens {
     else
       Gen.frequency(
         4 -> scalar,
-        1 -> Gen.choose(0, 4).flatMap(Gen.listOfN(_, value(depth - 1))).map(vs => CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)),
+        1 -> Gen
+          .choose(0, 4)
+          .flatMap(Gen.listOfN(_, value(depth - 1)))
+          .map(vs => CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)),
         1 -> Gen
           .choose(0, 4)
           .flatMap(Gen.listOfN(_, Gen.zip(text, value(depth - 1))))
@@ -66,7 +72,10 @@ object CanonicalGens {
     else
       Gen.frequency(
         4 -> jsonScalar,
-        1 -> Gen.choose(0, 4).flatMap(Gen.listOfN(_, jsonValue(depth - 1))).map(vs => CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)),
+        1 -> Gen
+          .choose(0, 4)
+          .flatMap(Gen.listOfN(_, jsonValue(depth - 1)))
+          .map(vs => CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)),
         1 -> Gen
           .choose(0, 4)
           .flatMap(Gen.listOfN(_, Gen.zip(text, jsonValue(depth - 1))))

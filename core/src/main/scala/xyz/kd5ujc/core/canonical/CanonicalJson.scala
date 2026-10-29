@@ -30,7 +30,8 @@ object CanonicalJson {
 
   sealed private trait Step
   final private case class ExpectValue(pos: Int, stack: List[Frame], depth: Int) extends Step
-  final private case class ExpectKey(pos: Int, acc: Vector[(String, CanonicalValue)], seen: Set[String], stack: List[Frame], depth: Int) extends Step
+  final private case class ExpectKey(pos: Int, acc: Vector[(String, CanonicalValue)], seen: Set[String], stack: List[Frame], depth: Int)
+      extends Step
   final private case class Deliver(value: CanonicalValue, pos: Int, stack: List[Frame], depth: Int) extends Step
 
   @tailrec
@@ -62,7 +63,7 @@ object CanonicalJson {
         if (!charAt(s, p).contains('"')) syntax(p, "expected a member name").asLeft
         else
           string(s, p) match {
-            case Left(e) => e.asLeft
+            case Left(e)                               => e.asLeft
             case Right((key, _)) if seen.contains(key) => DuplicateKey(key).asLeft
             case Right((key, next)) =>
               val colon = skipWs(s, next)
@@ -125,13 +126,14 @@ object CanonicalJson {
     val expDigits = if (hasExp) s.substring(expSignEnd, end) else "0"
     val malformed =
       intDigits.isEmpty || (intDigits.length > 1 && intDigits.startsWith("0")) ||
-        (hasFrac && fracDigits.isEmpty) || (hasExp && expDigits.isEmpty)
+      (hasFrac && fracDigits.isEmpty) || (hasExp && expDigits.isEmpty)
     if (malformed) InvalidNumber(source, None).asLeft
     else {
       val exponent = BigInt(expDigits) * (if (hasExp && charAt(s, fracEnd + 1).contains('-')) -1 else 1)
       val scale = BigInt(fracDigits.length) - exponent
       val unscaled = BigInt(intDigits + fracDigits) * (if (negative) -1 else 1)
-      if (scale.abs > BigInt(maxScale)) InvalidNumber(source, Some(xyz.kd5ujc.numerics.ArithmeticError.ScaleOutOfRange(scale.toInt, maxScale))).asLeft
+      if (scale.abs > BigInt(maxScale))
+        InvalidNumber(source, Some(xyz.kd5ujc.numerics.ArithmeticError.ScaleOutOfRange(scale.toInt, maxScale))).asLeft
       else Ratio.fromDecimal(unscaled, scale.toInt, maxScale).bimap(e => InvalidNumber(source, Some(e)), r => (number(r), end))
     }
   }
@@ -141,9 +143,9 @@ object CanonicalJson {
     @tailrec
     def go(i: Int, segment: Int, acc: Vector[String]): Either[CanonicalError, (String, Int)] =
       charAt(s, i) match {
-        case None                => syntax(i, "unterminated string").asLeft
-        case Some('"')           => ((acc :+ s.substring(segment, i)).mkString, i + 1).asRight
-        case Some(c) if c < ' '  => syntax(i, "unescaped control character in string").asLeft
+        case None               => syntax(i, "unterminated string").asLeft
+        case Some('"')          => ((acc :+ s.substring(segment, i)).mkString, i + 1).asRight
+        case Some(c) if c < ' ' => syntax(i, "unescaped control character in string").asLeft
         case Some('\\') =>
           val prefix = acc :+ s.substring(segment, i)
           charAt(s, i + 1) match {
@@ -168,15 +170,15 @@ object CanonicalJson {
   private def skipWs(s: String, i: Int): Int =
     charAt(s, i) match {
       case Some(' ') | Some('\t') | Some('\n') | Some('\r') => skipWs(s, i + 1)
-      case _                                                 => i
+      case _                                                => i
     }
 
   @tailrec
   private def digits(s: String, i: Int): Int = if (charAt(s, i).exists(isDigit)) digits(s, i + 1) else i
 
-  private def charAt(s: String, i: Int): Option[Char] = Option.when(i >= 0 && i < s.length)(s.charAt(i))
-  private def isDigit(c: Char): Boolean = c >= '0' && c <= '9'
-  private def isHex(c: Char): Boolean = isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+  private def charAt(s:      String, i:   Int): Option[Char] = Option.when(i >= 0 && i < s.length)(s.charAt(i))
+  private def isDigit(c:     Char): Boolean = c >= '0' && c <= '9'
+  private def isHex(c:       Char): Boolean = isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
   private def syntax(offset: Int, reason: String): CanonicalError = JsonSyntax(offset, reason)
 
   // ------------------------------------------------------------------ circe bridge
@@ -191,8 +193,7 @@ object CanonicalJson {
       jsonBoolean = b => Eval.now(CBool(b).asRight),
       jsonNumber = n => Eval.now(circeNumber(n, maxScale)),
       jsonString = s => Eval.now(text(s)),
-      jsonArray = vs =>
-        Eval.defer(vs.traverse(circe(_, maxScale))).map(_.sequence.flatMap(CanonicalValue.array)),
+      jsonArray = vs => Eval.defer(vs.traverse(circe(_, maxScale))).map(_.sequence.flatMap(CanonicalValue.array)),
       jsonObject = o =>
         Eval
           .defer(o.toVector.traverse { case (k, v) => circe(v, maxScale).map(_.map(k -> _)) })
@@ -209,9 +210,9 @@ object CanonicalJson {
 
   private def toCirceEval(value: CanonicalValue): Eval[Either[CanonicalError, Json]] =
     value match {
-      case CNull        => Eval.now(Json.Null.asRight)
-      case CBool(b)     => Eval.now(Json.fromBoolean(b).asRight)
-      case CInt(n)      => Eval.now(Json.fromBigInt(n).asRight)
+      case CNull    => Eval.now(Json.Null.asRight)
+      case CBool(b) => Eval.now(Json.fromBoolean(b).asRight)
+      case CInt(n)  => Eval.now(Json.fromBigInt(n).asRight)
       case r: CRational =>
         Eval.now(
           r.value.toDecimalString
@@ -249,15 +250,15 @@ object CanonicalJson {
 
   private def quote(s: String): String =
     s.flatMap {
-      case '"'           => "\\\""
-      case '\\'          => "\\\\"
-      case '\n'          => "\\n"
-      case '\r'          => "\\r"
-      case '\t'          => "\\t"
-      case '\b'          => "\\b"
-      case '\f'          => "\\f"
-      case c if c < ' '  => f"\\u${c.toInt}%04x"
-      case c             => c.toString
+      case '"'          => "\\\""
+      case '\\'         => "\\\\"
+      case '\n'         => "\\n"
+      case '\r'         => "\\r"
+      case '\t'         => "\\t"
+      case '\b'         => "\\b"
+      case '\f'         => "\\f"
+      case c if c < ' ' => f"\\u${c.toInt}%04x"
+      case c            => c.toString
     }.prepended('"').appended('"')
 
   private object CodePointOrder extends Ordering[String] {

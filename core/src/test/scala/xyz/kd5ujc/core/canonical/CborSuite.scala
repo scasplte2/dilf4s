@@ -9,8 +9,8 @@ import weaver.scalacheck.Checkers
 
 object CborSuite extends SimpleIOSuite with Checkers {
 
-  private def txt(s: String): CanonicalValue = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
-  private def arr(vs: CanonicalValue*): CanonicalValue = CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)
+  private def txt(s:   String): CanonicalValue = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
+  private def arr(vs:  CanonicalValue*): CanonicalValue = CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)
   private def obj(kvs: (String, CanonicalValue)*): CanonicalValue = CanonicalValue.map(kvs).fold(e => sys.error(e.toString), identity)
 
   /** RFC 8949 Appendix A examples that fall inside the deterministic profile. */
@@ -53,17 +53,17 @@ object CborSuite extends SimpleIOSuite with Checkers {
     ("[\"a\", {\"b\": \"c\"}]", arr(txt("a"), obj("b" -> txt("c"))), hex"826161a161626163")
   )
 
-  rfcExamples.foreach { case (name, value, bytes) =>
-    pureTest(s"RFC 8949 Appendix A: $name") {
-      expect.same(bytes, Cbor.encode(value)) and expect.same(Right(value), Cbor.decode(bytes))
-    }
+  rfcExamples.foreach {
+    case (name, value, bytes) =>
+      pureTest(s"RFC 8949 Appendix A: $name") {
+        expect.same(bytes, Cbor.encode(value)).and(expect.same(Right(value), Cbor.decode(bytes)))
+      }
   }
 
   pureTest("rationals are tag 30 over a reduced [numerator, denominator] pair") {
     val half = CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(1, 2).toOption.get)
     val negThird = CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(-2, 6).toOption.get)
-    expect.same(hex"d81e820102", Cbor.encode(half)) and
-      expect.same(hex"d81e822003", Cbor.encode(negThird))
+    expect.same(hex"d81e820102", Cbor.encode(half)).and(expect.same(hex"d81e822003", Cbor.encode(negThird)))
   }
 
   pureTest("map keys order by encoded bytes: shorter keys first, then bytewise") {
@@ -72,8 +72,9 @@ object CborSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("null map values are dropped, so absent and null hash identically") {
-    expect.same(Cbor.encode(obj("a" -> CInt(1))), Cbor.encode(obj("a" -> CInt(1), "b" -> CNull))) and
-      expect.same(Left(DuplicateKey("a")), CanonicalValue.map(List("a" -> CNull, "a" -> CInt(1))))
+    expect
+      .same(Cbor.encode(obj("a" -> CInt(1))), Cbor.encode(obj("a" -> CInt(1), "b" -> CNull)))
+      .and(expect.same(Left(DuplicateKey("a")), CanonicalValue.map(List("a" -> CNull, "a" -> CInt(1)))))
   }
 
   test("decode inverts encode") {
@@ -110,13 +111,14 @@ object CborSuite extends SimpleIOSuite with Checkers {
     ("huge claimed length", hex"9bffffffffffffffff", { case UnexpectedEnd(_) => true; case _ => false })
   )
 
-  rejected.foreach { case (name, bytes, isExpected) =>
-    pureTest(s"rejects non-canonical input: $name") {
-      Cbor.decode(bytes) match {
-        case Left(e)  => expect(isExpected(e), s"unexpected error $e for ${bytes.toHex}")
-        case Right(v) => failure(s"accepted ${bytes.toHex} as $v")
+  rejected.foreach {
+    case (name, bytes, isExpected) =>
+      pureTest(s"rejects non-canonical input: $name") {
+        Cbor.decode(bytes) match {
+          case Left(e)  => expect(isExpected(e), s"unexpected error $e for ${bytes.toHex}")
+          case Right(v) => failure(s"accepted ${bytes.toHex} as $v")
+        }
       }
-    }
   }
 
   pureTest("nesting beyond the limit is a typed error at any depth, never a stack overflow") {
@@ -125,26 +127,26 @@ object CborSuite extends SimpleIOSuite with Checkers {
     val overLimit = (1 to CanonicalValue.MaxDepth).foldLeft(CanonicalValue.array(Vector(CInt(0)))) { (acc, _) =>
       acc.flatMap(a => CanonicalValue.array(Vector(a)))
     }
-    expect.same(Left(DepthExceeded(CanonicalValue.MaxDepth)), Cbor.decode(bomb)) and
-      expect(Cbor.decode(atLimit).isRight, "a value exactly at the depth limit decodes") and
-      expect.same(Left(DepthExceeded(CanonicalValue.MaxDepth)), overLimit.map(_.depth))
+    expect
+      .same(Left(DepthExceeded(CanonicalValue.MaxDepth)), Cbor.decode(bomb))
+      .and(expect(Cbor.decode(atLimit).isRight, "a value exactly at the depth limit decodes"))
+      .and(expect.same(Left(DepthExceeded(CanonicalValue.MaxDepth)), overLimit.map(_.depth)))
   }
 
   pureTest("a caller-supplied depth limit below the maximum is honoured") {
-    expect.same(Left(DepthExceeded(2)), Cbor.decode(hex"81818100", maxDepth = 2)) and
-      expect(Cbor.decode(hex"818100", maxDepth = 2).isRight, "depth 2 fits a limit of 2")
+    expect
+      .same(Left(DepthExceeded(2)), Cbor.decode(hex"81818100", maxDepth = 2))
+      .and(expect(Cbor.decode(hex"818100", maxDepth = 2).isRight, "depth 2 fits a limit of 2"))
   }
 
   pureTest("the bytewise comparator is unsigned") {
-    expect(Cbor.compareBytes(hex"01", hex"ff") < 0, "0x01 < 0xff") and
-      expect(Cbor.compareBytes(hex"61", hex"6161") < 0, "prefix sorts first") and
-      expect.same(0, Cbor.compareBytes(hex"abcd", hex"abcd"))
+    expect(Cbor.compareBytes(hex"01", hex"ff") < 0, "0x01 < 0xff")
+      .and(expect(Cbor.compareBytes(hex"61", hex"6161") < 0, "prefix sorts first"))
+      .and(expect.same(0, Cbor.compareBytes(hex"abcd", hex"abcd")))
   }
 
   pureTest("depth is tracked structurally") {
-    expect.same(0, CInt(1).depth) and
-      expect.same(1, EmptyArray.depth) and
-      expect.same(3, arr(obj("k" -> arr(CInt(1)))).depth)
+    expect.same(0, CInt(1).depth).and(expect.same(1, EmptyArray.depth)).and(expect.same(3, arr(obj("k" -> arr(CInt(1)))).depth))
   }
 
 }
