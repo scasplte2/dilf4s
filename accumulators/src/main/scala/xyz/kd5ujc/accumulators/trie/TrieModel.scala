@@ -36,16 +36,28 @@ object KeyMode {
 
   sealed abstract case class Variable(maxBytes: Int) extends KeyMode {
     def path(key: ByteVector): Either[TrieError, BitVector] =
-      Either.cond(key.size <= maxBytes.toLong, key.bits, TrieError.InvalidKey(s"variable($maxBytes) mode allows at most $maxBytes bytes, got ${key.size}"))
+      Either.cond(
+        key.size <= maxBytes.toLong,
+        key.bits,
+        TrieError.InvalidKey(s"variable($maxBytes) mode allows at most $maxBytes bytes, got ${key.size}")
+      )
     def maxBits: Long = maxBytes.toLong * 8
     def allowsBranchValues: Boolean = true
   }
 
   def fixed(bytes: Int): Either[TrieError, KeyMode] =
-    Either.cond(bytes >= 1 && bytes <= MaxFixedBytes, new Fixed(bytes) {}, TrieError.InvalidKey(s"fixed key length must be 1..$MaxFixedBytes"))
+    Either.cond(
+      bytes >= 1 && bytes <= MaxFixedBytes,
+      new Fixed(bytes) {},
+      TrieError.InvalidKey(s"fixed key length must be 1..$MaxFixedBytes")
+    )
 
   def variable(maxBytes: Int): Either[TrieError, KeyMode] =
-    Either.cond(maxBytes >= 0 && maxBytes <= MaxVariableBytes, new Variable(maxBytes) {}, TrieError.InvalidKey(s"variable key limit must be 0..$MaxVariableBytes"))
+    Either.cond(
+      maxBytes >= 0 && maxBytes <= MaxVariableBytes,
+      new Variable(maxBytes) {},
+      TrieError.InvalidKey(s"variable key limit must be 0..$MaxVariableBytes")
+    )
 }
 
 sealed trait TrieError extends Product with Serializable
@@ -84,8 +96,8 @@ object Node {
     Leaf(segment, value, T.leaf(segment, value))
 
   /** Callers guarantee the branch invariant: two children, or one child and a value. */
-  def branch[H](segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]])(implicit
-    T: TrieHashing[H]
+  def branch[H](segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]])(
+    implicit T: TrieHashing[H]
   ): Branch[H] = Branch(segment, value, left, right, T.branch(segment, value, left, right))
 
   def validBranch(value: Option[Any], children: Int): Boolean = children == 2 || (children == 1 && value.isDefined)
@@ -95,8 +107,8 @@ object Node {
 trait TrieHashing[H] {
   def hasher: Hasher[H]
   def empty: Digest[H]
-  def value(bytes: ByteVector): Digest[H]
-  def leaf(segment: BitVector, value: Digest[H]): Digest[H]
+  def value(bytes:    ByteVector): Digest[H]
+  def leaf(segment:   BitVector, value: Digest[H]): Digest[H]
   def branch(segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]]): Digest[H]
 }
 
@@ -118,7 +130,7 @@ object TrieHashing {
     private val leafTag = TaggedHash[H](tag(LeafTag))
     private val branchTag = TaggedHash[H](tag(BranchTag))
     val empty: Digest[H] = TaggedHash[H](tag(EmptyTag)).apply(ByteVector.empty)
-    def value(bytes: ByteVector): Digest[H] = valueTag(bytes)
+    def value(bytes:  ByteVector): Digest[H] = valueTag(bytes)
     def leaf(segment: BitVector, value: Digest[H]): Digest[H] = leafTag(Cbor.encode(NodeCodec.leaf(segment, value)))
     def branch(segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]]): Digest[H] =
       branchTag(Cbor.encode(NodeCodec.branch(segment, value.map(_.bytes), left.map(_.bytes), right.map(_.bytes))))
@@ -138,7 +150,7 @@ private[trie] object NodeCodec {
   def branch(segmentBits: BitVector, value: Option[ByteVector], left: Option[ByteVector], right: Option[ByteVector]): CanonicalValue =
     fields(
       List("s" -> segment(segmentBits)) ++ value.map(v => "v" -> CanonicalValue.bytes(v)).toList ++
-        left.map(l => "l" -> CanonicalValue.bytes(l)).toList ++ right.map(r => "r" -> CanonicalValue.bytes(r)).toList
+      left.map(l => "l" -> CanonicalValue.bytes(l)).toList ++ right.map(r => "r" -> CanonicalValue.bytes(r)).toList
     )
 
   /** Decodes `{n, b}` with canonical zero padding. */

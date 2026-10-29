@@ -18,7 +18,8 @@ sealed trait ProofNode[H] extends Product with Serializable
 object ProofNode {
   final case class Stub[H](hash: Digest[H]) extends ProofNode[H]
   final case class PLeaf[H](segment: BitVector, value: Digest[H]) extends ProofNode[H]
-  final case class PBranch[H](segment: BitVector, value: Option[Digest[H]], left: Option[ProofNode[H]], right: Option[ProofNode[H]]) extends ProofNode[H]
+  final case class PBranch[H](segment: BitVector, value: Option[Digest[H]], left: Option[ProofNode[H]], right: Option[ProofNode[H]])
+      extends ProofNode[H]
 }
 
 /** A partial trie; `None` is the proof of the empty trie. */
@@ -43,7 +44,7 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
     @tailrec
     def go(node: ProofNode[H], remaining: BitVector): Lookup[H] =
       node match {
-        case Stub(_) => Lookup.NotCovered
+        case Stub(_)           => Lookup.NotCovered
         case PLeaf(segment, v) => if (segment == remaining) Lookup.Present(v) else Lookup.Absent
         case PBranch(segment, value, left, right) =>
           if (!remaining.startsWith(segment)) Lookup.Absent
@@ -88,8 +89,8 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
     @tailrec
     def gather(todo: List[(ProofNode[H], BitVector)], acc: List[(BitVector, Digest[H])]): Option[List[(BitVector, Digest[H])]] =
       todo match {
-        case Nil => Some(acc.reverse)
-        case (Stub(_), _) :: _ => None
+        case Nil                             => Some(acc.reverse)
+        case (Stub(_), _) :: _               => None
         case (PLeaf(segment, v), at) :: rest => gather(rest, (at ++ segment, v) :: acc)
         case (PBranch(segment, value, left, right), at) :: rest =>
           val here = at ++ segment
@@ -98,7 +99,9 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
       }
 
     top.fold[Option[List[(BitVector, Digest[H])]]](Some(Nil)) { t =>
-      locate(t, BitVector.empty, prefix).flatMap(_.fold[Option[List[(BitVector, Digest[H])]]](Some(Nil)) { case (n, at) => gather(List(n -> at), Nil) })
+      locate(t, BitVector.empty, prefix).flatMap(_.fold[Option[List[(BitVector, Digest[H])]]](Some(Nil)) {
+        case (n, at) => gather(List(n -> at), Nil)
+      })
     }
   }
 }
@@ -120,8 +123,8 @@ object TrieProofs {
 
   private def assemble[H](hash: Digest[H], nodes: Map[Digest[H], Node[H]]): Eval[ProofNode[H]] =
     nodes.get(hash) match {
-      case None              => Eval.now(Stub(hash))
-      case Some(l: Leaf[H])  => Eval.now(PLeaf(l.segment, l.value))
+      case None             => Eval.now(Stub(hash))
+      case Some(l: Leaf[H]) => Eval.now(PLeaf(l.segment, l.value))
       case Some(b: Branch[H]) =>
         (b.left.traverse(h => Eval.defer(assemble(h, nodes))), b.right.traverse(h => Eval.defer(assemble(h, nodes))))
           .mapN(PBranch(b.segment, b.value, _, _))
@@ -134,19 +137,25 @@ object TrieProofs {
         case Key(p)    => (p, false)
         case Prefix(p) => (p, true)
       }
-      (root, path, acc).tailRecM { case (hash, remaining, seen) =>
-        lookup(hash).flatMap {
-          case l: Leaf[H] =>
-            seen.updated(hash, l).asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F]
-          case b: Branch[H] =>
-            val withThis = seen.updated(hash, b)
-            if (isPrefix && b.segment.startsWith(remaining)) TrieEngine.collect(lookup, List(hash)).map(sub => (withThis ++ sub).asRight)
-            else {
-              val rest = remaining.drop(b.segment.size)
-              if (!remaining.startsWith(b.segment) || rest.isEmpty) withThis.asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F]
-              else b.child(rest.head).fold(withThis.asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F])(c => (c, rest.tail, withThis).asLeft[Map[Digest[H], Node[H]]].pure[F])
-            }
-        }
+      (root, path, acc).tailRecM {
+        case (hash, remaining, seen) =>
+          lookup(hash).flatMap {
+            case l: Leaf[H] =>
+              seen.updated(hash, l).asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F]
+            case b: Branch[H] =>
+              val withThis = seen.updated(hash, b)
+              if (isPrefix && b.segment.startsWith(remaining)) TrieEngine.collect(lookup, List(hash)).map(sub => (withThis ++ sub).asRight)
+              else {
+                val rest = remaining.drop(b.segment.size)
+                if (!remaining.startsWith(b.segment) || rest.isEmpty)
+                  withThis.asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F]
+                else
+                  b.child(rest.head)
+                    .fold(withThis.asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F])(c =>
+                      (c, rest.tail, withThis).asLeft[Map[Digest[H], Node[H]]].pure[F]
+                    )
+              }
+          }
       }
     }
 
@@ -169,7 +178,8 @@ object TrieProofs {
       case PBranch(segment, value, left, right) =>
         val here = depth + segment.size
         val children = left.fold(0)(_ => 1) + right.fold(0)(_ => 1)
-        if (!Node.validBranch(value, children)) Eval.now(TrieError.InvalidProof("branch needs two children, or one child and a value").asLeft)
+        if (!Node.validBranch(value, children))
+          Eval.now(TrieError.InvalidProof("branch needs two children, or one child and a value").asLeft)
         else if (value.isDefined && (!mode.allowsBranchValues || here % 8 != 0 || here > mode.maxBits))
           Eval.now(TrieError.InvalidProof(s"branch value at bit $here is invalid for $mode").asLeft)
         else if (here + 1 > mode.maxBits) Eval.now(TrieError.InvalidProof(s"branch at bit $here exceeds $mode").asLeft)
@@ -190,8 +200,8 @@ object TrieProofs {
   @tailrec
   private def records[H](todo: List[ProofNode[H]], acc: List[CanonicalValue]): List[CanonicalValue] =
     todo match {
-      case Nil => acc.reverse
-      case Stub(h) :: rest => records(rest, CanonicalValue.trustedMap(List("h" -> CanonicalValue.bytes(h.bytes))) :: acc)
+      case Nil                 => acc.reverse
+      case Stub(h) :: rest     => records(rest, CanonicalValue.trustedMap(List("h" -> CanonicalValue.bytes(h.bytes))) :: acc)
       case PLeaf(s, v) :: rest => records(rest, NodeCodec.leaf(s, v) :: acc)
       case PBranch(s, v, l, r) :: rest =>
         val mask = (if (l.isDefined) 1 else 0) + (if (r.isDefined) 2 else 0)
@@ -202,7 +212,13 @@ object TrieProofs {
     }
 
   /** Pending decoder work: a branch waiting for its children, newest first. */
-  final private case class Open[H](segment: BitVector, value: Option[Digest[H]], wantLeft: Boolean, wantRight: Boolean, left: Option[ProofNode[H]])
+  final private case class Open[H](
+    segment:   BitVector,
+    value:     Option[Digest[H]],
+    wantLeft:  Boolean,
+    wantRight: Boolean,
+    left:      Option[ProofNode[H]]
+  )
 
   def decode[H: Hasher](value: CanonicalValue): Either[TrieError, TrieProof[H]] =
     value match {
@@ -217,13 +233,13 @@ object TrieProofs {
       case Nil => TrieError.Encoding("proof ended with unfinished branches").asLeft
       case r :: rest =>
         record[H](r) match {
-          case Left(e) => e.asLeft
+          case Left(e)           => e.asLeft
           case Right(Left(open)) => assembleFlat(rest, open :: stack)
           case Right(Right(done)) =>
             attach(done, stack) match {
-              case Left(e)              => e.asLeft
-              case Right(Right(top))    => Either.cond(rest.isEmpty, top, TrieError.Encoding("trailing proof records"))
-              case Right(Left(stack2))  => assembleFlat(rest, stack2)
+              case Left(e)             => e.asLeft
+              case Right(Right(top))   => Either.cond(rest.isEmpty, top, TrieError.Encoding("trailing proof records"))
+              case Right(Left(stack2)) => assembleFlat(rest, stack2)
             }
         }
     }
@@ -251,16 +267,21 @@ object TrieProofs {
       case CMap(m) if m.keySet == Set("s", "v") =>
         (NodeCodec.decodeSegment(m("s")), digest(m("v"))).mapN((s, d) => (PLeaf(s, d): ProofNode[H]).asRight)
       case CMap(m) if m.keySet == Set("s", "c") || m.keySet == Set("s", "c", "v") =>
-        (NodeCodec.decodeSegment(m("s")), m.get("v").traverse(digest), m("c") match {
-          case CInt(c) if c >= 1 && c <= 3 => c.toInt.asRight
-          case other                       => TrieError.Encoding(s"child mask must be 1, 2 or 3: $other").asLeft
-        }).tupled.flatMap { case (s, value, mask) =>
-          val children = (mask & 1) + ((mask >> 1) & 1)
-          Either.cond(
-            Node.validBranch(value, children),
-            Open[H](s, value, (mask & 1) == 1, (mask & 2) == 2, None).asLeft,
-            TrieError.Encoding("branch needs two children, or one child and a value")
-          )
+        (
+          NodeCodec.decodeSegment(m("s")),
+          m.get("v").traverse(digest),
+          m("c") match {
+            case CInt(c) if c >= 1 && c <= 3 => c.toInt.asRight
+            case other                       => TrieError.Encoding(s"child mask must be 1, 2 or 3: $other").asLeft
+          }
+        ).tupled.flatMap {
+          case (s, value, mask) =>
+            val children = (mask & 1) + ((mask >> 1) & 1)
+            Either.cond(
+              Node.validBranch(value, children),
+              Open[H](s, value, (mask & 1) == 1, (mask & 2) == 2, None).asLeft,
+              TrieError.Encoding("branch needs two children, or one child and a value")
+            )
         }
       case other => TrieError.Encoding(s"unrecognised proof record: $other").asLeft
     }

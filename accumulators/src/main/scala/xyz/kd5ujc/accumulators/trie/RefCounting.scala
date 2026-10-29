@@ -42,20 +42,20 @@ object RefCounting {
     for {
       // 1. insert genuinely new nodes with count 0
       fresh <- delta.created.toList.filterA { case (h, _) => view(h).map(_.isEmpty) }
-      start  = fresh.foldLeft(Map.empty: Plan[H]) { case (acc, (h, n)) => acc.updated(h, Some((n, 0))) }
+      start = fresh.foldLeft(Map.empty: Plan[H]) { case (acc, (h, n)) => acc.updated(h, Some((n, 0))) }
       // 2. each new node references its children
       linked <- fresh.flatMap { case (_, n) => children(n) }.foldLeftM(start)((acc, c) => adjust(acc, c, 1).map(_._1))
       // 3. the new root is retained
       rooted <- (if (retainNewRoot) delta.root.toList else Nil).foldLeftM(linked)((acc, r) => adjust(acc, r, 1).map(_._1))
       // 4. release, cascading through nodes that reach zero
       done <- (release, rooted).tailRecM[F, Plan[H]] {
-                case (Nil, acc) => acc.asRight[(List[Digest[H]], Plan[H])].pure[F]
-                case (h :: rest, acc) =>
-                  adjust(acc, h, -1).map {
-                    case (next, Some(deleted)) => (children(deleted) ++ rest, next).asLeft
-                    case (next, None)          => (rest, next).asLeft
-                  }
-              }
+        case (Nil, acc) => acc.asRight[(List[Digest[H]], Plan[H])].pure[F]
+        case (h :: rest, acc) =>
+          adjust(acc, h, -1).map {
+            case (next, Some(deleted)) => (children(deleted) ++ rest, next).asLeft
+            case (next, None)          => (rest, next).asLeft
+          }
+      }
     } yield done
   }
 }

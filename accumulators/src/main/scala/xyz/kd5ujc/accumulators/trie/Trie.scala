@@ -12,9 +12,9 @@ import scodec.bits.{BitVector, ByteVector}
  * live with the caller; the trie commits to their hashes.
  */
 final class Trie[H] private (
-  val mode:              KeyMode,
-  private val rootHash:  Option[Digest[H]],
-  private val nodes:     Map[Digest[H], (Node[H], Int)]
+  val mode:             KeyMode,
+  private val rootHash: Option[Digest[H]],
+  private val nodes:    Map[Digest[H], (Node[H], Int)]
 )(implicit T: TrieHashing[H]) {
 
   private type Result[A] = Either[TrieError, A]
@@ -31,9 +31,9 @@ final class Trie[H] private (
   def get(key: ByteVector): Result[Option[Digest[H]]] =
     mode.path(key).flatMap(p => TrieEngine.get[Result, H](node, rootHash, p))
 
-  def put(key: ByteVector, valueHash: Digest[H]): Result[Trie[H]] = update(List(key -> Some(valueHash)))
-  def putValue(key: ByteVector, value: ByteVector): Result[Trie[H]] = put(key, T.value(value))
-  def remove(key: ByteVector): Result[Trie[H]] = update(List(key -> None))
+  def put(key:      ByteVector, valueHash: Digest[H]): Result[Trie[H]] = update(List(key -> Some(valueHash)))
+  def putValue(key: ByteVector, value:     ByteVector): Result[Trie[H]] = put(key, T.value(value))
+  def remove(key:   ByteVector): Result[Trie[H]] = update(List(key -> None))
 
   /** Applies writes in order (`None` deletes) and garbage-collects what the old root no longer shares. */
   def update(ops: List[(ByteVector, Option[Digest[H]])]): Result[Trie[H]] =
@@ -41,16 +41,21 @@ final class Trie[H] private (
       trieOps <- ops.traverse { case (k, v) => mode.path(k).map(TrieOp(_, v)) }
       delta   <- TrieEngine.apply[Result, H](node, rootHash, trieOps)
       plan    <- RefCounting.plan[Result, H](h => nodes.get(h).asRight, delta, retainNewRoot = true, release = rootHash.toList)
-    } yield new Trie[H](mode, delta.root, plan.foldLeft(nodes) {
-      case (acc, (h, Some(entry))) => acc.updated(h, entry)
-      case (acc, (h, None))        => acc.removed(h)
-    })
+    } yield
+      new Trie[H](
+        mode,
+        delta.root,
+        plan.foldLeft(nodes) {
+          case (acc, (h, Some(entry))) => acc.updated(h, entry)
+          case (acc, (h, None))        => acc.removed(h)
+        }
+      )
 
   def prove(keys: List[ByteVector], prefixes: List[ByteVector] = Nil): Result[TrieProof[H]] =
     for {
-      keyPaths    <- keys.traverse(mode.path)
-      prefixPaths  = prefixes.map(_.bits)
-      proof       <- TrieProofs.prove[Result, H](node, rootHash, keyPaths.map(TrieProofs.Key) ++ prefixPaths.map(TrieProofs.Prefix))
+      keyPaths <- keys.traverse(mode.path)
+      prefixPaths = prefixes.map(_.bits)
+      proof <- TrieProofs.prove[Result, H](node, rootHash, keyPaths.map(TrieProofs.Key) ++ prefixPaths.map(TrieProofs.Prefix))
     } yield proof
 
   /** Every entry in key order. */
