@@ -3,7 +3,6 @@ package xyz.kd5ujc.storage
 import java.nio.charset.StandardCharsets.UTF_8
 
 import cats.effect.Concurrent
-import cats.effect.std.Mutex
 import cats.mtl.Raise
 import cats.syntax.all._
 import cats.{Order, Show}
@@ -36,7 +35,9 @@ final case class Change[K, V](key: K, before: Option[V], after: Option[V])
 
 /**
  * A key-value store with linear history. Commits are optimistic (`expected` must be the latest version) and atomic;
- * any retained version can be read with [[getAt]] or restored with [[rollback]]; [[prune]] discards history.
+ * any retained version can be read with [[getAt]] or restored with [[rollback]]; [[prune]] discards history. Every
+ * mutation is a compare-and-write guarded on the stored version records, so concurrent writers, even through separate
+ * instances over one backend, can never both succeed against the same version.
  */
 trait VersionedStore[F[_], K, V] {
   def latest: F[Version]
@@ -69,10 +70,9 @@ object VersionedStore {
       lift(Namespace(s"$name/data")),
       lift(Namespace(s"$name/log")),
       lift(Namespace(s"$name/hist")),
-      lift(Namespace(s"$name/meta")),
-      Mutex[F]
-    ).mapN { (dataNs, logNs, histNs, metaNs, mutex) =>
-      new Impl[F, K, V](raw, dataNs.prefix, logNs.prefix, histNs.prefix, metaNs.prefix, mutex)
+      lift(Namespace(s"$name/meta"))
+    ).mapN { (dataNs, logNs, histNs, metaNs) =>
+      new Impl[F, K, V](raw, dataNs.prefix, logNs.prefix, histNs.prefix, metaNs.prefix)
     }
 
   private def lift[F[_]: Concurrent, A](e: Either[StoreError, A])(implicit R: Raise[F, StoreError]): F[A] =
@@ -83,8 +83,7 @@ object VersionedStore {
     dataNs: ByteVector,
     logNs:  ByteVector,
     histNs: ByteVector,
-    metaNs: ByteVector,
-    mutex:  Mutex[F]
+    metaNs: ByteVector
   )(implicit R: Raise[F, StoreError])
       extends VersionedStore[F, K, V] {
 
@@ -101,15 +100,28 @@ object VersionedStore {
     private def fail[A](e:  StoreError): F[A] = R.raise[StoreError, A](e)
     private def liftE[A](e: Either[StoreError, A]): F[A] = e.fold(fail[A], _.pure[F])
 
-    private def readVersion(key: ByteVector): F[Long] =
-      raw.get(key).flatMap {
+    private def parseVersion(raw: Option[ByteVector]): F[Long] =
+      raw match {
         case None                    => 0L.pure[F]
         case Some(b) if b.size == 8L => b.toLong(signed = false).pure[F]
         case Some(b)                 => fail(StoreError.Corrupt(s"version record has ${b.size} bytes"))
       }
 
-    def latest: F[Version] = readVersion(latestKey).map(Version.unsafe)
-    def floor: F[Version] = readVersion(floorKey).map(Version.unsafe)
+    /** The raw version records, kept to guard the compare-and-write. */
+    private def versionRecords: F[(Option[ByteVector], Option[ByteVector])] =
+      raw.getAll(List(latestKey, floorKey)).flatMap {
+        case List(l, f) => (l, f).pure[F]
+        case other      => fail(StoreError.Corrupt(s"expected 2 version records, got ${other.size}"))
+      }
+
+    def latest: F[Version] = raw.get(latestKey).flatMap(parseVersion).map(Version.unsafe)
+    def floor: F[Version] = raw.get(floorKey).flatMap(parseVersion).map(Version.unsafe)
+
+    /** Writes only if both version records are unchanged; otherwise reports the conflict against the new latest. */
+    private def guarded(records: (Option[ByteVector], Option[ByteVector]), expected: Long, batch: RawBatch): F[Unit] =
+      raw.writeIf(List(latestKey -> records._1, floorKey -> records._2), batch).flatMap { wrote =>
+        if (wrote) ().pure[F] else latest.flatMap(now => fail(StoreError.VersionConflict(expected, now.value)))
+      }
 
     // ---- records: canonical CBOR maps of optional raw values; an absent field means "no value"
 
@@ -199,11 +211,11 @@ object VersionedStore {
     // ---- writes: each is one atomic RawBatch, serialised by the mutex
 
     def commit(expected: Version, batch: Batch[K, V]): F[Version] =
-      mutex.lock.surround {
-        latest.flatMap { current =>
-          if (current =!= expected) fail(StoreError.VersionConflict(expected.value, current.value))
+      versionRecords.flatMap { records =>
+        parseVersion(records._1).flatMap { current =>
+          if (current != expected.value) fail(StoreError.VersionConflict(expected.value, current))
           else {
-            val next = current.next
+            val next = expected.next
             val finals = batch.last.map { case (k, v) => (K.encode(k), v) }
             for {
               befores <- raw.getAll(finals.toList.map { case (ek, _) => dataKey(ek) })
@@ -217,16 +229,16 @@ object VersionedStore {
                     RawBatch.put(histPrefix(ek) ++ ver(next.value), histRecord)
                   }
               }
-              _ <- raw.write(writes ++ RawBatch.put(latestKey, ver(next.value)))
+              _ <- guarded(records, expected.value, writes ++ RawBatch.put(latestKey, ver(next.value)))
             } yield next
           }
         }
       }
 
     def rollback(to: Version): F[Unit] =
-      mutex.lock.surround {
-        checkReadable(to) >> latest.flatMap { current =>
-          logEntries(to.value + 1, current.value + 1).flatMap { entries =>
+      versionRecords.flatMap { records =>
+        checkReadable(to) >> parseVersion(records._1).flatMap { current =>
+          logEntries(to.value + 1, current + 1).flatMap { entries =>
             entries.traverse { case (v, ek, r) => readRecord(r).map { case (before, _) => (v, ek, before) } }.flatMap { decoded =>
               // the earliest change after `to` holds each key's value as of `to`
               val restore = decoded.foldLeft(Map.empty[ByteVector, Option[ByteVector]]) {
@@ -242,22 +254,23 @@ object VersionedStore {
                   case (acc, (v, ek, _)) =>
                     acc ++ RawBatch.delete(logKey(v, ek)) ++ RawBatch.delete(histPrefix(ek) ++ ver(v))
                 }
-              raw.write(writes ++ RawBatch.put(latestKey, ver(to.value)))
+              guarded(records, current, writes ++ RawBatch.put(latestKey, ver(to.value)))
             }
           }
         }
       }
 
     def prune(through: Version): F[Unit] =
-      mutex.lock.surround {
-        checkReadable(through) >> floor.flatMap { f =>
-          logEntries(f.value + 1, through.value + 1).flatMap { entries =>
-            val writes = entries.foldLeft(RawBatch.empty) {
-              case (acc, (v, ek, _)) =>
-                acc ++ RawBatch.delete(logKey(v, ek)) ++ RawBatch.delete(histPrefix(ek) ++ ver(v))
+      versionRecords.flatMap { records =>
+        checkReadable(through) >> (parseVersion(records._1), parseVersion(records._2)).tupled.flatMap {
+          case (current, f) =>
+            logEntries(f + 1, through.value + 1).flatMap { entries =>
+              val writes = entries.foldLeft(RawBatch.empty) {
+                case (acc, (v, ek, _)) =>
+                  acc ++ RawBatch.delete(logKey(v, ek)) ++ RawBatch.delete(histPrefix(ek) ++ ver(v))
+              }
+              guarded(records, current, writes ++ RawBatch.put(floorKey, ver(through.value)))
             }
-            raw.write(writes ++ RawBatch.put(floorKey, ver(through.value)))
-          }
         }
       }
   }

@@ -30,7 +30,7 @@ final case class RawBatch(ops: Vector[RawOp]) {
 
 object RawBatch {
   val empty: RawBatch = RawBatch(Vector.empty)
-  def put(key: ByteVector, value: ByteVector): RawBatch = RawBatch(Vector(RawOp.Put(key, value)))
+  def put(key:    ByteVector, value: ByteVector): RawBatch = RawBatch(Vector(RawOp.Put(key, value)))
   def delete(key: ByteVector): RawBatch = RawBatch(Vector(RawOp.Delete(key)))
 
   implicit val rawBatchMonoid: Monoid[RawBatch] = Monoid.instance(empty, _ ++ _)
@@ -54,9 +54,9 @@ object ByteRange {
     @tailrec
     def go(p: ByteVector): Option[ByteVector] =
       p.lastOption match {
-        case None                       => None
+        case None                        => None
         case Some(b) if b == 0xff.toByte => go(p.dropRight(1))
-        case Some(b)                    => Some(p.dropRight(1) :+ (b + 1).toByte)
+        case Some(b)                     => Some(p.dropRight(1) :+ (b + 1).toByte)
       }
     go(prefix)
   }
@@ -82,9 +82,17 @@ object Namespace {
 
 /** The byte-level store every backend implements. Batches are atomic; scans are ordered and see one snapshot. */
 trait RawStore[F[_]] {
-  def get(key: ByteVector): F[Option[ByteVector]]
+  def get(key:     ByteVector): F[Option[ByteVector]]
   def getAll(keys: List[ByteVector]): F[List[Option[ByteVector]]]
   def write(batch: RawBatch): F[Unit]
+
+  /**
+   * Compare-and-write: applies `batch` atomically **only if** every guarded key currently holds exactly the expected
+   * value (`None` = absent). Returns whether it wrote. This is what makes optimistic concurrency safe across any number
+   * of store instances sharing a backend.
+   */
+  def writeIf(guards: List[(ByteVector, Option[ByteVector])], batch: RawBatch): F[Boolean]
+
   def scan(range: ByteRange): Stream[F, (ByteVector, ByteVector)]
 }
 
@@ -101,6 +109,11 @@ object RawStore {
       def getAll(keys: List[ByteVector]): F[List[Option[ByteVector]]] = ref.get.map(m => keys.map(m.get))
 
       def write(batch: RawBatch): F[Unit] = ref.update(apply(_, batch))
+
+      def writeIf(guards: List[(ByteVector, Option[ByteVector])], batch: RawBatch): F[Boolean] =
+        ref.modify { m =>
+          if (guards.forall { case (k, expected) => m.get(k) == expected }) (apply(m, batch), true) else (m, false)
+        }
 
       def scan(range: ByteRange): Stream[F, (ByteVector, ByteVector)] =
         Stream.eval(ref.get).flatMap { m =>

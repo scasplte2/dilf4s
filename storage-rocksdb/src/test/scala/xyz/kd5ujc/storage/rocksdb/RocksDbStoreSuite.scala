@@ -28,7 +28,7 @@ object RocksDbStoreSuite extends SimpleIOSuite with Checkers with StoreBehaviour
       tempDir.use { dir =>
         val path = dir.resolve("db")
         RocksDbStore.open[IO](path).use(_.write(xyz.kd5ujc.storage.RawBatch.put(scodec.bits.ByteVector(1), scodec.bits.ByteVector(2)))) >>
-          RocksDbStore.open[IO](path).use(_.get(scodec.bits.ByteVector(1))).map(v => expect.same(Some(scodec.bits.ByteVector(2)), v))
+        RocksDbStore.open[IO](path).use(_.get(scodec.bits.ByteVector(1))).map(v => expect.same(Some(scodec.bits.ByteVector(2)), v))
       }
     }
   }

@@ -22,7 +22,7 @@ object ByteOrder {
  * have the same sign, so range scans follow the key type's natural order.
  */
 trait KeyCodec[K] {
-  def encode(key: K): ByteVector
+  def encode(key:   K): ByteVector
   def decode(bytes: ByteVector): Either[StoreError, K]
 }
 
@@ -35,7 +35,7 @@ object KeyCodec {
 
   def instance[K](enc: K => ByteVector, dec: ByteVector => Either[StoreError, K]): KeyCodec[K] =
     new KeyCodec[K] {
-      def encode(key: K): ByteVector = enc(key)
+      def encode(key:   K): ByteVector = enc(key)
       def decode(bytes: ByteVector): Either[StoreError, K] = dec(bytes)
     }
 
@@ -52,8 +52,7 @@ object KeyCodec {
   /** UTF-8 byte order is code-point order. */
   implicit val stringKey: KeyCodec[String] = instance(
     s => ByteVector(s.getBytes(UTF_8)),
-    b =>
-      Either.cond(Utf8.isWellFormed(b.toArray), new String(b.toArray, UTF_8), StoreError.Codec("key", "invalid UTF-8"))
+    b => Either.cond(Utf8.isWellFormed(b.toArray), new String(b.toArray, UTF_8), StoreError.Codec("key", "invalid UTF-8"))
   )
 
   /** Big-endian with the sign bit flipped, so negative values sort before positive ones. */
@@ -93,10 +92,10 @@ object KeyCodec {
     @tailrec
     private def unescape(in: ByteVector, i: Long, acc: ByteVector): Either[StoreError, (ByteVector, ByteVector)] =
       in.indexOfSlice(ByteVector(0), i) match {
-        case -1 => StoreError.Codec("key", "unterminated component").asLeft
+        case -1                                               => StoreError.Codec("key", "unterminated component").asLeft
         case j if j + 1 < in.size && in(j + 1) == 0xff.toByte => unescape(in, j + 2, acc ++ in.slice(i, j) ++ ByteVector(0))
-        case j if j + 1 < in.size && in(j + 1) == 0 => (acc ++ in.slice(i, j), in.drop(j + 2)).asRight
-        case _ => StoreError.Codec("key", "invalid escape").asLeft
+        case j if j + 1 < in.size && in(j + 1) == 0           => (acc ++ in.slice(i, j), in.drop(j + 2)).asRight
+        case _                                                => StoreError.Codec("key", "invalid escape").asLeft
       }
   }
 }

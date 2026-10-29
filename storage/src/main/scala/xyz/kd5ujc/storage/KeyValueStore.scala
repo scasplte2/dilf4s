@@ -33,8 +33,8 @@ final case class Batch[K, V](ops: Vector[Op[K, V]]) {
 
 object Batch {
   def empty[K, V]: Batch[K, V] = Batch(Vector.empty)
-  def put[K, V](key: K, value: V): Batch[K, V] = Batch(Vector(Op.Put(key, value)))
-  def delete[K, V](key: K): Batch[K, V] = Batch(Vector(Op.Delete(key)))
+  def put[K, V](key:      K, value: V): Batch[K, V] = Batch(Vector(Op.Put(key, value)))
+  def delete[K, V](key:   K): Batch[K, V] = Batch(Vector(Op.Delete(key)))
   def puts[K, V](entries: Iterable[(K, V)]): Batch[K, V] = Batch(entries.toVector.map { case (k, v) => Op.Put(k, v) })
   def deletes[K, V](keys: Iterable[K]): Batch[K, V] = Batch(keys.toVector.map(Op.Delete(_)))
 
@@ -49,19 +49,19 @@ object KeyRange {
   final case class Between[K](from: Option[K], until: Option[K]) extends KeyRange[K]
   final case class EncodedPrefix(prefix: ByteVector) extends KeyRange[Nothing]
 
-  def from[K](k: K): KeyRange[K] = Between(Some(k), None)
-  def until[K](k: K): KeyRange[K] = Between(None, Some(k))
+  def from[K](k:       K): KeyRange[K] = Between(Some(k), None)
+  def until[K](k:      K): KeyRange[K] = Between(None, Some(k))
   def between[K](from: K, until: K): KeyRange[K] = Between(Some(from), Some(until))
 }
 
 /** A typed, namespaced key-value store. Every method raises [[StoreError]] through `Raise` rather than throwing. */
 trait KeyValueStore[F[_], K, V] {
-  def get(key: K): F[Option[V]]
+  def get(key:        K): F[Option[V]]
   def getOrRaise(key: K): F[V]
-  def contains(key: K): F[Boolean]
-  def getAll(keys: List[K]): F[List[(K, Option[V])]]
-  def put(key: K, value: V): F[Unit]
-  def remove(key: K): F[Unit]
+  def contains(key:   K): F[Boolean]
+  def getAll(keys:    List[K]): F[List[(K, Option[V])]]
+  def put(key:        K, value: V): F[Unit]
+  def remove(key:     K): F[Unit]
 
   /** Applies the whole batch atomically. */
   def commit(batch: Batch[K, V]): F[Unit]
@@ -75,8 +75,8 @@ trait KeyValueStore[F[_], K, V] {
 
 object KeyValueStore {
 
-  def apply[F[_]: Monad, K: KeyCodec, V: ValueCodec](raw: RawStore[F], namespace: Namespace)(implicit
-    R: Raise[F, StoreError]
+  def apply[F[_]: Monad, K: KeyCodec, V: ValueCodec](raw: RawStore[F], namespace: Namespace)(
+    implicit R: Raise[F, StoreError]
   ): KeyValueStore[F, K, V] =
     new KeyValueStore[F, K, V] {
       private val K = KeyCodec[K]
@@ -106,11 +106,10 @@ object KeyValueStore {
       def commit(batch: Batch[K, V]): F[Unit] = encodeBatch(batch).flatMap(raw.write)
 
       def encodeBatch(batch: Batch[K, V]): F[RawBatch] =
-        batch.ops
-          .traverse {
-            case Op.Put(k, v) => lift(V.encode(v)).map(bytes => RawOp.Put(rawKey(k), bytes): RawOp)
-            case Op.Delete(k) => (RawOp.Delete(rawKey(k)): RawOp).pure[F]
-          }
+        batch.ops.traverse {
+          case Op.Put(k, v) => lift(V.encode(v)).map(bytes => RawOp.Put(rawKey(k), bytes): RawOp)
+          case Op.Delete(k) => (RawOp.Delete(rawKey(k)): RawOp).pure[F]
+        }
           .map(RawBatch(_))
 
       def scan(range: KeyRange[K]): Stream[F, (K, V)] = {

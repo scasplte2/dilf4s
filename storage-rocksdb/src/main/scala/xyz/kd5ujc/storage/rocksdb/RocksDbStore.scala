@@ -2,7 +2,8 @@ package xyz.kd5ujc.storage.rocksdb
 
 import java.nio.file.Path
 
-import cats.effect.{Resource, Sync}
+import cats.effect.std.Mutex
+import cats.effect.{Async, Resource, Sync}
 import cats.mtl.Raise
 import cats.syntax.all._
 
@@ -21,28 +22,30 @@ final case class RocksDbConfig(syncWrites: Boolean = true, scanChunkSize: Int = 
 
 /**
  * [[RawStore]] on RocksDB. Every native call runs in `Sync[F].blocking`, native handles are scoped by `Resource`,
- * batches use one `WriteBatch` (atomic), and scans iterate a snapshot. `RocksDBException`s become
+ * batches use one `WriteBatch` (atomic), and scans iterate a snapshot. Writes are serialised by one lock per open
+ * database; RocksDB's own lock file guarantees a database is open at most once, so the lock covers every writer and
+ * makes [[RawStore.writeIf]] a true compare-and-write. `RocksDBException`s become
  * [[StoreError.Backend]]; any other failure stays in `F`'s error channel.
  */
 object RocksDbStore {
 
-  def open[F[_]: Sync](path: Path, config: RocksDbConfig = RocksDbConfig())(implicit
-    R: Raise[F, StoreError]
-  ): Resource[F, RawStore[F]] =
+  def open[F[_]: Async](path: Path, config: RocksDbConfig = RocksDbConfig())(implicit R: Raise[F, StoreError]): Resource[F, RawStore[F]] =
     for {
       _       <- Resource.eval(native("load library")(RocksDB.loadLibrary()))
       options <- Resource.fromAutoCloseable(Sync[F].delay(new Options().setCreateIfMissing(true)))
       db      <- Resource.fromAutoCloseable(native(s"open $path")(RocksDB.open(options, path.toString)))
       writes  <- Resource.fromAutoCloseable(Sync[F].delay(new WriteOptions().setSync(config.syncWrites)))
-    } yield new Impl[F](db, writes, config)
+      lock    <- Resource.eval(Mutex[F])
+    } yield new Impl[F](db, writes, lock, config)
 
   private def native[F[_]: Sync, A](operation: String)(thunk: => A)(implicit R: Raise[F, StoreError]): F[A] =
-    Sync[F].blocking(thunk).recoverWith { case e: RocksDBException =>
-      R.raise[StoreError, A](StoreError.Backend(operation, Option(e.getMessage).getOrElse(e.getClass.getName)))
+    Sync[F].blocking(thunk).recoverWith {
+      case e: RocksDBException =>
+        R.raise[StoreError, A](StoreError.Backend(operation, Option(e.getMessage).getOrElse(e.getClass.getName)))
     }
 
-  final private class Impl[F[_]: Sync](db: RocksDB, writeOptions: WriteOptions, config: RocksDbConfig)(implicit
-    R: Raise[F, StoreError]
+  final private class Impl[F[_]: Sync](db: RocksDB, writeOptions: WriteOptions, lock: Mutex[F], config: RocksDbConfig)(
+    implicit R: Raise[F, StoreError]
   ) extends RawStore[F] {
 
     def get(key: ByteVector): F[Option[ByteVector]] =
@@ -52,7 +55,17 @@ object RocksDbStore {
       if (keys.isEmpty) List.empty[Option[ByteVector]].pure[F]
       else native("multiGet")(db.multiGetAsList(keys.map(_.toArray).asJava).asScala.toList.map(v => Option(v).map(ByteVector.view)))
 
-    def write(batch: RawBatch): F[Unit] =
+    def write(batch: RawBatch): F[Unit] = lock.lock.surround(unguardedWrite(batch))
+
+    def writeIf(guards: List[(ByteVector, Option[ByteVector])], batch: RawBatch): F[Boolean] =
+      lock.lock.surround {
+        getAll(guards.map(_._1)).flatMap { current =>
+          val matches = current.zip(guards).forall { case (actual, (_, expected)) => actual == expected }
+          unguardedWrite(batch).whenA(matches).as(matches)
+        }
+      }
+
+    private def unguardedWrite(batch: RawBatch): F[Unit] =
       if (batch.isEmpty) ().pure[F]
       else
         Resource.fromAutoCloseable(Sync[F].delay(new WriteBatch())).use { wb =>
@@ -69,7 +82,7 @@ object RocksDbStore {
             snapshot <- Resource.make(Sync[F].delay(db.getSnapshot))(s => Sync[F].delay(db.releaseSnapshot(s)))
             read     <- Resource.fromAutoCloseable(Sync[F].delay(new ReadOptions().setSnapshot(snapshot)))
             iterator <- Resource.fromAutoCloseable(Sync[F].delay(db.newIterator(read)))
-            _ <- Resource.eval(native("seek")(range.from.fold(iterator.seekToFirst())(f => iterator.seek(f.toArray))))
+            _        <- Resource.eval(native("seek")(range.from.fold(iterator.seekToFirst())(f => iterator.seek(f.toArray))))
           } yield iterator
         )
         .flatMap(iterator => Stream.unfoldChunkEval(())(_ => nextChunk(iterator, range)))
