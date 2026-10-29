@@ -1,4 +1,4 @@
-package xyz.kd5ujc.accumulators.bloom
+package xyz.kd5ujc.core.bloom
 
 import scala.util.Random
 
@@ -30,10 +30,12 @@ object BloomFilterSuite extends SimpleIOSuite with Checkers {
   }
 
   test("union is the filter of the union; insertion order is irrelevant") {
-    forall(Gen.zip(items, items)) { case (a, b) =>
-      val (fa, fb) = (BloomFilter.of[Sha256](p, a), BloomFilter.of[Sha256](p, b))
-      expect.same(Right(BloomFilter.of[Sha256](p, a ++ b)), fa.union(fb)) and
-        expect.same(BloomFilter.of[Sha256](p, a ++ b), BloomFilter.of[Sha256](p, (a ++ b).reverse))
+    forall(Gen.zip(items, items)) {
+      case (a, b) =>
+        val (fa, fb) = (BloomFilter.of[Sha256](p, a), BloomFilter.of[Sha256](p, b))
+        expect
+          .same(Right(BloomFilter.of[Sha256](p, a ++ b)), fa.union(fb))
+          .and(expect.same(BloomFilter.of[Sha256](p, a ++ b), BloomFilter.of[Sha256](p, (a ++ b).reverse)))
     }
   }
 
@@ -44,15 +46,15 @@ object BloomFilterSuite extends SimpleIOSuite with Checkers {
     val f = BloomFilter.of[Sha256](p, inserted)
     val rate = probes.count(f.contains).toDouble / probes.size
     val theory = math.pow(1 - math.exp(-4.0 * 500 / 2048), 4) // ~0.151
-    expect(math.abs(rate - theory) < 0.02, s"observed $rate vs theoretical $theory") and
-      expect(math.abs(f.estimatedFalsePositiveRate - theory) < 0.02, s"fill estimate ${f.estimatedFalsePositiveRate}")
+    expect(math.abs(rate - theory) < 0.02, s"observed $rate vs theoretical $theory")
+      .and(expect(math.abs(f.estimatedFalsePositiveRate - theory) < 0.02, s"fill estimate ${f.estimatedFalsePositiveRate}"))
   }
 
   pureTest("parameters are validated and mismatched filters do not combine") {
     val small = BloomParams(1024, 3).toOption.get
-    expect(BloomParams(1000, 4).isLeft, "size must be a power of two") and
-      expect(BloomParams(2048, 0).isLeft, "at least one hash") and
-      expect(BloomFilter.empty[Sha256](p).union(BloomFilter.empty[Sha256](small)).isLeft, "union needs equal params")
+    expect(BloomParams(1000, 4).isLeft, "size must be a power of two")
+      .and(expect(BloomParams(2048, 0).isLeft, "at least one hash"))
+      .and(expect(BloomFilter.empty[Sha256](p).union(BloomFilter.empty[Sha256](small)).isLeft, "union needs equal params"))
   }
 
   test("the canonical encoding round-trips") {
@@ -63,6 +65,6 @@ object BloomFilterSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("an empty filter contains nothing") {
-    expect(!BloomFilter.empty[Sha256](p).contains(ByteVector(1, 2, 3))) and expect(BloomFilter.empty[Sha256](p).isEmpty)
+    expect(!BloomFilter.empty[Sha256](p).contains(ByteVector(1, 2, 3))).and(expect(BloomFilter.empty[Sha256](p).isEmpty))
   }
 }

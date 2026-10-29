@@ -4,7 +4,7 @@
  * tagged digest (k distinct bits per item, one hash call instead of four); immutable bits with consistent equality;
  * typed errors instead of `require`; union, intersection and a canonical encoding.
  */
-package xyz.kd5ujc.accumulators.bloom
+package xyz.kd5ujc.core.bloom
 
 import cats.syntax.all._
 
@@ -20,7 +20,8 @@ sealed abstract case class BloomParams(bits: Int, hashes: Int)
 object BloomParams {
 
   def apply(bits: Int, hashes: Int): Either[BloomError, BloomParams] =
-    if (bits < 64 || bits > (1 << 24) || Integer.bitCount(bits) != 1) BloomError.InvalidParams(s"bits must be a power of two in 64..2^24, got $bits").asLeft
+    if (bits < 64 || bits > (1 << 24) || Integer.bitCount(bits) != 1)
+      BloomError.InvalidParams(s"bits must be a power of two in 64..2^24, got $bits").asLeft
     else if (hashes < 1 || hashes > 32) BloomError.InvalidParams(s"hashes must be 1..32, got $hashes").asLeft
     else (new BloomParams(bits, hashes) {}).asRight
 
@@ -102,7 +103,11 @@ object BloomFilter {
         (m("m"), m("k"), m("b")) match {
           case (CInt(bits), CInt(k), CBytes(b)) if bits.isValidInt && k.isValidInt =>
             BloomParams(bits.toInt, k.toInt).flatMap { p =>
-              Either.cond(b.size * 8 == p.bits.toLong, new BloomFilter[H](p, b.bits), BloomError.Encoding(s"expected ${p.bits / 8} bytes, got ${b.size}"))
+              Either.cond(
+                b.size * 8 == p.bits.toLong,
+                new BloomFilter[H](p, b.bits),
+                BloomError.Encoding(s"expected ${p.bits / 8} bytes, got ${b.size}")
+              )
             }
           case other => BloomError.Encoding(s"invalid bloom fields $other").asLeft
         }
