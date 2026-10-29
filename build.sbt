@@ -148,12 +148,13 @@ lazy val accumulators = project.in(file("accumulators"))
     libraryDependencies ++= Seq(
       Libraries.cats,
       Libraries.catsEffect,
+      Libraries.catsMtl,
       Libraries.circeCore,
       Libraries.circeGeneric,
       Libraries.circeParser,
     )
   )
-  .dependsOn(models, core, sharedTest % Test)
+  .dependsOn(models, core, storage, sharedTest % Test)
 
 // ─── Storage: Store, VersionedStore (self-contained) ───
 lazy val storage = project.in(file("storage"))
