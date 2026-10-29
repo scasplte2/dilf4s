@@ -33,6 +33,21 @@ object RocksDbStoreSuite extends SimpleIOSuite with Checkers with StoreBehaviour
     }
   }
 
+  test("compaction after deleting a range keeps the remaining data intact") {
+    expectOk { implicit r =>
+      tempDir.use { dir =>
+        RocksDbStore.open[IO](dir.resolve("db")).use { db =>
+          val keys = (0 until 2000).toList.map(i => scodec.bits.ByteVector.fromInt(i))
+          db.write(keys.foldLeft(xyz.kd5ujc.storage.RawBatch.empty)((b, k) => b ++ xyz.kd5ujc.storage.RawBatch.put(k, k))) >>
+          db.write(keys.take(1500).foldLeft(xyz.kd5ujc.storage.RawBatch.empty)((b, k) => b ++ xyz.kd5ujc.storage.RawBatch.delete(k))) >>
+          db.compact(xyz.kd5ujc.storage.ByteRange.all) >>
+          db.compact(xyz.kd5ujc.storage.ByteRange(None, Some(scodec.bits.ByteVector.fromInt(1700)))) >>
+          db.scan(xyz.kd5ujc.storage.ByteRange.all).compile.toList.map(rest => expect.same(keys.drop(1500).map(k => k -> k), rest))
+        }
+      }
+    }
+  }
+
   test("a second open of a locked database is a typed backend error") {
     attempt { implicit r =>
       tempDir.use { dir =>

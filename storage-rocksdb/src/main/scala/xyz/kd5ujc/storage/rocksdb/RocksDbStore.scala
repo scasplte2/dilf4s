@@ -14,11 +14,31 @@ import xyz.kd5ujc.storage.ByteOrder.unsigned
 import xyz.kd5ujc.storage._
 
 import fs2.{Chunk, Stream}
-import org.rocksdb.{Options, ReadOptions, RocksDB, RocksDBException, RocksIterator, WriteBatch, WriteOptions}
+import org.rocksdb._
 import scodec.bits.ByteVector
 
-/** Tuning that affects durability and memory. */
-final case class RocksDbConfig(syncWrites: Boolean = true, scanChunkSize: Int = 256)
+/**
+ * Durability and performance tuning.
+ *   - `bloomBitsPerKey`: bloom filters make point reads of absent keys cheap (trie nodes are random digest keys); 0
+ *     disables them.
+ *   - `blockCacheBytes`: shared LRU cache for uncompressed blocks.
+ *   - `compression`: LZ4 by default. RocksDB compacts in the background, so space freed by deletes (pruned history,
+ *     garbage-collected nodes) returns as compaction runs; [[RocksDbHandle.compact]] forces it for a range.
+ */
+final case class RocksDbConfig(
+  syncWrites:      Boolean = true,
+  scanChunkSize:   Int = 256,
+  bloomBitsPerKey: Int = 10,
+  blockCacheBytes: Long = 64L * 1024 * 1024,
+  compression:     CompressionType = CompressionType.LZ4_COMPRESSION
+)
+
+/** A [[RawStore]] with RocksDB maintenance operations. */
+trait RocksDbHandle[F[_]] extends RawStore[F] {
+
+  /** Compacts `range` now rather than on RocksDB's schedule, reclaiming space from deletes and pruned history. */
+  def compact(range: ByteRange): F[Unit]
+}
 
 /**
  * [[RawStore]] on RocksDB. Every native call runs in `Sync[F].blocking`, native handles are scoped by `Resource`,
@@ -29,13 +49,21 @@ final case class RocksDbConfig(syncWrites: Boolean = true, scanChunkSize: Int = 
  */
 object RocksDbStore {
 
-  def open[F[_]: Async](path: Path, config: RocksDbConfig = RocksDbConfig())(implicit R: Raise[F, StoreError]): Resource[F, RawStore[F]] =
+  def open[F[_]: Async](path: Path, config: RocksDbConfig = RocksDbConfig())(
+    implicit R: Raise[F, StoreError]
+  ): Resource[F, RocksDbHandle[F]] =
     for {
-      _       <- Resource.eval(native("load library")(RocksDB.loadLibrary()))
-      options <- Resource.fromAutoCloseable(Sync[F].delay(new Options().setCreateIfMissing(true)))
-      db      <- Resource.fromAutoCloseable(native(s"open $path")(RocksDB.open(options, path.toString)))
-      writes  <- Resource.fromAutoCloseable(Sync[F].delay(new WriteOptions().setSync(config.syncWrites)))
-      lock    <- Resource.eval(Mutex[F])
+      _      <- Resource.eval(native("load library")(RocksDB.loadLibrary()))
+      cache  <- Resource.fromAutoCloseable(Sync[F].delay(new LRUCache(config.blockCacheBytes)))
+      filter <- Resource.fromAutoCloseable(Sync[F].delay(new BloomFilter(math.max(config.bloomBitsPerKey, 1).toDouble, false)))
+      options <- Resource.fromAutoCloseable(Sync[F].delay {
+        val table = new BlockBasedTableConfig().setBlockCache(cache)
+        val tuned = if (config.bloomBitsPerKey > 0) table.setFilterPolicy(filter) else table
+        new Options().setCreateIfMissing(true).setTableFormatConfig(tuned).setCompressionType(config.compression)
+      })
+      db     <- Resource.fromAutoCloseable(native(s"open $path")(RocksDB.open(options, path.toString)))
+      writes <- Resource.fromAutoCloseable(Sync[F].delay(new WriteOptions().setSync(config.syncWrites)))
+      lock   <- Resource.eval(Mutex[F])
     } yield new Impl[F](db, writes, lock, config)
 
   private def native[F[_]: Sync, A](operation: String)(thunk: => A)(implicit R: Raise[F, StoreError]): F[A] =
@@ -46,7 +74,12 @@ object RocksDbStore {
 
   final private class Impl[F[_]: Sync](db: RocksDB, writeOptions: WriteOptions, lock: Mutex[F], config: RocksDbConfig)(
     implicit R: Raise[F, StoreError]
-  ) extends RawStore[F] {
+  ) extends RocksDbHandle[F] {
+
+    def compact(range: ByteRange): F[Unit] =
+      range.until.fold(native("compact")(db.compactRange())) { until =>
+        native("compact")(db.compactRange(range.from.fold(Array.emptyByteArray)(_.toArray), until.toArray))
+      }
 
     def get(key: ByteVector): F[Option[ByteVector]] =
       native("get")(Option(db.get(key.toArray)).map(ByteVector.view))
