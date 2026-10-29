@@ -57,8 +57,8 @@ class SumComposition extends KesEd25519Blake2b256 {
       if (height == 0) {
         SigningLeaf.tupled(sGenKeypair(seed))
       } else {
-        val r     = prng(seed)
-        val left  = seedTree(r._1, height - 1)
+        val r = prng(seed)
+        val left = seedTree(r._1, height - 1)
         val right = seedTree(r._2, height - 1)
         MerkleNode(r._2, witness(left), witness(right), left, right)
       }
@@ -87,7 +87,7 @@ class SumComposition extends KesEd25519Blake2b256 {
    */
   private[kes] def updateKey(keyTree: KesBinaryTree, step: Int): KesBinaryTree = {
     val totalSteps = exp(getTreeHeight(keyTree))
-    val keyTime    = getKeyTime(keyTree)
+    val keyTime = getKeyTime(keyTree)
     if (step == 0) keyTree
     else if (step < totalSteps && keyTime < step) {
       evolveKey(keyTree, step)
@@ -133,8 +133,8 @@ class SumComposition extends KesEd25519Blake2b256 {
    * Evolve the key to a target time step.
    */
   private[kes] def evolveKey(input: KesBinaryTree, step: Int): KesBinaryTree = {
-    val halfTotalSteps         = exp(getTreeHeight(input) - 1)
-    val shiftStep: Int => Int  = (step: Int) => step % halfTotalSteps
+    val halfTotalSteps = exp(getTreeHeight(input) - 1)
+    val shiftStep: Int => Int = (step: Int) => step % halfTotalSteps
 
     if (step >= halfTotalSteps) {
       input match {

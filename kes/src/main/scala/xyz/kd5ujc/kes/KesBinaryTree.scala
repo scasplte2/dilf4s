@@ -13,8 +13,8 @@ package xyz.kd5ujc.kes
 sealed trait KesBinaryTree
 
 object KesBinaryTree {
-  val nodeTypePrefix: Byte  = 0
-  val leafTypePrefix: Byte  = 1
+  val nodeTypePrefix: Byte = 0
+  val leafTypePrefix: Byte = 1
   val emptyTypePrefix: Byte = 2
 
   /**

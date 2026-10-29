@@ -22,26 +22,26 @@ object Dependencies {
   }
 
   object Libraries {
-    val bc = "org.bouncycastle" % "bcprov-jdk15on" % V.bouncyCastle
-    val cats = "org.typelevel" %% "cats-core" % V.cats
-    val catsEffect = "org.typelevel" %% "cats-effect" % V.catsEffect
-    val catsEffectTestkit = "org.typelevel" %% "cats-effect-testkit" % V.catsEffect
-    val circeCore = "io.circe" %% "circe-core" % V.circe
-    val circeGeneric = "io.circe" %% "circe-generic" % V.circe
-    val circeParser = "io.circe" %% "circe-parser" % V.circe
-    val curve25519 = "com.weavechain" % "curve25519-elisabeth" % V.curve25519 % "runtime"
-    val weaverCats = "com.disneystreaming" %% "weaver-cats" % V.weaver
-    val weaverDiscipline = "com.disneystreaming" %% "weaver-discipline" % V.weaver
-    val weaverScalaCheck = "com.disneystreaming" %% "weaver-scalacheck" % V.weaver
-    val organizeImports = "com.github.liancheng" %% "organize-imports" % V.organizeImports
-    val levelDb = "org.iq80.leveldb" % "leveldb" % V.levelDb
-    val levelDbJni = "org.fusesource.leveldbjni" % "leveldbjni-all" % V.levelDbJni
-    val log4cats = "org.typelevel" %% "log4cats-slf4j" % V.log4cats
-    val logback = "ch.qos.logback" % "logback-classic" % V.logback
-    val ed25519Elisabeth = "cafe.cryptography" % "ed25519-elisabeth" % V.ed25519Elisabeth
-    val curve25519Elisabeth = "cafe.cryptography" % "curve25519-elisabeth" % V.curve25519Elisabeth
-    val jmhCore = "org.openjdk.jmh" % "jmh-core" % "1.37"
-    val jmhGen = "org.openjdk.jmh" % "jmh-generator-annprocess" % "1.37"
+    val bc = "org.bouncycastle"                   % "bcprov-jdk15on"           % V.bouncyCastle
+    val cats = "org.typelevel"                   %% "cats-core"                % V.cats
+    val catsEffect = "org.typelevel"             %% "cats-effect"              % V.catsEffect
+    val catsEffectTestkit = "org.typelevel"      %% "cats-effect-testkit"      % V.catsEffect
+    val circeCore = "io.circe"                   %% "circe-core"               % V.circe
+    val circeGeneric = "io.circe"                %% "circe-generic"            % V.circe
+    val circeParser = "io.circe"                 %% "circe-parser"             % V.circe
+    val curve25519 = "com.weavechain"             % "curve25519-elisabeth"     % V.curve25519 % "runtime"
+    val weaverCats = "com.disneystreaming"       %% "weaver-cats"              % V.weaver
+    val weaverDiscipline = "com.disneystreaming" %% "weaver-discipline"        % V.weaver
+    val weaverScalaCheck = "com.disneystreaming" %% "weaver-scalacheck"        % V.weaver
+    val organizeImports = "com.github.liancheng" %% "organize-imports"         % V.organizeImports
+    val levelDb = "org.iq80.leveldb"              % "leveldb"                  % V.levelDb
+    val levelDbJni = "org.fusesource.leveldbjni"  % "leveldbjni-all"           % V.levelDbJni
+    val log4cats = "org.typelevel"               %% "log4cats-slf4j"           % V.log4cats
+    val logback = "ch.qos.logback"                % "logback-classic"          % V.logback
+    val ed25519Elisabeth = "cafe.cryptography"    % "ed25519-elisabeth"        % V.ed25519Elisabeth
+    val curve25519Elisabeth = "cafe.cryptography" % "curve25519-elisabeth"     % V.curve25519Elisabeth
+    val jmhCore = "org.openjdk.jmh"               % "jmh-core"                 % "1.37"
+    val jmhGen = "org.openjdk.jmh"                % "jmh-generator-annprocess" % "1.37"
   }
 
   object CompilerPlugin {

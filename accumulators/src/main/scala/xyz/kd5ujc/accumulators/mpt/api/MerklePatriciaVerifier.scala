@@ -149,7 +149,7 @@ object MerklePatriciaVerifier {
        * @return Success if the path exists and proof is valid
        */
       def confirmInclusion[F[_]](proof: MerklePatriciaInclusionProof)(
-        implicit V:                     MerklePatriciaVerifier[F]
+        implicit V: MerklePatriciaVerifier[F]
       ): F[Either[MerklePatriciaVerificationError, Unit]] =
         V.confirmPath(path, proof)
     }

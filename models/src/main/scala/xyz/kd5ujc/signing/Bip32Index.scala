@@ -39,6 +39,6 @@ object Bip32Index {
     }
   }
 
-  def soft(index: Long): SoftIndex = SoftIndex(index)
+  def soft(index:     Long): SoftIndex = SoftIndex(index)
   def hardened(index: Long): HardenedIndex = HardenedIndex(index)
 }

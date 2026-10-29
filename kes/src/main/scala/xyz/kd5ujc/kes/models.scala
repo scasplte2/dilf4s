@@ -17,7 +17,7 @@ final case class VerificationKeyKesSum(
   }
 
   override def hashCode(): Int = {
-    val prime  = 31
+    val prime = 31
     var result = 1
     result = prime * result + step
     result = prime * result + java.util.Arrays.hashCode(value)
@@ -41,7 +41,7 @@ final case class SignatureKesSum(
   }
 
   override def hashCode(): Int = {
-    val prime  = 31
+    val prime = 31
     var result = 1
     result = prime * result + java.util.Arrays.hashCode(verificationKey)
     result = prime * result + java.util.Arrays.hashCode(signature)
@@ -72,7 +72,7 @@ final case class VerificationKeyKesProduct(
   }
 
   override def hashCode(): Int = {
-    val prime  = 31
+    val prime = 31
     var result = 1
     result = prime * result + step
     result = prime * result + java.util.Arrays.hashCode(value)
@@ -95,7 +95,7 @@ final case class SignatureKesProduct(
   }
 
   override def hashCode(): Int = {
-    val prime  = 31
+    val prime = 31
     var result = 1
     result = prime * result + superSignature.hashCode()
     result = prime * result + subSignature.hashCode()

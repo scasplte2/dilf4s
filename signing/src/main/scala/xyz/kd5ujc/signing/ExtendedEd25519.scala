@@ -165,8 +165,8 @@ object ExtendedEd25519 {
 
     override def hashCode(): Int =
       java.util.Arrays.hashCode(leftKey) +
-        31 * java.util.Arrays.hashCode(rightKey) +
-        31 * 31 * java.util.Arrays.hashCode(chainCode)
+      31 * java.util.Arrays.hashCode(rightKey) +
+      31 * 31 * java.util.Arrays.hashCode(chainCode)
   }
 
   case class PublicKey(vk: Ed25519.PublicKey, chainCode: Array[Byte]) extends VerificationKey {

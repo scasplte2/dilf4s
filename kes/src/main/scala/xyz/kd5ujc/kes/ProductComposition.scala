@@ -31,8 +31,8 @@ class ProductComposition extends KesEd25519Blake2b256 {
    */
   private[kes] def getKeyTime(key: SK): Int = {
     val numSubSteps = exp(sumComposition.getTreeHeight(key._2))
-    val tSup        = sumComposition.getKeyTime(key._1)
-    val tSub        = sumComposition.getKeyTime(key._2)
+    val tSup = sumComposition.getKeyTime(key._1)
+    val tSub = sumComposition.getKeyTime(key._2)
     (tSup * numSubSteps) + tSub
   }
 
@@ -54,12 +54,12 @@ class ProductComposition extends KesEd25519Blake2b256 {
    * @return product secret key
    */
   private[kes] def generateSecretKey(seed: Array[Byte], heightSup: Int, heightSub: Int): SK = {
-    val rSuper      = prng(seed)
-    val rSub        = prng(rSuper._2)
+    val rSuper = prng(seed)
+    val rSub = prng(rSuper._2)
     val superScheme = sumComposition.generateSecretKey(rSuper._1, heightSup)
-    val subScheme   = sumComposition.generateSecretKey(rSub._1, heightSub)
-    val kesVkSub    = sumComposition.generateVerificationKey(subScheme)
-    val kesSigSup   = sumComposition.sign(superScheme, kesVkSub._1)
+    val subScheme = sumComposition.generateSecretKey(rSub._1, heightSub)
+    val kesVkSub = sumComposition.generateVerificationKey(subScheme)
+    val kesSigSup = sumComposition.sign(superScheme, kesVkSub._1)
     random.nextBytes(rSuper._2)
     random.nextBytes(seed)
     (superScheme, subScheme, rSub._2, kesSigSup)
@@ -96,11 +96,11 @@ class ProductComposition extends KesEd25519Blake2b256 {
    * Update product keys to the specified time step.
    */
   private[kes] def updateKey(key: SK, step: Int): SK = {
-    val keyTime       = getKeyTime(key)
-    val keyTimeSup    = sumComposition.getKeyTime(key._1)
-    val heightSup     = sumComposition.getTreeHeight(key._1)
-    val heightSub     = sumComposition.getTreeHeight(key._2)
-    val totalSteps    = exp(heightSup + heightSub)
+    val keyTime = getKeyTime(key)
+    val keyTimeSup = sumComposition.getKeyTime(key._1)
+    val heightSup = sumComposition.getTreeHeight(key._1)
+    val heightSub = sumComposition.getTreeHeight(key._2)
+    val totalSteps = exp(heightSup + heightSub)
     val totalStepsSub = exp(heightSub)
     val newKeyTimeSup = step / totalStepsSub
     val newKeyTimeSub = step % totalStepsSub
@@ -117,14 +117,14 @@ class ProductComposition extends KesEd25519Blake2b256 {
     else if (step > keyTime && step < totalSteps) {
       if (keyTimeSup < newKeyTimeSup) {
         sumComposition.eraseOldNode(key._2)
-        val (s1, s2)               = getSeed((Array(), key._3), keyTimeSup)
-        val superScheme            = sumComposition.evolveKey(key._1, newKeyTimeSup)
-        val newSubScheme           = sumComposition.generateSecretKey(s1, heightSub)
+        val (s1, s2) = getSeed((Array(), key._3), keyTimeSup)
+        val superScheme = sumComposition.evolveKey(key._1, newKeyTimeSup)
+        val newSubScheme = sumComposition.generateSecretKey(s1, heightSub)
         random.nextBytes(s1)
-        val kesVkSub               = sumComposition.generateVerificationKey(newSubScheme)
-        val kesSigSuper            = sumComposition.sign(superScheme, kesVkSub._1)
+        val kesVkSub = sumComposition.generateVerificationKey(newSubScheme)
+        val kesSigSuper = sumComposition.sign(superScheme, kesVkSub._1)
         val forwardSecureSuperScheme = eraseLeafSecretKey(superScheme)
-        val updatedSubScheme       = sumComposition.evolveKey(newSubScheme, newKeyTimeSub)
+        val updatedSubScheme = sumComposition.evolveKey(newSubScheme, newKeyTimeSub)
         (forwardSecureSuperScheme, updatedSubScheme, s2, kesSigSuper)
       } else {
         val subScheme = sumComposition.updateKey(key._2, newKeyTimeSub)
@@ -148,8 +148,8 @@ class ProductComposition extends KesEd25519Blake2b256 {
    */
   private[kes] def verify(kesSig: SIG, m: Array[Byte], kesVk: VK): Boolean = {
     val totalStepsSub = exp(kesSig._2._3.length)
-    val keyTimeSup    = kesVk._2 / totalStepsSub
-    val keyTimeSub    = kesVk._2 % totalStepsSub
+    val keyTimeSup = kesVk._2 / totalStepsSub
+    val keyTimeSub = kesVk._2 % totalStepsSub
 
     val verifySup = sumComposition.verify(kesSig._1, kesSig._3, (kesVk._1, keyTimeSup))
     val verifySub = sumComposition.verify(kesSig._2, m, (kesSig._3, keyTimeSub))

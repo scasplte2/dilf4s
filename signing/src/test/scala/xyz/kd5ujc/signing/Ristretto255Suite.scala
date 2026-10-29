@@ -3,9 +3,9 @@ package xyz.kd5ujc.signing
 import java.security.SecureRandom
 import java.util.HexFormat
 
-import weaver.SimpleIOSuite
-
 import cats.effect.IO
+
+import weaver.SimpleIOSuite
 
 object Ristretto255Suite extends SimpleIOSuite {
 
@@ -23,7 +23,7 @@ object Ristretto255Suite extends SimpleIOSuite {
       val message = hex.parseHex("74657374") // "test"
       val signature = hex.parseHex(
         "fc45655fbc66bbffad654ea4ce5fdae253a49a64ace25d9adb62010dd9fb2555" +
-          "2164141787162e5b4cab915b4aa45d94655dbb9ed7c378a53b980a0be220a802"
+        "2164141787162e5b4cab915b4aa45d94655dbb9ed7c378a53b980a0be220a802"
       )
 
       val pk = Ristretto255.PublicKey(groupPublicKey)

@@ -47,7 +47,7 @@ class KesSum extends SumComposition {
     verifyKey: VerificationKeyKesSum
   ): Boolean = {
     val sumSig = (signature.verificationKey, signature.signature, signature.witness.toVector)
-    val sumVk  = (verifyKey.value, verifyKey.step)
+    val sumVk = (verifyKey.value, verifyKey.step)
     verify(sumSig, message, sumVk)
   }
 

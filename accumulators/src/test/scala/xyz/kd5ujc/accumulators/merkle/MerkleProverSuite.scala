@@ -7,8 +7,8 @@ import xyz.kd5ujc.accumulators.merkle.api.MerkleProver
 import xyz.kd5ujc.accumulators.merkle.{MerkleNode, MerkleTree}
 import xyz.kd5ujc.binary.JsonSerializer
 import xyz.kd5ujc.hash.impl.Blake2b256Hasher
-
 import xyz.kd5ujc.test.generators.nonEmptyStringListGen
+
 import io.circe.syntax.EncoderOps
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers

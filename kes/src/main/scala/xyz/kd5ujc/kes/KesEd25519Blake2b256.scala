@@ -18,8 +18,8 @@ import org.bouncycastle.crypto.digests.Blake2bDigest
  */
 trait KesEd25519Blake2b256 {
 
-  protected val pkBytes: Int   = 32
-  protected val sigBytes: Int  = 64
+  protected val pkBytes: Int = 32
+  protected val sigBytes: Int = 64
   protected val hashBytes: Int = 32
 
   /**
@@ -57,7 +57,7 @@ trait KesEd25519Blake2b256 {
    */
   protected def sGenKeypair(seed: Array[Byte]): (Array[Byte], Array[Byte]) = {
     val sk = seed.clone()
-    val h  = sha512(sk)
+    val h = sha512(sk)
     // Clamp
     h(0) = (h(0) & 0xf8).toByte
     h(31) = ((h(31) & 0x7f) | 0x40).toByte
@@ -73,9 +73,9 @@ trait KesEd25519Blake2b256 {
     // Clamp
     h(0) = (h(0) & 0xf8).toByte
     h(31) = ((h(31) & 0x7f) | 0x40).toByte
-    val scalar      = h.take(32)
+    val scalar = h.take(32)
     val noncePrefix = h.slice(32, 64)
-    val pk          = Ed25519Signing.publicKeyFromScalar(scalar)
+    val pk = Ed25519Signing.publicKeyFromScalar(scalar)
     Ed25519Signing.sign(scalar, noncePrefix, pk, m)
   }
 
