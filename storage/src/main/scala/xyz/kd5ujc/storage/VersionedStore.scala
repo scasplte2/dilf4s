@@ -24,7 +24,7 @@ object Version {
   def apply(value: Long): Either[StoreError, Version] =
     Either.cond(value >= 0, unsafe(value), StoreError.UnknownVersion(value, -1))
 
-  private[storage] def unsafe(value: Long): Version = new Version(value) {}
+  private[kd5ujc] def unsafe(value: Long): Version = new Version(value) {}
 
   implicit val versionOrder: Order[Version] = Order.by(_.value)
   implicit val versionShow: Show[Version] = Show.show(v => s"v${v.value}")
