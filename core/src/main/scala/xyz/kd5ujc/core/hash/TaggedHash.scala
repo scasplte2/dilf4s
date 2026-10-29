@@ -15,6 +15,12 @@ object DomainTag {
 
   def apply(value: String): Either[HashError, DomainTag] =
     Either.cond(Grammar.matcher(value).matches(), new DomainTag(value) {}, HashError.InvalidDomainTag(value))
+
+  /**
+   * For dilf4s's own compile-time tags only: skips validation instead of throwing. Every library tag is checked
+   * against [[apply]] by `LibraryTagsSuite`.
+   */
+  private[kd5ujc] def literal(value: String): DomainTag = new DomainTag(value) {}
 }
 
 /**

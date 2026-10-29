@@ -81,14 +81,19 @@ A single-key proof is the partial trie expanded along that key's path, with ever
 
 ## 5. Proof encoding
 
-A proof is a canonical value:
+A proof is a canonical **array** of node records in pre-order: each branch record is followed by the records of its
+present children, left before right. Keeping the encoding flat means proof depth is never bounded by the canonical
+model's nesting limit, so deep variable-mode tries stay provable.
 
 ```
+proof  = [ record... ]                   -- [] is the proof of an empty trie
 stub   = { "h": bytes }
 leaf   = { "s": segment, "v": bytes }
-branch = { "s": segment, "v"?: bytes, "l"?: node, "r"?: node }
-empty  = {}
+branch = { "s": segment, "v"?: bytes, "c": 1 | 2 | 3 }   -- child mask: 1 = left only, 2 = right only, 3 = both
 ```
+
+Decoders rebuild the tree with an explicit stack and reject trailing records, missing children, a mask inconsistent
+with the branch invariant, and any record that matches none of the three shapes.
 
 Values travel separately. To check a value `x` against a proven `valueHash`, compute `valueHash(x)` and compare.
 

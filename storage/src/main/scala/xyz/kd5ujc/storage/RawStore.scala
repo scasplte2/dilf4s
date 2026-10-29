@@ -75,9 +75,6 @@ object Namespace {
       StoreError.Codec("namespace", s"'$name' must be 1..255 UTF-8 bytes")
     )
   }
-
-  /** For namespaces fixed at compile time; the name is checked when the library loads. */
-  private[storage] def unsafe(name: String): Namespace = Namespace(name).fold(e => sys.error(e.toString), identity)
 }
 
 /** The byte-level store every backend implements. Batches are atomic; scans are ordered and see one snapshot. */

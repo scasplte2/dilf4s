@@ -50,10 +50,10 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
   /** Applies commands to the pure tree, skipping out-of-range ones (the log must reject those the same way). */
   private def model(cmds: List[Cmd]): MerkleTree[Sha256] =
     cmds.foldLeft(MerkleTree.empty[Sha256]) {
-      case (t, Append(ns))  => t.appendAll(ns.map(leaf))
+      case (t, Append(ns))   => t.appendAll(ns.map(leaf))
       case (t, Update(i, v)) => t.update(i.toLong, leaf(v)).getOrElse(t)
-      case (t, Prepend(v))  => t.prependAll(List(leaf(v)))
-      case (t, Remove(i))   => t.removeAt(i.toLong).getOrElse(t)
+      case (t, Prepend(v))   => t.prependAll(List(leaf(v)))
+      case (t, Remove(i))    => t.removeAt(i.toLong).getOrElse(t)
     }
 
   test("in-memory and persistent logs track the pure tree through arbitrary operations") {
@@ -81,11 +81,11 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
       def inRange(i: Int) = i.toLong < n
       List(a, b).traverse_ { log =>
         c match {
-          case Append(ns)                => log.append(ns.map(leaf))
+          case Append(ns)                 => log.append(ns.map(leaf))
           case Update(i, v) if inRange(i) => log.update(i.toLong, leaf(v))
-          case Prepend(v)                => log.prepend(List(leaf(v)))
+          case Prepend(v)                 => log.prepend(List(leaf(v)))
           case Remove(i) if inRange(i)    => log.remove(i.toLong)
-          case _                         => IO.unit
+          case _                          => IO.unit
         }
       }
     }
@@ -101,7 +101,7 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
         seenB <- b.size
         _     <- b.append(List(leaf(3)))
         seenA <- a.tree
-      } yield expect.same(2L, seenB) and expect.same(MerkleTree.fromLeafHashes[Sha256](List(leaf(1), leaf(2), leaf(3))).root, seenA.root)
+      } yield expect.same(2L, seenB).and(expect.same(MerkleTree.fromLeafHashes[Sha256](List(leaf(1), leaf(2), leaf(3))).root, seenA.root))
     }
   }
 
@@ -109,14 +109,15 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
     ok { (rs, rm) =>
       implicit val (s, t) = (rs, rm)
       for {
-        raw   <- RawStore.inMemory[IO]
-        log   <- MerkleLog.persistent[IO, Sha256](raw, "log")
-        _     <- log.append((0 until 13).toList.map(leaf))
-        root  <- log.root
-        inc   <- log.inclusionProof(7)
-        con   <- log.consistencyProof(5)
-        old    = MerkleTree.fromLeafHashes[Sha256]((0 until 5).map(leaf))
-      } yield expect(MerkleVerifier.inclusion(root, leaf(7), inc).isRight) and expect(MerkleVerifier.consistency(old.root, root, con).isRight)
+        raw  <- RawStore.inMemory[IO]
+        log  <- MerkleLog.persistent[IO, Sha256](raw, "log")
+        _    <- log.append((0 until 13).toList.map(leaf))
+        root <- log.root
+        inc  <- log.inclusionProof(7)
+        con  <- log.consistencyProof(5)
+        old = MerkleTree.fromLeafHashes[Sha256]((0 until 5).map(leaf))
+      } yield
+        expect(MerkleVerifier.inclusion(root, leaf(7), inc).isRight).and(expect(MerkleVerifier.consistency(old.root, root, con).isRight))
     }
   }
 

@@ -34,7 +34,14 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
 
   /** The Certificate Transparency test leaves (certificate-transparency-go merkle tests). */
   private val ctLeaves: Vector[ByteVector] = Vector(
-    hex"", hex"00", hex"10", hex"2021", hex"3031", hex"40414243", hex"5051525354555657", hex"606162636465666768696a6b6c6d6e6f"
+    hex"",
+    hex"00",
+    hex"10",
+    hex"2021",
+    hex"3031",
+    hex"40414243",
+    hex"5051525354555657",
+    hex"606162636465666768696a6b6c6d6e6f"
   )
 
   private val ctRoots: Vector[String] = Vector(
@@ -49,8 +56,10 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
   )
 
   pureTest("RFC 6962 profile reproduces the Certificate Transparency roots") {
-    (1 to 8).map(n => expect.same(ctRoots(n - 1), tree(ctLeaves.take(n))(ct).root.hex)).reduce(_ and _) and
-      expect.same(Hasher[Sha256].digest(ByteVector.empty), MerkleTree.empty[Sha256](ct).root)
+    (1 to 8)
+      .map(n => expect.same(ctRoots(n - 1), tree(ctLeaves.take(n))(ct).root.hex))
+      .reduce(_ and _)
+      .and(expect.same(Hasher[Sha256].digest(ByteVector.empty), MerkleTree.empty[Sha256](ct).root))
   }
 
   test("the level-based tree equals the reference MTH at every size") {
@@ -72,17 +81,30 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
   }
 
   test("tampered inclusion proofs fail") {
-    forall(leavesOfSize(2).flatMap(ls => Gen.choose(0, ls.size - 1).map(ls -> _))) { case (ls, i) =>
-      val t = tree(ls)(tagged)
-      val leaf = tagged.leaf(ls(i))
-      val proof = t.inclusionProof(i.toLong).toOption.get
-      val other = tagged.leaf(ls(i) ++ hex"ff")
-      val flipped = proof.copy(path = proof.path.updated(0, tagged.leaf(hex"deadbeef")))
-      expect(MerkleVerifier.inclusion(t.root, other, proof)(tagged).isLeft, "wrong leaf") and
-        expect(MerkleVerifier.inclusion(t.root, leaf, proof.copy(index = (i + 1L) % ls.size))(tagged).isLeft || ls(i) == ls((i + 1) % ls.size), "wrong index") and
-        expect(MerkleVerifier.inclusion(t.append(other).root, leaf, proof.copy(size = proof.size + 1))(tagged).isLeft, "stale proof against the grown tree") and
-        expect(MerkleVerifier.inclusion(t.root, leaf, flipped)(tagged).isLeft, "altered path") and
-        expect(MerkleVerifier.inclusion(t.root, leaf, proof.copy(path = proof.path :+ leaf))(tagged).isLeft, "extended path")
+    forall(leavesOfSize(2).flatMap(ls => Gen.choose(0, ls.size - 1).map(ls -> _))) {
+      case (ls, i) =>
+        val t = tree(ls)(tagged)
+        val leaf = tagged.leaf(ls(i))
+        val proof = t.inclusionProof(i.toLong).toOption.get
+        val other = tagged.leaf(ls(i) ++ hex"ff")
+        val flipped = proof.copy(path = proof.path.updated(0, tagged.leaf(hex"deadbeef")))
+        expect(MerkleVerifier.inclusion(t.root, other, proof)(tagged).isLeft, "wrong leaf")
+          .and(
+            expect(
+              MerkleVerifier.inclusion(t.root, leaf, proof.copy(index = (i + 1L) % ls.size))(tagged).isLeft || ls(i) == ls(
+                (i + 1) % ls.size
+              ),
+              "wrong index"
+            )
+          )
+          .and(
+            expect(
+              MerkleVerifier.inclusion(t.append(other).root, leaf, proof.copy(size = proof.size + 1))(tagged).isLeft,
+              "stale proof against the grown tree"
+            )
+          )
+          .and(expect(MerkleVerifier.inclusion(t.root, leaf, flipped)(tagged).isLeft, "altered path"))
+          .and(expect(MerkleVerifier.inclusion(t.root, leaf, proof.copy(path = proof.path :+ leaf))(tagged).isLeft, "extended path"))
     }
   }
 
@@ -98,42 +120,53 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
   }
 
   test("consistency fails for a tree that is not an extension") {
-    forall(Gen.choose(2, 40).flatMap(n => Gen.listOfN(n, leafData)).map(_.toVector).flatMap(ls => Gen.choose(1, ls.size - 1).map(ls -> _))) { case (ls, m) =>
-      val full = tree(ls)(tagged)
-      val forked = tree(ls.take(m - 1) :+ (ls(m - 1) ++ hex"01"))(tagged)
-      val proof = full.consistencyProof(m.toLong).toOption.get
-      expect(MerkleVerifier.consistency(forked.root, full.root, proof)(tagged).isLeft, s"forked prefix of size $m")
+    forall(
+      Gen.choose(2, 40).flatMap(n => Gen.listOfN(n, leafData)).map(_.toVector).flatMap(ls => Gen.choose(1, ls.size - 1).map(ls -> _))
+    ) {
+      case (ls, m) =>
+        val full = tree(ls)(tagged)
+        val forked = tree(ls.take(m - 1) :+ (ls(m - 1) ++ hex"01"))(tagged)
+        val proof = full.consistencyProof(m.toLong).toOption.get
+        expect(MerkleVerifier.consistency(forked.root, full.root, proof)(tagged).isLeft, s"forked prefix of size $m")
     }
   }
 
   pureTest("out-of-range requests are typed errors") {
     val t = tree(ctLeaves)(tagged)
-    expect.same(Left(MerkleError.IndexOutOfRange(8, 8)), t.inclusionProof(8)) and
-      expect.same(Left(MerkleError.IndexOutOfRange(-1, 8)), t.inclusionProof(-1)) and
-      expect.same(Left(MerkleError.InvalidSizes(9, 8)), t.consistencyProof(9)) and
-      expect.same(Left(MerkleError.IndexOutOfRange(0, 0)), MerkleTree.empty[Sha256](tagged).inclusionProof(0))
+    expect
+      .same(Left(MerkleError.IndexOutOfRange(8, 8)), t.inclusionProof(8))
+      .and(expect.same(Left(MerkleError.IndexOutOfRange(-1, 8)), t.inclusionProof(-1)))
+      .and(expect.same(Left(MerkleError.InvalidSizes(9, 8)), t.consistencyProof(9)))
+      .and(expect.same(Left(MerkleError.IndexOutOfRange(0, 0)), MerkleTree.empty[Sha256](tagged).inclusionProof(0)))
   }
 
   pureTest("profiles are domain separated from each other and from raw hashing") {
-    expect(tagged.leaf(hex"00") != ct.leaf(hex"00"), "tagged and RFC 6962 leaves differ") and
-      expect(tagged.leaf(hex"") != tagged.empty, "an empty leaf is not the empty tree") and
-      expect(tagged.node(tagged.leaf(hex"01"), tagged.leaf(hex"02")) != tagged.leaf(tagged.leaf(hex"01").bytes ++ tagged.leaf(hex"02").bytes), "a node is never a leaf")
+    expect(tagged.leaf(hex"00") != ct.leaf(hex"00"), "tagged and RFC 6962 leaves differ")
+      .and(expect(tagged.leaf(hex"") != tagged.empty, "an empty leaf is not the empty tree"))
+      .and(
+        expect(
+          tagged.node(tagged.leaf(hex"01"), tagged.leaf(hex"02")) != tagged.leaf(tagged.leaf(hex"01").bytes ++ tagged.leaf(hex"02").bytes),
+          "a node is never a leaf"
+        )
+      )
   }
 
   test("update, prepend and remove agree with rebuilding from the edited leaf list") {
-    forall(nonEmptyLeaves.flatMap(ls => Gen.zip(Gen.choose(0, ls.size - 1), leafData).map { case (i, d) => (ls, i, d) })) { case (ls, i, d) =>
-      implicit val m: MerkleHashing[Sha256] = tagged
-      val t = tree(ls)
-      expect.same(Right(tree(ls.updated(i, d)).root), t.update(i.toLong, m.leaf(d)).map(_.root)) and
-        expect.same(tree(d +: ls).root, t.prependAll(List(m.leaf(d))).root) and
-        expect.same(Right(tree(ls.patch(i, Nil, 1)).root), t.removeAt(i.toLong).map(_.root)) and
-        expect.same(Left(MerkleError.IndexOutOfRange(ls.size.toLong, ls.size.toLong)), t.update(ls.size.toLong, m.leaf(d)))
+    forall(nonEmptyLeaves.flatMap(ls => Gen.zip(Gen.choose(0, ls.size - 1), leafData).map { case (i, d) => (ls, i, d) })) {
+      case (ls, i, d) =>
+        implicit val m: MerkleHashing[Sha256] = tagged
+        val t = tree(ls)
+        expect
+          .same(Right(tree(ls.updated(i, d)).root), t.update(i.toLong, m.leaf(d)).map(_.root))
+          .and(expect.same(tree(d +: ls).root, t.prependAll(List(m.leaf(d))).root))
+          .and(expect.same(Right(tree(ls.patch(i, Nil, 1)).root), t.removeAt(i.toLong).map(_.root)))
+          .and(expect.same(Left(MerkleError.IndexOutOfRange(ls.size.toLong, ls.size.toLong)), t.update(ls.size.toLong, m.leaf(d))))
     }
   }
 
   pureTest("indicesOf finds every position of a repeated leaf") {
     implicit val m: MerkleHashing[Sha256] = tagged
     val t = tree(Vector(hex"01", hex"02", hex"01", hex"03", hex"01"))
-    expect.same(List(0L, 2L, 4L), t.indicesOf(m.leaf(hex"01"))) and expect.same(Nil, t.indicesOf(m.leaf(hex"09")))
+    expect.same(List(0L, 2L, 4L), t.indicesOf(m.leaf(hex"01"))).and(expect.same(Nil, t.indicesOf(m.leaf(hex"09"))))
   }
 }

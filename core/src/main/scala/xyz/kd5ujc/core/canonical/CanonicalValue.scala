@@ -68,6 +68,13 @@ object CanonicalValue {
   def map(entries: Iterable[(String, CanonicalValue)]): Either[CanonicalError, CMap] =
     collect(entries.toList, Set.empty, Map.empty).flatMap(m => withinDepth(new CMap(m) {}))
 
+  /**
+   * For dilf4s's own fixed-shape records (e.g. trie node commitments): distinct ASCII keys known at compile time and
+   * shallow values. Null values are still dropped. Never use with external input.
+   */
+  private[kd5ujc] def trustedMap(entries: List[(String, CanonicalValue)]): CMap =
+    new CMap(entries.filter { case (_, v) => v != CNull }.toMap) {}
+
   /** For the strict decoder, which bounds depth and has verified unique, ordered text keys and non-null values. */
   private[canonical] def decodedArray(values: Vector[CanonicalValue]): CArray = new CArray(values) {}
   private[canonical] def decodedMap(entries:  Vector[(String, CanonicalValue)]): CMap = new CMap(entries.toMap) {}

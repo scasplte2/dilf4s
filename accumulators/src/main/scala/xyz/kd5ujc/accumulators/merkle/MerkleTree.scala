@@ -21,13 +21,18 @@ object MerkleHashing {
 
   def apply[H](implicit M: MerkleHashing[H]): MerkleHashing[H] = M
 
-  private def tag(name: String): DomainTag = DomainTag(name).fold(e => sys.error(e.toString), identity)
+  private[kd5ujc] val LeafTag = "dilf4s/merkle/leaf/v1"
+  private[kd5ujc] val NodeTag = "dilf4s/merkle/node/v1"
+  private[kd5ujc] val EmptyTag = "dilf4s/merkle/empty/v1"
+  private[kd5ujc] val Tags: List[String] = List(LeafTag, NodeTag, EmptyTag)
+
+  private def tag(name: String): DomainTag = DomainTag.literal(name)
 
   /** The dilf4s profile: tagged hashes per role. */
   implicit def tagged[H: Hasher]: MerkleHashing[H] = new MerkleHashing[H] {
-    private val leafTag = TaggedHash[H](tag("dilf4s/merkle/leaf/v1"))
-    private val nodeTag = TaggedHash[H](tag("dilf4s/merkle/node/v1"))
-    val empty: Digest[H] = TaggedHash[H](tag("dilf4s/merkle/empty/v1")).apply(ByteVector.empty)
+    private val leafTag = TaggedHash[H](tag(LeafTag))
+    private val nodeTag = TaggedHash[H](tag(NodeTag))
+    val empty: Digest[H] = TaggedHash[H](tag(EmptyTag)).apply(ByteVector.empty)
     def leaf(data: ByteVector): Digest[H] = leafTag(data)
     def node(left: Digest[H], right: Digest[H]): Digest[H] = nodeTag(left.bytes ++ right.bytes)
   }
@@ -102,7 +107,11 @@ final class MerkleTree[H] private (private val levels: Vector[Vector[Digest[H]]]
 
   /** RFC 9162 §2.1.3.1 audit path, read from the stored levels. */
   def inclusionProof(index: Long): Either[MerkleError, InclusionProof[H]] =
-    Either.cond(index >= 0 && index < size, InclusionProof(index, size, auditPath(index.toInt, 0, Vector.empty)), MerkleError.IndexOutOfRange(index, size))
+    Either.cond(
+      index >= 0 && index < size,
+      InclusionProof(index, size, auditPath(index.toInt, 0, Vector.empty)),
+      MerkleError.IndexOutOfRange(index, size)
+    )
 
   @tailrec
   private def auditPath(i: Int, level: Int, acc: Vector[Digest[H]]): Vector[Digest[H]] =
@@ -197,21 +206,24 @@ object MerkleTree {
 object MerkleVerifier {
 
   /** RFC 9162 §2.1.3.2. */
-  def inclusion[H](root: Digest[H], leafHash: Digest[H], proof: InclusionProof[H])(implicit M: MerkleHashing[H]): Either[MerkleError, Unit] =
+  def inclusion[H](root: Digest[H], leafHash: Digest[H], proof: InclusionProof[H])(
+    implicit M: MerkleHashing[H]
+  ): Either[MerkleError, Unit] =
     if (proof.index < 0 || proof.index >= proof.size) MerkleError.IndexOutOfRange(proof.index, proof.size).asLeft
     else
-      walkInclusion(proof.path.toList, proof.index, proof.size - 1, leafHash).flatMap { case (sn, computed) =>
-        if (sn != 0) MerkleError.InvalidProof("path is too short for the tree size").asLeft
-        else Either.cond(computed == root, (), MerkleError.RootMismatch(root.hex, computed.hex))
+      walkInclusion(proof.path.toList, proof.index, proof.size - 1, leafHash).flatMap {
+        case (sn, computed) =>
+          if (sn != 0) MerkleError.InvalidProof("path is too short for the tree size").asLeft
+          else Either.cond(computed == root, (), MerkleError.RootMismatch(root.hex, computed.hex))
       }
 
   @tailrec
-  private def walkInclusion[H](path: List[Digest[H]], fn: Long, sn: Long, r: Digest[H])(implicit
-    M: MerkleHashing[H]
+  private def walkInclusion[H](path: List[Digest[H]], fn: Long, sn: Long, r: Digest[H])(
+    implicit M: MerkleHashing[H]
   ): Either[MerkleError, (Long, Digest[H])] =
     path match {
-      case Nil                => (sn, r).asRight
-      case _ :: _ if sn == 0  => MerkleError.InvalidProof("path is too long for the tree size").asLeft
+      case Nil               => (sn, r).asRight
+      case _ :: _ if sn == 0 => MerkleError.InvalidProof("path is too long for the tree size").asLeft
       case p :: rest =>
         if ((fn & 1) == 1 || fn == sn) {
           val (f, s) = if ((fn & 1) == 0) shiftUntilOddOrZero(fn, sn) else (fn, sn)
@@ -220,8 +232,8 @@ object MerkleVerifier {
     }
 
   /** RFC 9162 §2.1.4.2. */
-  def consistency[H](oldRoot: Digest[H], newRoot: Digest[H], proof: ConsistencyProof[H])(implicit
-    M: MerkleHashing[H]
+  def consistency[H](oldRoot: Digest[H], newRoot: Digest[H], proof: ConsistencyProof[H])(
+    implicit M: MerkleHashing[H]
   ): Either[MerkleError, Unit] = {
     val (m, n) = (proof.oldSize, proof.newSize)
     if (m < 0 || m > n) MerkleError.InvalidSizes(m, n).asLeft
@@ -235,18 +247,19 @@ object MerkleVerifier {
         case Nil => MerkleError.InvalidProof("empty consistency path").asLeft
         case first :: rest =>
           val (fn, sn) = shiftWhileOdd(m - 1, n - 1)
-          walkConsistency(rest, fn, sn, first, first).flatMap { case (s, fr, sr) =>
-            if (s != 0) MerkleError.InvalidProof("path is too short for the sizes").asLeft
-            else if (fr != oldRoot) MerkleError.RootMismatch(oldRoot.hex, fr.hex).asLeft
-            else Either.cond(sr == newRoot, (), MerkleError.RootMismatch(newRoot.hex, sr.hex))
+          walkConsistency(rest, fn, sn, first, first).flatMap {
+            case (s, fr, sr) =>
+              if (s != 0) MerkleError.InvalidProof("path is too short for the sizes").asLeft
+              else if (fr != oldRoot) MerkleError.RootMismatch(oldRoot.hex, fr.hex).asLeft
+              else Either.cond(sr == newRoot, (), MerkleError.RootMismatch(newRoot.hex, sr.hex))
           }
       }
     }
   }
 
   @tailrec
-  private def walkConsistency[H](path: List[Digest[H]], fn: Long, sn: Long, fr: Digest[H], sr: Digest[H])(implicit
-    M: MerkleHashing[H]
+  private def walkConsistency[H](path: List[Digest[H]], fn: Long, sn: Long, fr: Digest[H], sr: Digest[H])(
+    implicit M: MerkleHashing[H]
   ): Either[MerkleError, (Long, Digest[H], Digest[H])] =
     path match {
       case Nil               => (sn, fr, sr).asRight
