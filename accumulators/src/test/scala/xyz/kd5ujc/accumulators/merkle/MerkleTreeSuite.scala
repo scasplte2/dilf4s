@@ -1,15 +1,15 @@
 package xyz.kd5ujc.accumulators.merkle
 
-import java.util.HexFormat
-
 import cats.effect.IO
 
 import xyz.kd5ujc.accumulators.merkle.MerkleTree
 import xyz.kd5ujc.binary.JsonSerializer
-import xyz.kd5ujc.hash.{Blake2b256Hasher, l256}
+import xyz.kd5ujc.hash.impl.Blake2b256Hasher
+import xyz.kd5ujc.hash.l256
 
 import io.circe.Json
 import io.circe.syntax.EncoderOps
+import org.bouncycastle.util.encoders.Hex
 import org.scalacheck.Gen
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
@@ -92,7 +92,7 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
       implicit0(json2bin: JsonSerializer[IO]) <- JsonSerializer.forSync[IO]
       implicit0(hasher: Blake2b256Hasher[IO]) <- IO(new Blake2b256Hasher[IO])
       tree                                    <- MerkleTree.create[IO, Json](List(Json.obj("a" -> 1.asJson), Json.obj("b" -> 2.asJson)))
-      expectedRootHash = l256.unsafe(HexFormat.of().parseHex("b1784feac2b405fc80b56d001f4e2364bc1dec7678622cfdba15b4be3902e873"))
+      expectedRootHash = l256.unsafe(Hex.decodeStrict("b1784feac2b405fc80b56d001f4e2364bc1dec7678622cfdba15b4be3902e873"))
     } yield expect.same(tree.rootNode.digest.asJson, expectedRootHash.asJson)
   }
 }

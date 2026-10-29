@@ -1,19 +1,19 @@
-import Dependencies._
-import sbt._
-import sbt.Keys._
+import Dependencies.*
+import sbt.*
+import sbt.Keys.*
 
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / organization := "xyz.kd5ujc"
-ThisBuild / scalaVersion := "2.13.11"
+ThisBuild / scalaVersion := "2.13.16"
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / scalafixDependencies += Libraries.organizeImports
 ThisBuild / scalafixScalaBinaryVersion := "2.13"
 
 ThisBuild / assemblyMergeStrategy := {
-  case "logback.xml" => MergeStrategy.first
-  case x if x.contains("io.netty.versions.properties") => MergeStrategy.discard
-  case PathList("xyz", "kd5ujc", "buildinfo", xs @ _*) => MergeStrategy.first
-  case PathList(xs@_*) if xs.last == "module-info.class" => MergeStrategy.first
+  case "logback.xml"                                       => MergeStrategy.first
+  case x if x.contains("io.netty.versions.properties")     => MergeStrategy.discard
+  case PathList("xyz", "kd5ujc", "buildinfo", xs @ _*)     => MergeStrategy.first
+  case PathList(xs @ _*) if xs.last == "module-info.class" => MergeStrategy.first
   case x =>
     val oldStrategy = (assembly / assemblyMergeStrategy).value
     oldStrategy(x)
@@ -30,7 +30,7 @@ lazy val commonScalacOptions = Seq(
   "-Ymacro-annotations",
   "-Ywarn-unused:_",
   "-Ywarn-macros:after",
-  "-Wconf:cat=unused:info",
+  "-Wconf:cat=unused:info"
 )
 
 lazy val commonSettings = Seq(
@@ -46,10 +46,10 @@ lazy val commonSettings = Seq(
 lazy val commonTestSettings = Seq(
   testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
   libraryDependencies ++= Seq(
+    Libraries.catsEffectTestkit,
     Libraries.weaverCats,
     Libraries.weaverDiscipline,
-    Libraries.weaverScalaCheck,
-    Libraries.catsEffectTestkit
+    Libraries.weaverScalaCheck
   ).map(_ % Test)
 )
 
@@ -70,7 +70,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(models, sharedTest, core, accumulators, storage, signing, vrf, kes)
+  .aggregate(models, sharedTest, core, accumulators, storage, signing, vrf, kes, benchmarks)
 
 // ─── Models: cross-cutting value types ───
 lazy val models = project.in(file("models"))
@@ -160,6 +160,7 @@ lazy val signing = project.in(file("signing"))
     libraryDependencies ++= Seq(
       Libraries.cats,
       Libraries.catsEffect,
+      Libraries.bc,
       Libraries.curve25519Elisabeth,
       Libraries.circeGeneric % Test,
       Libraries.circeParser  % Test,
@@ -201,3 +202,13 @@ lazy val kes = project.in(file("kes"))
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll")
+
+// ─── Benchmarks: JMH, never published ───
+lazy val benchmarks = project.in(file("benchmarks"))
+  .enablePlugins(JmhPlugin)
+  .settings(
+    name := "dilf4s-benchmarks",
+    commonSettings,
+    publish / skip := true
+  )
+  .dependsOn(core, accumulators)

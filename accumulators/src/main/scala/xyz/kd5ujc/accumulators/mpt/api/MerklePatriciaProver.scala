@@ -1,63 +1,146 @@
 package xyz.kd5ujc.accumulators.mpt.api
 
-import cats.Monad
+import cats.MonadThrow
+import cats.syntax.applicativeError._
 import cats.syntax.either._
+import cats.syntax.flatMap._
 import cats.syntax.functor._
-import cats.syntax.option._
 
 import xyz.kd5ujc.accumulators.mpt._
-import xyz.kd5ujc.hash.{Digest, JsonHasher}
+import xyz.kd5ujc.hash.Digest
+import xyz.kd5ujc.hash.api.DigestProducer
 
+/**
+ * Type class for generating Merkle Patricia Trie inclusion proofs
+ */
+// Interface for MerklePatriciaProver
 trait MerklePatriciaProver[F[_]] {
-  def attest(path: Digest): F[Option[MerklePatriciaInclusionProof]]
+
+  /**
+   * Generate a proof that a path exists in the trie
+   *
+   * @param path The path to prove inclusion for
+   * @return A proof of inclusion if the path exists, or an error
+   */
+  def attestPath(path: String): F[Either[MerklePatriciaProofError, MerklePatriciaInclusionProof]]
+
+  /**
+   * Generate a proof that a digest exists in the trie
+   *
+   * @param digest The digest to prove inclusion for
+   * @return A proof of inclusion if the digest exists, or an error
+   */
+  def attestDigest(digest: Digest): F[Either[MerklePatriciaProofError, MerklePatriciaInclusionProof]]
 }
 
 object MerklePatriciaProver {
-  def make[F[_]: Monad: JsonHasher](trie: MerklePatriciaTrie): MerklePatriciaProver[F] =
-    new MerklePatriciaProver[F] {
-      type Continue = (MerklePatriciaNode, Seq[Nibble], List[MerklePatriciaCommitment])
-      type Return = Option[List[MerklePatriciaCommitment]]
+  def apply[F[_]](implicit prover: MerklePatriciaProver[F]): MerklePatriciaProver[F] = prover
 
-      override def attest(path: Digest): F[Option[MerklePatriciaInclusionProof]] =
-        Monad[F]
-          .tailRecM[Continue, Return]((trie.rootNode, Nibble(path), List.empty[MerklePatriciaCommitment])) {
+  /**
+   * Create a prover instance from a Merkle Patricia Trie
+   */
+  def make[F[_]: MonadThrow](trie: MerklePatriciaTrie)(implicit producer: DigestProducer[F]): MerklePatriciaProver[F] =
+    new MerklePatriciaProver[F] {
+      def attestPath(path: String): F[Either[MerklePatriciaProofError, MerklePatriciaInclusionProof]] =
+        DigestProducer[F]
+          .hash(path)
+          .flatMap(digest => attestDigest(digest))
+          .handleError(e => ProofGenerationError(e.getMessage).asLeft[MerklePatriciaInclusionProof])
+
+      def attestDigest(digest: Digest): F[Either[MerklePatriciaProofError, MerklePatriciaInclusionProof]] = {
+        type Continue = (MerklePatriciaNode, Seq[Nibble], List[MerklePatriciaCommitment])
+        type Return = Either[MerklePatriciaProofError, List[MerklePatriciaCommitment]]
+
+        MonadThrow[F]
+          .tailRecM[Continue, Return]((trie.rootNode, Nibble(digest), List.empty[MerklePatriciaCommitment])) {
             case (currentNode, remainingPath, acc) =>
               currentNode match {
                 case leaf: MerklePatriciaNode.Leaf if leaf.remaining == remainingPath =>
-                  JsonHasher[F]
+                  DigestProducer[F]
                     .hash(leaf.data)
                     .map(dataDigest => MerklePatriciaCommitment.Leaf(leaf.remaining, dataDigest) :: acc)
-                    .map(_.some)
-                    .map(_.asRight)
+                    .map(commitments => commitments.asRight[MerklePatriciaProofError])
+                    .map(_.asRight[Continue])
+                    .handleError(e => ProofGenerationError(e.getMessage).asLeft[List[MerklePatriciaCommitment]].asRight[Continue])
 
                 case extension: MerklePatriciaNode.Extension if remainingPath.startsWith(extension.shared) =>
-                  Monad[F].pure(
+                  MonadThrow[F].pure(
                     (
                       extension.child,
                       remainingPath.drop(extension.shared.length),
                       MerklePatriciaCommitment.Extension(extension.shared, extension.child.digest) :: acc
-                    ).asLeft
+                    ).asLeft[Return]
                   )
 
                 case branch: MerklePatriciaNode.Branch if remainingPath.nonEmpty =>
                   branch.paths.get(remainingPath.head) match {
                     case Some(child) =>
-                      Monad[F].pure(
+                      MonadThrow[F].pure(
                         (
                           child,
                           remainingPath.tail,
                           MerklePatriciaCommitment.Branch(
                             branch.paths.toSeq.sortBy(_._1.value).map { case (k, v) => k -> v.digest }.toMap
                           ) :: acc
-                        ).asLeft
+                        ).asLeft[Return]
                       )
 
-                    case None => Monad[F].pure(Right(None))
+                    case None =>
+                      MonadThrow[F].pure(
+                        PathNotFound(s"Path not found: ${digest.toString}").asLeft[List[MerklePatriciaCommitment]].asRight[Continue]
+                      )
                   }
 
-                case _ => Monad[F].pure(Right(None))
+                case _ =>
+                  MonadThrow[F].pure(
+                    InvalidNodeType(s"Unexpected node type encountered for path: ${digest.toString}")
+                      .asLeft[List[MerklePatriciaCommitment]]
+                      .asRight[Continue]
+                  )
               }
           }
-          .map(_.map(MerklePatriciaInclusionProof(path, _)))
+          .map(_.map(commitments => MerklePatriciaInclusionProof(digest, commitments)))
+          .handleError(e => ProofGenerationError(e.getMessage).asLeft[MerklePatriciaInclusionProof])
+      }
     }
+
+  /**
+   * Provides syntax extensions for more ergonomic proof generation
+   *
+   * Import xyz.kd5ujc.accumulators.mpt.api.MerklePatriciaProver.syntax._ to use these extensions
+   */
+  object syntax {
+    implicit class MerklePatriciaPathOps(val path: String) extends AnyVal {
+
+      /**
+       * Generate a proof that this path exists in the trie
+       *
+       * @return A proof of inclusion if the path exists
+       */
+      def attestInclusion[F[_]](implicit P: MerklePatriciaProver[F]): F[Either[MerklePatriciaProofError, MerklePatriciaInclusionProof]] =
+        P.attestPath(path)
+    }
+
+    implicit class MerklePatriciaDigestOps(val digest: Digest) extends AnyVal {
+
+      /**
+       * Generate a proof that this digest exists in the trie
+       *
+       * @return A proof of inclusion if the digest exists
+       */
+      def attestInclusion[F[_]](implicit P: MerklePatriciaProver[F]): F[Either[MerklePatriciaProofError, MerklePatriciaInclusionProof]] =
+        P.attestDigest(digest)
+    }
+  }
+}
+
+sealed trait MerklePatriciaProofError extends Throwable
+case class PathNotFound(path: String) extends MerklePatriciaProofError {
+  override def getMessage: String = s"Path not found: $path"
+}
+case class InvalidNodeType(message: String) extends MerklePatriciaProofError {
+  override def getMessage: String = message
+}
+case class ProofGenerationError(message: String) extends MerklePatriciaProofError {
+  override def getMessage: String = message
 }
