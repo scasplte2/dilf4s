@@ -3,7 +3,8 @@ import sbt.*
 object Dependencies {
 
   object V {
-    val bouncyCastle = "1.70"
+    val bouncyCastle = "1.86"
+    val scodecBits = "1.2.5"
     val cats = "2.13.0"
     val catsEffect = "3.5.7"
     val circe = "0.14.6"
@@ -17,12 +18,14 @@ object Dependencies {
     val betterMonadicFor = "0.3.1"
     val ed25519Elisabeth = "0.1.0"
     val curve25519Elisabeth = "0.1.0"
-    val kindProjector = "0.13.3"
+    val kindProjector = "0.13.4"
     val semanticDB = "4.12.7"
   }
 
   object Libraries {
-    val bc = "org.bouncycastle"                   % "bcprov-jdk15on"           % V.bouncyCastle
+    val bc = "org.bouncycastle"                   % "bcprov-jdk18on"           % V.bouncyCastle
+    val scodecBits = "org.scodec"                %% "scodec-bits"              % V.scodecBits
+    val catsKernelLaws = "org.typelevel"         %% "cats-kernel-laws"         % V.cats
     val cats = "org.typelevel"                   %% "cats-core"                % V.cats
     val catsEffect = "org.typelevel"             %% "cats-effect"              % V.catsEffect
     val catsEffectTestkit = "org.typelevel"      %% "cats-effect-testkit"      % V.catsEffect

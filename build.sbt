@@ -4,7 +4,7 @@ import sbt.Keys.*
 
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / organization := "xyz.kd5ujc"
-ThisBuild / scalaVersion := "2.13.16"
+ThisBuild / scalaVersion := "2.13.18"
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
@@ -53,6 +53,8 @@ lazy val commonSettings = Seq(
 
 lazy val commonTestSettings = Seq(
   testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
+  // weaver's expect macro re-emits clue strings, which trips the missing-interpolator lint
+  Test / scalacOptions += "-Wconf:cat=lint-missing-interpolator:s",
   libraryDependencies ++= Seq(
     Libraries.catsEffectTestkit,
     Libraries.weaverCats,
@@ -78,7 +80,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(models, sharedTest, core, accumulators, storage, signing, vrf, kes, benchmarks)
+  .aggregate(models, sharedTest, numerics, core, accumulators, storage, signing, vrf, kes, benchmarks)
 
 // ─── Models: cross-cutting value types ───
 lazy val models = project.in(file("models"))
@@ -104,7 +106,20 @@ lazy val sharedTest = project.in(file("shared-test"))
   )
   .dependsOn(models)
 
-// ─── Core: hash implementations, serialization ───
+// ─── Numerics: exact rational arithmetic ───
+lazy val numerics = project.in(file("numerics"))
+  .settings(
+    name := "dilf4s-numerics",
+    commonSettings,
+    commonTestSettings,
+    libraryDependencies ++= Seq(
+      Libraries.cats,
+      Libraries.catsKernelLaws % Test
+    )
+  )
+  .dependsOn(sharedTest % Test)
+
+// ─── Core: canonical encoding, tagged hashing, hash implementations ───
 lazy val core = project.in(file("core"))
   .enablePlugins(BuildInfoPlugin)
   .settings(
@@ -119,9 +134,10 @@ lazy val core = project.in(file("core"))
       Libraries.circeCore,
       Libraries.circeGeneric,
       Libraries.circeParser,
+      Libraries.scodecBits
     )
   )
-  .dependsOn(models, sharedTest % Test)
+  .dependsOn(models, numerics, sharedTest % Test)
 
 // ─── Accumulators: Merkle, MPT, Verkle (self-contained) ───
 lazy val accumulators = project.in(file("accumulators"))
