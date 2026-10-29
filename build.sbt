@@ -6,8 +6,8 @@ ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / organization := "xyz.kd5ujc"
 ThisBuild / scalaVersion := "2.13.16"
 ThisBuild / evictionErrorLevel := Level.Warn
-ThisBuild / scalafixDependencies += Libraries.organizeImports
-ThisBuild / scalafixScalaBinaryVersion := "2.13"
+ThisBuild / semanticdbEnabled := true
+ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
 ThisBuild / assemblyMergeStrategy := {
   case "logback.xml"                                       => MergeStrategy.first
@@ -38,9 +38,17 @@ lazy val commonSettings = Seq(
   resolvers += Resolver.mavenLocal,
   libraryDependencies ++= Seq(
     CompilerPlugin.kindProjector,
-    CompilerPlugin.betterMonadicFor,
-    CompilerPlugin.semanticDB,
-  )
+    CompilerPlugin.betterMonadicFor
+  ),
+  // Purity gate (see .workspace/crypto-architecture.md §1): main sources only; tests and
+  // benchmarks are the edge. Files in LegacyPurity are pending the signing/accumulator rewrite.
+  Compile / compile / wartremoverErrors ++= PurityGate.warts,
+  wartremoverExcluded ++= LegacyPurity.files.map((LocalRootProject / baseDirectory).value / _),
+  Compile / scalafix / unmanagedSources := {
+    val legacy = LegacyPurity.files.map((LocalRootProject / baseDirectory).value / _).toSet
+    (Compile / unmanagedSources).value.filterNot(legacy)
+  },
+  Test / scalafixConfig := Some((LocalRootProject / baseDirectory).value / ".scalafix-test.conf")
 )
 
 lazy val commonTestSettings = Seq(

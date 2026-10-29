@@ -185,3 +185,6 @@ db/
 # ------------------------
 ENV/
 env/
+# Metals-generated sbt files
+project/metals.sbt
+project/project/
