@@ -108,7 +108,8 @@ class ExtendedEd25519 extends SignatureScheme[ExtendedEd25519.SecretKey, Extende
     val zLMult8 = sec256LE(BigInt(1, zL.reverse) * 8)
 
     // EC point operations using curve25519-elisabeth
-    val scaledZL = Constants.ED25519_BASEPOINT_TABLE.multiply(Scalar.fromBits(zLMult8))
+    // legacy, deleted with the signing module
+    val scaledZL = Constants.ED25519_BASEPOINT_TABLE.multiply(Scalar.fromBits(zLMult8)) // scalafix:ok DisableSyntax.noScalarFromBits
     val existingPoint = new CompressedEdwardsY(pk.vk.bytes).decompress()
     val newPoint = scaledZL.add(existingPoint)
     val newPkBytes = newPoint.compress().toByteArray

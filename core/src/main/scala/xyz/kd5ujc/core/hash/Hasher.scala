@@ -3,12 +3,13 @@ package xyz.kd5ujc.core.hash
 import cats.syntax.either._
 import cats.{Eq, Show}
 
-import org.bouncycastle.crypto.digests.{Blake2bDigest, SHA256Digest, SHA3Digest}
-import org.bouncycastle.crypto.{Digest => BcDigest}
+import org.bouncycastle.crypto.ExtendedDigest
+import org.bouncycastle.crypto.digests.{Blake2bDigest, SHA256Digest, SHA3Digest, SHA512Digest}
 import scodec.bits.ByteVector
 
 /** Hash algorithm tags: uninhabited types that index [[Digest]] and [[Hasher]]. */
 sealed trait Sha256
+sealed trait Sha512
 sealed trait Sha3_256
 sealed trait Sha3_512
 sealed trait Blake2b256
@@ -41,6 +42,9 @@ object Digest {
 trait Hasher[H] {
   def name: String
   def outputSize: Long
+
+  /** The compression function's input block size in bytes (HMAC, `expand_message_xmd`). */
+  def blockSize: Long
   def digest(data: ByteVector): Digest[H]
 }
 
@@ -49,6 +53,7 @@ object Hasher {
   def apply[H](implicit H: Hasher[H]): Hasher[H] = H
 
   implicit val sha256: Hasher[Sha256] = bouncyCastle("SHA-256", () => new SHA256Digest())
+  implicit val sha512: Hasher[Sha512] = bouncyCastle("SHA-512", () => new SHA512Digest())
   implicit val sha3_256: Hasher[Sha3_256] = bouncyCastle("SHA3-256", () => new SHA3Digest(256))
   implicit val sha3_512: Hasher[Sha3_512] = bouncyCastle("SHA3-512", () => new SHA3Digest(512))
   implicit val blake2b256: Hasher[Blake2b256] = bouncyCastle("BLAKE2b-256", () => new Blake2bDigest(256))
@@ -59,10 +64,11 @@ object Hasher {
    * never escape. `update` and `doFinal` cannot throw here: bounds come from the arrays themselves, and the output
    * buffer is sized by `getDigestSize`.
    */
-  private def bouncyCastle[H](algorithm: String, make: () => BcDigest): Hasher[H] =
+  private def bouncyCastle[H](algorithm: String, make: () => ExtendedDigest): Hasher[H] =
     new Hasher[H] {
       val name: String = algorithm
       val outputSize: Long = make().getDigestSize.toLong
+      val blockSize: Long = make().getByteLength.toLong
 
       def digest(data: ByteVector): Digest[H] = {
         val d = make()
@@ -81,4 +87,5 @@ object HashError {
   final case class InvalidLength(algorithm: String, expected: Long, actual: Long) extends HashError
   final case class InvalidHex(reason: String) extends HashError
   final case class InvalidDomainTag(tag: String) extends HashError
+  final case class InvalidExpansion(reason: String) extends HashError
 }
