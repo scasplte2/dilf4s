@@ -117,11 +117,25 @@ enum Op(val wire: String) {
 }
 
 object Op {
-  private val byWire: scala.collection.immutable.Map[String, Op] = Op.values.map(o => o.wire -> o).toMap
+
+  /**
+   * Other names for operations, accepted by the parser and normalised to the operation's own name, so they never
+   * change a program's identity. They are the names the SDK and documentation apps use.
+   */
+  val Aliases: scala.collection.immutable.Map[String, Op] =
+    scala.collection.immutable.Map("getKey" -> Get, "setKey" -> Set, "deleteKey" -> Unset, "size" -> Length)
+
+  private val byWire: scala.collection.immutable.Map[String, Op] = Op.values.map(o => o.wire -> o).toMap ++ Aliases
   def fromWire(name: String): Option[Op] = byWire.get(name)
+
+  /**
+   * The operations written with a single non-array argument to take that value's elements as their arguments
+   * (`{"+": {"values": x}}`). Whether an operation spreads is fixed by the syntax, never by an evaluated value.
+   */
+  val Variadic: scala.collection.immutable.Set[Op] = scala.collection.immutable.Set(Add, Mul, Min, Max, Cat, Merge)
 }
 
-/** A `var` path: `$name.path` reads a let or callback binding; any other path reads the input data. */
+/** A `var` path: `$name.path` reads a binding (host, `let` or callback); any other path reads the data (§4.1). */
 enum VarRef {
   case Data(path: Vector[String])
   case Bound(name: String, path: Vector[String])
@@ -152,7 +166,13 @@ object VarRef {
 enum Expr {
   case Lit(value: CanonicalValue)
   case Var(ref: VarRef, default: Option[CanonicalValue])
+
+  /** A path computed at run time: text is read as a `var` path; an array is the exact segments of a data path. */
+  case VarAt(path: Expr, default: Option[CanonicalValue])
   case Apply(op: Op, args: Vector[Expr])
+
+  /** A [[Op.Variadic]] operation whose arguments are the elements of one array value. */
+  case Spread(op: Op, arg: Expr)
   case Arr(items: Vector[Expr])
   case Obj(fields: scala.collection.immutable.Map[String, Expr])
 }
@@ -171,22 +191,27 @@ object Program {
   /** Expression nesting: an operation's arguments, an array's items and a map's fields are one level deeper. */
   val MaxDepth: Int = 256
 
-  def from(expr: Expr): Either[JlvmError, Program] =
-    Either.cond(
-      within(List(expr -> 0)),
-      new Program(expr),
-      JlvmError.Limit(s"the program nests deeper than $MaxDepth")
-    )
+  /**
+   * Checks the depth bound and the shapes no surface text can produce, so every program has exactly one surface form:
+   * a spread names a [[Op.Variadic]] operation and its argument is not an array expression (that is an argument list).
+   */
+  def from(expr: Expr): Either[JlvmError, Program] = check(List(expr -> 0)).toLeft(new Program(expr))
 
   /** A worklist walk, so that checking an unbounded tree cannot itself overflow the stack. */
   @tailrec
-  private def within(todo: List[(Expr, Int)]): Boolean =
+  private def check(todo: List[(Expr, Int)]): Option[JlvmError] =
     todo match {
-      case Nil                          => true
-      case (_, d) :: _ if d > MaxDepth  => false
-      case (Expr.Apply(_, as), d) :: tl => within(as.toList.map(_ -> (d + 1)) ::: tl)
-      case (Expr.Arr(is), d) :: tl      => within(is.toList.map(_ -> (d + 1)) ::: tl)
-      case (Expr.Obj(fs), d) :: tl      => within(fs.values.toList.map(_ -> (d + 1)) ::: tl)
-      case _ :: tl                      => within(tl)
+      case Nil                         => scala.None
+      case (_, d) :: _ if d > MaxDepth => scala.Some(JlvmError.Limit(s"the program nests deeper than $MaxDepth"))
+      case (Expr.Spread(op, _), _) :: _ if !Op.Variadic.contains(op) =>
+        scala.Some(JlvmError.Malformed(s"${op.wire} does not spread its argument"))
+      case (Expr.Spread(op, Expr.Arr(_)), _) :: _ =>
+        scala.Some(JlvmError.Malformed(s"a spread ${op.wire} takes one expression, not an argument list"))
+      case (Expr.Apply(_, as), d) :: tl            => check(as.toList.map(_ -> (d + 1)) ::: tl)
+      case (Expr.Spread(_, a), d) :: tl            => check((a -> (d + 1)) :: tl)
+      case (Expr.VarAt(p, _), d) :: tl             => check((p -> (d + 1)) :: tl)
+      case (Expr.Arr(is), d) :: tl                 => check(is.toList.map(_ -> (d + 1)) ::: tl)
+      case (Expr.Obj(fs), d) :: tl                 => check(fs.values.toList.map(_ -> (d + 1)) ::: tl)
+      case (Expr.Lit(_) | Expr.Var(_, _), _) :: tl => check(tl)
     }
 }

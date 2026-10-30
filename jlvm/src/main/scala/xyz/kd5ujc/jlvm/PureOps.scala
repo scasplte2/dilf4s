@@ -55,8 +55,8 @@ object PureOps {
       case Gt            => Option(ordering(op, args, _ > 0, between = false))
       case Ge            => Option(ordering(op, args, _ >= 0, between = false))
 
-      case Add         => Option(fold(op, args)(_ + _))
-      case Mul         => Option(fold(op, args)(_ * _))
+      case Add         => Option(total(op, args, Ratio.Zero)(_ + _))
+      case Mul         => Option(total(op, args, Ratio.One)(_ * _))
       case Min         => Option(fold(op, args)(_.min(_)))
       case Max         => Option(fold(op, args)(_.max(_)))
       case Sub         => Option(subtract(op, args))
@@ -210,6 +210,10 @@ object PureOps {
       .traverse(numeric(op, _))
       .flatMap(_.reduceLeftOption(f).toRight(JlvmError.Arity(op.wire, "takes at least 1 argument")))
       .flatMap(num(op, _))
+
+  /** `+` and `*` of no arguments are their identities, so a spread over an empty array is 0 or 1. */
+  private def total(op: Op, args: Vector[CanonicalValue], identity: Ratio)(f: (Ratio, Ratio) => Ratio): Result =
+    args.traverse(numeric(op, _)).map(_.foldLeft(identity)(f)).flatMap(num(op, _))
 
   private def subtract(op: Op, args: Vector[CanonicalValue]): Result =
     args.traverse(numeric(op, _)).flatMap {

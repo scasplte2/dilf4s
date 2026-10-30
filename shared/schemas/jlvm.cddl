@@ -7,17 +7,23 @@ jlvm-program = {
   "expr": jlvm-expr,
 }
 
-jlvm-expr = jlvm-null / jlvm-lit / jlvm-var / jlvm-apply / jlvm-array / jlvm-map
+jlvm-expr = jlvm-null / jlvm-lit / jlvm-var / jlvm-var-at / jlvm-apply / jlvm-spread / jlvm-array / jlvm-map
 
 ; Canonical maps drop null values, so the null literal is the empty record.
 jlvm-null = {}
 
 jlvm-lit = { "lit": any }
 
-; "$name.path" reads a let or callback binding; any other path reads the input data.
+; "$name.path" reads a binding (host, let or callback); any other path reads the input data.
 jlvm-var = { "var": text, ? "default": any }
 
+; A path computed at run time: text is read as a var path, an array as the exact segments of a data path.
+jlvm-var-at = { "path": jlvm-expr, ? "default": any }
+
 jlvm-apply = { "op": text, "args": [* jlvm-expr] }
+
+; A variadic operation whose arguments are the elements of one array value. The argument is never a jlvm-array.
+jlvm-spread = { "spread": text, "arg": jlvm-expr }
 
 jlvm-array = { "arr": [* jlvm-expr] }
 

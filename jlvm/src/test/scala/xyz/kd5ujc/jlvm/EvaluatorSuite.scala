@@ -92,7 +92,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   // ---- callbacks
 
-  check("callbacks bind $current, $index and $accumulator; plain paths still read the data") {
+  check("callbacks bind $current, $index and $accumulator; plain paths fall through to the data") {
     val data = """{"xs": [1, 2, 3, 4], "k": 2, "people": [{"age": 30}, {"age": 12}]}"""
     expect
       .same(ok("[2, 4, 6, 8]"), result("""{"map": [{"var": "xs"}, {"*": [{"var": "$current"}, 2]}]}""", data))
@@ -151,6 +151,116 @@ object EvaluatorSuite extends IOSuite with Checkers {
       .and(expect.same(ok("""["x", "y"]"""), result("""{"missing_some": [2, ["a", "x", "y"]]}""", data)))
   }
 
+  // ---- callback scope (decision C1): the element first, then the data
+
+  check("inside a callback a plain path reads the element first, then the data; \"\" is the element") {
+    val data = """{"x": 1, "k": 2, "proofs": [{"address": "a"}, {"address": "b"}], "items": [{"x": 2}, {"y": 3}]}"""
+    expect
+      .same(ok("""["a", "b"]"""), result("""{"map": [{"var": "proofs"}, {"var": "address"}]}""", data))
+      .and(expect.same(ok("[2, 1]"), result("""{"map": [{"var": "items"}, {"var": "x"}]}""", data)))
+      .and(expect.same(ok("[1, 2]"), result("""{"map": [[1, 2], {"var": ""}]}""", data)))
+      .and(expect.same(ok("[3]"), result("""{"filter": [[2, 3], {"!==": [{"var": ""}, {"var": "k"}]}]}""", data)))
+      .and(expect.same(ok("1"), result("""{"var": "x"}""", data)))
+  }
+
+  check("nested callbacks: the innermost element, then the enclosing ones, then the data") {
+    val data = """{"z": 0, "rows": [{"a": 1, "cells": [{"b": 10}, {"a": 5, "b": 20}]}]}"""
+    expect.same(
+      ok("[[11, 25]]"),
+      result("""{"map": [{"var": "rows"}, {"map": [{"var": "cells"}, {"+": [{"var": "a"}, {"var": "b"}, {"var": "z"}]}]}]}""", data)
+    )
+  }
+
+  check("reduce exposes current and accumulator as plain paths, as metakit merged them") {
+    val data = """{"votes": [{"vote": 2}, {"vote": 3}]}"""
+    expect
+      .same(ok("5"), result("""{"reduce": [{"var": "votes"}, {"+": [{"var": "accumulator"}, {"var": "current.vote"}]}, 0]}""", data))
+      .and(
+        expect
+          .same(ok("5"), result("""{"reduce": [{"var": "votes"}, {"+": [{"var": "$accumulator"}, {"var": "$current.vote"}]}, 0]}""", data))
+      )
+  }
+
+  check("missing resolves like a plain path: inside a callback, the element first") {
+    val data = """{"top": 1, "xs": [{"a": 1}, {}]}"""
+    expect.same(ok("""[[], ["a"]]"""), result("""{"map": [{"var": "xs"}, {"missing": ["a", "top"]}]}""", data))
+  }
+
+  check("a path the element and the data both hold is flagged, once; unambiguous reads are not, and cost the same") {
+    val data = """{"x": 1, "items": [{"x": 2}, {"x": 3}], "ys": [{"y": 1}]}"""
+    val plain = """{"map": [{"var": "items"}, {"var": "x"}]}"""
+    val explicit = """{"map": [{"var": "items"}, {"var": "$current.x"}]}"""
+    expect
+      .same(Vector(Warning.AmbiguousPath("x")), eval(plain, data).warnings)
+      .and(expect.same(Vector.empty[Warning], eval("""{"map": [{"var": "ys"}, {"var": "y"}]}""", data).warnings))
+      .and(expect.same(Vector.empty[Warning], eval(explicit, data).warnings))
+      .and(expect.same(eval(plain, data, driver = Config.Driver.Recursive), eval(plain, data)))
+      .and(expect.same(ok("[2, 3]"), eval(plain, data).result))
+  }
+
+  // ---- computed paths (H1)
+
+  check("a computed text path is read as a var path; an array path is exact segments, so a key may hold a dot") {
+    val data = """{"balances": {"alice": 5}, "who": "alice", "m": {"x.y": 1, "x": {"y": 2}}, "xs": [7, 8]}"""
+    val env = Map("ordinal" -> CInt(BigInt(9)))
+    expect
+      .same(ok("5"), result("""{"var": {"cat": ["balances.", {"var": "who"}]}}""", data))
+      .and(expect.same(ok("5"), result("""{"var": [["balances", {"var": "who"}]]}""", data)))
+      .and(expect.same(ok("1"), result("""{"var": [["m", "x.y"]]}""", data)))
+      .and(expect.same(ok("2"), result("""{"var": {"literal": "m.x.y"}}""", data)))
+      .and(expect.same(ok("8"), result("""{"var": [["xs", 1]]}""", data)))
+      .and(expect.same(ok("0"), result("""{"var": [{"cat": ["balances.", "bob"]}, 0]}""", data)))
+      .and(expect.same(ok("9"), result("""{"var": {"cat": ["$", "ordinal"]}}""", data, env)))
+      .and(expect.same(ok("null"), result("""{"var": [["$ordinal"]]}""", data, env)))
+  }
+
+  check("a computed path of the wrong kind or form is an error") {
+    def kind(r: Either[JlvmError, CanonicalValue]) = r.left.toOption.map(_.getClass.getSimpleName)
+    expect
+      .same(Some("Type"), kind(result("""{"var": {"+": [1, 2]}}""")))
+      .and(expect.same(Some("Type"), kind(result("""{"var": [[true]]}"""))))
+      .and(expect.same(Some("Domain"), kind(result("""{"var": {"cat": ["a", "..b"]}}"""))))
+  }
+
+  check("a computed path costs its expression, then the access and its segments") {
+    val data = """{"a": {"b": 1}}"""
+    // static a.b: var 2 + 2 segments; computed: the literal path (1), then the same
+    expect.same(eval("""{"var": "a.b"}""", data).gasUsed.value + 1, eval("""{"var": {"literal": "a.b"}}""", data).gasUsed.value)
+  }
+
+  // ---- spreading, decided by the syntax
+
+  check("a variadic operation with a non-array argument takes the elements of its value") {
+    val data = """{"balances": {"a": 3, "b": 4}, "xs": [3, 1, 4], "parts": ["x", "y"], "maps": [{"a": 1}, {"b": 2}], "n": 5}"""
+    expect
+      .same(ok("7"), result("""{"+": {"values": {"var": "balances"}}}""", data))
+      .and(expect.same(ok("0"), result("""{"+": {"values": {}}}""", data)))
+      .and(expect.same(ok("12"), result("""{"*": {"var": "xs"}}""", data)))
+      .and(expect.same(ok("4"), result("""{"max": {"var": "xs"}}""", data)))
+      .and(expect.same(ok("\"xy\""), result("""{"cat": {"var": "parts"}}""", data)))
+      .and(expect.same(ok("""{"a": 1, "b": 2}"""), result("""{"merge": {"var": "maps"}}""", data)))
+      .and(expect(result("""{"+": [{"var": "xs"}]}""", data).isLeft, "the bracketed form never spreads"))
+      .and(expect(result("""{"+": {"var": "n"}}""", data).isLeft, "a spread needs an array"))
+      .and(expect(Parser.parse("""{"+": 3}""").flatMap(Compiled(_)).isLeft, "a literal that is no array does not compile"))
+      .and(expect(Parser.parse("""{"+": {"a": 1, "b": 2}}""").flatMap(Compiled(_)).isLeft, "nor does an object"))
+  }
+
+  // ---- surface forms
+
+  check("object constructs maps with any keys; _ keys are data; the SDK aliases evaluate") {
+    val data = """{"m": {"a": 1}}"""
+    expect
+      .same(ok("""{"count": 3}"""), result("""{"object": {"count": {"+": [1, 2]}}}"""))
+      .and(
+        expect
+          .same(ok("""{"_result": {"error": "no", "valid": true}}"""), result("""{"_result": {"valid": {"==": [1, 1]}, "error": "no"}}"""))
+      )
+      .and(expect.same(ok("1"), result("""{"getKey": [{"var": "m"}, "a"]}""", data)))
+      .and(expect.same(ok("""{"a": 1, "b": 2}"""), result("""{"setKey": [{"var": "m"}, "b", 2]}""", data)))
+      .and(expect.same(ok("{}"), result("""{"deleteKey": [{"var": "m"}, "a"]}""", data)))
+      .and(expect.same(ok("1"), result("""{"size": {"var": "m"}}""", data)))
+  }
+
   // ---- gas
 
   check("gas follows the schedule: base, then arguments, then the size charge") {
@@ -205,7 +315,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   // ---- the two drivers agree
 
-  private val dataJson = """{"n": 7, "xs": [3, 1, 4, 1, 5], "name": "jlvm", "o": {"k": 2}}"""
+  private val dataJson = """{"n": 7, "xs": [3, 1, 4, 1, 5], "name": "jlvm", "o": {"k": 2}, "rs": [{"n": 1}, {"m": 2}, 4]}"""
 
   private def lit(i:  Int): Expr = Expr.Lit(CInt(BigInt(i)))
   private def v(path: String): Expr = Expr.Var(VarRef.parse(path).toOption.get, scala.None)
@@ -216,7 +326,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
     val leaf: Gen[Expr] = Gen.frequency(
       4 -> Gen.choose(-3, 9).map(lit),
       2 -> Gen.const(v("n")),
-      1 -> Gen.oneOf(v("o.k"), v("missing"), v("name")),
+      1 -> Gen.oneOf(v("o.k"), v("missing"), v("name"), v("m")),
       3 -> (if (bound.isEmpty) Gen.const(v("n")) else Gen.oneOf(bound).map(b => v("$" + b)))
     )
     if (depth <= 0) leaf
@@ -234,7 +344,12 @@ object EvaluatorSuite extends IOSuite with Checkers {
         2 -> inner.map(body => ap(Op.Reduce, v("xs"), ap(Op.Add, v("$accumulator"), body), lit(0))),
         1 -> inner.map(body => ap(Op.Count, v("xs"), ap(Op.Gt, body, lit(2)))),
         1 -> inner.map(body => ap(Op.Length, ap(Op.Map, v("xs"), body))),
-        1 -> inner.map(body => ap(Op.Some, v("xs"), ap(Op.Lt, body, lit(3)), lit(2)))
+        1 -> inner.map(body => ap(Op.Some, v("xs"), ap(Op.Lt, body, lit(3)), lit(2))),
+        1 -> inner.map(body => ap(Op.Length, ap(Op.Filter, v("rs"), body))),
+        1 -> Gen
+          .zip(Gen.oneOf(Op.Add, Op.Mul, Op.Min, Op.Max), Gen.oneOf(Gen.const(v("xs")), inner.map(b => ap(Op.Map, v("rs"), b))))
+          .map { case (o, a) => Expr.Spread(o, a) },
+        1 -> sub.map(i => Expr.VarAt(Expr.Arr(Vector(Expr.Lit(CanonicalValue.text("xs").toOption.get), i)), scala.None))
       )
     }
   }

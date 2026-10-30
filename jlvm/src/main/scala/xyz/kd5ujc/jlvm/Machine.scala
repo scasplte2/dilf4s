@@ -7,12 +7,62 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 
-/** Gas used so far, against the limit. */
-final case class Meter(used: Gas, limit: Gas)
+/** Gas used so far, against the limit; and the lint warnings so far, distinct, at most [[Warning.Max]]. */
+final case class Meter(used: Gas, limit: Gas, warnings: Vector[Warning] = Vector.empty) {
+  def warn(w: Warning): Meter =
+    if (warnings.size >= Warning.Max || warnings.contains(w)) this else copy(warnings = warnings :+ w)
+}
 
-/** What a node sees: the input data, and the `$` bindings (host bindings, then `let` and callback bindings). */
-final case class Scope(data: CanonicalValue, bindings: Map[String, CanonicalValue]) {
+/** Where a plain data path resolved, and whether an outer element or the data also holds its first key. */
+final case class Resolved(value: CanonicalValue, ambiguous: Boolean)
+
+/**
+ * An enclosing callback's contribution to plain paths: the element, or in `reduce` the pair `{current, accumulator}`
+ * that metakit merged into the data. Frames are not values, so building one can never fail a bound.
+ */
+enum Frame {
+  case Element(value: CanonicalValue)
+  case Accumulating(current: CanonicalValue, accumulator: CanonicalValue)
+
+  /** What `""` reads: the element. */
+  def element: CanonicalValue = this match {
+    case Element(v)         => v
+    case Accumulating(c, _) => c
+  }
+
+  /** The value this frame binds to `key`, if it binds it. */
+  def lookup(key: String): Option[CanonicalValue] = this match {
+    case Element(CMap(m))                           => m.get(key)
+    case Element(_)                                 => scala.None
+    case Accumulating(c, _) if key == "current"     => Option(c)
+    case Accumulating(_, a) if key == "accumulator" => Option(a)
+    case Accumulating(_, _)                         => scala.None
+  }
+}
+
+/**
+ * What a node sees: the input data, the `$` bindings (host bindings, then `let` and callback bindings), and inside
+ * callbacks the enclosing frames, innermost first (docs/specs/jlvm.md §4.1).
+ */
+final case class Scope(data: CanonicalValue, bindings: Map[String, CanonicalValue], frames: List[Frame] = Nil) {
   def bind(entries: (String, CanonicalValue)*): Scope = copy(bindings = bindings ++ entries)
+
+  def enter(frame: Frame): Scope = copy(frames = frame :: frames)
+
+  /**
+   * A plain data path. `""` is the innermost element, or the data outside callbacks. Otherwise the path is read from
+   * the innermost frame binding its first key, else from the data: metakit's merged scope, with the element's keys
+   * shadowing the data's.
+   */
+  def resolve(path: Vector[String]): Resolved =
+    path match {
+      case key +: rest =>
+        frames.flatMap(_.lookup(key).toList) match {
+          case inner :: outer => Resolved(Values.at(inner, rest), outer.nonEmpty || Values.at(data, Vector(key)) != CNull)
+          case Nil            => Resolved(Values.at(data, path), ambiguous = false)
+        }
+      case _ => Resolved(frames.headOption.fold(data)(_.element), ambiguous = false)
+    }
 }
 
 /**
@@ -29,6 +79,9 @@ enum Step {
 
   /** Evaluate `node` in `scope`, then continue with its value. */
   case Eval(node: Node, scope: Scope, k: CanonicalValue => Step)
+
+  /** Record a lint warning, then continue. Costs nothing. */
+  case Note(warning: Warning, next: () => Step)
 }
 
 /** The evaluation rules (docs/specs/jlvm.md §Evaluation), parameterised by a gas schedule. */
@@ -65,12 +118,18 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
     node match {
       case Const(v) => Charge(schedule.literal, () => Done(v))
 
-      case Read(ref, default) =>
-        val segments = ref match {
-          case VarRef.Data(p)     => p.size.toLong
-          case VarRef.Bound(_, p) => 1L + p.size
-        }
-        Charge(schedule.varAccess + schedule.perPathSegment * segments, () => result(read(ref, default, scope)))
+      case Read(ref, default) => read(ref, default, scope)
+
+      case ReadAt(path, default) =>
+        Eval(
+          path,
+          scope,
+          {
+            case CText(t)   => VarRef.parse(t).fold(e => Fail(JlvmError.Domain("var", e.message)), read(_, default, scope))
+            case CArray(ss) => ss.traverse(segment).fold(Fail(_), p => read(VarRef.Data(p), default, scope))
+            case other      => Fail(JlvmError.Type("var", s"a computed path is text or an array of segments, got ${Values.kind(other)}"))
+          }
+        )
 
       case ArrayOf(items) =>
         Charge(schedule.literal + schedule.element * items.size.toLong, () => all(items, scope)(vs => result(Values.array("array", vs))))
@@ -88,6 +147,21 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
             all(args, scope) { vs =>
               Charge(sized(op, vs), () => PureOps(op, vs).fold(Fail(JlvmError.Malformed(s"${op.wire} has no strict form")))(result))
             }
+        )
+
+      case Spread(op, arg) =>
+        Charge(
+          base(op),
+          () =>
+            Eval(
+              arg,
+              scope,
+              {
+                case CArray(vs) =>
+                  Charge(sized(op, vs), () => PureOps(op, vs).fold(Fail(JlvmError.Malformed(s"${op.wire} has no strict form")))(result))
+                case other => Fail(JlvmError.Type(op.wire, s"a spread argument is an array, got ${Values.kind(other)}"))
+              }
+            )
         )
 
       case Cond(branches, otherwise) => Charge(base(Op.If), () => cond(branches, otherwise, scope))
@@ -121,7 +195,7 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
         Charge(base(Op.Reduce), () => collection(Op.Reduce, over, scope)(vs => Eval(init, scope, acc => fold(vs, body, scope, 0, acc))))
 
       case Lookup(op, args) =>
-        Charge(base(op), () => all(args, scope)(vs => Charge(sized(op, vs), () => result(Lookups(op, vs, scope.data)))))
+        Charge(base(op), () => all(args, scope)(vs => Charge(sized(op, vs), () => result(Lookups(op, vs, p => scope.resolve(p).value)))))
 
       case Crypto(op, args) =>
         Charge(
@@ -135,17 +209,36 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
 
   // ---- variables
 
-  private def read(ref: VarRef, default: Option[CanonicalValue], scope: Scope): Either[JlvmError, CanonicalValue] = {
+  /** Charges for the access and each segment (a binding name counts as one), then reads. */
+  private def read(ref: VarRef, default: Option[CanonicalValue], scope: Scope): Step = {
     def orDefault(v: CanonicalValue): CanonicalValue = if (v == CNull) default.getOrElse(CNull) else v
-    ref match {
-      case VarRef.Data(path) => orDefault(Values.at(scope.data, path)).asRight
-      case VarRef.Bound(name, path) =>
-        scope.bindings.get(name) match {
-          case scala.Some(v) => orDefault(Values.at(v, path)).asRight
-          case scala.None    => default.toRight(JlvmError.Malformed(s"$$$name is not bound"))
-        }
+    val segments = ref match {
+      case VarRef.Data(p)     => p.size.toLong
+      case VarRef.Bound(_, p) => 1L + p.size
     }
+    Charge(
+      schedule.varAccess + schedule.perPathSegment * segments,
+      () =>
+        ref match {
+          case VarRef.Data(path) =>
+            val r = scope.resolve(path)
+            if (r.ambiguous) Note(Warning.AmbiguousPath(ref.render), () => Done(orDefault(r.value))) else Done(orDefault(r.value))
+          case VarRef.Bound(name, path) =>
+            scope.bindings.get(name) match {
+              case scala.Some(v) => Done(orDefault(Values.at(v, path)))
+              case scala.None    => default.fold(Fail(JlvmError.Malformed(s"$$$name is not bound")))(Done(_))
+            }
+        }
+    )
   }
+
+  /** A segment of a computed data path: text is an exact key (it may contain `.`); an integer is an index. */
+  private def segment(v: CanonicalValue): Either[JlvmError, String] =
+    v match {
+      case CText(t) => t.asRight
+      case CInt(i)  => i.toString.asRight
+      case other    => JlvmError.Type("var", s"a path segment is text or an integer, got ${Values.kind(other)}").asLeft
+    }
 
   // ---- lazy forms
 
@@ -198,8 +291,9 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
       }
     )
 
+  /** The element is bound as `$current` and is the innermost frame for plain paths. */
   private def element(scope: Scope, vs: Vector[CanonicalValue], i: Int): Scope =
-    scope.bind("current" -> vs(i), "index" -> Values.count(i.toLong))
+    scope.bind("current" -> vs(i), "index" -> Values.count(i.toLong)).enter(Frame.Element(vs(i)))
 
   private def iterate(kind: Iteration, vs: Vector[CanonicalValue], body: Node, scope: Scope): Step = {
     def go(i: Int, acc: Vector[CanonicalValue], n: Long): Step =
@@ -246,12 +340,15 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
         () => Eval(body, element(scope, vs, i), r => quorum(vs, body, scope, min, i + 1, if (Values.truthy(r)) n + 1 else n))
       )
 
+  private def accumulating(scope: Scope, vs: Vector[CanonicalValue], i: Int, acc: CanonicalValue): Scope =
+    scope.bind("current" -> vs(i), "index" -> Values.count(i.toLong), "accumulator" -> acc).enter(Frame.Accumulating(vs(i), acc))
+
   private def fold(vs: Vector[CanonicalValue], body: Node, scope: Scope, i: Int, acc: CanonicalValue): Step =
     if (i >= vs.size) Done(acc)
     else
       Charge(
         schedule.callbackRun,
-        () => Eval(body, element(scope, vs, i).bind("accumulator" -> acc), next => fold(vs, body, scope, i + 1, next))
+        () => Eval(body, accumulating(scope, vs, i, acc), next => fold(vs, body, scope, i + 1, next))
       )
 }
 
@@ -274,6 +371,7 @@ object Machine {
       case (Fail(e), _)          => R.raise(e)
       case (Charge(g, next), ks) => charge[F](g).map(_ => (next(), ks).asLeft[CanonicalValue])
       case (Eval(n, s, k), ks)   => (semantics.start(n, s), k :: ks).asLeft[CanonicalValue].pure[F]
+      case (Note(w, next), ks)   => S.modify(_.warn(w)).map(_ => (next(), ks).asLeft[CanonicalValue])
     }
 
   /** The reference driver: each node is a nested computation in `F`, mirroring the program's structure. */
@@ -283,5 +381,6 @@ object Machine {
       case Fail(e)         => R.raise(e)
       case Charge(g, next) => charge[F](g) >> recursive(semantics, next())
       case Eval(n, s, k)   => recursive(semantics, semantics.start(n, s)).flatMap(v => recursive(semantics, k(v)))
+      case Note(w, next)   => S.modify(_.warn(w)) >> recursive(semantics, next())
     }
 }

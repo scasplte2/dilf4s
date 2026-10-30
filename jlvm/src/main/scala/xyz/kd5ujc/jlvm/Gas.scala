@@ -186,4 +186,4 @@ object GasLimit {
 }
 
 /** The result of an evaluation: the gas it used, **whether it succeeded or failed**, and the value or the error. */
-final case class Outcome(gasUsed: Gas, result: Either[JlvmError, CanonicalValue])
+final case class Outcome(gasUsed: Gas, result: Either[JlvmError, CanonicalValue], warnings: Vector[Warning] = Vector.empty)

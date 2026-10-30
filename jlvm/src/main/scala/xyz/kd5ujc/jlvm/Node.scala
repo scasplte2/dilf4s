@@ -3,7 +3,7 @@ package xyz.kd5ujc.jlvm
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
-import xyz.kd5ujc.core.canonical.CanonicalValue.CText
+import xyz.kd5ujc.core.canonical.CanonicalValue.{CArray, CText}
 
 /**
  * The checked form of a program. Every special form's shape (`if`, `let`, the callbacks) is validated once, by
@@ -12,11 +12,17 @@ import xyz.kd5ujc.core.canonical.CanonicalValue.CText
 enum Node {
   case Const(value: CanonicalValue)
   case Read(ref: VarRef, default: Option[CanonicalValue])
+
+  /** `var` with a computed path: text is parsed as a `var` path; an array gives the exact segments of a data path. */
+  case ReadAt(path: Node, default: Option[CanonicalValue])
   case ArrayOf(items: Vector[Node])
   case ObjectOf(fields: Vector[(String, Node)])
 
   /** An operation on evaluated arguments ([[PureOps]]). */
   case Strict(op: Op, args: Vector[Node])
+
+  /** A [[Op.Variadic]] strict operation on the elements of one array value. */
+  case Spread(op: Op, arg: Node)
 
   /** `if`: the first branch whose condition is truthy, else `otherwise`. */
   case Cond(branches: Vector[(Node, Node)], otherwise: Node)
@@ -70,8 +76,17 @@ object Node {
 
   private def node(e: Expr): Either[JlvmError, Node] =
     e match {
-      case Expr.Lit(v)          => Const(v).asRight
-      case Expr.Var(ref, d)     => Read(ref, d).asRight
+      case Expr.Lit(v)      => Const(v).asRight
+      case Expr.Var(ref, d) => Read(ref, d).asRight
+      case Expr.VarAt(p, d) => node(p).map(ReadAt(_, d))
+      case Expr.Spread(op, a) =>
+        def notArray(kind: String) = malformed[Node](s"a spread ${op.wire} takes an array, and its argument is always of kind $kind")
+        node(a).flatMap {
+          case n @ Const(CArray(_)) => Spread(op, n).asRight
+          case Const(v)             => notArray(Values.kind(v))
+          case ObjectOf(_)          => notArray("object")
+          case n                    => Spread(op, n).asRight
+        }
       case Expr.Arr(items)      => items.traverse(node).map(ArrayOf(_))
       case Expr.Obj(fields)     => fields.toVector.traverse { case (k, x) => node(x).map(k -> _) }.map(fs => ObjectOf(sorted(fs)))
       case Expr.Apply(op, args) => apply(op, args)

@@ -58,7 +58,7 @@ final class Jlvm private (crypto: CryptoOps) {
       case Config.Driver.Recursive    => Machine.recursive[Run](semantics, first)
     }
     val (meter, result) = run.value.run(Meter(Gas.Zero, config.limit.amount)).value
-    Outcome(meter.used, result)
+    Outcome(meter.used, result, meter.warnings)
   }
 
   /** Compiles and evaluates; a program that does not compile uses no gas. */

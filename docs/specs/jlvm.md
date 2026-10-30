@@ -18,20 +18,33 @@ exactly five things:
 (`canonical-encoding.md` §6), which bounds depth and requires exact numbers. Then:
 
 - **Objects.**
-  - A single-key object whose key is an operation of this version is that operation.
-    - Its value is the argument list. A non-array value is a single argument.
-    - `{"literal": x}` quotes `x`, which is not evaluated.
+  - A single-key object whose key is an operation of this version is that operation. Its value gives the arguments:
+    - an array is the argument list, and never spreads;
+    - for a **variadic** operation (`+`, `*`, `min`, `max`, `cat`, `merge`), any other value is an expression whose
+      value must be an array, and its elements are the arguments: `{"+": {"values": x}}` sums the values of `x`.
+      This is decided by the syntax alone. A literal that is not an array, or an object expression, does not compile;
+      any other non-array value is a `Type` error;
+    - for any other operation, a non-array value is the single argument.
+  - Three keywords are not operations:
+    - `{"literal": x}` quotes `x`, which is not evaluated;
+    - `{"object": {...}}` is a map expression with any keys, including one key that names an operation;
     - `{"var": p}` and `{"var": [p, default]}` read a variable (§4.1).
+  - A single key starting with `_` is a map expression. No operation's name starts with `_`; the prefix is the
+    namespace of host triggers (`_result`, `_emit`, `_spawn`).
   - Any other single-key object is a parse error.
   - Any other object is a map expression, whose fields are evaluated.
-  - **Open (decision A):** an evaluating object constructor for single-key maps.
+- **Aliases.** `getKey`, `setKey`, `deleteKey` and `size` are accepted for `get`, `set`, `unset` and `length`. The
+  canonical form records the operation's own name, so an alias never changes a program's identity.
 - **Arrays** are evaluated element-wise. There are no array-form operations.
 - **JSON `null`** is the null literal.
 - **Strings** of the form `0x` followed by an even number of lowercase hex digits are byte strings (§2). Every other
   string is text.
 
 The parser's `Lenient` mode reads an unknown single-key object as a map expression, as metakit did. It exists only to
-migrate older programs.
+migrate older programs: `Parser.migrate` reads a program leniently and writes it back in the strict surface
+(`Parser.render`), emitting `{"object": ...}` for each single-key map expression. Rendering is exact: parsing the
+rendered text gives the same program. A literal holding `0x`-hex text, or a non-terminating rational, has no surface
+form and is an error.
 
 **Canonical form and identity.**
 - A program is the tagged syntax tree of `shared/schemas/jlvm.cddl`, not its JSON text.
@@ -43,7 +56,11 @@ migrate older programs.
 (`Malformed`), reported with no gas used:
 - the shape of `if`, `let` and every callback form;
 - binding names;
-- duplicate bindings.
+- duplicate bindings;
+- a spread whose argument can never be an array.
+
+The canonical form also rejects a spread of a non-variadic operation, and a spread whose argument is an array
+expression, so that every program has exactly one surface form.
 
 ## 2. Values
 
@@ -123,6 +140,30 @@ Arguments are evaluated left to right, depth first. Only the forms below are laz
 - `""` is the whole data.
 - An absent value is null, and then the default if one is given.
 
+**Inside a callback** (decision C1), a plain path first looks in the enclosing callbacks' frames, innermost first,
+then in the data:
+- each callback contributes a frame. In `reduce` the frame binds `current` and `accumulator`. In every other
+  callback, the frame is the element, and binds that element's keys when it is an object;
+- the path is read from the innermost frame that binds its first segment; otherwise from the data;
+- `""` is the innermost element (`current` in `reduce`);
+- arrays are never concatenated, and a primitive element is reachable only as `""` or `$current`.
+
+This is metakit's merged scope, without its silent collisions:
+- when the frame that resolved a path is not the only one that binds its first segment (an outer frame or the data
+  binds it too), the evaluation records an `AmbiguousPath` warning;
+- warnings never change the result or the gas. At most 64 distinct ones are kept;
+- `$current`, `$index` and `$accumulator` read the same values with no ambiguity.
+
+**Computed paths.** In `{"var": e}` and `{"var": [e, default]}`, an object or array `e` is an expression computing the
+path:
+- if it evaluates to text, that text is read as a `var` path, `$` included. A malformed path, such as an empty
+  segment, is a `Domain` error;
+- if it evaluates to an array, its items are the exact segments of a data path: text is a key and may contain `.`; an
+  integer is an index. A key can therefore never redirect the read into another field, and the array form never
+  reads a binding;
+- any other value is a `Type` error;
+- `{"var": [["a", {"var": "k"}]]}` is the array form. A literal path is quoted: `{"var": {"literal": "a.b"}}`.
+
 **Bound paths.**
 - `{"var": "$name.path"}` reads a binding.
 - A binding is one of:
@@ -131,7 +172,8 @@ Arguments are evaluated left to right, depth first. Only the forms below are laz
   - a callback name: `$current`, `$index` or `$accumulator`.
 - Inner bindings shadow outer ones.
 - An unbound name is `Malformed`, unless a default is given.
-- **Open (decisions B, C):** whether plain paths inside callbacks also see the element (metakit's merged scope).
+- The host supplies its context this way (decision B): for example, the ottochain adapter binds `ordinal`,
+  `epochProgress`, `lastSnapshotHash` and `timestamp`, rather than putting them in the data.
 
 ### 4.2 Lazy forms
 
@@ -157,7 +199,8 @@ the names.
 **Collections.** The collection is evaluated first. An array iterates. Null is an empty collection (metakit). Anything
 else is a `Type` error.
 
-**Bindings.** The body runs once per element, with `$current` (the element) and `$index` bound.
+**Bindings.** The body runs once per element, with `$current` (the element) and `$index` bound. Plain paths also see the
+element (§4.1).
 
 **Forms.**
 - `map`
@@ -179,12 +222,13 @@ else is a `Type` error.
 
 `missing_some [min, [keys]]` returns `[]` if at least `min` keys are present, and otherwise the missing keys.
 
-Both read the input data, never bindings.
+Their paths resolve as plain `var` paths do: inside a callback the element comes first (§4.1). They never read
+bindings.
 
 ## 5. Strict operations
 
-Every argument is evaluated, then the operation is applied. There is no coercion and no unwrapping of a single array
-argument.
+Every argument is evaluated, then the operation is applied. There is no coercion, and no unwrapping of an evaluated
+array argument; only the syntax spreads (§1).
 
 **The one exception: absence.** Where metakit treated null as "absent", that behaviour is kept:
 - `in`: a null needle gives `false`;
@@ -200,7 +244,7 @@ argument.
 | `!`, `!!` | Negated truthiness, truthiness. |
 | `==` `===` `!=` `!==` | Structural equality (§2). |
 | `<` `<=` `>` `>=` | Ordering (§2). |
-| `+` `*` | Exact sum or product, of at least 1 argument. |
+| `+` `*` | Exact sum or product. Of no arguments, 0 or 1, so a spread over an empty array is defined. |
 | `min` `max` | Exact minimum or maximum, of at least 1 argument. |
 | `-` | Negation (1 argument) or difference (2). |
 | `/` | Exact division. Zero is an `Arithmetic` error. |
@@ -319,9 +363,9 @@ canonical (less than the modulus).
 | Node | Charges, in order |
 |---|---|
 | Literal | `literal`. |
-| Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment. |
+| Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment. A computed path is evaluated first, then charged by the segments it gives. |
 | Array or map expression | `literal + element × n`, then each item. |
-| Strict operation, lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)`, then the operation. |
+| Strict operation, lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)`, then the operation. A spread is charged the same way, on the elements of its array. |
 | `if`, `and`, `or`, `default`, `let` | `base(op)`, then only the subexpressions actually evaluated. |
 | Callback | `base(op)`, then the collection, then `perUnit(op) × elements`, then for each body run: `callbackRun` plus the body. For `some` with a quorum, `min` is evaluated after the collection. For `reduce`, `initial` is evaluated after the collection. |
 
@@ -338,12 +382,15 @@ A property test checks that they agree on value, error and gas at random gas lim
 | # | metakit | Change here | Why |
 |---|---|---|---|
 | 1 | Coercion: `"1" == 1`, arithmetic on strings, booleans and null. | No coercion. | Silent coercion hides bugs. |
-| 2 | Unwraps a single array argument for `+`, `*`, `min`, `max`, `merge`, `exists`. | No unwrapping. `count [array]` and `missing [[keys]]` remain as defined forms. | Ambiguous argument shapes. |
+| 2 | Unwraps a single array argument for `+`, `*`, `min`, `max`, `merge`, `exists`, depending on its evaluated value. | Spreading is decided by the syntax (§1), for the variadic operations only. `exists` never spreads. `count [array]` and `missing [[keys]]` remain as defined forms. | The value no longer decides the meaning: `{"cat": [[1, 2]]}` is `[1, 2]`, never `"12"`. |
 | 3 | Ints and floats are distinct (`1.5 + 0.5` is a float `2`). | One exact number kind. | Exactness, and one equality. |
 | 4 | `round` rounds half away from zero. | `round` is half-even; `round_half_up` is explicit. | Unbiased rounding by default. |
 | 5 | `and`, `or` and `default` evaluate everything; `all`, `some` and `none` never stop early. | Lazy, and stop at the first decisive element. | Gas pays only for work done. |
-| 6 | Callback scope merges the element into the data. | `$current`, `$index` and `$accumulator` bindings. | Silent collisions. **Open (decision C).** |
+| 6 | Callback scope merges the element into the data; arrays are concatenated. | The element is a frame looked up before the data; arrays are not concatenated; collisions are warned about; `$current`, `$index` and `$accumulator` are unambiguous. | Silent collisions. |
 | 7 | `length` and `substr` count UTF-16 code units; `trim` uses Java's notion of whitespace. | Code points; Unicode `White_Space`. | Portability. |
 | 8 | Gas is unchecked `Long`, priced after the fact, and absent on failure. | Saturating, charged before the work, sized by weight, reported on failure. | Fairness, and DoS bounds. |
 | 9 | `cat` on arrays is an error. | Concatenates when every argument is an array. | Programs use it. |
 | 10 | Unbounded numbers and values. | The bounds of §2. | DoS. |
+| 11 | Every single-key object naming an operation is code, so `{"count": 3}` as data is impossible. | `{"object": {...}}` builds any map; `Parser.migrate` rewrites older programs. | The `count` ambiguity. |
+| 12 | `var` paths may be computed only as text. | Text, or an array of exact segments. | Keys holding `.` cannot redirect a read. |
+| 13 | `+` and `*` of nothing are errors. | 0 and 1. | Spreads over empty collections. |
