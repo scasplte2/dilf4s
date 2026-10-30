@@ -358,7 +358,7 @@ which branches the prover knew. This is what ring signatures, hidden-signer k-of
 - Combining single-key checks with `or` or `some` proves that a particular key signed. Only one `sigma_verify` over
   an `or` or `threshold` hides which.
 - Gas is priced by weight: about 45,000 per `dlog` leaf and 92,000 per `dhtuple` leaf, with proposition and proof
-  together. Every argument counts, so sign a 32-byte digest rather than a long message.
+  together. The message pays the hashing rate, 1 per unit of weight, as `blake2b256` does.
 
 **Authenticated structures**: dilf4s's Merkle trees (`merkle.md`) and binary Patricia tries (`trie.md`), over SHA-256.
 Proofs are their canonical records (`merkle-inclusion`, `merkle-consistency`, `trie-proof`), passed as values. A leaf
@@ -387,10 +387,13 @@ library's conventions: `MerkleTree.leaf` (or `MerkleHashing.leaf` on the bytes) 
 ## 7. Gas
 
 **Schedules.** A schedule is versioned data (`Gas.scala`, `GasSchedule.V1`). It holds:
-- for every operation, a base charge, a per-unit charge and a size unit;
+- for every operation, a base charge, a per-unit charge and a size unit, and optionally a rate of their own for
+  particular argument positions;
 - the scalar charges `literal`, `element`, `varAccess`, `perPathSegment` and `callbackRun`.
 
-**Size units.** An operation's size is summed over all its evaluated arguments:
+**Size units.** An operation's size charge is summed over its evaluated arguments, each at its position's rate (by
+default the operation's). For example, `sigma_verify` and `schnorr_verify` charge the message at the hashing rate,
+1 per unit of weight, and the proposition and proof at the curve rate. Each argument is measured in its rate's unit:
 - `Elements`: the top-level entries of arrays and objects, and 1 for anything else;
 - `Weight`: the weight (§2);
 - `None`: zero.

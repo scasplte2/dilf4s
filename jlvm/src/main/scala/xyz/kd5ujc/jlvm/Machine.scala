@@ -93,17 +93,7 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
   private def result(r: Either[JlvmError, CanonicalValue]): Step = r.fold(Fail(_), Done(_))
 
   /** The size charge of an operation on its evaluated arguments (taken after the arguments, before the work). */
-  private def sized(op: Op, args: Vector[CanonicalValue]): Gas = {
-    val cost = schedule.cost(op)
-    val units = cost.unit match {
-      case SizeUnit.None     => 0L
-      case SizeUnit.Elements => args.foldLeft(0L)((n, v) => sat(n, Values.elements(v)))
-      case SizeUnit.Weight   => args.foldLeft(0L)((n, v) => sat(n, v.weight))
-    }
-    cost.perUnit * units
-  }
-
-  private def sat(a: Long, b: Long): Long = if (a > Long.MaxValue - b) Long.MaxValue else a + b
+  private def sized(op: Op, args: Vector[CanonicalValue]): Gas = schedule.sized(op, args)
 
   private def base(op: Op): Gas = schedule.cost(op).base
 

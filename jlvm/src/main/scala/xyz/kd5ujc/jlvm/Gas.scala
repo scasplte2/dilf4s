@@ -26,14 +26,25 @@ object Gas {
   given Ordering[Gas] = Ordering.Long
 }
 
-/**
- * What an operation costs: a base charge, plus a charge per unit of argument size, where the unit is fixed per
- * operation. Every size charge is taken **before** the work it pays for.
- */
-final case class OpCost(base: Gas, perUnit: Gas, unit: SizeUnit)
+/** A charge per unit of an argument's size. */
+final case class Rate(perUnit: Gas, unit: SizeUnit)
 
 /**
- * How an operation's arguments are measured, summed over all arguments:
+ * What an operation costs: a base charge, plus a charge per unit of each argument's size. Every argument is charged at
+ * the operation's rate, unless `byArgument` gives its position a rate of its own (a message that is only hashed costs
+ * far less per byte than a proof that drives curve arithmetic). Every size charge is taken **before** the work it pays
+ * for.
+ */
+final case class OpCost(base: Gas, perUnit: Gas, unit: SizeUnit, byArgument: Map[Int, Rate] = Map.empty) {
+  def rate(position: Int): Rate = byArgument.getOrElse(position, Rate(perUnit, unit))
+
+  /** Argument `position` is charged `perUnit` per `unit` instead. */
+  def at(position: Int, perUnit: Long, unit: SizeUnit): OpCost =
+    copy(byArgument = byArgument.updated(position, Rate(Gas(perUnit), unit)))
+}
+
+/**
+ * How an argument is measured:
  *   - `Elements`: top-level entries of arrays and objects (1 for anything else), for operations that only touch the
  *     outermost collection (structure is shared, never copied);
  *   - `Weight`: [[xyz.kd5ujc.core.canonical.CanonicalValue.weight]], for operations that read content (text, bytes,
@@ -57,6 +68,21 @@ final case class GasSchedule(
   callbackRun:    Gas
 ) {
   def cost(op: Op): OpCost = ops.getOrElse(op, OpCost(Gas(1), Gas.Zero, SizeUnit.None))
+
+  /** The size charge of `op` on its evaluated arguments: each argument at its position's rate. */
+  def sized(op: Op, args: Vector[CanonicalValue]): Gas = {
+    val c = cost(op)
+    args.zipWithIndex.foldLeft(Gas.Zero) {
+      case (total, (v, i)) =>
+        val r = c.rate(i)
+        val units = r.unit match {
+          case SizeUnit.None     => 0L
+          case SizeUnit.Elements => Values.elements(v)
+          case SizeUnit.Weight   => v.weight
+        }
+        total + r.perUnit * units
+    }
+  }
 }
 
 object GasSchedule {
@@ -159,8 +185,9 @@ object GasSchedule {
       Bn254Mul           -> c(40000),
       Bn254Pairing       -> c(45000, 180, Weight),
       // ~300us per dlog leaf on BouncyCastle; a leaf of proposition and proof weighs ~105, a DH tuple ~215 (4 muls)
-      SchnorrVerify -> c(5000, 430, Weight),
-      SigmaVerify   -> c(5000, 430, Weight),
+      // the message is only hashed: it pays the hashing rate (as blake2b256), not the curve rate
+      SchnorrVerify -> c(5000, 430, Weight).at(1, 1, Weight),
+      SigmaVerify   -> c(5000, 430, Weight).at(2, 1, Weight),
       // measured at ~150 gas/us: a 16-digest Merkle path (weight 548) in ~46us, a 129-record trie proof (3495) in ~700us
       MerkleVerify            -> c(500, 13, Weight),
       MerkleConsistencyVerify -> c(500, 13, Weight),
