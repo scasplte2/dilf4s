@@ -29,6 +29,13 @@ Signing follows RFC 8032 §5.1.6 (pure Ed25519, no context). The secret key is t
 - `S` must be canonical (`S < L`).
 - Accept if and only if `[8]([S]B − R − [k]A) = 0`, where `k = SHA-512(R ‖ A ‖ M) mod L` over the encodings as given.
 
+A third rule, **libsodium** (`crypto_sign_ed25519_verify_detached`), exists only for compatibility with systems built on
+it, such as Cardano KES leaves. It requires all of the following:
+
+- `S < L`;
+- `A` with canonical `y` and not of small order;
+- `[S]B − [k]A`, computed cofactorless, encodes exactly to `R` and is not of small order.
+
 ZIP-215 fixes the accept set exactly, so every implementation agrees on every signature (batch-compatible). An
 RFC 8032 strict verifier, which additionally requires canonical `A` and `R`, may be offered but is not the default.
 
