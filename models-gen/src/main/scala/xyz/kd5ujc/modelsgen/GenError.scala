@@ -32,7 +32,7 @@ enum GenError:
     case BadConfig(l, p)            => s"config line $l: ${p.message}"
     case CyclicExpansion(q)         => s"cyclic expansion of `$q`"
     case EmptyIntegerDomain(lo, hi) => s"cannot sample an empty integer domain ($lo .. $hi)"
-    case SamplingCycle(q) => s"recursive sampling of `$q` cannot terminate beyond the depth cutoff"
+    case SamplingCycle(q)           => s"recursive sampling of `$q` cannot terminate beyond the depth cutoff"
 
 enum ConfigProblem:
   case QualifiedName(value: String)
@@ -97,7 +97,7 @@ enum UnsupportedFeature:
 private[modelsgen] type GenResult[A] = EitherT[Eval, GenError, A]
 
 private[modelsgen] object GenResult:
-  def success[A](value: A): GenResult[A] = EitherT.rightT(value)
-  def failure[A](error: GenError): GenResult[A] = EitherT.leftT(error)
+  def success[A](value:    A): GenResult[A] = EitherT.rightT(value)
+  def failure[A](error:    GenError): GenResult[A] = EitherT.leftT(error)
   def fromEither[A](value: Either[GenError, A]): GenResult[A] = EitherT.fromEither(value)
-  def deferred[A](body: => GenResult[A]): GenResult[A] = EitherT(Eval.defer(body.value))
+  def deferred[A](body:    => GenResult[A]): GenResult[A] = EitherT(Eval.defer(body.value))

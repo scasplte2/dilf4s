@@ -42,8 +42,9 @@ enum RKey:
   case TextKey(value: String)
   case OfType(ty: RT, cut: Boolean)
 
-/** An array or map entry. `label` is the CDDL member name (a comment in arrays, the key in maps).
-  */
+/**
+ * An array or map entry. `label` is the CDDL member name (a comment in arrays, the key in maps).
+ */
 final case class REntry(occ: Occ, label: Option[String], key: Option[RKey], value: RT)
 
 enum RuleBody:
@@ -90,9 +91,7 @@ final class Schema(val modules: Map[String, Module]):
         else
           defs
             .traverse(r => ty(r.body, scope, Map.empty, q.toString))
-            .map(tys =>
-              RuleDef(q, RuleBody.Type(tys match { case Vector(one) => one; case _ => flattenChoice(tys) }))
-            )
+            .map(tys => RuleDef(q, RuleBody.Type(tys match { case Vector(one) => one; case _ => flattenChoice(tys) })))
   }
 
   private def flattenChoice(alts: Vector[RT]): RT =
@@ -118,47 +117,48 @@ final class Schema(val modules: Map[String, Module]):
     val bignint = RT.Tagged(3, bytes)
     val bigint = RT.Choice(Vector(biguint, bignint))
     Map(
-      "tdate" -> RT.Tagged(0, text),
-      "biguint" -> biguint,
-      "bignint" -> bignint,
-      "bigint" -> bigint,
-      "integer" -> RT.Choice(Vector(RT.Prim(PrimKind.Int), biguint, bignint)),
-      "unsigned" -> RT.Choice(Vector(RT.Prim(PrimKind.Uint), biguint)),
-      "eb64url" -> RT.Tagged(21, any),
-      "eb64legacy" -> RT.Tagged(22, any),
-      "eb16" -> RT.Tagged(23, any),
+      "tdate"        -> RT.Tagged(0, text),
+      "biguint"      -> biguint,
+      "bignint"      -> bignint,
+      "bigint"       -> bigint,
+      "integer"      -> RT.Choice(Vector(RT.Prim(PrimKind.Int), biguint, bignint)),
+      "unsigned"     -> RT.Choice(Vector(RT.Prim(PrimKind.Uint), biguint)),
+      "eb64url"      -> RT.Tagged(21, any),
+      "eb64legacy"   -> RT.Tagged(22, any),
+      "eb16"         -> RT.Tagged(23, any),
       "encoded-cbor" -> RT.Tagged(24, bytes),
-      "uri" -> RT.Tagged(32, text),
-      "b64url" -> RT.Tagged(33, text),
-      "b64legacy" -> RT.Tagged(34, text),
-      "regexp" -> RT.Tagged(35, text),
+      "uri"          -> RT.Tagged(32, text),
+      "b64url"       -> RT.Tagged(33, text),
+      "b64legacy"    -> RT.Tagged(34, text),
+      "regexp"       -> RT.Tagged(35, text),
       "mime-message" -> RT.Tagged(36, text),
-      "cbor-any" -> RT.Tagged(55799, any)
+      "cbor-any"     -> RT.Tagged(55799, any)
     )
 
   private val prelude: Map[String, RT] = tagged ++ Map(
-    "uint" -> RT.Prim(PrimKind.Uint),
-    "nint" -> RT.Prim(PrimKind.Nint),
-    "int" -> RT.Prim(PrimKind.Int),
-    "bytes" -> RT.Prim(PrimKind.Bytes),
-    "bstr" -> RT.Prim(PrimKind.Bytes),
-    "text" -> RT.Prim(PrimKind.Text),
-    "tstr" -> RT.Prim(PrimKind.Text),
-    "bool" -> RT.Prim(PrimKind.Bool),
-    "true" -> RT.LitBool(true),
-    "false" -> RT.LitBool(false),
-    "nil" -> RT.Prim(PrimKind.Nil),
-    "null" -> RT.Prim(PrimKind.Nil),
-    "any" -> RT.Prim(PrimKind.Any),
-    "float" -> RT.Prim(PrimKind.Float),
+    "uint"    -> RT.Prim(PrimKind.Uint),
+    "nint"    -> RT.Prim(PrimKind.Nint),
+    "int"     -> RT.Prim(PrimKind.Int),
+    "bytes"   -> RT.Prim(PrimKind.Bytes),
+    "bstr"    -> RT.Prim(PrimKind.Bytes),
+    "text"    -> RT.Prim(PrimKind.Text),
+    "tstr"    -> RT.Prim(PrimKind.Text),
+    "bool"    -> RT.Prim(PrimKind.Bool),
+    "true"    -> RT.LitBool(true),
+    "false"   -> RT.LitBool(false),
+    "nil"     -> RT.Prim(PrimKind.Nil),
+    "null"    -> RT.Prim(PrimKind.Nil),
+    "any"     -> RT.Prim(PrimKind.Any),
+    "float"   -> RT.Prim(PrimKind.Float),
     "float16" -> RT.Prim(PrimKind.Float),
     "float32" -> RT.Prim(PrimKind.Float),
     "float64" -> RT.Prim(PrimKind.Float)
   )
 
-  /** Find the rule an identifier names from `scope`: a local rule, or `alias.rule` through an
-    * import.
-    */
+  /**
+   * Find the rule an identifier names from `scope`: a local rule, or `alias.rule` through an
+   * import.
+   */
   private def locate(id: String, scope: Scope): GenResult[Option[QName]] =
     val local = QName(scope.module, id)
     if lookup(local).isDefined then success(Some(local))
@@ -175,11 +175,11 @@ final class Schema(val modules: Map[String, Module]):
             else failure(GenError.UnknownModule(m, scope.module))
 
   private def intOf(
-      t: Ast.Ty,
-      scope: Scope,
-      env: Map[String, RT],
-      ctx: String,
-      seen: Set[QName] = Set.empty
+    t:     Ast.Ty,
+    scope: Scope,
+    env:   Map[String, RT],
+    ctx:   String,
+    seen:  Set[QName] = Set.empty
   ): GenResult[BigInt] = deferred {
     t match
       case Ast.Ty.Literal(Ast.Lit.IntL(n)) => success(n)
@@ -197,11 +197,11 @@ final class Schema(val modules: Map[String, Module]):
   }
 
   private def ty(
-      t: Ast.Ty,
-      scope: Scope,
-      env: Map[String, RT],
-      ctx: String,
-      expanding: Set[QName] = Set.empty
+    t:         Ast.Ty,
+    scope:     Scope,
+    env:       Map[String, RT],
+    ctx:       String,
+    expanding: Set[QName] = Set.empty
   ): GenResult[RT] = deferred {
     def resolve(value: Ast.Ty): GenResult[RT] = ty(value, scope, env, ctx, expanding)
     t match
@@ -210,7 +210,8 @@ final class Schema(val modules: Map[String, Module]):
           case Ast.Lit.IntL(n)    => RT.LitInt(n)
           case Ast.Lit.TextL(s)   => RT.LitText(s)
           case Ast.Lit.BytesL(bs) => RT.LitBytes(bs)
-          case Ast.Lit.FloatL(s)  => RT.Unsupported(UnsupportedFeature.FloatLiteral(s)))
+          case Ast.Lit.FloatL(s)  => RT.Unsupported(UnsupportedFeature.FloatLiteral(s))
+        )
       case Ast.Ty.Name(id, args) =>
         env.get(id) match
           case Some(bound) => success(bound)
@@ -221,17 +222,14 @@ final class Schema(val modules: Map[String, Module]):
                   case None => failure(GenError.UnresolvedName(q.module, q.name))
                   case Some((defs, defScope)) =>
                     val params = defs.headOption.fold(Vector.empty[String])(_.params)
-                    if params.size != args.size then
-                      failure(GenError.ArityMismatch(q.toString, params.size, args.size))
+                    if params.size != args.size then failure(GenError.ArityMismatch(q.toString, params.size, args.size))
                     else if params.isEmpty then success(RT.Ref(q))
                     else if expanding(q) then failure(GenError.CyclicExpansion(q))
                     else
                       for
                         resolved <- args.traverse(resolve)
                         bound = params.zip(resolved).toMap
-                        tys <- defs.traverse(r =>
-                          ty(r.body, defScope, bound, q.toString, expanding + q)
-                        )
+                        tys <- defs.traverse(r => ty(r.body, defScope, bound, q.toString, expanding + q))
                       yield flattenChoice(tys)
               case None =>
                 fromEither(prelude.get(id).toRight(GenError.UnresolvedName(scope.module, id)))
@@ -248,7 +246,7 @@ final class Schema(val modules: Map[String, Module]):
           case (6, Some(n), Some(i)) => resolve(i).map(RT.Tagged(n, _))
           case (6, Some(n), None)    => success(RT.Tagged(n, RT.Prim(PrimKind.Any)))
           case (-1, None, None)      => success(RT.Prim(PrimKind.Any))
-          case _ => success(RT.Unsupported(UnsupportedFeature.TagForm(major, number)))
+          case _                     => success(RT.Unsupported(UnsupportedFeature.TagForm(major, number)))
       case Ast.Ty.GroupT(_) => success(RT.Unsupported(UnsupportedFeature.GroupInTypePosition))
       case Ast.Ty.Enumeration(of) =>
         of match
@@ -259,13 +257,13 @@ final class Schema(val modules: Map[String, Module]):
   }
 
   private def control(
-      base: Ast.Ty,
-      op: String,
-      arg: Ast.Ty,
-      scope: Scope,
-      env: Map[String, RT],
-      ctx: String,
-      expanding: Set[QName]
+    base:      Ast.Ty,
+    op:        String,
+    arg:       Ast.Ty,
+    scope:     Scope,
+    env:       Map[String, RT],
+    ctx:       String,
+    expanding: Set[QName]
   ): GenResult[RT] =
     def underlying(value: RT, seen: Set[QName]): GenResult[RT] = deferred {
       value match
@@ -325,12 +323,12 @@ final class Schema(val modules: Map[String, Module]):
     case _ => None
 
   private def composite(
-      g: Ast.Group,
-      scope: Scope,
-      env: Map[String, RT],
-      ctx: String,
-      inMap: Boolean,
-      expanding: Set[QName]
+    g:         Ast.Group,
+    scope:     Scope,
+    env:       Map[String, RT],
+    ctx:       String,
+    inMap:     Boolean,
+    expanding: Set[QName]
   ): GenResult[RT] =
     g.choices
       .traverse(es =>
@@ -343,12 +341,12 @@ final class Schema(val modules: Map[String, Module]):
       }
 
   private def entries(
-      es: Vector[Ast.Entry],
-      scope: Scope,
-      env: Map[String, RT],
-      ctx: String,
-      inMap: Boolean,
-      expanding: Set[QName] = Set.empty
+    es:        Vector[Ast.Entry],
+    scope:     Scope,
+    env:       Map[String, RT],
+    ctx:       String,
+    inMap:     Boolean,
+    expanding: Set[QName] = Set.empty
   ): GenResult[Vector[REntry]] = deferred {
     es.flatTraverse { e =>
       e.value match
@@ -358,9 +356,7 @@ final class Schema(val modules: Map[String, Module]):
           locate(id, scope).flatMap { located =>
             val group = located.filter(q =>
               lookup(q).exists { (defs, _) =>
-                defs.exists(r =>
-                  r.assign == Assign.GroupChoice || isGroupBody(r.body)
-                )
+                defs.exists(r => r.assign == Assign.GroupChoice || isGroupBody(r.body))
               }
             )
             group match
@@ -372,12 +368,12 @@ final class Schema(val modules: Map[String, Module]):
   }
 
   private def entry(
-      e: Ast.Entry,
-      scope: Scope,
-      env: Map[String, RT],
-      ctx: String,
-      inMap: Boolean,
-      expanding: Set[QName]
+    e:         Ast.Entry,
+    scope:     Scope,
+    env:       Map[String, RT],
+    ctx:       String,
+    inMap:     Boolean,
+    expanding: Set[QName]
   ): GenResult[REntry] =
     val key: GenResult[(Option[String], Option[RKey])] = e.key match
       case None => success((None, None))
@@ -406,12 +402,12 @@ object Schema:
           val prior = acc.getOrElse(r.name, Vector.empty)
           acc.updated(r.name, if r.assign == Assign.Eq then Vector(r) else prior :+ r)
         }
-        perFile.foldLeft(rules) { case (acc, (n, rs)) =>
-          val merged =
-            if rs.forall(_.assign != Assign.Eq) then
-              acc.get(n).fold(Vector.empty[Ast.Rule])(_._1) ++ rs
-            else rs
-          acc.updated(n, (merged, scope))
+        perFile.foldLeft(rules) {
+          case (acc, (n, rs)) =>
+            val merged =
+              if rs.forall(_.assign != Assign.Eq) then acc.get(n).fold(Vector.empty[Ast.Rule])(_._1) ++ rs
+              else rs
+            acc.updated(n, (merged, scope))
         }
       }
       name -> Module(name, rules)

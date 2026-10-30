@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 package xyz.kd5ujc.modelsgen
 
-/** Error payloads keep the complete syntax tree. Diagnostics inspect only a bounded prefix, using
-  * an explicit work list rather than the recursive toString generated for AST products.
-  */
+/**
+ * Error payloads keep the complete syntax tree. Diagnostics inspect only a bounded prefix, using
+ * an explicit work list rather than the recursive toString generated for AST products.
+ */
 private[modelsgen] object SyntaxSummary:
   private enum Part:
     case Text(value: String)
@@ -20,9 +21,9 @@ private[modelsgen] object SyntaxSummary:
       if values.isEmpty then List(Text(prefix))
       else
         Text(prefix + "(") ::
-          (values.zipWithIndex.flatMap { (v, i) =>
-            if i == 0 then List(Inspect(v)) else List(Text(", "), Inspect(v))
-          } :+ Text(")"))
+        (values.zipWithIndex.flatMap { (v, i) =>
+          if i == 0 then List(Inspect(v)) else List(Text(", "), Inspect(v))
+        } :+ Text(")"))
 
     @scala.annotation.tailrec
     def loop(todo: List[Part], nodes: Int, size: Int, out: Vector[String]): String =

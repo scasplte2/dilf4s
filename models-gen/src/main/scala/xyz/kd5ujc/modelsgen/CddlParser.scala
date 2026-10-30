@@ -6,11 +6,12 @@ import cats.parse.{Numbers, Parser, Parser0}
 
 import xyz.kd5ujc.modelsgen.Ast._
 
-/** A CDDL parser (RFC 8610) on cats-parse. It accepts the whole grammar used by the pinned Cardano
-  * specifications: rules, generics, group and type choices, occurrence indicators, member keys
-  * (`name:`, `value:`, `type =>`), ranges, control operators, tags, `&` enumerations, sockets (`$`,
-  * `$$` names) and `/=`, `//=` extensions. Floating-point literals are parsed, never interpreted.
-  */
+/**
+ * A CDDL parser (RFC 8610) on cats-parse. It accepts the whole grammar used by the pinned Cardano
+ * specifications: rules, generics, group and type choices, occurrence indicators, member keys
+ * (`name:`, `value:`, `type =>`), ranges, control operators, tags, `&` enumerations, sockets (`$`,
+ * `$$` names) and `/=`, `//=` extensions. Floating-point literals are parsed, never interpreted.
+ */
 object CddlParser:
   final case class ParseFailure(detail: String, line: Int, column: Int):
     def message: String = s"CDDL parse error at $line:$column: $detail"
@@ -20,7 +21,7 @@ object CddlParser:
   private val space: Parser[Unit] = Parser.charIn(" \t\r\n").void
   private val sp: Parser0[Unit] = (space | comment).rep0.void
   private def lexeme[A](p: Parser[A]): Parser[A] = p <* sp
-  private def tok(s: String): Parser[Unit] = lexeme(Parser.string(s))
+  private def tok(s:       String): Parser[Unit] = lexeme(Parser.string(s))
 
   private def isAlpha(c: Char) = (c.isLetter && c < 128) || c == '@' || c == '_' || c == '$'
   private def isDigit(c: Char) = c >= '0' && c <= '9'
@@ -46,9 +47,8 @@ object CddlParser:
   private val binInt: Parser[BigInt] =
     (Parser.string("0b") *> Parser.charsWhile(c => c == '0' || c == '1')).map(BigInt(_, 2))
   private val intLit: Parser[BigInt] =
-    (Parser.char('-').string.?.with1 ~ (hexInt.backtrack | binInt.backtrack | uintBig)).map {
-      (neg, n) =>
-        if neg.isDefined then -n else n
+    (Parser.char('-').string.?.with1 ~ (hexInt.backtrack | binInt.backtrack | uintBig)).map { (neg, n) =>
+      if neg.isDefined then -n else n
     }
   private val floatLit: Parser[String] =
     (Parser.char('-').?.with1 ~ digits ~ Parser.char('.') ~ digits ~
@@ -67,23 +67,23 @@ object CddlParser:
     s.filterNot(_.isWhitespace).grouped(2).map(h => Integer.parseInt(h, 16).toByte).toVector
   private val bytesLit: Parser[Vector[Byte]] =
     (Parser.string("h'") *> Parser.charsWhile0(_ != '\'') <* Parser.char('\'')).map(hexBytes) |
-      (Parser.char('\'') *> Parser.charsWhile0(_ != '\'') <* Parser.char('\''))
-        .map(_.getBytes("UTF-8").toVector)
+    (Parser.char('\'') *> Parser.charsWhile0(_ != '\'') <* Parser.char('\''))
+      .map(_.getBytes(java.nio.charset.StandardCharsets.UTF_8).toVector)
 
   private val lit: Parser[Lit] =
     textLit.map(Lit.TextL(_)) | bytesLit.backtrack.map(Lit.BytesL(_)) | floatLit.map(
       Lit.FloatL(_)
     ) |
-      intLit.map(Lit.IntL(_))
+    intLit.map(Lit.IntL(_))
 
   // Types and groups ---------------------------------------------------------------------------
   private val bound: Parser[Int] = uintBig.map(_.toInt)
   private val occ: Parser[Occ] =
     tok("?").as(Occ.Optional) |
-      tok("+").as(Occ.Plus) |
-      (((bound.?.with1 <* Parser.char('*')) ~ bound.?) <* sp)
-        .map((lo, hi) => Occ(lo.getOrElse(0), hi))
-        .backtrack
+    tok("+").as(Occ.Plus) |
+    (((bound.?.with1 <* Parser.char('*')) ~ bound.?) <* sp)
+      .map((lo, hi) => Occ(lo.getOrElse(0), hi))
+      .backtrack
 
   private val slashChoice: Parser[Unit] =
     ((Parser.char('/') ~ Parser.not(Parser.charIn("/="))).void *> sp).backtrack
@@ -108,8 +108,9 @@ object CddlParser:
     val cut: Parser0[Boolean] = (Parser.char('^') *> sp).as(true).orElse(Parser.pure(false))
     val arrow: Parser[Boolean] = (cut.with1 <* Parser.string("=>") <* sp).backtrack
     val keyed: Parser[Entry] =
-      (occ.?.with1 ~ (bareKey | valueKey) ~ ty).map { case ((o, k), t) =>
-        Entry(o.getOrElse(Occ.Once), Some(k), t)
+      (occ.?.with1 ~ (bareKey | valueKey) ~ ty).map {
+        case ((o, k), t) =>
+          Entry(o.getOrElse(Occ.Once), Some(k), t)
       }
     val typeKeyOrPlain: Parser[Entry] =
       (occ.?.with1 ~ self ~
@@ -127,8 +128,9 @@ object CddlParser:
 
     val tagP: Parser[Ty] =
       (Parser.char('#') *> ((digits.? ~ (Parser.char('.') *> uintBig).?) ~
-        (Parser.char('(') *> sp *> ty <* sp <* Parser.char(')')).?))
-        .map { case ((major, num), inner) => Ty.Tag(major.fold(-1)(_.toInt), num, inner) }
+      (Parser.char('(') *> sp *> ty <* sp <* Parser.char(')')).?)).map {
+        case ((major, num), inner) => Ty.Tag(major.fold(-1)(_.toInt), num, inner)
+      }
     val arrayP = (Parser.char('[') *> sp *> grp <* sp <* Parser.char(']')).map(Ty.Array(_))
     val mapP = (Parser.char('{') *> sp *> grp <* sp <* Parser.char('}')).map(Ty.MapT(_))
     val paren: Parser[Ty] = (Parser.char('(') *> sp *> grp <* sp <* Parser.char(')')).map { g =>
@@ -145,8 +147,8 @@ object CddlParser:
     val rangeOp: Parser[Boolean] = tok("...").as(false) | tok("..").as(true)
     val ctrlName: Parser[String] = lexeme(Parser.char('.') *> ident)
     val tail: Parser[Ty => Ty] =
-      (rangeOp ~ ty2).map { (inc, hi) => (lo: Ty) => Ty.Range(lo, hi, inc) } |
-        (ctrlName ~ ty2).map { (op, arg) => (b: Ty) => Ty.Ctrl(b, op, arg) }
+      (rangeOp ~ ty2).map((inc, hi) => (lo: Ty) => Ty.Range(lo, hi, inc)) |
+      (ctrlName ~ ty2).map((op, arg) => (b: Ty) => Ty.Ctrl(b, op, arg))
     (ty2 ~ tail.?).map((a, t) => t.fold(a)(_(a)))
   }
 
@@ -158,8 +160,9 @@ object CddlParser:
     (Parser.char('<') *> sp *> lexeme(ident).repSep(tok(",")) <* Parser.char('>'))
       .map(_.toList.toVector)
   private val rule: Parser[Rule] =
-    (ident ~ params.? <* sp).flatMap { case (n, ps) =>
-      (assign ~ tyAll).map((a, b) => Rule(n, ps.getOrElse(Vector.empty), a, b))
+    (ident ~ params.? <* sp).flatMap {
+      case (n, ps) =>
+        (assign ~ tyAll).map((a, b) => Rule(n, ps.getOrElse(Vector.empty), a, b))
     }
   private val fileP: Parser0[Vector[Rule]] = sp *> rule.rep0.map(_.toVector) <* Parser.end
 

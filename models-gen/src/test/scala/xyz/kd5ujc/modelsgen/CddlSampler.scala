@@ -7,10 +7,11 @@ import cats.syntax.all._
 
 import scala.util.Random
 
-/** Constructs canonical CBOR candidates from resolved CDDL. Random is supplied by the calling
-  * test/tool; all encoding and domain failure propagation use values, trampolined over schema
-  * depth.
-  */
+/**
+ * Constructs canonical CBOR candidates from resolved CDDL. Random is supplied by the calling
+ * test/tool; all encoding and domain failure propagation use values, trampolined over schema
+ * depth.
+ */
 final class CddlSampler(schema: Schema, maxDepth: Int = 7):
   import GenResult.*
   private def unsupported[A](feature: UnsupportedFeature): GenResult[A] =
@@ -42,31 +43,34 @@ final class CddlSampler(schema: Schema, maxDepth: Int = 7):
     fromEither(schema.rule(q))
       .flatMap(_.body match
         case RuleBody.GroupBody(es) => ty(RT.Arr(es), rnd, 0, Set.empty)
-        case RuleBody.Type(_)       => unsupported(UnsupportedFeature.StandaloneGroup(q)))
+        case RuleBody.Type(_)       => unsupported(UnsupportedFeature.StandaloneGroup(q))
+      )
       .value
       .value
       .map(_.toArray)
 
-  /** Beyond the cutoff, choice and occurrence selection are deterministic. Re-entering a rule on
-    * that ancestry cannot produce a finite encoding. Siblings use independent immutable paths,
-    * while pre-cutoff random selections retain their original draws and output.
-    */
+  /**
+   * Beyond the cutoff, choice and occurrence selection are deterministic. Re-entering a rule on
+   * that ancestry cannot produce a finite encoding. Siblings use independent immutable paths,
+   * while pre-cutoff random selections retain their original draws and output.
+   */
   private def enter[A](q: QName, depth: Int, cutoffPath: Set[QName])(
-      body: Set[QName] => GenResult[A]
+    body: Set[QName] => GenResult[A]
   ): GenResult[A] =
     if depth > maxDepth && cutoffPath(q) then failure(GenError.SamplingCycle(q))
     else body(if depth > maxDepth then cutoffPath + q else Set.empty)
 
   private def rule(
-      q: QName,
-      rnd: Random,
-      depth: Int,
-      cutoffPath: Set[QName]
+    q:          QName,
+    rnd:        Random,
+    depth:      Int,
+    cutoffPath: Set[QName]
   ): GenResult[Vector[Byte]] = deferred {
     enter(q, depth, cutoffPath) { next =>
       fromEither(schema.rule(q)).flatMap(_.body match
         case RuleBody.Type(t)      => ty(t, rnd, depth + 1, next)
-        case RuleBody.GroupBody(_) => unsupported(UnsupportedFeature.StandaloneGroup(q)))
+        case RuleBody.GroupBody(_) => unsupported(UnsupportedFeature.StandaloneGroup(q))
+      )
     }
   }
 
@@ -77,7 +81,7 @@ final class CddlSampler(schema: Schema, maxDepth: Int = 7):
       case 1 => hi
       case _ =>
         if span.isValidLong && span <= Int.MaxValue then lo + rnd.nextInt(span.toInt)
-        else lo + (BigInt(span.bitLength + 8, rnd) mod span)
+        else lo + (BigInt(span.bitLength + 8, rnd).mod(span))
 
   private def randBytes(rnd: Random, n: Int): Vector[Byte] =
     val a = new Array[Byte](n)
@@ -102,7 +106,8 @@ final class CddlSampler(schema: Schema, maxDepth: Int = 7):
             case 0 => head(0, rnd.nextInt(1000))
             case 1 => bytes(randBytes(rnd, rnd.nextInt(6)))
             case 2 => text(rnd.alphanumeric.take(rnd.nextInt(6)).mkString)
-            case _ => Vector(0x80.toByte))
+            case _ => Vector(0x80.toByte)
+          )
         case RT.Prim(PrimKind.Float)        => unsupported(UnsupportedFeature.FloatSampling)
         case RT.LitInt(n)                   => success(int(n))
         case RT.LitText(s)                  => success(text(s))
@@ -164,16 +169,17 @@ final class CddlSampler(schema: Schema, maxDepth: Int = 7):
     val hi = occ.max.getOrElse(occ.min + 3)
     if depth > maxDepth then occ.min else occ.min + rnd.nextInt(math.min(hi - occ.min, 3) + 1)
 
-  /** Conservatively include optionals before a required suffix. CDDL matches greedily, so an absent
-    * overlapping member could otherwise consume the suffix during validation. Propagate the
-    * enclosing suffix through groups; no generated sample is filtered or retried.
-    */
+  /**
+   * Conservatively include optionals before a required suffix. CDDL matches greedily, so an absent
+   * overlapping member could otherwise consume the suffix during validation. Propagate the
+   * enclosing suffix through groups; no generated sample is filtered or retried.
+   */
   private def arrayItems(
-      es: Vector[REntry],
-      rnd: Random,
-      depth: Int,
-      cutoffPath: Set[QName],
-      requiredAfter: Boolean = false
+    es:            Vector[REntry],
+    rnd:           Random,
+    depth:         Int,
+    cutoffPath:    Set[QName],
+    requiredAfter: Boolean = false
   ): GenResult[Vector[Vector[Byte]]] =
     val (_, positioned) =
       es.reverseIterator.foldLeft((requiredAfter, List.empty[(REntry, Boolean)])) {
@@ -185,11 +191,11 @@ final class CddlSampler(schema: Schema, maxDepth: Int = 7):
     }
 
   private def entryItems(
-      en: REntry,
-      rnd: Random,
-      depth: Int,
-      cutoffPath: Set[QName],
-      requiredAfter: Boolean
+    en:            REntry,
+    rnd:           Random,
+    depth:         Int,
+    cutoffPath:    Set[QName],
+    requiredAfter: Boolean
   ): GenResult[Vector[Vector[Byte]]] =
     deferred {
       val occurrences = if requiredAfter && en.occ.isOptional then 1 else count(en.occ, rnd, depth)
@@ -199,7 +205,8 @@ final class CddlSampler(schema: Schema, maxDepth: Int = 7):
             enter(g, depth, cutoffPath) { next =>
               fromEither(schema.rule(g)).flatMap(_.body match
                 case RuleBody.GroupBody(es) => arrayItems(es, rnd, depth + 1, next, requiredAfter)
-                case _                      => unsupported(UnsupportedFeature.NotGroup(g)))
+                case _                      => unsupported(UnsupportedFeature.NotGroup(g))
+              )
             }
           case v => ty(v, rnd, depth + 1, cutoffPath).map(Vector(_))
       }
