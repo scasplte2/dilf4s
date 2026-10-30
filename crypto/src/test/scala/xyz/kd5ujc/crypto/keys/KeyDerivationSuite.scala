@@ -176,6 +176,36 @@ object KeyDerivationSuite extends SimpleIOSuite {
     }
   }
 
+  test("BIP32 secp256k1: public derivation (CKDpub) matches private derivation") {
+    Secp256k1.load[IO].map { backend =>
+      val bip32 = new Bip32Secp256k1(backend)
+      val seed = Secret(hex"000102030405060708090a0b0c0d0e0f")
+      val parent = ChildIndex.path("m/0'").flatMap(bip32.derive(seed, _)).toOption.get
+      val parentVk = backend.ecdsaPublicKeyOf.verifyingKey(parent.key)
+      val viaPublic = ChildIndex.soft(1).flatMap(bip32.publicChild(parentVk, parent.chainCode, _))
+      val viaPrivate = ChildIndex.path("m/0'/1").flatMap(bip32.derive(seed, _))
+      expect
+        .same(Right(hex"03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c"), viaPublic.map(_._1.bytes))
+        .and(expect.same(viaPrivate.map(k => (backend.ecdsaPublicKeyOf.verifyingKey(k.key), k.chainCode)), viaPublic))
+        .and(expect(ChildIndex.hardened(1).flatMap(bip32.publicChild(parentVk, parent.chainCode, _)).isLeft, "hardened rejected"))
+    }
+  }
+
+  test("BIP-39: generated mnemonics have the requested length and validate") {
+    (english, cats.effect.std.SecureRandom.javaSecuritySecureRandom[IO]).tupled.flatMap {
+      case (words, r) =>
+        implicit val random: cats.effect.std.SecureRandom[IO] = r
+        List(16, 20, 24, 28, 32).traverse(n => Bip39.generate[IO](n, words).map(n -> _)).flatMap { generated =>
+          Bip39.generate[IO](17, words).map { bad =>
+            generated.foldMap {
+              case (n, m) =>
+                expect.same(Right(n * 3 / 4), m.map(_.words.size)).and(expect(m.flatMap(x => Bip39.toEntropy(x.phrase, words)).isRight))
+            }.and(expect(bad.isLeft, "17 bytes rejected"))
+          }
+        }
+    }
+  }
+
   // ------------------------------------------------------------------ BIP32-Ed25519
 
   private def extended(bytes: ByteVector): ExtendedKey[Ed25519Bip32] =

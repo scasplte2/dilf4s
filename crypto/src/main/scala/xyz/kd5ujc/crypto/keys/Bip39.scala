@@ -3,6 +3,8 @@ package xyz.kd5ujc.crypto.keys
 import java.nio.charset.StandardCharsets.UTF_8
 import java.text.Normalizer
 
+import cats.Monad
+import cats.effect.std.SecureRandom
 import cats.effect.{Resource, Sync}
 import cats.syntax.all._
 
@@ -107,6 +109,12 @@ object Bip39 {
       new Mnemonic(bits.grouped(11).map(group => words.words(group.toInt(signed = false))).toList, words.language).asRight
     }
   }
+
+  /** A fresh mnemonic from `entropyBytes` (16, 20, 24, 28 or 32) of secure randomness. */
+  def generate[F[_]: Monad](entropyBytes: Int, words: WordList)(implicit R: SecureRandom[F]): F[Either[KeyError, Mnemonic]] =
+    if (!Set(16, 20, 24, 28, 32).contains(entropyBytes))
+      (KeyError.InvalidEntropy(s"entropy must be 16..32 bytes in steps of 4, got $entropyBytes"): KeyError).asLeft[Mnemonic].pure[F]
+    else R.nextBytes(entropyBytes).map(b => toMnemonic(Secret(ByteVector.view(b)), words))
 
   /** Parses and validates a phrase (word count, membership, checksum), returning its entropy. */
   def toEntropy(phrase: String, words: WordList): Either[KeyError, (Mnemonic, Secret)] = {

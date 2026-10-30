@@ -123,6 +123,8 @@ Derivation follows BIP32 for private keys:
 
 An index whose `I[0:32] ≥ n`, or whose resulting key is zero, is an error. The caller moves to the next index.
 
+Public derivation (CKDpub, soft indices only): `I = HMAC-SHA512(cc, serP(K) ‖ BE32(i))`, `K' = K + [I[0:32]]G`.
+
 ### 2.4 BIP32-Ed25519 (Icarus, CIP-0003)
 
 **Root.** `PBKDF2-HMAC-SHA512(passphrase, entropy, 4096, 96)`, then clamp:

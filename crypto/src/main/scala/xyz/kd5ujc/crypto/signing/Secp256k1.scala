@@ -106,6 +106,11 @@ final class Secp256k1 private (native: Native) {
   private[crypto] def tweakAdd(a: ByteVector, b: ByteVector): Either[CryptoError, ByteVector] =
     call("privKeyTweakAdd")(native.privKeyTweakAdd(a.toArray, b.toArray)).map(ByteVector.view)
 
+  /** `P + [t]G` on a compressed point, returned compressed; fails if `t` is not a scalar or the sum is infinity. */
+  private[crypto] def pubTweakAdd(point33: ByteVector, tweak: ByteVector): Either[CryptoError, ByteVector] =
+    call("pubKeyTweakAdd")(native.pubKeyCompress(native.pubKeyTweakAdd(native.pubkeyParse(point33.toArray), tweak.toArray)))
+      .map(ByteVector.view)
+
   // ------------------------------------------------------------------ BIP-340 Schnorr (standard and tagged)
 
   private def schnorrCodecFor[S](scheme: String): SchemeCodec[S] = new SchemeCodec[S] {

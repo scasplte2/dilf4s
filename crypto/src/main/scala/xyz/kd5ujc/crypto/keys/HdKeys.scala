@@ -99,6 +99,22 @@ final class Bip32Secp256k1(backend: Secp256k1) {
     } yield ExtendedKey(key, i.drop(32))
   }
 
+  /** CKDpub: `K' = K + [I_L]G` from the parent verifying key and chain code; soft indices only. */
+  def publicChild(
+    key:       VerifyingKey[Secp256k1Ecdsa],
+    chainCode: ByteVector,
+    index:     ChildIndex
+  ): Either[KeyError, (VerifyingKey[Secp256k1Ecdsa], ByteVector)] =
+    if (index.hardened) KeyError.InvalidDerivation("hardened children need the private key").asLeft
+    else {
+      val i = Hmac.sha512(chainCode, key.bytes ++ ChildIndex.be32(index))
+      for {
+        _     <- keyOf(i.take(32))
+        child <- backend.pubTweakAdd(key.bytes, i.take(32)).leftMap(e => KeyError.InvalidDerivation(e.toString))
+        vk    <- backend.ecdsaCodec.verifyingKey(child).leftMap(e => KeyError.InvalidDerivation(e.toString))
+      } yield (vk, i.drop(32))
+    }
+
   def derive(seed: Secret, path: List[ChildIndex]): Either[KeyError, ExtendedKey[Secp256k1Ecdsa]] =
     master(seed).flatMap(m => path.foldM(m)(child))
 }
