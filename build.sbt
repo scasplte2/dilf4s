@@ -43,14 +43,8 @@ lazy val commonSettings = Seq(
     CompilerPlugin.kindProjector,
     CompilerPlugin.betterMonadicFor
   ),
-  // Purity gate (see .workspace/crypto-architecture.md §1): main sources only; tests and
-  // benchmarks are the edge. Files in LegacyPurity are pending the signing/accumulator rewrite.
+  // Purity gate: main sources only; tests and benchmarks are the edge.
   Compile / compile / wartremoverErrors ++= PurityGate.warts,
-  wartremoverExcluded ++= LegacyPurity.files.map((LocalRootProject / baseDirectory).value / _),
-  Compile / scalafix / unmanagedSources := {
-    val legacy = LegacyPurity.files.map((LocalRootProject / baseDirectory).value / _).toSet
-    (Compile / unmanagedSources).value.filterNot(legacy)
-  },
   Test / scalafixConfig := Some((LocalRootProject / baseDirectory).value / ".scalafix-test.conf")
 )
 
@@ -83,19 +77,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(models, sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, signing, vrf, kes, benchmarks)
-
-// ─── Models: cross-cutting value types ───
-lazy val models = project.in(file("models"))
-  .settings(
-    name := "dilf4s-models",
-    commonSettings,
-    commonTestSettings,
-    libraryDependencies ++= Seq(
-      Libraries.cats,
-      Libraries.circeCore,
-    )
-  )
+  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, benchmarks)
 
 // ─── Shared Test Utilities ───
 lazy val sharedTest = project.in(file("shared-test"))
@@ -107,7 +89,6 @@ lazy val sharedTest = project.in(file("shared-test"))
       Libraries.weaverScalaCheck,
     )
   )
-  .dependsOn(models)
 
 // ─── Numerics: exact rational arithmetic ───
 lazy val numerics = project.in(file("numerics"))
@@ -140,7 +121,7 @@ lazy val core = project.in(file("core"))
       Libraries.scodecBits
     )
   )
-  .dependsOn(models, numerics, sharedTest % Test)
+  .dependsOn(numerics, sharedTest % Test)
 
 // ─── Crypto: typed signature schemes, VRF, KES, BLS, zk primitives ───
 lazy val crypto = project.in(file("crypto"))
@@ -177,7 +158,7 @@ lazy val accumulators = project.in(file("accumulators"))
       Libraries.circeParser,
     )
   )
-  .dependsOn(models, core, storage, sharedTest % Test)
+  .dependsOn(core, storage, sharedTest % Test)
 
 // ─── Storage: Store, VersionedStore (self-contained) ───
 lazy val storage = project.in(file("storage"))
@@ -204,55 +185,6 @@ lazy val storageRocksDb = project.in(file("storage-rocksdb"))
     libraryDependencies += Libraries.rocksDb
   )
   .dependsOn(storage % "compile->compile;test->test", sharedTest % Test)
-
-// ─── Signing: Ed25519, Extended Ed25519 ───
-lazy val signing = project.in(file("signing"))
-  .settings(
-    name := "dilf4s-signing",
-    commonSettings,
-    commonTestSettings,
-    libraryDependencies ++= Seq(
-      Libraries.cats,
-      Libraries.catsEffect,
-      Libraries.bc,
-      Libraries.curve25519Elisabeth,
-      Libraries.circeGeneric % Test,
-      Libraries.circeParser  % Test,
-    )
-  )
-  .dependsOn(models, sharedTest % Test)
-
-// ─── VRF: ECVRF-ED25519-SHA512-TAI ───
-lazy val vrf = project.in(file("vrf"))
-  .settings(
-    name := "dilf4s-vrf",
-    commonSettings,
-    commonTestSettings,
-    libraryDependencies ++= Seq(
-      Libraries.cats,
-      Libraries.catsEffect,
-      Libraries.curve25519Elisabeth,
-      Libraries.circeGeneric % Test,
-      Libraries.circeParser  % Test,
-    )
-  )
-  .dependsOn(models, signing, sharedTest % Test)
-
-// ─── KES: Forward-secure Key Evolving Signatures ───
-lazy val kes = project.in(file("kes"))
-  .settings(
-    name := "dilf4s-kes",
-    commonSettings,
-    commonTestSettings,
-    libraryDependencies ++= Seq(
-      Libraries.cats,
-      Libraries.catsEffect,
-      Libraries.bc,
-      Libraries.circeGeneric % Test,
-      Libraries.circeParser  % Test,
-    )
-  )
-  .dependsOn(models, signing, core, sharedTest % Test)
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll; scalafmtSbtCheck")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll; scalafmtSbt")

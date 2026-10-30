@@ -193,6 +193,19 @@ final class KesSum[H] private (val height: Int)(implicit H: Hasher[H]) {
       .leftMap { case KesError.Exhausted(_) => KesError.Exhausted(key.period); case e => e }
       .map(new Key(_, key.period + 1))
 
+  /** The key at `target` (at or after the key's period), evolving one period at a time. */
+  def evolveTo(key: Key, target: Long): Either[KesError, Key] = {
+    @scala.annotation.tailrec
+    def loop(k: Key): Either[KesError, Key] =
+      if (k.period == target) Right(k)
+      else
+        evolve(k) match {
+          case Right(next) => loop(next)
+          case left        => left
+        }
+    Either.cond(target >= key.period && target < totalPeriods, key, KesError.PeriodOutOfRange(target, totalPeriods)).flatMap(loop)
+  }
+
   def verify(vk: ByteVector, period: Long, message: ByteVector, signature: ByteVector): Either[KesError, Boolean] =
     for {
       _ <- Either.cond(vk.size == n, (), KesError.Malformed("KES verifying key", s"expected $n bytes, got ${vk.size}"))
@@ -295,6 +308,19 @@ final class KesProduct[H] private (val superHeight: Int, val subHeight: Int)(imp
         KesError.InconsistentKey("the super signature does not certify the sub tree")
       )
     } yield new Key(sup, sub, next, sig, period)
+  }
+
+  /** The key at `target` (at or after the key's period), evolving one period at a time. */
+  def evolveTo(key: Key, target: Long): Either[KesError, Key] = {
+    @scala.annotation.tailrec
+    def loop(k: Key): Either[KesError, Key] =
+      if (k.period == target) Right(k)
+      else
+        evolve(k) match {
+          case Right(next) => loop(next)
+          case left        => left
+        }
+    Either.cond(target >= key.period && target < totalPeriods, key, KesError.PeriodOutOfRange(target, totalPeriods)).flatMap(loop)
   }
 
   def verify(vk: ByteVector, period: Long, message: ByteVector, signature: ByteVector): Either[KesError, Boolean] =

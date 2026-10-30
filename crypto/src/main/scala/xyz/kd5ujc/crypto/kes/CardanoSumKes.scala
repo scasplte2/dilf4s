@@ -117,6 +117,19 @@ final class CardanoSumKes private (val depth: Int) {
     update(key.tree, depth, key.period).map(new Key(_, key.period + 1)).toRight(KesError.Exhausted(key.period))
 
   /** Verification of `signature` by root key `vk` at relative `period` (`verifyKES`). */
+  /** The key at `target` (at or after the key's period), evolving one period at a time. */
+  def evolveTo(key: Key, target: Long): Either[KesError, Key] = {
+    @scala.annotation.tailrec
+    def loop(k: Key): Either[KesError, Key] =
+      if (k.period == target) Right(k)
+      else
+        evolve(k) match {
+          case Right(next) => loop(next)
+          case left        => left
+        }
+    Either.cond(target >= key.period && target < totalPeriods, key, KesError.PeriodOutOfRange(target, totalPeriods)).flatMap(loop)
+  }
+
   def verify(vk: ByteVector, period: Long, message: ByteVector, signature: ByteVector): Either[KesError, Boolean] =
     for {
       _ <- Either.cond(vk.size == 32L, (), KesError.Malformed("KES verifying key", s"expected 32 bytes, got ${vk.size}"))

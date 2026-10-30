@@ -113,6 +113,19 @@ object MerkleKesSuite extends SimpleIOSuite with Checkers {
       .and(expect(kes.verify(kes.verifyingKey(k), 4, hex"", kes.sign(k, hex"").toOption.get).isLeft))
   }
 
+  pureTest("evolveTo jumps forward like repeated evolution and refuses the past") {
+    val prod = KesProduct[Blake2b256](2, 2).toOption.get
+    val k0 = prod.generate(ByteVector.fill(32)(3)).toOption.get
+    val stepwise = (1 to 9).foldLeft(k0)((k, _) => prod.evolve(k).toOption.get)
+    val sum = CardanoSumKes.Sum6
+    val c0 = sum.generate(ByteVector.fill(32)(3)).toOption.get
+    expect
+      .same(Right(stepwise.bytes), prod.evolveTo(k0, 9).map(_.bytes))
+      .and(expect(prod.evolveTo(stepwise, 3).isLeft, "backwards"))
+      .and(expect(prod.evolveTo(k0, 16).isLeft, "beyond the last period"))
+      .and(expect.same(Right(63L), sum.evolveTo(c0, 63).map(_.period)))
+  }
+
   pureTest("KES tags satisfy the tag grammar") {
     MerkleKes.Tags.foldMap(t => expect(DomainTag(t).isRight, t))
   }
