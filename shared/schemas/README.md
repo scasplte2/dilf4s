@@ -10,6 +10,10 @@ validate against the same files.
 | `merkle.cddl` | Merkle inclusion and consistency proofs (wire) | `docs/specs/merkle.md` §4 (embedded) |
 | `trie.cddl` | Patricia trie proofs (wire shape) | `docs/specs/trie.md` §5 (embedded) |
 | `poseidon.cddl` | Poseidon Merkle proofs (wire) | `docs/specs/zk.md` §4 (embedded) |
+| `merkle.cddl` (`merkle-log-state`) | the persistent Merkle log's state record | `docs/specs/merkle.md` §5 |
+| `storage.cddl` | versioned-store history records | `docs/specs/storage.md` (embedded) |
+| `bloom.cddl` | Bloom filter encoding | `docs/specs/bloom.md` (embedded) |
+| `crypto.cddl` | sizes of keys, signatures, VRF/KES/zk proofs | `docs/specs/signing.md` §4 (embedded) |
 | `*-vectors.cddl` | The conformance vector files in `shared/vectors/` | the matching spec |
 
 Every vector file in `shared/vectors/` must have a schema here. `VectorSchemasSuite` checks this, and checks that each

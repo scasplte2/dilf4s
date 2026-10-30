@@ -23,6 +23,17 @@ The data model has no floating-point numbers, no NaN or infinity, no negative ze
 
 **Integers and rationals are one numeric domain.** A number whose value is an integer is always the integer kind. The rational kind only ever holds non-integers.
 
+For other-language implementers, here is the same model in CDDL (RFC 8610). This block is **informative**: it is not
+in `shared/schemas`, because tags and recursion are outside the code generator's profile. The prose above, and the
+deterministic encoding rules in §2, are normative.
+
+```text
+canonical-value = null / bool / int / rational / tstr / bstr
+                / [* canonical-value]
+                / { * tstr => canonical-value }        ; unique keys, no null values
+rational = #6.30([numerator: int, denominator: uint])  ; denominator >= 2, gcd(|n|, d) = 1
+```
+
 ## 2. Encoding: deterministic CBOR profile
 
 Values encode with RFC 8949 CBOR under the following rules. Any other encoding of the same value is **invalid**, and decoders MUST reject it.

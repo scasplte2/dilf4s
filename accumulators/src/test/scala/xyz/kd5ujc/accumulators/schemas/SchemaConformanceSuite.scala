@@ -69,7 +69,8 @@ object SchemaConformanceSuite extends SimpleIOSuite {
       )
   }
 
-  private val schemas = List("merkle", "trie", "poseidon", "storage", "bloom").map(m => m -> read("shared", "schemas", s"$m.cddl"))
+  private val schemas =
+    List("merkle", "trie", "poseidon", "storage", "bloom", "crypto").map(m => m -> read("shared", "schemas", s"$m.cddl"))
 
   private val codecs: Map[String, Codec[?]] = Map(
     "merkle-inclusion"      -> MerkleInclusion.codec,
@@ -99,7 +100,14 @@ object SchemaConformanceSuite extends SimpleIOSuite {
   }
 
   pureTest("each spec embeds its schema verbatim") {
-    List("merkle" -> "merkle.md", "trie" -> "trie.md", "poseidon" -> "zk.md", "storage" -> "storage.md", "bloom" -> "bloom.md").foldMap {
+    List(
+      "merkle"   -> "merkle.md",
+      "trie"     -> "trie.md",
+      "poseidon" -> "zk.md",
+      "storage"  -> "storage.md",
+      "bloom"    -> "bloom.md",
+      "crypto"   -> "signing.md"
+    ).foldMap {
       case (m, spec) =>
         val schema = read("shared", "schemas", s"$m.cddl").trim
         val blocks = "(?s)```cddl\\n(.*?)```".r.findAllMatchIn(read("docs", "specs", spec)).map(_.group(1).trim).toList

@@ -126,7 +126,7 @@ lazy val crypto = project.in(file("crypto"))
       Libraries.catsKernelLaws % Test
     )
   )
-  .dependsOn(core, sharedTest % Test)
+  .dependsOn(core, models % Test, sharedTest % Test)
 
 // ─── Accumulators: Merkle, MPT, Verkle (self-contained) ───
 lazy val accumulators = project.in(file("accumulators"))

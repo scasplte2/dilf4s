@@ -1,0 +1,52 @@
+; dilf4s cryptographic byte strings: their sizes (docs/specs/signing.md, vrf.md, kes.md, zk.md). Normative for size;
+; the internal layout and validity rules (curve membership, canonical scalars, low-S, ...) are in the specs.
+
+; Ed25519 (RFC 8032; ZIP-215 verification)
+ed25519-signing-key = bytes .size 32
+ed25519-verifying-key = bytes .size 32
+ed25519-signature = bytes .size 64
+
+; Ed25519-BIP32 (Icarus / CIP-0003): kL || kR, and an extended key's chain code
+ed25519-bip32-signing-key = bytes .size 64
+chain-code = bytes .size 32
+
+; ECDSA over P-256 and secp256k1: compressed SEC1 keys, compact low-S r || s
+ecdsa-signing-key = bytes .size 32
+ecdsa-verifying-key = bytes .size 33
+ecdsa-signature = bytes .size 64
+
+; BIP-340 and dilf4s tagged Schnorr over secp256k1: x-only keys
+schnorr-signing-key = bytes .size 32
+schnorr-verifying-key = bytes .size 32
+schnorr-signature = bytes .size 64
+bip340-message = bytes .size 32
+
+; ristretto255 Schnorr (FROST ciphersuite)
+ristretto255-signing-key = bytes .size 32
+ristretto255-verifying-key = bytes .size 32
+ristretto255-signature = bytes .size 64
+
+; BLS12-381, Ethereum PoP profile (keys in G1, signatures in G2, compressed)
+bls-signing-key = bytes .size 32
+bls-verifying-key = bytes .size 48
+bls-signature = bytes .size 96
+
+; ECVRF (RFC 9381 TAI and ELL2: 32-byte seed keys; Cardano draft-03: 64-byte seed || pk)
+vrf-signing-key = bytes .size 32
+vrf-draft03-signing-key = bytes .size 64
+vrf-verifying-key = bytes .size 32
+vrf-proof = bytes .size 80
+vrf-output = bytes .size 64
+
+; Cardano Sum6KES (the Praos hot key); other depths are 32 + 96 d (key) and 64 + 64 d (signature)
+sum6-kes-signing-key = bytes .size 608
+sum6-kes-verifying-key = bytes .size 32
+sum6-kes-signature = bytes .size 448
+
+; BIP-39 entropy (16, 20, 24, 28 or 32 bytes; the step of 4 is checked by the domain)
+bip39-entropy = bytes .size (16..32)
+
+; Groth16 over BN254 (EIP-197 layout) and the SP1 v6.1.0 wrapper
+groth16-proof = bytes .size 256
+sp1-proof = bytes .size 356
+sp1-program-vkey = bytes .size 32
