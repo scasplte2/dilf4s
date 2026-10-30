@@ -2,7 +2,7 @@ package xyz.kd5ujc.jlvm
 
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
 import xyz.kd5ujc.models.{jlvm => W}
 
@@ -68,7 +68,7 @@ object Parser {
 
   def parse(json: String, mode: Mode = Mode.Strict): Either[JlvmError, Program] =
     for {
-      _    <- CanonicalJson.parse(json).leftMap(e => JlvmError.Malformed(e.toString))
+      _    <- CanonicalJson.parse(json).leftMap(canonicalError)
       j    <- io.circe.parser.parse(json).leftMap(e => JlvmError.Malformed(e.message))
       expr <- fromJson(j, mode).map(e => if (mode == Mode.Lenient) bindLets(e, Set.empty) else e)
       prog <- Program.from(expr)
@@ -294,7 +294,13 @@ object Parser {
     Op.values.find(_.wire == name).toRight(JlvmError.Malformed(s"unknown operation \"$name\""))
 
   def canonical(p: Program): Either[JlvmError, CanonicalValue] =
-    W.JlvmProgram.codec.encode(W.JlvmProgram(1, toWire(p.expr))).leftMap(e => JlvmError.Malformed(e.toString))
+    W.JlvmProgram.codec.encode(W.JlvmProgram(1, toWire(p.expr))).leftMap(canonicalError)
+
+  /** A depth bound is a [[JlvmError.Limit]], however it is reached; anything else malformed is [[JlvmError.Malformed]]. */
+  private def canonicalError(e: CanonicalError): JlvmError = e match {
+    case CanonicalError.DepthExceeded(n) => JlvmError.Limit(s"the program nests deeper than its canonical form allows ($n levels)")
+    case other                           => JlvmError.Malformed(other.toString)
+  }
 
   def fromCanonical(v: CanonicalValue): Either[JlvmError, Program] =
     W.JlvmProgram.codec.decoder.decode(v).leftMap(e => JlvmError.Malformed(e.message)).flatMap(w => fromWire(w.expr).flatMap(Program.from))
@@ -302,7 +308,7 @@ object Parser {
   def encode(p: Program): Either[JlvmError, ByteVector] = canonical(p).map(Cbor.encode)
 
   def decode(bytes: ByteVector): Either[JlvmError, Program] =
-    Cbor.decode(bytes).leftMap(e => JlvmError.Malformed(e.toString)).flatMap(fromCanonical)
+    Cbor.decode(bytes).leftMap(canonicalError).flatMap(fromCanonical)
 
   /** A program's identity: the tagged hash of its canonical form. */
   def id[H: Hasher](p: Program): Either[JlvmError, Digest[H]] =

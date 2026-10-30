@@ -356,11 +356,20 @@ object EvaluatorSuite extends IOSuite with Checkers {
       .and(expect.same(1, outcomes.distinct.size))
   }
 
-  check("programs nest at most Program.MaxDepth deep, checked without recursion") {
-    val deep = (1 to 100000).foldLeft[Expr](Expr.Lit(CNull))((e, _) => Expr.Apply(Op.Not, Vector(e)))
-    val legal = (1 to Program.MaxDepth).foldLeft[Expr](Expr.Lit(CNull))((e, _) => Expr.Apply(Op.Not, Vector(e)))
-    expect(Program.from(deep).isLeft, "too deep")
-      .and(expect.same(Right(False), Program.from(legal).flatMap(p => summon[Jlvm].evaluate(p, CNull, Map.empty, Config()).result)))
+  check("programs nest as deep as their canonical form allows (127 operations), checked without recursion; deeper is Limit") {
+    def nots(n: Int) = (1 to n).foldLeft[Expr](Expr.Lit(CNull))((e, _) => Expr.Apply(Op.Not, Vector(e)))
+    def isLimit(r: Either[JlvmError, ?]) = r match {
+      case Left(JlvmError.Limit(_)) => true
+      case _                        => false
+    }
+    val legal = Program.from(nots(127))
+    val text = Parser.render(legal.toOption.get).map(_.noSpaces)
+    expect(isLimit(Program.from(nots(100000))), "far too deep")
+      .and(expect(isLimit(Program.from(nots(128))), "one operation past the canonical bound"))
+      .and(expect(legal.flatMap(Parser.id[xyz.kd5ujc.core.hash.Sha256]).isRight, "the deepest legal program has an identity"))
+      .and(expect.same(legal, text.flatMap(Parser.parse(_))))
+      .and(expect(isLimit(Parser.parse("[" * 300 + "]" * 300)), "too-deep text is Limit too"))
+      .and(expect.same(Right(True), legal.flatMap(p => summon[Jlvm].evaluate(p, CNull, Map.empty, Config()).result)))
   }
 
   // ---- the two drivers agree

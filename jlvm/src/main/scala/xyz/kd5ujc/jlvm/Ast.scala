@@ -194,8 +194,11 @@ object Program {
   /**
    * Checks the depth bound and the shapes no surface text can produce, so every program has exactly one surface form:
    * a spread names a [[Op.Variadic]] operation and its argument is not an array expression (that is an argument list).
+   * Then requires the canonical form to fit the value depth bound, so every program has an identity and an exact
+   * rendering: an operation takes two canonical levels, so about 127 nest, fewer around deep literals.
    */
-  def from(expr: Expr): Either[JlvmError, Program] = check(List(expr -> 0)).toLeft(new Program(expr))
+  def from(expr: Expr): Either[JlvmError, Program] =
+    check(List(expr -> 0)).toLeft(new Program(expr)).flatMap(p => Parser.canonical(p).map(_ => p))
 
   /** A worklist walk, so that checking an unbounded tree cannot itself overflow the stack. */
   @tailrec

@@ -18,7 +18,7 @@ exactly five things:
 ## 1. Programs
 
 **Surface.** Programs are written as JSON. The text must first pass `CanonicalJson.parse`
-(`canonical-encoding.md` §6), which bounds depth and requires exact numbers. Then:
+(`canonical-encoding.md` §3), which bounds depth and requires exact numbers. Then:
 
 - **Objects.**
   - A single-key object whose key is an operation of this version is that operation. Its value gives the arguments:
@@ -59,8 +59,7 @@ An operation metakit had but v1 removed is a parse error in both modes, and the 
 - `mpt_prefix_verify` becomes `trie_prefix_verify`;
 - `noop` was internal to metakit's evaluator.
 
-The `Lenient` mode It still
-recognises the keywords `object` and `literal` and the `_` prefix, so that migration is idempotent; no program in the
+The `Lenient` mode still recognises the keywords `object` and `literal` and the `_` prefix, so that migration is idempotent; no program in the
 ottochain or metakit corpus uses `object` as a data key. It exists only to migrate older programs: `Parser.migrate` reads a program leniently and writes it back in the strict surface
 (`Parser.render`), emitting `{"object": ...}` for each single-key map expression. Rendering is exact: parsing the
 rendered text gives the same program. A literal holding `0x`-hex text, or a non-terminating rational, has no surface
@@ -69,8 +68,12 @@ form and is an error.
 **Canonical form and identity.**
 - A program is the tagged syntax tree of `shared/schemas/jlvm.cddl`, not its JSON text.
 - Its identity is `taggedHash_H("dilf4s/jlvm/program/v1", cbor(program))` (`canonical-encoding.md` §4).
-- Expressions nest at most 256 deep: an operation's arguments, an array's items and a map's fields are each one level
-  deeper.
+- **Depth.** A program's canonical form must fit the value depth bound of `canonical-encoding.md`, 256 levels, so
+  every program has an identity and an exact rendering. An operation takes two levels (its map and its argument
+  array), so at most 127 operations nest, and fewer around deep literals.
+  - Text, structure or canonical form too deep is `Limit`, however the bound is reached.
+  - metakit counted evaluated nodes at run time, so an untaken deep branch never counted. Here the program is bounded
+    before it runs (§8 #22).
 
 **Compilation.** Before evaluation, a program is checked into its evaluation form. These are parse errors
 (`Malformed`), reported with no gas used:
@@ -504,3 +507,4 @@ A property test checks that all three agree on value, error, gas and warnings, a
 | 19 | A BLS signature of the right length that does not decode is `false`. | A `Crypto` error, as for every other scheme: malformed input is an error, a well-formed invalid proof is `false` (§3). | One rule for every verifier. |
 | 20 | An array headed by an operation's name is a call (`["+", 1, 2]`); `let` names are read with plain paths. | A parse error in each case (§1, §4.2); `Parser.migrate` rewrites both. | metakit programs fail loudly, rather than silently reading data. |
 | 21 | `prove_dlog_verify`, `prove_dhtuple_verify`, `mpt_verify`, `mpt_prefix_verify`, `smt_verify`, `noop`. | Removed; the parse error names the replacement (§1). | Replaced by `sigma_verify` (§8 #14) and the binary trie (`trie.md`). `noop` was internal. |
+| 22 | Evaluation depth is capped at run time (about 255 evaluated levels; an untaken branch never counts). | The program is bounded before it runs: its canonical form must fit 256 levels (§1), about 127 nested operations. Every depth violation is `Limit`. | Every program has an identity and an exact rendering; depth is known before any gas is spent. |
