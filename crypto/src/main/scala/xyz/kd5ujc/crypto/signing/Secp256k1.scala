@@ -228,7 +228,7 @@ object Secp256k1 {
   }
 
   /**
-   * Sanctioned FFI boundary (`.workspace/crypto-architecture.md` §1): libsecp256k1 uses standard RFC 6979 nonces only
+   * The one sanctioned FFI boundary: libsecp256k1 uses standard RFC 6979 nonces only
    * when `ndata` is absent, which the Kotlin binding expresses as `null`. This is the one `null` in dilf4s.
    */
   private[signing] object Ffi {

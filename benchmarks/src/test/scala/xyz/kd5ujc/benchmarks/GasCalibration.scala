@@ -50,6 +50,13 @@ object GasCalibration extends IOApp {
   private def text(n:  Int): CanonicalValue = t(("ab c" * (n / 4 + 1)).take(n))
   private def bytes(n: Int): CanonicalValue = CBytes(ByteVector.fill(n.toLong)(0x5a))
 
+  /** A BN254 scalar-field element, 32 bytes big-endian: 250 bits, so below `r`. */
+  private def fe(seed: Int): CanonicalValue = CBytes(ByteVector(word(250, seed).toByteArray).padLeft(32))
+  private def fes(n:   Int): Vector[CanonicalValue] = Vector.tabulate(n)(i => fe(i + 1))
+
+  /** `pmt_verify` with `depth` siblings: the root does not match, but every level is hashed regardless. */
+  private def pmt(depth: Int): Vector[CanonicalValue] = Vector(fe(1000), fe(1001), CInt(BigInt(5)), a(fes(depth)))
+
   /** Microseconds per call, from batches of at least 200ms, after a warm-up batch. */
   private def micros(f: () => Long): IO[Double] = {
     def batch(k: Int): IO[(Int, FiniteDuration, Long)] =
@@ -138,7 +145,9 @@ object GasCalibration extends IOApp {
     Case(Op.IntToBytes, Vector(int(64, 1), CInt(8)), Vector(int(4000, 1), CInt(512))),
     mk(Op.Sha256, one(bytes, 32, 64000)),
     mk(Op.Sha3_256, one(bytes, 32, 64000)),
-    mk(Op.Blake2b256, one(bytes, 32, 64000))
+    mk(Op.Blake2b256, one(bytes, 32, 64000)),
+    Case(Op.Poseidon, fes(1), fes(4), "1 and 4 inputs; the cost is convex in the width, so the fit bounds 2 and 3"),
+    Case(Op.PmtVerify, pmt(8), pmt(128), "8 and 128 siblings")
   )
 
   /** Rationals: the gcd that normalises them is quadratic in their size. */

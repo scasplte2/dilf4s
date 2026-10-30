@@ -9,6 +9,10 @@ import java.lang.Math.unsignedMultiplyHigh
  * Multiplication is CIOS Montgomery multiplication (Koç, Acar and Kaliski). Every value is fully reduced, below `r`, so
  * equal elements have equal limbs.
  *
+ * The helpers that produce several limbs pass them to an inline continuation instead of returning a tuple: the compiler
+ * substitutes the continuation's body, so intermediate limbs stay in local `Long`s and an operation allocates only its
+ * result.
+ *
  * Variable time: for public data only, as [[Poseidon]].
  */
 final private[hash] case class FrMont(l0: Long, l1: Long, l2: Long, l3: Long) {
@@ -22,32 +26,42 @@ final private[hash] case class FrMont(l0: Long, l1: Long, l2: Long, l3: Long) {
     val c1 = carry3(s1, l1, c0)
     val s2 = l2 + that.l2 + c1
     val c2 = carry3(s2, l2, c1)
-    val s3 = l3 + that.l3 + c2
     // r < 2^254, so the sum of two reduced elements is below 2^255: no carry out of the top limb
-    reduce(FrMont(s0, s1, s2, s3))
+    reduced(s0, s1, s2, l3 + that.l3 + c2)
   }
 
-  /** CIOS: four rounds, each adding `this · b_i` and then a multiple of `r` that clears the low limb. */
-  def *(that: FrMont): FrMont = {
-    val t = round(round(round(round(Acc(0L, 0L, 0L, 0L, 0L), that.l0), that.l1), that.l2), that.l3)
-    reduce(FrMont(t.t0, t.t1, t.t2, t.t3))
-  }
+  /**
+   * CIOS: four rounds, each adding `this · b_i` and then a multiple of `r` that clears the low limb. Since `r`'s top
+   * limb is below `2^63 - 1`, the accumulator never needs a fifth word ("no-carry" CIOS: Botrel and El Housni, EdMSM,
+   * eprint 2022/1400).
+   */
+  def *(that: FrMont): FrMont =
+    round(0L, 0L, 0L, 0L, that.l0) { (a0, a1, a2, a3) =>
+      round(a0, a1, a2, a3, that.l1) { (b0, b1, b2, b3) =>
+        round(b0, b1, b2, b3, that.l2) { (c0, c1, c2, c3) =>
+          round(c0, c1, c2, c3, that.l3)(reduced)
+        }
+      }
+    }
 
-  inline private def round(t: Acc, b: Long): Acc = {
-    val w0 = mac(t.t0, l0, b, 0L)
-    val w1 = mac(t.t1, l1, b, w0.hi)
-    val w2 = mac(t.t2, l2, b, w1.hi)
-    val w3 = mac(t.t3, l3, b, w2.hi)
-    val top = t.t4 + w3.hi
-    val top1 = carry(top, t.t4)
-    val m = w0.lo * NInv
-    val r0 = mac(w0.lo, m, N0, 0L)
-    val r1 = mac(w1.lo, m, N1, r0.hi)
-    val r2 = mac(w2.lo, m, N2, r1.hi)
-    val r3 = mac(w3.lo, m, N3, r2.hi)
-    val t3 = top + r3.hi
-    Acc(r1.lo, r2.lo, r3.lo, t3, top1 + carry(t3, top))
-  }
+  /** One round over the accumulator `t0..t3`; passes the next accumulator to `k`. */
+  inline private def round[A](t0: Long, t1: Long, t2: Long, t3: Long, b: Long)(inline k: (Long, Long, Long, Long) => A): A =
+    mac(t0, l0, b, 0L) { (a0, u0) =>
+      val m = u0 * NInv
+      mac(u0, m, N0, 0L) { (c0, _) =>
+        mac(t1, l1, b, a0) { (a1, u1) =>
+          mac(u1, m, N1, c0) { (c1, v0) =>
+            mac(t2, l2, b, a1) { (a2, u2) =>
+              mac(u2, m, N2, c1) { (c2, v1) =>
+                mac(t3, l3, b, a2) { (a3, u3) =>
+                  mac(u3, m, N3, c2)((c3, v2) => k(v0, v1, v2, c3 + a3))
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 
   def toBigInt: BigInt = {
     val plain = this * FrMont(1L, 0L, 0L, 0L)
@@ -75,9 +89,6 @@ private[hash] object FrMont {
 
   private def unsigned(l: Long): BigInt = if (l >= 0) BigInt(l) else BigInt(l) + (BigInt(1) << 64)
 
-  final private case class Wide(hi: Long, lo: Long)
-  final private case class Acc(t0: Long, t1: Long, t2: Long, t3: Long, t4: Long)
-
   /** Whether `sum = a + b` carried out of 64 bits. */
   inline private def carry(sum: Long, a: Long): Long = if (compareUnsigned(sum, a) < 0) 1L else 0L
 
@@ -85,40 +96,36 @@ private[hash] object FrMont {
   inline private def carry3(sum: Long, a: Long, c: Long): Long =
     if (compareUnsigned(sum, a) < 0 || (c == 1L && sum == a)) 1L else 0L
 
-  /** `t + a · b + c` as 128 bits, every input below 2^64: the result fits. */
-  inline private def mac(t: Long, a: Long, b: Long, c: Long): Wide = {
+  /** `t + a · b + c` as 128 bits, every input below 2^64 so the result fits: `k(high, low)`. */
+  inline private def mac[A](t: Long, a: Long, b: Long, c: Long)(inline k: (Long, Long) => A): A = {
     val lo = a * b
     val hi = unsignedMultiplyHigh(a, b)
     val lo1 = lo + t
     val hi1 = hi + carry(lo1, lo)
     val lo2 = lo1 + c
-    Wide(hi1 + carry(lo2, lo1), lo2)
+    k(hi1 + carry(lo2, lo1), lo2)
   }
 
-  private def geqModulus(x: FrMont): Boolean = {
-    def cmp(a: Long, b: Long) = compareUnsigned(a, b)
-    val c3 = cmp(x.l3, N3)
+  private def geqModulus(x0: Long, x1: Long, x2: Long, x3: Long): Boolean = {
+    val c3 = compareUnsigned(x3, N3)
     if (c3 != 0) c3 > 0
     else {
-      val c2 = cmp(x.l2, N2)
+      val c2 = compareUnsigned(x2, N2)
       if (c2 != 0) c2 > 0
       else {
-        val c1 = cmp(x.l1, N1)
-        if (c1 != 0) c1 > 0 else cmp(x.l0, N0) >= 0
+        val c1 = compareUnsigned(x1, N1)
+        if (c1 != 0) c1 > 0 else compareUnsigned(x0, N0) >= 0
       }
     }
   }
 
-  /** `x - r` if `x >= r`: every operation's result is below `2r`. */
-  private def reduce(x: FrMont): FrMont =
-    if (!geqModulus(x)) x
+  /** `x - r` if `x >= r`, else `x`: every operation's result is below `2r`. */
+  private def reduced(x0: Long, x1: Long, x2: Long, x3: Long): FrMont =
+    if (!geqModulus(x0, x1, x2, x3)) FrMont(x0, x1, x2, x3)
     else {
-      val d0 = x.l0 - N0
-      val b0 = if (compareUnsigned(x.l0, N0) < 0) 1L else 0L
-      val d1 = x.l1 - N1 - b0
-      val b1 = if (compareUnsigned(x.l1, N1) < 0 || (b0 == 1L && x.l1 == N1)) 1L else 0L
-      val d2 = x.l2 - N2 - b1
-      val b2 = if (compareUnsigned(x.l2, N2) < 0 || (b1 == 1L && x.l2 == N2)) 1L else 0L
-      FrMont(d0, d1, d2, x.l3 - N3 - b2)
+      val b0 = if (compareUnsigned(x0, N0) < 0) 1L else 0L
+      val b1 = if (compareUnsigned(x1, N1) < 0 || (b0 == 1L && x1 == N1)) 1L else 0L
+      val b2 = if (compareUnsigned(x2, N2) < 0 || (b1 == 1L && x2 == N2)) 1L else 0L
+      FrMont(x0 - N0, x1 - N1 - b0, x2 - N2 - b1, x3 - N3 - b2)
     }
 }

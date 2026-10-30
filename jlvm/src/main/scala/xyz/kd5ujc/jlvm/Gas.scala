@@ -215,10 +215,11 @@ object GasSchedule {
       BlsVerify          -> c(233000, 1, Weight),
       BlsAggregateVerify -> c(230000, 25000, Elements),
       // measured at 150 gas/us: BN254 on gnark, a pairing ~480us plus ~25k gas a pair (weight ~195), Groth16 ~1.45ms;
-      // ecvrf ~1ms. Close to EIP-1108. Poseidon (optimised form, Montgomery limbs) ~33us for one input, ~46us for two,
-      // ~55us for three, ~84us for four; pmt_verify ~63us a level, whose elements are its siblings plus three.
-      Poseidon      -> c(2500, 2600, Elements),
-      PmtVerify     -> c(1000, 9800, Elements),
+      // ecvrf ~1ms. Close to EIP-1108. Through GasCalibration, Poseidon ~36us for one input and ~107-114us for four
+      // (convex in the width, so the linear fit bounds two and three); pmt_verify ~73us a level, whose elements are its
+      // siblings plus three.
+      Poseidon      -> c(1800, 3900, Elements),
+      PmtVerify     -> c(1000, 11000, Elements),
       Groth16Verify -> c(218000, 1, Weight),
       EcvrfVerify   -> c(150000, 1, Weight),
       Bn254Add      -> c(150),

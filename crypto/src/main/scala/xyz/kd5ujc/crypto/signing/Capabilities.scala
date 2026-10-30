@@ -8,7 +8,7 @@ import cats.syntax.all._
 import scodec.bits.ByteVector
 
 /**
- * Small, orthogonal capabilities (`.workspace/crypto-architecture.md` §4). Consumers ask only for what they use, so no
+ * Small, orthogonal capabilities. Consumers ask only for what they use, so no
  * curve or library type reaches higher layers. Deterministic operations are pure functions; only randomness is in `F`.
  */
 trait Verifier[S] {
