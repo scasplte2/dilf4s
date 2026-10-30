@@ -1,5 +1,7 @@
 package xyz.kd5ujc.jlvm
 
+import scala.annotation.tailrec
+
 import xyz.kd5ujc.core.canonical.CanonicalValue
 
 /**
@@ -155,11 +157,36 @@ enum Expr {
   case Obj(fields: scala.collection.immutable.Map[String, Expr])
 }
 
-/** A program: language version 1 and its expression. */
-final case class Program(expr: Expr) {
+/**
+ * A program: language version 1 and its expression, nested at most [[Program.MaxDepth]] deep. The bound is checked
+ * once, here, so everything that walks a program (compilation, hashing, rendering) may recurse on its structure.
+ */
+final case class Program private (expr: Expr) {
   def version: Int = Program.Version
 }
 
 object Program {
   val Version: Int = 1
+
+  /** Expression nesting: an operation's arguments, an array's items and a map's fields are one level deeper. */
+  val MaxDepth: Int = 256
+
+  def from(expr: Expr): Either[JlvmError, Program] =
+    Either.cond(
+      within(List(expr -> 0)),
+      new Program(expr),
+      JlvmError.Limit(s"the program nests deeper than $MaxDepth")
+    )
+
+  /** A worklist walk, so that checking an unbounded tree cannot itself overflow the stack. */
+  @tailrec
+  private def within(todo: List[(Expr, Int)]): Boolean =
+    todo match {
+      case Nil                          => true
+      case (_, d) :: _ if d > MaxDepth  => false
+      case (Expr.Apply(_, as), d) :: tl => within(as.toList.map(_ -> (d + 1)) ::: tl)
+      case (Expr.Arr(is), d) :: tl      => within(is.toList.map(_ -> (d + 1)) ::: tl)
+      case (Expr.Obj(fs), d) :: tl      => within(fs.values.toList.map(_ -> (d + 1)) ::: tl)
+      case _ :: tl                      => within(tl)
+    }
 }

@@ -42,7 +42,8 @@ object Parser {
       _    <- CanonicalJson.parse(json).leftMap(e => JlvmError.Malformed(e.toString))
       j    <- io.circe.parser.parse(json).leftMap(e => JlvmError.Malformed(e.message))
       expr <- fromJson(j, mode)
-    } yield Program(expr)
+      prog <- Program.from(expr)
+    } yield prog
 
   /** Depth is bounded by the canonical parser that validated the text (256), so this recursion is bounded too. */
   def fromJson(j: Json, mode: Mode = Mode.Strict): Either[JlvmError, Expr] =
@@ -117,7 +118,7 @@ object Parser {
     W.JlvmProgram.codec.encode(W.JlvmProgram(1, toWire(p.expr))).leftMap(e => JlvmError.Malformed(e.toString))
 
   def fromCanonical(v: CanonicalValue): Either[JlvmError, Program] =
-    W.JlvmProgram.codec.decoder.decode(v).leftMap(e => JlvmError.Malformed(e.message)).flatMap(w => fromWire(w.expr).map(Program(_)))
+    W.JlvmProgram.codec.decoder.decode(v).leftMap(e => JlvmError.Malformed(e.message)).flatMap(w => fromWire(w.expr).flatMap(Program.from))
 
   def encode(p: Program): Either[JlvmError, ByteVector] = canonical(p).map(Cbor.encode)
 

@@ -72,17 +72,52 @@ object Values {
 
   def bool(b: Boolean): CanonicalValue = CBool(b)
 
-  def bounded(op: Op, v: CanonicalValue): Either[JlvmError, CanonicalValue] =
-    Either.cond(v.weight <= MaxWeight, v, JlvmError.Limit(s"${op.wire}: the result exceeds weight $MaxWeight"))
+  def bounded(op: Op, v: CanonicalValue): Either[JlvmError, CanonicalValue] = bounded(op.wire, v)
+
+  /** `where` names the construct in error messages: an operation's wire name, or `array` / `object` for literals. */
+  def bounded(where: String, v: CanonicalValue): Either[JlvmError, CanonicalValue] =
+    Either.cond(v.weight <= MaxWeight, v, JlvmError.Limit(s"$where: the result exceeds weight $MaxWeight"))
 
   def text(op: Op, s: String): Either[JlvmError, CanonicalValue] =
     CanonicalValue.text(s).leftMap(_ => JlvmError.Type(op.wire, "the result is not well-formed text")).flatMap(bounded(op, _))
 
-  def array(op: Op, vs: Vector[CanonicalValue]): Either[JlvmError, CanonicalValue] =
-    CanonicalValue.array(vs).leftMap(e => JlvmError.Limit(s"${op.wire}: $e")).flatMap(bounded(op, _))
+  def array(op: Op, vs: Vector[CanonicalValue]): Either[JlvmError, CanonicalValue] = array(op.wire, vs)
 
-  def map(op: Op, entries: Iterable[(String, CanonicalValue)]): Either[JlvmError, CanonicalValue] =
-    CanonicalValue.map(entries).leftMap(e => JlvmError.Limit(s"${op.wire}: $e")).flatMap(bounded(op, _))
+  def array(where: String, vs: Vector[CanonicalValue]): Either[JlvmError, CanonicalValue] =
+    CanonicalValue.array(vs).leftMap(e => JlvmError.Limit(s"$where: $e")).flatMap(bounded(where, _))
+
+  def map(op: Op, entries: Iterable[(String, CanonicalValue)]): Either[JlvmError, CanonicalValue] = map(op.wire, entries)
+
+  def map(where: String, entries: Iterable[(String, CanonicalValue)]): Either[JlvmError, CanonicalValue] =
+    CanonicalValue.map(entries).leftMap(e => JlvmError.Limit(s"$where: $e")).flatMap(bounded(where, _))
+
+  /**
+   * The value at `path`: an object segment is a key; an array segment is a decimal index without leading zeros. Anything
+   * absent is null.
+   */
+  @tailrec
+  def at(v: CanonicalValue, path: Vector[String]): CanonicalValue =
+    (v, path) match {
+      case (_, seg +: rest) =>
+        v match {
+          case CMap(m) =>
+            m.get(seg) match {
+              case Some(x) => at(x, rest)
+              case None    => CNull
+            }
+          case CArray(vs) =>
+            index(seg).filter(_ < vs.size) match {
+              case Some(i) => at(vs(i), rest)
+              case None    => CNull
+            }
+          case _ => CNull
+        }
+      case _ => v
+    }
+
+  private val Decimal = "0|[1-9][0-9]{0,8}".r
+
+  private def index(seg: String): Option[Int] = Option.when(Decimal.matches(seg))(seg.toInt)
 
   def bytesValue(op: Op, b: ByteVector): Either[JlvmError, CanonicalValue] = bounded(op, CBytes(b))
 

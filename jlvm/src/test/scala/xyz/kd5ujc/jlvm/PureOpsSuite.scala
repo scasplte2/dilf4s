@@ -284,12 +284,15 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
     )
   }
 
-  pureTest("case mapping is Unicode full mapping, locale-independent; trim strips Unicode white space") {
+  // GARAY CAPITAL LETTER A (U+10D50) gained a lowercase mapping in Unicode 16.0: if it maps, the JDK has moved past the
+  // pinned Unicode 15.0 and case mapping results may change (docs/specs/jlvm.md §2).
+  pureTest("case mapping is Unicode 15.0 full mapping, locale-independent; trim strips Unicode white space") {
     expect
       .same(ok(t("STRASSE")), run(Op.Upper, t("straße")))
       .and(expect.same(ok(t("i")), run(Op.Lower, t("I"))))
       .and(expect.same(ok(t("x")), run(Op.Trim, t(" x "))))
       .and(expect.same(ok(t("x\ufeff")), run(Op.Trim, t("\u0085x\ufeff"))))
+      .and(expect.same(ok(t("\ud803\udd50")), run(Op.Lower, t("\ud803\udd50"))))
       .and(expect(isType(run(Op.Upper, i(1))), "text only"))
   }
 

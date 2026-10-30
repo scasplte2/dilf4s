@@ -50,9 +50,10 @@ enum SizeUnit {
 final case class GasSchedule(
   version:        Int,
   ops:            Map[Op, OpCost],
+  literal:        Gas,
+  element:        Gas,
   varAccess:      Gas,
   perPathSegment: Gas,
-  depthPenalty:   Gas,
   callbackRun:    Gas
 ) {
   def cost(op: Op): OpCost = ops.getOrElse(op, OpCost(Gas(1), Gas.Zero, SizeUnit.None))
@@ -167,9 +168,10 @@ object GasSchedule {
       TriePrefixVerify        -> c(1000, 800, Elements),
       TrieRangeVerify         -> c(1000, 800, Elements)
     ),
+    literal = Gas(1),
+    element = Gas(1),
     varAccess = Gas(2),
     perPathSegment = Gas(1),
-    depthPenalty = Gas(5),
     callbackRun = Gas(1)
   )
 
