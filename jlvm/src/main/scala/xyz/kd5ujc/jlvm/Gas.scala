@@ -129,7 +129,7 @@ object GasSchedule {
    */
   val V1: GasSchedule = GasSchedule(
     version = 1,
-    // Calibrated at 150 gas/us on the direct driver (benchmarks: GasCalibration; .workspace/pricing), the rate the
+    // Calibrated at 150 gas/us on the direct driver (benchmarks: GasCalibration), the rate the
     // cryptographic operations are priced at. A per-unit rate of 1 is the floor for work that grows with its input,
     // even where the measured rate is lower.
     ops = scala.collection.immutable.Map(
@@ -214,11 +214,11 @@ object GasSchedule {
       Bip340Verify       -> c(8000, 1, Weight),
       BlsVerify          -> c(233000, 1, Weight),
       BlsAggregateVerify -> c(230000, 25000, Elements),
-      // measured at 150 gas/us (.workspace/pricing): BN254 on gnark, a pairing ~480us plus ~25k gas a pair (weight
-      // ~195), Groth16 ~1.45ms; ecvrf ~1ms. Close to EIP-1108. Poseidon (Montgomery limbs) ~37us for one input,
-      // ~62us for two, ~170us for four; pmt_verify ~78us a level.
-      Poseidon      -> c(500, 6300, Elements),
-      PmtVerify     -> c(1000, 8500, Elements),
+      // measured at 150 gas/us: BN254 on gnark, a pairing ~480us plus ~25k gas a pair (weight ~195), Groth16 ~1.45ms;
+      // ecvrf ~1ms. Close to EIP-1108. Poseidon (optimised form, Montgomery limbs) ~33us for one input, ~46us for two,
+      // ~55us for three, ~84us for four; pmt_verify ~63us a level, whose elements are its siblings plus three.
+      Poseidon      -> c(2500, 2600, Elements),
+      PmtVerify     -> c(1000, 9800, Elements),
       Groth16Verify -> c(218000, 1, Weight),
       EcvrfVerify   -> c(150000, 1, Weight),
       Bn254Add      -> c(150),

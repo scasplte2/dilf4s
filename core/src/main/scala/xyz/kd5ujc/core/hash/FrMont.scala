@@ -33,7 +33,7 @@ final private[hash] case class FrMont(l0: Long, l1: Long, l2: Long, l3: Long) {
     reduce(FrMont(t.t0, t.t1, t.t2, t.t3))
   }
 
-  private def round(t: Acc, b: Long): Acc = {
+  inline private def round(t: Acc, b: Long): Acc = {
     val w0 = mac(t.t0, l0, b, 0L)
     val w1 = mac(t.t1, l1, b, w0.hi)
     val w2 = mac(t.t2, l2, b, w1.hi)
@@ -79,14 +79,14 @@ private[hash] object FrMont {
   final private case class Acc(t0: Long, t1: Long, t2: Long, t3: Long, t4: Long)
 
   /** Whether `sum = a + b` carried out of 64 bits. */
-  private def carry(sum: Long, a: Long): Long = if (compareUnsigned(sum, a) < 0) 1L else 0L
+  inline private def carry(sum: Long, a: Long): Long = if (compareUnsigned(sum, a) < 0) 1L else 0L
 
   /** The carry out of `a + b + c`, `c` in {0, 1}, given `sum`. */
-  private def carry3(sum: Long, a: Long, c: Long): Long =
+  inline private def carry3(sum: Long, a: Long, c: Long): Long =
     if (compareUnsigned(sum, a) < 0 || (c == 1L && sum == a)) 1L else 0L
 
   /** `t + a · b + c` as 128 bits, every input below 2^64: the result fits. */
-  private def mac(t: Long, a: Long, b: Long, c: Long): Wide = {
+  inline private def mac(t: Long, a: Long, b: Long, c: Long): Wide = {
     val lo = a * b
     val hi = unsignedMultiplyHigh(a, b)
     val lo1 = lo + t
