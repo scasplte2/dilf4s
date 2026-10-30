@@ -61,7 +61,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, modelsGen, models, benchmarks)
+  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, modelsGen, models, jlvm, benchmarks)
 
 // ─── Shared Test Utilities ───
 lazy val sharedTest = project.in(file("shared-test"))
@@ -213,6 +213,22 @@ lazy val models = project.in(file("models"))
     }.taskValue
   )
   .dependsOn(core, sharedTest % Test)
+
+// ─── JLVM: the strict JsonLogic-syntax ledger VM (docs/specs/jlvm.md) ───
+lazy val jlvm = project.in(file("jlvm"))
+  .settings(
+    name := "dilf4s-jlvm",
+    commonSettings,
+    commonTestSettings,
+    libraryDependencies ++= Seq(
+      Libraries.cats,
+      Libraries.catsEffect,
+      Libraries.circeCore,
+      Libraries.circeParser,
+      Libraries.scodecBits
+    )
+  )
+  .dependsOn(core, crypto, accumulators, models, sharedTest % Test)
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll; scalafmtSbtCheck")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll; scalafmtSbt")

@@ -1,0 +1,26 @@
+; dilf4s JLVM programs, canonical form v1 (docs/specs/jlvm.md). Normative.
+; A program is this tagged syntax tree, not its JSON authoring surface; its identity is the content hash of the
+; record. Operation names are those of language version "jlvm"; an unknown name is invalid.
+
+jlvm-program = {
+  "jlvm": 1,
+  "expr": jlvm-expr,
+}
+
+jlvm-expr = jlvm-null / jlvm-lit / jlvm-var / jlvm-apply / jlvm-array / jlvm-map
+
+; Canonical maps drop null values, so the null literal is the empty record.
+jlvm-null = {}
+
+jlvm-lit = { "lit": any }
+
+; "$name.path" reads a let or callback binding; any other path reads the input data.
+jlvm-var = { "var": text, ? "default": any }
+
+jlvm-apply = { "op": text, "args": [* jlvm-expr] }
+
+jlvm-array = { "arr": [* jlvm-expr] }
+
+jlvm-map = { "map": jlvm-fields }
+
+jlvm-fields = { * tstr => jlvm-expr }

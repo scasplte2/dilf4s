@@ -92,11 +92,11 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
          |
          |object $n {
          |  lazy val codec: Codec[$n] = Codec(
-         |    a =>
+         |    ${if (fs.isEmpty) "_" else "a"} =>
          |      Codec.record(List(
          |$enc
          |      )),
-         |    CanonicalDecoder.record(Set($keys)) { fields$$ =>
+         |    CanonicalDecoder.record(Set($keys)) { ${if (fs.isEmpty) "_" else "fields$"} =>
          |      $body
          |    }
          |  )
