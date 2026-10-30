@@ -44,9 +44,9 @@ object Signature {
 /** Validating decoders for a scheme's keys and signatures (lengths, and curve membership where checkable). */
 trait SchemeCodec[S] {
   def name: String
-  def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[S]]
+  def signingKey(bytes:   ByteVector): Either[CryptoError, SigningKey[S]]
   def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[S]]
-  def signature(bytes: ByteVector): Either[CryptoError, Signature[S]]
+  def signature(bytes:    ByteVector): Either[CryptoError, Signature[S]]
 }
 
 object SchemeCodec {
@@ -54,12 +54,19 @@ object SchemeCodec {
   def apply[S](implicit C: SchemeCodec[S]): SchemeCodec[S] = C
 
   /** Fixed-length codec with optional extra validation of verifying keys. */
-  def fixed[S](scheme: String, skLength: Long, vkLength: Long, sigLength: Long, validVk: ByteVector => Boolean = _ => true): SchemeCodec[S] =
+  def fixed[S](
+    scheme:    String,
+    skLength:  Long,
+    vkLength:  Long,
+    sigLength: Long,
+    validVk:   ByteVector => Boolean = _ => true
+  ): SchemeCodec[S] =
     new SchemeCodec[S] {
       val name: String = scheme
       private def length(what: String, expected: Long, b: ByteVector): Either[CryptoError, ByteVector] =
         Either.cond(b.size == expected, b, CryptoError.InvalidEncoding(s"$scheme $what", s"expected $expected bytes, got ${b.size}"))
-      def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[S]] = length("signing key", skLength, bytes).map(new SigningKey[S](_))
+      def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[S]] =
+        length("signing key", skLength, bytes).map(new SigningKey[S](_))
       def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[S]] =
         length("verifying key", vkLength, bytes)
           .flatMap(b => Either.cond(validVk(b), VerifyingKey[S](b), CryptoError.InvalidKey(s"$scheme verifying key is not a valid point")))
