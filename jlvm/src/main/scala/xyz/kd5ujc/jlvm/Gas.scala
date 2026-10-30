@@ -156,7 +156,7 @@ object GasSchedule {
       Mod         -> c(200, 2, Weight).plus(8, Limbs2),
       Min         -> c(90, 1, Weight),
       Max         -> c(90, 1, Weight),
-      Abs         -> c(60, 1, Weight).plus(4, RationalLimbs2),
+      Abs         -> c(60),
       Round       -> c(60, 1, Weight),
       RoundHalfUp -> c(60, 1, Weight),
       Floor       -> c(60, 1, Weight),
@@ -193,9 +193,9 @@ object GasSchedule {
       Entries    -> c(50, 18, Weight),
       Get        -> c(30),
       Has        -> c(40),
-      // a canonical map caches its weight and depth, so a new map costs a pass over its entries
-      SetOp       -> c(90, 6, Elements),
-      Unset       -> c(40, 6, Elements),
+      // one entry changes in O(log n): a map keeps its weight and its values' depths up to date
+      SetOp       -> c(105),
+      Unset       -> c(65),
       Exists      -> c(50, 1, Elements),
       Missing     -> c(50, 20, Elements),
       MissingSome -> c(60, 20, Elements),

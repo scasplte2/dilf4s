@@ -45,7 +45,27 @@ object CanonicalValueSuite extends SimpleIOSuite with Checkers {
           .same(CanonicalValue.map(m.entries.updated(k, v)), CanonicalValue.updated(m, key, v))
           .and(expect.same(CanonicalValue.map(m.entries - k), Right(CanonicalValue.removed(m, key))))
           .and(expect.same(CanonicalValue.map(m.entries ++ n.entries), Right(CanonicalValue.merged(Vector(m, n)))))
+          // equality is on entries alone: check the cached depth and weight too
+          .and(expect.same(shape(CanonicalValue.map(m.entries.updated(k, v))), shape(CanonicalValue.updated(m, key, v))))
+          .and(expect.same(shape(CanonicalValue.map(m.entries - k)), shape(Right(CanonicalValue.removed(m, key)))))
       case _ => failure("the generator only yields maps")
+    }
+  }
+
+  private def shape(v: Either[?, CanonicalValue]): Either[String, (Int, Long)] = v.left.map(_.toString).map(x => (x.depth, x.weight))
+
+  test("a chain of updates and removals keeps depth and weight exact, including replacing the deepest value") {
+    val deep = (1 to 6).foldLeft[CanonicalValue](CNull)((v, _) => CanonicalValue.array(Vector(v)).toOption.get)
+    val values = Gen.oneOf(Gen.const(deep), Gen.const(CInt(BigInt(1))), Gen.const(CNull), CanonicalGens.value(2))
+    val step = Gen.zip(Gen.oneOf("a", "b", "c", "d"), values)
+    forall(Gen.listOfN(30, step)) { steps =>
+      val (_, checks) = steps.foldLeft((CanonicalValue.EmptyMap, success)) {
+        case ((m, acc), (k, v)) =>
+          val next = CanonicalValue.updated(m, t(k), v).toOption.getOrElse(m)
+          val fresh = CanonicalValue.map(next.entries)
+          (next, acc.and(expect.same(shape(fresh), shape(Right(next)))))
+      }
+      checks
     }
   }
 }

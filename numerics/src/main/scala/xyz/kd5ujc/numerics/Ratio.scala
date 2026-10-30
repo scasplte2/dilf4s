@@ -19,9 +19,10 @@ sealed abstract case class Ratio(numerator: BigInt, denominator: BigInt) {
 
   def toBigIntExact: Option[BigInt] = Option.when(isInteger)(numerator)
 
-  def unary_- : Ratio = Ratio.reduced(-numerator, denominator)
+  // negation and absolute value keep a reduced fraction reduced: no gcd
+  def unary_- : Ratio = new Ratio(-numerator, denominator) {}
 
-  def abs: Ratio = Ratio.reduced(numerator.abs, denominator)
+  def abs: Ratio = if (numerator.signum >= 0) this else new Ratio(-numerator, denominator) {}
 
   def +(that: Ratio): Ratio =
     Ratio.reduced(numerator * that.denominator + that.numerator * denominator, denominator * that.denominator)

@@ -416,7 +416,7 @@ default the operation's). For example, `sigma_verify` and `schnorr_verify` charg
 - `None`: zero.
 
 The gcd that normalises a result is quadratic in its operands' size. `/` and `%` therefore also charge `Limbs2`, and
-`+`, `-`, `*` and `abs` also charge `RationalLimbs2`: integer sums and products are linear. `pow` is priced at its
+`+`, `-` and `*` also charge `RationalLimbs2`: integer sums and products are linear. `pow` is priced at its
 worst case, a 4096-bit rational result.
 
 **Every charge is taken before the work it pays for.** If a charge would exceed the limit:
