@@ -86,7 +86,8 @@ object Bip39 {
     case object Czech extends Language("czech", " ")
     case object Portuguese extends Language("portuguese", " ")
 
-    val all: List[Language] = List(English, Japanese, Korean, Spanish, ChineseSimplified, ChineseTraditional, French, Italian, Czech, Portuguese)
+    val all: List[Language] =
+      List(English, Japanese, Korean, Spanish, ChineseSimplified, ChineseTraditional, French, Italian, Czech, Portuguese)
   }
 
   private def sha256(b: ByteVector): ByteVector = {
@@ -98,7 +99,8 @@ object Bip39 {
   /** 16, 20, 24, 28 or 32 bytes of entropy -> 12..24 words (ENT/32 checksum bits from SHA-256). */
   def toMnemonic(entropy: Secret, words: WordList): Either[KeyError, Mnemonic] = {
     val ent = entropy.bytes
-    if (!Set(16L, 20L, 24L, 28L, 32L).contains(ent.size)) KeyError.InvalidEntropy(s"entropy must be 16..32 bytes in steps of 4, got ${ent.size}").asLeft
+    if (!Set(16L, 20L, 24L, 28L, 32L).contains(ent.size))
+      KeyError.InvalidEntropy(s"entropy must be 16..32 bytes in steps of 4, got ${ent.size}").asLeft
     else {
       val bits = ent.bits ++ sha256(ent).bits.take(ent.size * 8 / 32)
       new Mnemonic(bits.grouped(11).map(group => words.words(group.toInt(signed = false))).toList, words.language).asRight
@@ -109,16 +111,30 @@ object Bip39 {
   def toEntropy(phrase: String, words: WordList): Either[KeyError, (Mnemonic, Secret)] = {
     val tokens = nfkd(phrase).trim.split("[\\s　]+").toList.filter(_.nonEmpty)
     for {
-      _ <- Either.cond(Set(12, 15, 18, 21, 24).contains(tokens.size), (), KeyError.InvalidMnemonic(s"expected 12, 15, 18, 21 or 24 words, got ${tokens.size}"))
+      _ <- Either.cond(
+        Set(12, 15, 18, 21, 24).contains(tokens.size),
+        (),
+        KeyError.InvalidMnemonic(s"expected 12, 15, 18, 21 or 24 words, got ${tokens.size}")
+      )
       indices <- tokens.traverse(w => words.indexOf(w).toRight(KeyError.InvalidMnemonic("phrase contains a word not in the list")))
       bits = indices.foldLeft(BitVector.empty)((acc, i) => acc ++ BitVector.fromInt(i, 11))
       checksumBits = tokens.size * 11 / 33
       entropy = bits.dropRight(checksumBits.toLong).bytes
-      _ <- Either.cond(sha256(entropy).bits.take(checksumBits.toLong) == bits.takeRight(checksumBits.toLong), (), KeyError.InvalidMnemonic("checksum mismatch"))
+      _ <- Either.cond(
+        sha256(entropy).bits.take(checksumBits.toLong) == bits.takeRight(checksumBits.toLong),
+        (),
+        KeyError.InvalidMnemonic("checksum mismatch")
+      )
     } yield (new Mnemonic(tokens, words.language), Secret(entropy))
   }
 
   /** The 64-byte BIP-39 seed: PBKDF2-HMAC-SHA512(NFKD(mnemonic), "mnemonic" ++ NFKD(passphrase), 2048). */
   def seed(mnemonic: Mnemonic, passphrase: String = ""): Secret =
-    Secret(Hmac.pbkdf2Sha512Block(ByteVector(nfkd(mnemonic.words.mkString(" ")).getBytes(UTF_8)), ByteVector(("mnemonic" + nfkd(passphrase)).getBytes(UTF_8)), 2048))
+    Secret(
+      Hmac.pbkdf2Sha512Block(
+        ByteVector(nfkd(mnemonic.words.mkString(" ")).getBytes(UTF_8)),
+        ByteVector(("mnemonic" + nfkd(passphrase)).getBytes(UTF_8)),
+        2048
+      )
+    )
 }

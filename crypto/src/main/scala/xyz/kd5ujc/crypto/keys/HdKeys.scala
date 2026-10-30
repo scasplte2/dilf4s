@@ -15,10 +15,14 @@ sealed trait ChildIndex extends Product with Serializable {
 
 object ChildIndex {
   final case class Soft private (value: Long) extends ChildIndex { def serialized: Long = value; def hardened: Boolean = false }
-  final case class Hardened private (value: Long) extends ChildIndex { def serialized: Long = value | 0x80000000L; def hardened: Boolean = true }
+  final case class Hardened private (value: Long) extends ChildIndex {
+    def serialized: Long = value | 0x80000000L; def hardened: Boolean = true
+  }
 
-  def soft(i: Long): Either[KeyError, ChildIndex] = Either.cond(i >= 0 && i < 0x80000000L, Soft(i), KeyError.InvalidDerivation(s"index $i out of range"))
-  def hardened(i: Long): Either[KeyError, ChildIndex] = Either.cond(i >= 0 && i < 0x80000000L, Hardened(i), KeyError.InvalidDerivation(s"index $i out of range"))
+  def soft(i: Long): Either[KeyError, ChildIndex] =
+    Either.cond(i >= 0 && i < 0x80000000L, Soft(i), KeyError.InvalidDerivation(s"index $i out of range"))
+  def hardened(i: Long): Either[KeyError, ChildIndex] =
+    Either.cond(i >= 0 && i < 0x80000000L, Hardened(i), KeyError.InvalidDerivation(s"index $i out of range"))
 
   /** `m/44'/0'/0'/0/7` (or with `h`), relative to the master key. */
   def path(p: String): Either[KeyError, List[ChildIndex]] =
@@ -27,7 +31,10 @@ object ChildIndex {
         rest.traverse { seg =>
           val hard = seg.endsWith("'") || seg.endsWith("h")
           val digits = if (hard) seg.dropRight(1) else seg
-          Either.catchNonFatal(digits.toLong).leftMap(_ => KeyError.InvalidDerivation(s"bad path segment '$seg'")).flatMap(i => if (hard) hardened(i) else soft(i))
+          Either
+            .catchNonFatal(digits.toLong)
+            .leftMap(_ => KeyError.InvalidDerivation(s"bad path segment '$seg'"))
+            .flatMap(i => if (hard) hardened(i) else soft(i))
         }
       case _ => KeyError.InvalidDerivation("path must start with m").asLeft
     }
@@ -50,7 +57,9 @@ object Slip10Ed25519 {
     Ed25519.codec.signingKey(i.take(32)).bimap(e => KeyError.InvalidDerivation(e.toString), ExtendedKey(_, i.drop(32)))
 
   def master(seed: Secret): Either[KeyError, ExtendedKey[Ed25519]] =
-    Either.cond(seed.bytes.size >= 16 && seed.bytes.size <= 64, seed, KeyError.InvalidDerivation("seed must be 16..64 bytes")).flatMap(s => split(Hmac.sha512(curveKey, s.bytes)))
+    Either
+      .cond(seed.bytes.size >= 16 && seed.bytes.size <= 64, seed, KeyError.InvalidDerivation("seed must be 16..64 bytes"))
+      .flatMap(s => split(Hmac.sha512(curveKey, s.bytes)))
 
   def child(parent: ExtendedKey[Ed25519], index: ChildIndex): Either[KeyError, ExtendedKey[Ed25519]] =
     if (!index.hardened) KeyError.InvalidDerivation("SLIP-10 Ed25519 supports hardened indices only").asLeft
@@ -65,12 +74,15 @@ final class Bip32Secp256k1(backend: Secp256k1) {
   private val curveKey = ByteVector("Bitcoin seed".getBytes("UTF-8"))
 
   private def keyOf(b: ByteVector): Either[KeyError, SigningKey[Secp256k1Ecdsa]] =
-    backend.ecdsaCodec.signingKey(b).leftMap(_ => KeyError.InvalidDerivation("derived key is not a valid scalar (skip this index, per BIP32)"))
+    backend.ecdsaCodec
+      .signingKey(b)
+      .leftMap(_ => KeyError.InvalidDerivation("derived key is not a valid scalar (skip this index, per BIP32)"))
 
   def master(seed: Secret): Either[KeyError, ExtendedKey[Secp256k1Ecdsa]] =
-    Either.cond(seed.bytes.size >= 16 && seed.bytes.size <= 64, seed, KeyError.InvalidDerivation("seed must be 16..64 bytes")).flatMap { s =>
-      val i = Hmac.sha512(curveKey, s.bytes)
-      keyOf(i.take(32)).map(ExtendedKey(_, i.drop(32)))
+    Either.cond(seed.bytes.size >= 16 && seed.bytes.size <= 64, seed, KeyError.InvalidDerivation("seed must be 16..64 bytes")).flatMap {
+      s =>
+        val i = Hmac.sha512(curveKey, s.bytes)
+        keyOf(i.take(32)).map(ExtendedKey(_, i.drop(32)))
     }
 
   def child(parent: ExtendedKey[Secp256k1Ecdsa], index: ChildIndex): Either[KeyError, ExtendedKey[Secp256k1Ecdsa]] = {
@@ -85,5 +97,6 @@ final class Bip32Secp256k1(backend: Secp256k1) {
     } yield ExtendedKey(key, i.drop(32))
   }
 
-  def derive(seed: Secret, path: List[ChildIndex]): Either[KeyError, ExtendedKey[Secp256k1Ecdsa]] = master(seed).flatMap(m => path.foldM(m)(child))
+  def derive(seed: Secret, path: List[ChildIndex]): Either[KeyError, ExtendedKey[Secp256k1Ecdsa]] =
+    master(seed).flatMap(m => path.foldM(m)(child))
 }
