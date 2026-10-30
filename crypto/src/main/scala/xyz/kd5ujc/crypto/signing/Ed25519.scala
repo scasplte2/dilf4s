@@ -52,6 +52,14 @@ object Ed25519 {
     Rfc8032.verify(signature.bytes.toArray, 0, key.bytes.toArray, 0, m, 0, m.length)
   }
 
+  /**
+   * libsodium's `crypto_sign_ed25519_verify_detached` (as used by Cardano, e.g. for KES leaves): canonical `S`;
+   * a canonical-`y`, non-small-order `A`; and the **cofactorless** check that `[S]B - [k]A` encodes exactly to `R` and
+   * is not of small order. Stricter than ZIP-215; use it only where libsodium compatibility is the rule.
+   */
+  val libsodiumVerifier: Verifier[Ed25519] = (key: VerifyingKey[Ed25519], message: ByteVector, signature: Signature[Ed25519]) =>
+    Zip215.verifyLibsodium(key.bytes, message, signature.bytes)
+
   /** The RFC 8032 secret key is the 32-byte seed itself. */
   implicit val seedDerivation: SeedDerivation[Ed25519] = new SeedDerivation[Ed25519] {
     val seedLength: Long = SeedLength
@@ -77,6 +85,17 @@ object Ed25519 {
       d.doFinal(out, 0)
       out
     }
+
+    private val p: BigInt = BigInt(2).pow(255) - 19
+    private def canonicalY(b: ByteVector): Boolean = BigInt(1, b.update(31, (b(31) & 0x7f).toByte).reverse.toArray) < p
+
+    def verifyLibsodium(key: ByteVector, message: ByteVector, signature: ByteVector): Boolean =
+      signature.size == SignatureLength && key.size == KeyLength && canonicalY(key) && (for {
+        a <- decode(key).filterOrElse(!_.multiplyByCofactor().isIdentity, new IllegalArgumentException("small-order key"))
+        s <- canonicalScalar(signature.drop(32))
+        k = Scalar.fromBytesModOrderWide(sha512(signature.take(32) ++ key ++ message))
+        r = EdwardsPoint.vartimeDoubleScalarMultiplyBasepoint(k, a.negate(), s)
+      } yield ByteVector.view(r.compress().toByteArray) == signature.take(32) && !r.multiplyByCofactor().isIdentity).getOrElse(false)
 
     def verify(key: ByteVector, message: ByteVector, signature: ByteVector): Boolean =
       signature.size == SignatureLength && key.size == KeyLength && (for {
