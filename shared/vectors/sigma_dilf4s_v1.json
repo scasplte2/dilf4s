@@ -1,0 +1,3307 @@
+{
+  "spec" : "docs/specs/sigma.md",
+  "version" : 1,
+  "source" : "dilf4s prover, verified by sigmastate 5.0.13 (tools/sigma-vectors check)",
+  "cases" : [
+    {
+      "name" : "dlog",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "dlog",
+        "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xf2afb80d9fb00bc4437212efc492722782093a0160e142f1c6e37a1021a0dbcb27a0bcbcbdff1f2088a9e37966bd949ff420eb52b388a9b6",
+      "ergo" : true
+    },
+    {
+      "name" : "dlog",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "dlog",
+        "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0xf2afb80d9fb00bc4437212efc492722782093a0160e142f1c6e37a1021a0dbcb27a0bcbcbdff1f2088a9e37966bd949ff420eb52b388a9b6",
+      "ergo" : false
+    },
+    {
+      "name" : "dlog",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "dlog",
+        "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xf2afb80d9fb00bc4437212efc492722782093a0160e142f1c6e37a1021a0dbcb27a0bcbcbdff1f2088a9e37966bd949ff420eb52b388a9b7",
+      "ergo" : false
+    },
+    {
+      "name" : "dlog",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "dlog",
+        "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xf3afb80d9fb00bc4437212efc492722782093a0160e142f1c6e37a1021a0dbcb27a0bcbcbdff1f2088a9e37966bd949ff420eb52b388a9b6",
+      "ergo" : false
+    },
+    {
+      "name" : "dlog",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "dlog",
+        "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xf2afb80d9fb00bc4437212efc492722782093a0160e142f1c6e37a1021a0dbcb27a0bcbcbdff1f2088a9e37966bd949ff420eb52b388a9b600",
+      "ergo" : true
+    },
+    {
+      "name" : "dlog",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "dlog",
+        "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xf2afb80d9fb00bc4437212efc492722782093a0160e142f1c6e37a1021a0dbcb27a0bcbcbdff1f2088a9e37966bd949ff420eb52b388a9",
+      "ergo" : false
+    },
+    {
+      "name" : "dhtuple",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "dhtuple",
+        "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+        "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+        "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xfe2d6dd07b021662e343907e31d74fb4d271e8af9f584a7b218bd4ff5324a16fb945ba9cfb06e09d01ee6dee8307f9f252481a5a8ec84a4f",
+      "ergo" : true
+    },
+    {
+      "name" : "dhtuple",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "dhtuple",
+        "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+        "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+        "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0xfe2d6dd07b021662e343907e31d74fb4d271e8af9f584a7b218bd4ff5324a16fb945ba9cfb06e09d01ee6dee8307f9f252481a5a8ec84a4f",
+      "ergo" : false
+    },
+    {
+      "name" : "dhtuple",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "dhtuple",
+        "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+        "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+        "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xfe2d6dd07b021662e343907e31d74fb4d271e8af9f584a7b218bd4ff5324a16fb945ba9cfb06e09d01ee6dee8307f9f252481a5a8ec84a4e",
+      "ergo" : false
+    },
+    {
+      "name" : "dhtuple",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "dhtuple",
+        "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+        "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+        "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xff2d6dd07b021662e343907e31d74fb4d271e8af9f584a7b218bd4ff5324a16fb945ba9cfb06e09d01ee6dee8307f9f252481a5a8ec84a4f",
+      "ergo" : false
+    },
+    {
+      "name" : "dhtuple",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "dhtuple",
+        "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+        "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+        "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xfe2d6dd07b021662e343907e31d74fb4d271e8af9f584a7b218bd4ff5324a16fb945ba9cfb06e09d01ee6dee8307f9f252481a5a8ec84a4f00",
+      "ergo" : true
+    },
+    {
+      "name" : "dhtuple",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "dhtuple",
+        "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+        "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+        "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xfe2d6dd07b021662e343907e31d74fb4d271e8af9f584a7b218bd4ff5324a16fb945ba9cfb06e09d01ee6dee8307f9f252481a5a8ec84a",
+      "ergo" : false
+    },
+    {
+      "name" : "and of two",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xebab43b541335a7db37030369657d39a068c7eb673eb1fa06b04dfb36fba885fecc44ec0920d0633818db77ecd9692cc6a0aacae31f71840ea4090d8ea5f613f476719270c3b3ecca14858c6c40e359bdd16bce12a249478",
+      "ergo" : true
+    },
+    {
+      "name" : "and of two",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0xebab43b541335a7db37030369657d39a068c7eb673eb1fa06b04dfb36fba885fecc44ec0920d0633818db77ecd9692cc6a0aacae31f71840ea4090d8ea5f613f476719270c3b3ecca14858c6c40e359bdd16bce12a249478",
+      "ergo" : false
+    },
+    {
+      "name" : "and of two",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xebab43b541335a7db37030369657d39a068c7eb673eb1fa06b04dfb36fba885fecc44ec0920d0633818db77ecd9692cc6a0aacae31f71840ea4090d8ea5f613f476719270c3b3ecca14858c6c40e359bdd16bce12a249479",
+      "ergo" : false
+    },
+    {
+      "name" : "and of two",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xeaab43b541335a7db37030369657d39a068c7eb673eb1fa06b04dfb36fba885fecc44ec0920d0633818db77ecd9692cc6a0aacae31f71840ea4090d8ea5f613f476719270c3b3ecca14858c6c40e359bdd16bce12a249478",
+      "ergo" : false
+    },
+    {
+      "name" : "and of two",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xebab43b541335a7db37030369657d39a068c7eb673eb1fa06b04dfb36fba885fecc44ec0920d0633818db77ecd9692cc6a0aacae31f71840ea4090d8ea5f613f476719270c3b3ecca14858c6c40e359bdd16bce12a24947800",
+      "ergo" : true
+    },
+    {
+      "name" : "and of two",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xebab43b541335a7db37030369657d39a068c7eb673eb1fa06b04dfb36fba885fecc44ec0920d0633818db77ecd9692cc6a0aacae31f71840ea4090d8ea5f613f476719270c3b3ecca14858c6c40e359bdd16bce12a2494",
+      "ergo" : false
+    },
+    {
+      "name" : "and of one",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x57de60e447aa11dc88a68a320002780c460e4a050ccd2dabeed2aac8cfa0330729ce92b6dd0e531ea8c8e31613a4d91ecbee5c49a05f73d5",
+      "ergo" : true
+    },
+    {
+      "name" : "and of one",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0x57de60e447aa11dc88a68a320002780c460e4a050ccd2dabeed2aac8cfa0330729ce92b6dd0e531ea8c8e31613a4d91ecbee5c49a05f73d5",
+      "ergo" : false
+    },
+    {
+      "name" : "and of one",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x57de60e447aa11dc88a68a320002780c460e4a050ccd2dabeed2aac8cfa0330729ce92b6dd0e531ea8c8e31613a4d91ecbee5c49a05f73d4",
+      "ergo" : false
+    },
+    {
+      "name" : "and of one",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x56de60e447aa11dc88a68a320002780c460e4a050ccd2dabeed2aac8cfa0330729ce92b6dd0e531ea8c8e31613a4d91ecbee5c49a05f73d5",
+      "ergo" : false
+    },
+    {
+      "name" : "and of one",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x57de60e447aa11dc88a68a320002780c460e4a050ccd2dabeed2aac8cfa0330729ce92b6dd0e531ea8c8e31613a4d91ecbee5c49a05f73d500",
+      "ergo" : true
+    },
+    {
+      "name" : "and of one",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x57de60e447aa11dc88a68a320002780c460e4a050ccd2dabeed2aac8cfa0330729ce92b6dd0e531ea8c8e31613a4d91ecbee5c49a05f73",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of two, the first signs",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xbc0b027495f701a2c7b331660fb347993adcc12aab885e89434d02d8189870b695e1fce301e8053bcb240177f07ae073c0e78209e5de67659a4a1dfdefc880f8dbc378af39f91e1573e2a575404ed9bea414b8b6ea1ccf6cb018a727dc52e6cfdbef7208425187f98488b591eddd3f2e",
+      "ergo" : true
+    },
+    {
+      "name" : "ring of two, the first signs",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0xbc0b027495f701a2c7b331660fb347993adcc12aab885e89434d02d8189870b695e1fce301e8053bcb240177f07ae073c0e78209e5de67659a4a1dfdefc880f8dbc378af39f91e1573e2a575404ed9bea414b8b6ea1ccf6cb018a727dc52e6cfdbef7208425187f98488b591eddd3f2e",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of two, the first signs",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xbc0b027495f701a2c7b331660fb347993adcc12aab885e89434d02d8189870b695e1fce301e8053bcb240177f07ae073c0e78209e5de67659a4a1dfdefc880f8dbc378af39f91e1573e2a575404ed9bea414b8b6ea1ccf6cb018a727dc52e6cfdbef7208425187f98488b591eddd3f2f",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of two, the first signs",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xbd0b027495f701a2c7b331660fb347993adcc12aab885e89434d02d8189870b695e1fce301e8053bcb240177f07ae073c0e78209e5de67659a4a1dfdefc880f8dbc378af39f91e1573e2a575404ed9bea414b8b6ea1ccf6cb018a727dc52e6cfdbef7208425187f98488b591eddd3f2e",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of two, the first signs",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xbc0b027495f701a2c7b331660fb347993adcc12aab885e89434d02d8189870b695e1fce301e8053bcb240177f07ae073c0e78209e5de67659a4a1dfdefc880f8dbc378af39f91e1573e2a575404ed9bea414b8b6ea1ccf6cb018a727dc52e6cfdbef7208425187f98488b591eddd3f2e00",
+      "ergo" : true
+    },
+    {
+      "name" : "ring of two, the first signs",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xbc0b027495f701a2c7b331660fb347993adcc12aab885e89434d02d8189870b695e1fce301e8053bcb240177f07ae073c0e78209e5de67659a4a1dfdefc880f8dbc378af39f91e1573e2a575404ed9bea414b8b6ea1ccf6cb018a727dc52e6cfdbef7208425187f98488b591eddd3f",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of three, the middle signs",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x12d2db282252f581faaf748028346589c957044d707153a378ba598cee7bb78ff7f2949e385f12e5707d7a1de031242a61eee33d71750d18aa8189077d860ab7f62c99871031c70b6d9cbdbd0dbc8de8333c16a0961e9b0e19c3360197409a6ca96293935532f61cf4f869b52572c3af323fe128da43db45b5ed6dc1ad604974221717b02e28b8bd959347cab1601f4d06aa23984c12d5bdcb9d4f542e76e2cf317255116a7e72ba",
+      "ergo" : true
+    },
+    {
+      "name" : "ring of three, the middle signs",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0x12d2db282252f581faaf748028346589c957044d707153a378ba598cee7bb78ff7f2949e385f12e5707d7a1de031242a61eee33d71750d18aa8189077d860ab7f62c99871031c70b6d9cbdbd0dbc8de8333c16a0961e9b0e19c3360197409a6ca96293935532f61cf4f869b52572c3af323fe128da43db45b5ed6dc1ad604974221717b02e28b8bd959347cab1601f4d06aa23984c12d5bdcb9d4f542e76e2cf317255116a7e72ba",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of three, the middle signs",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x12d2db282252f581faaf748028346589c957044d707153a378ba598cee7bb78ff7f2949e385f12e5707d7a1de031242a61eee33d71750d18aa8189077d860ab7f62c99871031c70b6d9cbdbd0dbc8de8333c16a0961e9b0e19c3360197409a6ca96293935532f61cf4f869b52572c3af323fe128da43db45b5ed6dc1ad604974221717b02e28b8bd959347cab1601f4d06aa23984c12d5bdcb9d4f542e76e2cf317255116a7e72bb",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of three, the middle signs",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x13d2db282252f581faaf748028346589c957044d707153a378ba598cee7bb78ff7f2949e385f12e5707d7a1de031242a61eee33d71750d18aa8189077d860ab7f62c99871031c70b6d9cbdbd0dbc8de8333c16a0961e9b0e19c3360197409a6ca96293935532f61cf4f869b52572c3af323fe128da43db45b5ed6dc1ad604974221717b02e28b8bd959347cab1601f4d06aa23984c12d5bdcb9d4f542e76e2cf317255116a7e72ba",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of three, the middle signs",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x12d2db282252f581faaf748028346589c957044d707153a378ba598cee7bb78ff7f2949e385f12e5707d7a1de031242a61eee33d71750d18aa8189077d860ab7f62c99871031c70b6d9cbdbd0dbc8de8333c16a0961e9b0e19c3360197409a6ca96293935532f61cf4f869b52572c3af323fe128da43db45b5ed6dc1ad604974221717b02e28b8bd959347cab1601f4d06aa23984c12d5bdcb9d4f542e76e2cf317255116a7e72ba00",
+      "ergo" : true
+    },
+    {
+      "name" : "ring of three, the middle signs",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x12d2db282252f581faaf748028346589c957044d707153a378ba598cee7bb78ff7f2949e385f12e5707d7a1de031242a61eee33d71750d18aa8189077d860ab7f62c99871031c70b6d9cbdbd0dbc8de8333c16a0961e9b0e19c3360197409a6ca96293935532f61cf4f869b52572c3af323fe128da43db45b5ed6dc1ad604974221717b02e28b8bd959347cab1601f4d06aa23984c12d5bdcb9d4f542e76e2cf317255116a7e72",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of three, the last signs",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x16b9da20abdbc334d9c2c75f7a7a1c3ee04c9b0b7d065d80c8302df06373bf39c1f310c8c694dbd43cd01c97b2ad0c0e4b892899b080223b1b22f11ae6ecefdca625dc403aeb97087a813179c59980c15b0d6a3dd742add74db0711e52601523a13013b6dbf3f36dd4aad0c55a4d8525140cb46d527d1056cd39d85260b9b95fd8e9cdab00111e5337e9e0df365c5a7330370604023affe0233105ee53521a656ab0aea0192c211e",
+      "ergo" : true
+    },
+    {
+      "name" : "ring of three, the last signs",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0x16b9da20abdbc334d9c2c75f7a7a1c3ee04c9b0b7d065d80c8302df06373bf39c1f310c8c694dbd43cd01c97b2ad0c0e4b892899b080223b1b22f11ae6ecefdca625dc403aeb97087a813179c59980c15b0d6a3dd742add74db0711e52601523a13013b6dbf3f36dd4aad0c55a4d8525140cb46d527d1056cd39d85260b9b95fd8e9cdab00111e5337e9e0df365c5a7330370604023affe0233105ee53521a656ab0aea0192c211e",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of three, the last signs",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x16b9da20abdbc334d9c2c75f7a7a1c3ee04c9b0b7d065d80c8302df06373bf39c1f310c8c694dbd43cd01c97b2ad0c0e4b892899b080223b1b22f11ae6ecefdca625dc403aeb97087a813179c59980c15b0d6a3dd742add74db0711e52601523a13013b6dbf3f36dd4aad0c55a4d8525140cb46d527d1056cd39d85260b9b95fd8e9cdab00111e5337e9e0df365c5a7330370604023affe0233105ee53521a656ab0aea0192c211f",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of three, the last signs",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x17b9da20abdbc334d9c2c75f7a7a1c3ee04c9b0b7d065d80c8302df06373bf39c1f310c8c694dbd43cd01c97b2ad0c0e4b892899b080223b1b22f11ae6ecefdca625dc403aeb97087a813179c59980c15b0d6a3dd742add74db0711e52601523a13013b6dbf3f36dd4aad0c55a4d8525140cb46d527d1056cd39d85260b9b95fd8e9cdab00111e5337e9e0df365c5a7330370604023affe0233105ee53521a656ab0aea0192c211e",
+      "ergo" : false
+    },
+    {
+      "name" : "ring of three, the last signs",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x16b9da20abdbc334d9c2c75f7a7a1c3ee04c9b0b7d065d80c8302df06373bf39c1f310c8c694dbd43cd01c97b2ad0c0e4b892899b080223b1b22f11ae6ecefdca625dc403aeb97087a813179c59980c15b0d6a3dd742add74db0711e52601523a13013b6dbf3f36dd4aad0c55a4d8525140cb46d527d1056cd39d85260b9b95fd8e9cdab00111e5337e9e0df365c5a7330370604023affe0233105ee53521a656ab0aea0192c211e00",
+      "ergo" : true
+    },
+    {
+      "name" : "ring of three, the last signs",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x16b9da20abdbc334d9c2c75f7a7a1c3ee04c9b0b7d065d80c8302df06373bf39c1f310c8c694dbd43cd01c97b2ad0c0e4b892899b080223b1b22f11ae6ecefdca625dc403aeb97087a813179c59980c15b0d6a3dd742add74db0711e52601523a13013b6dbf3f36dd4aad0c55a4d8525140cb46d527d1056cd39d85260b9b95fd8e9cdab00111e5337e9e0df365c5a7330370604023affe0233105ee53521a656ab0aea0192c21",
+      "ergo" : false
+    },
+    {
+      "name" : "or of one",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x8235f797d21801c647d39335190f4178f651763385233723072b1fe17f02b4a55b495d5e29a5dc28e62968b4e1fdae5a69b6f25e628dcc0a",
+      "ergo" : true
+    },
+    {
+      "name" : "or of one",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0x8235f797d21801c647d39335190f4178f651763385233723072b1fe17f02b4a55b495d5e29a5dc28e62968b4e1fdae5a69b6f25e628dcc0a",
+      "ergo" : false
+    },
+    {
+      "name" : "or of one",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x8235f797d21801c647d39335190f4178f651763385233723072b1fe17f02b4a55b495d5e29a5dc28e62968b4e1fdae5a69b6f25e628dcc0b",
+      "ergo" : false
+    },
+    {
+      "name" : "or of one",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x8335f797d21801c647d39335190f4178f651763385233723072b1fe17f02b4a55b495d5e29a5dc28e62968b4e1fdae5a69b6f25e628dcc0a",
+      "ergo" : false
+    },
+    {
+      "name" : "or of one",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x8235f797d21801c647d39335190f4178f651763385233723072b1fe17f02b4a55b495d5e29a5dc28e62968b4e1fdae5a69b6f25e628dcc0a00",
+      "ergo" : true
+    },
+    {
+      "name" : "or of one",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x8235f797d21801c647d39335190f4178f651763385233723072b1fe17f02b4a55b495d5e29a5dc28e62968b4e1fdae5a69b6f25e628dcc",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-3, the first two",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x516d307326206bbf4abae761ecbcf3f9929851064205b11fdd4d5eb571f1df9a9f466b44b4f62fb191ce31f8126c6a7214a7994de6fe79afd94173fc3c2ef6abf4315157d6060dc60cb2231228b5743e015f84efc0e3383f68c82f91e534fbd44fbe5e4b1d26127dd1488e58eafe39b4b41c1b8a1f5ab53d915ee6b9c2e4e3ee0005b8f4117b17d874aa3b761c594c73",
+      "ergo" : true
+    },
+    {
+      "name" : "2-of-3, the first two",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0x516d307326206bbf4abae761ecbcf3f9929851064205b11fdd4d5eb571f1df9a9f466b44b4f62fb191ce31f8126c6a7214a7994de6fe79afd94173fc3c2ef6abf4315157d6060dc60cb2231228b5743e015f84efc0e3383f68c82f91e534fbd44fbe5e4b1d26127dd1488e58eafe39b4b41c1b8a1f5ab53d915ee6b9c2e4e3ee0005b8f4117b17d874aa3b761c594c73",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-3, the first two",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x516d307326206bbf4abae761ecbcf3f9929851064205b11fdd4d5eb571f1df9a9f466b44b4f62fb191ce31f8126c6a7214a7994de6fe79afd94173fc3c2ef6abf4315157d6060dc60cb2231228b5743e015f84efc0e3383f68c82f91e534fbd44fbe5e4b1d26127dd1488e58eafe39b4b41c1b8a1f5ab53d915ee6b9c2e4e3ee0005b8f4117b17d874aa3b761c594c72",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-3, the first two",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x506d307326206bbf4abae761ecbcf3f9929851064205b11fdd4d5eb571f1df9a9f466b44b4f62fb191ce31f8126c6a7214a7994de6fe79afd94173fc3c2ef6abf4315157d6060dc60cb2231228b5743e015f84efc0e3383f68c82f91e534fbd44fbe5e4b1d26127dd1488e58eafe39b4b41c1b8a1f5ab53d915ee6b9c2e4e3ee0005b8f4117b17d874aa3b761c594c73",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-3, the first two",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x516d307326206bbf4abae761ecbcf3f9929851064205b11fdd4d5eb571f1df9a9f466b44b4f62fb191ce31f8126c6a7214a7994de6fe79afd94173fc3c2ef6abf4315157d6060dc60cb2231228b5743e015f84efc0e3383f68c82f91e534fbd44fbe5e4b1d26127dd1488e58eafe39b4b41c1b8a1f5ab53d915ee6b9c2e4e3ee0005b8f4117b17d874aa3b761c594c7300",
+      "ergo" : true
+    },
+    {
+      "name" : "2-of-3, the first two",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x516d307326206bbf4abae761ecbcf3f9929851064205b11fdd4d5eb571f1df9a9f466b44b4f62fb191ce31f8126c6a7214a7994de6fe79afd94173fc3c2ef6abf4315157d6060dc60cb2231228b5743e015f84efc0e3383f68c82f91e534fbd44fbe5e4b1d26127dd1488e58eafe39b4b41c1b8a1f5ab53d915ee6b9c2e4e3ee0005b8f4117b17d874aa3b761c594c",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-3, the outer two",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x0e652412f8a4ea34df0a555b16c7ae9e06e887ab9cfbe95e8494e5d3b814c65def95eac6b3c8fbc148e928e971679e835d15882453d0d10f23c21036bc3f7772713ad2184685b72239bf9925957eaa60fa587c03029ab9dfa93439f86c6ef6523e78983c62f19a1101ede65e4aa3f091e32aa9bb5a9ad2997bd92796d1f2bb0024b76183e36cee52bf2a6f2223c5ebeb",
+      "ergo" : true
+    },
+    {
+      "name" : "2-of-3, the outer two",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0x0e652412f8a4ea34df0a555b16c7ae9e06e887ab9cfbe95e8494e5d3b814c65def95eac6b3c8fbc148e928e971679e835d15882453d0d10f23c21036bc3f7772713ad2184685b72239bf9925957eaa60fa587c03029ab9dfa93439f86c6ef6523e78983c62f19a1101ede65e4aa3f091e32aa9bb5a9ad2997bd92796d1f2bb0024b76183e36cee52bf2a6f2223c5ebeb",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-3, the outer two",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x0e652412f8a4ea34df0a555b16c7ae9e06e887ab9cfbe95e8494e5d3b814c65def95eac6b3c8fbc148e928e971679e835d15882453d0d10f23c21036bc3f7772713ad2184685b72239bf9925957eaa60fa587c03029ab9dfa93439f86c6ef6523e78983c62f19a1101ede65e4aa3f091e32aa9bb5a9ad2997bd92796d1f2bb0024b76183e36cee52bf2a6f2223c5ebea",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-3, the outer two",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x0f652412f8a4ea34df0a555b16c7ae9e06e887ab9cfbe95e8494e5d3b814c65def95eac6b3c8fbc148e928e971679e835d15882453d0d10f23c21036bc3f7772713ad2184685b72239bf9925957eaa60fa587c03029ab9dfa93439f86c6ef6523e78983c62f19a1101ede65e4aa3f091e32aa9bb5a9ad2997bd92796d1f2bb0024b76183e36cee52bf2a6f2223c5ebeb",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-3, the outer two",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x0e652412f8a4ea34df0a555b16c7ae9e06e887ab9cfbe95e8494e5d3b814c65def95eac6b3c8fbc148e928e971679e835d15882453d0d10f23c21036bc3f7772713ad2184685b72239bf9925957eaa60fa587c03029ab9dfa93439f86c6ef6523e78983c62f19a1101ede65e4aa3f091e32aa9bb5a9ad2997bd92796d1f2bb0024b76183e36cee52bf2a6f2223c5ebeb00",
+      "ergo" : true
+    },
+    {
+      "name" : "2-of-3, the outer two",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x0e652412f8a4ea34df0a555b16c7ae9e06e887ab9cfbe95e8494e5d3b814c65def95eac6b3c8fbc148e928e971679e835d15882453d0d10f23c21036bc3f7772713ad2184685b72239bf9925957eaa60fa587c03029ab9dfa93439f86c6ef6523e78983c62f19a1101ede65e4aa3f091e32aa9bb5a9ad2997bd92796d1f2bb0024b76183e36cee52bf2a6f2223c5eb",
+      "ergo" : false
+    },
+    {
+      "name" : "1-of-2 threshold",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 1,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x80d750c2bce7841e36679bc8d38c9f79d6a5f8868e4b8a731ccbea616cd7c9cec57d267275b508ae801a949f9e6c2768c9231daffcf6834199ebe72041dc5e6d80de4a3e8f1f23e69bcc5a42a67b65c8aea93944a1c7dce97287c89d770c7f1a4e239141bfd2396278f4e3da2a9ecbe6",
+      "ergo" : true
+    },
+    {
+      "name" : "1-of-2 threshold",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 1,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0x80d750c2bce7841e36679bc8d38c9f79d6a5f8868e4b8a731ccbea616cd7c9cec57d267275b508ae801a949f9e6c2768c9231daffcf6834199ebe72041dc5e6d80de4a3e8f1f23e69bcc5a42a67b65c8aea93944a1c7dce97287c89d770c7f1a4e239141bfd2396278f4e3da2a9ecbe6",
+      "ergo" : false
+    },
+    {
+      "name" : "1-of-2 threshold",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 1,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x80d750c2bce7841e36679bc8d38c9f79d6a5f8868e4b8a731ccbea616cd7c9cec57d267275b508ae801a949f9e6c2768c9231daffcf6834199ebe72041dc5e6d80de4a3e8f1f23e69bcc5a42a67b65c8aea93944a1c7dce97287c89d770c7f1a4e239141bfd2396278f4e3da2a9ecbe7",
+      "ergo" : false
+    },
+    {
+      "name" : "1-of-2 threshold",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 1,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x81d750c2bce7841e36679bc8d38c9f79d6a5f8868e4b8a731ccbea616cd7c9cec57d267275b508ae801a949f9e6c2768c9231daffcf6834199ebe72041dc5e6d80de4a3e8f1f23e69bcc5a42a67b65c8aea93944a1c7dce97287c89d770c7f1a4e239141bfd2396278f4e3da2a9ecbe6",
+      "ergo" : false
+    },
+    {
+      "name" : "1-of-2 threshold",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 1,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x80d750c2bce7841e36679bc8d38c9f79d6a5f8868e4b8a731ccbea616cd7c9cec57d267275b508ae801a949f9e6c2768c9231daffcf6834199ebe72041dc5e6d80de4a3e8f1f23e69bcc5a42a67b65c8aea93944a1c7dce97287c89d770c7f1a4e239141bfd2396278f4e3da2a9ecbe600",
+      "ergo" : true
+    },
+    {
+      "name" : "1-of-2 threshold",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 1,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x80d750c2bce7841e36679bc8d38c9f79d6a5f8868e4b8a731ccbea616cd7c9cec57d267275b508ae801a949f9e6c2768c9231daffcf6834199ebe72041dc5e6d80de4a3e8f1f23e69bcc5a42a67b65c8aea93944a1c7dce97287c89d770c7f1a4e239141bfd2396278f4e3da2a9ecb",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-2 threshold",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x0d6b38eb72d580989a32bd2386b72047c4bf9ac84e83b12b1b6b3e57959a0d5ad05166c1af5bdc5e19a999f74a0be795583ab484c5753ba6859b7f59e0fe481377019c5e324d4fc6177f55a6ce26cab07dcbbbfe777fc112",
+      "ergo" : true
+    },
+    {
+      "name" : "2-of-2 threshold",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0x0d6b38eb72d580989a32bd2386b72047c4bf9ac84e83b12b1b6b3e57959a0d5ad05166c1af5bdc5e19a999f74a0be795583ab484c5753ba6859b7f59e0fe481377019c5e324d4fc6177f55a6ce26cab07dcbbbfe777fc112",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-2 threshold",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x0d6b38eb72d580989a32bd2386b72047c4bf9ac84e83b12b1b6b3e57959a0d5ad05166c1af5bdc5e19a999f74a0be795583ab484c5753ba6859b7f59e0fe481377019c5e324d4fc6177f55a6ce26cab07dcbbbfe777fc113",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-2 threshold",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x0c6b38eb72d580989a32bd2386b72047c4bf9ac84e83b12b1b6b3e57959a0d5ad05166c1af5bdc5e19a999f74a0be795583ab484c5753ba6859b7f59e0fe481377019c5e324d4fc6177f55a6ce26cab07dcbbbfe777fc112",
+      "ergo" : false
+    },
+    {
+      "name" : "2-of-2 threshold",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x0d6b38eb72d580989a32bd2386b72047c4bf9ac84e83b12b1b6b3e57959a0d5ad05166c1af5bdc5e19a999f74a0be795583ab484c5753ba6859b7f59e0fe481377019c5e324d4fc6177f55a6ce26cab07dcbbbfe777fc11200",
+      "ergo" : true
+    },
+    {
+      "name" : "2-of-2 threshold",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x0d6b38eb72d580989a32bd2386b72047c4bf9ac84e83b12b1b6b3e57959a0d5ad05166c1af5bdc5e19a999f74a0be795583ab484c5753ba6859b7f59e0fe481377019c5e324d4fc6177f55a6ce26cab07dcbbbfe777fc1",
+      "ergo" : false
+    },
+    {
+      "name" : "3-of-5",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 3,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x0000000000000000000000000000000000000000000000000000000000000007"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xc56f7763c00768b60a539616f2ac61455cb6af625dc92e2a22cf5498a829769621e30a8d0ca09fd700ebadf6ab8ac5b21bd23a12d07fcb79ea0c6459cefbf026cff5a436ad004cf09b2143ab81d15fc205e1e743deb353e44d6c5f20d0e1a60bd853c89f0f0b9cb4e1e81a248e9bb9eea06a304799d1cebb8d8631ddc3b1e074730b6b3a145a9277fcc76ae4805f97053616081ce32dc1bc44dc864a4ed715400cb703b0d9ba284c68cfdaee8a5d1cd343751827b059f29d29038dab0b8220ac27f43b0f9fc8ef41ec3167fa91b1d7efc751f8b78247f46178633258b1ba4f06f0d782fb7b85f1bc",
+      "ergo" : true
+    },
+    {
+      "name" : "3-of-5",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 3,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x0000000000000000000000000000000000000000000000000000000000000007"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0xc56f7763c00768b60a539616f2ac61455cb6af625dc92e2a22cf5498a829769621e30a8d0ca09fd700ebadf6ab8ac5b21bd23a12d07fcb79ea0c6459cefbf026cff5a436ad004cf09b2143ab81d15fc205e1e743deb353e44d6c5f20d0e1a60bd853c89f0f0b9cb4e1e81a248e9bb9eea06a304799d1cebb8d8631ddc3b1e074730b6b3a145a9277fcc76ae4805f97053616081ce32dc1bc44dc864a4ed715400cb703b0d9ba284c68cfdaee8a5d1cd343751827b059f29d29038dab0b8220ac27f43b0f9fc8ef41ec3167fa91b1d7efc751f8b78247f46178633258b1ba4f06f0d782fb7b85f1bc",
+      "ergo" : false
+    },
+    {
+      "name" : "3-of-5",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 3,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x0000000000000000000000000000000000000000000000000000000000000007"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xc56f7763c00768b60a539616f2ac61455cb6af625dc92e2a22cf5498a829769621e30a8d0ca09fd700ebadf6ab8ac5b21bd23a12d07fcb79ea0c6459cefbf026cff5a436ad004cf09b2143ab81d15fc205e1e743deb353e44d6c5f20d0e1a60bd853c89f0f0b9cb4e1e81a248e9bb9eea06a304799d1cebb8d8631ddc3b1e074730b6b3a145a9277fcc76ae4805f97053616081ce32dc1bc44dc864a4ed715400cb703b0d9ba284c68cfdaee8a5d1cd343751827b059f29d29038dab0b8220ac27f43b0f9fc8ef41ec3167fa91b1d7efc751f8b78247f46178633258b1ba4f06f0d782fb7b85f1bd",
+      "ergo" : false
+    },
+    {
+      "name" : "3-of-5",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 3,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x0000000000000000000000000000000000000000000000000000000000000007"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xc46f7763c00768b60a539616f2ac61455cb6af625dc92e2a22cf5498a829769621e30a8d0ca09fd700ebadf6ab8ac5b21bd23a12d07fcb79ea0c6459cefbf026cff5a436ad004cf09b2143ab81d15fc205e1e743deb353e44d6c5f20d0e1a60bd853c89f0f0b9cb4e1e81a248e9bb9eea06a304799d1cebb8d8631ddc3b1e074730b6b3a145a9277fcc76ae4805f97053616081ce32dc1bc44dc864a4ed715400cb703b0d9ba284c68cfdaee8a5d1cd343751827b059f29d29038dab0b8220ac27f43b0f9fc8ef41ec3167fa91b1d7efc751f8b78247f46178633258b1ba4f06f0d782fb7b85f1bc",
+      "ergo" : false
+    },
+    {
+      "name" : "3-of-5",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 3,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x0000000000000000000000000000000000000000000000000000000000000007"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xc56f7763c00768b60a539616f2ac61455cb6af625dc92e2a22cf5498a829769621e30a8d0ca09fd700ebadf6ab8ac5b21bd23a12d07fcb79ea0c6459cefbf026cff5a436ad004cf09b2143ab81d15fc205e1e743deb353e44d6c5f20d0e1a60bd853c89f0f0b9cb4e1e81a248e9bb9eea06a304799d1cebb8d8631ddc3b1e074730b6b3a145a9277fcc76ae4805f97053616081ce32dc1bc44dc864a4ed715400cb703b0d9ba284c68cfdaee8a5d1cd343751827b059f29d29038dab0b8220ac27f43b0f9fc8ef41ec3167fa91b1d7efc751f8b78247f46178633258b1ba4f06f0d782fb7b85f1bc00",
+      "ergo" : true
+    },
+    {
+      "name" : "3-of-5",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 3,
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x0000000000000000000000000000000000000000000000000000000000000007"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xc56f7763c00768b60a539616f2ac61455cb6af625dc92e2a22cf5498a829769621e30a8d0ca09fd700ebadf6ab8ac5b21bd23a12d07fcb79ea0c6459cefbf026cff5a436ad004cf09b2143ab81d15fc205e1e743deb353e44d6c5f20d0e1a60bd853c89f0f0b9cb4e1e81a248e9bb9eea06a304799d1cebb8d8631ddc3b1e074730b6b3a145a9277fcc76ae4805f97053616081ce32dc1bc44dc864a4ed715400cb703b0d9ba284c68cfdaee8a5d1cd343751827b059f29d29038dab0b8220ac27f43b0f9fc8ef41ec3167fa91b1d7efc751f8b78247f46178633258b1ba4f06f0d782fb7b85f1",
+      "ergo" : false
+    },
+    {
+      "name" : "and with or",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xb6fbf031cf10c04a399238ef288c3d21c83f1227d24599e6c9c2d231860ac2344f2dc73b760766dae165aa1a1d5cf478386e46c8171433f995f5c0de2071cc936fcff687015bc7559e364ff96a6d36cb662d8413c641efdd35de7a7680e5c2c5c43c793bd504b0013030ab590db612a48946fdfcee71863fe743512af13ff2156e7d578b8f4bd5c0538c801dc074f3e9",
+      "ergo" : true
+    },
+    {
+      "name" : "and with or",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0xb6fbf031cf10c04a399238ef288c3d21c83f1227d24599e6c9c2d231860ac2344f2dc73b760766dae165aa1a1d5cf478386e46c8171433f995f5c0de2071cc936fcff687015bc7559e364ff96a6d36cb662d8413c641efdd35de7a7680e5c2c5c43c793bd504b0013030ab590db612a48946fdfcee71863fe743512af13ff2156e7d578b8f4bd5c0538c801dc074f3e9",
+      "ergo" : false
+    },
+    {
+      "name" : "and with or",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xb6fbf031cf10c04a399238ef288c3d21c83f1227d24599e6c9c2d231860ac2344f2dc73b760766dae165aa1a1d5cf478386e46c8171433f995f5c0de2071cc936fcff687015bc7559e364ff96a6d36cb662d8413c641efdd35de7a7680e5c2c5c43c793bd504b0013030ab590db612a48946fdfcee71863fe743512af13ff2156e7d578b8f4bd5c0538c801dc074f3e8",
+      "ergo" : false
+    },
+    {
+      "name" : "and with or",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xb7fbf031cf10c04a399238ef288c3d21c83f1227d24599e6c9c2d231860ac2344f2dc73b760766dae165aa1a1d5cf478386e46c8171433f995f5c0de2071cc936fcff687015bc7559e364ff96a6d36cb662d8413c641efdd35de7a7680e5c2c5c43c793bd504b0013030ab590db612a48946fdfcee71863fe743512af13ff2156e7d578b8f4bd5c0538c801dc074f3e9",
+      "ergo" : false
+    },
+    {
+      "name" : "and with or",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xb6fbf031cf10c04a399238ef288c3d21c83f1227d24599e6c9c2d231860ac2344f2dc73b760766dae165aa1a1d5cf478386e46c8171433f995f5c0de2071cc936fcff687015bc7559e364ff96a6d36cb662d8413c641efdd35de7a7680e5c2c5c43c793bd504b0013030ab590db612a48946fdfcee71863fe743512af13ff2156e7d578b8f4bd5c0538c801dc074f3e900",
+      "ergo" : true
+    },
+    {
+      "name" : "and with or",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "and",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xb6fbf031cf10c04a399238ef288c3d21c83f1227d24599e6c9c2d231860ac2344f2dc73b760766dae165aa1a1d5cf478386e46c8171433f995f5c0de2071cc936fcff687015bc7559e364ff96a6d36cb662d8413c641efdd35de7a7680e5c2c5c43c793bd504b0013030ab590db612a48946fdfcee71863fe743512af13ff2156e7d578b8f4bd5c0538c801dc074f3",
+      "ergo" : false
+    },
+    {
+      "name" : "or with and",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x43a15f00b9f2de5f798b7a6842d0a7b6a78a5963197bd19a27cdbfff5dee63350a00d1ce95baa3ab817425648c97ccbbfcd5e5ff288a9565d62372a9365a784d22f2fc5279bf2f4591ed1dfe6e78891ccb4b084df23e61c0131cd8f9ec6c3c7d49254b5106dff483423f63611c9c659b3b89c0421de8903e63c539e09cf8030651fda3ca0188487bdb62a193ad78e4fe",
+      "ergo" : true
+    },
+    {
+      "name" : "or with and",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0x43a15f00b9f2de5f798b7a6842d0a7b6a78a5963197bd19a27cdbfff5dee63350a00d1ce95baa3ab817425648c97ccbbfcd5e5ff288a9565d62372a9365a784d22f2fc5279bf2f4591ed1dfe6e78891ccb4b084df23e61c0131cd8f9ec6c3c7d49254b5106dff483423f63611c9c659b3b89c0421de8903e63c539e09cf8030651fda3ca0188487bdb62a193ad78e4fe",
+      "ergo" : false
+    },
+    {
+      "name" : "or with and",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x43a15f00b9f2de5f798b7a6842d0a7b6a78a5963197bd19a27cdbfff5dee63350a00d1ce95baa3ab817425648c97ccbbfcd5e5ff288a9565d62372a9365a784d22f2fc5279bf2f4591ed1dfe6e78891ccb4b084df23e61c0131cd8f9ec6c3c7d49254b5106dff483423f63611c9c659b3b89c0421de8903e63c539e09cf8030651fda3ca0188487bdb62a193ad78e4ff",
+      "ergo" : false
+    },
+    {
+      "name" : "or with and",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x42a15f00b9f2de5f798b7a6842d0a7b6a78a5963197bd19a27cdbfff5dee63350a00d1ce95baa3ab817425648c97ccbbfcd5e5ff288a9565d62372a9365a784d22f2fc5279bf2f4591ed1dfe6e78891ccb4b084df23e61c0131cd8f9ec6c3c7d49254b5106dff483423f63611c9c659b3b89c0421de8903e63c539e09cf8030651fda3ca0188487bdb62a193ad78e4fe",
+      "ergo" : false
+    },
+    {
+      "name" : "or with and",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x43a15f00b9f2de5f798b7a6842d0a7b6a78a5963197bd19a27cdbfff5dee63350a00d1ce95baa3ab817425648c97ccbbfcd5e5ff288a9565d62372a9365a784d22f2fc5279bf2f4591ed1dfe6e78891ccb4b084df23e61c0131cd8f9ec6c3c7d49254b5106dff483423f63611c9c659b3b89c0421de8903e63c539e09cf8030651fda3ca0188487bdb62a193ad78e4fe00",
+      "ergo" : true
+    },
+    {
+      "name" : "or with and",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+          },
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          }
+        ]
+      },
+      "secrets" : [
+        "0x6f76336d1672b10661e0ba11cadfb00933bb80837c7e8c14e6080106f03627ee",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x43a15f00b9f2de5f798b7a6842d0a7b6a78a5963197bd19a27cdbfff5dee63350a00d1ce95baa3ab817425648c97ccbbfcd5e5ff288a9565d62372a9365a784d22f2fc5279bf2f4591ed1dfe6e78891ccb4b084df23e61c0131cd8f9ec6c3c7d49254b5106dff483423f63611c9c659b3b89c0421de8903e63c539e09cf8030651fda3ca0188487bdb62a193ad78e4",
+      "ergo" : false
+    },
+    {
+      "name" : "or of a threshold and a key",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "threshold",
+            "k" : 2,
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x688554c079c1b4601338f35d436d23caf151e58834288f8a218980de84cc3eca16384d4cf2f1e7a6e888ca2c86bc66e4043364f18cdc75380f17c8a6e525482477196bac8a021954f65ff41c5c73fcd30d4521640ad75743a754cd5224928c3c16655be356fcf8ee240820cce88218d97ae344d9bf80a3295f42bc7ce1e3ae82c92aa1bba0649d694c297174574dfe94ff55009371b0679e421e8b01d1227962f6b43e22b164708fdb2cdb8bbc947770ee78aacafa5384cd51331950bd0d38e5c95f3dba50fd0ad9",
+      "ergo" : true
+    },
+    {
+      "name" : "or of a threshold and a key",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "threshold",
+            "k" : 2,
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0x688554c079c1b4601338f35d436d23caf151e58834288f8a218980de84cc3eca16384d4cf2f1e7a6e888ca2c86bc66e4043364f18cdc75380f17c8a6e525482477196bac8a021954f65ff41c5c73fcd30d4521640ad75743a754cd5224928c3c16655be356fcf8ee240820cce88218d97ae344d9bf80a3295f42bc7ce1e3ae82c92aa1bba0649d694c297174574dfe94ff55009371b0679e421e8b01d1227962f6b43e22b164708fdb2cdb8bbc947770ee78aacafa5384cd51331950bd0d38e5c95f3dba50fd0ad9",
+      "ergo" : false
+    },
+    {
+      "name" : "or of a threshold and a key",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "threshold",
+            "k" : 2,
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x688554c079c1b4601338f35d436d23caf151e58834288f8a218980de84cc3eca16384d4cf2f1e7a6e888ca2c86bc66e4043364f18cdc75380f17c8a6e525482477196bac8a021954f65ff41c5c73fcd30d4521640ad75743a754cd5224928c3c16655be356fcf8ee240820cce88218d97ae344d9bf80a3295f42bc7ce1e3ae82c92aa1bba0649d694c297174574dfe94ff55009371b0679e421e8b01d1227962f6b43e22b164708fdb2cdb8bbc947770ee78aacafa5384cd51331950bd0d38e5c95f3dba50fd0ad8",
+      "ergo" : false
+    },
+    {
+      "name" : "or of a threshold and a key",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "threshold",
+            "k" : 2,
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x698554c079c1b4601338f35d436d23caf151e58834288f8a218980de84cc3eca16384d4cf2f1e7a6e888ca2c86bc66e4043364f18cdc75380f17c8a6e525482477196bac8a021954f65ff41c5c73fcd30d4521640ad75743a754cd5224928c3c16655be356fcf8ee240820cce88218d97ae344d9bf80a3295f42bc7ce1e3ae82c92aa1bba0649d694c297174574dfe94ff55009371b0679e421e8b01d1227962f6b43e22b164708fdb2cdb8bbc947770ee78aacafa5384cd51331950bd0d38e5c95f3dba50fd0ad9",
+      "ergo" : false
+    },
+    {
+      "name" : "or of a threshold and a key",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "threshold",
+            "k" : 2,
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x688554c079c1b4601338f35d436d23caf151e58834288f8a218980de84cc3eca16384d4cf2f1e7a6e888ca2c86bc66e4043364f18cdc75380f17c8a6e525482477196bac8a021954f65ff41c5c73fcd30d4521640ad75743a754cd5224928c3c16655be356fcf8ee240820cce88218d97ae344d9bf80a3295f42bc7ce1e3ae82c92aa1bba0649d694c297174574dfe94ff55009371b0679e421e8b01d1227962f6b43e22b164708fdb2cdb8bbc947770ee78aacafa5384cd51331950bd0d38e5c95f3dba50fd0ad900",
+      "ergo" : true
+    },
+    {
+      "name" : "or of a threshold and a key",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "threshold",
+            "k" : 2,
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              }
+            ]
+          },
+          {
+            "type" : "dlog",
+            "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+          }
+        ]
+      },
+      "secrets" : [
+        "0xf2a3d963df1591971cd4455b41cca9245bf684e1dc668049c4ca84689807c6b2",
+        "0x4c9a4382636dbccf66d231aae14e4f895f841f139edfd8f70bde67671224186f"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0x688554c079c1b4601338f35d436d23caf151e58834288f8a218980de84cc3eca16384d4cf2f1e7a6e888ca2c86bc66e4043364f18cdc75380f17c8a6e525482477196bac8a021954f65ff41c5c73fcd30d4521640ad75743a754cd5224928c3c16655be356fcf8ee240820cce88218d97ae344d9bf80a3295f42bc7ce1e3ae82c92aa1bba0649d694c297174574dfe94ff55009371b0679e421e8b01d1227962f6b43e22b164708fdb2cdb8bbc947770ee78aacafa5384cd51331950bd0d38e5c95f3dba50fd0a",
+      "ergo" : false
+    },
+    {
+      "name" : "threshold over connectives and a DH tuple",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              }
+            ]
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+              }
+            ]
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xb7d8b636b85afd379b275e28fc25652b5b4d80338e294c7384661a5a0e769ec0d156ca99a6ec292bb815f2711c58b6d0790e1452fba306288045f380dc3b9edc0efa23b99331da6010e4771264fd03d6106f172c9378e29c568d7f6f14cc4e9723f3ec0f2cdfe3b26b7eb5e51950642f4fdd625b20c73af6bd2c848d4f33f319aac990747c8b3462f1eadf775beab680b48e50d4ad2e48ed7d75380aa7699f7771f066991bec4dfdbf9626a5c9107a87eeea52ccc920e3a0e6d24e9a0ae9c900968aa5123b6a13654d946c8cf8ae98491218ab4b1bad5b39cae188dd692b6b60c450ac8dad682556",
+      "ergo" : true
+    },
+    {
+      "name" : "threshold over connectives and a DH tuple",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              }
+            ]
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+              }
+            ]
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0xb7d8b636b85afd379b275e28fc25652b5b4d80338e294c7384661a5a0e769ec0d156ca99a6ec292bb815f2711c58b6d0790e1452fba306288045f380dc3b9edc0efa23b99331da6010e4771264fd03d6106f172c9378e29c568d7f6f14cc4e9723f3ec0f2cdfe3b26b7eb5e51950642f4fdd625b20c73af6bd2c848d4f33f319aac990747c8b3462f1eadf775beab680b48e50d4ad2e48ed7d75380aa7699f7771f066991bec4dfdbf9626a5c9107a87eeea52ccc920e3a0e6d24e9a0ae9c900968aa5123b6a13654d946c8cf8ae98491218ab4b1bad5b39cae188dd692b6b60c450ac8dad682556",
+      "ergo" : false
+    },
+    {
+      "name" : "threshold over connectives and a DH tuple",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              }
+            ]
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+              }
+            ]
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xb7d8b636b85afd379b275e28fc25652b5b4d80338e294c7384661a5a0e769ec0d156ca99a6ec292bb815f2711c58b6d0790e1452fba306288045f380dc3b9edc0efa23b99331da6010e4771264fd03d6106f172c9378e29c568d7f6f14cc4e9723f3ec0f2cdfe3b26b7eb5e51950642f4fdd625b20c73af6bd2c848d4f33f319aac990747c8b3462f1eadf775beab680b48e50d4ad2e48ed7d75380aa7699f7771f066991bec4dfdbf9626a5c9107a87eeea52ccc920e3a0e6d24e9a0ae9c900968aa5123b6a13654d946c8cf8ae98491218ab4b1bad5b39cae188dd692b6b60c450ac8dad682557",
+      "ergo" : false
+    },
+    {
+      "name" : "threshold over connectives and a DH tuple",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              }
+            ]
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+              }
+            ]
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xb6d8b636b85afd379b275e28fc25652b5b4d80338e294c7384661a5a0e769ec0d156ca99a6ec292bb815f2711c58b6d0790e1452fba306288045f380dc3b9edc0efa23b99331da6010e4771264fd03d6106f172c9378e29c568d7f6f14cc4e9723f3ec0f2cdfe3b26b7eb5e51950642f4fdd625b20c73af6bd2c848d4f33f319aac990747c8b3462f1eadf775beab680b48e50d4ad2e48ed7d75380aa7699f7771f066991bec4dfdbf9626a5c9107a87eeea52ccc920e3a0e6d24e9a0ae9c900968aa5123b6a13654d946c8cf8ae98491218ab4b1bad5b39cae188dd692b6b60c450ac8dad682556",
+      "ergo" : false
+    },
+    {
+      "name" : "threshold over connectives and a DH tuple",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              }
+            ]
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+              }
+            ]
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xb7d8b636b85afd379b275e28fc25652b5b4d80338e294c7384661a5a0e769ec0d156ca99a6ec292bb815f2711c58b6d0790e1452fba306288045f380dc3b9edc0efa23b99331da6010e4771264fd03d6106f172c9378e29c568d7f6f14cc4e9723f3ec0f2cdfe3b26b7eb5e51950642f4fdd625b20c73af6bd2c848d4f33f319aac990747c8b3462f1eadf775beab680b48e50d4ad2e48ed7d75380aa7699f7771f066991bec4dfdbf9626a5c9107a87eeea52ccc920e3a0e6d24e9a0ae9c900968aa5123b6a13654d946c8cf8ae98491218ab4b1bad5b39cae188dd692b6b60c450ac8dad68255600",
+      "ergo" : true
+    },
+    {
+      "name" : "threshold over connectives and a DH tuple",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "threshold",
+        "k" : 2,
+        "children" : [
+          {
+            "type" : "and",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b"
+              }
+            ]
+          },
+          {
+            "type" : "or",
+            "children" : [
+              {
+                "type" : "dlog",
+                "pk" : "0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461"
+              },
+              {
+                "type" : "dlog",
+                "pk" : "0x03de9ee04e65343414d59c5760a92dd9b88baec5ecaffca09f9d640d5e5fb0465a"
+              }
+            ]
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x00eb8ae569c6ea4646d2ea6f31072fe1e04b618437058edf8cb351a0c6ea2663",
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xb7d8b636b85afd379b275e28fc25652b5b4d80338e294c7384661a5a0e769ec0d156ca99a6ec292bb815f2711c58b6d0790e1452fba306288045f380dc3b9edc0efa23b99331da6010e4771264fd03d6106f172c9378e29c568d7f6f14cc4e9723f3ec0f2cdfe3b26b7eb5e51950642f4fdd625b20c73af6bd2c848d4f33f319aac990747c8b3462f1eadf775beab680b48e50d4ad2e48ed7d75380aa7699f7771f066991bec4dfdbf9626a5c9107a87eeea52ccc920e3a0e6d24e9a0ae9c900968aa5123b6a13654d946c8cf8ae98491218ab4b1bad5b39cae188dd692b6b60c450ac8dad6825",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin half-mix, Bob spends",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xd35552b8a0141d71edddf17d2dad31734a8b5f0b4549e1ff4d5fcafd1c1bec6b02a97b4f68c2506075d352ea470b3620eb11c0a47a979370d1f8045a6d73895efde11cf64b2a0bfee9912b8105369152467d714cc17d465efa57669c85ae69013777d25143c30e533dd5d09dd439147a",
+      "ergo" : true
+    },
+    {
+      "name" : "ZeroJoin half-mix, Bob spends",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0xd35552b8a0141d71edddf17d2dad31734a8b5f0b4549e1ff4d5fcafd1c1bec6b02a97b4f68c2506075d352ea470b3620eb11c0a47a979370d1f8045a6d73895efde11cf64b2a0bfee9912b8105369152467d714cc17d465efa57669c85ae69013777d25143c30e533dd5d09dd439147a",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin half-mix, Bob spends",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xd35552b8a0141d71edddf17d2dad31734a8b5f0b4549e1ff4d5fcafd1c1bec6b02a97b4f68c2506075d352ea470b3620eb11c0a47a979370d1f8045a6d73895efde11cf64b2a0bfee9912b8105369152467d714cc17d465efa57669c85ae69013777d25143c30e533dd5d09dd439147b",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin half-mix, Bob spends",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xd25552b8a0141d71edddf17d2dad31734a8b5f0b4549e1ff4d5fcafd1c1bec6b02a97b4f68c2506075d352ea470b3620eb11c0a47a979370d1f8045a6d73895efde11cf64b2a0bfee9912b8105369152467d714cc17d465efa57669c85ae69013777d25143c30e533dd5d09dd439147a",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin half-mix, Bob spends",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xd35552b8a0141d71edddf17d2dad31734a8b5f0b4549e1ff4d5fcafd1c1bec6b02a97b4f68c2506075d352ea470b3620eb11c0a47a979370d1f8045a6d73895efde11cf64b2a0bfee9912b8105369152467d714cc17d465efa57669c85ae69013777d25143c30e533dd5d09dd439147a00",
+      "ergo" : true
+    },
+    {
+      "name" : "ZeroJoin half-mix, Bob spends",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "u" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xd35552b8a0141d71edddf17d2dad31734a8b5f0b4549e1ff4d5fcafd1c1bec6b02a97b4f68c2506075d352ea470b3620eb11c0a47a979370d1f8045a6d73895efde11cf64b2a0bfee9912b8105369152467d714cc17d465efa57669c85ae69013777d25143c30e533dd5d09dd43914",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin full-mix, Alice spends",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xe9e3afb7ecc4691e035f741fa0671d15eb49bea2af409ac685706b14d7a76cc58392b5a45dc02e91eaedded0d9014ae681ceb1d2dc8937b98c842fac4a385df91f021ab0fa4374f8b94ebe461452fcdc34bb7f3b9335120e39488efa05652954215d094f384a43e363bad9ea71d6126a",
+      "ergo" : true
+    },
+    {
+      "name" : "ZeroJoin full-mix, Alice spends",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0xe9e3afb7ecc4691e035f741fa0671d15eb49bea2af409ac685706b14d7a76cc58392b5a45dc02e91eaedded0d9014ae681ceb1d2dc8937b98c842fac4a385df91f021ab0fa4374f8b94ebe461452fcdc34bb7f3b9335120e39488efa05652954215d094f384a43e363bad9ea71d6126a",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin full-mix, Alice spends",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xe9e3afb7ecc4691e035f741fa0671d15eb49bea2af409ac685706b14d7a76cc58392b5a45dc02e91eaedded0d9014ae681ceb1d2dc8937b98c842fac4a385df91f021ab0fa4374f8b94ebe461452fcdc34bb7f3b9335120e39488efa05652954215d094f384a43e363bad9ea71d6126b",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin full-mix, Alice spends",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xe8e3afb7ecc4691e035f741fa0671d15eb49bea2af409ac685706b14d7a76cc58392b5a45dc02e91eaedded0d9014ae681ceb1d2dc8937b98c842fac4a385df91f021ab0fa4374f8b94ebe461452fcdc34bb7f3b9335120e39488efa05652954215d094f384a43e363bad9ea71d6126a",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin full-mix, Alice spends",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xe9e3afb7ecc4691e035f741fa0671d15eb49bea2af409ac685706b14d7a76cc58392b5a45dc02e91eaedded0d9014ae681ceb1d2dc8937b98c842fac4a385df91f021ab0fa4374f8b94ebe461452fcdc34bb7f3b9335120e39488efa05652954215d094f384a43e363bad9ea71d6126a00",
+      "ergo" : true
+    },
+    {
+      "name" : "ZeroJoin full-mix, Alice spends",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000b"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xe9e3afb7ecc4691e035f741fa0671d15eb49bea2af409ac685706b14d7a76cc58392b5a45dc02e91eaedded0d9014ae681ceb1d2dc8937b98c842fac4a385df91f021ab0fa4374f8b94ebe461452fcdc34bb7f3b9335120e39488efa05652954215d094f384a43e363bad9ea71d612",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin full-mix, Bob spends",
+      "kind" : "valid",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xa53d9ee59c4d9b6f715e18ee27526f4987cbac083f2699568810113571089245971cf7f6da6dc50cf9db0c14836c137a08985b5efc74925e79a7e0d32ec5d4ef193ea4b82b1afe49f15b6c6a70b0068e9f2b75ed4f05cbd12fb3e02b6da91846c2dc0eb5b64e6581e84cacfa4190e20b",
+      "ergo" : true
+    },
+    {
+      "name" : "ZeroJoin full-mix, Bob spends",
+      "kind" : "other-message",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x616e6f74686572206d657373616765",
+      "proof" : "0xa53d9ee59c4d9b6f715e18ee27526f4987cbac083f2699568810113571089245971cf7f6da6dc50cf9db0c14836c137a08985b5efc74925e79a7e0d32ec5d4ef193ea4b82b1afe49f15b6c6a70b0068e9f2b75ed4f05cbd12fb3e02b6da91846c2dc0eb5b64e6581e84cacfa4190e20b",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin full-mix, Bob spends",
+      "kind" : "flipped-response",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xa53d9ee59c4d9b6f715e18ee27526f4987cbac083f2699568810113571089245971cf7f6da6dc50cf9db0c14836c137a08985b5efc74925e79a7e0d32ec5d4ef193ea4b82b1afe49f15b6c6a70b0068e9f2b75ed4f05cbd12fb3e02b6da91846c2dc0eb5b64e6581e84cacfa4190e20a",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin full-mix, Bob spends",
+      "kind" : "flipped-challenge",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xa43d9ee59c4d9b6f715e18ee27526f4987cbac083f2699568810113571089245971cf7f6da6dc50cf9db0c14836c137a08985b5efc74925e79a7e0d32ec5d4ef193ea4b82b1afe49f15b6c6a70b0068e9f2b75ed4f05cbd12fb3e02b6da91846c2dc0eb5b64e6581e84cacfa4190e20b",
+      "ergo" : false
+    },
+    {
+      "name" : "ZeroJoin full-mix, Bob spends",
+      "kind" : "trailing-byte",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xa53d9ee59c4d9b6f715e18ee27526f4987cbac083f2699568810113571089245971cf7f6da6dc50cf9db0c14836c137a08985b5efc74925e79a7e0d32ec5d4ef193ea4b82b1afe49f15b6c6a70b0068e9f2b75ed4f05cbd12fb3e02b6da91846c2dc0eb5b64e6581e84cacfa4190e20b00",
+      "ergo" : true
+    },
+    {
+      "name" : "ZeroJoin full-mix, Bob spends",
+      "kind" : "truncated",
+      "proposition" : {
+        "type" : "or",
+        "children" : [
+          {
+            "type" : "dlog",
+            "pk" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          },
+          {
+            "type" : "dhtuple",
+            "g" : "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "h" : "0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252",
+            "u" : "0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb",
+            "v" : "0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8"
+          }
+        ]
+      },
+      "secrets" : [
+        "0x000000000000000000000000000000000000000000000000000000000000000d"
+      ],
+      "message" : "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00",
+      "proof" : "0xa53d9ee59c4d9b6f715e18ee27526f4987cbac083f2699568810113571089245971cf7f6da6dc50cf9db0c14836c137a08985b5efc74925e79a7e0d32ec5d4ef193ea4b82b1afe49f15b6c6a70b0068e9f2b75ed4f05cbd12fb3e02b6da91846c2dc0eb5b64e6581e84cacfa4190e2",
+      "ergo" : false
+    }
+  ]
+}

@@ -162,4 +162,70 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
       .and(expect(SigmaProp.threshold(0, Vector(dlog(sk1))).isLeft, "k = 0"))
       .and(expect(SigmaProp.threshold(2, Vector(dlog(sk1))).isLeft, "k > n"))
   }
+
+  // ---- our prover
+
+  private val secrets: Vector[BigInt] = Vector(sk1, sk2, sk3).map(BigInt(_))
+  private val keys: Vector[SigmaProp] = secrets.map(w => Dlog(Secp256k1Group.base(w)))
+  private val stranger: SigmaProp = Dlog(Secp256k1Group.base(BigInt(7)))
+
+  // ZeroJoin (Ergo's MixExampleSpecification). Alice's half-mix box holds gX = x·G. Bob spends it with secret y into
+  // two full-mix outputs holding (c1, c2) = (y·G, xy·G) in some order; the half-mix demands that he prove
+  // dht(g, gX, c1, c2) or dht(g, gX, c2, c1), which hides which output is which.
+  private val (x, y) = (BigInt(11), BigInt(13))
+  private val g = Secp256k1Group.Generator
+  private val (c1, c2) = (g * y, g * (x * y))
+  private val halfMix = p(SigmaProp.or(Vector(DhTuple(g, g * x, c2, c1), DhTuple(g, g * x, c1, c2))))
+
+  // Each full-mix output is spendable as dlog(c2) or dht(g, c1, gX, c2): Alice, knowing x, proves the second
+  // disjunct for the output where c2 = xy·G; Bob, knowing y, proves the first for the other.
+  private val fullMixAlice = p(SigmaProp.or(Vector(Dlog(c2), DhTuple(g, c1, g * x, c2))))
+  private val fullMixBob = p(SigmaProp.or(Vector(Dlog(c1), DhTuple(g, c2, g * x, c1))))
+
+  private val cases: List[(String, SigmaProp, Vector[BigInt])] = List(
+    ("dlog", keys(0), Vector(secrets(0))),
+    ("and", p(SigmaProp.and(keys.take(2))), secrets.take(2)),
+    ("ring of three, signed by the second", p(SigmaProp.or(keys)), Vector(secrets(1))),
+    ("ring with a stranger, signed by the last", p(SigmaProp.or(Vector(stranger, keys(2)))), Vector(secrets(2))),
+    ("2-of-3 by the first and the last", p(SigmaProp.threshold(2, keys)), Vector(secrets(0), secrets(2))),
+    ("3-of-4 nested in an and", p(SigmaProp.threshold(3, keys :+ stranger).flatMap(t => SigmaProp.and(Vector(keys(0), t)))), secrets),
+    (
+      "an or of thresholds",
+      p((SigmaProp.threshold(2, keys), SigmaProp.threshold(1, Vector(stranger))).tupled.flatMap {
+        case (a, b) => SigmaProp.or(Vector(b, a))
+      }),
+      secrets.take(2)
+    ),
+    ("ZeroJoin: Bob spends the half-mix", halfMix, Vector(y)),
+    ("ZeroJoin: Alice spends her full-mix output", fullMixAlice, Vector(x)),
+    ("ZeroJoin: Bob spends his", fullMixBob, Vector(y))
+  )
+
+  cases.foreach {
+    case (name, prop, ws) =>
+      pureTest(s"our prover: $name verifies; a fresh seed gives a different proof; another message does not verify") {
+        val one = Sigma.verify(prop, SigmaProver.proveWith(prop, ws, msg, hex"01").toOption.get, msg)
+        val proofs = List(hex"01", hex"02").map(seed => SigmaProver.proveWith(prop, ws, msg, seed))
+        expect
+          .same(Right(true), one)
+          .and(expect(proofs.distinct.size == 2, "fresh randomness"))
+          .and(expect.same(Right(false), proofs.head.flatMap(Sigma.verify(prop, _, msg.reverse))))
+          .and(expect.same(Right(Sigma.proofLength(prop)), proofs.head.map(_.size)))
+      }
+  }
+
+  pureTest("our prover refuses secrets that do not satisfy the proposition") {
+    expect(SigmaProver.proveWith(p(SigmaProp.threshold(2, keys)), Vector(secrets(0)), msg, hex"01").isLeft, "one of two")
+      .and(expect(SigmaProver.proveWith(keys(0), Vector(BigInt(7)), msg, hex"01").isLeft, "the wrong key"))
+  }
+
+  test("random rings: any member can sign, and the proof verifies") {
+    forall(Gen.zip(Gen.choose(1, 6), Gen.choose(0, 5), Gen.choose(1L, Long.MaxValue))) {
+      case (n, who, seed) =>
+        val ws = (1 to n).toVector.map(i => BigInt(seed) * i + 1)
+        val ring = p(SigmaProp.or(ws.map(w => Dlog(Secp256k1Group.base(w)))))
+        val proof = SigmaProver.proveWith(ring, Vector(ws(who % n)), msg, ByteVector.fromLong(seed))
+        expect.same(Right(true), proof.flatMap(Sigma.verify(ring, _, msg)))
+    }
+  }
 }

@@ -2,6 +2,9 @@ package xyz.kd5ujc.crypto.sigma
 
 import cats.syntax.all._
 
+import xyz.kd5ujc.core.canonical.CanonicalValue
+import xyz.kd5ujc.core.canonical.CanonicalValue._
+
 import scodec.bits.ByteVector
 
 /**
@@ -71,6 +74,47 @@ object SigmaProp {
       else if (n.leaves > MaxLeaves) s"a proposition has at most $MaxLeaves leaves".asLeft
       else n.asRight
     }
+
+  // ---- the canonical form (docs/specs/sigma.md §3): a map per node, discriminated by "type", with no other fields
+
+  /**
+   * `{"type": "dlog", "pk": bytes}`, `{"type": "dhtuple", "g", "h", "u", "v": bytes}`, `{"type": "and" | "or",
+   * "children": [...]}`, `{"type": "threshold", "k": int, "children": [...]}`. A field outside its type's schema is an
+   * error, so the encoding is canonical. Value depth is bounded by the canonical model, so this recursion is too.
+   */
+  def fromCanonical(v: CanonicalValue): Either[String, SigmaProp] =
+    v match {
+      case CMap(m) =>
+        def point(k: String): Either[String, GroupElement] =
+          m.get(k) match {
+            case scala.Some(CBytes(b)) => Secp256k1Group.decode(b).leftMap(e => s"$k: $e")
+            case _                     => s"$k must be bytes".asLeft
+          }
+        def children: Either[String, Vector[SigmaProp]] =
+          m.get("children") match {
+            case scala.Some(CArray(cs)) => cs.traverse(fromCanonical)
+            case _                      => "children must be an array".asLeft
+          }
+        def fields(ks: String*): Either[String, Unit] =
+          Either.cond(m.keySet == (ks.toSet + "type"), (), s"${typeName(m)} takes exactly the fields ${ks.mkString(", ")}")
+        m.get("type") match {
+          case scala.Some(CText("dlog")) => fields("pk") >> point("pk").map(Dlog(_))
+          case scala.Some(CText("dhtuple")) =>
+            fields("g", "h", "u", "v") >> (point("g"), point("h"), point("u"), point("v")).mapN(DhTuple(_, _, _, _))
+          case scala.Some(CText("and")) => fields("children") >> children.flatMap(and)
+          case scala.Some(CText("or"))  => fields("children") >> children.flatMap(or)
+          case scala.Some(CText("threshold")) =>
+            fields("k", "children") >> (m.get("k") match {
+              case scala.Some(CInt(k)) if k.isValidInt => children.flatMap(threshold(k.toInt, _))
+              case _                                   => "k must be an integer".asLeft
+            })
+          case _ => "a proposition's type is dlog, dhtuple, and, or or threshold".asLeft
+        }
+      case _ => "a proposition is an object".asLeft
+    }
+
+  private def typeName(m: Map[String, CanonicalValue]): String =
+    m.get("type").collect { case CText(t) => t }.getOrElse("a proposition")
 
   // ---- the Fiat-Shamir statement bytes of a leaf: Ergo's ErgoTree for SigmaPropConstant(leaf), constants segregated
 

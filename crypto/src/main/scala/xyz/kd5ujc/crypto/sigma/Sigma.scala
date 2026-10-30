@@ -123,6 +123,9 @@ object Sigma {
     go(tree, commitments)._1
   }
 
+  /** The proposition's own bytes: its Fiat-Shamir serialization without commitments. */
+  private[sigma] def statementBytes(prop: SigmaProp): ByteVector = fiatShamir(prop, Vector.empty)
+
   private def leaves(c: Checked): Vector[Checked.Leaf] =
     c match {
       case l: Checked.Leaf        => Vector(l)
