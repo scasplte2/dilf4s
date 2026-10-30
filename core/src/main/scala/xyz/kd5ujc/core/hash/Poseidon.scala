@@ -84,7 +84,39 @@ object Poseidon {
    * matrix row's sum of t products of a reduced constant with such an element stays far below 2^(2·254+4), so one
    * reduction per row suffices. Every state element is reduced again at the end of each round.
    */
+  /** A width's constants in Montgomery form, converted once. */
+  final private case class Mont(constants: Vector[FrMont], mds: Vector[Vector[FrMont]], partialRounds: Int)
+
+  private def montgomery(p: PoseidonConstants.Params): Mont =
+    Mont(p.roundConstants.map(FrMont(_)), p.mds.map(_.map(FrMont(_))), p.partialRounds)
+
+  private val mont: Map[Int, Mont] = PoseidonConstants.byWidth.map { case (w, p) => w -> montgomery(p) }
+
+  private def pow5m(a: FrMont): FrMont = {
+    val a2 = a * a
+    a2 * a2 * a
+  }
+
+  /** The permutation, in Montgomery arithmetic over four 64-bit limbs. */
   private def permute(params: PoseidonConstants.Params, state: Vector[BigInt]): Fr = {
+    val t = state.size
+    val f = mont.getOrElse(t, montgomery(params))
+    val rf = PoseidonConstants.FullRounds
+    @tailrec def loop(r: Int, s: Vector[FrMont]): Vector[FrMont] =
+      if (r >= rf + f.partialRounds) s
+      else {
+        val full = r < rf / 2 || r >= rf / 2 + f.partialRounds
+        val sbox = Vector.tabulate(t) { i =>
+          val x = s(i) + f.constants(r * t + i)
+          if (full || i == 0) pow5m(x) else x
+        }
+        loop(r + 1, f.mds.map(row => row.indices.foldLeft(FrMont.Zero)((acc, j) => acc + row(j) * sbox(j))))
+      }
+    Fr.reduce(loop(0, state.map(FrMont(_))).headOption.fold(BigInt(0))(_.toBigInt))
+  }
+
+  /** The `BigInteger` permutation: the reference the Montgomery one is checked against. */
+  private[hash] def referencePermute(params: PoseidonConstants.Params, state: Vector[BigInt]): Fr = {
     val t = state.size
     val f = fast.getOrElse(t, converted(params))
     val rf = PoseidonConstants.FullRounds

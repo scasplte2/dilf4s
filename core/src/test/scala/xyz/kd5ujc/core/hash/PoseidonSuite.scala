@@ -1,8 +1,12 @@
 package xyz.kd5ujc.core.hash
 
-import weaver.SimpleIOSuite
+import cats.Show
 
-object PoseidonSuite extends SimpleIOSuite {
+import org.scalacheck.Gen
+import weaver.SimpleIOSuite
+import weaver.scalacheck.Checkers
+
+object PoseidonSuite extends SimpleIOSuite with Checkers {
 
   private def fr(i: BigInt): Fr = Fr.from(i).toOption.get
   private def h(xs: Int*): Either[PoseidonError, BigInt] = Poseidon.hash(xs.map(i => fr(BigInt(i)))).map(_.value)
@@ -38,5 +42,37 @@ object PoseidonSuite extends SimpleIOSuite {
       .same(Left(PoseidonError.NonCanonical(-1)), Fr.from(-1))
       .and(expect.same(Left(PoseidonError.NonCanonical(Fr.Modulus)), Fr.from(Fr.Modulus)))
       .and(expect.same(BigInt(1), Fr.reduce(Fr.Modulus + 1).value))
+  }
+
+  // ---- Montgomery arithmetic against BigInt
+
+  private val element: Gen[BigInt] = Gen.oneOf(
+    Gen.choose(0L, Long.MaxValue).map(BigInt(_)),
+    Gen.listOfN(32, Gen.choose(Byte.MinValue, Byte.MaxValue)).map(bs => BigInt(1, bs.toArray).mod(Fr.Modulus)),
+    Gen.oneOf(BigInt(0), BigInt(1), Fr.Modulus - 1, Fr.Modulus - 2, (BigInt(1) << 253) - 1)
+  )
+
+  private given Show[(BigInt, BigInt)] = Show.fromToString
+  private given Show[List[BigInt]] = Show.fromToString
+
+  test("Montgomery field arithmetic agrees with BigInt mod r, and round-trips") {
+    forall(Gen.zip(element, element)) {
+      case (a, b) =>
+        val (x, y) = (FrMont(a), FrMont(b))
+        expect
+          .same((a * b).mod(Fr.Modulus), (x * y).toBigInt)
+          .and(expect.same((a + b).mod(Fr.Modulus), (x + y).toBigInt))
+          .and(expect.same(a, x.toBigInt))
+    }
+  }
+
+  test("the Montgomery permutation agrees with the BigInteger reference at every width") {
+    forall(Gen.choose(1, 4).flatMap(n => Gen.listOfN(n, element))) { xs =>
+      val params = PoseidonConstants.byWidth(xs.size + 1)
+      expect.same(
+        Poseidon.referencePermute(params, BigInt(0) +: xs.toVector).value,
+        Poseidon.hash(xs.map(fr)).map(_.value).getOrElse(BigInt(-1))
+      )
+    }
   }
 }
