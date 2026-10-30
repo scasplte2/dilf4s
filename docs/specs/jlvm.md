@@ -362,7 +362,9 @@ which branches the prover knew. This is what ring signatures, hidden-signer k-of
 
 **Authenticated structures**: dilf4s's Merkle trees (`merkle.md`) and binary Patricia tries (`trie.md`), over SHA-256.
 Proofs are their canonical records (`merkle-inclusion`, `merkle-consistency`, `trie-proof`), passed as values. A leaf
-or value that is bytes commits as itself; any other value commits as its canonical CBOR encoding.
+or value that is bytes commits as itself; any other value commits as its canonical CBOR encoding. These are the
+library's conventions: `MerkleTree.leaf` (or `MerkleHashing.leaf` on the bytes) for a Merkle leaf, and
+`TrieHashing.value` on the bytes for a trie value.
 
 | Operation | Arguments | Result |
 |---|---|---|
@@ -379,7 +381,8 @@ or value that is bytes commits as itself; any other value commits as its canonic
   exactly the trie's entries under the prefix, or in `[from, until)`.
 - **"Not covered" is an error.** A proof that does not reach the queried key, or reaches a stub inside the queried
   prefix or range, is a `Crypto` error, never `false`: it establishes neither presence nor absence.
-- **Gas** is priced by weight, about one SHA-256 per path digest or proof record.
+- **Gas** is priced by weight. As measured: about 13 per unit of weight for Merkle proofs, and 30 for trie proofs,
+  whose records are larger and hashed through CBOR.
 
 ## 7. Gas
 

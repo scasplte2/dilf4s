@@ -120,6 +120,22 @@ object ProofOpsSuite extends IOSuite {
     }
   }
 
+  test("merkle_verify commits leaves as MerkleTree.leaf does: bytes as they are, other values as canonical CBOR") { f =>
+    IO {
+      val leaves =
+        List[CanonicalValue](CBytes(ByteVector(1, 2, 3)), m("to" -> CBytes(ByteVector(9)), "amount" -> CInt(BigInt(5))), CInt(BigInt(7)))
+      val tree = get(MerkleTree.fromLeaves[Sha256, CanonicalValue](leaves))
+      val head = m("root" -> CBytes(tree.root.bytes), "size" -> CInt(BigInt(tree.size)))
+      leaves.zipWithIndex.foldMap {
+        case (leaf, i) =>
+          expect.same(
+            Right(True),
+            call(f.jlvm, Op.MerkleVerify, head, leaf, get(tree.inclusionProof(i.toLong).flatMap(MerkleCodec.encodeInclusion(_))))
+          )
+      }
+    }
+  }
+
   // ---- tries
 
   private def mode(j: Json): CanonicalValue =

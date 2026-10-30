@@ -161,12 +161,12 @@ object GasSchedule {
       // ~300us per dlog leaf on BouncyCastle; a leaf of proposition and proof weighs ~105, a DH tuple ~215 (4 muls)
       SchnorrVerify -> c(5000, 430, Weight),
       SigmaVerify   -> c(5000, 430, Weight),
-      // one SHA-256 per path digest or proof record (weight ~34 to ~100), plus encoding the leaf or values
-      MerkleVerify            -> c(500, 5, Weight),
-      MerkleConsistencyVerify -> c(500, 5, Weight),
-      TrieVerify              -> c(500, 5, Weight),
-      TriePrefixVerify        -> c(1000, 5, Weight),
-      TrieRangeVerify         -> c(1000, 5, Weight)
+      // measured at ~150 gas/us: a 16-digest Merkle path (weight 548) in ~46us, a 129-record trie proof (3495) in ~700us
+      MerkleVerify            -> c(500, 13, Weight),
+      MerkleConsistencyVerify -> c(500, 13, Weight),
+      TrieVerify              -> c(500, 30, Weight),
+      TriePrefixVerify        -> c(1000, 30, Weight),
+      TrieRangeVerify         -> c(1000, 30, Weight)
     ),
     literal = Gas(1),
     element = Gas(1),

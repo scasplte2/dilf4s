@@ -166,7 +166,9 @@ Simulated and real transcripts are identically distributed, so a proof does not 
 ## 8. Using proofs
 
 - **Fix the statement in the program.** Build the proposition from the program's literals and committed state, never
-  from the spender's arguments alone: whoever chooses the statement can choose one they can prove.
+  from the spender's arguments alone: whoever chooses the statement can choose one they can prove. Rejecting the
+  identity does not make every statement safe. Any statement with a public witness can be proven by anyone, such as
+  `dlog(G)` (`w = 1`) or a tuple with `u = g`, and no verifier can tell.
 - **Bind the message.** The message must commit to what the proof authorises: the update or transaction, its target,
   and a nonce or ordinal. A proof over a reused message replays.
 - **Use one `sigma_verify` for any hiding.**
