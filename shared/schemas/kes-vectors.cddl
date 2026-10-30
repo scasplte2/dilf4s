@@ -1,0 +1,30 @@
+; Schema of shared/vectors/kes_v1.json (conformance vectors for docs/specs/kes.md).
+
+kes-vectors = {
+  "spec": "docs/specs/kes.md",
+  "version": 1,
+  "vectors": [* kes-vector],
+}
+
+kes-vector = {
+  "construction": kes-construction,
+  "parameters": kes-parameters,
+  "seed": hex,
+  "message": hex,
+  "verifyingKey": hex,
+  "periods": [* kes-period],
+}
+
+kes-construction = "dilf4s-sum" / "dilf4s-product" / "cardano-sum"
+
+kes-parameters = kes-sum-parameters / kes-product-parameters / kes-cardano-parameters
+
+kes-sum-parameters = { "hash": text, "height": uint }
+
+kes-product-parameters = { "hash": text, "superHeight": uint, "subHeight": uint }
+
+kes-cardano-parameters = { "depth": uint }
+
+kes-period = { "period": uint, "key": hex, "signature": hex }
+
+hex = text .regexp "([0-9a-f]{2})*"

@@ -55,6 +55,34 @@ object Codec {
       CanonicalDecoder.sizedText(lo, hi)
     )
 
+  /** Exactly the integer `a`; `A` is its singleton type, so the value is fixed by the type. */
+  def literalInt[A <: Int & Singleton](a: A): Codec[A] =
+    Codec(_ => CInt(BigInt(a)).asRight, CanonicalDecoder.int.emap(i => Either.cond(i == BigInt(a), a, s"expected $a, got $i")))
+
+  /** Exactly the text `a`, as its singleton type. */
+  def literalText[A <: String & Singleton](a: A): Codec[A] =
+    Codec(_ => CanonicalValue.text(a), CanonicalDecoder.text.emap(t => Either.cond(t == a, a, s"expected \"$a\", got \"$t\"")))
+
+  /**
+   * Text matching the whole of `pattern` (CDDL `.regexp`). The generator compiles every pattern before emitting it, so
+   * the patterns reaching this point are valid.
+   */
+  def matching(pattern: scala.util.matching.Regex): Codec[String] =
+    Codec(
+      t => Either.cond(pattern.matches(t), t, mismatch(s"text does not match ${pattern.regex}")).flatMap(CanonicalValue.text),
+      CanonicalDecoder.text.emap(t => Either.cond(pattern.matches(t), t, s"\"$t\" does not match ${pattern.regex}"))
+    )
+
+  /** A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`). */
+  def textMap[A](value: Codec[A]): Codec[Map[String, A]] =
+    Codec(
+      m => m.toList.traverse { case (k, v) => value.encode(v).map(k -> _) }.flatMap(CanonicalValue.map),
+      {
+        case CMap(entries) => entries.toList.traverse { case (k, v) => value.decoder.decode(v).leftMap(_.at(k)).map(k -> _) }.map(_.toMap)
+        case _             => DecodeFailure(Nil, "expected a map").asLeft
+      }
+    )
+
   def vector[A](element: Codec[A], min: Int, max: Option[Int]): Codec[Vector[A]] =
     Codec(
       xs =>
@@ -79,10 +107,15 @@ object Codec {
    */
   def selectAlternative[A](
     value:        CanonicalValue,
-    alternatives: List[(Set[String], Set[String], CanonicalDecoder[A])]
+    alternatives: List[(Set[String], Set[String], CanonicalDecoder[A])],
+    texts:        List[(String, A)] = Nil
   ): Either[DecodeFailure, A] =
     CanonicalDecoder.keysOf(value) match {
-      case None => DecodeFailure(Nil, "expected a map").asLeft
+      case None =>
+        value match {
+          case CText(t) => texts.collectFirst { case (`t`, a) => a }.toRight(DecodeFailure(Nil, s"\"$t\" is not an alternative"))
+          case _        => DecodeFailure(Nil, "expected a map or one of the text alternatives").asLeft
+        }
       case Some(keys) =>
         alternatives.collectFirst { case (required, all, d) if required.subsetOf(keys) && keys.subsetOf(all) => d }
           .toRight(DecodeFailure(Nil, s"no alternative has keys ${keys.toList.sorted.mkString(", ")}"))

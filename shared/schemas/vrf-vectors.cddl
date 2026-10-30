@@ -1,0 +1,15 @@
+; Schema of shared/vectors/vrf_v1.json (conformance vectors for docs/specs/vrf.md).
+
+vrf-vectors = {
+  "spec": "docs/specs/vrf.md",
+  "version": 1,
+  "suites": [* vrf-suite],
+}
+
+vrf-suite = { "suite": text, "keys": [* vrf-key] }
+
+vrf-key = { "seed": hex, "signingKey": hex, "verifyingKey": hex, "proofs": [* vrf-proof] }
+
+vrf-proof = { "alpha": hex, "pi": hex, "beta": hex }
+
+hex = text .regexp "([0-9a-f]{2})*"

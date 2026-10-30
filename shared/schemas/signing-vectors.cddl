@@ -1,0 +1,41 @@
+; Schema of shared/vectors/signing_v1.json (conformance vectors for docs/specs/signing.md).
+
+signing-vectors = {
+  "spec": "docs/specs/signing.md",
+  "version": 1,
+  "randomness": hex,
+  "signing": [* signing-scheme],
+  "bip39": [* bip39-vector],
+  "slip10Ed25519": slip10-vector,
+  "bip32Secp256k1": bip32-vector,
+  "ed25519Bip32": icarus-vector,
+}
+
+signing-scheme = { "scheme": text, "keys": [* signing-key] }
+
+signing-key = { "seed": hex, "signingKey": hex, "verifyingKey": hex, "signatures": [* signed-message] }
+
+signed-message = { "message": hex, "signature": hex }
+
+bip39-vector = { "entropy": hex, "mnemonic": text, "passphrase": text, "seed": hex }
+
+extended-key = { "key": hex, "chainCode": hex }
+
+slip10-vector = { "seed": hex, "path": text, "master": extended-key, "child": extended-key }
+
+bip32-vector = { "seed": hex, "path": text, "master": extended-key, "child": extended-key, "verifyingKey": hex }
+
+icarus-vector = {
+  "entropy": hex,
+  "passphrase": text,
+  "root": extended-key,
+  "accountPath": text,
+  "account": extended-key,
+  "accountVerifyingKey": hex,
+  "addressPath": text,
+  "address": extended-key,
+  "addressVerifyingKey": hex,
+  "signatures": [* signed-message],
+}
+
+hex = text .regexp "([0-9a-f]{2})*"

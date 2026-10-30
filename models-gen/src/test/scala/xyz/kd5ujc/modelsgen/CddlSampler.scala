@@ -114,6 +114,7 @@ final class CddlSampler(schema: Schema, maxDepth: Int = 7, sortMapKeys: Boolean 
           )
         case RT.Prim(PrimKind.Float) => unsupported(UnsupportedFeature.FloatSampling)
         case RT.LitInt(n)            => success(int(n))
+        case RT.MatchingText(_)      => unsupported(UnsupportedFeature.Control("regexp"))
         case RT.IntEnum(cases) =>
           cases
             .lift(if cases.isEmpty then 0 else rnd.nextInt(cases.size))

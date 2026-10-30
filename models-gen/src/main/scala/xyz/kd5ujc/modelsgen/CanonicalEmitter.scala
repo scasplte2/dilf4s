@@ -25,7 +25,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
 
   def typeName(q: QName): String = pascal(q.name)
   private def qualified(from: String, q: QName): String =
-    if (q.module == from) typeName(q) else s"$packagePrefix.${q.module}.${typeName(q)}"
+    if (q.module == from) typeName(q) else s"$packagePrefix.${CanonicalEmitter.packageSegment(q.module)}.${typeName(q)}"
 
   /** Scala type and codec expression of a type in field or element position. */
   private def tc(rule: QName, t: RT): Either[GenError, (String, String)] = t match {
@@ -41,6 +41,16 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     case RT.SizedBytes(lo, hi) => ("ByteVector", s"Codec.sizedBytes(${lo}L, ${bound(hi, "L")})").asRight
     case RT.SizedText(lo, hi)  => ("String", s"Codec.sizedText($lo, ${bound(hi, "")})").asRight
     case RT.Ref(q)             => (qualified(rule.module, q), s"${qualified(rule.module, q)}.codec").asRight
+    case RT.LitInt(v) if v >= Int.MinValue && v <= Int.MaxValue => (s"$v", s"Codec.literalInt[$v]($v)").asRight
+    case RT.LitText(v)                                          => (literal(v), s"Codec.literalText[${literal(v)}](${literal(v)})").asRight
+    case RT.MatchingText(pattern) =>
+      Either
+        .catchNonFatal(java.util.regex.Pattern.compile(pattern))
+        .bimap(
+          e => outside(rule, s"invalid .regexp pattern ${literal(pattern)}: ${e.getMessage}"),
+          _ => ("String", s"Codec.matching(${literal(pattern)}.r)")
+        )
+    case TextMap(value) => tc(rule, value).map { case (t, c) => (s"Map[String, $t]", s"Codec.textMap($c)") }
     case RT.Arr(Vector(REntry(occ, _, None, element))) if occ != Occ.Once && occ != Occ.Optional =>
       tc(rule, element).map {
         case (et, ec) => (s"Vector[$et]", s"Codec.vector($ec, ${occ.min}, ${occ.max.fold("None")(m => s"Some($m)")})")
@@ -125,7 +135,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
       case _ => outside(alt, "choice alternative that is not a map rule").asLeft
     }
 
-  private def union(rule: QName, alts: Vector[QName]): Either[GenError, String] =
+  private def union(rule: QName, alts: Vector[QName], texts: Vector[String]): Either[GenError, String] =
     alts.traverse(a => keySets(a).map(a -> _)).flatMap { ks =>
       val ambiguous = for {
         (a, (ra, aa)) <- ks
@@ -136,12 +146,15 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
       else {
         val n = typeName(rule)
         val names = alts.map(qualified(rule.module, _))
-        val enc = names.map(t => s"      case a: $t => $t.codec.encode(a)").mkString("\n")
+        val enc = (names.map(t => s"      case a: $t => $t.codec.encode(a)") ++
+          texts.map(t => s"      case ${literal(t)} => Codec.literalText[${literal(t)}](${literal(t)}).encode(${literal(t)})"))
+          .mkString("\n")
+        val textAlts = texts.map(t => s"(${literal(t)}, ${literal(t)}: $n)").mkString(", ")
         def set(s: Set[String]) = s"Set(${s.toList.sorted.map(k => s""""$k"""").mkString(", ")})"
         val sel = ks.map {
           case (q, (r, a)) => s"        (${set(r)}, ${set(a)}, ${qualified(rule.module, q)}.codec.decoder.map(x => x: $n))"
         }.mkString(",\n")
-        s"""type $n = ${names.mkString(" | ")}
+        s"""type $n = ${(names ++ texts.map(literal)).mkString(" | ")}
            |
            |object $n {
            |  lazy val codec: Codec[$n] = Codec(
@@ -151,7 +164,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
            |    (v: CanonicalValue) =>
            |      Codec.selectAlternative[$n](v, List(
            |$sel
-           |      ))
+           |      ), List($textAlts))
            |  )
            |}
            |""".stripMargin.asRight
@@ -172,15 +185,17 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
 
   private def emitRule(q: QName): Either[GenError, String] =
     schema.rule(q).flatMap {
+      case RuleDef(_, RuleBody.Type(t @ TextMap(_))) => alias(q, t)
       case RuleDef(_, RuleBody.Type(RT.MapT(es)))    => record(q, es)
       case RuleDef(_, RuleBody.Type(RT.IntEnum(cs))) => enumeration(q, cs)
       case RuleDef(_, RuleBody.Type(RT.Choice(alts))) =>
         alts.traverse {
-          case RT.Ref(a) => a.some
-          case _         => none[QName]
+          case RT.Ref(a)     => Left(a).some
+          case RT.LitText(t) => Right(t).some
+          case _             => none[Either[QName, String]]
         }
-          .toRight(outside(q, "inline choice (use a labelled enumeration or a choice of named map rules)"))
-          .flatMap(union(q, _))
+          .toRight(outside(q, "inline choice (a choice is of named map rules and text literals; use an enumeration for integers)"))
+          .flatMap(as => union(q, as.collect { case Left(a) => a }, as.collect { case Right(t) => t }))
       case RuleDef(_, RuleBody.Type(t))      => alias(q, t)
       case RuleDef(_, RuleBody.GroupBody(_)) => outside(q, "group rule").asLeft
     }
@@ -202,7 +217,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
               )
             ).flatten
             s"""// GENERATED by models-gen from shared/schemas/$name.cddl. Do not edit.
-               |package $packagePrefix.$name
+               |package $packagePrefix.${CanonicalEmitter.packageSegment(name)}
                |
                |${imports.mkString("\n")}
                |
@@ -262,6 +277,27 @@ object CanonicalEmitter {
   // scalafix:on DisableSyntax.noTry, DisableSyntax.noCatch, DisableSyntax.noFinally
 
   private def words(s: String): List[String] = s.split("[-_ .]+").toList.filter(_.nonEmpty)
+
+  /** A module name as a package segment: `merkle-vectors` is `merkle_vectors`. */
+  def packageSegment(module: String): String = module.map(c => if (c.isLetterOrDigit) c.toLower else '_')
+
+  /** A Scala string literal (also usable as a singleton type) for `s`. */
+  def literal(s: String): String =
+    "\"" + s.flatMap {
+      case '"'  => "\\\""
+      case '\\' => "\\\\"
+      case '\n' => "\\n"
+      case c    => c.toString
+    } + "\""
+
+  /** `{ * text => T }`: a map with arbitrary text keys. */
+  object TextMap {
+    def unapply(t: RT): Option[RT] = t match {
+      case RT.MapT(Vector(REntry(occ, _, Some(RKey.OfType(RT.Prim(PrimKind.Text), _)), value))) if occ.min == 0 && occ.max.isEmpty =>
+        Some(value)
+      case _ => None
+    }
+  }
 
   def pascal(s: String): String = words(s).map(w => w.take(1).toUpperCase + w.drop(1)).mkString
 

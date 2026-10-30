@@ -1,0 +1,26 @@
+; Schema of shared/vectors/canonical_encoding_v1.json (conformance vectors for docs/specs/canonical-encoding.md).
+
+canonical-vectors = {
+  "spec": "docs/specs/canonical-encoding.md",
+  "version": 1,
+  "contentHashTag": text,
+  "contentHashAlgorithm": text,
+  "json": [* canonical-json-case],
+  "model": [* canonical-model-case],
+  "cborRejections": [* canonical-cbor-rejection],
+  "taggedHash": [* canonical-tagged-hash],
+}
+
+canonical-json-case = canonical-json-accepted / canonical-json-rejected
+
+canonical-json-accepted = { "json": text, "cbor": hex, "contentHash": hex }
+
+canonical-json-rejected = { "json": text, "error": text }
+
+canonical-model-case = { "value": text, "cbor": hex, "contentHash": hex }
+
+canonical-cbor-rejection = { "cbor": hex, "error": text }
+
+canonical-tagged-hash = { "algorithm": text, "tag": text, "message": hex, "digest": hex }
+
+hex = text .regexp "([0-9a-f]{2})*"

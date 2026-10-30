@@ -1,0 +1,24 @@
+; Schema of shared/vectors/poseidon_v1.json (conformance vectors for docs/specs/zk.md sections 3 and 4).
+; Field elements and positions are decimal strings (they exceed JSON's safe integer range).
+
+poseidon-vectors = {
+  "spec": "docs/specs/zk.md",
+  "version": 1,
+  "poseidon": [* poseidon-hash-vector],
+  "merkle": poseidon-merkle-vector,
+}
+
+poseidon-hash-vector = { "inputs": [1*4 decimal], "output": decimal }
+
+poseidon-merkle-vector = {
+  "depth": uint,
+  "leaves": decimal-leaves,
+  "root": decimal,
+  "proofs": [* poseidon-proof-vector],
+}
+
+decimal-leaves = { * tstr => decimal }
+
+poseidon-proof-vector = { "position": decimal, "siblings": [* decimal] }
+
+decimal = text .regexp "0|[1-9][0-9]*"

@@ -35,7 +35,9 @@ object Main extends IOApp {
           texts <- paths.traverse(p => IO.blocking(Files.readString(p, UTF_8)).map(p.getFileName.toString.stripSuffix(".cddl") -> _))
           out   <- IO.fromEither(generate(texts, packagePrefix).leftMap(e => new IllegalArgumentException(e.message)))
           _     <- IO.blocking(Files.createDirectories(Paths.get(outDir)))
-          _     <- out.traverse_ { case (m, src) => IO.blocking(Files.writeString(Paths.get(outDir, s"$m.scala"), src, UTF_8)) }
+          _ <- out.traverse_ {
+            case (m, src) => IO.blocking(Files.writeString(Paths.get(outDir, s"${CanonicalEmitter.packageSegment(m)}.scala"), src, UTF_8))
+          }
         } yield ExitCode.Success
       case _ => IO.println("usage: Main <schemaDir> <outDir> <packagePrefix>").as(ExitCode.Error)
     }

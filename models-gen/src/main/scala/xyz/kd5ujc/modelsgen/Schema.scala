@@ -24,6 +24,9 @@ enum RT:
   case IntRange(lo: BigInt, hi: BigInt)
   case SizedBytes(lo: Int, hi: Int)
   case SizedText(lo: Int, hi: Int)
+
+  /** `text .regexp "pattern"`: text matching the whole pattern. */
+  case MatchingText(pattern: String)
   case Ref(target: QName)
   case Choice(alts: Vector[RT])
 
@@ -313,6 +316,10 @@ final class Schema(val modules: Map[String, Module]):
             success(
               sizes(arg).fold(RT.Unsupported(UnsupportedFeature.SizeBound(arg)))(RT.SizedText(_, _))
             )
+          case (RT.Prim(PrimKind.Text), "regexp") =>
+            arg match
+              case Ast.Ty.Literal(Ast.Lit.TextL(pattern)) => success(RT.MatchingText(pattern))
+              case _                                      => success(RT.Unsupported(UnsupportedFeature.Control(op)))
           case (RT.Prim(PrimKind.Bytes), "cbor") =>
             ty(arg, scope, env, ctx, expanding).map(RT.CborOf(_))
           case (RT.Prim(PrimKind.Uint), _) if comparison =>

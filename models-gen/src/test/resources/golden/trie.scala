@@ -81,7 +81,7 @@ object TrieRecord {
         (Set("h"), Set("h"), TrieStub.codec.decoder.map(x => x: TrieRecord)),
         (Set("s", "v"), Set("s", "v"), TrieLeaf.codec.decoder.map(x => x: TrieRecord)),
         (Set("c", "s"), Set("c", "s", "v"), TrieBranch.codec.decoder.map(x => x: TrieRecord))
-      ))
+      ), List())
   )
 }
 

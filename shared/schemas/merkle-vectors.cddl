@@ -1,0 +1,21 @@
+; Schema of shared/vectors/merkle_v1.json (conformance vectors for docs/specs/merkle.md).
+; Proofs are hex of their canonical CBOR, whose shape is shared/schemas/merkle.cddl.
+
+merkle-vectors = {
+  "spec": "docs/specs/merkle.md",
+  "version": 1,
+  "hash": "SHA-256",
+  "leaves": [* hex],
+  "leafHashes": [* hex],
+  "trees": [* merkle-vector-tree],
+}
+
+merkle-vector-tree = {
+  "size": uint,
+  "root": hex,
+  "rfc6962Root": hex,
+  "inclusion": [* hex],
+  "consistency": [* hex],
+}
+
+hex = text .regexp "([0-9a-f]{2})*"

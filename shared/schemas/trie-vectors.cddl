@@ -1,0 +1,58 @@
+; Schema of shared/vectors/trie_v1.json (conformance vectors for docs/specs/trie.md).
+; "cbor" is hex of a canonical proof, whose shape is shared/schemas/trie.cddl.
+
+trie-vectors = {
+  "spec": "docs/specs/trie.md",
+  "version": 1,
+  "hash": "SHA-256",
+  "emptyRoot": hex,
+  "nodeHashes": trie-node-hashes,
+  "fixtures": [* trie-fixture],
+}
+
+trie-node-hashes = {
+  "leaf": trie-leaf-hash,
+  "branch": trie-branch-hash,
+}
+
+trie-leaf-hash = { "segment": trie-bits, "valueHash": hex, "hash": hex }
+
+trie-branch-hash = { "segment": trie-bits, "valueHash": hex, "left": hex, "hash": hex }
+
+trie-bits = { "bits": uint, "bytes": hex }
+
+trie-fixture = {
+  "name": text,
+  "mode": trie-mode,
+  "entries": [* trie-entry],
+  "root": hex,
+  "proof": trie-proof-vector,
+}
+
+trie-mode = trie-fixed-mode / trie-variable-mode
+
+trie-fixed-mode = { "fixed": uint }
+
+trie-variable-mode = { "variable": uint }
+
+trie-entry = { "key": hex, "value": hex, "valueHash": hex }
+
+trie-proof-vector = {
+  "keys": [* hex],
+  "prefixes": [* hex],
+  "cbor": hex,
+  "lookups": [* trie-lookup],
+  "prefixListings": [* trie-prefix-listing],
+}
+
+trie-lookup = { "key": hex, "result": trie-lookup-result }
+
+trie-lookup-result = trie-present / "absent" / "notCovered"
+
+trie-present = { "present": hex }
+
+trie-prefix-listing = { "prefix": hex, "entries": [* trie-listed] }
+
+trie-listed = { "key": hex, "valueHash": hex }
+
+hex = text .regexp "([0-9a-f]{2})*"
