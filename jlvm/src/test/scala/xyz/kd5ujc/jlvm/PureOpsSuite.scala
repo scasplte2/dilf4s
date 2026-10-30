@@ -473,4 +473,119 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(ok(t("bytes")), run(Op.TypeOf, CBytes(hex"00"))))
       .and(expect.same(ok(False), run(Op.Exists, i(1), CNull)))
   }
+
+  // ---- algebraic properties (metakit PropertyBasedSuite), in their strict form
+
+  test("0 and 1 are identities, and * distributes over +") {
+    forall(Gen.zip(number, number, number)) {
+      case (x, y, z) =>
+        val left = run(Op.Add, y, z).flatMap(s => run(Op.Mul, x, s))
+        val right = for {
+          p <- run(Op.Mul, x, y)
+          r <- run(Op.Mul, x, z)
+          s <- run(Op.Add, p, r)
+        } yield s
+        expect
+          .same(ok(x), run(Op.Add, x, i(0)))
+          .and(expect.same(ok(x), run(Op.Mul, x, i(1))))
+          .and(expect.same(left, right))
+    }
+  }
+
+  pureTest("booleans are not numbers: arithmetic on them is a type error") {
+    expect(isType(run(Op.Add, i(5), True)), "5 + true")
+      .and(expect(isType(run(Op.Add, i(5), False)), "5 + false"))
+      .and(expect(isType(run(Op.Mul, True, i(2))), "true * 2"))
+      .and(expect(isType(run(Op.Sub, i(1), False)), "1 - false"))
+  }
+
+  test("max and min bound their arguments, are among them, and are idempotent") {
+    forall(Gen.nonEmptyListOf(number).map(_.toVector)) { xs =>
+      val rs = xs.map(x => Values.number(x).get)
+      val mx = run(Op.Max, xs*)
+      val mn = run(Op.Min, xs*)
+      val top = mx.toOption.flatMap(Values.number)
+      val bottom = mn.toOption.flatMap(Values.number)
+      expect(top.exists(hi => rs.forall(_ <= hi)), s"max $mx bounds $xs")
+        .and(expect(bottom.exists(b => rs.forall(b <= _)), s"min $mn bounds $xs"))
+        .and(expect(mx.exists(xs.contains), "max is one of the arguments"))
+        .and(expect(mn.exists(xs.contains), "min is one of the arguments"))
+        .and(expect.same(ok(xs.head), run(Op.Max, xs.head, xs.head)))
+        .and(expect.same(ok(xs.head), run(Op.Min, xs.head, xs.head)))
+    }
+  }
+
+  test("unique keeps the first occurrence of each element, in order, so it never lengthens") {
+    val element = Gen.oneOf(Gen.choose(-3, 3).map(n => i(n.toLong)), CanonicalGens.value(1))
+    forall(Gen.listOf(element)) { vs =>
+      expect.same(ok(a(vs.distinct*)), run(Op.Unique, a(vs*)))
+    }
+  }
+
+  test("abs is non-negative, idempotent, and either x or -x") {
+    forall(number) { x =>
+      val r = run(Op.Abs, x)
+      expect(r.toOption.flatMap(Values.number).exists(Ratio.integer(0) <= _), s"abs($x) = $r")
+        .and(expect.same(r, r.flatMap(run(Op.Abs, _))))
+        .and(expect(r == ok(x) || r == run(Op.Sub, x), s"abs($x) is x or -x, got $r"))
+    }
+  }
+
+  test("slice follows JavaScript bounds and keeps order; flatten of singleton arrays is the identity") {
+    forall(Gen.zip(Gen.listOf(Gen.choose(-9, 9)), Gen.choose(-12, 12), Gen.choose(-12, 12))) {
+      case (ns, from, until) =>
+        val vs = ns.map(n => i(n.toLong)).toVector
+        def bound(k: Int): Int = if (k < 0) math.max(0, vs.size + k) else math.min(k, vs.size)
+        expect
+          .same(ok(a(vs.slice(bound(from), bound(until))*)), run(Op.Slice, a(vs*), i(from.toLong), i(until.toLong)))
+          .and(expect.same(ok(a(vs*)), run(Op.Flatten, a(vs.map(v => a(v))*))))
+    }
+  }
+
+  test("the length of a cat of texts is the sum of their lengths, in code points") {
+    forall(Gen.zip(CanonicalGens.text, CanonicalGens.text)) {
+      case (x, y) =>
+        val expected = (Values.codePoints(x).size + Values.codePoints(y).size).toLong
+        expect.same(ok(i(expected)), run(Op.Cat, t(x), t(y)).flatMap(run(Op.Length, _)))
+    }
+  }
+
+  // metakit asserted "lower has no uppercase letters" against the default-locale String.toLowerCase; under full Unicode
+  // mapping that is false (U+0130 lowers to "i\u0307"), so the portable property is idempotence.
+  test("lower and upper are idempotent") {
+    forall(CanonicalGens.text) { s =>
+      val lower = run(Op.Lower, t(s))
+      val upper = run(Op.Upper, t(s))
+      expect.same(lower, lower.flatMap(run(Op.Lower, _))).and(expect.same(upper, upper.flatMap(run(Op.Upper, _))))
+    }
+  }
+
+  // metakit's cross-language ordering_case_vectors.json; dilf4s gives the same results.
+  pureTest("case mapping uses the root locale: no Turkish or Lithuanian tailoring; final sigma is contextual") {
+    expect
+      .same(ok(t("i i\u0307 \u0131 i")), run(Op.Lower, t("I \u0130 \u0131 i")))
+      .and(expect.same(ok(t("I \u0130 I I")), run(Op.Upper, t("I \u0130 \u0131 i"))))
+      .and(expect.same(ok(t("i\u0301 j\u0300")), run(Op.Lower, t("I\u0301 J\u0300"))))
+      .and(expect.same(ok(t("\u03bf\u03c2 \u03c3\u03bf")), run(Op.Lower, t("\u039f\u03a3 \u03a3\u039f"))))
+  }
+
+  // metakit's cross-language ordering vectors, in code-point order (jlvm.md 5.4). metakit sorted by UTF-16 code units,
+  // which puts U+1F600 before U+E000; code-point order puts U+E000 first.
+  pureTest("keys, values and entries follow the code-point order of the keys (cross-language ordering vectors)") {
+    val zam = m("z" -> i(1), "a" -> i(3), "m" -> i(2))
+    val mixed = m("\ue000" -> i(4), "\ud83d\ude00" -> i(3), "2" -> i(2), "10" -> i(1))
+    val unnormalised = m("\u00e9" -> i(1), "e\u0301" -> i(2), "e" -> i(3), "" -> i(4))
+    expect
+      .same(ok(a(i(3), i(2), i(1))), run(Op.Values, zam))
+      .and(expect.same(ok(a(a(t("a"), i(3)), a(t("m"), i(2)), a(t("z"), i(1)))), run(Op.Entries, zam)))
+      .and(expect.same(ok(a(t("10"), t("2"), t("\ue000"), t("\ud83d\ude00"))), run(Op.Keys, mixed)))
+      .and(expect.same(ok(a(i(1), i(2), i(4), i(3))), run(Op.Values, mixed)))
+      .and(
+        expect.same(
+          ok(a(a(t("10"), i(1)), a(t("2"), i(2)), a(t("\ue000"), i(4)), a(t("\ud83d\ude00"), i(3)))),
+          run(Op.Entries, mixed)
+        )
+      )
+      .and(expect.same(ok(a(t(""), t("e"), t("e\u0301"), t("\u00e9"))), run(Op.Keys, unnormalised)))
+  }
 }

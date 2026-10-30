@@ -306,6 +306,85 @@ object EvaluatorSuite extends IOSuite with Checkers {
       .and(expect.same(ok("1"), result("""{"size": {"var": "m"}}""", data)))
   }
 
+  // ---- algebraic and ordering properties (metakit PropertyBasedSuite, CanonicalOrderingLocaleSuite)
+
+  check("boolean algebra over and, or and !; truthiness of null, zero and nonzero numbers") {
+    val pairs = for {
+      x <- List(true, false)
+      y <- List(true, false)
+    } yield (x, y)
+    val algebra = pairs.foldLeft(success) {
+      case (acc, (x, y)) =>
+        acc
+          .and(expect.same(ok(s"$x"), result(s"""{"!": {"!": $x}}""")))
+          .and(expect.same(result(s"""{"and": [$x, $y]}"""), result(s"""{"and": [$y, $x]}""")))
+          .and(expect.same(result(s"""{"or": [$x, $y]}"""), result(s"""{"or": [$y, $x]}""")))
+          .and(expect.same(result(s"""{"!": {"and": [$x, $y]}}"""), result(s"""{"or": [{"!": $x}, {"!": $y}]}""")))
+          .and(expect.same(result(s"""{"!": {"or": [$x, $y]}}"""), result(s"""{"and": [{"!": $x}, {"!": $y}]}""")))
+    }
+    algebra
+      .and(expect.same(ok("false"), result("""{"!!": [null]}""")))
+      .and(expect.same(ok("false"), result("""{"!!": [0]}""")))
+      .and(expect.same(ok("true"), result("""{"!!": [1]}""")))
+      .and(expect.same(ok("true"), result("""{"!!": [-1]}""")))
+      .and(expect.same(ok("true"), result("""{"!!": [-0.5]}""")))
+  }
+
+  test("map preserves length; filter keeps order and never lengthens") { jlvm =>
+    given Jlvm = jlvm
+    forall(Gen.listOf(Gen.choose(-50, 50))) { ns =>
+      val data = s"""{"xs": ${ns.mkString("[", ", ", "]")}}"""
+      expect
+        .same(ok(ns.mkString("[", ", ", "]")), result("""{"map": [{"var": "xs"}, {"var": "$current"}]}""", data))
+        .and(
+          expect.same(
+            ok(ns.filter(_ > 0).mkString("[", ", ", "]")),
+            result("""{"filter": [{"var": "xs"}, {">": [{"var": "$current"}, 0]}]}""", data)
+          )
+        )
+    }
+  }
+
+  // The singleton is metakit's {"only": null}: null values are dropped (jlvm.md 8 #18), so it is the empty map.
+  check("keys, values and entries ignore insertion order, on every driver, at equal gas") {
+    def text(s: String): CanonicalValue = CanonicalValue.text(s).toOption.get
+    def expected(op: String, sorted: List[(String, Int)]): CanonicalValue =
+      CanonicalValue
+        .array(sorted.toVector.map {
+          case (k, n) =>
+            op match {
+              case "keys"   => text(k)
+              case "values" => CInt(BigInt(n))
+              case _        => CanonicalValue.array(Vector(text(k), CInt(BigInt(n)))).toOption.get
+            }
+        })
+        .toOption
+        .get
+    def runAll(op: String, input: CanonicalValue): List[Outcome] = {
+      val data = CanonicalValue.map(List("input" -> input)).toOption.get
+      val p = program(s"""{"$op": {"var": "input"}}""")
+      Config.Driver.values.toList.map(d => summon[Jlvm].evaluate(p, data, Map.empty, Config(driver = d)))
+    }
+    def orders(op: String, sorted: List[(String, Int)], perms: List[List[(String, Int)]]): Expectations = {
+      val outcomes = perms.flatMap(p => runAll(op, CanonicalValue.map(p.map { case (k, n) => k -> CInt(BigInt(n)) }).toOption.get))
+      expect(outcomes.forall(_.result == Right(expected(op, sorted))), s"$op: every order gives the sorted result")
+        .and(expect.same(1, outcomes.map(_.gasUsed).distinct.size))
+    }
+    val five = List("alpha" -> 50, "bravo" -> 10, "charlie" -> 40, "delta" -> 20, "echo" -> 30)
+    val wide = (0 until 128).toList.map(i => f"key-$i%03d" -> (i * 53) % 128)
+    val rotations = wide.indices.toList.flatMap { i =>
+      val r = wide.drop(i) ++ wide.take(i)
+      List(r, r.reverse)
+    }
+    List("keys", "values", "entries").foldLeft(expect.same(120, five.permutations.size)) { (acc, op) =>
+      acc
+        .and(orders(op, five, five.permutations.toList))
+        .and(orders(op, wide, rotations))
+        .and(expect(runAll(op, value("{}")).forall(_.result == ok("[]")), s"$op of {}"))
+        .and(expect(runAll(op, value("""{"only": null}""")).forall(_.result == ok("[]")), s"$op of {\"only\": null}"))
+    }
+  }
+
   // ---- gas
 
   private val S = GasSchedule.V1
@@ -491,6 +570,37 @@ object EvaluatorSuite extends IOSuite with Checkers {
       .and(expect.same(legal, text.flatMap(Parser.parse(_))))
       .and(expect(isLimit(Parser.parse("[" * 300 + "]" * 300)), "too-deep text is Limit too"))
       .and(expect.same(Right(True), legal.flatMap(p => summon[Jlvm].evaluate(p, CNull, Map.empty, Config()).result)))
+  }
+
+  // metakit capped evaluation depth at run time (ParityWave2Suite); here the bound is on the program's canonical form
+  // (jlvm.md 1, 8 #22): an operation takes two levels and the program record one, within 256.
+  check("the depth bound is static: callback bodies, let bindings and untaken branches all count, and it is Limit before any gas") {
+    def nots(k: Int, leaf: Expr): Expr = (1 to k).foldLeft(leaf)((e, _) => ap(Op.Not, e))
+    def isLimit(r: Either[JlvmError, ?]) = r match {
+      case Left(JlvmError.Limit(_)) => true
+      case _                        => false
+    }
+    val yes = Expr.Lit(True)
+    val one = Expr.Lit(CanonicalValue.array(Vector(CInt(BigInt(1)))).toOption.get)
+    // map record (2) over its body: k operations over a var (2k + 1)
+    def mapBody(k: Int): Expr = ap(Op.Map, one, nots(k, v("")))
+    // the binding list's two arrays (2 each) sit between let and the binding
+    def letBinding(k: Int): Expr =
+      ap(Op.Let, Expr.Arr(Vector(Expr.Arr(Vector(Expr.Lit(CanonicalValue.text("x").toOption.get), nots(k, yes))))), v("$x"))
+    def untaken(k:   Int): Expr = ap(Op.If, yes, lit(1), nots(k, yes))
+    def bracketed(k: Int): String = """{"!": [""" * k + "true" + "]}" * k
+    val tooDeep = JlvmVectors.run(summon[Jlvm], JlvmVectors.Input("deep", bracketed(128), "null", scala.None, Some(1L)))
+    expect(Program.from(mapBody(126)).isRight, "a callback body at the bound")
+      .and(expect(isLimit(Program.from(mapBody(127))), "one deeper"))
+      .and(expect(Program.from(letBinding(124)).isRight, "a let binding at the bound"))
+      .and(expect(isLimit(Program.from(letBinding(125))), "one deeper"))
+      .and(expect(Program.from(untaken(126)).isRight, "an untaken branch at the bound"))
+      .and(expect(isLimit(Program.from(untaken(127))), "an untaken branch one deeper still counts"))
+      .and(expect(Parser.parse(bracketed(127)).flatMap(Parser.id[xyz.kd5ujc.core.hash.Sha256]).isRight, "127 bracketed operations"))
+      .and(expect(isLimit(Parser.parse(bracketed(128))), "128: the canonical form does not fit"))
+      .and(expect(isLimit(Parser.parse(bracketed(200))), "200: the text itself is too deep"))
+      .and(expect(isLimit(tooDeep.result), s"Limit, not OutOfGas, at a 1-gas limit: ${tooDeep.result}"))
+      .and(expect.same(Gas.Zero, tooDeep.gasUsed))
   }
 
   // ---- the two drivers agree
