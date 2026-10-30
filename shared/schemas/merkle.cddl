@@ -1,0 +1,16 @@
+; dilf4s Merkle tree proofs, v1 (docs/specs/merkle.md section 4). Normative.
+; Proofs are canonical values (docs/specs/canonical-encoding.md); digests are opaque byte strings.
+
+merkle-inclusion = {
+  "index": tree-index,
+  "size": tree-index,
+  "path": [* bytes],
+}
+
+merkle-consistency = {
+  "old": tree-index,
+  "new": tree-index,
+  "path": [* bytes],
+}
+
+tree-index = 0..9223372036854775807

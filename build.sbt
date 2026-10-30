@@ -61,7 +61,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, modelsGen, benchmarks)
+  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, modelsGen, models, benchmarks)
 
 // ─── Shared Test Utilities ───
 lazy val sharedTest = project.in(file("shared-test"))
@@ -180,10 +180,39 @@ lazy val modelsGen = project.in(file("models-gen"))
     publish / skip := true,
     libraryDependencies ++= Seq(
       Libraries.cats,
+      Libraries.catsEffect,
       Libraries.catsParse
     )
   )
   .dependsOn(core % Test, sharedTest % Test)
+
+// ─── models: wire types and canonical codecs generated from shared/schemas at build time ───
+lazy val models = project.in(file("models"))
+  .settings(
+    name := "dilf4s-models",
+    commonSettings,
+    commonTestSettings,
+    libraryDependencies ++= Seq(Libraries.scodecBits, Libraries.circeParser % Test),
+    Compile / sourceGenerators += Def.task {
+      val log = streams.value.log
+      val schemas = (LocalRootProject / baseDirectory).value / "shared" / "schemas"
+      val out = (Compile / sourceManaged).value / "dilf4s-models"
+      val cp = (modelsGen / Compile / fullClasspath).value.files
+      val genRunner = (modelsGen / Compile / runner).value
+      val generatorClasses = ((modelsGen / Compile / classDirectory).value ** "*.class").get
+      val inputs = ((schemas ** "*.cddl").get ++ generatorClasses).toSet
+      val cached = FileFunction.cached(streams.value.cacheDirectory / "models-gen", FilesInfo.hash) { _ =>
+        IO.delete(out)
+        genRunner
+          .run("xyz.kd5ujc.modelsgen.Main", cp, Seq(schemas.getAbsolutePath, out.getAbsolutePath, "xyz.kd5ujc.models"), log)
+          .failed
+          .foreach(e => sys.error(s"models generator failed: ${e.getMessage}"))
+        (out ** "*.scala").get.toSet
+      }
+      cached(inputs).toSeq.sortBy(_.getAbsolutePath)
+    }.taskValue
+  )
+  .dependsOn(core, accumulators % "test->compile", modelsGen % "test->test", sharedTest % Test)
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll; scalafmtSbtCheck")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll; scalafmtSbt")

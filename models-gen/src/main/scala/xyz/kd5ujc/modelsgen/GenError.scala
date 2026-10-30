@@ -65,6 +65,8 @@ enum UnsupportedFeature:
   case GroupAsType(rule: QName)
   case NotGroup(rule: QName)
   case FloatSampling
+  case OutsideProfile(what: String)
+  case AmbiguousAlternatives(pairs: Vector[String])
 
   def message: String = this match
     case UnappliedGeneric          => "generic rule used without type arguments"
@@ -92,6 +94,8 @@ enum UnsupportedFeature:
     case GroupAsType(q)            => s"group $q as a type"
     case NotGroup(q)               => s"$q is not a group"
     case FloatSampling             => "float"
+    case OutsideProfile(w)         => s"outside the dilf4s canonical profile: $w"
+    case AmbiguousAlternatives(ps) => s"choice alternatives cannot be told apart by keys: ${ps.mkString(", ")}"
 
 /** Eval trampolines schema depth; EitherT propagates domain failures as values. */
 private[modelsgen] type GenResult[A] = EitherT[Eval, GenError, A]

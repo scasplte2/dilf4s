@@ -26,6 +26,9 @@ enum RT:
   case SizedText(lo: Int, hi: Int)
   case Ref(target: QName)
   case Choice(alts: Vector[RT])
+
+  /** A labelled integer enumeration, `&(left: 1, right: 2)`: the labels name the cases. */
+  case IntEnum(cases: Vector[(String, BigInt)])
   case Arr(entries: Vector[REntry])
   case MapT(entries: Vector[REntry])
   case Tagged(tag: BigInt, inner: RT)
@@ -251,7 +254,13 @@ final class Schema(val modules: Map[String, Module]):
       case Ast.Ty.Enumeration(of) =>
         of match
           case Ast.Ty.GroupT(Ast.Group(Vector(only))) =>
-            only.traverse(e => resolve(e.value)).map(RT.Choice(_))
+            val labelled = only.traverse {
+              case Ast.Entry(_, Some(Ast.Key.Bare(label)), Ast.Ty.Literal(Ast.Lit.IntL(n))) => Some(label -> n)
+              case _                                                                        => None
+            }
+            labelled.filter(_.nonEmpty) match
+              case Some(cases) => success(RT.IntEnum(cases))
+              case None        => only.traverse(e => resolve(e.value)).map(RT.Choice(_))
           case other => success(RT.Unsupported(UnsupportedFeature.Enumeration(other)))
       case Ast.Ty.Unwrap(_) => success(RT.Unsupported(UnsupportedFeature.Unwrap))
   }

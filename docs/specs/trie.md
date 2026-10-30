@@ -85,11 +85,37 @@ A proof is a canonical **array** of node records in pre-order: each branch recor
 present children, left before right. Keeping the encoding flat means proof depth is never bounded by the canonical
 model's nesting limit, so deep variable-mode tries stay provable.
 
-```
-proof  = [ record... ]                   -- [] is the proof of an empty trie
-stub   = { "h": bytes }
-leaf   = { "s": segment, "v": bytes }
-branch = { "s": segment, "v"?: bytes, "c": 1 | 2 | 3 }   -- child mask: 1 = left only, 2 = right only, 3 = both
+The normative shape is `shared/schemas/trie.cddl`. It is reproduced here verbatim and checked by a test; generated wire types live in `xyz.kd5ujc.models.trie`:
+
+```cddl
+; dilf4s binary Patricia trie proofs, v1 (docs/specs/trie.md sections 2 and 5). Normative for shape.
+; A proof is a flat array of node records in pre-order. Invariants the shape cannot express (zero padding bits,
+; len(b) == ceil(n / 8), pre-order structure, masks consistent with present children, no trailing records) are
+; checked by the domain decoder, not by these types.
+
+trie-proof = [* trie-record]
+
+trie-record = trie-stub / trie-leaf / trie-branch
+
+trie-stub = { "h": bytes }
+
+trie-leaf = {
+  "s": trie-segment,
+  "v": bytes,
+}
+
+trie-branch = {
+  "s": trie-segment,
+  ? "v": bytes,
+  "c": trie-children,
+}
+
+trie-children = &(left: 1, right: 2, both: 3)
+
+trie-segment = {
+  "n": 0..9223372036854775807,
+  "b": bytes,
+}
 ```
 
 Decoders rebuild the tree with an explicit stack and reject trailing records, missing children, a mask inconsistent

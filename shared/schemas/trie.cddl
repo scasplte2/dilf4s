@@ -1,0 +1,28 @@
+; dilf4s binary Patricia trie proofs, v1 (docs/specs/trie.md sections 2 and 5). Normative for shape.
+; A proof is a flat array of node records in pre-order. Invariants the shape cannot express (zero padding bits,
+; len(b) == ceil(n / 8), pre-order structure, masks consistent with present children, no trailing records) are
+; checked by the domain decoder, not by these types.
+
+trie-proof = [* trie-record]
+
+trie-record = trie-stub / trie-leaf / trie-branch
+
+trie-stub = { "h": bytes }
+
+trie-leaf = {
+  "s": trie-segment,
+  "v": bytes,
+}
+
+trie-branch = {
+  "s": trie-segment,
+  ? "v": bytes,
+  "c": trie-children,
+}
+
+trie-children = &(left: 1, right: 2, both: 3)
+
+trie-segment = {
+  "n": 0..9223372036854775807,
+  "b": bytes,
+}

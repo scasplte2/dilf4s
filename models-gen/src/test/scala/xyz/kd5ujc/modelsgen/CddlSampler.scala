@@ -12,7 +12,11 @@ import scala.util.Random
  * test/tool; all encoding and domain failure propagation use values, trampolined over schema
  * depth.
  */
-final class CddlSampler(schema: Schema, maxDepth: Int = 7):
+/**
+ * `sortMapKeys`: emit map entries in RFC 8949 deterministic order (by encoded key bytes), as dilf4s canonical CBOR
+ * requires. `false` keeps scarab's schema-order output, used only by the transcript test that pins the port.
+ */
+final class CddlSampler(schema: Schema, maxDepth: Int = 7, sortMapKeys: Boolean = true):
   import GenResult.*
   private def unsupported[A](feature: UnsupportedFeature): GenResult[A] =
     failure(GenError.Unsupported("sampler", feature))
@@ -108,8 +112,12 @@ final class CddlSampler(schema: Schema, maxDepth: Int = 7):
             case 2 => text(rnd.alphanumeric.take(rnd.nextInt(6)).mkString)
             case _ => Vector(0x80.toByte)
           )
-        case RT.Prim(PrimKind.Float)        => unsupported(UnsupportedFeature.FloatSampling)
-        case RT.LitInt(n)                   => success(int(n))
+        case RT.Prim(PrimKind.Float) => unsupported(UnsupportedFeature.FloatSampling)
+        case RT.LitInt(n)            => success(int(n))
+        case RT.IntEnum(cases) =>
+          cases
+            .lift(if cases.isEmpty then 0 else rnd.nextInt(cases.size))
+            .fold(failure(GenError.EmptyIntegerDomain(0, -1)))(c => success(int(c._2)))
         case RT.LitText(s)                  => success(text(s))
         case RT.LitBool(b)                  => success(Vector((if b then 0xf5 else 0xf4).toByte))
         case RT.LitBytes(bs)                => success(bytes(bs))
@@ -158,7 +166,12 @@ final class CddlSampler(schema: Schema, maxDepth: Int = 7):
                   }
               }
               .map(_._2)
-          }.map(pairs => head(5, pairs.size) ++ pairs.flatMap((k, v) => k ++ v))
+          }.map { pairs =>
+            val ordered =
+              if sortMapKeys then pairs.sortWith((a, b) => java.util.Arrays.compareUnsigned(a._1.toArray, b._1.toArray) < 0)
+              else pairs
+            head(5, ordered.size) ++ ordered.flatMap((k, v) => k ++ v)
+          }
         case RT.Tagged(n, inner)     => ty(inner, rnd, depth, cutoffPath).map(head(6, n) ++ _)
         case RT.CborOf(inner)        => ty(inner, rnd, depth, cutoffPath).map(bytes)
         case RT.GroupRef(q)          => unsupported(UnsupportedFeature.GroupAsType(q))

@@ -35,9 +35,23 @@ An `rfc6962` profile exists only for interoperability tests: `leafHash(d) = H(0x
 
 ## 4. Proof encoding
 
-Proofs are canonical values (`docs/specs/canonical-encoding.md`):
+Proofs are canonical values (`docs/specs/canonical-encoding.md`). The normative schema is `shared/schemas/merkle.cddl`. It is reproduced here verbatim and checked by a test; generated types and codecs for it live in `xyz.kd5ujc.models.merkle`:
 
-```
-inclusion   = { "index": uint, "size": uint, "path": [bytes...] }
-consistency = { "old": uint, "new": uint, "path": [bytes...] }
+```cddl
+; dilf4s Merkle tree proofs, v1 (docs/specs/merkle.md section 4). Normative.
+; Proofs are canonical values (docs/specs/canonical-encoding.md); digests are opaque byte strings.
+
+merkle-inclusion = {
+  "index": tree-index,
+  "size": tree-index,
+  "path": [* bytes],
+}
+
+merkle-consistency = {
+  "old": tree-index,
+  "new": tree-index,
+  "path": [* bytes],
+}
+
+tree-index = 0..9223372036854775807
 ```
