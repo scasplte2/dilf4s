@@ -15,6 +15,7 @@ ed25519 / ristretto255 prime-order group, `n` the order of the named elliptic cu
 | secp256k1-ECDSA | 32-byte BE scalar in `[1, n)` | 33-byte compressed SEC1 | 64 `r ‖ s` (BE) | `SHA-256(message)` |
 | BIP-340 | 32-byte BE scalar in `[1, n)` | 32-byte x-only | 64 `R.x ‖ s` | exactly 32 bytes, as given |
 | secp256k1-tagged-Schnorr | 32-byte BE scalar in `[1, n)` | 32-byte x-only | 64 `R.x ‖ s` | `taggedHash_SHA256("dilf4s/sig/bip340/v1", message)` |
+| BLS12-381-PoP | 32-byte BE scalar in `[1, r)` | 48-byte compressed G1 | 96-byte compressed G2 | raw message |
 | ristretto255-Schnorr | 32-byte LE canonical scalar, non-zero | 32-byte ristretto255 | 64 `R ‖ z` | raw message |
 
 Every decoder checks lengths, and rejects keys and signatures that fail the scheme's validity rules below.
@@ -94,7 +95,25 @@ Verification:
 
 A FROST threshold signature over the group key verifies under the same rule.
 
-### 1.6 Seeds to keys
+### 1.6 BLS12-381 (Ethereum consensus profile)
+
+This is the minimal-pubkey-size variant with the proof-of-possession ciphersuite
+`BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_` (draft-irtf-cfrg-bls-signature, as in Eth2). It is byte-compatible with
+the ethereum/bls12-381-tests v0.1.2 suite and with tessellation-bls.
+
+- **Public keys.** Must pass KeyValidate: decode, lie in G1, and are **not the identity**.
+- **Signatures.** Must decode and lie in G2. The identity decodes but never verifies.
+- **Operations.**
+  - `Sign` and `Verify`;
+  - `Aggregate` (one or more signatures);
+  - `FastAggregateVerify` (one message, keys with proofs of possession);
+  - `AggregateVerify`;
+  - `PopProve` and `PopVerify`, which use DST `BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`.
+- **Seed derivation.** EIP-2333 `derive_master_SK`.
+
+The backend is blst (`tech.pegasys:jblst`), which runs secret-key operations in constant time.
+
+### 1.7 Seeds to keys
 
 `SeedDerivation` maps a 32-byte seed to a key pair:
 
@@ -103,6 +122,7 @@ A FROST threshold signature over the group key verifies under the same rule.
 | Ed25519 | the identity |
 | ECDSA and BIP-340 | the BE scalar, which must lie in `[1, n)` |
 | ristretto255 | `SHA-512(seed) mod L` (non-zero) |
+| BLS12-381 | EIP-2333 `derive_master_SK(seed)` |
 
 ## 2. Key derivation
 

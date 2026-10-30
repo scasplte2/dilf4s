@@ -55,7 +55,7 @@ object CryptoVectors {
 
   private def extended[S](k: ExtendedKey[S]): Json = Json.obj("key" -> k.key.bytes.toHex.asJson, "chainCode" -> k.chainCode.toHex.asJson)
 
-  def build(secp: Secp256k1, english: WordList): Json = {
+  def build(secp: Secp256k1, english: WordList, bls: xyz.kd5ujc.crypto.bls.Bls12381): Json = {
     val instances = new Secp256k1.Instances(secp)
     import instances._
 
@@ -91,7 +91,8 @@ object CryptoVectors {
         scheme[Secp256k1Ecdsa]("secp256k1-ECDSA", secp.ecdsaSigner.sign),
         scheme[Bip340]("BIP-340", (k, m) => get(Message32.from(m).flatMap(secp.bip340SignWithAux(k, _, randomness))), messages32),
         scheme[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", (k, m) => get(secp.taggedSchnorrSignWithAux(k, m, randomness))),
-        scheme[Ristretto255Schnorr]("ristretto255-Schnorr", (k, m) => get(Ristretto255Schnorr.signWithRandomness(k, m, randomness)))
+        scheme[Ristretto255Schnorr]("ristretto255-Schnorr", (k, m) => get(Ristretto255Schnorr.signWithRandomness(k, m, randomness))),
+        scheme[xyz.kd5ujc.crypto.bls.BlsPop]("BLS12-381-PoP", (k, m) => get(bls.sign(k, m)))(bls.seedDerivation)
       ).asJson,
       "bip39" -> bip39.asJson,
       "slip10Ed25519" -> Json.obj(
@@ -127,7 +128,8 @@ object CryptoVectors {
   val render: IO[String] =
     (
       Secp256k1.load[IO],
-      WordList.load[IO](Bip39.Language.English).flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO])
+      WordList.load[IO](Bip39.Language.English).flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO]),
+      xyz.kd5ujc.crypto.bls.Bls12381.load[IO]
     )
       .mapN(build)
       .map(_.spaces2 + "\n")

@@ -137,6 +137,7 @@ lazy val crypto = project.in(file("crypto"))
       Libraries.bc,
       Libraries.curve25519Elisabeth,
       Libraries.secp256k1,
+      Libraries.jblst,
       Libraries.circeParser % Test,
       Libraries.catsKernelLaws % Test
     )

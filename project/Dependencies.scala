@@ -9,6 +9,7 @@ object Dependencies {
     val fs2 = "3.14.0"
     val rocksDb = "11.8.1"
     val secp256k1Kmp = "0.24.0"
+    val jblst = "0.3.18"
     val cats = "2.13.0"
     val catsEffect = "3.7.1"
     val circe = "0.14.17"
@@ -25,12 +26,15 @@ object Dependencies {
   }
 
   object Libraries {
-    val bc = "org.bouncycastle"                   % "bcprov-jdk18on"           % V.bouncyCastle
-    val scodecBits = "org.scodec"                %% "scodec-bits"              % V.scodecBits
-    val catsMtl = "org.typelevel"                %% "cats-mtl"                 % V.catsMtl
-    val fs2Core = "co.fs2"                       %% "fs2-core"                 % V.fs2
-    val rocksDb = "org.rocksdb"                   % "rocksdbjni"               % V.rocksDb
-    val secp256k1 = "fr.acinq.secp256k1"          % "secp256k1-kmp-jni-jvm"    % V.secp256k1Kmp
+    val bc = "org.bouncycastle"          % "bcprov-jdk18on"        % V.bouncyCastle
+    val scodecBits = "org.scodec"       %% "scodec-bits"           % V.scodecBits
+    val catsMtl = "org.typelevel"       %% "cats-mtl"              % V.catsMtl
+    val fs2Core = "co.fs2"              %% "fs2-core"              % V.fs2
+    val rocksDb = "org.rocksdb"          % "rocksdbjni"            % V.rocksDb
+    val secp256k1 = "fr.acinq.secp256k1" % "secp256k1-kmp-jni-jvm" % V.secp256k1Kmp
+    // blst through Teku's JNI build: portable natives (run-time ADX dispatch) for Linux/macOS/Windows in the jar.
+    // Its Guava dependency is unused by the bindings.
+    val jblst = ("tech.pegasys"                   % "jblst"                    % V.jblst).exclude("com.google.guava", "guava")
     val catsKernelLaws = "org.typelevel"         %% "cats-kernel-laws"         % V.cats
     val cats = "org.typelevel"                   %% "cats-core"                % V.cats
     val catsEffect = "org.typelevel"             %% "cats-effect"              % V.catsEffect
