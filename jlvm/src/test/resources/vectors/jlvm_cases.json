@@ -1844,7 +1844,7 @@
   {
    "name": "metakit LetOpSuite: let with external data access",
    "program": "{\"let\":[[[\"doubled\",{\"*\":[{\"var\":\"value\"},2]}]],{\"+\":[{\"var\":\"$doubled\"},5]}]}",
-   "data": "null"
+   "data": "{\"value\":10}"
   },
   {
    "name": "metakit LetOpSuite: let with nested let",
@@ -1859,7 +1859,7 @@
   {
    "name": "metakit LetOpSuite: let preserves original context",
    "program": "{\"let\":[[[\"x\",100]],{\"+\":[{\"var\":\"$x\"},{\"var\":\"original\"}]}]}",
-   "data": "null"
+   "data": "{\"original\":50}"
   },
   {
    "name": "metakit LetOpSuite: let object form with single binding",
@@ -1867,9 +1867,14 @@
    "data": "null"
   },
   {
+   "name": "metakit LetOpSuite: let object form binding references outer scope",
+   "program": "{\"let\":[{\"object\":{\"doubled\":{\"*\":[{\"var\":\"x\"},2]}}},{\"+\":[{\"var\":\"$doubled\"},1]}]}",
+   "data": "{\"x\":5}"
+  },
+  {
    "name": "metakit LetOpSuite: let object form preserves original context",
    "program": "{\"let\":[{\"object\":{\"x\":100}},{\"+\":[{\"var\":\"$x\"},{\"var\":\"original\"}]}]}",
-   "data": "null"
+   "data": "{\"original\":50}"
   },
   {
    "name": "metakit LetOpSuite: let object form evaluates bindings in sorted-key order (a before b)",
@@ -1899,12 +1904,12 @@
   {
    "name": "metakit MapSetUnsetOpsSuite: set: replaces an existing key in place, leaving the original map unmutated #2",
    "program": "{\"get\":[{\"var\":\"obj\"},\"a\"]}",
-   "data": "null"
+   "data": "{\"obj\":{\"a\":1,\"b\":2}}"
   },
   {
    "name": "metakit MapSetUnsetOpsSuite: set: replaces an existing key in place, leaving the original map unmutated #3",
    "program": "{\"set\":[{\"var\":\"obj\"},\"a\",9]}",
-   "data": "null"
+   "data": "{\"obj\":{\"a\":1,\"b\":2}}"
   },
   {
    "name": "metakit MapSetUnsetOpsSuite: unset: absent key returns an equal map (no-op, structural equality holds)",
@@ -2465,11 +2470,6 @@
    "name": "metakit json_logic vector 104",
    "program": "{\"let\":[{\"object\":{\"x\":5}},{\"+\":[{\"var\":\"$x\"},1]}]}",
    "data": "{}"
-  },
-  {
-   "name": "metakit json_logic vector 105",
-   "program": "{\"let\":[{\"object\":{\"doubled\":{\"*\":[{\"var\":\"x\"},2]}}},{\"+\":[{\"var\":\"$doubled\"},1]}]}",
-   "data": "{\"x\":5}"
   },
   {
    "name": "metakit json_logic vector 106",

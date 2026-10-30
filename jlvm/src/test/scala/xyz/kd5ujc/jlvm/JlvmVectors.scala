@@ -20,17 +20,24 @@ object JlvmVectors {
 
   val path: Path = Paths.get("shared", "vectors", "jlvm_v1.json")
 
-  final case class Input(name: String, program: String, data: String)
+  /** `env` holds host bindings as JSON surface text; `gasLimit` replaces the default limit. */
+  final case class Input(name: String, program: String, data: String, env: Option[Map[String, String]], gasLimit: Option[Long])
   final case class Inputs(source: String, cases: List[Input])
 
-  given Decoder[Input] = Decoder.forProduct3("name", "program", "data")(Input.apply)
+  given Decoder[Input] = Decoder.forProduct5("name", "program", "data", "env", "gasLimit")(Input.apply)
   given Decoder[Inputs] = Decoder.forProduct2("source", "cases")(Inputs.apply)
 
-  val inputs: IO[Inputs] =
+  /** The metakit-derived cases, then the example contracts' (ContractVectorCases). */
+  val files: List[String] = List("jlvm_cases.json", "jlvm_contract_cases.json")
+
+  private def read(name: String): IO[Inputs] =
     Resource
-      .fromAutoCloseable(IO.blocking(getClass.getResourceAsStream("/vectors/jlvm_cases.json")))
+      .fromAutoCloseable(IO.blocking(getClass.getResourceAsStream(s"/vectors/$name")))
       .use(in => IO.blocking(new String(in.readAllBytes(), UTF_8)))
       .flatMap(text => io.circe.parser.decode[Inputs](text).liftTo[IO])
+
+  val inputs: IO[Inputs] =
+    files.traverse(read).map(all => Inputs(all.map(_.source).mkString("; "), all.flatMap(_.cases)))
 
   def kind(e: JlvmError): String = e match {
     case _: JlvmError.Malformed  => "Malformed"
@@ -44,10 +51,18 @@ object JlvmVectors {
   }
 
   def run(jlvm: Jlvm, i: Input, driver: Config.Driver = Config.Driver.Direct): Outcome =
-    (Parser.parse(i.program), JsonSurface.parse(i.data)).tupled.fold(
-      e => Outcome(Gas.Zero, Left(e)),
-      { case (p, d) => jlvm.evaluate(p, d, Map.empty, Config(driver = driver)) }
-    )
+    (
+      Parser.parse(i.program),
+      JsonSurface.parse(i.data),
+      i.env.getOrElse(Map.empty).toList.traverse { case (k, v) => JsonSurface.parse(v).map(k -> _) }
+    ).tupled
+      .fold(
+        e => Outcome(Gas.Zero, Left(e)),
+        {
+          case (p, d, env) =>
+            jlvm.evaluate(p, d, env.toMap, Config(limit = i.gasLimit.fold(GasLimit.Default)(l => GasLimit(Gas(l))), driver = driver))
+        }
+      )
 
   private def outcome(o: Outcome): Json =
     o.result.fold(
@@ -68,13 +83,11 @@ object JlvmVectors {
         "source"   -> in.source.asJson,
         "cases" -> in.cases.map { i =>
           val o = run(jlvm, i)
-          Json.obj(
-            "name"     -> i.name.asJson,
-            "program"  -> i.program.asJson,
-            "data"     -> i.data.asJson,
-            "outcome"  -> outcome(o),
-            "gasUsed"  -> o.gasUsed.value.asJson,
-            "warnings" -> o.warnings.size.asJson
+          Json.fromFields(
+            List("name" -> i.name.asJson, "program" -> i.program.asJson, "data" -> i.data.asJson) ++
+            i.env.map(e => "env" -> Json.fromFields(e.toList.sortBy(_._1).map { case (k, v) => k -> v.asJson })) ++
+            i.gasLimit.map(l => "gasLimit" -> l.asJson) ++
+            List("outcome" -> outcome(o), "gasUsed" -> o.gasUsed.value.asJson, "warnings" -> o.warnings.size.asJson)
           )
         }.asJson
       )
