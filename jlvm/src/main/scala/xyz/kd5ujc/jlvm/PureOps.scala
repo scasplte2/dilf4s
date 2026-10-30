@@ -41,8 +41,8 @@ object PureOps {
     op match {
       case If | And | Or | Default | Let | MapOp | Filter | Reduce | All | SomeOp | NoneOp | Find | Missing | MissingSome | Ed25519Verify |
           Secp256k1Verify | Bip340Verify | BlsVerify | BlsAggregateVerify | Poseidon | PmtVerify | Groth16Verify | EcvrfVerify | Bn254Add |
-          Bn254Mul | Bn254Pairing | SchnorrVerify | ProveDlogVerify | ProveDhTupleVerify | SigmaVerify | MerkleVerify |
-          MerkleConsistencyVerify | TrieVerify | TriePrefixVerify | TrieRangeVerify =>
+          Bn254Mul | Bn254Pairing | SchnorrVerify | SigmaVerify | MerkleVerify | MerkleConsistencyVerify | TrieVerify | TriePrefixVerify |
+          TrieRangeVerify =>
         Option.empty
 
       case Not    => Option(unary(op, args)(v => bool(!truthy(v)).asRight))

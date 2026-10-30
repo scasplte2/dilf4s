@@ -1,7 +1,7 @@
 # dilf4s JLVM (language v1, gas schedule v1)
 
-Status: normative, in progress. Every operation is specified except some of the cryptographic ones (§6), which are
-listed but not yet available. The decisions still open are marked **Open**.
+Status: normative, in progress. Every operation is specified except the Merkle and trie proof operations (§6), which
+are listed but not yet available.
 
 The JLVM is a strict, metered expression language for ledgers, written in JsonLogic syntax. A result is a function of
 exactly five things:
@@ -342,10 +342,27 @@ canonical (less than the modulus).
 
 `bn254_pairing` is priced by weight, so both argument forms cost the same.
 
-**Not yet available.** Evaluating these is a `Crypto` error:
-- Sigma protocols (**unaudited**): `schnorr_verify`, `prove_dlog_verify`, `prove_dhtuple_verify`, `sigma_verify`.
-- Merkle and trie proofs (**Open**: argument design): `merkle_verify`, `merkle_consistency_verify`, `trie_verify`,
-  `trie_prefix_verify`, `trie_range_verify`.
+**Sigma protocols** over secp256k1, byte-compatible with Ergo (`sigma.md`, normative). They prove knowledge of secret
+keys for a tree of `and`, `or` and `threshold` over Schnorr and Diffie-Hellman-tuple statements, without revealing
+which branches the prover knew. This is what ring signatures, hidden-signer k-of-n multisig and ZeroJoin need.
+
+| Operation | Arguments | Result |
+|---|---|---|
+| `sigma_verify` | `[proposition, proof, message]` | boolean |
+| `schnorr_verify` | `[key33, message, proof56]`: `sigma_verify` of one `dlog` leaf (Ergo's P2PK signature) | boolean |
+
+- A proposition is a map per node (`sigma.md` §3): `{"type": "dlog", "pk": key33}`,
+  `{"type": "dhtuple", "g", "h", "u", "v"}`, `{"type": "and" | "or", "children": [...]}`, and
+  `{"type": "threshold", "k": k, "children": [...]}`. Programs build it like any other value, so they choose the
+  statement at run time, e.g. with `if` over a deadline.
+- The message must bind what the proof authorises (the update, with a nonce or ordinal), or the proof replays.
+- Combining single-key checks with `or` or `some` proves that a particular key signed. Only one `sigma_verify` over
+  an `or` or `threshold` hides which.
+- Gas is priced by weight: about 45,000 per `dlog` leaf and 92,000 per `dhtuple` leaf, with proposition and proof
+  together. Every argument counts, so sign a 32-byte digest rather than a long message.
+
+**Not yet available.** Evaluating these is a `Crypto` error: `merkle_verify`, `merkle_consistency_verify`,
+`trie_verify`, `trie_prefix_verify`, `trie_range_verify`.
 
 ## 7. Gas
 
@@ -399,3 +416,4 @@ A property test checks that they agree on value, error and gas at random gas lim
 | 11 | Every single-key object naming an operation is code, so `{"count": 3}` as data is impossible. | `{"object": {...}}` builds any map; `Parser.migrate` rewrites older programs. | The `count` ambiguity. |
 | 12 | `var` paths may be computed only as text. | Text, or an array of exact segments. | Keys holding `.` cannot redirect a read. |
 | 13 | `+` and `*` of nothing are errors. | 0 and 1. | Spreads over empty collections. |
+| 14 | Sigma protocols on BN254 G1 with metakit's own transcript, GF(2^8) per byte for thresholds, and standalone `prove_dlog_verify` / `prove_dhtuple_verify`. | Ergo's construction on secp256k1 (`sigma.md`), cross-checked against Ergo both ways. `schnorr_verify` is a one-leaf `sigma_verify`; the standalone leaf ops are gone, since a one-leaf `sigma_verify` does the same. | Ergo's construction has been in production since 2019, and Ergo's own prover and verifier check ours. Standalone leaves combined with `or` look like rings but hide nothing. |

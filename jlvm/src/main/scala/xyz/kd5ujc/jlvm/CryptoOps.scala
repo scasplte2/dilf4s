@@ -6,6 +6,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.crypto.bls.Bls12381
+import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, Sigma, SigmaProp}
 import xyz.kd5ujc.crypto.signing._
 
 import scodec.bits.ByteVector
@@ -30,6 +31,8 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381) {
       case Op.BlsVerify          => Option(signature(op, args)(bls.codec, bls.verifier))
       case Op.Bip340Verify       => Option(bip340(op, args))
       case Op.BlsAggregateVerify => Option(blsAggregate(op, args))
+      case Op.SigmaVerify        => Option(sigma(op, args))
+      case Op.SchnorrVerify      => Option(schnorr(op, args))
       case _                     => ZkOps(op, args)
     }
 
@@ -64,6 +67,26 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381) {
         (secp.bip340Codec.verifyingKey(k), Message32.from(m), secp.bip340Codec.signature(s)).tupled
           .leftMap(crypto(op))
           .map { case (key, msg, sig) => Values.bool(secp.bip340Verify(key, msg, sig)) }
+    }
+
+  /** `[proposition, proof, message]` (docs/specs/sigma.md): the proposition is the tagged-map form. */
+  private def sigma(op: Op, args: Vector[CanonicalValue]): Result =
+    args match {
+      case Vector(p, proof, message) =>
+        (SigmaProp.fromCanonical(p).leftMap(JlvmError.Crypto(op.wire, _)), bytes(op, proof), bytes(op, message)).tupled.flatMap {
+          case (prop, pf, m) => Sigma.verify(prop, pf, m).bimap(JlvmError.Crypto(op.wire, _), Values.bool)
+        }
+      case _ => JlvmError.Arity(op.wire, s"takes [proposition, proof, message], got ${args.size} arguments").asLeft
+    }
+
+  /** `[key33, message, proof56]`: a single-key sigma proof, Ergo's P2PK signature. */
+  private def schnorr(op: Op, args: Vector[CanonicalValue]): Result =
+    triple(op, args).flatMap {
+      case (k, m, s) =>
+        Secp256k1Group
+          .decode(k)
+          .flatMap(pk => Sigma.verify(SigmaProp.Dlog(pk), s, m))
+          .bimap(JlvmError.Crypto(op.wire, _), Values.bool)
     }
 
   /**
