@@ -10,7 +10,7 @@ import xyz.kd5ujc.core.hash.Sha256
 
 import io.circe.Json
 import io.circe.syntax._
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 
 /** Conformance vectors for docs/specs/merkle.md, over the Certificate Transparency test leaves. */
@@ -46,7 +46,7 @@ object MerkleVectors {
         Json.obj(
           "size"        -> t.size.asJson,
           "root"        -> t.root.hex.asJson,
-          "rfc6962Root" -> MerkleTree.fromLeafHashes[Sha256](leaves.take(t.size.toInt).map(ct.leaf))(ct).root.hex.asJson,
+          "rfc6962Root" -> MerkleTree.fromLeafHashes[Sha256](leaves.take(t.size.toInt).map(ct.leaf))(using ct).root.hex.asJson,
           "inclusion"   -> (0L until t.size).map(i => hexOrDie(t.inclusionProof(i).flatMap(MerkleCodec.encodeInclusion))).asJson,
           "consistency" -> (0L to t.size).map(o => hexOrDie(t.consistencyProof(o).flatMap(MerkleCodec.encodeConsistency))).asJson
         )

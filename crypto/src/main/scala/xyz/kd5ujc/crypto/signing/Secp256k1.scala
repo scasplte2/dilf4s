@@ -130,16 +130,16 @@ final class Secp256k1 private (native: Native) {
       )
   }
 
-  private def xOnly[S](key: SigningKey[_]): VerifyingKey[S] =
+  private def xOnly[S](key: SigningKey[?]): VerifyingKey[S] =
     VerifyingKey[S](ByteVector.view(native.pubKeyCompress(native.pubkeyCreate(key.bytes.toArray))).drop(1))
 
-  private def signRaw[S](key: SigningKey[_], message32: ByteVector, aux: ByteVector): Either[CryptoError, Signature[S]] =
+  private def signRaw[S](key: SigningKey[?], message32: ByteVector, aux: ByteVector): Either[CryptoError, Signature[S]] =
     Either
       .cond(aux.size == 32L, aux, CryptoError.InvalidEncoding("BIP-340 auxiliary randomness", s"expected 32 bytes, got ${aux.size}"))
       .flatMap(a => call("signSchnorr")(native.signSchnorr(message32.toArray, key.bytes.toArray, a.toArray)))
       .map(b => Signature[S](ByteVector.view(b)))
 
-  private def verifyRaw(key: VerifyingKey[_], message32: ByteVector, signature: Signature[_]): Boolean =
+  private def verifyRaw(key: VerifyingKey[?], message32: ByteVector, signature: Signature[?]): Boolean =
     signature.bytes.size == 64L &&
     call("verifySchnorr")(native.verifySchnorr(signature.bytes.toArray, message32.toArray, key.bytes.toArray)).getOrElse(false)
 

@@ -4,7 +4,7 @@ import sbt.Keys.*
 
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / organization := "xyz.kd5ujc"
-ThisBuild / scalaVersion := "2.13.18"
+ThisBuild / scalaVersion := "3.9.0"
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
@@ -23,26 +23,12 @@ lazy val commonScalacOptions = Seq(
   "-deprecation",
   "-feature",
   "-unchecked",
-  "-language:reflectiveCalls",
-  "-language:higherKinds",
-  "-language:postfixOps",
-  "-Yrangepos",
-  "-Ymacro-annotations",
-  "-Ywarn-unused:_",
-  "-Ywarn-macros:after",
-  "-Wconf:cat=unused:info",
-  // a private case-class constructor also makes the synthesised apply/copy private (Scala 3 semantics)
-  "-Xsource:3",
-  "-Xsource-features:case-apply-copy-access"
+  "-Wunused:all"
 )
 
 lazy val commonSettings = Seq(
   scalacOptions ++= commonScalacOptions,
   resolvers += Resolver.mavenLocal,
-  libraryDependencies ++= Seq(
-    CompilerPlugin.kindProjector,
-    CompilerPlugin.betterMonadicFor
-  ),
   // Purity gate: main sources only; tests and benchmarks are the edge.
   Compile / compile / wartremoverErrors ++= PurityGate.warts,
   Test / scalafixConfig := Some((LocalRootProject / baseDirectory).value / ".scalafix-test.conf")
@@ -50,8 +36,6 @@ lazy val commonSettings = Seq(
 
 lazy val commonTestSettings = Seq(
   testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
-  // weaver's expect macro re-emits clue strings, which trips the missing-interpolator lint
-  Test / scalacOptions += "-Wconf:cat=lint-missing-interpolator:s",
   libraryDependencies ++= Seq(
     Libraries.catsEffectTestkit,
     Libraries.weaverCats,

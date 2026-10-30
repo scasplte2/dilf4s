@@ -59,7 +59,8 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
   test("in-memory and persistent logs track the pure tree through arbitrary operations") {
     forall(Gen.listOf(cmd).map(_.take(25))) { cmds =>
       ok { (rs, rm) =>
-        implicit val (s, t) = (rs, rm)
+        given Raise[IO, StoreError] = rs
+        given Raise[IO, MerkleError] = rm
         for {
           raw        <- RawStore.inMemory[IO]
           memory     <- MerkleLog.inMemory[IO, Sha256]
@@ -93,7 +94,8 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
   test("persistent proofs equal the in-memory tree's after every command") {
     forall(Gen.listOf(cmd).map(_.take(20))) { cmds =>
       ok { (rs, rm) =>
-        implicit val (s, t) = (rs, rm)
+        given Raise[IO, StoreError] = rs
+        given Raise[IO, MerkleError] = rm
         for {
           raw        <- RawStore.inMemory[IO]
           persistent <- MerkleLog.persistent[IO, Sha256](raw, "log")
@@ -118,7 +120,8 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
 
   test("a large persistent log opens without loading it and proves with logarithmic reads") {
     ok { (rs, rm) =>
-      implicit val (s, t) = (rs, rm)
+      given Raise[IO, StoreError] = rs
+      given Raise[IO, MerkleError] = rm
       for {
         raw      <- RawStore.inMemory[IO]
         log      <- MerkleLog.persistent[IO, Sha256](raw, "log")
@@ -136,7 +139,8 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
 
   test("a second instance over the same store sees the first instance's writes") {
     ok { (rs, rm) =>
-      implicit val (s, t) = (rs, rm)
+      given Raise[IO, StoreError] = rs
+      given Raise[IO, MerkleError] = rm
       for {
         raw   <- RawStore.inMemory[IO]
         a     <- MerkleLog.persistent[IO, Sha256](raw, "log")
@@ -151,7 +155,8 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
 
   test("proofs from the log verify against its root") {
     ok { (rs, rm) =>
-      implicit val (s, t) = (rs, rm)
+      given Raise[IO, StoreError] = rs
+      given Raise[IO, MerkleError] = rm
       for {
         raw  <- RawStore.inMemory[IO]
         log  <- MerkleLog.persistent[IO, Sha256](raw, "log")
@@ -166,8 +171,8 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
   }
 
   test("out-of-range operations raise typed Merkle errors") {
-    run { (rs, rm) =>
-      implicit val (s, t) = (rs, rm)
+    run { (_, rm) =>
+      given Raise[IO, MerkleError] = rm
       MerkleLog.inMemory[IO, Sha256].flatMap(_.update(3, leaf(1)))
     }.map(r => expect.same(Left(Tree(MerkleError.IndexOutOfRange(3, 0))), r))
   }

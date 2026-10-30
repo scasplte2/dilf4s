@@ -55,7 +55,7 @@ final case class BloomFilter[H] private (params: BloomParams, bits: BitVector) {
   def add(item: ByteVector)(implicit H: Hasher[H]): BloomFilter[H] =
     copy(bits = indices(item).foldLeft(bits)((b, i) => b.set(i)))
 
-  def addAll(items: Iterable[ByteVector])(implicit H: Hasher[H]): BloomFilter[H] = items.foldLeft(this)(_ add _)
+  def addAll(items: Iterable[ByteVector])(implicit H: Hasher[H]): BloomFilter[H] = items.foldLeft(this)(_ `add` _)
 
   /** Adds a typed value by its canonical encoding. */
   def addValue[A: Canonical](value: A)(implicit H: Hasher[H]): Either[CanonicalError, BloomFilter[H]] =

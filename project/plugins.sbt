@@ -1,5 +1,5 @@
 addSbtPlugin("org.jetbrains.scala" % "sbt-ide-settings" % "1.1.2")
-addSbtPlugin("io.github.davidgregory084" % "sbt-tpolecat" % "0.4.1")
+addSbtPlugin("org.typelevel" % "sbt-tpolecat" % "0.5.7")
 addSbtPlugin("io.spray" % "sbt-revolver" % "0.9.1")
 addSbtPlugin("com.github.sbt" % "sbt-native-packager" % "1.9.11")
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.6")

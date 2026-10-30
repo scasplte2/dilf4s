@@ -3,7 +3,7 @@ package xyz.kd5ujc.core.canonical
 import xyz.kd5ujc.core.canonical.CanonicalError._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
 

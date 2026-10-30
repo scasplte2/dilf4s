@@ -3,7 +3,7 @@ package xyz.kd5ujc.accumulators.merkle
 import xyz.kd5ujc.core.hash.{Digest, Hasher, Sha256}
 
 import org.scalacheck.Gen
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
 
@@ -57,25 +57,25 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
 
   pureTest("RFC 6962 profile reproduces the Certificate Transparency roots") {
     (1 to 8)
-      .map(n => expect.same(ctRoots(n - 1), tree(ctLeaves.take(n))(ct).root.hex))
+      .map(n => expect.same(ctRoots(n - 1), tree(ctLeaves.take(n))(using ct).root.hex))
       .reduce(_ and _)
-      .and(expect.same(Hasher[Sha256].digest(ByteVector.empty), MerkleTree.empty[Sha256](ct).root))
+      .and(expect.same(Hasher[Sha256].digest(ByteVector.empty), MerkleTree.empty[Sha256](using ct).root))
   }
 
   test("the level-based tree equals the reference MTH at every size") {
-    forall(leaves)(ls => expect.same(referenceRoot(ls)(tagged), tree(ls)(tagged).root))
+    forall(leaves)(ls => expect.same(referenceRoot(ls)(using tagged), tree(ls)(using tagged).root))
   }
 
   test("repeating the last leaf always changes the root (no CVE-2012-2459 malleability)") {
-    forall(nonEmptyLeaves)(ls => expect(tree(ls)(tagged).root != tree(ls :+ ls.last)(tagged).root, s"size ${ls.size}"))
+    forall(nonEmptyLeaves)(ls => expect(tree(ls)(using tagged).root != tree(ls :+ ls.last)(using tagged).root, s"size ${ls.size}"))
   }
 
   test("every inclusion proof verifies, including for repeated leaves") {
     forall(nonEmptyLeaves.map(ls => ls ++ ls.take(3))) { ls =>
-      val t = tree(ls)(tagged)
+      val t = tree(ls)(using tagged)
       ls.indices.toList.map { i =>
         val proof = t.inclusionProof(i.toLong)
-        expect(proof.flatMap(p => MerkleVerifier.inclusion(t.root, tagged.leaf(ls(i)), p)(tagged)).isRight, s"index $i of ${ls.size}")
+        expect(proof.flatMap(p => MerkleVerifier.inclusion(t.root, tagged.leaf(ls(i)), p)(using tagged)).isRight, s"index $i of ${ls.size}")
       }.reduce(_ and _)
     }
   }
@@ -83,15 +83,15 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
   test("tampered inclusion proofs fail") {
     forall(leavesOfSize(2).flatMap(ls => Gen.choose(0, ls.size - 1).map(ls -> _))) {
       case (ls, i) =>
-        val t = tree(ls)(tagged)
+        val t = tree(ls)(using tagged)
         val leaf = tagged.leaf(ls(i))
         val proof = t.inclusionProof(i.toLong).toOption.get
         val other = tagged.leaf(ls(i) ++ hex"ff")
         val flipped = proof.copy(path = proof.path.updated(0, tagged.leaf(hex"deadbeef")))
-        expect(MerkleVerifier.inclusion(t.root, other, proof)(tagged).isLeft, "wrong leaf")
+        expect(MerkleVerifier.inclusion(t.root, other, proof)(using tagged).isLeft, "wrong leaf")
           .and(
             expect(
-              MerkleVerifier.inclusion(t.root, leaf, proof.copy(index = (i + 1L) % ls.size))(tagged).isLeft || ls(i) == ls(
+              MerkleVerifier.inclusion(t.root, leaf, proof.copy(index = (i + 1L) % ls.size))(using tagged).isLeft || ls(i) == ls(
                 (i + 1) % ls.size
               ),
               "wrong index"
@@ -99,22 +99,22 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
           )
           .and(
             expect(
-              MerkleVerifier.inclusion(t.append(other).root, leaf, proof.copy(size = proof.size + 1))(tagged).isLeft,
+              MerkleVerifier.inclusion(t.append(other).root, leaf, proof.copy(size = proof.size + 1))(using tagged).isLeft,
               "stale proof against the grown tree"
             )
           )
-          .and(expect(MerkleVerifier.inclusion(t.root, leaf, flipped)(tagged).isLeft, "altered path"))
-          .and(expect(MerkleVerifier.inclusion(t.root, leaf, proof.copy(path = proof.path :+ leaf))(tagged).isLeft, "extended path"))
+          .and(expect(MerkleVerifier.inclusion(t.root, leaf, flipped)(using tagged).isLeft, "altered path"))
+          .and(expect(MerkleVerifier.inclusion(t.root, leaf, proof.copy(path = proof.path :+ leaf))(using tagged).isLeft, "extended path"))
     }
   }
 
   test("consistency proofs verify between every pair of sizes") {
     forall(Gen.choose(1, 40).flatMap(n => Gen.listOfN(n, leafData)).map(_.toVector)) { ls =>
-      val full = tree(ls)(tagged)
+      val full = tree(ls)(using tagged)
       (0 to ls.size).toList.map { m =>
-        val old = tree(ls.take(m))(tagged)
+        val old = tree(ls.take(m))(using tagged)
         val proof = full.consistencyProof(m.toLong)
-        expect(proof.flatMap(p => MerkleVerifier.consistency(old.root, full.root, p)(tagged)).isRight, s"$m -> ${ls.size}")
+        expect(proof.flatMap(p => MerkleVerifier.consistency(old.root, full.root, p)(using tagged)).isRight, s"$m -> ${ls.size}")
       }.reduce(_ and _)
     }
   }
@@ -124,20 +124,20 @@ object MerkleTreeSuite extends SimpleIOSuite with Checkers {
       Gen.choose(2, 40).flatMap(n => Gen.listOfN(n, leafData)).map(_.toVector).flatMap(ls => Gen.choose(1, ls.size - 1).map(ls -> _))
     ) {
       case (ls, m) =>
-        val full = tree(ls)(tagged)
-        val forked = tree(ls.take(m - 1) :+ (ls(m - 1) ++ hex"01"))(tagged)
+        val full = tree(ls)(using tagged)
+        val forked = tree(ls.take(m - 1) :+ (ls(m - 1) ++ hex"01"))(using tagged)
         val proof = full.consistencyProof(m.toLong).toOption.get
-        expect(MerkleVerifier.consistency(forked.root, full.root, proof)(tagged).isLeft, s"forked prefix of size $m")
+        expect(MerkleVerifier.consistency(forked.root, full.root, proof)(using tagged).isLeft, s"forked prefix of size $m")
     }
   }
 
   pureTest("out-of-range requests are typed errors") {
-    val t = tree(ctLeaves)(tagged)
+    val t = tree(ctLeaves)(using tagged)
     expect
       .same(Left(MerkleError.IndexOutOfRange(8, 8)), t.inclusionProof(8))
       .and(expect.same(Left(MerkleError.IndexOutOfRange(-1, 8)), t.inclusionProof(-1)))
       .and(expect.same(Left(MerkleError.InvalidSizes(9, 8)), t.consistencyProof(9)))
-      .and(expect.same(Left(MerkleError.IndexOutOfRange(0, 0)), MerkleTree.empty[Sha256](tagged).inclusionProof(0)))
+      .and(expect.same(Left(MerkleError.IndexOutOfRange(0, 0)), MerkleTree.empty[Sha256](using tagged).inclusionProof(0)))
   }
 
   pureTest("profiles are domain separated from each other and from raw hashing") {

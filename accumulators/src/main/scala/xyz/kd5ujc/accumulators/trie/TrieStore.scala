@@ -105,7 +105,7 @@ object TrieStore {
       }
 
     private def digest(b: ByteVector): F[Digest[H]] =
-      Digest.fromBytes[H](b)(T.hasher).fold(e => failS(StoreError.Corrupt(e.toString)), _.pure[F])
+      Digest.fromBytes[H](b)(using T.hasher).fold(e => failS(StoreError.Corrupt(e.toString)), _.pure[F])
 
     def root(version: Version): F[Digest[H]] =
       state.flatMap(s => checkReadable(s, version) >> rootHash(version.value).map(_.getOrElse(T.empty)))

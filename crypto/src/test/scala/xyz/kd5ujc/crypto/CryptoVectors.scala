@@ -11,7 +11,7 @@ import xyz.kd5ujc.crypto.signing._
 
 import io.circe.Json
 import io.circe.syntax._
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 
 /** Conformance vectors for docs/specs/signing.md: every scheme and derivation, from fixed inputs. */
@@ -30,7 +30,7 @@ object CryptoVectors {
   /** Fixed nonce / auxiliary randomness for the randomised schemes. */
   val randomness: ByteVector = ByteVector.fill(32)(0x42)
 
-  private def get[A](e: Either[_, A]): A = e.fold(err => sys.error(err.toString), identity)
+  private def get[A](e: Either[?, A]): A = e.fold(err => sys.error(err.toString), identity)
 
   /** Standard BIP-340 signs exact 32-byte messages: the SHA-256 digests of [[messages]]. */
   val messages32: List[ByteVector] = messages.map(m => xyz.kd5ujc.core.hash.Hasher[xyz.kd5ujc.core.hash.Sha256].digest(m).bytes)
@@ -92,7 +92,7 @@ object CryptoVectors {
         scheme[Bip340]("BIP-340", (k, m) => get(Message32.from(m).flatMap(secp.bip340SignWithAux(k, _, randomness))), messages32),
         scheme[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", (k, m) => get(secp.taggedSchnorrSignWithAux(k, m, randomness))),
         scheme[Ristretto255Schnorr]("ristretto255-Schnorr", (k, m) => get(Ristretto255Schnorr.signWithRandomness(k, m, randomness))),
-        scheme[xyz.kd5ujc.crypto.bls.BlsPop]("BLS12-381-PoP", (k, m) => get(bls.sign(k, m)))(bls.seedDerivation)
+        scheme[xyz.kd5ujc.crypto.bls.BlsPop]("BLS12-381-PoP", (k, m) => get(bls.sign(k, m)))(using bls.seedDerivation)
       ).asJson,
       "bip39" -> bip39.asJson,
       "slip10Ed25519" -> Json.obj(

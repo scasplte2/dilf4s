@@ -57,7 +57,8 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
     forall(history) { h =>
       val snaps = model(h)
       ok { (rs, rt) =>
-        implicit val (s, t) = (rs, rt)
+        given Raise[IO, StoreError] = rs
+        given Raise[IO, TrieError] = rt
         for {
           raw   <- RawStore.inMemory[IO]
           store <- TrieStore.make[IO, Sha256](raw, "trie", mode)
@@ -83,7 +84,8 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
       case (h, cut) =>
         val snaps = model(h)
         ok { (rs, rt) =>
-          implicit val (s, t) = (rs, rt)
+          given Raise[IO, StoreError] = rs
+          given Raise[IO, TrieError] = rt
           for {
             raw     <- RawStore.inMemory[IO]
             store   <- TrieStore.make[IO, Sha256](raw, "trie", mode)
@@ -109,7 +111,8 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
 
   test("reading a pruned or future version is a typed error") {
     run { (rs, rt) =>
-      implicit val (s, t) = (rs, rt)
+      given Raise[IO, StoreError] = rs
+      given Raise[IO, TrieError] = rt
       for {
         raw    <- RawStore.inMemory[IO]
         store  <- TrieStore.make[IO, Sha256](raw, "trie", mode)
@@ -122,13 +125,14 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
 
   test("concurrent commits through separate instances: one wins per version") {
     ok { (rs, rt) =>
-      implicit val (s, t) = (rs, rt)
+      given Raise[IO, StoreError] = rs
+      given Raise[IO, TrieError] = rt
       for {
         raw <- RawStore.inMemory[IO]
         results <- (0 until 6).toList.parTraverse { i =>
           run((rs2, rt2) =>
             TrieStore
-              .make[IO, Sha256](raw, "trie", mode)(implicitly, implicitly, rs2, rt2)
+              .make[IO, Sha256](raw, "trie", mode)(using implicitly, implicitly, rs2, rt2)
               .flatMap(_.commit(Version.Genesis, List(ByteVector(i.toByte) -> Some(value(i)))))
           )
         }
@@ -140,7 +144,8 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
 
   test("tampered node storage is detected on read") {
     run { (rs, rt) =>
-      implicit val (s, t) = (rs, rt)
+      given Raise[IO, StoreError] = rs
+      given Raise[IO, TrieError] = rt
       for {
         raw   <- RawStore.inMemory[IO]
         store <- TrieStore.make[IO, Sha256](raw, "trie", mode)

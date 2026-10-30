@@ -2,7 +2,7 @@ package xyz.kd5ujc.crypto.signing
 
 import cafe.cryptography.curve25519.{CompressedEdwardsY, Constants, Scalar}
 import org.bouncycastle.crypto.digests.SHA512Digest
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 
 /** ZIP-215 against RFC 8032 strict verification, on signatures constructed from first principles. */

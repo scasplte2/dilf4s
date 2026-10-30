@@ -18,11 +18,8 @@ object Dependencies {
     val organizeImports = "0.6.0"
     val weaver = "0.13.0"
     val logback = "1.6.6"
-    val betterMonadicFor = "0.3.1"
     val ed25519Elisabeth = "0.1.0"
     val curve25519Elisabeth = "0.1.0"
-    val kindProjector = "0.13.4"
-    val semanticDB = "4.12.7"
   }
 
   object Libraries {
@@ -53,20 +50,5 @@ object Dependencies {
     val curve25519Elisabeth = "cafe.cryptography" % "curve25519-elisabeth"     % V.curve25519Elisabeth
     val jmhCore = "org.openjdk.jmh"               % "jmh-core"                 % "1.37"
     val jmhGen = "org.openjdk.jmh"                % "jmh-generator-annprocess" % "1.37"
-  }
-
-  object CompilerPlugin {
-
-    val betterMonadicFor = compilerPlugin(
-      "com.olegpy" %% "better-monadic-for" % V.betterMonadicFor
-    )
-
-    val kindProjector = compilerPlugin(
-      ("org.typelevel" % "kind-projector" % V.kindProjector).cross(CrossVersion.full)
-    )
-
-    val semanticDB = compilerPlugin(
-      ("org.scalameta" % "semanticdb-scalac" % V.semanticDB).cross(CrossVersion.full)
-    )
   }
 }

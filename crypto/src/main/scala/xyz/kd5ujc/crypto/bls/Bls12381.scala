@@ -91,7 +91,9 @@ final class Bls12381 private () {
         for {
           head <- g2(first.bytes)
           tail <- rest.traverse(s => g2(s.bytes))
-          sum  <- call("aggregate")(tail.foldLeft(head.to_jacobian()) { (acc, p) => acc.aggregate(p); acc })
+          sum <- call("aggregate")(tail.foldLeft(head.to_jacobian()) { (acc, p) =>
+            acc.aggregate(p); acc
+          })
         } yield Signature[BlsPop](ByteVector.view(sum.compress()))
     }
 
@@ -103,9 +105,11 @@ final class Bls12381 private () {
         for {
           head <- g1(first.bytes)
           tail <- rest.traverse(k => g1(k.bytes))
-          sum  <- call("aggregate")(tail.foldLeft(head.to_jacobian()) { (acc, p) => acc.aggregate(p); acc })
-          sig  <- g2(signature.bytes)
-          ok   <- call("core_verify")(sig.core_verify(sum.to_affine(), true, message.toArray, SignatureDst) == BLST_ERROR.BLST_SUCCESS)
+          sum <- call("aggregate")(tail.foldLeft(head.to_jacobian()) { (acc, p) =>
+            acc.aggregate(p); acc
+          })
+          sig <- g2(signature.bytes)
+          ok  <- call("core_verify")(sig.core_verify(sum.to_affine(), true, message.toArray, SignatureDst) == BLST_ERROR.BLST_SUCCESS)
         } yield ok
     }).getOrElse(false)
 

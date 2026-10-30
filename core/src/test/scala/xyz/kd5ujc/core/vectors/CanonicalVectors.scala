@@ -10,7 +10,7 @@ import xyz.kd5ujc.core.hash._
 
 import io.circe.Json
 import io.circe.syntax._
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 
 /** The conformance vectors for docs/specs/canonical-encoding.md; every SDK must reproduce them. */
 object CanonicalVectors {
@@ -151,7 +151,7 @@ object CanonicalVectors {
     }.asJson,
     "taggedHash" -> (for {
       m <- tagMessages
-      (name, digest) <- List[(String, ByteVector => Digest[_])](
+      (name, digest) <- List[(String, ByteVector => Digest[?])](
         "SHA-256"     -> TaggedHash[Sha256](tag).apply,
         "SHA3-256"    -> TaggedHash[Sha3_256](tag).apply,
         "SHA3-512"    -> TaggedHash[Sha3_512](tag).apply,

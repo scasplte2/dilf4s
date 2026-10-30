@@ -10,7 +10,7 @@ import cats.syntax.all._
 
 import io.circe.parser
 import org.scalacheck.Gen
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
 
@@ -120,7 +120,7 @@ object SignatureSuite extends SimpleIOSuite with Checkers {
 
   // ------------------------------------------------------------------ secp256k1
 
-  private val backend = Secp256k1.load[IO].unsafeRunSync()(cats.effect.unsafe.IORuntime.global)
+  private val backend = Secp256k1.load[IO].unsafeRunSync()(using cats.effect.unsafe.IORuntime.global)
   private val k1 = new Secp256k1.Instances(backend)
 
   {

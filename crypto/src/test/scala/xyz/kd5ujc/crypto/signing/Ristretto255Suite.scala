@@ -6,7 +6,7 @@ import cats.syntax.all._
 
 import cafe.cryptography.curve25519.RistrettoElement
 import org.scalacheck.Gen
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
 

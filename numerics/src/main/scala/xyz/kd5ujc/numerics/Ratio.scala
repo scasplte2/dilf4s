@@ -117,7 +117,7 @@ object Ratio {
   private def stripFives(n: BigInt, count: Int): (Int, BigInt) =
     if (n % 5 == BigInt(0)) stripFives(n / 5, count + 1) else (count, n)
 
-  implicit val ratioOrder: Order[Ratio] = Order.from(_ compare _)
+  implicit val ratioOrder: Order[Ratio] = Order.from(_ `compare` _)
   implicit val ratioShow: Show[Ratio] = Show.fromToString
   implicit val ratioOrdering: Ordering[Ratio] = ratioOrder.toOrdering
 }

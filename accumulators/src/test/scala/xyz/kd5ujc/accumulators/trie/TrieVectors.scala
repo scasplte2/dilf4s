@@ -10,7 +10,7 @@ import xyz.kd5ujc.core.hash.Sha256
 
 import io.circe.Json
 import io.circe.syntax._
-import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
+import scodec.bits.{BitVector, ByteVector, hex}
 import weaver.SimpleIOSuite
 
 /** Conformance vectors for docs/specs/trie.md: roots, encoded proofs, and the answers each proof must give. */

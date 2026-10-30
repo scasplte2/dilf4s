@@ -7,7 +7,7 @@ import cats.syntax.all._
 
 import io.circe.{Json, parser}
 import org.scalacheck.Gen
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
 
@@ -125,7 +125,7 @@ object EcVrfSuite extends SimpleIOSuite with Checkers {
     val kp = Vrf.fromSeed[EcVrfTai](ByteVector.fill(32)(9)).toOption.get
     val (pi, _) = Vrf.tai.prove(kp.signing, hex"").toOption.get
     val l = Curve25519Maps.le32(Curve25519Maps.L)
-    def malformed(e: Either[VrfError, _]) = e match {
+    def malformed(e: Either[VrfError, ?]) = e match {
       case Left(VrfError.Malformed(_, _)) => true
       case _                              => false
     }

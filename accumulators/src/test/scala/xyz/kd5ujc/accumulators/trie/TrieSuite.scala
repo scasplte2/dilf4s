@@ -10,7 +10,7 @@ import xyz.kd5ujc.core.hash.{Digest, Sha256}
 import xyz.kd5ujc.storage.ByteOrder.unsigned
 
 import org.scalacheck.Gen
-import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
+import scodec.bits.{BitVector, ByteVector, hex}
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
 
@@ -101,8 +101,11 @@ object TrieSuite extends SimpleIOSuite with Checkers {
             .toOption
             .get
           val parents = nodes.values.toList.flatMap {
-            case (b: Branch[Sha256], _) => b.left.toList ++ b.right.toList
-            case (_: Leaf[Sha256], _)   => Nil
+            case (node, _) =>
+              node match {
+                case b: Branch[Sha256] => b.left.toList ++ b.right.toList
+                case _: Leaf[Sha256]   => Nil
+              }
           } ++ t.rootForTest.toList
           val expected = parents.groupBy(identity).view.mapValues(_.size).toMap
           expect.same(reachable.keySet, nodes.keySet).and(expect.same(expected, nodes.view.mapValues(_._2).toMap))
@@ -296,7 +299,7 @@ object TrieSuite extends SimpleIOSuite with Checkers {
         val m = model(ops)
         val t = build(variable4, ops)
         val expected = m.toList.filter { case (k, _) => KeyOrder.lteq(from.bits, k.bits) && until.forall(u => KeyOrder.lt(k.bits, u.bits)) }
-          .sortBy(_._1)(bitOrder)
+          .sortBy(_._1)(using bitOrder)
           .map { case (k, v) => (k.bits, v) }
         val listed = t
           .prove(Nil, Nil, List(from -> until))
@@ -409,7 +412,7 @@ object TrieSuite extends SimpleIOSuite with Checkers {
     val proved = bulk
       .prove(sample)
       .flatMap(p => TrieProofs.verify(mode, bulk.root, p))
-      .map(v => sample.forall(k => v.lookup(k.bits).isInstanceOf[Lookup.Present[_]]))
+      .map(v => sample.forall(k => v.lookup(k.bits).isInstanceOf[Lookup.Present[?]]))
     val halved = keys.take(2500).foldLeft(bulk)((t, k) => t.remove(k).toOption.get)
     expect
       .same(bulk.root, incremental.root)

@@ -6,12 +6,12 @@ import cats.syntax.all._
 
 import io.circe.{Decoder, Encoder}
 import org.scalacheck.Gen
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.scalacheck.Checkers
 import weaver.{Expectations, SimpleIOSuite}
 
 /** Backend-independent behaviour of every store layer; each interpreter's suite mixes this in. */
-trait StoreBehaviours { self: SimpleIOSuite with Checkers =>
+trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
 
   def backend: String
 
@@ -28,7 +28,7 @@ trait StoreBehaviours { self: SimpleIOSuite with Checkers =>
   def expectOk(f: Handle[IO, StoreError] => IO[Expectations]): IO[Expectations] =
     attempt(f).map(_.fold(e => failure(s"unexpected store error $e"), identity))
 
-  implicit private val intValue: ValueCodec[Int] = ValueCodec.fromCirce[Int](Encoder[Int], Decoder[Int])
+  implicit private val intValue: ValueCodec[Int] = ValueCodec.fromCirce[Int](using Encoder[Int], Decoder[Int])
 
   private def ns(name: String): Namespace = Namespace(name).fold(e => sys.error(e.toString), identity)
 
@@ -143,7 +143,7 @@ trait StoreBehaviours { self: SimpleIOSuite with Checkers =>
     }
     expectOk { implicit h =>
       withRaw { raw =>
-        val kv = KeyValueStore[IO, String, Int](raw, ns("kv"))(implicitly, implicitly, refuse13, h)
+        val kv = KeyValueStore[IO, String, Int](raw, ns("kv"))(using implicitly, implicitly, refuse13, h)
         h.attempt(kv.commit(Batch.puts(List("a" -> 1, "b" -> 13))))
           .flatMap(result => kv.get("a").map(a => expect(result.isLeft, "the commit fails").and(expect.same(None, a))))
       }
@@ -291,7 +291,7 @@ trait StoreBehaviours { self: SimpleIOSuite with Checkers =>
           results <- (0 until 8).toList.parTraverse { i =>
             attempt(r2 =>
               VersionedStore
-                .make[IO, Int, Int](raw, "vs")(implicitly, implicitly, implicitly, r2)
+                .make[IO, Int, Int](raw, "vs")(using implicitly, implicitly, implicitly, r2)
                 .flatMap(_.commit(Version.Genesis, Batch.put(i, i)))
             )
           }

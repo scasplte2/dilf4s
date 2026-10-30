@@ -9,7 +9,7 @@ import xyz.kd5ujc.core.hash.{Blake2b256, Sha3_512}
 
 import io.circe.Json
 import io.circe.syntax._
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 
 /** Conformance vectors for docs/specs/kes.md: every period of small instances of each construction. */

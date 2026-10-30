@@ -244,7 +244,7 @@ object CanonicalJson {
       case CArray(vs)   => Eval.defer(vs.traverse(renderEval)).map(_.sequence.map(_.mkString("[", ",", "]")))
       case CMap(m) =>
         Eval
-          .defer(m.toVector.sortBy(_._1)(CodePointOrder).traverse { case (k, v) => renderEval(v).map(_.map(quote(k) + ":" + _)) })
+          .defer(m.toVector.sortBy(_._1)(using CodePointOrder).traverse { case (k, v) => renderEval(v).map(_.map(quote(k) + ":" + _)) })
           .map(_.sequence.map(_.mkString("{", ",", "}")))
     }
 

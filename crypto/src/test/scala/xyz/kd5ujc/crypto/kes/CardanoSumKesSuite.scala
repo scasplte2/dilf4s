@@ -9,7 +9,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.hash.{Blake2b256, Hasher, Sha256}
 
 import org.scalacheck.Gen
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
 

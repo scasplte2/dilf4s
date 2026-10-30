@@ -5,7 +5,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.hash.{Hasher, Sha256}
 import xyz.kd5ujc.crypto.zk.Bn254.{G1, G2, ZkError}
 
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 
 sealed trait Groth16Error extends Product with Serializable
 

@@ -74,7 +74,7 @@ final class MerkleTree[H] private (private val levels: Vector[Vector[Digest[H]]]
   def append(leafHash: Digest[H]): MerkleTree[H] =
     new MerkleTree[H](MerkleTree.propagate(levels.headOption.fold(Vector(Vector(leafHash)))(l0 => levels.updated(0, l0 :+ leafHash)), 0))
 
-  def appendAll(leafHashes: Iterable[Digest[H]]): MerkleTree[H] = leafHashes.foldLeft(this)(_ append _)
+  def appendAll(leafHashes: Iterable[Digest[H]]): MerkleTree[H] = leafHashes.foldLeft(this)(_ `append` _)
 
   /** All leaf hashes, in order. */
   def leafHashes: Vector[Digest[H]] = levels.headOption.getOrElse(Vector.empty)

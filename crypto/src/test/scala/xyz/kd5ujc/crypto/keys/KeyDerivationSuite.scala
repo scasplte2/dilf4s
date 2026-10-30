@@ -9,7 +9,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.crypto.signing._
 
 import io.circe.{ACursor, Json, parser}
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 
 object KeyDerivationSuite extends SimpleIOSuite {
@@ -21,7 +21,7 @@ object KeyDerivationSuite extends SimpleIOSuite {
     parser.parse(new String(Files.readAllBytes(Paths.get("docs", "test-vectors", file)), UTF_8)).flatMap(_.as[List[Json]]).toOption.get
 
   private def str(j: Json, path: String*): String = path.foldLeft(j.hcursor: ACursor)(_.downField(_)).as[String].toOption.get
-  private def hx(j:  Json, path: String*): ByteVector = ByteVector.fromValidHex(str(j, path: _*))
+  private def hx(j:  Json, path: String*): ByteVector = ByteVector.fromValidHex(str(j, path*))
 
   // ------------------------------------------------------------------ BIP-39
 

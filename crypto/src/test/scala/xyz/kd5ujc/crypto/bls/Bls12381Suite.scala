@@ -9,7 +9,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.crypto.signing._
 
 import io.circe.{Json, parser}
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, hex}
 import weaver.{Expectations, IOSuite}
 
 /** ethereum/bls12-381-tests v0.1.2 (every category) and the tessellation-bls known answer. */

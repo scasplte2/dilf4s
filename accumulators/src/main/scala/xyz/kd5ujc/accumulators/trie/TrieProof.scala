@@ -52,7 +52,7 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
             val rest = remaining.drop(segment.size)
             if (rest.isEmpty) value.fold[Lookup[H]](Lookup.Absent)(Lookup.Present(_))
             else
-              (if (rest.head) right else left) match {
+              ((if (rest.head) right else left): Option[ProofNode[H]]) match {
                 case None        => Lookup.Absent
                 case Some(child) => go(child, rest.tail)
               }
@@ -108,7 +108,7 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
           else if (!remaining.startsWith(segment)) Some(None)
           else {
             val rest = remaining.drop(segment.size)
-            (if (rest.head) right else left) match {
+            ((if (rest.head) right else left): Option[ProofNode[H]]) match {
               case None        => Some(None)
               case Some(child) => locate(child, consumed ++ segment ++ BitVector.bit(rest.head), rest.tail)
             }
