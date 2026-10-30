@@ -352,7 +352,7 @@ All inputs are bytes. Malformed input is a `Crypto` error; a well-formed signatu
 | `bip340_verify` | `[key32, message32, sig64]` | Standard BIP-340. The message must be exactly 32 bytes |
 | `bls_verify` | `[key48, message, sig96]` | BLS12-381, minimal-pubkey-size, proof-of-possession ciphersuite |
 | `bls_aggregate_verify` | `[[key48, ...], message, sig96]` | Fast aggregate verification: one message, every key |
-| `ecrecover` | `[digest32, sig65]` | Ethereum's signer recovery. `sig65` is `r ‖ s ‖ v`, with `v` in {27, 28} or {0, 1}. The result is the signer's 20-byte address, or null if the signature recovers no key: `r` or `s` zero or not below the order, `s` above half the order (EIP-2: OpenZeppelin's `ECDSA.recover` rule, stricter than the EVM precompile), or `r` not an x-coordinate. Other sizes, or another `v`, are malformed. |
+| `ecrecover` | `[digest32, sig65]` | Ethereum's signer recovery. `sig65` is `r ‖ s ‖ v`, with `v` in {27, 28} or {0, 1}. The result is the signer's 20-byte address. A signature that recovers no key is a `Crypto` error, never a value: Ethereum's precompile returns the zero address, and a null would likewise equal an unset owner, so a comparison would accept any signature. It recovers no key when `r` or `s` is zero or not below the order, `s` is above half the order (EIP-2's twin signature: OpenZeppelin's `ECDSA.recover` rule, stricter than the precompile), or `r` is not an x-coordinate. Other sizes, or another `v`, are malformed. |
 
 `bls_aggregate_verify` assumes every key carries a proof of possession, checked when the key was admitted. Without
 that check, a rogue key can forge an aggregate.

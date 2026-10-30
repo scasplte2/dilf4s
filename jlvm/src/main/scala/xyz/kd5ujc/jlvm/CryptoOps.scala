@@ -71,12 +71,20 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
           .map { case (key, msg, sig) => Values.bool(secp.bip340Verify(key, msg, sig)) }
     }
 
-  /** `[digest32, signature65]`: the signer's 20-byte Ethereum address, or null when the signature recovers no key. */
+  /**
+   * `[digest32, signature65]`: the signer's 20-byte Ethereum address. A signature that recovers no key is an error, not a
+   * value: Ethereum's zero address, or a null, would equal an unset owner, and a program comparing against one would
+   * accept any signature.
+   */
   private def ecrecover(op: Op, args: Vector[CanonicalValue]): Result =
     args match {
       case Vector(d, s) =>
         (bytes(op, d), bytes(op, s)).tupled.flatMap {
-          case (digest, sig) => Ecrecover.recover(digest, sig).bimap(JlvmError.Crypto(op.wire, _), _.fold[CanonicalValue](CNull)(CBytes(_)))
+          case (digest, sig) =>
+            Ecrecover
+              .recover(digest, sig)
+              .flatMap(_.toRight("the signature recovers no key (r or s out of range, high s, or r not an x-coordinate)"))
+              .bimap(JlvmError.Crypto(op.wire, _), CBytes(_))
         }
       case _ => JlvmError.Arity(op.wire, s"takes [digest, signature], got ${args.size} arguments").asLeft
     }

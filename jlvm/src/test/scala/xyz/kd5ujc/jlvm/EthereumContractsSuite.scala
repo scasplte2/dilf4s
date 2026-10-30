@@ -128,6 +128,14 @@ object EthereumContractsSuite extends IOSuite with Checkers {
       .and(expect(rejected(c.next(walletState(1), execute(5, keys.slice(0, 2)))), "signatures for nonce 0 do not replay at nonce 1"))
       .and(expect(rejected(c.next(walletState(0), execute(5, keys.slice(0, 2)).replace("\"value\": 5", "\"value\": 6"))), "another value"))
       .and(expect.same(Right(walletState(1)), c.next(walletState(0), execute(5, keys.slice(0, 3)))))
+      .and(
+        expect(
+          c.run(walletState(0), execute(5, keys.slice(0, 2)).replaceFirst("\"0x[0-9a-f]{130}\"", s"\"0x${"00" * 32}${"11" * 32}1b\""))
+            .result
+            .isLeft,
+          "an unrecoverable signature fails the call: it is never silently skipped or read as an address"
+        )
+      )
   }
 
   private def at(v: CanonicalValue, k: String): CanonicalValue = v match {

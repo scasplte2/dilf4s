@@ -337,9 +337,17 @@ object CryptoOpsSuite extends IOSuite {
             "another message, another signer"
           )
         )
-        .and(expect.same(Right(CNull), recover(hash, highS)))
+        .and(expect(crypto(recover(hash, highS)), "the high-s twin is an error, never a value"))
         .and(expect(crypto(recover(hash, sig.dropRight(1) :+ 29.toByte)), "v = 29 is malformed"))
         .and(expect(crypto(recover(hash, sig.drop(1))), "a 64-byte signature is malformed"))
+    }
+  }
+
+  test("a failed recovery cannot equal an unset owner: it is an error, never null or the zero address") { b =>
+    IO {
+      val garbage = ByteVector.fill(32)(0) ++ ByteVector.fill(32)(1) :+ 27.toByte
+      val program = """{"==": [{"ecrecover": [{"var": "digest"}, {"var": "sig"}]}, {"var": "owner"}]}"""
+      expect(crypto(run(b.jlvm, program, s"""{"digest": "0x${"00" * 32}", "sig": "${EthKeys.hex(garbage)}"}""").result), "no owner set")
     }
   }
 
