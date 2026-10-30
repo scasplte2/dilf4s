@@ -53,6 +53,12 @@ object ParserSuite extends SimpleIOSuite with Checkers {
       )
   }
 
+  pureTest("let binding names are never code, even when they spell an operation's name") {
+    val json = """{"let":[[["values",[1,2]],["max",3]],{"var":"$values"}]}"""
+    expect(p(json).isRight, "binds values and max")
+      .and(expect.same(Right(json), Parser.parse(json).flatMap(Parser.render).map(_.noSpaces)))
+  }
+
   pureTest("an array headed by a call's name renders quoted, so it reads back as the same array") {
     val arr = Expr.Arr(Vector(text("max"), Expr.Var(VarRef.Data(Vector("x")), None)))
     val back = Program.from(arr).flatMap(Parser.render).map(_.noSpaces).flatMap(Parser.parse(_)).map(_.expr)

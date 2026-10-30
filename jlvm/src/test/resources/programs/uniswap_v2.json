@@ -1,0 +1,81 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["c", {"var": "call"}],
+  ["me", {"var": "$sender"}],
+  ["T", {"var": "state.totalSupply"}]
+ ],
+ {"if": [
+  {"==": [{"var": "$c.method"}, "addLiquidity"]},
+  {"let": [[
+    ["liquidity", {"if": [
+      {"==": [{"var": "$T"}, 0]},
+      {"var": "$c.amount0"},
+      {"floor": {"min": [
+        {"/": [{"*": [{"var": "$c.amount0"}, {"var": "$T"}]}, {"var": "$s.reserve0"}]},
+        {"/": [{"*": [{"var": "$c.amount1"}, {"var": "$T"}]}, {"var": "$s.reserve1"}]}
+      ]}}
+    ]}]
+   ],
+   {"if": [
+    {"and": [{">": [{"var": "$c.amount0"}, 0]}, {">": [{"var": "$c.amount1"}, 0]}, {">": [{"var": "$liquidity"}, 0]}]},
+    {"state": {"merge": [{"var": "$s"}, {
+        "reserve0": {"+": [{"var": "$s.reserve0"}, {"var": "$c.amount0"}]},
+        "reserve1": {"+": [{"var": "$s.reserve1"}, {"var": "$c.amount1"}]},
+        "totalSupply": {"+": [{"var": "$T"}, {"var": "$liquidity"}]},
+        "lp": {"set": [{"var": "$s.lp"}, {"var": "$me"}, {"+": [{"get": [{"var": "$s.lp"}, {"var": "$me"}, 0]}, {"var": "$liquidity"}]}]}
+      }]},
+     "effects": [{"kind": "mint", "to": {"var": "$me"}, "amount": {"var": "$liquidity"}}]},
+    {"object": {"reject": "deposit both tokens, enough for at least one LP unit"}}
+   ]}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "removeLiquidity"]},
+  {"let": [[
+    ["held", {"get": [{"var": "$s.lp"}, {"var": "$me"}, 0]}],
+    ["out0", {"floor": {"/": [{"*": [{"var": "$c.liquidity"}, {"var": "$s.reserve0"}]}, {"var": "$T"}]}}],
+    ["out1", {"floor": {"/": [{"*": [{"var": "$c.liquidity"}, {"var": "$s.reserve1"}]}, {"var": "$T"}]}}]
+   ],
+   {"if": [
+    {"and": [{">": [{"var": "$c.liquidity"}, 0]}, {"<=": [{"var": "$c.liquidity"}, {"var": "$held"}]}]},
+    {"state": {"merge": [{"var": "$s"}, {
+        "reserve0": {"-": [{"var": "$s.reserve0"}, {"var": "$out0"}]},
+        "reserve1": {"-": [{"var": "$s.reserve1"}, {"var": "$out1"}]},
+        "totalSupply": {"-": [{"var": "$T"}, {"var": "$c.liquidity"}]},
+        "lp": {"set": [{"var": "$s.lp"}, {"var": "$me"}, {"-": [{"var": "$held"}, {"var": "$c.liquidity"}]}]}
+      }]},
+     "effects": [
+       {"kind": "transfer", "token": 0, "to": {"var": "$me"}, "amount": {"var": "$out0"}},
+       {"kind": "transfer", "token": 1, "to": {"var": "$me"}, "amount": {"var": "$out1"}}
+     ]},
+    {"object": {"reject": "burn at most the LP units held"}}
+   ]}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "swap"]},
+  {"let": [[
+    ["zeroForOne", {"var": "call.zeroForOne"}],
+    ["rin", {"if": [{"var": "call.zeroForOne"}, {"var": "state.reserve0"}, {"var": "state.reserve1"}]}],
+    ["rout", {"if": [{"var": "call.zeroForOne"}, {"var": "state.reserve1"}, {"var": "state.reserve0"}]}],
+    ["inFee", {"*": [{"var": "call.amountIn"}, 997]}],
+    ["out", {"floor": {"/": [{"*": [{"var": "$inFee"}, {"var": "$rout"}]}, {"+": [{"*": [{"var": "$rin"}, 1000]}, {"var": "$inFee"}]}]}}]
+   ],
+   {"if": [
+    {"and": [
+      {">": [{"var": "$c.amountIn"}, 0]},
+      {"==": [{"floor": {"var": "$c.amountIn"}}, {"var": "$c.amountIn"}]},
+      {">": [{"var": "$out"}, 0]},
+      {">=": [{"var": "$out"}, {"var": "$c.minOut"}]}
+    ]},
+    {"state": {"merge": [{"var": "$s"}, {"if": [
+       {"var": "$zeroForOne"},
+       {"reserve0": {"+": [{"var": "$rin"}, {"var": "$c.amountIn"}]}, "reserve1": {"-": [{"var": "$rout"}, {"var": "$out"}]}},
+       {"reserve1": {"+": [{"var": "$rin"}, {"var": "$c.amountIn"}]}, "reserve0": {"-": [{"var": "$rout"}, {"var": "$out"}]}}
+     ]}]},
+     "effects": [{"kind": "transfer", "token": {"if": [{"var": "$zeroForOne"}, 1, 0]}, "to": {"var": "$me"}, "amount": {"var": "$out"}}]},
+    {"object": {"reject": "a positive whole amount in, and at least minOut out"}}
+   ]}
+  ]},
+
+  {"object": {"reject": "unknown method"}}
+ ]}
+]}

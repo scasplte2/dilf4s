@@ -1,0 +1,53 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["c", {"var": "call"}],
+  ["me", {"var": "$sender"}],
+  ["t", {"var": "$timestamp"}]
+ ],
+ {"if": [
+  {"==": [{"var": "$c.method"}, "commit"]},
+  {"if": [
+    {"<": [{"var": "$t"}, {"var": "$s.commitEnd"}]},
+    {"state": {"set": [{"var": "$s"}, "commits", {"set": [{"var": "$s.commits"}, {"var": "$me"}, {"var": "$c.commitment"}]}]},
+     "effects": []},
+    {"object": {"reject": "the commit phase is over"}}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "reveal"]},
+  {"if": [
+    {"and": [
+      {">=": [{"var": "$t"}, {"var": "$s.commitEnd"}]},
+      {"<": [{"var": "$t"}, {"var": "$s.revealEnd"}]},
+      {"==": [
+        {"keccak256": {"cat": [{"int_to_bytes": [{"var": "$c.amount"}, 32]}, {"var": "$c.salt"}]}},
+        {"get": [{"var": "$s.commits"}, {"var": "$me"}]}
+      ]}
+    ]},
+    {"let": [[["wins", {">": [{"var": "$c.amount"}, {"var": "$s.highestBid"}]}]],
+     {"state": {"merge": [
+        {"var": "$s"},
+        {"commits": {"unset": [{"var": "$s.commits"}, {"var": "$me"}]},
+         "highestBid": {"if": [{"var": "$wins"}, {"var": "$c.amount"}, {"var": "$s.highestBid"}]},
+         "highestBidder": {"if": [{"var": "$wins"}, {"var": "$me"}, {"var": "$s.highestBidder"}]}}
+      ]},
+      "effects": []}
+    ]},
+    {"object": {"reject": "outside the reveal phase, or the bid and salt do not match the commitment"}}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "settle"]},
+  {"if": [
+    {"and": [{">=": [{"var": "$t"}, {"var": "$s.revealEnd"}]}, {"!": {"var": "$s.settled"}}]},
+    {"state": {"set": [{"var": "$s"}, "settled", true]},
+     "effects": {"if": [
+       {"var": "$s.highestBidder"},
+       [{"kind": "transfer", "to": {"var": "$s.seller"}, "amount": {"var": "$s.highestBid"}},
+        {"kind": "deliver", "to": {"var": "$s.highestBidder"}, "item": {"var": "$s.item"}}],
+       [{"kind": "deliver", "to": {"var": "$s.seller"}, "item": {"var": "$s.item"}}]
+     ]}},
+    {"object": {"reject": "settle once, after the reveal phase"}}
+  ]},
+
+  {"object": {"reject": "unknown method"}}
+ ]}
+]}

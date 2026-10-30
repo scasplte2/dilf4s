@@ -1,0 +1,22 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["c", {"var": "call"}],
+  ["message", {"blake2b256": {"cat": [
+    {"var": "state.treasury"},
+    {"int_to_bytes": [{"var": "state.nonce"}, 8]},
+    {"var": "call.to"},
+    {"int_to_bytes": [{"var": "call.amount"}, 32]}
+  ]}}],
+  ["committee", {"type": "threshold", "k": {"var": "state.k"},
+    "children": {"map": [{"var": "state.signers"}, {"type": "dlog", "pk": {"var": "$current"}}]}}]
+ ],
+ {"if": [
+  {"and": [
+    {"==": [{"var": "$c.method"}, "spend"]},
+    {"sigma_verify": [{"var": "$committee"}, {"var": "$c.proof"}, {"var": "$message"}]}
+  ]},
+  {"state": {"set": [{"var": "$s"}, "nonce", {"+": [{"var": "$s.nonce"}, 1]}]},
+   "effects": [{"kind": "transfer", "to": {"var": "$c.to"}, "amount": {"var": "$c.amount"}}]},
+  {"object": {"reject": "k of the committee must sign this spend at this nonce"}}
+ ]}
+]}

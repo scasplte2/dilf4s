@@ -101,6 +101,10 @@ object Parser {
 
   private def elements(items: Vector[Json], mode: Mode): Either[JlvmError, Expr] = items.traverse(fromJson(_, mode)).map(Expr.Arr(_))
 
+  /** A `let`'s `[name, expression]` pairs: a name is never code, so a pair is exempt from the array-syntax check. */
+  private def letBindings(j: Json, mode: Mode): Either[JlvmError, Expr] =
+    j.asArray.fold(fromJson(j, mode))(_.traverse(pair => pair.asArray.fold(fromJson(pair, mode))(elements(_, mode))).map(Expr.Arr(_)))
+
   /**
    * metakit read a `let` name with a plain path, `{"var": "x"}`; in v1 it is `$x` (decision B). Lenient parsing
    * rewrites those reads, so a migrated program keeps its meaning. Bounded by the program depth, like [[fromJson]].
@@ -160,6 +164,8 @@ object Parser {
 
   private def operation(op: Op, arg: Json, mode: Mode): Either[JlvmError, Expr] =
     arg.asArray match {
+      case Some(Vector(bindings, body)) if op == Op.Let =>
+        (letBindings(bindings, mode), fromJson(body, mode)).mapN((b, x) => Expr.Apply(op, Vector(b, x)))
       case Some(items)                      => items.traverse(fromJson(_, mode)).map(Expr.Apply(op, _))
       case None if Op.Variadic.contains(op) => fromJson(arg, mode).map(Expr.Spread(op, _))
       case None                             => fromJson(arg, mode).map(a => Expr.Apply(op, Vector(a)))
@@ -233,6 +239,15 @@ object Parser {
           case other       => toJson(other)
         }
         (pathJson, default.traverse(defaultJson)).mapN((pj, dj) => Json.obj(Variable -> Json.fromValues(pj +: dj.toVector)))
+      case Expr.Apply(Op.Let, Vector(Expr.Arr(pairs), body)) =>
+        // binding names are written plainly: letBindings reads them back as names, whatever they spell
+        (
+          pairs.traverse {
+            case Expr.Arr(Vector(n @ Expr.Lit(CanonicalValue.CText(_)), x)) => (toJson(n), toJson(x)).mapN(Json.arr(_, _))
+            case other                                                      => toJson(other)
+          },
+          toJson(body)
+        ).mapN((ps, b) => Json.obj(Op.Let.wire -> Json.arr(Json.fromValues(ps), b)))
       case Expr.Apply(op, args) => args.traverse(toJson).map(as => Json.obj(op.wire -> Json.fromValues(as)))
       case Expr.Spread(op, arg) => toJson(arg).map(a => Json.obj(op.wire -> a))
       case Expr.Arr(items)      =>

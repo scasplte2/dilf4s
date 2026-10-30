@@ -1,0 +1,50 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["c", {"var": "call"}],
+  ["t", {"var": "$timestamp"}]
+ ],
+ {"if": [
+  {"==": [{"var": "$c.method"}, "bid"]},
+  {"if": [
+    {"and": [
+      {"<": [{"var": "$t"}, {"var": "$s.end"}]},
+      {">=": [{"var": "$c.amount"}, {"var": "$s.reserve"}]},
+      {"or": [
+        {"!": {"var": "$s.bidder"}},
+        {">=": [{"*": [{"var": "$c.amount"}, 100]}, {"*": [{"var": "$s.bid"}, {"+": [100, {"var": "$s.minStepPercent"}]}]}]}
+      ]},
+      {"sigma_verify": [{"type": "dlog", "pk": {"var": "$c.bidder"}}, {"var": "$c.proof"}, {"var": "$txHash"}]}
+    ]},
+    {"state": {"merge": [{"var": "$s"}, {
+        "bid": {"var": "$c.amount"},
+        "bidder": {"var": "$c.bidder"},
+        "end": {"if": [
+          {"<": [{"-": [{"var": "$s.end"}, {"var": "$t"}]}, {"var": "$s.extendWindow"}]},
+          {"+": [{"var": "$s.end"}, {"var": "$s.extendBy"}]},
+          {"var": "$s.end"}
+        ]}
+      }]},
+     "effects": {"if": [
+       {"var": "$s.bidder"},
+       [{"kind": "transfer", "to": {"var": "$s.bidder"}, "amount": {"var": "$s.bid"}}],
+       []
+     ]}},
+    {"object": {"reject": "a signed bid, before the end, at least the reserve and the minimum step over the current bid"}}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "settle"]},
+  {"if": [
+    {"and": [{">=": [{"var": "$t"}, {"var": "$s.end"}]}, {"!": {"var": "$s.settled"}}]},
+    {"state": {"set": [{"var": "$s"}, "settled", true]},
+     "effects": {"if": [
+       {"var": "$s.bidder"},
+       [{"kind": "transfer", "to": {"var": "$s.seller"}, "amount": {"var": "$s.bid"}},
+        {"kind": "deliver", "to": {"var": "$s.bidder"}, "item": {"var": "$s.item"}}],
+       [{"kind": "deliver", "to": {"var": "$s.seller"}, "item": {"var": "$s.item"}}]
+     ]}},
+    {"object": {"reject": "settle once, after the end"}}
+  ]},
+
+  {"object": {"reject": "unknown method"}}
+ ]}
+]}

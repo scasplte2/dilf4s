@@ -1,0 +1,19 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["t", {"var": "$timestamp"}],
+  ["vested", {"if": [
+    {"<": [{"var": "$t"}, {"var": "state.cliff"}]}, 0,
+    {">=": [{"var": "$t"}, {"+": [{"var": "state.start"}, {"var": "state.duration"}]}]}, {"var": "state.total"},
+    {"floor": {"/": [{"*": [{"var": "state.total"}, {"-": [{"var": "$t"}, {"var": "state.start"}]}]}, {"var": "state.duration"}]}}
+  ]}],
+  ["releasable", {"-": [{"var": "$vested"}, {"var": "state.released"}]}]
+ ],
+ {"if": [
+  {"!=": [{"var": "call.method"}, "release"]},
+  {"object": {"reject": "unknown method"}},
+  {">": [{"var": "$releasable"}, 0]},
+  {"state": {"set": [{"var": "$s"}, "released", {"var": "$vested"}]},
+   "effects": [{"kind": "transfer", "to": {"var": "$s.beneficiary"}, "amount": {"var": "$releasable"}}]},
+  {"object": {"reject": "nothing to release yet"}}
+ ]}
+]}

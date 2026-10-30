@@ -1,0 +1,46 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["c", {"var": "call"}],
+  ["t", {"var": "$timestamp"}],
+  ["total", {"+": {"values": {"var": "state.pledges"}}}]
+ ],
+ {"if": [
+  {"==": [{"var": "$c.method"}, "pledge"]},
+  {"if": [
+    {"and": [{"<": [{"var": "$t"}, {"var": "$s.deadline"}]}, {">": [{"var": "$c.amount"}, 0]}]},
+    {"let": [[["slot", {"hex": {"var": "call.backer"}}]],
+     {"state": {"set": [{"var": "$s"}, "pledges", {"set": [{"var": "$s.pledges"}, {"var": "$slot"}, {"+": [{"get": [{"var": "$s.pledges"}, {"var": "$slot"}, 0]}, {"var": "$c.amount"}]}]}]},
+      "effects": []}]},
+    {"object": {"reject": "pledges close at the deadline"}}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "claim"]},
+  {"if": [
+    {"and": [
+      {"!": {"var": "$s.claimed"}},
+      {">=": [{"var": "$total"}, {"var": "$s.goal"}]},
+      {"sigma_verify": [{"type": "dlog", "pk": {"var": "$s.project"}}, {"var": "$c.proof"}, {"var": "$txHash"}]}
+    ]},
+    {"state": {"set": [{"var": "$s"}, "claimed", true]},
+     "effects": [{"kind": "transfer", "to": {"var": "$s.project"}, "amount": {"var": "$total"}}]},
+    {"object": {"reject": "the project claims once, with the goal met, signing this transaction"}}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "refund"]},
+  {"let": [[["pledged", {"get": [{"var": "state.pledges"}, {"hex": {"var": "call.backer"}}, 0]}]],
+   {"if": [
+    {"and": [
+      {">=": [{"var": "$t"}, {"var": "$s.deadline"}]},
+      {"<": [{"var": "$total"}, {"var": "$s.goal"}]},
+      {">": [{"var": "$pledged"}, 0]},
+      {"sigma_verify": [{"type": "dlog", "pk": {"var": "$c.backer"}}, {"var": "$c.proof"}, {"var": "$txHash"}]}
+    ]},
+    {"state": {"set": [{"var": "$s"}, "pledges", {"unset": [{"var": "$s.pledges"}, {"hex": {"var": "$c.backer"}}]}]},
+     "effects": [{"kind": "transfer", "to": {"var": "$c.backer"}, "amount": {"var": "$pledged"}}]},
+    {"object": {"reject": "refunds open after a missed deadline, to the backer, signing this transaction"}}
+   ]}
+  ]},
+
+  {"object": {"reject": "unknown method"}}
+ ]}
+]}

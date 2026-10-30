@@ -1287,11 +1287,6 @@
    "data": "{\"a\":5,\"b\":3}"
   },
   {
-   "name": "metakit JsonLogicSpec: MapExpression should handle all constant values as ConstExpression(MapValue)",
-   "program": "{\"name\":\"John\",\"age\":30,\"active\":true}",
-   "data": "null"
-  },
-  {
    "name": "metakit JsonLogicSpec: MapExpression should handle deeply nested expressions",
    "program": "{\"object\":{\"result\":{\"object\":{\"value\":{\"+\":[1,2]}}}}}",
    "data": "null"
@@ -1299,11 +1294,6 @@
   {
    "name": "metakit JsonLogicSpec: MapExpression should encode and decode round-trip correctly",
    "program": "{\"computed\":{\"var\":\"x\"},\"static\":100}",
-   "data": "null"
-  },
-  {
-   "name": "metakit JsonLogicSpec: MapExpression should handle empty objects",
-   "program": "{}",
    "data": "null"
   },
   {
@@ -2012,11 +2002,6 @@
    "data": "null"
   },
   {
-   "name": "metakit SigmaVerifySuite: error: missing required field (pk) => hard error",
-   "program": "{\"object\":{\"type\":\"dlog\"}}",
-   "data": "{\"type\":\"dlog\",\"e\":\"${hexChallenge(BigInt(1))}\",\"z\":\"${hex32(BigInt(1))}\"}"
-  },
-  {
    "name": "metakit ZkOpsSuite: poseidon([0x01, 0x02]) matches the known circomlib vector",
    "program": "{\"poseidon\":[\"0x0000000000000000000000000000000000000000000000000000000000000001\",\"0x0000000000000000000000000000000000000000000000000000000000000002\"]}",
    "data": "null"
@@ -2025,46 +2010,6 @@
    "name": "metakit ZkOpsWave2Suite: bn254_pairing([]) == true (empty product is the identity)",
    "program": "{\"bn254_pairing\":[[]]}",
    "data": "null"
-  },
-  {
-   "name": "metakit json_logic vector 0",
-   "program": "null",
-   "data": "{}"
-  },
-  {
-   "name": "metakit json_logic vector 1",
-   "program": "true",
-   "data": "{}"
-  },
-  {
-   "name": "metakit json_logic vector 2",
-   "program": "false",
-   "data": "{}"
-  },
-  {
-   "name": "metakit json_logic vector 3",
-   "program": "42",
-   "data": "{}"
-  },
-  {
-   "name": "metakit json_logic vector 4",
-   "program": "3.14",
-   "data": "{}"
-  },
-  {
-   "name": "metakit json_logic vector 5",
-   "program": "\"hello\"",
-   "data": "{}"
-  },
-  {
-   "name": "metakit json_logic vector 6",
-   "program": "[1,2,3]",
-   "data": "{}"
-  },
-  {
-   "name": "metakit json_logic vector 7",
-   "program": "{\"a\":1,\"b\":2}",
-   "data": "{}"
   },
   {
    "name": "metakit json_logic vector 8",

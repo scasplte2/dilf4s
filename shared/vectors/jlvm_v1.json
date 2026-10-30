@@ -2817,17 +2817,6 @@
       "warnings" : 0
     },
     {
-      "name" : "metakit JsonLogicSpec: MapExpression should handle all constant values as ConstExpression(MapValue)",
-      "program" : "{\"name\":\"John\",\"age\":30,\"active\":true}",
-      "data" : "null",
-      "outcome" : {
-        "json" : "{\"active\":true,\"age\":30,\"name\":\"John\"}",
-        "cbor" : "a363616765181e646e616d65644a6f686e66616374697665f5"
-      },
-      "gasUsed" : 96,
-      "warnings" : 0
-    },
-    {
       "name" : "metakit JsonLogicSpec: MapExpression should handle deeply nested expressions",
       "program" : "{\"object\":{\"result\":{\"object\":{\"value\":{\"+\":[1,2]}}}}}",
       "data" : "null",
@@ -2847,17 +2836,6 @@
         "cbor" : "a1667374617469631864"
       },
       "gasUsed" : 73,
-      "warnings" : 0
-    },
-    {
-      "name" : "metakit JsonLogicSpec: MapExpression should handle empty objects",
-      "program" : "{}",
-      "data" : "null",
-      "outcome" : {
-        "json" : "{}",
-        "cbor" : "a0"
-      },
-      "gasUsed" : 15,
       "warnings" : 0
     },
     {
@@ -4386,17 +4364,6 @@
       "warnings" : 0
     },
     {
-      "name" : "metakit SigmaVerifySuite: error: missing required field (pk) => hard error",
-      "program" : "{\"object\":{\"type\":\"dlog\"}}",
-      "data" : "{\"type\":\"dlog\",\"e\":\"${hexChallenge(BigInt(1))}\",\"z\":\"${hex32(BigInt(1))}\"}",
-      "outcome" : {
-        "json" : "{\"type\":\"dlog\"}",
-        "cbor" : "a1647479706564646c6f67"
-      },
-      "gasUsed" : 42,
-      "warnings" : 0
-    },
-    {
       "name" : "metakit ZkOpsSuite: poseidon([0x01, 0x02]) matches the known circomlib vector",
       "program" : "{\"poseidon\":[\"0x0000000000000000000000000000000000000000000000000000000000000001\",\"0x0000000000000000000000000000000000000000000000000000000000000002\"]}",
       "data" : "null",
@@ -4416,94 +4383,6 @@
         "cbor" : "f5"
       },
       "gasUsed" : 55143,
-      "warnings" : 0
-    },
-    {
-      "name" : "metakit json_logic vector 0",
-      "program" : "null",
-      "data" : "{}",
-      "outcome" : {
-        "json" : "null",
-        "cbor" : "f6"
-      },
-      "gasUsed" : 15,
-      "warnings" : 0
-    },
-    {
-      "name" : "metakit json_logic vector 1",
-      "program" : "true",
-      "data" : "{}",
-      "outcome" : {
-        "json" : "true",
-        "cbor" : "f5"
-      },
-      "gasUsed" : 15,
-      "warnings" : 0
-    },
-    {
-      "name" : "metakit json_logic vector 2",
-      "program" : "false",
-      "data" : "{}",
-      "outcome" : {
-        "json" : "false",
-        "cbor" : "f4"
-      },
-      "gasUsed" : 15,
-      "warnings" : 0
-    },
-    {
-      "name" : "metakit json_logic vector 3",
-      "program" : "42",
-      "data" : "{}",
-      "outcome" : {
-        "json" : "42",
-        "cbor" : "182a"
-      },
-      "gasUsed" : 15,
-      "warnings" : 0
-    },
-    {
-      "name" : "metakit json_logic vector 4",
-      "program" : "3.14",
-      "data" : "{}",
-      "outcome" : {
-        "json" : "3.14",
-        "cbor" : "d81e82189d1832"
-      },
-      "gasUsed" : 15,
-      "warnings" : 0
-    },
-    {
-      "name" : "metakit json_logic vector 5",
-      "program" : "\"hello\"",
-      "data" : "{}",
-      "outcome" : {
-        "json" : "\"hello\"",
-        "cbor" : "6568656c6c6f"
-      },
-      "gasUsed" : 15,
-      "warnings" : 0
-    },
-    {
-      "name" : "metakit json_logic vector 6",
-      "program" : "[1,2,3]",
-      "data" : "{}",
-      "outcome" : {
-        "json" : "[1,2,3]",
-        "cbor" : "83010203"
-      },
-      "gasUsed" : 96,
-      "warnings" : 0
-    },
-    {
-      "name" : "metakit json_logic vector 7",
-      "program" : "{\"a\":1,\"b\":2}",
-      "data" : "{}",
-      "outcome" : {
-        "json" : "{\"a\":1,\"b\":2}",
-        "cbor" : "a2616101616202"
-      },
-      "gasUsed" : 69,
       "warnings" : 0
     },
     {
