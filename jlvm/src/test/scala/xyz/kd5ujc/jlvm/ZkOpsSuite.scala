@@ -7,6 +7,8 @@ import cats.effect.{IO, Resource}
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.hash.{Fr, Poseidon => PoseidonHash}
+import xyz.kd5ujc.crypto.zk.Bn254
 
 import io.circe.{Decoder, Json, parser}
 import org.scalacheck.Gen
@@ -190,6 +192,24 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
       .and(expect.same("Arity", kind(run(Op.EcvrfVerify, pk, proof))))
       .and(expect.same("Crypto", kind(run(Op.Groth16Verify, b(ByteVector.low(32)), b(ByteVector.empty), b(ByteVector.low(355))))))
       .and(expect.same(Right(False), run(Op.Groth16Verify, b(ByteVector.low(32)), b(ByteVector.empty), b(ByteVector.low(356)))))
+  }
+
+  pureTest("ecvrf_verify: a key of the wrong width is a Crypto error") {
+    val proof = b(ByteVector.low(80))
+    List(0L, 2L, 31L, 33L, 64L)
+      .map(n => expect.same("Crypto", kind(run(Op.EcvrfVerify, b(ByteVector.low(n)), b(ByteVector.empty), proof))))
+      .foldLeft(success)(_ and _)
+  }
+
+  pureTest("poseidon output is a canonical field element: it feeds back into poseidon and pmt_verify") {
+    val digest = run(Op.Poseidon, one, two)
+    val expected = digest.toOption.collect { case CBytes(d) => d }
+      .flatMap(d => Fr.from(BigInt(1, d.toArray)).toOption)
+      .flatMap(f => PoseidonHash.hash(List(f)).toOption)
+      .map(h => b(Bn254.be32(h.value)))
+    expect(expected.isDefined, s"the digest decodes as a field element: $digest")
+      .and(expect.same(expected, digest.flatMap(d => run(Op.Poseidon, d)).toOption))
+      .and(expect.same(Right(True), digest.flatMap(d => run(Op.PmtVerify, d, d, CInt(BigInt(0)), a()))))
   }
 }
 

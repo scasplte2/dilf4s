@@ -245,4 +245,78 @@ object ProofOpsSuite extends IOSuite {
         .and(expect(isCrypto(call(f.jlvm, Op.TrieVerify, md, root, CBytes(hex("000102")), CNull, keyProof)), "a key of the wrong length"))
     }
   }
+
+  private def fixture(f: Fixtures, name: String): Json =
+    fixtures(f).find(x => str(x.hcursor.downField("name")) == name).getOrElse(sys.error(s"no fixture $name"))
+  private def rootOf(fx:  Json): CanonicalValue = CBytes(hex(str(fx.hcursor.downField("root"))))
+  private def proofOf(fx: Json): CanonicalValue = cbor(str(fx.hcursor.downField("proof").downField("cbor")))
+  private def text(s:     String): CanonicalValue = get(CanonicalValue.text(s))
+
+  test("trie_verify: a wrong root is false; an undecodable proof or a short root is a crypto error; a text root a type error") { f =>
+    IO {
+      val fx = fixture(f, "fixed-2")
+      val md = m("fixed" -> CInt(BigInt(2)))
+      val key = CBytes(hex("0001"))
+      val value = CBytes(values(fx)("0001"))
+      val run = (root: CanonicalValue, v: CanonicalValue, proof: CanonicalValue) => call(f.jlvm, Op.TrieVerify, md, root, key, v, proof)
+      expect
+        .same(Right(True), run(rootOf(fx), value, proofOf(fx)))
+        .and(expect.same(Right(False), run(CBytes(ByteVector.fill(32)(0)), value, proofOf(fx))))
+        .and(expect.same(Right(False), run(CBytes(ByteVector.fill(32)(0xff)), CNull, proofOf(fx))))
+        .and(expect(isCrypto(run(rootOf(fx), value, m("nope" -> text("not a proof")))), "an undecodable proof"))
+        .and(expect(isCrypto(run(CBytes(ByteVector(1, 2, 3)), value, proofOf(fx))), "a 3-byte root"))
+        .and(
+          expect(
+            run(text("not-hex"), value, proofOf(fx)) match {
+              case Left(JlvmError.Type(_, _)) => true
+              case _                          => false
+            },
+            "a text root is a type error"
+          )
+        )
+    }
+  }
+
+  test("trie_prefix_verify: altered, swapped or extra entries are false; a partial proof is not covered; junk is malformed") { f =>
+    IO {
+      // fixed-2-prefix proves prefix 00 (keys 0000, 0001, 00ff); fixed-2 holds the same entries, so the same root, but
+      // its key proof leaves 0000 as a stub: under prefix 00 it is not covered
+      val full = fixture(f, "fixed-2-prefix")
+      val partial = fixture(f, "fixed-2")
+      val vs = values(full)
+      val md = m("fixed" -> CInt(BigInt(2)))
+      val entries = (es: List[(String, ByteVector)]) => a(es.map(e => a(CBytes(hex(e._1)), CBytes(e._2)))*)
+      val listed = List("0000", "0001", "00ff").map(k => k -> vs(k))
+      val run = (es: List[(String, ByteVector)], proof: CanonicalValue) =>
+        call(f.jlvm, Op.TriePrefixVerify, md, rootOf(full), CBytes(hex("00")), entries(es), proof)
+      expect
+        .same(rootOf(full), rootOf(partial))
+        .and(expect(vs("0000") != vs("0001"), "the swap below exchanges different values"))
+        .and(expect.same(Right(True), run(listed, proofOf(full))))
+        .and(expect.same(Right(False), run(listed.updated(1, "0001" -> (vs("0001") :+ 0)), proofOf(full))))
+        .and(expect.same(Right(False), run(List("0000" -> vs("0001"), "0001" -> vs("0000"), "00ff" -> vs("00ff")), proofOf(full))))
+        .and(expect.same(Right(False), run(listed.take(2) ++ List("0080" -> ByteVector(9)) ++ listed.drop(2), proofOf(full))))
+        .and(expect(isCrypto(run(listed.take(2), proofOf(partial))), "a key proof does not cover the prefix"))
+        .and(expect(isCrypto(run(listed, m("nope" -> text("x")))), "an undecodable proof"))
+    }
+  }
+
+  test("a revocation gate: denied when the key is proven present, allowed when proven absent, an error when not covered") { f =>
+    IO {
+      val fx = fixture(f, "fixed-2")
+      val program = get(
+        Parser.parse(
+          """{"if": [{"trie_verify": [{"var": "mode"}, {"var": "root"}, {"var": "key"}, null, {"var": "proof"}]}, "allowed", "denied"]}"""
+        )
+      )
+      def gate(key: String) = {
+        val data = m("mode" -> m("fixed" -> CInt(BigInt(2))), "root" -> rootOf(fx), "key" -> CBytes(hex(key)), "proof" -> proofOf(fx))
+        f.jlvm.evaluate(program, data, Map.empty, Config()).result
+      }
+      expect
+        .same(Right(text("denied")), gate("0001"))
+        .and(expect.same(Right(text("allowed")), gate("8001")))
+        .and(expect(isCrypto(gate("0000")), "not covered is neither present nor absent"))
+    }
+  }
 }

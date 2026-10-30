@@ -27,8 +27,11 @@ object JlvmVectors {
   given Decoder[Input] = Decoder.forProduct5("name", "program", "data", "env", "gasLimit")(Input.apply)
   given Decoder[Inputs] = Decoder.forProduct2("source", "cases")(Inputs.apply)
 
-  /** The metakit-derived cases, then the example contracts' (ContractVectorCases). */
-  val files: List[String] = List("jlvm_cases.json", "jlvm_contract_cases.json")
+  /**
+   * The metakit-derived cases, then the example contracts' (ContractVectorCases), then metakit's out-of-gas cases at
+   * their own gas limits.
+   */
+  val files: List[String] = List("jlvm_cases.json", "jlvm_contract_cases.json", "jlvm_gas_cases.json")
 
   private def read(name: String): IO[Inputs] =
     Resource
@@ -126,6 +129,46 @@ object JlvmVectorsSuite extends IOSuite {
             a.and(expect(o.result == reference.result && o.gasUsed == reference.gasUsed, s"${i.name}: $d disagrees"))
           }
         }
+      }
+  }
+
+  test("metakit's out-of-gas cases: every charge is taken before the work, and running out uses the whole limit") {
+    case (jlvm, in) =>
+      IO {
+        val gas = in.cases.filter(i => i.name.startsWith("metakit gas oog: ") || i.name.startsWith("dilf4s gas boundary: "))
+        // dilf4s's dlog sigma_verify costs less than metakit's limit: it runs, and metakit's BN254 proof is malformed here
+        val finishes = Set(
+          "metakit gas oog: sigma_verify dlog at 90004",
+          "dilf4s gas boundary: nested + at its cost 361",
+          "dilf4s gas boundary: var lookup at its cost 19",
+          "dilf4s gas boundary: map callback at its cost 1235"
+        )
+        val read = GasSchedule.V1.varAccess.value + GasSchedule.V1.perPathSegment.value
+        def named(name: String): Option[Outcome] = in.cases.find(_.name == name).map(JlvmVectors.run(jlvm, _))
+        gas
+          .foldLeft(expect.same(15, gas.size)) { (acc, i) =>
+            val limit = i.gasLimit.getOrElse(GasLimit.Default.amount.value)
+            val o = JlvmVectors.run(jlvm, i)
+            val starved = o.result match {
+              case Left(JlvmError.OutOfGas(required, available)) => available == limit && required > limit && o.gasUsed == Gas(limit)
+              case _                                             => false
+            }
+            acc.and(expect(starved != finishes.contains(i.name), s"${i.name}: ${o.result}, gas ${o.gasUsed}"))
+          }
+          // metakit swallowed this failed charge into null for 0 gas
+          .and(
+            expect.same(
+              Option(Outcome(Gas(2), Left(JlvmError.OutOfGas(read, 2)))),
+              named("metakit gas oog: var lookup at 2 (metakit gave null for 0 gas)")
+            )
+          )
+          // one gas short of the cost runs out exactly at the last charge
+          .and(
+            expect.same(
+              Option(Outcome(Gas(360), Left(JlvmError.OutOfGas(361, 360)))),
+              named("dilf4s gas boundary: nested + one short, 360")
+            )
+          )
       }
   }
 

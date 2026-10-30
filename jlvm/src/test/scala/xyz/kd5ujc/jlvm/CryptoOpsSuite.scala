@@ -1,5 +1,8 @@
 package xyz.kd5ujc.jlvm
 
+import java.nio.charset.StandardCharsets.UTF_8
+
+import cats.Show
 import cats.effect.std.SecureRandom
 import cats.effect.{IO, Resource}
 import cats.syntax.all._
@@ -10,15 +13,21 @@ import xyz.kd5ujc.crypto.bls.Bls12381
 import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, SigmaProp, SigmaProver}
 import xyz.kd5ujc.crypto.signing._
 
-import scodec.bits.ByteVector
+import io.circe.{Json, parser}
+import org.scalacheck.Gen
+import scodec.bits.{ByteVector, hex}
+import weaver.scalacheck.Checkers
 import weaver.{Expectations, IOSuite}
 
-object CryptoOpsSuite extends IOSuite {
+object CryptoOpsSuite extends IOSuite with Checkers {
 
-  final case class Backends(jlvm: Jlvm, secp: Secp256k1, bls: Bls12381, random: SecureRandom[IO])
+  final case class Backends(jlvm: Jlvm, ops: CryptoOps, secp: Secp256k1, bls: Bls12381, random: SecureRandom[IO])
   type Res = Backends
   def sharedResource: Resource[IO, Backends] =
-    Resource.eval((Jlvm.load[IO], Secp256k1.load[IO], Bls12381.load[IO], SecureRandom.javaSecuritySecureRandom[IO]).mapN(Backends.apply))
+    Resource.eval(
+      (Jlvm.load[IO], CryptoOps.load[IO], Secp256k1.load[IO], Bls12381.load[IO], SecureRandom.javaSecuritySecureRandom[IO])
+        .mapN(Backends.apply)
+    )
 
   private def seed(n: Int): ByteVector = ByteVector.fill(32)(n.toByte)
   private val message = ByteVector("transfer 10 to bob".getBytes("UTF-8"))
@@ -302,13 +311,25 @@ object CryptoOpsSuite extends IOSuite {
 
   test("sigma_verify: malformed propositions are crypto errors") { b =>
     IO {
-      val p = (prop: String) => run(b.jlvm, s"""{"sigma_verify": [$prop, "0x00", "0x00"]}""", "{}").result
-      expect(crypto(p("""{"type": "or", "children": []}""")), "an empty or")
-        .and(expect(crypto(p("""{"type": "dlog", "pk": "0x02"}""")), "a short key"))
-        .and(expect(crypto(p(s"""{"type": "dlog", "pk": "$G", "extra": 1}""")), "an extra field"))
-        .and(expect(crypto(p(s"""{"type": "threshold", "k": 0, "children": [{"type": "dlog", "pk": "$G"}]}""")), "k = 0"))
-        .and(expect(crypto(p(s"""{"type": "threshold", "k": 2, "children": [{"type": "dlog", "pk": "$G"}]}""")), "k > n"))
-        .and(expect(crypto(p(s"""{"type": "dlog", "pk": "$G"}""")), "a 1-byte proof has the wrong length"))
+      // each proof has the length the proposition would fix if its flaw were ignored (sigma.md §5: 24 + 32 per leaf
+      // + 24 (n - k) per threshold), so only the flaw named can make it an error; a well-formed one gives false
+      val proof = (n: Int) => "\"0x" + "01" * n + "\""
+      val p = (prop: String, n: Int) => run(b.jlvm, s"""{"sigma_verify": [$prop, ${proof(n)}, "0x00"]}""", "{}").result
+      val leaf = s"""{"type": "dlog", "pk": "$G"}"""
+      val offCurve = "0x02" + "00" * 31 + "05" // 5^3 + 7 is not a square modulo the field prime
+      expect
+        .same(Right(False), p(leaf, 56))
+        .and(expect(crypto(p("""{"type": "or", "children": []}""", 24)), "an empty or"))
+        .and(expect(crypto(p("""{"type": "dlog", "pk": "0x02"}""", 56)), "a short key"))
+        .and(expect(crypto(p("""{"object": {"type": "dlog"}}""", 56)), "no pk")) // a single-key map needs "object"
+        .and(expect(crypto(p(s"""{"type": "dlog", "pk": "$G", "extra": 1}""", 56)), "an extra field"))
+        .and(expect(crypto(p(s"""{"type": "dlog", "pk": "$G", "children": [$leaf]}""", 56)), "children on a leaf"))
+        .and(expect(crypto(p(s"""{"type": "dlog", "pk": "$offCurve"}""", 56)), "an off-curve key"))
+        .and(expect(crypto(p(s"""{"type": "dhtuple", "g": "$offCurve", "h": "$G", "u": "$G", "v": "$G"}""", 56)), "an off-curve base"))
+        .and(expect(crypto(p(s"""{"type": "xor", "children": [$leaf]}""", 56)), "an unknown type"))
+        .and(expect(crypto(p(s"""{"type": "threshold", "k": 0, "children": [$leaf]}""", 80)), "k = 0"))
+        .and(expect(crypto(p(s"""{"type": "threshold", "k": 2, "children": [$leaf]}""", 32)), "k > n"))
+        .and(expect(crypto(p(leaf, 1)), "a 1-byte proof has the wrong length"))
     }
   }
 
@@ -359,6 +380,351 @@ object CryptoOpsSuite extends IOSuite {
         .and(expect.same(Right(CBytes(EthKeys.keccak("abc"))), eval("""{"keccak256": "0x616263"}""")))
         .and(expect.same(Right(CBytes(ByteVector(1, 2, 3))), eval("""{"cat": ["0x01", "0x0203"]}""")))
         .and(expect(eval("""{"cat": ["0x01", "a"]}""").isLeft, "bytes and text do not mix"))
+    }
+  }
+
+  // ---- programs over verified facts (metakit's worked examples)
+
+  private def text(s: String): CanonicalValue = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
+
+  /** The arguments of the first metakit zk vector of `op` whose expected result is `true`. */
+  private def validArgs(op: String): IO[Vector[Json]] =
+    Resource
+      .fromAutoCloseable(IO.blocking(getClass.getResourceAsStream("/vectors/jlvm_zk_from_metakit.json")))
+      .use(in => IO.blocking(new String(in.readAllBytes(), UTF_8)))
+      .flatMap(t => IO.fromEither(parser.parse(t).flatMap(_.hcursor.downField("cases").as[Vector[Json]])))
+      .flatMap { cases =>
+        val found = cases.find(c => c.hcursor.get[String]("op").contains(op) && c.hcursor.downField("expected").focus.contains(Json.True))
+        IO.fromOption(found.flatMap(_.hcursor.get[Vector[Json]]("args").toOption))(new NoSuchElementException(s"no valid $op vector"))
+      }
+
+  test("a policy over verified facts: granted only when the Groth16 proof and the Merkle path both verify") { b =>
+    (validArgs("groth16_verify"), validArgs("pmt_verify")).mapN { (groth16, pmt) =>
+      val program =
+        """{"if": [{"and": [
+          |  {"groth16_verify": [{"var": "vkey"}, {"var": "publicValues"}, {"var": "proof"}]},
+          |  {"pmt_verify": [{"var": "root"}, {"var": "leaf"}, {"var": "index"}, {"var": "siblings"}]}]},
+          |  "granted", "denied"]}""".stripMargin
+      val proof = groth16(2).asString.getOrElse("")
+      // the lowest bit of the last proof byte flipped: well formed, but the pairing check fails
+      val badProof = proof.dropRight(1) + Integer.toHexString(Integer.parseInt(proof.takeRight(1), 16) ^ 1)
+      val siblings = pmt(3).asArray.getOrElse(Vector.empty)
+      val badSiblings = Json.fromValues(Json.fromString("0x" + "00" * 31 + "07") +: siblings.drop(1))
+      def data(p: String, sibs: Json) =
+        Json
+          .obj(
+            "vkey"         -> groth16(0),
+            "publicValues" -> groth16(1),
+            "proof"        -> Json.fromString(p),
+            "root"         -> pmt(0),
+            "leaf"         -> pmt(1),
+            "index"        -> pmt(2),
+            "siblings"     -> sibs
+          )
+          .noSpaces
+      expect
+        .same(Right(text("granted")), run(b.jlvm, program, data(proof, Json.fromValues(siblings))).result)
+        .and(expect.same(Right(text("denied")), run(b.jlvm, program, data(badProof, Json.fromValues(siblings))).result))
+        .and(expect.same(Right(text("denied")), run(b.jlvm, program, data(proof, badSiblings)).result))
+    }
+  }
+
+  // Eth2 fast_aggregate_verify_valid_3d7576f3c0e3570a (ethereum/bls12-381-tests v0.1.2): three signers, one message
+  private val quorum = List(
+    "0xa491d1b0ecd9bb917989f0e74f0dea0422eac4a873e5e2644f368dffb9a6e20fd6e10c1b77654d067c0618f6e5a7f79a",
+    "0xb301803f8b5ac4a1133581fc676dfedc60d891dd5fa99028805e5ea5b08d3491af75d0707adab3b70c6a6a580217bf81",
+    "0xb53d21a4cfd562c469cc81514d4ce5a6b577d8403d32a394dc265dd190b47fa9f829fdd7963afdf972e5e77854051f6f"
+  )
+  private val quorumMessage = "0x" + "ab" * 32
+  private val quorumSignature =
+    "0x9712c3edd73a209c742b8250759db12549b3eaf43b5ca61376d9f30e2747dbcf842d8b2ac0901d2a093713e20284a767" +
+    "0fcf6954e9ab93de991bb9b313e664785a075fc285806fa5224c82bde146561b446ccfc706a64b8579513cfc4ff1d930"
+
+  test("bls_aggregate_verify gates a program on a published quorum; a key left out of the set is false") { b =>
+    IO {
+      val bare = """{"bls_aggregate_verify": [{"var": "keys"}, {"var": "msg"}, {"var": "sig"}]}"""
+      val gate = s"""{"if": [$bare, "authorized", "rejected"]}"""
+      def data(keys: List[String]) =
+        s"""{"keys": [${keys.map(k => s"\"$k\"").mkString(", ")}], "msg": "$quorumMessage", "sig": "$quorumSignature"}"""
+      expect
+        .same(Right(True), run(b.jlvm, bare, data(quorum)).result)
+        .and(expect.same(Right(False), run(b.jlvm, bare, data(quorum.take(2))).result))
+        .and(expect.same(Right(text("authorized")), run(b.jlvm, gate, data(quorum)).result))
+        .and(expect.same(Right(text("rejected")), run(b.jlvm, gate, data(quorum.take(2))).result))
+    }
+  }
+
+  test("bn254_pairing: each extra pair costs the same, its weight at the pairing's rate plus its literal nodes") { b =>
+    IO {
+      val g1 = "0x" + "00" * 31 + "01" + "00" * 31 + "02"
+      val g2 = "0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2" +
+        "1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed" +
+        "090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b" +
+        "12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa"
+      val pair = s"""["$g1", "$g2"]"""
+      def gas(n: Int) = run(b.jlvm, s"""{"bn254_pairing": [${List.fill(n)(pair).mkString(", ")}]}""", "{}").gasUsed.value
+      val schedule = Config().schedule
+      val pairValue = JsonSurface.parse(pair).fold(e => sys.error(e.toString), identity)
+      // one more array expression of two byte literals, and the pair's weight at the pairing's per-unit rate
+      val perPair = 3 * schedule.literal.value + 2 * schedule.element.value + schedule.sized(Op.Bn254Pairing, Vector(pairValue)).value
+      expect
+        .same(195L, pairValue.weight)
+        .and(expect.same(perPair, gas(2) - gas(1)))
+        .and(expect.same(perPair, gas(3) - gas(2)))
+    }
+  }
+
+  test("schnorr_verify: a tampered response or another message is false; a one-leaf sigma_verify agrees on each") { b =>
+    IO {
+      val program = """{"schnorr_verify": [{"var": "pk"}, {"var": "msg"}, {"var": "sig"}]}"""
+      val oneLeaf = """{"sigma_verify": [{"type": "dlog", "pk": {"var": "pk"}}, {"var": "sig"}, {"var": "msg"}]}"""
+      val msg = "0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00"
+      val sig = "0xbcb866ba434d5c77869ddcbc3f09ddd62dd2d2539bf99076674d1ae0c32338ea95581fdc18a3b66789904938ac641eba1a66d234070207a2"
+      val pk = "0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1"
+      def data(m: String, s: String) = s"""{"pk": "$pk", "msg": "$m", "sig": "$s"}"""
+      val cases = List(
+        "valid"           -> data(msg, sig),
+        "response byte"   -> data(msg, sig.dropRight(2) + "a3"),
+        "challenge byte"  -> data(msg, "0xbdb8" + sig.drop(6)),
+        "another message" -> data("0x1ec01772" + msg.drop(10), sig)
+      )
+      expect
+        .same(Right(True), run(b.jlvm, program, data(msg, sig)).result)
+        .and(expect.same(Right(False), run(b.jlvm, program, data(msg, sig.dropRight(2) + "a3")).result))
+        .and(expect.same(Right(False), run(b.jlvm, program, data(msg, "0xbdb8" + sig.drop(6))).result))
+        .and(expect.same(Right(False), run(b.jlvm, program, data("0x1ec01772" + msg.drop(10), sig)).result))
+        .and(cases.foldMap { c =>
+          val schnorr = run(b.jlvm, program, c._2).result
+          val sigma = run(b.jlvm, oneLeaf, c._2).result
+          expect(schnorr == sigma, s"${c._1}: schnorr_verify $schnorr, sigma_verify $sigma")
+        })
+    }
+  }
+
+  // ---- totality: hostile input to the signature, recovery and sigma operations gives a value or a typed error
+
+  private given Show[Op] = Show.show(_.wire)
+  private given Show[CanonicalValue] = Show.fromToString
+
+  private val signatureOps: List[Op] =
+    List(Op.Ed25519Verify, Op.Secp256k1Verify, Op.Bip340Verify, Op.BlsVerify, Op.BlsAggregateVerify, Op.SchnorrVerify, Op.SigmaVerify)
+
+  /** The outcome's category: a boolean, a 20-byte address, or the error's kind. */
+  private def outcome(r: Option[Either[JlvmError, CanonicalValue]]): String = r match {
+    case scala.None                             => "unimplemented"
+    case Some(Right(True)) | Some(Right(False)) => "boolean"
+    case Some(Right(CBytes(a))) if a.size == 20 => "address"
+    case Some(Right(other))                     => s"value $other"
+    case Some(Left(e))                          => e.getClass.getSimpleName
+  }
+
+  private val errors = Set("Type", "Arity", "Crypto")
+
+  /** Well-formed keys and signatures, so that generated arguments also get past decoding. */
+  private val knownBytes: List[ByteVector] = List(
+    hex"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+    hex"03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1",
+    ByteVector.low(33),
+    hex"5866666666666666666666666666666666666666666666666666666666666666",
+    ByteVector.fromValidHex(quorum.head.drop(2)),
+    ByteVector.fromValidHex(quorumSignature.drop(2))
+  )
+
+  /** Exact widths of the schemes' keys, signatures, digests and proofs, with plausible first bytes. */
+  private val biasedBytes: Gen[CanonicalValue] =
+    for {
+      n    <- Gen.oneOf(0, 1, 24, 31, 32, 33, 47, 48, 49, 55, 56, 57, 63, 64, 65, 66, 95, 96, 97, 128)
+      head <- Gen.oneOf(0x00, 0x02, 0x03, 0x04, 0x1b, 0x1c, 0x80, 0xa0, 0xc0, 0xe0, 0xff).map(_.toByte)
+      tail <- Gen.listOfN(math.max(n - 1, 0), Gen.choose(Byte.MinValue, Byte.MaxValue))
+    } yield CBytes(if (n == 0) ByteVector.empty else ByteVector(head +: tail))
+
+  private def array(xs: Seq[CanonicalValue]): CanonicalValue =
+    CanonicalValue.array(xs.toVector).fold(e => sys.error(e.toString), identity)
+
+  private val cryptoArg: Gen[CanonicalValue] = Gen.frequency(
+    6 -> biasedBytes,
+    2 -> Gen.oneOf(knownBytes).map(CBytes(_)),
+    1 -> Gen.oneOf[CanonicalValue](CNull, True, CInt(BigInt(7)), text("0xabc")),
+    1 -> Gen.choose(0, 4).flatMap(Gen.listOfN(_, biasedBytes)).map(array)
+  )
+
+  test("every signature, recovery and sigma op is total: random and exact-width arguments give a value or a typed error") { b =>
+    val ops = Gen.oneOf(Op.Ecrecover :: signatureOps)
+    forall(Gen.zip(ops, Gen.choose(0, 4).flatMap(Gen.listOfN(_, cryptoArg)).map(_.toVector))) {
+      case (op, args) =>
+        val o = outcome(b.ops(op, args))
+        val allowed = if (op == Op.Ecrecover) errors + "address" else errors + "boolean"
+        expect(allowed(o), s"${op.wire}: unexpected outcome $o")
+    }
+  }
+
+  test("structured hostile input to the signature and sigma ops gives the typed error the specs define") { b =>
+    IO {
+      def is(op: Op, args: CanonicalValue*)(want: String) = {
+        val o = outcome(b.ops(op, args.toVector))
+        expect(o == want, s"${op.wire}(${args.map(_.toString.take(48)).mkString(", ")}): expected $want, got $o")
+      }
+      def arr(vs:   CanonicalValue*): CanonicalValue = array(vs)
+      def node(kvs: (String, CanonicalValue)*): CanonicalValue = CanonicalValue.map(kvs.toList).fold(e => sys.error(e.toString), identity)
+      def int(n:    Int): CanonicalValue = CInt(BigInt(n))
+      val g = CBytes(hex"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
+      val identity33 = CBytes(ByteVector.low(33))
+      val msg = CBytes(hex"00")
+      val blsKey = CBytes(ByteVector.fromValidHex(quorum.head.drop(2)))
+      val aggregate = CBytes(ByteVector.fromValidHex(quorumSignature.drop(2)))
+      val proof56 = CBytes(ByteVector.fill(24)(1) ++ ByteVector.low(32))
+      val zIsQ = CBytes(ByteVector.fill(24)(1) ++ Secp256k1Group.scalarBytes(Secp256k1Group.Order))
+      def dlog(pk: CanonicalValue) = node("type" -> text("dlog"), "pk" -> pk)
+      val deep = (0 until 80).foldLeft(dlog(g))((acc, _) => node("type" -> text("and"), "children" -> arr(acc)))
+      val dhtuple = node("type" -> text("dhtuple"), "g" -> g, "h" -> g, "u" -> identity33, "v" -> identity33)
+      val threshold = node("type" -> text("threshold"), "k" -> int(5), "children" -> arr(dlog(g), dlog(g)))
+      val wide = node("type" -> text("or"), "children" -> arr(Vector.fill(256)(dlog(g))*))
+      val bls =
+        is(Op.BlsVerify)("Arity")
+          .and(is(Op.BlsVerify, msg, msg)("Arity"))
+          .and(is(Op.BlsVerify, int(1), int(2), int(3))("Type"))
+          .and(is(Op.BlsVerify, text("0xabc"), msg, aggregate)("Type"))
+          .and(is(Op.BlsVerify, msg, msg, msg)("Crypto"))
+          .and(is(Op.BlsVerify, CBytes(ByteVector.fill(48)(0x11)), msg, CBytes(ByteVector.fill(96)(0x33)))("Crypto"))
+          .and(is(Op.BlsAggregateVerify)("Arity"))
+          .and(expect.same(Some(Right(False)), b.ops(Op.BlsAggregateVerify, Vector(arr(), msg, aggregate))))
+          .and(is(Op.BlsAggregateVerify, msg, msg, aggregate)("Type"))
+          .and(is(Op.BlsAggregateVerify, arr(Vector.fill(5000)(msg)*), msg, aggregate)("Crypto"))
+          .and(is(Op.BlsAggregateVerify, arr(int(1)), int(2), int(3))("Type"))
+          .and(is(Op.BlsAggregateVerify, arr(blsKey), msg, CBytes(ByteVector.fill(96)(0x33)))("Crypto"))
+      val schnorr =
+        is(Op.SchnorrVerify)("Arity")
+          .and(is(Op.SchnorrVerify, g, msg)("Arity"))
+          .and(is(Op.SchnorrVerify, int(1), int(2), int(3))("Type"))
+          .and(is(Op.SchnorrVerify, CBytes(hex"04" ++ ByteVector.fill(32)(1)), msg, proof56)("Crypto"))
+          .and(is(Op.SchnorrVerify, CBytes(hex"02" ++ ByteVector.high(32)), msg, proof56)("Crypto"))
+          .and(is(Op.SchnorrVerify, identity33, msg, proof56)("Crypto"))
+          .and(is(Op.SchnorrVerify, g, msg, CBytes(hex"dead"))("Crypto"))
+          .and(is(Op.SchnorrVerify, g, msg, zIsQ)("Crypto"))
+          .and(is(Op.SchnorrVerify, g, text("0xabc"), proof56)("Type"))
+          .and(is(Op.SchnorrVerify, g, msg, proof56)("boolean"))
+      val sigma =
+        is(Op.SigmaVerify)("Arity")
+          .and(is(Op.SigmaVerify, dlog(g), proof56)("Arity"))
+          .and(is(Op.SigmaVerify, msg, proof56, msg)("Crypto"))
+          .and(is(Op.SigmaVerify, node("type" -> text("xor"), "pk" -> g), proof56, msg)("Crypto"))
+          .and(is(Op.SigmaVerify, node("type" -> text("dlog")), proof56, msg)("Crypto"))
+          .and(is(Op.SigmaVerify, dlog(identity33), proof56, msg)("Crypto"))
+          .and(is(Op.SigmaVerify, dhtuple, proof56, msg)("Crypto"))
+          .and(is(Op.SigmaVerify, threshold, proof56, msg)("Crypto"))
+          .and(is(Op.SigmaVerify, dlog(g), zIsQ, msg)("Crypto"))
+          .and(is(Op.SigmaVerify, dlog(g), CBytes(ByteVector.low(200000)), msg)("Crypto"))
+          .and(is(Op.SigmaVerify, deep, proof56, msg)("Crypto"))
+          .and(is(Op.SigmaVerify, wide, proof56, msg)("Crypto"))
+          .and(is(Op.SigmaVerify, dlog(g), proof56, int(1))("Type"))
+          .and(is(Op.SigmaVerify, dlog(g), proof56, text("0xZZ"))("Type")) // not 0x-hex, so text, not bytes
+          .and(is(Op.SigmaVerify, dlog(g), proof56, msg)("boolean"))
+      bls.and(schnorr).and(sigma)
+    }
+  }
+
+  /** Random, mostly malformed proposition trees: unknown types, missing and extra fields, any k, identity points. */
+  private def sigmaNode(depth: Int): Gen[CanonicalValue] = {
+    def m(kvs: List[(String, CanonicalValue)]) = CanonicalValue.map(kvs).fold(e => sys.error(e.toString), identity)
+    val point = Gen.frequency(4 -> Gen.oneOf(knownBytes).map(CBytes(_): CanonicalValue), 3 -> biasedBytes)
+    val tpe = Gen.oneOf("dlog", "dhtuple", "and", "or", "threshold", "xor", "", "DLOG").map(text)
+    val leaf = for {
+      t      <- tpe
+      fields <- Gen.someOf("pk", "g", "h", "u", "v", "extra")
+      pts    <- Gen.listOfN(fields.size, point)
+    } yield m(("type" -> t) :: fields.toList.zip(pts))
+    if (depth <= 0) leaf
+    else
+      Gen.frequency(
+        3 -> leaf,
+        2 -> (for {
+          t  <- tpe
+          k  <- Gen.choose(-2, 8)
+          n  <- Gen.choose(0, 5)
+          cs <- Gen.listOfN(n, sigmaNode(depth - 1))
+        } yield m(List("type" -> t, "k" -> CInt(BigInt(k)), "children" -> array(cs))))
+      )
+  }
+
+  /** Proofs at and around the length of small trees, including a response z = q. */
+  private val sigmaProof: Gen[CanonicalValue] = Gen.frequency(
+    3 -> (for {
+      leaves <- Gen.choose(0, 8)
+      delta  <- Gen.choose(-1, 1)
+      bs     <- Gen.listOfN(math.max(24 + leaves * 56 + delta, 0), Gen.choose(Byte.MinValue, Byte.MaxValue))
+    } yield CBytes(ByteVector(bs))),
+    1 -> Gen.const(CBytes(ByteVector.fill(24)(1) ++ Secp256k1Group.scalarBytes(Secp256k1Group.Order))),
+    1 -> biasedBytes
+  )
+
+  test("sigma_verify is total over random proposition trees and proofs") { b =>
+    forall(Gen.zip(sigmaNode(4), sigmaProof, Gen.oneOf(biasedBytes, Gen.const(CInt(BigInt(1)): CanonicalValue)))) {
+      case (prop, proof, msg) =>
+        val o = outcome(b.ops(Op.SigmaVerify, Vector(prop, proof, msg)))
+        expect(errors(o) || o == "boolean", s"unexpected outcome $o")
+    }
+  }
+
+  // ---- sigma gates and gas (metakit's worked examples; jlvm.md §6-§7)
+
+  test("gates: a 2-of-3 issuer threshold and a DH-tuple statement decide 'authorized' or 'rejected'") { b =>
+    val issuers = Vector(BigInt(11), BigInt(12), BigInt(13))
+    val message = ByteVector("mint 100 to carol, nonce 7".getBytes(UTF_8))
+    val thresholdGate =
+      """{"if": [{"sigma_verify": [
+        |  {"type": "threshold", "k": 2, "children": {"map": [{"var": "issuers"}, {"type": "dlog", "pk": {"var": "$current"}}]}},
+        |  {"var": "proof"}, {"var": "msg"}]}, "authorized", "rejected"]}""".stripMargin
+    def issuerData(proof: ByteVector) =
+      s"""{"issuers": [${issuers.map(w => h(pk(w))).mkString(", ")}], "proof": ${h(proof)}, "msg": ${h(message)}}"""
+    val g = Secp256k1Group.Generator
+    val base = g * BigInt(99)
+    val w = BigInt(4242)
+    val dhGate =
+      """{"if": [{"sigma_verify": [{"type": "dhtuple", "g": {"var": "g"}, "h": {"var": "h"}, "u": {"var": "u"}, "v": {"var": "v"}},
+        |  {"var": "proof"}, {"var": "msg"}]}, "authorized", "rejected"]}""".stripMargin
+    def dhData(v: ByteVector, proof: ByteVector) =
+      s"""{"g": ${h(g.bytes)}, "h": ${h(base.bytes)}, "u": ${h((g * w).bytes)}, "v": ${h(v)}, "proof": ${h(proof)}, "msg": ${h(message)}}"""
+    (
+      prove(b.random, SigmaProp.threshold(2, issuers.map(i => key(Secp256k1Group.base(i)))), Vector(issuers(0), issuers(2)), message),
+      prove(b.random, Right(tuple(g, base, g * w, base * w)), Vector(w), message)
+    ).mapN { (tp, dp) =>
+      expect
+        .same(Right(text("authorized")), run(b.jlvm, thresholdGate, issuerData(tp)).result)
+        .and(expect.same(Right(text("rejected")), run(b.jlvm, thresholdGate, issuerData(tp.update(30, (tp(30) ^ 1).toByte))).result))
+        .and(expect.same(Right(text("authorized")), run(b.jlvm, dhGate, dhData((base * w).bytes, dp)).result))
+        .and(expect.same(Right(text("rejected")), run(b.jlvm, dhGate, dhData((base * (w + 1)).bytes, dp)).result))
+    }
+  }
+
+  test("sigma_verify gas: a DH-tuple leaf costs about twice a dlog leaf; a limit short of the charge runs out first") { b =>
+    val w = BigInt(4242)
+    val g = Secp256k1Group.Generator
+    val base = g * BigInt(99)
+    val message = ByteVector.fill(32)(1)
+    def dlogProgram(proof: ByteVector) = s"""{"sigma_verify": [{"type": "dlog", "pk": ${h(pk(w))}}, ${h(proof)}, ${h(message)}]}"""
+    def dhProgram(proof: ByteVector) =
+      s"""{"sigma_verify": [{"type": "dhtuple", "g": ${h(g.bytes)}, "h": ${h(base.bytes)}, "u": ${h((g * w).bytes)}, "v": ${h(
+          (base * w).bytes
+        )}}, ${h(proof)}, ${h(message)}]}"""
+    def at(program: String, limit: Long) =
+      b.jlvm
+        .evaluate(Parser.parse(program).fold(e => sys.error(e.toString), identity), CNull, Map.empty, Config(limit = GasLimit(Gas(limit))))
+    (
+      prove(b.random, SigmaProp.dlog(Secp256k1Group.base(w)), Vector(w), message),
+      prove(b.random, Right(tuple(g, base, g * w, base * w)), Vector(w), message)
+    ).mapN { (dl, dh) =>
+      val dlog = at(dlogProgram(dl), GasLimit.Default.amount.value)
+      val dhtuple = at(dhProgram(dh), GasLimit.Default.amount.value)
+      val used = dhtuple.gasUsed.value
+      val ratio = used.toDouble / dlog.gasUsed.value.toDouble
+      // the operation's size charge is the last before its work (jlvm.md §7), so one gas short stops before the curve
+      val starved = at(dhProgram(dh), used - 1)
+      expect
+        .same(Right(True), dlog.result)
+        .and(expect.same(Right(True), dhtuple.result))
+        .and(expect(ratio > 1.6 && ratio < 2.4, s"dhtuple / dlog = $ratio (${dhtuple.gasUsed} / ${dlog.gasUsed})"))
+        .and(expect.same(Left(JlvmError.OutOfGas(used, used - 1)), starved.result))
+        .and(expect.same(Gas(used - 1), starved.gasUsed))
     }
   }
 }

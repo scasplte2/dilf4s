@@ -408,6 +408,39 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
       .and(expect(run(Op.IntToBytes, i(-1)).isLeft, "unsigned"))
   }
 
+  /** The error's kind, or `value`. */
+  private def outcome(r: Either[JlvmError, CanonicalValue]): String = r match {
+    case Left(e)  => e.getClass.getSimpleName
+    case Right(_) => "value"
+  }
+
+  pureTest("hex_to_int reads 0x text and bytes alike, unsigned and arbitrarily wide; malformed text is a Domain error") {
+    // metakit's HexOpsSuite vectors; text reaches hex_to_int when a program builds it, e.g. with cat
+    val vectors = List(
+      "0x"                   -> BigInt(0),
+      "0x00"                 -> BigInt(0),
+      "0xff"                 -> BigInt(255),
+      "0x0100"               -> BigInt(256),
+      "0x00ff"               -> BigInt(255),
+      "0xdeadbeef"           -> BigInt(3735928559L),
+      "0xffffffffffffffff"   -> BigInt("18446744073709551615"),
+      "0x010000000000000000" -> BigInt("18446744073709551616"),
+      ("0x" + "f" * 128)     -> (BigInt(2).pow(512) - 1)
+    )
+    vectors.map {
+      case (h, n) =>
+        expect
+          .same(ok(CInt(n)), run(Op.HexToInt, t(h)))
+          .and(expect.same(ok(CInt(n)), run(Op.HexToInt, CBytes(ByteVector.fromValidHex(h.drop(2))))))
+    }
+      .foldLeft(success)(_ and _)
+      .and(expect.same("Domain", outcome(run(Op.HexToInt, t("0xfff")))))
+      .and(expect.same("Domain", outcome(run(Op.HexToInt, t("0xzz")))))
+      .and(expect.same("Type", outcome(run(Op.HexToInt, i(5)))))
+      .and(expect.same("Arity", outcome(run(Op.HexToInt))))
+      .and(expect.same("Arity", outcome(run(Op.HexToInt, t("0x01"), t("0x02")))))
+  }
+
   pureTest("hashes of bytes and of UTF-8 text") {
     expect
       .same(

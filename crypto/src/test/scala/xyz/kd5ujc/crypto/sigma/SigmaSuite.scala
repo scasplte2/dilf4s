@@ -186,6 +186,10 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
   private val fullMixAlice = p(SigmaProp.or(Vector(key(c2), tuple(g, c1, g * x, c2))))
   private val fullMixBob = p(SigmaProp.or(Vector(key(c1), tuple(g, c2, g * x, c1))))
 
+  // (g, c1, x·g, x·c1): a DH tuple with witness x, as in Alice's full-mix disjunct; and two keys outside `keys`
+  private val dhtX = tuple(g, c1, g * x, c2)
+  private val more = Vector(BigInt(21), BigInt(22)).map(w => key(Secp256k1Group.base(w)))
+
   private val cases: List[(String, SigmaProp, Vector[BigInt])] = List(
     ("dlog", keys(0), Vector(secrets(0))),
     ("and", p(SigmaProp.and(keys.take(2))), secrets.take(2)),
@@ -202,7 +206,25 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     ),
     ("ZeroJoin: Bob spends the half-mix", halfMix, Vector(y)),
     ("ZeroJoin: Alice spends her full-mix output", fullMixAlice, Vector(x)),
-    ("ZeroJoin: Bob spends his", fullMixBob, Vector(y))
+    ("ZeroJoin: Bob spends his", fullMixBob, Vector(y)),
+    ("an and of a key and a DH tuple", p(SigmaProp.and(Vector(keys(0), dhtX))), Vector(secrets(0), x)),
+    (
+      "(A or B) and (C or D), signed by B and C",
+      p((SigmaProp.or(keys.take(2)), SigmaProp.or(more)).tupled.flatMap { case (ab, cd) => SigmaProp.and(Vector(ab, cd)) }),
+      Vector(secrets(1), BigInt(21))
+    ),
+    (
+      "an or of an and and a threshold, signed through the threshold",
+      p((SigmaProp.and(Vector(stranger, keys(0))), SigmaProp.threshold(2, keys)).tupled.flatMap {
+        case (a, t) => SigmaProp.or(Vector(a, t))
+      }),
+      Vector(secrets(1), secrets(2))
+    ),
+    (
+      "a 2-of-3 of keys in an and with a DH tuple",
+      p(SigmaProp.threshold(2, keys).flatMap(t => SigmaProp.and(Vector(t, dhtX)))),
+      Vector(secrets(0), secrets(2), x)
+    )
   )
 
   cases.foreach {
@@ -252,5 +274,136 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
           "decoded"
         )
       )
+  }
+
+  private given Show[(Int, Int, Vector[Int], Long)] = Show.fromToString
+
+  test("random thresholds: any k-of-n, with k or more secrets known, proves and verifies") {
+    val shape = for {
+      n     <- Gen.choose(1, 6)
+      k     <- Gen.choose(1, n)
+      known <- Gen.choose(k, n)
+      who   <- Gen.pick(known, 0 until n)
+      seed  <- Gen.choose(1L, Long.MaxValue)
+    } yield (n, k, who.toVector.sorted, seed)
+    forall(shape) {
+      case (n, k, who, seed) =>
+        val ws = (1 to n).toVector.map(i => BigInt(seed) * i + 1)
+        val prop = p(SigmaProp.threshold(k, ws.map(w => key(Secp256k1Group.base(w)))))
+        val proof = SigmaProver.proveWith(prop, who.map(ws), msg, ByteVector.fromLong(seed))
+        expect
+          .same(Right(true), proof.flatMap(Sigma.verify(prop, _, msg)))
+          .and(expect.same(Right(Sigma.proofLength(prop)), proof.map(_.size)))
+    }
+  }
+
+  // ---- the bounds (sigma.md §3)
+
+  pureTest("a proposition nests at most 64 deep, has 1 to 255 children per connective and at most 4096 leaves") {
+    val leaf = keys(0)
+    def nest(depth: Int): Either[String, SigmaProp] =
+      (1 until depth).foldLeft(leaf.asRight[String])((acc, _) => acc.flatMap(c => SigmaProp.and(Vector(c))))
+    def wide(n: Int) = SigmaProp.or(Vector.fill(n)(leaf))
+    // groups of 241 leaves: 16 of them are 3856 leaves, 17 are 4097
+    def leaves(groups: Int) = SigmaProp.and(Vector.fill(241)(leaf)).flatMap(g => SigmaProp.and(Vector.fill(groups)(g)))
+    expect(nest(64).isRight, "64 deep")
+      .and(expect(nest(65).isLeft, "65 deep"))
+      .and(expect(wide(255).isRight, "255 children"))
+      .and(expect(wide(256).isLeft, "256 children"))
+      .and(expect(SigmaProp.threshold(1, Vector.fill(256)(leaf)).isLeft, "a threshold of 256 children"))
+      .and(expect(leaves(16).isRight, "3856 leaves"))
+      .and(expect(leaves(17).isLeft, "4097 leaves"))
+  }
+
+  pureTest("a 24-byte challenge read as a scalar is below q, so distinct challenges are distinct scalars") {
+    val largest = BigInt(1, ByteVector.fill(Sigma.ChallengeSize.toLong)(0xff).toArray)
+    expect
+      .same(24, Sigma.ChallengeSize)
+      .and(expect(largest < Secp256k1Group.Order, s"2^192 - 1 must be below q = ${Secp256k1Group.Order}"))
+  }
+
+  pureTest("a compressed point whose x has no y on secp256k1 does not decode") {
+    // 5^3 + 7 = 132 is not a square modulo the field prime
+    val x5 = ByteVector.fill(31)(0) :+ 5.toByte
+    expect(Secp256k1Group.decode(hex"02" ++ x5).isLeft, "02, x = 5")
+      .and(expect(Secp256k1Group.decode(hex"03" ++ x5).isLeft, "03, x = 5"))
+  }
+
+  // ---- soundness: the verifier against forgers (sigma.md §5-§7)
+
+  pureTest("forgers who simulate what they cannot prove do not verify: a ring with no witness, a 2-of-3 with one") {
+    def leaf(i: Int) = SigmaProp.dlog(Secp256k1Group.base(secrets(i))).toOption.get
+    def e(b:    Int) = ByteVector.fill(Sigma.ChallengeSize.toLong)(b)
+    def z(n:    Int) = BigInt(1000 + n)
+    def zb(k:   BigInt) = Secp256k1Group.scalarBytes(k)
+
+    // A ring of two with no witness: both challenges and responses chosen, then hashed. The verifier derives the last
+    // challenge as root XOR e1, which is not the chosen e2.
+    val ring = p(SigmaProp.or(keys.take(2)))
+    val ringRoot =
+      Sigma.challenge(Sigma.fiatShamir(ring, Vector(Sigma.commitment(leaf(0), e(1), z(1)), Sigma.commitment(leaf(1), e(2), z(2)))), msg)
+    val ringForgery = ringRoot ++ e(1) ++ zb(z(1)) ++ zb(z(2))
+
+    // 2-of-3 knowing only secrets(0): child 1 real with nonce r, children 2 and 3 simulated with chosen challenges.
+    // Q has degree n - k = 1, so the root and child 2's challenge fix it, and Q(3) is not child 3's chosen challenge.
+    val t = p(SigmaProp.threshold(2, keys))
+    val r = BigInt(777)
+    val e2 = Gf2_192.fromBytes(e(2)).get
+    val e3 = Gf2_192.fromBytes(e(3)).get
+    val commitments =
+      Vector(Secp256k1Group.base(r).bytes, Sigma.commitment(leaf(1), e2.bytes, z(2)), Sigma.commitment(leaf(2), e3.bytes, z(3)))
+    val root = Sigma.challenge(Sigma.fiatShamir(t, commitments), msg)
+    val q = Gf2Poly.interpolate(Gf2_192.fromBytes(root).get, Vector(2 -> e2))
+    val z1 = (r + BigInt(1, q(1).bytes.toArray) * secrets(0)).mod(Secp256k1Group.Order)
+    val thresholdForgery = root ++ q.higherBytes ++ zb(z1) ++ zb(z(2)) ++ zb(z(3))
+
+    // Controls: the same constructions with the witnesses they need verify, so the forgeries fail for want of them.
+    def scalar(c: ByteVector) = BigInt(1, c.toArray)
+    val honestRingRoot =
+      Sigma.challenge(Sigma.fiatShamir(ring, Vector(Secp256k1Group.base(r).bytes, Sigma.commitment(leaf(1), e(2), z(2)))), msg)
+    val e1 = honestRingRoot ^ e(2)
+    val honestRing = honestRingRoot ++ e1 ++ zb((r + scalar(e1) * secrets(0)).mod(Secp256k1Group.Order)) ++ zb(z(2))
+    val r2 = BigInt(888)
+    val honestCommitments = Vector(Secp256k1Group.base(r).bytes, Secp256k1Group.base(r2).bytes, Sigma.commitment(leaf(2), e3.bytes, z(3)))
+    val honestRoot = Sigma.challenge(Sigma.fiatShamir(t, honestCommitments), msg)
+    val hq = Gf2Poly.interpolate(Gf2_192.fromBytes(honestRoot).get, Vector(3 -> e3))
+    def answer(i: Int, nonce: BigInt) = zb((nonce + scalar(hq(i + 1).bytes) * secrets(i)).mod(Secp256k1Group.Order))
+    val honestThreshold = honestRoot ++ hq.higherBytes ++ answer(0, r) ++ answer(1, r2) ++ zb(z(3))
+
+    expect
+      .same(Right(false), Sigma.verify(ring, ringForgery, msg))
+      .and(expect(q(3) != e3, "the polynomial cannot also pass through the third chosen challenge"))
+      .and(expect.same(Right(false), Sigma.verify(t, thresholdForgery, msg)))
+      .and(expect.same(Right(true), Sigma.verify(ring, honestRing, msg)))
+      .and(expect.same(Right(true), Sigma.verify(t, honestThreshold, msg)))
+  }
+
+  pureTest("a proof is bound to its proposition: another of the same length gives false, another length is malformed") {
+    val dlogProof = SigmaProver.proveWith(keys(0), Vector(secrets(0)), msg, hex"01").toOption.get
+    val andProof = SigmaProver.proveWith(p(SigmaProp.and(keys.take(2))), secrets.take(2), msg, hex"01").toOption.get
+    expect
+      .same(Sigma.proofLength(keys(0)), Sigma.proofLength(dhtX))
+      .and(expect.same(Right(false), Sigma.verify(dhtX, dlogProof, msg)))
+      .and(expect(Sigma.verify(p(SigmaProp.and(keys)), andProof, msg).isLeft, "a proof for two children against three"))
+      .and(expect(Sigma.verify(keys(0), andProof, msg).isLeft, "an and proof against a single leaf"))
+  }
+
+  pureTest("a DH-tuple proof does not verify once any statement point changes, or for a tuple that is not DH") {
+    val w = BigInt(4242)
+    val h = g * BigInt(99)
+    val good = tuple(g, h, g * w, h * w)
+    val proof = SigmaProver.proveWith(good, Vector(w), msg, hex"01").toOption.get
+    val other = g * BigInt(5)
+    val notDh = tuple(g, h, g * w, h * (w + 1))
+    val variants = List(
+      "u and v swapped" -> tuple(g, h, h * w, g * w),
+      "not a DH tuple"  -> notDh,
+      "another base g"  -> tuple(other, h, g * w, h * w),
+      "another base h"  -> tuple(g, other, g * w, h * w)
+    )
+    expect
+      .same(Right(true), Sigma.verify(good, proof, msg))
+      .and(variants.foldMap { case (name, prop) => expect(Sigma.verify(prop, proof, msg) == Right(false), name) })
+      .and(expect(SigmaProver.proveWith(notDh, Vector(w), msg, hex"01").isLeft, "no proof of a tuple that is not DH"))
   }
 }

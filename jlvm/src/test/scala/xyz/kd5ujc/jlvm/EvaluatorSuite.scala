@@ -44,6 +44,8 @@ object EvaluatorSuite extends IOSuite with Checkers {
       .and(expect.same(ok("[2, 3]"), result("""[{"+": [1, 1]}, 3]""")))
       .and(expect.same(ok("""{"a": 2, "b": "x"}"""), result("""{"a": {"*": [1, 2]}, "b": "x"}""")))
       .and(expect.same(ok("""{"a": 1}"""), result("""{"a": 1, "b": null}""")))
+      .and(expect.same(ok("""{"active": true, "age": 30, "name": "John"}"""), result("""{"name": "John", "age": 30, "active": true}""")))
+      .and(expect.same(ok("{}"), result("{}")))
   }
 
   check("var reads data paths and array indices; absent paths are null or the default") {
@@ -341,6 +343,125 @@ object EvaluatorSuite extends IOSuite with Checkers {
     val element = S.literal.value + S.element.value
     val run = S.callbackRun.value + S.varAccess.value + S.perPathSegment.value
     expect.same(element + S.cost(Op.Map).perUnit.value + run, two - one)
+  }
+
+  check("a program costing exactly the limit succeeds; one gas less runs out, on every driver") {
+    val sum = add.base.value + 2 * S.literal.value + add.perUnit.value * 2
+    Config.Driver.values.toList.foldLeft(success) { (acc, d) =>
+      val exact = eval("""{"+": [1, 2]}""", driver = d, limit = sum)
+      val short = eval("""{"+": [1, 2]}""", driver = d, limit = sum - 1)
+      acc
+        .and(expect.same(ok("3"), exact.result))
+        .and(expect.same(Gas(sum), exact.gasUsed))
+        .and(expect.same(Left(JlvmError.OutOfGas(sum, sum - 1)), short.result))
+        .and(expect.same(Gas(sum - 1), short.gasUsed))
+    }
+  }
+
+  check("running out inside a callback: the per-element charge is taken before any body runs") {
+    val data = s"""{"xs": ${List.fill(100)("1").mkString("[", ", ", "]")}}"""
+    // {"var": "xs"}: one segment, no enclosing frame
+    val read = S.varAccess.value + S.perPathSegment.value
+    def starve(op: Op, program: String): Expectations = {
+      val upfront = S.cost(op).base.value + read + S.cost(op).perUnit.value * 100
+      val firstRun = upfront + S.callbackRun.value
+      val beforeBodies = eval(program, data, limit = upfront - 1)
+      val midway = eval(program, data, limit = upfront + 500)
+      expect
+        .same(Left(JlvmError.OutOfGas(upfront, upfront - 1)), beforeBodies.result)
+        .and(expect.same(Gas(upfront - 1), beforeBodies.gasUsed))
+        .and(expect.same(Left(JlvmError.OutOfGas(firstRun, firstRun - 1)), eval(program, data, limit = firstRun - 1).result))
+        .and(
+          expect(
+            midway.result match {
+              case Left(JlvmError.OutOfGas(_, available)) => available == upfront + 500
+              case _                                      => false
+            },
+            s"${op.wire}: out of gas partway through the bodies, got ${midway.result}"
+          )
+        )
+        .and(expect.same(Gas(upfront + 500), midway.gasUsed))
+    }
+    starve(Op.Map, """{"map": [{"var": "xs"}, {"+": [{"var": "$current"}, 1]}]}""")
+      .and(starve(Op.Filter, """{"filter": [{"var": "xs"}, {">": [{"var": "$current"}, 0]}]}"""))
+  }
+
+  check("size charges grow with the weight of the arguments, not with the result") {
+    // the input comes through var, whose charge does not depend on the value: the difference is the size term alone
+    def grows(op: Op, program: String, small: String, large: String, uses: Int = 1): Expectations = {
+      val gs = eval(program, s"""{"x": $small}""").gasUsed.value
+      val gl = eval(program, s"""{"x": $large}""").gasUsed.value
+      val expected = S.cost(op).perUnit.value * uses * (value(large).weight - value(small).weight)
+      expect(gl > gs, s"${op.wire}: $gl > $gs").and(expect.same(expected, gl - gs))
+    }
+    val a100 = "\"" + "a" * 100 + "\""
+    val five = """{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}"""
+    val long = s"""{"x": "${"x" * 1000}"}"""
+    grows(Op.Join, """{"join": [{"var": "x"}, ","]}""", """["a", "b", "c"]""", s"""[$a100, $a100, $a100]""")
+      .and(grows(Op.Substr, """{"substr": [{"var": "x"}, 0, 5]}""", "\"" + "x" * 10 + "\"", "\"" + "x" * 1000 + "\""))
+      .and(grows(Op.Values, """{"values": [{"var": "x"}]}""", """{"a": 1}""", five))
+      .and(grows(Op.Keys, """{"keys": [{"var": "x"}]}""", """{"a": 1}""", five))
+      .and(grows(Op.Entries, """{"entries": [{"var": "x"}]}""", """{"a": 1}""", five))
+      .and(grows(Op.Flatten, """{"flatten": [{"var": "x"}]}""", "[[1]]", "[[1, 2, 3, 4, 5]]"))
+      .and(grows(Op.Unique, """{"unique": [{"var": "x"}]}""", "[1, 2]", (1 to 20).mkString("[", ", ", "]")))
+      .and(grows(Op.Intersect, """{"intersect": [{"var": "x"}, {"var": "x"}]}""", "[1]", (1 to 10).mkString("[", ", ", "]"), uses = 2))
+      // metakit priced substr by the length of its result; here only the arguments' weight counts
+      .and(
+        expect.same(
+          eval("""{"substr": [{"var": "x"}, 0, 5]}""", long).gasUsed,
+          eval("""{"substr": [{"var": "x"}, 0, 500]}""", long).gasUsed
+        )
+      )
+  }
+
+  check("bls_aggregate_verify pays one per-element charge per key, before verifying") {
+    val bls = S.cost(Op.BlsAggregateVerify)
+    val read = S.varAccess.value + S.perPathSegment.value
+    val pk = "\"0x" + "00" * 48 + "\""
+    val sig = "\"0x" + "00" * 96 + "\""
+    def run(n: Int): Outcome =
+      eval(
+        """{"bls_aggregate_verify": [{"var": "pks"}, {"var": "msg"}, {"var": "sig"}]}""",
+        s"""{"pks": ${List.fill(n)(pk).mkString("[", ", ", "]")}, "msg": "0xabcd", "sig": $sig}"""
+      )
+    val two = run(2)
+    val three = run(3)
+    // the keys count their elements; the message and the signature count 1 each
+    expect
+      .same(bls.perUnit.value, three.gasUsed.value - two.gasUsed.value)
+      .and(expect.same(Gas(bls.base.value + 3 * read + bls.perUnit.value * (3 + 1 + 1)), three.gasUsed))
+      .and(
+        expect(
+          three.result match {
+            case Left(JlvmError.OutOfGas(_, _)) => false
+            case _                              => true
+          },
+          s"not out of gas: ${three.result}"
+        )
+      )
+  }
+
+  check("bn254_pairing pays its size charge before the pairing runs") {
+    val pairing = S.cost(Op.Bn254Pairing)
+    // the right sizes, but not points on the curve: the engine rejects them only if it runs
+    val g1 = "0x" + "01" * 64
+    val g2 = "0x" + "01" * 128
+    val pairs = s"""[["$g1", "$g2"], ["$g1", "$g2"]]"""
+    val program = """{"bn254_pairing": [{"var": "pairs"}]}"""
+    val data = s"""{"pairs": $pairs}"""
+    val total = pairing.base.value + S.varAccess.value + S.perPathSegment.value + pairing.perUnit.value * value(pairs).weight
+    val full = eval(program, data)
+    val starved = eval(program, data, limit = total - 1)
+    expect(
+      full.result match {
+        case Left(JlvmError.Crypto(_, _)) => true
+        case _                            => false
+      },
+      s"with enough gas the pairing runs and rejects the points: ${full.result}"
+    )
+      .and(expect.same(Gas(total), full.gasUsed))
+      .and(expect.same(Left(JlvmError.OutOfGas(total, total - 1)), starved.result))
+      .and(expect.same(Gas(total - 1), starved.gasUsed))
   }
 
   // ---- stack safety
