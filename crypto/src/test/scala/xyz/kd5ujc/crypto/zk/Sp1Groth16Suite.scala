@@ -77,6 +77,9 @@ object Sp1Groth16Suite extends SimpleIOSuite {
     expect
       .same(Left("InvalidProof"), kind(Sp1Groth16.verify(f.vkey, f.publicValues, offCurve)))
       .and(expect(Bn254.onCurveG2(planted) && !Bn254.inSubgroupG2(planted), "the planted point isolates the subgroup check"))
+      .and(expect.same(Left(Bn254.ZkError.InvalidPoint("G2 point is not in the order-r subgroup")), Bn254.G2.from(planted.x, planted.y)))
+      .and(expect(Bn254.G1.from(1, 3).isLeft, "off-curve G1 is unconstructible"))
+      .and(expect(Bn254.G1.from(Bn254.P, 2).isLeft, "non-canonical G1 is unconstructible"))
       .and(
         expect.same(
           Left(Groth16Error.InvalidProof("G2 point is not in the order-r subgroup")),

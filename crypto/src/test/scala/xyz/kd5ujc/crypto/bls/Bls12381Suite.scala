@@ -108,7 +108,7 @@ object Bls12381Suite extends IOSuite {
   test("tessellation-bls known answer, proof of possession, and typed key errors") { bls =>
     IO {
       val sk = bls.codec.signingKey(hex"328388aff0d4a5b7dc9205abd374e7e98f3cd9f3418edb4eafda5fb16473d216").toOption.get
-      val vk = bls.publicKeyOf.verifyingKey(sk)
+      val vk = bls.publicKey(sk).toOption.get
       val msg = ByteVector.fill(32)(0xab)
       val other = bls.codec.signingKey(ByteVector.fromLong(7).padLeft(32)).toOption.get
       val pop = bls.popProve(sk).toOption.get
@@ -123,9 +123,10 @@ object Bls12381Suite extends IOSuite {
           )
         )
         .and(expect(bls.popVerify(vk, pop), "PoP verifies"))
-        .and(expect(!bls.popVerify(bls.publicKeyOf.verifyingKey(other), pop), "PoP is bound to its key"))
+        .and(expect(!bls.popVerify(bls.publicKey(other).toOption.get, pop), "PoP is bound to its key"))
         .and(expect(!bls.verifier.verify(vk, vk.bytes, pop), "a PoP is not a message signature (distinct DST)"))
         .and(expect(bls.codec.signingKey(ByteVector.low(32)).isLeft, "zero key"))
+        .and(expect(bls.hashToG2(hex"00", "bad\u0000dst").isLeft, "a DST that JNI would mangle is refused"))
         .and(expect(bls.codec.signingKey(ByteVector.view(Bls12381.R.toByteArray).takeRight(32)).isLeft, "key = r"))
     }
   }

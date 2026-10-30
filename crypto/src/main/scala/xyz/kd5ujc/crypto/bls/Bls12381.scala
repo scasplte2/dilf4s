@@ -62,9 +62,9 @@ final class Bls12381 private () {
     def signature(bytes:    ByteVector): Either[CryptoError, Signature[BlsPop]] = g2(bytes).as(Signature[BlsPop](bytes))
   }
 
-  /** Total for keys built by the codec (in `[1, r)`); the `getOrElse` branch is unreachable for them. */
-  implicit val publicKeyOf: PublicKeyOf[BlsPop] = (key: SigningKey[BlsPop]) =>
-    VerifyingKey[BlsPop](secret(key).flatMap(sk => call("P1")(ByteVector.view(new P1(sk).compress()))).getOrElse(ByteVector.low(48)))
+  /** The public key of a secret key; a native failure is a typed error, never a substitute key. */
+  def publicKey(key: SigningKey[BlsPop]): Either[CryptoError, VerifyingKey[BlsPop]] =
+    secret(key).flatMap(sk => call("P1")(VerifyingKey[BlsPop](ByteVector.view(new P1(sk).compress()))))
 
   private def signWith(key: SigningKey[BlsPop], message: ByteVector, dst: String): Either[CryptoError, Signature[BlsPop]] =
     secret(key).flatMap(sk =>
@@ -129,13 +129,23 @@ final class Bls12381 private () {
     triples.nonEmpty && triples.forall { case (k, m, s) => verifier.verify(k, m, s) }
 
   /** Proof of possession: a signature over the public key under the PoP tag. */
-  def popProve(key: SigningKey[BlsPop]): Either[CryptoError, Signature[BlsPop]] = signWith(key, publicKeyOf.verifyingKey(key).bytes, PopDst)
+  def popProve(key: SigningKey[BlsPop]): Either[CryptoError, Signature[BlsPop]] =
+    publicKey(key).flatMap(pk => signWith(key, pk.bytes, PopDst))
 
   def popVerify(key: VerifyingKey[BlsPop], proof: Signature[BlsPop]): Boolean = verifyWith(key.bytes, key.bytes, proof.bytes, PopDst)
 
-  /** `hash_to_curve` into G2 (any DST), uncompressed `x.c1 || x.c0 || y.c1 || y.c0` (192 bytes). */
+  /**
+   * `hash_to_curve` into G2, uncompressed `x.c1 || x.c0 || y.c1 || y.c0` (192 bytes). The DST crosses JNI as a Java
+   * string (modified UTF-8), so it must be 1..255 printable ASCII characters to hash the bytes other implementations do.
+   */
   def hashToG2(message: ByteVector, dst: String): Either[CryptoError, ByteVector] =
-    call("hash_to")(ByteVector.view(new P2().hash_to(message.toArray, dst).serialize()))
+    Either
+      .cond(
+        dst.nonEmpty && dst.length <= 255 && dst.forall(ch => ch >= 0x20 && ch < 0x7f),
+        dst,
+        CryptoError.InvalidEncoding("hash-to-curve DST", "must be 1..255 printable ASCII characters")
+      )
+      .flatMap(d => call("hash_to")(ByteVector.view(new P2().hash_to(message.toArray, d).serialize())))
 
   /** EIP-2333 master and child keys (the Ethereum BLS key tree). */
   def eip2333Master(seed: ByteVector): Either[CryptoError, SigningKey[BlsPop]] =
@@ -157,7 +167,7 @@ final class Bls12381 private () {
   implicit val seedDerivation: SeedDerivation[BlsPop] = new SeedDerivation[BlsPop] {
     val seedLength: Long = 32
     def fromSeed(seed: ByteVector): Either[CryptoError, KeyPair[BlsPop]] =
-      eip2333Master(seed).map(sk => KeyPair(sk, publicKeyOf.verifyingKey(sk)))
+      eip2333Master(seed).flatMap(sk => publicKey(sk).map(KeyPair(sk, _)))
   }
 }
 

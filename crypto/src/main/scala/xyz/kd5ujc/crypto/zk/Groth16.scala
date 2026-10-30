@@ -27,11 +27,24 @@ object Groth16Error {
   }
 }
 
-/** A Groth16 verifying key over BN254: `ic(0) + sum_i x_i ic(i + 1)` is the public-input commitment. */
-final case class Groth16VerifyingKey(alpha: G1, beta: G2, gamma: G2, delta: G2, ic: Vector[G1]) {
+/**
+ * A Groth16 verifying key over BN254: `ic(0) + sum_i x_i ic(i + 1)` is the public-input commitment. Its points are
+ * valid by construction ([[G1]], [[G2]]), so only the shape is checked here.
+ */
+final case class Groth16VerifyingKey private[zk] (alpha: G1, beta: G2, gamma: G2, delta: G2, ic: Vector[G1]) {
   def publicInputs: Int = ic.size - 1
 }
 
+object Groth16VerifyingKey {
+  def from(alpha: G1, beta: G2, gamma: G2, delta: G2, ic: Vector[G1]): Either[Groth16Error, Groth16VerifyingKey] =
+    Either.cond(
+      ic.nonEmpty,
+      Groth16VerifyingKey(alpha, beta, gamma, delta, ic),
+      Groth16Error.Malformed("a verifying key needs at least the constant IC point")
+    )
+}
+
+/** A proof of valid, non-identity points (identity is unrepresentable as a [[G1]] or [[G2]] value). */
 final case class Groth16Proof(a: G1, b: G2, c: G1)
 
 /**

@@ -23,7 +23,8 @@ object Bn254 {
 
   // ------------------------------------------------------------------ Fp2 = Fp[i] / (i^2 + 1)
 
-  final case class Fp2(a: BigInt, b: BigInt) {
+  /** An element of Fp2 with canonical coordinates; build with [[Fp2.from]]. */
+  final case class Fp2 private[zk] (a: BigInt, b: BigInt) {
     def +(o: Fp2): Fp2 = Fp2(md(a + o.a), md(b + o.b))
     def -(o: Fp2): Fp2 = Fp2(md(a - o.a), md(b - o.b))
     def *(o: Fp2): Fp2 = Fp2(md(a * o.a - b * o.b), md(a * o.b + b * o.a))
@@ -46,6 +47,10 @@ object Bn254 {
   object Fp2 {
     val Zero: Fp2 = Fp2(0, 0)
     val One: Fp2 = Fp2(1, 0)
+
+    /** `real + imag i` with both coordinates in `[0, p)`. */
+    def from(real: BigInt, imag: BigInt): Either[ZkError, Fp2] =
+      Either.cond(real >= 0 && real < P && imag >= 0 && imag < P, Fp2(real, imag), ZkError.Malformed("Fp2 coordinates must be in [0, p)"))
   }
 
   /** `xi = 9 + i`; the twist is `y^2 = x^3 + 3 / xi`. */
@@ -57,7 +62,8 @@ object Bn254 {
   // ------------------------------------------------------------------ Fp12 = Fp[w] / (w^12 - 18 w^6 + 82)
 
   /** Twelve coefficients of `w^0 .. w^11`; `w^6 = xi`. */
-  final case class Fp12(c: Vector[BigInt]) {
+  /** Internal: always twelve reduced coefficients. */
+  final case class Fp12 private[zk] (c: Vector[BigInt]) {
     def *(o: Fp12): Fp12 = {
       val wide =
         (0 until 23).toVector.map(k => (math.max(0, k - 11) to math.min(11, k)).foldLeft(BigInt(0))((s, i) => s + c(i) * o.c(k - i)))
@@ -73,7 +79,7 @@ object Bn254 {
     }
   }
 
-  object Fp12 {
+  private[zk] object Fp12 {
     val One: Fp12 = Fp12(BigInt(1) +: Vector.fill(11)(BigInt(0)))
 
     /** `a + b i = (a - 9b) + b w^6`, multiplied by `w^shift`. */
@@ -85,11 +91,31 @@ object Bn254 {
 
   // ------------------------------------------------------------------ groups (affine; None is the point at infinity)
 
-  final case class G1(x: BigInt, y: BigInt)
-  final case class G2(x: Fp2, y: Fp2)
+  /**
+   * Affine points, valid by construction: a [[G1]] is on the curve and a [[G2]] is on the twist and in the order-r
+   * subgroup. The identity is not a point value; operations use `Option` with `None` as the identity.
+   */
+  final case class G1 private[zk] (x: BigInt, y: BigInt)
+  final case class G2 private[zk] (x: Fp2, y: Fp2)
 
-  def onCurveG1(p: G1): Boolean = md(p.y * p.y) == md(p.x * p.x * p.x + 3)
-  def onCurveG2(p: G2): Boolean = p.y * p.y == p.x * p.x * p.x + B2
+  object G1 {
+    def from(x: BigInt, y: BigInt): Either[ZkError, G1] =
+      for {
+        _ <- Either.cond(x >= 0 && x < P && y >= 0 && y < P, (), ZkError.Malformed("G1 coordinates must be in [0, p)"))
+        p <- Either.cond(onCurveG1(new G1(x, y)), new G1(x, y), ZkError.InvalidPoint("G1 point is not on the curve"))
+      } yield p
+  }
+
+  object G2 {
+    def from(x: Fp2, y: Fp2): Either[ZkError, G2] = {
+      val q = new G2(x, y)
+      if (!onCurveG2(q)) ZkError.InvalidPoint("G2 point is not on the twist").asLeft
+      else Either.cond(inSubgroupG2(q), q, ZkError.InvalidPoint("G2 point is not in the order-r subgroup"))
+    }
+  }
+
+  private[zk] def onCurveG1(p: G1): Boolean = md(p.y * p.y) == md(p.x * p.x * p.x + 3)
+  private[zk] def onCurveG2(p: G2): Boolean = p.y * p.y == p.x * p.x * p.x + B2
 
   def addG1(p: Option[G1], q: Option[G1]): Option[G1] = (p, q) match {
     case (None, _) => q
@@ -130,7 +156,7 @@ object Bn254 {
   }
 
   /** G2 has a large cofactor: membership needs `r Q = O`. */
-  def inSubgroupG2(p: G2): Boolean = mulG2(Some(p), R).isEmpty
+  private[zk] def inSubgroupG2(p: G2): Boolean = mulG2(Some(p), R).isEmpty
 
   // ------------------------------------------------------------------ optimal ate pairing
 
@@ -147,7 +173,7 @@ object Bn254 {
   private def frobenius(q: G2): G2 = G2(q.x.conj * FrobX, q.y.conj * FrobY)
 
   /** The Miller loop for `e(p, q)`, without final exponentiation. */
-  def miller(p: G1, q: G2): Fp12 = {
+  private[zk] def miller(p: G1, q: G2): Fp12 = {
     val (f, r) = (63 to 0 by -1).foldLeft((Fp12.One, q)) {
       case ((f0, r0), i) =>
         val f1 = f0 * f0 * line(r0, r0, p)
