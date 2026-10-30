@@ -60,6 +60,16 @@ sealed abstract case class Ratio(numerator: BigInt, denominator: BigInt) {
   /** Round half away from zero. */
   def roundHalfUp: BigInt = (numerator.abs * 2 + denominator) / (denominator * 2) * numerator.signum
 
+  /** Round half to even (banker's rounding): ties go to the even neighbour, so rounding has no bias. */
+  def roundHalfEven: BigInt = {
+    val lo = floor
+    val twiceFraction = (numerator - lo * denominator) * 2
+    if (twiceFraction < denominator) lo
+    else if (twiceFraction > denominator) lo + 1
+    else if (lo % 2 == BigInt(0)) lo
+    else lo + 1
+  }
+
   /** Truncated remainder `a - b * truncate(a / b)`, the sign follows the dividend. */
   def rem(that: Ratio): Either[ArithmeticError, Ratio] = (this / that).map(q => this - that * Ratio.integer(q.truncate))
 

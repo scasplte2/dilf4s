@@ -49,6 +49,26 @@ object RatioSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  pureTest("half-even rounding: ties to the even neighbour, everything else to the nearest") {
+    def r(n: Int, d: Int) = Ratio.of(BigInt(n), BigInt(d)).toOption.get.roundHalfEven
+    expect
+      .same(BigInt(2), r(5, 2))
+      .and(expect.same(BigInt(4), r(7, 2)))
+      .and(expect.same(BigInt(-2), r(-5, 2)))
+      .and(expect.same(BigInt(-4), r(-7, 2)))
+      .and(expect.same(BigInt(0), r(1, 2)))
+      .and(expect.same(BigInt(3), r(8, 3)))
+      .and(expect.same(BigInt(-3), r(-8, 3)))
+      .and(expect.same(BigInt(7), r(7, 1)))
+  }
+
+  test("half-even rounding lands within 1/2 of the value") {
+    forall(RatioGens.ratioGen) { x =>
+      val diff = (Ratio.integer(x.roundHalfEven) - x).abs
+      expect(diff <= Ratio.of(1, 2).toOption.get)
+    }
+  }
+
   test("zero has the single representation 0/1") {
     forall(nonZeroGen)(d => expect.same(Right(Ratio.Zero), Ratio.of(0, d)))
   }
