@@ -239,6 +239,23 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  test("code-point comparison, which never allocates, agrees with comparing the code points") {
+    forall(Gen.zip(CanonicalGens.text, CanonicalGens.text)) {
+      case (x, y) =>
+        val (a, b) = (Values.codePoints(x), Values.codePoints(y))
+        val reference = a.zip(b).collectFirst { case (p, q) if p != q => Integer.compare(p, q) }.getOrElse(Integer.compare(a.size, b.size))
+        expect.same(reference.sign, Values.compareCodePoints(x, y).sign)
+    }
+  }
+
+  test("trim, scanning from both ends, agrees with dropping White_Space code points") {
+    val piece = Gen.oneOf(" ", "\t", "\u00a0", "\u2003", "\u3000", "a", "😀", "\uffff", "é")
+    forall(Gen.choose(0, 8).flatMap(n => Gen.listOfN(n, piece).map(_.mkString))) { s =>
+      val reference = Values.fromCodePoints(Values.codePoints(s).dropWhile(Values.WhiteSpace).reverse.dropWhile(Values.WhiteSpace).reverse)
+      expect.same(reference, Values.trim(s))
+    }
+  }
+
   test("substring search is linear-time KMP and agrees with String.indexOf") {
     val alphabet = Gen.oneOf("a", "b", "😀")
     val str = Gen.choose(0, 12).flatMap(Gen.listOfN(_, alphabet)).map(_.mkString)

@@ -144,9 +144,20 @@ object Values {
     }
 
   def compareCodePoints(x: String, y: String): Int = {
-    val (a, b) = (x.codePoints().toArray, y.codePoints().toArray)
-    a.zip(b).collectFirst { case (p, q) if p != q => Integer.compare(p, q) }.getOrElse(Integer.compare(a.length, b.length))
+    @tailrec
+    def go(i: Int): Int =
+      if (i >= x.length || i >= y.length) Integer.compare(x.length, y.length)
+      else if (x.charAt(i) == y.charAt(i)) go(i + 1)
+      else Integer.compare(codePointRank(x.charAt(i)), codePointRank(y.charAt(i)))
+    go(0)
   }
+
+  /**
+   * UTF-16 units ranked so that comparing them at the first difference gives code-point order (ICU's fix-up): only a
+   * surrogate, which starts a code point above U+FFFF, can meet a unit in U+E000..U+FFFF out of order, so surrogates
+   * move above that range.
+   */
+  private def codePointRank(c: Char): Int = if (c < 0xd800) c.toInt else if (c < 0xe000) c + 0x2000 else c - 0x800
 
   def codePoints(s:       String): Vector[Int] = s.codePoints().toArray.toVector
   def fromCodePoints(cps: Vector[Int]): String = new String(cps.toArray, 0, cps.size)
@@ -163,8 +174,14 @@ object Values {
     Set(0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000) ++ (0x2000 to 0x200a)
 
   /** Trims Unicode `White_Space` from both ends. */
-  def trim(s: String): String =
-    fromCodePoints(codePoints(s).dropWhile(WhiteSpace).reverse.dropWhile(WhiteSpace).reverse)
+  def trim(s: String): String = {
+    @tailrec def start(i: Int): Int =
+      if (i < s.length && WhiteSpace(s.codePointAt(i))) start(i + Character.charCount(s.codePointAt(i))) else i
+    @tailrec def end(j: Int, floor: Int): Int =
+      if (j > floor && WhiteSpace(s.codePointBefore(j))) end(j - Character.charCount(s.codePointBefore(j)), floor) else j
+    val from = start(0)
+    s.substring(from, end(s.length, from))
+  }
 
   /** Map keys in Unicode code-point order (the order of `keys`, `values` and `entries`). */
   def sortedKeys(m: scala.collection.immutable.Map[String, CanonicalValue]): List[String] =

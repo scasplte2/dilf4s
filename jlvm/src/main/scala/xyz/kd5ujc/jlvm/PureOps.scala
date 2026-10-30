@@ -263,12 +263,13 @@ object PureOps {
       case Vector(s, start, rest*) if rest.sizeIs <= 1 =>
         (str(op, s), index(op, start), rest.headOption.traverse(index(op, _))).tupled.flatMap {
           case (t, i, len) =>
-            val cps = codePoints(t)
-            val from = bound(i, cps.size)
-            val to = len.fold(cps.size) { l =>
-              if (l < 0) bound(l, cps.size) else from + math.min(l, (cps.size - from).toLong).toInt
+            val n = t.codePointCount(0, t.length)
+            val from = bound(i, n)
+            val to = len.fold(n) { l =>
+              if (l < 0) bound(l, n) else from + math.min(l, (n - from).toLong).toInt
             }
-            text(op, fromCodePoints(cps.slice(from, math.max(from, to))))
+            val begin = t.offsetByCodePoints(0, from)
+            text(op, t.substring(begin, t.offsetByCodePoints(begin, math.max(from, to) - from)))
         }
       case _ => arity(op, "takes [text, start] or [text, start, length]")
     }
