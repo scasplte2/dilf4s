@@ -17,13 +17,20 @@ object JsonSurface {
 
   private val HexBytes = "0x((?:[0-9a-f]{2})*)".r
 
+  /** The bytes a string denotes in the JSON surface, if it has the `0x`-hex form. */
+  def hexBytes(s: String): Option[ByteVector] =
+    s match {
+      case HexBytes(hex) => ByteVector.fromHex(hex)
+      case _             => None
+    }
+
   /** Strings in `0x`-hex form become bytes, everywhere in the value; depth is bounded by the canonical model (256). */
   def fromCanonicalJson(v: CanonicalValue): CanonicalValue =
     v match {
-      case CText(HexBytes(hex)) => CBytes(ByteVector.fromValidHex(hex))
-      case CArray(vs)           => CanonicalValue.array(vs.map(fromCanonicalJson)).getOrElse(v)
-      case CMap(m)              => CanonicalValue.map(m.toList.map { case (k, x) => k -> fromCanonicalJson(x) }).getOrElse(v)
-      case other                => other
+      case CText(s)   => hexBytes(s).fold(v)(CBytes(_))
+      case CArray(vs) => CanonicalValue.array(vs.map(fromCanonicalJson)).getOrElse(v)
+      case CMap(m)    => CanonicalValue.map(m.toList.map { case (k, x) => k -> fromCanonicalJson(x) }).getOrElse(v)
+      case other      => other
     }
 
   def toCanonicalJson(v: CanonicalValue): CanonicalValue =

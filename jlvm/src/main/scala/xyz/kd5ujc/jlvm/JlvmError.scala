@@ -19,6 +19,9 @@ object JlvmError {
   /** Division by zero, an exponent out of range, a non-terminating rational where text is required, ... */
   final case class Arithmetic(op: String, message: String) extends JlvmError
 
+  /** A value of the right kind outside the operation's domain: malformed hex, an empty separator, an integer too wide. */
+  final case class Domain(op: String, message: String) extends JlvmError
+
   /** Malformed cryptographic input (a well-formed but invalid proof is `false`, not an error). */
   final case class Crypto(op: String, message: String) extends JlvmError
 

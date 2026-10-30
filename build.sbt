@@ -228,7 +228,7 @@ lazy val jlvm = project.in(file("jlvm"))
       Libraries.scodecBits
     )
   )
-  .dependsOn(core, crypto, accumulators, models, sharedTest % Test)
+  .dependsOn(core % "compile->compile;test->test", crypto, accumulators, models, sharedTest % Test)
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll; scalafmtSbtCheck")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll; scalafmtSbt")
