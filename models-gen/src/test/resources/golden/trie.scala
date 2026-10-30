@@ -10,15 +10,15 @@ object TrieBranch {
   lazy val codec: Codec[TrieBranch] = Codec(
     a =>
       Codec.record(List(
-        Codec.field("s", TrieSegment.codec, a.s),
+        Codec.field("s", Codec.defer(TrieSegment.codec), a.s),
         Codec.optionalField("v", Codec.bytes, a.v),
-        Codec.field("c", TrieChildren.codec, a.c)
+        Codec.field("c", Codec.defer(TrieChildren.codec), a.c)
       )),
     CanonicalDecoder.record(Set("s", "v", "c")) { fields$ =>
       for {
-        s <- fields$.required("s")(using TrieSegment.codec.decoder)
+        s <- fields$.required("s")(using Codec.defer(TrieSegment.codec).decoder)
         v <- fields$.optional("v")(using Codec.bytes.decoder)
-        c <- fields$.required("c")(using TrieChildren.codec.decoder)
+        c <- fields$.required("c")(using Codec.defer(TrieChildren.codec).decoder)
       } yield TrieBranch(s, v, c)
     }
   )
@@ -47,12 +47,12 @@ object TrieLeaf {
   lazy val codec: Codec[TrieLeaf] = Codec(
     a =>
       Codec.record(List(
-        Codec.field("s", TrieSegment.codec, a.s),
+        Codec.field("s", Codec.defer(TrieSegment.codec), a.s),
         Codec.field("v", Codec.bytes, a.v)
       )),
     CanonicalDecoder.record(Set("s", "v")) { fields$ =>
       for {
-        s <- fields$.required("s")(using TrieSegment.codec.decoder)
+        s <- fields$.required("s")(using Codec.defer(TrieSegment.codec).decoder)
         v <- fields$.required("v")(using Codec.bytes.decoder)
       } yield TrieLeaf(s, v)
     }
@@ -67,14 +67,14 @@ object TrieNode {
   lazy val codec: Codec[TrieNode] = Codec(
     a =>
       Codec.record(List(
-        Codec.field("s", TrieSegment.codec, a.s),
+        Codec.field("s", Codec.defer(TrieSegment.codec), a.s),
         Codec.optionalField("v", Codec.bytes, a.v),
         Codec.optionalField("l", Codec.bytes, a.l),
         Codec.optionalField("r", Codec.bytes, a.r)
       )),
     CanonicalDecoder.record(Set("s", "v", "l", "r")) { fields$ =>
       for {
-        s <- fields$.required("s")(using TrieSegment.codec.decoder)
+        s <- fields$.required("s")(using Codec.defer(TrieSegment.codec).decoder)
         v <- fields$.optional("v")(using Codec.bytes.decoder)
         l <- fields$.optional("l")(using Codec.bytes.decoder)
         r <- fields$.optional("r")(using Codec.bytes.decoder)
@@ -88,7 +88,7 @@ object TrieNode {
 type TrieProof = Vector[TrieRecord]
 
 object TrieProof {
-  lazy val codec: Codec[TrieProof] = Codec.vector(TrieRecord.codec, 0, None)
+  lazy val codec: Codec[TrieProof] = Codec.vector(Codec.defer(TrieRecord.codec), 0, None)
 }
 
 type TrieRecord = TrieStub | TrieLeaf | TrieBranch
