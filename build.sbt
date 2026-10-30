@@ -61,7 +61,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, benchmarks)
+  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, modelsGen, benchmarks)
 
 // ─── Shared Test Utilities ───
 lazy val sharedTest = project.in(file("shared-test"))
@@ -170,6 +170,20 @@ lazy val storageRocksDb = project.in(file("storage-rocksdb"))
     libraryDependencies += Libraries.rocksDb
   )
   .dependsOn(storage % "compile->compile;test->test", sharedTest % Test)
+
+// ─── models-gen: CDDL (RFC 8610) -> types and canonical codecs (build-time tool, ported from scarab) ───
+lazy val modelsGen = project.in(file("models-gen"))
+  .settings(
+    name := "dilf4s-models-gen",
+    commonSettings,
+    commonTestSettings,
+    publish / skip := true,
+    libraryDependencies ++= Seq(
+      Libraries.cats,
+      Libraries.catsParse
+    )
+  )
+  .dependsOn(core % Test, sharedTest % Test)
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll; scalafmtSbtCheck")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll; scalafmtSbt")

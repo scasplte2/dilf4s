@@ -10,6 +10,7 @@ object Dependencies {
     val rocksDb = "11.8.1"
     val secp256k1Kmp = "0.24.0"
     val jblst = "0.3.18"
+    val catsParse = "1.1.0"
     val cats = "2.13.0"
     val catsEffect = "3.7.1"
     val circe = "0.14.17"
@@ -26,6 +27,7 @@ object Dependencies {
     val bc = "org.bouncycastle"          % "bcprov-jdk18on"        % V.bouncyCastle
     val scodecBits = "org.scodec"       %% "scodec-bits"           % V.scodecBits
     val catsMtl = "org.typelevel"       %% "cats-mtl"              % V.catsMtl
+    val catsParse = "org.typelevel"     %% "cats-parse"            % V.catsParse
     val fs2Core = "co.fs2"              %% "fs2-core"              % V.fs2
     val rocksDb = "org.rocksdb"          % "rocksdbjni"            % V.rocksDb
     val secp256k1 = "fr.acinq.secp256k1" % "secp256k1-kmp-jni-jvm" % V.secp256k1Kmp
