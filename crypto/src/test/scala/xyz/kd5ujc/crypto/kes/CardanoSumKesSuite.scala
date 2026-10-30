@@ -135,6 +135,19 @@ object CardanoSumKesSuite extends SimpleIOSuite with Checkers {
       .and(expect(!k0.toString.contains(k0.bytes.toHex.take(16)), "redacted"))
   }
 
+  pureTest("a key loaded at the wrong period, or with a corrupted r1, is refused") {
+    val k0 = sum6.generate(ByteVector.fill(32)(5)).toOption.get
+    val k31 = sum6.evolveTo(k0, 31).toOption.get
+    val badR1 = k31.bytes.update(512L, (k31.bytes(512L) ^ 1).toByte)
+    expect(sum6.load(k0.bytes, 32).isLeft, "period-0 key as period 32")
+      .and(expect(sum6.load(k0.bytes, 1).isLeft, "period-0 key as period 1"))
+      .and(expect(sum6.load(sum6.evolve(k31).toOption.get.bytes, 31).isLeft, "period-32 key as period 31"))
+      .and(expect(sum6.load(badR1, 31).flatMap(sum6.evolve).isLeft, "corrupted r1 caught on activation"))
+      .and(
+        expect((0L until 64L).forall(p => sum6.evolveTo(k0, p).flatMap(k => sum6.load(k.bytes, p)).isRight), "every honest period loads")
+      )
+  }
+
   pureTest("malformed inputs and out-of-range periods are typed errors") {
     val k = sum6.generate(ByteVector.fill(32)(2)).toOption.get
     val vk = sum6.verifyingKey(k)

@@ -1,5 +1,7 @@
 package xyz.kd5ujc.crypto.kes
 
+import cats.syntax.all._
+
 import xyz.kd5ujc.core.hash.{Blake2b256, Hasher}
 import xyz.kd5ujc.crypto.signing.{Ed25519, Signature, SigningKey, VerifyingKey}
 
@@ -72,15 +74,44 @@ final class CardanoSumKes private (val depth: Int) {
       sign(inner, d - 1, if (t < half) t else t - half, msg) ++ sk.slice(skLen(d - 1) + 32, skLen(d))
     }
 
-  private def update(sk: ByteVector, d: Int, t: Long): Option[ByteVector] =
-    if (d == 0) None
+  /**
+   * `updateKES`. Activating the right half regenerates it from `r1`, checked against the stored `vk1`; `None` means
+   * the last period was reached, `Left` that the key is inconsistent.
+   */
+  private def update(sk: ByteVector, d: Int, t: Long): Either[KesError, Option[ByteVector]] =
+    if (d == 0) None.asRight
     else {
       val half = 1L << (d - 1)
       val (inner, rest) = (sk.take(skLen(d - 1)), sk.drop(skLen(d - 1)))
       val (r1, vks) = (rest.take(32), rest.drop(32))
-      if (t + 1 < half) update(inner, d - 1, t).map(_ ++ r1 ++ vks)
-      else if (t + 1 == half) Some(gen(r1, d - 1) ++ zeroSeed ++ vks)
-      else update(inner, d - 1, t - half).map(_ ++ r1 ++ vks)
+      if (t + 1 < half) update(inner, d - 1, t).map(_.map(_ ++ r1 ++ vks))
+      else if (t + 1 == half) {
+        val right = gen(r1, d - 1)
+        Either.cond(
+          vkOf(right, d - 1) == vks.drop(32),
+          Some(right ++ zeroSeed ++ vks),
+          KesError.InconsistentKey(s"r1 at depth $d does not match vk1")
+        )
+      } else update(inner, d - 1, t - half).map(_.map(_ ++ r1 ++ vks))
+    }
+
+  /** Load-time consistency at period `t`: `r1` is zero exactly once used, and each active subtree's vk is the stored one. */
+  private def check(sk: ByteVector, d: Int, t: Long): Either[KesError, Unit] =
+    if (d == 0) ().asRight
+    else {
+      val half = 1L << (d - 1)
+      val inner = sk.take(skLen(d - 1))
+      val (r1, vk0, vk1) =
+        (sk.slice(skLen(d - 1), skLen(d - 1) + 32), sk.slice(skLen(d - 1) + 32, skLen(d - 1) + 64), sk.drop(skLen(d - 1) + 64))
+      for {
+        _ <- Either.cond((t >= half) == (r1 == zeroSeed), (), KesError.InconsistentKey(s"r1 state does not match period $t at depth $d"))
+        _ <- Either.cond(
+          vkOf(inner, d - 1) == (if (t < half) vk0 else vk1),
+          (),
+          KesError.InconsistentKey(s"active subtree does not match its vk at depth $d")
+        )
+        _ <- check(inner, d - 1, t % half)
+      } yield ()
     }
 
   private def verify(vk: ByteVector, d: Int, t: Long, msg: ByteVector, sig: ByteVector): Boolean =
@@ -106,6 +137,7 @@ final class CardanoSumKes private (val depth: Int) {
         KesError.Malformed("KES signing key", s"expected $signingKeyLength bytes, got ${raw.size}")
       )
       _ <- Either.cond(period >= 0 && period < totalPeriods, (), KesError.PeriodOutOfRange(period, totalPeriods))
+      _ <- check(raw, depth, period)
     } yield new Key(raw, period)
 
   def verifyingKey(key: Key): ByteVector = vkOf(key.tree, depth)
@@ -114,7 +146,7 @@ final class CardanoSumKes private (val depth: Int) {
 
   /** The key for the next period (`updateKES`); the last period cannot evolve. */
   def evolve(key: Key): Either[KesError, Key] =
-    update(key.tree, depth, key.period).map(new Key(_, key.period + 1)).toRight(KesError.Exhausted(key.period))
+    update(key.tree, depth, key.period).flatMap(_.map(new Key(_, key.period + 1)).toRight(KesError.Exhausted(key.period)))
 
   /** Verification of `signature` by root key `vk` at relative `period` (`verifyKES`). */
   /** The key at `target` (at or after the key's period), evolving one period at a time. */
