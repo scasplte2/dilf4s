@@ -1,5 +1,7 @@
 package xyz.kd5ujc.core.hash
 
+import java.math.BigInteger
+
 import cats.{Eq, Show}
 
 import scala.annotation.tailrec
@@ -61,21 +63,41 @@ object Poseidon {
       .toRight(PoseidonError.InputCount(inputs.size, MaxInputs))
       .map(params => permute(params, BigInt(0) +: inputs.toVector.map(_.value)))
 
-  private val R = Fr.Modulus
+  private val R: BigInteger = Fr.Modulus.bigInteger
 
-  private def pow5(a: BigInt): BigInt = { val a2 = a * a % R; a2 * a2 % R * a % R }
+  /** A width's constants as `BigInteger`, converted once. */
+  private final case class Fast(constants: Vector[BigInteger], mds: Vector[Vector[BigInteger]], partialRounds: Int)
 
+  private def converted(p: PoseidonConstants.Params): Fast =
+    Fast(p.roundConstants.map(_.bigInteger), p.mds.map(_.map(_.bigInteger)), p.partialRounds)
+
+  /** By width: hashing a `Params` as a key would hash every constant on each call. */
+  private val fast: Map[Int, Fast] = PoseidonConstants.byWidth.map { case (w, p) => w -> converted(p) }
+
+  private def pow5(a: BigInteger): BigInteger = {
+    val a2 = a.multiply(a).remainder(R)
+    a2.multiply(a2).remainder(R).multiply(a).remainder(R)
+  }
+
+  /**
+   * Reductions are deferred where the bound allows: after adding a round constant an element is below 2r, and a
+   * matrix row's sum of t products of a reduced constant with such an element stays far below 2^(2·254+4), so one
+   * reduction per row suffices. Every state element is reduced again at the end of each round.
+   */
   private def permute(params: PoseidonConstants.Params, state: Vector[BigInt]): Fr = {
     val t = state.size
-    val (c, m) = (params.roundConstants, params.mds)
-    val (rf, rp) = (PoseidonConstants.FullRounds, params.partialRounds)
-    @tailrec def loop(r: Int, s: Vector[BigInt]): Vector[BigInt] =
-      if (r >= rf + rp) s
+    val f = fast.getOrElse(t, converted(params))
+    val rf = PoseidonConstants.FullRounds
+    @tailrec def loop(r: Int, s: Vector[BigInteger]): Vector[BigInteger] =
+      if (r >= rf + f.partialRounds) s
       else {
-        val ark = Vector.tabulate(t)(i => (s(i) + c(r * t + i)) % R)
-        val sbox = if (r < rf / 2 || r >= rf / 2 + rp) ark.map(pow5) else ark.updated(0, pow5(ark(0)))
-        loop(r + 1, m.map(row => row.zip(sbox).foldLeft(BigInt(0)) { case (acc, (mij, x)) => (acc + mij * x) % R }))
+        val full = r < rf / 2 || r >= rf / 2 + f.partialRounds
+        val sbox = Vector.tabulate(t) { i =>
+          val x = s(i).add(f.constants(r * t + i))
+          if (full || i == 0) pow5(x) else x
+        }
+        loop(r + 1, f.mds.map(row => row.indices.foldLeft(BigInteger.ZERO)((acc, j) => acc.add(row(j).multiply(sbox(j)))).remainder(R)))
       }
-    Fr.reduce(loop(0, state).headOption.getOrElse(BigInt(0)))
+    Fr.reduce(BigInt(loop(0, state.map(_.bigInteger)).headOption.getOrElse(BigInteger.ZERO)))
   }
 }
