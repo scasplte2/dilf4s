@@ -21,14 +21,14 @@ sealed trait SigmaProp {
 
 object SigmaProp {
 
-  /** Knowledge of `w` with `pk = w·G`: a Schnorr signature. */
-  final case class Dlog(pk: GroupElement) extends SigmaProp {
+  /** Knowledge of `w` with `pk = w·G`: a Schnorr signature. Built by [[dlog]]. */
+  final case class Dlog private[SigmaProp] (pk: GroupElement) extends SigmaProp {
     def depth: Int = 1
     def leaves: Int = 1
   }
 
-  /** Knowledge of `w` with `u = w·g` and `v = w·h`: (g, h, u, v) is a Diffie-Hellman tuple. */
-  final case class DhTuple(g: GroupElement, h: GroupElement, u: GroupElement, v: GroupElement) extends SigmaProp {
+  /** Knowledge of `w` with `u = w·g` and `v = w·h`: (g, h, u, v) is a Diffie-Hellman tuple. Built by [[dhTuple]]. */
+  final case class DhTuple private[SigmaProp] (g: GroupElement, h: GroupElement, u: GroupElement, v: GroupElement) extends SigmaProp {
     def depth: Int = 1
     def leaves: Int = 1
   }
@@ -56,6 +56,19 @@ object SigmaProp {
 
   /** A threshold's points are the bytes 1..n. */
   val MaxChildren: Int = 255
+
+  /**
+   * A statement point is never the identity. With `pk` the identity, `dlog(pk)` holds for `w = 0`, and anyone can prove
+   * it; the same holds for a DH tuple with `u` or `v` the identity, and a base `g` or `h` that is the identity proves
+   * nothing. (Commitments may be the identity: they are computed, never taken from input.)
+   */
+  private def statementPoint(field: String, p: GroupElement): Either[String, GroupElement] =
+    Either.cond(!p.isIdentity, p, s"$field is the identity, for which anyone can prove knowledge (w = 0)")
+
+  def dlog(pk: GroupElement): Either[String, Dlog] = statementPoint("pk", pk).map(Dlog(_))
+
+  def dhTuple(g: GroupElement, h: GroupElement, u: GroupElement, v: GroupElement): Either[String, DhTuple] =
+    (statementPoint("g", g), statementPoint("h", h), statementPoint("u", u), statementPoint("v", v)).mapN(DhTuple(_, _, _, _))
 
   def and(children: Vector[SigmaProp]): Either[String, SigmaProp] = conjecture(children)(And(children))
   def or(children:  Vector[SigmaProp]): Either[String, SigmaProp] = conjecture(children)(Or(children))
@@ -98,9 +111,9 @@ object SigmaProp {
         def fields(ks: String*): Either[String, Unit] =
           Either.cond(m.keySet == (ks.toSet + "type"), (), s"${typeName(m)} takes exactly the fields ${ks.mkString(", ")}")
         m.get("type") match {
-          case scala.Some(CText("dlog")) => fields("pk") >> point("pk").map(Dlog(_))
+          case scala.Some(CText("dlog")) => fields("pk") >> point("pk").flatMap(dlog)
           case scala.Some(CText("dhtuple")) =>
-            fields("g", "h", "u", "v") >> (point("g"), point("h"), point("u"), point("v")).mapN(DhTuple(_, _, _, _))
+            fields("g", "h", "u", "v") >> (point("g"), point("h"), point("u"), point("v")).tupled.flatMap(dhTuple.tupled)
           case scala.Some(CText("and")) => fields("children") >> children.flatMap(and)
           case scala.Some(CText("or"))  => fields("children") >> children.flatMap(or)
           case scala.Some(CText("threshold")) =>

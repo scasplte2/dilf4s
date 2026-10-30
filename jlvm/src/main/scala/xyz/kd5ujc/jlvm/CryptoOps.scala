@@ -85,7 +85,8 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381) {
       case (k, m, s) =>
         Secp256k1Group
           .decode(k)
-          .flatMap(pk => Sigma.verify(SigmaProp.Dlog(pk), s, m))
+          .flatMap(SigmaProp.dlog)
+          .flatMap(Sigma.verify(_, s, m))
           .bimap(JlvmError.Crypto(op.wire, _), Values.bool)
     }
 

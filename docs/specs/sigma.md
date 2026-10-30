@@ -54,6 +54,9 @@ A proposition is a canonical map per node, discriminated by `type`. Each type ta
 | `threshold` | `k`: integer; `children`: array of propositions |
 
 **Constraints**, each a malformed-input error:
+- no statement point (`pk`, `g`, `h`, `u`, `v`) is the identity. `dlog(O)` holds for `w = 0`, so anyone could prove it,
+  and likewise a tuple with `u` or `v` the identity; an identity base proves nothing. Commitments may be the identity:
+  they are computed, never read;
 - a connective has 1 to 255 children; an empty one would verify for anyone;
 - a threshold has `1 <= k <= n`;
 - a proposition nests at most 64 deep and has at most 4096 leaves;
@@ -121,6 +124,7 @@ A proposition fixes its proof's length exactly:
 A well-formed proof that fails step 4 is `false`.
 
 **Stricter than Ergo.** Each of these is malformed here:
+- an identity statement point, which Ergo accepts (and for which a proof is trivial);
 - Ergo's verifier ignores trailing proof bytes (the vectors record that it accepts them);
 - it only warns on a short proof;
 - it places no bound on `z`;
@@ -161,6 +165,8 @@ Simulated and real transcripts are identically distributed, so a proof does not 
 
 ## 8. Using proofs
 
+- **Fix the statement in the program.** Build the proposition from the program's literals and committed state, never
+  from the spender's arguments alone: whoever chooses the statement can choose one they can prove.
 - **Bind the message.** The message must commit to what the proof authorises: the update or transaction, its target,
   and a nonce or ordinal. A proof over a reused message replays.
 - **Use one `sigma_verify` for any hiding.**
@@ -175,3 +181,15 @@ Simulated and real transcripts are identically distributed, so a proof does not 
 
   A program can check all of these only when the ledger exposes outputs, with their values and program hashes, as
   data. An account model links balances whatever the proof hides.
+
+## 9. Regenerating the vectors
+
+`tools/sigma-vectors` is a dev-only Scala 2.13 project over sigmastate 5.0.13. It pins the released `scrypto` 2.3.0,
+as the Ergo node does, because sigma-state 5.0.13 names an unpublished snapshot. Ergo's proofs are randomised, so
+regenerating changes `sigma_v1.json`. The order:
+
+1. In `tools/sigma-vectors`: `sbt "run generate <repo>/shared/vectors/sigma_v1.json"`.
+2. At the root: `sbt "crypto/Test/runMain xyz.kd5ujc.crypto.sigma.SigmaProofsGen"`, which writes our proofs to
+   `target/sigma_dilf4s_proofs.json`.
+3. In `tools/sigma-vectors`: `sbt "run check <repo>/target/sigma_dilf4s_proofs.json <repo>/shared/vectors/sigma_dilf4s_v1.json"`.
+

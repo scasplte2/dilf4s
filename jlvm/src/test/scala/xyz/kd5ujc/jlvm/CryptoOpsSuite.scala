@@ -144,6 +144,14 @@ object CryptoOpsSuite extends IOSuite {
       Config()
     )
 
+  private def key(pk: xyz.kd5ujc.crypto.sigma.GroupElement): SigmaProp = SigmaProp.dlog(pk).fold(sys.error, identity)
+  private def tuple(
+    g: xyz.kd5ujc.crypto.sigma.GroupElement,
+    h: xyz.kd5ujc.crypto.sigma.GroupElement,
+    u: xyz.kd5ujc.crypto.sigma.GroupElement,
+    v: xyz.kd5ujc.crypto.sigma.GroupElement
+  ): SigmaProp = SigmaProp.dhTuple(g, h, u, v).fold(sys.error, identity)
+
   private def h(b:  ByteVector): String = "\"0x" + b.toHex + "\""
   private def pk(w: BigInt): ByteVector = Secp256k1Group.base(w).bytes
 
@@ -167,7 +175,7 @@ object CryptoOpsSuite extends IOSuite {
   test("a ring signature built in the program: any member signs, nobody else can") { b =>
     val ws = Vector(BigInt(101), BigInt(202), BigInt(303))
     val message = ByteVector("rotate the oracle key".getBytes("UTF-8"))
-    val ring = SigmaProp.or(ws.map(w => SigmaProp.Dlog(Secp256k1Group.base(w))))
+    val ring = SigmaProp.or(ws.map(w => key(Secp256k1Group.base(w))))
     val program =
       """{"sigma_verify": [{"type": "or", "children": {"map": [{"var": "ring"}, {"type": "dlog", "pk": {"var": "$current"}}]}},
         |  {"var": "proof"}, {"var": "msg"}]}""".stripMargin
@@ -203,8 +211,8 @@ object CryptoOpsSuite extends IOSuite {
          | "proof": ${h(proof)}, "msg": ${h(message)}}""".stripMargin
     def at(height: Int) = Map("height" -> (CInt(BigInt(height)): CanonicalValue))
     (
-      prove(b.random, Right(SigmaProp.Dlog(Secp256k1Group.base(bob))), Vector(bob), message),
-      prove(b.random, Right(SigmaProp.Dlog(Secp256k1Group.base(alice))), Vector(alice), message)
+      prove(b.random, Right(key(Secp256k1Group.base(bob))), Vector(bob), message),
+      prove(b.random, Right(key(Secp256k1Group.base(alice))), Vector(alice), message)
     ).mapN { (bobs, alices) =>
       expect
         .same(Right(True), run(b.jlvm, program, data(preimage, bobs), at(50)).result)
@@ -242,20 +250,46 @@ object CryptoOpsSuite extends IOSuite {
     def data(outputs: List[String], proof: ByteVector) =
       s"""{"g": ${h(g.bytes)}, "self": {"value": 10, "gX": ${h((g * x).bytes)}}, "fullMixScriptHash": ${h(scriptHash)},
          | "outputs": [${outputs.mkString(", ")}], "proof": ${h(proof)}, "msg": ${h(message)}}""".stripMargin
+    // g is read from data here for brevity; a real contract fixes it as a literal, since a proposition built from the
+    // spender's own arguments lets the spender choose a statement they can prove (docs/specs/sigma.md section 8).
     // Bob puts Alice's output (c2 = g^xy) second; his proof covers whichever order he chose
     val outputs = List(out(gy, gxy), out(gxy, gy))
     val prop = SigmaProp.or(
       Vector(
-        SigmaProp.DhTuple(g, g * x, Secp256k1Group.decode(gy).toOption.get, Secp256k1Group.decode(gxy).toOption.get),
-        SigmaProp.DhTuple(g, g * x, Secp256k1Group.decode(gxy).toOption.get, Secp256k1Group.decode(gy).toOption.get)
+        tuple(g, g * x, Secp256k1Group.decode(gy).toOption.get, Secp256k1Group.decode(gxy).toOption.get),
+        tuple(g, g * x, Secp256k1Group.decode(gxy).toOption.get, Secp256k1Group.decode(gy).toOption.get)
       )
     )
+    val identity = ByteVector.fill(33)(0)
     prove(b.random, prop, Vector(y), message).map { proof =>
       expect
         .same(Right(True), run(b.jlvm, program, data(outputs, proof)).result)
         .and(expect.same(Right(False), run(b.jlvm, program, data(List(out(gy, gxy), out(gy, gxy)), proof)).result))
         .and(expect.same(Right(False), run(b.jlvm, program, data(List(out(gy, gxy), out(gxy, gy, value = 9)), proof)).result))
         .and(expect(crypto(run(b.jlvm, program, data(outputs, proof.drop(1))).result), "a short proof is malformed"))
+        .and(
+          expect(crypto(run(b.jlvm, program, data(List(out(identity, identity), out(identity, identity)), proof)).result), "c1 = c2 = O")
+        )
+    }
+  }
+
+  test("schnorr_verify rejects the identity key: anyone could prove dlog(O), as metakit warned") { b =>
+    IO {
+      // the forgery that would verify if O were accepted: any z, a = z·G, e = H(transcript(a) || msg)
+      val z = BigInt(12345)
+      val a = Secp256k1Group.base(z).bytes
+      val o = ByteVector.fill(33)(0)
+      val statement = ByteVector(0x10, 0x01, 0x08, 0xcd) ++ o ++ ByteVector(0x73, 0x00)
+      val transcript = ByteVector(0x01, 0x00, statement.size.toInt) ++ statement ++ ByteVector(0x00, 0x21) ++ a
+      val msg = ByteVector.fill(32)(5)
+      val e = xyz.kd5ujc.crypto.sigma.Sigma.challenge(transcript, msg)
+      val forged = e ++ Secp256k1Group.scalarBytes(z)
+      val outcome = run(
+        b.jlvm,
+        """{"schnorr_verify": [{"var": "pk"}, {"var": "msg"}, {"var": "sig"}]}""",
+        s"""{"pk": ${h(o)}, "msg": ${h(msg)}, "sig": ${h(forged)}}"""
+      )
+      expect(crypto(outcome.result), s"the identity key is malformed, got ${outcome.result}")
     }
   }
 

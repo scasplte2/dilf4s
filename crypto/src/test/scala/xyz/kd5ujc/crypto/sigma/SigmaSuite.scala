@@ -3,6 +3,8 @@ package xyz.kd5ujc.crypto.sigma
 import cats.Show
 import cats.syntax.all._
 
+import xyz.kd5ujc.core.canonical.CanonicalValue
+
 import org.scalacheck.Gen
 import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
@@ -10,7 +12,9 @@ import weaver.scalacheck.Checkers
 
 object SigmaSuite extends SimpleIOSuite with Checkers {
 
-  import SigmaProp._
+  private def key(pk: GroupElement): SigmaProp = SigmaProp.dlog(pk).fold(sys.error, identity)
+  private def tuple(g: GroupElement, h: GroupElement, u: GroupElement, v: GroupElement): SigmaProp =
+    SigmaProp.dhTuple(g, h, u, v).fold(sys.error, identity)
 
   // ---- GF(2^192)
 
@@ -67,14 +71,14 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
   // ---- Ergo's known-answer vectors (sigmastate 5.0.13, SigningSpecification; cross-checked there with sigma-rust)
 
   private val msg = hex"1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00"
-  private def dlog(sk: String): SigmaProp = Dlog(Secp256k1Group.base(BigInt(sk)))
+  private def dlog(sk: String): SigmaProp = key(Secp256k1Group.base(BigInt(sk)))
   private val sk1 = "109749205800194830127901595352600384558037183218698112947062497909408298157746"
   private val sk2 = "50415569076448343263191022044468203756975150511337537963383000142821297891310"
   private val sk3 = "34648336872573478681093104997365775365807654884817677358848426648354905397359"
 
   private def dht(b: ByteVector): SigmaProp =
     b.grouped(33).toVector.traverse(Secp256k1Group.decode) match {
-      case Right(Vector(g, h, u, v)) => DhTuple(g, h, u, v)
+      case Right(Vector(g, h, u, v)) => tuple(g, h, u, v)
       case other                     => sys.error(s"bad DH tuple: $other")
     }
 
@@ -166,8 +170,8 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
   // ---- our prover
 
   private val secrets: Vector[BigInt] = Vector(sk1, sk2, sk3).map(BigInt(_))
-  private val keys: Vector[SigmaProp] = secrets.map(w => Dlog(Secp256k1Group.base(w)))
-  private val stranger: SigmaProp = Dlog(Secp256k1Group.base(BigInt(7)))
+  private val keys: Vector[SigmaProp] = secrets.map(w => key(Secp256k1Group.base(w)))
+  private val stranger: SigmaProp = key(Secp256k1Group.base(BigInt(7)))
 
   // ZeroJoin (Ergo's MixExampleSpecification). Alice's half-mix box holds gX = x·G. Bob spends it with secret y into
   // two full-mix outputs holding (c1, c2) = (y·G, xy·G) in some order; the half-mix demands that he prove
@@ -175,12 +179,12 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
   private val (x, y) = (BigInt(11), BigInt(13))
   private val g = Secp256k1Group.Generator
   private val (c1, c2) = (g * y, g * (x * y))
-  private val halfMix = p(SigmaProp.or(Vector(DhTuple(g, g * x, c2, c1), DhTuple(g, g * x, c1, c2))))
+  private val halfMix = p(SigmaProp.or(Vector(tuple(g, g * x, c2, c1), tuple(g, g * x, c1, c2))))
 
   // Each full-mix output is spendable as dlog(c2) or dht(g, c1, gX, c2): Alice, knowing x, proves the second
   // disjunct for the output where c2 = xy·G; Bob, knowing y, proves the first for the other.
-  private val fullMixAlice = p(SigmaProp.or(Vector(Dlog(c2), DhTuple(g, c1, g * x, c2))))
-  private val fullMixBob = p(SigmaProp.or(Vector(Dlog(c1), DhTuple(g, c2, g * x, c1))))
+  private val fullMixAlice = p(SigmaProp.or(Vector(key(c2), tuple(g, c1, g * x, c2))))
+  private val fullMixBob = p(SigmaProp.or(Vector(key(c1), tuple(g, c2, g * x, c1))))
 
   private val cases: List[(String, SigmaProp, Vector[BigInt])] = List(
     ("dlog", keys(0), Vector(secrets(0))),
@@ -223,9 +227,30 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     forall(Gen.zip(Gen.choose(1, 6), Gen.choose(0, 5), Gen.choose(1L, Long.MaxValue))) {
       case (n, who, seed) =>
         val ws = (1 to n).toVector.map(i => BigInt(seed) * i + 1)
-        val ring = p(SigmaProp.or(ws.map(w => Dlog(Secp256k1Group.base(w)))))
+        val ring = p(SigmaProp.or(ws.map(w => key(Secp256k1Group.base(w)))))
         val proof = SigmaProver.proveWith(ring, Vector(ws(who % n)), msg, ByteVector.fromLong(seed))
         expect.same(Right(true), proof.flatMap(Sigma.verify(ring, _, msg)))
     }
+  }
+
+  pureTest("the identity is no statement point: dlog(O) would be provable by anyone, as w = 0") {
+    val o = Secp256k1Group.Identity
+    val g = Secp256k1Group.Generator
+    expect(SigmaProp.dlog(o).isLeft, "dlog(O)")
+      .and(expect(SigmaProp.dhTuple(g, g, o, o).isLeft, "dht with u = v = O (ZeroJoin with c1 = c2 = O)"))
+      .and(expect(SigmaProp.dhTuple(o, g, g, g).isLeft, "an identity base"))
+      .and(
+        expect(
+          SigmaProp
+            .fromCanonical(
+              CanonicalValue
+                .map(List("type" -> CanonicalValue.text("dlog").toOption.get, "pk" -> CanonicalValue.CBytes(o.bytes)))
+                .toOption
+                .get
+            )
+            .isLeft,
+          "decoded"
+        )
+      )
   }
 }

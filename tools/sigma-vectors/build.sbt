@@ -1,7 +1,9 @@
 // Dev-only: generates and cross-checks the sigma vectors in shared/vectors against Ergo's own implementation.
-// Not part of the main build (sigmastate is Scala 2.13). Run from this directory:
-//   sbt "run generate ../../shared/vectors/sigma_v1.json"
-//   sbt "run check ../../shared/vectors/sigma_dilf4s_proofs.json ../../shared/vectors/sigma_dilf4s_v1.json"
+// Not part of the main build (sigmastate is Scala 2.13). The regeneration order is in docs/specs/sigma.md section 9;
+// paths must be absolute, since the run forks:
+//   sbt "run generate <repo>/shared/vectors/sigma_v1.json"
+//   (root) sbt "crypto/Test/runMain xyz.kd5ujc.crypto.sigma.SigmaProofsGen"
+//   sbt "run check <repo>/target/sigma_dilf4s_proofs.json <repo>/shared/vectors/sigma_dilf4s_v1.json"
 ThisBuild / scalaVersion := "2.13.11"
 
 lazy val root = project
