@@ -10,7 +10,7 @@ import io.circe.{ACursor, Json}
 
 /**
  * Writes `PoseidonConstants.scala` from [[PoseidonDerivation]]. Run from the repository root:
- * `sbt "core/Test/runMain xyz.kd5ujc.core.hash.PoseidonConstantsGen"`.
+ * `sbt "core/Test/runMain xyz.kd5ujc.core.hash.PoseidonConstantsGen"`, then `sbt preparePR` to format it.
  */
 object PoseidonConstantsGen extends IOApp {
 
