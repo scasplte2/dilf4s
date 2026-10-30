@@ -13,7 +13,8 @@ ed25519 / ristretto255 prime-order group, `n` the order of the named elliptic cu
 | Ed25519-BIP32 | 64-byte `kL ‖ kR` | 32-byte point | 64 `R ‖ S` | raw message |
 | P-256-ECDSA | 32-byte BE scalar in `[1, n)` | 33-byte compressed SEC1 | 64 `r ‖ s` (BE) | `SHA-256(message)` |
 | secp256k1-ECDSA | 32-byte BE scalar in `[1, n)` | 33-byte compressed SEC1 | 64 `r ‖ s` (BE) | `SHA-256(message)` |
-| BIP-340 | 32-byte BE scalar in `[1, n)` | 32-byte x-only | 64 `R.x ‖ s` | `taggedHash_SHA256("dilf4s/sig/bip340/v1", message)` |
+| BIP-340 | 32-byte BE scalar in `[1, n)` | 32-byte x-only | 64 `R.x ‖ s` | exactly 32 bytes, as given |
+| secp256k1-tagged-Schnorr | 32-byte BE scalar in `[1, n)` | 32-byte x-only | 64 `R.x ‖ s` | `taggedHash_SHA256("dilf4s/sig/bip340/v1", message)` |
 | ristretto255-Schnorr | 32-byte LE canonical scalar, non-zero | 32-byte ristretto255 | 64 `R ‖ z` | raw message |
 
 Every decoder checks lengths, and rejects keys and signatures that fail the scheme's validity rules below.
@@ -49,13 +50,20 @@ Nonces are deterministic, per RFC 6979 with HMAC-SHA-256 over the SHA-256 digest
 - The signer outputs `s ≤ n/2`, replacing `s` by `n − s` if needed.
 - Decoders and verifiers reject `s > n/2`, so each signature has a single encoding.
 
-### 1.4 BIP-340
+### 1.4 BIP-340 and tagged Schnorr
 
-This is BIP-340 Schnorr over the 32-byte tagged digest of the message, so any message length is accepted. The tagged
-hash follows `canonical-encoding.md` §4.
+There are two distinct schemes. They share key encodings, but **neither accepts the other's signatures**.
+
+- **BIP-340** is the standard algorithm over a message of exactly 32 bytes. It is byte-compatible with Bitcoin
+  (Taproot), Nostr and external wallets. Implementations expose it with a 32-byte message type, so a message of any
+  other length is unrepresentable and never silently hashed or padded.
+- **secp256k1-tagged-Schnorr** is BIP-340 applied to the tagged digest of a message of any length. The tagged hash
+  follows `canonical-encoding.md` §4. This is the dilf4s default for signing dilf4s data.
+
+In both schemes:
 
 - The 32-byte auxiliary randomness `a` is fresh per signature in production.
-- The vectors use `a = 42…42` (32 bytes).
+- The vectors use `a = 42…42` (32 bytes). The BIP-340 vectors sign `SHA-256(m)` for each test message `m`.
 
 ### 1.5 ristretto255 Schnorr (FROST ciphersuite)
 

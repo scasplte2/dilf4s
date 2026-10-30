@@ -1,9 +1,9 @@
 package xyz.kd5ujc.crypto.signing
 
+import cats.Functor
 import cats.effect.Sync
 import cats.effect.std.SecureRandom
 import cats.syntax.all._
-import cats.{Functor, Monad}
 
 import xyz.kd5ujc.core.hash.{DomainTag, Hasher, Sha256, TaggedHash}
 
@@ -14,11 +14,29 @@ import scodec.bits.ByteVector
 sealed trait Secp256k1Ecdsa
 
 /**
- * BIP-340 Schnorr signatures over secp256k1 with 32-byte x-only verifying keys. The signed 32-byte message is the
- * tagged hash `dilf4s/sig/bip340/v1` of the caller's message (BIP-340's own recommendation for arbitrary messages), so
- * signing is total for every message length. Raw 32-byte BIP-340 is available as `schnorrSignRaw` / `schnorrVerifyRaw`.
+ * Standard BIP-340 Schnorr over secp256k1, byte-compatible with Bitcoin (Taproot), Nostr and wallets: the signed
+ * message is exactly the caller's 32 bytes ([[Message32]]). Use it to interoperate with external signers.
  */
-sealed trait Secp256k1Schnorr
+sealed trait Bip340
+
+/**
+ * dilf4s Schnorr over secp256k1: BIP-340 applied to the tagged hash `dilf4s/sig/bip340/v1` of a message of any length
+ * (BIP-340's recommendation for domain separation). Keys share the [[Bip340]] encodings, but a signature of one scheme
+ * never verifies under the other, and the types keep them apart.
+ */
+sealed trait Secp256k1TaggedSchnorr
+
+/** Exactly 32 bytes: the message type of standard [[Bip340]]. */
+final case class Message32 private[signing] (bytes: ByteVector)
+
+object Message32 {
+  def from(bytes: ByteVector): Either[CryptoError, Message32] =
+    Either.cond(
+      bytes.size == 32L,
+      Message32(bytes),
+      CryptoError.InvalidEncoding("BIP-340 message", s"expected 32 bytes, got ${bytes.size}")
+    )
+}
 
 /**
  * bitcoin-core's constant-time libsecp256k1, through ACINQ's JNI bindings. Loading the native library is an effect, so
@@ -88,73 +106,93 @@ final class Secp256k1 private (native: Native) {
   private[crypto] def tweakAdd(a: ByteVector, b: ByteVector): Either[CryptoError, ByteVector] =
     call("privKeyTweakAdd")(native.privKeyTweakAdd(a.toArray, b.toArray)).map(ByteVector.view)
 
-  // ------------------------------------------------------------------ BIP-340 Schnorr
+  // ------------------------------------------------------------------ BIP-340 Schnorr (standard and tagged)
 
-  val schnorrCodec: SchemeCodec[Secp256k1Schnorr] = new SchemeCodec[Secp256k1Schnorr] {
-    val name: String = "secp256k1-BIP340"
-    def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[Secp256k1Schnorr]] =
-      Either.cond(
-        validScalar(bytes),
-        new SigningKey[Secp256k1Schnorr](bytes),
-        CryptoError.InvalidKey("secp256k1 secret key must be a scalar in [1, n)")
-      )
+  private def schnorrCodecFor[S](scheme: String): SchemeCodec[S] = new SchemeCodec[S] {
+    val name: String = scheme
+    def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[S]] =
+      Either.cond(validScalar(bytes), new SigningKey[S](bytes), CryptoError.InvalidKey("secp256k1 secret key must be a scalar in [1, n)"))
 
     /** 32-byte x-only key; it must lift to a curve point (even y). */
-    def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[Secp256k1Schnorr]] =
-      if (bytes.size != 32L) CryptoError.InvalidEncoding("BIP-340 verifying key", s"expected 32 bytes, got ${bytes.size}").asLeft
-      else call("pubkeyParse")(native.pubkeyParse((ByteVector(0x02) ++ bytes).toArray)).as(VerifyingKey[Secp256k1Schnorr](bytes))
-    def signature(bytes: ByteVector): Either[CryptoError, Signature[Secp256k1Schnorr]] =
+    def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[S]] =
+      if (bytes.size != 32L) CryptoError.InvalidEncoding(s"$scheme verifying key", s"expected 32 bytes, got ${bytes.size}").asLeft
+      else call("pubkeyParse")(native.pubkeyParse((ByteVector(0x02) ++ bytes).toArray)).as(VerifyingKey[S](bytes))
+    def signature(bytes: ByteVector): Either[CryptoError, Signature[S]] =
       Either.cond(
         bytes.size == 64L,
-        Signature[Secp256k1Schnorr](bytes),
-        CryptoError.InvalidEncoding("BIP-340 signature", s"expected 64 bytes, got ${bytes.size}")
+        Signature[S](bytes),
+        CryptoError.InvalidEncoding(s"$scheme signature", s"expected 64 bytes, got ${bytes.size}")
       )
   }
 
-  val schnorrPublicKeyOf: PublicKeyOf[Secp256k1Schnorr] = (key: SigningKey[Secp256k1Schnorr]) =>
-    VerifyingKey[Secp256k1Schnorr](ByteVector.view(native.pubKeyCompress(native.pubkeyCreate(key.bytes.toArray))).drop(1))
+  private def xOnly[S](key: SigningKey[_]): VerifyingKey[S] =
+    VerifyingKey[S](ByteVector.view(native.pubKeyCompress(native.pubkeyCreate(key.bytes.toArray))).drop(1))
 
-  /** Fresh auxiliary randomness per signature, as BIP-340 recommends. Total: the signed digest is always 32 bytes. */
-  def schnorrSigner[F[_]: Functor](implicit R: SecureRandom[F]): RandomizedSigner[F, Secp256k1Schnorr] =
-    (key: SigningKey[Secp256k1Schnorr], message: ByteVector) =>
-      R.nextBytes(32)
-        .map(aux =>
-          Signature[Secp256k1Schnorr](ByteVector.view(native.signSchnorr(schnorrTag(message).bytes.toArray, key.bytes.toArray, aux)))
-        )
+  private def signRaw[S](key: SigningKey[_], message32: ByteVector, aux: ByteVector): Either[CryptoError, Signature[S]] =
+    Either
+      .cond(aux.size == 32L, aux, CryptoError.InvalidEncoding("BIP-340 auxiliary randomness", s"expected 32 bytes, got ${aux.size}"))
+      .flatMap(a => call("signSchnorr")(native.signSchnorr(message32.toArray, key.bytes.toArray, a.toArray)))
+      .map(b => Signature[S](ByteVector.view(b)))
 
-  val schnorrVerifier: Verifier[Secp256k1Schnorr] =
-    (key: VerifyingKey[Secp256k1Schnorr], message: ByteVector, signature: Signature[Secp256k1Schnorr]) =>
-      schnorrVerifyRaw(key, schnorrTag(message).bytes, signature)
+  private def verifyRaw(key: VerifyingKey[_], message32: ByteVector, signature: Signature[_]): Boolean =
+    signature.bytes.size == 64L &&
+    call("verifySchnorr")(native.verifySchnorr(signature.bytes.toArray, message32.toArray, key.bytes.toArray)).getOrElse(false)
 
-  /** dilf4s BIP-340 (tagged message digest) with caller-supplied 32-byte auxiliary randomness: for known answers. */
-  def schnorrSignWithAux(
-    key:     SigningKey[Secp256k1Schnorr],
+  // standard
+
+  val bip340Codec: SchemeCodec[Bip340] = schnorrCodecFor[Bip340]("BIP-340")
+  val bip340PublicKeyOf: PublicKeyOf[Bip340] = (key: SigningKey[Bip340]) => xOnly[Bip340](key)
+
+  /** Standard BIP-340 with caller-supplied 32-byte auxiliary randomness (known answers, external RNGs). */
+  def bip340SignWithAux(key: SigningKey[Bip340], message: Message32, aux: ByteVector): Either[CryptoError, Signature[Bip340]] =
+    signRaw[Bip340](key, message.bytes, aux)
+
+  /** Standard BIP-340 with fresh auxiliary randomness, as BIP-340 recommends. Total for the same reasons as the tagged signer. */
+  def bip340Sign[F[_]: Functor](key: SigningKey[Bip340], message: Message32)(implicit R: SecureRandom[F]): F[Signature[Bip340]] =
+    R.nextBytes(32).map(aux => Signature[Bip340](ByteVector.view(native.signSchnorr(message.bytes.toArray, key.bytes.toArray, aux))))
+
+  def bip340Verify(key: VerifyingKey[Bip340], message: Message32, signature: Signature[Bip340]): Boolean =
+    verifyRaw(key, message.bytes, signature)
+
+  val bip340SeedDerivation: SeedDerivation[Bip340] = new SeedDerivation[Bip340] {
+    val seedLength: Long = 32
+    def fromSeed(seed: ByteVector): Either[CryptoError, KeyPair[Bip340]] =
+      bip340Codec.signingKey(seed).map(sk => KeyPair(sk, bip340PublicKeyOf.verifyingKey(sk)))
+  }
+
+  // tagged (dilf4s)
+
+  val taggedSchnorrCodec: SchemeCodec[Secp256k1TaggedSchnorr] = schnorrCodecFor[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr")
+  val taggedSchnorrPublicKeyOf: PublicKeyOf[Secp256k1TaggedSchnorr] = (key: SigningKey[Secp256k1TaggedSchnorr]) =>
+    xOnly[Secp256k1TaggedSchnorr](key)
+
+  /** Tagged Schnorr with caller-supplied 32-byte auxiliary randomness: for known answers. */
+  def taggedSchnorrSignWithAux(
+    key:     SigningKey[Secp256k1TaggedSchnorr],
     message: ByteVector,
     aux:     ByteVector
-  ): Either[CryptoError, Signature[Secp256k1Schnorr]] =
-    schnorrSignRaw(key, schnorrTag(message).bytes, aux)
+  ): Either[CryptoError, Signature[Secp256k1TaggedSchnorr]] =
+    signRaw[Secp256k1TaggedSchnorr](key, schnorrTag(message).bytes, aux)
 
-  /** Raw BIP-340 over an exact 32-byte message (interoperability, test vectors); `aux` is the 32-byte auxiliary randomness. */
-  def schnorrSignRaw(
-    key:       SigningKey[Secp256k1Schnorr],
-    message32: ByteVector,
-    aux:       ByteVector
-  ): Either[CryptoError, Signature[Secp256k1Schnorr]] =
-    if (message32.size != 32L || aux.size != 32L)
-      CryptoError.InvalidEncoding("BIP-340 raw input", "message and auxiliary randomness must be 32 bytes").asLeft
-    else
-      call("signSchnorr")(native.signSchnorr(message32.toArray, key.bytes.toArray, aux.toArray)).map(b =>
-        Signature[Secp256k1Schnorr](ByteVector.view(b))
-      )
+  /**
+   * Fresh auxiliary randomness per signature. Total: the key passed the codec and the digest and randomness are always
+   * 32 bytes, the only inputs libsecp256k1 rejects.
+   */
+  def taggedSchnorrSigner[F[_]: Functor](implicit R: SecureRandom[F]): RandomizedSigner[F, Secp256k1TaggedSchnorr] =
+    (key: SigningKey[Secp256k1TaggedSchnorr], message: ByteVector) =>
+      R.nextBytes(32)
+        .map(aux =>
+          Signature[Secp256k1TaggedSchnorr](ByteVector.view(native.signSchnorr(schnorrTag(message).bytes.toArray, key.bytes.toArray, aux)))
+        )
 
-  def schnorrVerifyRaw(key: VerifyingKey[Secp256k1Schnorr], message32: ByteVector, signature: Signature[Secp256k1Schnorr]): Boolean =
-    message32.size == 32L && call("verifySchnorr")(native.verifySchnorr(signature.bytes.toArray, message32.toArray, key.bytes.toArray))
-      .getOrElse(false)
+  val taggedSchnorrVerifier: Verifier[Secp256k1TaggedSchnorr] =
+    (key: VerifyingKey[Secp256k1TaggedSchnorr], message: ByteVector, signature: Signature[Secp256k1TaggedSchnorr]) =>
+      verifyRaw(key, schnorrTag(message).bytes, signature)
 
-  val schnorrSeedDerivation: SeedDerivation[Secp256k1Schnorr] = new SeedDerivation[Secp256k1Schnorr] {
+  val taggedSchnorrSeedDerivation: SeedDerivation[Secp256k1TaggedSchnorr] = new SeedDerivation[Secp256k1TaggedSchnorr] {
     val seedLength: Long = 32
-    def fromSeed(seed: ByteVector): Either[CryptoError, KeyPair[Secp256k1Schnorr]] =
-      schnorrCodec.signingKey(seed).map(sk => KeyPair(sk, schnorrPublicKeyOf.verifyingKey(sk)))
+    def fromSeed(seed: ByteVector): Either[CryptoError, KeyPair[Secp256k1TaggedSchnorr]] =
+      taggedSchnorrCodec.signingKey(seed).map(sk => KeyPair(sk, taggedSchnorrPublicKeyOf.verifyingKey(sk)))
   }
 }
 
@@ -173,11 +211,15 @@ object Secp256k1 {
     implicit val ecdsaVerifier: Verifier[Secp256k1Ecdsa] = backend.ecdsaVerifier
     implicit val ecdsaPublicKeyOf: PublicKeyOf[Secp256k1Ecdsa] = backend.ecdsaPublicKeyOf
     implicit val ecdsaSeedDerivation: SeedDerivation[Secp256k1Ecdsa] = backend.ecdsaSeedDerivation
-    implicit val schnorrCodec: SchemeCodec[Secp256k1Schnorr] = backend.schnorrCodec
-    implicit val schnorrVerifier: Verifier[Secp256k1Schnorr] = backend.schnorrVerifier
-    implicit val schnorrPublicKeyOf: PublicKeyOf[Secp256k1Schnorr] = backend.schnorrPublicKeyOf
-    implicit val schnorrSeedDerivation: SeedDerivation[Secp256k1Schnorr] = backend.schnorrSeedDerivation
-    implicit def schnorrSigner[F[_]: Monad: SecureRandom]: RandomizedSigner[F, Secp256k1Schnorr] = backend.schnorrSigner[F]
+    implicit val bip340Codec: SchemeCodec[Bip340] = backend.bip340Codec
+    implicit val bip340PublicKeyOf: PublicKeyOf[Bip340] = backend.bip340PublicKeyOf
+    implicit val bip340SeedDerivation: SeedDerivation[Bip340] = backend.bip340SeedDerivation
+    implicit val taggedSchnorrCodec: SchemeCodec[Secp256k1TaggedSchnorr] = backend.taggedSchnorrCodec
+    implicit val taggedSchnorrVerifier: Verifier[Secp256k1TaggedSchnorr] = backend.taggedSchnorrVerifier
+    implicit val taggedSchnorrPublicKeyOf: PublicKeyOf[Secp256k1TaggedSchnorr] = backend.taggedSchnorrPublicKeyOf
+    implicit val taggedSchnorrSeedDerivation: SeedDerivation[Secp256k1TaggedSchnorr] = backend.taggedSchnorrSeedDerivation
+    implicit def taggedSchnorrSigner[F[_]: Functor: SecureRandom]: RandomizedSigner[F, Secp256k1TaggedSchnorr] =
+      backend.taggedSchnorrSigner[F]
   }
 
   /**

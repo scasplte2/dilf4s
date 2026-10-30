@@ -6,6 +6,7 @@ import java.nio.file.{Files, Paths}
 import cats.effect.IO
 import cats.effect.std.SecureRandom
 import cats.mtl.Handle
+import cats.syntax.all._
 
 import io.circe.parser
 import org.scalacheck.Gen
@@ -151,32 +152,70 @@ object SignatureSuite extends SimpleIOSuite with Checkers {
       .and(expect(backend.ecdsaCodec.signingKey(ByteVector.fill(32)(0)).isLeft, "the zero key is rejected"))
   }
 
-  pureTest("BIP-340: official test vector 0") {
-    val sk = backend.schnorrCodec.signingKey(ByteVector.fromLong(3).padLeft(32)).toOption.get
-    val vk = backend.schnorrPublicKeyOf.verifyingKey(sk)
-    val sig = backend.schnorrSignRaw(sk, ByteVector.fill(32)(0), ByteVector.fill(32)(0)).toOption.get
-    expect
-      .same(hex"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9", vk.bytes)
-      .and(
-        expect.same(
-          hex"e907831f80848d1069a5371b402410364bdf1c5f8307b0084c55f1ce2dca821525f66a4a85ea8b71e482a74f382d2ce5ebeee8fdb2172f477df4900d310536c0",
-          sig.bytes
-        )
-      )
-      .and(expect(backend.schnorrVerifyRaw(vk, ByteVector.fill(32)(0), sig)))
-      .and(expect(backend.schnorrSignRaw(sk, ByteVector.fill(31)(0), ByteVector.fill(32)(0)).isLeft, "raw input must be exactly 32 bytes"))
+  /** BIP-340 official vectors 0 and 1: (secret key, aux, message, verifying key, signature). */
+  private val bip340Vectors = List(
+    (
+      ByteVector.fromLong(3).padLeft(32),
+      ByteVector.fill(32)(0),
+      ByteVector.fill(32)(0),
+      hex"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      hex"e907831f80848d1069a5371b402410364bdf1c5f8307b0084c55f1ce2dca821525f66a4a85ea8b71e482a74f382d2ce5ebeee8fdb2172f477df4900d310536c0"
+    ),
+    (
+      hex"b7e151628aed2a6abf7158809cf4f3c762e7160f38b4da56a784d9045190cfef",
+      ByteVector.fromLong(1).padLeft(32),
+      hex"243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      hex"dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+      hex"6896bd60eeae296db48a229ff71dfe071bde413e6d43f917dc8dcf8c78de33418906d11ac976abccb20b091292bff4ea897efcb639ea871cfa95f6de339e4b0a"
+    )
+  )
+
+  pureTest("BIP-340: official test vectors (standard scheme)") {
+    bip340Vectors.foldMap {
+      case (skBytes, aux, msg, vkBytes, sigBytes) =>
+        val sk = backend.bip340Codec.signingKey(skBytes).toOption.get
+        val vk = backend.bip340PublicKeyOf.verifyingKey(sk)
+        val m = Message32.from(msg).toOption.get
+        val sig = backend.bip340SignWithAux(sk, m, aux)
+        expect
+          .same(vkBytes, vk.bytes)
+          .and(expect.same(Right(sigBytes), sig.map(_.bytes)))
+          .and(expect(backend.bip340Verify(vk, m, Signature(sigBytes)), "verifies"))
+    }
   }
 
-  test("BIP-340: randomised signatures verify and reject tampering") {
+  pureTest("BIP-340: messages must be 32 bytes, and the schemes never cross-verify") {
+    val seed = ByteVector.fromLong(3).padLeft(32)
+    val std = backend.bip340SeedDerivation.fromSeed(seed).toOption.get
+    val tagged = backend.taggedSchnorrSeedDerivation.fromSeed(seed).toOption.get
+    val msg = ByteVector.fill(32)(9)
+    val stdSig = backend.bip340SignWithAux(std.signing, Message32.from(msg).toOption.get, ByteVector.fill(32)(0)).toOption.get
+    val taggedSig = backend.taggedSchnorrSignWithAux(tagged.signing, msg, ByteVector.fill(32)(0)).toOption.get
+    expect(Message32.from(ByteVector.fill(31)(0)).isLeft, "31-byte message")
+      .and(expect.same(std.verifying.bytes, tagged.verifying.bytes))
+      .and(expect(!backend.taggedSchnorrVerifier.verify(tagged.verifying, msg, Signature(stdSig.bytes)), "standard sig under tagged rule"))
+      .and(
+        expect(
+          !backend.bip340Verify(std.verifying, Message32.from(msg).toOption.get, Signature(taggedSig.bytes)),
+          "tagged sig under standard rule"
+        )
+      )
+      .and(expect(backend.bip340SignWithAux(std.signing, Message32.from(msg).toOption.get, ByteVector.fill(31)(0)).isLeft, "short aux"))
+  }
+
+  test("BIP-340: randomised signatures verify and reject tampering (both schemes)") {
     SecureRandom.javaSecuritySecureRandom[IO].flatMap { implicit r =>
       forall(Gen.zip(seed32, message)) {
         case (seed, msg) =>
-          backend.schnorrSeedDerivation.fromSeed(seed) match {
-            case Left(_) => IO.pure(success)
-            case Right(KeyPair(sk, vk)) =>
-              backend.schnorrSigner[IO].sign(sk, msg).map { sig =>
-                expect(backend.schnorrVerifier.verify(vk, msg, sig)).and(expect(!backend.schnorrVerifier.verify(vk, msg ++ hex"00", sig)))
+          (backend.taggedSchnorrSeedDerivation.fromSeed(seed), backend.bip340SeedDerivation.fromSeed(seed)) match {
+            case (Right(KeyPair(sk, vk)), Right(KeyPair(sk2, vk2))) =>
+              val m32 = Message32.from(xyz.kd5ujc.core.hash.Hasher[xyz.kd5ujc.core.hash.Sha256].digest(msg).bytes).toOption.get
+              (backend.taggedSchnorrSigner[IO].sign(sk, msg), backend.bip340Sign[IO](sk2, m32)).mapN { (sig, sig2) =>
+                expect(backend.taggedSchnorrVerifier.verify(vk, msg, sig))
+                  .and(expect(!backend.taggedSchnorrVerifier.verify(vk, msg ++ hex"00", sig)))
+                  .and(expect(backend.bip340Verify(vk2, m32, sig2)))
               }
+            case _ => IO.pure(success)
           }
       }
     }

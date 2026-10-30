@@ -198,6 +198,68 @@
           "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
           "signatures" : [
             {
+              "message" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "signature" : "2978ea3928c8f502863b70ebbe76c3d7b9d673629d86f6b07518de5327ef06fd4756895e3ec2edc8a3cbdbc8f6552c71b8a3fdc2ca5abe6563dd97899327a1b1"
+            },
+            {
+              "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+              "signature" : "bc1e36a75bbd52fa15f1e721a6a36310a85c3fd9f73bb2b6d80c4d44edf7d5e8cc3c081d832efcb1b67aedd0141da9c68b608c616a6f2644b46ea0a0bcf35299"
+            },
+            {
+              "message" : "3f8591112c6bbe5c963965954e293108b7208ed2af893e500d859368c654eabe",
+              "signature" : "2790bd1c69e90e2751c2c0ba8d8b5db5e92088c312c69768cbd7107834070cda30ea6aeb0ab82cdcf0d36a455a9216b0d49a47b5da26f81ffa9411208890ec3d"
+            }
+          ]
+        },
+        {
+          "seed" : "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+          "signingKey" : "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+          "verifyingKey" : "142715675faf8da1ecc4d51e0b9e539fa0d52fdd96ed60dbe99adb15d6b05ad9",
+          "signatures" : [
+            {
+              "message" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "signature" : "027a5fb8d9fd7f97cc12d9a85533daed929ff2027428a7265da322928d3bc38fa47a3eb371e80aaa50bb2f65a310e98ce034e6231fa4b4101dc9e40a9009b0c2"
+            },
+            {
+              "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+              "signature" : "9632e87f56627c00b9b95eeabbd9ea00a7f856747e7c2ff019bee28b770568f64b1a965fa79960b4371a2849aabd1421ff87d673dee080001c5f3d96473cd2a6"
+            },
+            {
+              "message" : "3f8591112c6bbe5c963965954e293108b7208ed2af893e500d859368c654eabe",
+              "signature" : "9ff35039aca4c41bf592563711d1b22c0a025ac0219efaf333d33326f9bffd958990afbbe10acfe2c7baec7e73e8fc8a83797070e14df055d263ed59adf1cf4d"
+            }
+          ]
+        },
+        {
+          "seed" : "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+          "signingKey" : "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+          "verifyingKey" : "a8486a7c187010a2842721b864290397d36be8a42b7202510093db03e72efa96",
+          "signatures" : [
+            {
+              "message" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "signature" : "3c6b4ca2d54e590d58a5c7287b80ba45dc23c4343cc9e438ce26579710fd07f34ace64879512edd23b5c4693725ec282242f371d7c6b16592b2a70c39e85c164"
+            },
+            {
+              "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+              "signature" : "ec554bdc62edfb271695dddd8be466f1f5bb4c591a43037880d26ac164854e9eb018de4904347e199e96c5f817e36d470534acec1665105ee061591314fcbfc0"
+            },
+            {
+              "message" : "3f8591112c6bbe5c963965954e293108b7208ed2af893e500d859368c654eabe",
+              "signature" : "0050dca5415e6faf3eefe163f5e0034d33dd10c8588dfac7a7343afcc9f8d82ec57678c322bb4466c661cffe22d5cc250f3384d18ec22ecda02e8dceaa46612e"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "scheme" : "secp256k1-tagged-Schnorr",
+      "keys" : [
+        {
+          "seed" : "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+          "signingKey" : "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+          "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+          "signatures" : [
+            {
               "message" : "",
               "signature" : "08acb7a2750f2a80b73a7ab514a95ec0cf5b4ca1da14bc8acdde7294fa8bc34c2ae531a6d725d783f514150bc040d92fdaa0e2d2c2dc79cfada70624b76e8978"
             },

@@ -32,7 +32,12 @@ object CryptoVectors {
 
   private def get[A](e: Either[_, A]): A = e.fold(err => sys.error(err.toString), identity)
 
-  private def scheme[S](name: String, sign: (SigningKey[S], ByteVector) => Signature[S])(implicit D: SeedDerivation[S]): Json =
+  /** Standard BIP-340 signs exact 32-byte messages: the SHA-256 digests of [[messages]]. */
+  val messages32: List[ByteVector] = messages.map(m => xyz.kd5ujc.core.hash.Hasher[xyz.kd5ujc.core.hash.Sha256].digest(m).bytes)
+
+  private def scheme[S](name: String, sign: (SigningKey[S], ByteVector) => Signature[S], messages: List[ByteVector] = messages)(
+    implicit D: SeedDerivation[S]
+  ): Json =
     Json.obj(
       "scheme" -> name.asJson,
       "keys" -> seeds.map { seed =>
@@ -84,7 +89,8 @@ object CryptoVectors {
         scheme[Ed25519]("Ed25519", Ed25519.signer.sign),
         scheme[P256Ecdsa]("P-256-ECDSA", P256Ecdsa.signer.sign),
         scheme[Secp256k1Ecdsa]("secp256k1-ECDSA", secp.ecdsaSigner.sign),
-        scheme[Secp256k1Schnorr]("BIP-340", (k, m) => get(secp.schnorrSignWithAux(k, m, randomness))),
+        scheme[Bip340]("BIP-340", (k, m) => get(Message32.from(m).flatMap(secp.bip340SignWithAux(k, _, randomness))), messages32),
+        scheme[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", (k, m) => get(secp.taggedSchnorrSignWithAux(k, m, randomness))),
         scheme[Ristretto255Schnorr]("ristretto255-Schnorr", (k, m) => get(Ristretto255Schnorr.signWithRandomness(k, m, randomness)))
       ).asJson,
       "bip39" -> bip39.asJson,
@@ -158,7 +164,7 @@ object CryptoVectorsSuite extends SimpleIOSuite {
       val viaPublic = ChildIndex.path("m/0/0").toOption.get.foldM((Ed25519Bip32.publicKeyOf.verifyingKey(account.key), account.chainCode)) {
         case ((vk, cc), i) => Ed25519Bip32.publicChild(vk, cc, i)
       }
-      check[Secp256k1Schnorr]((k, m) => secp.schnorrSignWithAux(k, m, CryptoVectors.randomness).toOption.get)
+      check[Secp256k1TaggedSchnorr]((k, m) => secp.taggedSchnorrSignWithAux(k, m, CryptoVectors.randomness).toOption.get)
         .and(check[Ristretto255Schnorr]((k, m) => Ristretto255Schnorr.signWithRandomness(k, m, CryptoVectors.randomness).toOption.get))
         .and(expect.same(Right((Ed25519Bip32.publicKeyOf.verifyingKey(address.key), address.chainCode)), viaPublic))
     }
