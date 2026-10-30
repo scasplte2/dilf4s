@@ -21,6 +21,8 @@ object Dependencies {
     val logback = "1.6.6"
     val ed25519Elisabeth = "0.1.0"
     val curve25519Elisabeth = "0.1.0"
+    // pinned (project/Pinned.scala) and vendored (vendor/maven): 2.0.0 has had months in Besu releases; 2.1.0 is days old
+    val besuNative = "2.0.0"
   }
 
   object Libraries {
@@ -33,7 +35,9 @@ object Dependencies {
     val secp256k1 = "fr.acinq.secp256k1" % "secp256k1-kmp-jni-jvm" % V.secp256k1Kmp
     // blst through Teku's JNI build: portable natives (run-time ADX dispatch) for Linux/macOS/Windows in the jar.
     // Its Guava dependency is unused by the bindings.
-    val jblst = ("tech.pegasys"                   % "jblst"                    % V.jblst).exclude("com.google.guava", "guava")
+    val jblst = ("tech.pegasys" % "jblst" % V.jblst).exclude("com.google.guava", "guava")
+    // gnark-crypto (Consensys) through Besu's JNI build: BN254 per EIP-196/197, as Besu's precompiles use it.
+    val besuGnark = "org.hyperledger.besu"        % "gnark"                    % V.besuNative
     val catsKernelLaws = "org.typelevel"         %% "cats-kernel-laws"         % V.cats
     val cats = "org.typelevel"                   %% "cats-core"                % V.cats
     val catsEffect = "org.typelevel"             %% "cats-effect"              % V.catsEffect

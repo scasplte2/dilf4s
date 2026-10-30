@@ -8,6 +8,7 @@ import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.crypto.bls.Bls12381
 import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, Sigma, SigmaProp}
 import xyz.kd5ujc.crypto.signing._
+import xyz.kd5ujc.crypto.zk.Bn254Engine
 
 import scodec.bits.ByteVector
 
@@ -19,7 +20,7 @@ import scodec.bits.ByteVector
  * Malformed input (a wrong length, a key that is not a curve point) is a [[JlvmError.Crypto]] error; a well-formed
  * signature that does not verify is `false`.
  */
-final class CryptoOps private (secp: Secp256k1, bls: Bls12381) {
+final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
 
   type Result = Either[JlvmError, CanonicalValue]
 
@@ -33,7 +34,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381) {
       case Op.BlsAggregateVerify => Option(blsAggregate(op, args))
       case Op.SigmaVerify        => Option(sigma(op, args))
       case Op.SchnorrVerify      => Option(schnorr(op, args))
-      case _                     => ProofOps(op, args).orElse(ZkOps(op, args))
+      case _                     => ProofOps(op, args).orElse(zk(op, args))
     }
 
   private def crypto[A](op: Op)(e: CryptoError): JlvmError = JlvmError.Crypto(op.wire, e.toString)
@@ -110,6 +111,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381) {
 
 object CryptoOps {
 
-  /** Loads the native backends (secp256k1, BLS12-381); fails on a platform without them. */
-  def load[F[_]: Sync]: F[CryptoOps] = (Secp256k1.load[F], Bls12381.load[F]).mapN(new CryptoOps(_, _))
+  /** Loads the native backends (secp256k1, BLS12-381, gnark for BN254); fails on a platform without them. */
+  def load[F[_]: Sync]: F[CryptoOps] =
+    (Secp256k1.load[F], Bls12381.load[F], Bn254Engine.gnark[F]).mapN((s, b, e) => new CryptoOps(s, b, new ZkOps(e)))
 }

@@ -124,17 +124,16 @@ object CryptoOpsSuite extends IOSuite {
         "1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed" +
         "090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b" +
         "12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa"
-      // a pairing costs more than the default limit (docs/specs/jlvm.md section 7)
-      def run(json: String) = b.jlvm.evaluate(Parser.parse(json).toOption.get, CNull, Map.empty, Config(limit = GasLimit(Gas(100000000L))))
+      def run(json: String) = b.jlvm.evaluate(Parser.parse(json).toOption.get, CNull, Map.empty, Config())
       val separate = run(s"""{"bn254_pairing": [["$g1", "$g2"], ["$neg", "$g2"]]}""")
       val single = run(s"""{"bn254_pairing": [[["$g1", "$g2"], ["$neg", "$g2"]]]}""")
       expect
         .same(Right(True), separate.result)
         .and(expect.same(Right(True), single.result))
-        // the forms differ by one array node of weight, at the per-unit rate: well under 0.1%
+        // the forms differ by one array node: one unit of weight at the pairing's rate, and that node's own charges
         .and(
           expect(
-            math.abs(separate.gasUsed.value - single.gasUsed.value) * 1000 < separate.gasUsed.value,
+            math.abs(separate.gasUsed.value - single.gasUsed.value) <= GasSchedule.V1.cost(Op.Bn254Pairing).perUnit.value + 10,
             s"${separate.gasUsed} vs ${single.gasUsed}"
           )
         )

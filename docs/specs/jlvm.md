@@ -341,6 +341,12 @@ canonical (less than the modulus).
 
 `bn254_pairing` is priced by weight, so both argument forms cost the same.
 
+The BN254 operations and `groth16_verify` run on gnark-crypto, through Besu's native build of the EIP-196/197
+precompiles. It is loaded with the other native backends (`Jlvm.load`), pinned by checksum and vendored
+(`vendor/README.md`). Every point is validated (canonical coordinates, on the curve, G2 in the subgroup) before any
+arithmetic. A pure-Scala engine with the same semantics is kept as the reference, and the test suites check gnark
+against it.
+
 **Sigma protocols** over secp256k1, byte-compatible with Ergo (`sigma.md`, normative). They prove knowledge of secret
 keys for a tree of `and`, `or` and `threshold` over Schnorr and Diffie-Hellman-tuple statements, without revealing
 which branches the prover knew. This is what ring signatures, hidden-signer k-of-n multisig and ZeroJoin need.

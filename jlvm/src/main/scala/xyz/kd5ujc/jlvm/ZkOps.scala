@@ -7,7 +7,7 @@ import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.hash.{Fr, Poseidon => PoseidonHash}
 import xyz.kd5ujc.crypto.vrf.{EcVrfTai, Vrf, VrfError}
-import xyz.kd5ujc.crypto.zk.{Bn254, Groth16Error, Sp1Groth16}
+import xyz.kd5ujc.crypto.zk.{Bn254, Bn254Engine, Groth16Error, Sp1Groth16}
 
 import scodec.bits.ByteVector
 
@@ -21,18 +21,11 @@ import scodec.bits.ByteVector
  * encode the expected object (wrong width, a non-canonical field element, a point off the curve or outside the subgroup)
  * a [[JlvmError.Crypto]]. A well-formed proof that does not verify is `false`, never an error.
  */
-object ZkOps {
+final class ZkOps(engine: Bn254Engine) {
+
+  import ZkOps._
 
   type Result = Either[JlvmError, CanonicalValue]
-
-  /** The most pairs `bn254_pairing` accepts (metakit has no bound; gas already grows with the count). */
-  val MaxPairs: Int = 64
-
-  /** The most siblings `pmt_verify` accepts: the deepest Poseidon Merkle tree. */
-  val MaxSiblings: Int = PoseidonMerkleTree.MaxDepth
-
-  private val FieldBytes: Long = 32L
-  private val VrfKeyBytes: Long = 32L
 
   /** None for operations this object does not implement. */
   def apply(op: Op, args: Vector[CanonicalValue]): Option[Result] =
@@ -92,7 +85,7 @@ object ZkOps {
           vkey    <- sized(op, "vkey", vkeyV, FieldBytes)
           pubVals <- bytes(op, "publicValues", publicV)
           proof   <- bytes(op, "proof", proofV)
-          valid <- Sp1Groth16.verify(vkey, pubVals, proof) match {
+          valid <- Sp1Groth16.verify(engine)(vkey, pubVals, proof) match {
             case Right(())                            => true.asRight
             case Left(Groth16Error.Malformed(reason)) => crypto(op, reason).asLeft
             case Left(Groth16Error.InvalidProof(_) | Groth16Error.PairingCheckFailed | Groth16Error.Rejected(_)) => false.asRight
@@ -129,9 +122,10 @@ object ZkOps {
     args match {
       case Vector(aV, bV) =>
         for {
-          a   <- g1(op, "a", aV)
-          b   <- g1(op, "b", bV)
-          out <- Values.bytesValue(op, Bn254.encodeG1(Bn254.addG1(a, b)))
+          a   <- sized(op, "a", aV, G1Bytes)
+          b   <- sized(op, "b", bV, G1Bytes)
+          sum <- engine.add(a, b).leftMap(zkError(op, "a + b"))
+          out <- Values.bytesValue(op, sum)
         } yield out
       case _ => JlvmError.Arity(op.wire, s"takes [a, b], got ${args.size} arguments").asLeft
     }
@@ -141,9 +135,10 @@ object ZkOps {
     args match {
       case Vector(pV, sV) =>
         for {
-          p   <- g1(op, "point", pV)
+          p   <- sized(op, "point", pV, G1Bytes)
           s   <- sized(op, "scalar", sV, FieldBytes)
-          out <- Values.bytesValue(op, Bn254.encodeG1(Bn254.mulG1(p, BigInt(1, s.toArray).mod(Bn254.R))))
+          q   <- engine.mul(p, s).leftMap(zkError(op, "point"))
+          out <- Values.bytesValue(op, q)
         } yield out
       case _ => JlvmError.Arity(op.wire, s"takes [point, scalar], got ${args.size} arguments").asLeft
     }
@@ -159,12 +154,13 @@ object ZkOps {
     for {
       _  <- Either.cond(pairs.size <= MaxPairs, (), crypto(op, s"at most $MaxPairs pairs, got ${pairs.size}"))
       ps <- pairs.zipWithIndex.traverse { case (v, i) => pair(op, i, v) }
-    } yield Values.bool(Bn254.pairingProductIsOne(ps))
+      ok <- engine.pairing(ps).leftMap(zkError(op, "a pair"))
+    } yield Values.bool(ok)
   }
 
-  private def pair(op: Op, i: Int, v: CanonicalValue): Either[JlvmError, (Option[Bn254.G1], Option[Bn254.G2])] =
+  private def pair(op: Op, i: Int, v: CanonicalValue): Either[JlvmError, (ByteVector, ByteVector)] =
     v match {
-      case CArray(Vector(a, b)) => g1(op, s"pair[$i].g1", a).flatMap(p => g2(op, s"pair[$i].g2", b).map(p -> _))
+      case CArray(Vector(a, b)) => (sized(op, s"pair[$i].g1", a, G1Bytes), sized(op, s"pair[$i].g2", b, G2Bytes)).tupled
       case CArray(vs)           => crypto(op, s"pair[$i]: expected [g1, g2], got ${vs.size} elements").asLeft
       case other                => JlvmError.Type(op.wire, s"pair[$i]: expected an array, got ${Values.kind(other)}").asLeft
     }
@@ -205,15 +201,26 @@ object ZkOps {
       Fr.from(BigInt(1, b.toArray)).leftMap(_ => crypto(op, s"$role: not a canonical BN254 scalar field element (must be < r)"))
     )
 
-  private def g1(op: Op, role: String, v: CanonicalValue): Either[JlvmError, Option[Bn254.G1]] =
-    bytes(op, role, v).flatMap(b => Bn254.decodeG1(b).leftMap(zkError(op, role)))
-
-  private def g2(op: Op, role: String, v: CanonicalValue): Either[JlvmError, Option[Bn254.G2]] =
-    bytes(op, role, v).flatMap(b => Bn254.decodeG2(b).leftMap(zkError(op, role)))
-
   /** For the curve operations a point off the curve or outside the subgroup is malformed input, as in metakit. */
   private def zkError(op: Op, role: String)(e: Bn254.ZkError): JlvmError = e match {
     case Bn254.ZkError.Malformed(reason)    => crypto(op, s"$role: $reason")
     case Bn254.ZkError.InvalidPoint(reason) => crypto(op, s"$role: $reason")
   }
+}
+
+object ZkOps {
+
+  /** The most pairs `bn254_pairing` accepts (metakit has no bound; gas already grows with the count). */
+  val MaxPairs: Int = 64
+
+  /** The most siblings `pmt_verify` accepts: the deepest Poseidon Merkle tree. */
+  val MaxSiblings: Int = PoseidonMerkleTree.MaxDepth
+
+  private val FieldBytes: Long = 32L
+  private val VrfKeyBytes: Long = 32L
+  private val G1Bytes: Long = 64L
+  private val G2Bytes: Long = 128L
+
+  /** On the pure-Scala engine: the reference, for tests. */
+  val reference: ZkOps = new ZkOps(Bn254Engine.reference)
 }

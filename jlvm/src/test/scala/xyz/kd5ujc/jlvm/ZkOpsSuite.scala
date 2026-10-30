@@ -14,7 +14,8 @@ import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 import weaver.scalacheck.{CheckConfig, Checkers}
 
-object ZkOpsSuite extends SimpleIOSuite with Checkers {
+/** The zk operations on one BN254 engine: the suite runs once on the pure-Scala reference and once on gnark. */
+abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
 
   override def checkConfig: CheckConfig = CheckConfig.default.withMinimumSuccessful(40)
 
@@ -25,7 +26,7 @@ object ZkOpsSuite extends SimpleIOSuite with Checkers {
     Set(Op.Poseidon, Op.PmtVerify, Op.Groth16Verify, Op.EcvrfVerify, Op.Bn254Add, Op.Bn254Mul, Op.Bn254Pairing)
 
   private def run(op: Op, args: CanonicalValue*): Either[JlvmError, CanonicalValue] =
-    ZkOps(op, args.toVector).getOrElse(Left(JlvmError.Malformed(s"${op.wire} is not a zk op")))
+    zk(op, args.toVector).getOrElse(Left(JlvmError.Malformed(s"${op.wire} is not a zk op")))
 
   private def a(vs: CanonicalValue*): CanonicalValue = CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)
   private def b(h:  ByteVector): CanonicalValue = CBytes(h)
@@ -65,7 +66,7 @@ object ZkOpsSuite extends SimpleIOSuite with Checkers {
   private def check(c: Case) = {
     val clue = s"${c.category} ${c.op} ${c.note.getOrElse("")}"
     val result = (Op.fromWire(c.op), surface(c.args)) match {
-      case (Some(op), CArray(args)) => ZkOps(op, args)
+      case (Some(op), CArray(args)) => zk(op, args)
       case other                    => sys.error(s"bad vector: $other")
     }
     (c.expected, c.error) match {
@@ -88,7 +89,7 @@ object ZkOpsSuite extends SimpleIOSuite with Checkers {
   // ---- dispatch and totality
 
   pureTest("ZkOps implements exactly the seven zk ops and returns None for every other op") {
-    Op.values.toList.map(op => expect.same(zkOps(op), ZkOps(op, Vector.empty).isDefined)).foldLeft(success)(_ and _)
+    Op.values.toList.map(op => expect.same(zkOps(op), zk(op, Vector.empty).isDefined)).foldLeft(success)(_ and _)
   }
 
   private val rawBytes: Gen[CanonicalValue] =
@@ -111,7 +112,7 @@ object ZkOpsSuite extends SimpleIOSuite with Checkers {
     val args = Gen.choose(0, 4).flatMap(Gen.listOfN(_, argument)).map(_.toVector)
     forall(Gen.zip(Gen.oneOf(zkOps.toList), args)) {
       case (op, vs) =>
-        val r = ZkOps(op, vs)
+        val r = zk(op, vs)
         expect(r.isDefined, s"${op.wire} must be implemented")
           .and(expect(r.map(kind).forall(Set("value", "Type", "Arity", "Crypto")), s"unexpected outcome: $r"))
     }
@@ -191,3 +192,10 @@ object ZkOpsSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Right(False), run(Op.Groth16Verify, b(ByteVector.low(32)), b(ByteVector.empty), b(ByteVector.low(356)))))
   }
 }
+
+object ZkOpsSuite extends ZkOpsChecks(ZkOps.reference)
+
+object ZkOpsGnarkSuite
+    extends ZkOpsChecks(
+      new ZkOps(xyz.kd5ujc.crypto.zk.Bn254Engine.gnark[IO].unsafeRunSync()(using cats.effect.unsafe.IORuntime.global))
+    )

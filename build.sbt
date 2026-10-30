@@ -29,6 +29,9 @@ lazy val commonScalacOptions = Seq(
 lazy val commonSettings = Seq(
   scalacOptions ++= commonScalacOptions,
   resolvers += Resolver.mavenLocal,
+  // Hyperledger Besu's native libraries are not on Maven Central; the pinned copies are vendored here (vendor/README.md)
+  resolvers += MavenRepository("dilf4s-vendor", ((ThisBuild / baseDirectory).value / "vendor" / "maven").toURI.toString),
+  update := Pinned.check(update.value),
   // Purity gate: main sources only; tests and benchmarks are the edge.
   Compile / compile / wartremoverErrors ++= PurityGate.warts,
   Test / scalafixConfig := Some((LocalRootProject / baseDirectory).value / ".scalafix-test.conf")
@@ -122,6 +125,7 @@ lazy val crypto = project.in(file("crypto"))
       Libraries.curve25519Elisabeth,
       Libraries.secp256k1,
       Libraries.jblst,
+      Libraries.besuGnark,
       Libraries.circeParser % Test,
       Libraries.catsKernelLaws % Test
     )

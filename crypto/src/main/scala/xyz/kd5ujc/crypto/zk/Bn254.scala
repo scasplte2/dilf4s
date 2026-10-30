@@ -222,6 +222,8 @@ object Bn254 {
 
   def encodeG1(p: Option[G1]): ByteVector = p.fold(ByteVector.low(64))(a => be32(a.x) ++ be32(a.y))
 
+  def encodeG2(p: Option[G2]): ByteVector = p.fold(ByteVector.low(128))(q => be32(q.x.b) ++ be32(q.x.a) ++ be32(q.y.b) ++ be32(q.y.a))
+
   /** 128 bytes `x.imag || x.real || y.imag || y.real` (EIP-197 order); on the twist and in the order-r subgroup. */
   def decodeG2(b: ByteVector): Either[ZkError, Option[G2]] =
     for {

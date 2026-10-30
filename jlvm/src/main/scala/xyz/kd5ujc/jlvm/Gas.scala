@@ -177,15 +177,15 @@ object GasSchedule {
       Bip340Verify       -> c(30000, 1, Weight),
       BlsVerify          -> c(120000, 1, Weight),
       BlsAggregateVerify -> c(120000, 15000, Elements),
-      // measured on the pure-Scala BN254 backend at 150 gas/us (.workspace/pricing): a pairing is ~75ms of final
-      // exponentiation plus ~10ms per pair (a pair weighs ~195); Groth16 is ~170ms; Poseidon ~250us per input
-      Poseidon      -> c(5000, 45000, Elements),
-      PmtVerify     -> c(10000, 55000, Elements),
-      Groth16Verify -> c(25500000, 1, Weight),
-      EcvrfVerify   -> c(140000, 1, Weight),
-      Bn254Add      -> c(200),
-      Bn254Mul      -> c(1150000),
-      Bn254Pairing  -> c(11250000, 7700, Weight),
+      // measured at 150 gas/us (.workspace/pricing): BN254 on gnark, a pairing ~480us plus ~25k gas a pair (weight
+      // ~195), Groth16 ~1.45ms; Poseidon (BigInteger) ~17k plus ~14k gas an input; ecvrf ~1ms. Close to EIP-1108.
+      Poseidon      -> c(17000, 14000, Elements),
+      PmtVerify     -> c(10000, 30000, Elements),
+      Groth16Verify -> c(218000, 1, Weight),
+      EcvrfVerify   -> c(150000, 1, Weight),
+      Bn254Add      -> c(150),
+      Bn254Mul      -> c(7700),
+      Bn254Pairing  -> c(55000, 128, Weight),
       // ~300us per dlog leaf on BouncyCastle; a leaf of proposition and proof weighs ~105, a DH tuple ~215 (4 muls)
       // the message is only hashed: it pays the hashing rate (as blake2b256), not the curve rate
       SchnorrVerify -> c(5000, 430, Weight).at(1, 1, Weight),
