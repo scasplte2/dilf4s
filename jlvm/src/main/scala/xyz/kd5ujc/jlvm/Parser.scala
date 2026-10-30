@@ -12,9 +12,11 @@ import scodec.bits.ByteVector
 /**
  * The JSON authoring surface and the canonical program form.
  *
- * Surface rules (docs/specs/jlvm.md): a single-key object whose key is an operation of this language version is
- * that operation; any other object is a map expression (in [[Mode.Strict]], an unknown single key is an error, to
- * reject typos such as `iff`); arrays are evaluated element-wise; JSON null is the null literal; `0x`-hex strings are
+ * Surface rules (docs/specs/jlvm.md): every single-key object is an operation, and an unknown name is an error
+ * ([[Mode.Strict]], the default), so whether `{"count": 3}` is code never depends on the operation list and typos such
+ * as `iff` are rejected; single-key data is quoted with `{"literal": ...}`; objects with any other number of keys are
+ * map expressions. [[Mode.Lenient]] (opt-in, for loading older programs) instead reads an unknown single key as a map
+ * expression; arrays are evaluated element-wise; JSON null is the null literal; `0x`-hex strings are
  * bytes ([[JsonSurface]]); `{"literal": x}` quotes `x`; `{"var": path}` or `{"var": [path, default]}` reads a variable.
  *
  * Input is validated by the strict canonical JSON parser first (duplicate keys, depth, exact numbers), then read
@@ -23,14 +25,19 @@ import scodec.bits.ByteVector
 object Parser {
 
   enum Mode {
-    case Lenient, Strict
+
+    /** Every single-key object is an operation; unknown names are errors. The default. */
+    case Strict
+
+    /** Unknown single-key objects are map expressions (metakit's reading), for migrating older programs. */
+    case Lenient
   }
 
   private def malformed[A](m: String): Either[JlvmError, A] = JlvmError.Malformed(m).asLeft
 
   private def value(j: Json): Either[JlvmError, CanonicalValue] = JsonSurface.value(j)
 
-  def parse(json: String, mode: Mode = Mode.Lenient): Either[JlvmError, Program] =
+  def parse(json: String, mode: Mode = Mode.Strict): Either[JlvmError, Program] =
     for {
       _    <- CanonicalJson.parse(json).leftMap(e => JlvmError.Malformed(e.toString))
       j    <- io.circe.parser.parse(json).leftMap(e => JlvmError.Malformed(e.message))
@@ -38,7 +45,7 @@ object Parser {
     } yield Program(expr)
 
   /** Depth is bounded by the canonical parser that validated the text (256), so this recursion is bounded too. */
-  def fromJson(j: Json, mode: Mode = Mode.Lenient): Either[JlvmError, Expr] =
+  def fromJson(j: Json, mode: Mode = Mode.Strict): Either[JlvmError, Expr] =
     j.fold(
       Expr.Lit(CanonicalValue.CNull).asRight,
       _ => value(j).map(Expr.Lit(_)),

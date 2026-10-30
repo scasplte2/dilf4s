@@ -43,11 +43,12 @@ object ParserSuite extends SimpleIOSuite {
       .and(expect.same(Right("\"0xabcd\""), JsonSurface.render(CBytes(hex"abcd"))))
   }
 
-  pureTest("single-key objects: operations, lenient map literals, strict errors, literal quoting") {
+  pureTest("single-key objects: always operations by default; quoting; lenient reading for older programs") {
     val mapLit = Expr.Obj(Map("price" -> int(5)))
-    expect
-      .same(Right(mapLit), p("""{"price": 5}"""))
-      .and(expect(Parser.parse("""{"iff": [true, 1, 2]}""", Parser.Mode.Strict).isLeft, "strict: unknown single key"))
+    expect(p("""{"price": 5}""").isLeft, "strict (default): an unknown single key is an error")
+      .and(expect(p("""{"iff": [true, 1, 2]}""").isLeft, "a typo is rejected"))
+      .and(expect.same(Right(mapLit), Parser.parse("""{"price": 5}""", Parser.Mode.Lenient).map(_.expr)))
+      .and(expect.same(Right(Expr.Obj(Map("price" -> int(5), "qty" -> int(1)))), p("""{"price": 5, "qty": 1}""")))
       .and(expect.same(Right(Expr.Lit(CanonicalValue.map(List("if" -> CInt(1))).toOption.get)), p("""{"literal": {"if": 1}}""")))
       .and(expect.same(Right(Expr.Obj(Map("a" -> Expr.Lit(CNull), "b" -> int(1)))), p("""{"a": null, "b": 1}""")))
   }
