@@ -11,7 +11,8 @@ import weaver.{Expectations, IOSuite}
 
 /**
  * Example contracts from the projects JLVM replaces, run end to end. `proofchain-fungible.json` is proofchain's ERC-20
- * (`e2e-test/resources/fungible.json` at 28b2d9d), verbatim; `fungible.json` is its port to strict semantics.
+ * (`e2e-test/resources/fungible.json` at 28b2d9d), verbatim; `fungible.json` is its port to strict semantics. The
+ * counter is ottochain's counter script as its author first wrote it, before `count` had to be renamed.
  */
 object ContractsSuite extends IOSuite {
 
@@ -45,7 +46,7 @@ object ContractsSuite extends IOSuite {
 
   private def check(name: String)(f: Programs => Jlvm ?=> Expectations) = test(name)(r => IO(f(r)(using r.jlvm)))
 
-  check("the ERC-20 is strict JLVM as written, and its port differs only in reading an absent balance as 0") { r =>
+  check("the ERC-20 is strict JLVM as written; its port differs only in reading absent balances and allowances as 0") { r =>
     expect(r.original != r.ported, "two programs")
       .and(
         expect.same(
@@ -116,5 +117,38 @@ object ContractsSuite extends IOSuite {
       )
       .and(expect.same(updates("\"Failed transferFrom checks\""), run(r.ported, over).result))
       .and(expect.same(updates("\"Unknown method\""), run(r.ported, call("""{"method": "burn"}""", List("alice"))).result))
+  }
+
+  check("absent balances and allowances: the original errors where metakit rejected; the port rejects") { r =>
+    val unfunded = call("""{"method": "transfer", "from": "erin", "to": "bob", "amount": 1}""", List("erin"))
+    val noAllowance = call("""{"method": "transferFrom", "from": "bob", "spender": "carol", "to": "alice", "amount": 1}""", List("carol"))
+    def typeError(o: Outcome) = o.result match {
+      case Left(JlvmError.Type(">=", _)) => true
+      case _                             => false
+    }
+    expect
+      .same(updates("\"Failed transfer checks\""), run(r.ported, unfunded).result)
+      .and(expect.same(updates("\"Failed transferFrom checks\""), run(r.ported, noAllowance).result))
+      .and(expect(typeError(run(r.original, unfunded)), "null >= 1 is a type error"))
+      .and(expect(typeError(run(r.original, noAllowance)), "null >= 1 is a type error"))
+  }
+
+  // ---- ottochain's counter, as first written (decision A1)
+
+  private val counter =
+    """{"if": [
+      |  {"==": [{"var": "method"}, "increment"]}, {"merge": [{"var": "state"}, %s]},
+      |  {"==": [{"var": "method"}, "reset"]}, %s,
+      |  {"var": "state"}]}""".stripMargin
+
+  check("{\"count\": ...} as data now fails loudly; {\"object\": ...} says what was meant") { _ =>
+    val data = value("""{"method": "increment", "state": {"count": 4}}""")
+    val written = Parser.parse(counter.format("""{"count": {"+": [{"var": "state.count"}, 1]}}""", """{"count": 0}"""))
+    val fixed =
+      Parser.parse(counter.format("""{"object": {"count": {"+": [{"var": "state.count"}, 1]}}}""", """{"object": {"count": 0}}"""))
+    val renamed = Parser.migrate(counter.format("""{"value": {"+": [{"var": "state.count"}, 1]}}""", """{"value": 0}"""))
+    expect(written.flatMap(Compiled(_)).isLeft || written.map(run(_, data).result.isLeft).getOrElse(true), "count as data is an error")
+      .and(expect.same(updates("""{"count": 5}"""), fixed.map(run(_, data)).flatMap(_.result)))
+      .and(expect.same(updates("""{"count": 4, "value": 5}"""), renamed.flatMap(Parser.parse(_)).map(run(_, data)).flatMap(_.result)))
   }
 }

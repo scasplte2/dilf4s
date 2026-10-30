@@ -209,12 +209,16 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
 
   // ---- variables
 
-  /** Charges for the access and each segment (a binding name counts as one), then reads. */
+  /**
+   * Charges for the access and each segment (a binding name counts as one), then reads. A plain path inside callbacks
+   * may consult every enclosing frame, so each frame is charged as a segment too.
+   */
   private def read(ref: VarRef, default: Option[CanonicalValue], scope: Scope): Step = {
     def orDefault(v: CanonicalValue): CanonicalValue = if (v == CNull) default.getOrElse(CNull) else v
     val segments = ref match {
-      case VarRef.Data(p)     => p.size.toLong
-      case VarRef.Bound(_, p) => 1L + p.size
+      case VarRef.Data(p) if p.nonEmpty => p.size.toLong + scope.frames.size
+      case VarRef.Data(_)               => 0L
+      case VarRef.Bound(_, p)           => 1L + p.size
     }
     Charge(
       schedule.varAccess + schedule.perPathSegment * segments,

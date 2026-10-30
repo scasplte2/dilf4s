@@ -20,7 +20,7 @@
   {"if":[
     {"and":[
       {"exists":[{"var":"from"},{"var":"to"},{"var":"amount"}]},
-      {">=":[{"var":{"cat":["content.balances.",{"var":"from"}]}},{"var":"amount"}]},
+      {">=":[{"var":[{"cat":["content.balances.",{"var":"from"}]},0]},{"var":"amount"}]},
       {">":[{"var":"amount"},0]},
       {"in":[{"var":"from"},{"map":[{"var":"proofs"},{"var":"address"}]}]}
     ]},
@@ -35,8 +35,8 @@
   {"if":[
     {"and":[
       {"exists":[{"var":"from"},{"var":"spender"},{"var":"to"},{"var":"amount"}]},
-      {">=":[{"var":{"cat":["content.balances.",{"var":"from"}]}},{"var":"amount"}]},
-      {">=":[{"var":{"cat":["content.allowances.",{"var":"from"},".",{"var":"spender"}]}},{"var":"amount"}]},
+      {">=":[{"var":[{"cat":["content.balances.",{"var":"from"}]},0]},{"var":"amount"}]},
+      {">=":[{"var":[{"cat":["content.allowances.",{"var":"from"},".",{"var":"spender"}]},0]},{"var":"amount"}]},
       {">":[{"var":"amount"},0]},
       {"in":[{"var":"spender"},{"map":[{"var":"proofs"},{"var":"address"}]}]}
     ]},

@@ -40,8 +40,9 @@ exactly five things:
 - **Strings** of the form `0x` followed by an even number of lowercase hex digits are byte strings (§2). Every other
   string is text.
 
-The parser's `Lenient` mode reads an unknown single-key object as a map expression, as metakit did. It exists only to
-migrate older programs: `Parser.migrate` reads a program leniently and writes it back in the strict surface
+The parser's `Lenient` mode reads an unknown single-key object as a map expression, as metakit did. It still
+recognises the keywords `object` and `literal` and the `_` prefix, so that migration is idempotent; no program in the
+ottochain or metakit corpus uses `object` as a data key. It exists only to migrate older programs: `Parser.migrate` reads a program leniently and writes it back in the strict surface
 (`Parser.render`), emitting `{"object": ...}` for each single-key map expression. Rendering is exact: parsing the
 rendered text gives the same program. A literal holding `0x`-hex text, or a non-terminating rational, has no surface
 form and is an error.
@@ -133,6 +134,10 @@ An evaluation ends with a value or one of the following errors. **Either way it 
 Arguments are evaluated left to right, depth first. Only the forms below are lazy.
 
 ### 4.1 Variables
+
+**Defaults.** A default is a literal value and is never evaluated, as in metakit. The strict surface requires an
+object or array default to be quoted, `{"var": ["x", {"literal": {...}}]}`, because unquoted it could be mistaken for
+code.
 
 **Data paths.**
 - `{"var": "a.b.0"}` reads the input data.
@@ -363,7 +368,7 @@ canonical (less than the modulus).
 | Node | Charges, in order |
 |---|---|
 | Literal | `literal`. |
-| Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment. A computed path is evaluated first, then charged by the segments it gives. |
+| Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment. A non-empty plain path inside callbacks also counts each enclosing frame as a segment, since it may consult them all. A computed path is evaluated first, then charged by the segments it gives. |
 | Array or map expression | `literal + element × n`, then each item. |
 | Strict operation, lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)`, then the operation. A spread is charged the same way, on the elements of its array. |
 | `if`, `and`, `or`, `default`, `let` | `base(op)`, then only the subexpressions actually evaluated. |

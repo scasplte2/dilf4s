@@ -117,9 +117,21 @@ object Parser {
   private def variable(arg: Json, mode: Mode): Either[JlvmError, Expr] =
     arg.asArray match {
       case Some(Vector(p))          => path(p, None, mode)
-      case Some(Vector(p, default)) => value(default).flatMap(d => path(p, Some(d).filter(_ != CanonicalValue.CNull), mode))
+      case Some(Vector(p, default)) => defaultValue(default, mode).flatMap(d => path(p, Some(d).filter(_ != CanonicalValue.CNull), mode))
       case Some(_)                  => malformed("var takes a path, or [path, default]")
       case None                     => path(arg, None, mode)
+    }
+
+  /**
+   * A default is a literal value, never evaluated (as in metakit). An object or array default could be mistaken for
+   * code, so the strict surface requires it quoted, `{"literal": ...}`; both modes accept the quoted form.
+   */
+  private def defaultValue(j: Json, mode: Mode): Either[JlvmError, CanonicalValue] =
+    (j.asObject.map(_.toList), mode) match {
+      case (Some(List((Literal, x))), _) => value(x)
+      case (_, Mode.Strict) if j.isObject || j.isArray =>
+        malformed("a var default is a literal value: quote an object or array default with {\"literal\": ...}")
+      case _ => value(j)
     }
 
   // ------------------------------------------------------------------ the strict surface, written back
@@ -136,6 +148,12 @@ object Parser {
 
   private def quoted(v: CanonicalValue): Either[JlvmError, Json] = JsonSurface.json(v).map(j => Json.obj(Literal -> j))
 
+  private def defaultJson(v: CanonicalValue): Either[JlvmError, Json] =
+    v match {
+      case CanonicalValue.CArray(_) | CanonicalValue.CMap(_) => quoted(v)
+      case other                                             => JsonSurface.json(other)
+    }
+
   /** Depth is bounded by [[Program.MaxDepth]], so this recursion is bounded too. */
   private def toJson(e: Expr): Either[JlvmError, Json] =
     e match {
@@ -143,9 +161,7 @@ object Parser {
       case Expr.Lit(v)                                                       => JsonSurface.json(v)
       case Expr.Var(ref, default) =>
         default
-          .fold(Json.fromString(ref.render).asRight[JlvmError])(d =>
-            JsonSurface.json(d).map(dj => Json.arr(Json.fromString(ref.render), dj))
-          )
+          .fold(Json.fromString(ref.render).asRight[JlvmError])(d => defaultJson(d).map(dj => Json.arr(Json.fromString(ref.render), dj)))
           .map(a => Json.obj(Variable -> a))
       case Expr.VarAt(path, default) =>
         // always the array form: a bare array would read as [path, default], and a bare literal path as a static one
@@ -153,7 +169,7 @@ object Parser {
           case Expr.Lit(v) => quoted(v)
           case other       => toJson(other)
         }
-        (pathJson, default.traverse(JsonSurface.json)).mapN((pj, dj) => Json.obj(Variable -> Json.fromValues(pj +: dj.toVector)))
+        (pathJson, default.traverse(defaultJson)).mapN((pj, dj) => Json.obj(Variable -> Json.fromValues(pj +: dj.toVector)))
       case Expr.Apply(op, args) => args.traverse(toJson).map(as => Json.obj(op.wire -> Json.fromValues(as)))
       case Expr.Spread(op, arg) => toJson(arg).map(a => Json.obj(op.wire -> a))
       case Expr.Arr(items)      => items.traverse(toJson).map(Json.fromValues)

@@ -6,6 +6,7 @@ import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.hash.Sha256
 
+import io.circe.Json
 import org.scalacheck.Gen
 import scodec.bits.hex
 import weaver.SimpleIOSuite
@@ -195,6 +196,48 @@ object ParserSuite extends SimpleIOSuite with Checkers {
         .same(Right(prog), text.flatMap(Parser.parse(_)))
         .and(expect.same(Right(prog), text.flatMap(Parser.parse(_, Parser.Mode.Lenient))))
     }
+  }
+
+  /** The same program as metakit wrote it: a single-key data map bare wherever its key is not an operation. */
+  private def metakitStyle(j: Json): Json =
+    j.asObject.map(_.toList) match {
+      case Some(List((Parser.ObjectKey, inner))) =>
+        inner.asObject.map(_.toList) match {
+          case Some(List((k, v))) if Op.fromWire(k).isEmpty && !Set(Parser.Literal, Parser.Variable, Parser.ObjectKey).contains(k) =>
+            Json.obj(k -> metakitStyle(v))
+          case _ => Json.obj(Parser.ObjectKey -> metakitStyle(inner))
+        }
+      case Some(List((Parser.Literal, _))) => j
+      case Some(List((Parser.Variable, arg))) =>
+        arg.asArray match {
+          case Some(path +: default) => Json.obj(Parser.Variable -> Json.fromValues(metakitStyle(path) +: default))
+          case _                     => Json.obj(Parser.Variable -> metakitStyle(arg))
+        }
+      case Some(fields) => Json.fromFields(fields.map { case (k, v) => k -> metakitStyle(v) })
+      case scala.None   => j.asArray.fold(j)(a => Json.fromValues(a.map(metakitStyle)))
+    }
+
+  test("migrate reads a metakit-style program as metakit did, and writes the same program in the strict surface") {
+    forall(programs) { prog =>
+      val old = Parser.render(prog).map(j => metakitStyle(j).noSpaces)
+      expect
+        .same(Right(prog), old.flatMap(Parser.parse(_, Parser.Mode.Lenient)))
+        .and(expect.same(Right(prog), old.flatMap(Parser.migrate).flatMap(Parser.parse(_))))
+    }
+  }
+
+  pureTest("a var default is a literal; the strict surface quotes object and array defaults") {
+    val m = CanonicalValue.map(List("var" -> CanonicalValue.text("y").toOption.get)).toOption.get
+    expect
+      .same(Right(Expr.Var(VarRef.Data(Vector("x")), Some(m))), p("""{"var": ["x", {"literal": {"var": "y"}}]}"""))
+      .and(expect(p("""{"var": ["x", {"var": "y"}]}""").isLeft, "an unquoted object default could be read as code"))
+      .and(expect(p("""{"var": ["x", []]}""").isLeft, "so could an array"))
+      .and(
+        expect.same(
+          Right(Expr.Var(VarRef.Data(Vector("x")), Some(m))),
+          Parser.parse("""{"var": ["x", {"var": "y"}]}""", Parser.Mode.Lenient).map(_.expr)
+        )
+      )
   }
 
   pureTest("values with no surface form are reported, not rendered wrongly") {
