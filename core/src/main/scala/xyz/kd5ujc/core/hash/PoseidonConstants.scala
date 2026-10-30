@@ -1,4 +1,4 @@
-package xyz.kd5ujc.crypto.zk
+package xyz.kd5ujc.core.hash
 
 // =============================================================================
 // AUTO-GENERATED constants for circomlib-compatible Poseidon over BN254 Fr.
@@ -16,7 +16,7 @@ package xyz.kd5ujc.crypto.zk
 //   poseidon([1,2]) == 0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a
 //   poseidon([1])   == 18586133768512220936620570745912940619677854269274689475585506675881198879027
 // =============================================================================
-private[zk] object PoseidonConstants {
+private[hash] object PoseidonConstants {
 
   /** Number of full rounds (RF). Identical for every supported width. */
   val FullRounds: Int = 8

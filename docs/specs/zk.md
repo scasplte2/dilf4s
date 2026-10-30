@@ -1,6 +1,6 @@
 # dilf4s zero-knowledge verification (v1)
 
-Status: normative. Conformance vectors: `shared/vectors/zk_v1.json`. Reference vectors are in `docs/test-vectors/zk/`:
+Status: normative. Conformance vectors: `shared/vectors/poseidon_v1.json` (Poseidon in `core.hash`, the tree in `accumulators.poseidon`). Reference vectors are in `docs/test-vectors/zk/`:
 go-ethereum's EIP-196/197 precompile vectors, and two real SP1 v6.1.0 proofs.
 
 Everything here is **verification only**. The arithmetic is variable-time `BigInt` over public data: proofs, public
