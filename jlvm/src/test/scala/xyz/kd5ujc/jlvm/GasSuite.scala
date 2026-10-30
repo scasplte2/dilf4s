@@ -42,4 +42,17 @@ object GasSuite extends SimpleIOSuite {
         )
       )
   }
+
+  pureTest("limb-squared units: numbers only; integers count only under Limbs2") {
+    import xyz.kd5ujc.core.canonical.CanonicalValue
+    import xyz.kd5ujc.numerics.Ratio
+    val big = CanonicalValue.CInt(BigInt(1) << 4000)
+    val q = CanonicalValue.number(Ratio.of(BigInt(1) << 1000, (BigInt(1) << 600) + 1).toOption.get)
+    expect
+      .same(62L * 62, GasSchedule.units(SizeUnit.Limbs2, big))
+      .and(expect.same(0L, GasSchedule.units(SizeUnit.RationalLimbs2, big)))
+      .and(expect.same(24L * 24, GasSchedule.units(SizeUnit.RationalLimbs2, q)))
+      .and(expect.same(0L, GasSchedule.units(SizeUnit.Limbs2, CanonicalValue.CInt(BigInt(7)))))
+      .and(expect.same(0L, GasSchedule.units(SizeUnit.Limbs2, CanonicalValue.True)))
+  }
 }

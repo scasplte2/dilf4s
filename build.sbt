@@ -245,4 +245,4 @@ lazy val benchmarks = project.in(file("benchmarks"))
     commonSettings,
     publish / skip := true
   )
-  .dependsOn(core, accumulators)
+  .dependsOn(core, accumulators, jlvm)

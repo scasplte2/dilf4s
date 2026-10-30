@@ -35,12 +35,21 @@ final case class Rate(perUnit: Gas, unit: SizeUnit)
  * far less per byte than a proof that drives curve arithmetic). Every size charge is taken **before** the work it pays
  * for.
  */
-final case class OpCost(base: Gas, perUnit: Gas, unit: SizeUnit, byArgument: Map[Int, Rate] = Map.empty) {
+final case class OpCost(
+  base:       Gas,
+  perUnit:    Gas,
+  unit:       SizeUnit,
+  byArgument: Map[Int, Rate] = Map.empty,
+  extra:      Vector[Rate] = Vector.empty
+) {
   def rate(position: Int): Rate = byArgument.getOrElse(position, Rate(perUnit, unit))
 
   /** Argument `position` is charged `perUnit` per `unit` instead. */
   def at(position: Int, perUnit: Long, unit: SizeUnit): OpCost =
     copy(byArgument = byArgument.updated(position, Rate(Gas(perUnit), unit)))
+
+  /** Every argument is also charged `perUnit` per `unit`: a second term, such as a quadratic one. */
+  def plus(perUnit: Long, unit: SizeUnit): OpCost = copy(extra = extra :+ Rate(Gas(perUnit), unit))
 }
 
 /**
@@ -52,6 +61,15 @@ final case class OpCost(base: Gas, perUnit: Gas, unit: SizeUnit, byArgument: Map
  */
 enum SizeUnit {
   case None, Elements, Weight
+
+  /**
+   * For a number, the square of its 64-bit limbs, numerator and denominator together (`⌊bits/64⌋` each); 0 for anything
+   * else. The gcd that normalises a quotient, or a sum or product of rationals, is quadratic in the operands' size.
+   */
+  case Limbs2
+
+  /** [[Limbs2]] for a non-integer rational, and 0 for an integer: integer sums and products are linear. */
+  case RationalLimbs2
 }
 
 /**
@@ -73,19 +91,31 @@ final case class GasSchedule(
   def sized(op: Op, args: Vector[CanonicalValue]): Gas = {
     val c = cost(op)
     args.zipWithIndex.foldLeft(Gas.Zero) {
-      case (total, (v, i)) =>
-        val r = c.rate(i)
-        val units = r.unit match {
-          case SizeUnit.None     => 0L
-          case SizeUnit.Elements => Values.elements(v)
-          case SizeUnit.Weight   => v.weight
-        }
-        total + r.perUnit * units
+      case (total, (v, i)) => (c.rate(i) +: c.extra).foldLeft(total)((t, r) => t + r.perUnit * GasSchedule.units(r.unit, v))
     }
   }
 }
 
 object GasSchedule {
+
+  /** One argument's size in `unit`. */
+  def units(unit: SizeUnit, v: CanonicalValue): Long =
+    unit match {
+      case SizeUnit.None           => 0L
+      case SizeUnit.Elements       => Values.elements(v)
+      case SizeUnit.Weight         => v.weight
+      case SizeUnit.Limbs2         => limbs(v, integers = true)
+      case SizeUnit.RationalLimbs2 => limbs(v, integers = false)
+    }
+
+  private def limbs(v: CanonicalValue, integers: Boolean): Long =
+    v match {
+      case CanonicalValue.CInt(i) if integers => square((i.bitLength / 64).toLong)
+      case CanonicalValue.CRational(r)        => square((r.numerator.bitLength / 64 + r.denominator.bitLength / 64).toLong)
+      case _                                  => 0L
+    }
+
+  private def square(n: Long): Long = n * n
 
   private def c(base: Long, perUnit: Long = 0, unit: SizeUnit = SizeUnit.None): OpCost = OpCost(Gas(base), Gas(perUnit), unit)
 

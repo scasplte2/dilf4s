@@ -295,14 +295,14 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   // ---- stack safety
 
-  check("long iterations run in constant stack on both drivers") {
+  check("long iterations run in constant stack on every driver") {
     val xs = CanonicalValue.array(Vector.tabulate(20000)(i => CInt(BigInt(i)))).toOption.get
     val p = program("""{"reduce": [{"var": "xs"}, {"+": [{"var": "$accumulator"}, {"var": "$current"}]}, 0]}""")
     val data = CanonicalValue.map(List("xs" -> xs)).toOption.get
     val outcomes =
       Config.Driver.values.toList.map(d => summon[Jlvm].evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(10000000L)), driver = d)))
     expect
-      .same(List.fill(2)(Right(CInt(BigInt(20000L * 19999L / 2)))), outcomes.map(_.result))
+      .same(List.fill(Config.Driver.values.size)(Right(CInt(BigInt(20000L * 19999L / 2)))), outcomes.map(_.result))
       .and(expect.same(1, outcomes.distinct.size))
   }
 
@@ -358,13 +358,14 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   private val limits: Gen[Long] = Gen.frequency(1 -> Gen.choose(0L, 300L), 1 -> Gen.const(GasLimit.Default.amount.value))
 
-  test("the stack machine and the recursive driver agree on value, error and gas, at every gas limit") { jlvm =>
+  test("all three drivers agree on value, error, gas and warnings, at every gas limit") { jlvm =>
     given Jlvm = jlvm
     val data = value(dataJson)
     forall(Gen.zip(programs, limits)) {
       case (p, limit) =>
         val run = (d: Config.Driver) => summon[Jlvm].evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(limit)), driver = d))
-        expect.same(run(Config.Driver.Recursive), run(Config.Driver.StackMachine))
+        val reference = run(Config.Driver.Recursive)
+        expect.same(reference, run(Config.Driver.StackMachine)).and(expect.same(reference, run(Config.Driver.Direct)))
     }
   }
 

@@ -348,6 +348,31 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
 
 object Machine {
 
+  /**
+   * The same explicit continuation stack as [[stackMachine]], as a direct tail-recursive function of (step, stack,
+   * meter): pure and constant-stack, without a monad stack per step. A candidate production driver (experimental).
+   */
+  def direct(semantics: Semantics, first: Step, meter: Meter): (Meter, Either[JlvmError, CanonicalValue]) = {
+    import Step._
+    @scala.annotation.tailrec
+    def loop(step: Step, ks: List[CanonicalValue => Step], m: Meter): (Meter, Either[JlvmError, CanonicalValue]) =
+      step match {
+        case Done(v) =>
+          ks match {
+            case k :: rest => loop(k(v), rest, m)
+            case Nil       => (m, Right(v))
+          }
+        case Fail(e) => (m, Left(e))
+        case Charge(g, next) =>
+          val total = m.used + g
+          if (total <= m.limit) loop(next(), ks, m.copy(used = total))
+          else (m.copy(used = m.limit), Left(JlvmError.OutOfGas(total.value, m.limit.value)))
+        case Eval(n, s, k) => loop(semantics.start(n, s), k :: ks, m)
+        case Note(w, next) => loop(next(), ks, m.warn(w))
+      }
+    loop(first, Nil, meter)
+  }
+
   import Step._
 
   private def charge[F[_]: Monad](amount: Gas)(using S: Stateful[F, Meter], R: Raise[F, JlvmError]): F[Unit] =

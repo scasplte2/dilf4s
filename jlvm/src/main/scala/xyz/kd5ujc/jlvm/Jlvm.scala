@@ -29,6 +29,9 @@ object Config {
 
     /** Nested computations mirroring the program: the reference driver, checked against the stack machine. */
     case Recursive
+
+    /** The stack machine as one tail-recursive function, without the monad stack (experimental; same semantics). */
+    case Direct
   }
 }
 
@@ -53,11 +56,12 @@ final class Jlvm private (crypto: CryptoOps) {
   ): Outcome = {
     val semantics = new Semantics(config.schedule, crypto)
     val first = semantics.start(compiled.root, Scope(data, env))
-    val run: Run[CanonicalValue] = config.driver match {
-      case Config.Driver.StackMachine => Machine.stackMachine[Run](semantics, first)
-      case Config.Driver.Recursive    => Machine.recursive[Run](semantics, first)
+    val start = Meter(Gas.Zero, config.limit.amount)
+    val (meter, result) = config.driver match {
+      case Config.Driver.StackMachine => Machine.stackMachine[Run](semantics, first).value.run(start).value
+      case Config.Driver.Recursive    => Machine.recursive[Run](semantics, first).value.run(start).value
+      case Config.Driver.Direct       => Machine.direct(semantics, first, start)
     }
-    val (meter, result) = run.value.run(Meter(Gas.Zero, config.limit.amount)).value
     Outcome(meter.used, result, meter.warnings)
   }
 
