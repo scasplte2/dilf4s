@@ -55,8 +55,21 @@ object MerkleError {
   final case class Encoding(reason: String) extends MerkleError
 }
 
-final case class InclusionProof[H](index: Long, size: Long, path: Vector[Digest[H]])
-final case class ConsistencyProof[H](oldSize: Long, newSize: Long, path: Vector[Digest[H]])
+/** An audit path for leaf `index` of a tree of `size` leaves; `0 <= index < size` by construction. */
+final case class InclusionProof[H] private[merkle] (index: Long, size: Long, path: Vector[Digest[H]])
+
+object InclusionProof {
+  def from[H](index: Long, size: Long, path: Vector[Digest[H]]): Either[MerkleError, InclusionProof[H]] =
+    Either.cond(index >= 0 && index < size, InclusionProof(index, size, path), MerkleError.IndexOutOfRange(index, size))
+}
+
+/** A consistency path between tree sizes `oldSize <= newSize`; both non-negative by construction. */
+final case class ConsistencyProof[H] private[merkle] (oldSize: Long, newSize: Long, path: Vector[Digest[H]])
+
+object ConsistencyProof {
+  def from[H](oldSize: Long, newSize: Long, path: Vector[Digest[H]]): Either[MerkleError, ConsistencyProof[H]] =
+    Either.cond(oldSize >= 0 && oldSize <= newSize, ConsistencyProof(oldSize, newSize, path), MerkleError.IndexOutOfRange(oldSize, newSize))
+}
 
 /**
  * An immutable RFC 9162 Merkle tree (docs/specs/merkle.md), stored as levels of node hashes: `levels(0)` are the leaf

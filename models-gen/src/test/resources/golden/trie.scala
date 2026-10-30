@@ -61,6 +61,30 @@ object TrieLeaf {
   given CanonicalDecoder[TrieLeaf] = codec.decoder
 }
 
+final case class TrieNode(s: TrieSegment, v: Option[ByteVector], l: Option[ByteVector], r: Option[ByteVector])
+
+object TrieNode {
+  lazy val codec: Codec[TrieNode] = Codec(
+    a =>
+      Codec.record(List(
+        Codec.field("s", TrieSegment.codec, a.s),
+        Codec.optionalField("v", Codec.bytes, a.v),
+        Codec.optionalField("l", Codec.bytes, a.l),
+        Codec.optionalField("r", Codec.bytes, a.r)
+      )),
+    CanonicalDecoder.record(Set("s", "v", "l", "r")) { fields$ =>
+      for {
+        s <- fields$.required("s")(using TrieSegment.codec.decoder)
+        v <- fields$.optional("v")(using Codec.bytes.decoder)
+        l <- fields$.optional("l")(using Codec.bytes.decoder)
+        r <- fields$.optional("r")(using Codec.bytes.decoder)
+      } yield TrieNode(s, v, l, r)
+    }
+  )
+  given Canonical[TrieNode] = codec.canonical
+  given CanonicalDecoder[TrieNode] = codec.decoder
+}
+
 type TrieProof = Vector[TrieRecord]
 
 object TrieProof {

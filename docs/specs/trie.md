@@ -116,6 +116,16 @@ trie-segment = {
   "n": 0..9223372036854775807,
   "b": bytes,
 }
+
+; A node commitment (hashed under the leaf or branch tag, section 3) and a stored node record (section 6). A leaf
+; has exactly "s" and "v"; a branch has "s" and either two of "l"/"r", or one of them and "v". The shape cannot tell
+; the two apart, and need not: the hash tag (or, in storage, the presence of children) does.
+trie-node = {
+  "s": trie-segment,
+  ? "v": bytes,
+  ? "l": bytes,
+  ? "r": bytes,
+}
 ```
 
 Decoders rebuild the tree with an explicit stack and reject trailing records, missing children, a mask inconsistent
@@ -130,4 +140,4 @@ the client) is a possible extension; it is not part of v1.
 
 ## 6. Storage (informative)
 
-Nodes are stored by digest and shared across versions. Each retained version records its root. A node's reference count is the number of live parents plus the number of retained versions whose root it is. A commit writes its new nodes and increments the counts of the existing nodes they reference, all in one atomic batch. Pruning a version decrements its root's count, and any node whose count reaches zero is deleted and its children decremented, iteratively, in the same batch.
+Nodes are stored by digest and shared across versions, each as a 4-byte big-endian reference count followed by the canonical CBOR of its `trie-node` record (re-hashed and checked when loaded). Each retained version records its root. A node's reference count is the number of live parents plus the number of retained versions whose root it is. A commit writes its new nodes and increments the counts of the existing nodes they reference, all in one atomic batch. Pruning a version decrements its root's count, and any node whose count reaches zero is deleted and its children decremented, iteratively, in the same batch.

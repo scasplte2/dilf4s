@@ -153,18 +153,16 @@ private[trie] object NodeCodec {
       left.map(l => "l" -> CanonicalValue.bytes(l)).toList ++ right.map(r => "r" -> CanonicalValue.bytes(r)).toList
     )
 
-  /** Decodes `{n, b}` with canonical zero padding. */
-  def decodeSegment(v: CanonicalValue): Either[TrieError, BitVector] =
-    v match {
-      case CMap(m) if m.keySet == Set("n", "b") =>
-        (m("n"), m("b")) match {
-          case (CInt(n), CBytes(b)) if n >= 0 && n <= b.size * 8 && b.size == (n + 7) / 8 =>
-            val bits = b.bits.take(n.toLong)
-            Either.cond(bits.toByteVector == b, bits, TrieError.Encoding("segment padding bits must be zero"))
-          case other => TrieError.Encoding(s"invalid segment fields $other").asLeft
-        }
-      case other => TrieError.Encoding(s"segment must be {n, b}: $other").asLeft
+  /** The domain segment of a wire segment: `len(b) == ceil(n / 8)` and zero padding, which the schema cannot state. */
+  def fromWire(w: xyz.kd5ujc.models.trie.TrieSegment): Either[TrieError, BitVector] =
+    if (w.n > w.b.size * 8 || w.b.size != (w.n + 7) / 8) TrieError.Encoding(s"segment of ${w.n} bits in ${w.b.size} bytes").asLeft
+    else {
+      val bits = w.b.bits.take(w.n)
+      Either.cond(bits.toByteVector == w.b, bits, TrieError.Encoding("segment padding bits must be zero"))
     }
+
+  def decodeSegment(v: CanonicalValue): Either[TrieError, BitVector] =
+    xyz.kd5ujc.models.trie.TrieSegment.codec.decoder.decode(v).leftMap(e => TrieError.Encoding(e.message)).flatMap(fromWire)
 }
 
 private[trie] object Bits {

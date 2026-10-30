@@ -7,8 +7,8 @@ import scala.annotation.tailrec
 
 import xyz.kd5ujc.accumulators.trie.Node.{Branch, Leaf}
 import xyz.kd5ujc.core.canonical.CanonicalValue
-import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.hash.{Digest, Hasher}
+import xyz.kd5ujc.models.{trie => W}
 
 import scodec.bits.BitVector
 
@@ -277,23 +277,27 @@ object TrieProofs {
 
   // ------------------------------------------------------------------ flat encoding (docs/specs/trie.md §5)
 
+  private def wireSegment(bits: BitVector): W.TrieSegment = W.TrieSegment(bits.size, bits.toByteVector)
+
+  /** Pre-order records through the generated codec of shared/schemas/trie.cddl. */
   def encode[H](proof: TrieProof[H]): Either[TrieError, CanonicalValue] =
-    CanonicalValue
-      .array(proof.top.fold(Vector.empty[CanonicalValue])(t => records(List(t), Nil).toVector))
+    W.TrieProof.codec
+      .encode(proof.top.fold(Vector.empty[W.TrieRecord])(t => records(List(t), Nil).toVector))
       .leftMap(e => TrieError.Encoding(e.toString))
 
   @tailrec
-  private def records[H](todo: List[ProofNode[H]], acc: List[CanonicalValue]): List[CanonicalValue] =
+  private def records[H](todo: List[ProofNode[H]], acc: List[W.TrieRecord]): List[W.TrieRecord] =
     todo match {
       case Nil                 => acc.reverse
-      case Stub(h) :: rest     => records(rest, CanonicalValue.trustedMap(List("h" -> CanonicalValue.bytes(h.bytes))) :: acc)
-      case PLeaf(s, v) :: rest => records(rest, NodeCodec.leaf(s, v) :: acc)
+      case Stub(h) :: rest     => records(rest, W.TrieStub(h.bytes) :: acc)
+      case PLeaf(s, v) :: rest => records(rest, W.TrieLeaf(wireSegment(s), v.bytes) :: acc)
       case PBranch(s, v, l, r) :: rest =>
-        val mask = (if (l.isDefined) 1 else 0) + (if (r.isDefined) 2 else 0)
-        val rec = CanonicalValue.trustedMap(
-          List("s" -> NodeCodec.segment(s), "c" -> CInt(mask)) ++ v.map(x => "v" -> CanonicalValue.bytes(x.bytes)).toList
-        )
-        records(l.toList ++ r.toList ++ rest, rec :: acc)
+        val children = (l, r) match {
+          case (Some(_), Some(_)) => W.TrieChildren.Both
+          case (Some(_), None)    => W.TrieChildren.Left
+          case _                  => W.TrieChildren.Right
+        }
+        records(l.toList ++ r.toList ++ rest, W.TrieBranch(wireSegment(s), v.map(_.bytes), children) :: acc)
     }
 
   /** Pending decoder work: a branch waiting for its children, newest first. */
@@ -305,15 +309,15 @@ object TrieProofs {
     left:      Option[ProofNode[H]]
   )
 
+  /** The generated decoder checks each record's shape; this rebuilds the tree and checks the structure. */
   def decode[H: Hasher](value: CanonicalValue): Either[TrieError, TrieProof[H]] =
-    value match {
-      case CArray(rs) if rs.isEmpty => TrieProof[H](None).asRight
-      case CArray(rs)               => assembleFlat[H](rs.toList, Nil).map(t => TrieProof(Some(t)))
-      case other                    => TrieError.Encoding(s"proof must be an array of records: $other").asLeft
+    W.TrieProof.codec.decoder.decode(value).leftMap(e => TrieError.Encoding(e.message)).flatMap {
+      case rs if rs.isEmpty => TrieProof[H](None).asRight
+      case rs               => assembleFlat[H](rs.toList, Nil).map(t => TrieProof(Some(t)))
     }
 
   @tailrec
-  private def assembleFlat[H: Hasher](records: List[CanonicalValue], stack: List[Open[H]]): Either[TrieError, ProofNode[H]] =
+  private def assembleFlat[H: Hasher](records: List[W.TrieRecord], stack: List[Open[H]]): Either[TrieError, ProofNode[H]] =
     records match {
       case Nil => TrieError.Encoding("proof ended with unfinished branches").asLeft
       case r :: rest =>
@@ -341,34 +345,27 @@ object TrieProofs {
         } else attach(PBranch(o.segment, o.value, o.left, Some(node)), rest)
     }
 
-  /** One record: a finished node, or an open branch awaiting children. */
-  private def record[H](v: CanonicalValue)(implicit H: Hasher[H]): Either[TrieError, Either[Open[H], ProofNode[H]]] = {
-    def digest(c: CanonicalValue): Either[TrieError, Digest[H]] = c match {
-      case CBytes(b) => Digest.fromBytes[H](b).leftMap(e => TrieError.Encoding(e.toString))
-      case other     => TrieError.Encoding(s"expected digest bytes: $other").asLeft
-    }
-    v match {
-      case CMap(m) if m.keySet == Set("h") => digest(m("h")).map(h => Stub(h).asRight)
-      case CMap(m) if m.keySet == Set("s", "v") =>
-        (NodeCodec.decodeSegment(m("s")), digest(m("v"))).mapN((s, d) => (PLeaf(s, d): ProofNode[H]).asRight)
-      case CMap(m) if m.keySet == Set("s", "c") || m.keySet == Set("s", "c", "v") =>
-        (
-          NodeCodec.decodeSegment(m("s")),
-          m.get("v").traverse(digest),
-          m("c") match {
-            case CInt(c) if c >= 1 && c <= 3 => c.toInt.asRight
-            case other                       => TrieError.Encoding(s"child mask must be 1, 2 or 3: $other").asLeft
-          }
-        ).tupled.flatMap {
-          case (s, value, mask) =>
-            val children = (mask & 1) + ((mask >> 1) & 1)
+  /** One typed record: a finished node, or an open branch awaiting children. */
+  private def record[H](r: W.TrieRecord)(implicit H: Hasher[H]): Either[TrieError, Either[Open[H], ProofNode[H]]] = {
+    def digest(b: scodec.bits.ByteVector): Either[TrieError, Digest[H]] =
+      Digest.fromBytes[H](b).leftMap(e => TrieError.Encoding(e.toString))
+    r match {
+      case W.TrieStub(h)    => digest(h).map(d => Stub(d).asRight)
+      case W.TrieLeaf(s, v) => (NodeCodec.fromWire(s), digest(v)).mapN((seg, d) => (PLeaf(seg, d): ProofNode[H]).asRight)
+      case W.TrieBranch(s, v, c) =>
+        val (left, right) = c match {
+          case W.TrieChildren.Left  => (true, false)
+          case W.TrieChildren.Right => (false, true)
+          case W.TrieChildren.Both  => (true, true)
+        }
+        (NodeCodec.fromWire(s), v.traverse(digest)).tupled.flatMap {
+          case (seg, value) =>
             Either.cond(
-              Node.validBranch(value, children),
-              Open[H](s, value, (mask & 1) == 1, (mask & 2) == 2, None).asLeft,
+              Node.validBranch(value, (if (left) 1 else 0) + (if (right) 1 else 0)),
+              Open[H](seg, value, left, right, None).asLeft,
               TrieError.Encoding("branch needs two children, or one child and a value")
             )
         }
-      case other => TrieError.Encoding(s"unrecognised proof record: $other").asLeft
     }
   }
 }

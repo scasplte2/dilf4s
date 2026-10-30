@@ -7,8 +7,7 @@ import cats.mtl.Raise
 import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.trie.Node.{Branch, Leaf}
-import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.Cbor
 import xyz.kd5ujc.core.hash.Digest
 import xyz.kd5ujc.storage._
 
@@ -104,6 +103,8 @@ object TrieStore {
         case Some(b)              => digest(b).map(Some(_))
       }
 
+    private def liftC[A](e: Either[String, A]): F[A] = e.fold(m => failS[A](StoreError.Corrupt(s"node record: $m")), _.pure[F])
+
     private def digest(b: ByteVector): F[Digest[H]] =
       Digest.fromBytes[H](b)(using T.hasher).fold(e => failS(StoreError.Corrupt(e.toString)), _.pure[F])
 
@@ -122,27 +123,19 @@ object TrieStore {
       ByteVector.fromInt(count) ++ Cbor.encode(record)
     }
 
+    /** The generated `trie-node` decoder checks the record's shape; this classifies it and checks the invariant. */
     private def decodeEntry(h: Digest[H], bytes: ByteVector): F[(Node[H], Int)] = {
-      def field(m: Map[String, CanonicalValue], name: String): F[Option[Digest[H]]] =
-        m.get(name).traverse {
-          case CBytes(b) => digest(b)
-          case other     => failS[Digest[H]](StoreError.Corrupt(s"node field $name: $other"))
-        }
-      val parsed: F[Node[H]] = Cbor.decode(bytes.drop(4)) match {
-        case Right(CMap(m)) =>
-          m.get("s").fold(failS[CanonicalValue](StoreError.Corrupt("node without segment")))(_.pure[F]).flatMap { s =>
-            liftT(NodeCodec.decodeSegment(s)).flatMap { segment =>
-              (field(m, "v"), field(m, "l"), field(m, "r")).tupled.flatMap {
-                case (Some(v), None, None) if !m.contains("l") && !m.contains("r") && m.keySet == Set("s", "v") =>
-                  (Node.leaf(segment, v): Node[H]).pure[F]
-                case (v, l, r) if Node.validBranch(v, l.fold(0)(_ => 1) + r.fold(0)(_ => 1)) =>
-                  (Node.branch(segment, v, l, r): Node[H]).pure[F]
-                case _ => failS[Node[H]](StoreError.Corrupt("node violates the branch invariant"))
-              }
-            }
+      val parsed: F[Node[H]] =
+        liftC(
+          Cbor.decode(bytes.drop(4)).leftMap(_.toString).flatMap(xyz.kd5ujc.models.trie.TrieNode.codec.decoder.decode(_).leftMap(_.message))
+        ).flatMap { w =>
+          (liftT(NodeCodec.fromWire(w.s)), w.v.traverse(digest), w.l.traverse(digest), w.r.traverse(digest)).tupled.flatMap {
+            case (segment, Some(v), None, None) => (Node.leaf(segment, v): Node[H]).pure[F]
+            case (segment, v, l, r) if Node.validBranch(v, l.fold(0)(_ => 1) + r.fold(0)(_ => 1)) =>
+              (Node.branch(segment, v, l, r): Node[H]).pure[F]
+            case _ => failS[Node[H]](StoreError.Corrupt("node violates the branch invariant"))
           }
-        case other => failS[Node[H]](StoreError.Corrupt(s"node record does not decode: $other"))
-      }
+        }
       parsed.flatMap { n =>
         if (n.hash != h) failS(StoreError.Corrupt(s"node ${h.hex} hashes to ${n.hash.hex}"))
         else (n, bytes.take(4).toInt()).pure[F]
