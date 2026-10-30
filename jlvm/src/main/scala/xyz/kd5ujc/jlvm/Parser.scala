@@ -49,6 +49,19 @@ object Parser {
   /** Single keys with this prefix are data: the namespace of host triggers (`_result`, `_emit`, `_spawn`). */
   val DataPrefix: String = "_"
 
+  /** metakit operations with no v1 form, and what replaces each: named in the error, so a migration knows where to go. */
+  val Removed: scala.collection.immutable.Map[String, String] = scala.collection.immutable.Map(
+    "prove_dlog_verify"    -> "a one-leaf sigma_verify over {\"type\": \"dlog\"} (docs/specs/sigma.md)",
+    "prove_dhtuple_verify" -> "a one-leaf sigma_verify over {\"type\": \"dhtuple\"} (docs/specs/sigma.md)",
+    "mpt_verify"           -> "trie_verify (docs/specs/trie.md)",
+    "mpt_prefix_verify"    -> "trie_prefix_verify (docs/specs/trie.md)",
+    "smt_verify"           -> "trie_verify (docs/specs/trie.md)",
+    "noop"                 -> "nothing: it was internal to metakit's evaluator"
+  )
+
+  /** Names metakit's array syntax reads as a call when they head an array: `["+", 1, 2]`, `["var", "a"]`. */
+  def callName(s: String): Boolean = s == Variable || Op.fromWire(s).isDefined || Removed.contains(s)
+
   private def malformed[A](m: String): Either[JlvmError, A] = JlvmError.Malformed(m).asLeft
 
   private def value(j: Json): Either[JlvmError, CanonicalValue] = JsonSurface.value(j)
@@ -57,7 +70,7 @@ object Parser {
     for {
       _    <- CanonicalJson.parse(json).leftMap(e => JlvmError.Malformed(e.toString))
       j    <- io.circe.parser.parse(json).leftMap(e => JlvmError.Malformed(e.message))
-      expr <- fromJson(j, mode)
+      expr <- fromJson(j, mode).map(e => if (mode == Mode.Lenient) bindLets(e, Set.empty) else e)
       prog <- Program.from(expr)
     } yield prog
 
@@ -68,9 +81,55 @@ object Parser {
       _ => value(j).map(Expr.Lit(_)),
       _ => value(j).map(Expr.Lit(_)),
       _ => value(j).map(Expr.Lit(_)),
-      items => items.traverse(fromJson(_, mode)).map(Expr.Arr(_)),
+      items => array(items, mode),
       obj => fromObject(obj, mode)
     )
+
+  /**
+   * metakit read an array headed by an operation's name (or `var`) as that call. Strict rejects that form, so no
+   * metakit program changes meaning silently; lenient reads it as metakit did.
+   */
+  private def array(items: Vector[Json], mode: Mode): Either[JlvmError, Expr] =
+    (items.headOption.flatMap(_.asString).filter(callName), mode) match {
+      case (Some(name), Mode.Strict) =>
+        malformed(
+          s"[\"$name\", ...] is a call in metakit's array syntax: write {\"$name\": [...]}, or quote data with {\"literal\": [...]}"
+        )
+      case (Some(name), Mode.Lenient) => single(name, Json.fromValues(items.drop(1)), mode)
+      case (scala.None, _)            => elements(items, mode)
+    }
+
+  private def elements(items: Vector[Json], mode: Mode): Either[JlvmError, Expr] = items.traverse(fromJson(_, mode)).map(Expr.Arr(_))
+
+  /**
+   * metakit read a `let` name with a plain path, `{"var": "x"}`; in v1 it is `$x` (decision B). Lenient parsing
+   * rewrites those reads, so a migrated program keeps its meaning. Bounded by the program depth, like [[fromJson]].
+   */
+  private def bindLets(e: Expr, lets: Set[String]): Expr =
+    e match {
+      case Expr.Var(VarRef.Data(path), d) if path.headOption.exists(lets.contains) =>
+        Expr.Var(VarRef.Bound(path.headOption.getOrElse(""), path.drop(1)), d)
+      case Expr.Var(_, _) | Expr.Lit(_) => e
+      case Expr.VarAt(p, d)             => Expr.VarAt(bindLets(p, lets), d)
+      case Expr.Spread(op, a)           => Expr.Spread(op, bindLets(a, lets))
+      case Expr.Arr(is)                 => Expr.Arr(is.map(bindLets(_, lets)))
+      case Expr.Obj(fs)                 => Expr.Obj(fs.map { case (k, v) => k -> bindLets(v, lets) })
+      case Expr.Apply(Op.Let, Vector(Expr.Arr(pairs), body)) =>
+        val names = pairs.collect { case Expr.Arr(Vector(Expr.Lit(CanonicalValue.CText(n)), _)) => n }
+        val bound = pairs.zipWithIndex.map {
+          case (Expr.Arr(Vector(n, x)), i) => Expr.Arr(Vector(n, bindLets(x, lets ++ names.take(i))))
+          case (other, _)                  => other
+        }
+        Expr.Apply(Op.Let, Vector(Expr.Arr(bound), bindLets(body, lets ++ names)))
+      case Expr.Apply(Op.Let, Vector(Expr.Obj(fields), body)) =>
+        // bound in code-point order of the names (docs/specs/jlvm.md section 4.2)
+        def before(n: String) = fields.keySet.filter(m => Values.compareCodePoints(m, n) < 0)
+        Expr.Apply(
+          Op.Let,
+          Vector(Expr.Obj(fields.map { case (n, x) => n -> bindLets(x, lets ++ before(n)) }), bindLets(body, lets ++ fields.keySet))
+        )
+      case Expr.Apply(op, as) => Expr.Apply(op, as.map(bindLets(_, lets)))
+    }
 
   private def fromObject(obj: JsonObject, mode: Mode): Either[JlvmError, Expr] =
     obj.toList match {
@@ -88,6 +147,8 @@ object Parser {
       case ObjectKey =>
         arg.asObject.fold(malformed[Expr]("object takes an object: {\"object\": {key: expression, ...}}"))(o => mapExpr(o.toList, mode))
       case data if data.startsWith(DataPrefix) => mapExpr(List(data -> arg), mode)
+      case removed if Removed.contains(removed) =>
+        malformed(s"\"$removed\" was removed in JLVM v1: use ${Removed.getOrElse(removed, "")}")
       case name =>
         (Op.fromWire(name), mode) match {
           case (Some(op), _)        => operation(op, arg, mode)
@@ -110,7 +171,9 @@ object Parser {
       .orElse(j.asNumber.flatMap(_.toBigInt).map(_.toString))
       .map(VarRef.parse(_).map(Expr.Var(_, default)))
       .getOrElse(
-        if (j.isObject || j.isArray) fromJson(j, mode).map(Expr.VarAt(_, default))
+        // a literal array here is the path's segments, not code, so it is exempt from the array-syntax check
+        if (j.isObject) fromJson(j, mode).map(Expr.VarAt(_, default))
+        else if (j.isArray) j.asArray.fold(fromJson(j, mode))(elements(_, mode)).map(Expr.VarAt(_, default))
         else malformed("a var path is text, an integer, or an expression computing one")
       )
 
@@ -172,7 +235,12 @@ object Parser {
         (pathJson, default.traverse(defaultJson)).mapN((pj, dj) => Json.obj(Variable -> Json.fromValues(pj +: dj.toVector)))
       case Expr.Apply(op, args) => args.traverse(toJson).map(as => Json.obj(op.wire -> Json.fromValues(as)))
       case Expr.Spread(op, arg) => toJson(arg).map(a => Json.obj(op.wire -> a))
-      case Expr.Arr(items)      => items.traverse(toJson).map(Json.fromValues)
+      case Expr.Arr(items)      =>
+        // a leading text naming a call is quoted, so the array cannot read back as metakit's array syntax
+        items.zipWithIndex.traverse {
+          case (Expr.Lit(t @ CanonicalValue.CText(s)), 0) if callName(s) => quoted(t)
+          case (x, _)                                                    => toJson(x)
+        }.map(Json.fromValues)
       case Expr.Obj(fields) =>
         fields.toList.traverse { case (k, x) => toJson(x).map(k -> _) }.map {
           case List((k, x)) if !k.startsWith(DataPrefix) => Json.obj(ObjectKey -> Json.obj(k -> x))

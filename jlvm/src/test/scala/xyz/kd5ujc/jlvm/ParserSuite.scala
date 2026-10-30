@@ -22,9 +22,52 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     expect
       .same(Right(Expr.Apply(Op.Add, Vector(int(1), int(2)))), p("""{"+": [1, 2]}"""))
       .and(expect.same(Right(Expr.Apply(Op.Not, Vector(Expr.Lit(CBool(true))))), p("""{"!": true}""")))
-      .and(expect.same(Right(Expr.Arr(Vector(text("+"), int(1), int(2)))), p("""["+", 1, 2]""")))
+      .and(expect.same(Right(Expr.Arr(Vector(text("a"), int(1), int(2)))), p("""["a", 1, 2]""")))
       .and(expect.same(Right(Expr.Lit(CNull)), p("null")))
       .and(expect.same(Right(Expr.Apply(Op.StartsWith, Vector(text("abc"), text("a")))), p("""{"startsWith": ["abc", "a"]}""")))
+  }
+
+  pureTest("metakit's array syntax: strict rejects it, lenient reads it as the call, and data quotes it") {
+    def lenient(json: String) = Parser.parse(json, Parser.Mode.Lenient).map(_.expr)
+    val sum = Expr.Apply(Op.Add, Vector(int(1), int(2)))
+    expect(p("""["+", 1, 2]""").isLeft, "strict: a call in array syntax")
+      .and(expect(p("""{"in": ["a", ["var", "x"]]}""").isLeft, "strict: var heads count too"))
+      .and(expect.same(Right(sum), lenient("""["+", 1, 2]""")))
+      .and(expect.same(Right(Expr.Var(VarRef.Data(Vector("a")), Some(CInt(BigInt(5))))), lenient("""["var", "a", 5]""")))
+      .and(
+        expect.same(
+          Right(Expr.Lit(CanonicalValue.array(Vector(CanonicalValue.text("+").toOption.get)).toOption.get)),
+          p("""{"literal": ["+"]}""")
+        )
+      )
+      .and(
+        expect
+          .same(Right(Expr.Arr(Vector(text("max"), Expr.Var(VarRef.Data(Vector("x")), None)))), p("""[{"literal": "max"}, {"var": "x"}]"""))
+      )
+      .and(expect(p("""{"var": [["values", "x"]]}""").isRight, "a computed path's segments are data"))
+      .and(
+        expect.same(
+          Right("""{"+":[1,2]}"""),
+          Parser.migrate("""["+", 1, 2]""")
+        )
+      )
+  }
+
+  pureTest("an array headed by a call's name renders quoted, so it reads back as the same array") {
+    val arr = Expr.Arr(Vector(text("max"), Expr.Var(VarRef.Data(Vector("x")), None)))
+    val back = Program.from(arr).flatMap(Parser.render).map(_.noSpaces).flatMap(Parser.parse(_)).map(_.expr)
+    expect.same(Right(arr), back)
+  }
+
+  pureTest("metakit operations removed in v1 are rejected in both modes, naming their replacement") {
+    def message(e: Either[JlvmError, ?]) = e.left.toOption.map(_.toString).getOrElse("")
+    Parser.Removed.keys.toList.foldLeft(success) { (acc, name) =>
+      val json = s"""{"$name": [1]}"""
+      acc
+        .and(expect(message(p(json)).contains("removed in JLVM v1"), s"strict $name"))
+        .and(expect(message(Parser.parse(json, Parser.Mode.Lenient)).contains("removed in JLVM v1"), s"lenient $name"))
+        .and(expect(message(Parser.parse(s"""["$name", 1]""", Parser.Mode.Lenient)).contains("removed in JLVM v1"), s"array $name"))
+    }
   }
 
   pureTest("var paths: data paths, $-bindings, defaults, integers") {

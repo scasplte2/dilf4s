@@ -35,11 +35,27 @@ exactly five things:
 - **Aliases.** `getKey`, `setKey`, `deleteKey` and `size` are accepted for `get`, `set`, `unset` and `length`. The
   canonical form records the operation's own name, so an alias never changes a program's identity.
 - **Arrays** are evaluated element-wise. There are no array-form operations.
+  - An array whose first element is text naming an operation, or `var`, is a parse error. metakit read
+    `["+", 1, 2]` as a call, so accepting it as data would silently change such a program's meaning.
+  - Data of that shape is quoted, `{"literal": ["+", 1, 2]}`, or given a non-text first element, as in
+    `[{"literal": "+"}, {"var": "x"}]`. Rendering quotes such a first element itself.
+  - The segments array of a computed `var` path (§4.1) is exempt, since it is never code.
 - **JSON `null`** is the null literal.
 - **Strings** of the form `0x` followed by an even number of lowercase hex digits are byte strings (§2). Every other
   string is text.
 
-The parser's `Lenient` mode reads an unknown single-key object as a map expression, as metakit did. It still
+The parser's `Lenient` mode reads programs as metakit did:
+- an unknown single-key object is a map expression;
+- an array headed by an operation's name, or `var`, is that call;
+- a plain path whose first segment a `let` binds reads the binding: `{"var": "x"}` is rewritten to `$x`.
+
+An operation metakit had but v1 removed is a parse error in both modes, and the message names its replacement:
+- `prove_dlog_verify` and `prove_dhtuple_verify` become a one-leaf `sigma_verify`;
+- `mpt_verify` and `smt_verify` become `trie_verify`;
+- `mpt_prefix_verify` becomes `trie_prefix_verify`;
+- `noop` was internal to metakit's evaluator.
+
+The `Lenient` mode It still
 recognises the keywords `object` and `literal` and the `_` prefix, so that migration is idempotent; no program in the
 ottochain or metakit corpus uses `object` as a data key. It exists only to migrate older programs: `Parser.migrate` reads a program leniently and writes it back in the strict surface
 (`Parser.render`), emitting `{"object": ...}` for each single-key map expression. Rendering is exact: parsing the
@@ -55,7 +71,9 @@ form and is an error.
 **Compilation.** Before evaluation, a program is checked into its evaluation form. These are parse errors
 (`Malformed`), reported with no gas used:
 - the shape of `if`, `let` and every callback form;
-- binding names;
+- binding names, and a plain path naming a `let` binding in scope;
+- an array headed by an operation's name (above);
+- an operation metakit had and v1 removed;
 - duplicate bindings;
 - a spread whose argument can never be an array.
 
@@ -181,8 +199,9 @@ path:
 
 ### 4.2 Lazy forms
 
-**`if`** takes `[c1, t1, (c2, t2)..., else]`, an odd count of at least 3. The result is the first `ti` whose `ci` is
-truthy, otherwise `else`. Only the taken branch is evaluated.
+**`if`** takes `[c1, t1, (c2, t2)..., else]`, or the same without `else`: at least 2 arguments. The result is the
+first `ti` whose `ci` is truthy, otherwise `else`, or null when there is no `else` (standard JsonLogic). Only the taken
+branch is evaluated.
 
 **`and`, `or`, `default`** evaluate their arguments left to right and stop early:
 
@@ -197,6 +216,12 @@ the names.
 - Each binding sees the earlier ones, and the body sees all of them.
 - A name is non-empty, has no `.`, and has no leading `$`.
 - A name may not be bound twice in one `let`.
+- A binding is read only as `$name`.
+  - A plain path whose first segment names a binding in scope is a parse error. metakit read `{"var": "x"}` as the
+    binding, so accepting it would silently read the data instead.
+  - The data's `x` is read with the exact-segment form `{"var": [["x"]]}`.
+  - A callback element's `x` is read as `$current.x`.
+  - `Parser.migrate` rewrites metakit's plain reads to `$name`.
 
 ### 4.3 Callbacks
 
@@ -217,6 +242,8 @@ element (§4.1).
   is reached.
 - `reduce [array, body, initial]`: also binds `$accumulator`; the body's value is the next accumulator. `initial` is
   evaluated after the array.
+- `reduce [array, body]`: the first element is the initial accumulator, and the body runs from the second (`$index`
+  1). An empty array gives null (metakit).
 
 **Syntactic forms.** Whether `count` is a callback is decided by syntax: `count [array]` is the length.
 
@@ -465,3 +492,10 @@ A property test checks that all three agree on value, error, gas and warnings, a
 | 12 | `var` paths may be computed only as text. | Text, or an array of exact segments. | Keys holding `.` cannot redirect a read. |
 | 13 | `+` and `*` of nothing are errors. | 0 and 1. | Spreads over empty collections. |
 | 14 | Sigma protocols on BN254 G1 with metakit's own transcript, GF(2^8) per byte for thresholds, and standalone `prove_dlog_verify` / `prove_dhtuple_verify`. | Ergo's construction on secp256k1 (`sigma.md`), cross-checked against Ergo both ways. `schnorr_verify` is a one-leaf `sigma_verify`; the standalone leaf ops are gone, since a one-leaf `sigma_verify` does the same. | Ergo's construction has been in production since 2019, and Ergo's own prover and verifier check ours. Standalone leaves combined with `or` look like rings but hide nothing. |
+| 15 | `typeof` names `int`, `float`, `bool`, `map`. | `number`, `boolean`, `object` (§2), with one exact number kind; `bytes` is new. | One number kind; JSON's names. `Parser.migrate` cannot rewrite comparisons against the old names. |
+| 16 | `keys`, `values` and `entries` with no argument give null; `missing_some` with one argument treats it as the keys. | `Arity` errors. | A call with missing arguments is a mistake, not a query. |
+| 17 | `substr` and `slice` indices beyond 64 bits are errors. | Clamped like any other out-of-range index (JavaScript bounds). | One rule for every index. |
+| 18 | A map may hold null values (`{"a": null}`, or an invalid `ecvrf_verify`'s `beta: null`). | Null values are dropped from maps (`canonical-encoding.md`, dropNulls): absent and null read the same. | One encoding per value, and fields can be added without changing existing hashes. |
+| 19 | A BLS signature of the right length that does not decode is `false`. | A `Crypto` error, as for every other scheme: malformed input is an error, a well-formed invalid proof is `false` (§3). | One rule for every verifier. |
+| 20 | An array headed by an operation's name is a call (`["+", 1, 2]`); `let` names are read with plain paths. | A parse error in each case (§1, §4.2); `Parser.migrate` rewrites both. | metakit programs fail loudly, rather than silently reading data. |
+| 21 | `prove_dlog_verify`, `prove_dhtuple_verify`, `mpt_verify`, `mpt_prefix_verify`, `smt_verify`, `noop`. | Removed; the parse error names the replacement (§1). | Replaced by `sigma_verify` (§8 #14) and the binary trie (`trie.md`). `noop` was internal. |

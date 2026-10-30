@@ -87,7 +87,47 @@ object EvaluatorSuite extends IOSuite with Checkers {
       .and(expect.same(ok("null"), result("""{"default": [null, 0]}""")))
       .and(expect.same(ok("true"), result("""{"and": []}""")))
       .and(expect.same(ok("false"), result("""{"or": []}""")))
-      .and(expect(Parser.parse("""{"if": [true, 1]}""").flatMap(Compiled(_)).isLeft, "if needs an else"))
+      .and(expect.same(ok("1"), result("""{"if": [true, 1]}""")))
+      .and(expect.same(ok("null"), result("""{"if": [false, 1, false, 2]}""")))
+      .and(expect(Parser.parse("""{"if": [true]}""").flatMap(Compiled(_)).isLeft, "if needs a condition and a branch"))
+  }
+
+  check("reduce without an initial value starts from the first element; an empty array gives null") {
+    val sum = """{"+": [{"var": "$accumulator"}, {"var": "$current"}]}"""
+    val indices = """{"cat": [{"var": "$accumulator"}, {"var": "$index"}]}"""
+    expect
+      .same(ok("10"), result(s"""{"reduce": [[1, 2, 3, 4], $sum]}"""))
+      .and(expect.same(ok("42"), result(s"""{"reduce": [[42], $sum]}""")))
+      .and(expect.same(ok("null"), result(s"""{"reduce": [[], $sum]}""")))
+      .and(expect.same(ok("null"), result(s"""{"reduce": [{"var": "absent"}, $sum]}""")))
+      .and(expect.same(ok("\"a12\""), result(s"""{"reduce": [["a", "b", "c"], $indices]}""")))
+  }
+
+  check("a plain path naming a let binding is rejected; the binding, the data and the element are each explicit") {
+    def compiles(json: String) = Parser.parse(json).flatMap(Compiled(_)).isRight
+    expect(!compiles("""{"let": [[["x", 5]], {"var": "x"}]}"""), "the body")
+      .and(expect(!compiles("""{"let": [[["x", 5], ["y", {"var": "x.a"}]], 0]}"""), "a later binding"))
+      .and(expect(!compiles("""{"let": [[["x", 5]], {"map": [[1], {"var": "x"}]}]}"""), "inside a callback"))
+      .and(expect(compiles("""{"let": [[["y", {"var": "x"}], ["x", 5]], 0]}"""), "an earlier binding sees the data"))
+      .and(expect.same(ok("5"), result("""{"let": [[["x", 5]], {"var": "$x"}]}""")))
+      .and(expect.same(ok("7"), result("""{"let": [[["x", 5]], {"var": [["x"]]}]}""", """{"x": 7}""")))
+  }
+
+  check("migrate rewrites metakit's plain reads of let names to $name") {
+    def run(json: String, data: String = "{}") = Parser.migrate(json).map(result(_, data))
+    expect
+      .same(
+        Right("""{"let":[[["x",5],["y",{"+":[{"var":"$x"},3]}]],{"var":"$y"}]}"""),
+        Parser.migrate("""{"let": [[["x", 5], ["y", {"+": [{"var": "x"}, 3]}]], {"var": "y"}]}""")
+      )
+      .and(expect.same(Right(ok("8")), run("""{"let": [[["x", 5], ["y", {"+": [{"var": "x"}, 3]}]], {"var": "y"}]}""")))
+      .and(
+        expect.same(
+          Right(ok("11")),
+          run("""{"let": [{"doubled": {"*": [{"var": "x"}, 2]}}, {"+": [{"var": "doubled"}, 1]}]}""", """{"x": 5}""")
+        )
+      )
+      .and(expect.same(Right(ok("2")), run("""{"let": [{"b": {"+": [{"var": "a"}, 1]}, "a": 1}, {"var": "b"}]}""")))
   }
 
   // ---- callbacks

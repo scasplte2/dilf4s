@@ -182,7 +182,15 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
         )
 
       case Fold(over, body, init) =>
-        Charge(base(Op.Reduce), () => collection(Op.Reduce, over, scope)(vs => Eval(init, scope, acc => fold(vs, body, scope, 0, acc))))
+        Charge(
+          base(Op.Reduce),
+          () =>
+            collection(Op.Reduce, over, scope) { vs =>
+              init.fold(vs.headOption.fold[Step](Done(CNull))(first => fold(vs, body, scope, 1, first)))(i =>
+                Eval(i, scope, acc => fold(vs, body, scope, 0, acc))
+              )
+            }
+        )
 
       case Lookup(op, args) =>
         Charge(base(op), () => all(args, scope)(vs => Charge(sized(op, vs), () => result(Lookups(op, vs, p => scope.resolve(p).value)))))
