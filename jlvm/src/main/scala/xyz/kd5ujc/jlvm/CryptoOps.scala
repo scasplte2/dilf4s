@@ -30,7 +30,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381) {
       case Op.BlsVerify          => Option(signature(op, args)(bls.codec, bls.verifier))
       case Op.Bip340Verify       => Option(bip340(op, args))
       case Op.BlsAggregateVerify => Option(blsAggregate(op, args))
-      case _                     => Option.empty
+      case _                     => ZkOps(op, args)
     }
 
   private def crypto[A](op: Op)(e: CryptoError): JlvmError = JlvmError.Crypto(op.wire, e.toString)

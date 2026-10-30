@@ -157,7 +157,7 @@ object GasSchedule {
       EcvrfVerify             -> c(50000, 1, Weight),
       Bn254Add                -> c(500),
       Bn254Mul                -> c(40000),
-      Bn254Pairing            -> c(45000, 35000, Elements),
+      Bn254Pairing            -> c(45000, 180, Weight),
       SchnorrVerify           -> c(45000, 1, Weight),
       ProveDlogVerify         -> c(45000, 1, Weight),
       ProveDhTupleVerify      -> c(85000, 1, Weight),

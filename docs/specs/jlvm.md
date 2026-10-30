@@ -277,9 +277,23 @@ All inputs are bytes. Malformed input is a `Crypto` error; a well-formed signatu
 `bls_aggregate_verify` assumes every key carries a proof of possession, checked when the key was admitted. Without
 that check, a rogue key can forge an aggregate.
 
+The BN254 family follows metakit's byte formats. G1 points are 64 bytes `x‖y`, and `(0,0)` is the point at infinity.
+G2 points are 128 bytes, imaginary part first (EVM order). Scalars and field elements are 32 bytes and must be
+canonical (less than the modulus).
+
+| Operation | Arguments | Result |
+|---|---|---|
+| `poseidon` | 1–4 field elements, as separate arguments or one array | 32 bytes |
+| `pmt_verify` | `[root, leaf, index, [sibling, ...]]`, at most 256 siblings, root-first | boolean |
+| `groth16_verify` | `[vkey32, publicValues, proof]` (an SP1 Groth16 proof) | boolean |
+| `ecvrf_verify` | `[key32, alpha, proof80]` (RFC 9381, Edwards25519 TAI) | `{valid: true, beta}` or `{valid: false}` |
+| `bn254_add` | `[g1, g1]` | `g1` |
+| `bn254_mul` | `[g1, scalar32]`, with the scalar reduced mod r | `g1` |
+| `bn254_pairing` | at most 64 `[g1, g2]` pairs, as separate arguments or one array; no pairs is `true` | boolean |
+
+`bn254_pairing` is priced by weight, so both argument forms cost the same.
+
 **Not yet available.** Evaluating these is a `Crypto` error:
-- BN254 family, in progress: `poseidon`, `pmt_verify`, `groth16_verify`, `ecvrf_verify`, `bn254_add`, `bn254_mul`,
-  `bn254_pairing`.
 - Sigma protocols (**unaudited**): `schnorr_verify`, `prove_dlog_verify`, `prove_dhtuple_verify`, `sigma_verify`.
 - Merkle and trie proofs (**Open**: argument design): `merkle_verify`, `merkle_consistency_verify`, `trie_verify`,
   `trie_prefix_verify`, `trie_range_verify`.
