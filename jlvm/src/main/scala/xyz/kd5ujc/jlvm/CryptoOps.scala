@@ -33,7 +33,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381) {
       case Op.BlsAggregateVerify => Option(blsAggregate(op, args))
       case Op.SigmaVerify        => Option(sigma(op, args))
       case Op.SchnorrVerify      => Option(schnorr(op, args))
-      case _                     => ZkOps(op, args)
+      case _                     => ProofOps(op, args).orElse(ZkOps(op, args))
     }
 
   private def crypto[A](op: Op)(e: CryptoError): JlvmError = JlvmError.Crypto(op.wire, e.toString)

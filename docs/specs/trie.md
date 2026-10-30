@@ -77,7 +77,15 @@ Empty                                          -- only as the whole proof of an 
 
 **Prefix query** for prefix `p`: walk to the node whose subtree holds exactly the keys starting with `p`. If any stub lies inside that subtree, the proof doesn't cover `p`. Otherwise every key/value-hash pair under `p` is listed, and the list is **complete**, because the expanded subtree hashes to the committed value.
 
-A single-key proof is the partial trie expanded along that key's path, with every sibling as a stub. Batch, prefix and mixed proofs are the union of their paths, so shared nodes appear once.
+**Range query** for `[from, until)`, with `until` absent meaning unbounded. Keys are compared in bitwise lexicographic
+order, a proper prefix before its extensions. Walk every subtree whose keys can fall in the range:
+- a stub there means the proof doesn't cover the range;
+- otherwise every key/value-hash pair with `from <= key < until` is listed, in key order.
+
+The list is **complete**, including when it is empty, because every subtree that could hold such a key is expanded.
+`from` and `until` are bit strings and need not be keys.
+
+A single-key proof is the partial trie expanded along that key's path, with every sibling as a stub. Batch, prefix, range and mixed proofs are the union of their paths, so shared nodes appear once.
 
 ## 5. Proof encoding
 

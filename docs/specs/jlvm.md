@@ -1,7 +1,6 @@
 # dilf4s JLVM (language v1, gas schedule v1)
 
-Status: normative, in progress. Every operation is specified except the Merkle and trie proof operations (§6), which
-are listed but not yet available.
+Status: normative. Every operation of language version 1 is specified and available.
 
 The JLVM is a strict, metered expression language for ledgers, written in JsonLogic syntax. A result is a function of
 exactly five things:
@@ -361,8 +360,26 @@ which branches the prover knew. This is what ring signatures, hidden-signer k-of
 - Gas is priced by weight: about 45,000 per `dlog` leaf and 92,000 per `dhtuple` leaf, with proposition and proof
   together. Every argument counts, so sign a 32-byte digest rather than a long message.
 
-**Not yet available.** Evaluating these is a `Crypto` error: `merkle_verify`, `merkle_consistency_verify`,
-`trie_verify`, `trie_prefix_verify`, `trie_range_verify`.
+**Authenticated structures**: dilf4s's Merkle trees (`merkle.md`) and binary Patricia tries (`trie.md`), over SHA-256.
+Proofs are their canonical records (`merkle-inclusion`, `merkle-consistency`, `trie-proof`), passed as values. A leaf
+or value that is bytes commits as itself; any other value commits as its canonical CBOR encoding.
+
+| Operation | Arguments | Result |
+|---|---|---|
+| `merkle_verify` | `[head, leaf, proof]`, or `[head, leaf, proof, "rfc6962"]` for that profile | boolean |
+| `merkle_consistency_verify` | `[oldHead, newHead, proof]`, or with `"rfc6962"` | boolean |
+| `trie_verify` | `[mode, root, key, value, proof]`; a null `value` claims absence | boolean |
+| `trie_prefix_verify` | `[mode, root, prefix, entries, proof]` | boolean |
+| `trie_range_verify` | `[mode, root, from, until, entries, proof]`; `until` null is unbounded | boolean |
+
+- **A head is `{root, size}`**, taken from one trusted tree head. A proof whose own size differs from the head's is
+  `false`: a root from a smaller tree can satisfy a proof that claims a larger size (`merkle.md` §3).
+- **A mode is `{"fixed": n}` or `{"variable": max}`.** A key of the wrong length for the mode is a `Crypto` error.
+- **Entries are `[key, value]` pairs in key order** (bitwise, a prefix before its extensions). True means they are
+  exactly the trie's entries under the prefix, or in `[from, until)`.
+- **"Not covered" is an error.** A proof that does not reach the queried key, or reaches a stub inside the queried
+  prefix or range, is a `Crypto` error, never `false`: it establishes neither presence nor absence.
+- **Gas** is priced by weight, about one SHA-256 per path digest or proof record.
 
 ## 7. Gas
 
