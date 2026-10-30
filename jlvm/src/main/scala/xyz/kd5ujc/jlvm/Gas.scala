@@ -120,7 +120,7 @@ object GasSchedule {
   private def c(base: Long, perUnit: Long = 0, unit: SizeUnit = SizeUnit.None): OpCost = OpCost(Gas(base), Gas(perUnit), unit)
 
   import Op.{Map => MapOp, None => NoneOp, Set => SetOp, Some => SomeOp, _}
-  import SizeUnit.{Elements, Weight}
+  import SizeUnit.{Elements, Limbs2, RationalLimbs2, Weight}
 
   /**
    * Version 1. Base costs start from metakit's table; size terms now cover the work metakit left unpriced: everything
@@ -129,84 +129,91 @@ object GasSchedule {
    */
   val V1: GasSchedule = GasSchedule(
     version = 1,
+    // Calibrated at 150 gas/us on the direct driver (benchmarks: GasCalibration; .workspace/pricing), the rate the
+    // cryptographic operations are priced at. A per-unit rate of 1 is the floor for work that grows with its input,
+    // even where the measured rate is lower.
     ops = scala.collection.immutable.Map(
-      If                 -> c(10),
-      And                -> c(2),
-      Or                 -> c(2),
-      Not                -> c(1),
-      Truthy             -> c(1),
-      Default            -> c(5),
-      Let                -> c(10),
-      Eq                 -> c(2, 1, Weight),
-      Ne                 -> c(2, 1, Weight),
-      StrictEq           -> c(2, 1, Weight),
-      StrictNe           -> c(2, 1, Weight),
-      Lt                 -> c(3, 1, Weight),
-      Le                 -> c(3, 1, Weight),
-      Gt                 -> c(3, 1, Weight),
-      Ge                 -> c(3, 1, Weight),
-      Add                -> c(5, 1, Weight),
-      Sub                -> c(5, 1, Weight),
-      Mul                -> c(8, 2, Weight),
-      Div                -> c(10, 4, Weight),
-      Mod                -> c(10, 4, Weight),
-      Min                -> c(5, 1, Weight),
-      Max                -> c(5, 1, Weight),
-      Abs                -> c(2, 1, Weight),
-      Round              -> c(3, 2, Weight),
-      RoundHalfUp        -> c(3, 2, Weight),
-      Floor              -> c(3, 2, Weight),
-      Ceil               -> c(3, 2, Weight),
-      Pow                -> c(20, 8, Weight),
-      MapOp              -> c(10, 1, Elements),
-      Filter             -> c(10, 1, Elements),
-      Reduce             -> c(15, 1, Elements),
-      All                -> c(10, 1, Elements),
-      SomeOp             -> c(10, 1, Elements),
-      NoneOp             -> c(10, 1, Elements),
-      Find               -> c(10, 1, Elements),
-      Count              -> c(5, 1, Elements),
-      Merge              -> c(5, 1, Weight),
-      In                 -> c(8, 1, Weight),
-      Intersect          -> c(15, 1, Weight),
-      Unique             -> c(20, 2, Weight),
-      Slice              -> c(5, 1, Elements),
-      Reverse            -> c(5, 1, Elements),
-      Flatten            -> c(10, 1, Weight),
-      Length             -> c(1, 1, Weight),
-      Cat                -> c(5, 1, Weight),
-      Substr             -> c(8, 1, Weight),
-      Lower              -> c(3, 1, Weight),
-      Upper              -> c(3, 1, Weight),
-      Join               -> c(10, 1, Weight),
-      Split              -> c(15, 2, Weight),
-      Trim               -> c(5, 1, Weight),
-      StartsWith         -> c(5, 1, Weight),
-      EndsWith           -> c(5, 1, Weight),
-      Keys               -> c(5, 1, Weight),
-      Values             -> c(5, 1, Weight),
-      Entries            -> c(10, 2, Weight),
-      Get                -> c(3),
-      Has                -> c(3),
-      SetOp              -> c(5, 1, Elements),
-      Unset              -> c(5, 1, Elements),
-      Exists             -> c(5, 1, Elements),
-      Missing            -> c(5, 1, Elements),
-      MissingSome        -> c(15, 1, Elements),
-      TypeOf             -> c(1),
-      Hex                -> c(5, 1, Weight),
-      Unhex              -> c(5, 1, Weight),
-      HexToInt           -> c(10, 1, Weight),
-      BytesToInt         -> c(10, 1, Weight),
-      IntToBytes         -> c(10, 1, Weight),
-      Sha256             -> c(60, 1, Weight),
-      Sha3_256           -> c(60, 1, Weight),
-      Blake2b256         -> c(60, 1, Weight),
-      Ed25519Verify      -> c(30000, 1, Weight),
-      Secp256k1Verify    -> c(30000, 1, Weight),
-      Bip340Verify       -> c(30000, 1, Weight),
-      BlsVerify          -> c(120000, 1, Weight),
-      BlsAggregateVerify -> c(120000, 15000, Elements),
+      If       -> c(20),
+      And      -> c(15),
+      Or       -> c(15),
+      Not      -> c(40),
+      Truthy   -> c(40),
+      Default  -> c(15),
+      Let      -> c(30),
+      Eq       -> c(50, 1, Weight),
+      Ne       -> c(50, 1, Weight),
+      StrictEq -> c(50, 1, Weight),
+      StrictNe -> c(50, 1, Weight),
+      Lt       -> c(55, 1, Weight),
+      Le       -> c(55, 1, Weight),
+      Gt       -> c(55, 1, Weight),
+      Ge       -> c(55, 1, Weight),
+      // integer sums and products are linear; rational ones, and every quotient, normalise through a quadratic gcd
+      Add         -> c(140, 9, Weight).plus(8, RationalLimbs2),
+      Sub         -> c(140, 10, Weight).plus(8, RationalLimbs2),
+      Mul         -> c(100, 17, Weight).plus(10, RationalLimbs2),
+      Div         -> c(200, 2, Weight).plus(8, Limbs2),
+      Mod         -> c(200, 2, Weight).plus(8, Limbs2),
+      Min         -> c(90, 1, Weight),
+      Max         -> c(90, 1, Weight),
+      Abs         -> c(60, 1, Weight).plus(4, RationalLimbs2),
+      Round       -> c(60, 1, Weight),
+      RoundHalfUp -> c(60, 1, Weight),
+      Floor       -> c(60, 1, Weight),
+      Ceil        -> c(60, 1, Weight),
+      // priced at its worst case, a 4096-bit rational result: the result's size is not known from the arguments
+      Pow        -> c(50000),
+      MapOp      -> c(40, 8, Elements),
+      Filter     -> c(40, 8, Elements),
+      Reduce     -> c(40, 8, Elements),
+      All        -> c(40, 8, Elements),
+      SomeOp     -> c(40, 8, Elements),
+      NoneOp     -> c(40, 8, Elements),
+      Find       -> c(40, 8, Elements),
+      Count      -> c(45, 8, Elements),
+      Merge      -> c(210, 1, Weight),
+      In         -> c(70, 1, Weight),
+      Intersect  -> c(50, 12, Weight),
+      Unique     -> c(50, 18, Weight),
+      Slice      -> c(45, 5, Elements),
+      Reverse    -> c(55, 9, Elements),
+      Flatten    -> c(60, 5, Weight),
+      Length     -> c(45, 1, Weight),
+      Cat        -> c(65, 1, Weight),
+      Substr     -> c(75, 1, Weight),
+      Lower      -> c(45, 1, Weight),
+      Upper      -> c(50, 1, Weight),
+      Join       -> c(110, 2, Weight),
+      Split      -> c(85, 6, Weight),
+      Trim       -> c(75, 1, Weight),
+      StartsWith -> c(50, 1, Weight),
+      EndsWith   -> c(50, 1, Weight),
+      Keys       -> c(50, 12, Weight),
+      Values     -> c(50, 12, Weight),
+      Entries    -> c(50, 18, Weight),
+      Get        -> c(30),
+      Has        -> c(40),
+      // a canonical map caches its weight and depth, so a new map costs a pass over its entries
+      SetOp       -> c(90, 6, Elements),
+      Unset       -> c(40, 6, Elements),
+      Exists      -> c(50, 1, Elements),
+      Missing     -> c(50, 20, Elements),
+      MissingSome -> c(60, 20, Elements),
+      TypeOf      -> c(45),
+      Hex         -> c(45, 1, Weight),
+      Unhex       -> c(80, 3, Weight),
+      HexToInt    -> c(80, 3, Weight),
+      BytesToInt  -> c(45, 1, Weight),
+      IntToBytes  -> c(70, 1, Weight),
+      Sha256      -> c(80, 1, Weight),
+      Sha3_256    -> c(130, 1, Weight),
+      Blake2b256  -> c(115, 1, Weight),
+      // measured at 150 gas/us: secp256k1 (native) ~48us, BIP-340 ~53us, Ed25519 ~240us, BLS ~1.55ms plus ~170us a key
+      Ed25519Verify      -> c(36000, 1, Weight),
+      Secp256k1Verify    -> c(7200, 1, Weight),
+      Bip340Verify       -> c(8000, 1, Weight),
+      BlsVerify          -> c(233000, 1, Weight),
+      BlsAggregateVerify -> c(230000, 25000, Elements),
       // measured at 150 gas/us (.workspace/pricing): BN254 on gnark, a pairing ~480us plus ~25k gas a pair (weight
       // ~195), Groth16 ~1.45ms; Poseidon (BigInteger) ~17k plus ~14k gas an input; ecvrf ~1ms. Close to EIP-1108.
       Poseidon      -> c(17000, 14000, Elements),
@@ -227,11 +234,13 @@ object GasSchedule {
       TriePrefixVerify        -> c(1000, 30, Weight),
       TrieRangeVerify         -> c(1000, 30, Weight)
     ),
-    literal = Gas(1),
-    element = Gas(1),
-    varAccess = Gas(2),
+    // per node, measured: a literal in an array ~25, a var read ~29, a callback run ~38 (with its body), an untaken
+    // if branch ~34 (its condition plus one element charge)
+    literal = Gas(15),
+    element = Gas(12),
+    varAccess = Gas(18),
     perPathSegment = Gas(1),
-    callbackRun = Gas(1)
+    callbackRun = Gas(10)
   )
 
   val Latest: GasSchedule = V1
@@ -241,7 +250,9 @@ object GasSchedule {
 final case class GasLimit(amount: Gas)
 
 object GasLimit {
-  val Default: GasLimit = GasLimit(Gas(1000000L))
+
+  /** 2^24, Ethereum's per-transaction cap (EIP-7825): about 110ms of work at the schedule's 150 gas/us. */
+  val Default: GasLimit = GasLimit(Gas(1L << 24))
 }
 
 /** The result of an evaluation: the gas it used, **whether it succeeded or failed**, and the value or the error. */

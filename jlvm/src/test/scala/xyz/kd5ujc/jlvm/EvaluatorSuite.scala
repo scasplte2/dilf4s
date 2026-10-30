@@ -224,8 +224,11 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   check("a computed path costs its expression, then the access and its segments") {
     val data = """{"a": {"b": 1}}"""
-    // static a.b: var 2 + 2 segments; computed: the literal path (1), then the same
-    expect.same(eval("""{"var": "a.b"}""", data).gasUsed.value + 1, eval("""{"var": {"literal": "a.b"}}""", data).gasUsed.value)
+    // computed: the literal path, then the same access and segments as the static path
+    expect.same(
+      eval("""{"var": "a.b"}""", data).gasUsed.value + S.literal.value,
+      eval("""{"var": {"literal": "a.b"}}""", data).gasUsed.value
+    )
   }
 
   // ---- spreading, decided by the syntax
@@ -263,21 +266,26 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   // ---- gas
 
+  private val S = GasSchedule.V1
+  private def add = S.cost(Op.Add)
+
   check("gas follows the schedule: base, then arguments, then the size charge") {
-    // + base 5; two literals at 1; size: perUnit 1 x (weight 1 + weight 1)
+    // + base; two literals; size: perUnit x (weight 1 + weight 1), and no rational term for integers
+    val sum = add.base.value + 2 * S.literal.value + add.perUnit.value * 2
     expect
-      .same(Gas(9), eval("""{"+": [1, 2]}""").gasUsed)
-      .and(expect.same(Gas(2 + 1 * 2), eval("""{"var": "a.b"}""", """{"a": {"b": 1}}""").gasUsed))
+      .same(Gas(sum), eval("""{"+": [1, 2]}""").gasUsed)
+      .and(expect.same(Gas(S.varAccess.value + S.perPathSegment.value * 2), eval("""{"var": "a.b"}""", """{"a": {"b": 1}}""").gasUsed))
   }
 
   check("failures report the gas they used; running out uses the whole limit") {
-    // base 5, literals 1 + 1, size 1 x (weight 1 + weight 2): "x" is one node plus one byte
+    // "x" weighs 2: one node plus one byte
+    val sum = add.base.value + 2 * S.literal.value + add.perUnit.value * 2
     val failed = eval("""{"+": [1, "x"]}""")
-    val starved = eval("""{"+": [1, 2]}""", limit = 8)
+    val starved = eval("""{"+": [1, 2]}""", limit = sum - 1)
     expect(failed.result.isLeft, "type error")
-      .and(expect.same(Gas(10), failed.gasUsed))
-      .and(expect.same(Gas(8), starved.gasUsed))
-      .and(expect.same(Left(JlvmError.OutOfGas(9, 8)), starved.result))
+      .and(expect.same(Gas(sum + add.perUnit.value), failed.gasUsed))
+      .and(expect.same(Gas(sum - 1), starved.gasUsed))
+      .and(expect.same(Left(JlvmError.OutOfGas(sum, sum - 1)), starved.result))
   }
 
   check("an untaken branch costs nothing") {
@@ -289,8 +297,10 @@ object EvaluatorSuite extends IOSuite with Checkers {
   check("callbacks pay per element up front, and per run") {
     val one = eval("""{"map": [[1], {"var": "$current"}]}""").gasUsed.value
     val two = eval("""{"map": [[1, 1], {"var": "$current"}]}""").gasUsed.value
-    // one more literal element (1 literal + 1 element), one more per-element charge (1), one more run (1 + var 2 + 1)
-    expect.same(2L + 1L + 4L, two - one)
+    // one more literal element (literal + element), one more per-element charge, one more run (run + var + its name)
+    val element = S.literal.value + S.element.value
+    val run = S.callbackRun.value + S.varAccess.value + S.perPathSegment.value
+    expect.same(element + S.cost(Op.Map).perUnit.value + run, two - one)
   }
 
   // ---- stack safety

@@ -154,11 +154,14 @@ object ParserSuite extends SimpleIOSuite with Checkers {
       keys.map(k => CanonicalValue.map(List(k -> CInt(1))).toOption.get)
     )
 
+  /** A default is never null (a null default is no default): mapped rather than filtered, so nothing is discarded. */
+  private def default: Gen[CanonicalValue] = lit.map(d => if (d == CNull) CInt(1) else d)
+
   private def expr(depth: Int): Gen[Expr] = {
     val leaf = Gen.oneOf[Expr](
       lit.map(Expr.Lit(_)),
       Gen.oneOf("a", "a.b", "", "$current", "$x.0", "0").map(v),
-      Gen.zip(Gen.oneOf("a", "$x"), lit.suchThat(_ != CNull)).map { case (q, d) => Expr.Var(VarRef.parse(q).toOption.get, Some(d)) }
+      Gen.zip(Gen.oneOf("a", "$x"), default).map { case (q, d) => Expr.Var(VarRef.parse(q).toOption.get, Some(d)) }
     )
     if (depth <= 0) leaf
     else {
@@ -171,13 +174,14 @@ object ParserSuite extends SimpleIOSuite with Checkers {
         1 -> Gen
           .zip(
             Gen.oneOf(Op.Variadic.toList),
-            sub.suchThat {
-              case Expr.Arr(_) => false
-              case _           => true
+            // an array expression would be an argument list: spread its first item instead
+            sub.map {
+              case Expr.Arr(items) => items.headOption.getOrElse(v("a"))
+              case e               => e
             }
           )
           .map { case (o, a) => Expr.Spread(o, a) },
-        1 -> Gen.zip(sub, Gen.option(lit.suchThat(_ != CNull))).map { case (q, d) => Expr.VarAt(q, d) },
+        1 -> Gen.zip(sub, Gen.option(default)).map { case (q, d) => Expr.VarAt(q, d) },
         1 -> Gen.listOfN(2, sub).map(is => Expr.Arr(is.toVector)),
         2 -> Gen.choose(0, 3).flatMap(n => Gen.listOfN(n, Gen.zip(keys, sub))).map(fs => Expr.Obj(fs.toMap))
       )

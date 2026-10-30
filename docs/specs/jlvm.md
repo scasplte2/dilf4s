@@ -393,16 +393,31 @@ library's conventions: `MerkleTree.leaf` (or `MerkleHashing.leaf` on the bytes) 
 ## 7. Gas
 
 **Schedules.** A schedule is versioned data (`Gas.scala`, `GasSchedule.V1`). It holds:
-- for every operation, a base charge, a per-unit charge and a size unit, and optionally a rate of their own for
-  particular argument positions;
+- for every operation, a base charge, a per-unit charge and a size unit;
+- optionally, a rate of their own for particular argument positions, and further rates charged on every argument;
 - the scalar charges `literal`, `element`, `varAccess`, `perPathSegment` and `callbackRun`.
+
+**Calibration.** Schedule v1 prices work at **150 gas per µs**, on the direct driver. Every operation and node charge
+was fitted to measured time at a small and a large size (`benchmarks`: `GasCalibration`). A per-unit rate of 1 is the
+floor for work that grows with its input. The cryptographic operations sit at the same rate; the BN254 ones land near
+Ethereum's EIP-1108 prices.
+
+**The default limit** is 2^24 = 16,777,216 gas, Ethereum's per-transaction cap (EIP-7825): about 110 ms of work. Hosts
+pass their own limit per evaluation.
 
 **Size units.** An operation's size charge is summed over its evaluated arguments, each at its position's rate (by
 default the operation's). For example, `sigma_verify` and `schnorr_verify` charge the message at the hashing rate,
 1 per unit of weight, and the proposition and proof at the curve rate. Each argument is measured in its rate's unit:
 - `Elements`: the top-level entries of arrays and objects, and 1 for anything else;
 - `Weight`: the weight (§2);
+- `Limbs2`: for a number, the square of its 64-bit limbs, numerator and denominator together (`⌊bits/64⌋` each); 0
+  for anything else;
+- `RationalLimbs2`: `Limbs2` for a non-integer rational, 0 for an integer;
 - `None`: zero.
+
+The gcd that normalises a result is quadratic in its operands' size. `/` and `%` therefore also charge `Limbs2`, and
+`+`, `-`, `*` and `abs` also charge `RationalLimbs2`: integer sums and products are linear. `pow` is priced at its
+worst case, a 4096-bit rational result.
 
 **Every charge is taken before the work it pays for.** If a charge would exceed the limit:
 - the evaluation stops with `OutOfGas(used + charge, limit)`;
@@ -417,16 +432,20 @@ default the operation's). For example, `sigma_verify` and `schnorr_verify` charg
 | Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment. A non-empty plain path inside callbacks also counts each enclosing frame as a segment, since it may consult them all. A computed path is evaluated first, then charged by the segments it gives. |
 | Array or map expression | `literal + element × n`, then each item. |
 | Strict operation, lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)`, then the operation. A spread is charged the same way, on the elements of its array. |
-| `if`, `and`, `or`, `default`, `let` | `base(op)`, then only the subexpressions actually evaluated. |
+| `if` | `base(if)`, then for each condition tested `element` and the condition, then the branch taken. |
+| `and`, `or`, `default`, `let` | `base(op)`, then only the subexpressions actually evaluated. |
 | Callback | `base(op)`, then the collection, then `perUnit(op) × elements`, then for each body run: `callbackRun` plus the body. For `some` with a quorum, `min` is evaluated after the collection. For `reduce`, `initial` is evaluated after the collection. |
 
 A program that does not compile uses no gas.
 
-**Drivers.** Two drivers run the same small-step rules:
-- the stack machine (production): an explicit continuation stack, constant host stack;
-- the recursive driver (reference).
+**Drivers.** Three drivers run the same small-step rules:
+- **direct (production):** the explicit continuation stack as one pure tail-recursive function of (step, stack,
+  meter). Constant host stack;
+- **stack machine (reference):** the same stack, run by `tailRecM` over cats-mtl `Stateful` and `Raise`. About 12×
+  slower per step: each step passes through `EitherT` and `State`;
+- **recursive (reference):** nested computations that mirror the program.
 
-A property test checks that they agree on value, error and gas at random gas limits.
+A property test checks that all three agree on value, error, gas and warnings, at random gas limits.
 
 ## 8. Deliberate changes from metakit
 

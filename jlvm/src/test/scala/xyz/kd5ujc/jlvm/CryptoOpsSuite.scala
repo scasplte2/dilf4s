@@ -130,10 +130,11 @@ object CryptoOpsSuite extends IOSuite {
       expect
         .same(Right(True), separate.result)
         .and(expect.same(Right(True), single.result))
-        // the forms differ by one array node: one unit of weight at the pairing's rate, and that node's own charges
+        // the forms differ by one array node of two items: a unit of weight at the pairing's rate, and its own charges
         .and(
           expect(
-            math.abs(separate.gasUsed.value - single.gasUsed.value) <= GasSchedule.V1.cost(Op.Bn254Pairing).perUnit.value + 10,
+            math.abs(separate.gasUsed.value - single.gasUsed.value) <=
+              GasSchedule.V1.cost(Op.Bn254Pairing).perUnit.value + GasSchedule.V1.literal.value + 2 * GasSchedule.V1.element.value,
             s"${separate.gasUsed} vs ${single.gasUsed}"
           )
         )

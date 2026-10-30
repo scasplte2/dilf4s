@@ -17,21 +17,24 @@ object Compiled {
 final case class Config(
   limit:    GasLimit = GasLimit.Default,
   schedule: GasSchedule = GasSchedule.Latest,
-  driver:   Config.Driver = Config.Driver.StackMachine
+  driver:   Config.Driver = Config.Driver.Direct
 )
 
 object Config {
 
   enum Driver {
 
-    /** Constant host stack: the production driver. */
+    /**
+     * The production driver: the explicit continuation stack as one pure tail-recursive function of (step, stack,
+     * meter). Constant host stack, and no monad per step.
+     */
+    case Direct
+
+    /** The same stack machine run by `tailRecM` over cats-mtl `Stateful`/`Raise`: a reference, ~12x slower per step. */
     case StackMachine
 
-    /** Nested computations mirroring the program: the reference driver, checked against the stack machine. */
+    /** Nested computations mirroring the program: the reference the stack machines are checked against. */
     case Recursive
-
-    /** The stack machine as one tail-recursive function, without the monad stack (experimental; same semantics). */
-    case Direct
   }
 }
 
