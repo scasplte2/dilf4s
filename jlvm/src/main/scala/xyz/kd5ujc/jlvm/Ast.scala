@@ -88,11 +88,13 @@ enum Op(val wire: String) {
   case IntToBytes extends Op("int_to_bytes")
   case Sha256 extends Op("sha256")
   case Sha3_256 extends Op("sha3_256")
+  case Keccak256 extends Op("keccak256")
   case Blake2b256 extends Op("blake2b256")
   // signatures
   case Ed25519Verify extends Op("ed25519_verify")
   case Secp256k1Verify extends Op("secp256k1_verify")
   case Bip340Verify extends Op("bip340_verify")
+  case Ecrecover extends Op("ecrecover")
   case BlsVerify extends Op("bls_verify")
   case BlsAggregateVerify extends Op("bls_aggregate_verify")
   // zk

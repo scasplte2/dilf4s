@@ -4,13 +4,16 @@ import cats.syntax.either._
 import cats.{Eq, Show}
 
 import org.bouncycastle.crypto.ExtendedDigest
-import org.bouncycastle.crypto.digests.{Blake2bDigest, SHA256Digest, SHA3Digest, SHA512Digest}
+import org.bouncycastle.crypto.digests.{Blake2bDigest, KeccakDigest, SHA256Digest, SHA3Digest, SHA512Digest}
 import scodec.bits.ByteVector
 
 /** Hash algorithm tags: uninhabited types that index [[Digest]] and [[Hasher]]. */
 sealed trait Sha256
 sealed trait Sha512
 sealed trait Sha3_256
+
+/** Keccak-256 as Ethereum uses it: the pre-standard padding, not SHA3-256's. */
+sealed trait Keccak256
 sealed trait Sha3_512
 sealed trait Blake2b256
 sealed trait Blake2b512
@@ -56,6 +59,7 @@ object Hasher {
   implicit val sha512: Hasher[Sha512] = bouncyCastle("SHA-512", () => new SHA512Digest())
   implicit val sha3_256: Hasher[Sha3_256] = bouncyCastle("SHA3-256", () => new SHA3Digest(256))
   implicit val sha3_512: Hasher[Sha3_512] = bouncyCastle("SHA3-512", () => new SHA3Digest(512))
+  implicit val keccak256: Hasher[Keccak256] = bouncyCastle("Keccak-256", () => new KeccakDigest(256))
   implicit val blake2b256: Hasher[Blake2b256] = bouncyCastle("BLAKE2b-256", () => new Blake2bDigest(256))
   implicit val blake2b512: Hasher[Blake2b512] = bouncyCastle("BLAKE2b-512", () => new Blake2bDigest(512))
 

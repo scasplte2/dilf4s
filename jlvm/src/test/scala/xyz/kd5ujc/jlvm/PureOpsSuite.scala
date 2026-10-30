@@ -44,7 +44,9 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
   // ---- totality: the property that rules out unaccounted effects
 
   private def isVerifier(op: Op): Boolean =
-    op.wire.endsWith("_verify") || scala.collection.immutable.Set[Op](Op.Poseidon, Op.Bn254Add, Op.Bn254Mul, Op.Bn254Pairing).contains(op)
+    op.wire.endsWith("_verify") || scala.collection.immutable
+      .Set[Op](Op.Ecrecover, Op.Poseidon, Op.Bn254Add, Op.Bn254Mul, Op.Bn254Pairing)
+      .contains(op)
 
   private def owned(op: Op): Boolean = evaluatorOwned(op) || isVerifier(op)
 

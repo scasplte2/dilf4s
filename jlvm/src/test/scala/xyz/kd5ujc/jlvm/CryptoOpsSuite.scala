@@ -305,8 +305,52 @@ object CryptoOpsSuite extends IOSuite {
       val p = (prop: String) => run(b.jlvm, s"""{"sigma_verify": [$prop, "0x00", "0x00"]}""", "{}").result
       expect(crypto(p("""{"type": "or", "children": []}""")), "an empty or")
         .and(expect(crypto(p("""{"type": "dlog", "pk": "0x02"}""")), "a short key"))
-        .and(expect(crypto(p("""{"type": "dlog", "pk": "0x00", "extra": 1}""")), "an extra field"))
-        .and(expect(crypto(p("""{"type": "threshold", "k": 0, "children": [{"type": "dlog", "pk": "0x00"}]}""")), "k = 0"))
+        .and(expect(crypto(p(s"""{"type": "dlog", "pk": "$G", "extra": 1}""")), "an extra field"))
+        .and(expect(crypto(p(s"""{"type": "threshold", "k": 0, "children": [{"type": "dlog", "pk": "$G"}]}""")), "k = 0"))
+        .and(expect(crypto(p(s"""{"type": "threshold", "k": 2, "children": [{"type": "dlog", "pk": "$G"}]}""")), "k > n"))
+        .and(expect(crypto(p(s"""{"type": "dlog", "pk": "$G"}""")), "a 1-byte proof has the wrong length"))
+    }
+  }
+
+  /** The generator, compressed: a well-formed key, so the malformed cases above fail for the reason they name. */
+  private val G = "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+
+  // ---- Ethereum: keccak256, ecrecover and EIP-191 personal_sign
+
+  test("ecrecover gives the signer of an EIP-191 personal_sign message built in the program") { b =>
+    IO {
+      val key = BigInt("4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318", 16)
+      val hash = EthKeys.keccak("transfer 10 to bob")
+      val sig = EthKeys.sign(key, EthKeys.personal(hash))
+      val program =
+        s"""{"ecrecover": [{"keccak256": {"cat": ["${EthKeys.hex(EthKeys.PersonalPrefix)}", {"var": "hash"}]}}, {"var": "sig"}]}"""
+      def recover(h: ByteVector, s: ByteVector) =
+        run(b.jlvm, program, s"""{"hash": "${EthKeys.hex(h)}", "sig": "${EthKeys.hex(s)}"}""").result
+      val n = BigInt("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16)
+      val highS =
+        sig.take(32) ++ ByteVector((n - BigInt(1, sig.slice(32, 64).toArray)).toByteArray).takeRight(32).padLeft(32) ++ sig.takeRight(1)
+      expect
+        .same(Right(CBytes(EthKeys.address(key))), recover(hash, sig))
+        .and(
+          expect(
+            recover(EthKeys.keccak("transfer 99 to eve"), sig).exists(_ != CBytes(EthKeys.address(key))),
+            "another message, another signer"
+          )
+        )
+        .and(expect.same(Right(CNull), recover(hash, highS)))
+        .and(expect(crypto(recover(hash, sig.dropRight(1) :+ 29.toByte)), "v = 29 is malformed"))
+        .and(expect(crypto(recover(hash, sig.drop(1))), "a 64-byte signature is malformed"))
+    }
+  }
+
+  test("keccak256 of text and bytes; cat concatenates bytes only when every argument is bytes") { b =>
+    IO {
+      def eval(p: String) = run(b.jlvm, p, "{}").result
+      expect
+        .same(Right(CBytes(EthKeys.keccak("abc"))), eval("""{"keccak256": "abc"}"""))
+        .and(expect.same(Right(CBytes(EthKeys.keccak("abc"))), eval("""{"keccak256": "0x616263"}""")))
+        .and(expect.same(Right(CBytes(ByteVector(1, 2, 3))), eval("""{"cat": ["0x01", "0x0203"]}""")))
+        .and(expect(eval("""{"cat": ["0x01", "a"]}""").isLeft, "bytes and text do not mix"))
     }
   }
 }

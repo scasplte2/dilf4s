@@ -9,7 +9,7 @@ import scala.collection.immutable.{Map => SMap}
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.hash.{Blake2b256 => B2b, Hasher, Sha256 => S256, Sha3_256 => S3}
+import xyz.kd5ujc.core.hash.{Blake2b256 => B2b, Hasher, Keccak256 => K256, Sha256 => S256, Sha3_256 => S3}
 import xyz.kd5ujc.numerics.Ratio
 
 import scodec.bits.ByteVector
@@ -40,9 +40,9 @@ object PureOps {
     import Op.{Map => MapOp, None => NoneOp, Set => SetOp, Some => SomeOp, _}
     op match {
       case If | And | Or | Default | Let | MapOp | Filter | Reduce | All | SomeOp | NoneOp | Find | Missing | MissingSome | Ed25519Verify |
-          Secp256k1Verify | Bip340Verify | BlsVerify | BlsAggregateVerify | Poseidon | PmtVerify | Groth16Verify | EcvrfVerify | Bn254Add |
-          Bn254Mul | Bn254Pairing | SchnorrVerify | SigmaVerify | MerkleVerify | MerkleConsistencyVerify | TrieVerify | TriePrefixVerify |
-          TrieRangeVerify =>
+          Secp256k1Verify | Bip340Verify | Ecrecover | BlsVerify | BlsAggregateVerify | Poseidon | PmtVerify | Groth16Verify | EcvrfVerify |
+          Bn254Add | Bn254Mul | Bn254Pairing | SchnorrVerify | SigmaVerify | MerkleVerify | MerkleConsistencyVerify | TrieVerify |
+          TriePrefixVerify | TrieRangeVerify =>
         Option.empty
 
       case Not    => Option(unary(op, args)(v => bool(!truthy(v)).asRight))
@@ -104,6 +104,7 @@ object PureOps {
       case IntToBytes => Option(intToBytes(op, args))
       case Sha256     => Option(unary(op, args)(digest[S256](op)))
       case Sha3_256   => Option(unary(op, args)(digest[S3](op)))
+      case Keccak256  => Option(unary(op, args)(digest[K256](op)))
       case Blake2b256 => Option(unary(op, args)(digest[B2b](op)))
     }
   }
@@ -252,10 +253,13 @@ object PureOps {
         number(other).fold(tpe[String](op, s"cannot render ${kind(other)} as text"))(_ => numeric(op, other).flatMap(render(op, _)))
     }
 
-  /** Concatenates text; when every argument is an array, concatenates the arrays instead. */
-  private def cat(op: Op, args: Vector[CanonicalValue]): Result =
+  /** Concatenates text; when every argument is an array, or every one is bytes, concatenates those instead. */
+  private def cat(op: Op, args: Vector[CanonicalValue]): Result = {
+    val bytes = args.collect { case CBytes(b) => b }
     if (args.nonEmpty && args.forall(isArray)) array(op, args.flatMap(spread))
+    else if (args.nonEmpty && bytes.size == args.size) Values.bytesValue(op, bytes.foldLeft(ByteVector.empty)(_ ++ _))
     else args.traverse(piece(op, _)).flatMap(ps => text(op, ps.mkString))
+  }
 
   /** `[text, start]` or `[text, start, length]`, counted in code points; a negative length drops from the end. */
   private def substr(op: Op, args: Vector[CanonicalValue]): Result =

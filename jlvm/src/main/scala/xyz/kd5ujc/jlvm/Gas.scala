@@ -207,11 +207,13 @@ object GasSchedule {
       IntToBytes  -> c(70, 1, Weight),
       Sha256      -> c(80, 1, Weight),
       Sha3_256    -> c(130, 1, Weight),
+      Keccak256   -> c(150, 1, Weight),
       Blake2b256  -> c(115, 1, Weight),
       // measured at 150 gas/us: secp256k1 (native) ~48us, BIP-340 ~53us, Ed25519 ~240us, BLS ~1.55ms plus ~170us a key
       Ed25519Verify      -> c(36000, 1, Weight),
       Secp256k1Verify    -> c(7200, 1, Weight),
       Bip340Verify       -> c(8000, 1, Weight),
+      Ecrecover          -> c(30000),
       BlsVerify          -> c(233000, 1, Weight),
       BlsAggregateVerify -> c(230000, 25000, Elements),
       // measured at 150 gas/us: BN254 on gnark, a pairing ~480us plus ~25k gas a pair (weight ~195), Groth16 ~1.45ms;

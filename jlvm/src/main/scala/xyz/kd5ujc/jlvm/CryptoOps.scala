@@ -31,6 +31,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
       case Op.Secp256k1Verify    => Option(signature(op, args)(secp.ecdsaCodec, secp.ecdsaVerifier))
       case Op.BlsVerify          => Option(signature(op, args)(bls.codec, bls.verifier))
       case Op.Bip340Verify       => Option(bip340(op, args))
+      case Op.Ecrecover          => Option(ecrecover(op, args))
       case Op.BlsAggregateVerify => Option(blsAggregate(op, args))
       case Op.SigmaVerify        => Option(sigma(op, args))
       case Op.SchnorrVerify      => Option(schnorr(op, args))
@@ -68,6 +69,16 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
         (secp.bip340Codec.verifyingKey(k), Message32.from(m), secp.bip340Codec.signature(s)).tupled
           .leftMap(crypto(op))
           .map { case (key, msg, sig) => Values.bool(secp.bip340Verify(key, msg, sig)) }
+    }
+
+  /** `[digest32, signature65]`: the signer's 20-byte Ethereum address, or null when the signature recovers no key. */
+  private def ecrecover(op: Op, args: Vector[CanonicalValue]): Result =
+    args match {
+      case Vector(d, s) =>
+        (bytes(op, d), bytes(op, s)).tupled.flatMap {
+          case (digest, sig) => Ecrecover.recover(digest, sig).bimap(JlvmError.Crypto(op.wire, _), _.fold[CanonicalValue](CNull)(CBytes(_)))
+        }
+      case _ => JlvmError.Arity(op.wire, s"takes [digest, signature], got ${args.size} arguments").asLeft
     }
 
   /** `[proposition, proof, message]` (docs/specs/sigma.md): the proposition is the tagged-map form. */

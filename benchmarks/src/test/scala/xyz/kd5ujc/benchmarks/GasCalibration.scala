@@ -54,6 +54,12 @@ object GasCalibration extends IOApp {
   private def fe(seed: Int): CanonicalValue = CBytes(ByteVector(word(250, seed).toByteArray).padLeft(32))
   private def fes(n:   Int): Vector[CanonicalValue] = Vector.tabulate(n)(i => fe(i + 1))
 
+  /** `ecrecover` that recovers a key: r = x(G), s = 1, so the full recovery runs. */
+  private val ecrecover: Vector[CanonicalValue] = Vector(
+    CBytes(ByteVector.fill(32)(0x42)),
+    CBytes(ByteVector.fromValidHex("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798" + "00" * 31 + "011b"))
+  )
+
   /** `pmt_verify` with `depth` siblings: the root does not match, but every level is hashed regardless. */
   private def pmt(depth: Int): Vector[CanonicalValue] = Vector(fe(1000), fe(1001), CInt(BigInt(5)), a(fes(depth)))
 
@@ -146,6 +152,8 @@ object GasCalibration extends IOApp {
     mk(Op.Sha256, one(bytes, 32, 64000)),
     mk(Op.Sha3_256, one(bytes, 32, 64000)),
     mk(Op.Blake2b256, one(bytes, 32, 64000)),
+    mk(Op.Keccak256, one(bytes, 32, 64000)),
+    Case(Op.Ecrecover, ecrecover, ecrecover, "flat: r is G's x-coordinate, so a key is always recovered"),
     Case(Op.Poseidon, fes(1), fes(4), "1 and 4 inputs; the cost is convex in the width, so the fit bounds 2 and 3"),
     Case(Op.PmtVerify, pmt(8), pmt(128), "8 and 128 siblings")
   )

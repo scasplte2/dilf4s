@@ -294,7 +294,7 @@ array argument; only the syntax spreads (§1).
 
 | Operation | Semantics |
 |---|---|
-| `cat` | Concatenates strings, numbers (§2) and booleans; null is empty. When **every** argument is an array, it concatenates the arrays instead. |
+| `cat` | Concatenates strings, numbers (§2) and booleans; null is empty. When **every** argument is an array, it concatenates the arrays instead; when every argument is bytes, the bytes (as Ethereum's `abi.encodePacked` does for byte strings). |
 | `substr [s, start]`, `substr [s, start, len]` | Counted in code points. A negative `start` counts from the end. A negative `len` drops that many from the end. |
 | `lower` `upper` `trim` | §2. |
 | `startsWith` `endsWith` | Prefix or suffix test. |
@@ -336,7 +336,7 @@ array argument; only the syntax spreads (§1).
 | `hex_to_int` | The same input as `unhex`, read as an unsigned big-endian integer. |
 | `bytes_to_int` | Bytes, read as an unsigned big-endian integer. |
 | `int_to_bytes [n]`, `int_to_bytes [n, width]` | Unsigned, big-endian, minimal (`0` is empty), or left-padded to `width` (`0..1024`). |
-| `sha256` `sha3_256` `blake2b256` | The 32-byte digest of bytes, or of the UTF-8 encoding of text. |
+| `sha256` `sha3_256` `blake2b256` `keccak256` | The 32-byte digest of bytes, or of the UTF-8 encoding of text. `keccak256` is Ethereum's Keccak-256, with the original padding, not SHA3-256's. |
 
 ## 6. Cryptographic operations
 
@@ -352,6 +352,7 @@ All inputs are bytes. Malformed input is a `Crypto` error; a well-formed signatu
 | `bip340_verify` | `[key32, message32, sig64]` | Standard BIP-340. The message must be exactly 32 bytes |
 | `bls_verify` | `[key48, message, sig96]` | BLS12-381, minimal-pubkey-size, proof-of-possession ciphersuite |
 | `bls_aggregate_verify` | `[[key48, ...], message, sig96]` | Fast aggregate verification: one message, every key |
+| `ecrecover` | `[digest32, sig65]` | Ethereum's signer recovery. `sig65` is `r ‖ s ‖ v`, with `v` in {27, 28} or {0, 1}. The result is the signer's 20-byte address, or null if the signature recovers no key: `r` or `s` zero or not below the order, `s` above half the order (EIP-2: OpenZeppelin's `ECDSA.recover` rule, stricter than the EVM precompile), or `r` not an x-coordinate. Other sizes, or another `v`, are malformed. |
 
 `bls_aggregate_verify` assumes every key carries a proof of possession, checked when the key was admitted. Without
 that check, a rogue key can forge an aggregate.
