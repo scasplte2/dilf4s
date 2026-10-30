@@ -32,7 +32,7 @@ enum Step {
 }
 
 /** The evaluation rules (docs/specs/jlvm.md §Evaluation), parameterised by a gas schedule. */
-final class Semantics(schedule: GasSchedule) {
+final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
 
   import Node._
   import Step._
@@ -126,7 +126,10 @@ final class Semantics(schedule: GasSchedule) {
       case Crypto(op, args) =>
         Charge(
           base(op),
-          () => all(args, scope)(vs => Charge(sized(op, vs), () => Fail(JlvmError.Crypto(op.wire, "not available in this build yet"))))
+          () =>
+            all(args, scope) { vs =>
+              Charge(sized(op, vs), () => crypto(op, vs).fold(Fail(JlvmError.Crypto(op.wire, "not available yet")))(result))
+            }
         )
     }
 

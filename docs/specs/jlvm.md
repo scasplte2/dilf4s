@@ -1,6 +1,6 @@
 # dilf4s JLVM (language v1, gas schedule v1)
 
-Status: normative, in progress. The operations are complete except for the cryptographic operations (§6.8), which are
+Status: normative, in progress. Every operation is specified except some of the cryptographic ones (§6), which are
 listed but not yet available. The decisions still open are marked **Open**.
 
 The JLVM is a strict, metered expression language for ledgers, written in JsonLogic syntax. A result is a function of
@@ -261,15 +261,28 @@ argument.
 
 ## 6. Cryptographic operations
 
-These operations are listed by language v1 and priced by gas schedule v1, but are **not yet available**. Evaluating
-one is a `Crypto` error.
+The backends are loaded once, at the edge (`Jlvm.load`). Every node therefore evaluates with the same complete set:
+no operation's availability depends on the classpath.
 
-- Signatures: `ed25519_verify`, `secp256k1_verify`, `bip340_verify`, `bls_verify`, `bls_aggregate_verify`.
-- Commitments and curves: `poseidon`, `pmt_verify`, `bn254_add`, `bn254_mul`, `bn254_pairing`.
-- Proofs: `groth16_verify`, `ecvrf_verify`.
+All inputs are bytes. Malformed input is a `Crypto` error; a well-formed signature that does not verify is `false`.
+
+| Operation | Arguments | Scheme |
+|---|---|---|
+| `ed25519_verify` | `[key32, message, sig64]` | Ed25519 under ZIP-215 rules (`signing.md`) |
+| `secp256k1_verify` | `[key33, message, sig64]` | ECDSA over SHA-256 of the message; compact `r‖s`, low-S |
+| `bip340_verify` | `[key32, message32, sig64]` | Standard BIP-340. The message must be exactly 32 bytes |
+| `bls_verify` | `[key48, message, sig96]` | BLS12-381, minimal-pubkey-size, proof-of-possession ciphersuite |
+| `bls_aggregate_verify` | `[[key48, ...], message, sig96]` | Fast aggregate verification: one message, every key |
+
+`bls_aggregate_verify` assumes every key carries a proof of possession, checked when the key was admitted. Without
+that check, a rogue key can forge an aggregate.
+
+**Not yet available.** Evaluating these is a `Crypto` error:
+- BN254 family, in progress: `poseidon`, `pmt_verify`, `groth16_verify`, `ecvrf_verify`, `bn254_add`, `bn254_mul`,
+  `bn254_pairing`.
 - Sigma protocols (**unaudited**): `schnorr_verify`, `prove_dlog_verify`, `prove_dhtuple_verify`, `sigma_verify`.
-- Merkle and trie proofs: `merkle_verify`, `merkle_consistency_verify`, `trie_verify`, `trie_prefix_verify`,
-  `trie_range_verify`.
+- Merkle and trie proofs (**Open**: argument design): `merkle_verify`, `merkle_consistency_verify`, `trie_verify`,
+  `trie_prefix_verify`, `trie_range_verify`.
 
 ## 7. Gas
 

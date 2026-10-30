@@ -1,16 +1,22 @@
 package xyz.kd5ujc.jlvm
 
 import cats.Show
+import cats.effect.{IO, Resource}
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
-import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
+import weaver.{Expectations, IOSuite}
 
-object EvaluatorSuite extends SimpleIOSuite with Checkers {
+object EvaluatorSuite extends IOSuite with Checkers {
+
+  type Res = Jlvm
+  def sharedResource: Resource[IO, Jlvm] = Resource.eval(Jlvm.load[IO])
+
+  private def check(name: String)(f: Jlvm ?=> Expectations) = test(name)(jlvm => IO(f(using jlvm)))
 
   private given Show[Program] = Show.fromToString
 
@@ -23,16 +29,16 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
     env:    Map[String, CanonicalValue] = Map.empty,
     driver: Config.Driver = Config.Driver.StackMachine,
     limit:  Long = GasLimit.Default.amount.value
-  ): Outcome = Jlvm.evaluate(program(json), value(data), env, Config(limit = GasLimit(Gas(limit)), driver = driver))
+  )(using jlvm: Jlvm): Outcome = jlvm.evaluate(program(json), value(data), env, Config(limit = GasLimit(Gas(limit)), driver = driver))
 
-  private def result(json: String, data: String = "{}", env: Map[String, CanonicalValue] = Map.empty) =
+  private def result(json: String, data: String = "{}", env: Map[String, CanonicalValue] = Map.empty)(using Jlvm) =
     eval(json, data, env).result
 
   private def ok(json: String): Either[JlvmError, CanonicalValue] = Right(value(json))
 
   // ---- values
 
-  pureTest("operations, literals, arrays and objects evaluate element-wise") {
+  check("operations, literals, arrays and objects evaluate element-wise") {
     expect
       .same(ok("3"), result("""{"+": [1, 2]}"""))
       .and(expect.same(ok("[2, 3]"), result("""[{"+": [1, 1]}, 3]""")))
@@ -40,7 +46,7 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(ok("""{"a": 1}"""), result("""{"a": 1, "b": null}""")))
   }
 
-  pureTest("var reads data paths and array indices; absent paths are null or the default") {
+  check("var reads data paths and array indices; absent paths are null or the default") {
     val data = """{"a": {"b": [10, 20]}, "z": 0}"""
     expect
       .same(ok("20"), result("""{"var": "a.b.1"}""", data))
@@ -51,7 +57,7 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Right(value(data)), result("""{"var": ""}""", data)))
   }
 
-  pureTest("$ reads host bindings, which let and callbacks shadow; an unbound name is an error unless defaulted") {
+  check("$ reads host bindings, which let and callbacks shadow; an unbound name is an error unless defaulted") {
     val env = Map("ordinal" -> CInt(BigInt(42)))
     expect
       .same(ok("43"), result("""{"+": [{"var": "$ordinal"}, 1]}""", env = env))
@@ -60,7 +66,7 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(ok("0"), result("""{"var": ["$timestamp", 0]}""")))
   }
 
-  pureTest("let binds sequentially, in either surface form") {
+  check("let binds sequentially, in either surface form") {
     expect
       .same(ok("3"), result("""{"let": [[["x", 1], ["y", {"+": [{"var": "$x"}, 1]}]], {"+": [{"var": "$x"}, {"var": "$y"}]}]}"""))
       .and(expect.same(ok("3"), result("""{"let": [{"a": 1, "b": {"+": [{"var": "$a"}, 1]}}, {"+": [{"var": "$a"}, {"var": "$b"}]}]}""")))
@@ -70,7 +76,7 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
 
   // ---- laziness
 
-  pureTest("if, and, or and default evaluate only what decides the result") {
+  check("if, and, or and default evaluate only what decides the result") {
     val boom = """{"/": [1, 0]}"""
     expect
       .same(ok("1"), result(s"""{"if": [true, 1, $boom]}"""))
@@ -86,7 +92,7 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
 
   // ---- callbacks
 
-  pureTest("callbacks bind $current, $index and $accumulator; plain paths still read the data") {
+  check("callbacks bind $current, $index and $accumulator; plain paths still read the data") {
     val data = """{"xs": [1, 2, 3, 4], "k": 2, "people": [{"age": 30}, {"age": 12}]}"""
     expect
       .same(ok("[2, 4, 6, 8]"), result("""{"map": [{"var": "xs"}, {"*": [{"var": "$current"}, 2]}]}""", data))
@@ -107,7 +113,7 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
       )
   }
 
-  pureTest("all, some (with a quorum), none, find and count") {
+  check("all, some (with a quorum), none, find and count") {
     val data = """{"xs": [1, 2, 3]}"""
     expect
       .same(ok("true"), result("""{"all": [{"var": "xs"}, {">": [{"var": "$current"}, 0]}]}""", data))
@@ -124,7 +130,7 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
       .and(expect(result("""{"map": [5, 1]}""").isLeft, "only arrays (or null) iterate"))
   }
 
-  pureTest("all, some and find stop at the first decisive element") {
+  check("all, some and find stop at the first decisive element") {
     val boom = """{"/": [1, {"-": [{"var": "$current"}, 2]}]}"""
     expect
       .same(ok("false"), result(s"""{"all": [[1, 0, 2], {"and": [{"var": "$$current"}, $boom]}]}"""))
@@ -132,11 +138,11 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(ok("3"), result(s"""{"find": [[3, 2], {"!!": $boom}]}""")))
   }
 
-  pureTest("count with a callback is a callback, decided by the syntax, not by evaluated arguments") {
+  check("count with a callback is a callback, decided by the syntax, not by evaluated arguments") {
     expect.same(ok("1"), result("""{"count": [[0, 7], {"var": "$current"}]}"""))
   }
 
-  pureTest("missing and missing_some read the data") {
+  check("missing and missing_some read the data") {
     val data = """{"a": 1, "b": {"c": 2}}"""
     expect
       .same(ok("""["x"]"""), result("""{"missing": ["a", "b.c", "x"]}""", data))
@@ -147,14 +153,14 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
 
   // ---- gas
 
-  pureTest("gas follows the schedule: base, then arguments, then the size charge") {
+  check("gas follows the schedule: base, then arguments, then the size charge") {
     // + base 5; two literals at 1; size: perUnit 1 x (weight 1 + weight 1)
     expect
       .same(Gas(9), eval("""{"+": [1, 2]}""").gasUsed)
       .and(expect.same(Gas(2 + 1 * 2), eval("""{"var": "a.b"}""", """{"a": {"b": 1}}""").gasUsed))
   }
 
-  pureTest("failures report the gas they used; running out uses the whole limit") {
+  check("failures report the gas they used; running out uses the whole limit") {
     // base 5, literals 1 + 1, size 1 x (weight 1 + weight 2): "x" is one node plus one byte
     val failed = eval("""{"+": [1, "x"]}""")
     val starved = eval("""{"+": [1, 2]}""", limit = 8)
@@ -164,13 +170,13 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Left(JlvmError.OutOfGas(9, 8)), starved.result))
   }
 
-  pureTest("an untaken branch costs nothing") {
+  check("an untaken branch costs nothing") {
     val cheap = eval("""{"if": [true, 1, {"+": [1, 2, 3, 4, 5]}]}""").gasUsed
     val dear = eval("""{"if": [false, 1, {"+": [1, 2, 3, 4, 5]}]}""").gasUsed
     expect(cheap.value < dear.value, s"$cheap < $dear")
   }
 
-  pureTest("callbacks pay per element up front, and per run") {
+  check("callbacks pay per element up front, and per run") {
     val one = eval("""{"map": [[1], {"var": "$current"}]}""").gasUsed.value
     val two = eval("""{"map": [[1, 1], {"var": "$current"}]}""").gasUsed.value
     // one more literal element (1 literal + 1 element), one more per-element charge (1), one more run (1 + var 2 + 1)
@@ -179,22 +185,22 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
 
   // ---- stack safety
 
-  pureTest("long iterations run in constant stack on both drivers") {
+  check("long iterations run in constant stack on both drivers") {
     val xs = CanonicalValue.array(Vector.tabulate(20000)(i => CInt(BigInt(i)))).toOption.get
     val p = program("""{"reduce": [{"var": "xs"}, {"+": [{"var": "$accumulator"}, {"var": "$current"}]}, 0]}""")
     val data = CanonicalValue.map(List("xs" -> xs)).toOption.get
     val outcomes =
-      Config.Driver.values.toList.map(d => Jlvm.evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(10000000L)), driver = d)))
+      Config.Driver.values.toList.map(d => summon[Jlvm].evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(10000000L)), driver = d)))
     expect
       .same(List.fill(2)(Right(CInt(BigInt(20000L * 19999L / 2)))), outcomes.map(_.result))
       .and(expect.same(1, outcomes.distinct.size))
   }
 
-  pureTest("programs nest at most Program.MaxDepth deep, checked without recursion") {
+  check("programs nest at most Program.MaxDepth deep, checked without recursion") {
     val deep = (1 to 100000).foldLeft[Expr](Expr.Lit(CNull))((e, _) => Expr.Apply(Op.Not, Vector(e)))
     val legal = (1 to Program.MaxDepth).foldLeft[Expr](Expr.Lit(CNull))((e, _) => Expr.Apply(Op.Not, Vector(e)))
     expect(Program.from(deep).isLeft, "too deep")
-      .and(expect.same(Right(False), Program.from(legal).flatMap(p => Jlvm.evaluate(p, CNull, Map.empty, Config()).result)))
+      .and(expect.same(Right(False), Program.from(legal).flatMap(p => summon[Jlvm].evaluate(p, CNull, Map.empty, Config()).result)))
   }
 
   // ---- the two drivers agree
@@ -237,19 +243,20 @@ object EvaluatorSuite extends SimpleIOSuite with Checkers {
 
   private val limits: Gen[Long] = Gen.frequency(1 -> Gen.choose(0L, 300L), 1 -> Gen.const(GasLimit.Default.amount.value))
 
-  test("the stack machine and the recursive driver agree on value, error and gas, at every gas limit") {
+  test("the stack machine and the recursive driver agree on value, error and gas, at every gas limit") { jlvm =>
+    given Jlvm = jlvm
     val data = value(dataJson)
     forall(Gen.zip(programs, limits)) {
       case (p, limit) =>
-        val run = (d: Config.Driver) => Jlvm.evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(limit)), driver = d))
+        val run = (d: Config.Driver) => summon[Jlvm].evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(limit)), driver = d))
         expect.same(run(Config.Driver.Recursive), run(Config.Driver.StackMachine))
     }
   }
 
-  pureTest("the agreement property is not vacuous: most generated programs succeed, some fail, some run out of gas") {
+  check("the agreement property is not vacuous: most generated programs succeed, some fail, some run out of gas") {
     val data = value(dataJson)
     val sample = Gen.listOfN(600, Gen.zip(programs, limits)).pureApply(Gen.Parameters.default, Seed(20261030L))
-    val outcomes = sample.map { case (p, limit) => Jlvm.evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(limit)))).result }
+    val outcomes = sample.map { case (p, limit) => summon[Jlvm].evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(limit)))).result }
     val succeeded = outcomes.count(_.isRight)
     val starved = outcomes.count {
       case Left(JlvmError.OutOfGas(_, _)) => true

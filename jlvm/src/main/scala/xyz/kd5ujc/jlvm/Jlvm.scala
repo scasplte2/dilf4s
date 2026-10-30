@@ -1,6 +1,8 @@
 package xyz.kd5ujc.jlvm
 
 import cats.data.{EitherT, State}
+import cats.effect.Sync
+import cats.syntax.functor._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
 
@@ -31,10 +33,11 @@ object Config {
 }
 
 /**
- * The JLVM entry point. Evaluation is a pure function of the program, the data, the host bindings, the language version
- * and the gas schedule; it reports the gas used whether it succeeds or fails.
+ * The JLVM. Evaluation is a pure function of the program, the data, the host bindings, the language version and the gas
+ * schedule; it reports the gas used whether it succeeds or fails. Obtain one with [[Jlvm.load]], which loads the
+ * cryptographic backends once.
  */
-object Jlvm {
+final class Jlvm private (crypto: CryptoOps) {
 
   private type Run[A] = EitherT[State[Meter, *], JlvmError, A]
 
@@ -48,7 +51,7 @@ object Jlvm {
     env:      Map[String, CanonicalValue] = Map.empty,
     config:   Config = Config()
   ): Outcome = {
-    val semantics = new Semantics(config.schedule)
+    val semantics = new Semantics(config.schedule, crypto)
     val first = semantics.start(compiled.root, Scope(data, env))
     val run: Run[CanonicalValue] = config.driver match {
       case Config.Driver.StackMachine => Machine.stackMachine[Run](semantics, first)
@@ -61,4 +64,10 @@ object Jlvm {
   /** Compiles and evaluates; a program that does not compile uses no gas. */
   def evaluate(program: Program, data: CanonicalValue, env: Map[String, CanonicalValue], config: Config): Outcome =
     Compiled(program).fold(e => Outcome(Gas.Zero, Left(e)), evaluate(_, data, env, config))
+}
+
+object Jlvm {
+
+  /** Loads the cryptographic backends (native libraries) and returns an evaluator. */
+  def load[F[_]: Sync]: F[Jlvm] = CryptoOps.load[F].map(new Jlvm(_))
 }
