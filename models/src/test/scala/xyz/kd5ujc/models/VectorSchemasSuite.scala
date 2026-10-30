@@ -23,6 +23,7 @@ object VectorSchemasSuite extends SimpleIOSuite {
     "merkle_v1.json"             -> merkle_vectors.MerkleVectors.codec,
     "trie_v1.json"               -> trie_vectors.TrieVectors.codec,
     "poseidon_v1.json"           -> poseidon_vectors.PoseidonVectors.codec,
+    "jlvm_v1.json"               -> jlvm_vectors.JlvmVectors.codec,
     "signing_v1.json"            -> signing_vectors.SigningVectors.codec,
     "vrf_v1.json"                -> vrf_vectors.VrfVectors.codec,
     "kes_v1.json"                -> kes_vectors.KesVectors.codec,

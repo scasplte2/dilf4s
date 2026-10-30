@@ -13,3 +13,7 @@ Adapted files keep their original notices; entries are added as material is port
   Ed25519 / ExtendedEd25519 / VRF compatibility test vectors (docs/test-vectors).
 - BIP-39 word lists (https://github.com/bitcoin/bips/tree/master/bip-0039), MIT:
   signing/src/main/resources/bip-0039.
+- metakit (https://github.com/Constellation-Labs/metakit), Apache-2.0:
+  JLVM conformance programs adapted from its json_logic tests and shared vectors
+  (jlvm/src/test/resources/vectors/jlvm_cases.json, shared/vectors/jlvm_v1.json,
+  jlvm/src/test/resources/vectors/jlvm_zk_from_metakit.json).

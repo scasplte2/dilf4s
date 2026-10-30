@@ -1,0 +1,34 @@
+; Schema of shared/vectors/jlvm_v1.json (conformance vectors for docs/specs/jlvm.md, language v1, gas schedule v1).
+; Each case is a program in the strict surface and its input data, both as JSON surface text, evaluated with no host
+; bindings, the default gas limit and the default schedule. An implementation conforms when it gives the same outcome
+; and uses the same gas on every case.
+
+jlvm-vectors = {
+  "spec": "docs/specs/jlvm.md",
+  "version": 1,
+  "schedule": 1,
+  "gasLimit": uint,
+  "source": text,
+  "cases": [* jlvm-case],
+}
+
+jlvm-case = {
+  "name": text,
+  "program": text,
+  "data": text,
+  "outcome": jlvm-outcome,
+  "gasUsed": uint,
+  "warnings": uint,
+}
+
+; A value as its canonical CBOR (canonical-encoding.md), with its JSON surface text when it has one; or an error by
+; kind only (jlvm.md section 3). Messages are not part of conformance.
+jlvm-outcome = jlvm-value / jlvm-error
+
+jlvm-value = { "cbor": hex, ? "json": text }
+
+jlvm-error = { "error": jlvm-error-kind }
+
+jlvm-error-kind = "Malformed" / "Type" / "Arity" / "Arithmetic" / "Domain" / "Crypto" / "Limit" / "OutOfGas"
+
+hex = text .regexp "([0-9a-f]{2})*"

@@ -1,6 +1,10 @@
 # dilf4s JLVM (language v1, gas schedule v1)
 
 Status: normative. Every operation of language version 1 is specified and available.
+Conformance vectors: `shared/vectors/jlvm_v1.json` (schema `shared/schemas/jlvm-vectors.cddl`). Each case is a program
+and its data, with the outcome (a value's canonical CBOR, or an error kind) and the gas used under schedule v1. Most
+are metakit's own test programs, migrated to the strict surface. They agree with metakit's results, except where §8
+says otherwise.
 
 The JLVM is a strict, metered expression language for ledgers, written in JsonLogic syntax. A result is a function of
 exactly five things:

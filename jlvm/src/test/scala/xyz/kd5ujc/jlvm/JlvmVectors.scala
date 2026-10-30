@@ -1,0 +1,125 @@
+package xyz.kd5ujc.jlvm
+
+import java.nio.charset.StandardCharsets.UTF_8
+import java.nio.file.{Files, Path, Paths}
+
+import cats.effect.{ExitCode, IO, IOApp, Resource}
+import cats.syntax.all._
+
+import xyz.kd5ujc.core.canonical.Cbor
+
+import io.circe.syntax._
+import io.circe.{Decoder, Json}
+import weaver.IOSuite
+
+/**
+ * Conformance vectors for docs/specs/jlvm.md: each input case (`vectors/jlvm_cases.json`, a strict program and its data)
+ * evaluated with no host bindings, the default limit and the latest schedule, by the production driver.
+ */
+object JlvmVectors {
+
+  val path: Path = Paths.get("shared", "vectors", "jlvm_v1.json")
+
+  final case class Input(name: String, program: String, data: String)
+  final case class Inputs(source: String, cases: List[Input])
+
+  given Decoder[Input] = Decoder.forProduct3("name", "program", "data")(Input.apply)
+  given Decoder[Inputs] = Decoder.forProduct2("source", "cases")(Inputs.apply)
+
+  val inputs: IO[Inputs] =
+    Resource
+      .fromAutoCloseable(IO.blocking(getClass.getResourceAsStream("/vectors/jlvm_cases.json")))
+      .use(in => IO.blocking(new String(in.readAllBytes(), UTF_8)))
+      .flatMap(text => io.circe.parser.decode[Inputs](text).liftTo[IO])
+
+  def kind(e: JlvmError): String = e match {
+    case _: JlvmError.Malformed  => "Malformed"
+    case _: JlvmError.Type       => "Type"
+    case _: JlvmError.Arity      => "Arity"
+    case _: JlvmError.Arithmetic => "Arithmetic"
+    case _: JlvmError.Domain     => "Domain"
+    case _: JlvmError.Crypto     => "Crypto"
+    case _: JlvmError.Limit      => "Limit"
+    case _: JlvmError.OutOfGas   => "OutOfGas"
+  }
+
+  def run(jlvm: Jlvm, i: Input, driver: Config.Driver = Config.Driver.Direct): Outcome =
+    (Parser.parse(i.program), JsonSurface.parse(i.data)).tupled.fold(
+      e => Outcome(Gas.Zero, Left(e)),
+      { case (p, d) => jlvm.evaluate(p, d, Map.empty, Config(driver = driver)) }
+    )
+
+  private def outcome(o: Outcome): Json =
+    o.result.fold(
+      e => Json.obj("error" -> kind(e).asJson),
+      v =>
+        Json
+          .obj("cbor" -> Cbor.encode(v).toHex.asJson)
+          .deepMerge(JsonSurface.render(v).toOption.fold(Json.obj())(t => Json.obj("json" -> t.asJson)))
+    )
+
+  def render(jlvm: Jlvm, in: Inputs): String =
+    Json
+      .obj(
+        "spec"     -> "docs/specs/jlvm.md".asJson,
+        "version"  -> Program.Version.asJson,
+        "schedule" -> GasSchedule.Latest.version.asJson,
+        "gasLimit" -> GasLimit.Default.amount.value.asJson,
+        "source"   -> in.source.asJson,
+        "cases" -> in.cases.map { i =>
+          val o = run(jlvm, i)
+          Json.obj(
+            "name"     -> i.name.asJson,
+            "program"  -> i.program.asJson,
+            "data"     -> i.data.asJson,
+            "outcome"  -> outcome(o),
+            "gasUsed"  -> o.gasUsed.value.asJson,
+            "warnings" -> o.warnings.size.asJson
+          )
+        }.asJson
+      )
+      .spaces2 + "\n"
+}
+
+object JlvmVectorGen extends IOApp {
+  def run(args: List[String]): IO[ExitCode] =
+    (Jlvm.load[IO], JlvmVectors.inputs)
+      .flatMapN((jlvm, in) => IO.blocking(Files.write(JlvmVectors.path, JlvmVectors.render(jlvm, in).getBytes(UTF_8))))
+      .as(ExitCode.Success)
+}
+
+object JlvmVectorsSuite extends IOSuite {
+
+  type Res = (Jlvm, JlvmVectors.Inputs)
+  def sharedResource: Resource[IO, Res] = Resource.eval((Jlvm.load[IO], JlvmVectors.inputs).tupled)
+
+  test("committed JLVM vectors match the reference implementation") {
+    case (jlvm, in) =>
+      IO.blocking(new String(Files.readAllBytes(JlvmVectors.path), UTF_8)).map { committed =>
+        expect(
+          committed == JlvmVectors.render(jlvm, in),
+          s"${JlvmVectors.path} is stale; regenerate with: sbt \"jlvm/Test/runMain xyz.kd5ujc.jlvm.JlvmVectorGen\""
+        )
+      }
+  }
+
+  test("every driver gives every vector case the same outcome and gas") {
+    case (jlvm, in) =>
+      IO {
+        in.cases.foldLeft(success) { (acc, i) =>
+          val reference = JlvmVectors.run(jlvm, i)
+          Config.Driver.values.toList.foldLeft(acc) { (a, d) =>
+            val o = JlvmVectors.run(jlvm, i, d)
+            a.and(expect(o.result == reference.result && o.gasUsed == reference.gasUsed, s"${i.name}: $d disagrees"))
+          }
+        }
+      }
+  }
+
+  test("case names are unique") {
+    case (_, in) =>
+      IO {
+        expect.same(in.cases.size, in.cases.map(_.name).distinct.size)
+      }
+  }
+}
