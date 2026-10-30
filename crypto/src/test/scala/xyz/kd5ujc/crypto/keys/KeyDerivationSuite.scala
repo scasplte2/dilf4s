@@ -57,6 +57,41 @@ object KeyDerivationSuite extends SimpleIOSuite {
     }
   }
 
+  /** Reference Japanese vectors: U+3000 separators, and an NFKD-sensitive passphrase. */
+  private val japanesePassphrase = "㍍ガバヴァぱばぐゞちぢ十人十色"
+  private val japanese = List(
+    (
+      hex"00000000000000000000000000000000",
+      "あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あおぞら",
+      hex"a262d6fb6122ecf45be09c50492b31f92e9beb7d9a845987a02cefda57a15f9c467a17872029a9e92299b5cbdf306e3a0ee620245cbd508959b6cb7ca637bd55"
+    ),
+    (
+      hex"7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+      "そつう　れきだい　ほんやく　わかす　りくつ　ばいか　ろせん　やちん　そつう　れきだい　ほんやく　わかめ",
+      hex"aee025cbe6ca256862f889e48110a6a382365142f7d16f2b9545285b3af64e542143a577e9c144e101a6bdca18f8d97ec3366ebf5b088b1c1af9bc31346e60d9"
+    ),
+    (
+      hex"000000000000000000000000000000000000000000000000",
+      "あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あらいぐま",
+      hex"d99e8f1ce2d4288d30b9c815ae981edd923c01aa4ffdc5dee1ab5fe0d4a3e13966023324d119105aff266dac32e5cd11431eeca23bbd7202ff423f30d6776d69"
+    )
+  )
+
+  test("BIP-39: Japanese vectors (ideographic spaces, NFKD passphrase)") {
+    WordList.load[IO](Bip39.Language.Japanese).flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO]).map { words =>
+      def nfkd(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKD)
+      japanese.foldMap {
+        case (entropy, phrase, seed) =>
+          val mnemonic = Bip39.toMnemonic(Secret(entropy), words)
+          expect
+            .same(Right(phrase.split("\u3000").map(nfkd).mkString("\u3000")), mnemonic.map(_.phrase))
+            .and(expect.same(Right(Secret(entropy)), Bip39.toEntropy(phrase, words).map(_._2)))
+            .and(expect.same(Right(seed), Bip39.toEntropy(phrase, words).map { case (m, _) => Bip39.seed(m, japanesePassphrase).bytes }))
+            .and(expect.same(Right(seed), mnemonic.map(m => Bip39.seed(m, japanesePassphrase).bytes)))
+      }
+    }
+  }
+
   test("BIP-39: bad checksum, unknown word, wrong length and bad entropy are typed errors") {
     english.map { words =>
       def mnemonicError(phrase: String) = Bip39.toEntropy(phrase, words) match {
@@ -217,6 +252,20 @@ object KeyDerivationSuite extends SimpleIOSuite {
         }
         expect.same(Right(hx(v, "outputs", "extendedEd25519")), key.map(k => k.key.bytes ++ k.chainCode))
       }
+    }
+  }
+
+  test("BIP32-Ed25519: CIP-0003 Icarus reference vector") {
+    english.map { words =>
+      val key = Bip39
+        .toEntropy("eight country switch draw meat scout mystery blade tip drift useless good keep usage title", words)
+        .flatMap { case (_, e) => Ed25519Bip32.icarus(e) }
+      expect.same(
+        Right(
+          hex"c065afd2832cd8b087c4d9ab7011f481ee1e0721e78ea5dd609f3ab3f156d245d176bd8fd4ec60b4731c3918a2a72a0226c0cd119ec35b47e4d55884667f552a23f7fdcd4a10c6cd2c7393ac61d877873e248f417634aa3d812af327ffe9d620"
+        ),
+        key.map(k => k.key.bytes ++ k.chainCode)
+      )
     }
   }
 

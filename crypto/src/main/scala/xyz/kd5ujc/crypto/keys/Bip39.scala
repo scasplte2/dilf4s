@@ -37,8 +37,9 @@ final class Mnemonic private[keys] (val words: List[String], val language: Bip39
   def phrase: String = words.mkString(language.separator)
   override def toString: String = s"Mnemonic(<${words.size} words redacted>)"
   override def equals(other: Any): Boolean = other match {
-    case that: Mnemonic => phrase == that.phrase && language == that.language
-    case _              => false
+    case that: Mnemonic =>
+      java.security.MessageDigest.isEqual(phrase.getBytes(UTF_8), that.phrase.getBytes(UTF_8)) && language == that.language
+    case _ => false
   }
   override def hashCode: Int = words.size
 }

@@ -186,7 +186,7 @@ object TrieStore {
         _     <- checkReadable(s, version)
         paths <- liftT(keys.traverse(mode.path))
         r     <- rootHash(version.value)
-        queries = paths.map(TrieProofs.Key) ++ prefixes.map(p => TrieProofs.Prefix(p.bits)) ++
+        queries = paths.map(TrieProofs.Key.apply) ++ prefixes.map(p => TrieProofs.Prefix(p.bits)) ++
           ranges.map { case (f, u) => TrieProofs.Range(f.bits, u.map(_.bits)) }
         proof <- TrieProofs.prove[F, H](node, r, queries)
       } yield proof

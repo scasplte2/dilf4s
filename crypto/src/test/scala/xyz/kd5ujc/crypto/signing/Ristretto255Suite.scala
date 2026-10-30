@@ -29,22 +29,24 @@ object Ristretto255Suite extends SimpleIOSuite with Checkers {
 
   pureTest("RFC 9591 vector: group key derivation and the threshold signature verify") {
     val sk = C.signingKey(groupSecret).toOption.get
-    expect.same(groupPublic, Ristretto255Schnorr.publicKeyOf.verifyingKey(sk).bytes)
+    expect
+      .same(groupPublic, Ristretto255Schnorr.publicKeyOf.verifyingKey(sk).bytes)
       .and(expect(V.verify(VerifyingKey(groupPublic), hex"74657374", Signature(groupSignature)), "aggregate signature verifies"))
       .and(expect(!V.verify(VerifyingKey(groupPublic), hex"74657375", Signature(groupSignature)), "other message rejected"))
   }
 
   test("signatures verify, tampering is rejected, encodings round-trip") {
-    forall(Gen.zip(bytes32, bytes32, message)) { case (seed, rand, msg) =>
-      val kp = Ristretto255Schnorr.seedDerivation.fromSeed(seed).toOption.get
-      val sig = Ristretto255Schnorr.signWithRandomness(kp.signing, msg, rand).toOption.get
-      val tampered = sig.bytes.update(40, (sig.bytes(40) ^ 1).toByte)
-      expect(V.verify(kp.verifying, msg, sig), "verifies")
-        .and(expect(!V.verify(kp.verifying, msg ++ hex"00", sig), "extended message rejected"))
-        .and(expect(!V.verify(kp.verifying, msg, Signature(tampered)), "tampered z rejected"))
-        .and(expect.same(Right(sig), C.signature(sig.bytes)))
-        .and(expect.same(Right(kp.verifying), C.verifyingKey(kp.verifying.bytes)))
-        .and(expect.same(Right(sig), Ristretto255Schnorr.signWithRandomness(kp.signing, msg, rand)))
+    forall(Gen.zip(bytes32, bytes32, message)) {
+      case (seed, rand, msg) =>
+        val kp = Ristretto255Schnorr.seedDerivation.fromSeed(seed).toOption.get
+        val sig = Ristretto255Schnorr.signWithRandomness(kp.signing, msg, rand).toOption.get
+        val tampered = sig.bytes.update(40, (sig.bytes(40) ^ 1).toByte)
+        expect(V.verify(kp.verifying, msg, sig), "verifies")
+          .and(expect(!V.verify(kp.verifying, msg ++ hex"00", sig), "extended message rejected"))
+          .and(expect(!V.verify(kp.verifying, msg, Signature(tampered)), "tampered z rejected"))
+          .and(expect.same(Right(sig), C.signature(sig.bytes)))
+          .and(expect.same(Right(kp.verifying), C.verifyingKey(kp.verifying.bytes)))
+          .and(expect.same(Right(sig), Ristretto255Schnorr.signWithRandomness(kp.signing, msg, rand)))
     }
   }
 
@@ -52,8 +54,9 @@ object Ristretto255Suite extends SimpleIOSuite with Checkers {
     SecureRandom.javaSecuritySecureRandom[IO].flatMap { implicit R =>
       val kp = Ristretto255Schnorr.seedDerivation.fromSeed(ByteVector.fill(32)(7)).toOption.get
       val signer = Ristretto255Schnorr.signer[IO]
-      (signer.sign(kp.signing, hex"01"), signer.sign(kp.signing, hex"01")).tupled.map { case (a, b) =>
-        expect(a != b, "fresh nonces").and(expect(V.verify(kp.verifying, hex"01", a))).and(expect(V.verify(kp.verifying, hex"01", b)))
+      (signer.sign(kp.signing, hex"01"), signer.sign(kp.signing, hex"01")).tupled.map {
+        case (a, b) =>
+          expect(a != b, "fresh nonces").and(expect(V.verify(kp.verifying, hex"01", a))).and(expect(V.verify(kp.verifying, hex"01", b)))
       }
     }
   }
@@ -64,7 +67,11 @@ object Ristretto255Suite extends SimpleIOSuite with Checkers {
     val sig = Ristretto255Schnorr.signWithRandomness(kp.signing, hex"", ByteVector.fill(32)(2)).toOption.get
     // z + L is the same scalar, non-canonically encoded
     val l = hex"edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010"
-    val zPlusL = ByteVector.view((BigInt(1, sig.bytes.drop(32).reverse.toArray) + BigInt(1, l.reverse.toArray)).toByteArray).reverse.padRight(32).take(32)
+    val zPlusL = ByteVector
+      .view((BigInt(1, sig.bytes.drop(32).reverse.toArray) + BigInt(1, l.reverse.toArray)).toByteArray)
+      .reverse
+      .padRight(32)
+      .take(32)
     expect(C.verifyingKey(identity).isLeft, "identity verifying key")
       .and(expect(!V.verify(VerifyingKey(identity), hex"", sig), "identity key never verifies"))
       .and(expect(C.signature(identity ++ sig.bytes.drop(32)).isLeft, "identity R"))

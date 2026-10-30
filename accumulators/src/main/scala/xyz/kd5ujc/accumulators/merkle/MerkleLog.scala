@@ -1,5 +1,7 @@
 package xyz.kd5ujc.accumulators.merkle
 
+import java.nio.charset.StandardCharsets.UTF_8
+
 import cats.effect.{Concurrent, Ref}
 import cats.mtl.Raise
 import cats.syntax.all._
@@ -71,7 +73,7 @@ object MerkleLog {
           (new Persistent[F, H](
             raw,
             KeyValueStore[F, (Int, Long), ByteVector](raw, nodeNs),
-            metaNs.prefix ++ ByteVector("state".getBytes("UTF-8"))
+            metaNs.prefix ++ ByteVector("state".getBytes(UTF_8))
           ): MerkleLog[F, H]).pure[F]
       }
     )

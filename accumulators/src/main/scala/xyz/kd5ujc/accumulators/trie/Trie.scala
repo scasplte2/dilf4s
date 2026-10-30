@@ -59,7 +59,7 @@ final class Trie[H] private (
     ranges:   List[(ByteVector, Option[ByteVector])] = Nil
   ): Result[TrieProof[H]] =
     keys.traverse(mode.path).flatMap { keyPaths =>
-      val queries = keyPaths.map(TrieProofs.Key) ++ prefixes.map(p => TrieProofs.Prefix(p.bits)) ++
+      val queries = keyPaths.map(TrieProofs.Key.apply) ++ prefixes.map(p => TrieProofs.Prefix(p.bits)) ++
         ranges.map { case (f, u) => TrieProofs.Range(f.bits, u.map(_.bits)) }
       TrieProofs.prove[Result, H](node, rootHash, queries)
     }

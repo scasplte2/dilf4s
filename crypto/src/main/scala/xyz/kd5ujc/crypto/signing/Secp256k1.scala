@@ -126,6 +126,14 @@ final class Secp256k1 private (native: Native) {
     (key: VerifyingKey[Secp256k1Schnorr], message: ByteVector, signature: Signature[Secp256k1Schnorr]) =>
       schnorrVerifyRaw(key, schnorrTag(message).bytes, signature)
 
+  /** dilf4s BIP-340 (tagged message digest) with caller-supplied 32-byte auxiliary randomness: for known answers. */
+  def schnorrSignWithAux(
+    key:     SigningKey[Secp256k1Schnorr],
+    message: ByteVector,
+    aux:     ByteVector
+  ): Either[CryptoError, Signature[Secp256k1Schnorr]] =
+    schnorrSignRaw(key, schnorrTag(message).bytes, aux)
+
   /** Raw BIP-340 over an exact 32-byte message (interoperability, test vectors); `aux` is the 32-byte auxiliary randomness. */
   def schnorrSignRaw(
     key:       SigningKey[Secp256k1Schnorr],

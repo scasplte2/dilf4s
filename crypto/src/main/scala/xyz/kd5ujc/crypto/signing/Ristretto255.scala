@@ -54,7 +54,11 @@ object Ristretto255Schnorr {
       )
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[Ristretto255Schnorr]] =
       if (bytes.size != 32L) CryptoError.InvalidEncoding("ristretto255 verifying key", s"expected 32 bytes, got ${bytes.size}").asLeft
-      else element(bytes).bimap(_ => CryptoError.InvalidKey("ristretto255 verifying key is not a canonical non-identity element"), _ => VerifyingKey(bytes))
+      else
+        element(bytes).bimap(
+          _ => CryptoError.InvalidKey("ristretto255 verifying key is not a canonical non-identity element"),
+          _ => VerifyingKey(bytes)
+        )
     def signature(bytes: ByteVector): Either[CryptoError, Signature[Ristretto255Schnorr]] =
       Either.cond(
         bytes.size == 64L && element(bytes.take(32)).isRight && canonicalScalar(bytes.drop(32)).isRight,
@@ -68,7 +72,11 @@ object Ristretto255Schnorr {
   implicit val publicKeyOf: PublicKeyOf[Ristretto255Schnorr] = (key: SigningKey[Ristretto255Schnorr]) =>
     VerifyingKey(ByteVector.view(Constants.RISTRETTO_GENERATOR_TABLE.multiply(secret(key)).compress().toByteArray))
 
-  private def signWith(key: SigningKey[Ristretto255Schnorr], message: ByteVector, randomness: ByteVector): Signature[Ristretto255Schnorr] = {
+  private def signWith(
+    key:        SigningKey[Ristretto255Schnorr],
+    message:    ByteVector,
+    randomness: ByteVector
+  ): Signature[Ristretto255Schnorr] = {
     val k = hashToScalar("nonce", randomness, key.bytes)
     val r = ByteVector.view(Constants.RISTRETTO_GENERATOR_TABLE.multiply(k).compress().toByteArray)
     val c = hashToScalar("chal", r, publicKeyOf.verifyingKey(key).bytes, message)
@@ -76,11 +84,20 @@ object Ristretto255Schnorr {
   }
 
   /** Signing with caller-supplied nonce randomness (32 bytes): pure, for known-answer tests and external RNGs. */
-  def signWithRandomness(key: SigningKey[Ristretto255Schnorr], message: ByteVector, randomness: ByteVector): Either[CryptoError, Signature[Ristretto255Schnorr]] =
-    Either.cond(randomness.size == RandomnessLength.toLong, signWith(key, message, randomness), CryptoError.InvalidEncoding("nonce randomness", s"expected $RandomnessLength bytes"))
+  def signWithRandomness(
+    key:        SigningKey[Ristretto255Schnorr],
+    message:    ByteVector,
+    randomness: ByteVector
+  ): Either[CryptoError, Signature[Ristretto255Schnorr]] =
+    Either.cond(
+      randomness.size == RandomnessLength.toLong,
+      signWith(key, message, randomness),
+      CryptoError.InvalidEncoding("nonce randomness", s"expected $RandomnessLength bytes")
+    )
 
   def signer[F[_]: Functor](implicit R: SecureRandom[F]): RandomizedSigner[F, Ristretto255Schnorr] =
-    (key: SigningKey[Ristretto255Schnorr], message: ByteVector) => R.nextBytes(RandomnessLength).map(rand => signWith(key, message, ByteVector.view(rand)))
+    (key: SigningKey[Ristretto255Schnorr], message: ByteVector) =>
+      R.nextBytes(RandomnessLength).map(rand => signWith(key, message, ByteVector.view(rand)))
 
   implicit val verifier: Verifier[Ristretto255Schnorr] =
     (key: VerifyingKey[Ristretto255Schnorr], message: ByteVector, signature: Signature[Ristretto255Schnorr]) =>

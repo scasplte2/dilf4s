@@ -1,5 +1,7 @@
 package xyz.kd5ujc.crypto.keys
 
+import java.nio.charset.StandardCharsets.UTF_8
+
 import cats.syntax.all._
 
 import xyz.kd5ujc.crypto.signing._
@@ -14,8 +16,8 @@ sealed trait ChildIndex extends Product with Serializable {
 }
 
 object ChildIndex {
-  final case class Soft private (value: Long) extends ChildIndex { def serialized: Long = value; def hardened: Boolean = false }
-  final case class Hardened private (value: Long) extends ChildIndex {
+  final case class Soft private[keys] (value: Long) extends ChildIndex { def serialized: Long = value; def hardened: Boolean = false }
+  final case class Hardened private[keys] (value: Long) extends ChildIndex {
     def serialized: Long = value | 0x80000000L; def hardened: Boolean = true
   }
 
@@ -51,7 +53,7 @@ final case class ExtendedKey[S](key: SigningKey[S], chainCode: ByteVector) {
 /** SLIP-10 for Ed25519: hardened derivation only; the 32-byte key is an RFC 8032 seed. */
 object Slip10Ed25519 {
 
-  private val curveKey = ByteVector("ed25519 seed".getBytes("UTF-8"))
+  private val curveKey = ByteVector("ed25519 seed".getBytes(UTF_8))
 
   private def split(i: ByteVector): Either[KeyError, ExtendedKey[Ed25519]] =
     Ed25519.codec.signingKey(i.take(32)).bimap(e => KeyError.InvalidDerivation(e.toString), ExtendedKey(_, i.drop(32)))
@@ -71,7 +73,7 @@ object Slip10Ed25519 {
 /** BIP32 for secp256k1. Scalar additions run in libsecp256k1 (constant time). */
 final class Bip32Secp256k1(backend: Secp256k1) {
 
-  private val curveKey = ByteVector("Bitcoin seed".getBytes("UTF-8"))
+  private val curveKey = ByteVector("Bitcoin seed".getBytes(UTF_8))
 
   private def keyOf(b: ByteVector): Either[KeyError, SigningKey[Secp256k1Ecdsa]] =
     backend.ecdsaCodec

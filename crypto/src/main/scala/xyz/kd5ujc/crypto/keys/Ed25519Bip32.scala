@@ -1,5 +1,7 @@
 package xyz.kd5ujc.crypto.keys
 
+import java.nio.charset.StandardCharsets.UTF_8
+
 import cats.syntax.all._
 
 import xyz.kd5ujc.crypto.signing._
@@ -69,7 +71,7 @@ object Ed25519Bip32 {
 
   /** Icarus (CIP-0003) master key: PBKDF2-HMAC-SHA512(passphrase, entropy, 4096, 96), clamped. */
   def icarus(entropy: Secret, passphrase: String = ""): Either[KeyError, ExtendedKey[Ed25519Bip32]] =
-    root(Secret(Hmac.pbkdf2Sha512(ByteVector(passphrase.getBytes("UTF-8")), entropy.bytes, 4096, 96)))
+    root(Secret(Hmac.pbkdf2Sha512(ByteVector(passphrase.getBytes(UTF_8)), entropy.bytes, 4096, 96)))
 
   // ------------------------------------------------------------------ fixed-width little-endian arithmetic
 
@@ -110,7 +112,10 @@ object Ed25519Bip32 {
 
   def derive(root: ExtendedKey[Ed25519Bip32], path: List[ChildIndex]): Either[KeyError, ExtendedKey[Ed25519Bip32]] = path.foldM(root)(child)
 
-  /** Public (soft-only) derivation: A' = A + (8 zL) B, from the verifying key and chain code alone. */
+  /**
+   * Public (soft-only) derivation: A' = A + (8 zL) B, from the verifying key and chain code alone. `A` must be the
+   * canonical encoding: the HMAC input is the raw bytes, so a non-canonical twin would diverge from the private path.
+   */
   def publicChild(
     key:       VerifyingKey[Ed25519Bip32],
     chainCode: ByteVector,
@@ -122,7 +127,9 @@ object Ed25519Bip32 {
       val z = Hmac.sha512(chainCode, ByteVector(0x02) ++ key.bytes ++ idx)
       Either
         .catchNonFatal(new CompressedEdwardsY(key.bytes.toArray).decompress())
-        .leftMap(_ => KeyError.InvalidDerivation("verifying key does not decode"))
+        .toOption
+        .filter(p => ByteVector.view(p.compress().toByteArray) == key.bytes)
+        .toRight(KeyError.InvalidDerivation("verifying key is not a canonical point encoding"))
         .map { point =>
           val child = Constants.ED25519_BASEPOINT_TABLE.multiply(Scalar.fromBytesModOrder(times8(z).toArray)).add(point)
           (

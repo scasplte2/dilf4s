@@ -30,7 +30,10 @@ lazy val commonScalacOptions = Seq(
   "-Ymacro-annotations",
   "-Ywarn-unused:_",
   "-Ywarn-macros:after",
-  "-Wconf:cat=unused:info"
+  "-Wconf:cat=unused:info",
+  // a private case-class constructor also makes the synthesised apply/copy private (Scala 3 semantics)
+  "-Xsource:3",
+  "-Xsource-features:case-apply-copy-access"
 )
 
 lazy val commonSettings = Seq(
