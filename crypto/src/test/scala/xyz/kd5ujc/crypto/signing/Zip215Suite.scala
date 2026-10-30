@@ -20,6 +20,7 @@ object Zip215Suite extends SimpleIOSuite {
     Scalar.fromBits(h).reduce()
   }
   private val message = ByteVector("zip215".getBytes("UTF-8"))
+
   /** An order-8 torsion point. */
   private val torsion = new CompressedEdwardsY(hex"26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05".toArray).decompress()
 
@@ -32,8 +33,8 @@ object Zip215Suite extends SimpleIOSuite {
   }
 
   pureTest("the torsion point is small-order and the derived key matches RFC 8032") {
-    expect(torsion.isSmallOrder && !torsion.isIdentity) and
-      expect.same(kp.verifying.bytes, ByteVector(Constants.ED25519_BASEPOINT.multiply(a).compress().toByteArray))
+    expect(torsion.isSmallOrder && !torsion.isIdentity)
+      .and(expect.same(kp.verifying.bytes, ByteVector(Constants.ED25519_BASEPOINT.multiply(a).compress().toByteArray)))
   }
 
   pureTest("a mixed-order signature (valid only cofactored) is accepted by ZIP-215") {
@@ -49,8 +50,8 @@ object Zip215Suite extends SimpleIOSuite {
 
   pureTest("a non-canonical R encoding: ZIP-215 accepts, BouncyCastle's strict RFC 8032 rejects") {
     val sig = Signature[Ed25519](nonCanonicalRSignature)
-    expect(Ed25519.verifier.verify(kp.verifying, message, sig), "ZIP-215 accepts non-canonical R") and
-      expect(!Ed25519.strictVerifier.verify(kp.verifying, message, sig), "strict verification requires canonical R")
+    expect(Ed25519.verifier.verify(kp.verifying, message, sig), "ZIP-215 accepts non-canonical R")
+      .and(expect(!Ed25519.strictVerifier.verify(kp.verifying, message, sig), "strict verification requires canonical R"))
   }
 
   pureTest("a non-canonical S (S + l) is rejected by both rules") {
@@ -58,17 +59,18 @@ object Zip215Suite extends SimpleIOSuite {
     val sig = Ed25519.signer.sign(kp.signing, message).bytes
     val sPlusL = BigInt(1, sig.drop(32).reverse.toArray) + l
     val bumped = Signature[Ed25519](sig.take(32) ++ ByteVector(sPlusL.toByteArray).reverse.padRight(32).take(32))
-    expect(!Ed25519.verifier.verify(kp.verifying, message, bumped)) and expect(!Ed25519.strictVerifier.verify(kp.verifying, message, bumped))
+    expect(!Ed25519.verifier.verify(kp.verifying, message, bumped))
+      .and(expect(!Ed25519.strictVerifier.verify(kp.verifying, message, bumped)))
   }
 
   pureTest("non-canonical point encodings decode under ZIP-215 (y = p + 1 is the identity)") {
     val nonCanonicalIdentity = hex"eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
-    expect(Ed25519.Zip215.decode(nonCanonicalIdentity).exists(_.isIdentity)) and
-      expect(Ed25519.codec.verifyingKey(nonCanonicalIdentity).isRight, "ZIP-215 keys may be non-canonical")
+    expect(Ed25519.Zip215.decode(nonCanonicalIdentity).exists(_.isIdentity))
+      .and(expect(Ed25519.codec.verifyingKey(nonCanonicalIdentity).isRight, "ZIP-215 keys may be non-canonical"))
   }
 
   pureTest("honest signatures verify under both rules") {
     val sig = Ed25519.signer.sign(kp.signing, message)
-    expect(Ed25519.verifier.verify(kp.verifying, message, sig)) and expect(Ed25519.strictVerifier.verify(kp.verifying, message, sig))
+    expect(Ed25519.verifier.verify(kp.verifying, message, sig)).and(expect(Ed25519.strictVerifier.verify(kp.verifying, message, sig)))
   }
 }

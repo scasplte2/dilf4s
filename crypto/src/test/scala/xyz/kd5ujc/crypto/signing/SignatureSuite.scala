@@ -84,6 +84,39 @@ object SignatureSuite extends SimpleIOSuite with Checkers {
     expect(!kp.signing.toString.contains("07")).and(expect(kp.signing == same.signing)).and(expect(!kp.toString.contains("0707")))
   }
 
+  // ------------------------------------------------------------------ P-256
+
+  laws[P256Ecdsa]("P-256 ECDSA")
+
+  pureTest("P-256 ECDSA: RFC 6979 A.2.5 known answers (SHA-256), with s normalised low") {
+    val n = BigInt("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551", 16)
+    val sk = P256Ecdsa.codec.signingKey(hex"c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721").toOption.get
+    def low(sig: ByteVector): ByteVector = {
+      val s = BigInt(1, sig.drop(32).toArray)
+      sig.take(32) ++ ByteVector.view((if (s > n / 2) n - s else s).toByteArray).takeRight(32).padLeft(32)
+    }
+    val sample = P256Ecdsa.signer.sign(sk, ByteVector("sample".getBytes(UTF_8))).bytes
+    val testMsg = P256Ecdsa.signer.sign(sk, ByteVector("test".getBytes(UTF_8))).bytes
+    expect
+      .same(hex"0360fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6", P256Ecdsa.publicKeyOf.verifyingKey(sk).bytes)
+      .and(
+        expect.same(
+          low(
+            hex"efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8"
+          ),
+          sample
+        )
+      )
+      .and(
+        expect.same(
+          low(
+            hex"f1abb023518351cd71d881567b1ea663ed3efcf6c5132b354f28d3b0b7d38367019f4113742a2b14bd25926b49c649155f267e60d3814b4c0cc84250e46f0083"
+          ),
+          testMsg
+        )
+      )
+  }
+
   // ------------------------------------------------------------------ secp256k1
 
   private val backend = Secp256k1.load[IO].unsafeRunSync()(cats.effect.unsafe.IORuntime.global)
