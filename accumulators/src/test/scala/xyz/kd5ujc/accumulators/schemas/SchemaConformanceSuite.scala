@@ -1,4 +1,4 @@
-package xyz.kd5ujc.models
+package xyz.kd5ujc.accumulators.schemas
 
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Paths}
@@ -12,6 +12,7 @@ import xyz.kd5ujc.accumulators.trie.TrieProofs
 import xyz.kd5ujc.core.canonical.{Cbor, Codec}
 import xyz.kd5ujc.core.hash.Sha256
 import xyz.kd5ujc.models.merkle.{MerkleConsistency, MerkleInclusion}
+import xyz.kd5ujc.models.poseidon.PoseidonMerkleProof
 import xyz.kd5ujc.models.trie.{TrieChildren, TrieProof, TrieSegment}
 import xyz.kd5ujc.modelsgen.{CddlParser, CddlSampler, QName, Schema}
 
@@ -66,14 +67,15 @@ object SchemaConformanceSuite extends SimpleIOSuite {
       )
   }
 
-  private val schemas = List("merkle", "trie").map(m => m -> read("shared", "schemas", s"$m.cddl"))
+  private val schemas = List("merkle", "trie", "poseidon").map(m => m -> read("shared", "schemas", s"$m.cddl"))
 
   private val codecs: Map[String, Codec[?]] = Map(
-    "merkle-inclusion"   -> MerkleInclusion.codec,
-    "merkle-consistency" -> MerkleConsistency.codec,
-    "trie-proof"         -> TrieProof.codec,
-    "trie-segment"       -> TrieSegment.codec,
-    "trie-children"      -> TrieChildren.codec
+    "merkle-inclusion"      -> MerkleInclusion.codec,
+    "merkle-consistency"    -> MerkleConsistency.codec,
+    "trie-proof"            -> TrieProof.codec,
+    "trie-segment"          -> TrieSegment.codec,
+    "trie-children"         -> TrieChildren.codec,
+    "poseidon-merkle-proof" -> PoseidonMerkleProof.codec
   )
 
   /** Samples must be canonical CBOR the generated decoder accepts and re-encodes exactly: a rejection is a bug. */
@@ -92,7 +94,7 @@ object SchemaConformanceSuite extends SimpleIOSuite {
   }
 
   pureTest("each spec embeds its schema verbatim") {
-    List("merkle" -> "merkle.md", "trie" -> "trie.md").foldMap {
+    List("merkle" -> "merkle.md", "trie" -> "trie.md", "poseidon" -> "zk.md").foldMap {
       case (m, spec) =>
         val schema = read("shared", "schemas", s"$m.cddl").trim
         val blocks = "(?s)```cddl\\n(.*?)```".r.findAllMatchIn(read("docs", "specs", spec)).map(_.group(1).trim).toList

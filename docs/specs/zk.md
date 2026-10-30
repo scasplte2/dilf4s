@@ -58,3 +58,25 @@ shielded-transfer circuit.
 - **Proof.** `(position, siblings)`, with siblings **root-first**. Verification folds from the leaf upward: at level
   `i`, bit `i` of the position chooses whether the path node is the right child.
 - **Absence.** An absence proof is an inclusion proof of 0.
+
+### Proof encoding
+
+The proof's wire form is the canonical value below: the normative schema `shared/schemas/poseidon.cddl`, reproduced
+verbatim and checked by a test. Field elements are integers in `[0, r)`. Decoders also require `position < 2^depth`,
+where depth is the number of siblings; in the Scala API that invariant, and the field range, are carried by the types
+(`Fr`, `PoseidonMerkleProof`).
+
+```cddl
+; dilf4s Poseidon Merkle tree proofs, v1 (docs/specs/zk.md section 4). Normative for shape.
+; Siblings are root-first BN254 scalar-field elements. The tree depth is the number of siblings; the domain decoder
+; additionally requires position < 2^depth.
+
+poseidon-merkle-proof = {
+  "position": tree-position,
+  "siblings": [0*256 field-element],
+}
+
+tree-position = 0..115792089237316195423570985008687907853269984665640564039457584007913129639935
+
+field-element = 0..21888242871839275222246405745257275088548364400416034343698204186575808495616
+```

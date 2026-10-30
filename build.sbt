@@ -143,7 +143,7 @@ lazy val accumulators = project.in(file("accumulators"))
       Libraries.circeParser,
     )
   )
-  .dependsOn(core, storage, sharedTest % Test)
+  .dependsOn(core, storage, models, modelsGen % "test->test", sharedTest % Test)
 
 // ─── Storage: Store, VersionedStore (self-contained) ───
 lazy val storage = project.in(file("storage"))
@@ -212,7 +212,7 @@ lazy val models = project.in(file("models"))
       cached(inputs).toSeq.sortBy(_.getAbsolutePath)
     }.taskValue
   )
-  .dependsOn(core, accumulators % "test->compile", modelsGen % "test->test", sharedTest % Test)
+  .dependsOn(core, sharedTest % Test)
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll; scalafmtSbtCheck")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll; scalafmtSbt")
