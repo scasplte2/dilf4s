@@ -27,14 +27,20 @@ object Gas {
 }
 
 /**
- * What an operation costs: a base charge, plus a charge per unit of input size, where the unit is fixed per operation
- * (elements of a collection, bytes or characters, or 64-bit limbs of a number). Every size charge is taken **before**
- * the work it pays for.
+ * What an operation costs: a base charge, plus a charge per unit of argument size, where the unit is fixed per
+ * operation. Every size charge is taken **before** the work it pays for.
  */
 final case class OpCost(base: Gas, perUnit: Gas, unit: SizeUnit)
 
+/**
+ * How an operation's arguments are measured, summed over all arguments:
+ *   - `Elements`: top-level entries of arrays and objects (1 for anything else), for operations that only touch the
+ *     outermost collection (structure is shared, never copied);
+ *   - `Weight`: [[xyz.kd5ujc.core.canonical.CanonicalValue.weight]], for operations that read content (text, bytes,
+ *     numbers, nested values).
+ */
 enum SizeUnit {
-  case None, Elements, Bytes, Limbs
+  case None, Elements, Weight
 }
 
 /**
@@ -57,12 +63,12 @@ object GasSchedule {
   private def c(base: Long, perUnit: Long = 0, unit: SizeUnit = SizeUnit.None): OpCost = OpCost(Gas(base), Gas(perUnit), unit)
 
   import Op.{Map => MapOp, None => NoneOp, Set => SetOp, Some => SomeOp, _}
-  import SizeUnit.{Bytes, Elements, Limbs}
+  import SizeUnit.{Elements, Weight}
 
   /**
-   * Version 1. Base costs start from metakit's table; size terms now cover the work metakit left unpriced (big numbers by
-   * limb, text and bytes by length, hashing and signature messages by byte), and every op that walks a collection pays
-   * per element.
+   * Version 1. Base costs start from metakit's table; size terms now cover the work metakit left unpriced: everything
+   * that reads content (comparison, arithmetic, text, bytes, hashing, signature messages) pays by weight, and
+   * everything that walks a collection pays per element.
    */
   val V1: GasSchedule = GasSchedule(
     version = 1,
@@ -74,27 +80,27 @@ object GasSchedule {
       Truthy                  -> c(1),
       Default                 -> c(5),
       Let                     -> c(10),
-      Eq                      -> c(2, 1, Elements),
-      Ne                      -> c(2, 1, Elements),
-      StrictEq                -> c(2, 1, Elements),
-      StrictNe                -> c(2, 1, Elements),
-      Lt                      -> c(3, 1, Limbs),
-      Le                      -> c(3, 1, Limbs),
-      Gt                      -> c(3, 1, Limbs),
-      Ge                      -> c(3, 1, Limbs),
-      Add                     -> c(5, 1, Limbs),
-      Sub                     -> c(5, 1, Limbs),
-      Mul                     -> c(8, 2, Limbs),
-      Div                     -> c(10, 4, Limbs),
-      Mod                     -> c(10, 4, Limbs),
-      Min                     -> c(5, 1, Elements),
-      Max                     -> c(5, 1, Elements),
-      Abs                     -> c(2, 1, Limbs),
-      Round                   -> c(3, 2, Limbs),
-      RoundHalfUp             -> c(3, 2, Limbs),
-      Floor                   -> c(3, 2, Limbs),
-      Ceil                    -> c(3, 2, Limbs),
-      Pow                     -> c(20, 8, Limbs),
+      Eq                      -> c(2, 1, Weight),
+      Ne                      -> c(2, 1, Weight),
+      StrictEq                -> c(2, 1, Weight),
+      StrictNe                -> c(2, 1, Weight),
+      Lt                      -> c(3, 1, Weight),
+      Le                      -> c(3, 1, Weight),
+      Gt                      -> c(3, 1, Weight),
+      Ge                      -> c(3, 1, Weight),
+      Add                     -> c(5, 1, Weight),
+      Sub                     -> c(5, 1, Weight),
+      Mul                     -> c(8, 2, Weight),
+      Div                     -> c(10, 4, Weight),
+      Mod                     -> c(10, 4, Weight),
+      Min                     -> c(5, 1, Weight),
+      Max                     -> c(5, 1, Weight),
+      Abs                     -> c(2, 1, Weight),
+      Round                   -> c(3, 2, Weight),
+      RoundHalfUp             -> c(3, 2, Weight),
+      Floor                   -> c(3, 2, Weight),
+      Ceil                    -> c(3, 2, Weight),
+      Pow                     -> c(20, 8, Weight),
       MapOp                   -> c(10, 1, Elements),
       Filter                  -> c(10, 1, Elements),
       Reduce                  -> c(15, 1, Elements),
@@ -103,26 +109,26 @@ object GasSchedule {
       NoneOp                  -> c(10, 1, Elements),
       Find                    -> c(10, 1, Elements),
       Count                   -> c(5, 1, Elements),
-      Merge                   -> c(5, 1, Elements),
-      In                      -> c(8, 1, Elements),
-      Intersect               -> c(15, 1, Elements),
-      Unique                  -> c(20, 2, Elements),
+      Merge                   -> c(5, 1, Weight),
+      In                      -> c(8, 1, Weight),
+      Intersect               -> c(15, 1, Weight),
+      Unique                  -> c(20, 2, Weight),
       Slice                   -> c(5, 1, Elements),
       Reverse                 -> c(5, 1, Elements),
-      Flatten                 -> c(10, 1, Elements),
-      Length                  -> c(1),
-      Cat                     -> c(5, 1, Bytes),
-      Substr                  -> c(8, 1, Bytes),
-      Lower                   -> c(3, 1, Bytes),
-      Upper                   -> c(3, 1, Bytes),
-      Join                    -> c(10, 1, Bytes),
-      Split                   -> c(15, 2, Bytes),
-      Trim                    -> c(5, 1, Bytes),
-      StartsWith              -> c(5, 1, Bytes),
-      EndsWith                -> c(5, 1, Bytes),
-      Keys                    -> c(5, 1, Elements),
-      Values                  -> c(5, 1, Elements),
-      Entries                 -> c(10, 2, Elements),
+      Flatten                 -> c(10, 1, Weight),
+      Length                  -> c(1, 1, Weight),
+      Cat                     -> c(5, 1, Weight),
+      Substr                  -> c(8, 1, Weight),
+      Lower                   -> c(3, 1, Weight),
+      Upper                   -> c(3, 1, Weight),
+      Join                    -> c(10, 1, Weight),
+      Split                   -> c(15, 2, Weight),
+      Trim                    -> c(5, 1, Weight),
+      StartsWith              -> c(5, 1, Weight),
+      EndsWith                -> c(5, 1, Weight),
+      Keys                    -> c(5, 1, Weight),
+      Values                  -> c(5, 1, Weight),
+      Entries                 -> c(10, 2, Weight),
       Get                     -> c(3),
       Has                     -> c(3),
       SetOp                   -> c(5, 1, Elements),
@@ -131,29 +137,29 @@ object GasSchedule {
       Missing                 -> c(5, 1, Elements),
       MissingSome             -> c(15, 1, Elements),
       TypeOf                  -> c(1),
-      Hex                     -> c(5, 1, Bytes),
-      Unhex                   -> c(5, 1, Bytes),
-      HexToInt                -> c(10, 1, Bytes),
-      BytesToInt              -> c(10, 1, Bytes),
-      IntToBytes              -> c(10, 1, Limbs),
-      Sha256                  -> c(60, 1, Bytes),
-      Sha3_256                -> c(60, 1, Bytes),
-      Blake2b256              -> c(60, 1, Bytes),
-      Ed25519Verify           -> c(30000, 1, Bytes),
-      Secp256k1Verify         -> c(30000, 1, Bytes),
-      Bip340Verify            -> c(30000, 1, Bytes),
-      BlsVerify               -> c(120000, 1, Bytes),
+      Hex                     -> c(5, 1, Weight),
+      Unhex                   -> c(5, 1, Weight),
+      HexToInt                -> c(10, 1, Weight),
+      BytesToInt              -> c(10, 1, Weight),
+      IntToBytes              -> c(10, 1, Weight),
+      Sha256                  -> c(60, 1, Weight),
+      Sha3_256                -> c(60, 1, Weight),
+      Blake2b256              -> c(60, 1, Weight),
+      Ed25519Verify           -> c(30000, 1, Weight),
+      Secp256k1Verify         -> c(30000, 1, Weight),
+      Bip340Verify            -> c(30000, 1, Weight),
+      BlsVerify               -> c(120000, 1, Weight),
       BlsAggregateVerify      -> c(120000, 15000, Elements),
       Poseidon                -> c(150, 150, Elements),
       PmtVerify               -> c(200, 300, Elements),
-      Groth16Verify           -> c(250000, 1, Bytes),
-      EcvrfVerify             -> c(50000, 1, Bytes),
+      Groth16Verify           -> c(250000, 1, Weight),
+      EcvrfVerify             -> c(50000, 1, Weight),
       Bn254Add                -> c(500),
       Bn254Mul                -> c(40000),
       Bn254Pairing            -> c(45000, 35000, Elements),
-      SchnorrVerify           -> c(45000, 1, Bytes),
-      ProveDlogVerify         -> c(45000, 1, Bytes),
-      ProveDhTupleVerify      -> c(85000, 1, Bytes),
+      SchnorrVerify           -> c(45000, 1, Weight),
+      ProveDlogVerify         -> c(45000, 1, Weight),
+      ProveDhTupleVerify      -> c(85000, 1, Weight),
       SigmaVerify             -> c(45000, 2000, Elements),
       MerkleVerify            -> c(500, 400, Elements),
       MerkleConsistencyVerify -> c(500, 400, Elements),

@@ -237,6 +237,53 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  test("substring search is linear-time KMP and agrees with String.indexOf") {
+    val alphabet = Gen.oneOf("a", "b", "😀")
+    val str = Gen.choose(0, 12).flatMap(Gen.listOfN(_, alphabet)).map(_.mkString)
+    forall(Gen.zip(str, str, Gen.choose(0, 12))) {
+      case (h, n, from) =>
+        val start = math.min(from, h.length)
+        expect.same(h.indexOf(n, start), Values.indexOf(h, n, start))
+    }
+  }
+
+  pureTest("substr and slice clamp lengths and indices beyond 64 bits") {
+    val huge = CInt(BigInt(10).pow(30))
+    expect
+      .same(ok(t("bc")), run(Op.Substr, t("abc"), i(1), huge))
+      .and(expect.same(ok(t("abc")), run(Op.Substr, t("abc"), CInt(-huge.value))))
+      .and(expect.same(ok(a(i(2))), run(Op.Slice, a(i(1), i(2)), i(1), huge)))
+  }
+
+  pureTest("numbers stay within MaxNumberBits, checked on operands and results") {
+    val big = CInt(BigInt(2).pow(Values.MaxNumberBits - 1))
+    def limited(r: Either[JlvmError, CanonicalValue]) = r match {
+      case Left(JlvmError.Limit(_)) => true
+      case _                        => false
+    }
+    val half = CInt(BigInt(2).pow(Values.MaxNumberBits - 2))
+    expect
+      .same(ok(big), run(Op.Add, half, half))
+      .and(expect(limited(run(Op.Add, big, big)), "2^4096 has 4097 bits"))
+      .and(expect(limited(run(Op.Mul, big, big)), "product too wide"))
+      .and(expect(limited(run(Op.Add, CInt(BigInt(2).pow(5000)), i(1))), "operand too wide"))
+      .and(expect(limited(run(Op.Lt, CInt(BigInt(2).pow(5000)), i(1))), "ordering reads the bound too"))
+      .and(expect(limited(run(Op.BytesToInt, CBytes(ByteVector.fill(600)(1)))), "bytes_to_int bound"))
+      .and(expect.same(ok(i(1)), run(Op.BytesToInt, CBytes(ByteVector.fill(600)(0) :+ 1.toByte))))
+  }
+
+  pureTest("results stay within MaxWeight: doubling text with cat hits a limit, not memory") {
+    val start = t("x" * 4096)
+    val doubled = (1 to 16).foldLeft[Either[JlvmError, CanonicalValue]](ok(start))((acc, _) => acc.flatMap(v => run(Op.Cat, v, v)))
+    expect(
+      doubled match {
+        case Left(JlvmError.Limit(_)) => true
+        case _                        => false
+      },
+      "doubling 4 KiB sixteen times exceeds 16 Mi weight"
+    )
+  }
+
   pureTest("case mapping is Unicode full mapping, locale-independent; trim strips Unicode white space") {
     expect
       .same(ok(t("STRASSE")), run(Op.Upper, t("straße")))

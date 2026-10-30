@@ -4,6 +4,8 @@ import java.util.Locale
 
 import cats.syntax.all._
 
+import scala.annotation.tailrec
+
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.numerics.Ratio
@@ -25,24 +27,64 @@ object Values {
     case CMap(m)      => m.nonEmpty
   }
 
+  /**
+   * The largest number, in bits of the numerator and of the denominator. Every number an operation reads or produces is
+   * checked, so arithmetic (including the gcd that keeps rationals reduced) works on bounded operands and its cost is
+   * a constant the gas schedule can price.
+   */
+  val MaxNumberBits: Int = 4096
+
+  /** The largest [[CanonicalValue.weight]] an operation may produce: bounds memory and the cost of later traversals. */
+  val MaxWeight: Long = 1L << 24
+
   def number(v: CanonicalValue): Option[Ratio] = v match {
     case CInt(i)      => Some(Ratio.integer(i))
     case CRational(r) => Some(r)
     case _            => None
   }
 
-  def num(r:  Ratio): CanonicalValue = CanonicalValue.number(r)
-  def int(i:  BigInt): CanonicalValue = CInt(i)
+  private def fits(r: Ratio): Boolean = r.numerator.bitLength <= MaxNumberBits && r.denominator.bitLength <= MaxNumberBits
+
+  private def tooLarge(op: Op): JlvmError = JlvmError.Limit(s"${op.wire}: a number exceeds $MaxNumberBits bits")
+
+  /** A number operand, within [[MaxNumberBits]]. */
+  def numeric(op: Op, v: CanonicalValue): Either[JlvmError, Ratio] =
+    number(v)
+      .toRight(JlvmError.Type(op.wire, s"expected a number, got ${kind(v)}"))
+      .flatMap(r => Either.cond(fits(r), r, tooLarge(op)))
+
+  /** An integer operand, within [[MaxNumberBits]]. */
+  def integer(op: Op, v: CanonicalValue): Either[JlvmError, BigInt] =
+    v match {
+      case CInt(i) => Either.cond(i.bitLength <= MaxNumberBits, i, tooLarge(op))
+      case other   => JlvmError.Type(op.wire, s"expected an integer, got ${kind(other)}").asLeft
+    }
+
+  /** A number result, within [[MaxNumberBits]]. */
+  def num(op: Op, r: Ratio): Either[JlvmError, CanonicalValue] =
+    Either.cond(fits(r), CanonicalValue.number(r), tooLarge(op))
+
+  def int(op: Op, i: BigInt): Either[JlvmError, CanonicalValue] =
+    Either.cond(i.bitLength <= MaxNumberBits, CInt(i), tooLarge(op))
+
+  /** A count or a length: always small. */
+  def count(n: Long): CanonicalValue = CInt(BigInt(n))
+
   def bool(b: Boolean): CanonicalValue = CBool(b)
 
+  def bounded(op: Op, v: CanonicalValue): Either[JlvmError, CanonicalValue] =
+    Either.cond(v.weight <= MaxWeight, v, JlvmError.Limit(s"${op.wire}: the result exceeds weight $MaxWeight"))
+
   def text(op: Op, s: String): Either[JlvmError, CanonicalValue] =
-    CanonicalValue.text(s).leftMap(_ => JlvmError.Type(op.wire, "the result is not well-formed text"))
+    CanonicalValue.text(s).leftMap(_ => JlvmError.Type(op.wire, "the result is not well-formed text")).flatMap(bounded(op, _))
 
   def array(op: Op, vs: Vector[CanonicalValue]): Either[JlvmError, CanonicalValue] =
-    CanonicalValue.array(vs).leftMap(e => JlvmError.Limit(s"${op.wire}: $e"))
+    CanonicalValue.array(vs).leftMap(e => JlvmError.Limit(s"${op.wire}: $e")).flatMap(bounded(op, _))
 
   def map(op: Op, entries: Iterable[(String, CanonicalValue)]): Either[JlvmError, CanonicalValue] =
-    CanonicalValue.map(entries).leftMap(e => JlvmError.Limit(s"${op.wire}: $e"))
+    CanonicalValue.map(entries).leftMap(e => JlvmError.Limit(s"${op.wire}: $e")).flatMap(bounded(op, _))
+
+  def bytesValue(op: Op, b: ByteVector): Either[JlvmError, CanonicalValue] = bounded(op, CBytes(b))
 
   /** The kind name reported by `typeof`. There is one number kind. */
   def kind(v: CanonicalValue): String = v match {
@@ -61,12 +103,9 @@ object Values {
   /** Text compares by Unicode code point; numbers numerically; anything else cannot be ordered. */
   def compare(op: Op, a: CanonicalValue, b: CanonicalValue): Either[JlvmError, Int] =
     (a, b) match {
-      case (CText(x), CText(y)) => compareCodePoints(x, y).asRight
-      case _ =>
-        (number(a), number(b)) match {
-          case (Some(x), Some(y)) => x.compare(y).asRight
-          case _                  => JlvmError.Type(op.wire, s"cannot order ${kind(a)} and ${kind(b)}").asLeft
-        }
+      case (CText(x), CText(y))                            => compareCodePoints(x, y).asRight
+      case _ if number(a).isDefined && number(b).isDefined => (numeric(op, a), numeric(op, b)).mapN(_.compare(_))
+      case _                                               => JlvmError.Type(op.wire, s"cannot order ${kind(a)} and ${kind(b)}").asLeft
     }
 
   def compareCodePoints(x: String, y: String): Int = {
@@ -96,28 +135,46 @@ object Values {
   def sortedKeys(m: scala.collection.immutable.Map[String, CanonicalValue]): List[String] =
     m.keys.toList.sortWith((a, b) => compareCodePoints(a, b) < 0)
 
-  /**
-   * Number size in 64-bit limbs, for gas: numerator plus denominator for a rational, at least 1. The size of a value
-   * is the sum of its parts.
-   */
-  def limbs(v: CanonicalValue): Long = v match {
-    case CInt(i)      => 1L + i.bitLength / 64
-    case CRational(r) => 2L + r.numerator.bitLength / 64 + r.denominator.bitLength / 64
-    case _            => 1L
-  }
-
-  def bytesOf(v: CanonicalValue): Long = v match {
-    case CText(s)   => s.getBytes(java.nio.charset.StandardCharsets.UTF_8).length.toLong
-    case CBytes(b)  => b.size
-    case CArray(vs) => vs.foldLeft(0L)(_ + bytesOf(_))
-    case _          => 0L
-  }
-
+  /** Top-level size, for operations that only touch the outermost collection. */
   def elements(v: CanonicalValue): Long = v match {
     case CArray(vs) => vs.size.toLong
     case CMap(m)    => m.size.toLong
     case _          => 1L
   }
 
-  def bytesValue(b: ByteVector): CanonicalValue = CBytes(b)
+  /**
+   * The first index at or after `from` where `needle` occurs in `haystack`, or -1: Knuth-Morris-Pratt, so the work is
+   * linear in both lengths (a naive search is quadratic, which no linear gas charge could price).
+   */
+  def indexOf(haystack: Int => Int, hayLength: Int, needle: Int => Int, needleLength: Int, from: Int): Int = {
+    val fail = failure(needle, needleLength)
+
+    @tailrec
+    def search(i: Int, k: Int): Int =
+      if (k == needleLength) i - k
+      else if (i >= hayLength) -1
+      else if (haystack(i) == needle(k)) search(i + 1, k + 1)
+      else if (k > 0) search(i, fail(k - 1))
+      else search(i + 1, 0)
+
+    search(from, 0)
+  }
+
+  /** The KMP failure function: for each prefix, the length of its longest proper prefix that is also a suffix. */
+  private def failure(needle: Int => Int, n: Int): Vector[Int] = {
+    @tailrec
+    def build(i: Int, k: Int, acc: Vector[Int]): Vector[Int] =
+      if (i >= n) acc
+      else if (needle(i) == needle(k)) build(i + 1, k + 1, acc :+ (k + 1))
+      else if (k > 0) build(i, acc(k - 1), acc)
+      else build(i + 1, 0, acc :+ 0)
+
+    if (n == 0) Vector.empty else build(1, 0, Vector(0))
+  }
+
+  def indexOf(haystack: String, needle: String, from: Int): Int =
+    indexOf(i => haystack.charAt(i).toInt, haystack.length, i => needle.charAt(i).toInt, needle.length, from)
+
+  def indexOf(haystack: ByteVector, needle: ByteVector): Long =
+    indexOf(i => haystack(i.toLong).toInt, haystack.size.toInt, i => needle(i.toLong).toInt, needle.size.toInt, 0).toLong
 }
