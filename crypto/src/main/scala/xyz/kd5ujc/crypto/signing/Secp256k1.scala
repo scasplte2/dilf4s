@@ -84,6 +84,10 @@ final class Secp256k1 private (native: Native) {
       ecdsaCodec.signingKey(seed).map(sk => KeyPair(sk, ecdsaPublicKeyOf.verifyingKey(sk)))
   }
 
+  /** `(a + b) mod n` on secret scalars, in libsecp256k1 (constant time); fails if either is invalid or the sum is 0. */
+  private[crypto] def tweakAdd(a: ByteVector, b: ByteVector): Either[CryptoError, ByteVector] =
+    call("privKeyTweakAdd")(native.privKeyTweakAdd(a.toArray, b.toArray)).map(ByteVector.view)
+
   // ------------------------------------------------------------------ BIP-340 Schnorr
 
   val schnorrCodec: SchemeCodec[Secp256k1Schnorr] = new SchemeCodec[Secp256k1Schnorr] {

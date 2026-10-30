@@ -27,7 +27,7 @@ object P256Ecdsa {
   private val n: BigInt = BigInt(curve.getN)
   private val sha256 = Hasher[Sha256]
 
-  private def scalar(b: ByteVector): BigInt = BigInt(1, b.toArray)
+  private def scalar(b:  ByteVector): BigInt = BigInt(1, b.toArray)
   private def fixed32(i: BigInt): ByteVector = ByteVector.view(i.toByteArray).takeRight(32).padLeft(32)
   private def point(b: ByteVector): Either[Throwable, ECPoint] =
     Either.catchNonFatal(curve.getCurve.decodePoint(b.toArray)).filterOrElse(_.isValid, new IllegalArgumentException("not a valid point"))
@@ -35,7 +35,11 @@ object P256Ecdsa {
   implicit val codec: SchemeCodec[P256Ecdsa] = new SchemeCodec[P256Ecdsa] {
     val name: String = "P-256-ECDSA"
     def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[P256Ecdsa]] =
-      Either.cond(bytes.size == 32L && scalar(bytes) >= 1 && scalar(bytes) < n, new SigningKey[P256Ecdsa](bytes), CryptoError.InvalidKey("P-256 secret key must be a 32-byte scalar in [1, n)"))
+      Either.cond(
+        bytes.size == 32L && scalar(bytes) >= 1 && scalar(bytes) < n,
+        new SigningKey[P256Ecdsa](bytes),
+        CryptoError.InvalidKey("P-256 secret key must be a 32-byte scalar in [1, n)")
+      )
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[P256Ecdsa]] =
       if (bytes.size != 33L) CryptoError.InvalidEncoding("P-256 verifying key", s"expected 33 compressed bytes, got ${bytes.size}").asLeft
       else point(bytes).bimap(_ => CryptoError.InvalidKey("P-256 verifying key is not a valid point"), _ => VerifyingKey[P256Ecdsa](bytes))
@@ -43,12 +47,18 @@ object P256Ecdsa {
       if (bytes.size != 64L) CryptoError.InvalidEncoding("P-256 signature", s"expected 64 bytes, got ${bytes.size}").asLeft
       else {
         val (r, s) = (scalar(bytes.take(32)), scalar(bytes.drop(32)))
-        Either.cond(r >= 1 && r < n && s >= 1 && s <= n / 2, Signature[P256Ecdsa](bytes), CryptoError.InvalidEncoding("P-256 signature", "r and s must be in range and s must be low (canonical)"))
+        Either.cond(
+          r >= 1 && r < n && s >= 1 && s <= n / 2,
+          Signature[P256Ecdsa](bytes),
+          CryptoError.InvalidEncoding("P-256 signature", "r and s must be in range and s must be low (canonical)")
+        )
       }
   }
 
   implicit val publicKeyOf: PublicKeyOf[P256Ecdsa] = (key: SigningKey[P256Ecdsa]) =>
-    VerifyingKey[P256Ecdsa](ByteVector.view(new FixedPointCombMultiplier().multiply(curve.getG, scalar(key.bytes).bigInteger).normalize().getEncoded(true)))
+    VerifyingKey[P256Ecdsa](
+      ByteVector.view(new FixedPointCombMultiplier().multiply(curve.getG, scalar(key.bytes).bigInteger).normalize().getEncoded(true))
+    )
 
   implicit val signer: Signer[P256Ecdsa] = (key: SigningKey[P256Ecdsa], message: ByteVector) => {
     val s = new ECDSASigner(new HMacDSAKCalculator(new SHA256Digest()))
@@ -62,11 +72,16 @@ object P256Ecdsa {
     codec.signature(signature.bytes).isRight && point(key.bytes).exists { q =>
       val v = new ECDSASigner()
       v.init(false, new ECPublicKeyParameters(q, domain))
-      v.verifySignature(sha256.digest(message).bytes.toArray, new BigInteger(1, signature.bytes.take(32).toArray), new BigInteger(1, signature.bytes.drop(32).toArray))
+      v.verifySignature(
+        sha256.digest(message).bytes.toArray,
+        new BigInteger(1, signature.bytes.take(32).toArray),
+        new BigInteger(1, signature.bytes.drop(32).toArray)
+      )
     }
 
   implicit val seedDerivation: SeedDerivation[P256Ecdsa] = new SeedDerivation[P256Ecdsa] {
     val seedLength: Long = 32
-    def fromSeed(seed: ByteVector): Either[CryptoError, KeyPair[P256Ecdsa]] = codec.signingKey(seed).map(sk => KeyPair(sk, publicKeyOf.verifyingKey(sk)))
+    def fromSeed(seed: ByteVector): Either[CryptoError, KeyPair[P256Ecdsa]] =
+      codec.signingKey(seed).map(sk => KeyPair(sk, publicKeyOf.verifyingKey(sk)))
   }
 }
