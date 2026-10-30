@@ -15,7 +15,7 @@ object CanonicalEmitterSuite extends FunSuite {
 
   /** Regenerate with: sbt "modelsGen/runMain xyz.kd5ujc.modelsgen.Main shared/schemas <dir> xyz.kd5ujc.models". */
   test("generated sources for shared/schemas match the reviewed golden snapshot") {
-    val modules = List("merkle", "trie", "poseidon")
+    val modules = List("merkle", "trie", "poseidon", "storage", "bloom")
     val out = Main.generate(modules.toVector.map(m => m -> read(s"shared/schemas/$m.cddl")), "xyz.kd5ujc.models").map(_.toMap)
     modules.foldMap(m => expect.same(Right(Some(read(s"models-gen/src/test/resources/golden/$m.scala"))), out.map(_.get(m))))
   }

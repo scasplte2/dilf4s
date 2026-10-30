@@ -48,6 +48,26 @@ object MerkleInclusion {
   given CanonicalDecoder[MerkleInclusion] = codec.decoder
 }
 
+final case class MerkleLogState(size: TreeIndex, generation: TreeIndex)
+
+object MerkleLogState {
+  lazy val codec: Codec[MerkleLogState] = Codec(
+    a =>
+      Codec.record(List(
+        Codec.field("size", TreeIndex.codec, a.size),
+        Codec.field("generation", TreeIndex.codec, a.generation)
+      )),
+    CanonicalDecoder.record(Set("size", "generation")) { fields$ =>
+      for {
+        size <- fields$.required("size")(using TreeIndex.codec.decoder)
+        generation <- fields$.required("generation")(using TreeIndex.codec.decoder)
+      } yield MerkleLogState(size, generation)
+    }
+  )
+  given Canonical[MerkleLogState] = codec.canonical
+  given CanonicalDecoder[MerkleLogState] = codec.decoder
+}
+
 type TreeIndex = Long
 
 object TreeIndex {

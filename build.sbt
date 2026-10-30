@@ -159,7 +159,7 @@ lazy val storage = project.in(file("storage"))
       Libraries.scodecBits
     )
   )
-  .dependsOn(core, sharedTest % Test)
+  .dependsOn(core, models, sharedTest % Test)
 
 // ─── Storage on RocksDB: separate artifact so the pure core never pulls in native code ───
 lazy val storageRocksDb = project.in(file("storage-rocksdb"))

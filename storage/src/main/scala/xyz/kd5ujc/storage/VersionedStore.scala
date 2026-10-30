@@ -7,8 +7,8 @@ import cats.mtl.Raise
 import cats.syntax.all._
 import cats.{Order, Show}
 
-import xyz.kd5ujc.core.canonical.CanonicalValue.{CBytes, CMap}
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.Cbor
+import xyz.kd5ujc.models.storage.VersionedRecord
 
 import fs2.Stream
 import scodec.bits.ByteVector
@@ -123,28 +123,19 @@ object VersionedStore {
         if (wrote) ().pure[F] else latest.flatMap(now => fail(StoreError.VersionConflict(expected, now.value)))
       }
 
-    // ---- records: canonical CBOR maps of optional raw values; an absent field means "no value"
+    // ---- records: shared/schemas/storage.cddl `versioned-record`; an absent field means "no value"
 
     private def record(before: Option[ByteVector], after: Option[ByteVector]): F[ByteVector] =
-      liftE(
-        CanonicalValue
-          .map(before.map(b => "b" -> CBytes(b)).toList ++ after.map(a => "a" -> CBytes(a)).toList)
-          .bimap(e => StoreError.Corrupt(s"record: $e"), Cbor.encode)
-      )
-
-    private def field(m: Map[String, CanonicalValue], name: String): F[Option[ByteVector]] =
-      m.get(name) match {
-        case None            => none[ByteVector].pure[F]
-        case Some(CBytes(b)) => b.some.pure[F]
-        case Some(other)     => fail(StoreError.Corrupt(s"record field '$name' is not bytes: $other"))
-      }
+      liftE(VersionedRecord.codec.encode(VersionedRecord(before, after)).bimap(e => StoreError.Corrupt(s"record: $e"), Cbor.encode))
 
     private def readRecord(bytes: ByteVector): F[(Option[ByteVector], Option[ByteVector])] =
-      Cbor.decode(bytes) match {
-        case Right(CMap(m)) => (field(m, "b"), field(m, "a")).tupled
-        case Right(other)   => fail(StoreError.Corrupt(s"record is not a map: $other"))
-        case Left(e)        => fail(StoreError.Corrupt(s"record does not decode: $e"))
-      }
+      liftE(
+        Cbor
+          .decode(bytes)
+          .leftMap(_.toString)
+          .flatMap(VersionedRecord.codec.decoder.decode(_).leftMap(_.message))
+          .bimap(e => StoreError.Corrupt(s"record: $e"), r => (r.b, r.a))
+      )
 
     private def decodeValue(b: Option[ByteVector]): F[Option[V]] = b.traverse(bytes => liftE(V.decode(bytes)))
 

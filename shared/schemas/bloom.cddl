@@ -1,0 +1,8 @@
+; dilf4s Bloom filter (docs/specs/bloom.md). "m" is the number of bits, a power of two (checked by the domain
+; decoder); "k" the number of hash functions; "b" the m bits, MSB-first, as m / 8 bytes.
+
+bloom-filter = {
+  "m": 64..16777216,
+  "k": 1..32,
+  "b": bytes,
+}

@@ -54,4 +54,17 @@ merkle-consistency = {
 }
 
 tree-index = 0..9223372036854775807
+
+; The persistent Merkle log's state record (section 5): tree size and a generation counter that every commit
+; increments. Commits compare-and-write this record, so concurrent writers cannot both succeed.
+merkle-log-state = {
+  "size": tree-index,
+  "generation": tree-index,
+}
 ```
+
+## 5. Storage (informative)
+
+The persistent Merkle log stores only perfect subtree hashes, keyed by `(level, index)` as fixed-width
+order-preserving integers. It also stores one `merkle-log-state` record (§4 schema) holding the tree size and a
+generation counter. Every commit compare-and-writes the state record, so of two concurrent writers at most one succeeds.

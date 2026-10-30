@@ -11,8 +11,10 @@ import xyz.kd5ujc.accumulators.merkle.MerkleCodec
 import xyz.kd5ujc.accumulators.trie.TrieProofs
 import xyz.kd5ujc.core.canonical.{Cbor, Codec}
 import xyz.kd5ujc.core.hash.Sha256
-import xyz.kd5ujc.models.merkle.{MerkleConsistency, MerkleInclusion}
+import xyz.kd5ujc.models.bloom.BloomFilter
+import xyz.kd5ujc.models.merkle.{MerkleConsistency, MerkleInclusion, MerkleLogState}
 import xyz.kd5ujc.models.poseidon.PoseidonMerkleProof
+import xyz.kd5ujc.models.storage.VersionedRecord
 import xyz.kd5ujc.models.trie.{TrieChildren, TrieProof, TrieSegment}
 import xyz.kd5ujc.modelsgen.{CddlParser, CddlSampler, QName, Schema}
 
@@ -67,7 +69,7 @@ object SchemaConformanceSuite extends SimpleIOSuite {
       )
   }
 
-  private val schemas = List("merkle", "trie", "poseidon").map(m => m -> read("shared", "schemas", s"$m.cddl"))
+  private val schemas = List("merkle", "trie", "poseidon", "storage", "bloom").map(m => m -> read("shared", "schemas", s"$m.cddl"))
 
   private val codecs: Map[String, Codec[?]] = Map(
     "merkle-inclusion"      -> MerkleInclusion.codec,
@@ -75,7 +77,10 @@ object SchemaConformanceSuite extends SimpleIOSuite {
     "trie-proof"            -> TrieProof.codec,
     "trie-segment"          -> TrieSegment.codec,
     "trie-children"         -> TrieChildren.codec,
-    "poseidon-merkle-proof" -> PoseidonMerkleProof.codec
+    "poseidon-merkle-proof" -> PoseidonMerkleProof.codec,
+    "merkle-log-state"      -> MerkleLogState.codec,
+    "versioned-record"      -> VersionedRecord.codec,
+    "bloom-filter"          -> BloomFilter.codec
   )
 
   /** Samples must be canonical CBOR the generated decoder accepts and re-encodes exactly: a rejection is a bug. */
@@ -84,7 +89,7 @@ object SchemaConformanceSuite extends SimpleIOSuite {
     val sampler = new CddlSampler(schema, maxDepth = 5)
     codecs.toList.foldMap {
       case (rule, codec) =>
-        val module = rule.takeWhile(_ != '-')
+        val module = schemas.collectFirst { case (m, text) if text.linesIterator.exists(_.startsWith(s"$rule =")) => m }.getOrElse(rule)
         val rnd = new Random(20261029L + rule.hashCode.toLong)
         (1 to 200).toList.foldMap { _ =>
           val sample = sampler.sample(QName(module, rule), rnd).map(ByteVector(_)).leftMap(_.message)
@@ -94,7 +99,7 @@ object SchemaConformanceSuite extends SimpleIOSuite {
   }
 
   pureTest("each spec embeds its schema verbatim") {
-    List("merkle" -> "merkle.md", "trie" -> "trie.md", "poseidon" -> "zk.md").foldMap {
+    List("merkle" -> "merkle.md", "trie" -> "trie.md", "poseidon" -> "zk.md", "storage" -> "storage.md", "bloom" -> "bloom.md").foldMap {
       case (m, spec) =>
         val schema = read("shared", "schemas", s"$m.cddl").trim
         val blocks = "(?s)```cddl\\n(.*?)```".r.findAllMatchIn(read("docs", "specs", spec)).map(_.group(1).trim).toList

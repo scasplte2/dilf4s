@@ -1,0 +1,8 @@
+; dilf4s storage records (docs/specs/storage.md). Keys are not CBOR: they are order-preserving binary encodings.
+
+; A VersionedStore history record: the value of one key before and after the write at one version. An absent
+; field means the key had no value.
+versioned-record = {
+  ? "b": bytes,
+  ? "a": bytes,
+}

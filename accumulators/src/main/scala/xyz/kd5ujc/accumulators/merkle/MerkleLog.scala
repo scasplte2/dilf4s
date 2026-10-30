@@ -6,7 +6,9 @@ import cats.effect.{Concurrent, Ref}
 import cats.mtl.Raise
 import cats.syntax.all._
 
+import xyz.kd5ujc.core.canonical.Cbor
 import xyz.kd5ujc.core.hash.{Digest, Hasher}
+import xyz.kd5ujc.models.merkle.MerkleLogState
 import xyz.kd5ujc.storage._
 
 import fs2.Stream
@@ -80,7 +82,12 @@ object MerkleLog {
 
   /** Size and generation, with the raw record kept to guard the compare-and-write. */
   final private case class State(size: Long, generation: Long, raw: Option[ByteVector]) {
-    def next(newSize: Long): ByteVector = ByteVector.fromLong(newSize) ++ ByteVector.fromLong(generation + 1)
+
+    /** The `merkle-log-state` record of the next commit (shared/schemas/merkle.cddl). */
+    def next(newSize: Long): Either[StoreError, ByteVector] =
+      MerkleLogState.codec
+        .encode(MerkleLogState(newSize, generation + 1))
+        .bimap(e => StoreError.Corrupt(s"Merkle log state: $e"), Cbor.encode)
   }
 
   final private class Persistent[F[_]: Concurrent, H](
@@ -95,9 +102,13 @@ object MerkleLog {
 
     private def state: F[State] =
       raw.get(stateKey).flatMap {
-        case None                     => State(0L, 0L, None).pure[F]
-        case Some(b) if b.size == 16L => State(b.take(8).toLong(signed = false), b.drop(8).toLong(signed = false), Some(b)).pure[F]
-        case Some(b)                  => failS(StoreError.Corrupt(s"Merkle log state has ${b.size} bytes"))
+        case None => State(0L, 0L, None).pure[F]
+        case Some(b) =>
+          Cbor
+            .decode(b)
+            .leftMap(_.toString)
+            .flatMap(MerkleLogState.codec.decoder.decode(_).leftMap(_.message))
+            .fold(e => failS(StoreError.Corrupt(s"Merkle log state: $e")), w => State(w.size, w.generation, Some(b)).pure[F])
       }
 
     private def perfect(level: Int, index: Long): F[Digest[H]] =
@@ -108,9 +119,13 @@ object MerkleLog {
 
     private def commit(read: State, newSize: Long, batch: Batch[(Int, Long), ByteVector]): F[Unit] =
       nodes.encodeBatch(batch).flatMap { writes =>
-        raw.writeIf(List(stateKey -> read.raw), writes ++ RawBatch.put(stateKey, read.next(newSize))).flatMap { wrote =>
-          if (wrote) ().pure[F] else state.flatMap(now => failS(StoreError.VersionConflict(read.generation, now.generation)))
-        }
+        read
+          .next(newSize)
+          .fold(failS[ByteVector], _.pure[F])
+          .flatMap(next => raw.writeIf(List(stateKey -> read.raw), writes ++ RawBatch.put(stateKey, next)))
+          .flatMap { wrote =>
+            if (wrote) ().pure[F] else state.flatMap(now => failS(StoreError.VersionConflict(read.generation, now.generation)))
+          }
       }
 
     def size: F[Long] = state.map(_.size)

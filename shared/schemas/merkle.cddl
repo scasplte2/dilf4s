@@ -14,3 +14,10 @@ merkle-consistency = {
 }
 
 tree-index = 0..9223372036854775807
+
+; The persistent Merkle log's state record (section 5): tree size and a generation counter that every commit
+; increments. Commits compare-and-write this record, so concurrent writers cannot both succeed.
+merkle-log-state = {
+  "size": tree-index,
+  "generation": tree-index,
+}
