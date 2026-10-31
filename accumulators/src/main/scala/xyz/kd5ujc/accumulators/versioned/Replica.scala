@@ -4,6 +4,7 @@ import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.trie.{Trie, TrieHashing}
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
+import xyz.kd5ujc.core.canonical.CanonicalValue.CNull
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.Digest
 
@@ -79,6 +80,11 @@ object Replica {
       _  <- hk.filterNot(Cbor.compareBytes(nk, _) > 0).toLeft(()).leftMap(VersionedTrieError.VersionNotIncreasing(_, nk))
       _  <- Either.cond(delta.removes.forall(k => !written(k)), (), VersionedTrieError.Malformed("a key is both written and removed"))
       _  <- Either.cond(written.size == delta.upserts.size, (), VersionedTrieError.Malformed("a key is written twice"))
+      // the limits a commit and a snapshot enforce, so no replication path accepts a value another refuses
+      _ <- delta.upserts.traverse_ {
+        case (k, v) =>
+          if (v == CNull) VersionedTrieError.Malformed(s"${k.value} is upserted as null").asLeft else VersionedTrie.checkValue(k, v)
+      }
       ops = delta.removes.map(k => k.bytes -> Option.empty[Digest[H]]) ++ delta.upserts.map {
         case (k, v) => k.bytes -> Option(VersionedTrie.valueHash[H](v))
       }
