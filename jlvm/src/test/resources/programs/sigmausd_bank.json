@@ -1,7 +1,7 @@
 {"let": [[
   ["s", {"var": "state"}],
   ["c", {"var": "call"}],
-  ["P", {"var": "$rate"}],
+  ["P", {"var": "oracle.rate"}],
   ["R", {"var": "state.reserve"}],
   ["S", {"var": "state.stable"}],
   ["Rc", {"var": "state.reserveCoins"}],

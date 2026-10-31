@@ -128,25 +128,25 @@ object ErgoContractsSuite extends IOSuite {
 
   test("SigmaUSD bank: mint and redeem prices, fees, and the reserve-ratio band") { e =>
     IO {
-      val c = e.contracts("sigmausd_bank")
-      val rate = "rate" -> CInt(BigInt(2000000))
+      // the price comes from an oracle pool's state, read as a data input, never from the caller or the clock
+      val c = e.contracts("sigmausd_bank").withInputs("oracle" -> value("""{"rate": 2000000}"""))
       def bank(r: Long, s: Long, rc: Long) =
         value(s"""{"reserve": $r, "stable": $s, "reserveCoins": $rc, "feePercent": 2, "defaultReservePrice": 1000000}""")
       def op(m: String, n: BigDecimal) = s"""{"method": "$m", "amount": $n}"""
-      val s1 = c.next(bank(0, 0, 0), op("mintReserve", 1000), rate)
-      val s2 = s1.flatMap(s => c.next(s, op("mintStable", 100), rate))
-      val s3 = s2.flatMap(s => c.next(s, op("mintStable", 60), rate))
+      val s1 = c.next(bank(0, 0, 0), op("mintReserve", 1000))
+      val s2 = s1.flatMap(s => c.next(s, op("mintStable", 100)))
+      val s3 = s2.flatMap(s => c.next(s, op("mintStable", 60)))
       expect
         .same(Right(bank(1020000000L, 0, 1000)), s1)
         .and(expect.same(Right(bank(1224000000L, 100, 1000)), s2))
         .and(expect.same(Right(bank(1346400000L, 160, 1000)), s3))
-        .and(expect(rejected(s3.flatMap(s => c.next(s, op("mintStable", 20), rate))), "below 400%"))
-        .and(expect.same(Right(bank(1537344000L, 100, 1300)), s2.flatMap(s => c.next(s, op("mintReserve", 300), rate))))
-        .and(expect(rejected(s2.flatMap(s => c.next(s, op("mintReserve", 400), rate))), "above 800%"))
-        .and(expect.same(Right(bank(1126000000L, 50, 1000)), s2.flatMap(s => c.next(s, op("redeemStable", 50), rate))))
-        .and(expect(rejected(s3.flatMap(s => c.next(s, op("redeemReserve", 100), rate))), "redeeming reservecoins below 400%"))
-        .and(expect.same(Right(bank(1336341280L, 160, 990)), s3.flatMap(s => c.next(s, op("redeemReserve", 10), rate))))
-        .and(expect(rejected(c.next(bank(0, 0, 0), op("mintReserve", BigDecimal("0.5")), rate)), "whole amounts"))
+        .and(expect(rejected(s3.flatMap(s => c.next(s, op("mintStable", 20)))), "below 400%"))
+        .and(expect.same(Right(bank(1537344000L, 100, 1300)), s2.flatMap(s => c.next(s, op("mintReserve", 300)))))
+        .and(expect(rejected(s2.flatMap(s => c.next(s, op("mintReserve", 400)))), "above 800%"))
+        .and(expect.same(Right(bank(1126000000L, 50, 1000)), s2.flatMap(s => c.next(s, op("redeemStable", 50)))))
+        .and(expect(rejected(s3.flatMap(s => c.next(s, op("redeemReserve", 100)))), "redeeming reservecoins below 400%"))
+        .and(expect.same(Right(bank(1336341280L, 160, 990)), s3.flatMap(s => c.next(s, op("redeemReserve", 10)))))
+        .and(expect(rejected(c.next(bank(0, 0, 0), op("mintReserve", BigDecimal("0.5")))), "whole amounts"))
     }
   }
 
