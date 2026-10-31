@@ -561,3 +561,87 @@ fn walking_a_deep_and_wide_value_keeps_to_explicit_or_depth_bounded_stacks() {
         (a, b)
     });
 }
+
+#[test]
+fn array_clone_and_read_costs() {
+    let array = Value::array((0..1_000).map(Value::int).collect()).unwrap();
+    let start = Instant::now();
+    let clones: Vec<Value> = (0..1_000_000).map(|_| array.clone()).collect();
+    let cloning = start.elapsed();
+    let start = Instant::now();
+    let mut total = 0usize;
+    for _ in 0..1_000 {
+        for v in &clones[..1_000] {
+            let Value::Array(a) = v else { panic!("an array") };
+            total += a.items().iter().filter(|x| matches!(x, Value::Int(_))).count();
+        }
+    }
+    let read = start.elapsed();
+    let encoded = Value::array(vec![array; 1_000]).unwrap();
+    let start = Instant::now();
+    let bytes = cbor::encode(&encoded).len();
+    let encoding = start.elapsed();
+    eprintln!(
+        "1M array clones {cloning:?}; 1G element reads {read:?} ({total}); encoding 1M elements {encoding:?} ({bytes} B)"
+    );
+    drop(clones);
+}
+
+#[test]
+fn concurrent_drops_of_shared_levels_never_recurse_or_leak() {
+    use std::sync::{Arc, Barrier};
+    const THREADS: usize = 4;
+    const LEVELS: usize = 200;
+    // every level holds a clone of the probe, so its count tells how many levels are still alive
+    let probe: Arc<str> = Arc::from("probe");
+    let marker = || Value::Text(Text::from(Arc::clone(&probe)));
+    for round in 0..40 {
+        // maps and arrays alternating, each level a wide container holding the next deeper one
+        let mut levels: Vec<Value> = Vec::with_capacity(LEVELS);
+        let mut inner = marker();
+        for level in 0..LEVELS {
+            inner = if level % 2 == 0 {
+                let base = Map::new((0..64).map(|i| (format!("k{i:02}"), Value::int(i)))).unwrap();
+                Value::Map(base.updated(Text::from("z"), inner).unwrap().updated(Text::from("p"), marker()).unwrap())
+            } else {
+                let mut items: Vec<Value> = (0..32).map(Value::int).collect();
+                items.push(marker());
+                items.push(inner);
+                Value::array(items).unwrap()
+            };
+            levels.push(inner.clone());
+        }
+        drop(inner);
+        // each thread retains clones of every level at its own stride, and all drop them at once
+        let barrier = Arc::new(Barrier::new(THREADS));
+        let mut shares: Vec<Vec<Value>> = vec![Vec::new(); THREADS];
+        for (i, v) in levels.into_iter().enumerate() {
+            for (t, share) in shares.iter_mut().enumerate() {
+                if (i + t + round) % 2 == 0 || t == i % THREADS {
+                    share.push(v.clone());
+                }
+            }
+        }
+        let handles: Vec<_> = shares
+            .into_iter()
+            .enumerate()
+            .map(|(t, mut share)| {
+                let barrier = Arc::clone(&barrier);
+                std::thread::Builder::new()
+                    .stack_size(64 * 1024)
+                    .spawn(move || {
+                        if (t + round) % 2 == 0 {
+                            share.reverse();
+                        }
+                        barrier.wait();
+                        drop(share);
+                    })
+                    .unwrap()
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(Arc::strong_count(&probe), 1, "round {round}: every level was released");
+    }
+}

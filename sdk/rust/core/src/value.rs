@@ -31,6 +31,7 @@
 //! A [`Value`] must never hold secret material. Its buffers are shared and freed by whichever clone drops last, so they
 //! cannot be reliably zeroized; secret keys, nonces and seeds belong in dedicated types (as in `dilf4s-signing`).
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -520,7 +521,9 @@ impl fmt::Display for Rational {
 /// An array whose nesting is within [`MAX_DEPTH`]. Shared: clones in O(1); its depth and weight are cached.
 #[derive(Clone)]
 pub struct Array {
-    items: Arc<[Value]>,
+    /// Always present but while the array is dropped: the storage is taken out then, so its last owner can be found
+    /// atomically (`Arc::into_inner`, which needs a sized payload, hence the box) and released without recursion.
+    items: Option<Arc<Box<[Value]>>>,
     depth: usize,
     weight: u64,
 }
@@ -533,28 +536,33 @@ impl Array {
             Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH })
         } else {
             let weight = items.iter().fold(1, |w, v| add_weight(w, v.weight()));
-            Ok(Self { items: Arc::from(items), depth, weight })
+            Ok(Self { items: Some(Arc::new(items.into_boxed_slice())), depth, weight })
         }
     }
 
     /// The elements, in order.
     pub fn items(&self) -> &[Value] {
-        &self.items
+        self.items.as_deref().map_or(&[], |b| b)
+    }
+
+    /// The address of the shared storage: a key for the equality memo, never a decision by itself.
+    fn address(&self) -> usize {
+        self.items.as_ref().map_or(0, |b| Arc::as_ptr(b).addr())
     }
 
     /// The elements, by value: O(n) reference-count increments, never a deep copy.
     pub fn into_items(self) -> Vec<Value> {
-        self.items.to_vec()
+        self.items().to_vec()
     }
 
     /// The number of elements.
     pub fn len(&self) -> usize {
-        self.items.len()
+        self.items().len()
     }
 
     /// Whether the array has no elements.
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+        self.items().is_empty()
     }
 
     /// See [`Value::depth`].
@@ -691,12 +699,12 @@ impl<'a> Comparison<'a> {
     }
 
     fn array(&mut self, a: &'a Array, b: &'a Array) -> bool {
-        if a.weight != b.weight || a.depth != b.depth || a.items.len() != b.items.len() {
+        if a.weight != b.weight || a.depth != b.depth || a.len() != b.len() {
             return false;
         }
-        let pair = (ARRAY, address(&a.items), address(&b.items));
+        let pair = (ARRAY, a.address(), b.address());
         if pair.1 != pair.2 && !self.proven.contains(&pair) {
-            self.stack.push(Frame::Items { a: &a.items, b: &b.items, next: 0, pair });
+            self.stack.push(Frame::Items { a: a.items(), b: b.items(), next: 0, pair });
         }
         true
     }
@@ -842,7 +850,7 @@ impl fmt::Debug for Shown<'_, Array> {
         let Self(a, left) = *self;
         left.nested(f, |f| {
             f.debug_struct("Array")
-                .field("items", &Shown(&*a.items, left))
+                .field("items", &Shown(a.items(), left))
                 .field("depth", &a.depth)
                 .field("weight", &a.weight)
                 .finish()

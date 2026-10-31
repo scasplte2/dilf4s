@@ -11,6 +11,7 @@
 //! Insertion, removal and building recurse at most that deep; iteration keeps an explicit stack of at most that many
 //! nodes. Dropping never recurses: see [`release`].
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -162,20 +163,30 @@ fn build(entries: &mut impl Iterator<Item = (Text, Value)>, n: usize) -> Link {
 
 /// A part of a value being released whose children may still need releasing.
 enum Part {
-    /// A tree node: its subtrees and its value.
+    /// A tree node, released only by whoever holds its last reference.
     Node(Arc<Node>),
-    /// An array, with the index of the next element to look at.
-    Array { array: Array, next: usize },
+    /// The elements of an array whose last reference was released here, still to be looked at.
+    Items(alloc::vec::IntoIter<Value>),
 }
 
 fn is_container(v: &Value) -> bool {
     matches!(v, Value::Array(_) | Value::Map(_))
 }
 
+/// Queues an array's storage if this was its last reference and it holds containers; otherwise the storage is only
+/// let go: shared, it loses a reference; unshared but flat, its drop never recurses.
+fn queue_items(work: &mut Vec<Part>, items: Option<Arc<Box<[Value]>>>) {
+    if let Some(owned) = items.and_then(Arc::into_inner) {
+        if owned.iter().any(is_container) {
+            work.push(Part::Items(owned.into_vec().into_iter()));
+        }
+    }
+}
+
 /// Queues what `v` holds, or lets it go at once: a scalar's drop never recurses.
 fn queue(work: &mut Vec<Part>, v: Value) {
     match v {
-        Value::Array(array) => work.push(Part::Array { array, next: 0 }),
+        Value::Array(mut array) => queue_items(work, array.items.take()),
         Value::Map(mut m) => {
             if let Some(root) = m.root.take() {
                 work.push(Part::Node(root));
@@ -200,28 +211,29 @@ impl Node {
     }
 }
 
-/// Releases everything in `work` with an explicit worklist, never by recursion: a part held only here has its
-/// children moved out (into `work`) before it is dropped, so every drop that runs is flat; a part shared elsewhere
-/// only loses a reference. An array gives up one container element at a time, so the worklist holds at most a few
-/// parts per level of nesting and of tree height, never a whole array's elements.
+/// Releases everything in `work` with an explicit worklist, never by recursion.
 ///
-/// Every `Drop` of a [`Value`]'s containers ([`Array`], [`Map`], and a tree node) starts here, so dropping any value,
-/// however deep and however large its maps, uses a bounded native stack.
+/// Ownership is decided atomically: [`Arc::into_inner`] gives a part to exactly one of its holders, the last, even
+/// when several threads drop clones at once; every other holder only loses its reference. The last holder moves the
+/// part's children into `work` before the part itself is dropped, so every drop that runs is flat. An array's
+/// elements are looked at one container at a time, so the worklist holds at most a few parts per level of nesting and
+/// of tree height, never a whole array's elements.
+///
+/// Every `Drop` of a [`Value`]'s containers ([`Array`], [`Map`], and a tree node) starts here, and none of them ever
+/// lets a shared payload go by a plain field drop, so dropping any value, however deep and however large its maps,
+/// and from however many threads, uses a bounded native stack.
 fn release(work: &mut Vec<Part>) {
     while let Some(part) = work.pop() {
         match part {
-            Part::Node(mut n) => {
-                if let Some(node) = Arc::get_mut(&mut n) {
+            Part::Node(n) => {
+                if let Some(mut node) = Arc::into_inner(n) {
                     node.surrender(work);
                 }
             }
-            Part::Array { mut array, next } => {
-                let taken = Arc::get_mut(&mut array.items).and_then(|items| {
-                    let (i, slot) = items.iter_mut().enumerate().skip(next).find(|(_, v)| is_container(v))?;
-                    Some((i, core::mem::replace(slot, Value::Null)))
-                });
-                if let Some((i, child)) = taken {
-                    work.push(Part::Array { array, next: i.saturating_add(1) });
+            Part::Items(mut items) => {
+                // scalars passed over are dropped here, flat
+                if let Some(child) = items.find(is_container) {
+                    work.push(Part::Items(items));
                     queue(work, child);
                 }
             }
@@ -239,24 +251,19 @@ impl Drop for Node {
 
 impl Drop for Map {
     fn drop(&mut self) {
-        if let Some(mut root) = self.root.take() {
-            if let Some(node) = Arc::get_mut(&mut root) {
-                let mut work = Vec::new();
-                node.surrender(&mut work);
-                release(&mut work);
-            }
+        if let Some(mut node) = self.root.take().and_then(Arc::into_inner) {
+            let mut work = Vec::new();
+            node.surrender(&mut work);
+            release(&mut work);
         }
     }
 }
 
 impl Drop for Array {
     fn drop(&mut self) {
-        let Some(items) = Arc::get_mut(&mut self.items) else { return };
         let mut work = Vec::new();
-        for slot in items.iter_mut().filter(|v| is_container(v)) {
-            queue(&mut work, core::mem::replace(slot, Value::Null));
-            release(&mut work);
-        }
+        queue_items(&mut work, self.items.take());
+        release(&mut work);
     }
 }
 
