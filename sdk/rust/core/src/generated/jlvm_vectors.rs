@@ -23,13 +23,13 @@ pub struct JlvmCase {
     /// The `env` entry.
     pub env: Option<BTreeMap<String, String>>,
     /// The `gasLimit` entry.
-    pub gas_limit: Option<c::BigInt>,
+    pub gas_limit: Option<u64>,
     /// The `outcome` entry.
     pub outcome: JlvmOutcome,
     /// The `gasUsed` entry.
-    pub gas_used: c::BigInt,
+    pub gas_used: u64,
     /// The `warnings` entry.
-    pub warnings: c::BigInt,
+    pub warnings: u64,
 }
 
 impl c::Model for JlvmCase {
@@ -186,7 +186,7 @@ impl c::Model for JlvmValue {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JlvmVectors {
     /// The `gasLimit` entry.
-    pub gas_limit: c::BigInt,
+    pub gas_limit: u64,
     /// The `source` entry.
     pub source: String,
     /// The `cases` entry.

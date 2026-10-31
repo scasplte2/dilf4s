@@ -14,7 +14,7 @@ pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KesCardanoParameters {
     /// The `depth` entry.
-    pub depth: c::BigInt,
+    pub depth: u64,
 }
 
 impl c::Model for KesCardanoParameters {
@@ -95,7 +95,7 @@ impl c::Model for KesParameters {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KesPeriod {
     /// The `period` entry.
-    pub period: c::BigInt,
+    pub period: u64,
     /// The `key` entry.
     pub key: Hex,
     /// The `signature` entry.
@@ -126,9 +126,9 @@ pub struct KesProductParameters {
     /// The `hash` entry.
     pub hash: String,
     /// The `superHeight` entry.
-    pub super_height: c::BigInt,
+    pub super_height: u64,
     /// The `subHeight` entry.
-    pub sub_height: c::BigInt,
+    pub sub_height: u64,
 }
 
 impl c::Model for KesProductParameters {
@@ -155,7 +155,7 @@ pub struct KesSumParameters {
     /// The `hash` entry.
     pub hash: String,
     /// The `height` entry.
-    pub height: c::BigInt,
+    pub height: u64,
 }
 
 impl c::Model for KesSumParameters {

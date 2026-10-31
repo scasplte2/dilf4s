@@ -7,7 +7,7 @@ use crate::codec as c;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Record {
     /// The `x` entry.
-    pub x: c::BigInt,
+    pub x: u64,
 }
 
 impl c::Model for Record {

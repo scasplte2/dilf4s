@@ -61,6 +61,14 @@ describe("the generated models hold every vector file", () => {
     expect(models.canonicalVectors.Hex.encode("0A").ok).toBe(false);
   });
 
+  it("CDDL integers follow RFC 8610: uint is major type 0", () => {
+    const { TrieBits } = models.trieVectors;
+    expect(TrieBits.encode({ bits: 2n ** 64n - 1n, bytes: "" }).ok, "2^64 - 1 is a uint").toBe(true);
+    expect(TrieBits.encode({ bits: 2n ** 64n, bytes: "" }).ok, "2^64 is not").toBe(false);
+    const wide = expectOk(json.parse('{"bits":18446744073709551616,"bytes":""}'), "canonical JSON");
+    expect(TrieBits.decode(wide).ok, "nor does it decode").toBe(false);
+  });
+
   it("a recursive model round-trips through CBOR", () => {
     const program = '{"jlvm":1,"expr":{"op":"+","args":[{"lit":1},{"var":"x","default":{"path":{"lit":"y"}}},{"map":{"k":{}}}]}}';
     const value = expectOk(json.parse(program), "canonical JSON");

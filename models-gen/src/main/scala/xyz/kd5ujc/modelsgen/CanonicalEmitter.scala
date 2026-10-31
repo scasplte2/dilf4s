@@ -30,7 +30,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
   private def tc(rule: QName, t: FieldType): (String, String) = t match {
     case FieldType.Uint                                                           => ("BigInt", "Codec.uint")
     case FieldType.Int                                                            => ("BigInt", "Codec.int")
-    case FieldType.Nint                                                           => ("BigInt", "Codec.intRange(None, Some(BigInt(-1)))")
+    case FieldType.Nint                                                           => ("BigInt", "Codec.nint")
     case FieldType.Bytes                                                          => ("ByteVector", "Codec.bytes")
     case FieldType.Text                                                           => ("String", "Codec.text")
     case FieldType.Bool                                                           => ("Boolean", "Codec.bool")

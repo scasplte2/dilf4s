@@ -46,7 +46,7 @@ impl c::Model for PoseidonHashVector {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PoseidonMerkleVector {
     /// The `depth` entry.
-    pub depth: c::BigInt,
+    pub depth: u64,
     /// The `leaves` entry.
     pub leaves: DecimalLeaves,
     /// The `root` entry.

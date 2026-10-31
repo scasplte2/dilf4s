@@ -69,7 +69,8 @@ object CanonicalDecoder {
       Either.cond(lo.forall(i >= _) && hi.forall(i <= _), i, s"integer $i outside ${lo.fold("")(_.toString)}..${hi.fold("")(_.toString)}")
     )
 
-  val uint: CanonicalDecoder[BigInt] = intRange(Some(BigInt(0)), None)
+  /** CDDL `uint` (RFC 8610 major type 0): 0..2^64-1. [[int]] stays the whole numeric domain's integers. */
+  val uint: CanonicalDecoder[BigInt] = intRange(Some(BigInt(0)), Some((BigInt(1) << 64) - 1))
   def intIn(lo:  Int, hi:  Int): CanonicalDecoder[Int] = intRange(Some(BigInt(lo)), Some(BigInt(hi))).map(_.toInt)
   def longIn(lo: Long, hi: Long): CanonicalDecoder[Long] = intRange(Some(BigInt(lo)), Some(BigInt(hi))).map(_.toLong)
 

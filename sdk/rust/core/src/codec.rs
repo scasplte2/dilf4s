@@ -139,12 +139,15 @@ pub struct BigIntIn {
     pub hi: Option<BigBound>,
 }
 
-/// Any integer (CDDL `int`).
-pub const INT: BigIntIn = BigIntIn { lo: None, hi: None };
-/// A non-negative integer (CDDL `uint`; like the reference implementation, not bounded by 2^64).
-pub const UINT: BigIntIn = BigIntIn { lo: Some(BigBound { negative: false, magnitude: &[] }), hi: None };
-/// A negative integer (CDDL `nint`).
-pub const NINT: BigIntIn = BigIntIn { lo: None, hi: Some(BigBound { negative: true, magnitude: &[1] }) };
+// CDDL integers follow RFC 8610: major type 0 (`uint`), major type 1 (`nint`), or either (`int`). A wider integer must
+// be an explicit range in the schema.
+
+/// CDDL `uint`: 0..2^64-1, as a `u64`.
+pub const UINT: U64In = U64In { lo: 0, hi: u64::MAX };
+/// CDDL `int`: -2^64..2^64-1, as an `i128` (the narrowest native type holding both major types).
+pub const INT: I128In = I128In { lo: -18_446_744_073_709_551_616, hi: 18_446_744_073_709_551_615 };
+/// CDDL `nint`: -2^64..-1, as an `i128`.
+pub const NINT: I128In = I128In { lo: -18_446_744_073_709_551_616, hi: -1 };
 
 impl BigIntIn {
     fn within(&self, n: &BigInt) -> bool {
@@ -223,6 +226,10 @@ native_range!(
 native_range!(
     /// An integer range within `i64`.
     I64In, i64
+);
+native_range!(
+    /// An integer range within `i128`.
+    I128In, i128
 );
 
 /// A byte string of any length.

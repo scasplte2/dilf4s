@@ -19,7 +19,13 @@ import xyz.kd5ujc.modelsgen.Ast.Occ
  * than [[Profile.Patterns]]) is a typed [[GenError]].
  */
 enum FieldType {
-  case Uint, Int, Nint, Bytes, Text, Bool, AnyValue
+
+  /**
+   * CDDL `uint`, `int` and `nint` follow RFC 8610: major type 0 (0..2^64-1), either major type (-2^64..2^64-1), and
+   * major type 1 (-2^64..-1). A wider integer must be an explicit range.
+   */
+  case Uint, Int, Nint
+  case Bytes, Text, Bool, AnyValue
 
   /** An integer in `lo..hi`, inclusive. */
   case IntRange(lo: BigInt, hi: BigInt)

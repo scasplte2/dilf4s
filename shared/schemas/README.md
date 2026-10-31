@@ -31,7 +31,9 @@ file round-trips through its schema without loss.
 
 - **Allowed:**
   - maps with text-literal keys (each required or `?`), and `{ * tstr => T }`;
-  - integers and ranges, and labelled integer enumerations `&(a: 1)`;
+  - integers and ranges, and labelled integer enumerations `&(a: 1)`. `uint`, `nint` and `int` follow RFC 8610: major
+    type 0 (0..2^64−1), major type 1 (−2^64..−1), or either (−2^64..2^64−1). The canonical data model's integers are
+    unbounded, so a field that may need more than 64 bits must say so with an explicit range (as `poseidon.cddl` does);
   - text, bytes and sized strings (a text `.size` counts UTF-8 bytes, as RFC 8610 defines it);
   - `text .regexp` with one of the shared patterns `([0-9a-f]{2})*`, `0x([0-9a-f]{2})*` and `0|[1-9][0-9]*`. Each SDK
     implements these as named validators rather than carrying a regular-expression engine, so a new pattern means a new

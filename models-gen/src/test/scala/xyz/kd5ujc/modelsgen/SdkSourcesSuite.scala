@@ -106,6 +106,6 @@ object SdkSourcesSuite extends SimpleIOSuite {
 
   pureTest("keywords become raw identifiers in Rust") {
     val out = gen("r = { \"type\": uint, \"self\": uint }\n").map(_.rust.toMap.getOrElse("t.rs", ""))
-    expect(out.exists(s => s.contains("pub r#type: c::BigInt,") && s.contains("pub self_: c::BigInt,")), out.fold(_.message, identity))
+    expect(out.exists(s => s.contains("pub r#type: u64,") && s.contains("pub self_: u64,")), out.fold(_.message, identity))
   }
 }

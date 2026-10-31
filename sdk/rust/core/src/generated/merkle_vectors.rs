@@ -43,7 +43,7 @@ impl c::Model for MerkleValueCommitment {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MerkleVectorTree {
     /// The `size` entry.
-    pub size: c::BigInt,
+    pub size: u64,
     /// The `root` entry.
     pub root: Hex,
     /// The `rfc6962Root` entry.

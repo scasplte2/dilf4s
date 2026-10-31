@@ -62,9 +62,9 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
    * but every path in the result is written relative to `from`.
    */
   private def rs(rule: QName, t: FieldType, resolving: Set[QName], from: String): Either[GenError, Rs] = t match {
-    case FieldType.Uint     => Rs("c::BigInt", "c::BigIntIn", "c::UINT").asRight
-    case FieldType.Int      => Rs("c::BigInt", "c::BigIntIn", "c::INT").asRight
-    case FieldType.Nint     => Rs("c::BigInt", "c::BigIntIn", "c::NINT").asRight
+    case FieldType.Uint     => Rs("u64", "c::U64In", "c::UINT").asRight
+    case FieldType.Int      => Rs("i128", "c::I128In", "c::INT").asRight
+    case FieldType.Nint     => Rs("i128", "c::I128In", "c::NINT").asRight
     case FieldType.Bytes    => Rs("Vec<u8>", "c::Bytes", "c::Bytes").asRight
     case FieldType.Text     => Rs("String", "c::Text", "c::Text").asRight
     case FieldType.Bool     => Rs("bool", "c::Bool", "c::Bool").asRight
@@ -208,8 +208,8 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |
          |    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
          |        let n = c::Codec::decode(&c::INT, value)?;
-         |        match i64::try_from(&n) {
-         |${names.map { case (cn, _, v) => s"            Ok(${number(v)}) => Ok(Self::$cn)," }.mkString("\n")}
+         |        match n {
+         |${names.map { case (cn, _, v) => s"            ${number(v)} => Ok(Self::$cn)," }.mkString("\n")}
          |            _ => Err(c::DecodeFailure::new(alloc::format!("{n} is not a $n"))),
          |        }
          |    }

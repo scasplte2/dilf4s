@@ -110,3 +110,15 @@ fn a_recursive_model_round_trips_through_cbor() {
     let bytes = parsed.to_cbor().expect("encodes");
     assert_eq!(jlvm::JlvmProgram::from_cbor(&bytes), Ok(parsed));
 }
+
+#[test]
+fn cddl_integers_follow_rfc_8610() {
+    // `uint` is major type 0 (up to 2^64 - 1); a wider integer needs an explicit range in the schema
+    let bits = |n: dilf4s_core::BigInt| {
+        Value::map(vec![("bits".to_owned(), Value::Int(n)), ("bytes".to_owned(), Value::text(""))]).expect("a map")
+    };
+    let max = (dilf4s_core::BigInt::from(1u8) << 64u32) - 1u8;
+    assert!(trie_vectors::TrieBits::from_value(&bits(max.clone())).is_ok(), "2^64 - 1 is a uint");
+    assert!(trie_vectors::TrieBits::from_value(&bits(max + 1u8)).is_err(), "2^64 is not a uint");
+    assert!(trie_vectors::TrieBits::from_value(&bits((-1).into())).is_err(), "-1 is not a uint");
+}

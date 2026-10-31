@@ -14,7 +14,7 @@ pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrieBits {
     /// The `bits` entry.
-    pub bits: c::BigInt,
+    pub bits: u64,
     /// The `bytes` entry.
     pub bytes: Hex,
 }
@@ -101,7 +101,7 @@ impl c::Model for TrieEntry {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrieFixedMode {
     /// The `fixed` entry.
-    pub fixed: c::BigInt,
+    pub fixed: u64,
 }
 
 impl c::Model for TrieFixedMode {
@@ -402,7 +402,7 @@ impl c::Model for TrieProofVector {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrieVariableMode {
     /// The `variable` entry.
-    pub variable: c::BigInt,
+    pub variable: u64,
 }
 
 impl c::Model for TrieVariableMode {

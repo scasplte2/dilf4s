@@ -61,10 +61,10 @@ impl c::Model for TrieChildren {
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let n = c::Codec::decode(&c::INT, value)?;
-        match i64::try_from(&n) {
-            Ok(1) => Ok(Self::Left),
-            Ok(2) => Ok(Self::Right),
-            Ok(3) => Ok(Self::Both),
+        match n {
+            1 => Ok(Self::Left),
+            2 => Ok(Self::Right),
+            3 => Ok(Self::Both),
             _ => Err(c::DecodeFailure::new(alloc::format!("{n} is not a TrieChildren"))),
         }
     }

@@ -78,12 +78,14 @@ export function intRange(lo: bigint | null, hi: bigint | null): Codec<bigint> {
   };
 }
 
-/** Any integer (CDDL `int`). */
-export const int: Codec<bigint> = intRange(null, null);
-/** A non-negative integer (CDDL `uint`; like the reference implementation, not bounded by 2^64). */
-export const uint: Codec<bigint> = intRange(0n, null);
-/** A negative integer (CDDL `nint`). */
-export const nint: Codec<bigint> = intRange(null, -1n);
+// CDDL integers follow RFC 8610: major type 0 (`uint`), major type 1 (`nint`), or either (`int`). A wider integer must
+// be an explicit range in the schema.
+/** CDDL `int`: -2^64..2^64-1. */
+export const int: Codec<bigint> = intRange(-(2n ** 64n), 2n ** 64n - 1n);
+/** CDDL `uint`: 0..2^64-1. */
+export const uint: Codec<bigint> = intRange(0n, 2n ** 64n - 1n);
+/** CDDL `nint`: -2^64..-1. */
+export const nint: Codec<bigint> = intRange(-(2n ** 64n), -1n);
 
 /** A byte string of `lo` to `hi` bytes (`hi` unbounded when `null`). */
 export function sizedBytes(lo: number, hi: number | null): Codec<Uint8Array> {
