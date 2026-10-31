@@ -62,6 +62,13 @@ object CanonicalVectors {
     "\"\\u00e9\"",
     "\"é\"",
     "\"\\ud83d\\ude00\"",
+    // surrogate pairs across the supplementary planes, escaped and literal: U+10000, U+20000, U+10FFFF
+    "\"\\ud800\\udc00\"",
+    "\"\\ud840\\udc00\"",
+    "\"" + new String(Character.toChars(0x20000)) + "\"",
+    "\"\\udbff\\udfff\"",
+    "\"" + new String(Character.toChars(0x10ffff)) + "\"",
+    "{\"\\ud840\\udc00\":1,\"" + new String(Character.toChars(0x10ffff)) + "\":2}",
     "\"\\u0000\"",
     "\"\\\"\\\\/\\b\\f\\n\\r\\t\"",
     "[]",

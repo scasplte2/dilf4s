@@ -239,6 +239,42 @@
       "render" : "\"😀\""
     },
     {
+      "json" : "\"\\ud800\\udc00\"",
+      "cbor" : "64f0908080",
+      "contentHash" : "b0f60375d19b52cd9bd844b4d8aaead4573e41160aeee83ac51a93da079b9898",
+      "render" : "\"𐀀\""
+    },
+    {
+      "json" : "\"\\ud840\\udc00\"",
+      "cbor" : "64f0a08080",
+      "contentHash" : "a9f91d1ff9bd32b58ca63a1fbb371203b25a406028fa4dd3fe0e33091e861737",
+      "render" : "\"𠀀\""
+    },
+    {
+      "json" : "\"𠀀\"",
+      "cbor" : "64f0a08080",
+      "contentHash" : "a9f91d1ff9bd32b58ca63a1fbb371203b25a406028fa4dd3fe0e33091e861737",
+      "render" : "\"𠀀\""
+    },
+    {
+      "json" : "\"\\udbff\\udfff\"",
+      "cbor" : "64f48fbfbf",
+      "contentHash" : "d134b00be0b8ad4d72a54d46f81360c77a26213b94ffb545aa9e4353d602c55c",
+      "render" : "\"􏿿\""
+    },
+    {
+      "json" : "\"􏿿\"",
+      "cbor" : "64f48fbfbf",
+      "contentHash" : "d134b00be0b8ad4d72a54d46f81360c77a26213b94ffb545aa9e4353d602c55c",
+      "render" : "\"􏿿\""
+    },
+    {
+      "json" : "{\"\\ud840\\udc00\":1,\"􏿿\":2}",
+      "cbor" : "a264f0a080800164f48fbfbf02",
+      "contentHash" : "3d3bc418e491ced898d9d64a573e4585f30fec40f45f0e81ab2b3fbf01803f21",
+      "render" : "{\"𠀀\":1,\"􏿿\":2}"
+    },
+    {
       "json" : "\"\\u0000\"",
       "cbor" : "6100",
       "contentHash" : "44c985927decf6239e58d9e41fc51ac5319fc00a5a812e87cb0d1c9271818d16",

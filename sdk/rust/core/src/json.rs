@@ -328,7 +328,8 @@ impl Wtf8Builder {
         let is_low = (0xdc00..=0xdfff).contains(&u);
         match self.high.take() {
             Some(h) if is_low => {
-                let code = 0x1_0000u32 | (u32::from(h & 0x3ff) << 10) | u32::from(u & 0x3ff);
+                // the 20-bit payload is added to 0x10000, not ORed: payloads from U+20000 up have bit 16 set
+                let code = ((u32::from(h & 0x3ff) << 10) | u32::from(u & 0x3ff)).wrapping_add(0x1_0000);
                 self.char(code);
                 return;
             }
