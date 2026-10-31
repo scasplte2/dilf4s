@@ -71,8 +71,16 @@ const DOMAIN_TAG = /^[a-z0-9]+(\/[a-z0-9][a-z0-9._-]*)*\/v[0-9]+$/;
 
 /** A versioned domain-separation tag, such as `dilf4s/mpt/leaf/v1`. */
 export class DomainTag {
-  private constructor(readonly value: string) {
+  // #private state makes the class nominal: only DomainTag.of can produce one, so no unchecked tag reaches a hash
+  readonly #value: string;
+  private constructor(value: string) {
+    this.#value = value;
     Object.freeze(this);
+  }
+
+  /** The tag text. */
+  get value(): string {
+    return this.#value;
   }
 
   /** The tag, if it matches the grammar. */

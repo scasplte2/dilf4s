@@ -190,7 +190,10 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
     cases.find { case (_, v) => v < Profile.IntMin || v > Profile.IntMax }.fold {
       val n = typeName(rule)
       val names = cases.map { case (l, v) => (CanonicalEmitter.pascal(l), l, v) }
-      s"""${doc(rule)}
+      val reservedNames = names.collect { case (cn, _, _) if reserved(cn) => cn }
+      if (reservedNames.nonEmpty) GenError.NameClash(rule.toString, reservedNames.mkString(", "), names.map(_._1)).asLeft
+      else
+        s"""${doc(rule)}
          |#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
          |pub enum $n {
          |${names.map { case (cn, l, v) => s"    /// `$l`, written as $v.\n    $cn," }.mkString("\n")}
@@ -227,7 +230,9 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
     val textVariants = texts.map(t => CanonicalEmitter.pascal(t) -> t)
     val variantNames = recordVariants.map(_._1) ++ textVariants.map(_._1)
     val dup = variantNames.diff(variantNames.distinct)
-    if (dup.nonEmpty || textVariants.exists(_._1.isEmpty)) GenError.NameClash(rule.toString, dup.mkString(", "), variantNames).asLeft
+    val invalid = variantNames.filter(v => !Profile.isIdentifier(v) || reserved(v))
+    if (dup.nonEmpty || invalid.nonEmpty)
+      GenError.NameClash(rule.toString, (dup ++ invalid).mkString(", "), variantNames).asLeft
     else {
       val variants = recordVariants.map { case (v, t) => s"    /// A [`$t`].\n    $v($t)," } ++
         textVariants.map { case (v, t) => s"    /// The text `${string(t).drop(1).dropRight(1)}`.\n    $v," }

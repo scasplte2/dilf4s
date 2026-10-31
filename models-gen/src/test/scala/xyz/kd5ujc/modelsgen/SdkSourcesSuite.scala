@@ -125,6 +125,15 @@ object SdkSourcesSuite extends SimpleIOSuite {
       .and(expect(clash(gen("readonly-map = { \"x\": { * text => uint } }\n")), "a type ReadonlyMap would shadow TypeScript's"))
   }
 
+  pureTest("names with no valid identifier form are generator errors, not uncompilable output") {
+    def failed(e: Either[GenError, ?]) = e.isLeft
+    expect(failed(gen("r = \"self\" / \"other\"\n")), "a text alternative would be the variant Self")
+      .and(expect(failed(gen("e = &(self: 1, other: 2)\n")), "an enumeration label would be the variant Self"))
+      .and(expect(failed(gen("r = \"1x\" / \"other\"\n")), "a variant cannot start with a digit"))
+      .and(expect(failed(gen("r = { \"1x\": uint }\n")), "nor a field"))
+      .and(expect(failed(Main.generate(Vector("t" -> "r = { \"1x\": uint }\n"), "p")), "in any language"))
+  }
+
   pureTest("keywords become raw identifiers in Rust") {
     val out = gen("r = { \"type\": uint, \"self\": uint }\n").map(_.rust.toMap.getOrElse("t.rs", ""))
     expect(out.exists(s => s.contains("pub r#type: u64,") && s.contains("pub self_: u64,")), out.fold(_.message, identity))

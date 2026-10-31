@@ -106,15 +106,22 @@ final class Profile(val schema: Schema) {
       val clash = Profile.Namings.collectFirst(Function.unlift { (_, name) =>
         fs.groupBy(f => name(f.key)).collectFirst { case (n, xs) if xs.size > 1 => n -> xs.map(_.key) }
       })
-      clash.fold(fs.asRight[GenError]) { case (n, keys) => GenError.NameClash(rule.toString, n, keys).asLeft }
+      val unnamed =
+        fs.find(f => Profile.Namings.exists((n, name) => n != "wire" && !Profile.isIdentifier(name(f.key).stripPrefix("r#"))))
+      unnamed
+        .map(f => outside(rule, s"key ${CanonicalEmitter.literal(f.key)} has no identifier form"))
+        .orElse(clash.map { case (n, keys) => GenError.NameClash(rule.toString, n, keys) })
+        .toLeft(fs)
     }
 
   private def enumeration(rule: QName, cases: Vector[(String, BigInt)]): Either[GenError, ModelRule] = {
     val names = cases.map { case (l, _) => CanonicalEmitter.pascal(l) }
+    val unnamed = cases.collect { case (l, _) if !Profile.isIdentifier(CanonicalEmitter.pascal(l)) => l }
     val dupNames = names.diff(names.distinct)
     val dupValues = cases.map(_._2).diff(cases.map(_._2).distinct)
     val outOfRange = cases.collect { case (l, v) if v < Profile.IntMin || v > Profile.IntMax => l }
     if (dupNames.nonEmpty || dupValues.nonEmpty) outside(rule, "enumeration with repeated labels or values").asLeft
+    else if (unnamed.nonEmpty) outside(rule, s"enumeration labels with no identifier form: ${unnamed.mkString(", ")}").asLeft
     else if (outOfRange.nonEmpty) outside(rule, s"enumeration values beyond CDDL int: ${outOfRange.mkString(", ")}").asLeft
     else ModelRule.Enumeration(cases).asRight
   }
@@ -173,6 +180,9 @@ object Profile {
    * The `.regexp` patterns of the profile. Each SDK implements these as named validators instead of carrying a
    * regular-expression engine; adding one means adding it to every SDK core.
    */
+  /** Whether `s` is an identifier in every target language (ASCII letters, digits and `_`, not starting with a digit). */
+  def isIdentifier(s: String): Boolean = s.matches("[A-Za-z_][A-Za-z0-9_]*")
+
   /** CDDL `int` (RFC 8610: major types 0 and 1). */
   val IntMin: BigInt = -(BigInt(1) << 64)
   val IntMax: BigInt = (BigInt(1) << 64) - 1
