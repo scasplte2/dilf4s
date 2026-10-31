@@ -54,7 +54,7 @@ version after it, computed without writing.
 
 - **Composition.** Stores sharing one backend combine their stages into one `writeIf`, with the union of the guards
   and the concatenation of the batches. Either every store moves or none does, so a crash can never leave one store
-  ahead of another. `docs/specs/committed.md` commits its four stores this way.
+  ahead of another. `docs/specs/versioned-trie.md` commits its four stores this way.
 - **Drafts.** A stage can be built on another stage that has not been written. It reads through the writes below it
   (current values, trie nodes and their reference counts, the latest root) and carries their guards and batch, so
   writing the top of a chain writes the whole chain or nothing. A chain is therefore a speculative sequence of

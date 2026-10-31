@@ -20,7 +20,7 @@ whether a version was committed, and about the state at any past version, with t
 - The **root** is the root of the top trie (§3).
 
 `commit(v)` is the value commitment of `trie.md` §5: `0x00 ‖ b` for a byte string `b`, `0x01 ‖ cbor(v)` otherwise. A
-trie commits `valueHash(commit(v))`, so a JLVM program claims a value as itself, with a plain (non-raw) trie mode.
+trie commits `valueHash(commit(v))`, so a JLVM program claims a value as itself, with a plain trie mode.
 
 ## 2. Keys and versions
 
@@ -201,7 +201,7 @@ the state root from the entries and compares it with the committed one.
 ## 9. Verifying in the JLVM
 
 No operation is specific to versioned tries. A program uses `trie_verify`, `trie_prefix_verify`, `trie_range_verify`,
-`int_to_bytes` and `cat` (`jlvm.md` §6), in plain (non-raw) modes. The trusted inputs are the root `R` and the width
+`int_to_bytes` and `cat` (`jlvm.md` §6), in plain trie modes. The trusted inputs are the root `R` and the width
 `w`; intermediate roots pass as byte witnesses, and each is bound by the check before it. Modes are maps, written
 `{"object": {"fixed": 1}}`; the table abbreviates them.
 
@@ -272,6 +272,8 @@ part of this library.
 | The journal written in separate steps | Every store in one compare-and-write | A crash between metakit's writes left the node unable to hydrate |
 | Delta ring buffer of 64 | Deltas served down to the prune floor; below it "not retained" | Retention is one policy |
 | Replica snapshot checked against its own roots | Checked against a head the caller already trusts | A self-consistent forgery passed metakit's check |
+| Verify-gated hydration installs a snapshot into the live state | A verified snapshot seeds an in-memory replica; persisting one into a store is not part of v1 | A store's dense internal sequence cannot hold versions from before the bootstrap without fabricating their state roots |
+| The snapshot is served from one atomic cell | A snapshot is read in pieces and refused with a version conflict if a commit lands meanwhile | The store holds no in-memory copy; refusing is what keeps a snapshot from being torn |
 | Historical key proofs not offered | A key at any retained version, through the history trie | Both tries are persistent |
 | Reserved namespaces `fiber/`, `registry/`, `oracle/`, `meta/` | None | Applications own their namespaces |
 | `CommitKey.unsafe` throws | Keys parse to a typed error | No exceptions in the library |
