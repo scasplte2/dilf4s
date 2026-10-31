@@ -5,6 +5,7 @@ import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.versioned.Harness._
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
+import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.storage.Batch
 
 import weaver.scalacheck.Checkers
@@ -24,7 +25,19 @@ object ReplicaSuite extends SimpleIOSuite with Checkers {
     deltas.foldLeftM(List(r))((acc, d) => Replica.applyDelta(acc.last, d).map(acc :+ _)).map(_.tail)
 
   private def snapshotOf(s: VersionedTrieStore[IO, Long, H]): IO[Snapshot[Long, H]] =
-    s.snapshot.compile.toList.map(cs => get(Snapshot.fromChunks(cs)))
+    s.snapshot().compile.toList.map(cs => get(assemble(cs)))
+
+  pureTest("a delta's upserts meet the commit and snapshot limits: oversized, too deep and null values are refused") {
+    val root = xyz.kd5ujc.core.hash.Hasher[H].digest(scodec.bits.ByteVector.empty)
+    def apply(v: CanonicalValue) =
+      Replica.empty[Long, H].flatMap(r => Replica.applyDelta(r, Delta[Long, H](None, Head(1L, root, root), List(key("a") -> v), Nil)))
+    val tooLarge = CanonicalValue.bytes(scodec.bits.ByteVector.fill(VersionedTrie.MaxValueBytes)(1))
+    val tooDeep = (0 to VersionedTrie.MaxValueDepth).foldLeft(int(1))((v, _) => get(CanonicalValue.array(Vector(v))))
+    def refused(v: CanonicalValue)(p: VersionedTrieError => Boolean) = apply(v).left.exists(p)
+    expect(refused(tooLarge) { case _: VersionedTrieError.TooLarge => true; case _ => false }, "a 1 MiB byte string encodes over the limit")
+      .and(expect(refused(tooDeep) { case _: VersionedTrieError.TooDeep => true; case _ => false }, "one level past MaxValueDepth"))
+      .and(expect(refused(CanonicalValue.CNull) { case _: VersionedTrieError.Malformed => true; case _ => false }, "a null upsert"))
+  }
 
   test("a replica applying the delta stream matches the source's head at every step") {
     forall(stepsGen) { steps =>
@@ -218,10 +231,14 @@ object ReplicaSuite extends SimpleIOSuite with Checkers {
       for {
         s <- fresh
         _ <- commitAll(s._2, List(1L -> Batch.put(key("a"), int(1))))
-        _ <- s._2.snapshot.evalTap {
-          case _: SnapshotChunk.Top[Long, H] => s._2.commit(Some(1L), 2L, Batch.put(key("b"), int(2))).void
-          case _                             => IO.unit
-        }.compile.drain
+        _ <- s._2
+          .snapshot()
+          .evalTap {
+            case _: SnapshotChunk.Top[Long, H] => s._2.commit(Some(1L), 2L, Batch.put(key("b"), int(2))).void
+            case _                             => IO.unit
+          }
+          .compile
+          .drain
       } yield ()
     }.map(r => expect.same(Left(VersionedTrieError.VersionConflict(Some(vk(1L)), Some(vk(2L)))), r))
   }

@@ -12,7 +12,12 @@ versioned-trie-vectors = {
   "commits": [* vt-commit],
   "root": hex,
   "proofs": [* vt-proof],
+  "snapshot": vt-snapshot,
 }
+
+; The final commit's snapshot, in chunks of at most "chunkEntries" items: each is the hex of a canonical
+; versioned-trie-snapshot-chunk. Restoring it into an empty store reproduces "root".
+vt-snapshot = { "chunkEntries": uint, "chunks": [+ hex] }
 
 ; The top trie for one head, slot by slot: "root" is the commitment root.
 vt-head-kat = {

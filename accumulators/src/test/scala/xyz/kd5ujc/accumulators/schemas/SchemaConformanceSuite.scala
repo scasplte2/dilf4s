@@ -16,7 +16,14 @@ import xyz.kd5ujc.models.merkle.{MerkleConsistency, MerkleInclusion, MerkleLogSt
 import xyz.kd5ujc.models.poseidon.PoseidonMerkleProof
 import xyz.kd5ujc.models.storage.VersionedRecord
 import xyz.kd5ujc.models.trie.{TrieChildren, TrieProof, TrieSegment}
-import xyz.kd5ujc.models.versioned_trie.{VersionedTrieAt, VersionedTrieHead, VersionedTrieProof}
+import xyz.kd5ujc.models.versioned_trie.{
+  VersionedTrieAt,
+  VersionedTrieHead,
+  VersionedTrieProof,
+  VersionedTrieSnapshotHead,
+  VersionedTrieSnapshotHistory,
+  VersionedTrieVersion
+}
 import xyz.kd5ujc.modelsgen.{CddlParser, CddlSampler, QName, Schema}
 
 import io.circe.{Json, parser}
@@ -74,20 +81,23 @@ object SchemaConformanceSuite extends SimpleIOSuite {
     List("merkle", "trie", "poseidon", "storage", "bloom", "crypto", "versioned-trie").map(m => m -> read("shared", "schemas", s"$m.cddl"))
 
   private val codecs: Map[String, Codec[?]] = Map(
-    "merkle-inclusion"      -> MerkleInclusion.codec,
-    "merkle-consistency"    -> MerkleConsistency.codec,
-    "trie-proof"            -> TrieProof.codec,
-    "trie-segment"          -> TrieSegment.codec,
-    "trie-children"         -> TrieChildren.codec,
-    "poseidon-merkle-proof" -> PoseidonMerkleProof.codec,
-    "merkle-log-state"      -> MerkleLogState.codec,
-    "versioned-record"      -> VersionedRecord.codec,
-    "bloom-filter"          -> BloomFilter.codec,
-    "versioned-trie-head"   -> VersionedTrieHead.codec,
-    "versioned-trie-at"     -> VersionedTrieAt.codec,
-    "versioned-trie-proof"  -> VersionedTrieProof.codec
-    // state keys are `.regexp` text, which the sampler cannot generate; versioned-trie deltas are round-tripped
-    // through the conformance vectors and VersionedTrieProofSuite instead
+    "merkle-inclusion"                -> MerkleInclusion.codec,
+    "merkle-consistency"              -> MerkleConsistency.codec,
+    "trie-proof"                      -> TrieProof.codec,
+    "trie-segment"                    -> TrieSegment.codec,
+    "trie-children"                   -> TrieChildren.codec,
+    "poseidon-merkle-proof"           -> PoseidonMerkleProof.codec,
+    "merkle-log-state"                -> MerkleLogState.codec,
+    "versioned-record"                -> VersionedRecord.codec,
+    "bloom-filter"                    -> BloomFilter.codec,
+    "versioned-trie-head"             -> VersionedTrieHead.codec,
+    "versioned-trie-at"               -> VersionedTrieAt.codec,
+    "versioned-trie-proof"            -> VersionedTrieProof.codec,
+    "versioned-trie-version"          -> VersionedTrieVersion.codec,
+    "versioned-trie-snapshot-head"    -> VersionedTrieSnapshotHead.codec,
+    "versioned-trie-snapshot-history" -> VersionedTrieSnapshotHistory.codec
+    // state keys are `.regexp` text, which the sampler cannot generate; versioned-trie deltas and snapshot state chunks
+    // are round-tripped through the conformance vectors, VersionedTrieProofSuite and RestoreSuite instead
   )
 
   /** Samples must be canonical CBOR the generated decoder accepts and re-encodes exactly: a rejection is a bug. */

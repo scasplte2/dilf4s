@@ -71,7 +71,11 @@ A commit takes the version the caller expects to be the head (none before the fi
 batch:
 
 1. A null value deletes its key, as a null map value is absent (`canonical-encoding.md` §1). A null value could not
-   be proven present anyway: in `trie_verify`, a null claims absence.
+   be proven present anyway: in `trie_verify`, a null claims absence. A value is at most 1 MiB (1048576 bytes) of
+   canonical CBOR, so that every entry fits one snapshot chunk (§7), and at most 253 levels deep (a scalar is 0). The
+   records that carry values, a delta's upserts and a snapshot's state chunks, wrap each in a map, an array and a map,
+   and every record stays within the canonical depth limit of 256 (`canonical-encoding.md`). A larger or deeper value is
+   refused at commit, so a store can always serve every delta and snapshot of what it accepted.
 2. **Recommit.** If the next version is the head's and the expected version is the head's parent, the commit is a
    retry: it succeeds without writing if the batch, applied to the parent's state, gives the head's state root, and is
    refused as a rewrite otherwise. Only the head can be recommitted.
@@ -94,6 +98,17 @@ state (a consensus round, for example) previews it, and commits the preview it s
   made earlier still verifies against its root.
 
 Retention is node-local policy: it never changes a root.
+
+**Restore.** A store can start from a snapshot instead of from its first commit. Restore takes a head the caller
+already trusts and a snapshot, checks the snapshot against it (§7), and writes it into an **empty** store in one
+compare-and-write; a store that is not empty is refused. The restored store is then exactly the store that committed
+every version of the snapshot's history and pruned through its head `V_b`, byte for byte:
+- every version, before `V_b` included, stays attestable: inclusion, absence, as-of and version listings;
+- the state and values of versions before `V_b` are "not retained", as below a prune floor; so is the delta into `V_b`;
+- rollback below `V_b` is "not retained"; commits continue from `V_b`.
+
+Nothing is fabricated. The stores below the index hold only `V_b`, as after a prune. The index holds every version with
+the state root the history lists, and those are the roots the trusted history root commits to (§10).
 
 ## 5. Proofs
 
@@ -140,6 +155,8 @@ versioned-trie-proof = {
 
 state-key = text .regexp "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*"
 
+; A value is at most 253 levels deep, so that this record inside a delta or a snapshot chunk (a map, an array and a
+; map around it) stays within the canonical depth limit of 256.
 versioned-trie-upsert = {
   "k": state-key,
   "v": any,
@@ -150,6 +167,25 @@ versioned-trie-delta = {
   "head": versioned-trie-head,
   "upserts": [* versioned-trie-upsert],
   "removes": [* state-key],
+}
+
+; A snapshot is a stream of chunks, each one canonical CBOR record of at most 4194304 bytes: one head chunk, then state
+; chunks whose keys strictly increase across all of them, then history chunks whose versions strictly increase across
+; all of them and end at the head version, with the head's state root. Values are at most 1048576 bytes of canonical
+; CBOR, at most 253 levels deep, and never null. A receiver checks each chunk as it arrives, and the roots once the
+; history reaches the head.
+versioned-trie-snapshot-chunk = versioned-trie-snapshot-head / versioned-trie-snapshot-state / versioned-trie-snapshot-history
+
+versioned-trie-snapshot-head = { "head": versioned-trie-head }
+
+versioned-trie-snapshot-state = { "state": [1*1024 versioned-trie-upsert] }
+
+versioned-trie-snapshot-history = { "history": [1*1024 versioned-trie-version] }
+
+; A committed version (its version key) and its state root.
+versioned-trie-version = {
+  "v": bytes,
+  "s": bytes,
 }
 ```
 
@@ -184,12 +220,28 @@ Transport is out of scope; these are the data and the checks.
   removes. A store serves the delta of every retained version; below the prune floor it is "not retained", and a
   follower falls back to a snapshot.
 - **Snapshot.** The head, every current entry in key order, then every committed version with its state root in
-  version order. It is read in pieces; if a commit lands while it is read, it is refused rather than torn.
-- **Replica.** A replica starts empty, or from a snapshot checked against a head the caller **already trusts**, never
-  against the snapshot's own claim. The snapshot must rebuild the trusted state root and history root, its versions
-  must be strictly increasing and end at the trusted head with its state root, and no entry may repeat. A replica
+  version order, as a stream of chunks (below). A store reads it in pieces; if a commit lands while it is read, it is
+  refused rather than torn.
+- **Checking a snapshot.** A receiver checks it against a head it **already trusts**, never against the snapshot's
+  own claim, chunk by chunk as it arrives, and refuses it at the first chunk that breaks a rule:
+  1. the first chunk is the head, and it is the trusted head; no other head chunk follows;
+  2. state chunks come next; their keys strictly increase across all of them (so none repeats), and no value is null,
+     over 1 MiB or over 253 levels deep;
+  3. history chunks come last; their versions strictly increase across all of them, none is after the trusted
+     version, and the trusted version, when it comes, holds the trusted state root and ends the snapshot;
+  4. every state or history chunk holds 1 to 1024 items.
+
+  Once the history reaches the trusted version, the entries must rebuild the trusted state root, and the versions
+  the trusted history root. A snapshot that ends earlier is truncated.
+- **Replica.** A replica starts empty, or from a snapshot checked as above. A replica
   applies a delta only if the delta's parent is its head, its version is greater, no key is both written and removed,
   and the head it recomputes (state root, then history root with the new version) is the delta's head.
+
+**Snapshot wire format.** Each chunk is one canonical CBOR record (`versioned-trie-snapshot-chunk`, §5) of at most
+4 MiB (4194304 bytes); a receiver refuses a larger chunk before decoding it. A head chunk is `{"head": head}`, a state
+chunk `{"state": [{"k": key, "v": value}, …]}`, a history chunk `{"history": [{"v": vkey, "s": stateRoot}, …]}`. A
+producer closes a chunk before it would pass 1024 items or the byte limit; one entry always fits, since a value is at
+most 1 MiB and a key 256 bytes. How chunks are framed and carried is the transport's concern.
 
 ## 8. Projection (informative)
 
@@ -251,6 +303,13 @@ sequences are equal; opening a store checks this. The index maps between version
 version's state root, so version attestations, as-of answers and snapshots survive pruning of old states. Pruning never
 touches the index.
 
+**Sequences after a restore.** The `i`-th version of a restored history (from 1) gets sequence `i`, the sequence it
+had in the store that committed it, so the head `V_b` gets the length of the history. The index holds an entry for
+every one of them. The tries and the values store hold only sequence `V_b`, with their floor there, which is exactly
+how a store pruned through `V_b` holds them: sequences below a floor have no state, no root and no log. A sequence
+that starts above zero, or an index keyed by version alone, was not needed: the dense sequence already describes a
+pruned store, and a restore is a pruned store that never held the pruned states.
+
 ## 11. Deliberate changes from metakit
 
 metakit's committed state (`lifecycle/committed`) is the predecessor. Its tessellation wiring (DataApplication hooks,
@@ -272,7 +331,9 @@ part of this library.
 | The journal written in separate steps | Every store in one compare-and-write | A crash between metakit's writes left the node unable to hydrate |
 | Delta ring buffer of 64 | Deltas served down to the prune floor; below it "not retained" | Retention is one policy |
 | Replica snapshot checked against its own roots | Checked against a head the caller already trusts | A self-consistent forgery passed metakit's check |
-| Verify-gated hydration installs a snapshot into the live state | A verified snapshot seeds an in-memory replica; persisting one into a store is not part of v1 | A store's dense internal sequence cannot hold versions from before the bootstrap without fabricating their state roots |
+| Verify-gated hydration installs a snapshot into the live state | Restore writes a snapshot checked against a trusted head into an empty store, which is then the store pruned through that head | Persistent, atomic and checked against a trusted head; nothing before the head is fabricated |
+| Snapshot contents checked once, whole | Checked chunk by chunk as they arrive, with ordering and size limits; roots checked at the end | A malformed, reordered or foreign snapshot is refused before it is all received |
+| Entry values unbounded | A value is at most 1 MiB of canonical CBOR and 253 levels deep | Every entry fits one bounded snapshot chunk, and every delta and chunk stays within the canonical depth limit |
 | The snapshot is served from one atomic cell | A snapshot is read in pieces and refused with a version conflict if a commit lands meanwhile | The store holds no in-memory copy; refusing is what keeps a snapshot from being torn |
 | Historical key proofs not offered | A key at any retained version, through the history trie | Both tries are persistent |
 | Reserved namespaces `fiber/`, `registry/`, `oracle/`, `meta/` | None | Applications own their namespaces |

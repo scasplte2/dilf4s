@@ -51,6 +51,12 @@ trait TrieStore[F[_], H] {
   /** A commit on top of a staged one that is not yet written: nodes are read through the draft, and writing it writes both. */
   def stageOn(base: TrieStore.Staged[H], ops: List[(ByteVector, Option[Digest[H]])]): F[TrieStore.Staged[H]]
 
+  /**
+   * Loads a whole trie into an empty store as version `at`, which becomes both the latest and the floor: the store is
+   * then exactly as if it had committed up to `at` and pruned through it. Versions below `at` are not readable.
+   */
+  def stageRestore(trie: Trie[H], at: Version): F[TrieStore.Staged[H]]
+
   def stageRollback(to:   Version): F[TrieStore.Staged[H]]
   def stagePrune(through: Version): F[TrieStore.Staged[H]]
 
@@ -276,6 +282,27 @@ object TrieStore {
           overlay ++ plan
         )
     }
+
+    def stageRestore(trie: Trie[H], at: Version): F[Staged[H]] =
+      state.flatMap { s =>
+        if (s.raw.isDefined) failS[Staged[H]](StoreError.VersionConflict(0L, s.latest))
+        else if (trie.mode != mode) failT[Staged[H]](TrieError.InvalidKey(s"a $mode store cannot hold a ${trie.mode} trie"))
+        else if (at.value < 1L) failS[Staged[H]](StoreError.UnknownVersion(at.value, 0L))
+        else
+          roots.encodeBatch(Batch.put(at.value, trie.rootOption.fold(ByteVector.empty)(_.bytes))).map { rootRec =>
+            val plan: RefCounting.Plan[H] = trie.storedNodes.map { case (h, e) => h -> Option(e) }
+            Staged(
+              List(stateKey -> None),
+              planBatch(plan) ++ rootRec ++ RawBatch.put(stateKey, stateRecord(at.value, at.value)),
+              at,
+              trie.root,
+              trie.rootOption,
+              0L,
+              at.value,
+              plan
+            )
+          }
+      }
 
     /** Releases the roots of `versions` and deletes their root records, as one stage. */
     private def dropVersions(s: State, versions: List[Long], newLatest: Long, newFloor: Long): F[Staged[H]] =

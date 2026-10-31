@@ -49,6 +49,12 @@ object Harness {
       }
       .map(_._2)
 
+  /** A snapshot read against the head its own first chunk claims (tests that check trust pass the head explicitly). */
+  def assemble(chunks: List[SnapshotChunk[Long, H]]): Either[VersionedTrieError, Snapshot[Long, H]] =
+    chunks.headOption.collect { case SnapshotChunk.Top(h) => h }
+      .toRight(VersionedTrieError.Malformed("no head"))
+      .flatMap(Snapshot.read(_, chunks))
+
   // ---- reference model
 
   type State = Map[StateKey, CanonicalValue]

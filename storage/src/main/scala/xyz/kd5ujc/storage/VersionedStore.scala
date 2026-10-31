@@ -63,6 +63,12 @@ trait VersionedStore[F[_], K, V] {
   /** A commit on top of a staged one that is not yet written; it reads through the draft, and writing it writes both. */
   def stageOn(base: VersionedStore.Staged, batch: Batch[K, V]): F[VersionedStore.Staged]
 
+  /**
+   * Loads `entries` into an empty store as version `at`, which becomes both the latest and the floor: the store is then
+   * exactly as if it had committed up to `at` and pruned through it. Later duplicates of a key win.
+   */
+  def stageRestore(entries: List[(K, V)], at: Version): F[VersionedStore.Staged]
+
   def stageRollback(to:   Version): F[VersionedStore.Staged]
   def stagePrune(through: Version): F[VersionedStore.Staged]
 
@@ -280,6 +286,25 @@ object VersionedStore {
         written = finals.map(_._1).zip(afters).toMap
       } yield Staged(guards, below ++ writes ++ RawBatch.put(latestKey, ver(next)), Version.unsafe(next), expected, f, overlay ++ written)
     }
+
+    def stageRestore(entries: List[(K, V)], at: Version): F[Staged] =
+      versionRecords.flatMap { records =>
+        if (records._1.isDefined || records._2.isDefined) latest.flatMap(now => fail[Staged](StoreError.VersionConflict(0L, now.value)))
+        else if (at.value < 1L) fail[Staged](StoreError.UnknownVersion(at.value, 0L))
+        else
+          entries.traverse { case (k, v) => liftE(V.encode(v)).map(K.encode(k) -> _) }.map { encoded =>
+            // the loaded values are the overlay: a stage built on this one reads them, not the still-empty backend
+            Staged(
+              guardsOf(records),
+              encoded.foldMap { case (ek, b) => RawBatch.put(dataKey(ek), b) } ++ RawBatch.put(latestKey, ver(at.value)) ++
+              RawBatch.put(floorKey, ver(at.value)),
+              at,
+              0L,
+              at.value,
+              encoded.map { case (ek, b) => ek -> Option(b) }.toMap
+            )
+          }
+      }
 
     def stageRollback(to: Version): F[Staged] =
       versionRecords.flatMap { records =>

@@ -358,6 +358,68 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
     }
   }
 
+  test(s"$backend: a restored store holds the same records as one that committed and pruned through the same version") {
+    forall(Gen.choose(1, 6).flatMap(Gen.listOfN(_, batchGen))) { batches =>
+      expectOk { implicit r =>
+        for {
+          pruned <- withRaw { raw =>
+            VersionedStore.make[IO, Int, Int](raw, "vs").flatMap { s =>
+              batches.foldLeftM(Version.Genesis)(s.commit).flatMap(v => s.prune(v)) >> raw.scan(ByteRange.all).compile.toList
+            }
+          }
+          restored <- withRaw { raw =>
+            VersionedStore.make[IO, Int, Int](raw, "vs").flatMap { s =>
+              s.stageRestore(model(batches).last.toList, Version.unsafe(batches.size.toLong)).flatMap(s.write) >>
+              (raw.scan(ByteRange.all).compile.toList, r.attempt(s.stageRestore(Nil, Version.unsafe(1L)))).tupled
+            }
+          }
+        } yield
+          expect(pruned == restored._1, "the same records")
+            .and(expect.same(Left(StoreError.VersionConflict(0L, batches.size.toLong)), restored._2))
+      }
+    }
+  }
+
+  implicit private val showRestoreCase: cats.Show[(List[(Int, Int)], Batch[Int, Int])] = cats.Show.fromToString
+
+  test(s"$backend: a commit chained on an unwritten restore reads the restored values, and history at the restored version keeps them") {
+    forall(Gen.zip(Gen.listOf(Gen.zip(Gen.choose(0, 6), Gen.choose(0, 9))).map(_.toMap.toList), batchGen)) {
+      case (entries, next) =>
+        expectOk { implicit r =>
+          for {
+            sequential <- withRaw { raw =>
+              VersionedStore.make[IO, Int, Int](raw, "vs").flatMap { s =>
+                s.stageRestore(entries, Version.unsafe(5L)).flatMap(s.write) >> s.commit(Version.unsafe(5L), next) >>
+                raw.scan(ByteRange.all).compile.toList
+              }
+            }
+            chained <- withRaw { raw =>
+              VersionedStore.make[IO, Int, Int](raw, "vs").flatMap { s =>
+                for {
+                  restored <- s.stageRestore(entries, Version.unsafe(5L))
+                  draft    <- s.stageOn(restored, next)
+                  _        <- s.write(draft)
+                  bytes    <- raw.scan(ByteRange.all).compile.toList
+                  at5      <- (0 to 6).toList.traverseFilter(k => s.getAt(k, Version.unsafe(5L)).map(_.map(k -> _)))
+                  changes  <- s.changes(Version.unsafe(6L))
+                  _        <- s.rollback(Version.unsafe(5L))
+                  back     <- s.scan().compile.toList
+                } yield (bytes, at5, changes, back)
+              }
+            }
+          } yield {
+            val restored = entries.toMap
+            expect(sequential == chained._1, "the same records as restoring, writing, then committing")
+              .and(expect.same(restored, chained._2.toMap))
+              .and(
+                expect.same(next.last.map { case (k, a) => Change(k, restored.get(k), a) }.toList.sortBy(_.key), chained._3.sortBy(_.key))
+              )
+              .and(expect.same(restored.toList.sortBy(_._1), chained._4))
+          }
+        }
+    }
+  }
+
   test(s"$backend: a draft staged against a version that moved on does not write") {
     attempt { implicit r =>
       withRaw { raw =>
