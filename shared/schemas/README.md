@@ -35,7 +35,8 @@ file round-trips through its schema without loss.
     type 0 (0..2^64−1), major type 1 (−2^64..−1), or either (−2^64..2^64−1). The canonical data model's integers are
     unbounded, so a field that may need more than 64 bits must say so with an explicit range (as `poseidon.cddl` does);
   - text, bytes and sized strings (a text `.size` counts UTF-8 bytes, as RFC 8610 defines it);
-  - `text .regexp` with one of the shared patterns `([0-9a-f]{2})*`, `0x([0-9a-f]{2})*` and `0|[1-9][0-9]*`. Each SDK
+  - `text .regexp` with one of the shared patterns `([0-9a-f]{2})*`, `0x([0-9a-f]{2})*`, `0|[1-9][0-9]*` and the
+    versioned-trie state-key grammar `[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*`. Each SDK
     implements these as named validators rather than carrying a regular-expression engine, so a new pattern means a new
     validator in every SDK core (`Profile.Patterns`);
   - homogeneous arrays;

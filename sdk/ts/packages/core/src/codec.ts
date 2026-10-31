@@ -127,7 +127,7 @@ export const text: Codec<string> = sizedText(0, null);
  * The `.regexp` patterns the schemas use. The generator accepts only these, so every SDK checks them identically
  * without a regular-expression engine.
  */
-export type TextPattern = "([0-9a-f]{2})*" | "0x([0-9a-f]{2})*" | "0|[1-9][0-9]*";
+export type TextPattern = "([0-9a-f]{2})*" | "0x([0-9a-f]{2})*" | "0|[1-9][0-9]*" | "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*";
 
 const lowerHex = (s: string): boolean => s.length % 2 === 0 && /^[0-9a-f]*$/.test(s);
 
@@ -140,6 +140,9 @@ export function matches(pattern: TextPattern, text: string): boolean {
       return text.startsWith("0x") && lowerHex(text.slice(2));
     case "0|[1-9][0-9]*":
       return /^(0|[1-9][0-9]*)$/.test(text);
+    // a versioned-trie state key's grammar (versioned-trie.md section 2), without the length limits the domain checks
+    case "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*":
+      return /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/.test(text);
   }
 }
 

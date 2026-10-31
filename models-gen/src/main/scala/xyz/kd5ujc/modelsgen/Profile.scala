@@ -187,7 +187,8 @@ object Profile {
   val IntMin: BigInt = -(BigInt(1) << 64)
   val IntMax: BigInt = (BigInt(1) << 64) - 1
 
-  val Patterns: Vector[String] = Vector("([0-9a-f]{2})*", "0x([0-9a-f]{2})*", "0|[1-9][0-9]*")
+  val Patterns: Vector[String] =
+    Vector("([0-9a-f]{2})*", "0x([0-9a-f]{2})*", "0|[1-9][0-9]*", "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*")
 
   /** How each emitter names a wire key: the key itself, camelCase (Scala, TypeScript) and snake_case (Rust). */
   val Namings: Vector[(String, String => String)] = Vector(

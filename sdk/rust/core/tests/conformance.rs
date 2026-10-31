@@ -14,9 +14,12 @@
 mod common;
 
 use common::{bytes, load};
+use dilf4s_core::codec::Codec;
 use dilf4s_core::commitment::value_commitment;
 use dilf4s_core::generated::canonical_vectors::{CanonicalJsonCase, CanonicalVectors};
 use dilf4s_core::generated::merkle_vectors::MerkleVectors;
+use dilf4s_core::generated::versioned_trie::STATE_KEY;
+use dilf4s_core::generated::versioned_trie_vectors::VersionedTrieVectors;
 use dilf4s_core::hash::{DomainTag, HashAlgorithm};
 use dilf4s_core::{cbor, hex, json};
 
@@ -108,6 +111,21 @@ fn domain_tags() {
         if valid == c.valid { Ok(()) } else { Err(format!("{:?}: expected valid = {}, got {valid}", c.tag, c.valid)) }
     });
     eprintln!("domainTags: {n} cases");
+}
+
+#[test]
+fn state_keys() {
+    let vt: VersionedTrieVectors = load("versioned_trie_v1.json");
+    let n = run(&vt.state_keys, |c| {
+        let decoded = STATE_KEY.decode(&dilf4s_core::Value::text(c.key.clone())).is_ok();
+        let encoded = STATE_KEY.encode(&c.key).is_ok();
+        if decoded == c.schema && encoded == c.schema {
+            Ok(())
+        } else {
+            Err(format!("{:?}: expected schema = {}, decoded {decoded}, encoded {encoded}", c.key, c.schema))
+        }
+    });
+    eprintln!("stateKeys: {n} cases");
 }
 
 #[test]

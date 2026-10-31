@@ -75,6 +75,41 @@ object VersionedTrieVectors {
         .deepMerge(extra)
     }
 
+  /** The `.regexp` of `state-key` in shared/schemas/versioned-trie.cddl: the grammar without its length limits. */
+  val StateKeyPattern: String = "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*"
+
+  /** Candidate state keys: whether each matches the schema pattern, and whether StateKey (with the limits) accepts it. */
+  val stateKeyCases: List[String] = List(
+    "a",
+    "0",
+    "fiber/1",
+    "oracle/a/b",
+    "a.b_c-d/0.9",
+    "x" * 64,
+    "x" * 65,
+    List.fill(16)("a").mkString("/"),
+    List.fill(17)("a").mkString("/"),
+    List("x" * 64, "x" * 64, "x" * 64, "x" * 61).mkString("/"),
+    List("x" * 64, "x" * 64, "x" * 64, "x" * 62).mkString("/"),
+    "",
+    "/",
+    "a/",
+    "/a",
+    "a//b",
+    "A",
+    "a/B",
+    ".a",
+    "-a",
+    "_a",
+    "a/.b",
+    "a b",
+    "\u00e9",
+    "a\n"
+  )
+
+  private def stateKeyCase(k: String): Json =
+    Json.obj("key" -> k.asJson, "schema" -> k.matches(StateKeyPattern).asJson, "valid" -> StateKey.parse(k).isRight.asJson)
+
   def build: IO[Json] =
     attempt { implicit h =>
       for {
@@ -168,7 +203,8 @@ object VersionedTrieVectors {
           "commits"        -> commitJson.asJson,
           "root"           -> hex(root.bytes),
           "proofs"         -> List(currentJ, nsJ, pastJ, v255J, v3J, as299J, as0J, hpJ).asJson,
-          "snapshot"       -> Json.obj("chunkEntries" -> 2.asJson, "chunks" -> wire.map(hex).asJson)
+          "snapshot"       -> Json.obj("chunkEntries" -> 2.asJson, "chunks" -> wire.map(hex).asJson),
+          "stateKeys"      -> stateKeyCases.map(stateKeyCase).asJson
         )
     }.flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO])
 
@@ -181,6 +217,25 @@ object VersionedTrieVectorGen extends IOApp {
 }
 
 object VersionedTrieVectorsSuite extends SimpleIOSuite {
+
+  pureTest("the schema's state-key pattern is the grammar of StateKey without its length limits") {
+    val patternOnly =
+      VersionedTrieVectors.stateKeyCases.filter(k => k.matches(VersionedTrieVectors.StateKeyPattern) && StateKey.parse(k).isLeft)
+    VersionedTrieVectors.stateKeyCases.map { k =>
+      expect(StateKey.parse(k).isLeft || k.matches(VersionedTrieVectors.StateKeyPattern), s"$k is a StateKey but fails the schema pattern")
+    }.reduce(_ and _)
+      .and(
+        expect(
+          patternOnly.forall(k =>
+            k.length > StateKey.MaxLength || k.split("/", -1).length > StateKey.MaxSegments || k
+              .split("/", -1)
+              .exists(_.length > StateKey.MaxSegmentLength)
+          ),
+          s"keys the pattern accepts and StateKey rejects break only a length limit: $patternOnly"
+        )
+      )
+      .and(expect(patternOnly.size >= 3, "the cases cover each limit"))
+  }
 
   test("committed versioned-trie vectors match the reference implementation") {
     (IO(new String(Files.readAllBytes(VersionedTrieVectors.path), UTF_8)), VersionedTrieVectors.render).mapN { (committed, rendered) =>

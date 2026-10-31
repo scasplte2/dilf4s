@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cbor, contentHash, digest, DomainTag, fromHex, hashAlgorithm, json, models, taggedHash, toHex, valueCommitment } from "../src/index.js";
+import { cbor, contentHash, digest, DomainTag, fromHex, hashAlgorithm, json, models, taggedHash, toHex, Value, valueCommitment } from "../src/index.js";
 import { expectOk, loadVectors } from "./vectors.js";
 
 const vectors = loadVectors("canonical_encoding_v1.json", models.canonicalVectors.CanonicalVectors);
@@ -55,6 +55,16 @@ describe("canonical_encoding_v1.json", () => {
 
   it.each(vectors.domainTags.map((c) => [JSON.stringify(c.tag), c] as const))("domain tag %s", (_, c) => {
     expect(DomainTag.of(c.tag).ok).toBe(c.valid);
+  });
+});
+
+describe("versioned_trie_v1.json state keys", () => {
+  const vt = loadVectors("versioned_trie_v1.json", models.versionedTrieVectors.VersionedTrieVectors);
+  const { StateKey } = models.versionedTrie;
+  it.each(vt.stateKeys.map((c) => [JSON.stringify(c.key).slice(0, 40), c] as const))("state key %s matches the schema pattern as the reference does", (_, c) => {
+    const decoded = StateKey.decode(expectOk(Value.text(c.key), "text"));
+    expect(decoded.ok).toBe(c.schema);
+    expect(StateKey.encode(c.key).ok, "the encoder agrees").toBe(c.schema);
   });
 });
 

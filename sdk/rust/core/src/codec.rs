@@ -382,6 +382,9 @@ pub enum TextPattern {
     Hex0x,
     /// `0|[1-9][0-9]*`: a non-negative decimal with no leading zero.
     Decimal,
+    /// `[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*`: a versioned-trie state key's grammar (versioned-trie.md
+    /// section 2), without the length limits the domain checks.
+    StateKey,
 }
 
 impl TextPattern {
@@ -391,6 +394,7 @@ impl TextPattern {
             Self::Hex => "([0-9a-f]{2})*",
             Self::Hex0x => "0x([0-9a-f]{2})*",
             Self::Decimal => "0|[1-9][0-9]*",
+            Self::StateKey => "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*",
         }
     }
 
@@ -404,6 +408,13 @@ impl TextPattern {
             Self::Decimal => {
                 text == "0" || (!text.starts_with('0') && !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()))
             }
+            // every `/`-separated segment: [a-z0-9] then [a-z0-9._-]*
+            Self::StateKey => text.split('/').all(|segment| {
+                !segment.is_empty()
+                    && segment.bytes().enumerate().all(|(i, b)| {
+                        b.is_ascii_lowercase() || b.is_ascii_digit() || (i > 0 && matches!(b, b'.' | b'_' | b'-'))
+                    })
+            }),
         }
     }
 }

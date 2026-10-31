@@ -14,4 +14,6 @@ export * as signingVectors from "./signing_vectors.js";
 export * as storage from "./storage.js";
 export * as trie from "./trie.js";
 export * as trieVectors from "./trie_vectors.js";
+export * as versionedTrie from "./versioned_trie.js";
+export * as versionedTrieVectors from "./versioned_trie_vectors.js";
 export * as vrfVectors from "./vrf_vectors.js";

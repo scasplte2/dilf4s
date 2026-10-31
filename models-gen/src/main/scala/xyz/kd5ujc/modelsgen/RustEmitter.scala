@@ -422,7 +422,8 @@ object RustEmitter {
   def patternName(pattern: String): String = pattern match {
     case "([0-9a-f]{2})*"   => "Hex"
     case "0x([0-9a-f]{2})*" => "Hex0x"
-    case _                  => "Decimal"
+    case "0|[1-9][0-9]*"    => "Decimal"
+    case _                  => "StateKey"
   }
 
   /** A Rust string literal. */

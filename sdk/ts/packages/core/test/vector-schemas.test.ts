@@ -25,6 +25,7 @@ const schemas: Readonly<Record<string, (value: Value) => Result<Value, string>>>
   "sigma_v1.json": roundTrip(models.sigmaVectors.SigmaVectors),
   "signing_v1.json": roundTrip(models.signingVectors.SigningVectors),
   "trie_v1.json": roundTrip(models.trieVectors.TrieVectors),
+  "versioned_trie_v1.json": roundTrip(models.versionedTrieVectors.VersionedTrieVectors),
   "vrf_v1.json": roundTrip(models.vrfVectors.VrfVectors),
 };
 
