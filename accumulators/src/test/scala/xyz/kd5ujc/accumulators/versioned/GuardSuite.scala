@@ -101,4 +101,20 @@ object GuardSuite extends SimpleIOSuite {
       } yield result
     })(result => expect(result.left.exists(_.isInstanceOf[VersionedTrieError.VersionConflict]), s"$result"))
   }
+
+  test("a proof whose reads lose a record to a racing rollback is a version conflict, not corruption") {
+    ok(attempt { implicit h =>
+      for {
+        base  <- RawStore.inMemory[IO]
+        raw   <- WatchedRawStore(base)
+        s     <- open(raw)
+        other <- open(base)
+        _     <- commitAll(s, List(1L -> Batch.put(key("a"), int(1)), 2L -> Batch.put(key("a"), int(2))))
+        index <- IO.fromEither(Namespace("c/vidx/s").leftMap(e => new IllegalStateException(e.toString)))
+        // the first index read finds sequence 2, then the rollback deletes its record before it is read
+        _      <- raw.beforeNextGetOf(index.prefix, other.rollback(1L))
+        result <- h.attempt(s.proveState(StateQuery.keys(key("a"))))
+      } yield result
+    })(result => expect(result.left.exists(_.isInstanceOf[VersionedTrieError.VersionConflict]), s"$result"))
+  }
 }

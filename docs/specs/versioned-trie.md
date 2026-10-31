@@ -315,6 +315,9 @@ backend. Each part's guarded records hold a generation that every mutation advan
 - **Reads** that combine several records (the head, a past head or value, every proof, a delta, a snapshot, the
   recommit check, and the alignment check on opening) read the revision before and after, and refuse the answer if
   it changed, rather than mix two states.
+- A read that fails inside either kind, because a record it followed was removed or replaced meanwhile, is judged
+  by the revision too: if the store moved, the failure is a version conflict, not corruption; if it did not, the
+  failure stands.
 - Single reads (the current value of a key, a scan of current entries) need no revision.
 
 **Sequences after a restore.** The `i`-th version of a restored history (from 1) gets sequence `i`, the sequence it

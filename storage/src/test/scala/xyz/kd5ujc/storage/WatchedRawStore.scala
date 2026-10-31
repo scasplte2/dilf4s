@@ -14,7 +14,8 @@ final class WatchedRawStore private (
   underlying: RawStore[IO],
   counts:     Ref[IO, (Int, Int)],
   crashing:   Ref[IO, Boolean],
-  hook:       Ref[IO, Option[(ByteVector, IO[Unit])]]
+  hook:       Ref[IO, Option[(ByteVector, IO[Unit])]],
+  getHook:    Ref[IO, Option[(ByteVector, IO[Unit])]]
 ) extends RawStore[IO] {
 
   /** `(write, writeIf)` calls so far, crashed ones included. */
@@ -24,8 +25,17 @@ final class WatchedRawStore private (
   private def crashOr[A](fa: IO[A]): IO[A] =
     crashing.get.flatMap(c => if (c) IO.raiseError(new RuntimeException("crash before the batch landed")) else fa)
 
-  def get(key:     ByteVector): IO[Option[ByteVector]] = underlying.get(key)
-  def getAll(keys: List[ByteVector]): IO[List[Option[ByteVector]]] = underlying.getAll(keys)
+  /** Runs `action` once, just before the next point read of a key starting with `prefix`. */
+  def beforeNextGetOf(prefix: ByteVector, action: IO[Unit]): IO[Unit] = getHook.set(Some(prefix -> action))
+
+  private def beforeGet(keys: List[ByteVector]): IO[Unit] =
+    getHook.modify {
+      case Some((p, action)) if keys.exists(_.startsWith(p)) => (None, action)
+      case other                                             => (other, IO.unit)
+    }.flatten
+
+  def get(key:     ByteVector): IO[Option[ByteVector]] = beforeGet(List(key)) >> underlying.get(key)
+  def getAll(keys: List[ByteVector]): IO[List[Option[ByteVector]]] = beforeGet(keys) >> underlying.getAll(keys)
 
   /**
    * Runs `action` once, just before the next scan whose lower bound starts with `prefix`: a deterministic way to land
@@ -52,6 +62,10 @@ final class WatchedRawStore private (
 
 object WatchedRawStore {
   def apply(underlying: RawStore[IO]): IO[WatchedRawStore] =
-    (Ref.of[IO, (Int, Int)]((0, 0)), Ref.of[IO, Boolean](false), Ref.of[IO, Option[(ByteVector, IO[Unit])]](None))
-      .mapN(new WatchedRawStore(underlying, _, _, _))
+    (
+      Ref.of[IO, (Int, Int)]((0, 0)),
+      Ref.of[IO, Boolean](false),
+      Ref.of[IO, Option[(ByteVector, IO[Unit])]](None),
+      Ref.of[IO, Option[(ByteVector, IO[Unit])]](None)
+    ).mapN(new WatchedRawStore(underlying, _, _, _, _))
 }
