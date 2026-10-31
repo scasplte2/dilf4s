@@ -215,7 +215,7 @@ impl Decoder<'_> {
                             reason: NonCanonicalReason::KeyOrder,
                         });
                     }
-                    *pending = Some(PendingKey { key, start, end });
+                    *pending = Some(PendingKey { key: String::from(key.as_str()), start, end });
                     return Ok(Next::Read(end));
                 }
                 Frame::Map { remaining, entries, last_key, pending } => {
@@ -250,13 +250,13 @@ impl Decoder<'_> {
     fn read_item(&self, pos: usize) -> Result<(Item, usize), CanonicalError> {
         let Head { major, argument, end } = self.read_head(pos)?;
         match major {
-            MAJOR_UNSIGNED => Ok((Item::Scalar(Value::Int(BigInt::from(argument))), end)),
-            MAJOR_NEGATIVE => Ok((Item::Scalar(Value::Int(-BigInt::from(argument) - BigInt::one())), end)),
-            MAJOR_BYTES => self.span(end, argument).map(|(b, e)| (Item::Scalar(Value::Bytes(b.to_vec())), e)),
+            MAJOR_UNSIGNED => Ok((Item::Scalar(Value::int(argument)), end)),
+            MAJOR_NEGATIVE => Ok((Item::Scalar(Value::int(-BigInt::from(argument) - BigInt::one())), end)),
+            MAJOR_BYTES => self.span(end, argument).map(|(b, e)| (Item::Scalar(Value::bytes(b)), e)),
             MAJOR_TEXT => {
                 let (b, e) = self.span(end, argument)?;
                 let text = core::str::from_utf8(b).map_err(|_| CanonicalError::InvalidUtf8 { offset: end })?;
-                Ok((Item::Scalar(Value::Text(String::from(text))), e))
+                Ok((Item::Scalar(Value::text(text)), e))
             }
             MAJOR_ARRAY => self.count(end, argument, 1).map(|n| (Item::OpenArray(n), end)),
             MAJOR_MAP => self.count(end, argument, 2).map(|n| (Item::OpenMap(n), end)),
@@ -305,7 +305,7 @@ impl Decoder<'_> {
     fn read_tagged(&self, pos: usize, tag: u64, end: usize) -> Result<(Value, usize), CanonicalError> {
         match tag {
             TAG_POSITIVE_BIGNUM | TAG_NEGATIVE_BIGNUM => {
-                self.read_bignum(pos, tag, end).map(|(n, e)| (Value::Int(n), e))
+                self.read_bignum(pos, tag, end).map(|(n, e)| (Value::int(n), e))
             }
             TAG_RATIONAL => self.read_rational(pos, end),
             _ => Err(CanonicalError::Unsupported { offset: pos, item: UnsupportedItem::Tag(tag) }),

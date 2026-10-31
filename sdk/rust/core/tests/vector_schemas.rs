@@ -142,7 +142,7 @@ fn encoding_a_model_nested_past_the_depth_limit_is_a_typed_error() {
 fn cddl_integers_follow_rfc_8610() {
     // `uint` is major type 0 (up to 2^64 - 1); a wider integer needs an explicit range in the schema
     let bits = |n: dilf4s_core::BigInt| {
-        Value::map(vec![("bits".to_owned(), Value::Int(n)), ("bytes".to_owned(), Value::text(""))]).expect("a map")
+        Value::map(vec![("bits".to_owned(), Value::int(n)), ("bytes".to_owned(), Value::text(""))]).expect("a map")
     };
     let max = (dilf4s_core::BigInt::from(1u8) << 64u32) - 1u8;
     assert!(trie_vectors::TrieBits::from_value(&bits(max.clone())).is_ok(), "2^64 - 1 is a uint");

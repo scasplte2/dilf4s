@@ -182,7 +182,7 @@ impl Parser<'_> {
         match self.at(p) {
             Some(b'"') => {
                 let (s, next) = self.string(p)?;
-                String::from_utf8(s).map(|t| (Value::Text(t), next)).map_err(|_| CanonicalError::UnpairedSurrogate)
+                String::from_utf8(s).map(|t| (Value::text(t), next)).map_err(|_| CanonicalError::UnpairedSurrogate)
             }
             Some(b't') if rest.starts_with("true") => Ok((Value::Bool(true), p.saturating_add(4))),
             Some(b'f') if rest.starts_with("false") => Ok((Value::Bool(false), p.saturating_add(5))),
@@ -241,7 +241,7 @@ impl Parser<'_> {
         let value = if scale >= 0 {
             Value::number(&unscaled, &power(scale)?).map_err(|_| invalid(None))?
         } else {
-            Value::Int(unscaled * power(scale)?)
+            Value::int(unscaled * power(scale)?)
         };
         Ok((value, end))
     }
