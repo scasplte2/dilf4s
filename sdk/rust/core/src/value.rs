@@ -18,7 +18,7 @@
 //!   into typed models) costs O(weight), not O(memory): bound the weight of a value not known to be small first, or
 //!   use the budgeted [`crate::cbor::encode_within`] and [`crate::cbor::encoded_len_within`];
 //! - equality never expands: it records the pairs of shared parts it has proven equal and skips them when they recur;
-//! - [`fmt::Debug`] shows at most [`DEBUG_BUDGET`] units of weight and elides the rest as `…`.
+//! - [`fmt::Debug`] shows at most [`DEBUG_BUDGET`] units of weight and [`DEBUG_DEPTH`] levels, and elides the rest as `…`.
 //!
 //! Values decoded from bytes are trees, not shared, so their weight is bounded by their input: every canonical
 //! encoding is at least as long as its value's weight (see [`crate::cbor::encode_within`]).
@@ -52,11 +52,11 @@ pub use map::{Entries, Map};
 
 /// The nesting limit for arrays and maps: a scalar has depth 0, an array or map one more than its deepest element.
 ///
-/// Every walk of a [`Value`] relies on it: dropping the last reference to a value, [`fmt::Debug`], the CBOR encoder
-/// and the JSON renderer recurse at most `MAX_DEPTH` (256) frames deep, and [`PartialEq`] keeps an explicit stack of
-/// at most that many frames, never by input size. A map is a balanced tree (see [`Map`]): walking its entries keeps a
-/// stack of at most its height (under 92), and dropping it recurses that deep too, so a drop is at most `MAX_DEPTH`
-/// levels of values times that.
+/// No walk of a [`Value`] recurses on the native stack by its depth or size, so every one is safe on a small stack
+/// (an SP1 guest's): [`PartialEq`], the CBOR encoder and decoder, and the JSON renderer and parser keep explicit
+/// stacks of at most `MAX_DEPTH` (256) open containers; a map's entries come from an explicit stack of at most its
+/// tree height (under 92, see [`Map`]); dropping releases parts from an explicit worklist; and [`fmt::Debug`], which
+/// recurses through the formatter, stops at [`DEBUG_DEPTH`] levels.
 pub const MAX_DEPTH: usize = 256;
 
 /// The greatest [`Value::weight`]: weights saturate here (the Scala reference's `Long.MaxValue`), never wrap.
@@ -89,7 +89,7 @@ fn limbs(n: &BigInt) -> u64 {
 /// A canonical value.
 ///
 /// Cloning is O(1), comparing never expands shared parts, and formatting is budgeted: see the [module
-/// documentation](self). Every walk is at most [`MAX_DEPTH`] deep.
+/// documentation](self). No walk of it recurses by its depth or size (see [`MAX_DEPTH`]).
 #[derive(Clone)]
 pub enum Value {
     /// `null`.
@@ -750,13 +750,43 @@ impl<'a> Comparison<'a> {
 /// value is then bounded by this budget, however often it repeats a shared part.
 pub const DEBUG_BUDGET: u64 = 1 << 16;
 
-/// The budget left in one `fmt` call. The `Cell` lives on that call's stack, never in a value.
-type Left = core::cell::Cell<u64>;
+/// How many arrays and maps deep [`fmt::Debug`] shows; deeper ones are elided as `…`. Formatting recurses through the
+/// formatter once per level shown, so this, not [`MAX_DEPTH`], bounds its native stack.
+pub const DEBUG_DEPTH: usize = 16;
+
+/// The budget left in one `fmt` call, and how deep it is. The cells live on that call's stack, never in a value.
+struct Left {
+    units: core::cell::Cell<u64>,
+    depth: core::cell::Cell<usize>,
+}
+
+impl Left {
+    const fn new(units: u64) -> Self {
+        Self { units: core::cell::Cell::new(units), depth: core::cell::Cell::new(0) }
+    }
+
+    /// `show` one level deeper, or `…` past [`DEBUG_DEPTH`] or the budget.
+    fn nested(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        show: impl FnOnce(&mut fmt::Formatter<'_>) -> fmt::Result,
+    ) -> fmt::Result {
+        let depth = self.depth.get();
+        // an elided container still costs a unit, so the output stays within the budget
+        if !spend(self, 1) || depth >= DEBUG_DEPTH {
+            return fmt::Debug::fmt(&Elided, f);
+        }
+        self.depth.set(depth.saturating_add(1));
+        let shown = show(f);
+        self.depth.set(depth);
+        shown
+    }
+}
 
 fn spend(left: &Left, weight: u64) -> bool {
-    let l = left.get();
+    let l = left.units.get();
     let affordable = weight <= l;
-    left.set(if affordable { l.saturating_sub(weight) } else { 0 });
+    left.units.set(if affordable { l.saturating_sub(weight) } else { 0 });
     affordable
 }
 
@@ -810,28 +840,26 @@ impl fmt::Debug for Shown<'_, Value> {
 impl fmt::Debug for Shown<'_, Array> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(a, left) = *self;
-        if !spend(left, 1) {
-            return Elided.fmt(f);
-        }
-        f.debug_struct("Array")
-            .field("items", &Shown(&*a.items, left))
-            .field("depth", &a.depth)
-            .field("weight", &a.weight)
-            .finish()
+        left.nested(f, |f| {
+            f.debug_struct("Array")
+                .field("items", &Shown(&*a.items, left))
+                .field("depth", &a.depth)
+                .field("weight", &a.weight)
+                .finish()
+        })
     }
 }
 
 impl fmt::Debug for Shown<'_, Map> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(m, left) = *self;
-        if !spend(left, 1) {
-            return Elided.fmt(f);
-        }
-        f.debug_struct("Map")
-            .field("entries", &ShownEntries(m, left))
-            .field("depth", &m.depth())
-            .field("weight", &m.weight())
-            .finish()
+        left.nested(f, |f| {
+            f.debug_struct("Map")
+                .field("entries", &ShownEntries(m, left))
+                .field("depth", &m.depth())
+                .field("weight", &m.weight())
+                .finish()
+        })
     }
 }
 
@@ -840,7 +868,7 @@ impl fmt::Debug for Shown<'_, [Value]> {
         let Self(items, left) = *self;
         let mut list = f.debug_list();
         for v in items {
-            if left.get() == 0 {
+            if left.units.get() == 0 {
                 list.entry(&Elided);
                 break;
             }

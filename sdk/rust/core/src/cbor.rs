@@ -8,7 +8,7 @@ use num_integer::Integer;
 use num_traits::One;
 
 use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem};
-use crate::value::{Array, MAX_DEPTH, MAX_WEIGHT, Map, Rational, Text, Value, bit_length};
+use crate::value::{Array, Entries, MAX_DEPTH, MAX_WEIGHT, Map, Rational, Text, Value, bit_length};
 
 const TAG_POSITIVE_BIGNUM: u64 = 2;
 const TAG_NEGATIVE_BIGNUM: u64 = 3;
@@ -158,36 +158,60 @@ impl Sink for Budget<'_> {
     }
 }
 
-/// Recursion is bounded: a [`Value`] never nests deeper than [`MAX_DEPTH`]. Every node writes its first byte before
-/// its children (the budget relies on it).
+/// An array or map being written: the elements still to come.
+enum Open<'a> {
+    Items(core::slice::Iter<'a, Value>),
+    Entries(Entries<'a>),
+}
+
+/// Never recursive: an explicit stack holds one open container per level of nesting (at most [`MAX_DEPTH`]), and a
+/// map's entries come from its own explicit stack. Every node writes its first byte before its children (the budget
+/// relies on it).
 fn write_value<S: Sink>(out: &mut S, value: &Value) -> Result<(), S::Error> {
-    match value {
-        Value::Null => out.put(&[0xf6]),
-        Value::Bool(false) => out.put(&[0xf4]),
-        Value::Bool(true) => out.put(&[0xf5]),
-        Value::Int(n) => write_integer(out, n),
-        Value::Rational(r) => {
-            head(out, MAJOR_TAG, TAG_RATIONAL)?;
-            head(out, MAJOR_ARRAY, 2)?;
-            write_integer(out, r.numerator())?;
-            write_integer(out, r.denominator())
+    let mut stack: Vec<Open<'_>> = Vec::new();
+    let mut next = Some(value);
+    loop {
+        match next.take() {
+            Some(Value::Array(a)) => {
+                head(out, MAJOR_ARRAY, length(a.items().len()))?;
+                stack.push(Open::Items(a.items().iter()));
+            }
+            Some(Value::Map(m)) => {
+                // entries come in canonical key order
+                head(out, MAJOR_MAP, length(m.len()))?;
+                stack.push(Open::Entries(m.entries()));
+            }
+            Some(Value::Null) => out.put(&[0xf6])?,
+            Some(Value::Bool(false)) => out.put(&[0xf4])?,
+            Some(Value::Bool(true)) => out.put(&[0xf5])?,
+            Some(Value::Int(n)) => write_integer(out, n)?,
+            Some(Value::Rational(r)) => {
+                head(out, MAJOR_TAG, TAG_RATIONAL)?;
+                head(out, MAJOR_ARRAY, 2)?;
+                write_integer(out, r.numerator())?;
+                write_integer(out, r.denominator())?;
+            }
+            Some(Value::Text(s)) => write_text(out, s)?,
+            Some(Value::Bytes(b)) => {
+                head(out, MAJOR_BYTES, length(b.len()))?;
+                out.put(b)?;
+            }
+            None => {}
         }
-        Value::Text(s) => write_text(out, s),
-        Value::Bytes(b) => {
-            head(out, MAJOR_BYTES, length(b.len()))?;
-            out.put(b)
+        let Some(open) = stack.last_mut() else {
+            return Ok(());
+        };
+        match open {
+            Open::Items(items) => next = items.next(),
+            Open::Entries(entries) => {
+                if let Some((k, v)) = entries.next() {
+                    write_text(out, k)?;
+                    next = Some(v);
+                }
+            }
         }
-        Value::Array(a) => {
-            head(out, MAJOR_ARRAY, length(a.items().len()))?;
-            a.items().iter().try_for_each(|v| write_value(out, v))
-        }
-        Value::Map(m) => {
-            // entries are held in canonical key order
-            head(out, MAJOR_MAP, length(m.len()))?;
-            m.entries().try_for_each(|(k, v)| {
-                write_text(out, k)?;
-                write_value(out, v)
-            })
+        if next.is_none() {
+            stack.pop();
         }
     }
 }

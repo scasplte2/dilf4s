@@ -370,7 +370,7 @@ fn object(entries: Vec<(Wtf8, Value)>) -> Result<Map, CanonicalError> {
 // ------------------------------------------------------------------------------------------------ render
 
 /// Compact JSON with object members in code-point order of their names. Fails for bytes and for rationals with no
-/// terminating decimal. Recursion is bounded by [`MAX_DEPTH`].
+/// terminating decimal. Never recursive: its explicit stack holds at most [`MAX_DEPTH`] open containers.
 ///
 /// It costs at least O([`Value::weight`]) (a rational can render longer than its weight), which for a value built
 /// with shared parts can be far more than the value occupies: bound the weight of such a value first.
@@ -380,45 +380,67 @@ pub fn render(value: &Value) -> Result<String, CanonicalError> {
     Ok(out)
 }
 
+/// An array or object being rendered: the elements still to come, and whether one has been written.
+enum Open<'a> {
+    Items { items: core::slice::Iter<'a, Value>, started: bool },
+    Members { members: alloc::vec::IntoIter<(&'a Text, &'a Value)>, started: bool },
+}
+
+/// Never recursive: an explicit stack holds one open container per level of nesting (at most [`MAX_DEPTH`]).
 fn write_json(out: &mut String, value: &Value) -> Result<(), CanonicalError> {
-    match value {
-        Value::Null => out.push_str("null"),
-        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-        Value::Int(n) => push_display(out, n),
-        Value::Rational(r) => out.push_str(
-            &decimal(r).ok_or(CanonicalError::NotJsonRepresentable { kind: NotJson::NonTerminatingRational })?,
-        ),
-        Value::Text(s) => quote(out, s),
-        Value::Bytes(_) => {
-            return Err(CanonicalError::NotJsonRepresentable { kind: NotJson::Bytes });
-        }
-        Value::Array(a) => {
-            out.push('[');
-            for (i, v) in a.items().iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                write_json(out, v)?;
+    let mut stack: Vec<Open<'_>> = Vec::new();
+    let mut next = Some(value);
+    loop {
+        match next.take() {
+            Some(Value::Null) => out.push_str("null"),
+            Some(Value::Bool(b)) => out.push_str(if *b { "true" } else { "false" }),
+            Some(Value::Int(n)) => push_display(out, n),
+            Some(Value::Rational(r)) => out.push_str(
+                &decimal(r).ok_or(CanonicalError::NotJsonRepresentable { kind: NotJson::NonTerminatingRational })?,
+            ),
+            Some(Value::Text(s)) => quote(out, s),
+            Some(Value::Bytes(_)) => return Err(CanonicalError::NotJsonRepresentable { kind: NotJson::Bytes }),
+            Some(Value::Array(a)) => {
+                out.push('[');
+                stack.push(Open::Items { items: a.items().iter(), started: false });
             }
-            out.push(']');
+            Some(Value::Map(m)) => {
+                // Rust orders str by bytes, which for UTF-8 is code-point order
+                let mut members: Vec<(&Text, &Value)> = m.entries().collect();
+                members.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
+                out.push('{');
+                stack.push(Open::Members { members: members.into_iter(), started: false });
+            }
+            None => {}
         }
-        Value::Map(m) => {
-            // Rust orders str by bytes, which for UTF-8 is code-point order
-            let mut entries: Vec<(&Text, &Value)> = m.entries().collect();
-            entries.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
-            out.push('{');
-            for (i, (k, v)) in entries.into_iter().enumerate() {
-                if i > 0 {
+        let Some(open) = stack.last_mut() else {
+            return Ok(());
+        };
+        let closed = match open {
+            Open::Items { items, started } => items.next().map_or(Some(']'), |v| {
+                if *started {
                     out.push(',');
                 }
+                *started = true;
+                next = Some(v);
+                None
+            }),
+            Open::Members { members, started } => members.next().map_or(Some('}'), |(k, v)| {
+                if *started {
+                    out.push(',');
+                }
+                *started = true;
                 quote(out, k);
                 out.push(':');
-                write_json(out, v)?;
-            }
-            out.push('}');
+                next = Some(v);
+                None
+            }),
+        };
+        if let Some(close) = closed {
+            out.push(close);
+            stack.pop();
         }
     }
-    Ok(())
 }
 
 fn push_display(out: &mut String, n: &BigInt) {

@@ -9,8 +9,7 @@
 //!
 //! **Bounds.** An AVL tree of `n` entries is at most `1.44 log2(n + 2)` high: under 92 for any `n` below `2^64`.
 //! Insertion, removal and building recurse at most that deep; iteration keeps an explicit stack of at most that many
-//! nodes. Dropping a map's last reference recurses through its tree as well as through the values it holds, so a
-//! drop is at most `MAX_DEPTH` nested maps of at most that height each.
+//! nodes. Dropping never recurses: see [`release`].
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -19,7 +18,7 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::iter::FusedIterator;
 
-use super::{MAX_DEPTH, MAX_WEIGHT, Text, Value, canonical_key_order};
+use super::{Array, MAX_DEPTH, MAX_WEIGHT, Text, Value, canonical_key_order};
 use crate::error::CanonicalError;
 
 type Link = Option<Arc<Node>>;
@@ -157,6 +156,108 @@ fn build(entries: &mut impl Iterator<Item = (Text, Value)>, n: usize) -> Link {
     let (key, value) = entries.next()?;
     let right = build(entries, n.saturating_sub(half).saturating_sub(1));
     Some(node(key, value, left, right))
+}
+
+// ------------------------------------------------------------------------------------------------ dropping
+
+/// A part of a value being released whose children may still need releasing.
+enum Part {
+    /// A tree node: its subtrees and its value.
+    Node(Arc<Node>),
+    /// An array, with the index of the next element to look at.
+    Array { array: Array, next: usize },
+}
+
+fn is_container(v: &Value) -> bool {
+    matches!(v, Value::Array(_) | Value::Map(_))
+}
+
+/// Queues what `v` holds, or lets it go at once: a scalar's drop never recurses.
+fn queue(work: &mut Vec<Part>, v: Value) {
+    match v {
+        Value::Array(array) => work.push(Part::Array { array, next: 0 }),
+        Value::Map(mut m) => {
+            if let Some(root) = m.root.take() {
+                work.push(Part::Node(root));
+            }
+        }
+        _ => {}
+    }
+}
+
+impl Node {
+    /// Moves this node's subtrees and container value into `work`, leaving a node whose drop is flat.
+    fn surrender(&mut self, work: &mut Vec<Part>) {
+        if let Some(left) = self.left.take() {
+            work.push(Part::Node(left));
+        }
+        if let Some(right) = self.right.take() {
+            work.push(Part::Node(right));
+        }
+        if is_container(&self.value) {
+            queue(work, core::mem::replace(&mut self.value, Value::Null));
+        }
+    }
+}
+
+/// Releases everything in `work` with an explicit worklist, never by recursion: a part held only here has its
+/// children moved out (into `work`) before it is dropped, so every drop that runs is flat; a part shared elsewhere
+/// only loses a reference. An array gives up one container element at a time, so the worklist holds at most a few
+/// parts per level of nesting and of tree height, never a whole array's elements.
+///
+/// Every `Drop` of a [`Value`]'s containers ([`Array`], [`Map`], and a tree node) starts here, so dropping any value,
+/// however deep and however large its maps, uses a bounded native stack.
+fn release(work: &mut Vec<Part>) {
+    while let Some(part) = work.pop() {
+        match part {
+            Part::Node(mut n) => {
+                if let Some(node) = Arc::get_mut(&mut n) {
+                    node.surrender(work);
+                }
+            }
+            Part::Array { mut array, next } => {
+                let taken = Arc::get_mut(&mut array.items).and_then(|items| {
+                    let (i, slot) = items.iter_mut().enumerate().skip(next).find(|(_, v)| is_container(v))?;
+                    Some((i, core::mem::replace(slot, Value::Null)))
+                });
+                if let Some((i, child)) = taken {
+                    work.push(Part::Array { array, next: i.saturating_add(1) });
+                    queue(work, child);
+                }
+            }
+        }
+    }
+}
+
+impl Drop for Node {
+    fn drop(&mut self) {
+        let mut work = Vec::new();
+        self.surrender(&mut work);
+        release(&mut work);
+    }
+}
+
+impl Drop for Map {
+    fn drop(&mut self) {
+        if let Some(mut root) = self.root.take() {
+            if let Some(node) = Arc::get_mut(&mut root) {
+                let mut work = Vec::new();
+                node.surrender(&mut work);
+                release(&mut work);
+            }
+        }
+    }
+}
+
+impl Drop for Array {
+    fn drop(&mut self) {
+        let Some(items) = Arc::get_mut(&mut self.items) else { return };
+        let mut work = Vec::new();
+        for slot in items.iter_mut().filter(|v| is_container(v)) {
+            queue(&mut work, core::mem::replace(slot, Value::Null));
+            release(&mut work);
+        }
+    }
 }
 
 /// A map with unique text keys, no null values, keys in canonical order and nesting within [`MAX_DEPTH`]: a persistent

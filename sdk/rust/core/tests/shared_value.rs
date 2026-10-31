@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use common::{bytes, load, read_vectors, vectors_dir};
 use dilf4s_core::generated::canonical_vectors::{CanonicalJsonCase, CanonicalVectors};
-use dilf4s_core::{BigInt, CanonicalError, MAX_DEPTH, MAX_WEIGHT, Value, cbor, json};
+use dilf4s_core::{BigInt, CanonicalError, MAX_DEPTH, MAX_WEIGHT, Map, Text, Value, cbor, json};
 
 /// Java's `BigInteger.bitLength`, computed differently from core: a negative `n` has the bit length of `-n - 1`.
 fn java_bit_length(n: &BigInt) -> BigInt {
@@ -320,7 +320,9 @@ fn debug_output_is_budgeted() {
     let start = Instant::now();
     let dag = doubled(Value::text("a"), 60);
     let shown = format!("{dag:?}");
-    assert!(shown.len() < 1 << 21, "{} bytes of output", shown.len());
+    // each unit of the budget prints at most one container's frame (about 70 bytes) or a small scalar
+    let limit = 80 * usize::try_from(dilf4s_core::value::DEBUG_BUDGET).unwrap();
+    assert!(shown.len() < limit, "{} bytes of output", shown.len());
     assert!(shown.contains('…'), "the rest is elided");
     let big = Value::array(vec![Value::text("x".repeat(1 << 20))]).unwrap();
     let shown = format!("{big:?}");
@@ -452,10 +454,10 @@ fn keyed(n: usize) -> Vec<String> {
     (0..n).map(|i| format!("key-{}", (i * 7919) % n)).collect()
 }
 
-fn built_by_updates(keys: &[String]) -> dilf4s_core::Map {
-    keys.iter().enumerate().fold(dilf4s_core::Map::new([]).unwrap(), |m, (i, k)| {
-        m.updated(dilf4s_core::Text::from(k.as_str()), Value::int(i % 97)).unwrap()
-    })
+fn built_by_updates(keys: &[String]) -> Map {
+    keys.iter()
+        .enumerate()
+        .fold(Map::new([]).unwrap(), |m, (i, k)| m.updated(Text::from(k.as_str()), Value::int(i % 97)).unwrap())
 }
 
 #[test]
@@ -465,11 +467,11 @@ fn a_map_built_by_updates_in_any_order_is_the_same_value() {
     let mut reversed_keys = keys.clone();
     reversed_keys.reverse();
     // the same final entries: each key's value depends on its position in `keys`, so rebuild them that way
-    let reversed = reversed_keys.iter().fold(dilf4s_core::Map::new([]).unwrap(), |m, k| {
+    let reversed = reversed_keys.iter().fold(Map::new([]).unwrap(), |m, k| {
         let i = keys.iter().position(|x| x == k).unwrap();
-        m.updated(dilf4s_core::Text::from(k.as_str()), Value::int(i % 97)).unwrap()
+        m.updated(Text::from(k.as_str()), Value::int(i % 97)).unwrap()
     });
-    let fresh = dilf4s_core::Map::new(keys.iter().enumerate().map(|(i, k)| (k.clone(), Value::int(i % 97)))).unwrap();
+    let fresh = Map::new(keys.iter().enumerate().map(|(i, k)| (k.clone(), Value::int(i % 97)))).unwrap();
     let (a, b, c) = (Value::Map(in_order), Value::Map(reversed), Value::Map(fresh));
     assert!(a == b && b == c, "equal whatever the tree's shape");
     assert_eq!(cbor::encode(&a), cbor::encode(&c), "one encoding");
@@ -492,7 +494,7 @@ fn successive_updates_build_a_large_map_in_n_log_n() {
     let (half, full) = (time(50_000), time(100_000));
     let keys = keyed(100_000);
     let start = Instant::now();
-    let fresh = dilf4s_core::Map::new(keys.iter().enumerate().map(|(i, k)| (k.clone(), Value::int(i % 97)))).unwrap();
+    let fresh = Map::new(keys.iter().enumerate().map(|(i, k)| (k.clone(), Value::int(i % 97)))).unwrap();
     let new = start.elapsed();
     assert_eq!(fresh.len(), 100_000);
     eprintln!(
@@ -500,4 +502,62 @@ fn successive_updates_build_a_large_map_in_n_log_n() {
         full.as_secs_f64() / half.as_secs_f64()
     );
     assert!(full.as_secs() < 30, "100k updates took {full:?}");
+}
+
+/// Runs `f` on a thread with a 64 KiB stack, as small as an SP1 guest's might be.
+fn on_a_small_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new().stack_size(64 * 1024).spawn(f).unwrap().join().unwrap()
+}
+
+/// `levels` maps, each of `width` entries plus one holding the next, nested at the greatest key (so it sits at the
+/// bottom of its tree's right spine): the most drop frames a recursive drop would need, `levels × tree height`.
+fn nested_maps(levels: usize, width: usize) -> Value {
+    (0..levels).fold(Value::int(0), |inner, level| {
+        let base = Map::new((0..width).map(|i| (format!("k{i:05}"), Value::int(i + level)))).unwrap();
+        Value::Map(base.updated(Text::from("z-next"), inner).unwrap())
+    })
+}
+
+#[test]
+fn dropping_a_deep_and_wide_value_never_recurses() {
+    // 255 nested maps of 2,000 entries (tree height about 12): some 3,000 frames if dropped recursively
+    let maps = nested_maps(255, 2_000);
+    assert_eq!(maps.depth(), 255);
+    on_a_small_stack(move || drop(maps));
+    // 255 nested arrays, each holding a wide array of maps beside the next
+    let wide =
+        Value::array((0..1_000).map(|i| Value::map([("k".to_owned(), Value::int(i))]).unwrap()).collect()).unwrap();
+    let arrays = (0..250).fold(Value::int(0), |inner, _| Value::array(vec![wide.clone(), inner]).unwrap());
+    drop(wide);
+    on_a_small_stack(move || drop(arrays));
+    // a single 100k-entry map
+    let big = Map::new((0..100_000).map(|i| (format!("{i}"), Value::int(i)))).unwrap();
+    on_a_small_stack(move || drop(big));
+    // a value shared with a live copy is released only when its last reference goes
+    let shared = nested_maps(50, 100);
+    let copy = shared.clone();
+    on_a_small_stack(move || drop(shared));
+    assert_eq!(copy.depth(), 50, "the copy is intact");
+}
+
+#[test]
+fn walking_a_deep_and_wide_value_keeps_to_explicit_or_depth_bounded_stacks() {
+    let a = nested_maps(255, 2_000);
+    let b = nested_maps(255, 2_000);
+    on_a_small_stack(move || {
+        // equality: an explicit stack of frames, each map's entries an explicit stack of at most its height
+        assert!(a == b, "equal");
+        let Value::Map(m) = &a else { panic!("a map") };
+        assert_eq!(m.entries().count(), 2_001, "iteration");
+        // the encoder and the renderer: explicit stacks of at most MAX_DEPTH open containers
+        let encoded = cbor::encode(&a);
+        assert_eq!(cbor::encoded_len_within(&a, encoded.len()), Ok(encoded.len()), "measured");
+        assert!(json::render(&a).unwrap().ends_with('}'), "rendered");
+        // decoding keeps its own stack too
+        assert!(cbor::decode(&encoded).unwrap() == a, "decoded");
+        // Debug recurses through the formatter, but only DEBUG_DEPTH levels deep
+        let shown = format!("{a:?}");
+        assert!(shown.contains('…'), "deep levels elided");
+        (a, b)
+    });
 }
