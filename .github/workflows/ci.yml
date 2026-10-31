@@ -78,7 +78,8 @@ jobs:
         with:
           components: rustfmt, clippy
           # SP1 v6 guests build for riscv64im-succinct-zkvm-elf with atomics lowered (-Cpasses=lower-atomic), a target
-          # rustup does not ship. riscv64imac-unknown-none-elf stands in: 64-bit, no std, atomic CAS available
+          # rustup does not ship. riscv64imac-unknown-none-elf stands in: 64-bit, no std, atomic CAS available. It does not
+          # compile the SP1 patches' target_os = "zkvm" paths (their precompile calls): only an SP1 guest build does
           targets: riscv64imac-unknown-none-elf
       - uses: Swatinem/rust-cache@v2
         with:

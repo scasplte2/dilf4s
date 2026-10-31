@@ -84,7 +84,9 @@ pub struct VerifyingKey {
 }
 
 impl VerifyingKey {
-    /// A key from its encoded points; `ic` holds `IC_0` then one point per public input.
+    /// A key from its encoded points; `ic` holds `IC_0` then one point per public input. Every point must be a
+    /// valid, finite point: an identity in a key could cancel terms of the pairing equation, so that some proof would
+    /// verify for every input.
     pub fn from_bytes(
         alpha: &[u8; G1_BYTES],
         beta: &[u8; G2_BYTES],
@@ -94,12 +96,12 @@ impl VerifyingKey {
     ) -> Result<Self, Groth16Error> {
         let (first, rest) = ic.split_first().ok_or_else(|| malformed("IC needs IC_0"))?;
         Ok(Self {
-            alpha: decode_g1(alpha)?,
-            beta: decode_g2(beta)?,
-            gamma: decode_g2(gamma)?,
-            delta: decode_g2(delta)?,
-            ic0: decode_g1(first)?,
-            ic: rest.iter().map(|p| decode_g1(p)).collect::<Result<_, _>>()?,
+            alpha: finite_g1(alpha, "alpha")?,
+            beta: finite_g2(beta, "beta")?,
+            gamma: finite_g2(gamma, "gamma")?,
+            delta: finite_g2(delta, "delta")?,
+            ic0: finite_g1(first, "IC_0")?,
+            ic: rest.iter().map(|p| finite_g1(p, "an IC point")).collect::<Result<_, _>>()?,
         })
     }
 
@@ -107,6 +109,16 @@ impl VerifyingKey {
     pub fn public_inputs(&self) -> usize {
         self.ic.len()
     }
+}
+
+fn finite_g1(bytes: &[u8; G1_BYTES], role: &str) -> Result<G1, Groth16Error> {
+    let p = decode_g1(bytes)?;
+    if p.is_zero() { Err(malformed(&alloc::format!("the key's {role} is the identity"))) } else { Ok(p) }
+}
+
+fn finite_g2(bytes: &[u8; G2_BYTES], role: &str) -> Result<G2, Groth16Error> {
+    let p = decode_g2(bytes)?;
+    if p.is_zero() { Err(malformed(&alloc::format!("the key's {role} is the identity"))) } else { Ok(p) }
 }
 
 /// Whether `x`, 32 bytes big-endian, is below `r`.
