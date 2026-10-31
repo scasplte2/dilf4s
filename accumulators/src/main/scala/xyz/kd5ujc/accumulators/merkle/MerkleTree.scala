@@ -5,7 +5,8 @@ import cats.syntax.all._
 
 import scala.annotation.tailrec
 
-import xyz.kd5ujc.core.canonical.{Canonical, CanonicalError, CanonicalValue, Cbor}
+import xyz.kd5ujc.accumulators.ValueCommitment
+import xyz.kd5ujc.core.canonical.{Canonical, CanonicalError}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
 
 import scodec.bits.ByteVector
@@ -183,12 +184,9 @@ object MerkleTree {
   def fromLeaves[H, A: Canonical](leaves: Iterable[A])(implicit M: MerkleHashing[H]): Either[CanonicalError, MerkleTree[H]] =
     leaves.toList.traverse(leaf[H, A](_)).map(fromLeafHashes[H])
 
-  /** A leaf's hash (docs/specs/merkle.md §2): a byte string as it is, any other value in canonical CBOR. */
+  /** A value leaf's hash (docs/specs/merkle.md §2): the leaf hash of its [[ValueCommitment]] bytes. */
   def leaf[H, A](value: A)(implicit M: MerkleHashing[H], C: Canonical[A]): Either[CanonicalError, Digest[H]] =
-    C.canonical(value).map {
-      case CanonicalValue.CBytes(b) => M.leaf(b)
-      case v                        => M.leaf(Cbor.encode(v))
-    }
+    C.canonical(value).map(v => M.leaf(ValueCommitment.bytes(v)))
 
   /** Largest power of two strictly below `n` (n >= 2). */
   private[merkle] def splitPoint(n: Long): Long = java.lang.Long.highestOneBit(n - 1)

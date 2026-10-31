@@ -4,6 +4,8 @@ import cats.effect.Concurrent
 import cats.syntax.all._
 import cats.{Eval, Parallel}
 
+import xyz.kd5ujc.accumulators.ValueCommitment
+import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.hash.Digest
 
 import scodec.bits.{BitVector, ByteVector}
@@ -35,7 +37,10 @@ final class Trie[H] private (
 
   def put(key:      ByteVector, valueHash: Digest[H]): Result[Trie[H]] = update(List(key -> Some(valueHash)))
   def putValue(key: ByteVector, value:     ByteVector): Result[Trie[H]] = put(key, T.value(value))
-  def remove(key:   ByteVector): Result[Trie[H]] = update(List(key -> None))
+
+  /** A value committed by its [[ValueCommitment]] bytes, as a JLVM program claims it. */
+  def putCanonical(key: ByteVector, value: CanonicalValue): Result[Trie[H]] = putValue(key, ValueCommitment.bytes(value))
+  def remove(key:       ByteVector): Result[Trie[H]] = update(List(key -> None))
 
   /** Applies writes in order (`None` deletes) and garbage-collects what the old root no longer shares. */
   def update(ops: List[(ByteVector, Option[Digest[H]])]): Result[Trie[H]] =

@@ -24,7 +24,15 @@ Domain separation uses tagged hashing (`docs/specs/canonical-encoding.md` §4) w
 | `nodeHash(l, r)` | `taggedHash_H("dilf4s/merkle/node/v1", l ‖ r)` |
 | `emptyHash` | `taggedHash_H("dilf4s/merkle/empty/v1", "")` |
 
-A leaf's `d` is the canonical encoding of the leaf value, or opaque bytes when the leaf is bytes.
+**Value commitment.** A value `v` becomes leaf or value bytes as `commit(v)`:
+- `0x00 ‖ b` for a byte string `b`;
+- `0x01 ‖ cbor(v)` for any other value (`canonical-encoding.md` §2).
+
+The tag keeps the mapping injective. Untagged, the bytes `0x6161` and the text `"a"` (whose CBOR is `0x6161`) would
+commit identically, and a proof of one would verify a claim of the other.
+
+A value leaf's `d` is `commit(value)` (`MerkleTree.leaf`). Trees whose leaves are opaque bytes use those bytes as `d`
+(`MerkleHashing.leaf`), as the conformance vectors do.
 
 An `rfc6962` profile exists only for interoperability tests: `leafHash(d) = H(0x00 ‖ d)`, `nodeHash(l, r) = H(0x01 ‖ l ‖ r)`, `emptyHash = H("")`.
 
