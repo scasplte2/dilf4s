@@ -1,0 +1,61 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/TriggerEventsSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 46,
+      "program": {"_triggers": [{"targetMachineId": "INTERP", "eventName": "activate", "payload": {"initiator": {"var": "machineId"}, "timestamp": 12345}}], "status": "triggered"},
+      "changes": [
+        "A: array-syntax [\"var\", ...] written as {\"var\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 79,
+      "program": [["status", "ACTIVE"], ["activatedBy", {"var": "event.initiator"}], ["activatedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 345,
+      "program": {"_triggers": [{"targetMachineId": "INTERP", "eventName": "receive", "payload": {"amount": {"+": [{"var": "state.balance"}, {"var": "event.amount"}]}, "sender": {"var": "machineId"}, "message": {"var": "event.message"}}}], "balance": {"-": [{"var": "state.balance"}, {"var": "event.amount"}]}},
+      "changes": [
+        "A: array-syntax [\"+\", ...] written as {\"+\": [...]}",
+        "A: array-syntax [\"var\", ...] written as {\"var\": ...}",
+        "A: array-syntax [\"-\", ...] written as {\"-\": [...]}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 379,
+      "program": [["amount", {"var": "event.amount"}], ["sender", {"var": "event.sender"}], ["message", {"var": "event.message"}]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 567,
+      "program": {"_triggers": [{"targetMachineId": "INTERP", "eventName": "pong", "payload": {}}], "count": {"+": [{"var": "state.count"}, 1]}},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/TriggerEventsSuite.scala:584 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 614,
+      "program": {"_triggers": [{"targetMachineId": "INTERP", "eventName": "ping", "payload": {}}], "count": {"+": [{"var": "state.count"}, 1]}},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/TriggerEventsSuite.scala:631 $.transitions[1].effect"
+      ]
+    }
+  ]
+}

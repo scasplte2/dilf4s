@@ -1,0 +1,86 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/DefinitionLinterSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 89,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.retailerId"}, "eventName": "receive_shipment", "payload": {"object": {"quantity": {"var": "event.quantity"}}}}], "_transferAsset": [{"assetId": {"var": "event.goodsAssetId"}, "recipient": {"var": "event.retailerId"}}], "status": "shipped", "inventory": {"-": [{"var": "state.inventory"}, {"var": "event.quantity"}]}},
+      "changes": [
+        "K: single-key map \"quantity\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 140,
+      "program": {"_triger": [{"targetMachineId": "00000000-0000-0000-0000-000000000001", "eventName": "x", "payload": {}}], "status": "b"}
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 173,
+      "program": {">": [{"var": "state.unseeded"}, 0]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 174,
+      "program": {"object": {"status": "b"}},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/DefinitionLinterSuite.scala:207 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 255,
+      "program": {"_transferAsset": [{"assetId": {"var": "event.aid"}, "recipient": "__INTERP__"}], "done": true},
+      "placeholders": [
+        "__INTERP__"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 265,
+      "program": {"object": {"Fiber": {"object": {"fiberId": {"var": "event.to"}}}}},
+      "changes": [
+        "K: single-key map \"Fiber\" written as {\"object\": ...}",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 277,
+      "program": {"object": {"Fiber": {"object": {"nope": {"var": "event.to"}}}}},
+      "changes": [
+        "K: single-key map \"Fiber\" written as {\"object\": ...}",
+        "K: single-key map \"nope\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 325,
+      "program": {"var": "event.nf"}
+    },
+    {
+      "path": "$",
+      "line": 347,
+      "program": {"merge": [{"var": "state"}, {"set": [{}, {"var": "event.k"}, {"var": "event.v"}]}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/DirectiveInjectionHardeningSuite.scala:110 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 355,
+      "program": {"merge": [{"var": "state"}, {"object": {"tally": {"set": [{"var": "state.tally"}, {"var": "event.k"}, true]}}}]},
+      "changes": [
+        "K: single-key map \"tally\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 362,
+      "program": {"set": [{"var": "state"}, "status", "done"]}
+    }
+  ]
+}

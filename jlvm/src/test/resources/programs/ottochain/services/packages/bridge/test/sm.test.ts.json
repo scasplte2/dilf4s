@@ -1,0 +1,78 @@
+{
+  "source": {"repo": "ottochain-services", "commit": "cf05326", "file": "packages/bridge/test/sm.test.ts"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 71,
+      "program": {"===": [{"var": "event.agent"}, {"var": "state.creator"}]},
+      "alsoAt": [
+        "ottochain-services@cf05326:packages/bridge/test/sm.test.ts:71 $.transitions[1].guard",
+        "ottochain-services@cf05326:packages/traffic-generator/src/__tests__/orchestrator.test.ts:27 $.creatorGuard"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 71,
+      "program": {"merge": [{"var": "state"}, {"status": "CANCELLED", "cancelledAt": {"var": "event.timestamp"}, "reason": {"var": "event.reason"}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"cancelledAt\" -> event.timestamp (caller-supplied)"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 71,
+      "program": {"and": [{">": [{"var": "event.amount"}, 0]}, {"or": [{"!": {"var": "state.deadline"}}, {"<=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]}]},
+      "changes": [
+        "TS: $timestamp as an operand of <= -> $ordinal (deadlines count in ordinals)"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 71,
+      "program": {"merge": [{"var": "state"}, {"commitments": {"set": [{"var": "state.commitments"}, {"var": "event.agent"}, {"merge": [{"get": [{"var": "state.commitments"}, {"var": "event.agent"}, {"amount": 0, "data": {}}]}, {"amount": {"+": [{"get": [{"get": [{"var": "state.commitments"}, {"var": "event.agent"}, {"object": {"amount": 0}}]}, "amount", 0]}, {"var": "event.amount"}]}, "data": {"var": "event.data"}, "lastCommitAt": {"var": "event.timestamp"}}]}]}, "totalCommitted": {"+": [{"var": "state.totalCommitted"}, {"var": "event.amount"}]}}]},
+      "changes": [
+        "AL: setKey (data in metakit) written as set",
+        "AL: getKey (data in metakit) written as get",
+        "K: single-key map \"amount\" written as {\"object\": ...}",
+        "TS: $timestamp recorded as \"lastCommitAt\" -> event.timestamp (caller-supplied)"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 71,
+      "program": {"or": [{"===": [{"var": "event.agent"}, {"var": "state.creator"}]}, {"and": [{"var": "state.deadline"}, {">=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]}]},
+      "changes": [
+        "TS: $timestamp as an operand of >= -> $ordinal (deadlines count in ordinals)"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 71,
+      "program": {"or": [{"in": [{"var": "event.agent"}, {"var": "state.oracles"}]}, {"===": [{"var": "event.agent"}, {"var": "state.creator"}]}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 71,
+      "program": {"merge": [{"var": "state"}, {"status": "RESOLVING", "resolutions": {"cat": [{"var": "state.resolutions"}, [{"oracle": {"var": "event.agent"}, "outcome": {"var": "event.outcome"}, "proof": {"var": "event.proof"}, "submittedAt": {"var": "event.timestamp"}}]]}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"submittedAt\" -> event.timestamp (caller-supplied)"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 71,
+      "program": {"or": [{">=": [{"length": {"var": "state.resolutions"}}, {"var": "state.quorum"}]}, {"===": [{"var": "state.marketType"}, "crowdfund"]}, {"===": [{"var": "state.marketType"}, "group_buy"]}, {"===": [{"var": "state.marketType"}, "auction"]}]},
+      "changes": [
+        "AL: size (data in metakit) written as length"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 71,
+      "program": {"merge": [{"var": "state"}, {"status": "SETTLED", "settledAt": {"var": "event.timestamp"}, "finalOutcome": {"var": "event.outcome"}, "settlement": {"var": "event.settlement"}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"settledAt\" -> event.timestamp (caller-supplied)"
+      ]
+    }
+  ]
+}

@@ -10,8 +10,9 @@ import xyz.kd5ujc.core.canonical.CanonicalValue._
 
 /**
  * The calling convention of the example contracts in `resources/programs`: a program reads
- * `{"state": ..., "call": {"method": ..., ...}}` and the host bindings (`$sender`, the authenticated caller; `$timestamp`;
- * `$txHash`, what Ergo-style proofs sign), and returns `{"state": next, "effects": [...]}` or `{"reject": reason}`.
+ * `{"state": ..., "call": {"method": ..., ...}}` and the host bindings (`$sender`, the authenticated caller; `$ordinal`,
+ * the snapshot ordinal, which deadlines count in; `$txHash`, what Ergo-style proofs sign), and returns
+ * `{"state": next, "effects": [...]}` or `{"reject": reason}`.
  */
 object ContractHarness {
 

@@ -1,0 +1,47 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/simple-order/definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 41,
+      "program": {"merge": [{"var": "state"}, {"var": "event"}]},
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:50 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 63,
+      "program": {"merge": [{"var": "state"}, {"object": {"cancelReason": {"var": "event.reason"}}}]},
+      "changes": [
+        "K: single-key map \"cancelReason\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:packages/traffic-generator/test/simple-order.integration.test.ts:47 $.transitions[1].effect",
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:50 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 87,
+      "program": {"merge": [{"var": "state"}, {"object": {"trackingNumber": {"var": "event.trackingNumber"}}}]},
+      "changes": [
+        "K: single-key map \"trackingNumber\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:50 $.transitions[2].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 111,
+      "program": {"merge": [{"var": "state"}, {"object": {"deliveredAt": {"var": "event.timestamp"}}}]},
+      "changes": [
+        "K: single-key map \"deliveredAt\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:50 $.transitions[3].effect"
+      ]
+    }
+  ]
+}

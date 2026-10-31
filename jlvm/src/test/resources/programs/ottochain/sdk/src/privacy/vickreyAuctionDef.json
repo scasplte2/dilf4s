@@ -1,0 +1,37 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/privacy/index.ts#vickreyAuctionDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {">=": [{"var": "$ordinal"}, {"var": "state.deadline"}]},
+      "changes": [
+        "TS: $timestamp as an operand of >= -> $ordinal (deadlines count in ordinals)"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/privacy/index.ts#vickreyAuctionDef $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "REVEAL", "revealed": {"cat": [{"var": "state.revealed"}, [{"bidder": {"var": "event.bidder"}, "amount": {"var": "event.amount"}}]]}}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"revealed": {"cat": [{"var": "state.revealed"}, [{"bidder": {"var": "event.bidder"}, "amount": {"var": "event.amount"}}]]}}}]},
+      "changes": [
+        "K: single-key map \"revealed\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {">": [{"reduce": [{"var": "state.revealed"}, {"+": [{"var": "accumulator"}, 1]}, 0]}, 0]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "SETTLED", "settledAt": {"var": "event.timestamp"}, "winner": {"var": ["tally.winner", null]}, "clearingPrice": {"var": ["tally.second", 0]}, "tally": {"reduce": [{"var": "state.revealed"}, {"if": [{">": [{"var": "current.amount"}, {"var": "accumulator.max"}]}, {"max": {"var": "current.amount"}, "second": {"var": "accumulator.max"}, "winner": {"var": "current.bidder"}}, {"if": [{">": [{"var": "current.amount"}, {"var": "accumulator.second"}]}, {"max": {"var": "accumulator.max"}, "second": {"var": "current.amount"}, "winner": {"var": "accumulator.winner"}}, {"var": "accumulator"}]}]}, {"max": 0, "second": 0, "winner": null}]}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"settledAt\" -> event.timestamp (caller-supplied)"
+      ]
+    }
+  ]
+}

@@ -1,10 +1,10 @@
 {"let": [[
   ["s", {"var": "state"}],
-  ["t", {"var": "$timestamp"}],
+  ["height", {"var": "$ordinal"}],
   ["vested", {"if": [
-    {"<": [{"var": "$t"}, {"var": "state.cliff"}]}, 0,
-    {">=": [{"var": "$t"}, {"+": [{"var": "state.start"}, {"var": "state.duration"}]}]}, {"var": "state.total"},
-    {"floor": {"/": [{"*": [{"var": "state.total"}, {"-": [{"var": "$t"}, {"var": "state.start"}]}]}, {"var": "state.duration"}]}}
+    {"<": [{"var": "$height"}, {"var": "state.cliff"}]}, 0,
+    {">=": [{"var": "$height"}, {"+": [{"var": "state.start"}, {"var": "state.duration"}]}]}, {"var": "state.total"},
+    {"floor": {"/": [{"*": [{"var": "state.total"}, {"-": [{"var": "$height"}, {"var": "state.start"}]}]}, {"var": "state.duration"}]}}
   ]}],
   ["releasable", {"-": [{"var": "$vested"}, {"var": "state.released"}]}]
  ],

@@ -1,0 +1,98 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/contracts/state-machines/index.ts#contractEscrowDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"and": [{"in": [{"var": "state.depositor"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {">=": [{"var": "event.amount"}, {"var": "state.requiredAmount"}]}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"balance": {"var": "event.amount"}, "fundedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"or": [{"in": [{"var": "state.beneficiary"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"var": "state.autoActivate"}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"activatedAt": {"var": "$ordinal"}}}]},
+      "changes": [
+        "K: single-key map \"activatedAt\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"in": [{"var": "state.beneficiary"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"releaseRequest": {"requestedBy": {"var": "event.agent"}, "amount": {"var": "event.amount"}, "reason": {"var": "event.reason"}, "requestedAt": {"var": "$ordinal"}}, "releaseDeadline": {"+": [{"var": "$ordinal"}, {"var": "state.releaseWindowMs"}]}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"or": [{"in": [{"var": "state.depositor"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {">=": [{"var": "$ordinal"}, {"var": "state.releaseDeadline"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"releasedAt": {"var": "$ordinal"}, "releasedTo": {"var": "state.beneficiary"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"and": [{"in": [{"var": "state.depositor"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"<": [{"var": "$ordinal"}, {"var": "state.releaseDeadline"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"disputedAt": {"var": "$ordinal"}}}, {"_emit": [{"name": "dispute_opened", "data": {"caseType": "escrow_dispute", "plaintiff": {"var": "state.depositor"}, "defendant": {"var": "state.beneficiary"}, "claim": {"escrowId": {"var": "machineId"}, "amount": {"var": "state.balance"}}}, "destination": "Judiciary"}]}]},
+      "changes": [
+        "K: single-key map \"disputedAt\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"and": [{"in": [{"var": "state.arbiter"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"===": [{"reduce": [{"var": "event.splits"}, {"+": [{"var": "accumulator"}, {"var": "current.amount"}]}, 0]}, {"var": "state.balance"}]}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"splits": {"var": "event.splits"}, "rulingId": {"var": "event.rulingId"}}]}
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"or": [{"and": [{"in": [{"var": "state.depositor"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "state.beneficiary"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}, {">=": [{"var": "$ordinal"}, {"var": "state.expiresAt"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"refundedAt": {"var": "$ordinal"}}}]},
+      "changes": [
+        "K: single-key map \"refundedAt\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/contracts/state-machines/index.ts#contractEscrowDef $.transitions[7].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "program": {"in": [{"var": "state.depositor"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}
+    }
+  ]
+}

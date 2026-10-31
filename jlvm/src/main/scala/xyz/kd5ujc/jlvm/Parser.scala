@@ -22,26 +22,17 @@ import scodec.bits.ByteVector
  *     `{"var": [p, default]}` read a variable, with `p` a path or an expression computing one;
  *   - a single key starting with `_` is a map expression: no operation's name starts with `_`, so host triggers such
  *     as `{"_result": ...}` read as data;
- *   - any other single key is an error ([[Mode.Strict]], the default), so whether `{"count": 3}` is code never depends
- *     on the operation list, and typos such as `iff` are rejected. [[Mode.Lenient]] (opt-in, for migrating older
- *     programs) reads it as a map expression instead;
- *   - objects with any other number of keys are map expressions; arrays are evaluated element-wise; JSON null is the
- *     null literal; `0x`-hex strings are bytes ([[JsonSurface]]).
+ *   - any other single key is an error, so whether `{"count": 3}` is code never depends on the operation list, and
+ *     typos such as `iff` are rejected;
+ *   - an array headed by an operation's name (or `var`) is an error, so text shaped like a call is never data by
+ *     accident; objects with any other number of keys are map expressions; arrays are evaluated element-wise; JSON
+ *     null is the null literal; `0x`-hex strings are bytes ([[JsonSurface]]).
  *
  * Input is validated by the strict canonical JSON parser first (duplicate keys, depth, exact numbers), then read
- * structurally with nulls still visible, so a null field cannot turn a map expression into an operation.
- * [[render]] writes the strict surface back; [[migrate]] rewrites an older (lenient) program into it.
+ * structurally with nulls still visible, so a null field cannot turn a map expression into an operation. [[render]]
+ * writes the surface back.
  */
 object Parser {
-
-  enum Mode {
-
-    /** Every single-key object is an operation; unknown names are errors. The default. */
-    case Strict
-
-    /** Unknown single-key objects are map expressions (metakit's reading), for migrating older programs. */
-    case Lenient
-  }
 
   /** Surface keywords that are not operations. */
   val Literal: String = "literal"
@@ -51,308 +42,136 @@ object Parser {
   /** Single keys with this prefix are data: the namespace of host triggers (`_result`, `_emit`, `_spawn`). */
   val DataPrefix: String = "_"
 
-  /** metakit operations with no v1 form, and what replaces each: named in the error, so a migration knows where to go. */
-  val Removed: scala.collection.immutable.Map[String, String] = scala.collection.immutable.Map(
-    "prove_dlog_verify"    -> "a one-leaf sigma_verify over {\"type\": \"dlog\"} (docs/specs/sigma.md)",
-    "prove_dhtuple_verify" -> "a one-leaf sigma_verify over {\"type\": \"dhtuple\"} (docs/specs/sigma.md)",
-    "mpt_verify"           -> "trie_verify (docs/specs/trie.md)",
-    "mpt_prefix_verify"    -> "trie_prefix_verify (docs/specs/trie.md)",
-    "smt_verify"           -> "trie_verify (docs/specs/trie.md)",
-    "noop"                 -> "nothing: it was internal to metakit's evaluator"
-  )
-
   /**
-   * metakit's operation names (`JsonLogicOp`, metakit de2a856), the ones [[Mode.Lenient]] reads as operations: metakit
-   * read a single-key object or an array headed by any other name as data, even where v1 has an operation of that
-   * name. Each is a v1 operation or in [[Removed]].
+   * Names that are not operations although they read like one, each with what to write instead: the parse error
+   * names it.
    */
-  val MetakitOps: scala.collection.immutable.Set[String] = scala.collection.immutable.Set(
-    "noop",
-    "if",
-    "default",
-    "let",
-    "!",
-    "!!",
-    "or",
-    "and",
-    "==",
-    "===",
-    "!=",
-    "!==",
-    "<",
-    "<=",
-    ">",
-    ">=",
-    "+",
-    "-",
-    "*",
-    "/",
-    "%",
-    "max",
-    "min",
-    "abs",
-    "round",
-    "floor",
-    "ceil",
-    "pow",
-    "hex_to_int",
-    "map",
-    "filter",
-    "reduce",
-    "merge",
-    "all",
-    "some",
-    "none",
-    "find",
-    "count",
-    "in",
-    "intersect",
-    "unique",
-    "slice",
-    "reverse",
-    "flatten",
-    "cat",
-    "substr",
-    "lower",
-    "upper",
-    "join",
-    "split",
-    "trim",
-    "startsWith",
-    "endsWith",
-    "values",
-    "keys",
-    "get",
-    "has",
-    "set",
-    "unset",
-    "entries",
-    "length",
-    "exists",
-    "missing",
-    "missing_some",
-    "typeof",
-    "poseidon",
-    "pmt_verify",
-    "groth16_verify",
-    "ecvrf_verify",
-    "bn254_add",
-    "bn254_mul",
-    "bn254_pairing",
-    "bls_verify",
-    "bls_aggregate_verify",
-    "schnorr_verify",
-    "smt_verify",
-    "mpt_verify",
-    "mpt_prefix_verify",
-    "prove_dlog_verify",
-    "prove_dhtuple_verify",
-    "sigma_verify"
+  val Removed: scala.collection.immutable.Map[String, String] = scala.collection.immutable.Map(
+    "prove_dlog_verify"    -> "use a one-leaf sigma_verify over {\"type\": \"dlog\"} (docs/specs/sigma.md)",
+    "prove_dhtuple_verify" -> "use a one-leaf sigma_verify over {\"type\": \"dhtuple\"} (docs/specs/sigma.md)",
+    "mpt_verify"           -> "use trie_verify (docs/specs/trie.md)",
+    "mpt_prefix_verify"    -> "use trie_prefix_verify (docs/specs/trie.md)",
+    "smt_verify"           -> "use trie_verify (docs/specs/trie.md)",
+    "noop"                 -> "omit it: it does nothing"
   )
 
-  /** Names v1 reads as a call when they head an array, in metakit's array syntax: `["+", 1, 2]`, `["var", "a"]`. */
+  /** Names that may not head an array, which would read as a call: `["+", 1, 2]`, `["var", "a"]`. */
   def callName(s: String): Boolean = s == Variable || Op.fromWire(s).isDefined || Removed.contains(s)
-
-  /** The names metakit read as a call heading an array: [[Mode.Lenient]] reads these, and only these, as calls. */
-  private def metakitCallName(s: String): Boolean = s == Variable || MetakitOps.contains(s)
-
-  /** A metakit operation as v1 means it: metakit's `round` rounded half away from zero, which is v1's `round_half_up`. */
-  private def metakitOp(name: String): Option[Op] =
-    if (name == Op.Round.wire) Option(Op.RoundHalfUp) else Op.fromWire(name).filter(_ => MetakitOps.contains(name))
 
   private def malformed[A](m: String): Either[JlvmError, A] = JlvmError.Malformed(m).asLeft
 
   private def value(j: Json): Either[JlvmError, CanonicalValue] = JsonSurface.value(j)
 
-  def parse(json: String, mode: Mode = Mode.Strict): Either[JlvmError, Program] =
+  def parse(json: String): Either[JlvmError, Program] =
     for {
       _    <- CanonicalJson.parse(json).leftMap(canonicalError)
       j    <- io.circe.parser.parse(json).leftMap(e => JlvmError.Malformed(e.message))
-      expr <- fromJson(j, mode).flatMap(e => if (mode == Mode.Lenient) bindLets(e, Set.empty, Set.empty) else e.asRight)
+      expr <- fromJson(j)
       prog <- Program.from(expr)
     } yield prog
 
   /** Depth is bounded by the canonical parser that validated the text (256), so this recursion is bounded too. */
-  def fromJson(j: Json, mode: Mode = Mode.Strict): Either[JlvmError, Expr] =
+  def fromJson(j: Json): Either[JlvmError, Expr] =
     j.fold(
       Expr.Lit(CanonicalValue.CNull).asRight,
       _ => value(j).map(Expr.Lit(_)),
       _ => value(j).map(Expr.Lit(_)),
       _ => value(j).map(Expr.Lit(_)),
-      items => array(items, mode),
-      obj => fromObject(obj, mode)
+      array,
+      fromObject
     )
 
-  /**
-   * metakit read an array headed by an operation's name (or `var`) as that call. Strict rejects that form, so no
-   * metakit program changes meaning silently; lenient reads it as metakit did.
-   */
-  private def array(items: Vector[Json], mode: Mode): Either[JlvmError, Expr] =
-    (items.headOption.flatMap(_.asString).filter(if (mode == Mode.Lenient) metakitCallName else callName), mode) match {
-      case (Some(name), Mode.Strict) =>
+  /** An array headed by a call's name is rejected, so text shaped like a call is never read as data by accident. */
+  private def array(items: Vector[Json]): Either[JlvmError, Expr] =
+    items.headOption.flatMap(_.asString).filter(callName) match {
+      case Some(name) =>
+        val call = Removed.get(name).fold(s"write the call as {\"$name\": [...]}")(hint => s"\"$name\" is not an operation: $hint")
         malformed(
-          s"[\"$name\", ...] is a call in metakit's array syntax: write {\"$name\": [...]}, or quote data with {\"literal\": [...]}"
+          s"an array may not start with \"$name\", which reads as a call: $call; quote data as {\"literal\": [...]}, or " +
+          s"start it with {\"literal\": \"$name\"}"
         )
-      case (Some(name), Mode.Lenient) => single(name, Json.fromValues(items.drop(1)), mode)
-      case (scala.None, _)            => elements(items, mode)
+      case scala.None => elements(items)
     }
 
-  private def elements(items: Vector[Json], mode: Mode): Either[JlvmError, Expr] = items.traverse(fromJson(_, mode)).map(Expr.Arr(_))
+  private def elements(items: Vector[Json]): Either[JlvmError, Expr] = items.traverse(fromJson).map(Expr.Arr(_))
 
-  /** A `let`'s `[name, expression]` pairs: a name is never code, so a pair is exempt from the array-syntax check. */
-  private def letBindings(j: Json, mode: Mode): Either[JlvmError, Expr] =
-    j.asArray.fold(fromJson(j, mode))(_.traverse(pair => pair.asArray.fold(fromJson(pair, mode))(elements(_, mode))).map(Expr.Arr(_)))
+  /** A `let`'s `[name, expression]` pairs: a name is never code, so a pair is exempt from the array check. */
+  private def letBindings(j: Json): Either[JlvmError, Expr] =
+    j.asArray.fold(fromJson(j))(_.traverse(pair => pair.asArray.fold(fromJson(pair))(elements)).map(Expr.Arr(_)))
 
-  /** metakit's callbacks: the argument at index 1 of these ran with the element as its whole scope. */
-  private val Callbacks: scala.collection.immutable.Set[Op] =
-    scala.collection.immutable.Set(Op.Map, Op.Filter, Op.All, Op.Some, Op.None, Op.Find, Op.Count, Op.Reduce)
-
-  /**
-   * metakit read a `let` name with a plain path, `{"var": "x"}`; in v1 it is `$x` (decision B). Lenient parsing
-   * rewrites those reads, so a migrated program keeps its meaning, and fails where v1 cannot say the same thing.
-   *
-   * metakit merged a `let`'s bindings into the data for its bindings and body, but ran a callback body with only the
-   * element merged into the data. `lets` holds the names bound since the nearest enclosing callback (metakit saw them),
-   * `hidden` the names bound outside it (v1 still has them in scope; metakit did not). So:
-   *   - a plain path whose first segment is in `lets` is rewritten to the binding;
-   *   - one whose first segment is only in `hidden` read the element or the data in metakit, which v1 cannot read
-   *     plainly while the name is bound ([[Node.compile]] rejects it): an error;
-   *   - while `lets` is non-empty, a computed path may have read a binding, and `""` read the merged scope: errors.
-   *
-   * Bounded by the program depth, like [[fromJson]].
-   */
-  private def bindLets(e: Expr, lets: Set[String], hidden: Set[String]): Either[JlvmError, Expr] = {
-    def go(x: Expr): Either[JlvmError, Expr] = bindLets(x, lets, hidden)
-    e match {
-      case Expr.Var(ref @ VarRef.Data(path), d) =>
-        path.headOption match {
-          case Some(h) if lets.contains(h) => Expr.Var(VarRef.Bound(h, path.drop(1)), d).asRight
-          case Some(h) if hidden.contains(h) =>
-            malformed(
-              s"cannot migrate {\"var\": \"${ref.render}\"} inside a callback within a let binding \"$h\": metakit read the " +
-              s"callback element or the data there, not the binding; write \"$$current.${ref.render}\" or {\"var\": [[...]]}"
-            )
-          case scala.None if lets.nonEmpty =>
-            malformed("cannot migrate {\"var\": \"\"} within a let: metakit read the let's bindings merged into the data")
-          case _ => e.asRight
-        }
-      case Expr.Var(_, _) | Expr.Lit(_) => e.asRight
-      case Expr.VarAt(_, _) if lets.nonEmpty =>
-        malformed(
-          s"cannot migrate a computed var path within a let binding ${lets.toList.sorted.mkString(", ")}: metakit read a " +
-          "computed path naming a binding as that binding, which v1 cannot know before it runs; compute the path outside " +
-          "the let, or read the binding as $name"
-        )
-      case Expr.VarAt(p, d)   => go(p).map(Expr.VarAt(_, d))
-      case Expr.Spread(op, a) => go(a).map(Expr.Spread(op, _))
-      case Expr.Arr(is)       => is.traverse(go).map(Expr.Arr(_))
-      case Expr.Obj(fs)       => fs.toList.traverse { case (k, v) => go(v).map(k -> _) }.map(f => Expr.Obj(f.toMap))
-      case Expr.Apply(Op.Let, Vector(Expr.Arr(pairs), body)) =>
-        val names = pairs.collect { case Expr.Arr(Vector(Expr.Lit(CanonicalValue.CText(n)), _)) => n }
-        (
-          pairs.zipWithIndex.traverse {
-            case (Expr.Arr(Vector(n, x)), i) => bindLets(x, lets ++ names.take(i), hidden).map(b => Expr.Arr(Vector(n, b)))
-            case (other, _)                  => other.asRight
-          },
-          bindLets(body, lets ++ names, hidden)
-        ).mapN((bound, b) => Expr.Apply(Op.Let, Vector(Expr.Arr(bound), b)))
-      case Expr.Apply(Op.Let, Vector(Expr.Obj(fields), body)) =>
-        // bound in code-point order of the names (docs/specs/jlvm.md section 4.2)
-        def before(n: String) = fields.keySet.filter(m => Values.compareCodePoints(m, n) < 0)
-        (
-          fields.toList.traverse { case (n, x) => bindLets(x, lets ++ before(n), hidden).map(n -> _) },
-          bindLets(body, lets ++ fields.keySet, hidden)
-        ).mapN((bound, b) => Expr.Apply(Op.Let, Vector(Expr.Obj(bound.toMap), b)))
-      case Expr.Apply(op, as) if Callbacks.contains(op) =>
-        as.zipWithIndex.traverse {
-          case (body, 1) => bindLets(body, Set.empty, hidden ++ lets)
-          case (a, _)    => go(a)
-        }.map(Expr.Apply(op, _))
-      case Expr.Apply(op, as) => as.traverse(go).map(Expr.Apply(op, _))
-    }
-  }
-
-  private def fromObject(obj: JsonObject, mode: Mode): Either[JlvmError, Expr] =
+  private def fromObject(obj: JsonObject): Either[JlvmError, Expr] =
     obj.toList match {
-      case (key, arg) :: Nil => single(key, arg, mode)
-      case fields            => mapExpr(fields, mode)
+      case (key, arg) :: Nil => single(key, arg)
+      case fields            => mapExpr(fields)
     }
 
-  private def mapExpr(fields: List[(String, Json)], mode: Mode): Either[JlvmError, Expr] =
-    fields.traverse { case (k, v) => fromJson(v, mode).map(k -> _) }.map(fs => Expr.Obj(fs.toMap))
+  private def mapExpr(fields: List[(String, Json)]): Either[JlvmError, Expr] =
+    fields.traverse { case (k, v) => fromJson(v).map(k -> _) }.map(fs => Expr.Obj(fs.toMap))
 
-  private def single(key: String, arg: Json, mode: Mode): Either[JlvmError, Expr] =
+  private def single(key: String, arg: Json): Either[JlvmError, Expr] =
     key match {
       case Literal  => value(arg).map(Expr.Lit(_))
-      case Variable => variable(arg, mode)
+      case Variable => variable(arg)
       case ObjectKey =>
-        arg.asObject.fold(malformed[Expr]("object takes an object: {\"object\": {key: expression, ...}}"))(o => mapExpr(o.toList, mode))
-      case data if data.startsWith(DataPrefix) => mapExpr(List(data -> arg), mode)
+        arg.asObject.fold(malformed[Expr]("object takes an object: {\"object\": {key: expression, ...}}"))(o => mapExpr(o.toList))
+      case data if data.startsWith(DataPrefix) => mapExpr(List(data -> arg))
       case removed if Removed.contains(removed) =>
-        malformed(s"\"$removed\" was removed in JLVM v1: use ${Removed.getOrElse(removed, "")}")
-      // metakit read the empty key as var
-      case "" if mode == Mode.Lenient => variable(arg, mode)
+        malformed(s"\"$removed\" is not an operation: ${Removed.getOrElse(removed, "")}")
       case name =>
-        (if (mode == Mode.Lenient) metakitOp(name) else Op.fromWire(name), mode) match {
-          case (Some(op), _)        => operation(op, arg, mode)
-          case (None, Mode.Lenient) => mapExpr(List(name -> arg), mode)
-          case (None, Mode.Strict) =>
-            malformed(s"unknown operation \"$name\" (strict mode; write single-key data as {\"object\": ...} or {\"literal\": ...})")
-        }
+        Op.fromWire(name)
+          .fold(
+            malformed[Expr](s"unknown operation \"$name\": write single-key data as {\"object\": {...}} or {\"literal\": {...}}")
+          )(operation(_, arg))
     }
 
-  private def operation(op: Op, arg: Json, mode: Mode): Either[JlvmError, Expr] =
+  private def operation(op: Op, arg: Json): Either[JlvmError, Expr] =
     arg.asArray match {
       case Some(Vector(bindings, body)) if op == Op.Let =>
-        (letBindings(bindings, mode), fromJson(body, mode)).mapN((b, x) => Expr.Apply(op, Vector(b, x)))
-      case Some(items)                      => items.traverse(fromJson(_, mode)).map(Expr.Apply(op, _))
-      case None if Op.Variadic.contains(op) => fromJson(arg, mode).map(Expr.Spread(op, _))
-      case None                             => fromJson(arg, mode).map(a => Expr.Apply(op, Vector(a)))
+        (letBindings(bindings), fromJson(body)).mapN((b, x) => Expr.Apply(op, Vector(b, x)))
+      case Some(items)                      => items.traverse(fromJson).map(Expr.Apply(op, _))
+      case None if Op.Variadic.contains(op) => fromJson(arg).map(Expr.Spread(op, _))
+      case None                             => fromJson(arg).map(a => Expr.Apply(op, Vector(a)))
     }
 
   /** A path is text or an integer; an object or an array is an expression computing the path. */
-  private def path(j: Json, default: Option[CanonicalValue], mode: Mode): Either[JlvmError, Expr] =
+  private def path(j: Json, default: Option[CanonicalValue]): Either[JlvmError, Expr] =
     j.asString
       .orElse(j.asNumber.flatMap(_.toBigInt).map(_.toString))
       .map(VarRef.parse(_).map(Expr.Var(_, default)))
       .getOrElse(
-        // a literal array here is the path's segments, not code, so it is exempt from the array-syntax check
-        if (j.isObject) fromJson(j, mode).map(Expr.VarAt(_, default))
-        else if (j.isArray) j.asArray.fold(fromJson(j, mode))(elements(_, mode)).map(Expr.VarAt(_, default))
+        // a literal array here is the path's segments, not code, so it is exempt from the array check
+        if (j.isObject) fromJson(j).map(Expr.VarAt(_, default))
+        else if (j.isArray) j.asArray.fold(fromJson(j))(elements).map(Expr.VarAt(_, default))
         else malformed("a var path is text, an integer, or an expression computing one")
       )
 
-  private def variable(arg: Json, mode: Mode): Either[JlvmError, Expr] =
+  private def variable(arg: Json): Either[JlvmError, Expr] =
     arg.asArray match {
-      case Some(Vector(p))          => path(p, None, mode)
-      case Some(Vector(p, default)) => defaultValue(default, mode).flatMap(d => path(p, Some(d).filter(_ != CanonicalValue.CNull), mode))
+      case Some(Vector(p))          => path(p, None)
+      case Some(Vector(p, default)) => defaultValue(default).flatMap(d => path(p, Some(d).filter(_ != CanonicalValue.CNull)))
       case Some(_)                  => malformed("var takes a path, or [path, default]")
-      case None                     => path(arg, None, mode)
+      case None                     => path(arg, None)
     }
 
   /**
-   * A default is a literal value, never evaluated (as in metakit). An object or array default could be mistaken for
-   * code, so the strict surface requires it quoted, `{"literal": ...}`; both modes accept the quoted form.
+   * A default is a literal value, never evaluated. An object or array default could be mistaken for code, so it is
+   * quoted, `{"literal": ...}`.
    */
-  private def defaultValue(j: Json, mode: Mode): Either[JlvmError, CanonicalValue] =
-    (j.asObject.map(_.toList), mode) match {
-      case (Some(List((Literal, x))), _) => value(x)
-      case (_, Mode.Strict) if j.isObject || j.isArray =>
+  private def defaultValue(j: Json): Either[JlvmError, CanonicalValue] =
+    j.asObject.map(_.toList) match {
+      case Some(List((Literal, x))) => value(x)
+      case _ if j.isObject || j.isArray =>
         malformed("a var default is a literal value: quote an object or array default with {\"literal\": ...}")
       case _ => value(j)
     }
 
-  // ------------------------------------------------------------------ the strict surface, written back
+  // ------------------------------------------------------------------ the surface, written back
 
   /**
-   * The strict surface text of a program: [[parse]] reads it back as the same program. A literal holding `0x`-hex text
-   * or a non-terminating rational has no surface form (only the canonical form can carry it), and is an error.
+   * The surface text of a program: [[parse]] reads it back as the same program. A literal holding `0x`-hex text or a
+   * non-terminating rational has no surface form (only the canonical form can carry it), and is an error.
    */
   def render(p: Program): Either[JlvmError, Json] = toJson(p.expr)
-
-  /** Reads an older program as metakit did ([[Mode.Lenient]]) and writes it in the strict surface. */
-  def migrate(json: String): Either[JlvmError, String] =
-    parse(json, Mode.Lenient).flatMap(render).map(_.noSpaces)
 
   private def quoted(v: CanonicalValue): Either[JlvmError, Json] = JsonSurface.json(v).map(j => Json.obj(Literal -> j))
 
@@ -394,7 +213,7 @@ object Parser {
       case Expr.Apply(op, args) => args.traverse(toJson).map(as => Json.obj(op.wire -> Json.fromValues(as)))
       case Expr.Spread(op, arg) => toJson(arg).map(a => Json.obj(op.wire -> a))
       case Expr.Arr(items)      =>
-        // a leading text naming a call is quoted, so the array cannot read back as metakit's array syntax
+        // a leading text naming a call is quoted: unquoted, the array would not parse
         items.zipWithIndex.traverse {
           case (Expr.Lit(t @ CanonicalValue.CText(s)), 0) if callName(s) => quoted(t)
           case (x, _)                                                    => toJson(x)

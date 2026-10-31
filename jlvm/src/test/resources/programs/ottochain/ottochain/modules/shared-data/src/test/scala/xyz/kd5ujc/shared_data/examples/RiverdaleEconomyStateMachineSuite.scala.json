@@ -1,0 +1,431 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 73,
+      "program": {"and": [{">=": [{"var": "state.rawMaterials"}, {"var": "state.requiredMaterials"}]}, {"<": [{"var": "state.inventory"}, {"var": "state.maxInventory"}]}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:115 $.transitions[5].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 79,
+      "program": [["status", "production_scheduled"], ["scheduledAt", {"var": "event.timestamp"}], ["batchSize", {"var": "event.batchSize"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:155 $.transitions[5].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 91,
+      "program": [["status", "producing"], ["productionStartedAt", {"var": "event.timestamp"}], ["rawMaterials", {"-": [{"var": "state.rawMaterials"}, {"var": "state.requiredMaterials"}]}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 90,
+      "program": {">=": [{"+": [{"var": "state.inventory"}, {"var": "state.batchSize"}]}, {"var": "state.maxInventory"}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 103,
+      "program": [["status", "inventory_full"], ["inventory", {"+": [{"var": "state.inventory"}, {"var": "state.batchSize"}]}], ["completedAt", {"var": "event.timestamp"}], ["totalProduced", {"+": [{"var": "state.totalProduced"}, {"var": "state.batchSize"}]}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 102,
+      "program": {">=": [{"var": "state.inventory"}, {"var": "event.orderQuantity"}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 116,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.retailerId"}, "eventName": "receive_shipment", "payload": {"quantity": {"var": "event.orderQuantity"}, "supplier": {"var": "machineId"}, "shipmentId": {"var": "event.shipmentId"}}}], "status": "shipping", "inventory": {"-": [{"var": "state.inventory"}, {"var": "event.orderQuantity"}]}, "shipmentCount": {"+": [{"var": "state.shipmentCount"}, 1]}}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 139,
+      "program": [["status", "idle"], ["lastShipmentCompletedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "line": 138,
+      "program": {"<": [{"var": "state.rawMaterials"}, {"var": "state.requiredMaterials"}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 167,
+      "program": {"_emit": [{"name": "alert", "data": {"severity": "high", "message": "Raw material shortage detected", "manufacturer": {"var": "machineId"}}}], "status": "supply_shortage", "shortageDetectedAt": {"var": "event.timestamp"}}
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 188,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.governanceId"}, "eventName": "tax_payment_received", "payload": {"taxpayerId": {"var": "machineId"}, "taxAmount": {"*": [{"var": "state.totalProduced"}, {"var": "event.taxRate"}]}, "taxPeriod": {"var": "event.taxPeriod"}, "timestamp": {"var": "event.collectionDate"}}}], "taxesPaid": {"+": [{"var": "state.taxesPaid"}, {"*": [{"var": "state.totalProduced"}, {"var": "event.taxRate"}]}]}, "lastTaxPayment": {"*": [{"var": "state.totalProduced"}, {"var": "event.taxRate"}]}, "lastTaxPeriod": {"var": "event.taxPeriod"}},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:215 $.transitions[8].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:242 $.transitions[9].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:269 $.transitions[10].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 310,
+      "program": {"<": [{"var": "state.stock"}, {"var": "state.reorderThreshold"}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 311,
+      "program": {"_triggers": [{"targetMachineId": "INTERP", "eventName": "fulfill_order", "payload": {"retailerId": {"var": "machineId"}, "orderQuantity": {"var": "state.reorderQuantity"}, "shipmentId": {"var": "event.shipmentId"}}}], "status": "inventory_low", "reorderInitiatedAt": {"var": "event.timestamp"}},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 332,
+      "program": {"===": [{"var": "event.supplier"}, "INTERP"]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 333,
+      "program": [["status", "stocking"], ["stock", {"+": [{"var": "state.stock"}, {"var": "event.quantity"}]}], ["lastRestockAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 345,
+      "program": [["status", "open"], ["reopenedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 344,
+      "program": {"or": [{"===": [{"var": "event.season"}, "holiday"]}, {"===": [{"var": "event.season"}, "black_friday"]}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 361,
+      "program": [["status", "sale_active"], ["saleStartedAt", {"var": "event.timestamp"}], ["discountRate", {"var": "event.discountRate"}]]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 355,
+      "program": {"and": [{">=": [{"var": "state.stock"}, {"var": "event.quantity"}]}, {"===": [{"var": "machines.INTERP.state.status"}, "ACTIVE"]}]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:372 $.transitions[5].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 378,
+      "program": [["stock", {"-": [{"var": "state.stock"}, {"var": "event.quantity"}]}], ["revenue", {"+": [{"var": "state.revenue"}, {"*": [{"var": "event.quantity"}, {"var": "state.pricePerUnit"}]}]}], ["salesCount", {"+": [{"var": "state.salesCount"}, 1]}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:398 $.transitions[5].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 413,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.governanceId"}, "eventName": "tax_payment_received", "payload": {"taxpayerId": {"var": "machineId"}, "taxAmount": {"*": [{"var": "state.revenue"}, {"var": "event.taxRate"}]}, "taxPeriod": {"var": "event.taxPeriod"}, "timestamp": {"var": "event.collectionDate"}}}], "taxesPaid": {"+": [{"var": "state.taxesPaid"}, {"*": [{"var": "state.revenue"}, {"var": "event.taxRate"}]}]}, "lastTaxPayment": {"*": [{"var": "state.revenue"}, {"var": "event.taxRate"}]}, "lastTaxPeriod": {"var": "event.taxPeriod"}},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:440 $.transitions[7].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:467 $.transitions[8].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 510,
+      "program": {"and": [{">=": [{"var": "event.creditScore"}, {"var": "state.minCreditScore"}]}, {">=": [{"var": "state.availableCapital"}, {"var": "event.loanAmount"}]}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 516,
+      "program": [["status", "processing_loan"], ["currentApplication", {"applicantId": {"var": "event.applicantId"}, "amount": {"var": "event.loanAmount"}, "creditScore": {"var": "event.creditScore"}, "dti": {"var": "event.dti"}}], ["applicationReceivedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 532,
+      "program": {"and": [{">=": [{"var": "state.currentApplication.creditScore"}, 620]}, {"<=": [{"var": "state.currentApplication.dti"}, 0.43]}, {"===": [{"var": "machines.INTERP.state.status"}, "stable"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 539,
+      "program": {"_triggers": [{"targetMachineId": {"var": "state.currentApplication.applicantId"}, "eventName": "loan_funded", "payload": {"loanId": {"var": "machineId"}, "amount": {"var": "state.currentApplication.amount"}, "interestRate": {"+": [{"var": "machines.INTERP.state.baseRate"}, {"var": "state.riskPremium"}]}, "fundedAt": {"var": "event.timestamp"}}}], "status": "loan_servicing", "activeLoans": {"+": [{"var": "state.activeLoans"}, 1]}, "availableCapital": {"-": [{"var": "state.availableCapital"}, {"var": "state.currentApplication.amount"}]}, "loanPortfolio": {"+": [{"var": "state.loanPortfolio"}, {"var": "state.currentApplication.amount"}]}},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 566,
+      "program": {"<": [{"var": "event.missedPayments"}, 3]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 567,
+      "program": [["missedPaymentCount", {"+": [{"var": "state.missedPaymentCount"}, 1]}], ["lastMissedPaymentAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 578,
+      "program": {"_emit": [{"name": "credit_report", "data": {"borrowerId": {"var": "event.borrowerId"}, "delinquencyStatus": "90-days", "loanId": {"var": "event.loanId"}}}], "status": "default_management", "defaultedLoans": {"+": [{"var": "state.defaultedLoans"}, 1]}, "defaultRate": {"/": [{"var": "state.defaultedLoans"}, {"var": "state.activeLoans"}]}}
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 599,
+      "program": {"===": [{"var": "machines.INTERP.state.status"}, "stress_testing"]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:615 $.transitions[5].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 600,
+      "program": [["status", "stress_test"], ["testInitiatedAt", {"var": "event.timestamp"}], ["capitalRatio", {"if": [{">": [{"var": "state.loanPortfolio"}, 0]}, {"/": [{"var": "state.reserveCapital"}, {"var": "state.loanPortfolio"}]}, 1.0]}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:616 $.transitions[5].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "line": 631,
+      "program": {"and": [{">=": [{"var": "state.capitalRatio"}, 0.08]}, {"<=": [{"var": "state.defaultRate"}, 0.1]}, {">": [{"var": "state.activeLoans"}, 0]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 638,
+      "program": [["status", "loan_servicing"], ["testCompletedAt", {"var": "event.timestamp"}], ["stressTestPassed", true]]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "line": 649,
+      "program": {"and": [{">=": [{"var": "state.capitalRatio"}, 0.08]}, {"<=": [{"var": "state.defaultRate"}, 0.1]}]}
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 655,
+      "program": [["status", "operating"], ["testCompletedAt", {"var": "event.timestamp"}], ["stressTestPassed", true]]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "line": 666,
+      "program": {"or": [{"<": [{"var": "state.capitalRatio"}, 0.08]}, {">": [{"var": "state.defaultRate"}, 0.1]}]}
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "line": 672,
+      "program": {"_triggers": [{"targetMachineId": "INTERP", "eventName": "emergency_lending_request", "payload": {"bankId": {"var": "machineId"}, "capitalShortfall": {"-": [{"*": [{"var": "state.loanPortfolio"}, 0.08]}, {"var": "state.reserveCapital"}]}, "requestedAt": {"var": "event.timestamp"}}}], "status": "liquidity_crisis", "crisisStartedAt": {"var": "event.timestamp"}},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "line": 697,
+      "program": [["baseRate", {"var": "event.newBaseRate"}], ["rateAdjustedAt", {"var": "event.timestamp"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:708 $.transitions[10].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[11].effect",
+      "line": 719,
+      "program": [["lastPaymentReceivedAt", {"var": "event.timestamp"}], ["totalPaymentsReceived", {"+": [{"var": "state.totalPaymentsReceived"}, {"var": "event.amount"}]}]]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 745,
+      "program": {">=": [{"var": "state.balance"}, {"var": "event.expectedCost"}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:794 $.transitions[4].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 746,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.retailerId"}, "eventName": "process_sale", "payload": {"customerId": {"var": "machineId"}, "quantity": {"var": "event.quantity"}}}], "balance": {"-": [{"var": "state.balance"}, {"var": "event.expectedCost"}]}, "purchaseCount": {"+": [{"var": "state.purchaseCount"}, 1]}, "lastPurchaseAt": {"var": "event.timestamp"}},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:824 $.transitions[4].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 767,
+      "program": {"===": [{"var": "state.serviceType"}, {"var": "event.requestedService"}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:823 $.transitions[5].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 768,
+      "program": [["balance", {"+": [{"var": "state.balance"}, {"var": "event.payment"}]}], ["serviceRevenue", {"+": [{"var": "state.serviceRevenue"}, {"var": "event.payment"}]}], ["servicesProvided", {"+": [{"var": "state.servicesProvided"}, 1]}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:846 $.transitions[5].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 780,
+      "program": [["status", "debt_current"], ["loanBalance", {"var": "event.amount"}], ["loanInterestRate", {"var": "event.interestRate"}], ["lenderId", {"var": "event.loanId"}], ["balance", {"+": [{"var": "state.balance"}, {"var": "event.amount"}]}], ["nextPaymentDue", {"+": [{"var": "event.fundedAt"}, 2592000]}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 779,
+      "program": {">=": [{"var": "state.balance"}, {"var": "state.monthlyPayment"}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 795,
+      "program": {"_triggers": [{"targetMachineId": {"var": "state.lenderId"}, "eventName": "payment_received", "payload": {"borrowerId": {"var": "machineId"}, "amount": {"var": "state.monthlyPayment"}}}], "balance": {"-": [{"var": "state.balance"}, {"var": "state.monthlyPayment"}]}, "loanBalance": {"-": [{"var": "state.loanBalance"}, {"-": [{"var": "state.monthlyPayment"}, {"*": [{"var": "state.loanBalance"}, {"var": "state.loanInterestRate"}]}]}]}, "nextPaymentDue": {"+": [{"var": "state.nextPaymentDue"}, 2592000]}, "paymentsRemaining": {"-": [{"var": "state.paymentsRemaining"}, 1]}}
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "line": 845,
+      "program": {">": [{"var": "event.timestamp"}, {"var": "state.nextPaymentDue"}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 858,
+      "program": {"_triggers": [{"targetMachineId": {"var": "state.lenderId"}, "eventName": "payment_missed", "payload": {"borrowerId": {"var": "machineId"}, "missedPayments": {"+": [{"var": "state.missedPayments"}, 1]}}}], "status": "debt_delinquent", "missedPayments": {"+": [{"var": "state.missedPayments"}, 1]}, "delinquentSince": {"var": "event.timestamp"}}
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 880,
+      "program": {"_spawn": [{"childId": {"var": "event.auctionId"}, "definition": {"states": {"listed": {"id": "listed", "isFinal": false}, "bid_received": {"id": "bid_received", "isFinal": false}, "sold": {"id": "sold", "isFinal": true}, "expired": {"id": "expired", "isFinal": true}}, "initialState": "listed", "transitions": [{"from": "listed", "to": "bid_received", "eventName": "place_bid", "guard": {">=": [{"var": "event.bidAmount"}, {"var": "state.reservePrice"}]}, "effect": [["status", "bid_received"], ["highestBid", {"var": "event.bidAmount"}], ["highestBidder", {"var": "event.bidderId"}], ["bidReceivedAt", {"var": "event.timestamp"}]], "dependencies": []}, {"from": "bid_received", "to": "sold", "eventName": "accept_bid", "guard": true, "effect": {"_triggers": [{"targetMachineId": {"var": "parent.machineId"}, "eventName": "sale_completed", "payload": {"amount": {"var": "state.highestBid"}, "buyer": {"var": "state.highestBidder"}, "itemName": {"var": "state.itemName"}}}], "status": "sold", "soldAt": {"var": "event.timestamp"}}, "dependencies": []}]}, "initialData": {"itemName": {"var": "event.itemName"}, "reservePrice": {"var": "event.reservePrice"}, "sellerId": {"var": "machineId"}, "status": "listed"}}], "status": "marketplace_selling", "activeListings": {"+": [{"var": "state.activeListings"}, 1]}}
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "line": 898,
+      "program": [["balance", {"+": [{"var": "state.balance"}, {"var": "event.amount"}]}], ["activeListings", {"-": [{"var": "state.activeListings"}, 1]}], ["marketplaceSales", {"+": [{"var": "state.marketplaceSales"}, 1]}], ["status", "ACTIVE"]]
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "line": 911,
+      "program": {"_spawn": [{"childId": {"var": "event.auctionId"}, "definition": {"states": {"listed": {"id": "listed", "isFinal": false}, "bid_received": {"id": "bid_received", "isFinal": false}, "sold": {"id": "sold", "isFinal": true}, "expired": {"id": "expired", "isFinal": true}}, "initialState": "listed", "transitions": [{"from": "listed", "to": "bid_received", "eventName": "place_bid", "guard": {">=": [{"var": "event.bidAmount"}, {"var": "state.reservePrice"}]}, "effect": [["status", "bid_received"], ["highestBid", {"var": "event.bidAmount"}], ["highestBidder", {"var": "event.bidderId"}], ["bidReceivedAt", {"var": "event.timestamp"}]], "dependencies": []}, {"from": "bid_received", "to": "sold", "eventName": "accept_bid", "guard": true, "effect": {"_triggers": [{"targetMachineId": {"var": "parent.machineId"}, "eventName": "sale_completed", "payload": {"amount": {"var": "state.highestBid"}, "buyer": {"var": "state.highestBidder"}, "itemName": {"var": "state.itemName"}}}], "status": "sold", "soldAt": {"var": "event.timestamp"}}, "dependencies": []}]}, "initialData": {"itemName": {"var": "event.itemName"}, "reservePrice": {"var": "event.reservePrice"}, "sellerId": {"var": "machineId"}, "status": "listed"}}], "activeListings": {"+": [{"var": "state.activeListings"}, 1]}}
+    },
+    {
+      "path": "$.transitions[10].effect",
+      "line": 948,
+      "program": [["balance", {"+": [{"var": "state.balance"}, {"var": "event.amount"}]}], ["activeListings", {"-": [{"var": "state.activeListings"}, 1]}], ["marketplaceSales", {"+": [{"var": "state.marketplaceSales"}, 1]}]]
+    },
+    {
+      "path": "$.transitions[11].effect",
+      "line": 961,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.governanceId"}, "eventName": "tax_payment_received", "payload": {"taxpayerId": {"var": "machineId"}, "taxAmount": {"*": [{"var": "state.serviceRevenue"}, {"var": "event.taxRate"}]}, "taxPeriod": {"var": "event.taxPeriod"}, "timestamp": {"var": "event.collectionDate"}}}], "taxesPaid": {"+": [{"var": "state.taxesPaid"}, {"*": [{"var": "state.serviceRevenue"}, {"var": "event.taxRate"}]}]}, "lastTaxPayment": {"*": [{"var": "state.serviceRevenue"}, {"var": "event.taxRate"}]}, "lastTaxPeriod": {"var": "event.taxPeriod"}},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:979 $.transitions[12].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:992 $.transitions[13].effect"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 1122,
+      "program": {"targetMachineId": "INTERP", "eventName": "rate_adjustment", "payload": {"newBaseRate": {"+": [{"var": "state.baseRate"}, 0.0025]}, "direction": "increase"}},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 1159,
+      "program": [["status", "rate_review"], ["reviewStartedAt", {"var": "event.timestamp"}], ["inflationRate", {"var": "event.inflationRate"}], ["unemploymentRate", {"var": "event.unemploymentRate"}], ["gdpGrowth", {"var": "event.gdpGrowth"}]]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 1158,
+      "program": {">": [{"var": "state.inflationRate"}, 0.025]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 1173,
+      "program": {"_triggers": "__INTERP__", "status": "stable", "baseRate": {"+": [{"var": "state.baseRate"}, 0.0025]}, "lastAdjustmentAt": {"var": "event.timestamp"}, "rateChangeCount": {"+": [{"var": "state.rateChangeCount"}, 1]}},
+      "placeholders": [
+        "__INTERP__"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 1172,
+      "program": {"or": [{">": [{"var": "event.marketVolatility"}, 0.3]}, {">": [{"var": "event.systemicRisk"}, 0.5]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 1192,
+      "program": {"_triggers": "__INTERP__", "status": "stress_testing", "testInitiatedAt": {"var": "event.timestamp"}},
+      "placeholders": [
+        "__INTERP__"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 1204,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.bankId"}, "eventName": "receive_emergency_funds", "payload": {"amount": {"var": "event.capitalShortfall"}, "interestRate": {"+": [{"var": "state.baseRate"}, 0.01]}, "term": 90}}], "_emit": [{"name": "regulatory_notice", "data": {"type": "emergency_lending", "recipient": {"var": "event.bankId"}, "amount": {"var": "event.capitalShortfall"}}}], "status": "emergency_lending", "emergencyLoansIssued": {"+": [{"var": "state.emergencyLoansIssued"}, 1]}, "totalEmergencyLending": {"+": [{"var": "state.totalEmergencyLending"}, {"var": "event.capitalShortfall"}]}}
+    },
+    {
+      "path": "$",
+      "line": 1244,
+      "program": {"targetMachineId": "INTERP", "eventName": "pay_taxes", "payload": {"taxPeriod": {"var": "event.taxPeriod"}, "taxRate": {"var": "event.taxRate"}, "collectionDate": {"var": "event.timestamp"}, "governanceId": {"var": "event.governanceId"}}},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 1271,
+      "program": {"_triggers": "__INTERP__", "taxPeriod": {"var": "event.taxPeriod"}, "taxRate": {"var": "event.taxRate"}, "collectionInitiatedAt": {"var": "event.timestamp"}, "expectedTaxpayers": "__INTERP__", "taxpayersCompliant": 0},
+      "placeholders": [
+        "__INTERP__"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 1270,
+      "program": {"<": [{"+": [{"var": "state.taxpayersCompliant"}, 1]}, {"var": "state.expectedTaxpayers"}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 1286,
+      "program": [["totalTaxesCollected", {"+": [{"var": "state.totalTaxesCollected"}, {"var": "event.taxAmount"}]}], ["lastPaymentFrom", {"var": "event.taxpayerId"}], ["lastPaymentAt", {"var": "event.timestamp"}], ["taxpayersCompliant", {"+": [{"var": "state.taxpayersCompliant"}, 1]}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:1299 $.transitions[2].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:1312 $.transitions[3].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 1285,
+      "program": {"===": [{"+": [{"var": "state.taxpayersCompliant"}, 1]}, {"var": "state.expectedTaxpayers"}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 1325,
+      "program": {"auditTarget": {"var": "event.targetId"}, "auditInitiatedAt": {"var": "event.timestamp"}, "investigationsActive": {"+": [{"var": "state.investigationsActive"}, 1]}}
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 1298,
+      "program": {"===": [{"var": "event.finding"}, "compliant"]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 1337,
+      "program": {"_emit": [{"name": "audit_report", "data": {"target": {"var": "state.auditTarget"}, "finding": "compliant", "completedAt": {"var": "event.timestamp"}}}], "investigationsActive": {"-": [{"var": "state.investigationsActive"}, 1]}, "auditCompletedAt": {"var": "event.timestamp"}}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 1358,
+      "program": []
+    }
+  ]
+}

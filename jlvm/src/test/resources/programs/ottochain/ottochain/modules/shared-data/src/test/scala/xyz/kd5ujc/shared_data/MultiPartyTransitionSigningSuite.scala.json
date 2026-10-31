@@ -1,0 +1,60 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/MultiPartyTransitionSigningSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 46,
+      "program": {"status": "accepted", "acceptedAt": {"var": "event.timestamp"}}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 57,
+      "program": {"status": "rejected", "rejectedAt": {"var": "event.timestamp"}}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 129,
+      "program": {"object": {"status": "accepted"}},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 139,
+      "program": {"status": "rejected", "reason": {"var": "event.reason"}}
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 360,
+      "program": {">=": [{"var": "event.amount"}, {"var": "state.minimumAmount"}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/MultiPartyTransitionSigningSuite.scala:461 $.transitions[0].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 363,
+      "program": {"status": "approved", "finalAmount": {"var": "event.amount"}},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/MultiPartyTransitionSigningSuite.scala:464 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 373,
+      "program": {"<": [{"var": "event.amount"}, {"var": "state.minimumAmount"}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/MultiPartyTransitionSigningSuite.scala:474 $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 376,
+      "program": {"status": "denied", "reason": "amount too low"},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/MultiPartyTransitionSigningSuite.scala:477 $.transitions[1].effect"
+      ]
+    }
+  ]
+}

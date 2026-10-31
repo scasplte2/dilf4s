@@ -108,7 +108,7 @@ enum Op(val wire: String) {
   // sigma protocols over secp256k1, Ergo-compatible (docs/specs/sigma.md)
   case SchnorrVerify extends Op("schnorr_verify")
   case SigmaVerify extends Op("sigma_verify")
-  // authenticated data structures (dilf4s formats; the successors of metakit's smt/mpt verify ops)
+  // authenticated data structures (dilf4s formats: docs/specs/merkle.md, trie.md)
   case MerkleVerify extends Op("merkle_verify")
   case MerkleConsistencyVerify extends Op("merkle_consistency_verify")
   case TrieVerify extends Op("trie_verify")

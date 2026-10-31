@@ -1,0 +1,27 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/DynamicDependenciesSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 65,
+      "program": {"_addDependency": [{"object": {"fiberId": "INTERP"}}]},
+      "changes": [
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 70,
+      "program": {"merge": [{"var": "state"}, {"object": {"seen": {"var": "machines.INTERP.state.value"}}}]},
+      "changes": [
+        "K: single-key map \"seen\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    }
+  ]
+}

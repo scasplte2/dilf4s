@@ -1,0 +1,33 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ParentChildStateMachineSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 49,
+      "program": {"_emit": [{"name": "email", "data": {"to": {"var": "state.customerEmail"}, "subject": "Order Confirmed", "body": "Your order has been confirmed"}, "destination": "email-service"}], "status": "confirmed", "confirmedAt": {"var": "event.timestamp"}}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 71,
+      "program": [["_emit", [{"name": "webhook", "data": {"event": "order.shipped", "orderId": {"var": "state.orderId"}, "trackingNumber": {"var": "event.trackingNumber"}}, "destination": "https://api.partner.com/webhooks"}, {"name": "sms", "data": {"to": {"var": "state.customerPhone"}, "message": "Your order has shipped!"}}]], ["status", "shipped"], ["trackingNumber", {"var": "event.trackingNumber"}]]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 205,
+      "program": {"===": [{"var": "parent.state.status"}, "SUSPENDED"]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 211,
+      "program": {"status": "paused", "reason": "parent_suspended"}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 365,
+      "program": {"_emit": [{"name": "alarm", "data": {"object": {"severity": {"var": "event.severity"}}}, "destination": "monitoring-service"}], "status": "notified"},
+      "changes": [
+        "K: single-key map \"severity\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

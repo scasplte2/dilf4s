@@ -1,0 +1,48 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/privacy/state-machines/index.ts#notePoolDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"and": [{"groth16_verify": [{"var": "state.vkey"}, {"var": "event.publicValues"}, {"var": "event.proof"}]}, {"in": [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 66, 64]}]}}, {"var": "state.knownRoots"}]}, {"none": [{"var": "state.nullifiers"}, {"===": [{"var": ""}, {"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 450, 64]}]}}]}]}, {"===": [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 322, 64]}]}}, {"var": "state.feeAsset"}]}, {"===": [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 258, 64]}]}}, {"var": "state.feeWord"}]}, {"in": [{"var": "state.relayer"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]},
+      "changes": [
+        "HEXT: substr over 0x-hex data reads its hex text",
+        "HEXT: a 0x-prefixed word is rebuilt as bytes (unhex), or as text when it is a map key"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"nullifiers": {"merge": [{"var": "state.nullifiers"}, [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 450, 64]}]}}]]}, "commitments": {"merge": [{"var": "state.commitments"}, [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 578, 64]}]}}]]}, "currentRoot": {"var": "event.newRoot"}, "knownRoots": {"slice": [{"merge": [{"var": "state.knownRoots"}, [{"var": "event.newRoot"}]]}, {"*": [-1, {"var": "state.rootWindow"}]}]}, "leafCount": {"+": [{"var": "state.leafCount"}, 1]}, "transfers": {"+": [{"var": "state.transfers"}, 1]}}]},
+      "changes": [
+        "HEXT: substr over 0x-hex data reads its hex text",
+        "HEXT: a 0x-prefixed word is rebuilt as bytes (unhex), or as text when it is a map key"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"and": [{"in": [{"var": "event.depositor"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"commitments": {"merge": [{"var": "state.commitments"}, [{"var": "event.commitment"}]]}, "noteRecords": {"merge": [{"var": "state.noteRecords"}, [{"var": "event.recordId"}]]}, "leafCount": {"+": [{"var": "state.leafCount"}, 1]}}]}
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"and": [{"groth16_verify": [{"var": "state.vkey"}, {"var": "event.publicValues"}, {"var": "event.proof"}]}, {"in": [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 66, 64]}]}}, {"var": "state.knownRoots"}]}, {"none": [{"var": "state.nullifiers"}, {"===": [{"var": ""}, {"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 450, 64]}]}}]}]}, {"===": [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 322, 64]}]}}, {"var": "state.feeAsset"}]}, {"===": [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 258, 64]}]}}, {"var": "state.feeWord"}]}, {"in": [{"var": "event.recordId"}, {"var": "state.noteRecords"}]}]},
+      "changes": [
+        "HEXT: substr over 0x-hex data reads its hex text",
+        "HEXT: a 0x-prefixed word is rebuilt as bytes (unhex), or as text when it is a map key"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"nullifiers": {"merge": [{"var": "state.nullifiers"}, [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 450, 64]}]}}]]}, "noteRecords": {"filter": [{"var": "state.noteRecords"}, {"!==": [{"var": ""}, {"var": "event.recordId"}]}]}, "transfers": {"+": [{"var": "state.transfers"}, 1]}, "_transferAsset": [{"assetId": {"var": "event.recordId"}, "recipient": {"object": {"Wallet": {"object": {"address": {"var": "event.recipient"}}}}}}]}]},
+      "changes": [
+        "NE: !==",
+        "K: single-key map \"Wallet\" written as {\"object\": ...}",
+        "K: single-key map \"address\" written as {\"object\": ...}",
+        "HEXT: substr over 0x-hex data reads its hex text",
+        "HEXT: a 0x-prefixed word is rebuilt as bytes (unhex), or as text when it is a map key"
+      ]
+    }
+  ]
+}

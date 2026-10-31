@@ -1,0 +1,30 @@
+{
+  "source": {"repo": "ottochain-services", "commit": "cf05326", "file": "scripts/testing/test-contract-debug.ts"},
+  "expressions": [
+    {
+      "path": "$.guard",
+      "line": 35,
+      "program": {">=": [{"count": {"var": "state.completions"}}, 2]},
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[3].guard"
+      ]
+    },
+    {
+      "path": "$.effect",
+      "line": 35,
+      "program": {"merge": [{"var": "state"}, {"object": {"status": "COMPLETED"}}]},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/testing/test-contract-debug.ts:41 $.effect",
+        "ottochain-services@cf05326:scripts/testing/test-contract-debug.ts:47 $.effect"
+      ]
+    },
+    {
+      "path": "$.guard",
+      "line": 41,
+      "program": {">=": [{"var": "state.completionsCount"}, 2]}
+    }
+  ]
+}

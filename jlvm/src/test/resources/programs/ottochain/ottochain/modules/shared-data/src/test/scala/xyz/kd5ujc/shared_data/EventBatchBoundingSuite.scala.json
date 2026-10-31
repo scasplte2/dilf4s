@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/EventBatchBoundingSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 46,
+      "program": {"merge": [{"var": "state"}, {"object": {"counter": {"+": [{"var": "state.counter"}, 1]}}}]},
+      "changes": [
+        "K: single-key map \"counter\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

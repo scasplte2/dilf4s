@@ -1,0 +1,10 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-economy/event-collect-taxes.ts"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 5,
+      "program": {"var": "machineId"}
+    }
+  ]
+}

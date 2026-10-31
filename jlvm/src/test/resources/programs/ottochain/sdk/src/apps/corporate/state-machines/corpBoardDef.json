@@ -1,0 +1,139 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/corporate/state-machines/index.ts#corpBoardDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"and": [{">": [{"var": "state.seats.vacant"}, 0]}, {"!=": [{"var": "event.electionResolutionRef"}, null]}, {"!": {"some": [{"var": "state.directors"}, {"and": [{"==": [{"var": "directorId"}, {"var": "event.directorId"}]}, {"==": [{"var": "status"}, "ACTIVE"]}]}]}}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"directors": {"merge": [{"var": "state.directors"}, [{"directorId": {"var": "event.directorId"}, "name": {"var": "event.name"}, "email": {"var": "event.email"}, "termStart": {"var": "event.termStart"}, "termEnd": {"var": "event.termEnd"}, "class": {"var": "event.class"}, "status": "ACTIVE", "isIndependent": {"var": "event.isIndependent"}, "isChair": false, "isLeadIndependent": false, "committees": [], "electedBy": {"var": "event.electionResolutionRef"}}]]}, "seats": {"merge": [{"var": "state.seats"}, {"filled": {"+": [{"var": "state.seats.filled"}, 1]}, "vacant": {"-": [{"var": "state.seats.vacant"}, 1]}}]}}, {"_emit": [{"name": "DIRECTOR_ELECTED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"some": [{"var": "state.directors"}, {"and": [{"==": [{"var": "directorId"}, {"var": "event.directorId"}]}, {"==": [{"var": "status"}, "ACTIVE"]}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpBoardDef $.transitions[2].guard",
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpBoardDef $.transitions[5].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"directors": {"map": [{"var": "state.directors"}, {"if": [{"==": [{"var": "directorId"}, {"var": "event.directorId"}]}, {"merge": [{"var": ""}, {"status": "RESIGNED", "termEnd": {"var": "event.effectiveDate"}}]}, {"var": ""}]}]}, "seats": {"merge": [{"var": "state.seats"}, {"filled": {"-": [{"var": "state.seats.filled"}, 1]}, "vacant": {"+": [{"var": "state.seats.vacant"}, 1]}}]}}, {"_emit": [{"name": "DIRECTOR_RESIGNED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpBoardDef $.transitions[2].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"and": [{"some": [{"map": [{"var": "proofs"}, {"var": "address"}]}, {"in": [{"var": ""}, {"var": "state.authorizedRemovers"}]}]}, {"some": [{"var": "state.directors"}, {"and": [{"==": [{"var": "directorId"}, {"var": "event.directorId"}]}, {"==": [{"var": "status"}, "ACTIVE"]}]}]}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"pendingRemoval": {"directorId": {"var": "event.directorId"}, "cause": {"var": "event.cause"}, "resolutionRef": {"var": "event.removalResolutionRef"}, "proposedAt": {"var": "$ordinal"}}}}, {"_addDependency": [{"object": {"fiberId": {"var": "event.removalResolutionRef"}}}]}]},
+      "changes": [
+        "K: single-key map \"pendingRemoval\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"and": [{"some": [{"map": [{"var": "proofs"}, {"var": "address"}]}, {"in": [{"var": ""}, {"var": "state.authorizedRemovers"}]}]}, {"==": [{"var": "state.pendingRemoval.directorId"}, {"var": "event.directorId"}]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.pendingRemoval.resolutionRef"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.pendingRemoval.resolutionRef"}]}, "currentStateId"]}, "EXECUTED"]}, false]}, {"some": [{"var": "state.directors"}, {"and": [{"==": [{"var": "directorId"}, {"var": "event.directorId"}]}, {"==": [{"var": "status"}, "ACTIVE"]}]}]}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"directors": {"map": [{"var": "state.directors"}, {"if": [{"==": [{"var": "directorId"}, {"var": "event.directorId"}]}, {"merge": [{"var": ""}, {"status": "REMOVED", "termEnd": {"var": "event.effectiveDate"}}]}, {"var": ""}]}]}, "seats": {"merge": [{"var": "state.seats"}, {"filled": {"-": [{"var": "state.seats.filled"}, 1]}, "vacant": {"+": [{"var": "state.seats.vacant"}, 1]}}]}, "pendingRemoval": null}, {"_emit": [{"name": "DIRECTOR_REMOVED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"directors": {"map": [{"var": "state.directors"}, {"merge": [{"var": ""}, {"object": {"isChair": {"==": [{"var": "directorId"}, {"var": "event.directorId"}]}}}]}]}}}]},
+      "changes": [
+        "K: single-key map \"directors\" written as {\"object\": ...}",
+        "K: single-key map \"isChair\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"and": [{"or": [{"==": [{"var": "event.waiverOfNotice"}, true]}, {">=": [{"-": [{"var": "event.scheduledDate"}, {"var": "event.noticeDate"}]}, 172800000]}]}, {"or": [{"==": [{"var": "state.currentMeeting"}, null]}, {"!=": [{"var": "state.currentMeeting.closedAt"}, null]}]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"currentMeeting": {"meetingId": {"var": "event.meetingId"}, "type": {"var": "event.type"}, "scheduledDate": {"var": "event.scheduledDate"}, "location": {"var": "event.location"}, "isVirtual": {"var": "event.isVirtual"}, "calledBy": {"var": "event.calledBy"}, "noticeDate": {"var": "event.noticeDate"}, "agenda": {"var": "event.agenda"}, "attendees": [], "quorumPresent": false, "quorumCount": 0}}}, {"_emit": [{"name": "BOARD_MEETING_SCHEDULED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "K: single-key map \"currentMeeting\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "program": {"and": [{"!=": [{"var": "state.currentMeeting"}, null]}, {"==": [{"var": "state.currentMeeting.openedAt"}, null]}, {"some": [{"var": "state.directors"}, {"and": [{"==": [{"var": "directorId"}, {"var": "event.directorId"}]}, {"==": [{"var": "status"}, "ACTIVE"]}]}]}]}
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"currentMeeting": {"merge": [{"var": "state.currentMeeting"}, {"object": {"attendees": {"merge": [{"var": "state.currentMeeting.attendees"}, [{"directorId": {"var": "event.directorId"}, "present": {"var": "event.present"}, "arrivedAt": {"var": "event.arrivedAt"}, "viaProxy": false}]]}}}]}}}]},
+      "changes": [
+        "K: single-key map \"currentMeeting\" written as {\"object\": ...}",
+        "K: single-key map \"attendees\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "program": {"and": [{"!=": [{"var": "state.currentMeeting"}, null]}, {"==": [{"var": "state.currentMeeting.openedAt"}, null]}, {"==": [{"var": "state.currentMeeting.quorumPresent"}, true]}]}
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "IN_MEETING", "currentMeeting": {"merge": [{"var": "state.currentMeeting"}, {"object": {"openedAt": {"var": "event.openedAt"}}}]}}, {"_emit": [{"name": "BOARD_MEETING_OPENED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "K: single-key map \"openedAt\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"currentMeeting": {"merge": [{"var": "state.currentMeeting"}, {"object": {"attendees": {"map": [{"var": "state.currentMeeting.attendees"}, {"if": [{"==": [{"var": "directorId"}, {"var": "event.directorId"}]}, {"merge": [{"var": ""}, {"present": false, "departedAt": {"var": "event.departedAt"}}]}, {"var": ""}]}]}}}]}}}]},
+      "changes": [
+        "K: single-key map \"currentMeeting\" written as {\"object\": ...}",
+        "K: single-key map \"attendees\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[10].guard",
+      "program": {"==": [{"var": "state.currentMeeting.quorumPresent"}, false]}
+    },
+    {
+      "path": "$.transitions[10].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"status": "QUORUM_LOST"}}, {"_emit": [{"name": "BOARD_QUORUM_LOST", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[11].guard",
+      "program": {"==": [{"var": "state.currentMeeting.quorumPresent"}, true]}
+    },
+    {
+      "path": "$.transitions[11].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"status": "IN_MEETING"}}, {"_emit": [{"name": "BOARD_QUORUM_RESTORED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[12].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "currentMeeting": null, "meetingHistory": {"merge": [{"var": "state.meetingHistory"}, [{"meetingId": {"var": "state.currentMeeting.meetingId"}, "type": {"var": "state.currentMeeting.type"}, "date": {"var": "state.currentMeeting.scheduledDate"}, "quorumAchieved": {"var": "state.currentMeeting.quorumPresent"}, "attendeeCount": {"var": "state.currentMeeting.quorumCount"}, "resolutionsPassed": {"var": "event.resolutionsPassed"}, "minutesRef": {"var": "event.minutesRef"}}]]}}, {"_emit": [{"name": "BOARD_MEETING_ADJOURNED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpBoardDef $.transitions[13].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[14].guard",
+      "program": {">=": [{"var": "event.newAuthorizedSeats"}, {"var": "state.seats.filled"}]}
+    },
+    {
+      "path": "$.transitions[14].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"seats": {"merge": [{"var": "state.seats"}, {"authorized": {"var": "event.newAuthorizedSeats"}, "vacant": {"-": [{"var": "event.newAuthorizedSeats"}, {"var": "state.seats.filled"}]}}]}}}]},
+      "changes": [
+        "K: single-key map \"seats\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

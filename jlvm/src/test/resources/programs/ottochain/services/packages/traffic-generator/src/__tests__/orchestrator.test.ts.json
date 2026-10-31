@@ -1,0 +1,35 @@
+{
+  "source": {"repo": "ottochain-services", "commit": "cf05326", "file": "packages/traffic-generator/src/__tests__/orchestrator.test.ts"},
+  "expressions": [
+    {
+      "path": "$.counterpartyGuard",
+      "line": 27,
+      "program": {"===": [{"var": "event.agent"}, {"var": "state.counterparty"}]},
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/continuous-10tps.ts:111 $.transitions[0].guard",
+        "ottochain-services@cf05326:scripts/demo/continuous-10tps.ts:111 $.transitions[1].guard",
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[0].guard",
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[1].guard",
+        "ottochain-services@cf05326:scripts/testing/test-contract-signing.ts:9 $.transitions[0].guard",
+        "ottochain-services@cf05326:scripts/testing/test-contract-signing.ts:9 $.transitions[1].guard",
+        "ottochain-services@cf05326:scripts/testing/test-rejection-notification-e2e.ts:216 $.transitions[0].guard",
+        "ottochain-services@cf05326:scripts/testing/test-rejection-notification-e2e.ts:216 $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.proposerGuard",
+      "line": 27,
+      "program": {"===": [{"var": "event.agent"}, {"var": "state.proposer"}]},
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/continuous-10tps.ts:111 $.transitions[6].guard",
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[6].guard",
+        "ottochain-services@cf05326:scripts/testing/test-contract-signing.ts:9 $.transitions[2].guard"
+      ]
+    },
+    {
+      "path": "$.operatorGuard",
+      "line": 27,
+      "program": {"===": [{"var": "event.agent"}, {"var": "state.operator"}]}
+    }
+  ]
+}

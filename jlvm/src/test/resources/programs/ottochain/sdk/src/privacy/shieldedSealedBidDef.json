@@ -1,0 +1,20 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/privacy/index.ts#shieldedSealedBidDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"and": [{"groth16_verify": [{"var": "state.vkey"}, {"var": "event.publicValues"}, {"var": "event.proof"}]}, {"===": [{"substr": [{"hex": {"var": "event.publicValues"}}, 194, 64]}, {"var": "state.exprHash"}]}, {"in": [{"substr": [{"hex": {"var": "event.publicValues"}}, 2, 64]}, {"var": "state.knownRoots"}]}, {"none": [{"var": "state.nullifiers"}, {"===": [{"var": ""}, {"substr": [{"hex": {"var": "event.publicValues"}}, 66, 64]}]}]}]},
+      "changes": [
+        "HEXT: substr over 0x-hex data reads its hex text"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"nullifiers": {"cat": [{"var": "state.nullifiers"}, [{"substr": [{"hex": {"var": "event.publicValues"}}, 66, 64]}]]}, "commitments": {"cat": [{"var": "state.commitments"}, [{"substr": [{"hex": {"var": "event.publicValues"}}, 130, 64]}]]}, "leafCount": {"+": [{"var": "state.leafCount"}, 1]}, "transitions": {"+": [{"var": "state.transitions"}, 1]}, "lastTransitionAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding",
+        "HEXT: substr over 0x-hex data reads its hex text"
+      ]
+    }
+  ]
+}

@@ -64,8 +64,8 @@ object EvaluatorSuite extends IOSuite with Checkers {
     expect
       .same(ok("43"), result("""{"+": [{"var": "$ordinal"}, 1]}""", env = env))
       .and(expect.same(ok("1"), result("""{"let": [[["ordinal", 1]], {"var": "$ordinal"}]}""", env = env)))
-      .and(expect(result("""{"var": "$timestamp"}""").isLeft, "unbound"))
-      .and(expect.same(ok("0"), result("""{"var": ["$timestamp", 0]}""")))
+      .and(expect(result("""{"var": "$epochProgress"}""").isLeft, "unbound"))
+      .and(expect.same(ok("0"), result("""{"var": ["$epochProgress", 0]}""")))
   }
 
   check("let binds sequentially, in either surface form") {
@@ -113,39 +113,6 @@ object EvaluatorSuite extends IOSuite with Checkers {
       .and(expect(compiles("""{"let": [[["y", {"var": "x"}], ["x", 5]], 0]}"""), "an earlier binding sees the data"))
       .and(expect.same(ok("5"), result("""{"let": [[["x", 5]], {"var": "$x"}]}""")))
       .and(expect.same(ok("7"), result("""{"let": [[["x", 5]], {"var": [["x"]]}]}""", """{"x": 7}""")))
-  }
-
-  check("migrate rewrites metakit's plain reads of let names to $name") {
-    def run(json: String, data: String = "{}") = Parser.migrate(json).map(result(_, data))
-    expect
-      .same(
-        Right("""{"let":[[["x",5],["y",{"+":[{"var":"$x"},3]}]],{"var":"$y"}]}"""),
-        Parser.migrate("""{"let": [[["x", 5], ["y", {"+": [{"var": "x"}, 3]}]], {"var": "y"}]}""")
-      )
-      .and(expect.same(Right(ok("8")), run("""{"let": [[["x", 5], ["y", {"+": [{"var": "x"}, 3]}]], {"var": "y"}]}""")))
-      .and(
-        expect.same(
-          Right(ok("11")),
-          run("""{"let": [{"doubled": {"*": [{"var": "x"}, 2]}}, {"+": [{"var": "doubled"}, 1]}]}""", """{"x": 5}""")
-        )
-      )
-      .and(expect.same(Right(ok("2")), run("""{"let": [{"b": {"+": [{"var": "a"}, 1]}, "a": 1}, {"var": "b"}]}""")))
-  }
-
-  check("migrated programs give metakit's results (checked against metakit de2a856), or fail to migrate") {
-    def run(json: String, data: String = "{}") = Parser.migrate(json).map(result(_, data))
-    expect
-      .same(Right(ok("true")), run("""{"if": [{"round_half_up": 0}, true, false]}"""))
-      .and(expect.same(Right(ok("""["round_half_up", 0]""")), run("""["round_half_up", 0]""")))
-      .and(expect.same(Right(ok("""{"sha256": "0x00"}""")), run("""{"sha256": "0x00"}""")))
-      .and(expect.same(Right(ok("3")), run("""{"round": 2.5}""")))
-      .and(expect.same(Right(ok("3")), run("""{"": "a"}""", """{"a": 3}""")))
-      .and(expect.same(Right(ok("[3]")), run("""{"map": [[{"y": 2}], {"let": [[["x", 1]], {"+": [{"var": "x"}, {"var": "y"}]}]}]}""")))
-      .and(expect.same(Right(ok("4")), run("""{"let": [[["x", {"var": "a"}]], {"var": "x"}]}""", """{"a": 4}""")))
-      // metakit: true (the binding), [5] (the element), {"x": 1} (the bindings): v1 cannot say these, so they fail
-      .and(expect(run("""{"let": [[["x", true]], {"var": {"cat": ["x"]}}]}""", """{"x": false}""").isLeft, "computed path"))
-      .and(expect(run("""{"let": [[["x", 1]], {"map": [[{"x": 5}], {"var": "x"}]}]}""").isLeft, "callback element"))
-      .and(expect(run("""{"let": [[["x", 1]], {"var": ""}]}""", """{"a": 2}""").isLeft, "the whole scope"))
   }
 
   // ---- callbacks

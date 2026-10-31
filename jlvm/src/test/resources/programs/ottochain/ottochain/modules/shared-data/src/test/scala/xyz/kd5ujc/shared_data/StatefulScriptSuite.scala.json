@@ -1,0 +1,10 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/StatefulScriptSuite.scala"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 24,
+      "program": {"method": {"var": "method"}, "result": 42}
+    }
+  ]
+}

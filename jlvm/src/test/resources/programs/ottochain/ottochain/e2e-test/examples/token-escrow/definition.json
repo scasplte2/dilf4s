@@ -1,0 +1,45 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/token-escrow/definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 36,
+      "program": {"merge": [{"var": "state"}, {"depositor": {"var": "event.depositor"}, "amount": {"var": "event.amount"}}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/resources/repro/definition.json:36 $.transitions[0].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ScriptEscrowSuite.scala:55 $.transitions[0].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ScriptEscrowSuite.scala:174 $.transitions[0].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:54 $.transitions[0].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:164 $.transitions[0].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:254 $.transitions[0].effect",
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:34 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 63,
+      "program": {"merge": [{"var": "state"}, {"object": {"beneficiary": {"var": "event.beneficiary"}}}]},
+      "changes": [
+        "K: single-key map \"beneficiary\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/resources/repro/definition.json:63 $.transitions[1].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ScriptEscrowSuite.scala:63 $.transitions[1].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ScriptEscrowSuite.scala:182 $.transitions[1].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:62 $.transitions[1].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:172 $.transitions[1].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:262 $.transitions[1].effect",
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:34 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 87,
+      "program": {"merge": [{"var": "state"}, {}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/resources/repro/definition.json:87 $.transitions[2].effect",
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:34 $.transitions[2].effect"
+      ]
+    }
+  ]
+}

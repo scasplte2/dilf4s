@@ -1,0 +1,39 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/DirectiveInjectionHardeningSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 252,
+      "program": {"if": [{"var": "event.doTransfer"}, {"_transferAsset": [{"assetId": "INTERP", "recipient": "__INTERP__"}], "released": true}, {"object": {"released": false}}]},
+      "changes": [
+        "K: single-key map \"released\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP",
+        "__INTERP__"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 331,
+      "program": {"if": [{"var": "event.fire"}, {"_triggers": [{"targetMachineId": "INTERP", "eventName": "activate", "payload": {}}], "status": "fired"}, {"object": {"status": "skipped"}}]},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 442,
+      "program": {"merge": [{"var": "state"}, {"_addDependency": [{"object": {"fiberId": "INTERP"}}]}]},
+      "changes": [
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    }
+  ]
+}

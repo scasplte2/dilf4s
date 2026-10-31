@@ -200,7 +200,7 @@ object EthereumContractsSuite extends IOSuite with Checkers {
   // ---- vesting: a cliff, then linear
 
   private val grant = value("""{"beneficiary": "ann", "start": 1000, "cliff": 1250, "duration": 1000, "total": 3000, "released": 0}""")
-  private def at(t: Long) = "timestamp" -> CInt(BigInt(t))
+  private def at(t: Long) = "ordinal" -> CInt(BigInt(t))
 
   check("vesting: nothing before the cliff, linear (floored) after it, everything at the end, never twice") { r =>
     val c = r("vesting")
@@ -212,7 +212,7 @@ object EthereumContractsSuite extends IOSuite with Checkers {
       .and(expect.same(Right(value("""[{"kind": "transfer", "to": "ann", "amount": 999}]""")), c.effects(grant, call, at(1333))))
       .and(expect.same(Right(BigInt(3000)), end.map(e => int(at(e, "released")))))
       .and(expect(rejected(end.flatMap(e => c.next(e, call, at(6000)))), "all released"))
-      .and(expect(rejected(mid.flatMap(m => c.next(m, call, at(1333)))), "nothing new at the same time"))
+      .and(expect(rejected(mid.flatMap(m => c.next(m, call, at(1333)))), "nothing new at the same ordinal"))
   }
 
   // ---- Merkle airdrop

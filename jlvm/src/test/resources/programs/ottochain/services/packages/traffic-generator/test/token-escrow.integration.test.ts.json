@@ -1,0 +1,61 @@
+{
+  "source": {"repo": "ottochain-services", "commit": "cf05326", "file": "packages/traffic-generator/test/token-escrow.integration.test.ts"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 60,
+      "program": {"merge": [{"var": "state"}, {"status": "FUNDED", "depositor": {"var": "event.depositor"}, "fundedAt": {"var": "event.timestamp"}}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 60,
+      "program": {"merge": [{"var": "state"}, {"status": "CANCELLED", "cancelledAt": {"var": "event.timestamp"}}]},
+      "alsoAt": [
+        "ottochain-services@cf05326:packages/traffic-generator/test/token-escrow.integration.test.ts:60 $.transitions[3].effect",
+        "ottochain-services@cf05326:packages/traffic-generator/test/token-escrow.integration.test.ts:60 $.transitions[9].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 60,
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "activatedAt": {"var": "event.timestamp"}}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 60,
+      "program": {"merge": [{"var": "state"}, {"object": {"mintedAmount": {"+": [{"var": "state.mintedAmount"}, {"var": "event.amount"}]}}}]},
+      "changes": [
+        "K: single-key map \"mintedAmount\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 60,
+      "program": {"merge": [{"var": "state"}, {"object": {"lastTransferAt": {"var": "event.timestamp"}}}]},
+      "changes": [
+        "K: single-key map \"lastTransferAt\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 60,
+      "program": {"merge": [{"var": "state"}, {"object": {"burnedAmount": {"+": [{"var": "state.burnedAmount"}, {"var": "event.amount"}]}}}]},
+      "changes": [
+        "K: single-key map \"burnedAmount\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 60,
+      "program": {"merge": [{"var": "state"}, {"object": {"escrowedAmount": {"+": [{"var": "state.escrowedAmount"}, {"var": "event.amount"}]}}}]},
+      "changes": [
+        "K: single-key map \"escrowedAmount\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "line": 60,
+      "program": {"merge": [{"var": "state"}, {"status": "COMPLETED", "releasedAt": {"var": "event.timestamp"}}]}
+    }
+  ]
+}

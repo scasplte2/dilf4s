@@ -1,0 +1,65 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/PredictionMarketSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 60,
+      "program": {"merge": [{"var": "state"}, {"object": {"escrowTx": {"var": "event.escrowTx"}}}]},
+      "changes": [
+        "K: single-key map \"escrowTx\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 81,
+      "program": {"merge": [{"var": "state"}, {"object": {"positions": {"merge": [{"var": "state.positions"}, {"map": [[{"var": "event"}], {"user": {"var": "user"}, "side": {"var": "side"}, "amount": {"var": "amount"}}]}]}}}]},
+      "changes": [
+        "K: single-key map \"positions\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 105,
+      "program": {">=": [{"count": [{"var": "state.positions"}]}, 1]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 114,
+      "program": {"merge": [{"var": "state"}, {"object": {"oracleSubmissions": []}}]},
+      "changes": [
+        "K: single-key map \"oracleSubmissions\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 126,
+      "program": {">=": [{"var": "event.oracleReputation"}, {"var": "state.minReputation"}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 129,
+      "program": {"merge": [{"var": "state"}, {"object": {"oracleSubmissions": {"merge": [{"var": "state.oracleSubmissions"}, [{"oracle": {"var": "event.oracleId"}, "reputation": {"var": "event.oracleReputation"}, "vote": {"var": "event.vote"}}]]}}}]},
+      "changes": [
+        "K: single-key map \"oracleSubmissions\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "line": 152,
+      "program": {">=": [{"reduce": [{"var": "state.oracleSubmissions"}, {"+": [{"var": "accumulator"}, 1]}, 0]}, {"var": "state.minOracles"}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 158,
+      "program": {"merge": [{"var": "state"}, {"outcome": {"var": "event.outcome"}, "confidence": {"var": "event.confidence"}}]}
+    },
+    {
+      "path": "$",
+      "line": 180,
+      "program": {"if": [{"==": [{"var": "method"}, "calculateOutcome"]}, {"if": [{">": [{"+": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "NO"]}, {"var": "current.reputation"}, 0]}]}, 0]}]}, 0]}, {"if": [{">=": [{"/": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"+": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "NO"]}, {"var": "current.reputation"}, 0]}]}, 0]}]}]}, {"var": "args.consensusThreshold"}]}, {"outcome": "YES", "confidence": {"/": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"+": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "NO"]}, {"var": "current.reputation"}, 0]}]}, 0]}]}]}}, {"if": [{">=": [{"-": [1, {"/": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"+": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "NO"]}, {"var": "current.reputation"}, 0]}]}, 0]}]}]}]}, {"var": "args.consensusThreshold"}]}, {"outcome": "NO", "confidence": {"-": [1, {"/": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"+": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "NO"]}, {"var": "current.reputation"}, 0]}]}, 0]}]}]}]}}, {"outcome": "DISPUTED", "yesRatio": {"/": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"+": [{"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "YES"]}, {"var": "current.reputation"}, 0]}]}, 0]}, {"reduce": [{"var": "args.submissions"}, {"+": [{"var": "accumulator"}, {"if": [{"==": [{"var": "current.vote"}, "NO"]}, {"var": "current.reputation"}, 0]}]}, 0]}]}]}}]}]}, {"outcome": "DISPUTED", "yesRatio": 0.5}]}, {"object": {"error": "unknown method"}}]},
+      "changes": [
+        "K: single-key map \"error\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

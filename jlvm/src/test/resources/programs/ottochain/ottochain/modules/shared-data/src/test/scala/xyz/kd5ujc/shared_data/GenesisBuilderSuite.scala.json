@@ -1,0 +1,18 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/GenesisBuilderSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 46,
+      "program": {">=": [{"var": "event.currentTime"}, {"var": "state.unlockTime"}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/JsonEncodedStateMachineSuite.scala:59 $.transitions[0].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 46,
+      "program": [["unlocked", true]]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/resources/tictactoe/state-machine-definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 37,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.oracleFiberId"}, "method": "initialize", "args": {"playerX": {"var": "event.playerX"}, "playerO": {"var": "event.playerO"}, "gameId": {"var": "event.gameId"}}}, "gameId": {"var": "event.gameId"}, "playerX": {"var": "event.playerX"}, "playerO": {"var": "event.playerO"}, "status": "initialized"}
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 58,
+      "program": {"===": [{"var": "scriptOracles.11111111-1111-1111-1111-111111111111.state.status"}, "InProgress"]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 61,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.oracleFiberId"}, "method": "makeMove", "args": {"player": {"var": "event.player"}, "cell": {"var": "event.cell"}}}, "lastMove": {"player": {"var": "event.player"}, "cell": {"var": "event.cell"}}}
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 81,
+      "program": {"or": [{"===": [{"var": "scriptOracles.11111111-1111-1111-1111-111111111111.state.status"}, "Won"]}, {"===": [{"var": "scriptOracles.11111111-1111-1111-1111-111111111111.state.status"}, "Draw"]}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/resources/tictactoe/state-machine-definition.json:117 $.transitions[3].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 87,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.oracleFiberId"}, "method": "makeMove", "args": {"player": {"var": "event.player"}, "cell": {"var": "event.cell"}}}, "finalStatus": {"var": "scriptOracles.11111111-1111-1111-1111-111111111111.state.status"}, "winner": {"var": "scriptOracles.11111111-1111-1111-1111-111111111111.state.winner"}, "finalBoard": {"var": "scriptOracles.11111111-1111-1111-1111-111111111111.state.board"}, "_emit": [{"name": "game_completed", "data": {"gameId": {"var": "state.gameId"}, "winner": {"var": "scriptOracles.11111111-1111-1111-1111-111111111111.state.winner"}, "status": {"var": "scriptOracles.11111111-1111-1111-1111-111111111111.state.status"}, "moveCount": {"var": "scriptOracles.11111111-1111-1111-1111-111111111111.state.moveCount"}}}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 123,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.oracleFiberId"}, "method": "resetGame", "args": {}}, "roundCount": {"+": [{"var": "state.roundCount"}, 1]}}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 138,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.oracleFiberId"}, "method": "cancelGame", "args": {"requestedBy": {"var": "event.requestedBy"}, "reason": {"var": "event.reason"}}}, "cancelledBy": {"var": "event.requestedBy"}, "cancelReason": {"var": "event.reason"}}
+    }
+  ]
+}

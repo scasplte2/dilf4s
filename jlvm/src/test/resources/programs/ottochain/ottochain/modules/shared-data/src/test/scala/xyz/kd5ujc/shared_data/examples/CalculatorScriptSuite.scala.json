@@ -1,0 +1,10 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/CalculatorScriptSuite.scala"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 32,
+      "program": {"if": [{"==": [{"var": "method"}, "add"]}, {"+": [{"var": "args.a"}, {"var": "args.b"}]}, {"==": [{"var": "method"}, "subtract"]}, {"-": [{"var": "args.a"}, {"var": "args.b"}]}, {"==": [{"var": "method"}, "multiply"]}, {"*": [{"var": "args.a"}, {"var": "args.b"}]}, {"==": [{"var": "method"}, "divide"]}, {"/": [{"var": "args.a"}, {"var": "args.b"}]}, null]}
+    }
+  ]
+}

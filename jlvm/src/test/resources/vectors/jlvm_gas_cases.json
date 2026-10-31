@@ -1,5 +1,5 @@
 {
- "source": "metakit dev de2a856 (Apache-2.0): the out-of-gas cases of src/test/resources/conformance/gas_test_vectors.json at their own gas limits, migrated to the strict surface with Parser.migrate; plus dilf4s's own boundaries (its cost, and one less) for three of them",
+ "source": "metakit dev de2a856 (Apache-2.0): the out-of-gas cases of src/test/resources/conformance/gas_test_vectors.json at their own gas limits, rewritten into the strict surface and stored as its text; plus dilf4s's own boundaries (its cost, and one less) for three of them",
  "cases": [
   {
    "name": "metakit gas oog: poseidon size pre-charge at 400",

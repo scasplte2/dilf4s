@@ -1,0 +1,25 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/zk-eligibility/definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 12,
+      "program": {"and": [{"groth16_verify": ["0x00a311c00aaa949133f52d6485167ce2f9b448320db65a94f3dd8876a59fcdd0", {"var": "event.publicValues"}, {"var": "event.proof"}]}, {"===": [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 2, 64]}]}}, "0xccc6c597899c9e0dc76770e4e288fd9796431140c8cd4facc9f01daeaac0bb62"]}, {"===": [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 130, 64]}]}}, "0x6273151f959616268004b58dbb21e5c851b7b8d04498b4aabee12291d22fc034"]}]},
+      "changes": [
+        "HX: 0x-hex text reads as bytes",
+        "HEXT: substr over 0x-hex data reads its hex text",
+        "HEXT: a 0x-prefixed word is rebuilt as bytes (unhex), or as text when it is a map key"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 35,
+      "program": {"merge": [{"var": "state"}, {"object": {"provenRule": {"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.publicValues"}}, 2, 64]}]}}}}]},
+      "changes": [
+        "K: single-key map \"provenRule\" written as {\"object\": ...}",
+        "HEXT: substr over 0x-hex data reads its hex text",
+        "HEXT: a 0x-prefixed word is rebuilt as bytes (unhex), or as text when it is a map key"
+      ]
+    }
+  ]
+}

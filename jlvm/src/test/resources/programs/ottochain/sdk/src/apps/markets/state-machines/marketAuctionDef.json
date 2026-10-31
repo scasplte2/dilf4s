@@ -1,0 +1,86 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/markets/state-machines/index.ts#marketAuctionDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"in": [{"var": "state.seller"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketAuctionDef $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "OPEN", "openedAt": {"var": "$ordinal"}, "bids": [], "highBid": null, "highBidder": null}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "CANCELLED", "cancelledAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketCrowdfundDef $.transitions[1].effect",
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketGroupBuyDef $.transitions[1].effect",
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketUniversalDef $.transitions[1].effect",
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketUniversalDef $.transitions[5].effect",
+        "ottochain-sdk@a53a6e0:src/apps/contracts/state-machines/index.ts#contractAgreementDef $.transitions[2].effect",
+        "ottochain-sdk@a53a6e0:src/apps/contracts/state-machines/index.ts#contractAgreementDef $.transitions[7].effect",
+        "ottochain-sdk@a53a6e0:src/apps/contracts/state-machines/index.ts#contractUniversalDef $.transitions[1].effect",
+        "ottochain-sdk@a53a6e0:src/apps/contracts/state-machines/index.ts#contractUniversalDef $.transitions[3].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"and": [{"!": [{"in": [{"var": "state.seller"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}, {">=": [{"var": "event.amount"}, {"var": "state.minBid"}]}, {"or": [{"!": [{"var": "state.highBid"}]}, {">=": [{"var": "event.amount"}, {"+": [{"var": "state.highBid"}, {"var": "state.bidIncrement"}]}]}]}, {"or": [{"!": [{"var": "state.deadline"}]}, {"<=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"bids": {"cat": [{"var": "state.bids"}, [{"bidder": {"var": "event.agent"}, "amount": {"var": "event.amount"}, "bidAt": {"var": "$ordinal"}}]]}, "highBid": {"var": "event.amount"}, "highBidder": {"var": "event.agent"}, "lastBidAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"or": [{"in": [{"var": "state.seller"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"and": [{"var": "state.deadline"}, {">=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "CLOSING", "closedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"and": [{"var": "state.highBidder"}, {"or": [{"!": [{"var": "state.reservePrice"}]}, {">=": [{"var": "state.highBid"}, {"var": "state.reservePrice"}]}]}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "SETTLED", "settledAt": {"var": "$ordinal"}, "winner": {"var": "state.highBidder"}, "finalPrice": {"var": "state.highBid"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"or": [{"!": [{"var": "state.highBidder"}]}, {"and": [{"var": "state.reservePrice"}, {"<": [{"var": "state.highBid"}, {"var": "state.reservePrice"}]}]}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "NO_SALE", "closedAt": {"var": "$ordinal"}, "reason": {"if": [{"!": [{"var": "state.highBidder"}]}, "no_bids", "reserve_not_met"]}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    }
+  ]
+}

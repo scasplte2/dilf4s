@@ -1,0 +1,78 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/identity/state-machines/index.ts#identityOracleDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {">=": [{"var": "event.stake"}, {"var": "state.minStake"}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "REGISTERED", "address": {"var": "event.agent"}, "stake": {"var": "event.stake"}, "registeredAt": {"var": "$ordinal"}, "reputation": {"accuracy": 100, "totalResolutions": 0, "disputesWon": 0, "disputesLost": 0}, "domains": {"var": "event.domains"}, "slashingHistory": []}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"in": [{"var": "state.address"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/identity/state-machines/index.ts#identityOracleDef $.transitions[6].guard",
+        "ottochain-sdk@a53a6e0:src/apps/identity/state-machines/index.ts#identityOracleDef $.transitions[7].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"and": [{"in": [{"var": "state.address"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {">": [{"var": "event.amount"}, 0]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"stake": {"+": [{"var": "state.stake"}, {"var": "event.amount"}]}, "lastStakeAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"var": "event.marketId"}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"reputation": {"merge": [{"var": "state.reputation"}, {"totalResolutions": {"+": [{"var": "state.reputation.totalResolutions"}, 1]}, "accuracy": {"if": [{"var": "event.correct"}, {"var": "state.reputation.accuracy"}, {"-": [{"var": "state.reputation.accuracy"}, 5]}]}}]}, "lastResolutionAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"and": [{"in": [{"var": "state.slasher"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {">": [{"var": "event.amount"}, 0]}, {"<=": [{"var": "event.amount"}, {"var": "state.stake"}]}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "SLASHED", "stake": {"-": [{"var": "state.stake"}, {"var": "event.amount"}]}, "slashingHistory": {"cat": [{"var": "state.slashingHistory"}, [{"reason": {"var": "event.reason"}, "amount": {"var": "event.amount"}, "marketId": {"var": "event.marketId"}, "slashedAt": {"var": "$ordinal"}}]]}, "slashedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"and": [{"in": [{"var": "state.address"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {">=": [{"var": "state.stake"}, {"var": "state.minStake"}]}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "reactivatedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "WITHDRAWN", "withdrawnAt": {"var": "$ordinal"}, "finalStake": {"var": "state.stake"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/identity/state-machines/index.ts#identityOracleDef $.transitions[7].effect"
+      ]
+    }
+  ]
+}

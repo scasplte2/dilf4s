@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/calculator-script/definition.json"},
+  "expressions": [
+    {
+      "path": "$.scriptProgram",
+      "line": 2,
+      "program": {"if": [{"==": [{"var": "method"}, "add"]}, {"+": [{"var": "args.a"}, {"var": "args.b"}]}, {"if": [{"==": [{"var": "method"}, "subtract"]}, {"-": [{"var": "args.a"}, {"var": "args.b"}]}, {"if": [{"==": [{"var": "method"}, "multiply"]}, {"*": [{"var": "args.a"}, {"var": "args.b"}]}, {"if": [{"==": [{"var": "method"}, "divide"]}, {"/": [{"var": "args.a"}, {"var": "args.b"}]}, {"object": {"error": "Unknown method"}}]}]}]}]},
+      "changes": [
+        "K: single-key map \"error\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

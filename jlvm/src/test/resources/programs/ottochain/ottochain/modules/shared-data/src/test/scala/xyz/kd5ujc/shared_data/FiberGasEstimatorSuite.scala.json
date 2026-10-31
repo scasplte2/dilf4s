@@ -1,0 +1,26 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/FiberGasEstimatorSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 24,
+      "program": {"object": {"status": "done"}},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 25,
+      "program": {"object": {"n": {"+": [{"var": "state.n"}, {"*": [2, 3]}]}}},
+      "changes": [
+        "K: single-key map \"n\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 47,
+      "program": {"+": [{"var": "x"}, 1]}
+    }
+  ]
+}

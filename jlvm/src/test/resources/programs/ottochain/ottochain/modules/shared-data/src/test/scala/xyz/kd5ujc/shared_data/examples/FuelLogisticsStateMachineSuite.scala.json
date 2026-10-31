@@ -1,0 +1,221 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/FuelLogisticsStateMachineSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 66,
+      "program": {"and": [{">=": [{"var": "state.fuelQuantity"}, 1000]}, {">=": [{"var": "state.pricePerLiter"}, 0]}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 72,
+      "program": [["status", "supplier_review"], ["submittedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 82,
+      "program": {"===": [{"var": "machines.INTERP.state.status"}, "approved"]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 88,
+      "program": [["status", "supplier_approved"], ["supplierApprovedAt", {"var": "event.timestamp"}], ["approvedSupplier", {"var": "machines.INTERP.state.supplierName"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 105,
+      "program": [["status", "gps_ready"], ["shipmentPreparedAt", {"var": "event.timestamp"}], ["vehicleId", {"var": "event.vehicleId"}], ["driverId", {"var": "event.driverId"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 117,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.status"}, "tracking"]}, {">": [{"var": "machines.INTERP.state.dataPointCount"}, 0]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 133,
+      "program": [["status", "in_transit"], ["transitStartedAt", {"var": "event.timestamp"}], ["estimatedArrival", {"var": "event.estimatedArrival"}]]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 144,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.status"}, "stopped"]}, {">=": [{"var": "machines.INTERP.state.dataPointCount"}, 3]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 160,
+      "program": [["status", "delivered"], ["deliveredAt", {"var": "event.timestamp"}], ["totalDistance", {"var": "machines.INTERP.state.totalDistance"}], ["gpsDataPoints", {"var": "machines.INTERP.state.dataPointCount"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 172,
+      "program": {"===": [{"var": "machines.INTERP.state.status"}, "scheduled"]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/JsonEncodedStateMachineSuite.scala:450 $.transitions[4].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 178,
+      "program": [["status", "quality_check"], ["inspectionInitiatedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "line": 188,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.status"}, "passed"]}, {">=": [{"var": "machines.INTERP.state.qualityScore"}, 85]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 204,
+      "program": [["status", "inspected"], ["inspectedAt", {"var": "event.timestamp"}], ["qualityScore", {"var": "machines.INTERP.state.qualityScore"}], ["qualityReport", {"var": "machines.INTERP.state.reportId"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "line": 216,
+      "program": {"or": [{"===": [{"var": "machines.INTERP.state.status"}, "failed"]}, {"<": [{"var": "machines.INTERP.state.qualityScore"}, 85]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 232,
+      "program": [["status", "REJECTED"], ["rejectedAt", {"var": "event.timestamp"}], ["rejectionReason", "quality inspection failed"], ["qualityScore", {"var": "machines.INTERP.state.qualityScore"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "line": 245,
+      "program": [["status", "settling"], ["settlementInitiatedAt", {"var": "event.timestamp"}], ["totalAmount", {"*": [{"var": "state.fuelQuantity"}, {"var": "state.pricePerLiter"}]}]]
+    },
+    {
+      "path": "$.transitions[9].guard",
+      "line": 244,
+      "program": {">=": [{"var": "event.paymentConfirmation"}, {"*": [{"var": "state.fuelQuantity"}, {"var": "state.pricePerLiter"}]}]}
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "line": 262,
+      "program": [["status", "settled"], ["settledAt", {"var": "event.timestamp"}], ["paymentConfirmation", {"var": "event.paymentConfirmation"}], ["contractCompleted", true]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 291,
+      "program": [["status", "ACTIVE"], ["activatedAt", {"var": "event.timestamp"}], ["vehicleId", {"var": "event.vehicleId"}], ["dataPointCount", 0], ["totalDistance", 0]]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 305,
+      "program": [["status", "tracking"], ["trackingStartedAt", {"var": "event.timestamp"}], ["originLat", {"var": "event.latitude"}], ["originLon", {"var": "event.longitude"}], ["lastLat", {"var": "event.latitude"}], ["lastLon", {"var": "event.longitude"}], ["dataPointCount", 1]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 290,
+      "program": {"<": [{"var": "state.dataPointCount"}, 100]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 326,
+      "program": [["lastLat", {"var": "event.latitude"}], ["lastLon", {"var": "event.longitude"}], ["lastUpdate", {"var": "event.timestamp"}], ["dataPointCount", {"+": [{"var": "state.dataPointCount"}, 1]}], ["totalDistance", {"+": [{"var": "state.totalDistance"}, {"var": "event.distanceDelta"}]}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 304,
+      "program": {">=": [{"var": "state.dataPointCount"}, 1]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 345,
+      "program": [["status", "stopped"], ["stoppedAt", {"var": "event.timestamp"}], ["finalLat", {"var": "state.lastLat"}], ["finalLon", {"var": "state.lastLon"}]]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 358,
+      "program": [["status", "archived"], ["archivedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 384,
+      "program": [["status", "reviewing"], ["reviewStartedAt", {"var": "event.timestamp"}], ["reviewer", {"var": "event.reviewer"}]]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 383,
+      "program": {"and": [{">=": [{"var": "event.complianceScore"}, 75]}, {"===": [{"var": "event.licenseValid"}, true]}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 401,
+      "program": [["status", "approved"], ["approvedAt", {"var": "event.timestamp"}], ["complianceScore", {"var": "event.complianceScore"}], ["approvedBy", {"var": "event.approver"}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 395,
+      "program": {"or": [{"<": [{"var": "event.complianceScore"}, 75]}, {"===": [{"var": "event.licenseValid"}, false]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 419,
+      "program": [["status", "REJECTED"], ["rejectedAt", {"var": "event.timestamp"}], ["rejectionReason", "compliance or licensing issues"]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 447,
+      "program": [["status", "scheduled"], ["scheduledAt", {"var": "event.timestamp"}], ["inspector", {"var": "event.inspector"}]]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 459,
+      "program": [["status", "inspecting"], ["inspectionStartedAt", {"var": "event.timestamp"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/JsonEncodedStateMachineSuite.scala:472 $.transitions[4].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 446,
+      "program": {"and": [{">=": [{"var": "event.qualityScore"}, 85]}, {"===": [{"var": "event.contaminationDetected"}, false]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 475,
+      "program": [["status", "passed"], ["completedAt", {"var": "event.timestamp"}], ["qualityScore", {"var": "event.qualityScore"}], ["reportId", {"var": "event.reportId"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 458,
+      "program": {"or": [{"<": [{"var": "event.qualityScore"}, 85]}, {"===": [{"var": "event.contaminationDetected"}, true]}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 493,
+      "program": [["status", "failed"], ["completedAt", {"var": "event.timestamp"}], ["qualityScore", {"var": "event.qualityScore"}], ["failureReason", {"var": "event.failureReason"}]]
+    }
+  ]
+}

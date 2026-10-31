@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/CounterScriptSuite.scala"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 36,
+      "program": {"if": [{"==": [{"var": "method"}, "increment"]}, {"merge": [{"var": "state"}, {"object": {"value": {"+": [{"var": "state.value"}, 1]}}}]}, {"==": [{"var": "method"}, "decrement"]}, {"merge": [{"var": "state"}, {"object": {"value": {"-": [{"var": "state.value"}, 1]}}}]}, {"==": [{"var": "method"}, "reset"]}, {"object": {"value": 0}}, {"var": "state"}]},
+      "changes": [
+        "K: single-key map \"value\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

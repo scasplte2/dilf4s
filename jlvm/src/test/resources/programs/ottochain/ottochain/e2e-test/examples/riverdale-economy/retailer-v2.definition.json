@@ -1,0 +1,15 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-economy/retailer-v2.definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[1].guard",
+      "line": 24,
+      "program": {">=": [{"var": "state.loyaltyPoints"}, 0]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 25,
+      "program": {"status": "loyalty_redeemed", "loyaltyPoints": {"+": [{"var": "state.loyaltyPoints"}, {"var": "event.points"}]}}
+    }
+  ]
+}

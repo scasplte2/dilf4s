@@ -1,0 +1,16 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/AutoDependencyScanSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 92,
+      "program": {"object": {"copied": {"var": "machines.INTERP.state.x"}}},
+      "changes": [
+        "K: single-key map \"copied\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    }
+  ]
+}

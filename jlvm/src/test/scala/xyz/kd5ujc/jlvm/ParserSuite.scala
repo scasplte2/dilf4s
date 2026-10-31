@@ -27,13 +27,12 @@ object ParserSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Right(Expr.Apply(Op.StartsWith, Vector(text("abc"), text("a")))), p("""{"startsWith": ["abc", "a"]}""")))
   }
 
-  pureTest("metakit's array syntax: strict rejects it, lenient reads it as the call, and data quotes it") {
-    def lenient(json: String) = Parser.parse(json, Parser.Mode.Lenient).map(_.expr)
-    val sum = Expr.Apply(Op.Add, Vector(int(1), int(2)))
-    expect(p("""["+", 1, 2]""").isLeft, "strict: a call in array syntax")
-      .and(expect(p("""{"in": ["a", ["var", "x"]]}""").isLeft, "strict: var heads count too"))
-      .and(expect.same(Right(sum), lenient("""["+", 1, 2]""")))
-      .and(expect.same(Right(Expr.Var(VarRef.Data(Vector("a")), Some(CInt(BigInt(5))))), lenient("""["var", "a", 5]""")))
+  pureTest("an array headed by a call's name is rejected, naming the call form; data quotes it") {
+    def message(e: Either[JlvmError, ?]) = e.left.toOption.map(_.toString).getOrElse("")
+    expect(p("""["+", 1, 2]""").isLeft, "an operation's name")
+      .and(expect(p("""{"in": ["a", ["var", "x"]]}""").isLeft, "var heads count too"))
+      .and(expect(p("""["getKey", 1]""").isLeft, "an alias heads count too"))
+      .and(expect(message(p("""["+", 1, 2]""")).contains("""{"+": [...]}"""), "the message names the call form"))
       .and(
         expect.same(
           Right(Expr.Lit(CanonicalValue.array(Vector(CanonicalValue.text("+").toOption.get)).toOption.get)),
@@ -45,12 +44,6 @@ object ParserSuite extends SimpleIOSuite with Checkers {
           .same(Right(Expr.Arr(Vector(text("max"), Expr.Var(VarRef.Data(Vector("x")), None)))), p("""[{"literal": "max"}, {"var": "x"}]"""))
       )
       .and(expect(p("""{"var": [["values", "x"]]}""").isRight, "a computed path's segments are data"))
-      .and(
-        expect.same(
-          Right("""{"+":[1,2]}"""),
-          Parser.migrate("""["+", 1, 2]""")
-        )
-      )
   }
 
   pureTest("let binding names are never code, even when they spell an operation's name") {
@@ -65,14 +58,13 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     expect.same(Right(arr), back)
   }
 
-  pureTest("metakit operations removed in v1 are rejected in both modes, naming their replacement") {
+  pureTest("names that read like operations but are not are rejected, naming the operation to use") {
     def message(e: Either[JlvmError, ?]) = e.left.toOption.map(_.toString).getOrElse("")
-    Parser.Removed.keys.toList.foldLeft(success) { (acc, name) =>
-      val json = s"""{"$name": [1]}"""
-      acc
-        .and(expect(message(p(json)).contains("removed in JLVM v1"), s"strict $name"))
-        .and(expect(message(Parser.parse(json, Parser.Mode.Lenient)).contains("removed in JLVM v1"), s"lenient $name"))
-        .and(expect(message(Parser.parse(s"""["$name", 1]""", Parser.Mode.Lenient)).contains("removed in JLVM v1"), s"array $name"))
+    Parser.Removed.toList.foldLeft(success) {
+      case (acc, (name, use)) =>
+        acc
+          .and(expect(message(p(s"""{"$name": [1]}""")).contains(s""""$name" is not an operation: $use"""), name))
+          .and(expect(message(p(s"""["$name", 1]""")).contains(s""""$name" is not an operation: $use"""), s"an array headed by $name"))
     }
   }
 
@@ -97,11 +89,12 @@ object ParserSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Right("\"0xabcd\""), JsonSurface.render(CBytes(hex"abcd"))))
   }
 
-  pureTest("single-key objects: always operations by default; quoting; lenient reading for older programs") {
-    val mapLit = Expr.Obj(Map("price" -> int(5)))
-    expect(p("""{"price": 5}""").isLeft, "strict (default): an unknown single key is an error")
+  pureTest("single-key objects are always operations; data is quoted") {
+    expect(p("""{"price": 5}""").isLeft, "an unknown single key is an error")
       .and(expect(p("""{"iff": [true, 1, 2]}""").isLeft, "a typo is rejected"))
-      .and(expect.same(Right(mapLit), Parser.parse("""{"price": 5}""", Parser.Mode.Lenient).map(_.expr)))
+      .and(expect(p("""{"": "a"}""").isLeft, "the empty key is no operation"))
+      .and(expect.same(Right(Expr.Obj(Map("price" -> int(5)))), p("""{"object": {"price": 5}}""")))
+      .and(expect.same(Right(Expr.Apply(Op.Round, Vector(int(1)))), p("""{"round": [1]}""")))
       .and(expect.same(Right(Expr.Obj(Map("price" -> int(5), "qty" -> int(1)))), p("""{"price": 5, "qty": 1}""")))
       .and(expect.same(Right(Expr.Lit(CanonicalValue.map(List("if" -> CInt(1))).toOption.get)), p("""{"literal": {"if": 1}}""")))
       .and(expect.same(Right(Expr.Obj(Map("a" -> Expr.Lit(CNull), "b" -> int(1)))), p("""{"a": null, "b": 1}""")))
@@ -264,56 +257,18 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     }
   }
 
-  test("render writes the strict surface: parsing it back, in either mode, gives the same program") {
+  test("render writes the surface: parsing it back gives the same program") {
     forall(exprs)(accepted(_) { prog =>
-      val text = Parser.render(prog).map(_.noSpaces)
-      expect
-        .same(Right(prog), text.flatMap(Parser.parse(_)))
-        .and(expect.same(Right(prog), text.flatMap(Parser.parse(_, Parser.Mode.Lenient))))
+      expect.same(Right(prog), Parser.render(prog).map(_.noSpaces).flatMap(Parser.parse(_)))
     })
   }
 
-  /** The same program as metakit wrote it: a single-key data map bare wherever its key is not an operation. */
-  private def metakitStyle(j: Json): Json =
-    j.asObject.map(_.toList) match {
-      case Some(List((Parser.ObjectKey, inner))) =>
-        inner.asObject.map(_.toList) match {
-          case Some(List((k, v)))
-              if k.nonEmpty && Op.fromWire(k).isEmpty && !Set(Parser.Literal, Parser.Variable, Parser.ObjectKey).contains(k) =>
-            Json.obj(k -> metakitStyle(v))
-          case _ => Json.obj(Parser.ObjectKey -> metakitStyle(inner))
-        }
-      case Some(List((Parser.Literal, _))) => j
-      case Some(List((Parser.Variable, arg))) =>
-        arg.asArray match {
-          case Some(path +: default) => Json.obj(Parser.Variable -> Json.fromValues(metakitStyle(path) +: default))
-          case _                     => Json.obj(Parser.Variable -> metakitStyle(arg))
-        }
-      case Some(fields) => Json.fromFields(fields.map { case (k, v) => k -> metakitStyle(v) })
-      case scala.None   => j.asArray.fold(j)(a => Json.fromValues(a.map(metakitStyle)))
-    }
-
-  test("migrate reads a metakit-style program as metakit did, and writes the same program in the strict surface") {
-    forall(exprs)(accepted(_) { prog =>
-      val old = Parser.render(prog).map(j => metakitStyle(j).noSpaces)
-      expect
-        .same(Right(prog), old.flatMap(Parser.parse(_, Parser.Mode.Lenient)))
-        .and(expect.same(Right(prog), old.flatMap(Parser.migrate).flatMap(Parser.parse(_))))
-    })
-  }
-
-  pureTest("a var default is a literal; the strict surface quotes object and array defaults") {
+  pureTest("a var default is a literal; object and array defaults are quoted") {
     val m = CanonicalValue.map(List("var" -> CanonicalValue.text("y").toOption.get)).toOption.get
     expect
       .same(Right(Expr.Var(VarRef.Data(Vector("x")), Some(m))), p("""{"var": ["x", {"literal": {"var": "y"}}]}"""))
       .and(expect(p("""{"var": ["x", {"var": "y"}]}""").isLeft, "an unquoted object default could be read as code"))
       .and(expect(p("""{"var": ["x", []]}""").isLeft, "so could an array"))
-      .and(
-        expect.same(
-          Right(Expr.Var(VarRef.Data(Vector("x")), Some(m))),
-          Parser.parse("""{"var": ["x", {"var": "y"}]}""", Parser.Mode.Lenient).map(_.expr)
-        )
-      )
   }
 
   pureTest("values with no surface form are reported, not rendered wrongly") {
@@ -324,18 +279,6 @@ object ParserSuite extends SimpleIOSuite with Checkers {
           "1/3"
         )
       )
-  }
-
-  pureTest("migrate rewrites a metakit program into the strict surface, with the same meaning") {
-    val old = """{"if": [{"==": [{"var": "method"}, "inc"]}, {"value": {"+": [{"var": "state.value"}, 1]}}, {"count": [1, 2]}]}"""
-    val migrated = Parser.migrate(old)
-    expect
-      .same(
-        Right("""{"if":[{"==":[{"var":"method"},"inc"]},{"object":{"value":{"+":[{"var":"state.value"},1]}}},{"count":[1,2]}]}"""),
-        migrated
-      )
-      .and(expect.same(Parser.parse(old, Parser.Mode.Lenient), migrated.flatMap(Parser.parse(_))))
-      .and(expect(Parser.parse(old).isLeft, "the old text is not strict"))
   }
 
   // ---- identity: distinct behaviour never shares an encoding
@@ -381,167 +324,6 @@ object ParserSuite extends SimpleIOSuite with Checkers {
       .and(expect(!scala.compiletime.testing.typeChecks("summon[scala.deriving.Mirror.ProductOf[Compiled]]"), "Compiled"))
   }
 
-  // ---- lenient reading is metakit's
-
-  private def lenient(json: String) = Parser.parse(json, Parser.Mode.Lenient).map(_.expr)
-
-  pureTest("lenient reading uses metakit's operations: a name only v1 has is data, and migrates as data") {
-    val rhu = Expr.Obj(Map("round_half_up" -> int(0)))
-    expect
-      .same(
-        Right(Expr.Apply(Op.If, Vector(rhu, Expr.Lit(CBool(true)), Expr.Lit(CBool(false))))),
-        lenient("""{"if":[{"round_half_up":0},true,false]}""")
-      )
-      .and(
-        expect.same(
-          Right("""{"if":[{"object":{"round_half_up":0}},true,false]}"""),
-          Parser.migrate("""{"if":[{"round_half_up":0},true,false]}""")
-        )
-      )
-      .and(expect.same(Right(Expr.Arr(Vector(text("round_half_up"), int(0)))), lenient("""["round_half_up",0]""")))
-      .and(expect.same(Right("""[{"literal":"round_half_up"},0]"""), Parser.migrate("""["round_half_up",0]""")))
-      .and(expect.same(Right(Expr.Obj(Map("sha256" -> text("a")))), lenient("""{"sha256": "a"}""")))
-      .and(
-        expect.same(Right(Expr.Obj(Map("getKey" -> Expr.Arr(Vector(v("m"), text("k")))))), lenient("""{"getKey": [{"var": "m"}, "k"]}"""))
-      )
-      .and(expect.same(Right(Expr.Apply(Op.Add, Vector(int(1), int(2)))), lenient("""["+", 1, 2]""")))
-      .and(
-        expect.same(
-          Right(Expr.Apply(Op.SigmaVerify, Vector(v("p"), v("q"), v("m")))),
-          lenient("""{"sigma_verify": [{"var": "p"}, {"var": "q"}, {"var": "m"}]}""")
-        )
-      )
-  }
-
-  pureTest("lenient reading keeps metakit's meaning for round (half away from zero) and for the empty key (var)") {
-    expect
-      .same(Right(Expr.Apply(Op.RoundHalfUp, Vector(int(1)))), lenient("""{"round": [1]}"""))
-      .and(expect.same(Right("""{"round_half_up":[2.5]}"""), Parser.migrate("""{"round": 2.5}""")))
-      .and(expect.same(Right(Expr.Apply(Op.Round, Vector(int(1)))), p("""{"round": [1]}""")))
-      .and(expect.same(Right(v("a")), lenient("""{"": "a"}""")))
-      .and(expect.same(Right(Expr.Var(VarRef.Data(Vector("a")), Some(CInt(1)))), lenient("""{"": ["a", 1]}""")))
-      .and(expect(p("""{"": "a"}""").isLeft, "strict: the empty key is no operation"))
-  }
-
-  pureTest("the metakit operation list is metakit's (de2a856), and every name in it is a v1 operation or removed") {
-    val metakit = Set(
-      "noop",
-      "if",
-      "default",
-      "let",
-      "!",
-      "!!",
-      "or",
-      "and",
-      "==",
-      "===",
-      "!=",
-      "!==",
-      "<",
-      "<=",
-      ">",
-      ">=",
-      "+",
-      "-",
-      "*",
-      "/",
-      "%",
-      "max",
-      "min",
-      "abs",
-      "round",
-      "floor",
-      "ceil",
-      "pow",
-      "hex_to_int",
-      "map",
-      "filter",
-      "reduce",
-      "merge",
-      "all",
-      "some",
-      "none",
-      "find",
-      "count",
-      "in",
-      "intersect",
-      "unique",
-      "slice",
-      "reverse",
-      "flatten",
-      "cat",
-      "substr",
-      "lower",
-      "upper",
-      "join",
-      "split",
-      "trim",
-      "startsWith",
-      "endsWith",
-      "values",
-      "keys",
-      "get",
-      "has",
-      "set",
-      "unset",
-      "entries",
-      "length",
-      "exists",
-      "missing",
-      "missing_some",
-      "typeof",
-      "poseidon",
-      "pmt_verify",
-      "groth16_verify",
-      "ecvrf_verify",
-      "bn254_add",
-      "bn254_mul",
-      "bn254_pairing",
-      "bls_verify",
-      "bls_aggregate_verify",
-      "schnorr_verify",
-      "smt_verify",
-      "mpt_verify",
-      "mpt_prefix_verify",
-      "prove_dlog_verify",
-      "prove_dhtuple_verify",
-      "sigma_verify"
-    )
-    expect
-      .same(metakit, Parser.MetakitOps)
-      .and(expect(metakit.forall(n => Op.values.exists(_.wire == n) || Parser.Removed.contains(n)), "a v1 operation or removed"))
-  }
-
-  // ---- migration fails loudly where metakit's let scope cannot be expressed
-
-  pureTest("migrate rejects a computed var path while a let binding is in scope: metakit may have read the binding") {
-    def message(e: Either[JlvmError, ?]) = e.left.toOption.map(_.toString).getOrElse("")
-    expect(message(Parser.migrate("""{"let":[[["x",true]],{"var":{"cat":["x"]}}]}""")).contains("computed"), "computed text")
-      .and(expect(Parser.migrate("""{"let":[[["x",true]],{"var":[["x"]]}]}""").isLeft, "computed segments"))
-      .and(expect(Parser.migrate("""{"let":[[["x",1],["y",{"var":{"cat":["x"]}}]],0]}""").isLeft, "in a later binding"))
-      .and(expect(Parser.migrate("""{"let":[[["x",1]],{"var":""}]}""").isLeft, "the whole data is the merged scope"))
-      .and(expect(Parser.migrate("""{"var":{"cat":["x"]}}""").isRight, "no binding in scope"))
-      .and(expect(Parser.migrate("""{"let":[[["x",{"var":{"cat":["a"]}}]],0]}""").isRight, "the first binding sees no binding"))
-  }
-
-  pureTest("migrate: a callback body does not see the enclosing let's bindings in metakit, and fails loudly on them") {
-    expect(Parser.migrate("""{"let":[[["x",1]],{"map":[[{"x":5}],{"var":"x"}]}]}""").isLeft, "map")
-      .and(expect(Parser.migrate("""{"let":[[["x",1]],{"reduce":[[1],{"var":"x.a"},0]}]}""").isLeft, "reduce"))
-      .and(expect(Parser.migrate("""{"let":[[["x",1]],{"map":[[{}],{"let":[[["y",2]],{"var":"x"}]}]}]}""").isLeft, "through an inner let"))
-      .and(
-        expect.same(
-          Right("""{"map":[[{"object":{"y":2}}],{"let":[[["x",1]],{"+":[{"var":"$x"},{"var":"y"}]}]}]}"""),
-          Parser.migrate("""{"map":[[{"y":2}],{"let":[[["x",1]],{"+":[{"var":"x"},{"var":"y"}]}]}]}""")
-        )
-      )
-      .and(
-        expect.same(
-          Right("""{"let":[[["xs",[1,2]]],{"map":[{"var":"$xs"},{"+":[{"var":""},1]}]}]}"""),
-          Parser.migrate("""{"let":[[["xs",[1,2]]],{"map":[{"var":"xs"},{"+":[{"var":""},1]}]}]}""")
-        )
-      )
-  }
-
   // ---- rendering: exact, within the depth bound
 
   pureTest("150 nested computed var paths render within the depth bound and read back as the same program") {
@@ -549,7 +331,7 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     val prog = Parser.parse(src)
     expect(prog.isRight, "parses")
       .and(expect.same(prog, prog.flatMap(Parser.render).map(_.noSpaces).flatMap(Parser.parse(_))))
-      .and(expect.same(Right(src), Parser.migrate(src)))
+      .and(expect.same(Right(src), prog.flatMap(Parser.render).map(_.noSpaces)))
   }
 
   /** Non-empty arrays and objects nested, as the canonical JSON parser counts them. */

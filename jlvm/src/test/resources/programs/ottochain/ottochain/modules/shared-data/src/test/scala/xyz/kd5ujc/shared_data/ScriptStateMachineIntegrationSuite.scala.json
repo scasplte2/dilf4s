@@ -1,0 +1,67 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ScriptStateMachineIntegrationSuite.scala"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 37,
+      "program": {"if": [{"==": [{"var": "method"}, "validateAmount"]}, {">=": [{"var": "args.amount"}, 100]}, false]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ScriptStateMachineIntegrationSuite.scala:150 $"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 70,
+      "program": {"_scriptCall": {"fiberId": "INTERP", "method": "validateAmount", "args": {"object": {"amount": {"var": "event.amount"}}}}, "submittedAmount": {"var": "event.amount"}, "status": "validated"},
+      "changes": [
+        "K: single-key map \"amount\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ScriptStateMachineIntegrationSuite.scala:183 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 271,
+      "program": {">=": [{"var": "scripts.INTERP.state.counter"}, 5]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 277,
+      "program": {"object": {"status": "unlocked"}},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 349,
+      "program": {"if": [{"==": [{"var": "method"}, "calculateFee"]}, {"*": [{"var": "args.amount"}, 0.05]}, 0]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 383,
+      "program": {"_scriptCall": {"fiberId": "INTERP", "method": "calculateFee", "args": {"object": {"amount": {"var": "event.amount"}}}}, "amount": {"var": "event.amount"}},
+      "changes": [
+        "K: single-key map \"amount\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 400,
+      "program": [["totalAmount", {"+": [{"var": "state.amount"}, {"var": "scripts.INTERP.lastInvocation.result"}]}], ["feeCalculated", {"var": "scripts.INTERP.lastInvocation.result"}], ["status", "COMPLETED"]],
+      "placeholders": [
+        "INTERP"
+      ]
+    }
+  ]
+}

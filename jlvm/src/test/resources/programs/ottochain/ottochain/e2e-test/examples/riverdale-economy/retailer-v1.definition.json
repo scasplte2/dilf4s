@@ -1,0 +1,25 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-economy/retailer-v1.definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 13,
+      "program": {"status": "received", "receivedQuantity": {"var": "event.quantity"}, "shipmentsReceived": {"+": [{"var": "state.shipmentsReceived"}, 1]}},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/riverdale-economy/retailer-v2.definition.json:13 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 25,
+      "program": {"_transferAsset": [{"assetId": {"var": "event.goodsAssetId"}, "recipient": {"object": {"Fiber": {"object": {"fiberId": {"var": "event.buyerId"}}}}}}], "status": "received", "revenue": {"*": [{"var": "event.quantity"}, 10]}},
+      "changes": [
+        "K: single-key map \"Fiber\" written as {\"object\": ...}",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/riverdale-economy/retailer-v2.definition.json:36 $.transitions[2].effect"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/NftMarketplaceSuite.scala"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 45,
+      "program": {"if": [{"===": [{"var": "method"}, "recordRoyalty"]}, {"_state": {"totalRoyalties": {"+": [{"if": [{"var": "state.totalRoyalties"}, {"var": "state.totalRoyalties"}, 0]}, {"var": "args.royaltyAmount"}]}, "lastRecorded": {"var": "args"}}, "_result": {"success": true, "totalRoyalties": {"+": [{"if": [{"var": "state.totalRoyalties"}, {"var": "state.totalRoyalties"}, 0]}, {"var": "args.royaltyAmount"}]}}}, {"_state": {"var": "state"}, "_result": {"object": {"error": "Unknown method"}}}]},
+      "changes": [
+        "K: single-key map \"error\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 135,
+      "program": {">=": [{"var": "event.offerPrice"}, {"var": "state.price"}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 141,
+      "program": {"buyer": {"var": "event.buyer"}, "salePrice": {"var": "event.offerPrice"}, "soldAt": {"var": "event.timestamp"}, "royaltyAmount": {"*": [{"var": "event.offerPrice"}, 5]}, "_triggers": [{"targetMachineId": "INTERP", "eventName": "recordRoyalty", "payload": {"nftId": {"var": "state.nftId"}, "creator": {"var": "state.creator"}, "royaltyAmount": {"*": [{"var": "event.offerPrice"}, 5]}, "salePrice": {"var": "event.offerPrice"}}}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 175,
+      "program": {"===": [{"var": "event.cancelledBy"}, {"var": "state.seller"}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 181,
+      "program": {"object": {"cancelledAt": {"var": "event.timestamp"}}},
+      "changes": [
+        "K: single-key map \"cancelledAt\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 211,
+      "program": {"listingCount": {"+": [{"if": [{"var": "state.listingCount"}, {"var": "state.listingCount"}, 0]}, 1]}, "_spawn": [{"childId": {"var": "event.listingId"}, "definition": {"states": {"listed": {"id": "listed", "isFinal": false, "metadata": "NFT is listed for sale"}, "sold": {"id": "sold", "isFinal": true, "metadata": "NFT has been sold"}, "CANCELLED": {"id": "CANCELLED", "isFinal": true, "metadata": "Listing was cancelled"}}, "initialState": "listed", "transitions": [{"from": "listed", "to": "sold", "eventName": "purchase", "guard": {">=": [{"var": "event.offerPrice"}, {"var": "state.price"}]}, "effect": {"buyer": {"var": "event.buyer"}, "salePrice": {"var": "event.offerPrice"}, "soldAt": {"var": "event.timestamp"}, "royaltyAmount": {"*": [{"var": "event.offerPrice"}, 5]}, "_triggers": [{"targetMachineId": "INTERP", "eventName": "recordRoyalty", "payload": {"nftId": {"var": "state.nftId"}, "creator": {"var": "state.creator"}, "royaltyAmount": {"*": [{"var": "event.offerPrice"}, 5]}, "salePrice": {"var": "event.offerPrice"}}}]}, "dependencies": ["INTERP"]}, {"from": "listed", "to": "CANCELLED", "eventName": "cancel", "guard": {"===": [{"var": "event.cancelledBy"}, {"var": "state.seller"}]}, "effect": {"object": {"cancelledAt": {"var": "event.timestamp"}}}, "dependencies": []}]}, "initialData": {"nftId": {"var": "event.nftId"}, "creator": {"var": "event.creator"}, "seller": {"var": "event.seller"}, "price": {"var": "event.price"}, "metadata": {"var": "event.metadata"}, "listedAt": {"var": "event.timestamp"}}}]},
+      "changes": [
+        "K: single-key map \"cancelledAt\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    }
+  ]
+}

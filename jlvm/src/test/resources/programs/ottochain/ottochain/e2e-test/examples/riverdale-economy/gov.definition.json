@@ -1,0 +1,10 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-economy/gov.definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 13,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.manufacturerId"}, "eventName": "pay_taxes", "payload": {"taxAmount": {"var": "event.taxAmount"}, "taxAssetId": {"var": "event.taxAssetId"}, "govId": {"var": "machineId"}}}, {"targetMachineId": {"var": "event.retailerId"}, "eventName": "pay_taxes", "payload": {"taxAmount": {"var": "event.taxAmount"}, "taxAssetId": {"var": "event.taxAssetId"}, "govId": {"var": "machineId"}}}, {"targetMachineId": {"var": "event.consumerId"}, "eventName": "pay_taxes", "payload": {"taxAmount": {"var": "event.taxAmount"}, "taxAssetId": {"var": "event.taxAssetId"}, "govId": {"var": "machineId"}}}], "status": "tax_collection", "totalTaxesCollected": {"+": [{"var": "state.totalTaxesCollected"}, {"var": "event.taxAmount"}]}, "taxpayersBilled": {"+": [{"var": "state.taxpayersBilled"}, 3]}}
+    }
+  ]
+}

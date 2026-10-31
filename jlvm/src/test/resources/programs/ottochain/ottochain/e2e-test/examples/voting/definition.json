@@ -1,0 +1,46 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/voting/definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 31,
+      "program": {"merge": [{"var": "state"}, {"object": {"candidates": {"var": "event.candidates"}}}]},
+      "changes": [
+        "K: single-key map \"candidates\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/VotingSuite.scala:53 $.transitions[0].effect",
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:20 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 55,
+      "program": {"var": "state"},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ContextVariablesSuite.scala:97 $.transitions[0].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/PredictionMarketSuite.scala:73 $.transitions[1].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/PredictionMarketSuite.scala:106 $.transitions[3].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ScriptEscrowSuite.scala:190 $.transitions[2].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:70 $.transitions[2].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:78 $.transitions[3].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:180 $.transitions[2].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:270 $.transitions[2].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TokenEscrowSuite.scala:278 $.transitions[3].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/VotingSuite.scala:61 $.transitions[1].effect",
+        "ottochain-services@cf05326:packages/traffic-generator/src/orchestrator.ts:463 $.effect",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[0].effect",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[1].effect",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[2].effect",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[3].effect",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[4].effect",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[5].effect",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:73 $.transitions[0].effect",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:73 $.transitions[1].effect",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:73 $.transitions[2].effect",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:73 $.transitions[3].effect",
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:20 $.transitions[1].effect"
+      ]
+    }
+  ]
+}

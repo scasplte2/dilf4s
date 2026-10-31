@@ -1,0 +1,26 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/staked-oracle-pool/consumer-definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 45,
+      "program": {"merge": [{"var": "state"}, {"expectedPoolEpoch": {"get": [{"get": [{"get": [{"var": "machines"}, {"var": "state.poolId"}]}, "state"]}, "epoch"]}, "_addDependency": [{"object": {"fiberId": {"var": "state.poolId"}}}]}]},
+      "changes": [
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 87,
+      "program": {"and": [{"in": [{"var": "state.owner"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"and": [{"if": [{"has": [{"var": "machines"}, {"var": "state.poolId"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.poolId"}]}, "currentStateId"]}, "SETTLED"]}, false]}, {"===": [{"get": [{"get": [{"get": [{"var": "machines"}, {"var": "state.poolId"}]}, "state"]}, "epoch"]}, {"var": "state.expectedPoolEpoch"}]}]}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 174,
+      "program": {"merge": [{"var": "state"}, {"answer": {"get": [{"get": [{"get": [{"get": [{"var": "machines"}, {"var": "state.poolId"}]}, "state"]}, "result"]}, "value"]}, "readAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    }
+  ]
+}

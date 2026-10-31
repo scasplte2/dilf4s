@@ -1,0 +1,14 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ScriptValidationSuite.scala"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 26,
+      "program": {"if": [{"==": [{"var": "method"}, "validate"]}, {">=": [{"var": "args.value"}, 10]}, false]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ScriptValidationSuite.scala:60 $",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ScriptValidationSuite.scala:120 $"
+      ]
+    }
+  ]
+}

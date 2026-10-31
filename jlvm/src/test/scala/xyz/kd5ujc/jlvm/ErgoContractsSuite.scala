@@ -41,7 +41,7 @@ object ErgoContractsSuite extends IOSuite {
 
   private val tx = ByteVector.fill(32)(0x51)
   private val otherTx = ByteVector.fill(32)(0x52)
-  private def at(t: Long, txHash: ByteVector = tx) = List("timestamp" -> CInt(BigInt(t)), "txHash" -> CBytes(txHash))
+  private def at(t: Long, txHash: ByteVector = tx) = List("ordinal" -> CInt(BigInt(t)), "txHash" -> CBytes(txHash))
 
   private def field(v: CanonicalValue, k: String): CanonicalValue = v match {
     case CMap(m) => m.getOrElse(k, CanonicalValue.CNull)

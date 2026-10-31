@@ -1,0 +1,63 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ProofValidationSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 49,
+      "program": [["approved", true], ["signer1", {"var": "proofs.0.address"}], ["signer2", {"var": "proofs.1.address"}], ["hasTwoSigners", {"and": [{"exists": [{"var": "proofs.0"}]}, {"exists": [{"var": "proofs.1"}]}]}]],
+      "changes": [
+        "SP?: exists with one computed argument: reviewed by hand"
+      ]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 146,
+      "program": {"in": ["INTERP", {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 152,
+      "program": {"status": "approved", "approvedBy": "alice"}
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 238,
+      "program": {"and": [{"exists": [{"var": "proofs.0"}]}, {"exists": [{"var": "proofs.1"}]}]},
+      "changes": [
+        "SP?: exists with one computed argument: reviewed by hand"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 244,
+      "program": {"status": "approved", "hasTwoProofs": true}
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 334,
+      "program": {"and": [{"exists": [{"var": "proofs.0"}]}, {"exists": [{"var": "proofs.1"}]}, {"or": [{"in": ["INTERP", {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": ["INTERP", {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}]},
+      "changes": [
+        "SP?: exists with one computed argument: reviewed by hand"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 346,
+      "program": {"status": "approved", "approvers": {"map": [{"var": "proofs"}, {"var": "address"}]}}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 427,
+      "program": [["hasProofs", {"exists": [{"var": "proofs.0"}]}], ["firstProofId", {"var": "proofs.0.id"}], ["firstProofAddress", {"var": "proofs.0.address"}], ["firstProofSignature", {"var": "proofs.0.signature"}]],
+      "changes": [
+        "SP?: exists with one computed argument: reviewed by hand"
+      ]
+    }
+  ]
+}

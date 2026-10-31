@@ -2,12 +2,12 @@
   ["s", {"var": "state"}],
   ["c", {"var": "call"}],
   ["me", {"var": "$sender"}],
-  ["t", {"var": "$timestamp"}]
+  ["height", {"var": "$ordinal"}]
  ],
  {"if": [
   {"==": [{"var": "$c.method"}, "commit"]},
   {"if": [
-    {"<": [{"var": "$t"}, {"var": "$s.commitEnd"}]},
+    {"<": [{"var": "$height"}, {"var": "$s.commitEnd"}]},
     {"state": {"set": [{"var": "$s"}, "commits", {"set": [{"var": "$s.commits"}, {"var": "$me"}, {"var": "$c.commitment"}]}]},
      "effects": []},
     {"object": {"reject": "the commit phase is over"}}
@@ -16,8 +16,8 @@
   {"==": [{"var": "$c.method"}, "reveal"]},
   {"if": [
     {"and": [
-      {">=": [{"var": "$t"}, {"var": "$s.commitEnd"}]},
-      {"<": [{"var": "$t"}, {"var": "$s.revealEnd"}]},
+      {">=": [{"var": "$height"}, {"var": "$s.commitEnd"}]},
+      {"<": [{"var": "$height"}, {"var": "$s.revealEnd"}]},
       {"==": [
         {"keccak256": {"cat": [{"int_to_bytes": [{"var": "$c.amount"}, 32]}, {"var": "$c.salt"}]}},
         {"get": [{"var": "$s.commits"}, {"var": "$me"}]}
@@ -37,7 +37,7 @@
 
   {"==": [{"var": "$c.method"}, "settle"]},
   {"if": [
-    {"and": [{">=": [{"var": "$t"}, {"var": "$s.revealEnd"}]}, {"!": {"var": "$s.settled"}}]},
+    {"and": [{">=": [{"var": "$height"}, {"var": "$s.revealEnd"}]}, {"!": {"var": "$s.settled"}}]},
     {"state": {"set": [{"var": "$s"}, "settled", true]},
      "effects": {"if": [
        {"var": "$s.highestBidder"},

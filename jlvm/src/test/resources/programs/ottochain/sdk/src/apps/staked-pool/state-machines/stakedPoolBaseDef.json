@@ -1,0 +1,16 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"and": [{"in": [{"var": "state.authority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {">=": [{"count": [{"var": "state.submissions"}]}, {"var": "state.quorum"}]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "SETTLED", "inConsensus": [], "claimed": {}, "result": {"submissionCount": {"count": [{"var": "state.submissions"}]}, "epoch": {"var": "state.epoch"}, "finalizedAt": {"var": "$ordinal"}}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    }
+  ]
+}

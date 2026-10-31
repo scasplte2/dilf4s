@@ -1,0 +1,113 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/governance/state-machines/index.ts#daoTokenDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"some": [{"map": [{"var": "proofs"}, {"var": "address"}]}, {">=": [{"get": [{"var": "state.balances"}, {"var": ""}]}, {"var": "state.proposalThreshold"}]}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"proposal": {"id": {"var": "event.proposalId"}, "title": {"var": "event.title"}, "description": {"var": "event.description"}, "actionType": {"var": "event.actionType"}, "payload": {"var": "event.payload"}, "proposer": {"var": "event.agent"}, "proposedAt": {"var": "$ordinal"}, "votingEndsAt": {"+": [{"var": "$ordinal"}, {"var": "state.votingPeriodMs"}]}, "snapshotBlock": {"var": "event.snapshotBlock"}}, "votes": {"for": 0, "against": 0, "abstain": 0, "voters": {}}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {">": [{"get": [{"var": "state.balances"}, {"var": "event.agent"}]}, 0]}, {"!": [{"has": [{"var": "state.votes.voters"}, {"var": "event.agent"}]}]}, {"<=": [{"var": "$ordinal"}, {"var": "state.proposal.votingEndsAt"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"votes": {"merge": [{"var": "state.votes"}, {"if": [{"===": [{"var": "event.vote"}, "for"]}, {"object": {"for": {"+": [{"var": "state.votes.for"}, {"get": [{"var": "state.balances"}, {"var": "event.agent"}]}]}}}, {"===": [{"var": "event.vote"}, "against"]}, {"object": {"against": {"+": [{"var": "state.votes.against"}, {"get": [{"var": "state.balances"}, {"var": "event.agent"}]}]}}}, {"object": {"abstain": {"+": [{"var": "state.votes.abstain"}, {"get": [{"var": "state.balances"}, {"var": "event.agent"}]}]}}}]}, {"object": {"voters": {"set": [{"var": "state.votes.voters"}, {"var": "event.agent"}, {"vote": {"var": "event.vote"}, "weight": {"get": [{"var": "state.balances"}, {"var": "event.agent"}]}, "votedAt": {"var": "$ordinal"}}]}}}]}}}]},
+      "changes": [
+        "K: single-key map \"votes\" written as {\"object\": ...}",
+        "K: single-key map \"for\" written as {\"object\": ...}",
+        "K: single-key map \"against\" written as {\"object\": ...}",
+        "K: single-key map \"abstain\" written as {\"object\": ...}",
+        "K: single-key map \"voters\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"and": [{">": [{"var": "$ordinal"}, {"var": "state.proposal.votingEndsAt"}]}, {">": [{"var": "state.votes.for"}, {"var": "state.votes.against"}]}, {">=": [{"+": [{"var": "state.votes.for"}, {"var": "state.votes.against"}, {"var": "state.votes.abstain"}]}, {"var": "state.quorum"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"proposal": {"merge": [{"var": "state.proposal"}, {"queuedAt": {"var": "$ordinal"}, "executableAt": {"+": [{"var": "$ordinal"}, {"var": "state.timelockMs"}]}}]}}}]},
+      "changes": [
+        "K: single-key map \"proposal\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {">=": [{"var": "$ordinal"}, {"var": "state.proposal.executableAt"}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"executedProposals": {"cat": [{"var": "state.executedProposals"}, [{"merge": [{"var": "state.proposal"}, {"votes": {"var": "state.votes"}, "executedAt": {"var": "$ordinal"}}]}]]}, "proposal": null, "votes": null, "_emit": [{"name": "proposal_executed", "data": {"object": {"proposalId": {"var": "state.proposal.id"}}}, "destination": "external"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"proposalId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"and": [{">": [{"var": "$ordinal"}, {"var": "state.proposal.votingEndsAt"}]}, {"or": [{"<=": [{"var": "state.votes.for"}, {"var": "state.votes.against"}]}, {"<": [{"+": [{"var": "state.votes.for"}, {"var": "state.votes.against"}, {"var": "state.votes.abstain"}]}, {"var": "state.quorum"}]}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"rejectedProposals": {"cat": [{"var": "state.rejectedProposals"}, [{"merge": [{"var": "state.proposal"}, {"votes": {"var": "state.votes"}, "rejectedAt": {"var": "$ordinal"}}]}]]}, "proposal": null, "votes": null}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"in": [{"var": "state.proposal.proposer"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"cancelledProposals": {"cat": [{"var": "state.cancelledProposals"}, [{"merge": [{"var": "state.proposal"}, {"object": {"cancelledAt": {"var": "$ordinal"}}}]}]]}, "proposal": null, "votes": null}]},
+      "changes": [
+        "K: single-key map \"cancelledAt\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {">": [{"get": [{"var": "state.balances"}, {"var": "event.agent"}]}, 0]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"delegations": {"set": [{"var": "state.delegations"}, {"var": "event.agent"}, {"var": "event.delegateTo"}]}}}]},
+      "changes": [
+        "K: single-key map \"delegations\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "program": {"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"has": [{"var": "state.delegations"}, {"var": "event.agent"}]}]}
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"delegations": {"unset": [{"var": "state.delegations"}, {"var": "event.agent"}]}}}]},
+      "changes": [
+        "K: single-key map \"delegations\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

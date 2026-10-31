@@ -1,0 +1,75 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/lending/state-machines/index.ts#lendingZkLoanDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"and": [{"in": [{"var": "state.borrower"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"===": [{"var": "event.assetId"}, {"var": "state.collateralAssetId"}]}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "COLLATERAL_LOCKED", "lockedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"or": [{"in": [{"var": "state.borrower"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "state.lender"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"and": [{"in": [{"var": "state.lender"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"groth16_verify": [{"var": "state.lendingRuleVKey"}, {"var": "event.witness.publicValues"}, {"var": "event.witness.proof"}]}, {"===": [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.witness.publicValues"}}, 2, 64]}]}}, {"var": "state.lendingRuleLogicHash"}]}, {"===": [{"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.witness.publicValues"}}, 130, 64]}]}}, {"var": "state.keccakTrue"}]}, {"===": [{"substr": [{"hex": {"var": "event.witness.publicValues"}}, 256, 2]}, "01"]}]},
+      "changes": [
+        "HEXT: substr over 0x-hex data reads its hex text",
+        "HEXT: a 0x-prefixed word is rebuilt as bytes (unhex), or as text when it is a map key"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "originatedAt": {"var": "$ordinal"}, "debtAssetId": {"var": "event.debtAssetId"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"in": [{"var": "state.borrower"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "REPAID", "repaidAt": {"var": "$ordinal"}, "_transferAsset": [{"assetId": {"var": "state.collateralAssetId"}, "recipient": {"object": {"Wallet": {"object": {"address": {"var": "state.borrower"}}}}}}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"Wallet\" written as {\"object\": ...}",
+        "K: single-key map \"address\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"and": [{"var": "state.dueOrdinal"}, {">=": [{"var": "$ordinal"}, {"var": "state.dueOrdinal"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "DEFAULTED", "defaultedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"in": [{"var": "state.lender"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "LIQUIDATED", "liquidatedAt": {"var": "$ordinal"}, "_transferAsset": [{"assetId": {"var": "state.collateralAssetId"}, "recipient": {"object": {"Wallet": {"object": {"address": {"var": "state.lender"}}}}}}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"Wallet\" written as {\"object\": ...}",
+        "K: single-key map \"address\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

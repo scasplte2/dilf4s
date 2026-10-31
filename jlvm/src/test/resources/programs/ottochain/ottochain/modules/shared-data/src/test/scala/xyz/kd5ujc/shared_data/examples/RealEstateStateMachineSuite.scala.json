@@ -1,0 +1,573 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RealEstateStateMachineSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 66,
+      "program": {"and": [{">=": [{"var": "event.offerAmount"}, {"var": "state.minPrice"}]}, {"===": [{"var": "machines.INTERP.state.status"}, "signed"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 72,
+      "program": [["status", "under_contract"], ["buyer", {"var": "event.buyerId"}], ["contractPrice", {"var": "event.offerAmount"}], ["contractDate", {"var": "event.timestamp"}], ["saleCount", {"+": [{"var": "state.saleCount"}, 1]}]]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 85,
+      "program": {"or": [{"===": [{"var": "machines.INTERP.state.status"}, "buyer_default"]}, {"===": [{"var": "machines.INTERP.state.status"}, "seller_default"]}, {"===": [{"var": "machines.INTERP.state.status"}, "contingency_failed"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 92,
+      "program": [["status", "for_sale"], ["buyer", null], ["contractPrice", null], ["failedContracts", {"+": [{"var": "state.failedContracts"}, 1]}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 104,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.result"}, "passed"]}, {"===": [{"var": "machines.INTERP.state.result"}, "approved"]}, {"===": [{"var": "machines.INTERP.state.status"}, "approved"]}, {"===": [{"var": "machines.INTERP.state.status"}, "held"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 112,
+      "program": [["status", "pending_sale"], ["contingenciesCleared", true], ["clearedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 123,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.status"}, "transferred"]}, {"===": [{"var": "machines.INTERP.state.status"}, "closed"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 129,
+      "program": [["_triggers", [{"targetMachineId": "INTERP", "eventName": "activate", "payload": {"propertyId": {"var": "machineId"}, "closingDate": {"var": "event.timestamp"}}}]], ["status", "owned"], ["owner", {"var": "state.buyer"}], ["previousOwner", {"var": "state.owner"}], ["purchasePrice", {"var": "state.contractPrice"}], ["purchaseDate", {"var": "event.timestamp"}], ["hasMortgage", true]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 153,
+      "program": {"===": [{"var": "machines.INTERP.state.status"}, "lease_active"]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 156,
+      "program": [["status", "rented"], ["rentStartDate", {"var": "event.timestamp"}], ["isInvestmentProperty", true]]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 167,
+      "program": {"===": [{"var": "machines.INTERP.state.status"}, "lease_ended"]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 170,
+      "program": [["status", "owned"], ["rentEndDate", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "line": 180,
+      "program": {"and": [{"===": [{"var": "state.hasMortgage"}, true]}, {"===": [{"var": "machines.INTERP.state.status"}, "defaulted"]}]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RealEstateStateMachineSuite.scala:196 $.transitions[7].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 186,
+      "program": [["status", "in_default"], ["defaultDate", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 202,
+      "program": [["_triggers", [{"targetMachineId": "INTERP", "eventName": "terminate_lease", "payload": {"reason": "foreclosure", "terminationDate": {"var": "event.timestamp"}}}]], ["status", "in_default"], ["defaultDate", {"var": "event.timestamp"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "line": 222,
+      "program": {"===": [{"var": "machines.INTERP.state.status"}, "current"]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "line": 225,
+      "program": [["status", "owned"], ["curedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[9].guard",
+      "line": 235,
+      "program": {"===": [{"var": "machines.INTERP.state.status"}, "foreclosure"]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "line": 238,
+      "program": [["status", "in_foreclosure"], ["foreclosureStartDate", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[10].guard",
+      "line": 248,
+      "program": {"===": [{"var": "machines.INTERP.state.status"}, "foreclosed"]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[10].effect",
+      "line": 251,
+      "program": [["_emit", [{"name": "legal_notice", "data": {"noticeType": "foreclosure_complete", "propertyId": {"var": "machineId"}, "previousOwner": {"var": "state.owner"}, "newOwner": {"var": "machines.INTERP.state.lender"}}}]], ["status", "foreclosed"], ["previousOwner", {"var": "state.owner"}], ["owner", {"var": "machines.INTERP.state.lender"}], ["foreclosureCompleteDate", {"var": "event.timestamp"}], ["hasMortgage", false]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[11].effect",
+      "line": 276,
+      "program": [["status", "reo"], ["reoDate", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[12].effect",
+      "line": 287,
+      "program": [["status", "for_sale"], ["listPrice", {"var": "event.listPrice"}], ["listDate", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 315,
+      "program": {"and": [{"===": [{"var": "event.buyerSigned"}, true]}, {"===": [{"var": "event.sellerSigned"}, true]}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 321,
+      "program": [["status", "signed"], ["signedAt", {"var": "event.timestamp"}], ["buyer", {"var": "event.buyer"}], ["seller", {"var": "event.seller"}], ["purchasePrice", {"var": "event.purchasePrice"}], ["earnestMoney", {"var": "event.earnestMoney"}], ["closingDate", {"var": "event.closingDate"}]]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 337,
+      "program": [["status", "contingent"], ["contingencyPeriodEnd", {"+": [{"var": "event.timestamp"}, 2592000]}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 336,
+      "program": {"or": [{"===": [{"var": "machines.INTERP.state.result"}, "failed"]}, {"===": [{"var": "machines.INTERP.state.result"}, "REJECTED"]}, {"===": [{"var": "machines.INTERP.state.status"}, "denied"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 354,
+      "program": [["_triggers", [{"targetMachineId": "INTERP", "eventName": "release_to_buyer", "payload": {"reason": "contingency_failed", "amount": {"var": "state.earnestMoney"}}}]], ["status", "contingency_failed"], ["failureReason", {"var": "event.reason"}], ["failedAt", {"var": "event.timestamp"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 347,
+      "program": {">": [{"var": "event.timestamp"}, {"var": "state.closingDate"}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 378,
+      "program": [["_triggers", [{"targetMachineId": "INTERP", "eventName": "release_to_seller", "payload": {"reason": "buyer_default", "amount": {"var": "state.earnestMoney"}}}]], ["status", "buyer_default"], ["defaultedAt", {"var": "event.timestamp"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 375,
+      "program": {"===": [{"var": "event.sellerRefusedToClose"}, true]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 401,
+      "program": [["_triggers", [{"targetMachineId": "INTERP", "eventName": "release_to_buyer", "payload": {"reason": "seller_default", "amount": {"*": [{"var": "state.earnestMoney"}, 2]}}}]], ["status", "seller_default"], ["defaultedAt", {"var": "event.timestamp"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 398,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.status"}, "closed"]}, {"===": [{"var": "machines.INTERP.state.status"}, "transferred"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 427,
+      "program": [["status", "executed"], ["closedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 457,
+      "program": [["status", "funded"], ["balance", {"var": "event.amount"}], ["depositedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 469,
+      "program": [["status", "held"], ["heldAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 480,
+      "program": [["_emit", [{"name": "payment", "data": {"payee": {"var": "state.buyer"}, "amount": {"var": "event.amount"}, "reason": {"var": "event.reason"}}}]], ["status", "released_to_buyer"], ["releasedAmount", {"var": "event.amount"}], ["releasedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 502,
+      "program": [["_emit", [{"name": "payment", "data": {"payee": {"var": "state.seller"}, "amount": {"var": "event.amount"}, "reason": {"var": "event.reason"}}}]], ["status", "released_to_seller"], ["releasedAmount", {"var": "event.amount"}], ["releasedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 524,
+      "program": [["status", "disbursed"], ["disbursedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 535,
+      "program": [["status", "closed"], ["closedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 562,
+      "program": [["status", "scheduled"], ["scheduledDate", {"var": "event.inspectionDate"}]]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 573,
+      "program": [["status", "COMPLETED"], ["completedAt", {"var": "event.timestamp"}], ["issues", {"var": "event.issues"}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 561,
+      "program": {"===": [{"var": "state.issues"}, 0]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 587,
+      "program": [["result", "passed"], ["approvedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 572,
+      "program": {"and": [{">": [{"var": "state.issues"}, 0]}, {"<=": [{"var": "state.issues"}, 3]}, {"===": [{"var": "event.repairsAgreed"}, true]}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 604,
+      "program": [["result", "passed"], ["approvedAt", {"var": "event.timestamp"}], ["repairsRequired", true]]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 584,
+      "program": {">": [{"var": "state.issues"}, 3]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 618,
+      "program": [["result", "failed"], ["rejectedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 644,
+      "program": [["status", "ordered"], ["orderedAt", {"var": "event.timestamp"}], ["expectedValue", {"var": "event.purchasePrice"}]]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 656,
+      "program": [["status", "COMPLETED"], ["appraisedValue", {"var": "event.appraisedValue"}], ["completedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 643,
+      "program": {">=": [{"var": "state.appraisedValue"}, {"var": "state.expectedValue"}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 670,
+      "program": [["result", "approved"], ["approvedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 655,
+      "program": {"<": [{"var": "state.appraisedValue"}, {"var": "state.expectedValue"}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 683,
+      "program": [["result", "REJECTED"], ["rejectedAt", {"var": "event.timestamp"}], ["shortfall", {"-": [{"var": "state.expectedValue"}, {"var": "state.appraisedValue"}]}]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 718,
+      "program": [["status", "underwriting"], ["submittedAt", {"var": "event.timestamp"}], ["loanAmount", {"var": "event.loanAmount"}], ["lender", {"var": "event.lender"}], ["borrower", {"var": "event.borrower"}]]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 717,
+      "program": {"and": [{">=": [{"var": "event.creditScore"}, 620]}, {"<=": [{"var": "event.dti"}, 43]}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 737,
+      "program": [["status", "approved"], ["approvedAt", {"var": "event.timestamp"}], ["interestRate", {"var": "event.interestRate"}], ["term", {"var": "event.term"}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 731,
+      "program": {"or": [{"<": [{"var": "event.creditScore"}, 620]}, {">": [{"var": "event.dti"}, 43]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 755,
+      "program": [["status", "denied"], ["deniedAt", {"var": "event.timestamp"}], ["denialReason", {"var": "event.reason"}]]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 767,
+      "program": [["status", "ACTIVE"], ["originationDate", {"var": "event.closingDate"}], ["servicer", {"var": "state.lender"}], ["owner", {"var": "state.lender"}], ["principalBalance", {"var": "state.loanAmount"}], ["paymentsRemaining", {"var": "state.term"}]]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 782,
+      "program": [["status", "current"], ["lastPaymentDate", {"var": "event.timestamp"}], ["principalBalance", {"-": [{"var": "state.principalBalance"}, {"var": "event.principalPaid"}]}], ["paymentsRemaining", {"-": [{"var": "state.paymentsRemaining"}, 1]}], ["paymentCount", 1]]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 749,
+      "program": {"<=": [{"-": [{"var": "event.timestamp"}, {"var": "state.lastPaymentDate"}]}, 2678400]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 798,
+      "program": [["status", "current"], ["lastPaymentDate", {"var": "event.timestamp"}], ["principalBalance", {"-": [{"var": "state.principalBalance"}, {"var": "event.principalPaid"}]}], ["paymentsRemaining", {"-": [{"var": "state.paymentsRemaining"}, 1]}], ["paymentCount", {"+": [{"var": "state.paymentCount"}, 1]}]]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 812,
+      "program": [["status", "current"], ["servicer", {"var": "event.newServicer"}], ["servicingTransferDate", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 824,
+      "program": [["status", "current"], ["owner", {"var": "event.newOwner"}], ["saleDate", {"var": "event.timestamp"}], ["soldPrice", {"var": "event.salePrice"}]]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "line": 766,
+      "program": {"and": [{">": [{"-": [{"var": "event.timestamp"}, {"var": "state.lastPaymentDate"}]}, 2678400]}, {"<=": [{"-": [{"var": "event.timestamp"}, {"var": "state.lastPaymentDate"}]}, 5270400]}]}
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "line": 842,
+      "program": [["status", "delinquent_30"], ["delinquentSince", {"var": "event.timestamp"}], ["missedPayments", 1]]
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "line": 854,
+      "program": [["status", "current"], ["lastPaymentDate", {"var": "event.timestamp"}], ["principalBalance", {"-": [{"var": "state.principalBalance"}, {"var": "event.principalPaid"}]}], ["paymentsRemaining", {"-": [{"var": "state.paymentsRemaining"}, 1]}], ["paymentCount", {"+": [{"var": "state.paymentCount"}, 1]}], ["missedPayments", 0]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RealEstateStateMachineSuite.scala:885 $.transitions[11].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[10].guard",
+      "line": 781,
+      "program": {"and": [{">": [{"-": [{"var": "event.timestamp"}, {"var": "state.lastPaymentDate"}]}, 5270400]}, {"<=": [{"-": [{"var": "event.timestamp"}, {"var": "state.lastPaymentDate"}]}, 7862400]}]}
+    },
+    {
+      "path": "$.transitions[10].effect",
+      "line": 874,
+      "program": [["status", "delinquent_60"], ["missedPayments", 2]]
+    },
+    {
+      "path": "$.transitions[12].guard",
+      "line": 795,
+      "program": {">": [{"-": [{"var": "event.timestamp"}, {"var": "state.lastPaymentDate"}]}, 7862400]}
+    },
+    {
+      "path": "$.transitions[12].effect",
+      "line": 902,
+      "program": [["status", "delinquent_90"], ["missedPayments", 3]]
+    },
+    {
+      "path": "$.transitions[13].guard",
+      "line": 811,
+      "program": {">=": [{"var": "state.missedPayments"}, 3]}
+    },
+    {
+      "path": "$.transitions[13].effect",
+      "line": 915,
+      "program": [["_emit", [{"name": "notice", "data": {"noticeType": "default", "borrower": {"var": "state.borrower"}, "missedPayments": {"var": "state.missedPayments"}}}]], ["status", "defaulted"], ["defaultDate", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[14].guard",
+      "line": 823,
+      "program": {"===": [{"var": "event.paidPastDue"}, true]}
+    },
+    {
+      "path": "$.transitions[14].effect",
+      "line": 938,
+      "program": [["status", "current"], ["lastPaymentDate", {"var": "event.timestamp"}], ["reinstatedAt", {"var": "event.timestamp"}], ["missedPayments", 0]]
+    },
+    {
+      "path": "$.transitions[15].guard",
+      "line": 836,
+      "program": {">": [{"-": [{"var": "event.timestamp"}, {"var": "state.defaultDate"}]}, 7862400]}
+    },
+    {
+      "path": "$.transitions[15].effect",
+      "line": 953,
+      "program": [["status", "foreclosure"], ["foreclosureStartDate", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[16].effect",
+      "line": 964,
+      "program": [["status", "foreclosed"], ["foreclosureCompleteDate", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[17].guard",
+      "line": 853,
+      "program": {"<=": [{"var": "state.principalBalance"}, 0]}
+    },
+    {
+      "path": "$.transitions[17].effect",
+      "line": 977,
+      "program": [["status", "paid_off"], ["paidOffAt", {"var": "event.timestamp"}], ["finalPaymentAmount", {"var": "event.payoffAmount"}]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 1005,
+      "program": [["status", "searching"], ["searchStartedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 1004,
+      "program": {"===": [{"var": "event.issuesFound"}, 0]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 1018,
+      "program": [["status", "clear"], ["clearAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 1015,
+      "program": {">": [{"var": "event.issuesFound"}, 0]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 1031,
+      "program": [["status", "issues_found"], ["issues", {"var": "event.issuesFound"}], ["foundAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 1043,
+      "program": [["status", "clear"], ["resolvedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 1054,
+      "program": [["status", "insured"], ["insuredAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 1065,
+      "program": [["status", "transferred"], ["transferredAt", {"var": "event.timestamp"}], ["fromOwner", {"var": "event.fromOwner"}], ["toOwner", {"var": "event.toOwner"}]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 1095,
+      "program": [["status", "showing"], ["showingCount", {"+": [{"var": "state.showingCount"}, 1]}]]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 1094,
+      "program": {">=": [{"var": "event.creditScore"}, 650]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 1108,
+      "program": [["status", "lease_pending"], ["tenant", {"var": "event.tenant"}], ["monthlyRent", {"var": "event.monthlyRent"}], ["leaseTermMonths", {"var": "event.leaseTermMonths"}]]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 1121,
+      "program": [["status", "lease_active"], ["leaseStartDate", {"var": "event.timestamp"}], ["leaseEndDate", {"+": [{"var": "event.timestamp"}, {"*": [{"var": "state.leaseTermMonths"}, 2592000]}]}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 1105,
+      "program": {">=": [{"var": "event.timestamp"}, {"var": "state.leaseEndDate"}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 1135,
+      "program": [["status", "lease_ended"], ["leaseEndedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 1120,
+      "program": {">=": [{"var": "event.missedPayments"}, 3]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/RiverdaleEconomyStateMachineSuite.scala:577 $.transitions[3].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 1148,
+      "program": [["status", "eviction"], ["evictionStartDate", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 1132,
+      "program": {"===": [{"var": "event.reason"}, "foreclosure"]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 1161,
+      "program": [["status", "terminated"], ["terminationReason", {"var": "event.reason"}], ["terminatedAt", {"var": "event.terminationDate"}]]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 1173,
+      "program": [["status", "available"], ["evictionCompletedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 1184,
+      "program": [["status", "available"], ["showingCount", 0]]
+    }
+  ]
+}

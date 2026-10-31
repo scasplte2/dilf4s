@@ -1,0 +1,162 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/MultipleGuardsSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 46,
+      "program": {">=": [{"var": "event.priority"}, 80]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 49,
+      "program": {"object": {"level": "high"}},
+      "changes": [
+        "K: single-key map \"level\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 58,
+      "program": {">=": [{"var": "event.priority"}, 50]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 61,
+      "program": {"object": {"level": "medium"}},
+      "changes": [
+        "K: single-key map \"level\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 71,
+      "program": {"object": {"level": "low"}},
+      "changes": [
+        "K: single-key map \"level\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 141,
+      "program": {">=": [{"var": "event.value"}, 10]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 144,
+      "program": {"result": "a", "message": "matched first guard (>= 10)"}
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 154,
+      "program": {">=": [{"var": "event.value"}, 5]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 157,
+      "program": {"result": "b", "message": "matched second guard (>= 5)"}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 168,
+      "program": {"result": "c", "message": "matched fallback guard"}
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 247,
+      "program": {">=": [{"var": "event.amount"}, 1000]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 250,
+      "program": {"object": {"tier": 1}},
+      "changes": [
+        "K: single-key map \"tier\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 259,
+      "program": {">=": [{"var": "event.amount"}, 500]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 262,
+      "program": {"object": {"tier": 2}},
+      "changes": [
+        "K: single-key map \"tier\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 271,
+      "program": {">=": [{"var": "event.amount"}, 100]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 274,
+      "program": {"object": {"tier": 3}},
+      "changes": [
+        "K: single-key map \"tier\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 346,
+      "program": {"and": [{">=": [{"var": "event.age"}, 25]}, {">=": [{"var": "event.income"}, 100000]}, {"===": [{"var": "event.verified"}, true]}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 353,
+      "program": {"object": {"level": "premium"}},
+      "changes": [
+        "K: single-key map \"level\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 362,
+      "program": {"and": [{">=": [{"var": "event.age"}, 18]}, {">=": [{"var": "event.income"}, 50000]}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 368,
+      "program": {"object": {"level": "standard"}},
+      "changes": [
+        "K: single-key map \"level\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 377,
+      "program": {">=": [{"var": "event.age"}, 18]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 380,
+      "program": {"object": {"level": "basic"}},
+      "changes": [
+        "K: single-key map \"level\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 455,
+      "program": {"===": [{"var": "event.role"}, "admin"]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 458,
+      "program": {"unlockedBy": "admin", "attempts": {"var": "state.attempts"}}
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 468,
+      "program": {"and": [{"===": [{"var": "event.code"}, {"var": "state.secretCode"}]}, {"<": [{"var": "state.attempts"}, 3]}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 474,
+      "program": {"unlockedBy": "code", "attempts": {"+": [{"var": "state.attempts"}, 1]}}
+    }
+  ]
+}

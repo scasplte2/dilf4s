@@ -1,0 +1,35 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ExecutionLimitsSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 46,
+      "program": {"_triggers": [{"targetMachineId": "INTERP", "eventName": "pong", "payload": {"var": "state"}}], "count": {"+": [{"var": "state.count"}, 1]}},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 76,
+      "program": {"_triggers": [{"targetMachineId": "INTERP", "eventName": "ping", "payload": {"var": "state"}}], "count": {"+": [{"var": "state.count"}, 1]}},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ExecutionLimitsSuite.scala:93 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 314,
+      "program": {"_triggers": [{"targetMachineId": "INTERP", "eventName": "start", "payload": {}}], "count": {"+": [{"var": "state.count"}, 1]}},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ExecutionLimitsSuite.scala:331 $.transitions[1].effect"
+      ]
+    }
+  ]
+}
