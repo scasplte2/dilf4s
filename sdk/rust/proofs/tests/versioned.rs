@@ -86,6 +86,8 @@ fn proofs() {
                     assert!(state.holds(k, x.as_ref()).unwrap(), "{}: {k}", p.name);
                     // a different claim is false
                     assert!(!state.holds(k, Some(&Value::text("other"))).unwrap(), "{}: {k} other", p.name);
+                    // absent equals null: a null claim is a claim of absence
+                    assert_eq!(state.holds(k, Some(&Value::Null)).unwrap(), x.is_none(), "{}: {k} null", p.name);
                 }
                 for l in p.listings.iter().flatten() {
                     let ns = StateNamespace::parse(&l.namespace).unwrap();

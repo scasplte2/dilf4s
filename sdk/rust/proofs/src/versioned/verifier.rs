@@ -45,9 +45,11 @@ impl<H: Hasher> VerifiedState<'_, H> {
         }
     }
 
-    /// Whether the key holds `value` (`None`: is absent), as `trie_verify` decides it.
+    /// Whether the key holds `value` (`None`, or a null value: is absent), as `trie_verify` decides it. Absent equals
+    /// null in the data model, and a null value is never stored.
     pub fn holds(&self, key: &StateKey, value: Option<&Value>) -> Result<bool, VersionedTrieError> {
-        Ok(self.lookup(key)? == value.map(|v| self.hashing.value_of(v)))
+        let claimed = value.filter(|v| !matches!(v, Value::Null)).map(|v| self.hashing.value_of(v));
+        Ok(self.lookup(key)? == claimed)
     }
 
     /// Every entry under the namespace, complete, in key order.
