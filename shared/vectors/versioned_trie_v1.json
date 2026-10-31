@@ -224,5 +224,132 @@
       "a167686973746f727982a261735820d6060125154f601c7c99f39e2049b78fe646b882a7a16fbad186350623f16af961764800000000000000ffa261735820cb5664a74b45470b70b80f63b55aaefefd259b8856a44a9738d8a043d12aae476176480000000000000100",
       "a167686973746f727981a261735820e1ba90fda45955a86e67e23a1eccb0654270364f6c0213375961782c1a1df925617648000000000000012c"
     ]
-  }
+  },
+  "stateKeys" : [
+    {
+      "key" : "a",
+      "schema" : true,
+      "valid" : true
+    },
+    {
+      "key" : "0",
+      "schema" : true,
+      "valid" : true
+    },
+    {
+      "key" : "fiber/1",
+      "schema" : true,
+      "valid" : true
+    },
+    {
+      "key" : "oracle/a/b",
+      "schema" : true,
+      "valid" : true
+    },
+    {
+      "key" : "a.b_c-d/0.9",
+      "schema" : true,
+      "valid" : true
+    },
+    {
+      "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "schema" : true,
+      "valid" : true
+    },
+    {
+      "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "schema" : true,
+      "valid" : false
+    },
+    {
+      "key" : "a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a",
+      "schema" : true,
+      "valid" : true
+    },
+    {
+      "key" : "a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a",
+      "schema" : true,
+      "valid" : false
+    },
+    {
+      "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "schema" : true,
+      "valid" : true
+    },
+    {
+      "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "schema" : true,
+      "valid" : false
+    },
+    {
+      "key" : "",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "/",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "a/",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "/a",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "a//b",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "A",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "a/B",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : ".a",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "-a",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "_a",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "a/.b",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "a b",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "é",
+      "schema" : false,
+      "valid" : false
+    },
+    {
+      "key" : "a\n",
+      "schema" : false,
+      "valid" : false
+    }
+  ]
 }

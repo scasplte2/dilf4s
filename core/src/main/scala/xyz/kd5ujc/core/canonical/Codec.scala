@@ -33,7 +33,6 @@ object Codec {
   }
 
   val bool: Codec[Boolean] = Codec(b => CBool(b).asRight, CanonicalDecoder.bool)
-  val int: Codec[BigInt] = Codec(i => CInt(i).asRight, CanonicalDecoder.int)
   val bytes: Codec[ByteVector] = Codec(b => CBytes(b).asRight, CanonicalDecoder.bytes)
   val text: Codec[String] = Codec(s => CanonicalValue.text(s), CanonicalDecoder.text)
 
@@ -43,7 +42,16 @@ object Codec {
       CanonicalDecoder.intRange(lo, hi)
     )
 
-  val uint: Codec[BigInt] = intRange(Some(BigInt(0)), None)
+  /**
+   * CDDL integers follow RFC 8610: `uint` is major type 0 (0..2^64-1), `nint` major type 1 (-2^64..-1), and `int`
+   * either. A wider integer must be an explicit range in the schema.
+   */
+  val UintMax: BigInt = (BigInt(1) << 64) - 1
+  val NintMin: BigInt = -(BigInt(1) << 64)
+
+  val uint: Codec[BigInt] = intRange(Some(BigInt(0)), Some(UintMax))
+  val nint: Codec[BigInt] = intRange(Some(NintMin), Some(BigInt(-1)))
+  val int: Codec[BigInt] = intRange(Some(NintMin), Some(UintMax))
 
   def intIn(lo: Int, hi: Int): Codec[Int] =
     Codec(i => Either.cond(i >= lo && i <= hi, CInt(BigInt(i)), mismatch(s"integer $i outside $lo..$hi")), CanonicalDecoder.intIn(lo, hi))
@@ -58,12 +66,14 @@ object Codec {
       CanonicalDecoder.sizedBytes(lo, hi)
     )
 
+  /** Text whose UTF-8 encoding is `lo` to `hi` bytes long (RFC 8610 `.size` on a text string counts bytes). */
   def sizedText(lo: Int, hi: Option[Int]): Codec[String] =
     Codec(
       s =>
-        Either
-          .cond(s.length >= lo && hi.forall(s.length <= _), s, mismatch(s"text of length ${s.length} outside the schema size"))
-          .flatMap(CanonicalValue.text),
+        CanonicalValue.text(s).flatMap { t =>
+          val n = Utf16.utf8Length(s)
+          Either.cond(n >= lo && hi.forall(n <= _), t, mismatch(s"text of $n UTF-8 bytes outside the schema size"))
+        },
       CanonicalDecoder.sizedText(lo, hi)
     )
 

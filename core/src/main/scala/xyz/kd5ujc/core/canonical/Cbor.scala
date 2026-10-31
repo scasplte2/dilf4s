@@ -127,9 +127,9 @@ object Cbor {
         readItem(in, pos) match {
           case Left(e)                       => e.asLeft
           case Right(Scalar(v, end))         => run(in, maxDepth, Deliver(v, pos, end, stack, depth))
+          case Right(_) if depth >= maxDepth => DepthExceeded(maxDepth).asLeft // an empty array or map is one level too
           case Right(OpenArray(0L, end))     => run(in, maxDepth, Deliver(EmptyArray, pos, end, stack, depth))
           case Right(OpenMap(0L, end))       => run(in, maxDepth, Deliver(EmptyMap, pos, end, stack, depth))
-          case Right(_) if depth >= maxDepth => DepthExceeded(maxDepth).asLeft
           case Right(OpenArray(n, end))      => run(in, maxDepth, Read(end, ArrayFrame(n, Vector.empty) :: stack, depth + 1))
           case Right(OpenMap(n, end))        => run(in, maxDepth, Read(end, MapFrame(n, Vector.empty, None, None) :: stack, depth + 1))
         }

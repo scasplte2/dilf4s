@@ -69,7 +69,8 @@ object CanonicalDecoder {
       Either.cond(lo.forall(i >= _) && hi.forall(i <= _), i, s"integer $i outside ${lo.fold("")(_.toString)}..${hi.fold("")(_.toString)}")
     )
 
-  val uint: CanonicalDecoder[BigInt] = intRange(Some(BigInt(0)), None)
+  /** CDDL `uint` (RFC 8610 major type 0): 0..2^64-1. [[int]] stays the whole numeric domain's integers. */
+  val uint: CanonicalDecoder[BigInt] = intRange(Some(BigInt(0)), Some((BigInt(1) << 64) - 1))
   def intIn(lo:  Int, hi:  Int): CanonicalDecoder[Int] = intRange(Some(BigInt(lo)), Some(BigInt(hi))).map(_.toInt)
   def longIn(lo: Long, hi: Long): CanonicalDecoder[Long] = intRange(Some(BigInt(lo)), Some(BigInt(hi))).map(_.toLong)
 
@@ -78,10 +79,12 @@ object CanonicalDecoder {
       Either.cond(b.size >= lo && hi.forall(b.size <= _), b, s"byte string of ${b.size} bytes, expected $lo..${hi.fold("")(_.toString)}")
     )
 
+  /** Text whose UTF-8 encoding is `lo` to `hi` bytes long (RFC 8610 `.size` on a text string counts bytes). */
   def sizedText(lo: Int, hi: Option[Int]): CanonicalDecoder[String] =
-    text.emap(s =>
-      Either.cond(s.length >= lo && hi.forall(s.length <= _), s, s"text of length ${s.length}, expected $lo..${hi.fold("")(_.toString)}")
-    )
+    text.emap { s =>
+      val n = Utf16.utf8Length(s)
+      Either.cond(n >= lo && hi.forall(n <= _), s, s"text of $n UTF-8 bytes, expected $lo..${hi.fold("")(_.toString)}")
+    }
 
   /** A homogeneous array with at least `min` and at most `max` elements; failures name the index. */
   def vector[A](min: Int, max: Option[Int])(implicit D: CanonicalDecoder[A]): CanonicalDecoder[Vector[A]] = {

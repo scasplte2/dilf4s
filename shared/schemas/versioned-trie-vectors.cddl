@@ -13,7 +13,12 @@ versioned-trie-vectors = {
   "root": hex,
   "proofs": [* vt-proof],
   "snapshot": vt-snapshot,
+  "stateKeys": [* vt-state-key],
 }
+
+; A candidate state key: whether it matches versioned-trie.cddl's state-key pattern ("schema"), and whether the full
+; grammar of section 2, with its length and segment limits, accepts it ("valid").
+vt-state-key = { "key": text, "schema": bool, "valid": bool }
 
 ; The final commit's snapshot, in chunks of at most "chunkEntries" items: each is the hex of a canonical
 ; versioned-trie-snapshot-chunk. Restoring it into an empty store reproduces "root".
