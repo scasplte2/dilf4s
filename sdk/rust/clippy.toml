@@ -20,6 +20,10 @@ arithmetic-side-effects-allowed = [
   "bls12_381::G2Affine",
   "bls12_381::Gt",
   "ark_bn254::Fr",
+  "substrate_bn::Fq",
+  "substrate_bn::Fr",
+  "substrate_bn::G1",
+  "substrate_bn::G2",
   "ark_ff::Fp",
 ]
 allow-unwrap-in-tests = true
