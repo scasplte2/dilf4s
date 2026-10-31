@@ -86,12 +86,21 @@ final class Profile(val schema: Schema) {
     case other => outside(rule, s"${SyntaxSummary(other)} in field position (name it as its own rule)").asLeft
   }
 
+  /**
+   * The fields of a record. Two keys that any emitter would give the same name (camelCase in Scala and TypeScript,
+   * snake_case in Rust) are a [[GenError.NameClash]] for every language, so all of them accept the same schemas.
+   */
   def fields(rule: QName, entries: Vector[REntry]): Either[GenError, Vector[ProfileField]] =
     entries.traverse {
       case REntry(occ, _, Some(RKey.TextKey(key)), value) if occ == Occ.Once || occ == Occ.Optional =>
         fieldType(rule, value).map(ProfileField(key, occ == Occ.Optional, _))
       case REntry(_, _, key, _) =>
         outside(rule, s"map entry with key ${key.fold("<none>")(_.toString)} (text-literal keys, once or optional)").asLeft
+    }.flatMap { fs =>
+      val clash = Profile.Namings.collectFirst(Function.unlift { (_, name) =>
+        fs.groupBy(f => name(f.key)).collectFirst { case (n, xs) if xs.size > 1 => n -> xs.map(_.key) }
+      })
+      clash.fold(fs.asRight[GenError]) { case (n, keys) => GenError.NameClash(rule.toString, n, keys).asLeft }
     }
 
   private def enumeration(rule: QName, cases: Vector[(String, BigInt)]): Either[GenError, ModelRule] = {
@@ -112,12 +121,14 @@ final class Profile(val schema: Schema) {
 
   private def union(rule: QName, alts: Vector[QName], texts: Vector[String]): Either[GenError, ModelRule] =
     alts.traverse(keySets).flatMap { ks =>
-      val ambiguous = for {
-        a <- ks
-        b <- ks
+      // ambiguous by wire keys (decoding), or by field names (TypeScript encodes a union by its present fields)
+      val ambiguous = (for {
+        (_, name) <- Profile.Namings
+        a         <- ks
+        b         <- ks
         if CanonicalEmitter.pascal(a.rule.name) < CanonicalEmitter.pascal(b.rule.name) &&
-        (a.required -- b.allowed).isEmpty && (b.required -- a.allowed).isEmpty
-      } yield s"${a.rule.name}/${b.rule.name}"
+        (a.required.map(name) -- b.allowed.map(name)).isEmpty && (b.required.map(name) -- a.allowed.map(name)).isEmpty
+      } yield s"${a.rule.name}/${b.rule.name}").distinct
       if (ambiguous.nonEmpty) GenError.Unsupported(rule.toString, UnsupportedFeature.AmbiguousAlternatives(ambiguous)).asLeft
       else ModelRule.Union(ks, texts).asRight
     }
@@ -155,6 +166,13 @@ object Profile {
    * regular-expression engine; adding one means adding it to every SDK core.
    */
   val Patterns: Vector[String] = Vector("([0-9a-f]{2})*", "0x([0-9a-f]{2})*", "0|[1-9][0-9]*")
+
+  /** How each emitter names a wire key: the key itself, camelCase (Scala, TypeScript) and snake_case (Rust). */
+  val Namings: Vector[(String, String => String)] = Vector(
+    "wire"       -> identity,
+    "camelCase"  -> (k => CanonicalEmitter.fieldName(k).stripPrefix("`").stripSuffix("`")),
+    "snake_case" -> RustEmitter.fieldName
+  )
 
   /** `{ * text => T }`: a map with arbitrary text keys. */
   object TextMapOf {

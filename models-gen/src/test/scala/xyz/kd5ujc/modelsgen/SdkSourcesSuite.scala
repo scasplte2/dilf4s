@@ -66,6 +66,21 @@ object SdkSourcesSuite extends SimpleIOSuite {
     expect(clash.swap.exists { case GenError.NameClash(_, _, _) => true; case _ => false }, "aB and a_b are both a_b in Rust")
   }
 
+  pureTest("a union whose alternatives differ only in wire spelling is ambiguous once names are normalised") {
+    val cddl = "r = a / b\na = { \"x-y\": uint }\nb = { \"x_y\": uint }\n"
+    def ambiguous(e: Either[GenError, ?]) =
+      e.swap.exists { case GenError.Unsupported(_, UnsupportedFeature.AmbiguousAlternatives(_)) => true; case _ => false }
+    expect(ambiguous(gen(cddl)), "TypeScript tells alternatives apart by camelCase field names")
+      .and(expect(ambiguous(Main.generate(Vector("t" -> cddl), "p")), "the profile is the same for Scala"))
+  }
+
+  pureTest("record fields that collide in any language's naming are rejected in every language") {
+    // "AB" and "ab" stay apart in camelCase but are both `ab` in Rust
+    val cddl = "r = { \"AB\": uint, \"ab\": uint }\n"
+    def clash(e: Either[GenError, ?]) = e.swap.exists { case GenError.NameClash(_, _, _) => true; case _ => false }
+    expect(clash(gen(cddl)), "SDKs").and(expect(clash(Main.generate(Vector("t" -> cddl), "p")), "Scala"))
+  }
+
   pureTest("keywords become raw identifiers in Rust") {
     val out = gen("r = { \"type\": uint, \"self\": uint }\n").map(_.rust.toMap.getOrElse("t.rs", ""))
     expect(out.exists(s => s.contains("pub r#type: c::BigInt,") && s.contains("pub self_: c::BigInt,")), out.fold(_.message, identity))
