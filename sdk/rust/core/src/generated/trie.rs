@@ -15,11 +15,12 @@ pub struct TrieBranch {
 }
 
 impl c::Model for TrieBranch {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("s", &c::ModelOf::<TrieSegment>::NEW, &self.s)?,
-            c::optional_field("v", &c::Bytes, self.v.as_ref())?,
-            c::field("c", &c::ModelOf::<TrieChildren>::NEW, &self.c)?,
+            c::field("s", &c::ModelOf::<TrieSegment>::NEW, &self.s, inner)?,
+            c::optional_field("v", &c::Bytes, self.v.as_ref(), inner)?,
+            c::field("c", &c::ModelOf::<TrieChildren>::NEW, &self.c, inner)?,
         ])
     }
 
@@ -45,7 +46,7 @@ pub enum TrieChildren {
 
 impl TrieChildren {
     /// The integer this case is written as.
-    pub const fn wire(self) -> i64 {
+    pub const fn wire(self) -> i128 {
         match self {
             Self::Left => 1,
             Self::Right => 2,
@@ -55,7 +56,7 @@ impl TrieChildren {
 }
 
 impl c::Model for TrieChildren {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
         Ok(c::Value::int(self.wire()))
     }
 
@@ -80,10 +81,11 @@ pub struct TrieLeaf {
 }
 
 impl c::Model for TrieLeaf {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("s", &c::ModelOf::<TrieSegment>::NEW, &self.s)?,
-            c::field("v", &c::Bytes, &self.v)?,
+            c::field("s", &c::ModelOf::<TrieSegment>::NEW, &self.s, inner)?,
+            c::field("v", &c::Bytes, &self.v, inner)?,
         ])
     }
 
@@ -109,12 +111,13 @@ pub struct TrieNode {
 }
 
 impl c::Model for TrieNode {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("s", &c::ModelOf::<TrieSegment>::NEW, &self.s)?,
-            c::optional_field("v", &c::Bytes, self.v.as_ref())?,
-            c::optional_field("l", &c::Bytes, self.l.as_ref())?,
-            c::optional_field("r", &c::Bytes, self.r.as_ref())?,
+            c::field("s", &c::ModelOf::<TrieSegment>::NEW, &self.s, inner)?,
+            c::optional_field("v", &c::Bytes, self.v.as_ref(), inner)?,
+            c::optional_field("l", &c::Bytes, self.l.as_ref(), inner)?,
+            c::optional_field("r", &c::Bytes, self.r.as_ref(), inner)?,
         ])
     }
 
@@ -146,11 +149,11 @@ pub enum TrieRecord {
 }
 
 impl c::Model for TrieRecord {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
-            Self::TrieStub(a) => c::Model::to_value(a),
-            Self::TrieLeaf(a) => c::Model::to_value(a),
-            Self::TrieBranch(a) => c::Model::to_value(a),
+            Self::TrieStub(a) => c::Model::to_value_at(a, depth),
+            Self::TrieLeaf(a) => c::Model::to_value_at(a, depth),
+            Self::TrieBranch(a) => c::Model::to_value_at(a, depth),
         }
     }
 
@@ -174,10 +177,11 @@ pub struct TrieSegment {
 }
 
 impl c::Model for TrieSegment {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("n", &c::U64In { lo: 0, hi: 9_223_372_036_854_775_807 }, &self.n)?,
-            c::field("b", &c::Bytes, &self.b)?,
+            c::field("n", &c::U64In { lo: 0, hi: 9_223_372_036_854_775_807 }, &self.n, inner)?,
+            c::field("b", &c::Bytes, &self.b, inner)?,
         ])
     }
 
@@ -197,9 +201,10 @@ pub struct TrieStub {
 }
 
 impl c::Model for TrieStub {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("h", &c::Bytes, &self.h)?,
+            c::field("h", &c::Bytes, &self.h, inner)?,
         ])
     }
 

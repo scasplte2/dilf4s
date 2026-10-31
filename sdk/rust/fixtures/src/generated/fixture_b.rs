@@ -14,11 +14,12 @@ pub struct Holder {
 }
 
 impl c::Model for Holder {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("r", &RECORDS_AGAIN, &self.r)?,
-            c::field("s", &super::fixture_a::RECORDS, &self.s)?,
-            c::optional_field("t", &c::ModelOf::<super::fixture_a::Record>::NEW, self.t.as_ref())?,
+            c::field("r", &RECORDS_AGAIN, &self.r, inner)?,
+            c::field("s", &super::fixture_a::RECORDS, &self.s, inner)?,
+            c::optional_field("t", &c::ModelOf::<super::fixture_a::Record>::NEW, self.t.as_ref(), inner)?,
         ])
     }
 

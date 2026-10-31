@@ -15,13 +15,15 @@ export interface VrfKey {
 }
 
 export const VrfKey: c.Codec<VrfKey> = {
-  encode: (a) =>
-    c.record([
-      c.field("seed", c.defer(() => Hex), a.seed),
-      c.field("signingKey", c.defer(() => Hex), a.signingKey),
-      c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey),
-      c.field("proofs", c.vector(c.defer(() => VrfProof), 0, null), a.proofs),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("seed", c.defer(() => Hex), a.seed, e),
+        c.field("signingKey", c.defer(() => Hex), a.signingKey, e),
+        c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey, e),
+        c.field("proofs", c.vector(c.defer(() => VrfProof), 0, null), a.proofs, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["seed", "signingKey", "verifyingKey", "proofs"]);
     if (!f.ok) return f;
@@ -45,12 +47,14 @@ export interface VrfProof {
 }
 
 export const VrfProof: c.Codec<VrfProof> = {
-  encode: (a) =>
-    c.record([
-      c.field("alpha", c.defer(() => Hex), a.alpha),
-      c.field("pi", c.defer(() => Hex), a.pi),
-      c.field("beta", c.defer(() => Hex), a.beta),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("alpha", c.defer(() => Hex), a.alpha, e),
+        c.field("pi", c.defer(() => Hex), a.pi, e),
+        c.field("beta", c.defer(() => Hex), a.beta, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["alpha", "pi", "beta"]);
     if (!f.ok) return f;
@@ -71,11 +75,13 @@ export interface VrfSuite {
 }
 
 export const VrfSuite: c.Codec<VrfSuite> = {
-  encode: (a) =>
-    c.record([
-      c.field("suite", c.text, a.suite),
-      c.field("keys", c.vector(c.defer(() => VrfKey), 0, null), a.keys),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("suite", c.text, a.suite, e),
+        c.field("keys", c.vector(c.defer(() => VrfKey), 0, null), a.keys, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["suite", "keys"]);
     if (!f.ok) return f;
@@ -95,12 +101,14 @@ export interface VrfVectors {
 }
 
 export const VrfVectors: c.Codec<VrfVectors> = {
-  encode: (a) =>
-    c.record([
-      c.field("spec", c.literalText("docs/specs/vrf.md"), a.spec),
-      c.field("version", c.literalInt(1n), a.version),
-      c.field("suites", c.vector(c.defer(() => VrfSuite), 0, null), a.suites),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("spec", c.literalText("docs/specs/vrf.md"), a.spec, e),
+        c.field("version", c.literalInt(1n), a.version, e),
+        c.field("suites", c.vector(c.defer(() => VrfSuite), 0, null), a.suites, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["spec", "version", "suites"]);
     if (!f.ok) return f;

@@ -8,11 +8,13 @@ export interface JlvmApply {
 }
 
 export const JlvmApply: c.Codec<JlvmApply> = {
-  encode: (a) =>
-    c.record([
-      c.field("op", c.text, a.op),
-      c.field("args", c.vector(c.defer(() => JlvmExpr), 0, null), a.args),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("op", c.text, a.op, e),
+        c.field("args", c.vector(c.defer(() => JlvmExpr), 0, null), a.args, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["op", "args"]);
     if (!f.ok) return f;
@@ -30,10 +32,12 @@ export interface JlvmArray {
 }
 
 export const JlvmArray: c.Codec<JlvmArray> = {
-  encode: (a) =>
-    c.record([
-      c.field("arr", c.vector(c.defer(() => JlvmExpr), 0, null), a.arr),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("arr", c.vector(c.defer(() => JlvmExpr), 0, null), a.arr, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["arr"]);
     if (!f.ok) return f;
@@ -47,15 +51,16 @@ export const JlvmArray: c.Codec<JlvmArray> = {
 export type JlvmExpr = JlvmNull | JlvmLit | JlvmVar | JlvmVarAt | JlvmApply | JlvmSpread | JlvmArray | JlvmMap;
 
 export const JlvmExpr: c.Codec<JlvmExpr> = {
-  encode: (a) => {
-    if (c.hasFields(a, JlvmNull, [], [])) return JlvmNull.encode(a);
-    if (c.hasFields(a, JlvmLit, ["lit"], ["lit"])) return JlvmLit.encode(a);
-    if (c.hasFields(a, JlvmVar, ["var"], ["default", "var"])) return JlvmVar.encode(a);
-    if (c.hasFields(a, JlvmVarAt, ["path"], ["default", "path"])) return JlvmVarAt.encode(a);
-    if (c.hasFields(a, JlvmApply, ["args", "op"], ["args", "op"])) return JlvmApply.encode(a);
-    if (c.hasFields(a, JlvmSpread, ["arg", "spread"], ["arg", "spread"])) return JlvmSpread.encode(a);
-    if (c.hasFields(a, JlvmArray, ["arr"], ["arr"])) return JlvmArray.encode(a);
-    if (c.hasFields(a, JlvmMap, ["map"], ["map"])) return JlvmMap.encode(a);
+  encode: (a, d) => {
+    const known = ["arg", "args", "arr", "default", "lit", "map", "op", "path", "spread", "var"];
+    if (c.hasFields(a, JlvmNull, [], [], known)) return JlvmNull.encode(a, d);
+    if (c.hasFields(a, JlvmLit, ["lit"], ["lit"], known)) return JlvmLit.encode(a, d);
+    if (c.hasFields(a, JlvmVar, ["var"], ["default", "var"], known)) return JlvmVar.encode(a, d);
+    if (c.hasFields(a, JlvmVarAt, ["path"], ["default", "path"], known)) return JlvmVarAt.encode(a, d);
+    if (c.hasFields(a, JlvmApply, ["args", "op"], ["args", "op"], known)) return JlvmApply.encode(a, d);
+    if (c.hasFields(a, JlvmSpread, ["arg", "spread"], ["arg", "spread"], known)) return JlvmSpread.encode(a, d);
+    if (c.hasFields(a, JlvmArray, ["arr"], ["arr"], known)) return JlvmArray.encode(a, d);
+    if (c.hasFields(a, JlvmMap, ["map"], ["map"], known)) return JlvmMap.encode(a, d);
     return c.typeMismatch("no alternative of JlvmExpr fits");
   },
   decode: (v) => {
@@ -95,10 +100,12 @@ export interface JlvmLit {
 }
 
 export const JlvmLit: c.Codec<JlvmLit> = {
-  encode: (a) =>
-    c.record([
-      c.field("lit", c.any, a.lit),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("lit", c.any, a.lit, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["lit"]);
     if (!f.ok) return f;
@@ -114,10 +121,12 @@ export interface JlvmMap {
 }
 
 export const JlvmMap: c.Codec<JlvmMap> = {
-  encode: (a) =>
-    c.record([
-      c.field("map", c.defer(() => JlvmFields), a.map),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("map", c.defer(() => JlvmFields), a.map, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["map"]);
     if (!f.ok) return f;
@@ -131,8 +140,10 @@ export const JlvmMap: c.Codec<JlvmMap> = {
 export type JlvmNull = Readonly<Record<string, never>>;
 
 export const JlvmNull: c.Codec<JlvmNull> = {
-  encode: () =>
-    c.record([]),
+  encode: (_a, d = 0) =>
+    c.nested(d, () =>
+      c.record([]),
+    ),
   decode: (v) => {
     const f = c.fields(v, []);
     if (!f.ok) return f;
@@ -147,11 +158,13 @@ export interface JlvmProgram {
 }
 
 export const JlvmProgram: c.Codec<JlvmProgram> = {
-  encode: (a) =>
-    c.record([
-      c.field("jlvm", c.literalInt(1n), a.jlvm),
-      c.field("expr", c.defer(() => JlvmExpr), a.expr),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("jlvm", c.literalInt(1n), a.jlvm, e),
+        c.field("expr", c.defer(() => JlvmExpr), a.expr, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["jlvm", "expr"]);
     if (!f.ok) return f;
@@ -170,11 +183,13 @@ export interface JlvmSpread {
 }
 
 export const JlvmSpread: c.Codec<JlvmSpread> = {
-  encode: (a) =>
-    c.record([
-      c.field("spread", c.text, a.spread),
-      c.field("arg", c.defer(() => JlvmExpr), a.arg),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("spread", c.text, a.spread, e),
+        c.field("arg", c.defer(() => JlvmExpr), a.arg, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["spread", "arg"]);
     if (!f.ok) return f;
@@ -193,11 +208,13 @@ export interface JlvmVar {
 }
 
 export const JlvmVar: c.Codec<JlvmVar> = {
-  encode: (a) =>
-    c.record([
-      c.field("var", c.text, a.var),
-      c.optionalField("default", c.any, a.default),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("var", c.text, a.var, e),
+        c.optionalField("default", c.any, a.default, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["var", "default"]);
     if (!f.ok) return f;
@@ -216,11 +233,13 @@ export interface JlvmVarAt {
 }
 
 export const JlvmVarAt: c.Codec<JlvmVarAt> = {
-  encode: (a) =>
-    c.record([
-      c.field("path", c.defer(() => JlvmExpr), a.path),
-      c.optionalField("default", c.any, a.default),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("path", c.defer(() => JlvmExpr), a.path, e),
+        c.optionalField("default", c.any, a.default, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["path", "default"]);
     if (!f.ok) return f;

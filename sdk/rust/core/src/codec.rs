@@ -14,8 +14,8 @@ pub use num_bigint::BigInt;
 use num_bigint::Sign;
 
 pub use crate::error::{CanonicalError, DecodeFailure};
-use crate::value::Map;
 pub use crate::value::Value;
+use crate::value::{MAX_DEPTH, Map};
 use crate::{cbor, json};
 
 /// Encodes `Target` to a canonical value and decodes it back.
@@ -26,14 +26,27 @@ pub trait Codec {
     /// The canonical value of `value`, or why `value` is outside the schema.
     fn encode(&self, value: &Self::Target) -> Result<Value, CanonicalError>;
 
+    /// [`Codec::encode`] for a value at nesting level `depth` (0 at the root). Containers refuse to go past
+    /// [`MAX_DEPTH`] before descending, so a deeply nested model is a typed
+    /// [`CanonicalError::DepthExceeded`], never a stack overflow. Scalars ignore the depth.
+    fn encode_at(&self, value: &Self::Target, depth: usize) -> Result<Value, CanonicalError> {
+        let _ = depth;
+        self.encode(value)
+    }
+
     /// The typed value of `value`, or why it does not fit the schema, and where.
     fn decode(&self, value: &Value) -> Result<Self::Target, DecodeFailure>;
 }
 
 /// A type generated from a schema rule: a record, an enumeration or a choice.
 pub trait Model: Sized {
+    /// The canonical value of `self` at nesting level `depth` (see [`Codec::encode_at`]).
+    fn to_value_at(&self, depth: usize) -> Result<Value, CanonicalError>;
+
     /// The canonical value of `self`.
-    fn to_value(&self) -> Result<Value, CanonicalError>;
+    fn to_value(&self) -> Result<Value, CanonicalError> {
+        self.to_value_at(0)
+    }
 
     /// The typed value of `value`.
     fn from_value(value: &Value) -> Result<Self, DecodeFailure>;
@@ -473,10 +486,14 @@ impl<C: Codec> VecOf<C> {
 impl<C: Codec> Codec for VecOf<C> {
     type Target = Vec<C::Target>;
     fn encode(&self, value: &Vec<C::Target>) -> Result<Value, CanonicalError> {
+        self.encode_at(value, 0)
+    }
+    fn encode_at(&self, value: &Vec<C::Target>, depth: usize) -> Result<Value, CanonicalError> {
+        let inner = nested(depth)?;
         if !self.fits(value.len()) {
             return Err(mismatch(format!("array of {} elements outside the schema size", value.len())));
         }
-        let items = value.iter().map(|x| self.element.encode(x)).collect::<Result<Vec<_>, _>>()?;
+        let items = value.iter().map(|x| self.element.encode_at(x, inner)).collect::<Result<Vec<_>, _>>()?;
         Value::array(items)
     }
     fn decode(&self, value: &Value) -> Result<Vec<C::Target>, DecodeFailure> {
@@ -505,8 +522,14 @@ pub struct TextMapOf<C>(pub C);
 impl<C: Codec> Codec for TextMapOf<C> {
     type Target = BTreeMap<String, C::Target>;
     fn encode(&self, value: &BTreeMap<String, C::Target>) -> Result<Value, CanonicalError> {
-        let entries =
-            value.iter().map(|(k, v)| self.0.encode(v).map(|e| (k.clone(), e))).collect::<Result<Vec<_>, _>>()?;
+        self.encode_at(value, 0)
+    }
+    fn encode_at(&self, value: &BTreeMap<String, C::Target>, depth: usize) -> Result<Value, CanonicalError> {
+        let inner = nested(depth)?;
+        let entries = value
+            .iter()
+            .map(|(k, v)| self.0.encode_at(v, inner).map(|e| (k.clone(), e)))
+            .collect::<Result<Vec<_>, _>>()?;
         Value::map(entries)
     }
     fn decode(&self, value: &Value) -> Result<BTreeMap<String, C::Target>, DecodeFailure> {
@@ -548,6 +571,9 @@ impl<T: Model> Codec for ModelOf<T> {
     fn encode(&self, value: &T) -> Result<Value, CanonicalError> {
         value.to_value()
     }
+    fn encode_at(&self, value: &T, depth: usize) -> Result<Value, CanonicalError> {
+        value.to_value_at(depth)
+    }
     fn decode(&self, value: &Value) -> Result<T, DecodeFailure> {
         T::from_value(value)
     }
@@ -562,6 +588,9 @@ impl<C: Codec> Codec for Boxed<C> {
     fn encode(&self, value: &Box<C::Target>) -> Result<Value, CanonicalError> {
         self.0.encode(value)
     }
+    fn encode_at(&self, value: &Box<C::Target>, depth: usize) -> Result<Value, CanonicalError> {
+        self.0.encode_at(value, depth)
+    }
     fn decode(&self, value: &Value) -> Result<Box<C::Target>, DecodeFailure> {
         self.0.decode(value).map(Box::new)
     }
@@ -569,9 +598,23 @@ impl<C: Codec> Codec for Boxed<C> {
 
 // ------------------------------------------------------------------------------------------------ records
 
-/// One entry of an encoded record.
-pub fn field<C: Codec>(key: &str, codec: &C, value: &C::Target) -> Result<Option<(String, Value)>, CanonicalError> {
-    codec.encode(value).map(|v| Some((String::from(key), v)))
+/// The nesting level inside a container at `depth`, if a container fits there.
+pub fn nested(depth: usize) -> Result<usize, CanonicalError> {
+    if depth >= MAX_DEPTH {
+        Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH })
+    } else {
+        Ok(depth.saturating_add(1))
+    }
+}
+
+/// One entry of an encoded record, its value at nesting level `depth`.
+pub fn field<C: Codec>(
+    key: &str,
+    codec: &C,
+    value: &C::Target,
+    depth: usize,
+) -> Result<Option<(String, Value)>, CanonicalError> {
+    codec.encode_at(value, depth).map(|v| Some((String::from(key), v)))
 }
 
 /// One optional entry: `None` (an absent field) is left out, never written as null.
@@ -579,8 +622,9 @@ pub fn optional_field<C: Codec>(
     key: &str,
     codec: &C,
     value: Option<&C::Target>,
+    depth: usize,
 ) -> Result<Option<(String, Value)>, CanonicalError> {
-    value.map_or(Ok(None), |v| field(key, codec, v))
+    value.map_or(Ok(None), |v| field(key, codec, v, depth))
 }
 
 /// The map of a record's entries.

@@ -22,11 +22,12 @@ pub struct MerkleValueCommitment {
 }
 
 impl c::Model for MerkleValueCommitment {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("cbor", &HEX, &self.cbor)?,
-            c::field("commitment", &HEX, &self.commitment)?,
-            c::field("leafHash", &HEX, &self.leaf_hash)?,
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::field("commitment", &HEX, &self.commitment, inner)?,
+            c::field("leafHash", &HEX, &self.leaf_hash, inner)?,
         ])
     }
 
@@ -55,13 +56,14 @@ pub struct MerkleVectorTree {
 }
 
 impl c::Model for MerkleVectorTree {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("size", &c::UINT, &self.size)?,
-            c::field("root", &HEX, &self.root)?,
-            c::field("rfc6962Root", &HEX, &self.rfc6962_root)?,
-            c::field("inclusion", &c::VecOf { element: HEX, min: 0, max: None }, &self.inclusion)?,
-            c::field("consistency", &c::VecOf { element: HEX, min: 0, max: None }, &self.consistency)?,
+            c::field("size", &c::UINT, &self.size, inner)?,
+            c::field("root", &HEX, &self.root, inner)?,
+            c::field("rfc6962Root", &HEX, &self.rfc6962_root, inner)?,
+            c::field("inclusion", &c::VecOf { element: HEX, min: 0, max: None }, &self.inclusion, inner)?,
+            c::field("consistency", &c::VecOf { element: HEX, min: 0, max: None }, &self.consistency, inner)?,
         ])
     }
 
@@ -90,15 +92,16 @@ pub struct MerkleVectors {
 }
 
 impl c::Model for MerkleVectors {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("spec", &c::LiteralText("docs/specs/merkle.md"), &())?,
-            c::field("version", &c::LiteralInt(1), &())?,
-            c::field("hash", &c::LiteralText("SHA-256"), &())?,
-            c::field("leaves", &c::VecOf { element: HEX, min: 0, max: None }, &self.leaves)?,
-            c::field("leafHashes", &c::VecOf { element: HEX, min: 0, max: None }, &self.leaf_hashes)?,
-            c::field("trees", &c::VecOf { element: c::ModelOf::<MerkleVectorTree>::NEW, min: 0, max: None }, &self.trees)?,
-            c::field("valueCommitments", &c::VecOf { element: c::ModelOf::<MerkleValueCommitment>::NEW, min: 0, max: None }, &self.value_commitments)?,
+            c::field("spec", &c::LiteralText("docs/specs/merkle.md"), &(), inner)?,
+            c::field("version", &c::LiteralInt(1), &(), inner)?,
+            c::field("hash", &c::LiteralText("SHA-256"), &(), inner)?,
+            c::field("leaves", &c::VecOf { element: HEX, min: 0, max: None }, &self.leaves, inner)?,
+            c::field("leafHashes", &c::VecOf { element: HEX, min: 0, max: None }, &self.leaf_hashes, inner)?,
+            c::field("trees", &c::VecOf { element: c::ModelOf::<MerkleVectorTree>::NEW, min: 0, max: None }, &self.trees, inner)?,
+            c::field("valueCommitments", &c::VecOf { element: c::ModelOf::<MerkleValueCommitment>::NEW, min: 0, max: None }, &self.value_commitments, inner)?,
         ])
     }
 

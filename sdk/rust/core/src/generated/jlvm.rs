@@ -16,10 +16,11 @@ pub struct JlvmApply {
 }
 
 impl c::Model for JlvmApply {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("op", &c::Text, &self.op)?,
-            c::field("args", &c::VecOf { element: c::ModelOf::<JlvmExpr>::NEW, min: 0, max: None }, &self.args)?,
+            c::field("op", &c::Text, &self.op, inner)?,
+            c::field("args", &c::VecOf { element: c::ModelOf::<JlvmExpr>::NEW, min: 0, max: None }, &self.args, inner)?,
         ])
     }
 
@@ -39,9 +40,10 @@ pub struct JlvmArray {
 }
 
 impl c::Model for JlvmArray {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("arr", &c::VecOf { element: c::ModelOf::<JlvmExpr>::NEW, min: 0, max: None }, &self.arr)?,
+            c::field("arr", &c::VecOf { element: c::ModelOf::<JlvmExpr>::NEW, min: 0, max: None }, &self.arr, inner)?,
         ])
     }
 
@@ -74,16 +76,16 @@ pub enum JlvmExpr {
 }
 
 impl c::Model for JlvmExpr {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
-            Self::JlvmNull(a) => c::Model::to_value(a),
-            Self::JlvmLit(a) => c::Model::to_value(a),
-            Self::JlvmVar(a) => c::Model::to_value(a),
-            Self::JlvmVarAt(a) => c::Model::to_value(a),
-            Self::JlvmApply(a) => c::Model::to_value(a),
-            Self::JlvmSpread(a) => c::Model::to_value(a),
-            Self::JlvmArray(a) => c::Model::to_value(a),
-            Self::JlvmMap(a) => c::Model::to_value(a),
+            Self::JlvmNull(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmLit(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmVar(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmVarAt(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmApply(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmSpread(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmArray(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmMap(a) => c::Model::to_value_at(a, depth),
         }
     }
 
@@ -116,9 +118,10 @@ pub struct JlvmLit {
 }
 
 impl c::Model for JlvmLit {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("lit", &c::Any, &self.lit)?,
+            c::field("lit", &c::Any, &self.lit, inner)?,
         ])
     }
 
@@ -137,9 +140,10 @@ pub struct JlvmMap {
 }
 
 impl c::Model for JlvmMap {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("map", &JLVM_FIELDS, &self.map)?,
+            c::field("map", &JLVM_FIELDS, &self.map, inner)?,
         ])
     }
 
@@ -155,7 +159,8 @@ impl c::Model for JlvmMap {
 pub struct JlvmNull;
 
 impl c::Model for JlvmNull {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        c::nested(depth)?;
         c::record([])
     }
 
@@ -172,10 +177,11 @@ pub struct JlvmProgram {
 }
 
 impl c::Model for JlvmProgram {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("jlvm", &c::LiteralInt(1), &())?,
-            c::field("expr", &c::ModelOf::<JlvmExpr>::NEW, &self.expr)?,
+            c::field("jlvm", &c::LiteralInt(1), &(), inner)?,
+            c::field("expr", &c::ModelOf::<JlvmExpr>::NEW, &self.expr, inner)?,
         ])
     }
 
@@ -197,10 +203,11 @@ pub struct JlvmSpread {
 }
 
 impl c::Model for JlvmSpread {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("spread", &c::Text, &self.spread)?,
-            c::field("arg", &c::Boxed(c::ModelOf::<JlvmExpr>::NEW), &self.arg)?,
+            c::field("spread", &c::Text, &self.spread, inner)?,
+            c::field("arg", &c::Boxed(c::ModelOf::<JlvmExpr>::NEW), &self.arg, inner)?,
         ])
     }
 
@@ -222,10 +229,11 @@ pub struct JlvmVar {
 }
 
 impl c::Model for JlvmVar {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("var", &c::Text, &self.var)?,
-            c::optional_field("default", &c::Any, self.default.as_ref())?,
+            c::field("var", &c::Text, &self.var, inner)?,
+            c::optional_field("default", &c::Any, self.default.as_ref(), inner)?,
         ])
     }
 
@@ -247,10 +255,11 @@ pub struct JlvmVarAt {
 }
 
 impl c::Model for JlvmVarAt {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("path", &c::Boxed(c::ModelOf::<JlvmExpr>::NEW), &self.path)?,
-            c::optional_field("default", &c::Any, self.default.as_ref())?,
+            c::field("path", &c::Boxed(c::ModelOf::<JlvmExpr>::NEW), &self.path, inner)?,
+            c::optional_field("default", &c::Any, self.default.as_ref(), inner)?,
         ])
     }
 

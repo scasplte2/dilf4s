@@ -8,11 +8,13 @@ export interface CanonicalCborRejection {
 }
 
 export const CanonicalCborRejection: c.Codec<CanonicalCborRejection> = {
-  encode: (a) =>
-    c.record([
-      c.field("cbor", c.defer(() => Hex), a.cbor),
-      c.field("error", c.text, a.error),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("cbor", c.defer(() => Hex), a.cbor, e),
+        c.field("error", c.text, a.error, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["cbor", "error"]);
     if (!f.ok) return f;
@@ -32,12 +34,14 @@ export interface CanonicalDigest {
 }
 
 export const CanonicalDigest: c.Codec<CanonicalDigest> = {
-  encode: (a) =>
-    c.record([
-      c.field("algorithm", c.text, a.algorithm),
-      c.field("message", c.defer(() => Hex), a.message),
-      c.field("digest", c.defer(() => Hex), a.digest),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("algorithm", c.text, a.algorithm, e),
+        c.field("message", c.defer(() => Hex), a.message, e),
+        c.field("digest", c.defer(() => Hex), a.digest, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["algorithm", "message", "digest"]);
     if (!f.ok) return f;
@@ -58,11 +62,13 @@ export interface CanonicalDomainTag {
 }
 
 export const CanonicalDomainTag: c.Codec<CanonicalDomainTag> = {
-  encode: (a) =>
-    c.record([
-      c.field("tag", c.text, a.tag),
-      c.field("valid", c.bool, a.valid),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("tag", c.text, a.tag, e),
+        c.field("valid", c.bool, a.valid, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["tag", "valid"]);
     if (!f.ok) return f;
@@ -83,13 +89,15 @@ export interface CanonicalJsonAccepted {
 }
 
 export const CanonicalJsonAccepted: c.Codec<CanonicalJsonAccepted> = {
-  encode: (a) =>
-    c.record([
-      c.field("json", c.text, a.json),
-      c.field("cbor", c.defer(() => Hex), a.cbor),
-      c.field("contentHash", c.defer(() => Hex), a.contentHash),
-      c.field("render", c.text, a.render),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("json", c.text, a.json, e),
+        c.field("cbor", c.defer(() => Hex), a.cbor, e),
+        c.field("contentHash", c.defer(() => Hex), a.contentHash, e),
+        c.field("render", c.text, a.render, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["json", "cbor", "contentHash", "render"]);
     if (!f.ok) return f;
@@ -109,9 +117,10 @@ export const CanonicalJsonAccepted: c.Codec<CanonicalJsonAccepted> = {
 export type CanonicalJsonCase = CanonicalJsonAccepted | CanonicalJsonRejected;
 
 export const CanonicalJsonCase: c.Codec<CanonicalJsonCase> = {
-  encode: (a) => {
-    if (c.hasFields(a, CanonicalJsonAccepted, ["cbor", "contentHash", "json", "render"], ["cbor", "contentHash", "json", "render"])) return CanonicalJsonAccepted.encode(a);
-    if (c.hasFields(a, CanonicalJsonRejected, ["error", "json"], ["error", "json"])) return CanonicalJsonRejected.encode(a);
+  encode: (a, d) => {
+    const known = ["cbor", "contentHash", "error", "json", "render"];
+    if (c.hasFields(a, CanonicalJsonAccepted, ["cbor", "contentHash", "json", "render"], ["cbor", "contentHash", "json", "render"], known)) return CanonicalJsonAccepted.encode(a, d);
+    if (c.hasFields(a, CanonicalJsonRejected, ["error", "json"], ["error", "json"], known)) return CanonicalJsonRejected.encode(a, d);
     return c.typeMismatch("no alternative of CanonicalJsonCase fits");
   },
   decode: (v) => {
@@ -135,11 +144,13 @@ export interface CanonicalJsonRejected {
 }
 
 export const CanonicalJsonRejected: c.Codec<CanonicalJsonRejected> = {
-  encode: (a) =>
-    c.record([
-      c.field("json", c.text, a.json),
-      c.field("error", c.text, a.error),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("json", c.text, a.json, e),
+        c.field("error", c.text, a.error, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["json", "error"]);
     if (!f.ok) return f;
@@ -159,12 +170,14 @@ export interface CanonicalModelCase {
 }
 
 export const CanonicalModelCase: c.Codec<CanonicalModelCase> = {
-  encode: (a) =>
-    c.record([
-      c.field("value", c.text, a.value),
-      c.field("cbor", c.defer(() => Hex), a.cbor),
-      c.field("contentHash", c.defer(() => Hex), a.contentHash),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("value", c.text, a.value, e),
+        c.field("cbor", c.defer(() => Hex), a.cbor, e),
+        c.field("contentHash", c.defer(() => Hex), a.contentHash, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["value", "cbor", "contentHash"]);
     if (!f.ok) return f;
@@ -187,13 +200,15 @@ export interface CanonicalTaggedHash {
 }
 
 export const CanonicalTaggedHash: c.Codec<CanonicalTaggedHash> = {
-  encode: (a) =>
-    c.record([
-      c.field("algorithm", c.text, a.algorithm),
-      c.field("tag", c.text, a.tag),
-      c.field("message", c.defer(() => Hex), a.message),
-      c.field("digest", c.defer(() => Hex), a.digest),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("algorithm", c.text, a.algorithm, e),
+        c.field("tag", c.text, a.tag, e),
+        c.field("message", c.defer(() => Hex), a.message, e),
+        c.field("digest", c.defer(() => Hex), a.digest, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["algorithm", "tag", "message", "digest"]);
     if (!f.ok) return f;
@@ -224,19 +239,21 @@ export interface CanonicalVectors {
 }
 
 export const CanonicalVectors: c.Codec<CanonicalVectors> = {
-  encode: (a) =>
-    c.record([
-      c.field("spec", c.literalText("docs/specs/canonical-encoding.md"), a.spec),
-      c.field("version", c.literalInt(1n), a.version),
-      c.field("contentHashTag", c.text, a.contentHashTag),
-      c.field("contentHashAlgorithm", c.text, a.contentHashAlgorithm),
-      c.field("json", c.vector(c.defer(() => CanonicalJsonCase), 0, null), a.json),
-      c.field("model", c.vector(c.defer(() => CanonicalModelCase), 0, null), a.model),
-      c.field("cborRejections", c.vector(c.defer(() => CanonicalCborRejection), 0, null), a.cborRejections),
-      c.field("taggedHash", c.vector(c.defer(() => CanonicalTaggedHash), 0, null), a.taggedHash),
-      c.field("digests", c.vector(c.defer(() => CanonicalDigest), 0, null), a.digests),
-      c.field("domainTags", c.vector(c.defer(() => CanonicalDomainTag), 0, null), a.domainTags),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("spec", c.literalText("docs/specs/canonical-encoding.md"), a.spec, e),
+        c.field("version", c.literalInt(1n), a.version, e),
+        c.field("contentHashTag", c.text, a.contentHashTag, e),
+        c.field("contentHashAlgorithm", c.text, a.contentHashAlgorithm, e),
+        c.field("json", c.vector(c.defer(() => CanonicalJsonCase), 0, null), a.json, e),
+        c.field("model", c.vector(c.defer(() => CanonicalModelCase), 0, null), a.model, e),
+        c.field("cborRejections", c.vector(c.defer(() => CanonicalCborRejection), 0, null), a.cborRejections, e),
+        c.field("taggedHash", c.vector(c.defer(() => CanonicalTaggedHash), 0, null), a.taggedHash, e),
+        c.field("digests", c.vector(c.defer(() => CanonicalDigest), 0, null), a.digests, e),
+        c.field("domainTags", c.vector(c.defer(() => CanonicalDomainTag), 0, null), a.domainTags, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["spec", "version", "contentHashTag", "contentHashAlgorithm", "json", "model", "cborRejections", "taggedHash", "digests", "domainTags"]);
     if (!f.ok) return f;

@@ -27,10 +27,11 @@ pub struct PoseidonHashVector {
 }
 
 impl c::Model for PoseidonHashVector {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("inputs", &c::VecOf { element: DECIMAL, min: 1, max: Some(4) }, &self.inputs)?,
-            c::field("output", &DECIMAL, &self.output)?,
+            c::field("inputs", &c::VecOf { element: DECIMAL, min: 1, max: Some(4) }, &self.inputs, inner)?,
+            c::field("output", &DECIMAL, &self.output, inner)?,
         ])
     }
 
@@ -56,12 +57,13 @@ pub struct PoseidonMerkleVector {
 }
 
 impl c::Model for PoseidonMerkleVector {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("depth", &c::UINT, &self.depth)?,
-            c::field("leaves", &DECIMAL_LEAVES, &self.leaves)?,
-            c::field("root", &DECIMAL, &self.root)?,
-            c::field("proofs", &c::VecOf { element: c::ModelOf::<PoseidonProofVector>::NEW, min: 0, max: None }, &self.proofs)?,
+            c::field("depth", &c::UINT, &self.depth, inner)?,
+            c::field("leaves", &DECIMAL_LEAVES, &self.leaves, inner)?,
+            c::field("root", &DECIMAL, &self.root, inner)?,
+            c::field("proofs", &c::VecOf { element: c::ModelOf::<PoseidonProofVector>::NEW, min: 0, max: None }, &self.proofs, inner)?,
         ])
     }
 
@@ -85,10 +87,11 @@ pub struct PoseidonProofVector {
 }
 
 impl c::Model for PoseidonProofVector {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("position", &DECIMAL, &self.position)?,
-            c::field("siblings", &c::VecOf { element: DECIMAL, min: 0, max: None }, &self.siblings)?,
+            c::field("position", &DECIMAL, &self.position, inner)?,
+            c::field("siblings", &c::VecOf { element: DECIMAL, min: 0, max: None }, &self.siblings, inner)?,
         ])
     }
 
@@ -110,12 +113,13 @@ pub struct PoseidonVectors {
 }
 
 impl c::Model for PoseidonVectors {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("spec", &c::LiteralText("docs/specs/zk.md"), &())?,
-            c::field("version", &c::LiteralInt(1), &())?,
-            c::field("poseidon", &c::VecOf { element: c::ModelOf::<PoseidonHashVector>::NEW, min: 0, max: None }, &self.poseidon)?,
-            c::field("merkle", &c::ModelOf::<PoseidonMerkleVector>::NEW, &self.merkle)?,
+            c::field("spec", &c::LiteralText("docs/specs/zk.md"), &(), inner)?,
+            c::field("version", &c::LiteralInt(1), &(), inner)?,
+            c::field("poseidon", &c::VecOf { element: c::ModelOf::<PoseidonHashVector>::NEW, min: 0, max: None }, &self.poseidon, inner)?,
+            c::field("merkle", &c::ModelOf::<PoseidonMerkleVector>::NEW, &self.merkle, inner)?,
         ])
     }
 

@@ -148,9 +148,9 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
               s"    /// The `${string(f.key).drop(1).dropRight(1)}` entry.\n    pub ${f.name}: $t,"
             }.mkString("\n")}\n}"
       val enc = fs.map { f =>
-        if (f.rs.tpe == "()") s"            c::field(${string(f.key)}, &${f.rs.codec}, &())?,"
-        else if (f.optional) s"            c::optional_field(${string(f.key)}, &${f.rs.codec}, self.${f.name}.as_ref())?,"
-        else s"            c::field(${string(f.key)}, &${f.rs.codec}, &self.${f.name})?,"
+        if (f.rs.tpe == "()") s"            c::field(${string(f.key)}, &${f.rs.codec}, &(), inner)?,"
+        else if (f.optional) s"            c::optional_field(${string(f.key)}, &${f.rs.codec}, self.${f.name}.as_ref(), inner)?,"
+        else s"            c::field(${string(f.key)}, &${f.rs.codec}, &self.${f.name}, inner)?,"
       }.mkString("\n")
       val keys = fs.map(f => string(f.key)).mkString(", ")
       val dec = fs.zipWithIndex.map {
@@ -169,7 +169,8 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |$struct
          |
          |impl c::Model for $n {
-         |    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+         |    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+         |        let inner = c::nested(depth)?;
          |        c::record([
          |$enc
          |        ])
@@ -179,11 +180,14 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |$decodeBody
          |    }
          |}
-         |""".stripMargin.replace("c::record([\n\n        ])", "c::record([])")
+         |""".stripMargin.replace(
+        "        let inner = c::nested(depth)?;\n        c::record([\n\n        ])",
+        "        c::nested(depth)?;\n        c::record([])"
+      )
     }
 
   private def enumeration(rule: QName, cases: Vector[(String, BigInt)]): Either[GenError, String] =
-    cases.find { case (_, v) => !v.isValidLong }.fold {
+    cases.find { case (_, v) => v < Profile.IntMin || v > Profile.IntMax }.fold {
       val n = typeName(rule)
       val names = cases.map { case (l, v) => (CanonicalEmitter.pascal(l), l, v) }
       s"""${doc(rule)}
@@ -194,7 +198,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |
          |impl $n {
          |    /// The integer this case is written as.
-         |    pub const fn wire(self) -> i64 {
+         |    pub const fn wire(self) -> i128 {
          |        match self {
          |${names.map { case (cn, _, v) => s"            Self::$cn => ${number(v)}," }.mkString("\n")}
          |        }
@@ -202,7 +206,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |}
          |
          |impl c::Model for $n {
-         |    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+         |    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
          |        Ok(c::Value::int(self.wire()))
          |    }
          |
@@ -215,7 +219,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |    }
          |}
          |""".stripMargin.asRight[GenError]
-    } { case (l, _) => outside(rule, s"enumeration case $l beyond i64").asLeft }
+    } { case (l, _) => outside(rule, s"enumeration case $l beyond CDDL int").asLeft }
 
   private def union(rule: QName, alts: Vector[UnionAlternative], texts: Vector[String]): Either[GenError, String] = {
     val n = typeName(rule)
@@ -227,7 +231,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
     else {
       val variants = recordVariants.map { case (v, t) => s"    /// A [`$t`].\n    $v($t)," } ++
         textVariants.map { case (v, t) => s"    /// The text `${string(t).drop(1).dropRight(1)}`.\n    $v," }
-      val enc = recordVariants.map { case (v, _) => s"            Self::$v(a) => c::Model::to_value(a)," } ++
+      val enc = recordVariants.map { case (v, _) => s"            Self::$v(a) => c::Model::to_value_at(a, depth)," } ++
         textVariants.map { case (v, t) => s"            Self::$v => Ok(c::Value::text(${string(t)}))," }
       def keys(s: Set[String]) = s"&[${s.toList.sorted.map(string).mkString(", ")}]"
       val records = alts.map(a => s"(${keys(a.required)}, ${keys(a.allowed)})").mkString(", ")
@@ -241,7 +245,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |}
          |
          |impl c::Model for $n {
-         |    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+         |    fn to_value_at(&self, ${if (recordVariants.isEmpty) "_depth" else "depth"}: usize) -> Result<c::Value, c::CanonicalError> {
          |        match self {
          |${enc.mkString("\n")}
          |        }

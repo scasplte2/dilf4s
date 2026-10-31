@@ -14,12 +14,14 @@ export interface MerkleValueCommitment {
 }
 
 export const MerkleValueCommitment: c.Codec<MerkleValueCommitment> = {
-  encode: (a) =>
-    c.record([
-      c.field("cbor", c.defer(() => Hex), a.cbor),
-      c.field("commitment", c.defer(() => Hex), a.commitment),
-      c.field("leafHash", c.defer(() => Hex), a.leafHash),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("cbor", c.defer(() => Hex), a.cbor, e),
+        c.field("commitment", c.defer(() => Hex), a.commitment, e),
+        c.field("leafHash", c.defer(() => Hex), a.leafHash, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["cbor", "commitment", "leafHash"]);
     if (!f.ok) return f;
@@ -43,14 +45,16 @@ export interface MerkleVectorTree {
 }
 
 export const MerkleVectorTree: c.Codec<MerkleVectorTree> = {
-  encode: (a) =>
-    c.record([
-      c.field("size", c.uint, a.size),
-      c.field("root", c.defer(() => Hex), a.root),
-      c.field("rfc6962Root", c.defer(() => Hex), a.rfc6962Root),
-      c.field("inclusion", c.vector(c.defer(() => Hex), 0, null), a.inclusion),
-      c.field("consistency", c.vector(c.defer(() => Hex), 0, null), a.consistency),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("size", c.uint, a.size, e),
+        c.field("root", c.defer(() => Hex), a.root, e),
+        c.field("rfc6962Root", c.defer(() => Hex), a.rfc6962Root, e),
+        c.field("inclusion", c.vector(c.defer(() => Hex), 0, null), a.inclusion, e),
+        c.field("consistency", c.vector(c.defer(() => Hex), 0, null), a.consistency, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["size", "root", "rfc6962Root", "inclusion", "consistency"]);
     if (!f.ok) return f;
@@ -80,16 +84,18 @@ export interface MerkleVectors {
 }
 
 export const MerkleVectors: c.Codec<MerkleVectors> = {
-  encode: (a) =>
-    c.record([
-      c.field("spec", c.literalText("docs/specs/merkle.md"), a.spec),
-      c.field("version", c.literalInt(1n), a.version),
-      c.field("hash", c.literalText("SHA-256"), a.hash),
-      c.field("leaves", c.vector(c.defer(() => Hex), 0, null), a.leaves),
-      c.field("leafHashes", c.vector(c.defer(() => Hex), 0, null), a.leafHashes),
-      c.field("trees", c.vector(c.defer(() => MerkleVectorTree), 0, null), a.trees),
-      c.field("valueCommitments", c.vector(c.defer(() => MerkleValueCommitment), 0, null), a.valueCommitments),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("spec", c.literalText("docs/specs/merkle.md"), a.spec, e),
+        c.field("version", c.literalInt(1n), a.version, e),
+        c.field("hash", c.literalText("SHA-256"), a.hash, e),
+        c.field("leaves", c.vector(c.defer(() => Hex), 0, null), a.leaves, e),
+        c.field("leafHashes", c.vector(c.defer(() => Hex), 0, null), a.leafHashes, e),
+        c.field("trees", c.vector(c.defer(() => MerkleVectorTree), 0, null), a.trees, e),
+        c.field("valueCommitments", c.vector(c.defer(() => MerkleValueCommitment), 0, null), a.valueCommitments, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["spec", "version", "hash", "leaves", "leafHashes", "trees", "valueCommitments"]);
     if (!f.ok) return f;

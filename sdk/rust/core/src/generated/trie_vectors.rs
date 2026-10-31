@@ -20,10 +20,11 @@ pub struct TrieBits {
 }
 
 impl c::Model for TrieBits {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("bits", &c::UINT, &self.bits)?,
-            c::field("bytes", &HEX, &self.bytes)?,
+            c::field("bits", &c::UINT, &self.bits, inner)?,
+            c::field("bytes", &HEX, &self.bytes, inner)?,
         ])
     }
 
@@ -49,12 +50,13 @@ pub struct TrieBranchHash {
 }
 
 impl c::Model for TrieBranchHash {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("segment", &c::ModelOf::<TrieBits>::NEW, &self.segment)?,
-            c::field("valueHash", &HEX, &self.value_hash)?,
-            c::field("left", &HEX, &self.left)?,
-            c::field("hash", &HEX, &self.hash)?,
+            c::field("segment", &c::ModelOf::<TrieBits>::NEW, &self.segment, inner)?,
+            c::field("valueHash", &HEX, &self.value_hash, inner)?,
+            c::field("left", &HEX, &self.left, inner)?,
+            c::field("hash", &HEX, &self.hash, inner)?,
         ])
     }
 
@@ -80,11 +82,12 @@ pub struct TrieEntry {
 }
 
 impl c::Model for TrieEntry {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("key", &HEX, &self.key)?,
-            c::field("value", &HEX, &self.value)?,
-            c::field("valueHash", &HEX, &self.value_hash)?,
+            c::field("key", &HEX, &self.key, inner)?,
+            c::field("value", &HEX, &self.value, inner)?,
+            c::field("valueHash", &HEX, &self.value_hash, inner)?,
         ])
     }
 
@@ -105,9 +108,10 @@ pub struct TrieFixedMode {
 }
 
 impl c::Model for TrieFixedMode {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("fixed", &c::UINT, &self.fixed)?,
+            c::field("fixed", &c::UINT, &self.fixed, inner)?,
         ])
     }
 
@@ -134,13 +138,14 @@ pub struct TrieFixture {
 }
 
 impl c::Model for TrieFixture {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("name", &c::Text, &self.name)?,
-            c::field("mode", &c::ModelOf::<TrieMode>::NEW, &self.mode)?,
-            c::field("entries", &c::VecOf { element: c::ModelOf::<TrieEntry>::NEW, min: 0, max: None }, &self.entries)?,
-            c::field("root", &HEX, &self.root)?,
-            c::field("proof", &c::ModelOf::<TrieProofVector>::NEW, &self.proof)?,
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("mode", &c::ModelOf::<TrieMode>::NEW, &self.mode, inner)?,
+            c::field("entries", &c::VecOf { element: c::ModelOf::<TrieEntry>::NEW, min: 0, max: None }, &self.entries, inner)?,
+            c::field("root", &HEX, &self.root, inner)?,
+            c::field("proof", &c::ModelOf::<TrieProofVector>::NEW, &self.proof, inner)?,
         ])
     }
 
@@ -167,11 +172,12 @@ pub struct TrieLeafHash {
 }
 
 impl c::Model for TrieLeafHash {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("segment", &c::ModelOf::<TrieBits>::NEW, &self.segment)?,
-            c::field("valueHash", &HEX, &self.value_hash)?,
-            c::field("hash", &HEX, &self.hash)?,
+            c::field("segment", &c::ModelOf::<TrieBits>::NEW, &self.segment, inner)?,
+            c::field("valueHash", &HEX, &self.value_hash, inner)?,
+            c::field("hash", &HEX, &self.hash, inner)?,
         ])
     }
 
@@ -194,10 +200,11 @@ pub struct TrieListed {
 }
 
 impl c::Model for TrieListed {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("key", &HEX, &self.key)?,
-            c::field("valueHash", &HEX, &self.value_hash)?,
+            c::field("key", &HEX, &self.key, inner)?,
+            c::field("valueHash", &HEX, &self.value_hash, inner)?,
         ])
     }
 
@@ -219,10 +226,11 @@ pub struct TrieLookup {
 }
 
 impl c::Model for TrieLookup {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("key", &HEX, &self.key)?,
-            c::field("result", &c::ModelOf::<TrieLookupResult>::NEW, &self.result)?,
+            c::field("key", &HEX, &self.key, inner)?,
+            c::field("result", &c::ModelOf::<TrieLookupResult>::NEW, &self.result, inner)?,
         ])
     }
 
@@ -246,9 +254,9 @@ pub enum TrieLookupResult {
 }
 
 impl c::Model for TrieLookupResult {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
-            Self::TriePresent(a) => c::Model::to_value(a),
+            Self::TriePresent(a) => c::Model::to_value_at(a, depth),
             Self::Absent => Ok(c::Value::text("absent")),
             Self::NotCovered => Ok(c::Value::text("notCovered")),
         }
@@ -274,10 +282,10 @@ pub enum TrieMode {
 }
 
 impl c::Model for TrieMode {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
-            Self::TrieFixedMode(a) => c::Model::to_value(a),
-            Self::TrieVariableMode(a) => c::Model::to_value(a),
+            Self::TrieFixedMode(a) => c::Model::to_value_at(a, depth),
+            Self::TrieVariableMode(a) => c::Model::to_value_at(a, depth),
         }
     }
 
@@ -300,10 +308,11 @@ pub struct TrieNodeHashes {
 }
 
 impl c::Model for TrieNodeHashes {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("leaf", &c::ModelOf::<TrieLeafHash>::NEW, &self.leaf)?,
-            c::field("branch", &c::ModelOf::<TrieBranchHash>::NEW, &self.branch)?,
+            c::field("leaf", &c::ModelOf::<TrieLeafHash>::NEW, &self.leaf, inner)?,
+            c::field("branch", &c::ModelOf::<TrieBranchHash>::NEW, &self.branch, inner)?,
         ])
     }
 
@@ -325,10 +334,11 @@ pub struct TriePrefixListing {
 }
 
 impl c::Model for TriePrefixListing {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("prefix", &HEX, &self.prefix)?,
-            c::field("entries", &c::VecOf { element: c::ModelOf::<TrieListed>::NEW, min: 0, max: None }, &self.entries)?,
+            c::field("prefix", &HEX, &self.prefix, inner)?,
+            c::field("entries", &c::VecOf { element: c::ModelOf::<TrieListed>::NEW, min: 0, max: None }, &self.entries, inner)?,
         ])
     }
 
@@ -348,9 +358,10 @@ pub struct TriePresent {
 }
 
 impl c::Model for TriePresent {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("present", &HEX, &self.present)?,
+            c::field("present", &HEX, &self.present, inner)?,
         ])
     }
 
@@ -377,13 +388,14 @@ pub struct TrieProofVector {
 }
 
 impl c::Model for TrieProofVector {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("keys", &c::VecOf { element: HEX, min: 0, max: None }, &self.keys)?,
-            c::field("prefixes", &c::VecOf { element: HEX, min: 0, max: None }, &self.prefixes)?,
-            c::field("cbor", &HEX, &self.cbor)?,
-            c::field("lookups", &c::VecOf { element: c::ModelOf::<TrieLookup>::NEW, min: 0, max: None }, &self.lookups)?,
-            c::field("prefixListings", &c::VecOf { element: c::ModelOf::<TriePrefixListing>::NEW, min: 0, max: None }, &self.prefix_listings)?,
+            c::field("keys", &c::VecOf { element: HEX, min: 0, max: None }, &self.keys, inner)?,
+            c::field("prefixes", &c::VecOf { element: HEX, min: 0, max: None }, &self.prefixes, inner)?,
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::field("lookups", &c::VecOf { element: c::ModelOf::<TrieLookup>::NEW, min: 0, max: None }, &self.lookups, inner)?,
+            c::field("prefixListings", &c::VecOf { element: c::ModelOf::<TriePrefixListing>::NEW, min: 0, max: None }, &self.prefix_listings, inner)?,
         ])
     }
 
@@ -406,9 +418,10 @@ pub struct TrieVariableMode {
 }
 
 impl c::Model for TrieVariableMode {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("variable", &c::UINT, &self.variable)?,
+            c::field("variable", &c::UINT, &self.variable, inner)?,
         ])
     }
 
@@ -431,14 +444,15 @@ pub struct TrieVectors {
 }
 
 impl c::Model for TrieVectors {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("spec", &c::LiteralText("docs/specs/trie.md"), &())?,
-            c::field("version", &c::LiteralInt(1), &())?,
-            c::field("hash", &c::LiteralText("SHA-256"), &())?,
-            c::field("emptyRoot", &HEX, &self.empty_root)?,
-            c::field("nodeHashes", &c::ModelOf::<TrieNodeHashes>::NEW, &self.node_hashes)?,
-            c::field("fixtures", &c::VecOf { element: c::ModelOf::<TrieFixture>::NEW, min: 0, max: None }, &self.fixtures)?,
+            c::field("spec", &c::LiteralText("docs/specs/trie.md"), &(), inner)?,
+            c::field("version", &c::LiteralInt(1), &(), inner)?,
+            c::field("hash", &c::LiteralText("SHA-256"), &(), inner)?,
+            c::field("emptyRoot", &HEX, &self.empty_root, inner)?,
+            c::field("nodeHashes", &c::ModelOf::<TrieNodeHashes>::NEW, &self.node_hashes, inner)?,
+            c::field("fixtures", &c::VecOf { element: c::ModelOf::<TrieFixture>::NEW, min: 0, max: None }, &self.fixtures, inner)?,
         ])
     }
 

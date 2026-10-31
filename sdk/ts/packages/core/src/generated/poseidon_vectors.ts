@@ -18,11 +18,13 @@ export interface PoseidonHashVector {
 }
 
 export const PoseidonHashVector: c.Codec<PoseidonHashVector> = {
-  encode: (a) =>
-    c.record([
-      c.field("inputs", c.vector(c.defer(() => Decimal), 1, 4), a.inputs),
-      c.field("output", c.defer(() => Decimal), a.output),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("inputs", c.vector(c.defer(() => Decimal), 1, 4), a.inputs, e),
+        c.field("output", c.defer(() => Decimal), a.output, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["inputs", "output"]);
     if (!f.ok) return f;
@@ -43,13 +45,15 @@ export interface PoseidonMerkleVector {
 }
 
 export const PoseidonMerkleVector: c.Codec<PoseidonMerkleVector> = {
-  encode: (a) =>
-    c.record([
-      c.field("depth", c.uint, a.depth),
-      c.field("leaves", c.defer(() => DecimalLeaves), a.leaves),
-      c.field("root", c.defer(() => Decimal), a.root),
-      c.field("proofs", c.vector(c.defer(() => PoseidonProofVector), 0, null), a.proofs),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("depth", c.uint, a.depth, e),
+        c.field("leaves", c.defer(() => DecimalLeaves), a.leaves, e),
+        c.field("root", c.defer(() => Decimal), a.root, e),
+        c.field("proofs", c.vector(c.defer(() => PoseidonProofVector), 0, null), a.proofs, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["depth", "leaves", "root", "proofs"]);
     if (!f.ok) return f;
@@ -72,11 +76,13 @@ export interface PoseidonProofVector {
 }
 
 export const PoseidonProofVector: c.Codec<PoseidonProofVector> = {
-  encode: (a) =>
-    c.record([
-      c.field("position", c.defer(() => Decimal), a.position),
-      c.field("siblings", c.vector(c.defer(() => Decimal), 0, null), a.siblings),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("position", c.defer(() => Decimal), a.position, e),
+        c.field("siblings", c.vector(c.defer(() => Decimal), 0, null), a.siblings, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["position", "siblings"]);
     if (!f.ok) return f;
@@ -97,13 +103,15 @@ export interface PoseidonVectors {
 }
 
 export const PoseidonVectors: c.Codec<PoseidonVectors> = {
-  encode: (a) =>
-    c.record([
-      c.field("spec", c.literalText("docs/specs/zk.md"), a.spec),
-      c.field("version", c.literalInt(1n), a.version),
-      c.field("poseidon", c.vector(c.defer(() => PoseidonHashVector), 0, null), a.poseidon),
-      c.field("merkle", c.defer(() => PoseidonMerkleVector), a.merkle),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("spec", c.literalText("docs/specs/zk.md"), a.spec, e),
+        c.field("version", c.literalInt(1n), a.version, e),
+        c.field("poseidon", c.vector(c.defer(() => PoseidonHashVector), 0, null), a.poseidon, e),
+        c.field("merkle", c.defer(() => PoseidonMerkleVector), a.merkle, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["spec", "version", "poseidon", "merkle"]);
     if (!f.ok) return f;

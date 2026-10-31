@@ -13,11 +13,13 @@ export interface TrieBits {
 }
 
 export const TrieBits: c.Codec<TrieBits> = {
-  encode: (a) =>
-    c.record([
-      c.field("bits", c.uint, a.bits),
-      c.field("bytes", c.defer(() => Hex), a.bytes),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("bits", c.uint, a.bits, e),
+        c.field("bytes", c.defer(() => Hex), a.bytes, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["bits", "bytes"]);
     if (!f.ok) return f;
@@ -38,13 +40,15 @@ export interface TrieBranchHash {
 }
 
 export const TrieBranchHash: c.Codec<TrieBranchHash> = {
-  encode: (a) =>
-    c.record([
-      c.field("segment", c.defer(() => TrieBits), a.segment),
-      c.field("valueHash", c.defer(() => Hex), a.valueHash),
-      c.field("left", c.defer(() => Hex), a.left),
-      c.field("hash", c.defer(() => Hex), a.hash),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("segment", c.defer(() => TrieBits), a.segment, e),
+        c.field("valueHash", c.defer(() => Hex), a.valueHash, e),
+        c.field("left", c.defer(() => Hex), a.left, e),
+        c.field("hash", c.defer(() => Hex), a.hash, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["segment", "valueHash", "left", "hash"]);
     if (!f.ok) return f;
@@ -68,12 +72,14 @@ export interface TrieEntry {
 }
 
 export const TrieEntry: c.Codec<TrieEntry> = {
-  encode: (a) =>
-    c.record([
-      c.field("key", c.defer(() => Hex), a.key),
-      c.field("value", c.defer(() => Hex), a.value),
-      c.field("valueHash", c.defer(() => Hex), a.valueHash),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("key", c.defer(() => Hex), a.key, e),
+        c.field("value", c.defer(() => Hex), a.value, e),
+        c.field("valueHash", c.defer(() => Hex), a.valueHash, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["key", "value", "valueHash"]);
     if (!f.ok) return f;
@@ -93,10 +99,12 @@ export interface TrieFixedMode {
 }
 
 export const TrieFixedMode: c.Codec<TrieFixedMode> = {
-  encode: (a) =>
-    c.record([
-      c.field("fixed", c.uint, a.fixed),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("fixed", c.uint, a.fixed, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["fixed"]);
     if (!f.ok) return f;
@@ -116,14 +124,16 @@ export interface TrieFixture {
 }
 
 export const TrieFixture: c.Codec<TrieFixture> = {
-  encode: (a) =>
-    c.record([
-      c.field("name", c.text, a.name),
-      c.field("mode", c.defer(() => TrieMode), a.mode),
-      c.field("entries", c.vector(c.defer(() => TrieEntry), 0, null), a.entries),
-      c.field("root", c.defer(() => Hex), a.root),
-      c.field("proof", c.defer(() => TrieProofVector), a.proof),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("name", c.text, a.name, e),
+        c.field("mode", c.defer(() => TrieMode), a.mode, e),
+        c.field("entries", c.vector(c.defer(() => TrieEntry), 0, null), a.entries, e),
+        c.field("root", c.defer(() => Hex), a.root, e),
+        c.field("proof", c.defer(() => TrieProofVector), a.proof, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["name", "mode", "entries", "root", "proof"]);
     if (!f.ok) return f;
@@ -149,12 +159,14 @@ export interface TrieLeafHash {
 }
 
 export const TrieLeafHash: c.Codec<TrieLeafHash> = {
-  encode: (a) =>
-    c.record([
-      c.field("segment", c.defer(() => TrieBits), a.segment),
-      c.field("valueHash", c.defer(() => Hex), a.valueHash),
-      c.field("hash", c.defer(() => Hex), a.hash),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("segment", c.defer(() => TrieBits), a.segment, e),
+        c.field("valueHash", c.defer(() => Hex), a.valueHash, e),
+        c.field("hash", c.defer(() => Hex), a.hash, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["segment", "valueHash", "hash"]);
     if (!f.ok) return f;
@@ -175,11 +187,13 @@ export interface TrieListed {
 }
 
 export const TrieListed: c.Codec<TrieListed> = {
-  encode: (a) =>
-    c.record([
-      c.field("key", c.defer(() => Hex), a.key),
-      c.field("valueHash", c.defer(() => Hex), a.valueHash),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("key", c.defer(() => Hex), a.key, e),
+        c.field("valueHash", c.defer(() => Hex), a.valueHash, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["key", "valueHash"]);
     if (!f.ok) return f;
@@ -198,11 +212,13 @@ export interface TrieLookup {
 }
 
 export const TrieLookup: c.Codec<TrieLookup> = {
-  encode: (a) =>
-    c.record([
-      c.field("key", c.defer(() => Hex), a.key),
-      c.field("result", c.defer(() => TrieLookupResult), a.result),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("key", c.defer(() => Hex), a.key, e),
+        c.field("result", c.defer(() => TrieLookupResult), a.result, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["key", "result"]);
     if (!f.ok) return f;
@@ -218,9 +234,10 @@ export const TrieLookup: c.Codec<TrieLookup> = {
 export type TrieLookupResult = TriePresent | "absent" | "notCovered";
 
 export const TrieLookupResult: c.Codec<TrieLookupResult> = {
-  encode: (a) => {
+  encode: (a, d) => {
     if (typeof a === "string") return c.oneOfText(a, ["absent", "notCovered"]);
-    if (c.hasFields(a, TriePresent, ["present"], ["present"])) return TriePresent.encode(a);
+    const known = ["present"];
+    if (c.hasFields(a, TriePresent, ["present"], ["present"], known)) return TriePresent.encode(a, d);
     return c.typeMismatch("no alternative of TrieLookupResult fits");
   },
   decode: (v) => {
@@ -243,9 +260,10 @@ export const TrieLookupResult: c.Codec<TrieLookupResult> = {
 export type TrieMode = TrieFixedMode | TrieVariableMode;
 
 export const TrieMode: c.Codec<TrieMode> = {
-  encode: (a) => {
-    if (c.hasFields(a, TrieFixedMode, ["fixed"], ["fixed"])) return TrieFixedMode.encode(a);
-    if (c.hasFields(a, TrieVariableMode, ["variable"], ["variable"])) return TrieVariableMode.encode(a);
+  encode: (a, d) => {
+    const known = ["fixed", "variable"];
+    if (c.hasFields(a, TrieFixedMode, ["fixed"], ["fixed"], known)) return TrieFixedMode.encode(a, d);
+    if (c.hasFields(a, TrieVariableMode, ["variable"], ["variable"], known)) return TrieVariableMode.encode(a, d);
     return c.typeMismatch("no alternative of TrieMode fits");
   },
   decode: (v) => {
@@ -269,11 +287,13 @@ export interface TrieNodeHashes {
 }
 
 export const TrieNodeHashes: c.Codec<TrieNodeHashes> = {
-  encode: (a) =>
-    c.record([
-      c.field("leaf", c.defer(() => TrieLeafHash), a.leaf),
-      c.field("branch", c.defer(() => TrieBranchHash), a.branch),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("leaf", c.defer(() => TrieLeafHash), a.leaf, e),
+        c.field("branch", c.defer(() => TrieBranchHash), a.branch, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["leaf", "branch"]);
     if (!f.ok) return f;
@@ -292,11 +312,13 @@ export interface TriePrefixListing {
 }
 
 export const TriePrefixListing: c.Codec<TriePrefixListing> = {
-  encode: (a) =>
-    c.record([
-      c.field("prefix", c.defer(() => Hex), a.prefix),
-      c.field("entries", c.vector(c.defer(() => TrieListed), 0, null), a.entries),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("prefix", c.defer(() => Hex), a.prefix, e),
+        c.field("entries", c.vector(c.defer(() => TrieListed), 0, null), a.entries, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["prefix", "entries"]);
     if (!f.ok) return f;
@@ -314,10 +336,12 @@ export interface TriePresent {
 }
 
 export const TriePresent: c.Codec<TriePresent> = {
-  encode: (a) =>
-    c.record([
-      c.field("present", c.defer(() => Hex), a.present),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("present", c.defer(() => Hex), a.present, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["present"]);
     if (!f.ok) return f;
@@ -337,14 +361,16 @@ export interface TrieProofVector {
 }
 
 export const TrieProofVector: c.Codec<TrieProofVector> = {
-  encode: (a) =>
-    c.record([
-      c.field("keys", c.vector(c.defer(() => Hex), 0, null), a.keys),
-      c.field("prefixes", c.vector(c.defer(() => Hex), 0, null), a.prefixes),
-      c.field("cbor", c.defer(() => Hex), a.cbor),
-      c.field("lookups", c.vector(c.defer(() => TrieLookup), 0, null), a.lookups),
-      c.field("prefixListings", c.vector(c.defer(() => TriePrefixListing), 0, null), a.prefixListings),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("keys", c.vector(c.defer(() => Hex), 0, null), a.keys, e),
+        c.field("prefixes", c.vector(c.defer(() => Hex), 0, null), a.prefixes, e),
+        c.field("cbor", c.defer(() => Hex), a.cbor, e),
+        c.field("lookups", c.vector(c.defer(() => TrieLookup), 0, null), a.lookups, e),
+        c.field("prefixListings", c.vector(c.defer(() => TriePrefixListing), 0, null), a.prefixListings, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["keys", "prefixes", "cbor", "lookups", "prefixListings"]);
     if (!f.ok) return f;
@@ -368,10 +394,12 @@ export interface TrieVariableMode {
 }
 
 export const TrieVariableMode: c.Codec<TrieVariableMode> = {
-  encode: (a) =>
-    c.record([
-      c.field("variable", c.uint, a.variable),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("variable", c.uint, a.variable, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["variable"]);
     if (!f.ok) return f;
@@ -392,15 +420,17 @@ export interface TrieVectors {
 }
 
 export const TrieVectors: c.Codec<TrieVectors> = {
-  encode: (a) =>
-    c.record([
-      c.field("spec", c.literalText("docs/specs/trie.md"), a.spec),
-      c.field("version", c.literalInt(1n), a.version),
-      c.field("hash", c.literalText("SHA-256"), a.hash),
-      c.field("emptyRoot", c.defer(() => Hex), a.emptyRoot),
-      c.field("nodeHashes", c.defer(() => TrieNodeHashes), a.nodeHashes),
-      c.field("fixtures", c.vector(c.defer(() => TrieFixture), 0, null), a.fixtures),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("spec", c.literalText("docs/specs/trie.md"), a.spec, e),
+        c.field("version", c.literalInt(1n), a.version, e),
+        c.field("hash", c.literalText("SHA-256"), a.hash, e),
+        c.field("emptyRoot", c.defer(() => Hex), a.emptyRoot, e),
+        c.field("nodeHashes", c.defer(() => TrieNodeHashes), a.nodeHashes, e),
+        c.field("fixtures", c.vector(c.defer(() => TrieFixture), 0, null), a.fixtures, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["spec", "version", "hash", "emptyRoot", "nodeHashes", "fixtures"]);
     if (!f.ok) return f;

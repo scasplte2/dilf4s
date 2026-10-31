@@ -19,17 +19,19 @@ export interface JlvmCase {
 }
 
 export const JlvmCase: c.Codec<JlvmCase> = {
-  encode: (a) =>
-    c.record([
-      c.field("name", c.text, a.name),
-      c.field("program", c.text, a.program),
-      c.field("data", c.text, a.data),
-      c.optionalField("env", c.textMap(c.text), a.env),
-      c.optionalField("gasLimit", c.uint, a.gasLimit),
-      c.field("outcome", c.defer(() => JlvmOutcome), a.outcome),
-      c.field("gasUsed", c.uint, a.gasUsed),
-      c.field("warnings", c.uint, a.warnings),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("name", c.text, a.name, e),
+        c.field("program", c.text, a.program, e),
+        c.field("data", c.text, a.data, e),
+        c.optionalField("env", c.textMap(c.text), a.env, e),
+        c.optionalField("gasLimit", c.uint, a.gasLimit, e),
+        c.field("outcome", c.defer(() => JlvmOutcome), a.outcome, e),
+        c.field("gasUsed", c.uint, a.gasUsed, e),
+        c.field("warnings", c.uint, a.warnings, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["name", "program", "data", "env", "gasLimit", "outcome", "gasUsed", "warnings"]);
     if (!f.ok) return f;
@@ -59,10 +61,12 @@ export interface JlvmError {
 }
 
 export const JlvmError: c.Codec<JlvmError> = {
-  encode: (a) =>
-    c.record([
-      c.field("error", c.defer(() => JlvmErrorKind), a.error),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("error", c.defer(() => JlvmErrorKind), a.error, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["error"]);
     if (!f.ok) return f;
@@ -110,9 +114,10 @@ export const JlvmErrorKind: c.Codec<JlvmErrorKind> = {
 export type JlvmOutcome = JlvmValue | JlvmError;
 
 export const JlvmOutcome: c.Codec<JlvmOutcome> = {
-  encode: (a) => {
-    if (c.hasFields(a, JlvmValue, ["cbor"], ["cbor", "json"])) return JlvmValue.encode(a);
-    if (c.hasFields(a, JlvmError, ["error"], ["error"])) return JlvmError.encode(a);
+  encode: (a, d) => {
+    const known = ["cbor", "error", "json"];
+    if (c.hasFields(a, JlvmValue, ["cbor"], ["cbor", "json"], known)) return JlvmValue.encode(a, d);
+    if (c.hasFields(a, JlvmError, ["error"], ["error"], known)) return JlvmError.encode(a, d);
     return c.typeMismatch("no alternative of JlvmOutcome fits");
   },
   decode: (v) => {
@@ -136,11 +141,13 @@ export interface JlvmValue {
 }
 
 export const JlvmValue: c.Codec<JlvmValue> = {
-  encode: (a) =>
-    c.record([
-      c.field("cbor", c.defer(() => Hex), a.cbor),
-      c.optionalField("json", c.text, a.json),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("cbor", c.defer(() => Hex), a.cbor, e),
+        c.optionalField("json", c.text, a.json, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["cbor", "json"]);
     if (!f.ok) return f;
@@ -163,15 +170,17 @@ export interface JlvmVectors {
 }
 
 export const JlvmVectors: c.Codec<JlvmVectors> = {
-  encode: (a) =>
-    c.record([
-      c.field("spec", c.literalText("docs/specs/jlvm.md"), a.spec),
-      c.field("version", c.literalInt(1n), a.version),
-      c.field("schedule", c.literalInt(1n), a.schedule),
-      c.field("gasLimit", c.uint, a.gasLimit),
-      c.field("source", c.text, a.source),
-      c.field("cases", c.vector(c.defer(() => JlvmCase), 0, null), a.cases),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("spec", c.literalText("docs/specs/jlvm.md"), a.spec, e),
+        c.field("version", c.literalInt(1n), a.version, e),
+        c.field("schedule", c.literalInt(1n), a.schedule, e),
+        c.field("gasLimit", c.uint, a.gasLimit, e),
+        c.field("source", c.text, a.source, e),
+        c.field("cases", c.vector(c.defer(() => JlvmCase), 0, null), a.cases, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["spec", "version", "schedule", "gasLimit", "source", "cases"]);
     if (!f.ok) return f;

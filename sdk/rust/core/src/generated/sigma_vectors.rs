@@ -30,15 +30,16 @@ pub struct SigmaCase {
 }
 
 impl c::Model for SigmaCase {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("name", &c::Text, &self.name)?,
-            c::field("kind", &c::ModelOf::<SigmaKind>::NEW, &self.kind)?,
-            c::field("proposition", &c::ModelOf::<SigmaProposition>::NEW, &self.proposition)?,
-            c::field("secrets", &c::VecOf { element: HEX0X, min: 0, max: None }, &self.secrets)?,
-            c::field("message", &HEX0X, &self.message)?,
-            c::field("proof", &HEX0X, &self.proof)?,
-            c::field("ergo", &c::Bool, &self.ergo)?,
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("kind", &c::ModelOf::<SigmaKind>::NEW, &self.kind, inner)?,
+            c::field("proposition", &c::ModelOf::<SigmaProposition>::NEW, &self.proposition, inner)?,
+            c::field("secrets", &c::VecOf { element: HEX0X, min: 0, max: None }, &self.secrets, inner)?,
+            c::field("message", &HEX0X, &self.message, inner)?,
+            c::field("proof", &HEX0X, &self.proof, inner)?,
+            c::field("ergo", &c::Bool, &self.ergo, inner)?,
         ])
     }
 
@@ -73,7 +74,7 @@ pub enum SigmaKind {
 }
 
 impl c::Model for SigmaKind {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Valid => Ok(c::Value::text("valid")),
             Self::OtherMessage => Ok(c::Value::text("other-message")),
@@ -119,16 +120,17 @@ pub struct SigmaProposition {
 }
 
 impl c::Model for SigmaProposition {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("type", &c::ModelOf::<SigmaType>::NEW, &self.r#type)?,
-            c::optional_field("pk", &HEX0X, self.pk.as_ref())?,
-            c::optional_field("g", &HEX0X, self.g.as_ref())?,
-            c::optional_field("h", &HEX0X, self.h.as_ref())?,
-            c::optional_field("u", &HEX0X, self.u.as_ref())?,
-            c::optional_field("v", &HEX0X, self.v.as_ref())?,
-            c::optional_field("k", &c::U32In { lo: 1, hi: 255 }, self.k.as_ref())?,
-            c::optional_field("children", &c::VecOf { element: c::ModelOf::<SigmaProposition>::NEW, min: 0, max: None }, self.children.as_ref())?,
+            c::field("type", &c::ModelOf::<SigmaType>::NEW, &self.r#type, inner)?,
+            c::optional_field("pk", &HEX0X, self.pk.as_ref(), inner)?,
+            c::optional_field("g", &HEX0X, self.g.as_ref(), inner)?,
+            c::optional_field("h", &HEX0X, self.h.as_ref(), inner)?,
+            c::optional_field("u", &HEX0X, self.u.as_ref(), inner)?,
+            c::optional_field("v", &HEX0X, self.v.as_ref(), inner)?,
+            c::optional_field("k", &c::U32In { lo: 1, hi: 255 }, self.k.as_ref(), inner)?,
+            c::optional_field("children", &c::VecOf { element: c::ModelOf::<SigmaProposition>::NEW, min: 0, max: None }, self.children.as_ref(), inner)?,
         ])
     }
 
@@ -162,7 +164,7 @@ pub enum SigmaType {
 }
 
 impl c::Model for SigmaType {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Dlog => Ok(c::Value::text("dlog")),
             Self::Dhtuple => Ok(c::Value::text("dhtuple")),
@@ -194,12 +196,13 @@ pub struct SigmaVectors {
 }
 
 impl c::Model for SigmaVectors {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("spec", &c::LiteralText("docs/specs/sigma.md"), &())?,
-            c::field("version", &c::LiteralInt(1), &())?,
-            c::field("source", &c::Text, &self.source)?,
-            c::field("cases", &c::VecOf { element: c::ModelOf::<SigmaCase>::NEW, min: 0, max: None }, &self.cases)?,
+            c::field("spec", &c::LiteralText("docs/specs/sigma.md"), &(), inner)?,
+            c::field("version", &c::LiteralInt(1), &(), inner)?,
+            c::field("source", &c::Text, &self.source, inner)?,
+            c::field("cases", &c::VecOf { element: c::ModelOf::<SigmaCase>::NEW, min: 0, max: None }, &self.cases, inner)?,
         ])
     }
 

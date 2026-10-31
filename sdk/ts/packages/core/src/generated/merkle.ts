@@ -9,12 +9,14 @@ export interface MerkleConsistency {
 }
 
 export const MerkleConsistency: c.Codec<MerkleConsistency> = {
-  encode: (a) =>
-    c.record([
-      c.field("old", c.defer(() => TreeIndex), a.old),
-      c.field("new", c.defer(() => TreeIndex), a.new),
-      c.field("path", c.vector(c.bytes, 0, null), a.path),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("old", c.defer(() => TreeIndex), a.old, e),
+        c.field("new", c.defer(() => TreeIndex), a.new, e),
+        c.field("path", c.vector(c.bytes, 0, null), a.path, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["old", "new", "path"]);
     if (!f.ok) return f;
@@ -36,12 +38,14 @@ export interface MerkleInclusion {
 }
 
 export const MerkleInclusion: c.Codec<MerkleInclusion> = {
-  encode: (a) =>
-    c.record([
-      c.field("index", c.defer(() => TreeIndex), a.index),
-      c.field("size", c.defer(() => TreeIndex), a.size),
-      c.field("path", c.vector(c.bytes, 0, null), a.path),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("index", c.defer(() => TreeIndex), a.index, e),
+        c.field("size", c.defer(() => TreeIndex), a.size, e),
+        c.field("path", c.vector(c.bytes, 0, null), a.path, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["index", "size", "path"]);
     if (!f.ok) return f;
@@ -62,11 +66,13 @@ export interface MerkleLogState {
 }
 
 export const MerkleLogState: c.Codec<MerkleLogState> = {
-  encode: (a) =>
-    c.record([
-      c.field("size", c.defer(() => TreeIndex), a.size),
-      c.field("generation", c.defer(() => TreeIndex), a.generation),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("size", c.defer(() => TreeIndex), a.size, e),
+        c.field("generation", c.defer(() => TreeIndex), a.generation, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["size", "generation"]);
     if (!f.ok) return f;

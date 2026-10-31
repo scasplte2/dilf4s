@@ -9,12 +9,14 @@ export interface TrieBranch {
 }
 
 export const TrieBranch: c.Codec<TrieBranch> = {
-  encode: (a) =>
-    c.record([
-      c.field("s", c.defer(() => TrieSegment), a.s),
-      c.optionalField("v", c.bytes, a.v),
-      c.field("c", c.defer(() => TrieChildren), a.c),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("s", c.defer(() => TrieSegment), a.s, e),
+        c.optionalField("v", c.bytes, a.v, e),
+        c.field("c", c.defer(() => TrieChildren), a.c, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["s", "v", "c"]);
     if (!f.ok) return f;
@@ -40,11 +42,13 @@ export interface TrieLeaf {
 }
 
 export const TrieLeaf: c.Codec<TrieLeaf> = {
-  encode: (a) =>
-    c.record([
-      c.field("s", c.defer(() => TrieSegment), a.s),
-      c.field("v", c.bytes, a.v),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("s", c.defer(() => TrieSegment), a.s, e),
+        c.field("v", c.bytes, a.v, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["s", "v"]);
     if (!f.ok) return f;
@@ -65,13 +69,15 @@ export interface TrieNode {
 }
 
 export const TrieNode: c.Codec<TrieNode> = {
-  encode: (a) =>
-    c.record([
-      c.field("s", c.defer(() => TrieSegment), a.s),
-      c.optionalField("v", c.bytes, a.v),
-      c.optionalField("l", c.bytes, a.l),
-      c.optionalField("r", c.bytes, a.r),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("s", c.defer(() => TrieSegment), a.s, e),
+        c.optionalField("v", c.bytes, a.v, e),
+        c.optionalField("l", c.bytes, a.l, e),
+        c.optionalField("r", c.bytes, a.r, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["s", "v", "l", "r"]);
     if (!f.ok) return f;
@@ -96,10 +102,11 @@ export const TrieProof: c.Codec<TrieProof> = c.vector(c.defer(() => TrieRecord),
 export type TrieRecord = TrieStub | TrieLeaf | TrieBranch;
 
 export const TrieRecord: c.Codec<TrieRecord> = {
-  encode: (a) => {
-    if (c.hasFields(a, TrieStub, ["h"], ["h"])) return TrieStub.encode(a);
-    if (c.hasFields(a, TrieLeaf, ["s", "v"], ["s", "v"])) return TrieLeaf.encode(a);
-    if (c.hasFields(a, TrieBranch, ["c", "s"], ["c", "s", "v"])) return TrieBranch.encode(a);
+  encode: (a, d) => {
+    const known = ["c", "h", "s", "v"];
+    if (c.hasFields(a, TrieStub, ["h"], ["h"], known)) return TrieStub.encode(a, d);
+    if (c.hasFields(a, TrieLeaf, ["s", "v"], ["s", "v"], known)) return TrieLeaf.encode(a, d);
+    if (c.hasFields(a, TrieBranch, ["c", "s"], ["c", "s", "v"], known)) return TrieBranch.encode(a, d);
     return c.typeMismatch("no alternative of TrieRecord fits");
   },
   decode: (v) => {
@@ -125,11 +132,13 @@ export interface TrieSegment {
 }
 
 export const TrieSegment: c.Codec<TrieSegment> = {
-  encode: (a) =>
-    c.record([
-      c.field("n", c.intRange(0n, 9223372036854775807n), a.n),
-      c.field("b", c.bytes, a.b),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("n", c.intRange(0n, 9223372036854775807n), a.n, e),
+        c.field("b", c.bytes, a.b, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["n", "b"]);
     if (!f.ok) return f;
@@ -147,10 +156,12 @@ export interface TrieStub {
 }
 
 export const TrieStub: c.Codec<TrieStub> = {
-  encode: (a) =>
-    c.record([
-      c.field("h", c.bytes, a.h),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("h", c.bytes, a.h, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["h"]);
     if (!f.ok) return f;

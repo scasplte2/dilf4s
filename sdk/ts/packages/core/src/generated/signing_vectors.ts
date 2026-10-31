@@ -11,14 +11,16 @@ export interface Bip32Vector {
 }
 
 export const Bip32Vector: c.Codec<Bip32Vector> = {
-  encode: (a) =>
-    c.record([
-      c.field("seed", c.defer(() => Hex), a.seed),
-      c.field("path", c.text, a.path),
-      c.field("master", c.defer(() => ExtendedKey), a.master),
-      c.field("child", c.defer(() => ExtendedKey), a.child),
-      c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("seed", c.defer(() => Hex), a.seed, e),
+        c.field("path", c.text, a.path, e),
+        c.field("master", c.defer(() => ExtendedKey), a.master, e),
+        c.field("child", c.defer(() => ExtendedKey), a.child, e),
+        c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["seed", "path", "master", "child", "verifyingKey"]);
     if (!f.ok) return f;
@@ -45,13 +47,15 @@ export interface Bip39Vector {
 }
 
 export const Bip39Vector: c.Codec<Bip39Vector> = {
-  encode: (a) =>
-    c.record([
-      c.field("entropy", c.defer(() => Hex), a.entropy),
-      c.field("mnemonic", c.text, a.mnemonic),
-      c.field("passphrase", c.text, a.passphrase),
-      c.field("seed", c.defer(() => Hex), a.seed),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("entropy", c.defer(() => Hex), a.entropy, e),
+        c.field("mnemonic", c.text, a.mnemonic, e),
+        c.field("passphrase", c.text, a.passphrase, e),
+        c.field("seed", c.defer(() => Hex), a.seed, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["entropy", "mnemonic", "passphrase", "seed"]);
     if (!f.ok) return f;
@@ -74,11 +78,13 @@ export interface ExtendedKey {
 }
 
 export const ExtendedKey: c.Codec<ExtendedKey> = {
-  encode: (a) =>
-    c.record([
-      c.field("key", c.defer(() => Hex), a.key),
-      c.field("chainCode", c.defer(() => Hex), a.chainCode),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("key", c.defer(() => Hex), a.key, e),
+        c.field("chainCode", c.defer(() => Hex), a.chainCode, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["key", "chainCode"]);
     if (!f.ok) return f;
@@ -110,19 +116,21 @@ export interface IcarusVector {
 }
 
 export const IcarusVector: c.Codec<IcarusVector> = {
-  encode: (a) =>
-    c.record([
-      c.field("entropy", c.defer(() => Hex), a.entropy),
-      c.field("passphrase", c.text, a.passphrase),
-      c.field("root", c.defer(() => ExtendedKey), a.root),
-      c.field("accountPath", c.text, a.accountPath),
-      c.field("account", c.defer(() => ExtendedKey), a.account),
-      c.field("accountVerifyingKey", c.defer(() => Hex), a.accountVerifyingKey),
-      c.field("addressPath", c.text, a.addressPath),
-      c.field("address", c.defer(() => ExtendedKey), a.address),
-      c.field("addressVerifyingKey", c.defer(() => Hex), a.addressVerifyingKey),
-      c.field("signatures", c.vector(c.defer(() => SignedMessage), 0, null), a.signatures),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("entropy", c.defer(() => Hex), a.entropy, e),
+        c.field("passphrase", c.text, a.passphrase, e),
+        c.field("root", c.defer(() => ExtendedKey), a.root, e),
+        c.field("accountPath", c.text, a.accountPath, e),
+        c.field("account", c.defer(() => ExtendedKey), a.account, e),
+        c.field("accountVerifyingKey", c.defer(() => Hex), a.accountVerifyingKey, e),
+        c.field("addressPath", c.text, a.addressPath, e),
+        c.field("address", c.defer(() => ExtendedKey), a.address, e),
+        c.field("addressVerifyingKey", c.defer(() => Hex), a.addressVerifyingKey, e),
+        c.field("signatures", c.vector(c.defer(() => SignedMessage), 0, null), a.signatures, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["entropy", "passphrase", "root", "accountPath", "account", "accountVerifyingKey", "addressPath", "address", "addressVerifyingKey", "signatures"]);
     if (!f.ok) return f;
@@ -157,11 +165,13 @@ export interface SignedMessage {
 }
 
 export const SignedMessage: c.Codec<SignedMessage> = {
-  encode: (a) =>
-    c.record([
-      c.field("message", c.defer(() => Hex), a.message),
-      c.field("signature", c.defer(() => Hex), a.signature),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("message", c.defer(() => Hex), a.message, e),
+        c.field("signature", c.defer(() => Hex), a.signature, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["message", "signature"]);
     if (!f.ok) return f;
@@ -182,13 +192,15 @@ export interface SigningKey {
 }
 
 export const SigningKey: c.Codec<SigningKey> = {
-  encode: (a) =>
-    c.record([
-      c.field("seed", c.defer(() => Hex), a.seed),
-      c.field("signingKey", c.defer(() => Hex), a.signingKey),
-      c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey),
-      c.field("signatures", c.vector(c.defer(() => SignedMessage), 0, null), a.signatures),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("seed", c.defer(() => Hex), a.seed, e),
+        c.field("signingKey", c.defer(() => Hex), a.signingKey, e),
+        c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey, e),
+        c.field("signatures", c.vector(c.defer(() => SignedMessage), 0, null), a.signatures, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["seed", "signingKey", "verifyingKey", "signatures"]);
     if (!f.ok) return f;
@@ -211,11 +223,13 @@ export interface SigningScheme {
 }
 
 export const SigningScheme: c.Codec<SigningScheme> = {
-  encode: (a) =>
-    c.record([
-      c.field("scheme", c.text, a.scheme),
-      c.field("keys", c.vector(c.defer(() => SigningKey), 0, null), a.keys),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("scheme", c.text, a.scheme, e),
+        c.field("keys", c.vector(c.defer(() => SigningKey), 0, null), a.keys, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["scheme", "keys"]);
     if (!f.ok) return f;
@@ -240,17 +254,19 @@ export interface SigningVectors {
 }
 
 export const SigningVectors: c.Codec<SigningVectors> = {
-  encode: (a) =>
-    c.record([
-      c.field("spec", c.literalText("docs/specs/signing.md"), a.spec),
-      c.field("version", c.literalInt(1n), a.version),
-      c.field("randomness", c.defer(() => Hex), a.randomness),
-      c.field("signing", c.vector(c.defer(() => SigningScheme), 0, null), a.signing),
-      c.field("bip39", c.vector(c.defer(() => Bip39Vector), 0, null), a.bip39),
-      c.field("slip10Ed25519", c.defer(() => Slip10Vector), a.slip10Ed25519),
-      c.field("bip32Secp256k1", c.defer(() => Bip32Vector), a.bip32Secp256k1),
-      c.field("ed25519Bip32", c.defer(() => IcarusVector), a.ed25519Bip32),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("spec", c.literalText("docs/specs/signing.md"), a.spec, e),
+        c.field("version", c.literalInt(1n), a.version, e),
+        c.field("randomness", c.defer(() => Hex), a.randomness, e),
+        c.field("signing", c.vector(c.defer(() => SigningScheme), 0, null), a.signing, e),
+        c.field("bip39", c.vector(c.defer(() => Bip39Vector), 0, null), a.bip39, e),
+        c.field("slip10Ed25519", c.defer(() => Slip10Vector), a.slip10Ed25519, e),
+        c.field("bip32Secp256k1", c.defer(() => Bip32Vector), a.bip32Secp256k1, e),
+        c.field("ed25519Bip32", c.defer(() => IcarusVector), a.ed25519Bip32, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["spec", "version", "randomness", "signing", "bip39", "slip10Ed25519", "bip32Secp256k1", "ed25519Bip32"]);
     if (!f.ok) return f;
@@ -283,13 +299,15 @@ export interface Slip10Vector {
 }
 
 export const Slip10Vector: c.Codec<Slip10Vector> = {
-  encode: (a) =>
-    c.record([
-      c.field("seed", c.defer(() => Hex), a.seed),
-      c.field("path", c.text, a.path),
-      c.field("master", c.defer(() => ExtendedKey), a.master),
-      c.field("child", c.defer(() => ExtendedKey), a.child),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("seed", c.defer(() => Hex), a.seed, e),
+        c.field("path", c.text, a.path, e),
+        c.field("master", c.defer(() => ExtendedKey), a.master, e),
+        c.field("child", c.defer(() => ExtendedKey), a.child, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["seed", "path", "master", "child"]);
     if (!f.ok) return f;

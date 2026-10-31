@@ -15,11 +15,12 @@ pub struct BloomFilter {
 }
 
 impl c::Model for BloomFilter {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("m", &c::U32In { lo: 64, hi: 16_777_216 }, &self.m)?,
-            c::field("k", &c::U32In { lo: 1, hi: 32 }, &self.k)?,
-            c::field("b", &c::Bytes, &self.b)?,
+            c::field("m", &c::U32In { lo: 64, hi: 16_777_216 }, &self.m, inner)?,
+            c::field("k", &c::U32In { lo: 1, hi: 32 }, &self.k, inner)?,
+            c::field("b", &c::Bytes, &self.b, inner)?,
         ])
     }
 

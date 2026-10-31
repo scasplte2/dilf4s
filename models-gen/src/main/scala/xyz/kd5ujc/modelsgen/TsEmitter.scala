@@ -70,7 +70,7 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
         if (fs.isEmpty) s"export type $n = Readonly<Record<string, never>>;"
         else s"export interface $n {\n${fs.map(f => s"  readonly ${f.name}${if (f.optional) "?" else ""}: ${f.tpe};").mkString("\n")}\n}"
       val enc = fs.map { f =>
-        s"      c.${if (f.optional) "optionalField" else "field"}(${string(f.key)}, ${f.codec}, a.${f.name}),"
+        s"        c.${if (f.optional) "optionalField" else "field"}(${string(f.key)}, ${f.codec}, a.${f.name}, e),"
       }.mkString("\n")
       val keys = fs.map(f => string(f.key)).mkString(", ")
       val dec = fs.zipWithIndex.map {
@@ -82,10 +82,12 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
          |$tpe
          |
          |export const $n: c.Codec<$n> = {
-         |  encode: (${if (fs.isEmpty) "" else "a"}) =>
-         |    c.record([
+         |  encode: (${if (fs.isEmpty) "_a" else "a"}, d = 0) =>
+         |    c.nested(d, (${if (fs.isEmpty) "" else "e"}) =>
+         |      c.record([
          |$enc
-         |    ]),
+         |      ]),
+         |    ),
          |  decode: (v) => {
          |    const f = c.fields(v, [$keys]);
          |    if (!f.ok) return f;
@@ -94,7 +96,7 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
          |  },
          |};
          |""".stripMargin
-        .replace("c.record([\n\n    ])", "c.record([])")
+        .replace("c.record([\n\n      ])", "c.record([])")
         .replace("    if (!f.ok) return f;\n\n    return c.ok({  });", "    if (!f.ok) return f;\n    return c.ok({});")
     }
 
@@ -120,15 +122,16 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
     fieldsOf.map { withFields =>
       val names = alts.map(a => qualified(rule.module, a.rule))
       def list(xs: Iterable[String]) = s"[${xs.toList.sorted.map(string).mkString(", ")}]"
+      val known = list(withFields.flatMap(_._2.map(f => fieldName(f.key))).distinct)
       val guards = withFields.zip(names).map {
         case ((_, fs), t) =>
           val required = fs.filterNot(_.optional).map(f => fieldName(f.key))
           val allowed = fs.map(f => fieldName(f.key))
-          s"    if (c.hasFields(a, $t, ${list(required)}, ${list(allowed)})) return $t.encode(a);"
+          s"    if (c.hasFields(a, $t, ${list(required)}, ${list(allowed)}, known)) return $t.encode(a, d);"
       }
       val objectBranch =
         if (alts.isEmpty) ""
-        else s"\n${guards.mkString("\n")}"
+        else s"\n    const known = $known;\n${guards.mkString("\n")}"
       val textBranch =
         if (texts.isEmpty) "" else s"\n    if (typeof a === \"string\") return c.oneOfText(a, ${list(texts)});"
       val records = alts.map(a => s"[${list(a.required)}, ${list(a.allowed)}]").mkString(", ")
@@ -138,7 +141,7 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
          |export type $n = ${(names ++ texts.map(string)).mkString(" | ")};
          |
          |export const $n: c.Codec<$n> = {
-         |  encode: (a) => {$textBranch$objectBranch
+         |  encode: (a${if (alts.isEmpty) "" else ", d"}) => {$textBranch$objectBranch
          |    return c.typeMismatch(${string(s"no alternative of $n fits")});
          |  },
          |  decode: (v) => {

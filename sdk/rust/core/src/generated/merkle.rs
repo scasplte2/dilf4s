@@ -15,11 +15,12 @@ pub struct MerkleConsistency {
 }
 
 impl c::Model for MerkleConsistency {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("old", &TREE_INDEX, &self.old)?,
-            c::field("new", &TREE_INDEX, &self.new)?,
-            c::field("path", &c::VecOf { element: c::Bytes, min: 0, max: None }, &self.path)?,
+            c::field("old", &TREE_INDEX, &self.old, inner)?,
+            c::field("new", &TREE_INDEX, &self.new, inner)?,
+            c::field("path", &c::VecOf { element: c::Bytes, min: 0, max: None }, &self.path, inner)?,
         ])
     }
 
@@ -44,11 +45,12 @@ pub struct MerkleInclusion {
 }
 
 impl c::Model for MerkleInclusion {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("index", &TREE_INDEX, &self.index)?,
-            c::field("size", &TREE_INDEX, &self.size)?,
-            c::field("path", &c::VecOf { element: c::Bytes, min: 0, max: None }, &self.path)?,
+            c::field("index", &TREE_INDEX, &self.index, inner)?,
+            c::field("size", &TREE_INDEX, &self.size, inner)?,
+            c::field("path", &c::VecOf { element: c::Bytes, min: 0, max: None }, &self.path, inner)?,
         ])
     }
 
@@ -71,10 +73,11 @@ pub struct MerkleLogState {
 }
 
 impl c::Model for MerkleLogState {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("size", &TREE_INDEX, &self.size)?,
-            c::field("generation", &TREE_INDEX, &self.generation)?,
+            c::field("size", &TREE_INDEX, &self.size, inner)?,
+            c::field("generation", &TREE_INDEX, &self.generation, inner)?,
         ])
     }
 

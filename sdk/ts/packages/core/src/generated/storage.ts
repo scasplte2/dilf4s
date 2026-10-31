@@ -8,11 +8,13 @@ export interface VersionedRecord {
 }
 
 export const VersionedRecord: c.Codec<VersionedRecord> = {
-  encode: (a) =>
-    c.record([
-      c.optionalField("b", c.bytes, a.b),
-      c.optionalField("a", c.bytes, a.a),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.optionalField("b", c.bytes, a.b, e),
+        c.optionalField("a", c.bytes, a.a, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["b", "a"]);
     if (!f.ok) return f;

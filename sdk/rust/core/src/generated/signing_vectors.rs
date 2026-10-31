@@ -20,13 +20,14 @@ pub struct Bip32Vector {
 }
 
 impl c::Model for Bip32Vector {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("seed", &HEX, &self.seed)?,
-            c::field("path", &c::Text, &self.path)?,
-            c::field("master", &c::ModelOf::<ExtendedKey>::NEW, &self.master)?,
-            c::field("child", &c::ModelOf::<ExtendedKey>::NEW, &self.child)?,
-            c::field("verifyingKey", &HEX, &self.verifying_key)?,
+            c::field("seed", &HEX, &self.seed, inner)?,
+            c::field("path", &c::Text, &self.path, inner)?,
+            c::field("master", &c::ModelOf::<ExtendedKey>::NEW, &self.master, inner)?,
+            c::field("child", &c::ModelOf::<ExtendedKey>::NEW, &self.child, inner)?,
+            c::field("verifyingKey", &HEX, &self.verifying_key, inner)?,
         ])
     }
 
@@ -55,12 +56,13 @@ pub struct Bip39Vector {
 }
 
 impl c::Model for Bip39Vector {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("entropy", &HEX, &self.entropy)?,
-            c::field("mnemonic", &c::Text, &self.mnemonic)?,
-            c::field("passphrase", &c::Text, &self.passphrase)?,
-            c::field("seed", &HEX, &self.seed)?,
+            c::field("entropy", &HEX, &self.entropy, inner)?,
+            c::field("mnemonic", &c::Text, &self.mnemonic, inner)?,
+            c::field("passphrase", &c::Text, &self.passphrase, inner)?,
+            c::field("seed", &HEX, &self.seed, inner)?,
         ])
     }
 
@@ -84,10 +86,11 @@ pub struct ExtendedKey {
 }
 
 impl c::Model for ExtendedKey {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("key", &HEX, &self.key)?,
-            c::field("chainCode", &HEX, &self.chain_code)?,
+            c::field("key", &HEX, &self.key, inner)?,
+            c::field("chainCode", &HEX, &self.chain_code, inner)?,
         ])
     }
 
@@ -131,18 +134,19 @@ pub struct IcarusVector {
 }
 
 impl c::Model for IcarusVector {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("entropy", &HEX, &self.entropy)?,
-            c::field("passphrase", &c::Text, &self.passphrase)?,
-            c::field("root", &c::ModelOf::<ExtendedKey>::NEW, &self.root)?,
-            c::field("accountPath", &c::Text, &self.account_path)?,
-            c::field("account", &c::ModelOf::<ExtendedKey>::NEW, &self.account)?,
-            c::field("accountVerifyingKey", &HEX, &self.account_verifying_key)?,
-            c::field("addressPath", &c::Text, &self.address_path)?,
-            c::field("address", &c::ModelOf::<ExtendedKey>::NEW, &self.address)?,
-            c::field("addressVerifyingKey", &HEX, &self.address_verifying_key)?,
-            c::field("signatures", &c::VecOf { element: c::ModelOf::<SignedMessage>::NEW, min: 0, max: None }, &self.signatures)?,
+            c::field("entropy", &HEX, &self.entropy, inner)?,
+            c::field("passphrase", &c::Text, &self.passphrase, inner)?,
+            c::field("root", &c::ModelOf::<ExtendedKey>::NEW, &self.root, inner)?,
+            c::field("accountPath", &c::Text, &self.account_path, inner)?,
+            c::field("account", &c::ModelOf::<ExtendedKey>::NEW, &self.account, inner)?,
+            c::field("accountVerifyingKey", &HEX, &self.account_verifying_key, inner)?,
+            c::field("addressPath", &c::Text, &self.address_path, inner)?,
+            c::field("address", &c::ModelOf::<ExtendedKey>::NEW, &self.address, inner)?,
+            c::field("addressVerifyingKey", &HEX, &self.address_verifying_key, inner)?,
+            c::field("signatures", &c::VecOf { element: c::ModelOf::<SignedMessage>::NEW, min: 0, max: None }, &self.signatures, inner)?,
         ])
     }
 
@@ -172,10 +176,11 @@ pub struct SignedMessage {
 }
 
 impl c::Model for SignedMessage {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("message", &HEX, &self.message)?,
-            c::field("signature", &HEX, &self.signature)?,
+            c::field("message", &HEX, &self.message, inner)?,
+            c::field("signature", &HEX, &self.signature, inner)?,
         ])
     }
 
@@ -201,12 +206,13 @@ pub struct SigningKey {
 }
 
 impl c::Model for SigningKey {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("seed", &HEX, &self.seed)?,
-            c::field("signingKey", &HEX, &self.signing_key)?,
-            c::field("verifyingKey", &HEX, &self.verifying_key)?,
-            c::field("signatures", &c::VecOf { element: c::ModelOf::<SignedMessage>::NEW, min: 0, max: None }, &self.signatures)?,
+            c::field("seed", &HEX, &self.seed, inner)?,
+            c::field("signingKey", &HEX, &self.signing_key, inner)?,
+            c::field("verifyingKey", &HEX, &self.verifying_key, inner)?,
+            c::field("signatures", &c::VecOf { element: c::ModelOf::<SignedMessage>::NEW, min: 0, max: None }, &self.signatures, inner)?,
         ])
     }
 
@@ -230,10 +236,11 @@ pub struct SigningScheme {
 }
 
 impl c::Model for SigningScheme {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("scheme", &c::Text, &self.scheme)?,
-            c::field("keys", &c::VecOf { element: c::ModelOf::<SigningKey>::NEW, min: 0, max: None }, &self.keys)?,
+            c::field("scheme", &c::Text, &self.scheme, inner)?,
+            c::field("keys", &c::VecOf { element: c::ModelOf::<SigningKey>::NEW, min: 0, max: None }, &self.keys, inner)?,
         ])
     }
 
@@ -263,16 +270,17 @@ pub struct SigningVectors {
 }
 
 impl c::Model for SigningVectors {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("spec", &c::LiteralText("docs/specs/signing.md"), &())?,
-            c::field("version", &c::LiteralInt(1), &())?,
-            c::field("randomness", &HEX, &self.randomness)?,
-            c::field("signing", &c::VecOf { element: c::ModelOf::<SigningScheme>::NEW, min: 0, max: None }, &self.signing)?,
-            c::field("bip39", &c::VecOf { element: c::ModelOf::<Bip39Vector>::NEW, min: 0, max: None }, &self.bip39)?,
-            c::field("slip10Ed25519", &c::ModelOf::<Slip10Vector>::NEW, &self.slip10_ed25519)?,
-            c::field("bip32Secp256k1", &c::ModelOf::<Bip32Vector>::NEW, &self.bip32_secp256k1)?,
-            c::field("ed25519Bip32", &c::ModelOf::<IcarusVector>::NEW, &self.ed25519_bip32)?,
+            c::field("spec", &c::LiteralText("docs/specs/signing.md"), &(), inner)?,
+            c::field("version", &c::LiteralInt(1), &(), inner)?,
+            c::field("randomness", &HEX, &self.randomness, inner)?,
+            c::field("signing", &c::VecOf { element: c::ModelOf::<SigningScheme>::NEW, min: 0, max: None }, &self.signing, inner)?,
+            c::field("bip39", &c::VecOf { element: c::ModelOf::<Bip39Vector>::NEW, min: 0, max: None }, &self.bip39, inner)?,
+            c::field("slip10Ed25519", &c::ModelOf::<Slip10Vector>::NEW, &self.slip10_ed25519, inner)?,
+            c::field("bip32Secp256k1", &c::ModelOf::<Bip32Vector>::NEW, &self.bip32_secp256k1, inner)?,
+            c::field("ed25519Bip32", &c::ModelOf::<IcarusVector>::NEW, &self.ed25519_bip32, inner)?,
         ])
     }
 
@@ -304,12 +312,13 @@ pub struct Slip10Vector {
 }
 
 impl c::Model for Slip10Vector {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("seed", &HEX, &self.seed)?,
-            c::field("path", &c::Text, &self.path)?,
-            c::field("master", &c::ModelOf::<ExtendedKey>::NEW, &self.master)?,
-            c::field("child", &c::ModelOf::<ExtendedKey>::NEW, &self.child)?,
+            c::field("seed", &HEX, &self.seed, inner)?,
+            c::field("path", &c::Text, &self.path, inner)?,
+            c::field("master", &c::ModelOf::<ExtendedKey>::NEW, &self.master, inner)?,
+            c::field("child", &c::ModelOf::<ExtendedKey>::NEW, &self.child, inner)?,
         ])
     }
 

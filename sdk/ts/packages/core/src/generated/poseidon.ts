@@ -13,11 +13,13 @@ export interface PoseidonMerkleProof {
 }
 
 export const PoseidonMerkleProof: c.Codec<PoseidonMerkleProof> = {
-  encode: (a) =>
-    c.record([
-      c.field("position", c.defer(() => TreePosition), a.position),
-      c.field("siblings", c.vector(c.defer(() => FieldElement), 0, 256), a.siblings),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("position", c.defer(() => TreePosition), a.position, e),
+        c.field("siblings", c.vector(c.defer(() => FieldElement), 0, 256), a.siblings, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["position", "siblings"]);
     if (!f.ok) return f;

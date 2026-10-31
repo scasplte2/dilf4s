@@ -46,10 +46,16 @@ object SdkSources {
         }
     }
 
+  /** Every schema in `dir`; a missing directory, or one with no schemas, is an error (SdkMain would empty its output). */
   def readSchemas(dir: Path): IO[Vector[(String, String)]] =
-    listFiles(dir, ".cddl").flatMap(
-      _.traverse(p => IO.blocking(Files.readString(p, UTF_8)).map(p.getFileName.toString.stripSuffix(".cddl") -> _))
-    )
+    listFiles(dir, ".cddl")
+      .flatMap(ps =>
+        IO.raiseWhen(ps.isEmpty)(new java.io.FileNotFoundException(s"no .cddl schemas in $dir"))
+          .as(ps)
+      )
+      .flatMap(
+        _.traverse(p => IO.blocking(Files.readString(p, UTF_8)).map(p.getFileName.toString.stripSuffix(".cddl") -> _))
+      )
 
   def listFiles(dir: Path, suffix: String): IO[Vector[Path]] =
     IO.blocking(Files.isDirectory(dir))

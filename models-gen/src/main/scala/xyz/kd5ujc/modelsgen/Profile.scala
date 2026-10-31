@@ -113,7 +113,9 @@ final class Profile(val schema: Schema) {
     val names = cases.map { case (l, _) => CanonicalEmitter.pascal(l) }
     val dupNames = names.diff(names.distinct)
     val dupValues = cases.map(_._2).diff(cases.map(_._2).distinct)
+    val outOfRange = cases.collect { case (l, v) if v < Profile.IntMin || v > Profile.IntMax => l }
     if (dupNames.nonEmpty || dupValues.nonEmpty) outside(rule, "enumeration with repeated labels or values").asLeft
+    else if (outOfRange.nonEmpty) outside(rule, s"enumeration values beyond CDDL int: ${outOfRange.mkString(", ")}").asLeft
     else ModelRule.Enumeration(cases).asRight
   }
 
@@ -171,6 +173,10 @@ object Profile {
    * The `.regexp` patterns of the profile. Each SDK implements these as named validators instead of carrying a
    * regular-expression engine; adding one means adding it to every SDK core.
    */
+  /** CDDL `int` (RFC 8610: major types 0 and 1). */
+  val IntMin: BigInt = -(BigInt(1) << 64)
+  val IntMax: BigInt = (BigInt(1) << 64) - 1
+
   val Patterns: Vector[String] = Vector("([0-9a-f]{2})*", "0x([0-9a-f]{2})*", "0|[1-9][0-9]*")
 
   /** How each emitter names a wire key: the key itself, camelCase (Scala, TypeScript) and snake_case (Rust). */

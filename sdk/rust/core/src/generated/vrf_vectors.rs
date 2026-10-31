@@ -24,12 +24,13 @@ pub struct VrfKey {
 }
 
 impl c::Model for VrfKey {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("seed", &HEX, &self.seed)?,
-            c::field("signingKey", &HEX, &self.signing_key)?,
-            c::field("verifyingKey", &HEX, &self.verifying_key)?,
-            c::field("proofs", &c::VecOf { element: c::ModelOf::<VrfProof>::NEW, min: 0, max: None }, &self.proofs)?,
+            c::field("seed", &HEX, &self.seed, inner)?,
+            c::field("signingKey", &HEX, &self.signing_key, inner)?,
+            c::field("verifyingKey", &HEX, &self.verifying_key, inner)?,
+            c::field("proofs", &c::VecOf { element: c::ModelOf::<VrfProof>::NEW, min: 0, max: None }, &self.proofs, inner)?,
         ])
     }
 
@@ -55,11 +56,12 @@ pub struct VrfProof {
 }
 
 impl c::Model for VrfProof {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("alpha", &HEX, &self.alpha)?,
-            c::field("pi", &HEX, &self.pi)?,
-            c::field("beta", &HEX, &self.beta)?,
+            c::field("alpha", &HEX, &self.alpha, inner)?,
+            c::field("pi", &HEX, &self.pi, inner)?,
+            c::field("beta", &HEX, &self.beta, inner)?,
         ])
     }
 
@@ -82,10 +84,11 @@ pub struct VrfSuite {
 }
 
 impl c::Model for VrfSuite {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("suite", &c::Text, &self.suite)?,
-            c::field("keys", &c::VecOf { element: c::ModelOf::<VrfKey>::NEW, min: 0, max: None }, &self.keys)?,
+            c::field("suite", &c::Text, &self.suite, inner)?,
+            c::field("keys", &c::VecOf { element: c::ModelOf::<VrfKey>::NEW, min: 0, max: None }, &self.keys, inner)?,
         ])
     }
 
@@ -105,11 +108,12 @@ pub struct VrfVectors {
 }
 
 impl c::Model for VrfVectors {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("spec", &c::LiteralText("docs/specs/vrf.md"), &())?,
-            c::field("version", &c::LiteralInt(1), &())?,
-            c::field("suites", &c::VecOf { element: c::ModelOf::<VrfSuite>::NEW, min: 0, max: None }, &self.suites)?,
+            c::field("spec", &c::LiteralText("docs/specs/vrf.md"), &(), inner)?,
+            c::field("version", &c::LiteralInt(1), &(), inner)?,
+            c::field("suites", &c::VecOf { element: c::ModelOf::<VrfSuite>::NEW, min: 0, max: None }, &self.suites, inner)?,
         ])
     }
 

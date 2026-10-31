@@ -14,10 +14,11 @@ pub struct CanonicalCborRejection {
 }
 
 impl c::Model for CanonicalCborRejection {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("cbor", &HEX, &self.cbor)?,
-            c::field("error", &c::Text, &self.error)?,
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::field("error", &c::Text, &self.error, inner)?,
         ])
     }
 
@@ -41,11 +42,12 @@ pub struct CanonicalDigest {
 }
 
 impl c::Model for CanonicalDigest {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("algorithm", &c::Text, &self.algorithm)?,
-            c::field("message", &HEX, &self.message)?,
-            c::field("digest", &HEX, &self.digest)?,
+            c::field("algorithm", &c::Text, &self.algorithm, inner)?,
+            c::field("message", &HEX, &self.message, inner)?,
+            c::field("digest", &HEX, &self.digest, inner)?,
         ])
     }
 
@@ -68,10 +70,11 @@ pub struct CanonicalDomainTag {
 }
 
 impl c::Model for CanonicalDomainTag {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("tag", &c::Text, &self.tag)?,
-            c::field("valid", &c::Bool, &self.valid)?,
+            c::field("tag", &c::Text, &self.tag, inner)?,
+            c::field("valid", &c::Bool, &self.valid, inner)?,
         ])
     }
 
@@ -97,12 +100,13 @@ pub struct CanonicalJsonAccepted {
 }
 
 impl c::Model for CanonicalJsonAccepted {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("json", &c::Text, &self.json)?,
-            c::field("cbor", &HEX, &self.cbor)?,
-            c::field("contentHash", &HEX, &self.content_hash)?,
-            c::field("render", &c::Text, &self.render)?,
+            c::field("json", &c::Text, &self.json, inner)?,
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::field("contentHash", &HEX, &self.content_hash, inner)?,
+            c::field("render", &c::Text, &self.render, inner)?,
         ])
     }
 
@@ -126,10 +130,10 @@ pub enum CanonicalJsonCase {
 }
 
 impl c::Model for CanonicalJsonCase {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
-            Self::CanonicalJsonAccepted(a) => c::Model::to_value(a),
-            Self::CanonicalJsonRejected(a) => c::Model::to_value(a),
+            Self::CanonicalJsonAccepted(a) => c::Model::to_value_at(a, depth),
+            Self::CanonicalJsonRejected(a) => c::Model::to_value_at(a, depth),
         }
     }
 
@@ -152,10 +156,11 @@ pub struct CanonicalJsonRejected {
 }
 
 impl c::Model for CanonicalJsonRejected {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("json", &c::Text, &self.json)?,
-            c::field("error", &c::Text, &self.error)?,
+            c::field("json", &c::Text, &self.json, inner)?,
+            c::field("error", &c::Text, &self.error, inner)?,
         ])
     }
 
@@ -179,11 +184,12 @@ pub struct CanonicalModelCase {
 }
 
 impl c::Model for CanonicalModelCase {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("value", &c::Text, &self.value)?,
-            c::field("cbor", &HEX, &self.cbor)?,
-            c::field("contentHash", &HEX, &self.content_hash)?,
+            c::field("value", &c::Text, &self.value, inner)?,
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::field("contentHash", &HEX, &self.content_hash, inner)?,
         ])
     }
 
@@ -210,12 +216,13 @@ pub struct CanonicalTaggedHash {
 }
 
 impl c::Model for CanonicalTaggedHash {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("algorithm", &c::Text, &self.algorithm)?,
-            c::field("tag", &c::Text, &self.tag)?,
-            c::field("message", &HEX, &self.message)?,
-            c::field("digest", &HEX, &self.digest)?,
+            c::field("algorithm", &c::Text, &self.algorithm, inner)?,
+            c::field("tag", &c::Text, &self.tag, inner)?,
+            c::field("message", &HEX, &self.message, inner)?,
+            c::field("digest", &HEX, &self.digest, inner)?,
         ])
     }
 
@@ -251,18 +258,19 @@ pub struct CanonicalVectors {
 }
 
 impl c::Model for CanonicalVectors {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("spec", &c::LiteralText("docs/specs/canonical-encoding.md"), &())?,
-            c::field("version", &c::LiteralInt(1), &())?,
-            c::field("contentHashTag", &c::Text, &self.content_hash_tag)?,
-            c::field("contentHashAlgorithm", &c::Text, &self.content_hash_algorithm)?,
-            c::field("json", &c::VecOf { element: c::ModelOf::<CanonicalJsonCase>::NEW, min: 0, max: None }, &self.json)?,
-            c::field("model", &c::VecOf { element: c::ModelOf::<CanonicalModelCase>::NEW, min: 0, max: None }, &self.model)?,
-            c::field("cborRejections", &c::VecOf { element: c::ModelOf::<CanonicalCborRejection>::NEW, min: 0, max: None }, &self.cbor_rejections)?,
-            c::field("taggedHash", &c::VecOf { element: c::ModelOf::<CanonicalTaggedHash>::NEW, min: 0, max: None }, &self.tagged_hash)?,
-            c::field("digests", &c::VecOf { element: c::ModelOf::<CanonicalDigest>::NEW, min: 0, max: None }, &self.digests)?,
-            c::field("domainTags", &c::VecOf { element: c::ModelOf::<CanonicalDomainTag>::NEW, min: 0, max: None }, &self.domain_tags)?,
+            c::field("spec", &c::LiteralText("docs/specs/canonical-encoding.md"), &(), inner)?,
+            c::field("version", &c::LiteralInt(1), &(), inner)?,
+            c::field("contentHashTag", &c::Text, &self.content_hash_tag, inner)?,
+            c::field("contentHashAlgorithm", &c::Text, &self.content_hash_algorithm, inner)?,
+            c::field("json", &c::VecOf { element: c::ModelOf::<CanonicalJsonCase>::NEW, min: 0, max: None }, &self.json, inner)?,
+            c::field("model", &c::VecOf { element: c::ModelOf::<CanonicalModelCase>::NEW, min: 0, max: None }, &self.model, inner)?,
+            c::field("cborRejections", &c::VecOf { element: c::ModelOf::<CanonicalCborRejection>::NEW, min: 0, max: None }, &self.cbor_rejections, inner)?,
+            c::field("taggedHash", &c::VecOf { element: c::ModelOf::<CanonicalTaggedHash>::NEW, min: 0, max: None }, &self.tagged_hash, inner)?,
+            c::field("digests", &c::VecOf { element: c::ModelOf::<CanonicalDigest>::NEW, min: 0, max: None }, &self.digests, inner)?,
+            c::field("domainTags", &c::VecOf { element: c::ModelOf::<CanonicalDomainTag>::NEW, min: 0, max: None }, &self.domain_tags, inner)?,
         ])
     }
 

@@ -69,6 +69,24 @@ describe("the generated models hold every vector file", () => {
     expect(TrieBits.decode(wide).ok, "nor does it decode").toBe(false);
   });
 
+  it("a union alternative is chosen by the fields the record encoder reads, getters included", () => {
+    class Var {
+      // eslint-disable-next-line @typescript-eslint/class-literal-property-style -- the point is an inherited getter
+      get var(): string {
+        return "x";
+      }
+    }
+    const { JlvmExpr } = models.jlvm;
+    expect(expectOk(json.render(expectOk(JlvmExpr.encode(new Var()), "encodes")), "renders")).toBe('{"var":"x"}');
+  });
+
+  it("encoding a model nested past the depth limit is a typed error, not a stack overflow", () => {
+    let expr: models.jlvm.JlvmExpr = {};
+    for (let i = 0; i < 20000; i++) expr = { path: expr };
+    const r = models.jlvm.JlvmExpr.encode(expr);
+    expect(r.ok ? "encoded" : r.error.kind).toBe("DepthExceeded");
+  });
+
   it("a recursive model round-trips through CBOR", () => {
     const program = '{"jlvm":1,"expr":{"op":"+","args":[{"lit":1},{"var":"x","default":{"path":{"lit":"y"}}},{"map":{"k":{}}}]}}';
     const value = expectOk(json.parse(program), "canonical JSON");

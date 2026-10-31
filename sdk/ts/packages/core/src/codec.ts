@@ -8,14 +8,18 @@ import { at, decodeFailure as failure, type CanonicalError, type DecodeFailure }
 import { parse as parseJson } from "./json.js";
 import { err, ok, type Err, type Ok, type Result } from "./result.js";
 import { utf8Length } from "./utf8.js";
-import { ArrayValue, BoolValue, BytesValue, IntValue, MapValue, TextValue, type Value } from "./value.js";
+import { ArrayValue, BoolValue, BytesValue, IntValue, MapValue, MAX_DEPTH, TextValue, type Value } from "./value.js";
 
 export type { Value } from "./value.js";
 export { ok } from "./result.js";
 
-/** Encodes `T` to a canonical value and decodes it back. */
+/**
+ * Encodes `T` to a canonical value and decodes it back. `depth` is the nesting level of the value being encoded (0 at
+ * the root): containers refuse to go past {@link MAX_DEPTH} before descending, so a deeply nested model is a typed
+ * `DepthExceeded`, never a stack overflow.
+ */
 export interface Codec<T> {
-  encode(value: T): Result<Value, CanonicalError>;
+  encode(value: T, depth?: number): Result<Value, CanonicalError>;
   decode(value: Value): Result<T, DecodeFailure>;
 }
 
@@ -179,18 +183,19 @@ export function oneOfText(t: string, texts: readonly string[]): Result<Value, Ca
 
 /** A codec referenced by name and resolved on use, so rules may refer to each other in any order, recursively. */
 export function defer<T>(codec: () => Codec<T>): Codec<T> {
-  return { encode: (a) => codec().encode(a), decode: (v) => codec().decode(v) };
+  return { encode: (a, depth) => codec().encode(a, depth), decode: (v) => codec().decode(v) };
 }
 
 /** A homogeneous array of `min` to `max` elements (`max` unbounded when `null`). */
 export function vector<T>(element: Codec<T>, min: number, max: number | null): Codec<readonly T[]> {
   const fits = (n: number): boolean => n >= min && (max === null || n <= max);
   return {
-    encode: (xs) => {
+    encode: (xs, depth = 0) => {
+      if (depth >= MAX_DEPTH) return depthExceeded();
       if (!fits(xs.length)) return typeMismatch(`array of ${xs.length.toString()} elements outside the schema size`);
       const items: Value[] = [];
       for (const x of xs) {
-        const e = element.encode(x);
+        const e = element.encode(x, depth + 1);
         if (!e.ok) return e;
         items.push(e.value);
       }
@@ -213,10 +218,11 @@ export function vector<T>(element: Codec<T>, min: number, max: number | null): C
 /** A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`). */
 export function textMap<T>(value: Codec<T>): Codec<ReadonlyMap<string, T>> {
   return {
-    encode: (m) => {
+    encode: (m, depth = 0) => {
+      if (depth >= MAX_DEPTH) return depthExceeded();
       const entries: [string, Value][] = [];
       for (const [k, x] of m) {
-        const e = value.encode(x);
+        const e = value.encode(x, depth + 1);
         if (!e.ok) return e;
         entries.push([k, e.value]);
       }
@@ -254,15 +260,25 @@ export function intEnum<L extends string>(name: string, cases: readonly (readonl
 
 type Entry = Result<readonly [string, Value] | undefined, CanonicalError>;
 
-/** One entry of an encoded record. */
-export function field<T>(key: string, codec: Codec<T>, value: T): Entry {
-  const v = codec.encode(value);
+/** The nesting limit was reached before encoding a container. */
+export function depthExceeded(): Err<CanonicalError> {
+  return err({ kind: "DepthExceeded", limit: MAX_DEPTH });
+}
+
+/** Encodes a record's fields one level below `depth`, if a container fits at `depth`. */
+export function nested(depth: number, fields: (inner: number) => Result<Value, CanonicalError>): Result<Value, CanonicalError> {
+  return depth >= MAX_DEPTH ? depthExceeded() : fields(depth + 1);
+}
+
+/** One entry of an encoded record, its value at `depth`. */
+export function field<T>(key: string, codec: Codec<T>, value: T, depth = 0): Entry {
+  const v = codec.encode(value, depth);
   return v.ok ? ok([key, v.value] as const) : v;
 }
 
 /** One optional entry: `undefined` (an absent field) is left out, never written as null. */
-export function optionalField<T>(key: string, codec: Codec<T>, value: T | undefined): Entry {
-  return value === undefined ? ok(undefined) : field(key, codec, value);
+export function optionalField<T>(key: string, codec: Codec<T>, value: T | undefined, depth = 0): Entry {
+  return value === undefined ? ok(undefined) : field(key, codec, value, depth);
 }
 
 /** The map of a record's entries. */
@@ -303,14 +319,19 @@ export function fields(v: Value, allowed: readonly string[]): Ok<Fields> | Err<D
 }
 
 /**
- * Whether a record value of a union is the alternative `T` (named by its codec), by its present (non-`undefined`)
- * fields: every required field present and none outside the allowed ones. The generator only accepts unions where at
- * most one fits.
+ * Whether a record value of a union is the alternative `T` (named by its codec), by which of the union's field names
+ * (`known`) it has a value for: every required field present and none outside the allowed ones. Fields are read as the
+ * record encoder reads them, so getters count and unrelated properties do not. The generator only accepts unions where
+ * at most one alternative fits.
  */
-export function hasFields<T extends object>(a: object, _alternative: Codec<T>, required: readonly string[], allowed: readonly string[]): a is T {
-  const present = Object.entries(a)
-    .filter(([, x]) => x !== undefined)
-    .map(([k]) => k);
+export function hasFields<T extends object>(
+  a: object,
+  _alternative: Codec<T>,
+  required: readonly string[],
+  allowed: readonly string[],
+  known: readonly string[],
+): a is T {
+  const present = known.filter((k) => Reflect.get(a, k) !== undefined);
   return required.every((k) => present.includes(k)) && present.every((k) => allowed.includes(k));
 }
 

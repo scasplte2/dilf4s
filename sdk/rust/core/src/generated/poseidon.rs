@@ -19,10 +19,11 @@ pub struct PoseidonMerkleProof {
 }
 
 impl c::Model for PoseidonMerkleProof {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("position", &TREE_POSITION, &self.position)?,
-            c::field("siblings", &c::VecOf { element: FIELD_ELEMENT, min: 0, max: Some(256) }, &self.siblings)?,
+            c::field("position", &TREE_POSITION, &self.position, inner)?,
+            c::field("siblings", &c::VecOf { element: FIELD_ELEMENT, min: 0, max: Some(256) }, &self.siblings, inner)?,
         ])
     }
 

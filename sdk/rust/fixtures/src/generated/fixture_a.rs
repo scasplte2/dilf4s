@@ -11,9 +11,10 @@ pub struct Record {
 }
 
 impl c::Model for Record {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("x", &c::UINT, &self.x)?,
+            c::field("x", &c::UINT, &self.x, inner)?,
         ])
     }
 

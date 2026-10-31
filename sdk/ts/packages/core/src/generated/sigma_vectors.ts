@@ -18,16 +18,18 @@ export interface SigmaCase {
 }
 
 export const SigmaCase: c.Codec<SigmaCase> = {
-  encode: (a) =>
-    c.record([
-      c.field("name", c.text, a.name),
-      c.field("kind", c.defer(() => SigmaKind), a.kind),
-      c.field("proposition", c.defer(() => SigmaProposition), a.proposition),
-      c.field("secrets", c.vector(c.defer(() => Hex0x), 0, null), a.secrets),
-      c.field("message", c.defer(() => Hex0x), a.message),
-      c.field("proof", c.defer(() => Hex0x), a.proof),
-      c.field("ergo", c.bool, a.ergo),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("name", c.text, a.name, e),
+        c.field("kind", c.defer(() => SigmaKind), a.kind, e),
+        c.field("proposition", c.defer(() => SigmaProposition), a.proposition, e),
+        c.field("secrets", c.vector(c.defer(() => Hex0x), 0, null), a.secrets, e),
+        c.field("message", c.defer(() => Hex0x), a.message, e),
+        c.field("proof", c.defer(() => Hex0x), a.proof, e),
+        c.field("ergo", c.bool, a.ergo, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["name", "kind", "proposition", "secrets", "message", "proof", "ergo"]);
     if (!f.ok) return f;
@@ -92,17 +94,19 @@ export interface SigmaProposition {
 }
 
 export const SigmaProposition: c.Codec<SigmaProposition> = {
-  encode: (a) =>
-    c.record([
-      c.field("type", c.defer(() => SigmaType), a.type),
-      c.optionalField("pk", c.defer(() => Hex0x), a.pk),
-      c.optionalField("g", c.defer(() => Hex0x), a.g),
-      c.optionalField("h", c.defer(() => Hex0x), a.h),
-      c.optionalField("u", c.defer(() => Hex0x), a.u),
-      c.optionalField("v", c.defer(() => Hex0x), a.v),
-      c.optionalField("k", c.intRange(1n, 255n), a.k),
-      c.optionalField("children", c.vector(c.defer(() => SigmaProposition), 0, null), a.children),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("type", c.defer(() => SigmaType), a.type, e),
+        c.optionalField("pk", c.defer(() => Hex0x), a.pk, e),
+        c.optionalField("g", c.defer(() => Hex0x), a.g, e),
+        c.optionalField("h", c.defer(() => Hex0x), a.h, e),
+        c.optionalField("u", c.defer(() => Hex0x), a.u, e),
+        c.optionalField("v", c.defer(() => Hex0x), a.v, e),
+        c.optionalField("k", c.intRange(1n, 255n), a.k, e),
+        c.optionalField("children", c.vector(c.defer(() => SigmaProposition), 0, null), a.children, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["type", "pk", "g", "h", "u", "v", "k", "children"]);
     if (!f.ok) return f;
@@ -163,13 +167,15 @@ export interface SigmaVectors {
 }
 
 export const SigmaVectors: c.Codec<SigmaVectors> = {
-  encode: (a) =>
-    c.record([
-      c.field("spec", c.literalText("docs/specs/sigma.md"), a.spec),
-      c.field("version", c.literalInt(1n), a.version),
-      c.field("source", c.text, a.source),
-      c.field("cases", c.vector(c.defer(() => SigmaCase), 0, null), a.cases),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("spec", c.literalText("docs/specs/sigma.md"), a.spec, e),
+        c.field("version", c.literalInt(1n), a.version, e),
+        c.field("source", c.text, a.source, e),
+        c.field("cases", c.vector(c.defer(() => SigmaCase), 0, null), a.cases, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["spec", "version", "source", "cases"]);
     if (!f.ok) return f;

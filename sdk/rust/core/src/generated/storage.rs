@@ -13,10 +13,11 @@ pub struct VersionedRecord {
 }
 
 impl c::Model for VersionedRecord {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::optional_field("b", &c::Bytes, self.b.as_ref())?,
-            c::optional_field("a", &c::Bytes, self.a.as_ref())?,
+            c::optional_field("b", &c::Bytes, self.b.as_ref(), inner)?,
+            c::optional_field("a", &c::Bytes, self.a.as_ref(), inner)?,
         ])
     }
 

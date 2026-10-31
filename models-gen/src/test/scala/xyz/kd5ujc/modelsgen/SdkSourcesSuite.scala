@@ -104,6 +104,17 @@ object SdkSourcesSuite extends SimpleIOSuite {
     expect(clash(gen(cddl)), "SDKs").and(expect(clash(Main.generate(Vector("t" -> cddl), "p")), "Scala"))
   }
 
+  test("a missing schema directory is an error, not an empty schema set (SdkMain would delete every model)") {
+    SdkSources.readSchemas(java.nio.file.Paths.get("shared", "no-such-schemas")).attempt.map(r => expect(r.isLeft, r.toString))
+  }
+
+  pureTest("enumeration wire values beyond CDDL int are rejected in every language") {
+    val cddl = "e = &(small: 1, large: 18446744073709551616)\n"
+    expect(outside(gen(cddl)), "SDKs")
+      .and(expect(outside(Main.generate(Vector("t" -> cddl), "p")), "Scala"))
+      .and(expect(gen("e = &(low: -18446744073709551616, high: 18446744073709551615)\n").isRight, "the int range itself is fine"))
+  }
+
   pureTest("keywords become raw identifiers in Rust") {
     val out = gen("r = { \"type\": uint, \"self\": uint }\n").map(_.rust.toMap.getOrElse("t.rs", ""))
     expect(out.exists(s => s.contains("pub r#type: u64,") && s.contains("pub self_: u64,")), out.fold(_.message, identity))

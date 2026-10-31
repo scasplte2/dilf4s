@@ -112,6 +112,31 @@ fn a_recursive_model_round_trips_through_cbor() {
 }
 
 #[test]
+fn encoding_a_model_nested_past_the_depth_limit_is_a_typed_error() {
+    use jlvm::{JlvmExpr, JlvmNull, JlvmVarAt};
+    let mut expr = JlvmExpr::JlvmNull(JlvmNull);
+    for _ in 0..20_000 {
+        expr = JlvmExpr::JlvmVarAt(JlvmVarAt { path: Box::new(expr), default: None });
+    }
+    // run on a thread with a known, modest stack, as a caller's might be
+    let kind = std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(move || {
+            let kind = expr.to_value().map_or_else(|e| e.kind(), |_| "encoded");
+            // drop the chain one level at a time
+            let mut next = Some(expr);
+            while let Some(JlvmExpr::JlvmVarAt(at)) = next {
+                next = Some(*at.path);
+            }
+            kind
+        })
+        .expect("a thread")
+        .join()
+        .expect("no stack overflow");
+    assert_eq!(kind, "DepthExceeded");
+}
+
+#[test]
 fn cddl_integers_follow_rfc_8610() {
     // `uint` is major type 0 (up to 2^64 - 1); a wider integer needs an explicit range in the schema
     let bits = |n: dilf4s_core::BigInt| {

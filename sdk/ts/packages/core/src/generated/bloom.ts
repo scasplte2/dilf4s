@@ -9,12 +9,14 @@ export interface BloomFilter {
 }
 
 export const BloomFilter: c.Codec<BloomFilter> = {
-  encode: (a) =>
-    c.record([
-      c.field("m", c.intRange(64n, 16777216n), a.m),
-      c.field("k", c.intRange(1n, 32n), a.k),
-      c.field("b", c.bytes, a.b),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("m", c.intRange(64n, 16777216n), a.m, e),
+        c.field("k", c.intRange(1n, 32n), a.k, e),
+        c.field("b", c.bytes, a.b, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["m", "k", "b"]);
     if (!f.ok) return f;

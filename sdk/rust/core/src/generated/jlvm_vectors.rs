@@ -33,16 +33,17 @@ pub struct JlvmCase {
 }
 
 impl c::Model for JlvmCase {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("name", &c::Text, &self.name)?,
-            c::field("program", &c::Text, &self.program)?,
-            c::field("data", &c::Text, &self.data)?,
-            c::optional_field("env", &c::TextMapOf(c::Text), self.env.as_ref())?,
-            c::optional_field("gasLimit", &c::UINT, self.gas_limit.as_ref())?,
-            c::field("outcome", &c::ModelOf::<JlvmOutcome>::NEW, &self.outcome)?,
-            c::field("gasUsed", &c::UINT, &self.gas_used)?,
-            c::field("warnings", &c::UINT, &self.warnings)?,
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("program", &c::Text, &self.program, inner)?,
+            c::field("data", &c::Text, &self.data, inner)?,
+            c::optional_field("env", &c::TextMapOf(c::Text), self.env.as_ref(), inner)?,
+            c::optional_field("gasLimit", &c::UINT, self.gas_limit.as_ref(), inner)?,
+            c::field("outcome", &c::ModelOf::<JlvmOutcome>::NEW, &self.outcome, inner)?,
+            c::field("gasUsed", &c::UINT, &self.gas_used, inner)?,
+            c::field("warnings", &c::UINT, &self.warnings, inner)?,
         ])
     }
 
@@ -68,9 +69,10 @@ pub struct JlvmError {
 }
 
 impl c::Model for JlvmError {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("error", &c::ModelOf::<JlvmErrorKind>::NEW, &self.error)?,
+            c::field("error", &c::ModelOf::<JlvmErrorKind>::NEW, &self.error, inner)?,
         ])
     }
 
@@ -103,7 +105,7 @@ pub enum JlvmErrorKind {
 }
 
 impl c::Model for JlvmErrorKind {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Malformed => Ok(c::Value::text("Malformed")),
             Self::Type => Ok(c::Value::text("Type")),
@@ -141,10 +143,10 @@ pub enum JlvmOutcome {
 }
 
 impl c::Model for JlvmOutcome {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
-            Self::JlvmValue(a) => c::Model::to_value(a),
-            Self::JlvmError(a) => c::Model::to_value(a),
+            Self::JlvmValue(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmError(a) => c::Model::to_value_at(a, depth),
         }
     }
 
@@ -167,10 +169,11 @@ pub struct JlvmValue {
 }
 
 impl c::Model for JlvmValue {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("cbor", &HEX, &self.cbor)?,
-            c::optional_field("json", &c::Text, self.json.as_ref())?,
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::optional_field("json", &c::Text, self.json.as_ref(), inner)?,
         ])
     }
 
@@ -194,14 +197,15 @@ pub struct JlvmVectors {
 }
 
 impl c::Model for JlvmVectors {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("spec", &c::LiteralText("docs/specs/jlvm.md"), &())?,
-            c::field("version", &c::LiteralInt(1), &())?,
-            c::field("schedule", &c::LiteralInt(1), &())?,
-            c::field("gasLimit", &c::UINT, &self.gas_limit)?,
-            c::field("source", &c::Text, &self.source)?,
-            c::field("cases", &c::VecOf { element: c::ModelOf::<JlvmCase>::NEW, min: 0, max: None }, &self.cases)?,
+            c::field("spec", &c::LiteralText("docs/specs/jlvm.md"), &(), inner)?,
+            c::field("version", &c::LiteralInt(1), &(), inner)?,
+            c::field("schedule", &c::LiteralInt(1), &(), inner)?,
+            c::field("gasLimit", &c::UINT, &self.gas_limit, inner)?,
+            c::field("source", &c::Text, &self.source, inner)?,
+            c::field("cases", &c::VecOf { element: c::ModelOf::<JlvmCase>::NEW, min: 0, max: None }, &self.cases, inner)?,
         ])
     }
 

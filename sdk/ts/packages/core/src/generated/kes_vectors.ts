@@ -12,10 +12,12 @@ export interface KesCardanoParameters {
 }
 
 export const KesCardanoParameters: c.Codec<KesCardanoParameters> = {
-  encode: (a) =>
-    c.record([
-      c.field("depth", c.uint, a.depth),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("depth", c.uint, a.depth, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["depth"]);
     if (!f.ok) return f;
@@ -53,10 +55,11 @@ export const KesConstruction: c.Codec<KesConstruction> = {
 export type KesParameters = KesSumParameters | KesProductParameters | KesCardanoParameters;
 
 export const KesParameters: c.Codec<KesParameters> = {
-  encode: (a) => {
-    if (c.hasFields(a, KesSumParameters, ["hash", "height"], ["hash", "height"])) return KesSumParameters.encode(a);
-    if (c.hasFields(a, KesProductParameters, ["hash", "subHeight", "superHeight"], ["hash", "subHeight", "superHeight"])) return KesProductParameters.encode(a);
-    if (c.hasFields(a, KesCardanoParameters, ["depth"], ["depth"])) return KesCardanoParameters.encode(a);
+  encode: (a, d) => {
+    const known = ["depth", "hash", "height", "subHeight", "superHeight"];
+    if (c.hasFields(a, KesSumParameters, ["hash", "height"], ["hash", "height"], known)) return KesSumParameters.encode(a, d);
+    if (c.hasFields(a, KesProductParameters, ["hash", "subHeight", "superHeight"], ["hash", "subHeight", "superHeight"], known)) return KesProductParameters.encode(a, d);
+    if (c.hasFields(a, KesCardanoParameters, ["depth"], ["depth"], known)) return KesCardanoParameters.encode(a, d);
     return c.typeMismatch("no alternative of KesParameters fits");
   },
   decode: (v) => {
@@ -83,12 +86,14 @@ export interface KesPeriod {
 }
 
 export const KesPeriod: c.Codec<KesPeriod> = {
-  encode: (a) =>
-    c.record([
-      c.field("period", c.uint, a.period),
-      c.field("key", c.defer(() => Hex), a.key),
-      c.field("signature", c.defer(() => Hex), a.signature),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("period", c.uint, a.period, e),
+        c.field("key", c.defer(() => Hex), a.key, e),
+        c.field("signature", c.defer(() => Hex), a.signature, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["period", "key", "signature"]);
     if (!f.ok) return f;
@@ -110,12 +115,14 @@ export interface KesProductParameters {
 }
 
 export const KesProductParameters: c.Codec<KesProductParameters> = {
-  encode: (a) =>
-    c.record([
-      c.field("hash", c.text, a.hash),
-      c.field("superHeight", c.uint, a.superHeight),
-      c.field("subHeight", c.uint, a.subHeight),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("hash", c.text, a.hash, e),
+        c.field("superHeight", c.uint, a.superHeight, e),
+        c.field("subHeight", c.uint, a.subHeight, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["hash", "superHeight", "subHeight"]);
     if (!f.ok) return f;
@@ -136,11 +143,13 @@ export interface KesSumParameters {
 }
 
 export const KesSumParameters: c.Codec<KesSumParameters> = {
-  encode: (a) =>
-    c.record([
-      c.field("hash", c.text, a.hash),
-      c.field("height", c.uint, a.height),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("hash", c.text, a.hash, e),
+        c.field("height", c.uint, a.height, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["hash", "height"]);
     if (!f.ok) return f;
@@ -163,15 +172,17 @@ export interface KesVector {
 }
 
 export const KesVector: c.Codec<KesVector> = {
-  encode: (a) =>
-    c.record([
-      c.field("construction", c.defer(() => KesConstruction), a.construction),
-      c.field("parameters", c.defer(() => KesParameters), a.parameters),
-      c.field("seed", c.defer(() => Hex), a.seed),
-      c.field("message", c.defer(() => Hex), a.message),
-      c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey),
-      c.field("periods", c.vector(c.defer(() => KesPeriod), 0, null), a.periods),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("construction", c.defer(() => KesConstruction), a.construction, e),
+        c.field("parameters", c.defer(() => KesParameters), a.parameters, e),
+        c.field("seed", c.defer(() => Hex), a.seed, e),
+        c.field("message", c.defer(() => Hex), a.message, e),
+        c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey, e),
+        c.field("periods", c.vector(c.defer(() => KesPeriod), 0, null), a.periods, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["construction", "parameters", "seed", "message", "verifyingKey", "periods"]);
     if (!f.ok) return f;
@@ -199,12 +210,14 @@ export interface KesVectors {
 }
 
 export const KesVectors: c.Codec<KesVectors> = {
-  encode: (a) =>
-    c.record([
-      c.field("spec", c.literalText("docs/specs/kes.md"), a.spec),
-      c.field("version", c.literalInt(1n), a.version),
-      c.field("vectors", c.vector(c.defer(() => KesVector), 0, null), a.vectors),
-    ]),
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("spec", c.literalText("docs/specs/kes.md"), a.spec, e),
+        c.field("version", c.literalInt(1n), a.version, e),
+        c.field("vectors", c.vector(c.defer(() => KesVector), 0, null), a.vectors, e),
+      ]),
+    ),
   decode: (v) => {
     const f = c.fields(v, ["spec", "version", "vectors"]);
     if (!f.ok) return f;

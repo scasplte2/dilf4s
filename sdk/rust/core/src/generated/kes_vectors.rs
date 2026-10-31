@@ -18,9 +18,10 @@ pub struct KesCardanoParameters {
 }
 
 impl c::Model for KesCardanoParameters {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("depth", &c::UINT, &self.depth)?,
+            c::field("depth", &c::UINT, &self.depth, inner)?,
         ])
     }
 
@@ -43,7 +44,7 @@ pub enum KesConstruction {
 }
 
 impl c::Model for KesConstruction {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Dilf4sSum => Ok(c::Value::text("dilf4s-sum")),
             Self::Dilf4sProduct => Ok(c::Value::text("dilf4s-product")),
@@ -73,11 +74,11 @@ pub enum KesParameters {
 }
 
 impl c::Model for KesParameters {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
-            Self::KesSumParameters(a) => c::Model::to_value(a),
-            Self::KesProductParameters(a) => c::Model::to_value(a),
-            Self::KesCardanoParameters(a) => c::Model::to_value(a),
+            Self::KesSumParameters(a) => c::Model::to_value_at(a, depth),
+            Self::KesProductParameters(a) => c::Model::to_value_at(a, depth),
+            Self::KesCardanoParameters(a) => c::Model::to_value_at(a, depth),
         }
     }
 
@@ -103,11 +104,12 @@ pub struct KesPeriod {
 }
 
 impl c::Model for KesPeriod {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("period", &c::UINT, &self.period)?,
-            c::field("key", &HEX, &self.key)?,
-            c::field("signature", &HEX, &self.signature)?,
+            c::field("period", &c::UINT, &self.period, inner)?,
+            c::field("key", &HEX, &self.key, inner)?,
+            c::field("signature", &HEX, &self.signature, inner)?,
         ])
     }
 
@@ -132,11 +134,12 @@ pub struct KesProductParameters {
 }
 
 impl c::Model for KesProductParameters {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("hash", &c::Text, &self.hash)?,
-            c::field("superHeight", &c::UINT, &self.super_height)?,
-            c::field("subHeight", &c::UINT, &self.sub_height)?,
+            c::field("hash", &c::Text, &self.hash, inner)?,
+            c::field("superHeight", &c::UINT, &self.super_height, inner)?,
+            c::field("subHeight", &c::UINT, &self.sub_height, inner)?,
         ])
     }
 
@@ -159,10 +162,11 @@ pub struct KesSumParameters {
 }
 
 impl c::Model for KesSumParameters {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("hash", &c::Text, &self.hash)?,
-            c::field("height", &c::UINT, &self.height)?,
+            c::field("hash", &c::Text, &self.hash, inner)?,
+            c::field("height", &c::UINT, &self.height, inner)?,
         ])
     }
 
@@ -192,14 +196,15 @@ pub struct KesVector {
 }
 
 impl c::Model for KesVector {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("construction", &c::ModelOf::<KesConstruction>::NEW, &self.construction)?,
-            c::field("parameters", &c::ModelOf::<KesParameters>::NEW, &self.parameters)?,
-            c::field("seed", &HEX, &self.seed)?,
-            c::field("message", &HEX, &self.message)?,
-            c::field("verifyingKey", &HEX, &self.verifying_key)?,
-            c::field("periods", &c::VecOf { element: c::ModelOf::<KesPeriod>::NEW, min: 0, max: None }, &self.periods)?,
+            c::field("construction", &c::ModelOf::<KesConstruction>::NEW, &self.construction, inner)?,
+            c::field("parameters", &c::ModelOf::<KesParameters>::NEW, &self.parameters, inner)?,
+            c::field("seed", &HEX, &self.seed, inner)?,
+            c::field("message", &HEX, &self.message, inner)?,
+            c::field("verifyingKey", &HEX, &self.verifying_key, inner)?,
+            c::field("periods", &c::VecOf { element: c::ModelOf::<KesPeriod>::NEW, min: 0, max: None }, &self.periods, inner)?,
         ])
     }
 
@@ -223,11 +228,12 @@ pub struct KesVectors {
 }
 
 impl c::Model for KesVectors {
-    fn to_value(&self) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
         c::record([
-            c::field("spec", &c::LiteralText("docs/specs/kes.md"), &())?,
-            c::field("version", &c::LiteralInt(1), &())?,
-            c::field("vectors", &c::VecOf { element: c::ModelOf::<KesVector>::NEW, min: 0, max: None }, &self.vectors)?,
+            c::field("spec", &c::LiteralText("docs/specs/kes.md"), &(), inner)?,
+            c::field("version", &c::LiteralInt(1), &(), inner)?,
+            c::field("vectors", &c::VecOf { element: c::ModelOf::<KesVector>::NEW, min: 0, max: None }, &self.vectors, inner)?,
         ])
     }
 
