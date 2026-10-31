@@ -67,9 +67,9 @@ A proposition is a canonical map per node, discriminated by `type`. Each type ta
 **Decoding order.** A decoder refuses a proposition at its first failing check, in this order, so that every
 implementation refuses the same input with the same error. No check depends on a part of the value not yet reached,
 and no input is decoded in full before it is refused for its size.
-1. **Weight.** A value heavier than 7,900,416 is refused before anything is decoded. Weight is the JLVM's measure of
-   size (`jlvm.md` §2). Both implementations cache it on every value, so the check is O(1) however much the value
-   shares.
+1. **Weight.** A value heavier than 7,900,416 is refused before anything is decoded. Weight is defined exactly in
+   `jlvm.md` §2, the table under **Weight**. Both implementations cache it on every value, so the check is O(1)
+   however much the value shares.
 2. **Each node, in pre-order, children in array order:**
    - it is a map; its `type` is one of the five; it has exactly its type's fields;
    - a leaf: refused if the proposition already has 4096 leaves. Then its points are decoded, `g`, `h`, `u`, `v` in
@@ -92,7 +92,7 @@ are. An oversized proposition costs at most 4096 leaves' worth of curve work bef
 | `or` | 19, plus its children |
 | `threshold` | `1 + (5 + 10) + (2 + 1) + (9 + 1)` = 29, plus its children |
 
-These are a map's own node, then `1 + len(key) + weight(value)` per entry. A group element is 34 bytes of weight (1 +
+These follow `jlvm.md` §2: a map's own node, then `1 + len(key) + weight(value)` per entry. A group element is 34 bytes of weight (1 +
 33), and `children` is an array (1, plus its elements).
 
 A proposition with `L` leaves and `C` connectives therefore weighs at most `158·L + 29·C`.
