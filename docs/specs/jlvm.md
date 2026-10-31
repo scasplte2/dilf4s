@@ -406,21 +406,23 @@ Proofs are their canonical records (`merkle-inclusion`, `merkle-consistency`, `t
 - **Leaves and values commit by `commit(v)` (`merkle.md` §2):** `0x00 ‖ b` for bytes, `0x01 ‖ cbor(v)` otherwise. A
   proof of the bytes `0x6161` therefore never verifies the text `"a"`. The library builds these with
   `MerkleTree.leaf` and `Trie.putCanonical`.
-- **Raw mode** reads leaves and values as their own bytes, for structures built with the byte-level APIs
-  (`MerkleHashing.leaf`, `Trie.putValue`). It is the Merkle profile `"raw"` and the trie mode key `"raw": true`. A raw
-  leaf or value must be bytes; anything else is a `Type` error.
+- **There is no raw reading.** If a program could read a leaf or value either as its own bytes or by `commit(v)`
+  under one hashing, whoever chose the reading could make a proof of the bytes `0x6161` verify the text `"a"`.
+  Structures built with the byte-level APIs (`MerkleHashing.leaf`, `Trie.putValue`) are for library use. The one
+  exception is the `"rfc6962"` Merkle profile, for external logs: it takes leaves as raw bytes, and must be bytes, but
+  its hashing differs throughout, so no root verifies under both readings.
 
 | Operation | Arguments | Result |
 |---|---|---|
-| `merkle_verify` | `[head, leaf, proof]`, or `[head, leaf, proof, profile]` with profile `"raw"` (dilf4s hashing, raw leaves) or `"rfc6962"` (RFC 6962 hashing, raw leaves) | boolean |
-| `merkle_consistency_verify` | `[oldHead, newHead, proof]`, or with a profile (`"raw"` is the default hashing) | boolean |
+| `merkle_verify` | `[head, leaf, proof]`, or `[head, leaf, proof, "rfc6962"]` (RFC 6962 hashing, raw byte leaves) | boolean |
+| `merkle_consistency_verify` | `[oldHead, newHead, proof]`, or with `"rfc6962"` | boolean |
 | `trie_verify` | `[mode, root, key, value, proof]`; a null `value` claims absence | boolean |
 | `trie_prefix_verify` | `[mode, root, prefix, entries, proof]` | boolean |
 | `trie_range_verify` | `[mode, root, from, until, entries, proof]`; `until` null is unbounded | boolean |
 
 - **A head is `{root, size}`**, taken from one trusted tree head. A proof whose own size differs from the head's is
   `false`: a root from a smaller tree can satisfy a proof that claims a larger size (`merkle.md` §3).
-- **A mode is `{"fixed": n}` or `{"variable": max}`, optionally with `"raw": true`.** A key of the wrong length for the mode is a `Crypto` error.
+- **A mode is `{"fixed": n}` or `{"variable": max}`.** A key of the wrong length for the mode is a `Crypto` error.
 - **Entries are `[key, value]` pairs in key order** (bitwise, a prefix before its extensions). True means they are
   exactly the trie's entries under the prefix, or in `[from, until)`.
 - **"Not covered" is an error.** A proof that does not reach the queried key, or reaches a stub inside the queried

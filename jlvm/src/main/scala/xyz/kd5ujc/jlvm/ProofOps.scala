@@ -70,8 +70,8 @@ object ProofOps {
 
   /**
    * The hashing, and how a leaf becomes bytes: the default profile commits any value by [[ValueCommitment]]; `"rfc6962"`
-   * hashes as RFC 6962 and takes a leaf as raw bytes, as external logs do; `"raw"` keeps the dilf4s hashing over raw
-   * bytes, for trees built with the byte-level API. Raw leaves must be bytes.
+   * hashes as RFC 6962 and takes a leaf as raw bytes, as external logs do, so its leaves must be bytes. Its hashing differs
+   * from the default's throughout, so no root verifies under both readings, whoever chooses the profile.
    */
   private def profile(
     op:   Op,
@@ -79,9 +79,8 @@ object ProofOps {
   ): Either[JlvmError, (MerkleHashing[H], CanonicalValue => Either[JlvmError, ByteVector])] =
     rest match {
       case Vector()                 => (MerkleHashing.tagged[H], (v: CanonicalValue) => committed(v).asRight[JlvmError]).asRight
-      case Vector(CText("raw"))     => (MerkleHashing.tagged[H], bytes(op, "a raw leaf")).asRight
       case Vector(CText("rfc6962")) => (MerkleHashing.rfc6962[H], bytes(op, "an rfc6962 leaf")).asRight
-      case _                        => JlvmError.Domain(op.wire, "the optional profile is \"raw\" or \"rfc6962\"").asLeft
+      case _                        => JlvmError.Domain(op.wire, "the only optional profile is \"rfc6962\"").asLeft
     }
 
   /** A proof that verifies is true; one that is well formed but proves something else is false. */
@@ -129,29 +128,19 @@ object ProofOps {
 
   private val T = TrieHashing[H]
 
-  /** A trie's key mode, and whether its values are raw bytes (`"raw": true`) or committed by [[ValueCommitment]]. */
-  final private case class Mode(keys: KeyMode, raw: Boolean)
-
-  private def mode(op: Op)(v: CanonicalValue): Either[JlvmError, Mode] =
+  private def mode(op: Op)(v: CanonicalValue): Either[JlvmError, KeyMode] =
     v match {
       case CMap(m) =>
-        val raw = m.get("raw") match {
-          case scala.None | scala.Some(False) => false.asRight[JlvmError]
-          case scala.Some(True)               => true.asRight[JlvmError]
-          case scala.Some(_)                  => JlvmError.Domain(op.wire, "raw is a boolean").asLeft[Boolean]
-        }
-        val keys = (m - "raw").toList match {
+        m.toList match {
           case List(("fixed", CInt(n))) if n.isValidInt    => KeyMode.fixed(n.toInt).leftMap(e => JlvmError.Domain(op.wire, e.toString))
           case List(("variable", CInt(n))) if n.isValidInt => KeyMode.variable(n.toInt).leftMap(e => JlvmError.Domain(op.wire, e.toString))
-          case _ => JlvmError.Domain(op.wire, "a mode is {\"fixed\": n} or {\"variable\": max}, optionally with \"raw\": true").asLeft
+          case _ => JlvmError.Domain(op.wire, "a mode is {\"fixed\": n} or {\"variable\": max}").asLeft
         }
-        (keys, raw).mapN(Mode(_, _))
       case other => JlvmError.Type(op.wire, s"a mode is an object, got ${Values.kind(other)}").asLeft
     }
 
-  /** A claimed value's hash: raw values must be bytes and hash as they are; any other value by its commitment. */
-  private def valueHash(op: Op, m: Mode)(v: CanonicalValue): Either[JlvmError, Digest[H]] =
-    if (m.raw) bytes(op, "a raw value")(v).map(T.value) else T.value(committed(v)).asRight
+  /** A claimed value's hash, by its [[ValueCommitment]] bytes: bytes and a value whose CBOR equals them differ. */
+  private def valueHash(v: CanonicalValue): Digest[H] = T.value(committed(v))
 
   private def path(op: Op, m: KeyMode)(key: CanonicalValue): Either[JlvmError, BitVector] =
     bytes(op, "a key")(key).flatMap(m.path(_).leftMap(e => crypto(op)(s"a key invalid for the mode: $e")))
@@ -170,11 +159,11 @@ object ProofOps {
   private def trie(op: Op, args: Vector[CanonicalValue]): Result =
     args match {
       case Vector(md, root, key, value, proof) =>
-        mode(op)(md).flatMap(m => (path(op, m.keys)(key), verified(op, m.keys, root, proof)).tupled.map(m -> _)).flatMap {
-          case (_, (_, scala.None)) => False.asRight
-          case (m, (p, scala.Some(v))) =>
+        mode(op)(md).flatMap(m => (path(op, m)(key), verified(op, m, root, proof)).tupled).flatMap {
+          case (_, scala.None) => False.asRight
+          case (p, scala.Some(v)) =>
             v.lookup(p) match {
-              case Lookup.Present(h) => if (value == CNull) False.asRight else valueHash(op, m)(value).map(x => Values.bool(x == h))
+              case Lookup.Present(h) => Values.bool(value != CNull && valueHash(value) == h).asRight
               case Lookup.Absent     => Values.bool(value == CNull).asRight
               case Lookup.NotCovered => crypto(op)("the proof does not reach this key").asLeft
             }
@@ -182,11 +171,11 @@ object ProofOps {
       case _ => JlvmError.Arity(op.wire, "takes [mode, root, key, value, proof]").asLeft
     }
 
-  private def entries(op: Op, m: Mode)(v: CanonicalValue): Either[JlvmError, List[(BitVector, Digest[H])]] =
+  private def entries(op: Op, m: KeyMode)(v: CanonicalValue): Either[JlvmError, List[(BitVector, Digest[H])]] =
     v match {
       case CArray(es) =>
         es.toList.traverse {
-          case CArray(Vector(k, x)) if x != CNull => (path(op, m.keys)(k), valueHash(op, m)(x)).tupled
+          case CArray(Vector(k, x)) if x != CNull => path(op, m)(k).map(_ -> valueHash(x))
           case _                                  => JlvmError.Type(op.wire, "an entry is [key, value], with a value").asLeft
         }
       case other => JlvmError.Type(op.wire, s"entries is an array, got ${Values.kind(other)}").asLeft
@@ -200,7 +189,7 @@ object ProofOps {
     args match {
       case Vector(md, root, prefix, es, proof) =>
         mode(op)(md).flatMap { m =>
-          (bytes(op, "a prefix")(prefix), entries(op, m)(es), verified(op, m.keys, root, proof)).tupled.flatMap {
+          (bytes(op, "a prefix")(prefix), entries(op, m)(es), verified(op, m, root, proof)).tupled.flatMap {
             case (_, _, scala.None)            => False.asRight
             case (pre, claimed, scala.Some(v)) => listing(op, claimed, v.prefix(pre.bits))
           }
@@ -216,7 +205,7 @@ object ProofOps {
           case other => bytes(op, "until")(other).map(b => Option(b.bits))
         }
         mode(op)(md).flatMap { m =>
-          (bytes(op, "from")(from), upper, entries(op, m)(es), verified(op, m.keys, root, proof)).tupled.flatMap {
+          (bytes(op, "from")(from), upper, entries(op, m)(es), verified(op, m, root, proof)).tupled.flatMap {
             case (_, _, _, scala.None)            => False.asRight
             case (lo, hi, claimed, scala.Some(v)) => listing(op, claimed, v.range(lo.bits, hi))
           }
