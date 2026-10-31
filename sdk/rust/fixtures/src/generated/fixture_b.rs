@@ -6,34 +6,34 @@ use crate::codec as c;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Holder {
     /// The `r` entry.
-    pub r: RecordsAgain,
+    pub r: ItemsAgain,
     /// The `s` entry.
-    pub s: super::fixture_a::Records,
+    pub s: super::fixture_a::Items,
     /// The `t` entry.
-    pub t: Option<super::fixture_a::Record>,
+    pub t: Option<super::fixture_a::Item>,
 }
 
 impl c::Model for Holder {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         let inner = c::nested(depth)?;
         c::record([
-            c::field("r", &RECORDS_AGAIN, &self.r, inner)?,
-            c::field("s", &super::fixture_a::RECORDS, &self.s, inner)?,
-            c::optional_field("t", &c::ModelOf::<super::fixture_a::Record>::NEW, self.t.as_ref(), inner)?,
+            c::field("r", &ITEMS_AGAIN, &self.r, inner)?,
+            c::field("s", &super::fixture_a::ITEMS, &self.s, inner)?,
+            c::optional_field("t", &c::ModelOf::<super::fixture_a::Item>::NEW, self.t.as_ref(), inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["r", "s", "t"])?;
-        let f0 = fields.required("r", &RECORDS_AGAIN)?;
-        let f1 = fields.required("s", &super::fixture_a::RECORDS)?;
-        let f2 = fields.optional("t", &c::ModelOf::<super::fixture_a::Record>::NEW)?;
+        let f0 = fields.required("r", &ITEMS_AGAIN)?;
+        let f1 = fields.required("s", &super::fixture_a::ITEMS)?;
+        let f2 = fields.optional("t", &c::ModelOf::<super::fixture_a::Item>::NEW)?;
         Ok(Self { r: f0, s: f1, t: f2 })
     }
 }
 
-/// `records-again` (`shared/schemas/fixture-b.cddl`).
-pub type RecordsAgain = super::fixture_a::Records;
+/// `items-again` (`shared/schemas/fixture-b.cddl`).
+pub type ItemsAgain = super::fixture_a::Items;
 
-/// The codec of [`RecordsAgain`].
-pub const RECORDS_AGAIN: c::VecOf<c::ModelOf<super::fixture_a::Record>> = super::fixture_a::RECORDS;
+/// The codec of [`ItemsAgain`].
+pub const ITEMS_AGAIN: c::VecOf<c::ModelOf<super::fixture_a::Item>> = super::fixture_a::ITEMS;

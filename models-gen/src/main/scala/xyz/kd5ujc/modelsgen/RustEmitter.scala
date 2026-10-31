@@ -273,10 +273,37 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
     }
 
   /** The source of one module. */
+  /**
+   * The first name this module would declare twice, or declare over a reserved name: types (and unit structs, which
+   * are values too) and codec constants each share a namespace, and must not shadow what the generated code refers to
+   * (`String`, `Vec`, `Result`, ...) or be a keyword (`Self`, or a module named `type`).
+   */
+  private def namespaceClash(name: String, rules: Vector[(QName, ModelRule)]): Option[GenError] = {
+    def literal(t: FieldType) = t match {
+      case FieldType.LitInt(_) | FieldType.LitText(_) => true
+      case _                                          => false
+    }
+    val types = rules.map { case (q, _) => typeName(q) -> q.name }
+    val values = rules.collect {
+      case (q, ModelRule.Alias(_))                                     => constName(q) -> q.name
+      case (q, ModelRule.Record(fs)) if fs.forall(f => literal(f.tpe)) => typeName(q)  -> q.name
+    }
+    def duplicate(names: Vector[(String, String)]) =
+      names.groupBy(_._1).toVector.sortBy(_._1).collectFirst { case (n, xs) if xs.size > 1 => n -> xs.map(_._2) }
+    def reservedIn(names: Vector[(String, String)]) = names.collectFirst { case (n, r) if reserved(n) => n -> Vector(r) }
+    val segment = CanonicalEmitter.packageSegment(name)
+    Option
+      .when(keywords(segment) || segment == "c")(segment -> Vector(name))
+      .orElse(duplicate(types))
+      .orElse(duplicate(values))
+      .orElse(reservedIn(types))
+      .orElse(reservedIn(values))
+      .map { case (n, rs) => GenError.NameClash(name, n, rs) }
+  }
+
   def module(name: String): Either[GenError, String] = {
     val rules = models.toVector.collect { case (q, m) if q.module == name => q -> m }.sortBy(_._1.name)
-    val clash = rules.groupBy { case (q, _) => typeName(q) }.collect { case (t, qs) if qs.size > 1 => t -> qs.map(_._1.name) }
-    clash.headOption.fold {
+    namespaceClash(name, rules).toLeft(()).flatMap { _ =>
       rules.traverse {
         case (q, ModelRule.Record(fs))       => record(q, fs)
         case (q, ModelRule.Enumeration(cs))  => enumeration(q, cs)
@@ -296,7 +323,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
            |
            |$code""".stripMargin
       }
-    } { case (t, qs) => GenError.NameClash(name, t, qs).asLeft }
+    }
   }
 
   /** `generated/mod.rs`, declaring every module. */
@@ -369,6 +396,9 @@ object RustEmitter {
 
   /** Keywords that cannot be raw identifiers. */
   private val unrawable = Set("crate", "self", "Self", "super")
+
+  /** Names the generated code refers to, which a generated type or constant must not shadow. */
+  private val reserved = Set("Self", "Box", "BTreeMap", "String", "Vec", "Option", "Result", "Some", "None", "Ok", "Err")
 
   private def snakeWords(s: String): List[String] =
     s.replaceAll("([a-z0-9])([A-Z])", "$1_$2").split("[-_ .]+").toList.filter(_.nonEmpty).map(_.toLowerCase)

@@ -3,14 +3,14 @@
 use alloc::vec::Vec;
 use crate::codec as c;
 
-/// `record` (`shared/schemas/fixture-a.cddl`).
+/// `item` (`shared/schemas/fixture-a.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Record {
+pub struct Item {
     /// The `x` entry.
     pub x: u64,
 }
 
-impl c::Model for Record {
+impl c::Model for Item {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         let inner = c::nested(depth)?;
         c::record([
@@ -25,8 +25,8 @@ impl c::Model for Record {
     }
 }
 
-/// `records` (`shared/schemas/fixture-a.cddl`).
-pub type Records = Vec<Record>;
+/// `items` (`shared/schemas/fixture-a.cddl`).
+pub type Items = Vec<Item>;
 
-/// The codec of [`Records`].
-pub const RECORDS: c::VecOf<c::ModelOf<Record>> = c::VecOf { element: c::ModelOf::<Record>::NEW, min: 0, max: None };
+/// The codec of [`Items`].
+pub const ITEMS: c::VecOf<c::ModelOf<Item>> = c::VecOf { element: c::ModelOf::<Item>::NEW, min: 0, max: None };

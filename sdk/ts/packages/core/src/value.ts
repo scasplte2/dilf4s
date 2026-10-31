@@ -1,8 +1,8 @@
 /**
  * The canonical data model (docs/specs/canonical-encoding.md section 1).
  *
- * Every kind is a frozen class with a private constructor, so a value can only come from these factories, and every
- * invariant holds: rationals are reduced and never integers, text has no unpaired surrogates, maps have unique keys in
+ * Every kind is a frozen class with a private constructor and `#private` state, which makes it nominal: a value can
+ * only come from these factories (an object literal of the same shape does not typecheck), and every invariant holds: rationals are reduced and never integers, text has no unpaired surrogates, maps have unique keys in
  * canonical order and no null values, and nothing nests deeper than {@link MAX_DEPTH}. Every constructible value
  * therefore has exactly one encoding, and decodes back to itself.
  */
@@ -26,20 +26,28 @@ const depthExceeded: CanonicalError = { kind: "DepthExceeded", limit: MAX_DEPTH 
 
 export class NullValue {
   readonly kind = "null";
-  readonly depth = 0;
+  readonly #depth = 0;
   static readonly instance: NullValue = new NullValue();
   private constructor() {
     Object.freeze(this);
+  }
+  get depth(): 0 {
+    return this.#depth;
   }
 }
 
 export class BoolValue {
   readonly kind = "bool";
   readonly depth = 0;
+  readonly #value: boolean;
   static readonly true: BoolValue = new BoolValue(true);
   static readonly false: BoolValue = new BoolValue(false);
-  private constructor(readonly value: boolean) {
+  private constructor(value: boolean) {
+    this.#value = value;
     Object.freeze(this);
+  }
+  get value(): boolean {
+    return this.#value;
   }
   static of(value: boolean): BoolValue {
     return value ? BoolValue.true : BoolValue.false;
@@ -49,8 +57,13 @@ export class BoolValue {
 export class IntValue {
   readonly kind = "int";
   readonly depth = 0;
-  private constructor(readonly value: bigint) {
+  readonly #value: bigint;
+  private constructor(value: bigint) {
+    this.#value = value;
     Object.freeze(this);
+  }
+  get value(): bigint {
+    return this.#value;
   }
   static of(value: bigint): IntValue {
     return new IntValue(value);
@@ -70,11 +83,22 @@ function gcd(a: bigint, b: bigint): bigint {
 export class RationalValue {
   readonly kind = "rational";
   readonly depth = 0;
-  private constructor(
-    readonly numerator: bigint,
-    readonly denominator: bigint,
-  ) {
+  readonly #numerator: bigint;
+  readonly #denominator: bigint;
+  private constructor(numerator: bigint, denominator: bigint) {
+    this.#numerator = numerator;
+    this.#denominator = denominator;
     Object.freeze(this);
+  }
+
+  /** The numerator, carrying the sign. */
+  get numerator(): bigint {
+    return this.#numerator;
+  }
+
+  /** The denominator, at least 2. */
+  get denominator(): bigint {
+    return this.#denominator;
   }
 
   /** `n/d` exactly as given, if it already satisfies the invariants (as a decoder must check). */
@@ -146,13 +170,18 @@ const deepest = (values: Iterable<Value>): number => {
 
 export class ArrayValue {
   readonly kind = "array";
-  readonly items: readonly Value[];
+  readonly #items: readonly Value[];
   private constructor(
     items: readonly Value[],
     readonly depth: number,
   ) {
-    this.items = Object.freeze([...items]);
+    this.#items = Object.freeze([...items]);
     Object.freeze(this);
+  }
+
+  /** The elements, in order (a frozen array). */
+  get items(): readonly Value[] {
+    return this.#items;
   }
 
   /** The array of `items`, if within the depth limit. */

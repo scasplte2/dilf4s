@@ -1,5 +1,5 @@
 ; Emitter fixture (not a dilf4s format): rules that another module reaches through an alias.
 
-record = { "x": uint }
+item = { "x": uint }
 
-records = [* record]
+items = [* item]

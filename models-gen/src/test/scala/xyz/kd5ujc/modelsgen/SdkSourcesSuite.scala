@@ -58,11 +58,11 @@ object SdkSourcesSuite extends SimpleIOSuite {
   }
 
   pureTest("an alias of another module's alias names that module's types from the consuming module") {
-    val a = "record = { \"x\": uint }\nrecords = [* record]\n"
-    val b = ";# import a as a\nagain = a.records\n"
+    val a = "item = { \"x\": uint }\nitems = [* item]\n"
+    val b = ";# import a as a\nagain = a.items\n"
     val out = SdkSources.generate(Vector("a" -> a, "b" -> b)).map(_.rust.toMap.getOrElse("b.rs", ""))
     expect(
-      out.exists(_.contains("pub const AGAIN: c::VecOf<c::ModelOf<super::a::Record>> = super::a::RECORDS;")),
+      out.exists(_.contains("pub const AGAIN: c::VecOf<c::ModelOf<super::a::Item>> = super::a::ITEMS;")),
       out.fold(_.message, identity)
     )
   }
@@ -113,6 +113,16 @@ object SdkSourcesSuite extends SimpleIOSuite {
     expect(outside(gen(cddl)), "SDKs")
       .and(expect(outside(Main.generate(Vector("t" -> cddl), "p")), "Scala"))
       .and(expect(gen("e = &(low: -18446744073709551616, high: 18446744073709551615)\n").isRight, "the int range itself is fine"))
+  }
+
+  pureTest("generated names that collide or are reserved in any namespace are generator errors") {
+    def clash(e: Either[GenError, ?]) = e.swap.exists { case GenError.NameClash(_, _, _) => true; case _ => false }
+    expect(clash(gen("ab = uint\nAB = text\n")), "both codec constants would be AB in Rust")
+      .and(expect(clash(gen("string = uint\nr = { \"s\": text }\n")), "a type String would shadow alloc's String"))
+      .and(expect(clash(gen("self = { \"x\": uint }\n")), "Self is reserved in Rust"))
+      .and(expect(clash(gen("result = { \"x\": uint }\n")), "a type Result would shadow the prelude's"))
+      .and(expect(clash(SdkSources.generate(Vector("type" -> "r = uint\n"))), "a module named type"))
+      .and(expect(clash(gen("readonly-map = { \"x\": { * text => uint } }\n")), "a type ReadonlyMap would shadow TypeScript's"))
   }
 
   pureTest("keywords become raw identifiers in Rust") {

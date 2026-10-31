@@ -171,7 +171,10 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
   /** The source of one module. */
   def module(name: String): Either[GenError, String] = {
     val rules = models.toVector.collect { case (q, m) if q.module == name => q -> m }.sortBy(_._1.name)
-    val clash = rules.groupBy { case (q, _) => typeName(q) }.collect { case (t, qs) if qs.size > 1 => t -> qs.map(_._1.name) }
+    val clash = rules.groupBy { case (q, _) => typeName(q) }.toVector.sortBy(_._1).collect {
+      case (t, qs) if qs.size > 1 => t -> qs.map(_._1.name)
+    } ++ rules.collect { case (q, _) if reservedTypes(typeName(q)) => typeName(q) -> Vector(q.name) } ++
+      Option.when(reservedWords(namespace(name)) || namespace(name) == "c")(namespace(name) -> Vector(name)).toVector
     clash.headOption.fold {
       rules.traverse {
         case (q, ModelRule.Record(fs))       => record(q, fs)
@@ -201,6 +204,61 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
 }
 
 object TsEmitter {
+
+  /** Global types the generated code refers to, which a generated type must not shadow. */
+  private val reservedTypes = Set("Readonly", "Record", "ReadonlyMap", "Uint8Array")
+
+  // scalafix:off DisableSyntax.noTry, DisableSyntax.noCatch, DisableSyntax.noFinally
+  /** JavaScript reserved words, which a module's namespace (its import binding) cannot be. */
+  private val reservedWords = Set(
+    "await",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "debugger",
+    "default",
+    "delete",
+    "do",
+    "else",
+    "enum",
+    "export",
+    "extends",
+    "false",
+    "finally",
+    "for",
+    "function",
+    "if",
+    "implements",
+    "import",
+    "in",
+    "instanceof",
+    "interface",
+    "let",
+    "new",
+    "null",
+    "package",
+    "private",
+    "protected",
+    "public",
+    "return",
+    "static",
+    "super",
+    "switch",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "typeof",
+    "var",
+    "void",
+    "while",
+    "with",
+    "yield"
+  )
+  // scalafix:on DisableSyntax.noTry, DisableSyntax.noCatch, DisableSyntax.noFinally
 
   /** A module's namespace: `merkle-vectors` is `merkleVectors`. */
   def namespace(module: String): String = CanonicalEmitter.fieldName(module).stripPrefix("`").stripSuffix("`")
