@@ -238,6 +238,8 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   }
 
   private given Show[Program] = Show.fromToString
+  private given Show[Expr] = Show.fromToString
+  private given Show[VarRef] = Show.fromToString
 
   /** Literals holding 0x-hex text have no surface form; the generator's "0x0" and "0xAB" are not hex bytes. */
   private val programs: Gen[Program] = Gen.choose(0, 4).flatMap(expr).map(e => Program.from(e).toOption.get)
@@ -256,7 +258,8 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     j.asObject.map(_.toList) match {
       case Some(List((Parser.ObjectKey, inner))) =>
         inner.asObject.map(_.toList) match {
-          case Some(List((k, v))) if Op.fromWire(k).isEmpty && !Set(Parser.Literal, Parser.Variable, Parser.ObjectKey).contains(k) =>
+          case Some(List((k, v)))
+              if k.nonEmpty && Op.fromWire(k).isEmpty && !Set(Parser.Literal, Parser.Variable, Parser.ObjectKey).contains(k) =>
             Json.obj(k -> metakitStyle(v))
           case _ => Json.obj(Parser.ObjectKey -> metakitStyle(inner))
         }
@@ -313,5 +316,296 @@ object ParserSuite extends SimpleIOSuite with Checkers {
       )
       .and(expect.same(Parser.parse(old, Parser.Mode.Lenient), migrated.flatMap(Parser.parse(_))))
       .and(expect(Parser.parse(old).isLeft, "the old text is not strict"))
+  }
+
+  // ---- identity: distinct behaviour never shares an encoding
+
+  pureTest("a var ref must be what its text reads back as: segments the text cannot spell are rejected") {
+    def from(ref: VarRef) = Program.from(Expr.Var(ref, None))
+    expect(from(VarRef.Data(Vector("a.b"))).isLeft, "a segment holding '.' would encode as the path a, b")
+      .and(expect(from(VarRef.Data(Vector("a", "b"))).isRight, "the path a, b"))
+      .and(expect(from(VarRef.Data(Vector(""))).isLeft, "an empty segment would encode as the whole data"))
+      .and(expect(from(VarRef.Data(Vector("a", ""))).isLeft, "an empty segment does not read back"))
+      .and(expect(from(VarRef.Data(Vector("$x"))).isLeft, "a data path spelling a binding"))
+      .and(expect(from(VarRef.Bound("x.y", Vector.empty)).isLeft, "a binding name holding '.'"))
+      .and(expect(from(VarRef.Bound("", Vector("a"))).isLeft, "an empty binding name"))
+      .and(expect(from(VarRef.Bound("x", Vector("a.b"))).isLeft, "a bound path segment holding '.'"))
+      .and(expect(from(VarRef.Data(Vector.empty)).isRight, "the whole data"))
+  }
+
+  pureTest("a null default is no default: the syntax tree never holds one, since the canonical form drops it") {
+    expect(Program.from(Expr.Var(VarRef.Data(Vector("a")), Some(CNull))).isLeft, "var")
+      .and(expect(Program.from(Expr.Var(VarRef.Bound("x", Vector.empty), Some(CNull))).isLeft, "a bound var"))
+      .and(expect(Program.from(Expr.VarAt(text("a"), Some(CNull))).isLeft, "a computed var"))
+      .and(expect.same(Right(Expr.Var(VarRef.Data(Vector("a")), None)), p("""{"var": ["a", null]}""")))
+      .and(expect.same(Right(Expr.VarAt(Expr.Arr(Vector(text("a"))), None)), p("""{"var": [["a"], null]}""")))
+  }
+
+  private val wildRefs: Gen[VarRef] = Gen.oneOf(
+    Gen.choose(0, 2).flatMap(n => Gen.listOfN(n, Gen.oneOf("a", "b", "a.b", "", "$x", "0"))).map(s => VarRef.Data(s.toVector)),
+    Gen
+      .zip(Gen.oneOf("x", "", "x.y", "$x"), Gen.choose(0, 2).flatMap(n => Gen.listOfN(n, Gen.oneOf("a", "a.b", ""))))
+      .map { case (n, s) => VarRef.Bound(n, s.toVector) }
+  )
+
+  test("every accepted program decodes from its encoding to itself, so no two share an encoding or an identity") {
+    forall(Gen.zip(wildRefs, Gen.option(lit), Gen.option(lit))) {
+      case (ref, d1, d2) =>
+        val e = Expr.Arr(Vector(Expr.Var(ref, d1), Expr.VarAt(text("a"), d2)))
+        Program.from(e).fold(_ => success, prog => expect.same(Right(prog), Parser.encode(prog).flatMap(Parser.decode)))
+    }
+  }
+
+  pureTest("a program is built only by Program.from: no product mirror can bypass its checks") {
+    expect(!scala.compiletime.testing.typeChecks("summon[scala.deriving.Mirror.ProductOf[Program]]"), "Program")
+      .and(expect(!scala.compiletime.testing.typeChecks("summon[scala.deriving.Mirror.ProductOf[Compiled]]"), "Compiled"))
+  }
+
+  // ---- lenient reading is metakit's
+
+  private def lenient(json: String) = Parser.parse(json, Parser.Mode.Lenient).map(_.expr)
+
+  pureTest("lenient reading uses metakit's operations: a name only v1 has is data, and migrates as data") {
+    val rhu = Expr.Obj(Map("round_half_up" -> int(0)))
+    expect
+      .same(
+        Right(Expr.Apply(Op.If, Vector(rhu, Expr.Lit(CBool(true)), Expr.Lit(CBool(false))))),
+        lenient("""{"if":[{"round_half_up":0},true,false]}""")
+      )
+      .and(
+        expect.same(
+          Right("""{"if":[{"object":{"round_half_up":0}},true,false]}"""),
+          Parser.migrate("""{"if":[{"round_half_up":0},true,false]}""")
+        )
+      )
+      .and(expect.same(Right(Expr.Arr(Vector(text("round_half_up"), int(0)))), lenient("""["round_half_up",0]""")))
+      .and(expect.same(Right("""[{"literal":"round_half_up"},0]"""), Parser.migrate("""["round_half_up",0]""")))
+      .and(expect.same(Right(Expr.Obj(Map("sha256" -> text("a")))), lenient("""{"sha256": "a"}""")))
+      .and(
+        expect.same(Right(Expr.Obj(Map("getKey" -> Expr.Arr(Vector(v("m"), text("k")))))), lenient("""{"getKey": [{"var": "m"}, "k"]}"""))
+      )
+      .and(expect.same(Right(Expr.Apply(Op.Add, Vector(int(1), int(2)))), lenient("""["+", 1, 2]""")))
+      .and(
+        expect.same(
+          Right(Expr.Apply(Op.SigmaVerify, Vector(v("p"), v("q"), v("m")))),
+          lenient("""{"sigma_verify": [{"var": "p"}, {"var": "q"}, {"var": "m"}]}""")
+        )
+      )
+  }
+
+  pureTest("lenient reading keeps metakit's meaning for round (half away from zero) and for the empty key (var)") {
+    expect
+      .same(Right(Expr.Apply(Op.RoundHalfUp, Vector(int(1)))), lenient("""{"round": [1]}"""))
+      .and(expect.same(Right("""{"round_half_up":[2.5]}"""), Parser.migrate("""{"round": 2.5}""")))
+      .and(expect.same(Right(Expr.Apply(Op.Round, Vector(int(1)))), p("""{"round": [1]}""")))
+      .and(expect.same(Right(v("a")), lenient("""{"": "a"}""")))
+      .and(expect.same(Right(Expr.Var(VarRef.Data(Vector("a")), Some(CInt(1)))), lenient("""{"": ["a", 1]}""")))
+      .and(expect(p("""{"": "a"}""").isLeft, "strict: the empty key is no operation"))
+  }
+
+  pureTest("the metakit operation list is metakit's (de2a856), and every name in it is a v1 operation or removed") {
+    val metakit = Set(
+      "noop",
+      "if",
+      "default",
+      "let",
+      "!",
+      "!!",
+      "or",
+      "and",
+      "==",
+      "===",
+      "!=",
+      "!==",
+      "<",
+      "<=",
+      ">",
+      ">=",
+      "+",
+      "-",
+      "*",
+      "/",
+      "%",
+      "max",
+      "min",
+      "abs",
+      "round",
+      "floor",
+      "ceil",
+      "pow",
+      "hex_to_int",
+      "map",
+      "filter",
+      "reduce",
+      "merge",
+      "all",
+      "some",
+      "none",
+      "find",
+      "count",
+      "in",
+      "intersect",
+      "unique",
+      "slice",
+      "reverse",
+      "flatten",
+      "cat",
+      "substr",
+      "lower",
+      "upper",
+      "join",
+      "split",
+      "trim",
+      "startsWith",
+      "endsWith",
+      "values",
+      "keys",
+      "get",
+      "has",
+      "set",
+      "unset",
+      "entries",
+      "length",
+      "exists",
+      "missing",
+      "missing_some",
+      "typeof",
+      "poseidon",
+      "pmt_verify",
+      "groth16_verify",
+      "ecvrf_verify",
+      "bn254_add",
+      "bn254_mul",
+      "bn254_pairing",
+      "bls_verify",
+      "bls_aggregate_verify",
+      "schnorr_verify",
+      "smt_verify",
+      "mpt_verify",
+      "mpt_prefix_verify",
+      "prove_dlog_verify",
+      "prove_dhtuple_verify",
+      "sigma_verify"
+    )
+    expect
+      .same(metakit, Parser.MetakitOps)
+      .and(expect(metakit.forall(n => Op.values.exists(_.wire == n) || Parser.Removed.contains(n)), "a v1 operation or removed"))
+  }
+
+  // ---- migration fails loudly where metakit's let scope cannot be expressed
+
+  pureTest("migrate rejects a computed var path while a let binding is in scope: metakit may have read the binding") {
+    def message(e: Either[JlvmError, ?]) = e.left.toOption.map(_.toString).getOrElse("")
+    expect(message(Parser.migrate("""{"let":[[["x",true]],{"var":{"cat":["x"]}}]}""")).contains("computed"), "computed text")
+      .and(expect(Parser.migrate("""{"let":[[["x",true]],{"var":[["x"]]}]}""").isLeft, "computed segments"))
+      .and(expect(Parser.migrate("""{"let":[[["x",1],["y",{"var":{"cat":["x"]}}]],0]}""").isLeft, "in a later binding"))
+      .and(expect(Parser.migrate("""{"let":[[["x",1]],{"var":""}]}""").isLeft, "the whole data is the merged scope"))
+      .and(expect(Parser.migrate("""{"var":{"cat":["x"]}}""").isRight, "no binding in scope"))
+      .and(expect(Parser.migrate("""{"let":[[["x",{"var":{"cat":["a"]}}]],0]}""").isRight, "the first binding sees no binding"))
+  }
+
+  pureTest("migrate: a callback body does not see the enclosing let's bindings in metakit, and fails loudly on them") {
+    expect(Parser.migrate("""{"let":[[["x",1]],{"map":[[{"x":5}],{"var":"x"}]}]}""").isLeft, "map")
+      .and(expect(Parser.migrate("""{"let":[[["x",1]],{"reduce":[[1],{"var":"x.a"},0]}]}""").isLeft, "reduce"))
+      .and(expect(Parser.migrate("""{"let":[[["x",1]],{"map":[[{}],{"let":[[["y",2]],{"var":"x"}]}]}]}""").isLeft, "through an inner let"))
+      .and(
+        expect.same(
+          Right("""{"map":[[{"object":{"y":2}}],{"let":[[["x",1]],{"+":[{"var":"$x"},{"var":"y"}]}]}]}"""),
+          Parser.migrate("""{"map":[[{"y":2}],{"let":[[["x",1]],{"+":[{"var":"x"},{"var":"y"}]}]}]}""")
+        )
+      )
+      .and(
+        expect.same(
+          Right("""{"let":[[["xs",[1,2]]],{"map":[{"var":"$xs"},{"+":[{"var":""},1]}]}]}"""),
+          Parser.migrate("""{"let":[[["xs",[1,2]]],{"map":[{"var":"xs"},{"+":[{"var":""},1]}]}]}""")
+        )
+      )
+  }
+
+  // ---- rendering: exact, within the depth bound
+
+  pureTest("150 nested computed var paths render within the depth bound and read back as the same program") {
+    val src = ("""{"var":""" * 150) + "\"a\"" + ("}" * 150)
+    val prog = Parser.parse(src)
+    expect(prog.isRight, "parses")
+      .and(expect.same(prog, prog.flatMap(Parser.render).map(_.noSpaces).flatMap(Parser.parse(_))))
+      .and(expect.same(Right(src), Parser.migrate(src)))
+  }
+
+  /** Non-empty arrays and objects nested, as the canonical JSON parser counts them. */
+  private def nesting(j: Json): Int =
+    j.arrayOrObject(
+      0,
+      a => if (a.isEmpty) 0 else 1 + a.foldLeft(0)((d, x) => math.max(d, nesting(x))),
+      o => if (o.isEmpty) 0 else 1 + o.values.foldLeft(0)((d, x) => math.max(d, nesting(x)))
+    )
+
+  private val structured: Gen[CanonicalValue] =
+    Gen.oneOf[CanonicalValue](
+      CanonicalValue.array(Vector(CInt(1))).toOption.get,
+      CanonicalValue.map(List("k" -> CanonicalValue.array(Vector(CInt(1))).toOption.get)).toOption.get,
+      CanonicalValue.array(Vector.empty).toOption.get
+    )
+
+  private val chainLeaf: Gen[Expr] =
+    Gen.oneOf[Expr](
+      Gen.const(v("a")),
+      Gen.zip(Gen.oneOf("a", "$x"), Gen.oneOf(structured, Gen.const(CInt(1)))).map {
+        case (q, d) => Expr.Var(VarRef.parse(q).toOption.get, Some(d))
+      },
+      structured.map(Expr.Lit(_)),
+      Gen.const(int(1))
+    )
+
+  /** Deep chains of every wrapper, so the bound is reached through each kind of nesting. */
+  private def chain(n: Int): Gen[Expr] =
+    (1 to n).foldLeft(chainLeaf) { (inner, _) =>
+      inner.flatMap { e =>
+        Gen.oneOf[Expr](
+          Gen.const(Expr.VarAt(e, None)),
+          Gen.oneOf(structured, Gen.const(CInt(0))).map(d => Expr.VarAt(e, Some(d))),
+          Gen.const(Expr.Apply(Op.Not, Vector(e))),
+          Gen.const(Expr.Arr(Vector(e))),
+          Gen.const(Expr.Obj(Map("k" -> e))),
+          Gen.const(Expr.Obj(Map("_k" -> e))),
+          Gen.const(e match {
+            case Expr.Arr(_) => Expr.Spread(Op.Add, Expr.Obj(Map("k" -> e)))
+            case other       => Expr.Spread(Op.Add, other)
+          })
+        )
+      }
+    }
+
+  test("every program Program.from accepts, the deepest included, renders within the bound and reads back exactly") {
+    forall(Gen.choose(60, 260).flatMap(chain)) { e =>
+      Program.from(e) match {
+        case Left(err) => expect(err.isInstanceOf[JlvmError.Limit], s"only the depth bound rejects a chain: $err")
+        case Right(prog) =>
+          val rendered = Parser.render(prog)
+          expect
+            .same(Right(prog), rendered.map(_.noSpaces).flatMap(Parser.parse(_)))
+            .and(expect(rendered.forall(nesting(_) <= CanonicalValue.MaxDepth), "within the JSON depth bound"))
+      }
+    }
+  }
+
+  test("the surface depth Program.from bounds is the depth of the rendered text") {
+    forall(Gen.oneOf(programs, Gen.choose(1, 40).flatMap(chain).map(e => Program.from(e).toOption.get))) { prog =>
+      expect.same(Parser.render(prog).map(nesting), Right(Parser.surfaceDepth(prog.expr)))
+    }
+  }
+
+  // ---- results: 0x-hex text has no surface form
+
+  private def t(s: String): CanonicalValue = CanonicalValue.text(s).toOption.get
+
+  pureTest("rendering a value checks it reads back: 0x-hex text, at any depth, is an error rather than bytes") {
+    val hexText = t("0xab")
+    expect(JsonSurface.render(hexText).isLeft, "text 0xab")
+      .and(expect(JsonSurface.render(CanonicalValue.array(Vector(CInt(1), hexText)).toOption.get).isLeft, "in an array"))
+      .and(expect(JsonSurface.render(CanonicalValue.map(List("k" -> hexText)).toOption.get).isLeft, "in a map"))
+      .and(expect.same(Right("\"0xab\""), JsonSurface.render(CBytes(hex"ab"))))
+      .and(expect.same(Right("""{"0xab":"0xab"}"""), JsonSurface.render(CanonicalValue.map(List("0xab" -> CBytes(hex"ab"))).toOption.get)))
+      .and(expect.same(Right("\"0xAB\""), JsonSurface.render(t("0xAB"))))
   }
 }

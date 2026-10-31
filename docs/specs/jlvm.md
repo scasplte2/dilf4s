@@ -48,10 +48,27 @@ exactly five things:
 - **Strings** of the form `0x` followed by an even number of lowercase hex digits are byte strings (§2). Every other
   string is text.
 
-The parser's `Lenient` mode reads programs as metakit did:
-- an unknown single-key object is a map expression;
-- an array headed by an operation's name, or `var`, is that call;
-- a plain path whose first segment a `let` binds reads the binding: `{"var": "x"}` is rewritten to `$x`.
+The parser's `Lenient` mode reads programs as metakit did (metakit de2a856), and fails where v1 cannot say the same
+thing:
+- the operations are metakit's, listed in `Parser.MetakitOps`, not v1's. A single-key object whose key is not one of
+  them is a map expression, even when v1 has an operation of that name (`round_half_up`, `sha256`, the aliases):
+  metakit read `{"round_half_up": 0}` as data, so the migrated program keeps it as data, `{"object": {...}}`;
+- an array headed by one of metakit's operation names, or `var`, is that call. Any other array is data; rendering
+  quotes a head that v1 would read as a call, `[{"literal": "round_half_up"}, 0]`;
+- `{"": p}` is `{"var": p}`, as in metakit;
+- `round` is `round_half_up`: metakit's `round` rounded half away from zero (§8 #4);
+- a plain path whose first segment a `let` binds reads the binding: `{"var": "x"}` is rewritten to `$x`. metakit
+  merged the bindings into the data for the `let`'s bindings and body, but a callback body saw only its element and
+  the data, never the bindings of a `let` around the callback. So:
+  - inside a callback body, only the `let`s within that body are rewritten;
+  - a plain path there naming a binding from outside the callback is an error: metakit read the element or the data,
+    which v1 cannot read plainly while the name is bound;
+  - while a binding is visible, a computed path (§4.1) is an error, since metakit may have read the binding and the
+    target is unknown until run time; so is `{"var": ""}`, which in metakit was the bindings merged into the data.
+
+Two metakit readings are kept only by the corpus: a `$`-prefixed plain path is a binding (metakit read a data key
+starting with `$`), and inside a `let`, metakit hid data that is not a map. No program in the ottochain or metakit
+corpus does either.
 
 An operation metakit had but v1 removed is a parse error in both modes, and the message names its replacement:
 - `prove_dlog_verify` and `prove_dhtuple_verify` become a one-leaf `sigma_verify`;
@@ -59,18 +76,28 @@ An operation metakit had but v1 removed is a parse error in both modes, and the 
 - `mpt_prefix_verify` becomes `trie_prefix_verify`;
 - `noop` was internal to metakit's evaluator.
 
-The `Lenient` mode still recognises the keywords `object` and `literal` and the `_` prefix, so that migration is idempotent; no program in the
-ottochain or metakit corpus uses `object` as a data key. It exists only to migrate older programs: `Parser.migrate` reads a program leniently and writes it back in the strict surface
-(`Parser.render`), emitting `{"object": ...}` for each single-key map expression. Rendering is exact: parsing the
-rendered text gives the same program. A literal holding `0x`-hex text, or a non-terminating rational, has no surface
-form and is an error.
+The `Lenient` mode still recognises the keywords `object` and `literal` and the `_` prefix, so that migrating a
+migrated program that uses only metakit's operations changes nothing; no program in the ottochain or metakit corpus
+uses `object` as a data key. A strict program using an operation metakit lacks is not metakit text, and migrating it
+reads that operation as data. The mode exists only to migrate older programs: `Parser.migrate` reads a program
+leniently and writes it back in the strict surface (`Parser.render`), emitting `{"object": ...}` for each single-key
+map expression. Rendering is exact: parsing the rendered text gives the same program. A literal holding `0x`-hex
+text, or a non-terminating rational, has no surface form and is an error.
 
 **Canonical form and identity.**
 - A program is the tagged syntax tree of `shared/schemas/jlvm.cddl`, not its JSON text.
 - Its identity is `taggedHash_H("dilf4s/jlvm/program/v1", cbor(program))` (`canonical-encoding.md` §4).
-- **Depth.** A program's canonical form must fit the value depth bound of `canonical-encoding.md`, 256 levels, so
-  every program has an identity and an exact rendering. An operation takes two levels (its map and its argument
-  array), so at most 127 operations nest, and fewer around deep literals.
+- **One encoding per meaning.** Decoding a program's canonical form gives that program back, so programs that behave
+  differently never share an identity. A syntax tree is therefore a program only if:
+  - each `var` path is what its text reads back as. A data path segment holding `.` or empty, a data path whose first
+    segment starts with `$`, or a binding name or segment holding `.` or empty has no text form; such keys are read
+    with the exact-segment form `{"var": [[...]]}`;
+  - no default is null. Canonical maps drop null, so a null default would encode as no default, which differs for
+    an unbound name (§4.1). The parser reads `{"var": [p, null]}` as no default.
+- **Depth.** A program's canonical form must fit the value depth bound of `canonical-encoding.md`, 256 levels, and
+  so must the JSON text `Parser.render` writes for it, as `CanonicalJson.parse` counts depth. So every program has an
+  identity and an exact rendering. An operation takes two levels (its map and its argument array), so at most 127
+  operations nest, and fewer around deep literals and defaults.
   - Text, structure or canonical form too deep is `Limit`, however the bound is reached.
   - metakit counted evaluated nodes at run time, so an untaken deep branch never counted. Here the program is bounded
     before it runs (§8 #22).
@@ -192,6 +219,8 @@ path:
   reads a binding;
 - any other value is a `Type` error;
 - `{"var": [["a", {"var": "k"}]]}` is the array form. A literal path is quoted: `{"var": {"literal": "a.b"}}`.
+- Rendering writes an object path with no default bare, `{"var": {"cat": [...]}}`, and an array path or any default
+  as the argument list, so a computed path adds one JSON level, as in the canonical form.
 
 **Bound paths.**
 - `{"var": "$name.path"}` reads a binding.
@@ -500,7 +529,7 @@ A property test checks that all three agree on value, error, gas and warnings, a
 | 1 | Coercion: `"1" == 1`, arithmetic on strings, booleans and null. | No coercion. | Silent coercion hides bugs. |
 | 2 | Unwraps a single array argument for `+`, `*`, `min`, `max`, `merge`, `exists`, depending on its evaluated value. | Spreading is decided by the syntax (§1), for the variadic operations only. `exists` never spreads. `count [array]` and `missing [[keys]]` remain as defined forms. | The value no longer decides the meaning: `{"cat": [[1, 2]]}` is `[1, 2]`, never `"12"`. |
 | 3 | Ints and floats are distinct (`1.5 + 0.5` is a float `2`). | One exact number kind. | Exactness, and one equality. |
-| 4 | `round` rounds half away from zero. | `round` is half-even; `round_half_up` is explicit. | Unbiased rounding by default. |
+| 4 | `round` rounds half away from zero. | `round` is half-even; `round_half_up` is explicit; `Parser.migrate` rewrites metakit's `round` to `round_half_up`. | Unbiased rounding by default. |
 | 5 | `and`, `or` and `default` evaluate everything; `all`, `some` and `none` never stop early. | Lazy, and stop at the first decisive element. | Gas pays only for work done. |
 | 6 | Callback scope merges the element into the data; arrays are concatenated. | The element is a frame looked up before the data; arrays are not concatenated; collisions are warned about; `$current`, `$index` and `$accumulator` are unambiguous. | Silent collisions. |
 | 7 | `length` and `substr` count UTF-16 code units; `trim` uses Java's notion of whitespace. | Code points; Unicode `White_Space`. | Portability. |
@@ -516,6 +545,6 @@ A property test checks that all three agree on value, error, gas and warnings, a
 | 17 | `substr` and `slice` indices beyond 64 bits are errors. | Clamped like any other out-of-range index (JavaScript bounds). | One rule for every index. |
 | 18 | A map may hold null values (`{"a": null}`, or an invalid `ecvrf_verify`'s `beta: null`). | Null values are dropped from maps (`canonical-encoding.md`, dropNulls): absent and null read the same. | One encoding per value, and fields can be added without changing existing hashes. |
 | 19 | A BLS signature of the right length that does not decode is `false`. | A `Crypto` error, as for every other scheme: malformed input is an error, a well-formed invalid proof is `false` (§3). | One rule for every verifier. |
-| 20 | An array headed by an operation's name is a call (`["+", 1, 2]`); `let` names are read with plain paths. | A parse error in each case (§1, §4.2); `Parser.migrate` rewrites both. | metakit programs fail loudly, rather than silently reading data. |
+| 20 | An array headed by an operation's name is a call (`["+", 1, 2]`); `let` names are read with plain paths. | A parse error in each case (§1, §4.2); `Parser.migrate` rewrites both, reading names with metakit's operation list. Where metakit's merged `let` scope has no v1 form (a computed path or `""` while a binding is visible, or an outer binding's name read inside a callback), migration fails (§1). | metakit programs fail loudly, rather than silently reading data. |
 | 21 | `prove_dlog_verify`, `prove_dhtuple_verify`, `mpt_verify`, `mpt_prefix_verify`, `smt_verify`, `noop`. | Removed; the parse error names the replacement (§1). | Replaced by `sigma_verify` (§8 #14) and the binary trie (`trie.md`). `noop` was internal. |
-| 22 | Evaluation depth is capped at run time (about 255 evaluated levels; an untaken branch never counts). | The program is bounded before it runs: its canonical form must fit 256 levels (§1), about 127 nested operations. Every depth violation is `Limit`. | Every program has an identity and an exact rendering; depth is known before any gas is spent. |
+| 22 | Evaluation depth is capped at run time (about 255 evaluated levels; an untaken branch never counts). | The program is bounded before it runs: its canonical form, and its rendered JSON, must fit 256 levels (§1), about 127 nested operations. Every depth violation is `Limit`. | Every program has an identity and an exact rendering; depth is known before any gas is spent. |

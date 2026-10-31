@@ -132,6 +132,22 @@ object EvaluatorSuite extends IOSuite with Checkers {
       .and(expect.same(Right(ok("2")), run("""{"let": [{"b": {"+": [{"var": "a"}, 1]}, "a": 1}, {"var": "b"}]}""")))
   }
 
+  check("migrated programs give metakit's results (checked against metakit de2a856), or fail to migrate") {
+    def run(json: String, data: String = "{}") = Parser.migrate(json).map(result(_, data))
+    expect
+      .same(Right(ok("true")), run("""{"if": [{"round_half_up": 0}, true, false]}"""))
+      .and(expect.same(Right(ok("""["round_half_up", 0]""")), run("""["round_half_up", 0]""")))
+      .and(expect.same(Right(ok("""{"sha256": "0x00"}""")), run("""{"sha256": "0x00"}""")))
+      .and(expect.same(Right(ok("3")), run("""{"round": 2.5}""")))
+      .and(expect.same(Right(ok("3")), run("""{"": "a"}""", """{"a": 3}""")))
+      .and(expect.same(Right(ok("[3]")), run("""{"map": [[{"y": 2}], {"let": [[["x", 1]], {"+": [{"var": "x"}, {"var": "y"}]}]}]}""")))
+      .and(expect.same(Right(ok("4")), run("""{"let": [[["x", {"var": "a"}]], {"var": "x"}]}""", """{"a": 4}""")))
+      // metakit: true (the binding), [5] (the element), {"x": 1} (the bindings): v1 cannot say these, so they fail
+      .and(expect(run("""{"let": [[["x", true]], {"var": {"cat": ["x"]}}]}""", """{"x": false}""").isLeft, "computed path"))
+      .and(expect(run("""{"let": [[["x", 1]], {"map": [[{"x": 5}], {"var": "x"}]}]}""").isLeft, "callback element"))
+      .and(expect(run("""{"let": [[["x", 1]], {"var": ""}]}""", """{"a": 2}""").isLeft, "the whole scope"))
+  }
+
   // ---- callbacks
 
   check("callbacks bind $current, $index and $accumulator; plain paths fall through to the data") {
