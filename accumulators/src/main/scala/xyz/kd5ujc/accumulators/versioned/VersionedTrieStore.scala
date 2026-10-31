@@ -2,7 +2,7 @@ package xyz.kd5ujc.accumulators.versioned
 
 import cats.Functor
 import cats.effect.Concurrent
-import cats.mtl.Raise
+import cats.mtl.{Handle, Raise}
 import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.trie.{TrieError, TrieHashing, TrieProof, TrieStore}
@@ -18,16 +18,18 @@ import scodec.bits.ByteVector
 /**
  * A commit computed but not written (docs/specs/versioned-trie.md §4): the head and root it would produce, and the staged
  * writes of every store. A draft can be extended by further drafts; committing one writes its whole chain, or nothing
- * if the store moved since it was staged.
+ * if the store was mutated since the revision it was staged against (even if the store has since returned to the
+ * same version).
  */
 final case class Draft[V, H] private[versioned] (
-  head:                           Head[V, H],
-  root:                           Digest[H],
-  private[versioned] val base:    Option[ByteVector],
-  private[versioned] val state:   TrieStore.Staged[H],
-  private[versioned] val history: TrieStore.Staged[H],
-  private[versioned] val values:  VersionedStore.Staged,
-  private[versioned] val index:   RawBatch
+  head:                            Head[V, H],
+  root:                            Digest[H],
+  private[versioned] val base:     Option[ByteVector],
+  private[versioned] val revision: Revision,
+  private[versioned] val state:    TrieStore.Staged[H],
+  private[versioned] val history:  TrieStore.Staged[H],
+  private[versioned] val values:   VersionedStore.Staged,
+  private[versioned] val index:    RawBatch
 )
 
 /**
@@ -119,7 +121,7 @@ object VersionedTrieStore {
   def make[F[_]: Concurrent, V, H](raw: RawStore[F], name: String)(
     implicit V: VersionKey[V],
     T:          TrieHashing[H],
-    R:          Raise[F, VersionedTrieError]
+    R:          Handle[F, VersionedTrieError]
   ): F[VersionedTrieStore[F, V, H]] = {
     implicit val rs: Raise[F, StoreError] = via[F, StoreError](VersionedTrieError.Store(_))
     implicit val rt: Raise[F, TrieError] = via[F, TrieError](VersionedTrieError.Trie(_))
@@ -152,7 +154,7 @@ object VersionedTrieStore {
     values:    VersionedStore[F, StateKey, CanonicalValue],
     byVersion: ByteVector,
     bySeq:     ByteVector
-  )(implicit V: VersionKey[V], T: TrieHashing[H], R: Raise[F, VersionedTrieError])
+  )(implicit V: VersionKey[V], T: TrieHashing[H], R: Handle[F, VersionedTrieError])
       extends VersionedTrieStore[F, V, H] {
 
     private def fail[A](e:         VersionedTrieError): F[A] = R.raise[VersionedTrieError, A](e)
@@ -205,33 +207,79 @@ object VersionedTrieStore {
         headOfSeq(n.value).flatMap(_.fold(fail[Current[V, H]](VersionedTrieError.Empty))(h => Current(n.value, h).pure[F]))
       )
 
-    private def headKey: F[Option[ByteVector]] = head.flatMap(_.traverse(h => vkey(h.version)))
+    private def unguardedHead: F[Option[Head[V, H]]] = state.latest.flatMap(n => headOfSeq(n.value))
 
+    private def headKey: F[Option[ByteVector]] = unguardedHead.flatMap(_.traverse(h => vkey(h.version)))
+
+    // ---- revisions (§10): a mutation reads them before anything else and guards its one write on them; a read-only
+    // operation of several reads compares them before and after. Generations never repeat, so equal means unmutated.
+
+    private def revision: F[Revision] = (state.revision, history.revision, values.revision).mapN(_ ++ _ ++ _)
+
+    /** The head's key for a conflict report; a read that a concurrent mutation breaks reports no head. */
+    private def reportedHead: F[Option[ByteVector]] = R.attempt(headKey).map(_.toOption.flatten)
+
+    private def moved[A](was: Option[ByteVector]): F[A] = reportedHead.flatMap(now => fail[A](VersionedTrieError.VersionConflict(was, now)))
+
+    /**
+     * Runs `fa`, whose reads all follow `rev`. A failure while the store moved past `rev` is a version conflict: a read
+     * that found a record gone, or half of a later state, was racing a mutation, not seeing corruption.
+     */
+    private def within[A](rev: Revision, was: Option[ByteVector])(fa: F[A]): F[A] =
+      R.attempt(fa).flatMap(_.fold(e => revision.flatMap(now => if (now == rev) fail[A](e) else moved[A](was)), _.pure[F]))
+
+    /** A mutation: the revision first, then everything it decides on, all within that revision. */
+    private def mutation[A](body: Revision => F[A]): F[A] =
+      for {
+        rev <- revision
+        was <- reportedHead
+        a   <- within(rev, was)(body(rev))
+      } yield a
+
+    /** Refuses a write if the store was mutated after `r` was read. */
+    private def guardedWrite(r: Revision, batch: RawBatch, was: Option[ByteVector]): F[Unit] =
+      raw.writeIf(r.guards, batch).flatMap(wrote => if (wrote) ().pure[F] else moved[Unit](was))
+
+    /** Fails if the store was mutated after `r` was read. */
+    private def unchangedSince(r: Revision, was: Option[ByteVector]): F[Unit] =
+      revision.flatMap(now => if (now == r) ().pure[F] else moved[Unit](was))
+
+    /** A read-only operation of several reads, refused if the store was mutated while it read. */
+    private def stable[A](fa: F[A]): F[A] =
+      for {
+        r   <- revision
+        was <- reportedHead
+        a   <- within(r, was)(fa)
+        _   <- unchangedSince(r, was)
+      } yield a
+
+    /** The stores' step, judged only once the reads are known to be of one revision: a racing writer is not corruption. */
     def checkAligned: F[Unit] =
-      (state.latest, history.latest, values.latest).tupled.flatMap {
+      stable((state.latest, history.latest, values.latest).tupled.flatMap {
         case (s, h, v) =>
-          if (s != h || s != v) corrupt(s"stores out of step: state ${s.value}, history ${h.value}, values ${v.value}")
+          if (s != h || s != v) Option(s"stores out of step: state ${s.value}, history ${h.value}, values ${v.value}").pure[F]
           else
-            (entryAt(s.value), entryAt(s.value + 1)).tupled.flatMap {
+            (entryAt(s.value), entryAt(s.value + 1)).tupled.map {
               case (here, next) =>
-                if ((s.value > 0L && here.isEmpty) || next.isDefined) corrupt(s"version index out of step at sequence ${s.value}")
-                else ().pure[F]
+                Option.when((s.value > 0L && here.isEmpty) || next.isDefined)(s"version index out of step at sequence ${s.value}")
             }
-      }
+      }).flatMap(_.traverse_(corrupt[Unit]))
 
     // ---- reads
 
-    def head: F[Option[Head[V, H]]] = state.latest.flatMap(n => headOfSeq(n.value))
+    def head: F[Option[Head[V, H]]] = stable(unguardedHead)
 
     def headAt(v: V): F[Option[Head[V, H]]] =
-      vkey(v).flatMap(vk =>
-        seqOf(vk).flatMap(_.flatTraverse { n =>
-          history.floor.flatMap(f => if (n < f.value) fail[Option[Head[V, H]]](VersionedTrieError.NotRetained(vk)) else headOfSeq(n))
-        })
+      stable(
+        vkey(v).flatMap(vk =>
+          seqOf(vk).flatMap(_.flatTraverse { n =>
+            history.floor.flatMap(f => if (n < f.value) fail[Option[Head[V, H]]](VersionedTrieError.NotRetained(vk)) else headOfSeq(n))
+          })
+        )
       )
 
     def get(key: StateKey, at: Option[V]): F[Option[CanonicalValue]] =
-      at.fold(values.get(key))(u => vkey(u).flatMap(retainedSeq).flatMap(n => values.getAt(key, version(n))))
+      at.fold(values.get(key))(u => stable(vkey(u).flatMap(retainedSeq).flatMap(n => values.getAt(key, version(n)))))
 
     def scan(ns: Option[StateNamespace]): Stream[F, (StateKey, CanonicalValue)] =
       values.scan(ns.fold[KeyRange[StateKey]](KeyRange.All)(n => KeyRange.EncodedPrefix(n.prefix)))
@@ -250,6 +298,7 @@ object VersionedTrieStore {
 
     private def draft(
       base:    Option[ByteVector],
+      rev:     Revision,
       next:    V,
       nk:      ByteVector,
       seq:     Long,
@@ -261,13 +310,14 @@ object VersionedTrieStore {
       (h, v).tupled.flatMap {
         case (hs, vs) =>
           val head = Head(next, s.root, hs.root)
-          lift(VersionedTrie.root(head)).map(root => Draft(head, root, base, s, hs, vs, indexed ++ indexWrites(seq, nk, s.root)))
+          lift(VersionedTrie.root(head)).map(root => Draft(head, root, base, rev, s, hs, vs, indexed ++ indexWrites(seq, nk, s.root)))
       }
 
     private def checkValues(fs: Vector[(StateKey, Option[CanonicalValue])]): F[Unit] =
       lift(fs.traverse_ { case (k, v) => v.traverse_(VersionedTrie.checkValue(k, _)) })
 
     private def stageOnDisk(
+      rev:   Revision,
       n:     Long,
       base:  Option[ByteVector],
       next:  V,
@@ -278,6 +328,7 @@ object VersionedTrieStore {
       checkValues(fs) >> state.stage(version(n), trieOps(fs)).flatMap { s =>
         draft(
           base,
+          rev,
           next,
           nk,
           n + 1,
@@ -290,56 +341,64 @@ object VersionedTrieStore {
     }
 
     def preview(next: V, batch: Batch[StateKey, CanonicalValue]): F[Draft[V, H]] =
-      for {
-        nk  <- vkey(next)
-        n   <- state.latest
-        cur <- headKey
-        _   <- cur.filterNot(after(nk, _)).traverse_(k => fail[Unit](VersionedTrieError.VersionNotIncreasing(k, nk)))
-        d   <- stageOnDisk(n.value, cur, next, nk, batch)
-      } yield d
+      mutation { rev =>
+        for {
+          nk  <- vkey(next)
+          n   <- state.latest
+          cur <- headKey
+          _   <- cur.filterNot(after(nk, _)).traverse_(k => fail[Unit](VersionedTrieError.VersionNotIncreasing(k, nk)))
+          d   <- stageOnDisk(rev, n.value, cur, next, nk, batch)
+        } yield d
+      }
 
     def previewOn(d: Draft[V, H], next: V, batch: Batch[StateKey, CanonicalValue]): F[Draft[V, H]] =
-      for {
-        nk <- vkey(next)
-        dk <- vkey(d.head.version)
-        _  <- if (after(nk, dk)) ().pure[F] else fail[Unit](VersionedTrieError.VersionNotIncreasing(dk, nk))
-        fs = finals(batch)
-        _ <- checkValues(fs)
-        s <- state.stageOn(d.state, trieOps(fs))
-        nd <- draft(
-          d.base,
-          next,
-          nk,
-          s.version.value,
-          s,
-          history.stageOn(d.history, List(nk -> Some(VersionedTrie.bytesHash[H](s.root.bytes)))),
-          values.stageOn(d.values, valueBatch(fs)),
-          d.index
-        )
-      } yield nd
+      within(d.revision, d.base)(
+        for {
+          nk <- vkey(next)
+          dk <- vkey(d.head.version)
+          _  <- if (after(nk, dk)) ().pure[F] else fail[Unit](VersionedTrieError.VersionNotIncreasing(dk, nk))
+          fs = finals(batch)
+          _ <- checkValues(fs)
+          s <- state.stageOn(d.state, trieOps(fs))
+          nd <- draft(
+            d.base,
+            d.revision,
+            next,
+            nk,
+            s.version.value,
+            s,
+            history.stageOn(d.history, List(nk -> Some(VersionedTrie.bytesHash[H](s.root.bytes)))),
+            values.stageOn(d.values, valueBatch(fs)),
+            d.index
+          )
+        } yield nd
+      )
 
+    /** Guarded on the revision the chain was staged against: every stage read after it, so equal means none is stale. */
     def commitDraft(d: Draft[V, H]): F[Head[V, H]] =
-      raw
-        .writeIf(d.state.guards ++ d.history.guards ++ d.values.guards, d.state.batch ++ d.history.batch ++ d.values.batch ++ d.index)
-        .flatMap(wrote => if (wrote) d.head.pure[F] else headKey.flatMap(now => fail(VersionedTrieError.VersionConflict(d.base, now))))
+      guardedWrite(d.revision, d.state.batch ++ d.history.batch ++ d.values.batch ++ d.index, d.base).as(d.head)
 
     def commit(expected: Option[V], next: V, batch: Batch[StateKey, CanonicalValue]): F[Head[V, H]] =
-      for {
-        nk  <- vkey(next)
-        ek  <- expected.traverse(vkey)
-        n   <- state.latest
-        cur <- head
-        ck  <- cur.traverse(h => vkey(h.version))
-        result <- (cur, ck) match {
-          case (Some(h), Some(k)) if k == nk && !ek.contains(k) => recommit(n.value, h, nk, ek, batch)
-          case _ if ek != ck                                    => fail[Head[V, H]](VersionedTrieError.VersionConflict(ek, ck))
-          case (_, Some(k)) if !after(nk, k)                    => fail[Head[V, H]](VersionedTrieError.VersionNotIncreasing(k, nk))
-          case _                                                => stageOnDisk(n.value, ck, next, nk, batch).flatMap(commitDraft)
-        }
-      } yield result
+      mutation { rev =>
+        for {
+          nk  <- vkey(next)
+          ek  <- expected.traverse(vkey)
+          n   <- state.latest
+          cur <- unguardedHead
+          ck  <- cur.traverse(h => vkey(h.version))
+          result <- (cur, ck) match {
+            case (Some(h), Some(k)) if k == nk && !ek.contains(k) => recommit(rev, n.value, h, nk, ek, batch)
+            case _ if ek != ck => unchangedSince(rev, ck) >> fail[Head[V, H]](VersionedTrieError.VersionConflict(ek, ck))
+            case (_, Some(k)) if !after(nk, k) =>
+              unchangedSince(rev, ck) >> fail[Head[V, H]](VersionedTrieError.VersionNotIncreasing(k, nk))
+            case _ => stageOnDisk(rev, n.value, ck, next, nk, batch).flatMap(commitDraft)
+          }
+        } yield result
+      }
 
     /** The head committed again against its parent: the same state is the same commit; any other is a rewrite. */
     private def recommit(
+      rev:   Revision,
       n:     Long,
       h:     Head[V, H],
       nk:    ByteVector,
@@ -352,7 +411,9 @@ object VersionedTrieStore {
         floor  <- state.floor
         _      <- if (n - 1 < floor.value) fail[Unit](VersionedTrieError.NotRetained(nk)) else ().pure[F]
         root   <- state.rootAfter(version(n - 1), trieOps(finals(batch)))
-        _      <- if (root == h.stateRoot) ().pure[F] else fail[Unit](VersionedTrieError.CommitRewrite(nk))
+        // every answer above is of one revision only if the store did not move while they were read
+        _ <- unchangedSince(rev, Some(nk))
+        _ <- if (root == h.stateRoot) ().pure[F] else fail[Unit](VersionedTrieError.CommitRewrite(nk))
       } yield h
 
     // ---- proofs
@@ -360,35 +421,41 @@ object VersionedTrieStore {
     private def topProof(h: Head[V, H]): F[TrieProof[H]] = lift(VersionedTrie.topProof(h))
 
     def proveHead: F[VersionedTrieProof[V, H]] =
-      for {
-        cur  <- current
-        hk   <- vkey(cur.head.version)
-        top  <- topProof(cur.head)
-        hist <- history.prove(Nil, Nil, version(cur.seq), List(hk -> None))
-      } yield VersionedTrieProof(cur.head, top, None, Some(hist), None)
+      stable(
+        for {
+          cur  <- current
+          hk   <- vkey(cur.head.version)
+          top  <- topProof(cur.head)
+          hist <- history.prove(Nil, Nil, version(cur.seq), List(hk -> None))
+        } yield VersionedTrieProof(cur.head, top, None, Some(hist), None)
+      )
 
     def proveState(q: StateQuery, at: Option[V]): F[VersionedTrieProof[V, H]] =
-      for {
-        cur    <- current
-        top    <- topProof(cur.head)
-        target <- at.traverse(u => vkey(u).flatMap(uk => retainedSeq(uk).flatMap(n => requireEntry(n).map(e => (u, uk, n, e._2)))))
-        sp <- state.prove(
-          q.keys.map(_.bytes),
-          q.namespaces.map(_.prefix),
-          version(target.fold(cur.seq)(_._3)),
-          q.ranges.map { case (f, u) => f.bytes -> u.map(_.bytes) }
-        )
-        hp <- target.traverse(t => history.prove(List(t._2), Nil, version(cur.seq)))
-      } yield VersionedTrieProof(cur.head, top, target.map(t => At[V, H](t._1, Some(t._4))), hp, Some(sp))
+      stable(
+        for {
+          cur    <- current
+          top    <- topProof(cur.head)
+          target <- at.traverse(u => vkey(u).flatMap(uk => retainedSeq(uk).flatMap(n => requireEntry(n).map(e => (u, uk, n, e._2)))))
+          sp <- state.prove(
+            q.keys.map(_.bytes),
+            q.namespaces.map(_.prefix),
+            version(target.fold(cur.seq)(_._3)),
+            q.ranges.map { case (f, u) => f.bytes -> u.map(_.bytes) }
+          )
+          hp <- target.traverse(t => history.prove(List(t._2), Nil, version(cur.seq)))
+        } yield VersionedTrieProof(cur.head, top, target.map(t => At[V, H](t._1, Some(t._4))), hp, Some(sp))
+      )
 
     def proveVersion(u: V): F[VersionedTrieProof[V, H]] =
-      for {
-        cur <- current
-        top <- topProof(cur.head)
-        uk  <- vkey(u)
-        s   <- seqOf(uk).flatMap(_.traverse(requireEntry)).map(_.map(_._2))
-        hp  <- history.prove(List(uk), Nil, version(cur.seq))
-      } yield VersionedTrieProof(cur.head, top, Some(At(u, s)), Some(hp), None)
+      stable(
+        for {
+          cur <- current
+          top <- topProof(cur.head)
+          uk  <- vkey(u)
+          s   <- seqOf(uk).flatMap(_.traverse(requireEntry)).map(_.map(_._2))
+          hp  <- history.prove(List(uk), Nil, version(cur.seq))
+        } yield VersionedTrieProof(cur.head, top, Some(At(u, s)), Some(hp), None)
+      )
 
     /** The latest sequence whose version key is at or before `tk`: a binary search over the dense sequence index. */
     private def atOrBefore(tk: ByteVector, n: Long): F[Option[(ByteVector, Digest[H])]] =
@@ -402,95 +469,97 @@ object VersionedTrieStore {
       }
 
     def proveAsOf(t: V): F[VersionedTrieProof[V, H]] =
-      for {
-        cur   <- current
-        top   <- topProof(cur.head)
-        tk    <- vkey(t)
-        found <- atOrBefore(tk, cur.seq)
-        at    <- found.traverse { case (pk, s) => lift(V.decode(pk)).map(p => At[V, H](p, Some(s))) }
-        hp    <- history.prove(Nil, Nil, version(cur.seq), List(found.fold(ByteVector.empty)(_._1) -> Some(tk :+ 0x00.toByte)))
-      } yield VersionedTrieProof(cur.head, top, at, Some(hp), None)
+      stable(
+        for {
+          cur   <- current
+          top   <- topProof(cur.head)
+          tk    <- vkey(t)
+          found <- atOrBefore(tk, cur.seq)
+          at    <- found.traverse { case (pk, s) => lift(V.decode(pk)).map(p => At[V, H](p, Some(s))) }
+          hp    <- history.prove(Nil, Nil, version(cur.seq), List(found.fold(ByteVector.empty)(_._1) -> Some(tk :+ 0x00.toByte)))
+        } yield VersionedTrieProof(cur.head, top, at, Some(hp), None)
+      )
 
     def proveVersions(from: V, until: Option[V]): F[VersionedTrieProof[V, H]] =
-      for {
-        cur <- current
-        top <- topProof(cur.head)
-        fk  <- vkey(from)
-        uk  <- until.traverse(vkey)
-        hp  <- history.prove(Nil, Nil, version(cur.seq), List(fk -> uk))
-      } yield VersionedTrieProof(cur.head, top, None, Some(hp), None)
+      stable(
+        for {
+          cur <- current
+          top <- topProof(cur.head)
+          fk  <- vkey(from)
+          uk  <- until.traverse(vkey)
+          hp  <- history.prove(Nil, Nil, version(cur.seq), List(fk -> uk))
+        } yield VersionedTrieProof(cur.head, top, None, Some(hp), None)
+      )
 
     // ---- replication
 
     def delta(v: V): F[Delta[V, H]] =
-      for {
-        vk      <- vkey(v)
-        n       <- requireSeq(vk)
-        floor   <- values.floor
-        _       <- if (floor.value > 0L && n <= floor.value) fail[Unit](VersionedTrieError.NotRetained(vk)) else ().pure[F]
-        parent  <- headOfSeq(n - 1)
-        h       <- headOfSeq(n).flatMap(_.fold(corrupt[Head[V, H]](s"no head at sequence $n"))(_.pure[F]))
-        changes <- values.changes(version(n))
-      } yield
-        Delta(
-          parent,
-          h,
-          changes.flatMap(c => c.after.map(c.key -> _).toList).sortBy(_._1),
-          changes.filter(_.after.isEmpty).map(_.key).sorted
-        )
+      stable(
+        for {
+          vk      <- vkey(v)
+          n       <- requireSeq(vk)
+          floor   <- values.floor
+          _       <- if (floor.value > 0L && n <= floor.value) fail[Unit](VersionedTrieError.NotRetained(vk)) else ().pure[F]
+          parent  <- headOfSeq(n - 1)
+          h       <- headOfSeq(n).flatMap(_.fold(corrupt[Head[V, H]](s"no head at sequence $n"))(_.pure[F]))
+          changes <- values.changes(version(n))
+        } yield
+          Delta(
+            parent,
+            h,
+            changes.flatMap(c => c.after.map(c.key -> _).toList).sortBy(_._1),
+            changes.filter(_.after.isEmpty).map(_.key).sorted
+          )
+      )
 
     def snapshot(chunkEntries: Int): Stream[F, SnapshotChunk[V, H]] = {
       val limit = chunkEntries.max(1).min(VersionedTrie.MaxChunkEntries)
-      Stream.eval(current).flatMap { cur =>
-        Stream.emit[F, SnapshotChunk[V, H]](SnapshotChunk.Top(cur.head)) ++
-        values
-          .scan()
-          // close a chunk before it would pass the entry or byte limit; one entry always fits (MaxValueBytes)
-          .mapAccumulate((0L, 0, 0L)) {
-            case ((group, n, bytes), (k, v)) =>
-              // the same rule as Snapshot.stateGroups, over a stream
-              val size = Snapshot.entryBytes(k, v)
-              val next = if (n >= limit || bytes + size > Snapshot.ChunkBudget) (group + 1, 1, size) else (group, n + 1, bytes + size)
-              (next, (k, v))
-          }
-          .groupAdjacentBy(_._1._1)
-          .map { case (_, c) => SnapshotChunk.State[V, H](c.toVector.map(_._2)): SnapshotChunk[V, H] } ++
-        raw
-          .scan(ByteRange(Some(seqKey(1L)), Some(seqKey(cur.seq + 1))))
-          .evalMap {
-            case (_, b) => decodeEntry(b).flatMap { case (vk, s) => lift(V.decode(vk)).map(u => u -> s) }
-          }
-          .chunkN(limit)
-          .map(c => SnapshotChunk.History[V, H](c.toVector): SnapshotChunk[V, H]) ++
-        // the pieces are separate reads: a commit in between would tear the snapshot, so it is refused instead
-        Stream
-          .eval(state.latest.flatMap { n =>
-            if (n.value == cur.seq) ().pure[F]
-            else
-              (vkey(cur.head.version), headKey).tupled.flatMap {
-                case (was, now) => fail[Unit](VersionedTrieError.VersionConflict(Some(was), now))
-              }
-          })
-          .drain
+      Stream.eval((revision, current).tupled).flatMap {
+        case (rev, cur) =>
+          Stream.emit[F, SnapshotChunk[V, H]](SnapshotChunk.Top(cur.head)) ++
+          values
+            .scan()
+            // close a chunk before it would pass the entry or byte limit; one entry always fits (MaxValueBytes)
+            .mapAccumulate((0L, 0, 0L)) {
+              case ((group, n, bytes), (k, v)) =>
+                // the same rule as Snapshot.stateGroups, over a stream
+                val size = Snapshot.entryBytes(k, v)
+                val next = if (n >= limit || bytes + size > Snapshot.ChunkBudget) (group + 1, 1, size) else (group, n + 1, bytes + size)
+                (next, (k, v))
+            }
+            .groupAdjacentBy(_._1._1)
+            .map { case (_, c) => SnapshotChunk.State[V, H](c.toVector.map(_._2)): SnapshotChunk[V, H] } ++
+          raw
+            .scan(ByteRange(Some(seqKey(1L)), Some(seqKey(cur.seq + 1))))
+            .evalMap {
+              case (_, b) => decodeEntry(b).flatMap { case (vk, s) => lift(V.decode(vk)).map(u => u -> s) }
+            }
+            .chunkN(limit)
+            .map(c => SnapshotChunk.History[V, H](c.toVector): SnapshotChunk[V, H]) ++
+          // the pieces are separate reads: a mutation in between, even one that returns the store to the same sequence,
+          // would tear the snapshot, so it is refused instead
+          Stream.eval(vkey(cur.head.version).flatMap(was => unchangedSince(rev, Some(was)))).drain
       }
     }
 
     // ---- restore
 
     def restore(trusted: Head[V, H], snapshot: Snapshot[V, H]): F[Head[V, H]] =
-      for {
-        replica <- lift(Replica.fromSnapshot(trusted, snapshot))
-        now     <- headKey
-        _       <- now.traverse_(k => fail[Unit](VersionedTrieError.VersionConflict(None, Some(k))))
-        // the base gets the sequence it would have had: one per committed version, so the index is dense and real
-        at = version(snapshot.history.size.toLong)
-        s     <- state.stageRestore(replica.state, at)
-        h     <- history.stageRestore(replica.history, at)
-        v     <- values.stageRestore(snapshot.entries, at)
-        index <- snapshot.history.zipWithIndex.traverse { case ((u, root), i) => vkey(u).map(indexWrites(i.toLong + 1L, _, root)) }
-        wrote <- raw.writeIf(s.guards ++ h.guards ++ v.guards :+ (seqKey(1L) -> None), s.batch ++ h.batch ++ v.batch ++ index.combineAll)
-        _     <- if (wrote) ().pure[F] else headKey.flatMap(k => fail[Unit](VersionedTrieError.VersionConflict(None, k)))
-      } yield trusted
+      lift(Replica.fromSnapshot(trusted, snapshot)).flatMap { replica =>
+        mutation { rev =>
+          for {
+            now <- headKey
+            _   <- now.traverse_(k => fail[Unit](VersionedTrieError.VersionConflict(None, Some(k))))
+            // the base gets the sequence it would have had: one per committed version, so the index is dense and real
+            at = version(snapshot.history.size.toLong)
+            s     <- state.stageRestore(replica.state, at)
+            h     <- history.stageRestore(replica.history, at)
+            v     <- values.stageRestore(snapshot.entries, at)
+            index <- snapshot.history.zipWithIndex.traverse { case ((u, root), i) => vkey(u).map(indexWrites(i.toLong + 1L, _, root)) }
+            _     <- guardedWrite(Revision(rev.guards :+ (seqKey(1L) -> None)), s.batch ++ h.batch ++ v.batch ++ index.combineAll, None)
+          } yield trusted
+        }
+      }
 
     def restoreFrom(trusted: Head[V, H], chunks: Stream[F, SnapshotChunk[V, H]]): F[Head[V, H]] =
       chunks
@@ -502,34 +571,34 @@ object VersionedTrieStore {
 
     // ---- retention
 
-    private def writeAll(was: Current[V, H], parts: List[(List[(ByteVector, Option[ByteVector])], RawBatch)]): F[Unit] =
-      raw.writeIf(parts.flatMap(_._1), parts.foldMap(_._2)).flatMap { wrote =>
-        if (wrote) ().pure[F]
-        else
-          (vkey(was.head.version), headKey).tupled.flatMap { case (k, now) => fail[Unit](VersionedTrieError.VersionConflict(Some(k), now)) }
+    def rollback(to: V): F[Unit] =
+      mutation { rev =>
+        for {
+          cur   <- current
+          tk    <- vkey(to)
+          n     <- retainedSeq(tk)
+          later <- raw.scan(ByteRange(Some(seqKey(n + 1)), Some(seqKey(cur.seq + 1)))).compile.toList
+          s     <- state.stageRollback(version(n))
+          h     <- history.stageRollback(version(n))
+          v     <- values.stageRollback(version(n))
+          forget = later.foldMap { case (k, record) => RawBatch.delete(k) ++ RawBatch.delete(byVersion ++ record.take(V.width.toLong)) }
+          was <- vkey(cur.head.version)
+          // the index records to forget and the stages were all read after `rev`: one revision describes them all
+          _ <- guardedWrite(rev, s.batch ++ h.batch ++ v.batch ++ forget, Some(was))
+        } yield ()
       }
 
-    def rollback(to: V): F[Unit] =
-      for {
-        cur   <- current
-        tk    <- vkey(to)
-        n     <- retainedSeq(tk)
-        later <- raw.scan(ByteRange(Some(seqKey(n + 1)), Some(seqKey(cur.seq + 1)))).compile.toList
-        s     <- state.stageRollback(version(n))
-        h     <- history.stageRollback(version(n))
-        v     <- values.stageRollback(version(n))
-        forget = later.foldMap { case (k, record) => RawBatch.delete(k) ++ RawBatch.delete(byVersion ++ record.take(V.width.toLong)) }
-        _ <- writeAll(cur, List(s.guards -> s.batch, h.guards -> h.batch, v.guards -> v.batch, Nil -> forget))
-      } yield ()
-
     def prune(through: V): F[Unit] =
-      for {
-        cur <- current
-        n   <- vkey(through).flatMap(retainedSeq)
-        s   <- state.stagePrune(version(n))
-        h   <- history.stagePrune(version(n))
-        v   <- values.stagePrune(version(n))
-        _   <- writeAll(cur, List(s.guards -> s.batch, h.guards -> h.batch, v.guards -> v.batch))
-      } yield ()
+      mutation { rev =>
+        for {
+          cur <- current
+          n   <- vkey(through).flatMap(retainedSeq)
+          s   <- state.stagePrune(version(n))
+          h   <- history.stagePrune(version(n))
+          v   <- values.stagePrune(version(n))
+          was <- vkey(cur.head.version)
+          _   <- guardedWrite(rev, s.batch ++ h.batch ++ v.batch, Some(was))
+        } yield ()
+      }
   }
 }

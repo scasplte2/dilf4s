@@ -7,7 +7,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.accumulators.versioned.Harness._
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
 import xyz.kd5ujc.core.canonical.CanonicalValue
-import xyz.kd5ujc.storage.{Batch, ByteRange, RawStore, WatchedRawStore}
+import xyz.kd5ujc.storage.{Batch, ByteRange, Generations, RawStore, WatchedRawStore}
 
 import fs2.Stream
 import org.scalacheck.Gen
@@ -85,11 +85,20 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
           } yield (atBase, seen, below, headsA, headsB, afterAll, p._3)
         }) {
           case (atBase, seen, below, headsA, headsB, afterAll, base) =>
-            expect(atBase._1 == atBase._2, "identical bytes at the restored head")
+            expect(
+              Generations.masked(atBase._1) == Generations.masked(atBase._2),
+              "identical bytes at the restored head, but for generations"
+            )
+              .and(expect.same(Generations.of(atBase._1).keySet, Generations.of(atBase._2).keySet))
               .and(expect.same(seen._1, seen._2))
               .and(expect(below.forall(b => b._1 == b._2 && b._2.left.exists(_.isInstanceOf[VersionedTrieError.NotRetained])), s"$below"))
               .and(expect.same(headsA, headsB))
-              .and(expect(afterAll._1 == afterAll._2, "identical bytes after further commits"))
+              .and(
+                expect(
+                  Generations.masked(afterAll._1) == Generations.masked(afterAll._2),
+                  "identical bytes after further commits, but for generations"
+                )
+              )
               .and(expect.same(model(steps ++ more).map(_._1).drop(steps.size), headsB))
               .and(expect.same(model(steps).last._1, base))
         }

@@ -5,7 +5,7 @@ import cats.mtl.{Handle, Raise}
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.hash.{Digest, Sha256}
-import xyz.kd5ujc.storage.{ByteRange, RawBatch, RawStore, StoreError, Version, WatchedRawStore}
+import xyz.kd5ujc.storage.{ByteRange, Generations, RawBatch, RawStore, StoreError, Version, WatchedRawStore}
 
 import org.scalacheck.Gen
 import scodec.bits.ByteVector
@@ -188,7 +188,10 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
           expect(empty.isEmpty, "drafts write nothing")
             .and(expect.same(snaps.tail.map(_.root).toList, drafts.map(_.root)))
             .and(expect.same(h.size.toLong, v.value))
-            .and(expect(expected == all, "the same records as committing one by one"))
+            .and(
+              expect(Generations.masked(expected) == Generations.masked(all), "the same records as committing one by one")
+                .and(expect.same(Generations.of(expected).keySet, Generations.of(all).keySet))
+            )
             .and(expect.same((0, 1), writes))
       }
     }
@@ -214,7 +217,8 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
             TrieStore.make[IO, Sha256](b, "trie", mode)(using implicitly, implicitly, rs2, rt2).flatMap(_.stageRestore(last, v))
           )
         } yield
-          expect(pruned == loaded, "the same nodes, counts, roots and state")
+          expect(Generations.masked(pruned) == Generations.masked(loaded), "the same nodes, counts, roots and state")
+            .and(expect.same(Generations.of(pruned).keySet, Generations.of(loaded).keySet))
             .and(expect.same(Left(Store(StoreError.VersionConflict(0L, v.value))), refused.map(_ => ())))
       }
     }
@@ -243,10 +247,36 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
             _       <- sb.rollback(at)
             back    <- sb.root(at)
           } yield
-            expect(written == chained, "the same nodes, counts, roots and state")
+            expect(Generations.masked(written) == Generations.masked(chained), "the same nodes, counts, roots and state")
+              .and(expect.same(Generations.of(written).keySet, Generations.of(chained).keySet))
               .and(expect.same(loaded.update(next).toOption.map(_.root), Some(draft.root)))
               .and(expect.same(loaded.root, back))
         }
+    }
+  }
+
+  test("a stage staged before a rollback is refused after the store re-reaches its version") {
+    run { (rs, rt) =>
+      given Raise[IO, StoreError] = rs
+      given Raise[IO, TrieError] = rt
+      for {
+        raw   <- RawStore.inMemory[IO]
+        store <- TrieStore.make[IO, Sha256](raw, "trie", mode)
+        _     <- commitAll(store, List(List(ByteVector(1) -> Some(value(1))), List(ByteVector(1) -> Some(value(2)))))
+        stale <- store.stage(Version.unsafe(2L), List(ByteVector(2) -> Some(value(3))))
+        _     <- store.rollback(Version.unsafe(1L))
+        _     <- store.commit(Version.unsafe(1L), List(ByteVector(1) -> Some(value(20))))
+        wrote <- run((rs2, rt2) =>
+          TrieStore.make[IO, Sha256](raw, "trie", mode)(using implicitly, implicitly, rs2, rt2).flatMap(_.write(stale))
+        )
+        root <- store.root(Version.unsafe(2L))
+      } yield (wrote, root)
+    }.map {
+      case Right((wrote, root)) =>
+        expect
+          .same(Left(Store(StoreError.VersionConflict(2L, 2L))), wrote.map(_ => ()))
+          .and(expect.same(model(List(List(ByteVector(1) -> Some(value(1))), List(ByteVector(1) -> Some(value(20))))).last.root, root))
+      case Left(e) => failure(s"unexpected $e")
     }
   }
 

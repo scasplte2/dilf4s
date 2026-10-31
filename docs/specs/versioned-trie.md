@@ -102,7 +102,8 @@ Retention is node-local policy: it never changes a root.
 **Restore.** A store can start from a snapshot instead of from its first commit. Restore takes a head the caller
 already trusts and a snapshot, checks the snapshot against it (§7), and writes it into an **empty** store in one
 compare-and-write; a store that is not empty is refused. The restored store is then exactly the store that committed
-every version of the snapshot's history and pruned through its head `V_b`, byte for byte:
+every version of the snapshot's history and pruned through its head `V_b`, byte for byte except each part's
+generation (§10), which counts the mutations that got it there:
 - every version, before `V_b` included, stays attestable: inclusion, absence, as-of and version listings;
 - the state and values of versions before `V_b` are "not retained", as below a prune floor; so is the delta into `V_b`;
 - rollback below `V_b` is "not retained"; commits continue from `V_b`.
@@ -302,6 +303,22 @@ Each part keeps a dense internal sequence, `0` before the first commit, and ever
 sequences are equal; opening a store checks this. The index maps between versions and sequences, and also records each
 version's state root, so version attestations, as-of answers and snapshots survive pruning of old states. Pruning never
 touches the index.
+
+**Revisions.** The four parts are written together, but read one record at a time, and other writers may share the
+backend. Each part's guarded records hold a generation that every mutation advances and that never repeats
+(`storage.md` §3), so the parts' records together form a **revision** that no later state of the store can match:
+- **Mutations** (commit, preview and its drafts, rollback, prune, restore) read the revision **before anything else**,
+  decide and stage on what they read after it, and guard their one compare-and-write on it alone. If it lands, nothing
+  they read had changed; if another writer moved the store in between, it is refused as a version conflict and can be
+  retried. A draft keeps the revision it was staged against, and so does every draft built on it: a draft from before a
+  rollback is refused even after the store re-reaches its sequence, which a guard on sequences alone would accept.
+- **Reads** that combine several records (the head, a past head or value, every proof, a delta, a snapshot, the
+  recommit check, and the alignment check on opening) read the revision before and after, and refuse the answer if
+  it changed, rather than mix two states.
+- A read that fails inside either kind, because a record it followed was removed or replaced meanwhile, is judged
+  by the revision too: if the store moved, the failure is a version conflict, not corruption; if it did not, the
+  failure stands.
+- Single reads (the current value of a key, a scan of current entries) need no revision.
 
 **Sequences after a restore.** The `i`-th version of a restored history (from 1) gets sequence `i`, the sequence it
 had in the store that committed it, so the head `V_b` gets the length of the history. The index holds an entry for
