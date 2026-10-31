@@ -84,8 +84,11 @@ object MeteringSuite extends IOSuite {
   private def againstControl(jlvm: Jlvm, p: Program, colliding: CanonicalValue, control: CanonicalValue): IO[(Outcome, Double)] =
     (rate(jlvm, p, colliding), rate(jlvm, p, control)).mapN { case ((o, r), (_, c)) => (o, r / c) }
 
-  /** Colliding input must get at least this share of the control's rate. */
-  private val MinControlShare = 0.5
+  /**
+   * Colliding input must get at least this share of the control's rate. Unpriced collisions ran at 0.002-0.05 of it, so
+   * this catches them by a factor of five while leaving room for a loaded machine (0.49 was seen at a load of 14).
+   */
+  private val MinControlShare = 0.25
 
   // ---- 1. join
 
@@ -306,6 +309,15 @@ object MeteringSuite extends IOSuite {
     }
   }
 
+  test("a let pays for the length of its names, which every insertion compares") { jlvm =>
+    // two names sharing a long prefix: each insertion compares them in full
+    val prefix = "n" * 100000
+    def twoNames(p: String) = program(s"""{"let": [[["${p}a", 1], ["${p}b", 2]], 3]}""")
+    val gap = eval(jlvm, twoNames(prefix), CNull).gasUsed.value - eval(jlvm, twoNames(""), CNull).gasUsed.value
+    val blocks = 2L * ((prefix.length + 1) / Values.KeyBlock)
+    IO.pure(expect(gap >= S.element.value * blocks, s"$gap more gas for two names of ${prefix.length + 1} characters"))
+  }
+
   // ---- keys and path segments compared on every lookup
 
   test("set does not rescan its key, and get, has, set and unset pay for long keys") { jlvm =>
@@ -344,11 +356,14 @@ object MeteringSuite extends IOSuite {
     val fits = Expr.Arr(Vector.fill(bound / 4)(Expr.Lit(CNull)))
     val longPath = Expr.Var(VarRef.Data(Vector("x" * (bound + 1))), scala.None)
     val longName = Expr.Var(VarRef.Bound("x" * (bound + 1), Vector.empty), scala.None)
+    // one 1 MiB segment shared 1024 times: a small tree whose path renders to 1 GiB
+    val sharedPath = Expr.Var(VarRef.Data(Vector.fill(1024)("x" * (1 << 20))), scala.None)
     IO.pure(
       expect(isLimit(Program.from(huge)), "one past the bound")
         .and(expect(Program.from(fits).isRight, "at the bound"))
         .and(expect(isLimit(Program.from(longPath)), "a path segment counts its length"))
         .and(expect(isLimit(Program.from(longName)), "a binding name counts its length"))
+        .and(expect(isLimit(Program.from(sharedPath)), "a path of shared segments is bounded before it is rendered"))
     )
   }
 }

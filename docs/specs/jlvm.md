@@ -540,7 +540,7 @@ GasCalibration measures these with the argument `metering`.
 | Lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)` plus, for each key, `perUnit(split) × weight(key)` and `perPathSegment` per enclosing frame (as `var` pays), then the lookup. |
 | `if` | `base(if)`, then for each condition tested `element` and the condition, then the branch taken. |
 | `and`, `or`, `default` | `base(op)`, then only the subexpressions actually evaluated. |
-| `let` | `base(let) + element × bindings` (each binding is an insertion into the scope), then the bindings and the body. |
+| `let` | `base(let) + element × Σ (1 + ⌊len(name)/32⌋)` over the bindings (each binding is an insertion into the scope, and comparing names costs like a path segment), then the bindings and the body. |
 | Callback | `base(op)`, then the collection, then `perUnit(op) × elements`, then for each body run: `callbackRun` plus the body. For `some` with a quorum, `min` is evaluated after the collection. For `reduce`, `initial` is evaluated after the collection. |
 
 A program that does not compile uses no gas.

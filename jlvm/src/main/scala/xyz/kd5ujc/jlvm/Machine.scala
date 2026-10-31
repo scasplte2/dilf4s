@@ -174,8 +174,13 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
 
       case Logic(kind, args) => Charge(base(kind.op), () => logic(kind, args, scope, 0))
 
-      // each binding is an insertion into the scope, paid like a field of an object literal
-      case Bind(bindings, body) => Charge(base(Op.Let) + schedule.element * bindings.size.toLong, () => bind(bindings, body, scope))
+      // each binding is an insertion into the scope, paid like a field of an object literal, and like a path segment once
+      // more per KeyBlock of its name, since the insertion compares names
+      case Bind(bindings, body) =>
+        Charge(
+          base(Op.Let) + schedule.element * bindings.foldLeft(0L) { case (n, (name, _)) => n + Values.segmentCount(name) },
+          () => bind(bindings, body, scope)
+        )
 
       case Each(kind, over, body) =>
         Charge(base(kind.op), () => collection(kind.op, over, scope)(vs => iterate(kind, vs, body, scope)))
