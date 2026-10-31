@@ -89,8 +89,8 @@ The prover and the verifier serialize the tree in pre-order, children in array o
 - Lengths and `n` are 2-byte big-endian.
 - `c` is the commitment: `a` (33 bytes), or `a ‖ b` (66 bytes).
 - `s` is the leaf's statement: Ergo's ErgoTree for `SigmaPropConstant(leaf)`, with constants segregated.
-  - `dlog`: `10 01 08 cd ‖ pk ‖ 73 00`, 38 bytes;
-  - `dhtuple`: `10 01 08 ce ‖ g ‖ h ‖ u ‖ v ‖ 73 00`, 137 bytes.
+  - `dlog`: `10 01 08 cd ‖ pk ‖ 73 00`, 39 bytes;
+  - `dhtuple`: `10 01 08 ce ‖ g ‖ h ‖ u ‖ v ‖ 73 00`, 138 bytes.
 
 The root challenge is `Blake2b-256(transcript ‖ message)`, truncated to its first 24 bytes.
 

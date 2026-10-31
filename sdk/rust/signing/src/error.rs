@@ -208,3 +208,58 @@ impl fmt::Display for KesError {
 }
 
 impl core::error::Error for KesError {}
+
+/// Malformed sigma input (`docs/specs/sigma.md` section 6). A well-formed proof that fails is `Ok(false)`, never one
+/// of these. The Scala reference reports malformed input as a message; the kinds are this SDK's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SigmaError {
+    /// A proposition breaking section 3: an unknown type, a missing or extra field, an identity statement point, a
+    /// connective with no children or more than 255, `k` outside `1..=n`, more than 64 levels or 4096 leaves.
+    InvalidProposition {
+        /// Why it was refused.
+        reason: String,
+    },
+    /// A group element that is not the canonical encoding of a point of secp256k1 (section 1).
+    InvalidPoint {
+        /// The field being decoded (`pk`, `g`, `h`, `u`, `v`, or `key`).
+        what: &'static str,
+        /// Why it was refused.
+        reason: String,
+    },
+    /// A proof whose length is not the one its proposition fixes (section 5).
+    ProofLength {
+        /// The length the proposition fixes.
+        expected: usize,
+        /// The proof's length.
+        actual: usize,
+    },
+    /// A response `z >= q`.
+    ResponseOutOfRange,
+}
+
+impl SigmaError {
+    /// The kind's name.
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            Self::InvalidProposition { .. } => "InvalidProposition",
+            Self::InvalidPoint { .. } => "InvalidPoint",
+            Self::ProofLength { .. } => "ProofLength",
+            Self::ResponseOutOfRange => "ResponseOutOfRange",
+        }
+    }
+}
+
+impl fmt::Display for SigmaError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidProposition { reason } => write!(f, "invalid proposition: {reason}"),
+            Self::InvalidPoint { what, reason } => write!(f, "invalid point {what}: {reason}"),
+            Self::ProofLength { expected, actual } => {
+                write!(f, "a proof of this proposition is {expected} bytes, got {actual}")
+            }
+            Self::ResponseOutOfRange => f.write_str("a response must be below the group order"),
+        }
+    }
+}
+
+impl core::error::Error for SigmaError {}

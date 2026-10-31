@@ -1,6 +1,6 @@
-//! dilf4s signatures, key derivation, verifiable random functions and key-evolving signatures.
+//! dilf4s signatures, key derivation, verifiable random functions, key-evolving signatures and sigma proofs.
 //!
-//! The normative specifications are `docs/specs/signing.md`, `vrf.md` and `kes.md`; the conformance vectors in
+//! The normative specifications are `docs/specs/signing.md`, `vrf.md`, `kes.md` and `sigma.md`; the conformance vectors in
 //! `shared/vectors` are part of them.
 //!
 //! - **Verification** of every scheme is pure Rust, `no_std` + `alloc`, and needs no feature: an SP1 guest builds this
@@ -34,8 +34,9 @@ pub mod scheme;
 pub mod schnorr;
 #[cfg(feature = "sign")]
 pub mod secret;
+pub mod sigma;
 mod util;
 pub mod vrf;
 
-pub use error::{KesError, KeyError, SigningError, VrfError};
+pub use error::{KesError, KeyError, SigmaError, SigningError, VrfError};
 pub use scheme::{Scheme, SchemeId};
