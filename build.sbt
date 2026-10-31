@@ -64,7 +64,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, modelsGen, models, jlvm, benchmarks)
+  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, modelsGen, jlvm, benchmarks)
 
 // ─── Shared Test Utilities ───
 lazy val sharedTest = project.in(file("shared-test"))
@@ -106,7 +106,27 @@ lazy val core = project.in(file("core"))
       Libraries.circeGeneric,
       Libraries.circeParser,
       Libraries.scodecBits
-    )
+    ),
+    // wire types and canonical codecs, generated from shared/schemas at build time (package xyz.kd5ujc.models). The
+    // generator is referenced by id: its tests depend on core, so naming its project value here would be a cycle.
+    Compile / sourceGenerators += Def.task {
+      val log = streams.value.log
+      val schemas = (LocalRootProject / baseDirectory).value / "shared" / "schemas"
+      val out = (Compile / sourceManaged).value / "dilf4s-models"
+      val cp = (LocalProject("modelsGen") / Compile / fullClasspath).value.files
+      val genRunner = (LocalProject("modelsGen") / Compile / runner).value
+      val generatorClasses = ((LocalProject("modelsGen") / Compile / classDirectory).value ** "*.class").get
+      val inputs = ((schemas ** "*.cddl").get ++ generatorClasses).toSet
+      val cached = FileFunction.cached(streams.value.cacheDirectory / "models-gen", FilesInfo.hash) { _ =>
+        IO.delete(out)
+        genRunner
+          .run("xyz.kd5ujc.modelsgen.Main", cp, Seq(schemas.getAbsolutePath, out.getAbsolutePath, "xyz.kd5ujc.models"), log)
+          .failed
+          .foreach(e => sys.error(s"models generator failed: ${e.getMessage}"))
+        (out ** "*.scala").get.toSet
+      }
+      cached(inputs).toSeq.sortBy(_.getAbsolutePath)
+    }.taskValue
   )
   .dependsOn(numerics, sharedTest % Test)
 
@@ -130,7 +150,7 @@ lazy val crypto = project.in(file("crypto"))
       Libraries.catsKernelLaws % Test
     )
   )
-  .dependsOn(core, models % Test, sharedTest % Test)
+  .dependsOn(core, sharedTest % Test)
 
 // ─── Accumulators: Merkle, MPT, Verkle (self-contained) ───
 lazy val accumulators = project.in(file("accumulators"))
@@ -147,7 +167,7 @@ lazy val accumulators = project.in(file("accumulators"))
       Libraries.circeParser,
     )
   )
-  .dependsOn(core, storage, models, modelsGen % "test->test", sharedTest % Test)
+  .dependsOn(core, storage, modelsGen % "test->test", sharedTest % Test)
 
 // ─── Storage: Store, VersionedStore (self-contained) ───
 lazy val storage = project.in(file("storage"))
@@ -163,7 +183,7 @@ lazy val storage = project.in(file("storage"))
       Libraries.scodecBits
     )
   )
-  .dependsOn(core, models, sharedTest % Test)
+  .dependsOn(core, sharedTest % Test)
 
 // ─── Storage on RocksDB: separate artifact so the pure core never pulls in native code ───
 lazy val storageRocksDb = project.in(file("storage-rocksdb"))
@@ -190,34 +210,6 @@ lazy val modelsGen = project.in(file("models-gen"))
   )
   .dependsOn(core % Test, sharedTest % Test)
 
-// ─── models: wire types and canonical codecs generated from shared/schemas at build time ───
-lazy val models = project.in(file("models"))
-  .settings(
-    name := "dilf4s-models",
-    commonSettings,
-    commonTestSettings,
-    libraryDependencies ++= Seq(Libraries.scodecBits, Libraries.circeParser % Test),
-    Compile / sourceGenerators += Def.task {
-      val log = streams.value.log
-      val schemas = (LocalRootProject / baseDirectory).value / "shared" / "schemas"
-      val out = (Compile / sourceManaged).value / "dilf4s-models"
-      val cp = (modelsGen / Compile / fullClasspath).value.files
-      val genRunner = (modelsGen / Compile / runner).value
-      val generatorClasses = ((modelsGen / Compile / classDirectory).value ** "*.class").get
-      val inputs = ((schemas ** "*.cddl").get ++ generatorClasses).toSet
-      val cached = FileFunction.cached(streams.value.cacheDirectory / "models-gen", FilesInfo.hash) { _ =>
-        IO.delete(out)
-        genRunner
-          .run("xyz.kd5ujc.modelsgen.Main", cp, Seq(schemas.getAbsolutePath, out.getAbsolutePath, "xyz.kd5ujc.models"), log)
-          .failed
-          .foreach(e => sys.error(s"models generator failed: ${e.getMessage}"))
-        (out ** "*.scala").get.toSet
-      }
-      cached(inputs).toSeq.sortBy(_.getAbsolutePath)
-    }.taskValue
-  )
-  .dependsOn(core, sharedTest % Test)
-
 // ─── JLVM: the strict JsonLogic-syntax ledger VM (docs/specs/jlvm.md) ───
 lazy val jlvm = project.in(file("jlvm"))
   .settings(
@@ -232,7 +224,7 @@ lazy val jlvm = project.in(file("jlvm"))
       Libraries.scodecBits
     )
   )
-  .dependsOn(core % "compile->compile;test->test", crypto, accumulators, models, sharedTest % Test)
+  .dependsOn(core % "compile->compile;test->test", crypto, accumulators, sharedTest % Test)
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll; scalafmtSbtCheck")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll; scalafmtSbt")

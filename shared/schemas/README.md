@@ -2,7 +2,7 @@
 
 These are CDDL (RFC 8610) definitions, written in the dilf4s canonical profile (see
 `models-gen/.../CanonicalEmitter.scala`). They are the single source of truth for shared byte and record formats. The
-build generates Scala types and codecs from them (`xyz.kd5ujc.models.<module>`), and other-language SDKs generate or
+build generates Scala types and codecs from them into `core` (`xyz.kd5ujc.models.<module>`), and other-language SDKs generate or
 validate against the same files.
 
 | Schema | Defines | Normative text |
