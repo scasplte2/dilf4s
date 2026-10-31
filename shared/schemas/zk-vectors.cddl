@@ -1,0 +1,51 @@
+; Schema of shared/vectors/zk_v1.json (conformance vectors for docs/specs/zk.md sections 1 and 2). BN254 operations on
+; exact-width bytes: the go-ethereum EIP-196/197 vectors (docs/test-vectors/zk) at the widths the operations take, then
+; malformed and invalid points. SP1 Groth16: two real SP1 v6.1.0 proofs and tamperings of them. Errors are by kind
+; only; messages are not part of conformance.
+
+zk-vectors = {
+  "spec": "docs/specs/zk.md",
+  "version": 1,
+  "source": text,
+  "add": [* zk-add],
+  "mul": [* zk-mul],
+  "pairing": [* zk-pairing],
+  "sp1Groth16": [* zk-sp1-groth16],
+}
+
+zk-add = { "name": text, "a": hex, "b": hex, "result": zk-point-result }
+
+zk-mul = { "name": text, "point": hex, "scalar": hex, "result": zk-point-result }
+
+; The product of e(g1, g2) over the pairs is one; no pairs is true.
+zk-pairing = { "name": text, "pairs": [* zk-pair], "result": zk-bool-result }
+
+zk-pair = { "g1": hex, "g2": hex }
+
+zk-point-result = zk-point / zk-failure
+
+zk-bool-result = zk-bool / zk-failure
+
+zk-point = { "point": hex }
+
+zk-bool = { "value": bool }
+
+zk-failure = { "error": zk-error }
+
+; Malformed: a wrong length or a coordinate not below p. InvalidPoint: off the curve or twist, or a G2 point outside
+; the order-r subgroup.
+zk-error = "Malformed" / "InvalidPoint"
+
+zk-sp1-groth16 = {
+  "name": text,
+  "programVKey": hex,
+  "publicValues": hex,
+  "proofBytes": hex,
+  "result": zk-groth16-result,
+}
+
+; "verified": the proof verifies. Rejected: SP1's framing (selector, exit code, VK root). InvalidProof: a point off
+; the curve, outside the subgroup or the identity, or an input not in Fr.
+zk-groth16-result = "verified" / "Malformed" / "InvalidProof" / "PairingCheckFailed" / "Rejected"
+
+hex = text .regexp "([0-9a-f]{2})*"
