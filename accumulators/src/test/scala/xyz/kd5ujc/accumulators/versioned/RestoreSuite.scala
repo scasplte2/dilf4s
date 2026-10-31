@@ -226,6 +226,28 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  test("a chunk must be canonical CBOR: reordered map keys or a widened length header are refused") {
+    ok(attempt { implicit h =>
+      fresh.flatMap(s => commitAll(s._2, List(1L -> Batch.put(key("a"), int(1)))) >> s._2.snapshot().compile.toList)
+    }) { chunks =>
+      val historyChunk = get(chunks.collectFirst { case c: SnapshotChunk.History[Long, H] => c }.toRight("no history chunk"))
+      val bytes = get(VersionedTrieWire.encodeChunk(historyChunk))
+      // {"history": [{"s": h'..32..', "v": h'..8..'}]}: keys in canonical order are "s" then "v"
+      val entry = bytes.drop(bytes.size - (1L + 2L + 2L + 32L + 2L + 1L + 8L))
+      val prefix = bytes.take(bytes.size - entry.size)
+      val s = entry.slice(1L, 1L + 2L + 2L + 32L)
+      val v = entry.drop(1L + 2L + 2L + 32L)
+      val reordered = prefix ++ entry.take(1L) ++ v ++ s
+      // the 8-byte version key's header 0x48 widened to 0x58 0x08: the same value, not minimally encoded
+      val widened = prefix ++ entry.take(1L) ++ s ++ v.take(2L) ++ ByteVector(0x58, 0x08) ++ v.drop(3L)
+      expect
+        .same(Right(historyChunk), VersionedTrieWire.decodeChunk[Long, H](bytes))
+        .and(expect(VersionedTrieWire.decodeChunk[Long, H](reordered).isLeft, s"reordered keys: ${reordered.toHex}"))
+        .and(expect(VersionedTrieWire.decodeChunk[Long, H](widened).isLeft, s"a widened header: ${widened.toHex}"))
+        .and(expect.same(bytes.size, reordered.size))
+    }
+  }
+
   test("values over 1 MiB are refused at commit; large values are chunked within the byte limit") {
     val big = (i: Int) => CanonicalValue.bytes(ByteVector.fill(VersionedTrie.MaxValueBytes - 16L)(i.toByte))
     ok(attempt { implicit h =>
