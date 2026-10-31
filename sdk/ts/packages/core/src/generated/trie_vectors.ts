@@ -256,6 +256,65 @@ export const TrieLookupResult: c.Codec<TrieLookupResult> = {
   },
 };
 
+/** `trie-malformed` (`shared/schemas/trie-vectors.cddl`). */
+export interface TrieMalformed {
+  readonly name: string;
+  readonly mode: TrieMode;
+  readonly root: Hex;
+  readonly cbor: Hex;
+  readonly error: TrieMalformedError;
+}
+
+export const TrieMalformed: c.Codec<TrieMalformed> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("name", c.text, a.name, e),
+        c.field("mode", c.defer(() => TrieMode), a.mode, e),
+        c.field("root", c.defer(() => Hex), a.root, e),
+        c.field("cbor", c.defer(() => Hex), a.cbor, e),
+        c.field("error", c.defer(() => TrieMalformedError), a.error, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["name", "mode", "root", "cbor", "error"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("name", c.text);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("mode", c.defer(() => TrieMode));
+    if (!r1.ok) return r1;
+    const r2 = f.value.required("root", c.defer(() => Hex));
+    if (!r2.ok) return r2;
+    const r3 = f.value.required("cbor", c.defer(() => Hex));
+    if (!r3.ok) return r3;
+    const r4 = f.value.required("error", c.defer(() => TrieMalformedError));
+    if (!r4.ok) return r4;
+    return c.ok({ name: r0.value, mode: r1.value, root: r2.value, cbor: r3.value, error: r4.value });
+  },
+};
+
+/** `trie-malformed-error` (`shared/schemas/trie-vectors.cddl`). */
+export type TrieMalformedError = "Encoding" | "InvalidProof";
+
+export const TrieMalformedError: c.Codec<TrieMalformedError> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["Encoding", "InvalidProof"]);
+    return c.typeMismatch("no alternative of TrieMalformedError fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["Encoding", "InvalidProof"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<TrieMalformedError>("Encoding");
+      case 1:
+        return c.ok<TrieMalformedError>("InvalidProof");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
 /** `trie-mode` (`shared/schemas/trie-vectors.cddl`). */
 export type TrieMode = TrieFixedMode | TrieVariableMode;
 
@@ -524,6 +583,7 @@ export interface TrieVectors {
   readonly emptyRoot: Hex;
   readonly nodeHashes: TrieNodeHashes;
   readonly fixtures: readonly TrieFixture[];
+  readonly malformed: readonly TrieMalformed[];
 }
 
 export const TrieVectors: c.Codec<TrieVectors> = {
@@ -536,10 +596,11 @@ export const TrieVectors: c.Codec<TrieVectors> = {
         c.field("emptyRoot", c.defer(() => Hex), a.emptyRoot, e),
         c.field("nodeHashes", c.defer(() => TrieNodeHashes), a.nodeHashes, e),
         c.field("fixtures", c.vector(c.defer(() => TrieFixture), 0, null), a.fixtures, e),
+        c.field("malformed", c.vector(c.defer(() => TrieMalformed), 0, null), a.malformed, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "hash", "emptyRoot", "nodeHashes", "fixtures"]);
+    const f = c.fields(v, ["spec", "version", "hash", "emptyRoot", "nodeHashes", "fixtures", "malformed"]);
     if (!f.ok) return f;
     const r0 = f.value.required("spec", c.literalText("docs/specs/trie.md"));
     if (!r0.ok) return r0;
@@ -553,6 +614,8 @@ export const TrieVectors: c.Codec<TrieVectors> = {
     if (!r4.ok) return r4;
     const r5 = f.value.required("fixtures", c.vector(c.defer(() => TrieFixture), 0, null));
     if (!r5.ok) return r5;
-    return c.ok({ spec: r0.value, version: r1.value, hash: r2.value, emptyRoot: r3.value, nodeHashes: r4.value, fixtures: r5.value });
+    const r6 = f.value.required("malformed", c.vector(c.defer(() => TrieMalformed), 0, null));
+    if (!r6.ok) return r6;
+    return c.ok({ spec: r0.value, version: r1.value, hash: r2.value, emptyRoot: r3.value, nodeHashes: r4.value, fixtures: r5.value, malformed: r6.value });
   },
 };

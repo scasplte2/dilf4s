@@ -4,9 +4,10 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Path, Paths}
 
 import cats.effect.{ExitCode, IO, IOApp}
+import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.Cbor
-import xyz.kd5ujc.core.hash.Sha256
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.hash.{Digest, Sha256}
 
 import io.circe.Json
 import io.circe.syntax._
@@ -55,10 +56,7 @@ object TrieVectors {
     val verified = orDie(TrieProofs.verify(mode, trie.root, proof))
     Json.obj(
       "name" -> name.asJson,
-      "mode" -> (mode match {
-        case f: KeyMode.Fixed    => Json.obj("fixed" -> f.bytes.asJson)
-        case v: KeyMode.Variable => Json.obj("variable" -> v.maxBytes.asJson)
-      }),
+      "mode" -> modeJson(mode),
       "entries" -> entries.map {
         case (k, v) => Json.obj("key" -> k.toHex.asJson, "value" -> v.toHex.asJson, "valueHash" -> T.value(v).hex.asJson)
       }.asJson,
@@ -89,6 +87,106 @@ object TrieVectors {
         }.asJson
       )
     )
+  }
+
+  // ---- refused proofs: decoding refuses what any reader sees (Encoding), verification what the mode decides (InvalidProof)
+
+  import ProofNode._
+
+  /** The root a partial trie hashes to with no structural check, so that only the mode can refuse it. */
+  private def rawRoot(node: ProofNode[Sha256]): cats.Eval[Digest[Sha256]] =
+    node match {
+      case Stub(h)     => cats.Eval.now(h)
+      case PLeaf(s, v) => cats.Eval.now(T.leaf(s, v))
+      case PBranch(s, v, l, r) =>
+        for {
+          lh <- l.traverse(c => cats.Eval.defer(rawRoot(c)))
+          rh <- r.traverse(c => cats.Eval.defer(rawRoot(c)))
+        } yield T.branch(s, v, lh, rh)
+    }
+
+  private def wire(node: ProofNode[Sha256]): CanonicalValue = orDie(TrieProofs.encode(TrieProof(Some(node))))
+
+  private def records(v: CanonicalValue): Vector[CanonicalValue] = v match {
+    case CanonicalValue.CArray(rs) => rs
+    case _                         => Vector.empty
+  }
+
+  private def arrayOf(rs: Vector[CanonicalValue]): CanonicalValue = CanonicalValue.array(rs).fold(e => sys.error(e.toString), identity)
+
+  private def record(fields: (String, CanonicalValue)*): CanonicalValue =
+    CanonicalValue.map(fields).fold(e => sys.error(e.toString), identity)
+
+  private def seg(n: Long, b: ByteVector): CanonicalValue = record("n" -> CanonicalValue.int(n), "b" -> CanonicalValue.bytes(b))
+
+  private val v0: Digest[Sha256] = T.value(hex"00")
+  private val leaf7: ProofNode[Sha256] = PLeaf(BitVector.low(7), v0)
+  private val leafRecord: CanonicalValue = record("s" -> seg(7, hex"00"), "v" -> CanonicalValue.bytes(v0.bytes))
+
+  private def malformedRow(name: String, mode: KeyMode, proof: CanonicalValue, root: Digest[Sha256], expected: String): Json = {
+    val result = TrieProofs.decode[Sha256](proof).flatMap(TrieProofs.verify(mode, root, _)).fold(_.productPrefix, _ => "ok")
+    require(result == expected, s"malformed trie proof $name: expected $expected, got $result")
+    Json.obj(
+      "name"  -> name.asJson,
+      "mode"  -> modeJson(mode),
+      "root"  -> root.hex.asJson,
+      "cbor"  -> Cbor.encode(proof).toHex.asJson,
+      "error" -> result.asJson
+    )
+  }
+
+  private def refusedByMode(name: String, mode: KeyMode, node: ProofNode[Sha256]): Json =
+    malformedRow(name, mode, wire(node), rawRoot(node).value, "InvalidProof")
+
+  private def refusedByDecoder(name: String, mode: KeyMode, proof: CanonicalValue): Json =
+    malformedRow(name, mode, proof, T.empty, "Encoding")
+
+  def malformed: List[Json] = {
+    val fixed1 = orDie(KeyMode.fixed(1))
+    val fixed2 = orDie(KeyMode.fixed(2))
+    val variable1 = orDie(KeyMode.variable(1))
+    val oneChild = wire(PBranch(BitVector.empty, None, Some(leaf7), None))
+    val both = wire(PBranch(BitVector.empty, None, Some(leaf7), Some(leaf7)))
+    List(
+      // the branch invariant is a property of one record: the decoder refuses it, whatever the mode
+      refusedByDecoder("branch-one-child-no-value", variable1, oneChild),
+      refusedByDecoder("branch-one-child-no-value-fixed", fixed1, oneChild),
+      refusedByDecoder(
+        "branch-no-children",
+        variable1,
+        arrayOf(Vector(record("s" -> seg(0, ByteVector.empty), "c" -> CanonicalValue.int(0))))
+      ),
+      refusedByDecoder(
+        "non-zero-padding",
+        variable1,
+        arrayOf(Vector(record("s" -> seg(7, hex"01"), "v" -> CanonicalValue.bytes(v0.bytes))))
+      ),
+      refusedByDecoder(
+        "segment-length-mismatch",
+        variable1,
+        arrayOf(Vector(record("s" -> seg(9, hex"00"), "v" -> CanonicalValue.bytes(v0.bytes))))
+      ),
+      refusedByDecoder("short-digest", variable1, arrayOf(Vector(record("h" -> CanonicalValue.bytes(ByteVector.low(31)))))),
+      refusedByDecoder("trailing-record", variable1, arrayOf(records(both) :+ leafRecord)),
+      refusedByDecoder("unfinished-branch", variable1, arrayOf(records(both).dropRight(1))),
+      // what the mode decides is refused at verification, against the root the records hash to
+      refusedByMode("fixed-leaf-too-short", fixed2, PLeaf(BitVector.low(8), v0)),
+      refusedByMode("fixed-leaf-too-long", fixed1, PLeaf(BitVector.low(16), v0)),
+      refusedByMode("fixed-branch-value", fixed1, PBranch(BitVector.empty, Some(v0), Some(leaf7), None)),
+      refusedByMode("fixed-branch-too-deep", fixed1, PBranch(BitVector.low(8), None, Some(leaf7), Some(leaf7))),
+      refusedByMode("variable-leaf-unaligned", variable1, PLeaf(BitVector.low(4), v0)),
+      refusedByMode("variable-leaf-too-long", variable1, PLeaf(BitVector.low(16), v0)),
+      refusedByMode(
+        "variable-branch-value-unaligned",
+        variable1,
+        PBranch(BitVector.low(4), Some(v0), Some(PLeaf(BitVector.low(3), v0)), None)
+      )
+    )
+  }
+
+  private def modeJson(mode: KeyMode): Json = mode match {
+    case f: KeyMode.Fixed    => Json.obj("fixed" -> f.bytes.asJson)
+    case v: KeyMode.Variable => Json.obj("variable" -> v.maxBytes.asJson)
   }
 
   def build: Json = {
@@ -155,7 +253,8 @@ object TrieVectors {
           ranges = List(hex"" -> None),
           rangeProbes = List(hex"6100" -> Some(hex"62"), hex"ff" -> None, hex"ff00" -> None)
         )
-      ).asJson
+      ).asJson,
+      "malformed" -> malformed.asJson
     )
   }
 

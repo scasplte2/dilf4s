@@ -263,3 +263,14 @@ describe("JLVM trie operations", () => {
     expect(deep).toHaveLength(32);
   });
 });
+
+describe("trie_v1.json malformed proofs", () => {
+  it("decoding refuses the mode-free rules (Encoding); verification the mode's (InvalidProof)", () => {
+    expect(vectors.malformed.length).toBeGreaterThan(10);
+    for (const c of vectors.malformed) {
+      const p = trie.TrieProof.decode(T, valueOf(c.cbor));
+      const r = p.ok ? trie.verify(T, modeOf(c.mode), bytes(c.root), p.value) : p;
+      expect(r.ok ? "accepted" : r.error.kind, c.name).toBe(c.error);
+    }
+  });
+});

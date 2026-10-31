@@ -35,14 +35,27 @@ object P256Ecdsa {
   implicit val codec: SchemeCodec[P256Ecdsa] = new SchemeCodec[P256Ecdsa] {
     val name: String = "P-256-ECDSA"
     def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[P256Ecdsa]] =
-      Either.cond(
-        bytes.size == 32L && scalar(bytes) >= 1 && scalar(bytes) < n,
-        new SigningKey[P256Ecdsa](bytes),
-        CryptoError.InvalidKey("P-256 secret key must be a 32-byte scalar in [1, n)")
-      )
+      SchemeCodec
+        .sized("P-256 signing key", 32, bytes)
+        .flatMap(b =>
+          Either.cond(
+            scalar(b) >= 1 && scalar(b) < n,
+            new SigningKey[P256Ecdsa](b),
+            CryptoError.InvalidKey("P-256 secret key must be a scalar in [1, n)")
+          )
+        )
+
+    /** 33-byte compressed SEC1 (tag 02 or 03), on the curve: the tag is checked here, not left to the backend. */
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[P256Ecdsa]] =
-      if (bytes.size != 33L) CryptoError.InvalidEncoding("P-256 verifying key", s"expected 33 compressed bytes, got ${bytes.size}").asLeft
-      else point(bytes).bimap(_ => CryptoError.InvalidKey("P-256 verifying key is not a valid point"), _ => VerifyingKey[P256Ecdsa](bytes))
+      SchemeCodec
+        .sized("P-256 verifying key", 33, bytes)
+        .flatMap(b =>
+          Option
+            .when(SchemeCodec.compressedTag(b))(b)
+            .flatMap(point(_).toOption)
+            .toRight(CryptoError.InvalidKey("P-256 verifying key is not a valid point"))
+            .as(VerifyingKey[P256Ecdsa](b))
+        )
     def signature(bytes: ByteVector): Either[CryptoError, Signature[P256Ecdsa]] =
       if (bytes.size != 64L) CryptoError.InvalidEncoding("P-256 signature", s"expected 64 bytes, got ${bytes.size}").asLeft
       else {

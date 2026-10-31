@@ -8,7 +8,17 @@ trie-vectors = {
   "emptyRoot": hex,
   "nodeHashes": trie-node-hashes,
   "fixtures": [* trie-fixture],
+  "malformed": [* trie-malformed],
 }
+
+; A refused proof (canonical CBOR) and the kind of its error (section 4). Decoding refuses, as "Encoding", what a
+; reader sees without the mode: the record shapes, segment lengths and padding, the branch invariant, the pre-order
+; structure and trailing records. Verification refuses, as "InvalidProof", what the mode decides: where leaves and
+; branch values may end, and the key-length bound. "root" is what the records hash to, so only those rules refuse an
+; "InvalidProof" case; it is the empty root for the "Encoding" cases.
+trie-malformed = { "name": text, "mode": trie-mode, "root": hex, "cbor": hex, "error": trie-malformed-error }
+
+trie-malformed-error = "Encoding" / "InvalidProof"
 
 trie-node-hashes = {
   "leaf": trie-leaf-hash,

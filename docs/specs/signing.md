@@ -18,7 +18,16 @@ ed25519 / ristretto255 prime-order group, `n` the order of the named elliptic cu
 | BLS12-381-PoP | 32-byte BE scalar in `[1, r)` | 48-byte compressed G1 | 96-byte compressed G2 | raw message |
 | ristretto255-Schnorr | 32-byte LE canonical scalar, non-zero | 32-byte ristretto255 | 64 `R ‖ z` | raw message |
 
-Every decoder checks lengths, and rejects keys and signatures that fail the scheme's validity rules below.
+Every decoder checks lengths, and rejects keys and signatures that fail the scheme's validity rules below. The two
+error kinds are distinct:
+
+- **A wrong length** is `InvalidEncoding`, for secret keys, verifying keys and signatures alike.
+- **A key of the right length that is not a key** is `InvalidKey`: a secret scalar out of range (or an Ed25519-BIP32
+  `kL` that is not a multiple of 8 below 2^255), or a verifying key that does not decode or fails validation. That a
+  backend library failed to parse it changes nothing: it is still `InvalidKey`.
+- A malformed signature is `InvalidEncoding`, under the per-scheme rules below.
+
+The `keyDecoding` vectors record the kind for each scheme.
 
 ### 1.1 Ed25519
 
@@ -52,6 +61,10 @@ Signatures verify under §1.1.
 ### 1.3 ECDSA (P-256, secp256k1)
 
 Nonces are deterministic, per RFC 6979 with HMAC-SHA-256 over the SHA-256 digest of the message.
+
+**Verifying keys** are compressed SEC1: tag `02` or `03`, then `x`, naming a point on the curve. Any other tag is
+`InvalidKey`, even where a SEC1 parser would accept it (`00`, `04`, `06` and `07` belong to other lengths, and some
+parsers take others). A 65-byte uncompressed key is a wrong length, `InvalidEncoding`.
 
 **Only low-S is valid:**
 
@@ -149,6 +162,8 @@ Derivation follows BIP32 for private keys:
 - `k' = I[0:32] + k mod n`.
 
 An index whose `I[0:32] ≥ n`, or whose resulting key is zero, is an error. The caller moves to the next index.
+`I[0:32] = 0` is not an error for a child: it adds nothing, so the child's key is the parent's (BIP32 skips only
+`I_L ≥ n`). For the master key, `I[0:32]` is the key itself, so 0 is an error.
 
 Public derivation (CKDpub, soft indices only): `I = HMAC-SHA512(cc, serP(K) ‖ BE32(i))`, `K' = K + [I[0:32]]G`.
 
@@ -181,8 +196,11 @@ The additions are fixed-width LE byte arithmetic.
 ## 3. Indices and paths
 
 - An index is below 2^31. Hardened indices are serialised with bit 31 set.
-- Path syntax is `m/a/b'/c` (or `h` in place of `'`).
-- Out-of-range or malformed segments are errors.
+- Path syntax is `m/a/b'/c` (or `h` in place of `'`); `m` alone is the master key.
+- A segment is one or more ASCII digits `0`–`9`, then optionally `'` or `h`. Leading zeros are allowed (`007` is 7).
+- Nothing else is accepted, and nothing is trimmed: whitespace anywhere, a sign (`+5`, `-0`), a non-ASCII digit, an
+  empty segment (`m/`, `m//1`, `m/1/`), an uppercase `M` or `H`, or a lone `'` is an error. So is an index of 2^31 or
+  more. The `paths` vectors pin these cases.
 
 ## 4. Sizes
 

@@ -10,6 +10,96 @@ pub type Hex = String;
 /// The codec of [`Hex`].
 pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 
+/// `merkle-decode-error` (`shared/schemas/merkle-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MerkleDecodeError {
+    /// The text `IndexOutOfRange`.
+    IndexOutOfRange,
+    /// The text `InvalidSizes`.
+    InvalidSizes,
+    /// The text `Encoding`.
+    Encoding,
+}
+
+impl c::Model for MerkleDecodeError {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::IndexOutOfRange => Ok(c::Value::text("IndexOutOfRange")),
+            Self::InvalidSizes => Ok(c::Value::text("InvalidSizes")),
+            Self::Encoding => Ok(c::Value::text("Encoding")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["IndexOutOfRange", "InvalidSizes", "Encoding"])? {
+            c::Alternative::Text(0) => Ok(Self::IndexOutOfRange),
+            c::Alternative::Text(1) => Ok(Self::InvalidSizes),
+            c::Alternative::Text(2) => Ok(Self::Encoding),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+/// `merkle-malformed` (`shared/schemas/merkle-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MerkleMalformed {
+    /// The `name` entry.
+    pub name: String,
+    /// The `kind` entry.
+    pub kind: MerkleProofKind,
+    /// The `cbor` entry.
+    pub cbor: Hex,
+    /// The `error` entry.
+    pub error: MerkleDecodeError,
+}
+
+impl c::Model for MerkleMalformed {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("kind", &c::ModelOf::<MerkleProofKind>::NEW, &self.kind, inner)?,
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::field("error", &c::ModelOf::<MerkleDecodeError>::NEW, &self.error, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["name", "kind", "cbor", "error"])?;
+        let f0 = fields.required("name", &c::Text)?;
+        let f1 = fields.required("kind", &c::ModelOf::<MerkleProofKind>::NEW)?;
+        let f2 = fields.required("cbor", &HEX)?;
+        let f3 = fields.required("error", &c::ModelOf::<MerkleDecodeError>::NEW)?;
+        Ok(Self { name: f0, kind: f1, cbor: f2, error: f3 })
+    }
+}
+
+/// `merkle-proof-kind` (`shared/schemas/merkle-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MerkleProofKind {
+    /// The text `inclusion`.
+    Inclusion,
+    /// The text `consistency`.
+    Consistency,
+}
+
+impl c::Model for MerkleProofKind {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Inclusion => Ok(c::Value::text("inclusion")),
+            Self::Consistency => Ok(c::Value::text("consistency")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["inclusion", "consistency"])? {
+            c::Alternative::Text(0) => Ok(Self::Inclusion),
+            c::Alternative::Text(1) => Ok(Self::Consistency),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
 /// `merkle-value-commitment` (`shared/schemas/merkle-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MerkleValueCommitment {
@@ -97,6 +187,8 @@ pub struct MerkleVectors {
     pub trees: Vec<MerkleVectorTree>,
     /// The `valueCommitments` entry.
     pub value_commitments: Vec<MerkleValueCommitment>,
+    /// The `malformed` entry.
+    pub malformed: Vec<MerkleMalformed>,
 }
 
 impl c::Model for MerkleVectors {
@@ -110,11 +202,12 @@ impl c::Model for MerkleVectors {
             c::field("leafHashes", &c::VecOf { element: HEX, min: 0, max: None }, &self.leaf_hashes, inner)?,
             c::field("trees", &c::VecOf { element: c::ModelOf::<MerkleVectorTree>::NEW, min: 0, max: None }, &self.trees, inner)?,
             c::field("valueCommitments", &c::VecOf { element: c::ModelOf::<MerkleValueCommitment>::NEW, min: 0, max: None }, &self.value_commitments, inner)?,
+            c::field("malformed", &c::VecOf { element: c::ModelOf::<MerkleMalformed>::NEW, min: 0, max: None }, &self.malformed, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "hash", "leaves", "leafHashes", "trees", "valueCommitments"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "hash", "leaves", "leafHashes", "trees", "valueCommitments", "malformed"])?;
         fields.required("spec", &c::LiteralText("docs/specs/merkle.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         fields.required("hash", &c::LiteralText("SHA-256"))?;
@@ -122,6 +215,7 @@ impl c::Model for MerkleVectors {
         let f4 = fields.required("leafHashes", &c::VecOf { element: HEX, min: 0, max: None })?;
         let f5 = fields.required("trees", &c::VecOf { element: c::ModelOf::<MerkleVectorTree>::NEW, min: 0, max: None })?;
         let f6 = fields.required("valueCommitments", &c::VecOf { element: c::ModelOf::<MerkleValueCommitment>::NEW, min: 0, max: None })?;
-        Ok(Self { leaves: f3, leaf_hashes: f4, trees: f5, value_commitments: f6 })
+        let f7 = fields.required("malformed", &c::VecOf { element: c::ModelOf::<MerkleMalformed>::NEW, min: 0, max: None })?;
+        Ok(Self { leaves: f3, leaf_hashes: f4, trees: f5, value_commitments: f6, malformed: f7 })
     }
 }

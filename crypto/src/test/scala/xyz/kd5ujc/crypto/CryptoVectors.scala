@@ -53,6 +53,57 @@ object CryptoVectors {
       }.asJson
     )
 
+  /**
+   * Path strictness (signing.md §3): nothing is trimmed, and a segment is one or more ASCII digits (leading zeros
+   * allowed) and an optional `'` or `h`.
+   */
+  val pathCases: List[String] = List(
+    "m",
+    "m/0",
+    "m/44'/0'/0'/0/7",
+    "m/0h/1'",
+    "m/2147483647'",
+    "m/007",
+    "m/00000000000000000000001'",
+    "m/2147483648",
+    "m/4294967296",
+    "m/99999999999999999999",
+    "m/0H",
+    "M/0",
+    "",
+    "m/",
+    "m//1",
+    "m/1/",
+    " m/1",
+    "m/1 ",
+    "m/ 1",
+    "m/1\n",
+    "m/+5",
+    "m/-0",
+    "m/-1",
+    "m/\u0661",
+    "m/\uff11",
+    "m/'",
+    "m/h",
+    "m/1''",
+    "m/1h'",
+    "m/0x1",
+    "m/1e3",
+    "m/1.0",
+    "m/1_0",
+    "44'/0",
+    "/m/0",
+    "m\\0"
+  )
+
+  def paths: List[Json] =
+    pathCases.map { p =>
+      Json.obj(
+        "path"   -> p.asJson,
+        "result" -> ChildIndex.path(p).fold(_ => "invalid".asJson, is => Json.obj("indices" -> is.map(_.serialized).asJson))
+      )
+    }
+
   private def extended[S](k: ExtendedKey[S]): Json = Json.obj("key" -> k.key.bytes.toHex.asJson, "chainCode" -> k.chainCode.toHex.asJson)
 
   def build(secp: Secp256k1, english: WordList, bls: xyz.kd5ujc.crypto.bls.Bls12381): Json = {
@@ -146,7 +197,9 @@ object CryptoVectors {
           .asJson
       ),
       "blsPop"       -> SigningRejections.blsPop(bls).asJson,
-      "verification" -> SigningRejections.signing(secp, bls).asJson
+      "verification" -> SigningRejections.signing(secp, bls).asJson,
+      "keyDecoding"  -> SigningRejections.keyDecoding(secp, bls).asJson,
+      "paths"        -> paths.asJson
     )
   }
 

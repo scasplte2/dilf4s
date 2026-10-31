@@ -272,6 +272,70 @@ impl c::Model for TrieLookupResult {
     }
 }
 
+/// `trie-malformed` (`shared/schemas/trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrieMalformed {
+    /// The `name` entry.
+    pub name: String,
+    /// The `mode` entry.
+    pub mode: TrieMode,
+    /// The `root` entry.
+    pub root: Hex,
+    /// The `cbor` entry.
+    pub cbor: Hex,
+    /// The `error` entry.
+    pub error: TrieMalformedError,
+}
+
+impl c::Model for TrieMalformed {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("mode", &c::ModelOf::<TrieMode>::NEW, &self.mode, inner)?,
+            c::field("root", &HEX, &self.root, inner)?,
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::field("error", &c::ModelOf::<TrieMalformedError>::NEW, &self.error, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["name", "mode", "root", "cbor", "error"])?;
+        let f0 = fields.required("name", &c::Text)?;
+        let f1 = fields.required("mode", &c::ModelOf::<TrieMode>::NEW)?;
+        let f2 = fields.required("root", &HEX)?;
+        let f3 = fields.required("cbor", &HEX)?;
+        let f4 = fields.required("error", &c::ModelOf::<TrieMalformedError>::NEW)?;
+        Ok(Self { name: f0, mode: f1, root: f2, cbor: f3, error: f4 })
+    }
+}
+
+/// `trie-malformed-error` (`shared/schemas/trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TrieMalformedError {
+    /// The text `Encoding`.
+    Encoding,
+    /// The text `InvalidProof`.
+    InvalidProof,
+}
+
+impl c::Model for TrieMalformedError {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Encoding => Ok(c::Value::text("Encoding")),
+            Self::InvalidProof => Ok(c::Value::text("InvalidProof")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["Encoding", "InvalidProof"])? {
+            c::Alternative::Text(0) => Ok(Self::Encoding),
+            c::Alternative::Text(1) => Ok(Self::InvalidProof),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
 /// `trie-mode` (`shared/schemas/trie-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TrieMode {
@@ -553,6 +617,8 @@ pub struct TrieVectors {
     pub node_hashes: TrieNodeHashes,
     /// The `fixtures` entry.
     pub fixtures: Vec<TrieFixture>,
+    /// The `malformed` entry.
+    pub malformed: Vec<TrieMalformed>,
 }
 
 impl c::Model for TrieVectors {
@@ -565,17 +631,19 @@ impl c::Model for TrieVectors {
             c::field("emptyRoot", &HEX, &self.empty_root, inner)?,
             c::field("nodeHashes", &c::ModelOf::<TrieNodeHashes>::NEW, &self.node_hashes, inner)?,
             c::field("fixtures", &c::VecOf { element: c::ModelOf::<TrieFixture>::NEW, min: 0, max: None }, &self.fixtures, inner)?,
+            c::field("malformed", &c::VecOf { element: c::ModelOf::<TrieMalformed>::NEW, min: 0, max: None }, &self.malformed, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "hash", "emptyRoot", "nodeHashes", "fixtures"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "hash", "emptyRoot", "nodeHashes", "fixtures", "malformed"])?;
         fields.required("spec", &c::LiteralText("docs/specs/trie.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         fields.required("hash", &c::LiteralText("SHA-256"))?;
         let f3 = fields.required("emptyRoot", &HEX)?;
         let f4 = fields.required("nodeHashes", &c::ModelOf::<TrieNodeHashes>::NEW)?;
         let f5 = fields.required("fixtures", &c::VecOf { element: c::ModelOf::<TrieFixture>::NEW, min: 0, max: None })?;
-        Ok(Self { empty_root: f3, node_hashes: f4, fixtures: f5 })
+        let f6 = fields.required("malformed", &c::VecOf { element: c::ModelOf::<TrieMalformed>::NEW, min: 0, max: None })?;
+        Ok(Self { empty_root: f3, node_hashes: f4, fixtures: f5, malformed: f6 })
     }
 }

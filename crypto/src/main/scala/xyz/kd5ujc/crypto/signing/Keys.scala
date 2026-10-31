@@ -53,6 +53,13 @@ object SchemeCodec {
 
   def apply[S](implicit C: SchemeCodec[S]): SchemeCodec[S] = C
 
+  /** Exactly `expected` bytes, or `InvalidEncoding`: a wrong length is malformed, never an invalid key. */
+  def sized(what: String, expected: Long, bytes: ByteVector): Either[CryptoError, ByteVector] =
+    Either.cond(bytes.size == expected, bytes, CryptoError.InvalidEncoding(what, s"expected $expected bytes, got ${bytes.size}"))
+
+  /** A SEC1 compressed tag (02 or 03) leads `b`; SEC1 parsers also take other tags (00, 04, 06, 07) at other lengths. */
+  def compressedTag(b: ByteVector): Boolean = b.headOption.exists(t => t == 0x02 || t == 0x03)
+
   /** Fixed-length codec with optional extra validation of verifying keys. */
   def fixed[S](
     scheme:    String,
@@ -64,7 +71,7 @@ object SchemeCodec {
     new SchemeCodec[S] {
       val name: String = scheme
       private def length(what: String, expected: Long, b: ByteVector): Either[CryptoError, ByteVector] =
-        Either.cond(b.size == expected, b, CryptoError.InvalidEncoding(s"$scheme $what", s"expected $expected bytes, got ${b.size}"))
+        sized(s"$scheme $what", expected, b)
       def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[S]] =
         length("signing key", skLength, bytes).map(new SigningKey[S](_))
       def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[S]] =

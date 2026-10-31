@@ -69,6 +69,9 @@ object TrieError {
   final case class InvalidProof(reason: String) extends TrieError
   final case class RootMismatch(expected: String, computed: String) extends TrieError
   final case class Encoding(reason: String) extends TrieError
+
+  /** A verified proof that does not reach the query: it establishes neither presence nor absence. */
+  final case class NotCovered(what: String) extends TrieError
 }
 
 /** A stored trie node; children are referenced by hash (docs/specs/trie.md §2). */

@@ -11,7 +11,31 @@ signing-vectors = {
   "ed25519Bip32": icarus-vector,
   "blsPop": [* bls-pop-vector],
   "verification": [* verification-case],
+  "keyDecoding": [* key-decoding-case],
+  "paths": [* path-case],
 }
+
+; How a scheme's decoder classifies an encoded signing or verifying key: "accepted", or the kind of its typed
+; error. A wrong length is "InvalidEncoding"; bytes of the right length that are not a key are "InvalidKey".
+; "Ed25519-BIP32" has signing keys only (its verifying keys are Ed25519's).
+key-decoding-case = {
+  "scheme": text,
+  "name": text,
+  "part": key-part,
+  "bytes": hex,
+  "result": key-decoding-result,
+}
+
+key-part = "signingKey" / "verifyingKey"
+
+key-decoding-result = "accepted" / "InvalidEncoding" / "InvalidKey"
+
+; A derivation path (section 3) and its serialised indices (bit 31 set when hardened), or "invalid".
+path-case = { "path": text, "result": path-result }
+
+path-result = path-indices / "invalid"
+
+path-indices = { "indices": [* uint] }
 
 ; PopProve of each seed's BLS key (DST BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_).
 bls-pop-vector = { "signingKey": hex, "verifyingKey": hex, "proof": hex }

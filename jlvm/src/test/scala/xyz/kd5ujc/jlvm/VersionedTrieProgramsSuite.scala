@@ -86,6 +86,16 @@ object VersionedTrieProgramsSuite extends IOSuite {
         "h"
       )}, {"trie_prefix_verify": [{"object": {"fixed": 8}}, {"var": "h"}, {"var": "prefix"}, {"var": "entries"}, {"var": "history"}]}]}"""
 
+  /** The committed versions in `[from, until)`, with every history key built by the program from `{v, s}` pairs. */
+  private def versionsIn(until: String) =
+    s"""{"and": [${slot(
+        "0x02",
+        "h"
+      )}, {"trie_range_verify": [{"object": {"fixed": 8}}, {"var": "h"}, {"int_to_bytes": [{"var": "from"}, 8]}, $until, {"map": [{"var": "vs"}, [{"int_to_bytes": [{"var": "v"}, 8]}, {"var": "s"}]]}, {"var": "history"}]}]}"""
+
+  private val versionsBounded = versionsIn("""{"int_to_bytes": [{"var": "until"}, 8]}""")
+  private val versionsFrom = versionsIn("null")
+
   private val versionSlot = slot("0x00", "v")
 
   /** The worked example of versioned-trie.md §9, taken verbatim from the spec. */
@@ -334,6 +344,58 @@ object VersionedTrieProgramsSuite extends IOSuite {
     }
   }
 
+  private def versionList(vs: List[(Long, ByteVector)]): CanonicalValue =
+    a(vs.map { case (v, s) => m("v" -> int(v), "s" -> CBytes(s)) }*)
+
+  test("versions [from, until): a range proof lists exactly the committed versions; one missing, extra or moved is false") { jlvm =>
+    (withStore(s => (s.proveVersions(2L, Some(300L)), s.proveVersions(4L, None)).tupled), heads).tupled.map {
+      case ((bounded, open), hs) =>
+        def run2(program: String, p: VersionedTrieProof[Long, H], extra: (String, CanonicalValue)*) = {
+          val x = parts(p)
+          run(jlvm, program, (List("root" -> x.root, "top" -> x.top, "h" -> x.h, "history" -> x.history) ++ extra)*)
+        }
+        val inBounds = List(2L, 4L, 255L, 256L).map(v => v -> hs(v).stateRoot.bytes)
+        val fromFour = List(4L, 255L, 256L, 300L).map(v => v -> hs(v).stateRoot.bytes)
+        def bounded2(vs: List[(Long, ByteVector)]) =
+          run2(versionsBounded, bounded, "from" -> int(2L), "until" -> int(300L), "vs" -> versionList(vs))
+        expect
+          .same(Right(True), bounded2(inBounds))
+          .and(expect.same(Right(False), bounded2(inBounds.drop(1))))
+          .and(expect.same(Right(False), bounded2(inBounds :+ (300L -> hs(300L).stateRoot.bytes))))
+          .and(expect.same(Right(False), bounded2(inBounds.map { case (v, r) => (if (v == 4L) 3L else v) -> r })))
+          .and(expect.same(Right(True), run2(versionsFrom, open, "from" -> int(4L), "vs" -> versionList(fromFour))))
+          .and(expect.same(Right(False), run2(versionsFrom, open, "from" -> int(4L), "vs" -> versionList(fromFour.dropRight(1)))))
+          // the proof from 4 leaves versions 1 and 2 as a stub: asking it for everything from 1 is no answer
+          .and(expect(isCrypto(run2(versionsFrom, open, "from" -> int(1L), "vs" -> versionList(fromFour))), "not covered"))
+    }
+  }
+
+  test("versions above 2^63 - 1: int_to_bytes still builds a key, which a head proof shows absent; 2^64 is a Domain error") { jlvm =>
+    (withStore(_.proveHead), heads).tupled.map {
+      case (p, hs) =>
+        val x = parts(p)
+        def claim(u: BigInt, su: CanonicalValue) =
+          run(jlvm, versionCommitted, "root" -> x.root, "top" -> x.top, "h" -> x.h, "history" -> x.history, "u" -> CInt(u), "su" -> su)
+        val cap = BigInt(Long.MaxValue)
+        val head = CBytes(hs(300L).stateRoot.bytes)
+        expect
+          .same(Right(True), claim(300, head))
+          .and(expect.same(Right(True), claim(cap, CNull)))
+          .and(expect.same(Right(True), claim(cap + 1, CNull)))
+          .and(expect.same(Right(False), claim(cap + 1, head)))
+          .and(expect.same(Right(True), claim(BigInt(2).pow(64) - 1, CNull)))
+          .and(
+            expect(
+              claim(BigInt(2).pow(64), CNull) match {
+                case Left(JlvmError.Domain("int_to_bytes", _)) => true
+                case _                                         => false
+              },
+              "2^64 does not fit 8 bytes"
+            )
+          )
+    }
+  }
+
   test("every proof in versioned_trie_v1.json verifies in the JLVM with the answers the vectors record") { jlvm =>
     (specExample, IO(new String(Files.readAllBytes(Paths.get("shared", "vectors", "versioned_trie_v1.json")), UTF_8))).tupled.map {
       case (pastKey, text) =>
@@ -382,9 +444,35 @@ object VersionedTrieProgramsSuite extends IOSuite {
                     run(jlvm, pastKey, (common ++ List("u" -> int(at.getOrElse(-1L)), "su" -> su, "k" -> bytesOf(k), "x" -> v))*)
                   )
               }
-            case _ => expect.same(Right(True), run(jlvm, versionSlot, "root" -> root, "top" -> x.top, "v" -> x.v))
+            case "versions" =>
+              val vs = get(c.downField("versions").as[List[Json]]).map { vj =>
+                get(vj.hcursor.get[Long]("version")) -> bytes(get(vj.hcursor.get[String]("stateRoot")))
+              }
+              val from = "from" -> int(at.getOrElse(-1L))
+              expect.same(
+                Right(True),
+                c.get[Long]("until")
+                  .toOption
+                  .fold(run(jlvm, versionsFrom, (common ++ List(from, "vs" -> versionList(vs)))*))(u =>
+                    run(jlvm, versionsBounded, (common ++ List(from, "until" -> int(u), "vs" -> versionList(vs)))*)
+                  )
+              )
+            case "head" => expect.same(Right(True), run(jlvm, versionSlot, "root" -> root, "top" -> x.top, "v" -> x.v))
+            case other  => failure(s"proof kind $other has no JLVM check")
           }
         }
+    }
+  }
+
+  test("versionKeys in versioned_trie_v1.json: the JLVM's int_to_bytes [v, 8] is each key, valid or not") { jlvm =>
+    IO(new String(Files.readAllBytes(Paths.get("shared", "vectors", "versioned_trie_v1.json")), UTF_8)).map { text =>
+      val rows = get(get(io.circe.parser.parse(text)).hcursor.downField("versionKeys").as[List[Json]])
+      expect(rows.exists(r => r.hcursor.get[Boolean]("valid").contains(false)), "the vectors cross the cap") |+|
+      rows.foldMap { r =>
+        val v = get(r.hcursor.get[BigInt]("version"))
+        val key = get(ByteVector.fromHexDescriptive(get(r.hcursor.get[String]("key"))))
+        expect.same(Right(CBytes(key)), run(jlvm, """{"int_to_bytes": [{"var": "v"}, 8]}""", "v" -> CInt(v)))
+      }
     }
   }
 }

@@ -19,6 +19,7 @@ export interface VersionedTrieVectors {
   readonly proofs: readonly VtProof[];
   readonly snapshot: VtSnapshot;
   readonly stateKeys: readonly VtStateKey[];
+  readonly versionKeys: readonly VtVersionKey[];
 }
 
 export const VersionedTrieVectors: c.Codec<VersionedTrieVectors> = {
@@ -36,10 +37,11 @@ export const VersionedTrieVectors: c.Codec<VersionedTrieVectors> = {
         c.field("proofs", c.vector(c.defer(() => VtProof), 0, null), a.proofs, e),
         c.field("snapshot", c.defer(() => VtSnapshot), a.snapshot, e),
         c.field("stateKeys", c.vector(c.defer(() => VtStateKey), 0, null), a.stateKeys, e),
+        c.field("versionKeys", c.vector(c.defer(() => VtVersionKey), 0, null), a.versionKeys, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys"]);
+    const f = c.fields(v, ["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys", "versionKeys"]);
     if (!f.ok) return f;
     const r0 = f.value.required("spec", c.literalText("docs/specs/versioned-trie.md"));
     if (!r0.ok) return r0;
@@ -63,7 +65,9 @@ export const VersionedTrieVectors: c.Codec<VersionedTrieVectors> = {
     if (!r9.ok) return r9;
     const r10 = f.value.required("stateKeys", c.vector(c.defer(() => VtStateKey), 0, null));
     if (!r10.ok) return r10;
-    return c.ok({ spec: r0.value, version: r1.value, hash: r2.value, width: r3.value, emptyStateRoot: r4.value, head: r5.value, commits: r6.value, root: r7.value, proofs: r8.value, snapshot: r9.value, stateKeys: r10.value });
+    const r11 = f.value.required("versionKeys", c.vector(c.defer(() => VtVersionKey), 0, null));
+    if (!r11.ok) return r11;
+    return c.ok({ spec: r0.value, version: r1.value, hash: r2.value, width: r3.value, emptyStateRoot: r4.value, head: r5.value, commits: r6.value, root: r7.value, proofs: r8.value, snapshot: r9.value, stateKeys: r10.value, versionKeys: r11.value });
   },
 };
 
@@ -387,5 +391,34 @@ export const VtVersion: c.Codec<VtVersion> = {
     const r1 = f.value.optional("stateRoot", c.defer(() => Hex));
     if (!r1.ok) return r1;
     return c.ok({ version: r0.value, stateRoot: r1.value });
+  },
+};
+
+/** `vt-version-key` (`shared/schemas/versioned-trie-vectors.cddl`). */
+export interface VtVersionKey {
+  readonly version: bigint;
+  readonly key: Hex;
+  readonly valid: boolean;
+}
+
+export const VtVersionKey: c.Codec<VtVersionKey> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("version", c.uint, a.version, e),
+        c.field("key", c.defer(() => Hex), a.key, e),
+        c.field("valid", c.bool, a.valid, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["version", "key", "valid"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("version", c.uint);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("key", c.defer(() => Hex));
+    if (!r1.ok) return r1;
+    const r2 = f.value.required("valid", c.bool);
+    if (!r2.ok) return r2;
+    return c.ok({ version: r0.value, key: r1.value, valid: r2.value });
   },
 };

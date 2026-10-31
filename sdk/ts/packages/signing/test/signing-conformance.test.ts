@@ -6,8 +6,10 @@ import {
   bip340,
   blsPop,
   ed25519,
+  ed25519Bip32,
   Message32,
   p256Ecdsa,
+  parsePath,
   ristretto255Schnorr,
   secp256k1Ecdsa,
   taggedSchnorr,
@@ -138,6 +140,44 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
       if (actual !== c.result) mismatches.push(`${c.scheme}/${c.name}: expected ${c.result}, got ${actual} ${r.ok ? "" : JSON.stringify(r.error)}`);
     }
     expect(mismatches).toEqual([]);
+  });
+
+  // a signing-key decoder per scheme, and the verifying-key decoder of each (Ed25519-BIP32 keys verify as Ed25519)
+  const signingKeyOf: Record<string, (b: Uint8Array) => Result<unknown, SigningError>> = {
+    Ed25519: ed25519.signingKey,
+    "Ed25519-BIP32": ed25519Bip32.signingKey,
+    "P-256-ECDSA": p256Ecdsa.signingKey,
+    "secp256k1-ECDSA": secp256k1Ecdsa.signingKey,
+    "BIP-340": bip340.signingKey,
+    "secp256k1-tagged-Schnorr": taggedSchnorr.signingKey,
+    "ristretto255-Schnorr": ristretto255Schnorr.signingKey,
+    "BLS12-381-PoP": blsPop.signingKey,
+  };
+
+  test("key decoding: a wrong length is InvalidEncoding, a well-sized non-key InvalidKey", () => {
+    expect(vectors.keyDecoding.length).toBeGreaterThan(90);
+    const mismatches: string[] = [];
+    for (const c of vectors.keyDecoding) {
+      const a = adapters[c.scheme];
+      const decode = c.part === "signingKey" ? signingKeyOf[c.scheme] : a && ((b: Uint8Array) => a.verifyingKey(b));
+      if (decode === undefined) {
+        mismatches.push(`no ${c.part} decoder for ${c.scheme}`);
+        continue;
+      }
+      const r = decode(h(c.bytes));
+      const actual = r.ok ? "accepted" : r.error.kind;
+      if (actual !== c.result) mismatches.push(`${c.scheme} ${c.part} ${c.name}: expected ${c.result}, got ${actual}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  test("paths are strict: nothing trimmed, ASCII digits only, no empty segment", () => {
+    expect(vectors.paths.length).toBeGreaterThan(30);
+    for (const c of vectors.paths) {
+      const r = parsePath(c.path);
+      const actual = r.ok ? { indices: r.value.map((i) => BigInt(i.serialized)) } : "invalid";
+      expect(actual, JSON.stringify(c.path)).toEqual(c.result);
+    }
   });
 
   test("BLS proofs of possession reproduce and verify", { timeout: 30_000 }, () => {

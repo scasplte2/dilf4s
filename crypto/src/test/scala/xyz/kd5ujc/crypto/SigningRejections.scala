@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import cats.syntax.all._
 
 import xyz.kd5ujc.crypto.bls.{Bls12381, BlsPop}
+import xyz.kd5ujc.crypto.keys.{Ed25519Bip32, Secret}
 import xyz.kd5ujc.crypto.signing._
 import xyz.kd5ujc.crypto.vrf._
 
@@ -226,6 +227,128 @@ object SigningRejections {
     ecdsa[P256Ecdsa]("P-256-ECDSA", nP256, p256, P256Ecdsa.signer.sign(p256.signing, abc).bytes) ++
     ecdsa[Secp256k1Ecdsa]("secp256k1-ECDSA", nSecp256k1, k1, ecdsaSigner.sign(k1.signing, abc).bytes) ++
     bipCases ++ taggedCases ++ ristretto ++ blsCases
+  }
+
+  // ---- key decoding: which typed error each decoder gives
+
+  /** The decoder's verdict: `"accepted"`, or the [[CryptoError]] kind. */
+  private def decoded(r: Either[CryptoError, ?]): String = r.fold(_.productPrefix, _ => "accepted")
+
+  private def keyRow(scheme: String, name: String, part: String, bytes: ByteVector, expected: String)(
+    decode: ByteVector => Either[CryptoError, ?]
+  ): Json = {
+    val result = decoded(decode(bytes))
+    require(expected == result, s"$scheme $part $name: expected $expected, got $result")
+    Json.obj(
+      "scheme" -> scheme.asJson,
+      "name"   -> name.asJson,
+      "part"   -> part.asJson,
+      "bytes"  -> bytes.toHex.asJson,
+      "result" -> result.asJson
+    )
+  }
+
+  /** Signing-key rows: a wrong length is `InvalidEncoding`; well-sized bytes that are no key are `InvalidKey`. */
+  private def signingKeys[S](scheme: String, valid: ByteVector, invalid: List[(String, ByteVector)])(
+    implicit C: SchemeCodec[S]
+  ): List[Json] = {
+    val row = (name: String, b: ByteVector, expected: String) => keyRow(scheme, name, "signingKey", b, expected)(C.signingKey)
+    List(
+      row("valid", valid, "accepted"),
+      row("short", valid.dropRight(1), "InvalidEncoding"),
+      row("long", valid :+ 0.toByte, "InvalidEncoding"),
+      row("empty", ByteVector.empty, "InvalidEncoding")
+    ) ++ invalid.map { case (name, b) => row(name, b, "InvalidKey") }
+  }
+
+  /** Verifying-key rows, as [[signingKeys]]. */
+  private def verifyingKeys[S](scheme: String, valid: ByteVector, invalid: List[(String, ByteVector)])(
+    implicit C: SchemeCodec[S]
+  ): List[Json] = {
+    val row = (name: String, b: ByteVector, expected: String) => keyRow(scheme, name, "verifyingKey", b, expected)(C.verifyingKey)
+    List(
+      row("valid", valid, "accepted"),
+      row("short", valid.dropRight(1), "InvalidEncoding"),
+      row("long", valid :+ 0.toByte, "InvalidEncoding")
+    ) ++ invalid.map { case (name, b) => row(name, b, "InvalidKey") }
+  }
+
+  /** 33-byte keys over a valid key's x with a tag other than 02 or 03: SEC1 parsers take some of these tags. */
+  private def badTags(vk: ByteVector): List[(String, ByteVector)] =
+    List(0x00, 0x01, 0x04, 0x05, 0x06, 0x07, 0x82, 0xff).map(t => f"tag-$t%02x" -> (ByteVector(t.toByte) ++ vk.drop(1)))
+
+  private val pSecp256k1: BigInt = BigInt("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f", 16)
+  private val pP256: BigInt = BigInt("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff", 16)
+  private val rBls: BigInt = BigInt("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001", 16)
+
+  /** The 65-byte SEC1 uncompressed form (`04 || x || y`) of a compressed key. */
+  private def uncompressed(curveName: String, compressed: ByteVector): ByteVector = {
+    val curve = org.bouncycastle.crypto.ec.CustomNamedCurves.getByName(curveName)
+    ByteVector.view(curve.getCurve.decodePoint(compressed.toArray).getEncoded(false))
+  }
+
+  private def ecdsaKeys[S](scheme: String, curveName: String, n: BigInt, p: BigInt, kp: KeyPair[S])(
+    implicit C: SchemeCodec[S]
+  ): List[Json] =
+    signingKeys[S](scheme, kp.signing.bytes, List("zero" -> ByteVector.low(32), "n" -> be32(n), "above-n" -> be32(n + 1))) ++
+    verifyingKeys[S](
+      scheme,
+      kp.verifying.bytes,
+      List("off-curve" -> offCurve(C.verifyingKey, ByteVector(0x02), 33), "x-is-p" -> (ByteVector(0x02) ++ be32(p))) ++
+      badTags(kp.verifying.bytes)
+    ) :+
+    keyRow(scheme, "uncompressed", "verifyingKey", uncompressed(curveName, kp.verifying.bytes), "InvalidEncoding")(C.verifyingKey)
+
+  private def schnorrKeys[S](scheme: String, kp: KeyPair[?])(implicit C: SchemeCodec[S]): List[Json] =
+    signingKeys[S](scheme, kp.signing.bytes, List("zero" -> ByteVector.low(32), "n" -> be32(nSecp256k1))) ++
+    verifyingKeys[S](
+      scheme,
+      kp.verifying.bytes,
+      List("off-curve" -> offCurve(C.verifyingKey, ByteVector.empty, 32), "x-is-p" -> be32(pSecp256k1))
+    )
+
+  /** How every scheme's decoders classify signing and verifying keys (signing.md §4). */
+  def keyDecoding(secp: Secp256k1, bls: Bls12381): List[Json] = {
+    val instances = new Secp256k1.Instances(secp)
+    import instances._
+    val seed = CryptoVectors.seeds.head
+    val ed = get(Ed25519.seedDerivation.fromSeed(seed))
+    val icarus = get(Ed25519Bip32.icarus(Secret(seed.take(16)))).key.bytes
+    val rist = get(Ristretto255Schnorr.seedDerivation.fromSeed(seed))
+    val blsKp = get(bls.seedDerivation.fromSeed(seed))
+    val bip = get(bip340SeedDerivation.fromSeed(seed))
+    signingKeys[Ed25519]("Ed25519", ed.signing.bytes, Nil)(using Ed25519.codec) ++
+    verifyingKeys[Ed25519]("Ed25519", ed.verifying.bytes, List("not-a-point" -> notAPoint))(using Ed25519.codec) ++
+    signingKeys[Ed25519Bip32](
+      "Ed25519-BIP32",
+      icarus,
+      List(
+        "kl-not-multiple-of-8" -> icarus.update(0, (icarus(0) | 0x01).toByte),
+        "kl-top-bit"           -> icarus.update(31, (icarus(31) | 0x80).toByte)
+      )
+    )(using Ed25519Bip32.codec) ++
+    ecdsaKeys[P256Ecdsa]("P-256-ECDSA", "secp256r1", nP256, pP256, get(P256Ecdsa.seedDerivation.fromSeed(seed)))(using P256Ecdsa.codec) ++
+    ecdsaKeys[Secp256k1Ecdsa]("secp256k1-ECDSA", "secp256k1", nSecp256k1, pSecp256k1, get(ecdsaSeedDerivation.fromSeed(seed))) ++
+    schnorrKeys[Bip340]("BIP-340", bip) ++
+    schnorrKeys[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", bip) ++
+    signingKeys[Ristretto255Schnorr]("ristretto255-Schnorr", rist.signing.bytes, List("zero" -> ByteVector.low(32), "l" -> le32(L)))(
+      using Ristretto255Schnorr.codec
+    ) ++
+    verifyingKeys[Ristretto255Schnorr](
+      "ristretto255-Schnorr",
+      rist.verifying.bytes,
+      List("identity" -> ByteVector.low(32), "non-canonical" -> (ByteVector(1) ++ ByteVector.low(31)))
+    )(using Ristretto255Schnorr.codec) ++
+    signingKeys[BlsPop]("BLS12-381-PoP", blsKp.signing.bytes, List("zero" -> ByteVector.low(32), "r" -> be32(rBls)))(using bls.codec) ++
+    verifyingKeys[BlsPop](
+      "BLS12-381-PoP",
+      blsKp.verifying.bytes,
+      List(
+        "identity"          -> (ByteVector(0xc0) ++ ByteVector.low(47)),
+        "uncompressed-flag" -> blsKp.verifying.bytes.update(0, (blsKp.verifying.bytes(0) & 0x7f).toByte),
+        "off-curve"         -> offCurve(bls.codec.verifyingKey, ByteVector(0x80), 48)
+      )
+    )(using bls.codec)
   }
 
   /** Proofs of possession for the shared seeds. */

@@ -811,5 +811,142 @@
         ]
       }
     }
+  ],
+  "malformed" : [
+    {
+      "name" : "branch-one-child-no-value",
+      "mode" : {
+        "variable" : 1
+      },
+      "root" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+      "cbor" : "82a26163016173a2616240616e00a26173a261624100616e076176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "Encoding"
+    },
+    {
+      "name" : "branch-one-child-no-value-fixed",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+      "cbor" : "82a26163016173a2616240616e00a26173a261624100616e076176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "Encoding"
+    },
+    {
+      "name" : "branch-no-children",
+      "mode" : {
+        "variable" : 1
+      },
+      "root" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+      "cbor" : "81a26163006173a2616240616e00",
+      "error" : "Encoding"
+    },
+    {
+      "name" : "non-zero-padding",
+      "mode" : {
+        "variable" : 1
+      },
+      "root" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+      "cbor" : "81a26173a261624101616e076176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "Encoding"
+    },
+    {
+      "name" : "segment-length-mismatch",
+      "mode" : {
+        "variable" : 1
+      },
+      "root" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+      "cbor" : "81a26173a261624100616e096176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "Encoding"
+    },
+    {
+      "name" : "short-digest",
+      "mode" : {
+        "variable" : 1
+      },
+      "root" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+      "cbor" : "81a16168581f00000000000000000000000000000000000000000000000000000000000000",
+      "error" : "Encoding"
+    },
+    {
+      "name" : "trailing-record",
+      "mode" : {
+        "variable" : 1
+      },
+      "root" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+      "cbor" : "84a26163036173a2616240616e00a26173a261624100616e076176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3a26173a261624100616e076176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3a26173a261624100616e076176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "Encoding"
+    },
+    {
+      "name" : "unfinished-branch",
+      "mode" : {
+        "variable" : 1
+      },
+      "root" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+      "cbor" : "82a26163036173a2616240616e00a26173a261624100616e076176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "Encoding"
+    },
+    {
+      "name" : "fixed-leaf-too-short",
+      "mode" : {
+        "fixed" : 2
+      },
+      "root" : "8b41c1029a3f66ef505851baf28c46eab19af61fd116b3288cd2f7842da719d3",
+      "cbor" : "81a26173a261624100616e086176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "InvalidProof"
+    },
+    {
+      "name" : "fixed-leaf-too-long",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "660a27389fb3f301dd7c11ec02cd284c142392eb5f793491906780780c235822",
+      "cbor" : "81a26173a26162420000616e106176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "InvalidProof"
+    },
+    {
+      "name" : "fixed-branch-value",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "ffa0159cb4c72802af7d1058655701bfc95429fac38f9168b71c19c51fe28cae",
+      "cbor" : "82a36163016173a2616240616e006176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3a26173a261624100616e076176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "InvalidProof"
+    },
+    {
+      "name" : "fixed-branch-too-deep",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "1eac43a6e811b02e25c69f236c163f2611f525373a407bf993559b9a17088f07",
+      "cbor" : "83a26163036173a261624100616e08a26173a261624100616e076176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3a26173a261624100616e076176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "InvalidProof"
+    },
+    {
+      "name" : "variable-leaf-unaligned",
+      "mode" : {
+        "variable" : 1
+      },
+      "root" : "1a72c89f63df2688ee05e715ed200a4b9f98e2cf7bc7b006f4de488bfafff0a8",
+      "cbor" : "81a26173a261624100616e046176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "InvalidProof"
+    },
+    {
+      "name" : "variable-leaf-too-long",
+      "mode" : {
+        "variable" : 1
+      },
+      "root" : "660a27389fb3f301dd7c11ec02cd284c142392eb5f793491906780780c235822",
+      "cbor" : "81a26173a26162420000616e106176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "InvalidProof"
+    },
+    {
+      "name" : "variable-branch-value-unaligned",
+      "mode" : {
+        "variable" : 1
+      },
+      "root" : "497bad0d40cf13218c2e7f02a6cdb276204a56d35fd49a0e11e06eac94725ce1",
+      "cbor" : "82a36163016173a261624100616e046176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3a26173a261624100616e036176582003b18f3f574bca9568e5bf81ebab3e877db655f14d2e491ef73c48f6453875f3",
+      "error" : "InvalidProof"
+    }
   ]
 }

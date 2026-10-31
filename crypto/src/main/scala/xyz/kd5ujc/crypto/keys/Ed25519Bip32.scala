@@ -31,11 +31,12 @@ object Ed25519Bip32 {
   implicit val codec: SchemeCodec[Ed25519Bip32] = new SchemeCodec[Ed25519Bip32] {
     val name: String = "Ed25519-BIP32"
     def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[Ed25519Bip32]] =
-      Either.cond(
-        bytes.size == 64L && validKL(bytes.take(32)),
-        new SigningKey[Ed25519Bip32](bytes),
-        CryptoError.InvalidKey("expected 64-byte kL || kR with a clamped kL")
-      )
+      SchemeCodec
+        .sized("Ed25519-BIP32 signing key", 64, bytes)
+        .flatMap(b =>
+          Either
+            .cond(validKL(b.take(32)), new SigningKey[Ed25519Bip32](b), CryptoError.InvalidKey("kL must be a multiple of 8 below 2^255"))
+        )
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[Ed25519Bip32]] =
       Ed25519.codec.verifyingKey(bytes).map(k => VerifyingKey[Ed25519Bip32](k.bytes))
     def signature(bytes: ByteVector): Either[CryptoError, Signature[Ed25519Bip32]] =
@@ -125,11 +126,15 @@ object Ed25519Bip32 {
     else {
       val idx = ChildIndex.le32(index)
       val z = Hmac.sha512(chainCode, ByteVector(0x02) ++ key.bytes ++ idx)
-      Either
-        .catchNonFatal(new CompressedEdwardsY(key.bytes.toArray).decompress())
-        .toOption
-        .filter(p => ByteVector.view(p.compress().toByteArray) == key.bytes)
-        .toRight(KeyError.InvalidDerivation("verifying key is not a canonical point encoding"))
+      ExtendedKey
+        .chainCode(chainCode)
+        .flatMap(_ =>
+          Either
+            .catchNonFatal(new CompressedEdwardsY(key.bytes.toArray).decompress())
+            .toOption
+            .filter(p => ByteVector.view(p.compress().toByteArray) == key.bytes)
+            .toRight(KeyError.InvalidDerivation("verifying key is not a canonical point encoding"))
+        )
         .map { point =>
           val child = Constants.ED25519_BASEPOINT_TABLE.multiply(Scalar.fromBytesModOrder(times8(z).toArray)).add(point)
           (

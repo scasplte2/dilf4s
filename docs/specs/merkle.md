@@ -41,6 +41,11 @@ An `rfc6962` profile exists only for interoperability tests: `leafHash(d) = H(0x
 - **Inclusion proof** for leaf `m` in a tree of size `n`: the RFC 9162 §2.1.3.1 audit path. Verification follows §2.1.3.2 exactly. As in RFC 9162, the verifier must take the tree size **and** root from the same trusted tree head: the algorithm binds the leaf to `(size, root)` together, not to the size alone. A root from a smaller tree can satisfy a proof that claims a larger size.
 - **Consistency proof** between sizes `0 < m <= n`: the RFC 9162 §2.1.4.1 path. Verification follows §2.1.4.2 exactly. When `m == n` the proof is empty and the roots must be equal. Size 0 is consistent with every tree, given an empty proof and `emptyHash` as the old root.
 
+**Malformed proofs** are typed errors, not `false`. A shape the schema (§4) refuses, or a path entry that is not a
+digest of the hash's length, is `Encoding`. An inclusion proof with `index ≥ size` is `IndexOutOfRange`. A consistency
+proof with `old > new` is `InvalidSizes`: it names two sizes, not an index, and the verifier reports sizes out of order
+the same way. The `malformed` vectors record each kind.
+
 ## 4. Proof encoding
 
 Proofs are canonical values (`docs/specs/canonical-encoding.md`). The normative schema is `shared/schemas/merkle.cddl`. It is reproduced here verbatim and checked by a test; generated types and codecs for it live in `xyz.kd5ujc.models.merkle`:

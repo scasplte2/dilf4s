@@ -51,6 +51,12 @@ object ProofOpsSuite extends IOSuite {
     case _                            => false
   }
 
+  /** Not covered is a `Crypto` error (jlvm.md §6) carrying the typed `TrieError.NotCovered`. */
+  private def notCovered(r: Either[JlvmError, CanonicalValue]): Boolean = r match {
+    case Left(JlvmError.Crypto(_, m)) => m.startsWith("NotCovered(")
+    case _                            => false
+  }
+
   // ---- Merkle
 
   /**
@@ -86,6 +92,36 @@ object ProofOpsSuite extends IOSuite {
           }
         }
       }
+    }
+  }
+
+  test("every malformed proof of merkle_v1 and trie_v1 is a Crypto error, whichever kind the decoder or verifier gives") { f =>
+    IO {
+      val emptyRoot = str(f.trie.hcursor.downField("emptyRoot"))
+      val merkle = get(f.merkle.hcursor.downField("malformed").as[List[Json]]).foldMap { c =>
+        val (name, proof) = (str(c.hcursor.downField("name")), cbor(str(c.hcursor.downField("cbor"))))
+        val r = str(c.hcursor.downField("kind")) match {
+          case "inclusion" => call(f.jlvm, Op.MerkleVerify, headOf(emptyRoot, 3), CBytes(ByteVector(1)), proof)
+          case _           => call(f.jlvm, Op.MerkleConsistencyVerify, headOf(emptyRoot, 1), headOf(emptyRoot, 3), proof)
+        }
+        expect(isCrypto(r), s"merkle $name: $r")
+      }
+      val trie = get(f.trie.hcursor.downField("malformed").as[List[Json]]).foldMap { c =>
+        val md = get(c.hcursor.downField("mode").as[Json])
+        // a key the mode accepts: all zeros in fixed mode, empty in variable mode
+        val key = md.hcursor.get[Int]("fixed").fold(_ => ByteVector.empty, n => ByteVector.low(n.toLong))
+        val r = call(
+          f.jlvm,
+          Op.TrieVerify,
+          mode(md),
+          CBytes(hex(str(c.hcursor.downField("root")))),
+          CBytes(key),
+          CNull,
+          cbor(str(c.hcursor.downField("cbor")))
+        )
+        expect(isCrypto(r), s"trie ${str(c.hcursor.downField("name"))}: $r")
+      }
+      merkle |+| trie
     }
   }
 
@@ -253,7 +289,7 @@ object ProofOpsSuite extends IOSuite {
           val run = (v: CanonicalValue) => call(f.jlvm, Op.TrieVerify, md, root, CBytes(hex(key)), v, proof)
           l.hcursor.downField("result").as[String].toOption match {
             case Some("absent")     => expect.same(Right(True), run(CNull)).and(expect.same(Right(False), run(CBytes(ByteVector(1)))))
-            case Some("notCovered") => expect(isCrypto(run(CNull)), s"${str(c.downField("name"))} $key is not covered")
+            case Some("notCovered") => expect(notCovered(run(CNull)), s"${str(c.downField("name"))} $key is not covered: ${run(CNull)}")
             case _ =>
               expect
                 .same(Right(True), run(CBytes(vs(key))))
@@ -310,7 +346,7 @@ object ProofOpsSuite extends IOSuite {
           val entries = (ks: List[String]) => a(ks.map(k => a(CBytes(hex(k)), CBytes(vs(k))))*)
           val run = (ks: List[String]) => call(f.jlvm, Op.TrieRangeVerify, md, root, from, until, entries(ks), proof)
           l.hcursor.downField("result").as[String].toOption match {
-            case Some(_) => expect(isCrypto(run(Nil)), s"${str(c.downField("name"))} ${l.noSpaces} is not covered")
+            case Some(_) => expect(notCovered(run(Nil)), s"${str(c.downField("name"))} ${l.noSpaces} is not covered: ${run(Nil)}")
             case None =>
               val listed = get(l.hcursor.downField("result").downField("entries").as[List[Json]]).map(e => str(e.hcursor.downField("key")))
               expect
@@ -403,7 +439,7 @@ object ProofOpsSuite extends IOSuite {
         .and(expect.same(Right(False), run(listed.updated(1, "0001" -> (vs("0001") :+ 0)), proofOf(full))))
         .and(expect.same(Right(False), run(List("0000" -> vs("0001"), "0001" -> vs("0000"), "00ff" -> vs("00ff")), proofOf(full))))
         .and(expect.same(Right(False), run(listed.take(2) ++ List("0080" -> ByteVector(9)) ++ listed.drop(2), proofOf(full))))
-        .and(expect(isCrypto(run(listed.take(2), proofOf(partial))), "a key proof does not cover the prefix"))
+        .and(expect(notCovered(run(listed.take(2), proofOf(partial))), "a key proof does not cover the prefix"))
         .and(expect(isCrypto(run(listed, m("nope" -> text("x")))), "an undecodable proof"))
     }
   }

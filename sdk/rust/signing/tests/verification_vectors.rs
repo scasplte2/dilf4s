@@ -16,7 +16,10 @@
 mod common;
 
 use common::{bytes, load};
-use dilf4s_core::generated::signing_vectors::{SigningVectors, VerificationResult};
+use dilf4s_core::generated::signing_vectors::{
+    KeyDecodingResult, KeyPart, PathResult, SigningVectors, VerificationResult,
+};
+use dilf4s_signing::keys::path;
 use dilf4s_signing::{SchemeId, SigningError, bls, ecdsa, ed25519, ristretto255, schnorr};
 
 /// Decodes just the verifying key of a scheme, to tell a malformed key from a malformed signature.
@@ -98,4 +101,50 @@ fn proofs_of_possession_verify() {
         assert!(!bls::verify(&vk, vk.as_bytes(), &proof), "a PoP is not a message signature");
     }
     assert_eq!(v.bls_pop.len(), 3);
+}
+
+/// The kind a `keyDecoding` row records, as `SigningError::kind` names it.
+pub fn expected_kind(r: &KeyDecodingResult) -> &'static str {
+    match r {
+        KeyDecodingResult::Accepted => "accepted",
+        KeyDecodingResult::InvalidEncoding => "InvalidEncoding",
+        KeyDecodingResult::InvalidKey => "InvalidKey",
+    }
+}
+
+/// Every `keyDecoding` row for a verifying key: a wrong length is `InvalidEncoding`, and well-sized bytes that are no
+/// key (an ECDSA key not tagged 02 or 03 among them) are `InvalidKey`.
+#[test]
+fn verifying_key_decoding() {
+    let v: SigningVectors = load("signing_v1.json");
+    let rows: Vec<_> = v.key_decoding.iter().filter(|c| c.part == KeyPart::VerifyingKey).collect();
+    let failures: Vec<String> = rows
+        .iter()
+        .filter_map(|c| {
+            let Some(id) = SchemeId::from_name(&c.scheme) else {
+                return Some(format!("unknown scheme {}", c.scheme));
+            };
+            let actual = key_decodes(id, &bytes(&c.bytes)).map_or_else(|e| e.kind(), |()| "accepted");
+            let expected = expected_kind(&c.result);
+            (actual != expected).then(|| format!("{} {}: expected {expected}, got {actual}", c.scheme, c.name))
+        })
+        .collect();
+    assert!(failures.is_empty(), "{} failures:\n{}", failures.len(), failures.join("\n"));
+    assert!(rows.len() >= 40, "{} verifying-key rows", rows.len());
+}
+
+/// Every `paths` row: nothing trimmed, ASCII digits only, no empty segment; accepted paths give these indices.
+#[test]
+fn path_strictness() {
+    let v: SigningVectors = load("signing_v1.json");
+    assert!(v.paths.len() >= 30, "{} path rows", v.paths.len());
+    for c in &v.paths {
+        let actual =
+            path::parse(&c.path).ok().map(|is| is.into_iter().map(|i| u64::from(i.serialized())).collect::<Vec<_>>());
+        let expected = match &c.result {
+            PathResult::PathIndices(p) => Some(p.indices.clone()),
+            PathResult::Invalid => None,
+        };
+        assert_eq!(actual, expected, "path {:?}", c.path);
+    }
 }

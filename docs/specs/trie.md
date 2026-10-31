@@ -62,9 +62,18 @@ Branch(segment, valueHash?, left, right)       -- children are partial nodes
 Empty                                          -- only as the whole proof of an empty trie
 ```
 
-**Verification against `root`:**
-1. Recompute the partial trie's hash: a stub contributes its hash, and other nodes hash per §3. The result must equal `root`.
-2. Check the structure: every branch satisfies the branch invariant (§2), no `Empty` appears below the top, the mode's rules hold, segment padding is canonical, and the bit depth of every path stays within the mode's key length.
+**Decoding** (§5) checks everything a reader can see without the mode, and refuses a violation as malformed
+(`Encoding`): the record shapes, segment lengths and zero padding, the branch invariant (§2: a branch record's
+children and value), the pre-order structure, and no trailing records. `Empty` exists only as the whole proof, the
+empty array, so it cannot appear below the top.
+
+**Verification against `root`** takes the mode:
+1. Recompute the partial trie's hash: a stub contributes its hash, and other nodes hash per §3. The result must equal `root`; otherwise it is `RootMismatch`, a well-formed proof of another trie.
+2. Check what the mode decides, and refuse a violation as `InvalidProof`: a fixed-mode leaf ends exactly at the key length; a variable-mode leaf or branch value ends on a byte boundary within it; fixed mode has no branch values; and no path is longer than the key length.
+
+A partial trie built in memory rather than decoded has not met the decoder, so verification also checks the branch
+invariant, as `InvalidProof`. For a decoded proof that check cannot fail. The `malformed` vectors record the kind for
+each rule.
 
 **Answering a lookup** for key `k` after verification: walk `k`'s path from the top node.
 - **Mismatch.** If `k`'s bits differ from a node's segment, or `k` ends inside the segment: **absent**.
