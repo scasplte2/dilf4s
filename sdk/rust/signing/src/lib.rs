@@ -23,6 +23,7 @@ extern crate alloc;
 
 pub mod bls;
 pub mod ecdsa;
+pub mod ecrecover;
 pub mod ed25519;
 #[cfg(feature = "sign")]
 pub mod ed25519_bip32;
