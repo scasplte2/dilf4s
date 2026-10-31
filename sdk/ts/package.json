@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/core"
+    "packages/core",
+    "packages/signing",
+    "packages/proofs"
   ],
   "engines": {
     "node": ">=22.12"

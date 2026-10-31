@@ -86,3 +86,7 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - run: cargo build -p dilf4s-core --release --target riscv32im-unknown-none-elf
+      - run: cargo build -p dilf4s-proofs --release --target riscv32im-unknown-none-elf
+      # the verifier-only build an SP1 guest uses, and the full one
+      - run: cargo build -p dilf4s-signing --no-default-features --release --target riscv32im-unknown-none-elf
+      - run: cargo build -p dilf4s-signing --release --target riscv32im-unknown-none-elf

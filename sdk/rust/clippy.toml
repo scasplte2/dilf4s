@@ -1,6 +1,27 @@
 # Big-integer arithmetic cannot overflow (it allocates). Division by zero still panics: every division in the crate
 # is by a value already shown to be non-zero.
-arithmetic-side-effects-allowed = ["num_bigint::BigInt", "num_bigint::BigUint"]
+# Group and prime-field types are modular: their operators cannot overflow or panic.
+arithmetic-side-effects-allowed = [
+  "num_bigint::BigInt",
+  "num_bigint::BigUint",
+  "curve25519_dalek::scalar::Scalar",
+  "curve25519_dalek::edwards::EdwardsPoint",
+  "curve25519_dalek::ristretto::RistrettoPoint",
+  "k256::Scalar",
+  "k256::ProjectivePoint",
+  "k256::AffinePoint",
+  "p256::Scalar",
+  "p256::ProjectivePoint",
+  "p256::AffinePoint",
+  "bls12_381::Scalar",
+  "bls12_381::G1Projective",
+  "bls12_381::G2Projective",
+  "bls12_381::G1Affine",
+  "bls12_381::G2Affine",
+  "bls12_381::Gt",
+  "ark_bn254::Fr",
+  "ark_ff::Fp",
+]
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-indexing-slicing-in-tests = true
