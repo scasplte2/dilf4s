@@ -185,5 +185,67 @@
         "a3636e657708636f6c6408647061746880"
       ]
     }
+  ],
+  "valueCommitments" : [
+    {
+      "cbor" : "40",
+      "commitment" : "00",
+      "leafHash" : "0673307cecf465f209cddd9cac520d0e59894ad8fc6756f5d39d503ffdcae6dc"
+    },
+    {
+      "cbor" : "426161",
+      "commitment" : "006161",
+      "leafHash" : "0c270a8d26f630304809509c0f76cc15876cba2cbd5427a242349504f014c132"
+    },
+    {
+      "cbor" : "41f6",
+      "commitment" : "00f6",
+      "leafHash" : "49a51c92e08261e28f665ff8546795362b524095d53bf01aa5d4d1aa1f50868c"
+    },
+    {
+      "cbor" : "6161",
+      "commitment" : "016161",
+      "leafHash" : "163c5addfa4218544f1b07703fd14110d5cd475895af11f0bbf3b7e435fd9bff"
+    },
+    {
+      "cbor" : "f6",
+      "commitment" : "01f6",
+      "leafHash" : "2093781dd4dcca35d1baf73547c2bf068f43e1396cd6122665600aa55fe460ea"
+    },
+    {
+      "cbor" : "00",
+      "commitment" : "0100",
+      "leafHash" : "8b715621433264711a3b347dfd3438dff5f137b8bc75bf69f201fa27b990777d"
+    },
+    {
+      "cbor" : "20",
+      "commitment" : "0120",
+      "leafHash" : "3fc42a437c3c6e096aa886ad2507a2be5cd013bec39332b03744415eae290b95"
+    },
+    {
+      "cbor" : "d81e820102",
+      "commitment" : "01d81e820102",
+      "leafHash" : "6fd9b72e381299e42a0c441e1ee90095305966d8600d1d768c6bfcfab7ca158b"
+    },
+    {
+      "cbor" : "80",
+      "commitment" : "0180",
+      "leafHash" : "3833b00ece8754eb61b1ce727f09b2618e2e2b20769cb3db78705eab65b7d10f"
+    },
+    {
+      "cbor" : "82018102",
+      "commitment" : "0182018102",
+      "leafHash" : "35b3fd8e936c5cfdee201cc390d459074493aaaac6bcb8f575b8e422bf6131e1"
+    },
+    {
+      "cbor" : "a2616182f5f4616201",
+      "commitment" : "01a2616182f5f4616201",
+      "leafHash" : "43fdf59d2796aa75e5584a3d14cc2b6144da911ecb29bddc47f3d860a530a005"
+    },
+    {
+      "cbor" : "c249010000000000000000",
+      "commitment" : "01c249010000000000000000",
+      "leafHash" : "4e90968f509b384f4aa70605d91cb4905aef1ebe8fe99b82aab894e451756fc3"
+    }
   ]
 }

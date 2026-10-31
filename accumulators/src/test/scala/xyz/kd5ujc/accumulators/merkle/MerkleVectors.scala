@@ -5,7 +5,8 @@ import java.nio.file.{Files, Path, Paths}
 
 import cats.effect.{ExitCode, IO, IOApp}
 
-import xyz.kd5ujc.core.canonical.Cbor
+import xyz.kd5ujc.accumulators.ValueCommitment
+import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.Sha256
 
 import io.circe.Json
@@ -29,6 +30,19 @@ object MerkleVectors {
     hex"606162636465666768696a6b6c6d6e6f"
   )
 
+  /**
+   * Values committed as leaves (section 2): byte strings, and values whose CBOR equals those bytes, as JSON text. The
+   * bytes `6161` and the text "a" (CBOR `6161`) must commit apart.
+   */
+  val committedBytes: Vector[ByteVector] = Vector(hex"", hex"6161", hex"f6")
+  val committedJson: Vector[String] =
+    Vector("\"a\"", "null", "0", "-1", "0.5", "[]", "[1,[2]]", "{\"b\":1,\"a\":[true,false]}", "18446744073709551616")
+
+  private def commitment(v: CanonicalValue, m: MerkleHashing[Sha256]): Json = {
+    val c = ValueCommitment.bytes(v)
+    Json.obj("cbor" -> Cbor.encode(v).toHex.asJson, "commitment" -> c.toHex.asJson, "leafHash" -> m.leaf(c).hex.asJson)
+  }
+
   private def hexOrDie(e: Either[MerkleError, xyz.kd5ujc.core.canonical.CanonicalValue]): Json =
     e.fold(err => sys.error(err.toString), v => Cbor.encode(v).toHex.asJson)
 
@@ -50,7 +64,9 @@ object MerkleVectors {
           "inclusion"   -> (0L until t.size).map(i => hexOrDie(t.inclusionProof(i).flatMap(MerkleCodec.encodeInclusion))).asJson,
           "consistency" -> (0L to t.size).map(o => hexOrDie(t.consistencyProof(o).flatMap(MerkleCodec.encodeConsistency))).asJson
         )
-      }.asJson
+      }.asJson,
+      "valueCommitments" -> (committedBytes.map(CanonicalValue.bytes) ++
+      committedJson.map(j => CanonicalJson.parse(j).fold(e => sys.error(e.toString), identity))).map(commitment(_, m)).asJson
     )
   }
 

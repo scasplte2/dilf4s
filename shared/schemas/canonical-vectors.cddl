@@ -9,11 +9,14 @@ canonical-vectors = {
   "model": [* canonical-model-case],
   "cborRejections": [* canonical-cbor-rejection],
   "taggedHash": [* canonical-tagged-hash],
+  "digests": [* canonical-digest],
+  "domainTags": [* canonical-domain-tag],
 }
 
 canonical-json-case = canonical-json-accepted / canonical-json-rejected
 
-canonical-json-accepted = { "json": text, "cbor": hex, "contentHash": hex }
+; "render" is the display JSON of section 3 (compact, keys in code-point order).
+canonical-json-accepted = { "json": text, "cbor": hex, "contentHash": hex, "render": text }
 
 canonical-json-rejected = { "json": text, "error": text }
 
@@ -22,5 +25,11 @@ canonical-model-case = { "value": text, "cbor": hex, "contentHash": hex }
 canonical-cbor-rejection = { "cbor": hex, "error": text }
 
 canonical-tagged-hash = { "algorithm": text, "tag": text, "message": hex, "digest": hex }
+
+; A plain (untagged) digest of each hash function the specs use.
+canonical-digest = { "algorithm": text, "message": hex, "digest": hex }
+
+; Whether a candidate tag matches the DomainTag grammar of section 4.
+canonical-domain-tag = { "tag": text, "valid": bool }
 
 hex = text .regexp "([0-9a-f]{2})*"
