@@ -388,6 +388,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "k256",
+ "num-bigint 0.5.1",
  "p256",
  "pbkdf2",
  "rand_core 0.10.1",
