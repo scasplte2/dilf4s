@@ -11832,6 +11832,76 @@
       "data" : "{\"a0\":-0.5}"
     },
     {
+      "name" : "dilf4s lower: ASCII",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"HeLLo, World 1\"}"
+    },
+    {
+      "name" : "dilf4s upper: ASCII",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"HeLLo, World 1\"}"
+    },
+    {
+      "name" : "dilf4s lower: sharp s",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"straße STRASSE\"}"
+    },
+    {
+      "name" : "dilf4s upper: sharp s",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"straße STRASSE\"}"
+    },
+    {
+      "name" : "dilf4s lower: dotted and dotless I",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"I İ ı i\"}"
+    },
+    {
+      "name" : "dilf4s upper: dotted and dotless I",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"I İ ı i\"}"
+    },
+    {
+      "name" : "dilf4s lower: final sigma",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"ΟΣ ΣΟ σς\"}"
+    },
+    {
+      "name" : "dilf4s upper: final sigma",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"ΟΣ ΣΟ σς\"}"
+    },
+    {
+      "name" : "dilf4s lower: precomposed and decomposed e acute",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"É é É é\"}"
+    },
+    {
+      "name" : "dilf4s upper: precomposed and decomposed e acute",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"É é É é\"}"
+    },
+    {
+      "name" : "dilf4s lower: Garay (Unicode 16)",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"𐵐 𐵰\"}"
+    },
+    {
+      "name" : "dilf4s upper: Garay (Unicode 16)",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"𐵐 𐵰\"}"
+    },
+    {
+      "name" : "dilf4s lower: Cherokee",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"Ꭰ ꭰ\"}"
+    },
+    {
+      "name" : "dilf4s upper: Cherokee",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"Ꭰ ꭰ\"}"
+    },
+    {
       "name" : "dilf4s ed25519_verify: verifies",
       "program" : "{\"ed25519_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
       "data" : "{\"a0\":\"0x8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c\",\"a1\":\"0x7472616e7366657220313020746f20626f62\",\"a2\":\"0x667ff2539c0a67f2c1e0f1db4dc4e194ce2672aba8c4ba294b1fd603106aeaf9243c4ec2215d75c81434117cd63261494537ca58b290f6d69d3e261e5ee9cc07\"}"

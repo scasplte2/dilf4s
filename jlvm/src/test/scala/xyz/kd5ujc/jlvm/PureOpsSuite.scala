@@ -305,15 +305,16 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
     )
   }
 
-  // GARAY CAPITAL LETTER A (U+10D50) gained a lowercase mapping in Unicode 16.0: if it maps, the JDK has moved past the
-  // pinned Unicode 15.0 and case mapping results may change (docs/specs/jlvm.md §2).
-  pureTest("case mapping is Unicode 15.0 full mapping, locale-independent; trim strips Unicode white space") {
+  pureTest("case mapping is ASCII only: other letters, Unicode case and context are left alone; trim strips Unicode white space") {
     expect
-      .same(ok(t("STRASSE")), run(Op.Upper, t("straße")))
-      .and(expect.same(ok(t("i")), run(Op.Lower, t("I"))))
-      .and(expect.same(ok(t("x")), run(Op.Trim, t(" x "))))
-      .and(expect.same(ok(t("x\ufeff")), run(Op.Trim, t("\u0085x\ufeff"))))
+      .same(ok(t("hello, world 1")), run(Op.Lower, t("HeLLo, WORLD 1")))
+      .and(expect.same(ok(t("STRAßE")), run(Op.Upper, t("straße"))))
+      .and(expect.same(ok(t("i \u0130 \u0131 i")), run(Op.Lower, t("I \u0130 \u0131 i"))))
+      .and(expect.same(ok(t("\u039f\u03a3 \u03a3\u039f")), run(Op.Lower, t("\u039f\u03a3 \u03a3\u039f"))))
+      .and(expect.same(ok(t("\u00c9 E\u0301")), run(Op.Upper, t("\u00c9 e\u0301"))))
       .and(expect.same(ok(t("\ud803\udd50")), run(Op.Lower, t("\ud803\udd50"))))
+      .and(expect.same(ok(t("x")), run(Op.Trim, t(" x "))))
+      .and(expect.same(ok(t("x\ufeff")), run(Op.Trim, t("\u0085x\ufeff"))))
       .and(expect(isType(run(Op.Upper, i(1))), "text only"))
   }
 
@@ -550,23 +551,14 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
     }
   }
 
-  // metakit asserted "lower has no uppercase letters" against the default-locale String.toLowerCase; under full Unicode
-  // mapping that is false (U+0130 lowers to "i\u0307"), so the portable property is idempotence.
-  test("lower and upper are idempotent") {
+  test("lower and upper change only ASCII letters, code point by code point") {
     forall(CanonicalGens.text) { s =>
-      val lower = run(Op.Lower, t(s))
-      val upper = run(Op.Upper, t(s))
-      expect.same(lower, lower.flatMap(run(Op.Lower, _))).and(expect.same(upper, upper.flatMap(run(Op.Upper, _))))
+      val cps = Values.codePoints(s)
+      def mapped(f: Int => Int) = ok(t(Values.fromCodePoints(cps.map(f))))
+      expect
+        .same(mapped(c => if (c >= 'A' && c <= 'Z') c + 32 else c), run(Op.Lower, t(s)))
+        .and(expect.same(mapped(c => if (c >= 'a' && c <= 'z') c - 32 else c), run(Op.Upper, t(s))))
     }
-  }
-
-  // metakit's cross-language ordering_case_vectors.json; dilf4s gives the same results.
-  pureTest("case mapping uses the root locale: no Turkish or Lithuanian tailoring; final sigma is contextual") {
-    expect
-      .same(ok(t("i i\u0307 \u0131 i")), run(Op.Lower, t("I \u0130 \u0131 i")))
-      .and(expect.same(ok(t("I \u0130 I I")), run(Op.Upper, t("I \u0130 \u0131 i"))))
-      .and(expect.same(ok(t("i\u0301 j\u0300")), run(Op.Lower, t("I\u0301 J\u0300"))))
-      .and(expect.same(ok(t("\u03bf\u03c2 \u03c3\u03bf")), run(Op.Lower, t("\u039f\u03a3 \u03a3\u039f"))))
   }
 
   // metakit's cross-language ordering vectors, in code-point order (jlvm.md 5.4). metakit sorted by UTF-16 code units,
