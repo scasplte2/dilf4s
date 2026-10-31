@@ -402,14 +402,19 @@ which branches the prover knew. This is what ring signatures, hidden-signer k-of
   together. The message pays the hashing rate, 1 per unit of weight, as `blake2b256` does.
 
 **Authenticated structures**: dilf4s's Merkle trees (`merkle.md`) and binary Patricia tries (`trie.md`), over SHA-256.
-Proofs are their canonical records (`merkle-inclusion`, `merkle-consistency`, `trie-proof`), passed as values. A leaf
-or value that is bytes commits as itself; any other value commits as its canonical CBOR encoding. These are the
-library's conventions: `MerkleTree.leaf` (or `MerkleHashing.leaf` on the bytes) for a Merkle leaf, and
-`TrieHashing.value` on the bytes for a trie value.
+Proofs are their canonical records (`merkle-inclusion`, `merkle-consistency`, `trie-proof`), passed as values.
+- **Leaves and values commit by `commit(v)` (`merkle.md` §2):** `0x00 ‖ b` for bytes, `0x01 ‖ cbor(v)` otherwise. A
+  proof of the bytes `0x6161` therefore never verifies the text `"a"`. The library builds these with
+  `MerkleTree.leaf` and `Trie.putCanonical`.
+- **There is no raw reading.** If a program could read a leaf or value either as its own bytes or by `commit(v)`
+  under one hashing, whoever chose the reading could make a proof of the bytes `0x6161` verify the text `"a"`.
+  Structures built with the byte-level APIs (`MerkleHashing.leaf`, `Trie.putValue`) are for library use. The one
+  exception is the `"rfc6962"` Merkle profile, for external logs: it takes leaves as raw bytes, and must be bytes, but
+  its hashing differs throughout, so no root verifies under both readings.
 
 | Operation | Arguments | Result |
 |---|---|---|
-| `merkle_verify` | `[head, leaf, proof]`, or `[head, leaf, proof, "rfc6962"]` for that profile | boolean |
+| `merkle_verify` | `[head, leaf, proof]`, or `[head, leaf, proof, "rfc6962"]` (RFC 6962 hashing, raw byte leaves) | boolean |
 | `merkle_consistency_verify` | `[oldHead, newHead, proof]`, or with `"rfc6962"` | boolean |
 | `trie_verify` | `[mode, root, key, value, proof]`; a null `value` claims absence | boolean |
 | `trie_prefix_verify` | `[mode, root, prefix, entries, proof]` | boolean |

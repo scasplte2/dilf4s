@@ -44,7 +44,7 @@ With hash function `H` and tagged hashing (`docs/specs/canonical-encoding.md` §
 
 | Item | Hash |
 |---|---|
-| value | `valueHash(v) = taggedHash_H("dilf4s/trie/value/v1", encode(v))`, where `encode` is the canonical encoding, or raw bytes for byte values |
+| value | `valueHash(b) = taggedHash_H("dilf4s/trie/value/v1", b)` over the value's bytes `b`: `commit(v)` (below) for a value `v` (`Trie.putCanonical`), or the bytes themselves for a trie of opaque byte values (`Trie.putValue`, as the conformance vectors do) |
 | leaf | `taggedHash_H("dilf4s/trie/leaf/v1", encode({ "s": segment, "v": valueHash }))` |
 | branch | `taggedHash_H("dilf4s/trie/branch/v1", encode({ "s": segment, "v"?: valueHash, "l"?: leftHash, "r"?: rightHash }))` (absent fields are omitted) |
 | empty trie root | `taggedHash_H("dilf4s/trie/empty/v1", "")` |
@@ -139,7 +139,15 @@ trie-node = {
 Decoders rebuild the tree with an explicit stack and reject trailing records, missing children, a mask inconsistent
 with the branch invariant, and any record that matches none of the three shapes.
 
-Values travel separately. To check a value `x` against a proven `valueHash`, compute `valueHash(x)` and compare.
+**Value commitment.** A value `v` becomes leaf or value bytes as `commit(v)`:
+- `0x00 ‖ b` for a byte string `b`;
+- `0x01 ‖ cbor(v)` for any other value (`canonical-encoding.md` §2).
+
+The tag keeps the mapping injective. Untagged, the bytes `0x6161` and the text `"a"` (whose CBOR is `0x6161`) would
+commit identically, and a proof of one would verify a claim of the other.
+
+Values travel separately. To check a value `x` against a proven `valueHash`, compute `valueHash` of its bytes and
+compare.
 
 **Privacy note.** A value hash does not hide a low-entropy value (a boolean, a small amount, an enum state): it can be
 recovered by hashing candidates. Proofs also reveal the key bits along the queried paths, including a neighbouring

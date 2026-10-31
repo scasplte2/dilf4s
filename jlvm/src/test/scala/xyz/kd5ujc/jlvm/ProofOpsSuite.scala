@@ -6,6 +6,7 @@ import java.nio.file.{Files, Paths}
 import cats.effect.{IO, Resource}
 import cats.syntax.all._
 
+import xyz.kd5ujc.accumulators.ValueCommitment
 import xyz.kd5ujc.accumulators.merkle.{MerkleCodec, MerkleHashing, MerkleTree}
 import xyz.kd5ujc.accumulators.trie.{KeyMode, Trie, TrieHashing, TrieProofs}
 import xyz.kd5ujc.core.canonical.CanonicalValue._
@@ -52,6 +53,14 @@ object ProofOpsSuite extends IOSuite {
 
   // ---- Merkle
 
+  /**
+   * merkle_v1 and trie_v1 are built with the byte-level APIs. Programs verify value-committed structures, so the
+   * Merkle and trie tests rebuild the vectors' trees from their leaves and entries with ValueCommitment, proving the
+   * same queries; the consistency test uses the vectors' heads as they are.
+   */
+  private def committedTree(leaves: List[ByteVector], n: Long): MerkleTree[Sha256] =
+    get(MerkleTree.fromLeaves[Sha256, CanonicalValue](leaves.take(n.toInt).map(CBytes(_))))
+
   test("merkle_verify: every inclusion proof of merkle_v1 verifies against its head; other leaves and sizes do not") { f =>
     IO {
       val leaves = get(f.merkle.hcursor.downField("leaves").as[List[String]]).map(hex)
@@ -59,19 +68,22 @@ object ProofOpsSuite extends IOSuite {
       expect.same(9, trees.size) |+| trees.foldMap { t =>
         val c = t.hcursor
         val n = get(c.downField("size").as[Long])
-        val root = str(c.downField("root"))
-        get(c.downField("inclusion").as[List[String]]).zipWithIndex.foldMap {
-          case (proof, i) =>
+        val tree = committedTree(leaves, n)
+        val root = tree.root.hex
+        get(c.downField("inclusion").as[List[String]]).indices.toList.foldMap { i =>
+          val proof = get(tree.inclusionProof(i.toLong).flatMap(MerkleCodec.encodeInclusion(_)))
+          locally {
             val other = leaves((i + 1) % leaves.size)
             expect
-              .same(Right(True), call(f.jlvm, Op.MerkleVerify, headOf(root, n), CBytes(leaves(i)), cbor(proof)))
+              .same(Right(True), call(f.jlvm, Op.MerkleVerify, headOf(root, n), CBytes(leaves(i)), proof))
               .and(
                 expect(
-                  other == leaves(i) || call(f.jlvm, Op.MerkleVerify, headOf(root, n), CBytes(other), cbor(proof)) == Right(False),
+                  other == leaves(i) || call(f.jlvm, Op.MerkleVerify, headOf(root, n), CBytes(other), proof) == Right(False),
                   s"another leaf, size $n"
                 )
               )
-              .and(expect.same(Right(False), call(f.jlvm, Op.MerkleVerify, headOf(root, n + 1), CBytes(leaves(i)), cbor(proof))))
+              .and(expect.same(Right(False), call(f.jlvm, Op.MerkleVerify, headOf(root, n + 1), CBytes(leaves(i)), proof)))
+          }
         }
       }
     }
@@ -136,6 +148,42 @@ object ProofOpsSuite extends IOSuite {
     }
   }
 
+  test("a proof of the bytes 0x6161 does not verify the text \"a\", whose CBOR is 0x6161, in a Merkle tree or a trie") { f =>
+    IO {
+      val bytes = CBytes(ByteVector(0x61, 0x61))
+      val a = text("a")
+      val tree = get(MerkleTree.fromLeaves[Sha256, CanonicalValue](List(bytes, CInt(BigInt(1)))))
+      val head = m("root" -> CBytes(tree.root.bytes), "size" -> CInt(BigInt(tree.size)))
+      val proof = get(tree.inclusionProof(0L).flatMap(MerkleCodec.encodeInclusion(_)))
+      val key = ByteVector(0x00, 0x01)
+      val km = get(KeyMode.fixed(2))
+      val trie = get(Trie.empty[Sha256](km).putCanonical(key, bytes))
+      val trieProof = get(trie.prove(List(key)).flatMap(TrieProofs.encode(_)))
+      val md = m("fixed" -> CInt(BigInt(2)))
+      def claim(v: CanonicalValue) = call(f.jlvm, Op.TrieVerify, md, CBytes(trie.root.bytes), CBytes(key), v, trieProof)
+      expect
+        .same(Right(True), call(f.jlvm, Op.MerkleVerify, head, bytes, proof))
+        .and(expect.same(Right(False), call(f.jlvm, Op.MerkleVerify, head, a, proof)))
+        .and(expect(call(f.jlvm, Op.MerkleVerify, head, a, proof, text("rfc6962")).isLeft, "rfc6962 leaves are bytes only"))
+        .and(expect.same(Right(True), claim(bytes)))
+        .and(expect.same(Right(False), claim(a)))
+        .and(
+          expect(
+            call(
+              f.jlvm,
+              Op.TrieVerify,
+              m("fixed" -> CInt(BigInt(2)), "raw" -> True),
+              CBytes(trie.root.bytes),
+              CBytes(key),
+              bytes,
+              trieProof
+            ).isLeft,
+            "there is no raw mode"
+          )
+        )
+    }
+  }
+
   // ---- tries
 
   private def mode(j: Json): CanonicalValue =
@@ -148,6 +196,37 @@ object ProofOpsSuite extends IOSuite {
 
   private def fixtures(f: Fixtures): List[Json] = get(f.trie.hcursor.downField("fixtures").as[List[Json]])
 
+  private def keyMode(fx: Json): KeyMode =
+    fx.hcursor
+      .downField("mode")
+      .downField("fixed")
+      .as[Int]
+      .map(KeyMode.fixed)
+      .orElse(
+        fx.hcursor.downField("mode").downField("variable").as[Int].map(KeyMode.variable)
+      )
+      .fold(e => sys.error(e.toString), r => get(r))
+
+  /** A trie_v1 fixture rebuilt with its values committed as programs claim them, proving the fixture's own queries. */
+  private def committedTrie(fx: Json): Trie[Sha256] =
+    get(
+      Trie.fromEntries[Sha256](
+        keyMode(fx),
+        values(fx).toList.map { case (k, v) => hex(k) -> TrieHashing[Sha256].value(ValueCommitment.bytes(CBytes(v))) }
+      )
+    )
+
+  private def rootOf(fx: Json): CanonicalValue = CBytes(committedTrie(fx).root.bytes)
+
+  private def proofOf(fx: Json): CanonicalValue = {
+    val q = fx.hcursor.downField("proof")
+    get(
+      committedTrie(fx)
+        .prove(get(q.downField("keys").as[List[String]]).map(hex), get(q.downField("prefixes").as[List[String]]).map(hex))
+        .flatMap(TrieProofs.encode(_))
+    )
+  }
+
   private def values(fx: Json): Map[String, ByteVector] =
     get(fx.hcursor.downField("entries").as[List[Json]])
       .map(e => str(e.hcursor.downField("key")) -> hex(str(e.hcursor.downField("value"))))
@@ -159,8 +238,8 @@ object ProofOpsSuite extends IOSuite {
         val c = fx.hcursor
         val (md, root, proof) = (
           mode(get(c.downField("mode").as[Json])),
-          CBytes(hex(str(c.downField("root")))),
-          cbor(str(c.downField("proof").downField("cbor")))
+          rootOf(fx),
+          proofOf(fx)
         )
         val vs = values(fx)
         get(c.downField("proof").downField("lookups").as[List[Json]]).foldMap { l =>
@@ -186,8 +265,8 @@ object ProofOpsSuite extends IOSuite {
         val c = fx.hcursor
         val (md, root, proof) = (
           mode(get(c.downField("mode").as[Json])),
-          CBytes(hex(str(c.downField("root")))),
-          cbor(str(c.downField("proof").downField("cbor")))
+          rootOf(fx),
+          proofOf(fx)
         )
         val vs = values(fx)
         get(c.downField("proof").downField("prefixListings").as[List[Json]]).foldMap { l =>
@@ -219,7 +298,7 @@ object ProofOpsSuite extends IOSuite {
       val vs = values(fx)
       val km = get(KeyMode.fixed(2))
       val T = TrieHashing[Sha256]
-      val trie = get(Trie.fromEntries[Sha256](km, vs.toList.map { case (k, v) => hex(k) -> T.value(v) }))
+      val trie = get(Trie.fromEntries[Sha256](km, vs.toList.map { case (k, v) => hex(k) -> T.value(ValueCommitment.bytes(CBytes(v))) }))
       val (from, until) = (hex("0001"), Option(hex("8000")))
       val proof = get(trie.prove(Nil, Nil, List(from -> until)).flatMap(TrieProofs.encode(_)))
       val keyProof = get(trie.prove(List(hex("0001"))).flatMap(TrieProofs.encode(_)))
@@ -248,9 +327,7 @@ object ProofOpsSuite extends IOSuite {
 
   private def fixture(f: Fixtures, name: String): Json =
     fixtures(f).find(x => str(x.hcursor.downField("name")) == name).getOrElse(sys.error(s"no fixture $name"))
-  private def rootOf(fx:  Json): CanonicalValue = CBytes(hex(str(fx.hcursor.downField("root"))))
-  private def proofOf(fx: Json): CanonicalValue = cbor(str(fx.hcursor.downField("proof").downField("cbor")))
-  private def text(s:     String): CanonicalValue = get(CanonicalValue.text(s))
+  private def text(s: String): CanonicalValue = get(CanonicalValue.text(s))
 
   test("trie_verify: a wrong root is false; an undecodable proof or a short root is a crypto error; a text root a type error") { f =>
     IO {
@@ -310,7 +387,8 @@ object ProofOpsSuite extends IOSuite {
         )
       )
       def gate(key: String) = {
-        val data = m("mode" -> m("fixed" -> CInt(BigInt(2))), "root" -> rootOf(fx), "key" -> CBytes(hex(key)), "proof" -> proofOf(fx))
+        val data =
+          m("mode" -> m("fixed" -> CInt(BigInt(2))), "root" -> rootOf(fx), "key" -> CBytes(hex(key)), "proof" -> proofOf(fx))
         f.jlvm.evaluate(program, data, Map.empty, Config()).result
       }
       expect

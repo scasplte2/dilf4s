@@ -2,10 +2,11 @@ package xyz.kd5ujc.jlvm
 
 import cats.syntax.all._
 
+import xyz.kd5ujc.accumulators.ValueCommitment
 import xyz.kd5ujc.accumulators.merkle.{MerkleCodec, MerkleError, MerkleHashing, MerkleVerifier}
 import xyz.kd5ujc.accumulators.trie.{KeyMode, Lookup, TrieError, TrieHashing, TrieProofs, VerifiedProof}
+import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.{Digest, Sha256}
 
 import scodec.bits.{BitVector, ByteVector}
@@ -49,12 +50,8 @@ object ProofOps {
   private def digest(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, Digest[H]] =
     bytes(op, what)(v).flatMap(Digest.fromBytes[H](_).leftMap(e => crypto(op)(s"$what: $e")))
 
-  /** The bytes a leaf or value commits to: bytes as they are, anything else in canonical CBOR. */
-  private def committed(v: CanonicalValue): ByteVector =
-    v match {
-      case CBytes(b) => b
-      case other     => Cbor.encode(other)
-    }
+  /** The bytes a leaf or value commits to: tagged, so bytes and a value whose CBOR equals them never coincide. */
+  private def committed(v: CanonicalValue): ByteVector = ValueCommitment.bytes(v)
 
   // ---- Merkle trees (merkle.md)
 
@@ -71,10 +68,18 @@ object ProofOps {
       case _ => crypto(op)(s"$what is a tree head {root, size}").asLeft
     }
 
-  private def profile(op: Op, rest: Vector[CanonicalValue]): Either[JlvmError, MerkleHashing[H]] =
+  /**
+   * The hashing, and how a leaf becomes bytes: the default profile commits any value by [[ValueCommitment]]; `"rfc6962"`
+   * hashes as RFC 6962 and takes a leaf as raw bytes, as external logs do, so its leaves must be bytes. Its hashing differs
+   * from the default's throughout, so no root verifies under both readings, whoever chooses the profile.
+   */
+  private def profile(
+    op:   Op,
+    rest: Vector[CanonicalValue]
+  ): Either[JlvmError, (MerkleHashing[H], CanonicalValue => Either[JlvmError, ByteVector])] =
     rest match {
-      case Vector()                 => MerkleHashing.tagged[H].asRight
-      case Vector(CText("rfc6962")) => MerkleHashing.rfc6962[H].asRight
+      case Vector()                 => (MerkleHashing.tagged[H], (v: CanonicalValue) => committed(v).asRight[JlvmError]).asRight
+      case Vector(CText("rfc6962")) => (MerkleHashing.rfc6962[H], bytes(op, "an rfc6962 leaf")).asRight
       case _                        => JlvmError.Domain(op.wire, "the only optional profile is \"rfc6962\"").asLeft
     }
 
@@ -94,10 +99,11 @@ object ProofOps {
           profile(op, rest),
           MerkleCodec.decodeInclusion[H](proof).leftMap(e => crypto(op)(e.toString))
         ).tupled.flatMap {
-          case ((root, size), m, p) =>
+          case ((root, size), (m, leafBytes), p) =>
             // the size comes from the trusted head: a smaller tree's root can satisfy a proof claiming a larger size
-            if (p.size != size) False.asRight
-            else outcome(op)(MerkleVerifier.inclusion(root, m.leaf(committed(leaf)), p)(using m))
+            leafBytes(leaf).flatMap(d =>
+              if (p.size != size) False.asRight else outcome(op)(MerkleVerifier.inclusion(root, m.leaf(d), p)(using m))
+            )
         }
       case _ => JlvmError.Arity(op.wire, "takes [head, leaf, proof] or [head, leaf, proof, profile]").asLeft
     }
@@ -111,7 +117,7 @@ object ProofOps {
           profile(op, rest),
           MerkleCodec.decodeConsistency[H](proof).leftMap(e => crypto(op)(e.toString))
         ).tupled.flatMap {
-          case ((oldRoot, oldSize), (newRoot, newSize), m, p) =>
+          case ((oldRoot, oldSize), (newRoot, newSize), (m, _), p) =>
             if (p.oldSize != oldSize || p.newSize != newSize) False.asRight
             else outcome(op)(MerkleVerifier.consistency(oldRoot, newRoot, p)(using m))
         }
@@ -132,6 +138,9 @@ object ProofOps {
         }
       case other => JlvmError.Type(op.wire, s"a mode is an object, got ${Values.kind(other)}").asLeft
     }
+
+  /** A claimed value's hash, by its [[ValueCommitment]] bytes: bytes and a value whose CBOR equals them differ. */
+  private def valueHash(v: CanonicalValue): Digest[H] = T.value(committed(v))
 
   private def path(op: Op, m: KeyMode)(key: CanonicalValue): Either[JlvmError, BitVector] =
     bytes(op, "a key")(key).flatMap(m.path(_).leftMap(e => crypto(op)(s"a key invalid for the mode: $e")))
@@ -154,7 +163,7 @@ object ProofOps {
           case (_, scala.None) => False.asRight
           case (p, scala.Some(v)) =>
             v.lookup(p) match {
-              case Lookup.Present(h) => Values.bool(value != CNull && T.value(committed(value)) == h).asRight
+              case Lookup.Present(h) => Values.bool(value != CNull && valueHash(value) == h).asRight
               case Lookup.Absent     => Values.bool(value == CNull).asRight
               case Lookup.NotCovered => crypto(op)("the proof does not reach this key").asLeft
             }
@@ -166,7 +175,7 @@ object ProofOps {
     v match {
       case CArray(es) =>
         es.toList.traverse {
-          case CArray(Vector(k, x)) if x != CNull => path(op, m)(k).map(_ -> T.value(committed(x)))
+          case CArray(Vector(k, x)) if x != CNull => path(op, m)(k).map(_ -> valueHash(x))
           case _                                  => JlvmError.Type(op.wire, "an entry is [key, value], with a value").asLeft
         }
       case other => JlvmError.Type(op.wire, s"entries is an array, got ${Values.kind(other)}").asLeft
