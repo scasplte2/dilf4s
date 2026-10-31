@@ -1,0 +1,79 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/tictactoe/archive/sm-definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 32,
+      "program": {"and": [{"!!": [{"var": "event.playerX"}]}, {"!!": [{"var": "event.playerO"}]}, {"!!": [{"var": "event.gameId"}]}]},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/tictactoe/sm-definition.ts:16 $.transitions[0].guard",
+        "ottochain@7ada01f:modules/shared-data/src/test/resources/tictactoe/state-machine-definition.json:30 $.transitions[0].guard",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TicTacToeGameSuite.scala:47 $.transitions[0].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 57,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.scriptFiberId"}, "method": "initialize", "args": {"playerX": {"var": "event.playerX"}, "playerO": {"var": "event.playerO"}, "gameId": {"var": "event.gameId"}}}, "gameId": {"var": "event.gameId"}, "playerX": {"var": "event.playerX"}, "playerO": {"var": "event.playerO"}, "status": "initialized"},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/tictactoe/sm-definition.ts:16 $.transitions[0].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TicTacToeGameSuite.scala:54 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 94,
+      "program": {"===": [{"var": "scriptScripts.11111111-1111-1111-1111-111111111111.state.status"}, "InProgress"]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 102,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.scriptFiberId"}, "method": "makeMove", "args": {"player": {"var": "event.player"}, "cell": {"var": "event.cell"}}}, "lastMove": {"player": {"var": "event.player"}, "cell": {"var": "event.cell"}}},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/tictactoe/sm-definition.ts:16 $.transitions[1].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TicTacToeGameSuite.scala:78 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 136,
+      "program": {"or": [{"===": [{"var": "scriptScripts.11111111-1111-1111-1111-111111111111.state.status"}, "Won"]}, {"===": [{"var": "scriptScripts.11111111-1111-1111-1111-111111111111.state.status"}, "Draw"]}]},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/tictactoe/archive/sm-definition.json:210 $.transitions[3].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 156,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.scriptFiberId"}, "method": "makeMove", "args": {"player": {"var": "event.player"}, "cell": {"var": "event.cell"}}}, "finalStatus": {"var": "scriptScripts.11111111-1111-1111-1111-111111111111.state.status"}, "winner": {"var": "scriptScripts.11111111-1111-1111-1111-111111111111.state.winner"}, "finalBoard": {"var": "scriptScripts.11111111-1111-1111-1111-111111111111.state.board"}, "_outputs": [{"outputType": "game_completed", "data": {"gameId": {"var": "state.gameId"}, "winner": {"var": "scriptScripts.11111111-1111-1111-1111-111111111111.state.winner"}, "status": {"var": "scriptScripts.11111111-1111-1111-1111-111111111111.state.status"}, "moveCount": {"var": "scriptScripts.11111111-1111-1111-1111-111111111111.state.moveCount"}}}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 230,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.scriptFiberId"}, "method": "resetGame", "args": {}}, "roundCount": {"+": [{"var": "state.roundCount"}, 1]}},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/tictactoe/sm-definition.ts:16 $.transitions[3].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TicTacToeGameSuite.scala:140 $.transitions[3].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 263,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.scriptFiberId"}, "method": "cancelGame", "args": {"requestedBy": {"var": "event.requestedBy"}, "reason": {"var": "event.reason"}}}, "cancelledBy": {"var": "event.requestedBy"}, "cancelReason": {"var": "event.reason"}},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/tictactoe/sm-definition.ts:16 $.transitions[4].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TicTacToeGameSuite.scala:155 $.transitions[4].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 299,
+      "program": {"cancelledBy": {"var": "event.requestedBy"}, "cancelReason": {"var": "event.reason"}},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/tictactoe/sm-definition.ts:16 $.transitions[5].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/resources/tictactoe/state-machine-definition.json:157 $.transitions[5].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TicTacToeGameSuite.scala:174 $.transitions[5].effect"
+      ]
+    }
+  ]
+}

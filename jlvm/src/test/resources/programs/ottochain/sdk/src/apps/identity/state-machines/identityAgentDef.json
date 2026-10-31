@@ -1,0 +1,84 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/identity/state-machines/index.ts#identityAgentDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "activatedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/identity/state-machines/index.ts#identityOracleDef $.transitions[1].effect",
+        "ottochain-sdk@a53a6e0:src/apps/identity/state-machines/index.ts#identityUniversalDef $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"!!": [{"var": "event.from"}]},
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/continuous-10tps.ts:88 $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"reputation": {"+": [{"var": "state.reputation"}, 2]}}}]},
+      "changes": [
+        "K: single-key map \"reputation\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/continuous-10tps.ts:88 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"reputation": {"+": [{"var": "state.reputation"}, 5]}}}]},
+      "changes": [
+        "K: single-key map \"reputation\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/continuous-10tps.ts:88 $.transitions[2].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"!!": [{"var": "event.challenger"}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "CHALLENGED", "challengedBy": {"var": "event.challenger"}}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "challengedBy": null}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "SUSPENDED", "suspendedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "PROBATION", "probationStartedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "probationStartedAt": null}]}
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"status": "WITHDRAWN"}}]},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/identity/state-machines/index.ts#identityAgentDef $.transitions[9].effect",
+        "ottochain-services@cf05326:scripts/demo/continuous-10tps.ts:88 $.transitions[3].effect"
+      ]
+    }
+  ]
+}

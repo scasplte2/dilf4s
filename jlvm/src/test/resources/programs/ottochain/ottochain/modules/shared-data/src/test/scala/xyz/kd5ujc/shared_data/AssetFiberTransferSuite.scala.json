@@ -1,0 +1,28 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/AssetFiberTransferSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 286,
+      "program": {">": [{"var": "heldAssets.INTERP.amount"}, 50]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/AssetFiberTransferSuite.scala:338 $.transitions[0].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 287,
+      "program": {"_transferAsset": [{"assetId": "INTERP", "recipient": "__INTERP__"}], "released": true},
+      "placeholders": [
+        "INTERP",
+        "__INTERP__"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/AssetFiberTransferSuite.scala:339 $.transitions[0].effect"
+      ]
+    }
+  ]
+}

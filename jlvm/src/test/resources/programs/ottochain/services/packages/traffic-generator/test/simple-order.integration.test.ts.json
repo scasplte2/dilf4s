@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain-services", "commit": "cf05326", "file": "packages/traffic-generator/test/simple-order.integration.test.ts"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 47,
+      "program": {"merge": [{"var": "state"}, {"object": {"filledAt": {"var": "event.timestamp"}}}]},
+      "changes": [
+        "K: single-key map \"filledAt\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

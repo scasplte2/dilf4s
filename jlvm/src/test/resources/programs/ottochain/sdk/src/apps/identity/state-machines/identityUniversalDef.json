@@ -1,0 +1,19 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/identity/state-machines/index.ts#identityUniversalDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"updatedAt": {"var": "$ordinal"}, "metadata": {"var": "event.metadata"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "INACTIVE", "deactivatedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    }
+  ]
+}

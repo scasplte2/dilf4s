@@ -1,0 +1,27 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/identity/state-machines/index.ts#identityRegistryDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"reputations": {"set": [{"var": "state.reputations"}, {"var": "event.subject"}, {"var": "event.score"}]}}}]},
+      "changes": [
+        "K: single-key map \"reputations\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"reputations": {"set": [{"var": "state.reputations"}, {"var": "event.subject"}, {"+": [{"get": [{"var": "state.reputations"}, {"var": "event.subject"}]}, {"var": "event.delta"}]}]}}}]},
+      "changes": [
+        "K: single-key map \"reputations\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"arbiters": {"if": [{"==": [{"var": "event.role"}, "ARBITER"]}, {"set": [{"var": "state.arbiters"}, {"var": "event.subject"}, true]}, {"var": "state.arbiters"}]}, "slashers": {"if": [{"==": [{"var": "event.role"}, "SLASHER"]}, {"set": [{"var": "state.slashers"}, {"var": "event.subject"}, true]}, {"var": "state.slashers"}]}, "issuers": {"if": [{"==": [{"var": "event.role"}, "ISSUER"]}, {"set": [{"var": "state.issuers"}, {"var": "event.subject"}, true]}, {"var": "state.issuers"}]}, "boardMembers": {"if": [{"==": [{"var": "event.role"}, "BOARD_MEMBER"]}, {"set": [{"var": "state.boardMembers"}, {"var": "event.subject"}, true]}, {"var": "state.boardMembers"}]}}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"arbiters": {"if": [{"==": [{"var": "event.role"}, "ARBITER"]}, {"unset": [{"var": "state.arbiters"}, {"var": "event.subject"}]}, {"var": "state.arbiters"}]}, "slashers": {"if": [{"==": [{"var": "event.role"}, "SLASHER"]}, {"unset": [{"var": "state.slashers"}, {"var": "event.subject"}]}, {"var": "state.slashers"}]}, "issuers": {"if": [{"==": [{"var": "event.role"}, "ISSUER"]}, {"unset": [{"var": "state.issuers"}, {"var": "event.subject"}]}, {"var": "state.issuers"}]}, "boardMembers": {"if": [{"==": [{"var": "event.role"}, "BOARD_MEMBER"]}, {"unset": [{"var": "state.boardMembers"}, {"var": "event.subject"}]}, {"var": "state.boardMembers"}]}}]}
+    }
+  ]
+}

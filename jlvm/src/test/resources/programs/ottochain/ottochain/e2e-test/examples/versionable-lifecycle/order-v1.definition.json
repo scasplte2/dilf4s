@@ -1,0 +1,47 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/versionable-lifecycle/order-v1.definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 16,
+      "program": {},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/versionable-lifecycle/order-v2.definition.json:16 $.transitions[0].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/PublishVersionSigningCanonicalSuite.scala:125 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 24,
+      "program": {"object": {"trackingNumber": {"var": "event.trackingNumber"}}},
+      "changes": [
+        "K: single-key map \"trackingNumber\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/versionable-lifecycle/order-v2.definition.json:32 $.transitions[2].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 32,
+      "program": {"object": {"deliveredAt": {"var": "event.timestamp"}}},
+      "changes": [
+        "K: single-key map \"deliveredAt\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/versionable-lifecycle/order-v2.definition.json:40 $.transitions[3].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 40,
+      "program": {"object": {"cancelReason": {"var": "event.reason"}}},
+      "changes": [
+        "K: single-key map \"cancelReason\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/versionable-lifecycle/order-v2.definition.json:48 $.transitions[4].effect"
+      ]
+    }
+  ]
+}

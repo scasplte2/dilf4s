@@ -1,0 +1,27 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/sigma-mixer/definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[2].guard",
+      "line": 58,
+      "program": {"and": [{"sigma_verify": [{"type": "or", "children": [{"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x039c846e3a79217fd140d094eec09fe4f398085d01dee70506edde1eb6a9d81608922722cc3a6c3a7ae4929e78e82dc5f25e91598a69f7f8b9b3adb95badb3d0", "u": {"var": "state.points.0"}, "v": {"var": "event.nullifier"}}, {"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x039c846e3a79217fd140d094eec09fe4f398085d01dee70506edde1eb6a9d81608922722cc3a6c3a7ae4929e78e82dc5f25e91598a69f7f8b9b3adb95badb3d0", "u": {"var": "state.points.1"}, "v": {"var": "event.nullifier"}}, {"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x039c846e3a79217fd140d094eec09fe4f398085d01dee70506edde1eb6a9d81608922722cc3a6c3a7ae4929e78e82dc5f25e91598a69f7f8b9b3adb95badb3d0", "u": {"var": "state.points.2"}, "v": {"var": "event.nullifier"}}, {"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x039c846e3a79217fd140d094eec09fe4f398085d01dee70506edde1eb6a9d81608922722cc3a6c3a7ae4929e78e82dc5f25e91598a69f7f8b9b3adb95badb3d0", "u": {"var": "state.points.3"}, "v": {"var": "event.nullifier"}}]}, {"var": "event.proof"}, {"var": "event.message"}]}, {"!": [{"has": [{"var": "state.spentNullifiers"}, {"hex": {"var": "event.nullifier"}}]}]}, {"===": [{"var": "event.message"}, {"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.nullifier"}}, 2]}, {"substr": [{"hex": {"var": "event.recipientHex"}}, 2]}]}}]}, {"===": [{"+": [{"var": "state.withdrawCount"}, 1]}, {"var": "state.anonymityTarget"}]}]},
+      "changes": [
+        "HX: 0x-hex text reads as bytes",
+        "HEXT: a 0x-hex key of has is read as its hex text",
+        "HEXT: substr over 0x-hex data reads its hex text",
+        "HEXT: a 0x-prefixed word is rebuilt as bytes (unhex), or as text when it is a map key"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 101,
+      "program": {"and": [{"sigma_verify": [{"type": "or", "children": [{"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x039c846e3a79217fd140d094eec09fe4f398085d01dee70506edde1eb6a9d81608922722cc3a6c3a7ae4929e78e82dc5f25e91598a69f7f8b9b3adb95badb3d0", "u": {"var": "state.points.0"}, "v": {"var": "event.nullifier"}}, {"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x039c846e3a79217fd140d094eec09fe4f398085d01dee70506edde1eb6a9d81608922722cc3a6c3a7ae4929e78e82dc5f25e91598a69f7f8b9b3adb95badb3d0", "u": {"var": "state.points.1"}, "v": {"var": "event.nullifier"}}, {"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x039c846e3a79217fd140d094eec09fe4f398085d01dee70506edde1eb6a9d81608922722cc3a6c3a7ae4929e78e82dc5f25e91598a69f7f8b9b3adb95badb3d0", "u": {"var": "state.points.2"}, "v": {"var": "event.nullifier"}}, {"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x039c846e3a79217fd140d094eec09fe4f398085d01dee70506edde1eb6a9d81608922722cc3a6c3a7ae4929e78e82dc5f25e91598a69f7f8b9b3adb95badb3d0", "u": {"var": "state.points.3"}, "v": {"var": "event.nullifier"}}]}, {"var": "event.proof"}, {"var": "event.message"}]}, {"!": [{"has": [{"var": "state.spentNullifiers"}, {"hex": {"var": "event.nullifier"}}]}]}, {"===": [{"var": "event.message"}, {"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.nullifier"}}, 2]}, {"substr": [{"hex": {"var": "event.recipientHex"}}, 2]}]}}]}, {"<": [{"+": [{"var": "state.withdrawCount"}, 1]}, {"var": "state.anonymityTarget"}]}]},
+      "changes": [
+        "HX: 0x-hex text reads as bytes",
+        "HEXT: a 0x-hex key of has is read as its hex text",
+        "HEXT: substr over 0x-hex data reads its hex text",
+        "HEXT: a 0x-prefixed word is rebuilt as bytes (unhex), or as text when it is a map key"
+      ]
+    }
+  ]
+}

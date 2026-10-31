@@ -1,0 +1,447 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ClinicalTrialStateMachineSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 64,
+      "program": {"and": [{">=": [{"var": "state.enrolledCount"}, {"var": "state.minParticipants"}]}, {"===": [{"var": "machines.INTERP.state.status"}, "approved"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 70,
+      "program": [["status", "ACTIVE"], ["startedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 80,
+      "program": {"and": [{">=": [{"var": "state.completedVisits"}, 3]}, {"===": [{"var": "machines.INTERP.state.hasCriticalEvent"}, false]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 86,
+      "program": [["status", "phase_1"], ["phase", 1], ["phaseStartedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 97,
+      "program": {"and": [{">=": [{"var": "state.completedVisits"}, 8]}, {"===": [{"var": "machines.INTERP.state.passRate"}, 100]}, {"===": [{"var": "machines.INTERP.state.hasCriticalEvent"}, false]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 104,
+      "program": [["status", "phase_2"], ["phase", 2], ["phaseStartedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 115,
+      "program": {"and": [{">=": [{"var": "state.completedVisits"}, 15]}, {">=": [{"var": "machines.INTERP.state.passRate"}, 95]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 121,
+      "program": [["status", "phase_3"], ["phase", 3], ["phaseStartedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 132,
+      "program": {"and": [{">=": [{"var": "state.completedVisits"}, 20]}, {"===": [{"var": "machines.INTERP.state.status"}, "COMPLETED"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 138,
+      "program": [["_triggers", [{"targetMachineId": "INTERP", "eventName": "begin_review", "payload": {"trialId": {"var": "machineId"}, "submittedAt": {"var": "event.timestamp"}, "completedVisits": {"var": "state.completedVisits"}}}]], ["status", "under_review"], ["submittedAt", {"var": "event.timestamp"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 159,
+      "program": {"===": [{"var": "machines.INTERP.state.reviewResult"}, "approved"]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 162,
+      "program": [["status", "COMPLETED"], ["completedAt", {"var": "event.timestamp"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/JsonEncodedStateMachineSuite.scala:498 $.transitions[5].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "line": 172,
+      "program": {"===": [{"var": "machines.INTERP.state.hasCriticalEvent"}, true]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 175,
+      "program": [["status", "SUSPENDED"], ["suspendedAt", {"var": "event.timestamp"}], ["suspensionReason", "critical_adverse_event"]]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "line": 186,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.resolved"}, true]}, {"===": [{"var": "machines.INTERP.state.allowResume"}, true]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 192,
+      "program": [["status", "ACTIVE"], ["resumedAt", {"var": "event.timestamp"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ClinicalTrialStateMachineSuite.scala:298 $.transitions[3].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "line": 202,
+      "program": {"===": [{"var": "machines.INTERP.state.terminationRequired"}, true]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "line": 205,
+      "program": [["status", "terminated"], ["terminatedAt", {"var": "event.timestamp"}], ["terminationReason", {"var": "event.reason"}]]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 235,
+      "program": {"and": [{">=": [{"var": "event.age"}, 18]}, {"===": [{"var": "event.consentSigned"}, true]}, {"===": [{"var": "machines.INTERP.state.coverageActive"}, true]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 242,
+      "program": [["_emit", [{"name": "webhook", "data": {"event": "patient.enrolled", "patientId": {"var": "machineId"}, "trialId": "INTERP", "timestamp": {"var": "event.timestamp"}}, "destination": "https://trial-system.example.com/webhooks"}]], ["status", "enrolled"], ["enrolledAt", {"var": "event.timestamp"}], ["patientName", {"var": "event.patientName"}], ["age", {"var": "event.age"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 266,
+      "program": {"===": [{"var": "machines.INTERP.state.status"}, "ACTIVE"]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/FuelLogisticsStateMachineSuite.scala:99 $.transitions[2].guard",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/JsonEncodedStateMachineSuite.scala:682 $.transitions[3].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 269,
+      "program": [["status", "ACTIVE"], ["activatedAt", {"var": "event.timestamp"}], ["visitCount", 0]]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 281,
+      "program": [["status", "paused"], ["pausedAt", {"var": "event.timestamp"}], ["pauseReason", {"var": "event.reason"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 280,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.status"}, "ACTIVE"]}, {"<": [{"-": [{"var": "event.timestamp"}, {"var": "state.pausedAt"}]}, 2592000]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 292,
+      "program": {"<": [{"var": "state.visitCount"}, 20]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 311,
+      "program": [["status", "visit_scheduled"], ["nextVisitAt", {"var": "event.visitTime"}]]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 308,
+      "program": {"===": [{"var": "machines.INTERP.state.sampleStatus"}, "collected"]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 324,
+      "program": [["_triggers", [{"targetMachineId": "INTERP", "eventName": "process_sample", "payload": {"patientId": {"var": "machineId"}, "visitNumber": {"+": [{"var": "state.visitCount"}, 1]}, "collectedAt": {"var": "event.timestamp"}}}]], ["status", "visit_completed"], ["visitCount", {"+": [{"var": "state.visitCount"}, 1]}], ["lastVisitAt", {"var": "event.timestamp"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "line": 321,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.result"}, "passed"]}, {"<": [{"var": "state.visitCount"}, 20]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 352,
+      "program": [["status", "ACTIVE"]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ClinicalTrialStateMachineSuite.scala:865 $.transitions[4].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "line": 346,
+      "program": {"or": [{"===": [{"var": "machines.INTERP.state.result"}, "failed"]}, {"===": [{"var": "machines.INTERP.state.result"}, "critical"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 367,
+      "program": [["_triggers", [{"targetMachineId": "INTERP", "eventName": "report_event", "payload": {"patientId": {"var": "machineId"}, "severity": {"var": "machines.INTERP.state.result"}, "detectedAt": {"var": "event.timestamp"}}}]], ["status", "adverse_event"], ["eventDetectedAt", {"var": "event.timestamp"}]],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "line": 361,
+      "program": {"===": [{"var": "machines.INTERP.state.resolved"}, true]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "line": 391,
+      "program": [["status", "ACTIVE"], ["resolvedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[9].guard",
+      "line": 388,
+      "program": {"and": [{">=": [{"var": "state.visitCount"}, 20]}, {"===": [{"var": "machines.INTERP.state.result"}, "passed"]}]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "line": 407,
+      "program": [["_emit", [{"name": "email", "data": {"to": {"var": "state.patientEmail"}, "subject": "Trial Completion", "body": "Congratulations on completing the clinical trial"}}]], ["status", "COMPLETED"], ["completedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[10].effect",
+      "line": 428,
+      "program": [["status", "WITHDRAWN"], ["withdrawnAt", {"var": "event.timestamp"}], ["withdrawalReason", {"var": "event.reason"}]]
+    },
+    {
+      "path": "$.transitions[11].guard",
+      "line": 401,
+      "program": {"===": [{"var": "machines.INTERP.state.severity"}, "critical"]},
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[11].effect",
+      "line": 442,
+      "program": [["status", "WITHDRAWN"], ["withdrawnAt", {"var": "event.timestamp"}], ["withdrawalReason", "critical_adverse_event"]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 472,
+      "program": [["sampleStatus", "collected"], ["receivedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 483,
+      "program": [["status", "processing"], ["sampleStatus", "processing"], ["processingStartedAt", {"var": "event.timestamp"}], ["patientId", {"var": "event.patientId"}], ["visitNumber", {"var": "event.visitNumber"}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 471,
+      "program": {"and": [{">=": [{"var": "event.qualityScore"}, 90]}, {"===": [{"var": "event.contaminated"}, false]}, {"<": [{"var": "event.biomarkerLevel"}, 100]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 503,
+      "program": [["result", "passed"], ["qualityScore", {"var": "event.qualityScore"}], ["biomarkerLevel", {"var": "event.biomarkerLevel"}], ["passRate", 100], ["completedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 482,
+      "program": {"and": [{">=": [{"var": "event.qualityScore"}, 70]}, {"<": [{"var": "event.qualityScore"}, 90]}, {"===": [{"var": "event.contaminated"}, false]}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 523,
+      "program": [["result", "questionable"], ["qualityScore", {"var": "event.qualityScore"}], ["biomarkerLevel", {"var": "event.biomarkerLevel"}], ["passRate", 95], ["completedAt", {"var": "event.timestamp"}], ["reviewRequired", true]]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 496,
+      "program": {"and": [{"<": [{"var": "event.qualityScore"}, 70]}, {"===": [{"var": "event.contaminated"}, false]}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 543,
+      "program": [["result", "failed"], ["qualityScore", {"var": "event.qualityScore"}], ["biomarkerLevel", {"var": "event.biomarkerLevel"}], ["passRate", 80], ["completedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 516,
+      "program": {">=": [{"var": "event.biomarkerLevel"}, 500]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 559,
+      "program": [["result", "critical"], ["qualityScore", {"var": "event.qualityScore"}], ["biomarkerLevel", {"var": "event.biomarkerLevel"}], ["passRate", 70], ["completedAt", {"var": "event.timestamp"}], ["criticalAlert", true]]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "line": 537,
+      "program": {"===": [{"var": "event.contaminated"}, true]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 576,
+      "program": [["result", "retest_required"], ["qualityScore", {"var": "event.qualityScore"}], ["passRate", 90], ["completedAt", {"var": "event.timestamp"}], ["contaminationReason", {"var": "event.contaminationReason"}]]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 590,
+      "program": [["status", "processing"], ["sampleStatus", "processing"], ["retestCount", {"+": [{"var": "state.retestCount"}, 1]}], ["retestStartedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "line": 603,
+      "program": [["sampleStatus", "idle"], ["result", null]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ClinicalTrialStateMachineSuite.scala:614 $.transitions[9].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ClinicalTrialStateMachineSuite.scala:625 $.transitions[10].effect",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ClinicalTrialStateMachineSuite.scala:636 $.transitions[11].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 662,
+      "program": [["hasCriticalEvent", {"===": [{"var": "event.severity"}, "critical"]}], ["severity", {"var": "event.severity"}], ["patientId", {"var": "event.patientId"}], ["reportedAt", {"var": "event.detectedAt"}], ["resolved", false]]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 676,
+      "program": [["status", "investigating"], ["investigationStartedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 661,
+      "program": {"!==": [{"var": "state.severity"}, "critical"]},
+      "changes": [
+        "NE: !=="
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 689,
+      "program": [["status", "resolved"], ["resolved", true], ["hasCriticalEvent", false], ["resolvedAt", {"var": "event.timestamp"}], ["resolution", {"var": "event.resolution"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 675,
+      "program": {"===": [{"var": "state.severity"}, "critical"]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 705,
+      "program": [["status", "escalated"], ["hasCriticalEvent", true], ["escalatedAt", {"var": "event.timestamp"}], ["escalationReason", {"var": "event.reason"}]]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 718,
+      "program": [["status", "monitoring"], ["hasCriticalEvent", false], ["resolved", true]]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 745,
+      "program": [["status", "monitoring"], ["allowResume", true], ["terminationRequired", false], ["monitoringStartedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 758,
+      "program": [["status", "reviewing"], ["reviewStartedAt", {"var": "event.submittedAt"}], ["trialId", {"var": "event.trialId"}], ["completedVisits", {"var": "event.completedVisits"}]]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 744,
+      "program": {">=": [{"var": "event.complianceScore"}, 90]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 773,
+      "program": [["reviewResult", "approved"], ["status", "final_approved"], ["approvedAt", {"var": "event.timestamp"}], ["complianceScore", {"var": "event.complianceScore"}]]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 757,
+      "program": {"<": [{"var": "event.complianceScore"}, 90]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 788,
+      "program": [["reviewResult", "REJECTED"], ["status", "REJECTED"], ["rejectedAt", {"var": "event.timestamp"}], ["complianceScore", {"var": "event.complianceScore"}], ["rejectionReason", {"var": "event.reason"}]]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 816,
+      "program": {">=": [{"var": "state.coverage"}, {"var": "event.claimAmount"}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 819,
+      "program": [["status", "claim_filed"], ["claimAmount", {"var": "event.claimAmount"}], ["claimFiledAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 831,
+      "program": [["status", "claim_processing"], ["processingStartedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 842,
+      "program": [["status", "claim_approved"], ["approvedAt", {"var": "event.timestamp"}]]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 853,
+      "program": [["status", "claim_paid"], ["paidAt", {"var": "event.timestamp"}], ["remainingCoverage", {"-": [{"var": "state.coverage"}, {"var": "state.claimAmount"}]}]]
+    }
+  ]
+}

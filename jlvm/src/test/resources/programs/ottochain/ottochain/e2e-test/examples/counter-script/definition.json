@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/counter-script/definition.json"},
+  "expressions": [
+    {
+      "path": "$.scriptProgram",
+      "line": 2,
+      "program": {"if": [{"==": [{"var": "method"}, "increment"]}, {"merge": [{"var": "state"}, {"object": {"value": {"+": [{"var": "state.value"}, 1]}}}]}, {"if": [{"==": [{"var": "method"}, "decrement"]}, {"merge": [{"var": "state"}, {"object": {"value": {"-": [{"var": "state.value"}, 1]}}}]}, {"if": [{"==": [{"var": "method"}, "reset"]}, {"object": {"value": 0}}, {"var": "state"}]}]}]},
+      "changes": [
+        "K: single-key map \"value\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

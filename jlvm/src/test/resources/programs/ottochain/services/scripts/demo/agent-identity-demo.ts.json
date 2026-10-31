@@ -1,0 +1,21 @@
+{
+  "source": {"repo": "ottochain-services", "commit": "cf05326", "file": "scripts/demo/agent-identity-demo.ts"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 18,
+      "program": {"===": [true, true]},
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[1].guard",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[2].guard",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[3].guard",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[4].guard",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:18 $.transitions[5].guard",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:73 $.transitions[0].guard",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:73 $.transitions[1].guard",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:73 $.transitions[2].guard",
+        "ottochain-services@cf05326:scripts/demo/agent-identity-demo.ts:73 $.transitions[3].guard"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,221 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"in": [{"var": "state.authority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[3].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[4].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[11].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[12].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[13].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[0].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[3].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[4].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[11].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[12].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[13].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[0].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[3].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[4].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[11].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[12].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[13].guard",
+        "ottochain-sdk@a53a6e0:src/apps/identity/state-machines/index.ts#identityRegistryDef $.transitions[0].guard",
+        "ottochain-sdk@a53a6e0:src/apps/identity/state-machines/index.ts#identityRegistryDef $.transitions[1].guard",
+        "ottochain-sdk@a53a6e0:src/apps/identity/state-machines/index.ts#identityRegistryDef $.transitions[2].guard",
+        "ottochain-sdk@a53a6e0:src/apps/identity/state-machines/index.ts#identityRegistryDef $.transitions[3].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:46 $.transitions[0].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:405 $.transitions[3].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:443 $.transitions[4].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1748 $.transitions[11].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1784 $.transitions[12].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1820 $.transitions[13].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"_addDependency": [{"object": {"fiberId": {"var": "state.registryId"}}}]}]},
+      "changes": [
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[0].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[0].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:63 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"===": [{"var": "event.stakeAmount"}, {"var": "state.stakeAmount"}]}, {"!": [{"has": [{"var": "state.participants"}, {"var": "event.agent"}]}]}, {"and": [{"has": [{"var": "heldAssets"}, {"var": "event.stakeAssetId"}]}, {">=": [{"get": [{"get": [{"var": "heldAssets"}, {"var": "event.stakeAssetId"}]}, "amount"]}, {"var": "state.stakeAmount"}]}]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.registryId"}]}, {"some": [{"map": [{"var": "proofs"}, {"var": "address"}]}, {">=": [{"get": [{"get": [{"get": [{"get": [{"var": "machines"}, {"var": "state.registryId"}]}, "state"]}, "reputations"]}, {"var": ""}]}, {"var": "state.minReputation"}]}]}, false]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[2].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[1].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[2].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[1].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[2].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"participants": {"set": [{"var": "state.participants"}, {"var": "event.agent"}, true]}, "stakes": {"set": [{"var": "state.stakes"}, {"var": "event.agent"}, {"var": "event.stakeAmount"}]}, "stakeAssetIds": {"set": [{"var": "state.stakeAssetIds"}, {"var": "event.agent"}, {"var": "event.stakeAssetId"}]}}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[2].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[1].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[2].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[1].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[2].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:193 $.transitions[1].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:353 $.transitions[2].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "COLLECTING", "epoch": 1, "epochStartedAt": {"var": "$ordinal"}, "submissions": []}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[3].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[3].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:422 $.transitions[3].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "COLLECTING", "epoch": {"+": [{"var": "state.epoch"}, 1]}, "epochStartedAt": {"var": "$ordinal"}, "submissions": [], "inConsensus": [], "claimed": {}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[4].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[4].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:460 $.transitions[4].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"and": [{"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"has": [{"var": "state.participants"}, {"var": "event.agent"}]}]}, {"<=": [{"var": "$ordinal"}, {"+": [{"var": "state.epochStartedAt"}, {"var": "state.epochLength"}]}]}, {"none": [{"var": "state.submissions"}, {"===": [{"get": [{"var": ""}, "addr"]}, {"var": "event.agent"}]}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[5].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[5].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"submissions": {"merge": [{"var": "state.submissions"}, [{"addr": {"var": "event.agent"}, "value": {"var": "event.value"}}]]}}}]},
+      "changes": [
+        "K: single-key map \"submissions\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[5].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[5].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:547 $.transitions[5].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"and": [{"in": [{"var": "state.authority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {">=": [{"count": [{"var": "state.submissions"}]}, {"var": "state.quorum"}]}, {">=": [{"var": "$ordinal"}, {"+": [{"var": "state.epochStartedAt"}, {"var": "state.epochLength"}]}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[6].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:579 $.transitions[6].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "SETTLED", "inConsensus": {"map": [{"filter": [{"var": "state.submissions"}, {"<=": [{"abs": [{"-": [{"get": [{"var": ""}, "value"]}, {"/": [{"reduce": [{"map": [{"var": "state.submissions"}, {"get": [{"var": ""}, "value"]}]}, {"+": [{"var": "accumulator"}, {"var": "current"}]}, 0]}, {"count": [{"map": [{"var": "state.submissions"}, {"get": [{"var": ""}, "value"]}]}]}]}]}]}, {"var": "state.outlierBound"}]}]}, {"get": [{"var": ""}, "addr"]}]}, "claimed": {}, "result": {"value": {"/": [{"reduce": [{"map": [{"filter": [{"var": "state.submissions"}, {"<=": [{"abs": [{"-": [{"get": [{"var": ""}, "value"]}, {"/": [{"reduce": [{"map": [{"var": "state.submissions"}, {"get": [{"var": ""}, "value"]}]}, {"+": [{"var": "accumulator"}, {"var": "current"}]}, 0]}, {"count": [{"map": [{"var": "state.submissions"}, {"get": [{"var": ""}, "value"]}]}]}]}]}]}, {"var": "state.outlierBound"}]}]}, {"get": [{"var": ""}, "value"]}]}, {"+": [{"var": "accumulator"}, {"var": "current"}]}, 0]}, {"count": [{"map": [{"filter": [{"var": "state.submissions"}, {"<=": [{"abs": [{"-": [{"get": [{"var": ""}, "value"]}, {"/": [{"reduce": [{"map": [{"var": "state.submissions"}, {"get": [{"var": ""}, "value"]}]}, {"+": [{"var": "accumulator"}, {"var": "current"}]}, 0]}, {"count": [{"map": [{"var": "state.submissions"}, {"get": [{"var": ""}, "value"]}]}]}]}]}]}, {"var": "state.outlierBound"}]}]}, {"get": [{"var": ""}, "value"]}]}]}]}, "epoch": {"var": "state.epoch"}, "finalizedAt": {"var": "$ordinal"}}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "program": {"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"some": [{"var": "state.inConsensus"}, {"===": [{"var": ""}, {"var": "event.agent"}]}]}, {"!": [{"has": [{"var": "state.claimed"}, {"var": "event.agent"}]}]}, {"has": [{"var": "heldAssets"}, {"var": "event.rewardAssetId"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[8].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[7].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[8].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[7].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[8].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1384 $.transitions[7].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1482 $.transitions[8].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "program": {"merge": [{"var": "state"}, {"claimed": {"set": [{"var": "state.claimed"}, {"var": "event.agent"}, true]}, "_transferAsset": [{"assetId": {"var": "event.rewardAssetId"}, "recipient": {"object": {"Wallet": {"object": {"address": {"var": "event.agent"}}}}}}]}]},
+      "changes": [
+        "K: single-key map \"Wallet\" written as {\"object\": ...}",
+        "K: single-key map \"address\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[8].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[7].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[8].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[7].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[8].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1446 $.transitions[7].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1544 $.transitions[8].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[9].guard",
+      "program": {"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"has": [{"var": "state.stakeAssetIds"}, {"var": "event.agent"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[10].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[9].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[10].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[9].guard",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[10].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1580 $.transitions[9].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1664 $.transitions[10].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "program": {"merge": [{"var": "state"}, {"stakes": {"set": [{"var": "state.stakes"}, {"var": "event.agent"}, 0]}, "stakeAssetIds": {"unset": [{"var": "state.stakeAssetIds"}, {"var": "event.agent"}]}, "_transferAsset": [{"assetId": {"get": [{"var": "state.stakeAssetIds"}, {"var": "event.agent"}]}, "recipient": {"object": {"Wallet": {"object": {"address": {"var": "event.agent"}}}}}}]}]},
+      "changes": [
+        "K: single-key map \"Wallet\" written as {\"object\": ...}",
+        "K: single-key map \"address\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[10].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[9].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[10].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[9].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[10].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1611 $.transitions[9].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1695 $.transitions[10].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[11].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "CLOSED", "closedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[12].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#makeOraclePoolDef $.transitions[13].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[11].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[12].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolBaseDef $.transitions[13].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[11].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[12].effect",
+        "ottochain-sdk@a53a6e0:src/apps/staked-pool/state-machines/index.ts#stakedPoolOracleDef $.transitions[13].effect",
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketPredictionDef $.transitions[3].effect",
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketUniversalDef $.transitions[3].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1765 $.transitions[11].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1801 $.transitions[12].effect",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/definition.json:1837 $.transitions[13].effect"
+      ]
+    }
+  ]
+}

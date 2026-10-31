@@ -1,0 +1,106 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/corporate/state-machines/index.ts#corpEntityDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"and": [{"!=": [{"var": "state.legalName"}, null]}, {"!=": [{"var": "state.jurisdiction.state"}, null]}, {"!=": [{"var": "state.registeredAgent"}, null]}, {">": [{"length": [{"var": "state.incorporators"}]}, 0]}, {">": [{"length": [{"var": "state.shareStructure.classes"}]}, 0]}, {">": [{"var": "state.shareStructure.totalAuthorized"}, 0]}]}
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "formationDate": {"var": "event.approvalDate"}, "updatedAt": {"var": "$ordinal"}}, {"_emit": [{"name": "CORPORATION_FORMED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"in": [{"var": "state.charterAuthority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"pendingAmendCharter": {"amendmentId": {"var": "event.amendmentId"}, "description": {"var": "event.description"}, "effectiveDate": {"var": "event.effectiveDate"}, "filedDate": {"var": "event.filedDate"}, "newLegalName": {"var": "event.newLegalName"}, "ref": {"var": "event.resolutionRef"}, "proposedAt": {"var": "$ordinal"}}}}, {"_addDependency": [{"object": {"fiberId": {"var": "event.resolutionRef"}}}]}]},
+      "changes": [
+        "K: single-key map \"pendingAmendCharter\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"and": [{"in": [{"var": "state.charterAuthority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"==": [{"var": "state.pendingAmendCharter.amendmentId"}, {"var": "event.amendmentId"}]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.pendingAmendCharter.ref"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.pendingAmendCharter.ref"}]}, "currentStateId"]}, "EXECUTED"]}, false]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"charterAmendments": {"merge": [{"var": "state.charterAmendments"}, [{"amendmentId": {"var": "event.amendmentId"}, "description": {"var": "event.description"}, "effectiveDate": {"var": "event.effectiveDate"}, "resolutionRef": {"var": "state.pendingAmendCharter.ref"}, "filedDate": {"var": "event.filedDate"}}]]}, "legalName": {"if": [{"!=": [{"var": "event.newLegalName"}, null]}, {"var": "event.newLegalName"}, {"var": "state.legalName"}]}, "updatedAt": {"var": "$ordinal"}, "pendingAmendCharter": null}, {"_emit": [{"name": "CHARTER_AMENDED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"some": [{"var": "state.charterAmendments"}, {"==": [{"var": "amendmentId"}, {"var": "event.charterAmendmentRef"}]}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"shareStructure": {"merge": [{"var": "state.shareStructure"}, {"object": {"classes": {"map": [{"var": "state.shareStructure.classes"}, {"if": [{"==": [{"var": "classId"}, {"var": "event.classId"}]}, {"classId": {"var": "event.classId"}, "className": {"var": "event.className"}, "authorized": {"var": "event.authorized"}, "issued": 0, "outstanding": 0, "treasury": 0, "parValue": {"var": "event.parValue"}, "votingRights": {"var": "event.votingRights"}, "votesPerShare": {"var": "event.votesPerShare"}, "liquidationPreference": {"var": "event.liquidationPreference"}, "dividendRate": {"var": "event.dividendRate"}, "convertible": {"var": "event.convertible"}}, {"var": ""}]}]}}}]}}}]},
+      "changes": [
+        "K: single-key map \"shareStructure\" written as {\"object\": ...}",
+        "K: single-key map \"classes\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"in": [{"var": "state.boardAuthority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpEntityDef $.transitions[6].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"registeredAgent": {"name": {"var": "event.name"}, "address": {"var": "event.address"}, "phone": {"var": "event.phone"}, "email": {"var": "event.email"}, "effectiveDate": {"var": "event.effectiveDate"}}}}, {"_emit": [{"name": "REGISTERED_AGENT_CHANGED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "K: single-key map \"registeredAgent\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"in": [{"var": "state.stateAuthority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpEntityDef $.transitions[9].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "SUSPENDED", "suspensionReason": {"var": "event.reason"}, "suspensionDate": {"var": "event.suspensionDate"}}, {"_emit": [{"name": "CORPORATION_SUSPENDED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "suspensionReason": null, "suspensionDate": null}, {"_emit": [{"name": "CORPORATION_REINSTATED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "program": {"and": [{"in": [{"var": "state.boardAuthority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "state.shareholderAuthority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"pendingDissolveVoluntary": {"dissolutionDate": {"var": "event.dissolutionDate"}, "boardRef": {"var": "event.boardResolutionRef"}, "shareholderRef": {"var": "event.shareholderResolutionRef"}, "proposedAt": {"var": "$ordinal"}}}}, {"_addDependency": [{"object": {"fiberId": {"var": "event.boardResolutionRef"}}}, {"object": {"fiberId": {"var": "event.shareholderResolutionRef"}}}]}]},
+      "changes": [
+        "K: single-key map \"pendingDissolveVoluntary\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "program": {"and": [{"in": [{"var": "state.boardAuthority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "state.shareholderAuthority"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"==": [{"var": "state.pendingDissolveVoluntary.dissolutionDate"}, {"var": "event.dissolutionDate"}]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.pendingDissolveVoluntary.boardRef"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.pendingDissolveVoluntary.boardRef"}]}, "currentStateId"]}, "EXECUTED"]}, false]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.pendingDissolveVoluntary.shareholderRef"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.pendingDissolveVoluntary.shareholderRef"}]}, "currentStateId"]}, "EXECUTED"]}, false]}]}
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "DISSOLVED", "dissolutionDate": {"var": "event.dissolutionDate"}, "dissolutionReason": "VOLUNTARY", "pendingDissolveVoluntary": null}, {"_emit": [{"name": "CORPORATION_DISSOLVED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "DISSOLVED", "dissolutionDate": {"var": "event.dissolutionDate"}, "dissolutionReason": {"cat": ["ADMINISTRATIVE: ", {"var": "event.reason"}]}}, {"_emit": [{"name": "CORPORATION_DISSOLVED", "data": {"var": "event"}, "destination": "external"}]}]}
+    }
+  ]
+}

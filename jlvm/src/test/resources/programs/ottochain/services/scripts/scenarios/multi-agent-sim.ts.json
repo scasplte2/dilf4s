@@ -1,0 +1,20 @@
+{
+  "source": {"repo": "ottochain-services", "commit": "cf05326", "file": "scripts/scenarios/multi-agent-sim.ts"},
+  "expressions": [
+    {
+      "path": "$.transitions[1].effects[0].expr",
+      "line": 31,
+      "program": {"+": [{"var": "reputation"}, 2]}
+    },
+    {
+      "path": "$.transitions[2].effects[0].expr",
+      "line": 31,
+      "program": {"+": [{"var": "reputation"}, 5]}
+    },
+    {
+      "path": "$.transitions[3].effects[0].expr",
+      "line": 31,
+      "program": {"max": [0, {"-": [{"var": "reputation"}, 10]}]}
+    }
+  ]
+}

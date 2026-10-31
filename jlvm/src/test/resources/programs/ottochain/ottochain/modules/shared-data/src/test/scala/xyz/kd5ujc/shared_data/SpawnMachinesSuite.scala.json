@@ -1,0 +1,78 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/SpawnMachinesSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 51,
+      "program": {"_spawn": [{"childId": "INTERP", "definition": {"states": {"object": {"ACTIVE": {"id": "ACTIVE", "isFinal": false}}}, "initialState": "ACTIVE", "transitions": []}, "initialData": {"parentId": {"var": "machineId"}, "createdAt": {"var": "sequenceNumber"}}}], "childCount": 1},
+      "changes": [
+        "K: single-key map \"ACTIVE\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 284,
+      "program": {"_spawn": [{"childId": "INTERP", "definition": {"states": {"idle": {"id": "idle", "isFinal": false}, "activated": {"id": "activated", "isFinal": false}}, "initialState": "idle", "transitions": [{"from": "idle", "to": "activated", "eventName": "activate", "guard": true, "effect": {"status": "activated", "message": {"var": "event.message"}}, "dependencies": []}]}, "initialData": {"object": {"status": "idle"}}}], "_triggers": [{"targetMachineId": "INTERP", "eventName": "activate", "payload": {"object": {"message": "Hello from parent"}}}], "childCount": 1},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}",
+        "K: single-key map \"message\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 619,
+      "program": {"_spawn": [{"childId": "INTERP", "definition": {"states": {"idle": {"id": "idle", "isFinal": false}, "ACTIVE": {"id": "ACTIVE", "isFinal": false}}, "initialState": "idle", "transitions": [{"from": "idle", "to": "ACTIVE", "eventName": "activate", "guard": true, "effect": {"status": "ACTIVE", "eventMessage": {"var": "event.msg"}, "eventAmount": {"var": "event.amount"}, "parentState": {"var": "parent.state.level"}, "myId": {"var": "machineId"}}, "dependencies": []}]}, "initialData": {"object": {"status": "idle"}}}], "_triggers": [{"targetMachineId": "INTERP", "eventName": "activate", "payload": {"msg": "Hello", "amount": 42}}], "childSpawned": true},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 747,
+      "program": {"_spawn": [{"childId": "INTERP", "definition": {"states": {"idle": {"id": "idle", "isFinal": false}, "spawned_child": {"id": "spawned_child", "isFinal": false}}, "initialState": "idle", "transitions": [{"from": "idle", "to": "spawned_child", "eventName": "spawn_grandchild", "guard": true, "effect": {"_spawn": [{"childId": "INTERP", "definition": {"states": {"object": {"ACTIVE": {"id": "ACTIVE", "isFinal": false}}}, "initialState": "ACTIVE", "transitions": [{"from": "ACTIVE", "to": "ACTIVE", "eventName": "activate", "guard": true, "effect": {"object": {"activatedBy": {"var": "event.activatedBy"}}}, "dependencies": []}]}, "initialData": {"grandparentId": {"var": "parent.machineId"}, "generation": 3}}], "_triggers": [{"targetMachineId": "INTERP", "eventName": "activate", "payload": {"object": {"activatedBy": {"var": "machineId"}}}}], "spawned": true}, "dependencies": []}, {"from": "spawned_child", "to": "spawned_child", "eventName": "activate", "guard": true, "effect": {"object": {"activationSource": {"var": "event.activatedBy"}}}, "dependencies": []}]}, "initialData": {"parentId": {"var": "machineId"}, "level": 2}}], "level": 1},
+      "changes": [
+        "K: single-key map \"ACTIVE\" written as {\"object\": ...}",
+        "K: single-key map \"activatedBy\" written as {\"object\": ...}",
+        "K: single-key map \"activationSource\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 915,
+      "program": {"_spawn": [{"childId": "INTERP", "definition": {"states": {"object": {"ACTIVE": {"id": "ACTIVE", "isFinal": false}}}, "initialState": "ACTIVE", "transitions": []}, "initialData": {"object": {"index": 0}}}, {"childId": "INTERP", "definition": {"states": {"idle": {"id": "idle", "isFinal": false}, "activated": {"id": "activated", "isFinal": false}}, "initialState": "idle", "transitions": [{"from": "idle", "to": "activated", "eventName": "activate", "guard": {"===": [{"var": "event.shouldFail"}, false]}, "effect": {"object": {"status": "activated"}}, "dependencies": []}]}, "initialData": {"object": {"status": "idle"}}}, {"childId": "INTERP", "definition": {"states": {"object": {"ACTIVE": {"id": "ACTIVE", "isFinal": false}}}, "initialState": "ACTIVE", "transitions": []}, "initialData": {"object": {"index": 2}}}], "_triggers": [{"targetMachineId": "INTERP", "eventName": "activate", "payload": {"object": {"shouldFail": true}}}], "spawnCount": 3},
+      "changes": [
+        "K: single-key map \"ACTIVE\" written as {\"object\": ...}",
+        "K: single-key map \"index\" written as {\"object\": ...}",
+        "K: single-key map \"status\" written as {\"object\": ...}",
+        "K: single-key map \"shouldFail\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 1534,
+      "program": {"_spawn": [{"childId": "INTERP", "definition": {"states": {"object": {"ACTIVE": {"id": "ACTIVE", "isFinal": false}}}, "initialState": "ACTIVE", "transitions": []}, "initialData": {"object": {"status": "ACTIVE"}}, "owners": {"var": "event.customOwners"}}], "status": "spawned"},
+      "changes": [
+        "K: single-key map \"ACTIVE\" written as {\"object\": ...}",
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ],
+      "placeholders": [
+        "INTERP"
+      ]
+    }
+  ]
+}

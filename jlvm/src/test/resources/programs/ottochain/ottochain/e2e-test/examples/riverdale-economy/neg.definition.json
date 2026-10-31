@@ -1,0 +1,18 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-economy/neg.definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 13,
+      "program": {"status": "s0", "pinged": {"+": [{"var": "state.pinged"}, 1]}}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 24,
+      "program": {"object": {"status": "s1"}},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

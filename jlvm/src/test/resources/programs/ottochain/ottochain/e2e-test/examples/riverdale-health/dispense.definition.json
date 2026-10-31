@@ -1,0 +1,25 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-health/dispense.definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 15,
+      "program": {"and": [{"sigma_verify": [{"type": "or", "children": [{"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x229c862dd473366e6ac6c8ae5114c917132ca3b1519d458e281cfe2d309b51c60880d6c66530b5f962a6a0f28154d47fc02877b911c6dd6f5eceddb2d3d92891", "u": {"var": "state.rxPoints.0"}, "v": {"var": "event.nullifier"}}, {"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x229c862dd473366e6ac6c8ae5114c917132ca3b1519d458e281cfe2d309b51c60880d6c66530b5f962a6a0f28154d47fc02877b911c6dd6f5eceddb2d3d92891", "u": {"var": "state.rxPoints.1"}, "v": {"var": "event.nullifier"}}, {"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x229c862dd473366e6ac6c8ae5114c917132ca3b1519d458e281cfe2d309b51c60880d6c66530b5f962a6a0f28154d47fc02877b911c6dd6f5eceddb2d3d92891", "u": {"var": "state.rxPoints.2"}, "v": {"var": "event.nullifier"}}, {"type": "dhtuple", "g": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002", "h": "0x229c862dd473366e6ac6c8ae5114c917132ca3b1519d458e281cfe2d309b51c60880d6c66530b5f962a6a0f28154d47fc02877b911c6dd6f5eceddb2d3d92891", "u": {"var": "state.rxPoints.3"}, "v": {"var": "event.nullifier"}}]}, {"var": "event.proof"}, {"var": "event.message"}]}, {"!": [{"has": [{"var": "state.spentNullifiers"}, {"hex": {"var": "event.nullifier"}}]}]}, {"===": [{"var": "event.message"}, {"unhex": {"cat": [{"hex": "0x"}, {"substr": [{"hex": {"var": "event.nullifier"}}, 2]}, {"substr": [{"hex": {"var": "event.pharmacyHex"}}, 2]}]}}]}]},
+      "changes": [
+        "HX: 0x-hex text reads as bytes",
+        "HEXT: a 0x-hex key of has is read as its hex text",
+        "HEXT: substr over 0x-hex data reads its hex text",
+        "HEXT: a 0x-prefixed word is rebuilt as bytes (unhex), or as text when it is a map key"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 120,
+      "program": {"merge": [{"var": "state"}, {"spentNullifiers": {"set": [{"var": "state.spentNullifiers"}, {"hex": {"var": "event.nullifier"}}, true]}, "fills": {"+": [{"var": "state.fills"}, 1]}, "lastFillAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding",
+        "HEXT: a 0x-hex key of set is read as its hex text"
+      ]
+    }
+  ]
+}

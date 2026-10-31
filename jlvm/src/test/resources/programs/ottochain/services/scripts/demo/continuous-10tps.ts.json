@@ -1,0 +1,105 @@
+{
+  "source": {"repo": "ottochain-services", "commit": "cf05326", "file": "scripts/demo/continuous-10tps.ts"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 88,
+      "program": {"merge": [{"var": "state"}, {"object": {"status": "ACTIVE"}}]},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 111,
+      "program": {"merge": [{"var": "state"}, {"acceptedAt": {"var": "event.timestamp"}, "status": "ACTIVE"}]},
+      "changes": [
+        "TS: $timestamp recorded as \"acceptedAt\" -> event.timestamp (caller-supplied)"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[0].effect",
+        "ottochain-services@cf05326:scripts/testing/test-contract-signing.ts:9 $.transitions[0].effect",
+        "ottochain-services@cf05326:scripts/testing/test-rejection-notification-e2e.ts:216 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 111,
+      "program": {"merge": [{"var": "state"}, {"rejectedAt": {"var": "event.timestamp"}, "rejectReason": {"var": "event.reason"}, "status": "REJECTED"}]},
+      "changes": [
+        "TS: $timestamp recorded as \"rejectedAt\" -> event.timestamp (caller-supplied)"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[1].effect",
+        "ottochain-services@cf05326:scripts/testing/test-contract-signing.ts:9 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 111,
+      "program": {"or": [{"===": [{"var": "event.agent"}, {"var": "state.proposer"}]}, {"===": [{"var": "event.agent"}, {"var": "state.counterparty"}]}]},
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/continuous-10tps.ts:111 $.transitions[4].guard",
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[2].guard",
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[4].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 111,
+      "program": {"merge": [{"var": "state"}, {"object": {"completions": {"cat": [{"var": "state.completions"}, [{"agent": {"var": "event.agent"}, "proof": {"var": "event.proof"}, "submittedAt": {"var": "event.timestamp"}}]]}}}]},
+      "changes": [
+        "K: single-key map \"completions\" written as {\"object\": ...}",
+        "TS: $timestamp recorded as \"submittedAt\" -> event.timestamp (caller-supplied)"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[2].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 111,
+      "program": {"merge": [{"var": "state"}, {"completedAt": {"var": "event.timestamp"}, "status": "COMPLETED"}]},
+      "changes": [
+        "TS: $timestamp recorded as \"completedAt\" -> event.timestamp (caller-supplied)"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[3].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 111,
+      "program": {"merge": [{"var": "state"}, {"disputedAt": {"var": "event.timestamp"}, "disputedBy": {"var": "event.agent"}, "disputeReason": {"var": "event.reason"}, "status": "DISPUTED"}]},
+      "changes": [
+        "TS: $timestamp recorded as \"disputedAt\" -> event.timestamp (caller-supplied)"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[4].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 111,
+      "program": {"merge": [{"var": "state"}, {"resolvedAt": {"var": "event.timestamp"}, "resolution": {"var": "event.resolution"}, "status": "COMPLETED"}]},
+      "changes": [
+        "TS: $timestamp recorded as \"resolvedAt\" -> event.timestamp (caller-supplied)"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[5].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 111,
+      "program": {"merge": [{"var": "state"}, {"cancelledAt": {"var": "event.timestamp"}, "status": "Cancelled"}]},
+      "changes": [
+        "TS: $timestamp recorded as \"cancelledAt\" -> event.timestamp (caller-supplied)"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/testing/test-contract-full.ts:9 $.transitions[6].effect",
+        "ottochain-services@cf05326:scripts/testing/test-contract-signing.ts:9 $.transitions[2].effect"
+      ]
+    }
+  ]
+}

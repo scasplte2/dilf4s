@@ -1,0 +1,45 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/governance/state-machines/index.ts#daoSingleDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"in": [{"var": "state.owner"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/governance/state-machines/index.ts#daoSingleDef $.transitions[1].guard",
+        "ottochain-sdk@a53a6e0:src/apps/governance/state-machines/index.ts#daoSingleDef $.transitions[3].guard",
+        "ottochain-sdk@a53a6e0:src/apps/governance/state-machines/index.ts#daoSingleDef $.transitions[4].guard",
+        "ottochain@7ada01f:e2e-test/examples/staked-oracle-pool/consumer-definition.json:28 $.transitions[0].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"actions": {"cat": [{"var": "state.actions"}, [{"id": {"var": "event.actionId"}, "type": {"var": "event.actionType"}, "payload": {"var": "event.payload"}, "executedAt": {"var": "$ordinal"}}]]}, "_emit": [{"name": "action_executed", "data": {"object": {"actionId": {"var": "event.actionId"}}}, "destination": "external"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"actionId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"pendingOwner": {"var": "event.newOwner"}, "transferInitiatedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"in": [{"var": "state.pendingOwner"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"owner": {"var": "state.pendingOwner"}, "pendingOwner": null, "transferInitiatedAt": null, "ownershipHistory": {"cat": [{"var": "state.ownershipHistory"}, [{"from": {"var": "state.owner"}, "to": {"var": "state.pendingOwner"}, "at": {"var": "$ordinal"}}]]}, "_emit": [{"name": "ownership_transferred", "data": {"var": "event"}, "destination": "Identity"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"pendingOwner": null, "transferInitiatedAt": null}]}
+    }
+  ]
+}

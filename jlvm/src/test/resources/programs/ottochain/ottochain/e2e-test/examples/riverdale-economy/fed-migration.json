@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-economy/fed-migration.json"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 1,
+      "program": {"merge": [{"var": ""}, {"object": {"emergencyLoans": 0}}]},
+      "changes": [
+        "K: single-key map \"emergencyLoans\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

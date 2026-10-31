@@ -1,0 +1,94 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/adjudicated-htlc/definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 14,
+      "program": {"and": [{"===": [{"poseidon": [[{"var": "event.secret"}]]}, {"var": "state.hashLock"}]}, {"<=": [{"var": "$ordinal"}, {"var": "state.timeoutOrdinal"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/atomic-swap/definition.json:13 $.transitions[0].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 25,
+      "program": {"merge": [{"var": "state"}, {"status": "claimed", "preimage": {"var": "event.secret"}, "claimedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/atomic-swap/definition.json:24 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 37,
+      "program": {">": [{"var": "$ordinal"}, {"var": "state.timeoutOrdinal"}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/atomic-swap/definition.json:40 $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 38,
+      "program": {"merge": [{"var": "state"}, {"status": "refunded", "refundedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/atomic-swap/definition.json:41 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 47,
+      "program": {"!!": [{"var": "event.reason"}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 48,
+      "program": {"merge": [{"var": "state"}, {"status": "disputed", "disputeReason": {"var": "event.reason"}, "disputedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 60,
+      "program": {"schnorr_verify": [{"var": "state.adjudicatorPubKey"}, "0x72656c656173653a48544c432d41444a2d303031", {"var": "event.ruling"}]},
+      "changes": [
+        "HX: 0x-hex text reads as bytes"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 67,
+      "program": {"merge": [{"var": "state"}, {"status": "adjudicated_release", "resolution": "release", "resolvedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 79,
+      "program": {"schnorr_verify": [{"var": "state.adjudicatorPubKey"}, "0x726566756e643a48544c432d41444a2d303031", {"var": "event.ruling"}]},
+      "changes": [
+        "HX: 0x-hex text reads as bytes"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 86,
+      "program": {"merge": [{"var": "state"}, {"status": "adjudicated_refund", "resolution": "refund", "resolvedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    }
+  ]
+}

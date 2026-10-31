@@ -1,0 +1,39 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/compute/state-machines/index.ts#computeRule110Def"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"or": [{"missing": ["state.maxGen"]}, {"<": [{"var": "state.gen"}, {"var": "state.maxGen"}]}]},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/rule110/definition.json:28 $.transitions[0].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"tape": {"map": [{"var": "state.idx"}, {"if": [{"or": [{"==": [{"+": [{"*": [4, {"var": [{"cat": ["state.tape.", {"-": [{"var": ""}, 1]}]}, 0]}]}, {"*": [2, {"var": [{"cat": ["state.tape.", {"var": ""}]}, 0]}]}, {"var": [{"cat": ["state.tape.", {"+": [{"var": ""}, 1]}]}, 0]}]}, 1]}, {"==": [{"+": [{"*": [4, {"var": [{"cat": ["state.tape.", {"-": [{"var": ""}, 1]}]}, 0]}]}, {"*": [2, {"var": [{"cat": ["state.tape.", {"var": ""}]}, 0]}]}, {"var": [{"cat": ["state.tape.", {"+": [{"var": ""}, 1]}]}, 0]}]}, 2]}, {"==": [{"+": [{"*": [4, {"var": [{"cat": ["state.tape.", {"-": [{"var": ""}, 1]}]}, 0]}]}, {"*": [2, {"var": [{"cat": ["state.tape.", {"var": ""}]}, 0]}]}, {"var": [{"cat": ["state.tape.", {"+": [{"var": ""}, 1]}]}, 0]}]}, 3]}, {"==": [{"+": [{"*": [4, {"var": [{"cat": ["state.tape.", {"-": [{"var": ""}, 1]}]}, 0]}]}, {"*": [2, {"var": [{"cat": ["state.tape.", {"var": ""}]}, 0]}]}, {"var": [{"cat": ["state.tape.", {"+": [{"var": ""}, 1]}]}, 0]}]}, 5]}, {"==": [{"+": [{"*": [4, {"var": [{"cat": ["state.tape.", {"-": [{"var": ""}, 1]}]}, 0]}]}, {"*": [2, {"var": [{"cat": ["state.tape.", {"var": ""}]}, 0]}]}, {"var": [{"cat": ["state.tape.", {"+": [{"var": ""}, 1]}]}, 0]}]}, 6]}]}, 1, 0]}]}, "gen": {"+": [{"var": "state.gen"}, 1]}}]},
+      "changes": [
+        "CP: computed var path"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/rule110/definition.json:47 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {">=": [{"var": "state.gen"}, {"var": "state.maxGen"}]},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/rule110/definition.json:427 $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"status": "halted"}}]},
+      "changes": [
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/rule110/definition.json:437 $.transitions[1].effect"
+      ]
+    }
+  ]
+}

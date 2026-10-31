@@ -1,0 +1,119 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/markets/state-machines/index.ts#marketPredictionDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "OPEN", "openedAt": {"var": "$ordinal"}, "positions": {}, "totalPool": 0}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "CANCELLED", "cancelledAt": {"var": "$ordinal"}, "reason": {"var": "event.reason"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/lending/state-machines/index.ts#lendingZkLoanDef $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"and": [{">": [{"var": "event.amount"}, 0]}, {"in": [{"var": "event.outcome"}, {"var": "state.outcomes"}]}, {"or": [{"!": [{"var": "state.deadline"}]}, {"<=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"positions": {"merge": [{"var": "state.positions"}, {"__computed": {"cat": [{"var": "event.agent"}, "_", {"var": "event.outcome"}]}}]}, "totalPool": {"+": [{"var": "state.totalPool"}, {"var": "event.amount"}]}}]}
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"or": [{"in": [{"var": "state.creator"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"and": [{"var": "state.deadline"}, {">=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"some": [{"map": [{"var": "proofs"}, {"var": "address"}]}, {"in": [{"var": ""}, {"var": "state.oracles"}]}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "RESOLVING", "resolutions": [{"oracle": {"var": "event.agent"}, "outcome": {"var": "event.outcome"}, "proof": {"var": "event.proof"}, "submittedAt": {"var": "$ordinal"}}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"and": [{"some": [{"map": [{"var": "proofs"}, {"var": "address"}]}, {"in": [{"var": ""}, {"var": "state.oracles"}]}]}, {"!": [{"in": [{"var": "event.agent"}, {"map": [{"var": "state.resolutions"}, {"var": "oracle"}]}]}]}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"resolutions": {"cat": [{"var": "state.resolutions"}, [{"oracle": {"var": "event.agent"}, "outcome": {"var": "event.outcome"}, "proof": {"var": "event.proof"}, "submittedAt": {"var": "$ordinal"}}]]}}}]},
+      "changes": [
+        "K: single-key map \"resolutions\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"and": [{"some": [{"map": [{"var": "proofs"}, {"var": "address"}]}, {"in": [{"var": ""}, {"var": "state.oracles"}]}]}, {">=": [{"count": {"var": "state.resolutions"}}, {"var": "state.quorum"}]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "SETTLED", "settledAt": {"var": "$ordinal"}, "finalOutcome": {"var": "state.resolutions.0.outcome"}, "claims": []}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "program": {"and": [{">": [{"length": [{"filter": [{"var": "state.positions"}, {"===": [{"var": "agent"}, {"var": "event.agent"}]}]}]}, 0]}, {"var": "event.stake"}]}
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "DISPUTED", "disputedAt": {"var": "$ordinal"}, "disputedBy": {"var": "event.agent"}, "disputeStake": {"var": "event.stake"}, "disputeReason": {"var": "event.reason"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "program": {"and": [{"in": [{"var": "state.arbiter"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "event.finalOutcome"}, {"var": "state.outcomes"}]}]}
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "SETTLED", "settledAt": {"var": "$ordinal"}, "finalOutcome": {"var": "event.finalOutcome"}, "rulingId": {"var": "event.rulingId"}, "claims": []}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[9].guard",
+      "program": {">=": [{"length": [{"filter": [{"var": "state.resolutions"}, {"===": [{"var": "outcome"}, "INVALID"]}]}]}, {"var": "state.quorum"}]}
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "REFUNDED", "refundedAt": {"var": "$ordinal"}, "reason": "oracle_invalidation"}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[10].guard",
+      "program": {"and": [{">": [{"length": [{"filter": [{"var": "state.positions"}, {"and": [{"===": [{"var": "agent"}, {"var": "event.agent"}]}, {"===": [{"var": "outcome"}, {"var": "state.finalOutcome"}]}]}]}]}, 0]}, {"!": [{"in": [{"var": "event.agent"}, {"map": [{"var": "state.claims"}, {"var": "agent"}]}]}]}]}
+    },
+    {
+      "path": "$.transitions[10].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"claims": {"cat": [{"var": "state.claims"}, [{"agent": {"var": "event.agent"}, "amount": {"var": "event.amount"}, "claimedAt": {"var": "$ordinal"}}]]}}}]},
+      "changes": [
+        "K: single-key map \"claims\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    }
+  ]
+}

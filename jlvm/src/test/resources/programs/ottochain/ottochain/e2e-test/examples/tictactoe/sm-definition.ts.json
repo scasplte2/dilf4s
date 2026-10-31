@@ -1,0 +1,40 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/tictactoe/sm-definition.ts"},
+  "expressions": [
+    {
+      "path": "$.transitions[1].guard",
+      "line": 16,
+      "program": {"===": [{"var": "scripts.INTERP.state.status"}, "InProgress"]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TicTacToeGameSuite.scala:75 $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 16,
+      "program": {"or": [{"===": [{"var": "scripts.INTERP.state.status"}, "Won"]}, {"===": [{"var": "scripts.INTERP.state.status"}, "Draw"]}]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/tictactoe/sm-definition.ts:16 $.transitions[3].guard",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TicTacToeGameSuite.scala:98 $.transitions[2].guard",
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TicTacToeGameSuite.scala:134 $.transitions[3].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 16,
+      "program": {"_scriptCall": {"fiberId": {"var": "state.scriptFiberId"}, "method": "makeMove", "args": {"player": {"var": "event.player"}, "cell": {"var": "event.cell"}}}, "finalStatus": {"var": "scripts.INTERP.state.status"}, "winner": {"var": "scripts.INTERP.state.winner"}, "finalBoard": {"var": "scripts.INTERP.state.board"}, "_emit": [{"name": "game_completed", "data": {"gameId": {"var": "state.gameId"}, "winner": {"var": "scripts.INTERP.state.winner"}, "status": {"var": "scripts.INTERP.state.status"}, "moveCount": {"var": "scripts.INTERP.state.moveCount"}}}]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/TicTacToeGameSuite.scala:104 $.transitions[2].effect"
+      ]
+    }
+  ]
+}

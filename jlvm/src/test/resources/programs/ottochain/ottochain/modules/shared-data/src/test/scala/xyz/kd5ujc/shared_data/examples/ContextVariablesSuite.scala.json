@@ -1,0 +1,40 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ContextVariablesSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 38,
+      "program": {">=": [{"var": "$ordinal"}, 0]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 39,
+      "program": {"merge": [{"var": "state"}, {"object": {"ordinalSeen": {"var": "$ordinal"}}}]},
+      "changes": [
+        "K: single-key map \"ordinalSeen\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 66,
+      "program": {"merge": [{"var": "state"}, {"capturedOrdinal": {"var": "$ordinal"}, "capturedHash": {"var": "$lastSnapshotHash"}, "capturedEpoch": {"var": "$epochProgress"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding",
+        "BND: $lastSnapshotHash: a host binding",
+        "BND: $epochProgress: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 96,
+      "program": {">=": [{"var": "$ordinal"}, {"var": "state.minOrdinal"}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    }
+  ]
+}

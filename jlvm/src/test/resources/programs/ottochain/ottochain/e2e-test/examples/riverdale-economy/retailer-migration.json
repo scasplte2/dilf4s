@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-economy/retailer-migration.json"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 1,
+      "program": {"merge": [{"var": ""}, {"object": {"loyaltyPoints": 0}}]},
+      "changes": [
+        "K: single-key map \"loyaltyPoints\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

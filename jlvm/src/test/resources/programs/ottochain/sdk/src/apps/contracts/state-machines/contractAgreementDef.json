@@ -1,0 +1,84 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/contracts/state-machines/index.ts#contractAgreementDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"in": [{"var": "state.counterparty"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/contracts/state-machines/index.ts#contractAgreementDef $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "acceptedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/contracts/state-machines/index.ts#contractUniversalDef $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "REJECTED", "rejectedAt": {"var": "$ordinal"}, "rejectReason": {"var": "event.reason"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"in": [{"var": "state.proposer"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"and": [{"or": [{"in": [{"var": "state.proposer"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "state.counterparty"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}, {"!": [{"in": [{"var": "event.agent"}, {"map": [{"var": "state.completions"}, {"var": "agent"}]}]}]}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"completions": {"cat": [{"var": "state.completions"}, [{"agent": {"var": "event.agent"}, "proof": {"var": "event.proof"}, "submittedAt": {"var": "$ordinal"}}]]}}}]},
+      "changes": [
+        "K: single-key map \"completions\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {">=": [{"length": [{"var": "state.completions"}]}, 2]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "COMPLETED", "completedAt": {"var": "$ordinal"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/contracts/state-machines/index.ts#contractUniversalDef $.transitions[2].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"or": [{"in": [{"var": "state.proposer"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "state.counterparty"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/contracts/state-machines/index.ts#contractAgreementDef $.transitions[7].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "DISPUTED", "disputedAt": {"var": "$ordinal"}, "disputeReason": {"var": "event.reason"}, "disputedBy": {"var": "event.agent"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"or": [{"in": [{"var": "state.arbitrator"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"and": [{"in": [{"var": "state.proposer"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "state.counterparty"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "COMPLETED", "resolvedAt": {"var": "$ordinal"}, "resolution": {"var": "event.resolution"}, "rulingId": {"if": [{"in": [{"var": "state.arbitrator"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"var": "event.rulingId"}, null]}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    }
+  ]
+}

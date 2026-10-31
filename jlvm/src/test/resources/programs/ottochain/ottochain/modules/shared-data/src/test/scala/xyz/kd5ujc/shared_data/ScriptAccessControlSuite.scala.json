@@ -1,0 +1,29 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ScriptAccessControlSuite.scala"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 200,
+      "program": {"if": [{"==": [{"var": "method"}, "validate"]}, {"object": {"result": "validated"}}, false]},
+      "changes": [
+        "K: single-key map \"result\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ScriptAccessControlSuite.scala:290 $"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 389,
+      "program": {"if": [{"==": [{"var": "method"}, "process"]}, {"object": {"result": "processed"}}, false]},
+      "changes": [
+        "K: single-key map \"result\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 492,
+      "program": {"if": [{"==": [{"var": "method"}, "process"]}, "processed", "unknown"]}
+    }
+  ]
+}

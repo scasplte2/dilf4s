@@ -1,0 +1,10 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-economy/fed-v2.definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[1].effect",
+      "line": 34,
+      "program": {"status": "emergency_lending", "emergencyLoans": {"+": [{"var": "state.emergencyLoans"}, 1]}}
+    }
+  ]
+}

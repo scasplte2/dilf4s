@@ -1,0 +1,10 @@
+{
+  "source": {"repo": "ottochain-services", "commit": "cf05326", "file": "packages/traffic-generator/src/fiber-definitions.ts"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 117,
+      "program": {"===": [{"var": "event.agent"}, {"var": "state.X"}]}
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/ConcurrentEventsSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 43,
+      "program": {"merge": [{"var": "state"}, {"object": {"value": {"+": [{"var": "state.value"}, 1]}}}]},
+      "changes": [
+        "K: single-key map \"value\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 56,
+      "program": {"merge": [{"var": "state"}, {"object": {"value": {"+": [{"var": "state.value"}, {"var": "event.amount"}]}}}]},
+      "changes": [
+        "K: single-key map \"value\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 212,
+      "program": {"merge": [{"var": "state"}, {"history": {"merge": [{"var": "state.history"}, [{"var": "event.value"}]]}, "lastValue": {"var": "event.value"}}]}
+    }
+  ]
+}

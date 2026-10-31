@@ -1,0 +1,29 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/governance/state-machines/index.ts#govUniversalDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "VOTING", "proposal": {"var": "event.proposal"}, "proposedAt": {"var": "$ordinal"}, "votes": {}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"votes": {"merge": [{"var": "state.votes"}, {"__key": {"var": "event.agent"}, "__value": {"var": "event.vote"}}]}}}]},
+      "changes": [
+        "K: single-key map \"votes\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/resources/genesis/std-manifest.json:351 $.packages[1].definition.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "lastProposal": {"var": "state.proposal"}, "lastResult": {"var": "event.result"}, "proposal": null, "votes": null}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/resources/genesis/std-manifest.json:387 $.packages[1].definition.transitions[2].effect"
+      ]
+    }
+  ]
+}

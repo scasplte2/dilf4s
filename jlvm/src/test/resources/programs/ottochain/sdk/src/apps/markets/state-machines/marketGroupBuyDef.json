@@ -1,0 +1,95 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/markets/state-machines/index.ts#marketGroupBuyDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"in": [{"var": "state.organizer"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketGroupBuyDef $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "OPEN", "openedAt": {"var": "$ordinal"}, "orders": [], "totalQuantity": 0, "currentTier": 0}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"and": [{">": [{"var": "event.quantity"}, 0]}, {"or": [{"!": [{"var": "state.maxPerBuyer"}]}, {"<=": [{"var": "event.quantity"}, {"var": "state.maxPerBuyer"}]}]}, {"<=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"orders": {"cat": [{"var": "state.orders"}, [{"buyer": {"var": "event.agent"}, "quantity": {"var": "event.quantity"}, "shippingInfo": {"var": "event.shippingInfo"}, "orderedAt": {"var": "$ordinal"}}]]}, "totalQuantity": {"+": [{"var": "state.totalQuantity"}, {"var": "event.quantity"}]}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {">=": [{"var": "state.totalQuantity"}, {"var": "state.minQuantity"}]}
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "THRESHOLD_MET", "thresholdMetAt": {"var": "$ordinal"}, "currentTier": {"reduce": [{"var": "state.priceTiers"}, {"if": [{"<=": [{"var": "current.minQuantity"}, {"var": "state.totalQuantity"}]}, {"var": "current.tier"}, {"var": "accumulator"}]}, 0]}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"and": [{">": [{"var": "event.quantity"}, 0]}, {"<=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"orders": {"cat": [{"var": "state.orders"}, [{"buyer": {"var": "event.agent"}, "quantity": {"var": "event.quantity"}, "shippingInfo": {"var": "event.shippingInfo"}, "orderedAt": {"var": "$ordinal"}}]]}, "totalQuantity": {"+": [{"var": "state.totalQuantity"}, {"var": "event.quantity"}]}, "currentTier": {"reduce": [{"var": "state.priceTiers"}, {"if": [{"<=": [{"var": "current.minQuantity"}, {"+": [{"var": "state.totalQuantity"}, {"var": "event.quantity"}]}]}, {"var": "current.tier"}, {"var": "accumulator"}]}, {"var": "state.currentTier"}]}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {">=": [{"var": "$ordinal"}, {"var": "state.deadline"}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "PROCESSING", "finalizedAt": {"var": "$ordinal"}, "finalTier": {"var": "state.currentTier"}, "finalPricePerUnit": {"var": {"cat": ["state.priceTiers.", {"var": "state.currentTier"}, ".pricePerUnit"]}}}]},
+      "changes": [
+        "BND: $ordinal: a host binding",
+        "CP: computed var path"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"or": [{"in": [{"var": "state.vendor"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "state.organizer"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "FULFILLED", "fulfilledAt": {"var": "$ordinal"}, "trackingInfo": {"var": "event.trackingInfo"}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "program": {"and": [{"<": [{"var": "state.totalQuantity"}, {"var": "state.minQuantity"}]}, {">=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "program": {"and": [{">": [{"length": [{"filter": [{"var": "state.orders"}, {"===": [{"var": "buyer"}, {"var": "event.agent"}]}]}]}, 0]}, {"!": [{"in": [{"var": "event.agent"}, {"var": "state.refundsClaimed"}]}]}]}
+    }
+  ]
+}

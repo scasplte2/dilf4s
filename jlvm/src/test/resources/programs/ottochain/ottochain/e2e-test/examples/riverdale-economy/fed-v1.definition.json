@@ -1,0 +1,16 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-economy/fed-v1.definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 12,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.bankId"}, "eventName": "rate_adjustment", "payload": {"object": {"newBaseRate": {"var": "event.newBaseRate"}}}}], "status": "stable", "baseRate": {"var": "event.newBaseRate"}, "rateChangeCount": {"+": [{"var": "state.rateChangeCount"}, 1]}},
+      "changes": [
+        "K: single-key map \"newBaseRate\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/riverdale-economy/fed-v2.definition.json:13 $.transitions[0].effect"
+      ]
+    }
+  ]
+}

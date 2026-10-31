@@ -1,0 +1,116 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/governance/state-machines/index.ts#daoMultisigDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "event.agent"}, {"var": "state.signers"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/governance/state-machines/index.ts#daoMultisigDef $.transitions[4].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"proposal": {"id": {"var": "event.proposalId"}, "actionType": {"var": "event.actionType"}, "payload": {"var": "event.payload"}, "proposer": {"var": "event.agent"}, "proposedAt": {"var": "$ordinal"}, "expiresAt": {"+": [{"var": "$ordinal"}, {"var": "state.proposalTTLMs"}]}}, "signatures": {"set": [{}, {"var": "event.agent"}, {"var": "$ordinal"}]}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"and": [{"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "event.agent"}, {"var": "state.signers"}]}]}, {"!": [{"has": [{"var": "state.signatures"}, {"var": "event.agent"}]}]}, {"<": [{"length": [{"keys": [{"var": "state.signatures"}]}]}, {"var": "state.threshold"}]}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"signatures": {"set": [{"var": "state.signatures"}, {"var": "event.agent"}, {"var": "$ordinal"}]}}}]},
+      "changes": [
+        "K: single-key map \"signatures\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {">=": [{"length": [{"keys": [{"var": "state.signatures"}]}]}, {"var": "state.threshold"}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"actions": {"cat": [{"var": "state.actions"}, [{"id": {"var": "state.proposal.id"}, "type": {"var": "state.proposal.actionType"}, "payload": {"var": "state.proposal.payload"}, "signatures": {"var": "state.signatures"}, "executedAt": {"var": "$ordinal"}}]]}, "proposal": null, "signatures": {}, "_emit": [{"name": "multisig_executed", "data": {"object": {"proposalId": {"var": "state.proposal.id"}}}, "destination": "external"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"proposalId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"or": [{">": [{"var": "$ordinal"}, {"var": "state.proposal.expiresAt"}]}, {"in": [{"var": "state.proposal.proposer"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"cancelledProposals": {"cat": [{"var": "state.cancelledProposals"}, [{"merge": [{"var": "state.proposal"}, {"object": {"cancelledAt": {"var": "$ordinal"}}}]}]]}, "proposal": null, "signatures": {}}]},
+      "changes": [
+        "K: single-key map \"cancelledAt\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"proposal": {"id": {"var": "event.proposalId"}, "actionType": "add_signer", "payload": {"object": {"newSigner": {"var": "event.newSigner"}}}, "proposer": {"var": "event.agent"}, "proposedAt": {"var": "$ordinal"}, "expiresAt": {"+": [{"var": "$ordinal"}, {"var": "state.proposalTTLMs"}]}}, "signatures": {"set": [{}, {"var": "event.agent"}, {"var": "$ordinal"}]}}]},
+      "changes": [
+        "K: single-key map \"newSigner\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"and": [{"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "event.agent"}, {"var": "state.signers"}]}]}, {">": [{"length": [{"var": "state.signers"}]}, {"var": "state.threshold"}]}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"proposal": {"id": {"var": "event.proposalId"}, "actionType": "remove_signer", "payload": {"object": {"removeSigner": {"var": "event.removeSigner"}}}, "proposer": {"var": "event.agent"}, "proposedAt": {"var": "$ordinal"}, "expiresAt": {"+": [{"var": "$ordinal"}, {"var": "state.proposalTTLMs"}]}}, "signatures": {"set": [{}, {"var": "event.agent"}, {"var": "$ordinal"}]}}]},
+      "changes": [
+        "K: single-key map \"removeSigner\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"and": [{"and": [{"in": [{"var": "event.agent"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"in": [{"var": "event.agent"}, {"var": "state.signers"}]}]}, {">=": [{"var": "event.newThreshold"}, 1]}, {"<=": [{"var": "event.newThreshold"}, {"length": [{"var": "state.signers"}]}]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"proposal": {"id": {"var": "event.proposalId"}, "actionType": "change_threshold", "payload": {"object": {"newThreshold": {"var": "event.newThreshold"}}}, "proposer": {"var": "event.agent"}, "proposedAt": {"var": "$ordinal"}, "expiresAt": {"+": [{"var": "$ordinal"}, {"var": "state.proposalTTLMs"}]}}, "signatures": {"set": [{}, {"var": "event.agent"}, {"var": "$ordinal"}]}}]},
+      "changes": [
+        "K: single-key map \"newThreshold\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "program": {"and": [{">=": [{"length": [{"keys": [{"var": "state.signatures"}]}]}, {"var": "state.threshold"}]}, {"in": [{"var": "state.proposal.actionType"}, ["add_signer", "remove_signer", "change_threshold"]]}]}
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "program": {"if": [{"===": [{"var": "state.proposal.actionType"}, "add_signer"]}, {"merge": [{"var": "state"}, {"signers": {"cat": [{"var": "state.signers"}, [{"var": "state.proposal.payload.newSigner"}]]}, "proposal": null, "signatures": {}}]}, {"===": [{"var": "state.proposal.actionType"}, "remove_signer"]}, {"merge": [{"var": "state"}, {"signers": {"filter": [{"var": "state.signers"}, {"!==": [{"var": ""}, {"var": "state.proposal.payload.removeSigner"}]}]}, "proposal": null, "signatures": {}}]}, {"merge": [{"var": "state"}, {"threshold": {"var": "state.proposal.payload.newThreshold"}, "proposal": null, "signatures": {}}]}]},
+      "changes": [
+        "NE: !=="
+      ]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "program": {"and": [{">": [{"length": [{"var": "state.signers"}]}, 0]}, {"all": [{"var": "state.signers"}, {"in": [{"var": ""}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}]}
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "program": {"merge": [{"var": "state"}, {"dissolvedAt": {"var": "$ordinal"}, "status": "DISSOLVED"}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/governance/state-machines/index.ts#daoSingleDef $.transitions[4].effect",
+        "ottochain-sdk@a53a6e0:src/apps/governance/state-machines/index.ts#govUniversalDef $.transitions[3].effect"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/ScriptToScriptSuite.scala"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 39,
+      "program": {"if": [{"==": [{"var": "method"}, "add"]}, {"+": [{"var": "args.a"}, {"var": "args.b"}]}, 0]}
+    },
+    {
+      "path": "$",
+      "line": 188,
+      "program": {"if": [{"==": [{"var": "method"}, "increment"]}, {"merge": [{"var": "state"}, {"object": {"value": {"+": [{"var": "state.value"}, 1]}}}]}, {"var": "state"}]},
+      "changes": [
+        "K: single-key map \"value\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 270,
+      "program": {"if": [{"==": [{"var": "method"}, "validate"]}, {"if": [{">=": [{"var": "args.amount"}, 100]}, {"valid": true, "result": "approved"}, {"valid": false, "error": "Amount must be at least 100"}]}, {"valid": false, "error": "Unknown method"}]}
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/markets/state-machines/index.ts#marketCrowdfundDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"in": [{"var": "state.creator"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketCrowdfundDef $.transitions[1].guard",
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketPredictionDef $.transitions[0].guard",
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketPredictionDef $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "OPEN", "launchedAt": {"var": "$ordinal"}, "pledges": [], "totalPledged": 0, "backerCount": 0}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"and": [{">": [{"var": "event.amount"}, 0]}, {"!": [{"in": [{"var": "state.creator"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}, {"or": [{"!": [{"var": "state.minPledge"}]}, {">=": [{"var": "event.amount"}, {"var": "state.minPledge"}]}]}, {"<=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"pledges": {"cat": [{"var": "state.pledges"}, [{"backer": {"var": "event.agent"}, "amount": {"var": "event.amount"}, "rewardTier": {"var": "event.rewardTier"}, "pledgedAt": {"var": "$ordinal"}}]]}, "totalPledged": {"+": [{"var": "state.totalPledged"}, {"var": "event.amount"}]}, "backerCount": {"+": [{"var": "state.backerCount"}, 1]}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"and": [{">": [{"var": "event.additionalAmount"}, 0]}, {"<=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}, {">": [{"length": [{"filter": [{"var": "state.pledges"}, {"===": [{"var": "backer"}, {"var": "event.agent"}]}]}]}, 0]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"totalPledged": {"+": [{"var": "state.totalPledged"}, {"var": "event.additionalAmount"}]}}}]},
+      "changes": [
+        "K: single-key map \"totalPledged\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"and": [{">=": [{"var": "state.totalPledged"}, {"var": "state.threshold"}]}, {">=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "FUNDED", "fundedAt": {"var": "$ordinal"}, "stretchGoalsReached": {"filter": [{"var": "state.stretchGoals"}, {"<=": [{"var": "target"}, {"var": "state.totalPledged"}]}]}}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"and": [{"<": [{"var": "state.totalPledged"}, {"var": "state.threshold"}]}, {">=": [{"var": "$ordinal"}, {"var": "state.deadline"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "REFUNDED", "refundedAt": {"var": "$ordinal"}, "reason": "threshold_not_met"}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketGroupBuyDef $.transitions[7].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"and": [{">": [{"length": [{"filter": [{"var": "state.pledges"}, {"===": [{"var": "backer"}, {"var": "event.agent"}]}]}]}, 0]}, {"!": [{"in": [{"var": "event.agent"}, {"var": "state.refundsClaimed"}]}]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"refundsClaimed": {"cat": [{"var": "state.refundsClaimed"}, [{"var": "event.agent"}]]}}}]},
+      "changes": [
+        "K: single-key map \"refundsClaimed\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/markets/state-machines/index.ts#marketGroupBuyDef $.transitions[8].effect"
+      ]
+    }
+  ]
+}

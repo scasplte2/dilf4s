@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/versionable-lifecycle/migration-v1-to-v2.json"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 1,
+      "program": {"merge": [{"var": ""}, {"object": {"priority": "standard"}}]},
+      "changes": [
+        "K: single-key map \"priority\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

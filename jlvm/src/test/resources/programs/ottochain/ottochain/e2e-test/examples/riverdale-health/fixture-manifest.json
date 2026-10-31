@@ -1,0 +1,25 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-health/fixture-manifest.json"},
+  "expressions": [
+    {
+      "path": "$.m5.effectExpr",
+      "line": 7,
+      "program": {"merge": [{"var": "state"}, {"failedFirstLine": {"+": [{"var": "state.failedFirstLine"}, {"if": [{"===": [{"var": "event.outcome"}, "failed"]}, 1, 0]}]}, "treatments": {"merge": [{"var": "state.treatments"}, [{"var": "event"}]]}}]},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/riverdale-health/fixtures/m5-visit-1.json:8 $.witness.effect_expr",
+        "ottochain@7ada01f:e2e-test/examples/riverdale-health/fixtures/m5-visit-1.witness.json:24 $.effect_expr",
+        "ottochain@7ada01f:e2e-test/examples/riverdale-health/fixtures/m5-visit-2.json:8 $.witness.effect_expr",
+        "ottochain@7ada01f:e2e-test/examples/riverdale-health/fixtures/m5-visit-2.witness.json:31 $.effect_expr"
+      ]
+    },
+    {
+      "path": "$.priorAuth.rule",
+      "line": 68,
+      "program": {"and": [{">=": [{"var": "failedFirstLine"}, 2]}, {"===": [{"var": "activeOpioidCount"}, 0]}]},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/riverdale-health/fixtures/prior-auth-false.json:6 $.expr",
+        "ottochain@7ada01f:e2e-test/examples/riverdale-health/fixtures/prior-auth-true.json:6 $.expr"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/zk-eligibility/event-prove-bad.ts"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 5,
+      "program": {">=": [{"var": "score"}, 700]},
+      "alsoAt": [
+        "ottochain@7ada01f:e2e-test/examples/zk-eligibility/event-prove.ts:3 $"
+      ]
+    }
+  ]
+}

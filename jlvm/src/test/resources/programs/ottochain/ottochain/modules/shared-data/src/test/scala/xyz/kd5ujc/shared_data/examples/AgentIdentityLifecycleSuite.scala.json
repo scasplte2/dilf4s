@@ -1,0 +1,220 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "line": 79,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.status"}, "VERIFIED"]}, {">": [{"var": "state.stakeAmount"}, 0]}]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1281 $.transitions[0].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 85,
+      "program": [["status", "ACTIVE"], ["activatedAt", {"var": "event.timestamp"}], ["attestationCount", 1], ["completionCount", {"if": [{"===": [{"var": "event.attestationType"}, "COMPLETION"]}, 1, 0]}], ["violationCount", 0], ["behavioralCount", {"if": [{"===": [{"var": "event.attestationType"}, "BEHAVIORAL"]}, 1, 0]}], ["vouchCount", {"if": [{"===": [{"var": "event.attestationType"}, "VOUCH"]}, 1, 0]}], ["lastAttestationAt", {"var": "event.timestamp"}], ["lastAttestationPlatform", {"var": "event.platformId"}], ["reputationScore", 10]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1287 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "line": 103,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.status"}, "VERIFIED"]}, {"in": [{"var": "event.attestationType"}, ["BEHAVIORAL", "COMPLETION", "VOUCH"]]}]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1305 $.transitions[1].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 109,
+      "program": [["attestationCount", {"+": [{"var": "state.attestationCount"}, 1]}], ["completionCount", {"+": [{"var": "state.completionCount"}, {"if": [{"===": [{"var": "event.attestationType"}, "COMPLETION"]}, 1, 0]}]}], ["behavioralCount", {"+": [{"var": "state.behavioralCount"}, {"if": [{"===": [{"var": "event.attestationType"}, "BEHAVIORAL"]}, 1, 0]}]}], ["vouchCount", {"+": [{"var": "state.vouchCount"}, {"if": [{"===": [{"var": "event.attestationType"}, "VOUCH"]}, 1, 0]}]}], ["lastAttestationAt", {"var": "event.timestamp"}], ["lastAttestationPlatform", {"var": "event.platformId"}], ["reputationScore", {"+": [{"var": "state.reputationScore"}, {"if": [{"===": [{"var": "event.attestationType"}, "COMPLETION"]}, 5, {"===": [{"var": "event.attestationType"}, "BEHAVIORAL"]}, 3, {"===": [{"var": "event.attestationType"}, "VOUCH"]}, 2, 1]}]}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1311 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "line": 132,
+      "program": {"===": [{"var": "machines.INTERP.state.status"}, "VERIFIED"]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1334 $.transitions[2].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 135,
+      "program": [["attestationCount", {"+": [{"var": "state.attestationCount"}, 1]}], ["violationCount", {"+": [{"var": "state.violationCount"}, 1]}], ["lastViolationAt", {"var": "event.timestamp"}], ["lastViolationReason", {"var": "event.reason"}], ["lastAttestationAt", {"var": "event.timestamp"}], ["lastAttestationPlatform", {"var": "event.platformId"}], ["reputationScore", {"max": [0, {"-": [{"var": "state.reputationScore"}, 10]}]}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1337 $.transitions[2].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "line": 150,
+      "program": {"and": [{">": [{"var": "event.challengerStake"}, 0]}, {"!==": [{"var": "event.challengerId"}, {"var": "state.operatorId"}]}]},
+      "changes": [
+        "NE: !=="
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1352 $.transitions[3].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 156,
+      "program": [["status", "CHALLENGED"], ["challengedAt", {"var": "event.timestamp"}], ["challengerId", {"var": "event.challengerId"}], ["challengerStake", {"var": "event.challengerStake"}], ["challengeReason", {"var": "event.reason"}], ["challengeEvidenceHash", {"var": "event.evidenceHash"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1358 $.transitions[3].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "line": 170,
+      "program": {">=": [{"var": "event.dismissalVotes"}, 3]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1372 $.transitions[4].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 173,
+      "program": [["status", "ACTIVE"], ["challengeResolution", "dismissed"], ["challengeResolvedAt", {"var": "event.timestamp"}], ["reputationScore", {"+": [{"var": "state.reputationScore"}, 5]}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1375 $.transitions[4].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "line": 185,
+      "program": {">=": [{"var": "event.upholdVotes"}, 3]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1387 $.transitions[5].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 188,
+      "program": [["status", "SUSPENDED"], ["suspendedAt", {"var": "event.timestamp"}], ["challengeResolution", "upheld"], ["challengeResolvedAt", {"var": "event.timestamp"}], ["stakeSlashed", {"/": [{"var": "state.stakeAmount"}, 2]}], ["stakeAmount", {"/": [{"var": "state.stakeAmount"}, 2]}], ["reputationScore", {"max": [0, {"-": [{"var": "state.reputationScore"}, 25]}]}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1390 $.transitions[5].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "line": 203,
+      "program": {"and": [{">": [{"var": "event.reinstateStake"}, 0]}, {">=": [{"-": [{"var": "event.timestamp"}, {"var": "state.suspendedAt"}]}, {"var": "state.suspensionPeriod"}]}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1405 $.transitions[6].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "line": 212,
+      "program": [["status", "PROBATION"], ["probationStartedAt", {"var": "event.timestamp"}], ["stakeAmount", {"+": [{"var": "state.stakeAmount"}, {"var": "event.reinstateStake"}]}], ["probationAttestationsRequired", 10]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1414 $.transitions[6].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[7].guard",
+      "line": 224,
+      "program": {"and": [{"===": [{"var": "machines.INTERP.state.status"}, "VERIFIED"]}, {">": [{"var": "state.probationAttestationsRequired"}, 0]}]},
+      "placeholders": [
+        "INTERP"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1426 $.transitions[7].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "line": 230,
+      "program": [["probationAttestationsRequired", {"-": [{"var": "state.probationAttestationsRequired"}, 1]}], ["attestationCount", {"+": [{"var": "state.attestationCount"}, 1]}], ["lastAttestationAt", {"var": "event.timestamp"}], ["reputationScore", {"+": [{"var": "state.reputationScore"}, 1]}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1432 $.transitions[7].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "line": 242,
+      "program": {"<=": [{"var": "state.probationAttestationsRequired"}, 0]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1444 $.transitions[8].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "line": 245,
+      "program": [["status", "ACTIVE"], ["probationCompletedAt", {"var": "event.timestamp"}], ["reputationScore", {"+": [{"var": "state.reputationScore"}, 10]}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1447 $.transitions[8].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "line": 257,
+      "program": [["status", "WITHDRAWN"], ["withdrawnAt", {"var": "event.timestamp"}], ["stakeReturned", {"var": "state.stakeAmount"}], ["finalReputationScore", {"var": "state.reputationScore"}], ["finalAttestationCount", {"var": "state.attestationCount"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1459 $.transitions[9].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[0].guard",
+      "line": 285,
+      "program": {"and": [{">": [{"var": "event.verificationScore"}, 0]}, {">": [{"var": "event.platformStake"}, 0]}]},
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1485 $.transitions[0].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "line": 291,
+      "program": [["status", "VERIFIED"], ["verifiedAt", {"var": "event.timestamp"}], ["platformStake", {"var": "event.platformStake"}], ["verificationScore", {"var": "event.verificationScore"}], ["attestationsSubmitted", 0]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1491 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 305,
+      "program": [["attestationsSubmitted", {"+": [{"var": "state.attestationsSubmitted"}, 1]}], ["lastAttestationAt", {"var": "event.timestamp"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1505 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 316,
+      "program": [["status", "SUSPENDED"], ["suspendedAt", {"var": "event.timestamp"}], ["suspensionReason", {"var": "event.reason"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1516 $.transitions[2].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 328,
+      "program": [["status", "VERIFIED"], ["reinstatedAt", {"var": "event.timestamp"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1528 $.transitions[3].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 339,
+      "program": [["status", "revoked"], ["revokedAt", {"var": "event.timestamp"}]],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/examples/AgentIdentityLifecycleSuite.scala:1539 $.transitions[4].effect"
+      ]
+    }
+  ]
+}

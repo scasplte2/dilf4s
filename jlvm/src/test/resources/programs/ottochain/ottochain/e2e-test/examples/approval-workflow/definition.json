@@ -1,0 +1,35 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/approval-workflow/definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 36,
+      "program": {"merge": [{"var": "state"}, {"object": {"submittedAt": {"var": "event.timestamp"}}}]},
+      "changes": [
+        "K: single-key map \"submittedAt\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:68 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 60,
+      "program": {"merge": [{"var": "state"}, {"object": {"approvedBy": {"var": "event.approver"}}}]},
+      "changes": [
+        "K: single-key map \"approvedBy\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:68 $.transitions[1].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 84,
+      "program": {"merge": [{"var": "state"}, {"rejectedBy": {"var": "event.approver"}, "reason": {"var": "event.reason"}}]},
+      "alsoAt": [
+        "ottochain-services@cf05326:scripts/demo/diverse-traffic.ts:68 $.transitions[2].effect"
+      ]
+    }
+  ]
+}

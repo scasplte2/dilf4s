@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/scala/xyz/kd5ujc/shared_data/SdkCompatibilitySuite.scala"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 84,
+      "program": {"object": {"increment": [{"var": "count"}, 1]}},
+      "changes": [
+        "K: single-key map \"increment\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

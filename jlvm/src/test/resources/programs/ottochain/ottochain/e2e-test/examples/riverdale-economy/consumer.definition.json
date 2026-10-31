@@ -1,0 +1,47 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/riverdale-economy/consumer.definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "line": 14,
+      "program": {"status": "debt_current", "loanBalance": {"var": "event.amount"}, "balance": {"+": [{"var": "state.balance"}, {"var": "event.amount"}]}}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "line": 26,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.retailerId"}, "eventName": "process_sale", "payload": {"buyerId": {"var": "machineId"}, "quantity": {"var": "event.quantity"}, "goodsAssetId": {"var": "event.goodsAssetId"}}}], "_transferAsset": [{"assetId": {"var": "event.payAssetId"}, "recipient": {"object": {"Fiber": {"object": {"fiberId": {"var": "event.retailerId"}}}}}}], "status": "debt_current", "purchaseCount": {"+": [{"var": "state.purchaseCount"}, 1]}},
+      "changes": [
+        "K: single-key map \"Fiber\" written as {\"object\": ...}",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "line": 54,
+      "program": {"_triggers": [{"targetMachineId": {"var": "event.bankId"}, "eventName": "payment_received", "payload": {"borrowerId": {"var": "machineId"}, "amount": {"var": "event.amount"}}}], "_transferAsset": [{"assetId": {"var": "event.repayAssetId"}, "recipient": {"object": {"Fiber": {"object": {"fiberId": {"var": "event.bankId"}}}}}}], "status": "debt_current", "loanBalance": {"-": [{"var": "state.loanBalance"}, {"var": "event.amount"}]}, "paymentsMade": {"+": [{"var": "state.paymentsMade"}, 1]}},
+      "changes": [
+        "K: single-key map \"Fiber\" written as {\"object\": ...}",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "line": 82,
+      "program": {"_transferAsset": [{"assetId": {"var": "event.taxAssetId"}, "recipient": {"object": {"Fiber": {"object": {"fiberId": {"var": "event.govId"}}}}}}], "status": "debt_current", "taxesPaid": {"+": [{"var": "state.taxesPaid"}, {"var": "event.taxAmount"}]}},
+      "changes": [
+        "K: single-key map \"Fiber\" written as {\"object\": ...}",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "line": 99,
+      "program": {"_spawn": [{"childId": {"var": "event.auctionId"}, "definition": {"states": {"listed": {"id": "listed", "isFinal": false}, "bid_received": {"id": "bid_received", "isFinal": false}, "sold": {"id": "sold", "isFinal": true}}, "initialState": "listed", "transitions": [{"from": "listed", "to": "bid_received", "eventName": "place_bid", "guard": {"==": [1, 1]}, "effect": {"status": "bid_received", "highestBid": {"var": "event.bidAmount"}, "highestBidder": {"var": "event.bidderId"}}, "dependencies": []}, {"from": "bid_received", "to": "sold", "eventName": "accept_bid", "guard": {"==": [1, 1]}, "effect": {"_triggers": [{"targetMachineId": {"var": "parent.machineId"}, "eventName": "sale_completed", "payload": {"amount": {"var": "state.highestBid"}, "buyer": {"var": "state.highestBidder"}}}], "status": "sold"}, "dependencies": []}]}, "initialData": {"reservePrice": {"var": "event.reservePrice"}, "itemName": {"var": "event.itemName"}, "sellerId": {"var": "machineId"}, "highestBid": 0, "status": "listed"}, "owners": {"var": "event.auctionOwners"}}], "status": "marketplace_selling", "activeListings": {"+": [{"var": "state.activeListings"}, 1]}}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "line": 116,
+      "program": {"status": "debt_current", "balance": {"+": [{"var": "state.balance"}, {"var": "event.amount"}]}, "activeListings": {"-": [{"var": "state.activeListings"}, 1]}, "marketplaceSales": {"+": [{"var": "state.marketplaceSales"}, 1]}}
+    }
+  ]
+}

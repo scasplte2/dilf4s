@@ -1,0 +1,12 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/privacy/index.ts#sealedBidAccountDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"amount": {"var": "event.amount"}}}]},
+      "changes": [
+        "K: single-key map \"amount\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

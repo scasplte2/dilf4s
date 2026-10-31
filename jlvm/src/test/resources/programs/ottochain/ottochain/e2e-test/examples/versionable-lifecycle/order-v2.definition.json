@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "e2e-test/examples/versionable-lifecycle/order-v2.definition.json"},
+  "expressions": [
+    {
+      "path": "$.transitions[1].effect",
+      "line": 24,
+      "program": {"object": {"priority": "express"}},
+      "changes": [
+        "K: single-key map \"priority\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

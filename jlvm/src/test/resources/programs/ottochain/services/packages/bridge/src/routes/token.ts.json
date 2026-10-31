@@ -1,0 +1,32 @@
+{
+  "source": {"repo": "ottochain-services", "commit": "cf05326", "file": "packages/bridge/src/routes/token.ts"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 64,
+      "program": {"var": "delegation.isAuthorized"}
+    },
+    {
+      "path": "$",
+      "line": 65,
+      "program": {"<": [{"var": "$ordinal"}, {"var": "state.expiresAtOrdinal"}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$",
+      "line": 66,
+      "program": {"<=": [{"var": "event.amount"}, {"var": "state.balance"}]}
+    },
+    {
+      "path": "$",
+      "line": 69,
+      "program": {"and": [{"var": "delegation.isAuthorized"}, {"<": [{"var": "$ordinal"}, {"var": "state.expiresAtOrdinal"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ],
+      "resolved": "transferGuard(g, e): {and: [GOVERNANCE_GUARD, EXPIRY_GUARD]} resolved from token.ts:64-69"
+    }
+  ]
+}

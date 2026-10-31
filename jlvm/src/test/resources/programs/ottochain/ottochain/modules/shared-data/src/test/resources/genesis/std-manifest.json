@@ -1,0 +1,86 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-data/src/test/resources/genesis/std-manifest.json"},
+  "expressions": [
+    {
+      "path": "$.packages[0].definition.transitions[0].effect",
+      "line": 138,
+      "program": {"merge": [{"var": "state"}, {"status": "ACTIVE", "activatedAt": {"var": "event.timestamp"}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"activatedAt\" -> event.timestamp (caller-supplied)"
+      ]
+    },
+    {
+      "path": "$.packages[0].definition.transitions[1].effect",
+      "line": 163,
+      "program": {"merge": [{"var": "state"}, {"updatedAt": {"var": "event.timestamp"}, "metadata": {"var": "event.metadata"}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"updatedAt\" -> event.timestamp (caller-supplied)"
+      ]
+    },
+    {
+      "path": "$.packages[0].definition.transitions[2].effect",
+      "line": 190,
+      "program": {"merge": [{"var": "state"}, {"status": "INACTIVE", "deactivatedAt": {"var": "event.timestamp"}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"deactivatedAt\" -> event.timestamp (caller-supplied)"
+      ]
+    },
+    {
+      "path": "$.packages[1].definition.transitions[0].effect",
+      "line": 322,
+      "program": {"merge": [{"var": "state"}, {"status": "VOTING", "proposal": {"var": "event.proposal"}, "proposedAt": {"var": "event.timestamp"}, "votes": {}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"proposedAt\" -> event.timestamp (caller-supplied)"
+      ]
+    },
+    {
+      "path": "$.packages[1].definition.transitions[3].effect",
+      "line": 417,
+      "program": {"merge": [{"var": "state"}, {"status": "DISSOLVED", "dissolvedAt": {"var": "event.timestamp"}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"dissolvedAt\" -> event.timestamp (caller-supplied)"
+      ]
+    },
+    {
+      "path": "$.packages[2].definition.transitions[0].effect",
+      "line": 587,
+      "program": {"merge": [{"var": "state"}, {"status": "OPEN", "openedAt": {"var": "event.timestamp"}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"openedAt\" -> event.timestamp (caller-supplied)"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:packages/bridge/test/sm.test.ts:71 $.transitions[0].effect"
+      ]
+    },
+    {
+      "path": "$.packages[2].definition.transitions[1].effect",
+      "line": 612,
+      "program": {"merge": [{"var": "state"}, {"status": "CANCELLED", "cancelledAt": {"var": "event.timestamp"}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"cancelledAt\" -> event.timestamp (caller-supplied)"
+      ],
+      "alsoAt": [
+        "ottochain@7ada01f:modules/shared-data/src/test/resources/genesis/std-manifest.json:720 $.packages[2].definition.transitions[5].effect"
+      ]
+    },
+    {
+      "path": "$.packages[2].definition.transitions[3].effect",
+      "line": 670,
+      "program": {"merge": [{"var": "state"}, {"status": "CLOSED", "closedAt": {"var": "event.timestamp"}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"closedAt\" -> event.timestamp (caller-supplied)"
+      ],
+      "alsoAt": [
+        "ottochain-services@cf05326:packages/bridge/test/sm.test.ts:71 $.transitions[3].effect"
+      ]
+    },
+    {
+      "path": "$.packages[2].definition.transitions[4].effect",
+      "line": 695,
+      "program": {"merge": [{"var": "state"}, {"status": "SETTLED", "settledAt": {"var": "event.timestamp"}}]},
+      "changes": [
+        "TS: $timestamp recorded as \"settledAt\" -> event.timestamp (caller-supplied)"
+      ]
+    }
+  ]
+}

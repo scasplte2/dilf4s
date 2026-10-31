@@ -1,0 +1,13 @@
+{
+  "source": {"repo": "ottochain", "commit": "7ada01f", "file": "modules/shared-test/src/test/scala/xyz/kd5ujc/shared_test/GenesisAndFeeSuite.scala"},
+  "expressions": [
+    {
+      "path": "$",
+      "line": 101,
+      "program": {"if": [true, {"object": {"value": 1}}, {"object": {"value": 0}}]},
+      "changes": [
+        "K: single-key map \"value\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,150 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/corporate/state-machines/index.ts#corpSecuritiesDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].guard",
+      "program": {"in": [{"var": "state.issuerAddress"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[1].guard",
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[4].guard",
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[7].guard",
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[9].guard",
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[10].guard",
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[13].guard",
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[14].guard",
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[16].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"securityId": {"var": "event.securityId"}, "entityId": {"var": "event.entityId"}, "shareClass": {"var": "event.shareClass"}, "shareClassName": {"var": "event.shareClassName"}, "shareCount": {"var": "event.shareCount"}, "parValue": {"var": "event.parValue"}, "authorization": {"authorizedDate": {"var": "event.authorizedDate"}, "charterProvision": {"var": "event.charterProvision"}, "authorizedShares": {"var": "event.shareCount"}}, "transferHistory": [], "corporateActions": []}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"pendingIssue": {"holderId": {"var": "event.holderId"}, "ref": {"var": "event.boardResolutionRef"}, "proposedAt": {"var": "$ordinal"}}}}, {"_addDependency": [{"object": {"fiberId": {"var": "event.boardResolutionRef"}}}]}, {"_addDependency": [{"object": {"fiberId": {"var": "state.entityId"}}}]}]},
+      "changes": [
+        "K: single-key map \"pendingIssue\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[2].guard",
+      "program": {"and": [{"in": [{"var": "state.issuerAddress"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"==": [{"var": "state.pendingIssue.holderId"}, {"var": "event.holderId"}]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.pendingIssue.ref"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.pendingIssue.ref"}]}, "currentStateId"]}, "EXECUTED"]}, false]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.entityId"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.entityId"}]}, "currentStateId"]}, "ACTIVE"]}, false]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ISSUED", "form": {"var": "event.form"}, "certificateNumber": {"var": "event.certificateNumber"}, "issuanceDate": {"var": "event.issuanceDate"}, "issuancePrice": {"var": "event.issuancePrice"}, "holder": {"holderId": {"var": "event.holderId"}, "holderType": {"var": "event.holderType"}, "name": {"var": "event.holderName"}, "walletAddress": {"var": "event.holderWallet"}, "address": {"var": "event.address"}, "acquisitionDate": {"var": "event.issuanceDate"}, "acquisitionMethod": "ORIGINAL_ISSUANCE", "costBasis": {"*": [{"var": "event.issuancePrice"}, {"var": "state.shareCount"}]}}, "restrictions": {"isRestricted": {"var": "event.isRestricted"}, "restrictionType": {"var": "event.restrictionType"}, "legends": {"var": "event.legends"}}, "issuanceDetails": {"boardResolutionRef": {"var": "state.pendingIssue.ref"}, "consideration": {"var": "event.consideration"}, "exemptionUsed": {"var": "event.exemptionUsed"}, "accreditedInvestor": {"var": "event.accreditedInvestor"}}, "pendingIssue": null}, {"_emit": [{"name": "SHARES_ISSUED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[3].guard",
+      "program": {"and": [{"in": [{"var": "state.holder.walletAddress"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"or": [{"==": [{"var": "state.restrictions.isRestricted"}, false]}, {"==": [{"var": "state.restrictions.restrictionEndDate"}, null]}, {">=": [{"var": "$ordinal"}, {"var": "state.restrictions.restrictionEndDate"}]}]}, {"==": [{"var": "state.restrictions.rofr"}, null]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "TRANSFERRED", "transferHistory": {"merge": [{"var": "state.transferHistory"}, [{"transferId": {"var": "event.transferId"}, "transferDate": {"var": "event.transferDate"}, "fromHolderId": {"var": "state.holder.holderId"}, "toHolderId": {"var": "event.toHolderId"}, "shares": {"var": "state.shareCount"}, "transferType": {"var": "event.transferType"}, "pricePerShare": {"var": "event.pricePerShare"}}]]}}, {"_emit": [{"name": "TRANSFER_INITIATED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ISSUED", "holder": {"holderId": {"var": "event.toHolderId"}, "holderType": {"var": "event.toHolderType"}, "name": {"var": "event.toHolderName"}, "walletAddress": {"var": "event.toHolderWallet"}, "address": {"var": "event.toAddress"}, "acquisitionDate": {"var": "event.completedDate"}, "acquisitionMethod": "PURCHASE", "costBasis": {"var": "event.costBasis"}}, "certificateNumber": {"if": [{"!=": [{"var": "event.newCertificateNumber"}, null]}, {"var": "event.newCertificateNumber"}, {"var": "state.certificateNumber"}]}}, {"_emit": [{"name": "TRANSFER_COMPLETED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[5].guard",
+      "program": {"in": [{"var": "state.holder.walletAddress"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"pendingRepurchase": {"repurchaseDate": {"var": "event.repurchaseDate"}, "ref": {"var": "event.boardResolutionRef"}, "proposedAt": {"var": "$ordinal"}}}}, {"_addDependency": [{"object": {"fiberId": {"var": "event.boardResolutionRef"}}}]}]},
+      "changes": [
+        "K: single-key map \"pendingRepurchase\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[6].guard",
+      "program": {"and": [{"in": [{"var": "state.holder.walletAddress"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"==": [{"var": "state.pendingRepurchase.repurchaseDate"}, {"var": "event.repurchaseDate"}]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.pendingRepurchase.ref"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.pendingRepurchase.ref"}]}, "currentStateId"]}, "EXECUTED"]}, false]}]}
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "TREASURY", "transferHistory": {"merge": [{"var": "state.transferHistory"}, [{"transferId": {"cat": ["REPURCHASE-", {"var": "event.repurchaseDate"}]}, "transferDate": {"var": "event.repurchaseDate"}, "fromHolderId": {"var": "state.holder.holderId"}, "toHolderId": "TREASURY", "shares": {"var": "state.shareCount"}, "transferType": "INTERNAL", "pricePerShare": {"var": "event.pricePerShare"}}]]}, "holder": {"holderId": "TREASURY", "holderType": "TREASURY", "name": "Treasury Stock", "acquisitionDate": {"var": "event.repurchaseDate"}, "acquisitionMethod": "PURCHASE", "costBasis": {"*": [{"var": "event.pricePerShare"}, {"var": "state.shareCount"}]}}, "pendingRepurchase": null}, {"_emit": [{"name": "SHARES_REPURCHASED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[7].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"pendingReissue": {"holderId": {"var": "event.holderId"}, "ref": {"var": "event.boardResolutionRef"}, "proposedAt": {"var": "$ordinal"}}}}, {"_addDependency": [{"object": {"fiberId": {"var": "event.boardResolutionRef"}}}]}]},
+      "changes": [
+        "K: single-key map \"pendingReissue\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[8].guard",
+      "program": {"and": [{"in": [{"var": "state.issuerAddress"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"==": [{"var": "state.pendingReissue.holderId"}, {"var": "event.holderId"}]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.pendingReissue.ref"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.pendingReissue.ref"}]}, "currentStateId"]}, "EXECUTED"]}, false]}]}
+    },
+    {
+      "path": "$.transitions[8].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "ISSUED", "holder": {"holderId": {"var": "event.holderId"}, "holderType": {"var": "event.holderType"}, "name": {"var": "event.holderName"}, "walletAddress": {"var": "event.holderWallet"}, "address": {"var": "event.address"}, "acquisitionDate": {"var": "event.reissueDate"}, "acquisitionMethod": "PURCHASE", "costBasis": {"*": [{"var": "event.issuancePrice"}, {"var": "state.shareCount"}]}}, "pendingReissue": null}, {"_emit": [{"name": "TREASURY_SHARES_REISSUED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"pendingRetire": {"retiredDate": {"var": "event.retiredDate"}, "ref": {"var": "event.boardResolutionRef"}, "proposedAt": {"var": "$ordinal"}}}}, {"_addDependency": [{"object": {"fiberId": {"var": "event.boardResolutionRef"}}}]}]},
+      "changes": [
+        "K: single-key map \"pendingRetire\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[10].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[11].guard",
+      "program": {"and": [{"in": [{"var": "state.issuerAddress"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"==": [{"var": "state.pendingRetire.retiredDate"}, {"var": "event.retiredDate"}]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.pendingRetire.ref"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.pendingRetire.ref"}]}, "currentStateId"]}, "EXECUTED"]}, false]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[12].guard"
+      ]
+    },
+    {
+      "path": "$.transitions[11].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "RETIRED", "retirementDetails": {"retiredDate": {"var": "event.retiredDate"}, "retirementMethod": {"var": "event.retirementMethod"}, "repurchasePrice": {"var": "event.repurchasePrice"}, "boardResolutionRef": {"var": "state.pendingRetire.ref"}}, "holder": null, "pendingRetire": null}, {"_emit": [{"name": "SHARES_RETIRED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpSecuritiesDef $.transitions[12].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[13].effect",
+      "program": {"merge": [{"var": "state"}, {"corporateActions": {"merge": [{"var": "state.corporateActions"}, [{"actionId": {"var": "event.actionId"}, "actionType": "STOCK_SPLIT", "actionDate": {"var": "event.effectiveDate"}, "ratio": {"var": "event.splitRatio"}, "sharesBeforeAction": {"var": "state.shareCount"}, "sharesAfterAction": {"var": "event.newShareCount"}, "resolutionRef": {"var": "event.resolutionRef"}}]]}, "shareCount": {"var": "event.newShareCount"}}, {"_emit": [{"name": "STOCK_SPLIT_APPLIED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[14].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"pendingDividend": {"actionId": {"var": "event.actionId"}, "ref": {"var": "event.resolutionRef"}, "proposedAt": {"var": "$ordinal"}}}}, {"_addDependency": [{"object": {"fiberId": {"var": "event.resolutionRef"}}}]}]},
+      "changes": [
+        "K: single-key map \"pendingDividend\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[15].guard",
+      "program": {"and": [{"in": [{"var": "state.issuerAddress"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}, {"==": [{"var": "state.pendingDividend.actionId"}, {"var": "event.actionId"}]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.pendingDividend.ref"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.pendingDividend.ref"}]}, "currentStateId"]}, "EXECUTED"]}, false]}]}
+    },
+    {
+      "path": "$.transitions[15].effect",
+      "program": {"if": [{"==": [{"var": "event.dividendType"}, "STOCK"]}, {"merge": [{"var": "state"}, {"corporateActions": {"merge": [{"var": "state.corporateActions"}, [{"actionId": {"var": "event.actionId"}, "actionType": "STOCK_DIVIDEND", "actionDate": {"var": "event.paymentDate"}, "sharesBeforeAction": {"var": "state.shareCount"}, "sharesAfterAction": {"+": [{"var": "state.shareCount"}, {"var": "event.stockShares"}]}, "resolutionRef": {"var": "state.pendingDividend.ref"}}]]}, "shareCount": {"+": [{"var": "state.shareCount"}, {"var": "event.stockShares"}]}, "pendingDividend": null}]}, {"merge": [{"var": "state"}, {"object": {"pendingDividend": null}}]}]},
+      "changes": [
+        "K: single-key map \"pendingDividend\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[16].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"restrictions": {"merge": [{"var": "state.restrictions"}, {"restrictionType": {"filter": [{"var": "state.restrictions.restrictionType"}, {"!=": [{"var": ""}, {"var": "event.restrictionType"}]}]}, "isRestricted": {">": [{"reduce": [{"filter": [{"var": "state.restrictions.restrictionType"}, {"!=": [{"var": ""}, {"var": "event.restrictionType"}]}]}, {"+": [{"var": "accumulator"}, 1]}, 0]}, 0]}}]}}}, {"_emit": [{"name": "RESTRICTION_REMOVED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "K: single-key map \"restrictions\" written as {\"object\": ...}"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "source": {"repo": "ottochain-sdk", "commit": "a53a6e0", "file": "src/apps/corporate/state-machines/index.ts#corpShareholdersDef"},
+  "expressions": [
+    {
+      "path": "$.transitions[0].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"pendingschedule_annual": {"meetingId": {"var": "event.meetingId"}, "entityId": {"var": "event.entityId"}, "fiscalYear": {"var": "event.fiscalYear"}, "scheduledDate": {"var": "event.scheduledDate"}, "location": {"var": "event.location"}, "ref": {"var": "event.boardResolutionRef"}, "proposedAt": {"var": "$ordinal"}}}}, {"_addDependency": [{"object": {"fiberId": {"var": "event.boardResolutionRef"}}}]}]},
+      "changes": [
+        "K: single-key map \"pendingschedule_annual\" written as {\"object\": ...}",
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"fiberId\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[1].guard",
+      "program": {"and": [{"==": [{"var": "state.pendingschedule_annual.meetingId"}, {"var": "event.meetingId"}]}, {"if": [{"has": [{"var": "machines"}, {"var": "state.pendingschedule_annual.ref"}]}, {"==": [{"get": [{"get": [{"var": "machines"}, {"var": "state.pendingschedule_annual.ref"}]}, "currentStateId"]}, "EXECUTED"]}, false]}]}
+    },
+    {
+      "path": "$.transitions[1].effect",
+      "program": {"merge": [{"var": "state"}, {"meetingId": {"var": "event.meetingId"}, "entityId": {"var": "event.entityId"}, "meetingType": "ANNUAL", "fiscalYear": {"var": "event.fiscalYear"}, "scheduledDate": {"var": "event.scheduledDate"}, "location": {"var": "event.location"}, "calledBy": {"type": "BOARD", "resolutionRef": {"var": "state.pendingschedule_annual.ref"}}, "pendingschedule_annual": null}, {"_emit": [{"name": "SHAREHOLDER_MEETING_SCHEDULED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[2].effect",
+      "program": {"merge": [{"var": "state"}, {"meetingId": {"var": "event.meetingId"}, "entityId": {"var": "event.entityId"}, "meetingType": "SPECIAL", "scheduledDate": {"var": "event.scheduledDate"}, "calledBy": {"object": {"type": {"var": "event.calledByType"}}}}, {"_emit": [{"name": "SPECIAL_MEETING_SCHEDULED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "K: single-key map \"type\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[3].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "RECORD_DATE_SET", "recordDate": {"date": {"var": "event.recordDate"}, "setByBoardOn": {"var": "$ordinal"}, "resolutionRef": {"var": "event.resolutionRef"}}}, {"_emit": [{"name": "RECORD_DATE_SET", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "BND: $ordinal: a host binding"
+      ]
+    },
+    {
+      "path": "$.transitions[4].guard",
+      "program": {"in": [{"var": "state.registrar"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}
+    },
+    {
+      "path": "$.transitions[4].effect",
+      "program": {"merge": [{"var": "state"}, {"eligibleVoters": {"var": "event.shareholders"}, "quorumRequirements": {"merge": [{"var": "state.quorumRequirements"}, {"object": {"sharesRequired": {"*": [{"var": "event.totalSharesOutstanding"}, 0.5]}}}]}}]},
+      "changes": [
+        "K: single-key map \"sharesRequired\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[5].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "PROXY_PERIOD", "proxyPeriod": {"startDate": {"var": "event.startDate"}, "endDate": {"var": "state.scheduledDate"}, "proxyMaterials": {"proxyStatementRef": {"var": "event.proxyStatementRef"}, "formOfProxyRef": {"var": "event.formOfProxyRef"}, "annualReportRef": {"var": "event.annualReportRef"}}}, "agenda": {"var": "event.agenda"}, "noticeInfo": {"merge": [{"var": "state.noticeInfo"}, {"object": {"noticeSentDate": {"var": "event.startDate"}}}]}}, {"_emit": [{"name": "PROXY_PERIOD_OPENED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "K: single-key map \"noticeSentDate\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[6].effect",
+      "program": {"merge": [{"var": "state"}, {"object": {"agenda": {"merge": [{"var": "state.agenda"}, [{"itemId": {"var": "event.itemId"}, "itemNumber": {"+": [{"length": [{"var": "state.agenda"}]}, 1]}, "title": {"var": "event.title"}, "description": {"var": "event.description"}, "type": {"var": "event.type"}, "voteRequired": {"var": "event.voteRequired"}, "eligibleClasses": {"var": "event.eligibleClasses"}, "allowCumulativeVoting": {"var": "event.allowCumulativeVoting"}, "status": "PENDING"}]]}}}]},
+      "changes": [
+        "K: single-key map \"agenda\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpShareholdersDef $.transitions[7].effect",
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpShareholdersDef $.transitions[8].effect"
+      ]
+    },
+    {
+      "path": "$.transitions[9].guard",
+      "program": {">=": [{"var": "event.initialQuorumCount"}, {"var": "state.quorumRequirements.sharesRequired"}]}
+    },
+    {
+      "path": "$.transitions[9].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "IN_SESSION", "sessionInfo": {"openedAt": {"var": "event.openedAt"}, "chairPerson": {"var": "event.chairPerson"}, "secretaryPresent": {"var": "event.secretaryPresent"}}, "inspectorOfElections": {"var": "event.inspectorOfElections"}, "quorumRequirements": {"merge": [{"var": "state.quorumRequirements"}, {"sharesRepresented": {"var": "event.initialQuorumCount"}, "quorumMet": true}]}}, {"_emit": [{"name": "SHAREHOLDER_MEETING_OPENED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[10].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "VOTING", "sessionInfo": {"merge": [{"var": "state.sessionInfo"}, {"object": {"pollsOpenedAt": {"var": "event.pollsOpenedAt"}}}]}, "agenda": {"map": [{"var": "state.agenda"}, {"merge": [{"var": ""}, {"object": {"status": "VOTING"}}]}]}}]},
+      "changes": [
+        "K: single-key map \"pollsOpenedAt\" written as {\"object\": ...}",
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[11].guard",
+      "program": {"and": [{"some": [{"var": "state.eligibleVoters"}, {"and": [{"==": [{"var": "shareholderId"}, {"var": "event.shareholderId"}]}, {"in": [{"var": "address"}, {"map": [{"var": "proofs"}, {"var": "address"}]}]}]}]}, {"!": {"some": [{"var": "state.votes"}, {"and": [{"==": [{"var": "shareholderId"}, {"var": "event.shareholderId"}]}, {"==": [{"var": "agendaItemId"}, {"var": "event.agendaItemId"}]}]}]}}]}
+    },
+    {
+      "path": "$.transitions[11].effect",
+      "program": {"merge": [{"var": "state"}, {"votes": {"merge": [{"var": "state.votes"}, [{"voteId": {"var": "event.voteId"}, "agendaItemId": {"var": "event.agendaItemId"}, "voterId": {"var": "event.voterId"}, "shareholderId": {"var": "event.shareholderId"}, "shareClass": {"var": "event.shareClass"}, "votesFor": {"var": "event.votesFor"}, "votesAgainst": {"var": "event.votesAgainst"}, "votesAbstain": {"var": "event.votesAbstain"}, "votesWithhold": {"var": "event.votesWithhold"}, "cumulativeVoteAllocation": {"var": "event.cumulativeVoteAllocation"}, "viaProxy": {"var": "event.viaProxy"}, "timestamp": {"var": "$ordinal"}}]]}, "eligibleVoters": {"map": [{"var": "state.eligibleVoters"}, {"if": [{"==": [{"var": "shareholderId"}, {"var": "event.shareholderId"}]}, {"merge": [{"var": ""}, {"object": {"hasVoted": true}}]}, {"var": ""}]}]}}]},
+      "changes": [
+        "BND: $ordinal: a host binding",
+        "K: single-key map \"hasVoted\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[12].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "IN_SESSION", "sessionInfo": {"merge": [{"var": "state.sessionInfo"}, {"object": {"pollsClosedAt": {"var": "event.pollsClosedAt"}}}]}, "agenda": {"map": [{"var": "state.agenda"}, {"merge": [{"var": ""}, {"object": {"status": "CLOSED"}}]}]}}]},
+      "changes": [
+        "K: single-key map \"pollsClosedAt\" written as {\"object\": ...}",
+        "K: single-key map \"status\" written as {\"object\": ...}"
+      ]
+    },
+    {
+      "path": "$.transitions[13].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "CLOSED", "certification": {"certifiedAt": {"var": "event.certifiedAt"}, "certifiedBy": {"var": "event.certifiedBy"}, "certificateRef": {"var": "event.certificateRef"}}, "sessionInfo": {"merge": [{"var": "state.sessionInfo"}, {"adjournedAt": {"var": "event.certifiedAt"}, "minutesRef": {"var": "event.minutesRef"}}]}}, {"_emit": [{"name": "MEETING_RESULTS_CERTIFIED", "data": {"var": "event"}, "destination": "external"}]}]}
+    },
+    {
+      "path": "$.transitions[14].effect",
+      "program": {"merge": [{"var": "state"}, {"status": "CLOSED", "sessionInfo": {"merge": [{"var": "state.sessionInfo"}, {"object": {"adjournedAt": {"var": "event.adjournedAt"}}}]}}, {"_emit": [{"name": "MEETING_ADJOURNED", "data": {"var": "event"}, "destination": "external"}]}]},
+      "changes": [
+        "K: single-key map \"adjournedAt\" written as {\"object\": ...}"
+      ],
+      "alsoAt": [
+        "ottochain-sdk@a53a6e0:src/apps/corporate/state-machines/index.ts#corpShareholdersDef $.transitions[15].effect"
+      ]
+    }
+  ]
+}
