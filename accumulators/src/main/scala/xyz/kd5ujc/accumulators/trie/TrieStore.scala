@@ -45,6 +45,12 @@ trait TrieStore[F[_], H] {
   /** Discards versions older than `through`; `through` becomes the oldest readable version (the floor). */
   def prune(through: Version): F[Unit]
 
+  /**
+   * The state record as it is now. A write guarded on it applies only if the store has not been mutated since, even if
+   * it has returned to the same version: every mutation advances a generation that never repeats.
+   */
+  def revision: F[Revision]
+
   /** The commit `commit(expected, ops)` would make, without writing. */
   def stage(expected: Version, ops: List[(ByteVector, Option[Digest[H]])]): F[TrieStore.Staged[H]]
 
@@ -72,14 +78,15 @@ object TrieStore {
    * through its plan, so it applies both or neither.
    */
   final case class Staged[H] private[trie] (
-    guards:                     List[(ByteVector, Option[ByteVector])],
-    batch:                      RawBatch,
-    version:                    Version,
-    root:                       Digest[H],
-    private[trie] val top:      Option[Digest[H]],
-    private[trie] val expected: Long,
-    private[trie] val floor:    Long,
-    private[trie] val nodes:    RefCounting.Plan[H]
+    guards:                       List[(ByteVector, Option[ByteVector])],
+    batch:                        RawBatch,
+    version:                      Version,
+    root:                         Digest[H],
+    private[trie] val top:        Option[Digest[H]],
+    private[trie] val expected:   Long,
+    private[trie] val generation: Long,
+    private[trie] val floor:      Long,
+    private[trie] val nodes:      RefCounting.Plan[H]
   )
 
   def make[F[_]: Concurrent, H: TrieHashing](raw: RawStore[F], name: String, keyMode: KeyMode)(
@@ -101,7 +108,7 @@ object TrieStore {
     )
 
   /** Latest and floor versions, with the raw record kept to guard the compare-and-write. */
-  final private case class State(latest: Long, floor: Long, raw: Option[ByteVector])
+  final private case class State(latest: Long, floor: Long, generation: Long, raw: Option[ByteVector])
 
   final private class Impl[F[_]: Concurrent, H](
     raw:      RawStore[F],
@@ -120,9 +127,11 @@ object TrieStore {
 
     private def state: F[State] =
       raw.get(stateKey).flatMap {
-        case None                     => State(0L, 0L, None).pure[F]
-        case Some(b) if b.size == 16L => State(b.take(8).toLong(signed = false), b.drop(8).toLong(signed = false), Some(b)).pure[F]
-        case Some(b)                  => failS(StoreError.Corrupt(s"trie state has ${b.size} bytes"))
+        case None => State(0L, 0L, 0L, None).pure[F]
+        case Some(b) if b.size == 24L =>
+          State(b.take(8).toLong(signed = false), b.slice(8L, 16L).toLong(signed = false), b.drop(16).toLong(signed = false), Some(b))
+            .pure[F]
+        case Some(b) => failS(StoreError.Corrupt(s"trie state has ${b.size} bytes"))
       }
 
     def latest: F[Version] = state.map(s => Version.unsafe(s.latest))
@@ -190,7 +199,14 @@ object TrieStore {
         case (acc, (h, None))         => acc ++ RawBatch.delete(nodeKey(h))
       }
 
-    private def stateRecord(latest: Long, floor: Long): ByteVector = ByteVector.fromLong(latest) ++ ByteVector.fromLong(floor)
+    /**
+     * latest ‖ floor ‖ generation. The generation advances with every mutation and never repeats, so a stage staged
+     * before a rollback is refused even after the store re-reaches its version (latest and floor alone would repeat).
+     */
+    private def stateRecord(latest: Long, floor: Long, generation: Long): ByteVector =
+      ByteVector.fromLong(latest) ++ ByteVector.fromLong(floor) ++ ByteVector.fromLong(generation)
+
+    def revision: F[Revision] = state.map(s => Revision(List(stateKey -> s.raw)))
 
     // ---- reads
 
@@ -244,23 +260,24 @@ object TrieStore {
         if (s.latest != expected.value) failS(StoreError.VersionConflict(expected.value, s.latest))
         else
           rootHash(s.latest).flatMap(current =>
-            stageCommit(List(stateKey -> s.raw), RawBatch.empty, s.latest, s.latest, s.floor, current, Map.empty, ops)
+            stageCommit(List(stateKey -> s.raw), RawBatch.empty, s.latest, s.generation + 1, s.latest, s.floor, current, Map.empty, ops)
           )
       }
 
     def stageOn(base: Staged[H], ops: List[(ByteVector, Option[Digest[H]])]): F[Staged[H]] =
-      stageCommit(base.guards, base.batch, base.expected, base.version.value, base.floor, base.top, base.nodes, ops)
+      stageCommit(base.guards, base.batch, base.expected, base.generation, base.version.value, base.floor, base.top, base.nodes, ops)
 
     /** One commit after `current` (whose root is `top`), reading nodes through `overlay` (the drafts below it). */
     private def stageCommit(
-      guards:   List[(ByteVector, Option[ByteVector])],
-      below:    RawBatch,
-      expected: Long,
-      current:  Long,
-      floor:    Long,
-      top:      Option[Digest[H]],
-      overlay:  RefCounting.Plan[H],
-      ops:      List[(ByteVector, Option[Digest[H]])]
+      guards:     List[(ByteVector, Option[ByteVector])],
+      below:      RawBatch,
+      expected:   Long,
+      generation: Long,
+      current:    Long,
+      floor:      Long,
+      top:        Option[Digest[H]],
+      overlay:    RefCounting.Plan[H],
+      ops:        List[(ByteVector, Option[Digest[H]])]
     ): F[Staged[H]] = {
       val view: RefCounting.View[F, H] = h => overlay.get(h).fold(entry(h))(_.pure[F])
       val lookup: Digest[H] => F[Node[H]] = h => view(h).flatMap(_.fold(failT[Node[H]](TrieError.MissingNode(h.hex)))(e => e._1.pure[F]))
@@ -273,11 +290,12 @@ object TrieStore {
       } yield
         Staged(
           guards,
-          below ++ planBatch(plan) ++ rootRec ++ RawBatch.put(stateKey, stateRecord(next, floor)),
+          below ++ planBatch(plan) ++ rootRec ++ RawBatch.put(stateKey, stateRecord(next, floor, generation)),
           Version.unsafe(next),
           delta.root.getOrElse(T.empty),
           delta.root,
           expected,
+          generation,
           floor,
           overlay ++ plan
         )
@@ -293,11 +311,12 @@ object TrieStore {
             val plan: RefCounting.Plan[H] = trie.storedNodes.map { case (h, e) => h -> Option(e) }
             Staged(
               List(stateKey -> None),
-              planBatch(plan) ++ rootRec ++ RawBatch.put(stateKey, stateRecord(at.value, at.value)),
+              planBatch(plan) ++ rootRec ++ RawBatch.put(stateKey, stateRecord(at.value, at.value, 1L)),
               at,
               trie.root,
               trie.rootOption,
               0L,
+              1L,
               at.value,
               plan
             )
@@ -314,11 +333,12 @@ object TrieStore {
       } yield
         Staged(
           List(stateKey -> s.raw),
-          planBatch(plan) ++ deletes ++ RawBatch.put(stateKey, stateRecord(newLatest, newFloor)),
+          planBatch(plan) ++ deletes ++ RawBatch.put(stateKey, stateRecord(newLatest, newFloor, s.generation + 1)),
           Version.unsafe(newLatest),
           top.getOrElse(T.empty),
           top,
           s.latest,
+          s.generation + 1,
           newFloor,
           plan
         )

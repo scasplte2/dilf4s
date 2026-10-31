@@ -57,6 +57,12 @@ trait VersionedStore[F[_], K, V] {
   def rollback(to:     Version): F[Unit]
   def prune(through:   Version): F[Unit]
 
+  /**
+   * The version records as they are now. A write guarded on them applies only if the store has not been mutated since,
+   * even if it has returned to the same version: every mutation advances a generation that never repeats.
+   */
+  def revision: F[Revision]
+
   /** The commit `commit(expected, batch)` would make, without writing. */
   def stage(expected: Version, batch: Batch[K, V]): F[VersionedStore.Staged]
 
@@ -126,6 +132,7 @@ object VersionedStore {
     private val V = ValueCodec[V]
     private val latestKey = metaNs ++ ByteVector("latest".getBytes(UTF_8))
     private val floorKey = metaNs ++ ByteVector("floor".getBytes(UTF_8))
+    private val generationKey = metaNs ++ ByteVector("generation".getBytes(UTF_8))
 
     private def ver(v:         Long): ByteVector = ByteVector.fromLong(v)
     private def dataKey(ek:    ByteVector): ByteVector = dataNs ++ ek
@@ -142,18 +149,26 @@ object VersionedStore {
         case Some(b)                 => fail(StoreError.Corrupt(s"version record has ${b.size} bytes"))
       }
 
-    /** The raw version records, kept to guard the compare-and-write. */
-    private def versionRecords: F[(Option[ByteVector], Option[ByteVector])] =
-      raw.getAll(List(latestKey, floorKey)).flatMap {
-        case List(l, f) => (l, f).pure[F]
-        case other      => fail(StoreError.Corrupt(s"expected 2 version records, got ${other.size}"))
+    /**
+     * The raw version records, kept to guard the compare-and-write. Every mutation advances the generation, which never
+     * repeats: latest and floor return to earlier values after a rollback, so guarding them alone would let a stage
+     * staged before the rollback write again once the store re-reaches its version.
+     */
+    final private case class Records(latest: Option[ByteVector], floor: Option[ByteVector], generation: Option[ByteVector], next: Long) {
+      def guards: List[(ByteVector, Option[ByteVector])] = List(latestKey -> latest, floorKey -> floor, generationKey -> generation)
+      def advance: RawBatch = RawBatch.put(generationKey, ver(next))
+    }
+
+    private def versionRecords: F[Records] =
+      raw.getAll(List(latestKey, floorKey, generationKey)).flatMap {
+        case List(l, f, g) => parseVersion(g).map(n => Records(l, f, g, n + 1))
+        case other         => fail(StoreError.Corrupt(s"expected 3 version records, got ${other.size}"))
       }
+
+    def revision: F[Revision] = versionRecords.map(r => Revision(r.guards))
 
     def latest: F[Version] = raw.get(latestKey).flatMap(parseVersion).map(Version.unsafe)
     def floor: F[Version] = raw.get(floorKey).flatMap(parseVersion).map(Version.unsafe)
-
-    private def guardsOf(records: (Option[ByteVector], Option[ByteVector])): List[(ByteVector, Option[ByteVector])] =
-      List(latestKey -> records._1, floorKey -> records._2)
 
     // ---- records: shared/schemas/storage.cddl `versioned-record`; an absent field means "no value"
 
@@ -247,10 +262,10 @@ object VersionedStore {
 
     def stage(expected: Version, batch: Batch[K, V]): F[Staged] =
       versionRecords.flatMap { records =>
-        (parseVersion(records._1), parseVersion(records._2)).tupled.flatMap {
+        (parseVersion(records.latest), parseVersion(records.floor)).tupled.flatMap {
           case (current, f) =>
             if (current != expected.value) fail(StoreError.VersionConflict(expected.value, current))
-            else stageCommit(guardsOf(records), RawBatch.empty, current, current, f, Map.empty, batch)
+            else stageCommit(records.guards, records.advance, current, current, f, Map.empty, batch)
         }
       }
 
@@ -289,15 +304,16 @@ object VersionedStore {
 
     def stageRestore(entries: List[(K, V)], at: Version): F[Staged] =
       versionRecords.flatMap { records =>
-        if (records._1.isDefined || records._2.isDefined) latest.flatMap(now => fail[Staged](StoreError.VersionConflict(0L, now.value)))
+        if (records.latest.isDefined || records.floor.isDefined || records.generation.isDefined)
+          latest.flatMap(now => fail[Staged](StoreError.VersionConflict(0L, now.value)))
         else if (at.value < 1L) fail[Staged](StoreError.UnknownVersion(at.value, 0L))
         else
           entries.traverse { case (k, v) => liftE(V.encode(v)).map(K.encode(k) -> _) }.map { encoded =>
             // the loaded values are the overlay: a stage built on this one reads them, not the still-empty backend
             Staged(
-              guardsOf(records),
+              records.guards,
               encoded.foldMap { case (ek, b) => RawBatch.put(dataKey(ek), b) } ++ RawBatch.put(latestKey, ver(at.value)) ++
-              RawBatch.put(floorKey, ver(at.value)),
+              RawBatch.put(floorKey, ver(at.value)) ++ records.advance,
               at,
               0L,
               at.value,
@@ -308,7 +324,7 @@ object VersionedStore {
 
     def stageRollback(to: Version): F[Staged] =
       versionRecords.flatMap { records =>
-        checkReadable(to) >> (parseVersion(records._1), parseVersion(records._2)).tupled.flatMap {
+        checkReadable(to) >> (parseVersion(records.latest), parseVersion(records.floor)).tupled.flatMap {
           case (current, f) =>
             logEntries(to.value + 1, current + 1).flatMap { entries =>
               entries.traverse { case (v, ek, r) => readRecord(r).map { case (before, _) => (v, ek, before) } }.map { decoded =>
@@ -326,7 +342,7 @@ object VersionedStore {
                     case (acc, (v, ek, _)) =>
                       acc ++ RawBatch.delete(logKey(v, ek)) ++ RawBatch.delete(histPrefix(ek) ++ ver(v))
                   }
-                Staged(guardsOf(records), writes ++ RawBatch.put(latestKey, ver(to.value)), to, current, f, restore)
+                Staged(records.guards, writes ++ RawBatch.put(latestKey, ver(to.value)) ++ records.advance, to, current, f, restore)
               }
             }
         }
@@ -334,7 +350,7 @@ object VersionedStore {
 
     def stagePrune(through: Version): F[Staged] =
       versionRecords.flatMap { records =>
-        checkReadable(through) >> (parseVersion(records._1), parseVersion(records._2)).tupled.flatMap {
+        checkReadable(through) >> (parseVersion(records.latest), parseVersion(records.floor)).tupled.flatMap {
           case (current, f) =>
             logEntries(f + 1, through.value + 1).map { entries =>
               val writes = entries.foldLeft(RawBatch.empty) {
@@ -342,8 +358,8 @@ object VersionedStore {
                   acc ++ RawBatch.delete(logKey(v, ek)) ++ RawBatch.delete(histPrefix(ek) ++ ver(v))
               }
               Staged(
-                guardsOf(records),
-                writes ++ RawBatch.put(floorKey, ver(through.value)),
+                records.guards,
+                writes ++ RawBatch.put(floorKey, ver(through.value)) ++ records.advance,
                 Version.unsafe(current),
                 current,
                 through.value,

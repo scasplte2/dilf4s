@@ -23,7 +23,8 @@ A versioned store keeps several kinds of entry:
 - the current value of each key;
 - a per-version write log;
 - per-key history, at `history ‖ terminated(key) ‖ version`;
-- two metadata markers, `latest` and `floor`, each a big-endian unsigned 64-bit version.
+- three metadata markers, each a big-endian unsigned 64-bit number: `latest` and `floor`, the versions, and
+  `generation`, which every mutation advances by one and which never repeats (absent means 0).
 
 A history entry is the following record, written in canonical CBOR (`docs/specs/canonical-encoding.md`). This is the
 normative schema `shared/schemas/storage.cddl`, reproduced verbatim:
@@ -61,3 +62,11 @@ version after it, computed without writing.
   versions that costs no writes until it is adopted.
 - **Conflicts.** If another writer moved the store after the stage was computed, the guards no longer match and the
   write is refused with a version conflict. Nothing is written.
+- **Generations.** Versions repeat: after a rollback to `v - 1` and a new commit, the store is at `v` again. So the
+  guarded records hold a generation besides the versions, advanced by every commit, rollback, prune and restore, and
+  never reused. A stage staged before the rollback is refused even though the store is back at its version. A trie
+  store's state record is `latest ‖ floor ‖ generation` (24 bytes; any other length is corrupt); a versioned store
+  keeps its generation in the `generation` marker. A chain of drafts advances it once, as it is written once.
+- **Revisions.** A store's guarded records as read at one moment are its revision. A layer over several stores reads
+  their revisions before anything it decides on, and guards its single write on them: if the write lands, nothing it
+  read had changed.

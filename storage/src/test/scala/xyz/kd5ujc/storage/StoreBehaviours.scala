@@ -352,7 +352,7 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
         } yield
           expect(chained._1.isEmpty, "drafts write nothing")
             .and(expect.same(batches.size.toLong, chained._2.value))
-            .and(expect(sequential == chained._3, "the same records as committing one by one"))
+            .and(expect(Generations.masked(sequential) == Generations.masked(chained._3), "the same records as committing one by one"))
             .and(expect.same((0, 1), chained._4))
       }
     }
@@ -374,7 +374,8 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
             }
           }
         } yield
-          expect(pruned == restored._1, "the same records")
+          expect(Generations.masked(pruned) == Generations.masked(restored._1), "the same records")
+            .and(expect.same(Generations.of(pruned).keySet, Generations.of(restored._1).keySet))
             .and(expect.same(Left(StoreError.VersionConflict(0L, batches.size.toLong)), restored._2))
       }
     }
@@ -409,7 +410,10 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
             }
           } yield {
             val restored = entries.toMap
-            expect(sequential == chained._1, "the same records as restoring, writing, then committing")
+            expect(
+              Generations.masked(sequential) == Generations.masked(chained._1),
+              "the same records as restoring, writing, then committing"
+            )
               .and(expect.same(restored, chained._2.toMap))
               .and(
                 expect.same(next.last.map { case (k, a) => Change(k, restored.get(k), a) }.toList.sortBy(_.key), chained._3.sortBy(_.key))
@@ -417,6 +421,26 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
               .and(expect.same(restored.toList.sortBy(_._1), chained._4))
           }
         }
+    }
+  }
+
+  test(s"$backend: a stage staged before a rollback is refused after the store re-reaches its version") {
+    attempt { implicit r =>
+      withRaw { raw =>
+        for {
+          store <- VersionedStore.make[IO, Int, Int](raw, "vs")
+          _     <- store.commit(Version.Genesis, Batch.put(1, 1)) >> store.commit(Version.unsafe(1L), Batch.put(1, 2))
+          stale <- store.stage(Version.unsafe(2L), Batch.put(2, 3))
+          _     <- store.rollback(Version.unsafe(1L))
+          _     <- store.commit(Version.unsafe(1L), Batch.put(1, 20))
+          wrote <- r.attempt(store.write(stale))
+          now   <- (store.get(1), store.get(2), store.latest).tupled
+        } yield (wrote, now)
+      }
+    }.map {
+      case Right((wrote, now)) =>
+        expect.same(Left(StoreError.VersionConflict(2L, 2L)), wrote).and(expect.same((Some(20), None, Version.unsafe(2L)), now))
+      case Left(e) => failure(s"unexpected $e")
     }
   }
 

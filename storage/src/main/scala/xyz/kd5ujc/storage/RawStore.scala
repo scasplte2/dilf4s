@@ -36,6 +36,16 @@ object RawBatch {
   implicit val rawBatchMonoid: Monoid[RawBatch] = Monoid.instance(empty, _ ++ _)
 }
 
+/**
+ * The guarded records of one or more stores as read at one moment: a compare-and-write guarded on them applies only if
+ * none of those stores has been mutated since. Each store's records include a generation that every mutation advances
+ * and that never repeats, so a store that returns to an earlier version (by a rollback and a new commit) does not
+ * match an old revision.
+ */
+final case class Revision(guards: List[(ByteVector, Option[ByteVector])]) {
+  def ++(that: Revision): Revision = Revision(guards ++ that.guards)
+}
+
 /** Half-open byte range `[from, until)` in unsigned order; `None` is unbounded. */
 final case class ByteRange(from: Option[ByteVector], until: Option[ByteVector]) {
   def contains(key: ByteVector): Boolean =
