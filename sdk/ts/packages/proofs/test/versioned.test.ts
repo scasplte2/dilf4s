@@ -228,6 +228,24 @@ describe("snapshots and replicas", () => {
     expect(expectErr(versioned.Replica.fromSnapshot(vt, finalHead, snapshot), "dropped entries")).toMatchObject({ kind: "RootMismatch", component: "state" });
   });
 
+  it("a replica owns its roots: mutating what goes in or comes out leaves it intact", () => {
+    const [d1, d2] = vectors.commits.map((c) => expectOk(vt.decodeDelta(valueOf(c.delta)), "delta"));
+    if (d1 === undefined || d2 === undefined) throw new Error("two deltas");
+    const one = expectOk(versioned.Replica.empty(vt).applyDelta(d1), "first");
+    const root = expectOk(one.root(), "root");
+    // the caller's delta head, the head getter and the history listing are all the caller's to scribble on
+    d1.head.stateRoot.fill(0);
+    d1.head.historyRoot.fill(0);
+    one.head?.stateRoot.fill(0);
+    for (const [, stateRoot] of one.history()) stateRoot.fill(0);
+    expect(expectOk(one.root(), "root after")).toEqual(root);
+    expectOk(one.applyDelta(d2), "the next delta still applies");
+
+    const restored = expectOk(versioned.Replica.restore(vt, finalHead, vectors.snapshot.chunks.map(bytes)), "restores");
+    for (const [, stateRoot] of restored.history()) stateRoot.fill(0);
+    expect(restored.history().every(([, r]) => r.some((b) => b !== 0))).toBe(true);
+  });
+
   it("a replica refuses deltas that do not chain, go backwards, or claim another state", () => {
     const deltas = vectors.commits.map((c) => expectOk(vt.decodeDelta(valueOf(c.delta)), "delta"));
     const [d1, d2] = deltas;

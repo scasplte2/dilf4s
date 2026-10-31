@@ -8,20 +8,20 @@ use crate::error::KeyError;
 /// The first hardened index, `2^31`.
 pub const HARDENED_OFFSET: u32 = 0x8000_0000;
 
-/// A child index below `2^31`; hardened indices are serialised with bit 31 set.
+/// A child index below `2^31`; hardened indices are serialised with bit 31 set. The fields are private, so an index
+/// is only built through [`ChildIndex::soft`] or [`ChildIndex::hardened`], which check the range: a soft index with
+/// bit 31 set would serialise as a hardened one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ChildIndex {
-    /// A soft (normal) index.
-    Soft(u32),
-    /// A hardened index.
-    Hardened(u32),
+pub struct ChildIndex {
+    hardened: bool,
+    index: u32,
 }
 
 impl ChildIndex {
     /// A soft index `i < 2^31`.
     pub fn soft(i: u32) -> Result<Self, KeyError> {
         if i < HARDENED_OFFSET {
-            Ok(Self::Soft(i))
+            Ok(Self { hardened: false, index: i })
         } else {
             Err(KeyError::InvalidDerivation { reason: format!("index {i} out of range") })
         }
@@ -30,7 +30,7 @@ impl ChildIndex {
     /// A hardened index `i < 2^31`.
     pub fn hardened(i: u32) -> Result<Self, KeyError> {
         if i < HARDENED_OFFSET {
-            Ok(Self::Hardened(i))
+            Ok(Self { hardened: true, index: i })
         } else {
             Err(KeyError::InvalidDerivation { reason: format!("index {i} out of range") })
         }
@@ -38,22 +38,17 @@ impl ChildIndex {
 
     /// The index without its hardening bit.
     pub const fn value(self) -> u32 {
-        match self {
-            Self::Soft(i) | Self::Hardened(i) => i,
-        }
+        self.index
     }
 
     /// Whether the index is hardened.
     pub const fn is_hardened(self) -> bool {
-        matches!(self, Self::Hardened(_))
+        self.hardened
     }
 
     /// The serialised index: bit 31 set when hardened.
     pub const fn serialized(self) -> u32 {
-        match self {
-            Self::Soft(i) => i,
-            Self::Hardened(i) => i | HARDENED_OFFSET,
-        }
+        if self.hardened { self.index | HARDENED_OFFSET } else { self.index }
     }
 
     /// `BE32(serialized)`.

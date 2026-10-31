@@ -233,6 +233,50 @@ describe("KES properties and typed errors", { timeout: 60_000 }, () => {
     expect(kind(KesProduct.of("SHA-256", 16, 15))).toBe("Malformed");
   });
 
+  test("a loaded key owns its bytes: clearing the caller's Buffer afterwards changes nothing", () => {
+    // Buffer#slice is a view, so a loader that keeps slices of its input would share the caller's memory
+    const sum = expectOk(KesSum.of("BLAKE2b-256", 1), "sum");
+    const prod = expectOk(KesProduct.of("BLAKE2b-256", 1, 1), "prod");
+    const cardano = expectOk(CardanoSumKes.of(2), "cardano");
+    const seed = new Uint8Array(32).fill(9);
+    const cases: readonly [string, Uint8Array, (raw: Uint8Array) => { bytes: Uint8Array; sign: () => Uint8Array }, (sig: Uint8Array) => boolean][] = [
+      [
+        "sum",
+        expectOk(sum.generate(seed), "sum k").bytes,
+        (raw) => {
+          const k = expectOk(sum.load(raw, 0), "load");
+          return { bytes: k.bytes, sign: () => expectOk(k.sign(beef), "sign") };
+        },
+        (sig) => expectOk(sum.verify(expectOk(sum.generate(seed), "vk").verifyingKey, 0, beef, sig), "verify"),
+      ],
+      [
+        "product",
+        expectOk(prod.generate(seed), "prod k").bytes,
+        (raw) => {
+          const k = expectOk(prod.load(raw, 0), "load");
+          return { bytes: k.bytes, sign: () => expectOk(k.sign(beef), "sign") };
+        },
+        (sig) => expectOk(prod.verify(expectOk(prod.generate(seed), "vk").verifyingKey, 0, beef, sig), "verify"),
+      ],
+      [
+        "cardano",
+        expectOk(cardano.generate(seed), "cardano k").bytes,
+        (raw) => {
+          const k = expectOk(cardano.load(raw, 0), "load");
+          return { bytes: k.bytes, sign: () => k.sign(beef) };
+        },
+        (sig) => expectOk(cardano.verify(expectOk(cardano.generate(seed), "vk").verifyingKey, 0, beef, sig), "verify"),
+      ],
+    ];
+    for (const [name, encoded, load, verifies] of cases) {
+      const buffer = Buffer.from(encoded);
+      const key = load(buffer);
+      buffer.fill(0);
+      expect(toHex(key.bytes), name).toBe(toHex(encoded));
+      expect(verifies(key.sign()), name).toBe(true);
+    }
+  });
+
   test("KesSum and KesProduct: every period round-trips; the super leaf is erased; corrupted keys are refused", () => {
     const sum = expectOk(KesSum.of("SHA-512", 3), "sum");
     let k = expectOk(sum.generate(new Uint8Array(32).fill(8)), "k0");

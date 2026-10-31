@@ -240,6 +240,9 @@ describe("BIP32 secp256k1", { timeout: 60_000 }, () => {
     expect(kind(bip32Secp256k1.publicChild(secp256k1Ecdsa.publicKey(parent.key), parent.chainCode, expectOk(ChildIndex.hardened(1), "1'")))).toBe(
       "InvalidDerivation",
     );
+    // HMAC takes a key of any length, so a chain code of the wrong length must be refused before it is used
+    for (const cc of [new Uint8Array(0), parent.chainCode.subarray(0, 31), new Uint8Array(33)])
+      expect(kind(bip32Secp256k1.publicChild(secp256k1Ecdsa.publicKey(parent.key), cc, expectOk(ChildIndex.soft(1), "1"))), String(cc.length)).toBe("InvalidDerivation");
   });
 });
 
@@ -267,6 +270,9 @@ describe("BIP32-Ed25519 (Icarus)", { timeout: 60_000 }, () => {
     for (const i of path(v.addressPath)) acc = expectOk(icarus.publicChild(acc.key, acc.chainCode, i), "public child");
     expect(toHex(acc.key.bytes)).toBe(v.addressVerifyingKey);
     expect(toHex(acc.chainCode)).toBe(v.address.chainCode);
+    const soft0 = expectOk(ChildIndex.soft(0), "0");
+    for (const cc of [new Uint8Array(0), account.chainCode.subarray(0, 31), new Uint8Array(33)])
+      expect(kind(icarus.publicChild(ed25519Bip32.publicKey(account.key), cc, soft0)), String(cc.length)).toBe("InvalidDerivation");
   });
 
   test("child key derivation (Brambl Bip32Ed25519Ckd.json), private and public", () => {

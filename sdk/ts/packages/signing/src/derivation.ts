@@ -61,6 +61,8 @@ export function parsePath(path: string): Result<readonly ChildIndex[], KeyError>
   return ok(out);
 }
 
+const CHAIN_CODE = "a chain code is 32 bytes";
+
 /** An extended private key: a signing key and a 32-byte chain code. Never printed. */
 export class ExtendedKey<S extends SchemeName> {
   readonly #chainCode: Uint8Array;
@@ -75,7 +77,7 @@ export class ExtendedKey<S extends SchemeName> {
 
   /** An extended key from a decoded signing key and a 32-byte chain code. */
   static of<S extends SchemeName>(key: SigningKey<S>, chainCode: Uint8Array): Result<ExtendedKey<S>, KeyError> {
-    return chainCode.length === 32 ? ok(new ExtendedKey(INTERNAL, key, chainCode)) : err(invalid("a chain code is 32 bytes"));
+    return chainCode.length === 32 ? ok(new ExtendedKey(INTERNAL, key, chainCode)) : err(invalid(CHAIN_CODE));
   }
 
   get chainCode(): Uint8Array {
@@ -183,6 +185,7 @@ export const bip32Secp256k1 = Object.freeze({
     index: ChildIndex,
   ): Result<PublicChild<"secp256k1-ECDSA">, KeyError> => {
     if (index.hardened) return err(invalid("hardened children need the private key"));
+    if (chainCode.length !== 32) return err(invalid(CHAIN_CODE));
     const i = hmac512(chainCode, concat(key.bytes, u32be(index.serialized)));
     const il = beToBig(i.subarray(0, 32));
     // only I_L >= n is skipped (BIP32, signing.md 2.3), as in CKDpriv; I_L = 0 adds nothing
@@ -243,6 +246,7 @@ export const icarus = Object.freeze({
   /** `A' = A + [8 LE(Z[0:28])]B`, soft indices only; `A` must be the canonical encoding. */
   publicChild: (key: VerifyingKey<"Ed25519-BIP32">, chainCode: Uint8Array, index: ChildIndex): Result<PublicChild<"Ed25519-BIP32">, KeyError> => {
     if (index.hardened) return err(invalid("hardened children need the private key"));
+    if (chainCode.length !== 32) return err(invalid(CHAIN_CODE));
     const a = key.bytes;
     const point = decodeStrict(a);
     if (point === undefined) return err(invalid("verifying key is not a canonical point encoding"));

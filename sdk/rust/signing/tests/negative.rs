@@ -47,6 +47,12 @@ fn paths_parse_hardened_and_soft_segments_and_reject_malformed_ones() {
     assert_eq!(serialized("m/0h"), [0x8000_0000]);
     assert!(serialized("m").is_empty());
     assert_eq!(serialized("m/2147483647'"), [0xffff_ffff]);
+    // an index is only built checked, so bit 31 of the serialised form and is_hardened always agree
+    assert_eq!(path::ChildIndex::soft(0x8000_0000).unwrap_err().kind(), "InvalidDerivation");
+    assert_eq!(path::ChildIndex::hardened(0x8000_0000).unwrap_err().kind(), "InvalidDerivation");
+    for i in [path::ChildIndex::soft(0x7fff_ffff).unwrap(), path::ChildIndex::hardened(0).unwrap()] {
+        assert_eq!(i.is_hardened(), i.serialized() >= path::HARDENED_OFFSET, "{i:?}");
+    }
     // the same malformed paths the TypeScript SDK rejects: an empty or trailing segment is malformed, never dropped
     for bad in
         ["44'/0", "m/x", "m/2147483648", "m/-1", "m/+1", "m/0/", "m//0", "m/0''", " m/0", "M/0", "m/1e3", "m/0x1"]

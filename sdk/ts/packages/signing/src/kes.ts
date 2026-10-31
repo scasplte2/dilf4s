@@ -270,7 +270,9 @@ export class KesSum {
   }
 
   /** Loads an encoded key at the period the caller knows it to be at. */
-  load(raw: Uint8Array, period: number): Result<KesSumKey, KesError> {
+  load(input: Uint8Array, period: number): Result<KesSumKey, KesError> {
+    // decoding retains slices of the input; a private copy keeps the caller's buffer (a Buffer slices by view) apart
+    const raw = copy(input);
     if (raw.length !== this.keyLength) return err(sizeError("KES key", this.keyLength, raw.length));
     if (!inRange(period, this.totalPeriods)) return err(outOfRange(period, this.totalPeriods));
     const t = this.#ops.decode(raw, this.height, period, false);
@@ -412,7 +414,8 @@ export class KesProduct {
   }
 
   /** Loads an encoded key at `period`, checking both trees and that the super signature certifies the sub tree. */
-  load(raw: Uint8Array, period: number): Result<KesProductKey, KesError> {
+  load(input: Uint8Array, period: number): Result<KesProductKey, KesError> {
+    const raw = copy(input);
     if (raw.length !== this.keyLength) return err(sizeError("KES key", this.keyLength, raw.length));
     if (!inRange(period, this.totalPeriods)) return err(outOfRange(period, this.totalPeriods));
     const ops = this.#ops;
@@ -591,7 +594,9 @@ export class CardanoSumKes {
   }
 
   /** Loads cardano's raw signing key (the `kes.skey` payload) at the period the caller knows it to be at. */
-  load(raw: Uint8Array, period: number): Result<CardanoSumKesKey, KesError> {
+  load(input: Uint8Array, period: number): Result<CardanoSumKesKey, KesError> {
+    // the key keeps the encoding itself, so it must own it
+    const raw = copy(input);
     if (raw.length !== this.signingKeyLength) return err(sizeError("KES signing key", this.signingKeyLength, raw.length));
     if (!inRange(period, this.totalPeriods)) return err(outOfRange(period, this.totalPeriods));
     const c = cardanoCheck(raw, this.depth, period);

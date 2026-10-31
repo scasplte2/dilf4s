@@ -757,6 +757,9 @@ interface VersionSlot<V> {
   readonly stateRoot: Uint8Array;
 }
 
+const copyHead = <V>(h: Head<V>): Head<V> =>
+  Object.freeze({ version: h.version, stateRoot: Uint8Array.from(h.stateRoot), historyRoot: Uint8Array.from(h.historyRoot) });
+
 const chunked = <T>(xs: readonly T[], n: number): T[][] => {
   const out: T[][] = [];
   for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
@@ -770,13 +773,23 @@ const chunked = <T>(xs: readonly T[], n: number): T[][] => {
  * depends only on the key set), which costs time linear in the state.
  */
 export class Replica<V> {
+  // the replica owns every root it holds: heads and roots come in from callers and go out as copies, so no caller can
+  // change a verified replica through a shared array
+  readonly #head: Head<V> | null;
+
   private constructor(
     readonly profile: VersionedTrie<V>,
-    readonly head: Head<V> | null,
+    head: Head<V> | null,
     private readonly state: ReadonlyMap<string, StateSlot>,
     private readonly versions: ReadonlyMap<string, VersionSlot<V>>,
   ) {
+    this.#head = head === null ? null : copyHead(head);
     Object.freeze(this);
+  }
+
+  /** The head, or `null` before the first delta (a copy). */
+  get head(): Head<V> | null {
+    return this.#head === null ? null : copyHead(this.#head);
   }
 
   static empty<V>(profile: VersionedTrie<V>): Replica<V> {
@@ -785,7 +798,7 @@ export class Replica<V> {
 
   /** The commitment root of the head, or `null` before the first delta. */
   root(): R<Uint8Array | null> {
-    return this.head === null ? ok(null) : this.profile.root(this.head);
+    return this.#head === null ? ok(null) : this.profile.root(this.#head);
   }
 
   /** The current value of `key`, if any. */
@@ -800,7 +813,7 @@ export class Replica<V> {
 
   /** Every committed version with its state root, in order. */
   history(): readonly (readonly [V, Uint8Array])[] {
-    return [...this.versions.values()].sort((a, b) => compareBytes(a.vkey, b.vkey)).map((s) => [s.version, s.stateRoot] as const);
+    return [...this.versions.values()].sort((a, b) => compareBytes(a.vkey, b.vkey)).map((s) => [s.version, Uint8Array.from(s.stateRoot)] as const);
   }
 
   private static stateRoot<V>(profile: VersionedTrie<V>, state: ReadonlyMap<string, StateSlot>): R<Uint8Array> {
@@ -835,7 +848,7 @@ export class Replica<V> {
     for (const [version, stateRoot] of checked.value.history) {
       const vkey = profile.versionKey.encode(version);
       if (!vkey.ok) return vkey;
-      versions.set(toHex(vkey.value), { version, vkey: vkey.value, stateRoot });
+      versions.set(toHex(vkey.value), { version, vkey: vkey.value, stateRoot: Uint8Array.from(stateRoot) });
     }
     const s = Replica.stateRoot(profile, state);
     if (!s.ok) return s;
@@ -872,8 +885,8 @@ export class Replica<V> {
     if (!same) return err({ kind: "RootMismatch", component: "parent", expected: parent.value === null ? "none" : toHex(parent.value), computed: claimed.value === null ? "none" : toHex(claimed.value) });
     const nk = p.versionKey.encode(delta.head.version);
     if (!nk.ok) return nk;
-    if (this.head !== null) {
-      const hk = p.versionKey.encode(this.head.version);
+    if (this.#head !== null) {
+      const hk = p.versionKey.encode(this.#head.version);
       if (!hk.ok) return hk;
       if (compareBytes(nk.value, hk.value) <= 0) return err({ kind: "VersionNotIncreasing", head: hk.value, next: nk.value });
     }
