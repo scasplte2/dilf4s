@@ -137,8 +137,11 @@ including every non-integer rational.
 
 **Text.**
 - `length` and `substr` count code points.
-- `lower` and `upper` are the Unicode default full case mappings of **Unicode 15.0**, independent of locale. A vector
-  pins the version: Garay, added in 16.0, does not map.
+- `lower` and `upper` map **ASCII letters only**: `A`–`Z` to `a`–`z`, and back. Every other code point is unchanged,
+  so the result has the same length, and no Unicode case table or version is involved: every implementation agrees.
+  Text is still any Unicode, and no normalisation is applied, so `é` (one code point) and `e` + U+0301 stay distinct.
+  Unicode case mapping is not portable: language runtimes ship different Unicode versions, and Final_Sigma needs
+  context that runtimes decide differently.
 - `trim` removes the `White_Space` code points from both ends: U+0009–000D, 0020, 0085, 00A0, 1680, 2000–200A, 2028,
   2029, 202F, 205F, 3000.
 
@@ -542,7 +545,7 @@ The parser reads only the surface of §1. Programs written for metakit are porte
 | 4 | `round` rounds half away from zero. | `round` is half-even; `round_half_up` is explicit, and is what a ported metakit `round` becomes. | Unbiased rounding by default. |
 | 5 | `and`, `or` and `default` evaluate everything; `all`, `some` and `none` never stop early. | Lazy, and stop at the first decisive element. | Gas pays only for work done. |
 | 6 | Callback scope merges the element into the data; arrays are concatenated. | The element is a frame looked up before the data; arrays are not concatenated; collisions are warned about; `$current`, `$index` and `$accumulator` are unambiguous. | Silent collisions. |
-| 7 | `length` and `substr` count UTF-16 code units; `trim` uses Java's notion of whitespace. | Code points; Unicode `White_Space`. | Portability. |
+| 7 | `length` and `substr` count UTF-16 code units; `trim` uses Java's notion of whitespace; `lower` and `upper` use the JVM's default locale. | Code points; Unicode `White_Space`; ASCII-only case mapping. | Portability. |
 | 8 | Gas is unchecked `Long`, priced after the fact, and absent on failure. | Saturating, charged before the work, sized by weight, reported on failure. | Fairness, and DoS bounds. |
 | 9 | `cat` on arrays is an error. | Concatenates when every argument is an array. | Programs use it. |
 | 10 | Unbounded numbers and values. | The bounds of §2. | DoS. |

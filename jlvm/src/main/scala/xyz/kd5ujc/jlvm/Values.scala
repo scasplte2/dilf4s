@@ -1,7 +1,5 @@
 package xyz.kd5ujc.jlvm
 
-import java.util.Locale
-
 import cats.syntax.all._
 
 import scala.annotation.tailrec
@@ -167,9 +165,12 @@ object Values {
   def codePoints(s:       String): Vector[Int] = s.codePoints().toArray.toVector
   def fromCodePoints(cps: Vector[Int]): String = new String(cps.toArray, 0, cps.size)
 
-  /** Unicode default full case mapping, locale-independent (docs/specs/jlvm.md). */
-  def lower(s: String): String = s.toLowerCase(Locale.ROOT)
-  def upper(s: String): String = s.toUpperCase(Locale.ROOT)
+  /**
+   * ASCII case mapping (docs/specs/jlvm.md §2): `A`–`Z` and `a`–`z` swap, every other code point is unchanged. No UTF-16
+   * unit of a supplementary code point is an ASCII letter, so mapping units maps code points.
+   */
+  def lower(s: String): String = s.map(c => if (c >= 'A' && c <= 'Z') (c + ('a' - 'A')).toChar else c)
+  def upper(s: String): String = s.map(c => if (c >= 'a' && c <= 'z') (c - ('a' - 'A')).toChar else c)
 
   /**
    * The Unicode `White_Space` property (PropList.txt), listed explicitly: Java's `strip` omits no-break spaces, and

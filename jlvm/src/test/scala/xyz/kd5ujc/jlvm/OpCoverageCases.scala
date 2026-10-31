@@ -20,7 +20,7 @@ import ProofFixtures._
 /**
  * Writes `vectors/jlvm_op_cases.json`, so that every operation has vectors: a sweep of each operation over 0 to 3
  * arguments of each kind, which pins argument counts, type checks, the order they run in and what they cost; then
- * cases with real inputs for the operations no other vector file reaches. Every signature here is deterministic, so
+ * cases with real inputs for the operations no other vector file reaches, and ASCII-only case mapping on non-ASCII text. Every signature here is deterministic, so
  * the file regenerates identically: `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.OpCoverageCases"`, then `JlvmVectorGen`.
  */
 object OpCoverageCases extends IOApp {
@@ -78,6 +78,20 @@ object OpCoverageCases extends IOApp {
       probe("width above 1024", Op.IntToBytes, int(1), int(1025))
     ) ++
     List("2.5", "-2.5", "2.4", "-2.6", "7", "-0.5").flatMap(x => List(probe(x, Op.RoundHalfUp, surface(x)), probe(x, Op.Round, surface(x))))
+  }
+
+  /** ASCII-only case mapping (jlvm.md §2): Unicode letters, one-to-many mappings and final sigma are left alone. */
+  val casing: List[Case] = {
+    val inputs = List(
+      "ASCII"                              -> "HeLLo, World 1",
+      "sharp s"                            -> "stra\u00dfe STRASSE",
+      "dotted and dotless I"               -> "I \u0130 \u0131 i",
+      "final sigma"                        -> "\u039f\u03a3 \u03a3\u039f \u03c3\u03c2",
+      "precomposed and decomposed e acute" -> "\u00c9 \u00e9 E\u0301 e\u0301",
+      "Garay (Unicode 16)"                 -> "\ud803\udd50 \ud803\udd70",
+      "Cherokee"                           -> "\u13a0 \uab70"
+    )
+    inputs.flatMap { case (n, x) => List(probe(n, Op.Lower, text(x)), probe(n, Op.Upper, text(x))) }
   }
 
   private val message = ByteVector("transfer 10 to bob".getBytes(UTF_8))
@@ -187,7 +201,7 @@ object OpCoverageCases extends IOApp {
 
   def run(args: List[String]): IO[ExitCode] =
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
-      .mapN((secp, mk, tr) => sweep ++ bytesAndHashing ++ signatures(secp) ++ merkle(mk) ++ tries(tr))
+      .mapN((secp, mk, tr) => sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ tries(tr))
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)
 }

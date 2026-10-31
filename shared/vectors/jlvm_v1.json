@@ -32651,6 +32651,160 @@
       "warnings" : 0
     },
     {
+      "name" : "dilf4s lower: ASCII",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"HeLLo, World 1\"}",
+      "outcome" : {
+        "json" : "\"hello, world 1\"",
+        "cbor" : "6e68656c6c6f2c20776f726c642031"
+      },
+      "gasUsed" : 79,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s upper: ASCII",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"HeLLo, World 1\"}",
+      "outcome" : {
+        "json" : "\"HELLO, WORLD 1\"",
+        "cbor" : "6e48454c4c4f2c20574f524c442031"
+      },
+      "gasUsed" : 84,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s lower: sharp s",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"straße STRASSE\"}",
+      "outcome" : {
+        "json" : "\"straße strasse\"",
+        "cbor" : "6f73747261c39f652073747261737365"
+      },
+      "gasUsed" : 80,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s upper: sharp s",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"straße STRASSE\"}",
+      "outcome" : {
+        "json" : "\"STRAßE STRASSE\"",
+        "cbor" : "6f53545241c39f452053545241535345"
+      },
+      "gasUsed" : 85,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s lower: dotted and dotless I",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"I İ ı i\"}",
+      "outcome" : {
+        "json" : "\"i İ ı i\"",
+        "cbor" : "696920c4b020c4b12069"
+      },
+      "gasUsed" : 74,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s upper: dotted and dotless I",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"I İ ı i\"}",
+      "outcome" : {
+        "json" : "\"I İ ı I\"",
+        "cbor" : "694920c4b020c4b12049"
+      },
+      "gasUsed" : 79,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s lower: final sigma",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"ΟΣ ΣΟ σς\"}",
+      "outcome" : {
+        "json" : "\"ΟΣ ΣΟ σς\"",
+        "cbor" : "6ece9fcea320cea3ce9f20cf83cf82"
+      },
+      "gasUsed" : 79,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s upper: final sigma",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"ΟΣ ΣΟ σς\"}",
+      "outcome" : {
+        "json" : "\"ΟΣ ΣΟ σς\"",
+        "cbor" : "6ece9fcea320cea3ce9f20cf83cf82"
+      },
+      "gasUsed" : 84,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s lower: precomposed and decomposed e acute",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"É é É é\"}",
+      "outcome" : {
+        "json" : "\"É é é é\"",
+        "cbor" : "6dc38920c3a92065cc812065cc81"
+      },
+      "gasUsed" : 78,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s upper: precomposed and decomposed e acute",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"É é É é\"}",
+      "outcome" : {
+        "json" : "\"É é É É\"",
+        "cbor" : "6dc38920c3a92045cc812045cc81"
+      },
+      "gasUsed" : 83,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s lower: Garay (Unicode 16)",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"𐵐 𐵰\"}",
+      "outcome" : {
+        "json" : "\"𐵐 𐵰\"",
+        "cbor" : "69f090b59020f090b5b0"
+      },
+      "gasUsed" : 74,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s upper: Garay (Unicode 16)",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"𐵐 𐵰\"}",
+      "outcome" : {
+        "json" : "\"𐵐 𐵰\"",
+        "cbor" : "69f090b59020f090b5b0"
+      },
+      "gasUsed" : 79,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s lower: Cherokee",
+      "program" : "{\"lower\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"Ꭰ ꭰ\"}",
+      "outcome" : {
+        "json" : "\"Ꭰ ꭰ\"",
+        "cbor" : "67e18ea020eaadb0"
+      },
+      "gasUsed" : 72,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s upper: Cherokee",
+      "program" : "{\"upper\":[{\"var\":\"a0\"}]}",
+      "data" : "{\"a0\":\"Ꭰ ꭰ\"}",
+      "outcome" : {
+        "json" : "\"Ꭰ ꭰ\"",
+        "cbor" : "67e18ea020eaadb0"
+      },
+      "gasUsed" : 77,
+      "warnings" : 0
+    },
+    {
       "name" : "dilf4s ed25519_verify: verifies",
       "program" : "{\"ed25519_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
       "data" : "{\"a0\":\"0x8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c\",\"a1\":\"0x7472616e7366657220313020746f20626f62\",\"a2\":\"0x667ff2539c0a67f2c1e0f1db4dc4e194ce2672aba8c4ba294b1fd603106aeaf9243c4ec2215d75c81434117cd63261494537ca58b290f6d69d3e261e5ee9cc07\"}",
