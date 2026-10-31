@@ -77,7 +77,7 @@ hasher!(
 );
 hasher!(
     /// `BLAKE2b` with a 32-byte output parameter (RFC 7693), not a truncated BLAKE2b-512.
-    Blake2b256, "BLAKE2b-256", 32, blake2::Blake2b256
+    Blake2b256, "BLAKE2b-256", 32, blake2::Blake2b<blake2::digest::consts::U32>
 );
 hasher!(
     /// `BLAKE2b-512` (RFC 7693).

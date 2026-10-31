@@ -80,7 +80,7 @@ impl Signature {
 
 /// RFC 9380 `hash_to_curve` into G2 (`BLS12381G2_XMD:SHA-256_SSWU_RO_`) with `dst`.
 pub fn hash_to_g2(message: &[u8], dst: &[u8]) -> G2Affine {
-    let point = <G2Projective as HashToCurve<ExpandMsgXmd<sha2_digest010::Sha256>>>::hash_to_curve([message], dst);
+    let point = <G2Projective as HashToCurve<ExpandMsgXmd<sha2::Sha256>>>::hash_to_curve([message], dst);
     G2Affine::from(point)
 }
 

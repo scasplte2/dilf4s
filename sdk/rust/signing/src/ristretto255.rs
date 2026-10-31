@@ -176,7 +176,11 @@ mod signing {
         }
 
         /// Signing with nonce randomness drawn from `rng`.
-        pub fn sign_with_rng<R: rand_core::CryptoRng + ?Sized>(&self, message: &[u8], rng: &mut R) -> Signature {
+        pub fn sign_with_rng<R: rand_core::CryptoRng + rand_core::RngCore + ?Sized>(
+            &self,
+            message: &[u8],
+            rng: &mut R,
+        ) -> Signature {
             let mut a = Zeroizing::new([0u8; 32]);
             rng.fill_bytes(&mut *a);
             self.sign(message, &a)
