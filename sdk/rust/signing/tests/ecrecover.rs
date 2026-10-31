@@ -100,3 +100,47 @@ fn an_address_from_a_compressed_or_uncompressed_key_is_the_same() {
     // x = 5 is no point's x-coordinate
     assert!(address_of_key(&b(&format!("02{}05", "00".repeat(31)))).is_err());
 }
+
+const GX: &str = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+const HALF_N: &str = "7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0";
+const HALF_N_PLUS_1: &str = "7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a1";
+const N_PLUS_1: &str = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142";
+
+fn word(last: u8) -> String {
+    format!("{}{last:02x}", "00".repeat(31))
+}
+
+#[test]
+fn a_recovered_identity_is_no_key() {
+    // R = G (r = G.x, even y), s = 1, e = 1: s R - e G = O
+    assert_eq!(recover(&b(&word(1)), &sig(GX, &word(1), 27)).unwrap(), None);
+    // with e = 2 the same signature recovers a key
+    assert!(recover(&b(&word(2)), &sig(GX, &word(1), 27)).unwrap().is_some());
+}
+
+#[test]
+fn the_digest_is_reduced_mod_n() {
+    let at = |d: &str| recover(&b(d), &sig(GX, &word(3), 27)).unwrap();
+    assert_eq!(at(N), at(&"00".repeat(32)), "n is 0");
+    assert_eq!(at(N_PLUS_1), at(&word(1)), "n + 1 is 1");
+}
+
+#[test]
+fn s_up_to_half_the_order_recovers_and_above_it_does_not() {
+    assert!(recover(&b(DIGEST), &sig(GX, HALF_N, 27)).unwrap().is_some(), "s = n / 2");
+    assert_eq!(recover(&b(DIGEST), &sig(GX, HALF_N_PLUS_1, 27)).unwrap(), None, "s = n / 2 + 1");
+}
+
+#[test]
+fn v_one_is_v_twenty_eight() {
+    let a = recover(&b(DIGEST), &sig(R, LOW_S, 1)).unwrap();
+    assert_eq!(a, recover(&b(DIGEST), &sig(R, LOW_S, 28)).unwrap());
+    assert!(a.is_some());
+    assert_ne!(a.map(|x| hex::encode(&x)).as_deref(), Some(ADDRESS), "the other parity is another key");
+}
+
+#[test]
+fn an_uncompressed_key_has_the_same_address() {
+    let uncompressed = b(&format!("04{GX}483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"));
+    assert_eq!(hex::encode(&address_of_key(&uncompressed).unwrap()), "7e5f4552091a69125d5dfcb7b8c2659029395bdf");
+}
