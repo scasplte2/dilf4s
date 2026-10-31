@@ -29,7 +29,8 @@ object VectorSchemasSuite extends SimpleIOSuite {
     "kes_v1.json"                -> kes_vectors.KesVectors.codec,
     "sigma_v1.json"              -> sigma_vectors.SigmaVectors.codec,
     "sigma_dilf4s_v1.json"       -> sigma_vectors.SigmaVectors.codec,
-    "versioned_trie_v1.json"     -> versioned_trie_vectors.VersionedTrieVectors.codec
+    "versioned_trie_v1.json"     -> versioned_trie_vectors.VersionedTrieVectors.codec,
+    "zk_v1.json"                 -> zk_vectors.ZkVectors.codec
   )
 
   private def lossless[A](codec: Codec[A], json: String): Either[String, Boolean] =
