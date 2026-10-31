@@ -150,12 +150,6 @@ export const VersionKey = {
     return ok(bigEndian(width, width === 8 ? 2n ** 63n - 1n : 2n ** BigInt(8 * width) - 1n));
   },
 
-  /** Any unsigned integer of `width` (1..1024) bytes: `0..2^(8 width) - 1`. */
-  unsigned(width: number): R<VersionKey<bigint>> {
-    if (!Number.isInteger(width) || width < 1 || width > trie.MAX_FIXED_BYTES) return err({ kind: "InvalidVersion", reason: `a version key is 1..${trie.MAX_FIXED_BYTES.toString()} bytes, not ${width.toString()}` });
-    return ok(bigEndian(width, 2n ** BigInt(8 * width) - 1n));
-  },
-
   /** The default, Scala's `VersionKey.long`: 8 bytes, `0..2^63 - 1` (the JLVM's `int_to_bytes [v, 8]`). */
   long: bigEndian(8, 2n ** 63n - 1n),
 } as const;

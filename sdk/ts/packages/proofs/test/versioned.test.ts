@@ -186,10 +186,10 @@ describe("versioned trie checks", () => {
     const w2 = expectOk(versioned.VersionKey.unsignedLong(2), "width 2");
     expect(toHex(expectOk(w2.encode(65535n), "encodes"))).toBe("ffff");
     expect(expectErr(w2.encode(65536n), "too big").kind).toBe("InvalidVersion");
-    const u8 = expectOk(versioned.VersionKey.unsigned(8), "unsigned 8");
-    expect(expectOk(u8.decode(bytes("ffffffffffffffff")), "decodes")).toBe(2n ** 64n - 1n);
+    expect(expectErr(versioned.VersionKey.long.decode(bytes("8000000000000000")), "top bit set").kind).toBe("InvalidVersion");
+    expect(expectOk(versioned.VersionKey.long.decode(bytes("7fffffffffffffff")), "decodes")).toBe(2n ** 63n - 1n);
+    expect(versioned.VersionKey.unsignedLong(0).ok).toBe(false);
     expect(versioned.VersionKey.unsignedLong(9).ok).toBe(false);
-    expect(versioned.VersionKey.unsigned(1025).ok).toBe(false);
   });
 });
 
