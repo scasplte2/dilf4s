@@ -50,6 +50,9 @@ object VersionedTrieError {
   /** A value or snapshot chunk over its limit (docs/specs/versioned-trie.md §7), in canonical CBOR bytes. */
   final case class TooLarge(what: String, size: Long, max: Long) extends VersionedTrieError
 
+  /** A value nested deeper than every wire format can carry (docs/specs/versioned-trie.md §4). */
+  final case class TooDeep(what: String, depth: Int, max: Int) extends VersionedTrieError
+
   final case class Store(error: StoreError) extends VersionedTrieError
   final case class Trie(error: TrieError) extends VersionedTrieError
 }

@@ -248,6 +248,56 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  private def nested(depth: Int): CanonicalValue =
+    (1 to depth).foldLeft(int(0))((v, _) => get(CanonicalValue.array(Vector(v))))
+
+  test("the deepest accepted value round-trips through snapshot chunks and deltas; one level deeper is refused at commit") {
+    val deepest = nested(VersionedTrie.MaxValueDepth)
+    ok(attempt { implicit h =>
+      for {
+        a       <- fresh
+        head    <- a._2.commit(None, 1L, Batch.put(key("deep"), deepest))
+        chunks  <- a._2.snapshot(1).compile.toList
+        delta   <- a._2.delta(1L)
+        tooDeep <- h.attempt(a._2.commit(Some(1L), 2L, Batch.put(key("deeper"), nested(VersionedTrie.MaxValueDepth + 1))))
+        preview <- h.attempt(a._2.preview(2L, Batch.put(key("deeper"), nested(VersionedTrie.MaxValueDepth + 1))))
+        b       <- fresh
+        copied <- chunks.traverse(c =>
+          IO.fromEither(
+            VersionedTrieWire
+              .encodeChunk(c)
+              .flatMap(VersionedTrieWire.decodeChunk[Long, H])
+              .leftMap(e => new IllegalStateException(e.toString))
+          )
+        )
+        _     <- b._2.restoreFrom(head, Stream.emits(copied))
+        value <- b._2.get(key("deep"))
+      } yield (copied == chunks, delta, tooDeep, preview, value)
+    }) {
+      case (sameChunks, delta, tooDeep, preview, value) =>
+        val refused = Left(VersionedTrieError.TooDeep("the value of deeper", VersionedTrie.MaxValueDepth + 1, VersionedTrie.MaxValueDepth))
+        val overWrapped =
+          VersionedTrieWire.encodeChunk[Long, H](SnapshotChunk.State(Vector(key("x") -> nested(VersionedTrie.MaxValueDepth + 1))))
+        expect
+          .same(253, VersionedTrie.MaxValueDepth)
+          .and(expect(overWrapped.isLeft, "one level deeper no longer fits a chunk, so 253 is exactly the limit"))
+          .and(expect(sameChunks, "every chunk encodes and decodes"))
+          .and(
+            expect.same(
+              Right(delta),
+              VersionedTrieWire
+                .encodeDelta(delta)
+                .map(xyz.kd5ujc.core.canonical.Cbor.encode)
+                .flatMap(b => xyz.kd5ujc.core.canonical.Cbor.decode(b).leftMap(e => VersionedTrieError.Malformed(e.toString)))
+                .flatMap(VersionedTrieWire.decodeDelta[Long, H])
+            )
+          )
+          .and(expect.same(Some(deepest), value))
+          .and(expect.same(refused, tooDeep))
+          .and(expect.same(refused, preview))
+    }
+  }
+
   test("values over 1 MiB are refused at commit; large values are chunked within the byte limit") {
     val big = (i: Int) => CanonicalValue.bytes(ByteVector.fill(VersionedTrie.MaxValueBytes - 16L)(i.toByte))
     ok(attempt { implicit h =>

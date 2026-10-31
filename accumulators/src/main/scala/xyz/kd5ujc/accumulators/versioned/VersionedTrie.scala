@@ -33,10 +33,22 @@ object VersionedTrie {
   /** The largest snapshot chunk, as canonical CBOR: refused before it is decoded. */
   val MaxChunkBytes: Long = 1L << 22
 
-  def checkValue(key: StateKey, v: CanonicalValue): Either[VersionedTrieError, Unit] = {
-    val size = Cbor.encode(v).size
-    Either.cond(size <= MaxValueBytes, (), VersionedTrieError.TooLarge(s"the value of ${key.value}", size, MaxValueBytes))
-  }
+  /**
+   * The deepest any wire record wraps a value: a delta's `{"upserts": [{"k", "v"}]}` and a snapshot chunk's
+   * `{"state": [{"k", "v"}]}` each add a map, an array and a map. Proofs and stored records carry no nested values.
+   */
+  val ValueWrapperDepth: Int = 3
+
+  /** The deepest value a key may hold, so that every record carrying it stays within `CanonicalValue.MaxDepth`. */
+  val MaxValueDepth: Int = CanonicalValue.MaxDepth - ValueWrapperDepth
+
+  /** A value every wire format can carry: at most `MaxValueDepth` deep and `MaxValueBytes` long. */
+  def checkValue(key: StateKey, v: CanonicalValue): Either[VersionedTrieError, Unit] =
+    if (v.depth > MaxValueDepth) VersionedTrieError.TooDeep(s"the value of ${key.value}", v.depth, MaxValueDepth).asLeft
+    else {
+      val size = Cbor.encode(v).size
+      Either.cond(size <= MaxValueBytes, (), VersionedTrieError.TooLarge(s"the value of ${key.value}", size, MaxValueBytes))
+    }
 
   val VersionSlot: ByteVector = ByteVector(0x00)
   val StateSlot: ByteVector = ByteVector(0x01)

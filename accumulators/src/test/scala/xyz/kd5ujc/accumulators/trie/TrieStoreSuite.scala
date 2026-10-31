@@ -220,6 +220,36 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  implicit private val showRestoreCase: cats.Show[(List[Ops], Ops)] = cats.Show.fromToString
+
+  test("a commit chained on an unwritten restore reads the restored nodes: the same records as restore, write, commit") {
+    forall(Gen.zip(history, batch)) {
+      case (h, next) =>
+        val loaded = model(h).last
+        ok { (rs, rt) =>
+          given Raise[IO, StoreError] = rs
+          given Raise[IO, TrieError] = rt
+          val at = Version.unsafe(5L)
+          for {
+            a       <- RawStore.inMemory[IO]
+            sa      <- TrieStore.make[IO, Sha256](a, "trie", mode)
+            _       <- sa.stageRestore(loaded, at).flatMap(sa.write) >> sa.commit(at, next)
+            written <- a.scan(ByteRange.all).compile.toList
+            b       <- RawStore.inMemory[IO]
+            sb      <- TrieStore.make[IO, Sha256](b, "trie", mode)
+            draft   <- sb.stageRestore(loaded, at).flatMap(sb.stageOn(_, next))
+            _       <- sb.write(draft)
+            chained <- b.scan(ByteRange.all).compile.toList
+            _       <- sb.rollback(at)
+            back    <- sb.root(at)
+          } yield
+            expect(written == chained, "the same nodes, counts, roots and state")
+              .and(expect.same(loaded.update(next).toOption.map(_.root), Some(draft.root)))
+              .and(expect.same(loaded.root, back))
+        }
+    }
+  }
+
   test("reading a pruned or future version is a typed error") {
     run { (rs, rt) =>
       given Raise[IO, StoreError] = rs

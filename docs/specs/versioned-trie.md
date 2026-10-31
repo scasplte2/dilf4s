@@ -72,7 +72,10 @@ batch:
 
 1. A null value deletes its key, as a null map value is absent (`canonical-encoding.md` §1). A null value could not
    be proven present anyway: in `trie_verify`, a null claims absence. A value is at most 1 MiB (1048576 bytes) of
-   canonical CBOR, so that every entry fits one snapshot chunk (§7); a larger one is refused as too large.
+   canonical CBOR, so that every entry fits one snapshot chunk (§7), and at most 253 levels deep (a scalar is 0). The
+   records that carry values, a delta's upserts and a snapshot's state chunks, wrap each in a map, an array and a map,
+   and every record stays within the canonical depth limit of 256 (`canonical-encoding.md`). A larger or deeper value is
+   refused at commit, so a store can always serve every delta and snapshot of what it accepted.
 2. **Recommit.** If the next version is the head's and the expected version is the head's parent, the commit is a
    retry: it succeeds without writing if the batch, applied to the parent's state, gives the head's state root, and is
    refused as a rewrite otherwise. Only the head can be recommitted.
@@ -152,6 +155,8 @@ versioned-trie-proof = {
 
 state-key = text .regexp "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*"
 
+; A value is at most 253 levels deep, so that this record inside a delta or a snapshot chunk (a map, an array and a
+; map around it) stays within the canonical depth limit of 256.
 versioned-trie-upsert = {
   "k": state-key,
   "v": any,
@@ -167,7 +172,8 @@ versioned-trie-delta = {
 ; A snapshot is a stream of chunks, each one canonical CBOR record of at most 4194304 bytes: one head chunk, then state
 ; chunks whose keys strictly increase across all of them, then history chunks whose versions strictly increase across
 ; all of them and end at the head version, with the head's state root. Values are at most 1048576 bytes of canonical
-; CBOR and never null. A receiver checks each chunk as it arrives, and the roots once the history reaches the head.
+; CBOR, at most 253 levels deep, and never null. A receiver checks each chunk as it arrives, and the roots once the
+; history reaches the head.
 versioned-trie-snapshot-chunk = versioned-trie-snapshot-head / versioned-trie-snapshot-state / versioned-trie-snapshot-history
 
 versioned-trie-snapshot-head = { "head": versioned-trie-head }
@@ -219,8 +225,8 @@ Transport is out of scope; these are the data and the checks.
 - **Checking a snapshot.** A receiver checks it against a head it **already trusts**, never against the snapshot's
   own claim, chunk by chunk as it arrives, and refuses it at the first chunk that breaks a rule:
   1. the first chunk is the head, and it is the trusted head; no other head chunk follows;
-  2. state chunks come next; their keys strictly increase across all of them (so none repeats), and no value is null
-     or over 1 MiB;
+  2. state chunks come next; their keys strictly increase across all of them (so none repeats), and no value is null,
+     over 1 MiB or over 253 levels deep;
   3. history chunks come last; their versions strictly increase across all of them, none is after the trusted
      version, and the trusted version, when it comes, holds the trusted state root and ends the snapshot;
   4. every state or history chunk holds 1 to 1024 items.
@@ -327,7 +333,7 @@ part of this library.
 | Replica snapshot checked against its own roots | Checked against a head the caller already trusts | A self-consistent forgery passed metakit's check |
 | Verify-gated hydration installs a snapshot into the live state | Restore writes a snapshot checked against a trusted head into an empty store, which is then the store pruned through that head | Persistent, atomic and checked against a trusted head; nothing before the head is fabricated |
 | Snapshot contents checked once, whole | Checked chunk by chunk as they arrive, with ordering and size limits; roots checked at the end | A malformed, reordered or foreign snapshot is refused before it is all received |
-| Entry values unbounded | A value is at most 1 MiB of canonical CBOR | Every entry fits one bounded snapshot chunk |
+| Entry values unbounded | A value is at most 1 MiB of canonical CBOR and 253 levels deep | Every entry fits one bounded snapshot chunk, and every delta and chunk stays within the canonical depth limit |
 | The snapshot is served from one atomic cell | A snapshot is read in pieces and refused with a version conflict if a commit lands meanwhile | The store holds no in-memory copy; refusing is what keeps a snapshot from being torn |
 | Historical key proofs not offered | A key at any retained version, through the history trie | Both tries are persistent |
 | Reserved namespaces `fiber/`, `registry/`, `oracle/`, `meta/` | None | Applications own their namespaces |

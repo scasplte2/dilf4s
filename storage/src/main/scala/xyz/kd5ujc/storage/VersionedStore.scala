@@ -292,14 +292,16 @@ object VersionedStore {
         if (records._1.isDefined || records._2.isDefined) latest.flatMap(now => fail[Staged](StoreError.VersionConflict(0L, now.value)))
         else if (at.value < 1L) fail[Staged](StoreError.UnknownVersion(at.value, 0L))
         else
-          entries.traverse { case (k, v) => liftE(V.encode(v)).map(b => RawBatch.put(dataKey(K.encode(k)), b)) }.map { puts =>
+          entries.traverse { case (k, v) => liftE(V.encode(v)).map(K.encode(k) -> _) }.map { encoded =>
+            // the loaded values are the overlay: a stage built on this one reads them, not the still-empty backend
             Staged(
               guardsOf(records),
-              puts.combineAll ++ RawBatch.put(latestKey, ver(at.value)) ++ RawBatch.put(floorKey, ver(at.value)),
+              encoded.foldMap { case (ek, b) => RawBatch.put(dataKey(ek), b) } ++ RawBatch.put(latestKey, ver(at.value)) ++
+              RawBatch.put(floorKey, ver(at.value)),
               at,
               0L,
               at.value,
-              Map.empty
+              encoded.map { case (ek, b) => ek -> Option(b) }.toMap
             )
           }
       }
