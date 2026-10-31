@@ -189,6 +189,27 @@ object VersionedTrieVectors {
         as0J   <- proofJson("as-of-0-none", "asOf", Some(0L), as0, Json.obj("answer" -> answer(None)))
         hp     <- store.proveHead
         hpJ    <- proofJson("head", "head", None, hp, Json.obj())
+        vs     <- store.proveVersions(2L, Some(300L))
+        vsJ <- proofJson(
+          "versions-2-until-300",
+          "versions",
+          Some(2L),
+          vs,
+          Json.obj(
+            "until" -> 300L.asJson,
+            "versions" -> List(2L -> heads(1), 255L -> heads(2), 256L -> heads(3)).map {
+              case (v, hd) => answer(Some(v -> hd.stateRoot))
+            }.asJson
+          )
+        )
+        vt <- store.proveVersions(256L, None)
+        vtJ <- proofJson(
+          "versions-from-256",
+          "versions",
+          Some(256L),
+          vt,
+          Json.obj("versions" -> List(256L -> heads(3), 300L -> heads(4)).map { case (v, hd) => answer(Some(v -> hd.stateRoot)) }.asJson)
+        )
         kat    <- headJson(heads.last)
         chunks <- store.snapshot(2).compile.toList
         wire   <- orDie(chunks.traverse(VersionedTrieWire.encodeChunk[Long, H]))
@@ -202,7 +223,7 @@ object VersionedTrieVectors {
           "head"           -> kat,
           "commits"        -> commitJson.asJson,
           "root"           -> hex(root.bytes),
-          "proofs"         -> List(currentJ, nsJ, pastJ, v255J, v3J, as299J, as0J, hpJ).asJson,
+          "proofs"         -> List(currentJ, nsJ, pastJ, v255J, v3J, as299J, as0J, hpJ, vsJ, vtJ).asJson,
           "snapshot"       -> Json.obj("chunkEntries" -> 2.asJson, "chunks" -> wire.map(hex).asJson),
           "stateKeys"      -> stateKeyCases.map(stateKeyCase).asJson
         )
@@ -308,10 +329,28 @@ object VersionedTrieVectorsSuite extends SimpleIOSuite {
               Right(answer.flatten),
               at.toRight(VersionedTrieError.Malformed("at")).flatMap(VersionedTrieVerifier.verifyAsOf(root, proof, _))
             )
+          case "versions" =>
+            val versions = c.downField("versions").as[List[Json]].getOrElse(Nil).map { v =>
+              get(v.hcursor.get[Long]("version")) -> get(xyz.kd5ujc.core.hash.Digest.fromHex[H](get(v.hcursor.get[String]("stateRoot"))))
+            }
+            val until = c.get[Long]("until").toOption
+            expect
+              .same(
+                Right(true),
+                at.toRight(VersionedTrieError.Malformed("at"))
+                  .flatMap(VersionedTrieVerifier.verifyVersions(root, proof, _, until, versions))
+              )
+              .and(
+                expect.same(
+                  Right(false),
+                  at.toRight(VersionedTrieError.Malformed("at"))
+                    .flatMap(VersionedTrieVerifier.verifyVersions(root, proof, _, until, versions.drop(1)))
+                )
+              )
           case _ =>
             expect(VersionedTrieVerifier.verifyHead(root, proof).isRight, "the head proof verifies")
         }
-      }.and(expect.same(8, proofs.size))
+      }.and(expect.same(10, proofs.size))
     }
   }
 }

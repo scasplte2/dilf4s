@@ -74,6 +74,48 @@ impl c::Model for VrfProof {
     }
 }
 
+/// `vrf-rejection` (`shared/schemas/vrf-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VrfRejection {
+    /// The `suite` entry.
+    pub suite: String,
+    /// The `name` entry.
+    pub name: String,
+    /// The `verifyingKey` entry.
+    pub verifying_key: Hex,
+    /// The `alpha` entry.
+    pub alpha: Hex,
+    /// The `pi` entry.
+    pub pi: Hex,
+    /// The `result` entry.
+    pub result: String,
+}
+
+impl c::Model for VrfRejection {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("suite", &c::Text, &self.suite, inner)?,
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("verifyingKey", &HEX, &self.verifying_key, inner)?,
+            c::field("alpha", &HEX, &self.alpha, inner)?,
+            c::field("pi", &HEX, &self.pi, inner)?,
+            c::field("result", &c::Text, &self.result, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["suite", "name", "verifyingKey", "alpha", "pi", "result"])?;
+        let f0 = fields.required("suite", &c::Text)?;
+        let f1 = fields.required("name", &c::Text)?;
+        let f2 = fields.required("verifyingKey", &HEX)?;
+        let f3 = fields.required("alpha", &HEX)?;
+        let f4 = fields.required("pi", &HEX)?;
+        let f5 = fields.required("result", &c::Text)?;
+        Ok(Self { suite: f0, name: f1, verifying_key: f2, alpha: f3, pi: f4, result: f5 })
+    }
+}
+
 /// `vrf-suite` (`shared/schemas/vrf-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VrfSuite {
@@ -105,6 +147,8 @@ impl c::Model for VrfSuite {
 pub struct VrfVectors {
     /// The `suites` entry.
     pub suites: Vec<VrfSuite>,
+    /// The `rejections` entry.
+    pub rejections: Vec<VrfRejection>,
 }
 
 impl c::Model for VrfVectors {
@@ -114,14 +158,16 @@ impl c::Model for VrfVectors {
             c::field("spec", &c::LiteralText("docs/specs/vrf.md"), &(), inner)?,
             c::field("version", &c::LiteralInt(1), &(), inner)?,
             c::field("suites", &c::VecOf { element: c::ModelOf::<VrfSuite>::NEW, min: 0, max: None }, &self.suites, inner)?,
+            c::field("rejections", &c::VecOf { element: c::ModelOf::<VrfRejection>::NEW, min: 0, max: None }, &self.rejections, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "suites"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "suites", "rejections"])?;
         fields.required("spec", &c::LiteralText("docs/specs/vrf.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         let f2 = fields.required("suites", &c::VecOf { element: c::ModelOf::<VrfSuite>::NEW, min: 0, max: None })?;
-        Ok(Self { suites: f2 })
+        let f3 = fields.required("rejections", &c::VecOf { element: c::ModelOf::<VrfRejection>::NEW, min: 0, max: None })?;
+        Ok(Self { suites: f2, rejections: f3 })
     }
 }

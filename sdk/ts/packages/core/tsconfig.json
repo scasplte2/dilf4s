@@ -3,6 +3,7 @@
   "compilerOptions": {
     "rootDir": ".",
     "types": ["node"],
+    "customConditions": ["source"],
     "noEmit": true
   },
   "include": ["src", "test"]

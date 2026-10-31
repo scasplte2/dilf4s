@@ -53,6 +53,10 @@ pub struct MerkleVectorTree {
     pub inclusion: Vec<Hex>,
     /// The `consistency` entry.
     pub consistency: Vec<Hex>,
+    /// The `rfc6962Inclusion` entry.
+    pub rfc6962_inclusion: Vec<Hex>,
+    /// The `rfc6962Consistency` entry.
+    pub rfc6962_consistency: Vec<Hex>,
 }
 
 impl c::Model for MerkleVectorTree {
@@ -64,17 +68,21 @@ impl c::Model for MerkleVectorTree {
             c::field("rfc6962Root", &HEX, &self.rfc6962_root, inner)?,
             c::field("inclusion", &c::VecOf { element: HEX, min: 0, max: None }, &self.inclusion, inner)?,
             c::field("consistency", &c::VecOf { element: HEX, min: 0, max: None }, &self.consistency, inner)?,
+            c::field("rfc6962Inclusion", &c::VecOf { element: HEX, min: 0, max: None }, &self.rfc6962_inclusion, inner)?,
+            c::field("rfc6962Consistency", &c::VecOf { element: HEX, min: 0, max: None }, &self.rfc6962_consistency, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["size", "root", "rfc6962Root", "inclusion", "consistency"])?;
+        let fields = c::Fields::of(value, &["size", "root", "rfc6962Root", "inclusion", "consistency", "rfc6962Inclusion", "rfc6962Consistency"])?;
         let f0 = fields.required("size", &c::UINT)?;
         let f1 = fields.required("root", &HEX)?;
         let f2 = fields.required("rfc6962Root", &HEX)?;
         let f3 = fields.required("inclusion", &c::VecOf { element: HEX, min: 0, max: None })?;
         let f4 = fields.required("consistency", &c::VecOf { element: HEX, min: 0, max: None })?;
-        Ok(Self { size: f0, root: f1, rfc6962_root: f2, inclusion: f3, consistency: f4 })
+        let f5 = fields.required("rfc6962Inclusion", &c::VecOf { element: HEX, min: 0, max: None })?;
+        let f6 = fields.required("rfc6962Consistency", &c::VecOf { element: HEX, min: 0, max: None })?;
+        Ok(Self { size: f0, root: f1, rfc6962_root: f2, inclusion: f3, consistency: f4, rfc6962_inclusion: f5, rfc6962_consistency: f6 })
     }
 }
 

@@ -74,6 +74,21 @@ object CryptoVectors {
     val bip32Path = "m/44'/0'/0'/0/7"
     val bip32 = new Bip32Secp256k1(secp)
     val bip32Key = get(ChildIndex.path(bip32Path).flatMap(bip32.derive(Secret(hdSeed.bytes), _)))
+    // CKDpub from the account key reproduces the soft tail of bip32Path
+    val bip32AccountPath = "m/44'/0'/0'"
+    val bip32Account = get(ChildIndex.path(bip32AccountPath).flatMap(bip32.derive(Secret(hdSeed.bytes), _)))
+    val bip32AccountVk = secp.ecdsaPublicKeyOf.verifyingKey(bip32Account.key)
+    val (bip32PublicVk, bip32PublicCc) = get(
+      ChildIndex
+        .path("m/0/7")
+        .flatMap(_.foldM((bip32AccountVk, bip32Account.chainCode)) {
+          case ((vk, cc), i) => bip32.publicChild(vk, cc, i)
+        })
+    )
+    require(
+      bip32PublicVk == secp.ecdsaPublicKeyOf.verifyingKey(bip32Key.key) && bip32PublicCc == bip32Key.chainCode,
+      "CKDpub matches CKDpriv"
+    )
 
     val icarusRoot = get(Ed25519Bip32.icarus(Secret(seeds.head.take(16))))
     val accountPath = "m/1852'/1815'/0'"
@@ -106,7 +121,15 @@ object CryptoVectors {
         "path"         -> bip32Path.asJson,
         "master"       -> extended(get(bip32.master(hdSeed))),
         "child"        -> extended(bip32Key),
-        "verifyingKey" -> secp.ecdsaPublicKeyOf.verifyingKey(bip32Key.key).bytes.toHex.asJson
+        "verifyingKey" -> secp.ecdsaPublicKeyOf.verifyingKey(bip32Key.key).bytes.toHex.asJson,
+        "publicDerivation" -> Json.obj(
+          "parentPath"         -> bip32AccountPath.asJson,
+          "parentVerifyingKey" -> bip32AccountVk.bytes.toHex.asJson,
+          "parentChainCode"    -> bip32Account.chainCode.toHex.asJson,
+          "path"               -> "m/0/7".asJson,
+          "verifyingKey"       -> bip32PublicVk.bytes.toHex.asJson,
+          "chainCode"          -> bip32PublicCc.toHex.asJson
+        )
       ),
       "ed25519Bip32" -> Json.obj(
         "entropy"             -> seeds.head.take(16).toHex.asJson,
@@ -121,7 +144,9 @@ object CryptoVectors {
         "signatures" -> messages
           .map(m => Json.obj("message" -> m.toHex.asJson, "signature" -> icarusSign(address.key, m).bytes.toHex.asJson))
           .asJson
-      )
+      ),
+      "blsPop"       -> SigningRejections.blsPop(bls).asJson,
+      "verification" -> SigningRejections.signing(secp, bls).asJson
     )
   }
 

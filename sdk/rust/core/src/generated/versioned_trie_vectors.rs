@@ -219,6 +219,8 @@ pub enum VtKind {
     AsOf,
     /// The text `head`.
     Head,
+    /// The text `versions`.
+    Versions,
 }
 
 impl c::Model for VtKind {
@@ -229,16 +231,18 @@ impl c::Model for VtKind {
             Self::Version => Ok(c::Value::text("version")),
             Self::AsOf => Ok(c::Value::text("asOf")),
             Self::Head => Ok(c::Value::text("head")),
+            Self::Versions => Ok(c::Value::text("versions")),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["state", "historical", "version", "asOf", "head"])? {
+        match c::select_alternative(value, &[], &["state", "historical", "version", "asOf", "head", "versions"])? {
             c::Alternative::Text(0) => Ok(Self::State),
             c::Alternative::Text(1) => Ok(Self::Historical),
             c::Alternative::Text(2) => Ok(Self::Version),
             c::Alternative::Text(3) => Ok(Self::AsOf),
             c::Alternative::Text(4) => Ok(Self::Head),
+            c::Alternative::Text(5) => Ok(Self::Versions),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -279,6 +283,8 @@ pub struct VtProof {
     pub kind: VtKind,
     /// The `at` entry.
     pub at: Option<u64>,
+    /// The `until` entry.
+    pub until: Option<u64>,
     /// The `cbor` entry.
     pub cbor: Hex,
     /// The `claims` entry.
@@ -287,6 +293,8 @@ pub struct VtProof {
     pub listings: Option<Vec<VtListing>>,
     /// The `answer` entry.
     pub answer: Option<VtVersion>,
+    /// The `versions` entry.
+    pub versions: Option<Vec<VtVersion>>,
 }
 
 impl c::Model for VtProof {
@@ -296,23 +304,27 @@ impl c::Model for VtProof {
             c::field("name", &c::Text, &self.name, inner)?,
             c::field("kind", &c::ModelOf::<VtKind>::NEW, &self.kind, inner)?,
             c::optional_field("at", &c::UINT, self.at.as_ref(), inner)?,
+            c::optional_field("until", &c::UINT, self.until.as_ref(), inner)?,
             c::field("cbor", &HEX, &self.cbor, inner)?,
             c::optional_field("claims", &c::VecOf { element: c::ModelOf::<VtClaim>::NEW, min: 0, max: None }, self.claims.as_ref(), inner)?,
             c::optional_field("listings", &c::VecOf { element: c::ModelOf::<VtListing>::NEW, min: 0, max: None }, self.listings.as_ref(), inner)?,
             c::optional_field("answer", &c::ModelOf::<VtVersion>::NEW, self.answer.as_ref(), inner)?,
+            c::optional_field("versions", &c::VecOf { element: c::ModelOf::<VtVersion>::NEW, min: 0, max: None }, self.versions.as_ref(), inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["name", "kind", "at", "cbor", "claims", "listings", "answer"])?;
+        let fields = c::Fields::of(value, &["name", "kind", "at", "until", "cbor", "claims", "listings", "answer", "versions"])?;
         let f0 = fields.required("name", &c::Text)?;
         let f1 = fields.required("kind", &c::ModelOf::<VtKind>::NEW)?;
         let f2 = fields.optional("at", &c::UINT)?;
-        let f3 = fields.required("cbor", &HEX)?;
-        let f4 = fields.optional("claims", &c::VecOf { element: c::ModelOf::<VtClaim>::NEW, min: 0, max: None })?;
-        let f5 = fields.optional("listings", &c::VecOf { element: c::ModelOf::<VtListing>::NEW, min: 0, max: None })?;
-        let f6 = fields.optional("answer", &c::ModelOf::<VtVersion>::NEW)?;
-        Ok(Self { name: f0, kind: f1, at: f2, cbor: f3, claims: f4, listings: f5, answer: f6 })
+        let f3 = fields.optional("until", &c::UINT)?;
+        let f4 = fields.required("cbor", &HEX)?;
+        let f5 = fields.optional("claims", &c::VecOf { element: c::ModelOf::<VtClaim>::NEW, min: 0, max: None })?;
+        let f6 = fields.optional("listings", &c::VecOf { element: c::ModelOf::<VtListing>::NEW, min: 0, max: None })?;
+        let f7 = fields.optional("answer", &c::ModelOf::<VtVersion>::NEW)?;
+        let f8 = fields.optional("versions", &c::VecOf { element: c::ModelOf::<VtVersion>::NEW, min: 0, max: None })?;
+        Ok(Self { name: f0, kind: f1, at: f2, until: f3, cbor: f4, claims: f5, listings: f6, answer: f7, versions: f8 })
     }
 }
 

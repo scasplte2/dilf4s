@@ -1,0 +1,41 @@
+[package]
+name = "dilf4s-signing"
+description = "dilf4s signatures, key derivation, VRFs and key-evolving signatures"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["sign"]
+# Signing, proving and key derivation. Verification never needs it, so a verifier-only build (an SP1 guest) leaves
+# it off.
+sign = ["dep:hkdf", "dep:hmac", "dep:pbkdf2", "dep:unicode-normalization", "dep:rand_core"]
+
+[dependencies]
+dilf4s-core = { path = "../core" }
+bls12_381 = { version = "0.9", default-features = false, features = ["groups", "pairings", "alloc", "experimental", "zeroize"] }
+curve25519-dalek = { version = "5", default-features = false, features = ["alloc", "zeroize", "digest"] }
+k256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa", "schnorr", "alloc"] }
+p256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa", "alloc"] }
+sha2.workspace = true
+# bls12_381 0.9 hashes to G2 through digest 0.10 traits, so its expand_message_xmd needs a SHA-256 of that generation
+sha2-digest010 = { package = "sha2", version = "0.10", default-features = false }
+blake2.workspace = true
+# GF(2^255 - 19) for the draft-03 VRF Elligator map: curve25519-dalek keeps its field arithmetic private
+num-bigint.workspace = true
+subtle = { version = "2.6", default-features = false }
+zeroize = { version = "1.9", default-features = false, features = ["alloc", "zeroize_derive"] }
+hkdf = { version = "0.13", default-features = false, optional = true }
+hmac = { version = "0.13", optional = true }
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"], optional = true }
+unicode-normalization = { version = "0.1", default-features = false, optional = true }
+rand_core = { version = "0.10", default-features = false, optional = true }
+
+[dev-dependencies]
+# An independent RFC 8032 implementation to cross-check signing and the strict/ZIP-215 difference
+ed25519-dalek = { version = "3", default-features = false, features = ["alloc"] }
+
+[lints]
+workspace = true

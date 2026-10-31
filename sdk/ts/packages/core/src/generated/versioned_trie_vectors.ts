@@ -204,15 +204,15 @@ export const VtHeadKat: c.Codec<VtHeadKat> = {
 };
 
 /** `vt-kind` (`shared/schemas/versioned-trie-vectors.cddl`). */
-export type VtKind = "state" | "historical" | "version" | "asOf" | "head";
+export type VtKind = "state" | "historical" | "version" | "asOf" | "head" | "versions";
 
 export const VtKind: c.Codec<VtKind> = {
   encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["asOf", "head", "historical", "state", "version"]);
+    if (typeof a === "string") return c.oneOfText(a, ["asOf", "head", "historical", "state", "version", "versions"]);
     return c.typeMismatch("no alternative of VtKind fits");
   },
   decode: (v) => {
-    const s = c.selectAlternative(v, [], ["state", "historical", "version", "asOf", "head"]);
+    const s = c.selectAlternative(v, [], ["state", "historical", "version", "asOf", "head", "versions"]);
     if (!s.ok) return s;
     switch (s.value) {
       case 0:
@@ -225,6 +225,8 @@ export const VtKind: c.Codec<VtKind> = {
         return c.ok<VtKind>("asOf");
       case 4:
         return c.ok<VtKind>("head");
+      case 5:
+        return c.ok<VtKind>("versions");
       default:
         return c.decodeFailure("unknown alternative");
     }
@@ -261,10 +263,12 @@ export interface VtProof {
   readonly name: string;
   readonly kind: VtKind;
   readonly at?: bigint;
+  readonly until?: bigint;
   readonly cbor: Hex;
   readonly claims?: readonly VtClaim[];
   readonly listings?: readonly VtListing[];
   readonly answer?: VtVersion;
+  readonly versions?: readonly VtVersion[];
 }
 
 export const VtProof: c.Codec<VtProof> = {
@@ -274,14 +278,16 @@ export const VtProof: c.Codec<VtProof> = {
         c.field("name", c.text, a.name, e),
         c.field("kind", c.defer(() => VtKind), a.kind, e),
         c.optionalField("at", c.uint, a.at, e),
+        c.optionalField("until", c.uint, a.until, e),
         c.field("cbor", c.defer(() => Hex), a.cbor, e),
         c.optionalField("claims", c.vector(c.defer(() => VtClaim), 0, null), a.claims, e),
         c.optionalField("listings", c.vector(c.defer(() => VtListing), 0, null), a.listings, e),
         c.optionalField("answer", c.defer(() => VtVersion), a.answer, e),
+        c.optionalField("versions", c.vector(c.defer(() => VtVersion), 0, null), a.versions, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["name", "kind", "at", "cbor", "claims", "listings", "answer"]);
+    const f = c.fields(v, ["name", "kind", "at", "until", "cbor", "claims", "listings", "answer", "versions"]);
     if (!f.ok) return f;
     const r0 = f.value.required("name", c.text);
     if (!r0.ok) return r0;
@@ -289,15 +295,19 @@ export const VtProof: c.Codec<VtProof> = {
     if (!r1.ok) return r1;
     const r2 = f.value.optional("at", c.uint);
     if (!r2.ok) return r2;
-    const r3 = f.value.required("cbor", c.defer(() => Hex));
+    const r3 = f.value.optional("until", c.uint);
     if (!r3.ok) return r3;
-    const r4 = f.value.optional("claims", c.vector(c.defer(() => VtClaim), 0, null));
+    const r4 = f.value.required("cbor", c.defer(() => Hex));
     if (!r4.ok) return r4;
-    const r5 = f.value.optional("listings", c.vector(c.defer(() => VtListing), 0, null));
+    const r5 = f.value.optional("claims", c.vector(c.defer(() => VtClaim), 0, null));
     if (!r5.ok) return r5;
-    const r6 = f.value.optional("answer", c.defer(() => VtVersion));
+    const r6 = f.value.optional("listings", c.vector(c.defer(() => VtListing), 0, null));
     if (!r6.ok) return r6;
-    return c.ok({ name: r0.value, kind: r1.value, at: r2.value, cbor: r3.value, claims: r4.value, listings: r5.value, answer: r6.value });
+    const r7 = f.value.optional("answer", c.defer(() => VtVersion));
+    if (!r7.ok) return r7;
+    const r8 = f.value.optional("versions", c.vector(c.defer(() => VtVersion), 0, null));
+    if (!r8.ok) return r8;
+    return c.ok({ name: r0.value, kind: r1.value, at: r2.value, until: r3.value, cbor: r4.value, claims: r5.value, listings: r6.value, answer: r7.value, versions: r8.value });
   },
 };
 

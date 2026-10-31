@@ -222,10 +222,16 @@ object ProofOpsSuite extends IOSuite {
     val q = fx.hcursor.downField("proof")
     get(
       committedTrie(fx)
-        .prove(get(q.downField("keys").as[List[String]]).map(hex), get(q.downField("prefixes").as[List[String]]).map(hex))
+        .prove(
+          get(q.downField("keys").as[List[String]]).map(hex),
+          get(q.downField("prefixes").as[List[String]]).map(hex),
+          get(q.downField("ranges").as[List[Json]]).map(r => hex(str(r.hcursor.downField("from"))) -> rangeEnd(r))
+        )
         .flatMap(TrieProofs.encode(_))
     )
   }
+
+  private def rangeEnd(r: Json): Option[ByteVector] = r.hcursor.downField("until").as[String].toOption.map(hex)
 
   private def values(fx: Json): Map[String, ByteVector] =
     get(fx.hcursor.downField("entries").as[List[Json]])
@@ -234,7 +240,7 @@ object ProofOpsSuite extends IOSuite {
 
   test("trie_verify: every lookup of trie_v1 (present, absent, not covered)") { f =>
     IO {
-      expect.same(4, fixtures(f).size) |+| fixtures(f).foldMap { fx =>
+      expect.same(7, fixtures(f).size) |+| fixtures(f).foldMap { fx =>
         val c = fx.hcursor
         val (md, root, proof) = (
           mode(get(c.downField("mode").as[Json])),
@@ -287,6 +293,30 @@ object ProofOpsSuite extends IOSuite {
                 "out of key order"
               )
             )
+        }
+      }
+    }
+  }
+
+  test("trie_range_verify: every range listing of trie_v1, complete or not covered, and a missing entry is caught") { f =>
+    IO {
+      fixtures(f).foldMap { fx =>
+        val c = fx.hcursor
+        val (md, root, proof) = (mode(get(c.downField("mode").as[Json])), rootOf(fx), proofOf(fx))
+        val vs = values(fx)
+        get(c.downField("proof").downField("rangeListings").as[List[Json]]).foldMap { l =>
+          val from = CBytes(hex(str(l.hcursor.downField("from"))))
+          val until = rangeEnd(l).fold[CanonicalValue](CNull)(CBytes(_))
+          val entries = (ks: List[String]) => a(ks.map(k => a(CBytes(hex(k)), CBytes(vs(k))))*)
+          val run = (ks: List[String]) => call(f.jlvm, Op.TrieRangeVerify, md, root, from, until, entries(ks), proof)
+          l.hcursor.downField("result").as[String].toOption match {
+            case Some(_) => expect(isCrypto(run(Nil)), s"${str(c.downField("name"))} ${l.noSpaces} is not covered")
+            case None =>
+              val listed = get(l.hcursor.downField("result").downField("entries").as[List[Json]]).map(e => str(e.hcursor.downField("key")))
+              expect
+                .same(Right(True), run(listed))
+                .and(expect(listed.isEmpty || run(listed.drop(1)) == Right(False), "an omitted entry"))
+          }
         }
       }
     }

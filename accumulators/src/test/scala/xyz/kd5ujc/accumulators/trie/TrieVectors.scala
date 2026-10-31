@@ -39,15 +39,19 @@ object TrieVectors {
   }
 
   private def fixture(
-    name:     String,
-    mode:     KeyMode,
-    entries:  List[(ByteVector, ByteVector)],
-    queries:  List[ByteVector],
-    prefixes: List[ByteVector],
-    probes:   List[ByteVector]
+    name:        String,
+    mode:        KeyMode,
+    entries:     List[(ByteVector, ByteVector)],
+    queries:     List[ByteVector],
+    prefixes:    List[ByteVector],
+    probes:      List[ByteVector],
+    ranges:      List[(ByteVector, Option[ByteVector])] = Nil,
+    rangeProbes: List[(ByteVector, Option[ByteVector])] = Nil
   ): Json = {
     val trie = orDie(Trie.fromEntries[Sha256](mode, entries.map { case (k, v) => k -> T.value(v) }))
-    val proof = orDie(trie.prove(queries, prefixes))
+    val proof = orDie(trie.prove(queries, prefixes, ranges))
+    def bounds(from: ByteVector, until: Option[ByteVector]): List[(String, Json)] =
+      ("from" -> from.toHex.asJson) :: until.map(u => "until" -> u.toHex.asJson).toList
     val verified = orDie(TrieProofs.verify(mode, trie.root, proof))
     Json.obj(
       "name" -> name.asJson,
@@ -62,6 +66,7 @@ object TrieVectors {
       "proof" -> Json.obj(
         "keys"     -> queries.map(_.toHex).asJson,
         "prefixes" -> prefixes.map(_.toHex).asJson,
+        "ranges"   -> ranges.map { case (f, u) => Json.fromFields(bounds(f, u)) }.asJson,
         "cbor"     -> orDie(TrieProofs.encode(proof)).pipe(Cbor.encode).toHex.asJson,
         "lookups"  -> probes.map(k => Json.obj("key" -> k.toHex.asJson, "result" -> lookupJson(verified.lookup(k.bits)))).asJson,
         "prefixListings" -> prefixes.map { p =>
@@ -72,6 +77,15 @@ object TrieVectors {
               .map(_.map { case (b, v) => Json.obj("key" -> b.bytes.toHex.asJson, "valueHash" -> v.hex.asJson) })
               .asJson
           )
+        }.asJson,
+        "rangeListings" -> (ranges ++ rangeProbes).map {
+          case (f, u) =>
+            val result = verified
+              .range(f.bits, u.map(_.bits))
+              .fold("notCovered".asJson)(l =>
+                Json.obj("entries" -> l.map { case (b, v) => Json.obj("key" -> b.bytes.toHex.asJson, "valueHash" -> v.hex.asJson) }.asJson)
+              )
+            Json.fromFields(bounds(f, u) :+ ("result" -> result))
         }.asJson
       )
     )
@@ -109,7 +123,38 @@ object TrieVectors {
           Nil,
           List(hex"6162", hex"6163", hex"", hex"61", hex"ff")
         ),
-        fixture("variable-3-prefix", variable3, variableEntries, Nil, List(hex"61"), List(hex"61", hex"6100", hex"62"))
+        fixture("variable-3-prefix", variable3, variableEntries, Nil, List(hex"61"), List(hex"61", hex"6100", hex"62")),
+        // Range proofs. Bounds are bit strings that need not be keys; a proper prefix sorts before its extensions.
+        fixture(
+          "fixed-2-range",
+          fixed2,
+          fixedEntries,
+          Nil,
+          Nil,
+          List(hex"0001", hex"7f80", hex"8000"),
+          ranges = List(hex"0001" -> Some(hex"7f81"), hex"ff00" -> None, hex"80" -> Some(hex"80")),
+          rangeProbes = List(hex"0001" -> Some(hex"7f80"), hex"00" -> None, hex"" -> Some(hex"0000"))
+        ),
+        fixture(
+          "variable-3-range",
+          variable3,
+          variableEntries,
+          Nil,
+          Nil,
+          List(hex"61", hex"6162", hex"ff"),
+          ranges = List(hex"61" -> Some(hex"6163"), hex"" -> Some(hex"00")),
+          rangeProbes = List(hex"6162" -> Some(hex"616263"), hex"61" -> None, hex"62" -> Some(hex"ff"))
+        ),
+        fixture(
+          "variable-3-everything",
+          variable3,
+          variableEntries,
+          Nil,
+          Nil,
+          List(hex"", hex"616263", hex"6164"),
+          ranges = List(hex"" -> None),
+          rangeProbes = List(hex"6100" -> Some(hex"62"), hex"ff" -> None, hex"ff00" -> None)
+        )
       ).asJson
     )
   }

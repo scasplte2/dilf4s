@@ -499,7 +499,15 @@
       "key" : "cc6c753bf4524b21bc364c2b10deea1c92421f008dd87c75f89b933ec7895c73",
       "chainCode" : "5b8062c27cab09a5257af2f95c1996969bc1b39de36f35ce9c67e987fca02670"
     },
-    "verifyingKey" : "038e398492fdfcefef23bc650ca0e0358aaa8c2bd398a9433f042ce5af39923152"
+    "verifyingKey" : "038e398492fdfcefef23bc650ca0e0358aaa8c2bd398a9433f042ce5af39923152",
+    "publicDerivation" : {
+      "parentPath" : "m/44'/0'/0'",
+      "parentVerifyingKey" : "03371a60bf759652c61ba2f2a381c2ad7cbde457490213a5cf1671c1625f053442",
+      "parentChainCode" : "d9f36b43a389074c955807a5d93d0db68fd4ce1abeef9c6d57554960505f3437",
+      "path" : "m/0/7",
+      "verifyingKey" : "038e398492fdfcefef23bc650ca0e0358aaa8c2bd398a9433f042ce5af39923152",
+      "chainCode" : "5b8062c27cab09a5257af2f95c1996969bc1b39de36f35ce9c67e987fca02670"
+    }
   },
   "ed25519Bip32" : {
     "entropy" : "000102030405060708090a0b0c0d0e0f",
@@ -534,5 +542,3648 @@
         "signature" : "afeb79831e512d7c35ab78b361062e2f3d8402ff06a4b0ada5431fbb8249c2b88bbf2e4acf4949eaa227c8a4bf924036ae2024f64cbddd8d4715955059d47903"
       }
     ]
-  }
+  },
+  "blsPop" : [
+    {
+      "signingKey" : "23360db7e337b0a32b264e06bc11c1b474d16f55665373de1ce93cf15ddb3456",
+      "verifyingKey" : "9112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
+      "proof" : "915993b4e43e717ec8079234490be46018bdc7d70e81de1bbec515844a3754cc0a387ddf825a2faa0984fa794a96b5a20da605161aa42c1d4028abeb3c52ffbf35d41bd26398e7110d0b6566e0b74b30b3431c4b821cc85a9d61ad5ffd3f9042"
+    },
+    {
+      "signingKey" : "40025ab15191eecb5857eb185cc9f3aa1bb236ae8fd9dfba7bb2b7167eb084b6",
+      "verifyingKey" : "81f1b9bf9f4e183ff10968b31d41973b2b0cf52b3e71a134f078c363bd4915426219d6355c7e952d0aeb084ff7e8dd58",
+      "proof" : "a25b659fb8cd31b7d13c64533135e37413db8af0f3054675ce18da8ef9f62cbf2fbca48b35308fcd2eed905cd0c5547c10529c93a62f9f8460cc3c352a095b05618a785d0feb0836974dc3ff535754502669c7c83681a22ff3ee4a4c7940f36a"
+    },
+    {
+      "signingKey" : "5d7f115144e1ea83c7af1f08acf5ce7e7de0573ee15dd8e89bc3c0884020debd",
+      "verifyingKey" : "853b7b7f9e0f25867ff25895dff0b3015578e01b16ac315f106d89d7d4c6a6ee356bea775be7d003c0dc7279b8b06aa7",
+      "proof" : "a61b1a950275f3f8dae7b2e611d42697a3c08aa622bed024d47421cf95dc3d4cf783acc62d28405c0e86405d0729477d02e7bdd1e9c2d6e3050c20fa5e9b1859bf2bc7ed9ef9e55f9aaa89f832f3a38f193ac1810d73cdfdeeb2f0f34511639a"
+    }
+  ],
+  "verification" : [
+    {
+      "scheme" : "Ed25519",
+      "name" : "valid",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "message" : "616263",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "valid",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "message" : "616263",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "wrong-message",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "message" : "616264",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "wrong-message",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "message" : "616264",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "s-plus-l",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "message" : "616263",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeaafae5c0a5431079b202d1b11880196ed057e3443dc5abfc9986967ee7213a417",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "s-plus-l",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "message" : "616263",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeaafae5c0a5431079b202d1b11880196ed057e3443dc5abfc9986967ee7213a417",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "r-not-a-point",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "message" : "616263",
+      "signature" : "0200000000000000000000000000000000000000000000000000000000000000c2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "r-not-a-point",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "message" : "616263",
+      "signature" : "0200000000000000000000000000000000000000000000000000000000000000c2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "key-not-a-point",
+      "verifyingKey" : "0200000000000000000000000000000000000000000000000000000000000000",
+      "message" : "616263",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "key-not-a-point",
+      "verifyingKey" : "0200000000000000000000000000000000000000000000000000000000000000",
+      "message" : "616263",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "short-key",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531",
+      "message" : "616263",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "short-key",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531",
+      "message" : "616263",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "short-signature",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "message" : "616263",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a4",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "short-signature",
+      "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "message" : "616263",
+      "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a4",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r0",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r0",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r1",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r1",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r2",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r2",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r3",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r3",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r4",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r4",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r5",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r5",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r6",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r6",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r7",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r7",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r8",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r8",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r9",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r9",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r10",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r10",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r11",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r11",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r12",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r12",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a0-r13",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a0-r13",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r0",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r0",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r1",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r1",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r2",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r2",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r3",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r3",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r4",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r4",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r5",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r5",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r6",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r6",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r7",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r7",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r8",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r8",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r9",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r9",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r10",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r10",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r11",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r11",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r12",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r12",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a1-r13",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a1-r13",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r0",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r0",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r1",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r1",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r2",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r2",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r3",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r3",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r4",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r4",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r5",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r5",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r6",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r6",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r7",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r7",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r8",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r8",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r9",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r9",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r10",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r10",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r11",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r11",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r12",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r12",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a2-r13",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a2-r13",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r0",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r0",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r1",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r1",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r2",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r2",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r3",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r3",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r4",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r4",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r5",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r5",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r6",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r6",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r7",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r7",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r8",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r8",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r9",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r9",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r10",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r10",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r11",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r11",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r12",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r12",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a3-r13",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a3-r13",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r0",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r0",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r1",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r1",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r2",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r2",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r3",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r3",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r4",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r4",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r5",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r5",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r6",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r6",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r7",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r7",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r8",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r8",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r9",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r9",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r10",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r10",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r11",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r11",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r12",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r12",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a4-r13",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a4-r13",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r0",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r0",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r1",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r1",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r2",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r2",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r3",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r3",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r4",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r4",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r5",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r5",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r6",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r6",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r7",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r7",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r8",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r8",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r9",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r9",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r10",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r10",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r11",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r11",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r12",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r12",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a5-r13",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a5-r13",
+      "verifyingKey" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r0",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r0",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r1",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r1",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r2",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r2",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r3",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r3",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r4",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r4",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r5",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r5",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r6",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r6",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r7",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r7",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r8",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r8",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r9",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r9",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r10",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r10",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r11",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r11",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r12",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r12",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a6-r13",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a6-r13",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r0",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r0",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r1",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r1",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r2",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r2",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r3",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r3",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r4",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r4",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r5",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r5",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r6",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r6",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r7",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r7",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r8",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r8",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r9",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r9",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r10",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r10",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r11",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r11",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r12",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r12",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a7-r13",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a7-r13",
+      "verifyingKey" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r0",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r0",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r1",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r1",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r2",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r2",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r3",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r3",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r4",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r4",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r5",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r5",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r6",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r6",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r7",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r7",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r8",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r8",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r9",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r9",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r10",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r10",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r11",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r11",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r12",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r12",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a8-r13",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a8-r13",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000080",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r0",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r0",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r1",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r1",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r2",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r2",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r3",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r3",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r4",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r4",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r5",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r5",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r6",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r6",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r7",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r7",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r8",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r8",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r9",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r9",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r10",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r10",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r11",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r11",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r12",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r12",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a9-r13",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a9-r13",
+      "verifyingKey" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r0",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r0",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r1",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r1",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r2",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r2",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r3",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r3",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r4",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r4",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r5",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r5",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r6",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r6",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r7",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r7",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r8",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r8",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r9",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r9",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r10",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r10",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r11",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r11",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r12",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r12",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a10-r13",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a10-r13",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r0",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r0",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r1",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r1",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r2",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r2",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r3",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r3",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r4",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r4",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r5",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r5",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r6",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r6",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r7",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r7",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r8",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r8",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r9",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r9",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r10",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r10",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r11",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r11",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r12",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r12",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a11-r13",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a11-r13",
+      "verifyingKey" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r0",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r0",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r1",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r1",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r2",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r2",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r3",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r3",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r4",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r4",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r5",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r5",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r6",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r6",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r7",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r7",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r8",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r8",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r9",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r9",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r10",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r10",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r11",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r11",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r12",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r12",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a12-r13",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a12-r13",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r0",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r0",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r1",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r1",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r2",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r2",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r3",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r3",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r4",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r4",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r5",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r5",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc850000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r6",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r6",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r7",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r7",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r8",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r8",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "01000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r9",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r9",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r10",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r10",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r11",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r11",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r12",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r12",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "Ed25519",
+      "name" : "small-order-a13-r13",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "Ed25519-libsodium",
+      "name" : "small-order-a13-r13",
+      "verifyingKey" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message" : "5a63617368",
+      "signature" : "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "P-256-ECDSA",
+      "name" : "valid",
+      "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
+      "message" : "616263",
+      "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e7413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "P-256-ECDSA",
+      "name" : "wrong-message",
+      "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
+      "message" : "616264",
+      "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e7413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "P-256-ECDSA",
+      "name" : "high-s",
+      "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
+      "message" : "616263",
+      "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e8bec346a02f3f7d163aceb4384fcbd5ed7d5465bb2a4077fbedce8815fe005e4",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "P-256-ECDSA",
+      "name" : "r-zero",
+      "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
+      "message" : "616263",
+      "signature" : "00000000000000000000000000000000000000000000000000000000000000007413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "P-256-ECDSA",
+      "name" : "s-zero",
+      "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
+      "message" : "616263",
+      "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e0000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "P-256-ECDSA",
+      "name" : "r-is-n",
+      "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
+      "message" : "616263",
+      "signature" : "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc6325517413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "P-256-ECDSA",
+      "name" : "key-off-curve",
+      "verifyingKey" : "020000000000000000000000000000000000000000000000000000000000000001",
+      "message" : "616263",
+      "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e7413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "P-256-ECDSA",
+      "name" : "key-bad-prefix",
+      "verifyingKey" : "057a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
+      "message" : "616263",
+      "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e7413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "P-256-ECDSA",
+      "name" : "uncompressed-length-key",
+      "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b27a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
+      "message" : "616263",
+      "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e7413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "P-256-ECDSA",
+      "name" : "short-signature",
+      "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
+      "message" : "616263",
+      "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e7413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "secp256k1-ECDSA",
+      "name" : "valid",
+      "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616263",
+      "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef401ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "secp256k1-ECDSA",
+      "name" : "wrong-message",
+      "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616264",
+      "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef401ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "secp256k1-ECDSA",
+      "name" : "high-s",
+      "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616263",
+      "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef4fe00db8f4f4af69069a86452f3ae30e99e2d4bd2d5ffb2f7877f65b8af48f41b",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "secp256k1-ECDSA",
+      "name" : "r-zero",
+      "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616263",
+      "signature" : "000000000000000000000000000000000000000000000000000000000000000001ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "secp256k1-ECDSA",
+      "name" : "s-zero",
+      "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616263",
+      "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef40000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "secp256k1-ECDSA",
+      "name" : "r-is-n",
+      "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616263",
+      "signature" : "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036414101ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "secp256k1-ECDSA",
+      "name" : "key-off-curve",
+      "verifyingKey" : "020000000000000000000000000000000000000000000000000000000000000005",
+      "message" : "616263",
+      "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef401ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "secp256k1-ECDSA",
+      "name" : "key-bad-prefix",
+      "verifyingKey" : "056d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616263",
+      "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef401ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "secp256k1-ECDSA",
+      "name" : "uncompressed-length-key",
+      "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e26d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616263",
+      "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef401ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "secp256k1-ECDSA",
+      "name" : "short-signature",
+      "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616263",
+      "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef401ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "BIP-340",
+      "name" : "valid",
+      "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "signature" : "bc1e36a75bbd52fa15f1e721a6a36310a85c3fd9f73bb2b6d80c4d44edf7d5e8cc3c081d832efcb1b67aedd0141da9c68b608c616a6f2644b46ea0a0bcf35299",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "BIP-340",
+      "name" : "wrong-message",
+      "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "bb7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "signature" : "bc1e36a75bbd52fa15f1e721a6a36310a85c3fd9f73bb2b6d80c4d44edf7d5e8cc3c081d832efcb1b67aedd0141da9c68b608c616a6f2644b46ea0a0bcf35299",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "BIP-340",
+      "name" : "tagged-signature",
+      "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "signature" : "96c0ce839afe2cd823ca7b4859d28d05539b304ed2ec0fde20efe9febb133cf61601f86988344401f8b49249f401b85981ba4dbd102f98263af56bec1d4ca474",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "BIP-340",
+      "name" : "s-not-below-n",
+      "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "signature" : "bc1e36a75bbd52fa15f1e721a6a36310a85c3fd9f73bb2b6d80c4d44edf7d5e8cc3c081d832efcb1b67aedd0141da9c5460f694819b7c6807440ff2d8d2993da",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "BIP-340",
+      "name" : "key-off-curve",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000005",
+      "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "signature" : "bc1e36a75bbd52fa15f1e721a6a36310a85c3fd9f73bb2b6d80c4d44edf7d5e8cc3c081d832efcb1b67aedd0141da9c68b608c616a6f2644b46ea0a0bcf35299",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "BIP-340",
+      "name" : "short-signature",
+      "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "signature" : "bc1e36a75bbd52fa15f1e721a6a36310a85c3fd9f73bb2b6d80c4d44edf7d5e8cc3c081d832efcb1b67aedd0141da9c68b608c616a6f2644b46ea0a0bcf352",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "secp256k1-tagged-Schnorr",
+      "name" : "valid",
+      "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616263",
+      "signature" : "96c0ce839afe2cd823ca7b4859d28d05539b304ed2ec0fde20efe9febb133cf61601f86988344401f8b49249f401b85981ba4dbd102f98263af56bec1d4ca474",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "secp256k1-tagged-Schnorr",
+      "name" : "wrong-message",
+      "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616264",
+      "signature" : "96c0ce839afe2cd823ca7b4859d28d05539b304ed2ec0fde20efe9febb133cf61601f86988344401f8b49249f401b85981ba4dbd102f98263af56bec1d4ca474",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "secp256k1-tagged-Schnorr",
+      "name" : "bip340-signature",
+      "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "616263",
+      "signature" : "bc1e36a75bbd52fa15f1e721a6a36310a85c3fd9f73bb2b6d80c4d44edf7d5e8cc3c081d832efcb1b67aedd0141da9c68b608c616a6f2644b46ea0a0bcf35299",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "secp256k1-tagged-Schnorr",
+      "name" : "bip340-signature-of-digest",
+      "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "signature" : "bc1e36a75bbd52fa15f1e721a6a36310a85c3fd9f73bb2b6d80c4d44edf7d5e8cc3c081d832efcb1b67aedd0141da9c68b608c616a6f2644b46ea0a0bcf35299",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "ristretto255-Schnorr",
+      "name" : "valid",
+      "verifyingKey" : "d64a13d307f563cb51b994c7942248e036113983b9666cd52e4ab8b92fd58a7b",
+      "message" : "616263",
+      "signature" : "748e4eab887b5db916991ac66139be09d4b1807bb0fb0354316e6a4d6101965bd8aa6260a9695f884979222f66cc4f4293180e58f46697e2c9755ea715c7f40a",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "ristretto255-Schnorr",
+      "name" : "wrong-message",
+      "verifyingKey" : "d64a13d307f563cb51b994c7942248e036113983b9666cd52e4ab8b92fd58a7b",
+      "message" : "616264",
+      "signature" : "748e4eab887b5db916991ac66139be09d4b1807bb0fb0354316e6a4d6101965bd8aa6260a9695f884979222f66cc4f4293180e58f46697e2c9755ea715c7f40a",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "ristretto255-Schnorr",
+      "name" : "identity-key",
+      "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "616263",
+      "signature" : "748e4eab887b5db916991ac66139be09d4b1807bb0fb0354316e6a4d6101965bd8aa6260a9695f884979222f66cc4f4293180e58f46697e2c9755ea715c7f40a",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "ristretto255-Schnorr",
+      "name" : "non-canonical-key",
+      "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
+      "message" : "616263",
+      "signature" : "748e4eab887b5db916991ac66139be09d4b1807bb0fb0354316e6a4d6101965bd8aa6260a9695f884979222f66cc4f4293180e58f46697e2c9755ea715c7f40a",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "ristretto255-Schnorr",
+      "name" : "identity-r",
+      "verifyingKey" : "d64a13d307f563cb51b994c7942248e036113983b9666cd52e4ab8b92fd58a7b",
+      "message" : "616263",
+      "signature" : "0000000000000000000000000000000000000000000000000000000000000000d8aa6260a9695f884979222f66cc4f4293180e58f46697e2c9755ea715c7f40a",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "ristretto255-Schnorr",
+      "name" : "z-plus-l",
+      "verifyingKey" : "d64a13d307f563cb51b994c7942248e036113983b9666cd52e4ab8b92fd58a7b",
+      "message" : "616263",
+      "signature" : "748e4eab887b5db916991ac66139be09d4b1807bb0fb0354316e6a4d6101965bc57e58bdc3cc71e01f161ad244c62e5793180e58f46697e2c9755ea715c7f41a",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "ristretto255-Schnorr",
+      "name" : "short-signature",
+      "verifyingKey" : "d64a13d307f563cb51b994c7942248e036113983b9666cd52e4ab8b92fd58a7b",
+      "message" : "616263",
+      "signature" : "748e4eab887b5db916991ac66139be09d4b1807bb0fb0354316e6a4d6101965bd8aa6260a9695f884979222f66cc4f4293180e58f46697e2c9755ea715c7f4",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "BLS12-381-PoP",
+      "name" : "valid",
+      "verifyingKey" : "9112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
+      "message" : "616263",
+      "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
+      "result" : "valid"
+    },
+    {
+      "scheme" : "BLS12-381-PoP",
+      "name" : "wrong-message",
+      "verifyingKey" : "9112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
+      "message" : "616264",
+      "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "BLS12-381-PoP",
+      "name" : "other-key",
+      "verifyingKey" : "81f1b9bf9f4e183ff10968b31d41973b2b0cf52b3e71a134f078c363bd4915426219d6355c7e952d0aeb084ff7e8dd58",
+      "message" : "616263",
+      "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "BLS12-381-PoP",
+      "name" : "pop-as-signature",
+      "verifyingKey" : "9112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
+      "message" : "9112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
+      "signature" : "915993b4e43e717ec8079234490be46018bdc7d70e81de1bbec515844a3754cc0a387ddf825a2faa0984fa794a96b5a20da605161aa42c1d4028abeb3c52ffbf35d41bd26398e7110d0b6566e0b74b30b3431c4b821cc85a9d61ad5ffd3f9042",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "BLS12-381-PoP",
+      "name" : "identity-signature",
+      "verifyingKey" : "9112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
+      "message" : "616263",
+      "signature" : "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "result" : "invalid"
+    },
+    {
+      "scheme" : "BLS12-381-PoP",
+      "name" : "identity-key",
+      "verifyingKey" : "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "message" : "616263",
+      "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "BLS12-381-PoP",
+      "name" : "uncompressed-flag-key",
+      "verifyingKey" : "1112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
+      "message" : "616263",
+      "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "BLS12-381-PoP",
+      "name" : "uncompressed-flag-signature",
+      "verifyingKey" : "9112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
+      "message" : "616263",
+      "signature" : "0aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
+      "result" : "malformedSignature"
+    },
+    {
+      "scheme" : "BLS12-381-PoP",
+      "name" : "key-off-curve",
+      "verifyingKey" : "800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+      "message" : "616263",
+      "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
+      "result" : "malformedKey"
+    },
+    {
+      "scheme" : "BLS12-381-PoP",
+      "name" : "short-signature",
+      "verifyingKey" : "9112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
+      "message" : "616263",
+      "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab",
+      "result" : "malformedSignature"
+    }
+  ]
 }

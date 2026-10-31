@@ -131,9 +131,10 @@ private[kes] final class MerkleKesOps[H](implicit H: Hasher[H]) {
     if (d == 0) {
       val (seed, vk) = (b.take(32), b.drop(32))
       (leafErased, seed == Zero32) match {
-        case (true, true)                         => (Leaf(None, vk): Tree).asRight
-        case (false, false) if leafVk(seed) == vk => (Leaf(Some(seed), vk): Tree).asRight
-        case _                                    => KesError.InconsistentKey("leaf seed and verifying key disagree").asLeft
+        case (true, true) => (Leaf(None, vk): Tree).asRight
+        // an active leaf is checked against its key, never by its bytes: an all-zero seed is a valid Ed25519 seed
+        case (false, _) if leafVk(seed) == vk => (Leaf(Some(seed), vk): Tree).asRight
+        case _                                => KesError.InconsistentKey("leaf seed and verifying key disagree").asLeft
       }
     } else {
       val half = 1L << (d - 1)

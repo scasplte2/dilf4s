@@ -379,12 +379,16 @@ pub struct TrieProofVector {
     pub keys: Vec<Hex>,
     /// The `prefixes` entry.
     pub prefixes: Vec<Hex>,
+    /// The `ranges` entry.
+    pub ranges: Vec<TrieRange>,
     /// The `cbor` entry.
     pub cbor: Hex,
     /// The `lookups` entry.
     pub lookups: Vec<TrieLookup>,
     /// The `prefixListings` entry.
     pub prefix_listings: Vec<TriePrefixListing>,
+    /// The `rangeListings` entry.
+    pub range_listings: Vec<TrieRangeListing>,
 }
 
 impl c::Model for TrieProofVector {
@@ -393,20 +397,128 @@ impl c::Model for TrieProofVector {
         c::record([
             c::field("keys", &c::VecOf { element: HEX, min: 0, max: None }, &self.keys, inner)?,
             c::field("prefixes", &c::VecOf { element: HEX, min: 0, max: None }, &self.prefixes, inner)?,
+            c::field("ranges", &c::VecOf { element: c::ModelOf::<TrieRange>::NEW, min: 0, max: None }, &self.ranges, inner)?,
             c::field("cbor", &HEX, &self.cbor, inner)?,
             c::field("lookups", &c::VecOf { element: c::ModelOf::<TrieLookup>::NEW, min: 0, max: None }, &self.lookups, inner)?,
             c::field("prefixListings", &c::VecOf { element: c::ModelOf::<TriePrefixListing>::NEW, min: 0, max: None }, &self.prefix_listings, inner)?,
+            c::field("rangeListings", &c::VecOf { element: c::ModelOf::<TrieRangeListing>::NEW, min: 0, max: None }, &self.range_listings, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["keys", "prefixes", "cbor", "lookups", "prefixListings"])?;
+        let fields = c::Fields::of(value, &["keys", "prefixes", "ranges", "cbor", "lookups", "prefixListings", "rangeListings"])?;
         let f0 = fields.required("keys", &c::VecOf { element: HEX, min: 0, max: None })?;
         let f1 = fields.required("prefixes", &c::VecOf { element: HEX, min: 0, max: None })?;
-        let f2 = fields.required("cbor", &HEX)?;
-        let f3 = fields.required("lookups", &c::VecOf { element: c::ModelOf::<TrieLookup>::NEW, min: 0, max: None })?;
-        let f4 = fields.required("prefixListings", &c::VecOf { element: c::ModelOf::<TriePrefixListing>::NEW, min: 0, max: None })?;
-        Ok(Self { keys: f0, prefixes: f1, cbor: f2, lookups: f3, prefix_listings: f4 })
+        let f2 = fields.required("ranges", &c::VecOf { element: c::ModelOf::<TrieRange>::NEW, min: 0, max: None })?;
+        let f3 = fields.required("cbor", &HEX)?;
+        let f4 = fields.required("lookups", &c::VecOf { element: c::ModelOf::<TrieLookup>::NEW, min: 0, max: None })?;
+        let f5 = fields.required("prefixListings", &c::VecOf { element: c::ModelOf::<TriePrefixListing>::NEW, min: 0, max: None })?;
+        let f6 = fields.required("rangeListings", &c::VecOf { element: c::ModelOf::<TrieRangeListing>::NEW, min: 0, max: None })?;
+        Ok(Self { keys: f0, prefixes: f1, ranges: f2, cbor: f3, lookups: f4, prefix_listings: f5, range_listings: f6 })
+    }
+}
+
+/// `trie-range` (`shared/schemas/trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrieRange {
+    /// The `from` entry.
+    pub from: Hex,
+    /// The `until` entry.
+    pub until: Option<Hex>,
+}
+
+impl c::Model for TrieRange {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("from", &HEX, &self.from, inner)?,
+            c::optional_field("until", &HEX, self.until.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["from", "until"])?;
+        let f0 = fields.required("from", &HEX)?;
+        let f1 = fields.optional("until", &HEX)?;
+        Ok(Self { from: f0, until: f1 })
+    }
+}
+
+/// `trie-range-entries` (`shared/schemas/trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrieRangeEntries {
+    /// The `entries` entry.
+    pub entries: Vec<TrieListed>,
+}
+
+impl c::Model for TrieRangeEntries {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("entries", &c::VecOf { element: c::ModelOf::<TrieListed>::NEW, min: 0, max: None }, &self.entries, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["entries"])?;
+        let f0 = fields.required("entries", &c::VecOf { element: c::ModelOf::<TrieListed>::NEW, min: 0, max: None })?;
+        Ok(Self { entries: f0 })
+    }
+}
+
+/// `trie-range-listing` (`shared/schemas/trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrieRangeListing {
+    /// The `from` entry.
+    pub from: Hex,
+    /// The `until` entry.
+    pub until: Option<Hex>,
+    /// The `result` entry.
+    pub result: TrieRangeResult,
+}
+
+impl c::Model for TrieRangeListing {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("from", &HEX, &self.from, inner)?,
+            c::optional_field("until", &HEX, self.until.as_ref(), inner)?,
+            c::field("result", &c::ModelOf::<TrieRangeResult>::NEW, &self.result, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["from", "until", "result"])?;
+        let f0 = fields.required("from", &HEX)?;
+        let f1 = fields.optional("until", &HEX)?;
+        let f2 = fields.required("result", &c::ModelOf::<TrieRangeResult>::NEW)?;
+        Ok(Self { from: f0, until: f1, result: f2 })
+    }
+}
+
+/// `trie-range-result` (`shared/schemas/trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TrieRangeResult {
+    /// A [`TrieRangeEntries`].
+    TrieRangeEntries(TrieRangeEntries),
+    /// The text `notCovered`.
+    NotCovered,
+}
+
+impl c::Model for TrieRangeResult {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::TrieRangeEntries(a) => c::Model::to_value_at(a, depth),
+            Self::NotCovered => Ok(c::Value::text("notCovered")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[(&["entries"], &["entries"])], &["notCovered"])? {
+            c::Alternative::Record(0) => <TrieRangeEntries as c::Model>::from_value(value).map(Self::TrieRangeEntries),
+            c::Alternative::Text(0) => Ok(Self::NotCovered),
+            other => Err(c::unknown_alternative(other)),
+        }
     }
 }
 
