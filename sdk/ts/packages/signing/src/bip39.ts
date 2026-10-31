@@ -36,6 +36,9 @@ export class WordList {
 
   /** A list from 2048 words (each NFKD-normalised here); `separator` joins phrases (U+3000 for Japanese). */
   static of(words: readonly string[], separator = " "): Result<WordList, KeyError> {
+    // the separator joins generated phrases, so it must be one that parsing splits on
+    if (separator.length !== 1 || !SEPARATORS.test(separator))
+      return err({ kind: "InvalidWordList", reason: `${JSON.stringify(separator)} is not a phrase separator` });
     const normalised = words.map(nfkd);
     const valid = normalised.every((w) => w.length > 0 && wellFormed(w) && !SEPARATORS.test(w));
     if (!valid || normalised.length !== 2048 || new Set(normalised).size !== 2048)

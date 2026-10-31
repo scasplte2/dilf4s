@@ -233,6 +233,14 @@ describe("KES properties and typed errors", { timeout: 60_000 }, () => {
     expect(kind(KesProduct.of("SHA-256", 16, 15))).toBe("Malformed");
   });
 
+  test("a height-0 key from the all-zero seed loads: an active leaf is checked against its key, not by its bytes", () => {
+    const sum = expectOk(KesSum.of("BLAKE2b-256", 0), "sum");
+    const k = expectOk(sum.generate(new Uint8Array(32)), "k");
+    const loaded = expectOk(sum.load(k.bytes, 0), "load");
+    expect(toHex(loaded.bytes)).toBe(toHex(k.bytes));
+    expect(sum.verify(k.verifyingKey, 0, beef, expectOk(loaded.sign(beef), "sign"))).toEqual({ ok: true, value: true });
+  });
+
   test("a loaded key owns its bytes: clearing the caller's Buffer afterwards changes nothing", () => {
     // Buffer#slice is a view, so a loader that keeps slices of its input would share the caller's memory
     const sum = expectOk(KesSum.of("BLAKE2b-256", 1), "sum");

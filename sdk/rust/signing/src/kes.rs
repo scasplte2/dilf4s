@@ -442,7 +442,8 @@ mod signing {
                 let vk: [u8; 32] = vk.try_into().map_err(|_| inconsistent("short leaf"))?;
                 return match (leaf_erased, seed == ZERO32) {
                     (true, true) => Ok(Tree::Leaf { seed: None, vk }),
-                    (false, false) if leaf_vk(&seed) == vk => Ok(Tree::Leaf { seed: Some(seed), vk }),
+                    // an active leaf is checked against its key, never by its bytes: a zero seed is a valid seed
+                    (false, _) if leaf_vk(&seed) == vk => Ok(Tree::Leaf { seed: Some(seed), vk }),
                     _ => Err(inconsistent("leaf seed and verifying key disagree")),
                 };
             };

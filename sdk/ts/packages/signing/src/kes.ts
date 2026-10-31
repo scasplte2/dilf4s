@@ -160,7 +160,8 @@ class MerkleKesOps {
       const vk = b.slice(32, 64);
       const zero = isZero(seed);
       if (leafErased && zero) return ok({ leaf: true, seed: undefined, vk });
-      if (!leafErased && !zero && equal(leafVk(seed), vk)) return ok({ leaf: true, seed, vk });
+      // an active leaf is checked against its key, never by its bytes: an all-zero seed is a valid Ed25519 seed
+      if (!leafErased && equal(leafVk(seed), vk)) return ok({ leaf: true, seed, vk });
       return err(inconsistent("leaf seed and verifying key disagree"));
     }
     const half = 2 ** (d - 1);

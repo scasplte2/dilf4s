@@ -279,6 +279,17 @@ fn cardano_keys_load_at_their_period_and_layouts_match() {
 }
 
 #[test]
+#[cfg(feature = "sign")]
+fn a_zero_seed_leaf_loads_because_active_leaves_are_checked_against_their_key() {
+    let kes = KesSum::new(HashAlgorithm::Blake2b256, 0).unwrap();
+    let k = kes.generate(&[0; 32]).unwrap();
+    let loaded = kes.load(&kes.key_bytes(&k), 0).unwrap();
+    assert_eq!(*kes.key_bytes(&loaded), *kes.key_bytes(&k));
+    let sig = kes.sign(&loaded, b"beef").unwrap();
+    assert_eq!(kes.verify(&kes.verifying_key(&k), 0, b"beef", &sig), Ok(true));
+}
+
+#[test]
 fn parameters_are_checked() {
     assert!(KesSum::new(HashAlgorithm::Blake2b256, 31).is_err());
     assert!(KesProduct::new(HashAlgorithm::Sha256, 20, 11).is_err());

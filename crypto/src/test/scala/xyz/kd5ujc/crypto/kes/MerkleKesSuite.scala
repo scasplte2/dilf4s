@@ -45,6 +45,15 @@ object MerkleKesSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  pureTest("a height-0 key from the all-zero seed loads: an active leaf is checked against its key, not by its bytes") {
+    val kes = KesSum[Blake2b256](0).toOption.get
+    val k = kes.generate(ByteVector.low(32)).toOption.get
+    val loaded = kes.load(k.bytes, 0)
+    expect
+      .same(Right(k.bytes), loaded.map(_.bytes))
+      .and(expect.same(Right(true), loaded.flatMap(l => kes.sign(l, hex"beef")).flatMap(kes.verify(kes.verifyingKey(k), 0, hex"beef", _))))
+  }
+
   sumLaws[Blake2b256]("Blake2b-256", 3)
   sumLaws[Sha256]("SHA-256", 2)
   sumLaws[Sha3_512]("SHA3-512", 2)

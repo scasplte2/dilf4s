@@ -108,7 +108,8 @@ export class Segment {
 
 function segmentBits(n: bigint, b: Uint8Array): Result<B.Bits, TrieError> {
   const len = BigInt(b.length);
-  if (n > len * 8n || len !== (n + 7n) / 8n) return encoding(`segment of ${n.toString()} bits in ${b.length.toString()} bytes`);
+  // bigint division truncates toward zero, so a negative length would pass the byte count: refuse it first
+  if (n < 0n || n > len * 8n || len !== (n + 7n) / 8n) return encoding(`segment of ${n.toString()} bits in ${b.length.toString()} bytes`);
   const bits = Number(n);
   const rem = bits % 8;
   const last = b[b.length - 1] ?? 0;

@@ -215,6 +215,9 @@ describe("JLVM trie operations", () => {
     expect(decode([{ s: segment(7n, [0x61]), v: v1 }]).reason).toMatch(/padding/);
     expect(decode([{ s: segment(9n, [0x61]), v: v1 }]).reason).toMatch(/bits in/);
     expect(decode([{ s: segment(8n, [0x61, 0x00]), v: v1 }]).reason).toMatch(/bits in/);
+    // bigint division truncates toward zero, so (-8 + 7) / 8 = 0 bytes: a negative length must be refused outright
+    expect(expectErr(trie.Segment.of(-8n, new Uint8Array(0)), "negative segment").kind).toBe("Encoding");
+    expect(expectErr(trie.TrieProof.fromRecords(T, [{ s: segment(-8n, []), v: v1 }]), "negative record").kind).toBe("Encoding");
     expect(decode([{ h: v1.slice(1) }]).reason).toMatch(/digest/);
     expect(expectErr(trie.TrieProof.decode(T, Value.null), "not an array").kind).toBe("Encoding");
     expect(expectErr(trie.trieVerify(T, variable, root.slice(1), Uint8Array.of(0x61), null, full), "short root").kind).toBe("Encoding");

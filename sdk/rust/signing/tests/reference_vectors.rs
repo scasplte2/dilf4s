@@ -343,6 +343,22 @@ fn bip39_typed_errors() {
     let mut dup: Vec<String> = (0..2048).map(|i| format!("w{i}")).collect();
     dup[1] = "w0".into();
     assert_eq!(bip39::WordList::new(dup, ' ').unwrap_err().kind(), "InvalidWordList");
+    // a word with a separator in it would make generated phrases unparsable, and so would a separator parsing ignores
+    let mut spaced: Vec<String> = (0..2048).map(|i| format!("w{i}")).collect();
+    spaced[0] = "abandon abandon".into();
+    assert_eq!(bip39::WordList::new(spaced, ' ').unwrap_err().kind(), "InvalidWordList");
+    let mut ideographic: Vec<String> = (0..2048).map(|i| format!("w{i}")).collect();
+    ideographic[0] = "a\u{3000}b".into();
+    assert_eq!(bip39::WordList::new(ideographic, ' ').unwrap_err().kind(), "InvalidWordList");
+    let plain: Vec<String> = (0..2048).map(|i| format!("w{i}")).collect();
+    assert_eq!(bip39::WordList::new(plain.clone(), ',').unwrap_err().kind(), "InvalidWordList");
+    let custom = bip39::WordList::new(plain, '\u{3000}').unwrap();
+    let generated = bip39::to_mnemonic(&[0; 16], &custom).unwrap();
+    assert_eq!(
+        bip39::to_entropy(&generated.phrase(), &custom).unwrap().1.expose(),
+        &[0; 16],
+        "a generated phrase parses back"
+    );
     let m = bip39::to_mnemonic(&[1; 16], &words).unwrap();
     assert!(!format!("{m:?}").contains(&m.phrase()[..5]), "mnemonics are redacted");
 }

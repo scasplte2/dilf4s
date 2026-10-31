@@ -141,6 +141,8 @@ describe("BIP-39", { timeout: 60_000 }, () => {
     expect(kind(WordList.of(ENGLISH.slice(1)))).toBe("InvalidWordList");
     expect(kind(WordList.of([...ENGLISH.slice(1), "ability"]))).toBe("InvalidWordList");
     expect(kind(WordList.of([...ENGLISH.slice(1), "two words"]))).toBe("InvalidWordList");
+    expect(kind(WordList.of(ENGLISH, ","))).toBe("InvalidWordList");
+    expect(kind(WordList.of(ENGLISH, "  "))).toBe("InvalidWordList");
     const m = expectOk(toMnemonic(new Uint8Array(16)), "m");
     expect(kind(mnemonicToSeed(m, "\uD800"))).toBe("InvalidMnemonic");
     expect(kind(icarus.fromEntropy(new Uint8Array(16), "x\uDC00"))).toBe("InvalidDerivation");
