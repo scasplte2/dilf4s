@@ -4,6 +4,8 @@ import cats.data.{EitherT, State}
 import cats.effect.Sync
 import cats.syntax.functor._
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.core.canonical.CanonicalValue
 
 /**
@@ -68,7 +70,7 @@ final class Jlvm private (crypto: CryptoOps) {
     config:   Config = Config()
   ): Outcome = {
     val semantics = new Semantics(config.schedule, crypto)
-    val first = semantics.start(compiled.root, Scope(data, env))
+    val first = semantics.start(compiled.root, Scope(data, TreeMap.from(env)))
     val start = Meter(Gas.Zero, config.limit.amount)
     val (meter, result) = config.driver match {
       case Config.Driver.StackMachine => Machine.stackMachine[Run](semantics, first).value.run(start).value

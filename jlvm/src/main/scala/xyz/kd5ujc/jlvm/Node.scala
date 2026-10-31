@@ -2,6 +2,8 @@ package xyz.kd5ujc.jlvm
 
 import cats.syntax.all._
 
+import scala.collection.immutable.TreeSet
+
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue.{CArray, CText}
 
@@ -16,7 +18,9 @@ enum Node {
   /** `var` with a computed path: text is parsed as a `var` path; an array gives the exact segments of a data path. */
   case ReadAt(path: Node, default: Option[CanonicalValue])
   case ArrayOf(items: Vector[Node])
-  case ObjectOf(fields: Vector[(String, Node)])
+
+  /** Keys are checked text, once, at compilation: evaluation never rescans them. */
+  case ObjectOf(fields: Vector[(CText, Node)])
 
   /** An operation on evaluated arguments ([[PureOps]]). */
   case Strict(op: Op, args: Vector[Node])
@@ -72,16 +76,20 @@ object Node {
   /** Names a `let` may bind: non-empty, without `.` (the path separator) or a leading `$` (the reference sigil). */
   def bindable(name: String): Boolean = name.nonEmpty && !name.contains('.') && !name.startsWith("$")
 
-  /** Program depth is bounded ([[Program.MaxDepth]]), so this recursion is bounded too. */
-  def compile(program: Program): Either[JlvmError, Node] = node(program.expr, Set.empty)
+  /**
+   * Program depth and size are bounded ([[Program.MaxDepth]], [[Program.MaxSize]]), so this recursion is bounded too, and
+   * its work is linear in the program's size.
+   */
+  def compile(program: Program): Either[JlvmError, Node] = node(program.expr, TreeSet.empty)
 
   private def malformed[A](msg: String): Either[JlvmError, A] = JlvmError.Malformed(msg).asLeft
 
   /**
    * `lets` holds the `let` names in scope. A plain path whose first segment is one of them is rejected: metakit read
-   * such a path as the binding, so accepting it would silently read the data instead.
+   * such a path as the binding, so accepting it would silently read the data instead. Names are chosen by the program,
+   * so they are kept in a sorted set, never hashed.
    */
-  private def node(e: Expr, lets: Set[String]): Either[JlvmError, Node] =
+  private def node(e: Expr, lets: TreeSet[String]): Either[JlvmError, Node] =
     e match {
       case Expr.Lit(v) => Const(v).asRight
       case Expr.Var(ref @ VarRef.Data(path), _) if path.headOption.exists(lets.contains) =>
@@ -100,15 +108,20 @@ object Node {
           case ObjectOf(_)          => notArray("object")
           case n                    => Spread(op, n).asRight
         }
-      case Expr.Arr(items)      => items.traverse(node(_, lets)).map(ArrayOf(_))
-      case Expr.Obj(fields)     => fields.toVector.traverse { case (k, x) => node(x, lets).map(k -> _) }.map(fs => ObjectOf(sorted(fs)))
+      case Expr.Arr(items) => items.traverse(node(_, lets)).map(ArrayOf(_))
+      case Expr.Obj(fields) =>
+        fields.toVector.traverse {
+          case (k, x) =>
+            (CanonicalValue.text(k).leftMap(_ => JlvmError.Malformed("an object key is not well-formed text")), node(x, lets)).tupled
+        }
+          .map(fs => ObjectOf(fs.sortWith((a, b) => Values.compareCodePoints(a._1.value, b._1.value) < 0)))
       case Expr.Apply(op, args) => apply(op, args, lets)
     }
 
   private def sorted[A](fields: Vector[(String, A)]): Vector[(String, A)] =
     fields.sortWith((a, b) => Values.compareCodePoints(a._1, b._1) < 0)
 
-  private def apply(op: Op, args: Vector[Expr], lets: Set[String]): Either[JlvmError, Node] = {
+  private def apply(op: Op, args: Vector[Expr], lets: TreeSet[String]): Either[JlvmError, Node] = {
     def node(e: Expr): Either[JlvmError, Node] = Node.node(e, lets)
     def each(kind: Iteration) = args match {
       case Vector(over, body) => (node(over), node(body)).mapN(Each(kind, _, _))
@@ -152,7 +165,7 @@ object Node {
   }
 
   /** `[[[name, expr], ...], body]`, or `[{name: expr, ...}, body]` with bindings in code-point order of the names. */
-  private def let(args: Vector[Expr], lets: Set[String]): Either[JlvmError, Node] = {
+  private def let(args: Vector[Expr], lets: TreeSet[String]): Either[JlvmError, Node] = {
     def name(n: String): Either[JlvmError, String] =
       Either.cond(bindable(n), n, JlvmError.Malformed(s"let cannot bind \"$n\": names are non-empty, without '.' or a leading '$$'"))
     val bindings: Either[JlvmError, Vector[(String, Expr)]] = args.headOption match {
@@ -167,12 +180,13 @@ object Node {
     args match {
       case Vector(_, body) =>
         bindings.flatMap { bs =>
-          val names = bs.map(_._1)
-          Either.cond(names.distinct.size == names.size, bs, JlvmError.Malformed("let binds a name twice"))
+          val names = bs.map(_._1).sorted
+          Either.cond(names.zip(names.drop(1)).forall(_ != _), bs, JlvmError.Malformed("let binds a name twice"))
         }.flatMap { bs =>
-          // each binding sees the ones before it; the body sees all of them
-          val compiled = bs.zipWithIndex.traverse { case ((n, x), i) => node(x, lets ++ bs.take(i).map(_._1)).map(n -> _) }
-          (compiled, node(body, lets ++ bs.map(_._1))).mapN(Bind(_, _))
+          // each binding sees the ones before it, and the body sees all of them: one pass, carrying the scope forward
+          bs.foldLeftM((Vector.empty[(String, Node)], lets)) {
+            case ((done, scope), (n, x)) => node(x, scope).map(c => (done :+ (n -> c), scope + n))
+          }.flatMap { case (compiled, scope) => node(body, scope).map(Bind(compiled, _)) }
         }
       case _ => malformed("let takes [bindings, body]")
     }

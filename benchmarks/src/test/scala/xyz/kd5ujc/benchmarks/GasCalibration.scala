@@ -20,7 +20,7 @@ import scodec.bits.ByteVector
  * two points. The node charges are fitted the same way, from programs of growing size.
  *
  * Results are machine-specific; run on the reference hardware, then apply the suggestions to `GasSchedule`:
- * `sbt "benchmarks/Test/runMain xyz.kd5ujc.benchmarks.GasCalibration"`.
+ * `sbt "benchmarks/Test/runMain xyz.kd5ujc.benchmarks.GasCalibration"` (add `metering` for the metering charges alone).
  */
 object GasCalibration extends IOApp {
 
@@ -194,6 +194,86 @@ object GasCalibration extends IOApp {
       f"${c.op.wire}%-12s ${c.note}%-10s ${ts}%9.2f / ${tl}%10.2f us, limbs^2 $qs%6d / $ql%7d -> ${(tl - ts) * Rate / math.max(ql - qs, 1L)}%6.2f gas per limb^2"
     }
 
+  /** A charge with a unit of its own: the measured gas per unit between two sizes, against the schedule's. */
+  private def extra(label: String, unit: String, charged: Long)(small: IO[Double], large: IO[Double], us: Long, ul: Long): IO[String] =
+    (small, large).mapN { (ts, tl) =>
+      f"$label%-34s ${(tl - ts) * Rate / (ul - us).toDouble}%8.2f gas per $unit%-14s now $charged%4d   $ts%9.2f / $tl%10.2f us"
+    }
+
+  /** `(4 + bits/64)^2` for a number's decimal expansion: the unit of the `rendering` charge. */
+  private def rendering(v: CanonicalValue): Long = {
+    val bits = v match {
+      case CInt(i)      => i.bitLength.toLong
+      case CRational(r) => r.numerator.bitLength.toLong + (7L * r.denominator.bitLength + 2) / 3
+      case _            => 0L
+    }
+    (4L + bits / 64) * (4L + bits / 64)
+  }
+
+  /**
+   * The charges added for metering: rendering numbers (`cat`, `join`), pieces of `cat` and `join`, and parsing a path at
+   * run time (a computed `var` path, a `missing` key, charged at `split`'s rate per unit of weight).
+   */
+  private def extras(jlvm: Jlvm): IO[List[String]] = {
+    val r = schedule.rendering.value
+    val piece = schedule.cost(Op.Cat).extra.headOption.fold(0L)(_.perUnit.value)
+    val joinPiece = schedule.cost(Op.Join).extra.headOption.fold(0L)(_.perUnit.value)
+    val small = int(64, 1)
+    val wide = int(4000, 1)
+    val fraction = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4000)))
+    val fifths = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1700))))
+    def words(n: Int) = Vector.fill(n)(t("w"))
+    def path(n:  Int) = t(Vector.fill(n)("a").mkString("."))
+    def parse(p: CanonicalValue): IO[Double] = {
+      val d = data(Vector(p))
+      (micros(run(jlvm, Expr.VarAt(reads(1)(0), scala.None), d)), micros(run(jlvm, reads(1)(0), d))).mapN((x, b) => math.max(x - b, 0.0))
+    }
+    List(
+      extra("cat: render a 4000-bit integer", "rendering unit", r)(
+        opTime(jlvm, Op.Cat, Vector(small)),
+        opTime(jlvm, Op.Cat, Vector(wide)),
+        rendering(small),
+        rendering(wide)
+      ),
+      extra("cat: render 1/2^4000", "rendering unit", r)(
+        opTime(jlvm, Op.Cat, Vector(small)),
+        opTime(jlvm, Op.Cat, Vector(fraction)),
+        rendering(small),
+        rendering(fraction)
+      ),
+      extra("cat: render 1/5^1700", "rendering unit", r)(
+        opTime(jlvm, Op.Cat, Vector(small)),
+        opTime(jlvm, Op.Cat, Vector(fifths)),
+        rendering(small),
+        rendering(fifths)
+      ),
+      extra("cat: pieces (one-letter texts)", "piece", piece + schedule.cost(Op.Cat).perUnit.value * 2)(
+        opTime(jlvm, Op.Cat, words(4)),
+        opTime(jlvm, Op.Cat, words(2000)),
+        4L,
+        2000L
+      ),
+      extra("cat: pieces (64-bit integers)", "piece", piece + r * 25 + schedule.cost(Op.Cat).perUnit.value)(
+        opTime(jlvm, Op.Cat, Vector.fill(4)(small)),
+        opTime(jlvm, Op.Cat, Vector.fill(2000)(small)),
+        4L,
+        2000L
+      ),
+      extra("join: pieces (one-letter texts)", "piece", joinPiece + schedule.cost(Op.Join).perUnit.value * 2)(
+        opTime(jlvm, Op.Join, Vector(a(words(4)), t(""))),
+        opTime(jlvm, Op.Join, Vector(a(words(8000)), t(""))),
+        4L,
+        8000L
+      ),
+      extra("computed path: parse a.a.a...", "unit of weight", schedule.cost(Op.Split).perUnit.value)(
+        parse(path(4)),
+        parse(path(20000)),
+        path(4).weight,
+        path(20000).weight
+      )
+    ).sequence
+  }
+
   /** Node charges: the time per item of growing programs. */
   private def nodes(jlvm: Jlvm): IO[List[String]] = {
     val d = m(
@@ -225,16 +305,20 @@ object GasCalibration extends IOApp {
     ).sequence
   }
 
+  /** With the argument `metering`, only the charges added for metering ([[extras]]), with the node charges to compare. */
   def run(args: List[String]): IO[ExitCode] =
     Jlvm.load[IO].flatMap { jlvm =>
+      val everything = !args.contains("metering")
       for {
         _  <- IO.println(f"JLVM gas calibration at $Rate%.0f gas/us")
         ns <- nodes(jlvm)
         _  <- ns.traverse_(IO.println)
-        os <- cases.traverse(fit(jlvm, _))
+        os <- if (everything) cases.traverse(fit(jlvm, _)) else IO.pure(Nil)
         _  <- os.traverse_(IO.println)
-        qs <- rationals.traverse(quadratic(jlvm, _))
+        qs <- if (everything) rationals.traverse(quadratic(jlvm, _)) else IO.pure(Nil)
         _  <- qs.traverse_(IO.println)
+        xs <- extras(jlvm)
+        _  <- xs.traverse_(IO.println)
       } yield ExitCode.Success
     }
 }

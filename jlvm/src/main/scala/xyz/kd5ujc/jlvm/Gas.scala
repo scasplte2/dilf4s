@@ -83,9 +83,25 @@ final case class GasSchedule(
   element:        Gas,
   varAccess:      Gas,
   perPathSegment: Gas,
-  callbackRun:    Gas
+  callbackRun:    Gas,
+  rendering:      Gas
 ) {
   def cost(op: Op): OpCost = ops.getOrElse(op, OpCost(Gas(1), Gas.Zero, SizeUnit.None))
+
+  /**
+   * A path parsed at run time (a computed `var` path, a `missing` key) is split on `.`: charged at `split`'s rate per
+   * unit of its weight, before it is parsed. A path has at most as many segments as its weight.
+   */
+  def pathText(path: CanonicalValue): Gas = cost(Op.Split).perUnit * path.weight
+
+  /**
+   * Rendering numbers as decimal text (`cat`, `join`): `rendering` per unit of `(4 + ⌊bits/64⌋)^2`, for the bits of each
+   * expansion ([[Values.renderedBits]]). The conversion is quadratic in the expansion, which can be far larger than the
+   * number's weight (`1/2^4095` weighs 66 and renders as 4,097 characters); the 4 limbs are the fixed cost of a
+   * conversion, fitted with GasCalibration.
+   */
+  def rendered(numbers: Vector[CanonicalValue]): Gas =
+    numbers.foldLeft(Gas.Zero)((g, v) => g + rendering * GasSchedule.square(4L + Values.renderedBits(v) / 64))
 
   /** The size charge of `op` on its evaluated arguments: each argument at its position's rate. */
   def sized(op: Op, args: Vector[CanonicalValue]): Gas = {
@@ -115,7 +131,7 @@ object GasSchedule {
       case _                                  => 0L
     }
 
-  private def square(n: Long): Long = n * n
+  private[jlvm] def square(n: Long): Long = n * n
 
   private def c(base: Long, perUnit: Long = 0, unit: SizeUnit = SizeUnit.None): OpCost = OpCost(Gas(base), Gas(perUnit), unit)
 
@@ -162,28 +178,29 @@ object GasSchedule {
       Floor       -> c(60, 1, Weight),
       Ceil        -> c(60, 1, Weight),
       // priced at its worst case, a 4096-bit rational result: the result's size is not known from the arguments
-      Pow        -> c(50000),
-      MapOp      -> c(40, 8, Elements),
-      Filter     -> c(40, 8, Elements),
-      Reduce     -> c(40, 8, Elements),
-      All        -> c(40, 8, Elements),
-      SomeOp     -> c(40, 8, Elements),
-      NoneOp     -> c(40, 8, Elements),
-      Find       -> c(40, 8, Elements),
-      Count      -> c(45, 8, Elements),
-      Merge      -> c(210, 1, Weight),
-      In         -> c(70, 1, Weight),
-      Intersect  -> c(50, 12, Weight),
-      Unique     -> c(50, 18, Weight),
-      Slice      -> c(45, 5, Elements),
-      Reverse    -> c(55, 9, Elements),
-      Flatten    -> c(60, 5, Weight),
-      Length     -> c(45, 1, Weight),
-      Cat        -> c(65, 1, Weight),
+      Pow       -> c(50000),
+      MapOp     -> c(40, 8, Elements),
+      Filter    -> c(40, 8, Elements),
+      Reduce    -> c(40, 8, Elements),
+      All       -> c(40, 8, Elements),
+      SomeOp    -> c(40, 8, Elements),
+      NoneOp    -> c(40, 8, Elements),
+      Find      -> c(40, 8, Elements),
+      Count     -> c(45, 8, Elements),
+      Merge     -> c(210, 1, Weight),
+      In        -> c(70, 1, Weight),
+      Intersect -> c(50, 12, Weight),
+      Unique    -> c(50, 18, Weight),
+      Slice     -> c(45, 5, Elements),
+      Reverse   -> c(55, 9, Elements),
+      Flatten   -> c(60, 5, Weight),
+      Length    -> c(45, 1, Weight),
+      // each piece of cat and join (and each element cat concatenates) costs ~30 gas besides its bytes: GasCalibration
+      Cat        -> c(65, 1, Weight).plus(32, Elements),
       Substr     -> c(75, 1, Weight),
       Lower      -> c(45, 1, Weight),
       Upper      -> c(50, 1, Weight),
-      Join       -> c(110, 2, Weight),
+      Join       -> c(110, 2, Weight).plus(32, Elements),
       Split      -> c(85, 6, Weight),
       Trim       -> c(75, 1, Weight),
       StartsWith -> c(50, 1, Weight),
@@ -244,7 +261,9 @@ object GasSchedule {
     element = Gas(12),
     varAccess = Gas(18),
     perPathSegment = Gas(1),
-    callbackRun = Gas(10)
+    callbackRun = Gas(10),
+    // per unit of (4 + bits/64)^2 of a decimal expansion: measured ~1.5-2 gas a unit for 4000-bit integers and 1/2^4000
+    rendering = Gas(4)
   )
 
   val Latest: GasSchedule = V1

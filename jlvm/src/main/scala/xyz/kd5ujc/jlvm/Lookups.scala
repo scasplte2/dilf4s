@@ -18,6 +18,15 @@ object Lookups {
       case other          => JlvmError.Malformed(s"${other.wire} is not a lookup").asLeft
     }
 
+  /** The values a lookup reads as paths, unchecked: what its charge is computed from, before any is parsed. */
+  def paths(op: Op, args: Vector[CanonicalValue]): Vector[CanonicalValue] =
+    (op, args) match {
+      case (Op.Missing, Vector(CArray(ks)))        => ks
+      case (Op.Missing, ks)                        => ks
+      case (Op.MissingSome, Vector(_, CArray(ks))) => ks
+      case _                                       => Vector.empty
+    }
+
   /** The keys: the arguments themselves, or one array argument holding them (a defined form, as `count([array])`). */
   private def keys(op: Op, args: Vector[CanonicalValue]): Either[JlvmError, Vector[CText]] =
     (args match {
@@ -29,7 +38,7 @@ object Lookups {
     }
 
   private def missing(ks: Vector[CText], data: Vector[String] => CanonicalValue): Vector[CText] =
-    ks.filter(k => data(if (k.value.isEmpty) Vector.empty else k.value.split("\\.", -1).toVector) == CNull)
+    ks.filter(k => data(if (k.value.isEmpty) Vector.empty else VarRef.segments(k.value)) == CNull)
 
   private def absent(op: Op, ks: Vector[CText], data: Vector[String] => CanonicalValue): Either[JlvmError, CanonicalValue] =
     Values.array(op, missing(ks, data))

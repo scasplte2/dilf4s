@@ -130,6 +130,22 @@ object CanonicalValue {
     collect(entries.toList, Set.empty, Map.empty).flatMap(m => withinDepth(mapOf(m)))
 
   /**
+   * A map whose keys are text values already, and distinct: for keys checked once and reused, such as a program's
+   * literal keys. Each key's weight is the one its [[CText]] cached, so no key is rescanned. Null values are dropped;
+   * depth is checked.
+   */
+  private[kd5ujc] def textKeyed(entries: Vector[(CText, CanonicalValue)]): Either[CanonicalError, CMap] = {
+    val present = entries.filter { case (_, v) => v != CNull }
+    withinDepth(
+      new MapNode(
+        present.iterator.map { case (k, v) => k.value -> v }.toMap,
+        present.foldLeft(TreeMap.empty[Int, Int]) { case (h, (_, v)) => counted(h, v.depth, 1) },
+        present.foldLeft(1L) { case (w, (k, v)) => Weight.add(w, Weight.add(k.weight, v.weight)) }
+      )
+    )
+  }
+
+  /**
    * `m` with `key` set to `value`, or removed when `value` is null, in O(log n). The key is already well-formed text, so
    * only depth is checked: no existing key is revalidated.
    */

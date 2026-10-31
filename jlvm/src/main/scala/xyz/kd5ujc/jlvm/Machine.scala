@@ -4,8 +4,11 @@ import cats.Monad
 import cats.mtl.{Raise, Stateful}
 import cats.syntax.all._
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.numerics.Ratio
 
 /** Gas used so far, against the limit; and the lint warnings so far, distinct, at most [[Warning.Max]]. */
 final case class Meter(used: Gas, limit: Gas, warnings: Vector[Warning] = Vector.empty) {
@@ -42,9 +45,10 @@ enum Frame {
 
 /**
  * What a node sees: the input data, the `$` bindings (host bindings, then `let` and callback bindings), and inside
- * callbacks the enclosing frames, innermost first (docs/specs/jlvm.md §4.1).
+ * callbacks the enclosing frames, innermost first (docs/specs/jlvm.md §4.1). Binding names are chosen by the program,
+ * so they are kept sorted, never hashed: names made to collide cannot slow a bind or a read.
  */
-final case class Scope(data: CanonicalValue, bindings: Map[String, CanonicalValue], frames: List[Frame] = Nil) {
+final case class Scope(data: CanonicalValue, bindings: TreeMap[String, CanonicalValue], frames: List[Frame] = Nil) {
   def bind(entries: (String, CanonicalValue)*): Scope = copy(bindings = bindings ++ entries)
 
   def enter(frame: Frame): Scope = copy(frames = frame :: frames)
@@ -110,14 +114,23 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
 
       case Read(ref, default) => read(ref, default, scope)
 
+      // a computed path is paid for before it is parsed or converted: text by its size, an array by its segments
       case ReadAt(path, default) =>
         Eval(
           path,
           scope,
           {
-            case CText(t)   => VarRef.parse(t).fold(e => Fail(JlvmError.Domain("var", e.message)), read(_, default, scope))
-            case CArray(ss) => ss.traverse(segment).fold(Fail(_), p => read(VarRef.Data(p), default, scope))
-            case other      => Fail(JlvmError.Type("var", s"a computed path is text or an array of segments, got ${Values.kind(other)}"))
+            case t @ CText(text) =>
+              Charge(
+                schedule.pathText(t),
+                () => VarRef.parse(text).fold(e => Fail(JlvmError.Domain("var", e.message)), read(_, default, scope))
+              )
+            case CArray(ss) =>
+              Charge(
+                readCost(if (ss.isEmpty) 0L else ss.size.toLong + scope.frames.size),
+                () => ss.traverse(segment).fold(Fail(_), p => lookup(VarRef.Data(p), default, scope))
+              )
+            case other => Fail(JlvmError.Type("var", s"a computed path is text or an array of segments, got ${Values.kind(other)}"))
           }
         )
 
@@ -127,16 +140,13 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
       case ObjectOf(fields) =>
         Charge(
           schedule.literal + schedule.element * fields.size.toLong,
-          () => all(fields.map(_._2), scope)(vs => result(Values.map("object", fields.map(_._1).zip(vs))))
+          () => all(fields.map(_._2), scope)(vs => result(Values.textKeyed("object", fields.map(_._1).zip(vs))))
         )
 
       case Strict(op, args) =>
         Charge(
           base(op),
-          () =>
-            all(args, scope) { vs =>
-              Charge(sized(op, vs), () => PureOps(op, vs).fold(Fail(JlvmError.Malformed(s"${op.wire} has no strict form")))(result))
-            }
+          () => all(args, scope)(vs => Charge(sized(op, vs), () => operate(op, vs)))
         )
 
       case Spread(op, arg) =>
@@ -147,9 +157,8 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
               arg,
               scope,
               {
-                case CArray(vs) =>
-                  Charge(sized(op, vs), () => PureOps(op, vs).fold(Fail(JlvmError.Malformed(s"${op.wire} has no strict form")))(result))
-                case other => Fail(JlvmError.Type(op.wire, s"a spread argument is an array, got ${Values.kind(other)}"))
+                case CArray(vs) => Charge(sized(op, vs), () => operate(op, vs))
+                case other      => Fail(JlvmError.Type(op.wire, s"a spread argument is an array, got ${Values.kind(other)}"))
               }
             )
         )
@@ -158,7 +167,8 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
 
       case Logic(kind, args) => Charge(base(kind.op), () => logic(kind, args, scope, 0))
 
-      case Bind(bindings, body) => Charge(base(Op.Let), () => bind(bindings, body, scope))
+      // each binding is an insertion into the scope, paid like a field of an object literal
+      case Bind(bindings, body) => Charge(base(Op.Let) + schedule.element * bindings.size.toLong, () => bind(bindings, body, scope))
 
       case Each(kind, over, body) =>
         Charge(base(kind.op), () => collection(kind.op, over, scope)(vs => iterate(kind, vs, body, scope)))
@@ -192,8 +202,17 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
             }
         )
 
+      // each key is a path parsed at run time, and searches every enclosing frame: both are paid before resolving
       case Lookup(op, args) =>
-        Charge(base(op), () => all(args, scope)(vs => Charge(sized(op, vs), () => result(Lookups(op, vs, p => scope.resolve(p).value)))))
+        Charge(
+          base(op),
+          () =>
+            all(args, scope) { vs =>
+              val keys = Lookups.paths(op, vs)
+              val paths = keys.foldLeft(schedule.perPathSegment * (scope.frames.size.toLong * keys.size))(_ + schedule.pathText(_))
+              Charge(sized(op, vs) + paths, () => result(Lookups(op, vs, p => scope.resolve(p).value)))
+            }
+        )
 
       case Crypto(op, args) =>
         Charge(
@@ -207,39 +226,90 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
 
   // ---- variables
 
+  /** The access, and each segment. */
+  private def readCost(segments: Long): Gas = schedule.varAccess + schedule.perPathSegment * segments
+
   /**
    * Charges for the access and each segment (a binding name counts as one), then reads. A plain path inside callbacks
    * may consult every enclosing frame, so each frame is charged as a segment too.
    */
   private def read(ref: VarRef, default: Option[CanonicalValue], scope: Scope): Step = {
-    def orDefault(v: CanonicalValue): CanonicalValue = if (v == CNull) default.getOrElse(CNull) else v
     val segments = ref match {
       case VarRef.Data(p) if p.nonEmpty => p.size.toLong + scope.frames.size
       case VarRef.Data(_)               => 0L
       case VarRef.Bound(_, p)           => 1L + p.size
     }
-    Charge(
-      schedule.varAccess + schedule.perPathSegment * segments,
-      () =>
-        ref match {
-          case VarRef.Data(path) =>
-            val r = scope.resolve(path)
-            if (r.ambiguous) Note(Warning.AmbiguousPath(ref.render), () => Done(orDefault(r.value))) else Done(orDefault(r.value))
-          case VarRef.Bound(name, path) =>
-            scope.bindings.get(name) match {
-              case scala.Some(v) => Done(orDefault(Values.at(v, path)))
-              case scala.None    => default.fold(Fail(JlvmError.Malformed(s"$$$name is not bound")))(Done(_))
-            }
-        }
-    )
+    Charge(readCost(segments), () => lookup(ref, default, scope))
   }
 
-  /** A segment of a computed data path: text is an exact key (it may contain `.`); an integer is an index. */
+  /** Reads a path already paid for. */
+  private def lookup(ref: VarRef, default: Option[CanonicalValue], scope: Scope): Step = {
+    def orDefault(v: CanonicalValue): CanonicalValue = if (v == CNull) default.getOrElse(CNull) else v
+    ref match {
+      case VarRef.Data(path) =>
+        val r = scope.resolve(path)
+        if (r.ambiguous) Note(Warning.AmbiguousPath(ref.render), () => Done(orDefault(r.value))) else Done(orDefault(r.value))
+      case VarRef.Bound(name, path) =>
+        scope.bindings.get(name) match {
+          case scala.Some(v) => Done(orDefault(Values.at(v, path)))
+          case scala.None    => default.fold(Fail(JlvmError.Malformed(s"$$$name is not bound")))(Done(_))
+        }
+    }
+  }
+
+  /**
+   * A segment of a computed data path: text is an exact key (it may contain `.`); an integer is an index, or the key
+   * that is its decimal form. Integers are bounded to 64 bits **before** they are rendered.
+   */
   private def segment(v: CanonicalValue): Either[JlvmError, String] =
     v match {
-      case CText(t) => t.asRight
-      case CInt(i)  => i.toString.asRight
-      case other    => JlvmError.Type("var", s"a path segment is text or an integer, got ${Values.kind(other)}").asLeft
+      case CText(t)                 => t.asRight
+      case CInt(i) if i.isValidLong => i.toLong.toString.asRight
+      case CInt(_)                  => JlvmError.Domain("var", "an integer path segment must fit in 64 bits").asLeft
+      case other                    => JlvmError.Type("var", s"a path segment is text or an integer, got ${Values.kind(other)}").asLeft
+    }
+
+  // ---- operations
+
+  /**
+   * An operation, after its size charge. `+` and `*` fold in charged steps; `cat` and `join` pay for rendering numbers
+   * before they render them, and `join` for its separators before it builds its result.
+   */
+  private def operate(op: Op, vs: Vector[CanonicalValue]): Step =
+    op match {
+      case Op.Add | Op.Mul =>
+        PureOps
+          .operands(op, vs)
+          .fold(
+            Fail(_),
+            {
+              case first +: rest => accumulate(op, rest, 0, first)
+              case _             => Done(PureOps.identity(op))
+            }
+          )
+      case Op.Join =>
+        Charge(
+          schedule.rendered(PureOps.rendered(op, vs)),
+          () =>
+            PureOps.joining(vs).fold(Fail(_), j => Charge(schedule.cost(op).perUnit * j.separatorBytes, () => result(PureOps.joined(j))))
+        )
+      case Op.Cat => Charge(schedule.rendered(PureOps.rendered(op, vs)), () => strict(op, vs))
+      case _      => strict(op, vs)
+    }
+
+  private def strict(op: Op, vs: Vector[CanonicalValue]): Step =
+    PureOps(op, vs).fold(Fail(JlvmError.Malformed(s"${op.wire} has no strict form")))(result)
+
+  /**
+   * `+` or `*`, left to right. Each step is the binary operation on the accumulator and the next operand: the operands
+   * were paid for by the size charge, and each step after the first also pays the size charge of its accumulator. Every
+   * intermediate is checked against the number bound, so the accumulator stays bounded too.
+   */
+  private def accumulate(op: Op, rest: Vector[Ratio], i: Int, acc: Ratio): Step =
+    if (i >= rest.size) result(Values.num(op, acc))
+    else {
+      def next(): Step = PureOps.combine(op, acc, rest(i)).fold(Fail(_), accumulate(op, rest, i + 1, _))
+      if (i == 0) next() else Charge(sized(op, Vector(CanonicalValue.number(acc))), () => next())
     }
 
   // ---- lazy forms

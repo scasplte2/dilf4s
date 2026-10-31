@@ -5,9 +5,10 @@ import java.util.Locale
 import cats.syntax.all._
 
 import scala.annotation.tailrec
+import scala.collection.Searching
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
 import xyz.kd5ujc.numerics.Ratio
 
 import scodec.bits.ByteVector
@@ -90,6 +91,10 @@ object Values {
 
   def map(where: String, entries: Iterable[(String, CanonicalValue)]): Either[JlvmError, CanonicalValue] =
     CanonicalValue.map(entries).leftMap(e => JlvmError.Limit(s"$where: $e")).flatMap(bounded(where, _))
+
+  /** A map from keys checked once (a program's literal keys), distinct: no key is rescanned. */
+  def textKeyed(where: String, entries: Vector[(CText, CanonicalValue)]): Either[JlvmError, CanonicalValue] =
+    CanonicalValue.textKeyed(entries).leftMap(e => JlvmError.Limit(s"$where: $e")).flatMap(bounded(where, _))
 
   /**
    * The value at `path`: an object segment is a key; an array segment is a decimal index without leading zeros. Anything
@@ -186,6 +191,72 @@ object Values {
   /** Map keys in Unicode code-point order (the order of `keys`, `values` and `entries`). */
   def sortedKeys(m: scala.collection.immutable.Map[String, CanonicalValue]): List[String] =
     m.keys.toList.sortWith((a, b) => compareCodePoints(a, b) < 0)
+
+  /**
+   * The bits of a number's decimal expansion, bounded from its size alone: the numerator's bits for an integer; for a
+   * terminating `p/q` with `q = 2^a 5^b`, the expansion is `p 2^(s-a) 5^(s-b)` with `s = max(a, b)`, at most
+   * `bits(p) + log2(5) bits(q)` bits, bounded here by `bits(p) + 7 bits(q) / 3`. 0 for anything else.
+   */
+  def renderedBits(v: CanonicalValue): Long = v match {
+    case CInt(i)      => i.bitLength.toLong
+    case CRational(r) => r.numerator.bitLength.toLong + (7L * r.denominator.bitLength + 2) / 3
+    case _            => 0L
+  }
+
+  // ---- an order for deduplicating
+
+  /**
+   * A sort key for deduplicating: kinds first; scalars then compare structurally (numbers by numerator and
+   * denominator, text by UTF-16 unit, bytes bytewise), and arrays and maps by their canonical encoding, computed once.
+   * The order is total and consistent with equality, and nothing is hashed, so values a program chooses cannot be made
+   * to collide.
+   */
+  final case class Key(rank: Int, value: CanonicalValue, encoding: ByteVector)
+
+  private def unsigned(a: ByteVector, b: ByteVector): Int = java.util.Arrays.compareUnsigned(a.toArrayUnsafe, b.toArrayUnsafe)
+
+  given Ordering[Key] = (a, b) =>
+    if (a.rank != b.rank) Integer.compare(a.rank, b.rank)
+    else
+      (a.value, b.value) match {
+        case (CBool(x), CBool(y))         => x.compare(y)
+        case (CInt(x), CInt(y))           => x.compare(y)
+        case (CRational(x), CRational(y)) => Ordering[(BigInt, BigInt)].compare((x.numerator, x.denominator), (y.numerator, y.denominator))
+        case (CText(x), CText(y))         => x.compareTo(y)
+        case (CBytes(x), CBytes(y))       => unsigned(x, y)
+        case _                            => unsigned(a.encoding, b.encoding)
+      }
+
+  private def key(v: CanonicalValue): Key = v match {
+    case CNull        => Key(0, v, ByteVector.empty)
+    case CBool(_)     => Key(1, v, ByteVector.empty)
+    case CInt(_)      => Key(2, v, ByteVector.empty)
+    case CRational(_) => Key(3, v, ByteVector.empty)
+    case CText(_)     => Key(4, v, ByteVector.empty)
+    case CBytes(_)    => Key(5, v, ByteVector.empty)
+    case CArray(_)    => Key(6, v, Cbor.encode(v).compact)
+    case CMap(_)      => Key(7, v, Cbor.encode(v).compact)
+  }
+
+  /** `vs` without repeats, keeping each value's first occurrence, in order: a stable sort and a scan, O(n log n). */
+  def distinct(vs: Vector[CanonicalValue]): Vector[CanonicalValue] = {
+    val sorted = vs.map(key).zipWithIndex.sortBy(_._1)
+    val firsts = sorted.zip(None +: sorted.map(Option(_))).collect {
+      case ((e, i), previous) if !previous.exists(p => summon[Ordering[Key]].equiv(p._1, e)) => i
+    }
+    firsts.sorted.map(vs)
+  }
+
+  /** Whether every element of `xs` is in `ys`: a binary search of `ys` in canonical order, O((m + n) log n). */
+  def subset(xs: Vector[CanonicalValue], ys: Vector[CanonicalValue]): Boolean = {
+    val sorted = ys.map(key).sorted
+    xs.forall(x =>
+      sorted.search(key(x)) match {
+        case Searching.Found(_)          => true
+        case Searching.InsertionPoint(_) => false
+      }
+    )
+  }
 
   /** Top-level size, for operations that only touch the outermost collection. */
   def elements(v: CanonicalValue): Long = v match {
