@@ -335,7 +335,7 @@ mod tests {
     use alloc::vec::Vec;
 
     use super::{Link, Map, Node, Text, Value, canonical_key_order, entry_weight};
-    use crate::value::MAX_DEPTH;
+    use crate::value::{MAX_DEPTH, MAX_WEIGHT};
 
     /// Checks every node's balance, order and caches against a recount; returns (height, weight sum, depth, count).
     fn check(link: &Link, low: Option<&str>, high: Option<&str>) -> (u8, u128, usize, usize) {
@@ -490,6 +490,36 @@ mod tests {
         let too_deep = (0..MAX_DEPTH).fold(Value::Null, |v, _| Value::array(vec![v]).unwrap());
         assert!(map.updated(Text::from("c"), too_deep).is_err(), "depth checked");
         assert_eq!(map.len(), 2, "unchanged by a refused update");
+    }
+
+    #[test]
+    fn the_weight_stays_exact_through_saturation() {
+        // never format or compare these: each holds 2^61 or more leaves
+        let doubled = |k: usize| (0..k).fold(Value::text("a"), |v, _| Value::array(vec![v.clone(), v]).unwrap());
+        let big = doubled(61);
+        let big_weight = 3 * (1u64 << 61) - 1;
+        assert_eq!(big.weight(), big_weight, "not saturated");
+        let entry = |w: u64| 1 + 1 + w; // a one-byte key
+        let m = Map::new([])
+            .unwrap()
+            .updated(Text::from("x"), big.clone())
+            .and_then(|m| m.updated(Text::from("y"), big.clone()))
+            .and_then(|m| m.updated(Text::from("z"), Value::int(1)))
+            .unwrap();
+        assert_eq!(m.weight(), MAX_WEIGHT, "two big entries pass the cap");
+        let without_y = m.removed("y");
+        let exact = 1 + entry(big_weight) + entry(1);
+        assert_eq!(without_y.weight(), exact, "exact again after a removal");
+        let fresh = Map::new([("x".to_string(), big.clone()), ("z".to_string(), Value::int(1))]).unwrap();
+        assert_eq!(without_y.weight(), fresh.weight(), "as a fresh build");
+        assert_eq!(m.updated(Text::from("y"), Value::int(1)).unwrap().weight(), exact + entry(1), "after a replace");
+        assert_eq!(m.removed("x").removed("y").weight(), 1 + entry(1), "both removed");
+        // an entry whose own weight is saturated
+        let saturated = doubled(62);
+        assert_eq!(saturated.weight(), MAX_WEIGHT);
+        let s = Map::new([("x".to_string(), saturated), ("z".to_string(), Value::int(1))]).unwrap();
+        assert_eq!(s.weight(), MAX_WEIGHT, "saturated");
+        assert_eq!(s.removed("x").weight(), 1 + entry(1), "exact once the saturated entry is gone");
     }
 
     #[test]
