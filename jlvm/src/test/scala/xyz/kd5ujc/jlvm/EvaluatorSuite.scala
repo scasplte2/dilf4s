@@ -64,8 +64,8 @@ object EvaluatorSuite extends IOSuite with Checkers {
     expect
       .same(ok("43"), result("""{"+": [{"var": "$ordinal"}, 1]}""", env = env))
       .and(expect.same(ok("1"), result("""{"let": [[["ordinal", 1]], {"var": "$ordinal"}]}""", env = env)))
-      .and(expect(result("""{"var": "$timestamp"}""").isLeft, "unbound"))
-      .and(expect.same(ok("0"), result("""{"var": ["$timestamp", 0]}""")))
+      .and(expect(result("""{"var": "$epochProgress"}""").isLeft, "unbound"))
+      .and(expect.same(ok("0"), result("""{"var": ["$epochProgress", 0]}""")))
   }
 
   check("let binds sequentially, in either surface form") {

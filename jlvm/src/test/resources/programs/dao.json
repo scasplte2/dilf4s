@@ -2,7 +2,7 @@
   ["s", {"var": "state"}],
   ["c", {"var": "call"}],
   ["me", {"var": "$sender"}],
-  ["t", {"var": "$timestamp"}],
+  ["height", {"var": "$ordinal"}],
   ["weight", {"get": [{"var": "state.weights"}, {"var": "$sender"}, 0]}],
   ["id", {"cat": [{"if": [{"!=": [{"var": "call.id"}, null]}, {"var": "call.id"}, {"var": "state.nextId"}]}]}],
   ["p", {"get": [{"var": "state.proposals"}, {"var": "$id"}]}]
@@ -15,7 +15,7 @@
         "nextId": {"+": [{"var": "$s.nextId"}, 1]},
         "proposals": {"set": [{"var": "$s.proposals"}, {"var": "$id"}, {
           "action": {"var": "$c.action"},
-          "deadline": {"+": [{"var": "$t"}, {"var": "$c.duration"}]},
+          "deadline": {"+": [{"var": "$height"}, {"var": "$c.duration"}]},
           "for": 0, "against": 0, "voters": {"literal": {}}, "executed": false
         }]}
       }]},
@@ -27,7 +27,7 @@
   {"if": [
     {"and": [
       {"var": "$p"},
-      {"<": [{"var": "$t"}, {"var": "$p.deadline"}]},
+      {"<": [{"var": "$height"}, {"var": "$p.deadline"}]},
       {">": [{"var": "$weight"}, 0]},
       {"!": {"has": [{"var": "$p.voters"}, {"var": "$me"}]}}
     ]},
@@ -46,7 +46,7 @@
   {"if": [
     {"and": [
       {"var": "$p"},
-      {">=": [{"var": "$t"}, {"var": "$p.deadline"}]},
+      {">=": [{"var": "$height"}, {"var": "$p.deadline"}]},
       {"!": {"var": "$p.executed"}},
       {">=": [{"+": [{"var": "$p.for"}, {"var": "$p.against"}]}, {"var": "$s.quorum"}]},
       {">": [{"var": "$p.for"}, {"var": "$p.against"}]}

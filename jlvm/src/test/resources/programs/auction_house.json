@@ -1,13 +1,13 @@
 {"let": [[
   ["s", {"var": "state"}],
   ["c", {"var": "call"}],
-  ["t", {"var": "$timestamp"}]
+  ["height", {"var": "$ordinal"}]
  ],
  {"if": [
   {"==": [{"var": "$c.method"}, "bid"]},
   {"if": [
     {"and": [
-      {"<": [{"var": "$t"}, {"var": "$s.end"}]},
+      {"<": [{"var": "$height"}, {"var": "$s.end"}]},
       {">=": [{"var": "$c.amount"}, {"var": "$s.reserve"}]},
       {"or": [
         {"!": {"var": "$s.bidder"}},
@@ -19,7 +19,7 @@
         "bid": {"var": "$c.amount"},
         "bidder": {"var": "$c.bidder"},
         "end": {"if": [
-          {"<": [{"-": [{"var": "$s.end"}, {"var": "$t"}]}, {"var": "$s.extendWindow"}]},
+          {"<": [{"-": [{"var": "$s.end"}, {"var": "$height"}]}, {"var": "$s.extendWindow"}]},
           {"+": [{"var": "$s.end"}, {"var": "$s.extendBy"}]},
           {"var": "$s.end"}
         ]}
@@ -34,7 +34,7 @@
 
   {"==": [{"var": "$c.method"}, "settle"]},
   {"if": [
-    {"and": [{">=": [{"var": "$t"}, {"var": "$s.end"}]}, {"!": {"var": "$s.settled"}}]},
+    {"and": [{">=": [{"var": "$height"}, {"var": "$s.end"}]}, {"!": {"var": "$s.settled"}}]},
     {"state": {"set": [{"var": "$s"}, "settled", true]},
      "effects": {"if": [
        {"var": "$s.bidder"},

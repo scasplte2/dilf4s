@@ -43,8 +43,8 @@ object ContractVectorCases extends IOApp {
   private def pk(w:   BigInt): ByteVector = Secp256k1Group.base(w).bytes
   private def dlog(w: BigInt): SigmaProp = SigmaProp.dlog(Secp256k1Group.base(w)).fold(sys.error, identity)
   private def be(i:   BigInt, n: Int): ByteVector = ByteVector(i.toByteArray).takeRight(n.toLong).padLeft(n.toLong)
-  private def s(v:    String) = "sender"  -> text(v)
-  private def t(n:    Long) = "timestamp" -> CInt(BigInt(n))
+  private def s(v:    String) = "sender" -> text(v)
+  private def t(n:    Long) = "ordinal"  -> CInt(BigInt(n))
   private val tx = ByteVector.fill(32)(0x51)
   private val txb = "txHash" -> CBytes(tx)
 

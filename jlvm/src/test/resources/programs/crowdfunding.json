@@ -1,13 +1,13 @@
 {"let": [[
   ["s", {"var": "state"}],
   ["c", {"var": "call"}],
-  ["t", {"var": "$timestamp"}],
+  ["height", {"var": "$ordinal"}],
   ["total", {"+": {"values": {"var": "state.pledges"}}}]
  ],
  {"if": [
   {"==": [{"var": "$c.method"}, "pledge"]},
   {"if": [
-    {"and": [{"<": [{"var": "$t"}, {"var": "$s.deadline"}]}, {">": [{"var": "$c.amount"}, 0]}]},
+    {"and": [{"<": [{"var": "$height"}, {"var": "$s.deadline"}]}, {">": [{"var": "$c.amount"}, 0]}]},
     {"let": [[["slot", {"hex": {"var": "call.backer"}}]],
      {"state": {"set": [{"var": "$s"}, "pledges", {"set": [{"var": "$s.pledges"}, {"var": "$slot"}, {"+": [{"get": [{"var": "$s.pledges"}, {"var": "$slot"}, 0]}, {"var": "$c.amount"}]}]}]},
       "effects": []}]},
@@ -30,7 +30,7 @@
   {"let": [[["pledged", {"get": [{"var": "state.pledges"}, {"hex": {"var": "call.backer"}}, 0]}]],
    {"if": [
     {"and": [
-      {">=": [{"var": "$t"}, {"var": "$s.deadline"}]},
+      {">=": [{"var": "$height"}, {"var": "$s.deadline"}]},
       {"<": [{"var": "$total"}, {"var": "$s.goal"}]},
       {">": [{"var": "$pledged"}, 0]},
       {"sigma_verify": [{"type": "dlog", "pk": {"var": "$c.backer"}}, {"var": "$c.proof"}, {"var": "$txHash"}]}

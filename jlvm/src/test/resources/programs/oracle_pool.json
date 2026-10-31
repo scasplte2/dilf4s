@@ -1,6 +1,6 @@
 {"let": [[
   ["s", {"var": "state"}],
-  ["t", {"var": "$timestamp"}],
+  ["height", {"var": "$ordinal"}],
   ["next", {"+": [{"var": "state.epoch"}, 1]}],
   ["valid", {"filter": [{"var": "call.datapoints"}, {"and": [
     {"in": [{"var": "$current.oracle"}, {"var": "state.oracles"}]},
@@ -21,13 +21,13 @@
  {"if": [
   {"!=": [{"var": "call.method"}, "update"]},
   {"object": {"reject": "unknown method"}},
-  {"<": [{"var": "$t"}, {"+": [{"var": "$s.lastUpdate"}, {"var": "$s.epochLength"}]}]},
+  {"<": [{"var": "$height"}, {"+": [{"var": "$s.lastUpdate"}, {"var": "$s.epochLength"}]}]},
   {"object": {"reject": "the epoch has not ended"}},
   {"!=": [{"count": {"unique": {"map": [{"var": "$valid"}, {"var": "$current.oracle"}]}}}, {"var": "$n"}]},
   {"object": {"reject": "one datapoint per oracle"}},
   {"<": [{"var": "$n"}, {"var": "$s.minDatapoints"}]},
   {"object": {"reject": "too few valid datapoints"}},
-  {"state": {"merge": [{"var": "$s"}, {"epoch": {"var": "$next"}, "rate": {"var": "$median"}, "lastUpdate": {"var": "$t"}}]},
+  {"state": {"merge": [{"var": "$s"}, {"epoch": {"var": "$next"}, "rate": {"var": "$median"}, "lastUpdate": {"var": "$height"}}]},
    "effects": []}
  ]}
 ]}

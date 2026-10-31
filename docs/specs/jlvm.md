@@ -238,7 +238,10 @@ path:
 - Inner bindings shadow outer ones.
 - An unbound name is `Malformed`, unless a default is given.
 - The host supplies its context this way (decision B): for example, the ottochain adapter binds `ordinal`,
-  `epochProgress`, `lastSnapshotHash` and `timestamp`, rather than putting them in the data.
+  `epochProgress` and `lastSnapshotHash`, rather than putting them in the data.
+- Host bindings must be identical on every node that evaluates the program: consensus context such as the snapshot
+  ordinal, never wall-clock time or any other per-node value. Deadlines are counted in ordinals; a time a caller
+  asserts is part of the input data.
 
 ### 4.2 Lazy forms
 
