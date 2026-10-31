@@ -52,6 +52,12 @@ object Secp256k1Group {
         .map(GroupElement(_))
         .filterOrElse(_.bytes == b, "not the canonical encoding of a point")
 
+  /**
+   * Whether `p` is a point of this group's curve. Every element built here is; one built around the constructor (a
+   * product mirror) may hold a point of another curve, or one off any curve.
+   */
+  def isPoint(p: GroupElement): Boolean = (p.point.getCurve eq curve.getCurve) && p.point.isValid
+
   /** `k·G`, with the fixed-base multiplier. */
   def base(k: BigInt): GroupElement =
     GroupElement(new FixedPointCombMultiplier().multiply(curve.getG, k.mod(Order).bigInteger).normalize())

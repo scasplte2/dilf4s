@@ -58,7 +58,13 @@ object JsonSurface {
       .leftMap(e => JlvmError.Malformed(e.toString))
       .flatMap(j => value(j).filterOrElse(_ == v, JlvmError.Malformed("a value with 0x-hex text has no JSON surface form")).as(j))
 
-  /** A result as JSON; a non-terminating rational has no JSON rendering and is an error. */
+  /**
+   * A result as JSON text that [[parse]] reads back as the same value. As for [[json]], text in `0x`-hex form anywhere
+   * in the value (it would read back as bytes) and a non-terminating rational have no rendering, and are errors.
+   */
   def render(v: CanonicalValue): Either[JlvmError, String] =
-    CanonicalJson.render(toCanonicalJson(v)).leftMap(e => JlvmError.Malformed(e.toString))
+    CanonicalJson
+      .render(toCanonicalJson(v))
+      .leftMap(e => JlvmError.Malformed(e.toString))
+      .flatMap(text => parse(text).filterOrElse(_ == v, JlvmError.Malformed("a value with 0x-hex text has no JSON surface form")).as(text))
 }

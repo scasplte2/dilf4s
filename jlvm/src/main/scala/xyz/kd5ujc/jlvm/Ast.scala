@@ -180,9 +180,19 @@ enum Expr {
 /**
  * A program: language version 1 and its expression, nested at most [[Program.MaxDepth]] deep. The bound is checked
  * once, here, so everything that walks a program (compilation, hashing, rendering) may recurse on its structure.
+ *
+ * Not a case class: a case class has a product mirror whose `fromProduct` builds an instance around its private
+ * constructor, so [[Program.from]] would not be the only way in.
  */
-final case class Program private (expr: Expr) {
+final class Program private (val expr: Expr) {
   def version: Int = Program.Version
+
+  override def equals(that: Any): Boolean = that match {
+    case p: Program => p.expr == expr
+    case _          => false
+  }
+  override def hashCode: Int = expr.hashCode
+  override def toString: String = s"Program($expr)"
 }
 
 object Program {
@@ -191,14 +201,35 @@ object Program {
   /** Expression nesting: an operation's arguments, an array's items and a map's fields are one level deeper. */
   val MaxDepth: Int = 256
 
+  /** JSON nesting of the rendered program ([[Parser.render]]), as the canonical JSON parser bounds it. */
+  val MaxSurfaceDepth: Int = CanonicalValue.MaxDepth
+
   /**
    * Checks the depth bound and the shapes no surface text can produce, so every program has exactly one surface form:
    * a spread names a [[Op.Variadic]] operation and its argument is not an array expression (that is an argument list).
-   * Then requires the canonical form to fit the value depth bound, so every program has an identity and an exact
-   * rendering: an operation takes two canonical levels, so about 127 nest, fewer around deep literals.
+   * Checks that the canonical form decodes to this tree, so programs that behave differently never share an identity:
+   * a `var` path is what its text reads back as, and no default is null (the canonical form drops null). Then requires
+   * the rendered surface and the canonical form to fit the depth bound, so every program has an identity and an exact
+   * rendering: an operation takes two canonical levels, so about 127 nest, fewer around deep literals and defaults.
    */
   def from(expr: Expr): Either[JlvmError, Program] =
-    check(List(expr -> 0)).toLeft(new Program(expr)).flatMap(p => Parser.canonical(p).map(_ => p))
+    for {
+      _ <- check(List(expr -> 0)).toLeft(())
+      surface = Parser.surfaceDepth(expr)
+      _ <- Either.cond(
+        surface <= MaxSurfaceDepth,
+        (),
+        JlvmError.Limit(s"the program's JSON surface nests $surface deep, deeper than $MaxSurfaceDepth")
+      )
+      program = new Program(expr)
+      _ <- Parser.canonical(program)
+    } yield program
+
+  private def unspellable(ref: VarRef): JlvmError =
+    JlvmError.Malformed(
+      s"the var path $ref has no text form: \"${ref.render}\" reads back as another path; read a key holding '.', " +
+      "an empty key or a key starting with '$' with the exact-segment form {\"var\": [[...]]}"
+    )
 
   /** A worklist walk, so that checking an unbounded tree cannot itself overflow the stack. */
   @tailrec
@@ -210,11 +241,14 @@ object Program {
         scala.Some(JlvmError.Malformed(s"${op.wire} does not spread its argument"))
       case (Expr.Spread(op, Expr.Arr(_)), _) :: _ =>
         scala.Some(JlvmError.Malformed(s"a spread ${op.wire} takes one expression, not an argument list"))
-      case (Expr.Apply(_, as), d) :: tl            => check(as.toList.map(_ -> (d + 1)) ::: tl)
-      case (Expr.Spread(_, a), d) :: tl            => check((a -> (d + 1)) :: tl)
-      case (Expr.VarAt(p, _), d) :: tl             => check((p -> (d + 1)) :: tl)
-      case (Expr.Arr(is), d) :: tl                 => check(is.toList.map(_ -> (d + 1)) ::: tl)
-      case (Expr.Obj(fs), d) :: tl                 => check(fs.values.toList.map(_ -> (d + 1)) ::: tl)
-      case (Expr.Lit(_) | Expr.Var(_, _), _) :: tl => check(tl)
+      case (Expr.Var(_, scala.Some(CanonicalValue.CNull)) | Expr.VarAt(_, scala.Some(CanonicalValue.CNull)), _) :: _ =>
+        scala.Some(JlvmError.Malformed("a var default is never null: the canonical form cannot tell it from no default"))
+      case (Expr.Var(ref, _), _) :: _ if !VarRef.parse(ref.render).exists(_ == ref) => scala.Some(unspellable(ref))
+      case (Expr.Apply(_, as), d) :: tl                                             => check(as.toList.map(_ -> (d + 1)) ::: tl)
+      case (Expr.Spread(_, a), d) :: tl                                             => check((a -> (d + 1)) :: tl)
+      case (Expr.VarAt(p, _), d) :: tl                                              => check((p -> (d + 1)) :: tl)
+      case (Expr.Arr(is), d) :: tl                                                  => check(is.toList.map(_ -> (d + 1)) ::: tl)
+      case (Expr.Obj(fs), d) :: tl                                                  => check(fs.values.toList.map(_ -> (d + 1)) ::: tl)
+      case (Expr.Lit(_) | Expr.Var(_, _), _) :: tl                                  => check(tl)
     }
 }

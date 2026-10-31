@@ -134,10 +134,12 @@ object Sigma {
 
   /**
    * Whether `proof` proves `prop` for `message`. The message must bind what the proof authorises (the transaction or
-   * update), or the proof can be replayed.
+   * update), or the proof can be replayed. The proposition is checked first ([[SigmaProp.validate]]): one built
+   * around the smart constructors (a product mirror) may be trivial, such as `dlog` of the identity or an empty `and`.
    */
   def verify(prop: SigmaProp, proof: ByteVector, message: ByteVector): Either[String, Boolean] =
     for {
+      _ <- SigmaProp.validate(prop)
       _ <- Either.cond(proof.size == proofLength(prop), (), s"a proof of this proposition is ${proofLength(prop)} bytes, got ${proof.size}")
       checked <- parse(prop, scala.None).runA(proof)
       commitments = leaves(checked).map(l => commitment(l.prop, l.challenge, l.z))

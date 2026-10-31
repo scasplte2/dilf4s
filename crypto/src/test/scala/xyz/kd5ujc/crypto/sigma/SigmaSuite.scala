@@ -3,8 +3,11 @@ package xyz.kd5ujc.crypto.sigma
 import cats.Show
 import cats.syntax.all._
 
+import scala.deriving.Mirror
+
 import xyz.kd5ujc.core.canonical.CanonicalValue
 
+import org.bouncycastle.crypto.ec.CustomNamedCurves
 import org.scalacheck.Gen
 import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
@@ -405,5 +408,64 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
       .same(Right(true), Sigma.verify(good, proof, msg))
       .and(variants.foldMap { case (name, prop) => expect(Sigma.verify(prop, proof, msg) == Right(false), name) })
       .and(expect(SigmaProver.proveWith(notDh, Vector(w), msg, hex"01").isLeft, "no proof of a tuple that is not DH"))
+  }
+
+  // ---- propositions built around the smart constructors (Scala 3 product mirrors) are checked at the boundary
+
+  private val mirrorDlog = summon[Mirror.ProductOf[SigmaProp.Dlog]]
+  private val mirrorAnd = summon[Mirror.ProductOf[SigmaProp.And]]
+  private val mirrorThreshold = summon[Mirror.ProductOf[SigmaProp.Threshold]]
+
+  /** A proof of `dlog(pk)` from `w`, made by hand so that nothing checks the statement: nonce `r`, `z = r + e·w`. */
+  private def handProof(prop: SigmaProp, w: BigInt): ByteVector = {
+    val r = BigInt(5)
+    val e = Sigma.challenge(Sigma.fiatShamir(prop, Vector(Secp256k1Group.base(r).bytes)), msg)
+    e ++ Secp256k1Group.scalarBytes((r + BigInt(1, e.toArray) * w).mod(Secp256k1Group.Order))
+  }
+
+  pureTest("a mirror-built dlog of the identity is rejected by the verifier, though its proof (w = 0) checks out") {
+    val forged = mirrorDlog.fromProduct(Tuple1(Secp256k1Group.Identity))
+    val proof = handProof(forged, BigInt(0))
+    expect
+      .same(56L, proof.size)
+      .and(expect(Sigma.verify(forged, proof, msg).isLeft, "the identity is no statement"))
+      .and(expect.same(Right(true), Sigma.verify(dlog(sk1), handProof(dlog(sk1), BigInt(sk1)), msg)))
+  }
+
+  pureTest("a mirror-built empty connective is rejected by the verifier and the prover; so is a bad threshold") {
+    val empty = mirrorAnd.fromProduct(Tuple1(Vector.empty[SigmaProp]))
+    val emptyProof = Sigma.challenge(Sigma.fiatShamir(empty, Vector.empty), msg)
+    val zeroOfOne = mirrorThreshold.fromProduct((0, Vector(dlog(sk1))))
+    val twoOfOne = mirrorThreshold.fromProduct((2, Vector(dlog(sk1))))
+    expect(Sigma.verify(empty, emptyProof, msg).isLeft, "an empty and verifies for anyone")
+      .and(expect(SigmaProver.proveWith(empty, Vector.empty, msg, hex"01").isLeft, "nor is one proven"))
+      .and(expect(Sigma.verify(zeroOfOne, ByteVector.fill(Sigma.proofLength(zeroOfOne))(1), msg).isLeft, "k = 0"))
+      .and(expect(SigmaProver.proveWith(zeroOfOne, Vector.empty, msg, hex"01").isLeft, "k = 0 proves with no secret"))
+      .and(expect(Sigma.verify(twoOfOne, ByteVector.fill(Sigma.proofLength(twoOfOne).max(0L))(1), msg).isLeft, "k > n"))
+  }
+
+  pureTest("a mirror-built proposition too deep, too wide or with too many leaves is rejected, without overflowing") {
+    val leaf = dlog(sk1)
+    def nest(n: Int): SigmaProp = (1 to n).foldLeft(leaf)((c, _) => mirrorAnd.fromProduct(Tuple1(Vector(c))))
+    val deep = nest(SigmaProp.MaxDepth)
+    val proof = SigmaProver.proveWith(nest(SigmaProp.MaxDepth - 1), Vector(BigInt(sk1)), msg, hex"01")
+    val wide = mirrorAnd.fromProduct(Tuple1(Vector.fill(SigmaProp.MaxChildren + 1)(leaf)))
+    val many = mirrorAnd.fromProduct(Tuple1(Vector.fill(17)(mirrorAnd.fromProduct(Tuple1(Vector.fill(250)(leaf))))))
+    expect(proof.flatMap(Sigma.verify(nest(SigmaProp.MaxDepth - 1), _, msg)) == Right(true), "64 deep is fine")
+      .and(expect(proof.flatMap(Sigma.verify(deep, _, msg)).isLeft, "65 deep is not"))
+      .and(expect(SigmaProver.proveWith(deep, Vector(BigInt(sk1)), msg, hex"01").isLeft, "nor is it proven"))
+      .and(expect(Sigma.verify(nest(100000), ByteVector.empty, msg).isLeft, "a very deep tree is malformed, not a stack overflow"))
+      .and(expect(Sigma.verify(wide, ByteVector.empty, msg).isLeft, "256 children"))
+      .and(expect(Sigma.verify(many, ByteVector.empty, msg).isLeft, "4250 leaves"))
+  }
+
+  pureTest("a mirror-built point off secp256k1 is rejected by the smart constructors and at the boundary") {
+    val other = CustomNamedCurves.getByName("secp256r1").getG.normalize()
+    val alien = summon[Mirror.ProductOf[GroupElement]].fromProduct(Tuple1(other))
+    val forged = mirrorDlog.fromProduct(Tuple1(alien))
+    expect(SigmaProp.dlog(alien).isLeft, "dlog")
+      .and(expect(SigmaProp.dhTuple(g, g, g, alien).isLeft, "dhTuple"))
+      .and(expect(Sigma.verify(forged, ByteVector.fill(56L)(1), msg).isLeft, "verify"))
+      .and(expect(SigmaProver.proveWith(forged, Vector(BigInt(1)), msg, hex"01").isLeft, "prove"))
   }
 }

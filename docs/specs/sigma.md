@@ -62,6 +62,12 @@ A proposition is a canonical map per node, discriminated by `type`. Each type ta
 - a proposition nests at most 64 deep and has at most 4096 leaves;
 - no field outside its type's row, so the encoding is canonical.
 
+The verifier and the prover check every constraint again on the proposition they are given, rather than trust its
+type: Scala 3 product mirrors build the proposition types around their smart constructors, so a caller could
+otherwise pass `dlog` of the identity, an empty `and` or a threshold with `k = 0`, each provable without a secret. The
+check also requires each statement point to be a point of secp256k1. It walks the tree with a worklist and stops at
+the first violation, so a tree of any depth is rejected without exhausting the stack.
+
 **The tree as written is the statement.** No normalisation is applied: nested `and`s are not flattened, and
 `threshold` with `k = 1` or `k = n` is not rewritten as `or` or `and`. Each shape has its own transcript. Ergo's script
 reducer normalises before proving, so an Ergo-reduced tree must be written in its reduced form.

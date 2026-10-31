@@ -6,8 +6,18 @@ import cats.syntax.functor._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
 
-/** A program checked for evaluation ([[Node.compile]]): its special forms are well-formed. */
-final case class Compiled private (program: Program, root: Node)
+/**
+ * A program checked for evaluation ([[Node.compile]]): its special forms are well-formed. Not a case class, so no
+ * product mirror can pair a program with a tree [[Node.compile]] did not produce.
+ */
+final class Compiled private (val program: Program, val root: Node) {
+  override def equals(that: Any): Boolean = that match {
+    case c: Compiled => c.program == program && c.root == root
+    case _           => false
+  }
+  override def hashCode: Int = (program, root).hashCode
+  override def toString: String = s"Compiled($program, $root)"
+}
 
 object Compiled {
   def apply(program: Program): Either[JlvmError, Compiled] = Node.compile(program).map(new Compiled(program, _))

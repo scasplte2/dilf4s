@@ -219,6 +219,15 @@ object SigmaProver {
     secrets: Vector[BigInt],
     message: ByteVector,
     seed:    ByteVector
+  ): Either[String, ByteVector] =
+    // a proposition built around the smart constructors may be trivial: proving it would prove nothing
+    SigmaProp.validate(prop).flatMap(proveChecked(_, secrets, message, seed))
+
+  private def proveChecked(
+    prop:    SigmaProp,
+    secrets: Vector[BigInt],
+    message: ByteVector,
+    seed:    ByteVector
   ): Either[String, ByteVector] = {
     val usable = secrets.filter(w => w > 0 && w < q)
     def witness(leaf: Dlog | DhTuple): Option[BigInt] = leaf match {

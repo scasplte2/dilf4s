@@ -2,6 +2,8 @@ package xyz.kd5ujc.crypto.sigma
 
 import cats.syntax.all._
 
+import scala.annotation.tailrec
+
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 
@@ -12,7 +14,9 @@ import scodec.bits.ByteVector
  * so that a single Fiat-Shamir challenge binds the whole tree (Cramer, Damgård, Schoenmakers). The construction and
  * every byte layout are Ergo's (sigmastate 5.0.13); docs/specs/sigma.md is normative.
  *
- * Built only through the smart constructors, which reject trivial trees (they verify for anyone) and bound the size.
+ * Built through the smart constructors, which reject trivial trees (they verify for anyone) and bound the size. A
+ * product mirror can build one around them, so [[Sigma.verify]] and [[SigmaProver]] check every tree again
+ * ([[SigmaProp.validate]]).
  */
 sealed trait SigmaProp {
   def depth: Int
@@ -63,7 +67,43 @@ object SigmaProp {
    * nothing. (Commitments may be the identity: they are computed, never taken from input.)
    */
   private def statementPoint(field: String, p: GroupElement): Either[String, GroupElement] =
-    Either.cond(!p.isIdentity, p, s"$field is the identity, for which anyone can prove knowledge (w = 0)")
+    Either
+      .cond(Secp256k1Group.isPoint(p), p, s"$field is not a point of secp256k1")
+      .filterOrElse(!_.isIdentity, s"$field is the identity, for which anyone can prove knowledge (w = 0)")
+
+  /**
+   * Checks every constraint the smart constructors enforce, over the whole tree: statement points on the curve and not
+   * the identity, 1 to [[MaxChildren]] children per connective, `1 <= k <= n`, depth and leaf bounds. Scala 3 product
+   * mirrors build these case classes around their private constructors, so [[Sigma.verify]] and [[SigmaProver.prove]]
+   * check here rather than trust the type. A worklist that stops at the first violation, so a tree of any depth or
+   * width is rejected without overflowing the stack.
+   */
+  def validate(prop: SigmaProp): Either[String, SigmaProp] = {
+    @tailrec
+    def go(todo: List[(SigmaProp, Int)], leaves: Int): Either[String, Unit] =
+      todo match {
+        case Nil                                                  => ().asRight
+        case (_, d) :: _ if d > MaxDepth                          => s"a proposition nests at most $MaxDepth deep".asLeft
+        case (_: (Dlog | DhTuple), _) :: _ if leaves >= MaxLeaves => s"a proposition has at most $MaxLeaves leaves".asLeft
+        case (Dlog(pk), _) :: tl =>
+          statementPoint("pk", pk) match {
+            case Left(e)  => e.asLeft
+            case Right(_) => go(tl, leaves + 1)
+          }
+        case (DhTuple(g, h, u, v), _) :: tl =>
+          (statementPoint("g", g), statementPoint("h", h), statementPoint("u", u), statementPoint("v", v)).tupled match {
+            case Left(e)  => e.asLeft
+            case Right(_) => go(tl, leaves + 1)
+          }
+        case (Threshold(k, cs), _) :: _ if k < 1 || k > cs.size =>
+          s"a threshold needs 1 <= k <= ${cs.size} children, got k = $k".asLeft
+        case (c: Conjecture, _) :: _ if c.children.isEmpty =>
+          "a connective needs at least one child: an empty one holds for anyone".asLeft
+        case (c: Conjecture, _) :: _ if c.children.size > MaxChildren => s"a connective has at most $MaxChildren children".asLeft
+        case (c: Conjecture, d) :: tl                                 => go(c.children.toList.map(_ -> (d + 1)) ::: tl, leaves)
+      }
+    go(List(prop -> 1), 0).as(prop)
+  }
 
   def dlog(pk: GroupElement): Either[String, Dlog] = statementPoint("pk", pk).map(Dlog(_))
 

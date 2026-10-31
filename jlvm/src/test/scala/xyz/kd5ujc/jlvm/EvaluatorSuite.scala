@@ -18,7 +18,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   private def check(name: String)(f: Jlvm ?=> Expectations) = test(name)(jlvm => IO(f(using jlvm)))
 
-  private given Show[Program] = Show.fromToString
+  private given Show[Expr] = Show.fromToString
 
   private def program(json: String): Program = Parser.parse(json).fold(e => sys.error(e.toString), identity)
   private def value(json:   String): CanonicalValue = JsonSurface.parse(json).fold(e => sys.error(e.toString), identity)
@@ -130,6 +130,22 @@ object EvaluatorSuite extends IOSuite with Checkers {
         )
       )
       .and(expect.same(Right(ok("2")), run("""{"let": [{"b": {"+": [{"var": "a"}, 1]}, "a": 1}, {"var": "b"}]}""")))
+  }
+
+  check("migrated programs give metakit's results (checked against metakit de2a856), or fail to migrate") {
+    def run(json: String, data: String = "{}") = Parser.migrate(json).map(result(_, data))
+    expect
+      .same(Right(ok("true")), run("""{"if": [{"round_half_up": 0}, true, false]}"""))
+      .and(expect.same(Right(ok("""["round_half_up", 0]""")), run("""["round_half_up", 0]""")))
+      .and(expect.same(Right(ok("""{"sha256": "0x00"}""")), run("""{"sha256": "0x00"}""")))
+      .and(expect.same(Right(ok("3")), run("""{"round": 2.5}""")))
+      .and(expect.same(Right(ok("3")), run("""{"": "a"}""", """{"a": 3}""")))
+      .and(expect.same(Right(ok("[3]")), run("""{"map": [[{"y": 2}], {"let": [[["x", 1]], {"+": [{"var": "x"}, {"var": "y"}]}]}]}""")))
+      .and(expect.same(Right(ok("4")), run("""{"let": [[["x", {"var": "a"}]], {"var": "x"}]}""", """{"a": 4}""")))
+      // metakit: true (the binding), [5] (the element), {"x": 1} (the bindings): v1 cannot say these, so they fail
+      .and(expect(run("""{"let": [[["x", true]], {"var": {"cat": ["x"]}}]}""", """{"x": false}""").isLeft, "computed path"))
+      .and(expect(run("""{"let": [[["x", 1]], {"map": [[{"x": 5}], {"var": "x"}]}]}""").isLeft, "callback element"))
+      .and(expect(run("""{"let": [[["x", 1]], {"var": ""}]}""", """{"a": 2}""").isLeft, "the whole scope"))
   }
 
   // ---- callbacks
@@ -644,7 +660,12 @@ object EvaluatorSuite extends IOSuite with Checkers {
     }
   }
 
-  private val programs: Gen[Program] = Gen.choose(1, 5).flatMap(expr(_, Nil)).map(e => Program.from(e).toOption.get)
+  /** Depth at most 5, a few canonical levels per level: far inside Program.from's bounds, by construction. */
+  private val programs: Gen[Expr] = Gen.choose(1, 5).flatMap(expr(_, Nil))
+
+  /** A tree Program.from rejects is a failure of the generator: reported with the tree, not thrown. */
+  private def accepted(e: Expr)(f: Program => Expectations): Expectations =
+    Program.from(e).fold(err => failure(s"the generator built a tree Program.from rejects: $err\n$e"), f)
 
   private val limits: Gen[Long] = Gen.frequency(1 -> Gen.choose(0L, 300L), 1 -> Gen.const(GasLimit.Default.amount.value))
 
@@ -652,24 +673,31 @@ object EvaluatorSuite extends IOSuite with Checkers {
     given Jlvm = jlvm
     val data = value(dataJson)
     forall(Gen.zip(programs, limits)) {
-      case (p, limit) =>
-        val run = (d: Config.Driver) => summon[Jlvm].evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(limit)), driver = d))
-        val reference = run(Config.Driver.Recursive)
-        expect.same(reference, run(Config.Driver.StackMachine)).and(expect.same(reference, run(Config.Driver.Direct)))
+      case (e, limit) =>
+        accepted(e) { p =>
+          val run = (d: Config.Driver) => summon[Jlvm].evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(limit)), driver = d))
+          val reference = run(Config.Driver.Recursive)
+          expect.same(reference, run(Config.Driver.StackMachine)).and(expect.same(reference, run(Config.Driver.Direct)))
+        }
     }
   }
 
   check("the agreement property is not vacuous: most generated programs succeed, some fail, some run out of gas") {
     val data = value(dataJson)
     val sample = Gen.listOfN(600, Gen.zip(programs, limits)).pureApply(Gen.Parameters.default, Seed(20261030L))
-    val outcomes = sample.map { case (p, limit) => summon[Jlvm].evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(limit)))).result }
+    val built = sample.map { case (e, limit) => Program.from(e).map(_ -> limit) }
+    val rejected = built.collect { case Left(err) => err }
+    val outcomes = built.collect {
+      case Right((p, limit)) => summon[Jlvm].evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(limit)))).result
+    }
     val succeeded = outcomes.count(_.isRight)
     val starved = outcomes.count {
       case Left(JlvmError.OutOfGas(_, _)) => true
       case _                              => false
     }
     val failed = outcomes.size - succeeded - starved
-    expect(succeeded * 100 >= outcomes.size * 35, s"succeeded $succeeded of ${outcomes.size}")
+    expect(rejected.isEmpty, s"the generator built trees Program.from rejects: ${rejected.take(3)}")
+      .and(expect(succeeded * 100 >= outcomes.size * 35, s"succeeded $succeeded of ${outcomes.size}"))
       .and(expect(starved >= 30, s"out of gas $starved"))
       .and(expect(failed >= 30, s"other errors $failed"))
   }
