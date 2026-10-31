@@ -85,9 +85,9 @@ object Node {
   private def malformed[A](msg: String): Either[JlvmError, A] = JlvmError.Malformed(msg).asLeft
 
   /**
-   * `lets` holds the `let` names in scope. A plain path whose first segment is one of them is rejected: metakit read
-   * such a path as the binding, so accepting it would silently read the data instead. Names are chosen by the program,
-   * so they are kept in a sorted set, never hashed.
+   * `lets` holds the `let` names in scope. A plain path whose first segment is one of them is rejected: a binding is
+   * read only as `$name`, so a plain path never reads the data where the binding was meant. Names are chosen by the
+   * program, so they are kept in a sorted set, never hashed.
    */
   private def node(e: Expr, lets: TreeSet[String]): Either[JlvmError, Node] =
     e match {

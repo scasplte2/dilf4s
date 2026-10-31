@@ -62,7 +62,7 @@ object ContractsSuite extends IOSuite {
       .and(
         expect.same(
           Right(r.original.expr),
-          Parser.migrate(Parser.render(r.original).map(_.noSpaces).getOrElse("")).flatMap(Parser.parse(_)).map(_.expr)
+          Parser.render(r.original).map(_.noSpaces).flatMap(Parser.parse(_)).map(_.expr)
         )
       )
   }
@@ -157,10 +157,11 @@ object ContractsSuite extends IOSuite {
     val written = Parser.parse(counter.format("""{"count": {"+": [{"var": "state.count"}, 1]}}""", """{"count": 0}"""))
     val fixed =
       Parser.parse(counter.format("""{"object": {"count": {"+": [{"var": "state.count"}, 1]}}}""", """{"object": {"count": 0}}"""))
-    val renamed = Parser.migrate(counter.format("""{"value": {"+": [{"var": "state.count"}, 1]}}""", """{"value": 0}"""))
+    val renamed =
+      Parser.parse(counter.format("""{"object": {"value": {"+": [{"var": "state.count"}, 1]}}}""", """{"object": {"value": 0}}"""))
     expect(written.flatMap(Compiled(_)).isLeft || written.map(run(_, data).result.isLeft).getOrElse(true), "count as data is an error")
       .and(expect.same(updates("""{"count": 5}"""), fixed.map(run(_, data)).flatMap(_.result)))
-      .and(expect.same(updates("""{"count": 4, "value": 5}"""), renamed.flatMap(Parser.parse(_)).map(run(_, data)).flatMap(_.result)))
+      .and(expect.same(updates("""{"count": 4, "value": 5}"""), renamed.map(run(_, data)).flatMap(_.result)))
   }
 
   // ---- metakit's ComplexContractsSuite: escrow, voting and marketplace, with metakit's expected results

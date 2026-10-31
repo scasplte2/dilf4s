@@ -1,5 +1,5 @@
 {
- "source": "metakit dev de2a856 (Apache-2.0): programs from src/test/scala/json_logic and its shared vector files, migrated to the strict surface with Parser.migrate",
+ "source": "metakit dev de2a856 (Apache-2.0): programs from src/test/scala/json_logic and its shared vector files, rewritten into the strict surface and stored as its text",
  "cases": [
   {
    "name": "metakit AllOperatorsComparisonSuite: if: simple true condition",
