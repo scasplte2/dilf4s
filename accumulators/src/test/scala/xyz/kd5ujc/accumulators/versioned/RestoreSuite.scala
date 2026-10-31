@@ -248,6 +248,17 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  pureTest("Snapshot.chunks groups by bytes as well as count: large valid values never make a chunk the wire refuses") {
+    val big = CanonicalValue.bytes(ByteVector.fill(900L * 1024L)(7))
+    val entries = (1 to 5).toList.map(i => key(s"k$i") -> big)
+    val root = xyz.kd5ujc.core.hash.Hasher[H].digest(ByteVector.empty)
+    val head = Head[Long, H](1L, root, root)
+    val states = Snapshot.chunks(Snapshot(head, entries, Nil)).collect { case c: SnapshotChunk.State[Long, H] => c }
+    expect(states.size > 1, s"five 900 KiB values need more than one chunk, got ${states.size}")
+      .and(expect.same(entries, states.flatMap(_.entries)))
+      .and(expect(states.forall(c => VersionedTrieWire.encodeChunk[Long, H](c).isRight), "every chunk encodes within the wire limit"))
+  }
+
   private def nested(depth: Int): CanonicalValue =
     (1 to depth).foldLeft(int(0))((v, _) => get(CanonicalValue.array(Vector(v))))
 

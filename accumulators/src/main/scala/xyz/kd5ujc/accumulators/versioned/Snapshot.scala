@@ -27,11 +27,33 @@ object SnapshotChunk {
 
 object Snapshot {
 
-  /** The chunks of a snapshot, at most `size` items each. */
+  /** An entry's share of a chunk's encoding: its key and value, and a margin for the record around them. */
+  def entryBytes(k: StateKey, v: CanonicalValue): Long = k.bytes.size + Cbor.encode(v).size + 16L
+
+  /** The bytes a chunk's entries may take, leaving a margin for the chunk's own framing. */
+  val ChunkBudget: Long = VersionedTrie.MaxChunkBytes - 64L
+
+  /**
+   * Groups entries greedily: a group closes before it would pass `limit` entries or [[ChunkBudget]] bytes, so every
+   * group encodes within `VersionedTrie.MaxChunkBytes`. One entry always fits (`VersionedTrie.MaxValueBytes`).
+   */
+  def stateGroups(entries: List[(StateKey, CanonicalValue)], limit: Int): List[Vector[(StateKey, CanonicalValue)]] = {
+    type Group = Vector[(StateKey, CanonicalValue)]
+    entries.foldLeft((Vector.empty[Group], Vector.empty[(StateKey, CanonicalValue)], 0L)) {
+      case ((done, current, bytes), entry @ (k, v)) =>
+        val size = entryBytes(k, v)
+        if (current.nonEmpty && (current.size >= limit || bytes + size > ChunkBudget)) (done :+ current, Vector(entry), size)
+        else (done, current :+ entry, bytes + size)
+    } match {
+      case (done, current, _) => (if (current.isEmpty) done else done :+ current).toList
+    }
+  }
+
+  /** The chunks of a snapshot: at most `size` items each, and within the wire byte limit. */
   def chunks[V, H](snapshot: Snapshot[V, H], size: Int = VersionedTrie.MaxChunkEntries): List[SnapshotChunk[V, H]] = {
     val n = size.max(1).min(VersionedTrie.MaxChunkEntries)
     (SnapshotChunk.Top[V, H](snapshot.head): SnapshotChunk[V, H]) ::
-    snapshot.entries.grouped(n).map(es => SnapshotChunk.State[V, H](es.toVector): SnapshotChunk[V, H]).toList ++
+    stateGroups(snapshot.entries, n).map(es => SnapshotChunk.State[V, H](es): SnapshotChunk[V, H]) ++
     snapshot.history.grouped(n).map(vs => SnapshotChunk.History[V, H](vs.toVector): SnapshotChunk[V, H]).toList
   }
 

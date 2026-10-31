@@ -439,12 +439,8 @@ object VersionedTrieStore {
           changes.filter(_.after.isEmpty).map(_.key).sorted
         )
 
-    /** An entry's share of a chunk's encoding: its key and value, and a margin for the record around them. */
-    private def entryBytes(k: StateKey, v: CanonicalValue): Long = k.bytes.size + Cbor.encode(v).size + 16L
-
     def snapshot(chunkEntries: Int): Stream[F, SnapshotChunk[V, H]] = {
       val limit = chunkEntries.max(1).min(VersionedTrie.MaxChunkEntries)
-      val budget = VersionedTrie.MaxChunkBytes - 64L
       Stream.eval(current).flatMap { cur =>
         Stream.emit[F, SnapshotChunk[V, H]](SnapshotChunk.Top(cur.head)) ++
         values
@@ -452,8 +448,9 @@ object VersionedTrieStore {
           // close a chunk before it would pass the entry or byte limit; one entry always fits (MaxValueBytes)
           .mapAccumulate((0L, 0, 0L)) {
             case ((group, n, bytes), (k, v)) =>
-              val size = entryBytes(k, v)
-              val next = if (n >= limit || bytes + size > budget) (group + 1, 1, size) else (group, n + 1, bytes + size)
+              // the same rule as Snapshot.stateGroups, over a stream
+              val size = Snapshot.entryBytes(k, v)
+              val next = if (n >= limit || bytes + size > Snapshot.ChunkBudget) (group + 1, 1, size) else (group, n + 1, bytes + size)
               (next, (k, v))
           }
           .groupAdjacentBy(_._1._1)
