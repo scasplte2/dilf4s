@@ -6,6 +6,7 @@ on:
     branches: [main, unify/base]
 
 jobs:
+  # Runs on every change: SdkSourcesSuite (models-gen) fails if the generated SDK models are stale.
   scala:
     runs-on: ubuntu-latest
     steps:
@@ -18,3 +19,70 @@ jobs:
       - uses: sbt/setup-sbt@v1
       # clean first: the sbt-scalafmt incremental cache can report false passes
       - run: sbt clean checkPR test
+
+  changes:
+    runs-on: ubuntu-latest
+    # paths-filter lists a pull request's changed files through the API
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ts: ${{ steps.filter.outputs.ts }}
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ts:
+              - 'sdk/ts/**'
+              - 'shared/**'
+              - '.github/workflows/ci.yml'
+            rust:
+              - 'sdk/rust/**'
+              - 'shared/**'
+              - '.github/workflows/ci.yml'
+
+  typescript:
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sdk/ts/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/rust
+    steps:
+      - uses: actions/checkout@v4
+      # pinned: clippy pedantic is denied, so a new stable's lints must not break CI unannounced
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt, clippy
+          # SP1's guest ISA, with no std and no atomics: the core must keep building for it
+          targets: riscv32im-unknown-none-elf
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk/rust
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo build -p dilf4s-core --release --target riscv32im-unknown-none-elf
