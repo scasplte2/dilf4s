@@ -1,6 +1,5 @@
 //! The dilf4s deterministic CBOR profile (docs/specs/canonical-encoding.md section 2).
 
-use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -9,7 +8,7 @@ use num_integer::Integer;
 use num_traits::One;
 
 use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem};
-use crate::value::{Array, MAX_DEPTH, MAX_WEIGHT, Map, Rational, Value, bit_length};
+use crate::value::{Array, MAX_DEPTH, MAX_WEIGHT, Map, Rational, Text, Value, bit_length};
 
 const TAG_POSITIVE_BIGNUM: u64 = 2;
 const TAG_NEGATIVE_BIGNUM: u64 = 3;
@@ -185,7 +184,7 @@ fn write_value<S: Sink>(out: &mut S, value: &Value) -> Result<(), S::Error> {
         Value::Map(m) => {
             // entries are held in canonical key order
             head(out, MAJOR_MAP, length(m.len()))?;
-            m.entries().iter().try_for_each(|(k, v)| {
+            m.entries().try_for_each(|(k, v)| {
                 write_text(out, k)?;
                 write_value(out, v)
             })
@@ -288,14 +287,14 @@ enum Item {
 
 /// A key read, waiting for its value: the key and the span of its encoding.
 struct PendingKey {
-    key: String,
+    key: Text,
     start: usize,
     end: usize,
 }
 
 enum Frame {
     Array { remaining: u64, items: Vec<Value> },
-    Map { remaining: u64, entries: Vec<(String, Value)>, last_key: Option<(usize, usize)>, pending: Option<PendingKey> },
+    Map { remaining: u64, entries: Vec<(Text, Value)>, last_key: Option<(usize, usize)>, pending: Option<PendingKey> },
 }
 
 struct Decoder<'a> {
@@ -367,7 +366,7 @@ impl Decoder<'_> {
                             reason: NonCanonicalReason::KeyOrder,
                         });
                     }
-                    *pending = Some(PendingKey { key: String::from(key.as_str()), start, end });
+                    *pending = Some(PendingKey { key, start, end });
                     return Ok(Next::Read(end));
                 }
                 Frame::Map { remaining, entries, last_key, pending } => {

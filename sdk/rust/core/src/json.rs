@@ -14,7 +14,7 @@ use num_integer::Integer;
 use num_traits::{Signed, Zero, pow};
 
 use crate::error::{CanonicalError, JsonSyntaxError, NotJson, ScaleOutOfRange};
-use crate::value::{Array, MAX_DEPTH, Map, Rational, Value};
+use crate::value::{Array, MAX_DEPTH, Map, Rational, Text, Value};
 
 /// The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises.
 pub const DEFAULT_MAX_SCALE: u32 = 10_000;
@@ -404,8 +404,8 @@ fn write_json(out: &mut String, value: &Value) -> Result<(), CanonicalError> {
         }
         Value::Map(m) => {
             // Rust orders str by bytes, which for UTF-8 is code-point order
-            let mut entries: Vec<&(String, Value)> = m.entries().iter().collect();
-            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            let mut entries: Vec<(&Text, &Value)> = m.entries().collect();
+            entries.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
             out.push('{');
             for (i, (k, v)) in entries.into_iter().enumerate() {
                 if i > 0 {

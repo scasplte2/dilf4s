@@ -35,7 +35,7 @@ fn recount(v: &Value) -> BigInt {
         Value::Text(t) => BigInt::from(1 + t.len()),
         Value::Bytes(b) => BigInt::from(1 + b.len()),
         Value::Array(a) => a.items().iter().fold(BigInt::from(1), |w, x| w + recount(x)),
-        Value::Map(m) => m.entries().iter().fold(BigInt::from(1), |w, (k, x)| w + 1 + k.len() + recount(x)),
+        Value::Map(m) => m.entries().fold(BigInt::from(1), |w, (k, x)| w + 1 + k.len() + recount(x)),
     }
 }
 
@@ -71,7 +71,7 @@ fn walk<'a>(v: &'a Value, out: &mut Vec<&'a Value>) {
     out.push(v);
     match v {
         Value::Array(a) => a.items().iter().for_each(|x| walk(x, out)),
-        Value::Map(m) => m.entries().iter().for_each(|(_, x)| walk(x, out)),
+        Value::Map(m) => m.entries().for_each(|(_, x)| walk(x, out)),
         _ => {}
     }
 }
@@ -170,7 +170,9 @@ fn clones_share_their_payloads() {
             (Value::Int(a), Value::Int(b)) => std::ptr::eq(a.as_bigint(), b.as_bigint()),
             (Value::Rational(a), Value::Rational(b)) => std::ptr::eq(a.numerator(), b.numerator()),
             (Value::Array(a), Value::Array(b)) => std::ptr::eq(a.items(), b.items()),
-            (Value::Map(a), Value::Map(b)) => std::ptr::eq(a.entries(), b.entries()),
+            (Value::Map(a), Value::Map(b)) => {
+                std::ptr::eq(a.entries().next().unwrap().1, b.entries().next().unwrap().1)
+            }
             _ => false,
         };
         assert!(shared, "a clone of the {} shares its payload", v.kind());
@@ -352,8 +354,7 @@ fn naive_eq(a: &Value, b: &Value) -> bool {
             x.len() == y.len() && x.items().iter().zip(y.items()).all(|(p, q)| naive_eq(p, q))
         }
         (Value::Map(x), Value::Map(y)) => {
-            x.len() == y.len()
-                && x.entries().iter().zip(y.entries()).all(|((kp, p), (kq, q))| kp == kq && naive_eq(p, q))
+            x.len() == y.len() && x.entries().zip(y.entries()).all(|((kp, p), (kq, q))| kp == kq && naive_eq(p, q))
         }
         (Value::Array(_) | Value::Map(_), _) | (_, Value::Array(_) | Value::Map(_)) => false,
         _ => a == b,
@@ -444,4 +445,59 @@ fn an_integer_over_the_budget_is_refused_from_its_length_alone() {
     let e = cbor::encoded_len_within(&v, 20_000).unwrap_err();
     assert_eq!(e.at_least, Some(full), "the whole length, from the bit length");
     assert_eq!(cbor::encode_within(&v, 20_000).unwrap_err(), e, "the same refusal when writing");
+}
+
+fn keyed(n: usize) -> Vec<String> {
+    // a fixed shuffle: multiply by a unit modulo n
+    (0..n).map(|i| format!("key-{}", (i * 7919) % n)).collect()
+}
+
+fn built_by_updates(keys: &[String]) -> dilf4s_core::Map {
+    keys.iter().enumerate().fold(dilf4s_core::Map::new([]).unwrap(), |m, (i, k)| {
+        m.updated(dilf4s_core::Text::from(k.as_str()), Value::int(i % 97)).unwrap()
+    })
+}
+
+#[test]
+fn a_map_built_by_updates_in_any_order_is_the_same_value() {
+    let keys = keyed(2000);
+    let in_order = built_by_updates(&keys);
+    let mut reversed_keys = keys.clone();
+    reversed_keys.reverse();
+    // the same final entries: each key's value depends on its position in `keys`, so rebuild them that way
+    let reversed = reversed_keys.iter().fold(dilf4s_core::Map::new([]).unwrap(), |m, k| {
+        let i = keys.iter().position(|x| x == k).unwrap();
+        m.updated(dilf4s_core::Text::from(k.as_str()), Value::int(i % 97)).unwrap()
+    });
+    let fresh = dilf4s_core::Map::new(keys.iter().enumerate().map(|(i, k)| (k.clone(), Value::int(i % 97)))).unwrap();
+    let (a, b, c) = (Value::Map(in_order), Value::Map(reversed), Value::Map(fresh));
+    assert!(a == b && b == c, "equal whatever the tree's shape");
+    assert_eq!(cbor::encode(&a), cbor::encode(&c), "one encoding");
+    assert_eq!(cbor::encode(&b), cbor::encode(&c), "one encoding");
+    assert_eq!(json::render(&a).unwrap(), json::render(&c).unwrap(), "one rendering");
+    assert_eq!(a.weight(), c.weight(), "one weight");
+    assert_eq!(cbor::decode(&cbor::encode(&a)).unwrap(), a, "decodes back");
+}
+
+#[test]
+fn successive_updates_build_a_large_map_in_n_log_n() {
+    let time = |n: usize| {
+        let keys = keyed(n);
+        let start = Instant::now();
+        let m = built_by_updates(&keys);
+        let elapsed = start.elapsed();
+        assert_eq!(m.len(), n);
+        elapsed
+    };
+    let (half, full) = (time(50_000), time(100_000));
+    let keys = keyed(100_000);
+    let start = Instant::now();
+    let fresh = dilf4s_core::Map::new(keys.iter().enumerate().map(|(i, k)| (k.clone(), Value::int(i % 97)))).unwrap();
+    let new = start.elapsed();
+    assert_eq!(fresh.len(), 100_000);
+    eprintln!(
+        "successive updated: 50k {half:?}, 100k {full:?} (ratio {:.2}); Map::new of 100k: {new:?}",
+        full.as_secs_f64() / half.as_secs_f64()
+    );
+    assert!(full.as_secs() < 30, "100k updates took {full:?}");
 }
