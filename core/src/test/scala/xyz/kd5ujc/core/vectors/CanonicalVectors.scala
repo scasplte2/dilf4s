@@ -247,8 +247,10 @@ object CanonicalVectors {
       m <- tagMessages
       (name, digest) <- List[(String, ByteVector => Digest[?])](
         "SHA-256"     -> TaggedHash[Sha256](tag).apply,
+        "SHA-512"     -> TaggedHash[Sha512](tag).apply,
         "SHA3-256"    -> TaggedHash[Sha3_256](tag).apply,
         "SHA3-512"    -> TaggedHash[Sha3_512](tag).apply,
+        "Keccak-256"  -> TaggedHash[Keccak256](tag).apply,
         "BLAKE2b-256" -> TaggedHash[Blake2b256](tag).apply,
         "BLAKE2b-512" -> TaggedHash[Blake2b512](tag).apply
       )

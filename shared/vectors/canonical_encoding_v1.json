@@ -694,6 +694,12 @@
       "digest" : "0ec05d4cf8e8dda0d260c9e461e05c2a890f33d9f8198ba4fe8c3aa9ee30bd84"
     },
     {
+      "algorithm" : "SHA-512",
+      "tag" : "dilf4s/vectors/canonical/v1",
+      "message" : "",
+      "digest" : "e93275464ec2ee0f68c760228c297a835f365651c6b4534e2b0894151eba4c9c3582af4164e7380b13d9cc208a2d10352f439c9177253f72a0fb7ba227f9256e"
+    },
+    {
       "algorithm" : "SHA3-256",
       "tag" : "dilf4s/vectors/canonical/v1",
       "message" : "",
@@ -704,6 +710,12 @@
       "tag" : "dilf4s/vectors/canonical/v1",
       "message" : "",
       "digest" : "1fbb6c2a6c6f9767a34517ab7c9bf70029bbd43b67766c7c84207717820f721e7776a8feef12507f40595c0e0e911dcad2b21926d173b5466c6c86137b65bee8"
+    },
+    {
+      "algorithm" : "Keccak-256",
+      "tag" : "dilf4s/vectors/canonical/v1",
+      "message" : "",
+      "digest" : "61a1bae9a2edbe36b28cb0b49f78a40530750e5cda329ec7f196b6c98a0c2270"
     },
     {
       "algorithm" : "BLAKE2b-256",
@@ -724,6 +736,12 @@
       "digest" : "5d3aaece25ef41a6f3e21a5955e1a455da37142c1c6cd8c942740aad8a7a55fb"
     },
     {
+      "algorithm" : "SHA-512",
+      "tag" : "dilf4s/vectors/canonical/v1",
+      "message" : "616263",
+      "digest" : "5d83ee9ee6f53cbbf53c5496a9483f4001ec6e299ba0773c86cd836cec5e37cb32098753cbdb236306a05e355d0d046c81268c5a91b0ee2b5cd9c6a95cd52905"
+    },
+    {
       "algorithm" : "SHA3-256",
       "tag" : "dilf4s/vectors/canonical/v1",
       "message" : "616263",
@@ -734,6 +752,12 @@
       "tag" : "dilf4s/vectors/canonical/v1",
       "message" : "616263",
       "digest" : "d725bbacbcfdd2c580be69d3776b085f72eb69609e944fae42fcdbdac62fb9394f5a14ebedb44c038237835fae9073e094ddd57de67359930283edda62e75e77"
+    },
+    {
+      "algorithm" : "Keccak-256",
+      "tag" : "dilf4s/vectors/canonical/v1",
+      "message" : "616263",
+      "digest" : "1403bc8eb243734f61c43659ca685d0258356c9fdb772fff0239c740848c6f5a"
     },
     {
       "algorithm" : "BLAKE2b-256",
@@ -754,6 +778,12 @@
       "digest" : "31ab163d16b49738e42539623a1032118840e7c56c8669e70cf1b090592409a0"
     },
     {
+      "algorithm" : "SHA-512",
+      "tag" : "dilf4s/vectors/canonical/v1",
+      "message" : "00ff00ff",
+      "digest" : "9c168bfcc374fe49cd9e7561d131d46863b5868a537c4e2e969b128f9c43aa60fc2fd3b75c378d013e6c551981dbc77e3aeec215c54619ee480188d365da7914"
+    },
+    {
       "algorithm" : "SHA3-256",
       "tag" : "dilf4s/vectors/canonical/v1",
       "message" : "00ff00ff",
@@ -764,6 +794,12 @@
       "tag" : "dilf4s/vectors/canonical/v1",
       "message" : "00ff00ff",
       "digest" : "598ce1da7639f5fc3d1c3b7adbd76c84004a5655e9a2ce2d5cfc2b2f9c0c472ee60628cfe986c74f9b812874d322afebf2b64064e400aba53325f86aa91beedc"
+    },
+    {
+      "algorithm" : "Keccak-256",
+      "tag" : "dilf4s/vectors/canonical/v1",
+      "message" : "00ff00ff",
+      "digest" : "f8d126d40581c00530146ebc2e94bab122a78ed5eaefe74d92e21ce76009f376"
     },
     {
       "algorithm" : "BLAKE2b-256",

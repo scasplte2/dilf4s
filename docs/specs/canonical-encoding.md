@@ -85,7 +85,10 @@ taggedHash_H(tag, msg) = H( H(utf8(tag)) || H(utf8(tag)) || msg )
 contentHash_H(tag, value) = taggedHash_H(tag, encode(value))
 ```
 
-- `H` is the hash function in use (SHA-256 by default; SHA3-256, SHA3-512, BLAKE2b-256 and BLAKE2b-512 are also defined).
+- `H` is the hash function in use: SHA-256 by default; SHA-512, SHA3-256, SHA3-512, Keccak-256, BLAKE2b-256 and
+  BLAKE2b-512 are also defined. Keccak-256 is the pre-standard Keccak padding (as Ethereum uses it), not SHA3-256;
+  BLAKE2b-256 is BLAKE2b with a 32-byte output parameter, not a truncated BLAKE2b-512. The conformance vectors give a
+  plain digest and tagged hashes for each.
 - `tag` is a domain tag matching `^[a-z0-9]+(/[a-z0-9][a-z0-9._-]*)*/v[0-9]+$`, for example `dilf4s/mpt/leaf/v1`.
 
 Every structure and message type has its own tag, so a digest produced in one context can never be valid in another. The tag ends with a version, so a format change takes a new tag rather than silently changing bytes.
