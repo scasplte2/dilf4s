@@ -403,6 +403,12 @@ which branches the prover knew. This is what ring signatures, hidden-signer k-of
 
 **Authenticated structures**: dilf4s's Merkle trees (`merkle.md`) and binary Patricia tries (`trie.md`), over SHA-256.
 Proofs are their canonical records (`merkle-inclusion`, `merkle-consistency`, `trie-proof`), passed as values.
+A versioned trie (`versioned-trie.md`) is verified with these same trie ops. Its §9 gives the programs for:
+- current keys and absence;
+- namespace slices;
+- version inclusion and absence;
+- a key at a past version;
+- the latest version at or before `t`.
 - **Leaves and values commit by `commit(v)` (`merkle.md` §2):** `0x00 ‖ b` for bytes, `0x01 ‖ cbor(v)` otherwise. A
   proof of the bytes `0x6161` therefore never verifies the text `"a"`. The library builds these with
   `MerkleTree.leaf` and `Trie.putCanonical`.
