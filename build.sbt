@@ -167,7 +167,7 @@ lazy val accumulators = project.in(file("accumulators"))
       Libraries.circeParser,
     )
   )
-  .dependsOn(core, storage, modelsGen % "test->test", sharedTest % Test)
+  .dependsOn(core, storage % "compile->compile;test->test", modelsGen % "test->test", sharedTest % Test)
 
 // ─── Storage: Store, VersionedStore (self-contained) ───
 lazy val storage = project.in(file("storage"))

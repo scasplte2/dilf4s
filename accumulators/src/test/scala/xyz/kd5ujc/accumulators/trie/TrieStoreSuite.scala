@@ -5,7 +5,7 @@ import cats.mtl.{Handle, Raise}
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.hash.{Digest, Sha256}
-import xyz.kd5ujc.storage.{ByteRange, RawBatch, RawStore, StoreError, Version}
+import xyz.kd5ujc.storage.{ByteRange, RawBatch, RawStore, StoreError, Version, WatchedRawStore}
 
 import org.scalacheck.Gen
 import scodec.bits.ByteVector
@@ -106,6 +106,91 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
               .and(expect.same(reachable(Seq(snaps(cut))).toLong, rolled))
               .and(expect.same(snaps(cut).root, rootNow))
         }
+    }
+  }
+
+  test("staged commits, rollbacks and prunes write nothing until written, then land as one compare-and-write") {
+    forall(history.flatMap(h => Gen.choose(0, h.size).map(h -> _))) {
+      case (h, cut) =>
+        val snaps = model(h)
+        ok { (rs, rt) =>
+          given Raise[IO, StoreError] = rs
+          given Raise[IO, TrieError] = rt
+          def step(raw: WatchedRawStore, stage: IO[TrieStore.Staged[Sha256]], write: TrieStore.Staged[Sha256] => IO[Version]) =
+            for {
+              before  <- raw.contents
+              atStart <- raw.writes
+              s       <- stage
+              after   <- raw.contents
+              staged  <- raw.writes
+              _       <- write(s)
+              written <- raw.writes
+            } yield (before == after && staged == atStart, (written._1 - staged._1, written._2 - staged._2), s.root)
+          for {
+            base    <- RawStore.inMemory[IO]
+            raw     <- WatchedRawStore(base)
+            store   <- TrieStore.make[IO, Sha256](raw, "trie", mode)
+            commits <- h.zipWithIndex.traverse { case (ops, v) => step(raw, store.stage(Version.unsafe(v.toLong), ops), store.write) }
+            prune   <- step(raw, store.stagePrune(Version.unsafe(cut.toLong)), store.write)
+            back    <- step(raw, store.stageRollback(Version.unsafe(cut.toLong)), store.write)
+          } yield {
+            val steps = commits :+ prune :+ back
+            expect(steps.forall(_._1), "staging changed no record and reached no write")
+              .and(expect.same(steps.map(_ => (0, 1)), steps.map(_._2)))
+              .and(expect.same(snaps.tail.map(_.root).toList :+ snaps.last.root :+ snaps(cut).root, steps.map(_._3)))
+          }
+        }
+    }
+  }
+
+  test("a crash during a staged write leaves node storage, roots and state as they were") {
+    forall(history) { h =>
+      ok { (rs, rt) =>
+        given Raise[IO, StoreError] = rs
+        given Raise[IO, TrieError] = rt
+        for {
+          base    <- RawStore.inMemory[IO]
+          raw     <- WatchedRawStore(base)
+          store   <- TrieStore.make[IO, Sha256](raw, "trie", mode)
+          v       <- commitAll(store, h.init)
+          before  <- raw.contents
+          _       <- raw.crashNextWrites(true)
+          crashed <- store.commit(v, h.last).attempt
+          _       <- raw.crashNextWrites(false)
+          after   <- raw.contents
+          latest  <- store.latest
+        } yield expect(crashed.isLeft, "the write failed").and(expect(before == after, "no record changed")).and(expect.same(v, latest))
+      }
+    }
+  }
+
+  test("chained drafts read nodes through the drafts below them and write what sequential commits write") {
+    forall(history) { h =>
+      val snaps = model(h)
+      ok { (rs, rt) =>
+        given Raise[IO, StoreError] = rs
+        given Raise[IO, TrieError] = rt
+        for {
+          seqRaw   <- RawStore.inMemory[IO]
+          seq      <- TrieStore.make[IO, Sha256](seqRaw, "trie", mode)
+          _        <- commitAll(seq, h)
+          expected <- seqRaw.scan(ByteRange.all).compile.toList
+          base     <- RawStore.inMemory[IO]
+          raw      <- WatchedRawStore(base)
+          store    <- TrieStore.make[IO, Sha256](raw, "trie", mode)
+          first    <- store.stage(Version.Genesis, h.head)
+          drafts   <- h.tail.foldLeftM(List(first))((acc, ops) => store.stageOn(acc.last, ops).map(acc :+ _))
+          empty    <- raw.contents
+          v        <- store.write(drafts.last)
+          all      <- raw.contents
+          writes   <- raw.writes
+        } yield
+          expect(empty.isEmpty, "drafts write nothing")
+            .and(expect.same(snaps.tail.map(_.root).toList, drafts.map(_.root)))
+            .and(expect.same(h.size.toLong, v.value))
+            .and(expect(expected == all, "the same records as committing one by one"))
+            .and(expect.same((0, 1), writes))
+      }
     }
   }
 
