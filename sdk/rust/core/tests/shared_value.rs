@@ -227,3 +227,97 @@ fn cloning_a_large_value_many_times_does_not_copy_it() {
     }
     assert!(elapsed.as_secs() < 5, "{CLONES} clones took {elapsed:?}");
 }
+
+/// `[x, x]` nested `k` deep around `leaf`, every level one allocation.
+fn doubled(leaf: Value, k: usize) -> Value {
+    (0..k).fold(leaf, |v, _| Value::array(vec![v.clone(), v]).unwrap())
+}
+
+#[test]
+fn every_encoding_is_at_least_its_weight_and_the_budgeted_forms_agree() {
+    let mut checked = 0usize;
+    for (name, root) in &vector_values() {
+        let mut all = Vec::new();
+        walk(root, &mut all);
+        for v in all {
+            let full = cbor::encode(v);
+            let n = full.len();
+            assert!(u64::try_from(n).unwrap() >= v.weight(), "{name}: {n} bytes under weight {}", v.weight());
+            let within = cbor::encode_within(v, n).unwrap();
+            assert_eq!(within, full, "{name}: encode_within at the exact length");
+            assert!(within.capacity() <= n, "{name}: buffer of {} over the budget {n}", within.capacity());
+            assert_eq!(cbor::encoded_len_within(v, n), Ok(n), "{name}: encoded_len_within");
+            if n > 0 {
+                let over = cbor::encode_within(v, n - 1).unwrap_err();
+                assert!(over.at_least > n - 1, "{name}: {over:?} reports more than the limit");
+                assert_eq!(cbor::encoded_len_within(v, n - 1).unwrap_err().limit, n - 1, "{name}: limit");
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked > 1000, "too few values checked: {checked}");
+}
+
+#[test]
+fn budgeted_encoding_refuses_a_shared_expansion_without_expanding_it() {
+    let start = Instant::now();
+    // 2^60 leaves in 60 allocations: refused by weight alone
+    let dag = doubled(Value::text("a"), 60);
+    let e = cbor::encode_within(&dag, 1 << 20).unwrap_err();
+    assert_eq!(e.limit, 1 << 20, "limit");
+    assert_eq!(u64::try_from(e.at_least).unwrap(), dag.weight(), "the weight is the lower bound reported");
+    assert!(cbor::encoded_len_within(&dag, 1 << 20).is_err(), "length refused too");
+    // within the weight bound but over in bytes (each u64::MAX is weight 2, 9 bytes): refused by the byte budget
+    let ints = doubled(Value::int(u64::MAX), 17);
+    assert!(ints.weight() < 1 << 20, "passes the weight check");
+    let e = cbor::encode_within(&ints, 1 << 20).unwrap_err();
+    assert!(e.at_least > 1 << 20, "{e:?}");
+    assert_eq!(cbor::encoded_len_within(&ints, 1 << 21), Ok(cbor::encode(&ints).len()), "counted exactly");
+    assert!(start.elapsed().as_millis() < 2000, "took {:?}", start.elapsed());
+}
+
+#[test]
+fn equality_of_shared_dags_never_expands_them() {
+    let start = Instant::now();
+    // separately allocated, so no pointer is shared between them: 2^60 leaves each
+    let a = doubled(Value::text("a"), 60);
+    let b = doubled(Value::text("a"), 60);
+    assert!(a == b, "content-equal DAGs are equal");
+    // one leaf differs, at the bottom of the second half: the first half is proven equal once, then skipped
+    let differing = doubled(Value::array(vec![Value::text("a"), Value::text("b")]).unwrap(), 58);
+    let half = doubled(Value::text("a"), 59);
+    let c = Value::array(vec![half, differing]).unwrap();
+    assert_eq!(a.weight(), c.weight(), "same weight, so no early reject");
+    assert_eq!(a.depth(), c.depth(), "same depth");
+    assert!(a != c, "one differing leaf");
+    assert!(c != a, "either way round");
+    // maps: {k: x, l: x} nested 60 deep
+    let map = |leaf: Value| {
+        (0..60).fold(leaf, |v, _| Value::map([("k".to_owned(), v.clone()), ("l".to_owned(), v)]).unwrap())
+    };
+    assert!(map(Value::int(1)) == map(Value::int(1)), "equal map DAGs");
+    assert!(map(Value::int(1)) != map(Value::int(2)), "unequal map DAGs");
+    let (Value::Array(first), Value::Array(second)) = (&a, &b) else { panic!("arrays") };
+    assert!(first == second, "Array equality shares the algorithm");
+    assert!(start.elapsed().as_millis() < 2000, "took {:?}", start.elapsed());
+}
+
+#[test]
+fn debug_output_is_budgeted() {
+    let small = Value::map([("a".to_owned(), Value::array(vec![Value::int(1), Value::text("x")]).unwrap())]).unwrap();
+    assert_eq!(
+        format!("{small:?}"),
+        "Map(Map { entries: [(\"a\", Array(Array { items: [Int(1), Text(\"x\")], depth: 1, weight: 4 }))], depth: 2, \
+         weight: 7 })",
+        "a small value prints in full"
+    );
+    let start = Instant::now();
+    let dag = doubled(Value::text("a"), 60);
+    let shown = format!("{dag:?}");
+    assert!(shown.len() < 1 << 21, "{} bytes of output", shown.len());
+    assert!(shown.contains('…'), "the rest is elided");
+    let big = Value::array(vec![Value::text("x".repeat(1 << 20))]).unwrap();
+    let shown = format!("{big:?}");
+    assert!(shown.len() < 1000 && shown.contains('…'), "a text over the budget is elided: {shown}");
+    assert!(start.elapsed().as_millis() < 2000, "took {:?}", start.elapsed());
+}

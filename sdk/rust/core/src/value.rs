@@ -12,10 +12,18 @@
 //! cached ones, so reading either is O(1). There is no interior mutability: once built, a value never changes.
 //!
 //! Sharing makes a value's logical size independent of its memory: `[x, x]` nested `k` deep holds `2^k` leaves in
-//! `O(k)` allocations. Anything that walks a value's contents ([`crate::cbor::encode`], [`crate::json::render`],
-//! equality, hashing, commitments) costs O(weight), not O(memory), and the weight is the logical, unshared measure
-//! that bounds it. Pointer identity is only ever a fast path for equality: equal pointers are equal values, and every
-//! other decision is made on content.
+//! `O(k)` allocations, and its weight (the logical, unshared measure) is about `2^k`. So:
+//! - anything that expands a value ([`crate::cbor::encode`], [`crate::json::render`], hashing, commitments, decoding
+//!   into typed models) costs O(weight), not O(memory): bound the weight of a value not known to be small first, or
+//!   use the budgeted [`crate::cbor::encode_within`] and [`crate::cbor::encoded_len_within`];
+//! - equality never expands: it records the pairs of shared parts it has proven equal and skips them when they recur;
+//! - [`fmt::Debug`] shows at most [`DEBUG_BUDGET`] units of weight and elides the rest as `…`.
+//!
+//! Values decoded from bytes are trees, not shared, so their weight is bounded by their input: every canonical
+//! encoding is at least as long as its value's weight (see [`crate::cbor::encode_within`]).
+//!
+//! Pointer identity is only ever a fast path for equality: equal pointers are equal values, and every other decision
+//! is made on content.
 //!
 //! # Not for secrets
 //!
@@ -39,8 +47,9 @@ use crate::error::CanonicalError;
 
 /// The nesting limit for arrays and maps: a scalar has depth 0, an array or map one more than its deepest element.
 ///
-/// Every recursive walk of a [`Value`] relies on it: dropping the last reference to a value, [`PartialEq`], [`fmt::Debug`],
-/// the CBOR encoder and the JSON renderer recurse at most `MAX_DEPTH` (256) frames deep, never by input size.
+/// Every walk of a [`Value`] relies on it: dropping the last reference to a value, [`fmt::Debug`], the CBOR encoder
+/// and the JSON renderer recurse at most `MAX_DEPTH` (256) frames deep, and [`PartialEq`] keeps an explicit stack of
+/// at most that many frames, never by input size.
 pub const MAX_DEPTH: usize = 256;
 
 /// The greatest [`Value::weight`]: weights saturate here (the Scala reference's `Long.MaxValue`), never wrap.
@@ -72,9 +81,9 @@ fn limbs(n: &BigInt) -> u64 {
 
 /// A canonical value.
 ///
-/// Cloning is O(1): see the [module documentation](self). Dropping, comparing and formatting recurse at most
-/// [`MAX_DEPTH`] deep.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Cloning is O(1), comparing never expands shared parts, and formatting is budgeted: see the [module
+/// documentation](self). Every walk is at most [`MAX_DEPTH`] deep.
+#[derive(Clone)]
 pub enum Value {
     /// `null`.
     Null,
@@ -552,25 +561,6 @@ impl Array {
     }
 }
 
-impl PartialEq for Array {
-    fn eq(&self, other: &Self) -> bool {
-        // the depth and weight follow from the items; `Arc<[Value]>` compares pointers first, then content
-        self.items == other.items
-    }
-}
-
-impl Eq for Array {}
-
-impl fmt::Debug for Array {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Array")
-            .field("items", &&*self.items)
-            .field("depth", &self.depth)
-            .field("weight", &self.weight)
-            .finish()
-    }
-}
-
 /// A map with unique text keys, no null values, keys in canonical order and nesting within [`MAX_DEPTH`]. Shared:
 /// clones in O(1); its depth and weight are cached.
 #[derive(Clone)]
@@ -657,21 +647,255 @@ impl Map {
     }
 }
 
+// ------------------------------------------------------------------------------------------------ equality
+
+// Equality is on content (the canonical encoding is the identity), and costs O(the distinct pairs of shared parts
+// compared), never O(weight): a comparison keeps the address pairs of containers it has proven equal, and skips them
+// when they recur. An address is only ever a fast path: equal addresses are the same payload, and a pair is recorded
+// only after its contents compared equal, while both values are borrowed (so neither address is freed or reused).
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        let mut c = Comparison::default();
+        c.value(self, other) && c.finish()
+    }
+}
+
+impl Eq for Value {}
+
+impl PartialEq for Array {
+    fn eq(&self, other: &Self) -> bool {
+        let mut c = Comparison::default();
+        c.array(self, other) && c.finish()
+    }
+}
+
+impl Eq for Array {}
+
 impl PartialEq for Map {
     fn eq(&self, other: &Self) -> bool {
-        // the depth and weight follow from the entries; `Arc<[_]>` compares pointers first, then content
-        self.entries == other.entries
+        let mut c = Comparison::default();
+        c.map(self, other) && c.finish()
     }
 }
 
 impl Eq for Map {}
 
+/// The address of a shared payload.
+fn address<T>(items: &[T]) -> usize {
+    items.as_ptr().addr()
+}
+
+/// A map entry.
+type Entry = (String, Value);
+
+/// Two containers whose elements are being compared, and the address pair to record once they are all equal.
+enum Frame<'a> {
+    Items { a: &'a [Value], b: &'a [Value], next: usize, pair: (usize, usize) },
+    Entries { a: &'a [Entry], b: &'a [Entry], next: usize, pair: (usize, usize) },
+}
+
+/// One comparison, with an explicit stack (at most [`MAX_DEPTH`] frames) and the pairs proven equal so far.
+#[derive(Default)]
+struct Comparison<'a> {
+    stack: Vec<Frame<'a>>,
+    proven: BTreeSet<(usize, usize)>,
+}
+
+impl<'a> Comparison<'a> {
+    /// False when `a` and `b` differ; true when they are equal scalars, or containers now open on the stack.
+    fn value(&mut self, a: &'a Value, b: &'a Value) -> bool {
+        if a.weight() != b.weight() || a.depth() != b.depth() {
+            return false;
+        }
+        match (a, b) {
+            (Value::Null, Value::Null) => true,
+            (Value::Bool(x), Value::Bool(y)) => x == y,
+            (Value::Int(x), Value::Int(y)) => x == y,
+            (Value::Rational(x), Value::Rational(y)) => x == y,
+            (Value::Text(x), Value::Text(y)) => x == y,
+            (Value::Bytes(x), Value::Bytes(y)) => x == y,
+            (Value::Array(x), Value::Array(y)) => self.array(x, y),
+            (Value::Map(x), Value::Map(y)) => self.map(x, y),
+            _ => false,
+        }
+    }
+
+    fn array(&mut self, a: &'a Array, b: &'a Array) -> bool {
+        if a.weight != b.weight || a.depth != b.depth || a.items.len() != b.items.len() {
+            return false;
+        }
+        let pair = (address(&a.items), address(&b.items));
+        if pair.0 != pair.1 && !self.proven.contains(&pair) {
+            self.stack.push(Frame::Items { a: &a.items, b: &b.items, next: 0, pair });
+        }
+        true
+    }
+
+    fn map(&mut self, a: &'a Map, b: &'a Map) -> bool {
+        if a.weight != b.weight || a.depth != b.depth || a.entries.len() != b.entries.len() {
+            return false;
+        }
+        let pair = (address(&a.entries), address(&b.entries));
+        if pair.0 != pair.1 && !self.proven.contains(&pair) {
+            self.stack.push(Frame::Entries { a: &a.entries, b: &b.entries, next: 0, pair });
+        }
+        true
+    }
+
+    /// Compares every open container to the end.
+    fn finish(mut self) -> bool {
+        loop {
+            let Some(frame) = self.stack.last_mut() else {
+                return true;
+            };
+            let next: Option<(&'a Value, &'a Value, bool)> = match frame {
+                Frame::Items { a, b, next, .. } => {
+                    let (a, b): (&'a [Value], &'a [Value]) = (a, b);
+                    let i = *next;
+                    *next = i.saturating_add(1);
+                    a.get(i).zip(b.get(i)).map(|(x, y)| (x, y, true))
+                }
+                Frame::Entries { a, b, next, .. } => {
+                    let (a, b): (&'a [Entry], &'a [Entry]) = (a, b);
+                    let i = *next;
+                    *next = i.saturating_add(1);
+                    a.get(i).zip(b.get(i)).map(|((ka, x), (kb, y))| (x, y, ka == kb))
+                }
+            };
+            match next {
+                Some((x, y, same_key)) => {
+                    if !same_key || !self.value(x, y) {
+                        return false;
+                    }
+                }
+                None => {
+                    if let Some(Frame::Items { pair, .. } | Frame::Entries { pair, .. }) = self.stack.pop() {
+                        self.proven.insert(pair);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ formatting
+
+/// How much of a value [`fmt::Debug`] shows, in units of [`Value::weight`]; the rest is elided as `…`. Formatting any
+/// value is then bounded by this budget, however often it repeats a shared part.
+pub const DEBUG_BUDGET: u64 = 1 << 16;
+
+/// The budget left in one `fmt` call. The `Cell` lives on that call's stack, never in a value.
+type Left = core::cell::Cell<u64>;
+
+fn spend(left: &Left, weight: u64) -> bool {
+    let l = left.get();
+    let affordable = weight <= l;
+    left.set(if affordable { l.saturating_sub(weight) } else { 0 });
+    affordable
+}
+
+/// What the budget did not reach.
+struct Elided;
+
+impl fmt::Debug for Elided {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("…")
+    }
+}
+
+/// A part of a value, formatted within a budget.
+struct Shown<'a, T: ?Sized>(&'a T, &'a Left);
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Shown(self, &Left::new(DEBUG_BUDGET)).fmt(f)
+    }
+}
+
+impl fmt::Debug for Array {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Shown(self, &Left::new(DEBUG_BUDGET)).fmt(f)
+    }
+}
+
 impl fmt::Debug for Map {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Map")
-            .field("entries", &&*self.entries)
-            .field("depth", &self.depth)
-            .field("weight", &self.weight)
+        Shown(self, &Left::new(DEBUG_BUDGET)).fmt(f)
+    }
+}
+
+impl fmt::Debug for Shown<'_, Value> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self(v, left) = *self;
+        match v {
+            Value::Array(a) => f.debug_tuple("Array").field(&Shown(a, left)).finish(),
+            Value::Map(m) => f.debug_tuple("Map").field(&Shown(m, left)).finish(),
+            _ if !spend(left, v.weight()) => Elided.fmt(f),
+            Value::Null => f.write_str("Null"),
+            Value::Bool(b) => f.debug_tuple("Bool").field(b).finish(),
+            Value::Int(n) => f.debug_tuple("Int").field(n).finish(),
+            Value::Rational(r) => f.debug_tuple("Rational").field(r).finish(),
+            Value::Text(t) => f.debug_tuple("Text").field(t).finish(),
+            Value::Bytes(b) => f.debug_tuple("Bytes").field(b).finish(),
+        }
+    }
+}
+
+impl fmt::Debug for Shown<'_, Array> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self(a, left) = *self;
+        if !spend(left, 1) {
+            return Elided.fmt(f);
+        }
+        f.debug_struct("Array")
+            .field("items", &Shown(&*a.items, left))
+            .field("depth", &a.depth)
+            .field("weight", &a.weight)
             .finish()
+    }
+}
+
+impl fmt::Debug for Shown<'_, Map> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self(m, left) = *self;
+        if !spend(left, 1) {
+            return Elided.fmt(f);
+        }
+        f.debug_struct("Map")
+            .field("entries", &Shown(&*m.entries, left))
+            .field("depth", &m.depth)
+            .field("weight", &m.weight)
+            .finish()
+    }
+}
+
+impl fmt::Debug for Shown<'_, [Value]> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self(items, left) = *self;
+        let mut list = f.debug_list();
+        for v in items {
+            if left.get() == 0 {
+                list.entry(&Elided);
+                break;
+            }
+            list.entry(&Shown(v, left));
+        }
+        list.finish()
+    }
+}
+
+impl fmt::Debug for Shown<'_, [(String, Value)]> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self(entries, left) = *self;
+        let mut list = f.debug_list();
+        for (k, v) in entries {
+            if !spend(left, sized_weight(k.len())) {
+                list.entry(&Elided);
+                break;
+            }
+            list.entry(&(k, Shown(v, left)));
+        }
+        list.finish()
     }
 }

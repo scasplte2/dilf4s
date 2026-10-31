@@ -243,6 +243,11 @@ impl Proposition {
     /// "g", "h", "u", "v": bytes}`, `{"type": "and" | "or", "children": [...]}` or `{"type": "threshold", "k": int,
     /// "children": [...]}`, with no other field. Decoded with an explicit stack, checking each node as the reference
     /// (`SigmaProp.fromCanonical`) does: a node's own fields first, then its children in order, then the connective.
+    ///
+    /// The work is bounded however much `value` shares, but not by its memory: a connective is checked when it closes
+    /// (as the reference orders its errors), so each child walked is a subtree of at most [`MAX_LEAVES`] leaves and
+    /// [`MAX_DEPTH`] levels, and a connective's children are all walked before its width is refused. A value built in
+    /// process with shared parts should have its [`Value::weight`] bounded first, as the JLVM's gas does.
     pub fn from_value(value: &Value) -> Result<Self, SigmaError> {
         let mut nodes = Vec::new();
         let mut stack: Vec<Open<'_>> = Vec::new();

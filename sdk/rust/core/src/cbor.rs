@@ -2,6 +2,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::fmt;
 
 use num_bigint::{BigInt, Sign};
 use num_integer::Integer;
@@ -26,48 +27,143 @@ const MAJOR_SIMPLE: u8 = 7;
 // ------------------------------------------------------------------------------------------------ encoding
 
 /// The canonical encoding of `value`. Total: every [`Value`] has exactly one.
+///
+/// It costs O([`Value::weight`]) time and memory, which for a value built with shared parts (`[x, x]` nested `k`
+/// deep weighs `2^k`) can be far more than the value occupies. Encode a value not known to be small with
+/// [`encode_within`], or check its weight first.
 pub fn encode(value: &Value) -> Vec<u8> {
     let mut out = Vec::new();
-    write_value(&mut out, value);
-    out
+    match write_value(&mut out, value) {
+        Ok(()) => out,
+        Err(never) => match never {},
+    }
 }
 
-/// Recursion is bounded: a [`Value`] never nests deeper than [`MAX_DEPTH`].
-fn write_value(out: &mut Vec<u8>, value: &Value) {
+/// A value whose canonical encoding is longer than a limit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TooLarge {
+    /// The limit, in bytes.
+    pub limit: usize,
+    /// A lower bound on the encoding's length, above the limit: counting stops at the first byte past it.
+    pub at_least: usize,
+}
+
+impl fmt::Display for TooLarge {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "the encoding is at least {} bytes, over {}", self.at_least, self.limit)
+    }
+}
+
+impl core::error::Error for TooLarge {}
+
+/// The canonical encoding of `value`, if it is at most `max_bytes` long; it never holds more than `max_bytes`.
+///
+/// O(min(weight, `max_bytes`)): every encoding is at least as long as the value's [`Value::weight`] (each node's head
+/// is a byte, text and byte strings add their length, a number of `l` whole limbs takes at least `l` bytes more), so a
+/// weight over the limit is refused at once, and each node visited writes a byte before its children, so the walk
+/// stops within `max_bytes + 1` nodes.
+pub fn encode_within(value: &Value, max_bytes: usize) -> Result<Vec<u8>, TooLarge> {
+    let mut out = Vec::new();
+    within(value, max_bytes, Some(&mut out))?;
+    Ok(out)
+}
+
+/// The length of `value`'s canonical encoding, if it is at most `max_bytes`, counted without encoding it, with the
+/// bounds of [`encode_within`].
+pub fn encoded_len_within(value: &Value, max_bytes: usize) -> Result<usize, TooLarge> {
+    within(value, max_bytes, None)
+}
+
+fn within(value: &Value, max_bytes: usize, out: Option<&mut Vec<u8>>) -> Result<usize, TooLarge> {
+    let weight = usize::try_from(value.weight()).unwrap_or(usize::MAX);
+    if weight > max_bytes {
+        return Err(TooLarge { limit: max_bytes, at_least: weight });
+    }
+    let mut sink = Budget { out, len: 0, max: max_bytes };
+    write_value(&mut sink, value).map_err(|over| TooLarge { limit: max_bytes, at_least: over.0 })?;
+    Ok(sink.len)
+}
+
+/// Where encoded bytes go.
+trait Sink {
+    type Error;
+    fn put(&mut self, bytes: &[u8]) -> Result<(), Self::Error>;
+}
+
+impl Sink for Vec<u8> {
+    type Error = core::convert::Infallible;
+    fn put(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        self.extend_from_slice(bytes);
+        Ok(())
+    }
+}
+
+/// A byte budget, optionally writing: its buffer never grows past `max`.
+struct Budget<'a> {
+    out: Option<&'a mut Vec<u8>>,
+    len: usize,
+    max: usize,
+}
+
+/// The length the output would have reached.
+struct Over(usize);
+
+impl Sink for Budget<'_> {
+    type Error = Over;
+    fn put(&mut self, bytes: &[u8]) -> Result<(), Over> {
+        let next = self.len.saturating_add(bytes.len());
+        if next > self.max {
+            return Err(Over(next));
+        }
+        if let Some(out) = self.out.as_deref_mut() {
+            if out.capacity() < next {
+                let target = next.max(out.capacity().saturating_mul(2)).min(self.max);
+                out.reserve_exact(target.saturating_sub(out.len()));
+            }
+            out.extend_from_slice(bytes);
+        }
+        self.len = next;
+        Ok(())
+    }
+}
+
+/// Recursion is bounded: a [`Value`] never nests deeper than [`MAX_DEPTH`]. Every node writes its first byte before
+/// its children (the budget relies on it).
+fn write_value<S: Sink>(out: &mut S, value: &Value) -> Result<(), S::Error> {
     match value {
-        Value::Null => out.push(0xf6),
-        Value::Bool(false) => out.push(0xf4),
-        Value::Bool(true) => out.push(0xf5),
+        Value::Null => out.put(&[0xf6]),
+        Value::Bool(false) => out.put(&[0xf4]),
+        Value::Bool(true) => out.put(&[0xf5]),
         Value::Int(n) => write_integer(out, n),
         Value::Rational(r) => {
-            head(out, MAJOR_TAG, TAG_RATIONAL);
-            head(out, MAJOR_ARRAY, 2);
-            write_integer(out, r.numerator());
-            write_integer(out, r.denominator());
+            head(out, MAJOR_TAG, TAG_RATIONAL)?;
+            head(out, MAJOR_ARRAY, 2)?;
+            write_integer(out, r.numerator())?;
+            write_integer(out, r.denominator())
         }
         Value::Text(s) => write_text(out, s),
         Value::Bytes(b) => {
-            head(out, MAJOR_BYTES, length(b.len()));
-            out.extend_from_slice(b);
+            head(out, MAJOR_BYTES, length(b.len()))?;
+            out.put(b)
         }
         Value::Array(a) => {
-            head(out, MAJOR_ARRAY, length(a.items().len()));
-            a.items().iter().for_each(|v| write_value(out, v));
+            head(out, MAJOR_ARRAY, length(a.items().len()))?;
+            a.items().iter().try_for_each(|v| write_value(out, v))
         }
         Value::Map(m) => {
             // entries are held in canonical key order
-            head(out, MAJOR_MAP, length(m.len()));
-            m.entries().iter().for_each(|(k, v)| {
-                write_text(out, k);
-                write_value(out, v);
-            });
+            head(out, MAJOR_MAP, length(m.len()))?;
+            m.entries().iter().try_for_each(|(k, v)| {
+                write_text(out, k)?;
+                write_value(out, v)
+            })
         }
     }
 }
 
-fn write_text(out: &mut Vec<u8>, s: &str) {
-    head(out, MAJOR_TEXT, length(s.len()));
-    out.extend_from_slice(s.as_bytes());
+fn write_text<S: Sink>(out: &mut S, s: &str) -> Result<(), S::Error> {
+    head(out, MAJOR_TEXT, length(s.len()))?;
+    out.put(s.as_bytes())
 }
 
 /// A length as a CBOR argument; `usize` is at most 64 bits on every supported target.
@@ -75,36 +171,36 @@ fn length(n: usize) -> u64 {
     u64::try_from(n).unwrap_or(u64::MAX)
 }
 
-fn write_integer(out: &mut Vec<u8>, n: &BigInt) {
+fn write_integer<S: Sink>(out: &mut S, n: &BigInt) -> Result<(), S::Error> {
     let (major, tag, magnitude) = if n.sign() == Sign::Minus {
         (MAJOR_NEGATIVE, TAG_NEGATIVE_BIGNUM, -n - BigInt::one())
     } else {
         (MAJOR_UNSIGNED, TAG_POSITIVE_BIGNUM, n.clone())
     };
     if let Some(m) = magnitude.to_u64() {
-        head(out, major, m);
+        head(out, major, m)
     } else {
         let (_, bytes) = magnitude.to_bytes_be();
-        head(out, MAJOR_TAG, tag);
-        head(out, MAJOR_BYTES, length(bytes.len()));
-        out.extend_from_slice(&bytes);
+        head(out, MAJOR_TAG, tag)?;
+        head(out, MAJOR_BYTES, length(bytes.len()))?;
+        out.put(&bytes)
     }
 }
 
 /// The shortest-form initial byte and argument.
-fn head(out: &mut Vec<u8>, major: u8, argument: u64) {
+fn head<S: Sink>(out: &mut S, major: u8, argument: u64) -> Result<(), S::Error> {
     let mt = major.wrapping_shl(5);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = argument.to_be_bytes();
     if argument < 24 {
-        out.push(mt | b7);
+        out.put(&[mt | b7])
     } else if argument < 0x100 {
-        out.extend_from_slice(&[mt | 0x18, b7]);
+        out.put(&[mt | 0x18, b7])
     } else if argument < 0x1_0000 {
-        out.extend_from_slice(&[mt | 0x19, b6, b7]);
+        out.put(&[mt | 0x19, b6, b7])
     } else if argument < 0x1_0000_0000 {
-        out.extend_from_slice(&[mt | 0x1a, b4, b5, b6, b7]);
+        out.put(&[mt | 0x1a, b4, b5, b6, b7])
     } else {
-        out.extend_from_slice(&[mt | 0x1b, b0, b1, b2, b3, b4, b5, b6, b7]);
+        out.put(&[mt | 0x1b, b0, b1, b2, b3, b4, b5, b6, b7])
     }
 }
 

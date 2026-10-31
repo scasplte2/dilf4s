@@ -48,10 +48,11 @@ pub trait Model: Sized {
         self.to_value_at(0)
     }
 
-    /// The typed value of `value`.
+    /// The typed value of `value`. O([`Value::weight`]) for the parts it decodes: decoding copies shared parts out
+    /// (see [`crate::value`]), so bound the weight of a value built in process before decoding it.
     fn from_value(value: &Value) -> Result<Self, DecodeFailure>;
 
-    /// The canonical CBOR of `self`.
+    /// The canonical CBOR of `self`: O(the weight of [`Model::to_value`]), as [`cbor::encode`].
     fn to_cbor(&self) -> Result<Vec<u8>, CanonicalError> {
         self.to_value().map(|v| cbor::encode(&v))
     }

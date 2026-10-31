@@ -3,6 +3,10 @@
 //! A proof of another trie (a root mismatch) or of other contents is `false`. Malformed input (a root of the wrong
 //! length, an undecodable proof, a key invalid for the mode, a structurally invalid proof) is an error, and so is a
 //! proof that does not reach the query (`TrieError::NotCovered`): it establishes neither answer.
+//!
+//! Each costs O(the weight of its arguments): claimed values are committed and proofs decoded in full. The JLVM prices
+//! them by weight before calling (jlvm.md section 7); any other caller holding a value built with shared parts should
+//! bound its [`Value::weight`] first.
 
 use dilf4s_core::hash::{Digest, Hasher};
 use dilf4s_core::value::Value;
