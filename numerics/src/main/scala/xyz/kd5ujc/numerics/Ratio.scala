@@ -79,10 +79,15 @@ sealed abstract case class Ratio(numerator: BigInt, denominator: BigInt) {
    * 5); `None` otherwise.
    */
   def toDecimalString: Option[String] =
-    Ratio.decimalScale(denominator).map { scale =>
-      val scaled = numerator * (BigInt(10).pow(scale) / denominator)
-      BigDecimal(scaled, scale).bigDecimal.toPlainString
-    }
+    if (isInteger) Option(numerator.toString)
+    else
+      Ratio.twosAndFives(denominator).map {
+        case (twos, fives) =>
+          // 10^scale / (2^twos 5^fives), as a shift and a power rather than a division
+          val scale = math.max(twos, fives)
+          val scaled = (numerator * Ratio.Five.pow(scale - fives)) << (scale - twos)
+          BigDecimal(scaled, scale).bigDecimal.toPlainString
+      }
 
   override def toString: String = if (isInteger) numerator.toString else s"$numerator/$denominator"
 }
@@ -116,17 +121,27 @@ object Ratio {
     new Ratio(sign * numerator / g, sign * denominator / g) {}
   }
 
-  /** Number of decimal places needed to write `1/denominator` exactly, if finite. */
-  private def decimalScale(denominator: BigInt): Option[Int] = {
+  private val Five: BigInt = BigInt(5)
+
+  /** log2(5): the bits per factor of five. */
+  private val BitsPerFive: Double = math.log(5.0) / math.log(2.0)
+
+  /**
+   * `(a, b)` when `denominator = 2^a 5^b`, so that `1/denominator` terminates. The power of five is found from the bit
+   * length and checked with one exponentiation, instead of one long division per factor (thousands, for a 4096-bit
+   * denominator).
+   */
+  private def twosAndFives(denominator: BigInt): Option[(Int, Int)] = {
     val twos = denominator.lowestSetBit
     val rest = denominator >> twos
-    val (fives, remainder) = stripFives(rest, 0)
-    Option.when(remainder == BigInt(1))(math.max(twos, fives))
+    if (rest == BigInt(1)) Option((twos, 0))
+    else if (rest % Five != BigInt(0)) Option.empty
+    else {
+      // 5^b has floor(b log2 5) + 1 bits; the neighbours absorb any rounding in the estimate
+      val estimate = ((rest.bitLength - 1) / BitsPerFive).toInt
+      List(estimate, estimate + 1, estimate - 1).find(b => b > 0 && Five.pow(b) == rest).map(twos -> _)
+    }
   }
-
-  @scala.annotation.tailrec
-  private def stripFives(n: BigInt, count: Int): (Int, BigInt) =
-    if (n % 5 == BigInt(0)) stripFives(n / 5, count + 1) else (count, n)
 
   implicit val ratioOrder: Order[Ratio] = Order.from(_ `compare` _)
   implicit val ratioShow: Show[Ratio] = Show.fromToString

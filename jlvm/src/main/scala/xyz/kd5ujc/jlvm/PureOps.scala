@@ -75,14 +75,14 @@ object PureOps {
       case Upper                 => Option(unary(op, args)(v => str(op, v).flatMap(s => text(op, upper(s)))))
       case Trim                  => Option(unary(op, args)(v => str(op, v).flatMap(s => text(op, trim(s)))))
       case StartsWith | EndsWith => Option(affix(op, args))
-      case Join                  => Option(join(op, args))
+      case Join                  => Option(join(args))
       case Split                 => Option(split(op, args))
       case Length                => Option(unary(op, args)(length(op)))
 
       case Merge     => Option(merge(op, args))
       case In        => Option(binary(op, args)(contains(op)))
       case Intersect => Option(binary(op, args)(subset(op)))
-      case Unique    => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, vs.distinct))))
+      case Unique    => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, distinct(vs)))))
       case Reverse   => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, vs.reverse))))
       case Flatten   => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, vs.flatMap(spread)))))
       case Slice     => Option(slice(op, args))
@@ -187,6 +187,11 @@ object PureOps {
     case _         => false
   }
 
+  private def isBytes(v: CanonicalValue): Boolean = v match {
+    case CBytes(_) => true
+    case _         => false
+  }
+
   private def isObject(v: CanonicalValue): Boolean = v match {
     case CMap(_) => true
     case _       => false
@@ -214,7 +219,21 @@ object PureOps {
 
   /** `+` and `*` of no arguments are their identities, so a spread over an empty array is 0 or 1. */
   private def total(op: Op, args: Vector[CanonicalValue], identity: Ratio)(f: (Ratio, Ratio) => Ratio): Result =
-    args.traverse(numeric(op, _)).map(_.foldLeft(identity)(f)).flatMap(num(op, _))
+    operands(op, args).flatMap(_.foldLeftM(identity)(combine(op, _, _)(f))).flatMap(num(op, _))
+
+  /** The operands of `+` or `*`, each within the number bound. */
+  def operands(op: Op, args: Vector[CanonicalValue]): Either[JlvmError, Vector[Ratio]] = args.traverse(numeric(op, _))
+
+  /** `+` or `*` of no operands. */
+  def identity(op: Op): CanonicalValue = if (op == Op.Mul) CInt(BigInt(1)) else CInt(BigInt(0))
+
+  /** One step of `+` or `*`: every intermediate is checked, so a fold never builds a number past the bound. */
+  def combine(op: Op, acc: Ratio, x: Ratio): Either[JlvmError, Ratio] = combine(op, acc, x)(if (op == Op.Mul) _ * _ else _ + _)
+
+  private def combine(op: Op, acc: Ratio, x: Ratio)(f: (Ratio, Ratio) => Ratio): Either[JlvmError, Ratio] = {
+    val r = f(acc, x)
+    num(op, r).as(r)
+  }
 
   private def subtract(op: Op, args: Vector[CanonicalValue]): Result =
     args.traverse(numeric(op, _)).flatMap {
@@ -243,22 +262,56 @@ object PureOps {
   private def render(op: Op, r: Ratio): Either[JlvmError, String] =
     r.toDecimalString.toRight(JlvmError.Arithmetic(op.wire, s"$r has no finite decimal form"))
 
-  /** A piece of `cat` or `join`: a string, a number (exact decimal) or a boolean; null (absent) is empty. */
-  private def piece(op: Op, v: CanonicalValue): Either[JlvmError, String] =
+  /**
+   * A piece of `cat` or `join`, with its UTF-8 length: a string, a number (exact decimal) or a boolean; null (absent) is
+   * empty.
+   */
+  private def piece(op: Op, v: CanonicalValue): Either[JlvmError, (String, Long)] =
     v match {
-      case CText(s) => s.asRight
-      case CNull    => "".asRight
-      case CBool(b) => b.toString.asRight
+      case t @ CText(s) => (s, t.weight - 1).asRight
+      case CNull        => ("", 0L).asRight
+      case CBool(b)     => (b.toString, b.toString.length.toLong).asRight
+      case CInt(_) =>
+        integer(op, v).map(i => if (i.isValidLong) i.toLong.toString else i.toString).map(s => (s, s.length.toLong))
       case other =>
-        number(other).fold(tpe[String](op, s"cannot render ${kind(other)} as text"))(_ => numeric(op, other).flatMap(render(op, _)))
+        number(other).fold(tpe[(String, Long)](op, s"cannot render ${kind(other)} as text"))(_ =>
+          numeric(op, other).flatMap(render(op, _)).map(s => (s, s.length.toLong))
+        )
     }
+
+  /** Saturating, so a projected size can only exceed the bound, never wrap around below it. */
+  private def plus(a: Long, b: Long): Long = if (a > Long.MaxValue - b) Long.MaxValue else a + b
+
+  private def times(a: Long, n: Long): Long = if (n <= 0 || a == 0) 0L else if (a > Long.MaxValue / n) Long.MaxValue else a * n
+
+  /** The weight of the text `pieces` make with `separators` more bytes, saturating. */
+  private def projected(pieces: Vector[(String, Long)], separators: Long): Long =
+    plus(pieces.foldLeft(1L)((n, p) => plus(n, p._2)), separators)
+
+  /** A text result's weight, checked **before** the text is built. */
+  private def fits(op: Op, weight: Long): Either[JlvmError, Unit] =
+    Either.cond(weight <= MaxWeight, (), JlvmError.Limit(s"${op.wire}: the result would exceed weight $MaxWeight"))
+
+  /** The values `cat` or `join` renders as decimal text: their numbers, priced before rendering. */
+  def rendered(op: Op, args: Vector[CanonicalValue]): Vector[CanonicalValue] = {
+    def numbers(vs: Vector[CanonicalValue]) = vs.filter {
+      case CInt(_) | CRational(_) => true
+      case _                      => false
+    }
+    (op, args) match {
+      case (Op.Cat, _) if args.nonEmpty && (args.forall(isArray) || args.forall(isBytes)) => Vector.empty
+      case (Op.Cat, _)                                                                    => numbers(args)
+      case (Op.Join, Vector(CArray(vs), _))                                               => numbers(vs)
+      case _                                                                              => Vector.empty
+    }
+  }
 
   /** Concatenates text; when every argument is an array, or every one is bytes, concatenates those instead. */
   private def cat(op: Op, args: Vector[CanonicalValue]): Result = {
     val bytes = args.collect { case CBytes(b) => b }
     if (args.nonEmpty && args.forall(isArray)) array(op, args.flatMap(spread))
     else if (args.nonEmpty && bytes.size == args.size) Values.bytesValue(op, bytes.foldLeft(ByteVector.empty)(_ ++ _))
-    else args.traverse(piece(op, _)).flatMap(ps => text(op, ps.mkString))
+    else args.traverse(piece(op, _)).flatMap(ps => fits(op, projected(ps, 0L)).flatMap(_ => text(op, ps.map(_._1).mkString)))
   }
 
   /** `[text, start]` or `[text, start, length]`, counted in code points; a negative length drops from the end. */
@@ -287,13 +340,32 @@ object PureOps {
       case _ => arity(op, s"takes 2 arguments, got ${args.size}")
     }
 
-  private def join(op: Op, args: Vector[CanonicalValue]): Result =
-    binary(op, args) { (a, sep) =>
-      (arr(op, a), str(op, sep)).tupled.flatMap {
-        case (vs, s) =>
-          vs.traverse(piece(op, _)).flatMap(ps => text(op, ps.mkString(s)))
-      }
+  /** A `join` whose pieces are rendered and whose result fits: what remains is to pay for the separators and build it. */
+  final case class Joining(pieces: Vector[(String, Long)], separator: CText) {
+
+    /** The separator bytes the result will copy. */
+    def separatorBytes: Long = times(separator.weight - 1, pieces.size.toLong - 1)
+  }
+
+  /** Validates and renders a `join`'s pieces, and rejects a result past the weight bound, without building it. */
+  def joining(args: Vector[CanonicalValue]): Either[JlvmError, Joining] =
+    args match {
+      case Vector(a, sep) =>
+        val separator = sep match {
+          case t: CText => t.asRight
+          case other    => tpe[CText](Op.Join, s"expected a string, got ${kind(other)}")
+        }
+        (arr(Op.Join, a), separator).tupled.flatMap {
+          case (vs, s) =>
+            vs.traverse(piece(Op.Join, _)).map(Joining(_, s)).flatMap(j => fits(Op.Join, projected(j.pieces, j.separatorBytes)).as(j))
+        }
+      case _ => arity(Op.Join, s"takes 2 arguments, got ${args.size}")
     }
+
+  /** Builds a checked `join`. */
+  def joined(j: Joining): Result = text(Op.Join, j.pieces.map(_._1).mkString(j.separator.value))
+
+  private def join(args: Vector[CanonicalValue]): Result = joining(args).flatMap(joined)
 
   private def split(op: Op, args: Vector[CanonicalValue]): Result =
     binary(op, args) { (a, b) =>
@@ -345,10 +417,7 @@ object PureOps {
       case (CNull, _)         => bool(true).asRight
       case (CArray(_), CNull) => bool(false).asRight
       case (a, b) =>
-        (arr(op, a), arr(op, b)).mapN { (xs, ys) =>
-          val present = ys.toSet
-          bool(xs.forall(present.contains))
-        }
+        (arr(op, a), arr(op, b)).mapN((xs, ys) => bool(Values.subset(xs, ys)))
     }
 
   /** `[array, start]` or `[array, start, end]`, with JavaScript bounds. */

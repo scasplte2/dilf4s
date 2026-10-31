@@ -95,14 +95,18 @@ object CanonicalValue {
       entries.foldLeft(1L) { case (w, (k, v)) => Weight.add(w, entryWeight(k, v)) }
     )
 
-  /** `m` with entry `key` changed from `before` to `after`; a saturated weight is recounted. */
-  private def changed(m: CMap, key: String, before: Option[CanonicalValue], after: Option[CanonicalValue]): CMap = {
-    val entries = after.fold(m.entries - key)(m.entries.updated(key, _))
+  /**
+   * `m` with entry `key` changed from `before` to `after`; a saturated weight is recounted. The key's weight is the one
+   * its [[CText]] cached, so a change never rescans the key.
+   */
+  private def changed(m: CMap, key: CText, before: Option[CanonicalValue], after: Option[CanonicalValue]): CMap = {
+    val entries = after.fold(m.entries - key.value)(m.entries.updated(key.value, _))
     val without = before.fold(m.childDepths)(v => counted(m.childDepths, v.depth, -1))
     val depths = after.fold(without)(v => counted(without, v.depth, 1))
+    def entry(v: CanonicalValue): Long = Weight.add(key.weight, v.weight)
     val weight =
       if (m.weight == Long.MaxValue) entries.foldLeft(1L) { case (w, (k, v)) => Weight.add(w, entryWeight(k, v)) }
-      else Weight.add(m.weight - before.fold(0L)(entryWeight(key, _)), after.fold(0L)(entryWeight(key, _)))
+      else Weight.add(m.weight - before.fold(0L)(entry), after.fold(0L)(entry))
     new MapNode(entries, depths, weight)
   }
 
@@ -130,14 +134,30 @@ object CanonicalValue {
     collect(entries.toList, Set.empty, Map.empty).flatMap(m => withinDepth(mapOf(m)))
 
   /**
+   * A map whose keys are text values already, and distinct: for keys checked once and reused, such as a program's
+   * literal keys. Each key's weight is the one its [[CText]] cached, so no key is rescanned. Null values are dropped;
+   * depth is checked.
+   */
+  private[kd5ujc] def textKeyed(entries: Vector[(CText, CanonicalValue)]): Either[CanonicalError, CMap] = {
+    val present = entries.filter { case (_, v) => v != CNull }
+    withinDepth(
+      new MapNode(
+        present.iterator.map { case (k, v) => k.value -> v }.toMap,
+        present.foldLeft(TreeMap.empty[Int, Int]) { case (h, (_, v)) => counted(h, v.depth, 1) },
+        present.foldLeft(1L) { case (w, (k, v)) => Weight.add(w, Weight.add(k.weight, v.weight)) }
+      )
+    )
+  }
+
+  /**
    * `m` with `key` set to `value`, or removed when `value` is null, in O(log n). The key is already well-formed text, so
    * only depth is checked: no existing key is revalidated.
    */
   def updated(m: CMap, key: CText, value: CanonicalValue): Either[CanonicalError, CMap] =
-    if (value == CNull) removed(m, key).asRight else withinDepth(changed(m, key.value, m.entries.get(key.value), Option(value)))
+    if (value == CNull) removed(m, key).asRight else withinDepth(changed(m, key, m.entries.get(key.value), Option(value)))
 
   /** `m` without `key`, in O(log n). */
-  def removed(m: CMap, key: CText): CMap = m.entries.get(key.value).fold(m)(v => changed(m, key.value, Option(v), scala.None))
+  def removed(m: CMap, key: CText): CMap = m.entries.get(key.value).fold(m)(v => changed(m, key, Option(v), scala.None))
 
   /** Maps merged left to right, later keys winning; every key is already valid, and depth cannot grow. */
   def merged(maps: Vector[CMap]): CMap = mapOf(maps.foldLeft(Map.empty[String, CanonicalValue])(_ ++ _.entries))

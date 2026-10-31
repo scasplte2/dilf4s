@@ -101,6 +101,12 @@ text, or a non-terminating rational, has no surface form and is an error.
   - Text, structure or canonical form too deep is `Limit`, however the bound is reached.
   - metakit counted evaluated nodes at run time, so an untaken deep branch never counted. Here the program is bounded
     before it runs (§8 #22).
+- **Size.** Compilation uses no gas, so a program's size is bounded before anything else is done: at most 2^18
+  (`Program.MaxSize`), counting one per expression, plus the weight of each literal and default, plus the length of
+  each object key, binding name and path segment, plus one per segment. A larger program is `Limit`. `let` carries its
+  scope forward in one pass, in a sorted set of names. Checking the canonical form still builds hashed maps of literal
+  keys, so compilation is not strictly linear in the worst case, but it is bounded by this size. The largest conformance
+  program is under 2^14. The host bounds the JSON text itself.
 
 **Compilation.** Before evaluation, a program is checked into its evaluation form. These are parse errors
 (`Malformed`), reported with no gas used:
@@ -215,8 +221,9 @@ path:
 - if it evaluates to text, that text is read as a `var` path, `$` included. A malformed path, such as an empty
   segment, is a `Domain` error;
 - if it evaluates to an array, its items are the exact segments of a data path: text is a key and may contain `.`; an
-  integer is an index. A key can therefore never redirect the read into another field, and the array form never
-  reads a binding;
+  integer is an index (on an object, the key that is its decimal form, so `-1` reads `"-1"`). An integer segment must
+  fit in 64 bits, or it is a `Domain` error: it is checked before it is rendered. A key can therefore never redirect
+  the read into another field, and the array form never reads a binding;
 - any other value is a `Type` error;
 - `{"var": [["a", {"var": "k"}]]}` is the array form. A literal path is quoted: `{"var": {"literal": "a.b"}}`.
 - Rendering writes an object path with no default bare, `{"var": {"cat": [...]}}`, and an array path or any default
@@ -470,7 +477,7 @@ A versioned trie (`versioned-trie.md`) is verified with these same trie ops. Its
 **Schedules.** A schedule is versioned data (`Gas.scala`, `GasSchedule.V1`). It holds:
 - for every operation, a base charge, a per-unit charge and a size unit;
 - optionally, a rate of their own for particular argument positions, and further rates charged on every argument;
-- the scalar charges `literal`, `element`, `varAccess`, `perPathSegment` and `callbackRun`.
+- the scalar charges `literal`, `element`, `varAccess`, `perPathSegment`, `callbackRun` and `rendering`.
 
 **Calibration.** Schedule v1 prices work at **150 gas per µs**, on the direct driver. Every operation and node charge
 was fitted to measured time at a small and a large size (`benchmarks`: `GasCalibration`). A per-unit rate of 1 is the
@@ -488,11 +495,34 @@ default the operation's). For example, `sigma_verify` and `schnorr_verify` charg
 - `Limbs2`: for a number, the square of its 64-bit limbs, numerator and denominator together (`⌊bits/64⌋` each); 0
   for anything else;
 - `RationalLimbs2`: `Limbs2` for a non-integer rational, 0 for an integer;
+- `Key`: for text, `⌊length/32⌋` in UTF-16 units; 0 for anything else. `get`, `has`, `set` and `unset` charge their key
+  at 1 per unit: a hit compares the whole key, so a long key costs more, and keys under 32 units nothing extra;
 - `None`: zero.
 
 The gcd that normalises a result is quadratic in its operands' size. `/` and `%` therefore also charge `Limbs2`, and
 `+`, `-` and `*` also charge `RationalLimbs2`: integer sums and products are linear. `pow` is priced at its
 worst case, a 4096-bit rational result.
+
+**Work an argument's size does not bound** has charges of its own, each taken before the work:
+- **Accumulators.** `+` and `*` fold left, and each step is the binary operation on the accumulator and the next
+  operand. The operands are paid by the size charge; each step after the first also pays the size charge of its
+  accumulator, as if it were an argument. Every intermediate is checked against the number bound (§2), so `*` of 10,000
+  twos is `Limit` at the 4097th bit, not a 10,000-bit product.
+- **Rendering numbers** (`cat`, `join`): `rendering` per unit of `(4 + ⌊b/64⌋)^2` for each number rendered, where `b`
+  bounds the bits of its decimal expansion: the numerator's bits for an integer, and `bits(p) + ⌊(7 bits(q) + 2)/3⌋`
+  for a rational `p/q` (the expansion of `p/(2^a 5^c)` is `p 2^(s-a) 5^(s-c)`, `s = max(a, c)`). The conversion is
+  quadratic in the expansion, which can be far longer than the number's weight: `1/2^4095` weighs 66 and renders as
+  4,097 characters. Measured at about 1.5–2 gas a unit; the 4 limbs are the fixed cost of a conversion.
+- **Pieces.** `cat` and `join` also charge 32 per element of each argument: a piece costs about 30 gas besides its bytes.
+- **Separators.** `join` renders its pieces, checks the result's weight (saturating) against the bound, which is
+  `Limit` before anything is built, and then charges `perUnit(join)` per byte of separator the result will copy.
+- **Paths parsed at run time** (a computed `var` path given as text, a `missing` or `missing_some` key) are split on
+  `.`: `perUnit(split) × weight(path)` before parsing. A path has at most as many segments as its weight, so this also
+  pays for walking them.
+- **Deduplicating** (`unique`, `intersect`) sorts by a total order instead of hashing: kinds, then scalars structurally
+  and collections by their canonical encoding. O(n log n), at the operations' calibrated rates, whatever the values.
+
+GasCalibration measures these with the argument `metering`.
 
 **Every charge is taken before the work it pays for.** If a charge would exceed the limit:
 - the evaluation stops with `OutOfGas(used + charge, limit)`;
@@ -504,11 +534,13 @@ worst case, a 4096-bit rational result.
 | Node | Charges, in order |
 |---|---|
 | Literal | `literal`. |
-| Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment. A non-empty plain path inside callbacks also counts each enclosing frame as a segment, since it may consult them all. A computed path is evaluated first, then charged by the segments it gives. |
+| Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment, and every segment counts once more per 32 UTF-16 units of its length (it is compared on a hit, and rendered in a warning). A non-empty plain path inside callbacks also counts each enclosing frame as a segment, since it may consult them all. A computed path is evaluated first. Text then pays `perUnit(split) × weight` before it is parsed, and then the access and the segments it gives; an array pays the access and its segments (counted the same way) before they are converted. |
 | Array or map expression | `literal + element × n`, then each item. |
-| Strict operation, lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)`, then the operation. A spread is charged the same way, on the elements of its array. |
+| Strict operation | `base(op)`, then each argument, then `perUnit(op) × size(arguments)`, then the operation, with the charges above for `+`, `*`, `cat` and `join`. A spread is charged the same way, on the elements of its array. |
+| Lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)` plus, for each key, `perUnit(split) × weight(key)` and `perPathSegment` per enclosing frame (as `var` pays), then the lookup. |
 | `if` | `base(if)`, then for each condition tested `element` and the condition, then the branch taken. |
-| `and`, `or`, `default`, `let` | `base(op)`, then only the subexpressions actually evaluated. |
+| `and`, `or`, `default` | `base(op)`, then only the subexpressions actually evaluated. |
+| `let` | `base(let) + element × Σ (1 + ⌊len(name)/32⌋)` over the bindings (each binding is an insertion into the scope, and comparing names costs like a path segment), then the bindings and the body. |
 | Callback | `base(op)`, then the collection, then `perUnit(op) × elements`, then for each body run: `callbackRun` plus the body. For `some` with a quorum, `min` is evaluated after the collection. For `reduce`, `initial` is evaluated after the collection. |
 
 A program that does not compile uses no gas.

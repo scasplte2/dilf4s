@@ -308,7 +308,7 @@
       "env" : {
         "sender" : "\"trader\""
       },
-      "gasLimit" : 3118
+      "gasLimit" : 3226
     },
     {
       "name" : "contract uniswap_v2: swap with one gas too few",
@@ -317,7 +317,7 @@
       "env" : {
         "sender" : "\"trader\""
       },
-      "gasLimit" : 3117
+      "gasLimit" : 3225
     }
   ]
 }

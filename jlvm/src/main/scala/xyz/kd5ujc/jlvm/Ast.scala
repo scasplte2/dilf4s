@@ -147,10 +147,22 @@ enum VarRef {
 }
 
 object VarRef {
+
+  /** The `.`-separated segments of `s`, empty ones included: one pass, without a regular expression. */
+  def segments(s: String): Vector[String] = {
+    @tailrec
+    def go(from: Int, acc: Vector[String]): Vector[String] =
+      s.indexOf('.', from) match {
+        case -1 => acc :+ s.substring(from)
+        case at => go(at + 1, acc :+ s.substring(from, at))
+      }
+    go(0, Vector.empty)
+  }
+
   def parse(s: String): Either[JlvmError, VarRef] =
     if (s.isEmpty) Right(Data(Vector.empty))
     else {
-      val segments = s.split("\\.", -1).toVector
+      val segments = VarRef.segments(s)
       if (segments.exists(_.isEmpty)) Left(JlvmError.Malformed(s"empty segment in var path \"$s\""))
       else
         segments.headOption match {
@@ -214,7 +226,8 @@ object Program {
    */
   def from(expr: Expr): Either[JlvmError, Program] =
     for {
-      _ <- check(List(expr -> 0)).toLeft(())
+      _ <- measure(List(Pending(Vector(expr), 0, 0)), 0L).toLeft(())
+      _ <- check(List(expr)).toLeft(())
       surface = Parser.surfaceDepth(expr)
       _ <- Either.cond(
         surface <= MaxSurfaceDepth,
@@ -231,24 +244,75 @@ object Program {
       "an empty key or a key starting with '$' with the exact-segment form {\"var\": [[...]]}"
     )
 
-  /** A worklist walk, so that checking an unbounded tree cannot itself overflow the stack. */
+  /**
+   * The largest program, in size: one per expression, plus the weight of each literal and default, plus the length of
+   * each object key, binding name and path segment, and one per segment. Compilation is linear in the size and uses no gas, so the bound is
+   * checked first, by a walk that stops as soon as it is exceeded. The largest conformance programs are under 2^14.
+   */
+  val MaxSize: Long = 1L << 18
+
+  /** A path's segments, each with its length. */
+  private def segments(p: Vector[String]): Long = p.foldLeft(0L)((n, s) => n + 1L + s.length)
+
+  /** Saturating: a literal's weight may itself have saturated. */
+  private def plus(a: Long, b: Long): Long = if (a > Long.MaxValue - b) Long.MaxValue else a + b
+
+  private def size(e: Expr): Long =
+    e match {
+      case Expr.Lit(v)                                        => plus(1L, v.weight)
+      case Expr.Var(VarRef.Data(p), d)                        => plus(1L + segments(p), d.fold(0L)(_.weight))
+      case Expr.Var(VarRef.Bound(n, p), d)                    => plus(2L + n.length + segments(p), d.fold(0L)(_.weight))
+      case Expr.VarAt(_, d)                                   => plus(1L, d.fold(0L)(_.weight))
+      case Expr.Obj(fs)                                       => fs.foldLeft(1L) { case (n, (k, _)) => n + 1L + k.length }
+      case Expr.Arr(_) | Expr.Apply(_, _) | Expr.Spread(_, _) => 1L
+    }
+
+  /** The children of `items` still to visit, from `next`, each at `depth`. */
+  private final case class Pending(items: Vector[Expr], next: Int, depth: Int)
+
+  private def children(e: Expr): Vector[Expr] =
+    e match {
+      case Expr.Apply(_, as)            => as
+      case Expr.Arr(is)                 => is
+      case Expr.Obj(fs)                 => fs.values.toVector
+      case Expr.Spread(_, a)            => Vector(a)
+      case Expr.VarAt(p, _)             => Vector(p)
+      case Expr.Lit(_) | Expr.Var(_, _) => Vector.empty
+    }
+
+  /**
+   * The size and depth bounds, before anything else reads the tree: each node counts as it is reached, and arguments
+   * are visited where they are, never copied into the worklist, so the walk stops within the bound whatever the tree.
+   */
   @tailrec
-  private def check(todo: List[(Expr, Int)]): Option[JlvmError] =
+  private def measure(todo: List[Pending], seen: Long): Option[JlvmError] =
     todo match {
-      case Nil                         => scala.None
-      case (_, d) :: _ if d > MaxDepth => scala.Some(JlvmError.Limit(s"the program nests deeper than $MaxDepth"))
-      case (Expr.Spread(op, _), _) :: _ if !Op.Variadic.contains(op) =>
+      case _ if seen > MaxSize => scala.Some(JlvmError.Limit(s"the program is larger than $MaxSize"))
+      case Nil                 => scala.None
+      case Pending(items, i, d) :: tl =>
+        items.lift(i) match {
+          case scala.None                    => measure(tl, seen)
+          case scala.Some(_) if d > MaxDepth => scala.Some(JlvmError.Limit(s"the program nests deeper than $MaxDepth"))
+          case scala.Some(e) =>
+            measure(Pending(children(e), 0, d + 1) :: Pending(items, i + 1, d) :: tl, plus(seen, size(e)))
+        }
+    }
+
+  /**
+   * The shapes no surface text can produce. Runs once [[measure]] has bounded the tree, so rendering every path costs
+   * at most the size. A worklist walk, so that checking a deep tree cannot itself overflow the stack.
+   */
+  @tailrec
+  private def check(todo: List[Expr]): Option[JlvmError] =
+    todo match {
+      case Nil => scala.None
+      case Expr.Spread(op, _) :: _ if !Op.Variadic.contains(op) =>
         scala.Some(JlvmError.Malformed(s"${op.wire} does not spread its argument"))
-      case (Expr.Spread(op, Expr.Arr(_)), _) :: _ =>
+      case Expr.Spread(op, Expr.Arr(_)) :: _ =>
         scala.Some(JlvmError.Malformed(s"a spread ${op.wire} takes one expression, not an argument list"))
-      case (Expr.Var(_, scala.Some(CanonicalValue.CNull)) | Expr.VarAt(_, scala.Some(CanonicalValue.CNull)), _) :: _ =>
+      case (Expr.Var(_, scala.Some(CanonicalValue.CNull)) | Expr.VarAt(_, scala.Some(CanonicalValue.CNull))) :: _ =>
         scala.Some(JlvmError.Malformed("a var default is never null: the canonical form cannot tell it from no default"))
-      case (Expr.Var(ref, _), _) :: _ if !VarRef.parse(ref.render).exists(_ == ref) => scala.Some(unspellable(ref))
-      case (Expr.Apply(_, as), d) :: tl                                             => check(as.toList.map(_ -> (d + 1)) ::: tl)
-      case (Expr.Spread(_, a), d) :: tl                                             => check((a -> (d + 1)) :: tl)
-      case (Expr.VarAt(p, _), d) :: tl                                              => check((p -> (d + 1)) :: tl)
-      case (Expr.Arr(is), d) :: tl                                                  => check(is.toList.map(_ -> (d + 1)) ::: tl)
-      case (Expr.Obj(fs), d) :: tl                                                  => check(fs.values.toList.map(_ -> (d + 1)) ::: tl)
-      case (Expr.Lit(_) | Expr.Var(_, _), _) :: tl                                  => check(tl)
+      case Expr.Var(ref, _) :: _ if !VarRef.parse(ref.render).exists(_ == ref) => scala.Some(unspellable(ref))
+      case e :: tl                                                             => check(children(e).toList ::: tl)
     }
 }

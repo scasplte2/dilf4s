@@ -280,13 +280,23 @@ object EvaluatorSuite extends IOSuite with Checkers {
       .and(expect.same(Some("Domain"), kind(result("""{"var": {"cat": ["a", "..b"]}}"""))))
   }
 
-  check("a computed path costs its expression, then the access and its segments") {
+  check("a computed path costs its expression, its parsing, then the access and its segments") {
     val data = """{"a": {"b": 1}}"""
-    // computed: the literal path, then the same access and segments as the static path
-    expect.same(
-      eval("""{"var": "a.b"}""", data).gasUsed.value + S.literal.value,
-      eval("""{"var": {"literal": "a.b"}}""", data).gasUsed.value
-    )
+    // text: the literal path, parsing it at split's rate per unit of its weight, then the static path's access and segments
+    val parsing = S.cost(Op.Split).perUnit.value * value("\"a.b\"").weight
+    // an array of segments needs no parsing: it pays the access and its segments before they are converted
+    val segments = """{"var": [["a", {"literal": "b"}]]}"""
+    expect
+      .same(
+        eval("""{"var": "a.b"}""", data).gasUsed.value + S.literal.value + parsing,
+        eval("""{"var": {"literal": "a.b"}}""", data).gasUsed.value
+      )
+      .and(
+        expect.same(
+          eval("""{"var": "a.b"}""", data).gasUsed.value + S.literal.value + 2 * S.literal.value + S.element.value * 2,
+          eval(segments, data).gasUsed.value
+        )
+      )
   }
 
   // ---- spreading, decided by the syntax
@@ -624,6 +634,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
   private val dataJson = """{"n": 7, "xs": [3, 1, 4, 1, 5], "name": "jlvm", "o": {"k": 2}, "rs": [{"n": 1}, {"m": 2}, 4]}"""
 
   private def lit(i:  Int): Expr = Expr.Lit(CInt(BigInt(i)))
+  private def text(s: String): Expr = Expr.Lit(CanonicalValue.text(s).toOption.get)
   private def v(path: String): Expr = Expr.Var(VarRef.parse(path).toOption.get, scala.None)
   private def ap(op:  Op, args: Expr*): Expr = Expr.Apply(op, args.toVector)
 
@@ -655,7 +666,15 @@ object EvaluatorSuite extends IOSuite with Checkers {
         1 -> Gen
           .zip(Gen.oneOf(Op.Add, Op.Mul, Op.Min, Op.Max), Gen.oneOf(Gen.const(v("xs")), inner.map(b => ap(Op.Map, v("rs"), b))))
           .map { case (o, a) => Expr.Spread(o, a) },
-        1 -> sub.map(i => Expr.VarAt(Expr.Arr(Vector(Expr.Lit(CanonicalValue.text("xs").toOption.get), i)), scala.None))
+        1 -> sub.map(i => Expr.VarAt(Expr.Arr(Vector(Expr.Lit(CanonicalValue.text("xs").toOption.get), i)), scala.None)),
+        // the charge points of the metering fixes: folds of three or more operands, rendering and separators, paths
+        // parsed at run time (inside callbacks too, where they search the frames)
+        1 -> Gen.zip(Gen.oneOf(Op.Add, Op.Mul), sub, sub, sub).map { case (o, a, b, c) => ap(o, a, b, c) },
+        1 -> Gen.zip(sub, sub).map { case (a, b) => ap(Op.Length, ap(Op.Join, Expr.Arr(Vector(a, b, Expr.Lit(CNull))), text(", "))) },
+        1 -> Gen
+          .oneOf("o.k", "n", "xs.1", "rs.0.n", "$current")
+          .map(p => Expr.VarAt(Expr.Lit(CanonicalValue.text(p).toOption.get), Some(CInt(0)))),
+        1 -> inner.map(body => ap(Op.Count, v("rs"), ap(Op.Gt, ap(Op.Length, ap(Op.Missing, text("n"), text("m"), text("o.k"))), body)))
       )
     }
   }
