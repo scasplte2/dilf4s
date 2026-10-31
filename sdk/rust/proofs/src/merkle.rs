@@ -137,7 +137,7 @@ impl<H: Hasher> Tagged<H> {
 impl<H: Hasher> MerkleHashing<H> for Tagged<H> {
     type Leaf = Value;
 
-    /// `leafHash(commit(v))`.
+    /// `leafHash(commit(v))`: O([`Value::weight`]), which the JLVM prices before calling (jlvm.md section 7).
     fn leaf_hash(&self, leaf: &Value) -> Digest<H> {
         self.leaf.hash(&[&value_commitment(leaf)])
     }
@@ -481,7 +481,7 @@ impl<H: Hasher> TreeHead<H> {
 
 /// `merkle_verify [head, leaf, proof]`: the leaf (a value for the tagged profile, bytes for RFC 6962) is at the
 /// proof's index of the tree `head` names. A proof whose size differs from the head's is `false`; an undecodable proof
-/// is an error.
+/// is an error. O(the weight of the leaf and the proof), which the JLVM prices before calling (jlvm.md section 7).
 pub fn merkle_verify<H: Hasher, M: MerkleHashing<H>>(
     profile: &M,
     head: &TreeHead<H>,

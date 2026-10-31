@@ -341,6 +341,7 @@ impl<H: Hasher> TrieHashing<H> {
     }
 
     /// `valueHash(commit(v))`: the hash a trie commits for a canonical value, as a JLVM program claims it.
+    /// O([`Value::weight`]), which the JLVM prices before calling (jlvm.md section 7).
     pub fn value_of(&self, value: &Value) -> Digest<H> {
         self.value(&value_commitment(value))
     }

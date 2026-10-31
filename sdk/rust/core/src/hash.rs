@@ -249,6 +249,7 @@ impl<H: Hasher> TaggedHash<H> {
     }
 
     /// The content hash of a canonical value: the tagged hash of its canonical encoding.
+    /// O([`Value::weight`]), as [`cbor::encode`].
     pub fn content(&self, value: &Value) -> Digest<H> {
         self.hash(&cbor::encode(value))
     }
@@ -341,7 +342,7 @@ impl HashAlgorithm {
         self.hash_parts(&[&t, &t, message])
     }
 
-    /// The content hash of a canonical value with this algorithm.
+    /// The content hash of a canonical value with this algorithm. O([`Value::weight`]), as [`cbor::encode`].
     pub fn content_hash(self, tag: &DomainTag, value: &Value) -> Vec<u8> {
         self.tagged_hash(tag, &cbor::encode(value))
     }

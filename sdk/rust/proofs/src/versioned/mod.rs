@@ -70,7 +70,8 @@ pub enum VersionedTrieError {
     TooLarge {
         /// What.
         what: String,
-        /// Its size.
+        /// Its size; for a value, a lower bound once past the limit (a value is measured only up to the limit), and
+        /// `u64::MAX` when too long to count.
         size: u64,
         /// The limit.
         max: u64,
@@ -220,16 +221,20 @@ impl<V: fmt::Debug, H: Hasher> fmt::Debug for Head<V, H> {
 }
 
 /// A value every wire format can carry: at most [`MAX_VALUE_DEPTH`] deep and [`MAX_VALUE_BYTES`] long.
+///
+/// O(min(weight, [`MAX_VALUE_BYTES`])) and allocation-free: the encoding is measured, not built, and the measure stops
+/// at the limit, so a compact value with a vast shared expansion is refused without expanding it.
 pub fn check_value(key: &StateKey, value: &Value) -> Result<(), VersionedTrieError> {
     let what = || alloc::format!("the value of {}", key.as_str());
     if value.depth() > MAX_VALUE_DEPTH {
         return Err(VersionedTrieError::TooDeep { what: what(), depth: value.depth(), max: MAX_VALUE_DEPTH });
     }
-    let size = u64::try_from(cbor::encode(value).len()).unwrap_or(u64::MAX);
-    if size > MAX_VALUE_BYTES {
-        return Err(VersionedTrieError::TooLarge { what: what(), size, max: MAX_VALUE_BYTES });
-    }
-    Ok(())
+    let max = usize::try_from(MAX_VALUE_BYTES).unwrap_or(usize::MAX);
+    cbor::encoded_len_within(value, max).map(|_| ()).map_err(|e| VersionedTrieError::TooLarge {
+        what: what(),
+        size: e.at_least.and_then(|n| u64::try_from(n).ok()).unwrap_or(u64::MAX),
+        max: MAX_VALUE_BYTES,
+    })
 }
 
 /// A versioned trie's configuration: the version key (its width is part of what a verifier trusts) and the trie

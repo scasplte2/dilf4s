@@ -48,10 +48,11 @@ pub trait Model: Sized {
         self.to_value_at(0)
     }
 
-    /// The typed value of `value`.
+    /// The typed value of `value`. O([`Value::weight`]) for the parts it decodes: decoding copies shared parts out
+    /// (see [`crate::value`]), so bound the weight of a value built in process before decoding it.
     fn from_value(value: &Value) -> Result<Self, DecodeFailure>;
 
-    /// The canonical CBOR of `self`.
+    /// The canonical CBOR of `self`: O(the weight of [`Model::to_value`]), as [`cbor::encode`].
     fn to_cbor(&self) -> Result<Vec<u8>, CanonicalError> {
         self.to_value().map(|v| cbor::encode(&v))
     }
@@ -177,14 +178,14 @@ impl Codec for BigIntIn {
     type Target = BigInt;
     fn encode(&self, value: &BigInt) -> Result<Value, CanonicalError> {
         if self.within(value) {
-            Ok(Value::Int(value.clone()))
+            Ok(Value::int(value.clone()))
         } else {
             Err(mismatch(format!("integer {value} outside {}", self.describe())))
         }
     }
     fn decode(&self, value: &Value) -> Result<BigInt, DecodeFailure> {
         match value {
-            Value::Int(n) if self.within(n) => Ok(n.clone()),
+            Value::Int(n) if self.within(n) => Ok(n.as_bigint().clone()),
             Value::Int(n) => Err(DecodeFailure::new(format!("integer {n} outside {}", self.describe()))),
             other => Err(expected("int", other)),
         }
@@ -206,7 +207,7 @@ macro_rules! native_range {
             type Target = $t;
             fn encode(&self, value: &$t) -> Result<Value, CanonicalError> {
                 if (self.lo..=self.hi).contains(value) {
-                    Ok(Value::Int(BigInt::from(*value)))
+                    Ok(Value::int(*value))
                 } else {
                     Err(mismatch(format!("integer {value} outside {}..{}", self.lo, self.hi)))
                 }
@@ -252,11 +253,11 @@ pub struct Bytes;
 impl Codec for Bytes {
     type Target = Vec<u8>;
     fn encode(&self, value: &Vec<u8>) -> Result<Value, CanonicalError> {
-        Ok(Value::Bytes(value.clone()))
+        Ok(Value::bytes(value.as_slice()))
     }
     fn decode(&self, value: &Value) -> Result<Vec<u8>, DecodeFailure> {
         match value {
-            Value::Bytes(b) => Ok(b.clone()),
+            Value::Bytes(b) => Ok(b.to_vec()),
             other => Err(expected("bytes", other)),
         }
     }
@@ -281,14 +282,14 @@ impl Codec for SizedBytes {
     type Target = Vec<u8>;
     fn encode(&self, value: &Vec<u8>) -> Result<Value, CanonicalError> {
         if self.fits(value.len()) {
-            Ok(Value::Bytes(value.clone()))
+            Ok(Value::bytes(value.as_slice()))
         } else {
             Err(mismatch(format!("byte string of {} bytes outside the schema size", value.len())))
         }
     }
     fn decode(&self, value: &Value) -> Result<Vec<u8>, DecodeFailure> {
         match value {
-            Value::Bytes(b) if self.fits(b.len()) => Ok(b.clone()),
+            Value::Bytes(b) if self.fits(b.len()) => Ok(b.to_vec()),
             Value::Bytes(b) => Err(DecodeFailure::new(format!(
                 "byte string of {} bytes, expected {}..{}",
                 b.len(),
@@ -311,11 +312,11 @@ pub struct FixedBytes<const N: usize>;
 impl<const N: usize> Codec for FixedBytes<N> {
     type Target = [u8; N];
     fn encode(&self, value: &[u8; N]) -> Result<Value, CanonicalError> {
-        Ok(Value::Bytes(value.to_vec()))
+        Ok(Value::bytes(value.as_slice()))
     }
     fn decode(&self, value: &Value) -> Result<[u8; N], DecodeFailure> {
         match value {
-            Value::Bytes(b) => <[u8; N]>::try_from(b.as_slice())
+            Value::Bytes(b) => <[u8; N]>::try_from(&**b)
                 .map_err(|_| DecodeFailure::new(format!("byte string of {} bytes, expected {N}", b.len()))),
             other => Err(expected("bytes", other)),
         }
@@ -329,11 +330,11 @@ pub struct Text;
 impl Codec for Text {
     type Target = String;
     fn encode(&self, value: &String) -> Result<Value, CanonicalError> {
-        Ok(Value::Text(value.clone()))
+        Ok(Value::text(value.as_str()))
     }
     fn decode(&self, value: &Value) -> Result<String, DecodeFailure> {
         match value {
-            Value::Text(t) => Ok(t.clone()),
+            Value::Text(t) => Ok(String::from(t.as_str())),
             other => Err(expected("text", other)),
         }
     }
@@ -353,14 +354,16 @@ impl Codec for SizedText {
     fn encode(&self, value: &String) -> Result<Value, CanonicalError> {
         let n = value.len();
         if n >= self.lo && self.hi.is_none_or(|hi| n <= hi) {
-            Ok(Value::Text(value.clone()))
+            Ok(Value::text(value.as_str()))
         } else {
             Err(mismatch(format!("text of {n} UTF-8 bytes outside the schema size")))
         }
     }
     fn decode(&self, value: &Value) -> Result<String, DecodeFailure> {
         match value {
-            Value::Text(t) if t.len() >= self.lo && self.hi.is_none_or(|hi| t.len() <= hi) => Ok(t.clone()),
+            Value::Text(t) if t.len() >= self.lo && self.hi.is_none_or(|hi| t.len() <= hi) => {
+                Ok(String::from(t.as_str()))
+            }
             Value::Text(t) => Err(DecodeFailure::new(format!(
                 "text of {} UTF-8 bytes, expected {}..{}",
                 t.len(),
@@ -427,14 +430,14 @@ impl Codec for Matching {
     type Target = String;
     fn encode(&self, value: &String) -> Result<Value, CanonicalError> {
         if self.0.matches(value) {
-            Ok(Value::Text(value.clone()))
+            Ok(Value::text(value.as_str()))
         } else {
             Err(mismatch(format!("text does not match {}", self.0.source())))
         }
     }
     fn decode(&self, value: &Value) -> Result<String, DecodeFailure> {
         match value {
-            Value::Text(t) if self.0.matches(t) => Ok(t.clone()),
+            Value::Text(t) if self.0.matches(t) => Ok(String::from(t.as_str())),
             Value::Text(t) => Err(DecodeFailure::new(format!("{t:?} does not match {}", self.0.source()))),
             other => Err(expected("text", other)),
         }
@@ -448,7 +451,7 @@ pub struct LiteralText(pub &'static str);
 impl Codec for LiteralText {
     type Target = ();
     fn encode(&self, (): &()) -> Result<Value, CanonicalError> {
-        Ok(Value::Text(String::from(self.0)))
+        Ok(Value::text(self.0))
     }
     fn decode(&self, value: &Value) -> Result<(), DecodeFailure> {
         match value {
@@ -466,11 +469,11 @@ pub struct LiteralInt(pub i64);
 impl Codec for LiteralInt {
     type Target = ();
     fn encode(&self, (): &()) -> Result<Value, CanonicalError> {
-        Ok(Value::Int(BigInt::from(self.0)))
+        Ok(Value::int(self.0))
     }
     fn decode(&self, value: &Value) -> Result<(), DecodeFailure> {
         match value {
-            Value::Int(n) if *n == BigInt::from(self.0) => Ok(()),
+            Value::Int(n) if **n == BigInt::from(self.0) => Ok(()),
             Value::Int(n) => Err(DecodeFailure::new(format!("expected {}, got {n}", self.0))),
             other => Err(expected("int", other)),
         }

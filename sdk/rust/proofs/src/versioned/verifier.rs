@@ -11,7 +11,7 @@ use dilf4s_core::value::Value;
 use super::wire::{At, VersionedTrieProof};
 use super::{
     HISTORY_SLOT, Head, STATE_SLOT, StateKey, StateNamespace, VERSION_SLOT, Version, VersionKey, VersionedTrie,
-    VersionedTrieError, malformed, mismatch,
+    VersionedTrieError, check_value, malformed, mismatch,
 };
 use crate::trie::{KeyMode, Lookup, TrieHashing, TrieProof, VerifiedProof};
 
@@ -47,9 +47,21 @@ impl<H: Hasher> VerifiedState<'_, H> {
 
     /// Whether the key holds `value` (`None`, or a null value: is absent), as `trie_verify` decides it. Absent equals
     /// null in the data model, and a null value is never stored.
+    ///
+    /// The lookup comes first, so its errors are the reference's, and a claimed value is committed only against a
+    /// present key. A value [`check_value`] refuses is never stored (versioned-trie.md section 4: it is refused at
+    /// commit), so it is not held: `false`, without committing it. That bounds the work by [`MAX_VALUE_BYTES`] however
+    /// much the claim shares.
+    ///
+    /// [`MAX_VALUE_BYTES`]: super::MAX_VALUE_BYTES
     pub fn holds(&self, key: &StateKey, value: Option<&Value>) -> Result<bool, VersionedTrieError> {
-        let claimed = value.filter(|v| !matches!(v, Value::Null)).map(|v| self.hashing.value_of(v));
-        Ok(self.lookup(key)? == claimed)
+        let stored = self.lookup(key)?;
+        let claimed = value.filter(|v| !matches!(v, Value::Null));
+        Ok(match (stored, claimed) {
+            (None, None) => true,
+            (None, Some(_)) | (Some(_), None) => false,
+            (Some(h), Some(v)) => check_value(key, v).is_ok() && self.hashing.value_of(v) == h,
+        })
     }
 
     /// Every entry under the namespace, complete, in key order.

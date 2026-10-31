@@ -74,6 +74,8 @@ fn proofs() {
     let (v, vt) = setup();
     let root = d(&v.root);
     let mut counts = std::collections::BTreeMap::<&str, usize>::new();
+    // 2^60 leaves in 60 allocations
+    let shared = (0..60).fold(Value::text("a"), |v, _| Value::array(vec![v.clone(), v]).unwrap());
     for p in &v.proofs {
         let pr = proof(&vt, p);
         let claims: Vec<(StateKey, Option<Value>)> =
@@ -86,6 +88,8 @@ fn proofs() {
                     assert!(state.holds(k, x.as_ref()).unwrap(), "{}: {k}", p.name);
                     // a different claim is false
                     assert!(!state.holds(k, Some(&Value::text("other"))).unwrap(), "{}: {k} other", p.name);
+                    // a compact claim with 2^60 leaves is not held, and is never committed (expanded) to say so
+                    assert!(!state.holds(k, Some(&shared)).unwrap(), "{}: {k} shared", p.name);
                     // absent equals null: a null claim is a claim of absence
                     assert_eq!(state.holds(k, Some(&Value::Null)).unwrap(), x.is_none(), "{}: {k} null", p.name);
                 }
@@ -303,6 +307,13 @@ fn refusals() {
         Ok(None) | Err(VersionedTrieError::NotCovered { .. }) => {}
         other => panic!("{other:?}"),
     }
+    // the lookup decides first, so a vast claim on such a key fails the same way, without being committed
+    let shared = (0..60).fold(Value::text("a"), |v, _| Value::array(vec![v.clone(), v]).unwrap());
+    match (s.lookup(&far), s.holds(&far, Some(&shared))) {
+        (Ok(None), Ok(false))
+        | (Err(VersionedTrieError::NotCovered { .. }), Err(VersionedTrieError::NotCovered { .. })) => {}
+        other => panic!("{other:?}"),
+    }
     // the head proof's history without its tail, against the version check: the as-of proof answers the version
     let head = proof(&vt, find(VtKind::Head));
     assert!(vt.verify_head(&root, &head).is_ok());
@@ -340,5 +351,33 @@ fn version_key_vectors() {
         assert_eq!(key, c.version.to_be_bytes().to_vec(), "version {}: int_to_bytes [v, 8]", c.version);
         assert_eq!(k.encode(&c.version).ok(), c.valid.then(|| key.clone()), "encode {}", c.version);
         assert_eq!(k.decode(&key).ok(), c.valid.then_some(c.version), "decode {}", c.version);
+    }
+}
+
+/// A compact value whose encoding would be vast is refused by measuring it up to the limit, never by encoding it.
+#[test]
+fn check_value_refuses_a_shared_expansion_without_expanding_it() {
+    use dilf4s_proofs::versioned::{MAX_VALUE_BYTES, check_value};
+    let k = key("big");
+    let max = usize::try_from(MAX_VALUE_BYTES).unwrap();
+    let doubled = |leaf: Value, n: usize| (0..n).fold(leaf, |v, _| Value::array(vec![v.clone(), v]).unwrap());
+    let start = std::time::Instant::now();
+    // 2^60 leaves in 60 allocations
+    match check_value(&k, &doubled(Value::text("a"), 60)) {
+        Err(VersionedTrieError::TooLarge { size, max: m, .. }) => {
+            assert!(size > MAX_VALUE_BYTES, "size {size} is a lower bound past the limit");
+            assert_eq!(m, MAX_VALUE_BYTES);
+        }
+        other => panic!("{other:?}"),
+    }
+    // light by weight, over in bytes: each u64::MAX weighs 2 and encodes in 9
+    let ints = doubled(Value::int(u64::MAX), 17);
+    assert_eq!(check_value(&k, &ints).unwrap_err().kind(), "TooLarge");
+    assert!(start.elapsed().as_millis() < 2000, "took {:?}", start.elapsed());
+    // the limit itself is exact: a byte string with a 5-byte head
+    assert!(check_value(&k, &Value::bytes(vec![0u8; max - 5])).is_ok(), "exactly at the limit");
+    match check_value(&k, &Value::bytes(vec![0u8; max - 4])) {
+        Err(VersionedTrieError::TooLarge { size, .. }) => assert_eq!(size, MAX_VALUE_BYTES + 1, "exact when one over"),
+        other => panic!("{other:?}"),
     }
 }

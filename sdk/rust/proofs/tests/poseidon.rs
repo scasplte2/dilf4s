@@ -263,8 +263,8 @@ fn malformed_merkle_proofs() {
     assert_eq!(PoseidonMerkleProof::new(BigUint::from(1u32), vec![]).unwrap_err().kind(), "Position");
     let wire = |position: BigInt, siblings: Vec<BigInt>| {
         Value::map([
-            ("position".into(), Value::Int(position)),
-            ("siblings".into(), Value::array(siblings.into_iter().map(Value::Int).collect()).unwrap()),
+            ("position".into(), Value::int(position)),
+            ("siblings".into(), Value::array(siblings.into_iter().map(Value::int).collect()).unwrap()),
         ])
         .unwrap()
     };
