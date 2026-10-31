@@ -15,13 +15,13 @@ object PoseidonMerkleProof {
   lazy val codec: Codec[PoseidonMerkleProof] = Codec(
     a =>
       Codec.record(List(
-        Codec.field("position", TreePosition.codec, a.position),
-        Codec.field("siblings", Codec.vector(FieldElement.codec, 0, Some(256)), a.siblings)
+        Codec.field("position", Codec.defer(TreePosition.codec), a.position),
+        Codec.field("siblings", Codec.vector(Codec.defer(FieldElement.codec), 0, Some(256)), a.siblings)
       )),
     CanonicalDecoder.record(Set("position", "siblings")) { fields$ =>
       for {
-        position <- fields$.required("position")(using TreePosition.codec.decoder)
-        siblings <- fields$.required("siblings")(using Codec.vector(FieldElement.codec, 0, Some(256)).decoder)
+        position <- fields$.required("position")(using Codec.defer(TreePosition.codec).decoder)
+        siblings <- fields$.required("siblings")(using Codec.vector(Codec.defer(FieldElement.codec), 0, Some(256)).decoder)
       } yield PoseidonMerkleProof(position, siblings)
     }
   )

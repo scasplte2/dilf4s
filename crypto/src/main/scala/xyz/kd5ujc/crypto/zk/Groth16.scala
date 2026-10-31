@@ -33,6 +33,12 @@ object Groth16Error {
  */
 final case class Groth16VerifyingKey private[zk] (alpha: G1, beta: G2, gamma: G2, delta: G2, ic: Vector[G1]) {
   def publicInputs: Int = ic.size - 1
+
+  private[zk] lazy val alphaBytes: ByteVector = Bn254.encodeG1(Some(alpha))
+  private[zk] lazy val betaBytes: ByteVector = Bn254.encodeG2(Some(beta))
+  private[zk] lazy val gammaBytes: ByteVector = Bn254.encodeG2(Some(gamma))
+  private[zk] lazy val deltaBytes: ByteVector = Bn254.encodeG2(Some(delta))
+  private[zk] def icBytes(i: Int): ByteVector = Bn254.encodeG1(ic.lift(i))
 }
 
 object Groth16VerifyingKey {
@@ -44,46 +50,44 @@ object Groth16VerifyingKey {
     )
 }
 
-/** A proof of valid, non-identity points (identity is unrepresentable as a [[G1]] or [[G2]] value). */
-final case class Groth16Proof(a: G1, b: G2, c: G1)
-
 /**
- * Groth16 verification over BN254 (pure `BigInt`, public data only):
- * `e(-A, B) * e(alpha, beta) * e(L, gamma) * e(C, delta) == 1`.
+ * Groth16 verification over BN254, on a [[Bn254Engine]]: `e(-A, B) * e(alpha, beta) * e(L, gamma) * e(C, delta) == 1`,
+ * with `L = ic(0) + sum_i x_i ic(i + 1)`.
  */
 object Groth16 {
 
-  /** EIP-197 word layout `A.x, A.y, B.x.imag, B.x.real, B.y.imag, B.y.real, C.x, C.y` (256 bytes, as gnark and SP1 emit). */
-  def decodeProof(bytes: ByteVector): Either[Groth16Error, Groth16Proof] = {
-    def nonIdentity[A](p: Option[A], role: String): Either[Groth16Error, A] =
-      p.toRight(Groth16Error.InvalidProof(s"$role is the identity"))
-    for {
-      _ <- Either.cond(bytes.size == 256L, (), Groth16Error.Malformed(s"a proof is 256 bytes, got ${bytes.size}"))
-      a <- Bn254.decodeG1(bytes.take(64)).leftMap(Groth16Error.fromZk).flatMap(nonIdentity(_, "A"))
-      b <- Bn254.decodeG2(bytes.slice(64, 192)).leftMap(Groth16Error.fromZk).flatMap(nonIdentity(_, "B"))
-      c <- Bn254.decodeG1(bytes.drop(192)).leftMap(Groth16Error.fromZk).flatMap(nonIdentity(_, "C"))
-    } yield Groth16Proof(a, b, c)
-  }
+  /** Proof bytes: EIP-197 word layout `A.x, A.y, B.x.imag, B.x.real, B.y.imag, B.y.real, C.x, C.y`, as gnark and SP1 emit. */
+  val ProofSize: Long = 256L
 
-  def verify(vk: Groth16VerifyingKey, proof: Groth16Proof, inputs: Vector[BigInt]): Either[Groth16Error, Unit] =
+  /** The engine validates every point; here only the identities, and A's coordinates, which negating it needs. */
+  def verify(engine: Bn254Engine)(vk: Groth16VerifyingKey, proof: ByteVector, inputs: Vector[BigInt]): Either[Groth16Error, Unit] = {
+    val (a, b, c) = (proof.take(64), proof.slice(64, 192), proof.drop(192))
+    def nonIdentity(p: ByteVector, role: String): Either[Groth16Error, Unit] =
+      Either.cond(p != ByteVector.low(p.size), (), Groth16Error.InvalidProof(s"$role is the identity"))
+    def field(w: ByteVector, role: String): Either[Groth16Error, BigInt] = {
+      val x = BigInt(1, w.toArray)
+      Either.cond(x < Bn254.P, x, Groth16Error.Malformed(s"$role is not a canonical field element"))
+    }
+    def zk[A](r: Either[ZkError, A]): Either[Groth16Error, A] = r.leftMap(Groth16Error.fromZk)
     for {
+      _  <- Either.cond(proof.size == ProofSize, (), Groth16Error.Malformed(s"a proof is $ProofSize bytes, got ${proof.size}"))
+      _  <- nonIdentity(a, "A") >> nonIdentity(b, "B") >> nonIdentity(c, "C")
+      ax <- field(a.take(32), "A.x")
+      ay <- field(a.drop(32), "A.y")
+      negA = Bn254.be32(ax) ++ Bn254.be32((Bn254.P - ay).mod(Bn254.P))
       _ <- Either.cond(
         inputs.size == vk.publicInputs,
         (),
         Groth16Error.Malformed(s"expected ${vk.publicInputs} public inputs, got ${inputs.size}")
       )
       _ <- Either.cond(inputs.forall(x => x >= 0 && x < Bn254.R), (), Groth16Error.InvalidProof("a public input is not in Fr"))
-      l = inputs.zip(vk.ic.drop(1)).foldLeft(vk.ic.headOption)((acc, xp) => Bn254.addG1(acc, Bn254.mulG1(Some(xp._2), xp._1)))
-      ok = Bn254.pairingProductIsOne(
-        List(
-          Bn254.negG1(Some(proof.a)) -> Some(proof.b),
-          Some(vk.alpha)             -> Some(vk.beta),
-          l                          -> Some(vk.gamma),
-          Some(proof.c)              -> Some(vk.delta)
-        )
-      )
-      _ <- Either.cond(ok, (), Groth16Error.PairingCheckFailed)
+      l <- inputs.zip(vk.ic.drop(1)).foldLeftM(vk.icBytes(0)) {
+        case (acc, (x, p)) => zk(engine.mul(Bn254.encodeG1(Some(p)), Bn254.be32(x)).flatMap(engine.add(acc, _)))
+      }
+      ok <- zk(engine.pairing(Vector(negA -> b, vk.alphaBytes -> vk.betaBytes, l -> vk.gammaBytes, c -> vk.deltaBytes)))
+      _  <- Either.cond(ok, (), Groth16Error.PairingCheckFailed)
     } yield ()
+  }
 }
 
 /**
@@ -168,7 +172,7 @@ object Sp1Groth16 {
   def hashPublicValues(publicValues: ByteVector): BigInt =
     BigInt(1, Hasher[Sha256].digest(publicValues).bytes.toArray) & ((BigInt(1) << 253) - 1)
 
-  def verify(programVKey: ByteVector, publicValues: ByteVector, proofBytes: ByteVector): Either[Groth16Error, Unit] = {
+  def verify(engine: Bn254Engine)(programVKey: ByteVector, publicValues: ByteVector, proofBytes: ByteVector): Either[Groth16Error, Unit] = {
     def word(i: Int): BigInt = BigInt(1, proofBytes.slice(4L + 32L * i, 4L + 32L * (i + 1)).toArray)
     for {
       _ <- Either.cond(programVKey.size == 32L, (), Groth16Error.Malformed(s"programVKey must be 32 bytes, got ${programVKey.size}"))
@@ -177,12 +181,11 @@ object Sp1Groth16 {
         (),
         Groth16Error.Malformed(s"proofBytes must be $ProofLength bytes, got ${proofBytes.size}")
       )
-      _     <- Either.cond(proofBytes.take(4) == Selector, (), Groth16Error.Rejected("wrong verifier selector"))
-      _     <- Either.cond(word(0) == 0, (), Groth16Error.Rejected("non-zero exit code"))
-      _     <- Either.cond(word(1) == VkRoot, (), Groth16Error.Rejected("wrong VK root"))
-      proof <- Groth16.decodeProof(proofBytes.drop(4L + 32L * 3))
+      _ <- Either.cond(proofBytes.take(4) == Selector, (), Groth16Error.Rejected("wrong verifier selector"))
+      _ <- Either.cond(word(0) == 0, (), Groth16Error.Rejected("non-zero exit code"))
+      _ <- Either.cond(word(1) == VkRoot, (), Groth16Error.Rejected("wrong VK root"))
       inputs = Vector(BigInt(1, programVKey.toArray), hashPublicValues(publicValues), word(0), word(1), word(2))
-      _ <- Groth16.verify(VerifyingKey, proof, inputs)
+      _ <- Groth16.verify(engine)(VerifyingKey, proofBytes.drop(4L + 32L * 3), inputs)
     } yield ()
   }
 }

@@ -1,0 +1,55 @@
+{"if":[
+  {"==":[{"var":"method"},"create"]},
+  {"if":[
+    {"and":[
+      {"exists":[{"var":"title"},{"var":"options"},{"var":"endTime"}]},
+      {">":[{"var":"endTime"},{"var":"currentTime"}]}
+    ]},
+    {
+      "title": {"var":"title"},
+      "options": {"var":"options"},
+      "voteCount": 0,
+      "endTime": {"var":"endTime"},
+      "active": true
+    },
+    "Failed create checks"
+  ]},
+
+  {"==":[{"var":"method"},"vote"]},
+  {"if":[
+    {"and":[
+      {"==":[{"var":"content.active"},true]},
+      {"<":[{"var":"currentTime"},{"var":"content.endTime"}]},
+      {"in":[{"var":"option"},{"var":"content.options"}]},
+      {"in":[{"var":"voter"},{"var":"participants"}]}
+    ]},
+    {
+      "title": {"var":"content.title"},
+      "options": {"var":"content.options"},
+      "voteCount": {"+":[{"var":"content.voteCount"},1]},
+      "lastVoter": {"var":"voter"},
+      "lastOption": {"var":"option"},
+      "endTime": {"var":"content.endTime"},
+      "active": {"var":"content.active"}
+    },
+    "Failed vote checks"
+  ]},
+
+  {"==":[{"var":"method"},"close"]},
+  {"if":[
+    {"and":[
+      {"==":[{"var":"content.active"},true]},
+      {">=":[{"var":"currentTime"},{"var":"content.endTime"}]}
+    ]},
+    {
+      "title": {"var":"content.title"},
+      "options": {"var":"content.options"},
+      "voteCount": {"var":"content.voteCount"},
+      "endTime": {"var":"content.endTime"},
+      "active": false
+    },
+    "Failed close checks"
+  ]},
+
+  "Unknown method"
+]}

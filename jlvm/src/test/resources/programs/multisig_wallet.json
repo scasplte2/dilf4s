@@ -1,0 +1,31 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["c", {"var": "call"}],
+  ["payload", {"keccak256": {"cat": [
+    {"var": "$s.wallet"},
+    {"int_to_bytes": [{"var": "$s.nonce"}, 32]},
+    {"var": "$c.to"},
+    {"int_to_bytes": [{"var": "$c.value"}, 32]},
+    {"var": "$c.data"}
+  ]}}],
+  ["digest", {"keccak256": {"cat": ["0x19457468657265756d205369676e6564204d6573736167653a0a3332", {"var": "$payload"}]}}]
+ ],
+ {"if": [
+  {"!=": [{"var": "$c.method"}, "execute"]},
+  {"object": {"reject": "unknown method"}},
+
+  {"let": [[
+    ["signers", {"unique": {"filter": [
+      {"map": [{"var": "$c.signatures"}, {"ecrecover": [{"var": "$digest"}, {"var": "$current"}]}]},
+      {"in": [{"var": "$current"}, {"var": "$s.owners"}]}
+    ]}}]
+   ],
+   {"if": [
+    {">=": [{"count": {"var": "$signers"}}, {"var": "$s.threshold"}]},
+    {"state": {"set": [{"var": "$s"}, "nonce", {"+": [{"var": "$s.nonce"}, 1]}]},
+     "effects": [{"kind": "call", "to": {"var": "$c.to"}, "value": {"var": "$c.value"}, "data": {"var": "$c.data"}}]},
+    {"object": {"reject": "too few distinct owners signed this transaction at this nonce"}}
+   ]}
+  ]}
+ ]}
+]}

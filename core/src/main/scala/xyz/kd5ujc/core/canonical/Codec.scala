@@ -20,6 +20,18 @@ object Codec {
 
   private def mismatch(reason: String): CanonicalError = CanonicalError.TypeMismatch(reason)
 
+  /** Any canonical value, unchanged (CDDL `any`). */
+  val any: Codec[CanonicalValue] = Codec(_.asRight, (v: CanonicalValue) => v.asRight)
+
+  /**
+   * A codec referenced by name and resolved on first use: recursive rules (an expression containing expressions)
+   * would otherwise initialise in a cycle.
+   */
+  def defer[A](codec: => Codec[A]): Codec[A] = {
+    lazy val c = codec
+    Codec(a => c.encode(a), (v: CanonicalValue) => c.decoder.decode(v))
+  }
+
   val bool: Codec[Boolean] = Codec(b => CBool(b).asRight, CanonicalDecoder.bool)
   val int: Codec[BigInt] = Codec(i => CInt(i).asRight, CanonicalDecoder.int)
   val bytes: Codec[ByteVector] = Codec(b => CBytes(b).asRight, CanonicalDecoder.bytes)

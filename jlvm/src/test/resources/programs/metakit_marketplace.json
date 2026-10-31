@@ -1,0 +1,82 @@
+{"if":[
+  {"==":[{"var":"method"},"createListing"]},
+  {"if":[
+    {"and":[
+      {"exists":[{"var":"itemId"},{"var":"seller"},{"var":"price"},{"var":"description"}]},
+      {">":[{"var":"price"},0]},
+      {"in":[{"var":"seller"},{"var":"participants"}]}
+    ]},
+    {
+      "itemId": {"var":"itemId"},
+      "seller": {"var":"seller"},
+      "price": {"var":"price"},
+      "description": {"var":"description"},
+      "status": "active",
+      "offerCount": 0
+    },
+    "Failed createListing checks"
+  ]},
+
+  {"==":[{"var":"method"},"makeOffer"]},
+  {"if":[
+    {"and":[
+      {"==":[{"var":"content.status"},"active"]},
+      {"exists":[{"var":"buyer"},{"var":"offerPrice"}]},
+      {">":[{"var":"offerPrice"},0]},
+      {"in":[{"var":"buyer"},{"var":"participants"}]},
+      {"!=":[{"var":"buyer"},{"var":"content.seller"}]}
+    ]},
+    {
+      "itemId": {"var":"content.itemId"},
+      "seller": {"var":"content.seller"},
+      "price": {"var":"content.price"},
+      "description": {"var":"content.description"},
+      "status": {"var":"content.status"},
+      "offerCount": {"+":[{"var":"content.offerCount"},1]},
+      "lastOfferBuyer": {"var":"buyer"},
+      "lastOfferPrice": {"var":"offerPrice"}
+    },
+    "Failed makeOffer checks"
+  ]},
+
+  {"==":[{"var":"method"},"acceptOffer"]},
+  {"if":[
+    {"and":[
+      {"==":[{"var":"content.status"},"active"]},
+      {"==":[{"var":"acceptor"},{"var":"content.seller"}]},
+      {"in":[{"var":"acceptor"},{"var":"participants"}]},
+      {">":[{"var":"content.offerCount"},0]}
+    ]},
+    {
+      "itemId": {"var":"content.itemId"},
+      "seller": {"var":"content.seller"},
+      "price": {"var":"content.price"},
+      "description": {"var":"content.description"},
+      "status": "sold",
+      "offerCount": {"var":"content.offerCount"},
+      "acceptedBuyer": {"var":"content.lastOfferBuyer"},
+      "acceptedPrice": {"var":"content.lastOfferPrice"}
+    },
+    "Failed acceptOffer checks"
+  ]},
+
+  {"==":[{"var":"method"},"cancelListing"]},
+  {"if":[
+    {"and":[
+      {"==":[{"var":"content.status"},"active"]},
+      {"==":[{"var":"canceller"},{"var":"content.seller"}]},
+      {"in":[{"var":"canceller"},{"var":"participants"}]}
+    ]},
+    {
+      "itemId": {"var":"content.itemId"},
+      "seller": {"var":"content.seller"},
+      "price": {"var":"content.price"},
+      "description": {"var":"content.description"},
+      "status": "cancelled",
+      "offerCount": {"var":"content.offerCount"}
+    },
+    "Failed cancelListing checks"
+  ]},
+
+  "Unknown method"
+]}

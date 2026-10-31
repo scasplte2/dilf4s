@@ -1,0 +1,33 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["t", {"var": "$timestamp"}],
+  ["next", {"+": [{"var": "state.epoch"}, 1]}],
+  ["valid", {"filter": [{"var": "call.datapoints"}, {"and": [
+    {"in": [{"var": "$current.oracle"}, {"var": "state.oracles"}]},
+    {"schnorr_verify": [
+      {"var": "$current.oracle"},
+      {"blake2b256": {"cat": [{"int_to_bytes": [{"+": [{"var": "state.epoch"}, 1]}, 8]}, {"int_to_bytes": [{"var": "$current.value"}, 32]}]}},
+      {"var": "$current.proof"}
+    ]}
+  ]}]}],
+  ["values", {"map": [{"var": "$valid"}, {"var": "$current.value"}]}],
+  ["n", {"count": {"var": "$values"}}],
+  ["half", {"floor": {"/": [{"-": [{"var": "$n"}, 1]}, 2]}}],
+  ["median", {"find": [{"var": "$values"}, {"let": [[["x", {"var": "$current"}]], {"and": [
+    {"<=": [{"count": [{"var": "$values"}, {"<": [{"var": "$current"}, {"var": "$x"}]}]}, {"var": "$half"}]},
+    {">": [{"count": [{"var": "$values"}, {"<=": [{"var": "$current"}, {"var": "$x"}]}]}, {"var": "$half"}]}
+  ]}]}]}]
+ ],
+ {"if": [
+  {"!=": [{"var": "call.method"}, "update"]},
+  {"object": {"reject": "unknown method"}},
+  {"<": [{"var": "$t"}, {"+": [{"var": "$s.lastUpdate"}, {"var": "$s.epochLength"}]}]},
+  {"object": {"reject": "the epoch has not ended"}},
+  {"!=": [{"count": {"unique": {"map": [{"var": "$valid"}, {"var": "$current.oracle"}]}}}, {"var": "$n"}]},
+  {"object": {"reject": "one datapoint per oracle"}},
+  {"<": [{"var": "$n"}, {"var": "$s.minDatapoints"}]},
+  {"object": {"reject": "too few valid datapoints"}},
+  {"state": {"merge": [{"var": "$s"}, {"epoch": {"var": "$next"}, "rate": {"var": "$median"}, "lastUpdate": {"var": "$t"}}]},
+   "effects": []}
+ ]}
+]}

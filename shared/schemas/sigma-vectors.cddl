@@ -1,0 +1,41 @@
+; Schema of shared/vectors/sigma_v1.json and sigma_dilf4s_v1.json (conformance vectors for docs/specs/sigma.md).
+; sigma_v1.json: proofs made by Ergo's prover; sigma_dilf4s_v1.json: proofs made by ours. Both were produced, with
+; Ergo's verdict on each case, by tools/sigma-vectors over sigmastate 5.0.13. Hex is in the JLVM surface form, 0x-prefixed.
+
+sigma-vectors = {
+  "spec": "docs/specs/sigma.md",
+  "version": 1,
+  "source": text,
+  "cases": [* sigma-case],
+}
+
+; A proof and one of its tamperings; "ergo" is Ergo's verdict. dilf4s agrees, except that a proof of the wrong length
+; (trailing-byte, truncated) is malformed input.
+sigma-case = {
+  "name": text,
+  "kind": sigma-kind,
+  "proposition": sigma-proposition,
+  "secrets": [* hex0x],
+  "message": hex0x,
+  "proof": hex0x,
+  "ergo": bool,
+}
+
+sigma-kind = "valid" / "other-message" / "flipped-response" / "flipped-challenge" / "trailing-byte" / "truncated"
+
+; The JLVM form of a proposition (docs/specs/sigma.md section 3). Shape only: which fields each type takes is checked
+; by the domain decoder (SigmaProp.fromCanonical).
+sigma-proposition = {
+  "type": sigma-type,
+  ? "pk": hex0x,
+  ? "g": hex0x,
+  ? "h": hex0x,
+  ? "u": hex0x,
+  ? "v": hex0x,
+  ? "k": 1..255,
+  ? "children": [* sigma-proposition],
+}
+
+sigma-type = "dlog" / "dhtuple" / "and" / "or" / "threshold"
+
+hex0x = text .regexp "0x([0-9a-f]{2})*"

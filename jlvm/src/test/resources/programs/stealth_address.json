@@ -1,0 +1,12 @@
+{"if": [
+  {"and": [
+    {"==": [{"var": "call.method"}, "spend"]},
+    {"sigma_verify": [
+      {"type": "dhtuple", "g": {"var": "call.box.g"}, "h": {"var": "call.box.h"}, "u": {"var": "call.box.u"}, "v": {"var": "call.box.v"}},
+      {"var": "call.proof"},
+      {"var": "$txHash"}
+    ]}
+  ]},
+  {"state": {"var": "state"}, "effects": [{"kind": "spend", "box": {"var": "call.box"}}]},
+  {"object": {"reject": "the spender must prove the one-time Diffie-Hellman tuple for this transaction"}}
+]}

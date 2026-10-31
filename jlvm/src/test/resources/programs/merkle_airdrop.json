@@ -1,0 +1,17 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["c", {"var": "call"}],
+  ["slot", {"cat": [{"var": "call.index"}]}],
+  ["leaf", [{"var": "call.index"}, {"var": "call.account"}, {"var": "call.amount"}]]
+ ],
+ {"if": [
+  {"!=": [{"var": "$c.method"}, "claim"]},
+  {"object": {"reject": "unknown method"}},
+  {"has": [{"var": "$s.claimed"}, {"var": "$slot"}]},
+  {"object": {"reject": "already claimed"}},
+  {"merkle_verify": [{"var": "$s.head"}, {"var": "$leaf"}, {"var": "$c.proof"}]},
+  {"state": {"set": [{"var": "$s"}, "claimed", {"set": [{"var": "$s.claimed"}, {"var": "$slot"}, true]}]},
+   "effects": [{"kind": "transfer", "to": {"var": "$c.account"}, "amount": {"var": "$c.amount"}}]},
+  {"object": {"reject": "not in the distribution"}}
+ ]}
+]}

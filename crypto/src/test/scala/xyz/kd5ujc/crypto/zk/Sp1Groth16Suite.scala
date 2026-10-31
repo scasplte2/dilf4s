@@ -9,8 +9,8 @@ import io.circe.parser
 import scodec.bits.ByteVector
 import weaver.SimpleIOSuite
 
-/** Real SP1 v6.1.0 Groth16 proofs (metakit fixtures) and adversarial mutations of them. */
-object Sp1Groth16Suite extends SimpleIOSuite {
+/** Real SP1 v6.1.0 Groth16 proofs (metakit fixtures) and adversarial mutations of them, on one BN254 engine. */
+abstract class Sp1Groth16Checks(engine: Bn254Engine) extends SimpleIOSuite {
 
   private final case class Fixture(vkey: ByteVector, publicValues: ByteVector, proofBytes: ByteVector)
 
@@ -40,19 +40,24 @@ object Sp1Groth16Suite extends SimpleIOSuite {
   }
 
   pureTest("real SP1 proofs verify (premium JsonLogic program, shielded transfer)") {
-    List(premium, shielded).foldMap(f => expect.same(Right(()), Sp1Groth16.verify(f.vkey, f.publicValues, f.proofBytes)))
+    List(premium, shielded).foldMap(f => expect.same(Right(()), Sp1Groth16.verify(engine)(f.vkey, f.publicValues, f.proofBytes)))
   }
 
   pureTest("tampering with the proof, public values, selector or program key is rejected") {
     val f = premium
-    expect(Sp1Groth16.verify(f.vkey, f.publicValues, flip(f.proofBytes, f.proofBytes.size - 1)).isLeft, "last proof byte")
-      .and(expect.same(Left(Groth16Error.PairingCheckFailed), Sp1Groth16.verify(f.vkey, flip(f.publicValues, 0), f.proofBytes)))
+    expect(Sp1Groth16.verify(engine)(f.vkey, f.publicValues, flip(f.proofBytes, f.proofBytes.size - 1)).isLeft, "last proof byte")
+      .and(expect.same(Left(Groth16Error.PairingCheckFailed), Sp1Groth16.verify(engine)(f.vkey, flip(f.publicValues, 0), f.proofBytes)))
       .and(
         expect
-          .same(Left(Groth16Error.Rejected("wrong verifier selector")), Sp1Groth16.verify(f.vkey, f.publicValues, flip(f.proofBytes, 0)))
+          .same(
+            Left(Groth16Error.Rejected("wrong verifier selector")),
+            Sp1Groth16.verify(engine)(f.vkey, f.publicValues, flip(f.proofBytes, 0))
+          )
       )
-      .and(expect.same(Left(Groth16Error.PairingCheckFailed), Sp1Groth16.verify(flip(f.vkey, 31), f.publicValues, f.proofBytes)))
-      .and(expect.same(Left(Groth16Error.PairingCheckFailed), Sp1Groth16.verify(shielded.vkey, shielded.publicValues, f.proofBytes)))
+      .and(expect.same(Left(Groth16Error.PairingCheckFailed), Sp1Groth16.verify(engine)(flip(f.vkey, 31), f.publicValues, f.proofBytes)))
+      .and(
+        expect.same(Left(Groth16Error.PairingCheckFailed), Sp1Groth16.verify(engine)(shielded.vkey, shielded.publicValues, f.proofBytes))
+      )
   }
 
   pureTest("adversarial points: off-curve A and non-subgroup B are invalid proofs; a coordinate >= P is malformed") {
@@ -75,7 +80,7 @@ object Sp1Groth16Suite extends SimpleIOSuite {
     val nonCanonical = setWord(f.proofBytes, 0, Bn254.P)
     def kind(e: Either[Groth16Error, Unit]) = e.leftMap(_.getClass.getSimpleName)
     expect
-      .same(Left("InvalidProof"), kind(Sp1Groth16.verify(f.vkey, f.publicValues, offCurve)))
+      .same(Left("InvalidProof"), kind(Sp1Groth16.verify(engine)(f.vkey, f.publicValues, offCurve)))
       .and(expect(Bn254.onCurveG2(planted) && !Bn254.inSubgroupG2(planted), "the planted point isolates the subgroup check"))
       .and(expect.same(Left(Bn254.ZkError.InvalidPoint("G2 point is not in the order-r subgroup")), Bn254.G2.from(planted.x, planted.y)))
       .and(expect(Bn254.G1.from(1, 3).isLeft, "off-curve G1 is unconstructible"))
@@ -83,11 +88,11 @@ object Sp1Groth16Suite extends SimpleIOSuite {
       .and(
         expect.same(
           Left(Groth16Error.InvalidProof("G2 point is not in the order-r subgroup")),
-          Sp1Groth16.verify(f.vkey, f.publicValues, nonSub)
+          Sp1Groth16.verify(engine)(f.vkey, f.publicValues, nonSub)
         )
       )
-      .and(expect.same(Left("Malformed"), kind(Sp1Groth16.verify(f.vkey, f.publicValues, nonCanonical))))
-      .and(expect.same(Left("Malformed"), kind(Sp1Groth16.verify(f.vkey, f.publicValues, f.proofBytes.dropRight(1)))))
+      .and(expect.same(Left("Malformed"), kind(Sp1Groth16.verify(engine)(f.vkey, f.publicValues, nonCanonical))))
+      .and(expect.same(Left("Malformed"), kind(Sp1Groth16.verify(engine)(f.vkey, f.publicValues, f.proofBytes.dropRight(1)))))
   }
 
   pureTest("pairing algebra: e(G1, G2) e(-G1, G2) = 1, bilinearity, and e(G1, G2) alone is not 1") {
@@ -99,3 +104,8 @@ object Sp1Groth16Suite extends SimpleIOSuite {
       .and(expect(!Bn254.pairingProductIsOne(List(g1 -> g2))))
   }
 }
+
+object Sp1Groth16Suite extends Sp1Groth16Checks(Bn254Engine.reference)
+
+object Sp1Groth16GnarkSuite
+    extends Sp1Groth16Checks(Bn254Engine.gnark[cats.effect.IO].unsafeRunSync()(using cats.effect.unsafe.IORuntime.global))

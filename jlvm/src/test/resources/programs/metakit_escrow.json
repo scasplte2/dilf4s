@@ -1,0 +1,86 @@
+{"if":[
+  {"==":[{"var":"method"},"create"]},
+  {"if":[
+    {"and":[
+      {"exists":[{"var":"buyer"},{"var":"seller"},{"var":"amount"},{"var":"arbiter"}]},
+      {">=":[{"var":"amount"},0]},
+      {"in":[{"var":"buyer"},{"var":"participants"}]},
+      {"in":[{"var":"seller"},{"var":"participants"}]},
+      {"in":[{"var":"arbiter"},{"var":"participants"}]}
+    ]},
+    {
+      "buyer": {"var":"buyer"},
+      "seller": {"var":"seller"},
+      "arbiter": {"var":"arbiter"},
+      "amount": {"var":"amount"},
+      "status": "pending",
+      "deposited": 0
+    },
+    "Failed create checks"
+  ]},
+
+  {"==":[{"var":"method"},"deposit"]},
+  {"if":[
+    {"and":[
+      {"==":[{"var":"content.status"},"pending"]},
+      {"==":[{"var":"depositor"},{"var":"content.buyer"}]},
+      {"==":[{"var":"depositAmount"},{"var":"content.amount"}]},
+      {"in":[{"var":"depositor"},{"var":"participants"}]}
+    ]},
+    {
+      "buyer": {"var":"content.buyer"},
+      "seller": {"var":"content.seller"},
+      "arbiter": {"var":"content.arbiter"},
+      "amount": {"var":"content.amount"},
+      "status": "deposited",
+      "deposited": {"var":"depositAmount"}
+    },
+    "Failed deposit checks"
+  ]},
+
+  {"==":[{"var":"method"},"release"]},
+  {"if":[
+    {"and":[
+      {"==":[{"var":"content.status"},"deposited"]},
+      {"or":[
+        {"==":[{"var":"releaser"},{"var":"content.buyer"}]},
+        {"==":[{"var":"releaser"},{"var":"content.arbiter"}]}
+      ]},
+      {"in":[{"var":"releaser"},{"var":"participants"}]}
+    ]},
+    {
+      "buyer": {"var":"content.buyer"},
+      "seller": {"var":"content.seller"},
+      "arbiter": {"var":"content.arbiter"},
+      "amount": {"var":"content.amount"},
+      "status": "completed",
+      "deposited": {"var":"content.deposited"},
+      "releasedTo": {"var":"content.seller"}
+    },
+    "Failed release checks"
+  ]},
+
+  {"==":[{"var":"method"},"refund"]},
+  {"if":[
+    {"and":[
+      {"==":[{"var":"content.status"},"deposited"]},
+      {"or":[
+        {"==":[{"var":"refunder"},{"var":"content.seller"}]},
+        {"==":[{"var":"refunder"},{"var":"content.arbiter"}]}
+      ]},
+      {"in":[{"var":"refunder"},{"var":"participants"}]}
+    ]},
+    {
+      "buyer": {"var":"content.buyer"},
+      "seller": {"var":"content.seller"},
+      "arbiter": {"var":"content.arbiter"},
+      "amount": {"var":"content.amount"},
+      "status": "refunded",
+      "deposited": {"var":"content.deposited"},
+      "refundedTo": {"var":"content.buyer"}
+    },
+    "Failed refund checks"
+  ]},
+
+  "Unknown method"
+]}

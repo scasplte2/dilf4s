@@ -40,7 +40,8 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     case RT.IntRange(lo, hi)   => ("BigInt", s"""Codec.intRange(Some(BigInt("$lo")), Some(BigInt("$hi")))""").asRight
     case RT.SizedBytes(lo, hi) => ("ByteVector", s"Codec.sizedBytes(${lo}L, ${bound(hi, "L")})").asRight
     case RT.SizedText(lo, hi)  => ("String", s"Codec.sizedText($lo, ${bound(hi, "")})").asRight
-    case RT.Ref(q)             => (qualified(rule.module, q), s"${qualified(rule.module, q)}.codec").asRight
+    case RT.Ref(q)             => (qualified(rule.module, q), s"Codec.defer(${qualified(rule.module, q)}.codec)").asRight
+    case RT.Prim(PrimKind.Any) => ("CanonicalValue", "Codec.any").asRight
     case RT.LitInt(v) if v >= Int.MinValue && v <= Int.MaxValue => (s"$v", s"Codec.literalInt[$v]($v)").asRight
     case RT.LitText(v)                                          => (literal(v), s"Codec.literalText[${literal(v)}](${literal(v)})").asRight
     case RT.MatchingText(pattern) =>
@@ -91,11 +92,11 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
          |
          |object $n {
          |  lazy val codec: Codec[$n] = Codec(
-         |    a =>
+         |    ${if (fs.isEmpty) "_" else "a"} =>
          |      Codec.record(List(
          |$enc
          |      )),
-         |    CanonicalDecoder.record(Set($keys)) { fields$$ =>
+         |    CanonicalDecoder.record(Set($keys)) { ${if (fs.isEmpty) "_" else "fields$"} =>
          |      $body
          |    }
          |  )

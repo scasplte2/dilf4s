@@ -1,0 +1,61 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["c", {"var": "call"}],
+  ["me", {"var": "$sender"}],
+  ["t", {"var": "$timestamp"}],
+  ["weight", {"get": [{"var": "state.weights"}, {"var": "$sender"}, 0]}],
+  ["id", {"cat": [{"if": [{"!=": [{"var": "call.id"}, null]}, {"var": "call.id"}, {"var": "state.nextId"}]}]}],
+  ["p", {"get": [{"var": "state.proposals"}, {"var": "$id"}]}]
+ ],
+ {"if": [
+  {"==": [{"var": "$c.method"}, "propose"]},
+  {"if": [
+    {">": [{"var": "$weight"}, 0]},
+    {"state": {"merge": [{"var": "$s"}, {
+        "nextId": {"+": [{"var": "$s.nextId"}, 1]},
+        "proposals": {"set": [{"var": "$s.proposals"}, {"var": "$id"}, {
+          "action": {"var": "$c.action"},
+          "deadline": {"+": [{"var": "$t"}, {"var": "$c.duration"}]},
+          "for": 0, "against": 0, "voters": {"literal": {}}, "executed": false
+        }]}
+      }]},
+     "effects": []},
+    {"object": {"reject": "only members propose"}}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "vote"]},
+  {"if": [
+    {"and": [
+      {"var": "$p"},
+      {"<": [{"var": "$t"}, {"var": "$p.deadline"}]},
+      {">": [{"var": "$weight"}, 0]},
+      {"!": {"has": [{"var": "$p.voters"}, {"var": "$me"}]}}
+    ]},
+    {"state": {"set": [{"var": "$s"}, "proposals", {"set": [{"var": "$s.proposals"}, {"var": "$id"}, {"merge": [
+        {"var": "$p"},
+        {"object": {"voters": {"set": [{"var": "$p.voters"}, {"var": "$me"}, true]}}},
+        {"if": [{"var": "$c.support"},
+          {"object": {"for": {"+": [{"var": "$p.for"}, {"var": "$weight"}]}}},
+          {"object": {"against": {"+": [{"var": "$p.against"}, {"var": "$weight"}]}}}]}
+      ]}]}]},
+     "effects": []},
+    {"object": {"reject": "members vote once, before the deadline"}}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "execute"]},
+  {"if": [
+    {"and": [
+      {"var": "$p"},
+      {">=": [{"var": "$t"}, {"var": "$p.deadline"}]},
+      {"!": {"var": "$p.executed"}},
+      {">=": [{"+": [{"var": "$p.for"}, {"var": "$p.against"}]}, {"var": "$s.quorum"}]},
+      {">": [{"var": "$p.for"}, {"var": "$p.against"}]}
+    ]},
+    {"state": {"set": [{"var": "$s"}, "proposals", {"set": [{"var": "$s.proposals"}, {"var": "$id"}, {"set": [{"var": "$p"}, "executed", true]}]}]},
+     "effects": [{"var": "$p.action"}]},
+    {"object": {"reject": "only a passed proposal, after its deadline, with a quorum, once"}}
+  ]},
+
+  {"object": {"reject": "unknown method"}}
+ ]}
+]}

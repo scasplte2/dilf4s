@@ -1,0 +1,65 @@
+{"if":[
+  {"==":[{"var":"method"},"constructor"]},
+    {"if":[
+    {"and":[
+      {"exists":[{"var":"name"},{"var":"symbol"},{"var":"totalSupply"},{"var":"balances"},{"var":"allowances"}]},
+      {"intersect":[{"keys":{"var":"balances"}},{"map":[{"var":"proofs"},{"var":"address"}]}]},
+      {"==":[{"+":{"values":{"var":"balances"}}},{"var": "totalSupply"}]}
+    ]},
+    [
+      ["name",{"var":"name"}],
+      ["symbol",{"var":"symbol"}],
+      ["totalSupply",{"var":"totalSupply"}],
+      ["balances",{"var":"balances"}],
+      ["allowances",{}]
+    ],
+    "Failed constructor checks"
+  ]},
+
+  {"==":[{"var":"method"},"transfer"]},
+  {"if":[
+    {"and":[
+      {"exists":[{"var":"from"},{"var":"to"},{"var":"amount"}]},
+      {">=":[{"var":[{"cat":["content.balances.",{"var":"from"}]},0]},{"var":"amount"}]},
+      {">":[{"var":"amount"},0]},
+      {"in":[{"var":"from"},{"map":[{"var":"proofs"},{"var":"address"}]}]}
+    ]},
+    [
+      [{"cat":["content.balances.",{"var":"from"}]},{"-":[{"var":{"cat":["content.balances.",{"var":"from"}]}},{"var":"amount"}]}],
+      [{"cat":["content.balances.",{"var":"to"}]},{"+":[{"var":[{"cat":["content.balances.",{"var":"to"}]},0]},{"var":"amount"}]}]
+    ],
+    "Failed transfer checks"
+  ]},
+
+  {"==":[{"var":"method"},"transferFrom"]},
+  {"if":[
+    {"and":[
+      {"exists":[{"var":"from"},{"var":"spender"},{"var":"to"},{"var":"amount"}]},
+      {">=":[{"var":[{"cat":["content.balances.",{"var":"from"}]},0]},{"var":"amount"}]},
+      {">=":[{"var":[{"cat":["content.allowances.",{"var":"from"},".",{"var":"spender"}]},0]},{"var":"amount"}]},
+      {">":[{"var":"amount"},0]},
+      {"in":[{"var":"spender"},{"map":[{"var":"proofs"},{"var":"address"}]}]}
+    ]},
+    [
+      [{"cat":["content.balances.",{"var":"from"}]},{"-":[{"var":{"cat":["content.balances.",{"var":"from"}]}},{"var":"amount"}]}],
+      [{"cat":["content.balances.",{"var":"to"}]},{"+":[{"var":[{"cat":["content.balances.",{"var":"to"}]},0]},{"var":"amount"}]}],
+      [{"cat":["content.allowances.",{"var":"from"},".",{"var":"spender"}]},{"-":[{"var":{"cat":["content.allowances.",{"var":"from"},".",{"var":"spender"}]}},{"var":"amount"}]}]
+    ],
+    "Failed transferFrom checks"
+  ]},
+
+  {"==":[{"var":"method"},"approve"]},
+  {"if":[
+    {"and":[
+      {"exists":[{"var":"from"},{"var":"spender"},{"var":"amount"}]},
+      {">=":[{"var":"amount"},0]},
+      {"in":[{"var":"from"},{"map":[{"var":"proofs"},{"var":"address"}]}]}
+    ]},
+    [
+      [{"cat":["content.allowances.",{"var":"from"},".",{"var":"spender"}]},{"var":"amount"}]
+    ],
+    "Failed approve checks"
+  ]},
+
+  "Unknown method"
+]}

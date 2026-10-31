@@ -1,0 +1,61 @@
+{"let": [[
+  ["s", {"var": "state"}],
+  ["c", {"var": "call"}],
+  ["me", {"var": "$sender"}],
+  ["owner", {"if": [{"var": "call.tokenId"}, {"get": [{"var": "$s.owners"}, {"var": "call.tokenId"}]}, null]}],
+  ["mayOperate", {"and": [{"var": "$owner"}, {"or": [
+    {"==": [{"var": "$me"}, {"var": "$owner"}]},
+    {"get": [{"get": [{"var": "$s.operators"}, {"var": "$owner"}, {"literal": {}}]}, {"var": "$me"}, false]}
+  ]}]}]
+ ],
+ {"if": [
+  {"==": [{"var": "$c.method"}, "mint"]},
+  {"if": [
+    {"and": [{"==": [{"var": "$me"}, {"var": "$s.minter"}]}, {"!": {"var": "$owner"}}, {"!!": {"var": "$c.to"}}]},
+    {"state": {"merge": [{"var": "$s"}, {
+        "owners": {"set": [{"var": "$s.owners"}, {"var": "$c.tokenId"}, {"var": "$c.to"}]},
+        "balances": {"set": [{"var": "$s.balances"}, {"var": "$c.to"}, {"+": [{"get": [{"var": "$s.balances"}, {"var": "$c.to"}, 0]}, 1]}]}
+      }]},
+     "effects": []},
+    {"object": {"reject": "only the minter mints, a token once, to someone"}}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "approve"]},
+  {"if": [
+    {"and": [{"var": "$owner"}, {"var": "$mayOperate"}]},
+    {"state": {"set": [{"var": "$s"}, "approvals", {"set": [{"var": "$s.approvals"}, {"var": "$c.tokenId"}, {"var": "$c.to"}]}]},
+     "effects": []},
+    {"object": {"reject": "only the owner or an operator approves"}}
+  ]},
+
+  {"==": [{"var": "$c.method"}, "setApprovalForAll"]},
+  {"state": {"set": [{"var": "$s"}, "operators", {"set": [
+      {"var": "$s.operators"},
+      {"var": "$me"},
+      {"set": [{"get": [{"var": "$s.operators"}, {"var": "$me"}, {"literal": {}}]}, {"var": "$c.operator"}, {"if": [{"var": "$c.approved"}, true, null]}]}
+    ]}]},
+   "effects": []},
+
+  {"==": [{"var": "$c.method"}, "transferFrom"]},
+  {"if": [
+    {"and": [
+      {"var": "$owner"},
+      {"==": [{"var": "$owner"}, {"var": "$c.from"}]},
+      {"!!": {"var": "$c.to"}},
+      {"or": [{"var": "$mayOperate"}, {"==": [{"get": [{"var": "$s.approvals"}, {"var": "$c.tokenId"}]}, {"var": "$me"}]}]}
+    ]},
+    {"state": {"merge": [{"var": "$s"}, {
+        "owners": {"set": [{"var": "$s.owners"}, {"var": "$c.tokenId"}, {"var": "$c.to"}]},
+        "approvals": {"unset": [{"var": "$s.approvals"}, {"var": "$c.tokenId"}]},
+        "balances": {"let": [
+          [["less", {"set": [{"var": "$s.balances"}, {"var": "$c.from"}, {"-": [{"get": [{"var": "$s.balances"}, {"var": "$c.from"}]}, 1]}]}]],
+          {"set": [{"var": "$less"}, {"var": "$c.to"}, {"+": [{"get": [{"var": "$less"}, {"var": "$c.to"}, 0]}, 1]}]}
+        ]}
+      }]},
+     "effects": []},
+    {"object": {"reject": "not the owner, an operator or the approved address"}}
+  ]},
+
+  {"object": {"reject": "unknown method"}}
+ ]}
+]}
