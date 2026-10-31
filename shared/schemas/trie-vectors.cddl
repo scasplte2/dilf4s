@@ -37,13 +37,27 @@ trie-variable-mode = { "variable": uint }
 
 trie-entry = { "key": hex, "value": hex, "valueHash": hex }
 
+; The proof covers "keys", "prefixes" and "ranges". "rangeListings" answers each of "ranges", then further range
+; probes, some of which the proof does not cover.
 trie-proof-vector = {
   "keys": [* hex],
   "prefixes": [* hex],
+  "ranges": [* trie-range],
   "cbor": hex,
   "lookups": [* trie-lookup],
   "prefixListings": [* trie-prefix-listing],
+  "rangeListings": [* trie-range-listing],
 }
+
+; [from, until) in bitwise key order, a proper prefix before its extensions; no "until" is unbounded. The bounds are
+; byte strings that need not be keys.
+trie-range = { "from": hex, ? "until": hex }
+
+trie-range-listing = { "from": hex, ? "until": hex, "result": trie-range-result }
+
+trie-range-result = trie-range-entries / "notCovered"
+
+trie-range-entries = { "entries": [* trie-listed] }
 
 trie-lookup = { "key": hex, "result": trie-lookup-result }
 

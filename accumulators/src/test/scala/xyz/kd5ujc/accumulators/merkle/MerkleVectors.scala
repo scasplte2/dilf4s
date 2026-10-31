@@ -57,12 +57,15 @@ object MerkleVectors {
       "leaves"     -> leaves.map(_.toHex).asJson,
       "leafHashes" -> leaves.map(l => m.leaf(l).hex).asJson,
       "trees" -> trees.map { t =>
+        val r = MerkleTree.fromLeafHashes[Sha256](leaves.take(t.size.toInt).map(ct.leaf))(using ct)
         Json.obj(
-          "size"        -> t.size.asJson,
-          "root"        -> t.root.hex.asJson,
-          "rfc6962Root" -> MerkleTree.fromLeafHashes[Sha256](leaves.take(t.size.toInt).map(ct.leaf))(using ct).root.hex.asJson,
-          "inclusion"   -> (0L until t.size).map(i => hexOrDie(t.inclusionProof(i).flatMap(MerkleCodec.encodeInclusion))).asJson,
-          "consistency" -> (0L to t.size).map(o => hexOrDie(t.consistencyProof(o).flatMap(MerkleCodec.encodeConsistency))).asJson
+          "size"               -> t.size.asJson,
+          "root"               -> t.root.hex.asJson,
+          "rfc6962Root"        -> r.root.hex.asJson,
+          "inclusion"          -> (0L until t.size).map(i => hexOrDie(t.inclusionProof(i).flatMap(MerkleCodec.encodeInclusion))).asJson,
+          "consistency"        -> (0L to t.size).map(o => hexOrDie(t.consistencyProof(o).flatMap(MerkleCodec.encodeConsistency))).asJson,
+          "rfc6962Inclusion"   -> (0L until r.size).map(i => hexOrDie(r.inclusionProof(i).flatMap(MerkleCodec.encodeInclusion))).asJson,
+          "rfc6962Consistency" -> (0L to r.size).map(o => hexOrDie(r.consistencyProof(o).flatMap(MerkleCodec.encodeConsistency))).asJson
         )
       }.asJson,
       "valueCommitments" -> (committedBytes.map(CanonicalValue.bytes) ++

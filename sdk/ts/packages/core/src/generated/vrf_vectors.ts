@@ -68,6 +68,47 @@ export const VrfProof: c.Codec<VrfProof> = {
   },
 };
 
+/** `vrf-rejection` (`shared/schemas/vrf-vectors.cddl`). */
+export interface VrfRejection {
+  readonly suite: string;
+  readonly name: string;
+  readonly verifyingKey: Hex;
+  readonly alpha: Hex;
+  readonly pi: Hex;
+  readonly result: string;
+}
+
+export const VrfRejection: c.Codec<VrfRejection> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("suite", c.text, a.suite, e),
+        c.field("name", c.text, a.name, e),
+        c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey, e),
+        c.field("alpha", c.defer(() => Hex), a.alpha, e),
+        c.field("pi", c.defer(() => Hex), a.pi, e),
+        c.field("result", c.text, a.result, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["suite", "name", "verifyingKey", "alpha", "pi", "result"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("suite", c.text);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("name", c.text);
+    if (!r1.ok) return r1;
+    const r2 = f.value.required("verifyingKey", c.defer(() => Hex));
+    if (!r2.ok) return r2;
+    const r3 = f.value.required("alpha", c.defer(() => Hex));
+    if (!r3.ok) return r3;
+    const r4 = f.value.required("pi", c.defer(() => Hex));
+    if (!r4.ok) return r4;
+    const r5 = f.value.required("result", c.text);
+    if (!r5.ok) return r5;
+    return c.ok({ suite: r0.value, name: r1.value, verifyingKey: r2.value, alpha: r3.value, pi: r4.value, result: r5.value });
+  },
+};
+
 /** `vrf-suite` (`shared/schemas/vrf-vectors.cddl`). */
 export interface VrfSuite {
   readonly suite: string;
@@ -98,6 +139,7 @@ export interface VrfVectors {
   readonly spec: "docs/specs/vrf.md";
   readonly version: 1n;
   readonly suites: readonly VrfSuite[];
+  readonly rejections: readonly VrfRejection[];
 }
 
 export const VrfVectors: c.Codec<VrfVectors> = {
@@ -107,10 +149,11 @@ export const VrfVectors: c.Codec<VrfVectors> = {
         c.field("spec", c.literalText("docs/specs/vrf.md"), a.spec, e),
         c.field("version", c.literalInt(1n), a.version, e),
         c.field("suites", c.vector(c.defer(() => VrfSuite), 0, null), a.suites, e),
+        c.field("rejections", c.vector(c.defer(() => VrfRejection), 0, null), a.rejections, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "suites"]);
+    const f = c.fields(v, ["spec", "version", "suites", "rejections"]);
     if (!f.ok) return f;
     const r0 = f.value.required("spec", c.literalText("docs/specs/vrf.md"));
     if (!r0.ok) return r0;
@@ -118,6 +161,8 @@ export const VrfVectors: c.Codec<VrfVectors> = {
     if (!r1.ok) return r1;
     const r2 = f.value.required("suites", c.vector(c.defer(() => VrfSuite), 0, null));
     if (!r2.ok) return r2;
-    return c.ok({ spec: r0.value, version: r1.value, suites: r2.value });
+    const r3 = f.value.required("rejections", c.vector(c.defer(() => VrfRejection), 0, null));
+    if (!r3.ok) return r3;
+    return c.ok({ spec: r0.value, version: r1.value, suites: r2.value, rejections: r3.value });
   },
 };

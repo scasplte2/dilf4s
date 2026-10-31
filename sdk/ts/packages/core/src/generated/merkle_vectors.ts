@@ -42,6 +42,8 @@ export interface MerkleVectorTree {
   readonly rfc6962Root: Hex;
   readonly inclusion: readonly Hex[];
   readonly consistency: readonly Hex[];
+  readonly rfc6962Inclusion: readonly Hex[];
+  readonly rfc6962Consistency: readonly Hex[];
 }
 
 export const MerkleVectorTree: c.Codec<MerkleVectorTree> = {
@@ -53,10 +55,12 @@ export const MerkleVectorTree: c.Codec<MerkleVectorTree> = {
         c.field("rfc6962Root", c.defer(() => Hex), a.rfc6962Root, e),
         c.field("inclusion", c.vector(c.defer(() => Hex), 0, null), a.inclusion, e),
         c.field("consistency", c.vector(c.defer(() => Hex), 0, null), a.consistency, e),
+        c.field("rfc6962Inclusion", c.vector(c.defer(() => Hex), 0, null), a.rfc6962Inclusion, e),
+        c.field("rfc6962Consistency", c.vector(c.defer(() => Hex), 0, null), a.rfc6962Consistency, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["size", "root", "rfc6962Root", "inclusion", "consistency"]);
+    const f = c.fields(v, ["size", "root", "rfc6962Root", "inclusion", "consistency", "rfc6962Inclusion", "rfc6962Consistency"]);
     if (!f.ok) return f;
     const r0 = f.value.required("size", c.uint);
     if (!r0.ok) return r0;
@@ -68,7 +72,11 @@ export const MerkleVectorTree: c.Codec<MerkleVectorTree> = {
     if (!r3.ok) return r3;
     const r4 = f.value.required("consistency", c.vector(c.defer(() => Hex), 0, null));
     if (!r4.ok) return r4;
-    return c.ok({ size: r0.value, root: r1.value, rfc6962Root: r2.value, inclusion: r3.value, consistency: r4.value });
+    const r5 = f.value.required("rfc6962Inclusion", c.vector(c.defer(() => Hex), 0, null));
+    if (!r5.ok) return r5;
+    const r6 = f.value.required("rfc6962Consistency", c.vector(c.defer(() => Hex), 0, null));
+    if (!r6.ok) return r6;
+    return c.ok({ size: r0.value, root: r1.value, rfc6962Root: r2.value, inclusion: r3.value, consistency: r4.value, rfc6962Inclusion: r5.value, rfc6962Consistency: r6.value });
   },
 };
 

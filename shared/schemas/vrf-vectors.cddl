@@ -4,7 +4,13 @@ vrf-vectors = {
   "spec": "docs/specs/vrf.md",
   "version": 1,
   "suites": [* vrf-suite],
+  "rejections": [* vrf-rejection],
 }
+
+; A verification verdict: "valid", or the VrfError kind (vrf.md section 3): "Malformed" (a wrong length; the proof's
+; is checked before the key's), "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar" or
+; "ChallengeMismatch". "suite" is a suite name of the suites list.
+vrf-rejection = { "suite": text, "name": text, "verifyingKey": hex, "alpha": hex, "pi": hex, "result": text }
 
 vrf-suite = { "suite": text, "keys": [* vrf-key] }
 

@@ -355,9 +355,11 @@ export const TriePresent: c.Codec<TriePresent> = {
 export interface TrieProofVector {
   readonly keys: readonly Hex[];
   readonly prefixes: readonly Hex[];
+  readonly ranges: readonly TrieRange[];
   readonly cbor: Hex;
   readonly lookups: readonly TrieLookup[];
   readonly prefixListings: readonly TriePrefixListing[];
+  readonly rangeListings: readonly TrieRangeListing[];
 }
 
 export const TrieProofVector: c.Codec<TrieProofVector> = {
@@ -366,25 +368,130 @@ export const TrieProofVector: c.Codec<TrieProofVector> = {
       c.record([
         c.field("keys", c.vector(c.defer(() => Hex), 0, null), a.keys, e),
         c.field("prefixes", c.vector(c.defer(() => Hex), 0, null), a.prefixes, e),
+        c.field("ranges", c.vector(c.defer(() => TrieRange), 0, null), a.ranges, e),
         c.field("cbor", c.defer(() => Hex), a.cbor, e),
         c.field("lookups", c.vector(c.defer(() => TrieLookup), 0, null), a.lookups, e),
         c.field("prefixListings", c.vector(c.defer(() => TriePrefixListing), 0, null), a.prefixListings, e),
+        c.field("rangeListings", c.vector(c.defer(() => TrieRangeListing), 0, null), a.rangeListings, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["keys", "prefixes", "cbor", "lookups", "prefixListings"]);
+    const f = c.fields(v, ["keys", "prefixes", "ranges", "cbor", "lookups", "prefixListings", "rangeListings"]);
     if (!f.ok) return f;
     const r0 = f.value.required("keys", c.vector(c.defer(() => Hex), 0, null));
     if (!r0.ok) return r0;
     const r1 = f.value.required("prefixes", c.vector(c.defer(() => Hex), 0, null));
     if (!r1.ok) return r1;
-    const r2 = f.value.required("cbor", c.defer(() => Hex));
+    const r2 = f.value.required("ranges", c.vector(c.defer(() => TrieRange), 0, null));
     if (!r2.ok) return r2;
-    const r3 = f.value.required("lookups", c.vector(c.defer(() => TrieLookup), 0, null));
+    const r3 = f.value.required("cbor", c.defer(() => Hex));
     if (!r3.ok) return r3;
-    const r4 = f.value.required("prefixListings", c.vector(c.defer(() => TriePrefixListing), 0, null));
+    const r4 = f.value.required("lookups", c.vector(c.defer(() => TrieLookup), 0, null));
     if (!r4.ok) return r4;
-    return c.ok({ keys: r0.value, prefixes: r1.value, cbor: r2.value, lookups: r3.value, prefixListings: r4.value });
+    const r5 = f.value.required("prefixListings", c.vector(c.defer(() => TriePrefixListing), 0, null));
+    if (!r5.ok) return r5;
+    const r6 = f.value.required("rangeListings", c.vector(c.defer(() => TrieRangeListing), 0, null));
+    if (!r6.ok) return r6;
+    return c.ok({ keys: r0.value, prefixes: r1.value, ranges: r2.value, cbor: r3.value, lookups: r4.value, prefixListings: r5.value, rangeListings: r6.value });
+  },
+};
+
+/** `trie-range` (`shared/schemas/trie-vectors.cddl`). */
+export interface TrieRange {
+  readonly from: Hex;
+  readonly until?: Hex;
+}
+
+export const TrieRange: c.Codec<TrieRange> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("from", c.defer(() => Hex), a.from, e),
+        c.optionalField("until", c.defer(() => Hex), a.until, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["from", "until"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("from", c.defer(() => Hex));
+    if (!r0.ok) return r0;
+    const r1 = f.value.optional("until", c.defer(() => Hex));
+    if (!r1.ok) return r1;
+    return c.ok({ from: r0.value, until: r1.value });
+  },
+};
+
+/** `trie-range-entries` (`shared/schemas/trie-vectors.cddl`). */
+export interface TrieRangeEntries {
+  readonly entries: readonly TrieListed[];
+}
+
+export const TrieRangeEntries: c.Codec<TrieRangeEntries> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("entries", c.vector(c.defer(() => TrieListed), 0, null), a.entries, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["entries"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("entries", c.vector(c.defer(() => TrieListed), 0, null));
+    if (!r0.ok) return r0;
+    return c.ok({ entries: r0.value });
+  },
+};
+
+/** `trie-range-listing` (`shared/schemas/trie-vectors.cddl`). */
+export interface TrieRangeListing {
+  readonly from: Hex;
+  readonly until?: Hex;
+  readonly result: TrieRangeResult;
+}
+
+export const TrieRangeListing: c.Codec<TrieRangeListing> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("from", c.defer(() => Hex), a.from, e),
+        c.optionalField("until", c.defer(() => Hex), a.until, e),
+        c.field("result", c.defer(() => TrieRangeResult), a.result, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["from", "until", "result"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("from", c.defer(() => Hex));
+    if (!r0.ok) return r0;
+    const r1 = f.value.optional("until", c.defer(() => Hex));
+    if (!r1.ok) return r1;
+    const r2 = f.value.required("result", c.defer(() => TrieRangeResult));
+    if (!r2.ok) return r2;
+    return c.ok({ from: r0.value, until: r1.value, result: r2.value });
+  },
+};
+
+/** `trie-range-result` (`shared/schemas/trie-vectors.cddl`). */
+export type TrieRangeResult = TrieRangeEntries | "notCovered";
+
+export const TrieRangeResult: c.Codec<TrieRangeResult> = {
+  encode: (a, d) => {
+    if (typeof a === "string") return c.oneOfText(a, ["notCovered"]);
+    const known = ["entries"];
+    if (c.hasFields(a, TrieRangeEntries, ["entries"], ["entries"], known)) return TrieRangeEntries.encode(a, d);
+    return c.typeMismatch("no alternative of TrieRangeResult fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [[["entries"], ["entries"]]], ["notCovered"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return TrieRangeEntries.decode(v);
+      case 1:
+        return c.ok<TrieRangeResult>("notCovered");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
   },
 };
 

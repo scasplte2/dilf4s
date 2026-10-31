@@ -9,7 +9,26 @@ signing-vectors = {
   "slip10Ed25519": slip10-vector,
   "bip32Secp256k1": bip32-vector,
   "ed25519Bip32": icarus-vector,
+  "blsPop": [* bls-pop-vector],
+  "verification": [* verification-case],
 }
+
+; PopProve of each seed's BLS key (DST BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_).
+bls-pop-vector = { "signingKey": hex, "verifyingKey": hex, "proof": hex }
+
+; A verdict to reproduce. The verifying key is decoded first, then the signature: a malformed one is a typed error
+; ("malformedKey", "malformedSignature"); a decoded pair verifies ("valid") or not ("invalid"). "scheme" is a scheme
+; of the signing list; "Ed25519" verifies under ZIP-215 and "Ed25519-libsodium" under libsodium's rule.
+verification-case = {
+  "scheme": text,
+  "name": text,
+  "verifyingKey": hex,
+  "message": hex,
+  "signature": hex,
+  "result": verification-result,
+}
+
+verification-result = "valid" / "invalid" / "malformedKey" / "malformedSignature"
 
 signing-scheme = { "scheme": text, "keys": [* signing-key] }
 
@@ -23,7 +42,24 @@ extended-key = { "key": hex, "chainCode": hex }
 
 slip10-vector = { "seed": hex, "path": text, "master": extended-key, "child": extended-key }
 
-bip32-vector = { "seed": hex, "path": text, "master": extended-key, "child": extended-key, "verifyingKey": hex }
+bip32-vector = {
+  "seed": hex,
+  "path": text,
+  "master": extended-key,
+  "child": extended-key,
+  "verifyingKey": hex,
+  "publicDerivation": bip32-public-derivation,
+}
+
+; CKDpub along the soft "path" from the key at "parentPath" (a prefix of the private path), reaching the child.
+bip32-public-derivation = {
+  "parentPath": text,
+  "parentVerifyingKey": hex,
+  "parentChainCode": hex,
+  "path": text,
+  "verifyingKey": hex,
+  "chainCode": hex,
+}
 
 icarus-vector = {
   "entropy": hex,

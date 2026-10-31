@@ -54,17 +54,20 @@ vt-listing = { "namespace": text, "entries": [* vt-entry] }
 ; A version answer: a version and its state root, or, empty, "none" / "not committed".
 vt-version = { ? "version": uint, ? "stateRoot": hex }
 
-vt-kind = "state" / "historical" / "version" / "asOf" / "head"
+vt-kind = "state" / "historical" / "version" / "asOf" / "head" / "versions"
 
-; "at" is the version a historical, version or as-of query names.
+; "at" is the version a historical, version or as-of query names, or the start of a "versions" query: the committed
+; versions in [at, until), no "until" being unbounded, are exactly "versions" (each with both fields).
 vt-proof = {
   "name": text,
   "kind": vt-kind,
   ? "at": uint,
+  ? "until": uint,
   "cbor": hex,
   ? "claims": [* vt-claim],
   ? "listings": [* vt-listing],
   ? "answer": vt-version,
+  ? "versions": [* vt-version],
 }
 
 hex = text .regexp "([0-9a-f]{2})*"

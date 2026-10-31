@@ -11,12 +11,17 @@ merkle-vectors = {
   "valueCommitments": [* merkle-value-commitment],
 }
 
+; "inclusion" and "consistency" are the tagged profile's proofs; "rfc6962Inclusion" and "rfc6962Consistency" are the
+; same proofs under the rfc6962 profile, whose leaves are the raw "leaves". Each lists one proof per leaf index, then
+; one per old size 0..size.
 merkle-vector-tree = {
   "size": uint,
   "root": hex,
   "rfc6962Root": hex,
   "inclusion": [* hex],
   "consistency": [* hex],
+  "rfc6962Inclusion": [* hex],
+  "rfc6962Consistency": [* hex],
 }
 
 ; A value (as its canonical CBOR), its commitment bytes commit(v) and the leaf hash of those bytes (section 2).
