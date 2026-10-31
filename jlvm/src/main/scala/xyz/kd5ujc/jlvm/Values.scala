@@ -211,11 +211,11 @@ object Values {
    * The order is total and consistent with equality, and nothing is hashed, so values a program chooses cannot be made
    * to collide.
    */
-  final case class Key(rank: Int, value: CanonicalValue, encoding: ByteVector)
+  final case class SortKey(rank: Int, value: CanonicalValue, encoding: ByteVector)
 
   private def unsigned(a: ByteVector, b: ByteVector): Int = java.util.Arrays.compareUnsigned(a.toArrayUnsafe, b.toArrayUnsafe)
 
-  given Ordering[Key] = (a, b) =>
+  given Ordering[SortKey] = (a, b) =>
     if (a.rank != b.rank) Integer.compare(a.rank, b.rank)
     else
       (a.value, b.value) match {
@@ -227,22 +227,22 @@ object Values {
         case _                            => unsigned(a.encoding, b.encoding)
       }
 
-  private def key(v: CanonicalValue): Key = v match {
-    case CNull        => Key(0, v, ByteVector.empty)
-    case CBool(_)     => Key(1, v, ByteVector.empty)
-    case CInt(_)      => Key(2, v, ByteVector.empty)
-    case CRational(_) => Key(3, v, ByteVector.empty)
-    case CText(_)     => Key(4, v, ByteVector.empty)
-    case CBytes(_)    => Key(5, v, ByteVector.empty)
-    case CArray(_)    => Key(6, v, Cbor.encode(v).compact)
-    case CMap(_)      => Key(7, v, Cbor.encode(v).compact)
+  private def key(v: CanonicalValue): SortKey = v match {
+    case CNull        => SortKey(0, v, ByteVector.empty)
+    case CBool(_)     => SortKey(1, v, ByteVector.empty)
+    case CInt(_)      => SortKey(2, v, ByteVector.empty)
+    case CRational(_) => SortKey(3, v, ByteVector.empty)
+    case CText(_)     => SortKey(4, v, ByteVector.empty)
+    case CBytes(_)    => SortKey(5, v, ByteVector.empty)
+    case CArray(_)    => SortKey(6, v, Cbor.encode(v).compact)
+    case CMap(_)      => SortKey(7, v, Cbor.encode(v).compact)
   }
 
   /** `vs` without repeats, keeping each value's first occurrence, in order: a stable sort and a scan, O(n log n). */
   def distinct(vs: Vector[CanonicalValue]): Vector[CanonicalValue] = {
     val sorted = vs.map(key).zipWithIndex.sortBy(_._1)
     val firsts = sorted.zip(None +: sorted.map(Option(_))).collect {
-      case ((e, i), previous) if !previous.exists(p => summon[Ordering[Key]].equiv(p._1, e)) => i
+      case ((e, i), previous) if !previous.exists(p => summon[Ordering[SortKey]].equiv(p._1, e)) => i
     }
     firsts.sorted.map(vs)
   }
@@ -256,6 +256,21 @@ object Values {
         case Searching.InsertionPoint(_) => false
       }
     )
+  }
+
+  /**
+   * Keys and path segments are compared, and rendered in warnings, in time that grows with their length: each counts once
+   * more per block of this many UTF-16 units. Names under a block cost what they always did.
+   */
+  val KeyBlock: Int = 32
+
+  /** A path segment's count: 1, plus one per [[KeyBlock]] of its length. */
+  def segmentCount(s: String): Long = 1L + s.length / KeyBlock
+
+  /** The blocks of text used as a key ([[GasSchedule]]'s `Key` unit); 0 for anything else. */
+  def keyBlocks(v: CanonicalValue): Long = v match {
+    case CText(s) => (s.length / KeyBlock).toLong
+    case _        => 0L
   }
 
   /** Top-level size, for operations that only touch the outermost collection. */

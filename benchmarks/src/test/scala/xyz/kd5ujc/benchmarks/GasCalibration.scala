@@ -211,8 +211,8 @@ object GasCalibration extends IOApp {
   }
 
   /**
-   * The charges added for metering: rendering numbers (`cat`, `join`), pieces of `cat` and `join`, and parsing a path at
-   * run time (a computed `var` path, a `missing` key, charged at `split`'s rate per unit of weight).
+   * The charges added for metering: rendering numbers (`cat`, `join`), pieces of `cat` and `join`, comparing a long key,
+   * and parsing a path at run time (a computed `var` path, a `missing` key, charged at `split`'s rate per unit of weight).
    */
   private def extras(jlvm: Jlvm): IO[List[String]] = {
     val r = schedule.rendering.value
@@ -224,6 +224,8 @@ object GasCalibration extends IOApp {
     val fifths = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1700))))
     def words(n: Int) = Vector.fill(n)(t("w"))
     def path(n:  Int) = t(Vector.fill(n)("a").mkString("."))
+    // the map's key and the key looked up are equal but distinct strings, so the hit compares them
+    def keyed(n: Int) = Vector(m(Vector("k" * n -> CInt(1))), t("k" * n))
     def parse(p: CanonicalValue): IO[Double] = {
       val d = data(Vector(p))
       (micros(run(jlvm, Expr.VarAt(reads(1)(0), scala.None), d)), micros(run(jlvm, reads(1)(0), d))).mapN((x, b) => math.max(x - b, 0.0))
@@ -264,6 +266,12 @@ object GasCalibration extends IOApp {
         opTime(jlvm, Op.Join, Vector(a(words(8000)), t(""))),
         4L,
         8000L
+      ),
+      extra("get: a hit compares the key", "32 units", 1L)(
+        opTime(jlvm, Op.Get, keyed(32)),
+        opTime(jlvm, Op.Get, keyed(64000)),
+        32L / Values.KeyBlock,
+        64000L / Values.KeyBlock
       ),
       extra("computed path: parse a.a.a...", "unit of weight", schedule.cost(Op.Split).perUnit.value)(
         parse(path(4)),

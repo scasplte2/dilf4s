@@ -103,9 +103,10 @@ text, or a non-terminating rational, has no surface form and is an error.
     before it runs (§8 #22).
 - **Size.** Compilation uses no gas, so a program's size is bounded before anything else is done: at most 2^18
   (`Program.MaxSize`), counting one per expression, plus the weight of each literal and default, plus the length of
-  each object key and the segments of each path. A larger program is `Limit`. Compilation is linear in this size: `let`
-  carries its scope forward in one pass, and names and keys are kept in sorted sets, never hashed. The largest
-  conformance program is under 2^14. The host bounds the JSON text itself.
+  each object key, binding name and path segment, plus one per segment. A larger program is `Limit`. `let` carries its
+  scope forward in one pass, in a sorted set of names. Checking the canonical form still builds hashed maps of literal
+  keys, so compilation is not strictly linear in the worst case, but it is bounded by this size. The largest conformance
+  program is under 2^14. The host bounds the JSON text itself.
 
 **Compilation.** Before evaluation, a program is checked into its evaluation form. These are parse errors
 (`Malformed`), reported with no gas used:
@@ -494,6 +495,8 @@ default the operation's). For example, `sigma_verify` and `schnorr_verify` charg
 - `Limbs2`: for a number, the square of its 64-bit limbs, numerator and denominator together (`⌊bits/64⌋` each); 0
   for anything else;
 - `RationalLimbs2`: `Limbs2` for a non-integer rational, 0 for an integer;
+- `Key`: for text, `⌊length/32⌋` in UTF-16 units; 0 for anything else. `get`, `has`, `set` and `unset` charge their key
+  at 1 per unit: a hit compares the whole key, so a long key costs more, and keys under 32 units nothing extra;
 - `None`: zero.
 
 The gcd that normalises a result is quadratic in its operands' size. `/` and `%` therefore also charge `Limbs2`, and
@@ -531,7 +534,7 @@ GasCalibration measures these with the argument `metering`.
 | Node | Charges, in order |
 |---|---|
 | Literal | `literal`. |
-| Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment. A non-empty plain path inside callbacks also counts each enclosing frame as a segment, since it may consult them all. A computed path is evaluated first. Text then pays `perUnit(split) × weight` before it is parsed, and then the access and the segments it gives; an array pays the access and its segments before they are converted. |
+| Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment, and every segment counts once more per 32 UTF-16 units of its length (it is compared on a hit, and rendered in a warning). A non-empty plain path inside callbacks also counts each enclosing frame as a segment, since it may consult them all. A computed path is evaluated first. Text then pays `perUnit(split) × weight` before it is parsed, and then the access and the segments it gives; an array pays the access and its segments (counted the same way) before they are converted. |
 | Array or map expression | `literal + element × n`, then each item. |
 | Strict operation | `base(op)`, then each argument, then `perUnit(op) × size(arguments)`, then the operation, with the charges above for `+`, `*`, `cat` and `join`. A spread is charged the same way, on the elements of its array. |
 | Lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)` plus, for each key, `perUnit(split) × weight(key)` and `perPathSegment` per enclosing frame (as `var` pays), then the lookup. |

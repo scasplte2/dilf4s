@@ -127,7 +127,14 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
               )
             case CArray(ss) =>
               Charge(
-                readCost(if (ss.isEmpty) 0L else ss.size.toLong + scope.frames.size),
+                readCost(
+                  if (ss.isEmpty) 0L
+                  else
+                    ss.foldLeft(scope.frames.size.toLong) {
+                      case (n, CText(t)) => n + Values.segmentCount(t)
+                      case (n, _)        => n + 1L
+                    }
+                ),
                 () => ss.traverse(segment).fold(Fail(_), p => lookup(VarRef.Data(p), default, scope))
               )
             case other => Fail(JlvmError.Type("var", s"a computed path is text or an array of segments, got ${Values.kind(other)}"))
@@ -230,14 +237,16 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
   private def readCost(segments: Long): Gas = schedule.varAccess + schedule.perPathSegment * segments
 
   /**
-   * Charges for the access and each segment (a binding name counts as one), then reads. A plain path inside callbacks
+   * Charges for the access and each segment (a binding name counts as one, and each counts once more per
+   * [[Values.KeyBlock]] of its length), then reads. A plain path inside callbacks
    * may consult every enclosing frame, so each frame is charged as a segment too.
    */
   private def read(ref: VarRef, default: Option[CanonicalValue], scope: Scope): Step = {
+    def count(p: Vector[String]): Long = p.foldLeft(0L)(_ + Values.segmentCount(_))
     val segments = ref match {
-      case VarRef.Data(p) if p.nonEmpty => p.size.toLong + scope.frames.size
+      case VarRef.Data(p) if p.nonEmpty => count(p) + scope.frames.size
       case VarRef.Data(_)               => 0L
-      case VarRef.Bound(_, p)           => 1L + p.size
+      case VarRef.Bound(n, p)           => Values.segmentCount(n) + count(p)
     }
     Charge(readCost(segments), () => lookup(ref, default, scope))
   }

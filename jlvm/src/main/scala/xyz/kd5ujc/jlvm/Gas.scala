@@ -70,6 +70,13 @@ enum SizeUnit {
 
   /** [[Limbs2]] for a non-integer rational, and 0 for an integer: integer sums and products are linear. */
   case RationalLimbs2
+
+  /**
+   * For text used as a key, `⌊length/32⌋`, its length in UTF-16 units ([[Values.KeyBlock]]); 0 for anything else. A key is
+   * compared with the map's key on every hit, so a long key costs more than a short one; keys under 32 units cost nothing
+   * extra.
+   */
+  case Key
 }
 
 /**
@@ -122,6 +129,7 @@ object GasSchedule {
       case SizeUnit.Weight         => v.weight
       case SizeUnit.Limbs2         => limbs(v, integers = true)
       case SizeUnit.RationalLimbs2 => limbs(v, integers = false)
+      case SizeUnit.Key            => Values.keyBlocks(v)
     }
 
   private def limbs(v: CanonicalValue, integers: Boolean): Long =
@@ -136,7 +144,7 @@ object GasSchedule {
   private def c(base: Long, perUnit: Long = 0, unit: SizeUnit = SizeUnit.None): OpCost = OpCost(Gas(base), Gas(perUnit), unit)
 
   import Op.{Map => MapOp, None => NoneOp, Set => SetOp, Some => SomeOp, _}
-  import SizeUnit.{Elements, Limbs2, RationalLimbs2, Weight}
+  import SizeUnit.{Elements, Key, Limbs2, RationalLimbs2, Weight}
 
   /**
    * Version 1. Base costs start from metakit's table; size terms now cover the work metakit left unpriced: everything
@@ -208,11 +216,11 @@ object GasSchedule {
       Keys       -> c(50, 12, Weight),
       Values     -> c(50, 12, Weight),
       Entries    -> c(50, 18, Weight),
-      Get        -> c(30),
-      Has        -> c(40),
+      Get        -> c(30).at(1, 1, Key),
+      Has        -> c(40).at(1, 1, Key),
       // one entry changes in O(log n): a map keeps its weight and its values' depths up to date
-      SetOp       -> c(105),
-      Unset       -> c(65),
+      SetOp       -> c(105).at(1, 1, Key),
+      Unset       -> c(65).at(1, 1, Key),
       Exists      -> c(50, 1, Elements),
       Missing     -> c(50, 20, Elements),
       MissingSome -> c(60, 20, Elements),

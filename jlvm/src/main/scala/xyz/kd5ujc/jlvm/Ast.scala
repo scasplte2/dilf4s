@@ -245,10 +245,13 @@ object Program {
 
   /**
    * The largest program, in size: one per expression, plus the weight of each literal and default, plus the length of
-   * each object key and the segments of each path. Compilation is linear in the size and uses no gas, so the bound is
+   * each object key, binding name and path segment, and one per segment. Compilation is linear in the size and uses no gas, so the bound is
    * checked first, by a walk that stops as soon as it is exceeded. The largest conformance programs are under 2^14.
    */
   val MaxSize: Long = 1L << 18
+
+  /** A path's segments, each with its length. */
+  private def segments(p: Vector[String]): Long = p.foldLeft(0L)((n, s) => n + 1L + s.length)
 
   /** Saturating: a literal's weight may itself have saturated. */
   private def plus(a: Long, b: Long): Long = if (a > Long.MaxValue - b) Long.MaxValue else a + b
@@ -256,8 +259,8 @@ object Program {
   private def size(e: Expr): Long =
     e match {
       case Expr.Lit(v)                                        => plus(1L, v.weight)
-      case Expr.Var(VarRef.Data(p), d)                        => plus(1L + p.size, d.fold(0L)(_.weight))
-      case Expr.Var(VarRef.Bound(_, p), d)                    => plus(2L + p.size, d.fold(0L)(_.weight))
+      case Expr.Var(VarRef.Data(p), d)                        => plus(1L + segments(p), d.fold(0L)(_.weight))
+      case Expr.Var(VarRef.Bound(n, p), d)                    => plus(2L + n.length + segments(p), d.fold(0L)(_.weight))
       case Expr.VarAt(_, d)                                   => plus(1L, d.fold(0L)(_.weight))
       case Expr.Obj(fs)                                       => fs.foldLeft(1L) { case (n, (k, _)) => n + 1L + k.length }
       case Expr.Arr(_) | Expr.Apply(_, _) | Expr.Spread(_, _) => 1L
@@ -267,8 +270,8 @@ object Program {
   @tailrec
   private def check(todo: List[(Expr, Int)], seen: Long): Option[JlvmError] =
     todo match {
-      case Nil                         => scala.None
       case _ if seen > MaxSize         => scala.Some(JlvmError.Limit(s"the program is larger than $MaxSize"))
+      case Nil                         => scala.None
       case (_, d) :: _ if d > MaxDepth => scala.Some(JlvmError.Limit(s"the program nests deeper than $MaxDepth"))
       case (Expr.Spread(op, _), _) :: _ if !Op.Variadic.contains(op) =>
         scala.Some(JlvmError.Malformed(s"${op.wire} does not spread its argument"))

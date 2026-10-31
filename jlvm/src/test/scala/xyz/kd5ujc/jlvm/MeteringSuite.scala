@@ -72,8 +72,20 @@ object MeteringSuite extends IOSuite {
   }
 
   /** `2^k` distinct strings of length `2k` with one Java hash code: every combination of "Aa" and "BB". */
-  private def colliding(k: Int): Vector[String] =
-    (1 to k).foldLeft(Vector(""))((acc, _) => acc.flatMap(s => Vector(s + "Aa", s + "BB")))
+  private def colliding(k: Int): Vector[String] = combinations(k, "Aa", "BB")
+
+  /** The control: as many strings, as long, from "Aa" and "Ac", whose hash codes differ. */
+  private def control(k: Int): Vector[String] = combinations(k, "Aa", "Ac")
+
+  private def combinations(k: Int, a: String, b: String): Vector[String] =
+    (1 to k).foldLeft(Vector(""))((acc, _) => acc.flatMap(s => Vector(s + a, s + b)))
+
+  /** The share of the control's gas per microsecond that the colliding input gets: about 1 when nothing is hashed. */
+  private def againstControl(jlvm: Jlvm, p: Program, colliding: CanonicalValue, control: CanonicalValue): IO[(Outcome, Double)] =
+    (rate(jlvm, p, colliding), rate(jlvm, p, control)).mapN { case ((o, r), (_, c)) => (o, r / c) }
+
+  /** Colliding input must get at least this share of the control's rate. */
+  private val MinControlShare = 0.5
 
   // ---- 1. join
 
@@ -158,15 +170,16 @@ object MeteringSuite extends IOSuite {
 
   test("unique and intersect do not hash attacker-chosen values: colliding strings are as cheap as any others") { jlvm =>
     val same = arr(colliding(13).map(t))
+    val other = obj("xs" -> arr(control(13).map(t)))
     val unique = program("""{"unique": {"var": "xs"}}""")
     val intersect = program("""{"intersect": [{"var": "xs"}, {"var": "xs"}]}""")
-    (priced(jlvm, unique, obj("xs" -> same)), priced(jlvm, intersect, obj("xs" -> same))).mapN {
+    (againstControl(jlvm, unique, obj("xs" -> same), other), againstControl(jlvm, intersect, obj("xs" -> same), other)).mapN {
       case ((u, ru), (i, ri)) =>
         expect
           .same(Right(same), u.result)
           .and(expect.same(Right(True), i.result))
-          .and(expect(ru >= MinShare, s"unique of 8192 colliding strings priced at $ru of the reference rate"))
-          .and(expect(ri >= MinShare, s"intersect of 8192 colliding strings priced at $ri of the reference rate"))
+          .and(expect(ru >= MinControlShare, s"unique of 8192 colliding strings runs at $ru of the control's rate"))
+          .and(expect(ri >= MinControlShare, s"intersect of 8192 colliding strings runs at $ri of the control's rate"))
     }
   }
 
@@ -281,18 +294,61 @@ object MeteringSuite extends IOSuite {
   }
 
   test("let and $ reads do not hash attacker-chosen names") { jlvm =>
-    val names = colliding(10)
-    val p = program(lets(names.size, names))
-    priced(jlvm, p, CNull).map {
-      case (o, rate) =>
-        expect.same(Right(CInt(BigInt(1))), o.result).and(expect(rate >= MinShare, s"priced at $rate of the reference rate"))
+    // 1024 bindings and a read of the last: the two runs differ only in the names, so they cost the same gas
+    val bound = program(lets(1024, colliding(10)))
+    val unbound = program(lets(1024, control(10)))
+    (rate(jlvm, bound, CNull), rate(jlvm, unbound, CNull)).mapN {
+      case ((o, r), (c, rc)) =>
+        expect
+          .same(Right(CInt(BigInt(1))), o.result)
+          .and(expect.same(o.gasUsed, c.gasUsed))
+          .and(expect(r / rc >= MinControlShare, s"1024 colliding names run at ${r / rc} of the control's rate"))
     }
+  }
+
+  // ---- keys and path segments compared on every lookup
+
+  test("set does not rescan its key, and get, has, set and unset pay for long keys") { jlvm =>
+    val long = "k" * (1 << 20)
+    val short = "k"
+    val build =
+      program("""{"reduce": [{"var": "xs"}, {"set": [{"var": "$accumulator"}, {"var": "k"}, {"var": "$index"}]}, {"object": {}}]}""")
+    val lookup = program("""{"count": [{"var": "xs"}, {"get": [{"var": "m"}, {"var": "k"}]}]}""")
+    def data(k: String, n: Int) =
+      // the map's key and the looked-up key are equal but distinct strings, so a hit compares them
+      obj("xs" -> arr(Vector.fill(n)(CInt(1))), "k" -> t(k), "m" -> obj(new String(k.toCharArray) -> CInt(1)))
+    (
+      rate(jlvm, build, data(long, 200)),
+      rate(jlvm, build, data(short, 200)),
+      rate(jlvm, lookup, data(long, 200)),
+      rate(jlvm, lookup, data(short, 200))
+    ).mapN {
+      case ((b, rb), (_, rbs), (l, rl), (_, rls)) =>
+        expect(b.result.isRight, s"builds: ${b.result.leftMap(_.toString)}")
+          .and(expect.same(Right(CInt(BigInt(200))), l.result))
+          .and(expect(rb / rbs >= MinControlShare, s"set with a 1 MB key runs at ${rb / rbs} of the 1-byte key's rate"))
+          .and(expect(rl / rls >= MinControlShare, s"get with a 1 MB key runs at ${rl / rls} of the 1-byte key's rate"))
+    }
+  }
+
+  test("a computed array path pays for the length of its segments before converting them") { jlvm =>
+    val p = program("""{"var": [[{"var": "k"}]]}""")
+    val long = "k" * 50000
+    val gap = eval(jlvm, p, obj("k" -> t(long))).gasUsed.value - eval(jlvm, p, obj("k" -> t("k"))).gasUsed.value
+    IO.pure(expect(gap >= long.length / Values.KeyBlock, s"$gap more gas for a 50,000-character segment"))
   }
 
   test("programs are bounded in size before compilation") { _ =>
     val bound = Program.MaxSize.toInt
     val huge = Expr.Arr(Vector.fill(bound + 1)(Expr.Lit(CNull)))
     val fits = Expr.Arr(Vector.fill(bound / 4)(Expr.Lit(CNull)))
-    IO.pure(expect(isLimit(Program.from(huge)), "one past the bound").and(expect(Program.from(fits).isRight, "at the bound")))
+    val longPath = Expr.Var(VarRef.Data(Vector("x" * (bound + 1))), scala.None)
+    val longName = Expr.Var(VarRef.Bound("x" * (bound + 1), Vector.empty), scala.None)
+    IO.pure(
+      expect(isLimit(Program.from(huge)), "one past the bound")
+        .and(expect(Program.from(fits).isRight, "at the bound"))
+        .and(expect(isLimit(Program.from(longPath)), "a path segment counts its length"))
+        .and(expect(isLimit(Program.from(longName)), "a binding name counts its length"))
+    )
   }
 }
