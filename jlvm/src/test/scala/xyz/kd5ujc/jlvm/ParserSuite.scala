@@ -9,8 +9,8 @@ import xyz.kd5ujc.core.hash.Sha256
 import io.circe.Json
 import org.scalacheck.Gen
 import scodec.bits.hex
-import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
+import weaver.{Expectations, SimpleIOSuite}
 
 object ParserSuite extends SimpleIOSuite with Checkers {
 
@@ -223,9 +223,9 @@ object ParserSuite extends SimpleIOSuite with Checkers {
         1 -> Gen
           .zip(
             Gen.oneOf(Op.Variadic.toList),
-            // an array expression would be an argument list: spread its first item instead
+            // an array expression would be an argument list (Program.from rejects it): spread its values instead
             sub.map {
-              case Expr.Arr(items) => items.headOption.getOrElse(v("a"))
+              case a @ Expr.Arr(_) => Expr.Apply(Op.Values, Vector(a))
               case e               => e
             }
           )
@@ -237,20 +237,40 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     }
   }
 
-  private given Show[Program] = Show.fromToString
   private given Show[Expr] = Show.fromToString
   private given Show[VarRef] = Show.fromToString
 
-  /** Literals holding 0x-hex text have no surface form; the generator's "0x0" and "0xAB" are not hex bytes. */
-  private val programs: Gen[Program] = Gen.choose(0, 4).flatMap(expr).map(e => Program.from(e).toOption.get)
+  /**
+   * Syntax trees Program.from accepts by construction: shallow (depth 4, far inside both depth bounds), spellable var
+   * paths, non-null defaults, and no spread of an array expression. Literals holding 0x-hex text have no surface form;
+   * the generator's "0x0" and "0xAB" are not hex bytes.
+   */
+  private val exprs: Gen[Expr] = Gen.choose(0, 4).flatMap(expr)
+
+  /** A generated tree as a program; a tree Program.from rejects is a failure of the generator, reported, not thrown. */
+  private def accepted(e: Expr)(f: Program => Expectations): Expectations =
+    Program.from(e).fold(err => failure(s"the generator built a tree Program.from rejects: $err\n$e"), f)
+
+  test("the program generator stays within Program.from's bounds: depth, surface depth and canonical depth") {
+    forall(exprs) { e =>
+      expect(Program.from(e).isRight, s"accepted: ${Program.from(e)}")
+        .and(expect(Parser.surfaceDepth(e) <= Program.MaxSurfaceDepth, s"surface depth ${Parser.surfaceDepth(e)}"))
+        .and(
+          expect(
+            Program.from(e).flatMap(Parser.canonical).forall(_.depth <= CanonicalValue.MaxDepth),
+            "canonical depth within the value bound"
+          )
+        )
+    }
+  }
 
   test("render writes the strict surface: parsing it back, in either mode, gives the same program") {
-    forall(programs) { prog =>
+    forall(exprs)(accepted(_) { prog =>
       val text = Parser.render(prog).map(_.noSpaces)
       expect
         .same(Right(prog), text.flatMap(Parser.parse(_)))
         .and(expect.same(Right(prog), text.flatMap(Parser.parse(_, Parser.Mode.Lenient))))
-    }
+    })
   }
 
   /** The same program as metakit wrote it: a single-key data map bare wherever its key is not an operation. */
@@ -274,12 +294,12 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     }
 
   test("migrate reads a metakit-style program as metakit did, and writes the same program in the strict surface") {
-    forall(programs) { prog =>
+    forall(exprs)(accepted(_) { prog =>
       val old = Parser.render(prog).map(j => metakitStyle(j).noSpaces)
       expect
         .same(Right(prog), old.flatMap(Parser.parse(_, Parser.Mode.Lenient)))
         .and(expect.same(Right(prog), old.flatMap(Parser.migrate).flatMap(Parser.parse(_))))
-    }
+    })
   }
 
   pureTest("a var default is a literal; the strict surface quotes object and array defaults") {
@@ -590,9 +610,10 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   }
 
   test("the surface depth Program.from bounds is the depth of the rendered text") {
-    forall(Gen.oneOf(programs, Gen.choose(1, 40).flatMap(chain).map(e => Program.from(e).toOption.get))) { prog =>
+    // chains of 40 wrappers nest at most 3 levels each (surface or canonical), plus a few for the leaf: within the bound
+    forall(Gen.oneOf(exprs, Gen.choose(1, 40).flatMap(chain)))(accepted(_) { prog =>
       expect.same(Parser.render(prog).map(nesting), Right(Parser.surfaceDepth(prog.expr)))
-    }
+    })
   }
 
   // ---- results: 0x-hex text has no surface form
