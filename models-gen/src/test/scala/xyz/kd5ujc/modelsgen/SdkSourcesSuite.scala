@@ -134,6 +134,22 @@ object SdkSourcesSuite extends SimpleIOSuite {
       .and(expect(failed(Main.generate(Vector("t" -> "r = { \"1x\": uint }\n"), "p")), "in any language"))
   }
 
+  pureTest("modules whose output files would collide are generator errors, not overwritten files") {
+    expect(SdkSources.generate(Vector("index" -> "r = uint\n")).isLeft, "index.ts is the barrel")
+      .and(expect(SdkSources.generate(Vector("mod" -> "r = uint\n")).isLeft, "mod.rs is the module list"))
+      .and(expect(SdkSources.generate(Vector("a-b" -> "r = uint\n", "a_b" -> "s = uint\n")).isLeft, "a-b and a_b are both a_b"))
+  }
+
+  pureTest("field names that are not usable in every language are generator errors") {
+    expect(gen("r = { \"_\": uint }\n").isLeft, "_ is not a field name in Rust or Scala")
+      .and(expect(gen("empty = {}\nnamed = { \"toString\": text }\nu = empty / named\n").isLeft, "toString is every object's"))
+  }
+
+  pureTest("Rust imports what the types use, not what names contain") {
+    val out = gen("byte-string = bytes\n").map(_.rust.toMap.getOrElse("t.rs", ""))
+    expect(out.exists(s => !s.contains("use alloc::string::String;") && s.contains("use alloc::vec::Vec;")), out.fold(_.message, identity))
+  }
+
   pureTest("keywords become raw identifiers in Rust") {
     val out = gen("r = { \"type\": uint, \"self\": uint }\n").map(_.rust.toMap.getOrElse("t.rs", ""))
     expect(out.exists(s => s.contains("pub r#type: u64,") && s.contains("pub self_: u64,")), out.fold(_.message, identity))

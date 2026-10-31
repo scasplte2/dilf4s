@@ -108,8 +108,12 @@ final class Profile(val schema: Schema) {
       })
       val unnamed =
         fs.find(f => Profile.Namings.exists((n, name) => n != "wire" && !Profile.isIdentifier(name(f.key).stripPrefix("r#"))))
+      // a TypeScript record reads its fields as properties, and every object inherits these
+      val inherited =
+        fs.find(f => Profile.ObjectMembers(Profile.Namings.collectFirst { case ("camelCase", name) => name(f.key) }.getOrElse(f.key)))
       unnamed
         .map(f => outside(rule, s"key ${CanonicalEmitter.literal(f.key)} has no identifier form"))
+        .orElse(inherited.map(f => outside(rule, s"key ${CanonicalEmitter.literal(f.key)} names a member every object inherits")))
         .orElse(clash.map { case (n, keys) => GenError.NameClash(rule.toString, n, keys) })
         .toLeft(fs)
     }
@@ -181,7 +185,23 @@ object Profile {
    * regular-expression engine; adding one means adding it to every SDK core.
    */
   /** Whether `s` is an identifier in every target language (ASCII letters, digits and `_`, not starting with a digit). */
-  def isIdentifier(s: String): Boolean = s.matches("[A-Za-z_][A-Za-z0-9_]*")
+  def isIdentifier(s: String): Boolean = s != "_" && s.matches("[A-Za-z_][A-Za-z0-9_]*")
+
+  /** Members of `Object.prototype`: a field with one of these names would be "present" on every object. */
+  val ObjectMembers: Set[String] = Set(
+    "constructor",
+    "hasOwnProperty",
+    "isPrototypeOf",
+    "propertyIsEnumerable",
+    "toLocaleString",
+    "toString",
+    "valueOf",
+    "__proto__",
+    "__defineGetter__",
+    "__defineSetter__",
+    "__lookupGetter__",
+    "__lookupSetter__"
+  )
 
   /** CDDL `int` (RFC 8610: major types 0 and 1). */
   val IntMin: BigInt = -(BigInt(1) << 64)

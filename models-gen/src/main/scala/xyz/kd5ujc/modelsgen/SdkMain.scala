@@ -42,7 +42,13 @@ object SdkSources {
             modules.traverse(m => rs.module(m).map(s"${CanonicalEmitter.packageSegment(m)}.rs" -> _))
           ).mapN((t, r) =>
             SdkSources((t :+ ("index.ts" -> ts.index(modules))).sortBy(_._1), (r :+ ("mod.rs" -> rs.index(modules))).sortBy(_._1))
-          )
+          ).flatMap { out =>
+            // two modules (or a module and an index) writing the same file would silently overwrite one another
+            val files = out.typescript.map(_._1) ++ out.rust.map(_._1)
+            files.groupBy(identity).collectFirst { case (f, fs) if fs.size > 1 => f }.fold(out.asRight[GenError]) { f =>
+              GenError.NameClash("generated files", f, modules.filter(m => f.startsWith(CanonicalEmitter.packageSegment(m) + "."))).asLeft
+            }
+          }
         }
     }
 
