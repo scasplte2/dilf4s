@@ -27,6 +27,7 @@ const schemas: Readonly<Record<string, (value: Value) => Result<Value, string>>>
   "trie_v1.json": roundTrip(models.trieVectors.TrieVectors),
   "versioned_trie_v1.json": roundTrip(models.versionedTrieVectors.VersionedTrieVectors),
   "vrf_v1.json": roundTrip(models.vrfVectors.VrfVectors),
+  "zk_v1.json": roundTrip(models.zkVectors.ZkVectors),
 };
 
 describe("the generated models hold every vector file", () => {
