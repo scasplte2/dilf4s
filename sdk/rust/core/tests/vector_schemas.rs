@@ -21,7 +21,7 @@ use common::{read_vectors, vectors_dir};
 use dilf4s_core::codec::Model;
 use dilf4s_core::generated::{
     canonical_vectors, crypto, jlvm, jlvm_vectors, kes_vectors, merkle, merkle_vectors, poseidon_vectors,
-    sigma_vectors, signing_vectors, trie_vectors, versioned_trie_vectors, vrf_vectors,
+    sigma_vectors, signing_vectors, trie_vectors, versioned_trie_vectors, vrf_vectors, zk_vectors,
 };
 use dilf4s_core::{Value, json};
 
@@ -32,7 +32,7 @@ fn round_trip<T: Model>(value: &Value) -> Result<Value, String> {
 
 type Check = fn(&Value) -> Result<Value, String>;
 
-const SCHEMAS: [(&str, Check); 11] = [
+const SCHEMAS: [(&str, Check); 12] = [
     ("canonical_encoding_v1.json", round_trip::<canonical_vectors::CanonicalVectors>),
     ("jlvm_v1.json", round_trip::<jlvm_vectors::JlvmVectors>),
     ("kes_v1.json", round_trip::<kes_vectors::KesVectors>),
@@ -44,6 +44,7 @@ const SCHEMAS: [(&str, Check); 11] = [
     ("trie_v1.json", round_trip::<trie_vectors::TrieVectors>),
     ("versioned_trie_v1.json", round_trip::<versioned_trie_vectors::VersionedTrieVectors>),
     ("vrf_v1.json", round_trip::<vrf_vectors::VrfVectors>),
+    ("zk_v1.json", round_trip::<zk_vectors::ZkVectors>),
 ];
 
 #[test]

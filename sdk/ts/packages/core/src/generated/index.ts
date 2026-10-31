@@ -17,3 +17,4 @@ export * as trieVectors from "./trie_vectors.js";
 export * as versionedTrie from "./versioned_trie.js";
 export * as versionedTrieVectors from "./versioned_trie_vectors.js";
 export * as vrfVectors from "./vrf_vectors.js";
+export * as zkVectors from "./zk_vectors.js";
