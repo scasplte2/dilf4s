@@ -10,9 +10,10 @@ import xyz.kd5ujc.core.canonical.CanonicalValue._
 
 /**
  * The calling convention of the example contracts in `resources/programs`: a program reads
- * `{"state": ..., "call": {"method": ..., ...}}` and the host bindings (`$sender`, the authenticated caller; `$ordinal`,
+ * `{"state": ..., "call": {"method": ..., ...}}`, any read-only inputs the host resolves from chain state (as an Ergo
+ * data input: `oracle`, an oracle pool's state), and the host bindings (`$sender`, the authenticated caller; `$ordinal`,
  * the snapshot ordinal, which deadlines count in; `$txHash`, what Ergo-style proofs sign), and returns
- * `{"state": next, "effects": [...]}` or `{"reject": reason}`.
+ * `{"state": next, "effects": [...]}` or `{"reject": reason}`. Every node sees the same inputs and bindings.
  */
 object ContractHarness {
 
@@ -25,10 +26,13 @@ object ContractHarness {
   def value(json: String): CanonicalValue = JsonSurface.parse(json).fold(e => sys.error(s"$e in $json"), identity)
   def text(s:     String): CanonicalValue = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
 
-  final case class Contract(jlvm: Jlvm, program: Program) {
+  final case class Contract(jlvm: Jlvm, program: Program, inputs: List[(String, CanonicalValue)] = Nil) {
+
+    /** The same contract, reading these read-only inputs beside its state and call. */
+    def withInputs(in: (String, CanonicalValue)*): Contract = copy(inputs = in.toList)
 
     def run(state: CanonicalValue, call: String, env: (String, CanonicalValue)*): Outcome =
-      jlvm.evaluate(program, CanonicalValue.map(List("state" -> state, "call" -> value(call))).toOption.get, env.toMap, Config())
+      jlvm.evaluate(program, ContractHarness.data(state, call, inputs), env.toMap, Config())
 
     /** The next state, or the rejection or error as text. */
     def next(state: CanonicalValue, call: String, env: (String, CanonicalValue)*): Either[String, CanonicalValue] =
@@ -44,6 +48,9 @@ object ContractHarness {
         case other   => s"not a contract result: ${render(other)}".asLeft
       }
   }
+
+  def data(state: CanonicalValue, call: String, inputs: List[(String, CanonicalValue)]): CanonicalValue =
+    CanonicalValue.map(("state" -> state) :: ("call" -> value(call)) :: inputs).toOption.get
 
   def render(v: CanonicalValue): String = JsonSurface.render(v).getOrElse(v.toString)
 

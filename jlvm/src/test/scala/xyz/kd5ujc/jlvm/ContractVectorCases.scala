@@ -32,7 +32,8 @@ object ContractVectorCases extends IOApp {
     state:    CanonicalValue,
     call:     String,
     env:      List[(String, CanonicalValue)],
-    gasLimit: Option[Long] = None
+    gasLimit: Option[Long] = None,
+    inputs:   List[(String, CanonicalValue)] = Nil
   )
 
   private def programText(name: String): IO[String] =
@@ -254,25 +255,34 @@ object ContractVectorCases extends IOApp {
         }
       }
       bank <- IO.pure {
-        val rate = "rate" -> CInt(BigInt(2000000))
+        val oracle = List("oracle" -> value("""{"rate": 2000000}"""))
         def b(r: Long, s0: Long, rc: Long) =
           value(s"""{"reserve": $r, "stable": $s0, "reserveCoins": $rc, "feePercent": 2, "defaultReservePrice": 1000000}""")
         List(
-          Case("mint reservecoins", "sigmausd_bank", b(0, 0, 0), """{"method": "mintReserve", "amount": 1000}""", List(rate)),
-          Case("mint stablecoins", "sigmausd_bank", b(1020000000L, 0, 1000), """{"method": "mintStable", "amount": 100}""", List(rate)),
+          Case("mint reservecoins", "sigmausd_bank", b(0, 0, 0), """{"method": "mintReserve", "amount": 1000}""", Nil, inputs = oracle),
+          Case(
+            "mint stablecoins",
+            "sigmausd_bank",
+            b(1020000000L, 0, 1000),
+            """{"method": "mintStable", "amount": 100}""",
+            Nil,
+            inputs = oracle
+          ),
           Case(
             "mint stablecoins below 400% is rejected",
             "sigmausd_bank",
             b(1346400000L, 160, 1000),
             """{"method": "mintStable", "amount": 20}""",
-            List(rate)
+            Nil,
+            inputs = oracle
           ),
           Case(
             "redeem reservecoins",
             "sigmausd_bank",
             b(1346400000L, 160, 1000),
             """{"method": "redeemReserve", "amount": 10}""",
-            List(rate)
+            Nil,
+            inputs = oracle
           )
         )
       }
@@ -362,7 +372,7 @@ object ContractVectorCases extends IOApp {
       .flatMap { cs =>
         cs.traverse { c =>
           programText(c.program).map { program =>
-            val data = render(CanonicalValue.map(List("state" -> c.state, "call" -> value(c.call))).toOption.get)
+            val data = render(ContractHarness.data(c.state, c.call, c.inputs))
             val env = c.env.map { case (k, v) => k -> render(v) }
             Json.fromFields(
               List("name" -> s"contract ${c.program}: ${c.name}".asJson, "program" -> program.asJson, "data" -> data.asJson) ++
