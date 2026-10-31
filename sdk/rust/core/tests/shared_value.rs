@@ -321,3 +321,59 @@ fn debug_output_is_budgeted() {
     assert!(shown.len() < 1000 && shown.contains('…'), "a text over the budget is elided: {shown}");
     assert!(start.elapsed().as_millis() < 2000, "took {:?}", start.elapsed());
 }
+
+#[test]
+fn equality_compares_each_pair_of_large_payloads_once() {
+    const N: usize = 100_000;
+    let mib = "x".repeat(1 << 20);
+    // separately allocated, equal: without the memo this is N full comparisons of 1 MiB (about 100 GiB)
+    let start = Instant::now();
+    let texts = |s: &str| Value::array(vec![Value::text(s); N]).unwrap();
+    assert!(texts(&mib) == texts(&mib), "equal texts");
+    let bytes = |b: &[u8]| Value::array(vec![Value::bytes(b); N]).unwrap();
+    assert!(bytes(mib.as_bytes()) == bytes(mib.as_bytes()), "equal byte strings");
+    let big = BigInt::from(1) << (1 << 23);
+    let ints = |n: &BigInt| Value::array(vec![Value::int(n.clone()); N]).unwrap();
+    assert!(ints(&big) == ints(&big), "equal integers");
+    let mut other = mib.clone();
+    other.replace_range(..1, "y");
+    assert!(texts(&mib) != texts(&other), "a differing text");
+    assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+}
+
+/// Equality as it was before sharing: a full recursive walk.
+fn naive_eq(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.items().iter().zip(y.items()).all(|(p, q)| naive_eq(p, q))
+        }
+        (Value::Map(x), Value::Map(y)) => {
+            x.len() == y.len()
+                && x.entries().iter().zip(y.entries()).all(|((kp, p), (kq, q))| kp == kq && naive_eq(p, q))
+        }
+        (Value::Array(_) | Value::Map(_), _) | (_, Value::Array(_) | Value::Map(_)) => false,
+        _ => a == b,
+    }
+}
+
+#[test]
+fn equality_of_unshared_trees_costs_about_a_walk() {
+    // every vector against an independent copy, so no address is shared and every pair is compared
+    let pairs: Vec<(Value, Value)> = vector_values()
+        .into_iter()
+        .map(|(_, v)| {
+            let copy = cbor::decode(&cbor::encode(&v)).unwrap();
+            (v, copy)
+        })
+        .collect();
+    let start = Instant::now();
+    assert!(pairs.iter().all(|(a, b)| a == b), "every copy is equal");
+    let memoised = start.elapsed();
+    let start = Instant::now();
+    assert!(pairs.iter().all(|(a, b)| naive_eq(a, b)), "and equal by a full walk");
+    let naive = start.elapsed();
+    eprintln!(
+        "{} vector roots against copies: memoised equality {memoised:?}, full recursive walk {naive:?}",
+        pairs.len()
+    );
+}

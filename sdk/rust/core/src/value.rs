@@ -649,10 +649,11 @@ impl Map {
 
 // ------------------------------------------------------------------------------------------------ equality
 
-// Equality is on content (the canonical encoding is the identity), and costs O(the distinct pairs of shared parts
-// compared), never O(weight): a comparison keeps the address pairs of containers it has proven equal, and skips them
-// when they recur. An address is only ever a fast path: equal addresses are the same payload, and a pair is recorded
-// only after its contents compared equal, while both values are borrowed (so neither address is freed or reused).
+// Equality is on content (the canonical encoding is the identity), and costs O(the distinct pairs of shared payloads
+// compared), never O(weight): a comparison keeps the address pairs of containers, and of large texts, byte strings and
+// numbers, that it has proven equal, and skips them when they recur. An address is only ever a fast path: equal
+// addresses are the same payload, and a pair is recorded only after its contents compared equal, while both values
+// are borrowed (so neither address is freed or reused). Small scalars are compared outright: cheaper than the memo.
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
@@ -681,25 +682,45 @@ impl PartialEq for Map {
 
 impl Eq for Map {}
 
-/// The address of a shared payload.
+/// The address of a shared slice payload.
 fn address<T>(items: &[T]) -> usize {
     items.as_ptr().addr()
 }
+
+/// The address of a shared payload.
+fn at<T>(item: &T) -> usize {
+    core::ptr::from_ref(item).addr()
+}
+
+/// A kind of payload and the addresses of two of them.
+type Pair = (u8, usize, usize);
+
+const ARRAY: u8 = 0;
+const MAP: u8 = 1;
+const INT: u8 = 2;
+const RATIONAL: u8 = 3;
+const TEXT: u8 = 4;
+const BYTES: u8 = 5;
+
+/// The weight from which a text or byte string is memoised (bytes: one unit each).
+const LARGE_STRING: u64 = 64;
+/// The weight from which a number is memoised (limbs: eight bytes each).
+const LARGE_NUMBER: u64 = 8;
 
 /// A map entry.
 type Entry = (String, Value);
 
 /// Two containers whose elements are being compared, and the address pair to record once they are all equal.
 enum Frame<'a> {
-    Items { a: &'a [Value], b: &'a [Value], next: usize, pair: (usize, usize) },
-    Entries { a: &'a [Entry], b: &'a [Entry], next: usize, pair: (usize, usize) },
+    Items { a: &'a [Value], b: &'a [Value], next: usize, pair: Pair },
+    Entries { a: &'a [Entry], b: &'a [Entry], next: usize, pair: Pair },
 }
 
 /// One comparison, with an explicit stack (at most [`MAX_DEPTH`] frames) and the pairs proven equal so far.
 #[derive(Default)]
 struct Comparison<'a> {
     stack: Vec<Frame<'a>>,
-    proven: BTreeSet<(usize, usize)>,
+    proven: BTreeSet<Pair>,
 }
 
 impl<'a> Comparison<'a> {
@@ -711,22 +732,46 @@ impl<'a> Comparison<'a> {
         match (a, b) {
             (Value::Null, Value::Null) => true,
             (Value::Bool(x), Value::Bool(y)) => x == y,
-            (Value::Int(x), Value::Int(y)) => x == y,
-            (Value::Rational(x), Value::Rational(y)) => x == y,
-            (Value::Text(x), Value::Text(y)) => x == y,
-            (Value::Bytes(x), Value::Bytes(y)) => x == y,
+            (Value::Int(x), Value::Int(y)) => {
+                let pair = (INT, at(x.as_bigint()), at(y.as_bigint()));
+                self.scalar(pair, a.weight() >= LARGE_NUMBER, || x == y)
+            }
+            (Value::Rational(x), Value::Rational(y)) => {
+                let pair = (RATIONAL, at(x.numerator()), at(y.numerator()));
+                self.scalar(pair, a.weight() >= LARGE_NUMBER, || x == y)
+            }
+            (Value::Text(x), Value::Text(y)) => {
+                let pair = (TEXT, address(x.as_bytes()), address(y.as_bytes()));
+                self.scalar(pair, a.weight() >= LARGE_STRING, || x == y)
+            }
+            (Value::Bytes(x), Value::Bytes(y)) => {
+                self.scalar((BYTES, address(x), address(y)), a.weight() >= LARGE_STRING, || x == y)
+            }
             (Value::Array(x), Value::Array(y)) => self.array(x, y),
             (Value::Map(x), Value::Map(y)) => self.map(x, y),
             _ => false,
         }
     }
 
+    /// Two scalars of one kind: the same payload, a large pair already proven equal, or compared now (and a large
+    /// pair recorded when equal).
+    fn scalar(&mut self, pair: Pair, large: bool, equal: impl FnOnce() -> bool) -> bool {
+        if pair.1 == pair.2 || (large && self.proven.contains(&pair)) {
+            return true;
+        }
+        let same = equal();
+        if same && large {
+            self.proven.insert(pair);
+        }
+        same
+    }
+
     fn array(&mut self, a: &'a Array, b: &'a Array) -> bool {
         if a.weight != b.weight || a.depth != b.depth || a.items.len() != b.items.len() {
             return false;
         }
-        let pair = (address(&a.items), address(&b.items));
-        if pair.0 != pair.1 && !self.proven.contains(&pair) {
+        let pair = (ARRAY, address(&a.items), address(&b.items));
+        if pair.1 != pair.2 && !self.proven.contains(&pair) {
             self.stack.push(Frame::Items { a: &a.items, b: &b.items, next: 0, pair });
         }
         true
@@ -736,8 +781,8 @@ impl<'a> Comparison<'a> {
         if a.weight != b.weight || a.depth != b.depth || a.entries.len() != b.entries.len() {
             return false;
         }
-        let pair = (address(&a.entries), address(&b.entries));
-        if pair.0 != pair.1 && !self.proven.contains(&pair) {
+        let pair = (MAP, address(&a.entries), address(&b.entries));
+        if pair.1 != pair.2 && !self.proven.contains(&pair) {
             self.stack.push(Frame::Entries { a: &a.entries, b: &b.entries, next: 0, pair });
         }
         true
