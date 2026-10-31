@@ -15,6 +15,13 @@ export const MAX_DEPTH = 256;
 
 export type Value = NullValue | BoolValue | IntValue | RationalValue | TextValue | BytesValue | ArrayValue | MapValue;
 
+/**
+ * A fresh plain `Uint8Array` holding `bytes`. `slice` would not do: on a Node `Buffer` it returns a view sharing memory.
+ */
+export function copyBytes(bytes: Uint8Array): Uint8Array {
+  return Uint8Array.from(bytes);
+}
+
 const depthExceeded: CanonicalError = { kind: "DepthExceeded", limit: MAX_DEPTH };
 
 export class NullValue {
@@ -103,7 +110,7 @@ export class TextValue {
 
   /** A copy of the UTF-8 encoding. */
   utf8(): Uint8Array {
-    return this.#utf8.slice();
+    return copyBytes(this.#utf8);
   }
 }
 
@@ -112,7 +119,7 @@ export class BytesValue {
   readonly depth = 0;
   readonly #bytes: Uint8Array;
   private constructor(bytes: Uint8Array) {
-    this.#bytes = bytes.slice();
+    this.#bytes = copyBytes(bytes);
     Object.freeze(this);
   }
 
@@ -123,7 +130,7 @@ export class BytesValue {
 
   /** A copy of the bytes. */
   get bytes(): Uint8Array {
-    return this.#bytes.slice();
+    return copyBytes(this.#bytes);
   }
 
   get length(): number {
@@ -218,7 +225,7 @@ export class MapValue {
 
   /** Each key's UTF-8 and value, in canonical key order. */
   encodedEntries(): readonly (readonly [Uint8Array, Value])[] {
-    return this.#entries.map((e) => [e.utf8.slice(), e.value] as const);
+    return this.#entries.map((e) => [copyBytes(e.utf8), e.value] as const);
   }
 
   get size(): number {
