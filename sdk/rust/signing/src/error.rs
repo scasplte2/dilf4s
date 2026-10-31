@@ -214,7 +214,8 @@ impl core::error::Error for KesError {}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SigmaError {
     /// A proposition breaking section 3: an unknown type, a missing or extra field, an identity statement point, a
-    /// connective with no children or more than 255, `k` outside `1..=n`, more than 64 levels or 4096 leaves.
+    /// connective with no children or more than 255, `k` outside `1..=n`, more than 64 levels or 4096 leaves, or a
+    /// canonical form heavier than the heaviest valid proposition.
     InvalidProposition {
         /// Why it was refused.
         reason: String,

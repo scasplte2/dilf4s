@@ -25,7 +25,7 @@ use common::{bytes, load};
 use dilf4s_core::Value;
 use dilf4s_core::generated::sigma_vectors::{SigmaCase, SigmaKind, SigmaProposition, SigmaType, SigmaVectors};
 use dilf4s_signing::SigmaError;
-use dilf4s_signing::sigma::{self, MAX_DEPTH, Proposition};
+use dilf4s_signing::sigma::{self, MAX_DEPTH, MAX_WEIGHT, Proposition};
 
 /// Bytes from the vectors' `0x`-prefixed hex (`hex0x` in the schema).
 fn hex0x(text: &str) -> Vec<u8> {
@@ -280,11 +280,111 @@ fn the_canonical_form_takes_exactly_its_types_fields() {
     assert_eq!(decode(&threshold(Value::int(-1))), "InvalidProposition", "k = -1");
     assert_eq!(decode(&threshold(Value::int(1u64 << 40))), "InvalidProposition", "k beyond an Int");
     assert_eq!(decode(&threshold(Value::text("2"))), "InvalidProposition", "k text");
-    // children are decoded before the connective is checked, as the reference does
-    let bad_child = map(&[("type", Value::text("dlog")), ("pk", Value::bytes(off_curve()))]);
-    let wide_with_bad_point =
-        map(&[("type", Value::text("and")), ("children", children(std::iter::repeat_n(bad_child, 256).collect()))]);
-    assert_eq!(decode(&wide_with_bad_point), "InvalidPoint");
+}
+
+fn dlog_of(pk: Vec<u8>) -> Value {
+    map(&[("type", Value::text("dlog")), ("pk", Value::bytes(pk))])
+}
+
+fn connective(ty: &str, children: Vec<Value>) -> Value {
+    map(&[("type", Value::text(ty)), ("children", Value::array(children).unwrap())])
+}
+
+fn threshold_of(k: i64, children: Vec<Value>) -> Value {
+    map(&[("type", Value::text("threshold")), ("k", Value::int(k)), ("children", Value::array(children).unwrap())])
+}
+
+/// The reason of an `InvalidProposition`, or the kind of any other outcome.
+fn reason(v: &Value) -> String {
+    match Proposition::from_value(v) {
+        Err(SigmaError::InvalidProposition { reason }) => reason,
+        other => kind(other).to_owned(),
+    }
+}
+
+/// `n` children, the first `bad` of them with an off-curve point.
+fn with_bad_first(n: usize, bad: usize) -> Vec<Value> {
+    (0..n).map(|i| dlog_of(if i < bad { off_curve() } else { generator() })).collect()
+}
+
+/// `groups` `or`s of `each` leaves under an `and`, the last leaf replaced by `last`.
+fn grouped(groups: usize, each: usize, last: Value) -> Value {
+    let mut leaves: Vec<Value> = (0..groups * each).map(|_| dlog_of(generator())).collect();
+    *leaves.last_mut().unwrap() = last;
+    connective("and", leaves.chunks(each).map(|c| connective("or", c.to_vec())).collect())
+}
+
+#[test]
+fn a_connective_wider_than_255_is_refused_before_its_children_are_decoded() {
+    let too_wide = "a connective has at most 255 children";
+    assert_eq!(reason(&connective("and", with_bad_first(256, 1))), too_wide, "256 children, child 0 off the curve");
+    assert_eq!(reason(&connective("or", with_bad_first(256, 256))), too_wide, "256 children, all off the curve");
+    assert_eq!(reason(&threshold_of(0, with_bad_first(256, 1))), too_wide, "the width before k = 0");
+    assert_eq!(reason(&threshold_of(1, with_bad_first(256, 1))), too_wide, "a threshold of 256");
+    // within the width, the children are decoded before the connective's other checks
+    assert_eq!(
+        reason(&connective("and", with_bad_first(255, 1))),
+        "InvalidPoint",
+        "255 children, child 0 off the curve"
+    );
+    assert_eq!(reason(&threshold_of(0, with_bad_first(2, 1))), "InvalidPoint", "a bad child before k = 0");
+    assert_eq!(
+        reason(&connective("and", vec![])),
+        "a connective needs at least one child: an empty one holds for anyone"
+    );
+}
+
+#[test]
+fn the_4097th_leaf_is_refused_before_its_points_are_decoded() {
+    let too_many = "a proposition has at most 4096 leaves";
+    assert_eq!(reason(&grouped(16, 255, dlog_of(generator()))), "Ok", "4080 leaves");
+    assert_eq!(reason(&grouped(32, 128, dlog_of(off_curve()))), "InvalidPoint", "4096 leaves, the last off the curve");
+    assert_eq!(reason(&grouped(32, 128, dlog_of(generator()))), "Ok", "4096 leaves");
+    assert_eq!(reason(&grouped(17, 241, dlog_of(generator()))), too_many, "4097 leaves");
+    assert_eq!(reason(&grouped(17, 241, dlog_of(off_curve()))), too_many, "4097 leaves, the last off the curve");
+    // a leaf's own fields are checked before the bound
+    assert_eq!(
+        reason(&grouped(17, 241, map(&[("type", Value::text("dlog"))]))),
+        "dlog takes exactly the fields pk",
+        "4097 leaves, the last without its pk"
+    );
+}
+
+#[test]
+fn depth_is_checked_once_the_children_are_decoded() {
+    let chain = |leaf: Value| (1..=MAX_DEPTH).fold(leaf, |c, _| connective("and", vec![c]));
+    assert_eq!(reason(&chain(dlog_of(generator()))), "a proposition nests at most 64 deep", "65 deep");
+    assert_eq!(reason(&chain(dlog_of(off_curve()))), "InvalidPoint", "65 deep over a point off the curve");
+}
+
+/// The heaviest valid proposition (`docs/specs/sigma.md` section 3): a one-`k` threshold over 255 more, which share
+/// 4096 chains of 61 one-`k` thresholds, each over a `dhtuple` leaf at depth 64.
+fn heaviest() -> Value {
+    let g = Value::bytes(generator());
+    let leaf = map(&[("type", Value::text("dhtuple")), ("g", g.clone()), ("h", g.clone()), ("u", g.clone()), ("v", g)]);
+    let chain = (0..61).fold(leaf, |c, _| threshold_of(1, vec![c]));
+    threshold_of(1, (0..255).map(|i| threshold_of(1, vec![chain.clone(); if i < 16 { 17 } else { 16 }])).collect())
+}
+
+#[test]
+fn a_proposition_heavier_than_the_heaviest_valid_one_is_refused_before_decoding() {
+    assert_eq!(heaviest().weight(), MAX_WEIGHT, "the heaviest valid proposition weighs exactly the bound");
+    let p = Proposition::from_value(&heaviest()).unwrap();
+    assert_eq!((p.depth(), p.leaves()), (MAX_DEPTH, 4096));
+
+    // a dlog weighs 15 plus its key's length
+    let at = |n: u64| dlog_of(vec![2; usize::try_from(n).unwrap()]);
+    assert_eq!(at(MAX_WEIGHT - 15).weight(), MAX_WEIGHT);
+    assert_eq!(reason(&at(MAX_WEIGHT - 15)), "InvalidPoint", "at the bound, the key is decoded");
+    let over = "a proposition weighs at most 7900416";
+    assert_eq!(reason(&at(MAX_WEIGHT - 14)), over, "one over the bound, before the key is decoded");
+    assert_eq!(
+        reason(&connective("and", vec![dlog_of(off_curve()), dlog_of(vec![2; 7_900_400])])),
+        over,
+        "before the first child"
+    );
+    assert_eq!(reason(&Value::text("x".repeat(7_900_416))), over, "before the type");
+    assert_eq!(reason(&Value::text("x".repeat(7_900_415))), "a proposition is an object", "a value at the bound");
 }
 
 #[test]

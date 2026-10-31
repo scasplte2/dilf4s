@@ -9,6 +9,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.accumulators.merkle.MerkleCodec
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.crypto.sigma.Secp256k1Group
 import xyz.kd5ujc.crypto.signing._
 
 import io.circe.Json
@@ -20,14 +21,16 @@ import ProofFixtures._
 /**
  * Writes `vectors/jlvm_op_cases.json`, so that every operation has vectors: a sweep of each operation over 0 to 3
  * arguments of each kind, which pins argument counts, type checks, the order they run in and what they cost; then
- * cases with real inputs for the operations no other vector file reaches, and ASCII-only case mapping on non-ASCII text. Every signature here is deterministic, so
+ * cases with real inputs for the operations no other vector file reaches, ASCII-only case mapping on non-ASCII text, and
+ * the order in which `sigma_verify` refuses an oversized proposition. Every signature here is deterministic, so
  * the file regenerates identically: `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.OpCoverageCases"`, then `JlvmVectorGen`.
  */
 object OpCoverageCases extends IOApp {
 
   val path: Path = Paths.get("jlvm", "src", "test", "resources", "vectors", "jlvm_op_cases.json")
 
-  final case class Case(name: String, program: String, data: CanonicalValue)
+  /** `gasLimit` replaces the default limit, for a case whose work the default does not cover. */
+  final case class Case(name: String, program: String, data: CanonicalValue, gasLimit: Option[Long] = scala.None)
 
   /** `{"<op>": [{"var": "a0"}, ...]}` over the arguments as data, so a null argument stays null. */
   def probe(name: String, op: Op, args: CanonicalValue*): Case =
@@ -119,6 +122,49 @@ object OpCoverageCases extends IOApp {
     probe("a message not 32 bytes", Op.Bip340Verify, CBytes(schnorr.verifying.bytes), CBytes(message), CBytes(bip340.bytes))
   }
 
+  /**
+   * The order in which `sigma_verify` refuses an oversized proposition (sigma.md §3): its weight before anything is
+   * decoded, a connective's width before its children, the leaf bound before a leaf's points. The JLVM reports each as
+   * `Crypto` after charging for the proposition's weight, so these pin that each is refused, at what cost, and that the
+   * refusal does not wait on decoding; the order itself is pinned by the unit tests of both implementations.
+   */
+  val sigmaBounds: List[Case] = {
+    def v(name:      String): Json = Json.obj("var" -> name.asJson)
+    def node(ty:     String, children: List[Json]): Json = Json.obj("type" -> ty.asJson, "children" -> Json.fromValues(children))
+    def verify(prop: Json): Json = Json.obj("sigma_verify" -> Json.fromValues(List(prop, v("proof"), v("message"))))
+    def let(bindings: List[(String, Json)], body: Json): Json =
+      Json.obj("let" -> Json.arr(Json.fromValues(bindings.map { case (n, e) => Json.arr(n.asJson, e) }), body))
+    def dlog(pk: ByteVector): CanonicalValue = m("type" -> text("dlog"), "pk" -> CBytes(pk))
+    val offCurve = ByteVector(2) ++ ByteVector.fill(31)(0) :+ 5.toByte
+    val data = m(
+      "good"    -> dlog(Secp256k1Group.Generator.bytes),
+      "bad"     -> dlog(offCurve),
+      "proof"   -> bytes("00"),
+      "message" -> bytes("00")
+    )
+    // 2^17 leaves under 17 levels of doubling, shared: weight 68·2^17 - 20 = 8,912,876, within the JLVM's 2^24
+    val doubling = (2 to 17).toList.map(i => s"x$i" -> node("and", List.fill(2)(v(s"$$x${i - 1}"))))
+    List(
+      Case(
+        "dilf4s sigma_verify: 256 children, child 0 off the curve: the width is checked before the children are decoded",
+        verify(node("and", v("bad") :: List.fill(255)(v("good")))).noSpaces,
+        data
+      ),
+      Case(
+        "dilf4s sigma_verify: 4097 leaves, 17 ors of 241: refused at the 4097th leaf",
+        let(List("o" -> node("or", List.fill(241)(v("good")))), verify(node("and", List.fill(17)(v("$o"))))).noSpaces,
+        data,
+        Option(1L << 27)
+      ),
+      Case(
+        "dilf4s sigma_verify: heavier than the heaviest valid proposition: refused before it is decoded",
+        let(("x1" -> node("and", List(v("bad"), v("good")))) :: doubling, verify(v("$x17"))).noSpaces,
+        data,
+        Option(1L << 32)
+      )
+    )
+  }
+
   def merkle(v: Json): List[Case] = {
     val leaves = get(v.hcursor.downField("leaves").as[List[String]]).map(hex)
     val trees = get(v.hcursor.downField("trees").as[List[Json]])
@@ -194,14 +240,17 @@ object OpCoverageCases extends IOApp {
       .obj(
         "source" -> "dilf4s: every operation over 0 to 3 arguments of each kind, then real inputs for the operations no other file reaches (OpCoverageCases)".asJson,
         "cases" -> cases.map { c =>
-          Json.obj("name" -> c.name.asJson, "program" -> c.program.asJson, "data" -> get(JsonSurface.render(c.data)).asJson)
+          Json.fromFields(
+            List("name" -> c.name.asJson, "program" -> c.program.asJson, "data" -> get(JsonSurface.render(c.data)).asJson) ++
+            c.gasLimit.map(l => "gasLimit" -> l.asJson)
+          )
         }.asJson
       )
       .spaces2 + "\n"
 
   def run(args: List[String]): IO[ExitCode] =
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
-      .mapN((secp, mk, tr) => sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ tries(tr))
+      .mapN((secp, mk, tr) => sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ tries(tr) ++ sigmaBounds)
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)
 }
