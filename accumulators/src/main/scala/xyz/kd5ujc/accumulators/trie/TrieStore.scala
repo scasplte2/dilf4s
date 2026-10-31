@@ -18,6 +18,9 @@ import scodec.bits.ByteVector
  * count; every retained version records its root, so any retained version can be read and proven. Commits, rollbacks
  * and prunes are each one compare-and-write on the version state, so concurrent instances stay consistent and
  * garbage collection is atomic with the change that causes it.
+ *
+ * Each mutation is also available staged, computed without writing (docs/specs/storage.md §3), so that several stores
+ * in one backend can make one atomic compare-and-write, and a staged commit is a draft later stages can build on.
  */
 trait TrieStore[F[_], H] {
   def mode: KeyMode
@@ -33,14 +36,45 @@ trait TrieStore[F[_], H] {
     ranges:   List[(ByteVector, Option[ByteVector])] = Nil
   ): F[TrieProof[H]]
 
+  /** The root `ops` would give applied to a retained version, without writing: what that version plus `ops` commits to. */
+  def rootAfter(version: Version, ops: List[(ByteVector, Option[Digest[H]])]): F[Digest[H]]
+
   /** Discards versions after `to`; their nodes are freed unless an older version shares them. */
   def rollback(to: Version): F[Unit]
 
   /** Discards versions older than `through`; `through` becomes the oldest readable version (the floor). */
   def prune(through: Version): F[Unit]
+
+  /** The commit `commit(expected, ops)` would make, without writing. */
+  def stage(expected: Version, ops: List[(ByteVector, Option[Digest[H]])]): F[TrieStore.Staged[H]]
+
+  /** A commit on top of a staged one that is not yet written: nodes are read through the draft, and writing it writes both. */
+  def stageOn(base: TrieStore.Staged[H], ops: List[(ByteVector, Option[Digest[H]])]): F[TrieStore.Staged[H]]
+
+  def stageRollback(to:   Version): F[TrieStore.Staged[H]]
+  def stagePrune(through: Version): F[TrieStore.Staged[H]]
+
+  /** Applies a stage as one compare-and-write; a `VersionConflict` if the store moved since it was staged. */
+  def write(staged: TrieStore.Staged[H]): F[Version]
 }
 
 object TrieStore {
+
+  /**
+   * A mutation computed but not written: `writeIf(guards, batch)` applies it. `version` is the latest version after it
+   * and `root` that version's root. A stage built on a draft carries the draft's guards and writes, and reads nodes
+   * through its plan, so it applies both or neither.
+   */
+  final case class Staged[H] private[trie] (
+    guards:                     List[(ByteVector, Option[ByteVector])],
+    batch:                      RawBatch,
+    version:                    Version,
+    root:                       Digest[H],
+    private[trie] val top:      Option[Digest[H]],
+    private[trie] val expected: Long,
+    private[trie] val floor:    Long,
+    private[trie] val nodes:    RefCounting.Plan[H]
+  )
 
   def make[F[_]: Concurrent, H: TrieHashing](raw: RawStore[F], name: String, keyMode: KeyMode)(
     implicit RS: Raise[F, StoreError],
@@ -61,9 +95,7 @@ object TrieStore {
     )
 
   /** Latest and floor versions, with the raw record kept to guard the compare-and-write. */
-  final private case class State(latest: Long, floor: Long, raw: Option[ByteVector]) {
-    def encode(l: Long, f: Long): ByteVector = ByteVector.fromLong(l) ++ ByteVector.fromLong(f)
-  }
+  final private case class State(latest: Long, floor: Long, raw: Option[ByteVector])
 
   final private class Impl[F[_]: Concurrent, H](
     raw:      RawStore[F],
@@ -152,10 +184,7 @@ object TrieStore {
         case (acc, (h, None))         => acc ++ RawBatch.delete(nodeKey(h))
       }
 
-    private def guarded(s: State, newLatest: Long, newFloor: Long, batch: RawBatch): F[Unit] =
-      raw.writeIf(List(stateKey -> s.raw), batch ++ RawBatch.put(stateKey, s.encode(newLatest, newFloor))).flatMap { wrote =>
-        if (wrote) ().pure[F] else state.flatMap(now => failS(StoreError.VersionConflict(s.latest, now.latest)))
-      }
+    private def stateRecord(latest: Long, floor: Long): ByteVector = ByteVector.fromLong(latest) ++ ByteVector.fromLong(floor)
 
     // ---- reads
 
@@ -167,6 +196,15 @@ object TrieStore {
         r    <- rootHash(version.value)
         v    <- TrieEngine.get[F, H](node, r, path)
       } yield v
+
+    def rootAfter(version: Version, ops: List[(ByteVector, Option[Digest[H]])]): F[Digest[H]] =
+      for {
+        s       <- state
+        _       <- checkReadable(s, version)
+        trieOps <- liftT(ops.traverse { case (k, v) => mode.path(k).map(TrieOp(_, v)) })
+        r       <- rootHash(version.value)
+        delta   <- TrieEngine.apply[F, H](node, r, trieOps)
+      } yield delta.root.getOrElse(T.empty)
 
     def prove(
       keys:     List[ByteVector],
@@ -184,36 +222,84 @@ object TrieStore {
         proof <- TrieProofs.prove[F, H](node, r, queries)
       } yield proof
 
-    // ---- writes
+    // ---- writes: each is one staged compare-and-write
 
-    def commit(expected: Version, ops: List[(ByteVector, Option[Digest[H]])]): F[Version] =
+    def commit(expected: Version, ops: List[(ByteVector, Option[Digest[H]])]): F[Version] = stage(expected, ops).flatMap(write)
+    def rollback(to:     Version): F[Unit] = stageRollback(to).flatMap(write).void
+    def prune(through:   Version): F[Unit] = stagePrune(through).flatMap(write).void
+
+    def write(staged: Staged[H]): F[Version] =
+      raw.writeIf(staged.guards, staged.batch).flatMap { wrote =>
+        if (wrote) staged.version.pure[F] else state.flatMap(now => failS(StoreError.VersionConflict(staged.expected, now.latest)))
+      }
+
+    def stage(expected: Version, ops: List[(ByteVector, Option[Digest[H]])]): F[Staged[H]] =
       state.flatMap { s =>
         if (s.latest != expected.value) failS(StoreError.VersionConflict(expected.value, s.latest))
         else
-          for {
-            trieOps <- liftT(ops.traverse { case (k, v) => mode.path(k).map(TrieOp(_, v)) })
-            current <- rootHash(s.latest)
-            delta   <- TrieEngine.apply[F, H](node, current, trieOps)
-            plan    <- RefCounting.plan[F, H](entry, delta, retainNewRoot = true, release = Nil)
-            next = s.latest + 1
-            rootRec <- roots.encodeBatch(Batch.put(next, delta.root.fold(ByteVector.empty)(_.bytes)))
-            _       <- guarded(s, next, s.floor, planBatch(plan) ++ rootRec)
-          } yield Version.unsafe(next)
+          rootHash(s.latest).flatMap(current =>
+            stageCommit(List(stateKey -> s.raw), RawBatch.empty, s.latest, s.latest, s.floor, current, Map.empty, ops)
+          )
       }
 
-    /** Releases the roots of `versions` and deletes their root records, in one guarded batch. */
-    private def dropVersions(s: State, versions: List[Long], newLatest: Long, newFloor: Long): F[Unit] =
+    def stageOn(base: Staged[H], ops: List[(ByteVector, Option[Digest[H]])]): F[Staged[H]] =
+      stageCommit(base.guards, base.batch, base.expected, base.version.value, base.floor, base.top, base.nodes, ops)
+
+    /** One commit after `current` (whose root is `top`), reading nodes through `overlay` (the drafts below it). */
+    private def stageCommit(
+      guards:   List[(ByteVector, Option[ByteVector])],
+      below:    RawBatch,
+      expected: Long,
+      current:  Long,
+      floor:    Long,
+      top:      Option[Digest[H]],
+      overlay:  RefCounting.Plan[H],
+      ops:      List[(ByteVector, Option[Digest[H]])]
+    ): F[Staged[H]] = {
+      val view: RefCounting.View[F, H] = h => overlay.get(h).fold(entry(h))(_.pure[F])
+      val lookup: Digest[H] => F[Node[H]] = h => view(h).flatMap(_.fold(failT[Node[H]](TrieError.MissingNode(h.hex)))(e => e._1.pure[F]))
+      val next = current + 1
+      for {
+        trieOps <- liftT(ops.traverse { case (k, v) => mode.path(k).map(TrieOp(_, v)) })
+        delta   <- TrieEngine.apply[F, H](lookup, top, trieOps)
+        plan    <- RefCounting.plan[F, H](view, delta, retainNewRoot = true, release = Nil)
+        rootRec <- roots.encodeBatch(Batch.put(next, delta.root.fold(ByteVector.empty)(_.bytes)))
+      } yield
+        Staged(
+          guards,
+          below ++ planBatch(plan) ++ rootRec ++ RawBatch.put(stateKey, stateRecord(next, floor)),
+          Version.unsafe(next),
+          delta.root.getOrElse(T.empty),
+          delta.root,
+          expected,
+          floor,
+          overlay ++ plan
+        )
+    }
+
+    /** Releases the roots of `versions` and deletes their root records, as one stage. */
+    private def dropVersions(s: State, versions: List[Long], newLatest: Long, newFloor: Long): F[Staged[H]] =
       for {
         released <- versions.traverse(rootHash).map(_.flatten)
         plan     <- RefCounting.plan[F, H](entry, TrieDelta[H](None, Map.empty), retainNewRoot = false, release = released)
         deletes  <- roots.encodeBatch(Batch.deletes(versions))
-        _        <- guarded(s, newLatest, newFloor, planBatch(plan) ++ deletes)
-      } yield ()
+        top      <- rootHash(newLatest)
+      } yield
+        Staged(
+          List(stateKey -> s.raw),
+          planBatch(plan) ++ deletes ++ RawBatch.put(stateKey, stateRecord(newLatest, newFloor)),
+          Version.unsafe(newLatest),
+          top.getOrElse(T.empty),
+          top,
+          s.latest,
+          newFloor,
+          plan
+        )
 
-    def rollback(to: Version): F[Unit] =
+    def stageRollback(to: Version): F[Staged[H]] =
       state.flatMap(s => checkReadable(s, to) >> dropVersions(s, ((to.value + 1) to s.latest).toList, to.value, s.floor))
 
-    def prune(through: Version): F[Unit] =
+    def stagePrune(through: Version): F[Staged[H]] =
       state.flatMap(s =>
         checkReadable(s, through) >> dropVersions(s, (s.floor until through.value).toList.filter(_ > 0L), s.latest, through.value)
       )

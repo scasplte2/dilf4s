@@ -41,3 +41,23 @@ versioned-record = {
 
 Reading key `k` at version `v` takes the first history record of `k` after `v`. Its `"b"` field is the value at `v`. If
 there is no such record, the current value applies.
+
+Once history is pruned through a floor version `f > 0`, the log entries of `f` itself are gone with it. The change
+into `f` is therefore reported as pruned, never as an empty change.
+
+## 3. Staged writes (informative)
+
+Every mutation of a versioned store or a trie store (`docs/specs/trie.md` §6) is a single compare-and-write
+(`writeIf(guards, batch)`). Its guards are the store's version records as read when the change was computed, and its
+batch is every write the change makes. Each store also offers the change **staged**: the guards, the batch and the
+version after it, computed without writing.
+
+- **Composition.** Stores sharing one backend combine their stages into one `writeIf`, with the union of the guards
+  and the concatenation of the batches. Either every store moves or none does, so a crash can never leave one store
+  ahead of another. `docs/specs/versioned-trie.md` commits its four stores this way.
+- **Drafts.** A stage can be built on another stage that has not been written. It reads through the writes below it
+  (current values, trie nodes and their reference counts, the latest root) and carries their guards and batch, so
+  writing the top of a chain writes the whole chain or nothing. A chain is therefore a speculative sequence of
+  versions that costs no writes until it is adopted.
+- **Conflicts.** If another writer moved the store after the stage was computed, the guards no longer match and the
+  write is refused with a version conflict. Nothing is written.

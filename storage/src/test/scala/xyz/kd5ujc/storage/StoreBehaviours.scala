@@ -256,6 +256,121 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
     }
   }
 
+  test(s"$backend: the change into the floor version is pruned with the history below it") {
+    attempt { implicit h =>
+      withRaw { raw =>
+        for {
+          store <- VersionedStore.make[IO, Int, Int](raw, "vs")
+          _ <- List(Batch.put[Int, Int](1, 10), Batch.put[Int, Int](1, 20), Batch.put[Int, Int](2, 5))
+            .foldLeftM(Version.Genesis)(store.commit)
+          _     <- store.prune(Version.unsafe(2L))
+          above <- store.changes(Version.unsafe(3L))
+          at    <- h.attempt(store.changes(Version.unsafe(2L)))
+        } yield (above, at)
+      }
+    }.map {
+      case Right((above, at)) =>
+        expect
+          .same(List(Change(2, None, Some(5))), above)
+          .and(expect.same(Left(StoreError.Pruned(2L, 2L)), at))
+      case Left(e) => failure(s"unexpected $e")
+    }
+  }
+
+  test(s"$backend: a staged commit writes nothing until written, then lands as exactly one compare-and-write") {
+    forall(Gen.choose(1, 6).flatMap(Gen.listOfN(_, batchGen))) { batches =>
+      val snapshots = model(batches)
+      expectOk { implicit r =>
+        withRaw { base =>
+          for {
+            raw   <- WatchedRawStore(base)
+            store <- VersionedStore.make[IO, Int, Int](raw, "vs")
+            steps <- batches.traverse { b =>
+              for {
+                v       <- store.latest
+                before  <- raw.contents
+                atStart <- raw.writes
+                s       <- store.stage(v, b)
+                after   <- raw.contents
+                staged  <- raw.writes
+                _       <- store.write(s)
+                written <- raw.writes
+              } yield (before == after, staged == atStart, (written._1 - staged._1, written._2 - staged._2))
+            }
+            current <- store.scan().compile.toList.map(_.toMap)
+          } yield
+            expect(steps.forall(_._1), "staging changed no record")
+              .and(expect(steps.forall(_._2), "staging reached no write"))
+              .and(expect.same(batches.map(_ => (0, 1)), steps.map(_._3)))
+              .and(expect.same(snapshots.last, current))
+        }
+      }
+    }
+  }
+
+  test(s"$backend: a crash during the write leaves every record as it was") {
+    forall(Gen.choose(1, 4).flatMap(Gen.listOfN(_, batchGen)).flatMap(bs => batchGen.map(bs :+ _))) { batches =>
+      expectOk { implicit r =>
+        withRaw { base =>
+          for {
+            raw     <- WatchedRawStore(base)
+            store   <- VersionedStore.make[IO, Int, Int](raw, "vs")
+            v       <- batches.init.foldLeftM(Version.Genesis)(store.commit)
+            before  <- raw.contents
+            _       <- raw.crashNextWrites(true)
+            crashed <- store.commit(v, batches.last).attempt
+            _       <- raw.crashNextWrites(false)
+            after   <- raw.contents
+            latest  <- store.latest
+          } yield expect(crashed.isLeft, "the write failed").and(expect(before == after, "no record changed")).and(expect.same(v, latest))
+        }
+      }
+    }
+  }
+
+  test(s"$backend: chained drafts read through the drafts below them and equal sequential commits") {
+    forall(Gen.choose(1, 6).flatMap(Gen.listOfN(_, batchGen))) { batches =>
+      expectOk { implicit r =>
+        for {
+          sequential <- withRaw { raw =>
+            VersionedStore
+              .make[IO, Int, Int](raw, "vs")
+              .flatMap(s => batches.foldLeftM(Version.Genesis)(s.commit) >> raw.scan(ByteRange.all).compile.toList)
+          }
+          chained <- withRaw { base =>
+            for {
+              raw   <- WatchedRawStore(base)
+              store <- VersionedStore.make[IO, Int, Int](raw, "vs")
+              first <- store.stage(Version.Genesis, batches.head)
+              draft <- batches.tail.foldLeftM(first)(store.stageOn)
+              empty <- raw.contents
+              v     <- store.write(draft)
+              all   <- raw.contents
+              n     <- raw.writes
+            } yield (empty, v, all, n)
+          }
+        } yield
+          expect(chained._1.isEmpty, "drafts write nothing")
+            .and(expect.same(batches.size.toLong, chained._2.value))
+            .and(expect(sequential == chained._3, "the same records as committing one by one"))
+            .and(expect.same((0, 1), chained._4))
+      }
+    }
+  }
+
+  test(s"$backend: a draft staged against a version that moved on does not write") {
+    attempt { implicit r =>
+      withRaw { raw =>
+        for {
+          store <- VersionedStore.make[IO, Int, Int](raw, "vs")
+          draft <- store.stage(Version.Genesis, Batch.put(1, 1))
+          _     <- store.commit(Version.Genesis, Batch.put(2, 2))
+          _     <- store.write(draft)
+        } yield ()
+      }
+    }.map(result => expect.same(Left(StoreError.VersionConflict(0L, 1L)), result))
+  }
+
   test(s"$backend: optimistic concurrency rejects a stale expected version") {
     attempt { implicit r =>
       withRaw { raw =>
