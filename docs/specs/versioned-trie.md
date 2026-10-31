@@ -38,9 +38,15 @@ Applications that accept keys from untrusted parties should bound or hash those 
 
 **Version keys.** A version type has a version key `vkey`: a fixed width `w` and an unsigned big-endian encoding that
 preserves order. Comparing two versions and comparing their keys as unsigned bytes always agree. The default is a
-non-negative 64-bit integer as 8 bytes, which is exactly the JLVM's `int_to_bytes [v, 8]`. It is **not** the storage
-key codec for integers (`storage.md` §1), which flips the sign bit and so would give a program a different key. `w` is
-configuration, part of what a verifier trusts along with the root.
+non-negative signed 64-bit integer, `0 ≤ v ≤ 2^63 − 1`, as 8 bytes. For those versions it is exactly the JLVM's
+`int_to_bytes [v, 8]`. It is **not** the storage key codec for integers (`storage.md` §1), which flips the sign bit and
+so would give a program a different key. `w` is configuration, part of what a verifier trusts along with the root.
+
+The cap is part of the key. A store refuses to commit a version above `2^63 − 1`, and a native verifier refuses to
+encode one, or to decode a key whose top bit is set, as `InvalidVersion`. The JLVM has no version type:
+`int_to_bytes [v, 8]` encodes every `v` below `2^64` (and is a `Domain` error from `2^64`). A key it builds for
+`2^63 ≤ v < 2^64` is therefore never in a history trie, so a program's proof about such a version shows it absent, or
+does not cover it. It is never a committed version. The `versionKeys` vectors pin both sides of the cap.
 
 ## 3. The root
 

@@ -23,7 +23,9 @@ use common::{bytes, load};
 use dilf4s_core::cbor;
 use dilf4s_core::codec::{Codec, Model};
 use dilf4s_core::generated::trie::{TRIE_PROOF, TrieBranch, TrieChildren, TrieLeaf, TrieRecord, TrieSegment, TrieStub};
-use dilf4s_core::generated::trie_vectors::{TrieLookupResult, TrieMode, TrieRangeResult, TrieVectors};
+use dilf4s_core::generated::trie_vectors::{
+    TrieLookupResult, TrieMalformedError, TrieMode, TrieRangeResult, TrieVectors,
+};
 use dilf4s_core::hash::{Digest, DomainTag, Sha256, TaggedHash};
 use dilf4s_core::value::Value;
 use dilf4s_proofs::Bits;
@@ -516,4 +518,23 @@ fn deep_proofs_do_not_recurse() {
     assert_eq!(verified.prefix(&[]).unwrap().len(), depth as usize + 1);
     assert_eq!(verified.range(&[], None).unwrap().len(), depth as usize + 1);
     drop(p);
+}
+
+/// Every `malformed` row: decoding refuses the mode-free rules as `Encoding` (the branch invariant among them), and
+/// verification against the root the records hash to refuses the mode's rules as `InvalidProof`.
+#[test]
+fn malformed_vectors() {
+    let v: TrieVectors = load("trie_v1.json");
+    let t = TrieHashing::<H>::new();
+    assert!(v.malformed.len() >= 10, "{} malformed rows", v.malformed.len());
+    for c in &v.malformed {
+        let kind = TrieProof::<H>::from_value(&cbor::decode(&bytes(&c.cbor)).unwrap())
+            .and_then(|p| p.verify(&t, mode_of(&c.mode), &d(&c.root)).map(|_| ()))
+            .map_or_else(|e| e.kind(), |()| "accepted");
+        let expected = match c.error {
+            TrieMalformedError::Encoding => "Encoding",
+            TrieMalformedError::InvalidProof => "InvalidProof",
+        };
+        assert_eq!(kind, expected, "{}", c.name);
+    }
 }

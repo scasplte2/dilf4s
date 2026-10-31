@@ -151,11 +151,11 @@ export class ConsistencyProof {
     return this.#path.map(copyBytes);
   }
 
-  /** As Scala's `ConsistencyProof.from`, sizes out of order are `IndexOutOfRange` (the verifier says `InvalidSizes`). */
+  /** Sizes out of order, or outside the tree-index range, are `InvalidSizes`, as in Scala and the verifier. */
   static of(oldSize: bigint, newSize: bigint, path: readonly Uint8Array[]): Result<ConsistencyProof, MerkleError> {
     return oldSize >= 0n && oldSize <= newSize && withinIndex(newSize)
       ? ok(new ConsistencyProof(oldSize, newSize, path))
-      : err({ kind: "IndexOutOfRange", index: oldSize, size: newSize });
+      : err({ kind: "InvalidSizes", oldSize, newSize });
   }
 
   /** A proof from its canonical value (`merkle-consistency`), its digests sized for `hashing`. */

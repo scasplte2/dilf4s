@@ -268,3 +268,17 @@ describe("snapshots and replicas", () => {
     expect(expectErr(one.applyDelta({ ...d2, upserts: [[k, big]] }), "too large").kind).toBe("TooLarge");
   });
 });
+
+describe("versioned_trie_v1.json version keys", () => {
+  it("the default key is int_to_bytes [v, 8], and stops at 2^63 - 1 both ways", () => {
+    const k = versioned.VersionKey.long;
+    expect(vectors.versionKeys.some((c) => !c.valid)).toBe(true);
+    for (const c of vectors.versionKeys) {
+      const encoded = k.encode(c.version);
+      const decoded = k.decode(bytes(c.key));
+      expect(c.key, `version ${c.version.toString()}`).toBe(c.version.toString(16).padStart(16, "0"));
+      expect(encoded.ok ? toHex(encoded.value) : "refused", `encode ${c.version.toString()}`).toBe(c.valid ? c.key : "refused");
+      expect(decoded.ok ? decoded.value : "refused", `decode ${c.key}`).toBe(c.valid ? c.version : "refused");
+    }
+  });
+});

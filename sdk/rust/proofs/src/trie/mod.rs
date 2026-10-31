@@ -69,7 +69,7 @@ pub enum TrieError {
 }
 
 impl TrieError {
-    /// The Scala case-class name of this kind (`NotCovered` has none in Scala's `TrieError`).
+    /// The Scala case-class name of this kind.
     pub const fn kind(&self) -> &'static str {
         match self {
             Self::InvalidKey { .. } => "InvalidKey",

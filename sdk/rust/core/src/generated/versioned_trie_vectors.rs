@@ -29,6 +29,8 @@ pub struct VersionedTrieVectors {
     pub snapshot: VtSnapshot,
     /// The `stateKeys` entry.
     pub state_keys: Vec<VtStateKey>,
+    /// The `versionKeys` entry.
+    pub version_keys: Vec<VtVersionKey>,
 }
 
 impl c::Model for VersionedTrieVectors {
@@ -46,11 +48,12 @@ impl c::Model for VersionedTrieVectors {
             c::field("proofs", &c::VecOf { element: c::ModelOf::<VtProof>::NEW, min: 0, max: None }, &self.proofs, inner)?,
             c::field("snapshot", &c::ModelOf::<VtSnapshot>::NEW, &self.snapshot, inner)?,
             c::field("stateKeys", &c::VecOf { element: c::ModelOf::<VtStateKey>::NEW, min: 0, max: None }, &self.state_keys, inner)?,
+            c::field("versionKeys", &c::VecOf { element: c::ModelOf::<VtVersionKey>::NEW, min: 0, max: None }, &self.version_keys, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys", "versionKeys"])?;
         fields.required("spec", &c::LiteralText("docs/specs/versioned-trie.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         fields.required("hash", &c::LiteralText("SHA-256"))?;
@@ -62,7 +65,8 @@ impl c::Model for VersionedTrieVectors {
         let f8 = fields.required("proofs", &c::VecOf { element: c::ModelOf::<VtProof>::NEW, min: 0, max: None })?;
         let f9 = fields.required("snapshot", &c::ModelOf::<VtSnapshot>::NEW)?;
         let f10 = fields.required("stateKeys", &c::VecOf { element: c::ModelOf::<VtStateKey>::NEW, min: 0, max: None })?;
-        Ok(Self { width: f3, empty_state_root: f4, head: f5, commits: f6, root: f7, proofs: f8, snapshot: f9, state_keys: f10 })
+        let f11 = fields.required("versionKeys", &c::VecOf { element: c::ModelOf::<VtVersionKey>::NEW, min: 0, max: None })?;
+        Ok(Self { width: f3, empty_state_root: f4, head: f5, commits: f6, root: f7, proofs: f8, snapshot: f9, state_keys: f10, version_keys: f11 })
     }
 }
 
@@ -407,5 +411,35 @@ impl c::Model for VtVersion {
         let f0 = fields.optional("version", &c::UINT)?;
         let f1 = fields.optional("stateRoot", &HEX)?;
         Ok(Self { version: f0, state_root: f1 })
+    }
+}
+
+/// `vt-version-key` (`shared/schemas/versioned-trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtVersionKey {
+    /// The `version` entry.
+    pub version: u64,
+    /// The `key` entry.
+    pub key: Hex,
+    /// The `valid` entry.
+    pub valid: bool,
+}
+
+impl c::Model for VtVersionKey {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("version", &c::UINT, &self.version, inner)?,
+            c::field("key", &HEX, &self.key, inner)?,
+            c::field("valid", &c::Bool, &self.valid, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["version", "key", "valid"])?;
+        let f0 = fields.required("version", &c::UINT)?;
+        let f1 = fields.required("key", &HEX)?;
+        let f2 = fields.required("valid", &c::Bool)?;
+        Ok(Self { version: f0, key: f1, valid: f2 })
     }
 }

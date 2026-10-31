@@ -242,6 +242,174 @@ impl c::Model for IcarusVector {
     }
 }
 
+/// `key-decoding-case` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyDecodingCase {
+    /// The `scheme` entry.
+    pub scheme: String,
+    /// The `name` entry.
+    pub name: String,
+    /// The `part` entry.
+    pub part: KeyPart,
+    /// The `bytes` entry.
+    pub bytes: Hex,
+    /// The `result` entry.
+    pub result: KeyDecodingResult,
+}
+
+impl c::Model for KeyDecodingCase {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("scheme", &c::Text, &self.scheme, inner)?,
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("part", &c::ModelOf::<KeyPart>::NEW, &self.part, inner)?,
+            c::field("bytes", &HEX, &self.bytes, inner)?,
+            c::field("result", &c::ModelOf::<KeyDecodingResult>::NEW, &self.result, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["scheme", "name", "part", "bytes", "result"])?;
+        let f0 = fields.required("scheme", &c::Text)?;
+        let f1 = fields.required("name", &c::Text)?;
+        let f2 = fields.required("part", &c::ModelOf::<KeyPart>::NEW)?;
+        let f3 = fields.required("bytes", &HEX)?;
+        let f4 = fields.required("result", &c::ModelOf::<KeyDecodingResult>::NEW)?;
+        Ok(Self { scheme: f0, name: f1, part: f2, bytes: f3, result: f4 })
+    }
+}
+
+/// `key-decoding-result` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeyDecodingResult {
+    /// The text `accepted`.
+    Accepted,
+    /// The text `InvalidEncoding`.
+    InvalidEncoding,
+    /// The text `InvalidKey`.
+    InvalidKey,
+}
+
+impl c::Model for KeyDecodingResult {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Accepted => Ok(c::Value::text("accepted")),
+            Self::InvalidEncoding => Ok(c::Value::text("InvalidEncoding")),
+            Self::InvalidKey => Ok(c::Value::text("InvalidKey")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["accepted", "InvalidEncoding", "InvalidKey"])? {
+            c::Alternative::Text(0) => Ok(Self::Accepted),
+            c::Alternative::Text(1) => Ok(Self::InvalidEncoding),
+            c::Alternative::Text(2) => Ok(Self::InvalidKey),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+/// `key-part` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeyPart {
+    /// The text `signingKey`.
+    SigningKey,
+    /// The text `verifyingKey`.
+    VerifyingKey,
+}
+
+impl c::Model for KeyPart {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::SigningKey => Ok(c::Value::text("signingKey")),
+            Self::VerifyingKey => Ok(c::Value::text("verifyingKey")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["signingKey", "verifyingKey"])? {
+            c::Alternative::Text(0) => Ok(Self::SigningKey),
+            c::Alternative::Text(1) => Ok(Self::VerifyingKey),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+/// `path-case` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PathCase {
+    /// The `path` entry.
+    pub path: String,
+    /// The `result` entry.
+    pub result: PathResult,
+}
+
+impl c::Model for PathCase {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("path", &c::Text, &self.path, inner)?,
+            c::field("result", &c::ModelOf::<PathResult>::NEW, &self.result, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["path", "result"])?;
+        let f0 = fields.required("path", &c::Text)?;
+        let f1 = fields.required("result", &c::ModelOf::<PathResult>::NEW)?;
+        Ok(Self { path: f0, result: f1 })
+    }
+}
+
+/// `path-indices` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PathIndices {
+    /// The `indices` entry.
+    pub indices: Vec<u64>,
+}
+
+impl c::Model for PathIndices {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("indices", &c::VecOf { element: c::UINT, min: 0, max: None }, &self.indices, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["indices"])?;
+        let f0 = fields.required("indices", &c::VecOf { element: c::UINT, min: 0, max: None })?;
+        Ok(Self { indices: f0 })
+    }
+}
+
+/// `path-result` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PathResult {
+    /// A [`PathIndices`].
+    PathIndices(PathIndices),
+    /// The text `invalid`.
+    Invalid,
+}
+
+impl c::Model for PathResult {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::PathIndices(a) => c::Model::to_value_at(a, depth),
+            Self::Invalid => Ok(c::Value::text("invalid")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[(&["indices"], &["indices"])], &["invalid"])? {
+            c::Alternative::Record(0) => <PathIndices as c::Model>::from_value(value).map(Self::PathIndices),
+            c::Alternative::Text(0) => Ok(Self::Invalid),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
 /// `signed-message` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignedMessage {
@@ -347,6 +515,10 @@ pub struct SigningVectors {
     pub bls_pop: Vec<BlsPopVector>,
     /// The `verification` entry.
     pub verification: Vec<VerificationCase>,
+    /// The `keyDecoding` entry.
+    pub key_decoding: Vec<KeyDecodingCase>,
+    /// The `paths` entry.
+    pub paths: Vec<PathCase>,
 }
 
 impl c::Model for SigningVectors {
@@ -363,11 +535,13 @@ impl c::Model for SigningVectors {
             c::field("ed25519Bip32", &c::ModelOf::<IcarusVector>::NEW, &self.ed25519_bip32, inner)?,
             c::field("blsPop", &c::VecOf { element: c::ModelOf::<BlsPopVector>::NEW, min: 0, max: None }, &self.bls_pop, inner)?,
             c::field("verification", &c::VecOf { element: c::ModelOf::<VerificationCase>::NEW, min: 0, max: None }, &self.verification, inner)?,
+            c::field("keyDecoding", &c::VecOf { element: c::ModelOf::<KeyDecodingCase>::NEW, min: 0, max: None }, &self.key_decoding, inner)?,
+            c::field("paths", &c::VecOf { element: c::ModelOf::<PathCase>::NEW, min: 0, max: None }, &self.paths, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "randomness", "signing", "bip39", "slip10Ed25519", "bip32Secp256k1", "ed25519Bip32", "blsPop", "verification"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "randomness", "signing", "bip39", "slip10Ed25519", "bip32Secp256k1", "ed25519Bip32", "blsPop", "verification", "keyDecoding", "paths"])?;
         fields.required("spec", &c::LiteralText("docs/specs/signing.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         let f2 = fields.required("randomness", &HEX)?;
@@ -378,7 +552,9 @@ impl c::Model for SigningVectors {
         let f7 = fields.required("ed25519Bip32", &c::ModelOf::<IcarusVector>::NEW)?;
         let f8 = fields.required("blsPop", &c::VecOf { element: c::ModelOf::<BlsPopVector>::NEW, min: 0, max: None })?;
         let f9 = fields.required("verification", &c::VecOf { element: c::ModelOf::<VerificationCase>::NEW, min: 0, max: None })?;
-        Ok(Self { randomness: f2, signing: f3, bip39: f4, slip10_ed25519: f5, bip32_secp256k1: f6, ed25519_bip32: f7, bls_pop: f8, verification: f9 })
+        let f10 = fields.required("keyDecoding", &c::VecOf { element: c::ModelOf::<KeyDecodingCase>::NEW, min: 0, max: None })?;
+        let f11 = fields.required("paths", &c::VecOf { element: c::ModelOf::<PathCase>::NEW, min: 0, max: None })?;
+        Ok(Self { randomness: f2, signing: f3, bip39: f4, slip10_ed25519: f5, bip32_secp256k1: f6, ed25519_bip32: f7, bls_pop: f8, verification: f9, key_decoding: f10, paths: f11 })
     }
 }
 

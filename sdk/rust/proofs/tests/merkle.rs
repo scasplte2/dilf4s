@@ -20,7 +20,7 @@ mod common;
 use common::{bytes, load};
 use dilf4s_core::cbor;
 use dilf4s_core::commitment::value_commitment;
-use dilf4s_core::generated::merkle_vectors::MerkleVectors;
+use dilf4s_core::generated::merkle_vectors::{MerkleDecodeError, MerkleProofKind, MerkleVectors};
 use dilf4s_core::hash::{Digest, DomainTag, Sha256, TaggedHash};
 use dilf4s_core::value::Value;
 use dilf4s_proofs::merkle::{
@@ -228,7 +228,7 @@ fn tampered_and_malformed_proofs() {
     assert_eq!(InclusionProof::<H>::from_value(&Value::int(1)).unwrap_err().kind(), "Encoding");
     assert_eq!(InclusionProof::<H>::new(0, 0, vec![]).unwrap_err().kind(), "IndexOutOfRange");
 
-    // consistency: old > new is IndexOutOfRange at decode (as Scala); the empty-tree rules; a wrong-size head is false
+    // consistency: old > new is InvalidSizes at decode (as Scala); the empty-tree rules; a wrong-size head is false
     let c = value(&t.consistency[3]);
     let mut cm = match &c {
         Value::Map(m) => m.clone().into_entries(),
@@ -239,7 +239,7 @@ fn tampered_and_malformed_proofs() {
             *x = Value::int(8);
         }
     }
-    assert_eq!(ConsistencyProof::<H>::from_value(&Value::map(cm).unwrap()).unwrap_err().kind(), "IndexOutOfRange");
+    assert_eq!(ConsistencyProof::<H>::from_value(&Value::map(cm).unwrap()).unwrap_err().kind(), "InvalidSizes");
     let zero = ConsistencyProof::<H>::new(0, 7, vec![]).unwrap();
     assert!(verify_consistency(&tagged, &tagged.empty_hash(), &root, &zero).unwrap());
     assert!(!verify_consistency(&tagged, &root, &root, &zero).unwrap());
@@ -262,4 +262,25 @@ fn heads_decode_from_values() {
         Value::map([("root".into(), Value::bytes(root)), ("size".into(), Value::int(1)), ("x".into(), Value::int(1))])
             .unwrap();
     assert_eq!(TreeHead::<H>::from_value(&extra).unwrap_err().kind(), "Encoding");
+}
+
+/// Every `malformed` row: the decoder refuses it with the kind the vectors record.
+#[test]
+fn malformed_vectors() {
+    let v: MerkleVectors = load("merkle_v1.json");
+    assert!(v.malformed.len() >= 10, "{} malformed rows", v.malformed.len());
+    for c in &v.malformed {
+        let proof = value(&c.cbor);
+        let kind = match c.kind {
+            MerkleProofKind::Inclusion => InclusionProof::<H>::from_value(&proof).map(|_| ()),
+            MerkleProofKind::Consistency => ConsistencyProof::<H>::from_value(&proof).map(|_| ()),
+        }
+        .map_or_else(|e| e.kind(), |()| "accepted");
+        let expected = match c.error {
+            MerkleDecodeError::IndexOutOfRange => "IndexOutOfRange",
+            MerkleDecodeError::InvalidSizes => "InvalidSizes",
+            MerkleDecodeError::Encoding => "Encoding",
+        };
+        assert_eq!(kind, expected, "{}", c.name);
+    }
 }

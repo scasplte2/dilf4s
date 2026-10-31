@@ -43,9 +43,13 @@ export class ChildIndex {
   }
 }
 
-const SEGMENT = /^([0-9]{1,10})(['h]?)$/;
+// ASCII digits (leading zeros allowed, as in Scala and Rust), then an optional hardening mark
+const SEGMENT = /^([0-9]+)(['h]?)$/;
 
-/** `m/44'/0'/0'/0/7` (or `h` for `'`), relative to the master key; `m` alone is the master. */
+/**
+ * `m/44'/0'/0'/0/7` (or `h` for `'`), relative to the master key; `m` alone is the master. Nothing is trimmed, and an
+ * empty segment or any character but ASCII digits and a final `'` or `h` is `InvalidDerivation` (`signing.md` 3).
+ */
 export function parsePath(path: string): Result<readonly ChildIndex[], KeyError> {
   const [head, ...rest] = path.split("/");
   if (head !== "m") return err(invalid("path must start with m"));

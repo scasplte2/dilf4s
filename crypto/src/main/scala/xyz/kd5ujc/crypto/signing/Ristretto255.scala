@@ -47,11 +47,15 @@ object Ristretto255Schnorr {
   implicit val codec: SchemeCodec[Ristretto255Schnorr] = new SchemeCodec[Ristretto255Schnorr] {
     val name: String = "ristretto255-Schnorr"
     def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[Ristretto255Schnorr]] =
-      Either.cond(
-        bytes.size == 32L && canonicalScalar(bytes).exists(s => !s.equals(Scalar.ZERO)),
-        new SigningKey[Ristretto255Schnorr](bytes),
-        CryptoError.InvalidKey("ristretto255 secret key must be a canonical non-zero scalar")
-      )
+      SchemeCodec
+        .sized("ristretto255 signing key", 32, bytes)
+        .flatMap(b =>
+          Either.cond(
+            canonicalScalar(b).exists(s => !s.equals(Scalar.ZERO)),
+            new SigningKey[Ristretto255Schnorr](b),
+            CryptoError.InvalidKey("ristretto255 secret key must be a canonical non-zero scalar")
+          )
+        )
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[Ristretto255Schnorr]] =
       if (bytes.size != 32L) CryptoError.InvalidEncoding("ristretto255 verifying key", s"expected 32 bytes, got ${bytes.size}").asLeft
       else

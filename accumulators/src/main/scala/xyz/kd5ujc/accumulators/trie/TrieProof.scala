@@ -134,6 +134,24 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
       })
     }
   }
+
+  // ---- claims, as the JLVM's trie operations check them (docs/specs/jlvm.md §6): not covered is a typed error
+
+  /** Whether `path` holds the value hash `claim` (`None`: is absent); `NotCovered` if a stub lies on the path. */
+  def holds(path: BitVector, claim: Option[Digest[H]]): Either[TrieError, Boolean] =
+    lookup(path) match {
+      case Lookup.Present(h) => claim.contains(h).asRight
+      case Lookup.Absent     => claim.isEmpty.asRight
+      case Lookup.NotCovered => TrieError.NotCovered("the key").asLeft
+    }
+
+  /** Whether `claimed`, in key order, is exactly the listing under `p`; `NotCovered` if a stub lies under it. */
+  def listsPrefix(p: BitVector, claimed: List[(BitVector, Digest[H])]): Either[TrieError, Boolean] =
+    prefix(p).toRight(TrieError.NotCovered("the prefix")).map(_ == claimed)
+
+  /** Whether `claimed`, in key order, is exactly the listing of `[from, until)`; `NotCovered` if a stub meets it. */
+  def listsRange(from: BitVector, until: Option[BitVector], claimed: List[(BitVector, Digest[H])]): Either[TrieError, Boolean] =
+    range(from, until).toRight(TrieError.NotCovered("the range")).map(_ == claimed)
 }
 
 /** Key-interval arithmetic in bitwise lexicographic order, where a proper prefix sorts before its extensions. */

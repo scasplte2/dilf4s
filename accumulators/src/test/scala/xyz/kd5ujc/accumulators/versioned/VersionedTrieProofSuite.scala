@@ -66,7 +66,13 @@ object VersionedTrieProofSuite extends SimpleIOSuite {
           .same(Right(true), state.holds(key("fiber/1"), Some(int(1))))
           .and(expect.same(Right(false), state.holds(key("fiber/1"), Some(int(2)))))
           .and(expect.same(Right(true), state.holds(key("fiber/3"), None)))
+          // a null claims absence, as in trie_verify (and the SDKs): it never holds at a present key
+          .and(expect.same(Right(true), state.holds(key("fiber/3"), Some(CanonicalValue.CNull))))
+          .and(expect.same(Right(false), state.holds(key("fiber/1"), Some(CanonicalValue.CNull))))
           .and(expect.same(Left(VersionedTrieError.NotCovered("key oracle/a/b")), state.lookup(key("oracle/a/b"))))
+          .and(
+            expect.same(Left(VersionedTrieError.NotCovered("key oracle/a/b")), state.holds(key("oracle/a/b"), Some(CanonicalValue.CNull)))
+          )
     }
   }
 

@@ -320,6 +320,32 @@ object TrieSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  test("claims: a stub on the query is TrieError.NotCovered, never true or false") {
+    forall(twoKeyOps) {
+      case (ops, a, b) =>
+        val m = model(ops)
+        val t = build(fixed2, ops)
+        val v = t.prove(List(a)).flatMap(p => TrieProofs.verify(fixed2, t.root, p)).toOption.get
+        val listing = m.toList.sortBy(_._1).map { case (k, h) => (k.bits, h) }
+        val covered = v.lookup(b.bits) != Lookup.NotCovered
+        expect
+          .same(Right(true), v.holds(a.bits, m.get(a)))
+          .and(expect.same(Right(false), v.holds(a.bits, Some(T.value(hex"ff")))))
+          .and(expect(covered || v.holds(b.bits, m.get(b)) == Left(TrieError.NotCovered("the key")), s"key ${b.toHex}"))
+          .and(expect(v.listsRange(BitVector.empty, None, listing).fold(_ == TrieError.NotCovered("the range"), _ => m.size <= 1)))
+          .and(expect(v.listsPrefix(BitVector.empty, listing).fold(_ == TrieError.NotCovered("the prefix"), _ => m.size <= 1)))
+    }
+  }
+
+  pureTest("the branch invariant: on the wire the decoder refuses it (Encoding); in memory, verification (InvalidProof)") {
+    val leafA = ProofNode.PLeaf[Sha256](BitVector.low(15), value(1))
+    val lonely = TrieProof[Sha256](Some(ProofNode.PBranch(BitVector.empty, None, Some(leafA), None)))
+    val lonelyRoot = T.branch(BitVector.empty, None, Some(T.leaf(BitVector.low(15), value(1))), None)
+    val decoded = TrieProofs.encode(lonely).flatMap(TrieProofs.decode[Sha256])
+    expect(decoded.left.exists(_.isInstanceOf[TrieError.Encoding]), s"decoded: $decoded")
+      .and(expect(TrieProofs.verify(fixed2, lonelyRoot, lonely).left.exists(_.isInstanceOf[TrieError.InvalidProof]), "in memory"))
+  }
+
   test("a batch proof is no larger than the separate proofs combined") {
     forall(Gen.zip(opsGen(fixed2), Gen.listOfN(4, keyGen(fixed2)))) {
       case (ops, keys) =>

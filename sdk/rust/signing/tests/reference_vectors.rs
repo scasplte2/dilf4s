@@ -371,7 +371,7 @@ fn paths() {
     assert_eq!(serialized("m/44'/0/7").unwrap(), vec![0x8000_002c, 0, 7]);
     assert_eq!(serialized("m/0h").unwrap(), vec![0x8000_0000]);
     assert_eq!(serialized("m").unwrap(), Vec::<u32>::new());
-    // stricter than Scala's String.split, which drops a trailing separator: an empty segment is malformed (section 3)
+    // an empty segment is malformed (section 3), as in Scala and TypeScript
     for bad in [" m/1/ ", "m/1/", "44'/0", "m/x", "m/2147483648", "m/-1", "m//1", "m/'", "m/1''", "M/1", "m/4294967296"]
     {
         assert_eq!(path::parse(bad).unwrap_err().kind(), "InvalidDerivation", "{bad}");

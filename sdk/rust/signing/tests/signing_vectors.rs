@@ -21,10 +21,10 @@
 mod common;
 
 use common::{bytes, load};
-use dilf4s_core::generated::signing_vectors::SigningVectors;
+use dilf4s_core::generated::signing_vectors::{KeyDecodingResult, KeyPart, SigningVectors};
 use dilf4s_core::hex;
 use dilf4s_signing::keys::{bip32, bip39, icarus, path, slip10};
-use dilf4s_signing::{SchemeId, bls, ecdsa, ed25519, ristretto255, schnorr};
+use dilf4s_signing::{SchemeId, SigningError, bls, ecdsa, ed25519, ed25519_bip32, ristretto255, schnorr};
 
 /// Checks every case, collecting failures so one run reports all of them; returns the number of cases.
 fn run<T>(cases: &[T], check: impl Fn(&T) -> Result<(), String>) -> usize {
@@ -211,4 +211,39 @@ fn slip10_bip32_and_icarus_derivations() {
         ensure("Icarus signature verifies", ed25519::verify(&address_vk, &m, &sig))
     });
     assert_eq!(n, 3);
+}
+
+/// Decodes a signing key of the named scheme.
+fn signing_key_decodes(scheme: &str, b: &[u8]) -> Option<Result<(), SigningError>> {
+    Some(match scheme {
+        "Ed25519" => ed25519::SigningKey::from_bytes(b).map(|_| ()),
+        "Ed25519-BIP32" => ed25519_bip32::SigningKey::from_bytes(b).map(|_| ()),
+        "P-256-ECDSA" => ecdsa::p256::SigningKey::from_bytes(b).map(|_| ()),
+        "secp256k1-ECDSA" => ecdsa::secp256k1::SigningKey::from_bytes(b).map(|_| ()),
+        "BIP-340" => schnorr::bip340::SigningKey::from_bytes(b).map(|_| ()),
+        "secp256k1-tagged-Schnorr" => schnorr::tagged::SigningKey::from_bytes(b).map(|_| ()),
+        "ristretto255-Schnorr" => ristretto255::SigningKey::from_bytes(b).map(|_| ()),
+        "BLS12-381-PoP" => bls::SigningKey::from_bytes(b).map(|_| ()),
+        _ => return None,
+    })
+}
+
+/// Every `keyDecoding` row for a signing key: a wrong length is `InvalidEncoding`, an out-of-range scalar (or an
+/// unclamped `kL`) `InvalidKey`.
+#[test]
+fn signing_key_decoding() {
+    let v: SigningVectors = load("signing_v1.json");
+    let rows: Vec<_> = v.key_decoding.iter().filter(|c| c.part == KeyPart::SigningKey).collect();
+    let n = run(&rows, |c| {
+        let actual = signing_key_decodes(&c.scheme, &bytes(&c.bytes))
+            .ok_or_else(|| format!("unknown scheme {}", c.scheme))?
+            .map_or_else(|e| e.kind(), |()| "accepted");
+        let expected = match c.result {
+            KeyDecodingResult::Accepted => "accepted",
+            KeyDecodingResult::InvalidEncoding => "InvalidEncoding",
+            KeyDecodingResult::InvalidKey => "InvalidKey",
+        };
+        same(&format!("{} {}", c.scheme, c.name), expected, actual)
+    });
+    assert!(n >= 40, "{n} signing-key rows");
 }

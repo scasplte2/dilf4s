@@ -126,7 +126,7 @@ describe("JLVM merkle_verify", () => {
     expect(expectErr(merkle.merkleVerify(tagged, { root: root.slice(1), size: 5n }, Value.null, proof2), "fails").kind).toBe("Encoding");
     expect(expectErr(merkle.merkleVerify(tagged, { root, size: -1n }, Value.null, proof2), "fails").kind).toBe("Encoding");
     const backwards = models.merkle.MerkleConsistency.encode({ old: 3n, new: 2n, path: [] });
-    expect(expectErr(merkle.merkleConsistencyVerify(tagged, { root, size: 3n }, { root, size: 2n }, expectOk(backwards, "encodes")), "fails").kind).toBe("IndexOutOfRange");
+    expect(expectErr(merkle.merkleConsistencyVerify(tagged, { root, size: 3n }, { root, size: 2n }, expectOk(backwards, "encodes")), "fails")).toEqual({ kind: "InvalidSizes", oldSize: 3n, newSize: 2n });
   });
 
   it("consistency: heads whose sizes differ from the proof's are false", () => {
@@ -141,5 +141,16 @@ describe("JLVM merkle_verify", () => {
     const p = valueOf(tree.rfc6962Inclusion[2] ?? "");
     expect(expectOk(merkle.merkleVerify(rfc, { root: rfcTree, size: 5n }, leaves[2] ?? new Uint8Array(0), p), "verdict")).toBe(true);
     expect(expectOk(merkle.merkleVerify(tagged, { root: rfcTree, size: 5n }, BytesValue.of(leaves[2] ?? new Uint8Array(0)), p), "verdict")).toBe(false);
+  });
+});
+
+describe("merkle_v1.json malformed proofs", () => {
+  it("each is refused at decode with the recorded kind", () => {
+    expect(vectors.malformed.length).toBeGreaterThan(10);
+    for (const c of vectors.malformed) {
+      const proof = valueOf(c.cbor);
+      const r = c.kind === "inclusion" ? merkle.InclusionProof.decode(tagged, proof) : merkle.ConsistencyProof.decode(tagged, proof);
+      expect(r.ok ? "accepted" : r.error.kind, c.name).toBe(c.error);
+    }
   });
 });

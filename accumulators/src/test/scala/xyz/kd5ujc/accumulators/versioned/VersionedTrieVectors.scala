@@ -59,6 +59,34 @@ object VersionedTrieVectors {
       )
     }
 
+  /**
+   * The default version key at its edges: `key` is `int_to_bytes [version, 8]` (a JLVM program builds those bytes for
+   * any version below 2^64), and `valid` says whether the version key accepts it, encoding and decoding alike. It
+   * stops at 2^63 - 1 (section 2).
+   */
+  val versionKeyCases: List[BigInt] =
+    List(
+      BigInt(0),
+      BigInt(1),
+      BigInt(255),
+      BigInt(256),
+      BigInt(2).pow(32),
+      BigInt(Long.MaxValue),
+      BigInt(2).pow(63),
+      BigInt(2).pow(63) + 1,
+      BigInt(2).pow(64) - 1
+    )
+
+  private def versionKeyCase(v: BigInt): Json = {
+    val key = ByteVector.view(v.toByteArray).takeRight(8).padLeft(8)
+    val decoded = VersionKey.long.decode(key)
+    val encoded =
+      Option.when(v.isValidLong)(v.toLong).toRight(VersionedTrieError.InvalidVersion("not a Long")).flatMap(VersionKey.long.encode)
+    require(decoded.isRight == encoded.isRight, s"version $v: decoding and encoding disagree")
+    require(decoded.forall(d => BigInt(d) == v) && encoded.forall(_ == key), s"version $v: the key does not round-trip")
+    Json.obj("version" -> v.asJson, "key" -> hex(key), "valid" -> decoded.isRight.asJson)
+  }
+
   private def entry(k: StateKey, v: CanonicalValue): Json = Json.obj("key" -> k.value.asJson, "value" -> cbor(v))
 
   private def claim(k: StateKey, v: Option[CanonicalValue]): Json =
@@ -225,7 +253,8 @@ object VersionedTrieVectors {
           "root"           -> hex(root.bytes),
           "proofs"         -> List(currentJ, nsJ, pastJ, v255J, v3J, as299J, as0J, hpJ, vsJ, vtJ).asJson,
           "snapshot"       -> Json.obj("chunkEntries" -> 2.asJson, "chunks" -> wire.map(hex).asJson),
-          "stateKeys"      -> stateKeyCases.map(stateKeyCase).asJson
+          "stateKeys"      -> stateKeyCases.map(stateKeyCase).asJson,
+          "versionKeys"    -> versionKeyCases.map(versionKeyCase).asJson
         )
     }.flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO])
 

@@ -4,7 +4,7 @@ import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.ValueCommitment
 import xyz.kd5ujc.accumulators.merkle.{MerkleCodec, MerkleError, MerkleHashing, MerkleVerifier}
-import xyz.kd5ujc.accumulators.trie.{KeyMode, Lookup, TrieError, TrieHashing, TrieProofs, VerifiedProof}
+import xyz.kd5ujc.accumulators.trie.{KeyMode, TrieError, TrieHashing, TrieProofs, VerifiedProof}
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.hash.{Digest, Sha256}
@@ -162,11 +162,7 @@ object ProofOps {
         mode(op)(md).flatMap(m => (path(op, m)(key), verified(op, m, root, proof)).tupled).flatMap {
           case (_, scala.None) => False.asRight
           case (p, scala.Some(v)) =>
-            v.lookup(p) match {
-              case Lookup.Present(h) => Values.bool(value != CNull && valueHash(value) == h).asRight
-              case Lookup.Absent     => Values.bool(value == CNull).asRight
-              case Lookup.NotCovered => crypto(op)("the proof does not reach this key").asLeft
-            }
+            v.holds(p, Option.when(value != CNull)(valueHash(value))).bimap(e => crypto(op)(e.toString), Values.bool)
         }
       case _ => JlvmError.Arity(op.wire, "takes [mode, root, key, value, proof]").asLeft
     }
@@ -181,9 +177,8 @@ object ProofOps {
       case other => JlvmError.Type(op.wire, s"entries is an array, got ${Values.kind(other)}").asLeft
     }
 
-  /** The claimed entries, in key order, are exactly what the proof lists; a listing that reaches a stub is no answer. */
-  private def listing(op: Op, claimed: List[(BitVector, Digest[H])], proven: Option[List[(BitVector, Digest[H])]]): Result =
-    proven.fold[Result](crypto(op)("the proof does not cover the whole query").asLeft)(l => Values.bool(l == claimed).asRight)
+  /** Whether the claimed entries, in key order, are exactly the proven listing; one that reaches a stub is no answer. */
+  private def listing(op: Op)(lists: Either[TrieError, Boolean]): Result = lists.bimap(e => crypto(op)(e.toString), Values.bool)
 
   private def triePrefix(op: Op, args: Vector[CanonicalValue]): Result =
     args match {
@@ -191,7 +186,7 @@ object ProofOps {
         mode(op)(md).flatMap { m =>
           (bytes(op, "a prefix")(prefix), entries(op, m)(es), verified(op, m, root, proof)).tupled.flatMap {
             case (_, _, scala.None)            => False.asRight
-            case (pre, claimed, scala.Some(v)) => listing(op, claimed, v.prefix(pre.bits))
+            case (pre, claimed, scala.Some(v)) => listing(op)(v.listsPrefix(pre.bits, claimed))
           }
         }
       case _ => JlvmError.Arity(op.wire, "takes [mode, root, prefix, entries, proof]").asLeft
@@ -207,7 +202,7 @@ object ProofOps {
         mode(op)(md).flatMap { m =>
           (bytes(op, "from")(from), upper, entries(op, m)(es), verified(op, m, root, proof)).tupled.flatMap {
             case (_, _, _, scala.None)            => False.asRight
-            case (lo, hi, claimed, scala.Some(v)) => listing(op, claimed, v.range(lo.bits, hi))
+            case (lo, hi, claimed, scala.Some(v)) => listing(op)(v.listsRange(lo.bits, hi, claimed))
           }
         }
       case _ => JlvmError.Arity(op.wire, "takes [mode, root, from, until, entries, proof]").asLeft

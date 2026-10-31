@@ -221,6 +221,31 @@ object SignatureSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  pureTest("key decoders: a wrong length is InvalidEncoding, bytes that are no key InvalidKey (never BackendFailure)") {
+    def kind(r: Either[CryptoError, ?]): String = r.fold(_.productPrefix, _ => "accepted")
+    val p = hex"fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
+    val vk = backend.ecdsaPublicKeyOf.verifyingKey(backend.ecdsaSeedDerivation.fromSeed(ByteVector.fill(32)(7)).toOption.get.signing).bytes
+    val shortKeys = List(
+      "P-256"         -> kind(P256Ecdsa.codec.signingKey(ByteVector.low(31))),
+      "secp256k1"     -> kind(backend.ecdsaCodec.signingKey(ByteVector.low(33))),
+      "BIP-340"       -> kind(backend.bip340Codec.signingKey(ByteVector.empty)),
+      "ristretto255"  -> kind(Ristretto255Schnorr.codec.signingKey(ByteVector.low(31))),
+      "Ed25519-BIP32" -> kind(xyz.kd5ujc.crypto.keys.Ed25519Bip32.codec.signingKey(ByteVector.low(63)))
+    )
+    val notKeys = List(
+      "secp256k1 zero scalar"      -> kind(backend.ecdsaCodec.signingKey(ByteVector.low(32))),
+      "BIP-340 x = p"              -> kind(backend.bip340Codec.verifyingKey(p)),
+      "tagged Schnorr x = p"       -> kind(backend.taggedSchnorrCodec.verifyingKey(p)),
+      "secp256k1 x = p"            -> kind(backend.ecdsaCodec.verifyingKey(hex"02" ++ p)),
+      "secp256k1 tag 04"           -> kind(backend.ecdsaCodec.verifyingKey(hex"04" ++ vk.drop(1))),
+      "secp256k1 tag 05"           -> kind(backend.ecdsaCodec.verifyingKey(hex"05" ++ vk.drop(1))),
+      "P-256 tag 00"               -> kind(P256Ecdsa.codec.verifyingKey(hex"00" ++ vk.drop(1))),
+      "Ed25519-BIP32 kL unclamped" -> kind(xyz.kd5ujc.crypto.keys.Ed25519Bip32.codec.signingKey(ByteVector.fill(64)(1)))
+    )
+    shortKeys.foldMap { case (what, k) => expect.same("InvalidEncoding", k).and(expect(k == "InvalidEncoding", what)) } |+|
+    notKeys.foldMap { case (what, k) => expect.same("InvalidKey", k).and(expect(k == "InvalidKey", what)) }
+  }
+
   pureTest("crypto domain tags satisfy the tag grammar") {
     Secp256k1.Tags.map(t => expect(xyz.kd5ujc.core.hash.DomainTag(t).isRight, t)).reduce(_ and _)
   }

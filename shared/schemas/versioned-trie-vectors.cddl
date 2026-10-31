@@ -14,7 +14,13 @@ versioned-trie-vectors = {
   "proofs": [* vt-proof],
   "snapshot": vt-snapshot,
   "stateKeys": [* vt-state-key],
+  "versionKeys": [* vt-version-key],
 }
+
+; The default version key (section 2) at its edges. "key" is "version" as 8 unsigned big-endian bytes, the JLVM's
+; int_to_bytes [version, 8]; "valid" says whether the version key accepts it (versions 0..2^63-1), encoding the
+; version and decoding the key alike.
+vt-version-key = { "version": uint, "key": hex, "valid": bool }
 
 ; A candidate state key: whether it matches versioned-trie.cddl's state-key pattern ("schema"), and whether the full
 ; grammar of section 2, with its length and segment limits, accepts it ("valid").

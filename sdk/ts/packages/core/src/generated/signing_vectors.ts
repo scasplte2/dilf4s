@@ -232,6 +232,159 @@ export const IcarusVector: c.Codec<IcarusVector> = {
   },
 };
 
+/** `key-decoding-case` (`shared/schemas/signing-vectors.cddl`). */
+export interface KeyDecodingCase {
+  readonly scheme: string;
+  readonly name: string;
+  readonly part: KeyPart;
+  readonly bytes: Hex;
+  readonly result: KeyDecodingResult;
+}
+
+export const KeyDecodingCase: c.Codec<KeyDecodingCase> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("scheme", c.text, a.scheme, e),
+        c.field("name", c.text, a.name, e),
+        c.field("part", c.defer(() => KeyPart), a.part, e),
+        c.field("bytes", c.defer(() => Hex), a.bytes, e),
+        c.field("result", c.defer(() => KeyDecodingResult), a.result, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["scheme", "name", "part", "bytes", "result"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("scheme", c.text);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("name", c.text);
+    if (!r1.ok) return r1;
+    const r2 = f.value.required("part", c.defer(() => KeyPart));
+    if (!r2.ok) return r2;
+    const r3 = f.value.required("bytes", c.defer(() => Hex));
+    if (!r3.ok) return r3;
+    const r4 = f.value.required("result", c.defer(() => KeyDecodingResult));
+    if (!r4.ok) return r4;
+    return c.ok({ scheme: r0.value, name: r1.value, part: r2.value, bytes: r3.value, result: r4.value });
+  },
+};
+
+/** `key-decoding-result` (`shared/schemas/signing-vectors.cddl`). */
+export type KeyDecodingResult = "accepted" | "InvalidEncoding" | "InvalidKey";
+
+export const KeyDecodingResult: c.Codec<KeyDecodingResult> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["InvalidEncoding", "InvalidKey", "accepted"]);
+    return c.typeMismatch("no alternative of KeyDecodingResult fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["accepted", "InvalidEncoding", "InvalidKey"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<KeyDecodingResult>("accepted");
+      case 1:
+        return c.ok<KeyDecodingResult>("InvalidEncoding");
+      case 2:
+        return c.ok<KeyDecodingResult>("InvalidKey");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
+/** `key-part` (`shared/schemas/signing-vectors.cddl`). */
+export type KeyPart = "signingKey" | "verifyingKey";
+
+export const KeyPart: c.Codec<KeyPart> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["signingKey", "verifyingKey"]);
+    return c.typeMismatch("no alternative of KeyPart fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["signingKey", "verifyingKey"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<KeyPart>("signingKey");
+      case 1:
+        return c.ok<KeyPart>("verifyingKey");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
+/** `path-case` (`shared/schemas/signing-vectors.cddl`). */
+export interface PathCase {
+  readonly path: string;
+  readonly result: PathResult;
+}
+
+export const PathCase: c.Codec<PathCase> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("path", c.text, a.path, e),
+        c.field("result", c.defer(() => PathResult), a.result, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["path", "result"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("path", c.text);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("result", c.defer(() => PathResult));
+    if (!r1.ok) return r1;
+    return c.ok({ path: r0.value, result: r1.value });
+  },
+};
+
+/** `path-indices` (`shared/schemas/signing-vectors.cddl`). */
+export interface PathIndices {
+  readonly indices: readonly bigint[];
+}
+
+export const PathIndices: c.Codec<PathIndices> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("indices", c.vector(c.uint, 0, null), a.indices, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["indices"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("indices", c.vector(c.uint, 0, null));
+    if (!r0.ok) return r0;
+    return c.ok({ indices: r0.value });
+  },
+};
+
+/** `path-result` (`shared/schemas/signing-vectors.cddl`). */
+export type PathResult = PathIndices | "invalid";
+
+export const PathResult: c.Codec<PathResult> = {
+  encode: (a, d) => {
+    if (typeof a === "string") return c.oneOfText(a, ["invalid"]);
+    const known = ["indices"];
+    if (c.hasFields(a, PathIndices, ["indices"], ["indices"], known)) return PathIndices.encode(a, d);
+    return c.typeMismatch("no alternative of PathResult fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [[["indices"], ["indices"]]], ["invalid"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return PathIndices.decode(v);
+      case 1:
+        return c.ok<PathResult>("invalid");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
 /** `signed-message` (`shared/schemas/signing-vectors.cddl`). */
 export interface SignedMessage {
   readonly message: Hex;
@@ -327,6 +480,8 @@ export interface SigningVectors {
   readonly ed25519Bip32: IcarusVector;
   readonly blsPop: readonly BlsPopVector[];
   readonly verification: readonly VerificationCase[];
+  readonly keyDecoding: readonly KeyDecodingCase[];
+  readonly paths: readonly PathCase[];
 }
 
 export const SigningVectors: c.Codec<SigningVectors> = {
@@ -343,10 +498,12 @@ export const SigningVectors: c.Codec<SigningVectors> = {
         c.field("ed25519Bip32", c.defer(() => IcarusVector), a.ed25519Bip32, e),
         c.field("blsPop", c.vector(c.defer(() => BlsPopVector), 0, null), a.blsPop, e),
         c.field("verification", c.vector(c.defer(() => VerificationCase), 0, null), a.verification, e),
+        c.field("keyDecoding", c.vector(c.defer(() => KeyDecodingCase), 0, null), a.keyDecoding, e),
+        c.field("paths", c.vector(c.defer(() => PathCase), 0, null), a.paths, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "randomness", "signing", "bip39", "slip10Ed25519", "bip32Secp256k1", "ed25519Bip32", "blsPop", "verification"]);
+    const f = c.fields(v, ["spec", "version", "randomness", "signing", "bip39", "slip10Ed25519", "bip32Secp256k1", "ed25519Bip32", "blsPop", "verification", "keyDecoding", "paths"]);
     if (!f.ok) return f;
     const r0 = f.value.required("spec", c.literalText("docs/specs/signing.md"));
     if (!r0.ok) return r0;
@@ -368,7 +525,11 @@ export const SigningVectors: c.Codec<SigningVectors> = {
     if (!r8.ok) return r8;
     const r9 = f.value.required("verification", c.vector(c.defer(() => VerificationCase), 0, null));
     if (!r9.ok) return r9;
-    return c.ok({ spec: r0.value, version: r1.value, randomness: r2.value, signing: r3.value, bip39: r4.value, slip10Ed25519: r5.value, bip32Secp256k1: r6.value, ed25519Bip32: r7.value, blsPop: r8.value, verification: r9.value });
+    const r10 = f.value.required("keyDecoding", c.vector(c.defer(() => KeyDecodingCase), 0, null));
+    if (!r10.ok) return r10;
+    const r11 = f.value.required("paths", c.vector(c.defer(() => PathCase), 0, null));
+    if (!r11.ok) return r11;
+    return c.ok({ spec: r0.value, version: r1.value, randomness: r2.value, signing: r3.value, bip39: r4.value, slip10Ed25519: r5.value, bip32Secp256k1: r6.value, ed25519Bip32: r7.value, blsPop: r8.value, verification: r9.value, keyDecoding: r10.value, paths: r11.value });
   },
 };
 

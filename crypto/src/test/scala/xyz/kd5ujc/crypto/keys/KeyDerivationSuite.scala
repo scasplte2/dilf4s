@@ -145,6 +145,14 @@ object KeyDerivationSuite extends SimpleIOSuite {
       .and(expect(ChildIndex.path("m/-1").isLeft, "negative"))
   }
 
+  pureTest("paths are strict: nothing is trimmed, segments are ASCII digits, and none is empty") {
+    // each of these was accepted before: Java's toLong takes a sign and non-ASCII digits, and the path was trimmed
+    val refused = List(" m/1", "m/1 ", "m/1\n", "m/+5", "m/-0", "m/\u0661", "m/\uff11", "m/", "m//1", "m/1/", "m/'", "m/h")
+    refused.foldMap(p => expect(ChildIndex.path(p).isLeft, s"${p.toList.map(_.toInt)} is refused")) |+|
+    expect.same(Right(List(7L, 0x80000001L)), ChildIndex.path("m/007/00000000000000000000001'").map(_.map(_.serialized))) |+|
+    expect.same(Right(Nil), ChildIndex.path("m"))
+  }
+
   // ------------------------------------------------------------------ SLIP-10 Ed25519 (vector 1)
 
   pureTest("SLIP-10 Ed25519: test vector 1") {
@@ -188,6 +196,43 @@ object KeyDerivationSuite extends SimpleIOSuite {
         .same(Right(hex"03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c"), viaPublic.map(_._1.bytes))
         .and(expect.same(viaPrivate.map(k => (backend.ecdsaPublicKeyOf.verifyingKey(k.key), k.chainCode)), viaPublic))
         .and(expect(ChildIndex.hardened(1).flatMap(bip32.publicChild(parentVk, parent.chainCode, _)).isLeft, "hardened rejected"))
+    }
+  }
+
+  test("BIP32 secp256k1: I_L = 0 is a valid tweak (the child is the parent's key); I_L >= n skips the index") {
+    Secp256k1.load[IO].map { backend =>
+      val bip32 = new Bip32Secp256k1(backend)
+      val seed = Secret(hex"000102030405060708090a0b0c0d0e0f")
+      val parent = ChildIndex.path("m/0'").flatMap(bip32.derive(seed, _)).toOption.get
+      val parentVk = backend.ecdsaPublicKeyOf.verifyingKey(parent.key)
+      val chain = ByteVector.fill(32)(0x5a)
+      val zero = ByteVector.low(32) ++ chain
+      val n = hex"fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
+      val child = bip32.childOf(parent, zero)
+      val publicChild = bip32.publicChildOf(parentVk, zero)
+      expect
+        .same(Right((parent.key.bytes, chain)), child.map(k => (k.key.bytes, k.chainCode)))
+        .and(expect.same(Right((parentVk, chain)), publicChild))
+        .and(expect(bip32.childOf(parent, n ++ chain).isLeft, "I_L = n is skipped"))
+        .and(expect(bip32.publicChildOf(parentVk, n ++ chain).isLeft, "I_L = n is skipped (CKDpub)"))
+        .and(expect(bip32.childOf(parent, (ByteVector.low(31) :+ 1.toByte) ++ chain).isRight, "I_L = 1 adds one"))
+    }
+  }
+
+  test("public derivation and extended keys need a 32-byte chain code") {
+    Secp256k1.load[IO].map { backend =>
+      val bip32 = new Bip32Secp256k1(backend)
+      val seed = Secret(hex"000102030405060708090a0b0c0d0e0f")
+      val parent = ChildIndex.path("m/0'").flatMap(bip32.derive(seed, _)).toOption.get
+      val parentVk = backend.ecdsaPublicKeyOf.verifyingKey(parent.key)
+      val icarus = Ed25519Bip32.icarus(Secret(hex"000102030405060708090a0b0c0d0e0f")).toOption.get
+      val icarusVk = Ed25519Bip32.publicKeyOf.verifyingKey(icarus.key)
+      val soft = ChildIndex.soft(1).toOption.get
+      List(parent.chainCode.take(31), parent.chainCode :+ 0.toByte, ByteVector.empty).foldMap { cc =>
+        expect(bip32.publicChild(parentVk, cc, soft).isLeft, s"BIP32 CKDpub with a ${cc.size}-byte chain code") |+|
+        expect(Ed25519Bip32.publicChild(icarusVk, cc, soft).isLeft, s"Icarus public derivation with a ${cc.size}-byte chain code") |+|
+        expect(ExtendedKey.from(parent.key, cc).isLeft, s"an extended key with a ${cc.size}-byte chain code")
+      } |+| expect(ExtendedKey.from(parent.key, parent.chainCode).isRight, "32 bytes")
     }
   }
 

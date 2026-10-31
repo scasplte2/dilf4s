@@ -53,11 +53,15 @@ final class Bls12381 private () {
   implicit val codec: SchemeCodec[BlsPop] = new SchemeCodec[BlsPop] {
     val name: String = "BLS12-381-PoP"
     def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[BlsPop]] =
-      Either.cond(
-        bytes.size == 32L && BigInt(1, bytes.toArray) > 0 && BigInt(1, bytes.toArray) < R,
-        new SigningKey[BlsPop](bytes),
-        CryptoError.InvalidKey("BLS secret key must be a 32-byte scalar in [1, r)")
-      )
+      SchemeCodec
+        .sized("BLS signing key", 32, bytes)
+        .flatMap(b =>
+          Either.cond(
+            BigInt(1, b.toArray) > 0 && BigInt(1, b.toArray) < R,
+            new SigningKey[BlsPop](b),
+            CryptoError.InvalidKey("BLS secret key must be a scalar in [1, r)")
+          )
+        )
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[BlsPop]] = g1(bytes).as(VerifyingKey[BlsPop](bytes))
     def signature(bytes:    ByteVector): Either[CryptoError, Signature[BlsPop]] = g2(bytes).as(Signature[BlsPop](bytes))
   }

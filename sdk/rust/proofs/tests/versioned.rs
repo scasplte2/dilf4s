@@ -327,3 +327,18 @@ fn refusals() {
     // a malformed proof value
     assert_eq!(vt.decode_proof(&Value::int(1)).unwrap_err().kind(), "Malformed");
 }
+
+/// The default version key stops at `2^63 - 1`: `key` is `int_to_bytes [version, 8]`, and the codec accepts it, both
+/// ways, exactly when `valid`.
+#[test]
+fn version_key_vectors() {
+    let (v, _) = setup();
+    let k = U64Key::default();
+    assert!(v.version_keys.iter().any(|c| !c.valid) && v.version_keys.iter().any(|c| c.valid));
+    for c in &v.version_keys {
+        let key = bytes(&c.key);
+        assert_eq!(key, c.version.to_be_bytes().to_vec(), "version {}: int_to_bytes [v, 8]", c.version);
+        assert_eq!(k.encode(&c.version).ok(), c.valid.then(|| key.clone()), "encode {}", c.version);
+        assert_eq!(k.decode(&key).ok(), c.valid.then_some(c.version), "decode {}", c.version);
+    }
+}

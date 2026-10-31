@@ -26,9 +26,12 @@ final class VerifiedState[H] private[versioned] (proof: VerifiedProof[H])(implic
       case Lookup.NotCovered => VersionedTrieError.NotCovered(s"key ${key.value}").asLeft
     }
 
-  /** Whether the key holds `value` (`None`: is absent), as a JLVM `trie_verify` decides it. */
+  /**
+   * Whether the key holds `value` (`None`: is absent), as a JLVM `trie_verify` decides it: a null claims absence
+   * there, so `Some(CNull)` is absence too (no key can hold null; a null value deletes it).
+   */
   def holds(key: StateKey, value: Option[CanonicalValue]): Either[VersionedTrieError, Boolean] =
-    lookup(key).map(_ == value.map(VersionedTrie.valueHash[H]))
+    lookup(key).map(_ == value.filterNot(_ == CanonicalValue.CNull).map(VersionedTrie.valueHash[H]))
 
   /** Every entry under the namespace, complete. */
   def namespace(ns: StateNamespace): Either[VersionedTrieError, List[(StateKey, Digest[H])]] =

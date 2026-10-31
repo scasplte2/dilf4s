@@ -46,6 +46,43 @@ object MerkleVectors {
   private def hexOrDie(e: Either[MerkleError, xyz.kd5ujc.core.canonical.CanonicalValue]): Json =
     e.fold(err => sys.error(err.toString), v => Cbor.encode(v).toHex.asJson)
 
+  private def proofValue(fields: (String, CanonicalValue)*): CanonicalValue =
+    CanonicalValue.map(fields).fold(e => sys.error(e.toString), identity)
+
+  private def digests(sizes: Long*): CanonicalValue =
+    CanonicalValue.array(sizes.map(n => CanonicalValue.bytes(ByteVector.fill(n)(0x11))).toVector).fold(e => sys.error(e.toString), identity)
+
+  private def int(i: BigInt): CanonicalValue = CanonicalValue.int(i)
+
+  /**
+   * Proofs the decoders refuse, with the kind of error each gives: an index not below the size is `IndexOutOfRange`,
+   * an old size above the new is `InvalidSizes`, and a bad shape or digest is `Encoding`.
+   */
+  val malformed: List[(String, String, CanonicalValue, String)] = List(
+    ("index-equals-size", "inclusion", proofValue("index" -> int(3), "size" -> int(3), "path" -> digests(32, 32)), "IndexOutOfRange"),
+    ("index-above-size", "inclusion", proofValue("index" -> int(9), "size" -> int(3), "path" -> digests(32, 32)), "IndexOutOfRange"),
+    ("empty-tree", "inclusion", proofValue("index" -> int(0), "size" -> int(0), "path" -> digests()), "IndexOutOfRange"),
+    ("short-digest", "inclusion", proofValue("index" -> int(0), "size" -> int(2), "path" -> digests(31)), "Encoding"),
+    ("negative-index", "inclusion", proofValue("index" -> int(-1), "size" -> int(2), "path" -> digests(32)), "Encoding"),
+    ("index-2-63", "inclusion", proofValue("index" -> int(BigInt(2).pow(63)), "size" -> int(2), "path" -> digests(32)), "Encoding"),
+    ("missing-size", "inclusion", proofValue("index" -> int(0), "path" -> digests(32)), "Encoding"),
+    ("old-above-new", "consistency", proofValue("old" -> int(5), "new" -> int(3), "path" -> digests(32)), "InvalidSizes"),
+    ("old-above-empty", "consistency", proofValue("old" -> int(1), "new" -> int(0), "path" -> digests()), "InvalidSizes"),
+    ("long-digest", "consistency", proofValue("old" -> int(1), "new" -> int(3), "path" -> digests(33)), "Encoding"),
+    ("negative-old", "consistency", proofValue("old" -> int(-1), "new" -> int(3), "path" -> digests(32)), "Encoding"),
+    ("extra-field", "consistency", proofValue("old" -> int(1), "new" -> int(3), "path" -> digests(32), "x" -> int(0)), "Encoding")
+  )
+
+  private def malformedRow(name: String, kind: String, proof: CanonicalValue, expected: String): Json = {
+    val decoded = kind match {
+      case "inclusion" => MerkleCodec.decodeInclusion[Sha256](proof).map(_ => ())
+      case _           => MerkleCodec.decodeConsistency[Sha256](proof).map(_ => ())
+    }
+    val result = decoded.fold(_.productPrefix, _ => "ok")
+    require(result == expected, s"malformed $kind $name: expected $expected, got $result")
+    Json.obj("name" -> name.asJson, "kind" -> kind.asJson, "cbor" -> Cbor.encode(proof).toHex.asJson, "error" -> result.asJson)
+  }
+
   def build: Json = {
     implicit val m: MerkleHashing[Sha256] = MerkleHashing.tagged[Sha256]
     val ct = MerkleHashing.rfc6962[Sha256]
@@ -69,7 +106,8 @@ object MerkleVectors {
         )
       }.asJson,
       "valueCommitments" -> (committedBytes.map(CanonicalValue.bytes) ++
-      committedJson.map(j => CanonicalJson.parse(j).fold(e => sys.error(e.toString), identity))).map(commitment(_, m)).asJson
+      committedJson.map(j => CanonicalJson.parse(j).fold(e => sys.error(e.toString), identity))).map(commitment(_, m)).asJson,
+      "malformed" -> malformed.map { case (name, kind, proof, error) => malformedRow(name, kind, proof, error) }.asJson
     )
   }
 

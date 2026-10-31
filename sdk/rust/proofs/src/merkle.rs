@@ -253,13 +253,13 @@ pub struct ConsistencyProof<H: Hasher> {
 }
 
 impl<H: Hasher> ConsistencyProof<H> {
-    /// The proof, if `old_size <= new_size`. As in Scala's `ConsistencyProof.from`, sizes out of order are
-    /// `IndexOutOfRange`.
+    /// The proof, if `old_size <= new_size`. Sizes out of order are `InvalidSizes`, as in Scala's
+    /// `ConsistencyProof.from` and the verifier.
     pub fn new(old_size: u64, new_size: u64, path: Vec<Digest<H>>) -> Result<Self, MerkleError> {
         if old_size <= new_size {
             Ok(Self { old_size, new_size, path })
         } else {
-            Err(MerkleError::IndexOutOfRange { index: old_size, size: new_size })
+            Err(MerkleError::InvalidSizes { old_size, new_size })
         }
     }
 

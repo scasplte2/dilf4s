@@ -69,7 +69,7 @@ final case class ConsistencyProof[H] private[merkle] (oldSize: Long, newSize: Lo
 
 object ConsistencyProof {
   def from[H](oldSize: Long, newSize: Long, path: Vector[Digest[H]]): Either[MerkleError, ConsistencyProof[H]] =
-    Either.cond(oldSize >= 0 && oldSize <= newSize, ConsistencyProof(oldSize, newSize, path), MerkleError.IndexOutOfRange(oldSize, newSize))
+    Either.cond(oldSize >= 0 && oldSize <= newSize, ConsistencyProof(oldSize, newSize, path), MerkleError.InvalidSizes(oldSize, newSize))
 }
 
 /**

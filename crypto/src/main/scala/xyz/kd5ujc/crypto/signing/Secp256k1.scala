@@ -54,24 +54,39 @@ final class Secp256k1 private (native: Native) {
   private val schnorrTag = TaggedHash[Sha256](DomainTag.literal(Secp256k1.SchnorrTag))
   private val n = BigInt("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16)
 
-  private def validScalar(b: ByteVector): Boolean = b.size == 32L && call("secKeyVerify")(native.secKeyVerify(b.toArray)).getOrElse(false)
+  /** 32 bytes (else `InvalidEncoding`) holding a scalar in `[1, n)` (else `InvalidKey`). */
+  private def secretKey[S](scheme: String, bytes: ByteVector): Either[CryptoError, SigningKey[S]] =
+    SchemeCodec
+      .sized(s"$scheme signing key", 32, bytes)
+      .flatMap(b =>
+        Either.cond(
+          call("secKeyVerify")(native.secKeyVerify(b.toArray)).getOrElse(false),
+          new SigningKey[S](b),
+          CryptoError.InvalidKey("secp256k1 secret key must be a scalar in [1, n)")
+        )
+      )
+
+  /** A key libsecp256k1 does not parse is not a key: `InvalidKey`, whatever the backend reports. */
+  private def parsedPoint(scheme: String, point33: ByteVector): Either[CryptoError, Unit] =
+    call("pubkeyParse")(native.pubkeyParse(point33.toArray))
+      .bimap(_ => CryptoError.InvalidKey(s"$scheme verifying key is not a valid point"), _ => ())
 
   // ------------------------------------------------------------------ ECDSA
 
   val ecdsaCodec: SchemeCodec[Secp256k1Ecdsa] = new SchemeCodec[Secp256k1Ecdsa] {
     val name: String = "secp256k1-ECDSA"
-    def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[Secp256k1Ecdsa]] =
-      Either.cond(
-        validScalar(bytes),
-        new SigningKey[Secp256k1Ecdsa](bytes),
-        CryptoError.InvalidKey("secp256k1 secret key must be a scalar in [1, n)")
-      )
+    def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[Secp256k1Ecdsa]] = secretKey(name, bytes)
 
-    /** 33-byte compressed SEC1 point, checked on the curve. */
+    /** 33-byte compressed SEC1 point (tag 02 or 03), checked on the curve. */
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[Secp256k1Ecdsa]] =
-      if (bytes.size != 33L)
-        CryptoError.InvalidEncoding("secp256k1 verifying key", s"expected 33 compressed bytes, got ${bytes.size}").asLeft
-      else call("pubkeyParse")(native.pubkeyParse(bytes.toArray)).as(VerifyingKey[Secp256k1Ecdsa](bytes))
+      SchemeCodec
+        .sized("secp256k1 verifying key", 33, bytes)
+        .flatMap(b =>
+          Either
+            .cond(SchemeCodec.compressedTag(b), b, CryptoError.InvalidKey("secp256k1 verifying key is not a compressed point"))
+            .flatMap(parsedPoint("secp256k1", _))
+            .as(VerifyingKey[Secp256k1Ecdsa](b))
+        )
 
     /** 64-byte compact `r || s` with `1 <= r < n` and `1 <= s <= n/2`: the high-S twin is rejected (malleability). */
     def signature(bytes: ByteVector): Either[CryptoError, Signature[Secp256k1Ecdsa]] =
@@ -115,13 +130,11 @@ final class Secp256k1 private (native: Native) {
 
   private def schnorrCodecFor[S](scheme: String): SchemeCodec[S] = new SchemeCodec[S] {
     val name: String = scheme
-    def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[S]] =
-      Either.cond(validScalar(bytes), new SigningKey[S](bytes), CryptoError.InvalidKey("secp256k1 secret key must be a scalar in [1, n)"))
+    def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[S]] = secretKey(scheme, bytes)
 
     /** 32-byte x-only key; it must lift to a curve point (even y). */
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[S]] =
-      if (bytes.size != 32L) CryptoError.InvalidEncoding(s"$scheme verifying key", s"expected 32 bytes, got ${bytes.size}").asLeft
-      else call("pubkeyParse")(native.pubkeyParse((ByteVector(0x02) ++ bytes).toArray)).as(VerifyingKey[S](bytes))
+      SchemeCodec.sized(s"$scheme verifying key", 32, bytes).flatMap(b => parsedPoint(scheme, ByteVector(0x02) ++ b).as(VerifyingKey[S](b)))
     def signature(bytes: ByteVector): Either[CryptoError, Signature[S]] =
       Either.cond(
         bytes.size == 64L,
