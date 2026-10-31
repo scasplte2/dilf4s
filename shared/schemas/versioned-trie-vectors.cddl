@@ -1,0 +1,60 @@
+; Schema of shared/vectors/versioned_trie_v1.json (conformance vectors for docs/specs/versioned-trie.md).
+; "cbor" fields are hex of canonical CBOR: proofs and deltas in the shape of shared/schemas/versioned-trie.cddl,
+; values as canonical values. Every proof is against the final commit's root.
+
+versioned-trie-vectors = {
+  "spec": "docs/specs/versioned-trie.md",
+  "version": 1,
+  "hash": "SHA-256",
+  "width": uint,
+  "emptyStateRoot": hex,
+  "head": vt-head-kat,
+  "commits": [* vt-commit],
+  "root": hex,
+  "proofs": [* vt-proof],
+}
+
+; The top trie for one head, slot by slot: "root" is the commitment root.
+vt-head-kat = {
+  "version": uint,
+  "vkey": hex,
+  "stateRoot": hex,
+  "historyRoot": hex,
+  "cbor": hex,
+  "root": hex,
+}
+
+vt-commit = {
+  "version": uint,
+  "upserts": [* vt-entry],
+  "removes": [* text],
+  "stateRoot": hex,
+  "historyRoot": hex,
+  "root": hex,
+  "delta": hex,
+}
+
+vt-entry = { "key": text, "value": hex }
+
+; A key's value (canonical CBOR) or, with no "value", its absence.
+vt-claim = { "key": text, ? "value": hex }
+
+vt-listing = { "namespace": text, "entries": [* vt-entry] }
+
+; A version answer: a version and its state root, or, empty, "none" / "not committed".
+vt-version = { ? "version": uint, ? "stateRoot": hex }
+
+vt-kind = "state" / "historical" / "version" / "asOf" / "head"
+
+; "at" is the version a historical, version or as-of query names.
+vt-proof = {
+  "name": text,
+  "kind": vt-kind,
+  ? "at": uint,
+  "cbor": hex,
+  ? "claims": [* vt-claim],
+  ? "listings": [* vt-listing],
+  ? "answer": vt-version,
+}
+
+hex = text .regexp "([0-9a-f]{2})*"

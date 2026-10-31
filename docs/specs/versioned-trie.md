@@ -216,7 +216,8 @@ No operation is specific to versioned tries. A program uses `trie_verify`, `trie
 | No version at or before `t` | slot `0x02` check `and trie_range_verify [{fixed:w}, h, 0x, cat(int_to_bytes [t, w], 0x00), [], history]` |
 | Epoch listing | slot `0x02` check `and trie_prefix_verify [{fixed:w}, h, epoch prefix, entries, history]` |
 
-- **Keys come from the program.** Build history keys with `int_to_bytes [u, w]`, never from the proof.
+- **Keys come from the program.** Build history keys with `int_to_bytes [u, w]`, never from the proof. There is no
+  text-to-UTF-8 operation, so a state key is a byte literal in the program (`"0x…"`) or a bytes input.
 - **Not covered is an error.** A program that wants a boolean wraps the check.
 - **Check slots one at a time.** A complete listing of the top trie (`trie_range_verify [{fixed:1}, R, 0x, null,
   [all slots], top]`) is an opt-in "exact head" check; programs that use it break when an extension slot is added.
