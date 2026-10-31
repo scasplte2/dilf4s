@@ -1,0 +1,10 @@
+; Emitter fixture (not a dilf4s format): aliases and fields whose types live in another module.
+;# import fixture-a as a
+
+records-again = a.records
+
+holder = {
+  "r": records-again,
+  "s": a.records,
+  ? "t": a.record,
+}

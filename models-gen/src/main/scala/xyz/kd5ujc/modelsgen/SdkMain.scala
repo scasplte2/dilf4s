@@ -17,6 +17,12 @@ object SdkSources {
   val TypeScriptDir: Path = Paths.get("sdk", "ts", "packages", "core", "src", "generated")
   val RustDir: Path = Paths.get("sdk", "rust", "core", "src", "generated")
 
+  /** Fixture schemas for the Rust emitter, and the crate that compiles their models (`sdk/rust/fixtures`). */
+  val RustFixtureSchemas: Path = Paths.get("sdk", "rust", "fixtures", "schemas")
+  val RustFixtureDir: Path = Paths.get("sdk", "rust", "fixtures", "src", "generated")
+  val RegenerateFixtures: String =
+    "sbt \"modelsGen/runMain xyz.kd5ujc.modelsgen.SdkMain sdk/rust/fixtures/schemas - sdk/rust/fixtures/src/generated\""
+
   /** The command that rewrites the committed output. */
   val Regenerate: String =
     "sbt \"modelsGen/runMain xyz.kd5ujc.modelsgen.SdkMain shared/schemas sdk/ts/packages/core/src/generated sdk/rust/core/src/generated\""
@@ -58,7 +64,8 @@ object SdkSources {
 
 /**
  * `SdkMain <schemaDir> <tsOutDir> <rustOutDir>`: writes the TypeScript and Rust models of every `<module>.cddl` in
- * `schemaDir`, and removes generated files of modules that no longer exist. Any parse error or profile violation fails.
+ * `schemaDir`, and removes generated files of modules that no longer exist; a `tsOutDir` of `-` writes Rust only (the
+ * emitter fixtures). Any parse error or profile violation fails.
  */
 object SdkMain extends IOApp {
 
@@ -77,9 +84,9 @@ object SdkMain extends IOApp {
         for {
           schemas <- SdkSources.readSchemas(Paths.get(schemaDir))
           out     <- IO.fromEither(SdkSources.generate(schemas).leftMap(e => new IllegalArgumentException(e.message)))
-          _       <- write(Paths.get(tsDir), ".ts", out.typescript)
+          _       <- write(Paths.get(tsDir), ".ts", out.typescript).unlessA(tsDir == "-")
           _       <- write(Paths.get(rustDir), ".rs", out.rust)
         } yield ExitCode.Success
-      case _ => IO.println("usage: SdkMain <schemaDir> <tsOutDir> <rustOutDir>").as(ExitCode.Error)
+      case _ => IO.println("usage: SdkMain <schemaDir> <tsOutDir | -> <rustOutDir>").as(ExitCode.Error)
     }
 }

@@ -57,7 +57,11 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
   /** Rust type, codec type and codec expression of a field or element type. */
   private final case class Rs(tpe: String, codecType: String, codec: String)
 
-  private def rs(rule: QName, t: FieldType, resolving: Set[QName] = Set.empty): Either[GenError, Rs] = t match {
+  /**
+   * `from` is the module the code is emitted into: an alias's target is expanded in the alias's own context (`rule`),
+   * but every path in the result is written relative to `from`.
+   */
+  private def rs(rule: QName, t: FieldType, resolving: Set[QName], from: String): Either[GenError, Rs] = t match {
     case FieldType.Uint     => Rs("c::BigInt", "c::BigIntIn", "c::UINT").asRight
     case FieldType.Int      => Rs("c::BigInt", "c::BigIntIn", "c::INT").asRight
     case FieldType.Nint     => Rs("c::BigInt", "c::BigIntIn", "c::NINT").asRight
@@ -81,17 +85,17 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
       models.get(q).toRight(GenError.UnresolvedName(rule.module, q.name)).flatMap {
         case ModelRule.Alias(_) if resolving(q) => outside(rule, s"alias cycle through ${q.name}").asLeft
         case ModelRule.Alias(target) =>
-          rs(q, target, resolving + q).map(r => Rs(path(rule.module, q, typeName(q)), r.codecType, path(rule.module, q, constName(q))))
+          rs(q, target, resolving + q, from).map(r => Rs(path(from, q, typeName(q)), r.codecType, path(from, q, constName(q))))
         case _ =>
-          val n = path(rule.module, q, typeName(q))
+          val n = path(from, q, typeName(q))
           Rs(n, s"c::ModelOf<$n>", s"c::ModelOf::<$n>::NEW").asRight
       }
     case FieldType.TextMap(value) =>
-      rs(rule, value, resolving).flatMap(v =>
+      rs(rule, value, resolving, from).flatMap(v =>
         element(rule, v).as(Rs(s"BTreeMap<String, ${v.tpe}>", s"c::TextMapOf<${v.codecType}>", s"c::TextMapOf(${v.codec})"))
       )
     case FieldType.Vec(e, min, max) =>
-      rs(rule, e, resolving).flatMap(v =>
+      rs(rule, e, resolving, from).flatMap(v =>
         element(rule, v).as(
           Rs(
             s"Vec<${v.tpe}>",
@@ -112,7 +116,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
 
   private def fields(rule: QName, profiled: Vector[ProfileField]): Either[GenError, Vector[Field]] =
     profiled.traverse { f =>
-      rs(rule, f.tpe).flatMap { r =>
+      rs(rule, f.tpe, Set.empty, rule.module).flatMap { r =>
         val boxed = f.tpe match {
           case FieldType.Ref(q) => reaches(q, rule)
           case _                => false
@@ -255,7 +259,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
   }
 
   private def alias(rule: QName, t: FieldType): Either[GenError, String] =
-    rs(rule, t, Set(rule)).flatMap(r => element(rule, r).as(r)).map { r =>
+    rs(rule, t, Set(rule), rule.module).flatMap(r => element(rule, r).as(r)).map { r =>
       s"""${doc(rule)}
          |pub type ${typeName(rule)} = ${r.tpe};
          |

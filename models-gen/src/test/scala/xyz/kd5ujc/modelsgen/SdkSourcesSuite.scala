@@ -25,14 +25,20 @@ object SdkSourcesSuite extends SimpleIOSuite {
       .readSchemas(java.nio.file.Paths.get("shared", "schemas"))
       .flatMap(s => IO.fromEither(SdkSources.generate(s).leftMap(e => new IllegalStateException(e.message))))
 
-  private def compare(language: String, dir: Path, suffix: String, fresh: Vector[(String, String)]): IO[weaver.Expectations] =
+  private def compare(
+    language: String,
+    dir:      Path,
+    suffix:   String,
+    fresh:    Vector[(String, String)],
+    command:  String = SdkSources.Regenerate
+  ): IO[weaver.Expectations] =
     committed(dir, suffix).map { files =>
       val expected = fresh.toMap
       val stale = expected.collect { case (name, src) if !files.get(name).contains(src) => name }.toList.sorted
       val extra = files.keySet.diff(expected.keySet).toList.sorted
       expect(
         stale.isEmpty && extra.isEmpty,
-        s"$language models in $dir are stale (${(stale ++ extra).mkString(", ")}); regenerate with: ${SdkSources.Regenerate}"
+        s"$language models in $dir are stale (${(stale ++ extra).mkString(", ")}); regenerate with: $command"
       )
     }
 
@@ -42,6 +48,23 @@ object SdkSourcesSuite extends SimpleIOSuite {
 
   test("committed Rust models match shared/schemas") {
     generated.flatMap(g => compare("Rust", SdkSources.RustDir, ".rs", g.rust))
+  }
+
+  test("committed Rust emitter fixtures match their schemas") {
+    SdkSources
+      .readSchemas(SdkSources.RustFixtureSchemas)
+      .flatMap(s => IO.fromEither(SdkSources.generate(s).leftMap(e => new IllegalStateException(e.message))))
+      .flatMap(g => compare("Rust fixture", SdkSources.RustFixtureDir, ".rs", g.rust, SdkSources.RegenerateFixtures))
+  }
+
+  pureTest("an alias of another module's alias names that module's types from the consuming module") {
+    val a = "record = { \"x\": uint }\nrecords = [* record]\n"
+    val b = ";# import a as a\nagain = a.records\n"
+    val out = SdkSources.generate(Vector("a" -> a, "b" -> b)).map(_.rust.toMap.getOrElse("b.rs", ""))
+    expect(
+      out.exists(_.contains("pub const AGAIN: c::VecOf<c::ModelOf<super::a::Record>> = super::a::RECORDS;")),
+      out.fold(_.message, identity)
+    )
   }
 
   private def gen(cddl: String): Either[GenError, SdkSources] = SdkSources.generate(Vector("t" -> cddl))
