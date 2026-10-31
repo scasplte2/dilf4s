@@ -50,7 +50,7 @@ mod extended {
 /// `HMAC-SHA512(key, parts...)`.
 #[cfg(feature = "sign")]
 pub(crate) fn hmac_sha512(key: &[u8], parts: &[&[u8]]) -> zeroize::Zeroizing<[u8; 64]> {
-    use hmac::{KeyInit as _, Mac as _};
+    use hmac::Mac as _;
     let mut out = zeroize::Zeroizing::new([0u8; 64]);
     // HMAC takes keys of any length, so construction cannot fail; an error would leave the output zero
     if let Ok(mut mac) = hmac::Hmac::<sha2::Sha512>::new_from_slice(key) {

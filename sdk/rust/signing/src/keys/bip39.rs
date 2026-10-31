@@ -182,7 +182,7 @@ pub fn to_mnemonic(entropy: &[u8], list: &WordList) -> Result<Mnemonic, KeyError
 }
 
 /// A fresh mnemonic from `entropy_bytes` (16, 20, 24, 28 or 32) of randomness drawn from `rng`.
-pub fn generate<R: rand_core::CryptoRng + ?Sized>(
+pub fn generate<R: rand_core::CryptoRng + rand_core::RngCore + ?Sized>(
     entropy_bytes: usize,
     list: &WordList,
     rng: &mut R,

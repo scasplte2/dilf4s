@@ -10,9 +10,9 @@
 
 use k256::elliptic_curve::Group as _;
 use k256::elliptic_curve::PrimeField as _;
-use k256::elliptic_curve::ops::Reduce as _;
+use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::{AffineCoordinates as _, DecompactPoint as _};
-use k256::{AffinePoint, FieldBytes, ProjectivePoint, Scalar};
+use k256::{AffinePoint, FieldBytes, ProjectivePoint, Scalar, U256};
 
 use crate::error::SigningError;
 use crate::util::{be_less_than, exact, halves, tagged_sha256};
@@ -44,7 +44,7 @@ impl XOnly {
 }
 
 fn challenge(r: &[u8; 32], px: &[u8; 32], message: &[u8]) -> Scalar {
-    Scalar::reduce(&FieldBytes::from(tagged_sha256(b"BIP0340/challenge", &[r, px, message])))
+    <Scalar as Reduce<U256>>::reduce_bytes(&FieldBytes::from(tagged_sha256(b"BIP0340/challenge", &[r, px, message])))
 }
 
 /// BIP-340 `Verify(pk, m, sig)`.
@@ -156,7 +156,7 @@ macro_rules! schnorr_scheme {
                 }
 
                 /// Signing with auxiliary randomness drawn from `rng`.
-                pub fn sign_with_rng<R: rand_core::CryptoRng + ?Sized>(
+                pub fn sign_with_rng<R: rand_core::CryptoRng + rand_core::RngCore + ?Sized>(
                     &self,
                     message: &$message,
                     rng: &mut R,
@@ -260,7 +260,7 @@ fn sign_raw(secret: &[u8; 32], message: &[u8], aux: &[u8; 32]) -> Result<[u8; 64
         *a ^= b;
     }
     let rand = Zeroizing::new(tagged_sha256(b"BIP0340/nonce", &[&*t, &px, message]));
-    let k0 = Zeroizing::new(Scalar::reduce(&FieldBytes::from(*rand)));
+    let k0 = Zeroizing::new(<Scalar as Reduce<U256>>::reduce_bytes(&FieldBytes::from(*rand)));
     if bool::from(k0.is_zero()) {
         return Err(SigningError::InvalidKey { reason: "the derived nonce is zero; use other randomness".into() });
     }

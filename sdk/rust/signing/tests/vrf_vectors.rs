@@ -190,7 +190,7 @@ fn rfc9380_ell2_encode_to_curve() {
 #[test]
 fn rfc9380_expand_message_xmd() {
     use bls12_381::hash_to_curve::{ExpandMessage, ExpandMsgXmd};
-    use sha2_digest010::digest::consts::U32;
+    use sha2::digest::consts::U32;
     let doc = json("vrf/rfc9380.json");
     for (section, sha512) in [("expand_message_xmd_sha256", false), ("expand_message_xmd_sha512", true)] {
         let s = field(&doc, section);
@@ -201,9 +201,9 @@ fn rfc9380_expand_message_xmd() {
             let msg = text(v, "msg").as_bytes().to_vec();
             let len = usize::from_str_radix(text(v, "len_in_bytes").trim_start_matches("0x"), 16).unwrap();
             let out = if sha512 {
-                ExpandMsgXmd::<sha2_digest010::Sha512>::init_expand::<_, U32>([&msg], &dst, len).into_vec()
+                ExpandMsgXmd::<sha2::Sha512>::init_expand::<_, U32>([&msg], &dst, len).into_vec()
             } else {
-                ExpandMsgXmd::<sha2_digest010::Sha256>::init_expand::<_, U32>([&msg], &dst, len).into_vec()
+                ExpandMsgXmd::<sha2::Sha256>::init_expand::<_, U32>([&msg], &dst, len).into_vec()
             };
             assert_eq!(hex::encode(&out), text(v, "uniform_bytes"), "{section}");
         }

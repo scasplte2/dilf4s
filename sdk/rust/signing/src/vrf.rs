@@ -329,7 +329,7 @@ const ELL2_DST: &[u8] = b"ECVRF_edwards25519_XMD:SHA-512_ELL2_NU_\x04";
 
 /// RFC 9381 section 5.4.1.2: `encode_to_curve(Y || alpha)` of RFC 9380's `edwards25519_XMD:SHA-512_ELL2_NU_`.
 fn hash_to_curve_ell2(pk: &[u8; 32], alpha: &[u8]) -> EdwardsPoint {
-    EdwardsPoint::encode_to_curve::<sha2::Sha512>(&[pk, alpha], &[ELL2_DST])
+    field::encode_to_curve_ell2(&[pk, alpha], ELL2_DST)
 }
 
 /// draft-03 (libsodium): `r = SHA-512(04 || 01 || Y || alpha)[0:32]` with bit 255 cleared, then Elligator 2.
@@ -412,15 +412,15 @@ fn verify_decoded(
     Ok(output(suite, &gamma))
 }
 
-/// GF(2^255 - 19) on public data only (variable time), for draft-03's Elligator map, which curve25519-dalek does not
-/// expose.
+/// GF(2^255 - 19) on public data only (variable time), for the Elligator 2 maps of draft-03 and of RFC 9380, which
+/// curve25519-dalek 4 does not expose.
 mod field {
     use alloc::vec::Vec;
 
-    use curve25519_dalek::edwards::EdwardsPoint;
+    use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
     use num_bigint::BigUint;
 
-    use super::decode_draft03;
+    use super::{decode_draft03, sha512};
 
     fn p() -> BigUint {
         (BigUint::from(1u8) << 255u32) - BigUint::from(19u8)
@@ -466,6 +466,71 @@ mod field {
             let exp = (&self.p - BigUint::from(1u8)) >> 1u32;
             a.modpow(&exp, &self.p) == &self.p - BigUint::from(1u8)
         }
+    }
+
+    /// `sqrt(a)` for `p = 5 mod 8` (RFC 9380 appendix I.2), if `a` is a square.
+    fn sqrt(f: &Fp, a: &BigUint) -> Option<BigUint> {
+        let c1 = (&f.p + BigUint::from(3u8)) >> 3u32;
+        let c2 = BigUint::from(2u8).modpow(&((&f.p - BigUint::from(1u8)) >> 2u32), &f.p);
+        let t = a.modpow(&c1, &f.p);
+        let z = if f.mul(&t, &t) == a % &f.p { t } else { f.mul(&t, &c2) };
+        (f.mul(&z, &z) == a % &f.p).then_some(z)
+    }
+
+    /// `sqrt(a)` with the given `sgn0` (the parity of the canonical value).
+    fn sqrt_with_sign(f: &Fp, a: &BigUint, odd: bool) -> Option<BigUint> {
+        sqrt(f, a).map(|z| if z.bit(0) == odd { z } else { f.neg(&z) })
+    }
+
+    /// RFC 9380 section 5.3.1 `expand_message_xmd` with SHA-512, for at most 64 bytes (one block of output): the
+    /// only length `hash_to_field` asks of it here. `dst` is 1 to 255 bytes.
+    fn expand_message_xmd_sha512(message: &[&[u8]], dst: &[u8], len: u8) -> Vec<u8> {
+        let dst_len = [u8::try_from(dst.len()).unwrap_or(u8::MAX)];
+        let mut parts: Vec<&[u8]> = Vec::with_capacity(message.len().saturating_add(5));
+        let z_pad = [0u8; 128];
+        let tail = [0u8, len, 0u8];
+        parts.push(&z_pad);
+        parts.extend_from_slice(message);
+        parts.extend_from_slice(&[&tail, dst, &dst_len]);
+        let b0 = sha512(&parts);
+        let b1 = sha512(&[&b0, &[1u8], dst, &dst_len]);
+        b1.iter().take(usize::from(len)).copied().collect()
+    }
+
+    /// RFC 9380 `encode_to_curve` with `edwards25519_XMD:SHA-512_ELL2_NU_`: one field element from 48 uniform bytes,
+    /// Elligator 2 onto curve25519 (section 6.7.1, `Z = 2`), the rational map to edwards25519 (appendix D), and the
+    /// cofactor cleared. `dst` is 1 to 255 bytes.
+    pub(super) fn encode_to_curve_ell2(message: &[&[u8]], dst: &[u8]) -> EdwardsPoint {
+        let f = Fp { p: p() };
+        let one = BigUint::from(1u8);
+        let j = BigUint::from(J);
+        let u = BigUint::from_bytes_be(&expand_message_xmd_sha512(message, dst, 48)) % &f.p;
+        // section 6.7.1 with K = 1
+        let x1 = match f.mul(&f.neg(&j), &f.inv0(&f.add(&one, &f.mul(&BigUint::from(2u8), &f.mul(&u, &u))))) {
+            x if x == BigUint::ZERO => f.neg(&j),
+            x => x,
+        };
+        let g = |x: &BigUint| f.add(&f.add(&f.mul(&f.mul(x, x), x), &f.mul(&j, &f.mul(x, x))), x);
+        let x2 = f.sub(&f.neg(&x1), &j);
+        let (s, t) = sqrt_with_sign(&f, &g(&x1), true)
+            .map(|y| (x1.clone(), y))
+            .or_else(|| sqrt_with_sign(&f, &g(&x2), false).map(|y| (x2, y)))
+            .unwrap_or((BigUint::ZERO, BigUint::ZERO));
+        // appendix D: v = sqrt(-486664) s / t, w = (s - 1) / (s + 1), and (0, 1) where t (s + 1) = 0
+        let c1 = sqrt_with_sign(&f, &f.neg(&BigUint::from(J + 2)), false).unwrap_or_default();
+        let s1 = f.add(&s, &one);
+        let d = f.inv0(&f.mul(&t, &s1));
+        let (v, w) = if d == BigUint::ZERO {
+            (BigUint::ZERO, one)
+        } else {
+            (f.mul(&f.mul(&f.mul(&d, &s1), &s), &c1), f.mul(&f.mul(&d, &t), &f.sub(&s, &one)))
+        };
+        let mut enc = le32(&w);
+        if let Some(last) = enc.last_mut() {
+            *last |= u8::from(v.bit(0)) << 7;
+        }
+        // (v, w) is on edwards25519 by construction, so it decodes
+        CompressedEdwardsY(enc).decompress().map_or(EdwardsPoint::default(), |pt| pt.mul_by_cofactor())
     }
 
     /// libsodium's `ge25519_from_uniform` (Cardano draft-03): bit 255 of the input is the sign of `x`, the rest the
@@ -556,11 +621,11 @@ pub mod internals {
     }
 
     /// RFC 9380 `encode_to_curve` with `edwards25519_XMD:SHA-512_ELL2_NU_`, re-encoded; `None` unless the DST is 1 to
-    /// 255 bytes (curve25519-dalek panics outside that range).
+    /// 255 bytes (longer DSTs must first be hashed, section 5.3.3, which no suite here needs).
     pub fn encode_to_curve_ell2(message: &[u8], dst: &[u8]) -> Option<[u8; 32]> {
         (1..=255)
             .contains(&dst.len())
-            .then(|| EdwardsPoint::encode_to_curve::<sha2::Sha512>(&[message], &[dst]).compress().to_bytes())
+            .then(|| super::field::encode_to_curve_ell2(&[message], dst).compress().to_bytes())
     }
 }
 

@@ -19,8 +19,6 @@
     reason = "tests fail by panicking, and run with std"
 )]
 
-use core::convert::Infallible;
-
 use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use curve25519_dalek::scalar::Scalar;
@@ -372,23 +370,25 @@ fn secret_keys_are_redacted() {
 /// A deterministic stand-in for a cryptographic RNG.
 struct Counter(u8);
 
-impl rand_core::TryRng for Counter {
-    type Error = Infallible;
-    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
-        Ok(u32::from_le_bytes([self.next(); 4]))
+impl rand_core::RngCore for Counter {
+    fn next_u32(&mut self) -> u32 {
+        u32::from_le_bytes([self.next(); 4])
     }
-    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
-        Ok(u64::from_le_bytes([self.next(); 8]))
+    fn next_u64(&mut self) -> u64 {
+        u64::from_le_bytes([self.next(); 8])
     }
-    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Infallible> {
+    fn fill_bytes(&mut self, dst: &mut [u8]) {
         for b in dst {
             *b = self.next();
         }
+    }
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), rand_core::Error> {
+        self.fill_bytes(dst);
         Ok(())
     }
 }
 
-impl rand_core::TryCryptoRng for Counter {}
+impl rand_core::CryptoRng for Counter {}
 
 impl Counter {
     fn next(&mut self) -> u8 {

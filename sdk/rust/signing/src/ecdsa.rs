@@ -160,7 +160,8 @@ macro_rules! ecdsa_scheme {
                         .inner
                         .sign_prehash(&sha256(&[message]))
                         .map_err(|_| SigningError::InvalidKey { reason: "signing failed".into() })?;
-                    let inner = inner.normalize_s();
+                    // `normalize_s` is `None` when `s` is already low
+                    let inner = inner.normalize_s().unwrap_or(inner);
                     Ok(Signature { bytes: inner.to_bytes().into(), inner })
                 }
             }
