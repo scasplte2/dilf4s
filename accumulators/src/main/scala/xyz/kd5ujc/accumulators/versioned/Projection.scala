@@ -1,5 +1,7 @@
 package xyz.kd5ujc.accumulators.versioned
 
+import cats.syntax.all._
+
 import scala.collection.immutable.SortedMap
 
 import xyz.kd5ujc.accumulators.trie.{Trie, TrieHashing}
@@ -24,18 +26,18 @@ object Projection {
     Batch.deletes[StateKey, CanonicalValue](prev.keys.filterNot(next.contains).toList.sorted) ++
     Batch.puts(next.toList.filterNot { case (k, v) => prev.get(k).contains(v) }.sortBy(_._1))
 
-  /** The state root of a set of entries, built from scratch. */
-  def stateRoot[H: TrieHashing](entries: Map[StateKey, CanonicalValue]): Either[VersionedTrieError, Digest[H]] =
-    VersionedTrie.stateMode
-      .flatMap(m =>
-        VersionedTrie.trie(
-          Trie.fromEntries[H](
-            m,
-            entries.toList.collect { case (k, v) if v != CanonicalValue.CNull => k.bytes -> VersionedTrie.valueHash[H](v) }
-          )
-        )
-      )
-      .map(_.root)
+  /**
+   * The state root of a set of entries, built from scratch. Every value is checked as a commit checks it
+   * (`VersionedTrie.checkValue`) before any is hashed, so a value too large for its weight alone is refused in O(1).
+   */
+  def stateRoot[H: TrieHashing](entries: Map[StateKey, CanonicalValue]): Either[VersionedTrieError, Digest[H]] = {
+    val present = entries.toList.filter { case (_, v) => v != CanonicalValue.CNull }
+    for {
+      m <- VersionedTrie.stateMode
+      _ <- present.traverse_ { case (k, v) => VersionedTrie.checkValue(k, v) }
+      t <- VersionedTrie.trie(Trie.fromEntries[H](m, present.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v) }))
+    } yield t.root
+  }
 
   /** Whether committed state with root `stateRoot` is exactly `entries`: a `RootMismatch` on "state" if not. */
   def verifyAgainst[H: TrieHashing](entries: Map[StateKey, CanonicalValue], stateRoot: Digest[H]): Either[VersionedTrieError, Unit] =

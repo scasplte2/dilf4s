@@ -81,7 +81,10 @@ batch:
    canonical CBOR, so that every entry fits one snapshot chunk (§7), and at most 253 levels deep (a scalar is 0). The
    records that carry values, a delta's upserts and a snapshot's state chunks, wrap each in a map, an array and a map,
    and every record stays within the canonical depth limit of 256 (`canonical-encoding.md`). A larger or deeper value is
-   refused at commit, so a store can always serve every delta and snapshot of what it accepted.
+   refused at commit, so a store can always serve every delta and snapshot of what it accepted. The size is checked
+   without encoding the value: a value's canonical CBOR is never shorter than its weight (`jlvm.md` §2), so a value
+   heavier than 1 MiB is refused for its weight alone, before its length is measured. A value that shares structure
+   can encode to far more bytes than it occupies, so no implementation encodes a value to check it.
 2. **Recommit.** If the next version is the head's and the expected version is the head's parent, the commit is a
    retry: it succeeds without writing if the batch, applied to the parent's state, gives the head's state root, and is
    refused as a rewrite otherwise. Only the head can be recommitted.
@@ -255,7 +258,10 @@ most 1 MiB and a key 256 bytes. How chunks are framed and carried is the transpo
 The core takes batches; it never diffs states. An application whose state is a value `S` can supply a view: the
 entries of `S`, and a delta between two states, which by default is the structural difference of their entries. A
 hand-written delta is faster but can disagree with the entries; the opt-in check `Projection.verifyAgainst` rebuilds
-the state root from the entries and compares it with the committed one.
+the state root from the entries and compares it with the committed one. Every entry's value is first checked as a
+commit checks it (§4): entries that no commit would accept are not committable state, so the rebuild refuses them as
+too large or too deep rather than computing a root for them, and a value too large for its weight alone is refused
+without being encoded.
 
 ## 9. Verifying in the JLVM
 

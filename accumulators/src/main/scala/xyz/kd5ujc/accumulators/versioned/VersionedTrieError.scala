@@ -47,7 +47,11 @@ object VersionedTrieError {
   /** A proof, delta or snapshot whose shape or contents are inconsistent with what it claims. */
   final case class Malformed(reason: String) extends VersionedTrieError
 
-  /** A value or snapshot chunk over its limit (docs/specs/versioned-trie.md §7), in canonical CBOR bytes. */
+  /**
+   * A value or snapshot chunk over its limit (docs/specs/versioned-trie.md §7), in canonical CBOR bytes. `size` is the
+   * exact length, or, when the weight alone shows the limit is passed, the weight: a lower bound on the length (saturated
+   * at `Long.MaxValue` for a value that shares structure), reported without encoding anything.
+   */
   final case class TooLarge(what: String, size: Long, max: Long) extends VersionedTrieError
 
   /** A value nested deeper than every wire format can carry (docs/specs/versioned-trie.md §4). */

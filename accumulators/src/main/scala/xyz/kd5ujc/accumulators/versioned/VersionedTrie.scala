@@ -42,13 +42,25 @@ object VersionedTrie {
   /** The deepest value a key may hold, so that every record carrying it stays within `CanonicalValue.MaxDepth`. */
   val MaxValueDepth: Int = CanonicalValue.MaxDepth - ValueWrapperDepth
 
-  /** A value every wire format can carry: at most `MaxValueDepth` deep and `MaxValueBytes` long. */
+  /**
+   * A value every wire format can carry: at most `MaxValueDepth` deep and `MaxValueBytes` long. Never encodes the value:
+   * see [[valueBytes]].
+   */
   def checkValue(key: StateKey, v: CanonicalValue): Either[VersionedTrieError, Unit] =
     if (v.depth > MaxValueDepth) VersionedTrieError.TooDeep(s"the value of ${key.value}", v.depth, MaxValueDepth).asLeft
     else {
-      val size = Cbor.encode(v).size
+      val size = valueBytes(v)
       Either.cond(size <= MaxValueBytes, (), VersionedTrieError.TooLarge(s"the value of ${key.value}", size, MaxValueBytes))
     }
+
+  /**
+   * The length of a value's canonical CBOR, without encoding it; or, for a value whose weight is already over
+   * `MaxValueBytes`, its weight, a lower bound on that length (`Cbor.encodedLength`), returned in O(1). A value that
+   * shares structure can be exponentially longer than it is large in memory, so its length is measured only once its
+   * weight bounds the work.
+   */
+  def valueBytes(v: CanonicalValue): Long =
+    if (v.weight > MaxValueBytes) v.weight else Cbor.encodedLength(v)
 
   val VersionSlot: ByteVector = ByteVector(0x00)
   val StateSlot: ByteVector = ByteVector(0x01)
