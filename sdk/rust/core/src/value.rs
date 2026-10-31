@@ -68,7 +68,7 @@ fn sized_weight(len: usize) -> u64 {
 /// Java's `BigInteger.bitLength` (the Scala reference's): the bits of the minimal two's-complement form without its
 /// sign bit, which for a negative `n` is the bit length of `|n| - 1`. That is one less than `|n|`'s exactly when `|n|`
 /// is a power of two (`-2^63` has 63).
-fn bit_length(n: &BigInt) -> u64 {
+pub(crate) fn bit_length(n: &BigInt) -> u64 {
     let bits = n.bits();
     let negative_power_of_two = n.is_negative() && n.magnitude().trailing_zeros() == Some(bits.saturating_sub(1));
     if negative_power_of_two { bits.saturating_sub(1) } else { bits }

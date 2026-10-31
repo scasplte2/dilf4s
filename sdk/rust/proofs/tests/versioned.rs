@@ -74,6 +74,8 @@ fn proofs() {
     let (v, vt) = setup();
     let root = d(&v.root);
     let mut counts = std::collections::BTreeMap::<&str, usize>::new();
+    // 2^60 leaves in 60 allocations
+    let shared = (0..60).fold(Value::text("a"), |v, _| Value::array(vec![v.clone(), v]).unwrap());
     for p in &v.proofs {
         let pr = proof(&vt, p);
         let claims: Vec<(StateKey, Option<Value>)> =
@@ -86,6 +88,8 @@ fn proofs() {
                     assert!(state.holds(k, x.as_ref()).unwrap(), "{}: {k}", p.name);
                     // a different claim is false
                     assert!(!state.holds(k, Some(&Value::text("other"))).unwrap(), "{}: {k} other", p.name);
+                    // a compact claim with 2^60 leaves is not held, and is never committed (expanded) to say so
+                    assert!(!state.holds(k, Some(&shared)).unwrap(), "{}: {k} shared", p.name);
                     // absent equals null: a null claim is a claim of absence
                     assert_eq!(state.holds(k, Some(&Value::Null)).unwrap(), x.is_none(), "{}: {k} null", p.name);
                 }
@@ -301,6 +305,13 @@ fn refusals() {
     let far = key("zzz/never/proven");
     match s.lookup(&far) {
         Ok(None) | Err(VersionedTrieError::NotCovered { .. }) => {}
+        other => panic!("{other:?}"),
+    }
+    // the lookup decides first, so a vast claim on such a key fails the same way, without being committed
+    let shared = (0..60).fold(Value::text("a"), |v, _| Value::array(vec![v.clone(), v]).unwrap());
+    match (s.lookup(&far), s.holds(&far, Some(&shared))) {
+        (Ok(None), Ok(false))
+        | (Err(VersionedTrieError::NotCovered { .. }), Err(VersionedTrieError::NotCovered { .. })) => {}
         other => panic!("{other:?}"),
     }
     // the head proof's history without its tail, against the version check: the as-of proof answers the version

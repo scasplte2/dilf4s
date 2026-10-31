@@ -70,7 +70,8 @@ pub enum VersionedTrieError {
     TooLarge {
         /// What.
         what: String,
-        /// Its size; for a value, a lower bound once past the limit (a value is measured only up to the limit).
+        /// Its size; for a value, a lower bound once past the limit (a value is measured only up to the limit), and
+        /// `u64::MAX` when too long to count.
         size: u64,
         /// The limit.
         max: u64,
@@ -231,7 +232,7 @@ pub fn check_value(key: &StateKey, value: &Value) -> Result<(), VersionedTrieErr
     let max = usize::try_from(MAX_VALUE_BYTES).unwrap_or(usize::MAX);
     cbor::encoded_len_within(value, max).map(|_| ()).map_err(|e| VersionedTrieError::TooLarge {
         what: what(),
-        size: u64::try_from(e.at_least).unwrap_or(u64::MAX),
+        size: e.at_least.and_then(|n| u64::try_from(n).ok()).unwrap_or(u64::MAX),
         max: MAX_VALUE_BYTES,
     })
 }

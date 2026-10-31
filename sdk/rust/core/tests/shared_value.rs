@@ -249,7 +249,7 @@ fn every_encoding_is_at_least_its_weight_and_the_budgeted_forms_agree() {
             assert_eq!(cbor::encoded_len_within(v, n), Ok(n), "{name}: encoded_len_within");
             if n > 0 {
                 let over = cbor::encode_within(v, n - 1).unwrap_err();
-                assert!(over.at_least > n - 1, "{name}: {over:?} reports more than the limit");
+                assert!(over.at_least.is_some_and(|a| a > n - 1), "{name}: {over:?} reports more than the limit");
                 assert_eq!(cbor::encoded_len_within(v, n - 1).unwrap_err().limit, n - 1, "{name}: limit");
             }
             checked += 1;
@@ -265,13 +265,17 @@ fn budgeted_encoding_refuses_a_shared_expansion_without_expanding_it() {
     let dag = doubled(Value::text("a"), 60);
     let e = cbor::encode_within(&dag, 1 << 20).unwrap_err();
     assert_eq!(e.limit, 1 << 20, "limit");
-    assert_eq!(u64::try_from(e.at_least).unwrap(), dag.weight(), "the weight is the lower bound reported");
+    assert_eq!(
+        e.at_least.map(|a| u64::try_from(a).unwrap()),
+        Some(dag.weight()),
+        "the weight is the lower bound reported"
+    );
     assert!(cbor::encoded_len_within(&dag, 1 << 20).is_err(), "length refused too");
     // within the weight bound but over in bytes (each u64::MAX is weight 2, 9 bytes): refused by the byte budget
     let ints = doubled(Value::int(u64::MAX), 17);
     assert!(ints.weight() < 1 << 20, "passes the weight check");
     let e = cbor::encode_within(&ints, 1 << 20).unwrap_err();
-    assert!(e.at_least > 1 << 20, "{e:?}");
+    assert!(e.at_least.is_some_and(|a| a > 1 << 20), "{e:?}");
     assert_eq!(cbor::encoded_len_within(&ints, 1 << 21), Ok(cbor::encode(&ints).len()), "counted exactly");
     assert!(start.elapsed().as_millis() < 2000, "took {:?}", start.elapsed());
 }
@@ -376,4 +380,68 @@ fn equality_of_unshared_trees_costs_about_a_walk() {
         "{} vector roots against copies: memoised equality {memoised:?}, full recursive walk {naive:?}",
         pairs.len()
     );
+}
+
+/// CBOR of an integer the plain way, materialising `-1 - n` and its bytes, to check the streamed encoder against.
+fn reference_integer(n: &BigInt) -> Vec<u8> {
+    let negative = *n < BigInt::from(0);
+    let carried = if negative { -n - BigInt::from(1) } else { n.clone() };
+    let major: u8 = if negative { 0x20 } else { 0x00 };
+    let head = |out: &mut Vec<u8>, mt: u8, arg: u64| {
+        let be = arg.to_be_bytes();
+        match arg {
+            0..=23 => out.push(mt | be[7]),
+            24..=0xff => out.extend([mt | 0x18, be[7]]),
+            0x100..=0xffff => out.extend([mt | 0x19, be[6], be[7]]),
+            0x1_0000..=0xffff_ffff => out.extend([mt | 0x1a, be[4], be[5], be[6], be[7]]),
+            _ => out.extend([&[mt | 0x1b][..], &be[..]].concat()),
+        }
+    };
+    let mut out = Vec::new();
+    if let Ok(small) = u64::try_from(&carried) {
+        head(&mut out, major, small);
+    } else {
+        let (_, bytes) = carried.to_bytes_be();
+        head(&mut out, 0xc0, if negative { 3 } else { 2 });
+        head(&mut out, 0x40, u64::try_from(bytes.len()).unwrap());
+        out.extend(bytes);
+    }
+    out
+}
+
+#[test]
+fn integers_are_streamed_exactly() {
+    let two = BigInt::from(2);
+    let mut cases = vec![BigInt::from(0), BigInt::from(1), BigInt::from(-1), BigInt::from(23), BigInt::from(-24)];
+    for e in [7u32, 8, 31, 32, 63, 64, 65, 127, 128, 129, 191, 192, 256, 1000, 4096] {
+        let p = num_traits_pow(&two, e);
+        for n in [p.clone() - 1, p.clone(), p.clone() + 1] {
+            cases.push(-n.clone());
+            cases.push(n);
+        }
+        // a power of two times a non-trivial low pattern, and a negative with zero low limbs
+        cases.push(-(p.clone() * BigInt::from(3) + num_traits_pow(&two, e / 2)));
+        cases.push(-(p * BigInt::from(5)));
+    }
+    for n in &cases {
+        let v = Value::int(n.clone());
+        let expected = reference_integer(n);
+        assert_eq!(cbor::encode(&v), expected, "encoding of {n}");
+        assert_eq!(cbor::decode(&expected).unwrap(), v, "decodes back: {n}");
+        assert_eq!(cbor::encoded_len_within(&v, expected.len()), Ok(expected.len()), "counted: {n}");
+        let r = Value::number(n, &BigInt::from(7)).unwrap();
+        assert_eq!(cbor::decode(&cbor::encode(&r)).unwrap(), r, "a rational round-trips: {n}/7");
+    }
+}
+
+#[test]
+fn an_integer_over_the_budget_is_refused_from_its_length_alone() {
+    // weight 1 + 2^20/64 = 16,385 passes a 20,000-byte limit; its 131,073 bytes do not, known before any is produced
+    let n = BigInt::from(1) << (1 << 20);
+    let v = Value::int(n);
+    assert_eq!(v.weight(), 16_385);
+    let full = cbor::encode(&v).len();
+    let e = cbor::encoded_len_within(&v, 20_000).unwrap_err();
+    assert_eq!(e.at_least, Some(full), "the whole length, from the bit length");
+    assert_eq!(cbor::encode_within(&v, 20_000).unwrap_err(), e, "the same refusal when writing");
 }

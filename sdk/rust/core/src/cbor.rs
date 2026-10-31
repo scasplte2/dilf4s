@@ -6,10 +6,10 @@ use core::fmt;
 
 use num_bigint::{BigInt, Sign};
 use num_integer::Integer;
-use num_traits::{One, ToPrimitive};
+use num_traits::One;
 
 use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem};
-use crate::value::{Array, MAX_DEPTH, Map, Rational, Value};
+use crate::value::{Array, MAX_DEPTH, MAX_WEIGHT, Map, Rational, Value, bit_length};
 
 const TAG_POSITIVE_BIGNUM: u64 = 2;
 const TAG_NEGATIVE_BIGNUM: u64 = 3;
@@ -44,13 +44,17 @@ pub fn encode(value: &Value) -> Vec<u8> {
 pub struct TooLarge {
     /// The limit, in bytes.
     pub limit: usize,
-    /// A lower bound on the encoding's length, above the limit: counting stops at the first byte past it.
-    pub at_least: usize,
+    /// A lower bound on the encoding's length, above the limit (counting stops at the first byte past it), or `None`
+    /// when the length is not even countable: over `usize::MAX`, or `2^63 - 1` bytes or more (a weight that saturates).
+    pub at_least: Option<usize>,
 }
 
 impl fmt::Display for TooLarge {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "the encoding is at least {} bytes, over {}", self.at_least, self.limit)
+        match self.at_least {
+            Some(n) => write!(f, "the encoding is at least {n} bytes, over {}", self.limit),
+            None => write!(f, "the encoding is too long to count, over {}", self.limit),
+        }
     }
 }
 
@@ -58,29 +62,39 @@ impl core::error::Error for TooLarge {}
 
 /// The canonical encoding of `value`, if it is at most `max_bytes` long; it never holds more than `max_bytes`.
 ///
-/// O(min(weight, `max_bytes`)): every encoding is at least as long as the value's [`Value::weight`] (each node's head
-/// is a byte, text and byte strings add their length, a number of `l` whole limbs takes at least `l` bytes more), so a
-/// weight over the limit is refused at once, and each node visited writes a byte before its children, so the walk
-/// stops within `max_bytes + 1` nodes.
+/// O(min(weight, `max_bytes`)), and no allocation beyond the output: every encoding is at least as long as the value's
+/// [`Value::weight`] (each node's head is a byte, text and byte strings add their length, a number of `l` whole limbs
+/// takes at least `l` bytes more), so a weight over the limit is refused at once; each node visited writes a byte
+/// before its children, so the walk stops within `max_bytes + 1` nodes; and a number's length is known from its bit
+/// length, so it is checked against the budget before its bytes are streamed out limb by limb.
 pub fn encode_within(value: &Value, max_bytes: usize) -> Result<Vec<u8>, TooLarge> {
     let mut out = Vec::new();
-    within(value, max_bytes, Some(&mut out))?;
+    within(value, max_bytes, countable(), Some(&mut out))?;
     Ok(out)
 }
 
 /// The length of `value`'s canonical encoding, if it is at most `max_bytes`, counted without encoding it, with the
 /// bounds of [`encode_within`].
 pub fn encoded_len_within(value: &Value, max_bytes: usize) -> Result<usize, TooLarge> {
-    within(value, max_bytes, None)
+    within(value, max_bytes, countable(), None)
 }
 
-fn within(value: &Value, max_bytes: usize, out: Option<&mut Vec<u8>>) -> Result<usize, TooLarge> {
-    let weight = usize::try_from(value.weight()).unwrap_or(usize::MAX);
-    if weight > max_bytes {
-        return Err(TooLarge { limit: max_bytes, at_least: weight });
+/// The longest length counted: below the saturated weight `2^63 - 1`, and within `usize`. Every count is checked
+/// against it, so no counter clamps or wraps into a false success.
+fn countable() -> usize {
+    usize::try_from(MAX_WEIGHT.saturating_sub(1)).unwrap_or(usize::MAX)
+}
+
+/// [`encode_within`] and [`encoded_len_within`], counting lengths up to `countable` (a parameter so tests can stand
+/// in for a 32-bit `usize`).
+fn within(value: &Value, max: usize, countable: usize, out: Option<&mut Vec<u8>>) -> Result<usize, TooLarge> {
+    match usize::try_from(value.weight()).ok().filter(|&w| w <= countable) {
+        None => return Err(TooLarge { limit: max, at_least: None }),
+        Some(w) if w > max => return Err(TooLarge { limit: max, at_least: Some(w) }),
+        Some(_) => {}
     }
-    let mut sink = Budget { out, len: 0, max: max_bytes };
-    write_value(&mut sink, value).map_err(|over| TooLarge { limit: max_bytes, at_least: over.0 })?;
+    let mut sink = Budget { out, len: 0, max, countable };
+    write_value(&mut sink, value).map_err(|Over(at_least)| TooLarge { limit: max, at_least })?;
     Ok(sink.len)
 }
 
@@ -88,6 +102,8 @@ fn within(value: &Value, max_bytes: usize, out: Option<&mut Vec<u8>>) -> Result<
 trait Sink {
     type Error;
     fn put(&mut self, bytes: &[u8]) -> Result<(), Self::Error>;
+    /// Whether `n` more bytes fit, checked before they are produced.
+    fn room(&mut self, n: u64) -> Result<(), Self::Error>;
 }
 
 impl Sink for Vec<u8> {
@@ -96,25 +112,38 @@ impl Sink for Vec<u8> {
         self.extend_from_slice(bytes);
         Ok(())
     }
+    fn room(&mut self, _: u64) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
-/// A byte budget, optionally writing: its buffer never grows past `max`.
+/// A byte budget, optionally writing: its buffer never grows past `max`, and its count never past `countable`.
 struct Budget<'a> {
     out: Option<&'a mut Vec<u8>>,
     len: usize,
     max: usize,
+    countable: usize,
 }
 
-/// The length the output would have reached.
-struct Over(usize);
+/// The length the output would have reached, or `None` past what is countable.
+struct Over(Option<usize>);
+
+impl Budget<'_> {
+    /// The length after `n` more bytes, if within the budget.
+    fn reach(&self, n: u64) -> Result<usize, Over> {
+        let next = usize::try_from(n)
+            .ok()
+            .and_then(|n| self.len.checked_add(n))
+            .filter(|&next| next <= self.countable)
+            .ok_or(Over(None))?;
+        if next > self.max { Err(Over(Some(next))) } else { Ok(next) }
+    }
+}
 
 impl Sink for Budget<'_> {
     type Error = Over;
     fn put(&mut self, bytes: &[u8]) -> Result<(), Over> {
-        let next = self.len.saturating_add(bytes.len());
-        if next > self.max {
-            return Err(Over(next));
-        }
+        let next = self.reach(length(bytes.len()))?;
         if let Some(out) = self.out.as_deref_mut() {
             if out.capacity() < next {
                 let target = next.max(out.capacity().saturating_mul(2)).min(self.max);
@@ -124,6 +153,9 @@ impl Sink for Budget<'_> {
         }
         self.len = next;
         Ok(())
+    }
+    fn room(&mut self, n: u64) -> Result<(), Over> {
+        self.reach(n).map(|_| ())
     }
 }
 
@@ -171,20 +203,44 @@ fn length(n: usize) -> u64 {
     u64::try_from(n).unwrap_or(u64::MAX)
 }
 
+/// An integer, without materialising it: CBOR carries `n` for `n >= 0` and `-1 - n` (that is `|n| - 1`) for `n < 0`,
+/// read here limb by limb from `|n|`'s own digits, so nothing the size of `n` is allocated.
 fn write_integer<S: Sink>(out: &mut S, n: &BigInt) -> Result<(), S::Error> {
-    let (major, tag, magnitude) = if n.sign() == Sign::Minus {
-        (MAJOR_NEGATIVE, TAG_NEGATIVE_BIGNUM, -n - BigInt::one())
-    } else {
-        (MAJOR_UNSIGNED, TAG_POSITIVE_BIGNUM, n.clone())
+    let negative = n.sign() == Sign::Minus;
+    let magnitude = n.magnitude();
+    // |n| - 1 borrows through |n|'s zero limbs below its lowest non-zero one, which loses 1
+    let lowest = if negative { magnitude.trailing_zeros().unwrap_or(0) / 64 } else { 0 };
+    let limb = |i: u64, digit: u64| {
+        if !negative {
+            return digit;
+        }
+        match i.cmp(&lowest) {
+            core::cmp::Ordering::Less => u64::MAX,
+            core::cmp::Ordering::Equal => digit.wrapping_sub(1),
+            core::cmp::Ordering::Greater => digit,
+        }
     };
-    if let Some(m) = magnitude.to_u64() {
-        head(out, major, m)
-    } else {
-        let (_, bytes) = magnitude.to_bytes_be();
-        head(out, MAJOR_TAG, tag)?;
-        head(out, MAJOR_BYTES, length(bytes.len()))?;
-        out.put(&bytes)
+    let bits = bit_length(n);
+    let major = if negative { MAJOR_NEGATIVE } else { MAJOR_UNSIGNED };
+    if bits <= 64 {
+        return head(out, major, magnitude.iter_u64_digits().next().map_or(0, |d| limb(0, d)));
     }
+    let bytes = bits.div_ceil(8);
+    let limbs = bits.div_ceil(64);
+    head(out, MAJOR_TAG, if negative { TAG_NEGATIVE_BIGNUM } else { TAG_POSITIVE_BIGNUM })?;
+    head(out, MAJOR_BYTES, bytes)?;
+    out.room(bytes)?;
+    // the top limb carries only its significant bytes; a limb above it (|n| = 2^(64k), borrowed to zero) carries none
+    let top_bytes = bytes.saturating_sub(limbs.saturating_sub(1).saturating_mul(8));
+    let skip = usize::try_from(8u64.saturating_sub(top_bytes)).unwrap_or(0);
+    for (i, digit) in magnitude.iter_u64_digits().enumerate().rev() {
+        let i = u64::try_from(i).unwrap_or(u64::MAX);
+        if i < limbs {
+            let from = if i.saturating_add(1) == limbs { skip } else { 0 };
+            out.put(limb(i, digit).to_be_bytes().get(from..).unwrap_or(&[]))?;
+        }
+    }
+    Ok(())
 }
 
 /// The shortest-form initial byte and argument.
@@ -470,5 +526,41 @@ impl Decoder<'_> {
         } else {
             Ok(n)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+
+    use super::{TooLarge, Value, within};
+
+    fn doubled(leaf: Value, k: usize) -> Value {
+        (0..k).fold(leaf, |v, _| Value::array(vec![v.clone(), v]).unwrap())
+    }
+
+    /// A 32-bit `usize` stands in as a small countable bound: no count clamps or wraps into a success.
+    #[test]
+    fn lengths_past_what_is_countable_are_refused_not_clamped() {
+        // 2^32 - 1 nodes of null encode in 2^33 - 1 bytes: over a 32-bit count, refused by weight alone
+        let nulls = doubled(Value::Null, 32);
+        let bound = usize::try_from(u32::MAX).unwrap();
+        assert_eq!(within(&nulls, bound, bound, None), Err(TooLarge { limit: bound, at_least: None }), "32-bit");
+        // within the countable weight but over it in bytes (u64::MAX: weight 2, 9 bytes): 383 weight, 1279 bytes
+        let ints = doubled(Value::int(u64::MAX), 7);
+        assert_eq!(ints.weight(), 383);
+        assert_eq!(super::encode(&ints).len(), 1279);
+        assert_eq!(within(&ints, 1000, 1000, None), Err(TooLarge { limit: 1000, at_least: None }), "past the count");
+        let mut out = vec![];
+        assert_eq!(
+            within(&ints, 1000, 1000, Some(&mut out)).map(|_| ()),
+            Err(TooLarge { limit: 1000, at_least: None })
+        );
+        assert!(out.capacity() <= 1000, "the buffer stays within the budget");
+        // under a smaller limit, the first length past it is reported
+        let e = within(&ints, 500, 1000, None).unwrap_err();
+        assert!(e.at_least.is_some_and(|n| n > 500 && n <= 1000), "{e:?}");
+        // and a countable length within the limit is exact
+        assert_eq!(within(&ints, 1279, 2000, None), Ok(1279));
     }
 }
