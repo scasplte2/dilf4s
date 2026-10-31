@@ -117,16 +117,16 @@ object ZkVectors {
   private val premium = fixture("sp1-groth16-premium.json")
   private val shielded = fixture("sp1-groth16-shielded.json")
 
-  private def flip(b: ByteVector, i: Long): ByteVector = b.update(i, (b(i) ^ 1).toByte)
+  private def flip(b:    ByteVector, i: Long): ByteVector = b.update(i, (b(i) ^ 1).toByte)
   private def setWord(b: ByteVector, i: Int, v: BigInt): ByteVector = b.patch(4L + 32L * i, word(v))
-  private def wordAt(b: ByteVector, i: Int): BigInt = BigInt(1, b.slice(4L + 32L * i, 4L + 32L * (i + 1)).toArray)
+  private def wordAt(b:  ByteVector, i: Int): BigInt = BigInt(1, b.slice(4L + 32L * i, 4L + 32L * (i + 1)).toArray)
 
   private def groth16Kind(r: Either[Groth16Error, Unit]): String = r match {
-    case Right(())                               => "verified"
-    case Left(Groth16Error.Malformed(_))         => "Malformed"
-    case Left(Groth16Error.InvalidProof(_))      => "InvalidProof"
-    case Left(Groth16Error.PairingCheckFailed)   => "PairingCheckFailed"
-    case Left(Groth16Error.Rejected(_))          => "Rejected"
+    case Right(())                             => "verified"
+    case Left(Groth16Error.Malformed(_))       => "Malformed"
+    case Left(Groth16Error.InvalidProof(_))    => "InvalidProof"
+    case Left(Groth16Error.PairingCheckFailed) => "PairingCheckFailed"
+    case Left(Groth16Error.Rejected(_))        => "Rejected"
   }
 
   private def sp1(name: String, vkey: ByteVector, publicValues: ByteVector, proofBytes: ByteVector): Json =
@@ -171,9 +171,9 @@ object ZkVectors {
   def render: String =
     Json
       .obj(
-        "spec"       -> "docs/specs/zk.md".asJson,
-        "version"    -> 1.asJson,
-        "source"     -> "go-ethereum EIP-196/197 precompile vectors and metakit's SP1 v6.1.0 proofs (docs/test-vectors/zk), with dilf4s's own malformed and invalid inputs (ZkVectors)".asJson,
+        "spec"    -> "docs/specs/zk.md".asJson,
+        "version" -> 1.asJson,
+        "source" -> "go-ethereum EIP-196/197 precompile vectors and metakit's SP1 v6.1.0 proofs (docs/test-vectors/zk), with dilf4s's own malformed and invalid inputs (ZkVectors)".asJson,
         "add"        -> adds.asJson,
         "mul"        -> muls.asJson,
         "pairing"    -> pairings.asJson,
