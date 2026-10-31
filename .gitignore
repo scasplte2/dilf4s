@@ -188,3 +188,8 @@ env/
 # Metals-generated sbt files
 project/metals.sbt
 project/project/
+
+# SDKs: the npm lockfile is committed (npm ci needs it); node_modules, dist and target stay ignored above
+!sdk/ts/package-lock.json
+# `result*` above (test results) would otherwise hide the Result module
+!sdk/ts/packages/core/src/result.ts
