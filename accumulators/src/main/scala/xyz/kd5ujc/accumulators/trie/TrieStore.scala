@@ -36,6 +36,9 @@ trait TrieStore[F[_], H] {
     ranges:   List[(ByteVector, Option[ByteVector])] = Nil
   ): F[TrieProof[H]]
 
+  /** The root `ops` would give applied to a retained version, without writing: what that version plus `ops` commits to. */
+  def rootAfter(version: Version, ops: List[(ByteVector, Option[Digest[H]])]): F[Digest[H]]
+
   /** Discards versions after `to`; their nodes are freed unless an older version shares them. */
   def rollback(to: Version): F[Unit]
 
@@ -193,6 +196,15 @@ object TrieStore {
         r    <- rootHash(version.value)
         v    <- TrieEngine.get[F, H](node, r, path)
       } yield v
+
+    def rootAfter(version: Version, ops: List[(ByteVector, Option[Digest[H]])]): F[Digest[H]] =
+      for {
+        s       <- state
+        _       <- checkReadable(s, version)
+        trieOps <- liftT(ops.traverse { case (k, v) => mode.path(k).map(TrieOp(_, v)) })
+        r       <- rootHash(version.value)
+        delta   <- TrieEngine.apply[F, H](node, r, trieOps)
+      } yield delta.root.getOrElse(T.empty)
 
     def prove(
       keys:     List[ByteVector],

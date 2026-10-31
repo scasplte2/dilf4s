@@ -16,6 +16,7 @@ import xyz.kd5ujc.models.merkle.{MerkleConsistency, MerkleInclusion, MerkleLogSt
 import xyz.kd5ujc.models.poseidon.PoseidonMerkleProof
 import xyz.kd5ujc.models.storage.VersionedRecord
 import xyz.kd5ujc.models.trie.{TrieChildren, TrieProof, TrieSegment}
+import xyz.kd5ujc.models.versioned_trie.{VersionedTrieAt, VersionedTrieHead, VersionedTrieProof}
 import xyz.kd5ujc.modelsgen.{CddlParser, CddlSampler, QName, Schema}
 
 import io.circe.{Json, parser}
@@ -70,7 +71,7 @@ object SchemaConformanceSuite extends SimpleIOSuite {
   }
 
   private val schemas =
-    List("merkle", "trie", "poseidon", "storage", "bloom", "crypto").map(m => m -> read("shared", "schemas", s"$m.cddl"))
+    List("merkle", "trie", "poseidon", "storage", "bloom", "crypto", "versioned-trie").map(m => m -> read("shared", "schemas", s"$m.cddl"))
 
   private val codecs: Map[String, Codec[?]] = Map(
     "merkle-inclusion"      -> MerkleInclusion.codec,
@@ -81,7 +82,12 @@ object SchemaConformanceSuite extends SimpleIOSuite {
     "poseidon-merkle-proof" -> PoseidonMerkleProof.codec,
     "merkle-log-state"      -> MerkleLogState.codec,
     "versioned-record"      -> VersionedRecord.codec,
-    "bloom-filter"          -> BloomFilter.codec
+    "bloom-filter"          -> BloomFilter.codec,
+    "versioned-trie-head"   -> VersionedTrieHead.codec,
+    "versioned-trie-at"     -> VersionedTrieAt.codec,
+    "versioned-trie-proof"  -> VersionedTrieProof.codec
+    // state keys are `.regexp` text, which the sampler cannot generate; versioned-trie deltas are round-tripped
+    // through the conformance vectors and VersionedTrieProofSuite instead
   )
 
   /** Samples must be canonical CBOR the generated decoder accepts and re-encodes exactly: a rejection is a bug. */
@@ -101,12 +107,13 @@ object SchemaConformanceSuite extends SimpleIOSuite {
 
   pureTest("each spec embeds its schema verbatim") {
     List(
-      "merkle"   -> "merkle.md",
-      "trie"     -> "trie.md",
-      "poseidon" -> "zk.md",
-      "storage"  -> "storage.md",
-      "bloom"    -> "bloom.md",
-      "crypto"   -> "signing.md"
+      "merkle"         -> "merkle.md",
+      "trie"           -> "trie.md",
+      "poseidon"       -> "zk.md",
+      "storage"        -> "storage.md",
+      "bloom"          -> "bloom.md",
+      "crypto"         -> "signing.md",
+      "versioned-trie" -> "versioned-trie.md"
     ).foldMap {
       case (m, spec) =>
         val schema = read("shared", "schemas", s"$m.cddl").trim

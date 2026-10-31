@@ -1,0 +1,38 @@
+; dilf4s versioned trie, v1 (docs/specs/versioned-trie.md). Normative for shape.
+; Trie proofs are trie.cddl's; they carry no keys, so the verifier supplies every key, prefix and range. A version
+; key "v" is the version's fixed-width unsigned big-endian encoding; roots are digests. Domain invariants (the width
+; of "v", digest sizes, the key grammar's length limits) are checked by the domain decoder, not by these types.
+;# import trie as trie
+
+versioned-trie-head = {
+  "v": bytes,
+  "s": bytes,
+  "h": bytes,
+}
+
+versioned-trie-at = {
+  "v": bytes,
+  ? "s": bytes,
+}
+
+versioned-trie-proof = {
+  "head": versioned-trie-head,
+  "top": trie.trie-proof,
+  ? "at": versioned-trie-at,
+  ? "history": trie.trie-proof,
+  ? "state": trie.trie-proof,
+}
+
+state-key = text .regexp "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*"
+
+versioned-trie-upsert = {
+  "k": state-key,
+  "v": any,
+}
+
+versioned-trie-delta = {
+  ? "parent": versioned-trie-head,
+  "head": versioned-trie-head,
+  "upserts": [* versioned-trie-upsert],
+  "removes": [* state-key],
+}

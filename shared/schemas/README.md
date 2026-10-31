@@ -14,6 +14,7 @@ validate against the same files.
 | `storage.cddl` | versioned-store history records | `docs/specs/storage.md` (embedded) |
 | `bloom.cddl` | Bloom filter encoding | `docs/specs/bloom.md` (embedded) |
 | `crypto.cddl` | sizes of keys, signatures, VRF/KES/zk proofs | `docs/specs/signing.md` §4 (embedded) |
+| `versioned-trie.cddl` | versioned-trie heads, proofs and deltas (wire) | `docs/specs/versioned-trie.md` §5 (embedded) |
 | `*-vectors.cddl` | The conformance vector files in `shared/vectors/` | the matching spec |
 
 Every vector file in `shared/vectors/` must have a schema here. `VectorSchemasSuite` checks this, and checks that each
