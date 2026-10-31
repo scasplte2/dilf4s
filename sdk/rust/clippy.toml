@@ -1,0 +1,7 @@
+# Big-integer arithmetic cannot overflow (it allocates). Division by zero still panics: every division in the crate
+# is by a value already shown to be non-zero.
+arithmetic-side-effects-allowed = ["num_bigint::BigInt", "num_bigint::BigUint"]
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-panic-in-tests = true
