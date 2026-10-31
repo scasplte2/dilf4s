@@ -29,9 +29,9 @@ object JlvmVectors {
 
   /**
    * The metakit-derived cases, then the example contracts' (ContractVectorCases), then metakit's out-of-gas cases at
-   * their own gas limits.
+   * their own gas limits, then the per-operation coverage (OpCoverageCases).
    */
-  val files: List[String] = List("jlvm_cases.json", "jlvm_contract_cases.json", "jlvm_gas_cases.json")
+  val files: List[String] = List("jlvm_cases.json", "jlvm_contract_cases.json", "jlvm_gas_cases.json", "jlvm_op_cases.json")
 
   private def read(name: String): IO[Inputs] =
     Resource

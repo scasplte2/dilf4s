@@ -1,33 +1,29 @@
 package xyz.kd5ujc.jlvm
 
-import java.nio.charset.StandardCharsets.UTF_8
-import java.nio.file.{Files, Paths}
-
 import cats.effect.{IO, Resource}
 import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.ValueCommitment
 import xyz.kd5ujc.accumulators.merkle.{MerkleCodec, MerkleHashing, MerkleTree}
 import xyz.kd5ujc.accumulators.trie.{KeyMode, Trie, TrieHashing, TrieProofs}
+import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.Sha256
 
-import io.circe.{ACursor, Json}
+import io.circe.Json
 import scodec.bits.ByteVector
 import weaver.{Expectations, IOSuite}
 
 /** The Merkle and trie proof operations, run over the committed conformance vectors (merkle_v1, trie_v1). */
 object ProofOpsSuite extends IOSuite {
 
+  import ProofFixtures._
+
   final case class Fixtures(jlvm: Jlvm, merkle: Json, trie: Json)
   type Res = Fixtures
 
-  private def read(name: String): IO[Json] =
-    IO(new String(Files.readAllBytes(Paths.get("shared", "vectors", name)), UTF_8)).flatMap(t => io.circe.parser.parse(t).liftTo[IO])
-
   def sharedResource: Resource[IO, Fixtures] =
-    Resource.eval((Jlvm.load[IO], read("merkle_v1.json"), read("trie_v1.json")).mapN(Fixtures.apply))
+    Resource.eval((Jlvm.load[IO], vector("merkle_v1.json"), vector("trie_v1.json")).mapN(Fixtures.apply))
 
   /** `{"<op>": [{"var": "a0"}, ...]}` over the arguments as data, so null arguments stay null. */
   private def call(jlvm: Jlvm, op: Op, args: CanonicalValue*): Either[JlvmError, CanonicalValue] = {
@@ -37,14 +33,6 @@ object ProofOpsSuite extends IOSuite {
     val data = CanonicalValue.map(names.zip(args)).fold(e => sys.error(e.toString), identity)
     jlvm.evaluate(program, data, Map.empty, Config()).result
   }
-
-  private def get[A](e:    Either[?, A]): A = e.fold(err => sys.error(err.toString), identity)
-  private def hex(s:       String): ByteVector = get(ByteVector.fromHexDescriptive(s))
-  private def cbor(s:      String): CanonicalValue = get(Cbor.decode(hex(s)))
-  private def str(c:       ACursor): String = get(c.as[String])
-  private def m(kvs:       (String, CanonicalValue)*): CanonicalValue = get(CanonicalValue.map(kvs))
-  private def a(vs:        CanonicalValue*): CanonicalValue = get(CanonicalValue.array(vs.toVector))
-  private def headOf(root: String, size: Long): CanonicalValue = m("root" -> CBytes(hex(root)), "size" -> CInt(BigInt(size)))
 
   private def isCrypto(r: Either[JlvmError, CanonicalValue]): Boolean = r match {
     case Left(JlvmError.Crypto(_, _)) => true
@@ -58,14 +46,6 @@ object ProofOpsSuite extends IOSuite {
   }
 
   // ---- Merkle
-
-  /**
-   * merkle_v1 and trie_v1 are built with the byte-level APIs. Programs verify value-committed structures, so the
-   * Merkle and trie tests rebuild the vectors' trees from their leaves and entries with ValueCommitment, proving the
-   * same queries; the consistency test uses the vectors' heads as they are.
-   */
-  private def committedTree(leaves: List[ByteVector], n: Long): MerkleTree[Sha256] =
-    get(MerkleTree.fromLeaves[Sha256, CanonicalValue](leaves.take(n.toInt).map(CBytes(_))))
 
   test("merkle_verify: every inclusion proof of merkle_v1 verifies against its head; other leaves and sizes do not") { f =>
     IO {
@@ -222,57 +202,7 @@ object ProofOpsSuite extends IOSuite {
 
   // ---- tries
 
-  private def mode(j: Json): CanonicalValue =
-    j.hcursor
-      .downField("fixed")
-      .as[Int]
-      .map(n => m("fixed" -> CInt(BigInt(n))))
-      .orElse(j.hcursor.downField("variable").as[Int].map(n => m("variable" -> CInt(BigInt(n)))))
-      .fold(e => sys.error(e.toString), identity)
-
   private def fixtures(f: Fixtures): List[Json] = get(f.trie.hcursor.downField("fixtures").as[List[Json]])
-
-  private def keyMode(fx: Json): KeyMode =
-    fx.hcursor
-      .downField("mode")
-      .downField("fixed")
-      .as[Int]
-      .map(KeyMode.fixed)
-      .orElse(
-        fx.hcursor.downField("mode").downField("variable").as[Int].map(KeyMode.variable)
-      )
-      .fold(e => sys.error(e.toString), r => get(r))
-
-  /** A trie_v1 fixture rebuilt with its values committed as programs claim them, proving the fixture's own queries. */
-  private def committedTrie(fx: Json): Trie[Sha256] =
-    get(
-      Trie.fromEntries[Sha256](
-        keyMode(fx),
-        values(fx).toList.map { case (k, v) => hex(k) -> TrieHashing[Sha256].value(ValueCommitment.bytes(CBytes(v))) }
-      )
-    )
-
-  private def rootOf(fx: Json): CanonicalValue = CBytes(committedTrie(fx).root.bytes)
-
-  private def proofOf(fx: Json): CanonicalValue = {
-    val q = fx.hcursor.downField("proof")
-    get(
-      committedTrie(fx)
-        .prove(
-          get(q.downField("keys").as[List[String]]).map(hex),
-          get(q.downField("prefixes").as[List[String]]).map(hex),
-          get(q.downField("ranges").as[List[Json]]).map(r => hex(str(r.hcursor.downField("from"))) -> rangeEnd(r))
-        )
-        .flatMap(TrieProofs.encode(_))
-    )
-  }
-
-  private def rangeEnd(r: Json): Option[ByteVector] = r.hcursor.downField("until").as[String].toOption.map(hex)
-
-  private def values(fx: Json): Map[String, ByteVector] =
-    get(fx.hcursor.downField("entries").as[List[Json]])
-      .map(e => str(e.hcursor.downField("key")) -> hex(str(e.hcursor.downField("value"))))
-      .toMap
 
   test("trie_verify: every lookup of trie_v1 (present, absent, not covered)") { f =>
     IO {
