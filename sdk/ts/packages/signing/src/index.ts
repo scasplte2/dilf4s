@@ -4,6 +4,10 @@
  *
  * Malformed input (a wrong length, a key that does not decode) is a typed error; a well-formed input that fails
  * verification is `false`. No function throws.
+ *
+ * Not side-channel hardened: JavaScript gives no constant-time guarantee, and part of the secret-key arithmetic
+ * (BIP32 and Icarus child keys, VRF and ristretto255 responses) is plain `bigint`. Verification is unaffected; sign
+ * where an attacker can time you (a server, a shared host) with the Rust SDK, whose secret scalars are constant time.
  */
 export type { KesError, KeyError, SigningError, VrfError } from "./errors.js";
 export { Secret, Signature, SigningKey, VerifyingKey, type KeyPair, type SchemeName } from "./keys.js";
