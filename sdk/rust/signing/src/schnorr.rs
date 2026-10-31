@@ -15,13 +15,7 @@ use k256::elliptic_curve::point::{AffineCoordinates as _, DecompactPoint as _};
 use k256::{AffinePoint, FieldBytes, ProjectivePoint, Scalar, U256};
 
 use crate::error::SigningError;
-use crate::util::{be_less_than, exact, halves, tagged_sha256};
-
-/// The field prime `p` of secp256k1, big-endian.
-const P: [u8; 32] = [
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xfc, 0x2f,
-];
+use crate::util::{SECP256K1_P, be_less_than, exact, halves, tagged_sha256};
 
 /// The dilf4s tag for [`tagged`] signatures.
 pub const TAG: &str = "dilf4s/sig/bip340/v1";
@@ -50,7 +44,7 @@ fn challenge(r: &[u8; 32], px: &[u8; 32], message: &[u8]) -> Scalar {
 /// BIP-340 `Verify(pk, m, sig)`.
 fn verify_raw(key: &XOnly, message: &[u8], signature: &[u8; 64]) -> bool {
     let (r, s) = halves(signature);
-    if !be_less_than(&r, &P) {
+    if !be_less_than(&r, &SECP256K1_P) {
         return false;
     }
     let Some(s) = Option::<Scalar>::from(Scalar::from_repr(FieldBytes::from(s))) else {
