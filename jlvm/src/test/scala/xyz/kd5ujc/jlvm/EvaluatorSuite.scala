@@ -486,7 +486,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
       )
   }
 
-  check("bls_aggregate_verify pays one per-element charge per key, before verifying") {
+  check("bls_aggregate_verify pays one per-element charge per key and the message by weight, before verifying") {
     val bls = S.cost(Op.BlsAggregateVerify)
     val read = S.varAccess.value + S.perPathSegment.value
     val pk = "\"0x" + "00" * 48 + "\""
@@ -498,10 +498,10 @@ object EvaluatorSuite extends IOSuite with Checkers {
       )
     val two = run(2)
     val three = run(3)
-    // the keys count their elements; the message and the signature count 1 each
+    // the keys count their elements and the signature 1; the message pays the hashing rate on its weight (2 bytes: 3)
     expect
       .same(bls.perUnit.value, three.gasUsed.value - two.gasUsed.value)
-      .and(expect.same(Gas(bls.base.value + 3 * read + bls.perUnit.value * (3 + 1 + 1)), three.gasUsed))
+      .and(expect.same(Gas(bls.base.value + 3 * read + bls.perUnit.value * (3 + 1) + 3), three.gasUsed))
       .and(
         expect(
           three.result match {

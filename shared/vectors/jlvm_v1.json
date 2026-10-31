@@ -6286,7 +6286,7 @@
         "json" : "true",
         "cbor" : "f5"
       },
-      "gasUsed" : 380153,
+      "gasUsed" : 355171,
       "warnings" : 0
     },
     {
@@ -7363,7 +7363,7 @@
         "json" : "false",
         "cbor" : "f4"
       },
-      "gasUsed" : 380153,
+      "gasUsed" : 355171,
       "warnings" : 0
     },
     {
@@ -7374,7 +7374,7 @@
         "json" : "false",
         "cbor" : "f4"
       },
-      "gasUsed" : 380153,
+      "gasUsed" : 355181,
       "warnings" : 0
     },
     {
@@ -7384,7 +7384,7 @@
       "outcome" : {
         "error" : "Crypto"
       },
-      "gasUsed" : 380153,
+      "gasUsed" : 355171,
       "warnings" : 0
     },
     {
@@ -7394,7 +7394,7 @@
       "outcome" : {
         "error" : "Crypto"
       },
-      "gasUsed" : 380153,
+      "gasUsed" : 355171,
       "warnings" : 0
     },
     {
@@ -7878,7 +7878,7 @@
         "json" : "true",
         "cbor" : "f5"
       },
-      "gasUsed" : 355126,
+      "gasUsed" : 330159,
       "warnings" : 0
     },
     {
@@ -7889,7 +7889,7 @@
         "json" : "false",
         "cbor" : "f4"
       },
-      "gasUsed" : 380153,
+      "gasUsed" : 355186,
       "warnings" : 0
     },
     {
@@ -28551,7 +28551,7 @@
       "outcome" : {
         "error" : "Arity"
       },
-      "gasUsed" : 280038,
+      "gasUsed" : 255039,
       "warnings" : 0
     },
     {
@@ -28561,7 +28561,7 @@
       "outcome" : {
         "error" : "Arity"
       },
-      "gasUsed" : 280038,
+      "gasUsed" : 255039,
       "warnings" : 0
     },
     {
@@ -28571,7 +28571,7 @@
       "outcome" : {
         "error" : "Arity"
       },
-      "gasUsed" : 280038,
+      "gasUsed" : 255039,
       "warnings" : 0
     },
     {
@@ -28581,7 +28581,7 @@
       "outcome" : {
         "error" : "Arity"
       },
-      "gasUsed" : 280038,
+      "gasUsed" : 255040,
       "warnings" : 0
     },
     {
@@ -28591,7 +28591,7 @@
       "outcome" : {
         "error" : "Arity"
       },
-      "gasUsed" : 280038,
+      "gasUsed" : 255041,
       "warnings" : 0
     },
     {
@@ -28601,7 +28601,7 @@
       "outcome" : {
         "error" : "Arity"
       },
-      "gasUsed" : 280038,
+      "gasUsed" : 255040,
       "warnings" : 0
     },
     {
@@ -28611,7 +28611,7 @@
       "outcome" : {
         "error" : "Arity"
       },
-      "gasUsed" : 330038,
+      "gasUsed" : 280041,
       "warnings" : 0
     },
     {
@@ -28621,7 +28621,7 @@
       "outcome" : {
         "error" : "Arity"
       },
-      "gasUsed" : 280038,
+      "gasUsed" : 255042,
       "warnings" : 0
     },
     {
@@ -28631,7 +28631,7 @@
       "outcome" : {
         "error" : "Type"
       },
-      "gasUsed" : 305057,
+      "gasUsed" : 280058,
       "warnings" : 0
     },
     {
@@ -28641,7 +28641,7 @@
       "outcome" : {
         "error" : "Type"
       },
-      "gasUsed" : 305057,
+      "gasUsed" : 280058,
       "warnings" : 0
     },
     {
@@ -28651,7 +28651,7 @@
       "outcome" : {
         "error" : "Type"
       },
-      "gasUsed" : 305057,
+      "gasUsed" : 280058,
       "warnings" : 0
     },
     {
@@ -28661,7 +28661,7 @@
       "outcome" : {
         "error" : "Type"
       },
-      "gasUsed" : 305057,
+      "gasUsed" : 280059,
       "warnings" : 0
     },
     {
@@ -28671,7 +28671,7 @@
       "outcome" : {
         "error" : "Type"
       },
-      "gasUsed" : 305057,
+      "gasUsed" : 280060,
       "warnings" : 0
     },
     {
@@ -28681,7 +28681,7 @@
       "outcome" : {
         "error" : "Type"
       },
-      "gasUsed" : 305057,
+      "gasUsed" : 280059,
       "warnings" : 0
     },
     {
@@ -28691,7 +28691,7 @@
       "outcome" : {
         "error" : "Type"
       },
-      "gasUsed" : 380057,
+      "gasUsed" : 330060,
       "warnings" : 0
     },
     {
@@ -28701,7 +28701,7 @@
       "outcome" : {
         "error" : "Type"
       },
-      "gasUsed" : 305057,
+      "gasUsed" : 280061,
       "warnings" : 0
     },
     {
