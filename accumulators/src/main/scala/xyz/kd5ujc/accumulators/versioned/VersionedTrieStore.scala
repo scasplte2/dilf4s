@@ -30,15 +30,6 @@ final case class Draft[V, H] private[versioned] (
   private[versioned] val index:   RawBatch
 )
 
-/** One piece of a snapshot stream: the head first, then every current entry, then every committed version. */
-sealed trait SnapshotChunk[V, H] extends Product with Serializable
-
-object SnapshotChunk {
-  final case class Top[V, H](head: Head[V, H]) extends SnapshotChunk[V, H]
-  final case class Entry[V, H](key: StateKey, value: CanonicalValue) extends SnapshotChunk[V, H]
-  final case class History[V, H](version: V, stateRoot: Digest[H]) extends SnapshotChunk[V, H]
-}
-
 /**
  * A versioned trie (docs/specs/versioned-trie.md): an application commits a batch of writes at a strictly
  * increasing version `V`, and every commit yields one commitment root over the version, the state and the history of
@@ -92,8 +83,22 @@ trait VersionedTrieStore[F[_], V, H] {
   /** The change a retained version made, between its parent's head and its own. */
   def delta(v: V): F[Delta[V, H]]
 
-  /** The head, the current entries and the committed versions, for bootstrapping a replica (§7). */
-  def snapshot: Stream[F, SnapshotChunk[V, H]]
+  /**
+   * The head, the current entries and the committed versions, in chunks of at most `chunkEntries` items and
+   * `VersionedTrie.MaxChunkBytes` bytes, for bootstrapping a replica or a store (§7).
+   */
+  def snapshot(chunkEntries: Int = VersionedTrie.MaxChunkEntries): Stream[F, SnapshotChunk[V, H]]
+
+  /**
+   * Loads a snapshot, checked against a head the caller already trusts, into an empty store, in one write. The store
+   * is then exactly as if it had committed every version of the snapshot's history and pruned through the head
+   * version (§4): every version stays attestable, states before the head are not retained, and commits continue from
+   * the head. A store that is not empty is a `VersionConflict` against no head.
+   */
+  def restore(trusted: Head[V, H], snapshot: Snapshot[V, H]): F[Head[V, H]]
+
+  /** [[restore]] from a chunk stream, refused at the first chunk that the incremental reader rejects. */
+  def restoreFrom(trusted: Head[V, H], chunks: Stream[F, SnapshotChunk[V, H]]): F[Head[V, H]]
 
   /** Discards every version after `to`. */
   def rollback(to: V): F[Unit]
@@ -259,6 +264,9 @@ object VersionedTrieStore {
           lift(VersionedTrie.root(head)).map(root => Draft(head, root, base, s, hs, vs, indexed ++ indexWrites(seq, nk, s.root)))
       }
 
+    private def checkValues(fs: Vector[(StateKey, Option[CanonicalValue])]): F[Unit] =
+      lift(fs.traverse_ { case (k, v) => v.traverse_(VersionedTrie.checkValue(k, _)) })
+
     private def stageOnDisk(
       n:     Long,
       base:  Option[ByteVector],
@@ -267,7 +275,7 @@ object VersionedTrieStore {
       batch: Batch[StateKey, CanonicalValue]
     ): F[Draft[V, H]] = {
       val fs = finals(batch)
-      state.stage(version(n), trieOps(fs)).flatMap { s =>
+      checkValues(fs) >> state.stage(version(n), trieOps(fs)).flatMap { s =>
         draft(
           base,
           next,
@@ -296,6 +304,7 @@ object VersionedTrieStore {
         dk <- vkey(d.head.version)
         _  <- if (after(nk, dk)) ().pure[F] else fail[Unit](VersionedTrieError.VersionNotIncreasing(dk, nk))
         fs = finals(batch)
+        _ <- checkValues(fs)
         s <- state.stageOn(d.state, trieOps(fs))
         nd <- draft(
           d.base,
@@ -430,14 +439,32 @@ object VersionedTrieStore {
           changes.filter(_.after.isEmpty).map(_.key).sorted
         )
 
-    def snapshot: Stream[F, SnapshotChunk[V, H]] =
+    /** An entry's share of a chunk's encoding: its key and value, and a margin for the record around them. */
+    private def entryBytes(k: StateKey, v: CanonicalValue): Long = k.bytes.size + Cbor.encode(v).size + 16L
+
+    def snapshot(chunkEntries: Int): Stream[F, SnapshotChunk[V, H]] = {
+      val limit = chunkEntries.max(1).min(VersionedTrie.MaxChunkEntries)
+      val budget = VersionedTrie.MaxChunkBytes - 64L
       Stream.eval(current).flatMap { cur =>
         Stream.emit[F, SnapshotChunk[V, H]](SnapshotChunk.Top(cur.head)) ++
-        values.scan().map { case (k, v) => SnapshotChunk.Entry[V, H](k, v): SnapshotChunk[V, H] } ++
-        raw.scan(ByteRange(Some(seqKey(1L)), Some(seqKey(cur.seq + 1)))).evalMap {
-          case (_, b) =>
-            decodeEntry(b).flatMap { case (vk, s) => lift(V.decode(vk)).map(u => SnapshotChunk.History[V, H](u, s): SnapshotChunk[V, H]) }
-        } ++
+        values
+          .scan()
+          // close a chunk before it would pass the entry or byte limit; one entry always fits (MaxValueBytes)
+          .mapAccumulate((0L, 0, 0L)) {
+            case ((group, n, bytes), (k, v)) =>
+              val size = entryBytes(k, v)
+              val next = if (n >= limit || bytes + size > budget) (group + 1, 1, size) else (group, n + 1, bytes + size)
+              (next, (k, v))
+          }
+          .groupAdjacentBy(_._1._1)
+          .map { case (_, c) => SnapshotChunk.State[V, H](c.toVector.map(_._2)): SnapshotChunk[V, H] } ++
+        raw
+          .scan(ByteRange(Some(seqKey(1L)), Some(seqKey(cur.seq + 1))))
+          .evalMap {
+            case (_, b) => decodeEntry(b).flatMap { case (vk, s) => lift(V.decode(vk)).map(u => u -> s) }
+          }
+          .chunkN(limit)
+          .map(c => SnapshotChunk.History[V, H](c.toVector): SnapshotChunk[V, H]) ++
         // the pieces are separate reads: a commit in between would tear the snapshot, so it is refused instead
         Stream
           .eval(state.latest.flatMap { n =>
@@ -449,6 +476,32 @@ object VersionedTrieStore {
           })
           .drain
       }
+    }
+
+    // ---- restore
+
+    def restore(trusted: Head[V, H], snapshot: Snapshot[V, H]): F[Head[V, H]] =
+      for {
+        replica <- lift(Replica.fromSnapshot(trusted, snapshot))
+        now     <- headKey
+        _       <- now.traverse_(k => fail[Unit](VersionedTrieError.VersionConflict(None, Some(k))))
+        // the base gets the sequence it would have had: one per committed version, so the index is dense and real
+        at = version(snapshot.history.size.toLong)
+        s     <- state.stageRestore(replica.state, at)
+        h     <- history.stageRestore(replica.history, at)
+        v     <- values.stageRestore(snapshot.entries, at)
+        index <- snapshot.history.zipWithIndex.traverse { case ((u, root), i) => vkey(u).map(indexWrites(i.toLong + 1L, _, root)) }
+        wrote <- raw.writeIf(s.guards ++ h.guards ++ v.guards :+ (seqKey(1L) -> None), s.batch ++ h.batch ++ v.batch ++ index.combineAll)
+        _     <- if (wrote) ().pure[F] else headKey.flatMap(k => fail[Unit](VersionedTrieError.VersionConflict(None, k)))
+      } yield trusted
+
+    def restoreFrom(trusted: Head[V, H], chunks: Stream[F, SnapshotChunk[V, H]]): F[Head[V, H]] =
+      chunks
+        .evalScan(SnapshotReader.start(trusted))((r, c) => lift(r.feed(c)))
+        .compile
+        .last
+        .flatMap(r => lift(r.getOrElse(SnapshotReader.start(trusted)).finish))
+        .flatMap(restore(trusted, _))
 
     // ---- retention
 

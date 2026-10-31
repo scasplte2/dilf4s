@@ -2,42 +2,13 @@ package xyz.kd5ujc.accumulators.versioned
 
 import cats.syntax.all._
 
-import scala.annotation.tailrec
-
 import xyz.kd5ujc.accumulators.trie.{Trie, TrieHashing}
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.Digest
 
-import scodec.bits.ByteVector
-
-/** A whole committed state as a snapshot carries it: the head, every current entry, and every committed version. */
-final case class Snapshot[V, H](head: Head[V, H], entries: List[(StateKey, CanonicalValue)], history: List[(V, Digest[H])])
-
-object Snapshot {
-
-  /** Reassembles a snapshot stream: one head first, then entries, then versions, as `VersionedTrieStore.snapshot` emits. */
-  def fromChunks[V, H](chunks: List[SnapshotChunk[V, H]]): Either[VersionedTrieError, Snapshot[V, H]] =
-    chunks match {
-      case SnapshotChunk.Top(head) :: rest =>
-        val entries = rest.collect { case SnapshotChunk.Entry(k, v) => k -> v }
-        val history = rest.collect { case SnapshotChunk.History(u, s) => u -> s }
-        val ordered = rest.map {
-          case _: SnapshotChunk.Entry[V, H]   => 0
-          case _: SnapshotChunk.History[V, H] => 1
-          case _: SnapshotChunk.Top[V, H]     => 2
-        }
-        Either.cond(
-          ordered == ordered.sorted && !ordered.contains(2),
-          Snapshot(head, entries, history),
-          VersionedTrieError.Malformed("snapshot chunks out of order")
-        )
-      case _ => VersionedTrieError.Malformed("a snapshot starts with its head").asLeft
-    }
-}
-
 /**
- * A replica of a committed state, kept in memory and checked locally (docs/specs/versioned-trie.md §7). It starts empty or
+ * A replica of a versioned trie, kept in memory and checked locally (docs/specs/versioned-trie.md §7). It starts empty or
  * from a snapshot verified against a head the caller already trusts, and follows deltas, recomputing both tries, so a
  * forged root, a dropped write or a gap is caught by the replica itself rather than taken from the producer.
  */
@@ -61,16 +32,10 @@ object Replica {
       Replica[V, H](None, Trie.empty[H](s), Trie.empty[H](h), Map.empty)
     )
 
-  @tailrec
-  private def increasing(keys: List[ByteVector]): Boolean =
-    keys match {
-      case a :: (rest @ (b :: _)) => Cbor.compareBytes(a, b) < 0 && increasing(rest)
-      case _                      => true
-    }
-
   /**
    * A replica of `snapshot`, which must reproduce `trusted`: its state root and history root, with the head invariant
-   * (the last history entry is the head version with the head's state root). The snapshot's own head is only a claim.
+   * (the last history entry is the head version with the head's state root). The snapshot's own head is only a claim;
+   * its contents pass every check of [[SnapshotReader]].
    */
   def fromSnapshot[V, H](
     trusted:  Head[V, H],
@@ -78,16 +43,10 @@ object Replica {
   )(implicit V: VersionKey[V], T: TrieHashing[H]): Either[VersionedTrieError, Replica[V, H]] =
     for {
       modes <- (VersionedTrie.stateMode, VersionedTrie.historyMode[V]).tupled
-      keys  <- snapshot.history.traverse { case (u, _) => V.encode(u) }
-      hk    <- V.encode(trusted.version)
-      _     <- Either.cond(increasing(keys), (), VersionedTrieError.Malformed("snapshot versions are not strictly increasing"))
-      _ <- Either.cond(
-        keys.lastOption.contains(hk) && snapshot.history.lastOption.exists(_._2 == trusted.stateRoot),
-        (),
-        VersionedTrieError.Malformed("the snapshot's history does not end at the trusted head")
-      )
-      values = snapshot.entries.toMap
-      _ <- Either.cond(values.size == snapshot.entries.size, (), VersionedTrieError.Malformed("a snapshot entry is repeated"))
+      // every structural check of the incremental reader: order, sizes, no nulls, the history ending at the head
+      checked <- Snapshot.read(trusted, Snapshot.chunks(snapshot.copy(head = trusted)))
+      keys    <- checked.history.traverse { case (u, _) => V.encode(u) }
+      values = checked.entries.toMap
       state <- VersionedTrie.trie(
         Trie.fromEntries[H](modes._1, snapshot.entries.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v) })
       )

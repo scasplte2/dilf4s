@@ -155,6 +155,8 @@ object VersionedTrieVectors {
         hp     <- store.proveHead
         hpJ    <- proofJson("head", "head", None, hp, Json.obj())
         kat    <- headJson(heads.last)
+        chunks <- store.snapshot(2).compile.toList
+        wire   <- orDie(chunks.traverse(VersionedTrieWire.encodeChunk[Long, H]))
       } yield
         Json.obj(
           "spec"           -> "docs/specs/versioned-trie.md".asJson,
@@ -165,7 +167,8 @@ object VersionedTrieVectors {
           "head"           -> kat,
           "commits"        -> commitJson.asJson,
           "root"           -> hex(root.bytes),
-          "proofs"         -> List(currentJ, nsJ, pastJ, v255J, v3J, as299J, as0J, hpJ).asJson
+          "proofs"         -> List(currentJ, nsJ, pastJ, v255J, v3J, as299J, as0J, hpJ).asJson,
+          "snapshot"       -> Json.obj("chunkEntries" -> 2.asJson, "chunks" -> wire.map(hex).asJson)
         )
     }.flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO])
 
@@ -185,6 +188,26 @@ object VersionedTrieVectorsSuite extends SimpleIOSuite {
         committed == rendered,
         s"${VersionedTrieVectors.path} is stale; regenerate with: sbt \"accumulators/Test/runMain xyz.kd5ujc.accumulators.versioned.VersionedTrieVectorGen\""
       )
+    }
+  }
+
+  test("the vector snapshot's chunks decode, pass the reader against the final head, and restore a store with the final root") {
+    IO(new String(Files.readAllBytes(VersionedTrieVectors.path), UTF_8)).flatMap { text =>
+      val json = get(io.circe.parser.parse(text))
+      val head = get(json.hcursor.downField("head").as[Json])
+      val trusted = VersionedTrie.Head[Long, H](
+        get(head.hcursor.get[Long]("version")),
+        get(xyz.kd5ujc.core.hash.Digest.fromHex[H](get(head.hcursor.get[String]("stateRoot")))),
+        get(xyz.kd5ujc.core.hash.Digest.fromHex[H](get(head.hcursor.get[String]("historyRoot"))))
+      )
+      val chunks = get(json.hcursor.downField("snapshot").downField("chunks").as[List[String]])
+        .traverse(c => VersionedTrieWire.decodeChunk[Long, H](get(ByteVector.fromHexDescriptive(c))))
+      attempt(implicit h => fresh.flatMap(s => s._2.restoreFrom(trusted, fs2.Stream.emits(get(chunks))) >> s._2.head)).map { restored =>
+        expect
+          .same(Right(Some(trusted)), restored)
+          .and(expect.same(Right(get(json.hcursor.get[String]("root"))), restored.map(_.fold("")(hd => get(VersionedTrie.root(hd)).hex))))
+          .and(expect(get(chunks).size > 3, "several chunks"))
+      }
     }
   }
 

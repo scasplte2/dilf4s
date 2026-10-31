@@ -4,7 +4,7 @@ import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.ValueCommitment
 import xyz.kd5ujc.accumulators.trie.{KeyMode, Trie, TrieError, TrieHashing, TrieProof}
-import xyz.kd5ujc.core.canonical.CanonicalValue
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.Digest
 
 import scodec.bits.ByteVector
@@ -23,6 +23,20 @@ object VersionedTrie {
    * and the root of the history trie, which maps every committed version up to and including it to its state root.
    */
   final case class Head[V, H](version: V, stateRoot: Digest[H], historyRoot: Digest[H])
+
+  /** The largest value a key may hold, as canonical CBOR: every entry then fits in one snapshot chunk (§7). */
+  val MaxValueBytes: Long = 1L << 20
+
+  /** At most this many entries or versions in one snapshot chunk. */
+  val MaxChunkEntries: Int = 1024
+
+  /** The largest snapshot chunk, as canonical CBOR: refused before it is decoded. */
+  val MaxChunkBytes: Long = 1L << 22
+
+  def checkValue(key: StateKey, v: CanonicalValue): Either[VersionedTrieError, Unit] = {
+    val size = Cbor.encode(v).size
+    Either.cond(size <= MaxValueBytes, (), VersionedTrieError.TooLarge(s"the value of ${key.value}", size, MaxValueBytes))
+  }
 
   val VersionSlot: ByteVector = ByteVector(0x00)
   val StateSlot: ByteVector = ByteVector(0x01)

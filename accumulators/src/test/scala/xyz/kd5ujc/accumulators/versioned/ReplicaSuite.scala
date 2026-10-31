@@ -24,7 +24,7 @@ object ReplicaSuite extends SimpleIOSuite with Checkers {
     deltas.foldLeftM(List(r))((acc, d) => Replica.applyDelta(acc.last, d).map(acc :+ _)).map(_.tail)
 
   private def snapshotOf(s: VersionedTrieStore[IO, Long, H]): IO[Snapshot[Long, H]] =
-    s.snapshot.compile.toList.map(cs => get(Snapshot.fromChunks(cs)))
+    s.snapshot().compile.toList.map(cs => get(assemble(cs)))
 
   test("a replica applying the delta stream matches the source's head at every step") {
     forall(stepsGen) { steps =>
@@ -218,10 +218,14 @@ object ReplicaSuite extends SimpleIOSuite with Checkers {
       for {
         s <- fresh
         _ <- commitAll(s._2, List(1L -> Batch.put(key("a"), int(1))))
-        _ <- s._2.snapshot.evalTap {
-          case _: SnapshotChunk.Top[Long, H] => s._2.commit(Some(1L), 2L, Batch.put(key("b"), int(2))).void
-          case _                             => IO.unit
-        }.compile.drain
+        _ <- s._2
+          .snapshot()
+          .evalTap {
+            case _: SnapshotChunk.Top[Long, H] => s._2.commit(Some(1L), 2L, Batch.put(key("b"), int(2))).void
+            case _                             => IO.unit
+          }
+          .compile
+          .drain
       } yield ()
     }.map(r => expect.same(Left(VersionedTrieError.VersionConflict(Some(vk(1L)), Some(vk(2L)))), r))
   }

@@ -27,8 +27,9 @@ final class Trie[H] private (
   def isEmpty: Boolean = rootHash.isEmpty
   def nodeCount: Int = nodes.size
 
-  private[trie] def nodesForTest: Map[Digest[H], (Node[H], Int)] = nodes
-  private[trie] def rootForTest: Option[Digest[H]] = rootHash
+  /** Every node with its reference count (parents plus one for the root): what a store holding this trie stores. */
+  private[trie] def storedNodes: Map[Digest[H], (Node[H], Int)] = nodes
+  private[trie] def rootOption: Option[Digest[H]] = rootHash
 
   private def node(h: Digest[H]): Result[Node[H]] = nodes.get(h).map(_._1).toRight(TrieError.MissingNode(h.hex))
 

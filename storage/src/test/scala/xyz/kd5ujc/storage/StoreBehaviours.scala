@@ -358,6 +358,28 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
     }
   }
 
+  test(s"$backend: a restored store holds the same records as one that committed and pruned through the same version") {
+    forall(Gen.choose(1, 6).flatMap(Gen.listOfN(_, batchGen))) { batches =>
+      expectOk { implicit r =>
+        for {
+          pruned <- withRaw { raw =>
+            VersionedStore.make[IO, Int, Int](raw, "vs").flatMap { s =>
+              batches.foldLeftM(Version.Genesis)(s.commit).flatMap(v => s.prune(v)) >> raw.scan(ByteRange.all).compile.toList
+            }
+          }
+          restored <- withRaw { raw =>
+            VersionedStore.make[IO, Int, Int](raw, "vs").flatMap { s =>
+              s.stageRestore(model(batches).last.toList, Version.unsafe(batches.size.toLong)).flatMap(s.write) >>
+              (raw.scan(ByteRange.all).compile.toList, r.attempt(s.stageRestore(Nil, Version.unsafe(1L)))).tupled
+            }
+          }
+        } yield
+          expect(pruned == restored._1, "the same records")
+            .and(expect.same(Left(StoreError.VersionConflict(0L, batches.size.toLong)), restored._2))
+      }
+    }
+  }
+
   test(s"$backend: a draft staged against a version that moved on does not write") {
     attempt { implicit r =>
       withRaw { raw =>

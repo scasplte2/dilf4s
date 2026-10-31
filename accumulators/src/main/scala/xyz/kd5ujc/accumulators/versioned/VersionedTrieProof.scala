@@ -4,7 +4,7 @@ import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.trie.{TrieProof, TrieProofs}
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
-import xyz.kd5ujc.core.canonical.CanonicalValue
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.{Digest, Hasher}
 import xyz.kd5ujc.models.{trie => WT, versioned_trie => W}
 
@@ -107,4 +107,43 @@ object VersionedTrieWire {
         w.removes.toList.traverse(key)
       ).mapN(Delta(_, _, _, _))
     }
+
+  /** A snapshot chunk as canonical CBOR bytes; a chunk over `VersionedTrie.MaxChunkBytes` is refused. */
+  def encodeChunk[V: VersionKey, H](c: SnapshotChunk[V, H]): Either[VersionedTrieError, ByteVector] = {
+    val wire: Either[VersionedTrieError, W.VersionedTrieSnapshotChunk] = c match {
+      case SnapshotChunk.Top(h) => head(h).map(W.VersionedTrieSnapshotHead(_))
+      case SnapshotChunk.State(es) =>
+        W.VersionedTrieSnapshotState(es.map { case (k, v) => W.VersionedTrieUpsert(k.value, v) }).asRight
+      case SnapshotChunk.History(vs) =>
+        vs.traverse { case (u, s) => VersionKey[V].encode(u).map(W.VersionedTrieVersion(_, s.bytes)) }
+          .map(W.VersionedTrieSnapshotHistory(_))
+    }
+    wire.flatMap(W.VersionedTrieSnapshotChunk.codec.encode(_).leftMap(malformed)).map(Cbor.encode).flatMap { bytes =>
+      Either.cond(
+        bytes.size <= VersionedTrie.MaxChunkBytes,
+        bytes,
+        VersionedTrieError.TooLarge("a snapshot chunk", bytes.size, VersionedTrie.MaxChunkBytes)
+      )
+    }
+  }
+
+  /** A snapshot chunk from canonical CBOR, refused by size before it is decoded; order is the reader's to check. */
+  def decodeChunk[V: VersionKey, H: Hasher](bytes: ByteVector): Either[VersionedTrieError, SnapshotChunk[V, H]] =
+    for {
+      _ <- Either.cond(
+        bytes.size <= VersionedTrie.MaxChunkBytes,
+        (),
+        VersionedTrieError.TooLarge("a snapshot chunk", bytes.size, VersionedTrie.MaxChunkBytes)
+      )
+      value <- Cbor.decode(bytes).leftMap(malformed)
+      wire  <- W.VersionedTrieSnapshotChunk.codec.decoder.decode(value).leftMap(malformed)
+      chunk <- wire match {
+        case W.VersionedTrieSnapshotHead(h) => fromHead[V, H](h).map(SnapshotChunk.Top[V, H](_): SnapshotChunk[V, H])
+        case W.VersionedTrieSnapshotState(es) =>
+          es.traverse(u => StateKey.parse(u.k).bimap(VersionedTrieError.Key(_), _ -> u.v))
+            .map(SnapshotChunk.State[V, H](_): SnapshotChunk[V, H])
+        case W.VersionedTrieSnapshotHistory(vs) =>
+          vs.traverse(x => (VersionKey[V].decode(x.v), digest[H](x.s)).tupled).map(SnapshotChunk.History[V, H](_): SnapshotChunk[V, H])
+      }
+    } yield chunk
 }

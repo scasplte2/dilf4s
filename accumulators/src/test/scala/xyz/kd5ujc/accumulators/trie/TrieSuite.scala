@@ -95,9 +95,9 @@ object TrieSuite extends SimpleIOSuite with Checkers {
       forall(Gen.zip(opsGen(mode), Gen.long)) {
         case (ops, seed) =>
           val t = buildIncrementally(mode, ops, LazyList.continually(new Random(seed).nextInt(3) + 1))
-          val nodes = t.nodesForTest
+          val nodes = t.storedNodes
           val reachable = TrieEngine
-            .collect[Either[TrieError, *], Sha256](h => nodes.get(h).map(_._1).toRight(TrieError.MissingNode(h.hex)), t.rootForTest.toList)
+            .collect[Either[TrieError, *], Sha256](h => nodes.get(h).map(_._1).toRight(TrieError.MissingNode(h.hex)), t.rootOption.toList)
             .toOption
             .get
           val parents = nodes.values.toList.flatMap {
@@ -106,7 +106,7 @@ object TrieSuite extends SimpleIOSuite with Checkers {
                 case b: Branch[Sha256] => b.left.toList ++ b.right.toList
                 case _: Leaf[Sha256]   => Nil
               }
-          } ++ t.rootForTest.toList
+          } ++ t.rootOption.toList
           val expected = parents.groupBy(identity).view.mapValues(_.size).toMap
           expect.same(reachable.keySet, nodes.keySet).and(expect.same(expected, nodes.view.mapValues(_._2).toMap))
       }
@@ -130,7 +130,7 @@ object TrieSuite extends SimpleIOSuite with Checkers {
         val incremental = build(mode, entries.map { case (k, v) => k -> Some(v) })
         val bulk = Trie.fromEntries[Sha256](mode, entries).toOption.get
         Trie.fromEntriesPar[cats.effect.IO, Sha256](mode, entries, parallelDepth = 3).map(_.toOption.get).map { par =>
-          val counts = (t: Trie[Sha256]) => t.nodesForTest.view.mapValues(_._2).toMap
+          val counts = (t: Trie[Sha256]) => t.storedNodes.view.mapValues(_._2).toMap
           expect
             .same(incremental.root, bulk.root)
             .and(expect.same(incremental.root, par.root))

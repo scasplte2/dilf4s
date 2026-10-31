@@ -47,6 +47,9 @@ object VersionedTrieError {
   /** A proof, delta or snapshot whose shape or contents are inconsistent with what it claims. */
   final case class Malformed(reason: String) extends VersionedTrieError
 
+  /** A value or snapshot chunk over its limit (docs/specs/versioned-trie.md §7), in canonical CBOR bytes. */
+  final case class TooLarge(what: String, size: Long, max: Long) extends VersionedTrieError
+
   final case class Store(error: StoreError) extends VersionedTrieError
   final case class Trie(error: TrieError) extends VersionedTrieError
 }

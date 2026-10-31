@@ -36,3 +36,21 @@ versioned-trie-delta = {
   "upserts": [* versioned-trie-upsert],
   "removes": [* state-key],
 }
+
+; A snapshot is a stream of chunks, each one canonical CBOR record of at most 4194304 bytes: one head chunk, then state
+; chunks whose keys strictly increase across all of them, then history chunks whose versions strictly increase across
+; all of them and end at the head version, with the head's state root. Values are at most 1048576 bytes of canonical
+; CBOR and never null. A receiver checks each chunk as it arrives, and the roots once the history reaches the head.
+versioned-trie-snapshot-chunk = versioned-trie-snapshot-head / versioned-trie-snapshot-state / versioned-trie-snapshot-history
+
+versioned-trie-snapshot-head = { "head": versioned-trie-head }
+
+versioned-trie-snapshot-state = { "state": [1*1024 versioned-trie-upsert] }
+
+versioned-trie-snapshot-history = { "history": [1*1024 versioned-trie-version] }
+
+; A committed version (its version key) and its state root.
+versioned-trie-version = {
+  "v": bytes,
+  "s": bytes,
+}
