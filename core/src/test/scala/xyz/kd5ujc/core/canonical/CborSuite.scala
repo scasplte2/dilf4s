@@ -139,6 +139,16 @@ object CborSuite extends SimpleIOSuite with Checkers {
       .and(expect(Cbor.decode(hex"818100", maxDepth = 2).isRight, "depth 2 fits a limit of 2"))
   }
 
+  pureTest("an empty array or map counts towards the depth limit") {
+    val nest = ByteVector.fill(CanonicalValue.MaxDepth.toLong)(0x81)
+    val emptyAtLimit = ByteVector.fill(CanonicalValue.MaxDepth.toLong - 1)(0x81) ++ hex"80"
+    expect
+      .same(Left(DepthExceeded(CanonicalValue.MaxDepth)), Cbor.decode(nest ++ hex"80"))
+      .and(expect.same(Left(DepthExceeded(CanonicalValue.MaxDepth)), Cbor.decode(nest ++ hex"a0")))
+      .and(expect.same(Right(CanonicalValue.MaxDepth), Cbor.decode(emptyAtLimit).map(_.depth)))
+      .and(expect.same(Left(DepthExceeded(2)), Cbor.decode(hex"818180", maxDepth = 2)))
+  }
+
   pureTest("the bytewise comparator is unsigned") {
     expect(Cbor.compareBytes(hex"01", hex"ff") < 0, "0x01 < 0xff")
       .and(expect(Cbor.compareBytes(hex"61", hex"6161") < 0, "prefix sorts first"))

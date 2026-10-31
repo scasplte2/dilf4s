@@ -78,10 +78,12 @@ object CanonicalDecoder {
       Either.cond(b.size >= lo && hi.forall(b.size <= _), b, s"byte string of ${b.size} bytes, expected $lo..${hi.fold("")(_.toString)}")
     )
 
+  /** Text whose UTF-8 encoding is `lo` to `hi` bytes long (RFC 8610 `.size` on a text string counts bytes). */
   def sizedText(lo: Int, hi: Option[Int]): CanonicalDecoder[String] =
-    text.emap(s =>
-      Either.cond(s.length >= lo && hi.forall(s.length <= _), s, s"text of length ${s.length}, expected $lo..${hi.fold("")(_.toString)}")
-    )
+    text.emap { s =>
+      val n = Utf16.utf8Length(s)
+      Either.cond(n >= lo && hi.forall(n <= _), s, s"text of $n UTF-8 bytes, expected $lo..${hi.fold("")(_.toString)}")
+    }
 
   /** A homogeneous array with at least `min` and at most `max` elements; failures name the index. */
   def vector[A](min: Int, max: Option[Int])(implicit D: CanonicalDecoder[A]): CanonicalDecoder[Vector[A]] = {

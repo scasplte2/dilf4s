@@ -56,7 +56,7 @@ Further rules:
 - **Arguments** (lengths, integers, tag numbers) use the shortest form: values `< 24` are immediate, then 1, 2, 4 and 8 bytes for `< 2^8`, `< 2^16`, `< 2^32` and `< 2^64`.
 - **Not allowed:** indefinite-length items, floats (major type 7 additional information 25/26/27), simple values other than false/true/null, and tags other than 2, 3 and 30.
 - **Tags 2 and 3** are only valid when the value is outside the major type 0/1 range.
-- **Decoders** MUST reject trailing bytes after the top-level item and MUST enforce a maximum nesting depth. The default limit is 256 and counts arrays and maps.
+- **Decoders** MUST reject trailing bytes after the top-level item and MUST enforce a maximum nesting depth. The default limit is 256 and counts arrays and maps, empty ones included: a scalar has depth 0, and an array or map has depth one more than its deepest element (1 when empty).
 
 ## 3. JSON mapping
 
@@ -73,6 +73,7 @@ JSON is the human-facing and API format. It converts to the data model as follow
 **Arrays** become arrays, and `null`, `true` and `false` map to themselves. The data model's bytes kind has no JSON form, so it only arises from typed data.
 
 Converting back to JSON (for display only) works as follows:
+- Output is compact (no whitespace), and object members are written in ascending Unicode code-point order of their names.
 - Integers are written as exact decimal digits.
 - A rational is written as an exact decimal when it terminates. Otherwise it can't be written as JSON and conversion fails.
 - Bytes can't be written as JSON, and conversion fails.

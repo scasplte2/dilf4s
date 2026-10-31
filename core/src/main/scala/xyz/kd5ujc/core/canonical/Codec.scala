@@ -58,12 +58,14 @@ object Codec {
       CanonicalDecoder.sizedBytes(lo, hi)
     )
 
+  /** Text whose UTF-8 encoding is `lo` to `hi` bytes long (RFC 8610 `.size` on a text string counts bytes). */
   def sizedText(lo: Int, hi: Option[Int]): Codec[String] =
     Codec(
       s =>
-        Either
-          .cond(s.length >= lo && hi.forall(s.length <= _), s, mismatch(s"text of length ${s.length} outside the schema size"))
-          .flatMap(CanonicalValue.text),
+        CanonicalValue.text(s).flatMap { t =>
+          val n = Utf16.utf8Length(s)
+          Either.cond(n >= lo && hi.forall(n <= _), t, mismatch(s"text of $n UTF-8 bytes outside the schema size"))
+        },
       CanonicalDecoder.sizedText(lo, hi)
     )
 
