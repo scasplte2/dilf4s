@@ -143,11 +143,12 @@ impl KeyMode {
     pub fn from_value(value: &Value) -> Result<Self, TrieError> {
         let shape = || encoding("a mode is {\"fixed\": n} or {\"variable\": max}");
         let Value::Map(m) = value else { return Err(shape()) };
-        match m.entries() {
-            [(k, Value::Int(n))] if k == "fixed" => {
+        let only = if m.len() == 1 { m.entries().next() } else { None };
+        match only {
+            Some((k, Value::Int(n))) if k == "fixed" => {
                 n.to_u64().map_or_else(|| Err(invalid_key("fixed key length out of range")), Self::fixed)
             }
-            [(k, Value::Int(n))] if k == "variable" => {
+            Some((k, Value::Int(n))) if k == "variable" => {
                 n.to_u64().map_or_else(|| Err(invalid_key("variable key limit out of range")), Self::variable)
             }
             _ => Err(shape()),

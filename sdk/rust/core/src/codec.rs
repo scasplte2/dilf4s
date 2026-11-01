@@ -550,8 +550,7 @@ impl<C: Codec> Codec for TextMapOf<C> {
         match value {
             Value::Map(m) => m
                 .entries()
-                .iter()
-                .map(|(k, v)| self.0.decode(v).map(|d| (k.clone(), d)).map_err(|e| e.at(k.clone())))
+                .map(|(k, v)| self.0.decode(v).map(|d| (String::from(k.as_str()), d)).map_err(|e| e.at(k.as_str())))
                 .collect(),
             other => Err(expected("map", other)),
         }
@@ -655,7 +654,7 @@ impl<'a> Fields<'a> {
         match value {
             Value::Map(m) => {
                 let mut unknown: Vec<&str> =
-                    m.entries().iter().map(|(k, _)| k.as_str()).filter(|k| !allowed.contains(k)).collect();
+                    m.entries().map(|(k, _)| k.as_str()).filter(|k| !allowed.contains(k)).collect();
                 if unknown.is_empty() {
                     Ok(Self(m))
                 } else {
@@ -697,7 +696,7 @@ pub fn select_alternative(
 ) -> Result<Alternative, DecodeFailure> {
     match value {
         Value::Map(m) => {
-            let keys: Vec<&str> = m.entries().iter().map(|(k, _)| k.as_str()).collect();
+            let keys: Vec<&str> = m.entries().map(|(k, _)| k.as_str()).collect();
             records
                 .iter()
                 .position(|(required, all)| {

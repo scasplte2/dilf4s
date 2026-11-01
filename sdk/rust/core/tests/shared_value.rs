@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use common::{bytes, load, read_vectors, vectors_dir};
 use dilf4s_core::generated::canonical_vectors::{CanonicalJsonCase, CanonicalVectors};
-use dilf4s_core::{BigInt, CanonicalError, MAX_DEPTH, MAX_WEIGHT, Value, cbor, json};
+use dilf4s_core::{BigInt, CanonicalError, MAX_DEPTH, MAX_WEIGHT, Map, Text, Value, cbor, json};
 
 /// Java's `BigInteger.bitLength`, computed differently from core: a negative `n` has the bit length of `-n - 1`.
 fn java_bit_length(n: &BigInt) -> BigInt {
@@ -35,7 +35,7 @@ fn recount(v: &Value) -> BigInt {
         Value::Text(t) => BigInt::from(1 + t.len()),
         Value::Bytes(b) => BigInt::from(1 + b.len()),
         Value::Array(a) => a.items().iter().fold(BigInt::from(1), |w, x| w + recount(x)),
-        Value::Map(m) => m.entries().iter().fold(BigInt::from(1), |w, (k, x)| w + 1 + k.len() + recount(x)),
+        Value::Map(m) => m.entries().fold(BigInt::from(1), |w, (k, x)| w + 1 + k.len() + recount(x)),
     }
 }
 
@@ -71,7 +71,7 @@ fn walk<'a>(v: &'a Value, out: &mut Vec<&'a Value>) {
     out.push(v);
     match v {
         Value::Array(a) => a.items().iter().for_each(|x| walk(x, out)),
-        Value::Map(m) => m.entries().iter().for_each(|(_, x)| walk(x, out)),
+        Value::Map(m) => m.entries().for_each(|(_, x)| walk(x, out)),
         _ => {}
     }
 }
@@ -170,7 +170,9 @@ fn clones_share_their_payloads() {
             (Value::Int(a), Value::Int(b)) => std::ptr::eq(a.as_bigint(), b.as_bigint()),
             (Value::Rational(a), Value::Rational(b)) => std::ptr::eq(a.numerator(), b.numerator()),
             (Value::Array(a), Value::Array(b)) => std::ptr::eq(a.items(), b.items()),
-            (Value::Map(a), Value::Map(b)) => std::ptr::eq(a.entries(), b.entries()),
+            (Value::Map(a), Value::Map(b)) => {
+                std::ptr::eq(a.entries().next().unwrap().1, b.entries().next().unwrap().1)
+            }
             _ => false,
         };
         assert!(shared, "a clone of the {} shares its payload", v.kind());
@@ -318,7 +320,9 @@ fn debug_output_is_budgeted() {
     let start = Instant::now();
     let dag = doubled(Value::text("a"), 60);
     let shown = format!("{dag:?}");
-    assert!(shown.len() < 1 << 21, "{} bytes of output", shown.len());
+    // each unit of the budget prints at most one container's frame (about 70 bytes) or a small scalar
+    let limit = 80 * usize::try_from(dilf4s_core::value::DEBUG_BUDGET).unwrap();
+    assert!(shown.len() < limit, "{} bytes of output", shown.len());
     assert!(shown.contains('…'), "the rest is elided");
     let big = Value::array(vec![Value::text("x".repeat(1 << 20))]).unwrap();
     let shown = format!("{big:?}");
@@ -352,8 +356,7 @@ fn naive_eq(a: &Value, b: &Value) -> bool {
             x.len() == y.len() && x.items().iter().zip(y.items()).all(|(p, q)| naive_eq(p, q))
         }
         (Value::Map(x), Value::Map(y)) => {
-            x.len() == y.len()
-                && x.entries().iter().zip(y.entries()).all(|((kp, p), (kq, q))| kp == kq && naive_eq(p, q))
+            x.len() == y.len() && x.entries().zip(y.entries()).all(|((kp, p), (kq, q))| kp == kq && naive_eq(p, q))
         }
         (Value::Array(_) | Value::Map(_), _) | (_, Value::Array(_) | Value::Map(_)) => false,
         _ => a == b,
@@ -444,4 +447,201 @@ fn an_integer_over_the_budget_is_refused_from_its_length_alone() {
     let e = cbor::encoded_len_within(&v, 20_000).unwrap_err();
     assert_eq!(e.at_least, Some(full), "the whole length, from the bit length");
     assert_eq!(cbor::encode_within(&v, 20_000).unwrap_err(), e, "the same refusal when writing");
+}
+
+fn keyed(n: usize) -> Vec<String> {
+    // a fixed shuffle: multiply by a unit modulo n
+    (0..n).map(|i| format!("key-{}", (i * 7919) % n)).collect()
+}
+
+fn built_by_updates(keys: &[String]) -> Map {
+    keys.iter()
+        .enumerate()
+        .fold(Map::new([]).unwrap(), |m, (i, k)| m.updated(Text::from(k.as_str()), Value::int(i % 97)).unwrap())
+}
+
+#[test]
+fn a_map_built_by_updates_in_any_order_is_the_same_value() {
+    let keys = keyed(2000);
+    let in_order = built_by_updates(&keys);
+    let mut reversed_keys = keys.clone();
+    reversed_keys.reverse();
+    // the same final entries: each key's value depends on its position in `keys`, so rebuild them that way
+    let reversed = reversed_keys.iter().fold(Map::new([]).unwrap(), |m, k| {
+        let i = keys.iter().position(|x| x == k).unwrap();
+        m.updated(Text::from(k.as_str()), Value::int(i % 97)).unwrap()
+    });
+    let fresh = Map::new(keys.iter().enumerate().map(|(i, k)| (k.clone(), Value::int(i % 97)))).unwrap();
+    let (a, b, c) = (Value::Map(in_order), Value::Map(reversed), Value::Map(fresh));
+    assert!(a == b && b == c, "equal whatever the tree's shape");
+    assert_eq!(cbor::encode(&a), cbor::encode(&c), "one encoding");
+    assert_eq!(cbor::encode(&b), cbor::encode(&c), "one encoding");
+    assert_eq!(json::render(&a).unwrap(), json::render(&c).unwrap(), "one rendering");
+    assert_eq!(a.weight(), c.weight(), "one weight");
+    assert_eq!(cbor::decode(&cbor::encode(&a)).unwrap(), a, "decodes back");
+}
+
+#[test]
+fn successive_updates_build_a_large_map_in_n_log_n() {
+    let time = |n: usize| {
+        let keys = keyed(n);
+        let start = Instant::now();
+        let m = built_by_updates(&keys);
+        let elapsed = start.elapsed();
+        assert_eq!(m.len(), n);
+        elapsed
+    };
+    let (half, full) = (time(50_000), time(100_000));
+    let keys = keyed(100_000);
+    let start = Instant::now();
+    let fresh = Map::new(keys.iter().enumerate().map(|(i, k)| (k.clone(), Value::int(i % 97)))).unwrap();
+    let new = start.elapsed();
+    assert_eq!(fresh.len(), 100_000);
+    eprintln!(
+        "successive updated: 50k {half:?}, 100k {full:?} (ratio {:.2}); Map::new of 100k: {new:?}",
+        full.as_secs_f64() / half.as_secs_f64()
+    );
+    assert!(full.as_secs() < 30, "100k updates took {full:?}");
+}
+
+/// Runs `f` on a thread with a 64 KiB stack, as small as an SP1 guest's might be.
+fn on_a_small_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new().stack_size(64 * 1024).spawn(f).unwrap().join().unwrap()
+}
+
+/// `levels` maps, each of `width` entries plus one holding the next, nested at the greatest key (so it sits at the
+/// bottom of its tree's right spine): the most drop frames a recursive drop would need, `levels × tree height`.
+fn nested_maps(levels: usize, width: usize) -> Value {
+    (0..levels).fold(Value::int(0), |inner, level| {
+        let base = Map::new((0..width).map(|i| (format!("k{i:05}"), Value::int(i + level)))).unwrap();
+        Value::Map(base.updated(Text::from("z-next"), inner).unwrap())
+    })
+}
+
+#[test]
+fn dropping_a_deep_and_wide_value_never_recurses() {
+    // 255 nested maps of 2,000 entries (tree height about 12): some 3,000 frames if dropped recursively
+    let maps = nested_maps(255, 2_000);
+    assert_eq!(maps.depth(), 255);
+    on_a_small_stack(move || drop(maps));
+    // 255 nested arrays, each holding a wide array of maps beside the next
+    let wide =
+        Value::array((0..1_000).map(|i| Value::map([("k".to_owned(), Value::int(i))]).unwrap()).collect()).unwrap();
+    let arrays = (0..250).fold(Value::int(0), |inner, _| Value::array(vec![wide.clone(), inner]).unwrap());
+    drop(wide);
+    on_a_small_stack(move || drop(arrays));
+    // a single 100k-entry map
+    let big = Map::new((0..100_000).map(|i| (format!("{i}"), Value::int(i)))).unwrap();
+    on_a_small_stack(move || drop(big));
+    // a value shared with a live copy is released only when its last reference goes
+    let shared = nested_maps(50, 100);
+    let copy = shared.clone();
+    on_a_small_stack(move || drop(shared));
+    assert_eq!(copy.depth(), 50, "the copy is intact");
+}
+
+#[test]
+fn walking_a_deep_and_wide_value_keeps_to_explicit_or_depth_bounded_stacks() {
+    let a = nested_maps(255, 2_000);
+    let b = nested_maps(255, 2_000);
+    on_a_small_stack(move || {
+        // equality: an explicit stack of frames, each map's entries an explicit stack of at most its height
+        assert!(a == b, "equal");
+        let Value::Map(m) = &a else { panic!("a map") };
+        assert_eq!(m.entries().count(), 2_001, "iteration");
+        // the encoder and the renderer: explicit stacks of at most MAX_DEPTH open containers
+        let encoded = cbor::encode(&a);
+        assert_eq!(cbor::encoded_len_within(&a, encoded.len()), Ok(encoded.len()), "measured");
+        assert!(json::render(&a).unwrap().ends_with('}'), "rendered");
+        // decoding keeps its own stack too
+        assert!(cbor::decode(&encoded).unwrap() == a, "decoded");
+        // Debug recurses through the formatter, but only DEBUG_DEPTH levels deep
+        let shown = format!("{a:?}");
+        assert!(shown.contains('…'), "deep levels elided");
+        (a, b)
+    });
+}
+
+#[test]
+fn array_clone_and_read_costs() {
+    let array = Value::array((0..1_000).map(Value::int).collect()).unwrap();
+    let start = Instant::now();
+    let clones: Vec<Value> = (0..1_000_000).map(|_| array.clone()).collect();
+    let cloning = start.elapsed();
+    let start = Instant::now();
+    let mut total = 0usize;
+    for _ in 0..1_000 {
+        for v in &clones[..1_000] {
+            let Value::Array(a) = v else { panic!("an array") };
+            total += a.items().iter().filter(|x| matches!(x, Value::Int(_))).count();
+        }
+    }
+    let read = start.elapsed();
+    let encoded = Value::array(vec![array; 1_000]).unwrap();
+    let start = Instant::now();
+    let bytes = cbor::encode(&encoded).len();
+    let encoding = start.elapsed();
+    eprintln!(
+        "1M array clones {cloning:?}; 1G element reads {read:?} ({total}); encoding 1M elements {encoding:?} ({bytes} B)"
+    );
+    drop(clones);
+}
+
+#[test]
+fn concurrent_drops_of_shared_levels_never_recurse_or_leak() {
+    use std::sync::{Arc, Barrier};
+    const THREADS: usize = 4;
+    const LEVELS: usize = 200;
+    // every level holds a clone of the probe, so its count tells how many levels are still alive
+    let probe: Arc<str> = Arc::from("probe");
+    let marker = || Value::Text(Text::from(Arc::clone(&probe)));
+    for round in 0..40 {
+        // maps and arrays alternating, each level a wide container holding the next deeper one
+        let mut levels: Vec<Value> = Vec::with_capacity(LEVELS);
+        let mut inner = marker();
+        for level in 0..LEVELS {
+            inner = if level % 2 == 0 {
+                let base = Map::new((0..64).map(|i| (format!("k{i:02}"), Value::int(i)))).unwrap();
+                Value::Map(base.updated(Text::from("z"), inner).unwrap().updated(Text::from("p"), marker()).unwrap())
+            } else {
+                let mut items: Vec<Value> = (0..32).map(Value::int).collect();
+                items.push(marker());
+                items.push(inner);
+                Value::array(items).unwrap()
+            };
+            levels.push(inner.clone());
+        }
+        drop(inner);
+        // each thread retains clones of every level at its own stride, and all drop them at once
+        let barrier = Arc::new(Barrier::new(THREADS));
+        let mut shares: Vec<Vec<Value>> = vec![Vec::new(); THREADS];
+        for (i, v) in levels.into_iter().enumerate() {
+            for (t, share) in shares.iter_mut().enumerate() {
+                if (i + t + round) % 2 == 0 || t == i % THREADS {
+                    share.push(v.clone());
+                }
+            }
+        }
+        let handles: Vec<_> = shares
+            .into_iter()
+            .enumerate()
+            .map(|(t, mut share)| {
+                let barrier = Arc::clone(&barrier);
+                std::thread::Builder::new()
+                    .stack_size(64 * 1024)
+                    .spawn(move || {
+                        if (t + round) % 2 == 0 {
+                            share.reverse();
+                        }
+                        barrier.wait();
+                        drop(share);
+                    })
+                    .unwrap()
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(Arc::strong_count(&probe), 1, "round {round}: every level was released");
+    }
 }

@@ -9,7 +9,8 @@
 //! Values are immutable and share structure: every variable-size payload sits behind an [`Arc`], so cloning a
 //! [`Value`] is O(1) and allocation-free, and a value may occur many times inside another without being copied. Each
 //! value's [`weight`](Value::weight) and [`depth`](Value::depth) are computed once, at construction, from its children's
-//! cached ones, so reading either is O(1). There is no interior mutability: once built, a value never changes.
+//! cached ones, so reading either is O(1). A [`Map`] is a persistent tree: an update is O(log n) and shares the rest.
+//! There is no interior mutability: once built, a value never changes.
 //!
 //! Sharing makes a value's logical size independent of its memory: `[x, x]` nested `k` deep holds `2^k` leaves in
 //! `O(k)` allocations, and its weight (the logical, unshared measure) is about `2^k`. So:
@@ -17,7 +18,7 @@
 //!   into typed models) costs O(weight), not O(memory): bound the weight of a value not known to be small first, or
 //!   use the budgeted [`crate::cbor::encode_within`] and [`crate::cbor::encoded_len_within`];
 //! - equality never expands: it records the pairs of shared parts it has proven equal and skips them when they recur;
-//! - [`fmt::Debug`] shows at most [`DEBUG_BUDGET`] units of weight and elides the rest as `…`.
+//! - [`fmt::Debug`] shows at most [`DEBUG_BUDGET`] units of weight and [`DEBUG_DEPTH`] levels, and elides the rest as `…`.
 //!
 //! Values decoded from bytes are trees, not shared, so their weight is bounded by their input: every canonical
 //! encoding is at least as long as its value's weight (see [`crate::cbor::encode_within`]).
@@ -30,6 +31,7 @@
 //! A [`Value`] must never hold secret material. Its buffers are shared and freed by whichever clone drops last, so they
 //! cannot be reliably zeroized; secret keys, nonces and seeds belong in dedicated types (as in `dilf4s-signing`).
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -45,11 +47,17 @@ use num_traits::{One, Signed, Zero};
 
 use crate::error::CanonicalError;
 
+mod map;
+
+pub use map::{Entries, Map};
+
 /// The nesting limit for arrays and maps: a scalar has depth 0, an array or map one more than its deepest element.
 ///
-/// Every walk of a [`Value`] relies on it: dropping the last reference to a value, [`fmt::Debug`], the CBOR encoder
-/// and the JSON renderer recurse at most `MAX_DEPTH` (256) frames deep, and [`PartialEq`] keeps an explicit stack of
-/// at most that many frames, never by input size.
+/// No walk of a [`Value`] recurses on the native stack by its depth or size, so every one is safe on a small stack
+/// (an SP1 guest's): [`PartialEq`], the CBOR encoder and decoder, and the JSON renderer and parser keep explicit
+/// stacks of at most `MAX_DEPTH` (256) open containers; a map's entries come from an explicit stack of at most its
+/// tree height (under 92, see [`Map`]); dropping releases parts from an explicit worklist; and [`fmt::Debug`], which
+/// recurses through the formatter, stops at [`DEBUG_DEPTH`] levels.
 pub const MAX_DEPTH: usize = 256;
 
 /// The greatest [`Value::weight`]: weights saturate here (the Scala reference's `Long.MaxValue`), never wrap.
@@ -82,7 +90,7 @@ fn limbs(n: &BigInt) -> u64 {
 /// A canonical value.
 ///
 /// Cloning is O(1), comparing never expands shared parts, and formatting is budgeted: see the [module
-/// documentation](self). Every walk is at most [`MAX_DEPTH`] deep.
+/// documentation](self). No walk of it recurses by its depth or size (see [`MAX_DEPTH`]).
 #[derive(Clone)]
 pub enum Value {
     /// `null`.
@@ -114,7 +122,7 @@ impl Value {
     pub fn depth(&self) -> usize {
         match self {
             Self::Array(a) => a.depth,
-            Self::Map(m) => m.depth,
+            Self::Map(m) => m.depth(),
             _ => 0,
         }
     }
@@ -131,7 +139,7 @@ impl Value {
             Self::Text(t) => sized_weight(t.len()),
             Self::Bytes(b) => sized_weight(b.len()),
             Self::Array(a) => a.weight,
-            Self::Map(m) => m.weight,
+            Self::Map(m) => m.weight(),
         }
     }
 
@@ -513,7 +521,9 @@ impl fmt::Display for Rational {
 /// An array whose nesting is within [`MAX_DEPTH`]. Shared: clones in O(1); its depth and weight are cached.
 #[derive(Clone)]
 pub struct Array {
-    items: Arc<[Value]>,
+    /// Always present but while the array is dropped: the storage is taken out then, so its last owner can be found
+    /// atomically (`Arc::into_inner`, which needs a sized payload, hence the box) and released without recursion.
+    items: Option<Arc<Box<[Value]>>>,
     depth: usize,
     weight: u64,
 }
@@ -526,28 +536,33 @@ impl Array {
             Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH })
         } else {
             let weight = items.iter().fold(1, |w, v| add_weight(w, v.weight()));
-            Ok(Self { items: Arc::from(items), depth, weight })
+            Ok(Self { items: Some(Arc::new(items.into_boxed_slice())), depth, weight })
         }
     }
 
     /// The elements, in order.
     pub fn items(&self) -> &[Value] {
-        &self.items
+        self.items.as_deref().map_or(&[], |b| b)
+    }
+
+    /// The address of the shared storage: a key for the equality memo, never a decision by itself.
+    fn address(&self) -> usize {
+        self.items.as_ref().map_or(0, |b| Arc::as_ptr(b).addr())
     }
 
     /// The elements, by value: O(n) reference-count increments, never a deep copy.
     pub fn into_items(self) -> Vec<Value> {
-        self.items.to_vec()
+        self.items().to_vec()
     }
 
     /// The number of elements.
     pub fn len(&self) -> usize {
-        self.items.len()
+        self.items().len()
     }
 
     /// Whether the array has no elements.
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+        self.items().is_empty()
     }
 
     /// See [`Value::depth`].
@@ -559,92 +574,12 @@ impl Array {
     pub const fn weight(&self) -> u64 {
         self.weight
     }
-}
-
-/// A map with unique text keys, no null values, keys in canonical order and nesting within [`MAX_DEPTH`]. Shared:
-/// clones in O(1); its depth and weight are cached.
-#[derive(Clone)]
-pub struct Map {
-    entries: Arc<[(String, Value)]>,
-    depth: usize,
-    weight: u64,
 }
 
 /// The order of keys in an encoded map: their encodings compared bytewise (RFC 8949 section 4.2.1). For text keys
 /// that is shorter UTF-8 first, then bytewise, because the head encodes the length in increasing order.
 pub fn canonical_key_order(a: &str, b: &str) -> Ordering {
     a.len().cmp(&b.len()).then_with(|| a.as_bytes().cmp(b.as_bytes()))
-}
-
-impl Map {
-    /// The map of `entries`: null values are dropped, a repeated key (even with a null value) is
-    /// [`CanonicalError::DuplicateKey`], and excess depth is [`CanonicalError::DepthExceeded`].
-    pub fn new(entries: impl IntoIterator<Item = (String, Value)>) -> Result<Self, CanonicalError> {
-        let mut seen: BTreeSet<String> = BTreeSet::new();
-        let mut kept: Vec<(String, Value)> = Vec::new();
-        for (k, v) in entries {
-            if seen.contains(&k) {
-                return Err(CanonicalError::DuplicateKey { key: k });
-            }
-            seen.insert(k.clone());
-            if v != Value::Null {
-                kept.push((k, v));
-            }
-        }
-        kept.sort_by(|(a, _), (b, _)| canonical_key_order(a, b));
-        Self::from_sorted(kept)
-    }
-
-    /// For entries already unique, non-null and in canonical order (the strict decoder checks all three).
-    pub(crate) fn from_sorted(entries: Vec<(String, Value)>) -> Result<Self, CanonicalError> {
-        let depth = entries.iter().map(|(_, v)| v.depth()).max().unwrap_or(0).saturating_add(1);
-        if depth > MAX_DEPTH {
-            Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH })
-        } else {
-            let weight =
-                entries.iter().fold(1, |w, (k, v)| add_weight(w, add_weight(sized_weight(k.len()), v.weight())));
-            Ok(Self { entries: Arc::from(entries), depth, weight })
-        }
-    }
-
-    /// The value at `key`, if present.
-    pub fn get(&self, key: &str) -> Option<&Value> {
-        self.entries
-            .binary_search_by(|(k, _)| canonical_key_order(k, key))
-            .ok()
-            .and_then(|i| self.entries.get(i))
-            .map(|(_, v)| v)
-    }
-
-    /// The entries in canonical key order.
-    pub fn entries(&self) -> &[(String, Value)] {
-        &self.entries
-    }
-
-    /// The entries by value, in canonical key order: the keys are copied, the values are O(1) clones.
-    pub fn into_entries(self) -> Vec<(String, Value)> {
-        self.entries.to_vec()
-    }
-
-    /// The number of entries.
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// Whether the map has no entries.
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// See [`Value::depth`].
-    pub const fn depth(&self) -> usize {
-        self.depth
-    }
-
-    /// See [`Value::weight`].
-    pub const fn weight(&self) -> u64 {
-        self.weight
-    }
 }
 
 // ------------------------------------------------------------------------------------------------ equality
@@ -707,13 +642,10 @@ const LARGE_STRING: u64 = 64;
 /// The weight from which a number is memoised (limbs: eight bytes each).
 const LARGE_NUMBER: u64 = 8;
 
-/// A map entry.
-type Entry = (String, Value);
-
 /// Two containers whose elements are being compared, and the address pair to record once they are all equal.
 enum Frame<'a> {
     Items { a: &'a [Value], b: &'a [Value], next: usize, pair: Pair },
-    Entries { a: &'a [Entry], b: &'a [Entry], next: usize, pair: Pair },
+    Entries { a: Entries<'a>, b: Entries<'a>, pair: Pair },
 }
 
 /// One comparison, with an explicit stack (at most [`MAX_DEPTH`] frames) and the pairs proven equal so far.
@@ -767,23 +699,23 @@ impl<'a> Comparison<'a> {
     }
 
     fn array(&mut self, a: &'a Array, b: &'a Array) -> bool {
-        if a.weight != b.weight || a.depth != b.depth || a.items.len() != b.items.len() {
+        if a.weight != b.weight || a.depth != b.depth || a.len() != b.len() {
             return false;
         }
-        let pair = (ARRAY, address(&a.items), address(&b.items));
+        let pair = (ARRAY, a.address(), b.address());
         if pair.1 != pair.2 && !self.proven.contains(&pair) {
-            self.stack.push(Frame::Items { a: &a.items, b: &b.items, next: 0, pair });
+            self.stack.push(Frame::Items { a: a.items(), b: b.items(), next: 0, pair });
         }
         true
     }
 
     fn map(&mut self, a: &'a Map, b: &'a Map) -> bool {
-        if a.weight != b.weight || a.depth != b.depth || a.entries.len() != b.entries.len() {
+        if a.weight() != b.weight() || a.depth() != b.depth() || a.len() != b.len() {
             return false;
         }
-        let pair = (MAP, address(&a.entries), address(&b.entries));
+        let pair = (MAP, a.address(), b.address());
         if pair.1 != pair.2 && !self.proven.contains(&pair) {
-            self.stack.push(Frame::Entries { a: &a.entries, b: &b.entries, next: 0, pair });
+            self.stack.push(Frame::Entries { a: a.entries(), b: b.entries(), pair });
         }
         true
     }
@@ -801,12 +733,8 @@ impl<'a> Comparison<'a> {
                     *next = i.saturating_add(1);
                     a.get(i).zip(b.get(i)).map(|(x, y)| (x, y, true))
                 }
-                Frame::Entries { a, b, next, .. } => {
-                    let (a, b): (&'a [Entry], &'a [Entry]) = (a, b);
-                    let i = *next;
-                    *next = i.saturating_add(1);
-                    a.get(i).zip(b.get(i)).map(|((ka, x), (kb, y))| (x, y, ka == kb))
-                }
+                // in-order entries: the trees' shapes may differ, their contents decide
+                Frame::Entries { a, b, .. } => a.next().zip(b.next()).map(|((ka, x), (kb, y))| (x, y, ka == kb)),
             };
             match next {
                 Some((x, y, same_key)) => {
@@ -830,13 +758,43 @@ impl<'a> Comparison<'a> {
 /// value is then bounded by this budget, however often it repeats a shared part.
 pub const DEBUG_BUDGET: u64 = 1 << 16;
 
-/// The budget left in one `fmt` call. The `Cell` lives on that call's stack, never in a value.
-type Left = core::cell::Cell<u64>;
+/// How many arrays and maps deep [`fmt::Debug`] shows; deeper ones are elided as `…`. Formatting recurses through the
+/// formatter once per level shown, so this, not [`MAX_DEPTH`], bounds its native stack.
+pub const DEBUG_DEPTH: usize = 16;
+
+/// The budget left in one `fmt` call, and how deep it is. The cells live on that call's stack, never in a value.
+struct Left {
+    units: core::cell::Cell<u64>,
+    depth: core::cell::Cell<usize>,
+}
+
+impl Left {
+    const fn new(units: u64) -> Self {
+        Self { units: core::cell::Cell::new(units), depth: core::cell::Cell::new(0) }
+    }
+
+    /// `show` one level deeper, or `…` past [`DEBUG_DEPTH`] or the budget.
+    fn nested(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        show: impl FnOnce(&mut fmt::Formatter<'_>) -> fmt::Result,
+    ) -> fmt::Result {
+        let depth = self.depth.get();
+        // an elided container still costs a unit, so the output stays within the budget
+        if !spend(self, 1) || depth >= DEBUG_DEPTH {
+            return fmt::Debug::fmt(&Elided, f);
+        }
+        self.depth.set(depth.saturating_add(1));
+        let shown = show(f);
+        self.depth.set(depth);
+        shown
+    }
+}
 
 fn spend(left: &Left, weight: u64) -> bool {
-    let l = left.get();
+    let l = left.units.get();
     let affordable = weight <= l;
-    left.set(if affordable { l.saturating_sub(weight) } else { 0 });
+    left.units.set(if affordable { l.saturating_sub(weight) } else { 0 });
     affordable
 }
 
@@ -890,28 +848,26 @@ impl fmt::Debug for Shown<'_, Value> {
 impl fmt::Debug for Shown<'_, Array> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(a, left) = *self;
-        if !spend(left, 1) {
-            return Elided.fmt(f);
-        }
-        f.debug_struct("Array")
-            .field("items", &Shown(&*a.items, left))
-            .field("depth", &a.depth)
-            .field("weight", &a.weight)
-            .finish()
+        left.nested(f, |f| {
+            f.debug_struct("Array")
+                .field("items", &Shown(a.items(), left))
+                .field("depth", &a.depth)
+                .field("weight", &a.weight)
+                .finish()
+        })
     }
 }
 
 impl fmt::Debug for Shown<'_, Map> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(m, left) = *self;
-        if !spend(left, 1) {
-            return Elided.fmt(f);
-        }
-        f.debug_struct("Map")
-            .field("entries", &Shown(&*m.entries, left))
-            .field("depth", &m.depth)
-            .field("weight", &m.weight)
-            .finish()
+        left.nested(f, |f| {
+            f.debug_struct("Map")
+                .field("entries", &ShownEntries(m, left))
+                .field("depth", &m.depth())
+                .field("weight", &m.weight())
+                .finish()
+        })
     }
 }
 
@@ -920,7 +876,7 @@ impl fmt::Debug for Shown<'_, [Value]> {
         let Self(items, left) = *self;
         let mut list = f.debug_list();
         for v in items {
-            if left.get() == 0 {
+            if left.units.get() == 0 {
                 list.entry(&Elided);
                 break;
             }
@@ -930,11 +886,14 @@ impl fmt::Debug for Shown<'_, [Value]> {
     }
 }
 
-impl fmt::Debug for Shown<'_, [(String, Value)]> {
+/// A map's entries, formatted within a budget.
+struct ShownEntries<'a>(&'a Map, &'a Left);
+
+impl fmt::Debug for ShownEntries<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self(entries, left) = *self;
+        let Self(m, left) = *self;
         let mut list = f.debug_list();
-        for (k, v) in entries {
+        for (k, v) in m.entries() {
             if !spend(left, sized_weight(k.len())) {
                 list.entry(&Elided);
                 break;
