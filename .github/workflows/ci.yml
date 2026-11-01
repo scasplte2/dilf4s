@@ -92,6 +92,7 @@ jobs:
       - run: cargo test -p dilf4s-signing --no-default-features
       - run: cargo build -p dilf4s-core --release --target riscv64imac-unknown-none-elf
       - run: cargo build -p dilf4s-proofs --release --target riscv64imac-unknown-none-elf
+      - run: cargo build -p dilf4s-jlvm --release --target riscv64imac-unknown-none-elf
       # the verifier-only build an SP1 guest uses, and the full one
       - run: cargo build -p dilf4s-signing --no-default-features --release --target riscv64imac-unknown-none-elf
       - run: cargo build -p dilf4s-signing --release --target riscv64imac-unknown-none-elf
