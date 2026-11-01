@@ -71,7 +71,8 @@ final class ZkOps(engine: Bn254Engine) {
           raw   <- array(op, "siblings", siblingsV)
           _     <- Either.cond(raw.size <= MaxSiblings, (), crypto(op, s"at most $MaxSiblings siblings, got ${raw.size}"))
           sibs  <- raw.zipWithIndex.traverse { case (v, i) => fr(op, s"sibling[$i]", v) }
-          proof <- PoseidonMerkleProof.from(index, sibs).leftMap(_ => crypto(op, s"index $index is out of range for depth ${sibs.size}"))
+          // the index is charged as one element, whatever its size: the error never renders it
+          proof <- PoseidonMerkleProof.from(index, sibs).leftMap(_ => crypto(op, s"index is out of range for depth ${sibs.size}"))
         } yield Values.bool(PoseidonMerkleTree.verifyInclusion(leaf, proof, root))
       case _ => JlvmError.Arity(op.wire, s"takes [root, leaf, index, siblings], got ${args.size} arguments").asLeft
     }
