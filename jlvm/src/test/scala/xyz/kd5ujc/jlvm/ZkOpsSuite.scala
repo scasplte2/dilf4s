@@ -181,6 +181,14 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
       .and(expect.same("Arity", kind(run(Op.PmtVerify, one, one, zero))))
   }
 
+  pureTest("pmt_verify: an index of any size is refused without rendering it") {
+    val huge = CInt(BigInt(1) << 1000000)
+    expect.same(
+      Left(JlvmError.Crypto(Op.PmtVerify.wire, "index is out of range for depth 1")),
+      run(Op.PmtVerify, one, one, huge, a(one))
+    )
+  }
+
   pureTest("ecvrf_verify and groth16_verify: invalid is false, wrong widths are Crypto errors, wrong kinds Type errors") {
     val pk = b(ByteVector.low(32))
     val proof = b(ByteVector.low(80))
