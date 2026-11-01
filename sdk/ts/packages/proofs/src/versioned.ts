@@ -3,7 +3,7 @@
  * head to one root, every check of Scala's `VersionedTrieVerifier`, proof / delta / snapshot-chunk decoding, the
  * chunk-by-chunk snapshot reader against a trusted head, and a replica that follows deltas.
  */
-import { BytesValue, cbor, describeFailure, err, models, ok, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, BytesValue, cbor, describeFailure, err, models, ok, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import * as trie from "./trie.js";
@@ -122,7 +122,7 @@ function bigEndian(width: number, max: bigint): VersionKey<bigint> {
   return Object.freeze({
     width,
     encode: (v: bigint): R<Uint8Array> => {
-      if (v < 0n || v > max) return err({ kind: "InvalidVersion", reason: `version ${v.toString()} is outside 0..${max.toString()}` });
+      if (v < 0n || v > max) return err({ kind: "InvalidVersion", reason: `version of ${bitLength(v).toString()} bits is outside 0..${max.toString()}` });
       const out = new Uint8Array(width);
       let x = v;
       for (let i = width - 1; i >= 0; i--) {

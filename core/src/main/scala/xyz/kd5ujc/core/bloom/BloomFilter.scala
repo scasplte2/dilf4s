@@ -109,8 +109,8 @@ object BloomFilter {
                 BloomError.Encoding(s"expected ${p.bits / 8} bytes, got ${b.size}")
               )
             }
-          case other => BloomError.Encoding(s"invalid bloom fields $other").asLeft
+          case _ => BloomError.Encoding("invalid bloom fields: m and k are 32-bit integers, b is bytes").asLeft
         }
-      case other => BloomError.Encoding(s"bloom filter must be {m, k, b}: $other").asLeft
+      case _ => BloomError.Encoding("a bloom filter is exactly {m, k, b}").asLeft
     }
 }

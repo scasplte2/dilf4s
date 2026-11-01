@@ -282,3 +282,10 @@ fn malformed_merkle_proofs() {
     assert_eq!(PoseidonMerkleProof::from_value(&wire(BigInt::from(0), deep)).unwrap_err().kind(), "Encoding");
     assert_eq!(PoseidonMerkleProof::new(BigUint::from(0u32), vec![s; 257]).unwrap_err().kind(), "Position");
 }
+
+#[test]
+fn a_refused_position_is_shown_by_its_size_never_its_digits() {
+    let e = PoseidonMerkleProof::new(BigUint::from(1u8) << 1_000_000u32, Vec::new()).unwrap_err();
+    assert_eq!(e.to_string(), "a position of 1000001 bits is out of range for depth 0");
+    assert_eq!(format!("{e:?}"), "Position { position_bits: 1000001, depth: 0 }");
+}

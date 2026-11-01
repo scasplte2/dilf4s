@@ -11,7 +11,10 @@ import xyz.kd5ujc.models.poseidon.{PoseidonMerkleProof => Wire}
 sealed trait PoseidonMerkleError extends Product with Serializable
 
 object PoseidonMerkleError {
-  final case class Position(position: BigInt, capacity: BigInt) extends PoseidonMerkleError
+  // a caller's position can be any size: it is shown by its bit length, never its digits
+  final case class Position(position: BigInt, capacity: BigInt) extends PoseidonMerkleError {
+    override def toString: String = s"Position(a ${position.bitLength}-bit position, capacity 2^${capacity.bitLength - 1})"
+  }
   final case class Depth(depth: Int) extends PoseidonMerkleError
   final case class OccupiedPosition(position: BigInt) extends PoseidonMerkleError
   final case class Encoding(reason: String) extends PoseidonMerkleError

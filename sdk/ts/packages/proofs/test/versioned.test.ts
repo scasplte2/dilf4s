@@ -282,3 +282,9 @@ describe("versioned_trie_v1.json version keys", () => {
     }
   });
 });
+
+describe("refusals name a number by its size", () => {
+  it("a version of any size", () => {
+    expect(expectErr(versioned.VersionKey.long.encode(1n << 1_000_000n), "refused")).toMatchObject({ reason: "version of 1000001 bits is outside 0..9223372036854775807" });
+  });
+});

@@ -3,6 +3,7 @@
  * every value its decoder would reject, so a schema-described type never encodes to bytes outside its schema. This is
  * the runtime of the models generated from `shared/schemas` (`./generated`).
  */
+import { bitLength } from "./bigint.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
 import { at, decodeFailure as failure, type CanonicalError, type DecodeFailure } from "./error.js";
 import { parse as parseJson } from "./json.js";
@@ -74,10 +75,10 @@ const show = (b: bigint | null): string => (b === null ? "" : b.toString());
 export function intRange(lo: bigint | null, hi: bigint | null): Codec<bigint> {
   const within = (n: bigint): boolean => (lo === null || n >= lo) && (hi === null || n <= hi);
   return {
-    encode: (n) => (within(n) ? ok(IntValue.of(n)) : typeMismatch(`integer ${n.toString()} outside ${show(lo)}..${show(hi)}`)),
+    encode: (n) => (within(n) ? ok(IntValue.of(n)) : typeMismatch(`integer of ${bitLength(n).toString()} bits outside ${show(lo)}..${show(hi)}`)),
     decode: (v) => {
       if (v.kind !== "int") return expected("int", v);
-      return within(v.value) ? ok(v.value) : decodeFailure(`integer ${v.value.toString()} outside ${show(lo)}..${show(hi)}`);
+      return within(v.value) ? ok(v.value) : decodeFailure(`integer of ${bitLength(v.value).toString()} bits outside ${show(lo)}..${show(hi)}`);
     },
   };
 }
@@ -174,7 +175,7 @@ export function literalInt<N extends bigint>(literal: N): Codec<N> {
     encode: () => ok(IntValue.of(literal)),
     decode: (v) => {
       if (v.kind !== "int") return expected("int", v);
-      return v.value === literal ? ok(literal) : decodeFailure(`expected ${literal.toString()}, got ${v.value.toString()}`);
+      return v.value === literal ? ok(literal) : decodeFailure(`expected ${literal.toString()}, got an integer of ${bitLength(v.value).toString()} bits`);
     },
   };
 }
@@ -254,7 +255,7 @@ export function intEnum<L extends string>(name: string, cases: readonly (readonl
     decode: (v) => {
       if (v.kind !== "int") return expected("int", v);
       const c = cases.find(([, w]) => w === v.value);
-      return c === undefined ? decodeFailure(`${v.value.toString()} is not a ${name}`) : ok(c[0]);
+      return c === undefined ? decodeFailure(`an integer of ${bitLength(v.value).toString()} bits is not a ${name}`) : ok(c[0]);
     },
   };
 }

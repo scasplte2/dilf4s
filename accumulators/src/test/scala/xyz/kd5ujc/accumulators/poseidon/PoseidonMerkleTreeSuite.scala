@@ -25,6 +25,13 @@ object PoseidonMerkleTreeSuite extends SimpleIOSuite with Checkers {
     Gen.listOfN(6, Gen.zip(Gen.choose(0, 255).map(BigInt(_)), Gen.choose(1L, Long.MaxValue).map(l => fr(BigInt(l)))))
   implicit private val showEntries: cats.Show[List[(BigInt, Fr)]] = cats.Show.fromToString
 
+  pureTest("refused positions and field values are shown by their size, never their digits") {
+    val huge = BigInt(1) << 1000000
+    expect
+      .same(Left("Position(a 1000001-bit position, capacity 2^0)"), PoseidonMerkleProof.from(huge, Vector.empty).left.map(_.toString))
+      .and(expect.same(Left("NonCanonical(a 1000001-bit value)"), Fr.from(huge).left.map(_.toString)))
+  }
+
   pureTest("zero hashes chain, and the empty root is zero(depth)") {
     val z = PoseidonMerkleTree.zeroHashes(depth)
     expect

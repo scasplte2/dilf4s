@@ -3,6 +3,7 @@
  * commitments, and the wire models generated from `shared/schemas`. The normative specification is
  * `docs/specs/canonical-encoding.md`; the conformance vectors in `shared/vectors` are part of it.
  */
+export { bitLength } from "./bigint.js";
 export * as cbor from "./cbor.js";
 export * as codec from "./codec.js";
 export * as json from "./json.js";
