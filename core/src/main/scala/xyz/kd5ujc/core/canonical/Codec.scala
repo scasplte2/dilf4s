@@ -38,7 +38,8 @@ object Codec {
 
   def intRange(lo: Option[BigInt], hi: Option[BigInt]): Codec[BigInt] =
     Codec(
-      i => Either.cond(lo.forall(i >= _) && hi.forall(i <= _), CInt(i), mismatch(s"integer $i outside the schema range")),
+      i =>
+        Either.cond(lo.forall(i >= _) && hi.forall(i <= _), CInt(i), mismatch(s"integer of ${i.bitLength} bits outside the schema range")),
       CanonicalDecoder.intRange(lo, hi)
     )
 
@@ -79,7 +80,10 @@ object Codec {
 
   /** Exactly the integer `a`; `A` is its singleton type, so the value is fixed by the type. */
   def literalInt[A <: Int & Singleton](a: A): Codec[A] =
-    Codec(_ => CInt(BigInt(a)).asRight, CanonicalDecoder.int.emap(i => Either.cond(i == BigInt(a), a, s"expected $a, got $i")))
+    Codec(
+      _ => CInt(BigInt(a)).asRight,
+      CanonicalDecoder.int.emap(i => Either.cond(i == BigInt(a), a, s"expected $a, got an integer of ${i.bitLength} bits"))
+    )
 
   /** Exactly the text `a`, as its singleton type. */
   def literalText[A <: String & Singleton](a: A): Codec[A] =

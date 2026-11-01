@@ -6,7 +6,7 @@
  *
  * Every walk uses an explicit stack, never recursion: a proof's depth is bounded only by the mode (up to 524280 bits).
  */
-import { describeFailure, err, models, ok, outputSize, toHex, valueCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, describeFailure, err, models, ok, outputSize, toHex, valueCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import * as B from "./bits.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
@@ -109,7 +109,11 @@ export class Segment {
 function segmentBits(n: bigint, b: Uint8Array): Result<B.Bits, TrieError> {
   const len = BigInt(b.length);
   // bigint division truncates toward zero, so a negative length would pass the byte count: refuse it first
-  if (n < 0n || n > len * 8n || len !== (n + 7n) / 8n) return encoding(`segment of ${n.toString()} bits in ${b.length.toString()} bytes`);
+  if (n < 0n || n > len * 8n || len !== (n + 7n) / 8n) {
+    // a count too wide for 64 bits is named by its size: its digits are superlinear and unpaid
+    const count = bitLength(n) <= 64 ? `${n.toString()} bits` : `a ${bitLength(n).toString()}-bit count of bits`;
+    return encoding(`segment of ${count} in ${b.length.toString()} bytes`);
+  }
   const bits = Number(n);
   const rem = bits % 8;
   const last = b[b.length - 1] ?? 0;

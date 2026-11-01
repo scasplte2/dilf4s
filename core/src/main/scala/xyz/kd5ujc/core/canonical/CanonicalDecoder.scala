@@ -63,10 +63,14 @@ object CanonicalDecoder {
     case other    => expected("text", other)
   }
 
-  /** An integer in `lo..hi` inclusive (`uint` is `intRange(0, None)`). */
+  /** An integer in `lo..hi` inclusive (`uint` is `intRange(0, None)`). A refusal names its size, never its digits. */
   def intRange(lo: Option[BigInt], hi: Option[BigInt]): CanonicalDecoder[BigInt] =
     int.emap(i =>
-      Either.cond(lo.forall(i >= _) && hi.forall(i <= _), i, s"integer $i outside ${lo.fold("")(_.toString)}..${hi.fold("")(_.toString)}")
+      Either.cond(
+        lo.forall(i >= _) && hi.forall(i <= _),
+        i,
+        s"integer of ${i.bitLength} bits outside ${lo.fold("")(_.toString)}..${hi.fold("")(_.toString)}"
+      )
     )
 
   /** CDDL `uint` (RFC 8610 major type 0): 0..2^64-1. [[int]] stays the whole numeric domain's integers. */

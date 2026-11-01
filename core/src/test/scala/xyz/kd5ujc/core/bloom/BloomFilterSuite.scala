@@ -2,6 +2,7 @@ package xyz.kd5ujc.core.bloom
 
 import scala.util.Random
 
+import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.hash.Sha256
 
 import org.scalacheck.Gen
@@ -55,6 +56,14 @@ object BloomFilterSuite extends SimpleIOSuite with Checkers {
     expect(BloomParams(1000, 4).isLeft, "size must be a power of two")
       .and(expect(BloomParams(2048, 0).isLeft, "at least one hash"))
       .and(expect(BloomFilter.empty[Sha256](p).union(BloomFilter.empty[Sha256](small)).isLeft, "union needs equal params"))
+  }
+
+  pureTest("a refused encoding never renders the values it was given") {
+    val huge = CanonicalValue.CInt(BigInt(1) << 1000000)
+    val fields = CanonicalValue.map(List("m" -> huge, "k" -> huge, "b" -> huge)).fold(e => sys.error(e.toString), identity)
+    expect
+      .same(Left(BloomError.Encoding("invalid bloom fields: m and k are 32-bit integers, b is bytes")), BloomFilter.decode[Sha256](fields))
+      .and(expect.same(Left(BloomError.Encoding("a bloom filter is exactly {m, k, b}")), BloomFilter.decode[Sha256](huge)))
   }
 
   test("the canonical encoding round-trips") {

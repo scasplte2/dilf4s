@@ -21,6 +21,23 @@ object CodecSuite extends SimpleIOSuite {
       .and(expect(Codec.uint.encode(two64).left.exists(_.isInstanceOf[CanonicalError.TypeMismatch]), "a typed error"))
   }
 
+  pureTest("a refused integer is named by its size, never its digits") {
+    val huge = BigInt(1) << 1000000
+    expect
+      .same(
+        Left("integer of 1000001 bits outside 0..18446744073709551615"),
+        Codec.uint.decoder.decode(CanonicalValue.CInt(huge)).left.map(_.reason)
+      )
+      .and(expect.same(Left(CanonicalError.TypeMismatch("integer of 1000001 bits outside the schema range")), Codec.uint.encode(huge)))
+  }
+
+  pureTest("a refused literal is named by the size of what came instead") {
+    expect.same(
+      Left("expected 7, got an integer of 1000001 bits"),
+      Codec.literalInt(7).decoder.decode(CanonicalValue.CInt(BigInt(1) << 1000000)).left.map(_.reason)
+    )
+  }
+
   pureTest("a sized text string is measured in UTF-8 bytes (RFC 8610 .size), not UTF-16 units") {
     val codec = Codec.sizedText(2, Some(4))
     // "é" is 1 UTF-16 unit and 2 UTF-8 bytes; "😀" is 2 units and 4 bytes; "éé€" is 3 units and 7 bytes

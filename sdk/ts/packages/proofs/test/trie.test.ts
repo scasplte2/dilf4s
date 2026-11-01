@@ -274,3 +274,10 @@ describe("trie_v1.json malformed proofs", () => {
     }
   });
 });
+
+describe("refusals name a number by its size", () => {
+  it("a segment length of any size", () => {
+    const e = expectErr(trie.Segment.of(1n << 1_000_000n, new Uint8Array()), "refused");
+    expect(e).toMatchObject({ reason: "segment of a 1000001-bit count of bits in 0 bytes" });
+  });
+});

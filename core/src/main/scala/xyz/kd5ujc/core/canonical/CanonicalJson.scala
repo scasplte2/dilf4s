@@ -203,7 +203,11 @@ object CanonicalJson {
   private def circeNumber(n: JsonNumber, maxScale: Int): Either[CanonicalError, CanonicalValue] =
     n.toBigDecimal
       .toRight(InvalidNumber(n.toString, None))
-      .flatMap(bd => Ratio.fromBigDecimal(bd, maxScale).bimap(e => InvalidNumber(n.toString, Some(e)), number))
+      .flatMap(bd => Ratio.fromBigDecimal(bd, maxScale).bimap(e => InvalidNumber(sized(bd), Some(e)), number))
+
+  // a decimal-backed number is described by its size: rendering its coefficient is superlinear and unpaid
+  private def sized(bd: BigDecimal): String =
+    s"a number of scale ${bd.scale} with a ${bd.bigDecimal.unscaledValue.bitLength}-bit coefficient"
 
   /** The inverse bridge, for decoding into typed data. Numbers stay exact; fails where [[render]] fails. */
   def toCirce(value: CanonicalValue): Either[CanonicalError, Json] = toCirceEval(value).value
@@ -217,7 +221,7 @@ object CanonicalJson {
         Eval.now(
           r.value.toDecimalString
             .map(d => Json.fromBigDecimal(BigDecimal(d)))
-            .toRight(NotJsonRepresentable(s"non-terminating rational ${r.value}"))
+            .toRight(nonTerminating(r))
         )
       case t: CText   => Eval.now(Json.fromString(t.value).asRight)
       case CBytes(_)  => Eval.now(NotJsonRepresentable("bytes").asLeft)
@@ -227,6 +231,12 @@ object CanonicalJson {
           .defer(m.toVector.traverse { case (k, v) => toCirceEval(v).map(_.map(k -> _)) })
           .map(_.sequence.map(Json.fromFields))
     }
+
+  // its size, never its digits: a decoded rational can be far larger than the cost of rendering it allows
+  private def nonTerminating(r: CRational): CanonicalError =
+    NotJsonRepresentable(
+      s"non-terminating rational of ${r.value.numerator.bitLength}/${r.value.denominator.bitLength} bits"
+    )
 
   // ------------------------------------------------------------------ render (display view)
 
@@ -238,7 +248,7 @@ object CanonicalJson {
       case CNull        => Eval.now("null".asRight)
       case CBool(b)     => Eval.now(b.toString.asRight)
       case CInt(n)      => Eval.now(n.toString.asRight)
-      case r: CRational => Eval.now(r.value.toDecimalString.toRight(NotJsonRepresentable(s"non-terminating rational ${r.value}")))
+      case r: CRational => Eval.now(r.value.toDecimalString.toRight(nonTerminating(r)))
       case t: CText     => Eval.now(quote(t.value).asRight)
       case CBytes(_)    => Eval.now(NotJsonRepresentable("bytes").asLeft)
       case CArray(vs)   => Eval.defer(vs.traverse(renderEval)).map(_.sequence.map(_.mkString("[", ",", "]")))

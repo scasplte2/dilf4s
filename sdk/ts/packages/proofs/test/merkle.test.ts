@@ -154,3 +154,10 @@ describe("merkle_v1.json malformed proofs", () => {
     }
   });
 });
+
+describe("refusals name a number by its size", () => {
+  it("a head size of any size", () => {
+    const head = { root: new Uint8Array(32), size: 1n << 1_000_000n };
+    expect(expectErr(merkle.merkleVerify(tagged, head, Value.null, Value.null), "refused")).toMatchObject({ reason: "head.size of 1000001 bits is not a tree size" });
+  });
+});

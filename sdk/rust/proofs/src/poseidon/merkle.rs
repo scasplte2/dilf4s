@@ -17,7 +17,7 @@ use super::{Fr, compress, fr_from_int, fr_to_int};
 pub const MAX_DEPTH: usize = 256;
 
 /// Why a Poseidon Merkle proof is malformed.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum PoseidonMerkleError {
     /// A position outside `[0, 2^depth)`, or more than 256 siblings.
     Position {
@@ -36,8 +36,22 @@ pub enum PoseidonMerkleError {
 impl fmt::Display for PoseidonMerkleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Position { position, depth } => write!(f, "position {position} is out of range for depth {depth}"),
+            Self::Position { position, depth } => {
+                write!(f, "a position of {} bits is out of range for depth {depth}", position.bits())
+            }
             Self::Encoding { reason } => write!(f, "encoding: {reason}"),
+        }
+    }
+}
+
+// a caller's position can be any size: Debug, like Display, shows its bit length, never its digits
+impl fmt::Debug for PoseidonMerkleError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Position { position, depth } => {
+                f.debug_struct("Position").field("position_bits", &position.bits()).field("depth", depth).finish()
+            }
+            Self::Encoding { reason } => f.debug_struct("Encoding").field("reason", reason).finish(),
         }
     }
 }

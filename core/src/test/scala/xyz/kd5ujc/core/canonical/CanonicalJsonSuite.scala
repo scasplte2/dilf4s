@@ -14,6 +14,21 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
   private def ratio(n: Int, d: Int): CanonicalValue = CanonicalValue.number(Ratio.of(n, d).toOption.get)
   private def parse(s: String) = CanonicalJson.parse(s)
 
+  pureTest("a refused rational is named by its size, never its digits") {
+    val third = Ratio.of(BigInt(1) << 1000000, BigInt(3)).fold(e => sys.error(e.toString), CanonicalValue.number)
+    val refusal = NotJsonRepresentable("non-terminating rational of 1000001/2 bits")
+    expect.same(Left(refusal), CanonicalJson.render(third)).and(expect.same(Left(refusal), CanonicalJson.toCirce(third)))
+  }
+
+  pureTest("a number refused for its scale is named by its size, never its digits") {
+    val wide = Json.fromBigDecimal(BigDecimal(new java.math.BigDecimal((BigInt(1) << 1000000).bigInteger, 10001)))
+    CanonicalJson.fromCirce(wide) match {
+      case Left(InvalidNumber(source, Some(_))) =>
+        expect.same("a number of scale 10001 with a 1000001-bit coefficient", source)
+      case other => failure(s"expected a scale refusal, got ${other.isRight}")
+    }
+  }
+
   pureTest("numbers are read exactly from source text") {
     expect
       .same(Right(ratio(1, 10)), parse("0.1"))

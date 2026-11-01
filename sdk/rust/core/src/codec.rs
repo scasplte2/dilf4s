@@ -15,7 +15,7 @@ use num_bigint::Sign;
 
 pub use crate::error::{CanonicalError, DecodeFailure};
 pub use crate::value::Value;
-use crate::value::{MAX_DEPTH, Map};
+use crate::value::{MAX_DEPTH, Map, bit_length};
 use crate::{cbor, json};
 
 /// Encodes `Target` to a canonical value and decodes it back.
@@ -180,13 +180,17 @@ impl Codec for BigIntIn {
         if self.within(value) {
             Ok(Value::int(value.clone()))
         } else {
-            Err(mismatch(format!("integer {value} outside {}", self.describe())))
+            Err(mismatch(format!("integer of {} bits outside {}", bit_length(value), self.describe())))
         }
     }
     fn decode(&self, value: &Value) -> Result<BigInt, DecodeFailure> {
         match value {
             Value::Int(n) if self.within(n) => Ok(n.as_bigint().clone()),
-            Value::Int(n) => Err(DecodeFailure::new(format!("integer {n} outside {}", self.describe()))),
+            Value::Int(n) => Err(DecodeFailure::new(format!(
+                "integer of {} bits outside {}",
+                bit_length(n.as_bigint()),
+                self.describe()
+            ))),
             other => Err(expected("int", other)),
         }
     }
@@ -217,7 +221,14 @@ macro_rules! native_range {
                     Value::Int(n) => <$t>::try_from(n)
                         .ok()
                         .filter(|v| (self.lo..=self.hi).contains(v))
-                        .ok_or_else(|| DecodeFailure::new(format!("integer {n} outside {}..{}", self.lo, self.hi))),
+                        .ok_or_else(|| {
+                            DecodeFailure::new(format!(
+                                "integer of {} bits outside {}..{}",
+                                bit_length(n.as_bigint()),
+                                self.lo,
+                                self.hi
+                            ))
+                        }),
                     other => Err(expected("int", other)),
                 }
             }
@@ -474,7 +485,11 @@ impl Codec for LiteralInt {
     fn decode(&self, value: &Value) -> Result<(), DecodeFailure> {
         match value {
             Value::Int(n) if **n == BigInt::from(self.0) => Ok(()),
-            Value::Int(n) => Err(DecodeFailure::new(format!("expected {}, got {n}", self.0))),
+            Value::Int(n) => Err(DecodeFailure::new(format!(
+                "expected {}, got an integer of {} bits",
+                self.0,
+                bit_length(n.as_bigint())
+            ))),
             other => Err(expected("int", other)),
         }
     }

@@ -106,7 +106,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
        |object $n {
        |  lazy val codec: Codec[$n] = Codec(
        |    e => Codec.int.encode(e.wire),
-       |    CanonicalDecoder.int.emap(i => $n.values.find(_.wire == i).toRight(s"$$i is not a $n"))
+       |    CanonicalDecoder.int.emap(i => $n.values.find(_.wire == i).toRight(s"an integer of $${i.bitLength} bits is not a $n"))
        |  )
        |  given Canonical[$n] = codec.canonical
        |  given CanonicalDecoder[$n] = codec.decoder

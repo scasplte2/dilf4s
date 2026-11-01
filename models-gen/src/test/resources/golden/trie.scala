@@ -35,7 +35,7 @@ enum TrieChildren(val wire: BigInt) {
 object TrieChildren {
   lazy val codec: Codec[TrieChildren] = Codec(
     e => Codec.int.encode(e.wire),
-    CanonicalDecoder.int.emap(i => TrieChildren.values.find(_.wire == i).toRight(s"$i is not a TrieChildren"))
+    CanonicalDecoder.int.emap(i => TrieChildren.values.find(_.wire == i).toRight(s"an integer of ${i.bitLength} bits is not a TrieChildren"))
   )
   given Canonical[TrieChildren] = codec.canonical
   given CanonicalDecoder[TrieChildren] = codec.decoder
