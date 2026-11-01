@@ -33466,6 +33466,61 @@
       },
       "gasUsed" : 3832545060,
       "warnings" : 0
+    },
+    {
+      "name" : "dilf4s frames: a static path found in the outer frame, with a 70-character first key",
+      "program" : "{\"map\":[{\"var\":\"xs\"},{\"map\":[{\"var\":\"ys\"},{\"var\":\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkka\"}]}]}",
+      "data" : "{\"xs\":[{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkka\":1}],\"ys\":[{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkb\":2}]}",
+      "outcome" : {
+        "json" : "[[1]]",
+        "cbor" : "818101"
+      },
+      "gasUsed" : 182,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s frames: a static path no frame holds, with a 70-character first key",
+      "program" : "{\"map\":[{\"var\":\"xs\"},{\"map\":[{\"var\":\"ys\"},{\"var\":\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkc\"}]}]}",
+      "data" : "{\"xs\":[{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkka\":1}],\"ys\":[{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkb\":2}]}",
+      "outcome" : {
+        "json" : "[[null]]",
+        "cbor" : "8181f6"
+      },
+      "gasUsed" : 182,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s frames: a computed text path, with a 70-character first key",
+      "program" : "{\"map\":[{\"var\":\"xs\"},{\"map\":[{\"var\":\"ys\"},{\"var\":{\"literal\":\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkka\"}}]}]}",
+      "data" : "{\"xs\":[{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkka\":1}],\"ys\":[{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkb\":2}]}",
+      "outcome" : {
+        "json" : "[[1]]",
+        "cbor" : "818101"
+      },
+      "gasUsed" : 623,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s frames: a computed array path, with a 70-character first key",
+      "program" : "{\"map\":[{\"var\":\"xs\"},{\"map\":[{\"var\":\"ys\"},{\"var\":{\"literal\":[\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkka\"]}}]}]}",
+      "data" : "{\"xs\":[{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkka\":1}],\"ys\":[{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkb\":2}]}",
+      "outcome" : {
+        "json" : "[[1]]",
+        "cbor" : "818101"
+      },
+      "gasUsed" : 197,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s frames: missing, which searches the frames too, with a 70-character first key",
+      "program" : "{\"map\":[{\"var\":\"xs\"},{\"map\":[{\"var\":\"ys\"},{\"missing\":[\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkka\",\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkc\"]}]}]}",
+      "data" : "{\"xs\":[{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkka\":1}],\"ys\":[{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkb\":2}]}",
+      "outcome" : {
+        "json" : "[[[\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkc\"]]]",
+        "cbor" : "81818178466b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b63"
+      },
+      "gasUsed" : 1139,
+      "warnings" : 0
     }
   ]
 }

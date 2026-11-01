@@ -48,10 +48,16 @@ enum Frame {
  * callbacks the enclosing frames, innermost first (docs/specs/jlvm.md §4.1). Binding names are chosen by the program,
  * so they are kept sorted, never hashed: names made to collide cannot slow a bind or a read.
  */
-final case class Scope(data: CanonicalValue, bindings: TreeMap[String, CanonicalValue], frames: List[Frame] = Nil) {
+final case class Scope private (
+  data:       CanonicalValue,
+  bindings:   TreeMap[String, CanonicalValue],
+  frames:     List[Frame],
+  frameCount: Long
+) {
   def bind(entries: (String, CanonicalValue)*): Scope = copy(bindings = bindings ++ entries)
 
-  def enter(frame: Frame): Scope = copy(frames = frame :: frames)
+  // the count travels with the frames, so pricing a frame search never walks the list
+  def enter(frame: Frame): Scope = copy(frames = frame :: frames, frameCount = frameCount + 1)
 
   /**
    * A plain data path. `""` is the innermost element, or the data outside callbacks. Otherwise the path is read from
@@ -67,6 +73,10 @@ final case class Scope(data: CanonicalValue, bindings: TreeMap[String, Canonical
         }
       case _ => Resolved(frames.headOption.fold(data)(_.element), ambiguous = false)
     }
+}
+
+object Scope {
+  def apply(data: CanonicalValue, bindings: TreeMap[String, CanonicalValue]): Scope = new Scope(data, bindings, Nil, 0L)
 }
 
 /**
@@ -127,14 +137,7 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
               )
             case CArray(ss) =>
               Charge(
-                readCost(
-                  if (ss.isEmpty) 0L
-                  else
-                    ss.foldLeft(scope.frames.size.toLong) {
-                      case (n, CText(t)) => n + Values.segmentCount(t)
-                      case (n, _)        => n + 1L
-                    }
-                ),
+                readCost(ss.foldLeft(0L)((n, s) => n + segments(s))) + frameCost(scope, ss.headOption.fold(0L)(segments)),
                 () => ss.traverse(segment).fold(Fail(_), p => lookup(VarRef.Data(p), default, scope))
               )
             case other => Fail(JlvmError.Type("var", s"a computed path is text or an array of segments, got ${Values.kind(other)}"))
@@ -221,7 +224,8 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
           () =>
             all(args, scope) { vs =>
               val keys = Lookups.paths(op, vs)
-              val paths = keys.foldLeft(schedule.perPathSegment * (scope.frames.size.toLong * keys.size))(_ + schedule.pathText(_))
+              // a key's whole text bounds its first segment, which every frame compares: priced without parsing it
+              val paths = keys.foldLeft(Gas.Zero)((g, k) => g + schedule.pathText(k) + frameCost(scope, segments(k)))
               Charge(sized(op, vs) + paths, () => result(Lookups(op, vs, p => scope.resolve(p).value)))
             }
         )
@@ -241,19 +245,30 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
   /** The access, and each segment. */
   private def readCost(segments: Long): Gas = schedule.varAccess + schedule.perPathSegment * segments
 
+  /** A computed path's segment: text as [[Values.segmentCount]], anything else (an index) as one. */
+  private def segments(v: CanonicalValue): Long = v match {
+    case CText(t) => Values.segmentCount(t)
+    case _        => 1L
+  }
+
+  /**
+   * A plain path inside callbacks may consult every enclosing frame, and each compares its first key with the frame's
+   * element: O(the key's length) where keys share a prefix. So each frame pays the first segment's count.
+   */
+  private def frameCost(scope: Scope, firstSegment: Long): Gas = schedule.perPathSegment * scope.frameCount * firstSegment
+
   /**
    * Charges for the access and each segment (a binding name counts as one, and each counts once more per
-   * [[Values.KeyBlock]] of its length), then reads. A plain path inside callbacks
-   * may consult every enclosing frame, so each frame is charged as a segment too.
+   * [[Values.KeyBlock]] of its length), and for each frame a plain path may search ([[frameCost]]), then reads.
    */
   private def read(ref: VarRef, default: Option[CanonicalValue], scope: Scope): Step = {
     def count(p: Vector[String]): Long = p.foldLeft(0L)(_ + Values.segmentCount(_))
-    val segments = ref match {
-      case VarRef.Data(p) if p.nonEmpty => count(p) + scope.frames.size
-      case VarRef.Data(_)               => 0L
-      case VarRef.Bound(n, p)           => Values.segmentCount(n) + count(p)
+    val cost = ref match {
+      case VarRef.Data(p @ (first +: _)) => readCost(count(p)) + frameCost(scope, Values.segmentCount(first))
+      case VarRef.Data(_)                => readCost(0L)
+      case VarRef.Bound(n, p)            => readCost(Values.segmentCount(n) + count(p))
     }
-    Charge(readCost(segments), () => lookup(ref, default, scope))
+    Charge(cost, () => lookup(ref, default, scope))
   }
 
   /** Reads a path already paid for. */

@@ -204,6 +204,8 @@ This is metakit's merged scope, without its silent collisions:
 - when the frame that resolved a path is not the only one that binds its first segment (an outer frame or the data
   binds it too), the evaluation records an `AmbiguousPath` warning;
 - warnings never change the result or the gas. At most 64 distinct ones are kept;
+- finding ambiguity means every frame is searched for the first segment, so a read pays that segment's count once
+  per enclosing frame (§7);
 - `$current`, `$index` and `$accumulator` read the same values with no ambiguity.
 
 **Computed paths.** In `{"var": e}` and `{"var": [e, default]}`, an object or array `e` is an expression computing the
@@ -527,10 +529,10 @@ GasCalibration measures these with the argument `metering`.
 | Node | Charges, in order |
 |---|---|
 | Literal | `literal`. |
-| Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment, and every segment counts once more per 32 UTF-16 units of its length (it is compared on a hit, and rendered in a warning). A non-empty plain path inside callbacks also counts each enclosing frame as a segment, since it may consult them all. A computed path is evaluated first. Text then pays `perUnit(split) × weight` before it is parsed, and then the access and the segments it gives; an array pays the access and its segments (counted the same way) before they are converted. |
+| Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment, and every segment counts once more per 32 UTF-16 units of its length (it is compared on a hit, and rendered in a warning). A non-empty plain path inside callbacks may consult every enclosing frame, and each compares the first segment with its element (work that grows with the length the keys share), so the first segment's count is added once more per enclosing frame. A computed path is evaluated first. Text then pays `perUnit(split) × weight` before it is parsed, and then the access and the segments it gives; an array pays the access and its segments (counted the same way) before they are converted. |
 | Array or map expression | `literal + element × n`, then each item. |
 | Strict operation | `base(op)`, then each argument, then `perUnit(op) × size(arguments)`, then the operation, with the charges above for `+`, `*`, `cat` and `join`. A spread is charged the same way, on the elements of its array. |
-| Lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)` plus, for each key, `perUnit(split) × weight(key)` and `perPathSegment` per enclosing frame (as `var` pays), then the lookup. |
+| Lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)` plus, for each key, `perUnit(split) × weight(key)` and, per enclosing frame, `perPathSegment` × the segment count of the whole key text (as `var` pays for its first segment; the whole text bounds the first segment, and prices the key without parsing it), then the lookup. |
 | `if` | `base(if)`, then for each condition tested `element` and the condition, then the branch taken. |
 | `and`, `or`, `default` | `base(op)`, then only the subexpressions actually evaluated. |
 | `let` | `base(let) + element × Σ (1 + ⌊len(name)/32⌋)` over the bindings (each binding is an insertion into the scope, and comparing names costs like a path segment), then the bindings and the body. |

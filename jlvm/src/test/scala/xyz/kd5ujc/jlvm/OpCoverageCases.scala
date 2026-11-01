@@ -21,9 +21,10 @@ import ProofFixtures._
 /**
  * Writes `vectors/jlvm_op_cases.json`, so that every operation has vectors: a sweep of each operation over 0 to 3
  * arguments of each kind, which pins argument counts, type checks, the order they run in and what they cost; then
- * cases with real inputs for the operations no other vector file reaches, ASCII-only case mapping on non-ASCII text, and
- * the order in which `sigma_verify` refuses an oversized proposition. Every signature here is deterministic, so
- * the file regenerates identically: `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.OpCoverageCases"`, then `JlvmVectorGen`.
+ * cases with real inputs for the operations no other vector file reaches, ASCII-only case mapping on non-ASCII text,
+ * the order in which `sigma_verify` refuses an oversized proposition, and reads that search callback frames with long
+ * keys. Every signature here is deterministic, so the file regenerates identically:
+ * `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.OpCoverageCases"`, then `JlvmVectorGen`.
  */
 object OpCoverageCases extends IOApp {
 
@@ -235,6 +236,29 @@ object OpCoverageCases extends IOApp {
       lookups ++ prefixes ++ ranges
     }
 
+  /**
+   * Reads inside two nested callbacks whose elements hold 70-character keys that differ only in their last character:
+   * each frame searched compares the whole shared prefix, so each pays the first segment's count (jlvm.md §7). A
+   * static path (found in the outer frame, and absent), a computed text path, a computed array path and `missing`.
+   */
+  val frameLookups: List[Case] = {
+    val prefix = "k" * 69
+    val (outer, inner, absent) = (prefix + "a", prefix + "b", prefix + "c")
+    val data = m("xs" -> surface(s"""[{"$outer": 1}]"""), "ys" -> surface(s"""[{"$inner": 2}]"""))
+    def nested(read: Json): String =
+      Json
+        .obj("map" -> Json.arr(Json.obj("var" -> "xs".asJson), Json.obj("map" -> Json.arr(Json.obj("var" -> "ys".asJson), read))))
+        .noSpaces
+    def literal(v: Json): Json = Json.obj("literal" -> v)
+    List(
+      "a static path found in the outer frame" -> Json.obj("var" -> outer.asJson),
+      "a static path no frame holds"           -> Json.obj("var" -> absent.asJson),
+      "a computed text path"                   -> Json.obj("var" -> literal(outer.asJson)),
+      "a computed array path"                  -> Json.obj("var" -> literal(Json.arr(outer.asJson))),
+      "missing, which searches the frames too" -> Json.obj("missing" -> Json.arr(outer.asJson, absent.asJson))
+    ).map { case (name, read) => Case(s"dilf4s frames: $name, with a 70-character first key", nested(read), data) }
+  }
+
   private def render(cases: List[Case]): String =
     Json
       .obj(
@@ -250,7 +274,9 @@ object OpCoverageCases extends IOApp {
 
   def run(args: List[String]): IO[ExitCode] =
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
-      .mapN((secp, mk, tr) => sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ tries(tr) ++ sigmaBounds)
+      .mapN((secp, mk, tr) =>
+        sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ tries(tr) ++ sigmaBounds ++ frameLookups
+      )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)
 }

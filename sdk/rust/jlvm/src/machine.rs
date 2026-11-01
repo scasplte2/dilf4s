@@ -19,11 +19,11 @@ use crate::ast::VarRef;
 use crate::crypto::{self, CryptoBackend};
 use crate::error::JlvmError;
 use crate::gas::{Gas, GasSchedule};
-use crate::node::{self, Iteration, Logical, Node};
+use crate::node::{self, Iteration, Logical, Node, Segments};
 use crate::op::Op;
 use crate::ops::{self, Joining};
 use crate::ratio::Ratio;
-use crate::values::{self, at, kind, segment_count, text_segment_count, truthy};
+use crate::values::{self, at, kind, path_segments, segment_count, truthy};
 
 /// Lint findings recorded during evaluation. They never change a result or its gas.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -587,13 +587,11 @@ impl<'a> Machine<'a> {
                         self.read_cost(0)
                     } else {
                         let left = self.left();
+                        let first = ss.items().first().map_or(0, path_segments);
                         ss.items()
                             .iter()
-                            .try_fold(self.read_cost(scope.frame_count), |g, s| {
-                                let next = g.plus(self.schedule.per_path_segment.times(match s {
-                                    Value::Text(t) => text_segment_count(t),
-                                    _ => 1,
-                                }));
+                            .try_fold(self.read_cost(0).plus(self.frame_cost(&scope, first)), |g, s| {
+                                let next = g.plus(self.schedule.per_path_segment.times(path_segments(s)));
                                 if next > left { Err(next) } else { Ok(next) }
                             })
                             .unwrap_or_else(|over| over)
@@ -717,25 +715,31 @@ impl<'a> Machine<'a> {
         self.schedule.var_access.plus(self.schedule.per_path_segment.times(segments))
     }
 
-    /// A static read: its segments were counted at compilation; a non-empty plain path inside callbacks also counts
-    /// each enclosing frame (`Machine.scala:249-257`).
-    fn read_static(&self, r: &'a VarRef, default: Option<&'a Value>, segments: u64, scope: Scope<'a>) -> Step<'a> {
-        let segments = match r {
-            VarRef::Data(p) if !p.is_empty() => segments.saturating_add(scope.frame_count),
-            _ => segments,
-        };
-        Step::Charge(self.read_cost(segments), Then::Lookup { path: PathRef::Static(r), default, scope })
+    /// A plain path inside callbacks may consult every enclosing frame, and each compares its first key with the
+    /// frame's element: O(the key's length) where keys share a prefix. So each frame pays the first segment's count
+    /// (`Machine.scala` `frameCost`).
+    fn frame_cost(&self, scope: &Scope<'a>, first_segment: u64) -> Gas {
+        self.schedule.per_path_segment.times(scope.frame_count).times(first_segment)
     }
 
-    /// Charges for the access and each segment, then reads (`Machine.scala:249-257`).
+    /// A static read: its segments were counted at compilation, the first one apart for the frames a non-empty plain
+    /// path may search (`Machine.scala:249-257`).
+    fn read_static(&self, r: &'a VarRef, default: Option<&'a Value>, segments: Segments, scope: Scope<'a>) -> Step<'a> {
+        let g = self.read_cost(segments.all).plus(self.frame_cost(&scope, segments.first));
+        Step::Charge(g, Then::Lookup { path: PathRef::Static(r), default, scope })
+    }
+
+    /// Charges for the access, each segment and each frame searched, then reads (`Machine.scala:249-257`).
     fn read(&self, path: PathRef<'a>, default: Option<&'a Value>, scope: Scope<'a>) -> Step<'a> {
         let count = |p: &[String]| p.iter().fold(0u64, |n, s| n.saturating_add(segment_count(s)));
-        let segments = match path.get() {
-            VarRef::Data(p) if !p.is_empty() => count(p).saturating_add(scope.frame_count),
-            VarRef::Data(_) => 0,
-            VarRef::Bound(n, p) => segment_count(n).saturating_add(count(p)),
+        let g = match path.get() {
+            VarRef::Data(p) => {
+                let first = p.first().map_or(0, |s| segment_count(s));
+                self.read_cost(count(p)).plus(self.frame_cost(&scope, first))
+            }
+            VarRef::Bound(n, p) => self.read_cost(segment_count(n).saturating_add(count(p))),
         };
-        Step::Charge(self.read_cost(segments), Then::Lookup { path, default, scope })
+        Step::Charge(g, Then::Lookup { path, default, scope })
     }
 
     /// Reads a path already paid for (`Machine.scala:260-272`).
@@ -784,13 +788,11 @@ impl<'a> Machine<'a> {
                 // each key's charge is O(1), and the keys are priced only as far as the gas left can pay for
                 let keys = lookup_paths(op, &vs);
                 let left = self.left();
-                let frames =
-                    self.schedule.per_path_segment.times(scope.frame_count.saturating_mul(len_u64(keys.len())));
-                let start = self.sized(op, &vs).plus(frames);
+                // a key's whole text bounds its first segment, which every frame compares: priced without parsing it
                 let g = keys
                     .iter()
-                    .try_fold(start, |g, k| {
-                        let next = g.plus(self.schedule.path_text(k));
+                    .try_fold(self.sized(op, &vs), |g, k| {
+                        let next = g.plus(self.schedule.path_text(k)).plus(self.frame_cost(&scope, path_segments(k)));
                         if next > left { Err(next) } else { Ok(next) }
                     })
                     .unwrap_or_else(|over| over);

@@ -180,6 +180,25 @@ fn inside_callbacks_missing_pays_for_every_frame() {
     assert!(frames - var_frame >= 50 * seg - seg, "{frames} vs {var_frame} for one more frame");
 }
 
+#[test]
+fn each_frame_a_read_searches_pays_for_its_first_keys_length() {
+    // every frame's element holds a 96-character key the query shares all but its last character with
+    let held = format!("{}b", "k".repeat(95));
+    let data = obj(vec![("xs", arr(vec![obj(vec![(held.as_str(), t("v"))])]))]);
+    let nested = |frames: usize, key: &str| {
+        (0..frames)
+            .fold(format!(r#"{{"var": "{key}"}}"#), |inner, _| format!(r#"{{"map": [{{"var": "xs"}}, {inner}]}}"#))
+    };
+    let long = format!("{}a", "k".repeat(95));
+    // a 96-character key counts 4 segments where a 1-character key counts 1: 3 more, once itself and once per frame
+    let extra = 3 * S.per_path_segment.value();
+    for frames in 1..=3u64 {
+        let n = usize::try_from(frames).unwrap_or_else(|e| panic!("{e}"));
+        let delta = gas(&eval(&nested(n, &long), &data)) - gas(&eval(&nested(n, "a"), &data));
+        assert_eq!(delta, extra * (1 + frames), "{frames} frames");
+    }
+}
+
 // ---- 5. computed paths
 
 #[test]

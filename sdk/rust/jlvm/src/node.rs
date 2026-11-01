@@ -90,13 +90,22 @@ fn name_at(bindings: &[(String, Node)], i: usize) -> &str {
     bindings.get(i).map_or("", |(n, _)| n.as_str())
 }
 
+/// A static path's segment counts, for pricing.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Segments {
+    /// Every segment's count.
+    pub(crate) all: u64,
+    /// A data path's first segment's count, which every enclosing frame pays to compare; 0 for a binding.
+    pub(crate) first: u64,
+}
+
 /// A node of the checked program.
 #[derive(Debug)]
 pub(crate) enum Node {
     Const(Value),
-    /// A static path, with its segment count (each segment once, and once more per 32 UTF-16 units; a `$name` counts
+    /// A static path, with its segment counts (each segment once, and once more per 32 UTF-16 units; a `$name` counts
     /// as a segment), computed here once: a read never rescans its path to price it.
-    Read(VarRef, Option<Value>, u64),
+    Read(VarRef, Option<Value>, Segments),
     /// `var` with a computed path.
     ReadAt(Box<Node>, Option<Value>),
     ArrayOf(Vec<Node>),
@@ -179,8 +188,8 @@ fn node<'e>(e: &'e Expr, lets: &mut Lets<'e>) -> Result<Node, JlvmError> {
         Expr::Var(r, d) => {
             let count = |p: &[String]| p.iter().fold(0u64, |n, s| n.saturating_add(segment_count(s)));
             let segments = match r {
-                VarRef::Data(p) => count(p),
-                VarRef::Bound(n, p) => segment_count(n).saturating_add(count(p)),
+                VarRef::Data(p) => Segments { all: count(p), first: p.first().map_or(0, |s| segment_count(s)) },
+                VarRef::Bound(n, p) => Segments { all: segment_count(n).saturating_add(count(p)), first: 0 },
             };
             Ok(Node::Read(r.clone(), d.clone(), segments))
         }
