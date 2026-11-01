@@ -49,7 +49,7 @@ use crate::error::CanonicalError;
 
 mod map;
 
-pub use map::{Entries, Map};
+pub use map::{Entries, Map, MapShape};
 
 /// The nesting limit for arrays and maps: a scalar has depth 0, an array or map one more than its deepest element.
 ///
@@ -80,11 +80,6 @@ pub(crate) fn bit_length(n: &BigInt) -> u64 {
     let bits = n.bits();
     let negative_power_of_two = n.is_negative() && n.magnitude().trailing_zeros() == Some(bits.saturating_sub(1));
     if negative_power_of_two { bits.saturating_sub(1) } else { bits }
-}
-
-/// The whole 64-bit limbs of `n`, as the weight counts them: `bitLength / 64`.
-fn limbs(n: &BigInt) -> u64 {
-    bit_length(n) / 64
 }
 
 /// A canonical value.
@@ -218,111 +213,152 @@ impl Value {
 
 // ------------------------------------------------------------------------------------------------ text
 
-/// Shared, immutable text: derefs to [`str`], and clones in O(1).
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Text(Arc<str>);
+/// Shared, immutable text: derefs to [`str`], and clones in O(1). Its length in UTF-16 code units (the Scala
+/// reference's `String.length`) is counted once, when it is made, and read in O(1).
+#[derive(Clone)]
+pub struct Text {
+    text: Arc<str>,
+    utf16: u64,
+}
 
 impl Text {
+    fn of(text: Arc<str>) -> Self {
+        let utf16 = text.chars().fold(0u64, |n, c| n.saturating_add(if c.len_utf16() == 2 { 2 } else { 1 }));
+        Self { text, utf16 }
+    }
+
     /// The text.
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.text
+    }
+
+    /// The length in UTF-16 code units. O(1): counted when the text was made.
+    pub const fn utf16_len(&self) -> u64 {
+        self.utf16
+    }
+}
+
+// equality, order and hashing are the text's: the cached length follows from it
+impl PartialEq for Text {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text
+    }
+}
+
+impl Eq for Text {}
+
+impl PartialOrd for Text {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Text {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.text.cmp(&other.text)
+    }
+}
+
+impl core::hash::Hash for Text {
+    fn hash<S: core::hash::Hasher>(&self, state: &mut S) {
+        self.text.hash(state);
     }
 }
 
 impl Deref for Text {
     type Target = str;
     fn deref(&self) -> &str {
-        &self.0
+        &self.text
     }
 }
 
 impl AsRef<str> for Text {
     fn as_ref(&self) -> &str {
-        &self.0
+        &self.text
     }
 }
 
 impl Borrow<str> for Text {
     fn borrow(&self) -> &str {
-        &self.0
+        &self.text
     }
 }
 
 impl fmt::Debug for Text {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&*self.0, f)
+        fmt::Debug::fmt(&*self.text, f)
     }
 }
 
 impl fmt::Display for Text {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&*self.0, f)
+        fmt::Display::fmt(&*self.text, f)
     }
 }
 
 impl PartialEq<str> for Text {
     fn eq(&self, other: &str) -> bool {
-        *self.0 == *other
+        *self.text == *other
     }
 }
 
 impl PartialEq<&str> for Text {
     fn eq(&self, other: &&str) -> bool {
-        *self.0 == **other
+        *self.text == **other
     }
 }
 
 impl PartialEq<String> for Text {
     fn eq(&self, other: &String) -> bool {
-        *self.0 == **other
+        *self.text == **other
     }
 }
 
 impl PartialEq<Text> for str {
     fn eq(&self, other: &Text) -> bool {
-        *self == *other.0
+        *self == *other.text
     }
 }
 
 impl PartialEq<Text> for &str {
     fn eq(&self, other: &Text) -> bool {
-        **self == *other.0
+        **self == *other.text
     }
 }
 
 impl PartialEq<Text> for String {
     fn eq(&self, other: &Text) -> bool {
-        **self == *other.0
+        **self == *other.text
     }
 }
 
 impl From<&str> for Text {
     fn from(s: &str) -> Self {
-        Self(Arc::from(s))
+        Self::of(Arc::from(s))
     }
 }
 
 impl From<&String> for Text {
     fn from(s: &String) -> Self {
-        Self(Arc::from(s.as_str()))
+        Self::of(Arc::from(s.as_str()))
     }
 }
 
 impl From<String> for Text {
     fn from(s: String) -> Self {
-        Self(Arc::from(s))
+        Self::of(Arc::from(s))
     }
 }
 
 impl From<Arc<str>> for Text {
     fn from(s: Arc<str>) -> Self {
-        Self(s)
+        Self::of(s)
     }
 }
 
 impl From<Text> for Arc<str> {
     fn from(t: Text) -> Self {
-        t.0
+        t.text
     }
 }
 
@@ -332,6 +368,7 @@ impl From<Text> for Arc<str> {
 #[derive(Clone)]
 pub struct Int {
     value: Arc<BigInt>,
+    bit_length: u64,
     weight: u64,
 }
 
@@ -339,8 +376,8 @@ impl Int {
     /// The integer `n`.
     pub fn new(n: impl Into<BigInt>) -> Self {
         let value = n.into();
-        let weight = add_weight(1, limbs(&value));
-        Self { value: Arc::new(value), weight }
+        let bits = bit_length(&value);
+        Self { value: Arc::new(value), bit_length: bits, weight: add_weight(1, bits / 64) }
     }
 
     /// The integer.
@@ -356,6 +393,12 @@ impl Int {
     /// `1 + bitLength / 64` (see [`Value::weight`]).
     pub const fn weight(&self) -> u64 {
         self.weight
+    }
+
+    /// Java's `BigInteger.bitLength` (the Scala reference's): the bits of the minimal two's-complement form without
+    /// its sign bit. O(1): computed when the integer was made.
+    pub const fn bit_length(&self) -> u64 {
+        self.bit_length
     }
 }
 
@@ -452,6 +495,8 @@ pub struct Rational(Arc<RationalParts>);
 struct RationalParts {
     numerator: BigInt,
     denominator: BigInt,
+    numerator_bits: u64,
+    denominator_bits: u64,
     weight: u64,
 }
 
@@ -463,8 +508,9 @@ pub(crate) enum Reduced {
 impl Rational {
     /// The only way to build one: callers have checked the invariants.
     fn checked(numerator: BigInt, denominator: BigInt) -> Self {
-        let weight = add_weight(add_weight(2, limbs(&numerator)), limbs(&denominator));
-        Self(Arc::new(RationalParts { numerator, denominator, weight }))
+        let (numerator_bits, denominator_bits) = (bit_length(&numerator), bit_length(&denominator));
+        let weight = add_weight(add_weight(2, numerator_bits / 64), denominator_bits / 64);
+        Self(Arc::new(RationalParts { numerator, denominator, numerator_bits, denominator_bits, weight }))
     }
 
     /// `n/d` exactly as given, if it already satisfies the invariants (as a decoder must check).
@@ -498,6 +544,16 @@ impl Rational {
     /// `2 + bitLength(n) / 64 + bitLength(d) / 64` (see [`Value::weight`]).
     pub fn weight(&self) -> u64 {
         self.0.weight
+    }
+
+    /// The numerator's Java `bitLength` (see [`Int::bit_length`]). O(1).
+    pub fn numerator_bit_length(&self) -> u64 {
+        self.0.numerator_bits
+    }
+
+    /// The denominator's Java `bitLength`. O(1).
+    pub fn denominator_bit_length(&self) -> u64 {
+        self.0.denominator_bits
     }
 }
 
