@@ -35,10 +35,8 @@ fn claimed<H: Hasher>(
         .collect()
 }
 
-fn listing<H: Hasher>(claimed: &Listing<H>, proven: Option<Listing<H>>) -> Result<bool, TrieError> {
-    proven
-        .map(|l| l == *claimed)
-        .ok_or_else(|| TrieError::NotCovered { what: alloc::string::String::from("the whole query") })
+fn listing(matched: Option<bool>) -> Result<bool, TrieError> {
+    matched.ok_or_else(|| TrieError::NotCovered { what: alloc::string::String::from("the whole query") })
 }
 
 /// `trie_verify [mode, root, key, value, proof]`: `key` holds `value` (committed by `commit(v)`); a `Value::Null`
@@ -76,7 +74,7 @@ pub fn trie_prefix_verify<H: Hasher>(
     let claimed = claimed(hashing, mode, entries)?;
     let p = TrieProof::<H>::from_value(proof)?;
     let Some(v) = p.verify(hashing, mode, &r)? else { return Ok(false) };
-    listing(&claimed, v.prefix(prefix))
+    listing(v.lists_prefix(prefix, &claimed))
 }
 
 /// `trie_range_verify [mode, root, from, until, entries, proof]`: `entries` (in key order) are exactly the trie's
@@ -94,5 +92,5 @@ pub fn trie_range_verify<H: Hasher>(
     let claimed = claimed(hashing, mode, entries)?;
     let p = TrieProof::<H>::from_value(proof)?;
     let Some(v) = p.verify(hashing, mode, &r)? else { return Ok(false) };
-    listing(&claimed, v.range(from, until))
+    listing(v.lists_range(from, until, &claimed))
 }

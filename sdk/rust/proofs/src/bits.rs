@@ -219,8 +219,3 @@ pub(crate) fn intersects(prefix: &Bits, from: &Bits, until: Option<&Bits>) -> bo
     let wholly_above = until.is_some_and(|u| u.key_cmp(prefix) != Ordering::Greater);
     !wholly_below && !wholly_above
 }
-
-/// `from <= key < until`.
-pub(crate) fn within(key: &Bits, from: &Bits, until: Option<&Bits>) -> bool {
-    from.key_cmp(key) != Ordering::Greater && until.is_none_or(|u| key.key_lt(u))
-}
