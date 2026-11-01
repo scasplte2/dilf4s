@@ -14,7 +14,9 @@ use dilf4s_core::hash::{Digest, Hasher};
 use dilf4s_core::value::Value;
 
 use super::{KeyMode, Lookup, TrieError, TrieHashing, encoding, valid_branch};
-use crate::bits::{Bits, intersects, within};
+use core::cmp::Ordering;
+
+use crate::bits::{Bits, intersects};
 use crate::tag::hex;
 
 /// A complete listing: `(key, valueHash)` pairs in key order.
@@ -278,6 +280,16 @@ impl<H: Hasher> TrieProof<H> {
     }
 }
 
+/// Where the keys starting with a prefix are in a proof.
+enum Located {
+    /// A stub is in the way: the proof does not say.
+    Stub,
+    /// No key starts with the prefix.
+    Nowhere,
+    /// The subtree of this node, whose path is given, holds exactly those keys.
+    At(usize, Bits),
+}
+
 /// What a partial trie proves, once its root has been checked against a trusted one.
 #[derive(Clone, Copy, Debug)]
 pub struct VerifiedProof<'a, H: Hasher> {
@@ -328,87 +340,141 @@ impl<'a, H: Hasher> VerifiedProof<'a, H> {
         self.lookup_bits(&Bits::from_bytes(key))
     }
 
-    /// Every entry of the subtree at `start` (whose path is `path`) in key order, keeping only subtrees that meet
-    /// `bounds` if given; `None` if a stub is reached. One path buffer is shared by the whole walk.
+    /// Visits every entry of the subtree at `start` (whose path is `path`) in key order, keeping only subtrees that meet
+    /// `bounds` if given; `None` if a stub is reached. One path buffer is shared by the whole walk, and each entry is
+    /// handed to `visit` as that buffer, never copied.
+    ///
+    /// The comparisons with the bounds are incremental: each frame carries the length of the common prefix of its
+    /// path with `from` and with `until`, extended only over the bits a node adds. So the whole walk is linear in the
+    /// proof's size, however long the keys and however many entries share a long prefix.
     fn walk(
         &self,
         start: usize,
         mut path: Bits,
         bounds: Option<(&Bits, Option<&Bits>)>,
-    ) -> Option<Vec<(Bits, Digest<H>)>> {
-        let mut out = Vec::new();
-        let keep = |key: &Bits| bounds.is_none_or(|(from, until)| within(key, from, until));
-        // (node, the path length above it, the bit that leads to it)
-        let mut todo: Vec<(usize, u64, Option<bool>)> = vec![(start, path.len(), None)];
-        while let Some((i, len, bit)) = todo.pop() {
+        visit: &mut dyn FnMut(&Bits, &Digest<H>),
+    ) -> Option<()> {
+        let empty = Bits::new();
+        let (from, until) = bounds.unwrap_or((&empty, None));
+        let bounded = bounds.is_some();
+        let common = |path: &Bits, known: u64, upto: u64, bound: &Bits| advance(path, known, upto, bound);
+        let start_from = common(&path, 0, 0, from);
+        let start_until = until.map_or(0, |u| common(&path, 0, 0, u));
+        // (node, the path length above it, the bit that leads to it, the common prefixes at that length)
+        let mut todo: Vec<(usize, u64, Option<bool>, u64, u64)> =
+            vec![(start, path.len(), None, start_from, start_until)];
+        while let Some((i, len, bit, cf, cu)) = todo.pop() {
             path.truncate(len);
             if let Some(b) = bit {
                 path.push(b);
             }
+            let (cf, cu) = (common(&path, cf, len, from), until.map_or(0, |u| common(&path, cu, len, u)));
+            let keep = |path: &Bits, cf: u64, cu: u64| {
+                !bounded
+                    || (order(path, cf, from) != Ordering::Less
+                        && until.is_none_or(|u| order(path, cu, u) == Ordering::Less))
+            };
             match self.node(i)? {
                 Node::Stub(_) => return None,
                 Node::Leaf { segment, value } => {
+                    let above = path.len();
                     path.extend(segment);
-                    if keep(&path) {
-                        out.push((path.clone(), value.clone()));
+                    let (cf, cu) = (common(&path, cf, above, from), until.map_or(0, |u| common(&path, cu, above, u)));
+                    if keep(&path, cf, cu) {
+                        visit(&path, value);
                     }
                 }
                 Node::Branch { segment, value, left, right } => {
+                    let above = path.len();
                     path.extend(segment);
                     let here = path.len();
+                    let (cf, cu) = (common(&path, cf, above, from), until.map_or(0, |u| common(&path, cu, above, u)));
                     for (child, b) in [(right, true), (left, false)] {
                         let Some(c) = child else { continue };
-                        let wanted = match bounds {
-                            None => true,
-                            Some((from, until)) => {
-                                path.push(b);
-                                let meets = intersects(&path, from, until);
-                                path.truncate(here);
-                                meets
-                            }
+                        let wanted = !bounded || {
+                            path.push(b);
+                            let (f, u) =
+                                (common(&path, cf, here, from), until.map_or(0, |x| common(&path, cu, here, x)));
+                            let meets = meets(&path, f, from, until.map(|x| (x, u)));
+                            path.truncate(here);
+                            meets
                         };
                         if wanted {
-                            todo.push((*c, here, Some(b)));
+                            todo.push((*c, here, Some(b), cf, cu));
                         }
                     }
                     if let Some(v) = value {
-                        if keep(&path) {
-                            out.push((path.clone(), v.clone()));
+                        if keep(&path, cf, cu) {
+                            visit(&path, v);
                         }
                     }
                 }
             }
         }
+        Some(())
+    }
+
+    /// Every entry `walk` visits, collected.
+    fn collect(
+        &self,
+        start: usize,
+        path: Bits,
+        bounds: Option<(&Bits, Option<&Bits>)>,
+    ) -> Option<Vec<(Bits, Digest<H>)>> {
+        let mut out = Vec::new();
+        self.walk(start, path, bounds, &mut |p, d| out.push((p.clone(), d.clone())))?;
         Some(out)
     }
 
-    /// Every `(path, valueHash)` under `prefix`, in key order, if the proof covers the whole subtree; `None` if any
-    /// part of it is a stub. A covered listing is complete.
-    pub fn prefix_bits(&self, prefix: &Bits) -> Option<Vec<(Bits, Digest<H>)>> {
+    /// Whether the entries `walk` visits are exactly `claimed` (byte keys, in key order), compared as they are
+    /// visited: nothing is listed, and comparing stops at the first difference, while the walk still goes on to find
+    /// any stub (a stub anywhere in the query is `None`, whatever the claim).
+    fn matches(
+        &self,
+        start: usize,
+        path: Bits,
+        bounds: Option<(&Bits, Option<&Bits>)>,
+        claimed: &Listing<H>,
+    ) -> Option<bool> {
+        let mut next = 0usize;
+        let mut equal = true;
+        self.walk(start, path, bounds, &mut |p, d| {
+            equal = equal
+                && claimed.get(next).is_some_and(|(k, h)| {
+                    u64::try_from(k.len()).ok().and_then(|n| n.checked_mul(8)) == Some(p.len())
+                        && p.padded_bytes() == k.as_slice()
+                        && h == d
+                });
+            next = next.saturating_add(1);
+        })?;
+        Some(equal && next == claimed.len())
+    }
+
+    /// Where the keys starting with `prefix` are.
+    fn locate(&self, prefix: &Bits) -> Located {
         if self.proof.nodes.is_empty() {
-            return Some(Vec::new());
+            return Located::Nowhere;
         }
-        // walk to the node whose subtree holds exactly the keys starting with `prefix`
         let mut i = 0usize;
         let mut consumed = Bits::new();
         let mut pos = 0u64;
         loop {
             let remaining = prefix.len().saturating_sub(pos);
-            let node = self.node(i)?;
+            let Some(node) = self.node(i) else { return Located::Stub };
             let segment = match node {
-                Node::Stub(_) => return None,
+                Node::Stub(_) => return Located::Stub,
                 Node::Leaf { segment, .. } | Node::Branch { segment, .. } => segment,
             };
             if segment.range_eq(0, prefix, pos, remaining) {
-                return self.walk(i, consumed, None);
+                return Located::At(i, consumed);
             }
-            let Node::Branch { left, right, .. } = node else { return Some(Vec::new()) };
+            let Node::Branch { left, right, .. } = node else { return Located::Nowhere };
             if !prefix.range_eq(pos, segment, 0, segment.len()) {
-                return Some(Vec::new());
+                return Located::Nowhere;
             }
             let rest = pos.saturating_add(segment.len());
-            let Some(bit) = prefix.get(rest) else { return Some(Vec::new()) };
-            let Some(child) = (if bit { right } else { left }) else { return Some(Vec::new()) };
+            let Some(bit) = prefix.get(rest) else { return Located::Nowhere };
+            let Some(child) = (if bit { right } else { left }) else { return Located::Nowhere };
             consumed.extend(segment);
             consumed.push(bit);
             i = *child;
@@ -416,9 +482,29 @@ impl<'a, H: Hasher> VerifiedProof<'a, H> {
         }
     }
 
+    /// Every `(path, valueHash)` under `prefix`, in key order, if the proof covers the whole subtree; `None` if any
+    /// part of it is a stub. A covered listing is complete.
+    pub fn prefix_bits(&self, prefix: &Bits) -> Option<Vec<(Bits, Digest<H>)>> {
+        match self.locate(prefix) {
+            Located::Stub => None,
+            Located::Nowhere => Some(Vec::new()),
+            Located::At(i, at) => self.collect(i, at, None),
+        }
+    }
+
     /// [`prefix_bits`](Self::prefix_bits) for a byte prefix, with byte keys.
     pub fn prefix(&self, prefix: &[u8]) -> Option<Listing<H>> {
         self.prefix_bits(&Bits::from_bytes(prefix)).map(into_listing)
+    }
+
+    /// Whether `claimed` is exactly the listing under `prefix`, without building the listing; `None` if a stub lies
+    /// under the prefix.
+    pub fn lists_prefix(&self, prefix: &[u8], claimed: &Listing<H>) -> Option<bool> {
+        match self.locate(&Bits::from_bytes(prefix)) {
+            Located::Stub => None,
+            Located::Nowhere => Some(claimed.is_empty()),
+            Located::At(i, at) => self.matches(i, at, None, claimed),
+        }
     }
 
     /// Every `(path, valueHash)` with `from <= path < until` (bitwise order, a prefix before its extensions; no
@@ -428,7 +514,7 @@ impl<'a, H: Hasher> VerifiedProof<'a, H> {
         if self.proof.nodes.is_empty() || !intersects(&Bits::new(), from, until) {
             return Some(Vec::new());
         }
-        self.walk(0, Bits::new(), Some((from, until)))
+        self.collect(0, Bits::new(), Some((from, until)))
     }
 
     /// [`range_bits`](Self::range_bits) for byte bounds, with byte keys.
@@ -436,4 +522,40 @@ impl<'a, H: Hasher> VerifiedProof<'a, H> {
         let until = until.map(Bits::from_bytes);
         self.range_bits(&Bits::from_bytes(from), until.as_ref()).map(into_listing)
     }
+
+    /// Whether `claimed` is exactly the listing of `[from, until)`, without building the listing; `None` if a stub
+    /// meets the range.
+    pub fn lists_range(&self, from: &[u8], until: Option<&[u8]>, claimed: &Listing<H>) -> Option<bool> {
+        let (from, until) = (Bits::from_bytes(from), until.map(Bits::from_bytes));
+        if self.proof.nodes.is_empty() || !intersects(&Bits::new(), &from, until.as_ref()) {
+            return Some(claimed.is_empty());
+        }
+        self.matches(0, Bits::new(), Some((&from, until.as_ref())), claimed)
+    }
+}
+
+/// The common prefix of `path` and `bound`, given `known`, its length over `path`'s first `upto` bits: extended over
+/// the bits after `upto` only while the two have agreed so far.
+fn advance(path: &Bits, known: u64, upto: u64, bound: &Bits) -> u64 {
+    if known < upto { known } else { upto.saturating_add(path.common_prefix_from(upto, bound, upto)) }
+}
+
+/// `path` against `bound` in key order (a prefix before its extensions), from the length of their common prefix.
+fn order(path: &Bits, common: u64, bound: &Bits) -> Ordering {
+    match (path.get(common), bound.get(common)) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Less,
+        (Some(_), None) => Ordering::Greater,
+        (Some(a), Some(b)) => a.cmp(&b),
+    }
+}
+
+/// Whether the keys starting with `prefix` meet `[from, until)` (`bits::intersects`), from the common prefixes.
+fn meets(prefix: &Bits, cf: u64, from: &Bits, until: Option<(&Bits, u64)>) -> bool {
+    // wholly below: `from` does not extend the prefix, and the prefix sorts before it
+    let from_extends = cf == prefix.len();
+    let wholly_below = !from_extends && order(prefix, cf, from) == Ordering::Less;
+    // wholly above: `until <= prefix`
+    let wholly_above = until.is_some_and(|(u, cu)| order(prefix, cu, u) != Ordering::Less);
+    !wholly_below && !wholly_above
 }

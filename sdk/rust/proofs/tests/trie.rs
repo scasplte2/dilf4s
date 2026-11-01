@@ -112,10 +112,21 @@ fn fixtures() {
             lookups += 1;
         }
         for p in &f.proof.prefix_listings {
+            let expected = listing(&p.entries);
+            assert_eq!(verified.prefix(&bytes(&p.prefix)), Some(expected.clone()), "{}: prefix {}", f.name, p.prefix);
+            // the streamed comparison agrees, and refuses any other claim
             assert_eq!(
-                verified.prefix(&bytes(&p.prefix)),
-                Some(listing(&p.entries)),
-                "{}: prefix {}",
+                verified.lists_prefix(&bytes(&p.prefix), &expected),
+                Some(true),
+                "{}: lists {}",
+                f.name,
+                p.prefix
+            );
+            let other: Vec<_> = expected.iter().skip(1).cloned().collect();
+            assert_eq!(
+                verified.lists_prefix(&bytes(&p.prefix), &other),
+                Some(expected.is_empty()),
+                "{}: lists less {}",
                 f.name,
                 p.prefix
             );
@@ -131,6 +142,15 @@ fn fixtures() {
                 verified.range(&bytes(&r.from), until.as_deref()),
                 expected,
                 "{}: range {} {:?}",
+                f.name,
+                r.from,
+                r.until
+            );
+            let claimed = expected.clone().unwrap_or_default();
+            assert_eq!(
+                verified.lists_range(&bytes(&r.from), until.as_deref(), &claimed),
+                expected.as_ref().map(|_| true),
+                "{}: lists range {} {:?}",
                 f.name,
                 r.from,
                 r.until
@@ -537,4 +557,52 @@ fn malformed_vectors() {
         };
         assert_eq!(kind, expected, "{}", c.name);
     }
+}
+
+#[test]
+fn listings_of_many_keys_behind_a_long_prefix_are_not_expanded() {
+    // a branch with a 60,000-byte segment over a complete subtree of 4,096 leaves: every key is 60,002 bytes, so
+    // listing them would build 246 MB from a proof of about 60 KB plus 8,191 records. Comparing a claim streams the
+    // walk over one shared path buffer, and the range bounds are compared incrementally
+    let t = TrieHashing::<H>::new();
+    let mode = KeyMode::variable(65535).unwrap();
+    let v = vec![1u8; 32];
+    let prefix_bits = 60_000u64 * 8;
+    let depth = 12u32;
+    // pre-order: a node at depth d < depth is a branch with both children, at depth `depth` a leaf
+    let records: Vec<TrieRecord> = (0..(1u32 << (depth + 1)) - 1)
+        .scan(Vec::<u32>::new(), |stack, _| {
+            // the depth of the next node in pre-order, from the depths of the right children still pending
+            let d = stack.pop().unwrap_or(0);
+            if d < depth {
+                stack.push(d + 1);
+                stack.push(d + 1);
+            }
+            Some(d)
+        })
+        .map(|d| {
+            let n = if d == 0 {
+                prefix_bits
+            } else if d == depth {
+                4
+            } else {
+                0
+            };
+            let s = TrieSegment { n, b: vec![0xa5; n.div_ceil(8) as usize] };
+            if d == depth {
+                TrieRecord::TrieLeaf(TrieLeaf { s: TrieSegment { n: 4, b: vec![0xa0] }, v: v.clone() })
+            } else {
+                TrieRecord::TrieBranch(TrieBranch { s, v: None, c: TrieChildren::Both })
+            }
+        })
+        .collect();
+    let p = decode(&records).unwrap();
+    let root = p.compute_root(&t, mode).unwrap();
+    let verified = p.verify(&t, mode, &root).unwrap().unwrap();
+    let start = std::time::Instant::now();
+    assert_eq!(verified.lists_prefix(&[], &Vec::new()), Some(false));
+    assert_eq!(verified.lists_range(&[], None, &Vec::new()), Some(false));
+    assert_eq!(verified.lists_range(&[0xa5; 100], Some(&[0xa6]), &Vec::new()), Some(false));
+    assert_eq!(verified.lists_range(&[0xa6], None, &Vec::new()), Some(true));
+    assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
 }
