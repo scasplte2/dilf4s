@@ -81,6 +81,31 @@ object CborSuite extends SimpleIOSuite with Checkers {
     forall(CanonicalGens.value(4))(v => expect.same(Right(v), Cbor.decode(Cbor.encode(v))))
   }
 
+  test("encodedLength is the encoding's length, and never below the weight") {
+    forall(CanonicalGens.value(4)) { v =>
+      val length = Cbor.encodedLength(v)
+      expect.same(Cbor.encode(v).size, length).and(expect(length >= v.weight, s"length $length is below weight ${v.weight}"))
+    }
+  }
+
+  pureTest("encodedLength at every head width, for integers, bignums, text, bytes, arrays and maps") {
+    val edges = List(0L, 23L, 24L, 255L, 256L, 65535L, 65536L, (1L << 32) - 1, 1L << 32).map(BigInt(_))
+    val ints = (edges ++ List(BigInt(Long.MaxValue), BigInt(1) << 63, (BigInt(1) << 64) - 1, BigInt(1) << 64, BigInt(1) << 4000))
+      .flatMap(n => List(n, -n, -n - 1))
+    def text(n: Int) = CanonicalValue.text("é" * n).fold(e => sys.error(e.toString), identity)
+    val sized = List(0, 23, 24, 255, 256, 70000).flatMap { n =>
+      List(
+        text(n),
+        CBytes(ByteVector.fill(n.toLong)(7)),
+        CanonicalValue.array(Vector.fill(n)(CNull)).fold(e => sys.error(e.toString), identity),
+        CanonicalValue.map((0 until n).map(i => s"k$i" -> CInt(i))).fold(e => sys.error(e.toString), identity)
+      )
+    }
+    (ints.map(CInt(_)) ++ sized).foldLeft(success) { (acc, v) =>
+      acc.and(expect.same(Cbor.encode(v).size, Cbor.encodedLength(v))).and(expect(Cbor.encodedLength(v) >= v.weight))
+    }
+  }
+
   test("every accepted encoding is the canonical one") {
     forall(CanonicalGens.value(4)) { v =>
       val bytes = Cbor.encode(v)

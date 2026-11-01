@@ -108,7 +108,10 @@ object VersionedTrieWire {
       ).mapN(Delta(_, _, _, _))
     }
 
-  /** A snapshot chunk as canonical CBOR bytes; a chunk over `VersionedTrie.MaxChunkBytes` is refused. */
+  /**
+   * A snapshot chunk as canonical CBOR bytes; a chunk over `VersionedTrie.MaxChunkBytes` is refused before it is
+   * encoded, by its weight alone when that already passes the limit (as `VersionedTrie.valueBytes` measures a value).
+   */
   def encodeChunk[V: VersionKey, H](c: SnapshotChunk[V, H]): Either[VersionedTrieError, ByteVector] = {
     val wire: Either[VersionedTrieError, W.VersionedTrieSnapshotChunk] = c match {
       case SnapshotChunk.Top(h) => head(h).map(W.VersionedTrieSnapshotHead(_))
@@ -118,12 +121,10 @@ object VersionedTrieWire {
         vs.traverse { case (u, s) => VersionKey[V].encode(u).map(W.VersionedTrieVersion(_, s.bytes)) }
           .map(W.VersionedTrieSnapshotHistory(_))
     }
-    wire.flatMap(W.VersionedTrieSnapshotChunk.codec.encode(_).leftMap(malformed)).map(Cbor.encode).flatMap { bytes =>
-      Either.cond(
-        bytes.size <= VersionedTrie.MaxChunkBytes,
-        bytes,
-        VersionedTrieError.TooLarge("a snapshot chunk", bytes.size, VersionedTrie.MaxChunkBytes)
-      )
+    def tooLarge(size: Long) = VersionedTrieError.TooLarge("a snapshot chunk", size, VersionedTrie.MaxChunkBytes)
+    wire.flatMap(W.VersionedTrieSnapshotChunk.codec.encode(_).leftMap(malformed)).flatMap { v =>
+      val size = if (v.weight > VersionedTrie.MaxChunkBytes) v.weight else Cbor.encodedLength(v)
+      Either.cond(size <= VersionedTrie.MaxChunkBytes, Cbor.encode(v), tooLarge(size))
     }
   }
 

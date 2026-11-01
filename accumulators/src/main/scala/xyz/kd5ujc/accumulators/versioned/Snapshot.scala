@@ -27,8 +27,12 @@ object SnapshotChunk {
 
 object Snapshot {
 
-  /** An entry's share of a chunk's encoding: its key and value, and a margin for the record around them. */
-  def entryBytes(k: StateKey, v: CanonicalValue): Long = k.bytes.size + Cbor.encode(v).size + 16L
+  /**
+   * An entry's share of a chunk's encoding: its key and value, and a margin for the record around them. A value over
+   * `VersionedTrie.MaxValueBytes`, which the reader refuses, counts as one byte over, so it is never encoded here.
+   */
+  def entryBytes(k: StateKey, v: CanonicalValue): Long =
+    k.bytes.size + math.min(VersionedTrie.valueBytes(v), VersionedTrie.MaxValueBytes + 1) + 16L
 
   /** The bytes a chunk's entries may take, leaving a margin for the chunk's own framing. */
   val ChunkBudget: Long = VersionedTrie.MaxChunkBytes - 64L

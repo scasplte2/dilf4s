@@ -28,10 +28,18 @@ final class VerifiedState[H] private[versioned] (proof: VerifiedProof[H])(implic
 
   /**
    * Whether the key holds `value` (`None`: is absent), as a JLVM `trie_verify` decides it: a null claims absence
-   * there, so `Some(CNull)` is absence too (no key can hold null; a null value deletes it).
+   * there, so `Some(CNull)` is absence too (no key can hold null; a null value deletes it). The lookup comes first, and
+   * a claim is checked and hashed only against a present key. A claim no commit accepts (`VersionedTrie.checkValue`)
+   * is never stored, so it is not held: `false`, without hashing it. One too large for its weight alone is answered in
+   * O(1), however much it shares. The Rust SDK's `VerifiedState::holds` answers the same.
    */
   def holds(key: StateKey, value: Option[CanonicalValue]): Either[VersionedTrieError, Boolean] =
-    lookup(key).map(_ == value.filterNot(_ == CanonicalValue.CNull).map(VersionedTrie.valueHash[H]))
+    lookup(key).map { found =>
+      value.filterNot(_ == CanonicalValue.CNull) match {
+        case None    => found.isEmpty
+        case Some(v) => found.exists(h => VersionedTrie.checkValue(key, v).isRight && h == VersionedTrie.valueHash[H](v))
+      }
+    }
 
   /** Every entry under the namespace, complete. */
   def namespace(ns: StateNamespace): Either[VersionedTrieError, List[(StateKey, Digest[H])]] =

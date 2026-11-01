@@ -131,11 +131,85 @@ object SigmaProp {
   // ---- the canonical form (docs/specs/sigma.md §3): a map per node, discriminated by "type", with no other fields
 
   /**
+   * The weight ([[CanonicalValue.weight]]) of the heaviest valid proposition in its canonical form (docs/specs/sigma.md
+   * §3): 4096 `dhtuple` leaves (158 each) at depth 64, under `1 + 255 + 61·4096` one-`k` thresholds (29 each, plus
+   * their children). A heavier value is refused before any of it is decoded.
+   */
+  val MaxWeight: Long = 7900416L
+
+  /** A connective as read, before its children are decoded; a threshold's `k` as given. */
+  private enum Kind {
+    case AllOf, AnyOf
+    case AtLeast(k: Int)
+  }
+
+  /** One node as read: a checked leaf, or a connective, within [[MaxChildren]], whose children are still to decode. */
+  private enum Read {
+    case Leaf(prop: SigmaProp)
+    case Node(kind: Kind, children: Vector[CanonicalValue])
+  }
+
+  private enum Step {
+    case Decode(value: CanonicalValue)
+    case Done(prop: SigmaProp)
+  }
+
+  /** A connective whose children are being decoded: those still to decode, and those decoded. */
+  final private case class Open(kind: Kind, rest: List[CanonicalValue], done: Vector[SigmaProp])
+
+  /**
    * `{"type": "dlog", "pk": bytes}`, `{"type": "dhtuple", "g", "h", "u", "v": bytes}`, `{"type": "and" | "or",
    * "children": [...]}`, `{"type": "threshold", "k": int, "children": [...]}`. A field outside its type's schema is an
-   * error, so the encoding is canonical. Value depth is bounded by the canonical model, so this recursion is too.
+   * error, so the encoding is canonical.
+   *
+   * The order (docs/specs/sigma.md §3): a value heavier than [[MaxWeight]] is refused first, in O(1). Then each node,
+   * in pre-order: its own fields; for a leaf, the leaf bound before its points are decoded; for a connective, its width
+   * before its children are decoded and, once they are, its own checks (`k`, emptiness, depth) through its smart
+   * constructor. A worklist, so a value of any depth decodes without growing the stack.
    */
   def fromCanonical(v: CanonicalValue): Either[String, SigmaProp] =
+    if (v.weight > MaxWeight) s"a proposition weighs at most $MaxWeight".asLeft
+    else decode(Step.Decode(v), Nil, 0)
+
+  /** `leaves` counts every leaf decoded so far, in the whole proposition. */
+  @tailrec
+  private def decode(step: Step, open: List[Open], leaves: Int): Either[String, SigmaProp] =
+    step match {
+      case Step.Decode(v) =>
+        read(v, leaves) match {
+          case Left(e)             => e.asLeft
+          case Right(Read.Leaf(p)) => decode(Step.Done(p), open, leaves + 1)
+          case Right(Read.Node(k, cs)) =>
+            advance(Open(k, cs.toList, Vector.empty), open) match {
+              case Left(e)          => e.asLeft
+              case Right((s, next)) => decode(s, next, leaves)
+            }
+        }
+      case Step.Done(p) =>
+        open match {
+          case Nil => p.asRight
+          case o :: up =>
+            advance(o.copy(done = o.done :+ p), up) match {
+              case Left(e)          => e.asLeft
+              case Right((s, next)) => decode(s, next, leaves)
+            }
+        }
+    }
+
+  /** The next child of `o` to decode, or, when there is none, `o` checked and built. */
+  private def advance(o: Open, up: List[Open]): Either[String, (Step, List[Open])] =
+    o.rest match {
+      case c :: rest => (Step.Decode(c), o.copy(rest = rest) :: up).asRight
+      case Nil =>
+        (o.kind match {
+          case Kind.AllOf      => and(o.done)
+          case Kind.AnyOf      => or(o.done)
+          case Kind.AtLeast(k) => threshold(k, o.done)
+        }).map(p => (Step.Done(p), up))
+    }
+
+  /** One node, `leaves` leaves into the proposition. */
+  private def read(v: CanonicalValue, leaves: Int): Either[String, Read] =
     v match {
       case CMap(m) =>
         def point(k: String): Either[String, GroupElement] =
@@ -143,22 +217,25 @@ object SigmaProp {
             case scala.Some(CBytes(b)) => Secp256k1Group.decode(b).leftMap(e => s"$k: $e")
             case _                     => s"$k must be bytes".asLeft
           }
-        def children: Either[String, Vector[SigmaProp]] =
+        def node(kind: Kind): Either[String, Read] =
           m.get("children") match {
-            case scala.Some(CArray(cs)) => cs.traverse(fromCanonical)
-            case _                      => "children must be an array".asLeft
+            case scala.Some(CArray(cs)) if cs.size > MaxChildren => s"a connective has at most $MaxChildren children".asLeft
+            case scala.Some(CArray(cs))                          => Read.Node(kind, cs).asRight
+            case _                                               => "children must be an array".asLeft
           }
+        def leaf(p: => Either[String, SigmaProp]): Either[String, Read] =
+          Either.cond(leaves < MaxLeaves, (), s"a proposition has at most $MaxLeaves leaves") >> p.map(Read.Leaf(_))
         def fields(ks: String*): Either[String, Unit] =
           Either.cond(m.keySet == (ks.toSet + "type"), (), s"${typeName(m)} takes exactly the fields ${ks.mkString(", ")}")
         m.get("type") match {
-          case scala.Some(CText("dlog")) => fields("pk") >> point("pk").flatMap(dlog)
+          case scala.Some(CText("dlog")) => fields("pk") >> leaf(point("pk").flatMap(dlog))
           case scala.Some(CText("dhtuple")) =>
-            fields("g", "h", "u", "v") >> (point("g"), point("h"), point("u"), point("v")).tupled.flatMap(dhTuple.tupled)
-          case scala.Some(CText("and")) => fields("children") >> children.flatMap(and)
-          case scala.Some(CText("or"))  => fields("children") >> children.flatMap(or)
+            fields("g", "h", "u", "v") >> leaf((point("g"), point("h"), point("u"), point("v")).tupled.flatMap(dhTuple.tupled))
+          case scala.Some(CText("and")) => fields("children") >> node(Kind.AllOf)
+          case scala.Some(CText("or"))  => fields("children") >> node(Kind.AnyOf)
           case scala.Some(CText("threshold")) =>
             fields("k", "children") >> (m.get("k") match {
-              case scala.Some(CInt(k)) if k.isValidInt => children.flatMap(threshold(k.toInt, _))
+              case scala.Some(CInt(k)) if k.isValidInt => node(Kind.AtLeast(k.toInt))
               case _                                   => "k must be an integer".asLeft
             })
           case _ => "a proposition's type is dlog, dhtuple, and, or or threshold".asLeft

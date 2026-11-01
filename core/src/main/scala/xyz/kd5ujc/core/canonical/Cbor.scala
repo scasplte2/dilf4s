@@ -49,6 +49,59 @@ object Cbor {
           }
     }
 
+  /**
+   * `encode(value).size`, without building the encoding: one stack-safe pass over the value, saturating at
+   * `Long.MaxValue`. Its cost is the value's [[CanonicalValue.weight]], which counts shared sub-values every time, so
+   * bound the weight first. The length is at least the weight: every node has a head, text and byte strings add their
+   * length, and an integer of `b` bits takes at least `1 + b/64` bytes.
+   */
+  def encodedLength(value: CanonicalValue): Long = {
+    @tailrec
+    def go(todo: List[CanonicalValue], acc: Long): Long =
+      todo match {
+        case Nil                => acc
+        case CArray(vs) :: rest => go(vs.toList ::: rest, Weight.add(acc, headLength(vs.size.toLong)))
+        case (m: CMap) :: rest =>
+          val keys = m.entries.keysIterator.foldLeft(headLength(m.entries.size.toLong))((n, k) => Weight.add(n, textLength(k)))
+          go(m.entries.values.toList ::: rest, Weight.add(acc, keys))
+        case v :: rest => go(rest, Weight.add(acc, scalarLength(v)))
+      }
+    go(List(value), 0L)
+  }
+
+  private def scalarLength(v: CanonicalValue): Long =
+    v match {
+      case CInt(n) => integerLength(n)
+      case r: CRational =>
+        headLength(TagRational.toLong) + headLength(2L) + integerLength(r.value.numerator) + integerLength(r.value.denominator)
+      case CText(s)  => textLength(s)
+      case CBytes(b) => Weight.add(headLength(b.size), b.size)
+      case _         => 1L
+    }
+
+  private def textLength(s: String): Long = {
+    val n = Utf16.utf8Length(s)
+    Weight.add(headLength(n), n)
+  }
+
+  private def integerLength(n: BigInt): Long = {
+    val m = if (n.signum >= 0) n else -1 - n
+    if (m.isValidLong) headLength(m.toLong)
+    else if (m < TwoTo64) 9L
+    else {
+      val bytes = (m.bitLength + 7) / 8
+      1L + headLength(bytes.toLong) + bytes
+    }
+  }
+
+  /** The length of [[head]]'s output, for `0 <= argument < 2^63`. */
+  private def headLength(argument: Long): Long =
+    if (argument < 24) 1L
+    else if (argument < 0x100) 2L
+    else if (argument < 0x10000) 3L
+    else if (argument < (1L << 32)) 5L
+    else 9L
+
   private def text(s: String): ByteVector = {
     val utf8 = ByteVector(s.getBytes(UTF_8))
     head(3, utf8.size) ++ utf8

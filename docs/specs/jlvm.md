@@ -104,13 +104,27 @@ expression, so that every program has exactly one surface form.
 
 There is one number kind: exact integers and exact rationals, so `2.0` *is* `2`.
 
-**Weight.** A value's weight is a portable measure of its size:
-- 1 per node;
-- plus the UTF-8 length of each text and each map key;
-- plus the length of each byte string;
-- plus the 64-bit limbs of each number, `⌊bitLength/64⌋` for the numerator and for the denominator.
+**Weight.** A value's weight is a portable measure of its size, exactly:
 
-Shared sub-values count every time they occur, and the total saturates.
+| Value | Weight |
+|---|---|
+| null, boolean | 1 |
+| integer `n` | `1 + ⌊bitLength(n)/64⌋` |
+| rational `n/d` | `2 + ⌊bitLength(n)/64⌋ + ⌊bitLength(d)/64⌋` |
+| text | `1 +` its length in UTF-8 bytes (not UTF-16 units: a surrogate pair is 4) |
+| byte string | `1 +` its length in bytes |
+| array | `1 + Σ` the weights of its elements |
+| map | `1 + Σ (1 + key length + weight of the value)` over its entries, the key's length in UTF-8 bytes |
+
+- `bitLength` is Java's `BigInteger.bitLength`: the bits of the minimal two's-complement form, without the sign bit.
+  For `n >= 0` that is the bit length of `n`; for `n < 0` it is the bit length of `-n - 1`, so `-2^63` has 63 bits
+  (weight 1) and `-2^63 - 1` has 64 (weight 2).
+- Shared sub-values count every time they occur, so the weight is the size of the value written out in full, and it
+  bounds the work of any full traversal.
+- The total saturates at `2^63 - 1`.
+
+A value's canonical CBOR (`canonical-encoding.md`) is never shorter than its weight: every node has a head of at least
+one byte, text and byte strings add their length, and an integer takes at least `1 + ⌊bitLength/64⌋` bytes.
 
 **Bounds**, checked on every value an operation reads or produces:
 

@@ -33,6 +33,24 @@ object CanonicalValueSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(4L, t("é😀").weight - 3L))
   }
 
+  pureTest("weights match the Rust SDK's (sdk/rust/core/tests/shared_value.rs), including bitLength on negative powers of two") {
+    val two = BigInt(2)
+    def rational(n: BigInt, d: BigInt) =
+      CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(n, d).fold(e => sys.error(e.toString), identity)).weight
+    def leaf = CanonicalValue.map(List("pk" -> CBytes(scodec.bits.ByteVector.fill(33)(0)), "type" -> t("dlog"))).toOption.get
+    expect
+      .same(List(1L, 1L, 1L, 6L, 4L), List(CNull.weight, True.weight, t("").weight, t("é€").weight, bytesOf(3).weight))
+      .and(expect.same(List(1L, 1L, 2L), List(CInt(0).weight, CInt(two.pow(63) - 1).weight, CInt(two.pow(63)).weight)))
+      .and(expect.same(List(1L, 2L), List(CInt(-two.pow(63)).weight, CInt(-two.pow(63) - 1).weight)))
+      .and(expect.same(List(2L, 3L), List(CInt(-two.pow(127)).weight, CInt(-two.pow(127) - 1).weight)))
+      .and(expect.same(List(2L, 3L, 3L), List(rational(1, 2), rational(two.pow(64), 3), rational(-1, -two.pow(64)))))
+      .and(expect.same(48L, leaf.weight))
+      .and(expect.same(5L, CanonicalValue.array(Vector(CNull, t("ab"))).toOption.get.weight))
+      .and(expect.same(1L, CanonicalValue.map(List("é" -> CNull)).toOption.get.weight))
+  }
+
+  private def bytesOf(n: Int): CanonicalValue = CBytes(scodec.bits.ByteVector.fill(n.toLong)(1))
+
   test("updated, removed and merged agree with building the map from scratch") {
     val maps: Gen[CMap] = CanonicalGens.value(2).map {
       case m: CMap => m

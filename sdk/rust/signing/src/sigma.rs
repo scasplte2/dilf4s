@@ -51,6 +51,11 @@ pub const MAX_LEAVES: usize = 4096;
 /// The most children of one connective: a threshold's evaluation points are the bytes `1..=n`.
 pub const MAX_CHILDREN: usize = 255;
 
+/// The weight of the heaviest valid proposition in its canonical form (section 3): 4096 `dhtuple` leaves (158 each)
+/// at depth 64, under `1 + 255 + 61·4096` one-`k` thresholds (29 each, plus their children). A heavier value is
+/// refused before any of it is decoded.
+pub const MAX_WEIGHT: u64 = 7_900_416;
+
 type Challenge = [u8; CHALLENGE_LENGTH];
 
 type Encoded = [u8; ELEMENT_LENGTH];
@@ -134,6 +139,10 @@ fn invalid(reason: impl Into<String>) -> SigmaError {
     SigmaError::InvalidProposition { reason: reason.into() }
 }
 
+fn too_wide() -> SigmaError {
+    invalid(format!("a connective has at most {MAX_CHILDREN} children"))
+}
+
 /// One node of a proposition, in pre-order: a connective is followed by its `n` children's subtrees.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Node {
@@ -162,7 +171,6 @@ fn close(kind: &Connective, n: usize, child_depth: usize, leaves: usize) -> Resu
     if n == 0 {
         return Err(invalid("a connective needs at least one child: an empty one holds for anyone"));
     }
-    let too_wide = || invalid(format!("a connective has at most {MAX_CHILDREN} children"));
     let n = u8::try_from(n).map_err(|_| too_wide())?;
     let depth = child_depth.saturating_add(1);
     if depth > MAX_DEPTH {
@@ -241,22 +249,28 @@ impl Proposition {
 
     /// The canonical form (section 3), as the JLVM passes it: `{"type": "dlog", "pk": bytes}`, `{"type": "dhtuple",
     /// "g", "h", "u", "v": bytes}`, `{"type": "and" | "or", "children": [...]}` or `{"type": "threshold", "k": int,
-    /// "children": [...]}`, with no other field. Decoded with an explicit stack, checking each node as the reference
-    /// (`SigmaProp.fromCanonical`) does: a node's own fields first, then its children in order, then the connective.
+    /// "children": [...]}`, with no other field. Decoded with an explicit stack, in the reference's order
+    /// (`SigmaProp.fromCanonical`, section 3): a value heavier than [`MAX_WEIGHT`] first, before anything is decoded;
+    /// then, in pre-order, each node's own fields, the leaf bound before a leaf's points and the width before a
+    /// connective's children; and each connective's remaining checks once its children are decoded.
     ///
-    /// The work is bounded however much `value` shares, but not by its memory: a connective is checked when it closes
-    /// (as the reference orders its errors), so each child walked is a subtree of at most [`MAX_LEAVES`] leaves and
-    /// [`MAX_DEPTH`] levels, and a connective's children are all walked before its width is refused. A value built in
-    /// process with shared parts should have its [`Value::weight`] bounded first, as the JLVM's gas does.
+    /// The work is bounded however much `value` shares: the weight is cached, so the first check is O(1), and what
+    /// passes it is at most [`MAX_WEIGHT`] of logical size, of which at most [`MAX_LEAVES`] leaves are decoded.
     pub fn from_value(value: &Value) -> Result<Self, SigmaError> {
+        if value.weight() > MAX_WEIGHT {
+            return Err(invalid(format!("a proposition weighs at most {MAX_WEIGHT}")));
+        }
         let mut nodes = Vec::new();
         let mut stack: Vec<Open<'_>> = Vec::new();
         let mut step = Step::Decode(value);
+        // every leaf decoded so far, in the whole proposition
+        let mut leaves = 0usize;
         loop {
             step = match step {
-                Step::Decode(v) => match decode_node(v)? {
+                Step::Decode(v) => match decode_node(v, leaves)? {
                     Decoded::Leaf(node) => {
                         nodes.push(node);
+                        leaves = leaves.saturating_add(1);
                         Step::Completed { depth: 1, leaves: 1 }
                     }
                     Decoded::Connective(kind, items) => {
@@ -339,8 +353,9 @@ enum Decoded<'a> {
     Connective(Connective, &'a [Value]),
 }
 
-/// One node of the canonical form: a checked leaf, or a connective with its children still to decode.
-fn decode_node(value: &Value) -> Result<Decoded<'_>, SigmaError> {
+/// One node of the canonical form, `leaves` leaves into the proposition: a checked leaf, or a connective, within
+/// [`MAX_CHILDREN`], with its children still to decode.
+fn decode_node(value: &Value, leaves: usize) -> Result<Decoded<'_>, SigmaError> {
     let Value::Map(m) = value else {
         return Err(invalid("a proposition is an object"));
     };
@@ -349,8 +364,16 @@ fn decode_node(value: &Value) -> Result<Decoded<'_>, SigmaError> {
         _ => Err(invalid(format!("{k} must be bytes"))),
     };
     let children = || match m.get("children") {
+        Some(Value::Array(a)) if a.items().len() > MAX_CHILDREN => Err(too_wide()),
         Some(Value::Array(a)) => Ok(a.items()),
         _ => Err(invalid("children must be an array")),
+    };
+    let one_more_leaf = || {
+        if leaves < MAX_LEAVES {
+            Ok(())
+        } else {
+            Err(invalid(format!("a proposition has at most {MAX_LEAVES} leaves")))
+        }
     };
     let ty = match m.get("type") {
         Some(Value::Text(t)) => t.as_str(),
@@ -359,11 +382,13 @@ fn decode_node(value: &Value) -> Result<Decoded<'_>, SigmaError> {
     match ty {
         "dlog" => {
             fields(m, ty, &["pk"])?;
+            one_more_leaf()?;
             let pk = point("pk")?;
             Ok(Decoded::Leaf(Node::Dlog(Box::new(statement_point("pk", pk)?))))
         }
         "dhtuple" => {
             fields(m, ty, &["g", "h", "u", "v"])?;
+            one_more_leaf()?;
             let (g, h, u, v) = (point("g")?, point("h")?, point("u")?, point("v")?);
             Ok(Decoded::Leaf(Node::DhTuple(Box::new([
                 statement_point("g", g)?,
