@@ -467,7 +467,8 @@ pass their own limit per evaluation.
 
 **Size units.** An operation's size charge is summed over its evaluated arguments, each at its position's rate (by
 default the operation's). For example, `sigma_verify` and `schnorr_verify` charge the message at the hashing rate,
-1 per unit of weight, and the proposition and proof at the curve rate. Each argument is measured in its rate's unit:
+1 per unit of weight, and the proposition and proof at the curve rate; `bls_aggregate_verify` charges each key as an
+element and the message at the hashing rate, since hashing it to G2 is linear in its length. Each argument is measured in its rate's unit:
 - `Elements`: the top-level entries of arrays and objects, and 1 for anything else;
 - `Weight`: the weight (§2);
 - `Limbs2`: for a number, the square of its 64-bit limbs, numerator and denominator together (`⌊bits/64⌋` each); 0
