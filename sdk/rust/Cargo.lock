@@ -393,6 +393,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dilf4s-jlvm"
+version = "0.1.0"
+dependencies = [
+ "dilf4s-core",
+ "dilf4s-proofs",
+ "dilf4s-signing",
+ "num-bigint 0.5.1",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "dilf4s-proofs"
 version = "0.1.0"
 dependencies = [

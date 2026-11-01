@@ -1,0 +1,20 @@
+[package]
+name = "dilf4s-jlvm"
+description = "dilf4s JLVM: the deterministic, gas-metered JSON-logic virtual machine (docs/specs/jlvm.md)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+dilf4s-core = { path = "../core" }
+dilf4s-proofs = { path = "../proofs" }
+# verification only, as an SP1 guest builds it
+dilf4s-signing = { path = "../signing", default-features = false }
+num-bigint.workspace = true
+num-integer.workspace = true
+num-traits.workspace = true
+
+[lints]
+workspace = true
