@@ -391,6 +391,65 @@ impl Map {
     }
 }
 
+/// The keys of a map, checked once: distinct, and their canonical order found. A map with exactly these keys is then
+/// built from their values in O(n), without comparing a key (a program's object literal, built on every evaluation).
+#[derive(Clone, Debug)]
+pub struct MapShape {
+    /// The keys, in the order their values are given.
+    keys: Vec<Text>,
+    /// Positions into `keys`, in canonical key order.
+    order: Vec<usize>,
+}
+
+impl MapShape {
+    /// The shape of `keys` (in the order their values will be given): [`CanonicalError::DuplicateKey`] if a key repeats.
+    pub fn new(keys: Vec<Text>) -> Result<Self, CanonicalError> {
+        let mut order: Vec<usize> = (0..keys.len()).collect();
+        let key = |i: &usize| keys.get(*i).map_or("", Text::as_str);
+        order.sort_by(|a, b| canonical_key_order(key(a), key(b)));
+        if let Some(w) = order.windows(2).find(|w| matches!(w, [a, b] if key(a) == key(b))) {
+            let repeated = w.first().map_or("", key);
+            return Err(CanonicalError::DuplicateKey { key: String::from(repeated) });
+        }
+        Ok(Self { keys, order })
+    }
+
+    /// The keys, in the order their values are given.
+    pub fn keys(&self) -> &[Text] {
+        &self.keys
+    }
+
+    /// The number of keys.
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    /// Whether there are no keys.
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
+
+    /// The map of these keys to `values` (in the keys' given order): null values are dropped, which keeps the rest in
+    /// order; [`CanonicalError::DepthExceeded`] if a value nests too deep; [`CanonicalError::TypeMismatch`] if the
+    /// number of values is not the number of keys. O(n), and no key is compared or copied.
+    pub fn map(&self, values: &[Value]) -> Result<Map, CanonicalError> {
+        if values.len() != self.keys.len() {
+            return Err(CanonicalError::TypeMismatch {
+                reason: alloc::format!("{} values for {} keys", values.len(), self.keys.len()),
+            });
+        }
+        let entries: Vec<(Text, Value)> = self
+            .order
+            .iter()
+            .filter_map(|&i| match (self.keys.get(i), values.get(i)) {
+                (Some(_), Some(Value::Null)) | (None, _) | (_, None) => None,
+                (Some(k), Some(v)) => Some((k.clone(), v.clone())),
+            })
+            .collect();
+        Map::from_sorted(entries)
+    }
+}
+
 /// The entries of a [`Map`] in canonical key order, as `(key, value)`.
 pub struct Entries<'a> {
     /// The nodes whose entry and right subtree are still to come: at most the tree's height.
@@ -442,7 +501,7 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
 
-    use super::{Link, Map, Node, Text, Value, canonical_key_order, entry_weight};
+    use super::{Link, Map, MapShape, Node, Text, Value, canonical_key_order, entry_weight};
     use crate::value::{MAX_DEPTH, MAX_WEIGHT};
 
     /// Checks every node's balance, order and caches against a recount; returns (height, weight sum, depth, count).
@@ -634,5 +693,31 @@ mod tests {
     fn a_node_type_stays_small() {
         assert!(core::mem::size_of::<Node>() <= 112, "{}", core::mem::size_of::<Node>());
         assert_eq!(core::mem::size_of::<Map>(), 16);
+    }
+
+    #[test]
+    fn a_shape_builds_the_map_of_its_keys() {
+        let keys: Vec<Text> = ["bb", "a", "ccc", "d"].into_iter().map(Text::from).collect();
+        let shape = MapShape::new(keys).unwrap();
+        let values = [Value::int(1), Value::int(2), Value::Null, Value::text("x")];
+        let built = shape.map(&values).unwrap();
+        let expected = Map::new(
+            [("bb", Value::int(1)), ("a", Value::int(2)), ("d", Value::text("x"))].map(|(k, v)| (String::from(k), v)),
+        )
+        .unwrap();
+        assert_eq!(Value::Map(built.clone()), Value::Map(expected.clone()));
+        assert_eq!(built.weight(), expected.weight());
+        assert_eq!(built.depth(), expected.depth());
+        // the keys are the shape's own, shared
+        let a = shape.keys().get(1).map(|k| k.as_ptr());
+        assert_eq!(built.keys().find(|k| k.as_str() == "a").map(|k| k.as_ptr()), a);
+        assert!(MapShape::new(vec![Text::from("k"), Text::from("k")]).is_err());
+        assert!(shape.map(&values[..3]).is_err());
+    }
+
+    #[test]
+    fn text_counts_its_utf16_units_once() {
+        assert_eq!(Text::from("a\u{e9}\u{1F600}").utf16_len(), 4);
+        assert_eq!(Text::from("").utf16_len(), 0);
     }
 }
