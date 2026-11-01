@@ -255,6 +255,14 @@ pub(crate) fn text_segment_count(t: &Text) -> u64 {
     (t.utf16_len() / KEY_BLOCK).saturating_add(1)
 }
 
+/// A computed path's segment: text as [`text_segment_count`] (O(1)), anything else (an index) as one.
+pub(crate) fn path_segments(v: &Value) -> u64 {
+    match v {
+        Value::Text(t) => text_segment_count(t),
+        _ => 1,
+    }
+}
+
 /// The blocks of text used as a key; 0 for anything else.
 pub(crate) fn key_blocks(v: &Value) -> u64 {
     match v {

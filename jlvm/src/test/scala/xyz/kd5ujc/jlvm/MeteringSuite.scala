@@ -232,6 +232,21 @@ object MeteringSuite extends IOSuite {
     )
   }
 
+  test("each frame a read searches pays for its first key's length, which the frame compares") { jlvm =>
+    // every frame's element holds a 96-character key the query shares all but its last character with
+    val held = "k" * 95 + "b"
+    val data = obj("xs" -> arr(Vector(obj(held -> t("v")))))
+    def nested(frames: Int, key: String): Program =
+      program((1 to frames).foldLeft(s"""{"var": "$key"}""")((inner, _) => s"""{"map": [{"var": "xs"}, $inner]}"""))
+    def gas(frames: Int, key: String): Long = eval(jlvm, nested(frames, key), data).gasUsed.value
+    // a 96-character key counts 4 segments where a 1-character key counts 1: 3 more, once itself and once per frame
+    val extra = 3L * S.perPathSegment.value
+    IO.pure((1 to 3).toList.foldMap { frames =>
+      val delta = gas(frames, "k" * 95 + "a") - gas(frames, "a")
+      expect.same(extra * (1 + frames), delta)
+    })
+  }
+
   // ---- 5. computed paths
 
   test("a computed path is charged by its size before it is parsed") { jlvm =>
