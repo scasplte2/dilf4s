@@ -1,0 +1,6 @@
+# Pinned exactly: clippy pedantic is denied, so a new stable's lints must not break the build unannounced. CI's
+# dtolnay/rust-toolchain pin in .github/workflows/ci.yml names the same version; move both together.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
+targets = ["riscv64imac-unknown-none-elf"]
