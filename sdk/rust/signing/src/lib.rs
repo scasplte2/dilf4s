@@ -39,5 +39,5 @@ pub mod sigma;
 mod util;
 pub mod vrf;
 
-pub use error::{KesError, KeyError, PathRefusal, SigmaError, SigningError, VrfError};
+pub use error::{KesError, KeyError, PathError, PathRefusal, SigmaError, SigningError, VrfError};
 pub use scheme::{Scheme, SchemeId};

@@ -98,7 +98,7 @@ fn a_segment_has_no_leading_zero_and_at_most_ten_digits_is_below_2_pow_31_and_a_
         (String::new(), MissingMaster, "path must start with m"),
     ];
     for (p, refusal, reason) in refused {
-        let expected = dilf4s_signing::KeyError::InvalidPath { refusal, reason: reason.into() };
+        let expected = dilf4s_signing::PathError { refusal, reason: reason.into() };
         assert_eq!(path::parse(&p).unwrap_err(), expected, "{}", &p[..p.len().min(40)]);
     }
 }
@@ -116,6 +116,21 @@ fn a_million_digit_segment_a_million_leading_zeros_and_a_million_segments_are_re
     assert_eq!(l.unwrap_err().to_string(), "InvalidPath: path segment 0 has 1000000 digits, more than 10");
     assert_eq!(p.unwrap_err().to_string(), "InvalidPath: path segment 0 has a leading zero");
     assert_eq!(d.unwrap_err().to_string(), "InvalidPath: path has more than 255 segments");
+}
+
+/// `parse` returns the narrow `PathError`; `?` turns it into `KeyError::InvalidPath` with the same refusal and reason.
+#[test]
+fn a_path_error_converts_into_a_key_error_through_question_mark() {
+    use dilf4s_signing::keys::{path, slip10};
+    use dilf4s_signing::{KeyError, PathRefusal};
+    let derive =
+        |p: &str| -> Result<[u8; 32], KeyError> { Ok(*slip10::derive(&[7; 32], &path::parse(p)?)?.key.as_bytes()) };
+    assert!(derive("m/0'").is_ok());
+    assert_eq!(
+        derive("m/01'").unwrap_err(),
+        KeyError::InvalidPath { refusal: PathRefusal::LeadingZero, reason: "path segment 0 has a leading zero".into() }
+    );
+    assert_eq!(path::parse("m/01'").unwrap_err().to_string(), derive("m/01'").unwrap_err().to_string());
 }
 
 // ------------------------------------------------------------------ curve25519-dalek decoding (ZIP-215's rules)

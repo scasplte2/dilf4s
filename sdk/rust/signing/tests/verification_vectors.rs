@@ -20,7 +20,7 @@ use dilf4s_core::generated::signing_vectors::{
     KeyDecodingResult, KeyPart, PathResult, SigningVectors, VerificationResult,
 };
 use dilf4s_signing::keys::path;
-use dilf4s_signing::{KeyError, PathRefusal, SchemeId, SigningError, bls, ecdsa, ed25519, ristretto255, schnorr};
+use dilf4s_signing::{PathRefusal, SchemeId, SigningError, bls, ecdsa, ed25519, ristretto255, schnorr};
 
 /// Decodes just the verifying key of a scheme, to tell a malformed key from a malformed signature.
 fn key_decodes(id: SchemeId, key: &[u8]) -> Result<(), SigningError> {
@@ -143,21 +143,18 @@ fn path_strictness() {
     for c in &v.paths {
         let actual = path::parse(&c.path)
             .map(|is| is.into_iter().map(|i| u64::from(i.serialized())).collect::<Vec<_>>())
-            .map_err(|e| match e {
-                KeyError::InvalidPath { refusal, .. } => Some(refusal),
-                _ => None,
-            });
+            .map_err(|e| e.refusal);
         let expected = match &c.result {
             PathResult::PathIndices(p) => Ok(p.indices.clone()),
-            PathResult::MissingMaster => Err(Some(PathRefusal::MissingMaster)),
-            PathResult::Malformed => Err(Some(PathRefusal::Malformed)),
-            PathResult::LeadingZero => Err(Some(PathRefusal::LeadingZero)),
-            PathResult::TooManyDigits => Err(Some(PathRefusal::TooManyDigits)),
-            PathResult::OutOfRange => Err(Some(PathRefusal::OutOfRange)),
-            PathResult::TooDeep => Err(Some(PathRefusal::TooDeep)),
+            PathResult::MissingMaster => Err(PathRefusal::MissingMaster),
+            PathResult::Malformed => Err(PathRefusal::Malformed),
+            PathResult::LeadingZero => Err(PathRefusal::LeadingZero),
+            PathResult::TooManyDigits => Err(PathRefusal::TooManyDigits),
+            PathResult::OutOfRange => Err(PathRefusal::OutOfRange),
+            PathResult::TooDeep => Err(PathRefusal::TooDeep),
         };
         assert_eq!(actual, expected, "path {:?}", c.path.get(..40).unwrap_or(&c.path));
-        if let Err(Some(r)) = expected {
+        if let Err(r) = expected {
             seen.insert(r);
         }
     }
