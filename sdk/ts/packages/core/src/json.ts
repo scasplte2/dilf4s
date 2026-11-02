@@ -9,7 +9,7 @@
 import { byteLimit, Meter } from "./budget.js";
 import type { CanonicalError, TooLarge } from "./error.js";
 import { err, ok, type Result } from "./result.js";
-import { compareCodePoints, utf8Length } from "./utf8.js";
+import { compareCodePoints } from "./utf8.js";
 import { ArrayValue, BoolValue, entriesView, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
 
 /** The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises. */
@@ -319,6 +319,17 @@ function quote(s: string): string {
   return out + '"';
 }
 
+/** The UTF-8 length of {@link quote}`(s)`, counted without building it, so a budget is checked before escaping. */
+function quotedLength(s: string): number {
+  let n = 2;
+  for (const ch of s) {
+    const c = ch.codePointAt(0) ?? 0;
+    const escaped = ch === '"' || ch === "\\" || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\b" || ch === "\f";
+    n += escaped ? 2 : c < 0x20 ? 6 : c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
+  }
+  return n;
+}
+
 /**
  * The longest JSON {@link render} produces, in UTF-8 bytes. A UTF-16 code unit takes at least one UTF-8 byte, so the
  * text stays within every engine's string limit (V8's is `2^29 - 24` code units): rendering never throws.
@@ -345,13 +356,13 @@ export function renderWithin(value: Value, maxBytes: number): Result<string, Ren
   const meter = new Meter(byteLimit(maxBytes));
   const out: string[] = [];
   const stack: Rendering[] = [];
-  /** Adds `piece`, of `bytes` UTF-8 bytes, if it fits. */
-  const emit = (piece: string, bytes: number): boolean => {
+  /** Adds the piece `build` makes, of `bytes` UTF-8 bytes, if they fit: nothing is built before it is paid for. */
+  const emit = (bytes: number, build: () => string): boolean => {
     const fits = meter.take(bytes);
-    if (fits) out.push(piece);
+    if (fits) out.push(build());
     return fits;
   };
-  const ascii = (piece: string): boolean => emit(piece, piece.length);
+  const ascii = (piece: string): boolean => emit(piece.length, () => piece);
   /** A value's JSON, or its opening bracket with its parts now open: `undefined`, or why it failed. */
   const node = (v: Value): RenderError | undefined => {
     if (!meter.admits(v.weight)) return meter.refusal();
@@ -371,8 +382,8 @@ export function renderWithin(value: Value, maxBytes: number): Result<string, Ren
         return ascii(d.value) ? undefined : meter.refusal();
       }
       case "text": {
-        const q = quote(v.value);
-        return emit(q, utf8Length(q)) ? undefined : meter.refusal();
+        const s = v.value;
+        return emit(quotedLength(s), () => quote(s)) ? undefined : meter.refusal();
       }
       case "bytes":
         return { kind: "NotJsonRepresentable", what: "bytes" };
@@ -398,8 +409,8 @@ export function renderWithin(value: Value, maxBytes: number): Result<string, Ren
         stack.pop();
         continue;
       }
-      const name = `${comma}${quote(m.key)}:`;
-      if (!emit(name, utf8Length(name))) return err(meter.refusal());
+      const key = m.key;
+      if (!emit(comma.length + quotedLength(key) + 1, () => `${comma}${quote(key)}:`)) return err(meter.refusal());
       const e = node(m.value);
       if (e !== undefined) return err(e);
     } else {

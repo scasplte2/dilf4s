@@ -278,6 +278,22 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
     expect(ms).toBeLessThan(HANG);
   });
 
+  it("counts escaped text and keys before escaping them", () => {
+    // every escape form, quotes, and one, two, three and four UTF-8 bytes
+    const all = `${Array.from({ length: 0x20 }, (_, c) => String.fromCharCode(c)).join("")}"\\/aé€😀\u007f`;
+    for (const v of [text(all), map([[all, text(all)]]), array([text(all), map([["\n", Value.int(1n)]])])]) {
+      const r = expectOk(json.render(v), "renders");
+      const n = utf8Bytes(r);
+      expect(json.renderWithin(v, n), "at the exact length").toEqual({ ok: true, value: r });
+      expect(json.renderWithin(v, n - 1).ok, "one byte short").toBe(false);
+    }
+    // NUL escapes to six bytes: refused with the escaped length, counted rather than built
+    const nuls = text("\u0000".repeat(200_000));
+    expect(json.renderWithin(nuls, 200_001)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 200_001, atLeast: 1_200_002n } });
+    const key = map([["\u0000".repeat(200_000), Value.int(1n)]]);
+    expect(json.renderWithin(key, 200_010)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 200_010, atLeast: 1_200_004n } });
+  });
+
   it("a budgeted commitment is the commitment, within its limit, tag included", () => {
     const tag = expectOk(DomainTag.of("dilf4s/test/v1"), "tag");
     const h = TaggedHash.of("SHA-256", tag);
