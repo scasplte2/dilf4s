@@ -19,19 +19,18 @@ pub fn encode(bytes: &[u8]) -> String {
 
 /// The bytes of hexadecimal text (either case), which must have an even number of digits.
 pub fn decode(text: &str) -> Result<Vec<u8>, HexError> {
-    let digits = text.as_bytes();
-    if digits.len() % 2 != 0 {
+    let (pairs, rest) = text.as_bytes().as_chunks::<2>();
+    if !rest.is_empty() {
         return Err(HexError::OddLength);
     }
-    digits
-        .chunks_exact(2)
+    pairs
+        .iter()
         .enumerate()
-        .map(|(i, pair)| match pair {
-            [h, l] => nibble(*h)
+        .map(|(i, [h, l])| {
+            nibble(*h)
                 .zip(nibble(*l))
                 .map(|(h, l)| (h << 4) | l)
-                .ok_or(HexError::InvalidDigit { offset: i.saturating_mul(2) }),
-            _ => Err(HexError::OddLength),
+                .ok_or(HexError::InvalidDigit { offset: i.saturating_mul(2) })
         })
         .collect()
 }

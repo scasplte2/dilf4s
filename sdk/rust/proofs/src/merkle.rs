@@ -317,7 +317,7 @@ pub fn root<H: Hasher, M: MerkleHashing<H>>(profile: &M, leaf_hashes: &[Digest<H
 
 /// Right-shifts both until `fn` is odd or zero.
 const fn shift_until_odd_or_zero(mut f: u64, mut s: u64) -> (u64, u64) {
-    while f % 2 == 0 && f != 0 {
+    while f.is_multiple_of(2) && f != 0 {
         f /= 2;
         s /= 2;
     }
