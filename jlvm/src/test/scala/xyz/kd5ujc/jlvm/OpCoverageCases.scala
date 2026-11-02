@@ -124,6 +124,24 @@ object OpCoverageCases extends IOApp {
   }
 
   /**
+   * ZIP-215's non-canonical encodings (`y` at or above `p`, reduced mod `p`), from `signing_v1.json`'s small-order
+   * rows: a key and an `R` with one, and `x = 0` with the sign bit set. Each verifies; the challenge hashes the
+   * encodings as given. SP1's curve25519-dalek patch refuses a non-canonical `y` unless it is reduced first.
+   */
+  val nonCanonicalEd25519: List[Case] = {
+    val zcash = "5a63617368"
+    val identityR = "01" + "00" * 63
+    val pPlus1Signed = "ee" + "ff" * 31
+    List(
+      ("a key with y = p", "ed" + "ff" * 30 + "7f", identityR),
+      ("a key with y = p + 1 and the sign bit", pPlus1Signed, identityR),
+      ("an R with y = p + 1", "01" + "00" * 31, "ee" + "ff" * 30 + "7f" + "00" * 32),
+      ("an R with y = p + 1 and the sign bit, a key with x = 0 and the sign bit", "01" + "00" * 30 + "80", pPlus1Signed + "00" * 32),
+      ("a key and an R with y = p + 1 and the sign bit", pPlus1Signed, pPlus1Signed + "00" * 32)
+    ).map { case (name, pk, sig) => probe(s"non-canonical: $name", Op.Ed25519Verify, bytes(pk), bytes(zcash), bytes(sig)) }
+  }
+
+  /**
    * The order in which `sigma_verify` refuses an oversized proposition (sigma.md §3): its weight before anything is
    * decoded, a connective's width before its children, the leaf bound before a leaf's points. The JLVM reports each as
    * `Crypto` after charging for the proposition's weight, so these pin that each is refused, at what cost, and that the
@@ -275,7 +293,8 @@ object OpCoverageCases extends IOApp {
   def run(args: List[String]): IO[ExitCode] =
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
       .mapN((secp, mk, tr) =>
-        sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ tries(tr) ++ sigmaBounds ++ frameLookups
+        sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ tries(tr) ++ sigmaBounds ++ frameLookups ++
+        nonCanonicalEd25519
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)
