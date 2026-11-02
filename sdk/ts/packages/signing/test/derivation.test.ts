@@ -21,6 +21,7 @@ import {
   toMnemonic,
   WordList,
   type KeyError,
+  type PathRefusal,
 } from "../src/index.js";
 import { ENGLISH } from "../src/wordlists/english.js";
 import { expectOk, h, loadVectors, readDoc, readResource, resourcesDir, utf8 } from "./vectors.js";
@@ -172,7 +173,7 @@ describe("paths", { timeout: 60_000 }, () => {
     expect(path("m")).toEqual([]);
     expect(path("m/2147483647'").map((i) => i.serialized)).toEqual([0xffffffff]);
     for (const bad of ["44'/0", "m/x", "m/2147483648", "m/-1", "m/+1", "m/0/", "m//0", "m/0''", " m/0", "M/0", "m/1e3", "m/0x1"])
-      expect(kind(parsePath(bad)), bad).toBe("InvalidDerivation");
+      expect(kind(parsePath(bad)), bad).toBe("InvalidPath");
     expect(kind(ChildIndex.soft(2 ** 31))).toBe("InvalidDerivation");
     expect(kind(ChildIndex.hardened(-1))).toBe("InvalidDerivation");
     expect(kind(ChildIndex.soft(1.5))).toBe("InvalidDerivation");
@@ -189,25 +190,29 @@ describe("paths", { timeout: 60_000 }, () => {
       [`m${"/1'".repeat(255)}`, Array<number>(255).fill(0x80000001)],
     ];
     for (const [p, is] of accepted) expect(path(p).map((i) => i.serialized), p.slice(0, 40)).toEqual(is);
-    const refused: [string, string][] = [
-      ["m/2147483648'", "path segment 0 is out of range"],
-      ["m/4294967295", "path segment 0 is out of range"],
-      ["m/9999999999", "path segment 0 is out of range"],
-      ["m/0/10000000000", "path segment 1 has 11 digits, more than 10"],
-      [`m/1/2/${"9".repeat(4096)}'`, "path segment 2 has 4096 digits, more than 10"],
-      ["m/007", "path segment 0 has a leading zero"],
-      ["m/00", "path segment 0 has a leading zero"],
-      ["m/000'", "path segment 0 has a leading zero"],
-      ["m/1/01h", "path segment 1 has a leading zero"],
-      ["m/02147483647'", "path segment 0 has a leading zero"],
-      [`m/${zeros}1'`, "path segment 0 has a leading zero"],
-      [`m/${zeros}12345678901`, "path segment 0 has a leading zero"],
-      ["m/1/x9", "path segment 1 is malformed"],
-      [`m${"/7".repeat(256)}`, "path has more than 255 segments"],
-      [`m${"/7".repeat(255)}/x`, "path has more than 255 segments"],
-      [`m${"/7".repeat(9)}/x${"/7".repeat(300)}`, "path segment 9 is malformed"],
+    const refused: [string, PathRefusal, string][] = [
+      ["m/2147483648'", "outOfRange", "path segment 0 is out of range"],
+      ["m/4294967295", "outOfRange", "path segment 0 is out of range"],
+      ["m/9999999999", "outOfRange", "path segment 0 is out of range"],
+      ["m/0/10000000000", "tooManyDigits", "path segment 1 has 11 digits, more than 10"],
+      [`m/1/2/${"9".repeat(4096)}'`, "tooManyDigits", "path segment 2 has 4096 digits, more than 10"],
+      ["m/007", "leadingZero", "path segment 0 has a leading zero"],
+      ["m/00", "leadingZero", "path segment 0 has a leading zero"],
+      ["m/000'", "leadingZero", "path segment 0 has a leading zero"],
+      ["m/1/01h", "leadingZero", "path segment 1 has a leading zero"],
+      ["m/02147483647'", "leadingZero", "path segment 0 has a leading zero"],
+      [`m/${zeros}1'`, "leadingZero", "path segment 0 has a leading zero"],
+      [`m/${zeros}12345678901`, "leadingZero", "path segment 0 has a leading zero"],
+      ["m/1/x9", "malformed", "path segment 1 is malformed"],
+      ["m/", "malformed", "path segment 0 is malformed"],
+      [`m${"/7".repeat(256)}`, "tooDeep", "path has more than 255 segments"],
+      [`m${"/7".repeat(255)}/x`, "tooDeep", "path has more than 255 segments"],
+      [`m${"/7".repeat(9)}/x${"/7".repeat(300)}`, "malformed", "path segment 9 is malformed"],
+      ["44'/0", "missingMaster", "path must start with m"],
+      ["", "missingMaster", "path must start with m"],
     ];
-    for (const [p, reason] of refused) expect(parsePath(p), p.slice(0, 40)).toEqual({ ok: false, error: { kind: "InvalidDerivation", reason } });
+    for (const [p, refusal, reason] of refused)
+      expect(parsePath(p), p.slice(0, 40)).toEqual({ ok: false, error: { kind: "InvalidPath", refusal, reason } });
   });
 
   test("a million-digit segment, a million leading zeros and a million segments are refused in linear time", () => {
@@ -218,10 +223,10 @@ describe("paths", { timeout: 60_000 }, () => {
     const [l, p, d] = [parsePath(long), parsePath(padded), parsePath(deep)];
     const took = performance.now() - start;
     expect(took, `took ${String(took)} ms`).toBeLessThan(1000);
-    const refused = (reason: string) => ({ ok: false, error: { kind: "InvalidDerivation", reason } });
-    expect(l).toEqual(refused("path segment 0 has 1000000 digits, more than 10"));
-    expect(p).toEqual(refused("path segment 0 has a leading zero"));
-    expect(d).toEqual(refused("path has more than 255 segments"));
+    const refused = (refusal: PathRefusal, reason: string) => ({ ok: false, error: { kind: "InvalidPath", refusal, reason } });
+    expect(l).toEqual(refused("tooManyDigits", "path segment 0 has 1000000 digits, more than 10"));
+    expect(p).toEqual(refused("leadingZero", "path segment 0 has a leading zero"));
+    expect(d).toEqual(refused("tooDeep", "path has more than 255 segments"));
   });
 });
 

@@ -8,7 +8,7 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 
 import { wellFormed } from "./bip39.js";
 import { ed25519, ed25519Bip32 } from "./ed25519.js";
-import type { KeyError } from "./errors.js";
+import type { InvalidPath, KeyError, PathRefusal } from "./errors.js";
 import { INSPECT, Secret, type SchemeName, type SigningKey, type VerifyingKey } from "./keys.js";
 import { secp256k1Ecdsa } from "./ecdsa.js";
 import { attempt } from "./internal/attempt.js";
@@ -55,18 +55,19 @@ export const MAX_DEPTH = 255;
 /**
  * `m/44'/0'/0'/0/7` (or `h` for `'`), relative to the master key; `m` alone is the master. A segment is `0` or a
  * nonzero ASCII digit and more digits, then an optional `'` or `h`, so each index has one spelling. Nothing is trimmed,
- * and an empty segment, a leading zero or any other character is `InvalidDerivation` (`signing.md` 3). A segment of
- * more than `MAX_SEGMENT_DIGITS` digits is refused before any conversion, and the scan stops at segment `MAX_DEPTH`,
- * so parsing is linear in the path and never holds more than `MAX_DEPTH` indices. An error names a segment by its
- * position (0 is the first after `m`) and, past the digit bound, its length; never by its text.
+ * and an empty segment, a leading zero or any other character is `InvalidPath`, typed by the first rule broken (a
+ * `PathRefusal`; `signing.md` 3). A segment of more than `MAX_SEGMENT_DIGITS` digits is refused before any conversion,
+ * and the scan stops at segment `MAX_DEPTH`, so parsing is linear in the path and never holds more than `MAX_DEPTH`
+ * indices. The message names a segment by its position (0 is the first after `m`) and, past the digit bound, its
+ * length; never by its text.
  */
-export function parsePath(path: string): Result<readonly ChildIndex[], KeyError> {
+export function parsePath(path: string): Result<readonly ChildIndex[], InvalidPath> {
   if (path === "m") return ok([]);
-  if (!path.startsWith("m/")) return err(invalid("path must start with m"));
+  if (!path.startsWith("m/")) return err(refuse("missingMaster", "path must start with m"));
   const out: ChildIndex[] = [];
   for (let from = 2; ; ) {
     const at = out.length;
-    if (at >= MAX_DEPTH) return err(invalid(`path has more than ${String(MAX_DEPTH)} segments`));
+    if (at >= MAX_DEPTH) return err(refuse("tooDeep", `path has more than ${String(MAX_DEPTH)} segments`));
     const slash = path.indexOf("/", from);
     const c = parseSegment(path.slice(from, slash < 0 ? path.length : slash), at);
     if (!c.ok) return c;
@@ -76,17 +77,18 @@ export function parsePath(path: string): Result<readonly ChildIndex[], KeyError>
   }
 }
 
-function parseSegment(seg: string, at: number): Result<ChildIndex, KeyError> {
+const refuse = (refusal: PathRefusal, reason: string): InvalidPath => ({ kind: "InvalidPath", refusal, reason });
+
+function parseSegment(seg: string, at: number): Result<ChildIndex, InvalidPath> {
   const m = SEGMENT.exec(seg);
-  if (m === null) return err(invalid(`path segment ${String(at)} is malformed`));
+  if (m === null) return err(refuse("malformed", `path segment ${String(at)} is malformed`));
   const digits = m[1] ?? "";
-  if (digits !== "0" && digits.startsWith("0")) return err(invalid(`path segment ${String(at)} has a leading zero`));
+  if (digits !== "0" && digits.startsWith("0")) return err(refuse("leadingZero", `path segment ${String(at)} has a leading zero`));
   if (digits.length > MAX_SEGMENT_DIGITS)
-    return err(invalid(`path segment ${String(at)} has ${String(digits.length)} digits, more than ${String(MAX_SEGMENT_DIGITS)}`));
-  // at most ten digits: exact as a double
-  const i = Number(digits);
-  if (i >= HARDENED) return err(invalid(`path segment ${String(at)} is out of range`));
-  return m[2] === "" ? ChildIndex.soft(i) : ChildIndex.hardened(i);
+    return err(refuse("tooManyDigits", `path segment ${String(at)} has ${String(digits.length)} digits, more than ${String(MAX_SEGMENT_DIGITS)}`));
+  // at most ten digits: exact as a double, and the index constructors check the range
+  const c = m[2] === "" ? ChildIndex.soft(Number(digits)) : ChildIndex.hardened(Number(digits));
+  return c.ok ? c : err(refuse("outOfRange", `path segment ${String(at)} is out of range`));
 }
 
 const CHAIN_CODE = "a chain code is 32 bytes";

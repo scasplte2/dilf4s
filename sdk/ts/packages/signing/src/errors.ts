@@ -10,7 +10,21 @@ export type KeyError =
   | { readonly kind: "InvalidEntropy"; readonly reason: string }
   | { readonly kind: "InvalidMnemonic"; readonly reason: string }
   | { readonly kind: "InvalidWordList"; readonly reason: string }
-  | { readonly kind: "InvalidDerivation"; readonly reason: string };
+  | { readonly kind: "InvalidDerivation"; readonly reason: string }
+  | InvalidPath;
+
+/**
+ * Why a derivation path is refused: the first rule it breaks, its segments checked in order (`signing.md` 3). Its
+ * spelling in the `paths` vectors.
+ */
+export type PathRefusal = "missingMaster" | "malformed" | "leadingZero" | "tooManyDigits" | "outOfRange" | "tooDeep";
+
+/** A derivation path `parsePath` refuses (Scala `KeyError.InvalidPath`); `reason` is a message, not normative. */
+export interface InvalidPath {
+  readonly kind: "InvalidPath";
+  readonly refusal: PathRefusal;
+  readonly reason: string;
+}
 
 /**
  * A VRF failure (Scala `VrfError`). `Malformed` is a wrong length; every other kind is a rejection (the JLVM's

@@ -121,7 +121,7 @@ object CryptoVectors {
     pathCases.map { p =>
       Json.obj(
         "path"   -> p.asJson,
-        "result" -> ChildIndex.path(p).fold(_ => "invalid".asJson, is => Json.obj("indices" -> is.map(_.serialized).asJson))
+        "result" -> ChildIndex.path(p).fold(_.refusal.name.asJson, is => Json.obj("indices" -> is.map(_.serialized).asJson))
       )
     }
 

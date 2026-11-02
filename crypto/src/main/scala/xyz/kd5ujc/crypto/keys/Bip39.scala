@@ -18,6 +18,9 @@ object KeyError {
   final case class InvalidMnemonic(reason: String) extends KeyError
   final case class InvalidWordList(reason: String) extends KeyError
   final case class InvalidDerivation(reason: String) extends KeyError
+
+  /** A derivation path refused by `ChildIndex.path`; `reason` is a message, `refusal` the typed rule it broke. */
+  final case class InvalidPath(refusal: PathRefusal, reason: String) extends KeyError
 }
 
 /** Secret byte material (seeds, entropy): never printed. */

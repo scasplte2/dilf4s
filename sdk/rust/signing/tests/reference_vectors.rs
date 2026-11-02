@@ -374,7 +374,7 @@ fn paths() {
     // an empty segment is malformed (section 3), as in Scala and TypeScript
     for bad in [" m/1/ ", "m/1/", "44'/0", "m/x", "m/2147483648", "m/-1", "m//1", "m/'", "m/1''", "M/1", "m/4294967296"]
     {
-        assert_eq!(path::parse(bad).unwrap_err().kind(), "InvalidDerivation", "{bad}");
+        assert_eq!(path::parse(bad).unwrap_err().kind(), "InvalidPath", "{bad}");
     }
     assert_eq!(serialized("m/2147483647'").unwrap(), vec![u32::MAX]);
 }

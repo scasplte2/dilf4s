@@ -1,9 +1,10 @@
 //! Child indices and derivation paths (`signing.md` section 3).
 
 use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::error::KeyError;
+use crate::error::{KeyError, PathRefusal};
 
 /// The first hardened index, `2^31`.
 pub const HARDENED_OFFSET: u32 = 0x8000_0000;
@@ -71,14 +72,14 @@ pub const MAX_DEPTH: usize = 255;
 /// Parses `m/44'/0'/0'/0/7` (or `h` in place of `'`), relative to the master key. `m` alone is the empty path.
 /// A segment is `0` or a nonzero ASCII digit and more digits, then an optional hardening mark, so each index has one
 /// spelling; anything else, a leading zero, an empty segment (`m/1/`, `m//1`) or surrounding whitespace included, is
-/// `InvalidDerivation`. A segment of more than [`MAX_SEGMENT_DIGITS`] digits is refused before any conversion, and
-/// the scan stops at segment [`MAX_DEPTH`], so parsing is linear in the path and never holds more than
-/// [`MAX_DEPTH`] indices. An error names a segment by its position (0 is the first after `m`) and, past the digit
-/// bound, its length; never by its text.
+/// `InvalidPath`, typed by the first rule broken (a [`PathRefusal`]). A segment of more than [`MAX_SEGMENT_DIGITS`]
+/// digits is refused before any conversion, and the scan stops at segment [`MAX_DEPTH`], so parsing is linear in the
+/// path and never holds more than [`MAX_DEPTH`] indices. The message names a segment by its position (0 is the first
+/// after `m`) and, past the digit bound, its length; never by its text.
 pub fn parse(path: &str) -> Result<Vec<ChildIndex>, KeyError> {
     let mut segments = path.split('/');
     if segments.next() != Some("m") {
-        return Err(KeyError::InvalidDerivation { reason: "path must start with m".into() });
+        return Err(refuse(PathRefusal::MissingMaster, "path must start with m".into()));
     }
     // collecting into a Result stops at the first error, so a long path is never split past segment MAX_DEPTH
     segments
@@ -87,7 +88,7 @@ pub fn parse(path: &str) -> Result<Vec<ChildIndex>, KeyError> {
             if at < MAX_DEPTH {
                 parse_segment(segment, at)
             } else {
-                Err(KeyError::InvalidDerivation { reason: format!("path has more than {MAX_DEPTH} segments") })
+                Err(refuse(PathRefusal::TooDeep, format!("path has more than {MAX_DEPTH} segments")))
             }
         })
         .collect()
@@ -99,18 +100,19 @@ fn parse_segment(segment: &str, at: usize) -> Result<ChildIndex, KeyError> {
         None => (segment, false),
     };
     if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(KeyError::InvalidDerivation { reason: format!("path segment {at} is malformed") });
+        return Err(refuse(PathRefusal::Malformed, format!("path segment {at} is malformed")));
     }
     if digits != "0" && digits.starts_with('0') {
-        return Err(KeyError::InvalidDerivation { reason: format!("path segment {at} has a leading zero") });
+        return Err(refuse(PathRefusal::LeadingZero, format!("path segment {at} has a leading zero")));
     }
     if digits.len() > MAX_SEGMENT_DIGITS {
-        return Err(KeyError::InvalidDerivation {
-            reason: format!("path segment {at} has {} digits, more than {MAX_SEGMENT_DIGITS}", digits.len()),
-        });
+        return Err(refuse(
+            PathRefusal::TooManyDigits,
+            format!("path segment {at} has {} digits, more than {MAX_SEGMENT_DIGITS}", digits.len()),
+        ));
     }
     // at most ten ASCII digits: the fold cannot overflow a u64, and checked arithmetic says so without a panic
-    let out_of_range = || KeyError::InvalidDerivation { reason: format!("path segment {at} is out of range") };
+    let out_of_range = || refuse(PathRefusal::OutOfRange, format!("path segment {at} is out of range"));
     let index = digits
         .bytes()
         .try_fold(0u64, |acc, b| acc.checked_mul(10)?.checked_add(u64::from(b.wrapping_sub(b'0'))))
@@ -118,4 +120,8 @@ fn parse_segment(segment: &str, at: usize) -> Result<ChildIndex, KeyError> {
         .filter(|&i| i < HARDENED_OFFSET)
         .ok_or_else(out_of_range)?;
     Ok(ChildIndex { hardened, index })
+}
+
+const fn refuse(refusal: PathRefusal, reason: String) -> KeyError {
+    KeyError::InvalidPath { refusal, reason }
 }

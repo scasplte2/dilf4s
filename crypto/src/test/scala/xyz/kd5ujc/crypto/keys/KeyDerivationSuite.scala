@@ -163,26 +163,32 @@ object KeyDerivationSuite extends SimpleIOSuite {
       s"m${"/7" * 255}"  -> List.fill(255)(7L),
       s"m${"/1'" * 255}" -> List.fill(255)(0x80000001L)
     )
-    val refused = List(
-      "m/2147483648'"                -> "path segment 0 is out of range",
-      "m/4294967295"                 -> "path segment 0 is out of range",
-      "m/9999999999"                 -> "path segment 0 is out of range",
-      "m/0/10000000000"              -> "path segment 1 has 11 digits, more than 10",
-      s"m/1/2/${"9" * 4096}'"        -> "path segment 2 has 4096 digits, more than 10",
-      "m/007"                        -> "path segment 0 has a leading zero",
-      "m/00"                         -> "path segment 0 has a leading zero",
-      "m/000'"                       -> "path segment 0 has a leading zero",
-      "m/1/01h"                      -> "path segment 1 has a leading zero",
-      "m/02147483647'"               -> "path segment 0 has a leading zero",
-      s"m/${zeros}1'"                -> "path segment 0 has a leading zero",
-      s"m/${zeros}12345678901"       -> "path segment 0 has a leading zero",
-      "m/1/x9"                       -> "path segment 1 is malformed",
-      s"m${"/7" * 256}"              -> "path has more than 255 segments",
-      s"m${"/7" * 255}/x"            -> "path has more than 255 segments",
-      s"m${"/7" * 9}/x${"/7" * 300}" -> "path segment 9 is malformed"
+    import PathRefusal._
+    val refused: List[(String, (PathRefusal, String))] = List(
+      "m/2147483648'"                -> (OutOfRange, "path segment 0 is out of range"),
+      "m/4294967295"                 -> (OutOfRange, "path segment 0 is out of range"),
+      "m/9999999999"                 -> (OutOfRange, "path segment 0 is out of range"),
+      "m/0/10000000000"              -> (TooManyDigits, "path segment 1 has 11 digits, more than 10"),
+      s"m/1/2/${"9" * 4096}'"        -> (TooManyDigits, "path segment 2 has 4096 digits, more than 10"),
+      "m/007"                        -> (LeadingZero, "path segment 0 has a leading zero"),
+      "m/00"                         -> (LeadingZero, "path segment 0 has a leading zero"),
+      "m/000'"                       -> (LeadingZero, "path segment 0 has a leading zero"),
+      "m/1/01h"                      -> (LeadingZero, "path segment 1 has a leading zero"),
+      "m/02147483647'"               -> (LeadingZero, "path segment 0 has a leading zero"),
+      s"m/${zeros}1'"                -> (LeadingZero, "path segment 0 has a leading zero"),
+      s"m/${zeros}12345678901"       -> (LeadingZero, "path segment 0 has a leading zero"),
+      "m/1/x9"                       -> (Malformed, "path segment 1 is malformed"),
+      "m/"                           -> (Malformed, "path segment 0 is malformed"),
+      s"m${"/7" * 256}"              -> (TooDeep, "path has more than 255 segments"),
+      s"m${"/7" * 255}/x"            -> (TooDeep, "path has more than 255 segments"),
+      s"m${"/7" * 9}/x${"/7" * 300}" -> (Malformed, "path segment 9 is malformed"),
+      "44'/0"                        -> (MissingMaster, "path must start with m"),
+      ""                             -> (MissingMaster, "path must start with m")
     )
     accepted.foldMap { case (p, is) => expect.same(Right(is), serialized(p)) } |+|
-    refused.foldMap { case (p, reason) => expect.same(Left(KeyError.InvalidDerivation(reason)), ChildIndex.path(p)) }
+    refused.foldMap { case (p, (refusal, reason)) => expect.same(Left(KeyError.InvalidPath(refusal, reason)), ChildIndex.path(p)) } |+|
+    expect.same(PathRefusal.all.toSet, refused.map(_._2._1).toSet) |+|
+    expect.same(PathRefusal.all.size, PathRefusal.all.map(_.name).distinct.size)
   }
 
   // BigInt of a million digits took about 23 s; the bound leaves room for a cold JIT on a loaded machine
@@ -194,9 +200,9 @@ object KeyDerivationSuite extends SimpleIOSuite {
       (t, (l, p, d)) <- IO((ChildIndex.path(long), ChildIndex.path(padded), ChildIndex.path(deep))).timed
     } yield
       expect(t.toMillis < 2000, s"took ${t.toMillis} ms")
-        .and(expect.same(Left(KeyError.InvalidDerivation("path segment 0 has 1000000 digits, more than 10")), l))
-        .and(expect.same(Left(KeyError.InvalidDerivation("path segment 0 has a leading zero")), p))
-        .and(expect.same(Left(KeyError.InvalidDerivation("path has more than 255 segments")), d))
+        .and(expect.same(Left(KeyError.InvalidPath(PathRefusal.TooManyDigits, "path segment 0 has 1000000 digits, more than 10")), l))
+        .and(expect.same(Left(KeyError.InvalidPath(PathRefusal.LeadingZero, "path segment 0 has a leading zero")), p))
+        .and(expect.same(Left(KeyError.InvalidPath(PathRefusal.TooDeep, "path has more than 255 segments")), d))
   }
 
   // ------------------------------------------------------------------ SLIP-10 Ed25519 (vector 1)

@@ -9,7 +9,7 @@
  * (BIP32 and Icarus child keys, VRF and ristretto255 responses) is plain `bigint`. Verification is unaffected; sign
  * where an attacker can time you (a server, a shared host) with the Rust SDK, whose secret scalars are constant time.
  */
-export type { KesError, KeyError, SigningError, VrfError } from "./errors.js";
+export type { InvalidPath, KesError, KeyError, PathRefusal, SigningError, VrfError } from "./errors.js";
 export { Secret, Signature, SigningKey, VerifyingKey, type KeyPair, type SchemeName } from "./keys.js";
 export type { SchemeCodec, SeedDerivation, Verifier } from "./scheme.js";
 
