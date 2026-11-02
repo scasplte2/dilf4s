@@ -44,4 +44,51 @@ object CanonicalEmitterSuite extends FunSuite {
     expect(gen("a-b = uint\na_b = text\n").swap.exists { case GenError.NameClash(_, "AB", _) => true; case _ => false })
       .and(expect(gen("r = { \"new\": uint }\n").exists(_.contains("`new`: BigInt"))))
   }
+
+  test("with several clashes, the first type name in order is the one reported") {
+    expect.same(Left(GenError.NameClash("t", "AB", Vector("a-b", "a_b"))), gen("c-d = uint\nc_d = text\na-b = uint\na_b = text\n"))
+  }
+
+  test("a rule named like a type the generated Scala refers to is a ReservedName in Scala") {
+    val names = List(
+      "big-int"           -> "BigInt",
+      "boolean"           -> "Boolean",
+      "byte-vector"       -> "ByteVector",
+      "canonical"         -> "Canonical",
+      "canonical-decoder" -> "CanonicalDecoder",
+      "canonical-value"   -> "CanonicalValue",
+      "codec"             -> "Codec",
+      "int"               -> "Int",
+      "list"              -> "List",
+      "long"              -> "Long",
+      "map"               -> "Map",
+      "none"              -> "None",
+      "option"            -> "Option",
+      "set"               -> "Set",
+      "some"              -> "Some",
+      "string"            -> "String",
+      "vector"            -> "Vector"
+    )
+    names.foldMap {
+      case (rule, scala) => expect.same(Left(GenError.ReservedName("t", Language.Scala, scala)), gen(s"$rule = { \"x\": uint }\n"))
+    }.and(expect(gen("either = { \"x\": uint }\nseq = uint\n").isRight, "names the generated code never uses stay available"))
+  }
+
+  test("an enumeration case named like a term its body refers to is a ReservedName in Scala") {
+    expect
+      .same(Left(GenError.ReservedName("t:e", Language.Scala, "Codec")), gen("e = &(codec: 1, other: 2)\n"))
+      .and(expect.same(Left(GenError.ReservedName("t:e", Language.Scala, "BigInt")), gen("e = &(big-int: 1, other: 2)\n")))
+      .and(
+        expect.same(Left(GenError.ReservedName("t:e", Language.Scala, "CanonicalDecoder")), gen("e = &(canonical-decoder: 1, other: 2)\n"))
+      )
+      .and(expect(gen("e = &(canonical: 1, string: 2)\n").isRight, "a case is a term, so it shadows no type"))
+  }
+
+  test("a field named like a member every case class has is a ReservedName in Scala") {
+    expect
+      .same(Left(GenError.ReservedName("t:r", Language.Scala, "hashCode")), gen("r = { \"hash-code\": uint }\n"))
+      .and(expect.same(Left(GenError.ReservedName("t:r", Language.Scala, "productArity")), gen("r = { \"productArity\": uint }\n")))
+      .and(expect.same(Left(GenError.ReservedName("t:r", Language.Scala, "wait")), gen("r = { \"wait\": uint }\n")))
+      .and(expect(gen("r = { \"copy\": uint, \"equals\": uint }\n").isRight, "members a field may overload stay available"))
+  }
 }
