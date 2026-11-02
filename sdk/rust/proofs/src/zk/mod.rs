@@ -90,7 +90,7 @@ pub fn decode_g1(bytes: &[u8]) -> Result<G1, ZkError> {
     if x.is_zero() && y.is_zero() {
         Ok(G1::zero())
     } else {
-        AffineG1::new(x, y).map(G1::from).map_err(|_| invalid("G1 point is not on the curve"))
+        AffineG1::new(x, y).map(Into::into).map_err(|_| invalid("G1 point is not on the curve"))
     }
 }
 
@@ -103,9 +103,12 @@ pub fn decode_g2(bytes: &[u8]) -> Result<G2, ZkError> {
     if x.is_zero() && y.is_zero() {
         Ok(G2::zero())
     } else {
-        AffineG2::new(x, y).map(G2::from).map_err(|e| match e {
-            bn::GroupError::NotOnCurve => invalid("G2 point is not on the twist"),
-            bn::GroupError::NotInSubgroup => invalid("G2 point is not in the order-r subgroup"),
+        AffineG2::new(x, y).map(Into::into).map_err(|e| {
+            if matches!(e, bn::GroupError::NotInSubgroup) {
+                invalid("G2 point is not in the order-r subgroup")
+            } else {
+                invalid("G2 point is not on the twist")
+            }
         })
     }
 }

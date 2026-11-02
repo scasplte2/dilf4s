@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 
 use dilf4s_core::hash::{Blake2b256, Hasher as _};
 use dilf4s_core::{Map, Value};
-use k256::elliptic_curve::Group as _;
+use k256::elliptic_curve::Group;
 use k256::elliptic_curve::PrimeField as _;
 use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::DecompressPoint as _;
@@ -506,7 +506,7 @@ fn push_leaf(out: &mut Vec<u8>, node: &Node, e: &Challenge, z: &Scalar) {
     let c = challenge_scalar(e);
     let (opcode, points, commitment): (u8, &[Element], Vec<u8>) = match node {
         Node::Dlog(pk) => {
-            let a = ProjectivePoint::GENERATOR * z - ProjectivePoint::from(pk.point) * c;
+            let a = <ProjectivePoint as Group>::generator() * z - ProjectivePoint::from(pk.point) * c;
             (DLOG_OPCODE, core::slice::from_ref(pk), encode(&a).to_vec())
         }
         Node::DhTuple(tuple) => {

@@ -5,7 +5,7 @@
 //! nothing, so a signature cannot be re-encoded into a second valid one. Written on k256's group arithmetic, so the
 //! rules here are this crate's own and do not depend on a recovery routine's checks.
 
-use k256::elliptic_curve::Group as _;
+use k256::elliptic_curve::Group;
 use k256::elliptic_curve::PrimeField as _;
 use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::DecompressPoint as _;
@@ -58,7 +58,7 @@ fn key(digest: &[u8; DIGEST_BYTES], r: &[u8], s: &[u8], parity: u8) -> Option<Af
     let big_r = Option::<AffinePoint>::from(AffinePoint::decompress(&r_bytes, Choice::from(parity)))?;
     let e = <Scalar as Reduce<U256>>::reduce_bytes(&FieldBytes::from(*digest));
     let r_inv = Option::<Scalar>::from(r.invert())?;
-    let q = (ProjectivePoint::from(big_r) * (s * r_inv)) - (ProjectivePoint::GENERATOR * (e * r_inv));
+    let q = (ProjectivePoint::from(big_r) * (s * r_inv)) - (<ProjectivePoint as Group>::generator() * (e * r_inv));
     (!bool::from(q.is_identity())).then(|| q.to_affine())
 }
 

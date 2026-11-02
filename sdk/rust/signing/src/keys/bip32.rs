@@ -3,6 +3,7 @@
 //! An index whose `I[0:32] >= n`, or whose derived key is zero (or the identity), is `InvalidDerivation`; the caller
 //! moves to the next index.
 
+use k256::elliptic_curve::Group;
 use k256::elliptic_curve::PrimeField as _;
 use k256::{FieldBytes, ProjectivePoint, Scalar};
 use zeroize::Zeroizing;
@@ -66,7 +67,7 @@ pub fn public_child(
     }
     let i = hmac_sha512(chain_code, &[key.as_bytes(), &index.be32()]);
     let (il, child_code) = split_i(&i);
-    let point = ProjectivePoint::from(*key.as_affine()) + ProjectivePoint::GENERATOR * *tweak(&il)?;
+    let point = ProjectivePoint::from(*key.as_affine()) + <ProjectivePoint as Group>::generator() * *tweak(&il)?;
     let child = VerifyingKey::from_affine(point.to_affine()).map_err(|_| invalid("derived key is the identity"))?;
     Ok((child, child_code))
 }
