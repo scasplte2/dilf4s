@@ -10,8 +10,8 @@ import xyz.kd5ujc.core.canonical.CanonicalValue
 import org.bouncycastle.crypto.ec.CustomNamedCurves
 import org.scalacheck.Gen
 import scodec.bits.{ByteVector, hex}
-import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
+import weaver.{Expectations, SimpleIOSuite}
 
 object SigmaSuite extends SimpleIOSuite with Checkers {
 
@@ -45,14 +45,44 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     expect.same(Gf2_192.fromBytes(hex"87" ++ ByteVector.fill(23)(0)), Option(x192))
   }
 
+  private val everyByte: List[Int] = (0 to 255).toList
+
+  private def byteProductsAgree(a: Gf2_192): Expectations =
+    everyByte.foldLeft(success) { (acc, b) =>
+      acc.and(expect(a * Gf2Byte(b) == a * Gf2_192.byte(b), s"${a.bytes.toHex} * $b: the byte path differs from the general multiply"))
+    }
+
+  pureTest("multiplying by a byte equals the general multiply, at every byte, including through the reduction") {
+    def bytes(b: ByteVector) = Gf2_192.fromBytes(b).get
+    val x191 = bytes(ByteVector.fill(23)(0) :+ 0x80.toByte)
+    val topByte = bytes(ByteVector.fill(23)(0) :+ 0xff.toByte)
+    val allOnes = bytes(ByteVector.fill(24)(0xff))
+    val mixed = bytes(ByteVector(Seq.tabulate(24)(i => (i * 31 + 7).toByte)))
+    List(Gf2_192.Zero, Gf2_192.One, x191, topByte, allOnes, mixed).foldLeft(success)((acc, a) => acc.and(byteProductsAgree(a)))
+  }
+
+  test("multiplying a random element by a byte equals the general multiply, at every byte") {
+    forall(element)(byteProductsAgree)
+  }
+
+  test("Horner's rule by bytes equals Horner's rule by the general multiply, at every point") {
+    forall(Gen.choose(0, 8).flatMap(Gen.listOfN(_, element))) { cs =>
+      val q = Gf2Poly(cs.toVector)
+      everyByte.foldLeft(success) { (acc, x) =>
+        val reference = cs.foldRight(Gf2_192.Zero)((c, r) => r * Gf2_192.byte(x) + c)
+        acc.and(expect(q(Gf2Byte(x)) == reference, s"Q($x) differs from the general-multiply evaluation"))
+      }
+    }
+  }
+
   test("interpolation passes through its points and keeps the requested number of coefficients") {
     forall(Gen.zip(element, Gen.choose(0, 6), Gen.listOfN(6, element))) {
       case (at0, n, ys) =>
-        val points = ys.take(n).zipWithIndex.map { case (y, i) => (i + 1, y) }.toVector
+        val points = ys.take(n).zipWithIndex.map { case (y, i) => (Gf2Byte(i + 1), y) }.toVector
         val q = Gf2Poly.interpolate(at0, points)
         expect
           .same(n + 1, q.coefficients.size)
-          .and(expect.same(at0, q(0)))
+          .and(expect.same(at0, q(Gf2Byte(0))))
           .and(expect.same(points.map(_._2), points.map(p => q(p._1))))
     }
   }
@@ -356,8 +386,8 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     val commitments =
       Vector(Secp256k1Group.base(r).bytes, Sigma.commitment(leaf(1), e2.bytes, z(2)), Sigma.commitment(leaf(2), e3.bytes, z(3)))
     val root = Sigma.challenge(Sigma.fiatShamir(t, commitments), msg)
-    val q = Gf2Poly.interpolate(Gf2_192.fromBytes(root).get, Vector(2 -> e2))
-    val z1 = (r + BigInt(1, q(1).bytes.toArray) * secrets(0)).mod(Secp256k1Group.Order)
+    val q = Gf2Poly.interpolate(Gf2_192.fromBytes(root).get, Vector(Gf2Byte(2) -> e2))
+    val z1 = (r + BigInt(1, q(Gf2Byte(1)).bytes.toArray) * secrets(0)).mod(Secp256k1Group.Order)
     val thresholdForgery = root ++ q.higherBytes ++ zb(z1) ++ zb(z(2)) ++ zb(z(3))
 
     // Controls: the same constructions with the witnesses they need verify, so the forgeries fail for want of them.
@@ -369,13 +399,13 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     val r2 = BigInt(888)
     val honestCommitments = Vector(Secp256k1Group.base(r).bytes, Secp256k1Group.base(r2).bytes, Sigma.commitment(leaf(2), e3.bytes, z(3)))
     val honestRoot = Sigma.challenge(Sigma.fiatShamir(t, honestCommitments), msg)
-    val hq = Gf2Poly.interpolate(Gf2_192.fromBytes(honestRoot).get, Vector(3 -> e3))
-    def answer(i: Int, nonce: BigInt) = zb((nonce + scalar(hq(i + 1).bytes) * secrets(i)).mod(Secp256k1Group.Order))
+    val hq = Gf2Poly.interpolate(Gf2_192.fromBytes(honestRoot).get, Vector(Gf2Byte(3) -> e3))
+    def answer(i: Int, nonce: BigInt) = zb((nonce + scalar(hq(Gf2Byte(i + 1)).bytes) * secrets(i)).mod(Secp256k1Group.Order))
     val honestThreshold = honestRoot ++ hq.higherBytes ++ answer(0, r) ++ answer(1, r2) ++ zb(z(3))
 
     expect
       .same(Right(false), Sigma.verify(ring, ringForgery, msg))
-      .and(expect(q(3) != e3, "the polynomial cannot also pass through the third chosen challenge"))
+      .and(expect(q(Gf2Byte(3)) != e3, "the polynomial cannot also pass through the third chosen challenge"))
       .and(expect.same(Right(false), Sigma.verify(t, thresholdForgery, msg)))
       .and(expect.same(Right(true), Sigma.verify(ring, honestRing, msg)))
       .and(expect.same(Right(true), Sigma.verify(t, honestThreshold, msg)))

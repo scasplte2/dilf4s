@@ -156,7 +156,7 @@ object SigmaProver {
             val higher =
               (1 to cs.size - k).toVector.map(d => Gf2_192.fromBytes(coins.challenge(path :+ d, Coefficient)).getOrElse(Gf2_192.Zero))
             val poly = Gf2Poly(e0 +: higher)
-            Draft.SimNode(prop, e, Option(poly), cs.zipWithIndex.map { case (c, i) => simulate(c, poly(i + 1).bytes, coins) })
+            Draft.SimNode(prop, e, Option(poly), cs.zipWithIndex.map { case (c, i) => simulate(c, poly(Gf2Byte(i + 1)).bytes, coins) })
           case _ => Draft.SimNode(prop, e, scala.None, cs.map(simulate(_, e, coins)))
         }
     }
@@ -192,9 +192,9 @@ object SigmaProver {
             val others = cs.flatMap(_.challenge.toList).foldLeft(e)(_ ^ _)
             Proved.Node(prop, e, scala.None, cs.map(c => settle(c, c.challenge.getOrElse(others))))
           case Threshold(_, _) =>
-            val points = cs.zipWithIndex.flatMap { case (c, i) => c.challenge.flatMap(Gf2_192.fromBytes).map(i + 1 -> _).toList }
+            val points = cs.zipWithIndex.flatMap { case (c, i) => c.challenge.flatMap(Gf2_192.fromBytes).map(Gf2Byte(i + 1) -> _).toList }
             val poly = Gf2Poly.interpolate(Gf2_192.fromBytes(e).getOrElse(Gf2_192.Zero), points)
-            Proved.Node(prop, e, Option(poly), cs.zipWithIndex.map { case (c, i) => settle(c, poly(i + 1).bytes) })
+            Proved.Node(prop, e, Option(poly), cs.zipWithIndex.map { case (c, i) => settle(c, poly(Gf2Byte(i + 1)).bytes) })
           case _ => Proved.Node(prop, e, scala.None, cs.map(settle(_, e)))
         }
     }
