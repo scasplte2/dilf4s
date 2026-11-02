@@ -240,16 +240,28 @@ object Values {
   }
 
   /** `vs` without repeats, keeping each value's first occurrence, in order: a stable sort and a scan, O(n log n). */
-  def distinct(vs: Vector[CanonicalValue]): Vector[CanonicalValue] = {
+  def distinct(vs: Vector[CanonicalValue]): Vector[CanonicalValue] = distinctBy(vs)(key)
+
+  /** Whether every element of `xs` is in `ys`: a binary search of `ys` in canonical order, O((m + n) log n). */
+  def subset(xs: Vector[CanonicalValue], ys: Vector[CanonicalValue]): Boolean = subsetBy(xs, ys)(key)
+
+  /**
+   * [[distinct]] for any element type: it uses only `order` on the elements' keys (never `hashCode` or `equals`), and
+   * compares O(n log n) times.
+   */
+  def distinctBy[A, K](vs: Vector[A])(key: A => K)(using order: Ordering[K]): Vector[A] = {
     val sorted = vs.map(key).zipWithIndex.sortBy(_._1)
     val firsts = sorted.zip(None +: sorted.map(Option(_))).collect {
-      case ((e, i), previous) if !previous.exists(p => summon[Ordering[SortKey]].equiv(p._1, e)) => i
+      case ((e, i), previous) if !previous.exists(p => order.equiv(p._1, e)) => i
     }
     firsts.sorted.map(vs)
   }
 
-  /** Whether every element of `xs` is in `ys`: a binary search of `ys` in canonical order, O((m + n) log n). */
-  def subset(xs: Vector[CanonicalValue], ys: Vector[CanonicalValue]): Boolean = {
+  /**
+   * [[subset]] for any element type: it uses only `order` on the elements' keys (never `hashCode` or `equals`), and
+   * compares O((m + n) log n) times.
+   */
+  def subsetBy[A, K](xs: Vector[A], ys: Vector[A])(key: A => K)(using order: Ordering[K]): Boolean = {
     val sorted = ys.map(key).sorted
     xs.forall(x =>
       sorted.search(key(x)) match {
