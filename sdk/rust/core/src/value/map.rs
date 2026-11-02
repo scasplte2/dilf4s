@@ -69,29 +69,29 @@ fn node(key: Text, value: Value, left: Link, right: Link) -> Arc<Node> {
 /// A child as high as its sibling inside it (possible after a removal) takes the single rotation.
 fn balanced(key: Text, value: Value, left: Link, right: Link) -> Arc<Node> {
     let (hl, hr) = (height(&left), height(&right));
-    if hl > hr.saturating_add(1) {
-        if let Some(l) = &left {
-            if height(&l.left) >= height(&l.right) {
-                let lowered = node(key, value, l.right.clone(), right);
-                return node(l.key.clone(), l.value.clone(), l.left.clone(), Some(lowered));
-            }
-            if let Some(lr) = &l.right {
-                let low = node(l.key.clone(), l.value.clone(), l.left.clone(), lr.left.clone());
-                let high = node(key, value, lr.right.clone(), right);
-                return node(lr.key.clone(), lr.value.clone(), Some(low), Some(high));
-            }
+    if hl > hr.saturating_add(1)
+        && let Some(l) = &left
+    {
+        if height(&l.left) >= height(&l.right) {
+            let lowered = node(key, value, l.right.clone(), right);
+            return node(l.key.clone(), l.value.clone(), l.left.clone(), Some(lowered));
         }
-    } else if hr > hl.saturating_add(1) {
-        if let Some(r) = &right {
-            if height(&r.right) >= height(&r.left) {
-                let lowered = node(key, value, left, r.left.clone());
-                return node(r.key.clone(), r.value.clone(), Some(lowered), r.right.clone());
-            }
-            if let Some(rl) = &r.left {
-                let low = node(key, value, left, rl.left.clone());
-                let high = node(r.key.clone(), r.value.clone(), rl.right.clone(), r.right.clone());
-                return node(rl.key.clone(), rl.value.clone(), Some(low), Some(high));
-            }
+        if let Some(lr) = &l.right {
+            let low = node(l.key.clone(), l.value.clone(), l.left.clone(), lr.left.clone());
+            let high = node(key, value, lr.right.clone(), right);
+            return node(lr.key.clone(), lr.value.clone(), Some(low), Some(high));
+        }
+    } else if hr > hl.saturating_add(1)
+        && let Some(r) = &right
+    {
+        if height(&r.right) >= height(&r.left) {
+            let lowered = node(key, value, left, r.left.clone());
+            return node(r.key.clone(), r.value.clone(), Some(lowered), r.right.clone());
+        }
+        if let Some(rl) = &r.left {
+            let low = node(key, value, left, rl.left.clone());
+            let high = node(r.key.clone(), r.value.clone(), rl.right.clone(), r.right.clone());
+            return node(rl.key.clone(), rl.value.clone(), Some(low), Some(high));
         }
     }
     node(key, value, left, right)
@@ -176,10 +176,10 @@ fn is_container(v: &Value) -> bool {
 /// Queues an array's storage if this was its last reference and it holds containers; otherwise the storage is only
 /// let go: shared, it loses a reference; unshared but flat, its drop never recurses.
 fn queue_items(work: &mut Vec<Part>, items: Option<Arc<Box<[Value]>>>) {
-    if let Some(owned) = items.and_then(Arc::into_inner) {
-        if owned.iter().any(is_container) {
-            work.push(Part::Items(owned.into_vec().into_iter()));
-        }
+    if let Some(owned) = items.and_then(Arc::into_inner)
+        && owned.iter().any(is_container)
+    {
+        work.push(Part::Items(owned.into_vec().into_iter()));
     }
 }
 

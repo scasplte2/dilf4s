@@ -415,7 +415,7 @@ impl TextPattern {
     /// Whether the whole of `text` matches.
     pub fn matches(self, text: &str) -> bool {
         let lower_hex =
-            |s: &str| s.len() % 2 == 0 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+            |s: &str| s.len().is_multiple_of(2) && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
         match self {
             Self::Hex => lower_hex(text),
             Self::Hex0x => text.strip_prefix("0x").is_some_and(lower_hex),

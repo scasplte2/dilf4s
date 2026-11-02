@@ -163,10 +163,10 @@ enum Connective {
 /// Section 3's checks on a connective with `n` children, in the reference's order (`SigmaProp.threshold` then
 /// `SigmaProp.conjecture`): its header and its depth.
 fn close(kind: &Connective, n: usize, child_depth: usize, leaves: usize) -> Result<(Node, usize), SigmaError> {
-    if let Connective::Threshold(k) = kind {
-        if !usize::try_from(*k).is_ok_and(|k| (1..=n).contains(&k)) {
-            return Err(invalid(format!("a threshold needs 1 <= k <= {n} children, got k = {k}")));
-        }
+    if let Connective::Threshold(k) = kind
+        && !usize::try_from(*k).is_ok_and(|k| (1..=n).contains(&k))
+    {
+        return Err(invalid(format!("a threshold needs 1 <= k <= {n} children, got k = {k}")));
     }
     if n == 0 {
         return Err(invalid("a connective needs at least one child: an empty one holds for anyone"));

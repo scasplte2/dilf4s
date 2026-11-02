@@ -16,12 +16,8 @@ impl Gf2_192 {
     /// The element encoded by 24 little-endian bytes.
     pub(crate) fn from_bytes(bytes: &[u8; 24]) -> Self {
         let mut words = [0u64; 3];
-        for (word, chunk) in words.iter_mut().zip(bytes.chunks_exact(8)) {
-            let mut le = [0u8; 8];
-            for (d, s) in le.iter_mut().zip(chunk) {
-                *d = *s;
-            }
-            *word = u64::from_le_bytes(le);
+        for (word, chunk) in words.iter_mut().zip(bytes.as_chunks::<8>().0) {
+            *word = u64::from_le_bytes(*chunk);
         }
         Self(words)
     }
@@ -29,10 +25,8 @@ impl Gf2_192 {
     /// The 24-byte little-endian encoding.
     pub(crate) fn to_bytes(self) -> [u8; 24] {
         let mut out = [0u8; 24];
-        for (chunk, word) in out.chunks_exact_mut(8).zip(self.0) {
-            for (d, s) in chunk.iter_mut().zip(word.to_le_bytes()) {
-                *d = s;
-            }
+        for (chunk, word) in out.as_chunks_mut::<8>().0.iter_mut().zip(self.0) {
+            *chunk = word.to_le_bytes();
         }
         out
     }

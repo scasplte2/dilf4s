@@ -86,7 +86,7 @@ impl Bits {
 
     /// Appends one bit.
     pub fn push(&mut self, bit: bool) {
-        if self.len % 8 == 0 {
+        if self.len.is_multiple_of(8) {
             self.bytes.push(0);
         }
         if bit {
@@ -105,7 +105,7 @@ impl Bits {
         }
         let keep = usize::try_from(len.div_ceil(8)).unwrap_or(usize::MAX);
         self.bytes.truncate(keep);
-        if len % 8 != 0 {
+        if !len.is_multiple_of(8) {
             let used = u32::try_from(len % 8).unwrap_or(0);
             let padding = 0xffu8.checked_shr(used).unwrap_or(0);
             if let Some(b) = self.bytes.last_mut() {
@@ -117,7 +117,7 @@ impl Bits {
 
     /// Appends every bit of `other`.
     pub fn extend(&mut self, other: &Self) {
-        if self.len % 8 == 0 {
+        if self.len.is_multiple_of(8) {
             self.bytes.extend_from_slice(&other.bytes);
             self.len = self.len.saturating_add(other.len);
         } else {

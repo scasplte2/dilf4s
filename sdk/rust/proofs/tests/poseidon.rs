@@ -199,7 +199,7 @@ impl<const T: usize> Base<T> {
                 element(&sum.modpow(&(&modulus - 2u32), &modulus))
             })
         });
-        let round_constants = rc.chunks_exact(T).map(|row| <[Fr; T]>::try_from(row).unwrap()).collect();
+        let round_constants = rc.as_chunks::<T>().0.to_vec();
         Self { round_constants, mds }
     }
 

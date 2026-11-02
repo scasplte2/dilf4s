@@ -72,14 +72,14 @@ fn sized(n: usize, what: &str) -> Result<(), VersionedTrieError> {
 fn increasing(previous: Option<&Vec<u8>>, keys: &[Vec<u8>], what: &str) -> Result<(), VersionedTrieError> {
     let mut last = previous;
     for k in keys {
-        if let Some(a) = last {
-            if a >= k {
-                return refuse(&alloc::format!(
-                    "{what} {} does not follow {}",
-                    dilf4s_core::hex::encode(k),
-                    dilf4s_core::hex::encode(a)
-                ));
-            }
+        if let Some(a) = last
+            && a >= k
+        {
+            return refuse(&alloc::format!(
+                "{what} {} does not follow {}",
+                dilf4s_core::hex::encode(k),
+                dilf4s_core::hex::encode(a)
+            ));
         }
         last = Some(k);
     }

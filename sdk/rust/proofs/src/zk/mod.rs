@@ -63,10 +63,8 @@ fn exact<'a, const N: usize>(bytes: &'a [u8], role: &str) -> Result<&'a [u8; N],
 /// The four 32-byte words of a 128-byte G2 encoding, or the two of a 64-byte G1 encoding.
 fn words<const N: usize, const W: usize>(bytes: &[u8; N]) -> [&[u8; WORD_BYTES]; W] {
     let mut out = [&[0u8; WORD_BYTES]; W];
-    for (o, c) in out.iter_mut().zip(bytes.chunks_exact(WORD_BYTES)) {
-        if let Ok(w) = <&[u8; WORD_BYTES]>::try_from(c) {
-            *o = w;
-        }
+    for (o, c) in out.iter_mut().zip(bytes.as_chunks::<WORD_BYTES>().0) {
+        *o = c;
     }
     out
 }

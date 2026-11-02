@@ -403,10 +403,10 @@ impl<'a, H: Hasher> VerifiedProof<'a, H> {
                             todo.push((*c, here, Some(b), cf, cu));
                         }
                     }
-                    if let Some(v) = value {
-                        if keep(&path, cf, cu) {
-                            visit(&path, v);
-                        }
+                    if let Some(v) = value
+                        && keep(&path, cf, cu)
+                    {
+                        visit(&path, v);
                     }
                 }
             }
