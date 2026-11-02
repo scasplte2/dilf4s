@@ -59,7 +59,7 @@ object SigmaProp {
   val MaxLeaves: Int = 4096
 
   /** A threshold's points are the bytes 1..n. */
-  val MaxChildren: Int = 255
+  val MaxChildren: Int = ChildPoint.Max
 
   /**
    * A statement point is never the identity. With `pk` the identity, `dlog(pk)` holds for `w = 0`, and anyone can prove

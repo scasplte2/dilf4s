@@ -1,5 +1,7 @@
 package xyz.kd5ujc.crypto.sigma
 
+import java.nio.charset.StandardCharsets.US_ASCII
+
 import cats.Show
 import cats.syntax.all._
 
@@ -39,26 +41,87 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  private def byte(b:      Int): Gf2Byte = Gf2Byte.fromByte(b.toByte)
+  private def point(i:     Int): ChildPoint = ChildPoint.from(i).get
+  private def elementOf(b: ByteVector): Gf2_192 = Gf2_192.fromBytes(b).get
+  private given Show[ChildPoint] = Show.show(p => s"point ${p.value}")
+
+  /** Zero, one, `x^191`, the whole top byte, all ones and a mixed element: the high ones carry into the reduction. */
+  private val fixedElements: List[Gf2_192] = List(
+    Gf2_192.Zero,
+    Gf2_192.One,
+    elementOf(ByteVector.fill(23)(0) :+ 0x80.toByte),
+    elementOf(ByteVector.fill(23)(0) :+ 0xff.toByte),
+    elementOf(ByteVector.fill(24)(0xff)),
+    elementOf(ByteVector(Seq.tabulate(24)(i => (i * 31 + 7).toByte)))
+  )
+
+  /** The multiply as it was before it was masked: shift-and-add, branching on each bit of `b`. */
+  private def branchingProduct(a: Gf2_192, b: Gf2_192): Gf2_192 = {
+    val le = b.bytes
+    (191 to 0 by -1).foldLeft(Gf2_192.Zero) { (acc, i) =>
+      val shifted = acc * byte(2)
+      if (((le(i.toLong / 8) >> (i % 8)) & 1) == 1) shifted + a else shifted
+    }
+  }
+
+  /** Lagrange's form as it was before batching: a numerator product and an inversion per point, cubic in all. */
+  private def cubicLagrange(valueAt0: Gf2_192, points: Vector[(Gf2Byte, Gf2_192)]): Vector[Gf2_192] = {
+    val all = (Gf2Byte.Zero, valueAt0) +: points
+    def timesMonomial(p: Vector[Gf2_192], r: Gf2Byte): Vector[Gf2_192] =
+      (Gf2_192.Zero +: p).zipAll(p.map(_ * r), Gf2_192.Zero, Gf2_192.Zero).map { case (a, b) => a + b }
+    all.zipWithIndex
+      .foldLeft(Vector.fill(all.size)(Gf2_192.Zero)) {
+        case (acc, ((xj, yj), j)) =>
+          val others = all.zipWithIndex.collect { case ((xm, _), m) if m != j => xm }
+          val numerator = others.foldLeft(Vector(Gf2_192.One))(timesMonomial)
+          val scale = yj * others.foldLeft(Gf2_192.One)((d, xm) => d * (xj + xm)).inverse
+          acc.zipAll(numerator.map(_ * scale), Gf2_192.Zero, Gf2_192.Zero).map { case (a, b) => a + b }
+      }
+      .padTo(all.size, Gf2_192.Zero)
+  }
+
+  /** `n` distinct child points anywhere in `1..255`, each with a value. */
+  private def distinctPoints(n: Int): Gen[Vector[(ChildPoint, Gf2_192)]] =
+    Gen.zip(Gen.pick(n, 1 to ChildPoint.Max), Gen.listOfN(n, element)).map { case (xs, ys) => xs.map(point).toVector.zip(ys) }
+
   pureTest("x^192 reduces by the pentanomial x^7 + x^2 + x + 1") {
-    val x = Gf2_192.byte(2)
+    val x = Gf2_192.byte(byte(2))
     val x192 = (1 to 192).foldLeft(Gf2_192.One)((p, _) => p * x)
     expect.same(Gf2_192.fromBytes(hex"87" ++ ByteVector.fill(23)(0)), Option(x192))
   }
 
-  private val everyByte: List[Int] = (0 to 255).toList
+  pureTest("a byte and a child point are checked, never truncated: no child point is zero, the parent's") {
+    expect
+      .same(List(None, Some(0), Some(1), Some(255), None), List(-1, 0, 1, 255, 256).map(Gf2Byte.from(_).map(_.value)))
+      .and(expect.same(List(None, Some(1), Some(255), None), List(0, 1, 255, 256).map(ChildPoint.from(_).map(_.value))))
+      .and(expect.same(Right((1 to 255).toVector), ChildPoint.number(Vector.fill(255)(())).map(_.map(_._2.value))))
+      .and(expect(ChildPoint.number(Vector.fill(256)(())).isLeft, "a 256th child would wrap to zero"))
+      .and(expect.same(SigmaProp.MaxChildren, ChildPoint.Max))
+  }
+
+  test("the masked general multiply equals the branching one") {
+    val fixed = for {
+      a <- fixedElements
+      b <- fixedElements
+    } yield (a, b)
+    val fixedAgree = fixed.foldLeft(success) {
+      case (acc, (a, b)) => acc.and(expect(a * b == branchingProduct(a, b), s"${a.bytes.toHex} * ${b.bytes.toHex}"))
+    }
+    forall(Gen.zip(element, element)) { case (a, b) => expect.same(branchingProduct(a, b), a * b) }.map(fixedAgree.and(_))
+  }
+
+  private val everyByte: List[Gf2Byte] = (0 to 255).toList.map(byte)
 
   private def byteProductsAgree(a: Gf2_192): Expectations =
     everyByte.foldLeft(success) { (acc, b) =>
-      acc.and(expect(a * Gf2Byte(b) == a * Gf2_192.byte(b), s"${a.bytes.toHex} * $b: the byte path differs from the general multiply"))
+      acc.and(
+        expect(a * b == a * Gf2_192.byte(b), s"${a.bytes.toHex} * ${b.value}: the byte path differs from the general multiply")
+      )
     }
 
   pureTest("multiplying by a byte equals the general multiply, at every byte, including through the reduction") {
-    def bytes(b: ByteVector) = Gf2_192.fromBytes(b).get
-    val x191 = bytes(ByteVector.fill(23)(0) :+ 0x80.toByte)
-    val topByte = bytes(ByteVector.fill(23)(0) :+ 0xff.toByte)
-    val allOnes = bytes(ByteVector.fill(24)(0xff))
-    val mixed = bytes(ByteVector(Seq.tabulate(24)(i => (i * 31 + 7).toByte)))
-    List(Gf2_192.Zero, Gf2_192.One, x191, topByte, allOnes, mixed).foldLeft(success)((acc, a) => acc.and(byteProductsAgree(a)))
+    fixedElements.foldLeft(success)((acc, a) => acc.and(byteProductsAgree(a)))
   }
 
   test("multiplying a random element by a byte equals the general multiply, at every byte") {
@@ -70,21 +133,33 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
       val q = Gf2Poly(cs.toVector)
       everyByte.foldLeft(success) { (acc, x) =>
         val reference = cs.foldRight(Gf2_192.Zero)((c, r) => r * Gf2_192.byte(x) + c)
-        acc.and(expect(q(Gf2Byte(x)) == reference, s"Q($x) differs from the general-multiply evaluation"))
+        acc.and(expect(q(x) == reference, s"Q(${x.value}) differs from the general-multiply evaluation"))
       }
     }
   }
 
   test("interpolation passes through its points and keeps the requested number of coefficients") {
-    forall(Gen.zip(element, Gen.choose(0, 6), Gen.listOfN(6, element))) {
-      case (at0, n, ys) =>
-        val points = ys.take(n).zipWithIndex.map { case (y, i) => (Gf2Byte(i + 1), y) }.toVector
-        val q = Gf2Poly.interpolate(at0, points)
+    forall(Gen.zip(element, Gen.choose(0, 12).flatMap(distinctPoints))) {
+      case (at0, points) =>
+        val q = Gf2Poly.interpolate(at0, points.toMap)
         expect
-          .same(n + 1, q.coefficients.size)
-          .and(expect.same(at0, q(Gf2Byte(0))))
+          .same(points.size + 1, q.coefficients.size)
+          .and(expect.same(at0, q(Gf2Byte.Zero)))
           .and(expect.same(points.map(_._2), points.map(p => q(p._1))))
     }
+  }
+
+  test("batched interpolation equals the cubic Lagrange form, coefficient for coefficient") {
+    forall(Gen.zip(element, Gen.choose(0, 12).flatMap(distinctPoints))) {
+      case (at0, points) =>
+        expect.same(cubicLagrange(at0, points), Gf2Poly.interpolate(at0, points.toMap).coefficients)
+    }
+  }
+
+  pureTest("batched interpolation equals the cubic Lagrange form at the widest threshold: 254 simulated children") {
+    def pseudoRandom(i: Int) = elementOf(ByteVector(Seq.tabulate(24)(j => (i * 37 + j * 11 + 5).toByte)))
+    val points = (1 to ChildPoint.Max).filter(_ != 77).toVector.map(i => (point(i), pseudoRandom(i)))
+    expect.same(cubicLagrange(pseudoRandom(0), points), Gf2Poly.interpolate(pseudoRandom(0), points.toMap).coefficients)
   }
 
   // ---- the group
@@ -330,6 +405,33 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  pureTest("wide thresholds prove byte for byte as the cubic interpolation and branching multiply did") {
+    // SHA-256 of fixed-seed proofs recorded from the prover before batched interpolation (#57)
+    val ws = Vector.tabulate(ChildPoint.Max)(i => BigInt(1000 + i))
+    val ks = ws.map(w => key(Secp256k1Group.base(w)))
+    val seed = ByteVector.fill(32)(7)
+    val message = ByteVector.view("bench".getBytes(US_ASCII))
+    val cases = List(
+      ("1-of-255", p(SigmaProp.threshold(1, ks)), ws.take(1), hex"a905d66c265efa326ae50b557850ea2afabaa5c987e5e74be4e8a5f2beac6283"),
+      ("128-of-255", p(SigmaProp.threshold(128, ks)), ws.take(128), hex"0f6e0117e15b24914f5ffde566a3ee3425bb7c8852f8e0d4340911ab6c9e0953"),
+      ("255-of-255", p(SigmaProp.threshold(255, ks)), ws, hex"0fcba7f98236184c0d6ba934e7f093465dad0fefa2367b326ce6545ccd986e47"),
+      (
+        "or(2-of-6, key), by the key",
+        p(SigmaProp.or(Vector(p(SigmaProp.threshold(2, ks.take(6))), ks(200)))),
+        Vector(ws(200)),
+        hex"1ded6f01bcc5b1b3f1abb2c7c80f12a1767ccf208ecd58abfdfb73ebd2501aa9"
+      ),
+      ("2-of-6", p(SigmaProp.threshold(2, ks.take(6))), ws.take(2), hex"4537be9646a5d8a1ee8b664160b27f3e58721f91671f1b8e389040eed7aea7bd")
+    )
+    cases.foldLeft(success) {
+      case (acc, (name, prop, known, digest)) =>
+        val proof = SigmaProver.proveWith(prop, known, message, seed)
+        acc
+          .and(expect(proof.map(_.sha256) == Right(digest), s"$name: the proof differs from the recorded one"))
+          .and(expect(proof.flatMap(Sigma.verify(prop, _, message)) == Right(true), s"$name: the proof does not verify"))
+    }
+  }
+
   // ---- the bounds (sigma.md §3)
 
   pureTest("a proposition nests at most 64 deep, has 1 to 255 children per connective and at most 4096 leaves") {
@@ -386,8 +488,8 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     val commitments =
       Vector(Secp256k1Group.base(r).bytes, Sigma.commitment(leaf(1), e2.bytes, z(2)), Sigma.commitment(leaf(2), e3.bytes, z(3)))
     val root = Sigma.challenge(Sigma.fiatShamir(t, commitments), msg)
-    val q = Gf2Poly.interpolate(Gf2_192.fromBytes(root).get, Vector(Gf2Byte(2) -> e2))
-    val z1 = (r + BigInt(1, q(Gf2Byte(1)).bytes.toArray) * secrets(0)).mod(Secp256k1Group.Order)
+    val q = Gf2Poly.interpolate(Gf2_192.fromBytes(root).get, Map(point(2) -> e2))
+    val z1 = (r + BigInt(1, q(point(1)).bytes.toArray) * secrets(0)).mod(Secp256k1Group.Order)
     val thresholdForgery = root ++ q.higherBytes ++ zb(z1) ++ zb(z(2)) ++ zb(z(3))
 
     // Controls: the same constructions with the witnesses they need verify, so the forgeries fail for want of them.
@@ -399,13 +501,13 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     val r2 = BigInt(888)
     val honestCommitments = Vector(Secp256k1Group.base(r).bytes, Secp256k1Group.base(r2).bytes, Sigma.commitment(leaf(2), e3.bytes, z(3)))
     val honestRoot = Sigma.challenge(Sigma.fiatShamir(t, honestCommitments), msg)
-    val hq = Gf2Poly.interpolate(Gf2_192.fromBytes(honestRoot).get, Vector(Gf2Byte(3) -> e3))
-    def answer(i: Int, nonce: BigInt) = zb((nonce + scalar(hq(Gf2Byte(i + 1)).bytes) * secrets(i)).mod(Secp256k1Group.Order))
+    val hq = Gf2Poly.interpolate(Gf2_192.fromBytes(honestRoot).get, Map(point(3) -> e3))
+    def answer(i: Int, nonce: BigInt) = zb((nonce + scalar(hq(point(i + 1)).bytes) * secrets(i)).mod(Secp256k1Group.Order))
     val honestThreshold = honestRoot ++ hq.higherBytes ++ answer(0, r) ++ answer(1, r2) ++ zb(z(3))
 
     expect
       .same(Right(false), Sigma.verify(ring, ringForgery, msg))
-      .and(expect(q(Gf2Byte(3)) != e3, "the polynomial cannot also pass through the third chosen challenge"))
+      .and(expect(q(point(3)) != e3, "the polynomial cannot also pass through the third chosen challenge"))
       .and(expect.same(Right(false), Sigma.verify(t, thresholdForgery, msg)))
       .and(expect.same(Right(true), Sigma.verify(ring, honestRing, msg)))
       .and(expect.same(Right(true), Sigma.verify(t, honestThreshold, msg)))
