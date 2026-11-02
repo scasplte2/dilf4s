@@ -21,6 +21,7 @@ import scodec.bits.ByteVector
  *
  * Results are machine-specific; run on the reference hardware, then apply the suggestions to `GasSchedule`:
  * `sbt "benchmarks/Test/runMain xyz.kd5ujc.benchmarks.GasCalibration"` (add `metering` for the metering charges alone).
+ * Both end with the metering shares ([[shares]]): the timed denial-of-service checks, kept out of the test gate.
  */
 object GasCalibration extends IOApp {
 
@@ -282,6 +283,87 @@ object GasCalibration extends IOApp {
     ).sequence
   }
 
+  /** `2^k` distinct strings of length `2k` with one Java hash code ("Aa"/"BB"), or as many whose hashes differ ("Aa"/"Ac"). */
+  private def strings(k: Int, a: String, b: String): Vector[String] =
+    (1 to k).foldLeft(Vector(""))((acc, _) => acc.flatMap(s => Vector(s + a, s + b)))
+
+  /**
+   * The timed checks MeteringSuite used to make, which now live here so that no gate measures time (MeteringSuite reads
+   * the gas and counts comparisons instead). Each prints an evaluation's gas per microsecond as a share of a reference
+   * timed right after it, with the floor the suite used: unpriced work measured 0.0001-0.05 of its reference before the
+   * metering fixes, priced work stays near 1. `let` compilation prints how much longer 4000 bindings take than 1000.
+   */
+  private def shares(jlvm: Jlvm): IO[List[String]] = {
+    def compiled(json: String): Compiled = get(Parser.parse(json).flatMap(Compiled(_)))
+    def rate(c: Compiled, d: CanonicalValue): IO[Double] = {
+      val gas = jlvm.evaluate(c, d, Map.empty, unlimited).gasUsed.value
+      micros(() => jlvm.evaluate(c, d, Map.empty, unlimited).gasUsed.value).map(us => gas / math.max(us, 1e-3))
+    }
+    val reference = (compiled("""{"map": [{"var": "xs"}, {"+": [{"var": "$current"}, 1]}]}"""), m(Vector("xs" -> ints(2000))))
+    def share(label: String, floor: Double)(p: String, d: CanonicalValue, against: (Compiled, CanonicalValue) = reference): IO[String] =
+      (rate(compiled(p), d), rate(against._1, against._2)).mapN((r, ref) => f"share $label%-52s ${r / ref}%8.3f   floor $floor%.2f")
+    def xs(v:         CanonicalValue, n: Int) = m(Vector("xs" -> a(Vector.fill(n)(v))))
+    def counted(body: String) = s"""{"count": [{"var": "xs"}, $body]}"""
+    val fifth = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1764))))
+    val half = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4095)))
+    val cat = """{"cat": {"var": "xs"}}"""
+    val longPath = t(Vector.fill(50001)("a").mkString("."))
+    val ones = a(Vector.fill(20)(CInt(1)))
+    def lets(names: Vector[String]) =
+      s"""{"let": [[${names.map(x => s"""["$x", 1]""").mkString(", ")}], {"var": "$$${names.last}"}]}"""
+    def keyed(k: String) = m(
+      Vector("xs" -> a(Vector.fill(200)(CInt(1))), "k" -> t(k), "m" -> m(Vector(new String(k.toCharArray) -> CInt(1))))
+    )
+    val set = """{"reduce": [{"var": "xs"}, {"set": [{"var": "$accumulator"}, {"var": "k"}, {"var": "$index"}]}, {"object": {}}]}"""
+    val lookup = counted("""{"get": [{"var": "m"}, {"var": "k"}]}""")
+    def texts(ss: Vector[String]) = m(Vector("xs" -> a(ss.map(t))))
+    val unique = """{"unique": {"var": "xs"}}"""
+    val intersect = """{"intersect": [{"var": "xs"}, {"var": "xs"}]}"""
+    def compileMicros(n: Int): IO[Double] = {
+      val json = lets(Vector.tabulate(n)(i => s"n$i"))
+      micros(() => Parser.parse(json).flatMap(Compiled(_)).fold(_ => 0L, _ => 1L))
+    }
+    List(
+      share("cat: 20 x 1/5^1764", 0.1)(cat, xs(fifth, 20)),
+      share("cat: 20 x 1/2^4095", 0.1)(cat, xs(half, 20)),
+      share("join: 20 x 1/5^1764", 0.1)("""{"join": [{"var": "xs"}, ""]}""", xs(fifth, 20)),
+      share("cat: 1000 small integers", 0.1)(cat, m(Vector("xs" -> a(Vector.tabulate(1000)(i => CInt(BigInt(i) * 1000003)))))),
+      share("*: a running product of 4000 twos", 0.1)("""{"*": {"var": "xs"}}""", xs(CInt(2), 4000)),
+      share("missing_some: 20 x a 100,001-character key", 0.1)(
+        counted("""{"missing_some": [0, [{"var": "p"}]]}"""),
+        m(Vector("xs" -> ones, "p" -> longPath))
+      ),
+      share("var: 20 x a 100,001-character computed path", 0.1)(
+        counted("""{"var": {"var": "p"}}"""),
+        m(Vector("xs" -> ones, "p" -> longPath))
+      ),
+      share("object: 1000 x a literal with a 50,000-character key", 0.1)(
+        counted(s"""{"object": {"${"k" * 50000}": 1}}"""),
+        xs(CInt(1), 1000)
+      ),
+      share("let: 1024 colliding names, against differing ones", 0.25)(
+        lets(strings(10, "Aa", "BB")),
+        CNull,
+        (compiled(lets(strings(10, "Aa", "Ac"))), CNull)
+      ),
+      share("set: 200 x a 1 MB key, against a 1-byte key", 0.25)(set, keyed("k" * (1 << 20)), (compiled(set), keyed("k"))),
+      share("get: 200 x a 1 MB key, against a 1-byte key", 0.25)(lookup, keyed("k" * (1 << 20)), (compiled(lookup), keyed("k"))),
+      share("unique: 8192 colliding strings, against differing ones", 0.25)(
+        unique,
+        texts(strings(13, "Aa", "BB")),
+        (compiled(unique), texts(strings(13, "Aa", "Ac")))
+      ),
+      share("intersect: 8192 colliding strings, against differing ones", 0.25)(
+        intersect,
+        texts(strings(13, "Aa", "BB")),
+        (compiled(intersect), texts(strings(13, "Aa", "Ac")))
+      ),
+      (compileMicros(1000), compileMicros(4000)).mapN((s, l) =>
+        f"let: compiling 4000 bindings takes ${l / s}%6.2f times 1000's   ceiling 10"
+      )
+    ).sequence
+  }
+
   /** Node charges: the time per item of growing programs. */
   private def nodes(jlvm: Jlvm): IO[List[String]] = {
     val d = m(
@@ -327,6 +409,8 @@ object GasCalibration extends IOApp {
         _  <- qs.traverse_(IO.println)
         xs <- extras(jlvm)
         _  <- xs.traverse_(IO.println)
+        ss <- shares(jlvm)
+        _  <- ss.traverse_(IO.println)
       } yield ExitCode.Success
     }
 }

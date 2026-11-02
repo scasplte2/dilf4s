@@ -80,16 +80,17 @@ object Node {
    * Program depth and size are bounded ([[Program.MaxDepth]], [[Program.MaxSize]]), so this recursion is bounded too, and
    * its work is linear in the program's size.
    */
-  def compile(program: Program): Either[JlvmError, Node] = node(program.expr, TreeSet.empty)
+  private[jlvm] def compile(program: Program, kernels: Kernels): Either[JlvmError, Node] =
+    node(program.expr, TreeSet.empty(using kernels.names))(using kernels)
 
   private def malformed[A](msg: String): Either[JlvmError, A] = JlvmError.Malformed(msg).asLeft
 
   /**
    * `lets` holds the `let` names in scope. A plain path whose first segment is one of them is rejected: a binding is
    * read only as `$name`, so a plain path never reads the data where the binding was meant. Names are chosen by the
-   * program, so they are kept in a sorted set, never hashed.
+   * program, so they are kept in a sorted set, in [[Kernels.names]] order, never hashed.
    */
-  private def node(e: Expr, lets: TreeSet[String]): Either[JlvmError, Node] =
+  private def node(e: Expr, lets: TreeSet[String])(using kernels: Kernels): Either[JlvmError, Node] =
     e match {
       case Expr.Lit(v) => Const(v).asRight
       case Expr.Var(ref @ VarRef.Data(path), _) if path.headOption.exists(lets.contains) =>
@@ -121,7 +122,7 @@ object Node {
   private def sorted[A](fields: Vector[(String, A)]): Vector[(String, A)] =
     fields.sortWith((a, b) => Values.compareCodePoints(a._1, b._1) < 0)
 
-  private def apply(op: Op, args: Vector[Expr], lets: TreeSet[String]): Either[JlvmError, Node] = {
+  private def apply(op: Op, args: Vector[Expr], lets: TreeSet[String])(using kernels: Kernels): Either[JlvmError, Node] = {
     def node(e: Expr): Either[JlvmError, Node] = Node.node(e, lets)
     def each(kind: Iteration) = args match {
       case Vector(over, body) => (node(over), node(body)).mapN(Each(kind, _, _))
@@ -158,14 +159,14 @@ object Node {
           case Vector(over, body, init) => (node(over), node(body), node(init)).mapN((o, b, i) => Fold(o, b, scala.Some(i)))
           case _                        => malformed("reduce takes [array, callback] or [array, callback, initial]")
         }
-      case Op.Missing | Op.MissingSome              => nodes.map(Lookup(op, _))
-      case _ if PureOps(op, Vector.empty).isDefined => nodes.map(Strict(op, _))
-      case _                                        => nodes.map(Crypto(op, _))
+      case Op.Missing | Op.MissingSome                       => nodes.map(Lookup(op, _))
+      case _ if PureOps(op, Vector.empty, kernels).isDefined => nodes.map(Strict(op, _))
+      case _                                                 => nodes.map(Crypto(op, _))
     }
   }
 
   /** `[[[name, expr], ...], body]`, or `[{name: expr, ...}, body]` with bindings in code-point order of the names. */
-  private def let(args: Vector[Expr], lets: TreeSet[String]): Either[JlvmError, Node] = {
+  private def let(args: Vector[Expr], lets: TreeSet[String])(using kernels: Kernels): Either[JlvmError, Node] = {
     def name(n: String): Either[JlvmError, String] =
       Either.cond(bindable(n), n, JlvmError.Malformed(s"let cannot bind \"$n\": names are non-empty, without '.' or a leading '$$'"))
     val bindings: Either[JlvmError, Vector[(String, Expr)]] = args.headOption match {
@@ -180,8 +181,12 @@ object Node {
     args match {
       case Vector(_, body) =>
         bindings.flatMap { bs =>
-          val names = bs.map(_._1).sorted
-          Either.cond(names.zip(names.drop(1)).forall(_ != _), bs, JlvmError.Malformed("let binds a name twice"))
+          val names = bs.map(_._1).sorted(using kernels.names)
+          Either.cond(
+            names.zip(names.drop(1)).forall((a, b) => !kernels.names.equiv(a, b)),
+            bs,
+            JlvmError.Malformed("let binds a name twice")
+          )
         }.flatMap { bs =>
           // each binding sees the ones before it, and the body sees all of them: one pass, carrying the scope forward
           bs.foldLeftM((Vector.empty[(String, Node)], lets)) {

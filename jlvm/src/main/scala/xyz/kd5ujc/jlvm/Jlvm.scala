@@ -22,7 +22,11 @@ final class Compiled private (val program: Program, val root: Node) {
 }
 
 object Compiled {
-  def apply(program: Program): Either[JlvmError, Compiled] = Node.compile(program).map(new Compiled(program, _))
+  def apply(program: Program): Either[JlvmError, Compiled] = apply(program, Kernels.Default)
+
+  /** Compiles with `kernels` ordering the `let` names: production passes [[Kernels.Default]]. */
+  private[jlvm] def apply(program: Program, kernels: Kernels): Either[JlvmError, Compiled] =
+    Node.compile(program, kernels).map(new Compiled(program, _))
 }
 
 /** How to evaluate: the gas limit and schedule, and which driver runs the semantics. */
@@ -68,9 +72,18 @@ final class Jlvm private (crypto: CryptoOps) {
     data:     CanonicalValue,
     env:      Map[String, CanonicalValue] = Map.empty,
     config:   Config = Config()
+  ): Outcome = evaluate(compiled, data, env, config, Kernels.Default)
+
+  /** [[evaluate]] with `kernels` ordering bindings and values: production passes [[Kernels.Default]]. */
+  private[jlvm] def evaluate(
+    compiled: Compiled,
+    data:     CanonicalValue,
+    env:      Map[String, CanonicalValue],
+    config:   Config,
+    kernels:  Kernels
   ): Outcome = {
-    val semantics = new Semantics(config.schedule, crypto)
-    val first = semantics.start(compiled.root, Scope(data, TreeMap.from(env)))
+    val semantics = new Semantics(config.schedule, crypto, kernels)
+    val first = semantics.start(compiled.root, Scope(data, TreeMap.from(env)(using kernels.names)))
     val start = Meter(Gas.Zero, config.limit.amount)
     val (meter, result) = config.driver match {
       case Config.Driver.StackMachine => Machine.stackMachine[Run](semantics, first).value.run(start).value
