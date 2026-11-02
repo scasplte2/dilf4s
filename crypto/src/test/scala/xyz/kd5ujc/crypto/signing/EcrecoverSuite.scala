@@ -3,6 +3,7 @@ package xyz.kd5ujc.crypto.signing
 import java.nio.charset.StandardCharsets.UTF_8
 
 import cats.Show
+import cats.effect.{IO, Resource}
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.hash.{Hasher, Keccak256}
@@ -10,20 +11,27 @@ import xyz.kd5ujc.core.hash.{Hasher, Keccak256}
 import fr.acinq.secp256k1.{Secp256k1 => Native}
 import org.scalacheck.Gen
 import scodec.bits.{ByteVector, hex}
-import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
+import weaver.{Expectations, IOSuite}
 
 /** `ecrecover` (BouncyCastle) against known Ethereum answers, and against libsecp256k1's own recovery. */
-object EcrecoverSuite extends SimpleIOSuite with Checkers {
+object EcrecoverSuite extends IOSuite with Checkers {
 
-  private val native = Native.get()
+  /** libsecp256k1 is loaded once for the suite, as an effect, rather than while the suite object initialises. */
+  type Res = Native
+  def sharedResource: Resource[IO, Native] = Resource.eval(IO(Native.get()))
+
+  /** A test that needs libsecp256k1, run inside IO so a failure stays in the test. */
+  private def nativeTest(name: String)(body: Native ?=> Expectations): Unit = test(name)(native => IO(body(using native)))
+
   private val N = BigInt("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16)
 
-  private def be32(i:      BigInt): ByteVector = ByteVector(i.toByteArray).takeRight(32).padLeft(32)
-  private def address(key: BigInt): ByteVector = Ecrecover.address(ByteVector.view(native.pubkeyCreate(be32(key).toArray))).toOption.get
+  private def be32(i: BigInt): ByteVector = ByteVector(i.toByteArray).takeRight(32).padLeft(32)
+  private def address(key: BigInt)(using native: Native): ByteVector =
+    Ecrecover.address(ByteVector.view(native.pubkeyCreate(be32(key).toArray))).toOption.get
 
   /** libsecp256k1's recovery, as an address; its failures are None. */
-  private def reference(digest: ByteVector, sig64: ByteVector, recid: Int): Option[ByteVector] =
+  private def reference(digest: ByteVector, sig64: ByteVector, recid: Int)(using native: Native): Option[ByteVector] =
     Either
       .catchNonFatal(native.ecdsaRecover(sig64.toArray, digest.toArray, recid))
       .toOption
@@ -46,13 +54,14 @@ object EcrecoverSuite extends SimpleIOSuite with Checkers {
       )
   }
 
-  pureTest("addresses of private keys 1 and 2, as every Ethereum tool derives them") {
+  nativeTest("addresses of private keys 1 and 2, as every Ethereum tool derives them") {
     expect
       .same(hex"7e5f4552091a69125d5dfcb7b8c2659029395bdf", address(1))
       .and(expect.same(hex"2b5ad5c4795c026514f8317c7a215e218dccd6cf", address(2)))
   }
 
-  test("a libsecp256k1 signature recovers its signer under one v, and v = 0/1 reads as 27/28") {
+  test("a libsecp256k1 signature recovers its signer under one v, and v = 0/1 reads as 27/28") { native =>
+    given Native = native
     forall(Gen.zip(scalar, digest)) {
       case (key, d) =>
         val sig = ByteVector.view(Signer.sign(key, d))
@@ -63,7 +72,8 @@ object EcrecoverSuite extends SimpleIOSuite with Checkers {
     }
   }
 
-  test("recovery agrees with libsecp256k1's for any low-s r and s, including r that is no point's x") {
+  test("recovery agrees with libsecp256k1's for any low-s r and s, including r that is no point's x") { native =>
+    given Native = native
     forall(Gen.zip(scalar, scalar.map(s => if (s > N / 2) N - s else s), digest)) {
       case (r, s, d) =>
         val sig64 = be32(r) ++ be32(s)
@@ -73,7 +83,7 @@ object EcrecoverSuite extends SimpleIOSuite with Checkers {
     }
   }
 
-  pureTest("high s (EIP-2), and r or s zero or not below the order, recover nothing") {
+  nativeTest("high s (EIP-2), and r or s zero or not below the order, recover nothing") {
     val d = hex"ce0677bb30baa8cf067c88db9811f4333d131bf8bcf12fe7065d211dce971008"
     val sig = ByteVector.view(Signer.sign(BigInt(7), d))
     val r = BigInt(1, sig.take(32).toArray)
@@ -101,6 +111,7 @@ object EcrecoverSuite extends SimpleIOSuite with Checkers {
 
   /** libsecp256k1 signs with RFC 6979 nonces and low s. */
   private object Signer {
-    def sign(key: BigInt, digest: ByteVector): Array[Byte] = Secp256k1.Ffi.signRfc6979(native, digest.toArray, be32(key).toArray)
+    def sign(key: BigInt, digest: ByteVector)(using native: Native): Array[Byte] =
+      Secp256k1.Ffi.signRfc6979(native, digest.toArray, be32(key).toArray)
   }
 }
