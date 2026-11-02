@@ -19,7 +19,7 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
   private given Show[CanonicalValue] = Show.fromToString
 
   private def run(op: Op, args: CanonicalValue*): Either[JlvmError, CanonicalValue] =
-    PureOps(op, args.toVector).getOrElse(Left(JlvmError.Malformed(s"${op.wire} is evaluator-owned")))
+    PureOps(op, args.toVector, Kernels.Default).getOrElse(Left(JlvmError.Malformed(s"${op.wire} is evaluator-owned")))
 
   private def t(s:   String): CanonicalValue = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
   private def i(n:   Long): CanonicalValue = CInt(BigInt(n))
@@ -54,12 +54,12 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
     val args = Gen.choose(0, 3).flatMap(Gen.listOfN(_, CanonicalGens.value(2))).map(_.toVector)
     forall(Gen.zip(Gen.oneOf(Op.values.toSeq), args)) {
       case (op, vs) =>
-        expect.same(owned(op), PureOps(op, vs).isEmpty)
+        expect.same(owned(op), PureOps(op, vs, Kernels.Default).isEmpty)
     }
   }
 
   pureTest("the evaluator owns exactly the lazy, binding, callback, lookup and verification ops") {
-    expect.same(Op.values.toSet.filter(owned), Op.values.toSet.filter(op => PureOps(op, Vector.empty).isEmpty))
+    expect.same(Op.values.toSet.filter(owned), Op.values.toSet.filter(op => PureOps(op, Vector.empty, Kernels.Default).isEmpty))
   }
 
   // ---- equality and ordering

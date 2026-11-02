@@ -35,8 +35,11 @@ object PureOps {
   /** The largest `int_to_bytes` width. */
   val MaxIntBytes: Int = 1024
 
-  /** `None` for operations the evaluator owns; otherwise the result of applying `op` to `args`. */
-  def apply(op: Op, args: Vector[CanonicalValue]): Option[Result] = {
+  /**
+   * `None` for operations the evaluator owns; otherwise the result of applying `op` to `args`. `kernels` orders the
+   * values `unique` and `intersect` compare.
+   */
+  private[jlvm] def apply(op: Op, args: Vector[CanonicalValue], kernels: Kernels): Option[Result] = {
     import Op.{Map => MapOp, None => NoneOp, Set => SetOp, Some => SomeOp, _}
     op match {
       case If | And | Or | Default | Let | MapOp | Filter | Reduce | All | SomeOp | NoneOp | Find | Missing | MissingSome | Ed25519Verify |
@@ -81,8 +84,8 @@ object PureOps {
 
       case Merge     => Option(merge(op, args))
       case In        => Option(binary(op, args)(contains(op)))
-      case Intersect => Option(binary(op, args)(subset(op)))
-      case Unique    => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, distinct(vs)))))
+      case Intersect => Option(binary(op, args)(subset(op, kernels)))
+      case Unique    => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, distinct(vs, kernels)))))
       case Reverse   => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, vs.reverse))))
       case Flatten   => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, vs.flatMap(spread)))))
       case Slice     => Option(slice(op, args))
@@ -412,13 +415,19 @@ object PureOps {
     }
 
   /** Whether every element of the first array is in the second; null is the empty set (metakit). */
-  private def subset(op: Op)(sub: CanonicalValue, sup: CanonicalValue): Result =
+  private def subset(op: Op, kernels: Kernels)(sub: CanonicalValue, sup: CanonicalValue): Result =
     (sub, sup) match {
       case (CNull, _)         => bool(true).asRight
       case (CArray(_), CNull) => bool(false).asRight
       case (a, b) =>
-        (arr(op, a), arr(op, b)).mapN((xs, ys) => bool(Values.subset(xs, ys)))
+        (arr(op, a), arr(op, b)).mapN((xs, ys) =>
+          bool(kernels.dedup.subset(xs.iterator.map(kernels.key), ys.map(kernels.key))(using kernels.values))
+        )
     }
+
+  /** `vs` without repeats, keeping each value's first occurrence, in order, compared in the canonical value order. */
+  private def distinct(vs: Vector[CanonicalValue], kernels: Kernels): Vector[CanonicalValue] =
+    kernels.dedup.distinct(vs.map(kernels.key))(using kernels.values).map(_.value)
 
   /** `[array, start]` or `[array, start, end]`, with JavaScript bounds. */
   private def slice(op: Op, args: Vector[CanonicalValue]): Result =

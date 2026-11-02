@@ -3,7 +3,6 @@ package xyz.kd5ujc.jlvm
 import cats.syntax.all._
 
 import scala.annotation.tailrec
-import scala.collection.Searching
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
@@ -216,7 +215,8 @@ object Values {
 
   private def unsigned(a: ByteVector, b: ByteVector): Int = java.util.Arrays.compareUnsigned(a.toArrayUnsafe, b.toArrayUnsafe)
 
-  given Ordering[SortKey] = (a, b) =>
+  /** The production order on [[SortKey]]s ([[Kernels.Default]]'s `values`). */
+  given sortKeyOrder: Ordering[SortKey] = (a, b) =>
     if (a.rank != b.rank) Integer.compare(a.rank, b.rank)
     else
       (a.value, b.value) match {
@@ -228,7 +228,7 @@ object Values {
         case _                            => unsigned(a.encoding, b.encoding)
       }
 
-  private def key(v: CanonicalValue): SortKey = v match {
+  def sortKey(v: CanonicalValue): SortKey = v match {
     case CNull        => SortKey(0, v, ByteVector.empty)
     case CBool(_)     => SortKey(1, v, ByteVector.empty)
     case CInt(_)      => SortKey(2, v, ByteVector.empty)
@@ -237,38 +237,6 @@ object Values {
     case CBytes(_)    => SortKey(5, v, ByteVector.empty)
     case CArray(_)    => SortKey(6, v, Cbor.encode(v).compact)
     case CMap(_)      => SortKey(7, v, Cbor.encode(v).compact)
-  }
-
-  /** `vs` without repeats, keeping each value's first occurrence, in order: a stable sort and a scan, O(n log n). */
-  def distinct(vs: Vector[CanonicalValue]): Vector[CanonicalValue] = distinctBy(vs)(key)
-
-  /** Whether every element of `xs` is in `ys`: a binary search of `ys` in canonical order, O((m + n) log n). */
-  def subset(xs: Vector[CanonicalValue], ys: Vector[CanonicalValue]): Boolean = subsetBy(xs, ys)(key)
-
-  /**
-   * [[distinct]] for any element type: it uses only `order` on the elements' keys (never `hashCode` or `equals`), and
-   * compares O(n log n) times.
-   */
-  def distinctBy[A, K](vs: Vector[A])(key: A => K)(using order: Ordering[K]): Vector[A] = {
-    val sorted = vs.map(key).zipWithIndex.sortBy(_._1)
-    val firsts = sorted.zip(None +: sorted.map(Option(_))).collect {
-      case ((e, i), previous) if !previous.exists(p => order.equiv(p._1, e)) => i
-    }
-    firsts.sorted.map(vs)
-  }
-
-  /**
-   * [[subset]] for any element type: it uses only `order` on the elements' keys (never `hashCode` or `equals`), and
-   * compares O((m + n) log n) times.
-   */
-  def subsetBy[A, K](xs: Vector[A], ys: Vector[A])(key: A => K)(using order: Ordering[K]): Boolean = {
-    val sorted = ys.map(key).sorted
-    xs.forall(x =>
-      sorted.search(key(x)) match {
-        case Searching.Found(_)          => true
-        case Searching.InsertionPoint(_) => false
-      }
-    )
   }
 
   /**

@@ -12,10 +12,11 @@ import xyz.kd5ujc.numerics.Ratio
 import weaver.{Expectations, IOSuite}
 
 /**
- * Denial-of-service regressions: every unit of work is charged before it is done and bounded by the gas limit. Where a
- * bound cannot be read off the gas alone, a test times the work and compares its gas per microsecond with a reference
- * timed alongside it (a `map`, whose node charges are calibrated): at least [[MinShare]] of the reference rate, so only
- * work priced an order of magnitude too low fails, however loaded the machine is.
+ * Denial-of-service regressions: every unit of work is charged before it is done and bounded by the gas limit. Nothing
+ * here measures time, so a loaded machine cannot fail it. A test either reads the bound off the gas (the charge a piece
+ * of work pays grows with its size), or counts the comparisons the evaluator makes through counting [[Kernels]] and
+ * bounds them by the input's size: a program-chosen name or value is only ever compared, never hashed, and in
+ * O(n log n) comparisons. How fast a unit of work runs is calibration, measured by the `benchmarks` GasCalibration job.
  */
 object MeteringSuite extends IOSuite {
 
@@ -23,10 +24,6 @@ object MeteringSuite extends IOSuite {
   def sharedResource: Resource[IO, Jlvm] = Resource.eval(Jlvm.load[IO])
 
   private val S = GasSchedule.V1
-  private val MinShare = 0.1
-
-  // timed tests run one at a time
-  override def maxParallelism: Int = 1
 
   private def get[A](e:     Either[?, A]): A = e.fold(err => sys.error(err.toString), identity)
   private def t(s:          String): CanonicalValue = get(CanonicalValue.text(s))
@@ -36,32 +33,6 @@ object MeteringSuite extends IOSuite {
 
   private def eval(jlvm: Jlvm, p: Program, data: CanonicalValue, limit: Long = GasLimit.Default.amount.value): Outcome =
     jlvm.evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(limit))))
-
-  /**
-   * The fastest of five runs, in microseconds, after warming up (at least 20 runs or 300 ms, at most 200 runs), so the
-   * JIT has compiled what is timed.
-   */
-  private def micros[A](f: => A): IO[(A, Double)] = {
-    val once = IO.monotonic.flatMap(t0 => IO(f).flatMap(a => IO.monotonic.map(t1 => (a, (t1 - t0).toNanos / 1000.0))))
-    def warm(runs: Int, spent: Double): IO[Unit] =
-      if (runs >= 200 || (runs >= 20 && spent >= 300000.0)) IO.unit else once.flatMap { case (_, us) => warm(runs + 1, spent + us) }
-    warm(0, 0.0) >> List.fill(5)(once).sequence.map(rs => rs.minBy(_._2))
-  }
-
-  /** Gas per microsecond of an evaluation (compiled beforehand), timed. */
-  private def rate(jlvm: Jlvm, p: Program, data: CanonicalValue): IO[(Outcome, Double)] = {
-    val compiled = get(Compiled(p))
-    micros(jlvm.evaluate(compiled, data, Map.empty, Config(limit = GasLimit(Gas(Long.MaxValue / 4))))).map {
-      case (o, us) => (o, o.gasUsed.value / math.max(us, 1.0))
-    }
-  }
-
-  private val reference = program("""{"map": [{"var": "xs"}, {"+": [{"var": "$current"}, 1]}]}""")
-  private val referenceData = obj("xs" -> arr(Vector.tabulate(2000)(i => CInt(BigInt(i)))))
-
-  /** An evaluation's gas per microsecond, as a share of the reference's, timed right after it. */
-  private def priced(jlvm: Jlvm, p: Program, data: CanonicalValue): IO[(Outcome, Double)] =
-    (rate(jlvm, p, data), rate(jlvm, reference, referenceData)).mapN { case ((o, r), (_, ref)) => (o, r / ref) }
 
   private def isLimit(r: Either[JlvmError, ?]): Boolean = r match {
     case Left(JlvmError.Limit(_)) => true
@@ -82,11 +53,39 @@ object MeteringSuite extends IOSuite {
   private def combinations(k: Int, a: String, b: String): Vector[String] =
     (1 to k).foldLeft(Vector(""))((acc, _) => acc.flatMap(s => Vector(s + a, s + b)))
 
+  /** `order`, counting its comparisons in `count`. */
+  private def counted[A](order: Ordering[A], count: AtomicLong): Ordering[A] = (a, b) => {
+    count.incrementAndGet()
+    order.compare(a, b)
+  }
+
+  /** The production kernels, with the name order counting its comparisons in `names` and the value order in `values`. */
+  private def counting(names: AtomicLong, values: AtomicLong): Kernels =
+    Kernels.Default.copy(names = counted(Ordering.String, names), values = counted(Values.sortKeyOrder, values))
+
+  /** `ceil(log2 n)`. */
+  private def log2(n: Int): Long = 64L - java.lang.Long.numberOfLeadingZeros(n.toLong - 1)
+
   /**
-   * Colliding input must get at least this share of the control's rate. Unpriced collisions ran at 0.002-0.05 of it, so
-   * this catches them by a factor of five while leaving room for a loaded machine (0.49 was seen at a load of 14).
+   * Compiles and evaluates `p` with counting kernels: the outcome, and the name and value comparisons the evaluation
+   * made (compilation's are counted apart, in [[compiling]]).
    */
-  private val MinControlShare = 0.25
+  private def comparing(jlvm: Jlvm, p: Program, data: CanonicalValue): IO[(Outcome, Long, Long)] =
+    (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (names, values) =>
+      IO {
+        val kernels = counting(names, values)
+        val compiled = get(Compiled(p, kernels))
+        val (n0, v0) = (names.get, values.get)
+        val o = jlvm.evaluate(compiled, data, Map.empty, Config(), kernels)
+        (o, names.get - n0, values.get - v0)
+      }
+    }
+
+  /** Parses and compiles `json` with counting kernels: whether it compiled, and the name comparisons it made. */
+  private def compiling(json: String): IO[(Boolean, Long)] =
+    (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (names, values) =>
+      IO((Parser.parse(json).flatMap(Compiled(_, counting(names, values))).isRight, names.get))
+    }
 
   // ---- 1. join
 
@@ -118,25 +117,26 @@ object MeteringSuite extends IOSuite {
     val half = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4095)))
     val cat = program("""{"cat": {"var": "xs"}}""")
     val join = program("""{"join": [{"var": "xs"}, ""]}""")
-    def rendersPaid(p: Program, v: CanonicalValue): IO[Expectations] =
-      priced(jlvm, p, obj("xs" -> arr(Vector.fill(20)(v)))).map {
-        case (o, rate) =>
-          val out = o.result.map(_.weight).getOrElse(0L)
-          expect(o.result.isRight, s"renders: ${o.result.leftMap(_.toString)}")
-            .and(expect(o.gasUsed.value >= out, s"at least 1 gas per output character: ${o.gasUsed.value} for $out"))
-            .and(expect(rate >= MinShare, s"priced at $rate of the reference rate"))
-      }
-    val ints = arr(Vector.tabulate(1000)(i => CInt(BigInt(i) * 1000003)))
-    val words = arr(Vector.fill(1000)(t("w")))
-    (rendersPaid(cat, fifth), rendersPaid(cat, half), rendersPaid(join, fifth), priced(jlvm, cat, obj("xs" -> ints))).mapN {
-      (a, b, c, small) =>
-        val gasInts = small._1.gasUsed.value
-        val gasWords = eval(jlvm, cat, obj("xs" -> words)).gasUsed.value
-        a.and(b)
-          .and(c)
-          .and(expect(small._2 >= MinShare, s"rendering small integers priced at ${small._2} of the reference rate"))
-          .and(expect(gasInts > gasWords, s"1000 rendered integers ($gasInts) cost more than 1000 one-letter texts ($gasWords)"))
+    // the rendering charge grows with each number's decimal expansion ((4 + bits/64)^2 units), and is taken before it
+    def rendersPaid(p: Program, v: CanonicalValue): Expectations = {
+      val numbers = Vector.fill(20)(v)
+      val o = eval(jlvm, p, obj("xs" -> arr(numbers)))
+      val out = o.result.map(_.weight).getOrElse(0L)
+      expect(o.result.isRight, s"renders: ${o.result.leftMap(_.toString)}")
+        .and(expect(o.gasUsed.value >= out, s"at least 1 gas per output character: ${o.gasUsed.value} for $out"))
+        .and(expect(S.rendered(numbers) <= o.gasUsed, s"pays the rendering charge ${S.rendered(numbers)}: ${o.gasUsed}"))
     }
+    val ints = Vector.tabulate(1000)(i => CInt(BigInt(i) * 1000003))
+    val words = arr(Vector.fill(1000)(t("w")))
+    val gasInts = eval(jlvm, cat, obj("xs" -> arr(ints))).gasUsed
+    val gasWords = eval(jlvm, cat, obj("xs" -> words)).gasUsed
+    IO(
+      rendersPaid(cat, fifth)
+        .and(rendersPaid(cat, half))
+        .and(rendersPaid(join, fifth))
+        .and(expect(S.rendered(ints) <= gasInts, s"1000 small integers pay their rendering ${S.rendered(ints)}: $gasInts"))
+        .and(expect(gasInts.value > gasWords.value, s"1000 rendered integers ($gasInts) cost more than 1000 one-letter texts ($gasWords)"))
+    )
   }
 
   // ---- 2. variadic arithmetic
@@ -157,14 +157,13 @@ object MeteringSuite extends IOSuite {
     // 4000 twos build a 4000-bit product: step i multiplies an i-bit accumulator
     val p = program("""{"*": {"var": "xs"}}""")
     val data = obj("xs" -> arr(Vector.fill(4000)(CInt(2))))
-    priced(jlvm, p, data).map {
-      case (o, rate) =>
-        val accumulators = (1 until 4000).map(i => 1L + i / 64).sum
-        expect
-          .same(Right(CInt(BigInt(1) << 4000)), o.result)
-          .and(expect(o.gasUsed.value >= S.cost(Op.Mul).perUnit.value * accumulators, s"gas ${o.gasUsed.value}"))
-          .and(expect(rate >= MinShare, s"priced at $rate of the reference rate"))
-    }
+    val o = eval(jlvm, p, data)
+    val accumulators = (1 until 4000).map(i => 1L + i / 64).sum
+    IO(
+      expect
+        .same(Right(CInt(BigInt(1) << 4000)), o.result)
+        .and(expect(o.gasUsed.value >= S.cost(Op.Mul).perUnit.value * accumulators, s"gas ${o.gasUsed.value}"))
+    )
   }
 
   // ---- 3. unique and intersect
@@ -179,27 +178,63 @@ object MeteringSuite extends IOSuite {
     override def equals(that: Any): Boolean = sys.error(s"element $n was compared for equality")
   }
 
-  /** An order on [[Opaque]] that counts its comparisons in `count`. */
-  private def counting(count: AtomicLong): Ordering[Opaque] = (a, b) => {
-    count.incrementAndGet()
-    Integer.compare(a.n, b.n)
-  }
+  private val byNumber: Ordering[Opaque] = Ordering.by(_.n)
 
-  test("unique and intersect never hash or compare values for equality, and compare them O(n log n) times") { _ =>
+  test("deduplication never hashes or compares values for equality, and compares them O(n log n) times") { _ =>
     // 8192 elements, each value twice; a quadratic algorithm would compare about n^2 / 2 = 33 million times
     val n = 8192
-    val log2n = 13L
+    val log2n = log2(n)
     val xs = Vector.tabulate(n)(i => new Opaque(i % (n / 2)))
     (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (uniqueCount, subsetCount) =>
       IO {
-        val unique = Either.catchNonFatal(Values.distinctBy(xs)(identity)(using counting(uniqueCount)).map(_.n)).leftMap(_.getMessage)
-        val subset = Either.catchNonFatal(Values.subsetBy(xs, xs)(identity)(using counting(subsetCount))).leftMap(_.getMessage)
+        val unique = Either.catchNonFatal(Dedup.Sorting.distinct(xs)(using counted(byNumber, uniqueCount)).map(_.n)).leftMap(_.getMessage)
+        val subset = Either.catchNonFatal(Dedup.Sorting.subset(xs.iterator, xs)(using counted(byNumber, subsetCount))).leftMap(_.getMessage)
         expect
           .same(Right(Vector.range(0, n / 2)), unique)
           .and(expect.same(Right(true), subset))
           .and(expect(uniqueCount.get <= 2 * n * log2n, s"unique compared ${uniqueCount.get} times for $n elements"))
           .and(expect(subsetCount.get <= 3 * n * log2n, s"intersect compared ${subsetCount.get} times for $n elements"))
       }
+    }
+  }
+
+  test("intersect stops at the first element missing from the second array, before keying the rest") { jlvm =>
+    // 8191 arrays after a missing 0: keying them would encode every one; only the 0 and the second array's [1] are keyed
+    val left = arr(CInt(0) +: Vector.fill(8191)(arr(Vector.tabulate(100)(i => CInt(BigInt(i))))))
+    val data = obj("a" -> left, "b" -> arr(Vector(CInt(1))))
+    val intersect = program("""{"intersect": [{"var": "a"}, {"var": "b"}]}""")
+    (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (consumed, keyed) =>
+      IO {
+        val generic = Dedup.Sorting.subset(
+          Iterator.tabulate(8192) { i =>
+            consumed.incrementAndGet(); new Opaque(if (i == 0) -1 else i)
+          },
+          Vector(new Opaque(1))
+        )(using byNumber)
+        val kernels = Kernels.Default.copy(key = v => { keyed.incrementAndGet(); Values.sortKey(v) })
+        val o = jlvm.evaluate(get(Compiled(intersect, kernels)), data, Map.empty, Config(), kernels)
+        expect(!generic, "the first element is missing")
+          .and(expect.same(1L, consumed.get))
+          .and(expect.same(Right(False), o.result))
+          .and(expect.same(2L, keyed.get))
+      }
+    }
+  }
+
+  test("unique and intersect compare colliding strings through the evaluator's value order, O(n log n) times") { jlvm =>
+    // at least n - 1 comparisons: the values went through the order, not a hash set
+    val n = 8192
+    val same = obj("xs" -> arr(colliding(13).map(t)))
+    (
+      comparing(jlvm, program("""{"unique": {"var": "xs"}}"""), same),
+      comparing(jlvm, program("""{"intersect": [{"var": "xs"}, {"var": "xs"}]}"""), same)
+    ).mapN {
+      case ((u, _, uc), (i, _, ic)) =>
+        expect
+          .same(Right(arr(colliding(13).map(t))), u.result)
+          .and(expect.same(Right(True), i.result))
+          .and(expect(uc >= n - 1 && uc <= 2 * n * log2(n), s"unique compared $uc times for $n values"))
+          .and(expect(ic >= n - 1 && ic <= 3 * n * log2(n), s"intersect compared $ic times for $n values"))
     }
   }
 
@@ -239,13 +274,10 @@ object MeteringSuite extends IOSuite {
     val some = program("""{"missing_some": [0, [{"var": "p"}]]}""")
     val missing = program("""{"missing": [{"var": "p"}]}""")
     def gap(p: Program): Long = eval(jlvm, p, obj("p" -> long)).gasUsed.value - eval(jlvm, p, obj("p" -> t("a"))).gasUsed.value
-    val loop = program("""{"count": [{"var": "xs"}, {"missing_some": [0, [{"var": "p"}]]}]}""")
-    priced(jlvm, loop, obj("xs" -> arr(Vector.fill(20)(CInt(1))), "p" -> long)).map {
-      case (_, rate) =>
-        expect(gap(some) >= long.weight, s"missing_some: ${gap(some)} more gas for weight ${long.weight}")
-          .and(expect(gap(missing) >= long.weight, s"missing: ${gap(missing)} more gas for weight ${long.weight}"))
-          .and(expect(rate >= MinShare, s"priced at $rate of the reference rate"))
-    }
+    IO(
+      expect(gap(some) >= long.weight, s"missing_some: ${gap(some)} more gas for weight ${long.weight}")
+        .and(expect(gap(missing) >= long.weight, s"missing: ${gap(missing)} more gas for weight ${long.weight}"))
+    )
   }
 
   test("inside callbacks, missing pays for every frame each key may search, as var does") { jlvm =>
@@ -286,13 +318,16 @@ object MeteringSuite extends IOSuite {
     val malformed = t(Vector.fill(50001)("a").mkString(".") + ".")
     val read = S.varAccess.value + S.perPathSegment.value
     val starved = eval(jlvm, p, obj("p" -> malformed), limit = read + 15)
+    // a well-formed path pays for its text each time it is read, by its size
     val loop = program("""{"count": [{"var": "xs"}, {"var": {"var": "p"}}]}""")
     val wellFormed = t(Vector.fill(50001)("a").mkString("."))
-    priced(jlvm, loop, obj("xs" -> arr(Vector.fill(20)(CInt(1))), "p" -> wellFormed)).map {
-      case (_, rate) =>
-        expect(isOutOfGas(starved.result), s"out of gas before parsing: ${starved.result}")
-          .and(expect(rate >= MinShare, s"priced at $rate of the reference rate"))
-    }
+    def gas(path: CanonicalValue): Long = eval(jlvm, loop, obj("xs" -> arr(Vector.fill(20)(CInt(1))), "p" -> path)).gasUsed.value
+    val gap = gas(wellFormed) - gas(t("a"))
+    val text = 20L * (S.pathText(wellFormed).value - S.pathText(t("a")).value)
+    IO(
+      expect(isOutOfGas(starved.result), s"out of gas before parsing: ${starved.result}")
+        .and(expect(gap >= text, s"20 reads of a 100,001-character path pay $gap more gas, for $text of path text"))
+    )
   }
 
   test("integer path segments are bounded before they are rendered as keys") { jlvm =>
@@ -317,13 +352,22 @@ object MeteringSuite extends IOSuite {
 
   // ---- 6. object keys
 
-  test("object literals do not rescan their keys on every evaluation") { jlvm =>
+  test("object literals hold their keys as checked text, and an evaluation pays nothing for a key's length") { jlvm =>
+    // the key is checked once, when the program compiles: an evaluation builds the map from the cached CText
     val key = "k" * 50000
-    val p = program(s"""{"count": [{"var": "xs"}, {"object": {"$key": 1}}]}""")
-    priced(jlvm, p, obj("xs" -> arr(Vector.fill(1000)(CInt(1))))).map {
-      case (o, rate) =>
-        expect.same(Right(CInt(BigInt(1000))), o.result).and(expect(rate >= MinShare, s"priced at $rate of the reference rate"))
+    def p(k: String) = program(s"""{"count": [{"var": "xs"}, {"object": {"$k": 1}}]}""")
+    val data = obj("xs" -> arr(Vector.fill(1000)(CInt(1))))
+    val long = eval(jlvm, p(key), data)
+    val literal = get(Compiled(p(key))).root match {
+      case Node.Each(_, _, Node.ObjectOf(Vector((k, _)))) => scala.Some(k)
+      case _                                              => scala.None
     }
+    IO(
+      expect
+        .same(Right(CInt(BigInt(1000))), long.result)
+        .and(expect.same(eval(jlvm, p("k"), data).gasUsed, long.gasUsed))
+        .and(expect(literal.exists(_.value == key), s"the compiled literal holds its key as CText: $literal"))
+    )
   }
 
   // ---- 7. let
@@ -331,27 +375,26 @@ object MeteringSuite extends IOSuite {
   private def lets(n: Int, names: Vector[String]): String =
     s"""{"let": [[${names.take(n).map(x => s"""["$x", 1]""").mkString(", ")}], {"var": "$$${names(n - 1)}"}]}"""
 
-  test("let compiles in linear time") { _ =>
-    val names = Vector.tabulate(8000)(i => s"n$i")
-    def compile(n: Int) = micros(Parser.parse(lets(n, names)).flatMap(Compiled(_)))
-    (compile(1000), compile(4000)).mapN {
-      case ((small, ts), (large, tl)) =>
-        expect(small.isRight && large.isRight, "both compile")
-          .and(expect(tl < 400000.0, s"4000 bindings compile in ${tl / 1000} ms"))
-          .and(expect(tl < 10 * math.max(ts, 1000.0), s"4000 bindings take ${tl / ts} times as long as 1000"))
+  test("let compiles with O(n log n) name comparisons: the scope is carried forward, not rebuilt per binding") { _ =>
+    // rebuilding the preceding names for each binding would compare about n^2 log n / 2 times
+    val names = Vector.tabulate(4000)(i => s"n$i")
+    (compiling(lets(1000, names)), compiling(lets(4000, names))).mapN {
+      case ((small, cs), (large, cl)) =>
+        expect(small && large, "both compile")
+          .and(expect(cs >= 999 && cs <= 3 * 1000 * log2(1000), s"1000 bindings compared names $cs times"))
+          .and(expect(cl >= 3999 && cl <= 3 * 4000 * log2(4000), s"4000 bindings compared names $cl times"))
     }
   }
 
-  test("let and $ reads do not hash attacker-chosen names") { jlvm =>
+  test("let and $ reads compare colliding names through the evaluator's name order, O(n log n) times") { jlvm =>
     // 1024 bindings and a read of the last: the two runs differ only in the names, so they cost the same gas
-    val bound = program(lets(1024, colliding(10)))
-    val unbound = program(lets(1024, control(10)))
-    (rate(jlvm, bound, CNull), rate(jlvm, unbound, CNull)).mapN {
-      case ((o, r), (c, rc)) =>
+    val n = 1024
+    (comparing(jlvm, program(lets(n, colliding(10))), CNull), comparing(jlvm, program(lets(n, control(10))), CNull)).mapN {
+      case ((o, names, _), (c, _, _)) =>
         expect
           .same(Right(CInt(BigInt(1))), o.result)
           .and(expect.same(o.gasUsed, c.gasUsed))
-          .and(expect(r / rc >= MinControlShare, s"1024 colliding names run at ${r / rc} of the control's rate"))
+          .and(expect(names >= n - 1 && names <= 2 * n * log2(n), s"$n colliding bindings compared names $names times"))
     }
   }
 
@@ -375,18 +418,16 @@ object MeteringSuite extends IOSuite {
     def data(k: String, n: Int) =
       // the map's key and the looked-up key are equal but distinct strings, so a hit compares them
       obj("xs" -> arr(Vector.fill(n)(CInt(1))), "k" -> t(k), "m" -> obj(new String(k.toCharArray) -> CInt(1)))
-    (
-      rate(jlvm, build, data(long, 200)),
-      rate(jlvm, build, data(short, 200)),
-      rate(jlvm, lookup, data(long, 200)),
-      rate(jlvm, lookup, data(short, 200))
-    ).mapN {
-      case ((b, rb), (_, rbs), (l, rl), (_, rls)) =>
-        expect(b.result.isRight, s"builds: ${b.result.leftMap(_.toString)}")
-          .and(expect.same(Right(CInt(BigInt(200))), l.result))
-          .and(expect(rb / rbs >= MinControlShare, s"set with a 1 MB key runs at ${rb / rbs} of the 1-byte key's rate"))
-          .and(expect(rl / rls >= MinControlShare, s"get with a 1 MB key runs at ${rl / rls} of the 1-byte key's rate"))
-    }
+    // each of the 200 sets and gets pays the key's length (the Key unit: one per KeyBlock), which a hit compares
+    val blocks = 200L * (long.length / Values.KeyBlock)
+    val (b, bs) = (eval(jlvm, build, data(long, 200)), eval(jlvm, build, data(short, 200)))
+    val (l, ls) = (eval(jlvm, lookup, data(long, 200)), eval(jlvm, lookup, data(short, 200)))
+    IO(
+      expect(b.result.isRight, s"builds: ${b.result.leftMap(_.toString)}")
+        .and(expect.same(Right(CInt(BigInt(200))), l.result))
+        .and(expect(b.gasUsed.value - bs.gasUsed.value >= blocks, s"set with a 1 MB key pays ${b.gasUsed.value - bs.gasUsed.value} more"))
+        .and(expect(l.gasUsed.value - ls.gasUsed.value >= blocks, s"get with a 1 MB key pays ${l.gasUsed.value - ls.gasUsed.value} more"))
+    )
   }
 
   test("a computed array path pays for the length of its segments before converting them") { jlvm =>

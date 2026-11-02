@@ -99,7 +99,7 @@ enum Step {
 }
 
 /** The evaluation rules (docs/specs/jlvm.md §Evaluation), parameterised by a gas schedule. */
-final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
+final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, kernels: Kernels) {
 
   import Node._
   import Step._
@@ -327,7 +327,7 @@ final class Semantics(schedule: GasSchedule, crypto: CryptoOps) {
     }
 
   private def strict(op: Op, vs: Vector[CanonicalValue]): Step =
-    PureOps(op, vs).fold(Fail(JlvmError.Malformed(s"${op.wire} has no strict form")))(result)
+    PureOps(op, vs, kernels).fold(Fail(JlvmError.Malformed(s"${op.wire} has no strict form")))(result)
 
   /**
    * `+` or `*`, left to right. Each step is the binary operation on the accumulator and the next operand: the operands
