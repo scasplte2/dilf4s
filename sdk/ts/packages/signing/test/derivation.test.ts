@@ -177,6 +177,42 @@ describe("paths", { timeout: 60_000 }, () => {
     expect(kind(ChildIndex.hardened(-1))).toBe("InvalidDerivation");
     expect(kind(ChildIndex.soft(1.5))).toBe("InvalidDerivation");
   });
+
+  // the same boundary and the same reasons as Scala's KeyDerivationSuite
+  test("a segment has at most ten significant digits, leading zeros aside, and is below 2^31", () => {
+    const zeros = "0".repeat(4096);
+    const accepted: [string, number[]][] = [
+      ["m/2147483647", [0x7fffffff]],
+      ["m/1000000000'", [0x80000000 + 1000000000]],
+      ["m/02147483647'", [0xffffffff]],
+      ["m/00", [0]],
+      ["m/000'", [0x80000000]],
+      [`m/${zeros}1'`, [0x80000001]],
+      [`m/0/${zeros}2147483647/0`, [0, 0x7fffffff, 0]],
+    ];
+    for (const [p, is] of accepted) expect(path(p).map((i) => i.serialized), p.slice(0, 40)).toEqual(is);
+    const refused: [string, string][] = [
+      ["m/2147483648'", "path segment 0 is out of range"],
+      ["m/4294967295", "path segment 0 is out of range"],
+      ["m/9999999999", "path segment 0 is out of range"],
+      ["m/0/10000000000", "path segment 1 has 11 significant digits, more than 10"],
+      [`m/${zeros}12345678901`, "path segment 0 has 11 significant digits, more than 10"],
+      [`m/1/2/${"9".repeat(4096)}'`, "path segment 2 has 4096 significant digits, more than 10"],
+      ["m/1/x9", "path segment 1 is malformed"],
+    ];
+    for (const [p, reason] of refused) expect(parsePath(p), p.slice(0, 40)).toEqual({ ok: false, error: { kind: "InvalidDerivation", reason } });
+  });
+
+  test("a million-digit segment is refused, and a million leading zeros are stripped, in linear time", () => {
+    const long = `m/${"1".repeat(1_000_000)}'`;
+    const padded = `m/${"0".repeat(1_000_000)}7`;
+    const start = performance.now();
+    const [l, p] = [parsePath(long), parsePath(padded)];
+    const took = performance.now() - start;
+    expect(took, `took ${String(took)} ms`).toBeLessThan(1000);
+    expect(l).toEqual({ ok: false, error: { kind: "InvalidDerivation", reason: "path segment 0 has 1000000 significant digits, more than 10" } });
+    expect(expectOk(p, "padded").map((i) => i.serialized)).toEqual([7]);
+  });
 });
 
 describe("SLIP-10 Ed25519", { timeout: 60_000 }, () => {

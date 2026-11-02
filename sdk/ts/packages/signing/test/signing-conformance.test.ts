@@ -171,12 +171,13 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
     expect(mismatches).toEqual([]);
   });
 
-  test("paths are strict: nothing trimmed, ASCII digits only, no empty segment", () => {
-    expect(vectors.paths.length).toBeGreaterThan(30);
+  test("paths are strict: nothing trimmed, ASCII digits only, no empty segment, at most ten significant digits", () => {
+    expect(vectors.paths.length).toBeGreaterThanOrEqual(48);
     for (const c of vectors.paths) {
       const r = parsePath(c.path);
-      const actual = r.ok ? { indices: r.value.map((i) => BigInt(i.serialized)) } : "invalid";
-      expect(actual, JSON.stringify(c.path)).toEqual(c.result);
+      const actual = r.ok ? { indices: r.value.map((i) => BigInt(i.serialized)) } : r.error.kind;
+      const expected = c.result === "invalid" ? "InvalidDerivation" : c.result;
+      expect(actual, JSON.stringify(c.path.slice(0, 40))).toEqual(expected);
     }
   });
 

@@ -93,7 +93,21 @@ object CryptoVectors {
     "m/1_0",
     "44'/0",
     "/m/0",
-    "m\\0"
+    "m\\0",
+    // at most ten significant digits once leading zeros are stripped, then below 2^31
+    "m/2147483647",
+    "m/1000000000'",
+    "m/02147483647'",
+    "m/00",
+    "m/000'",
+    "m/4294967295",
+    "m/9999999999",
+    "m/10000000000",
+    "m/0/12345678901'",
+    // 4096 digits: past every native integer and f64's range; the cost of a longer segment is the timing tests' job
+    s"m/${"0" * 4096}1'",
+    s"m/${"0" * 4096}12345678901",
+    s"m/1/${"9" * 4096}"
   )
 
   def paths: List[Json] =

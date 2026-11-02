@@ -26,29 +26,42 @@ object ChildIndex {
   def hardened(i: Long): Either[KeyError, ChildIndex] =
     Either.cond(i >= 0 && i < 0x80000000L, Hardened(i), KeyError.InvalidDerivation(s"index $i out of range"))
 
+  /** The most significant digits a segment may have once its leading zeros are stripped: 2^31 - 1 has ten. */
+  val MaxSegmentDigits: Int = 10
+
   /**
    * `m/44'/0'/0'/0/7` (or `h` in place of `'`), relative to the master key; `m` alone is the empty path. A segment is
    * one or more ASCII digits, then an optional hardening mark. Nothing is trimmed, and an empty segment (`m/`, `m//1`),
-   * a sign, a non-ASCII digit or any other character is `InvalidDerivation` (docs/specs/signing.md §3).
+   * a sign, a non-ASCII digit or any other character is `InvalidDerivation` (docs/specs/signing.md §3). Leading zeros
+   * are stripped and a segment with more than [[MaxSegmentDigits]] digits left is refused before any conversion, so
+   * parsing is linear in the path. An error names a segment by its position (0 is the first after `m`) and, past the
+   * bound, its significant digit count; never by its text.
    */
   def path(p: String): Either[KeyError, List[ChildIndex]] =
     p.split("/", -1).toList match {
-      case "m" :: rest => rest.traverse(segment)
+      case "m" :: rest => rest.zipWithIndex.traverse { case (seg, at) => segment(seg, at) }
       case _           => KeyError.InvalidDerivation("path must start with m").asLeft
     }
 
-  private def segment(seg: String): Either[KeyError, ChildIndex] = {
+  private def segment(seg: String, at: Int): Either[KeyError, ChildIndex] = {
     val hard = seg.endsWith("'") || seg.endsWith("h")
     val digits = if (hard) seg.dropRight(1) else seg
-    Either
-      .cond(digits.nonEmpty && digits.forall(c => c >= '0' && c <= '9'), digits, KeyError.InvalidDerivation(s"bad path segment '$seg'"))
-      // leading zeros are allowed, so the digits are unbounded: BigInt, then the range check
-      .map(BigInt(_))
-      .flatMap(i =>
-        Either
-          .cond(i.isValidLong, i.toLong, KeyError.InvalidDerivation(s"index $digits out of range"))
-          .flatMap(if (hard) hardened else soft)
+    val significant = digits.dropWhile(_ == '0')
+    for {
+      _ <- Either.cond(
+        digits.nonEmpty && digits.forall(c => c >= '0' && c <= '9'),
+        (),
+        KeyError.InvalidDerivation(s"path segment $at is malformed")
       )
+      _ <- Either.cond(
+        significant.length <= MaxSegmentDigits,
+        (),
+        KeyError.InvalidDerivation(s"path segment $at has ${significant.length} significant digits, more than $MaxSegmentDigits")
+      )
+      // at most ten digits: no overflow
+      i = significant.foldLeft(0L)((acc, c) => acc * 10 + (c - '0'))
+      index <- Either.cond(i < 0x80000000L, i, KeyError.InvalidDerivation(s"path segment $at is out of range"))
+    } yield if (hard) Hardened(index) else Soft(index)
   }
 
   def be32(i: ChildIndex): ByteVector = ByteVector.fromInt(i.serialized.toInt)

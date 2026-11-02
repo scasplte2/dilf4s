@@ -20,7 +20,16 @@ export { ristretto255Schnorr, type Ristretto255Scheme } from "./ristretto255.js"
 export { blsPop, POP_DST, SIGNATURE_DST, type BlsScheme } from "./bls.js";
 
 export { generateMnemonic, Mnemonic, mnemonicToSeed, toEntropy, toMnemonic, WordList } from "./bip39.js";
-export { bip32Secp256k1, ChildIndex, ExtendedKey, icarus, parsePath, slip10Ed25519, type PublicChild } from "./derivation.js";
+export {
+  bip32Secp256k1,
+  ChildIndex,
+  ExtendedKey,
+  icarus,
+  MAX_SEGMENT_DIGITS,
+  parsePath,
+  slip10Ed25519,
+  type PublicChild,
+} from "./derivation.js";
 
 export { ecvrfDraft03, ecvrfEll2, ecvrfTai, VrfOutput, VrfProof, type Vrf, type VrfSuiteName } from "./vrf.js";
 export { CardanoSumKes, CardanoSumKesKey, KesProduct, KesProductKey, KesSum, KesSumKey } from "./kes.js";
