@@ -75,9 +75,29 @@ impl Signature {
     }
 }
 
-/// ZIP-215 decoding: any `y` (reduced mod p) that is on the curve, any sign bit.
+/// ZIP-215 decoding: any `y` (reduced mod p) that is on the curve, any sign bit. `y` is reduced here rather than left
+/// to `decompress`: upstream curve25519-dalek reduces it, but SP1's patch refuses a non-canonical `y` in the zkVM
+/// guest, so reducing first gives both the same accept set. Only the decoding changes; the challenge hashes the
+/// encodings as given.
 pub(crate) fn decode_zip215(bytes: &[u8; 32]) -> Option<EdwardsPoint> {
-    CompressedEdwardsY(*bytes).decompress()
+    CompressedEdwardsY(reduce_y(bytes)).decompress()
+}
+
+/// The encoding with `y` reduced mod p and the sign bit kept. A `y` from `p = 2^255 - 19` to `2^255 - 1` is `p + d`
+/// with `d < 19`: its low byte is `0xed + d` and its other 247 bits are ones, so it reduces to `d`.
+fn reduce_y(bytes: &[u8; 32]) -> [u8; 32] {
+    if canonical_y(bytes) {
+        *bytes
+    } else {
+        let mut out = [0u8; 32];
+        if let (Some(low), Some(b)) = (out.first_mut(), bytes.first()) {
+            *low = b.saturating_sub(0xed);
+        }
+        if let (Some(high), Some(b)) = (out.last_mut(), bytes.last()) {
+            *high = b & 0x80;
+        }
+        out
+    }
 }
 
 fn canonical_scalar(bytes: &[u8; 32]) -> Option<Scalar> {
@@ -233,3 +253,74 @@ pub(crate) use signing::sign_expanded;
 #[cfg(feature = "sign")]
 #[allow(unused_imports, reason = "used by the VRF")]
 pub(crate) use signing::{clamp, expand};
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects, reason = "tests")]
+
+    use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
+    use curve25519_dalek::scalar::Scalar;
+    use curve25519_dalek::traits::Identity;
+
+    use super::{decode_zip215, reduce_y};
+    use crate::util::canonical_y;
+
+    /// `p + d` (`d < 19`), little-endian, with the sign bit `sign`.
+    fn non_canonical(d: u8, sign: u8) -> [u8; 32] {
+        let mut out = [0xff; 32];
+        out[0] = 0xed + d;
+        out[31] = 0x7f | sign;
+        out
+    }
+
+    /// `p - 1`, that is `y = -1`, with the sign bit `sign`.
+    fn minus_one(sign: u8) -> [u8; 32] {
+        let mut out = non_canonical(0, sign);
+        out[0] = 0xec;
+        out
+    }
+
+    #[test]
+    fn a_non_canonical_y_decodes_as_upstream_reduces_it() {
+        let mut decodable = 0;
+        for d in 0..19u8 {
+            for sign in [0u8, 0x80] {
+                let encoding = non_canonical(d, sign);
+                assert!(!canonical_y(&encoding));
+                let mut want = [0u8; 32];
+                want[0] = d;
+                want[31] = sign;
+                assert_eq!(reduce_y(&encoding), want, "y = p + {d}, sign {sign}");
+                // upstream curve25519-dalek reduces y itself: the same point, or none, either way
+                let decoded = decode_zip215(&encoding);
+                assert_eq!(decoded, CompressedEdwardsY(encoding).decompress(), "y = p + {d}, sign {sign}");
+                decodable += usize::from(decoded.is_some());
+            }
+        }
+        assert_eq!(decodable, 24, "12 of the 19 non-canonical y are on the curve, each with both signs");
+    }
+
+    #[test]
+    fn a_canonical_encoding_is_left_as_given() {
+        let two_b = EdwardsPoint::mul_base(&Scalar::from(2u8)).compress().to_bytes();
+        for encoding in [[0u8; 32], minus_one(0), minus_one(0x80), two_b] {
+            assert!(canonical_y(&encoding));
+            assert_eq!(reduce_y(&encoding), encoding);
+        }
+    }
+
+    /// `x = 0` with the sign bit set: upstream takes it as `x = 0` (zero negated), for `y = 1` (the identity) and
+    /// `y = -1`, canonical or not.
+    #[test]
+    fn x_zero_with_the_sign_bit_set_decodes() {
+        let mut one_signed = [0u8; 32];
+        one_signed[0] = 1;
+        one_signed[31] = 0x80;
+        let identity = EdwardsPoint::identity();
+        assert_eq!(decode_zip215(&one_signed), Some(identity));
+        assert_eq!(decode_zip215(&non_canonical(1, 0x80)), Some(identity), "y = p + 1");
+        let order_two = decode_zip215(&minus_one(0)).unwrap();
+        assert!(order_two != identity && order_two.mul_by_cofactor() == identity);
+        assert_eq!(decode_zip215(&minus_one(0x80)), Some(order_two), "y = -1 with the sign bit");
+    }
+}
