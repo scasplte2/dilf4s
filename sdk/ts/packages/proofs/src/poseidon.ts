@@ -108,7 +108,8 @@ export function compress(left: Fr, right: Fr): Fr {
 // ------------------------------------------------------------------ the Merkle tree (section 4)
 
 export type PoseidonMerkleError =
-  | { readonly kind: "Position"; readonly position: bigint; readonly capacity: bigint }
+  /** `depth` (the number of siblings, or the tree's depth) is normative; the position echoes the caller's input. */
+  | { readonly kind: "Position"; readonly position: bigint; readonly depth: number }
   | { readonly kind: "Depth"; readonly depth: number }
   | { readonly kind: "Encoding"; readonly reason: string };
 
@@ -135,7 +136,7 @@ export class PoseidonMerkleProof {
 
   static of(position: bigint, siblings: readonly Fr[]): Result<PoseidonMerkleProof, PoseidonMerkleError> {
     const capacity = 1n << BigInt(siblings.length);
-    return siblings.length <= MAX_DEPTH && position >= 0n && position < capacity ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", position, capacity });
+    return siblings.length <= MAX_DEPTH && position >= 0n && position < capacity ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", position, depth: siblings.length });
   }
 
   /**
@@ -199,7 +200,7 @@ export function treeRoot(depth: number, leaves: ReadonlyMap<bigint, Fr>): Result
   const capacity = 1n << BigInt(depth);
   let level = new Map<bigint, Fr>();
   for (const [p, l] of leaves) {
-    if (p < 0n || p >= capacity) return err({ kind: "Position", position: p, capacity });
+    if (p < 0n || p >= capacity) return err({ kind: "Position", position: p, depth });
     if (!l.equals(Fr.zero)) level.set(p, l);
   }
   for (let i = 0; i < depth; i++) {

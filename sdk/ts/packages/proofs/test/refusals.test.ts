@@ -111,7 +111,7 @@ function run(c: Case): Outcome {
       return found.value.kind === "notCovered" ? { kind: "NotCovered" } : accepted;
     }
     case "poseidon-proof":
-      return of(byKind)(poseidon.PoseidonMerkleProof.decode(input()));
+      return of((e: poseidon.PoseidonMerkleError): Outcome => (e.kind === "Position" ? { kind: e.kind, depth: BigInt(e.depth) } : byKind(e)))(poseidon.PoseidonMerkleProof.decode(input()));
   }
 }
 

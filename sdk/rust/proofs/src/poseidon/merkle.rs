@@ -21,9 +21,9 @@ pub const MAX_DEPTH: usize = 256;
 pub enum PoseidonMerkleError {
     /// A position outside `[0, 2^depth)`, or more than 256 siblings.
     Position {
-        /// The position.
+        /// The position: it echoes the caller's input, so it is informative.
         position: BigUint,
-        /// The depth (the number of siblings).
+        /// The depth (the number of siblings, or the tree's depth): normative (docs/specs/conformance.md section 3).
         depth: usize,
     },
     /// A proof that does not decode, or a sibling outside `[0, r)`.

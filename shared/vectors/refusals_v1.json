@@ -648,7 +648,8 @@
     },
     {
       "outcome" : {
-        "kind" : "Position"
+        "kind" : "Position",
+        "depth" : 2
       },
       "name" : "poseidon: position 4 of depth 2",
       "check" : "poseidon-proof",

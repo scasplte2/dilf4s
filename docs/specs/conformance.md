@@ -35,6 +35,7 @@ them. Every other field is informative. The normative fields are:
 | versioned trie | `TooLarge` | `limit`: `MaxValueBytes` (2^20) or `MaxChunkBytes` (2^22) in bytes, or `MaxProofWeight` (2^24) in weight, for a delta or proof the store would produce (§5) |
 | versioned trie | `TooDeep` | `depth` (the value's depth) and `limit`: `MaxValueDepth` (253) |
 | versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` |
+| Poseidon tree | `Position` | `depth`: the number of siblings (or the tree's depth); the position itself echoes the caller's input and is informative |
 | every other kind | | none: the kind alone |
 
 A field is normative only when every implementation can produce it exactly at no more cost than the refusal itself:

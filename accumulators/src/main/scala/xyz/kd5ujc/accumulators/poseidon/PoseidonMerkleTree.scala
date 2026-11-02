@@ -12,9 +12,14 @@ import xyz.kd5ujc.models.poseidon.{PoseidonMerkleProof => Wire}
 sealed trait PoseidonMerkleError extends Product with Serializable
 
 object PoseidonMerkleError {
+
+  /**
+   * A position outside `[0, 2^depth)`, or more than `MaxDepth` siblings. `depth` (the number of siblings, or the
+   * tree's depth) is normative (docs/specs/conformance.md §3); the position echoes the caller's input and is not.
+   */
   // a caller's position can be any size: it is shown by its bit length, never its digits
-  final case class Position(position: BigInt, capacity: BigInt) extends PoseidonMerkleError {
-    override def toString: String = s"Position(a ${position.bitLength}-bit position, capacity 2^${capacity.bitLength - 1})"
+  final case class Position(position: BigInt, depth: Int) extends PoseidonMerkleError {
+    override def toString: String = s"Position(a ${position.bitLength}-bit position, depth $depth)"
   }
   final case class Depth(depth: Int) extends PoseidonMerkleError
   final case class OccupiedPosition(position: BigInt) extends PoseidonMerkleError
@@ -36,7 +41,7 @@ object PoseidonMerkleProof {
     Either.cond(
       siblings.size <= PoseidonMerkleTree.MaxDepth && position >= 0 && position < (BigInt(1) << siblings.size),
       new PoseidonMerkleProof(position, siblings),
-      PoseidonMerkleError.Position(position, BigInt(1) << siblings.size)
+      PoseidonMerkleError.Position(position, siblings.size)
     )
 
   /** The wire form of shared/schemas/poseidon.cddl, through its generated codec. */
@@ -73,7 +78,7 @@ final class PoseidonMerkleTree private (
   def root: Fr = nodes.getOrElse((depth, BigInt(0)), zeroHashes(depth))
 
   private def checkPosition(position: BigInt): Either[PoseidonMerkleError, BigInt] =
-    Either.cond(position >= 0 && position < capacity, position, PoseidonMerkleError.Position(position, capacity))
+    Either.cond(position >= 0 && position < capacity, position, PoseidonMerkleError.Position(position, depth))
 
   def leafAt(position: BigInt): Either[PoseidonMerkleError, Fr] = checkPosition(position).map(leaves.getOrElse(_, Fr.Zero))
 

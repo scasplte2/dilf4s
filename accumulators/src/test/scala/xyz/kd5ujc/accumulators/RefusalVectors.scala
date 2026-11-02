@@ -59,9 +59,12 @@ object RefusalVectors {
     case other                                       => Refused(other.productPrefix)
   }
 
-  def merkle(e:   MerkleError): Refused = Refused(e.productPrefix)
-  def trie(e:     TrieError): Refused = Refused(e.productPrefix)
-  def poseidon(e: PoseidonMerkleError): Refused = Refused(e.productPrefix)
+  def merkle(e: MerkleError): Refused = Refused(e.productPrefix)
+  def trie(e:   TrieError): Refused = Refused(e.productPrefix)
+  def poseidon(e: PoseidonMerkleError): Refused = e match {
+    case PoseidonMerkleError.Position(_, depth) => Refused("Position", depth = Some(depth))
+    case other                                  => Refused(other.productPrefix)
+  }
 
   private def outcome[E, A](r: Either[E, A])(refused: E => Refused): Outcome = r.fold(refused, _ => Accepted)
 

@@ -65,7 +65,12 @@ fn trie_kind(e: &TrieError) -> Refused {
 }
 
 fn poseidon_kind(e: &PoseidonMerkleError) -> Refused {
-    kind(e.kind())
+    match e {
+        PoseidonMerkleError::Position { depth, .. } => {
+            Refused { depth: Some(u64::try_from(*depth).unwrap()), ..kind("Position") }
+        }
+        PoseidonMerkleError::Encoding { .. } => kind(e.kind()),
+    }
 }
 
 fn built(b: &BuiltValue) -> Value {
