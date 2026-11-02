@@ -1,5 +1,6 @@
 //! `shared/vectors/poseidon_v1.json`, the constant tables (pinned digests and a Grain LFSR derivation), the two
-//! evaluation forms, and the Poseidon Merkle tree.
+//! evaluation forms, and the Poseidon Merkle tree. The crate ships only the optimised form; the base form (the round
+//! constants and the rounds as defined) is derived here, as Scala's `PoseidonDerivation` does, to check it.
 
 #![allow(
     clippy::unwrap_used,
@@ -20,6 +21,7 @@ mod common;
 
 use std::collections::BTreeMap;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use common::load;
 use dilf4s_core::generated::poseidon_vectors::PoseidonVectors;
@@ -29,8 +31,8 @@ use dilf4s_proofs::poseidon::merkle::{
     PoseidonMerkleProof, compute_root, verify_absence, verify_inclusion, zero_hashes,
 };
 use dilf4s_proofs::poseidon::{
-    self, Fr, Params, PoseidonError, compress, constants, fr_from_be_bytes, fr_from_int, fr_to_be_bytes, fr_to_int,
-    hash, hash_reference,
+    self, FULL_ROUNDS, Fr, Params, PoseidonError, compress, constants, fr_from_be_bytes, fr_from_int, fr_to_be_bytes,
+    fr_to_int, hash,
 };
 use num_bigint::{BigInt, BigUint};
 
@@ -52,7 +54,7 @@ fn hash_vectors() {
     for c in &v.poseidon {
         let inputs: Vec<Fr> = c.inputs.iter().map(|s| fr(s)).collect();
         assert_eq!(dec(hash(&inputs).unwrap()), c.output, "{:?}", c.inputs);
-        assert_eq!(dec(hash_reference(&inputs).unwrap()), c.output, "{:?} reference", c.inputs);
+        assert_eq!(dec(hash_reference(&inputs)), c.output, "{:?} reference", c.inputs);
     }
     // circomlibjs known answers from Scala's PoseidonSuite
     let rm1 = fr_from_int(&BigInt::from(r() - 1u32)).unwrap();
@@ -84,12 +86,13 @@ fn optimised_and_reference_forms_agree() {
     for n in 1..=4 {
         for round in 0..20 {
             let inputs: Vec<Fr> = (0..n).map(|i| if round < 3 { edges[(round + i) % 3] } else { next() }).collect();
-            assert_eq!(hash(&inputs).unwrap(), hash_reference(&inputs).unwrap(), "{n} inputs, case {round}");
+            assert_eq!(hash(&inputs).unwrap(), hash_reference(&inputs), "{n} inputs, case {round}");
         }
     }
 }
 
-fn digest_of<const T: usize, const RP: usize, const R: usize>(p: &Params<T, RP, R>) -> String {
+/// The digest over the base round constants and the shipped tables, in `PoseidonDerivation.digest`'s order.
+fn digest_of<const T: usize, const RP: usize>(base: &Base<T>, p: &Params<T, RP>) -> String {
     let join = |xs: Vec<Fr>| xs.into_iter().map(dec).collect::<Vec<_>>().join(",");
     let flat = |m: &[[Fr; T]]| m.iter().flatten().copied().collect::<Vec<_>>();
     let mut constants: Vec<Fr> = p.first.to_vec();
@@ -99,7 +102,7 @@ fn digest_of<const T: usize, const RP: usize, const R: usize>(p: &Params<T, RP, 
     constants.extend(flat(&p.full_last));
     let sparse: Vec<Fr> =
         p.sparse_w.iter().zip(&p.sparse_v).flat_map(|(w, v)| w.iter().chain(v.iter().skip(1)).copied()).collect();
-    let tables = [flat(&p.round_constants), flat(&p.mds), constants, sparse, flat(&p.mds), flat(&p.pre_sparse)];
+    let tables = [flat(&base.round_constants), flat(&p.mds), constants, sparse, flat(&p.mds), flat(&p.pre_sparse)];
     let text = tables.into_iter().map(join).collect::<Vec<_>>().join(";");
     dilf4s_core::hex::encode(Digest::<Sha256>::of(text.as_bytes()).as_bytes())
 }
@@ -107,10 +110,23 @@ fn digest_of<const T: usize, const RP: usize, const R: usize>(p: &Params<T, RP, 
 /// The digests of circomlibjs's tables at commit 48b3ab37, as Scala's `PoseidonSuite` pins them.
 #[test]
 fn tables_match_the_pinned_circomlibjs_digests() {
-    assert_eq!(digest_of(&constants::WIDTH2), "d5e58f509cc3494297ac43fd51badea46b75bcc505b18cd31dffa274fe154149");
-    assert_eq!(digest_of(&constants::WIDTH3), "38e80297a0e0ecd5a20acc1cf519eb5eb898e924e2ae68808b49c7027e7e0b94");
-    assert_eq!(digest_of(&constants::WIDTH4), "6bc25738e42a0b5a18ca2b5d262ce7da4f3aa029bebf1090a08f4a466ce313b6");
-    assert_eq!(digest_of(&constants::WIDTH5), "fb21c20f55dc308123237c06f8838aa22772201c518746bb2ca699f0a4b7530e");
+    let b = &*BASE;
+    assert_eq!(
+        digest_of(&b.w2, &constants::WIDTH2),
+        "d5e58f509cc3494297ac43fd51badea46b75bcc505b18cd31dffa274fe154149"
+    );
+    assert_eq!(
+        digest_of(&b.w3, &constants::WIDTH3),
+        "38e80297a0e0ecd5a20acc1cf519eb5eb898e924e2ae68808b49c7027e7e0b94"
+    );
+    assert_eq!(
+        digest_of(&b.w4, &constants::WIDTH4),
+        "6bc25738e42a0b5a18ca2b5d262ce7da4f3aa029bebf1090a08f4a466ce313b6"
+    );
+    assert_eq!(
+        digest_of(&b.w5, &constants::WIDTH5),
+        "fb21c20f55dc308123237c06f8838aa22772201c518746bb2ca699f0a4b7530e"
+    );
     assert!(constants::WIDTH2.sparse_v.iter().all(|v| v[0] == fr("0")));
     assert!(constants::WIDTH3.sparse_v.iter().all(|v| v[0] == fr("0")));
     assert!(constants::WIDTH4.sparse_v.iter().all(|v| v[0] == fr("0")));
@@ -157,37 +173,93 @@ impl Grain {
     }
 }
 
-fn derive<const T: usize, const RP: usize, const R: usize>(p: &Params<T, RP, R>) {
-    let modulus = r();
-    let mut g = Grain::new(T, RP);
-    let mut rc = Vec::new();
-    while rc.len() < R * T {
-        let v = g.bits();
-        if v < modulus {
-            rc.push(v);
+/// One width's base form: round constants per round and the MDS matrix, as the Grain LFSR yields them.
+struct Base<const T: usize> {
+    round_constants: Vec<[Fr; T]>,
+    mds: [[Fr; T]; T],
+}
+
+impl<const T: usize> Base<T> {
+    /// Derived for the width and partial rounds of `_shipped`.
+    fn derive<const RP: usize>(_shipped: &Params<T, RP>) -> Self {
+        let modulus = r();
+        let element = |v: &BigUint| fr_from_int(&BigInt::from(v.clone())).unwrap();
+        let mut g = Grain::new(T, RP);
+        let mut rc = Vec::new();
+        while rc.len() < (FULL_ROUNDS + RP) * T {
+            let v = g.bits();
+            if v < modulus {
+                rc.push(element(&v));
+            }
         }
+        let points: Vec<BigUint> = (0..2 * T).map(|_| g.bits() % &modulus).collect();
+        let mds = std::array::from_fn(|i| {
+            std::array::from_fn(|j| {
+                let sum = (&points[i] + &points[T + j]) % &modulus;
+                element(&sum.modpow(&(&modulus - 2u32), &modulus))
+            })
+        });
+        let round_constants = rc.chunks_exact(T).map(|row| <[Fr; T]>::try_from(row).unwrap()).collect();
+        Self { round_constants, mds }
     }
-    let points: Vec<BigUint> = (0..2 * T).map(|_| g.bits() % &modulus).collect();
-    for (i, row) in p.round_constants.iter().enumerate() {
-        for (j, c) in row.iter().enumerate() {
-            assert_eq!(fr_to_int(*c).to_biguint().unwrap(), rc[i * T + j], "width {T}: round constant {i},{j}");
-        }
+
+    /// The permutation as defined: each round adds its constants, applies the S-box to every element (full rounds)
+    /// or to element 0 (partial rounds), and multiplies by the MDS matrix.
+    fn permute(&self, state: [Fr; T]) -> [Fr; T] {
+        let half = FULL_ROUNDS / 2;
+        let partial = half..self.round_constants.len() - half;
+        let pow5 = |x: Fr| x * x * x * x * x;
+        self.round_constants.iter().enumerate().fold(state, |s, (r, c)| {
+            let added: [Fr; T] = std::array::from_fn(|i| s[i] + c[i]);
+            let boxed: [Fr; T] =
+                std::array::from_fn(|i| if i == 0 || !partial.contains(&r) { pow5(added[i]) } else { added[i] });
+            std::array::from_fn(|i| (0..T).map(|j| self.mds[i][j] * boxed[j]).sum())
+        })
     }
-    for i in 0..T {
-        for j in 0..T {
-            let sum = (&points[i] + &points[T + j]) % &modulus;
-            let inv = sum.modpow(&(&modulus - 2u32), &modulus);
-            assert_eq!(fr_to_int(p.mds[i][j]).to_biguint().unwrap(), inv, "width {T}: mds {i},{j}");
-        }
+
+    /// `poseidon(inputs)`, over the state `[0, x1, ..., xn]`.
+    fn hash(&self, inputs: &[Fr]) -> Fr {
+        let state = std::array::from_fn(|i| if i == 0 { fr("0") } else { inputs[i - 1] });
+        self.permute(state)[0]
+    }
+}
+
+struct Bases {
+    w2: Base<2>,
+    w3: Base<3>,
+    w4: Base<4>,
+    w5: Base<5>,
+}
+
+static BASE: LazyLock<Bases> = LazyLock::new(|| Bases {
+    w2: Base::derive(&constants::WIDTH2),
+    w3: Base::derive(&constants::WIDTH3),
+    w4: Base::derive(&constants::WIDTH4),
+    w5: Base::derive(&constants::WIDTH5),
+});
+
+/// `poseidon(inputs)` through the rounds as defined, over the derived base form, for 1 to 4 inputs.
+fn hash_reference(inputs: &[Fr]) -> Fr {
+    let b = &*BASE;
+    match inputs.len() {
+        1 => b.w2.hash(inputs),
+        2 => b.w3.hash(inputs),
+        3 => b.w4.hash(inputs),
+        4 => b.w5.hash(inputs),
+        n => panic!("{n} inputs"),
     }
 }
 
 #[test]
-fn grain_lfsr_derives_the_base_tables() {
-    derive(&constants::WIDTH2);
-    derive(&constants::WIDTH3);
-    derive(&constants::WIDTH4);
-    derive(&constants::WIDTH5);
+fn grain_lfsr_derives_the_mds_tables() {
+    let b = &*BASE;
+    assert_eq!(b.w2.mds, constants::WIDTH2.mds, "width 2");
+    assert_eq!(b.w3.mds, constants::WIDTH3.mds, "width 3");
+    assert_eq!(b.w4.mds, constants::WIDTH4.mds, "width 4");
+    assert_eq!(b.w5.mds, constants::WIDTH5.mds, "width 5");
+    let rounds = [b.w2.round_constants.len(), b.w3.round_constants.len(), b.w4.round_constants.len()];
+    assert_eq!(rounds, [64, 65, 64]);
+    assert_eq!(b.w5.round_constants.len(), 68);
 }
 
 #[test]
