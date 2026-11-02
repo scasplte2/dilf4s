@@ -1,5 +1,6 @@
 package xyz.kd5ujc.accumulators.versioned
 
+import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.accumulators.versioned.Harness._
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
@@ -111,5 +112,62 @@ object SharedValueSuite extends SimpleIOSuite {
   pureTest("a snapshot chunk holding it is refused by its weight before it is encoded") {
     val chunk: SnapshotChunk[Long, H] = SnapshotChunk.State(Vector(k -> doubled))
     expect.same(Left(VersionedTrieError.TooLarge("a snapshot chunk", VersionedTrie.MaxChunkBytes)), VersionedTrieWire.encodeChunk(chunk))
+  }
+
+  /** One 1 MiB byte string (2^20 bytes of CBOR, the largest value), shared by every key that holds it. */
+  private val mib = CanonicalValue.bytes(ByteVector.fill(VersionedTrie.MaxValueBytes - 5)(7))
+
+  private def wide(n: Int): Batch[StateKey, CanonicalValue] =
+    (1 to n).map(i => Batch.put(key(s"wide/$i"), mib)).reduce(_ ++ _)
+
+  test("a commit whose delta no replica would decode (over MaxProofWeight) is refused, and nothing is written") {
+    attempt(implicit h => fresh.flatMap(s => h.attempt(s._2.commit(None, 1L, wide(17))).flatMap(r => s._2.head.map(r -> _)))).map { r =>
+      expect.same(Right((Left(VersionedTrieError.TooLarge("the delta", ProofInput.MaxProofWeight)), None)), r)
+    }
+  }
+
+  test("a draft staged on a draft counts its parent: a delta one over MaxProofWeight is refused before it is written") {
+    attempt { implicit h =>
+      for {
+        s  <- fresh
+        d1 <- s._2.preview(1L, Batch.put(key("a"), int(1)))
+        // the pad that brings version 2's delta, parent included, to one over the cap
+        upserts = (1 to 15).map(i => key(s"wide/$i") -> mib).toList
+        w0 = get(
+          VersionedTrieWire.encodeDelta(
+            Delta(Some(d1.head), d1.head, (key("pad") -> CanonicalValue.bytes(ByteVector.empty)) :: upserts, Nil)
+          )
+        ).weight
+        pad = CanonicalValue.bytes(ByteVector.fill(ProofInput.MaxProofWeight + 1 - w0)(1))
+        d2   <- h.attempt(s._2.previewOn(d1, 2L, wide(15) ++ Batch.put(key("pad"), pad)))
+        head <- s._2.head
+      } yield (pad, d2.map(_.head), head)
+    }.map {
+      case Left(e) => failure(s"unexpected $e")
+      case Right((pad, d2, head)) =>
+        expect(VersionedTrie.checkValue(key("pad"), pad).isRight, "the pad is a value a commit accepts")
+          .and(expect.same(Left(VersionedTrieError.TooLarge("the delta", ProofInput.MaxProofWeight)), d2))
+          .and(expect.same(None, head))
+    }
+  }
+
+  test("a commit just within it serves a delta that decodes and replays to the same head") {
+    attempt { implicit h =>
+      for {
+        s    <- fresh
+        head <- s._2.commit(None, 1L, wide(15))
+        d    <- s._2.delta(1L)
+      } yield head -> d
+    }.map {
+      case Left(e) => failure(s"unexpected $e")
+      case Right((head, d)) =>
+        val replayed = for {
+          wire    <- VersionedTrieWire.encodeDelta(d)
+          decoded <- VersionedTrieWire.decodeDelta[Long, H](wire)
+          r0      <- Replica.empty[Long, H]
+          r       <- Replica.applyDelta(r0, decoded)
+        } yield (wire.weight, r.head)
+        expect(replayed.exists(_._1 <= ProofInput.MaxProofWeight), s"$replayed").and(expect.same(Right(Some(head)), replayed.map(_._2)))
+    }
   }
 }

@@ -296,12 +296,32 @@ object VersionedTrieStore {
     private def trieOps(fs: Vector[(StateKey, Option[CanonicalValue])]): List[(ByteVector, Option[Digest[H]])] =
       fs.toList.map { case (k, v) => k.bytes -> v.map(VersionedTrie.valueHash[H]) }
 
+    /**
+     * The delta a version will serve must decode in every replica: one heavier than `ProofInput.MaxProofWeight` is
+     * refused before anything is written (`TooLarge` with that limit). Its parent is the draft it is staged on, or the
+     * head on disk; that one's record has the head's shape (the same version key width and digest size), so the head
+     * stands in for it and the weight is the delta's own. Deletes of absent keys are counted too, so the check errs
+     * only towards refusing.
+     */
+    private def deliverable(
+      parent: Option[Head[V, H]],
+      head:   Head[V, H],
+      fs:     Vector[(StateKey, Option[CanonicalValue])]
+    ): F[Unit] =
+      lift(
+        VersionedTrieWire.encodeDelta(
+          Delta(parent, head, fs.toList.collect { case (k, Some(x)) => k -> x }, fs.toList.collect { case (k, None) => k })
+        )
+      ).void
+
     private def draft(
       base:    Option[ByteVector],
       rev:     Revision,
       next:    V,
       nk:      ByteVector,
       seq:     Long,
+      staged:  Option[Head[V, H]],
+      fs:      Vector[(StateKey, Option[CanonicalValue])],
       s:       TrieStore.Staged[H],
       h:       F[TrieStore.Staged[H]],
       v:       F[VersionedStore.Staged],
@@ -310,6 +330,7 @@ object VersionedTrieStore {
       (h, v).tupled.flatMap {
         case (hs, vs) =>
           val head = Head(next, s.root, hs.root)
+          deliverable(staged.orElse(base.as(head)), head, fs) >>
           lift(VersionedTrie.root(head)).map(root => Draft(head, root, base, rev, s, hs, vs, indexed ++ indexWrites(seq, nk, s.root)))
       }
 
@@ -332,6 +353,8 @@ object VersionedTrieStore {
           next,
           nk,
           n + 1,
+          None,
+          fs,
           s,
           history.stage(version(n), List(nk -> Some(VersionedTrie.bytesHash[H](s.root.bytes)))),
           values.stage(version(n), valueBatch(fs)),
@@ -366,6 +389,8 @@ object VersionedTrieStore {
             next,
             nk,
             s.version.value,
+            Some(d.head),
+            fs,
             s,
             history.stageOn(d.history, List(nk -> Some(VersionedTrie.bytesHash[H](s.root.bytes)))),
             values.stageOn(d.values, valueBatch(fs)),

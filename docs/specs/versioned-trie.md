@@ -85,7 +85,10 @@ batch:
    refused at commit, so a store can always serve every delta and snapshot of what it accepted. The size is checked
    without encoding the value: a value's canonical CBOR is never shorter than its weight (`jlvm.md` §2), so a value
    heavier than 1 MiB is refused for its weight alone, before its length is measured. A value that shares structure
-   can encode to far more bytes than it occupies, so no implementation encodes a value to check it.
+   can encode to far more bytes than it occupies, so no implementation encodes a value to check it. The batch as a
+   whole must fit one delta: a commit whose delta (§7) would weigh over `MaxProofWeight` (2^24, `conformance.md` §5)
+   is refused before anything is written, since no replica would decode it. That is at most about sixteen values of
+   1 MiB, or many more smaller ones; a larger change is several commits.
 2. **Recommit.** If the next version is the head's and the expected version is the head's parent, the commit is a
    retry: it succeeds without writing if the batch, applied to the parent's state, gives the head's state root, and is
    refused as a rewrite otherwise. Only the head can be recommitted.

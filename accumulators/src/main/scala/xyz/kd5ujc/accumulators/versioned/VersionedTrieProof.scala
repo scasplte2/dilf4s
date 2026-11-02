@@ -63,6 +63,13 @@ object VersionedTrieWire {
   private def fromTrieProof[H: Hasher](w: WT.TrieProof): Either[VersionedTrieError, TrieProof[H]] =
     WT.TrieProof.codec.encode(w).leftMap(malformed).flatMap(v => VersionedTrie.trie(TrieProofs.decode[H](v)))
 
+  /**
+   * A record no verifier would decode is never produced: one heavier than `ProofInput.MaxProofWeight` is `TooLarge`
+   * with that limit (docs/specs/conformance.md §5).
+   */
+  private def producible(what: String)(v: CanonicalValue): Either[VersionedTrieError, CanonicalValue] =
+    Either.cond(v.weight <= ProofInput.MaxProofWeight, v, VersionedTrieError.TooLarge(what, ProofInput.MaxProofWeight))
+
   def encodeProof[V: VersionKey, H](p: VersionedTrieProof[V, H]): Either[VersionedTrieError, CanonicalValue] =
     (
       head(p.head),
@@ -70,7 +77,9 @@ object VersionedTrieWire {
       p.at.traverse(a => VersionKey[V].encode(a.version).map(W.VersionedTrieAt(_, a.stateRoot.map(_.bytes)))),
       p.history.traverse(trieProof),
       p.state.traverse(trieProof)
-    ).mapN(W.VersionedTrieProof(_, _, _, _, _)).flatMap(W.VersionedTrieProof.codec.encode(_).leftMap(malformed))
+    ).mapN(W.VersionedTrieProof(_, _, _, _, _))
+      .flatMap(W.VersionedTrieProof.codec.encode(_).leftMap(malformed))
+      .flatMap(producible("the proof"))
 
   /** A caller's input heavier than `ProofInput.MaxProofWeight` is `Malformed`, refused before it is decoded. */
   private def bounded(v: CanonicalValue): Either[VersionedTrieError, CanonicalValue] =
@@ -100,6 +109,7 @@ object VersionedTrieWire {
             )
           )
           .leftMap(malformed)
+          .flatMap(producible("the delta"))
     }
 
   def decodeDelta[V: VersionKey, H: Hasher](v: CanonicalValue): Either[VersionedTrieError, Delta[V, H]] =

@@ -32,7 +32,7 @@ them. Every other field is informative. The normative fields are:
 | Family | Kind | Normative fields |
 |---|---|---|
 | any byte budget | `TooLarge` | `limit`: the limit that was passed: a spec constant, or the caller's own limit as the implementation applies it (a limit past an implementation ceiling is that ceiling) |
-| versioned trie | `TooLarge` | `limit`: `MaxValueBytes` (2^20) or `MaxChunkBytes` (2^22) |
+| versioned trie | `TooLarge` | `limit`: `MaxValueBytes` (2^20) or `MaxChunkBytes` (2^22) in bytes, or `MaxProofWeight` (2^24) in weight, for a delta or proof the store would produce (§5) |
 | versioned trie | `TooDeep` | `depth` (the value's depth) and `limit`: `MaxValueDepth` (253) |
 | versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` |
 | every other kind | | none: the kind alone |
@@ -74,6 +74,10 @@ decoding it. The refusal is the family's malformed-input kind, never `false`:
 | `trie-proof` (`trie.md` §5), and so trie lookups, prefix and range queries | `Encoding` |
 | `poseidon-merkle-proof` (`zk.md` §4) | `Encoding` |
 | versioned-trie proofs and deltas (`versioned-trie.md` §5), and heads decoded from values | `Malformed` |
+
+What a verifier refuses, a producer never makes: the versioned-trie store refuses a commit whose delta would weigh over
+`MaxProofWeight`, before anything is written, and never encodes a proof over it (`TooLarge` with that limit). Without
+that, an accepted commit could serve a delta no replica decodes.
 
 Snapshot chunks arrive as bytes, bounded by `MaxChunkBytes`, and a value is never heavier than its encoding is long,
 so they need no weight check. The JLVM's proof operations surface the refusal as `Crypto` (`jlvm.md` §6).
