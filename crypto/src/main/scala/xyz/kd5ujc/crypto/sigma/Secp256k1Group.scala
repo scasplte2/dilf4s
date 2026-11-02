@@ -28,7 +28,7 @@ object Secp256k1Group {
 
   private val curve = CustomNamedCurves.getByName("secp256k1")
 
-  val Order: BigInt = BigInt(curve.getN)
+  val Order: BigInt = xyz.kd5ujc.crypto.signing.Secp256k1.Order
 
   /** Bytes of an encoded element. */
   val ElementSize: Int = 33

@@ -94,6 +94,11 @@ object EcrecoverSuite extends SimpleIOSuite with Checkers {
       .and(expect(List(2, 26, 29, 35, 255).forall(v => Ecrecover.recover(d, sig :+ v.toByte).isLeft), "v outside 0, 1, 27, 28"))
   }
 
+  pureTest("the shared secp256k1 order is SEC 2's n and BouncyCastle's curve order") {
+    val bouncyCastle = BigInt(org.bouncycastle.crypto.ec.CustomNamedCurves.getByName("secp256k1").getN)
+    expect.same(N, Secp256k1.Order).and(expect.same(bouncyCastle, Secp256k1.Order))
+  }
+
   /** libsecp256k1 signs with RFC 6979 nonces and low s. */
   private object Signer {
     def sign(key: BigInt, digest: ByteVector): Array[Byte] = Secp256k1.Ffi.signRfc6979(native, digest.toArray, be32(key).toArray)

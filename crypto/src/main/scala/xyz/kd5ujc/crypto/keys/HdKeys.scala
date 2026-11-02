@@ -96,7 +96,7 @@ final class Bip32Secp256k1(backend: Secp256k1) {
 
   private val curveKey = ByteVector("Bitcoin seed".getBytes(UTF_8))
 
-  private val n = BigInt("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16)
+  private val n = Secp256k1.Order
 
   private def keyOf(b: ByteVector): Either[KeyError, SigningKey[Secp256k1Ecdsa]] =
     backend.ecdsaCodec
