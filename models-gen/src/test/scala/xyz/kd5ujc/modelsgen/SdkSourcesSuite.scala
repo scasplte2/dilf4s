@@ -116,13 +116,125 @@ object SdkSourcesSuite extends SimpleIOSuite {
   }
 
   pureTest("generated names that collide or are reserved in any namespace are generator errors") {
-    def clash(e: Either[GenError, ?]) = e.swap.exists { case GenError.NameClash(_, _, _) => true; case _ => false }
-    expect(clash(gen("ab = uint\nAB = text\n")), "both codec constants would be AB in Rust")
-      .and(expect(clash(gen("string = uint\nr = { \"s\": text }\n")), "a type String would shadow alloc's String"))
-      .and(expect(clash(gen("self = { \"x\": uint }\n")), "Self is reserved in Rust"))
-      .and(expect(clash(gen("result = { \"x\": uint }\n")), "a type Result would shadow the prelude's"))
-      .and(expect(clash(SdkSources.generate(Vector("type" -> "r = uint\n"))), "a module named type"))
-      .and(expect(clash(gen("readonly-map = { \"x\": { * text => uint } }\n")), "a type ReadonlyMap would shadow TypeScript's"))
+    expect
+      .same(Left(GenError.NameClash("t", "AB", Vector("AB", "ab"))), gen("ab = uint\nAB = text\n"))
+      .and(expect.same(Left(GenError.ReservedName("t", Language.Rust, "String")), gen("string = uint\nr = { \"s\": text }\n")))
+      .and(expect.same(Left(GenError.ReservedName("t", Language.Rust, "Self")), gen("self = { \"x\": uint }\n")))
+      .and(expect.same(Left(GenError.ReservedName("t", Language.Rust, "Result")), gen("result = { \"x\": uint }\n")))
+      .and(expect.same(Left(GenError.ReservedName("type", Language.Rust, "type")), SdkSources.generate(Vector("type" -> "r = uint\n"))))
+      .and(
+        expect.same(
+          Left(GenError.ReservedName("t", Language.TypeScript, "ReadonlyMap")),
+          gen("readonly-map = { \"x\": { * text => uint } }\n")
+        )
+      )
+  }
+
+  private def models(module: String, cddl: String): Either[GenError, Map[QName, ModelRule]] =
+    CddlParser
+      .parse(cddl)
+      .leftMap(GenError.Parse(module, _))
+      .flatMap(f => new Profile(Schema.build(Vector(module -> Vector(f)))).module(module))
+      .map(_.toMap)
+
+  private def rust(cddl: String, module: String = "t"): Either[GenError, String] =
+    models(module, cddl).flatMap(new RustEmitter(_).module(module))
+
+  private def typescript(cddl: String, module: String = "t"): Either[GenError, String] =
+    models(module, cddl).flatMap(new TsEmitter(_).module(module))
+
+  pureTest("Rust: a name Rust keeps for itself is a ReservedName in Rust, not a clash with the other variants") {
+    val okVariant = Left(GenError.ReservedName("t:r", Language.Rust, "Ok"))
+    val okCase = Left(GenError.ReservedName("t:e", Language.Rust, "Ok"))
+    expect
+      .same(okVariant, rust("r = \"ok\" / \"malformed\" / \"rejected\"\n"))
+      .and(expect.same(okCase, rust("e = &(ok: 1, rejected: 2)\n")))
+      .and(expect.same(Left(GenError.ReservedName("t", Language.Rust, "Result")), rust("result = { \"x\": uint }\n")))
+      .and(expect.same(Left(GenError.ReservedName("t", Language.Rust, "Vec")), rust("vec = { \"x\": uint }\n")))
+      .and(expect.same(Left(GenError.ReservedName("type", Language.Rust, "type")), rust("r = uint\n", "type")))
+      .and(expect.same(Left(GenError.ReservedName("c", Language.Rust, "c")), rust("r = uint\n", "c")))
+      .and(expect(typescript("r = \"ok\" / \"malformed\" / \"rejected\"\n").isRight, "TypeScript reserves no text variant"))
+      .and(expect(typescript("e = &(ok: 1, rejected: 2)\n").isRight, "nor an enumeration label"))
+      .and(
+        expect(
+          okVariant.value.message == "in t:r the generated name `Ok` is reserved in Rust",
+          s"the message names the language and only the reserved name: ${okVariant.value.message}"
+        )
+      )
+  }
+
+  pureTest("Rust: a clash lists only the rules that collide") {
+    val byHand = Map(
+      QName("t", "r") -> ModelRule.Record(
+        Vector(
+          ProfileField("aB", false, FieldType.Uint),
+          ProfileField("a_b", false, FieldType.Uint),
+          ProfileField("c", false, FieldType.Uint)
+        )
+      )
+    )
+    expect
+      .same(Left(GenError.NameClash("t", "AB", Vector("AB", "ab"))), rust("ab = uint\nAB = text\nzz = uint\n"))
+      .and(expect.same(Left(GenError.NameClash("t", "AB", Vector("a-b", "a_b"))), rust("a-b = uint\na_b = text\nzz = uint\n")))
+      .and(
+        expect.same(
+          Left(GenError.NameClash("t:r", "A", Vector("a", "\"a\""))),
+          rust("r = a / \"a\" / \"other\"\na = { \"x\": uint }\n")
+        )
+      )
+      .and(expect.same(Left(GenError.NameClash("t:r", "a_b", Vector("aB", "a_b"))), new RustEmitter(byHand).module("t")))
+  }
+
+  pureTest("TypeScript: a name TypeScript keeps for itself is a ReservedName in TypeScript") {
+    expect
+      .same(
+        Left(GenError.ReservedName("t", Language.TypeScript, "ReadonlyMap")),
+        typescript("readonly-map = { \"x\": { * text => uint } }\n")
+      )
+      .and(expect.same(Left(GenError.ReservedName("class", Language.TypeScript, "class")), typescript("r = uint\n", "class")))
+      .and(expect.same(Left(GenError.ReservedName("c", Language.TypeScript, "c")), typescript("r = uint\n", "c")))
+      .and(expect(rust("readonly-map = { \"x\": { * text => uint } }\n").isRight, "Rust does not reserve ReadonlyMap"))
+      .and(expect(rust("r = uint\n", "class").isRight, "nor a module named class"))
+  }
+
+  pureTest("TypeScript: a clash lists only the rules that collide") {
+    val byHand = Map(
+      QName("t", "r") -> ModelRule.Record(
+        Vector(
+          ProfileField("aB", false, FieldType.Uint),
+          ProfileField("a_b", false, FieldType.Uint),
+          ProfileField("c", false, FieldType.Uint)
+        )
+      )
+    )
+    expect
+      .same(Left(GenError.NameClash("t", "AB", Vector("a-b", "a_b"))), typescript("a-b = uint\na_b = text\nzz = uint\n"))
+      .and(expect.same(Left(GenError.NameClash("t:r", "aB", Vector("aB", "a_b"))), new TsEmitter(byHand).module("t")))
+  }
+
+  pureTest("a module written over a language's module list is a ReservedName; two modules on one file are a NameClash") {
+    expect
+      .same(Left(GenError.ReservedName("index", Language.TypeScript, "index.ts")), SdkSources.generate(Vector("index" -> "r = uint\n")))
+      .and(
+        expect.same(
+          Left(GenError.NameClash("generated files", "a_b.rs", Vector("a-b", "a_b"))),
+          SdkSources.generate(Vector("a-b" -> "r = uint\n", "a_b" -> "s = uint\n"))
+        )
+      )
+  }
+
+  pureTest("Scala and the shared profile: a clash lists only the rules or keys that collide") {
+    expect
+      .same(
+        Left(GenError.NameClash("t", "AB", Vector("a-b", "a_b"))),
+        Main.generate(Vector("t" -> "a-b = uint\na_b = text\nzz = uint\n"), "p")
+      )
+      .and(
+        expect.same(
+          Left(GenError.NameClash("t:r", "aB", Vector("aB", "a_b"))),
+          Main.generate(Vector("t" -> "r = { \"aB\": uint, \"a_b\": uint, \"c\": uint }\n"), "p")
+        )
+      )
   }
 
   pureTest("names with no valid identifier form are generator errors, not uncompilable output") {

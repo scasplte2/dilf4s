@@ -13,7 +13,12 @@ enum GenError:
   case UnresolvedName(scope: String, name: String)
   case ArityMismatch(rule: String, expected: Int, actual: Int)
   case Unsupported(rule: String, feature: UnsupportedFeature)
-  case NameClash(scope: String, scalaName: String, rules: Vector[String])
+
+  /** Two or more rules (or keys, or modules) that map to the same generated name; `rules` lists only those. */
+  case NameClash(scope: String, name: String, rules: Vector[String])
+
+  /** A generated name that `language` keeps for itself or for names the generated code refers to. */
+  case ReservedName(scope: String, language: Language, name: String)
   case BadConfig(line: Int, problem: ConfigProblem)
   case CyclicExpansion(rule: QName)
   case SamplingCycle(rule: QName)
@@ -28,11 +33,17 @@ enum GenError:
     case ArityMismatch(r, e, a) => s"rule `$r` takes $e type arguments, got $a"
     case Unsupported(r, f)      => s"unsupported CDDL feature in `$r`: ${f.message}"
     case NameClash(s, n, rs) =>
-      s"in $s the rules ${rs.mkString(", ")} all map to the Scala name `$n`"
+      s"in $s the rules ${rs.mkString(", ")} all map to the generated name `$n`"
+    case ReservedName(s, l, n) =>
+      s"in $s the generated name `$n` is reserved in $l"
     case BadConfig(l, p)            => s"config line $l: ${p.message}"
     case CyclicExpansion(q)         => s"cyclic expansion of `$q`"
     case EmptyIntegerDomain(lo, hi) => s"cannot sample an empty integer domain ($lo .. $hi)"
     case SamplingCycle(q)           => s"recursive sampling of `$q` cannot terminate beyond the depth cutoff"
+
+/** A language the generator emits. */
+enum Language:
+  case Scala, Rust, TypeScript
 
 enum ConfigProblem:
   case QualifiedName(value: String)

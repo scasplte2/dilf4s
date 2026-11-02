@@ -27,6 +27,9 @@ object SdkSources {
   val Regenerate: String =
     "sbt \"modelsGen/runMain xyz.kd5ujc.modelsgen.SdkMain shared/schemas sdk/ts/packages/core/src/generated sdk/rust/core/src/generated\""
 
+  /** The file each language's generated directory keeps for its module list, which no module may be written to. */
+  private val IndexFiles: Map[String, Language] = Map("index.ts" -> Language.TypeScript, "mod.rs" -> Language.Rust)
+
   /** Parses `files` (module = file name without `.cddl`) and emits every module in TypeScript and Rust. */
   def generate(files: Vector[(String, String)]): Either[GenError, SdkSources] =
     files.traverse { case (module, text) => CddlParser.parse(text).leftMap(GenError.Parse(module, _)).map(module -> Vector(_)) }.flatMap {
@@ -45,8 +48,13 @@ object SdkSources {
           ).flatMap { out =>
             // two modules (or a module and an index) writing the same file would silently overwrite one another
             val files = out.typescript.map(_._1) ++ out.rust.map(_._1)
-            files.groupBy(identity).collectFirst { case (f, fs) if fs.size > 1 => f }.fold(out.asRight[GenError]) { f =>
-              GenError.NameClash("generated files", f, modules.filter(m => f.startsWith(CanonicalEmitter.packageSegment(m) + "."))).asLeft
+            files.groupBy(identity).toVector.sortBy(_._1).collectFirst { case (f, fs) if fs.size > 1 => f }.fold(out.asRight[GenError]) {
+              f =>
+                val owners = modules.filter(m => f.startsWith(CanonicalEmitter.packageSegment(m) + "."))
+                IndexFiles
+                  .get(f)
+                  .fold(GenError.NameClash("generated files", f, owners))(l => GenError.ReservedName(owners.mkString(", "), l, f))
+                  .asLeft
             }
           }
         }

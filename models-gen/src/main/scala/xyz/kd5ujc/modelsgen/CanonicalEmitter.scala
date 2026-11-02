@@ -61,8 +61,11 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
       val (t, c) = tc(rule, f.tpe)
       Field(f.key, fieldName(f.key), t, c, f.optional)
     }
-    val clash = fs.groupBy(_.name).collect { case (n, xs) if xs.size > 1 => n }
-    Either.cond(clash.isEmpty, fs, GenError.NameClash(rule.toString, clash.mkString(", "), fs.map(_.key)))
+    fs.groupBy(_.name)
+      .toVector
+      .sortBy(_._1)
+      .collectFirst { case (n, xs) if xs.size > 1 => GenError.NameClash(rule.toString, n, xs.map(_.key)) }
+      .toLeft(fs)
   }
 
   private def record(rule: QName, profiled: Vector[ProfileField]): Either[GenError, String] =
