@@ -71,6 +71,16 @@ object Bn254Suite extends IOSuite with Checkers {
   private val scalar: Gen[ByteVector] = Gen.listOfN(32, Gen.choose(Byte.MinValue, Byte.MaxValue)).map(ByteVector(_))
   private given Show[(ByteVector, ByteVector)] = Show.show { case (a, b) => s"${a.toHex}/${b.toHex}" }
 
+  pureTest("the shared BN254 group order is EIP-197's r, and r·G is the identity while (r - 1)·G is -G") {
+    val generator = Bn254.decodeG1(ByteVector.low(31) ++ ByteVector(1) ++ ByteVector.low(31) ++ ByteVector(2)).toOption.flatten
+    expect
+      .same(BigInt("21888242871839275222246405745257275088548364400416034343698204186575808495617"), Bn254.R)
+      .and(expect.same(xyz.kd5ujc.core.hash.Fr.Modulus, Bn254.R))
+      .and(expect(generator.isDefined, "the generator decodes"))
+      .and(expect.same(None, Bn254.mulG1(generator, Bn254.R)))
+      .and(expect.same(Bn254.negG1(generator), Bn254.mulG1(generator, Bn254.R - 1)))
+  }
+
   test("gnark agrees with the reference on k·G and on sums of multiples, for random 256-bit scalars") { gnark =>
     forall(Gen.zip(scalar, scalar)) {
       case (j, k) =>

@@ -16,7 +16,9 @@ import scodec.bits.ByteVector
 object Bn254 {
 
   val P: BigInt = BigInt("21888242871839275222246405745257275088696311157297823662689037894645226208583")
-  val R: BigInt = BigInt("21888242871839275222246405745257275088548364400416034343698204186575808495617")
+
+  /** The order `r` of G1 and G2: the scalar field, which core defines for Poseidon. */
+  val R: BigInt = xyz.kd5ujc.core.hash.Fr.Modulus
 
   private def md(a:  BigInt): BigInt = a.mod(P)
   private def inv(a: BigInt): BigInt = md(a).modPow(P - 2, P)
