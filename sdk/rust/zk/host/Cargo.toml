@@ -1,0 +1,39 @@
+[package]
+name = "dilf4s-zk-host"
+description = "Executes the dilf4s SP1 guest (execute mode, no proving) and checks it against native code and the vectors"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+publish = false
+
+# Its own root, with no patches: the native side is the crates.io releases dilf4s-signing and dilf4s-proofs ship.
+[workspace]
+
+[dependencies]
+dilf4s-zk-cases = { path = "../cases", features = ["vectors"] }
+# its syscall codes
+sp1-core-executor = "=6.10.0"
+sp1-sdk = "=6.10.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[build-dependencies]
+# builds ../guest with the succinct toolchain, --locked to its Cargo.lock
+sp1-build = "=6.10.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+arithmetic_side_effects = "deny"
+as_conversions = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+unwrap_used = "deny"
