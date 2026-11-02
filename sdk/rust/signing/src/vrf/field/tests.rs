@@ -12,6 +12,7 @@
 use alloc::vec::Vec;
 
 use num_bigint::BigUint;
+use subtle::{Choice, ConstantTimeEq as _, CtOption};
 
 use super::{
     Fe, J, SQRT_M_J2, SQRT_M1, encode_to_curve_ell2, expand_message_xmd_sha512_48, from_uniform, map_to_curve_ell2,
@@ -179,6 +180,18 @@ mod reference {
 
 use reference::{Fp, le32, p};
 
+fn b(c: Choice) -> bool {
+    c.into()
+}
+
+fn opt(c: CtOption<Fe>) -> Option<Fe> {
+    c.into()
+}
+
+fn sign(odd: bool) -> Choice {
+    Choice::from(u8::from(odd))
+}
+
 fn fp() -> Fp {
     Fp { p: p() }
 }
@@ -265,16 +278,24 @@ fn decoding_reduces_and_encoding_is_canonical() {
     all[31] = 0x7f;
     assert_eq!(big(Fe::from_bytes(&all)), BigUint::from(18u8));
     assert_eq!(big(Fe::from_bytes(&le32(&f.p))), BigUint::ZERO, "p is 0");
-    assert!(fe(&f.p).is_zero());
-    assert!(fe(&f.p).equals(Fe::zero()));
-    assert!(fe(&(&f.p + 1u8)).is_odd(), "p + 1 encodes with an even low byte but is 1, which is odd");
+    assert!(b(fe(&f.p).is_zero()));
+    assert!(b(fe(&f.p).ct_eq(&Fe::zero())));
+    assert!(b(fe(&(&f.p + 1u8)).is_odd()), "p + 1 encodes with an even low byte but is 1, which is odd");
+}
+
+#[test]
+fn selection_picks_by_choice() {
+    use subtle::ConditionallySelectable as _;
+    let (a, c) = (Fe::from_u32(3), fe(&(p() + 5u8)));
+    assert_eq!(big(Fe::conditional_select(&a, &c, Choice::from(0))), BigUint::from(3u8));
+    assert_eq!(big(Fe::conditional_select(&a, &c, Choice::from(1))), BigUint::from(5u8));
 }
 
 #[test]
 fn parity_is_of_the_canonical_value() {
     let f = fp();
     for x in values() {
-        assert_eq!(fe(&x).is_odd(), (&x % &f.p).bit(0), "sgn0 of {x:x}");
+        assert_eq!(b(fe(&x).is_odd()), (&x % &f.p).bit(0), "sgn0 of {x:x}");
     }
 }
 
@@ -301,11 +322,11 @@ fn exponentiations_agree_with_the_reference() {
         let a = fe(&x);
         assert_eq!(big(a.inv0()), f.inv0(&x), "inv0({x:x})");
         assert_eq!(big(a.pow_p58()), x.modpow(&p58, &f.p), "{x:x}^((p - 5) / 8)");
-        assert_eq!(a.is_non_square(), f.is_non_square(&x), "is_non_square({x:x})");
-        assert_eq!(a.sqrt().map(big), reference::sqrt(&f, &x), "sqrt({x:x})");
+        assert_eq!(b(a.is_non_square()), f.is_non_square(&x), "is_non_square({x:x})");
+        assert_eq!(opt(a.sqrt()).map(big), reference::sqrt(&f, &x), "sqrt({x:x})");
         for odd in [false, true] {
             assert_eq!(
-                a.sqrt_with_sign(odd).map(big),
+                opt(a.sqrt_with_sign(sign(odd))).map(big),
                 reference::sqrt_with_sign(&f, &x, odd),
                 "sqrt_with_sign({x:x}, {odd})"
             );
@@ -316,21 +337,21 @@ fn exponentiations_agree_with_the_reference() {
 #[test]
 fn exponentiation_edge_cases() {
     let f = fp();
-    assert!(Fe::zero().inv0().is_zero(), "inv0(0) = 0");
-    assert!(fe(&f.p).inv0().is_zero(), "inv0(p) = 0");
-    assert!(!Fe::zero().is_non_square(), "0 is not a non-square");
-    assert!(Fe::from_u32(2).is_non_square(), "2 is a non-square for p = 5 mod 8");
-    assert!(!Fe::one().neg().is_non_square(), "-1 is a square");
-    assert!(Fe::from_u32(2).sqrt().is_none(), "sqrt(2) does not exist");
-    assert!(Fe::from_u32(2).sqrt_with_sign(false).is_none());
-    let i = Fe::one().neg().sqrt_with_sign(false).unwrap();
-    assert!(i.equals(Fe::from_bytes(&SQRT_M1)), "the even sqrt(-1) is 2^((p - 1) / 4)");
+    assert!(b(Fe::zero().inv0().is_zero()), "inv0(0) = 0");
+    assert!(b(fe(&f.p).inv0().is_zero()), "inv0(p) = 0");
+    assert!(!b(Fe::zero().is_non_square()), "0 is not a non-square");
+    assert!(b(Fe::from_u32(2).is_non_square()), "2 is a non-square for p = 5 mod 8");
+    assert!(!b(Fe::one().neg().is_non_square()), "-1 is a square");
+    assert!(opt(Fe::from_u32(2).sqrt()).is_none(), "sqrt(2) does not exist");
+    assert!(opt(Fe::from_u32(2).sqrt_with_sign(sign(false))).is_none());
+    let i = opt(Fe::one().neg().sqrt_with_sign(sign(false))).unwrap();
+    assert!(b(i.ct_eq(&Fe::from_bytes(&SQRT_M1))), "the even sqrt(-1) is 2^((p - 1) / 4)");
     // sqrt(0) is 0 for either requested sign: -0 is 0
-    assert!(Fe::zero().sqrt_with_sign(false).unwrap().is_zero());
-    assert!(Fe::zero().sqrt_with_sign(true).unwrap().is_zero());
+    assert!(b(opt(Fe::zero().sqrt_with_sign(sign(false))).unwrap().is_zero()));
+    assert!(b(opt(Fe::zero().sqrt_with_sign(sign(true))).unwrap().is_zero()));
     let four = Fe::from_u32(4);
-    assert_eq!(big(four.sqrt_with_sign(false).unwrap()), BigUint::from(2u8));
-    assert_eq!(big(four.sqrt_with_sign(true).unwrap()), &f.p - 2u8);
+    assert_eq!(big(opt(four.sqrt_with_sign(sign(false))).unwrap()), BigUint::from(2u8));
+    assert_eq!(big(opt(four.sqrt_with_sign(sign(true))).unwrap()), &f.p - 2u8);
 }
 
 #[test]

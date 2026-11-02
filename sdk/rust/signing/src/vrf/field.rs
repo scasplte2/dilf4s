@@ -1,6 +1,12 @@
 //! GF(2^255 - 19) for the Elligator 2 maps of draft-03 and of RFC 9380, which curve25519-dalek 4 keeps private. The
 //! arithmetic is fiat-crypto's formally verified `curve25519` field, the one curve25519-dalek's own `fiat` backend
-//! uses: every operation is constant-time. The maps branch on their (public) intermediate values, as the references do.
+//! uses.
+//!
+//! Field arithmetic, exponentiation, equality, parity and selection are constant-time (fiat-crypto and `subtle`), and
+//! both maps compute every candidate and select between them: neither branches on a field value. Variable time remains
+//! only where the data is public: the final point decoding of each map (draft-03's `y < p` check and
+//! curve25519-dalek's decompression, which accept every map output by construction, and the branch on that result),
+//! the SHA-512 inputs' lengths, and `expand_message_xmd`'s DST length.
 
 use alloc::vec::Vec;
 
@@ -10,6 +16,7 @@ use fiat::{fiat_25519_loose_field_element as Loose, fiat_25519_tight_field_eleme
 use fiat_crypto::curve25519_32 as fiat;
 #[cfg(target_pointer_width = "64")]
 use fiat_crypto::curve25519_64 as fiat;
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::{decode_draft03, sha512};
 
@@ -36,6 +43,27 @@ const TWO_192: [u8; 32] =
 /// is compared, and its parity read, only through [`Fe::to_bytes`].
 #[derive(Clone, Copy)]
 struct Fe(Tight);
+
+impl ConditionallySelectable for Fe {
+    fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+        let mut out = Tight(Default::default());
+        fiat::fiat_25519_selectznz(&mut out.0, choice.unwrap_u8(), &a.0.0, &b.0.0);
+        Self(out)
+    }
+}
+
+/// Zero, which `CtOption::map` computes on in place of an absent value.
+impl Default for Fe {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
+impl ConstantTimeEq for Fe {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.to_bytes().as_slice().ct_eq(other.to_bytes().as_slice())
+    }
+}
 
 impl Fe {
     /// The value of 32 little-endian bytes with bit 255 cleared: values from `p` to `2^255 - 1` reduce.
@@ -72,17 +100,13 @@ impl Fe {
         out
     }
 
-    fn equals(self, that: Self) -> bool {
-        self.to_bytes() == that.to_bytes()
-    }
-
-    fn is_zero(self) -> bool {
-        self.equals(Self::zero())
+    fn is_zero(self) -> Choice {
+        self.ct_eq(&Self::zero())
     }
 
     /// RFC 9380's `sgn0`: the parity of the canonical value.
-    fn is_odd(self) -> bool {
-        self.to_bytes().first().is_some_and(|b| b & 1 == 1)
+    fn is_odd(self) -> Choice {
+        Choice::from(self.to_bytes().first().map_or(0, |b| b & 1))
     }
 
     fn relax(self) -> Loose {
@@ -162,21 +186,21 @@ impl Fe {
 
     /// Whether `self` is a non-zero non-square: its Legendre symbol `self^((p - 1) / 2)` is `-1`. `(p - 1) / 2` is
     /// `4 (p - 5) / 8 + 2`.
-    fn is_non_square(self) -> bool {
-        self.pow_p58().square_n(2).mul(self.square()).equals(Self::one().neg())
+    fn is_non_square(self) -> Choice {
+        self.pow_p58().square_n(2).mul(self.square()).ct_eq(&Self::one().neg())
     }
 
     /// `sqrt(self)` for `p = 5 mod 8` (RFC 9380 appendix I.2), if `self` is a square: `t = self^((p + 3) / 8)`, which
     /// is `self^((p - 5) / 8) * self`, or `t sqrt(-1)`.
-    fn sqrt(self) -> Option<Self> {
+    fn sqrt(self) -> CtOption<Self> {
         let t = self.pow_p58().mul(self);
-        let z = if t.square().equals(self) { t } else { t.mul(Self::from_bytes(&SQRT_M1)) };
-        z.square().equals(self).then_some(z)
+        let z = Self::conditional_select(&t.mul(Self::from_bytes(&SQRT_M1)), &t, t.square().ct_eq(&self));
+        CtOption::new(z, z.square().ct_eq(&self))
     }
 
     /// `sqrt(self)` with the given `sgn0`.
-    fn sqrt_with_sign(self, odd: bool) -> Option<Self> {
-        self.sqrt().map(|z| if z.is_odd() == odd { z } else { z.neg() })
+    fn sqrt_with_sign(self, odd: Choice) -> CtOption<Self> {
+        self.sqrt().map(|z| Self::conditional_select(&z, &z.neg(), z.is_odd() ^ odd))
     }
 
     /// A 48-byte big-endian integer reduced mod `p` (RFC 9380 `hash_to_field`'s `OS2IP(tv) mod p`), as
@@ -222,31 +246,28 @@ pub(super) fn encode_to_curve_ell2(message: &[&[u8]], dst: &[u8]) -> EdwardsPoin
 /// Elligator 2 onto curve25519 (RFC 9380 section 6.7.1, `Z = 2`), the rational map to edwards25519 (appendix D), and
 /// the cofactor cleared.
 fn map_to_curve_ell2(u: Fe) -> EdwardsPoint {
+    let zero = Fe::zero();
     let one = Fe::one();
     let j = Fe::from_u32(J);
-    // section 6.7.1 with K = 1
-    let x1 = match j.neg().mul(one.add(Fe::from_u32(2).mul(u.square())).inv0()) {
-        x if x.is_zero() => j.neg(),
-        x => x,
-    };
+    // section 6.7.1 with K = 1: x1 = -A / (1 + 2 u^2), or -A where that is 0
+    let x0 = j.neg().mul(one.add(Fe::from_u32(2).mul(u.square())).inv0());
+    let x1 = Fe::conditional_select(&x0, &j.neg(), x0.is_zero());
     let g = |x: Fe| x.square().mul(x).add(j.mul(x.square())).add(x);
     let x2 = x1.neg().sub(j);
-    let (s, t) = g(x1)
-        .sqrt_with_sign(true)
-        .map(|y| (x1, y))
-        .or_else(|| g(x2).sqrt_with_sign(false).map(|y| (x2, y)))
-        .unwrap_or((Fe::zero(), Fe::zero()));
+    // (x1, the odd sqrt(g(x1))) if g(x1) is a square, else (x2, the even sqrt(g(x2))), else (0, 0)
+    let y1 = g(x1).sqrt_with_sign(Choice::from(1));
+    let y2 = g(x2).sqrt_with_sign(Choice::from(0));
+    let s = Fe::conditional_select(&Fe::conditional_select(&zero, &x2, y2.is_some()), &x1, y1.is_some());
+    let t = Fe::conditional_select(&y2.unwrap_or(zero), &y1.unwrap_or(zero), y1.is_some());
     // appendix D: v = sqrt(-486664) s / t, w = (s - 1) / (s + 1), and (0, 1) where t (s + 1) = 0
     let s1 = s.add(one);
     let d = t.mul(s1).inv0();
-    let (v, w) = if d.is_zero() {
-        (Fe::zero(), one)
-    } else {
-        (d.mul(s1).mul(s).mul(Fe::from_bytes(&SQRT_M_J2)), d.mul(t).mul(s.sub(one)))
-    };
+    let exceptional = d.is_zero();
+    let v = Fe::conditional_select(&d.mul(s1).mul(s).mul(Fe::from_bytes(&SQRT_M_J2)), &zero, exceptional);
+    let w = Fe::conditional_select(&d.mul(t).mul(s.sub(one)), &one, exceptional);
     let mut enc = w.to_bytes();
     if let Some(last) = enc.last_mut() {
-        *last |= u8::from(v.is_odd()) << 7;
+        *last |= v.is_odd().unwrap_u8() << 7;
     }
     // (v, w) is on edwards25519 by construction, so it decodes
     CompressedEdwardsY(enc).decompress().map_or(EdwardsPoint::default(), |pt| pt.mul_by_cofactor())
@@ -263,9 +284,9 @@ pub(super) fn from_uniform(input: &[u8; 32]) -> EdwardsPoint {
     let rr2 = Fe::from_u32(2).mul(r.square());
     let u0 = j.neg().mul(one.add(rr2).inv0());
     let w = |u: Fe| u.mul(u.square().add(j.mul(u)).add(one));
-    let u = if w(u0).is_non_square() { u0.neg().sub(j) } else { u0 };
+    let u = Fe::conditional_select(&u0, &u0.neg().sub(j), w(u0).is_non_square());
     let u_plus_1 = u.add(one);
-    let y = if u_plus_1.is_zero() || w(u).is_zero() { one } else { u.sub(one).mul(u_plus_1.inv0()) };
+    let y = Fe::conditional_select(&u.sub(one).mul(u_plus_1.inv0()), &one, u_plus_1.is_zero() | w(u).is_zero());
     let mut enc = y.to_bytes();
     if let Some(last) = enc.last_mut() {
         *last |= sign;
