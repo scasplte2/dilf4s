@@ -59,8 +59,11 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
       val (t, c) = ts(rule, f.tpe)
       Field(f.key, fieldName(f.key), t, c, f.optional)
     }
-    val clash = fs.groupBy(_.name).collect { case (n, xs) if xs.size > 1 => n }
-    Either.cond(clash.isEmpty, fs, GenError.NameClash(rule.toString, clash.mkString(", "), fs.map(_.key)))
+    fs.groupBy(_.name)
+      .toVector
+      .sortBy(_._1)
+      .collectFirst { case (n, xs) if xs.size > 1 => GenError.NameClash(rule.toString, n, xs.map(_.key)) }
+      .toLeft(fs)
   }
 
   private def record(rule: QName, profiled: Vector[ProfileField]): Either[GenError, String] =
@@ -171,11 +174,17 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
   /** The source of one module. */
   def module(name: String): Either[GenError, String] = {
     val rules = models.toVector.collect { case (q, m) if q.module == name => q -> m }.sortBy(_._1.name)
-    val clash = rules.groupBy { case (q, _) => typeName(q) }.toVector.sortBy(_._1).collect {
-      case (t, qs) if qs.size > 1 => t -> qs.map(_._1.name)
-    } ++ rules.collect { case (q, _) if reservedTypes(typeName(q)) => typeName(q) -> Vector(q.name) } ++
-      Option.when(reservedWords(namespace(name)) || namespace(name) == "c")(namespace(name) -> Vector(name)).toVector
-    clash.headOption.fold {
+    val problem = rules.groupBy { case (q, _) => typeName(q) }.toVector
+      .sortBy(_._1)
+      .collectFirst { case (t, qs) if qs.size > 1 => GenError.NameClash(name, t, qs.map(_._1.name)) }
+      .orElse(rules.collectFirst {
+        case (q, _) if reservedTypes(typeName(q)) => GenError.ReservedName(name, Language.TypeScript, typeName(q))
+      })
+      .orElse(
+        Option
+          .when(reservedWords(namespace(name)) || namespace(name) == "c")(GenError.ReservedName(name, Language.TypeScript, namespace(name)))
+      )
+    problem.toLeft(()).flatMap { _ =>
       rules.traverse {
         case (q, ModelRule.Record(fs))       => record(q, fs)
         case (q, ModelRule.Enumeration(cs))  => enumeration(q, cs).asRight
@@ -193,7 +202,7 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
            |
            |$code""".stripMargin
       }
-    } { case (t, qs) => GenError.NameClash(name, t, qs).asLeft }
+    }
   }
 
   /** `generated/index.ts`, one namespace per module. */

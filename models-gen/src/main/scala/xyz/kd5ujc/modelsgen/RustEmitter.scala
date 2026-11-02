@@ -132,8 +132,11 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
           ).asRight
       }
     }.flatMap { fs =>
-      val clash = fs.groupBy(_.name).collect { case (n, xs) if xs.size > 1 => n }
-      Either.cond(clash.isEmpty, fs, GenError.NameClash(rule.toString, clash.mkString(", "), fs.map(_.key)))
+      fs.groupBy(_.name)
+        .toVector
+        .sortBy(_._1)
+        .collectFirst { case (n, xs) if xs.size > 1 => GenError.NameClash(rule.toString, n, xs.map(_.key)) }
+        .toLeft(fs)
     }
 
   private def record(rule: QName, profiled: Vector[ProfileField]): Either[GenError, String] =
@@ -190,9 +193,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
     cases.find { case (_, v) => v < Profile.IntMin || v > Profile.IntMax }.fold {
       val n = typeName(rule)
       val names = cases.map { case (l, v) => (CanonicalEmitter.pascal(l), l, v) }
-      val reservedNames = names.collect { case (cn, _, _) if reserved(cn) => cn }
-      if (reservedNames.nonEmpty) GenError.NameClash(rule.toString, reservedNames.mkString(", "), names.map(_._1)).asLeft
-      else
+      names.collectFirst { case (cn, _, _) if reserved(cn) => GenError.ReservedName(rule.toString, Language.Rust, cn) }.toLeft {
         s"""${doc(rule)}
          |#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
          |pub enum $n {
@@ -221,19 +222,27 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |        }
          |    }
          |}
-         |""".stripMargin.asRight[GenError]
+         |""".stripMargin
+      }
     } { case (l, _) => outside(rule, s"enumeration case $l beyond CDDL int").asLeft }
 
   private def union(rule: QName, alts: Vector[UnionAlternative], texts: Vector[String]): Either[GenError, String] = {
     val n = typeName(rule)
     val recordVariants = alts.map(a => typeName(a.rule) -> path(rule.module, a.rule, typeName(a.rule)))
     val textVariants = texts.map(t => CanonicalEmitter.pascal(t) -> t)
-    val variantNames = recordVariants.map(_._1) ++ textVariants.map(_._1)
-    val dup = variantNames.diff(variantNames.distinct)
-    val invalid = variantNames.filter(v => !Profile.isIdentifier(v) || reserved(v))
-    if (dup.nonEmpty || invalid.nonEmpty)
-      GenError.NameClash(rule.toString, (dup ++ invalid).mkString(", "), variantNames).asLeft
-    else {
+    // each variant with the alternative it comes from: a rule name, or a text literal as written in CDDL
+    val sources =
+      alts.map(a => typeName(a.rule) -> a.rule.name) ++ texts.map(t => CanonicalEmitter.pascal(t) -> CanonicalEmitter.literal(t))
+    val problem = sources
+      .groupBy(_._1)
+      .toVector
+      .sortBy(_._1)
+      .collectFirst { case (v, xs) if xs.size > 1 => GenError.NameClash(rule.toString, v, xs.map(_._2)) }
+      .orElse(sources.collectFirst {
+        case (v, s) if !Profile.isIdentifier(v) => outside(rule, s"choice alternative $s has no identifier form")
+      })
+      .orElse(sources.collectFirst { case (v, _) if reserved(v) => GenError.ReservedName(rule.toString, Language.Rust, v) })
+    problem.toLeft {
       val variants = recordVariants.map { case (v, t) => s"    /// A [`$t`].\n    $v($t)," } ++
         textVariants.map { case (v, t) => s"    /// The text `${string(t).drop(1).dropRight(1)}`.\n    $v," }
       val enc = recordVariants.map { case (v, _) => s"            Self::$v(a) => c::Model::to_value_at(a, depth)," } ++
@@ -263,7 +272,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |        }
          |    }
          |}
-         |""".stripMargin.asRight
+         |""".stripMargin
     }
   }
 
@@ -293,17 +302,17 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
       case (q, ModelRule.Alias(_))                                     => constName(q) -> q.name
       case (q, ModelRule.Record(fs)) if fs.forall(f => literal(f.tpe)) => typeName(q)  -> q.name
     }
-    def duplicate(names: Vector[(String, String)]) =
-      names.groupBy(_._1).toVector.sortBy(_._1).collectFirst { case (n, xs) if xs.size > 1 => n -> xs.map(_._2) }
-    def reservedIn(names: Vector[(String, String)]) = names.collectFirst { case (n, r) if reserved(n) => n -> Vector(r) }
+    def duplicate(names: Vector[(String, String)]): Option[GenError] =
+      names.groupBy(_._1).toVector.sortBy(_._1).collectFirst { case (n, xs) if xs.size > 1 => GenError.NameClash(name, n, xs.map(_._2)) }
+    def reservedIn(names: Vector[(String, String)]): Option[GenError] =
+      names.collectFirst { case (n, _) if reserved(n) => GenError.ReservedName(name, Language.Rust, n) }
     val segment = CanonicalEmitter.packageSegment(name)
     Option
-      .when(keywords(segment) || segment == "c")(segment -> Vector(name))
+      .when(keywords(segment) || segment == "c")(GenError.ReservedName(name, Language.Rust, segment))
       .orElse(duplicate(types))
       .orElse(duplicate(values))
       .orElse(reservedIn(types))
       .orElse(reservedIn(values))
-      .map { case (n, rs) => GenError.NameClash(name, n, rs) }
   }
 
   def module(name: String): Either[GenError, String] = {
