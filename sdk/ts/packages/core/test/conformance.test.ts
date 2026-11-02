@@ -33,6 +33,12 @@ describe("canonical_encoding_v1.json", () => {
     expect(toHex(contentHash(contentAlgorithm, tag, value))).toBe(c.contentHash);
   });
 
+  it.each(vectors.renderRejections.map((c) => [c.cbor.slice(0, 40), c] as const))("CBOR %s does not render to JSON", (_, c) => {
+    const v = expectOk(cbor.decode(bytes(c.cbor)), "decodes");
+    const r = json.render(v);
+    expect(r.ok ? "rendered" : r.error.kind).toBe(c.error);
+  });
+
   it.each(vectors.cborRejections.map((c) => [c.cbor.slice(0, 40), c] as const))("CBOR %s is rejected with the reference's error kind", (_, c) => {
     const r = cbor.decode(bytes(c.cbor));
     expect(r.ok ? "accepted" : r.error.kind).toBe(c.error);

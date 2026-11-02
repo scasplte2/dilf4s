@@ -6,13 +6,26 @@
  * so nesting is a typed error rather than a stack overflow. {@link render} is the display view, and fails for values
  * JSON cannot represent.
  */
+import { bitLength } from "./bigint.js";
 import type { CanonicalError } from "./error.js";
 import { err, ok, type Result } from "./result.js";
 import { compareCodePoints } from "./utf8.js";
-import { ArrayValue, BoolValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Value } from "./value.js";
+import { ArrayValue, BoolValue, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Value } from "./value.js";
 
 /** The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises. */
 export const DEFAULT_MAX_SCALE = 10000;
+
+/**
+ * The most significant digits a JSON number's significand (integer and fraction digits, leading zeros aside) or
+ * exponent may have, read or written. Decimal conversion is superlinear, so the bound is checked on the text before
+ * any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
+ */
+export const MAX_DIGITS = 10000;
+
+// 10^MAX_DIGITS has 33220 bits: a number any wider has more than MAX_DIGITS digits
+const MAX_DIGIT_BITS = 33220;
+
+const leadingZeros = (s: string): number => s.length - s.replace(/^0+/, "").length;
 
 type Frame = { readonly object: false; readonly items: Value[] } | { readonly object: true; readonly entries: [string, Value][]; readonly seen: Set<string>; key: string };
 
@@ -148,7 +161,10 @@ class Parser {
     return err(syntax(p, "expected a value"));
   }
 
-  /** `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`, converted exactly; the scale is bounded before `10^scale`. */
+  /**
+   * `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`, converted exactly. Its digits are counted, then its scale
+   * bounded, before any conversion: a refusal by a bound gives lengths, never the digits.
+   */
   private number(p: number): Result<{ readonly value: Value; readonly end: number }, CanonicalError> {
     const s = this.s;
     const negative = s[p] === "-";
@@ -160,19 +176,28 @@ class Parser {
     const expSign = s[fracEnd + 1];
     const expStart = hasExp && (expSign === "+" || expSign === "-") ? fracEnd + 2 : fracEnd + 1;
     const end = hasExp ? this.digits(expStart) : fracEnd;
-    const source = s.slice(p, end);
     const intDigits = s.slice(intStart, intEnd);
     const fracDigits = hasFrac ? s.slice(intEnd + 1, fracEnd) : "";
     const expDigits = hasExp ? s.slice(expStart, end) : "0";
     const malformed =
       intDigits.length === 0 || (intDigits.length > 1 && intDigits.startsWith("0")) || (hasFrac && fracDigits.length === 0) || (hasExp && expDigits.length === 0);
-    if (malformed) return err({ kind: "InvalidNumber", source });
-    const exponent = BigInt(expDigits) * (hasExp && expSign === "-" ? -1n : 1n);
+    // a refusal describes the number by its length and offset, never its text, whose size the caller chose
+    const described = `a number of ${(end - p).toString()} characters at offset ${p.toString()}`;
+    if (malformed) return err({ kind: "InvalidNumber", source: described });
+    // the integer digits have no leading zeros but a lone 0, after which the fraction's leading zeros are not counted
+    const significand = intDigits === "0" ? fracDigits.length - leadingZeros(fracDigits) : intDigits.length + fracDigits.length;
+    const exponentDigits = expDigits.length - leadingZeros(expDigits);
+    const digits = Math.max(significand, exponentDigits);
+    if (digits > MAX_DIGITS) return err({ kind: "InvalidNumber", source: described, digits });
+    // an exponent of more than 18 digits is past every scale a text this long can reach: saturate rather than convert
+    const magnitude = exponentDigits > 18 ? 10n ** 19n : BigInt(expDigits);
+    const exponent = magnitude * (hasExp && expSign === "-" ? -1n : 1n);
     const scale = BigInt(fracDigits.length) - exponent;
-    if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", source, scale });
+    if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", source: described, scale });
     const unscaled = BigInt(intDigits + fracDigits) * (negative ? -1n : 1n);
-    const value = scale >= 0n ? RationalValue.number(unscaled, 10n ** scale) : RationalValue.number(unscaled * 10n ** -scale, 1n);
-    return value === undefined ? err({ kind: "InvalidNumber", source }) : ok({ value, end });
+    // a decimal's denominator is 10^scale: reduced by its primes 2 and 5 alone, never by a general gcd
+    const value = scale >= 0n ? RationalValue.decimal(unscaled, Number(scale)) : IntValue.of(unscaled * 10n ** -scale);
+    return ok({ value, end });
   }
 
   /** A JSON string from its opening quote; escapes may produce unpaired surrogates, which the caller rejects. */
@@ -213,8 +238,29 @@ class Parser {
 
 // ------------------------------------------------------------------------------------------------ render
 
-/** The exact decimal of a rational, when its denominator has no prime factors but 2 and 5. */
-export function decimal(r: RationalValue): string | undefined {
+/** `text`, a plain decimal, when its significant digits and scale are within the bounds {@link parse} accepts. */
+function within(text: string): string | undefined {
+  const unsigned = text.startsWith("-") ? text.slice(1) : text;
+  const point = unsigned.indexOf(".");
+  const intPart = point < 0 ? unsigned : unsigned.slice(0, point);
+  const fracPart = point < 0 ? "" : unsigned.slice(point + 1);
+  const significand = intPart === "0" ? fracPart.length - leadingZeros(fracPart) : intPart.length - leadingZeros(intPart) + fracPart.length;
+  return significand <= MAX_DIGITS && fracPart.length <= DEFAULT_MAX_SCALE ? text : undefined;
+}
+
+/** An integer's decimal, within the bounds {@link parse} accepts. */
+function integerText(n: bigint): string | undefined {
+  return bitLength(n) > MAX_DIGIT_BITS ? undefined : within(n.toString());
+}
+
+/**
+ * The exact decimal of a rational, within the bounds {@link parse} accepts: `"non-terminating rational"` when its
+ * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds. A numerator or denominator
+ * wider than `10^MAX_DIGITS` is refused before it is factored or scaled: `2^a 5^b` with `max(a, b)` within the scale
+ * bound is at most that, and the significand is at least the numerator.
+ */
+export function decimalOf(r: RationalValue): Result<string, "non-terminating rational" | "over-long number"> {
+  if (bitLength(r.numerator) > MAX_DIGIT_BITS || bitLength(r.denominator) > MAX_DIGIT_BITS) return err("over-long number");
   let rest = r.denominator;
   let twos = 0;
   let fives = 0;
@@ -226,11 +272,19 @@ export function decimal(r: RationalValue): string | undefined {
     rest /= 5n;
     fives++;
   }
-  if (rest !== 1n) return undefined;
+  if (rest !== 1n) return err("non-terminating rational");
   const scale = Math.max(twos, fives);
+  if (scale > DEFAULT_MAX_SCALE) return err("over-long number");
   const scaled = r.numerator * (10n ** BigInt(scale) / r.denominator);
   const digits = (scaled < 0n ? -scaled : scaled).toString().padStart(scale + 1, "0");
-  return `${scaled < 0n ? "-" : ""}${digits.slice(0, digits.length - scale)}.${digits.slice(digits.length - scale)}`;
+  const text = within(`${scaled < 0n ? "-" : ""}${digits.slice(0, digits.length - scale)}.${digits.slice(digits.length - scale)}`);
+  return text === undefined ? err("over-long number") : ok(text);
+}
+
+/** The exact decimal of a rational, when it has one within the bounds {@link parse} accepts. */
+export function decimal(r: RationalValue): string | undefined {
+  const d = decimalOf(r);
+  return d.ok ? d.value : undefined;
 }
 
 function quote(s: string): string {
@@ -265,18 +319,20 @@ function quote(s: string): string {
   return out + '"';
 }
 
-/** Compact JSON with object members in code-point order of their names. Fails for bytes and non-terminating rationals. */
+/** Compact JSON with object members in code-point order of their names. Fails for bytes, non-terminating rationals and over-long numbers. */
 export function render(value: Value): Result<string, CanonicalError> {
   switch (value.kind) {
     case "null":
       return ok("null");
     case "bool":
       return ok(value.value ? "true" : "false");
-    case "int":
-      return ok(value.value.toString());
+    case "int": {
+      const t = integerText(value.value);
+      return t === undefined ? err({ kind: "NotJsonRepresentable", what: "over-long number" }) : ok(t);
+    }
     case "rational": {
-      const d = decimal(value);
-      return d === undefined ? err({ kind: "NotJsonRepresentable", what: "non-terminating rational" }) : ok(d);
+      const d = decimalOf(value);
+      return d.ok ? d : err({ kind: "NotJsonRepresentable", what: d.error });
     }
     case "text":
       return ok(quote(value.value));

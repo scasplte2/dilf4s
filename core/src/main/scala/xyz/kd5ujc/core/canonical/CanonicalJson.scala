@@ -8,7 +8,7 @@ import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalError._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.numerics.Ratio
+import xyz.kd5ujc.numerics.{ArithmeticError, Ratio}
 
 import io.circe.{Json, JsonNumber}
 
@@ -18,6 +18,16 @@ import io.circe.{Json, JsonNumber}
  * already has a circe `Encoder`; [[render]] is a display view and fails for values JSON cannot represent.
  */
 object CanonicalJson {
+
+  /**
+   * The most significant digits a JSON number's significand (integer and fraction digits, leading zeros aside) or
+   * exponent may have, read or written. Decimal conversion is superlinear, so the bound is checked on the text before
+   * any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
+   */
+  val MaxDigits: Int = 10000
+
+  // 10^MaxDigits has 33220 bits: a number any wider has more than MaxDigits digits
+  private val MaxDigitBits: Int = 33220
 
   // ------------------------------------------------------------------ parse
 
@@ -110,7 +120,11 @@ object CanonicalJson {
       case _                                     => syntax(p, "expected a value").asLeft
     }
 
-  /** `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`, converted exactly; the scale is bounded before `10^scale`. */
+  /**
+   * `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`, converted exactly. Its digits are counted, then its scale
+   * bounded, before any conversion. A refusal describes the number by its length and offset, never its text, whose
+   * size the caller chose.
+   */
   private def parseNumber(s: String, p: Int, maxScale: Int): Either[CanonicalError, (CanonicalValue, Int)] = {
     val negative = charAt(s, p).contains('-')
     val intStart = if (negative) p + 1 else p
@@ -120,21 +134,32 @@ object CanonicalJson {
     val hasExp = charAt(s, fracEnd).exists(c => c == 'e' || c == 'E')
     val expSignEnd = if (hasExp && charAt(s, fracEnd + 1).exists(c => c == '+' || c == '-')) fracEnd + 2 else fracEnd + 1
     val end = if (hasExp) digits(s, expSignEnd) else fracEnd
-    val source = s.substring(p, end)
+    val described = s"a number of ${end - p} characters at offset $p"
     val intDigits = s.substring(intStart, intEnd)
     val fracDigits = if (hasFrac) s.substring(intEnd + 1, fracEnd) else ""
     val expDigits = if (hasExp) s.substring(expSignEnd, end) else "0"
     val malformed =
       intDigits.isEmpty || (intDigits.length > 1 && intDigits.startsWith("0")) ||
       (hasFrac && fracDigits.isEmpty) || (hasExp && expDigits.isEmpty)
-    if (malformed) InvalidNumber(source, None).asLeft
+    // the integer digits have no leading zeros but a lone 0, after which the fraction's leading zeros are not counted
+    val significand = if (intDigits == "0") fracDigits.dropWhile(_ == '0').length else intDigits.length + fracDigits.length
+    val exponentDigits = expDigits.dropWhile(_ == '0').length
+    def tooLong(digits: Int): CanonicalError = InvalidNumber(described, Some(ArithmeticError.DigitsOutOfRange(digits, MaxDigits)))
+    if (malformed) InvalidNumber(described, None).asLeft
+    else if (significand > MaxDigits) tooLong(significand).asLeft
+    else if (exponentDigits > MaxDigits) tooLong(exponentDigits).asLeft
     else {
-      val exponent = BigInt(expDigits) * (if (hasExp && charAt(s, fracEnd + 1).contains('-')) -1 else 1)
+      // an exponent of more than 18 digits is past every scale a text this long can reach: saturate rather than convert
+      val magnitude = if (exponentDigits > 18) Long.MaxValue else expDigits.toLong
+      val exponent = if (hasExp && charAt(s, fracEnd + 1).contains('-')) -BigInt(magnitude) else BigInt(magnitude)
       val scale = BigInt(fracDigits.length) - exponent
-      val unscaled = BigInt(intDigits + fracDigits) * (if (negative) -1 else 1)
-      if (scale.abs > BigInt(maxScale))
-        InvalidNumber(source, Some(xyz.kd5ujc.numerics.ArithmeticError.ScaleOutOfRange(scale.toInt, maxScale))).asLeft
-      else Ratio.fromDecimal(unscaled, scale.toInt, maxScale).bimap(e => InvalidNumber(source, Some(e)), r => (number(r), end))
+      if (scale.abs > BigInt(maxScale)) {
+        val saturated = scale.max(BigInt(Int.MinValue)).min(BigInt(Int.MaxValue)).toInt
+        InvalidNumber(described, Some(ArithmeticError.ScaleOutOfRange(saturated, maxScale))).asLeft
+      } else {
+        val unscaled = BigInt(intDigits + fracDigits) * (if (negative) -1 else 1)
+        Ratio.fromDecimal(unscaled, scale.toInt, maxScale).bimap(e => InvalidNumber(described, Some(e)), r => (number(r), end))
+      }
     }
   }
 
@@ -200,10 +225,28 @@ object CanonicalJson {
           .map(_.sequence.flatMap(CanonicalValue.map))
     )
 
+  /**
+   * A number circe parsed keeps its source text, which is read exactly as [[parse]] reads it, before circe converts
+   * anything: so the bridge accepts and refuses exactly what [[parse]] does. A number built from a converted value has
+   * its coefficient's width checked before it is ever rendered.
+   */
   private def circeNumber(n: JsonNumber, maxScale: Int): Either[CanonicalError, CanonicalValue] =
+    io.circe.CirceNumberSource(n).fold(convertedNumber(n, maxScale)) { text =>
+      parseNumber(text, 0, maxScale).flatMap {
+        case (v, end) if end == text.length => v.asRight
+        case _                              => InvalidNumber(s"a number of ${text.length} characters at offset 0", None).asLeft
+      }
+    }
+
+  private def convertedNumber(n: JsonNumber, maxScale: Int): Either[CanonicalError, CanonicalValue] =
     n.toBigDecimal
-      .toRight(InvalidNumber(n.toString, None))
-      .flatMap(bd => Ratio.fromBigDecimal(bd, maxScale).bimap(e => InvalidNumber(sized(bd), Some(e)), number))
+      .toRight(InvalidNumber("a number with no decimal value", None))
+      .flatMap { bd =>
+        val unscaled = BigInt(bd.bigDecimal.unscaledValue)
+        val digits = if (unscaled.bitLength > MaxDigitBits) MaxDigits + 1 else unscaled.abs.toString.length
+        if (digits > MaxDigits) InvalidNumber(sized(bd), Some(ArithmeticError.DigitsOutOfRange(digits, MaxDigits))).asLeft
+        else Ratio.fromBigDecimal(bd, maxScale).bimap(e => InvalidNumber(sized(bd), Some(e)), number)
+      }
 
   // a decimal-backed number is described by its size: rendering its coefficient is superlinear and unpaid
   private def sized(bd: BigDecimal): String =
@@ -214,18 +257,13 @@ object CanonicalJson {
 
   private def toCirceEval(value: CanonicalValue): Eval[Either[CanonicalError, Json]] =
     value match {
-      case CNull    => Eval.now(Json.Null.asRight)
-      case CBool(b) => Eval.now(Json.fromBoolean(b).asRight)
-      case CInt(n)  => Eval.now(Json.fromBigInt(n).asRight)
-      case r: CRational =>
-        Eval.now(
-          r.value.toDecimalString
-            .map(d => Json.fromBigDecimal(BigDecimal(d)))
-            .toRight(nonTerminating(r))
-        )
-      case t: CText   => Eval.now(Json.fromString(t.value).asRight)
-      case CBytes(_)  => Eval.now(NotJsonRepresentable("bytes").asLeft)
-      case CArray(vs) => Eval.defer(vs.traverse(toCirceEval)).map(_.sequence.map(Json.fromValues))
+      case CNull        => Eval.now(Json.Null.asRight)
+      case CBool(b)     => Eval.now(Json.fromBoolean(b).asRight)
+      case CInt(n)      => Eval.now(numberText(value).map(_ => Json.fromBigInt(n)))
+      case r: CRational => Eval.now(numberText(r).map(d => Json.fromBigDecimal(BigDecimal(d))))
+      case t: CText     => Eval.now(Json.fromString(t.value).asRight)
+      case CBytes(_)    => Eval.now(NotJsonRepresentable("bytes").asLeft)
+      case CArray(vs)   => Eval.defer(vs.traverse(toCirceEval)).map(_.sequence.map(Json.fromValues))
       case CMap(m) =>
         Eval
           .defer(m.toVector.traverse { case (k, v) => toCirceEval(v).map(_.map(k -> _)) })
@@ -238,17 +276,42 @@ object CanonicalJson {
       s"non-terminating rational of ${r.value.numerator.bitLength}/${r.value.denominator.bitLength} bits"
     )
 
+  private val overLong: CanonicalError =
+    NotJsonRepresentable(s"a number of more than $MaxDigits digits or a scale above ${Ratio.DefaultMaxDecimalScale}")
+
+  /**
+   * A number's JSON text, within the bounds [[parse]] accepts, so that rendering always reads back. A wider numerator
+   * or denominator is refused before any conversion: `2^a 5^b` with scale `max(a, b)` within bounds is at most
+   * `10^MaxDigits`, and the significand is at least the numerator.
+   */
+  private def numberText(v: CanonicalValue): Either[CanonicalError, String] =
+    v match {
+      case CInt(n) if n.bitLength <= MaxDigitBits => within(n.toString)
+      case r: CRational if r.value.numerator.bitLength <= MaxDigitBits && r.value.denominator.bitLength <= MaxDigitBits =>
+        r.value.toDecimalString.toRight(nonTerminating(r)).flatMap(within)
+      case _ => overLong.asLeft
+    }
+
+  // the digits of `text`, a plain decimal, leading zeros aside, and the digits after its point
+  private def within(text: String): Either[CanonicalError, String] = {
+    val unsigned = text.stripPrefix("-")
+    val point = unsigned.indexOf('.')
+    val scale = if (point < 0) 0 else unsigned.length - point - 1
+    val significand = unsigned.filter(_ != '.').dropWhile(_ == '0').length
+    Either.cond(significand <= MaxDigits && scale <= Ratio.DefaultMaxDecimalScale, text, overLong)
+  }
+
   // ------------------------------------------------------------------ render (display view)
 
-  /** Compact JSON with keys in code-point order. Fails for bytes and non-terminating rationals. */
+  /** Compact JSON with keys in code-point order. Fails for bytes, non-terminating rationals and over-long numbers. */
   def render(value: CanonicalValue): Either[CanonicalError, String] = renderEval(value).value
 
   private def renderEval(value: CanonicalValue): Eval[Either[CanonicalError, String]] =
     value match {
       case CNull        => Eval.now("null".asRight)
       case CBool(b)     => Eval.now(b.toString.asRight)
-      case CInt(n)      => Eval.now(n.toString.asRight)
-      case r: CRational => Eval.now(r.value.toDecimalString.toRight(nonTerminating(r)))
+      case CInt(_)      => Eval.now(numberText(value))
+      case r: CRational => Eval.now(numberText(r))
       case t: CText     => Eval.now(quote(t.value).asRight)
       case CBytes(_)    => Eval.now(NotJsonRepresentable("bytes").asLeft)
       case CArray(vs)   => Eval.defer(vs.traverse(renderEval)).map(_.sequence.map(_.mkString("[", ",", "]")))

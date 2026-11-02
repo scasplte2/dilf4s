@@ -1,0 +1,59 @@
+import { describe, expect, it } from "vitest";
+
+import { json, RationalValue, Value } from "../src/index.js";
+import { expectOk } from "./vectors.js";
+
+// JSON numbers have at most 10,000 significant digits, counted on the text before any conversion, and render only
+// within the same bounds, so that a rendering always reads back
+describe("JSON number bounds", () => {
+  const digits = (n: number): string => "9".repeat(n);
+
+  it("10,000 digits read and write; leading zeros are not counted", () => {
+    const v = expectOk(json.parse(digits(10000)), "parses");
+    expect(json.render(v)).toEqual({ ok: true, value: digits(10000) });
+    const small = expectOk(json.parse(`0.${"0".repeat(10000)}1e1`), "parses");
+    expect(json.render(small)).toEqual({ ok: true, value: `0.${"0".repeat(9999)}1` });
+    expect(json.parse(`1e${"0".repeat(20000)}2`)).toEqual({ ok: true, value: Value.int(100n) });
+  });
+
+  it("more digits are refused by their length", () => {
+    expect(json.parse(digits(10001))).toEqual({ ok: false, error: { kind: "InvalidNumber", source: "a number of 10001 characters at offset 0", digits: 10001 } });
+    expect(json.parse(`0.${"1".repeat(10001)}e1`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber", digits: 10001 } });
+    expect(json.parse(`1e${"1".repeat(10001)}`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber", digits: 10001 } });
+    expect(json.parse(`1e${"9".repeat(20)}`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber" } });
+  });
+
+  it("rendering refuses what would not read back", () => {
+    expect(json.render(Value.int(10n ** 10000n))).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
+    const wide = Value.number(1n, 5n ** 14400n);
+    expect(wide).toBeDefined();
+    if (wide !== undefined) expect(json.render(wide)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
+    const third = Value.number(1n, 3n);
+    if (third !== undefined) expect(json.render(third)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "non-terminating rational" } });
+  });
+
+  it("a malformed number is described by its length and offset, never its text", () => {
+    const nines = digits(10001);
+    const cases: readonly (readonly [string, number])[] = [
+      [`[0${nines}]`, 10002],
+      [`[${nines}.]`, 10002],
+      [`[1.${nines}e]`, 10004],
+      [`[-${nines}e+]`, 10004],
+    ];
+    for (const [text, length] of cases) {
+      const r = json.parse(text);
+      expect(r).toEqual({ ok: false, error: { kind: "InvalidNumber", source: `a number of ${length.toString()} characters at offset 1` } });
+      expect(JSON.stringify(r, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v))).not.toContain("99999");
+    }
+  });
+
+  it("a decimal is reduced by 2 and 5 alone, exactly as by its gcd with 10^scale", () => {
+    const numerators = [0n, 1n, -1n, 2n, 5n, 10n, 16n, 25n, 125n, 640n, 3125n, -7812500n, 999n, 1000000n, 2048000000n, 5n ** 20000n, 3n * 2n ** 20000n];
+    // the parts themselves: toEqual does not see private fields
+    const parts = (v: Value | undefined): readonly [string, bigint, bigint] | undefined =>
+      v?.kind === "int" ? ["int", v.value, 1n] : v?.kind === "rational" ? ["rational", v.numerator, v.denominator] : undefined;
+    for (const n of numerators)
+      for (const scale of [0, 1, 2, 3, 7, 8, 9, 64, 1000, 10000])
+        expect(parts(RationalValue.decimal(n, scale))).toEqual(parts(RationalValue.number(n, 10n ** BigInt(scale))));
+  });
+});

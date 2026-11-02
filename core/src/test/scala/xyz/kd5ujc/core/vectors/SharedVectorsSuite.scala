@@ -20,5 +20,7 @@ object SharedVectorsSuite extends SimpleIOSuite {
 
   pureTest("no rejection vector is accidentally accepted") {
     expect(!CanonicalVectors.render.contains("ACCEPTED"), "every cborRejections entry must fail to decode")
+      .and(expect(!CanonicalVectors.render.contains("RENDERED"), "every renderRejections entry must fail to render"))
+      .and(expect(!CanonicalVectors.render.contains("UNRENDERABLE"), "every accepted JSON case must render"))
   }
 }

@@ -23,14 +23,14 @@ pub enum CanonicalError {
         /// What was expected.
         reason: JsonSyntaxError,
     },
-    /// A JSON number that is malformed or outside the accepted scale.
+    /// A JSON number that is malformed, or outside the accepted digits or scale.
     InvalidNumber {
-        /// The number as written.
+        /// The number's length and offset, never its text, whose size the caller chose.
         source: String,
-        /// The scale bound it exceeds, when that is the problem.
-        scale: Option<ScaleOutOfRange>,
+        /// The bound it exceeds, when that is the problem.
+        bound: Option<NumberBound>,
     },
-    /// A value with no JSON form: bytes, or a rational with no terminating decimal.
+    /// A value with no JSON form: bytes, a rational with no terminating decimal, or a number too long to read back.
     NotJsonRepresentable {
         /// What could not be written.
         kind: NotJson,
@@ -104,8 +104,8 @@ impl fmt::Display for CanonicalError {
             Self::JsonSyntax { offset, reason } => {
                 write!(f, "JSON syntax error at {offset}: {reason}")
             }
-            Self::InvalidNumber { source, scale } => match scale {
-                Some(s) => write!(f, "invalid number {source}: {s}"),
+            Self::InvalidNumber { source, bound } => match bound {
+                Some(b) => write!(f, "invalid number {source}: {b}"),
                 None => write!(f, "invalid number {source}"),
             },
             Self::NotJsonRepresentable { kind } => write!(f, "{kind} has no JSON form"),
@@ -123,6 +123,39 @@ impl fmt::Display for CanonicalError {
 }
 
 impl core::error::Error for CanonicalError {}
+
+/// A JSON number bound (canonical-encoding.md section 3) that a number exceeds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NumberBound {
+    /// Its scale.
+    Scale(ScaleOutOfRange),
+    /// Its significant digits, counted on its text before any conversion.
+    Digits(DigitsOutOfRange),
+}
+
+impl fmt::Display for NumberBound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Scale(s) => s.fmt(f),
+            Self::Digits(d) => d.fmt(f),
+        }
+    }
+}
+
+/// A significand or exponent with more significant digits than the bound (canonical-encoding.md section 3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DigitsOutOfRange {
+    /// Its significant digits.
+    pub digits: usize,
+    /// The most accepted.
+    pub max_digits: usize,
+}
+
+impl fmt::Display for DigitsOutOfRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} significant digits, more than {}", self.digits, self.max_digits)
+    }
+}
 
 /// A decimal whose scale exceeds the bound (canonical-encoding.md section 3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -146,6 +179,9 @@ pub enum NotJson {
     Bytes,
     /// A rational whose decimal does not terminate.
     NonTerminatingRational,
+    /// A number whose JSON form would have more than [`crate::json::MAX_DIGITS`] significant digits or a scale above
+    /// [`crate::json::DEFAULT_MAX_SCALE`]: rendering it could not be read back.
+    OverLong,
 }
 
 impl fmt::Display for NotJson {
@@ -153,6 +189,7 @@ impl fmt::Display for NotJson {
         f.write_str(match self {
             Self::Bytes => "a byte string",
             Self::NonTerminatingRational => "a non-terminating rational",
+            Self::OverLong => "a number of more than 10000 digits or a scale above 10000",
         })
     }
 }

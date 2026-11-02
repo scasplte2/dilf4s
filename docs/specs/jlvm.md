@@ -45,6 +45,8 @@ exactly five things:
     `[{"literal": "+"}, {"var": "x"}]`. Rendering quotes such a first element itself.
   - The segments array of a computed `var` path (§4.1) is exempt, since it is never code.
 - **JSON `null`** is the null literal.
+- **Numbers**, as literals and as `var` paths, are read as canonical JSON numbers (`canonical-encoding.md` §3): at
+  most 10,000 significant digits and a scale of at most 10,000, both checked on the text before any conversion.
 - **Strings** of the form `0x` followed by an even number of lowercase hex digits are byte strings (§2). Every other
   string is text.
 

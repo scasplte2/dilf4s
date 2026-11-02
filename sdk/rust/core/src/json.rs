@@ -13,11 +13,19 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{Signed, Zero, pow};
 
-use crate::error::{CanonicalError, JsonSyntaxError, NotJson, ScaleOutOfRange};
+use crate::error::{CanonicalError, DigitsOutOfRange, JsonSyntaxError, NotJson, NumberBound, ScaleOutOfRange};
 use crate::value::{Array, MAX_DEPTH, Map, Rational, Text, Value};
 
 /// The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises.
 pub const DEFAULT_MAX_SCALE: u32 = 10_000;
+
+/// The most significant digits a JSON number's significand (integer and fraction digits, leading zeros aside) or
+/// exponent may have, read or written. Decimal conversion is superlinear, so the bound is checked on the text before
+/// any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
+pub const MAX_DIGITS: usize = 10_000;
+
+/// `10^MAX_DIGITS` has 33220 bits: a number any wider has more than [`MAX_DIGITS`] digits.
+const MAX_DIGIT_BITS: u64 = 33_220;
 
 /// Parses JSON text into a canonical value with the default scale bound.
 pub fn parse(text: &str) -> Result<Value, CanonicalError> {
@@ -192,8 +200,9 @@ impl Parser<'_> {
         }
     }
 
-    /// `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`, converted exactly; the scale is checked before any
-    /// power of ten is built.
+    /// `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`, converted exactly. Its digits are counted, then its
+    /// scale checked, before any conversion. A refusal describes the number by its length and byte offset, never its
+    /// text, whose size the caller chose.
     fn number(&self, p: usize) -> Result<(Value, usize), CanonicalError> {
         let negative = self.at(p) == Some(b'-');
         let int_start = if negative { p.saturating_add(1) } else { p };
@@ -209,8 +218,11 @@ impl Parser<'_> {
         };
         let end = if has_exp { self.digits(exp_start) } else { frac_end };
         let slice = |a: usize, b: usize| self.text.get(a..b).unwrap_or("");
-        let source = slice(p, end);
-        let invalid = |scale| CanonicalError::InvalidNumber { source: String::from(source), scale };
+        let invalid = |bound| CanonicalError::InvalidNumber {
+            source: alloc::format!("a number of {} characters at offset {p}", end.saturating_sub(p)),
+            bound,
+        };
+        let bounded = |bound| invalid(Some(bound));
         let int_digits = slice(int_start, int_end);
         let frac_digits = if has_frac { slice(int_end.saturating_add(1), frac_end) } else { "" };
         let exp_digits = if has_exp { slice(exp_start, end) } else { "0" };
@@ -221,6 +233,16 @@ impl Parser<'_> {
         if malformed {
             return Err(invalid(None));
         }
+        // the integer digits have no leading zeros but a lone 0, after which the fraction's leading zeros are not counted
+        let significand = if int_digits == "0" {
+            frac_digits.trim_start_matches('0').len()
+        } else {
+            int_digits.len().saturating_add(frac_digits.len())
+        };
+        let exponent_digits = exp_digits.trim_start_matches('0').len();
+        if let Some(digits) = [significand, exponent_digits].into_iter().find(|d| *d > MAX_DIGITS) {
+            return Err(bounded(NumberBound::Digits(DigitsOutOfRange { digits, max_digits: MAX_DIGITS })));
+        }
         // saturating: any exponent past i128 is far outside every accepted scale
         let magnitude = exp_digits
             .bytes()
@@ -229,19 +251,19 @@ impl Parser<'_> {
         let scale = i128::try_from(frac_digits.len()).unwrap_or(i128::MAX).saturating_sub(exponent);
         let max = i128::from(self.max_scale);
         if scale.saturating_abs() > max {
-            return Err(invalid(Some(ScaleOutOfRange { scale, max_scale: self.max_scale })));
+            return Err(bounded(NumberBound::Scale(ScaleOutOfRange { scale, max_scale: self.max_scale })));
         }
         let mut all_digits = String::with_capacity(int_digits.len().saturating_add(frac_digits.len()));
         all_digits.push_str(int_digits);
         all_digits.push_str(frac_digits);
         let unscaled = BigInt::parse_bytes(all_digits.as_bytes(), 10).ok_or_else(|| invalid(None))?;
         let unscaled = if negative { -unscaled } else { unscaled };
-        let power =
-            |s: i128| usize::try_from(s.unsigned_abs()).map(|e| pow(BigInt::from(10u8), e)).map_err(|_| invalid(None));
+        let magnitude = usize::try_from(scale.unsigned_abs()).map_err(|_| invalid(None))?;
+        // a decimal's denominator is 10^scale: reduced by its primes 2 and 5 alone, never by a general gcd
         let value = if scale >= 0 {
-            Value::number(&unscaled, &power(scale)?).map_err(|_| invalid(None))?
+            Value::decimal(&unscaled, magnitude)
         } else {
-            Value::int(unscaled * power(scale)?)
+            Value::int(unscaled * pow(BigInt::from(10u8), magnitude))
         };
         Ok((value, end))
     }
@@ -394,10 +416,10 @@ fn write_json(out: &mut String, value: &Value) -> Result<(), CanonicalError> {
         match next.take() {
             Some(Value::Null) => out.push_str("null"),
             Some(Value::Bool(b)) => out.push_str(if *b { "true" } else { "false" }),
-            Some(Value::Int(n)) => push_display(out, n),
-            Some(Value::Rational(r)) => out.push_str(
-                &decimal(r).ok_or(CanonicalError::NotJsonRepresentable { kind: NotJson::NonTerminatingRational })?,
-            ),
+            Some(Value::Int(n)) => out.push_str(&integer_text(n)?),
+            Some(Value::Rational(r)) => {
+                out.push_str(&decimal(r).map_err(|kind| CanonicalError::NotJsonRepresentable { kind })?);
+            }
             Some(Value::Text(s)) => quote(out, s),
             Some(Value::Bytes(_)) => return Err(CanonicalError::NotJsonRepresentable { kind: NotJson::Bytes }),
             Some(Value::Array(a)) => {
@@ -443,9 +465,26 @@ fn write_json(out: &mut String, value: &Value) -> Result<(), CanonicalError> {
     }
 }
 
-fn push_display(out: &mut String, n: &BigInt) {
-    // writing to a String cannot fail
-    let _ = write!(out, "{n}");
+/// An integer's decimal, within the bounds [`parse`] accepts.
+fn integer_text(n: &crate::value::Int) -> Result<String, CanonicalError> {
+    let over_long = CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong };
+    if n.bit_length() > MAX_DIGIT_BITS {
+        return Err(over_long);
+    }
+    within(n.to_string()).ok_or(over_long)
+}
+
+/// `text`, a plain decimal, when its significant digits and scale are within the bounds [`parse`] accepts.
+fn within(text: String) -> Option<String> {
+    let unsigned = text.strip_prefix('-').unwrap_or(&text);
+    let (int_part, frac_part) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let significand = if int_part == "0" {
+        frac_part.trim_start_matches('0').len()
+    } else {
+        int_part.trim_start_matches('0').len().saturating_add(frac_part.len())
+    };
+    let scale_ok = u32::try_from(frac_part.len()).is_ok_and(|s| s <= DEFAULT_MAX_SCALE);
+    (significand <= MAX_DIGITS && scale_ok).then_some(text)
 }
 
 fn quote(out: &mut String, s: &str) {
@@ -468,8 +507,14 @@ fn quote(out: &mut String, s: &str) {
     out.push('"');
 }
 
-/// The exact decimal of `r`, when its denominator has no prime factors but 2 and 5.
-pub fn decimal(r: &Rational) -> Option<String> {
+/// The exact decimal of `r`, within the bounds [`parse`] accepts: [`NotJson::NonTerminatingRational`] when its
+/// denominator has prime factors other than 2 and 5, [`NotJson::OverLong`] past the bounds. A numerator or denominator
+/// wider than `10^MAX_DIGITS` is refused before it is factored or scaled: `2^a 5^b` with `max(a, b)` within the scale
+/// bound is at most that, and the significand is at least the numerator.
+pub fn decimal(r: &Rational) -> Result<String, NotJson> {
+    if r.numerator_bit_length() > MAX_DIGIT_BITS || r.denominator_bit_length() > MAX_DIGIT_BITS {
+        return Err(NotJson::OverLong);
+    }
     let d = r.denominator();
     let twos = d.trailing_zeros().unwrap_or(0);
     let mut rest: BigInt = d >> twos;
@@ -484,9 +529,12 @@ pub fn decimal(r: &Rational) -> Option<String> {
         fives = fives.saturating_add(1);
     }
     if rest != BigInt::from(1u8) {
-        return None;
+        return Err(NotJson::NonTerminatingRational);
     }
-    let scale = usize::try_from(twos.max(fives)).ok()?;
+    let scale = usize::try_from(twos.max(fives))
+        .ok()
+        .filter(|s| u32::try_from(*s).is_ok_and(|s| s <= DEFAULT_MAX_SCALE))
+        .ok_or(NotJson::OverLong)?;
     // 10^scale is a multiple of d, so the division is exact
     let scaled = r.numerator() * (pow(BigInt::from(10u8), scale) / d);
     let digits = scaled.abs().to_string();
@@ -494,5 +542,5 @@ pub fn decimal(r: &Rational) -> Option<String> {
     padded.push_str(&digits);
     let (int_part, frac_part) = padded.split_at(padded.len().saturating_sub(scale));
     let sign = if scaled.is_negative() { "-" } else { "" };
-    Some(alloc::format!("{sign}{int_part}.{frac_part}"))
+    within(alloc::format!("{sign}{int_part}.{frac_part}")).ok_or(NotJson::OverLong)
 }

@@ -7,6 +7,7 @@ canonical-vectors = {
   "contentHashAlgorithm": text,
   "json": [* canonical-json-case],
   "model": [* canonical-model-case],
+  "renderRejections": [* canonical-render-rejection],
   "cborRejections": [* canonical-cbor-rejection],
   "taggedHash": [* canonical-tagged-hash],
   "digests": [* canonical-digest],
@@ -21,6 +22,9 @@ canonical-json-accepted = { "json": text, "cbor": hex, "contentHash": hex, "rend
 canonical-json-rejected = { "json": text, "error": text }
 
 canonical-model-case = { "value": text, "cbor": hex, "contentHash": hex }
+
+; A value with a CBOR form whose JSON form would exceed the bounds of section 3, so rendering it fails.
+canonical-render-rejection = { "cbor": hex, "error": text }
 
 canonical-cbor-rejection = { "cbor": hex, "error": text }
 

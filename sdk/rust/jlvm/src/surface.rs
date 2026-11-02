@@ -296,6 +296,17 @@ mod tests {
     }
 
     #[test]
+    fn numbers_past_ten_thousand_digits_are_refused_as_literals_and_paths() {
+        let most = "9".repeat(10_000);
+        assert!(parse(&alloc::format!(r#"{{"var": {most}}}"#)).is_ok(), "a 10,000-digit path is read");
+        assert!(parse(&alloc::format!(r#"{{"+": [{most}, 1]}}"#)).is_ok(), "and a 10,000-digit literal");
+        assert!(parse(&alloc::format!(r#"{{"var": {most}9}}"#)).is_err(), "a 10,001-digit path is refused");
+        assert!(parse(&alloc::format!(r#"{{"+": [{most}9, 1]}}"#)).is_err(), "and a 10,001-digit literal");
+        let exponent = "1".repeat(10_001);
+        assert!(parse(&alloc::format!(r#"{{"var": 1e{exponent}}}"#)).is_err(), "and a 10,001-digit exponent");
+    }
+
+    #[test]
     fn null_fields_keep_a_map_expression() {
         // two keys, one null: a map expression, not the operation +
         let p = parse(r#"{"+": [1, 2], "x": null}"#).map(|p| p.expr);

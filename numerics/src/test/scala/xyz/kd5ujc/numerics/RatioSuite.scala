@@ -131,6 +131,16 @@ object RatioSuite extends SimpleIOSuite with Checkers {
       )
   }
 
+  pureTest("a decimal is reduced by 2 and 5 alone, exactly as by its gcd with 10^scale") {
+    val numerators = List[BigInt](0, 1, -1, 2, 5, 10, 16, 25, 125, 640, 3125, -7812500, 999, 1000000, 2048000000) ++
+      List(BigInt(5).pow(20000), BigInt(2).pow(20000) * 3)
+    (for {
+      n     <- numerators
+      scale <- List(0, 1, 2, 3, 7, 8, 9, 64, 1000, 10000)
+    } yield expect(Ratio.of(n, BigInt(10).pow(scale)) == Ratio.fromDecimal(n, scale), s"${n.bitLength}-bit / 10^$scale"))
+      .reduce(_ and _)
+  }
+
   pureTest("decimal rendering is exact for terminating values and absent otherwise") {
     val third = Ratio.of(1, 3).toOption
     expect

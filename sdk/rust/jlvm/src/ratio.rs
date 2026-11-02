@@ -187,7 +187,7 @@ impl Ratio {
     pub(crate) fn to_decimal_string(&self) -> Option<String> {
         match self.to_value() {
             Value::Int(i) => Some(i.to_string()),
-            Value::Rational(r) => decimal(&r),
+            Value::Rational(r) => decimal(&r).ok(),
             _ => None,
         }
     }

@@ -108,8 +108,29 @@ object Ratio {
   /** `unscaled * 10^-scale`, exactly; rejects `|scale| > maxScale`. */
   def fromDecimal(unscaled: BigInt, scale: Int, maxScale: Int = DefaultMaxDecimalScale): Either[ArithmeticError, Ratio] =
     if (math.abs(scale.toLong) > maxScale.toLong) ArithmeticError.ScaleOutOfRange(scale, maxScale).asLeft
-    else if (scale >= 0) reduced(unscaled, BigInt(10).pow(scale)).asRight
+    else if (scale >= 0) decimal(unscaled, scale).asRight
     else integer(unscaled * BigInt(10).pow(-scale)).asRight
+
+  /**
+   * `unscaled / 10^scale` in lowest terms. `10^scale`'s only primes are 2 and 5, so the common factor is
+   * `2^min(v2, scale) 5^min(v5, scale)`: the twos go in one shift, and the fives by trial division by `5^(2^i)` from the
+   * largest `2^i <= scale` down, which builds `min(v5, scale)` bit by bit (about 14 divisions for a scale of 10000).
+   * The same result as [[reduced]] against `10^scale`, without its general gcd.
+   */
+  private def decimal(unscaled: BigInt, scale: Int): Ratio =
+    if (unscaled.signum == 0) Zero
+    else {
+      val twos = math.min(unscaled.lowestSetBit, scale)
+      val powers = Iterator.iterate((1, Five)) { case (e, p) => (e * 2, p * p) }.takeWhile(_._1 <= scale).toList
+      val (rest, fives) = powers.reverse.foldLeft((unscaled >> twos, 0)) {
+        case ((n, count), (e, _)) if count + e > scale => (n, count)
+        case ((n, count), (e, p)) =>
+          val (q, r) = n /% p
+          if (r.signum == 0) (q, count + e) else (n, count)
+      }
+      val denominator = Five.pow(scale - fives) << (scale - twos)
+      if (denominator == BigInt(1)) integer(rest) else new Ratio(rest, denominator) {}
+    }
 
   def fromBigDecimal(value: BigDecimal, maxScale: Int = DefaultMaxDecimalScale): Either[ArithmeticError, Ratio] =
     fromDecimal(BigInt(value.bigDecimal.unscaledValue), value.bigDecimal.scale, maxScale)
@@ -153,4 +174,7 @@ sealed trait ArithmeticError extends Product with Serializable
 object ArithmeticError {
   case object DivisionByZero extends ArithmeticError
   final case class ScaleOutOfRange(scale: Int, maxScale: Int) extends ArithmeticError
+
+  /** A decimal with more significant digits than its reader accepts (counted on its text, before conversion). */
+  final case class DigitsOutOfRange(digits: Int, maxDigits: Int) extends ArithmeticError
 }

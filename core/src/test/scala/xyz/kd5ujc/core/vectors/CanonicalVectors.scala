@@ -86,6 +86,10 @@ object CanonicalVectors {
     "-1e-400",
     "0e10000",
     "0.000",
+    // significant digits: 10,000 is the bound, and leading zeros (of the fraction, or of the exponent) are not counted
+    "9" * 10000,
+    "0." + "0" * 10000 + "1e1",
+    "1e0000000002",
     // depth: 256 nested arrays is the limit, and an empty array is a level
     "[" * 255 + "[]" + "]" * 255,
     // rejected
@@ -106,6 +110,9 @@ object CanonicalVectors {
     "\"\\u0001\"".replace("\\u0001", "\u0001"),
     "0e-10001",
     "1e10001",
+    "9" * 10001,
+    "0." + "1" * 10001 + "e1",
+    "1e" + "1" * 10001,
     "[" * 256 + "[]" + "]" * 256,
     "[1,2",
     "{\"a\":1",
@@ -128,6 +135,21 @@ object CanonicalVectors {
       xyz.kd5ujc.numerics.Ratio.of(-(BigInt(1) << 70), 3).fold(e => sys.error(e.toString), identity)
     ),
     "rational(1/2^64)" -> CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(1, BigInt(1) << 64).fold(e => sys.error(e.toString), identity))
+  )
+
+  private def rational(n: BigInt, d: BigInt): CanonicalValue =
+    CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(n, d).fold(e => sys.error(e.toString), identity))
+
+  /**
+   * Values with a CBOR form whose JSON form would break the bounds parsing enforces, so rendering refuses them: 10^10000
+   * (10,001 digits), a scale of 10,001, a significand of 10,001 digits within the scale, and a denominator too wide for
+   * any scale within bounds (refused before it is factored).
+   */
+  val renderRejections: List[CanonicalValue] = List(
+    CanonicalValue.CInt(BigInt(10).pow(10000)),
+    rational(1, BigInt(1) << 10001),
+    rational(BigInt(10).pow(10000) + 1, 2),
+    rational(1, BigInt(5).pow(14400))
   )
 
   val cborRejections: List[ByteVector] = List(
@@ -239,6 +261,9 @@ object CanonicalVectors {
       case (name, v) =>
         val bytes = Cbor.encode(v)
         Json.obj("value" -> name.asJson, "cbor" -> bytes.toHex.asJson, "contentHash" -> sha256(bytes).hex.asJson)
+    }.asJson,
+    "renderRejections" -> renderRejections.map { v =>
+      Json.obj("cbor" -> Cbor.encode(v).toHex.asJson, "error" -> CanonicalJson.render(v).fold(errorKind, r => s"RENDERED $r".asJson))
     }.asJson,
     "cborRejections" -> cborRejections.map { b =>
       Json.obj("cbor" -> b.toHex.asJson, "error" -> Cbor.decode(b).fold(errorKind, v => s"ACCEPTED $v".asJson))

@@ -2,7 +2,7 @@ package xyz.kd5ujc.core.canonical
 
 import xyz.kd5ujc.core.canonical.CanonicalError._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.numerics.Ratio
+import xyz.kd5ujc.numerics.{ArithmeticError, Ratio}
 
 import io.circe.syntax._
 import io.circe.{Json, parser}
@@ -15,9 +15,40 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
   private def parse(s: String) = CanonicalJson.parse(s)
 
   pureTest("a refused rational is named by its size, never its digits") {
-    val third = Ratio.of(BigInt(1) << 1000000, BigInt(3)).fold(e => sys.error(e.toString), CanonicalValue.number)
-    val refusal = NotJsonRepresentable("non-terminating rational of 1000001/2 bits")
-    expect.same(Left(refusal), CanonicalJson.render(third)).and(expect.same(Left(refusal), CanonicalJson.toCirce(third)))
+    def rational(n: BigInt, d: BigInt) = Ratio.of(n, d).fold(e => sys.error(e.toString), CanonicalValue.number)
+    val third = rational(BigInt(1) << 30000, BigInt(3))
+    val refusal = NotJsonRepresentable("non-terminating rational of 30001/2 bits")
+    val huge = rational(BigInt(1) << 1000000, BigInt(3))
+    val overLong = NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")
+    expect
+      .same(Left(refusal), CanonicalJson.render(third))
+      .and(expect.same(Left(refusal), CanonicalJson.toCirce(third)))
+      .and(expect.same(Left(overLong), CanonicalJson.render(huge)))
+      .and(expect.same(Left(overLong), CanonicalJson.toCirce(huge)))
+  }
+
+  pureTest("numbers are read and written within 10,000 significant digits, counted before any conversion") {
+    def digits(n: Int) = "9" * n
+    val rejectedDigits = (n: Int) => s"a number of $n characters at offset 0"
+    expect
+      .same(Right(CInt(BigInt(digits(10000)))), parse(digits(10000)))
+      .and(expect.same(Right(digits(10000)), parse(digits(10000)).flatMap(CanonicalJson.render)))
+      .and(expect(parse("0." + "0" * 4000 + digits(6000)).isRight, "leading zeros of a fraction are not counted"))
+      .and(expect.same(Right(CInt(100)), parse("1e" + "0" * 20000 + "2")))
+      .and(parse(digits(10001)) match {
+        case Left(InvalidNumber(source, Some(ArithmeticError.DigitsOutOfRange(10001, 10000)))) =>
+          expect.same(rejectedDigits(10001), source)
+        case other => failure(s"expected a digit refusal, got ${other.isRight}")
+      })
+      .and(expect(parse("0." + digits(10001)).isLeft, "10,001 fraction digits"))
+      .and(expect(parse("1e" + digits(10001)).isLeft, "an exponent of 10,001 digits"))
+      .and(expect(parse("1e" + digits(20)).isLeft, "an exponent past every scale, saturated rather than converted"))
+      .and(
+        expect.same(
+          Left(NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")),
+          CanonicalJson.render(CInt(BigInt(10).pow(10000)))
+        )
+      )
   }
 
   pureTest("a number refused for its scale is named by its size, never its digits") {
@@ -27,6 +58,40 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
         expect.same("a number of scale 10001 with a 1000001-bit coefficient", source)
       case other => failure(s"expected a scale refusal, got ${other.isRight}")
     }
+  }
+
+  pureTest("a malformed or over-long number is described by its length and offset, never its text") {
+    val nines = "9" * 10001
+    List(
+      "0" + nines        -> 10002,
+      nines + "."        -> 10002,
+      "1." + nines + "e" -> 10004,
+      "-" + nines + "e+" -> 10004
+    ).map {
+      case (text, length) =>
+        val expected = s"a number of $length characters at offset 1"
+        parse(s"[$text]") match {
+          case Left(e @ InvalidNumber(source, _)) =>
+            expect.same(expected, source).and(expect(!e.toString.contains("99999"), s"its diagnostic keeps no digits: $e"))
+          case other => failure(s"expected a refusal of a $length-character number, got ${other.isRight}")
+        }
+    }.reduce(_ and _)
+  }
+
+  pureTest("circe-parsed numbers are read from their source text, exactly as the parser reads them") {
+    def viaCirce(text: String) = parser.parse(text).left.map(e => JsonSyntax(0, e.message)).flatMap(CanonicalJson.fromCirce(_))
+    val numbers = xyz.kd5ujc.core.vectors.CanonicalVectors.jsonInputs.filter(t => t.headOption.exists(c => c == '-' || c.isDigit))
+    val agree = numbers
+      .filter(t => parser.parse(t).isRight)
+      .map(t => expect.same(parse(t), viaCirce(t)))
+      .reduce(_ and _)
+    expect
+      .same(
+        Left(InvalidNumber("a number of 640000 characters at offset 0", Some(ArithmeticError.DigitsOutOfRange(640000, 10000)))),
+        viaCirce("9" * 640000)
+      )
+      .and(expect(viaCirce("0e" + "1" * 10001).isLeft, "a zero with a 10,001-digit exponent is refused, as the parser refuses it"))
+      .and(agree)
   }
 
   pureTest("numbers are read exactly from source text") {
