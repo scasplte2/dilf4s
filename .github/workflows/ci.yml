@@ -73,8 +73,9 @@ jobs:
         working-directory: sdk/rust
     steps:
       - uses: actions/checkout@v4
-      # pinned: clippy pedantic is denied, so a new stable's lints must not break CI unannounced
-      - uses: dtolnay/rust-toolchain@1.95.0
+      # pinned: clippy pedantic is denied, so a new stable's lints must not break CI unannounced. The same version as
+      # sdk/rust/rust-toolchain.toml; move both together
+      - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: rustfmt, clippy
           # SP1 v6 guests build for riscv64im-succinct-zkvm-elf with atomics lowered (-Cpasses=lower-atomic), a target

@@ -12,7 +12,8 @@ use std::sync::OnceLock;
 
 use dilf4s_core::BigInt;
 use dilf4s_jlvm::{
-    Compiled, Config, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Op, Outcome, Value, parse, parse_value,
+    Compiled, Config, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Op, Outcome, Value, Warning, parse,
+    parse_value,
 };
 
 const S: GasSchedule = GasSchedule::V1;
@@ -355,7 +356,7 @@ fn ambiguous_paths_warn_once_and_never_change_gas() {
     assert_eq!(plain.result, Ok(parse_value("[2]").unwrap()));
     assert_eq!(plain.warnings.len(), 1);
     let explicit = eval(r#"{"map": [{"var": "xs"}, {"var": "$current.a"}]}"#, &data);
-    assert!(explicit.warnings.is_empty());
+    assert_eq!(explicit.warnings, Vec::<Warning>::new());
 }
 
 #[test]

@@ -43,7 +43,7 @@ fn paths_parse_hardened_and_soft_segments_and_reject_malformed_ones() {
     let serialized = |p: &str| path::parse(p).unwrap().iter().map(|i| i.serialized()).collect::<Vec<_>>();
     assert_eq!(serialized("m/44'/0/7"), [0x8000_002c, 0, 7]);
     assert_eq!(serialized("m/0h"), [0x8000_0000]);
-    assert!(serialized("m").is_empty());
+    assert_eq!(serialized("m"), Vec::<u32>::new());
     assert_eq!(serialized("m/2147483647'"), [0xffff_ffff]);
     // an index is only built checked, so bit 31 of the serialised form and is_hardened always agree
     assert_eq!(path::ChildIndex::soft(0x8000_0000).unwrap_err().kind(), "InvalidDerivation");
