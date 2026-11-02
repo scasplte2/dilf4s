@@ -425,6 +425,7 @@ dependencies = [
  "curve25519-dalek",
  "dilf4s-core",
  "ed25519-dalek",
+ "fiat-crypto",
  "hkdf",
  "hmac",
  "k256",
