@@ -502,6 +502,10 @@ fn push_length(out: &mut Vec<u8>, length: usize) {
 
 /// A leaf's transcript bytes (section 4): `01 ‖ len(s) ‖ s ‖ len(c) ‖ c`, with `s` the leaf's statement and `c` its
 /// commitment, recomputed from its challenge `e` and response `z` (section 2).
+///
+/// Each commitment is two scalar multiplications on every target (issue #33). k256's `lincomb` takes 0.77× their time
+/// natively but about 1.05× their cycles in the SP1 guest (`sdk/rust/zk`), where the patch builds it on the same
+/// precompiles; gating `lincomb` on `not(target_os = "zkvm")` is the option if native speed is ever needed.
 fn push_leaf(out: &mut Vec<u8>, node: &Node, e: &Challenge, z: &Scalar) {
     let c = challenge_scalar(e);
     let (opcode, points, commitment): (u8, &[Element], Vec<u8>) = match node {
