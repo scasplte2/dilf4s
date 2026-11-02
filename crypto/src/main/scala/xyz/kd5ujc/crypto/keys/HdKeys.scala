@@ -4,6 +4,8 @@ import java.nio.charset.StandardCharsets.UTF_8
 
 import cats.syntax.all._
 
+import scala.annotation.tailrec
+
 import xyz.kd5ujc.crypto.signing._
 
 import scodec.bits.ByteVector
@@ -26,40 +28,57 @@ object ChildIndex {
   def hardened(i: Long): Either[KeyError, ChildIndex] =
     Either.cond(i >= 0 && i < 0x80000000L, Hardened(i), KeyError.InvalidDerivation(s"index $i out of range"))
 
-  /** The most significant digits a segment may have once its leading zeros are stripped: 2^31 - 1 has ten. */
+  /** The most digits a segment may have: 2^31 - 1 has ten. */
   val MaxSegmentDigits: Int = 10
+
+  /** The most segments a path may have after `m`: BIP32 serialises the depth in one byte. */
+  val MaxDepth: Int = 255
 
   /**
    * `m/44'/0'/0'/0/7` (or `h` in place of `'`), relative to the master key; `m` alone is the empty path. A segment is
-   * one or more ASCII digits, then an optional hardening mark. Nothing is trimmed, and an empty segment (`m/`, `m//1`),
-   * a sign, a non-ASCII digit or any other character is `InvalidDerivation` (docs/specs/signing.md §3). Leading zeros
-   * are stripped and a segment with more than [[MaxSegmentDigits]] digits left is refused before any conversion, so
-   * parsing is linear in the path. An error names a segment by its position (0 is the first after `m`) and, past the
-   * bound, its significant digit count; never by its text.
+   * `0` or a nonzero ASCII digit and more digits, then an optional hardening mark, so each index has one spelling.
+   * Nothing is trimmed, and an empty segment (`m/`, `m//1`), a leading zero, a sign, a non-ASCII digit or any other
+   * character is `InvalidDerivation` (docs/specs/signing.md §3). A segment of more than [[MaxSegmentDigits]] digits is
+   * refused before any conversion, and the scan stops at segment [[MaxDepth]], so parsing is linear in the path and
+   * never holds more than [[MaxDepth]] indices. An error names a segment by its position (0 is the first after `m`)
+   * and, past the digit bound, its length; never by its text.
    */
-  def path(p: String): Either[KeyError, List[ChildIndex]] =
-    p.split("/", -1).toList match {
-      case "m" :: rest => rest.zipWithIndex.traverse { case (seg, at) => segment(seg, at) }
-      case _           => KeyError.InvalidDerivation("path must start with m").asLeft
+  def path(p: String): Either[KeyError, List[ChildIndex]] = {
+    @tailrec
+    def scan(from: Int, at: Int, acc: List[ChildIndex]): Either[KeyError, List[ChildIndex]] = {
+      val slash = p.indexOf('/', from)
+      val end = if (slash < 0) p.length else slash
+      val parsed =
+        if (at < MaxDepth) segment(p.substring(from, end), at)
+        else KeyError.InvalidDerivation(s"path has more than $MaxDepth segments").asLeft
+      parsed match {
+        case Left(e)               => e.asLeft
+        case Right(c) if slash < 0 => (c :: acc).reverse.asRight
+        case Right(c)              => scan(slash + 1, at + 1, c :: acc)
+      }
     }
+    if (p == "m") Nil.asRight
+    else if (p.startsWith("m/")) scan(2, 0, Nil)
+    else KeyError.InvalidDerivation("path must start with m").asLeft
+  }
 
   private def segment(seg: String, at: Int): Either[KeyError, ChildIndex] = {
     val hard = seg.endsWith("'") || seg.endsWith("h")
     val digits = if (hard) seg.dropRight(1) else seg
-    val significant = digits.dropWhile(_ == '0')
     for {
       _ <- Either.cond(
         digits.nonEmpty && digits.forall(c => c >= '0' && c <= '9'),
         (),
         KeyError.InvalidDerivation(s"path segment $at is malformed")
       )
+      _ <- Either.cond(digits == "0" || !digits.startsWith("0"), (), KeyError.InvalidDerivation(s"path segment $at has a leading zero"))
       _ <- Either.cond(
-        significant.length <= MaxSegmentDigits,
+        digits.length <= MaxSegmentDigits,
         (),
-        KeyError.InvalidDerivation(s"path segment $at has ${significant.length} significant digits, more than $MaxSegmentDigits")
+        KeyError.InvalidDerivation(s"path segment $at has ${digits.length} digits, more than $MaxSegmentDigits")
       )
       // at most ten digits: no overflow
-      i = significant.foldLeft(0L)((acc, c) => acc * 10 + (c - '0'))
+      i = digits.foldLeft(0L)((acc, c) => acc * 10 + (c - '0'))
       index <- Either.cond(i < 0x80000000L, i, KeyError.InvalidDerivation(s"path segment $at is out of range"))
     } yield if (hard) Hardened(index) else Soft(index)
   }

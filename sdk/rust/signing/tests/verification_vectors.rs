@@ -133,12 +133,12 @@ fn verifying_key_decoding() {
     assert!(rows.len() >= 40, "{} verifying-key rows", rows.len());
 }
 
-/// Every `paths` row: nothing trimmed, ASCII digits only, no empty segment, at most ten significant digits; accepted
-/// paths give these indices, and a refused one is `InvalidDerivation`.
+/// Every `paths` row: nothing trimmed, ASCII digits only, no empty segment or leading zero, at most ten digits and 255
+/// segments; accepted paths give these indices, and a refused one is `InvalidDerivation`.
 #[test]
 fn path_strictness() {
     let v: SigningVectors = load("signing_v1.json");
-    assert!(v.paths.len() >= 48, "{} path rows", v.paths.len());
+    assert!(v.paths.len() >= 54, "{} path rows", v.paths.len());
     for c in &v.paths {
         let actual = path::parse(&c.path)
             .map(|is| is.into_iter().map(|i| u64::from(i.serialized())).collect::<Vec<_>>())
