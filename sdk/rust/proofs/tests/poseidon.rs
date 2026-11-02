@@ -92,7 +92,7 @@ fn optimised_and_reference_forms_agree() {
 }
 
 /// The digest over the base round constants and the shipped tables, in `PoseidonDerivation.digest`'s order.
-fn digest_of<const T: usize, const RP: usize>(base: &Base<T>, p: &Params<T, RP>) -> String {
+fn digest_of<const T: usize, const RP: usize, const N: usize>(base: &Base<T>, p: &Params<T, RP, N>) -> String {
     let join = |xs: Vec<Fr>| xs.into_iter().map(dec).collect::<Vec<_>>().join(",");
     let flat = |m: &[[Fr; T]]| m.iter().flatten().copied().collect::<Vec<_>>();
     let mut constants: Vec<Fr> = p.first.to_vec();
@@ -100,8 +100,7 @@ fn digest_of<const T: usize, const RP: usize>(base: &Base<T>, p: &Params<T, RP>)
     constants.extend(p.opened);
     constants.extend(p.partial);
     constants.extend(flat(&p.full_last));
-    let sparse: Vec<Fr> =
-        p.sparse_w.iter().zip(&p.sparse_v).flat_map(|(w, v)| w.iter().chain(v.iter().skip(1)).copied()).collect();
+    let sparse: Vec<Fr> = p.sparse_w.iter().zip(&p.sparse_v).flat_map(|(w, v)| w.iter().chain(v).copied()).collect();
     let tables = [flat(&base.round_constants), flat(&p.mds), constants, sparse, flat(&p.mds), flat(&p.pre_sparse)];
     let text = tables.into_iter().map(join).collect::<Vec<_>>().join(";");
     dilf4s_core::hex::encode(Digest::<Sha256>::of(text.as_bytes()).as_bytes())
@@ -127,10 +126,6 @@ fn tables_match_the_pinned_circomlibjs_digests() {
         digest_of(&b.w5, &constants::WIDTH5),
         "fb21c20f55dc308123237c06f8838aa22772201c518746bb2ca699f0a4b7530e"
     );
-    assert!(constants::WIDTH2.sparse_v.iter().all(|v| v[0] == fr("0")));
-    assert!(constants::WIDTH3.sparse_v.iter().all(|v| v[0] == fr("0")));
-    assert!(constants::WIDTH4.sparse_v.iter().all(|v| v[0] == fr("0")));
-    assert!(constants::WIDTH5.sparse_v.iter().all(|v| v[0] == fr("0")));
 }
 
 // ---- the Grain LFSR derivation (zk.md §3, Constants)
@@ -181,7 +176,7 @@ struct Base<const T: usize> {
 
 impl<const T: usize> Base<T> {
     /// Derived for the width and partial rounds of `_shipped`.
-    fn derive<const RP: usize>(_shipped: &Params<T, RP>) -> Self {
+    fn derive<const RP: usize, const N: usize>(_shipped: &Params<T, RP, N>) -> Self {
         let modulus = r();
         let element = |v: &BigUint| fr_from_int(&BigInt::from(v.clone())).unwrap();
         let mut g = Grain::new(T, RP);

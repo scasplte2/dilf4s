@@ -48,14 +48,34 @@ impl fmt::Display for PoseidonError {
 
 impl core::error::Error for PoseidonError {}
 
-/// One width's optimised constants. `T` is the width and `RP` the partial rounds.
+/// One width's optimised constants. `T` is the width, `RP` the partial rounds and `N = T - 1` the inputs (checked when
+/// the width is evaluated).
 ///
 /// With `h = 4`: `first` is added before the first S-box; `full_first` after the S-boxes of rounds `1..h`; `opened`
 /// after round `h`'s, which multiplies by `pre_sparse`; `partial` is one scalar per partial round, added to element 0
-/// after its S-box, whose sparse matrix has first row `sparse_w` and first column `sparse_v` (element 0 unused) below
-/// an identity; and `full_last` after the S-boxes of the last full rounds but the final one, which adds none. Matrices
+/// after its S-box, whose sparse matrix has first row `sparse_w` and the rest of its first column `sparse_v` beside an
+/// identity; and `full_last` after the S-boxes of the last full rounds but the final one, which adds none. Matrices
 /// act as `new_i = Σ_j m_ij · s_j`. The full rounds multiply by `mds`, which is also the base form's matrix.
-pub struct Params<const T: usize, const RP: usize> {
+///
+/// A width whose `N` is not `T - 1` does not compile once evaluated:
+///
+/// ```compile_fail,E0080
+/// use dilf4s_proofs::poseidon::{Fr, Params};
+/// let z = Fr::from(0u64);
+/// let p: Params<3, 1, 1> = Params {
+///     mds: [[z; 3]; 3],
+///     first: [z; 3],
+///     full_first: [[z; 3]; 3],
+///     opened: [z; 3],
+///     partial: [z; 1],
+///     full_last: [[z; 3]; 3],
+///     sparse_w: [[z; 3]; 1],
+///     sparse_v: [[z; 1]; 1],
+///     pre_sparse: [[z; 3]; 3],
+/// };
+/// p.permute([z; 3]);
+/// ```
+pub struct Params<const T: usize, const RP: usize, const N: usize> {
     /// The MDS matrix.
     pub mds: [[Fr; T]; T],
     /// Added before the first S-box.
@@ -70,8 +90,8 @@ pub struct Params<const T: usize, const RP: usize> {
     pub full_last: [[Fr; T]; 3],
     /// The first row of each partial round's sparse matrix.
     pub sparse_w: [[Fr; T]; RP],
-    /// The first column of each partial round's sparse matrix, below element 0 (which is 0).
-    pub sparse_v: [[Fr; T]; RP],
+    /// The rest of the first column of each partial round's sparse matrix, below element 0.
+    pub sparse_v: [[Fr; N]; RP],
     /// The matrix of full round 4.
     pub pre_sparse: [[Fr; T]; T],
 }
@@ -100,13 +120,13 @@ fn full_round<const T: usize>(s: [Fr; T], m: &[[Fr; T]; T], c: &[Fr; T]) -> [Fr;
     apply(m, &add(s.map(pow5), c))
 }
 
-fn partial_round<const T: usize>(mut s: [Fr; T], c: Fr, w: &[Fr; T], v: &[Fr; T]) -> [Fr; T] {
+fn partial_round<const T: usize, const N: usize>(mut s: [Fr; T], c: Fr, w: &[Fr; T], v: &[Fr; N]) -> [Fr; T] {
     let x0 = s.first().map_or(Fr::ZERO, |x| pow5(*x) + c);
     if let Some(first) = s.first_mut() {
         *first = x0;
     }
     let head = dot(w, &s);
-    for (x, vk) in s.iter_mut().zip(v) {
+    for (x, vk) in s.iter_mut().skip(1).zip(v) {
         *x += x0 * vk;
     }
     if let Some(first) = s.first_mut() {
@@ -115,9 +135,11 @@ fn partial_round<const T: usize>(mut s: [Fr; T], c: Fr, w: &[Fr; T], v: &[Fr; T]
     s
 }
 
-impl<const T: usize, const RP: usize> Params<T, RP> {
+impl<const T: usize, const RP: usize, const N: usize> Params<T, RP, N> {
     /// The permutation's output element 0, in the optimised form.
     pub fn permute(&self, state: [Fr; T]) -> Fr {
+        // `sparse_v` covers exactly the elements below element 0, or the width does not compile
+        const { assert!(matches!(T.checked_sub(1), Some(n) if n == N), "N must be T - 1") };
         let mut s = add(state, &self.first);
         for c in &self.full_first {
             s = full_round(s, &self.mds, c);
