@@ -65,6 +65,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
       .toVector
       .sortBy(_._1)
       .collectFirst { case (n, xs) if xs.size > 1 => GenError.NameClash(rule.toString, n, xs.map(_.key)) }
+      .orElse(fs.collectFirst { case f if reservedFields(f.name) => GenError.ReservedName(rule.toString, Language.Scala, f.name) })
       .toLeft(fs)
   }
 
@@ -100,9 +101,12 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
          |""".stripMargin
     }
 
-  private def enumeration(rule: QName, cases: Vector[(String, BigInt)]): String = {
+  private def enumeration(rule: QName, cases: Vector[(String, BigInt)]): Either[GenError, String] = {
     val n = typeName(rule)
-    s"""enum $n(val wire: BigInt) {
+    cases.collectFirst {
+      case (l, _) if reservedCases(pascal(l)) => GenError.ReservedName(rule.toString, Language.Scala, pascal(l))
+    }.toLeft {
+      s"""enum $n(val wire: BigInt) {
        |${cases.map { case (l, v) => s"""  case ${pascal(l)} extends $n(BigInt("$v"))""" }.mkString("\n")}
        |}
        |
@@ -115,6 +119,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
        |  given CanonicalDecoder[$n] = codec.decoder
        |}
        |""".stripMargin
+    }
   }
 
   private def union(rule: QName, ks: Vector[UnionAlternative], texts: Vector[String]): String = {
@@ -157,7 +162,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
 
   private def emitRule(q: QName, model: ModelRule): Either[GenError, String] = model match {
     case ModelRule.Record(fs)         => record(q, fs)
-    case ModelRule.Enumeration(cs)    => enumeration(q, cs).asRight
+    case ModelRule.Enumeration(cs)    => enumeration(q, cs)
     case ModelRule.Union(alts, texts) => union(q, alts, texts).asRight
     case ModelRule.Alias(t)           => alias(q, t).asRight
   }
@@ -166,9 +171,14 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
   def module(name: String): Either[GenError, String] =
     schema.modules.get(name).toRight(GenError.UnknownModule(name, "configuration")).flatMap { m =>
       val rules = m.rules.keys.toVector.sorted.map(QName(name, _))
-      val clash = rules.groupBy(typeName).collect { case (t, qs) if qs.size > 1 => t -> qs }
-      clash.headOption match {
-        case Some((t, qs)) => GenError.NameClash(name, t, qs.map(_.name)).asLeft
+      val problem = rules
+        .groupBy(typeName)
+        .toVector
+        .sortBy(_._1)
+        .collectFirst { case (t, qs) if qs.size > 1 => GenError.NameClash(name, t, qs.map(_.name)) }
+        .orElse(rules.collectFirst { case q if reservedTypes(typeName(q)) => GenError.ReservedName(name, Language.Scala, typeName(q)) })
+      problem match {
+        case Some(e) => e.asLeft
         case None =>
           rules.traverse(q => profile.rule(q).flatMap(emitRule(q, _))).map { bodies =>
             val code = bodies.mkString("\n")
@@ -237,6 +247,47 @@ object CanonicalEmitter {
     "yield"
   )
   // scalafix:on DisableSyntax.noTry, DisableSyntax.noCatch, DisableSyntax.noFinally
+
+  /**
+   * Type names the generated code refers to unqualified: a rule with one of these names would shadow it in its file.
+   * Each was confirmed by compiling generated output (the rest of Predef's and scala's types do not break it).
+   */
+  private val reservedTypes = Set(
+    "BigInt",
+    "Boolean",
+    "ByteVector",
+    "Canonical",
+    "CanonicalDecoder",
+    "CanonicalValue",
+    "Codec",
+    "Int",
+    "List",
+    "Long",
+    "Map",
+    "None",
+    "Option",
+    "Set",
+    "Some",
+    "String",
+    "Vector"
+  )
+
+  /** Terms an enumeration's own body refers to, which one of its cases would shadow. */
+  private val reservedCases = Set("BigInt", "CanonicalDecoder", "Codec")
+
+  /** Members of every case class that a field cannot override (Scala requires `override`, or they are final). */
+  private val reservedFields = Set(
+    "clone",
+    "finalize",
+    "hashCode",
+    "notify",
+    "notifyAll",
+    "productArity",
+    "productElementNames",
+    "productIterator",
+    "productPrefix",
+    "wait"
+  )
 
   private def words(s: String): List[String] = s.split("[-_ .]+").toList.filter(_.nonEmpty)
 
