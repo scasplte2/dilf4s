@@ -8,7 +8,7 @@
 //! Written on k256's group arithmetic: BIP-340's decoding rules (`r < p`, `s < n`, `s = 0` allowed) are applied here,
 //! and malformed signature fields verify `false` rather than failing.
 
-use k256::elliptic_curve::Group as _;
+use k256::elliptic_curve::Group;
 use k256::elliptic_curve::PrimeField as _;
 use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::{AffineCoordinates as _, DecompactPoint as _};
@@ -51,7 +51,7 @@ fn verify_raw(key: &XOnly, message: &[u8], signature: &[u8; 64]) -> bool {
         return false;
     };
     let e = challenge(&r, &key.x, message);
-    let big_r = ProjectivePoint::GENERATOR * s - ProjectivePoint::from(key.point) * e;
+    let big_r = <ProjectivePoint as Group>::generator() * s - ProjectivePoint::from(key.point) * e;
     if bool::from(big_r.is_identity()) {
         return false;
     }
@@ -232,7 +232,7 @@ fn secret_scalar(bytes: &[u8; 32]) -> Result<k256::NonZeroScalar, SigningError> 
 #[cfg(feature = "sign")]
 fn x_only(secret: &[u8; 32]) -> Result<XOnly, SigningError> {
     let d = secret_scalar(secret)?;
-    let point = (ProjectivePoint::GENERATOR * *d).to_affine();
+    let point = (<ProjectivePoint as Group>::generator() * *d).to_affine();
     let x: [u8; 32] = point.x().into();
     // the even-y lift of x
     XOnly::decode("x-only key", &x)
@@ -245,7 +245,7 @@ fn sign_raw(secret: &[u8; 32], message: &[u8], aux: &[u8; 32]) -> Result<[u8; 64
     use zeroize::Zeroizing;
 
     let d0 = secret_scalar(secret)?;
-    let p = (ProjectivePoint::GENERATOR * *d0).to_affine();
+    let p = (<ProjectivePoint as Group>::generator() * *d0).to_affine();
     let d = Zeroizing::new(Scalar::conditional_select(&d0, &-*d0, p.y_is_odd()));
     let px: [u8; 32] = p.x().into();
     let mut t = Zeroizing::new(tagged_sha256(b"BIP0340/aux", &[aux]));
@@ -258,7 +258,7 @@ fn sign_raw(secret: &[u8; 32], message: &[u8], aux: &[u8; 32]) -> Result<[u8; 64
     if bool::from(k0.is_zero()) {
         return Err(SigningError::InvalidKey { reason: "the derived nonce is zero; use other randomness".into() });
     }
-    let big_r = (ProjectivePoint::GENERATOR * *k0).to_affine();
+    let big_r = (<ProjectivePoint as Group>::generator() * *k0).to_affine();
     let k = Zeroizing::new(Scalar::conditional_select(&k0, &-*k0, big_r.y_is_odd()));
     let rx: [u8; 32] = big_r.x().into();
     let e = challenge(&rx, &px, message);
