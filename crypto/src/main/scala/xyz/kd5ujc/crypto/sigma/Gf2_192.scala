@@ -32,6 +32,18 @@ final case class Gf2_192 private (w0: Long, w1: Long, w2: Long) {
     go(191, Gf2_192.Zero)
   }
 
+  /**
+   * The same shift-and-add over only the 8 bits of `b`: the general multiply's first 184 steps shift a zero
+   * accumulator, so skipping them changes nothing. Always 8 steps, and each bit selects `this` by mask, not by branch.
+   */
+  def *(b: Gf2Byte): Gf2_192 = {
+    @tailrec
+    def go(bit: Int, acc: Gf2_192): Gf2_192 =
+      if (bit < 0) acc
+      else go(bit - 1, acc.timesX + masked(-((b.value >>> bit) & 1).toLong))
+    go(7, Gf2_192.Zero)
+  }
+
   /** The multiplicative inverse, `this^(2^192 - 2)`; zero has none and maps to zero. */
   def inverse: Gf2_192 = {
     // 2^192 - 2 = 2 + 4 + ... + 2^191: the product of the squares this^(2^i) for i in 1..191
@@ -46,6 +58,9 @@ final case class Gf2_192 private (w0: Long, w1: Long, w2: Long) {
   }
 
   def bytes: ByteVector = Gf2_192.word(w0) ++ Gf2_192.word(w1) ++ Gf2_192.word(w2)
+
+  /** The bits of `this` where `mask` has ones: an all-ones mask keeps the element, a zero mask clears it. */
+  private def masked(mask: Long): Gf2_192 = Gf2_192(w0 & mask, w1 & mask, w2 & mask)
 
   private def testBit(i: Int): Boolean = {
     val w = if (i < 64) w0 else if (i < 128) w1 else w2
@@ -88,11 +103,8 @@ final case class Gf2Poly(coefficients: Vector[Gf2_192]) {
 
   def degree: Int = math.max(coefficients.size - 1, 0)
 
-  /** Horner's rule at the point `x` (`0..255`). */
-  def apply(x: Int): Gf2_192 = {
-    val point = Gf2_192.byte(x)
-    coefficients.foldRight(Gf2_192.Zero)((c, acc) => acc * point + c)
-  }
+  /** Horner's rule at the point `x`. */
+  def apply(x: Gf2Byte): Gf2_192 = coefficients.foldRight(Gf2_192.Zero)((c, acc) => acc * x + c)
 
   /** Coefficients 1 and up, 24 bytes each, lowest first: the proof form (coefficient 0 is the parent's challenge). */
   def higherBytes: ByteVector = coefficients.drop(1).foldLeft(ByteVector.empty)(_ ++ _.bytes)
@@ -112,22 +124,22 @@ object Gf2Poly {
    * distinct nonzero `x`. Its representation always has `points.size + 1` coefficients (leading zeros kept), as the
    * proof form fixes the count.
    */
-  def interpolate(valueAt0: Gf2_192, points: Vector[(Int, Gf2_192)]): Gf2Poly = {
-    val all = (0, valueAt0) +: points
+  def interpolate(valueAt0: Gf2_192, points: Vector[(Gf2Byte, Gf2_192)]): Gf2Poly = {
+    val all = (Gf2Byte(0), valueAt0) +: points
     val size = all.size
     // Lagrange: sum over j of y_j * prod over m != j of (X + x_m) / (x_j + x_m); in characteristic 2, minus is plus
     val sum = all.zipWithIndex.foldLeft(Vector.fill(size)(Gf2_192.Zero)) {
       case (acc, ((xj, yj), j)) =>
         val others = all.zipWithIndex.collect { case ((xm, _), m) if m != j => xm }
-        val numerator = others.foldLeft(Vector(Gf2_192.One))((p, xm) => timesMonomial(p, Gf2_192.byte(xm)))
-        val scale = yj * others.foldLeft(Gf2_192.One)((d, xm) => d * (Gf2_192.byte(xj) + Gf2_192.byte(xm))).inverse
+        val numerator = others.foldLeft(Vector(Gf2_192.One))(timesMonomial)
+        val scale = yj * others.foldLeft(Gf2_192.One)((d, xm) => d * (xj + xm)).inverse
         acc.zipAll(numerator.map(_ * scale), Gf2_192.Zero, Gf2_192.Zero).map { case (a, b) => a + b }
     }
     Gf2Poly(sum.padTo(size, Gf2_192.Zero))
   }
 
   /** `p * (X + r)`. */
-  private def timesMonomial(p: Vector[Gf2_192], r: Gf2_192): Vector[Gf2_192] =
+  private def timesMonomial(p: Vector[Gf2_192], r: Gf2Byte): Vector[Gf2_192] =
     (Gf2_192.Zero +: p).zipAll(p.map(_ * r), Gf2_192.Zero, Gf2_192.Zero).map { case (a, b) => a + b }
 
 }

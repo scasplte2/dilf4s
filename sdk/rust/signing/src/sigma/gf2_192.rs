@@ -37,7 +37,9 @@ impl Gf2_192 {
         out
     }
 
-    /// The element with value `b`: the points `1..=255` at which threshold children's challenges are evaluated.
+    /// The element with value `b`: a point at which threshold children's challenges are evaluated, as a wide element
+    /// (evaluation itself multiplies by the byte with [`Self::mul_byte`]).
+    #[cfg(test)]
     pub(crate) fn from_byte(b: u8) -> Self {
         Self([u64::from(b), 0, 0])
     }
@@ -61,6 +63,7 @@ impl Gf2_192 {
     }
 
     /// Bit `i` (`0..192`).
+    #[cfg(test)]
     fn bit(self, i: u32) -> bool {
         let [w0, w1, w2] = self.0;
         let word = match i / 64 {
@@ -71,24 +74,43 @@ impl Gf2_192 {
         word.wrapping_shr(i % 64) & 1 == 1
     }
 
-    /// Shift-and-add over the bits of `that`, from the highest: each step multiplies the accumulator by `x`.
+    /// Shift-and-add over the bits of `that`, from the highest: each step multiplies the accumulator by `x`. The
+    /// verifier only ever multiplies by a byte ([`Self::mul_byte`]); this is the reference that path is tested against.
+    #[cfg(test)]
     pub(crate) fn mul(self, that: Self) -> Self {
         (0..192u32).rev().fold(Self::ZERO, |acc, i| {
             let shifted = acc.times_x();
             if that.bit(i) { shifted.add(self) } else { shifted }
         })
     }
+
+    /// The bits of `self` where `mask` has ones: an all-ones mask keeps the element, a zero mask clears it.
+    fn masked(self, mask: u64) -> Self {
+        let [w0, w1, w2] = self.0;
+        Self([w0 & mask, w1 & mask, w2 & mask])
+    }
+
+    /// The same shift-and-add over only the 8 bits of `b`: the general multiply's first 184 steps shift a zero
+    /// accumulator, so skipping them changes nothing. Always 8 steps, and each bit selects `self` by mask, not by
+    /// branch.
+    pub(crate) fn mul_byte(self, b: u8) -> Self {
+        (0..8u32).rev().fold(Self::ZERO, |acc, i| {
+            let mask = 0u64.wrapping_sub(u64::from(b).wrapping_shr(i) & 1);
+            acc.times_x().add(self.masked(mask))
+        })
+    }
 }
 
 /// The polynomial with these coefficients (lowest degree first) at the point `x`, by Horner's rule.
 pub(crate) fn evaluate(coefficients: &[Gf2_192], x: u8) -> Gf2_192 {
-    let point = Gf2_192::from_byte(x);
-    coefficients.iter().rev().fold(Gf2_192::ZERO, |acc, c| acc.mul(point).add(*c))
+    coefficients.iter().rev().fold(Gf2_192::ZERO, |acc, c| acc.mul_byte(x).add(*c))
 }
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::indexing_slicing, reason = "tests fail by panicking")]
+
+    use alloc::vec::Vec;
 
     use super::{Gf2_192, evaluate};
 
@@ -119,6 +141,59 @@ mod tests {
         assert_eq!(a.mul(b), b.mul(a));
         assert_eq!(a.mul(b.add(c)), a.mul(b).add(a.mul(c)));
         assert_eq!(a.mul(b).mul(c), a.mul(b.mul(c)));
+    }
+
+    /// Zero, one, `x^191`, the whole top byte, all ones, and a mixed element: the high ones carry into the reduction.
+    fn fixed_elements() -> [Gf2_192; 6] {
+        let mut x191 = [0u8; 24];
+        x191[23] = 0x80;
+        let mut top = [0u8; 24];
+        top[23] = 0xff;
+        [
+            Gf2_192::ZERO,
+            Gf2_192::from_byte(1),
+            Gf2_192::from_bytes(&x191),
+            Gf2_192::from_bytes(&top),
+            Gf2_192::from_bytes(&[0xff; 24]),
+            Gf2_192::from_bytes(&core::array::from_fn(|i| u8::try_from(i).unwrap().wrapping_mul(31).wrapping_add(7))),
+        ]
+    }
+
+    /// A deterministic stream of pseudo-random elements (xorshift64).
+    fn pseudo_random(seed: u64, count: usize) -> Vec<Gf2_192> {
+        let mut state = seed;
+        (0..count)
+            .map(|_| {
+                let mut word = || {
+                    state ^= state.wrapping_shl(13);
+                    state ^= state.wrapping_shr(7);
+                    state ^= state.wrapping_shl(17);
+                    state
+                };
+                Gf2_192([word(), word(), word()])
+            })
+            .collect()
+    }
+
+    #[test]
+    fn multiplying_by_a_byte_equals_the_general_multiply_at_every_byte() {
+        for a in fixed_elements().into_iter().chain(pseudo_random(0x9e37_79b9_7f4a_7c15, 32)) {
+            for b in 0..=u8::MAX {
+                assert_eq!(a.mul_byte(b), a.mul(Gf2_192::from_byte(b)), "{a:?} * {b}");
+            }
+        }
+    }
+
+    #[test]
+    fn horner_by_bytes_equals_horner_by_the_general_multiply_at_every_point() {
+        for n in 0..=8 {
+            let coefficients = pseudo_random(0x2545_f491_4f6c_dd1d ^ u64::try_from(n).unwrap(), n);
+            for x in 0..=u8::MAX {
+                let reference =
+                    coefficients.iter().rev().fold(Gf2_192::ZERO, |acc, c| acc.mul(Gf2_192::from_byte(x)).add(*c));
+                assert_eq!(evaluate(&coefficients, x), reference, "degree {n} at {x}");
+            }
+        }
     }
 
     #[test]

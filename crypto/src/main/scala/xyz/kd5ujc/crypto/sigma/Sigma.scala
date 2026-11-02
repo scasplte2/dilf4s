@@ -79,7 +79,7 @@ object Sigma {
               .flatMapN(Gf2Poly.fromBytes)
               .toRight("a malformed threshold polynomial")
           }.flatMap { q =>
-            cs.zipWithIndex.traverse { case (c, i) => parse(c, Option(q(i + 1).bytes)) }.map(Checked.Node(prop, e, _))
+            cs.zipWithIndex.traverse { case (c, i) => parse(c, Option(q(Gf2Byte(i + 1)).bytes)) }.map(Checked.Node(prop, e, _))
           }
       }
     }
