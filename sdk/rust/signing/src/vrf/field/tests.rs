@@ -12,7 +12,7 @@
 use alloc::vec::Vec;
 
 use num_bigint::BigUint;
-use subtle::{Choice, ConstantTimeEq as _, CtOption};
+use subtle::{Choice, ConstantTimeEq as _};
 
 use super::{
     Fe, J, SQRT_M_J2, SQRT_M1, encode_to_curve_ell2, expand_message_xmd_sha512_48, from_uniform, map_to_curve_ell2,
@@ -184,14 +184,6 @@ fn b(c: Choice) -> bool {
     c.into()
 }
 
-fn opt(c: CtOption<Fe>) -> Option<Fe> {
-    c.into()
-}
-
-fn sign(odd: bool) -> Choice {
-    Choice::from(u8::from(odd))
-}
-
 fn fp() -> Fp {
     Fp { p: p() }
 }
@@ -264,6 +256,8 @@ fn constants_are_the_ones_the_reference_computes() {
     let c1 = reference::sqrt_with_sign(&f, &f.neg(&BigUint::from(J + 2)), false).unwrap();
     assert_eq!(BigUint::from_bytes_le(&SQRT_M_J2), c1, "SQRT_M_J2 is the even sqrt(-486664)");
     assert_eq!(BigUint::from_bytes_le(&super::TWO_192), BigUint::from(1u8) << 192u32);
+    let two_p38 = BigUint::from(2u8).modpow(&((&f.p + 3u8) >> 3u32), &f.p);
+    assert_eq!(BigUint::from_bytes_le(&super::TWO_P38), two_p38, "TWO_P38 is 2^((p + 3) / 8)");
 }
 
 #[test]
@@ -318,40 +312,36 @@ fn arithmetic_agrees_with_the_reference() {
 fn exponentiations_agree_with_the_reference() {
     let f = fp();
     let p58 = (&f.p - 5u8) >> 3u32;
-    for x in values() {
-        let a = fe(&x);
-        assert_eq!(big(a.inv0()), f.inv0(&x), "inv0({x:x})");
+    let xs = values();
+    let ys: Vec<BigUint> = xs.iter().rev().cloned().collect();
+    for (x, y) in xs.iter().zip(&ys) {
+        let (a, c) = (fe(x), fe(y));
         assert_eq!(big(a.pow_p58()), x.modpow(&p58, &f.p), "{x:x}^((p - 5) / 8)");
-        assert_eq!(b(a.is_non_square()), f.is_non_square(&x), "is_non_square({x:x})");
-        assert_eq!(opt(a.sqrt()).map(big), reference::sqrt(&f, &x), "sqrt({x:x})");
-        for odd in [false, true] {
-            assert_eq!(
-                opt(a.sqrt_with_sign(sign(odd))).map(big),
-                reference::sqrt_with_sign(&f, &x, odd),
-                "sqrt_with_sign({x:x}, {odd})"
-            );
-        }
+        let (beta, inv) = Fe::pow_p58_and_inverse(a.or_one(), c.or_one());
+        let (x1, y1) = (big(a.or_one()), big(c.or_one()));
+        assert_eq!(big(beta), x1.modpow(&p58, &f.p), "the first half of pow_p58_and_inverse({x:x}, {y:x})");
+        assert_eq!(big(inv), f.inv0(&y1), "the second half of pow_p58_and_inverse({x:x}, {y:x})");
+        // the Legendre symbol from_uniform derives from beta
+        let chi = beta.square().square().mul(a.or_one().square());
+        assert_eq!(b(chi.ct_eq(&Fe::one().neg())), f.is_non_square(&x1), "chi({x1:x}) from beta");
     }
 }
 
 #[test]
 fn exponentiation_edge_cases() {
     let f = fp();
-    assert!(b(Fe::zero().inv0().is_zero()), "inv0(0) = 0");
-    assert!(b(fe(&f.p).inv0().is_zero()), "inv0(p) = 0");
-    assert!(!b(Fe::zero().is_non_square()), "0 is not a non-square");
-    assert!(b(Fe::from_u32(2).is_non_square()), "2 is a non-square for p = 5 mod 8");
-    assert!(!b(Fe::one().neg().is_non_square()), "-1 is a square");
-    assert!(opt(Fe::from_u32(2).sqrt()).is_none(), "sqrt(2) does not exist");
-    assert!(opt(Fe::from_u32(2).sqrt_with_sign(sign(false))).is_none());
-    let i = opt(Fe::one().neg().sqrt_with_sign(sign(false))).unwrap();
-    assert!(b(i.ct_eq(&Fe::from_bytes(&SQRT_M1))), "the even sqrt(-1) is 2^((p - 1) / 4)");
-    // sqrt(0) is 0 for either requested sign: -0 is 0
-    assert!(b(opt(Fe::zero().sqrt_with_sign(sign(false))).unwrap().is_zero()));
-    assert!(b(opt(Fe::zero().sqrt_with_sign(sign(true))).unwrap().is_zero()));
-    let four = Fe::from_u32(4);
-    assert_eq!(big(opt(four.sqrt_with_sign(sign(false))).unwrap()), BigUint::from(2u8));
-    assert_eq!(big(opt(four.sqrt_with_sign(sign(true))).unwrap()), &f.p - 2u8);
+    assert!(b(Fe::zero().pow_p58().is_zero()));
+    assert_eq!(big(Fe::zero().or_one()), BigUint::from(1u8), "or_one(0) = 1");
+    assert_eq!(big(fe(&f.p).or_one()), BigUint::from(1u8), "or_one(p) = 1");
+    assert_eq!(big(Fe::from_u32(7).or_one()), BigUint::from(7u8));
+    let (beta, inv) = Fe::pow_p58_and_inverse(Fe::one(), Fe::one().neg());
+    assert_eq!(big(beta), BigUint::from(1u8));
+    assert_eq!(big(inv), &f.p - 1u8, "(-1)^-1 = -1");
+    // 2 is a non-square for p = 5 mod 8, -1 a square
+    let (beta, _) = Fe::pow_p58_and_inverse(Fe::from_u32(2), Fe::one());
+    assert!(b(beta.square().square().mul(Fe::from_u32(4)).ct_eq(&Fe::one().neg())));
+    let (beta, _) = Fe::pow_p58_and_inverse(Fe::one().neg(), Fe::one());
+    assert!(b(beta.square().square().ct_eq(&Fe::one())));
 }
 
 #[test]
