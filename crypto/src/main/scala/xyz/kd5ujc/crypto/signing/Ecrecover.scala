@@ -23,7 +23,7 @@ object Ecrecover {
 
   private val params = CustomNamedCurves.getByName("secp256k1")
   private val curve = params.getCurve
-  private val N: BigInt = BigInt(params.getN)
+  private val N: BigInt = Secp256k1.Order
   private val HalfN: BigInt = N / 2
 
   /**

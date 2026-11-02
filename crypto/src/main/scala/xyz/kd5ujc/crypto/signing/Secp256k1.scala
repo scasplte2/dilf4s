@@ -52,7 +52,7 @@ final class Secp256k1 private (native: Native) {
 
   private val sha256 = Hasher[Sha256]
   private val schnorrTag = TaggedHash[Sha256](DomainTag.literal(Secp256k1.SchnorrTag))
-  private val n = BigInt("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16)
+  private val n = Secp256k1.Order
 
   /** 32 bytes (else `InvalidEncoding`) holding a scalar in `[1, n)` (else `InvalidKey`). */
   private def secretKey[S](scheme: String, bytes: ByteVector): Either[CryptoError, SigningKey[S]] =
@@ -215,6 +215,9 @@ final class Secp256k1 private (native: Native) {
 }
 
 object Secp256k1 {
+
+  /** The order `n` of the secp256k1 group (SEC 2 §2.4.1): secret keys and BIP32 tweaks are scalars below it. */
+  val Order: BigInt = BigInt("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16)
 
   private[kd5ujc] val SchnorrTag = "dilf4s/sig/bip340/v1"
   private[kd5ujc] val Tags: List[String] = List(SchnorrTag)
