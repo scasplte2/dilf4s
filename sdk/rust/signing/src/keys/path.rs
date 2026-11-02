@@ -62,27 +62,47 @@ impl ChildIndex {
     }
 }
 
+/// The most significant digits a segment may have once its leading zeros are stripped: `2^31 - 1` has ten.
+pub const MAX_SEGMENT_DIGITS: usize = 10;
+
 /// Parses `m/44'/0'/0'/0/7` (or `h` in place of `'`), relative to the master key. `m` alone is the empty path.
 /// Segments are ASCII decimal digits with an optional hardening mark; anything else, an empty segment (`m/1/`,
-/// `m//1`) or surrounding whitespace included, is `InvalidDerivation`.
+/// `m//1`) or surrounding whitespace included, is `InvalidDerivation`. Leading zeros are stripped and a segment with
+/// more than [`MAX_SEGMENT_DIGITS`] digits left is refused before any conversion, so parsing is linear in the path. An
+/// error names a segment by its position (0 is the first after `m`) and, past the bound, its significant digit
+/// count; never by its text.
 pub fn parse(path: &str) -> Result<Vec<ChildIndex>, KeyError> {
     let segments: Vec<&str> = path.split('/').collect();
     let Some((&"m", rest)) = segments.split_first() else {
         return Err(KeyError::InvalidDerivation { reason: "path must start with m".into() });
     };
-    rest.iter()
-        .map(|segment| {
-            let (digits, hardened) = match segment.strip_suffix('\'').or_else(|| segment.strip_suffix('h')) {
-                Some(d) => (d, true),
-                None => (*segment, false),
-            };
-            if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-                return Err(KeyError::InvalidDerivation { reason: format!("bad path segment '{segment}'") });
-            }
-            let i: u32 = digits
-                .parse()
-                .map_err(|_| KeyError::InvalidDerivation { reason: format!("index {digits} out of range") })?;
-            if hardened { ChildIndex::hardened(i) } else { ChildIndex::soft(i) }
-        })
-        .collect()
+    rest.iter().enumerate().map(|(at, segment)| parse_segment(segment, at)).collect()
+}
+
+fn parse_segment(segment: &str, at: usize) -> Result<ChildIndex, KeyError> {
+    let (digits, hardened) = match segment.strip_suffix('\'').or_else(|| segment.strip_suffix('h')) {
+        Some(d) => (d, true),
+        None => (segment, false),
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(KeyError::InvalidDerivation { reason: format!("path segment {at} is malformed") });
+    }
+    let significant = digits.trim_start_matches('0');
+    if significant.len() > MAX_SEGMENT_DIGITS {
+        return Err(KeyError::InvalidDerivation {
+            reason: format!(
+                "path segment {at} has {} significant digits, more than {MAX_SEGMENT_DIGITS}",
+                significant.len()
+            ),
+        });
+    }
+    // at most ten ASCII digits: the fold cannot overflow a u64, and checked arithmetic says so without a panic
+    let out_of_range = || KeyError::InvalidDerivation { reason: format!("path segment {at} is out of range") };
+    let index = significant
+        .bytes()
+        .try_fold(0u64, |acc, b| acc.checked_mul(10)?.checked_add(u64::from(b.wrapping_sub(b'0'))))
+        .and_then(|i| u32::try_from(i).ok())
+        .filter(|&i| i < HARDENED_OFFSET)
+        .ok_or_else(out_of_range)?;
+    Ok(ChildIndex { hardened, index })
 }

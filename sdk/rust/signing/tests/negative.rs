@@ -59,6 +59,55 @@ fn paths_parse_hardened_and_soft_segments_and_reject_malformed_ones() {
     }
 }
 
+/// The same boundary and the same reasons as Scala's `KeyDerivationSuite`.
+#[test]
+fn a_segment_has_at_most_ten_significant_digits_leading_zeros_aside_and_is_below_2_pow_31() {
+    use dilf4s_signing::keys::path;
+    let serialized = |p: &str| path::parse(p).map(|is| is.iter().map(|i| i.serialized()).collect::<Vec<_>>());
+    let zeros = "0".repeat(4096);
+    let accepted: [(String, Vec<u32>); 7] = [
+        ("m/2147483647".into(), vec![0x7fff_ffff]),
+        ("m/1000000000'".into(), vec![0x8000_0000 + 1_000_000_000]),
+        ("m/02147483647'".into(), vec![0xffff_ffff]),
+        ("m/00".into(), vec![0]),
+        ("m/000'".into(), vec![0x8000_0000]),
+        (format!("m/{zeros}1'"), vec![0x8000_0001]),
+        (format!("m/0/{zeros}2147483647/0"), vec![0, 0x7fff_ffff, 0]),
+    ];
+    for (p, is) in accepted {
+        assert_eq!(serialized(&p).unwrap(), is, "{}", &p[..p.len().min(40)]);
+    }
+    let refused: [(String, &str); 7] = [
+        ("m/2147483648'".into(), "path segment 0 is out of range"),
+        ("m/4294967295".into(), "path segment 0 is out of range"),
+        ("m/9999999999".into(), "path segment 0 is out of range"),
+        ("m/0/10000000000".into(), "path segment 1 has 11 significant digits, more than 10"),
+        (format!("m/{zeros}12345678901"), "path segment 0 has 11 significant digits, more than 10"),
+        (format!("m/1/2/{}'", "9".repeat(4096)), "path segment 2 has 4096 significant digits, more than 10"),
+        ("m/1/x9".into(), "path segment 1 is malformed"),
+    ];
+    for (p, reason) in refused {
+        let e = path::parse(&p).unwrap_err();
+        assert_eq!(e.to_string(), format!("InvalidDerivation: {reason}"), "{}", &p[..p.len().min(40)]);
+    }
+}
+
+#[test]
+fn a_million_digit_segment_is_refused_and_a_million_leading_zeros_are_stripped_in_linear_time() {
+    use dilf4s_signing::keys::path;
+    let long = format!("m/{}'", "1".repeat(1_000_000));
+    let padded = format!("m/{}7", "0".repeat(1_000_000));
+    let start = std::time::Instant::now();
+    let (l, p) = (path::parse(&long), path::parse(&padded));
+    let took = start.elapsed();
+    assert!(took.as_millis() < 1000, "took {took:?}");
+    assert_eq!(
+        l.unwrap_err().to_string(),
+        "InvalidDerivation: path segment 0 has 1000000 significant digits, more than 10"
+    );
+    assert_eq!(p.unwrap().iter().map(|i| i.serialized()).collect::<Vec<_>>(), [7]);
+}
+
 // ------------------------------------------------------------------ curve25519-dalek decoding (ZIP-215's rules)
 
 #[test]

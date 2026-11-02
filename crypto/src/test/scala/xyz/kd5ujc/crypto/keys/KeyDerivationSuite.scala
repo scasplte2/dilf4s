@@ -153,6 +153,44 @@ object KeyDerivationSuite extends SimpleIOSuite {
     expect.same(Right(Nil), ChildIndex.path("m"))
   }
 
+  // the vector generator takes its results from this parser, so the boundary is pinned here by hand
+  pureTest("a segment has at most ten significant digits, leading zeros aside, and is below 2^31") {
+    val serialized = (p: String) => ChildIndex.path(p).map(_.map(_.serialized))
+    val zeros = "0" * 4096
+    val accepted = List(
+      "m/2147483647"              -> List(0x7fffffffL),
+      "m/1000000000'"             -> List(0x80000000L + 1000000000L),
+      "m/02147483647'"            -> List(0xffffffffL),
+      "m/00"                      -> List(0L),
+      "m/000'"                    -> List(0x80000000L),
+      s"m/${zeros}1'"             -> List(0x80000001L),
+      s"m/0/${zeros}2147483647/0" -> List(0L, 0x7fffffffL, 0L)
+    )
+    val refused = List(
+      "m/2147483648'"          -> "path segment 0 is out of range",
+      "m/4294967295"           -> "path segment 0 is out of range",
+      "m/9999999999"           -> "path segment 0 is out of range",
+      "m/0/10000000000"        -> "path segment 1 has 11 significant digits, more than 10",
+      s"m/${zeros}12345678901" -> "path segment 0 has 11 significant digits, more than 10",
+      s"m/1/2/${"9" * 4096}'"  -> "path segment 2 has 4096 significant digits, more than 10",
+      "m/1/x9"                 -> "path segment 1 is malformed"
+    )
+    accepted.foldMap { case (p, is) => expect.same(Right(is), serialized(p)) } |+|
+    refused.foldMap { case (p, reason) => expect.same(Left(KeyError.InvalidDerivation(reason)), ChildIndex.path(p)) }
+  }
+
+  // BigInt of these digits took about 23 s; the bound leaves room for a cold JIT on a loaded machine
+  test("a million-digit segment is refused, and a million leading zeros are stripped, in linear time") {
+    val long = s"m/${"1" * 1000000}'"
+    val padded = s"m/${"0" * 1000000}7"
+    for {
+      (t, (l, p)) <- IO((ChildIndex.path(long), ChildIndex.path(padded))).timed
+    } yield
+      expect(t.toMillis < 2000, s"took ${t.toMillis} ms")
+        .and(expect.same(Left(KeyError.InvalidDerivation("path segment 0 has 1000000 significant digits, more than 10")), l))
+        .and(expect.same(Right(List(7L)), p.map(_.map(_.serialized))))
+  }
+
   // ------------------------------------------------------------------ SLIP-10 Ed25519 (vector 1)
 
   pureTest("SLIP-10 Ed25519: test vector 1") {

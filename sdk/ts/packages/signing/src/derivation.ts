@@ -46,23 +46,38 @@ export class ChildIndex {
 // ASCII digits (leading zeros allowed, as in Scala and Rust), then an optional hardening mark
 const SEGMENT = /^([0-9]+)(['h]?)$/;
 
+/** The most significant digits a segment may have once its leading zeros are stripped: 2^31 - 1 has ten. */
+export const MAX_SEGMENT_DIGITS = 10;
+
 /**
  * `m/44'/0'/0'/0/7` (or `h` for `'`), relative to the master key; `m` alone is the master. Nothing is trimmed, and an
  * empty segment or any character but ASCII digits and a final `'` or `h` is `InvalidDerivation` (`signing.md` 3).
+ * Leading zeros are stripped and a segment with more than `MAX_SEGMENT_DIGITS` digits left is refused before any
+ * conversion, so parsing is linear in the path. An error names a segment by its position (0 is the first after `m`)
+ * and, past the bound, its significant digit count; never by its text.
  */
 export function parsePath(path: string): Result<readonly ChildIndex[], KeyError> {
   const [head, ...rest] = path.split("/");
   if (head !== "m") return err(invalid("path must start with m"));
   const out: ChildIndex[] = [];
-  for (const seg of rest) {
-    const m = SEGMENT.exec(seg);
-    if (m === null) return err(invalid(`bad path segment '${seg}'`));
-    const i = Number(m[1]);
-    const c = m[2] === "" ? ChildIndex.soft(i) : ChildIndex.hardened(i);
+  for (const [at, seg] of rest.entries()) {
+    const c = parseSegment(seg, at);
     if (!c.ok) return c;
     out.push(c.value);
   }
   return ok(out);
+}
+
+function parseSegment(seg: string, at: number): Result<ChildIndex, KeyError> {
+  const m = SEGMENT.exec(seg);
+  if (m === null) return err(invalid(`path segment ${String(at)} is malformed`));
+  const significant = (m[1] ?? "").replace(/^0+/, "");
+  if (significant.length > MAX_SEGMENT_DIGITS)
+    return err(invalid(`path segment ${String(at)} has ${String(significant.length)} significant digits, more than ${String(MAX_SEGMENT_DIGITS)}`));
+  // at most ten digits: exact as a double
+  const i = significant === "" ? 0 : Number(significant);
+  if (i >= HARDENED) return err(invalid(`path segment ${String(at)} is out of range`));
+  return m[2] === "" ? ChildIndex.soft(i) : ChildIndex.hardened(i);
 }
 
 const CHAIN_CODE = "a chain code is 32 bytes";

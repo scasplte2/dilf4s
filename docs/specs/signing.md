@@ -201,6 +201,12 @@ The additions are fixed-width LE byte arithmetic.
 - Nothing else is accepted, and nothing is trimmed: whitespace anywhere, a sign (`+5`, `-0`), a non-ASCII digit, an
   empty segment (`m/`, `m//1`, `m/1/`), an uppercase `M` or `H`, or a lone `'` is an error. So is an index of 2^31 or
   more. The `paths` vectors pin these cases.
+- A segment's digits are bounded before they are converted, so parsing is linear in the path's length: strip the
+  leading zeros, refuse the segment if more than 10 digits remain (2^31 − 1 has ten), and only then convert and check
+  the index is below 2^31. All zeros is index 0. A segment of any length is accepted or refused this way without
+  arbitrary-precision arithmetic.
+- An error names the segment by its position (0 is the first after `m`) and, when it has too many digits, how many
+  significant digits it has. It never echoes the segment's text.
 
 ## 4. Sizes
 

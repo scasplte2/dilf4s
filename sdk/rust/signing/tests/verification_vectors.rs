@@ -133,18 +133,20 @@ fn verifying_key_decoding() {
     assert!(rows.len() >= 40, "{} verifying-key rows", rows.len());
 }
 
-/// Every `paths` row: nothing trimmed, ASCII digits only, no empty segment; accepted paths give these indices.
+/// Every `paths` row: nothing trimmed, ASCII digits only, no empty segment, at most ten significant digits; accepted
+/// paths give these indices, and a refused one is `InvalidDerivation`.
 #[test]
 fn path_strictness() {
     let v: SigningVectors = load("signing_v1.json");
-    assert!(v.paths.len() >= 30, "{} path rows", v.paths.len());
+    assert!(v.paths.len() >= 48, "{} path rows", v.paths.len());
     for c in &v.paths {
-        let actual =
-            path::parse(&c.path).ok().map(|is| is.into_iter().map(|i| u64::from(i.serialized())).collect::<Vec<_>>());
+        let actual = path::parse(&c.path)
+            .map(|is| is.into_iter().map(|i| u64::from(i.serialized())).collect::<Vec<_>>())
+            .map_err(|e| e.kind());
         let expected = match &c.result {
-            PathResult::PathIndices(p) => Some(p.indices.clone()),
-            PathResult::Invalid => None,
+            PathResult::PathIndices(p) => Ok(p.indices.clone()),
+            PathResult::Invalid => Err("InvalidDerivation"),
         };
-        assert_eq!(actual, expected, "path {:?}", c.path);
+        assert_eq!(actual, expected, "path {:?}", c.path.get(..40).unwrap_or(&c.path));
     }
 }
