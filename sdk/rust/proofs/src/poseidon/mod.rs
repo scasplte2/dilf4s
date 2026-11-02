@@ -2,7 +2,8 @@
 //! S-box, 8 full rounds, width `t = inputs + 1` for 1 to 4 inputs, state `[0, x1, …, xn]`, output `state[0]`.
 //!
 //! [`hash`] evaluates the optimised form (the paper's Appendix B, as Scala and circomlibjs's `poseidon_opt` lay it
-//! out); [`hash_reference`] evaluates the rounds as defined, over the base constants. The tests check they agree.
+//! out), and the crate holds only its tables. The base round constants feed nothing at run time, so, as in Scala, they
+//! live in the tests: those derive them with the Grain LFSR, evaluate the rounds as defined, and check the forms agree.
 //!
 //! **Public data only**: the arithmetic is variable time.
 
@@ -21,7 +22,6 @@ pub type Fr = ark_bn254::Fr;
 pub const MAX_INPUTS: usize = 4;
 /// Full rounds.
 pub const FULL_ROUNDS: usize = 8;
-const HALF: usize = FULL_ROUNDS / 2;
 
 /// Why hashing or a field element failed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,17 +48,14 @@ impl fmt::Display for PoseidonError {
 
 impl core::error::Error for PoseidonError {}
 
-/// One width's constants. `T` is the width, `RP` the partial rounds and `R = 8 + RP` the rounds.
+/// One width's optimised constants. `T` is the width and `RP` the partial rounds.
 ///
-/// The base form is `round_constants` (one row per round) and `mds`. The optimised form, with `h = 4`: `first` is added
-/// before the first S-box; `full_first` after the S-boxes of rounds `1..h`; `opened` after round `h`'s, which
-/// multiplies by `pre_sparse`; `partial` is one scalar per partial round, added to element 0 after its S-box, whose
-/// sparse matrix has first row `sparse_w` and first column `sparse_v` (element 0 unused) below an identity; and
-/// `full_last` after the S-boxes of the last full rounds but the final one, which adds none. Matrices act as
-/// `new_i = Σ_j m_ij · s_j`.
-pub struct Params<const T: usize, const RP: usize, const R: usize> {
-    /// Round constants, per round.
-    pub round_constants: [[Fr; T]; R],
+/// With `h = 4`: `first` is added before the first S-box; `full_first` after the S-boxes of rounds `1..h`; `opened`
+/// after round `h`'s, which multiplies by `pre_sparse`; `partial` is one scalar per partial round, added to element 0
+/// after its S-box, whose sparse matrix has first row `sparse_w` and first column `sparse_v` (element 0 unused) below
+/// an identity; and `full_last` after the S-boxes of the last full rounds but the final one, which adds none. Matrices
+/// act as `new_i = Σ_j m_ij · s_j`. The full rounds multiply by `mds`, which is also the base form's matrix.
+pub struct Params<const T: usize, const RP: usize> {
     /// The MDS matrix.
     pub mds: [[Fr; T]; T],
     /// Added before the first S-box.
@@ -118,7 +115,7 @@ fn partial_round<const T: usize>(mut s: [Fr; T], c: Fr, w: &[Fr; T], v: &[Fr; T]
     s
 }
 
-impl<const T: usize, const RP: usize, const R: usize> Params<T, RP, R> {
+impl<const T: usize, const RP: usize> Params<T, RP> {
     /// The permutation's output element 0, in the optimised form.
     pub fn permute(&self, state: [Fr; T]) -> Fr {
         let mut s = add(state, &self.first);
@@ -135,22 +132,6 @@ impl<const T: usize, const RP: usize, const R: usize> Params<T, RP, R> {
         // the last round adds no constant, and only element 0 of its output is read
         let boxed = s.map(pow5);
         self.mds.first().map_or(Fr::ZERO, |row| dot(row, &boxed))
-    }
-
-    /// The permutation as defined: each round adds its constants, applies the S-box to every element (full rounds)
-    /// or to element 0 (partial rounds), and multiplies by the MDS matrix.
-    pub fn permute_reference(&self, state: [Fr; T]) -> [Fr; T] {
-        let mut s = state;
-        for (r, c) in self.round_constants.iter().enumerate() {
-            s = add(s, c);
-            if r < HALF || r >= HALF.saturating_add(RP) {
-                s = s.map(pow5);
-            } else if let Some(x) = s.first_mut() {
-                *x = pow5(*x);
-            }
-            s = apply(&self.mds, &s);
-        }
-        s
     }
 }
 
@@ -194,18 +175,6 @@ pub fn hash(inputs: &[Fr]) -> Result<Fr, PoseidonError> {
         [a, b] => Ok(hash2(a, b)),
         [a, b, c] => Ok(hash3(a, b, c)),
         [a, b, c, d] => Ok(hash4(a, b, c, d)),
-        _ => Err(PoseidonError::InputCount { count: inputs.len(), max: MAX_INPUTS }),
-    }
-}
-
-/// `poseidon(inputs)` through the rounds as defined, over the base constants.
-pub fn hash_reference(inputs: &[Fr]) -> Result<Fr, PoseidonError> {
-    let first = |s: &[Fr]| s.first().copied().unwrap_or(Fr::ZERO);
-    match *inputs {
-        [a] => Ok(first(&constants::WIDTH2.permute_reference(state([a])))),
-        [a, b] => Ok(first(&constants::WIDTH3.permute_reference(state([a, b])))),
-        [a, b, c] => Ok(first(&constants::WIDTH4.permute_reference(state([a, b, c])))),
-        [a, b, c, d] => Ok(first(&constants::WIDTH5.permute_reference(state([a, b, c, d])))),
         _ => Err(PoseidonError::InputCount { count: inputs.len(), max: MAX_INPUTS }),
     }
 }

@@ -1,8 +1,9 @@
 """Generate sdk/rust/proofs/src/poseidon/constants.rs from Scala's checked-in PoseidonConstants.scala.
 
-The Scala tables (the optimised form) are the source of truth. The base round constants are re-derived with the Grain
-LFSR exactly as PoseidonDerivation.scala does; the script then checks PoseidonDerivation.digest over all six tables
-against the circomlibjs digests pinned in PoseidonSuite.scala, and that the derived MDS matrix equals the table's.
+The Scala tables (the optimised form) are the source of truth, and the only form emitted. The base round constants are
+re-derived with the Grain LFSR exactly as PoseidonDerivation.scala does, to check PoseidonDerivation.digest over all six
+tables against the circomlibjs digests pinned in PoseidonSuite.scala and that the derived MDS matrix equals the table's;
+like Scala, the crate keeps the base form out of its runtime tables, and its tests derive it again.
 Run from anywhere: python3 -I sdk/rust/proofs/tools/poseidon_gen.py
 """
 
@@ -124,9 +125,9 @@ def chunks(xs, n):
 
 def emit(widths):
     out = [
-        "//! GENERATED from core/src/main/scala/xyz/kd5ujc/core/hash/PoseidonConstants.scala (the optimised tables) and",
-        "//! the Grain LFSR derivation of the base round constants (docs/specs/zk.md §3). Do not edit. The generator",
-        "//! checks the circomlibjs digests pinned in PoseidonSuite.scala, and so do this crate's tests.",
+        "//! GENERATED from core/src/main/scala/xyz/kd5ujc/core/hash/PoseidonConstants.scala: the optimised tables only.",
+        "//! The generator derives the base round constants with the Grain LFSR (docs/specs/zk.md §3) to check the",
+        "//! circomlibjs digests pinned in PoseidonSuite.scala, and so do this crate's tests. Do not edit.",
         "",
         "use ark_ff::MontFp;",
         "",
@@ -145,7 +146,6 @@ def emit(widths):
         sparse_w = [row[:t] for row in sp]
         sparse_v = [[0] + row[t:] for row in sp]
         fields = [
-            ("round_constants", mat(chunks(rc, t), 4)),
             ("mds", mat(chunks(w["mds"], t), 4)),
             ("first", arr(c[0:t], 4)),
             ("full_first", mat(chunks(c[t : 4 * t], t), 4)),
@@ -158,7 +158,7 @@ def emit(widths):
         ]
         assert len(c[5 * t + rp :]) == 3 * t
         out.append("/// Width %d: %d input%s, %d partial rounds." % (t, t - 1, "" if t == 2 else "s", rp))
-        out.append("pub static WIDTH%d: Params<%d, %d, %d> = Params {" % (t, t, rp, FULL + rp))
+        out.append("pub static WIDTH%d: Params<%d, %d> = Params {" % (t, t, rp))
         for name, body in fields:
             out.append("    %s: %s," % (name, body))
         out.append("};")
