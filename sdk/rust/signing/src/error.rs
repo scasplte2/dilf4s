@@ -65,7 +65,7 @@ pub enum KeyError {
         /// Why it was refused.
         reason: String,
     },
-    /// A derivation path [`crate::keys::path::parse`] refuses.
+    /// A derivation path [`crate::keys::path::parse`] refuses, converted from its [`PathError`].
     InvalidPath {
         /// The first rule the path breaks.
         refusal: PathRefusal,
@@ -90,6 +90,37 @@ pub enum PathRefusal {
     OutOfRange,
     /// More than [`crate::keys::path::MAX_DEPTH`] segments.
     TooDeep,
+}
+
+/// A derivation path [`crate::keys::path::parse`] refuses: the narrow error of a parse, which converts into
+/// [`KeyError::InvalidPath`] so `?` works in a function returning [`KeyError`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PathError {
+    /// The first rule the path breaks.
+    pub refusal: PathRefusal,
+    /// Why it was refused, naming the segment by position (a message, not normative).
+    pub reason: String,
+}
+
+impl PathError {
+    /// The kind's name, as [`KeyError::kind`] gives it.
+    pub const fn kind(&self) -> &'static str {
+        "InvalidPath"
+    }
+}
+
+impl fmt::Display for PathError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.kind(), self.reason)
+    }
+}
+
+impl core::error::Error for PathError {}
+
+impl From<PathError> for KeyError {
+    fn from(e: PathError) -> Self {
+        Self::InvalidPath { refusal: e.refusal, reason: e.reason }
+    }
 }
 
 impl PathRefusal {

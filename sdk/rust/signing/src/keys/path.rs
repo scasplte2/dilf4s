@@ -4,7 +4,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::error::{KeyError, PathRefusal};
+use crate::error::{KeyError, PathError, PathRefusal};
 
 /// The first hardened index, `2^31`.
 pub const HARDENED_OFFSET: u32 = 0x8000_0000;
@@ -72,11 +72,11 @@ pub const MAX_DEPTH: usize = 255;
 /// Parses `m/44'/0'/0'/0/7` (or `h` in place of `'`), relative to the master key. `m` alone is the empty path.
 /// A segment is `0` or a nonzero ASCII digit and more digits, then an optional hardening mark, so each index has one
 /// spelling; anything else, a leading zero, an empty segment (`m/1/`, `m//1`) or surrounding whitespace included, is
-/// `InvalidPath`, typed by the first rule broken (a [`PathRefusal`]). A segment of more than [`MAX_SEGMENT_DIGITS`]
+/// a [`PathError`], typed by the first rule broken (a [`PathRefusal`]). A segment of more than [`MAX_SEGMENT_DIGITS`]
 /// digits is refused before any conversion, and the scan stops at segment [`MAX_DEPTH`], so parsing is linear in the
 /// path and never holds more than [`MAX_DEPTH`] indices. The message names a segment by its position (0 is the first
 /// after `m`) and, past the digit bound, its length; never by its text.
-pub fn parse(path: &str) -> Result<Vec<ChildIndex>, KeyError> {
+pub fn parse(path: &str) -> Result<Vec<ChildIndex>, PathError> {
     let mut segments = path.split('/');
     if segments.next() != Some("m") {
         return Err(refuse(PathRefusal::MissingMaster, "path must start with m".into()));
@@ -94,7 +94,7 @@ pub fn parse(path: &str) -> Result<Vec<ChildIndex>, KeyError> {
         .collect()
 }
 
-fn parse_segment(segment: &str, at: usize) -> Result<ChildIndex, KeyError> {
+fn parse_segment(segment: &str, at: usize) -> Result<ChildIndex, PathError> {
     let (digits, hardened) = match segment.strip_suffix('\'').or_else(|| segment.strip_suffix('h')) {
         Some(d) => (d, true),
         None => (segment, false),
@@ -122,6 +122,6 @@ fn parse_segment(segment: &str, at: usize) -> Result<ChildIndex, KeyError> {
     Ok(ChildIndex { hardened, index })
 }
 
-const fn refuse(refusal: PathRefusal, reason: String) -> KeyError {
-    KeyError::InvalidPath { refusal, reason }
+const fn refuse(refusal: PathRefusal, reason: String) -> PathError {
+    PathError { refusal, reason }
 }
