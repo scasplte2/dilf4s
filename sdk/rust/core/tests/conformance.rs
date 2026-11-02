@@ -49,7 +49,7 @@ fn json_cases() {
             let value = json::parse(&c.json).map_err(|e| format!("{}: rejected with {e}", c.json))?;
             same("cbor", &c.json, &c.cbor, &hex::encode(&cbor::encode(&value)))?;
             same("content hash", &c.json, &c.content_hash, &hex::encode(&algorithm.content_hash(&tag, &value)))?;
-            same("render", &c.json, &c.render, &json::render(&value).map_err(|e| e.to_string())?)?;
+            same("render", &c.json, &c.render, &json::render_within(&value, usize::MAX).map_err(|e| e.to_string())?)?;
             let decoded = cbor::decode(&bytes(&c.cbor)).map_err(|e| format!("{}: cbor rejected with {e}", c.json))?;
             same("decode then encode", &c.json, &c.cbor, &hex::encode(&cbor::encode(&decoded)))
         }
@@ -77,7 +77,11 @@ fn render_rejections() {
     let (v, _, _) = vectors();
     let n = run(&v.render_rejections, |c| {
         let value = cbor::decode(&bytes(&c.cbor)).map_err(|e| format!("{}: {e}", c.cbor))?;
-        let kind = json::render(&value).map_or_else(|e| e.kind(), |_| "rendered");
+        let kind = match json::render_within(&value, usize::MAX) {
+            Ok(_) => "rendered",
+            Err(json::RenderError::Canonical(e)) => e.kind(),
+            Err(json::RenderError::TooLarge(_)) => "TooLarge",
+        };
         same("error kind", &c.cbor, &c.error, kind)
     });
     eprintln!("renderRejections: {n} cases");

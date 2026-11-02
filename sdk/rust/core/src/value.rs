@@ -14,7 +14,7 @@
 //!
 //! Sharing makes a value's logical size independent of its memory: `[x, x]` nested `k` deep holds `2^k` leaves in
 //! `O(k)` allocations, and its weight (the logical, unshared measure) is about `2^k`. So:
-//! - anything that expands a value ([`crate::cbor::encode`], [`crate::json::render`], hashing, commitments, decoding
+//! - anything that expands a value ([`crate::cbor::encode`], [`crate::json::render_within`], hashing, commitments, decoding
 //!   into typed models) costs O(weight), not O(memory): bound the weight of a value not known to be small first, or
 //!   use the budgeted [`crate::cbor::encode_within`] and [`crate::cbor::encoded_len_within`];
 //! - equality never expands: it records the pairs of shared parts it has proven equal and skips them when they recur;

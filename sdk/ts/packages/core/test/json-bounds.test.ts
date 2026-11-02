@@ -10,9 +10,9 @@ describe("JSON number bounds", () => {
 
   it("10,000 digits read and write; leading zeros are not counted", () => {
     const v = expectOk(json.parse(digits(10000)), "parses");
-    expect(json.render(v)).toEqual({ ok: true, value: digits(10000) });
+    expect(json.renderWithin(v, json.MAX_RENDER_BYTES)).toEqual({ ok: true, value: digits(10000) });
     const small = expectOk(json.parse(`0.${"0".repeat(10000)}1e1`), "parses");
-    expect(json.render(small)).toEqual({ ok: true, value: `0.${"0".repeat(9999)}1` });
+    expect(json.renderWithin(small, json.MAX_RENDER_BYTES)).toEqual({ ok: true, value: `0.${"0".repeat(9999)}1` });
     expect(json.parse(`1e${"0".repeat(20000)}2`)).toEqual({ ok: true, value: Value.int(100n) });
   });
 
@@ -24,12 +24,12 @@ describe("JSON number bounds", () => {
   });
 
   it("rendering refuses what would not read back", () => {
-    expect(json.render(Value.int(10n ** 10000n))).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
+    expect(json.renderWithin(Value.int(10n ** 10000n), json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
     const wide = Value.number(1n, 5n ** 14400n);
     expect(wide).toBeDefined();
-    if (wide !== undefined) expect(json.render(wide)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
+    if (wide !== undefined) expect(json.renderWithin(wide, json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
     const third = Value.number(1n, 3n);
-    if (third !== undefined) expect(json.render(third)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "non-terminating rational" } });
+    if (third !== undefined) expect(json.renderWithin(third, json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "non-terminating rational" } });
   });
 
   it("a malformed number is described by its length and offset, never its text", () => {

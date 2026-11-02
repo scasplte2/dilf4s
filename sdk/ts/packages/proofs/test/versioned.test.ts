@@ -26,7 +26,7 @@ describe("versioned_trie_v1.json", () => {
     expect(finalHead.version).toBe(h.version);
     expect(toHex(expectOk(versionKey.encode(h.version), "vkey"))).toBe(h.vkey);
     expect([toHex(finalHead.stateRoot), toHex(finalHead.historyRoot)]).toEqual([h.stateRoot, h.historyRoot]);
-    expect(toHex(cbor.encode(expectOk(vt.encodeHead(finalHead), "encodes")))).toBe(h.cbor);
+    expect(toHex(expectOk(cbor.encode(expectOk(vt.encodeHead(finalHead), "encodes")), "encodes"))).toBe(h.cbor);
     expect(toHex(expectOk(vt.root(finalHead), "root"))).toBe(h.root);
     expect(h.root).toBe(vectors.root);
   });
@@ -35,7 +35,7 @@ describe("versioned_trie_v1.json", () => {
     let replica = versioned.Replica.empty(vt);
     for (const c of vectors.commits) {
       const delta = expectOk(vt.decodeDelta(valueOf(c.delta)), `delta ${c.version.toString()}`);
-      expect(delta.upserts.map(([k, v]) => [k.value, toHex(cbor.encode(v))])).toEqual(c.upserts.map((u) => [u.key, u.value]));
+      expect(delta.upserts.map(([k, v]) => [k.value, toHex(expectOk(cbor.encode(v), "encodes"))])).toEqual(c.upserts.map((u) => [u.key, u.value]));
       expect(delta.removes.map((k) => k.value)).toEqual(c.removes);
       replica = expectOk(replica.applyDelta(delta), `applies ${c.version.toString()}`);
       expect(replica.head?.version).toBe(c.version);
@@ -81,11 +81,11 @@ describe("versioned_trie_v1.json", () => {
             const claimed = c.value === undefined ? null : valueOf(c.value);
             expect(expectOk(state.holds(key(c.key), claimed), "holds"), c.key).toBe(true);
             const looked = expectOk(state.lookup(key(c.key)), "lookup");
-            expect(looked === null ? null : toHex(looked)).toBe(claimed === null ? null : toHex(vt.valueHash(claimed)));
+            expect(looked === null ? null : toHex(looked)).toBe(claimed === null ? null : toHex(expectOk(vt.valueHash(claimed), "encodes")));
             if (claimed !== null) expect(expectOk(state.holds(key(c.key), Value.int(424242n)), "holds"), "another value").toBe(false);
           }
           for (const l of p.listings ?? []) {
-            expect(entriesHex(expectOk(state.namespace(ns(l.namespace)), "listing")), l.namespace).toEqual(l.entries.map((e) => [e.key, toHex(vt.valueHash(valueOf(e.value)))]));
+            expect(entriesHex(expectOk(state.namespace(ns(l.namespace)), "listing")), l.namespace).toEqual(l.entries.map((e) => [e.key, toHex(expectOk(vt.valueHash(valueOf(e.value)), "encodes"))]));
           }
         });
         break;

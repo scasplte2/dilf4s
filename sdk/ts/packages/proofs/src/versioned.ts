@@ -3,7 +3,7 @@
  * head to one root, every check of Scala's `VersionedTrieVerifier`, proof / delta / snapshot-chunk decoding, the
  * chunk-by-chunk snapshot reader against a trusted head, and a replica that follows deltas.
  */
-import { bitLength, BytesValue, cbor, describeFailure, err, models, ok, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, cbor, describeFailure, err, models, ok, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { decodeInput } from "./input.js";
@@ -264,7 +264,9 @@ export class VerifiedState {
     if (!l.ok) return l;
     const claimed = value === null || value.kind === "null" ? null : value;
     if (l.value === null || claimed === null) return ok(l.value === null && claimed === null);
-    return ok(checkValue(key, claimed).ok && bytesEqual(l.value, this.#hashing.valueHash(claimed)));
+    if (!checkValue(key, claimed).ok) return ok(false);
+    const h = this.#hashing.valueHash(claimed);
+    return h.ok ? ok(bytesEqual(l.value, h.value)) : viaTrie(h);
   }
 
   /** Every entry under the namespace, complete. */
@@ -322,14 +324,14 @@ export class VersionedTrie<V> {
     return ok(new VersionedTrie(algorithm, versionKey, [top.value, state.value, history.value]));
   }
 
-  /** The hash a trie commits for a value: `valueHash(commit(v))`. */
-  valueHash(value: Value): Uint8Array {
-    return this.hashing.valueHash(value);
+  /** The hash a trie commits for a value: `valueHash(commit(v))`; one too large to commit is `Trie.Encoding`. */
+  valueHash(value: Value): R<Uint8Array> {
+    return viaTrie(this.hashing.valueHash(value));
   }
 
   /** The hash a trie commits for a byte string: the top trie's slots and the history trie's state roots. */
   bytesHash(b: Uint8Array): Uint8Array {
-    return this.hashing.valueHash(BytesValue.of(b));
+    return this.hashing.bytesHash(b);
   }
 
   /**
@@ -855,7 +857,11 @@ export class Replica<V> {
     const checked = reader.finish();
     if (!checked.ok) return checked;
     const state = new Map<string, StateSlot>();
-    for (const [key, value] of checked.value.entries) state.set(key.value, { key, value, valueHash: profile.valueHash(value) });
+    for (const [key, value] of checked.value.entries) {
+      const h = profile.valueHash(value);
+      if (!h.ok) return h;
+      state.set(key.value, { key, value, valueHash: h.value });
+    }
     const versions = new Map<string, VersionSlot<V>>();
     for (const [version, stateRoot] of checked.value.history) {
       const vkey = profile.versionKey.encode(version);
@@ -912,7 +918,11 @@ export class Replica<V> {
     }
     const state = new Map(this.state);
     for (const k of delta.removes) state.delete(k.value);
-    for (const [key, value] of delta.upserts) state.set(key.value, { key, value, valueHash: p.valueHash(value) });
+    for (const [key, value] of delta.upserts) {
+      const h = p.valueHash(value);
+      if (!h.ok) return h;
+      state.set(key.value, { key, value, valueHash: h.value });
+    }
     const s = Replica.stateRoot(p, state);
     if (!s.ok) return s;
     if (!bytesEqual(s.value, delta.head.stateRoot)) return mismatch("state", delta.head.stateRoot, s.value);

@@ -332,8 +332,9 @@ function quotedLength(s: string): number {
 }
 
 /**
- * The longest JSON {@link render} produces, in UTF-8 bytes. A UTF-16 code unit takes at least one UTF-8 byte, so the
- * text stays within every engine's string limit (V8's is `2^29 - 24` code units): rendering never throws.
+ * The longest JSON {@link renderWithin} produces, in UTF-8 bytes, whatever limit it is given. A UTF-16 code unit takes
+ * at least one UTF-8 byte, so the text stays within every engine's string limit (V8's is `2^29 - 24` code units):
+ * rendering never throws. There is no render without a limit: a caller names one, and a larger one is this.
  */
 export const MAX_RENDER_BYTES = 2 ** 29 - 24;
 
@@ -428,13 +429,4 @@ export function renderWithin(value: Value, maxBytes: number): Result<string, Ren
     }
   }
   return ok(out.join(""));
-}
-
-/**
- * Compact JSON with object members in code-point order of their names: {@link renderWithin} at
- * {@link MAX_RENDER_BYTES}. Fails for bytes, non-terminating rationals and over-long numbers, and for JSON too long for
- * a string. It costs O(weight): render a value built with shared parts within a smaller limit.
- */
-export function render(value: Value): Result<string, RenderError> {
-  return renderWithin(value, MAX_RENDER_BYTES);
 }

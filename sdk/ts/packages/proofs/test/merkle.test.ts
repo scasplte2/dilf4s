@@ -16,7 +16,7 @@ const rfcRoot = (n: number): Uint8Array =>
   expectOk(
     merkle.merkleRoot(
       rfc,
-      leaves.slice(0, n).map((l) => rfc.leaf(l)),
+      leaves.slice(0, n).map((l) => expectOk(rfc.leaf(l), "encodes")),
     ),
     "root",
   );
@@ -31,7 +31,7 @@ describe("merkle_v1.json", () => {
   describe.each(vectors.trees.map((t) => [Number(t.size), t] as const))("tree of %i leaves", (size, tree) => {
     const profiles = [
       { name: "tagged", hashing: tagged, root: taggedRoot, leafHash: (i: number) => leafHashes[i], inclusion: tree.inclusion, consistency: tree.consistency, treeRoot: tree.root },
-      { name: "rfc6962", hashing: rfc, root: rfcRoot, leafHash: (i: number) => rfc.leaf(leaves[i] ?? new Uint8Array(0)), inclusion: tree.rfc6962Inclusion, consistency: tree.rfc6962Consistency, treeRoot: tree.rfc6962Root },
+      { name: "rfc6962", hashing: rfc, root: rfcRoot, leafHash: (i: number) => expectOk(rfc.leaf(leaves[i] ?? new Uint8Array(0)), "encodes"), inclusion: tree.rfc6962Inclusion, consistency: tree.rfc6962Consistency, treeRoot: tree.rfc6962Root },
     ] as const;
 
     it.each(profiles.map((p) => [p.name, p] as const))("%s root from the leaves", (_, p) => {
@@ -45,7 +45,7 @@ describe("merkle_v1.json", () => {
         const proof = expectOk(merkle.InclusionProof.decode(p.hashing, valueOf(hex)), `proof ${i.toString()}`);
         expect(proof.index).toBe(BigInt(i));
         expect(proof.size).toBe(BigInt(size));
-        expect(toHex(cbor.encode(expectOk(proof.encode(), "encodes"))), "re-encodes").toBe(hex);
+        expect(toHex(expectOk(cbor.encode(expectOk(proof.encode(), "encodes")), "encodes")), "re-encodes").toBe(hex);
         const leafHash = p.leafHash(i) ?? new Uint8Array(0);
         expect(expectOk(merkle.verifyInclusion(p.hashing, root, leafHash, proof), "verifies"), `leaf ${i.toString()}`).toBe(true);
         const other = p.leafHash((i + 1) % 8) ?? new Uint8Array(0);
@@ -59,7 +59,7 @@ describe("merkle_v1.json", () => {
       for (const [m, hex] of p.consistency.entries()) {
         const proof = expectOk(merkle.ConsistencyProof.decode(p.hashing, valueOf(hex)), `proof from ${m.toString()}`);
         expect([proof.oldSize, proof.newSize]).toEqual([BigInt(m), BigInt(size)]);
-        expect(toHex(cbor.encode(expectOk(proof.encode(), "encodes")))).toBe(hex);
+        expect(toHex(expectOk(cbor.encode(expectOk(proof.encode(), "encodes")), "encodes"))).toBe(hex);
         const oldRoot = p.root(m);
         expect(expectOk(merkle.verifyConsistency(p.hashing, oldRoot, newRoot, proof), "verifies"), `from ${m.toString()}`).toBe(true);
         expect(expectOk(merkle.merkleConsistencyVerify(p.hashing, { root: oldRoot, size: BigInt(m) }, { root: newRoot, size: BigInt(size) }, valueOf(hex)), "jlvm")).toBe(true);
@@ -73,8 +73,8 @@ describe("merkle_v1.json", () => {
 
   it("value commitments hash as the leaf of a value", () => {
     for (const c of vectors.valueCommitments) {
-      expect(toHex(valueCommitment(valueOf(c.cbor))), "commit(v)").toBe(c.commitment);
-      expect(toHex(tagged.leaf(valueOf(c.cbor))), "leaf hash").toBe(c.leafHash);
+      expect(toHex(expectOk(valueCommitment(valueOf(c.cbor)), "encodes")), "commit(v)").toBe(c.commitment);
+      expect(toHex(expectOk(tagged.leaf(valueOf(c.cbor)), "encodes")), "leaf hash").toBe(c.leafHash);
     }
   });
 });
@@ -88,7 +88,7 @@ describe("JLVM merkle_verify", () => {
   it("a value leaf verifies through its commitment, a bytes leaf with the same CBOR does not", () => {
     const leafValue = Value.text("a");
     if (!leafValue.ok) throw new Error("text");
-    const hashes = [tagged.leaf(leafValue.value), ...leafHashes.slice(1, 5)];
+    const hashes = [expectOk(tagged.leaf(leafValue.value), "encodes"), ...leafHashes.slice(1, 5)];
     const r = expectOk(merkle.merkleRoot(tagged, hashes), "root");
     const proof = valueOf(tree.inclusion[0] ?? "");
     expect(expectOk(merkle.merkleVerify(tagged, { root: r, size: 5n }, leafValue.value, proof), "verdict")).toBe(true);

@@ -34,7 +34,7 @@ describe("caller-chosen map keys are compared, never hashed", () => {
   it("building, looking up, encoding, decoding and parsing a map", () => {
     const spies = watch();
     const m = expectOk(MapValue.of(keys.map((k) => [k, Value.int(1n)] as const)), "builds");
-    const decoded = expectOk(cbor.decode(cbor.encode(m)), "decodes");
+    const decoded = expectOk(cbor.decode(expectOk(cbor.encode(m), "encodes")), "decodes");
     const parsed = expectOk(json.parse(`{${keys.map((k) => `"${k}":1`).join(",")}}`), "parses");
     const typed = expectOk(codec.textMap(codec.uint).decode(m), "decodes as a typed map");
     const repeated = MapValue.of([...keys, keys[7] ?? ""].map((k) => [k, Value.int(1n)] as const));

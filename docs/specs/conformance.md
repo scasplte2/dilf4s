@@ -31,7 +31,7 @@ them. Every other field is informative. The normative fields are:
 
 | Family | Kind | Normative fields |
 |---|---|---|
-| any byte budget | `TooLarge` | `limit`: the limit that was passed: a spec constant, or the caller's own limit as the implementation applies it |
+| any byte budget | `TooLarge` | `limit`: the limit that was passed: a spec constant, or the caller's own limit as the implementation applies it (a limit past an implementation ceiling is that ceiling) |
 | versioned trie | `TooLarge` | `limit`: `MaxValueBytes` (2^20) or `MaxChunkBytes` (2^22) |
 | versioned trie | `TooDeep` | `depth` (the value's depth) and `limit`: `MaxValueDepth` (253) |
 | versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` |
@@ -50,6 +50,12 @@ A refusal costs no more than the spec says, whatever the input:
   weight. Otherwise its length is measured, never by building it, and measuring stops at the limit: O(min(weight,
   limit)). An implementation may keep counters internally, but they are not part of the refusal.
 - **Depth.** A value deeper than a limit is refused from its cached depth, in O(1).
+- **Implementation ceilings.** An SDK whose runtime cannot hold an encoding of any length budgets its unbudgeted forms
+  at a ceiling of its own and refuses past it as `TooLarge`, never with an exception: the TypeScript SDK encodes,
+  commits and content-hashes within 2^31 - 1 bytes (`cbor.MAX_ENCODED_BYTES`, the largest array the JVM reference can
+  build), and renders JSON only within a limit the caller names (at most 2^29 - 24 bytes, its string ceiling). A claim
+  too large to commit under such a ceiling is the family's malformed-input kind (`Encoding`). Values that large are
+  far past every limit these specs set, so no vector depends on a ceiling.
 - **Verifier inputs** are bounded by weight before they are decoded (§5).
 
 ## 5. Verifier input weight

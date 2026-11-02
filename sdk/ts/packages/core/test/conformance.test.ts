@@ -15,11 +15,11 @@ describe("canonical_encoding_v1.json", () => {
 
   it.each(accepted.map((c) => [c.json.slice(0, 60), c] as const))("JSON %s encodes, hashes and renders as the reference does", (_, c) => {
     const value = expectOk(json.parse(c.json), "parses");
-    expect(toHex(cbor.encode(value)), "canonical CBOR").toBe(c.cbor);
-    expect(toHex(contentHash(contentAlgorithm, tag, value)), "content hash").toBe(c.contentHash);
-    expect(expectOk(json.render(value), "renders"), "display JSON").toBe(c.render);
+    expect(toHex(expectOk(cbor.encode(value), "encodes")), "canonical CBOR").toBe(c.cbor);
+    expect(toHex(expectOk(contentHash(contentAlgorithm, tag, value), "encodes")), "content hash").toBe(c.contentHash);
+    expect(expectOk(json.renderWithin(value, json.MAX_RENDER_BYTES), "renders"), "display JSON").toBe(c.render);
     const decoded = expectOk(cbor.decode(bytes(c.cbor)), "the CBOR decodes");
-    expect(toHex(cbor.encode(decoded)), "decode then encode is the identity").toBe(c.cbor);
+    expect(toHex(expectOk(cbor.encode(decoded), "encodes")), "decode then encode is the identity").toBe(c.cbor);
   });
 
   it.each(rejected.map((c) => [c.json.slice(0, 60), c] as const))("JSON %s is rejected with the reference's error kind", (_, c) => {
@@ -29,13 +29,13 @@ describe("canonical_encoding_v1.json", () => {
 
   it.each(vectors.model.map((c) => [c.value, c] as const))("model value %s decodes, re-encodes and hashes", (_, c) => {
     const value = expectOk(cbor.decode(bytes(c.cbor)), "decodes");
-    expect(toHex(cbor.encode(value))).toBe(c.cbor);
-    expect(toHex(contentHash(contentAlgorithm, tag, value))).toBe(c.contentHash);
+    expect(toHex(expectOk(cbor.encode(value), "encodes"))).toBe(c.cbor);
+    expect(toHex(expectOk(contentHash(contentAlgorithm, tag, value), "encodes"))).toBe(c.contentHash);
   });
 
   it.each(vectors.renderRejections.map((c) => [c.cbor.slice(0, 40), c] as const))("CBOR %s does not render to JSON", (_, c) => {
     const v = expectOk(cbor.decode(bytes(c.cbor)), "decodes");
-    const r = json.render(v);
+    const r = json.renderWithin(v, json.MAX_RENDER_BYTES);
     expect(r.ok ? "rendered" : r.error.kind).toBe(c.error);
   });
 
@@ -78,7 +78,7 @@ describe("merkle_v1.json value commitments", () => {
   const leafTag = expectOk(DomainTag.of("dilf4s/merkle/leaf/v1"), "leaf tag");
   it.each(merkle.valueCommitments.map((c) => [c.cbor, c] as const))("value %s commits as the reference does", (_, c) => {
     const value = expectOk(cbor.decode(bytes(c.cbor)), "decodes");
-    const commitment = valueCommitment(value);
+    const commitment = expectOk(valueCommitment(value), "encodes");
     expect(toHex(commitment), "commitment").toBe(c.commitment);
     expect(toHex(taggedHash("SHA-256", leafTag, commitment)), "leaf hash").toBe(c.leafHash);
   });

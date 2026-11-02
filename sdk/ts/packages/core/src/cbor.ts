@@ -66,23 +66,6 @@ interface Out {
   bytes(b: Uint8Array): void;
 }
 
-/** Every byte, kept. */
-class Unbounded implements Out {
-  readonly #out = new Growing(Number.MAX_SAFE_INTEGER);
-  room(): boolean {
-    return true;
-  }
-  byte(b: number): void {
-    this.#out.byte(b);
-  }
-  bytes(b: Uint8Array): void {
-    this.#out.bytes(b);
-  }
-  result(): Uint8Array {
-    return this.#out.result();
-  }
-}
-
 /** Bytes counted against a limit, and kept only when there is somewhere to keep them (never more than the limit). */
 class Budgeted implements Out {
   constructor(
@@ -223,16 +206,20 @@ function write(out: Out, value: Value): boolean {
 }
 
 /**
- * The canonical encoding of `value`. Every {@link Value} has exactly one.
- *
- * It costs O(`value.weight`) time and memory, which for a value built with shared parts (`[x, x]` nested `k` deep weighs
- * about `2^k`) can be far more than the value occupies, and past what an array can hold. Encode a value not known to be
- * small with {@link encodeWithin}, or check its weight first.
+ * The longest encoding {@link encode} produces: 2^31 - 1 bytes, the largest array the JVM reference can build, and
+ * within every engine's typed-array limit. A longer encoding is a typed refusal, never an allocation failure (below it,
+ * memory may still run out: that is the host's, as for any allocation).
  */
-export function encode(value: Value): Uint8Array {
-  const out = new Unbounded();
-  write(out, value);
-  return out.result();
+export const MAX_ENCODED_BYTES = 2 ** 31 - 1;
+
+/**
+ * The canonical encoding of `value`: {@link encodeWithin} at {@link MAX_ENCODED_BYTES}. Every {@link Value} has exactly
+ * one, but a value built with shared parts (`[x, x]` nested `k` deep weighs about `2^k`) can encode to far more than it
+ * occupies: that is refused as `TooLarge`, from the weight alone when it is over. O(min(weight, the limit)): encode a
+ * caller's value within a limit of the caller's own.
+ */
+export function encode(value: Value): Result<Uint8Array, TooLarge> {
+  return encodeWithin(value, MAX_ENCODED_BYTES);
 }
 
 /** The walk of {@link encodeWithin} and {@link encodedLengthWithin}, keeping the bytes or only counting them. */

@@ -35,7 +35,8 @@ export interface MerkleHashing<L> {
   readonly size: number;
   /** The root of the empty tree. */
   readonly empty: Uint8Array;
-  leaf(input: L): Uint8Array;
+  /** A leaf's hash; a tagged leaf whose commitment is over `cbor.MAX_ENCODED_BYTES` is `Encoding`. */
+  leaf(input: L): Result<Uint8Array, MerkleError>;
   node(left: Uint8Array, right: Uint8Array): Uint8Array;
 }
 
@@ -63,11 +64,13 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
   }
 
   /**
-   * A value leaf's hash: the leaf hash of `commit(value)` (`MerkleTree.leaf`). O(`value.weight`), as `valueCommitment`,
-   * with no size limit (as Scala's and Rust's): bound the weight of a value built with shared parts.
+   * A value leaf's hash: the leaf hash of `commit(value)` (`MerkleTree.leaf`). O(min(weight, the ceiling)), as
+   * `valueCommitment`: a commitment over `cbor.MAX_ENCODED_BYTES` (2^31 - 1, this SDK's ceiling; Scala and Rust have
+   * none) is `Encoding`, never an allocation failure.
    */
-  leaf(value: Value): Uint8Array {
-    return this.#leaf.hash(valueCommitment(value));
+  leaf(value: Value): Result<Uint8Array, MerkleError> {
+    const c = valueCommitment(value);
+    return c.ok ? ok(this.#leaf.hash(c.value)) : err({ kind: "Encoding", reason: `a leaf whose commitment is over ${c.error.limit.toString()} bytes` });
   }
 
   node(left: Uint8Array, right: Uint8Array): Uint8Array {
@@ -92,8 +95,8 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
     return digest(this.algorithm, new Uint8Array(0));
   }
 
-  leaf(data: Uint8Array): Uint8Array {
-    return hashParts(this.algorithm, [Uint8Array.of(0), data]);
+  leaf(data: Uint8Array): Result<Uint8Array, MerkleError> {
+    return ok(hashParts(this.algorithm, [Uint8Array.of(0), data]));
   }
 
   node(left: Uint8Array, right: Uint8Array): Uint8Array {
@@ -294,7 +297,9 @@ export function merkleVerify<L>(hashing: MerkleHashing<L>, head: MerkleHead, lea
   if (!h.ok) return h;
   const p = InclusionProof.decode(hashing, proof);
   if (!p.ok) return p;
-  return p.value.size !== head.size ? ok(false) : verifyInclusion(hashing, head.root, hashing.leaf(leaf), p.value);
+  if (p.value.size !== head.size) return ok(false);
+  const l = hashing.leaf(leaf);
+  return l.ok ? verifyInclusion(hashing, head.root, l.value, p.value) : l;
 }
 
 /** The JLVM's `merkle_consistency_verify [oldHead, newHead, proof]`: sizes that differ from the heads' are `false`. */

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { MAX_WEIGHT, models, Value } from "@kd5ujc/dilf4s-core";
 
-import { versioned } from "../src/index.js";
+import { merkle, trie, versioned } from "../src/index.js";
 import { bytes, expectErr, expectOk, loadVectors, valueOf } from "./vectors.js";
 
 const vectors = loadVectors("versioned_trie_v1.json", models.versionedTrieVectors.VersionedTrieVectors);
@@ -67,6 +67,23 @@ describe("versioned values built with shared parts", { timeout: 60_000 }, () => 
       const head = { version: 1n, stateRoot: empty, historyRoot: empty };
       const reader = expectOk(versioned.SnapshotReader.start(vt, head).feed({ kind: "head", head }), "head");
       expect(expectErr(reader.feed({ kind: "state", entries: [[k, dag]] }), "chunk").kind).toBe("TooLarge");
+    });
+    expect(ms).toBeLessThan(HANG);
+  });
+});
+
+describe("claims built with shared parts", { timeout: 60_000 }, () => {
+  const heavy = doubled(Value.null, 40);
+
+  it("a Merkle leaf or trie value too large to commit is Encoding, never a thrown allocation failure", () => {
+    const ms = elapsed(() => {
+      expect(expectErr(merkle.TaggedMerkleHashing.of("SHA-256").leaf(heavy), "leaf").kind).toBe("Encoding");
+      const T = trie.TrieHashing.of("SHA-256");
+      expect(expectErr(T.valueHash(heavy), "value hash").kind).toBe("Encoding");
+      const mode = expectOk(trie.KeyMode.fixed(1), "mode");
+      const root = expectOk(trie.trieRoot(T, mode, [[Uint8Array.of(1), T.bytesHash(Uint8Array.of(1))]]), "root");
+      const entries: readonly trie.ClaimedEntry[] = [[Uint8Array.of(1), heavy]];
+      expect(expectErr(trie.triePrefixVerify(T, mode, root, new Uint8Array(0), entries, Value.null), "entries").kind).toBe("Encoding");
     });
     expect(ms).toBeLessThan(HANG);
   });

@@ -38,7 +38,7 @@ pub fn encode(value: &Value) -> Vec<u8> {
     }
 }
 
-/// A value whose canonical encoding is longer than a limit. It carries the limit only: how far past it the encoding
+/// A value whose canonical encoding or JSON is longer than a limit. It carries the limit only: how far past it the output
 /// goes is never measured (docs/specs/conformance.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TooLarge {

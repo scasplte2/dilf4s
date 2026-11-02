@@ -1,6 +1,6 @@
 /** The bytes a value commits to as a Merkle leaf or a trie value (docs/specs/merkle.md section 2). */
 import { byteLimit, tooLarge } from "./budget.js";
-import { encode, encodeWithin } from "./cbor.js";
+import { encodeWithin, MAX_ENCODED_BYTES } from "./cbor.js";
 import type { TooLarge } from "./error.js";
 import { err, ok, type Result } from "./result.js";
 import { bytesView, type Value } from "./value.js";
@@ -21,11 +21,10 @@ const tagged = (tag: number, body: Uint8Array): Uint8Array => {
  * `0x00 || b` for a byte string `b`, `0x01 || cbor(v)` for any other value. The tag keeps the mapping injective: the
  * bytes `0x6161` and the text `"a"` (whose CBOR is `0x6161`) commit apart.
  *
- * O(`value.weight`) time and memory, as `cbor.encode`: bound the weight of a value built with shared parts first, or use
- * {@link valueCommitmentWithin}.
+ * {@link valueCommitmentWithin} at `cbor.MAX_ENCODED_BYTES`, as `cbor.encode`: a commitment longer is `TooLarge`.
  */
-export function valueCommitment(value: Value): Uint8Array {
-  return value.kind === "bytes" ? tagged(BYTES_TAG, bytesView(value)) : tagged(CBOR_TAG, encode(value));
+export function valueCommitment(value: Value): Result<Uint8Array, TooLarge> {
+  return valueCommitmentWithin(value, MAX_ENCODED_BYTES);
 }
 
 /**

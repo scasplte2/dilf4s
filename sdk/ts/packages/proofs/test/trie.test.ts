@@ -103,7 +103,7 @@ const committed: readonly (readonly [Uint8Array, Value])[] = [
   [Uint8Array.of(0x62), Value.int(7n)],
   [Uint8Array.of(0x62, 0x00, 0x01), Value.bool(true)],
 ];
-const committedRoot = expectOk(trie.trieRoot(T, variable, committed.map(([k, v]) => [k, T.valueHash(v)] as const)), "root");
+const committedRoot = expectOk(trie.trieRoot(T, variable, committed.map(([k, v]) => [k, expectOk(T.valueHash(v), "encodes")] as const)), "root");
 
 /**
  * A full proof of a small trie, built by hand from its records: a variable(8) trie of "a" -> 1, "ab" -> 2, with root
@@ -116,8 +116,8 @@ function records(value: readonly models.trie.TrieRecord[]): Value {
 describe("JLVM trie operations", () => {
   // the whole trie as a proof: a prefix listing of everything needs it fully expanded
   const segment = (n: bigint, b: number[]): models.trie.TrieSegment => ({ n, b: Uint8Array.from(b) });
-  const v1 = T.valueHash(Value.int(1n));
-  const v2 = T.valueHash(Value.int(2n));
+  const v1 = expectOk(T.valueHash(Value.int(1n)), "encodes");
+  const v2 = expectOk(T.valueHash(Value.int(2n)), "encodes");
   // "a" = 0x61 = 0110 0001, "ab" = 0x61 0x62: after the branch at bit 8 with bit 0 (0x62 = 0110 0010), 7 bits remain: 110 0010
   const full = records([
     { s: segment(8n, [0x61]), v: v1, c: "left" },
@@ -151,8 +151,8 @@ describe("JLVM trie operations", () => {
 
   it("bytes and the text whose CBOR they are commit apart", () => {
     const k = Uint8Array.of(0x6b);
-    const r = hashOf(trie.trieRoot(T, variable, [[k, T.valueHash(text("a"))]]));
-    const proof = records([{ s: segment(8n, [0x6b]), v: T.valueHash(text("a")) }]);
+    const r = hashOf(trie.trieRoot(T, variable, [[k, expectOk(T.valueHash(text("a")), "encodes")]]));
+    const proof = records([{ s: segment(8n, [0x6b]), v: expectOk(T.valueHash(text("a")), "encodes") }]);
     expect(expectOk(trie.trieVerify(T, variable, r, k, text("a"), proof), "verdict")).toBe(true);
     expect(expectOk(trie.trieVerify(T, variable, r, k, BytesValue.of(Uint8Array.of(0x61, 0x61)), proof), "verdict")).toBe(false);
   });

@@ -64,7 +64,11 @@ fn every_vector_file_round_trips_through_its_type() {
     for (file, check) in SCHEMAS {
         let value = json::parse(&read_vectors(file)).unwrap_or_else(|e| panic!("{file}: {e}"));
         let again = check(&value).unwrap_or_else(|e| panic!("{file}: {e}"));
-        assert_eq!(json::render(&again), json::render(&value), "{file} changes on a round trip");
+        assert_eq!(
+            json::render_within(&again, usize::MAX),
+            json::render_within(&value, usize::MAX),
+            "{file} changes on a round trip"
+        );
     }
 }
 
@@ -84,10 +88,10 @@ fn unions_select_by_keys_and_text() {
     use trie_vectors::{TrieLookupResult, TriePresent};
     let present = TrieLookupResult::TriePresent(TriePresent { present: "00ff".to_owned() });
     let value = present.to_value().expect("encodes");
-    assert_eq!(json::render(&value).expect("renders"), r#"{"present":"00ff"}"#);
+    assert_eq!(json::render_within(&value, usize::MAX).expect("renders"), r#"{"present":"00ff"}"#);
     assert_eq!(TrieLookupResult::from_value(&value), Ok(present));
     let absent = TrieLookupResult::Absent.to_value().expect("encodes");
-    assert_eq!(json::render(&absent).expect("renders"), r#""absent""#);
+    assert_eq!(json::render_within(&absent, usize::MAX).expect("renders"), r#""absent""#);
     assert_eq!(TrieLookupResult::from_value(&Value::text("notCovered")), Ok(TrieLookupResult::NotCovered));
     assert!(TrieLookupResult::from_value(&Value::text("other")).is_err());
 }

@@ -277,6 +277,34 @@ fn budgeted_encoding_refuses_a_shared_expansion_without_expanding_it() {
 }
 
 #[test]
+fn render_within_agrees_with_an_unlimited_render_and_refuses_with_the_limit_alone() {
+    let mut rendered = 0usize;
+    for (name, root) in &vector_values() {
+        let Ok(full) = json::render_within(root, usize::MAX) else { continue };
+        let n = full.len();
+        assert!(u64::try_from(n).unwrap() >= root.weight(), "{name}: {n} bytes under weight {}", root.weight());
+        assert_eq!(json::render_within(root, n).as_deref(), Ok(full.as_str()), "{name}: at the exact length");
+        let refused = Err(json::RenderError::TooLarge(cbor::TooLarge { limit: n - 1 }));
+        assert_eq!(json::render_within(root, n - 1), refused, "{name}: one byte short");
+        rendered += 1;
+    }
+    assert!(rendered > 50, "too few values rendered: {rendered}");
+    // 2^60 leaves: refused by weight alone, at once
+    let start = Instant::now();
+    let dag = doubled(Value::text("a"), 60);
+    let refused = Err(json::RenderError::TooLarge(cbor::TooLarge { limit: 1 << 20 }));
+    assert_eq!(json::render_within(&dag, 1 << 20), refused);
+    // NUL escapes to six bytes: counted before it is built
+    let nuls = Value::text("\u{0}".repeat(200_000));
+    assert_eq!(
+        json::render_within(&nuls, 200_001),
+        Err(json::RenderError::TooLarge(cbor::TooLarge { limit: 200_001 }))
+    );
+    assert_eq!(json::render_within(&nuls, 1_200_002).map(|s| s.len()), Ok(1_200_002));
+    assert!(start.elapsed().as_millis() < 2000, "took {:?}", start.elapsed());
+}
+
+#[test]
 fn equality_of_shared_dags_never_expands_them() {
     let start = Instant::now();
     // separately allocated, so no pointer is shared between them: 2^60 leaves each
@@ -470,7 +498,11 @@ fn a_map_built_by_updates_in_any_order_is_the_same_value() {
     assert!(a == b && b == c, "equal whatever the tree's shape");
     assert_eq!(cbor::encode(&a), cbor::encode(&c), "one encoding");
     assert_eq!(cbor::encode(&b), cbor::encode(&c), "one encoding");
-    assert_eq!(json::render(&a).unwrap(), json::render(&c).unwrap(), "one rendering");
+    assert_eq!(
+        json::render_within(&a, usize::MAX).unwrap(),
+        json::render_within(&c, usize::MAX).unwrap(),
+        "one rendering"
+    );
     assert_eq!(a.weight(), c.weight(), "one weight");
     assert_eq!(cbor::decode(&cbor::encode(&a)).unwrap(), a, "decodes back");
 }
@@ -546,7 +578,7 @@ fn walking_a_deep_and_wide_value_keeps_to_explicit_or_depth_bounded_stacks() {
         // the encoder and the renderer: explicit stacks of at most MAX_DEPTH open containers
         let encoded = cbor::encode(&a);
         assert_eq!(cbor::encoded_len_within(&a, encoded.len()), Ok(encoded.len()), "measured");
-        assert!(json::render(&a).unwrap().ends_with('}'), "rendered");
+        assert!(json::render_within(&a, usize::MAX).unwrap().ends_with('}'), "rendered");
         // decoding keeps its own stack too
         assert!(cbor::decode(&encoded).unwrap() == a, "decoded");
         // Debug recurses through the formatter, but only DEBUG_DEPTH levels deep
