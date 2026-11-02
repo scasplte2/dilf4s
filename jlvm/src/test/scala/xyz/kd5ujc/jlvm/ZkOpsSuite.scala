@@ -13,11 +13,19 @@ import xyz.kd5ujc.crypto.zk.Bn254
 import io.circe.{Decoder, Json, parser}
 import org.scalacheck.Gen
 import scodec.bits.{ByteVector, hex}
-import weaver.SimpleIOSuite
 import weaver.scalacheck.{CheckConfig, Checkers}
+import weaver.{Expectations, IOSuite}
 
-/** The zk operations on one BN254 engine: the suite runs once on the pure-Scala reference and once on gnark. */
-abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
+/**
+ * The zk operations on one BN254 engine: the suite runs once on the pure-Scala reference and once on gnark. The engine is
+ * the suite's shared resource, so nothing is loaded while the suite object initialises.
+ */
+abstract class ZkOpsChecks extends IOSuite with Checkers {
+
+  type Res = ZkOps
+
+  /** A test on the operations, run inside IO so a failure stays in the test. */
+  private def zkTest(name: String)(body: ZkOps ?=> Expectations): Unit = test(name)(zk => IO(body(using zk)))
 
   override def checkConfig: CheckConfig = CheckConfig.default.withMinimumSuccessful(40)
 
@@ -27,7 +35,7 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
   private val zkOps: Set[Op] =
     Set(Op.Poseidon, Op.PmtVerify, Op.Groth16Verify, Op.EcvrfVerify, Op.Bn254Add, Op.Bn254Mul, Op.Bn254Pairing)
 
-  private def run(op: Op, args: CanonicalValue*): Either[JlvmError, CanonicalValue] =
+  private def run(op: Op, args: CanonicalValue*)(using zk: ZkOps): Either[JlvmError, CanonicalValue] =
     zk(op, args.toVector).getOrElse(Left(JlvmError.Malformed(s"${op.wire} is not a zk op")))
 
   private def a(vs: CanonicalValue*): CanonicalValue = CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)
@@ -65,7 +73,7 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
 
   private def surface(j: Json): CanonicalValue = JsonSurface.value(j).fold(e => sys.error(e.toString), identity)
 
-  private def check(c: Case) = {
+  private def check(c: Case)(using zk: ZkOps) = {
     val clue = s"${c.category} ${c.op} ${c.note.getOrElse("")}"
     val result = (Op.fromWire(c.op), surface(c.args)) match {
       case (Some(op), CArray(args)) => zk(op, args)
@@ -78,7 +86,8 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
     }
   }
 
-  test("metakit zk conformance vectors: every value and error category is reproduced") {
+  test("metakit zk conformance vectors: every value and error category is reproduced") { zk =>
+    given ZkOps = zk
     cases.map { cs =>
       cs.map(check)
         .foldLeft(expect.same(54, cs.size))(_ and _)
@@ -90,8 +99,10 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
 
   // ---- dispatch and totality
 
-  pureTest("ZkOps implements exactly the seven zk ops and returns None for every other op") {
-    Op.values.toList.map(op => expect.same(zkOps(op), zk(op, Vector.empty).isDefined)).foldLeft(success)(_ and _)
+  test("ZkOps implements exactly the seven zk ops and returns None for every other op") { zk =>
+    IO(
+      Op.values.toList.map(op => expect.same(zkOps(op), zk(op, Vector.empty).isDefined)).foldLeft(success)(_ and _)
+    )
   }
 
   private val rawBytes: Gen[CanonicalValue] =
@@ -110,7 +121,7 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
       Gen.choose(0, 2).flatMap(Gen.listOfN(_, Gen.listOfN(2, rawBytes).map(xs => a(xs*)))).map(xs => a(xs*))
     )
 
-  test("every zk op is total on random exact-width bytes, integers and nested arrays: a value or a typed error") {
+  test("every zk op is total on random exact-width bytes, integers and nested arrays: a value or a typed error") { zk =>
     val args = Gen.choose(0, 4).flatMap(Gen.listOfN(_, argument)).map(_.toVector)
     forall(Gen.zip(Gen.oneOf(zkOps.toList), args)) {
       case (op, vs) =>
@@ -134,7 +145,7 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
   )
   private val infinity = b(ByteVector.low(64))
 
-  pureTest("poseidon takes its elements as arguments or as one array, and returns 32 bytes") {
+  zkTest("poseidon takes its elements as arguments or as one array, and returns 32 bytes") {
     val variadic = run(Op.Poseidon, one, two)
     expect
       .same(variadic, run(Op.Poseidon, a(one, two)))
@@ -144,7 +155,7 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
       .and(expect.same("Type", kind(run(Op.Poseidon, CInt(BigInt(1))))))
   }
 
-  pureTest("bn254_pairing takes pairs as arguments or one array of pairs; e(P, Q) * e(-P, Q) is the identity") {
+  zkTest("bn254_pairing takes pairs as arguments or one array of pairs; e(P, Q) * e(-P, Q) is the identity") {
     val neg = run(Op.Bn254Mul, g1Gen, minusOne).fold(e => sys.error(e.toString), identity)
     expect
       .same(Right(True), run(Op.Bn254Pairing, a(g1Gen, g2Gen), a(neg, g2Gen)))
@@ -157,7 +168,7 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
       .and(expect.same("Crypto", kind(run(Op.Bn254Pairing, a(Vector.fill(ZkOps.MaxPairs + 1)(a(infinity, g2Gen))*)))))
   }
 
-  pureTest("bn254_add and bn254_mul agree: P + P = 2P, P + (-P) = O, 0P = O, and any 256-bit scalar is accepted") {
+  zkTest("bn254_add and bn254_mul agree: P + P = 2P, P + (-P) = O, 0P = O, and any 256-bit scalar is accepted") {
     expect
       .same(run(Op.Bn254Mul, g1Gen, two), run(Op.Bn254Add, g1Gen, g1Gen))
       .and(expect.same(Right(infinity), run(Op.Bn254Mul, g1Gen, minusOne).flatMap(n => run(Op.Bn254Add, g1Gen, n))))
@@ -168,7 +179,7 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
       .and(expect.same("Type", kind(run(Op.Bn254Mul, g1Gen, CInt(BigInt(2))))))
   }
 
-  pureTest("pmt_verify: a depth-0 proof checks leaf == root; shapes and bounds are typed errors") {
+  zkTest("pmt_verify: a depth-0 proof checks leaf == root; shapes and bounds are typed errors") {
     val zero = CInt(BigInt(0))
     expect
       .same(Right(True), run(Op.PmtVerify, one, one, zero, a()))
@@ -181,7 +192,7 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
       .and(expect.same("Arity", kind(run(Op.PmtVerify, one, one, zero))))
   }
 
-  pureTest("pmt_verify: an index of any size is refused without rendering it") {
+  zkTest("pmt_verify: an index of any size is refused without rendering it") {
     val huge = CInt(BigInt(1) << 1000000)
     expect.same(
       Left(JlvmError.Crypto(Op.PmtVerify.wire, "index is out of range for depth 1")),
@@ -189,7 +200,7 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
     )
   }
 
-  pureTest("ecvrf_verify and groth16_verify: invalid is false, wrong widths are Crypto errors, wrong kinds Type errors") {
+  zkTest("ecvrf_verify and groth16_verify: invalid is false, wrong widths are Crypto errors, wrong kinds Type errors") {
     val pk = b(ByteVector.low(32))
     val proof = b(ByteVector.low(80))
     val invalid = CanonicalValue.map(List("valid" -> False)).fold(e => sys.error(e.toString), identity)
@@ -202,14 +213,14 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
       .and(expect.same(Right(False), run(Op.Groth16Verify, b(ByteVector.low(32)), b(ByteVector.empty), b(ByteVector.low(356)))))
   }
 
-  pureTest("ecvrf_verify: a key of the wrong width is a Crypto error") {
+  zkTest("ecvrf_verify: a key of the wrong width is a Crypto error") {
     val proof = b(ByteVector.low(80))
     List(0L, 2L, 31L, 33L, 64L)
       .map(n => expect.same("Crypto", kind(run(Op.EcvrfVerify, b(ByteVector.low(n)), b(ByteVector.empty), proof))))
       .foldLeft(success)(_ and _)
   }
 
-  pureTest("poseidon output is a canonical field element: it feeds back into poseidon and pmt_verify") {
+  zkTest("poseidon output is a canonical field element: it feeds back into poseidon and pmt_verify") {
     val digest = run(Op.Poseidon, one, two)
     val expected = digest.toOption.collect { case CBytes(d) => d }
       .flatMap(d => Fr.from(BigInt(1, d.toArray)).toOption)
@@ -221,9 +232,10 @@ abstract class ZkOpsChecks(zk: ZkOps) extends SimpleIOSuite with Checkers {
   }
 }
 
-object ZkOpsSuite extends ZkOpsChecks(ZkOps.reference)
+object ZkOpsSuite extends ZkOpsChecks {
+  def sharedResource: Resource[IO, ZkOps] = Resource.pure(ZkOps.reference)
+}
 
-object ZkOpsGnarkSuite
-    extends ZkOpsChecks(
-      new ZkOps(xyz.kd5ujc.crypto.zk.Bn254Engine.gnark[IO].unsafeRunSync()(using cats.effect.unsafe.IORuntime.global))
-    )
+object ZkOpsGnarkSuite extends ZkOpsChecks {
+  def sharedResource: Resource[IO, ZkOps] = Resource.eval(xyz.kd5ujc.crypto.zk.Bn254Engine.gnark[IO].map(new ZkOps(_)))
+}
