@@ -1,5 +1,7 @@
 package xyz.kd5ujc.jlvm
 
+import java.util.concurrent.atomic.AtomicLong
+
 import cats.effect.{IO, Resource}
 import cats.syntax.all._
 
@@ -79,10 +81,6 @@ object MeteringSuite extends IOSuite {
 
   private def combinations(k: Int, a: String, b: String): Vector[String] =
     (1 to k).foldLeft(Vector(""))((acc, _) => acc.flatMap(s => Vector(s + a, s + b)))
-
-  /** The share of the control's gas per microsecond that the colliding input gets: about 1 when nothing is hashed. */
-  private def againstControl(jlvm: Jlvm, p: Program, colliding: CanonicalValue, control: CanonicalValue): IO[(Outcome, Double)] =
-    (rate(jlvm, p, colliding), rate(jlvm, p, control)).mapN { case ((o, r), (_, c)) => (o, r / c) }
 
   /**
    * Colliding input must get at least this share of the control's rate. Unpriced collisions ran at 0.002-0.05 of it, so
@@ -171,19 +169,52 @@ object MeteringSuite extends IOSuite {
 
   // ---- 3. unique and intersect
 
-  test("unique and intersect do not hash attacker-chosen values: colliding strings are as cheap as any others") { jlvm =>
-    val same = arr(colliding(13).map(t))
+  /**
+   * An element that can only be ordered: hashing it or comparing it for equality fails the test. Hashing is what
+   * attacker-chosen values can be made to collide in (every "Aa"/"BB" string has one Java hash code), and a hash set of
+   * colliding values compares each insertion for equality against all the others: quadratic work for linear gas.
+   */
+  private final class Opaque(val n: Int) {
+    override def hashCode: Int = sys.error(s"element $n was hashed")
+    override def equals(that: Any): Boolean = sys.error(s"element $n was compared for equality")
+  }
+
+  /** An order on [[Opaque]] that counts its comparisons in `count`. */
+  private def counting(count: AtomicLong): Ordering[Opaque] = (a, b) => {
+    count.incrementAndGet()
+    Integer.compare(a.n, b.n)
+  }
+
+  test("unique and intersect never hash or compare values for equality, and compare them O(n log n) times") { _ =>
+    // 8192 elements, each value twice; a quadratic algorithm would compare about n^2 / 2 = 33 million times
+    val n = 8192
+    val log2n = 13L
+    val xs = Vector.tabulate(n)(i => new Opaque(i % (n / 2)))
+    (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (uniqueCount, subsetCount) =>
+      IO {
+        val unique = Either.catchNonFatal(Values.distinctBy(xs)(identity)(using counting(uniqueCount)).map(_.n)).leftMap(_.getMessage)
+        val subset = Either.catchNonFatal(Values.subsetBy(xs, xs)(identity)(using counting(subsetCount))).leftMap(_.getMessage)
+        expect
+          .same(Right(Vector.range(0, n / 2)), unique)
+          .and(expect.same(Right(true), subset))
+          .and(expect(uniqueCount.get <= 2 * n * log2n, s"unique compared ${uniqueCount.get} times for $n elements"))
+          .and(expect(subsetCount.get <= 3 * n * log2n, s"intersect compared ${subsetCount.get} times for $n elements"))
+      }
+    }
+  }
+
+  test("unique and intersect of colliding strings: the right answers, for the same gas as strings that do not collide") { jlvm =>
+    val same = obj("xs" -> arr(colliding(13).map(t)))
     val other = obj("xs" -> arr(control(13).map(t)))
     val unique = program("""{"unique": {"var": "xs"}}""")
     val intersect = program("""{"intersect": [{"var": "xs"}, {"var": "xs"}]}""")
-    (againstControl(jlvm, unique, obj("xs" -> same), other), againstControl(jlvm, intersect, obj("xs" -> same), other)).mapN {
-      case ((u, ru), (i, ri)) =>
-        expect
-          .same(Right(same), u.result)
-          .and(expect.same(Right(True), i.result))
-          .and(expect(ru >= MinControlShare, s"unique of 8192 colliding strings runs at $ru of the control's rate"))
-          .and(expect(ri >= MinControlShare, s"intersect of 8192 colliding strings runs at $ri of the control's rate"))
-    }
+    IO(
+      expect
+        .same(Right(arr(colliding(13).map(t))), eval(jlvm, unique, same).result)
+        .and(expect.same(Right(True), eval(jlvm, intersect, same).result))
+        .and(expect.same(eval(jlvm, unique, other).gasUsed, eval(jlvm, unique, same).gasUsed))
+        .and(expect.same(eval(jlvm, intersect, other).gasUsed, eval(jlvm, intersect, same).gasUsed))
+    )
   }
 
   test("unique keeps the first occurrence of each value, in order; intersect is a subset test") { jlvm =>
