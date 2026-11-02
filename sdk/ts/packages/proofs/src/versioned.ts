@@ -3,7 +3,7 @@
  * head to one root, every check of Scala's `VersionedTrieVerifier`, proof / delta / snapshot-chunk decoding, the
  * chunk-by-chunk snapshot reader against a trusted head, and a replica that follows deltas.
  */
-import { bitLength, BytesValue, cbor, describeFailure, err, models, ok, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, BytesValue, cbor, describeFailure, err, MAX_WEIGHT, models, ok, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import * as trie from "./trie.js";
@@ -213,6 +213,15 @@ export const HISTORY_SLOT = Uint8Array.of(0x02);
 
 const slotName = (slot: Uint8Array): string => toHex(slot);
 
+/** {@link VersionedTrie.checkValue}, which needs no profile. */
+function checkValue(key: StateKey, value: Value): R<undefined> {
+  if (value.depth > MAX_VALUE_DEPTH) return err({ kind: "TooDeep", what: `the value of ${key.value}`, depth: value.depth, max: MAX_VALUE_DEPTH });
+  const size = cbor.encodedLengthWithin(value, MAX_VALUE_BYTES);
+  if (size.ok) return ok(undefined);
+  const { atLeast } = size.error;
+  return err({ kind: "TooLarge", what: `the value of ${key.value}`, size: Number(atLeast === "uncountable" ? MAX_WEIGHT : atLeast), max: MAX_VALUE_BYTES });
+}
+
 /** An entry of a verified listing: a state key and its value hash. */
 export type StateEntry = readonly [StateKey, Uint8Array];
 
@@ -246,12 +255,18 @@ export class VerifiedState {
     }
   }
 
-  /** Whether the key holds `value` (`null` or a null value: is absent), as the JLVM's `trie_verify` decides it. */
+  /**
+   * Whether the key holds `value` (`null` or a null value: is absent), as Scala's `VersionedTrieVerifier.holds`: the
+   * key is looked up first, and a claimed value is hashed only when the key is present and the value passes
+   * {@link VersionedTrie.checkValue}. A value no commit could store is `false`, so a claim built with shared parts
+   * costs at most the 1 MiB measure, never its expansion.
+   */
   holds(key: StateKey, value: Value | null): R<boolean> {
     const l = this.lookup(key);
     if (!l.ok) return l;
-    const absent = value === null || value.kind === "null";
-    return ok(l.value === null ? absent : !absent && bytesEqual(l.value, this.#hashing.valueHash(value)));
+    const claimed = value === null || value.kind === "null" ? null : value;
+    if (l.value === null || claimed === null) return ok(l.value === null && claimed === null);
+    return ok(checkValue(key, claimed).ok && bytesEqual(l.value, this.#hashing.valueHash(claimed)));
   }
 
   /** Every entry under the namespace, complete. */
@@ -319,11 +334,14 @@ export class VersionedTrie<V> {
     return this.hashing.valueHash(BytesValue.of(b));
   }
 
-  /** A value every wire format can carry: at most 253 levels deep and 1 MiB of canonical CBOR. */
+  /**
+   * A value every wire format can carry: at most 253 levels deep and 1 MiB of canonical CBOR. The size is measured
+   * without encoding, and refused at once when the value's weight (a lower bound on its length) is already over, so a
+   * value built with shared parts costs O(1 MiB) at most. A refused size is a lower bound: the weight, or the length
+   * counted to the first byte past the limit (`MAX_WEIGHT` when even the weight saturated).
+   */
   checkValue(key: StateKey, value: Value): R<undefined> {
-    if (value.depth > MAX_VALUE_DEPTH) return err({ kind: "TooDeep", what: `the value of ${key.value}`, depth: value.depth, max: MAX_VALUE_DEPTH });
-    const size = cbor.encode(value).length;
-    return size <= MAX_VALUE_BYTES ? ok(undefined) : err({ kind: "TooLarge", what: `the value of ${key.value}`, size, max: MAX_VALUE_BYTES });
+    return checkValue(key, value);
   }
 
   /** The root a head commits to: the top trie of `0x00 -> vkey`, `0x01 -> stateRoot`, `0x02 -> historyRoot`. */

@@ -171,7 +171,10 @@ export class TrieHashing {
     return copyBytes(this.#empty);
   }
 
-  /** The hash a trie commits for a value: `valueHash(commit(v))`, as a JLVM program claims it. */
+  /**
+   * The hash a trie commits for a value: `valueHash(commit(v))`, as a JLVM program claims it. O(`value.weight`), as
+   * `valueCommitment`, with no size limit (as Scala's and Rust's): bound the weight of a value built with shared parts.
+   */
   valueHash(value: Value): Uint8Array {
     return this.#value.hash(valueCommitment(value));
   }

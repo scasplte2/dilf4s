@@ -8,8 +8,8 @@ export * as cbor from "./cbor.js";
 export * as codec from "./codec.js";
 export * as json from "./json.js";
 export * as models from "./generated/index.js";
-export { valueCommitment, BYTES_TAG, CBOR_TAG } from "./commitment.js";
-export type { CanonicalError, DecodeFailure } from "./error.js";
+export { valueCommitment, valueCommitmentWithin, BYTES_TAG, CBOR_TAG } from "./commitment.js";
+export type { CanonicalError, DecodeFailure, TooLarge } from "./error.js";
 export { describeFailure } from "./error.js";
 export {
   contentHash,
@@ -26,4 +26,20 @@ export {
 } from "./hash.js";
 export { fromHex, toHex, type InvalidHex } from "./hex.js";
 export { all, andThen, err, map, ok, type Err, type Ok, type Result } from "./result.js";
-export { ArrayValue, BoolValue, BytesValue, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, Value } from "./value.js";
+export {
+  ArrayValue,
+  BoolValue,
+  BytesValue,
+  DEBUG_BUDGET,
+  DEBUG_DEPTH,
+  equals,
+  inspect,
+  IntValue,
+  MapValue,
+  MAX_DEPTH,
+  MAX_WEIGHT,
+  NullValue,
+  RationalValue,
+  TextValue,
+  Value,
+} from "./value.js";
