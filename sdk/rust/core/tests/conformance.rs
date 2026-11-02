@@ -73,6 +73,17 @@ fn model_cases() {
 }
 
 #[test]
+fn render_rejections() {
+    let (v, _, _) = vectors();
+    let n = run(&v.render_rejections, |c| {
+        let value = cbor::decode(&bytes(&c.cbor)).map_err(|e| format!("{}: {e}", c.cbor))?;
+        let kind = json::render(&value).map_or_else(|e| e.kind(), |_| "rendered");
+        same("error kind", &c.cbor, &c.error, kind)
+    });
+    eprintln!("renderRejections: {n} cases");
+}
+
+#[test]
 fn cbor_rejections() {
     let (v, _, _) = vectors();
     let n = run(&v.cbor_rejections, |c| {

@@ -191,6 +191,31 @@ export const CanonicalModelCase: c.Codec<CanonicalModelCase> = {
   },
 };
 
+/** `canonical-render-rejection` (`shared/schemas/canonical-vectors.cddl`). */
+export interface CanonicalRenderRejection {
+  readonly cbor: Hex;
+  readonly error: string;
+}
+
+export const CanonicalRenderRejection: c.Codec<CanonicalRenderRejection> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("cbor", c.defer(() => Hex), a.cbor, e),
+        c.field("error", c.text, a.error, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["cbor", "error"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("cbor", c.defer(() => Hex));
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("error", c.text);
+    if (!r1.ok) return r1;
+    return c.ok({ cbor: r0.value, error: r1.value });
+  },
+};
+
 /** `canonical-tagged-hash` (`shared/schemas/canonical-vectors.cddl`). */
 export interface CanonicalTaggedHash {
   readonly algorithm: string;
@@ -232,6 +257,7 @@ export interface CanonicalVectors {
   readonly contentHashAlgorithm: string;
   readonly json: readonly CanonicalJsonCase[];
   readonly model: readonly CanonicalModelCase[];
+  readonly renderRejections: readonly CanonicalRenderRejection[];
   readonly cborRejections: readonly CanonicalCborRejection[];
   readonly taggedHash: readonly CanonicalTaggedHash[];
   readonly digests: readonly CanonicalDigest[];
@@ -248,6 +274,7 @@ export const CanonicalVectors: c.Codec<CanonicalVectors> = {
         c.field("contentHashAlgorithm", c.text, a.contentHashAlgorithm, e),
         c.field("json", c.vector(c.defer(() => CanonicalJsonCase), 0, null), a.json, e),
         c.field("model", c.vector(c.defer(() => CanonicalModelCase), 0, null), a.model, e),
+        c.field("renderRejections", c.vector(c.defer(() => CanonicalRenderRejection), 0, null), a.renderRejections, e),
         c.field("cborRejections", c.vector(c.defer(() => CanonicalCborRejection), 0, null), a.cborRejections, e),
         c.field("taggedHash", c.vector(c.defer(() => CanonicalTaggedHash), 0, null), a.taggedHash, e),
         c.field("digests", c.vector(c.defer(() => CanonicalDigest), 0, null), a.digests, e),
@@ -255,7 +282,7 @@ export const CanonicalVectors: c.Codec<CanonicalVectors> = {
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "contentHashTag", "contentHashAlgorithm", "json", "model", "cborRejections", "taggedHash", "digests", "domainTags"]);
+    const f = c.fields(v, ["spec", "version", "contentHashTag", "contentHashAlgorithm", "json", "model", "renderRejections", "cborRejections", "taggedHash", "digests", "domainTags"]);
     if (!f.ok) return f;
     const r0 = f.value.required("spec", c.literalText("docs/specs/canonical-encoding.md"));
     if (!r0.ok) return r0;
@@ -269,15 +296,17 @@ export const CanonicalVectors: c.Codec<CanonicalVectors> = {
     if (!r4.ok) return r4;
     const r5 = f.value.required("model", c.vector(c.defer(() => CanonicalModelCase), 0, null));
     if (!r5.ok) return r5;
-    const r6 = f.value.required("cborRejections", c.vector(c.defer(() => CanonicalCborRejection), 0, null));
+    const r6 = f.value.required("renderRejections", c.vector(c.defer(() => CanonicalRenderRejection), 0, null));
     if (!r6.ok) return r6;
-    const r7 = f.value.required("taggedHash", c.vector(c.defer(() => CanonicalTaggedHash), 0, null));
+    const r7 = f.value.required("cborRejections", c.vector(c.defer(() => CanonicalCborRejection), 0, null));
     if (!r7.ok) return r7;
-    const r8 = f.value.required("digests", c.vector(c.defer(() => CanonicalDigest), 0, null));
+    const r8 = f.value.required("taggedHash", c.vector(c.defer(() => CanonicalTaggedHash), 0, null));
     if (!r8.ok) return r8;
-    const r9 = f.value.required("domainTags", c.vector(c.defer(() => CanonicalDomainTag), 0, null));
+    const r9 = f.value.required("digests", c.vector(c.defer(() => CanonicalDigest), 0, null));
     if (!r9.ok) return r9;
-    return c.ok({ spec: r0.value, version: r1.value, contentHashTag: r2.value, contentHashAlgorithm: r3.value, json: r4.value, model: r5.value, cborRejections: r6.value, taggedHash: r7.value, digests: r8.value, domainTags: r9.value });
+    const r10 = f.value.required("domainTags", c.vector(c.defer(() => CanonicalDomainTag), 0, null));
+    if (!r10.ok) return r10;
+    return c.ok({ spec: r0.value, version: r1.value, contentHashTag: r2.value, contentHashAlgorithm: r3.value, json: r4.value, model: r5.value, renderRejections: r6.value, cborRejections: r7.value, taggedHash: r8.value, digests: r9.value, domainTags: r10.value });
   },
 };
 

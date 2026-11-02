@@ -41,7 +41,7 @@ use core::cmp::Ordering;
 use core::fmt;
 use core::ops::Deref;
 
-use num_bigint::BigInt;
+use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
 use num_traits::{One, Signed, Zero};
 
@@ -151,6 +151,14 @@ impl Value {
     /// The byte string `b`.
     pub fn bytes(b: impl Into<Arc<[u8]>>) -> Self {
         Self::Bytes(b.into())
+    }
+
+    /// `unscaled / 10^scale`, reduced with only the primes 2 and 5 (a JSON decimal's denominator has no others).
+    pub(crate) fn decimal(unscaled: &BigInt, scale: usize) -> Self {
+        match Rational::reduce_decimal(unscaled, scale) {
+            Reduced::Integer(n) => Self::int(n),
+            Reduced::Fraction(r) => Self::Rational(r),
+        }
     }
 
     /// The number `numerator / denominator` in the single numeric domain: an integer when it is one, otherwise a
@@ -500,6 +508,18 @@ struct RationalParts {
     weight: u64,
 }
 
+/// `n` without its factors of 5, at most `cap` of them, and how many were removed (see [`Rational::reduce_decimal`]).
+fn strip_fives(n: BigUint, cap: usize) -> (BigUint, usize) {
+    let powers: Vec<(usize, BigUint)> =
+        core::iter::successors(Some((1usize, BigUint::from(5u8))), |(e, p)| e.checked_mul(2).map(|e2| (e2, p * p)))
+            .take_while(|(e, _)| *e <= cap)
+            .collect();
+    powers.iter().rev().fold((n, 0usize), |(n, count), (e, p)| {
+        let within = count.checked_add(*e).is_some_and(|c| c <= cap);
+        if within && (&n % p).is_zero() { (n / p, count.saturating_add(*e)) } else { (n, count) }
+    })
+}
+
 pub(crate) enum Reduced {
     Integer(BigInt),
     Fraction(Rational),
@@ -517,6 +537,28 @@ impl Rational {
     pub fn new(numerator: BigInt, denominator: BigInt) -> Option<Self> {
         let valid = denominator > BigInt::one() && numerator.gcd(&denominator).is_one();
         valid.then(|| Self::checked(numerator, denominator))
+    }
+
+    /// `unscaled / 10^scale` in lowest terms. `10^scale`'s only primes are 2 and 5, so the common factor is
+    /// `2^min(v2, scale) 5^min(v5, scale)`: the twos go in one shift, and the fives by trial division by `5^(2^i)` from
+    /// the largest `2^i <= scale` down, which builds `min(v5, scale)` bit by bit (about 14 divisions for a scale of
+    /// 10000). The same result as [`Rational::reduce`] against `10^scale`, without its general gcd.
+    pub(crate) fn reduce_decimal(unscaled: &BigInt, scale: usize) -> Reduced {
+        let magnitude = unscaled.magnitude();
+        if magnitude.is_zero() {
+            return Reduced::Integer(BigInt::zero());
+        }
+        let twos = magnitude.trailing_zeros().map_or(0, |t| usize::try_from(t).unwrap_or(usize::MAX)).min(scale);
+        let (rest, fives) = strip_fives(magnitude >> twos, scale);
+        let numerator = BigInt::from_biguint(unscaled.sign(), rest);
+        let denominator = BigInt::from(
+            num_traits::pow(BigUint::from(5u8), scale.saturating_sub(fives)) << scale.saturating_sub(twos),
+        );
+        if denominator.is_one() {
+            Reduced::Integer(numerator)
+        } else {
+            Reduced::Fraction(Self::checked(numerator, denominator))
+        }
     }
 
     pub(crate) fn reduce(numerator: &BigInt, denominator: &BigInt) -> Result<Reduced, DivisionByZero> {
@@ -957,5 +999,28 @@ impl fmt::Debug for ShownEntries<'_> {
             list.entry(&(k, Shown(v, left)));
         }
         list.finish()
+    }
+}
+
+#[cfg(test)]
+mod decimal_tests {
+    #![allow(clippy::unwrap_used, clippy::panic, reason = "tests fail by panicking")]
+
+    use super::{BigInt, Value};
+
+    /// Every shape of shared factor: none, only twos, only fives, both past the scale, and the sign.
+    #[test]
+    fn reducing_by_two_and_five_is_the_gcd_reduction() {
+        let ten = BigInt::from(10u8);
+        let numerators = [0i64, 1, -1, 2, 5, 10, 16, 25, 125, 640, 3125, -7_812_500, 999, 1_000_000, 2_048_000_000]
+            .into_iter()
+            .map(BigInt::from)
+            .chain([num_traits::pow(BigInt::from(5u8), 20_000), num_traits::pow(BigInt::from(2u8), 20_000) * 3]);
+        for n in numerators {
+            for scale in [0usize, 1, 2, 3, 7, 8, 9, 64, 1000, 10_000] {
+                let general = Value::number(&n, &num_traits::pow(ten.clone(), scale)).unwrap();
+                assert_eq!(Value::decimal(&n, scale), general, "{} / 10^{scale}", n.bits());
+            }
+        }
     }
 }

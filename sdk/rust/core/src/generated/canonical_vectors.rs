@@ -202,6 +202,32 @@ impl c::Model for CanonicalModelCase {
     }
 }
 
+/// `canonical-render-rejection` (`shared/schemas/canonical-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalRenderRejection {
+    /// The `cbor` entry.
+    pub cbor: Hex,
+    /// The `error` entry.
+    pub error: String,
+}
+
+impl c::Model for CanonicalRenderRejection {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::field("error", &c::Text, &self.error, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["cbor", "error"])?;
+        let f0 = fields.required("cbor", &HEX)?;
+        let f1 = fields.required("error", &c::Text)?;
+        Ok(Self { cbor: f0, error: f1 })
+    }
+}
+
 /// `canonical-tagged-hash` (`shared/schemas/canonical-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalTaggedHash {
@@ -247,6 +273,8 @@ pub struct CanonicalVectors {
     pub json: Vec<CanonicalJsonCase>,
     /// The `model` entry.
     pub model: Vec<CanonicalModelCase>,
+    /// The `renderRejections` entry.
+    pub render_rejections: Vec<CanonicalRenderRejection>,
     /// The `cborRejections` entry.
     pub cbor_rejections: Vec<CanonicalCborRejection>,
     /// The `taggedHash` entry.
@@ -267,6 +295,7 @@ impl c::Model for CanonicalVectors {
             c::field("contentHashAlgorithm", &c::Text, &self.content_hash_algorithm, inner)?,
             c::field("json", &c::VecOf { element: c::ModelOf::<CanonicalJsonCase>::NEW, min: 0, max: None }, &self.json, inner)?,
             c::field("model", &c::VecOf { element: c::ModelOf::<CanonicalModelCase>::NEW, min: 0, max: None }, &self.model, inner)?,
+            c::field("renderRejections", &c::VecOf { element: c::ModelOf::<CanonicalRenderRejection>::NEW, min: 0, max: None }, &self.render_rejections, inner)?,
             c::field("cborRejections", &c::VecOf { element: c::ModelOf::<CanonicalCborRejection>::NEW, min: 0, max: None }, &self.cbor_rejections, inner)?,
             c::field("taggedHash", &c::VecOf { element: c::ModelOf::<CanonicalTaggedHash>::NEW, min: 0, max: None }, &self.tagged_hash, inner)?,
             c::field("digests", &c::VecOf { element: c::ModelOf::<CanonicalDigest>::NEW, min: 0, max: None }, &self.digests, inner)?,
@@ -275,18 +304,19 @@ impl c::Model for CanonicalVectors {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "contentHashTag", "contentHashAlgorithm", "json", "model", "cborRejections", "taggedHash", "digests", "domainTags"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "contentHashTag", "contentHashAlgorithm", "json", "model", "renderRejections", "cborRejections", "taggedHash", "digests", "domainTags"])?;
         fields.required("spec", &c::LiteralText("docs/specs/canonical-encoding.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         let f2 = fields.required("contentHashTag", &c::Text)?;
         let f3 = fields.required("contentHashAlgorithm", &c::Text)?;
         let f4 = fields.required("json", &c::VecOf { element: c::ModelOf::<CanonicalJsonCase>::NEW, min: 0, max: None })?;
         let f5 = fields.required("model", &c::VecOf { element: c::ModelOf::<CanonicalModelCase>::NEW, min: 0, max: None })?;
-        let f6 = fields.required("cborRejections", &c::VecOf { element: c::ModelOf::<CanonicalCborRejection>::NEW, min: 0, max: None })?;
-        let f7 = fields.required("taggedHash", &c::VecOf { element: c::ModelOf::<CanonicalTaggedHash>::NEW, min: 0, max: None })?;
-        let f8 = fields.required("digests", &c::VecOf { element: c::ModelOf::<CanonicalDigest>::NEW, min: 0, max: None })?;
-        let f9 = fields.required("domainTags", &c::VecOf { element: c::ModelOf::<CanonicalDomainTag>::NEW, min: 0, max: None })?;
-        Ok(Self { content_hash_tag: f2, content_hash_algorithm: f3, json: f4, model: f5, cbor_rejections: f6, tagged_hash: f7, digests: f8, domain_tags: f9 })
+        let f6 = fields.required("renderRejections", &c::VecOf { element: c::ModelOf::<CanonicalRenderRejection>::NEW, min: 0, max: None })?;
+        let f7 = fields.required("cborRejections", &c::VecOf { element: c::ModelOf::<CanonicalCborRejection>::NEW, min: 0, max: None })?;
+        let f8 = fields.required("taggedHash", &c::VecOf { element: c::ModelOf::<CanonicalTaggedHash>::NEW, min: 0, max: None })?;
+        let f9 = fields.required("digests", &c::VecOf { element: c::ModelOf::<CanonicalDigest>::NEW, min: 0, max: None })?;
+        let f10 = fields.required("domainTags", &c::VecOf { element: c::ModelOf::<CanonicalDomainTag>::NEW, min: 0, max: None })?;
+        Ok(Self { content_hash_tag: f2, content_hash_algorithm: f3, json: f4, model: f5, render_rejections: f6, cbor_rejections: f7, tagged_hash: f8, digests: f9, domain_tags: f10 })
     }
 }
 

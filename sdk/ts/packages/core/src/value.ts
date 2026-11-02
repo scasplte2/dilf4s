@@ -6,6 +6,7 @@
  * canonical order and no null values, and nothing nests deeper than {@link MAX_DEPTH}. Every constructible value
  * therefore has exactly one encoding, and decodes back to itself.
  */
+import { bitLength } from "./bigint.js";
 import type { CanonicalError } from "./error.js";
 import { err, ok, type Result } from "./result.js";
 import { compareBytes, encodeUtf8, isWellFormed } from "./utf8.js";
@@ -114,6 +115,27 @@ export class RationalValue {
     const n = (sign * numerator) / g;
     const d = (sign * denominator) / g;
     return d === 1n ? IntValue.of(n) : new RationalValue(n, d);
+  }
+
+  /**
+   * `unscaled / 10^scale` in lowest terms. `10^scale`'s only primes are 2 and 5, so the common factor is
+   * `2^min(v2, scale) 5^min(v5, scale)`: the twos go in one shift, and the fives by trial division by `5^(2^i)` from the
+   * largest `2^i <= scale` down, which builds `min(v5, scale)` bit by bit (about 14 divisions for a scale of 10000).
+   * The same result as {@link number} against `10^scale`, without its general gcd.
+   */
+  static decimal(unscaled: bigint, scale: number): IntValue | RationalValue {
+    if (unscaled === 0n) return IntValue.of(0n);
+    const sign = unscaled < 0n ? -1n : 1n;
+    const magnitude = sign * unscaled;
+    const twos = Math.min(bitLength(magnitude & -magnitude) - 1, scale);
+    const powers: (readonly [number, bigint])[] = [];
+    for (let e = 1, p = 5n; e <= scale; e *= 2, p *= p) powers.push([e, p]);
+    const [rest, fives] = powers.reduceRight<readonly [bigint, number]>(
+      ([n, count], [e, p]) => (count + e <= scale && n % p === 0n ? [n / p, count + e] : [n, count]),
+      [magnitude >> BigInt(twos), 0],
+    );
+    const d = 5n ** BigInt(scale - fives) << BigInt(scale - twos);
+    return d === 1n ? IntValue.of(sign * rest) : new RationalValue(sign * rest, d);
   }
 }
 

@@ -65,6 +65,10 @@ JSON is the human-facing and API format. It converts to the data model as follow
 **Numbers** are read **exactly from their source text** as a terminating decimal and converted to an integer or a rational. For example, `0.1` becomes 1/10, `1.0` becomes the integer 1, `-0` becomes the integer 0, and `9007199254740993` stays exact.
 - Implementations MUST NOT route numbers through IEEE-754 doubles.
 - A decimal whose effective scale `|fraction digits - exponent|` exceeds 10000 is rejected, to bound memory.
+- A number's significand (its integer and fraction digits together, leading zeros aside) and its exponent (leading
+  zeros aside) each have at most 10000 digits; a longer one is rejected. Decimal conversion costs more than linear time
+  in the digits, so both are counted on the source text before any conversion. The bound equals the scale bound, so
+  every decimal of an accepted scale has a form within it (`0.` then 10000 zeros then `1e1` is 10^-10000).
 
 **Strings** become text. A string containing unpaired surrogates is rejected.
 
@@ -76,6 +80,12 @@ Converting back to JSON (for display only) works as follows:
 - Output is compact (no whitespace), and object members are written in ascending Unicode code-point order of their names.
 - Integers are written as exact decimal digits.
 - A rational is written as an exact decimal when it terminates. Otherwise it can't be written as JSON and conversion fails.
+- A number is written only when its decimal is within the bounds above (at most 10000 significant digits, and a scale
+  of at most 10000), so that every rendering reads back; otherwise conversion fails. `10^10000` (10001 digits) and
+  `1/2^10001` (scale 10001) can't be written. A short form can read beyond them (`1e10000` is `10^10000`), so reading
+  JSON and writing it back can fail; writing and reading back cannot. A numerator or denominator wider than 33220 bits
+  (the width of `10^10000`) is refused before any conversion: a denominator `2^a 5^b` with `max(a, b) <= 10000` is at
+  most `10^10000`, and the decimal's significand is at least the numerator.
 - Bytes can't be written as JSON, and conversion fails.
 
 ## 4. Tagged hashing

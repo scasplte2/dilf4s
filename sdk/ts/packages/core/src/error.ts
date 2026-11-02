@@ -9,10 +9,11 @@ export type CanonicalError =
   | { readonly kind: "DuplicateKey"; readonly key: string }
   /** JSON text that is not RFC 8259 syntax; `offset` counts UTF-16 code units. */
   | { readonly kind: "JsonSyntax"; readonly offset: number; readonly reason: string }
-  /** A JSON number that is malformed, or whose scale exceeds the bound. */
-  | { readonly kind: "InvalidNumber"; readonly source: string; readonly scale?: bigint }
-  /** Bytes, or a rational with no terminating decimal: no JSON form. */
-  | { readonly kind: "NotJsonRepresentable"; readonly what: "bytes" | "non-terminating rational" }
+  /** A JSON number that is malformed, or outside the digit or scale bound. */
+  // `source` is the number's length and offset, never its text, whose size the caller chose
+  | { readonly kind: "InvalidNumber"; readonly source: string; readonly scale?: bigint; readonly digits?: number }
+  /** Bytes, a rational with no terminating decimal, or a number too long to read back: no JSON form. */
+  | { readonly kind: "NotJsonRepresentable"; readonly what: "bytes" | "non-terminating rational" | "over-long number" }
   /** A typed value outside its schema. */
   | { readonly kind: "TypeMismatch"; readonly reason: string }
   /** The input ended inside an item. */
