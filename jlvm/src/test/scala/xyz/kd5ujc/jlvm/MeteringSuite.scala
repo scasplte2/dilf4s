@@ -409,7 +409,7 @@ object MeteringSuite extends IOSuite {
 
   // ---- keys and path segments compared on every lookup
 
-  test("set does not rescan its key, and get, has, set and unset pay for long keys") { jlvm =>
+  test("get and set pay for a long key, which a hit compares: the Key unit, read off the gas") { jlvm =>
     val long = "k" * (1 << 20)
     val short = "k"
     val build =
