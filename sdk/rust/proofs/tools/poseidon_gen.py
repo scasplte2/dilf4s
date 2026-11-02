@@ -144,7 +144,7 @@ def emit(widths):
         c = w["constants"]
         sp = chunks(w["sparse"], 2 * t - 1)
         sparse_w = [row[:t] for row in sp]
-        sparse_v = [[0] + row[t:] for row in sp]
+        sparse_v = [row[t:] for row in sp]
         fields = [
             ("mds", mat(chunks(w["mds"], t), 4)),
             ("first", arr(c[0:t], 4)),
@@ -158,7 +158,7 @@ def emit(widths):
         ]
         assert len(c[5 * t + rp :]) == 3 * t
         out.append("/// Width %d: %d input%s, %d partial rounds." % (t, t - 1, "" if t == 2 else "s", rp))
-        out.append("pub static WIDTH%d: Params<%d, %d> = Params {" % (t, t, rp))
+        out.append("pub static WIDTH%d: Params<%d, %d, %d> = Params {" % (t, t, rp, t - 1))
         for name, body in fields:
             out.append("    %s: %s," % (name, body))
         out.append("};")
