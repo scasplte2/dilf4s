@@ -1,0 +1,54 @@
+[package]
+name = "dilf4s-zk-cases"
+description = "What the SP1 guest computes over the shared vectors, so the host can compute the same natively"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+publish = false
+
+# Its own root: the guest builds it with the SP1 patches, the host and the native benchmark without them.
+[workspace]
+
+[features]
+# The cases read from `shared/vectors`, with what each vector says: off the guest only (std).
+vectors = ["dep:num-bigint"]
+
+[dependencies]
+dilf4s-core = { path = "../../core" }
+dilf4s-proofs = { path = "../../proofs" }
+# verification only, as the guest builds it
+dilf4s-signing = { path = "../../signing", default-features = false }
+dilf4s-jlvm = { path = "../../jlvm" }
+# the issue #33 measurement: k256 as dilf4s-signing has it
+k256 = { version = "=0.13.4", default-features = false, features = ["arithmetic"] }
+num-bigint = { version = "0.5", default-features = false, optional = true }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+arithmetic_side_effects = "deny"
+as_conversions = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+unwrap_used = "deny"
+alloc_instead_of_core = "deny"
+std_instead_of_alloc = "deny"
+std_instead_of_core = "deny"
+
+[[example]]
+name = "sigma_leaves"
+required-features = ["vectors"]

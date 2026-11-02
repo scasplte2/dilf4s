@@ -29,6 +29,7 @@ jobs:
     outputs:
       ts: ${{ steps.filter.outputs.ts }}
       rust: ${{ steps.filter.outputs.rust }}
+      sp1: ${{ steps.filter.outputs.sp1 }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -42,6 +43,11 @@ jobs:
             rust:
               - 'sdk/rust/**'
               - 'shared/**'
+              - '.github/workflows/ci.yml'
+            # the guest links core, proofs, signing and jlvm, so any of them (or the vectors) reruns it
+            sp1:
+              - 'sdk/rust/**'
+              - 'shared/vectors/**'
               - '.github/workflows/ci.yml'
 
   typescript:
@@ -97,3 +103,47 @@ jobs:
       # the verifier-only build an SP1 guest uses, and the full one
       - run: cargo build -p dilf4s-signing --no-default-features --release --target riscv64imac-unknown-none-elf
       - run: cargo build -p dilf4s-signing --release --target riscv64imac-unknown-none-elf
+
+  # A real SP1 v6 guest (riscv64im-succinct-zkvm-elf) with every SP1 patch, so the patches' target_os = "zkvm" paths
+  # are compiled and run. Execute mode only: nothing is proved. sdk/rust/zk/README.md says what each patch changes.
+  sp1-guest:
+    needs: changes
+    if: needs.changes.outputs.sp1 == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: sdk/rust/zk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: rustfmt, clippy
+      # sp1-sdk's build compiles protobuf definitions that import google/protobuf/empty.proto
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      # sp1up at the v6.10.0 commit (a SHA, as tags can move), installing cargo-prove v6.10.0, which installs its pinned
+      # succinct toolchain; check-toolchain.sh then checks both
+      - name: Install the SP1 toolchain v6.10.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/succinctlabs/sp1/d83ed91f96701209613720708f36ffce0e98ed33/sp1up/sp1up -o "$RUNNER_TEMP/sp1up"
+          SP1_DIR="$HOME/.sp1" bash "$RUNNER_TEMP/sp1up" --version v6.10.0 --token "$GITHUB_TOKEN"
+          echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
+      - run: ./check-toolchain.sh
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            sdk/rust/zk/cases
+            sdk/rust/zk/host
+            sdk/rust/zk/guest
+      - run: cargo fmt --check --manifest-path cases/Cargo.toml
+      - run: cargo fmt --check --manifest-path guest/Cargo.toml
+      - run: cargo fmt --check --manifest-path host/Cargo.toml
+      - run: cargo clippy --locked --manifest-path cases/Cargo.toml --all-targets --all-features -- -D warnings
+      # host/build.rs refuses a stale guest/Cargo.lock, then builds the guest with the succinct toolchain, --locked
+      - run: cargo test --locked --release --manifest-path host/Cargo.toml -- --nocapture
+      # after the tests: under clippy, sp1-build skips the guest build, and the host includes the guest's ELF
+      - run: cargo clippy --locked --manifest-path host/Cargo.toml --all-targets -- -D warnings
+      # no lockfile may change while checking
+      - run: git diff --exit-code -- '*.lock'
