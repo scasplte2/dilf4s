@@ -7,6 +7,7 @@
  */
 import { describeFailure, err, models, ok, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
+import { decodeInput } from "./input.js";
 import { FULL_ROUNDS, WIDTH2, WIDTH3, WIDTH4, WIDTH5, type PoseidonParams } from "./poseidon-constants.js";
 
 /** The BN254 scalar field modulus `r`. */
@@ -137,9 +138,12 @@ export class PoseidonMerkleProof {
     return siblings.length <= MAX_DEPTH && position >= 0n && position < capacity ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", position, capacity });
   }
 
-  /** A proof from its canonical value (`poseidon-merkle-proof`): field elements below `r`, `position < 2^depth`. */
+  /**
+   * A proof from its canonical value (`poseidon-merkle-proof`): field elements below `r`, `position < 2^depth`. A value
+   * heavier than `MAX_PROOF_WEIGHT` is `Encoding`, refused before it is decoded.
+   */
   static decode(value: Value): Result<PoseidonMerkleProof, PoseidonMerkleError> {
-    const w = models.poseidon.PoseidonMerkleProof.decode(value);
+    const w = decodeInput(models.poseidon.PoseidonMerkleProof, value);
     if (!w.ok) return err({ kind: "Encoding", reason: describeFailure(w.error) });
     const siblings: Fr[] = [];
     for (const x of w.value.siblings) {

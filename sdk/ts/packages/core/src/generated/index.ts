@@ -9,6 +9,7 @@ export * as merkle from "./merkle.js";
 export * as merkleVectors from "./merkle_vectors.js";
 export * as poseidon from "./poseidon.js";
 export * as poseidonVectors from "./poseidon_vectors.js";
+export * as refusalVectors from "./refusal_vectors.js";
 export * as sigmaVectors from "./sigma_vectors.js";
 export * as signingVectors from "./signing_vectors.js";
 export * as storage from "./storage.js";

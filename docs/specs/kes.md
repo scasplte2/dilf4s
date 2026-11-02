@@ -2,6 +2,7 @@
 
 Status: normative. Conformance vectors: `shared/vectors/kes_v1.json`. Reference data for Cardano is in
 `docs/test-vectors/kes/cardano/`.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 A KES key signs for one period at a time and evolves forward. A key leaked at period `t` cannot sign for any earlier
 period. Every construction here uses Ed25519 leaves; a leaf's 32-byte seed is its RFC 8032 secret key. Verifying keys

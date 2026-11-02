@@ -89,12 +89,10 @@ fn increasing(previous: Option<&Vec<u8>>, keys: &[Vec<u8>], what: &str) -> Resul
 impl<K: VersionKey, H: Hasher> VersionedTrie<K, H> {
     /// A snapshot chunk from canonical CBOR, refused by size before it is decoded. Order is the reader's to check.
     pub fn decode_chunk(&self, bytes: &[u8]) -> Result<SnapshotChunk<K::Version, H>, VersionedTrieError> {
-        let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
-        if size > MAX_CHUNK_BYTES {
+        if !u64::try_from(bytes.len()).is_ok_and(|n| n <= MAX_CHUNK_BYTES) {
             return Err(VersionedTrieError::TooLarge {
                 what: alloc::string::String::from("a snapshot chunk"),
-                size,
-                max: MAX_CHUNK_BYTES,
+                limit: MAX_CHUNK_BYTES,
             });
         }
         let value = cbor::decode(bytes).map_err(malformed)?;

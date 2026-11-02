@@ -4,6 +4,7 @@ import cats.syntax.all._
 
 import scala.annotation.tailrec
 
+import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.hash.{Fr, Poseidon}
 import xyz.kd5ujc.models.poseidon.{PoseidonMerkleProof => Wire}
@@ -42,9 +43,13 @@ object PoseidonMerkleProof {
   def toCanonical(p: PoseidonMerkleProof): Either[PoseidonMerkleError, CanonicalValue] =
     Wire.codec.encode(Wire(p.position, p.siblings.map(_.value))).leftMap(e => PoseidonMerkleError.Encoding(e.toString))
 
-  /** The schema fixes shape and field ranges; this adds the invariant it cannot state (`position < 2^depth`). */
+  /**
+   * The schema fixes shape and field ranges; this adds the invariant it cannot state (`position < 2^depth`). A proof
+   * heavier than `ProofInput.MaxProofWeight` is `Encoding`, refused before it is decoded.
+   */
   def fromCanonical(v: CanonicalValue): Either[PoseidonMerkleError, PoseidonMerkleProof] =
     for {
+      _        <- ProofInput.bounded(v)(PoseidonMerkleError.Encoding(_))
       w        <- Wire.codec.decoder.decode(v).leftMap(e => PoseidonMerkleError.Encoding(e.message))
       siblings <- w.siblings.traverse(Fr.from).leftMap(e => PoseidonMerkleError.Encoding(e.toString))
       proof    <- from(w.position, siblings)

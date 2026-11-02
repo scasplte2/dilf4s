@@ -28,16 +28,16 @@ describe("versioned values built with shared parts", { timeout: 60_000 }, () => 
 
   it("checkValue measures without encoding: refused by weight, or at the first byte past 1 MiB", () => {
     const ms = elapsed(() => {
-      expect(expectErr(vt.checkValue(k, dag), "2^60 leaves")).toEqual({ kind: "TooLarge", what: "the value of fiber/1", size: Number(dag.weight), max: versioned.MAX_VALUE_BYTES });
+      expect(expectErr(vt.checkValue(k, dag), "2^60 leaves")).toEqual({ kind: "TooLarge", what: "the value of fiber/1", limit: versioned.MAX_VALUE_BYTES });
       // within the weight bound but over in bytes (each 2^64 - 1 weighs 2 and takes 9 bytes)
       const ints = doubled(Value.int(2n ** 64n - 1n), 17);
       const e = expectErr(vt.checkValue(k, ints), "over in bytes");
-      expect(e.kind === "TooLarge" && e.size > versioned.MAX_VALUE_BYTES, "a size past the limit").toBe(true);
+      expect(e, "the limit, nothing measured").toEqual({ kind: "TooLarge", what: "the value of fiber/1", limit: versioned.MAX_VALUE_BYTES });
       expect(vt.checkValue(k, doubled(Value.int(2n ** 64n - 1n), 16)).ok, "1.2 MiB of logical size, 655 KiB of CBOR").toBe(true);
-      // the weight saturates within the depth limit: the size is the saturated weight
+      // the weight saturates within the depth limit: refused by weight, with the limit
       const saturated = doubled(expectOk(Value.text("a"), "text"), versioned.MAX_VALUE_DEPTH);
       expect(saturated.weight).toBe(MAX_WEIGHT);
-      expect(expectErr(vt.checkValue(k, saturated), "saturated")).toMatchObject({ kind: "TooLarge", size: Number(MAX_WEIGHT) });
+      expect(expectErr(vt.checkValue(k, saturated), "saturated")).toEqual({ kind: "TooLarge", what: "the value of fiber/1", limit: versioned.MAX_VALUE_BYTES });
       // depth is checked first
       expect(expectErr(vt.checkValue(k, doubled(Value.null, versioned.MAX_VALUE_DEPTH + 1)), "too deep").kind).toBe("TooDeep");
     });

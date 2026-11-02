@@ -2,6 +2,7 @@
 
 Status: normative. Conformance vectors: `shared/vectors/versioned_trie_v1.json`. Code:
 `xyz.kd5ujc.accumulators.versioned`.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 A versioned trie is a key-value state that an application changes by committing a batch of writes at a version.
 Every commit yields **one root**, which commits to three things: the version, the state at it, and the state root of
@@ -200,7 +201,8 @@ versioned-trie-version = {
 ```
 
 Values travel separately, as everywhere in `trie.md` §5. A delta's values are canonical values; its keys are state
-keys as text.
+keys as text. A proof, delta or head decoded from a value heavier than `MaxProofWeight` (2^24) is `Malformed`,
+refused before it is decoded (`conformance.md` §5); its values are part of its weight.
 
 ## 6. Verification
 

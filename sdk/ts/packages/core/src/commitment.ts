@@ -35,10 +35,9 @@ export function valueCommitment(value: Value): Uint8Array {
  */
 export function valueCommitmentWithin(value: Value, maxBytes: number): Result<Uint8Array, TooLarge> {
   const limit = byteLimit(maxBytes);
-  if (value.kind === "bytes") return value.length < limit ? ok(tagged(BYTES_TAG, bytesView(value))) : err(tooLarge(limit, BigInt(value.length) + 1n));
-  if (limit === 0) return err(tooLarge(limit, value.weight + 1n));
+  if (value.kind === "bytes") return value.length < limit ? ok(tagged(BYTES_TAG, bytesView(value))) : err(tooLarge(limit));
+  if (limit === 0) return err(tooLarge(limit));
+  // the body is budgeted one byte short, for the tag; the refusal names the caller's limit
   const body = encodeWithin(value, limit - 1);
-  if (body.ok) return ok(tagged(CBOR_TAG, body.value));
-  const { atLeast } = body.error;
-  return err({ kind: "TooLarge", limit, atLeast: atLeast === "uncountable" ? atLeast : atLeast + 1n });
+  return body.ok ? ok(tagged(CBOR_TAG, body.value)) : err(tooLarge(limit));
 }

@@ -48,14 +48,14 @@ object VersionedTrieError {
   final case class Malformed(reason: String) extends VersionedTrieError
 
   /**
-   * A value or snapshot chunk over its limit (docs/specs/versioned-trie.md §7), in canonical CBOR bytes. `size` is the
-   * exact length, or, when the weight alone shows the limit is passed, the weight: a lower bound on the length (saturated
-   * at `Long.MaxValue` for a value that shares structure), reported without encoding anything.
+   * A value or snapshot chunk over its limit (docs/specs/versioned-trie.md §7), in canonical CBOR bytes:
+   * `VersionedTrie.MaxValueBytes` or `VersionedTrie.MaxChunkBytes`. It carries the limit only, never a measured size
+   * (docs/specs/conformance.md): a value is measured no further than the limit. `what` is not normative.
    */
-  final case class TooLarge(what: String, size: Long, max: Long) extends VersionedTrieError
+  final case class TooLarge(what: String, limit: Long) extends VersionedTrieError
 
-  /** A value nested deeper than every wire format can carry (docs/specs/versioned-trie.md §4). */
-  final case class TooDeep(what: String, depth: Int, max: Int) extends VersionedTrieError
+  /** A value nested deeper than every wire format can carry (docs/specs/versioned-trie.md §4); `what` is not normative. */
+  final case class TooDeep(what: String, depth: Int, limit: Int) extends VersionedTrieError
 
   final case class Store(error: StoreError) extends VersionedTrieError
   final case class Trie(error: TrieError) extends VersionedTrieError

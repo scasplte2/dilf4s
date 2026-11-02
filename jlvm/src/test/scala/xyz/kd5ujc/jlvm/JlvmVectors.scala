@@ -6,7 +6,7 @@ import java.nio.file.{Files, Path, Paths}
 import cats.effect.{ExitCode, IO, IOApp, Resource}
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.Cbor
+import xyz.kd5ujc.core.canonical.{BuiltValues, Cbor}
 
 import io.circe.syntax._
 import io.circe.{Decoder, Json}
@@ -20,11 +20,21 @@ object JlvmVectors {
 
   val path: Path = Paths.get("shared", "vectors", "jlvm_v1.json")
 
-  /** `env` holds host bindings as JSON surface text; `gasLimit` replaces the default limit. */
-  final case class Input(name: String, program: String, data: String, env: Option[Map[String, String]], gasLimit: Option[Long])
+  /**
+   * `env` holds host bindings as JSON surface text, and `built` host bindings too heavy to write out, as `built-value`
+   * recipes (shared/schemas/jlvm-vectors.cddl); `gasLimit` replaces the default limit.
+   */
+  final case class Input(
+    name:     String,
+    program:  String,
+    data:     String,
+    env:      Option[Map[String, String]],
+    built:    Option[Map[String, Json]],
+    gasLimit: Option[Long]
+  )
   final case class Inputs(source: String, cases: List[Input])
 
-  given Decoder[Input] = Decoder.forProduct5("name", "program", "data", "env", "gasLimit")(Input.apply)
+  given Decoder[Input] = Decoder.forProduct6("name", "program", "data", "env", "built", "gasLimit")(Input.apply)
   given Decoder[Inputs] = Decoder.forProduct2("source", "cases")(Inputs.apply)
 
   /**
@@ -58,7 +68,14 @@ object JlvmVectors {
       Parser.parse(i.program),
       JsonSurface.parse(i.data),
       i.env.getOrElse(Map.empty).toList.traverse { case (k, v) => JsonSurface.parse(v).map(k -> _) }
-    ).tupled
+    ).tupled.map {
+      case (p, d, env) =>
+        // a recipe that does not build is a broken vector file, not an outcome
+        val built = i.built.getOrElse(Map.empty).toList.map {
+          case (k, b) => k -> BuiltValues.fromJsonValue(b.hcursor).fold(e => sys.error(s"${i.name}: $k: $e"), identity)
+        }
+        (p, d, env ++ built)
+    }
       .fold(
         e => Outcome(Gas.Zero, Left(e)),
         {
@@ -89,6 +106,7 @@ object JlvmVectors {
           Json.fromFields(
             List("name" -> i.name.asJson, "program" -> i.program.asJson, "data" -> i.data.asJson) ++
             i.env.map(e => "env" -> Json.fromFields(e.toList.sortBy(_._1).map { case (k, v) => k -> v.asJson })) ++
+            i.built.map(b => "built" -> Json.fromFields(b.toList.sortBy(_._1))) ++
             i.gasLimit.map(l => "gasLimit" -> l.asJson) ++
             List("outcome" -> outcome(o), "gasUsed" -> o.gasUsed.value.asJson, "warnings" -> o.warnings.size.asJson)
           )

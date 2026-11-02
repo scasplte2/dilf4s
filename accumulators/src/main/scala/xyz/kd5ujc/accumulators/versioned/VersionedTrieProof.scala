@@ -2,6 +2,7 @@ package xyz.kd5ujc.accumulators.versioned
 
 import cats.syntax.all._
 
+import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.accumulators.trie.{TrieProof, TrieProofs}
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
@@ -71,8 +72,12 @@ object VersionedTrieWire {
       p.state.traverse(trieProof)
     ).mapN(W.VersionedTrieProof(_, _, _, _, _)).flatMap(W.VersionedTrieProof.codec.encode(_).leftMap(malformed))
 
+  /** A caller's input heavier than `ProofInput.MaxProofWeight` is `Malformed`, refused before it is decoded. */
+  private def bounded(v: CanonicalValue): Either[VersionedTrieError, CanonicalValue] =
+    ProofInput.bounded(v)(VersionedTrieError.Malformed(_))
+
   def decodeProof[V: VersionKey, H: Hasher](v: CanonicalValue): Either[VersionedTrieError, VersionedTrieProof[V, H]] =
-    W.VersionedTrieProof.codec.decoder.decode(v).leftMap(malformed).flatMap { w =>
+    bounded(v).flatMap(W.VersionedTrieProof.codec.decoder.decode(_).leftMap(malformed)).flatMap { w =>
       (
         fromHead[V, H](w.head),
         fromTrieProof[H](w.top),
@@ -98,7 +103,7 @@ object VersionedTrieWire {
     }
 
   def decodeDelta[V: VersionKey, H: Hasher](v: CanonicalValue): Either[VersionedTrieError, Delta[V, H]] =
-    W.VersionedTrieDelta.codec.decoder.decode(v).leftMap(malformed).flatMap { w =>
+    bounded(v).flatMap(W.VersionedTrieDelta.codec.decoder.decode(_).leftMap(malformed)).flatMap { w =>
       def key(s: String) = StateKey.parse(s).leftMap(VersionedTrieError.Key(_))
       (
         w.parent.traverse(fromHead[V, H]),
@@ -121,21 +126,18 @@ object VersionedTrieWire {
         vs.traverse { case (u, s) => VersionKey[V].encode(u).map(W.VersionedTrieVersion(_, s.bytes)) }
           .map(W.VersionedTrieSnapshotHistory(_))
     }
-    def tooLarge(size: Long) = VersionedTrieError.TooLarge("a snapshot chunk", size, VersionedTrie.MaxChunkBytes)
     wire.flatMap(W.VersionedTrieSnapshotChunk.codec.encode(_).leftMap(malformed)).flatMap { v =>
-      val size = if (v.weight > VersionedTrie.MaxChunkBytes) v.weight else Cbor.encodedLength(v)
-      Either.cond(size <= VersionedTrie.MaxChunkBytes, Cbor.encode(v), tooLarge(size))
+      val fits = v.weight <= VersionedTrie.MaxChunkBytes && Cbor.encodedLength(v) <= VersionedTrie.MaxChunkBytes
+      Either.cond(fits, Cbor.encode(v), tooLargeChunk)
     }
   }
+
+  private val tooLargeChunk: VersionedTrieError = VersionedTrieError.TooLarge("a snapshot chunk", VersionedTrie.MaxChunkBytes)
 
   /** A snapshot chunk from canonical CBOR, refused by size before it is decoded; order is the reader's to check. */
   def decodeChunk[V: VersionKey, H: Hasher](bytes: ByteVector): Either[VersionedTrieError, SnapshotChunk[V, H]] =
     for {
-      _ <- Either.cond(
-        bytes.size <= VersionedTrie.MaxChunkBytes,
-        (),
-        VersionedTrieError.TooLarge("a snapshot chunk", bytes.size, VersionedTrie.MaxChunkBytes)
-      )
+      _     <- Either.cond(bytes.size <= VersionedTrie.MaxChunkBytes, (), tooLargeChunk)
       value <- Cbor.decode(bytes).leftMap(malformed)
       wire  <- W.VersionedTrieSnapshotChunk.codec.decoder.decode(value).leftMap(malformed)
       chunk <- wire match {

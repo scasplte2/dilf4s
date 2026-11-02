@@ -1,6 +1,7 @@
 # dilf4s storage formats (v1)
 
 Status: normative for record values; informative for key layout.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 ## 1. Keys
 

@@ -11997,6 +11997,170 @@
       "data" : "{\"a0\":{\"root\":\"0x59c04ec13f9fba50a5bff434a4c0f69ea391381e23ab52d15065b5f83fd58275\",\"size\":2},\"a1\":{\"root\":\"0x1c702077ae5a63db9b6911b4ca96cdc039fa85babeb67b46208cbe6dded5dda0\",\"size\":5},\"a2\":\"0x00\"}"
     },
     {
+      "name" : "dilf4s proof weight: merkle_verify, 508399 padded digests, within the cap, is decoded: false",
+      "program" : "{\"merkle_verify\": [{\"var\": \"head\"}, {\"var\": \"leaf\"}, {\"var\": \"$proof\"}]}",
+      "data" : "{\"head\":{\"root\":\"0x0673307cecf465f209cddd9cac520d0e59894ad8fc6756f5d39d503ffdcae6dc\",\"size\":1},\"leaf\":\"0x\"}",
+      "built" : {
+        "proof" : {
+          "leaf" : "58200673307cecf465f209cddd9cac520d0e59894ad8fc6756f5d39d503ffdcae6dc",
+          "steps" : [
+            {
+              "copies" : 508399
+            },
+            {
+              "template" : "a3647061746861246473697a650165696e64657800",
+              "times" : 1
+            }
+          ]
+        }
+      },
+      "gasLimit" : 1073741824
+    },
+    {
+      "name" : "dilf4s proof weight: merkle_verify, 508400 padded digests, over the cap: Crypto",
+      "program" : "{\"merkle_verify\": [{\"var\": \"head\"}, {\"var\": \"leaf\"}, {\"var\": \"$proof\"}]}",
+      "data" : "{\"head\":{\"root\":\"0x0673307cecf465f209cddd9cac520d0e59894ad8fc6756f5d39d503ffdcae6dc\",\"size\":1},\"leaf\":\"0x\"}",
+      "built" : {
+        "proof" : {
+          "leaf" : "58200673307cecf465f209cddd9cac520d0e59894ad8fc6756f5d39d503ffdcae6dc",
+          "steps" : [
+            {
+              "copies" : 508400
+            },
+            {
+              "template" : "a3647061746861246473697a650165696e64657800",
+              "times" : 1
+            }
+          ]
+        }
+      },
+      "gasLimit" : 1073741824
+    },
+    {
+      "name" : "dilf4s proof weight: merkle_verify, 508400 padded digests, at the default limit: out of gas",
+      "program" : "{\"merkle_verify\": [{\"var\": \"head\"}, {\"var\": \"leaf\"}, {\"var\": \"$proof\"}]}",
+      "data" : "{\"head\":{\"root\":\"0x0673307cecf465f209cddd9cac520d0e59894ad8fc6756f5d39d503ffdcae6dc\",\"size\":1},\"leaf\":\"0x\"}",
+      "built" : {
+        "proof" : {
+          "leaf" : "58200673307cecf465f209cddd9cac520d0e59894ad8fc6756f5d39d503ffdcae6dc",
+          "steps" : [
+            {
+              "copies" : 508400
+            },
+            {
+              "template" : "a3647061746861246473697a650165696e64657800",
+              "times" : 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name" : "dilf4s proof weight: trie_verify, a proof one over the cap: Crypto",
+      "program" : "{\"trie_verify\": [{\"var\": \"mode\"}, {\"var\": \"root\"}, {\"var\": \"key\"}, null, {\"var\": \"$proof\"}]}",
+      "data" : "{\"key\":\"0x01\",\"mode\":{\"fixed\":1},\"root\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}",
+      "built" : {
+        "proof" : {
+          "leaf" : "f6",
+          "steps" : [
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            }
+          ]
+        }
+      },
+      "gasLimit" : 1073741824
+    },
+    {
       "name" : "dilf4s trie_verify: fixed-2, absent 8001",
       "program" : "{\"trie_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"},{\"var\":\"a3\"},{\"var\":\"a4\"}]}",
       "data" : "{\"a0\":{\"fixed\":2},\"a1\":\"0x59d57e6061990371229fbd750e18141bb5d557f3fbc9d59ddc30841ce9378a07\",\"a2\":\"0x8001\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"c\":3,\"s\":{\"b\":\"0x00\",\"n\":6}},{\"c\":3,\"s\":{\"b\":\"0x00\",\"n\":6}},{\"h\":\"0x53e902eea1f4e010982a98b1ce341284cb649132f7b032f64a32603e73db29b0\"},{\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"h\":\"0xeedc867c4553b87507394bc7c9e9901da67e74321e4f78878c8b243a4758d3d6\"},{\"h\":\"0xb62c5cbb32cb2c1f3653a7d257078ce6cd23e54689bb4a5e55019d3aa185f7e6\"},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"s\":{\"b\":\"0x0000\",\"n\":14},\"v\":\"0x3978285376d9f7c23f4e8b9d564d9536f7133d694e29fe0280edb56f68701ab0\"},{\"h\":\"0x1fb9b7ef856f41073fbc40b495efa2504589f480114540d3d67407ddabc07578\"}]}"

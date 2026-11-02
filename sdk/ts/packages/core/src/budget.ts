@@ -1,6 +1,5 @@
 /** Byte budgets for the walks that expand a value (internal to this package). */
 import type { TooLarge } from "./error.js";
-import { MAX_WEIGHT } from "./value.js";
 
 /**
  * `maxBytes` as a limit: a whole number of bytes from 0 to `Number.MAX_SAFE_INTEGER`. A fraction rounds down, a larger
@@ -8,13 +7,12 @@ import { MAX_WEIGHT } from "./value.js";
  */
 export const byteLimit = (maxBytes: number): number => (Number.isNaN(maxBytes) || maxBytes <= 0 ? 0 : Math.min(Math.floor(maxBytes), Number.MAX_SAFE_INTEGER));
 
-/** The refusal of a length of at least `atLeast` bytes; from `MAX_WEIGHT` on, a saturated weight, it is uncountable. */
-export const tooLarge = (limit: number, atLeast: bigint): TooLarge => ({ kind: "TooLarge", limit, atLeast: atLeast >= MAX_WEIGHT ? "uncountable" : atLeast });
+/** The refusal of a length over `limit`: it carries the limit only (docs/specs/conformance.md), never a measured size. */
+export const tooLarge = (limit: number): TooLarge => ({ kind: "TooLarge", limit });
 
-/** A count of bytes against a limit; it stops at the first take that would pass the limit and remembers where. */
+/** A count of bytes against a limit; it stops at the first take that would pass the limit. */
 export class Meter {
   #used = 0;
-  #over = 0n;
 
   constructor(readonly limit: number) {}
 
@@ -22,11 +20,9 @@ export class Meter {
     return this.#used;
   }
 
-  /** Whether `weight` (a lower bound on what is still to come) fits what is left; if not, the refusal is recorded. */
+  /** Whether `weight` (a lower bound on what is still to come) fits what is left. */
   admits(weight: bigint): boolean {
-    const fits = weight <= BigInt(this.limit - this.#used);
-    if (!fits) this.#over = BigInt(this.#used) + weight;
-    return fits;
+    return weight <= BigInt(this.limit - this.#used);
   }
 
   /**
@@ -36,12 +32,11 @@ export class Meter {
   take(n: number): boolean {
     const fits = this.#used + n <= this.limit;
     if (fits) this.#used += n;
-    else this.#over = BigInt(this.#used) + BigInt(n);
     return fits;
   }
 
   /** The refusal, after {@link admits} or {@link take} said no. */
   refusal(): TooLarge {
-    return tooLarge(this.limit, this.#over);
+    return tooLarge(this.limit);
   }
 }

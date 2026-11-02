@@ -211,9 +211,10 @@ impl<H: Hasher> InclusionProof<H> {
         if index < size { Ok(Self { index, size, path }) } else { Err(MerkleError::IndexOutOfRange { index, size }) }
     }
 
-    /// Decodes a `merkle-inclusion` value: the schema, digest lengths for `H`, and `index < size`.
+    /// Decodes a `merkle-inclusion` value: the schema, digest lengths for `H`, and `index < size`. A value heavier than
+    /// [`crate::MAX_PROOF_WEIGHT`] is `Encoding`, refused before it is decoded.
     pub fn from_value(value: &Value) -> Result<Self, MerkleError> {
-        let w = MerkleInclusion::from_value(value).map_err(encoding)?;
+        let w = MerkleInclusion::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(encoding)?;
         Self::new(w.index, w.size, digests(&w.path)?)
     }
 
@@ -263,9 +264,10 @@ impl<H: Hasher> ConsistencyProof<H> {
         }
     }
 
-    /// Decodes a `merkle-consistency` value: the schema, digest lengths for `H`, and `old <= new`.
+    /// Decodes a `merkle-consistency` value: the schema, digest lengths for `H`, and `old <= new`. A value heavier
+    /// than [`crate::MAX_PROOF_WEIGHT`] is `Encoding`, refused before it is decoded.
     pub fn from_value(value: &Value) -> Result<Self, MerkleError> {
-        let w = MerkleConsistency::from_value(value).map_err(encoding)?;
+        let w = MerkleConsistency::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(encoding)?;
         Self::new(w.old, w.new, digests(&w.path)?)
     }
 

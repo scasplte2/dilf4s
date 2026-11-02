@@ -10,6 +10,7 @@ import { bitLength, describeFailure, err, models, ok, outputSize, toHex, valueCo
 
 import * as B from "./bits.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
+import { decodeInput } from "./input.js";
 
 /**
  * Why a trie operation failed, by Scala's `TrieError` names, plus `NotCovered`: the JLVM's "not covered" (a proof that
@@ -248,9 +249,12 @@ export class TrieProof {
     topOf = (p) => p.#top;
   }
 
-  /** A proof from its canonical value: the flat pre-order array of `trie-proof` records (trie.md section 5). */
+  /**
+   * A proof from its canonical value: the flat pre-order array of `trie-proof` records (trie.md section 5). A value
+   * heavier than `MAX_PROOF_WEIGHT` is `Encoding`, refused before it is decoded.
+   */
   static decode(hashing: TrieHashing, value: Value): Result<TrieProof, TrieError> {
-    const w = models.trie.TrieProof.decode(value);
+    const w = decodeInput(models.trie.TrieProof, value);
     return w.ok ? TrieProof.fromRecords(hashing, w.value) : encoding(describeFailure(w.error));
   }
 

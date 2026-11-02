@@ -1,6 +1,7 @@
 # dilf4s canonical encoding and tagged hashing (v1)
 
 Status: normative. Every dilf4s implementation (Scala reference, TS, Rust, Go, Java, Python) MUST produce identical bytes for identical values. The conformance vectors in `shared/vectors/canonical_encoding_v1.json` are part of this specification.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 ## 1. Data model
 

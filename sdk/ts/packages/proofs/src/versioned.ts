@@ -3,9 +3,10 @@
  * head to one root, every check of Scala's `VersionedTrieVerifier`, proof / delta / snapshot-chunk decoding, the
  * chunk-by-chunk snapshot reader against a trusted head, and a replica that follows deltas.
  */
-import { bitLength, BytesValue, cbor, describeFailure, err, MAX_WEIGHT, models, ok, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, BytesValue, cbor, describeFailure, err, models, ok, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
+import { decodeInput } from "./input.js";
 import * as trie from "./trie.js";
 
 /** Why a state key or namespace was rejected. */
@@ -26,8 +27,8 @@ export type VersionedTrieError =
   | { readonly kind: "RootMismatch"; readonly component: string; readonly expected: string; readonly computed: string }
   | { readonly kind: "NotCovered"; readonly what: string }
   | { readonly kind: "Malformed"; readonly reason: string }
-  | { readonly kind: "TooLarge"; readonly what: string; readonly size: number; readonly max: number }
-  | { readonly kind: "TooDeep"; readonly what: string; readonly depth: number; readonly max: number }
+  | { readonly kind: "TooLarge"; readonly what: string; readonly limit: number }
+  | { readonly kind: "TooDeep"; readonly what: string; readonly depth: number; readonly limit: number }
   | { readonly kind: "Trie"; readonly error: trie.TrieError };
 
 type R<T> = Result<T, VersionedTrieError>;
@@ -215,11 +216,8 @@ const slotName = (slot: Uint8Array): string => toHex(slot);
 
 /** {@link VersionedTrie.checkValue}, which needs no profile. */
 function checkValue(key: StateKey, value: Value): R<undefined> {
-  if (value.depth > MAX_VALUE_DEPTH) return err({ kind: "TooDeep", what: `the value of ${key.value}`, depth: value.depth, max: MAX_VALUE_DEPTH });
-  const size = cbor.encodedLengthWithin(value, MAX_VALUE_BYTES);
-  if (size.ok) return ok(undefined);
-  const { atLeast } = size.error;
-  return err({ kind: "TooLarge", what: `the value of ${key.value}`, size: Number(atLeast === "uncountable" ? MAX_WEIGHT : atLeast), max: MAX_VALUE_BYTES });
+  if (value.depth > MAX_VALUE_DEPTH) return err({ kind: "TooDeep", what: `the value of ${key.value}`, depth: value.depth, limit: MAX_VALUE_DEPTH });
+  return cbor.encodedLengthWithin(value, MAX_VALUE_BYTES).ok ? ok(undefined) : err({ kind: "TooLarge", what: `the value of ${key.value}`, limit: MAX_VALUE_BYTES });
 }
 
 /** An entry of a verified listing: a state key and its value hash. */
@@ -337,8 +335,7 @@ export class VersionedTrie<V> {
   /**
    * A value every wire format can carry: at most 253 levels deep and 1 MiB of canonical CBOR. The size is measured
    * without encoding, and refused at once when the value's weight (a lower bound on its length) is already over, so a
-   * value built with shared parts costs O(1 MiB) at most. A refused size is a lower bound: the weight, or the length
-   * counted to the first byte past the limit (`MAX_WEIGHT` when even the weight saturated).
+   * value built with shared parts costs O(1 MiB) at most. A refusal carries the limit, never a measured size.
    */
   checkValue(key: StateKey, value: Value): R<undefined> {
     return checkValue(key, value);
@@ -382,9 +379,9 @@ export class VersionedTrie<V> {
     return ok(Object.freeze({ version: version.value, stateRoot: s.value, historyRoot: h.value }));
   }
 
-  /** A head from its canonical value (`versioned-trie-head`). */
+  /** A head from its canonical value (`versioned-trie-head`); one heavier than `MAX_PROOF_WEIGHT` is `Malformed`. */
   decodeHead(value: Value): R<Head<V>> {
-    const w = models.versionedTrie.VersionedTrieHead.decode(value);
+    const w = decodeInput(models.versionedTrie.VersionedTrieHead, value);
     return w.ok ? this.fromWireHead(w.value) : malformed(describeFailure(w.error));
   }
 
@@ -396,9 +393,9 @@ export class VersionedTrie<V> {
     return e.ok ? e : malformed(e.error.kind);
   }
 
-  /** A proof from its canonical value (`versioned-trie-proof`). */
+  /** A proof from its canonical value (`versioned-trie-proof`); one heavier than `MAX_PROOF_WEIGHT` is `Malformed`. */
   decodeProof(value: Value): R<VersionedTrieProof<V>> {
-    const w = models.versionedTrie.VersionedTrieProof.decode(value);
+    const w = decodeInput(models.versionedTrie.VersionedTrieProof, value);
     if (!w.ok) return malformed(describeFailure(w.error));
     const head = this.fromWireHead(w.value.head);
     if (!head.ok) return head;
@@ -428,9 +425,12 @@ export class VersionedTrie<V> {
     );
   }
 
-  /** A delta from its canonical value (`versioned-trie-delta`). */
+  /**
+   * A delta from its canonical value (`versioned-trie-delta`); one heavier than `MAX_PROOF_WEIGHT` is `Malformed`,
+   * refused before it is decoded (its values are its own, so the whole delta is bounded).
+   */
   decodeDelta(value: Value): R<Delta<V>> {
-    const w = models.versionedTrie.VersionedTrieDelta.decode(value);
+    const w = decodeInput(models.versionedTrie.VersionedTrieDelta, value);
     if (!w.ok) return malformed(describeFailure(w.error));
     const parent = w.value.parent === undefined ? ok(undefined) : this.fromWireHead(w.value.parent);
     if (!parent.ok) return parent;
@@ -453,7 +453,7 @@ export class VersionedTrie<V> {
 
   /** A snapshot chunk from canonical CBOR, refused by size before it is decoded; order is the reader's to check. */
   decodeChunk(bytes: Uint8Array): R<SnapshotChunk<V>> {
-    if (bytes.length > MAX_CHUNK_BYTES) return err({ kind: "TooLarge", what: "a snapshot chunk", size: bytes.length, max: MAX_CHUNK_BYTES });
+    if (bytes.length > MAX_CHUNK_BYTES) return err({ kind: "TooLarge", what: "a snapshot chunk", limit: MAX_CHUNK_BYTES });
     const value = cbor.decode(bytes);
     if (!value.ok) return malformed(value.error.kind);
     const w = models.versionedTrie.VersionedTrieSnapshotChunk.decode(value.value);

@@ -3,6 +3,7 @@
 Status: normative. Conformance vectors:
 - `shared/vectors/sigma_v1.json`: proofs made by Ergo's prover.
 - `shared/vectors/sigma_dilf4s_v1.json`: proofs made by ours, each accepted by Ergo's verifier.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 Both files carry Ergo's verdict on every case. They are produced by `tools/sigma-vectors` (dev-only, Scala 2.13,
 outside the build) over sigmastate 5.0.13.

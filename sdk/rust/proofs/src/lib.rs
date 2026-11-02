@@ -19,3 +19,9 @@ pub mod versioned;
 pub mod zk;
 
 pub use bits::Bits;
+
+/// The heaviest caller input a verifier decodes: a proof, delta or head passed as a [`dilf4s_core::value::Value`]
+/// (docs/specs/conformance.md section 5). 2^24, four times the largest snapshot chunk, so range proofs over large
+/// listings fit. A heavier input is refused in O(1), from its cached weight, before it is decoded, as the verifier's
+/// malformed-input error: a value with shared parts is small in memory, and decoding walks it as written out.
+pub const MAX_PROOF_WEIGHT: u64 = 1 << 24;

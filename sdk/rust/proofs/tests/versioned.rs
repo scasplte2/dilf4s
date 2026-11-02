@@ -363,21 +363,13 @@ fn check_value_refuses_a_shared_expansion_without_expanding_it() {
     let doubled = |leaf: Value, n: usize| (0..n).fold(leaf, |v, _| Value::array(vec![v.clone(), v]).unwrap());
     let start = std::time::Instant::now();
     // 2^60 leaves in 60 allocations
-    match check_value(&k, &doubled(Value::text("a"), 60)) {
-        Err(VersionedTrieError::TooLarge { size, max: m, .. }) => {
-            assert!(size > MAX_VALUE_BYTES, "size {size} is a lower bound past the limit");
-            assert_eq!(m, MAX_VALUE_BYTES);
-        }
-        other => panic!("{other:?}"),
-    }
+    let refused = Err(VersionedTrieError::TooLarge { what: "the value of big".into(), limit: MAX_VALUE_BYTES });
+    assert_eq!(check_value(&k, &doubled(Value::text("a"), 60)), refused, "the limit, nothing measured");
     // light by weight, over in bytes: each u64::MAX weighs 2 and encodes in 9
     let ints = doubled(Value::int(u64::MAX), 17);
-    assert_eq!(check_value(&k, &ints).unwrap_err().kind(), "TooLarge");
+    assert_eq!(check_value(&k, &ints), refused);
     assert!(start.elapsed().as_millis() < 2000, "took {:?}", start.elapsed());
     // the limit itself is exact: a byte string with a 5-byte head
     assert!(check_value(&k, &Value::bytes(vec![0u8; max - 5])).is_ok(), "exactly at the limit");
-    match check_value(&k, &Value::bytes(vec![0u8; max - 4])) {
-        Err(VersionedTrieError::TooLarge { size, .. }) => assert_eq!(size, MAX_VALUE_BYTES + 1, "exact when one over"),
-        other => panic!("{other:?}"),
-    }
+    assert_eq!(check_value(&k, &Value::bytes(vec![0u8; max - 4])), refused, "one over");
 }

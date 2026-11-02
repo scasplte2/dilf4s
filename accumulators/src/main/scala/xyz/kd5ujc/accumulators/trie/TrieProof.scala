@@ -5,6 +5,7 @@ import cats.{Eval, Monad}
 
 import scala.annotation.tailrec
 
+import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.accumulators.trie.Node.{Branch, Leaf}
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.hash.{Digest, Hasher}
@@ -327,12 +328,18 @@ object TrieProofs {
     left:      Option[ProofNode[H]]
   )
 
-  /** The generated decoder checks each record's shape; this rebuilds the tree and checks the structure. */
+  /**
+   * The generated decoder checks each record's shape; this rebuilds the tree and checks the structure. A proof heavier
+   * than `ProofInput.MaxProofWeight` is `Encoding`, refused before it is decoded.
+   */
   def decode[H: Hasher](value: CanonicalValue): Either[TrieError, TrieProof[H]] =
-    W.TrieProof.codec.decoder.decode(value).leftMap(e => TrieError.Encoding(e.message)).flatMap {
-      case rs if rs.isEmpty => TrieProof[H](None).asRight
-      case rs               => assembleFlat[H](rs.toList, Nil).map(t => TrieProof(Some(t)))
-    }
+    ProofInput
+      .bounded(value)(TrieError.Encoding(_))
+      .flatMap(W.TrieProof.codec.decoder.decode(_).leftMap(e => TrieError.Encoding(e.message)))
+      .flatMap {
+        case rs if rs.isEmpty => TrieProof[H](None).asRight
+        case rs               => assembleFlat[H](rs.toList, Nil).map(t => TrieProof(Some(t)))
+      }
 
   @tailrec
   private def assembleFlat[H: Hasher](records: List[W.TrieRecord], stack: List[Open[H]]): Either[TrieError, ProofNode[H]] =

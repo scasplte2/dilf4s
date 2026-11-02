@@ -1,0 +1,63 @@
+; Schema of shared/vectors/refusals_v1.json (conformance vectors for docs/specs/conformance.md): calls into the
+; verifiers and the versioned trie, each with its outcome, a refusal by its kind and its normative fields
+; (conformance.md section 3), or "accepted". Free text is never part of a vector.
+
+refusal-vectors = {
+  "spec": "docs/specs/conformance.md",
+  "version": 1,
+  "hash": "SHA-256",
+  "cases": [* refusal-case],
+}
+
+; One call. "check" names the entry point and the arguments it reads (conformance.md section 6); a case carries only
+; those. "input" is the caller's value; "inputs" are deltas a replica applies in order; "zeros" is a byte input of
+; that many zero bytes. "stateKey" is a versioned-trie state key; "key" a trie key; "at" a version.
+refusal-case = {
+  "name": text,
+  "check": refusal-check,
+  ? "input": built-value,
+  ? "inputs": [* built-value],
+  ? "zeros": uint,
+  ? "mode": refusal-mode,
+  ? "root": hex,
+  ? "oldRoot": hex,
+  ? "leafHash": hex,
+  ? "key": hex,
+  ? "stateKey": text,
+  ? "at": uint,
+  "outcome": refusal-outcome,
+}
+
+refusal-check = "vt-value" / "vt-chunk" / "vt-delta" / "vt-proof" / "vt-state" / "vt-historical" / "vt-replica" / "merkle-inclusion" / "merkle-consistency" / "trie-lookup" / "poseidon-proof"
+
+refusal-mode = refusal-fixed-mode / refusal-variable-mode
+
+refusal-fixed-mode = { "fixed": uint }
+
+refusal-variable-mode = { "variable": uint }
+
+; "accepted", or a refusal: its kind (a nested kind as "Outer.Inner", e.g. "Trie.Encoding") and the fields
+; conformance.md section 3 names normative for it, each present exactly when the kind has it.
+refusal-outcome = refusal-error / "accepted"
+
+refusal-error = {
+  "kind": text,
+  ? "limit": uint,
+  ? "depth": uint,
+  ? "component": text,
+}
+
+; A canonical value given by how it is built, so that a value with shared parts, far heavier than its description,
+; fits in the file (canonical CBOR has no sharing). Start from "leaf" (canonical CBOR); then apply each step in order:
+; {"template": t, "times": n} replaces, n times over, every text "$" in the canonical value t by the value so far;
+; {"copies": n} makes an array of n of it. Every occurrence is the one value, shared: a built value can weigh up to
+; 2^63 - 1 (its weight saturates), so a loader builds it with sharing and never encodes, renders or copies it whole.
+built-value = { "leaf": hex, ? "steps": [* built-step] }
+
+built-step = built-wrap / built-copies
+
+built-wrap = { "template": hex, "times": uint }
+
+built-copies = { "copies": uint }
+
+hex = text .regexp "([0-9a-f]{2})*"

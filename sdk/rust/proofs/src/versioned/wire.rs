@@ -66,9 +66,10 @@ impl<K: VersionKey, H: Hasher> VersionedTrie<K, H> {
         })
     }
 
-    /// Decodes a `versioned-trie-proof` value.
+    /// Decodes a `versioned-trie-proof` value. A value heavier than [`crate::MAX_PROOF_WEIGHT`] is `Malformed`,
+    /// refused before it is decoded.
     pub fn decode_proof(&self, value: &Value) -> Result<VersionedTrieProof<K::Version, H>, VersionedTrieError> {
-        let p = w::VersionedTrieProof::from_value(value).map_err(malformed)?;
+        let p = w::VersionedTrieProof::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(malformed)?;
         let at = match &p.at {
             None => None,
             Some(a) => {
@@ -84,9 +85,10 @@ impl<K: VersionKey, H: Hasher> VersionedTrie<K, H> {
         })
     }
 
-    /// Decodes a `versioned-trie-delta` value.
+    /// Decodes a `versioned-trie-delta` value. A value heavier than [`crate::MAX_PROOF_WEIGHT`] is `Malformed`,
+    /// refused before it is decoded: a delta's values are its own, so the whole delta is bounded.
     pub fn decode_delta(&self, value: &Value) -> Result<Delta<K::Version, H>, VersionedTrieError> {
-        let d = w::VersionedTrieDelta::from_value(value).map_err(malformed)?;
+        let d = w::VersionedTrieDelta::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(malformed)?;
         Ok(Delta {
             parent: d.parent.as_ref().map(|h| self.head_from_wire(h)).transpose()?,
             head: self.head_from_wire(&d.head)?,

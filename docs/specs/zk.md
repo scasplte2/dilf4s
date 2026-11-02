@@ -4,6 +4,7 @@ Status: normative. Conformance vectors: `shared/vectors/zk_v1.json` (sections 1 
 exact-width bytes, and SP1 Groth16 with tamperings, each with its outcome) and `shared/vectors/poseidon_v1.json`
 (Poseidon in `core.hash`, the tree in `accumulators.poseidon`). Reference vectors are in `docs/test-vectors/zk/`:
 go-ethereum's EIP-196/197 precompile vectors, and two real SP1 v6.1.0 proofs.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 Everything here is **verification only**. The arithmetic is variable time, over public data: proofs, public
 inputs, verifying keys and Merkle data. Never hash or multiply secrets with these functions.
@@ -111,7 +112,8 @@ shielded-transfer circuit.
 The proof's wire form is the canonical value below: the normative schema `shared/schemas/poseidon.cddl`, reproduced
 verbatim and checked by a test. Field elements are integers in `[0, r)`. Decoders also require `position < 2^depth`,
 where depth is the number of siblings; in the Scala API that invariant, and the field range, are carried by the types
-(`Fr`, `PoseidonMerkleProof`).
+(`Fr`, `PoseidonMerkleProof`). A proof value heavier than `MaxProofWeight` (2^24) is `Encoding`, refused before it is
+decoded (`conformance.md` §5).
 
 ```cddl
 ; dilf4s Poseidon Merkle tree proofs, v1 (docs/specs/zk.md section 4). Normative for shape.

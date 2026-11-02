@@ -1,6 +1,7 @@
 # dilf4s Bloom filter (v1)
 
 Status: normative.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 A filter has `m` bits and `k` hash functions:
 

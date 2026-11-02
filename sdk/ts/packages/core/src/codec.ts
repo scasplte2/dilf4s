@@ -32,6 +32,14 @@ export interface Codec<T> {
 /** Why bytes or text are not a model: not canonical, or not the model's shape. */
 export type ModelError = { readonly kind: "Canonical"; readonly error: CanonicalError } | { readonly kind: "Decode"; readonly error: DecodeFailure };
 
+/**
+ * `codec.decode(value)`, if `value` weighs at most `maxWeight`: a heavier value is refused in O(1), from its cached
+ * weight, before any of it is read or copied. Decode a caller's value with this, never with `decode` alone.
+ */
+export function decodeWithin<T>(codec: Codec<T>, value: Value, maxWeight: bigint): Result<T, DecodeFailure> {
+  return value.weight > maxWeight ? err(failure(`the value weighs over ${maxWeight.toString()}`)) : codec.decode(value);
+}
+
 /** The canonical CBOR of `value`. O(weight), as `cbor.encode`: a model holding caller values (`any`) may share parts. */
 export function toCbor<T>(codec: Codec<T>, value: T): Result<Uint8Array, CanonicalError> {
   const v = codec.encode(value);

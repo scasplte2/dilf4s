@@ -5,6 +5,7 @@ Conformance vectors: `shared/vectors/jlvm_v1.json` (schema `shared/schemas/jlvm-
 and its data, with the outcome (a value's canonical CBOR, or an error kind) and the gas used under schedule v1. Most
 are metakit's own test programs, rewritten into this surface and stored as its text. They agree with metakit's
 results, except where §8 says otherwise.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 The JLVM is a strict, metered expression language for ledgers, written in JsonLogic syntax. A result is a function of
 exactly five things:
@@ -467,6 +468,10 @@ A versioned trie (`versioned-trie.md`) is verified with these same trie ops. Its
   prefix or range, is a `Crypto` error, never `false`: it establishes neither presence nor absence.
 - **Gas** is priced by weight. As measured: about 13 per unit of weight for Merkle proofs, and 30 for trie proofs,
   whose records are larger and hashed through CBOR.
+- **A proof heavier than `MaxProofWeight`** (2^24, `conformance.md` §5) is a `Crypto` error, refused from its weight
+  before it is decoded, as every malformed proof is. The size charge comes first, so at the default limit such a proof
+  is `OutOfGas` (its weight alone costs over 2^24); a host limit that pays for it reaches the refusal. No result is
+  heavier than 2^24 (§2), so only the input data or a host binding can carry one.
 
 ## 7. Gas
 

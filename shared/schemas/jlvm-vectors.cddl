@@ -1,8 +1,8 @@
 ; Schema of shared/vectors/jlvm_v1.json (conformance vectors for docs/specs/jlvm.md, language v1, gas schedule v1).
 ; Each case is a program in the strict surface and its input data, both as JSON surface text, evaluated with the
-; case's host bindings (none if absent; each value is JSON surface text), its gas limit (the file's gasLimit if
-; absent) and the default schedule. An implementation conforms when it gives the same outcome and uses the same gas on
-; every case.
+; case's host bindings (none if absent; each value is JSON surface text, or, under "built", a value built with shared
+; parts), its gas limit (the file's gasLimit if absent) and the default schedule. An implementation conforms when it
+; gives the same outcome and uses the same gas on every case.
 
 jlvm-vectors = {
   "spec": "docs/specs/jlvm.md",
@@ -18,6 +18,7 @@ jlvm-case = {
   "program": text,
   "data": text,
   ? "env": { * text => text },
+  ? "built": { * text => built-value },
   ? "gasLimit": uint,
   "outcome": jlvm-outcome,
   "gasUsed": uint,
@@ -33,5 +34,17 @@ jlvm-value = { "cbor": hex, ? "json": text }
 jlvm-error = { "error": jlvm-error-kind }
 
 jlvm-error-kind = "Malformed" / "Type" / "Arity" / "Arithmetic" / "Domain" / "Crypto" / "Limit" / "OutOfGas"
+
+; A host binding too heavy to write out (refusal-vectors.cddl defines the same rule): start from "leaf" (canonical
+; CBOR); then apply each step in order: {"template": t, "times": n} replaces, n times over, every text "$" in the
+; canonical value t by the value so far; {"copies": n} makes an array of n of it. Every occurrence is the one value,
+; shared, so a loader builds it with sharing and never encodes, renders or copies it whole.
+built-value = { "leaf": hex, ? "steps": [* built-step] }
+
+built-step = built-wrap / built-copies
+
+built-wrap = { "template": hex, "times": uint }
+
+built-copies = { "copies": uint }
 
 hex = text .regexp "([0-9a-f]{2})*"

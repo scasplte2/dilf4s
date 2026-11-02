@@ -36,6 +36,21 @@ pub trait Codec {
 
     /// The typed value of `value`, or why it does not fit the schema, and where.
     fn decode(&self, value: &Value) -> Result<Self::Target, DecodeFailure>;
+
+    /// [`Codec::decode`], if `value` weighs at most `max_weight`: a heavier value is refused in O(1), from its cached
+    /// weight, before any of it is read or copied.
+    fn decode_within(&self, value: &Value, max_weight: u64) -> Result<Self::Target, DecodeFailure> {
+        within_weight(value, max_weight)?;
+        self.decode(value)
+    }
+}
+
+/// `Ok` if `value` weighs at most `max_weight`, read from its cached weight in O(1).
+fn within_weight(value: &Value, max_weight: u64) -> Result<(), DecodeFailure> {
+    if value.weight() > max_weight {
+        return Err(DecodeFailure::new(format!("the value weighs over {max_weight}")));
+    }
+    Ok(())
 }
 
 /// A type generated from a schema rule: a record, an enumeration or a choice.
@@ -49,8 +64,15 @@ pub trait Model: Sized {
     }
 
     /// The typed value of `value`. O([`Value::weight`]) for the parts it decodes: decoding copies shared parts out
-    /// (see [`crate::value`]), so bound the weight of a value built in process before decoding it.
+    /// (see [`crate::value`]), so decode a caller's value with [`Model::from_value_within`].
     fn from_value(value: &Value) -> Result<Self, DecodeFailure>;
+
+    /// [`Model::from_value`], if `value` weighs at most `max_weight`: a heavier value is refused in O(1), from its
+    /// cached weight, before any of it is read or copied.
+    fn from_value_within(value: &Value, max_weight: u64) -> Result<Self, DecodeFailure> {
+        within_weight(value, max_weight)?;
+        Self::from_value(value)
+    }
 
     /// The canonical CBOR of `self`: O(the weight of [`Model::to_value`]), as [`cbor::encode`].
     fn to_cbor(&self) -> Result<Vec<u8>, CanonicalError> {

@@ -6,9 +6,10 @@ import java.nio.file.{Files, Path, Paths}
 import cats.effect.{ExitCode, IO, IOApp}
 import cats.syntax.all._
 
+import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.accumulators.merkle.MerkleCodec
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue}
 import xyz.kd5ujc.crypto.sigma.Secp256k1Group
 import xyz.kd5ujc.crypto.signing._
 
@@ -30,8 +31,17 @@ object OpCoverageCases extends IOApp {
 
   val path: Path = Paths.get("jlvm", "src", "test", "resources", "vectors", "jlvm_op_cases.json")
 
-  /** `gasLimit` replaces the default limit, for a case whose work the default does not cover. */
-  final case class Case(name: String, program: String, data: CanonicalValue, gasLimit: Option[Long] = scala.None)
+  /**
+   * `gasLimit` replaces the default limit, for a case whose work the default does not cover; `built` binds host names to
+   * values too heavy to write out (`BuiltValues` recipes).
+   */
+  final case class Case(
+    name:     String,
+    program:  String,
+    data:     CanonicalValue,
+    gasLimit: Option[Long] = scala.None,
+    built:    Map[String, BuiltValues.Built] = Map.empty
+  )
 
   /** `{"<op>": [{"var": "a0"}, ...]}` over the arguments as data, so a null argument stays null. */
   def probe(name: String, op: Op, args: CanonicalValue*): Case =
@@ -204,6 +214,60 @@ object OpCoverageCases extends IOApp {
     )
   }
 
+  /**
+   * A proof over `ProofInput.MaxProofWeight` reaches the verifier only through a host binding (no program result is
+   * heavier than 2^24), and only under a gas limit that pays for its weight: it is then `Crypto`, refused before it is
+   * decoded (docs/specs/conformance.md §5). A well-formed Merkle proof of leaf 0 of a tree of one, its path padded with
+   * copies of a digest: within the cap it is decoded, and its path is too long (`false`); past it, `Crypto`. At the
+   * default limit the size charge, taken first, runs out of gas.
+   */
+  def proofWeight(v: Json): List[Case] = {
+    val leaf = CBytes(hex(get(v.hcursor.downField("leaves").as[List[String]]).head))
+    val tree = committedTree(List(leaf.value), 1L)
+    val digest = CBytes(tree.root.bytes)
+    val template = m("index" -> int(0), "size" -> int(1), "path" -> BuiltValues.Hole)
+    val around = get(BuiltValues.fill(template, False)).weight - 1
+    def padded(copies: Long) = BuiltValues.of(digest).copies(copies.toInt).wrap(template)
+    val within = (ProofInput.MaxProofWeight - around - 1) / digest.weight
+    val over = within + 1
+    require(get(BuiltValues.build(padded(within))).weight <= ProofInput.MaxProofWeight, "within the cap")
+    require(get(BuiltValues.build(padded(over))).weight > ProofInput.MaxProofWeight, "over the cap")
+    val program = """{"merkle_verify": [{"var": "head"}, {"var": "leaf"}, {"var": "$proof"}]}"""
+    val data = m("head" -> m("root" -> CBytes(tree.root.bytes), "size" -> int(1)), "leaf" -> leaf)
+    val trie = """{"trie_verify": [{"var": "mode"}, {"var": "root"}, {"var": "key"}, null, {"var": "$proof"}]}"""
+    val trieData = m("mode" -> m("fixed" -> int(1)), "root" -> CBytes(ByteVector.fill(32)(0)), "key" -> CBytes(ByteVector(1)))
+    List(
+      Case(
+        s"dilf4s proof weight: merkle_verify, $within padded digests, within the cap, is decoded: false",
+        program,
+        data,
+        Option(1L << 30),
+        Map("proof" -> padded(within))
+      ),
+      Case(
+        s"dilf4s proof weight: merkle_verify, $over padded digests, over the cap: Crypto",
+        program,
+        data,
+        Option(1L << 30),
+        Map("proof" -> padded(over))
+      ),
+      Case(
+        s"dilf4s proof weight: merkle_verify, $over padded digests, at the default limit: out of gas",
+        program,
+        data,
+        scala.None,
+        Map("proof" -> padded(over))
+      ),
+      Case(
+        "dilf4s proof weight: trie_verify, a proof one over the cap: Crypto",
+        trie,
+        trieData,
+        Option(1L << 30),
+        Map("proof" -> BuiltValues.ofWeight(ProofInput.MaxProofWeight + 1))
+      )
+    )
+  }
+
   def tries(v: Json): List[Case] =
     get(v.hcursor.downField("fixtures").as[List[Json]]).flatMap { fx =>
       val c = fx.hcursor
@@ -284,6 +348,9 @@ object OpCoverageCases extends IOApp {
         "cases" -> cases.map { c =>
           Json.fromFields(
             List("name" -> c.name.asJson, "program" -> c.program.asJson, "data" -> get(JsonSurface.render(c.data)).asJson) ++
+            Option.when(c.built.nonEmpty)("built" -> Json.fromFields(c.built.toList.sortBy(_._1).map {
+              case (k, b) => k -> BuiltValues.json(b)
+            })) ++
             c.gasLimit.map(l => "gasLimit" -> l.asJson)
           )
         }.asJson
@@ -293,8 +360,8 @@ object OpCoverageCases extends IOApp {
   def run(args: List[String]): IO[ExitCode] =
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
       .mapN((secp, mk, tr) =>
-        sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ tries(tr) ++ sigmaBounds ++ frameLookups ++
-        nonCanonicalEd25519
+        sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ proofWeight(mk) ++ tries(tr) ++ sigmaBounds ++
+        frameLookups ++ nonCanonicalEd25519
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)

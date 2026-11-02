@@ -87,10 +87,11 @@ impl PoseidonMerkleProof {
         }
     }
 
-    /// Decodes a `poseidon-merkle-proof` value: the schema's shape and ranges, then `position < 2^depth`.
+    /// Decodes a `poseidon-merkle-proof` value: the schema's shape and ranges, then `position < 2^depth`. A value
+    /// heavier than [`crate::MAX_PROOF_WEIGHT`] is `Encoding`, refused before it is decoded.
     pub fn from_value(value: &Value) -> Result<Self, PoseidonMerkleError> {
         let encoding = |reason: String| PoseidonMerkleError::Encoding { reason };
-        let w = Wire::from_value(value).map_err(|e| encoding(alloc::format!("{e}")))?;
+        let w = Wire::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(|e| encoding(alloc::format!("{e}")))?;
         let siblings = w
             .siblings
             .iter()

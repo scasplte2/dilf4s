@@ -17,9 +17,9 @@ object SharedValueSuite extends SimpleIOSuite {
 
   private val doubled: CanonicalValue = (1 to 60).foldLeft(int(1))((v, _) => get(CanonicalValue.array(Vector(v, v))))
 
-  /** `TooLarge` for the doubled value, its size the value's weight: a lower bound on its length. */
-  private def tooLarge(what: String, max: Long)(r: Either[VersionedTrieError, ?]): Boolean =
-    r == Left(VersionedTrieError.TooLarge(what, doubled.weight, max))
+  /** `TooLarge` with the limit alone: nothing past the limit is measured. */
+  private def tooLarge(what: String, limit: Long)(r: Either[VersionedTrieError, ?]): Boolean =
+    r == Left(VersionedTrieError.TooLarge(what, limit))
 
   private val k = key("a/b")
   private val ofK = "the value of a/b"
@@ -32,25 +32,26 @@ object SharedValueSuite extends SimpleIOSuite {
       .and(expect(doubled.depth <= VersionedTrie.MaxValueDepth))
   }
 
-  pureTest("checkValue: refused by its weight, the size reported as that lower bound") {
+  pureTest("checkValue: refused by its weight, with the limit alone") {
     expect(tooLarge(ofK, VersionedTrie.MaxValueBytes)(VersionedTrie.checkValue(k, doubled)), s"${VersionedTrie.checkValue(k, doubled)}")
       .and(expect.same(doubled.weight, VersionedTrie.valueBytes(doubled)))
   }
 
-  pureTest("checkValue: within the weight, the exact length is measured, and refused past the limit") {
+  pureTest("checkValue: within the weight, the length is measured, and refused past the limit") {
     // 2^17 integers of 2^40 weigh 1 each but take 9 bytes each
     val wide = get(CanonicalValue.array(Vector.fill(1 << 17)(CanonicalValue.int(BigInt(1) << 40))))
-    val exact = Cbor.encode(wide).size
+    val exact = Cbor.encode(wide).size.toLong
     val atLimit = CanonicalValue.bytes(ByteVector.fill(VersionedTrie.MaxValueBytes - 5)(1))
     expect(wide.weight <= VersionedTrie.MaxValueBytes, s"weight ${wide.weight}")
-      .and(expect.same(Left(VersionedTrieError.TooLarge(ofK, exact, VersionedTrie.MaxValueBytes)), VersionedTrie.checkValue(k, wide)))
+      .and(expect(exact > VersionedTrie.MaxValueBytes, s"length $exact"))
+      .and(expect.same(Left(VersionedTrieError.TooLarge(ofK, VersionedTrie.MaxValueBytes)), VersionedTrie.checkValue(k, wide)))
       .and(expect.same(VersionedTrie.MaxValueBytes, Cbor.encode(atLimit).size))
       .and(expect.same(Right(()), VersionedTrie.checkValue(k, atLimit)))
   }
 
   test("a commit refuses it") {
     attempt(implicit h => fresh.flatMap(s => h.attempt(s._2.commit(None, 1L, Batch.put(k, doubled))))).map { r =>
-      expect(r.flatten.left.exists(_ == VersionedTrieError.TooLarge(ofK, doubled.weight, VersionedTrie.MaxValueBytes)), s"$r")
+      expect(r.flatten.left.exists(_ == VersionedTrieError.TooLarge(ofK, VersionedTrie.MaxValueBytes)), s"$r")
     }
   }
 
@@ -109,13 +110,6 @@ object SharedValueSuite extends SimpleIOSuite {
 
   pureTest("a snapshot chunk holding it is refused by its weight before it is encoded") {
     val chunk: SnapshotChunk[Long, H] = SnapshotChunk.State(Vector(k -> doubled))
-    val refused = VersionedTrieWire.encodeChunk(chunk)
-    expect(
-      refused.left.exists {
-        case VersionedTrieError.TooLarge("a snapshot chunk", size, VersionedTrie.MaxChunkBytes) => size > doubled.weight
-        case _                                                                                  => false
-      },
-      s"$refused"
-    )
+    expect.same(Left(VersionedTrieError.TooLarge("a snapshot chunk", VersionedTrie.MaxChunkBytes)), VersionedTrieWire.encodeChunk(chunk))
   }
 }

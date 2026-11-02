@@ -2,6 +2,7 @@ package xyz.kd5ujc.accumulators.merkle
 
 import cats.syntax.all._
 
+import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.core.canonical.{Canonical, CanonicalError, CanonicalValue}
 import xyz.kd5ujc.core.hash.{Digest, Hasher}
 import xyz.kd5ujc.models.merkle.{MerkleConsistency, MerkleInclusion}
@@ -23,15 +24,19 @@ object MerkleCodec {
   def encodeConsistency[H](p: ConsistencyProof[H]): Either[MerkleError, CanonicalValue] =
     MerkleConsistency.codec.encode(MerkleConsistency(p.oldSize, p.newSize, p.path.map(_.bytes))).leftMap(encoding)
 
+  /** A proof heavier than `ProofInput.MaxProofWeight` is `Encoding`, refused before it is decoded. */
   def decodeInclusion[H: Hasher](v: CanonicalValue): Either[MerkleError, InclusionProof[H]] =
     for {
+      _     <- ProofInput.bounded(v)(MerkleError.Encoding(_))
       w     <- MerkleInclusion.codec.decoder.decode(v).leftMap(e => MerkleError.Encoding(e.message))
       path  <- digests[H](w.path)
       proof <- InclusionProof.from(w.index, w.size, path)
     } yield proof
 
+  /** A proof heavier than `ProofInput.MaxProofWeight` is `Encoding`, refused before it is decoded. */
   def decodeConsistency[H: Hasher](v: CanonicalValue): Either[MerkleError, ConsistencyProof[H]] =
     for {
+      _     <- ProofInput.bounded(v)(MerkleError.Encoding(_))
       w     <- MerkleConsistency.codec.decoder.decode(v).leftMap(e => MerkleError.Encoding(e.message))
       path  <- digests[H](w.path)
       proof <- ConsistencyProof.from(w.old, w.`new`, path)

@@ -84,9 +84,10 @@ impl<H: Hasher> TrieProof<H> {
         self.nodes.is_empty()
     }
 
-    /// Decodes a canonical `trie-proof` value (`shared/schemas/trie.cddl`).
+    /// Decodes a canonical `trie-proof` value (`shared/schemas/trie.cddl`). A value heavier than
+    /// [`crate::MAX_PROOF_WEIGHT`] is `Encoding`, refused before it is decoded.
     pub fn from_value(value: &Value) -> Result<Self, TrieError> {
-        let records = TRIE_PROOF.decode(value).map_err(encoding)?;
+        let records = TRIE_PROOF.decode_within(value, crate::MAX_PROOF_WEIGHT).map_err(encoding)?;
         Self::from_records(&records)
     }
 

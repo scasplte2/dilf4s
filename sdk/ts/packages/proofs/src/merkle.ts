@@ -6,6 +6,7 @@
 import { bitLength, describeFailure, digest, err, hashParts, models, ok, outputSize, toHex, valueCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
+import { decodeInput } from "./input.js";
 
 /** Why a Merkle proof could not be checked, by Scala's `MerkleError` names. */
 export type MerkleError =
@@ -123,9 +124,12 @@ export class InclusionProof {
     return index >= 0n && index < size && withinIndex(size) ? ok(new InclusionProof(index, size, path)) : err({ kind: "IndexOutOfRange", index, size });
   }
 
-  /** A proof from its canonical value (`merkle-inclusion`), its digests sized for `hashing`. */
+  /**
+   * A proof from its canonical value (`merkle-inclusion`), its digests sized for `hashing`. A value heavier than
+   * `MAX_PROOF_WEIGHT` is `Encoding`, refused before it is decoded.
+   */
   static decode(hashing: MerkleHashing<unknown>, value: Value): Result<InclusionProof, MerkleError> {
-    const w = models.merkle.MerkleInclusion.decode(value);
+    const w = decodeInput(models.merkle.MerkleInclusion, value);
     if (!w.ok) return err({ kind: "Encoding", reason: describeFailure(w.error) });
     const sized = digests(hashing, w.value.path);
     return sized.ok ? InclusionProof.of(w.value.index, w.value.size, w.value.path) : sized;
@@ -161,9 +165,12 @@ export class ConsistencyProof {
       : err({ kind: "InvalidSizes", oldSize, newSize });
   }
 
-  /** A proof from its canonical value (`merkle-consistency`), its digests sized for `hashing`. */
+  /**
+   * A proof from its canonical value (`merkle-consistency`), its digests sized for `hashing`. A value heavier than
+   * `MAX_PROOF_WEIGHT` is `Encoding`, refused before it is decoded.
+   */
   static decode(hashing: MerkleHashing<unknown>, value: Value): Result<ConsistencyProof, MerkleError> {
-    const w = models.merkle.MerkleConsistency.decode(value);
+    const w = decodeInput(models.merkle.MerkleConsistency, value);
     if (!w.ok) return err({ kind: "Encoding", reason: describeFailure(w.error) });
     const sized = digests(hashing, w.value.path);
     return sized.ok ? ConsistencyProof.of(w.value.old, w.value.new, w.value.path) : sized;

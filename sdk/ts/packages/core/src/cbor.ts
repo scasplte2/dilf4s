@@ -238,7 +238,7 @@ export function encode(value: Value): Uint8Array {
 /** The walk of {@link encodeWithin} and {@link encodedLengthWithin}, keeping the bytes or only counting them. */
 function within(value: Value, maxBytes: number, keep: boolean): Result<Budgeted, TooLarge> {
   const limit = byteLimit(maxBytes);
-  if (value.weight > BigInt(limit)) return err(tooLarge(limit, value.weight));
+  if (value.weight > BigInt(limit)) return err(tooLarge(limit));
   const out = new Budgeted(new Meter(limit), keep ? new Growing(limit) : undefined);
   return write(out, value) ? ok(out) : err(out.meter.refusal());
 }

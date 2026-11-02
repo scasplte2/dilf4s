@@ -31,17 +31,12 @@ export type CanonicalError =
 
 /**
  * A value whose canonical CBOR, commitment or JSON is longer than a limit, found without producing more than the limit.
+ * It carries the limit only: how far past it the value goes is never measured (docs/specs/conformance.md).
  */
 export interface TooLarge {
   readonly kind: "TooLarge";
   /** The limit, in bytes. */
   readonly limit: number;
-  /**
-   * A lower bound on the length, above the limit: the value's weight when that alone was over it (refused at once), or
-   * where counting stopped, at the first byte past it. `"uncountable"` when not even the weight is known, because it
-   * saturated (the length is then at least `MAX_WEIGHT`).
-   */
-  readonly atLeast: bigint | "uncountable";
 }
 
 /** Why a canonical value is not the expected type, and where: `path` runs from the root (map keys and `[i]`). */
