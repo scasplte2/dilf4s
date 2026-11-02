@@ -278,6 +278,14 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
     expect(ms).toBeLessThan(HANG);
   });
 
+  it("never takes a limit past what a string can hold", () => {
+    // 2^10 MiB of text in 10 arrays and one 1 MiB text: past the string ceiling, so refused at once, never thrown
+    const big = doubled(text("x".repeat(1 << 20)), 10);
+    for (const limit of [Infinity, 2 ** 31, Number.MAX_SAFE_INTEGER]) {
+      expect(json.renderWithin(big, limit)).toEqual({ ok: false, error: { kind: "TooLarge", limit: json.MAX_RENDER_BYTES, atLeast: big.weight } });
+    }
+  });
+
   it("counts escaped text and keys before escaping them", () => {
     // every escape form, quotes, and one, two, three and four UTF-8 bytes
     const all = `${Array.from({ length: 0x20 }, (_, c) => String.fromCharCode(c)).join("")}"\\/aé€😀\u007f`;

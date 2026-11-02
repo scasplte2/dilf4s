@@ -344,8 +344,9 @@ export type RenderError = CanonicalError | TooLarge;
 
 /**
  * Compact JSON with object members in code-point order of their names, if it is at most `maxBytes` long in UTF-8 (a
- * fraction rounds down, `NaN` or a negative limit is 0). Fails for bytes, non-terminating rationals and over-long
- * numbers, and with `TooLarge` at the first part found past the limit, whichever comes first.
+ * fraction rounds down, `NaN` or a negative limit is 0, and no limit is above {@link MAX_RENDER_BYTES}, past which no
+ * string can hold the text). Fails for bytes, non-terminating rationals and over-long numbers, and with `TooLarge` at
+ * the first part found past the limit, whichever comes first.
  *
  * O(min(weight, `maxBytes`)) apart from sorting object members: a value's JSON is at least as long in UTF-8 as its
  * weight (each node writes at least a byte, a text or key its UTF-8 and quotes, a number of `l` whole limbs more than
@@ -353,7 +354,7 @@ export type RenderError = CanonicalError | TooLarge;
  * Iterative, with an explicit stack of at most {@link MAX_DEPTH} open containers.
  */
 export function renderWithin(value: Value, maxBytes: number): Result<string, RenderError> {
-  const meter = new Meter(byteLimit(maxBytes));
+  const meter = new Meter(Math.min(byteLimit(maxBytes), MAX_RENDER_BYTES));
   const out: string[] = [];
   const stack: Rendering[] = [];
   /** Adds the piece `build` makes, of `bytes` UTF-8 bytes, if they fit: nothing is built before it is paid for. */
