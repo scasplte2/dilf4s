@@ -60,11 +60,50 @@ pub enum KeyError {
         /// Why it was refused.
         reason: String,
     },
-    /// A malformed path or index, an invalid derived key, or an operation the scheme does not allow.
+    /// An index out of range, an invalid derived key, or an operation the scheme does not allow.
     InvalidDerivation {
         /// Why it was refused.
         reason: String,
     },
+    /// A derivation path [`crate::keys::path::parse`] refuses.
+    InvalidPath {
+        /// The first rule the path breaks.
+        refusal: PathRefusal,
+        /// Why it was refused, naming the segment by position (a message, not normative).
+        reason: String,
+    },
+}
+
+/// Why a derivation path is refused: the first rule it breaks, its segments checked in order (`signing.md`
+/// section 3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PathRefusal {
+    /// The path is not `m` and does not start with `m/`.
+    MissingMaster,
+    /// A segment is not ASCII digits and an optional `'` or `h`.
+    Malformed,
+    /// A segment other than `0` starts with `0`.
+    LeadingZero,
+    /// A segment has more than [`crate::keys::path::MAX_SEGMENT_DIGITS`] digits.
+    TooManyDigits,
+    /// An index of `2^31` or more.
+    OutOfRange,
+    /// More than [`crate::keys::path::MAX_DEPTH`] segments.
+    TooDeep,
+}
+
+impl PathRefusal {
+    /// Its spelling in the `paths` vectors.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::MissingMaster => "missingMaster",
+            Self::Malformed => "malformed",
+            Self::LeadingZero => "leadingZero",
+            Self::TooManyDigits => "tooManyDigits",
+            Self::OutOfRange => "outOfRange",
+            Self::TooDeep => "tooDeep",
+        }
+    }
 }
 
 impl KeyError {
@@ -75,6 +114,7 @@ impl KeyError {
             Self::InvalidMnemonic { .. } => "InvalidMnemonic",
             Self::InvalidWordList { .. } => "InvalidWordList",
             Self::InvalidDerivation { .. } => "InvalidDerivation",
+            Self::InvalidPath { .. } => "InvalidPath",
         }
     }
 }
@@ -85,7 +125,8 @@ impl fmt::Display for KeyError {
             Self::InvalidEntropy { reason }
             | Self::InvalidMnemonic { reason }
             | Self::InvalidWordList { reason }
-            | Self::InvalidDerivation { reason } => write!(f, "{}: {reason}", self.kind()),
+            | Self::InvalidDerivation { reason }
+            | Self::InvalidPath { reason, .. } => write!(f, "{}: {reason}", self.kind()),
         }
     }
 }

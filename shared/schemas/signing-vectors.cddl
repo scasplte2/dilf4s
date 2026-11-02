@@ -30,10 +30,14 @@ key-part = "signingKey" / "verifyingKey"
 
 key-decoding-result = "accepted" / "InvalidEncoding" / "InvalidKey"
 
-; A derivation path (section 3) and its serialised indices (bit 31 set when hardened), or "invalid".
+; A derivation path (section 3) and its serialised indices (bit 31 set when hardened), or why it is refused.
 path-case = { "path": text, "result": path-result }
 
-path-result = path-indices / "invalid"
+; A refusal names the first rule the path breaks, its segments checked in order: "missingMaster" (it is not `m` and
+; does not start with `m/`), "malformed" (a segment is not ASCII digits and an optional `'` or `h`), "leadingZero",
+; "tooManyDigits" (more than 10), "outOfRange" (2^31 or more), "tooDeep" (a 256th segment, whatever it holds).
+path-result =
+  path-indices / "missingMaster" / "malformed" / "leadingZero" / "tooManyDigits" / "outOfRange" / "tooDeep"
 
 path-indices = { "indices": [* uint] }
 

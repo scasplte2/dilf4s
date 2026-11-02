@@ -362,23 +362,33 @@ export const PathIndices: c.Codec<PathIndices> = {
 };
 
 /** `path-result` (`shared/schemas/signing-vectors.cddl`). */
-export type PathResult = PathIndices | "invalid";
+export type PathResult = PathIndices | "missingMaster" | "malformed" | "leadingZero" | "tooManyDigits" | "outOfRange" | "tooDeep";
 
 export const PathResult: c.Codec<PathResult> = {
   encode: (a, d) => {
-    if (typeof a === "string") return c.oneOfText(a, ["invalid"]);
+    if (typeof a === "string") return c.oneOfText(a, ["leadingZero", "malformed", "missingMaster", "outOfRange", "tooDeep", "tooManyDigits"]);
     const known = ["indices"];
     if (c.hasFields(a, PathIndices, ["indices"], ["indices"], known)) return PathIndices.encode(a, d);
     return c.typeMismatch("no alternative of PathResult fits");
   },
   decode: (v) => {
-    const s = c.selectAlternative(v, [[["indices"], ["indices"]]], ["invalid"]);
+    const s = c.selectAlternative(v, [[["indices"], ["indices"]]], ["missingMaster", "malformed", "leadingZero", "tooManyDigits", "outOfRange", "tooDeep"]);
     if (!s.ok) return s;
     switch (s.value) {
       case 0:
         return PathIndices.decode(v);
       case 1:
-        return c.ok<PathResult>("invalid");
+        return c.ok<PathResult>("missingMaster");
+      case 2:
+        return c.ok<PathResult>("malformed");
+      case 3:
+        return c.ok<PathResult>("leadingZero");
+      case 4:
+        return c.ok<PathResult>("tooManyDigits");
+      case 5:
+        return c.ok<PathResult>("outOfRange");
+      case 6:
+        return c.ok<PathResult>("tooDeep");
       default:
         return c.decodeFailure("unknown alternative");
     }

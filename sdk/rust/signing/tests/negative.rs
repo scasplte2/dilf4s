@@ -55,7 +55,7 @@ fn paths_parse_hardened_and_soft_segments_and_reject_malformed_ones() {
     for bad in
         ["44'/0", "m/x", "m/2147483648", "m/-1", "m/+1", "m/0/", "m//0", "m/0''", " m/0", "M/0", "m/1e3", "m/0x1"]
     {
-        assert_eq!(path::parse(bad).unwrap_err().kind(), "InvalidDerivation", "{bad}");
+        assert_eq!(path::parse(bad).unwrap_err().kind(), "InvalidPath", "{bad}");
     }
 }
 
@@ -75,27 +75,31 @@ fn a_segment_has_no_leading_zero_and_at_most_ten_digits_is_below_2_pow_31_and_a_
     for (p, is) in accepted {
         assert_eq!(serialized(&p).unwrap(), is, "{}", &p[..p.len().min(40)]);
     }
-    let refused: [(String, &str); 16] = [
-        ("m/2147483648'".into(), "path segment 0 is out of range"),
-        ("m/4294967295".into(), "path segment 0 is out of range"),
-        ("m/9999999999".into(), "path segment 0 is out of range"),
-        ("m/0/10000000000".into(), "path segment 1 has 11 digits, more than 10"),
-        (format!("m/1/2/{}'", "9".repeat(4096)), "path segment 2 has 4096 digits, more than 10"),
-        ("m/007".into(), "path segment 0 has a leading zero"),
-        ("m/00".into(), "path segment 0 has a leading zero"),
-        ("m/000'".into(), "path segment 0 has a leading zero"),
-        ("m/1/01h".into(), "path segment 1 has a leading zero"),
-        ("m/02147483647'".into(), "path segment 0 has a leading zero"),
-        (format!("m/{zeros}1'"), "path segment 0 has a leading zero"),
-        (format!("m/{zeros}12345678901"), "path segment 0 has a leading zero"),
-        ("m/1/x9".into(), "path segment 1 is malformed"),
-        (format!("m{}", "/7".repeat(256)), "path has more than 255 segments"),
-        (format!("m{}/x", "/7".repeat(255)), "path has more than 255 segments"),
-        (format!("m{}/x{}", "/7".repeat(9), "/7".repeat(300)), "path segment 9 is malformed"),
+    use dilf4s_signing::PathRefusal::{LeadingZero, Malformed, MissingMaster, OutOfRange, TooDeep, TooManyDigits};
+    let refused: [(String, dilf4s_signing::PathRefusal, &str); 19] = [
+        ("m/2147483648'".into(), OutOfRange, "path segment 0 is out of range"),
+        ("m/4294967295".into(), OutOfRange, "path segment 0 is out of range"),
+        ("m/9999999999".into(), OutOfRange, "path segment 0 is out of range"),
+        ("m/0/10000000000".into(), TooManyDigits, "path segment 1 has 11 digits, more than 10"),
+        (format!("m/1/2/{}'", "9".repeat(4096)), TooManyDigits, "path segment 2 has 4096 digits, more than 10"),
+        ("m/007".into(), LeadingZero, "path segment 0 has a leading zero"),
+        ("m/00".into(), LeadingZero, "path segment 0 has a leading zero"),
+        ("m/000'".into(), LeadingZero, "path segment 0 has a leading zero"),
+        ("m/1/01h".into(), LeadingZero, "path segment 1 has a leading zero"),
+        ("m/02147483647'".into(), LeadingZero, "path segment 0 has a leading zero"),
+        (format!("m/{zeros}1'"), LeadingZero, "path segment 0 has a leading zero"),
+        (format!("m/{zeros}12345678901"), LeadingZero, "path segment 0 has a leading zero"),
+        ("m/1/x9".into(), Malformed, "path segment 1 is malformed"),
+        ("m/".into(), Malformed, "path segment 0 is malformed"),
+        (format!("m{}", "/7".repeat(256)), TooDeep, "path has more than 255 segments"),
+        (format!("m{}/x", "/7".repeat(255)), TooDeep, "path has more than 255 segments"),
+        (format!("m{}/x{}", "/7".repeat(9), "/7".repeat(300)), Malformed, "path segment 9 is malformed"),
+        ("44'/0".into(), MissingMaster, "path must start with m"),
+        (String::new(), MissingMaster, "path must start with m"),
     ];
-    for (p, reason) in refused {
-        let e = path::parse(&p).unwrap_err();
-        assert_eq!(e.to_string(), format!("InvalidDerivation: {reason}"), "{}", &p[..p.len().min(40)]);
+    for (p, refusal, reason) in refused {
+        let expected = dilf4s_signing::KeyError::InvalidPath { refusal, reason: reason.into() };
+        assert_eq!(path::parse(&p).unwrap_err(), expected, "{}", &p[..p.len().min(40)]);
     }
 }
 
@@ -109,9 +113,9 @@ fn a_million_digit_segment_a_million_leading_zeros_and_a_million_segments_are_re
     let (l, p, d) = (path::parse(&long), path::parse(&padded), path::parse(&deep));
     let took = start.elapsed();
     assert!(took.as_millis() < 1000, "took {took:?}");
-    assert_eq!(l.unwrap_err().to_string(), "InvalidDerivation: path segment 0 has 1000000 digits, more than 10");
-    assert_eq!(p.unwrap_err().to_string(), "InvalidDerivation: path segment 0 has a leading zero");
-    assert_eq!(d.unwrap_err().to_string(), "InvalidDerivation: path has more than 255 segments");
+    assert_eq!(l.unwrap_err().to_string(), "InvalidPath: path segment 0 has 1000000 digits, more than 10");
+    assert_eq!(p.unwrap_err().to_string(), "InvalidPath: path segment 0 has a leading zero");
+    assert_eq!(d.unwrap_err().to_string(), "InvalidPath: path has more than 255 segments");
 }
 
 // ------------------------------------------------------------------ curve25519-dalek decoding (ZIP-215's rules)

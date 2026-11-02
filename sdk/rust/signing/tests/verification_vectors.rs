@@ -20,7 +20,7 @@ use dilf4s_core::generated::signing_vectors::{
     KeyDecodingResult, KeyPart, PathResult, SigningVectors, VerificationResult,
 };
 use dilf4s_signing::keys::path;
-use dilf4s_signing::{SchemeId, SigningError, bls, ecdsa, ed25519, ristretto255, schnorr};
+use dilf4s_signing::{KeyError, PathRefusal, SchemeId, SigningError, bls, ecdsa, ed25519, ristretto255, schnorr};
 
 /// Decodes just the verifying key of a scheme, to tell a malformed key from a malformed signature.
 fn key_decodes(id: SchemeId, key: &[u8]) -> Result<(), SigningError> {
@@ -134,19 +134,32 @@ fn verifying_key_decoding() {
 }
 
 /// Every `paths` row: nothing trimmed, ASCII digits only, no empty segment or leading zero, at most ten digits and 255
-/// segments; accepted paths give these indices, and a refused one is `InvalidDerivation`.
+/// segments; accepted paths give these indices, and a refused one is `InvalidPath` with the row's refusal.
 #[test]
 fn path_strictness() {
     let v: SigningVectors = load("signing_v1.json");
     assert!(v.paths.len() >= 54, "{} path rows", v.paths.len());
+    let mut seen = std::collections::HashSet::new();
     for c in &v.paths {
         let actual = path::parse(&c.path)
             .map(|is| is.into_iter().map(|i| u64::from(i.serialized())).collect::<Vec<_>>())
-            .map_err(|e| e.kind());
+            .map_err(|e| match e {
+                KeyError::InvalidPath { refusal, .. } => Some(refusal),
+                _ => None,
+            });
         let expected = match &c.result {
             PathResult::PathIndices(p) => Ok(p.indices.clone()),
-            PathResult::Invalid => Err("InvalidDerivation"),
+            PathResult::MissingMaster => Err(Some(PathRefusal::MissingMaster)),
+            PathResult::Malformed => Err(Some(PathRefusal::Malformed)),
+            PathResult::LeadingZero => Err(Some(PathRefusal::LeadingZero)),
+            PathResult::TooManyDigits => Err(Some(PathRefusal::TooManyDigits)),
+            PathResult::OutOfRange => Err(Some(PathRefusal::OutOfRange)),
+            PathResult::TooDeep => Err(Some(PathRefusal::TooDeep)),
         };
         assert_eq!(actual, expected, "path {:?}", c.path.get(..40).unwrap_or(&c.path));
+        if let Err(Some(r)) = expected {
+            seen.insert(r);
+        }
     }
+    assert_eq!(seen.len(), 6, "every refusal has a row: {seen:?}");
 }

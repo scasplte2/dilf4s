@@ -13,6 +13,7 @@ import {
   ristretto255Schnorr,
   secp256k1Ecdsa,
   taggedSchnorr,
+  type PathRefusal,
   type SigningError,
 } from "../src/index.js";
 import { expectOk, h, loadVectors } from "./vectors.js";
@@ -171,14 +172,20 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
     expect(mismatches).toEqual([]);
   });
 
-  test("paths are strict: nothing trimmed, ASCII digits only, no empty segment, at most ten significant digits", () => {
+  test("paths are strict, and a refused one is InvalidPath with the row's refusal", () => {
+    // the schema's refusals and the SDK's are the same set: each is assignable to the other
+    type SchemaRefusal = Exclude<models.signingVectors.PathResult, models.signingVectors.PathIndices>;
+    const toSdk = (r: SchemaRefusal): PathRefusal => r;
+    const toSchema = (r: PathRefusal): SchemaRefusal => r;
     expect(vectors.paths.length).toBeGreaterThanOrEqual(54);
+    const seen = new Set<PathRefusal>();
     for (const c of vectors.paths) {
       const r = parsePath(c.path);
-      const actual = r.ok ? { indices: r.value.map((i) => BigInt(i.serialized)) } : r.error.kind;
-      const expected = c.result === "invalid" ? "InvalidDerivation" : c.result;
-      expect(actual, JSON.stringify(c.path.slice(0, 40))).toEqual(expected);
+      const actual = r.ok ? { indices: r.value.map((i) => BigInt(i.serialized)) } : toSchema(r.error.refusal);
+      expect(actual, JSON.stringify(c.path.slice(0, 40))).toEqual(c.result);
+      if (typeof c.result === "string") seen.add(toSdk(c.result));
     }
+    expect([...seen].sort()).toEqual(["leadingZero", "malformed", "missingMaster", "outOfRange", "tooDeep", "tooManyDigits"]);
   });
 
   test("BLS proofs of possession reproduce and verify", { timeout: 30_000 }, () => {

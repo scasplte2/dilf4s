@@ -209,8 +209,23 @@ The additions are fixed-width LE byte arithmetic.
   longer path is never scanned past its 256th segment. A segment with more than 10 digits (2^31 − 1 has ten) is refused
   before its digits are converted; only then is it converted and checked to be below 2^31. No implementation needs
   arbitrary-precision arithmetic.
-- An error names the segment by its position (0 is the first after `m`) and, when it has too many digits, how many it
-  has. It never echoes the segment's text.
+- A refused path is an `InvalidPath` error typed by the first rule it breaks, checked in this order. The refusal is
+  normative, and the `paths` vectors record it:
+
+  | Refusal | Rule broken |
+  |---------|-------------|
+  | `missingMaster` | The path is not `m` and does not start with `m/`. |
+  | `malformed` | A segment is not ASCII digits and an optional `'` or `h`. An empty segment is malformed. |
+  | `leadingZero` | A segment other than `0` starts with `0`. |
+  | `tooManyDigits` | A segment has more than 10 digits. |
+  | `outOfRange` | A segment's index is 2^31 or more. |
+  | `tooDeep` | The path has a 256th segment. |
+
+  Within a segment the checks run in the order of the table, so `m/0123456789012` is `leadingZero`. The segments are
+  checked one after another, so `m/x/…` is `malformed` however deep it goes. Segment 256 is `tooDeep` before its text
+  is looked at.
+- The error's message is not normative. It names the segment by its position (0 is the first after `m`) and, when the
+  segment has too many digits, how many it has. It never echoes the segment's text.
 
 ## 4. Sizes
 

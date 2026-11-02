@@ -389,22 +389,42 @@ impl c::Model for PathIndices {
 pub enum PathResult {
     /// A [`PathIndices`].
     PathIndices(PathIndices),
-    /// The text `invalid`.
-    Invalid,
+    /// The text `missingMaster`.
+    MissingMaster,
+    /// The text `malformed`.
+    Malformed,
+    /// The text `leadingZero`.
+    LeadingZero,
+    /// The text `tooManyDigits`.
+    TooManyDigits,
+    /// The text `outOfRange`.
+    OutOfRange,
+    /// The text `tooDeep`.
+    TooDeep,
 }
 
 impl c::Model for PathResult {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::PathIndices(a) => c::Model::to_value_at(a, depth),
-            Self::Invalid => Ok(c::Value::text("invalid")),
+            Self::MissingMaster => Ok(c::Value::text("missingMaster")),
+            Self::Malformed => Ok(c::Value::text("malformed")),
+            Self::LeadingZero => Ok(c::Value::text("leadingZero")),
+            Self::TooManyDigits => Ok(c::Value::text("tooManyDigits")),
+            Self::OutOfRange => Ok(c::Value::text("outOfRange")),
+            Self::TooDeep => Ok(c::Value::text("tooDeep")),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[(&["indices"], &["indices"])], &["invalid"])? {
+        match c::select_alternative(value, &[(&["indices"], &["indices"])], &["missingMaster", "malformed", "leadingZero", "tooManyDigits", "outOfRange", "tooDeep"])? {
             c::Alternative::Record(0) => <PathIndices as c::Model>::from_value(value).map(Self::PathIndices),
-            c::Alternative::Text(0) => Ok(Self::Invalid),
+            c::Alternative::Text(0) => Ok(Self::MissingMaster),
+            c::Alternative::Text(1) => Ok(Self::Malformed),
+            c::Alternative::Text(2) => Ok(Self::LeadingZero),
+            c::Alternative::Text(3) => Ok(Self::TooManyDigits),
+            c::Alternative::Text(4) => Ok(Self::OutOfRange),
+            c::Alternative::Text(5) => Ok(Self::TooDeep),
             other => Err(c::unknown_alternative(other)),
         }
     }
