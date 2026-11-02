@@ -3,18 +3,22 @@ package xyz.kd5ujc.crypto.signing
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Paths}
 
-import cats.effect.IO
 import cats.effect.std.SecureRandom
+import cats.effect.{IO, Resource}
 import cats.mtl.Handle
 import cats.syntax.all._
 
 import io.circe.parser
 import org.scalacheck.Gen
 import scodec.bits.{ByteVector, hex}
-import weaver.SimpleIOSuite
+import weaver.IOSuite
 import weaver.scalacheck.Checkers
 
-object SignatureSuite extends SimpleIOSuite with Checkers {
+object SignatureSuite extends IOSuite with Checkers {
+
+  /** libsecp256k1 is loaded once for the suite, as an effect, rather than while the suite object initialises. */
+  type Res = Secp256k1
+  def sharedResource: Resource[IO, Secp256k1] = Resource.eval(Secp256k1.load[IO])
 
   private val message: Gen[ByteVector] = Gen.listOf(Gen.choose(Byte.MinValue, Byte.MaxValue)).map(ByteVector(_))
   private val seed32: Gen[ByteVector] = Gen.listOfN(32, Gen.choose(Byte.MinValue, Byte.MaxValue)).map(ByteVector(_))
@@ -22,34 +26,41 @@ object SignatureSuite extends SimpleIOSuite with Checkers {
 
   private def flip(b: ByteVector, i: Long): ByteVector = b.update(i, (b(i) ^ 0x01).toByte)
 
+  /** A scheme's capabilities, which for secp256k1 come from the loaded backend. */
+  private final case class Scheme[S](C: SchemeCodec[S], D: SeedDerivation[S], Si: Signer[S], V: Verifier[S])
+
+  private def summon[S](implicit C: SchemeCodec[S], D: SeedDerivation[S], Si: Signer[S], V: Verifier[S]): Scheme[S] = Scheme(C, D, Si, V)
+
   /** Laws every deterministic scheme satisfies; `seedOk` filters seeds a scheme rejects (secp256k1 scalars >= n). */
-  private def laws[S](name: String)(implicit C: SchemeCodec[S], D: SeedDerivation[S], Si: Signer[S], V: Verifier[S]): Unit = {
-    test(s"$name: signatures verify, are deterministic, and reject any tampering") {
+  private def laws[S](name: String)(scheme: Secp256k1 => Scheme[S]): Unit = {
+    test(s"$name: signatures verify, are deterministic, and reject any tampering") { backend =>
+      val Scheme(c, d, si, v) = scheme(backend)
       forall(Gen.zip(seed32, message)) {
         case (seed, msg) =>
-          D.fromSeed(seed) match {
+          d.fromSeed(seed) match {
             case Left(_) => success // out-of-range seed for this scheme
             case Right(KeyPair(sk, vk)) =>
-              val sig = Si.sign(sk, msg)
-              val other = D.fromSeed(flip(seed, 0)).toOption
-              expect(V.verify(vk, msg, sig), "a fresh signature verifies")
-                .and(expect.same(sig, Si.sign(sk, msg)))
-                .and(expect(!V.verify(vk, msg ++ hex"00", sig), "an extended message is rejected"))
-                .and(expect(C.signature(flip(sig.bytes, 5)).forall(s => !V.verify(vk, msg, s)), "a tampered signature is rejected"))
-                .and(expect(other.forall(kp => kp.verifying == vk || !V.verify(kp.verifying, msg, sig)), "another key is rejected"))
-                .and(expect.same(Right(vk), C.verifyingKey(vk.bytes)))
-                .and(expect.same(Right(sig), C.signature(sig.bytes)))
+              val sig = si.sign(sk, msg)
+              val other = d.fromSeed(flip(seed, 0)).toOption
+              expect(v.verify(vk, msg, sig), "a fresh signature verifies")
+                .and(expect.same(sig, si.sign(sk, msg)))
+                .and(expect(!v.verify(vk, msg ++ hex"00", sig), "an extended message is rejected"))
+                .and(expect(c.signature(flip(sig.bytes, 5)).forall(s => !v.verify(vk, msg, s)), "a tampered signature is rejected"))
+                .and(expect(other.forall(kp => kp.verifying == vk || !v.verify(kp.verifying, msg, sig)), "another key is rejected"))
+                .and(expect.same(Right(vk), c.verifyingKey(vk.bytes)))
+                .and(expect.same(Right(sig), c.signature(sig.bytes)))
           }
       }
     }
-    pureTest(s"$name: encodings of the wrong length are typed errors") {
-      expect(C.signingKey(hex"00").isLeft).and(expect(C.verifyingKey(hex"00").isLeft)).and(expect(C.signature(hex"00").isLeft))
+    test(s"$name: encodings of the wrong length are typed errors") { backend =>
+      val c = scheme(backend).C
+      IO(expect(c.signingKey(hex"00").isLeft).and(expect(c.verifyingKey(hex"00").isLeft)).and(expect(c.signature(hex"00").isLeft)))
     }
   }
 
   // ------------------------------------------------------------------ Ed25519
 
-  laws[Ed25519]("Ed25519")
+  laws[Ed25519]("Ed25519")(_ => summon)
 
   pureTest("Ed25519: RFC 8032 known answers (BramblSc vector file)") {
     val raw = new String(Files.readAllBytes(Paths.get("docs", "test-vectors", "Ed25519.json")), UTF_8)
@@ -87,7 +98,7 @@ object SignatureSuite extends SimpleIOSuite with Checkers {
 
   // ------------------------------------------------------------------ P-256
 
-  laws[P256Ecdsa]("P-256 ECDSA")
+  laws[P256Ecdsa]("P-256 ECDSA")(_ => summon)
 
   pureTest("P-256 ECDSA: RFC 6979 A.2.5 known answers (SHA-256), with s normalised low") {
     val n = BigInt("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551", 16)
@@ -120,36 +131,38 @@ object SignatureSuite extends SimpleIOSuite with Checkers {
 
   // ------------------------------------------------------------------ secp256k1
 
-  private val backend = Secp256k1.load[IO].unsafeRunSync()(using cats.effect.unsafe.IORuntime.global)
-  private val k1 = new Secp256k1.Instances(backend)
-
-  {
+  laws[Secp256k1Ecdsa]("secp256k1 ECDSA") { backend =>
+    val k1 = new Secp256k1.Instances(backend)
     import k1._
-    laws[Secp256k1Ecdsa]("secp256k1 ECDSA")
+    summon
   }
 
-  pureTest("secp256k1 ECDSA: RFC 6979 known answer (key 1, \"Satoshi Nakamoto\")") {
-    val sk = backend.ecdsaCodec.signingKey(ByteVector.fromLong(1).padLeft(32)).toOption.get
-    val sig = backend.ecdsaSigner.sign(sk, ByteVector("Satoshi Nakamoto".getBytes(UTF_8)))
-    expect.same(
-      hex"934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d82442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5",
-      sig.bytes
-    )
-  }
-
-  pureTest("secp256k1 ECDSA: high-S signatures are rejected as non-canonical") {
-    val n = BigInt("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16)
-    val sk = backend.ecdsaCodec.signingKey(ByteVector.fromLong(1).padLeft(32)).toOption.get
-    val sig = backend.ecdsaSigner.sign(sk, hex"0102").bytes
-    val highS = sig.take(32) ++ ByteVector.view((n - BigInt(1, sig.drop(32).toArray)).toByteArray).takeRight(32).padLeft(32)
-    val vk = backend.ecdsaPublicKeyOf.verifyingKey(sk)
-    val forged = Signature[Secp256k1Ecdsa](highS)
-    expect(backend.ecdsaCodec.signature(highS).isLeft, "the codec rejects the malleated twin")
-      .and(expect(!backend.ecdsaVerifier.verify(vk, hex"0102", forged), "libsecp256k1 also rejects high-S"))
-      .and(
-        expect(backend.ecdsaCodec.signingKey(ByteVector.view(n.toByteArray).takeRight(32)).isLeft, "a secret key equal to n is rejected")
+  test("secp256k1 ECDSA: RFC 6979 known answer (key 1, \"Satoshi Nakamoto\")") { backend =>
+    IO {
+      val sk = backend.ecdsaCodec.signingKey(ByteVector.fromLong(1).padLeft(32)).toOption.get
+      val sig = backend.ecdsaSigner.sign(sk, ByteVector("Satoshi Nakamoto".getBytes(UTF_8)))
+      expect.same(
+        hex"934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d82442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5",
+        sig.bytes
       )
-      .and(expect(backend.ecdsaCodec.signingKey(ByteVector.fill(32)(0)).isLeft, "the zero key is rejected"))
+    }
+  }
+
+  test("secp256k1 ECDSA: high-S signatures are rejected as non-canonical") { backend =>
+    IO {
+      val n = BigInt("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16)
+      val sk = backend.ecdsaCodec.signingKey(ByteVector.fromLong(1).padLeft(32)).toOption.get
+      val sig = backend.ecdsaSigner.sign(sk, hex"0102").bytes
+      val highS = sig.take(32) ++ ByteVector.view((n - BigInt(1, sig.drop(32).toArray)).toByteArray).takeRight(32).padLeft(32)
+      val vk = backend.ecdsaPublicKeyOf.verifyingKey(sk)
+      val forged = Signature[Secp256k1Ecdsa](highS)
+      expect(backend.ecdsaCodec.signature(highS).isLeft, "the codec rejects the malleated twin")
+        .and(expect(!backend.ecdsaVerifier.verify(vk, hex"0102", forged), "libsecp256k1 also rejects high-S"))
+        .and(
+          expect(backend.ecdsaCodec.signingKey(ByteVector.view(n.toByteArray).takeRight(32)).isLeft, "a secret key equal to n is rejected")
+        )
+        .and(expect(backend.ecdsaCodec.signingKey(ByteVector.fill(32)(0)).isLeft, "the zero key is rejected"))
+    }
   }
 
   /** BIP-340 official vectors 0 and 1: (secret key, aux, message, verifying key, signature). */
@@ -170,40 +183,46 @@ object SignatureSuite extends SimpleIOSuite with Checkers {
     )
   )
 
-  pureTest("BIP-340: official test vectors (standard scheme)") {
-    bip340Vectors.foldMap {
-      case (skBytes, aux, msg, vkBytes, sigBytes) =>
-        val sk = backend.bip340Codec.signingKey(skBytes).toOption.get
-        val vk = backend.bip340PublicKeyOf.verifyingKey(sk)
-        val m = Message32.from(msg).toOption.get
-        val sig = backend.bip340SignWithAux(sk, m, aux)
-        expect
-          .same(vkBytes, vk.bytes)
-          .and(expect.same(Right(sigBytes), sig.map(_.bytes)))
-          .and(expect(backend.bip340Verify(vk, m, Signature(sigBytes)), "verifies"))
+  test("BIP-340: official test vectors (standard scheme)") { backend =>
+    IO {
+      bip340Vectors.foldMap {
+        case (skBytes, aux, msg, vkBytes, sigBytes) =>
+          val sk = backend.bip340Codec.signingKey(skBytes).toOption.get
+          val vk = backend.bip340PublicKeyOf.verifyingKey(sk)
+          val m = Message32.from(msg).toOption.get
+          val sig = backend.bip340SignWithAux(sk, m, aux)
+          expect
+            .same(vkBytes, vk.bytes)
+            .and(expect.same(Right(sigBytes), sig.map(_.bytes)))
+            .and(expect(backend.bip340Verify(vk, m, Signature(sigBytes)), "verifies"))
+      }
     }
   }
 
-  pureTest("BIP-340: messages must be 32 bytes, and the schemes never cross-verify") {
-    val seed = ByteVector.fromLong(3).padLeft(32)
-    val std = backend.bip340SeedDerivation.fromSeed(seed).toOption.get
-    val tagged = backend.taggedSchnorrSeedDerivation.fromSeed(seed).toOption.get
-    val msg = ByteVector.fill(32)(9)
-    val stdSig = backend.bip340SignWithAux(std.signing, Message32.from(msg).toOption.get, ByteVector.fill(32)(0)).toOption.get
-    val taggedSig = backend.taggedSchnorrSignWithAux(tagged.signing, msg, ByteVector.fill(32)(0)).toOption.get
-    expect(Message32.from(ByteVector.fill(31)(0)).isLeft, "31-byte message")
-      .and(expect.same(std.verifying.bytes, tagged.verifying.bytes))
-      .and(expect(!backend.taggedSchnorrVerifier.verify(tagged.verifying, msg, Signature(stdSig.bytes)), "standard sig under tagged rule"))
-      .and(
-        expect(
-          !backend.bip340Verify(std.verifying, Message32.from(msg).toOption.get, Signature(taggedSig.bytes)),
-          "tagged sig under standard rule"
+  test("BIP-340: messages must be 32 bytes, and the schemes never cross-verify") { backend =>
+    IO {
+      val seed = ByteVector.fromLong(3).padLeft(32)
+      val std = backend.bip340SeedDerivation.fromSeed(seed).toOption.get
+      val tagged = backend.taggedSchnorrSeedDerivation.fromSeed(seed).toOption.get
+      val msg = ByteVector.fill(32)(9)
+      val stdSig = backend.bip340SignWithAux(std.signing, Message32.from(msg).toOption.get, ByteVector.fill(32)(0)).toOption.get
+      val taggedSig = backend.taggedSchnorrSignWithAux(tagged.signing, msg, ByteVector.fill(32)(0)).toOption.get
+      expect(Message32.from(ByteVector.fill(31)(0)).isLeft, "31-byte message")
+        .and(expect.same(std.verifying.bytes, tagged.verifying.bytes))
+        .and(
+          expect(!backend.taggedSchnorrVerifier.verify(tagged.verifying, msg, Signature(stdSig.bytes)), "standard sig under tagged rule")
         )
-      )
-      .and(expect(backend.bip340SignWithAux(std.signing, Message32.from(msg).toOption.get, ByteVector.fill(31)(0)).isLeft, "short aux"))
+        .and(
+          expect(
+            !backend.bip340Verify(std.verifying, Message32.from(msg).toOption.get, Signature(taggedSig.bytes)),
+            "tagged sig under standard rule"
+          )
+        )
+        .and(expect(backend.bip340SignWithAux(std.signing, Message32.from(msg).toOption.get, ByteVector.fill(31)(0)).isLeft, "short aux"))
+    }
   }
 
-  test("BIP-340: randomised signatures verify and reject tampering (both schemes)") {
+  test("BIP-340: randomised signatures verify and reject tampering (both schemes)") { backend =>
     SecureRandom.javaSecuritySecureRandom[IO].flatMap { implicit r =>
       forall(Gen.zip(seed32, message)) {
         case (seed, msg) =>
@@ -221,29 +240,32 @@ object SignatureSuite extends SimpleIOSuite with Checkers {
     }
   }
 
-  pureTest("key decoders: a wrong length is InvalidEncoding, bytes that are no key InvalidKey (never BackendFailure)") {
-    def kind(r: Either[CryptoError, ?]): String = r.fold(_.productPrefix, _ => "accepted")
-    val p = hex"fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
-    val vk = backend.ecdsaPublicKeyOf.verifyingKey(backend.ecdsaSeedDerivation.fromSeed(ByteVector.fill(32)(7)).toOption.get.signing).bytes
-    val shortKeys = List(
-      "P-256"         -> kind(P256Ecdsa.codec.signingKey(ByteVector.low(31))),
-      "secp256k1"     -> kind(backend.ecdsaCodec.signingKey(ByteVector.low(33))),
-      "BIP-340"       -> kind(backend.bip340Codec.signingKey(ByteVector.empty)),
-      "ristretto255"  -> kind(Ristretto255Schnorr.codec.signingKey(ByteVector.low(31))),
-      "Ed25519-BIP32" -> kind(xyz.kd5ujc.crypto.keys.Ed25519Bip32.codec.signingKey(ByteVector.low(63)))
-    )
-    val notKeys = List(
-      "secp256k1 zero scalar"      -> kind(backend.ecdsaCodec.signingKey(ByteVector.low(32))),
-      "BIP-340 x = p"              -> kind(backend.bip340Codec.verifyingKey(p)),
-      "tagged Schnorr x = p"       -> kind(backend.taggedSchnorrCodec.verifyingKey(p)),
-      "secp256k1 x = p"            -> kind(backend.ecdsaCodec.verifyingKey(hex"02" ++ p)),
-      "secp256k1 tag 04"           -> kind(backend.ecdsaCodec.verifyingKey(hex"04" ++ vk.drop(1))),
-      "secp256k1 tag 05"           -> kind(backend.ecdsaCodec.verifyingKey(hex"05" ++ vk.drop(1))),
-      "P-256 tag 00"               -> kind(P256Ecdsa.codec.verifyingKey(hex"00" ++ vk.drop(1))),
-      "Ed25519-BIP32 kL unclamped" -> kind(xyz.kd5ujc.crypto.keys.Ed25519Bip32.codec.signingKey(ByteVector.fill(64)(1)))
-    )
-    shortKeys.foldMap { case (what, k) => expect.same("InvalidEncoding", k).and(expect(k == "InvalidEncoding", what)) } |+|
-    notKeys.foldMap { case (what, k) => expect.same("InvalidKey", k).and(expect(k == "InvalidKey", what)) }
+  test("key decoders: a wrong length is InvalidEncoding, bytes that are no key InvalidKey (never BackendFailure)") { backend =>
+    IO {
+      def kind(r: Either[CryptoError, ?]): String = r.fold(_.productPrefix, _ => "accepted")
+      val p = hex"fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
+      val vk =
+        backend.ecdsaPublicKeyOf.verifyingKey(backend.ecdsaSeedDerivation.fromSeed(ByteVector.fill(32)(7)).toOption.get.signing).bytes
+      val shortKeys = List(
+        "P-256"         -> kind(P256Ecdsa.codec.signingKey(ByteVector.low(31))),
+        "secp256k1"     -> kind(backend.ecdsaCodec.signingKey(ByteVector.low(33))),
+        "BIP-340"       -> kind(backend.bip340Codec.signingKey(ByteVector.empty)),
+        "ristretto255"  -> kind(Ristretto255Schnorr.codec.signingKey(ByteVector.low(31))),
+        "Ed25519-BIP32" -> kind(xyz.kd5ujc.crypto.keys.Ed25519Bip32.codec.signingKey(ByteVector.low(63)))
+      )
+      val notKeys = List(
+        "secp256k1 zero scalar"      -> kind(backend.ecdsaCodec.signingKey(ByteVector.low(32))),
+        "BIP-340 x = p"              -> kind(backend.bip340Codec.verifyingKey(p)),
+        "tagged Schnorr x = p"       -> kind(backend.taggedSchnorrCodec.verifyingKey(p)),
+        "secp256k1 x = p"            -> kind(backend.ecdsaCodec.verifyingKey(hex"02" ++ p)),
+        "secp256k1 tag 04"           -> kind(backend.ecdsaCodec.verifyingKey(hex"04" ++ vk.drop(1))),
+        "secp256k1 tag 05"           -> kind(backend.ecdsaCodec.verifyingKey(hex"05" ++ vk.drop(1))),
+        "P-256 tag 00"               -> kind(P256Ecdsa.codec.verifyingKey(hex"00" ++ vk.drop(1))),
+        "Ed25519-BIP32 kL unclamped" -> kind(xyz.kd5ujc.crypto.keys.Ed25519Bip32.codec.signingKey(ByteVector.fill(64)(1)))
+      )
+      shortKeys.foldMap { case (what, k) => expect.same("InvalidEncoding", k).and(expect(k == "InvalidEncoding", what)) } |+|
+      notKeys.foldMap { case (what, k) => expect.same("InvalidKey", k).and(expect(k == "InvalidKey", what)) }
+    }
   }
 
   pureTest("crypto domain tags satisfy the tag grammar") {
