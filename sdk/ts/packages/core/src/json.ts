@@ -6,11 +6,11 @@
  * so nesting is a typed error rather than a stack overflow. {@link render} is the display view, and fails for values
  * JSON cannot represent.
  */
-import { bitLength } from "./bigint.js";
-import type { CanonicalError } from "./error.js";
+import { byteLimit, Meter } from "./budget.js";
+import type { CanonicalError, TooLarge } from "./error.js";
 import { err, ok, type Result } from "./result.js";
-import { compareCodePoints } from "./utf8.js";
-import { ArrayValue, BoolValue, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Value } from "./value.js";
+import { compareCodePoints, utf8Length } from "./utf8.js";
+import { ArrayValue, BoolValue, entriesView, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
 
 /** The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises. */
 export const DEFAULT_MAX_SCALE = 10000;
@@ -249,8 +249,8 @@ function within(text: string): string | undefined {
 }
 
 /** An integer's decimal, within the bounds {@link parse} accepts. */
-function integerText(n: bigint): string | undefined {
-  return bitLength(n) > MAX_DIGIT_BITS ? undefined : within(n.toString());
+function integerText(n: IntValue): string | undefined {
+  return n.bitLength > MAX_DIGIT_BITS ? undefined : within(n.value.toString());
 }
 
 /**
@@ -260,7 +260,7 @@ function integerText(n: bigint): string | undefined {
  * bound is at most that, and the significand is at least the numerator.
  */
 export function decimalOf(r: RationalValue): Result<string, "non-terminating rational" | "over-long number"> {
-  if (bitLength(r.numerator) > MAX_DIGIT_BITS || bitLength(r.denominator) > MAX_DIGIT_BITS) return err("over-long number");
+  if (r.numeratorBitLength > MAX_DIGIT_BITS || r.denominatorBitLength > MAX_DIGIT_BITS) return err("over-long number");
   let rest = r.denominator;
   let twos = 0;
   let fives = 0;
@@ -319,43 +319,109 @@ function quote(s: string): string {
   return out + '"';
 }
 
-/** Compact JSON with object members in code-point order of their names. Fails for bytes, non-terminating rationals and over-long numbers. */
-export function render(value: Value): Result<string, CanonicalError> {
-  switch (value.kind) {
-    case "null":
-      return ok("null");
-    case "bool":
-      return ok(value.value ? "true" : "false");
-    case "int": {
-      const t = integerText(value.value);
-      return t === undefined ? err({ kind: "NotJsonRepresentable", what: "over-long number" }) : ok(t);
-    }
-    case "rational": {
-      const d = decimalOf(value);
-      return d.ok ? d : err({ kind: "NotJsonRepresentable", what: d.error });
-    }
-    case "text":
-      return ok(quote(value.value));
-    case "bytes":
-      return err({ kind: "NotJsonRepresentable", what: "bytes" });
-    case "array": {
-      const parts: string[] = [];
-      for (const item of value.items) {
-        const r = render(item);
-        if (!r.ok) return r;
-        parts.push(r.value);
+/**
+ * The longest JSON {@link render} produces, in UTF-8 bytes. A UTF-16 code unit takes at least one UTF-8 byte, so the
+ * text stays within every engine's string limit (V8's is `2^29 - 24` code units): rendering never throws.
+ */
+export const MAX_RENDER_BYTES = 2 ** 29 - 24;
+
+/** An array, or an object's members in code-point order of their names, being rendered: the parts and the next one. */
+type Rendering = { readonly object: false; readonly items: readonly Value[]; at: number } | { readonly object: true; readonly members: readonly Entry[]; at: number };
+
+/** Why a value was not rendered: JSON cannot represent it, or its JSON is longer than the limit. */
+export type RenderError = CanonicalError | TooLarge;
+
+/**
+ * Compact JSON with object members in code-point order of their names, if it is at most `maxBytes` long in UTF-8 (a
+ * fraction rounds down, `NaN` or a negative limit is 0). Fails for bytes, non-terminating rationals and over-long
+ * numbers, and with `TooLarge` at the first part found past the limit, whichever comes first.
+ *
+ * O(min(weight, `maxBytes`)) apart from sorting object members: a value's JSON is at least as long in UTF-8 as its
+ * weight (each node writes at least a byte, a text or key its UTF-8 and quotes, a number of `l` whole limbs more than
+ * `l` digits), so each part is refused in O(1) when its weight is over what is left, and every part rendered fits.
+ * Iterative, with an explicit stack of at most {@link MAX_DEPTH} open containers.
+ */
+export function renderWithin(value: Value, maxBytes: number): Result<string, RenderError> {
+  const meter = new Meter(byteLimit(maxBytes));
+  const out: string[] = [];
+  const stack: Rendering[] = [];
+  /** Adds `piece`, of `bytes` UTF-8 bytes, if it fits. */
+  const emit = (piece: string, bytes: number): boolean => {
+    const fits = meter.take(bytes);
+    if (fits) out.push(piece);
+    return fits;
+  };
+  const ascii = (piece: string): boolean => emit(piece, piece.length);
+  /** A value's JSON, or its opening bracket with its parts now open: `undefined`, or why it failed. */
+  const node = (v: Value): RenderError | undefined => {
+    if (!meter.admits(v.weight)) return meter.refusal();
+    switch (v.kind) {
+      case "null":
+        return ascii("null") ? undefined : meter.refusal();
+      case "bool":
+        return ascii(v.value ? "true" : "false") ? undefined : meter.refusal();
+      case "int": {
+        const t = integerText(v);
+        if (t === undefined) return { kind: "NotJsonRepresentable", what: "over-long number" };
+        return ascii(t) ? undefined : meter.refusal();
       }
-      return ok(`[${parts.join(",")}]`);
-    }
-    case "map": {
-      const parts: string[] = [];
-      const sorted = [...value.entries()].sort(([a], [b]) => compareCodePoints(a, b));
-      for (const [k, v] of sorted) {
-        const r = render(v);
-        if (!r.ok) return r;
-        parts.push(`${quote(k)}:${r.value}`);
+      case "rational": {
+        const d = decimalOf(v);
+        if (!d.ok) return { kind: "NotJsonRepresentable", what: d.error };
+        return ascii(d.value) ? undefined : meter.refusal();
       }
-      return ok(`{${parts.join(",")}}`);
+      case "text": {
+        const q = quote(v.value);
+        return emit(q, utf8Length(q)) ? undefined : meter.refusal();
+      }
+      case "bytes":
+        return { kind: "NotJsonRepresentable", what: "bytes" };
+      case "array":
+        if (!ascii("[")) return meter.refusal();
+        stack.push({ object: false, items: v.items, at: 0 });
+        return undefined;
+      case "map":
+        if (!ascii("{")) return meter.refusal();
+        stack.push({ object: true, members: [...entriesView(v)].sort((a, b) => compareCodePoints(a.key, b.key)), at: 0 });
+        return undefined;
+    }
+  };
+  const first = node(value);
+  if (first !== undefined) return err(first);
+  for (let top = stack.at(-1); top !== undefined; top = stack.at(-1)) {
+    const i = top.at++;
+    const comma = i > 0 ? "," : "";
+    if (top.object) {
+      const m = top.members[i];
+      if (m === undefined) {
+        if (!ascii("}")) return err(meter.refusal());
+        stack.pop();
+        continue;
+      }
+      const name = `${comma}${quote(m.key)}:`;
+      if (!emit(name, utf8Length(name))) return err(meter.refusal());
+      const e = node(m.value);
+      if (e !== undefined) return err(e);
+    } else {
+      const item = top.items[i];
+      if (item === undefined) {
+        if (!ascii("]")) return err(meter.refusal());
+        stack.pop();
+        continue;
+      }
+      if (!ascii(comma)) return err(meter.refusal());
+      const e = node(item);
+      if (e !== undefined) return err(e);
     }
   }
+  return ok(out.join(""));
+}
+
+/**
+ * Compact JSON with object members in code-point order of their names: {@link renderWithin} at
+ * {@link MAX_RENDER_BYTES}. Fails for bytes, non-terminating rationals and over-long numbers, and for JSON too long for
+ * a string. It costs O(weight): render a value built with shared parts within a smaller limit.
+ */
+export function render(value: Value): Result<string, RenderError> {
+  return renderWithin(value, MAX_RENDER_BYTES);
 }

@@ -3,7 +3,8 @@ import { blake2b } from "@noble/hashes/blake2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { keccak_256, sha3_256, sha3_512 } from "@noble/hashes/sha3.js";
 
-import { encode } from "./cbor.js";
+import { encode, encodeWithin } from "./cbor.js";
+import type { TooLarge } from "./error.js";
 import { err, ok, type Result } from "./result.js";
 import { encodeUtf8 } from "./utf8.js";
 import type { Value } from "./value.js";
@@ -112,9 +113,18 @@ export class TaggedHash {
     return hashParts(this.algorithm, [this.#tagHash, this.#tagHash, message]);
   }
 
-  /** The content hash of a canonical value: the tagged hash of its canonical encoding. */
+  /**
+   * The content hash of a canonical value: the tagged hash of its canonical encoding. O(`value.weight`), as
+   * `cbor.encode`: bound the weight of a value built with shared parts first, or use {@link contentWithin}.
+   */
   content(value: Value): Uint8Array {
     return this.hash(encode(value));
+  }
+
+  /** The content hash of a value whose canonical encoding is at most `maxBytes` long, with the bounds of `cbor.encodeWithin`. */
+  contentWithin(value: Value, maxBytes: number): Result<Uint8Array, TooLarge> {
+    const e = encodeWithin(value, maxBytes);
+    return e.ok ? ok(this.hash(e.value)) : e;
   }
 }
 
@@ -123,7 +133,7 @@ export function taggedHash(algorithm: HashAlgorithm, tag: DomainTag, message: Ui
   return TaggedHash.of(algorithm, tag).hash(message);
 }
 
-/** The content hash of a canonical value with `algorithm`. */
+/** The content hash of a canonical value with `algorithm`. O(`value.weight`), as {@link TaggedHash.content}. */
 export function contentHash(algorithm: HashAlgorithm, tag: DomainTag, value: Value): Uint8Array {
   return TaggedHash.of(algorithm, tag).content(value);
 }

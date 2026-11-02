@@ -18,6 +18,10 @@ export { ok } from "./result.js";
  * Encodes `T` to a canonical value and decodes it back. `depth` is the nesting level of the value being encoded (0 at
  * the root): containers refuse to go past {@link MAX_DEPTH} before descending, so a deeply nested model is a typed
  * `DepthExceeded`, never a stack overflow.
+ *
+ * Decoding walks the value as the schema reads it, so a value built with shared parts costs up to its weight, and every
+ * byte string read is copied each time it occurs: bound the weight of a value not known to be small first. The codecs
+ * recurse once per level of nesting they read, which {@link MAX_DEPTH} bounds.
  */
 export interface Codec<T> {
   encode(value: T, depth?: number): Result<Value, CanonicalError>;
@@ -27,7 +31,7 @@ export interface Codec<T> {
 /** Why bytes or text are not a model: not canonical, or not the model's shape. */
 export type ModelError = { readonly kind: "Canonical"; readonly error: CanonicalError } | { readonly kind: "Decode"; readonly error: DecodeFailure };
 
-/** The canonical CBOR of `value`. */
+/** The canonical CBOR of `value`. O(weight), as `cbor.encode`: a model holding caller values (`any`) may share parts. */
 export function toCbor<T>(codec: Codec<T>, value: T): Result<Uint8Array, CanonicalError> {
   const v = codec.encode(value);
   return v.ok ? ok(encodeCbor(v.value)) : v;

@@ -61,7 +61,10 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
     return copyBytes(this.#empty);
   }
 
-  /** A value leaf's hash: the leaf hash of `commit(value)` (`MerkleTree.leaf`). */
+  /**
+   * A value leaf's hash: the leaf hash of `commit(value)` (`MerkleTree.leaf`). O(`value.weight`), as `valueCommitment`,
+   * with no size limit (as Scala's and Rust's): bound the weight of a value built with shared parts.
+   */
   leaf(value: Value): Uint8Array {
     return this.#leaf.hash(valueCommitment(value));
   }

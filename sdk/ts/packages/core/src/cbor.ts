@@ -1,24 +1,44 @@
 /** The dilf4s deterministic CBOR profile (docs/specs/canonical-encoding.md section 2). */
-import type { CanonicalError } from "./error.js";
+import { byteLimit, Meter, tooLarge } from "./budget.js";
+import type { CanonicalError, TooLarge } from "./error.js";
+import { toHex } from "./hex.js";
 import { err, ok, type Result } from "./result.js";
 import { compareBytes, decodeUtf8 } from "./utf8.js";
-import { ArrayValue, BoolValue, BytesValue, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Value } from "./value.js";
+import {
+  ArrayValue,
+  BoolValue,
+  BytesValue,
+  bytesView,
+  entriesView,
+  IntValue,
+  MapValue,
+  MAX_DEPTH,
+  NullValue,
+  RationalValue,
+  TextValue,
+  utf8View,
+  type Entry,
+  type Value,
+} from "./value.js";
 
 const TAG_POSITIVE_BIGNUM = 2n;
 const TAG_NEGATIVE_BIGNUM = 3n;
 const TAG_RATIONAL = 30n;
-const TWO_TO_64 = 1n << 64n;
 
 // ------------------------------------------------------------------------------------------------ encoding
 
-/** Appends bytes to a growable buffer. */
-class Sink {
-  #buf = new Uint8Array(64);
+/** A growable buffer that never grows past `cap` bytes. */
+class Growing {
+  #buf: Uint8Array;
   #len = 0;
+
+  constructor(private readonly cap: number) {
+    this.#buf = new Uint8Array(Math.min(64, cap));
+  }
 
   private reserve(n: number): void {
     if (this.#len + n <= this.#buf.length) return;
-    const next = new Uint8Array(Math.max(this.#buf.length * 2, this.#len + n));
+    const next = new Uint8Array(Math.min(Math.max(this.#buf.length * 2, this.#len + n), this.cap));
     next.set(this.#buf.subarray(0, this.#len));
     this.#buf = next;
   }
@@ -35,99 +55,213 @@ class Sink {
   }
 
   result(): Uint8Array {
-    return this.#buf.slice(0, this.#len);
+    return this.#len === this.#buf.length ? this.#buf : this.#buf.slice(0, this.#len);
   }
 }
 
-/** The big-endian bytes of a non-negative integer, with no leading zeros (empty for zero). */
-export function magnitudeBytes(n: bigint): Uint8Array {
-  const out: number[] = [];
-  for (let m = n; m > 0n; m >>= 8n) out.push(Number(m & 0xffn));
-  return Uint8Array.from(out.reverse());
+/** Where encoded bytes go: room for `n` more is asked before they are produced, and a refusal stops the encoding. */
+interface Out {
+  room(n: number): boolean;
+  byte(b: number): void;
+  bytes(b: Uint8Array): void;
 }
+
+/** Every byte, kept. */
+class Unbounded implements Out {
+  readonly #out = new Growing(Number.MAX_SAFE_INTEGER);
+  room(): boolean {
+    return true;
+  }
+  byte(b: number): void {
+    this.#out.byte(b);
+  }
+  bytes(b: Uint8Array): void {
+    this.#out.bytes(b);
+  }
+  result(): Uint8Array {
+    return this.#out.result();
+  }
+}
+
+/** Bytes counted against a limit, and kept only when there is somewhere to keep them (never more than the limit). */
+class Budgeted implements Out {
+  constructor(
+    readonly meter: Meter,
+    private readonly out: Growing | undefined,
+  ) {}
+  room(n: number): boolean {
+    return this.meter.take(n);
+  }
+  byte(b: number): void {
+    this.out?.byte(b);
+  }
+  bytes(b: Uint8Array): void {
+    this.out?.bytes(b);
+  }
+  result(): Uint8Array {
+    return this.out?.result() ?? new Uint8Array(0);
+  }
+}
+
+/** The value of a lowercase hexadecimal digit's character code. */
+const nibble = (c: number): number => (c <= 0x39 ? c - 0x30 : c - 0x57);
+
+/** Writes the `length` big-endian bytes of the hexadecimal `hex` (at most `2 * length` digits), linear in `length`. */
+function hexBytes(write: (b: number, i: number) => void, hex: string, length: number): void {
+  const digits = hex.padStart(2 * length, "0");
+  for (let i = 0; i < length; i++) write((nibble(digits.charCodeAt(2 * i)) << 4) | nibble(digits.charCodeAt(2 * i + 1)), i);
+}
+
+/** The big-endian bytes of a non-negative integer, with no leading zeros (empty for zero), linear in its size. */
+export function magnitudeBytes(n: bigint): Uint8Array {
+  if (n <= 0n) return new Uint8Array(0);
+  const hex = n.toString(16);
+  const out = new Uint8Array(Math.ceil(hex.length / 2));
+  hexBytes(
+    (b, i) => {
+      out[i] = b;
+    },
+    hex,
+    out.length,
+  );
+  return out;
+}
+
+/** The additional information of an argument `size` bytes long (1, 2, 4 or 8). */
+const argumentInfo = (size: number): number => (size === 1 ? 0x18 : size === 2 ? 0x19 : size === 4 ? 0x1a : 0x1b);
 
 /** The shortest-form initial byte and argument (`0 <= argument < 2^64`). */
-function head(out: Sink, major: number, argument: bigint): void {
+function head(out: Out, major: number, argument: bigint): boolean {
   const mt = major << 5;
-  const fixed = (len: number): void => {
-    for (let i = len - 1; i >= 0; i--) out.byte(Number((argument >> BigInt(8 * i)) & 0xffn));
-  };
-  if (argument < 24n) out.byte(mt | Number(argument));
-  else if (argument < 0x100n) {
-    out.byte(mt | 0x18);
-    fixed(1);
-  } else if (argument < 0x10000n) {
-    out.byte(mt | 0x19);
-    fixed(2);
-  } else if (argument < 0x100000000n) {
-    out.byte(mt | 0x1a);
-    fixed(4);
-  } else {
-    out.byte(mt | 0x1b);
-    fixed(8);
-  }
+  const size = argument < 24n ? 0 : argument < 0x100n ? 1 : argument < 0x10000n ? 2 : argument < 0x100000000n ? 4 : 8;
+  if (!out.room(1 + size)) return false;
+  out.byte(size === 0 ? mt | Number(argument) : mt | argumentInfo(size));
+  for (let i = size - 1; i >= 0; i--) out.byte(Number((argument >> BigInt(8 * i)) & 0xffn));
+  return true;
 }
 
-function integer(out: Sink, n: bigint): void {
-  const [major, tag, magnitude] = n < 0n ? [1, TAG_NEGATIVE_BIGNUM, -1n - n] : [0, TAG_POSITIVE_BIGNUM, n];
-  if (magnitude < TWO_TO_64) head(out, major, magnitude);
-  else {
-    const bytes = magnitudeBytes(magnitude);
-    head(out, 6, tag);
-    head(out, 2, BigInt(bytes.length));
-    out.bytes(bytes);
-  }
+/**
+ * An integer of `bits` (Java) bits: CBOR carries `n` for `n >= 0` and `-1 - n` for `n < 0`, whose bit length is
+ * `bits`, so a bignum's length is known, and checked against the budget, before any of its bytes is produced. They are
+ * then streamed from its hexadecimal form, linear in its size.
+ */
+function integer(out: Out, n: bigint, bits: number): boolean {
+  const negative = n < 0n;
+  const magnitude = negative ? -1n - n : n;
+  if (bits <= 64) return head(out, negative ? 1 : 0, magnitude);
+  const length = Math.ceil(bits / 8);
+  if (!head(out, 6, negative ? TAG_NEGATIVE_BIGNUM : TAG_POSITIVE_BIGNUM) || !head(out, 2, BigInt(length)) || !out.room(length)) return false;
+  hexBytes((b) => {
+    out.byte(b);
+  }, magnitude.toString(16), length);
+  return true;
 }
 
-/** Recursion is bounded: a {@link Value} never nests deeper than {@link MAX_DEPTH}. */
-function write(out: Sink, v: Value): void {
+/** A byte or text string: its head, then its bytes. */
+function span(out: Out, major: number, bytes: Uint8Array): boolean {
+  if (!head(out, major, BigInt(bytes.length)) || !out.room(bytes.length)) return false;
+  out.bytes(bytes);
+  return true;
+}
+
+function single(out: Out, b: number): boolean {
+  if (!out.room(1)) return false;
+  out.byte(b);
+  return true;
+}
+
+/** An array or map being written: its parts, and the next one. */
+type Open = { readonly map: false; readonly items: readonly Value[]; at: number } | { readonly map: true; readonly entries: readonly Entry[]; at: number };
+
+/** Writes `v`'s first bytes: all of a scalar, or a container's head (its parts are then open on `stack`). */
+function node(out: Out, v: Value, stack: Open[]): boolean {
   switch (v.kind) {
     case "null":
-      out.byte(0xf6);
-      return;
+      return single(out, 0xf6);
     case "bool":
-      out.byte(v.value ? 0xf5 : 0xf4);
-      return;
+      return single(out, v.value ? 0xf5 : 0xf4);
     case "int":
-      integer(out, v.value);
-      return;
+      return integer(out, v.value, v.bitLength);
     case "rational":
-      head(out, 6, TAG_RATIONAL);
-      head(out, 4, 2n);
-      integer(out, v.numerator);
-      integer(out, v.denominator);
-      return;
-    case "text": {
-      const utf8 = v.utf8();
-      head(out, 3, BigInt(utf8.length));
-      out.bytes(utf8);
-      return;
-    }
+      return head(out, 6, TAG_RATIONAL) && head(out, 4, 2n) && integer(out, v.numerator, v.numeratorBitLength) && integer(out, v.denominator, v.denominatorBitLength);
+    case "text":
+      return span(out, 3, utf8View(v));
     case "bytes":
-      head(out, 2, BigInt(v.length));
-      out.bytes(v.bytes);
-      return;
+      return span(out, 2, bytesView(v));
     case "array":
-      head(out, 4, BigInt(v.items.length));
-      for (const item of v.items) write(out, item);
-      return;
+      if (!head(out, 4, BigInt(v.length))) return false;
+      stack.push({ map: false, items: v.items, at: 0 });
+      return true;
     case "map":
       // entries are held in canonical key order
-      head(out, 5, BigInt(v.size));
-      for (const [key, value] of v.encodedEntries()) {
-        head(out, 3, BigInt(key.length));
-        out.bytes(key);
-        write(out, value);
-      }
-      return;
+      if (!head(out, 5, BigInt(v.size))) return false;
+      stack.push({ map: true, entries: entriesView(v), at: 0 });
+      return true;
   }
 }
 
-/** The canonical encoding of `value`. Total: every {@link Value} has exactly one. */
+/**
+ * Writes `value`, or stops at the first refusal. Never recursive: an explicit stack holds one open container per level
+ * (at most {@link MAX_DEPTH}). Every node writes its first byte before its parts, which the budget relies on.
+ */
+function write(out: Out, value: Value): boolean {
+  const stack: Open[] = [];
+  if (!node(out, value, stack)) return false;
+  for (let top = stack.at(-1); top !== undefined; top = stack.at(-1)) {
+    const i = top.at++;
+    if (top.map) {
+      const e = top.entries[i];
+      if (e === undefined) stack.pop();
+      else if (!span(out, 3, e.utf8) || !node(out, e.value, stack)) return false;
+    } else {
+      const item = top.items[i];
+      if (item === undefined) stack.pop();
+      else if (!node(out, item, stack)) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * The canonical encoding of `value`. Every {@link Value} has exactly one.
+ *
+ * It costs O(`value.weight`) time and memory, which for a value built with shared parts (`[x, x]` nested `k` deep weighs
+ * about `2^k`) can be far more than the value occupies, and past what an array can hold. Encode a value not known to be
+ * small with {@link encodeWithin}, or check its weight first.
+ */
 export function encode(value: Value): Uint8Array {
-  const out = new Sink();
+  const out = new Unbounded();
   write(out, value);
   return out.result();
+}
+
+/** The walk of {@link encodeWithin} and {@link encodedLengthWithin}, keeping the bytes or only counting them. */
+function within(value: Value, maxBytes: number, keep: boolean): Result<Budgeted, TooLarge> {
+  const limit = byteLimit(maxBytes);
+  if (value.weight > BigInt(limit)) return err(tooLarge(limit, value.weight));
+  const out = new Budgeted(new Meter(limit), keep ? new Growing(limit) : undefined);
+  return write(out, value) ? ok(out) : err(out.meter.refusal());
+}
+
+/**
+ * The canonical encoding of `value`, if it is at most `maxBytes` long (see `byteLimit` for odd limits); it never holds
+ * more than `maxBytes`.
+ *
+ * O(min(weight, `maxBytes`)), and no allocation beyond the output: every encoding is at least as long as its value's
+ * weight (each node's head is a byte, text and byte strings add their length, a number of `l` whole limbs takes at
+ * least `l` bytes more), so a weight over the limit is refused at once; each node visited writes a byte before its
+ * parts, so the walk stops within `maxBytes + 1` nodes; and a string's or number's length is checked against the
+ * budget before its bytes are produced.
+ */
+export function encodeWithin(value: Value, maxBytes: number): Result<Uint8Array, TooLarge> {
+  const w = within(value, maxBytes, true);
+  return w.ok ? ok(w.value.result()) : w;
+}
+
+/** The length of `value`'s canonical encoding, if it is at most `maxBytes`, counted without encoding it, with the bounds of {@link encodeWithin}. */
+export function encodedLengthWithin(value: Value, maxBytes: number): Result<number, TooLarge> {
+  const w = within(value, maxBytes, false);
+  return w.ok ? ok(w.value.meter.used) : w;
 }
 
 // ------------------------------------------------------------------------------------------------ decoding
@@ -328,8 +462,8 @@ class Decoder {
     const b = s.value.bytes;
     if (b.length === 0 || b[0] === 0) return err(nonCanonical(pos, "bignum magnitude must be non-empty without leading zeros"));
     if (b.length <= 8) return err(nonCanonical(pos, "bignum used for a value that fits major type 0/1"));
-    let magnitude = 0n;
-    for (const x of b) magnitude = (magnitude << 8n) | BigInt(x);
+    // one conversion from hexadecimal, linear in the length: shifting in a byte at a time would be quadratic
+    const magnitude = BigInt(`0x${toHex(b)}`);
     return ok({ value: tag === TAG_POSITIVE_BIGNUM ? magnitude : -1n - magnitude, end: s.value.end });
   }
 
