@@ -196,17 +196,21 @@ The additions are fixed-width LE byte arithmetic.
 ## 3. Indices and paths
 
 - An index is below 2^31. Hardened indices are serialised with bit 31 set.
-- Path syntax is `m/a/b'/c` (or `h` in place of `'`); `m` alone is the master key.
-- A segment is one or more ASCII digits `0`–`9`, then optionally `'` or `h`. Leading zeros are allowed (`007` is 7).
+- Path syntax is `m/a/b'/c`; `m` alone is the master key. Both hardening marks, `'` and `h`, are accepted: they are
+  the standard notations of BIP32 and of output descriptors.
+- A segment is the index in decimal with no leading zero: `0`, or a nonzero ASCII digit followed by ASCII digits
+  `0`–`9`. Then comes optionally `'` or `h`. So each index has one spelling: `007`, `00` and `00'` are errors.
 - Nothing else is accepted, and nothing is trimmed: whitespace anywhere, a sign (`+5`, `-0`), a non-ASCII digit, an
   empty segment (`m/`, `m//1`, `m/1/`), an uppercase `M` or `H`, or a lone `'` is an error. So is an index of 2^31 or
   more. The `paths` vectors pin these cases.
-- A segment's digits are bounded before they are converted, so parsing is linear in the path's length: strip the
-  leading zeros, refuse the segment if more than 10 digits remain (2^31 − 1 has ten), and only then convert and check
-  the index is below 2^31. All zeros is index 0. A segment of any length is accepted or refused this way without
+- A path has at most 255 segments after `m`, since BIP32 serialises the depth in one byte. A 256th segment is an error
+  whatever it holds.
+- Parsing is linear in the path's length. Segments are checked in order and parsing stops at the first error, so a
+  longer path is never scanned past its 256th segment. A segment with more than 10 digits (2^31 − 1 has ten) is refused
+  before its digits are converted; only then is it converted and checked to be below 2^31. No implementation needs
   arbitrary-precision arithmetic.
-- An error names the segment by its position (0 is the first after `m`) and, when it has too many digits, how many
-  significant digits it has. It never echoes the segment's text.
+- An error names the segment by its position (0 is the first after `m`) and, when it has too many digits, how many it
+  has. It never echoes the segment's text.
 
 ## 4. Sizes
 

@@ -25,6 +25,7 @@ export {
   ChildIndex,
   ExtendedKey,
   icarus,
+  MAX_DEPTH,
   MAX_SEGMENT_DIGITS,
   parsePath,
   slip10Ed25519,

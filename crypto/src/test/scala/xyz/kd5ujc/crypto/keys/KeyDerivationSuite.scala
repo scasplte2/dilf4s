@@ -149,46 +149,54 @@ object KeyDerivationSuite extends SimpleIOSuite {
     // each of these was accepted before: Java's toLong takes a sign and non-ASCII digits, and the path was trimmed
     val refused = List(" m/1", "m/1 ", "m/1\n", "m/+5", "m/-0", "m/\u0661", "m/\uff11", "m/", "m//1", "m/1/", "m/'", "m/h")
     refused.foldMap(p => expect(ChildIndex.path(p).isLeft, s"${p.toList.map(_.toInt)} is refused")) |+|
-    expect.same(Right(List(7L, 0x80000001L)), ChildIndex.path("m/007/00000000000000000000001'").map(_.map(_.serialized))) |+|
     expect.same(Right(Nil), ChildIndex.path("m"))
   }
 
   // the vector generator takes its results from this parser, so the boundary is pinned here by hand
-  pureTest("a segment has at most ten significant digits, leading zeros aside, and is below 2^31") {
+  pureTest("a segment has no leading zero and at most ten digits, is below 2^31, and a path has at most 255") {
     val serialized = (p: String) => ChildIndex.path(p).map(_.map(_.serialized))
     val zeros = "0" * 4096
     val accepted = List(
-      "m/2147483647"              -> List(0x7fffffffL),
-      "m/1000000000'"             -> List(0x80000000L + 1000000000L),
-      "m/02147483647'"            -> List(0xffffffffL),
-      "m/00"                      -> List(0L),
-      "m/000'"                    -> List(0x80000000L),
-      s"m/${zeros}1'"             -> List(0x80000001L),
-      s"m/0/${zeros}2147483647/0" -> List(0L, 0x7fffffffL, 0L)
+      "m/2147483647"     -> List(0x7fffffffL),
+      "m/1000000000'"    -> List(0x80000000L + 1000000000L),
+      "m/0'/10h/0"       -> List(0x80000000L, 0x8000000aL, 0L),
+      s"m${"/7" * 255}"  -> List.fill(255)(7L),
+      s"m${"/1'" * 255}" -> List.fill(255)(0x80000001L)
     )
     val refused = List(
-      "m/2147483648'"          -> "path segment 0 is out of range",
-      "m/4294967295"           -> "path segment 0 is out of range",
-      "m/9999999999"           -> "path segment 0 is out of range",
-      "m/0/10000000000"        -> "path segment 1 has 11 significant digits, more than 10",
-      s"m/${zeros}12345678901" -> "path segment 0 has 11 significant digits, more than 10",
-      s"m/1/2/${"9" * 4096}'"  -> "path segment 2 has 4096 significant digits, more than 10",
-      "m/1/x9"                 -> "path segment 1 is malformed"
+      "m/2147483648'"                -> "path segment 0 is out of range",
+      "m/4294967295"                 -> "path segment 0 is out of range",
+      "m/9999999999"                 -> "path segment 0 is out of range",
+      "m/0/10000000000"              -> "path segment 1 has 11 digits, more than 10",
+      s"m/1/2/${"9" * 4096}'"        -> "path segment 2 has 4096 digits, more than 10",
+      "m/007"                        -> "path segment 0 has a leading zero",
+      "m/00"                         -> "path segment 0 has a leading zero",
+      "m/000'"                       -> "path segment 0 has a leading zero",
+      "m/1/01h"                      -> "path segment 1 has a leading zero",
+      "m/02147483647'"               -> "path segment 0 has a leading zero",
+      s"m/${zeros}1'"                -> "path segment 0 has a leading zero",
+      s"m/${zeros}12345678901"       -> "path segment 0 has a leading zero",
+      "m/1/x9"                       -> "path segment 1 is malformed",
+      s"m${"/7" * 256}"              -> "path has more than 255 segments",
+      s"m${"/7" * 255}/x"            -> "path has more than 255 segments",
+      s"m${"/7" * 9}/x${"/7" * 300}" -> "path segment 9 is malformed"
     )
     accepted.foldMap { case (p, is) => expect.same(Right(is), serialized(p)) } |+|
     refused.foldMap { case (p, reason) => expect.same(Left(KeyError.InvalidDerivation(reason)), ChildIndex.path(p)) }
   }
 
-  // BigInt of these digits took about 23 s; the bound leaves room for a cold JIT on a loaded machine
-  test("a million-digit segment is refused, and a million leading zeros are stripped, in linear time") {
+  // BigInt of a million digits took about 23 s; the bound leaves room for a cold JIT on a loaded machine
+  test("a million-digit segment, a million leading zeros and a million segments are refused in linear time") {
     val long = s"m/${"1" * 1000000}'"
     val padded = s"m/${"0" * 1000000}7"
+    val deep = s"m${"/0" * 1000000}"
     for {
-      (t, (l, p)) <- IO((ChildIndex.path(long), ChildIndex.path(padded))).timed
+      (t, (l, p, d)) <- IO((ChildIndex.path(long), ChildIndex.path(padded), ChildIndex.path(deep))).timed
     } yield
       expect(t.toMillis < 2000, s"took ${t.toMillis} ms")
-        .and(expect.same(Left(KeyError.InvalidDerivation("path segment 0 has 1000000 significant digits, more than 10")), l))
-        .and(expect.same(Right(List(7L)), p.map(_.map(_.serialized))))
+        .and(expect.same(Left(KeyError.InvalidDerivation("path segment 0 has 1000000 digits, more than 10")), l))
+        .and(expect.same(Left(KeyError.InvalidDerivation("path segment 0 has a leading zero")), p))
+        .and(expect.same(Left(KeyError.InvalidDerivation("path has more than 255 segments")), d))
   }
 
   // ------------------------------------------------------------------ SLIP-10 Ed25519 (vector 1)

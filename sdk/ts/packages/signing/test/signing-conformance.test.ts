@@ -172,7 +172,7 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
   });
 
   test("paths are strict: nothing trimmed, ASCII digits only, no empty segment, at most ten significant digits", () => {
-    expect(vectors.paths.length).toBeGreaterThanOrEqual(48);
+    expect(vectors.paths.length).toBeGreaterThanOrEqual(54);
     for (const c of vectors.paths) {
       const r = parsePath(c.path);
       const actual = r.ok ? { indices: r.value.map((i) => BigInt(i.serialized)) } : r.error.kind;

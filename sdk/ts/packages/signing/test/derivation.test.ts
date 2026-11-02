@@ -179,39 +179,49 @@ describe("paths", { timeout: 60_000 }, () => {
   });
 
   // the same boundary and the same reasons as Scala's KeyDerivationSuite
-  test("a segment has at most ten significant digits, leading zeros aside, and is below 2^31", () => {
+  test("a segment has no leading zero and at most ten digits, is below 2^31, and a path has at most 255", () => {
     const zeros = "0".repeat(4096);
     const accepted: [string, number[]][] = [
       ["m/2147483647", [0x7fffffff]],
       ["m/1000000000'", [0x80000000 + 1000000000]],
-      ["m/02147483647'", [0xffffffff]],
-      ["m/00", [0]],
-      ["m/000'", [0x80000000]],
-      [`m/${zeros}1'`, [0x80000001]],
-      [`m/0/${zeros}2147483647/0`, [0, 0x7fffffff, 0]],
+      ["m/0'/10h/0", [0x80000000, 0x8000000a, 0]],
+      [`m${"/7".repeat(255)}`, Array<number>(255).fill(7)],
+      [`m${"/1'".repeat(255)}`, Array<number>(255).fill(0x80000001)],
     ];
     for (const [p, is] of accepted) expect(path(p).map((i) => i.serialized), p.slice(0, 40)).toEqual(is);
     const refused: [string, string][] = [
       ["m/2147483648'", "path segment 0 is out of range"],
       ["m/4294967295", "path segment 0 is out of range"],
       ["m/9999999999", "path segment 0 is out of range"],
-      ["m/0/10000000000", "path segment 1 has 11 significant digits, more than 10"],
-      [`m/${zeros}12345678901`, "path segment 0 has 11 significant digits, more than 10"],
-      [`m/1/2/${"9".repeat(4096)}'`, "path segment 2 has 4096 significant digits, more than 10"],
+      ["m/0/10000000000", "path segment 1 has 11 digits, more than 10"],
+      [`m/1/2/${"9".repeat(4096)}'`, "path segment 2 has 4096 digits, more than 10"],
+      ["m/007", "path segment 0 has a leading zero"],
+      ["m/00", "path segment 0 has a leading zero"],
+      ["m/000'", "path segment 0 has a leading zero"],
+      ["m/1/01h", "path segment 1 has a leading zero"],
+      ["m/02147483647'", "path segment 0 has a leading zero"],
+      [`m/${zeros}1'`, "path segment 0 has a leading zero"],
+      [`m/${zeros}12345678901`, "path segment 0 has a leading zero"],
       ["m/1/x9", "path segment 1 is malformed"],
+      [`m${"/7".repeat(256)}`, "path has more than 255 segments"],
+      [`m${"/7".repeat(255)}/x`, "path has more than 255 segments"],
+      [`m${"/7".repeat(9)}/x${"/7".repeat(300)}`, "path segment 9 is malformed"],
     ];
     for (const [p, reason] of refused) expect(parsePath(p), p.slice(0, 40)).toEqual({ ok: false, error: { kind: "InvalidDerivation", reason } });
   });
 
-  test("a million-digit segment is refused, and a million leading zeros are stripped, in linear time", () => {
+  test("a million-digit segment, a million leading zeros and a million segments are refused in linear time", () => {
     const long = `m/${"1".repeat(1_000_000)}'`;
     const padded = `m/${"0".repeat(1_000_000)}7`;
+    const deep = `m${"/0".repeat(1_000_000)}`;
     const start = performance.now();
-    const [l, p] = [parsePath(long), parsePath(padded)];
+    const [l, p, d] = [parsePath(long), parsePath(padded), parsePath(deep)];
     const took = performance.now() - start;
     expect(took, `took ${String(took)} ms`).toBeLessThan(1000);
-    expect(l).toEqual({ ok: false, error: { kind: "InvalidDerivation", reason: "path segment 0 has 1000000 significant digits, more than 10" } });
-    expect(expectOk(p, "padded").map((i) => i.serialized)).toEqual([7]);
+    const refused = (reason: string) => ({ ok: false, error: { kind: "InvalidDerivation", reason } });
+    expect(l).toEqual(refused("path segment 0 has 1000000 digits, more than 10"));
+    expect(p).toEqual(refused("path segment 0 has a leading zero"));
+    expect(d).toEqual(refused("path has more than 255 segments"));
   });
 });
 
