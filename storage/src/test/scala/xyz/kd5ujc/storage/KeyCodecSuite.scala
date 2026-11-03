@@ -1,5 +1,7 @@
 package xyz.kd5ujc.storage
 
+import xyz.kd5ujc.core.canonical.CanonicalValue
+import xyz.kd5ujc.core.canonical.CanonicalValue.CText
 import xyz.kd5ujc.storage.ByteOrder.unsigned
 
 import org.scalacheck.Gen
@@ -44,8 +46,16 @@ object KeyCodecSuite extends SimpleIOSuite with Checkers {
         )
         expect
           .same(cp, math.signum(codePoint.compare(a, b)))
-          .and(expect.same(Right(a), KeyCodec[String].decode(KeyCodec[String].encode(a))))
+          .and(expect.same(Right(a), CanonicalValue.text(a).map(KeyCodec[CText].encode).flatMap(KeyCodec[CText].decode).map(_.value)))
     }
+  }
+
+  pureTest("text keys are well-formed: a lone surrogate is no key, and ill-formed UTF-8 does not decode") {
+    val encode = KeyCodec[CText].encode
+    expect(CanonicalValue.text("\ud800").isLeft, "a lone surrogate is not text, so it has no key")
+      .and(expect(CanonicalValue.text("?").map(encode) != CanonicalValue.text("\udc00").map(encode), "no two texts share a key"))
+      .and(expect(KeyCodec[CText].decode(ByteVector(0xed, 0xa0, 0x80)).isLeft, "an encoded surrogate is refused"))
+      .and(expect(KeyCodec[CText].decode(ByteVector(0xc0, 0x80)).isLeft, "an overlong encoding is refused"))
   }
 
   test("terminated encoding round-trips and preserves order") {
@@ -71,11 +81,12 @@ object KeyCodecSuite extends SimpleIOSuite with Checkers {
   test("composite keys led by a fixed-width component order lexicographically") {
     forall(Gen.zip(Gen.long, Gen.alphaStr, Gen.long, Gen.alphaStr)) {
       case (a1, a2, b1, b2) =>
-        val K = KeyCodec[(Long, String)]
+        val K = KeyCodec[(Long, CText)]
+        val (ta, tb) = (CanonicalValue.text(a2).toOption.get, CanonicalValue.text(b2).toOption.get)
         val expected = math.signum(Ordering[(Long, String)].compare((a1, a2), (b1, b2)))
         expect
-          .same(expected, math.signum(unsigned.compare(K.encode((a1, a2)), K.encode((b1, b2)))))
-          .and(expect.same(Right((a1, a2)), K.decode(K.encode((a1, a2)))))
+          .same(expected, math.signum(unsigned.compare(K.encode((a1, ta)), K.encode((b1, tb)))))
+          .and(expect.same(Right((a1, ta)), K.decode(K.encode((a1, ta)))))
     }
   }
 

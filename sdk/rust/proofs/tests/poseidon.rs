@@ -273,15 +273,8 @@ fn field_elements_are_canonical() {
     assert_eq!(fr_from_be_bytes(&fr_to_be_bytes(x)).unwrap(), x);
 }
 
-#[test]
-fn merkle_vectors() {
-    let v: PoseidonVectors = load("poseidon_v1.json");
-    let m = &v.merkle;
-    let depth = usize::try_from(m.depth).unwrap();
-    let root = fr(&m.root);
-    let leaves: BTreeMap<BigUint, Fr> = m.leaves.iter().map(|(p, x)| (BigUint::from_str(p).unwrap(), fr(x))).collect();
-
-    // the root rebuilt from the sparse leaves, level by level, with the zero hashes
+/// The root of the sparse tree of `depth` holding `leaves`, rebuilt level by level with the zero hashes.
+fn sparse_root(depth: usize, leaves: &BTreeMap<BigUint, Fr>) -> Fr {
     let zeros = zero_hashes(depth);
     let mut level: BTreeMap<BigUint, Fr> = leaves.clone();
     for z in zeros.iter().take(depth) {
@@ -297,7 +290,41 @@ fn merkle_vectors() {
         }
         level = up;
     }
-    assert_eq!(level.get(&BigUint::from(0u32)).copied(), Some(root));
+    level.get(&BigUint::from(0u32)).copied().unwrap_or(zeros[depth])
+}
+
+/// zk.md section 4: entries apply in order, a later entry for a position replacing an earlier one and a later 0
+/// emptying it.
+#[test]
+fn build_vectors() {
+    let v: PoseidonVectors = load("poseidon_v1.json");
+    assert_eq!(v.builds.len(), 5);
+    for b in &v.builds {
+        let depth = usize::try_from(b.depth).unwrap();
+        let mut leaves: BTreeMap<BigUint, Fr> = BTreeMap::new();
+        for e in &b.entries {
+            let position = BigUint::from_str(&e.position).unwrap();
+            let leaf = fr(&e.leaf);
+            if leaf == fr("0") {
+                leaves.remove(&position);
+            } else {
+                leaves.insert(position, leaf);
+            }
+        }
+        assert_eq!(sparse_root(depth, &leaves), fr(&b.root), "{:?}", b.entries);
+    }
+}
+
+#[test]
+fn merkle_vectors() {
+    let v: PoseidonVectors = load("poseidon_v1.json");
+    let m = &v.merkle;
+    let depth = usize::try_from(m.depth).unwrap();
+    let root = fr(&m.root);
+    let leaves: BTreeMap<BigUint, Fr> = m.leaves.iter().map(|(p, x)| (BigUint::from_str(p).unwrap(), fr(x))).collect();
+
+    let zeros = zero_hashes(depth);
+    assert_eq!(sparse_root(depth, &leaves), root);
 
     for p in &m.proofs {
         let position = BigUint::from_str(&p.position).unwrap();

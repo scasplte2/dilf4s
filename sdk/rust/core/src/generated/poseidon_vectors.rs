@@ -17,6 +17,62 @@ pub type DecimalLeaves = BTreeMap<String, Decimal>;
 /// The codec of [`DecimalLeaves`].
 pub const DECIMAL_LEAVES: c::TextMapOf<c::Matching> = c::TextMapOf(DECIMAL);
 
+/// `poseidon-build-vector` (`shared/schemas/poseidon-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PoseidonBuildVector {
+    /// The `depth` entry.
+    pub depth: u64,
+    /// The `entries` entry.
+    pub entries: Vec<PoseidonEntry>,
+    /// The `root` entry.
+    pub root: Decimal,
+}
+
+impl c::Model for PoseidonBuildVector {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("depth", &c::UINT, &self.depth, inner)?,
+            c::field("entries", &c::VecOf { element: c::ModelOf::<PoseidonEntry>::NEW, min: 0, max: None }, &self.entries, inner)?,
+            c::field("root", &DECIMAL, &self.root, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["depth", "entries", "root"])?;
+        let f0 = fields.required("depth", &c::UINT)?;
+        let f1 = fields.required("entries", &c::VecOf { element: c::ModelOf::<PoseidonEntry>::NEW, min: 0, max: None })?;
+        let f2 = fields.required("root", &DECIMAL)?;
+        Ok(Self { depth: f0, entries: f1, root: f2 })
+    }
+}
+
+/// `poseidon-entry` (`shared/schemas/poseidon-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PoseidonEntry {
+    /// The `position` entry.
+    pub position: Decimal,
+    /// The `leaf` entry.
+    pub leaf: Decimal,
+}
+
+impl c::Model for PoseidonEntry {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("position", &DECIMAL, &self.position, inner)?,
+            c::field("leaf", &DECIMAL, &self.leaf, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["position", "leaf"])?;
+        let f0 = fields.required("position", &DECIMAL)?;
+        let f1 = fields.required("leaf", &DECIMAL)?;
+        Ok(Self { position: f0, leaf: f1 })
+    }
+}
+
 /// `poseidon-hash-vector` (`shared/schemas/poseidon-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PoseidonHashVector {
@@ -110,6 +166,8 @@ pub struct PoseidonVectors {
     pub poseidon: Vec<PoseidonHashVector>,
     /// The `merkle` entry.
     pub merkle: PoseidonMerkleVector,
+    /// The `builds` entry.
+    pub builds: Vec<PoseidonBuildVector>,
 }
 
 impl c::Model for PoseidonVectors {
@@ -120,15 +178,17 @@ impl c::Model for PoseidonVectors {
             c::field("version", &c::LiteralInt(1), &(), inner)?,
             c::field("poseidon", &c::VecOf { element: c::ModelOf::<PoseidonHashVector>::NEW, min: 0, max: None }, &self.poseidon, inner)?,
             c::field("merkle", &c::ModelOf::<PoseidonMerkleVector>::NEW, &self.merkle, inner)?,
+            c::field("builds", &c::VecOf { element: c::ModelOf::<PoseidonBuildVector>::NEW, min: 0, max: None }, &self.builds, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "poseidon", "merkle"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "poseidon", "merkle", "builds"])?;
         fields.required("spec", &c::LiteralText("docs/specs/zk.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         let f2 = fields.required("poseidon", &c::VecOf { element: c::ModelOf::<PoseidonHashVector>::NEW, min: 0, max: None })?;
         let f3 = fields.required("merkle", &c::ModelOf::<PoseidonMerkleVector>::NEW)?;
-        Ok(Self { poseidon: f2, merkle: f3 })
+        let f4 = fields.required("builds", &c::VecOf { element: c::ModelOf::<PoseidonBuildVector>::NEW, min: 0, max: None })?;
+        Ok(Self { poseidon: f2, merkle: f3, builds: f4 })
     }
 }

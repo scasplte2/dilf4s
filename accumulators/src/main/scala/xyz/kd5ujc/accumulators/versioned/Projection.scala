@@ -21,8 +21,11 @@ trait StateView[S] {
 
 object Projection {
 
-  /** Removes for keys that left, puts for keys that are new or changed; unchanged keys are not written. */
-  def diff(prev: Map[StateKey, CanonicalValue], next: Map[StateKey, CanonicalValue]): Batch[StateKey, CanonicalValue] =
+  /**
+   * Removes for keys that left, puts for keys that are new or changed; unchanged keys are not written. The states are
+   * sorted maps: each looks keys up in the other, and a hashed map of keys chosen to collide would make that quadratic.
+   */
+  def diff(prev: SortedMap[StateKey, CanonicalValue], next: SortedMap[StateKey, CanonicalValue]): Batch[StateKey, CanonicalValue] =
     Batch.deletes[StateKey, CanonicalValue](prev.keys.filterNot(next.contains).toList.sorted) ++
     Batch.puts(next.toList.filterNot { case (k, v) => prev.get(k).contains(v) }.sortBy(_._1))
 

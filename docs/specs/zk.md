@@ -106,6 +106,11 @@ shielded-transfer circuit.
 - **Proof.** `(position, siblings)`, with siblings **root-first**. Verification folds from the leaf upward: at level
   `i`, bit `i` of the position chooses whether the path node is the right child.
 - **Absence.** An absence proof is an inclusion proof of 0.
+- **Building.** A tree is built from `(position, leaf)` entries in order, each as an insertion: a later entry for a
+  position replaces an earlier one, and a later 0 empties it. Every position is checked against `2^d` first. Positions
+  are the caller's choice and some runtimes hash large integers by their low bits only, so implementations order
+  positions and never hash them: building from `n` entries costs O(n log n) comparisons and O(n · d) compressions.
+  `shared/vectors/poseidon_v1.json` pins it (`builds`).
 
 ### Proof encoding
 

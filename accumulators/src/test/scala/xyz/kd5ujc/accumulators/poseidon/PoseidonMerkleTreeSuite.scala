@@ -79,6 +79,19 @@ object PoseidonMerkleTreeSuite extends SimpleIOSuite with Checkers {
       .and(expect(PoseidonMerkleProof.from(4, Vector(Fr.Zero, Fr.Zero)).isLeft, "a position beyond 2^depth is unconstructible"))
   }
 
+  pureTest("a build applies entries in order: a later entry replaces an earlier one, and a later 0 empties it") {
+    import PoseidonVectors.built
+    expect
+      .same(built(4, List(BigInt(3) -> BigInt(7))), built(4, List(BigInt(3) -> BigInt(5), BigInt(3) -> BigInt(7))))
+      .and(
+        expect.same(
+          built(4, List(BigInt(9) -> BigInt(2))),
+          built(4, List(BigInt(3) -> BigInt(5), BigInt(9) -> BigInt(2), BigInt(3) -> BigInt(0)))
+        )
+      )
+      .and(expect.same(PoseidonMerkleTree.zeroHashes(4).last, built(4, Nil)))
+  }
+
   test("committed zk vectors match the reference implementation") {
     IO(new String(Files.readAllBytes(PoseidonVectors.path), UTF_8)).map(c =>
       expect(c == PoseidonVectors.render, s"${PoseidonVectors.path} is stale")
@@ -114,10 +127,36 @@ object PoseidonVectors {
           "proofs" -> List(BigInt(1), BigInt(4660), BigInt(7)).map { p =>
             Json.obj("position" -> p.toString.asJson, "siblings" -> tree.proof(p).toOption.get.siblings.map(_.value.toString).asJson)
           }.asJson
-        )
+        ),
+        "builds" -> builds.map {
+          case (depth, entries) =>
+            Json.obj(
+              "depth" -> depth.asJson,
+              "entries" -> entries.map {
+                case (p, l) => Json.obj("position" -> p.toString.asJson, "leaf" -> l.toString.asJson)
+              }.asJson,
+              "root" -> built(depth, entries).value.toString.asJson
+            )
+        }.asJson
       )
       .spaces2 + "\n"
   }
+
+  /** Trees built from entries in order: a later entry for a position replaces an earlier one, and a later 0 empties it. */
+  val builds: List[(Int, List[(BigInt, BigInt)])] = {
+    val far = BigInt(1) << 64
+    List(
+      4 -> Nil,
+      4 -> List(BigInt(3) -> BigInt(5), BigInt(3) -> BigInt(7)),
+      4 -> List(BigInt(3) -> BigInt(5), BigInt(9) -> BigInt(2), BigInt(3) -> BigInt(0)),
+      4 -> List(BigInt(0) -> BigInt(1), BigInt(1) -> BigInt(2), BigInt(1) -> BigInt(0), BigInt(1) -> BigInt(4), BigInt(15) -> BigInt(6)),
+      // positions 2^64 apart, which V8 hashes alike
+      66 -> List(far -> BigInt(1), BigInt(0) -> BigInt(2), far * 2 -> BigInt(3), far -> BigInt(4))
+    )
+  }
+
+  def built(depth: Int, entries: List[(BigInt, BigInt)]): Fr =
+    PoseidonMerkleTree.empty(depth).flatMap(_.insertAll(entries.map { case (p, l) => p -> Fr.reduce(l) })).toOption.get.root
 }
 
 object PoseidonVectorGen extends IOApp {

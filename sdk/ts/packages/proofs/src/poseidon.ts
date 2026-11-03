@@ -134,9 +134,10 @@ export class PoseidonMerkleProof {
     return this.#siblings.length;
   }
 
+  /** The depth is checked first, so the capacity `2^depth` it is compared with never exceeds `2^MAX_DEPTH`. */
   static of(position: bigint, siblings: readonly Fr[]): Result<PoseidonMerkleProof, PoseidonMerkleError> {
-    const capacity = 1n << BigInt(siblings.length);
-    return siblings.length <= MAX_DEPTH && position >= 0n && position < capacity ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", position, depth: siblings.length });
+    const depth = siblings.length;
+    return depth <= MAX_DEPTH && position >= 0n && position < 1n << BigInt(depth) ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", position, depth });
   }
 
   /**
@@ -193,25 +194,42 @@ export function zeroHashes(depth: number): Result<readonly Fr[], PoseidonMerkleE
   return ok(out);
 }
 
-/** The root of the sparse tree of `depth` holding `leaves` (position to leaf; 0 is empty). */
-export function treeRoot(depth: number, leaves: ReadonlyMap<bigint, Fr>): Result<Fr, PoseidonMerkleError> {
+type Placed = readonly [position: bigint, node: Fr];
+
+const byPosition = (a: Placed, b: Placed): number => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+
+/**
+ * The root of the sparse tree of `depth` holding `leaves`, `(position, leaf)` entries applied in order: a later entry for
+ * a position replaces an earlier one, and a leaf of 0 is empty. Positions are the caller's and V8 hashes a bigint by its
+ * low 64 bits, so they are only ever compared: one stable sort, then each level pairs neighbours in one pass. O(n log n)
+ * comparisons and O(n · depth) compressions. A `Map` is an iterable of entries, so it may be passed as before.
+ */
+export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, PoseidonMerkleError> {
   const zeros = zeroHashes(depth);
   if (!zeros.ok) return zeros;
   const capacity = 1n << BigInt(depth);
-  let level = new Map<bigint, Fr>();
-  for (const [p, l] of leaves) {
+  const entries: Placed[] = [];
+  // each entry is copied as it is read: an iterable may yield one tuple again with new contents
+  for (const [p, leaf] of leaves) {
     if (p < 0n || p >= capacity) return err({ kind: "Position", position: p, depth });
-    if (!l.equals(Fr.zero)) level.set(p, l);
+    entries.push([p, leaf]);
   }
+  // the sort is stable, so the last of a position's run of entries is its latest
+  entries.sort(byPosition);
+  let level: Placed[] = entries.filter((e, i) => entries[i + 1]?.[0] !== e[0] && !e[1].equals(Fr.zero));
   for (let i = 0; i < depth; i++) {
     const zero = zeros.value[i] ?? Fr.zero;
-    const next = new Map<bigint, Fr>();
-    for (const p of level.keys()) {
-      const parent = p >> 1n;
-      if (next.has(parent)) continue;
-      next.set(parent, compress(level.get(parent << 1n) ?? zero, level.get((parent << 1n) | 1n) ?? zero));
+    const up: Placed[] = [];
+    for (let j = 0; j < level.length; j++) {
+      const [p, node] = level[j] ?? [0n, zero];
+      const right = level[j + 1];
+      if ((p & 1n) === 1n) up.push([p >> 1n, compress(zero, node)]);
+      else if (right?.[0] === (p | 1n)) {
+        up.push([p >> 1n, compress(node, right[1])]);
+        j++;
+      } else up.push([p >> 1n, compress(node, zero)]);
     }
-    level = next;
+    level = up;
   }
-  return ok(level.get(0n) ?? zeros.value[depth] ?? Fr.zero);
+  return ok(level[0]?.[1] ?? zeros.value[depth] ?? Fr.zero);
 }

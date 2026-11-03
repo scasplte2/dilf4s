@@ -3,6 +3,7 @@ package xyz.kd5ujc.accumulators.poseidon
 import cats.syntax.all._
 
 import scala.annotation.tailrec
+import scala.collection.immutable.TreeMap
 
 import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.core.canonical.CanonicalValue
@@ -66,16 +67,21 @@ object PoseidonMerkleProof {
  * `PoseidonMerkleTree` and the SP1 shielded-transfer circuit: empty leaves are 0, a node is `poseidon([left, right])`,
  * and empty subtrees have the precomputed zero hashes. A leaf set to 0 is indistinguishable from an empty one, so an
  * absence proof is an inclusion proof of 0. Leaves and roots are [[Fr]], so only positions can be out of range.
+ *
+ * Positions are the caller's, and a `BigInt`'s hash code is trivially collidable (every `(x << 32) | x` hashes to 0), so
+ * they are only ever compared: `nodes(level)` holds that level's non-empty nodes by index, and every map is a `TreeMap`.
  */
 final class PoseidonMerkleTree private (
   val depth:          Int,
   val zeroHashes:     Vector[Fr],
-  private val nodes:  Map[(Int, BigInt), Fr],
-  private val leaves: Map[BigInt, Fr]
+  private val nodes:  Vector[TreeMap[BigInt, Fr]],
+  private val leaves: TreeMap[BigInt, Fr]
 ) {
 
   def capacity: BigInt = BigInt(1) << depth
-  def root: Fr = nodes.getOrElse((depth, BigInt(0)), zeroHashes(depth))
+  def root: Fr = node(depth, BigInt(0))
+
+  private def node(level: Int, idx: BigInt): Fr = nodes.lift(level).flatMap(_.get(idx)).getOrElse(zeroHashes(level))
 
   private def checkPosition(position: BigInt): Either[PoseidonMerkleError, BigInt] =
     Either.cond(position >= 0 && position < capacity, position, PoseidonMerkleError.Position(position, depth))
@@ -84,12 +90,13 @@ final class PoseidonMerkleTree private (
 
   def insert(position: BigInt, leaf: Fr): Either[PoseidonMerkleError, PoseidonMerkleTree] =
     checkPosition(position).map { _ =>
-      @tailrec def climb(level: Int, idx: BigInt, digest: Fr, acc: Map[(Int, BigInt), Fr]): Map[(Int, BigInt), Fr] = {
-        val acc1 = if (digest == zeroHashes(level)) acc - ((level, idx)) else acc.updated((level, idx), digest)
+      @tailrec def climb(level: Int, idx: BigInt, digest: Fr, acc: Vector[TreeMap[BigInt, Fr]]): Vector[TreeMap[BigInt, Fr]] = {
+        val here = acc.lift(level).map(m => if (digest == zeroHashes(level)) m - idx else m.updated(idx, digest))
+        val acc1 = here.fold(acc)(acc.updated(level, _))
         if (level == depth) acc1
         else {
           val right = position.testBit(level)
-          val sibling = acc1.getOrElse((level, if (right) idx - 1 else idx + 1), zeroHashes(level))
+          val sibling = here.flatMap(_.get(if (right) idx - 1 else idx + 1)).getOrElse(zeroHashes(level))
           climb(level + 1, idx >> 1, if (right) Poseidon.compress(sibling, digest) else Poseidon.compress(digest, sibling), acc1)
         }
       }
@@ -112,7 +119,7 @@ final class PoseidonMerkleTree private (
           collect(
             level + 1,
             idx >> 1,
-            nodes.getOrElse((level, if (position.testBit(level)) idx - 1 else idx + 1), zeroHashes(level)) :: acc
+            node(level, if (position.testBit(level)) idx - 1 else idx + 1) :: acc
           )
       PoseidonMerkleProof.from(position, collect(0, position, Nil).toVector)
     }
@@ -131,10 +138,18 @@ object PoseidonMerkleTree {
   def zeroHashes(depth: Int): Vector[Fr] =
     (1 to depth).scanLeft(Fr.Zero)((prev, _) => Poseidon.compress(prev, prev)).toVector
 
-  def empty(depth: Int = DefaultDepth): Either[PoseidonMerkleError, PoseidonMerkleTree] =
+  def empty(depth: Int = DefaultDepth): Either[PoseidonMerkleError, PoseidonMerkleTree] = empty(depth, Ordering.BigInt)
+
+  /** [[empty]], comparing positions in `positions`: production passes `Ordering.BigInt`, and a test counts its calls. */
+  private[poseidon] def empty(depth: Int, positions: Ordering[BigInt]): Either[PoseidonMerkleError, PoseidonMerkleTree] =
     Either.cond(
       depth >= 1 && depth <= MaxDepth,
-      new PoseidonMerkleTree(depth, zeroHashes(depth), Map.empty, Map.empty),
+      new PoseidonMerkleTree(
+        depth,
+        zeroHashes(depth),
+        Vector.fill(depth + 1)(TreeMap.empty[BigInt, Fr](using positions)),
+        TreeMap.empty(using positions)
+      ),
       PoseidonMerkleError.Depth(depth)
     )
 

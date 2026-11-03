@@ -9,7 +9,8 @@ Keys are **binary and order-preserving**, not CBOR, so that range scans follow k
 
 - **Integers:** big-endian with the sign bit flipped (8 bytes for 64-bit, 4 for 32-bit), so negative values sort before
   positive ones.
-- **Text:** UTF-8.
+- **Text:** UTF-8, of well-formed text only. An unpaired surrogate has no UTF-8 form, so such a string is no key (it
+  would otherwise share an encoding with another string), and a stored key that is not well-formed UTF-8 is corrupt.
 - **Digests:** raw bytes.
 - **Composite keys:** a fixed-width component followed by the rest.
 - **Variable-length components inside a composite key:** escape `00` as `00 FF` and end with `00 00`. This keeps
@@ -61,6 +62,9 @@ version after it, computed without writing.
   (current values, trie nodes and their reference counts, the latest root) and carries their guards and batch, so
   writing the top of a chain writes the whole chain or nothing. A chain is therefore a speculative sequence of
   versions that costs no writes until it is adopted.
+- **Batches.** A batch's writes to one key collapse to the last of them, keys first written first. A key is identified
+  by its encoded bytes. Keys are the callers' choice, so a store only ever compares them, never hashes them: staging
+  `n` writes, a restore of `n` entries or a rollback over `n` changes costs O(n log n) comparisons whatever the keys.
 - **Conflicts.** If another writer moved the store after the stage was computed, the guards no longer match and the
   write is refused with a version conflict. Nothing is written.
 - **Generations.** Versions repeat: after a rollback to `v - 1` and a new commit, the store is at `v` again. So the

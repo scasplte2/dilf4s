@@ -93,7 +93,7 @@ object Trie {
 
   /** Builds a trie from entries in one pass (later duplicates win); equal to inserting them in any order. */
   def fromEntries[H](mode: KeyMode, entries: List[(ByteVector, Digest[H])])(implicit T: TrieHashing[H]): Either[TrieError, Trie[H]] =
-    prepare(mode, entries).map(sorted => assembleBuilt(mode, sorted.headOption.map(_ => Bulk.build[H](sorted, 0L).value)))
+    prepare(mode, entries, PathOrder).map(sorted => assembleBuilt(mode, sorted.headOption.map(_ => Bulk.build[H](sorted, 0L).value)))
 
   /**
    * As [[fromEntries]], building the top `parallelDepth` levels of independent subtrees in parallel. The result is
@@ -102,26 +102,31 @@ object Trie {
   def fromEntriesPar[F[_]: Concurrent: Parallel, H](mode: KeyMode, entries: List[(ByteVector, Digest[H])], parallelDepth: Int = 4)(
     implicit T: TrieHashing[H]
   ): F[Either[TrieError, Trie[H]]] =
-    prepare(mode, entries).traverse { sorted =>
+    prepare(mode, entries, PathOrder).traverse { sorted =>
       sorted.headOption
         .traverse(_ => Bulk.buildPar[F, H](sorted, 0L, parallelDepth))
         .map(built => assembleBuilt(mode, built))
     }
 
+  /** Bitwise lexicographic order of paths, a proper prefix first, in one scan of their common prefix. */
+  private[trie] val PathOrder: Ordering[BitVector] = (a, b) => {
+    val c = Bits.commonPrefix(a, b)
+    if (c == a.size) java.lang.Long.compare(a.size, b.size) else if (c == b.size) 1 else if (a(c)) 1 else -1
+  }
+
   /**
-   * Validates keys, keeps the last value per key, and sorts by path (a prefix sorts before its extensions). Keys are
-   * only compared, never hashed: they may be a peer's (a snapshot's), and a key's hash code is collidable.
+   * Validates keys, keeps the last value per key, and sorts by path (a prefix sorts before its extensions). Keys may be a
+   * peer's (a snapshot's), so paths are only compared in `order` (production passes [[PathOrder]]), never hashed: one
+   * stable sort keeps a path's entries in input order, and the last of each run stands. O(n log n) comparisons.
    */
-  private def prepare[H](
+  private[trie] def prepare[H](
     mode:    KeyMode,
-    entries: List[(ByteVector, Digest[H])]
-  ): Either[TrieError, Vector[(scodec.bits.BitVector, Digest[H])]] =
+    entries: List[(ByteVector, Digest[H])],
+    order:   Ordering[BitVector]
+  ): Either[TrieError, Vector[(BitVector, Digest[H])]] =
     entries.traverse { case (k, v) => mode.path(k).map(_ -> v) }.map { paths =>
-      // the sort is stable, so the last of a run of equal keys is the latest
-      paths.toVector.sortWith((a, b) => Bulk.lessThan(a._1, b._1)).foldLeft(Vector.empty[(scodec.bits.BitVector, Digest[H])]) {
-        case (acc, e) if acc.lastOption.exists(_._1 == e._1) => acc.updated(acc.size - 1, e)
-        case (acc, e)                                        => acc :+ e
-      }
+      val sorted = paths.toVector.sortBy(_._1)(using order)
+      sorted.zipWithIndex.collect { case (e, i) if sorted.lift(i + 1).forall(n => order.compare(e._1, n._1) != 0) => e }
     }
 
   /** Every built node is new and has exactly the parents the build gave it, so counts follow from the edges. */
@@ -138,12 +143,6 @@ object Trie {
     }
 
   private object Bulk {
-
-    /** Bitwise lexicographic order with a proper prefix first. */
-    def lessThan(a: scodec.bits.BitVector, b: scodec.bits.BitVector): Boolean = {
-      val c = Bits.commonPrefix(a, b)
-      if (c == a.size) a.size < b.size else if (c == b.size) false else !a(c)
-    }
 
     /** One subtree of sorted, distinct paths that all share their first `offset` bits. */
     private def split[H](entries: Vector[(scodec.bits.BitVector, Digest[H])], offset: Long) = {
