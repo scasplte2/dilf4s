@@ -24,6 +24,7 @@ const schemas: Readonly<Record<string, (value: Value) => Result<Value, string>>>
   "sigma_dilf4s_v1.json": roundTrip(models.sigmaVectors.SigmaVectors),
   "sigma_v1.json": roundTrip(models.sigmaVectors.SigmaVectors),
   "signing_v1.json": roundTrip(models.signingVectors.SigningVectors),
+  "refusals_v1.json": roundTrip(models.refusalVectors.RefusalVectors),
   "trie_v1.json": roundTrip(models.trieVectors.TrieVectors),
   "versioned_trie_v1.json": roundTrip(models.versionedTrieVectors.VersionedTrieVectors),
   "vrf_v1.json": roundTrip(models.vrfVectors.VrfVectors),
@@ -38,7 +39,7 @@ describe("the generated models hold every vector file", () => {
   it.each(Object.entries(schemas))("%s decodes into its type and re-encodes to the same value", (file, check) => {
     const value = expectOk(json.parse(readVectors(file)), "canonical JSON");
     const again = expectOk(check(value), file);
-    expect(expectOk(json.render(again), "renders")).toBe(expectOk(json.render(value), "renders"));
+    expect(expectOk(json.renderWithin(again, json.MAX_RENDER_BYTES), "renders")).toBe(expectOk(json.renderWithin(value, json.MAX_RENDER_BYTES), "renders"));
   });
 
   it("a schema violation names the failing path", () => {
@@ -50,8 +51,8 @@ describe("the generated models hold every vector file", () => {
   it("unions are told apart by keys when encoding, as when decoding", () => {
     const { TrieLookupResult } = models.trieVectors;
     const present = expectOk(TrieLookupResult.encode({ present: "00ff" }), "record alternative");
-    expect(expectOk(json.render(present), "renders")).toBe('{"present":"00ff"}');
-    expect(expectOk(json.render(expectOk(TrieLookupResult.encode("absent"), "text alternative")), "renders")).toBe('"absent"');
+    expect(expectOk(json.renderWithin(present, json.MAX_RENDER_BYTES), "renders")).toBe('{"present":"00ff"}');
+    expect(expectOk(json.renderWithin(expectOk(TrieLookupResult.encode("absent"), "text alternative"), json.MAX_RENDER_BYTES), "renders")).toBe('"absent"');
     const back = TrieLookupResult.decode(present);
     expect(back.ok && back.value).toEqual({ present: "00ff" });
   });
@@ -79,7 +80,7 @@ describe("the generated models hold every vector file", () => {
       }
     }
     const { JlvmExpr } = models.jlvm;
-    expect(expectOk(json.render(expectOk(JlvmExpr.encode(new Var()), "encodes")), "renders")).toBe('{"var":"x"}');
+    expect(expectOk(json.renderWithin(expectOk(JlvmExpr.encode(new Var()), "encodes"), json.MAX_RENDER_BYTES), "renders")).toBe('{"var":"x"}');
   });
 
   it("encoding a model nested past the depth limit is a typed error, not a stack overflow", () => {
@@ -94,8 +95,8 @@ describe("the generated models hold every vector file", () => {
     const value = expectOk(json.parse(program), "canonical JSON");
     const decoded = models.jlvm.JlvmProgram.decode(value);
     if (!decoded.ok) throw new Error(describeFailure(decoded.error));
-    expect(expectOk(json.render(expectOk(models.jlvm.JlvmProgram.encode(decoded.value), "encodes")), "renders")).toBe(
-      expectOk(json.render(value), "renders"),
+    expect(expectOk(json.renderWithin(expectOk(models.jlvm.JlvmProgram.encode(decoded.value), "encodes"), json.MAX_RENDER_BYTES), "renders")).toBe(
+      expectOk(json.renderWithin(value, json.MAX_RENDER_BYTES), "renders"),
     );
   });
 });

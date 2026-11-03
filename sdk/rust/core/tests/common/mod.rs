@@ -28,3 +28,37 @@ pub fn load<T: Model>(file: &str) -> T {
 pub fn bytes(text: &str) -> Vec<u8> {
     hex::decode(text).unwrap_or_else(|e| panic!("{text}: {e}"))
 }
+
+/// A step of a `built-value` recipe (shared/schemas/refusal-vectors.cddl), its template as canonical CBOR hex.
+pub enum Step<'a> {
+    /// Replace every text `"$"` in the template by the value so far, `times` times over.
+    Wrap {
+        /// The template.
+        template: &'a str,
+        /// How many times.
+        times: u64,
+    },
+    /// An array of `n` of the value so far.
+    Copies(u64),
+}
+
+/// A `built-value`, built by [`dilf4s_core::built::build`] (the one implementation every reader uses).
+pub fn build(leaf: &str, steps: &[Step<'_>]) -> dilf4s_core::value::Value {
+    use dilf4s_core::built;
+    let templates: Vec<Vec<u8>> = steps
+        .iter()
+        .map(|s| match s {
+            Step::Wrap { template, .. } => bytes(template),
+            Step::Copies(_) => Vec::new(),
+        })
+        .collect();
+    let steps: Vec<built::Step<'_>> = steps
+        .iter()
+        .zip(&templates)
+        .map(|(s, t)| match s {
+            Step::Wrap { times, .. } => built::Step::Wrap { template: t, times: *times },
+            Step::Copies(n) => built::Step::Copies(*n),
+        })
+        .collect();
+    built::build(&bytes(leaf), &steps).unwrap_or_else(|e| panic!("{leaf}: {e}"))
+}

@@ -28,7 +28,7 @@ object PoseidonMerkleTreeSuite extends SimpleIOSuite with Checkers {
   pureTest("refused positions and field values are shown by their size, never their digits") {
     val huge = BigInt(1) << 1000000
     expect
-      .same(Left("Position(a 1000001-bit position, capacity 2^0)"), PoseidonMerkleProof.from(huge, Vector.empty).left.map(_.toString))
+      .same(Left("Position(a 1000001-bit position, depth 0)"), PoseidonMerkleProof.from(huge, Vector.empty).left.map(_.toString))
       .and(expect.same(Left("NonCanonical(a 1000001-bit value)"), Fr.from(huge).left.map(_.toString)))
   }
 

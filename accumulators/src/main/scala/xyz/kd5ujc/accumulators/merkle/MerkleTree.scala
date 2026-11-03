@@ -54,6 +54,9 @@ object MerkleError {
   final case class InvalidProof(reason: String) extends MerkleError
   final case class RootMismatch(expected: String, computed: String) extends MerkleError
   final case class Encoding(reason: String) extends MerkleError
+
+  /** A claimed leaf heavier than `limit` (`ProofInput.MaxProofWeight`), refused before it is hashed. */
+  final case class TooLarge(limit: Long) extends MerkleError
 }
 
 /** An audit path for leaf `index` of a tree of `size` leaves; `0 <= index < size` by construction. */

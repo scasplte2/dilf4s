@@ -284,3 +284,17 @@ fn malformed_vectors() {
         assert_eq!(kind, expected, "{}", c.name);
     }
 }
+
+/// `merkle_verify` checks the head first: a size past 2^63 - 1 is `Encoding`, whatever the leaf weighs.
+#[test]
+fn merkle_verify_checks_the_head_before_the_claim() {
+    let tagged = Tagged::<H>::new();
+    let head = TreeHead::<H> { root: tagged.empty_hash(), size: 1 << 63 };
+    let small = Value::int(1);
+    let heavy = (0..30).fold(Value::Null, |v, _| Value::array(vec![v.clone(), v]).unwrap());
+    for leaf in [&small, &heavy] {
+        assert_eq!(merkle::merkle_verify(&tagged, &head, leaf, &Value::Null).map_err(|e| e.kind()), Err("Encoding"));
+    }
+    let ok_head = TreeHead::<H> { root: tagged.empty_hash(), size: 0 };
+    assert_eq!(merkle::merkle_verify(&tagged, &ok_head, &heavy, &Value::Null).map_err(|e| e.kind()), Err("TooLarge"));
+}

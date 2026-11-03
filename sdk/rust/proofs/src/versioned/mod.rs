@@ -66,24 +66,22 @@ pub enum VersionedTrieError {
         /// Why.
         reason: String,
     },
-    /// A value or snapshot chunk over its limit, in canonical CBOR bytes.
+    /// A value or snapshot chunk over its limit, in canonical CBOR bytes. It carries the limit only: how far past it
+    /// the value goes is never measured (docs/specs/conformance.md).
     TooLarge {
-        /// What.
+        /// What (not normative).
         what: String,
-        /// Its size; for a value, a lower bound once past the limit (a value is measured only up to the limit), and
-        /// `u64::MAX` when too long to count.
-        size: u64,
-        /// The limit.
-        max: u64,
+        /// The limit: [`MAX_VALUE_BYTES`] or [`MAX_CHUNK_BYTES`].
+        limit: u64,
     },
     /// A value nested deeper than every wire format can carry.
     TooDeep {
-        /// What.
+        /// What (not normative).
         what: String,
         /// Its depth.
         depth: usize,
-        /// The limit.
-        max: usize,
+        /// The limit: [`MAX_VALUE_DEPTH`].
+        limit: usize,
     },
     /// A trie failure, including a trie root mismatch.
     Trie(TrieError),
@@ -128,8 +126,8 @@ impl fmt::Display for VersionedTrieError {
             }
             Self::NotCovered { what } => write!(f, "the proof does not cover {what}"),
             Self::Malformed { reason } => write!(f, "malformed: {reason}"),
-            Self::TooLarge { what, size, max } => write!(f, "{what} is {size} bytes, over {max}"),
-            Self::TooDeep { what, depth, max } => write!(f, "{what} is {depth} levels deep, over {max}"),
+            Self::TooLarge { what, limit } => write!(f, "{what} is over {limit} bytes"),
+            Self::TooDeep { what, depth, limit } => write!(f, "{what} is {depth} levels deep, over {limit}"),
             Self::Trie(e) => write!(f, "{e}"),
         }
     }
@@ -227,14 +225,12 @@ impl<V: fmt::Debug, H: Hasher> fmt::Debug for Head<V, H> {
 pub fn check_value(key: &StateKey, value: &Value) -> Result<(), VersionedTrieError> {
     let what = || alloc::format!("the value of {}", key.as_str());
     if value.depth() > MAX_VALUE_DEPTH {
-        return Err(VersionedTrieError::TooDeep { what: what(), depth: value.depth(), max: MAX_VALUE_DEPTH });
+        return Err(VersionedTrieError::TooDeep { what: what(), depth: value.depth(), limit: MAX_VALUE_DEPTH });
     }
     let max = usize::try_from(MAX_VALUE_BYTES).unwrap_or(usize::MAX);
-    cbor::encoded_len_within(value, max).map(|_| ()).map_err(|e| VersionedTrieError::TooLarge {
-        what: what(),
-        size: e.at_least.and_then(|n| u64::try_from(n).ok()).unwrap_or(u64::MAX),
-        max: MAX_VALUE_BYTES,
-    })
+    cbor::encoded_len_within(value, max)
+        .map(|_| ())
+        .map_err(|_| VersionedTrieError::TooLarge { what: what(), limit: MAX_VALUE_BYTES })
 }
 
 /// A versioned trie's configuration: the version key (its width is part of what a verifier trusts) and the trie

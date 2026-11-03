@@ -38,22 +38,17 @@ pub fn encode(value: &Value) -> Vec<u8> {
     }
 }
 
-/// A value whose canonical encoding is longer than a limit.
+/// A value whose canonical encoding or JSON is longer than a limit. It carries the limit only: how far past it the output
+/// goes is never measured (docs/specs/conformance.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TooLarge {
     /// The limit, in bytes.
     pub limit: usize,
-    /// A lower bound on the encoding's length, above the limit (counting stops at the first byte past it), or `None`
-    /// when the length is not even countable: over `usize::MAX`, or `2^63 - 1` bytes or more (a weight that saturates).
-    pub at_least: Option<usize>,
 }
 
 impl fmt::Display for TooLarge {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.at_least {
-            Some(n) => write!(f, "the encoding is at least {n} bytes, over {}", self.limit),
-            None => write!(f, "the encoding is too long to count, over {}", self.limit),
-        }
+        write!(f, "the encoding is over {} bytes", self.limit)
     }
 }
 
@@ -87,13 +82,12 @@ fn countable() -> usize {
 /// [`encode_within`] and [`encoded_len_within`], counting lengths up to `countable` (a parameter so tests can stand
 /// in for a 32-bit `usize`).
 fn within(value: &Value, max: usize, countable: usize, out: Option<&mut Vec<u8>>) -> Result<usize, TooLarge> {
-    match usize::try_from(value.weight()).ok().filter(|&w| w <= countable) {
-        None => return Err(TooLarge { limit: max, at_least: None }),
-        Some(w) if w > max => return Err(TooLarge { limit: max, at_least: Some(w) }),
-        Some(_) => {}
+    let refused = TooLarge { limit: max };
+    if !usize::try_from(value.weight()).is_ok_and(|w| w <= countable && w <= max) {
+        return Err(refused);
     }
     let mut sink = Budget { out, len: 0, max, countable };
-    write_value(&mut sink, value).map_err(|Over(at_least)| TooLarge { limit: max, at_least })?;
+    write_value(&mut sink, value).map_err(|Over| refused)?;
     Ok(sink.len)
 }
 
@@ -124,8 +118,8 @@ struct Budget<'a> {
     countable: usize,
 }
 
-/// The length the output would have reached, or `None` past what is countable.
-struct Over(Option<usize>);
+/// The output would pass the budget, or what is countable.
+struct Over;
 
 impl Budget<'_> {
     /// The length after `n` more bytes, if within the budget.
@@ -134,8 +128,8 @@ impl Budget<'_> {
             .ok()
             .and_then(|n| self.len.checked_add(n))
             .filter(|&next| next <= self.countable)
-            .ok_or(Over(None))?;
-        if next > self.max { Err(Over(Some(next))) } else { Ok(next) }
+            .ok_or(Over)?;
+        if next > self.max { Err(Over) } else { Ok(next) }
     }
 }
 
@@ -568,21 +562,17 @@ mod tests {
         // 2^32 - 1 nodes of null encode in 2^33 - 1 bytes: over a 32-bit count, refused by weight alone
         let nulls = doubled(Value::Null, 32);
         let bound = usize::try_from(u32::MAX).unwrap();
-        assert_eq!(within(&nulls, bound, bound, None), Err(TooLarge { limit: bound, at_least: None }), "32-bit");
+        assert_eq!(within(&nulls, bound, bound, None), Err(TooLarge { limit: bound }), "32-bit");
         // within the countable weight but over it in bytes (u64::MAX: weight 2, 9 bytes): 383 weight, 1279 bytes
         let ints = doubled(Value::int(u64::MAX), 7);
         assert_eq!(ints.weight(), 383);
         assert_eq!(super::encode(&ints).len(), 1279);
-        assert_eq!(within(&ints, 1000, 1000, None), Err(TooLarge { limit: 1000, at_least: None }), "past the count");
+        assert_eq!(within(&ints, 1000, 1000, None), Err(TooLarge { limit: 1000 }), "past the count");
         let mut out = vec![];
-        assert_eq!(
-            within(&ints, 1000, 1000, Some(&mut out)).map(|_| ()),
-            Err(TooLarge { limit: 1000, at_least: None })
-        );
+        assert_eq!(within(&ints, 1000, 1000, Some(&mut out)).map(|_| ()), Err(TooLarge { limit: 1000 }));
         assert!(out.capacity() <= 1000, "the buffer stays within the budget");
-        // under a smaller limit, the first length past it is reported
-        let e = within(&ints, 500, 1000, None).unwrap_err();
-        assert!(e.at_least.is_some_and(|n| n > 500 && n <= 1000), "{e:?}");
+        // under a smaller limit, the refusal names that limit
+        assert_eq!(within(&ints, 500, 1000, None), Err(TooLarge { limit: 500 }));
         // and a countable length within the limit is exact
         assert_eq!(within(&ints, 1279, 2000, None), Ok(1279));
     }

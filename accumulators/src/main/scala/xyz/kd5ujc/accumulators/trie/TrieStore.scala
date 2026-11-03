@@ -242,6 +242,8 @@ object TrieStore {
         queries = paths.map(TrieProofs.Key.apply) ++ prefixes.map(p => TrieProofs.Prefix(p.bits)) ++
           ranges.map { case (f, u) => TrieProofs.Range(f.bits, u.map(_.bits)) }
         proof <- TrieProofs.prove[F, H](node, r, queries)
+        // a proof no verifier would decode (over ProofInput.MaxProofWeight) is refused here, as TooLarge
+        _ <- liftT(TrieProofs.encode(proof))
       } yield proof
 
     // ---- writes: each is one staged compare-and-write

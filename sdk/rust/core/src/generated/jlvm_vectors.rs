@@ -5,6 +5,106 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use crate::codec as c;
 
+/// `built-copies` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BuiltCopies {
+    /// The `copies` entry.
+    pub copies: u64,
+}
+
+impl c::Model for BuiltCopies {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("copies", &c::UINT, &self.copies, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["copies"])?;
+        let f0 = fields.required("copies", &c::UINT)?;
+        Ok(Self { copies: f0 })
+    }
+}
+
+/// `built-step` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BuiltStep {
+    /// A [`BuiltWrap`].
+    BuiltWrap(BuiltWrap),
+    /// A [`BuiltCopies`].
+    BuiltCopies(BuiltCopies),
+}
+
+impl c::Model for BuiltStep {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::BuiltWrap(a) => c::Model::to_value_at(a, depth),
+            Self::BuiltCopies(a) => c::Model::to_value_at(a, depth),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[(&["template", "times"], &["template", "times"]), (&["copies"], &["copies"])], &[])? {
+            c::Alternative::Record(0) => <BuiltWrap as c::Model>::from_value(value).map(Self::BuiltWrap),
+            c::Alternative::Record(1) => <BuiltCopies as c::Model>::from_value(value).map(Self::BuiltCopies),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+/// `built-value` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BuiltValue {
+    /// The `leaf` entry.
+    pub leaf: Hex,
+    /// The `steps` entry.
+    pub steps: Option<Vec<BuiltStep>>,
+}
+
+impl c::Model for BuiltValue {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("leaf", &HEX, &self.leaf, inner)?,
+            c::optional_field("steps", &c::VecOf { element: c::ModelOf::<BuiltStep>::NEW, min: 0, max: None }, self.steps.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["leaf", "steps"])?;
+        let f0 = fields.required("leaf", &HEX)?;
+        let f1 = fields.optional("steps", &c::VecOf { element: c::ModelOf::<BuiltStep>::NEW, min: 0, max: None })?;
+        Ok(Self { leaf: f0, steps: f1 })
+    }
+}
+
+/// `built-wrap` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BuiltWrap {
+    /// The `template` entry.
+    pub template: Hex,
+    /// The `times` entry.
+    pub times: u64,
+}
+
+impl c::Model for BuiltWrap {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("template", &HEX, &self.template, inner)?,
+            c::field("times", &c::UINT, &self.times, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["template", "times"])?;
+        let f0 = fields.required("template", &HEX)?;
+        let f1 = fields.required("times", &c::UINT)?;
+        Ok(Self { template: f0, times: f1 })
+    }
+}
+
 /// `hex` (`shared/schemas/jlvm-vectors.cddl`).
 pub type Hex = String;
 
@@ -22,6 +122,8 @@ pub struct JlvmCase {
     pub data: String,
     /// The `env` entry.
     pub env: Option<BTreeMap<String, String>>,
+    /// The `built` entry.
+    pub built: Option<BTreeMap<String, BuiltValue>>,
     /// The `gasLimit` entry.
     pub gas_limit: Option<u64>,
     /// The `outcome` entry.
@@ -40,6 +142,7 @@ impl c::Model for JlvmCase {
             c::field("program", &c::Text, &self.program, inner)?,
             c::field("data", &c::Text, &self.data, inner)?,
             c::optional_field("env", &c::TextMapOf(c::Text), self.env.as_ref(), inner)?,
+            c::optional_field("built", &c::TextMapOf(c::ModelOf::<BuiltValue>::NEW), self.built.as_ref(), inner)?,
             c::optional_field("gasLimit", &c::UINT, self.gas_limit.as_ref(), inner)?,
             c::field("outcome", &c::ModelOf::<JlvmOutcome>::NEW, &self.outcome, inner)?,
             c::field("gasUsed", &c::UINT, &self.gas_used, inner)?,
@@ -48,16 +151,17 @@ impl c::Model for JlvmCase {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["name", "program", "data", "env", "gasLimit", "outcome", "gasUsed", "warnings"])?;
+        let fields = c::Fields::of(value, &["name", "program", "data", "env", "built", "gasLimit", "outcome", "gasUsed", "warnings"])?;
         let f0 = fields.required("name", &c::Text)?;
         let f1 = fields.required("program", &c::Text)?;
         let f2 = fields.required("data", &c::Text)?;
         let f3 = fields.optional("env", &c::TextMapOf(c::Text))?;
-        let f4 = fields.optional("gasLimit", &c::UINT)?;
-        let f5 = fields.required("outcome", &c::ModelOf::<JlvmOutcome>::NEW)?;
-        let f6 = fields.required("gasUsed", &c::UINT)?;
-        let f7 = fields.required("warnings", &c::UINT)?;
-        Ok(Self { name: f0, program: f1, data: f2, env: f3, gas_limit: f4, outcome: f5, gas_used: f6, warnings: f7 })
+        let f4 = fields.optional("built", &c::TextMapOf(c::ModelOf::<BuiltValue>::NEW))?;
+        let f5 = fields.optional("gasLimit", &c::UINT)?;
+        let f6 = fields.required("outcome", &c::ModelOf::<JlvmOutcome>::NEW)?;
+        let f7 = fields.required("gasUsed", &c::UINT)?;
+        let f8 = fields.required("warnings", &c::UINT)?;
+        Ok(Self { name: f0, program: f1, data: f2, env: f3, built: f4, gas_limit: f5, outcome: f6, gas_used: f7, warnings: f8 })
     }
 }
 

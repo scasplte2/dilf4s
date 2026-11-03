@@ -250,9 +250,9 @@ fn every_encoding_is_at_least_its_weight_and_the_budgeted_forms_agree() {
             assert!(within.capacity() <= n, "{name}: buffer of {} over the budget {n}", within.capacity());
             assert_eq!(cbor::encoded_len_within(v, n), Ok(n), "{name}: encoded_len_within");
             if n > 0 {
-                let over = cbor::encode_within(v, n - 1).unwrap_err();
-                assert!(over.at_least.is_some_and(|a| a > n - 1), "{name}: {over:?} reports more than the limit");
-                assert_eq!(cbor::encoded_len_within(v, n - 1).unwrap_err().limit, n - 1, "{name}: limit");
+                let over = cbor::TooLarge { limit: n - 1 };
+                assert_eq!(cbor::encode_within(v, n - 1), Err(over), "{name}: the limit, nothing measured");
+                assert_eq!(cbor::encoded_len_within(v, n - 1), Err(over), "{name}: limit");
             }
             checked += 1;
         }
@@ -265,20 +265,42 @@ fn budgeted_encoding_refuses_a_shared_expansion_without_expanding_it() {
     let start = Instant::now();
     // 2^60 leaves in 60 allocations: refused by weight alone
     let dag = doubled(Value::text("a"), 60);
-    let e = cbor::encode_within(&dag, 1 << 20).unwrap_err();
-    assert_eq!(e.limit, 1 << 20, "limit");
-    assert_eq!(
-        e.at_least.map(|a| u64::try_from(a).unwrap()),
-        Some(dag.weight()),
-        "the weight is the lower bound reported"
-    );
-    assert!(cbor::encoded_len_within(&dag, 1 << 20).is_err(), "length refused too");
+    let refused = cbor::TooLarge { limit: 1 << 20 };
+    assert_eq!(cbor::encode_within(&dag, 1 << 20), Err(refused), "the limit alone");
+    assert_eq!(cbor::encoded_len_within(&dag, 1 << 20), Err(refused), "length refused too");
     // within the weight bound but over in bytes (each u64::MAX is weight 2, 9 bytes): refused by the byte budget
     let ints = doubled(Value::int(u64::MAX), 17);
     assert!(ints.weight() < 1 << 20, "passes the weight check");
-    let e = cbor::encode_within(&ints, 1 << 20).unwrap_err();
-    assert!(e.at_least.is_some_and(|a| a > 1 << 20), "{e:?}");
+    assert_eq!(cbor::encode_within(&ints, 1 << 20), Err(refused), "refused at the limit");
     assert_eq!(cbor::encoded_len_within(&ints, 1 << 21), Ok(cbor::encode(&ints).len()), "counted exactly");
+    assert!(start.elapsed().as_millis() < 2000, "took {:?}", start.elapsed());
+}
+
+#[test]
+fn render_within_agrees_with_an_unlimited_render_and_refuses_with_the_limit_alone() {
+    let mut rendered = 0usize;
+    for (name, root) in &vector_values() {
+        let Ok(full) = json::render_within(root, usize::MAX) else { continue };
+        let n = full.len();
+        assert!(u64::try_from(n).unwrap() >= root.weight(), "{name}: {n} bytes under weight {}", root.weight());
+        assert_eq!(json::render_within(root, n).as_deref(), Ok(full.as_str()), "{name}: at the exact length");
+        let refused = Err(json::RenderError::TooLarge(cbor::TooLarge { limit: n - 1 }));
+        assert_eq!(json::render_within(root, n - 1), refused, "{name}: one byte short");
+        rendered += 1;
+    }
+    assert!(rendered > 50, "too few values rendered: {rendered}");
+    // 2^60 leaves: refused by weight alone, at once
+    let start = Instant::now();
+    let dag = doubled(Value::text("a"), 60);
+    let refused = Err(json::RenderError::TooLarge(cbor::TooLarge { limit: 1 << 20 }));
+    assert_eq!(json::render_within(&dag, 1 << 20), refused);
+    // NUL escapes to six bytes: counted before it is built
+    let nuls = Value::text("\u{0}".repeat(200_000));
+    assert_eq!(
+        json::render_within(&nuls, 200_001),
+        Err(json::RenderError::TooLarge(cbor::TooLarge { limit: 200_001 }))
+    );
+    assert_eq!(json::render_within(&nuls, 1_200_002).map(|s| s.len()), Ok(1_200_002));
     assert!(start.elapsed().as_millis() < 2000, "took {:?}", start.elapsed());
 }
 
@@ -439,13 +461,13 @@ fn integers_are_streamed_exactly() {
 
 #[test]
 fn an_integer_over_the_budget_is_refused_from_its_length_alone() {
-    // weight 1 + 2^20/64 = 16,385 passes a 20,000-byte limit; its 131,073 bytes do not, known before any is produced
+    // weight 1 + 2^20/64 = 16,385 passes a 20,000-byte limit; its 131,079 bytes do not, known before any is produced
     let n = BigInt::from(1) << (1 << 20);
     let v = Value::int(n);
     assert_eq!(v.weight(), 16_385);
-    let full = cbor::encode(&v).len();
+    assert_eq!(cbor::encode(&v).len(), 131_079);
     let e = cbor::encoded_len_within(&v, 20_000).unwrap_err();
-    assert_eq!(e.at_least, Some(full), "the whole length, from the bit length");
+    assert_eq!(e, cbor::TooLarge { limit: 20_000 }, "refused from the bit length");
     assert_eq!(cbor::encode_within(&v, 20_000).unwrap_err(), e, "the same refusal when writing");
 }
 
@@ -476,7 +498,11 @@ fn a_map_built_by_updates_in_any_order_is_the_same_value() {
     assert!(a == b && b == c, "equal whatever the tree's shape");
     assert_eq!(cbor::encode(&a), cbor::encode(&c), "one encoding");
     assert_eq!(cbor::encode(&b), cbor::encode(&c), "one encoding");
-    assert_eq!(json::render(&a).unwrap(), json::render(&c).unwrap(), "one rendering");
+    assert_eq!(
+        json::render_within(&a, usize::MAX).unwrap(),
+        json::render_within(&c, usize::MAX).unwrap(),
+        "one rendering"
+    );
     assert_eq!(a.weight(), c.weight(), "one weight");
     assert_eq!(cbor::decode(&cbor::encode(&a)).unwrap(), a, "decodes back");
 }
@@ -552,7 +578,7 @@ fn walking_a_deep_and_wide_value_keeps_to_explicit_or_depth_bounded_stacks() {
         // the encoder and the renderer: explicit stacks of at most MAX_DEPTH open containers
         let encoded = cbor::encode(&a);
         assert_eq!(cbor::encoded_len_within(&a, encoded.len()), Ok(encoded.len()), "measured");
-        assert!(json::render(&a).unwrap().ends_with('}'), "rendered");
+        assert!(json::render_within(&a, usize::MAX).unwrap().ends_with('}'), "rendered");
         // decoding keeps its own stack too
         assert!(cbor::decode(&encoded).unwrap() == a, "decoded");
         // Debug recurses through the formatter, but only DEBUG_DEPTH levels deep

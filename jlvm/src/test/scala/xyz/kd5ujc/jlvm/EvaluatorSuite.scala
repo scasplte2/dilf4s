@@ -582,7 +582,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
       ap(Op.Let, Expr.Arr(Vector(Expr.Arr(Vector(Expr.Lit(CanonicalValue.text("x").toOption.get), nots(k, yes))))), v("$x"))
     def untaken(k:   Int): Expr = ap(Op.If, yes, lit(1), nots(k, yes))
     def bracketed(k: Int): String = """{"!": [""" * k + "true" + "]}" * k
-    val tooDeep = JlvmVectors.run(summon[Jlvm], JlvmVectors.Input("deep", bracketed(128), "null", scala.None, Some(1L)))
+    val tooDeep = JlvmVectors.run(summon[Jlvm], JlvmVectors.Input("deep", bracketed(128), "null", scala.None, scala.None, Some(1L)))
     expect(Program.from(mapBody(126)).isRight, "a callback body at the bound")
       .and(expect(isLimit(Program.from(mapBody(127))), "one deeper"))
       .and(expect(Program.from(letBinding(124)).isRight, "a let binding at the bound"))

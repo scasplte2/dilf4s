@@ -5,7 +5,7 @@
  */
 import { bitLength } from "./bigint.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
-import { at, decodeFailure as failure, type CanonicalError, type DecodeFailure } from "./error.js";
+import { at, decodeFailure as failure, type CanonicalError, type DecodeFailure, type TooLarge } from "./error.js";
 import { parse as parseJson } from "./json.js";
 import { search } from "./keyset.js";
 import { err, ok, type Err, type Ok, type Result } from "./result.js";
@@ -21,7 +21,7 @@ export { ok } from "./result.js";
  * `DepthExceeded`, never a stack overflow.
  *
  * Decoding walks the value as the schema reads it, so a value built with shared parts costs up to its weight, and every
- * byte string read is copied each time it occurs: bound the weight of a value not known to be small first. The codecs
+ * byte string read is copied each time it occurs: decode a caller's value with {@link decodeWithin}. The codecs
  * recurse once per level of nesting they read, which {@link MAX_DEPTH} bounds.
  */
 export interface Codec<T> {
@@ -32,10 +32,18 @@ export interface Codec<T> {
 /** Why bytes or text are not a model: not canonical, or not the model's shape. */
 export type ModelError = { readonly kind: "Canonical"; readonly error: CanonicalError } | { readonly kind: "Decode"; readonly error: DecodeFailure };
 
-/** The canonical CBOR of `value`. O(weight), as `cbor.encode`: a model holding caller values (`any`) may share parts. */
-export function toCbor<T>(codec: Codec<T>, value: T): Result<Uint8Array, CanonicalError> {
+/**
+ * `codec.decode(value)`, if `value` weighs at most `maxWeight`: a heavier value is refused in O(1), from its cached
+ * weight, before any of it is read or copied. Decode a caller's value with this, never with `decode` alone.
+ */
+export function decodeWithin<T>(codec: Codec<T>, value: Value, maxWeight: bigint): Result<T, DecodeFailure> {
+  return value.weight > maxWeight ? err(failure(`the value weighs over ${maxWeight.toString()}`)) : codec.decode(value);
+}
+
+/** The canonical CBOR of `value`, as `cbor.encode`: a model holding caller values (`any`) may share parts. */
+export function toCbor<T>(codec: Codec<T>, value: T): Result<Uint8Array, CanonicalError | TooLarge> {
   const v = codec.encode(value);
-  return v.ok ? ok(encodeCbor(v.value)) : v;
+  return v.ok ? encodeCbor(v.value) : v;
 }
 
 /** The typed value of canonical CBOR. */

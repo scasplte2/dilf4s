@@ -48,10 +48,7 @@ object VersionedTrie {
    */
   def checkValue(key: StateKey, v: CanonicalValue): Either[VersionedTrieError, Unit] =
     if (v.depth > MaxValueDepth) VersionedTrieError.TooDeep(s"the value of ${key.value}", v.depth, MaxValueDepth).asLeft
-    else {
-      val size = valueBytes(v)
-      Either.cond(size <= MaxValueBytes, (), VersionedTrieError.TooLarge(s"the value of ${key.value}", size, MaxValueBytes))
-    }
+    else Either.cond(valueBytes(v) <= MaxValueBytes, (), VersionedTrieError.TooLarge(s"the value of ${key.value}", MaxValueBytes))
 
   /**
    * The length of a value's canonical CBOR, without encoding it; or, for a value whose weight is already over
@@ -78,7 +75,7 @@ object VersionedTrie {
   /** The hash a trie commits for a byte string: the top trie's slots and the history trie's state roots. */
   def bytesHash[H](b: ByteVector)(implicit T: TrieHashing[H]): Digest[H] = valueHash(CanonicalValue.bytes(b))
 
-  def trie[A](e: Either[TrieError, A]): Either[VersionedTrieError, A] = e.leftMap(VersionedTrieError.Trie(_))
+  def trie[A](e: Either[TrieError, A]): Either[VersionedTrieError, A] = e.leftMap(VersionedTrieError.fromTrie)
 
   def top[V, H](head: Head[V, H])(implicit V: VersionKey[V], T: TrieHashing[H]): Either[VersionedTrieError, Trie[H]] =
     for {

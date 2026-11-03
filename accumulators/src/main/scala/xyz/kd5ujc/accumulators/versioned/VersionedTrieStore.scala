@@ -124,7 +124,7 @@ object VersionedTrieStore {
     R:          Handle[F, VersionedTrieError]
   ): F[VersionedTrieStore[F, V, H]] = {
     implicit val rs: Raise[F, StoreError] = via[F, StoreError](VersionedTrieError.Store(_))
-    implicit val rt: Raise[F, TrieError] = via[F, TrieError](VersionedTrieError.Trie(_))
+    implicit val rt: Raise[F, TrieError] = via[F, TrieError](VersionedTrieError.fromTrie)
     def lift[A](e: Either[VersionedTrieError, A]): F[A] = e.fold(R.raise[VersionedTrieError, A], _.pure[F])
     for {
       modes   <- lift((VersionedTrie.stateMode, VersionedTrie.historyMode[V]).tupled)
@@ -296,6 +296,28 @@ object VersionedTrieStore {
     private def trieOps(fs: Vector[(StateKey, Option[CanonicalValue])]): List[(ByteVector, Option[Digest[H]])] =
       fs.toList.map { case (k, v) => k.bytes -> v.map(VersionedTrie.valueHash[H]) }
 
+    /**
+     * The delta a version will serve must decode in every replica: one heavier than `ProofInput.MaxProofWeight` is
+     * refused first, from the values' cached weights, before any value is measured, hashed or encoded and before
+     * anything is written (`TooLarge` with that limit). A head's record has a fixed shape (the version key's width and
+     * two digests), so a head of the next version over empty roots stands in for the head and for the parent (when
+     * there is one: the draft it is staged on, or the head on disk), and the weight is the delta's own. Deletes of
+     * absent keys are counted too, so the check errs only towards refusing.
+     */
+    private def deliverable(hasParent: Boolean, next: V, fs: Vector[(StateKey, Option[CanonicalValue])]): F[Unit] = {
+      val shape = Head(next, T.empty, T.empty)
+      lift(
+        VersionedTrieWire.encodeDelta(
+          Delta(
+            Option.when(hasParent)(shape),
+            shape,
+            fs.toList.collect { case (k, Some(x)) => k -> x },
+            fs.toList.collect { case (k, None) => k }
+          )
+        )
+      ).void
+    }
+
     private def draft(
       base:    Option[ByteVector],
       rev:     Revision,
@@ -316,6 +338,18 @@ object VersionedTrieStore {
     private def checkValues(fs: Vector[(StateKey, Option[CanonicalValue])]): F[Unit] =
       lift(fs.traverse_ { case (k, v) => v.traverse_(VersionedTrie.checkValue(k, _)) })
 
+    /**
+     * A batch's checks in their order, each only once the last has passed: what each value's cached depth and weight
+     * refuse (O(1) each), then the delta's weight (cached, O(entries)), then each value's measured length (O(min(weight,
+     * 1 MiB)) each).
+     */
+    private def checkBatch(hasParent: Boolean, next: V, fs: Vector[(StateKey, Option[CanonicalValue])]): F[Unit] =
+      lift(fs.traverse_ {
+        case (k, Some(v)) if v.depth > VersionedTrie.MaxValueDepth || v.weight > VersionedTrie.MaxValueBytes =>
+          VersionedTrie.checkValue(k, v)
+        case _ => ().asRight[VersionedTrieError]
+      }) >> deliverable(hasParent, next, fs) >> checkValues(fs)
+
     private def stageOnDisk(
       rev:   Revision,
       n:     Long,
@@ -325,7 +359,7 @@ object VersionedTrieStore {
       batch: Batch[StateKey, CanonicalValue]
     ): F[Draft[V, H]] = {
       val fs = finals(batch)
-      checkValues(fs) >> state.stage(version(n), trieOps(fs)).flatMap { s =>
+      checkBatch(base.isDefined, next, fs) >> state.stage(version(n), trieOps(fs)).flatMap { s =>
         draft(
           base,
           rev,
@@ -358,7 +392,8 @@ object VersionedTrieStore {
           dk <- vkey(d.head.version)
           _  <- if (after(nk, dk)) ().pure[F] else fail[Unit](VersionedTrieError.VersionNotIncreasing(dk, nk))
           fs = finals(batch)
-          _ <- checkValues(fs)
+          // staged on a draft: it is the parent
+          _ <- checkBatch(hasParent = true, next, fs)
           s <- state.stageOn(d.state, trieOps(fs))
           nd <- draft(
             d.base,

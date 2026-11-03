@@ -26,7 +26,7 @@ describe("byte strings own their bytes", () => {
     const input = Buffer.from([0x42, 0x01, 0x02]);
     const v = expectOk(cbor.decode(input), "decodes");
     input[1] = 9;
-    expect(toHex(cbor.encode(v))).toBe("420102");
+    expect(toHex(expectOk(cbor.encode(v), "encodes"))).toBe("420102");
   });
 
   it("a codec's encoded and decoded bytes are independent of the caller's", () => {
@@ -35,6 +35,6 @@ describe("byte strings own their bytes", () => {
     source[0] = 9;
     const decoded = expectOk(codec.bytes.decode(v), "decodes");
     decoded[1] = 9;
-    expect(toHex(cbor.encode(v))).toBe("420102");
+    expect(toHex(expectOk(cbor.encode(v), "encodes"))).toBe("420102");
   });
 });

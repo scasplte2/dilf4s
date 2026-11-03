@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 use core::cell::OnceCell;
 use core::fmt::Debug;
 
-use dilf4s_core::cbor;
+use dilf4s_core::{built, cbor};
 use dilf4s_jlvm::{Config, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, parse, parse_value};
 use dilf4s_proofs::poseidon::merkle::{PoseidonMerkleProof, compute_root};
 use dilf4s_proofs::poseidon::{self, Fr, fr_from_be_bytes, fr_to_be_bytes};
@@ -128,9 +128,50 @@ pub enum Case {
         data: String,
         /// The host bindings' texts.
         env: Vec<(String, String)>,
+        /// The host bindings built with shared parts (`built` in jlvm-vectors.cddl), built where the case runs.
+        built: Vec<(String, Recipe)>,
         /// The gas limit.
         gas_limit: u64,
     },
+}
+
+/// A `built-value` recipe, its leaf and templates as canonical CBOR: built by `dilf4s_core::built::build` on whichever
+/// side runs the case, so the guest and the native run build the same value the same way.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Recipe {
+    /// The leaf.
+    pub leaf: Vec<u8>,
+    /// The steps, in order.
+    pub steps: Vec<RecipeStep>,
+}
+
+/// A step of a [`Recipe`].
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum RecipeStep {
+    /// Replace every text `"$"` in the template by the value so far, `times` times over.
+    Wrap {
+        /// The template.
+        template: Vec<u8>,
+        /// How many times.
+        times: u64,
+    },
+    /// An array of `n` of the value so far.
+    Copies(u64),
+}
+
+impl Recipe {
+    /// The value it describes.
+    pub fn build(&self) -> Result<dilf4s_jlvm::Value, String> {
+        let steps: Vec<built::Step<'_>> = self
+            .steps
+            .iter()
+            .map(|s| match s {
+                RecipeStep::Wrap { template, times } => built::Step::Wrap { template, times: *times },
+                RecipeStep::Copies(n) => built::Step::Copies(*n),
+            })
+            .collect();
+        built::build(&self.leaf, &steps).map_err(debug)
+    }
 }
 
 /// What a case gives when it does not fail.
@@ -213,12 +254,16 @@ fn jlvm_case(
     program: &str,
     data: &str,
     env: &[(String, String)],
+    built: &[(String, Recipe)],
     gas_limit: u64,
 ) -> Outcome {
     let jlvm = jlvm.as_ref().map_err(String::clone)?;
+    // a recipe that does not build is a broken vector, not an outcome
+    let built = built.iter().map(|(k, r)| r.build().map(|v| (k.clone(), v))).collect::<Result<Vec<_>, _>>()?;
     let (result, gas, warnings) = match parse_inputs(program, data, env) {
         Err(e) => (Err(e), Gas::ZERO, 0),
-        Ok((program, data, env)) => {
+        Ok((program, data, mut env)) => {
+            env.extend(built);
             let config = Config { limit: GasLimit(Gas::new(gas_limit)), schedule: GasSchedule::LATEST };
             let o = jlvm.evaluate(&program, &data, &env, &config);
             (o.result, o.gas_used, o.warnings.len())
@@ -290,9 +335,9 @@ pub fn run(cases: &[Case]) -> Vec<Outcome> {
                 .ok_or_else(|| format!("unknown VRF suite {suite}"))
                 .and_then(|id| id.verify_bytes(key, alpha, proof).map_err(debug))
                 .map(|beta| Output::Bytes(beta.to_vec())),
-            Case::Jlvm { program, data, env, gas_limit } => {
+            Case::Jlvm { program, data, env, built, gas_limit } => {
                 let jlvm = jlvm.get_or_init(|| Native::new().map(Jlvm::new).map_err(debug));
-                jlvm_case(jlvm, program, data, env, *gas_limit)
+                jlvm_case(jlvm, program, data, env, built, *gas_limit)
             }
         })
         .collect()

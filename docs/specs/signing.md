@@ -1,6 +1,7 @@
 # dilf4s signatures and key derivation (v1)
 
 Status: normative. Conformance vectors: `shared/vectors/signing_v1.json`.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 All byte strings are written in hex. `‖` is concatenation. `LE`/`BE` are little/big-endian. `L` is the order of the
 ed25519 / ristretto255 prime-order group, `n` the order of the named elliptic curve.

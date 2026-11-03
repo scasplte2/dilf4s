@@ -149,7 +149,7 @@ describe("weight", { timeout: 60_000 }, () => {
 describe("budgeted encoding", { timeout: 60_000 }, () => {
   it("agrees with the encoder on every vector value, and no encoding is shorter than its weight", () => {
     for (const v of vectorValues()) {
-      const full = cbor.encode(v);
+      const full = expectOk(cbor.encode(v), "encodes");
       const n = full.length;
       expect(BigInt(n) >= v.weight, `${toHex(full)}: ${n.toString()} bytes under weight ${v.weight.toString()}`).toBe(true);
       const within = expectOk(cbor.encodeWithin(v, n), "at the exact length");
@@ -159,8 +159,7 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
       const over = cbor.encodeWithin(v, n - 1);
       expect(over.ok, "one byte short").toBe(false);
       if (!over.ok) {
-        expect(over.error.limit).toBe(n - 1);
-        expect(over.error.atLeast !== "uncountable" && over.error.atLeast > BigInt(n - 1), "a lower bound past the limit").toBe(true);
+        expect(over.error, "the limit, and nothing measured").toEqual({ kind: "TooLarge", limit: n - 1 });
       }
       expect(cbor.encodedLengthWithin(v, n - 1).ok).toBe(false);
     }
@@ -170,23 +169,38 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
     const ms = elapsed(() => {
       // 2^60 leaves in 60 arrays: refused by weight alone
       const dag = doubled(text("a"), 60);
-      expect(cbor.encodeWithin(dag, 1 << 20)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20, atLeast: dag.weight } });
+      expect(cbor.encodeWithin(dag, 1 << 20)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20 } });
       expect(cbor.encodedLengthWithin(dag, 1 << 20).ok).toBe(false);
       // within the weight bound but over in bytes (each 2^64 - 1 weighs 2 and takes 9 bytes): refused by the byte count
       const ints = doubled(Value.int(2n ** 64n - 1n), 17);
       expect(ints.weight < 1n << 20n, "passes the weight check").toBe(true);
       const e = cbor.encodeWithin(ints, 1 << 20);
-      expect(!e.ok && e.error.atLeast !== "uncountable" && e.error.atLeast > 1n << 20n, "refused past the limit").toBe(true);
-      expect(expectOk(cbor.encodedLengthWithin(ints, 1 << 21), "counted")).toBe(cbor.encode(ints).length);
+      expect(e, "refused at the limit").toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20 } });
+      expect(expectOk(cbor.encodedLengthWithin(ints, 1 << 21), "counted")).toBe(expectOk(cbor.encode(ints), "encodes").length);
     });
     expect(ms).toBeLessThan(HANG);
   });
 
-  it("reports a saturated weight as uncountable", () => {
+  it("refuses a saturated weight with the limit alone", () => {
     const saturated = doubled(text("a"), MAX_DEPTH);
     expect(saturated.weight).toBe(MAX_WEIGHT);
-    expect(cbor.encodeWithin(saturated, Number.MAX_SAFE_INTEGER)).toEqual({ ok: false, error: { kind: "TooLarge", limit: Number.MAX_SAFE_INTEGER, atLeast: "uncountable" } });
-    expect(valueCommitmentWithin(saturated, 100)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 100, atLeast: "uncountable" } });
+    expect(cbor.encodeWithin(saturated, Number.MAX_SAFE_INTEGER)).toEqual({ ok: false, error: { kind: "TooLarge", limit: Number.MAX_SAFE_INTEGER } });
+    expect(valueCommitmentWithin(saturated, 100)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 100 } });
+  });
+
+  it("the unbudgeted forms are budgeted at the ceiling: a typed refusal, never a thrown allocation failure", () => {
+    const tag = expectOk(DomainTag.of("dilf4s/test/v1"), "tag");
+    const refused = { ok: false, error: { kind: "TooLarge", limit: cbor.MAX_ENCODED_BYTES } };
+    // 2^40 leaves: a weight over the ceiling, refused before anything is allocated
+    const dag = doubled(text("a"), 40);
+    const ms = elapsed(() => {
+      expect(cbor.encode(dag)).toEqual(refused);
+      expect(valueCommitment(dag)).toEqual(refused);
+      expect(TaggedHash.of("SHA-256", tag).content(dag)).toEqual(refused);
+    });
+    expect(ms).toBeLessThan(HANG);
+    // and a small value encodes as before
+    expect(toHex(expectOk(cbor.encode(text("a")), "encodes"))).toBe("6161");
   });
 
   it("reads an odd limit as a whole number of bytes, never as unbounded", () => {
@@ -221,10 +235,10 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
     for (let e = 0n; e <= 4096n; e += e < 80n ? 1n : 61n) {
       for (const n of [2n ** e - 1n, 2n ** e, 2n ** e + 1n, -(2n ** e) + 1n, -(2n ** e), -(2n ** e) - 1n]) {
         const v = Value.int(n);
-        const encoded = toHex(cbor.encode(v));
+        const encoded = toHex(expectOk(cbor.encode(v), "encodes"));
         expect(encoded, `±2^${e.toString()}`).toBe(reference(n));
         expect(toHex(expectOk(cbor.encodeWithin(v, encoded.length / 2), "budgeted"))).toBe(encoded);
-        const back = expectOk(cbor.decode(cbor.encode(v)), "decodes");
+        const back = expectOk(cbor.decode(expectOk(cbor.encode(v), "encodes")), "decodes");
         expect(back.kind === "int" && back.value === n, "round trip").toBe(true);
       }
     }
@@ -233,7 +247,7 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
   it("encodes and decodes a large integer in linear time", () => {
     const n = -(1n << BigInt(8 << 20)) + 12345n;
     const ms = elapsed(() => {
-      const encoded = cbor.encode(Value.int(n));
+      const encoded = expectOk(cbor.encode(Value.int(n)), "encodes");
       const back = expectOk(cbor.decode(encoded), "decodes");
       expect(back.kind === "int" && back.value === n).toBe(true);
     });
@@ -245,7 +259,7 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
   it("renderWithin agrees with render on every vector value, and no JSON is shorter (in UTF-8) than its weight", () => {
     let rendered = 0;
     for (const v of vectorValues()) {
-      const r = json.render(v);
+      const r = json.renderWithin(v, json.MAX_RENDER_BYTES);
       if (!r.ok) {
         expect(json.renderWithin(v, Number.MAX_SAFE_INTEGER)).toEqual(r);
         continue;
@@ -254,7 +268,7 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
       expect(BigInt(n) >= v.weight, `${r.value}: ${n.toString()} bytes under weight ${v.weight.toString()}`).toBe(true);
       expect(json.renderWithin(v, n)).toEqual(r);
       const over = json.renderWithin(v, n - 1);
-      expect(!over.ok && over.error.kind === "TooLarge" && over.error.atLeast !== "uncountable" && over.error.atLeast > BigInt(n - 1), r.value).toBe(true);
+      expect(over, r.value).toEqual({ ok: false, error: { kind: "TooLarge", limit: n - 1 } });
       rendered++;
     }
     expect(rendered).toBeGreaterThan(500);
@@ -264,16 +278,16 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
     const dag = doubled(text("a"), 60);
     const tag = expectOk(DomainTag.of("dilf4s/test/v1"), "tag");
     const ms = elapsed(() => {
-      expect(json.renderWithin(dag, 1 << 20)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20, atLeast: dag.weight } });
-      const r = json.render(dag);
+      expect(json.renderWithin(dag, 1 << 20)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20 } });
+      const r = json.renderWithin(dag, json.MAX_RENDER_BYTES);
       expect(!r.ok && r.error.kind, "the default limit holds too").toBe("TooLarge");
-      expect(valueCommitmentWithin(dag, 1 << 20)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20, atLeast: dag.weight + 1n } });
+      expect(valueCommitmentWithin(dag, 1 << 20)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20 } });
       expect(TaggedHash.of("SHA-256", tag).contentWithin(dag, 1 << 20).ok).toBe(false);
       // a doubling under the weight bound but over in JSON (each 2^64 - 1 weighs 2 and takes 20 digits)
       const ints = doubled(Value.int(2n ** 64n - 1n), 16);
       expect(ints.weight < 1n << 20n, "passes the weight check").toBe(true);
       const e = json.renderWithin(ints, 1 << 20);
-      expect(!e.ok && e.error.kind === "TooLarge" && e.error.atLeast !== "uncountable" && e.error.atLeast > 1n << 20n).toBe(true);
+      expect(e).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20 } });
     });
     expect(ms).toBeLessThan(HANG);
   });
@@ -282,7 +296,7 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
     // 2^10 MiB of text in 10 arrays and one 1 MiB text: past the string ceiling, so refused at once, never thrown
     const big = doubled(text("x".repeat(1 << 20)), 10);
     for (const limit of [Infinity, 2 ** 31, Number.MAX_SAFE_INTEGER]) {
-      expect(json.renderWithin(big, limit)).toEqual({ ok: false, error: { kind: "TooLarge", limit: json.MAX_RENDER_BYTES, atLeast: big.weight } });
+      expect(json.renderWithin(big, limit)).toEqual({ ok: false, error: { kind: "TooLarge", limit: json.MAX_RENDER_BYTES } });
     }
   });
 
@@ -290,29 +304,28 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
     // every escape form, quotes, and one, two, three and four UTF-8 bytes
     const all = `${Array.from({ length: 0x20 }, (_, c) => String.fromCharCode(c)).join("")}"\\/aé€😀\u007f`;
     for (const v of [text(all), map([[all, text(all)]]), array([text(all), map([["\n", Value.int(1n)]])])]) {
-      const r = expectOk(json.render(v), "renders");
+      const r = expectOk(json.renderWithin(v, json.MAX_RENDER_BYTES), "renders");
       const n = utf8Bytes(r);
       expect(json.renderWithin(v, n), "at the exact length").toEqual({ ok: true, value: r });
       expect(json.renderWithin(v, n - 1).ok, "one byte short").toBe(false);
     }
-    // NUL escapes to six bytes: refused with the escaped length, counted rather than built
+    // NUL escapes to six bytes: refused by the escaped length, counted rather than built
     const nuls = text("\u0000".repeat(200_000));
-    expect(json.renderWithin(nuls, 200_001)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 200_001, atLeast: 1_200_002n } });
+    expect(json.renderWithin(nuls, 200_001)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 200_001 } });
     const key = map([["\u0000".repeat(200_000), Value.int(1n)]]);
-    expect(json.renderWithin(key, 200_010)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 200_010, atLeast: 1_200_004n } });
+    expect(json.renderWithin(key, 200_010)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 200_010 } });
   });
 
   it("a budgeted commitment is the commitment, within its limit, tag included", () => {
     const tag = expectOk(DomainTag.of("dilf4s/test/v1"), "tag");
     const h = TaggedHash.of("SHA-256", tag);
     for (const v of [text("a"), Value.bytes(Uint8Array.of(1, 2, 3)), array([Value.int(1n), Value.null]), Value.bytes(new Uint8Array(0))]) {
-      const c = valueCommitment(v);
+      const c = expectOk(valueCommitment(v), "encodes");
       expect(toHex(expectOk(valueCommitmentWithin(v, c.length), "fits"))).toBe(toHex(c));
       const over = valueCommitmentWithin(v, c.length - 1);
-      expect(over.ok ? "fits" : over.error.limit).toBe(c.length - 1);
-      expect(!over.ok && over.error.atLeast !== "uncountable" && over.error.atLeast >= BigInt(c.length), "a lower bound, tag included").toBe(true);
-      const n = cbor.encode(v).length;
-      expect(toHex(expectOk(h.contentWithin(v, n), "content"))).toBe(toHex(h.content(v)));
+      expect(over, "the caller's limit, tag included").toEqual({ ok: false, error: { kind: "TooLarge", limit: c.length - 1 } });
+      const n = expectOk(cbor.encode(v), "encodes").length;
+      expect(toHex(expectOk(h.contentWithin(v, n), "content"))).toBe(toHex(expectOk(h.content(v), "encodes")));
       expect(h.contentWithin(v, n - 1).ok).toBe(false);
     }
   });
@@ -321,10 +334,10 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
 describe("equality", { timeout: 60_000 }, () => {
   it("is content equality, on every vector value and its decoded copy", () => {
     const values = vectorValues();
-    for (const v of values) expect(equals(v, expectOk(cbor.decode(cbor.encode(v)), "copy")), inspect(v)).toBe(true);
+    for (const v of values) expect(equals(v, expectOk(cbor.decode(expectOk(cbor.encode(v), "encodes")), "copy")), inspect(v)).toBe(true);
     for (const [i, a] of values.entries()) {
       const b = values[(i * 7919 + 13) % values.length] ?? a;
-      expect(equals(a, b), `${inspect(a)} = ${inspect(b)}`).toBe(toHex(cbor.encode(a)) === toHex(cbor.encode(b)));
+      expect(equals(a, b), `${inspect(a)} = ${inspect(b)}`).toBe(toHex(expectOk(cbor.encode(a), "encodes")) === toHex(expectOk(cbor.encode(b), "encodes")));
     }
     expect(Value.equals(array([text("x"), Value.int(1n)]), array([text("x"), Value.int(1n)]))).toBe(true);
     expect(equals(array([text("x"), Value.int(1n)]), array([text("x"), Value.int(2n)]))).toBe(false);
@@ -419,10 +432,10 @@ describe("stack safety", { timeout: 60_000 }, () => {
     const deepArray = Array.from({ length: MAX_DEPTH }).reduce<Value>((v) => array([v, Value.int(1n)]), Value.null);
     const deepMap = Array.from({ length: MAX_DEPTH }).reduce<Value>((v) => map([["k", v]]), Value.int(1n));
     for (const v of [deepArray, deepMap]) {
-      const encoded = cbor.encode(v);
+      const encoded = expectOk(cbor.encode(v), "encodes");
       expect(equals(v, expectOk(cbor.decode(encoded), "decodes"))).toBe(true);
-      expect(json.render(v).ok).toBe(true);
-      expect(expectOk(json.parse(expectOk(json.render(v), "renders")), "parses").weight).toBe(v.weight);
+      expect(json.renderWithin(v, json.MAX_RENDER_BYTES).ok).toBe(true);
+      expect(expectOk(json.parse(expectOk(json.renderWithin(v, json.MAX_RENDER_BYTES), "renders")), "parses").weight).toBe(v.weight);
     }
   });
 });

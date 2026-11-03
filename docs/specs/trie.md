@@ -2,6 +2,7 @@
 
 Status: normative (v1), reviewed 2026-10-29. Replaces the 16-ary Merkle-Patricia trie and the separate sparse Merkle tree for the generic
 fixed-length and variable-length key cases. (The Poseidon sparse Merkle tree used by zk opcodes is specified separately.)
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 ## 1. Keys and modes
 
@@ -65,7 +66,10 @@ Empty                                          -- only as the whole proof of an 
 **Decoding** (§5) checks everything a reader can see without the mode, and refuses a violation as malformed
 (`Encoding`): the record shapes, segment lengths and zero padding, the branch invariant (§2: a branch record's
 children and value), the pre-order structure, and no trailing records. `Empty` exists only as the whole proof, the
-empty array, so it cannot appear below the top.
+empty array, so it cannot appear below the top. A proof heavier than `MaxProofWeight` (2^24) is `Encoding`, refused
+before it is decoded (`conformance.md` §5). Claimed values (a value, a listing's values) heavier than `MaxProofWeight`
+together are `TooLarge`, refused before any is hashed and before the proof is decoded. No producer emits a proof
+heavier than `MaxProofWeight`: proving or encoding one is `TooLarge`.
 
 **Verification against `root`** takes the mode:
 1. Recompute the partial trie's hash: a stub contributes its hash, and other nodes hash per §3. The result must equal `root`; otherwise it is `RootMismatch`, a well-formed proof of another trie.

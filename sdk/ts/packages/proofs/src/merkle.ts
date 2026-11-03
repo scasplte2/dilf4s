@@ -6,6 +6,7 @@
 import { bitLength, describeFailure, digest, err, hashParts, models, ok, outputSize, toHex, valueCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
+import { decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
 /** Why a Merkle proof could not be checked, by Scala's `MerkleError` names. */
 export type MerkleError =
@@ -13,7 +14,9 @@ export type MerkleError =
   | { readonly kind: "InvalidSizes"; readonly oldSize: bigint; readonly newSize: bigint }
   | { readonly kind: "InvalidProof"; readonly reason: string }
   | { readonly kind: "RootMismatch"; readonly expected: string; readonly computed: string }
-  | { readonly kind: "Encoding"; readonly reason: string };
+  | { readonly kind: "Encoding"; readonly reason: string }
+  /** A claimed leaf over `limit` (`MAX_PROOF_WEIGHT`, or this SDK's commitment ceiling), refused before it is hashed. */
+  | { readonly kind: "TooLarge"; readonly limit: number };
 
 /** The largest tree size or index: the schema's `tree-index`. */
 export const MAX_TREE_INDEX = 2n ** 63n - 1n;
@@ -34,7 +37,10 @@ export interface MerkleHashing<L> {
   readonly size: number;
   /** The root of the empty tree. */
   readonly empty: Uint8Array;
-  leaf(input: L): Uint8Array;
+  /** A leaf's hash; a tagged leaf whose commitment is over `cbor.MAX_ENCODED_BYTES` is `Encoding`. */
+  leaf(input: L): Result<Uint8Array, MerkleError>;
+  /** A leaf's weight as a claim (a value's weight; raw bytes weigh one more than their length). */
+  leafWeight(input: L): bigint;
   node(left: Uint8Array, right: Uint8Array): Uint8Array;
 }
 
@@ -62,11 +68,17 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
   }
 
   /**
-   * A value leaf's hash: the leaf hash of `commit(value)` (`MerkleTree.leaf`). O(`value.weight`), as `valueCommitment`,
-   * with no size limit (as Scala's and Rust's): bound the weight of a value built with shared parts.
+   * A value leaf's hash: the leaf hash of `commit(value)` (`MerkleTree.leaf`). O(min(weight, the ceiling)), as
+   * `valueCommitment`: a commitment over `cbor.MAX_ENCODED_BYTES` (2^31 - 1, this SDK's ceiling; Scala and Rust have
+   * none) is `Encoding`, never an allocation failure.
    */
-  leaf(value: Value): Uint8Array {
-    return this.#leaf.hash(valueCommitment(value));
+  leaf(value: Value): Result<Uint8Array, MerkleError> {
+    const c = valueCommitment(value);
+    return c.ok ? ok(this.#leaf.hash(c.value)) : err({ kind: "TooLarge", limit: c.error.limit });
+  }
+
+  leafWeight(value: Value): bigint {
+    return value.weight;
   }
 
   node(left: Uint8Array, right: Uint8Array): Uint8Array {
@@ -91,8 +103,12 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
     return digest(this.algorithm, new Uint8Array(0));
   }
 
-  leaf(data: Uint8Array): Uint8Array {
-    return hashParts(this.algorithm, [Uint8Array.of(0), data]);
+  leaf(data: Uint8Array): Result<Uint8Array, MerkleError> {
+    return ok(hashParts(this.algorithm, [Uint8Array.of(0), data]));
+  }
+
+  leafWeight(data: Uint8Array): bigint {
+    return BigInt(data.length) + 1n;
   }
 
   node(left: Uint8Array, right: Uint8Array): Uint8Array {
@@ -123,9 +139,12 @@ export class InclusionProof {
     return index >= 0n && index < size && withinIndex(size) ? ok(new InclusionProof(index, size, path)) : err({ kind: "IndexOutOfRange", index, size });
   }
 
-  /** A proof from its canonical value (`merkle-inclusion`), its digests sized for `hashing`. */
+  /**
+   * A proof from its canonical value (`merkle-inclusion`), its digests sized for `hashing`. A value heavier than
+   * `MAX_PROOF_WEIGHT` is `Encoding`, refused before it is decoded.
+   */
   static decode(hashing: MerkleHashing<unknown>, value: Value): Result<InclusionProof, MerkleError> {
-    const w = models.merkle.MerkleInclusion.decode(value);
+    const w = decodeInput(models.merkle.MerkleInclusion, value);
     if (!w.ok) return err({ kind: "Encoding", reason: describeFailure(w.error) });
     const sized = digests(hashing, w.value.path);
     return sized.ok ? InclusionProof.of(w.value.index, w.value.size, w.value.path) : sized;
@@ -161,9 +180,12 @@ export class ConsistencyProof {
       : err({ kind: "InvalidSizes", oldSize, newSize });
   }
 
-  /** A proof from its canonical value (`merkle-consistency`), its digests sized for `hashing`. */
+  /**
+   * A proof from its canonical value (`merkle-consistency`), its digests sized for `hashing`. A value heavier than
+   * `MAX_PROOF_WEIGHT` is `Encoding`, refused before it is decoded.
+   */
   static decode(hashing: MerkleHashing<unknown>, value: Value): Result<ConsistencyProof, MerkleError> {
-    const w = models.merkle.MerkleConsistency.decode(value);
+    const w = decodeInput(models.merkle.MerkleConsistency, value);
     if (!w.ok) return err({ kind: "Encoding", reason: describeFailure(w.error) });
     const sized = digests(hashing, w.value.path);
     return sized.ok ? ConsistencyProof.of(w.value.old, w.value.new, w.value.path) : sized;
@@ -285,9 +307,13 @@ function checkHead(hashing: MerkleHashing<unknown>, what: string, head: MerkleHe
 export function merkleVerify<L>(hashing: MerkleHashing<L>, head: MerkleHead, leaf: L, proof: Value): Result<boolean, MerkleError> {
   const h = checkHead(hashing, "head", head);
   if (!h.ok) return h;
+  // the leaf is a claim: bounded by weight before it is hashed and before the proof is decoded
+  if (hashing.leafWeight(leaf) > MAX_PROOF_WEIGHT) return err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
   const p = InclusionProof.decode(hashing, proof);
   if (!p.ok) return p;
-  return p.value.size !== head.size ? ok(false) : verifyInclusion(hashing, head.root, hashing.leaf(leaf), p.value);
+  if (p.value.size !== head.size) return ok(false);
+  const l = hashing.leaf(leaf);
+  return l.ok ? verifyInclusion(hashing, head.root, l.value, p.value) : l;
 }
 
 /** The JLVM's `merkle_consistency_verify [oldHead, newHead, proof]`: sizes that differ from the heads' are `false`. */

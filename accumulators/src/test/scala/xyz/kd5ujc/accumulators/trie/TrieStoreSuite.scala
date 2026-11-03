@@ -333,4 +333,24 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
       case other                              => failure(s"expected corruption to be detected, got $other")
     }
   }
+
+  test("a stored trie never proves what no verifier decodes: a listing over MaxProofWeight is TooLarge") {
+    val long = KeyMode.variable(65535).toOption.get
+    // 260 keys of 64 KiB: a full listing carries every key's bits, over 2^24 in weight; one key's proof is small
+    val keys = (0 until 260).toList.map(i => ByteVector.fromShort(i.toShort) ++ ByteVector.fill(65533)(7))
+    run { (rs, rt) =>
+      given Raise[IO, StoreError] = rs
+      given Raise[IO, TrieError] = rt
+      for {
+        raw   <- RawStore.inMemory[IO]
+        store <- TrieStore.make[IO, Sha256](raw, "trie", long)
+        v     <- store.commit(Version.Genesis, keys.map(k => k -> Some(value(1))))
+        one   <- store.prove(keys.take(1), Nil, v)
+        _     <- store.prove(Nil, List(ByteVector.empty), v)
+      } yield one
+    }.map {
+      case Left(Tree(e)) => expect.same(TrieError.TooLarge(xyz.kd5ujc.accumulators.ProofInput.MaxProofWeight), e)
+      case other         => failure(s"expected TooLarge, got $other")
+    }
+  }
 }

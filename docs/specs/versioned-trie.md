@@ -2,6 +2,7 @@
 
 Status: normative. Conformance vectors: `shared/vectors/versioned_trie_v1.json`. Code:
 `xyz.kd5ujc.accumulators.versioned`.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 A versioned trie is a key-value state that an application changes by committing a batch of writes at a version.
 Every commit yields **one root**, which commits to three things: the version, the state at it, and the state root of
@@ -85,6 +86,17 @@ batch:
    without encoding the value: a value's canonical CBOR is never shorter than its weight (`jlvm.md` §2), so a value
    heavier than 1 MiB is refused for its weight alone, before its length is measured. A value that shares structure
    can encode to far more bytes than it occupies, so no implementation encodes a value to check it.
+   **The batch as a whole must fit one delta.** A commit whose delta (§7) would weigh over `MaxProofWeight` (2^24,
+   `conformance.md` §5) is refused with `TooLarge { limit: MaxProofWeight }` before anything is written. A batch's
+   checks run in this order: what each value's depth and weight alone refuse (`TooDeep`, or `TooLarge` with
+   `MaxValueBytes` for a weight over 1 MiB), then the delta's weight, then each value's measured length. The first two
+   read cached properties, so a batch of many keys sharing one long value costs its number of keys, not its
+   expansion. Like a
+   block-size limit, it bounds each state transition, so replicas only ever handle bounded deltas, and every delta a
+   store serves is one every replica decodes. The delta is weighed as it would be served: the parent head (none for
+   the first commit), the head, every upsert with its value and every removed key. That is at most about sixteen
+   values of 1 MiB, or many more smaller ones; a larger change is several commits. The `vt-commit` vectors
+   (`shared/vectors/refusals_v1.json`) pin the bound at exactly 2^24 and one over.
 2. **Recommit.** If the next version is the head's and the expected version is the head's parent, the commit is a
    retry: it succeeds without writing if the batch, applied to the parent's state, gives the head's state root, and is
    refused as a rewrite otherwise. Only the head can be recommitted.
@@ -200,7 +212,15 @@ versioned-trie-version = {
 ```
 
 Values travel separately, as everywhere in `trie.md` §5. A delta's values are canonical values; its keys are state
-keys as text.
+keys as text. A proof, delta or head decoded from a value heavier than `MaxProofWeight` (2^24) is `Malformed`,
+refused before it is decoded (`conformance.md` §5); its values are part of its weight.
+
+**Decoding order.** A record with more than one fault is refused for the first in this order, every implementation
+alike (`conformance.md` §5), and the refusal vectors pin each pair. First the whole record's shape, as the schema
+above states it: any shape fault is `Malformed`, whatever meaning faults the record also has. Then the fields'
+meanings: a proof's `head`, `top`, `at`, `history`, then `state`; a delta's `parent`, `head`, each upsert's key in
+order, then each removed key; a head's `v`, `s`, then `h`; a history chunk's versions in order, each its `v` then its
+`s`.
 
 ## 6. Verification
 

@@ -21,7 +21,7 @@ use common::{read_vectors, vectors_dir};
 use dilf4s_core::codec::Model;
 use dilf4s_core::generated::{
     canonical_vectors, crypto, jlvm, jlvm_vectors, kes_vectors, merkle, merkle_vectors, poseidon_vectors,
-    sigma_vectors, signing_vectors, trie_vectors, versioned_trie_vectors, vrf_vectors, zk_vectors,
+    refusal_vectors, sigma_vectors, signing_vectors, trie_vectors, versioned_trie_vectors, vrf_vectors, zk_vectors,
 };
 use dilf4s_core::{Value, json};
 
@@ -32,12 +32,13 @@ fn round_trip<T: Model>(value: &Value) -> Result<Value, String> {
 
 type Check = fn(&Value) -> Result<Value, String>;
 
-const SCHEMAS: [(&str, Check); 12] = [
+const SCHEMAS: [(&str, Check); 13] = [
     ("canonical_encoding_v1.json", round_trip::<canonical_vectors::CanonicalVectors>),
     ("jlvm_v1.json", round_trip::<jlvm_vectors::JlvmVectors>),
     ("kes_v1.json", round_trip::<kes_vectors::KesVectors>),
     ("merkle_v1.json", round_trip::<merkle_vectors::MerkleVectors>),
     ("poseidon_v1.json", round_trip::<poseidon_vectors::PoseidonVectors>),
+    ("refusals_v1.json", round_trip::<refusal_vectors::RefusalVectors>),
     ("sigma_dilf4s_v1.json", round_trip::<sigma_vectors::SigmaVectors>),
     ("sigma_v1.json", round_trip::<sigma_vectors::SigmaVectors>),
     ("signing_v1.json", round_trip::<signing_vectors::SigningVectors>),
@@ -63,7 +64,11 @@ fn every_vector_file_round_trips_through_its_type() {
     for (file, check) in SCHEMAS {
         let value = json::parse(&read_vectors(file)).unwrap_or_else(|e| panic!("{file}: {e}"));
         let again = check(&value).unwrap_or_else(|e| panic!("{file}: {e}"));
-        assert_eq!(json::render(&again), json::render(&value), "{file} changes on a round trip");
+        assert_eq!(
+            json::render_within(&again, usize::MAX),
+            json::render_within(&value, usize::MAX),
+            "{file} changes on a round trip"
+        );
     }
 }
 
@@ -83,10 +88,10 @@ fn unions_select_by_keys_and_text() {
     use trie_vectors::{TrieLookupResult, TriePresent};
     let present = TrieLookupResult::TriePresent(TriePresent { present: "00ff".to_owned() });
     let value = present.to_value().expect("encodes");
-    assert_eq!(json::render(&value).expect("renders"), r#"{"present":"00ff"}"#);
+    assert_eq!(json::render_within(&value, usize::MAX).expect("renders"), r#"{"present":"00ff"}"#);
     assert_eq!(TrieLookupResult::from_value(&value), Ok(present));
     let absent = TrieLookupResult::Absent.to_value().expect("encodes");
-    assert_eq!(json::render(&absent).expect("renders"), r#""absent""#);
+    assert_eq!(json::render_within(&absent, usize::MAX).expect("renders"), r#""absent""#);
     assert_eq!(TrieLookupResult::from_value(&Value::text("notCovered")), Ok(TrieLookupResult::NotCovered));
     assert!(TrieLookupResult::from_value(&Value::text("other")).is_err());
 }

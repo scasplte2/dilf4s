@@ -72,6 +72,12 @@ object TrieError {
 
   /** A verified proof that does not reach the query: it establishes neither presence nor absence. */
   final case class NotCovered(what: String) extends TrieError
+
+  /**
+   * Over `limit` (`ProofInput.MaxProofWeight`) in weight: claimed values a verifier would hash, or a proof a producer
+   * would emit that every verifier refuses.
+   */
+  final case class TooLarge(limit: Long) extends TrieError
 }
 
 /** A stored trie node; children are referenced by hash (docs/specs/trie.md §2). */

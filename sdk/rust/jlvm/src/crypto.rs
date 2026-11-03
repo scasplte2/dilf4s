@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 
 use dilf4s_core::value::Text;
 use dilf4s_core::{BigInt, Value};
+use dilf4s_proofs::MAX_PROOF_WEIGHT;
 use num_bigint::Sign;
 use num_traits::{Signed, ToPrimitive};
 
@@ -495,6 +496,16 @@ fn profile(op: Op, rest: &[Value]) -> Result<MerkleProfile> {
     }
 }
 
+/// Claims (a leaf, a value, a listing's values) together at most [`MAX_PROOF_WEIGHT`], from their weights, before any
+/// is hashed and before the proof is decoded: heavier is `Crypto` (docs/specs/conformance.md section 5).
+fn claims<'a>(op: Op, values: impl IntoIterator<Item = &'a Value>) -> Result<()> {
+    let total = values.into_iter().fold(0u64, |t, v| t.saturating_add(v.weight()));
+    if total > MAX_PROOF_WEIGHT {
+        return Err(JlvmError::crypto(op.wire(), alloc::format!("the claims weigh over {MAX_PROOF_WEIGHT}")));
+    }
+    Ok(())
+}
+
 fn merkle(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> {
     let [h, leaf, proof, rest @ ..] = args else {
         return Err(arity(op, String::from("takes [head, leaf, proof] or [head, leaf, proof, profile]")));
@@ -502,6 +513,7 @@ fn merkle(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> 
     let fail = |e: CryptoFailure| JlvmError::crypto(op.wire(), e.0);
     let (root, size) = head(op, "head", h)?;
     let p = profile(op, rest)?;
+    claims(op, [leaf])?;
     let claimed = backend.merkle_inclusion_size(proof).map_err(fail)?;
     if p == MerkleProfile::Rfc6962 && !matches!(leaf, Value::Bytes(_)) {
         return Err(JlvmError::type_error(op.wire(), alloc::format!("an rfc6962 leaf is bytes, got {}", kind(leaf))));
@@ -595,8 +607,9 @@ fn trie(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> {
     };
     let m = mode(op, md)?;
     let k = key_path(op, m, key)?;
-    let r = digest(op, "root", root)?;
     let claimed = (*value != Value::Null).then_some(value);
+    claims(op, claimed)?;
+    let r = digest(op, "root", root)?;
     backend.trie_verify(m, r, k, claimed, proof).map(Value::Bool).map_err(|e| JlvmError::crypto(op.wire(), e.0))
 }
 
@@ -612,6 +625,7 @@ fn trie_prefix(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Va
         }
     };
     let claimed = entries(op, m, es)?;
+    claims(op, claimed.iter().map(|(_, v)| *v))?;
     let r = digest(op, "root", root)?;
     backend
         .trie_prefix_verify(m, r, pre, &claimed, proof)
@@ -634,6 +648,7 @@ fn trie_range(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Val
         other => return Err(JlvmError::type_error(op.wire(), alloc::format!("until is bytes, got {}", kind(other)))),
     };
     let claimed = entries(op, m, es)?;
+    claims(op, claimed.iter().map(|(_, v)| *v))?;
     let r = digest(op, "root", root)?;
     backend
         .trie_range_verify(m, r, lo, hi, &claimed, proof)

@@ -1,5 +1,6 @@
 //! The conformance vectors `shared/vectors/jlvm_v1.json`, run as the reference's `JlvmVectors.run` runs them: parse the
-//! program, the data and the host bindings (the first failure is the outcome, with no gas), then evaluate with the
+//! program, the data and the host bindings (the first failure is the outcome, with no gas), add the bindings built
+//! with shared parts (`built`, which no JSON text could carry), then evaluate with the
 //! case's gas limit (the file's when absent), the latest schedule and the native cryptographic backend. Every case must
 //! give the same value (canonical CBOR) or error kind, the same gas and the same number of warnings.
 //!
@@ -9,11 +10,15 @@
 
 extern crate alloc;
 
+#[path = "../../core/tests/common/mod.rs"]
+mod common;
+
 use alloc::collections::BTreeMap;
 use std::path::PathBuf;
 
+use common::{Step, build};
 use dilf4s_core::codec::Model;
-use dilf4s_core::generated::jlvm_vectors::{JlvmCase, JlvmOutcome, JlvmVectors};
+use dilf4s_core::generated::jlvm_vectors::{BuiltStep, BuiltValue, JlvmCase, JlvmOutcome, JlvmVectors};
 use dilf4s_core::{cbor, hex, json};
 use dilf4s_jlvm::{
     Compiled, Config, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Outcome, Value, parse, parse_value,
@@ -24,6 +29,20 @@ fn load() -> JlvmVectors {
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let value = json::parse(&text).unwrap_or_else(|e| panic!("jlvm_v1.json is not canonical JSON: {e}"));
     JlvmVectors::from_value(&value).unwrap_or_else(|e| panic!("jlvm_v1.json does not fit its schema: {e}"))
+}
+
+/// A `built-value` binding, built with sharing.
+fn built(b: &BuiltValue) -> Value {
+    let steps: Vec<Step<'_>> = b
+        .steps
+        .iter()
+        .flatten()
+        .map(|s| match s {
+            BuiltStep::BuiltWrap(w) => Step::Wrap { template: &w.template, times: w.times },
+            BuiltStep::BuiltCopies(c) => Step::Copies(c.copies),
+        })
+        .collect();
+    build(&b.leaf, &steps)
 }
 
 /// `JlvmVectors.run`: the first parse failure (program, then data, then bindings) is the outcome, with no gas.
@@ -45,6 +64,9 @@ fn run(jlvm: &Jlvm<Native>, case: &JlvmCase, default_limit: u64) -> Outcome {
             }
             Err(e) => return failed(e),
         }
+    }
+    for (k, b) in case.built.iter().flatten() {
+        env.insert(k.clone(), built(b));
     }
     let config =
         Config { limit: GasLimit(Gas::new(case.gas_limit.unwrap_or(default_limit))), schedule: GasSchedule::LATEST };

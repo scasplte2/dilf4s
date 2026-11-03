@@ -1,6 +1,7 @@
 # dilf4s verifiable random functions (v1)
 
 Status: normative. Conformance vectors: `shared/vectors/vrf_v1.json`. Reference vectors are in `docs/test-vectors/vrf/`:
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 - RFC 9381 Appendix B.3 and B.4;
 - RFC 9380 J.5.2, K.1 and K.3;

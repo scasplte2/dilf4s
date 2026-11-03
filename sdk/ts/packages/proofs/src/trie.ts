@@ -6,10 +6,11 @@
  *
  * Every walk uses an explicit stack, never recursion: a proof's depth is bounded only by the mode (up to 524280 bits).
  */
-import { bitLength, describeFailure, err, models, ok, outputSize, toHex, valueCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, BYTES_TAG, describeFailure, err, models, ok, outputSize, toHex, valueCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import * as B from "./bits.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
+import { decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
 /**
  * Why a trie operation failed, by Scala's `TrieError` names, plus `NotCovered`: the JLVM's "not covered" (a proof that
@@ -21,7 +22,13 @@ export type TrieError =
   | { readonly kind: "InvalidProof"; readonly reason: string }
   | { readonly kind: "RootMismatch"; readonly expected: string; readonly computed: string }
   | { readonly kind: "Encoding"; readonly reason: string }
-  | { readonly kind: "NotCovered"; readonly what: string };
+  | { readonly kind: "NotCovered"; readonly what: string }
+  /** Over `limit` in weight (`MAX_PROOF_WEIGHT`, or this SDK's commitment ceiling): claims, or a proof to emit. */
+  | { readonly kind: "TooLarge"; readonly limit: number };
+
+/** Claims together within `MAX_PROOF_WEIGHT`, from their weights, before any is hashed. */
+const claimsWithin = (values: readonly Value[]): Result<undefined, TrieError> =>
+  values.reduce((t, v) => t + v.weight, 0n) <= MAX_PROOF_WEIGHT ? ok(undefined) : err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
 
 const encoding = (reason: string): Result<never, TrieError> => err({ kind: "Encoding", reason });
 const invalidProof = (reason: string): Result<never, TrieError> => err({ kind: "InvalidProof", reason });
@@ -172,11 +179,18 @@ export class TrieHashing {
   }
 
   /**
-   * The hash a trie commits for a value: `valueHash(commit(v))`, as a JLVM program claims it. O(`value.weight`), as
-   * `valueCommitment`, with no size limit (as Scala's and Rust's): bound the weight of a value built with shared parts.
+   * The hash a trie commits for a value: `valueHash(commit(v))`, as a JLVM program claims it. O(min(weight, the
+   * ceiling)), as `valueCommitment`: a value whose commitment is over `cbor.MAX_ENCODED_BYTES` (2^31 - 1, this SDK's
+   * ceiling; Scala and Rust have none) is `Encoding`, never an allocation failure.
    */
-  valueHash(value: Value): Uint8Array {
-    return this.#value.hash(valueCommitment(value));
+  valueHash(value: Value): Result<Uint8Array, TrieError> {
+    const c = valueCommitment(value);
+    return c.ok ? ok(this.#value.hash(c.value)) : err({ kind: "TooLarge", limit: c.error.limit });
+  }
+
+  /** The hash a trie commits for a byte string, `valueHash(commit(b))`: linear in `b`, which the caller holds. */
+  bytesHash(b: Uint8Array): Uint8Array {
+    return this.#value.hash(concatBytes([Uint8Array.of(BYTES_TAG), b]));
   }
 
   /** A leaf's hash. */
@@ -248,9 +262,12 @@ export class TrieProof {
     topOf = (p) => p.#top;
   }
 
-  /** A proof from its canonical value: the flat pre-order array of `trie-proof` records (trie.md section 5). */
+  /**
+   * A proof from its canonical value: the flat pre-order array of `trie-proof` records (trie.md section 5). A value
+   * heavier than `MAX_PROOF_WEIGHT` is `Encoding`, refused before it is decoded.
+   */
   static decode(hashing: TrieHashing, value: Value): Result<TrieProof, TrieError> {
-    const w = models.trie.TrieProof.decode(value);
+    const w = decodeInput(models.trie.TrieProof, value);
     return w.ok ? TrieProof.fromRecords(hashing, w.value) : encoding(describeFailure(w.error));
   }
 
@@ -306,7 +323,9 @@ export class TrieProof {
       }
     }
     const v = models.trie.TrieProof.encode(out);
-    return v.ok ? v : encoding(v.error.kind);
+    if (!v.ok) return encoding(v.error.kind);
+    // a proof every verifier would refuse is never emitted
+    return v.value.weight <= MAX_PROOF_WEIGHT ? v : err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
   }
 }
 
@@ -551,13 +570,18 @@ const isAbsence = (v: Value | null): boolean => v === null || v.kind === "null";
 export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, key: Uint8Array, value: Value | null, proof: Value): Result<boolean, TrieError> {
   const k = mode.checkKey(key);
   if (!k.ok) return k;
+  const c = claimsWithin(value === null || isAbsence(value) ? [] : [value]);
+  if (!c.ok) return c;
   const v = verified(hashing, mode, root, proof);
   if (!v.ok || v.value === null) return v.ok ? ok(false) : v;
   const l = v.value.lookup(key);
   if (!l.ok) return l;
   switch (l.value.kind) {
-    case "present":
-      return ok(value !== null && !isAbsence(value) && bytesEqual(hashing.valueHash(value), l.value.valueHash));
+    case "present": {
+      if (value === null || isAbsence(value)) return ok(false);
+      const h = hashing.valueHash(value);
+      return h.ok ? ok(bytesEqual(h.value, l.value.valueHash)) : h;
+    }
     case "absent":
       return ok(isAbsence(value));
     case "notCovered":
@@ -566,12 +590,18 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
 }
 
 function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly ClaimedEntry[]): Result<readonly TrieEntry[], TrieError> {
-  const out: TrieEntry[] = [];
   for (const [key, value] of entries) {
     if (value.kind === "null") return encoding("an entry is [key, value], with a value");
     const k = mode.checkKey(key);
     if (!k.ok) return k;
-    out.push({ key, valueHash: hashing.valueHash(value) });
+  }
+  const c = claimsWithin(entries.map(([, value]) => value));
+  if (!c.ok) return c;
+  const out: TrieEntry[] = [];
+  for (const [key, value] of entries) {
+    const h = hashing.valueHash(value);
+    if (!h.ok) return h;
+    out.push({ key, valueHash: h.value });
   }
   return ok(out);
 }

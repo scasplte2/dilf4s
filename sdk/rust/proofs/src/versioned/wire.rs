@@ -66,27 +66,28 @@ impl<K: VersionKey, H: Hasher> VersionedTrie<K, H> {
         })
     }
 
-    /// Decodes a `versioned-trie-proof` value.
+    /// Decodes a `versioned-trie-proof` value. A value heavier than [`crate::MAX_PROOF_WEIGHT`] is `Malformed`,
+    /// refused before it is decoded.
     pub fn decode_proof(&self, value: &Value) -> Result<VersionedTrieProof<K::Version, H>, VersionedTrieError> {
-        let p = w::VersionedTrieProof::from_value(value).map_err(malformed)?;
+        let p = w::VersionedTrieProof::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(malformed)?;
+        // the parts in the reference's order (versioned-trie.md section 5): head, top, at, history, state
+        let head = self.head_from_wire(&p.head)?;
+        let top = TrieProof::from_records(&p.top)?;
         let at = match &p.at {
             None => None,
             Some(a) => {
                 Some(At { version: self.key.decode(&a.v)?, state_root: a.s.as_deref().map(digest).transpose()? })
             }
         };
-        Ok(VersionedTrieProof {
-            head: self.head_from_wire(&p.head)?,
-            top: TrieProof::from_records(&p.top)?,
-            at,
-            history: p.history.as_deref().map(TrieProof::from_records).transpose()?,
-            state: p.state.as_deref().map(TrieProof::from_records).transpose()?,
-        })
+        let history = p.history.as_deref().map(TrieProof::from_records).transpose()?;
+        let state = p.state.as_deref().map(TrieProof::from_records).transpose()?;
+        Ok(VersionedTrieProof { head, top, at, history, state })
     }
 
-    /// Decodes a `versioned-trie-delta` value.
+    /// Decodes a `versioned-trie-delta` value. A value heavier than [`crate::MAX_PROOF_WEIGHT`] is `Malformed`,
+    /// refused before it is decoded: a delta's values are its own, so the whole delta is bounded.
     pub fn decode_delta(&self, value: &Value) -> Result<Delta<K::Version, H>, VersionedTrieError> {
-        let d = w::VersionedTrieDelta::from_value(value).map_err(malformed)?;
+        let d = w::VersionedTrieDelta::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(malformed)?;
         Ok(Delta {
             parent: d.parent.as_ref().map(|h| self.head_from_wire(h)).transpose()?,
             head: self.head_from_wire(&d.head)?,

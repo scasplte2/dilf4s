@@ -1,5 +1,6 @@
 package xyz.kd5ujc.accumulators.versioned
 
+import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.accumulators.versioned.Harness._
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
@@ -17,9 +18,9 @@ object SharedValueSuite extends SimpleIOSuite {
 
   private val doubled: CanonicalValue = (1 to 60).foldLeft(int(1))((v, _) => get(CanonicalValue.array(Vector(v, v))))
 
-  /** `TooLarge` for the doubled value, its size the value's weight: a lower bound on its length. */
-  private def tooLarge(what: String, max: Long)(r: Either[VersionedTrieError, ?]): Boolean =
-    r == Left(VersionedTrieError.TooLarge(what, doubled.weight, max))
+  /** `TooLarge` with the limit alone: nothing past the limit is measured. */
+  private def tooLarge(what: String, limit: Long)(r: Either[VersionedTrieError, ?]): Boolean =
+    r == Left(VersionedTrieError.TooLarge(what, limit))
 
   private val k = key("a/b")
   private val ofK = "the value of a/b"
@@ -32,25 +33,26 @@ object SharedValueSuite extends SimpleIOSuite {
       .and(expect(doubled.depth <= VersionedTrie.MaxValueDepth))
   }
 
-  pureTest("checkValue: refused by its weight, the size reported as that lower bound") {
+  pureTest("checkValue: refused by its weight, with the limit alone") {
     expect(tooLarge(ofK, VersionedTrie.MaxValueBytes)(VersionedTrie.checkValue(k, doubled)), s"${VersionedTrie.checkValue(k, doubled)}")
       .and(expect.same(doubled.weight, VersionedTrie.valueBytes(doubled)))
   }
 
-  pureTest("checkValue: within the weight, the exact length is measured, and refused past the limit") {
+  pureTest("checkValue: within the weight, the length is measured, and refused past the limit") {
     // 2^17 integers of 2^40 weigh 1 each but take 9 bytes each
     val wide = get(CanonicalValue.array(Vector.fill(1 << 17)(CanonicalValue.int(BigInt(1) << 40))))
-    val exact = Cbor.encode(wide).size
+    val exact = Cbor.encode(wide).size.toLong
     val atLimit = CanonicalValue.bytes(ByteVector.fill(VersionedTrie.MaxValueBytes - 5)(1))
     expect(wide.weight <= VersionedTrie.MaxValueBytes, s"weight ${wide.weight}")
-      .and(expect.same(Left(VersionedTrieError.TooLarge(ofK, exact, VersionedTrie.MaxValueBytes)), VersionedTrie.checkValue(k, wide)))
+      .and(expect(exact > VersionedTrie.MaxValueBytes, s"length $exact"))
+      .and(expect.same(Left(VersionedTrieError.TooLarge(ofK, VersionedTrie.MaxValueBytes)), VersionedTrie.checkValue(k, wide)))
       .and(expect.same(VersionedTrie.MaxValueBytes, Cbor.encode(atLimit).size))
       .and(expect.same(Right(()), VersionedTrie.checkValue(k, atLimit)))
   }
 
   test("a commit refuses it") {
     attempt(implicit h => fresh.flatMap(s => h.attempt(s._2.commit(None, 1L, Batch.put(k, doubled))))).map { r =>
-      expect(r.flatten.left.exists(_ == VersionedTrieError.TooLarge(ofK, doubled.weight, VersionedTrie.MaxValueBytes)), s"$r")
+      expect(r.flatten.left.exists(_ == VersionedTrieError.TooLarge(ofK, VersionedTrie.MaxValueBytes)), s"$r")
     }
   }
 
@@ -109,13 +111,91 @@ object SharedValueSuite extends SimpleIOSuite {
 
   pureTest("a snapshot chunk holding it is refused by its weight before it is encoded") {
     val chunk: SnapshotChunk[Long, H] = SnapshotChunk.State(Vector(k -> doubled))
-    val refused = VersionedTrieWire.encodeChunk(chunk)
-    expect(
-      refused.left.exists {
-        case VersionedTrieError.TooLarge("a snapshot chunk", size, VersionedTrie.MaxChunkBytes) => size > doubled.weight
-        case _                                                                                  => false
-      },
-      s"$refused"
-    )
+    expect.same(Left(VersionedTrieError.TooLarge("a snapshot chunk", VersionedTrie.MaxChunkBytes)), VersionedTrieWire.encodeChunk(chunk))
+  }
+
+  /** One 1 MiB byte string (2^20 bytes of CBOR, the largest value), shared by every key that holds it. */
+  private val mib = CanonicalValue.bytes(ByteVector.fill(VersionedTrie.MaxValueBytes - 5)(7))
+
+  private def wide(n: Int): Batch[StateKey, CanonicalValue] =
+    (1 to n).map(i => Batch.put(key(s"wide/$i"), mib)).reduce(_ ++ _)
+
+  test("a commit whose delta no replica would decode (over MaxProofWeight) is refused, and nothing is written") {
+    attempt(implicit h => fresh.flatMap(s => h.attempt(s._2.commit(None, 1L, wide(17))).flatMap(r => s._2.head.map(r -> _)))).map { r =>
+      expect.same(Right((Left(VersionedTrieError.TooLarge("the delta", ProofInput.MaxProofWeight)), None)), r)
+    }
+  }
+
+  test("a draft staged on a draft counts its parent: a delta one over MaxProofWeight is refused before it is written") {
+    attempt { implicit h =>
+      for {
+        s  <- fresh
+        d1 <- s._2.preview(1L, Batch.put(key("a"), int(1)))
+        // the pad that brings version 2's delta, parent included, to one over the cap
+        upserts = (1 to 15).map(i => key(s"wide/$i") -> mib).toList
+        w0 = get(
+          VersionedTrieWire.encodeDelta(
+            Delta(Some(d1.head), d1.head, (key("pad") -> CanonicalValue.bytes(ByteVector.empty)) :: upserts, Nil)
+          )
+        ).weight
+        pad = CanonicalValue.bytes(ByteVector.fill(ProofInput.MaxProofWeight + 1 - w0)(1))
+        d2   <- h.attempt(s._2.previewOn(d1, 2L, wide(15) ++ Batch.put(key("pad"), pad)))
+        head <- s._2.head
+      } yield (pad, d2.map(_.head), head)
+    }.map {
+      case Left(e) => failure(s"unexpected $e")
+      case Right((pad, d2, head)) =>
+        expect(VersionedTrie.checkValue(key("pad"), pad).isRight, "the pad is a value a commit accepts")
+          .and(expect.same(Left(VersionedTrieError.TooLarge("the delta", ProofInput.MaxProofWeight)), d2))
+          .and(expect.same(None, head))
+    }
+  }
+
+  pureTest("a proof no verifier would decode is TooLarge, whether one embedded trie proof or the whole record is over") {
+    def leafOf(bytes: Long) =
+      xyz.kd5ujc.accumulators.trie
+        .TrieProof[H](Some(xyz.kd5ujc.accumulators.trie.ProofNode.PLeaf(scodec.bits.BitVector.low(bytes * 8), root)))
+    val head = Head[Long, H](1L, root, root)
+    val third = ProofInput.MaxProofWeight / 3 + 1024
+    val refused = Left(VersionedTrieError.TooLarge("the proof", ProofInput.MaxProofWeight))
+    expect
+      .same(refused, VersionedTrieWire.encodeProof(VersionedTrieProof[Long, H](head, leafOf(ProofInput.MaxProofWeight), None, None, None)))
+      .and(
+        expect.same(
+          refused,
+          VersionedTrieWire.encodeProof(VersionedTrieProof[Long, H](head, leafOf(third), None, Some(leafOf(third)), Some(leafOf(third))))
+        )
+      )
+      .and(expect(VersionedTrieWire.encodeProof(VersionedTrieProof[Long, H](head, leafOf(third), None, None, None)).isRight))
+  }
+
+  test("a batch of many keys sharing one long value is refused by the delta's weight before any value is measured") {
+    // 2^16 integers of 2^40 weigh 1 each and take 9 bytes: a value of weight 65,537 and 589,827 bytes of CBOR that a
+    // commit accepts; 20,000 keys hold it, so measuring each would cost 2^34 steps; their weights alone pass 2^24
+    val long: CanonicalValue = get(CanonicalValue.array(Vector.fill(1 << 16)(CanonicalValue.int(BigInt(1) << 40))))
+    val batch = (1 to 20000).map(i => Batch.put(key(s"shared/$i"), long)).reduce(_ ++ _)
+    attempt(implicit h => fresh.flatMap(s => h.attempt(s._2.commit(None, 1L, batch)))).map { r =>
+      expect.same(Right(Left(VersionedTrieError.TooLarge("the delta", ProofInput.MaxProofWeight))), r)
+    }
+  }
+
+  test("a commit just within it serves a delta that decodes and replays to the same head") {
+    attempt { implicit h =>
+      for {
+        s    <- fresh
+        head <- s._2.commit(None, 1L, wide(15))
+        d    <- s._2.delta(1L)
+      } yield head -> d
+    }.map {
+      case Left(e) => failure(s"unexpected $e")
+      case Right((head, d)) =>
+        val replayed = for {
+          wire    <- VersionedTrieWire.encodeDelta(d)
+          decoded <- VersionedTrieWire.decodeDelta[Long, H](wire)
+          r0      <- Replica.empty[Long, H]
+          r       <- Replica.applyDelta(r0, decoded)
+        } yield (wire.weight, r.head)
+        expect(replayed.exists(_._1 <= ProofInput.MaxProofWeight), s"$replayed").and(expect.same(Right(Some(head)), replayed.map(_._2)))
+    }
   }
 }

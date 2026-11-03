@@ -606,3 +606,15 @@ fn listings_of_many_keys_behind_a_long_prefix_are_not_expanded() {
     assert_eq!(verified.lists_range(&[0xa6], None, &Vec::new()), Some(true));
     assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
 }
+
+/// No producer emits a proof every verifier refuses: one heavier than `MAX_PROOF_WEIGHT` is `TooLarge` at encoding.
+#[test]
+fn a_proof_over_max_proof_weight_is_never_emitted() {
+    let leaf = |bytes: usize| {
+        let segment = TrieSegment { n: u64::try_from(bytes * 8).unwrap(), b: vec![0; bytes] };
+        TrieProof::<H>::from_records(&[TrieRecord::TrieLeaf(TrieLeaf { s: segment, v: vec![0; 32] })]).unwrap()
+    };
+    let limit = dilf4s_proofs::MAX_PROOF_WEIGHT;
+    assert_eq!(leaf(usize::try_from(limit).unwrap()).to_value(), Err(TrieError::TooLarge { limit }));
+    assert!(leaf(1024).to_value().is_ok_and(|v| v.weight() <= limit));
+}

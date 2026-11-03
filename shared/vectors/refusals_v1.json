@@ -1,0 +1,4671 @@
+{
+  "spec" : "docs/specs/conformance.md",
+  "version" : 1,
+  "hash" : "SHA-256",
+  "cases" : [
+    {
+      "outcome" : "accepted",
+      "name" : "value: exactly 2^20 bytes, measured (weight 327,680)",
+      "check" : "vt-value",
+      "stateKey" : "a/1",
+      "input" : {
+        "leaf" : "821bffffffffffffffff1affffffff",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 16
+          },
+          {
+            "template" : "816124",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 1048576
+      },
+      "name" : "value: 2^20 + 1 bytes, measured to the limit (weight 327,681)",
+      "check" : "vt-value",
+      "stateKey" : "a/1",
+      "input" : {
+        "leaf" : "821bffffffffffffffff1affffffff",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 16
+          },
+          {
+            "template" : "82612440",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 1048576
+      },
+      "name" : "value: weight 2^21 - 1, refused by weight alone",
+      "check" : "vt-value",
+      "stateKey" : "a/1",
+      "input" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 20
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 1048576
+      },
+      "name" : "value: a saturated weight (70 doublings)",
+      "check" : "vt-value",
+      "stateKey" : "a/1",
+      "input" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 70
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "value: 253 levels deep",
+      "check" : "vt-value",
+      "stateKey" : "a/1",
+      "input" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "816124",
+            "times" : 253
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooDeep",
+        "limit" : 253,
+        "depth" : 254
+      },
+      "name" : "value: 254 levels deep",
+      "check" : "vt-value",
+      "stateKey" : "a/1",
+      "input" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "816124",
+            "times" : 254
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "chunk: 2^22 zero bytes pass the size check and do not decode",
+      "check" : "vt-chunk",
+      "zeros" : 4194304
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 4194304
+      },
+      "name" : "chunk: 2^22 + 1 zero bytes, refused by size",
+      "check" : "vt-chunk",
+      "zeros" : 4194305
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "delta: weight exactly 2^24 decodes",
+      "check" : "vt-delta",
+      "input" : {
+        "leaf" : "4100",
+        "steps" : [
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "a36468656164a361685820020202020202020202020202020202020202020202020202020202020202020261735820010101010101010101010101010101010101010101010101010101010101010161764800000000000000006772656d6f76657380677570736572747381a2616b63612f3161766124",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "delta: weight 2^24 + 1, refused before decoding",
+      "check" : "vt-delta",
+      "input" : {
+        "leaf" : "4100",
+        "steps" : [
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "a36468656164a361685820020202020202020202020202020202020202020202020202020202020202020261735820010101010101010101010101010101010101010101010101010101010101010161764800000000000000006772656d6f76657380677570736572747381a2616b63612f3161766124",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "delta: a saturated weight, refused before decoding",
+      "check" : "vt-delta",
+      "input" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 70
+          },
+          {
+            "template" : "a36468656164a361685820020202020202020202020202020202020202020202020202020202020202020261735820010101010101010101010101010101010101010101010101010101010101010161764800000000000000006772656d6f76657380677570736572747381a2616b63612f3161766124",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Key"
+      },
+      "name" : "delta: a key the schema pattern accepts but the grammar refuses (a 65-byte segment)",
+      "check" : "vt-delta",
+      "input" : {
+        "leaf" : "a36468656164a361685820020202020202020202020202020202020202020202020202020202020202020261735820010101010101010101010101010101010101010101010101010101010101010161764800000000000000006772656d6f76657380677570736572747381a2616b78417878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878617601"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "InvalidVersion"
+      },
+      "name" : "proof precedence: head version 2^63, and a trailing top record: the head first",
+      "check" : "vt-proof",
+      "input" : {
+        "leaf" : "a4626174a1617648000000000000000363746f7086a26163036173a261624100616e06a26163036173a2616240616e00a26173a2616240616e00617658202c0e81550cd74eec1d1849b46c566a465a4cff24735f2cdc93d31aef7ec61633a26173a2616240616e0061765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26173a261624100616e016176582013aa0a075919852e5e5a189e3cdb28f5fa25971ff7a21e554fbea06df362a028a26163036173a261624100616e066468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648800000000000000067686973746f727983a26163036173a26162480000000000000000616e183ea16168582005f4072d32b86d8463d1a9f68ae0f2b74869cb088eb4d7e0f2f8f55baa5946caa26173a261624100616e0161765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22be"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Trie.Encoding"
+      },
+      "name" : "proof precedence: a trailing top record, and an at version 2^63: the top first",
+      "check" : "vt-proof",
+      "input" : {
+        "leaf" : "a4626174a1617648800000000000000063746f7086a26163036173a261624100616e06a26163036173a2616240616e00a26173a2616240616e00617658202c0e81550cd74eec1d1849b46c566a465a4cff24735f2cdc93d31aef7ec61633a26173a2616240616e0061765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26173a261624100616e016176582013aa0a075919852e5e5a189e3cdb28f5fa25971ff7a21e554fbea06df362a028a26163036173a261624100616e066468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648000000000000000267686973746f727983a26163036173a26162480000000000000000616e183ea16168582005f4072d32b86d8463d1a9f68ae0f2b74869cb088eb4d7e0f2f8f55baa5946caa26173a261624100616e0161765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22be"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "InvalidVersion"
+      },
+      "name" : "proof precedence: an at version 2^63, and a trailing history record: at first",
+      "check" : "vt-proof",
+      "input" : {
+        "leaf" : "a4626174a1617648800000000000000063746f7085a26163036173a261624100616e06a26163036173a2616240616e00a26173a2616240616e00617658202c0e81550cd74eec1d1849b46c566a465a4cff24735f2cdc93d31aef7ec61633a26173a2616240616e0061765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26173a261624100616e016176582013aa0a075919852e5e5a189e3cdb28f5fa25971ff7a21e554fbea06df362a0286468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648000000000000000267686973746f727984a26163036173a26162480000000000000000616e183ea16168582005f4072d32b86d8463d1a9f68ae0f2b74869cb088eb4d7e0f2f8f55baa5946caa26173a261624100616e0161765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26163036173a26162480000000000000000616e183e"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "InvalidVersion"
+      },
+      "name" : "proof precedence: head version 2^63, and a 31-byte state root in the head: v first",
+      "check" : "vt-proof",
+      "input" : {
+        "leaf" : "a4626174a1617648000000000000000363746f7085a26163036173a261624100616e06a26163036173a2616240616e00a26173a2616240616e00617658202c0e81550cd74eec1d1849b46c566a465a4cff24735f2cdc93d31aef7ec61633a26173a2616240616e0061765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26173a261624100616e016176582013aa0a075919852e5e5a189e3cdb28f5fa25971ff7a21e554fbea06df362a0286468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc26173581f00000000000000000000000000000000000000000000000000000000000000617648800000000000000067686973746f727983a26163036173a26162480000000000000000616e183ea16168582005f4072d32b86d8463d1a9f68ae0f2b74869cb088eb4d7e0f2f8f55baa5946caa26173a261624100616e0161765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22be"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "delta precedence: a 31-byte parent root, and head version 2^63: the parent first",
+      "check" : "vt-delta",
+      "input" : {
+        "leaf" : "a46468656164a3616858200202020202020202020202020202020202020202020202020202020202020202617358200101010101010101010101010101010101010101010101010101010101010101617648800000000000000066706172656e74a36168582002020202020202020202020202020202020202020202020202020202020202026173581f0000000000000000000000000000000000000000000000000000000000000061764800000000000000006772656d6f76657380677570736572747380"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "InvalidVersion"
+      },
+      "name" : "delta precedence: head version 2^63, and an upserted key the grammar refuses: the head first",
+      "check" : "vt-delta",
+      "input" : {
+        "leaf" : "a46468656164a3616858200202020202020202020202020202020202020202020202020202020202020202617358200101010101010101010101010101010101010101010101010101010101010101617648800000000000000066706172656e74a361685820020202020202020202020202020202020202020202020202020202020202020261735820010101010101010101010101010101010101010101010101010101010101010161764800000000000000006772656d6f76657380677570736572747381a2616b78417878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878617601"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "proof precedence: head version 2^63, and a top that is not an array: the shape first",
+      "check" : "vt-proof",
+      "input" : {
+        "leaf" : "a4626174a1617648000000000000000363746f70016468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648800000000000000067686973746f727983a26163036173a26162480000000000000000616e183ea16168582005f4072d32b86d8463d1a9f68ae0f2b74869cb088eb4d7e0f2f8f55baa5946caa26173a261624100616e0161765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22be"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "delta precedence: head version 2^63, and upserts that are not an array: the shape first",
+      "check" : "vt-delta",
+      "input" : {
+        "leaf" : "a46468656164a3616858200202020202020202020202020202020202020202020202020202020202020202617358200101010101010101010101010101010101010101010101010101010101010101617648800000000000000066706172656e74a361685820020202020202020202020202020202020202020202020202020202020202020261735820010101010101010101010101010101010101010101010101010101010101010161764800000000000000006772656d6f76657380677570736572747301"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "chunk precedence: a history version 2^63 with a state root that is not bytes: the shape first",
+      "check" : "vt-chunk",
+      "chunk" : "a167686973746f727981a26173016176488000000000000000"
+    },
+    {
+      "outcome" : {
+        "kind" : "InvalidVersion"
+      },
+      "name" : "chunk precedence: a history version 2^63 with a 31-byte state root: v first",
+      "check" : "vt-chunk",
+      "chunk" : "a167686973746f727981a26173581f000000000000000000000000000000000000000000000000000000000000006176488000000000000000"
+    },
+    {
+      "outcome" : {
+        "kind" : "Trie.Encoding"
+      },
+      "name" : "proof: a top trie with a trailing record",
+      "check" : "vt-proof",
+      "input" : {
+        "leaf" : "a363746f7086a26163036173a261624100616e06a26163036173a2616240616e00a26173a2616240616e00617658202c0e81550cd74eec1d1849b46c566a465a4cff24735f2cdc93d31aef7ec61633a26173a2616240616e0061765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26173a261624100616e016176582013aa0a075919852e5e5a189e3cdb28f5fa25971ff7a21e554fbea06df362a028a26163036173a261624100616e066468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648000000000000000265737461746583a26163036173a2616243612f30616e16a26173a261624180616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6a16168582086a44d60f698b383cad3f74ffc0bce67be0d822ca60a84456851d20b789b131e"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "InvalidVersion"
+      },
+      "name" : "proof: an at version no version key decodes (2^63)",
+      "check" : "vt-proof",
+      "input" : {
+        "leaf" : "a4626174a1617648800000000000000063746f7085a26163036173a261624100616e06a26163036173a2616240616e00a26173a2616240616e00617658202c0e81550cd74eec1d1849b46c566a465a4cff24735f2cdc93d31aef7ec61633a26173a2616240616e0061765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26173a261624100616e016176582013aa0a075919852e5e5a189e3cdb28f5fa25971ff7a21e554fbea06df362a0286468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648000000000000000267686973746f727983a26163036173a26162480000000000000000616e183ea16168582005f4072d32b86d8463d1a9f68ae0f2b74869cb088eb4d7e0f2f8f55baa5946caa26173a261624100616e0161765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22be"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "proof: a saturated weight, refused before decoding",
+      "check" : "vt-proof",
+      "input" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 70
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "state: a/1 at the head",
+      "check" : "vt-state",
+      "root" : "25a097e7c4a9d273dfe9818aad3513ee3bb872e73201bd434835097266ea618e",
+      "input" : {
+        "leaf" : "a363746f7085a26163036173a261624100616e06a26163036173a2616240616e00a26173a2616240616e00617658202c0e81550cd74eec1d1849b46c566a465a4cff24735f2cdc93d31aef7ec61633a26173a2616240616e0061765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26173a261624100616e016176582013aa0a075919852e5e5a189e3cdb28f5fa25971ff7a21e554fbea06df362a0286468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648000000000000000265737461746583a26163036173a2616243612f30616e16a26173a261624180616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6a16168582086a44d60f698b383cad3f74ffc0bce67be0d822ca60a84456851d20b789b131e"
+      },
+      "stateKey" : "a/1"
+    },
+    {
+      "outcome" : {
+        "kind" : "RootMismatch",
+        "component" : "root"
+      },
+      "name" : "state: against another root",
+      "check" : "vt-state",
+      "root" : "daad05004ea51c68de74ef9afc20d4d2fa6059406b26496760703055ce6322c0",
+      "input" : {
+        "leaf" : "a363746f7085a26163036173a261624100616e06a26163036173a2616240616e00a26173a2616240616e00617658202c0e81550cd74eec1d1849b46c566a465a4cff24735f2cdc93d31aef7ec61633a26173a2616240616e0061765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26173a261624100616e016176582013aa0a075919852e5e5a189e3cdb28f5fa25971ff7a21e554fbea06df362a0286468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648000000000000000265737461746583a26163036173a2616243612f30616e16a26173a261624180616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6a16168582086a44d60f698b383cad3f74ffc0bce67be0d822ca60a84456851d20b789b131e"
+      },
+      "stateKey" : "a/1"
+    },
+    {
+      "outcome" : {
+        "kind" : "NotCovered"
+      },
+      "name" : "state: a/2, behind a stub of a proof of a/1",
+      "check" : "vt-state",
+      "root" : "25a097e7c4a9d273dfe9818aad3513ee3bb872e73201bd434835097266ea618e",
+      "input" : {
+        "leaf" : "a363746f7085a26163036173a261624100616e06a26163036173a2616240616e00a26173a2616240616e00617658202c0e81550cd74eec1d1849b46c566a465a4cff24735f2cdc93d31aef7ec61633a26173a2616240616e0061765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26173a261624100616e016176582013aa0a075919852e5e5a189e3cdb28f5fa25971ff7a21e554fbea06df362a0286468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648000000000000000265737461746583a26163036173a2616243612f30616e16a26173a261624180616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6a16168582086a44d60f698b383cad3f74ffc0bce67be0d822ca60a84456851d20b789b131e"
+      },
+      "stateKey" : "a/2"
+    },
+    {
+      "outcome" : {
+        "kind" : "UnknownVersion"
+      },
+      "name" : "historical: version 3 was never committed",
+      "check" : "vt-historical",
+      "root" : "25a097e7c4a9d273dfe9818aad3513ee3bb872e73201bd434835097266ea618e",
+      "input" : {
+        "leaf" : "a4626174a1617648000000000000000363746f7085a26163036173a261624100616e06a26163036173a2616240616e00a26173a2616240616e00617658202c0e81550cd74eec1d1849b46c566a465a4cff24735f2cdc93d31aef7ec61633a26173a2616240616e0061765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22bea26173a261624100616e016176582013aa0a075919852e5e5a189e3cdb28f5fa25971ff7a21e554fbea06df362a0286468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648000000000000000267686973746f727983a26163036173a26162480000000000000000616e183ea16168582005f4072d32b86d8463d1a9f68ae0f2b74869cb088eb4d7e0f2f8f55baa5946caa26173a261624100616e0161765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22be"
+      },
+      "at" : 3,
+      "stateKey" : "a/1"
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "replica: the first delta",
+      "check" : "vt-replica",
+      "inputs" : [
+        {
+          "leaf" : "a36468656164a3616858204f05d9e2a4ada02149fcc2efd497b27ffd743e0a85f31bd359565507bc56cfab617358204fca9f9dacc330c2e4097bf97cf6f3842d71656a430badc3e8bf42d9cbcd449e61764800000000000000016772656d6f76657380677570736572747382a2616b63612f31617601a2616b63612f3261766178"
+        }
+      ]
+    },
+    {
+      "outcome" : {
+        "kind" : "VersionNotIncreasing"
+      },
+      "name" : "replica: the first delta, then version 1 again",
+      "check" : "vt-replica",
+      "inputs" : [
+        {
+          "leaf" : "a36468656164a3616858204f05d9e2a4ada02149fcc2efd497b27ffd743e0a85f31bd359565507bc56cfab617358204fca9f9dacc330c2e4097bf97cf6f3842d71656a430badc3e8bf42d9cbcd449e61764800000000000000016772656d6f76657380677570736572747382a2616b63612f31617601a2616b63612f3261766178"
+        },
+        {
+          "leaf" : "a46468656164a3616858204f05d9e2a4ada02149fcc2efd497b27ffd743e0a85f31bd359565507bc56cfab617358204fca9f9dacc330c2e4097bf97cf6f3842d71656a430badc3e8bf42d9cbcd449e617648000000000000000166706172656e74a3616858204f05d9e2a4ada02149fcc2efd497b27ffd743e0a85f31bd359565507bc56cfab617358204fca9f9dacc330c2e4097bf97cf6f3842d71656a430badc3e8bf42d9cbcd449e61764800000000000000016772656d6f76657380677570736572747380"
+        }
+      ]
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "merkle inclusion: leaf 0 of 3",
+      "check" : "merkle-inclusion",
+      "root" : "fd9059f90b02335e997391cf63cc3c4643189a71df05d8becc43f06875365b7d",
+      "leafHash" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "input" : {
+        "leaf" : "a364706174688258204117e9376b2fd4889c37bac165abca50815a68bf2801bb6dec03d58209fda8e758200c270a8d26f630304809509c0f76cc15876cba2cbd5427a242349504f014c1326473697a650365696e64657800"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "RootMismatch"
+      },
+      "name" : "merkle inclusion: against another root",
+      "check" : "merkle-inclusion",
+      "root" : "747064cc7b5acbbee230be16fd3faad34883f4c619a283631934a20e29a85970",
+      "leafHash" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "input" : {
+        "leaf" : "a364706174688258204117e9376b2fd4889c37bac165abca50815a68bf2801bb6dec03d58209fda8e758200c270a8d26f630304809509c0f76cc15876cba2cbd5427a242349504f014c1326473697a650365696e64657800"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "InvalidProof"
+      },
+      "name" : "merkle inclusion: a path one digest short",
+      "check" : "merkle-inclusion",
+      "root" : "fd9059f90b02335e997391cf63cc3c4643189a71df05d8becc43f06875365b7d",
+      "leafHash" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "input" : {
+        "leaf" : "a364706174688158204117e9376b2fd4889c37bac165abca50815a68bf2801bb6dec03d58209fda8e76473697a650365696e64657800"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "InvalidProof"
+      },
+      "name" : "merkle inclusion: precedence: a path one digest short, against another root: the path first",
+      "check" : "merkle-inclusion",
+      "root" : "747064cc7b5acbbee230be16fd3faad34883f4c619a283631934a20e29a85970",
+      "leafHash" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "input" : {
+        "leaf" : "a364706174688158204117e9376b2fd4889c37bac165abca50815a68bf2801bb6dec03d58209fda8e76473697a650365696e64657800"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "merkle inclusion: precedence: an index not below the size, and a 31-byte path digest: the path first",
+      "check" : "merkle-inclusion",
+      "root" : "fd9059f90b02335e997391cf63cc3c4643189a71df05d8becc43f06875365b7d",
+      "leafHash" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "input" : {
+        "leaf" : "a3647061746881581f000000000000000000000000000000000000000000000000000000000000006473697a650365696e64657803"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "merkle inclusion: a path of 508400 digests, over the weight cap",
+      "check" : "merkle-inclusion",
+      "root" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "leafHash" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "input" : {
+        "leaf" : "582048fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+        "steps" : [
+          {
+            "copies" : 508400
+          },
+          {
+            "template" : "a3647061746861246473697a650165696e64657800",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "merkle consistency: 1 to 3",
+      "check" : "merkle-consistency",
+      "oldRoot" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "root" : "fd9059f90b02335e997391cf63cc3c4643189a71df05d8becc43f06875365b7d",
+      "input" : {
+        "leaf" : "a3636e657703636f6c640164706174688258204117e9376b2fd4889c37bac165abca50815a68bf2801bb6dec03d58209fda8e758200c270a8d26f630304809509c0f76cc15876cba2cbd5427a242349504f014c132"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "merkle consistency: a saturated weight",
+      "check" : "merkle-consistency",
+      "oldRoot" : "fd9059f90b02335e997391cf63cc3c4643189a71df05d8becc43f06875365b7d",
+      "root" : "fd9059f90b02335e997391cf63cc3c4643189a71df05d8becc43f06875365b7d",
+      "input" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 70
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "trie: key 0x01",
+      "check" : "trie-lookup",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "39a0455449fb53815ff5126b3a49410ed91992142c6ab498f8cd2ddcbaba2665",
+      "key" : "01",
+      "input" : {
+        "leaf" : "85a26163036173a2616240616e00a26163036173a261624100616e05a26173a261624180616e016176582077e417b20f2e144a7c3a2636e980aaac8b8f6fabba500881b0d9b7cbfc9e2804a161685820aeea23ec67a11961055d885b909c06b154c1783ee979a47f035cf0b82aba8c41a16168582082c78868a61b23b32525479bda60de15aabdc64e4da6d6655c65d239b55bc494"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "RootMismatch"
+      },
+      "name" : "trie: against another root",
+      "check" : "trie-lookup",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+      "key" : "01",
+      "input" : {
+        "leaf" : "85a26163036173a2616240616e00a26163036173a261624100616e05a26173a261624180616e016176582077e417b20f2e144a7c3a2636e980aaac8b8f6fabba500881b0d9b7cbfc9e2804a161685820aeea23ec67a11961055d885b909c06b154c1783ee979a47f035cf0b82aba8c41a16168582082c78868a61b23b32525479bda60de15aabdc64e4da6d6655c65d239b55bc494"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "NotCovered"
+      },
+      "name" : "trie: key 0x02, behind a stub",
+      "check" : "trie-lookup",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "39a0455449fb53815ff5126b3a49410ed91992142c6ab498f8cd2ddcbaba2665",
+      "key" : "02",
+      "input" : {
+        "leaf" : "85a26163036173a2616240616e00a26163036173a261624100616e05a26173a261624180616e016176582077e417b20f2e144a7c3a2636e980aaac8b8f6fabba500881b0d9b7cbfc9e2804a161685820aeea23ec67a11961055d885b909c06b154c1783ee979a47f035cf0b82aba8c41a16168582082c78868a61b23b32525479bda60de15aabdc64e4da6d6655c65d239b55bc494"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "InvalidKey"
+      },
+      "name" : "trie: a two-byte key in a fixed(1) trie",
+      "check" : "trie-lookup",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "39a0455449fb53815ff5126b3a49410ed91992142c6ab498f8cd2ddcbaba2665",
+      "key" : "0100",
+      "input" : {
+        "leaf" : "85a26163036173a2616240616e00a26163036173a261624100616e05a26173a261624180616e016176582077e417b20f2e144a7c3a2636e980aaac8b8f6fabba500881b0d9b7cbfc9e2804a161685820aeea23ec67a11961055d885b909c06b154c1783ee979a47f035cf0b82aba8c41a16168582082c78868a61b23b32525479bda60de15aabdc64e4da6d6655c65d239b55bc494"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "trie: a saturated weight",
+      "check" : "trie-lookup",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "39a0455449fb53815ff5126b3a49410ed91992142c6ab498f8cd2ddcbaba2665",
+      "key" : "01",
+      "input" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 70
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "InvalidProof"
+      },
+      "name" : "trie: precedence: a proof invalid for the mode, against another root: the structure first",
+      "check" : "trie-lookup",
+      "mode" : {
+        "fixed" : 2
+      },
+      "root" : "fa45c59da4e14bf0042dfeadde89c591e0293e53e657d7eee6d42b6f0ed052a4",
+      "key" : "0100",
+      "input" : {
+        "leaf" : "85a26163036173a2616240616e00a26163036173a261624100616e05a26173a261624180616e016176582077e417b20f2e144a7c3a2636e980aaac8b8f6fabba500881b0d9b7cbfc9e2804a161685820aeea23ec67a11961055d885b909c06b154c1783ee979a47f035cf0b82aba8c41a16168582082c78868a61b23b32525479bda60de15aabdc64e4da6d6655c65d239b55bc494"
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "poseidon: position 3 of depth 2",
+      "check" : "poseidon-proof",
+      "input" : {
+        "leaf" : "a268706f736974696f6e03687369626c696e6773820000"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Position",
+        "depth" : 2
+      },
+      "name" : "poseidon: position 4 of depth 2",
+      "check" : "poseidon-proof",
+      "input" : {
+        "leaf" : "a268706f736974696f6e04687369626c696e6773820000"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "poseidon: precedence: a sibling not below r, and position 4 of depth 2: the siblings first",
+      "check" : "poseidon-proof",
+      "input" : {
+        "leaf" : "a268706f736974696f6e04687369626c696e67738200c2582030644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "poseidon: a saturated weight",
+      "check" : "poseidon-proof",
+      "input" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 70
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "trie prefix verify: an entry with an empty key and a null value: the null is refused first",
+      "check" : "trie-prefix-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "prefix" : "",
+      "entries" : [
+        {
+          "key" : "",
+          "value" : {
+            "leaf" : "f6"
+          }
+        }
+      ],
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "merkle verify: a leaf of weight exactly 2^24",
+      "check" : "merkle-verify",
+      "root" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "size" : 1,
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          }
+        ]
+      },
+      "input" : {
+        "leaf" : "a36470617468806473697a650165696e64657800"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "merkle verify: a leaf of weight 2^24 + 1, refused before it is hashed",
+      "check" : "merkle-verify",
+      "root" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "size" : 1,
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          }
+        ]
+      },
+      "input" : {
+        "leaf" : "a36470617468806473697a650165696e64657800"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "merkle verify: a leaf of saturated weight",
+      "check" : "merkle-verify",
+      "root" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "size" : 1,
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 70
+          }
+        ]
+      },
+      "input" : {
+        "leaf" : "a36470617468806473697a650165696e64657800"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "merkle verify: a leaf over the cap with a 31-byte root: the head is checked first",
+      "check" : "merkle-verify",
+      "root" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5",
+      "size" : 1,
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          }
+        ]
+      },
+      "input" : {
+        "leaf" : "a36470617468806473697a650165696e64657800"
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "trie verify: absence claimed",
+      "check" : "trie-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "key" : "01",
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "trie verify: a value of weight exactly 2^24",
+      "check" : "trie-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "key" : "01",
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      },
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "trie verify: a value of weight 2^24 + 1, refused before it is hashed",
+      "check" : "trie-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "key" : "01",
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      },
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "trie verify: a claim over the cap with a 31-byte root: the claim is refused first",
+      "check" : "trie-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c",
+      "key" : "01",
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      },
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "trie verify: a 31-byte root, with no claim to refuse first",
+      "check" : "trie-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c",
+      "key" : "01",
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "trie prefix verify: two values of 2^23, together 2^24",
+      "check" : "trie-prefix-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "prefix" : "",
+      "entries" : [
+        {
+          "key" : "01",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "key" : "02",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        }
+      ],
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "trie prefix verify: values of 2^23 and 2^23 + 1, each under the cap, together over it",
+      "check" : "trie-prefix-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "prefix" : "",
+      "entries" : [
+        {
+          "key" : "01",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "key" : "02",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              }
+            ]
+          }
+        }
+      ],
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "commit: a batch whose delta weighs exactly 2^24",
+      "check" : "vt-commit",
+      "batch" : [
+        {
+          "stateKey" : "wide/1",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/2",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/3",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/4",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/5",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/6",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/7",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/8",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/9",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/10",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/11",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/12",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/13",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/14",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/15",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "pad",
+          "value" : {
+            "leaf" : "4100",
+            "steps" : [
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "commit: a batch whose delta would weigh 2^24 + 1, refused before anything is written",
+      "check" : "vt-commit",
+      "batch" : [
+        {
+          "stateKey" : "wide/1",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/2",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/3",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/4",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/5",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/6",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/7",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/8",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/9",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/10",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/11",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/12",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/13",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/14",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/15",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "pad",
+          "value" : {
+            "leaf" : "4100",
+            "steps" : [
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

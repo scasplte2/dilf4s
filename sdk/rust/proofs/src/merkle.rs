@@ -60,6 +60,11 @@ pub enum MerkleError {
         /// Why.
         reason: String,
     },
+    /// A claimed leaf heavier than [`crate::MAX_PROOF_WEIGHT`], refused before it is hashed.
+    TooLarge {
+        /// The limit: [`crate::MAX_PROOF_WEIGHT`] (normative).
+        limit: u64,
+    },
 }
 
 impl fmt::Display for MerkleError {
@@ -72,6 +77,7 @@ impl fmt::Display for MerkleError {
                 write!(f, "root mismatch: expected {expected}, computed {computed}")
             }
             Self::Encoding { reason } => write!(f, "encoding: {reason}"),
+            Self::TooLarge { limit } => write!(f, "the leaf weighs over {limit}"),
         }
     }
 }
@@ -87,6 +93,7 @@ impl MerkleError {
             Self::InvalidProof { .. } => "InvalidProof",
             Self::RootMismatch { .. } => "RootMismatch",
             Self::Encoding { .. } => "Encoding",
+            Self::TooLarge { .. } => "TooLarge",
         }
     }
 
@@ -102,6 +109,9 @@ pub trait MerkleHashing<H: Hasher> {
     type Leaf: ?Sized;
     /// The hash of a leaf.
     fn leaf_hash(&self, leaf: &Self::Leaf) -> Digest<H>;
+    /// A leaf's weight as a claim ([`Value::weight`]; raw bytes weigh one more than their length), which a verifier
+    /// bounds by [`crate::MAX_PROOF_WEIGHT`] before hashing it.
+    fn leaf_weight(&self, leaf: &Self::Leaf) -> u64;
     /// The hash of an interior node.
     fn node_hash(&self, left: &Digest<H>, right: &Digest<H>) -> Digest<H>;
     /// The root of the empty tree.
@@ -142,6 +152,10 @@ impl<H: Hasher> MerkleHashing<H> for Tagged<H> {
         self.leaf.hash(&[&value_commitment(leaf)])
     }
 
+    fn leaf_weight(&self, leaf: &Value) -> u64 {
+        leaf.weight()
+    }
+
     fn node_hash(&self, left: &Digest<H>, right: &Digest<H>) -> Digest<H> {
         self.node.hash(&[left.as_bytes(), right.as_bytes()])
     }
@@ -180,6 +194,10 @@ impl<H: Hasher> MerkleHashing<H> for Rfc6962<H> {
         Digest::from_output(H::hash_parts(&[&[0x00], leaf]))
     }
 
+    fn leaf_weight(&self, leaf: &[u8]) -> u64 {
+        u64::try_from(leaf.len()).map_or(u64::MAX, |n| n.saturating_add(1))
+    }
+
     fn node_hash(&self, left: &Digest<H>, right: &Digest<H>) -> Digest<H> {
         Digest::from_output(H::hash_parts(&[&[0x01], left.as_bytes(), right.as_bytes()]))
     }
@@ -211,9 +229,10 @@ impl<H: Hasher> InclusionProof<H> {
         if index < size { Ok(Self { index, size, path }) } else { Err(MerkleError::IndexOutOfRange { index, size }) }
     }
 
-    /// Decodes a `merkle-inclusion` value: the schema, digest lengths for `H`, and `index < size`.
+    /// Decodes a `merkle-inclusion` value: the schema, digest lengths for `H`, and `index < size`. A value heavier than
+    /// [`crate::MAX_PROOF_WEIGHT`] is `Encoding`, refused before it is decoded.
     pub fn from_value(value: &Value) -> Result<Self, MerkleError> {
-        let w = MerkleInclusion::from_value(value).map_err(encoding)?;
+        let w = MerkleInclusion::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(encoding)?;
         Self::new(w.index, w.size, digests(&w.path)?)
     }
 
@@ -263,9 +282,10 @@ impl<H: Hasher> ConsistencyProof<H> {
         }
     }
 
-    /// Decodes a `merkle-consistency` value: the schema, digest lengths for `H`, and `old <= new`.
+    /// Decodes a `merkle-consistency` value: the schema, digest lengths for `H`, and `old <= new`. A value heavier
+    /// than [`crate::MAX_PROOF_WEIGHT`] is `Encoding`, refused before it is decoded.
     pub fn from_value(value: &Value) -> Result<Self, MerkleError> {
-        let w = MerkleConsistency::from_value(value).map_err(encoding)?;
+        let w = MerkleConsistency::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(encoding)?;
         Self::new(w.old, w.new, digests(&w.path)?)
     }
 
@@ -481,13 +501,21 @@ impl<H: Hasher> TreeHead<H> {
 
 /// `merkle_verify [head, leaf, proof]`: the leaf (a value for the tagged profile, bytes for RFC 6962) is at the
 /// proof's index of the tree `head` names. A proof whose size differs from the head's is `false`; an undecodable proof
-/// is an error. O(the weight of the leaf and the proof), which the JLVM prices before calling (jlvm.md section 7).
+/// is an error. A leaf heavier than [`crate::MAX_PROOF_WEIGHT`] is `TooLarge`, before the proof is decoded, so the work
+/// is bounded whatever the arguments share.
 pub fn merkle_verify<H: Hasher, M: MerkleHashing<H>>(
     profile: &M,
     head: &TreeHead<H>,
     leaf: &M::Leaf,
     proof: &Value,
 ) -> Result<bool, MerkleError> {
+    // the head first, as every SDK checks it: a size past the tree-index range (2^63 - 1) is malformed
+    if i64::try_from(head.size).is_err() {
+        return Err(encoding("head.size is a tree size"));
+    }
+    if !crate::claims_within([profile.leaf_weight(leaf)]) {
+        return Err(MerkleError::TooLarge { limit: crate::MAX_PROOF_WEIGHT });
+    }
     let p = InclusionProof::<H>::from_value(proof)?;
     if p.size != head.size {
         return Ok(false);

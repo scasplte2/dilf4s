@@ -20,9 +20,9 @@ fn digits(n: usize) -> String {
 #[test]
 fn ten_thousand_digits_read_and_write() {
     let v = json::parse(&digits(10_000)).unwrap();
-    assert_eq!(json::render(&v).unwrap(), digits(10_000));
+    assert_eq!(json::render_within(&v, usize::MAX).unwrap(), digits(10_000));
     let small = json::parse(&format!("0.{}1e1", "0".repeat(10_000))).unwrap();
-    assert_eq!(json::render(&small).unwrap(), format!("0.{}1", "0".repeat(9_999)));
+    assert_eq!(json::render_within(&small, usize::MAX).unwrap(), format!("0.{}1", "0".repeat(9_999)));
     assert_eq!(json::parse(&format!("1e{}2", "0".repeat(20_000))).unwrap(), Value::int(100));
 }
 
@@ -61,12 +61,12 @@ fn malformed_numbers_are_described_by_length_and_offset_never_their_text() {
 
 #[test]
 fn rendering_refuses_what_would_not_read_back() {
-    let over_long = Err(CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong });
-    assert_eq!(json::render(&Value::int(num_traits::pow(BigInt::from(10u8), 10_000))), over_long);
+    let over_long = Err(json::RenderError::Canonical(CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong }));
+    assert_eq!(json::render_within(&Value::int(num_traits::pow(BigInt::from(10u8), 10_000)), usize::MAX), over_long);
     let wide = Value::number(&BigInt::from(1u8), &num_traits::pow(BigInt::from(5u8), 14_400)).unwrap();
     let Value::Rational(r) = &wide else { panic!("a rational") };
     assert_eq!(json::decimal(r), Err(NotJson::OverLong));
-    assert_eq!(json::render(&wide), over_long);
+    assert_eq!(json::render_within(&wide, usize::MAX), over_long);
     let third: Rational = match Value::number(&BigInt::from(1u8), &BigInt::from(3u8)).unwrap() {
         Value::Rational(r) => r,
         _ => panic!("a rational"),

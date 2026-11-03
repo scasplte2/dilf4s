@@ -228,7 +228,7 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
         .same(Right(chunks), again)
         .and(
           expect.same(
-            Left(VersionedTrieError.TooLarge("a snapshot chunk", huge.size, VersionedTrie.MaxChunkBytes)),
+            Left(VersionedTrieError.TooLarge("a snapshot chunk", VersionedTrie.MaxChunkBytes)),
             VersionedTrieWire.decodeChunk[Long, H](huge)
           )
         )

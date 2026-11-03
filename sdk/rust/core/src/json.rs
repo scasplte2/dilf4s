@@ -2,7 +2,8 @@
 //!
 //! [`parse`] is a strict RFC 8259 parser that reads numbers exactly from their source text (never through a float),
 //! rejects duplicate member names and unpaired surrogates, and keeps its own frame stack, so nesting is a typed error
-//! rather than a stack overflow. [`render`] is the display view, and fails for values JSON cannot represent.
+//! rather than a stack overflow. [`render_within`] is the display view, within a byte limit the caller names, and fails
+//! for values JSON cannot represent.
 
 use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
@@ -391,15 +392,83 @@ fn object(entries: Vec<(Wtf8, Value)>) -> Result<Map, CanonicalError> {
 
 // ------------------------------------------------------------------------------------------------ render
 
-/// Compact JSON with object members in code-point order of their names. Fails for bytes and for rationals with no
-/// terminating decimal. Never recursive: its explicit stack holds at most [`MAX_DEPTH`] open containers.
+/// Why a value was not rendered: JSON cannot represent it, or its JSON is longer than the limit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RenderError {
+    /// Bytes, a rational with no terminating decimal, or a number past the bounds [`parse`] accepts.
+    Canonical(CanonicalError),
+    /// The JSON is longer than the limit (docs/specs/conformance.md: the limit alone, nothing measured).
+    TooLarge(crate::cbor::TooLarge),
+}
+
+impl core::fmt::Display for RenderError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Canonical(e) => e.fmt(f),
+            Self::TooLarge(t) => write!(f, "the JSON is over {} bytes", t.limit),
+        }
+    }
+}
+
+impl core::error::Error for RenderError {}
+
+impl From<CanonicalError> for RenderError {
+    fn from(e: CanonicalError) -> Self {
+        Self::Canonical(e)
+    }
+}
+
+/// Compact JSON with object members in code-point order of their names, if it is at most `max_bytes` long in UTF-8.
+/// Fails for bytes, non-terminating rationals and over-long numbers, and with `TooLarge` at the first part found past
+/// the limit, whichever comes first. Never recursive: its explicit stack holds at most [`MAX_DEPTH`] open containers.
 ///
-/// It costs at least O([`Value::weight`]) (a rational can render longer than its weight), which for a value built
-/// with shared parts can be far more than the value occupies: bound the weight of such a value first.
-pub fn render(value: &Value) -> Result<String, CanonicalError> {
-    let mut out = String::new();
+/// O(min(weight, `max_bytes`)) apart from sorting object members: a value's JSON is at least as long in UTF-8 as its
+/// weight (each node writes at least a byte, a text or key its UTF-8 and quotes, a number of `l` whole limbs more than
+/// `l` digits), so each part is refused in O(1) when its weight is over what is left, and every part written fits;
+/// escaped text is counted before it is written. There is no render without a limit.
+pub fn render_within(value: &Value, max_bytes: usize) -> Result<String, RenderError> {
+    let mut out = Budget { out: String::new(), max: max_bytes };
     write_json(&mut out, value)?;
-    Ok(out)
+    Ok(out.out)
+}
+
+/// The output so far and its limit, in UTF-8 bytes.
+struct Budget {
+    out: String,
+    max: usize,
+}
+
+impl Budget {
+    fn refused(&self) -> RenderError {
+        RenderError::TooLarge(crate::cbor::TooLarge { limit: self.max })
+    }
+
+    fn left(&self) -> usize {
+        self.max.saturating_sub(self.out.len())
+    }
+
+    /// Whether a part of at least `weight` bytes can still fit.
+    fn admits(&self, weight: u64) -> Result<(), RenderError> {
+        if usize::try_from(weight).is_ok_and(|w| w <= self.left()) { Ok(()) } else { Err(self.refused()) }
+    }
+
+    /// Writes `piece` if it fits.
+    fn push(&mut self, piece: &str) -> Result<(), RenderError> {
+        if piece.len() > self.left() {
+            return Err(self.refused());
+        }
+        self.out.push_str(piece);
+        Ok(())
+    }
+
+    /// Writes `s` quoted and escaped, counted before it is built.
+    fn quote(&mut self, s: &str) -> Result<(), RenderError> {
+        if quoted_len(s) > self.left() {
+            return Err(self.refused());
+        }
+        quote(&mut self.out, s);
+        Ok(())
+    }
 }
 
 /// An array or object being rendered: the elements still to come, and whether one has been written.
@@ -409,28 +478,31 @@ enum Open<'a> {
 }
 
 /// Never recursive: an explicit stack holds one open container per level of nesting (at most [`MAX_DEPTH`]).
-fn write_json(out: &mut String, value: &Value) -> Result<(), CanonicalError> {
+fn write_json(out: &mut Budget, value: &Value) -> Result<(), RenderError> {
     let mut stack: Vec<Open<'_>> = Vec::new();
     let mut next = Some(value);
     loop {
+        if let Some(v) = next {
+            out.admits(v.weight())?;
+        }
         match next.take() {
-            Some(Value::Null) => out.push_str("null"),
-            Some(Value::Bool(b)) => out.push_str(if *b { "true" } else { "false" }),
-            Some(Value::Int(n)) => out.push_str(&integer_text(n)?),
+            Some(Value::Null) => out.push("null")?,
+            Some(Value::Bool(b)) => out.push(if *b { "true" } else { "false" })?,
+            Some(Value::Int(n)) => out.push(&integer_text(n)?)?,
             Some(Value::Rational(r)) => {
-                out.push_str(&decimal(r).map_err(|kind| CanonicalError::NotJsonRepresentable { kind })?);
+                out.push(&decimal(r).map_err(|kind| CanonicalError::NotJsonRepresentable { kind })?)?;
             }
-            Some(Value::Text(s)) => quote(out, s),
-            Some(Value::Bytes(_)) => return Err(CanonicalError::NotJsonRepresentable { kind: NotJson::Bytes }),
+            Some(Value::Text(s)) => out.quote(s)?,
+            Some(Value::Bytes(_)) => return Err(CanonicalError::NotJsonRepresentable { kind: NotJson::Bytes }.into()),
             Some(Value::Array(a)) => {
-                out.push('[');
+                out.push("[")?;
                 stack.push(Open::Items { items: a.items().iter(), started: false });
             }
             Some(Value::Map(m)) => {
+                out.push("{")?;
                 // Rust orders str by bytes, which for UTF-8 is code-point order
                 let mut members: Vec<(&Text, &Value)> = m.entries().collect();
                 members.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
-                out.push('{');
                 stack.push(Open::Members { members: members.into_iter(), started: false });
             }
             None => {}
@@ -439,27 +511,33 @@ fn write_json(out: &mut String, value: &Value) -> Result<(), CanonicalError> {
             return Ok(());
         };
         let closed = match open {
-            Open::Items { items, started } => items.next().map_or(Some(']'), |v| {
-                if *started {
-                    out.push(',');
+            Open::Items { items, started } => match items.next() {
+                None => Some("]"),
+                Some(v) => {
+                    if *started {
+                        out.push(",")?;
+                    }
+                    *started = true;
+                    next = Some(v);
+                    None
                 }
-                *started = true;
-                next = Some(v);
-                None
-            }),
-            Open::Members { members, started } => members.next().map_or(Some('}'), |(k, v)| {
-                if *started {
-                    out.push(',');
+            },
+            Open::Members { members, started } => match members.next() {
+                None => Some("}"),
+                Some((k, v)) => {
+                    if *started {
+                        out.push(",")?;
+                    }
+                    *started = true;
+                    out.quote(k)?;
+                    out.push(":")?;
+                    next = Some(v);
+                    None
                 }
-                *started = true;
-                quote(out, k);
-                out.push(':');
-                next = Some(v);
-                None
-            }),
+            },
         };
         if let Some(close) = closed {
-            out.push(close);
+            out.push(close)?;
             stack.pop();
         }
     }
@@ -485,6 +563,18 @@ fn within(text: String) -> Option<String> {
     };
     let scale_ok = u32::try_from(frac_part.len()).is_ok_and(|s| s <= DEFAULT_MAX_SCALE);
     (significand <= MAX_DIGITS && scale_ok).then_some(text)
+}
+
+/// The length of `s` quoted and escaped as [`quote`] writes it, in UTF-8 bytes.
+fn quoted_len(s: &str) -> usize {
+    s.chars().fold(2usize, |n, c| {
+        let w = match c {
+            '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
+            c if c < ' ' => 6,
+            c => c.len_utf8(),
+        };
+        n.saturating_add(w)
+    })
 }
 
 fn quote(out: &mut String, s: &str) {

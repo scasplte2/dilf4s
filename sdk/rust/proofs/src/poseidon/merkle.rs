@@ -21,9 +21,9 @@ pub const MAX_DEPTH: usize = 256;
 pub enum PoseidonMerkleError {
     /// A position outside `[0, 2^depth)`, or more than 256 siblings.
     Position {
-        /// The position.
+        /// The position: it echoes the caller's input, so it is informative.
         position: BigUint,
-        /// The depth (the number of siblings).
+        /// The depth (the number of siblings, or the tree's depth): normative (docs/specs/conformance.md section 3).
         depth: usize,
     },
     /// A proof that does not decode, or a sibling outside `[0, r)`.
@@ -87,10 +87,11 @@ impl PoseidonMerkleProof {
         }
     }
 
-    /// Decodes a `poseidon-merkle-proof` value: the schema's shape and ranges, then `position < 2^depth`.
+    /// Decodes a `poseidon-merkle-proof` value: the schema's shape and ranges, then `position < 2^depth`. A value
+    /// heavier than [`crate::MAX_PROOF_WEIGHT`] is `Encoding`, refused before it is decoded.
     pub fn from_value(value: &Value) -> Result<Self, PoseidonMerkleError> {
         let encoding = |reason: String| PoseidonMerkleError::Encoding { reason };
-        let w = Wire::from_value(value).map_err(|e| encoding(alloc::format!("{e}")))?;
+        let w = Wire::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(|e| encoding(alloc::format!("{e}")))?;
         let siblings = w
             .siblings
             .iter()

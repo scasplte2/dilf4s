@@ -6,11 +6,12 @@ import cats.{Eval, Monad}
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.accumulators.trie.Node.{Branch, Leaf}
+import xyz.kd5ujc.accumulators.{ProofInput, ValueCommitment}
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.hash.{Digest, Hasher}
 import xyz.kd5ujc.models.{trie => W}
 
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
 /** A node of a partial trie (docs/specs/trie.md §4). */
 sealed trait ProofNode[H] extends Product with Serializable
@@ -262,6 +263,62 @@ object TrieProofs {
         }
     }
 
+  // ---- the JLVM's trie operations over caller values (docs/specs/jlvm.md §6), as the SDKs' trie_verify and
+  // trie_prefix_verify: claims are capped by weight before any is hashed and before the proof is decoded
+
+  private def claimHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Digest[H] = T.value(ValueCommitment.bytes(v))
+
+  /** A verified proof, or `None` for one of another trie (`false`); a root of the wrong length is `Encoding`. */
+  private def verifiedOrNone[H](mode: KeyMode, root: ByteVector, proof: CanonicalValue)(
+    implicit H: Hasher[H],
+    T:          TrieHashing[H]
+  ): Either[TrieError, Option[VerifiedProof[H]]] =
+    for {
+      r <- Digest.fromBytes[H](root).leftMap(e => TrieError.Encoding(s"root: $e"))
+      p <- decode[H](proof)
+      v <- verify(mode, r, p) match {
+        case Right(v)                           => Option(v).asRight
+        case Left(TrieError.RootMismatch(_, _)) => None.asRight
+        case Left(other)                        => other.asLeft
+      }
+    } yield v
+
+  /** `trie_verify`: whether `key` holds `claim` (`None` or null: is absent). */
+  def verifyClaim[H](mode: KeyMode, root: ByteVector, key: ByteVector, claim: Option[CanonicalValue], proof: CanonicalValue)(
+    implicit H: Hasher[H],
+    T:          TrieHashing[H]
+  ): Either[TrieError, Boolean] =
+    for {
+      path <- mode.path(key)
+      present = claim.filterNot(_ == CanonicalValue.CNull)
+      _        <- ProofInput.claimed(present.toList)(TrieError.TooLarge(_))
+      verified <- verifiedOrNone(mode, root, proof)
+      held     <- verified.fold(false.asRight[TrieError])(_.holds(path, present.map(claimHash[H])))
+    } yield held
+
+  /** `trie_prefix_verify`: whether `entries`, in key order, are exactly the trie's entries under `prefix`. */
+  def verifyPrefixClaims[H](
+    mode:    KeyMode,
+    root:    ByteVector,
+    prefix:  ByteVector,
+    entries: List[(ByteVector, CanonicalValue)],
+    proof:   CanonicalValue
+  )(
+    implicit H: Hasher[H],
+    T:          TrieHashing[H]
+  ): Either[TrieError, Boolean] =
+    for {
+      paths <- entries.traverse {
+        case (k, v) =>
+          if (v == CanonicalValue.CNull) TrieError.Encoding("an entry is [key, value], with a value").asLeft
+          else mode.path(k).map(_ -> v)
+      }
+      _ <- ProofInput.claimed(entries.map(_._2))(TrieError.TooLarge(_))
+      claimed = paths.map { case (p, v) => p -> claimHash[H](v) }
+      verified <- verifiedOrNone(mode, root, proof)
+      listed   <- verified.fold(false.asRight[TrieError])(_.listsPrefix(prefix.bits, claimed))
+    } yield listed
+
   /** Recomputes the root, enforcing the branch invariant, the mode, and the key-length bound. */
   def verify[H](mode: KeyMode, root: Digest[H], proof: TrieProof[H])(implicit T: TrieHashing[H]): Either[TrieError, VerifiedProof[H]] =
     proof.top
@@ -297,11 +354,15 @@ object TrieProofs {
 
   private def wireSegment(bits: BitVector): W.TrieSegment = W.TrieSegment(bits.size, bits.toByteVector)
 
-  /** Pre-order records through the generated codec of shared/schemas/trie.cddl. */
+  /**
+   * Pre-order records through the generated codec of shared/schemas/trie.cddl. A proof every verifier would refuse is
+   * never emitted: one heavier than `ProofInput.MaxProofWeight` is `TooLarge` (docs/specs/conformance.md §5).
+   */
   def encode[H](proof: TrieProof[H]): Either[TrieError, CanonicalValue] =
     W.TrieProof.codec
       .encode(proof.top.fold(Vector.empty[W.TrieRecord])(t => records(List(t), Nil).toVector))
       .leftMap(e => TrieError.Encoding(e.toString))
+      .flatMap(v => Either.cond(v.weight <= ProofInput.MaxProofWeight, v, TrieError.TooLarge(ProofInput.MaxProofWeight)))
 
   @tailrec
   private def records[H](todo: List[ProofNode[H]], acc: List[W.TrieRecord]): List[W.TrieRecord] =
@@ -327,12 +388,18 @@ object TrieProofs {
     left:      Option[ProofNode[H]]
   )
 
-  /** The generated decoder checks each record's shape; this rebuilds the tree and checks the structure. */
+  /**
+   * The generated decoder checks each record's shape; this rebuilds the tree and checks the structure. A proof heavier
+   * than `ProofInput.MaxProofWeight` is `Encoding`, refused before it is decoded.
+   */
   def decode[H: Hasher](value: CanonicalValue): Either[TrieError, TrieProof[H]] =
-    W.TrieProof.codec.decoder.decode(value).leftMap(e => TrieError.Encoding(e.message)).flatMap {
-      case rs if rs.isEmpty => TrieProof[H](None).asRight
-      case rs               => assembleFlat[H](rs.toList, Nil).map(t => TrieProof(Some(t)))
-    }
+    ProofInput
+      .bounded(value)(TrieError.Encoding(_))
+      .flatMap(W.TrieProof.codec.decoder.decode(_).leftMap(e => TrieError.Encoding(e.message)))
+      .flatMap {
+        case rs if rs.isEmpty => TrieProof[H](None).asRight
+        case rs               => assembleFlat[H](rs.toList, Nil).map(t => TrieProof(Some(t)))
+      }
 
   @tailrec
   private def assembleFlat[H: Hasher](records: List[W.TrieRecord], stack: List[Open[H]]): Either[TrieError, ProofNode[H]] =

@@ -1,6 +1,7 @@
 # dilf4s Merkle tree (v1)
 
 Status: normative. Conformance vectors: `shared/vectors/merkle_v1.json`.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 ## 1. Construction
 
@@ -44,7 +45,9 @@ An `rfc6962` profile exists only for interoperability tests: `leafHash(d) = H(0x
 **Malformed proofs** are typed errors, not `false`. A shape the schema (§4) refuses, or a path entry that is not a
 digest of the hash's length, is `Encoding`. An inclusion proof with `index ≥ size` is `IndexOutOfRange`. A consistency
 proof with `old > new` is `InvalidSizes`: it names two sizes, not an index, and the verifier reports sizes out of order
-the same way. The `malformed` vectors record each kind.
+the same way. A proof heavier than `MaxProofWeight` (2^24) is `Encoding`, refused before it is decoded
+(`conformance.md` §5). A claimed leaf heavier than `MaxProofWeight` is `TooLarge`, refused before it is hashed and
+before the proof is decoded. The `malformed` vectors record each kind.
 
 ## 4. Proof encoding
 
