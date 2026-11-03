@@ -184,6 +184,17 @@ object FlatBytesSuite extends IOSuite {
     IO.pure(made.foldMap { case (name, r) => expect(r.exists(isFlat), s"$name: $r") })
   }
 
+  test("a byte string's sort key is one whole array, so comparing two never copies either") { _ =>
+    // a slice of a decoded buffer, and a rope: both used to be copied on every comparison of a sort
+    val sources = List("slice" -> ByteVector(0, 1, 2, 3).slice(1, 3), "rope" -> (ByteVector(1) ++ ByteVector(2)))
+    IO.pure(sources.foldMap {
+      case (name, b) =>
+        val key = Values.sortKey(CBytes(b))
+        expect(key.encoding.toArrayUnsafe eq key.encoding.toArrayUnsafe, s"$name: the key's bytes are read in place")
+          .and(expect.same(b, key.encoding))
+    })
+  }
+
   test("bytes decoded from a flat buffer are flat: CBOR data, and 0x literals and data") { jlvm =>
     val encoded = Cbor.encode(arr(Vector(CBytes(ByteVector(1, 2, 3)), obj("k" -> CBytes(ByteVector(4)))))).compact
     val decoded = Cbor.decode(encoded).map {
