@@ -8,6 +8,7 @@ import { bitLength, cbor, describeFailure, err, models, ok, toHex, type HashAlgo
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { decodeInput } from "./input.js";
 import * as trie from "./trie.js";
+import { TrieMap } from "./trie-map.js";
 
 /** Why a state key or namespace was rejected. */
 export interface StateKeyError {
@@ -762,12 +763,10 @@ export class SnapshotReader<V> {
 interface StateSlot {
   readonly key: StateKey;
   readonly value: Value;
-  readonly valueHash: Uint8Array;
 }
 
 interface VersionSlot<V> {
   readonly version: V;
-  readonly vkey: Uint8Array;
   readonly stateRoot: Uint8Array;
 }
 
@@ -780,11 +779,29 @@ const chunked = <T>(xs: readonly T[], n: number): T[][] => {
   return out;
 };
 
+/** Whether sorted `keys` hold one key twice: compared, never hashed. */
+const repeats = (keys: readonly Uint8Array[]): boolean => keys.some((k, i) => i > 0 && compareBytes(keys[i - 1] ?? k, k) === 0);
+
+/** Whether sorted `keys` hold `key`, by binary search. */
+function holds(keys: readonly Uint8Array[], key: Uint8Array): boolean {
+  let [lo, hi] = [0, keys.length];
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const c = compareBytes(keys[mid] ?? key, key);
+    if (c === 0) return true;
+    if (c < 0) lo = mid + 1;
+    else hi = mid;
+  }
+  return false;
+}
+
 /**
  * A replica of a versioned trie, held in memory and checked locally (section 7). It starts empty, or from a snapshot
  * checked against a head the caller already trusts, and follows deltas, recomputing both roots, so a forged root, a
- * dropped write or a gap is caught by the replica itself. Each delta rebuilds both roots from the entries (the root
- * depends only on the key set), which costs time linear in the state.
+ * dropped write or a gap is caught by the replica itself. The state and the history are each one persistent trie that
+ * holds the entries and caches every node's hash: a delta re-hashes only the paths of the keys it changes, O(changed
+ * keys x key length) whatever the state's size, and shares the rest with the replica it was applied to. No key a peer
+ * sends is ever put in a `Map` or `Set`: keys are walked bit by bit, or compared.
  */
 export class Replica<V> {
   // the replica owns every root it holds: heads and roots come in from callers and go out as copies, so no caller can
@@ -794,8 +811,8 @@ export class Replica<V> {
   private constructor(
     readonly profile: VersionedTrie<V>,
     head: Head<V> | null,
-    private readonly state: ReadonlyMap<string, StateSlot>,
-    private readonly versions: ReadonlyMap<string, VersionSlot<V>>,
+    private readonly state: TrieMap<StateSlot>,
+    private readonly versions: TrieMap<VersionSlot<V>>,
   ) {
     this.#head = head === null ? null : copyHead(head);
     Object.freeze(this);
@@ -807,7 +824,7 @@ export class Replica<V> {
   }
 
   static empty<V>(profile: VersionedTrie<V>): Replica<V> {
-    return new Replica(profile, null, new Map(), new Map());
+    return new Replica(profile, null, TrieMap.empty(profile.hashing, profile.stateMode), TrieMap.empty(profile.hashing, profile.historyMode));
   }
 
   /** The commitment root of the head, or `null` before the first delta. */
@@ -815,27 +832,24 @@ export class Replica<V> {
     return this.#head === null ? ok(null) : this.profile.root(this.#head);
   }
 
-  /** The current value of `key`, if any. */
+  /** The current value of `key`, if any: one walk down its path. */
   get(key: StateKey): Value | undefined {
-    return this.state.get(key.value)?.value;
+    return this.state.get(key.bytes())?.value;
+  }
+
+  /** The number of current entries. */
+  get size(): number {
+    return this.state.size;
   }
 
   /** Every current entry, in key order. */
   entries(): readonly (readonly [StateKey, Value])[] {
-    return [...this.state.values()].sort((a, b) => compareBytes(a.key.bytes(), b.key.bytes())).map((s) => [s.key, s.value] as const);
+    return this.state.values().map((s) => [s.key, s.value] as const);
   }
 
   /** Every committed version with its state root, in order. */
   history(): readonly (readonly [V, Uint8Array])[] {
-    return [...this.versions.values()].sort((a, b) => compareBytes(a.vkey, b.vkey)).map((s) => [s.version, Uint8Array.from(s.stateRoot)] as const);
-  }
-
-  private static stateRoot<V>(profile: VersionedTrie<V>, state: ReadonlyMap<string, StateSlot>): R<Uint8Array> {
-    return viaTrie(trie.trieRoot(profile.hashing, profile.stateMode, [...state.values()].map((s) => [s.key.bytes(), s.valueHash] as const)));
-  }
-
-  private static historyRoot<V>(profile: VersionedTrie<V>, versions: ReadonlyMap<string, VersionSlot<V>>): R<Uint8Array> {
-    return viaTrie(trie.trieRoot(profile.hashing, profile.historyMode, [...versions.values()].map((s) => [s.vkey, profile.bytesHash(s.stateRoot)] as const)));
+    return this.versions.values().map((s) => [s.version, Uint8Array.from(s.stateRoot)] as const);
   }
 
   /**
@@ -856,25 +870,26 @@ export class Replica<V> {
     }
     const checked = reader.finish();
     if (!checked.ok) return checked;
-    const state = new Map<string, StateSlot>();
+    // the reader has checked that keys and versions strictly increase, which the builder requires
+    const entries: (readonly [Uint8Array, StateSlot, Uint8Array])[] = [];
     for (const [key, value] of checked.value.entries) {
       const h = profile.valueHash(value);
       if (!h.ok) return h;
-      state.set(key.value, { key, value, valueHash: h.value });
+      entries.push([key.bytes(), { key, value }, h.value]);
     }
-    const versions = new Map<string, VersionSlot<V>>();
+    const state = viaTrie(TrieMap.fromSorted(profile.hashing, profile.stateMode, entries));
+    if (!state.ok) return state;
+    if (!bytesEqual(state.value.root, trusted.stateRoot)) return mismatch("state", trusted.stateRoot, state.value.root);
+    const versions: (readonly [Uint8Array, VersionSlot<V>, Uint8Array])[] = [];
     for (const [version, stateRoot] of checked.value.history) {
       const vkey = profile.versionKey.encode(version);
       if (!vkey.ok) return vkey;
-      versions.set(toHex(vkey.value), { version, vkey: vkey.value, stateRoot: Uint8Array.from(stateRoot) });
+      versions.push([vkey.value, { version, stateRoot: Uint8Array.from(stateRoot) }, profile.bytesHash(stateRoot)]);
     }
-    const s = Replica.stateRoot(profile, state);
-    if (!s.ok) return s;
-    if (!bytesEqual(s.value, trusted.stateRoot)) return mismatch("state", trusted.stateRoot, s.value);
-    const h = Replica.historyRoot(profile, versions);
-    if (!h.ok) return h;
-    if (!bytesEqual(h.value, trusted.historyRoot)) return mismatch("history", trusted.historyRoot, h.value);
-    return ok(new Replica(profile, trusted, state, versions));
+    const history = viaTrie(TrieMap.fromSorted(profile.hashing, profile.historyMode, versions));
+    if (!history.ok) return history;
+    if (!bytesEqual(history.value.root, trusted.historyRoot)) return mismatch("history", trusted.historyRoot, history.value.root);
+    return ok(new Replica(profile, trusted, state.value, history.value));
   }
 
   /** Reads a snapshot's chunks of canonical CBOR against `trusted`, then restores a replica from it. */
@@ -892,6 +907,7 @@ export class Replica<V> {
   /**
    * The replica after `delta`, which must chain from this head, raise the version, write no key twice nor both write
    * and remove one, carry only values every wire format can, and whose claimed head must be what the replica computes.
+   * This replica is unchanged either way.
    */
   applyDelta(delta: Delta<V>): R<Replica<V>> {
     const p = this.profile;
@@ -908,29 +924,34 @@ export class Replica<V> {
       if (!hk.ok) return hk;
       if (compareBytes(nk.value, hk.value) <= 0) return err({ kind: "VersionNotIncreasing", head: hk.value, next: nk.value });
     }
-    const written = new Set(delta.upserts.map(([k]) => k.value));
-    if (delta.removes.some((k) => written.has(k.value))) return malformed("a key is both written and removed");
-    if (written.size !== delta.upserts.length) return malformed("a key is written twice");
+    const written = delta.upserts.map(([k]) => k.bytes()).sort(compareBytes);
+    if (delta.removes.some((k) => holds(written, k.bytes()))) return malformed("a key is both written and removed");
+    if (repeats(written)) return malformed("a key is written twice");
     for (const [k, v] of delta.upserts) {
       if (v.kind === "null") return malformed(`${k.value} is upserted as null`);
       const c = p.checkValue(k, v);
       if (!c.ok) return c;
     }
-    const state = new Map(this.state);
-    for (const k of delta.removes) state.delete(k.value);
+    // new tries sharing every untouched subtree with this replica's, which stay as they are
+    let state = this.state;
+    for (const k of delta.removes) {
+      const next = viaTrie(state.delete(k.bytes()));
+      if (!next.ok) return next;
+      state = next.value;
+    }
     for (const [key, value] of delta.upserts) {
       const h = p.valueHash(value);
       if (!h.ok) return h;
-      state.set(key.value, { key, value, valueHash: h.value });
+      const next = viaTrie(state.set(key.bytes(), { key, value }, h.value));
+      if (!next.ok) return next;
+      state = next.value;
     }
-    const s = Replica.stateRoot(p, state);
-    if (!s.ok) return s;
-    if (!bytesEqual(s.value, delta.head.stateRoot)) return mismatch("state", delta.head.stateRoot, s.value);
-    const versions = new Map(this.versions);
-    versions.set(toHex(nk.value), { version: delta.head.version, vkey: nk.value, stateRoot: s.value });
-    const h = Replica.historyRoot(p, versions);
-    if (!h.ok) return h;
-    if (!bytesEqual(h.value, delta.head.historyRoot)) return mismatch("history", delta.head.historyRoot, h.value);
-    return ok(new Replica(p, delta.head, state, versions));
+    const s = state.root;
+    if (!bytesEqual(s, delta.head.stateRoot)) return mismatch("state", delta.head.stateRoot, s);
+    const versions = viaTrie(this.versions.set(nk.value, { version: delta.head.version, stateRoot: s }, p.bytesHash(s)));
+    if (!versions.ok) return versions;
+    const h = versions.value.root;
+    if (!bytesEqual(h, delta.head.historyRoot)) return mismatch("history", delta.head.historyRoot, h);
+    return ok(new Replica(p, delta.head, state, versions.value));
   }
 }
