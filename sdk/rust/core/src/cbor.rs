@@ -4,11 +4,16 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use num_bigint::{BigInt, Sign};
-use num_integer::Integer;
 use num_traits::One;
 
 use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem};
 use crate::value::{Array, Entries, MAX_DEPTH, MAX_WEIGHT, Map, Rational, Text, Value, bit_length};
+
+/// The widest numerator or denominator a rational has, in Java `bitLength` bits (docs/specs/canonical-encoding.md
+/// section 1): the width of `10^10000`, so every rational a JSON decimal reads to fits. Checking lowest terms takes a
+/// gcd, superlinear in its operands, so a decoder refuses a wider part before any gcd: a rational's decoding then costs
+/// at most one gcd of two numbers this wide, about 4 KiB each, and decoding stays linear in its input.
+pub const MAX_RATIONAL_BITS: u64 = 33_220;
 
 const TAG_POSITIVE_BIGNUM: u64 = 2;
 const TAG_NEGATIVE_BIGNUM: u64 = 3;
@@ -288,7 +293,16 @@ pub fn decode(bytes: &[u8]) -> Result<Value, CanonicalError> {
 /// [`decode`] with a lower nesting limit (it never exceeds [`MAX_DEPTH`]). The decoder keeps its own frame stack,
 /// so input of any nesting is a typed error, never a stack overflow.
 pub fn decode_with_limit(bytes: &[u8], max_depth: usize) -> Result<Value, CanonicalError> {
-    Decoder { input: bytes, max_depth: max_depth.min(MAX_DEPTH), stack: Vec::new() }.run()
+    decode_with(bytes, max_depth, &Rational::new)
+}
+
+/// What builds a decoded rational from parts within [`MAX_RATIONAL_BITS`]: [`Rational::new`], which runs the one gcd
+/// that checks lowest terms. A test passes one that counts its calls and the widths it sees.
+type Reduce<'a> = &'a dyn Fn(BigInt, BigInt) -> Option<Rational>;
+
+/// [`decode_with_limit`], building rationals with `reduce`.
+fn decode_with(bytes: &[u8], max_depth: usize, reduce: Reduce<'_>) -> Result<Value, CanonicalError> {
+    Decoder { input: bytes, max_depth: max_depth.min(MAX_DEPTH), stack: Vec::new(), reduce }.run()
 }
 
 struct Head {
@@ -319,6 +333,7 @@ struct Decoder<'a> {
     input: &'a [u8],
     max_depth: usize,
     stack: Vec<Frame>,
+    reduce: Reduce<'a>,
 }
 
 /// What to do after a value is complete: read the next item at an offset, or finish.
@@ -507,23 +522,32 @@ impl Decoder<'_> {
         }
     }
 
+    /// In order: the pair, the numerator and its width, the denominator and its width, the denominator's range, and
+    /// last the one gcd that checks lowest terms (docs/specs/conformance.md section 5).
     fn read_rational(&self, pos: usize, end: usize) -> Result<(Value, usize), CanonicalError> {
         let non_canonical = |reason| CanonicalError::NonCanonical { offset: pos, reason };
         let pair = self.read_head(end)?;
         if pair.major != MAJOR_ARRAY || pair.argument != 2 {
             return Err(non_canonical(NonCanonicalReason::RationalNotPair));
         }
-        let (numerator, after_numerator) = self.read_integer(pair.end)?;
-        let (denominator, after) = self.read_integer(after_numerator)?;
+        let (numerator, after_numerator) = self.read_part(pos, pair.end)?;
+        let (denominator, after) = self.read_part(pos, after_numerator)?;
         if denominator < BigInt::from(2) {
             return Err(non_canonical(NonCanonicalReason::RationalDenominator));
         }
-        if !numerator.gcd(&denominator).is_one() {
-            return Err(non_canonical(NonCanonicalReason::RationalNotReduced));
-        }
-        Rational::new(numerator, denominator)
+        (self.reduce)(numerator, denominator)
             .map(|r| (Value::Rational(r), after))
             .ok_or_else(|| non_canonical(NonCanonicalReason::RationalNotReduced))
+    }
+
+    /// A rational's numerator or denominator, refused when wider than [`MAX_RATIONAL_BITS`].
+    fn read_part(&self, rational: usize, pos: usize) -> Result<(BigInt, usize), CanonicalError> {
+        let (n, end) = self.read_integer(pos)?;
+        if bit_length(&n) > MAX_RATIONAL_BITS {
+            Err(CanonicalError::Unsupported { offset: rational, item: UnsupportedItem::RationalTooWide })
+        } else {
+            Ok((n, end))
+        }
     }
 
     /// `len` bytes from `pos`, and the offset after them.
@@ -549,8 +573,133 @@ impl Decoder<'_> {
 #[cfg(test)]
 mod tests {
     use alloc::vec;
+    use alloc::vec::Vec;
+    use core::cell::Cell;
 
-    use super::{TooLarge, Value, within};
+    use num_bigint::BigInt;
+    use num_traits::One;
+
+    use super::{MAX_RATIONAL_BITS, Rational, TooLarge, Value, decode, decode_with, encode, within};
+    use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem};
+    use crate::value::{MAX_DEPTH, bit_length};
+
+    /// The consecutive Fibonacci numbers `(F(k + 1), F(k))` with `F(k + 1)` exactly `bits` wide: coprime, and the
+    /// pair whose gcd takes the most steps for its width.
+    fn fibonacci(bits: u64) -> (BigInt, BigInt) {
+        let (mut a, mut b) = (BigInt::one(), BigInt::one());
+        while b.bits() < bits {
+            let next = &a + &b;
+            a = core::mem::replace(&mut b, next);
+        }
+        (b, a)
+    }
+
+    fn rational(n: &BigInt, d: &BigInt) -> Value {
+        let v = Value::number(n, d).unwrap();
+        assert!(matches!(v, Value::Rational(_)), "{} / {} bits is a rational", bit_length(n), bit_length(d));
+        v
+    }
+
+    /// Decodes `bytes` through a [`Rational::new`] that counts its calls (each one gcd) and the widest part it was given.
+    fn counted(bytes: &[u8]) -> (Result<Value, CanonicalError>, usize, u64) {
+        let (calls, widest) = (Cell::new(0usize), Cell::new(0u64));
+        let reduce = |n: BigInt, d: BigInt| {
+            calls.set(calls.get().saturating_add(1));
+            widest.set(widest.get().max(bit_length(&n)).max(bit_length(&d)));
+            Rational::new(n, d)
+        };
+        let decoded = decode_with(bytes, MAX_DEPTH, &reduce);
+        (decoded, calls.get(), widest.get())
+    }
+
+    fn too_wide() -> Result<Value, CanonicalError> {
+        Err(CanonicalError::Unsupported { offset: 0, item: UnsupportedItem::RationalTooWide })
+    }
+
+    #[test]
+    fn the_rational_bound_is_the_width_of_ten_to_the_digit_bound() {
+        let ten_to_the_bound = num_traits::pow(BigInt::from(10u8), crate::json::MAX_DIGITS);
+        assert_eq!(bit_length(&ten_to_the_bound), MAX_RATIONAL_BITS);
+    }
+
+    /// Decoding `k` maximal rationals runs exactly `k` gcds, each of parts within the bound: its work is at most `k`
+    /// gcds of [`MAX_RATIONAL_BITS`]-bit numbers, linear in the input (each takes over 8 KiB). A wider part is refused
+    /// before any gcd.
+    #[test]
+    fn decoding_a_rational_runs_one_gcd_of_bounded_parts() {
+        let (n, d) = fibonacci(MAX_RATIONAL_BITS);
+        assert_eq!((bit_length(&n), bit_length(&d)), (MAX_RATIONAL_BITS, MAX_RATIONAL_BITS - 1));
+        let k = 8;
+        let maximal = Value::array((0..k).map(|_| rational(&n, &d)).collect()).unwrap();
+        let bytes = encode(&maximal);
+        let (decoded, calls, widest) = counted(&bytes);
+        assert_eq!(decoded.as_ref().ok(), Some(&maximal), "maximal rationals decode");
+        assert_eq!(calls, k, "one gcd per rational");
+        assert_eq!(widest, MAX_RATIONAL_BITS, "of parts within the bound");
+        assert!(bytes.len() > k * 8300, "each takes {} bytes", bytes.len() / k);
+
+        // one bit wider, numerator or denominator, and not in lowest terms either: refused with no gcd
+        let wide = BigInt::one() << MAX_RATIONAL_BITS;
+        let two = BigInt::from(2u8);
+        for (numerator, denominator) in [
+            (&wide * &two, &wide + &two),
+            (two.clone(), &wide * &two),
+            (-(&wide) - BigInt::one(), two.clone()),
+            (BigInt::one(), -(&wide) * &two),
+        ] {
+            let bytes = rational_bytes(&numerator, &denominator);
+            let (decoded, calls, _) = counted(&bytes);
+            assert_eq!(decoded, too_wide(), "{} / {} bits", bit_length(&numerator), bit_length(&denominator));
+            assert_eq!(calls, 0, "no gcd");
+        }
+    }
+
+    /// Tag 30 around `[n, d]`, whatever `n` and `d` are.
+    fn rational_bytes(n: &BigInt, d: &BigInt) -> Vec<u8> {
+        let mut out = vec![0xd8, 0x1e, 0x82];
+        super::write_integer(&mut out, n).unwrap();
+        super::write_integer(&mut out, d).unwrap();
+        out
+    }
+
+    #[test]
+    fn the_bound_is_on_java_bit_length_for_either_sign() {
+        let edge = BigInt::one() << MAX_RATIONAL_BITS;
+        let (two, three) = (BigInt::from(2u8), BigInt::from(3u8));
+        // 2^33220 - 1 and -2^33220 are 33220 bits wide; 2^33220 and -2^33220 - 1 are 33221
+        for (n, d) in
+            [(&edge - BigInt::one(), two.clone()), (-(&edge), three.clone()), (two.clone(), &edge - BigInt::one())]
+        {
+            assert_eq!(
+                decode(&rational_bytes(&n, &d)),
+                Ok(rational(&n, &d)),
+                "{} / {} bits",
+                bit_length(&n),
+                bit_length(&d)
+            );
+        }
+        for (n, d) in
+            [(edge.clone(), three.clone()), (-(&edge) - BigInt::one(), three.clone()), (three.clone(), edge.clone())]
+        {
+            assert_eq!(decode(&rational_bytes(&n, &d)), too_wide(), "{} / {} bits", bit_length(&n), bit_length(&d));
+        }
+    }
+
+    #[test]
+    fn a_wide_numerator_is_refused_before_the_denominator_is_read() {
+        let mut bytes = vec![0xd8, 0x1e, 0x82];
+        super::write_integer(&mut bytes, &(BigInt::one() << MAX_RATIONAL_BITS)).unwrap();
+        bytes.extend_from_slice(&[0x61, 0x61]);
+        assert_eq!(decode(&bytes), too_wide());
+        // within the bound, the same denominator is not an integer
+        let mut narrow = vec![0xd8, 0x1e, 0x82, 0x01, 0x61, 0x61];
+        assert!(matches!(
+            decode(&narrow),
+            Err(CanonicalError::NonCanonical { reason: NonCanonicalReason::RationalNotInteger, .. })
+        ));
+        narrow.truncate(4);
+        assert!(matches!(decode(&narrow), Err(CanonicalError::UnexpectedEnd { .. })));
+    }
 
     fn doubled(leaf: Value, k: usize) -> Value {
         (0..k).fold(leaf, |v, _| Value::array(vec![v.clone(), v]).unwrap())

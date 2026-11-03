@@ -12,7 +12,7 @@ A canonical value is exactly one of:
 | null | |
 | boolean | `true`, `false` |
 | integer | any integer (unbounded) |
-| rational | `n/d` with `d ≥ 2` and `gcd(\|n\|, d) = 1` |
+| rational | `n/d` with `d ≥ 2`, `gcd(\|n\|, d) = 1`, and `n` and `d` each at most `MaxRationalBits` wide |
 | text | a sequence of Unicode scalar values (no surrogate code points) |
 | bytes | a finite byte sequence |
 | array | a finite sequence of canonical values |
@@ -24,6 +24,16 @@ The data model has no floating-point numbers, no NaN or infinity, no negative ze
 
 **Integers and rationals are one numeric domain.** A number whose value is an integer is always the integer kind. The rational kind only ever holds non-integers.
 
+**`MaxRationalBits` = 33220**: a rational's numerator and its denominator each have a `bitLength` of at most 33220
+(`bitLength` is Java's `BigInteger.bitLength`, `jlvm.md` §2: for `n < 0` it is the bit length of `-n - 1`, so
+`-2^33220` is 33220 bits wide and `-2^33220 - 1` is 33221). 33220 is the bit length of `10^10000`, the bound on a JSON
+number's digits and scale (§3), so every rational JSON reads is within it, and every JLVM number (4096 bits) is too.
+Integers have no such bound. The reason is cost: a rational is valid only in lowest terms, and checking that takes a gcd,
+which is superlinear in its operands (about 10 ms in Rust, 14 ms on the JVM and 15 ms in TypeScript for two 33220-bit
+Fibonacci neighbours, the slowest pair of that width). With the bound, decoding a rational costs at most one gcd of
+operands at most 33220 bits wide, and its encoding is over 8 KiB, so decoding stays linear in its input; without it a
+rational of n bytes would cost O(n²).
+
 For other-language implementers, here is the same model in CDDL (RFC 8610). This block is **informative**: it is not
 in `shared/schemas`, because tags and recursion are outside the code generator's profile. The prose above, and the
 deterministic encoding rules in §2, are normative.
@@ -32,7 +42,8 @@ deterministic encoding rules in §2, are normative.
 canonical-value = null / bool / int / rational / tstr / bstr
                 / [* canonical-value]
                 / { * tstr => canonical-value }        ; unique keys, no null values
-rational = #6.30([numerator: int, denominator: uint])  ; denominator >= 2, gcd(|n|, d) = 1
+rational = #6.30([numerator: int, denominator: uint])  ; denominator >= 2, gcd(|n|, d) = 1,
+                                                       ; bitLength of each <= 33220 (MaxRationalBits)
 ```
 
 ## 2. Encoding: deterministic CBOR profile
@@ -58,6 +69,11 @@ Further rules:
 - **Not allowed:** indefinite-length items, floats (major type 7 additional information 25/26/27), simple values other than false/true/null, and tags other than 2, 3 and 30.
 - **Tags 2 and 3** are only valid when the value is outside the major type 0/1 range.
 - **Decoders** MUST reject trailing bytes after the top-level item and MUST enforce a maximum nesting depth. The default limit is 256 and counts arrays and maps, empty ones included: a scalar has depth 0, and an array or map has depth one more than its deepest element (1 when empty).
+- **Rationals** are checked in this order, and the first failure is the refusal: tag 30 wraps a 2-element array
+  (`NonCanonical`); the numerator is a canonical integer (`NonCanonical`) at most `MaxRationalBits` wide
+  (`Unsupported`: outside the data model, §1); the same for the denominator; the denominator is at least 2
+  (`NonCanonical`); and last, `gcd(|n|, d) = 1` (`NonCanonical`). A part's width is checked as soon as it is read, so a
+  part too wide is refused before the next is read and before any gcd, and a decoder runs at most one gcd per rational.
 
 ## 3. JSON mapping
 
@@ -84,9 +100,9 @@ Converting back to JSON (for display only) works as follows:
 - A number is written only when its decimal is within the bounds above (at most 10000 significant digits, and a scale
   of at most 10000), so that every rendering reads back; otherwise conversion fails. `10^10000` (10001 digits) and
   `1/2^10001` (scale 10001) can't be written. A short form can read beyond them (`1e10000` is `10^10000`), so reading
-  JSON and writing it back can fail; writing and reading back cannot. A numerator or denominator wider than 33220 bits
-  (the width of `10^10000`) is refused before any conversion: a denominator `2^a 5^b` with `max(a, b) <= 10000` is at
-  most `10^10000`, and the decimal's significand is at least the numerator.
+  JSON and writing it back can fail; writing and reading back cannot. An integer wider than 33220 bits (the width of
+  `10^10000`) is refused before any conversion; no rational's numerator or denominator is that wide (§1), and a
+  denominator `2^a 5^b` with `max(a, b) <= 10000` is at most `10^10000`, so its factoring is bounded too.
 - Bytes can't be written as JSON, and conversion fails.
 
 ## 4. Tagged hashing

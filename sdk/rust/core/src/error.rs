@@ -290,6 +290,8 @@ pub enum UnsupportedItem {
     Tag(u64),
     /// A map key that is not text.
     NonTextKey,
+    /// A rational whose numerator or denominator is wider than [`crate::cbor::MAX_RATIONAL_BITS`].
+    RationalTooWide,
 }
 
 impl fmt::Display for UnsupportedItem {
@@ -301,6 +303,9 @@ impl fmt::Display for UnsupportedItem {
             Self::ReservedInfo(info) => write!(f, "reserved additional information {info}"),
             Self::Tag(t) => write!(f, "tag {t}"),
             Self::NonTextKey => f.write_str("map keys must be text"),
+            Self::RationalTooWide => {
+                write!(f, "a rational numerator or denominator wider than {} bits", crate::cbor::MAX_RATIONAL_BITS)
+            }
         }
     }
 }
