@@ -35,8 +35,11 @@ object Cbor {
 
   // ------------------------------------------------------------------ encoding
 
-  /** Total: every canonical value has exactly one encoding. Stack-safe for any nesting depth. */
-  def encode(value: CanonicalValue): ByteVector = encodeEval(value).value
+  /**
+   * Total: every canonical value has exactly one encoding. Stack-safe for any nesting depth. The result is flat: one
+   * array ([[FlatBytes]]), so reading or slicing it never walks a rope.
+   */
+  def encode(value: CanonicalValue): FlatBytes = FlatBytes(encodeEval(value).value)
 
   private def encodeEval(value: CanonicalValue): Eval[ByteVector] =
     value match {
@@ -157,7 +160,9 @@ object Cbor {
 
   /**
    * Strict decoder: accepts exactly the canonical encodings, so `decode(b).map(encode) == Right(b)` whenever it
-   * succeeds. An explicit frame stack bounds nesting by `maxDepth` instead of the JVM call stack.
+   * succeeds. An explicit frame stack bounds nesting by `maxDepth` instead of the JVM call stack. The input is made
+   * flat once on entry ([[FlatBytes]]: O(1) when it already is, one copy otherwise), so every byte string decoded from
+   * it is a view of that one array, and every read of the input is O(1).
    */
   def decode(bytes: ByteVector, maxDepth: Int = DefaultMaxDepth): Either[CanonicalError, CanonicalValue] =
     decode(bytes, maxDepth, KeyOrder.Default)
@@ -173,7 +178,7 @@ object Cbor {
     keys:     KeyOrder,
     reduce:   LowestTerms
   ): Either[CanonicalError, CanonicalValue] =
-    run(bytes, math.min(maxDepth, CanonicalValue.MaxDepth), keys, reduce, Read(0L, Nil, 0))
+    run(FlatBytes(bytes), math.min(maxDepth, CanonicalValue.MaxDepth), keys, reduce, Read(0L, Nil, 0))
 
   sealed private trait Frame
   final private case class ArrayFrame(remaining: Long, acc: Vector[CanonicalValue]) extends Frame
