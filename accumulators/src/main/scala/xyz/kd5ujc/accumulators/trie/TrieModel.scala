@@ -177,9 +177,141 @@ private[trie] object NodeCodec {
 private[trie] object Bits {
 
   /** Length of the longest common prefix of two bit vectors. */
-  def commonPrefix(a: BitVector, b: BitVector): Long = {
+  def commonPrefix(a: BitVector, b: BitVector): Long = agreeing(a, 0L, b, 0L, a.size.min(b.size))
+
+  /** How many bits of `a` from `ia` and `b` from `ib` agree before the first difference, at most `n`: `n` in range. */
+  def agreeing(a: BitVector, ia: Long, b: BitVector, ib: Long, n: Long): Long = {
     @tailrec
-    def go(i: Long): Long = if (i < a.size && i < b.size && a(i) == b(i)) go(i + 1) else i
+    def go(i: Long): Long = if (i < n && a(ia + i) == b(ib + i)) go(i + 1) else i
     go(0L)
   }
+
+  /** No path is longer in any mode (`KeyMode.MaxVariableBytes` bytes): a bound compares with paths as these bits do. */
+  val PathCap: Long = KeyMode.MaxVariableBytes.toLong * 8 + 1
+
+  /** The most bits `compact` holds in one array (2^31 - 1 bytes): it refuses more. */
+  private val Compactable: Long = Int.MaxValue.toLong * 8
+
+  /**
+   * `bits` in one flat array, so reading a bit is O(1) and stack-safe however its bytes were appended (a rope of
+   * appends indexes recursively, in time and stack its depth; `compact` copies it with an explicit stack); and the bits
+   * copied. Callers pass at most `PathCap` bits, far below what `compact` refuses. Flattening is a no-op on a vector
+   * that is already flat. Every operand the JLVM and the decoder make is bytes, flat or appended. A lazy view a Scala
+   * caller builds (`reverse`, `ByteVector.view`, an unaligned drop of a rope) is read through its own function, as
+   * every scodec operation reads it: its cost and stack are the caller's construction.
+   */
+  def flat(bits: BitVector): (BitVector, Long) = (bits.compact, bits.size)
+
+  /**
+   * A bound or prefix flattened for reading, cut to its first `PathCap` bits: a walk reads no further, since every
+   * verified path is shorter, and a path compares with the cut bound as with the whole (docs/specs/trie.md §4). With
+   * the bits copied: the whole vector when flattened before cutting, which is stack-safe on any rope `compact` holds.
+   */
+  def readable(bits: BitVector): (BitVector, Long) =
+    if (bits.size <= PathCap) flat(bits)
+    else if (bits.size <= Compactable) (bits.compact.take(PathCap), bits.size)
+    else (bits.take(PathCap).compact, PathCap)
+
+  /**
+   * Whether the path held as `pieces` (newest first, each flat) and `depth` bits long is `key`, and the bits compared
+   * or copied. The length is compared first, so the work is bounded by the key's length.
+   */
+  def spells(pieces: List[BitVector], depth: Long, key: BitVector): (Boolean, Long) = {
+    @tailrec
+    def go(k: BitVector, rest: List[BitVector], end: Long, steps: Long): (Boolean, Long) =
+      rest match {
+        case Nil => (true, steps)
+        case p :: older =>
+          val start = end - p.size
+          val same = agreeing(p, 0L, k, start, p.size)
+          if (same < p.size) (false, steps + same + 1) else go(k, older, start, steps + same + 1)
+      }
+    if (key.size != depth) (false, 1L)
+    else {
+      val (k, copied) = flat(key)
+      go(k, pieces, depth, copied + 1)
+    }
+  }
+
+}
+
+/**
+ * Where a walk's path stands against a bound in key order (bitwise, a proper prefix before its extensions). `Along`:
+ * the path is a prefix of the bound, equal to it when as long. Once the two part, every extension of the path stays on
+ * the same side, so a walk carries the side down and compares only the bits each node adds (docs/specs/trie.md §4).
+ */
+private[trie] sealed trait Side extends Product with Serializable
+
+private[trie] object Side {
+  case object Along extends Side
+  case object Below extends Side
+  case object Above extends Side
+
+  /** The side of the path extended by `bits`, from the side of the path (`depth` bits long); and the bits compared. */
+  def extend(side: Side, depth: Long, bits: BitVector, bound: BitVector): (Side, Long) =
+    side match {
+      case Along =>
+        val room = bound.size - depth
+        val n = bits.size.min(room)
+        val same = Bits.agreeing(bits, 0L, bound, depth, n)
+        val next =
+          if (same < n) { if (bits(same)) Above else Below }
+          else if (bits.size > room) Above
+          else Along
+        (next, same + 1)
+      case parted => (parted, 0L)
+    }
+
+  /** Whether the path (`depth` bits long) sorts before `bound`. */
+  def before(side: Side, depth: Long, bound: BitVector): Boolean =
+    side match {
+      case Along => depth < bound.size
+      case Below => true
+      case Above => false
+    }
+}
+
+/** Key bounds `[from, until)`; `until` absent is unbounded. */
+final private[trie] case class Bounds(from: BitVector, until: Option[BitVector]) {
+
+  /** The cursor moved past `bits`, and the bits compared with the bounds. */
+  def extend[P](c: Cursor[P], bits: BitVector, grow: (P, BitVector) => P): (Cursor[P], Long) = {
+    val (f, nf) = Side.extend(c.from, c.depth, bits, from)
+    val (u, nu) = until.fold((c.until, 0L))(Side.extend(c.until, c.depth, bits, _))
+    (Cursor(grow(c.path, bits), c.depth + bits.size, f, u), nf + nu + 1)
+  }
+
+  /** Whether the cursor's path is a key in the bounds: `from <= path < until`. */
+  def holds(c: Cursor[?]): Boolean = !Side.before(c.from, c.depth, from) && until.forall(Side.before(c.until, c.depth, _))
+
+  /**
+   * Whether keys starting with the cursor's path can lie in the bounds: not wholly below (`from` does not extend the
+   * path, and the path sorts before it) and not wholly above (`until <= path`).
+   */
+  def meets(c: Cursor[?]): Boolean = c.from != Side.Below && until.forall(Side.before(c.until, c.depth, _))
+}
+
+private[trie] object Bounds {
+
+  /** Every key. */
+  val All: Bounds = Bounds(BitVector.empty, None)
+
+  /** `[from, until)` with each bound readable (`Bits.readable`), and the bits copied. */
+  def readable(from: BitVector, until: Option[BitVector]): (Bounds, Long) = {
+    val (f, nf) = Bits.readable(from)
+    val (u, nu) = until.map(Bits.readable).fold((Option.empty[BitVector], 0L)) { case (b, n) => (Some(b), n) }
+    (Bounds(f, u), nf + nu)
+  }
+}
+
+/**
+ * A walk's position: the path so far, carried as the walk needs it (`P`: pieces to compare, a vector to list, or
+ * nothing), its length in bits, and where it stands against each bound.
+ */
+final private[trie] case class Cursor[P](path: P, depth: Long, from: Side, until: Side)
+
+private[trie] object Cursor {
+
+  /** The empty path, a prefix of every bound. */
+  def origin[P](path: P): Cursor[P] = Cursor(path, 0L, Side.Along, Side.Along)
 }

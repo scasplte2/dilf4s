@@ -1,7 +1,7 @@
 /**
  * Bit strings, most significant bit first (docs/specs/trie.md section 1), and the bitwise key order of section 4, where
- * a proper prefix sorts before its extensions. A bit string is packed into bytes with zero padding bits, so two equal
- * bit strings have equal bytes.
+ * a proper prefix sorts before its extensions, as a walk compares with it incrementally. A bit string is packed into
+ * bytes with zero padding bits, so two equal bit strings have equal bytes.
  */
 export interface Bits {
   readonly bytes: Uint8Array;
@@ -36,34 +36,6 @@ export function drop(s: Bits, n: number): Bits {
   return slice(s, n, s.length);
 }
 
-/** The concatenation of `parts`. */
-export function concat(parts: readonly Bits[]): Bits {
-  let n = 0;
-  for (const p of parts) n += p.length;
-  const out = new Uint8Array((n + 7) >> 3);
-  let at = 0;
-  for (const p of parts) {
-    // whole bytes, shifted into place: padding bits are zero, as are the output's bits beyond `at`
-    const [base, shift] = [at >> 3, at & 7];
-    const used = (p.length + 7) >> 3;
-    for (let j = 0; j < used; j++) {
-      const v = p.bytes[j] ?? 0;
-      out[base + j] = (out[base + j] ?? 0) | (v >> shift);
-      if (shift !== 0 && base + j + 1 < out.length) out[base + j + 1] = (out[base + j + 1] ?? 0) | ((v << (8 - shift)) & 0xff);
-    }
-    at += p.length;
-  }
-  return { bytes: out, length: n };
-}
-
-/** `s` followed by one bit. */
-export function append(s: Bits, b: boolean): Bits {
-  const out = new Uint8Array((s.length + 8) >> 3);
-  out.set(s.bytes.subarray(0, (s.length + 7) >> 3));
-  if (b) setBit(out, s.length);
-  return { bytes: out, length: s.length + 1 };
-}
-
 /** The length of the longest common prefix of `a` from bit `ia` and `b` from bit `ib`. */
 export function commonPrefixFrom(a: Bits, ia: number, b: Bits, ib: number): number {
   const n = Math.min(a.length - ia, b.length - ib);
@@ -75,18 +47,6 @@ export function commonPrefixFrom(a: Bits, ia: number, b: Bits, ib: number): numb
   }
   while (i < n && bit(a, ia + i) === bit(b, ib + i)) i++;
   return i;
-}
-
-export function commonPrefix(a: Bits, b: Bits): number {
-  return commonPrefixFrom(a, 0, b, 0);
-}
-
-export function equals(a: Bits, b: Bits): boolean {
-  return a.length === b.length && commonPrefix(a, b) === a.length;
-}
-
-export function startsWith(s: Bits, prefix: Bits): boolean {
-  return prefix.length <= s.length && commonPrefix(s, prefix) === prefix.length;
 }
 
 /** Whether `s` from bit `from` starts with `prefix`. */
@@ -101,25 +61,31 @@ export function toBytes(s: Bits): Uint8Array {
 
 // ------------------------------------------------------------------ key order (trie.md section 4)
 
-/** `a < b` in bitwise lexicographic order, a proper prefix first. */
-export function lt(a: Bits, b: Bits): boolean {
-  const c = commonPrefix(a, b);
-  if (c === a.length) return a.length < b.length;
-  if (c === b.length) return false;
-  return !bit(a, c);
+/**
+ * Where a walk's path stands against a bound in key order: `"along"` while the path is a prefix of the bound (equal to
+ * it when as long). Once the two part, every extension of the path stays on the same side, `"below"` or `"above"`, so a
+ * walk carries the side down and compares only the bits each node adds.
+ */
+export type Side = "along" | "below" | "above";
+
+/** The side of the path (`depth` bits long, on `side`) extended by `s`, counting the bits compared in `work.steps`. */
+export function extendSide(side: Side, depth: number, s: Bits, bound: Bits, work: { steps: number }): Side {
+  if (side !== "along") return side;
+  const same = commonPrefixFrom(s, 0, bound, depth);
+  work.steps += same + 1;
+  if (same === s.length) return "along";
+  if (depth + same === bound.length) return "above";
+  return bit(s, same) ? "above" : "below";
 }
 
-export function lteq(a: Bits, b: Bits): boolean {
-  return equals(a, b) || lt(a, b);
-}
-
-/** Whether the subtree of keys starting with `prefix` meets `[from, until)`. */
-export function intersects(prefix: Bits, from: Bits, until: Bits | undefined): boolean {
-  const whollyBelow = !startsWith(from, prefix) && lt(prefix, from);
-  const whollyAbove = until !== undefined && lteq(until, prefix);
-  return !whollyBelow && !whollyAbove;
-}
-
-export function within(key: Bits, from: Bits, until: Bits | undefined): boolean {
-  return lteq(from, key) && (until === undefined || lt(key, until));
+/** Whether the path (`depth` bits long, on `side`) sorts before `bound`. */
+export function before(side: Side, depth: number, bound: Bits): boolean {
+  switch (side) {
+    case "along":
+      return depth < bound.length;
+    case "below":
+      return true;
+    case "above":
+      return false;
+  }
 }

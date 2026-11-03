@@ -5,10 +5,13 @@ import java.util.concurrent.atomic.AtomicLong
 import cats.effect.{IO, Resource}
 import cats.syntax.all._
 
+import xyz.kd5ujc.accumulators.trie.{KeyMode, ProofNode, TrieHashing, TrieProof, TrieProofs}
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.hash.{Digest, Sha256}
 import xyz.kd5ujc.numerics.Ratio
 
+import scodec.bits.{BitVector, ByteVector}
 import weaver.{Expectations, IOSuite}
 
 /**
@@ -452,6 +455,61 @@ object MeteringSuite extends IOSuite {
         .and(expect(isLimit(Program.from(longName)), "a binding name counts its length"))
         .and(expect(isLimit(Program.from(sharedPath)), "a path of shared segments is bounded before it is rendered"))
     )
+  }
+
+  // ---- trie listing checks: work linear in the proof plus the bounds (docs/specs/trie.md §4)
+
+  /**
+   * The chain of issue #90 in `variable(65535)`: keys `00^k` for `k = 0..n`, a pre-order chain of `n` branches (a
+   * 7-bit zero segment, the first empty, with a value and a left child) ending in a leaf. Its root and encoded proof.
+   */
+  private def trieChain(n: Int): (Digest[Sha256], CanonicalValue) = {
+    val T = TrieHashing[Sha256]
+    val v = T.value(ByteVector(0x01))
+    val seven = BitVector.low(7)
+    @scala.annotation.tailrec
+    def go(k: Int, below: ProofNode[Sha256], hash: Digest[Sha256]): (Digest[Sha256], ProofNode[Sha256]) =
+      if (k < 0) (hash, below)
+      else {
+        val segment = if (k == 0) BitVector.empty else seven
+        go(k - 1, ProofNode.PBranch(segment, Some(v), Some(below), scala.None), T.branch(segment, Some(v), Some(hash), scala.None))
+      }
+    val (root, top) = go(n - 1, ProofNode.PLeaf(seven, v), T.leaf(seven, v))
+    (root, get(TrieProofs.encode(TrieProof(Some(top)))))
+  }
+
+  /** `trie_range_verify` of `[00^(n-1), ∞)` with an empty claim on the chain: the outcome, and the check's steps. */
+  private def longFrom(jlvm: Jlvm, n: Int): (Outcome, Long, Long) = {
+    val (root, proof) = trieChain(n)
+    val from = ByteVector.low((n - 1).toLong)
+    val p = program(
+      """{"trie_range_verify": [{"literal": {"variable": 65535}}, {"var": "root"}, {"var": "from"}, null, {"literal": []}, {"var": "p"}]}"""
+    )
+    val o = eval(jlvm, p, obj("root" -> CBytes(root.bytes), "from" -> CBytes(from), "p" -> proof))
+    val mode = get(KeyMode.variable(KeyMode.MaxVariableBytes))
+    val steps = get(TrieProofs.decode[Sha256](proof).flatMap(TrieProofs.verify(mode, root, _))).checkRange(from.bits, scala.None, Nil).steps
+    (o, steps, proof.weight)
+  }
+
+  test("trie_range_verify with a long from on a deep chain: work linear in the proof and bound, which its gas pays") { jlvm =>
+    IO {
+      val runs = List(2000, 4000).map(n => n -> longFrom(jlvm, n))
+      val perWeight = S.cost(Op.TrieRangeVerify).perUnit.value
+      runs.map {
+        case (n, (o, steps, weight)) =>
+          val bits = 8L * weight + 8L * (n - 1)
+          expect
+            .same(Right(False), o.result)
+            .and(expect(steps <= 2L * bits, s"n = $n: $steps steps, over 2 * (proof + bound bits) = ${2L * bits}"))
+            .and(expect(o.gasUsed.value >= perWeight * weight, s"n = $n: gas ${o.gasUsed.value} pays the proof's weight $weight"))
+            .and(expect(steps <= o.gasUsed.value, s"n = $n: $steps steps for ${o.gasUsed.value} gas"))
+      }
+        .reduce(_ and _)
+        .and(runs.map(_._2._2) match {
+          case List(small, large) => expect(large <= 2L * small + 64L, s"twice as deep, twice the work: $small steps, then $large")
+          case other              => failure(s"two runs, got $other")
+        })
+    }
   }
 
   // ---- parsing and compiling: work linear in the program, n log n where keys or names are sorted

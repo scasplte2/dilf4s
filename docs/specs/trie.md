@@ -98,6 +98,25 @@ order, a proper prefix before its extensions. Walk every subtree whose keys can 
 The list is **complete**, including when it is empty, because every subtree that could hold such a key is expanded.
 `from` and `until` are bit strings and need not be keys.
 
+**Listing checks** (`trie_prefix_verify`, `trie_range_verify`; `jlvm.md` §6) decide whether a claimed listing is
+exactly the proven one. Their work is **linear in the proof's weight plus the lengths of the prefix or bounds and of the
+claimed keys**, however long the keys and however many share a long prefix. Every operand is charged by weight, so
+the gas pays for the work. Rebuilding each node's path and comparing it with the bounds from bit 0 is quadratic in the
+proof's depth, as is building the listing before comparing it. On a chain of keys `00^k`, each a prefix of the next,
+both cost Θ(N²) bits for N records. Conforming implementations instead:
+- **Carry the comparison with each bound down the walk.** A path is a prefix of a bound, or has sorted below or above
+  it for good, so each node compares only the bits it adds: its segment, then the bit to a child.
+- **Locate a prefix in place.** Compare each segment on the way with the prefix at its offset, never copying either.
+- **Read every bit in O(1).** An operand held as a rope of appends, whose indexing costs its depth, is flattened once
+  first. A bound or prefix past the longest path any mode allows (524,280 bits) is read no further than that, since
+  every path compares with it as with its first 524,281 bits.
+- **Compare the claim as the walk reaches each key.** Its next entry's key length comes first, so the key bits compared
+  never exceed the claim's. After the first difference the walk still goes on, since a stub anywhere in the query
+  leaves it not covered, whatever the claim.
+
+The answer is the same as building the listing and comparing it. A listing that is returned rather than checked costs
+its own size as well.
+
 A single-key proof is the partial trie expanded along that key's path, with every sibling as a stub. Batch, prefix, range and mixed proofs are the union of their paths, so shared nodes appear once.
 
 ## 5. Proof encoding

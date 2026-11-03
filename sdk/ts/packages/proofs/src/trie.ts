@@ -9,6 +9,7 @@
 import { bitLength, BYTES_TAG, describeFailure, err, models, ok, outputSize, toHex, valueCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import * as B from "./bits.js";
+import * as L from "./listing.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
 import { decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
@@ -433,7 +434,6 @@ export type Listing = { readonly kind: "listed"; readonly entries: readonly Trie
 const ABSENT: Lookup = { kind: "absent" };
 const NOT_COVERED: Lookup & Listing = { kind: "notCovered" };
 const listed = (entries: readonly TrieEntry[]): Listing => ({ kind: "listed", entries });
-const entryOf = (key: B.Bits, valueHash: Uint8Array): TrieEntry => ({ key: B.toBytes(key), valueHash: copyBytes(valueHash) });
 
 let createVerified!: (mode: KeyMode, top: ProofNode | undefined) => VerifiedTrieProof;
 
@@ -483,23 +483,7 @@ export class VerifiedTrieProof {
 
   /** Every entry whose key starts with `prefix`, in key order, if the proof covers the whole subtree. */
   prefix(prefix: Uint8Array): Listing {
-    const p = B.bitsOf(prefix);
-    // walk to the node whose subtree holds exactly the keys starting with the prefix
-    let node = this.#top;
-    let consumed: B.Bits = B.EMPTY_BITS;
-    let at = 0;
-    for (;;) {
-      if (node === undefined) return listed([]);
-      if (node.kind === "stub") return NOT_COVERED;
-      const remaining = B.drop(p, at);
-      if (B.startsWith(node.segment, remaining)) return gather(node, consumed);
-      if (node.kind === "leaf" || !B.startsWith(remaining, node.segment)) return listed([]);
-      at += node.segment.length;
-      const b = B.bit(p, at);
-      consumed = B.append(B.concat([consumed, node.segment]), b);
-      node = b ? node.right : node.left;
-      at += 1;
-    }
+    return listingOf(L.listPrefix(this.#top, prefix));
   }
 
   /**
@@ -507,47 +491,27 @@ export class VerifiedTrieProof {
    * the range. A covered listing is complete, including an empty one.
    */
   range(from: Uint8Array, until?: Uint8Array): Listing {
-    const lo = B.bitsOf(from);
-    const hi = until === undefined ? undefined : B.bitsOf(until);
-    if (this.#top === undefined || !B.intersects(B.EMPTY_BITS, lo, hi)) return listed([]);
-    const out: TrieEntry[] = [];
-    const todo: (readonly [ProofNode, B.Bits])[] = [[this.#top, B.EMPTY_BITS]];
-    for (let t = todo.pop(); t !== undefined; t = todo.pop()) {
-      const [node, at] = t;
-      if (node.kind === "stub") return NOT_COVERED;
-      const here = B.concat([at, node.segment]);
-      if (node.kind === "leaf") {
-        if (B.within(here, lo, hi)) out.push(entryOf(here, node.value));
-        continue;
-      }
-      if (node.value !== undefined && B.within(here, lo, hi)) out.push(entryOf(here, node.value));
-      const right = B.append(here, true);
-      const left = B.append(here, false);
-      if (node.right !== undefined && B.intersects(right, lo, hi)) todo.push([node.right, right]);
-      if (node.left !== undefined && B.intersects(left, lo, hi)) todo.push([node.left, left]);
-    }
-    return listed(out);
+    return listingOf(L.listRange(this.#top, from, until));
+  }
+
+  /**
+   * Whether `claimed`, in key order, is exactly the listing under `prefix`, compared entry by entry as the walk reaches
+   * each key, without building the listing; `NotCovered` if a stub lies under the prefix.
+   */
+  listsPrefix(prefix: Uint8Array, claimed: readonly TrieEntry[]): Result<boolean, TrieError> {
+    return verdictOf(L.listsPrefix(this.#top, prefix, claimed));
+  }
+
+  /** Whether `claimed`, in key order, is exactly the listing of `[from, until)`, as {@link listsPrefix} compares it. */
+  listsRange(from: Uint8Array, until: Uint8Array | undefined, claimed: readonly TrieEntry[]): Result<boolean, TrieError> {
+    return verdictOf(L.listsRange(this.#top, from, until, claimed));
   }
 }
 
-/** Every entry of a subtree whose path so far is `at`, depth first in key order; a stub anywhere is not covered. */
-function gather(top: ProofNode, at: B.Bits): Listing {
-  const out: TrieEntry[] = [];
-  const todo: (readonly [ProofNode, B.Bits])[] = [[top, at]];
-  for (let t = todo.pop(); t !== undefined; t = todo.pop()) {
-    const [node, path] = t;
-    if (node.kind === "stub") return NOT_COVERED;
-    const here = B.concat([path, node.segment]);
-    if (node.kind === "leaf") {
-      out.push(entryOf(here, node.value));
-      continue;
-    }
-    if (node.value !== undefined) out.push(entryOf(here, node.value));
-    if (node.right !== undefined) todo.push([node.right, B.append(here, true)]);
-    if (node.left !== undefined) todo.push([node.left, B.append(here, false)]);
-  }
-  return listed(out);
-}
+const listingOf = (entries: readonly TrieEntry[] | undefined): Listing => (entries === undefined ? NOT_COVERED : listed(entries));
+
+const verdictOf = (v: boolean | undefined): Result<boolean, TrieError> =>
+  v === undefined ? err({ kind: "NotCovered", what: "the proof does not cover the whole query" }) : ok(v);
 
 // ------------------------------------------------------------------ JLVM operations (jlvm.md section 6)
 
@@ -606,19 +570,13 @@ function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly C
   return ok(out);
 }
 
-function sameListing(claimed: readonly TrieEntry[], proven: Listing): Result<boolean, TrieError> {
-  if (proven.kind === "notCovered") return err({ kind: "NotCovered", what: "the proof does not cover the whole query" });
-  const e = proven.entries;
-  return ok(e.length === claimed.length && e.every((x, i) => bytesEqual(x.key, claimed[i]?.key ?? new Uint8Array(0)) && bytesEqual(x.valueHash, claimed[i]?.valueHash ?? new Uint8Array(0))));
-}
-
 /** `trie_prefix_verify [mode, root, prefix, entries, proof]`: whether `entries`, in key order, are exactly the trie's under `prefix`. */
 export function triePrefixVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, prefix: Uint8Array, entries: readonly ClaimedEntry[], proof: Value): Result<boolean, TrieError> {
   const claimed = claimedEntries(hashing, mode, entries);
   if (!claimed.ok) return claimed;
   const v = verified(hashing, mode, root, proof);
   if (!v.ok || v.value === null) return v.ok ? ok(false) : v;
-  return sameListing(claimed.value, v.value.prefix(prefix));
+  return v.value.listsPrefix(prefix, claimed.value);
 }
 
 /** `trie_range_verify [mode, root, from, until, entries, proof]`: `until` null is unbounded. */
@@ -635,7 +593,7 @@ export function trieRangeVerify(
   if (!claimed.ok) return claimed;
   const v = verified(hashing, mode, root, proof);
   if (!v.ok || v.value === null) return v.ok ? ok(false) : v;
-  return sameListing(claimed.value, v.value.range(from, until ?? undefined));
+  return v.value.listsRange(from, until ?? undefined, claimed.value);
 }
 
 // ------------------------------------------------------------------ building
