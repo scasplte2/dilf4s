@@ -29,9 +29,9 @@ pub fn bytes(text: &str) -> Vec<u8> {
     hex::decode(text).unwrap_or_else(|e| panic!("{text}: {e}"))
 }
 
-/// A step of a `built-value` recipe (shared/schemas/refusal-vectors.cddl).
+/// A step of a `built-value` recipe (shared/schemas/refusal-vectors.cddl), its template as canonical CBOR hex.
 pub enum Step<'a> {
-    /// Replace every text `"$"` in the template (canonical CBOR hex) by the value so far, `times` times over.
+    /// Replace every text `"$"` in the template by the value so far, `times` times over.
     Wrap {
         /// The template.
         template: &'a str,
@@ -42,33 +42,23 @@ pub enum Step<'a> {
     Copies(u64),
 }
 
-/// A `built-value`: every occurrence is the one value, shared, so building costs the recipe (and `n` for copies),
-/// never the weight. Nothing here encodes the built value.
+/// A `built-value`, built by [`dilf4s_core::built::build`] (the one implementation every reader uses).
 pub fn build(leaf: &str, steps: &[Step<'_>]) -> dilf4s_core::value::Value {
-    use dilf4s_core::cbor;
-    let decode = |h: &str| cbor::decode(&bytes(h)).unwrap_or_else(|e| panic!("{h}: {e}"));
-    steps.iter().fold(decode(leaf), |v, step| match step {
-        Step::Wrap { template, times } => {
-            let t = decode(template);
-            (0..*times).fold(v, |x, _| fill(&t, &x))
-        }
-        Step::Copies(n) => {
-            let n = usize::try_from(*n).unwrap_or_else(|e| panic!("{n} copies: {e}"));
-            dilf4s_core::value::Value::array(vec![v; n]).unwrap_or_else(|e| panic!("copies: {e}"))
-        }
-    })
-}
-
-/// `template` with every text `"$"` replaced by `v`; templates are a few levels deep.
-fn fill(template: &dilf4s_core::value::Value, v: &dilf4s_core::value::Value) -> dilf4s_core::value::Value {
-    use dilf4s_core::value::Value;
-    match template {
-        Value::Text(t) if t.as_str() == "$" => v.clone(),
-        Value::Array(a) => {
-            Value::array(a.items().iter().map(|x| fill(x, v)).collect()).unwrap_or_else(|e| panic!("fill: {e}"))
-        }
-        Value::Map(m) => Value::map(m.entries().map(|(k, x)| (String::from(k.as_str()), fill(x, v))))
-            .unwrap_or_else(|e| panic!("fill: {e}")),
-        other => other.clone(),
-    }
+    use dilf4s_core::built;
+    let templates: Vec<Vec<u8>> = steps
+        .iter()
+        .map(|s| match s {
+            Step::Wrap { template, .. } => bytes(template),
+            Step::Copies(_) => Vec::new(),
+        })
+        .collect();
+    let steps: Vec<built::Step<'_>> = steps
+        .iter()
+        .zip(&templates)
+        .map(|(s, t)| match s {
+            Step::Wrap { times, .. } => built::Step::Wrap { template: t, times: *times },
+            Step::Copies(n) => built::Step::Copies(*n),
+        })
+        .collect();
+    built::build(&bytes(leaf), &steps).unwrap_or_else(|e| panic!("{leaf}: {e}"))
 }

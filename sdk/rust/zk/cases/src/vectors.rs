@@ -23,7 +23,7 @@ use dilf4s_signing::ecrecover::address_of_key;
 use num_bigint::{BigInt, BigUint};
 
 use crate::leaves::Leaf;
-use crate::{Case, Outcome, Output};
+use crate::{Case, Outcome, Output, Recipe, RecipeStep};
 
 /// A failure reading the vectors.
 pub type Error = String;
@@ -426,11 +426,32 @@ pub fn jlvm(
                 program: c.program.clone(),
                 data: c.data.clone(),
                 env: c.env.iter().flatten().map(|(k, x)| (k.clone(), x.clone())).collect(),
+                built: c
+                    .built
+                    .iter()
+                    .flatten()
+                    .map(|(k, b)| Ok((k.clone(), recipe(b)?)))
+                    .collect::<Result<_, Error>>()?,
                 gas_limit: c.gas_limit.unwrap_or(v.gas_limit),
             };
             Ok(named(format!("jlvm {}", c.name), case, Expect::Jlvm { result, gas: c.gas_used, warnings: c.warnings }))
         })
         .collect()
+}
+
+/// A `built` binding's recipe, its leaf and templates decoded from hex: built where the case runs.
+fn recipe(b: &dilf4s_core::generated::jlvm_vectors::BuiltValue) -> Result<Recipe, Error> {
+    use dilf4s_core::generated::jlvm_vectors::BuiltStep;
+    let steps = b
+        .steps
+        .iter()
+        .flatten()
+        .map(|s| match s {
+            BuiltStep::BuiltWrap(w) => Ok(RecipeStep::Wrap { template: bytes(&w.template)?, times: w.times }),
+            BuiltStep::BuiltCopies(c) => Ok(RecipeStep::Copies(c.copies)),
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    Ok(Recipe { leaf: bytes(&b.leaf)?, steps })
 }
 
 fn hex_point(p: Option<&String>) -> Result<Vec<u8>, Error> {

@@ -9,6 +9,7 @@
 
 extern crate alloc;
 
+pub mod built;
 pub mod cbor;
 pub mod codec;
 pub mod commitment;
