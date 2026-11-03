@@ -6,8 +6,9 @@ import java.nio.file.{Files, Paths}
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.hash.{Hasher, Sha256}
+import xyz.kd5ujc.crypto.curve25519.Point
 
-import cafe.cryptography.curve25519.{Constants, Scalar}
+import cafe.cryptography.curve25519.Scalar
 import scodec.bits.ByteVector
 import weaver.SimpleIOSuite
 
@@ -63,7 +64,7 @@ object Draft03CorpusSuite extends SimpleIOSuite {
   replay("additional corpus", "additional.tsv", "additional-results.tsv", 2338, 3, 0)
 
   private val profile = Vrf.Draft03Profile
-  private def b(pt: cafe.cryptography.curve25519.EdwardsPoint) = Curve25519Maps.bytes(pt)
+  private def b(pt: Point) = Curve25519Maps.bytes(pt)
 
   /** The four helper kinds, evaluated with the production functions (same output formats as the oracle helper). */
   private def helper(row: String): String = {
@@ -85,7 +86,7 @@ object Draft03CorpusSuite extends SimpleIOSuite {
           gamma <- Curve25519Maps.decodeDraft03(gb)
           s     <- Option.when(Curve25519Maps.le(sb) < Curve25519Maps.L)(Scalar.fromBytesModOrder(sb.toArray))
           h     <- Curve25519Maps.hashToCurveDraft03(b(y), alpha)
-          u = profile.equation(y, Constants.ED25519_BASEPOINT, Vrf.scalar16(cb), s)
+          u = profile.equation(y, Point.Basepoint, Vrf.scalar16(cb), s)
           v = profile.equation(gamma, h, Vrf.scalar16(cb), s)
         } yield
           (b(h) ++ b(u) ++ b(v) ++ profile.challenge(in, b(h), gb, b(u), b(v)) ++

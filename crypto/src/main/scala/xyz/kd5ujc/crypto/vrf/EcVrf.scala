@@ -7,9 +7,10 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.hash.{Hasher, Sha512}
+import xyz.kd5ujc.crypto.curve25519.Point
 import xyz.kd5ujc.crypto.signing.{KeyPair, PublicKeyOf, SigningKey, VerifyingKey}
 
-import cafe.cryptography.curve25519.{Constants, EdwardsPoint, Scalar}
+import cafe.cryptography.curve25519.{CompressedEdwardsY, Constants, EdwardsPoint, Scalar}
 import scodec.bits.ByteVector
 
 /** ECVRF-EDWARDS25519-SHA512-TAI (RFC 9381, suite 0x03). */
@@ -76,21 +77,29 @@ object Vrf {
   private[crypto] trait Profile {
     def name: String
     def suite: Int
-    def decode(b:       ByteVector): Option[EdwardsPoint]
-    def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, EdwardsPoint]
+    def decode(b:       ByteVector): Option[Point]
+    def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, Point]
     def challenge(pk:   ByteVector, h:     ByteVector, gamma: ByteVector, u: ByteVector, v: ByteVector): ByteVector
 
-    /** `U = s B - c Y` and `V = s H - c Gamma`, as the suite's reference evaluates them. */
-    def equation(p: EdwardsPoint, q: EdwardsPoint, c: Scalar, s: Scalar): EdwardsPoint
+    /**
+     * `U = s B - c Y` and `V = s H - c Gamma`, as the suite's reference evaluates them, with `c` and `s` the exact
+     * integers (variable time: verification sees public data only).
+     */
+    def equation(p: Point, q: Point, c: Scalar, s: Scalar): Point
+
+    /** [[equation]] with `q = B`, on the fixed basepoint table. */
+    def equationBase(p: Point, c: Scalar, s: Scalar): Point
     def outputSuffix: ByteVector
   }
 
   /** RFC 9381 §5: strict RFC 8032 decoding, `Y` in the challenge, trailing zero octets, literal `s B - c Y`. */
   private abstract class Rfc9381Profile extends Profile {
-    def decode(b: ByteVector): Option[EdwardsPoint] = Curve25519Maps.decodeStrict(b)
+    def decode(b: ByteVector): Option[Point] = Curve25519Maps.decodeStrict(b)
     def challenge(pk: ByteVector, h: ByteVector, gamma: ByteVector, u: ByteVector, v: ByteVector): ByteVector =
       hash(ByteVector(suite, 0x02), pk, h, gamma, u, v, ByteVector(0x00)).take(16)
-    def equation(p: EdwardsPoint, q: EdwardsPoint, c: Scalar, s: Scalar): EdwardsPoint = q.multiply(s).subtract(p.multiply(c))
+    // c (below 2^128) times -p, exactly: not (L - c) p, which differs on mixed-order points
+    def equation(p:     Point, q: Point, c:  Scalar, s: Scalar): Point = Point.doubleScalarMultiply(s, q, c, p.negate)
+    def equationBase(p: Point, c: Scalar, s: Scalar): Point = Point.doubleScalarMultiplyBasepoint(c, p.negate, s)
     val outputSuffix: ByteVector = ByteVector(0x00)
   }
 
@@ -99,8 +108,8 @@ object Vrf {
     val suite: Int = 0x03
 
     /** §5.4.1.1: the first counter whose hash decodes to a point; the point times the cofactor. */
-    def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, EdwardsPoint] = {
-      @tailrec def loop(ctr: Int): Either[VrfError, EdwardsPoint] =
+    def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, Point] = {
+      @tailrec def loop(ctr: Int): Either[VrfError, Point] =
         if (ctr > 255) VrfError.HashToCurveFailed("no counter in 0..255 gave a curve point").asLeft
         else
           Curve25519Maps.decodeStrict(hash(ByteVector(suite, 0x01), pk, alpha, ByteVector(ctr, 0x00)).take(32)) match {
@@ -117,7 +126,7 @@ object Vrf {
     private val dst = ByteVector("ECVRF_edwards25519_XMD:SHA-512_ELL2_NU_".getBytes(US_ASCII)) ++ ByteVector(suite)
 
     /** §5.4.1.2: `encode_to_curve(PK || alpha)` with DST `"ECVRF_" || h2c_suite_ID_string || suite_string`. */
-    def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, EdwardsPoint] =
+    def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, Point] =
       Curve25519Maps.encodeToCurveEll2(pk ++ alpha, dst).toRight(VrfError.HashToCurveFailed("Elligator 2 produced no point"))
   }
 
@@ -128,13 +137,15 @@ object Vrf {
   private[crypto] object Draft03Profile extends Profile {
     val name = "ECVRF-ED25519-SHA512-Elligator2 (draft-03)"
     val suite: Int = 0x04
-    def decode(b: ByteVector): Option[EdwardsPoint] = Curve25519Maps.decodeDraft03(b)
-    def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, EdwardsPoint] =
+    def decode(b: ByteVector): Option[Point] = Curve25519Maps.decodeDraft03(b)
+    def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, Point] =
       Curve25519Maps.hashToCurveDraft03(pk, alpha).toRight(VrfError.HashToCurveFailed("Elligator 2 produced no point"))
     def challenge(pk: ByteVector, h: ByteVector, gamma: ByteVector, u: ByteVector, v: ByteVector): ByteVector =
       hash(ByteVector(suite, 0x02), h, gamma, u, v).take(16)
-    def equation(p: EdwardsPoint, q: EdwardsPoint, c: Scalar, s: Scalar): EdwardsPoint =
-      p.multiply(Scalar.ZERO.subtract(c)).add(q.multiply(s))
+    def equation(p: Point, q: Point, c: Scalar, s: Scalar): Point =
+      Point.doubleScalarMultiply(Scalar.ZERO.subtract(c), p, s, q)
+    def equationBase(p: Point, c: Scalar, s: Scalar): Point =
+      Point.doubleScalarMultiplyBasepoint(Scalar.ZERO.subtract(c), p, s)
     val outputSuffix: ByteVector = ByteVector.empty
   }
 
@@ -147,8 +158,9 @@ object Vrf {
     (Scalar.fromBytesModOrder(a.update(0, (a(0) & 0xf8).toByte).update(31, ((a(31) & 0x7f) | 0x40).toByte).toArray), h.drop(32))
   }
 
-  private def publicFromSeed(seed: ByteVector): ByteVector =
-    Curve25519Maps.bytes(Constants.ED25519_BASEPOINT_TABLE.multiply(expand(seed)._1))
+  private def encoded(pt: EdwardsPoint): ByteVector = ByteVector.view(pt.compress().toByteArray)
+
+  private def publicFromSeed(seed: ByteVector): ByteVector = encoded(Constants.ED25519_BASEPOINT_TABLE.multiply(expand(seed)._1))
 
   private class Impl[S](profile: Profile, seedOf: SigningKey[S] => ByteVector, val signingKeyLength: Long) extends Vrf[S] {
     val name: String = profile.name
@@ -165,7 +177,7 @@ object Vrf {
           Either.cond(b.size == 32L || publicFromSeed(b.take(32)) == b.drop(32), new SigningKey[S](b), VrfError.KeyMismatch)
         }
 
-    private def decodeKey(bytes: ByteVector): Either[VrfError, EdwardsPoint] =
+    private def decodeKey(bytes: ByteVector): Either[VrfError, Point] =
       for {
         _  <- Either.cond(bytes.size == 32L, (), VrfError.Malformed(s"$name public key", s"expected 32 bytes, got ${bytes.size}"))
         pt <- profile.decode(bytes).toRight(VrfError.InvalidPublicKey)
@@ -183,22 +195,29 @@ object Vrf {
 
     def publicKey(key: SigningKey[S]): VerifyingKey[S] = VerifyingKey[S](publicFromSeed(seedOf(key)))
 
-    private def output(gamma: EdwardsPoint): VrfOutput[S] =
-      VrfOutput[S](hash(ByteVector(profile.suite, 0x03), Curve25519Maps.bytes(gamma.multiplyByCofactor()), profile.outputSuffix))
+    /** `beta` from the encoding of `[8]Gamma`. */
+    private def output(gamma8: ByteVector): VrfOutput[S] = VrfOutput[S](hash(ByteVector(profile.suite, 0x03), gamma8, profile.outputSuffix))
 
-    /** Secret scalars meet only elisabeth's constant-time multiplications; hash-to-curve sees public inputs only. */
+    /**
+     * Secret scalars meet only elisabeth's constant-time multiplications; hash-to-curve sees public inputs only, and its
+     * point is carried to elisabeth through its encoding.
+     */
     def prove(key: SigningKey[S], alpha: ByteVector): Either[VrfError, (VrfProof[S], VrfOutput[S])] = {
       val (x, prefix) = expand(seedOf(key))
       val pk = publicFromSeed(seedOf(key))
-      profile.hashToCurve(pk, alpha).map { h =>
-        val hb = Curve25519Maps.bytes(h)
+      for {
+        point <- profile.hashToCurve(pk, alpha)
+        hb = Curve25519Maps.bytes(point)
+        h <- Either
+          .catchNonFatal(new CompressedEdwardsY(hb.toArray).decompress())
+          .leftMap(_ => VrfError.HashToCurveFailed("the point's encoding did not decode"))
+      } yield {
         val gamma = h.multiply(x)
-        val gb = Curve25519Maps.bytes(gamma)
+        val gb = encoded(gamma)
         val k = Scalar.fromBytesModOrderWide(hash(prefix, hb).toArray)
-        val c = profile
-          .challenge(pk, hb, gb, Curve25519Maps.bytes(Constants.ED25519_BASEPOINT_TABLE.multiply(k)), Curve25519Maps.bytes(h.multiply(k)))
+        val c = profile.challenge(pk, hb, gb, encoded(Constants.ED25519_BASEPOINT_TABLE.multiply(k)), encoded(h.multiply(k)))
         val s = scalar16(c).multiplyAndAdd(x, k)
-        (VrfProof[S](gb ++ c ++ ByteVector.view(s.toByteArray)), output(gamma))
+        (VrfProof[S](gb ++ c ++ ByteVector.view(s.toByteArray)), output(encoded(gamma.multiplyByCofactor())))
       }
     }
 
@@ -216,15 +235,13 @@ object Vrf {
         sb = proof.drop(48)
         _ <- Either.cond(Curve25519Maps.le(sb) < Curve25519Maps.L, (), VrfError.NonCanonicalScalar)
         s = Scalar.fromBytesModOrder(sb.toArray)
-        h <- profile.hashToCurve(Curve25519Maps.bytes(y), alpha)
-        u = profile.equation(y, Constants.ED25519_BASEPOINT, scalar16(c), s)
+        // a decoded key's canonical `y` is its own: the only `x = 0` points (negative zero) are small-order, refused
+        h <- profile.hashToCurve(key, alpha)
+        u = profile.equationBase(y, scalar16(c), s)
         v = profile.equation(gamma, h, scalar16(c), s)
-        _ <- Either.cond(
-          profile.challenge(key, Curve25519Maps.bytes(h), gb, Curve25519Maps.bytes(u), Curve25519Maps.bytes(v)) == c,
-          (),
-          VrfError.ChallengeMismatch
-        )
-      } yield output(gamma)
+        (hb, ub, vb, gamma8) = Point.compressBatch(h, u, v, gamma.multiplyByCofactor())
+        _ <- Either.cond(profile.challenge(key, hb, gb, ub, vb) == c, (), VrfError.ChallengeMismatch)
+      } yield output(gamma8)
   }
 
   implicit val tai: Vrf[EcVrfTai] = new Impl[EcVrfTai](TaiProfile, _.bytes, 32)
