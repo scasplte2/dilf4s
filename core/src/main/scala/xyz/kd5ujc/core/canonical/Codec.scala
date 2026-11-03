@@ -103,7 +103,7 @@ object Codec {
 
   /**
    * A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`). Its keys are the caller's, so it is
-   * ordered, never hashed: decoded, in [[KeyOrder.Default]]; to encode, in any order (the encoding sorts them).
+   * ordered, never hashed: decoded, in the order of the map it is read from; to encode, in any order (the encoding sorts them).
    */
   def textMap[A](value: Codec[A]): Codec[TreeMap[String, A]] =
     Codec(
@@ -111,7 +111,7 @@ object Codec {
       {
         case CMap(entries) =>
           entries.toList.traverse { case (k, v) => value.decoder.decode(v).leftMap(_.at(k)).map(k -> _) }
-            .map(TreeMap.from(_)(using KeyOrder.Default))
+            .map(TreeMap.from(_)(using entries.ordering))
         case _ => DecodeFailure(Nil, "expected a map").asLeft
       }
     )

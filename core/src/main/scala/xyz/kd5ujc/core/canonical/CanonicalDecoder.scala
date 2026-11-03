@@ -122,7 +122,7 @@ object CanonicalDecoder {
     case CMap(entries) =>
       val unknown = entries.size - allowed.count(entries.contains)
       if (unknown > 0) {
-        val known = TreeSet.from(allowed)(using KeyOrder.Default)
+        val known = TreeSet.from(allowed)(using entries.ordering)
         val first = entries.keysIterator.filterNot(known.contains).minOption(using CanonicalKeyOrder).getOrElse("")
         fail(s"$unknown unknown ${if (unknown == 1) "key" else "keys"}, the first ${Preview.of(first)}")
       } else f(new Fields(entries))

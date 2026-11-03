@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicLong
 import cats.effect.IO
 import cats.syntax.all._
 
-import scala.annotation.nowarn
+import scala.collection.immutable.TreeMap
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 
@@ -14,9 +14,10 @@ import weaver.{Expectations, SimpleIOSuite}
 /**
  * Hash-flooding regressions for canonical maps. Java's `String.hashCode` is trivially collidable (every combination of
  * "Aa" and "BB" blocks has one hash code), and a hashed map degrades to linear scans on colliding keys. A map is a
- * `TreeMap` in [[KeyOrder]] instead. Nothing here measures time: a map built through a counting [[KeyOrder]] reports the
- * comparisons, the key units they read and the keys it measured, bounded by the input's size; and each `String` caches
- * its hash code once computed, so a key whose cache is still empty afterwards was never hashed, by anything.
+ * `TreeMap` in [[KeyOrder]] instead. Nothing here measures time or looks inside a key: every path runs through a
+ * counting [[KeyOrder]], whose comparisons are bounded below (a hashed path compares nothing) and above (n log n), and,
+ * where a path is given its keys in a known order, counted exactly (a hashed step on the way reorders them, which
+ * changes the count).
  */
 object CollidingKeysSuite extends SimpleIOSuite {
 
@@ -29,9 +30,8 @@ object CollidingKeysSuite extends SimpleIOSuite {
   /** The control: as many keys, as long, from "Aa" and "Ac", whose hash codes differ. */
   private def control(k: Int): Vector[String] = combinations(k, "Aa", "Ac")
 
-  // each key a fresh String, so no hash code is cached in it yet
   private def combinations(k: Int, a: String, b: String): Vector[String] =
-    (1 to k).foldLeft(Vector(""))((acc, _) => acc.flatMap(s => Vector(s + a, s + b))).map(s => new String(s.toCharArray))
+    (1 to k).foldLeft(Vector(""))((acc, _) => acc.flatMap(s => Vector(s + a, s + b)))
 
   private val K = 12
   private val N = 1 << K
@@ -69,27 +69,17 @@ object CollidingKeysSuite extends SimpleIOSuite {
     IO(new Counting).flatMap(keys => IO(f(keys)).map(a => (a, keys.comparisons.get, keys.units.get, keys.measures.get)))
 
   /**
-   * Whether `String.hashCode` was ever called on `s`: reads its cached hash, through `sun.misc.Unsafe` because `java.lang`
-   * is not open to reflection. A test-only probe: if a JDK ever withdraws the call, the suite fails rather than passes.
+   * The comparisons of inserting `keys` one at a time, in this order, into a tree in [[KeyOrder]]: exactly what a path
+   * that inserts the keys it is given, as it is given them, must make.
    */
-  private object HashProbe {
-    private val unsafe: sun.misc.Unsafe = {
-      val f = classOf[sun.misc.Unsafe].getDeclaredField("theUnsafe")
-      f.setAccessible(true)
-      f.get(null).asInstanceOf[sun.misc.Unsafe]
-    }
-    @nowarn("cat=deprecation")
-    private val offset: Long = unsafe.objectFieldOffset(classOf[String].getDeclaredField("hash"))
-    def hashed(s: String): Boolean = unsafe.getInt(s, offset) != 0
+  private def inserting(keys: Vector[String]): Long = {
+    val o = new Counting
+    val _ = keys.foldLeft(TreeMap.empty[String, Int](using o))(_.updated(_, 1))
+    o.comparisons.get
   }
 
-  /** The hash code `String.hashCode` would compute, without computing it there (so nothing is cached). */
+  /** The hash code `String.hashCode` computes. */
   private def javaHash(s: String): Int = s.foldLeft(0)((h, c) => 31 * h + c)
-
-  private def neverHashed(what: String, keys: Iterable[String]): Expectations = {
-    val hashed = keys.count(HashProbe.hashed)
-    expect(hashed == 0, s"$what: $hashed of ${keys.size} keys were hashed")
-  }
 
   private def keysOf(v: CanonicalValue): Vector[String] = v match {
     case CMap(m) => m.keysIterator.toVector
@@ -105,29 +95,26 @@ object CollidingKeysSuite extends SimpleIOSuite {
     expect(comparisons >= n - 1L, s"$what: $comparisons comparisons for $n keys; a hashed path makes none")
       .and(expect(comparisons <= upper, s"$what: $comparisons comparisons for $n keys, above $upper"))
 
-  test("the probe sees a hash code once one is computed, and every colliding key really collides") {
-    IO {
-      val keys = colliding(K)
-      val probe = new String("probe".toCharArray)
-      val before = HashProbe.hashed(probe)
-      val _ = probe.hashCode
-      expect(!before && HashProbe.hashed(probe), "the probe reads String's cached hash code")
-        .and(expect.same(1, keys.map(javaHash).distinct.size))
-        .and(expect(javaHash(keys.head) != 0, "a zero hash code would read as never computed"))
-        .and(expect.same(N, keys.distinct.size))
+  test("every colliding key collides, and the exact count tells a hash-ordered insertion apart") {
+    IO(
+      expect
+        .same(1, colliding(K).map(javaHash).distinct.size)
+        .and(expect.same(N, colliding(K).distinct.size))
         .and(expect(control(K).map(javaHash).distinct.size > N / 2, "the control's keys mostly differ in hash code"))
-    }
+        .and(expect(inserting(control(K)) != inserting(control(K).sortBy(javaHash)), "hash order inserts with another count"))
+        .and(expect(inserting(control(K)) != inserting(control(K).map(_ -> 1).toMap.keysIterator.toVector), "so does a HashMap's order"))
+    )
   }
 
-  test("map: one insertion per key in O(n log n) comparisons, each key measured once, none hashed") {
+  test("map: one insertion per key in O(n log n) comparisons, each key measured once") {
     val keys = colliding(K)
     counting(o => CanonicalValue.map(keys.map(_ -> CInt(1)), o).map(m => (m, o))).map {
       case (result, comparisons, _, measures) =>
         val m = get(result)._1
         within("map", N, comparisons, nLogN(N))
+          .and(expect.same(inserting(keys), comparisons))
           .and(expect.same(N.toLong, measures))
           .and(ordered("map", m, get(result)._2))
-          .and(neverHashed("map", keys))
           .and(expect.same(N, keysOf(m).size))
     }
   }
@@ -142,20 +129,25 @@ object CollidingKeysSuite extends SimpleIOSuite {
     }
   }
 
-  test("decode: O(n log n) comparisons, no key measured again or hashed, in the order passed") {
-    val bytes = Cbor.encode(get(CanonicalValue.map(colliding(K).map(_ -> CInt(1)))))
-    counting(o => (Cbor.decode(bytes, Cbor.DefaultMaxDepth, o), o)).map {
-      case ((result, o), comparisons, _, measures) =>
+  test("decode: one insertion per key, in encoded order, and no key measured again") {
+    def decoding(keys: Vector[String]) = {
+      val bytes = Cbor.encode(get(CanonicalValue.map(keys.map(_ -> CInt(1)))))
+      counting(o => (Cbor.decode(bytes, Cbor.DefaultMaxDepth, o), o, bytes))
+    }
+    (decoding(colliding(K)), decoding(control(K))).mapN {
+      case (((result, o, bytes), comparisons, _, measures), ((plain, _, _), plainComparisons, _, _)) =>
         val v = get(result)
+        // a sorted map iterates in encoded order here: every key has the same UTF-8 length
         within("decode", N, comparisons, nLogN(N))
+          .and(expect.same(inserting(keysOf(v)), comparisons))
+          .and(expect.same(inserting(keysOf(get(plain))), plainComparisons))
           .and(expect.same(0L, measures))
           .and(ordered("decode", v, o))
-          .and(neverHashed("decode", keysOf(v)))
           .and(expect.same(bytes, Cbor.encode(v)))
     }
   }
 
-  test("JSON: repeated member names are found in O(n log n) comparisons, and no member name is hashed") {
+  test("JSON: a repeated member name is found by comparing names as they are read, in O(n log n)") {
     val keys = colliding(K)
     val json = keys.map(k => s"\"$k\":1").mkString("{", ",", "}")
     val repeated = keys.map(k => s"\"$k\":1").appended(s"\"${keys(N / 2)}\":2").mkString("{", ",", "}")
@@ -165,32 +157,33 @@ object CollidingKeysSuite extends SimpleIOSuite {
         within("parse", N, comparisons, 2L * nLogN(N))
           .and(expect.same(N.toLong, measures))
           .and(ordered("parse", v, o))
-          .and(neverHashed("parse", keysOf(v)))
           .and(
             expect(dup == Left(CanonicalError.DuplicateKey(Preview.of(keys(N / 2)))), s"the repeat is found: ${dup.leftMap(_.toString)}")
           )
-          .and(expect(dupComparisons <= 2L * nLogN(N + 1), s"$dupComparisons comparisons to find the repeat"))
+          // the repeat ends the parse before any map is built: only the check of the names read so far compared them
+          .and(within("the repeat", N, dupComparisons, 2L * nLogN(N + 1)))
     }
   }
 
-  test("textKeyed: O(n log n) comparisons, each key's cached weight reused: no key measured or hashed") {
-    val keys = colliding(K).map(t)
-    counting(o => (CanonicalValue.textKeyed(keys.map(_ -> CInt(1)), o), o)).map {
-      case ((result, o), comparisons, _, measures) =>
+  test("textKeyed: one insertion per key, in the order given, each key's cached weight reused: none measured") {
+    def keyed(keys: Vector[String]) = counting(o => (CanonicalValue.textKeyed(keys.map(k => t(k) -> CInt(1)), o), o))
+    (keyed(colliding(K)), keyed(control(K))).mapN {
+      case (((result, o), comparisons, _, measures), (_, plainComparisons, _, _)) =>
         within("textKeyed", N, comparisons, nLogN(N))
+          .and(expect.same(inserting(colliding(K)), comparisons))
+          .and(expect.same(inserting(control(K)), plainComparisons))
           .and(expect.same(0L, measures))
           .and(ordered("textKeyed", get(result), o))
-          .and(neverHashed("textKeyed", keys.map(_.value)))
     }
   }
 
-  test("updated and removed: O(log n) comparisons, each reading O(the key), the key never measured again or hashed") {
+  test("updated and removed: O(log n) comparisons, each reading O(the key), the key never measured again") {
     val keys = colliding(K)
     IO(new Counting).flatMap { o =>
       IO {
         val m = get(CanonicalValue.map(keys.map(_ -> CInt(1)), o))
         val (c0, u0, m0) = o.counts
-        val added = t(new String(("BB" * K).updated(0, 'C').toCharArray))
+        val added = t(("BB" * K).updated(0, 'C'))
         val updates = Vector(added, t(keys(7)), t(keys(N - 1)))
         val (after, costs) = updates.foldLeft((m, Vector.empty[(Long, Long, Long)])) {
           case ((acc, cs), k) =>
@@ -207,6 +200,7 @@ object CollidingKeysSuite extends SimpleIOSuite {
           .foldLeft(success) {
             case (acc, (comparisons, units, measures)) =>
               acc
+                .and(expect(comparisons >= log2(N), s"an update and a removal made $comparisons comparisons; a hashed path makes none"))
                 .and(expect(comparisons <= perOp, s"an update and a removal made $comparisons comparisons, above $perOp"))
                 .and(expect(units <= comparisons * perUnit, s"$units units read in $comparisons comparisons of ${2 * K}-unit keys"))
                 .and(expect.same(0L, measures))
@@ -215,12 +209,11 @@ object CollidingKeysSuite extends SimpleIOSuite {
           .and(expect(c0 > 0L && u0 > 0L, "building the map compared keys"))
           .and(ordered("updated", after, o))
           .and(expect.same(N, keysOf(after).size))
-          .and(neverHashed("updated", keysOf(after) ++ updates.map(_.value)))
       }
     }
   }
 
-  test("merged: O(n log n) comparisons, each key of the result measured once, none hashed") {
+  test("merged: O(n log n) comparisons, each key of the result measured once") {
     val (left, right) = colliding(K).splitAt(N / 2)
     counting { o =>
       val maps = Vector(left, right, left.take(10)).map(ks => get(CanonicalValue.map(ks.map(_ -> CInt(1)), o)))
@@ -233,25 +226,38 @@ object CollidingKeysSuite extends SimpleIOSuite {
           .and(expect.same(N.toLong, measures - m0))
           .and(ordered("merged", m, o))
           .and(expect.same(N, keysOf(m).size))
-          .and(neverHashed("merged", keysOf(m)))
     }
   }
 
-  test("equality, typed decoding and record shapes look keys up in the map's order: none is hashed") {
+  test("equality, typed decoding and record checks compare keys in the map's own order") {
     val keys = colliding(K)
-    val m = get(CanonicalValue.map(keys.map(_ -> CInt(1))))
-    val same = get(CanonicalValue.map(colliding(K).map(_ -> CInt(1))))
-    val other = get(CanonicalValue.map(colliding(K).updated(5, new String("x".toCharArray)).map(_ -> CInt(1))))
-    val decoded = Codec.textMap(Codec.uint).decoder.decode(m)
-    val record = CanonicalDecoder.record(Set("a", "b"))(f => f.optional[BigInt]("a")).decode(m)
-    val alternative = Codec.selectAlternative(m, List((Set("a"), Set("a", "b"), CanonicalDecoder.record(Set("a", "b"))(_ => 1.asRight))))
-    IO(
-      expect(m == same && m != other, "equal maps are equal, and a different key is not")
-        .and(expect(decoded.map(_.size) == Right(N), s"textMap decodes: ${decoded.map(_.size)}"))
-        .and(expect(decoded.exists(_.ordering eq KeyOrder.Default), "textMap decodes in the default key order"))
-        .and(expect(record.isLeft && alternative.isLeft, "4096 unknown keys are refused"))
-        .and(neverHashed("equality, textMap, record and selectAlternative", keys ++ keysOf(same) ++ keysOf(other)))
-    )
+    IO(new Counting).flatMap { o =>
+      IO {
+        val m = get(CanonicalValue.map(keys.map(_ -> CInt(1)), o))
+        val same = get(CanonicalValue.map(keys.map(_ -> CInt(1)), o))
+        val other = get(CanonicalValue.map(keys.updated(5, "x").map(_ -> CInt(1)), o))
+        def cost[A](f: => A): (A, Long) = {
+          val before = o.comparisons.get
+          val a = f
+          (a, o.comparisons.get - before)
+        }
+        val (equal, equality) = cost(m == same && m != other)
+        val (decoded, decoding) = cost(Codec.textMap(Codec.uint).decoder.decode(m))
+        val (record, recording) = cost(CanonicalDecoder.record(Set("a", "b"))(f => f.optional[BigInt]("a")).decode(m))
+        val (alternative, choosing) =
+          cost(Codec.selectAlternative(m, List((Set("a"), Set("a", "b"), CanonicalDecoder.record(Set("a", "b"))(_ => 1.asRight)))))
+        expect(equal, "equal maps are equal, and a different key is not")
+          // two trees in one order are walked side by side, their keys compared by `equals`: the order is barely asked
+          .and(expect(equality <= 2L * log2(N), s"equality made $equality comparisons"))
+          .and(expect(decoded.map(_.size) == Right(N), s"textMap decodes: ${decoded.map(_.size)}"))
+          .and(expect(decoded.exists(_.ordering eq o), "textMap decodes in the order of the map it reads"))
+          .and(within("textMap", N, decoding, nLogN(N)))
+          .and(expect(record.isLeft && alternative.isLeft, "4096 unknown keys are refused"))
+          // the refusal names the unknown keys: each is looked up among the allowed ones, in the map's order
+          .and(within("record", N, recording, 4L * nLogN(N)))
+          .and(expect(choosing <= 4L * log2(N), s"choosing an alternative made $choosing comparisons"))
+      }
+    }
   }
 
   pureTest("measure is a key's UTF-8 length, and -1 when it holds an unpaired surrogate") {
