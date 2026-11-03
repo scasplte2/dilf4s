@@ -87,7 +87,11 @@ batch:
    heavier than 1 MiB is refused for its weight alone, before its length is measured. A value that shares structure
    can encode to far more bytes than it occupies, so no implementation encodes a value to check it.
    **The batch as a whole must fit one delta.** A commit whose delta (§7) would weigh over `MaxProofWeight` (2^24,
-   `conformance.md` §5) is refused with `TooLarge { limit: MaxProofWeight }` before anything is written. Like a
+   `conformance.md` §5) is refused with `TooLarge { limit: MaxProofWeight }` before anything is written. A batch's
+   checks run in this order: what each value's depth and weight alone refuse (`TooDeep`, or `TooLarge` with
+   `MaxValueBytes` for a weight over 1 MiB), then the delta's weight, then each value's measured length. The first two
+   read cached properties, so a batch of many keys sharing one long value costs its number of keys, not its
+   expansion. Like a
    block-size limit, it bounds each state transition, so replicas only ever handle bounded deltas, and every delta a
    store serves is one every replica decodes. The delta is weighed as it would be served: the parent head (none for
    the first commit), the head, every upsert with its value and every removed key. That is at most about sixteen

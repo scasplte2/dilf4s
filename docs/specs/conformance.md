@@ -147,7 +147,7 @@ outcome, and `"accepted"` means every step succeeded.
 | `poseidon-proof` | `input` | decode the proof |
 | `merkle-verify` | `root`, `size`, `claim`, `input` | `merkle_verify`: the head (the root's length), the leaf claim's weight, decode the proof, the size, check it (tagged profile) |
 | `trie-verify` | `mode`, `root`, `key`, `claim` (absent: absence), `input` | `trie_verify`: the key's path, the claim's weight, the root's length, decode the proof, check it against `root`, look the key up |
-| `vt-commit` | `batch` | commit the batch at version 1 to an empty store: each value's `checkValue`, then the weight of the delta it would serve (no parent; the head's version key and both roots at their widths) against `MaxProofWeight`. An SDK without a store checks the same, building that delta |
+| `vt-commit` | `batch` | commit the batch at version 1 to an empty store: what each value's depth and weight alone refuse, the weight of the delta it would serve (no parent; the head's version key and both roots at their widths) against `MaxProofWeight`, then each value's `checkValue`. An SDK without a store checks the same, building that delta |
 | `trie-prefix-verify` | `mode`, `root`, `prefix`, `entries`, `input` | `trie_prefix_verify`: each entry's key and value, the values' weight together, the root's length, decode the proof, check it, list the prefix |
 
 Versioned-trie checks use the default version key (8 bytes) and SHA-256.

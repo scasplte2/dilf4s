@@ -115,18 +115,22 @@ function run(c: Case): Outcome {
       return found.value.kind === "notCovered" ? { kind: "NotCovered" } : accepted;
     }
     case "vt-commit": {
-      // each value as a commit checks it, then the weight of the delta it would serve at version 1 (no parent; the
-      // head's version key and roots at their widths): what the store refuses before writing
-      const upserts: models.versionedTrie.VersionedTrieUpsert[] = [];
-      for (const u of c.batch ?? []) {
-        const value = built(u.value);
-        const checked = vt.checkValue(expectOk(versioned.StateKey.parse(u.stateKey), "state key"), value);
-        if (!checked.ok) return v(checked);
-        upserts.push({ k: u.stateKey, v: value });
+      // the weight of the delta it would serve at version 1 (no parent; the head's version key and roots at their
+      // widths), checked first, then each value as a commit checks it: what the store refuses before writing
+      const upserts: models.versionedTrie.VersionedTrieUpsert[] = (c.batch ?? []).map((u) => ({ k: u.stateKey, v: built(u.value) }));
+      // what each value's depth and weight alone refuse, then the delta's weight, then each value's measured length
+      for (const u of upserts.filter((x) => x.v.depth > versioned.MAX_VALUE_DEPTH || x.v.weight > BigInt(versioned.MAX_VALUE_BYTES))) {
+        const deep = vt.checkValue(expectOk(versioned.StateKey.parse(u.k), "state key"), u.v);
+        if (!deep.ok) return v(deep);
       }
       const head = { v: expectOk(fromHex("0000000000000001"), "vkey"), s: new Uint8Array(32), h: new Uint8Array(32) };
       const delta = expectOk(models.versionedTrie.VersionedTrieDelta.encode({ head, upserts, removes: [] }), "delta");
-      return delta.weight > MAX_PROOF_WEIGHT ? { kind: "TooLarge", limit: MAX_PROOF_WEIGHT } : accepted;
+      if (delta.weight > MAX_PROOF_WEIGHT) return { kind: "TooLarge", limit: MAX_PROOF_WEIGHT };
+      for (const u of upserts) {
+        const checked = vt.checkValue(expectOk(versioned.StateKey.parse(u.k), "state key"), u.v);
+        if (!checked.ok) return v(checked);
+      }
+      return accepted;
     }
     case "merkle-verify": {
       const hashing = merkle.TaggedMerkleHashing.of("SHA-256");

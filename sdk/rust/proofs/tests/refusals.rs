@@ -25,7 +25,9 @@ use dilf4s_proofs::MAX_PROOF_WEIGHT;
 use dilf4s_proofs::merkle::{self, ConsistencyProof, InclusionProof, MerkleError, Tagged, TreeHead};
 use dilf4s_proofs::poseidon::merkle::{PoseidonMerkleError, PoseidonMerkleProof};
 use dilf4s_proofs::trie::{self, KeyMode, Lookup, TrieError, TrieHashing, TrieProof};
-use dilf4s_proofs::versioned::{Replica, StateKey, U64Key, VersionedTrie, VersionedTrieError, check_value};
+use dilf4s_proofs::versioned::{
+    MAX_VALUE_BYTES, MAX_VALUE_DEPTH, Replica, StateKey, U64Key, VersionedTrie, VersionedTrieError, check_value,
+};
 
 type H = Sha256;
 type Vt = VersionedTrie<U64Key, H>;
@@ -107,21 +109,30 @@ fn digest(hex: Option<&String>) -> Digest<H> {
     Digest::from_slice(&bytes(hex.expect("a digest"))).unwrap()
 }
 
-/// `vt-commit`: each value as a commit checks it, then the weight of the delta it would serve at version 1 (no
-/// parent; the head's version key and roots at their widths), which the store refuses before writing.
+/// `vt-commit`: the weight of the delta it would serve at version 1 (no parent; the head's version key and roots at
+/// their widths), checked first, then each value as a commit checks it, as the store refuses before writing.
 fn commit(c: &RefusalCase) -> Option<Refused> {
-    let mut upserts = Vec::new();
-    for u in c.batch.iter().flatten() {
-        let k = StateKey::parse(&u.state_key).unwrap();
-        let v = built(&u.value);
-        if let Err(e) = check_value(&k, &v) {
-            return Some(versioned(&e));
-        }
-        upserts.push(w::VersionedTrieUpsert { k: u.state_key.clone(), v });
+    let upserts: Vec<w::VersionedTrieUpsert> = c
+        .batch
+        .iter()
+        .flatten()
+        .map(|u| w::VersionedTrieUpsert { k: u.state_key.clone(), v: built(&u.value) })
+        .collect();
+    let check =
+        |u: &w::VersionedTrieUpsert| check_value(&StateKey::parse(&u.k).unwrap(), &u.v).err().map(|e| versioned(&e));
+    // what each value's depth and weight alone refuse, then the delta's weight, then each value's measured length
+    if let Some(deep) =
+        upserts.iter().filter(|u| u.v.depth() > MAX_VALUE_DEPTH || u.v.weight() > MAX_VALUE_BYTES).find_map(check)
+    {
+        return Some(deep);
     }
     let head = w::VersionedTrieHead { v: 1u64.to_be_bytes().to_vec(), s: vec![0; 32], h: vec![0; 32] };
-    let delta = w::VersionedTrieDelta { parent: None, head, upserts, removes: vec![] }.to_value().unwrap();
-    (delta.weight() > MAX_PROOF_WEIGHT).then(|| Refused { limit: Some(MAX_PROOF_WEIGHT), ..kind("TooLarge") })
+    let delta =
+        w::VersionedTrieDelta { parent: None, head, upserts: upserts.clone(), removes: vec![] }.to_value().unwrap();
+    if delta.weight() > MAX_PROOF_WEIGHT {
+        return Some(Refused { limit: Some(MAX_PROOF_WEIGHT), ..kind("TooLarge") });
+    }
+    upserts.iter().find_map(check)
 }
 
 /// The case's outcome, by its check (conformance.md section 6): the first refusal, or `None`.
