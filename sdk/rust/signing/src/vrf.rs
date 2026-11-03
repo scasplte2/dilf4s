@@ -14,12 +14,11 @@ use alloc::format;
 use core::fmt;
 use core::marker::PhantomData;
 
-use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
 use curve25519_dalek::scalar::Scalar;
 
 use crate::error::VrfError;
-use crate::util::{ED25519_L, canonical_y, le_less_than, sha512};
+use crate::util::{ED25519_L, ED25519_X_ZERO_YS, canonical_y, le_less_than, sha512};
 
 /// Proof length (`Gamma (32) || c (16) || s (32)`).
 pub const PROOF_LENGTH: usize = 80;
@@ -279,9 +278,16 @@ pub(crate) fn decode(suite: SuiteId, bytes: &[u8; 32]) -> Option<EdwardsPoint> {
     }
 }
 
-/// RFC 8032 section 5.1.3: canonical `y` and no negative zero (the re-encoding equals the input).
+/// RFC 8032 section 5.1.3: canonical `y` and no negative zero, that is, the re-encoding equals the input. Checked on
+/// the encoding, without re-encoding, which would cost a field inversion: given `y < p`, the decoded point re-encodes
+/// to its input unless `x = 0` (where the sign bit cannot survive), and `x = 0` exactly at `y = 1` and `y = -1`.
 fn decode_strict(bytes: &[u8; 32]) -> Option<EdwardsPoint> {
-    CompressedEdwardsY(*bytes).decompress().filter(|p| p.compress().to_bytes() == *bytes)
+    let sign = bytes.last().is_some_and(|b| b & 0x80 != 0);
+    let mut y = *bytes;
+    if let Some(last) = y.last_mut() {
+        *last &= 0x7f;
+    }
+    if sign && ED25519_X_ZERO_YS.contains(&y) { None } else { decode_draft03(bytes) }
 }
 
 /// libsodium's `ge25519_frombytes` with a canonicity check: `y < p`; `x = 0` with the sign bit decodes to the
@@ -360,14 +366,39 @@ fn challenge(suite: SuiteId, pk: &[u8; 32], h: &[u8; 32], gamma: &[u8; 32], u: &
 /// `U = s B - c Y` (and `V = s H - c Gamma`) as each suite's reference evaluates it: literally for RFC 9381,
 /// `(-c mod L) P + s Q` for draft-03 (they differ on mixed-order points).
 ///
-/// Every input is public, so this runs in variable time. The multiscalar multiplication computes the exact integer
-/// multiples of the canonical scalars, torsion components included: `s Q - c P` is `s Q + c (-P)`.
+/// Every input is public, so this runs in variable time. Each multiplication computes the exact integer multiple of
+/// its canonical scalar, torsion components included: `s Q - c P` is `s Q + c (-P)`.
 fn equation(suite: SuiteId, p: &EdwardsPoint, q: &EdwardsPoint, c: &Scalar, s: &Scalar) -> EdwardsPoint {
-    use curve25519_dalek::traits::VartimeMultiscalarMul as _;
     match suite {
-        SuiteId::Tai | SuiteId::Ell2 => EdwardsPoint::vartime_multiscalar_mul([s, c], [q, &-p]),
-        SuiteId::Draft03 => EdwardsPoint::vartime_multiscalar_mul([&(Scalar::ZERO - c), s], [p, q]),
+        SuiteId::Tai | SuiteId::Ell2 => lincomb(s, q, c, &-p),
+        SuiteId::Draft03 => lincomb(&(Scalar::ZERO - c), p, s, q),
     }
+}
+
+/// [`equation`] with `Q = B`, as one double-base multiplication, faster on both targets than the multiscalar
+/// multiplication [`lincomb`] uses natively: natively about 34 µs against 39 µs; in the SP1 guest, whose patch runs it on
+/// the `ED_ADD` precompile, about 640,000 fewer cycles per verification (`sdk/rust/zk/README.md`).
+fn equation_base(suite: SuiteId, p: &EdwardsPoint, c: &Scalar, s: &Scalar) -> EdwardsPoint {
+    match suite {
+        SuiteId::Tai | SuiteId::Ell2 => EdwardsPoint::vartime_double_scalar_mul_basepoint(c, &-p, s),
+        SuiteId::Draft03 => EdwardsPoint::vartime_double_scalar_mul_basepoint(&(Scalar::ZERO - c), p, s),
+    }
+}
+
+/// `a A + b B`, natively as one multiscalar multiplication, which shares its doublings: about 41 µs, where two
+/// separate (constant-time) multiplications take about 82 µs.
+#[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+fn lincomb(a: &Scalar, pa: &EdwardsPoint, b: &Scalar, pb: &EdwardsPoint) -> EdwardsPoint {
+    use curve25519_dalek::traits::VartimeMultiscalarMul as _;
+    EdwardsPoint::vartime_multiscalar_mul([a, b], [pa, pb])
+}
+
+/// `a A + b B` in the SP1 guest, as two variable-base multiplications: SP1's patch runs these on the `ED_ADD`
+/// precompile but leaves the multiscalar multiplication in software, so they cost about 640,000 fewer cycles
+/// (`sdk/rust/zk/README.md`).
+#[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
+fn lincomb(a: &Scalar, pa: &EdwardsPoint, b: &Scalar, pb: &EdwardsPoint) -> EdwardsPoint {
+    pa * a + pb * b
 }
 
 fn output(suite: SuiteId, gamma: &EdwardsPoint) -> [u8; 64] {
@@ -403,8 +434,10 @@ fn verify_decoded(
     }
     let s = Scalar::from_bytes_mod_order(sb);
     let c = scalar16(&cb);
-    let h = hash_to_curve(suite, &encode(y), alpha)?;
-    let u = equation(suite, y, &ED25519_BASEPOINT_POINT, &c, &s);
+    // `Y`'s encoding is `key`: a key decodes, under either rule, to a point that re-encodes to it unless `x = 0`, and
+    // those points (the identity and the point of order 2) are of small order, which decoding the key refused
+    let h = hash_to_curve(suite, key, alpha)?;
+    let u = equation_base(suite, y, &c, &s);
     let v = equation(suite, &gamma, &h, &c, &s);
     if challenge(suite, key, &encode(&h), &gb, &encode(&u), &encode(&v)) != cb {
         return Err(VrfError::ChallengeMismatch);
@@ -451,8 +484,8 @@ pub mod internals {
         }
         let s = Scalar::from_bytes_mod_order(sb);
         let c = super::scalar16(&cb);
-        let h: EdwardsPoint = super::hash_to_curve_draft03(&super::encode(&y), alpha);
-        let u = super::equation(suite, &y, &curve25519_dalek::constants::ED25519_BASEPOINT_POINT, &c, &s);
+        let h: EdwardsPoint = super::hash_to_curve_draft03(pk, alpha);
+        let u = super::equation_base(suite, &y, &c, &s);
         let v = super::equation(suite, &gamma, &h, &c, &s);
         let (hb, ub, vb) = (super::encode(&h), super::encode(&u), super::encode(&v));
         let challenge = super::challenge(suite, pk, &hb, &gb, &ub, &vb);
@@ -596,5 +629,75 @@ mod signing {
         let sk = SigningKey { seed, public: public_of(&seed), suite: PhantomData };
         let vk = sk.verifying_key();
         Ok((sk, vk))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::indexing_slicing, reason = "tests")]
+
+    use alloc::vec::Vec;
+
+    use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
+
+    use super::{SuiteId, decode, decode_strict};
+    use crate::util::sha512;
+
+    /// The strict rule as RFC 8032 states it: decompress, then require the re-encoding to equal the input.
+    fn by_reencoding(bytes: &[u8; 32]) -> Option<EdwardsPoint> {
+        CompressedEdwardsY(*bytes).decompress().filter(|p| p.compress().to_bytes() == *bytes)
+    }
+
+    /// Every `y` from `p - 2` to `2^255 - 1` (the 19 non-canonical ones among them), `0` to `2`, and 4096
+    /// pseudo-random encodings, each with both sign bits.
+    fn encodings() -> Vec<[u8; 32]> {
+        let high = (0xebu8..=0xff).map(|low| {
+            let mut y = [0xff; 32];
+            y[0] = low;
+            y[31] = 0x7f;
+            y
+        });
+        let small = (0u8..=2).map(|low| {
+            let mut y = [0; 32];
+            y[0] = low;
+            y
+        });
+        let random = (0u32..4096).map(|i| {
+            let mut y = [0; 32];
+            y.copy_from_slice(&sha512(&[b"vrf decode", &i.to_le_bytes()])[..32]);
+            y[31] &= 0x7f;
+            y
+        });
+        high.chain(small)
+            .chain(random)
+            .flat_map(|y| {
+                let mut signed = y;
+                signed[31] |= 0x80;
+                [y, signed]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn strict_decoding_refuses_exactly_what_re_encoding_does() {
+        let all = encodings();
+        for e in &all {
+            assert_eq!(decode_strict(e), by_reencoding(e), "{e:02x?}");
+        }
+        let accepted = all.iter().filter(|e| decode_strict(e).is_some()).count();
+        assert!((3000..6000).contains(&accepted), "both outcomes are exercised: {accepted} of {} accepted", all.len());
+    }
+
+    /// Verification hashes a key's bytes as `Y`'s encoding: under either suite's decoding, every key that is not of
+    /// small order re-encodes to itself.
+    #[test]
+    fn a_decoded_key_re_encodes_to_itself() {
+        for suite in SuiteId::ALL {
+            for e in encodings() {
+                if let Some(p) = decode(suite, &e).filter(|p| !p.is_small_order()) {
+                    assert_eq!(p.compress().to_bytes(), e, "{suite:?}");
+                }
+            }
+        }
     }
 }
