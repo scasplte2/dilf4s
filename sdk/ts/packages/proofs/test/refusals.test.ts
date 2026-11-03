@@ -4,9 +4,9 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { models, Value } from "@kd5ujc/dilf4s-core";
+import { fromHex, models, Value } from "@kd5ujc/dilf4s-core";
 
-import { merkle, poseidon, trie, versioned } from "../src/index.js";
+import { MAX_PROOF_WEIGHT, merkle, poseidon, trie, versioned } from "../src/index.js";
 import { bytes, expectOk, loadVectors, valueOf } from "./vectors.js";
 
 type Case = models.refusalVectors.RefusalCase;
@@ -114,6 +114,20 @@ function run(c: Case): Outcome {
       if (!found.ok) return byKind(found.error);
       return found.value.kind === "notCovered" ? { kind: "NotCovered" } : accepted;
     }
+    case "vt-commit": {
+      // each value as a commit checks it, then the weight of the delta it would serve at version 1 (no parent; the
+      // head's version key and roots at their widths): what the store refuses before writing
+      const upserts: models.versionedTrie.VersionedTrieUpsert[] = [];
+      for (const u of c.batch ?? []) {
+        const value = built(u.value);
+        const checked = vt.checkValue(expectOk(versioned.StateKey.parse(u.stateKey), "state key"), value);
+        if (!checked.ok) return v(checked);
+        upserts.push({ k: u.stateKey, v: value });
+      }
+      const head = { v: expectOk(fromHex("0000000000000001"), "vkey"), s: new Uint8Array(32), h: new Uint8Array(32) };
+      const delta = expectOk(models.versionedTrie.VersionedTrieDelta.encode({ head, upserts, removes: [] }), "delta");
+      return delta.weight > MAX_PROOF_WEIGHT ? { kind: "TooLarge", limit: MAX_PROOF_WEIGHT } : accepted;
+    }
     case "merkle-verify": {
       const hashing = merkle.TaggedMerkleHashing.of("SHA-256");
       const head = { root: root(), size: c.size ?? 0n };
@@ -134,7 +148,7 @@ function run(c: Case): Outcome {
 
 describe("refusals_v1.json", { timeout: 120_000 }, () => {
   it("has a case for every check", () => {
-    expect(new Set(vectors.cases.map((c) => c.check)).size).toBe(14);
+    expect(new Set(vectors.cases.map((c) => c.check)).size).toBe(15);
   });
 
   for (const c of vectors.cases) {

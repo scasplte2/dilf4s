@@ -119,6 +119,7 @@ export interface RefusalCase {
   readonly prefix?: Hex;
   readonly claim?: BuiltValue;
   readonly entries?: readonly RefusalEntry[];
+  readonly batch?: readonly RefusalUpsert[];
   readonly outcome: RefusalOutcome;
 }
 
@@ -142,11 +143,12 @@ export const RefusalCase: c.Codec<RefusalCase> = {
         c.optionalField("prefix", c.defer(() => Hex), a.prefix, e),
         c.optionalField("claim", c.defer(() => BuiltValue), a.claim, e),
         c.optionalField("entries", c.vector(c.defer(() => RefusalEntry), 0, null), a.entries, e),
+        c.optionalField("batch", c.vector(c.defer(() => RefusalUpsert), 0, null), a.batch, e),
         c.field("outcome", c.defer(() => RefusalOutcome), a.outcome, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["name", "check", "input", "inputs", "zeros", "mode", "root", "oldRoot", "leafHash", "key", "stateKey", "at", "size", "prefix", "claim", "entries", "outcome"]);
+    const f = c.fields(v, ["name", "check", "input", "inputs", "zeros", "mode", "root", "oldRoot", "leafHash", "key", "stateKey", "at", "size", "prefix", "claim", "entries", "batch", "outcome"]);
     if (!f.ok) return f;
     const r0 = f.value.required("name", c.text);
     if (!r0.ok) return r0;
@@ -180,22 +182,24 @@ export const RefusalCase: c.Codec<RefusalCase> = {
     if (!r14.ok) return r14;
     const r15 = f.value.optional("entries", c.vector(c.defer(() => RefusalEntry), 0, null));
     if (!r15.ok) return r15;
-    const r16 = f.value.required("outcome", c.defer(() => RefusalOutcome));
+    const r16 = f.value.optional("batch", c.vector(c.defer(() => RefusalUpsert), 0, null));
     if (!r16.ok) return r16;
-    return c.ok({ name: r0.value, check: r1.value, input: r2.value, inputs: r3.value, zeros: r4.value, mode: r5.value, root: r6.value, oldRoot: r7.value, leafHash: r8.value, key: r9.value, stateKey: r10.value, at: r11.value, size: r12.value, prefix: r13.value, claim: r14.value, entries: r15.value, outcome: r16.value });
+    const r17 = f.value.required("outcome", c.defer(() => RefusalOutcome));
+    if (!r17.ok) return r17;
+    return c.ok({ name: r0.value, check: r1.value, input: r2.value, inputs: r3.value, zeros: r4.value, mode: r5.value, root: r6.value, oldRoot: r7.value, leafHash: r8.value, key: r9.value, stateKey: r10.value, at: r11.value, size: r12.value, prefix: r13.value, claim: r14.value, entries: r15.value, batch: r16.value, outcome: r17.value });
   },
 };
 
 /** `refusal-check` (`shared/schemas/refusal-vectors.cddl`). */
-export type RefusalCheck = "vt-value" | "vt-chunk" | "vt-delta" | "vt-proof" | "vt-state" | "vt-historical" | "vt-replica" | "merkle-inclusion" | "merkle-consistency" | "trie-lookup" | "poseidon-proof" | "merkle-verify" | "trie-verify" | "trie-prefix-verify";
+export type RefusalCheck = "vt-value" | "vt-chunk" | "vt-delta" | "vt-proof" | "vt-state" | "vt-historical" | "vt-replica" | "merkle-inclusion" | "merkle-consistency" | "trie-lookup" | "poseidon-proof" | "merkle-verify" | "trie-verify" | "trie-prefix-verify" | "vt-commit";
 
 export const RefusalCheck: c.Codec<RefusalCheck> = {
   encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["merkle-consistency", "merkle-inclusion", "merkle-verify", "poseidon-proof", "trie-lookup", "trie-prefix-verify", "trie-verify", "vt-chunk", "vt-delta", "vt-historical", "vt-proof", "vt-replica", "vt-state", "vt-value"]);
+    if (typeof a === "string") return c.oneOfText(a, ["merkle-consistency", "merkle-inclusion", "merkle-verify", "poseidon-proof", "trie-lookup", "trie-prefix-verify", "trie-verify", "vt-chunk", "vt-commit", "vt-delta", "vt-historical", "vt-proof", "vt-replica", "vt-state", "vt-value"]);
     return c.typeMismatch("no alternative of RefusalCheck fits");
   },
   decode: (v) => {
-    const s = c.selectAlternative(v, [], ["vt-value", "vt-chunk", "vt-delta", "vt-proof", "vt-state", "vt-historical", "vt-replica", "merkle-inclusion", "merkle-consistency", "trie-lookup", "poseidon-proof", "merkle-verify", "trie-verify", "trie-prefix-verify"]);
+    const s = c.selectAlternative(v, [], ["vt-value", "vt-chunk", "vt-delta", "vt-proof", "vt-state", "vt-historical", "vt-replica", "merkle-inclusion", "merkle-consistency", "trie-lookup", "poseidon-proof", "merkle-verify", "trie-verify", "trie-prefix-verify", "vt-commit"]);
     if (!s.ok) return s;
     switch (s.value) {
       case 0:
@@ -226,6 +230,8 @@ export const RefusalCheck: c.Codec<RefusalCheck> = {
         return c.ok<RefusalCheck>("trie-verify");
       case 13:
         return c.ok<RefusalCheck>("trie-prefix-verify");
+      case 14:
+        return c.ok<RefusalCheck>("vt-commit");
       default:
         return c.decodeFailure("unknown alternative");
     }
@@ -356,6 +362,31 @@ export const RefusalOutcome: c.Codec<RefusalOutcome> = {
       default:
         return c.decodeFailure("unknown alternative");
     }
+  },
+};
+
+/** `refusal-upsert` (`shared/schemas/refusal-vectors.cddl`). */
+export interface RefusalUpsert {
+  readonly stateKey: string;
+  readonly value: BuiltValue;
+}
+
+export const RefusalUpsert: c.Codec<RefusalUpsert> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("stateKey", c.text, a.stateKey, e),
+        c.field("value", c.defer(() => BuiltValue), a.value, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["stateKey", "value"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("stateKey", c.text);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("value", c.defer(() => BuiltValue));
+    if (!r1.ok) return r1;
+    return c.ok({ stateKey: r0.value, value: r1.value });
   },
 };
 

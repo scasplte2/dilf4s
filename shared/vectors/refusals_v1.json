@@ -1564,6 +1564,2703 @@
       "input" : {
         "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
       }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "commit: a batch whose delta weighs exactly 2^24",
+      "check" : "vt-commit",
+      "batch" : [
+        {
+          "stateKey" : "wide/1",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/2",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/3",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/4",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/5",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/6",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/7",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/8",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/9",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/10",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/11",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/12",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/13",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/14",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/15",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "pad",
+          "value" : {
+            "leaf" : "4100",
+            "steps" : [
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "commit: a batch whose delta would weigh 2^24 + 1, refused before anything is written",
+      "check" : "vt-commit",
+      "batch" : [
+        {
+          "stateKey" : "wide/1",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/2",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/3",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/4",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/5",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/6",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/7",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/8",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/9",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/10",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/11",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/12",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/13",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/14",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "wide/15",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "stateKey" : "pad",
+          "value" : {
+            "leaf" : "4100",
+            "steps" : [
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

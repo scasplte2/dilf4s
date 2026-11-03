@@ -444,16 +444,70 @@ object RefusalVectors {
     )
   }
 
+  /**
+   * The per-commit delta bound (versioned-trie.md §4): fifteen values of 2^20 bytes and a pad, so that the delta the
+   * commit would serve weighs exactly `ProofInput.MaxProofWeight` (accepted) or one more (`TooLarge`, before anything is
+   * written). Each value passes `checkValue`: `BuiltValues.ofWeight` encodes in exactly its weight.
+   */
+  private def commitCases: List[Case] = {
+    val cap = ProofInput.MaxProofWeight
+    val full = BuiltValues.ofWeight(VersionedTrie.MaxValueBytes)
+    val keys = (1 to 15).map(i => s"wide/$i").toList
+    val root = TrieHashing[H].empty
+    def deltaWeight(pad: CanonicalValue): Long = {
+      val upserts = keys.map(k => key(k) -> get(BuiltValues.build(full))) :+ (key("pad") -> pad)
+      get(VersionedTrieWire.encodeDelta(Delta[Long, H](None, VersionedTrie.Head(1L, root, root), upserts, Nil))).weight
+    }
+    val around = deltaWeight(False) - 1
+    def batch(target: Long) = {
+      val pad = BuiltValues.ofWeight(target - around)
+      // weights add, so the pad sets the delta's weight; within the cap the encoder confirms it
+      require(target > cap || deltaWeight(get(BuiltValues.build(pad))) == target, s"a delta of weight $target")
+      "batch" -> (keys.map(k => Json.obj("stateKey" -> k.asJson, "value" -> BuiltValues.json(full))) :+
+      Json.obj("stateKey" -> "pad".asJson, "value" -> BuiltValues.json(pad))).asJson
+    }
+    List(
+      Case("commit: a batch whose delta weighs exactly 2^24", "vt-commit", List(batch(cap))),
+      Case("commit: a batch whose delta would weigh 2^24 + 1, refused before anything is written", "vt-commit", List(batch(cap + 1)))
+    )
+  }
+
   def cases: IO[List[Case]] =
-    store.map(s => valueCases ++ chunkCases ++ deltaCases ++ storeCases(s) ++ merkleCases ++ trieCases ++ poseidonCases ++ claimCases)
+    store.map(s =>
+      valueCases ++ chunkCases ++ deltaCases ++ storeCases(s) ++ merkleCases ++ trieCases ++ poseidonCases ++ claimCases ++ commitCases
+    )
+
+  /**
+   * `vt-commit`: the batch committed at version 1 into an empty store, the reference for the per-commit delta bound
+   * (versioned-trie.md §4); every other check is [[run]].
+   */
+  def runIO(c: ACursor): IO[Either[String, Outcome]] =
+    field[String](c, "check").flatTraverse {
+      case "vt-commit" =>
+        c.downField("batch")
+          .as[List[Json]]
+          .leftMap(_.toString)
+          .flatMap(_.traverse { u =>
+            (
+              field[String](u.hcursor, "stateKey").flatMap(StateKey.parse(_).leftMap(_.toString)),
+              built(u.hcursor.downField("value"))
+            ).tupled
+          })
+          .traverse { upserts =>
+            val batch = upserts.foldLeft(Batch.empty[StateKey, CanonicalValue]) { case (b, (k, v)) => b ++ Batch.put(k, v) }
+            attempt(implicit h => fresh.flatMap(_._2.commit(None, 1L, batch))).map(outcome(_)(versioned))
+          }
+      case _ => IO.pure(run(c))
+    }
 
   def build: IO[Json] =
     cases
       .flatMap(_.traverse { c =>
-        run(c.json.hcursor)
-          .map(o => c.json.deepMerge(Json.obj("outcome" -> outcomeJson(o))))
-          .leftMap(e => new IllegalStateException(s"${c.name}: $e"))
-          .liftTo[IO]
+        runIO(c.json.hcursor).flatMap(
+          _.map(o => c.json.deepMerge(Json.obj("outcome" -> outcomeJson(o))))
+            .leftMap(e => new IllegalStateException(s"${c.name}: $e"))
+            .liftTo[IO]
+        )
       })
       .map { cs =>
         Json.obj("spec" -> "docs/specs/conformance.md".asJson, "version" -> 1.asJson, "hash" -> "SHA-256".asJson, "cases" -> cs.asJson)

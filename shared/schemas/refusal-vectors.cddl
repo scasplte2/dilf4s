@@ -12,7 +12,7 @@ refusal-vectors = {
 ; One call. "check" names the entry point and the arguments it reads (conformance.md section 6); a case carries only
 ; those. "input" is the caller's value (a proof, delta or value); "inputs" are deltas a replica applies in order;
 ; "zeros" is a byte input of that many zero bytes. "claim" is a claimed value (a Merkle leaf, a trie value; absent
-; claims absence), "entries" a claimed listing. "stateKey" is a versioned-trie state key; "key" a trie key; "at" a
+; claims absence), "entries" a claimed listing, "batch" the writes of a commit at version 1. "stateKey" is a versioned-trie state key; "key" a trie key; "at" a
 ; version; "size" a Merkle tree size.
 refusal-case = {
   "name": text,
@@ -31,12 +31,16 @@ refusal-case = {
   ? "prefix": hex,
   ? "claim": built-value,
   ? "entries": [* refusal-entry],
+  ? "batch": [* refusal-upsert],
   "outcome": refusal-outcome,
 }
 
+; A write in a commit's batch: a state key and its value.
+refusal-upsert = { "stateKey": text, "value": built-value }
+
 refusal-entry = { "key": hex, "value": built-value }
 
-refusal-check = "vt-value" / "vt-chunk" / "vt-delta" / "vt-proof" / "vt-state" / "vt-historical" / "vt-replica" / "merkle-inclusion" / "merkle-consistency" / "trie-lookup" / "poseidon-proof" / "merkle-verify" / "trie-verify" / "trie-prefix-verify"
+refusal-check = "vt-value" / "vt-chunk" / "vt-delta" / "vt-proof" / "vt-state" / "vt-historical" / "vt-replica" / "merkle-inclusion" / "merkle-consistency" / "trie-lookup" / "poseidon-proof" / "merkle-verify" / "trie-verify" / "trie-prefix-verify" / "vt-commit"
 
 refusal-mode = refusal-fixed-mode / refusal-variable-mode
 

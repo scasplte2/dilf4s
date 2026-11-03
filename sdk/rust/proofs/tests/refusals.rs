@@ -14,11 +14,14 @@
 mod common;
 
 use common::{Step, build, bytes, load};
+use dilf4s_core::codec::Model;
 use dilf4s_core::generated::refusal_vectors::{
     BuiltStep, BuiltValue, RefusalCase, RefusalCheck, RefusalMode, RefusalOutcome, RefusalVectors,
 };
+use dilf4s_core::generated::versioned_trie as w;
 use dilf4s_core::hash::{Digest, Sha256};
 use dilf4s_core::value::Value;
+use dilf4s_proofs::MAX_PROOF_WEIGHT;
 use dilf4s_proofs::merkle::{self, ConsistencyProof, InclusionProof, MerkleError, Tagged, TreeHead};
 use dilf4s_proofs::poseidon::merkle::{PoseidonMerkleError, PoseidonMerkleProof};
 use dilf4s_proofs::trie::{self, KeyMode, Lookup, TrieError, TrieHashing, TrieProof};
@@ -104,6 +107,23 @@ fn digest(hex: Option<&String>) -> Digest<H> {
     Digest::from_slice(&bytes(hex.expect("a digest"))).unwrap()
 }
 
+/// `vt-commit`: each value as a commit checks it, then the weight of the delta it would serve at version 1 (no
+/// parent; the head's version key and roots at their widths), which the store refuses before writing.
+fn commit(c: &RefusalCase) -> Option<Refused> {
+    let mut upserts = Vec::new();
+    for u in c.batch.iter().flatten() {
+        let k = StateKey::parse(&u.state_key).unwrap();
+        let v = built(&u.value);
+        if let Err(e) = check_value(&k, &v) {
+            return Some(versioned(&e));
+        }
+        upserts.push(w::VersionedTrieUpsert { k: u.state_key.clone(), v });
+    }
+    let head = w::VersionedTrieHead { v: 1u64.to_be_bytes().to_vec(), s: vec![0; 32], h: vec![0; 32] };
+    let delta = w::VersionedTrieDelta { parent: None, head, upserts, removes: vec![] }.to_value().unwrap();
+    (delta.weight() > MAX_PROOF_WEIGHT).then(|| Refused { limit: Some(MAX_PROOF_WEIGHT), ..kind("TooLarge") })
+}
+
 /// The case's outcome, by its check (conformance.md section 6): the first refusal, or `None`.
 fn run(vt: &Vt, c: &RefusalCase) -> Option<Refused> {
     let input = || built(c.input.as_ref().expect("an input"));
@@ -170,6 +190,7 @@ fn run(vt: &Vt, c: &RefusalCase) -> Option<Refused> {
             answer.err().map(|e| trie_kind(&e))
         }
         RefusalCheck::PoseidonProof => PoseidonMerkleProof::from_value(&input()).err().map(|e| poseidon_kind(&e)),
+        RefusalCheck::VtCommit => commit(c),
         RefusalCheck::MerkleVerify => {
             let head = TreeHead::<H> { root: root(), size: c.size.expect("a size") };
             let leaf = built(c.claim.as_ref().expect("a leaf"));
