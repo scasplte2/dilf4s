@@ -291,14 +291,14 @@ object TrieSuite extends SimpleIOSuite with Checkers {
   implicit private val showRange: cats.Show[(List[(ByteVector, Option[Digest[Sha256]])], ByteVector, Option[ByteVector])] =
     cats.Show.fromToString
 
-  private val bitOrder: Ordering[ByteVector] = (a, b) => if (KeyOrder.lt(a.bits, b.bits)) -1 else if (a == b) 0 else 1
+  private val bitOrder: Ordering[ByteVector] = (a, b) => if (QuadraticListing.lt(a.bits, b.bits)._1) -1 else if (a == b) 0 else 1
 
   test("range proofs list exactly the entries in [from, until), and are complete") {
     forall(Gen.zip(opsGen(variable4), keyGen(variable4), Gen.option(keyGen(variable4)))) {
       case (ops, from, until) =>
         val m = model(ops)
         val t = build(variable4, ops)
-        val expected = m.toList.filter { case (k, _) => KeyOrder.lteq(from.bits, k.bits) && until.forall(u => KeyOrder.lt(k.bits, u.bits)) }
+        val expected = m.toList.filter { case (k, _) => QuadraticListing.within(k.bits, from.bits, until.map(_.bits))._1 }
           .sortBy(_._1)(using bitOrder)
           .map { case (k, v) => (k.bits, v) }
         val listed = t

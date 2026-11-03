@@ -59,6 +59,10 @@ A refusal costs no more than the spec says, whatever the input:
   public leaf and value hashing refuse a commitment past that ceiling as `TooLarge` with the ceiling as its limit. Values
   that large are far past every limit these specs set (§5 caps every claim at 2^24), so no vector depends on a ceiling.
 - **Verifier inputs** are bounded by weight before they are decoded (§5).
+- **Listing checks.** `trie_prefix_verify` and `trie_range_verify` do work linear in the proof's weight plus the
+  lengths of the prefix or bounds and of the claimed keys (`trie.md` §4). They never rebuild each key from the top, never
+  compare it with a bound from bit 0, and never build the listing to compare it. So their answer and their refusal
+  cost no more than the weight their operands are charged by.
 
 ## 5. Verifier input weight
 

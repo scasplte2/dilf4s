@@ -177,9 +177,103 @@ private[trie] object NodeCodec {
 private[trie] object Bits {
 
   /** Length of the longest common prefix of two bit vectors. */
-  def commonPrefix(a: BitVector, b: BitVector): Long = {
+  def commonPrefix(a: BitVector, b: BitVector): Long = agreeing(a, 0L, b, 0L, a.size.min(b.size))
+
+  /** How many bits of `a` from `ia` and `b` from `ib` agree before the first difference, at most `n`: `n` in range. */
+  def agreeing(a: BitVector, ia: Long, b: BitVector, ib: Long, n: Long): Long = {
     @tailrec
-    def go(i: Long): Long = if (i < a.size && i < b.size && a(i) == b(i)) go(i + 1) else i
+    def go(i: Long): Long = if (i < n && a(ia + i) == b(ib + i)) go(i + 1) else i
     go(0L)
   }
+
+  /**
+   * Whether the path held as `pieces` (newest first) and `depth` bits long is `key`, and the bits compared. The length
+   * is compared first, so the work is bounded by the key's length.
+   */
+  def spells(pieces: List[BitVector], depth: Long, key: BitVector): (Boolean, Long) = {
+    @tailrec
+    def go(rest: List[BitVector], end: Long, steps: Long): (Boolean, Long) =
+      rest match {
+        case Nil => (true, steps)
+        case p :: older =>
+          val start = end - p.size
+          val same = agreeing(p, 0L, key, start, p.size)
+          if (same < p.size) (false, steps + same + 1) else go(older, start, steps + same + 1)
+      }
+    if (key.size != depth) (false, 1L) else go(pieces, depth, 1L)
+  }
+}
+
+/**
+ * Where a walk's path stands against a bound in key order (bitwise, a proper prefix before its extensions). `Along`:
+ * the path is a prefix of the bound, equal to it when as long. Once the two part, every extension of the path stays on
+ * the same side, so a walk carries the side down and compares only the bits each node adds (docs/specs/trie.md §4).
+ */
+private[trie] sealed trait Side extends Product with Serializable
+
+private[trie] object Side {
+  case object Along extends Side
+  case object Below extends Side
+  case object Above extends Side
+
+  /** The side of the path extended by `bits`, from the side of the path (`depth` bits long); and the bits compared. */
+  def extend(side: Side, depth: Long, bits: BitVector, bound: BitVector): (Side, Long) =
+    side match {
+      case Along =>
+        val room = bound.size - depth
+        val n = bits.size.min(room)
+        val same = Bits.agreeing(bits, 0L, bound, depth, n)
+        val next =
+          if (same < n) { if (bits(same)) Above else Below }
+          else if (bits.size > room) Above
+          else Along
+        (next, same + 1)
+      case parted => (parted, 0L)
+    }
+
+  /** Whether the path (`depth` bits long) sorts before `bound`. */
+  def before(side: Side, depth: Long, bound: BitVector): Boolean =
+    side match {
+      case Along => depth < bound.size
+      case Below => true
+      case Above => false
+    }
+}
+
+/** Key bounds `[from, until)`; `until` absent is unbounded. */
+final private[trie] case class Bounds(from: BitVector, until: Option[BitVector]) {
+
+  /** The cursor moved past `bits`, and the bits compared with the bounds. */
+  def extend[P](c: Cursor[P], bits: BitVector, grow: (P, BitVector) => P): (Cursor[P], Long) = {
+    val (f, nf) = Side.extend(c.from, c.depth, bits, from)
+    val (u, nu) = until.fold((c.until, 0L))(Side.extend(c.until, c.depth, bits, _))
+    (Cursor(grow(c.path, bits), c.depth + bits.size, f, u), nf + nu + 1)
+  }
+
+  /** Whether the cursor's path is a key in the bounds: `from <= path < until`. */
+  def holds(c: Cursor[?]): Boolean = !Side.before(c.from, c.depth, from) && until.forall(Side.before(c.until, c.depth, _))
+
+  /**
+   * Whether keys starting with the cursor's path can lie in the bounds: not wholly below (`from` does not extend the
+   * path, and the path sorts before it) and not wholly above (`until <= path`).
+   */
+  def meets(c: Cursor[?]): Boolean = c.from != Side.Below && until.forall(Side.before(c.until, c.depth, _))
+}
+
+private[trie] object Bounds {
+
+  /** Every key. */
+  val All: Bounds = Bounds(BitVector.empty, None)
+}
+
+/**
+ * A walk's position: the path so far, carried as the walk needs it (`P`: pieces to compare, a vector to list, or
+ * nothing), its length in bits, and where it stands against each bound.
+ */
+final private[trie] case class Cursor[P](path: P, depth: Long, from: Side, until: Side)
+
+private[trie] object Cursor {
+
+  /** The empty path, a prefix of every bound. */
+  def origin[P](path: P): Cursor[P] = Cursor(path, 0L, Side.Along, Side.Along)
 }

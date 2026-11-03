@@ -62,79 +62,121 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
     top.fold[Lookup[H]](Lookup.Absent)(go(_, path))
   }
 
+  private type Entry = (BitVector, Digest[H])
+
+  /** Paths as pieces, newest first: O(1) to extend, and compared with a claimed key piece by piece. */
+  private val piece: (List[BitVector], BitVector) => List[BitVector] = (ps, bits) => if (bits.isEmpty) ps else bits :: ps
+
+  /** Paths as one vector, extended by concatenation, which shares the path above with every key below it. */
+  private val joined: (BitVector, BitVector) => BitVector = _ ++ _
+
   /**
-   * Every `(path, valueHash)` with `from <= path < until` (bitwise order, prefixes first), if no stub meets the range;
-   * `None` otherwise. A covered listing is complete, including an empty one.
+   * Folds `visit` over every entry of the subtree at `start` (whose path is `at`) that `bounds` holds, in key order (a
+   * branch's own entry, then its left subtree, then its right); `None` if a stub meets the bounds. A cursor carries
+   * where its path stands against each bound, so every node compares only the bits it adds: the walk's work, counted
+   * with `visit`'s, is linear in the proof's size, however long the keys and bounds (docs/specs/trie.md §4).
    */
-  def range(from: BitVector, until: Option[BitVector]): Option[List[(BitVector, Digest[H])]] = {
+  private def walk[P, S](start: ProofNode[H], at: Cursor[P], bounds: Bounds, grow: (P, BitVector) => P, z: S)(
+    visit: (S, Cursor[P], Digest[H]) => (S, Long)
+  ): Counted[Option[S]] = {
+    def within(s: S, c: Cursor[P], v: Digest[H]): (S, Long) = if (bounds.holds(c)) visit(s, c, v) else (s, 0L)
     @tailrec
-    def go(todo: List[(ProofNode[H], BitVector)], acc: List[(BitVector, Digest[H])]): Option[List[(BitVector, Digest[H])]] =
+    def go(todo: List[(ProofNode[H], Cursor[P])], s: S, steps: Long): Counted[Option[S]] =
       todo match {
-        case Nil => Some(acc.reverse)
-        case (node, at) :: rest =>
-          node match {
-            case Stub(_) => None
-            case PLeaf(segment, v) =>
-              val key = at ++ segment
-              go(rest, if (KeyOrder.within(key, from, until)) (key, v) :: acc else acc)
-            case PBranch(segment, value, left, right) =>
-              val here = at ++ segment
-              val own = value.filter(_ => KeyOrder.within(here, from, until)).map(here -> _)
-              val children = List(left.map(_ -> (here :+ false)), right.map(_ -> (here :+ true))).flatten.filter {
-                case (_, p) =>
-                  KeyOrder.intersects(p, from, until)
-              }
-              go(children ++ rest, own.fold(acc)(_ :: acc))
+        case Nil               => Counted(Some(s), steps)
+        case (Stub(_), _) :: _ => Counted(None, steps + 1)
+        case (PLeaf(segment, v), c) :: rest =>
+          val (here, n) = bounds.extend(c, segment, grow)
+          val (next, m) = within(s, here, v)
+          go(rest, next, steps + n + m)
+        case (PBranch(segment, value, left, right), c) :: rest =>
+          val (here, n) = bounds.extend(c, segment, grow)
+          val (later, k) = List(left.map(false -> _), right.map(true -> _)).flatten.foldRight((rest, 0L)) {
+            case ((bit, child), (todo2, j)) =>
+              val (below, i) = bounds.extend(here, BitVector.bit(bit), grow)
+              (if (bounds.meets(below)) (child, below) :: todo2 else todo2, i + j)
+          }
+          val (next, m) = value.fold((s, 0L))(within(s, here, _))
+          go(later, next, steps + n + k + m)
+      }
+    go(List(start -> at), z, 0L)
+  }
+
+  /** The walk of `[from, until)` from the top: `z` without a walk when no key can lie in it, even under a stub. */
+  private def ranged[P, S](from: BitVector, until: Option[BitVector], empty: P, grow: (P, BitVector) => P, z: S)(
+    visit: (S, Cursor[P], Digest[H]) => (S, Long)
+  ): Counted[Option[S]] = {
+    val bounds = Bounds(from, until)
+    top
+      .filter(_ => bounds.meets(Cursor.origin(empty)))
+      .fold(Counted(Option(z), 1L))(walk(_, Cursor.origin(empty), bounds, grow, z)(visit))
+  }
+
+  /**
+   * The walk of the subtree holding exactly the keys that start with `p`: `z` if there is none, `None` if a stub lies
+   * on the way or under it. Each node on the way compares only its own bits with `p`'s.
+   */
+  private def prefixed[P, S](p: BitVector, empty: P, grow: (P, BitVector) => P, z: S)(
+    visit: (S, Cursor[P], Digest[H]) => (S, Long)
+  ): Counted[Option[S]] = {
+    // the subtree's keys all start with `p`'s first `pos` bits: the walk below needs no bounds
+    def under(node: ProofNode[H], pos: Long, steps: Long): Counted[Option[S]] = {
+      val (at, n) = Bounds.All.extend(Cursor.origin(empty), p.take(pos), grow)
+      walk(node, at, Bounds.All, grow, z)(visit).add(steps + n)
+    }
+    @tailrec
+    def locate(node: ProofNode[H], pos: Long, steps: Long): Counted[Option[S]] =
+      node match {
+        case Stub(_) => Counted(None, steps + 1)
+        case PLeaf(segment, _) =>
+          val remaining = p.size - pos
+          val same = Bits.agreeing(segment, 0L, p, pos, segment.size.min(remaining))
+          if (same == remaining) under(node, pos, steps + same + 1) else Counted(Option(z), steps + same + 1)
+        case PBranch(segment, _, left, right) =>
+          val remaining = p.size - pos
+          val same = Bits.agreeing(segment, 0L, p, pos, segment.size.min(remaining))
+          if (same == remaining) under(node, pos, steps + same + 1)
+          else if (same < segment.size) Counted(Option(z), steps + same + 1)
+          else {
+            val at = pos + segment.size
+            ((if (p(at)) right else left): Option[ProofNode[H]]) match {
+              case None        => Counted(Option(z), steps + same + 2)
+              case Some(child) => locate(child, at + 1, steps + same + 2)
+            }
           }
       }
-    top.fold[Option[List[(BitVector, Digest[H])]]](Some(Nil)) { t =>
-      if (KeyOrder.intersects(BitVector.empty, from, until)) go(List(t -> BitVector.empty), Nil) else Some(Nil)
-    }
+    top.fold(Counted(Option(z), 1L))(locate(_, 0L, 0L))
   }
+
+  private def listed(acc: List[Entry], c: Cursor[BitVector], v: Digest[H]): (List[Entry], Long) = ((c.path, v) :: acc, 1L)
+
+  /** A claimed listing matched entry by entry as the walk reaches each key: the entries still due, while all agree. */
+  final private case class Matching(due: List[Entry], equal: Boolean) {
+    def verdict: Boolean = equal && due.isEmpty
+  }
+
+  /** Compares the claim's next entry with the one reached, only while every earlier one matched, never building it. */
+  private def matched(m: Matching, c: Cursor[List[BitVector]], v: Digest[H]): (Matching, Long) =
+    m.due match {
+      case (k, h) :: rest if m.equal =>
+        val (same, n) = Bits.spells(c.path, c.depth, k)
+        (Matching(rest, same && h == v), n + 1)
+      case _ => (Matching(Nil, equal = false), 1L)
+    }
+
+  /**
+   * Every `(path, valueHash)` with `from <= path < until` (bitwise order, prefixes first), if no stub meets the range;
+   * `None` otherwise. A covered listing is complete, including an empty one. Its keys share the paths above them.
+   */
+  def range(from: BitVector, until: Option[BitVector]): Option[List[(BitVector, Digest[H])]] =
+    ranged(from, until, BitVector.empty, joined, List.empty[Entry])(listed).value.map(_.reverse)
 
   /**
    * Every `(path, valueHash)` under `prefix`, in key order, if the proof covers the whole subtree; `None` if any part
    * of it is a stub. A covered listing is complete: no key under the prefix can be missing.
    */
-  def prefix(prefix: BitVector): Option[List[(BitVector, Digest[H])]] = {
-    // Walk to the node whose subtree holds exactly the keys starting with `prefix`.
-    @tailrec
-    def locate(node: ProofNode[H], consumed: BitVector, remaining: BitVector): Option[Option[(ProofNode[H], BitVector)]] =
-      node match {
-        case Stub(_) => None
-        case PLeaf(segment, _) =>
-          Some(Option.when(segment.startsWith(remaining))((node, consumed)))
-        case PBranch(segment, _, left, right) =>
-          if (segment.startsWith(remaining)) Some(Some((node, consumed)))
-          else if (!remaining.startsWith(segment)) Some(None)
-          else {
-            val rest = remaining.drop(segment.size)
-            ((if (rest.head) right else left): Option[ProofNode[H]]) match {
-              case None        => Some(None)
-              case Some(child) => locate(child, consumed ++ segment ++ BitVector.bit(rest.head), rest.tail)
-            }
-          }
-      }
-
-    // Collect every entry of a fully expanded subtree, depth first in key order.
-    @tailrec
-    def gather(todo: List[(ProofNode[H], BitVector)], acc: List[(BitVector, Digest[H])]): Option[List[(BitVector, Digest[H])]] =
-      todo match {
-        case Nil                             => Some(acc.reverse)
-        case (Stub(_), _) :: _               => None
-        case (PLeaf(segment, v), at) :: rest => gather(rest, (at ++ segment, v) :: acc)
-        case (PBranch(segment, value, left, right), at) :: rest =>
-          val here = at ++ segment
-          val children = left.map(_ -> (here :+ false)).toList ++ right.map(_ -> (here :+ true)).toList
-          gather(children ++ rest, value.fold(acc)(v => (here, v) :: acc))
-      }
-
-    top.fold[Option[List[(BitVector, Digest[H])]]](Some(Nil)) { t =>
-      locate(t, BitVector.empty, prefix).flatMap(_.fold[Option[List[(BitVector, Digest[H])]]](Some(Nil)) {
-        case (n, at) => gather(List(n -> at), Nil)
-      })
-    }
-  }
+  def prefix(prefix: BitVector): Option[List[(BitVector, Digest[H])]] =
+    prefixed(prefix, BitVector.empty, joined, List.empty[Entry])(listed).value.map(_.reverse)
 
   // ---- claims, as the JLVM's trie operations check them (docs/specs/jlvm.md §6): not covered is a typed error
 
@@ -147,32 +189,34 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
     }
 
   /** Whether `claimed`, in key order, is exactly the listing under `p`; `NotCovered` if a stub lies under it. */
-  def listsPrefix(p: BitVector, claimed: List[(BitVector, Digest[H])]): Either[TrieError, Boolean] =
-    prefix(p).toRight(TrieError.NotCovered("the prefix")).map(_ == claimed)
+  def listsPrefix(p: BitVector, claimed: List[(BitVector, Digest[H])]): Either[TrieError, Boolean] = checkPrefix(p, claimed).value
 
   /** Whether `claimed`, in key order, is exactly the listing of `[from, until)`; `NotCovered` if a stub meets it. */
   def listsRange(from: BitVector, until: Option[BitVector], claimed: List[(BitVector, Digest[H])]): Either[TrieError, Boolean] =
-    range(from, until).toRight(TrieError.NotCovered("the range")).map(_ == claimed)
+    checkRange(from, until, claimed).value
+
+  /**
+   * [[listsPrefix]] with its work: the bits compared (with the prefix and with the claim's keys) and the nodes
+   * visited, never more than a constant times the proof's bits plus the prefix's and the claim's (docs/specs/trie.md §4).
+   */
+  private[kd5ujc] def checkPrefix(p: BitVector, claimed: List[(BitVector, Digest[H])]): Counted[Either[TrieError, Boolean]] =
+    prefixed(p, List.empty[BitVector], piece, Matching(claimed, equal = true))(matched)
+      .map(_.toRight(TrieError.NotCovered("the prefix")).map(_.verdict))
+
+  /** [[listsRange]] with its work, bounded as [[checkPrefix]]'s is, by the proof's bits plus the bounds' and the claim's. */
+  private[kd5ujc] def checkRange(
+    from:    BitVector,
+    until:   Option[BitVector],
+    claimed: List[(BitVector, Digest[H])]
+  ): Counted[Either[TrieError, Boolean]] =
+    ranged(from, until, List.empty[BitVector], piece, Matching(claimed, equal = true))(matched)
+      .map(_.toRight(TrieError.NotCovered("the range")).map(_.verdict))
 }
 
-/** Key-interval arithmetic in bitwise lexicographic order, where a proper prefix sorts before its extensions. */
-private[trie] object KeyOrder {
-
-  def lt(a: BitVector, b: BitVector): Boolean = {
-    val c = Bits.commonPrefix(a, b)
-    if (c == a.size) a.size < b.size else if (c == b.size) false else !a(c)
-  }
-
-  def lteq(a: BitVector, b: BitVector): Boolean = a == b || lt(a, b)
-
-  /** Does the subtree of keys starting with `prefix` meet `[from, until)`? */
-  def intersects(prefix: BitVector, from: BitVector, until: Option[BitVector]): Boolean = {
-    val whollyBelow = !from.startsWith(prefix) && lt(prefix, from)
-    val whollyAbove = until.exists(u => lteq(u, prefix))
-    !whollyBelow && !whollyAbove
-  }
-
-  def within(key: BitVector, from: BitVector, until: Option[BitVector]): Boolean = lteq(from, key) && until.forall(lt(key, _))
+/** A result and the work it took, in steps (bits compared, nodes visited), for tests to bound (docs/specs/trie.md §4). */
+final private[kd5ujc] case class Counted[A](value: A, steps: Long) {
+  def map[B](f: A => B): Counted[B] = Counted(f(value), steps)
+  def add(more: Long): Counted[A] = Counted(value, steps + more)
 }
 
 object TrieProofs {
@@ -206,33 +250,39 @@ object TrieProofs {
   private def expanded[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], root: Digest[H], queries: List[Query]): F[Map[Digest[H], Node[H]]] =
     queries.foldLeftM(Map.empty[Digest[H], Node[H]]) {
       case (acc, Range(from, until)) =>
-        if (KeyOrder.intersects(BitVector.empty, from, until)) rangeNodes(lookup, root, from, until, acc) else acc.pure[F]
+        val bounds = Bounds(from, until)
+        if (bounds.meets(Cursor.origin(()))) rangeNodes(lookup, root, bounds, acc) else acc.pure[F]
       case (acc, Key(p))    => pathNodes(lookup, root, p, isPrefix = false, acc)
       case (acc, Prefix(p)) => pathNodes(lookup, root, p, isPrefix = true, acc)
     }
 
-  /** The nodes whose key intervals meet `[from, until)`, gathered by a work list from the root. */
+  /**
+   * The nodes whose key intervals meet the bounds, gathered by a work list from the root. Each entry carries where its
+   * path stands against the bounds, so a node compares only its own bits with them.
+   */
   private def rangeNodes[F[_]: Monad, H](
     lookup: Digest[H] => F[Node[H]],
     root:   Digest[H],
-    from:   BitVector,
-    until:  Option[BitVector],
+    bounds: Bounds,
     seen:   Map[Digest[H], Node[H]]
-  ): F[Map[Digest[H], Node[H]]] =
-    (List((root, BitVector.empty)), seen).tailRecM {
-      case (Nil, acc) => acc.asRight[(List[(Digest[H], BitVector)], Map[Digest[H], Node[H]])].pure[F]
+  ): F[Map[Digest[H], Node[H]]] = {
+    val unit: (Unit, BitVector) => Unit = (_, _) => ()
+    (List((root, Cursor.origin(()))), seen).tailRecM {
+      case (Nil, acc) => acc.asRight[(List[(Digest[H], Cursor[Unit])], Map[Digest[H], Node[H]])].pure[F]
       case ((h, at) :: rest, acc) =>
         lookup(h).map {
           case l: Leaf[H] => (rest, acc.updated(h, l)).asLeft
           case b: Branch[H] =>
-            val here = at ++ b.segment
-            val next = List(b.left.map(_ -> (here :+ false)), b.right.map(_ -> (here :+ true))).flatten.filter {
-              case (_, p) =>
-                KeyOrder.intersects(p, from, until)
+            val (here, _) = bounds.extend(at, b.segment, unit)
+            val next = List(b.left.map(false -> _), b.right.map(true -> _)).flatten.flatMap {
+              case (bit, child) =>
+                val (below, _) = bounds.extend(here, BitVector.bit(bit), unit)
+                Option.when(bounds.meets(below))(child -> below)
             }
             (next ++ rest, acc.updated(h, b)).asLeft
         }
     }
+  }
 
   /** The nodes on one key's path, plus the whole subtree under a prefix. */
   private def pathNodes[F[_]: Monad, H](
