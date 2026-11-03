@@ -3,7 +3,7 @@
  * profile (any core hash algorithm) or the RFC 6962 profile, proof decoding from canonical values, and the JLVM's
  * `merkle_verify` / `merkle_consistency_verify` over a trusted head `{root, size}` (jlvm.md section 6).
  */
-import { bitLength, describeFailure, digest, err, hashParts, models, ok, outputSize, toHex, valueCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, describeFailure, digest, err, hashParts, models, ok, outputSize, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
 import { decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
@@ -70,11 +70,11 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
   /**
    * A value leaf's hash: the leaf hash of `commit(value)` (`MerkleTree.leaf`). O(min(weight, the ceiling)), as
    * `valueCommitment`: a commitment over `cbor.MAX_ENCODED_BYTES` (2^31 - 1, this SDK's ceiling; Scala and Rust have
-   * none) is `Encoding`, never an allocation failure.
+   * none) is `TooLarge`. The commitment is streamed into the hash, never built.
    */
   leaf(value: Value): Result<Uint8Array, MerkleError> {
-    const c = valueCommitment(value);
-    return c.ok ? ok(this.#leaf.hash(c.value)) : err({ kind: "TooLarge", limit: c.error.limit });
+    const c = this.#leaf.commitment(value);
+    return c.ok ? c : err({ kind: "TooLarge", limit: c.error.limit });
   }
 
   leafWeight(value: Value): bigint {

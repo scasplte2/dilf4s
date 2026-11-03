@@ -1,5 +1,5 @@
 /** Byte-string helpers shared by the verifiers. */
-import { digest, hashParts, type HashAlgorithm } from "@kd5ujc/dilf4s-core";
+import { digest, hashCommitment, hashParts, type HashAlgorithm, type Result, type TooLarge, type Value } from "@kd5ujc/dilf4s-core";
 
 /** A fresh plain copy: `slice` on a Node `Buffer` would share memory. */
 export function copyBytes(bytes: Uint8Array): Uint8Array {
@@ -69,11 +69,27 @@ export class ConstantTag {
     Object.freeze(this);
   }
 
+  /** A copy of the tag hash: a hash is never handed this instance's own state. */
+  #tag(): Uint8Array {
+    return copyBytes(this.#tagHash);
+  }
+
   hash(message: Uint8Array): Uint8Array {
-    return hashParts(this.algorithm, [this.#tagHash, this.#tagHash, message]);
+    const t = this.#tag();
+    return hashParts(this.algorithm, [t, t, message]);
+  }
+
+  /**
+   * The tagged hash of `commit(value)`, streamed into the hash (core's `hashCommitment`, with memory as core's
+   * `cbor.ts` `STAGED_BYTES` states), with `valueCommitment`'s ceiling and refusal.
+   */
+  commitment(value: Value): Result<Uint8Array, TooLarge> {
+    const t = this.#tag();
+    return hashCommitment(this.algorithm, [t, t], value);
   }
 
   hashParts(parts: readonly Uint8Array[]): Uint8Array {
-    return hashParts(this.algorithm, [this.#tagHash, this.#tagHash, ...parts]);
+    const t = this.#tag();
+    return hashParts(this.algorithm, [t, t, ...parts]);
   }
 }

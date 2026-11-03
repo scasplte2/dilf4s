@@ -4,11 +4,11 @@
  * `docs/specs/canonical-encoding.md`; the conformance vectors in `shared/vectors` are part of it.
  */
 export { bitLength } from "./bigint.js";
-export * as cbor from "./cbor.js";
+export * as cbor from "./cbor-api.js";
 export * as codec from "./codec.js";
 export * as json from "./json.js";
 export * as models from "./generated/index.js";
-export { valueCommitment, valueCommitmentWithin, BYTES_TAG, CBOR_TAG } from "./commitment.js";
+export { hashCommitment, valueCommitment, valueCommitmentWithin, BYTES_TAG, CBOR_TAG } from "./commitment.js";
 export type { CanonicalError, DecodeFailure, TooLarge } from "./error.js";
 export { describeFailure } from "./error.js";
 export {
@@ -18,10 +18,12 @@ export {
   HASH_ALGORITHMS,
   hashAlgorithm,
   hashParts,
+  startHash,
   outputSize,
   TaggedHash,
   taggedHash,
   type HashAlgorithm,
+  type Hashing,
   type InvalidDomainTag,
 } from "./hash.js";
 export { fromHex, toHex, type InvalidHex } from "./hex.js";

@@ -14,8 +14,15 @@ export const TAGS = {
   kesProduct: "dilf4s/kes/product/v1",
 } as const;
 
-/** `m => H(H(tag) || H(tag) || m)`, hashing the tag once. */
+/**
+ * `m => H(H(tag) || H(tag) || m)`, hashing the tag once. Each call hands the hash a copy of the tag hash, never the
+ * kept array: a hash's `update` can be replaced on its prototype, and a replacement that kept and rewrote the array
+ * would change every later hash under this tag.
+ */
 export function literalTaggedHash(algorithm: HashAlgorithm, tag: string): (message: Uint8Array) => Uint8Array {
   const t = digest(algorithm, utf8ToBytes(tag));
-  return (message) => hashParts(algorithm, [t, t, message]);
+  return (message) => {
+    const copy = Uint8Array.from(t);
+    return hashParts(algorithm, [copy, copy, message]);
+  };
 }
