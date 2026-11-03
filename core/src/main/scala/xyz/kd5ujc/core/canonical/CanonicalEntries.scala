@@ -54,8 +54,9 @@ object CanonicalEntries {
     def iterator: Iterator[(String, A)] = e.iterator
     def keysIterator: Iterator[String] = e.keysIterator
     def valuesIterator: Iterator[A] = e.valuesIterator
-    def keys: Iterable[String] = e.keys
-    def values: Iterable[A] = e.values
+    // a Vector, not the tree's key set: mapping a set would rebuild it as a hashed one
+    def keys: Vector[String] = e.keysIterator.toVector
+    def values: Vector[A] = e.valuesIterator.toVector
     def toList: List[(String, A)] = e.toList
     def toVector: Vector[(String, A)] = e.toVector
     def foldLeft[B](z: B)(op: (B, (String, A)) => B): B = e.foldLeft(z)(op)

@@ -56,6 +56,7 @@ object CanonicalEmitterSuite extends FunSuite {
       "byte-vector"       -> "ByteVector",
       "canonical"         -> "Canonical",
       "canonical-decoder" -> "CanonicalDecoder",
+      "canonical-entries" -> "CanonicalEntries",
       "canonical-value"   -> "CanonicalValue",
       "codec"             -> "Codec",
       "int"               -> "Int",

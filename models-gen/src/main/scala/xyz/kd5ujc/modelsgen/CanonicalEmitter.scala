@@ -258,6 +258,7 @@ object CanonicalEmitter {
     "ByteVector",
     "Canonical",
     "CanonicalDecoder",
+    "CanonicalEntries",
     "CanonicalValue",
     "Codec",
     "Int",
