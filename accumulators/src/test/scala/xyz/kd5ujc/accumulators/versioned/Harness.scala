@@ -4,6 +4,8 @@ import cats.effect.IO
 import cats.mtl.Handle
 import cats.syntax.all._
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.accumulators.trie.{KeyMode, Trie, TrieHashing}
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
 import xyz.kd5ujc.core.canonical.CanonicalValue
@@ -65,7 +67,7 @@ object Harness {
       case (acc, (k, _))                     => acc - k
     }
 
-  def stateRoot(s: State): Digest[H] = get(Projection.stateRoot[H](s))
+  def stateRoot(s: State): Digest[H] = get(Projection.stateRoot[H](TreeMap.from(s)))
 
   def historyRoot(h: List[(Long, Digest[H])]): Digest[H] =
     get(Trie.fromEntries[H](get(KeyMode.fixed(8)), h.map { case (v, s) => vk(v) -> VersionedTrie.bytesHash[H](s.bytes) })).root

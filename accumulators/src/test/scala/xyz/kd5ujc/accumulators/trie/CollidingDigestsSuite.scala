@@ -18,8 +18,9 @@ import weaver.{Expectations, SimpleIOSuite}
 /**
  * Hash-flooding regressions for maps of trie nodes. A node's digest is content a peer may choose (a snapshot's), and a
  * `Digest`'s JVM hash code is a seedless MurmurHash3 of its bytes, so a hashed map of them degrades to scanning one
- * bucket. Here every node digest is forced onto one hash code (MurmurHash3's last block is solved for a fixed state, as
- * an attacker would), and nothing measures time:
+ * bucket. A real attacker must find node content whose digest has the chosen hash code, about 2^32 node hashes per
+ * colliding node (done once, then reusable). A test can skip that work: its `TrieHashing` chooses the node digests
+ * directly, solving MurmurHash3's last block so that every one has the same hash code. Nothing here measures time:
  *   - every map is built in the order passed, and its comparisons are counted: O(n log n) for a build, O(depth log n)
  *     per update;
  *   - every node digest counts the reads of its bytes, and outside the order's comparisons and node hashing there are
@@ -42,7 +43,8 @@ object CollidingDigestsSuite extends SimpleIOSuite {
 
   /**
    * `ByteVector`'s hash code is MurmurHash3 over little-endian 4-byte blocks, and one block's mixing is a bijection, so
-   * the last block can be solved for any state: every digest forced here hashes as `Target` does after it.
+   * the last block can be solved for any state: every digest forced here hashes as `Target` does after it. Only a test
+   * can do this, because it chooses the digest bytes itself; an attacker controls only the content they hash.
    */
   private object Murmur {
     private val (c1, c2, c3) = (0xcc9e2d51, 0x1b873593, 0xe6546b64)

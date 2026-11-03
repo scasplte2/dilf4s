@@ -285,7 +285,8 @@ hand-written delta is faster but can disagree with the entries; the opt-in check
 the state root from the entries and compares it with the committed one. Every entry's value is first checked as a
 commit checks it (§4): entries that no commit would accept are not committable state, so the rebuild refuses them as
 too large or too deep rather than computing a root for them, and a value too large for its weight alone is refused
-without being encoded.
+without being encoded. A view's entries, and the entries `verifyAgainst` and `Projection.stateRoot` take, are maps sorted by key, never
+hashed: state keys are strings, whose hash codes collide within the key grammar.
 
 ## 9. Verifying in the JLVM
 

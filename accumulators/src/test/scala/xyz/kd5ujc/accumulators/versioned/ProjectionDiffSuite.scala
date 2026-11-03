@@ -4,6 +4,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.immutable.TreeMap
 
+import xyz.kd5ujc.accumulators.versioned.Harness.{attempt, fresh}
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.storage.{Batch, Op}
 
@@ -11,8 +12,9 @@ import weaver.SimpleIOSuite
 
 /**
  * A state key is a string, and Java's `String.hashCode` is trivially collidable (every combination of "ak" and "c-"
- * blocks has one hash code), so a view's states are sorted maps. Nothing here measures time: the states compare keys
- * through a counting order, and diffing them stays within O(n log n) comparisons.
+ * blocks has one hash code), so a view's states, and the entries a state root is computed from, are sorted maps.
+ * Nothing here measures time: the states compare keys through a counting order, diffing them stays within O(n log n)
+ * comparisons, and a state root reads its entries once, in order, comparing none.
  */
 object ProjectionDiffSuite extends SimpleIOSuite {
 
@@ -52,5 +54,31 @@ object ProjectionDiffSuite extends SimpleIOSuite {
       .and(expect.same(removed.toList, batch.ops.collect { case Op.Delete(k) => k }.toList))
       .and(expect.same(changed.sorted.toList, batch.ops.collect { case Op.Put(k, _) => k }.toList))
       .and(expect.same(Batch.empty[StateKey, CanonicalValue], Projection.diff(prev, prev)))
+  }
+
+  test("stateRoot and verifyAgainst over colliding keys: a sorted state built in O(n log n), read with no comparison") {
+    val order = new Counting
+    val state = TreeMap.from(keys.zipWithIndex.map { case (k, i) => k -> CanonicalValue.int(i) })(using order)
+    val built = order.comparisons.get
+    val n = state.size
+    attempt { implicit h =>
+      fresh.flatMap { case (_, store) => store.commit(None, 1L, Batch.puts(state)) }
+    }.map { committed =>
+      val other = state.updated(keys(7), CanonicalValue.int(-1))
+      val before = order.comparisons.get
+      val root = Projection.stateRoot[Harness.H](state)
+      val verified = committed.map(head => Projection.verifyAgainst[Harness.H](state, head.stateRoot))
+      val changed = committed.map(head => Projection.verifyAgainst[Harness.H](other, head.stateRoot))
+      val reading = order.comparisons.get - before
+      expect(keys.map(_.value.hashCode).distinct.size == 1, "the keys' strings share one hash code")
+        .and(expect(built >= n - 1L, s"building the state made $built comparisons for $n keys; a hashed map makes none"))
+        .and(expect(built <= n * (2L * log2(n) + 1L), s"building the state made $built comparisons for $n keys"))
+        .and(expect(reading == 0L, s"stateRoot and verifyAgainst made $reading comparisons; they read the entries in order"))
+        .and(expect.same(committed.map(_.stateRoot), root))
+        .and(expect.same(Right(Right(())), verified))
+        .and(
+          expect(changed.exists(_.left.exists(_.isInstanceOf[VersionedTrieError.RootMismatch])), s"a changed state mismatches: $changed")
+        )
+    }
   }
 }

@@ -1,5 +1,7 @@
 package xyz.kd5ujc.accumulators.versioned
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.accumulators.versioned.Harness._
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
@@ -80,7 +82,7 @@ object SharedValueSuite extends SimpleIOSuite {
 
   pureTest("Projection.stateRoot and verifyAgainst refuse state no commit accepts: too large before hashing, too deep") {
     val deep = (0 to VersionedTrie.MaxValueDepth).foldLeft(int(1))((v, _) => get(CanonicalValue.array(Vector(v))))
-    val committable = Map(key("a/a") -> int(1))
+    val committable = TreeMap(key("a/a") -> int(1))
     val r = get(Projection.stateRoot[H](committable))
     expect(tooLarge(ofK, VersionedTrie.MaxValueBytes)(Projection.stateRoot[H](committable + (k -> doubled))))
       .and(expect(tooLarge(ofK, VersionedTrie.MaxValueBytes)(Projection.verifyAgainst[H](committable + (k -> doubled), r))))
