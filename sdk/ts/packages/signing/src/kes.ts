@@ -2,7 +2,7 @@
  * Key-evolving signatures (`kes.md`): the dilf4s sum and product compositions over a hash `H`, and Cardano's SumKES.
  * Keys are immutable values: evolving returns a new key. Their bytes never print.
  */
-import { err, ok, outputSize, type HashAlgorithm, type Result } from "@kd5ujc/dilf4s-core";
+import { err, models, ok, outputSize, type HashAlgorithm, type Result } from "@kd5ujc/dilf4s-core";
 import { ed25519 as noble } from "@noble/curves/ed25519.js";
 import { blake2b } from "@noble/hashes/blake2.js";
 
@@ -12,6 +12,11 @@ import { INSPECT } from "./keys.js";
 import { INTERNAL, type Internal } from "./internal/token.js";
 import { concat, copy, equal, isZero } from "./internal/bytes.js";
 import { literalTaggedHash, TAGS } from "./internal/tags.js";
+
+/** The greatest height: of a sum tree, or of a product's super and sub heights together. */
+const MAX_HEIGHT = models.limits.KES_MAX_HEIGHT;
+/** The greatest Cardano `SumKES` depth: `Sum7KES`. */
+const CARDANO_MAX_DEPTH = models.limits.CARDANO_KES_MAX_DEPTH;
 
 const ZERO32 = new Uint8Array(32);
 const leafVk = (seed: Uint8Array): Uint8Array => noble.getPublicKey(seed);
@@ -259,9 +264,9 @@ export class KesSum {
   static of(hash: HashAlgorithm, height: number): Result<KesSum, KesError> {
     const h = hashCheck(hash);
     if (!h.ok) return h;
-    return Number.isInteger(height) && height >= 0 && height <= 30
+    return Number.isInteger(height) && height >= 0 && height <= MAX_HEIGHT
       ? ok(new KesSum(hash, height))
-      : err(malformed("KES height", `expected 0..30, got ${String(height)}`));
+      : err(malformed("KES height", `expected 0..${String(MAX_HEIGHT)}, got ${String(height)}`));
   }
 
   /** The period-0 key of a 32-byte seed. */
@@ -273,6 +278,9 @@ export class KesSum {
   /** Loads an encoded key at the period the caller knows it to be at. */
   load(input: Uint8Array, period: number): Result<KesSumKey, KesError> {
     // decoding retains slices of the input; a private copy keeps the caller's buffer (a Buffer slices by view) apart
+    // the length first, so a wrong-sized input is refused without copying it (the copy is checked too: a view of a
+    // growable shared buffer may change length)
+    if (input.length !== this.keyLength) return err(sizeError("KES key", this.keyLength, input.length));
     const raw = copy(input);
     if (raw.length !== this.keyLength) return err(sizeError("KES key", this.keyLength, raw.length));
     if (!inRange(period, this.totalPeriods)) return err(outOfRange(period, this.totalPeriods));
@@ -402,10 +410,10 @@ export class KesProduct {
   static of(hash: HashAlgorithm, superHeight: number, subHeight: number): Result<KesProduct, KesError> {
     const h = hashCheck(hash);
     if (!h.ok) return h;
-    const valid = Number.isInteger(superHeight) && Number.isInteger(subHeight) && superHeight >= 0 && subHeight >= 0 && superHeight + subHeight <= 30;
+    const valid = Number.isInteger(superHeight) && Number.isInteger(subHeight) && superHeight >= 0 && subHeight >= 0 && superHeight + subHeight <= MAX_HEIGHT;
     return valid
       ? ok(new KesProduct(hash, superHeight, subHeight))
-      : err(malformed("KES heights", `expected non-negative heights summing to at most 30, got (${String(superHeight)}, ${String(subHeight)})`));
+      : err(malformed("KES heights", `expected non-negative heights summing to at most ${String(MAX_HEIGHT)}, got (${String(superHeight)}, ${String(subHeight)})`));
   }
 
   generate(seed: Uint8Array): Result<KesProductKey, KesError> {
@@ -416,6 +424,7 @@ export class KesProduct {
 
   /** Loads an encoded key at `period`, checking both trees and that the super signature certifies the sub tree. */
   load(input: Uint8Array, period: number): Result<KesProductKey, KesError> {
+    if (input.length !== this.keyLength) return err(sizeError("KES key", this.keyLength, input.length));
     const raw = copy(input);
     if (raw.length !== this.keyLength) return err(sizeError("KES key", this.keyLength, raw.length));
     if (!inRange(period, this.totalPeriods)) return err(outOfRange(period, this.totalPeriods));
@@ -583,7 +592,7 @@ export class CardanoSumKes {
 
   /** `SumKES` of depth 0 to 7 (`Sum0KES` to `Sum7KES`). */
   static of(depth: number): Result<CardanoSumKes, KesError> {
-    return Number.isInteger(depth) && depth >= 0 && depth <= 7 ? ok(new CardanoSumKes(depth)) : err(malformed("KES depth", `expected 0..7, got ${String(depth)}`));
+    return Number.isInteger(depth) && depth >= 0 && depth <= CARDANO_MAX_DEPTH ? ok(new CardanoSumKes(depth)) : err(malformed("KES depth", `expected 0..${String(CARDANO_MAX_DEPTH)}, got ${String(depth)}`));
   }
 
   /** `Sum6KES`: 64 periods, 448-byte signatures, 608-byte keys. */
@@ -597,6 +606,7 @@ export class CardanoSumKes {
   /** Loads cardano's raw signing key (the `kes.skey` payload) at the period the caller knows it to be at. */
   load(input: Uint8Array, period: number): Result<CardanoSumKesKey, KesError> {
     // the key keeps the encoding itself, so it must own it
+    if (input.length !== this.signingKeyLength) return err(sizeError("KES signing key", this.signingKeyLength, input.length));
     const raw = copy(input);
     if (raw.length !== this.signingKeyLength) return err(sizeError("KES signing key", this.signingKeyLength, raw.length));
     if (!inRange(period, this.totalPeriods)) return err(outOfRange(period, this.totalPeriods));
