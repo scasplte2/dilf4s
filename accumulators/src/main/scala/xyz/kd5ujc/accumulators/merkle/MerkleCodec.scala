@@ -52,6 +52,8 @@ object MerkleCodec {
     M:          MerkleHashing[H]
   ): Either[MerkleError, Boolean] =
     for {
+      // the head first, as every SDK checks it: a size outside the tree-index range is malformed, not a verdict
+      _ <- Either.cond(size >= 0, (), MerkleError.Encoding("head.size is a tree size"))
       _ <- ProofInput.claimed(List(leaf))(MerkleError.TooLarge(_))
       p <- decodeInclusion[H](proof)
       verdict <-
