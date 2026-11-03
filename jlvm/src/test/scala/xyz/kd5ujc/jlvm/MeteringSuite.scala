@@ -453,4 +453,73 @@ object MeteringSuite extends IOSuite {
         .and(expect(isLimit(Program.from(sharedPath)), "a path of shared segments is bounded before it is rendered"))
     )
   }
+
+  // ---- parsing and compiling: work linear in the program, n log n where keys or names are sorted
+
+  /** The work of parsing and compiling a program: expressions visited, and object-key and name comparisons. */
+  private final case class Work(ok: Boolean, steps: Long, keys: Long, names: Long)
+
+  /** Parses (with [[Program.from]]'s passes) and compiles `json`, counting steps and comparisons. */
+  private def work(json: String): IO[Work] =
+    (IO(new AtomicLong), IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (steps, keys, names) =>
+      IO {
+        val kernels = Kernels.Default.copy(
+          names = counted(Ordering.String, names),
+          keys = counted(Kernels.CodePoints, keys),
+          steps = new Steps { def step(): Unit = { steps.incrementAndGet(); () } }
+        )
+        val ok = Parser.parse(json, kernels).flatMap(Compiled(_, kernels)).isRight
+        Work(ok, steps.get, keys.get, names.get)
+      }
+    }
+
+  /** Five passes visit each expression once: reading the JSON, measuring, checking, the surface depth, compiling. */
+  private val Passes = 5L
+
+  private val N = 4096
+
+  test("an array of n expressions is parsed and compiled in O(n) steps") { _ =>
+    work(s"[${List.fill(N)("1").mkString(", ")}]").map { w =>
+      expect(w.ok, "compiles").and(expect(w.steps <= Passes * (N + 1), s"$N items took ${w.steps} steps"))
+    }
+  }
+
+  test("an operation's n arguments are parsed and compiled in O(n) steps") { _ =>
+    work(s"""{"+": [${List.fill(N)("1").mkString(", ")}]}""").map { w =>
+      expect(w.ok, "compiles").and(expect(w.steps <= Passes * (N + 1), s"$N arguments took ${w.steps} steps"))
+    }
+  }
+
+  test("a map expression's n fields: O(n) steps and O(n log n) key comparisons, never a hash") { _ =>
+    work(s"""{${List.tabulate(N)(i => s""""k$i": 1""").mkString(", ")}}""").map { w =>
+      expect(w.ok, "compiles")
+        .and(expect(w.steps <= Passes * (N + 1), s"$N fields took ${w.steps} steps"))
+        .and(expect(w.keys >= N - 1 && w.keys <= 4 * N * log2(N), s"$N fields compared keys ${w.keys} times"))
+    }
+  }
+
+  test("a let's n bindings: O(n) steps and O(n log n) name comparisons") { _ =>
+    // each binding is three expressions: the pair, its name and its value
+    work(lets(N, Vector.tabulate(N)(i => s"n$i"))).map { w =>
+      expect(w.ok, "compiles")
+        .and(expect(w.steps <= Passes * (3 * N + 3), s"$N bindings took ${w.steps} steps"))
+        .and(expect(w.names >= N - 1 && w.names <= 3 * N * log2(N), s"$N bindings compared names ${w.names} times"))
+    }
+  }
+
+  test("a let's n bindings written as an object: O(n log n) key and name comparisons") { _ =>
+    work(s"""{"let": [{${List.tabulate(N)(i => s""""n$i": 1""").mkString(", ")}}, 1]}""").map { w =>
+      expect(w.ok, "compiles")
+        .and(expect(w.steps <= Passes * (N + 3), s"$N bindings took ${w.steps} steps"))
+        .and(expect(w.keys >= N - 1 && w.keys <= 4 * N * log2(N), s"$N bindings compared keys ${w.keys} times"))
+        .and(expect(w.names >= N - 1 && w.names <= 3 * N * log2(N), s"$N bindings compared names ${w.names} times"))
+    }
+  }
+
+  test("a program nested d deep is parsed and compiled in O(d) steps") { _ =>
+    val d = 120
+    work((1 to d).foldLeft("1")((inner, _) => s"""{"!": $inner}""")).map { w =>
+      expect(w.ok, "compiles").and(expect(w.steps <= Passes * (d + 1), s"$d levels took ${w.steps} steps"))
+    }
+  }
 }

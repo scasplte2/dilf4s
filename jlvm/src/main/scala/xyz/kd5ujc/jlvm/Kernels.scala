@@ -5,24 +5,44 @@ import scala.collection.Searching
 import xyz.kd5ujc.core.canonical.CanonicalValue
 
 /**
- * How the evaluator orders what a program chooses: binding names (the `let` scope while compiling, the `$` bindings
- * while evaluating) and values (`unique`, `intersect`). Nothing a program chooses is hashed, where values made to
- * collide could slow a lookup; it is compared, through these orders and nothing else. A value is compared by its sort
- * key ([[Values.sortKey]], which encodes an array or a map once), made by `key`. Production uses [[Kernels.Default]];
- * a test passes orders and a key that count their calls, which bounds the evaluator's work on adversarial input
- * without timing it.
+ * How the parser, the compiler and the evaluator order what a program chooses, and how their work is counted: binding
+ * names (the `let` scope while compiling, the `$` bindings while evaluating), object keys (a map expression's fields),
+ * and values (`unique`, `intersect`). Nothing a program chooses is hashed, where values made to collide could slow a
+ * lookup; it is compared, through these orders and nothing else. A value is compared by its sort key
+ * ([[Values.sortKey]], which encodes an array or a map once), made by `key`. `steps` is told of each expression the
+ * parser, [[Program.from]] and the compiler visit. Production uses [[Kernels.Default]]; a test passes orders, a key
+ * and steps that count their calls, which bounds the work on adversarial input without timing it.
  */
 private[jlvm] final case class Kernels(
   names:  Ordering[String],
+  keys:   Ordering[String],
   values: Ordering[Values.SortKey],
   key:    CanonicalValue => Values.SortKey,
-  dedup:  Dedup
+  dedup:  Dedup,
+  steps:  Steps
 )
 
 private[jlvm] object Kernels {
 
-  /** UTF-16 order on names, the canonical value order, and deduplication by sorting. */
-  val Default: Kernels = Kernels(Ordering.String, Values.sortKeyOrder, Values.sortKey, Dedup.Sorting)
+  /** Code-point order on object keys (the canonical order: UTF-8 byte order). */
+  val CodePoints: Ordering[String] = (a, b) => Values.compareCodePoints(a, b)
+
+  /** UTF-16 order on names, code-point order on keys, the canonical value order, sorting, and uncounted steps. */
+  val Default: Kernels =
+    Kernels(Ordering.String, CodePoints, Values.sortKeyOrder, Values.sortKey, Dedup.Sorting, Steps.Uncounted)
+}
+
+/** Told of each unit of parse and compile work: an expression visited by one pass. */
+private[jlvm] trait Steps {
+  def step(): Unit
+}
+
+private[jlvm] object Steps {
+
+  /** Production: nothing is counted, and nothing happens. */
+  object Uncounted extends Steps {
+    def step(): Unit = ()
+  }
 }
 
 /** Deduplication and subset tests that use only an order on their elements: never `hashCode` or `equals`. */
