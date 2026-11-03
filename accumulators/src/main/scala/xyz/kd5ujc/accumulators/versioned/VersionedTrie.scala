@@ -75,7 +75,7 @@ object VersionedTrie {
   /** The hash a trie commits for a byte string: the top trie's slots and the history trie's state roots. */
   def bytesHash[H](b: ByteVector)(implicit T: TrieHashing[H]): Digest[H] = valueHash(CanonicalValue.bytes(b))
 
-  def trie[A](e: Either[TrieError, A]): Either[VersionedTrieError, A] = e.leftMap(VersionedTrieError.Trie(_))
+  def trie[A](e: Either[TrieError, A]): Either[VersionedTrieError, A] = e.leftMap(VersionedTrieError.fromTrie)
 
   def top[V, H](head: Head[V, H])(implicit V: VersionKey[V], T: TrieHashing[H]): Either[VersionedTrieError, Trie[H]] =
     for {

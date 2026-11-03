@@ -151,6 +151,24 @@ object SharedValueSuite extends SimpleIOSuite {
     }
   }
 
+  pureTest("a proof no verifier would decode is TooLarge, whether one embedded trie proof or the whole record is over") {
+    def leafOf(bytes: Long) =
+      xyz.kd5ujc.accumulators.trie
+        .TrieProof[H](Some(xyz.kd5ujc.accumulators.trie.ProofNode.PLeaf(scodec.bits.BitVector.low(bytes * 8), root)))
+    val head = Head[Long, H](1L, root, root)
+    val third = ProofInput.MaxProofWeight / 3 + 1024
+    val refused = Left(VersionedTrieError.TooLarge("the proof", ProofInput.MaxProofWeight))
+    expect
+      .same(refused, VersionedTrieWire.encodeProof(VersionedTrieProof[Long, H](head, leafOf(ProofInput.MaxProofWeight), None, None, None)))
+      .and(
+        expect.same(
+          refused,
+          VersionedTrieWire.encodeProof(VersionedTrieProof[Long, H](head, leafOf(third), None, Some(leafOf(third)), Some(leafOf(third))))
+        )
+      )
+      .and(expect(VersionedTrieWire.encodeProof(VersionedTrieProof[Long, H](head, leafOf(third), None, None, None)).isRight))
+  }
+
   test("a commit just within it serves a delta that decodes and replays to the same head") {
     attempt { implicit h =>
       for {

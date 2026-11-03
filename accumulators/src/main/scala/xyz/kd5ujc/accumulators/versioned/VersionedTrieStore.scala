@@ -124,7 +124,7 @@ object VersionedTrieStore {
     R:          Handle[F, VersionedTrieError]
   ): F[VersionedTrieStore[F, V, H]] = {
     implicit val rs: Raise[F, StoreError] = via[F, StoreError](VersionedTrieError.Store(_))
-    implicit val rt: Raise[F, TrieError] = via[F, TrieError](VersionedTrieError.Trie(_))
+    implicit val rt: Raise[F, TrieError] = via[F, TrieError](VersionedTrieError.fromTrie)
     def lift[A](e: Either[VersionedTrieError, A]): F[A] = e.fold(R.raise[VersionedTrieError, A], _.pure[F])
     for {
       modes   <- lift((VersionedTrie.stateMode, VersionedTrie.historyMode[V]).tupled)

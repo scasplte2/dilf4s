@@ -59,4 +59,14 @@ object VersionedTrieError {
 
   final case class Store(error: StoreError) extends VersionedTrieError
   final case class Trie(error: TrieError) extends VersionedTrieError
+
+  /**
+   * A trie failure as the versioned trie reports it: a trie proof over `ProofInput.MaxProofWeight`, which no producer
+   * emits, is this family's `TooLarge` with that limit (docs/specs/conformance.md §3), whether it was one embedded
+   * proof or the whole record that passed the cap; every other trie failure is wrapped as `Trie`.
+   */
+  def fromTrie(e: TrieError): VersionedTrieError = e match {
+    case TrieError.TooLarge(limit) => TooLarge("the proof", limit)
+    case other                     => Trie(other)
+  }
 }
