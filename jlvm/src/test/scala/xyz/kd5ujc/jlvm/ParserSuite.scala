@@ -258,7 +258,12 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   test("the program generator stays within Program.from's bounds: depth, surface depth and canonical depth") {
     forall(exprs) { e =>
       expect(Program.from(e).isRight, s"accepted: ${Program.from(e)}")
-        .and(expect(Parser.surfaceDepth(e) <= Program.MaxSurfaceDepth, s"surface depth ${Parser.surfaceDepth(e)}"))
+        .and(
+          expect(
+            Parser.surfaceDepth(e, Kernels.Default) <= Program.MaxSurfaceDepth,
+            s"surface depth ${Parser.surfaceDepth(e, Kernels.Default)}"
+          )
+        )
         .and(
           expect(
             Program.from(e).flatMap(Parser.canonical).forall(_.depth <= CanonicalValue.MaxDepth),
@@ -405,7 +410,7 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   test("the surface depth Program.from bounds is the depth of the rendered text") {
     // chains of 40 wrappers nest at most 3 levels each (surface or canonical), plus a few for the leaf: within the bound
     forall(Gen.oneOf(exprs, Gen.choose(1, 40).flatMap(chain)))(accepted(_) { prog =>
-      expect.same(Parser.render(prog).map(nesting), Right(Parser.surfaceDepth(prog.expr)))
+      expect.same(Parser.render(prog).map(nesting), Right(Parser.surfaceDepth(prog.expr, Kernels.Default)))
     })
   }
 

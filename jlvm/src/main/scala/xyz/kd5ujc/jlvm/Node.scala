@@ -90,7 +90,8 @@ object Node {
    * read only as `$name`, so a plain path never reads the data where the binding was meant. Names are chosen by the
    * program, so they are kept in a sorted set, in [[Kernels.names]] order, never hashed.
    */
-  private def node(e: Expr, lets: TreeSet[String])(using kernels: Kernels): Either[JlvmError, Node] =
+  private def node(e: Expr, lets: TreeSet[String])(using kernels: Kernels): Either[JlvmError, Node] = {
+    kernels.steps.step()
     e match {
       case Expr.Lit(v) => Const(v).asRight
       case Expr.Var(ref @ VarRef.Data(path), _) if path.headOption.exists(lets.contains) =>
@@ -115,12 +116,14 @@ object Node {
           case (k, x) =>
             (CanonicalValue.text(k).leftMap(_ => JlvmError.Malformed("an object key is not well-formed text")), node(x, lets)).tupled
         }
-          .map(fs => ObjectOf(fs.sortWith((a, b) => Values.compareCodePoints(a._1.value, b._1.value) < 0)))
+          .map(fs => ObjectOf(fs.sortBy(_._1.value)(using kernels.keys)))
       case Expr.Apply(op, args) => apply(op, args, lets)
     }
+  }
 
-  private def sorted[A](fields: Vector[(String, A)]): Vector[(String, A)] =
-    fields.sortWith((a, b) => Values.compareCodePoints(a._1, b._1) < 0)
+  /** Fields in [[Kernels.keys]] order (code points). */
+  private def sorted[A](fields: Vector[(String, A)])(using kernels: Kernels): Vector[(String, A)] =
+    fields.sortBy(_._1)(using kernels.keys)
 
   private def apply(op: Op, args: Vector[Expr], lets: TreeSet[String])(using kernels: Kernels): Either[JlvmError, Node] = {
     def node(e: Expr): Either[JlvmError, Node] = Node.node(e, lets)

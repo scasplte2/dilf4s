@@ -63,16 +63,25 @@ object Parser {
 
   private def value(j: Json): Either[JlvmError, CanonicalValue] = JsonSurface.value(j)
 
-  def parse(json: String): Either[JlvmError, Program] =
+  def parse(json: String): Either[JlvmError, Program] = parse(json, Kernels.Default)
+
+  /** [[parse]] with `kernels` ordering object keys and told of each expression read: production passes the default. */
+  private[jlvm] def parse(json: String, kernels: Kernels): Either[JlvmError, Program] =
     for {
       _    <- CanonicalJson.parse(json).leftMap(canonicalError)
       j    <- io.circe.parser.parse(json).leftMap(e => JlvmError.Malformed(e.message))
-      expr <- fromJson(j)
-      prog <- Program.from(expr)
+      expr <- expression(j)(using kernels)
+      prog <- Program.from(expr, kernels)
     } yield prog
 
-  /** Depth is bounded by the canonical parser that validated the text (256), so this recursion is bounded too. */
-  def fromJson(j: Json): Either[JlvmError, Expr] =
+  def fromJson(j: Json): Either[JlvmError, Expr] = expression(j)(using Kernels.Default)
+
+  /**
+   * One step per JSON value read. Depth is bounded by the canonical parser that validated the text (256), so this
+   * recursion is bounded too.
+   */
+  private def expression(j: Json)(using kernels: Kernels): Either[JlvmError, Expr] = {
+    kernels.steps.step()
     j.fold(
       Expr.Lit(CanonicalValue.CNull).asRight,
       _ => value(j).map(Expr.Lit(_)),
@@ -81,9 +90,10 @@ object Parser {
       array,
       fromObject
     )
+  }
 
   /** An array headed by a call's name is rejected, so text shaped like a call is never read as data by accident. */
-  private def array(items: Vector[Json]): Either[JlvmError, Expr] =
+  private def array(items: Vector[Json])(using kernels: Kernels): Either[JlvmError, Expr] =
     items.headOption.flatMap(_.asString).filter(callName) match {
       case Some(name) =>
         val call = Removed.get(name).fold(s"write the call as {\"$name\": [...]}")(hint => s"\"$name\" is not an operation: $hint")
@@ -94,22 +104,23 @@ object Parser {
       case scala.None => elements(items)
     }
 
-  private def elements(items: Vector[Json]): Either[JlvmError, Expr] = items.traverse(fromJson).map(Expr.Arr(_))
+  private def elements(items: Vector[Json])(using kernels: Kernels): Either[JlvmError, Expr] = items.traverse(expression).map(Expr.Arr(_))
 
   /** A `let`'s `[name, expression]` pairs: a name is never code, so a pair is exempt from the array check. */
-  private def letBindings(j: Json): Either[JlvmError, Expr] =
-    j.asArray.fold(fromJson(j))(_.traverse(pair => pair.asArray.fold(fromJson(pair))(elements)).map(Expr.Arr(_)))
+  private def letBindings(j: Json)(using kernels: Kernels): Either[JlvmError, Expr] =
+    j.asArray.fold(expression(j))(_.traverse(pair => pair.asArray.fold(expression(pair))(elements)).map(Expr.Arr(_)))
 
-  private def fromObject(obj: JsonObject): Either[JlvmError, Expr] =
+  private def fromObject(obj: JsonObject)(using kernels: Kernels): Either[JlvmError, Expr] =
     obj.toList match {
       case (key, arg) :: Nil => single(key, arg)
       case fields            => mapExpr(fields)
     }
 
-  private def mapExpr(fields: List[(String, Json)]): Either[JlvmError, Expr] =
-    fields.traverse { case (k, v) => fromJson(v).map(k -> _) }.map(fs => Expr.Obj(TreeMap.from(fs)))
+  /** The fields in [[Kernels.keys]] order: keys a program chooses are compared, never hashed. */
+  private def mapExpr(fields: List[(String, Json)])(using kernels: Kernels): Either[JlvmError, Expr] =
+    fields.traverse { case (k, v) => expression(v).map(k -> _) }.map(fs => Expr.Obj(TreeMap.from(fs)(using kernels.keys)))
 
-  private def single(key: String, arg: Json): Either[JlvmError, Expr] =
+  private def single(key: String, arg: Json)(using kernels: Kernels): Either[JlvmError, Expr] =
     key match {
       case Literal  => value(arg).map(Expr.Lit(_))
       case Variable => variable(arg)
@@ -125,28 +136,28 @@ object Parser {
           )(operation(_, arg))
     }
 
-  private def operation(op: Op, arg: Json): Either[JlvmError, Expr] =
+  private def operation(op: Op, arg: Json)(using kernels: Kernels): Either[JlvmError, Expr] =
     arg.asArray match {
       case Some(Vector(bindings, body)) if op == Op.Let =>
-        (letBindings(bindings), fromJson(body)).mapN((b, x) => Expr.Apply(op, Vector(b, x)))
-      case Some(items)                      => items.traverse(fromJson).map(Expr.Apply(op, _))
-      case None if Op.Variadic.contains(op) => fromJson(arg).map(Expr.Spread(op, _))
-      case None                             => fromJson(arg).map(a => Expr.Apply(op, Vector(a)))
+        (letBindings(bindings), expression(body)).mapN((b, x) => Expr.Apply(op, Vector(b, x)))
+      case Some(items)                      => items.traverse(expression).map(Expr.Apply(op, _))
+      case None if Op.Variadic.contains(op) => expression(arg).map(Expr.Spread(op, _))
+      case None                             => expression(arg).map(a => Expr.Apply(op, Vector(a)))
     }
 
   /** A path is text or an integer; an object or an array is an expression computing the path. */
-  private def path(j: Json, default: Option[CanonicalValue]): Either[JlvmError, Expr] =
+  private def path(j: Json, default: Option[CanonicalValue])(using kernels: Kernels): Either[JlvmError, Expr] =
     j.asString
       .orElse(j.asNumber.flatMap(_.toBigInt).map(_.toString))
       .map(VarRef.parse(_).map(Expr.Var(_, default)))
       .getOrElse(
         // a literal array here is the path's segments, not code, so it is exempt from the array check
-        if (j.isObject) fromJson(j).map(Expr.VarAt(_, default))
-        else if (j.isArray) j.asArray.fold(fromJson(j))(elements).map(Expr.VarAt(_, default))
+        if (j.isObject) expression(j).map(Expr.VarAt(_, default))
+        else if (j.isArray) j.asArray.fold(expression(j))(elements).map(Expr.VarAt(_, default))
         else malformed("a var path is text, an integer, or an expression computing one")
       )
 
-  private def variable(arg: Json): Either[JlvmError, Expr] =
+  private def variable(arg: Json)(using kernels: Kernels): Either[JlvmError, Expr] =
     arg.asArray match {
       case Some(Vector(p))          => path(p, None)
       case Some(Vector(p, default)) => defaultValue(default).flatMap(d => path(p, Some(d).filter(_ != CanonicalValue.CNull)))
@@ -231,12 +242,13 @@ object Parser {
    * objects), so [[Program.from]] can bound it without rendering. It follows [[toJson]] case by case. A worklist of
    * (expression, nesting of the JSON container holding it), so an unchecked tree cannot overflow the stack.
    */
-  private[jlvm] def surfaceDepth(e: Expr): Int = {
+  private[jlvm] def surfaceDepth(e: Expr, kernels: Kernels): Int = {
     @tailrec
     def go(todo: List[(Expr, Int)], deepest: Int): Int =
       todo match {
         case Nil => deepest
         case (x, l) :: tl =>
+          kernels.steps.step()
           val (own, children) = surfaceStep(x, l)
           go(children ::: tl, math.max(deepest, own))
       }
@@ -318,7 +330,8 @@ object Parser {
       case W.JlvmApply(op, as) => wireOp(op).flatMap(o => as.traverse(fromWire).map(Expr.Apply(o, _)))
       case W.JlvmSpread(op, a) => (wireOp(op), fromWire(a)).mapN(Expr.Spread(_, _))
       case W.JlvmArray(items)  => items.traverse(fromWire).map(Expr.Arr(_))
-      case W.JlvmMap(fields)   => fields.toList.traverse { case (k, v) => fromWire(v).map(k -> _) }.map(fs => Expr.Obj(TreeMap.from(fs)))
+      case W.JlvmMap(fields) =>
+        fields.toList.traverse { case (k, v) => fromWire(v).map(k -> _) }.map(fs => Expr.Obj(TreeMap.from(fs)(using Kernels.CodePoints)))
     }
 
   /** The canonical form names operations by their own names only; aliases are a surface convenience. */

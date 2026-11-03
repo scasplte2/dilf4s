@@ -226,11 +226,14 @@ object Program {
    * the rendered surface and the canonical form to fit the depth bound, so every program has an identity and an exact
    * rendering: an operation takes two canonical levels, so about 127 nest, fewer around deep literals and defaults.
    */
-  def from(expr: Expr): Either[JlvmError, Program] =
+  def from(expr: Expr): Either[JlvmError, Program] = from(expr, Kernels.Default)
+
+  /** [[from]], telling `kernels` of each expression each pass visits: production passes the default. */
+  private[jlvm] def from(expr: Expr, kernels: Kernels): Either[JlvmError, Program] =
     for {
-      _ <- measure(List(Pending(Vector(expr), 0, 0)), 0L).toLeft(())
-      _ <- check(List(expr)).toLeft(())
-      surface = Parser.surfaceDepth(expr)
+      _ <- measure(List(Pending(Vector(expr), 0, 0)), 0L, kernels).toLeft(())
+      _ <- check(List(expr), kernels).toLeft(())
+      surface = Parser.surfaceDepth(expr, kernels)
       _ <- Either.cond(
         surface <= MaxSurfaceDepth,
         (),
@@ -287,16 +290,17 @@ object Program {
    * are visited where they are, never copied into the worklist, so the walk stops within the bound whatever the tree.
    */
   @tailrec
-  private def measure(todo: List[Pending], seen: Long): Option[JlvmError] =
+  private def measure(todo: List[Pending], seen: Long, kernels: Kernels): Option[JlvmError] =
     todo match {
       case _ if seen > MaxSize => scala.Some(JlvmError.Limit(s"the program is larger than $MaxSize"))
       case Nil                 => scala.None
       case Pending(items, i, d) :: tl =>
         items.lift(i) match {
-          case scala.None                    => measure(tl, seen)
+          case scala.None                    => measure(tl, seen, kernels)
           case scala.Some(_) if d > MaxDepth => scala.Some(JlvmError.Limit(s"the program nests deeper than $MaxDepth"))
           case scala.Some(e) =>
-            measure(Pending(children(e), 0, d + 1) :: Pending(items, i + 1, d) :: tl, plus(seen, size(e)))
+            kernels.steps.step()
+            measure(Pending(children(e), 0, d + 1) :: Pending(items, i + 1, d) :: tl, plus(seen, size(e)), kernels)
         }
     }
 
@@ -305,7 +309,7 @@ object Program {
    * at most the size. A worklist walk, so that checking a deep tree cannot itself overflow the stack.
    */
   @tailrec
-  private def check(todo: List[Expr]): Option[JlvmError] =
+  private def check(todo: List[Expr], kernels: Kernels): Option[JlvmError] =
     todo match {
       case Nil => scala.None
       case Expr.Spread(op, _) :: _ if !Op.Variadic.contains(op) =>
@@ -315,6 +319,8 @@ object Program {
       case (Expr.Var(_, scala.Some(CanonicalValue.CNull)) | Expr.VarAt(_, scala.Some(CanonicalValue.CNull))) :: _ =>
         scala.Some(JlvmError.Malformed("a var default is never null: the canonical form cannot tell it from no default"))
       case Expr.Var(ref, _) :: _ if !VarRef.parse(ref.render).exists(_ == ref) => scala.Some(unspellable(ref))
-      case e :: tl                                                             => check(children(e).toList ::: tl)
+      case e :: tl =>
+        kernels.steps.step()
+        check(children(e).toList ::: tl, kernels)
     }
 }
