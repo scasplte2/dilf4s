@@ -108,5 +108,26 @@ object Bypasses {
   def instanceTest(v: Any): Boolean =
     v.isInstanceOf[TreeSet[?]] // assert: NoHashing
 
+  // a dependency's method, chained so no value of the hashed type is ever named
+  def circeToMap(pairs: List[(String, io.circe.Json)]): Int =
+    io.circe.JsonObject.fromIterable(pairs).toMap.size // assert: NoHashing
+
+  // the hashed set is a type argument of the collector, not the head of any type
+  def collectorToSet(s: String, t: String): Int =
+    java.util.stream.Stream.of(s, t).collect(java.util.stream.Collectors.toSet[String]()).size() // assert: NoHashing
+
+  def catsHash(s: String): Int =
+    cats.kernel.Hash[String].hash(s) // assert: NoHashing
+
+  def runtimeHash(s: String): Int =
+    scala.runtime.ScalaRunTime._hashCode(Tuple1(s)) // assert: NoHashing
+
+  def deepHash(s: String): Int =
+    java.util.Arrays.deepHashCode(Array[Object](s)) // assert: NoHashing
+
+  // a library symbol the rule cannot read (Scala 3's own library keeps it in TASTy): refused, not assumed safe
+  def unknowable: Int =
+    scala.util.boundary(1) // assert: NoHashing
+
   def ordered(keys: List[String]): Int = TreeSet.from(keys)(using KeyOrder.Default).size
 }

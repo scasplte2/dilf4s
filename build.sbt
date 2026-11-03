@@ -249,15 +249,23 @@ lazy val scalafixRules = project.in(file("scalafix-rules/rules"))
     libraryDependencies ++= Seq(
       "ch.epfl.scala" %% "scalafix-core" % _root_.scalafix.sbt.BuildInfo.scalafixVersion,
       // the classpath symbol table (scalafix's own runtime provides it): a Scala 3 SemanticDB omits library symbols
-      ("org.scalameta" % "semanticdb-scalac-core" % "4.17.4" % Provided).cross(CrossVersion.full)
+      ("org.scalameta" % "semanticdb-scalac-core" % "4.17.4" % Provided).cross(CrossVersion.full),
+      // core's own libraries, built for Scala 2.13: the rule reads their signatures, which their Scala 3 builds keep in
+      // TASTy only (the same versions, so the same API)
+      Libraries.bc               % Provided,
+      Libraries.cats             % Provided,
+      Libraries.catsEffect       % Provided,
+      Libraries.circeCore        % Provided,
+      Libraries.circeGeneric     % Provided,
+      Libraries.circeParser      % Provided,
+      Libraries.scodecBits       % Provided
     ),
-    // the Scala 2.13 library the rule reads library symbols from: Scala 3.8's own carries TASTy, not Scala 2 signatures
+    // the classpath the rule reads library symbols from: Scala 3.8's own library carries TASTy, not Scala 2 signatures
     Compile / resourceGenerators += Def.task {
-      val library = (Compile / dependencyClasspath).value.files
-        .find(f => f.getName.startsWith("scala-library-2.13"))
-        .getOrElse(sys.error("NoHashing needs a Scala 2.13 scala-library on its classpath"))
-      val out = (Compile / resourceManaged).value / "xyz" / "kd5ujc" / "scalafix" / "scala-library.path"
-      IO.write(out, library.getAbsolutePath)
+      val jars = (Compile / dependencyClasspath).value.files
+      if (!jars.exists(_.getName.startsWith("scala-library-2.13"))) sys.error("NoHashing needs a Scala 2.13 scala-library")
+      val out = (Compile / resourceManaged).value / "xyz" / "kd5ujc" / "scalafix" / "classpath"
+      IO.write(out, jars.map(_.getAbsolutePath).mkString("\n"))
       Seq(out)
     }.taskValue,
     publish / skip := true

@@ -33,6 +33,10 @@ object Allowed {
 
   def ownIntersect(a: Filter, b: Filter): Filter = a.intersect(b)
 
+  // core's own libraries are read through their Scala 2.13 builds: nothing here is unknown
+  def libraries(s: String): Either[String, io.circe.Json] =
+    cats.syntax.either.catsSyntaxEitherId(io.circe.Json.fromString(s)).asRight[String]
+
   def matched(v: Any): Int = v match {
     case s: String => s.length
     case _         => 0
