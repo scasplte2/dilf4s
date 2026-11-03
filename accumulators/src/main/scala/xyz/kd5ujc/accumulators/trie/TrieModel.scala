@@ -193,9 +193,12 @@ private[trie] object Bits {
   private val Compactable: Long = Int.MaxValue.toLong * 8
 
   /**
-   * `bits` in one flat array, so reading a bit is O(1) and stack-safe however the vector was built (a rope of appends
-   * indexes recursively, in time and stack its depth); and the bits copied. Callers pass at most `PathCap` bits, far
-   * below what `compact` refuses. Flattening is a no-op on a vector that is already flat.
+   * `bits` in one flat array, so reading a bit is O(1) and stack-safe however its bytes were appended (a rope of
+   * appends indexes recursively, in time and stack its depth; `compact` copies it with an explicit stack); and the bits
+   * copied. Callers pass at most `PathCap` bits, far below what `compact` refuses. Flattening is a no-op on a vector
+   * that is already flat. Every operand the JLVM and the decoder make is bytes, flat or appended. A lazy view a Scala
+   * caller builds (`reverse`, `ByteVector.view`, an unaligned drop of a rope) is read through its own function, as
+   * every scodec operation reads it: its cost and stack are the caller's construction.
    */
   def flat(bits: BitVector): (BitVector, Long) = (bits.compact, bits.size)
 
