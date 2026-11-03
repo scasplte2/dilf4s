@@ -212,9 +212,11 @@ keys as text. A proof, delta or head decoded from a value heavier than `MaxProof
 refused before it is decoded (`conformance.md` §5); its values are part of its weight.
 
 **Decoding order.** A record with more than one fault is refused for the first in this order, every implementation
-alike (`conformance.md` §5), and the refusal vectors pin each pair: a proof's `head`, `top`, `at`, `history`, then
-`state`; a delta's `parent`, `head`, each upsert's key in order, then each removed key; a head's `v`, `s`, then `h`; a
-history chunk's versions in order, each its `v` then its `s`.
+alike (`conformance.md` §5), and the refusal vectors pin each pair. First the whole record's shape, as the schema
+above states it: any shape fault is `Malformed`, whatever meaning faults the record also has. Then the fields'
+meanings: a proof's `head`, `top`, `at`, `history`, then `state`; a delta's `parent`, `head`, each upsert's key in
+order, then each removed key; a head's `v`, `s`, then `h`; a history chunk's versions in order, each its `v` then its
+`s`.
 
 ## 6. Verification
 

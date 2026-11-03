@@ -429,6 +429,34 @@
     },
     {
       "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "proof precedence: head version 2^63, and a top that is not an array: the shape first",
+      "check" : "vt-proof",
+      "input" : {
+        "leaf" : "a4626174a1617648000000000000000363746f70016468656164a3616858201f753025d771fd054bb44fffa7d533322563a493ae6209bf37fdadc922132bc261735820a2c537f4d13b0015853a0406b8921e11a5625e8582af881f7e768d90f4323a38617648800000000000000067686973746f727983a26163036173a26162480000000000000000616e183ea16168582005f4072d32b86d8463d1a9f68ae0f2b74869cb088eb4d7e0f2f8f55baa5946caa26173a261624100616e0161765820caeeb67baa275d7657734665e5c263b73f63deaf75352d6b8c9014dcce1b22be"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "delta precedence: head version 2^63, and upserts that are not an array: the shape first",
+      "check" : "vt-delta",
+      "input" : {
+        "leaf" : "a46468656164a3616858200202020202020202020202020202020202020202020202020202020202020202617358200101010101010101010101010101010101010101010101010101010101010101617648800000000000000066706172656e74a361685820020202020202020202020202020202020202020202020202020202020202020261735820010101010101010101010101010101010101010101010101010101010101010161764800000000000000006772656d6f76657380677570736572747301"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "Malformed"
+      },
+      "name" : "chunk precedence: a history version 2^63 with a state root that is not bytes: the shape first",
+      "check" : "vt-chunk",
+      "chunk" : "a167686973746f727981a26173016176488000000000000000"
+    },
+    {
+      "outcome" : {
         "kind" : "InvalidVersion"
       },
       "name" : "chunk precedence: a history version 2^63 with a 31-byte state root: v first",

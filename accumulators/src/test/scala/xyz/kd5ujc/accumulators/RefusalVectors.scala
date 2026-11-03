@@ -341,6 +341,14 @@ object RefusalVectors {
         "head version 2^63, and an upserted key the grammar refuses: the head first",
         badHeadV(edit(withParent, "upserts")(_ => arr(obj("k" -> get(CanonicalValue.text("x" * 65)), "v" -> int(1)))))
       ),
+      // shape against meaning: the schema is checked whole first, so a shape fault anywhere answers Malformed
+      proof("head version 2^63, and a top that is not an array: the shape first", edit(badHeadV(s.absent3), "top")(_ => int(1))),
+      delta("head version 2^63, and upserts that are not an array: the shape first", badHeadV(edit(withParent, "upserts")(_ => int(1)))),
+      Case(
+        "chunk precedence: a history version 2^63 with a state root that is not bytes: the shape first",
+        "vt-chunk",
+        List("chunk" -> hex(xyz.kd5ujc.core.canonical.Cbor.encode(obj("history" -> arr(obj("v" -> badVersionKey, "s" -> int(1)))))))
+      ),
       Case(
         "chunk precedence: a history version 2^63 with a 31-byte state root: v first",
         "vt-chunk",
