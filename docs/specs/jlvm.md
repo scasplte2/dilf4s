@@ -562,7 +562,8 @@ first, and `levels = ⌈log2(N + 1)⌉ + 1` for the `N` entries of all of them.
 The gcd that normalises a result is quadratic in its operands' size. `/` and `%` therefore also charge `Limbs2`, and
 `+`, `-` and `*` also charge `RationalLimbs2`: integer sums and products are linear. `%` of rationals divides,
 multiplies and subtracts, so it charges `RationalLimbs2` as well; so does `abs` (the Rust node re-checks that its result
-is in lowest terms). `<`, `<=`, `>` and `>=` charge `RationalWeight`: two rationals are compared by multiplying across.
+is in lowest terms). `<`, `<=`, `>`, `>=`, `min` and `max` charge `RationalWeight`: two rationals are compared by
+multiplying across (`min` and `max` return the argument they choose as it is, never reduced again).
 `pow` is priced at its worst case, a 4096-bit rational result.
 
 **Work an argument's size does not bound** has charges of its own, each taken before the work:
@@ -610,7 +611,10 @@ A program that does not compile uses no gas.
 
 **`ecvrf_verify`** runs RFC 9381's try-and-increment hash-to-curve before it checks the proof, and an attacker can
 choose `alpha`: one whose first `k` counters fail takes about `2^k` attempts to find, and then serves forever. Its base
-is priced for 64 counters, a number no search for `alpha` reaches; honest inputs need about two.
+is priced for 64 counters, a number no search for `alpha` reaches; honest inputs need about two. Its size charge pays
+for hashing `alpha` once: an implementation hashes the prefix `suite || 01 || Y || alpha` once and finishes a copy of
+that state for each counter, since hashing `alpha` again per counter would make a ground `alpha` cost its weight 64
+times.
 
 **The table.** Every operation's charges in schedule v1 (the charge points above say when each is taken):
 
@@ -631,17 +635,17 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `!=` | 50 | 1 per `Weight` |  |
 | `===` | 50 | 1 per `Weight` |  |
 | `!==` | 50 | 1 per `Weight` |  |
-| `<` | 55 | 1 per `Weight` | plus 10 per `RationalWeight` |
-| `<=` | 55 | 1 per `Weight` | plus 10 per `RationalWeight` |
-| `>` | 55 | 1 per `Weight` | plus 10 per `RationalWeight` |
-| `>=` | 55 | 1 per `Weight` | plus 10 per `RationalWeight` |
+| `<` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
+| `<=` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
+| `>` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
+| `>=` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
 | `+` | 140 | 3 per `Weight` | plus 7 per `RationalLimbs2` |
 | `-` | 140 | 3 per `Weight` | plus 7 per `RationalLimbs2` |
 | `*` | 100 | 10 per `Weight` | plus 7 per `RationalLimbs2` |
 | `/` | 340 | 2 per `Weight` | plus 8 per `Limbs2` |
 | `%` | 340 | 2 per `Weight` | plus 8 per `Limbs2`; plus 8 per `RationalLimbs2` |
-| `min` | 90 | 1 per `Weight` |  |
-| `max` | 90 | 1 per `Weight` |  |
+| `min` | 90 | 1 per `Weight` | plus 14 per `RationalWeight` |
+| `max` | 90 | 1 per `Weight` | plus 14 per `RationalWeight` |
 | `abs` | 60 |  | plus 2 per `RationalLimbs2` |
 | `round` | 60 | 8 per `Weight` |  |
 | `round_half_up` | 60 | 8 per `Weight` |  |

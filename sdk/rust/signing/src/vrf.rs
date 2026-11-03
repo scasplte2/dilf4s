@@ -318,11 +318,14 @@ fn hash_to_curve(suite: SuiteId, pk: &[u8; 32], alpha: &[u8]) -> Result<EdwardsP
 }
 
 /// RFC 9381 section 5.4.1.1: the first `ctr` whose `SHA-512(03 || 01 || Y || alpha || ctr || 00)[0:32]` strictly
-/// decodes, times the cofactor.
+/// decodes, times the cofactor. The prefix up to `alpha` is hashed once and its state copied for each counter: a
+/// caller can choose an `alpha` whose first counters fail, which must not make it hashed again for each of them.
 fn hash_to_curve_tai(pk: &[u8; 32], alpha: &[u8]) -> Result<EdwardsPoint, VrfError> {
+    use sha2::Digest;
+    let prefix = sha2::Sha512::new().chain_update([0x03, 0x01]).chain_update(pk).chain_update(alpha);
     (0u8..=255)
         .find_map(|ctr| {
-            let h = sha512(&[&[0x03, 0x01], pk, alpha, &[ctr, 0x00]]);
+            let h: [u8; 64] = prefix.clone().chain_update([ctr, 0x00]).finalize().into();
             let (candidate, _) = h.split_first_chunk::<32>()?;
             decode_strict(candidate)
         })
