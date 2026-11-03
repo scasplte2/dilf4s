@@ -299,11 +299,12 @@ the precompiles' rows, so it is the fairer figure once verification leans on pre
 Each row includes the ones above it; all of them give the same outcomes as native code on every VRF row.
 
 1. **`U = s B - c Y`** is `vartime_double_scalar_mul_basepoint` (`equation_base` in `signing/src/vrf.rs`), on every
-   target. SP1's patch runs it on `ED_ADD`, about 700 calls per verification. Natively it is faster as well: about
-   34 µs, against 39 µs for the multiscalar multiplication.
+   target. SP1's patch runs it on `ED_ADD`, about 700 calls per verification. Natively it costs no more than the
+   multiscalar multiplication: about 34 µs against 36 µs with RFC 9381's 128-bit `c`, and the same 35 µs with
+   draft-03's full-width `-c`.
 2. **`V = s H - c Gamma`** is two variable-base multiplications in the guest (`lincomb`), which the patch also runs
    on `ED_ADD`. The patch leaves `vartime_multiscalar_mul` in software. Natively `V` stays one multiscalar
-   multiplication: about 41 µs, where the two constant-time multiplications take about 82 µs. The choice is gated
+   multiplication: about 35 µs, where the two constant-time multiplications take about 68 µs. The choice is gated
    on `target_os = "zkvm"` and `target_vendor = "succinct"`.
 3. **Re-encoding.** Each `compress` is a field inversion in software, about 38,000 cycles in the guest (about 4 µs
    natively). Strict decoding used to decode and then re-encode to compare; it now checks `y < p` and refuses the
@@ -312,7 +313,6 @@ Each row includes the ones above it; all of them give the same outcomes as nativ
    re-encoding `Y`: a key that decodes and is not of small order re-encodes to itself, under both suites' rules
    (`a_decoded_key_re_encodes_to_itself`). This saves three inversions per verification for ELL2, one for draft-03,
    and for TAI one more per hash-to-curve attempt.
-
 4. **`sys_bigint` (issue #69).** Both Elligator maps spend one exponentiation, `x^((p - 5) / 8)`: 251 squarings and
    11 multiplications. In the guest its 262 multiplications go to the `UINT256_MUL` precompile through `sys_bigint`
    (`signing/src/vrf/field/zkvm.rs`), on the same addition chain as fiat-crypto's (`pow_p58_chain`). This saves
@@ -332,6 +332,11 @@ Each row includes the ones above it; all of them give the same outcomes as nativ
      The gate on `target_vendor = "succinct"` as well as `target_os = "zkvm"` keeps it off RISC Zero, whose
      `sys_bigint` differs.
    - **The harness** requires `UINT256_MUL` calls in the ELL2 and draft-03 families.
+
+Natively, a whole verification got faster too: TAI from about 109 µs to 96 µs, ELL2 from 108 µs to 97 µs, draft-03
+from 99 µs to 97 µs (the fastest of 600 passes over 16 proofs, several interleaved runs, one pinned core of a
+16-core x86-64 under a load average of 17 to 28; the multiplication timings above come from the same method). The
+load makes single runs vary by 10% or more, so read these as ratios.
 
 The four inversions that remain encode `H`, `U`, `V` and `8 Gamma`, about 150,000 cycles. Each is needed: the
 challenge hashes those encodings, and `beta` hashes the last one.
