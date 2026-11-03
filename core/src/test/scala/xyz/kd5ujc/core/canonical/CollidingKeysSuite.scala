@@ -15,9 +15,12 @@ import weaver.{Expectations, SimpleIOSuite}
  * Hash-flooding regressions for canonical maps. Java's `String.hashCode` is trivially collidable (every combination of
  * "Aa" and "BB" blocks has one hash code), and a hashed map degrades to linear scans on colliding keys. A map is a
  * `TreeMap` in [[KeyOrder]] instead. Nothing here measures time or looks inside a key: every path runs through a
- * counting [[KeyOrder]], whose comparisons are bounded below (a hashed path compares nothing) and above (n log n), and,
- * where a path is given its keys in a known order, counted exactly (a hashed step on the way reorders them, which
- * changes the count).
+ * counting [[KeyOrder]], whose comparisons are bounded below (a path that hashes in place of comparing compares
+ * nothing) and above (n log n), and, where a path is given its keys in a known order, counted exactly (a step that
+ * reorders them changes the count). These are complexity checks: a hashed step that keeps its input's order compares
+ * exactly as often, and these counts cannot see it. What holds structurally: the opaque [[CanonicalEntries]] and
+ * [[CanonicalKeys]] types keep every canonical map and key set in one key order, and core does not depend on circe,
+ * so circe's hashed `JsonObject` is out of its reach.
  */
 object CollidingKeysSuite extends SimpleIOSuite {
 
@@ -99,7 +102,7 @@ object CollidingKeysSuite extends SimpleIOSuite {
   }
 
   private def ordered(what: String, v: CanonicalValue, keys: KeyOrder): Expectations = v match {
-    case CMap(m) => expect(m.ordering eq keys, s"$what: the entries are ordered by ${m.ordering}, not the order passed")
+    case CMap(m) => expect(CanonicalEntries.ordering(m) eq keys, s"$what: the entries are not in the order passed")
     case other   => failure(s"$what: not a map: $other")
   }
 
@@ -281,7 +284,7 @@ object CollidingKeysSuite extends SimpleIOSuite {
           // two trees in one order are walked side by side, their keys compared by `equals`: the order is barely asked
           .and(expect(equality <= 2L * log2(N), s"equality made $equality comparisons"))
           .and(expect(decoded.map(_.size) == Right(N), s"textMap decodes: ${decoded.map(_.size)}"))
-          .and(expect(decoded.exists(_.ordering eq o), "textMap decodes in the order of the map it reads"))
+          .and(expect(decoded.exists(e => CanonicalEntries.ordering(e) eq o), "textMap decodes in the order of the map it reads"))
           .and(within("textMap", N, decoding, nLogN(N)))
           // decoded entries are inserted in the map's order: a hashed step on the way would reorder the control's keys
           .and(expect.same(inserting(keysOf(m)), decoding))

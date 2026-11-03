@@ -5,7 +5,6 @@ import cats.syntax.either._
 import cats.syntax.traverse._
 
 import scala.annotation.tailrec
-import scala.collection.immutable.TreeSet
 
 import xyz.kd5ujc.core.canonical.CanonicalError._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
@@ -39,17 +38,17 @@ object CanonicalJson {
     parse(text, maxScale, KeyOrder.Default)
 
   /** [[parse]] building maps, and checking for repeated member names, in `keys`'s order: production passes [[KeyOrder.Default]]. */
-  private[kd5ujc] def parse(text: String, maxScale: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
+  private[canonical] def parse(text: String, maxScale: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
     run(text, maxScale, keys, ExpectValue(0, Nil, 0))
 
   sealed private trait Frame
   final private case class InArray(acc: Vector[CanonicalValue]) extends Frame
   // the members in input order, and their names ordered (never hashed) to find a repeat as it is read
-  final private case class InObject(acc: Vector[(String, CanonicalValue)], seen: TreeSet[String], key: String) extends Frame
+  final private case class InObject(acc: Vector[(String, CanonicalValue)], seen: CanonicalKeys, key: String) extends Frame
 
   sealed private trait Step
   final private case class ExpectValue(pos: Int, stack: List[Frame], depth: Int) extends Step
-  final private case class ExpectKey(pos: Int, acc: Vector[(String, CanonicalValue)], seen: TreeSet[String], stack: List[Frame], depth: Int)
+  final private case class ExpectKey(pos: Int, acc: Vector[(String, CanonicalValue)], seen: CanonicalKeys, stack: List[Frame], depth: Int)
       extends Step
   final private case class Deliver(value: CanonicalValue, pos: Int, stack: List[Frame], depth: Int) extends Step
 
@@ -63,7 +62,7 @@ object CanonicalJson {
             val q = skipWs(s, p + 1)
             if (charAt(s, q).contains('}')) run(s, maxScale, keys, Deliver(EmptyMap, q + 1, stack, depth))
             else if (depth >= MaxDepth) DepthExceeded(MaxDepth).asLeft
-            else run(s, maxScale, keys, ExpectKey(q, Vector.empty, TreeSet.empty(using keys), stack, depth + 1))
+            else run(s, maxScale, keys, ExpectKey(q, Vector.empty, CanonicalKeys.emptyIn(keys), stack, depth + 1))
           case Some('[') =>
             val q = skipWs(s, p + 1)
             if (charAt(s, q).contains(']')) run(s, maxScale, keys, Deliver(EmptyArray, q + 1, stack, depth))
@@ -87,7 +86,7 @@ object CanonicalJson {
             case Right((key, next)) =>
               val colon = skipWs(s, next)
               if (!charAt(s, colon).contains(':')) syntax(colon, "expected ':'").asLeft
-              else run(s, maxScale, keys, ExpectValue(colon + 1, InObject(acc, seen + key, key) :: stack, depth))
+              else run(s, maxScale, keys, ExpectValue(colon + 1, InObject(acc, seen.added(key), key) :: stack, depth))
           }
 
       case Deliver(v, p0, Nil, _) =>

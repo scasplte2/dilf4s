@@ -1,5 +1,7 @@
 package xyz.kd5ujc.core.canonical
 
+import cats.syntax.either._
+
 import weaver.SimpleIOSuite
 
 object CodecSuite extends SimpleIOSuite {
@@ -19,6 +21,24 @@ object CodecSuite extends SimpleIOSuite {
       .and(expect(fits(Codec.int, -two64) && fits(Codec.int, two64 - 1), "int spans both major types"))
       .and(expect(!fits(Codec.int, two64) && !fits(Codec.int, -two64 - 1), "and no further"))
       .and(expect(Codec.uint.encode(two64).left.exists(_.isInstanceOf[CanonicalError.TypeMismatch]), "a typed error"))
+  }
+
+  pureTest("a name the schema lists twice counts once: it cannot make room for an unknown key") {
+    val m = CanonicalValue
+      .map(List("a" -> CanonicalValue.CInt(1), "unexpected" -> CanonicalValue.CInt(2)))
+      .fold(e => sys.error(e.toString), identity)
+    val record = CanonicalDecoder.record(List("a", "a"))(f => f.required[BigInt]("a")).decode(m)
+    val chosen = Codec.selectAlternative(m, List((List("a"), List("a", "a"), CanonicalDecoder.record(List("a", "a"))(_ => 1.asRight))))
+    val fits = CanonicalValue.map(List("a" -> CanonicalValue.CInt(1))).fold(e => sys.error(e.toString), identity)
+    expect(record.left.exists(_.reason.startsWith("1 unknown key, the first \"unexpected\"")), s"record: $record")
+      .and(expect(chosen.left.exists(_.reason.contains("no alternative")), s"selectAlternative: $chosen"))
+      .and(expect.same(Right(BigInt(1)), CanonicalDecoder.record(List("a", "a"))(f => f.required[BigInt]("a")).decode(fits)))
+      .and(
+        expect.same(
+          Right(1),
+          Codec.selectAlternative(fits, List((List("a"), List("a", "a"), CanonicalDecoder.record(List("a", "a"))(_ => 1.asRight))))
+        )
+      )
   }
 
   pureTest("a refused integer is named by its size, never its digits") {

@@ -5,7 +5,7 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalValue, Cbor}
 import xyz.kd5ujc.numerics.Ratio
 
 import scodec.bits.ByteVector
@@ -192,7 +192,7 @@ object Values {
   }
 
   /** Map keys in Unicode code-point order (the order of `keys`, `values` and `entries`). */
-  def sortedKeys(m: scala.collection.immutable.Map[String, CanonicalValue]): List[String] =
+  def sortedKeys(m: CanonicalEntries[CanonicalValue]): List[String] =
     m.keys.toList.sortWith((a, b) => compareCodePoints(a, b) < 0)
 
   /**
