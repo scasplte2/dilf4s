@@ -151,7 +151,7 @@ object RefusalVectors {
         }
       case "trie-verify" =>
         val claim = c.downField("claim").success.traverse(built(_))
-        (mode(c), digest(c, "root"), bytes(c, "key"), claim, input).mapN { (m, r, k, cl, v) =>
+        (mode(c), bytes(c, "root"), bytes(c, "key"), claim, input).mapN { (m, r, k, cl, v) =>
           outcome(TrieProofs.verifyClaim[H](m, r, k, cl, v)(using summon[xyz.kd5ujc.core.hash.Hasher[H]], T))(trie)
         }
       case "trie-prefix-verify" =>
@@ -162,7 +162,7 @@ object RefusalVectors {
           .flatMap(_.traverse { e =>
             (bytes(e.hcursor, "key"), built(e.hcursor.downField("value"))).tupled
           })
-        (mode(c), digest(c, "root"), bytes(c, "prefix"), entries, input).mapN { (m, r, p, es, v) =>
+        (mode(c), bytes(c, "root"), bytes(c, "prefix"), entries, input).mapN { (m, r, p, es, v) =>
           outcome(TrieProofs.verifyPrefixClaims[H](m, r, p, es, v)(using summon[xyz.kd5ujc.core.hash.Hasher[H]], T))(trie)
         }
       case other => s"unknown check $other".asLeft
@@ -439,6 +439,27 @@ object RefusalVectors {
       claim("absence claimed", None),
       claim("a value of weight exactly 2^24", Some(BuiltValues.ofWeight(cap))),
       claim("a value of weight 2^24 + 1, refused before it is hashed", Some(BuiltValues.ofWeight(cap + 1))),
+      // competing refusals: the claim is checked before the root is read, so a 31-byte root does not answer first
+      Case(
+        "trie verify: a claim over the cap with a 31-byte root: the claim is refused first",
+        "trie-verify",
+        List(
+          "mode" -> Json.obj("fixed" -> 1.asJson),
+          "root" -> hex(t.root.bytes.take(31)),
+          "key"  -> hex(ByteVector(0x01)),
+          input(literal(proof)),
+          "claim" -> BuiltValues.json(BuiltValues.ofWeight(cap + 1))
+        )
+      ),
+      claim("a value within the cap with a 31-byte root", None).copy(
+        name = "trie verify: a 31-byte root, with no claim to refuse first",
+        fields = List(
+          "mode" -> Json.obj("fixed" -> 1.asJson),
+          "root" -> hex(t.root.bytes.take(31)),
+          "key"  -> hex(ByteVector(0x01)),
+          input(literal(proof))
+        )
+      ),
       listing("two values of 2^23, together 2^24", cap / 2, cap / 2),
       listing("values of 2^23 and 2^23 + 1, each under the cap, together over it", cap / 2, cap / 2 + 1)
     )

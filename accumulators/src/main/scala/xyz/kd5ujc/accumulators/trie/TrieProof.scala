@@ -268,19 +268,23 @@ object TrieProofs {
 
   private def claimHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Digest[H] = T.value(ValueCommitment.bytes(v))
 
-  /** A verified proof, or `None` for one of another trie (`false`). */
-  private def verifiedOrNone[H](mode: KeyMode, root: Digest[H], proof: CanonicalValue)(
+  /** A verified proof, or `None` for one of another trie (`false`); a root of the wrong length is `Encoding`. */
+  private def verifiedOrNone[H](mode: KeyMode, root: ByteVector, proof: CanonicalValue)(
     implicit H: Hasher[H],
     T:          TrieHashing[H]
   ): Either[TrieError, Option[VerifiedProof[H]]] =
-    decode[H](proof).flatMap(verify(mode, root, _) match {
-      case Right(v)                           => Option(v).asRight
-      case Left(TrieError.RootMismatch(_, _)) => None.asRight
-      case Left(other)                        => other.asLeft
-    })
+    for {
+      r <- Digest.fromBytes[H](root).leftMap(e => TrieError.Encoding(s"root: $e"))
+      p <- decode[H](proof)
+      v <- verify(mode, r, p) match {
+        case Right(v)                           => Option(v).asRight
+        case Left(TrieError.RootMismatch(_, _)) => None.asRight
+        case Left(other)                        => other.asLeft
+      }
+    } yield v
 
   /** `trie_verify`: whether `key` holds `claim` (`None` or null: is absent). */
-  def verifyClaim[H](mode: KeyMode, root: Digest[H], key: ByteVector, claim: Option[CanonicalValue], proof: CanonicalValue)(
+  def verifyClaim[H](mode: KeyMode, root: ByteVector, key: ByteVector, claim: Option[CanonicalValue], proof: CanonicalValue)(
     implicit H: Hasher[H],
     T:          TrieHashing[H]
   ): Either[TrieError, Boolean] =
@@ -295,7 +299,7 @@ object TrieProofs {
   /** `trie_prefix_verify`: whether `entries`, in key order, are exactly the trie's entries under `prefix`. */
   def verifyPrefixClaims[H](
     mode:    KeyMode,
-    root:    Digest[H],
+    root:    ByteVector,
     prefix:  ByteVector,
     entries: List[(ByteVector, CanonicalValue)],
     proof:   CanonicalValue

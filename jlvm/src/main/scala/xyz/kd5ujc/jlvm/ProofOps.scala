@@ -103,11 +103,13 @@ object ProofOps {
       case h +: leaf +: proof +: rest =>
         (
           head(op, "head")(h),
-          profile(op, rest),
-          claims(op)(List(leaf)),
-          MerkleCodec.decodeInclusion[H](proof).leftMap(e => crypto(op)(e.toString))
+          profile(op, rest)
         ).tupled.flatMap {
-          case ((root, size), (m, leafBytes), _, p) =>
+          case (hd, pr) =>
+            // in order, each step only after the last succeeds: the proof is not decoded once the claim is refused
+            claims(op)(List(leaf)) >> MerkleCodec.decodeInclusion[H](proof).bimap(e => crypto(op)(e.toString), (hd, pr, _))
+        }.flatMap {
+          case ((root, size), (m, leafBytes), p) =>
             // the size comes from the trusted head: a smaller tree's root can satisfy a proof claiming a larger size
             leafBytes(leaf).flatMap(d =>
               if (p.size != size) False.asRight else outcome(op)(MerkleVerifier.inclusion(root, m.leaf(d), p)(using m))
@@ -168,10 +170,16 @@ object ProofOps {
     args match {
       case Vector(md, root, key, value, proof) =>
         mode(op)(md)
-          .flatMap(m => (path(op, m)(key), claims(op)(List(value).filter(_ != CNull)), verified(op, m, root, proof)).tupled)
+          .flatMap(m =>
+            for {
+              p <- path(op, m)(key)
+              _ <- claims(op)(List(value).filter(_ != CNull))
+              v <- verified(op, m, root, proof)
+            } yield (p, v)
+          )
           .flatMap {
-            case (_, _, scala.None) => False.asRight
-            case (p, _, scala.Some(v)) =>
+            case (_, scala.None) => False.asRight
+            case (p, scala.Some(v)) =>
               v.holds(p, Option.when(value != CNull)(valueHash(value))).bimap(e => crypto(op)(e.toString), Values.bool)
           }
       case _ => JlvmError.Arity(op.wire, "takes [mode, root, key, value, proof]").asLeft
@@ -196,7 +204,11 @@ object ProofOps {
     args match {
       case Vector(md, root, prefix, es, proof) =>
         mode(op)(md).flatMap { m =>
-          (bytes(op, "a prefix")(prefix), entries(op, m)(es), verified(op, m, root, proof)).tupled.flatMap {
+          (for {
+            pre     <- bytes(op, "a prefix")(prefix)
+            claimed <- entries(op, m)(es)
+            v       <- verified(op, m, root, proof)
+          } yield (pre, claimed, v)).flatMap {
             case (_, _, scala.None)            => False.asRight
             case (pre, claimed, scala.Some(v)) => listing(op)(v.listsPrefix(pre.bits, claimed))
           }
@@ -212,7 +224,12 @@ object ProofOps {
           case other => bytes(op, "until")(other).map(b => Option(b.bits))
         }
         mode(op)(md).flatMap { m =>
-          (bytes(op, "from")(from), upper, entries(op, m)(es), verified(op, m, root, proof)).tupled.flatMap {
+          (for {
+            lo      <- bytes(op, "from")(from)
+            hi      <- upper
+            claimed <- entries(op, m)(es)
+            v       <- verified(op, m, root, proof)
+          } yield (lo, hi, claimed, v)).flatMap {
             case (_, _, _, scala.None)            => False.asRight
             case (lo, hi, claimed, scala.Some(v)) => listing(op)(v.listsRange(lo.bits, hi, claimed))
           }

@@ -54,8 +54,8 @@ pub fn trie_verify<H: Hasher>(
     proof: &Value,
 ) -> Result<bool, TrieError> {
     let path = mode.path(key)?;
-    let r = root::<H>(root_bytes)?;
     within((*value != Value::Null).then(|| value.weight()))?;
+    let r = root::<H>(root_bytes)?;
     let p = TrieProof::<H>::from_value(proof)?;
     let Some(v) = p.verify(hashing, mode, &r)? else { return Ok(false) };
     match v.lookup_bits(&path) {
@@ -75,8 +75,8 @@ pub fn trie_prefix_verify<H: Hasher>(
     entries: &[(&[u8], &Value)],
     proof: &Value,
 ) -> Result<bool, TrieError> {
-    let r = root::<H>(root_bytes)?;
     let claimed = claimed(hashing, mode, entries)?;
+    let r = root::<H>(root_bytes)?;
     let p = TrieProof::<H>::from_value(proof)?;
     let Some(v) = p.verify(hashing, mode, &r)? else { return Ok(false) };
     listing(v.lists_prefix(prefix, &claimed))
@@ -93,8 +93,8 @@ pub fn trie_range_verify<H: Hasher>(
     entries: &[(&[u8], &Value)],
     proof: &Value,
 ) -> Result<bool, TrieError> {
-    let r = root::<H>(root_bytes)?;
     let claimed = claimed(hashing, mode, entries)?;
+    let r = root::<H>(root_bytes)?;
     let p = TrieProof::<H>::from_value(proof)?;
     let Some(v) = p.verify(hashing, mode, &r)? else { return Ok(false) };
     listing(v.lists_range(from, until, &claimed))
