@@ -2,6 +2,8 @@ package xyz.kd5ujc.accumulators.versioned
 
 import cats.syntax.all._
 
+import scala.collection.immutable.{TreeMap, TreeSet}
+
 import xyz.kd5ujc.accumulators.trie.{Trie, TrieHashing}
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
 import xyz.kd5ujc.core.canonical.CanonicalValue.CNull
@@ -12,12 +14,16 @@ import xyz.kd5ujc.core.hash.Digest
  * A replica of a versioned trie, kept in memory and checked locally (docs/specs/versioned-trie.md §7). It starts empty or
  * from a snapshot verified against a head the caller already trusts, and follows deltas, recomputing both tries, so a
  * forged root, a dropped write or a gap is caught by the replica itself rather than taken from the producer.
+ *
+ * Both tries are updated in place of a rebuild: a delta re-hashes only the paths of the keys it changes, O(changed keys
+ * x key length), whatever the state's size. The values are a `TreeMap` in [[Replica.keyOrder]]: a peer's key is only
+ * ever compared, never hashed (`StateKey`'s hash code is its string's, which is trivially collidable).
  */
 final case class Replica[V, H] private (
   head:    Option[Head[V, H]],
   state:   Trie[H],
   history: Trie[H],
-  values:  Map[StateKey, CanonicalValue]
+  values:  TreeMap[StateKey, CanonicalValue]
 ) {
   def root(implicit V: VersionKey[V], T: TrieHashing[H]): Either[VersionedTrieError, Option[Digest[H]]] =
     head.traverse(VersionedTrie.root(_))
@@ -28,9 +34,20 @@ object Replica {
   private def mismatch(component: String, expected: Digest[?], computed: Digest[?]): VersionedTrieError =
     VersionedTrieError.RootMismatch(component, expected.hex, computed.hex)
 
-  def empty[V: VersionKey, H: TrieHashing]: Either[VersionedTrieError, Replica[V, H]] =
+  /**
+   * The order of a replica's values: string order, which for the key grammar's ASCII alphabet is byte order, the trie's.
+   * A comparison reads the keys only up to their first difference, and allocates nothing.
+   */
+  val keyOrder: Ordering[StateKey] = new Ordering[StateKey] {
+    def compare(a: StateKey, b: StateKey): Int = a.value.compareTo(b.value)
+  }
+
+  def empty[V: VersionKey, H: TrieHashing]: Either[VersionedTrieError, Replica[V, H]] = emptyIn[V, H](keyOrder)
+
+  /** [[empty]] with its values in `order`: the seam through which a test counts the comparisons a replica makes. */
+  private[versioned] def emptyIn[V: VersionKey, H: TrieHashing](order: Ordering[StateKey]): Either[VersionedTrieError, Replica[V, H]] =
     (VersionedTrie.stateMode, VersionedTrie.historyMode[V]).mapN((s, h) =>
-      Replica[V, H](None, Trie.empty[H](s), Trie.empty[H](h), Map.empty)
+      Replica[V, H](None, Trie.empty[H](s), Trie.empty[H](h), TreeMap.empty[StateKey, CanonicalValue](using order))
     )
 
   /**
@@ -41,22 +58,28 @@ object Replica {
   def fromSnapshot[V, H](
     trusted:  Head[V, H],
     snapshot: Snapshot[V, H]
+  )(implicit V: VersionKey[V], T: TrieHashing[H]): Either[VersionedTrieError, Replica[V, H]] = fromSnapshotIn(trusted, snapshot, keyOrder)
+
+  /** [[fromSnapshot]] with its values in `order` (see [[emptyIn]]). */
+  private[versioned] def fromSnapshotIn[V, H](
+    trusted:  Head[V, H],
+    snapshot: Snapshot[V, H],
+    order:    Ordering[StateKey]
   )(implicit V: VersionKey[V], T: TrieHashing[H]): Either[VersionedTrieError, Replica[V, H]] =
     for {
       modes <- (VersionedTrie.stateMode, VersionedTrie.historyMode[V]).tupled
       // every structural check of the incremental reader: order, sizes, no nulls, the history ending at the head
       checked <- Snapshot.read(trusted, Snapshot.chunks(snapshot.copy(head = trusted)))
       keys    <- checked.history.traverse { case (u, _) => V.encode(u) }
-      values = checked.entries.toMap
       state <- VersionedTrie.trie(
-        Trie.fromEntries[H](modes._1, snapshot.entries.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v) })
-      )
-      history <- VersionedTrie.trie(
-        Trie.fromEntries[H](modes._2, keys.zip(snapshot.history).map { case (k, (_, s)) => k -> VersionedTrie.bytesHash[H](s.bytes) })
+        Trie.fromEntries[H](modes._1, checked.entries.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v) })
       )
       _ <- Either.cond(state.root == trusted.stateRoot, (), mismatch("state", trusted.stateRoot, state.root))
+      history <- VersionedTrie.trie(
+        Trie.fromEntries[H](modes._2, keys.zip(checked.history).map { case (k, (_, s)) => k -> VersionedTrie.bytesHash[H](s.bytes) })
+      )
       _ <- Either.cond(history.root == trusted.historyRoot, (), mismatch("history", trusted.historyRoot, history.root))
-    } yield Replica(Some(trusted), state, history, values)
+    } yield Replica(Some(trusted), state, history, TreeMap.from(checked.entries)(using order))
 
   /**
    * The replica after `delta`, which must chain from its head and whose claimed head must be what the replica
@@ -66,7 +89,7 @@ object Replica {
     r:     Replica[V, H],
     delta: Delta[V, H]
   )(implicit V: VersionKey[V], T: TrieHashing[H]): Either[VersionedTrieError, Replica[V, H]] = {
-    val written = delta.upserts.map(_._1).toSet
+    val written = TreeSet.from(delta.upserts.map(_._1))(using r.values.ordering)
     for {
       parent  <- r.head.traverse(VersionedTrie.root(_))
       claimed <- delta.parent.traverse(VersionedTrie.root(_))
