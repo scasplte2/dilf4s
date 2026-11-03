@@ -67,7 +67,8 @@ final class Trie[H] private (
     keys.traverse(mode.path).flatMap { keyPaths =>
       val queries = keyPaths.map(TrieProofs.Key.apply) ++ prefixes.map(p => TrieProofs.Prefix(p.bits)) ++
         ranges.map { case (f, u) => TrieProofs.Range(f.bits, u.map(_.bits)) }
-      TrieProofs.prove[Result, H](node, rootHash, queries)
+      // a proof no verifier would decode (over ProofInput.MaxProofWeight) is refused here, as TooLarge
+      TrieProofs.prove[Result, H](node, rootHash, queries).flatTap(TrieProofs.encode(_))
     }
 
   /** Every entry in key order. */

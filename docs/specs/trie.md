@@ -68,7 +68,8 @@ Empty                                          -- only as the whole proof of an 
 children and value), the pre-order structure, and no trailing records. `Empty` exists only as the whole proof, the
 empty array, so it cannot appear below the top. A proof heavier than `MaxProofWeight` (2^24) is `Encoding`, refused
 before it is decoded (`conformance.md` §5). Claimed values (a value, a listing's values) heavier than `MaxProofWeight`
-together are `TooLarge`, refused before any is hashed and before the proof is decoded.
+together are `TooLarge`, refused before any is hashed and before the proof is decoded. No producer emits a proof
+heavier than `MaxProofWeight`: proving or encoding one is `TooLarge`.
 
 **Verification against `root`** takes the mode:
 1. Recompute the partial trie's hash: a stub contributes its hash, and other nodes hash per §3. The result must equal `root`; otherwise it is `RootMismatch`, a well-formed proof of another trie.

@@ -323,7 +323,9 @@ export class TrieProof {
       }
     }
     const v = models.trie.TrieProof.encode(out);
-    return v.ok ? v : encoding(v.error.kind);
+    if (!v.ok) return encoding(v.error.kind);
+    // a proof every verifier would refuse is never emitted
+    return v.value.weight <= MAX_PROOF_WEIGHT ? v : err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
   }
 }
 

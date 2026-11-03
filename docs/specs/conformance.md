@@ -35,7 +35,7 @@ them. Every other field is informative. The normative fields are:
 | versioned trie | `TooLarge` | `limit`: `MaxValueBytes` (2^20) or `MaxChunkBytes` (2^22) in bytes, or `MaxProofWeight` (2^24) in weight, for a delta or proof the store would produce (§5) |
 | versioned trie | `TooDeep` | `depth` (the value's depth) and `limit`: `MaxValueDepth` (253) |
 | versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` |
-| Merkle tree, trie | `TooLarge` | `limit`: `MaxProofWeight` (2^24), for claims (§5) |
+| Merkle tree, trie | `TooLarge` | `limit`: `MaxProofWeight` (2^24), for claims (§5) or a trie proof a producer would emit |
 | Poseidon tree | `Position` | `depth`: the number of siblings (or the tree's depth); the position itself echoes the caller's input and is informative |
 | every other kind | | none: the kind alone |
 
@@ -92,6 +92,10 @@ summed, so many entries sharing one heavy value are refused as a whole. In the b
 entry's shape are checked first, then the claims, then the proof. A Merkle leaf given as raw bytes (RFC 6962) weighs one
 more than its length. The versioned trie's `holds` already answers `false` in O(1) for a claim no commit accepts (over
 1 MiB), which is stricter.
+
+What a verifier refuses, no producer emits. A trie proof heavier than `MaxProofWeight` is `TooLarge` where it would be
+emitted: `Trie.prove` and `TrieProofs.encode` in Scala, `TrieProof::to_value` in Rust and `TrieProof.encode` in
+TypeScript. The versioned trie's store does the same for its proofs and deltas (above).
 
 ## 6. Vectors
 

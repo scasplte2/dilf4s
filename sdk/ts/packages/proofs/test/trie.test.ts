@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { BytesValue, models, toHex, Value, type Result } from "@kd5ujc/dilf4s-core";
 
-import { trie } from "../src/index.js";
+import { MAX_PROOF_WEIGHT, trie } from "../src/index.js";
 import { bytes, expectErr, expectOk, loadVectors, valueOf } from "./vectors.js";
 
 const vectors = loadVectors("trie_v1.json", models.trieVectors.TrieVectors);
@@ -279,5 +279,14 @@ describe("refusals name a number by its size", () => {
   it("a segment length of any size", () => {
     const e = expectErr(trie.Segment.of(1n << 1_000_000n, new Uint8Array()), "refused");
     expect(e).toMatchObject({ reason: "segment of a 1000001-bit count of bits in 0 bytes" });
+  });
+});
+
+describe("producing proofs", () => {
+  it("a proof over MAX_PROOF_WEIGHT is never emitted: TooLarge at encoding", () => {
+    const leaf = (n: number): trie.TrieProof =>
+      expectOk(trie.TrieProof.fromRecords(T, [{ s: { n: BigInt(n * 8), b: new Uint8Array(n) }, v: new Uint8Array(32) }]), "a one-leaf proof");
+    expect(expectErr(leaf(Number(MAX_PROOF_WEIGHT)).encode(), "over")).toEqual({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
+    expect(expectOk(leaf(1024).encode(), "under").weight <= MAX_PROOF_WEIGHT).toBe(true);
   });
 });

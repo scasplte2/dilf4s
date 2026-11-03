@@ -350,11 +350,15 @@ object TrieProofs {
 
   private def wireSegment(bits: BitVector): W.TrieSegment = W.TrieSegment(bits.size, bits.toByteVector)
 
-  /** Pre-order records through the generated codec of shared/schemas/trie.cddl. */
+  /**
+   * Pre-order records through the generated codec of shared/schemas/trie.cddl. A proof every verifier would refuse is
+   * never emitted: one heavier than `ProofInput.MaxProofWeight` is `TooLarge` (docs/specs/conformance.md §5).
+   */
   def encode[H](proof: TrieProof[H]): Either[TrieError, CanonicalValue] =
     W.TrieProof.codec
       .encode(proof.top.fold(Vector.empty[W.TrieRecord])(t => records(List(t), Nil).toVector))
       .leftMap(e => TrieError.Encoding(e.toString))
+      .flatMap(v => Either.cond(v.weight <= ProofInput.MaxProofWeight, v, TrieError.TooLarge(ProofInput.MaxProofWeight)))
 
   @tailrec
   private def records[H](todo: List[ProofNode[H]], acc: List[W.TrieRecord]): List[W.TrieRecord] =

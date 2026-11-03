@@ -172,8 +172,14 @@ impl<H: Hasher> TrieProof<H> {
     }
 
     /// The canonical `trie-proof` value.
+    /// A proof heavier than [`crate::MAX_PROOF_WEIGHT`], which every verifier would refuse, is never emitted:
+    /// `TooLarge`.
     pub fn to_value(&self) -> Result<Value, TrieError> {
-        TRIE_PROOF.encode(&self.to_records()).map_err(encoding)
+        let v = TRIE_PROOF.encode(&self.to_records()).map_err(encoding)?;
+        if v.weight() > crate::MAX_PROOF_WEIGHT {
+            return Err(TrieError::TooLarge { limit: crate::MAX_PROOF_WEIGHT });
+        }
+        Ok(v)
     }
 
     /// Checks the structure against `mode` (docs/specs/trie.md §4 step 2), then recomputes the root. Every failure is
