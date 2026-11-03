@@ -93,7 +93,8 @@ object FlatBytesSuite extends IOSuite {
       val o = eval(jlvm, prepend, prepending(d))
       // the k-th cat copies the element and the k bytes before it
       val copied = (1L to d.toLong).map(_ + 1).sum
-      expect(d >= 5000, s"the default limit reaches $d elements")
+      // 5,604 on schedule v1: a loose bound, so repricing cat does not fail it
+      expect(d >= 1000, s"the default limit reaches $d elements")
         .and(expect(o.result.exists(isFlat), s"the result is one chunk: ${o.result.map(_.weight)}"))
         .and(expect(o.result.exists(_.weight == d + 2L), s"the result holds every byte: ${o.result.map(_.weight)}"))
         .and(expect(copied <= o.gasUsed.value, s"the cats copied $copied bytes, within the ${o.gasUsed.value} gas paid"))
