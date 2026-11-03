@@ -1,6 +1,6 @@
 package xyz.kd5ujc.accumulators
 
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{ByteSource, CanonicalValue, Cbor}
 
 import scodec.bits.ByteVector
 
@@ -16,9 +16,13 @@ object ValueCommitment {
   val BytesTag: Byte = 0x00
   val CborTag: Byte = 0x01
 
-  def bytes(v: CanonicalValue): ByteVector =
+  /** The commitment, not yet built: hashing it (`MerkleHashing.leafOf`, `TrieHashing.valueOf`) streams it. */
+  def source(v: CanonicalValue): ByteSource =
     v match {
-      case CanonicalValue.CBytes(b) => BytesTag +: b
-      case other                    => CborTag +: Cbor.encode(other)
+      case CanonicalValue.CBytes(b) => ByteSource.byte(BytesTag.toInt) ++ ByteSource.bytes(b)
+      case other                    => ByteSource.byte(CborTag.toInt) ++ Cbor.source(other)
     }
+
+  /** The commitment, built: O(its length) memory. */
+  def bytes(v: CanonicalValue): ByteVector = source(v).toByteVector
 }

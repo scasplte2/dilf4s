@@ -323,7 +323,7 @@ object TrieProofs {
   // ---- the JLVM's trie operations over caller values (docs/specs/jlvm.md §6), as the SDKs' trie_verify and
   // trie_prefix_verify: claims are capped by weight before any is hashed and before the proof is decoded
 
-  private def claimHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Digest[H] = T.value(ValueCommitment.bytes(v))
+  private def claimHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Digest[H] = T.valueOf(ValueCommitment.source(v))
 
   /** A verified proof, or `None` for one of another trie (`false`); a root of the wrong length is `Encoding`. */
   private def verifiedOrNone[H](mode: KeyMode, root: ByteVector, proof: CanonicalValue)(

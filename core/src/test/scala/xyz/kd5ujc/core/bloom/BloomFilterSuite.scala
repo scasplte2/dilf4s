@@ -26,6 +26,14 @@ object BloomFilterSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  test("a value streamed into the hash sets the bits of its buffered encoding") {
+    forall(xyz.kd5ujc.core.canonical.CanonicalGens.value(3)) { v =>
+      val bytes = xyz.kd5ujc.core.canonical.BufferedCbor.encode(v)
+      val f = BloomFilter.empty[Sha256](p)
+      expect.same(Right(f.add(bytes)), f.addValue(v)).and(expect.same(Right(true), f.add(bytes).containsValue(v)))
+    }
+  }
+
   test("each item sets exactly k distinct bits") {
     forall(item)(x => expect.same(p.hashes.toLong, BloomFilter.empty[Sha256](p).add(x).setBits))
   }

@@ -2,7 +2,7 @@ package xyz.kd5ujc.core.hash
 
 import java.nio.charset.StandardCharsets.UTF_8
 
-import xyz.kd5ujc.core.canonical.{Canonical, CanonicalError, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{ByteSource, Canonical, CanonicalError, CanonicalValue, Cbor}
 
 import scodec.bits.ByteVector
 
@@ -29,10 +29,15 @@ object DomainTag {
  */
 final class TaggedHash[H] private (val tag: DomainTag, prefix: ByteVector)(implicit H: Hasher[H]) {
 
+  private val prefixed: ByteSource = ByteSource.bytes(prefix)
+
   def apply(message: ByteVector): Digest[H] = H.digest(prefix ++ message)
 
-  /** Content hash of an already-canonical value. */
-  def value(v: CanonicalValue): Digest[H] = apply(Cbor.encode(v))
+  /** The tagged hash of `message`'s bytes, absorbed as they are written (`Hasher.digestOf`). */
+  def of(message: ByteSource): Digest[H] = H.digestOf(prefixed ++ message)
+
+  /** Content hash of an already-canonical value, its encoding streamed into the hash: never built whole. */
+  def value(v: CanonicalValue): Digest[H] = of(Cbor.source(v))
 
   /** Content hash of typed data: canonicalise, encode deterministically, tagged-hash. */
   def content[A](a: A)(implicit C: Canonical[A]): Either[CanonicalError, Digest[H]] = C.canonical(a).map(value)

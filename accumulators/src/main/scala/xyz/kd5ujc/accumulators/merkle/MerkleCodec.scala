@@ -59,7 +59,7 @@ object MerkleCodec {
       verdict <-
         if (p.size != size) false.asRight
         else
-          MerkleVerifier.inclusion(root, M.leaf(ValueCommitment.bytes(leaf)), p) match {
+          MerkleVerifier.inclusion(root, M.leafOf(ValueCommitment.source(leaf)), p) match {
             case Right(())                                                          => true.asRight
             case Left(MerkleError.InvalidProof(_) | MerkleError.RootMismatch(_, _)) => false.asRight
             case Left(other)                                                        => other.asLeft

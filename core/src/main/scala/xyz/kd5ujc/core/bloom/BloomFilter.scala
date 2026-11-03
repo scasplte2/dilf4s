@@ -9,8 +9,8 @@ package xyz.kd5ujc.core.bloom
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{Canonical, CanonicalError, CanonicalValue, Cbor}
-import xyz.kd5ujc.core.hash.{DomainTag, Hasher, TaggedHash}
+import xyz.kd5ujc.core.canonical.{Canonical, CanonicalError, CanonicalValue}
+import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
 
 import scodec.bits.{BitVector, ByteVector}
 
@@ -48,28 +48,34 @@ object BloomError {
  */
 final case class BloomFilter[H] private (params: BloomParams, bits: BitVector) {
 
-  private def indices(item: ByteVector)(implicit H: Hasher[H]): List[Long] = {
-    val d = BloomFilter.tagged[H].apply(item).bytes
+  private def indices(item: ByteVector)(implicit H: Hasher[H]): List[Long] = indicesOf(BloomFilter.tagged[H].apply(item))
+
+  /** A value's indices: the tagged hash of its canonical encoding, streamed into the hash, as `add(Cbor.encode(v))`. */
+  private def valueIndices(v: CanonicalValue)(implicit H: Hasher[H]): List[Long] = indicesOf(BloomFilter.tagged[H].value(v))
+
+  private def indicesOf(digest: Digest[H]): List[Long] = {
+    val d = digest.bytes
     val h1 = d.take(8).toLong(signed = false)
     val h2 = d.drop(8).take(8).toLong(signed = false) | 1L
     val mask = params.bits.toLong - 1
     (0 until params.hashes).toList.map(i => (h1 + i.toLong * h2) & mask)
   }
 
-  def add(item: ByteVector)(implicit H: Hasher[H]): BloomFilter[H] =
-    copy(bits = indices(item).foldLeft(bits)((b, i) => b.set(i)))
+  def add(item: ByteVector)(implicit H: Hasher[H]): BloomFilter[H] = setAll(indices(item))
+
+  private def setAll(at: List[Long]): BloomFilter[H] = copy(bits = at.foldLeft(bits)((b, i) => b.set(i)))
 
   def addAll(items: Iterable[ByteVector])(implicit H: Hasher[H]): BloomFilter[H] = items.foldLeft(this)(_ `add` _)
 
-  /** Adds a typed value by its canonical encoding. */
+  /** Adds a typed value by its canonical encoding, streamed into the hash: never built whole. */
   def addValue[A: Canonical](value: A)(implicit H: Hasher[H]): Either[CanonicalError, BloomFilter[H]] =
-    Canonical[A].canonical(value).map(v => add(Cbor.encode(v)))
+    Canonical[A].canonical(value).map(v => setAll(valueIndices(v)))
 
   /** `false` means definitely absent; `true` means possibly present. */
   def contains(item: ByteVector)(implicit H: Hasher[H]): Boolean = indices(item).forall(bits.get)
 
   def containsValue[A: Canonical](value: A)(implicit H: Hasher[H]): Either[CanonicalError, Boolean] =
-    Canonical[A].canonical(value).map(v => contains(Cbor.encode(v)))
+    Canonical[A].canonical(value).map(v => valueIndices(v).forall(bits.get))
 
   /** The filter of the union of both item sets. */
   def union(that: BloomFilter[H]): Either[BloomError, BloomFilter[H]] =
