@@ -6,6 +6,8 @@ import cats.effect.Concurrent
 import cats.mtl.Raise
 import cats.syntax.all._
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.accumulators.trie.Node.{Branch, Leaf}
 import xyz.kd5ujc.core.canonical.Cbor
 import xyz.kd5ujc.core.hash.Digest
@@ -92,6 +94,15 @@ object TrieStore {
   def make[F[_]: Concurrent, H: TrieHashing](raw: RawStore[F], name: String, keyMode: KeyMode)(
     implicit RS: Raise[F, StoreError],
     RT:          Raise[F, TrieError]
+  ): F[TrieStore[F, H]] = makeIn[F, H](raw, name, keyMode, Digest.digestOrdering[H])
+
+  /**
+   * [[make]] with every in-memory map of nodes (a stage's plan, its overlay, a commit's created nodes) keyed in `order`:
+   * the seam through which a test counts the comparisons a store makes.
+   */
+  private[trie] def makeIn[F[_]: Concurrent, H: TrieHashing](raw: RawStore[F], name: String, keyMode: KeyMode, order: Ordering[Digest[H]])(
+    implicit RS: Raise[F, StoreError],
+    RT:          Raise[F, TrieError]
   ): F[TrieStore[F, H]] =
     (Namespace(s"$name/node"), Namespace(s"$name/root"), Namespace(s"$name/meta")).tupled.fold(
       RS.raise[StoreError, TrieStore[F, H]],
@@ -102,7 +113,8 @@ object TrieStore {
             keyMode,
             nodeNs.prefix,
             KeyValueStore[F, Long, ByteVector](raw, rootNs),
-            metaNs.prefix ++ ByteVector("state".getBytes(UTF_8))
+            metaNs.prefix ++ ByteVector("state".getBytes(UTF_8)),
+            order
           ): TrieStore[F, H]).pure[F]
       }
     )
@@ -111,13 +123,18 @@ object TrieStore {
   final private case class State(latest: Long, floor: Long, generation: Long, raw: Option[ByteVector])
 
   final private class Impl[F[_]: Concurrent, H](
-    raw:      RawStore[F],
-    val mode: KeyMode,
-    nodeNs:   ByteVector,
-    roots:    KeyValueStore[F, Long, ByteVector],
-    stateKey: ByteVector
+    raw:       RawStore[F],
+    val mode:  KeyMode,
+    nodeNs:    ByteVector,
+    roots:     KeyValueStore[F, Long, ByteVector],
+    stateKey:  ByteVector,
+    nodeOrder: Ordering[Digest[H]]
   )(implicit T: TrieHashing[H], RS: Raise[F, StoreError], RT: Raise[F, TrieError])
       extends TrieStore[F, H] {
+
+    // node digests are a peer's content (a restored snapshot's), so the maps of them are keyed in byte order, never hashed
+    implicit private val order: Ordering[Digest[H]] = nodeOrder
+    private def noNodes: RefCounting.Plan[H] = TreeMap.empty(using order)
 
     private def failS[A](e: StoreError): F[A] = RS.raise[StoreError, A](e)
     private def failT[A](e: TrieError): F[A] = RT.raise[TrieError, A](e)
@@ -262,7 +279,7 @@ object TrieStore {
         if (s.latest != expected.value) failS(StoreError.VersionConflict(expected.value, s.latest))
         else
           rootHash(s.latest).flatMap(current =>
-            stageCommit(List(stateKey -> s.raw), RawBatch.empty, s.latest, s.generation + 1, s.latest, s.floor, current, Map.empty, ops)
+            stageCommit(List(stateKey -> s.raw), RawBatch.empty, s.latest, s.generation + 1, s.latest, s.floor, current, noNodes, ops)
           )
       }
 
@@ -310,7 +327,8 @@ object TrieStore {
         else if (at.value < 1L) failS[Staged[H]](StoreError.UnknownVersion(at.value, 0L))
         else
           roots.encodeBatch(Batch.put(at.value, trie.rootOption.fold(ByteVector.empty)(_.bytes))).map { rootRec =>
-            val plan: RefCounting.Plan[H] = trie.storedNodes.map { case (h, e) => h -> Option(e) }
+            // rebuilt in this store's order: a trie built elsewhere may key its nodes in another
+            val plan: RefCounting.Plan[H] = trie.storedNodes.foldLeft(noNodes) { case (acc, (h, e)) => acc.updated(h, Option(e)) }
             Staged(
               List(stateKey -> None),
               planBatch(plan) ++ rootRec ++ RawBatch.put(stateKey, stateRecord(at.value, at.value, 1L)),
@@ -329,7 +347,7 @@ object TrieStore {
     private def dropVersions(s: State, versions: List[Long], newLatest: Long, newFloor: Long): F[Staged[H]] =
       for {
         released <- versions.traverse(rootHash).map(_.flatten)
-        plan     <- RefCounting.plan[F, H](entry, TrieDelta[H](None, Map.empty), retainNewRoot = false, release = released)
+        plan     <- RefCounting.plan[F, H](entry, TrieDelta[H](None, TreeMap.empty(using order)), retainNewRoot = false, release = released)
         deletes  <- roots.encodeBatch(Batch.deletes(versions))
         top      <- rootHash(newLatest)
       } yield
