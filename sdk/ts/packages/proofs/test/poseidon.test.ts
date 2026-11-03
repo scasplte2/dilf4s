@@ -163,6 +163,20 @@ describe("treeRoot: caller-chosen positions are compared, never hashed", () => {
     expect(expectOk(poseidon.treeRoot(6, [[5n, one], [5n, poseidon.Fr.zero]]), "emptied").equals(expectOk(poseidon.zeroHashes(6), "zeros")[6] ?? one)).toBe(true);
     expect(expectErr(poseidon.treeRoot(6, [[5n, one], [64n, one]]), "out of range")).toEqual({ kind: "Position", position: 64n, depth: 6 });
   });
+
+  it("an iterable that yields one tuple again with new contents builds the tree of what it yielded", () => {
+    const one = fr(1n);
+    const two = fr(2n);
+    function* reused(): Generator<readonly [bigint, poseidon.Fr]> {
+      const entry: [bigint, poseidon.Fr] = [0n, one];
+      yield entry;
+      entry[0] = 1n;
+      entry[1] = two;
+      yield entry;
+    }
+    const expected = expectOk(poseidon.treeRoot(2, [[0n, one], [1n, two]]), "independent entries");
+    expect(expectOk(poseidon.treeRoot(2, reused()), "reused tuple").equals(expected)).toBe(true);
+  });
 });
 
 describe("PoseidonMerkleProof.of: the depth is checked before any work in it", () => {

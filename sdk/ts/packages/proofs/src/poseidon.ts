@@ -209,10 +209,10 @@ export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, Po
   if (!zeros.ok) return zeros;
   const capacity = 1n << BigInt(depth);
   const entries: Placed[] = [];
-  for (const entry of leaves) {
-    const p = entry[0];
+  // each entry is copied as it is read: an iterable may yield one tuple again with new contents
+  for (const [p, leaf] of leaves) {
     if (p < 0n || p >= capacity) return err({ kind: "Position", position: p, depth });
-    entries.push(entry);
+    entries.push([p, leaf]);
   }
   // the sort is stable, so the last of a position's run of entries is its latest
   entries.sort(byPosition);
