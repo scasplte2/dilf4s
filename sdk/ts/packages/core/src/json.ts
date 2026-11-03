@@ -198,8 +198,8 @@ class Parser {
     if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", source: described, scale });
     const unscaled = BigInt(intDigits + fracDigits) * (negative ? -1n : 1n);
     // a decimal's denominator is 10^scale: reduced by its primes 2 and 5 alone, never by a general gcd
-    const value = scale >= 0n ? RationalValue.decimal(unscaled, Number(scale)) : IntValue.of(unscaled * 10n ** -scale);
-    return ok({ value, end });
+    const value = scale >= 0n ? RationalValue.decimal(unscaled, Number(scale)) : ok(IntValue.of(unscaled * 10n ** -scale));
+    return value.ok ? ok({ value: value.value, end }) : value;
   }
 
   /** A JSON string from its opening quote; escapes may produce unpaired surrogates, which the caller rejects. */

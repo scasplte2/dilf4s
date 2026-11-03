@@ -1,4 +1,5 @@
 /** The dilf4s deterministic CBOR profile (docs/specs/canonical-encoding.md section 2). */
+import { bitLength } from "./bigint.js";
 import { byteLimit, Meter, tooLarge } from "./budget.js";
 import type { CanonicalError, TooLarge } from "./error.js";
 import { toHex } from "./hex.js";
@@ -13,6 +14,7 @@ import {
   IntValue,
   MapValue,
   MAX_DEPTH,
+  MAX_RATIONAL_BITS,
   NullValue,
   RationalValue,
   TextValue,
@@ -20,6 +22,8 @@ import {
   type Entry,
   type Value,
 } from "./value.js";
+
+export { MAX_RATIONAL_BITS } from "./value.js";
 
 const TAG_POSITIVE_BIGNUM = 2n;
 const TAG_NEGATIVE_BIGNUM = 3n;
@@ -464,17 +468,30 @@ class Decoder {
     return err(nonCanonical(pos, "expected an integer"));
   }
 
+  /**
+   * In order: the pair, the numerator and its width, the denominator and its width, the denominator's range, and last
+   * the one gcd that checks lowest terms (docs/specs/conformance.md section 5).
+   */
   private readRational(pos: number, end: number): Result<{ readonly value: Value; readonly end: number }, CanonicalError> {
     const pair = this.readHead(end);
     if (!pair.ok) return pair;
     if (pair.value.major !== 4 || pair.value.argument !== 2n) return err(nonCanonical(pos, "rational must wrap a 2-element array"));
-    const num = this.readInteger(pair.value.end);
+    const num = this.readPart(pair.value.end);
     if (!num.ok) return num;
-    const den = this.readInteger(num.value.end);
+    const den = this.readPart(num.value.end);
     if (!den.ok) return den;
     if (den.value.value < 2n) return err(nonCanonical(pos, "rational denominator must be >= 2"));
     const r = RationalValue.of(num.value.value, den.value.value);
     return r === undefined ? err(nonCanonical(pos, "rational must be reduced")) : ok({ value: r, end: den.value.end });
+  }
+
+  /**
+   * A rational's numerator or denominator, refused when wider than {@link MAX_RATIONAL_BITS}: before any gcd, so a wide
+   * part costs no more than reading it.
+   */
+  private readPart(pos: number): Result<{ readonly value: bigint; readonly end: number }, CanonicalError> {
+    const n = this.readInteger(pos);
+    return n.ok && bitLength(n.value.value) > MAX_RATIONAL_BITS ? err({ kind: "RationalTooWide", limit: MAX_RATIONAL_BITS }) : n;
   }
 
   /** `len` bytes from `pos`, and the offset after them. */

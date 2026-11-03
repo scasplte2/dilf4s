@@ -37,6 +37,7 @@ export {
   IntValue,
   MapValue,
   MAX_DEPTH,
+  MAX_RATIONAL_BITS,
   MAX_WEIGHT,
   NullValue,
   RationalValue,

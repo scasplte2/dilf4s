@@ -7,6 +7,8 @@ export type CanonicalError =
   | { readonly kind: "UnpairedSurrogate" }
   /** A map or JSON object with the same key twice. */
   | { readonly kind: "DuplicateKey"; readonly key: string }
+  /** A rational whose numerator or denominator is wider than `MAX_RATIONAL_BITS`, the data model's bound. */
+  | { readonly kind: "RationalTooWide"; readonly limit: number }
   /** JSON text that is not RFC 8259 syntax; `offset` counts UTF-16 code units. */
   | { readonly kind: "JsonSyntax"; readonly offset: number; readonly reason: string }
   /** A JSON number that is malformed, or outside the digit or scale bound. */

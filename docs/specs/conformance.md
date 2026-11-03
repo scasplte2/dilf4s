@@ -37,6 +37,7 @@ them. Every other field is informative. The normative fields are:
 | versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` |
 | Merkle tree, trie | `TooLarge` | `limit`: `MaxProofWeight` (2^24), for claims (§5) or a trie proof a producer would emit |
 | Poseidon tree | `Position` | `depth`: the number of siblings (or the tree's depth); the position itself echoes the caller's input and is informative |
+| canonical value | `RationalTooWide` | `limit`: `MaxRationalBits` (33220), for a rational part wider than it, from any producer (`canonical-encoding.md` §1); the part's width is not reported |
 | every other kind | | none: the kind alone |
 
 A field is normative only when every implementation can produce it exactly at no more cost than the refusal itself:
@@ -63,6 +64,10 @@ A refusal costs no more than the spec says, whatever the input:
   lengths of the prefix or bounds and of the claimed keys (`trie.md` §4). They never rebuild each key from the top, never
   compare it with a bound from bit 0, and never build the listing to compare it. So their answer and their refusal
   cost no more than the weight their operands are charged by.
+- **Rationals.** Decoding a CBOR rational (`canonical-encoding.md` §2) runs at most one gcd, and only of a numerator and
+  denominator each at most `MaxRationalBits` (33220) wide: a wider part is refused as `RationalTooWide` as soon as it
+  is read, before the other part is read and before any gcd. A gcd is superlinear in its operands; with the bound, the
+  work of decoding is linear in the input (at most one gcd of bounded operands per 8 KiB of rational).
 
 ## 5. Verifier input weight
 
@@ -104,8 +109,12 @@ checked whole (any shape fault is the family's malformed kind, `Encoding` or `Ma
 read); then each field's **meaning**, in this order: a Merkle proof's path digests before its index and sizes; a trie
 proof's records in order, its structure before its root (`InvalidProof` before `RootMismatch`); a Merkle path's length
 before its root; a Poseidon proof's siblings before its position; the versioned trie's records in the order
-`versioned-trie.md` §5 gives. The refusal vectors pin each pair of faults that would otherwise answer differently,
-shape against meaning as well as meaning against meaning.
+`versioned-trie.md` §5 gives. Within canonical CBOR, a rational's faults come in the order `canonical-encoding.md` §2
+gives: its pair, its numerator then the numerator's width, its denominator then the denominator's width, the
+denominator's range, and lowest terms last (so a part too wide is `RationalTooWide` even when the denominator is below 2
+or the rational is not in lowest terms; `canonical_encoding_v1.json`'s `cborRejections` pin each pair). The refusal
+vectors pin each pair of faults that would otherwise answer differently, shape against meaning as well as meaning
+against meaning.
 
 What a verifier refuses, no producer emits. A trie proof heavier than `MaxProofWeight` is `TooLarge` where it would be
 emitted: `Trie.prove` and `TrieProofs.encode` in Scala, `TrieProof::to_value` in Rust and `TrieProof.encode` in
@@ -154,8 +163,8 @@ loading and evolution (`Exhausted`, `InconsistentKey`) are checked natively only
 (`crypto-error-kind`, `key-error-kind`, `vrf-result`, `kes-outcome`, `sigma-outcome`, `zk-error`), so each SDK's
 generated model is a closed type: a vector naming a kind the schema does not list does not load.
 
-**Limits.** Every limit the specs state (`MaxValueBytes`, `MaxChunkBytes`, `MaxProofWeight`, the depth, digit, key,
-chunk, sigma, KES and JLVM limits) is defined once, in `shared/schemas/limits.cddl`, and generated into each SDK
+**Limits.** Every limit the specs state (`MaxValueBytes`, `MaxChunkBytes`, `MaxProofWeight`, the depth, digit, rational,
+key, chunk, sigma, KES and JLVM limits) is defined once, in `shared/schemas/limits.cddl`, and generated into each SDK
 (`xyz.kd5ujc.models.limits`, `dilf4s_core::generated::limits`, `models.limits`); every implementation reads it from
 there. A limit the specs derive from others is stated there as its spec states it, and the reference's `LimitsSuite`
 checks the derivation.

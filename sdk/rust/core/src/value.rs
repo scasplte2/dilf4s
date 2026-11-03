@@ -1,6 +1,7 @@
 //! The canonical data model (docs/specs/canonical-encoding.md section 1).
 //!
-//! Every invariant is held by a type: [`Rational`] is reduced and never an integer, [`Map`] has unique keys in
+//! Every invariant is held by a type: [`Rational`] is reduced, never an integer and no wider than
+//! [`MAX_RATIONAL_BITS`], [`Map`] has unique keys in
 //! canonical order and no null values, and [`Array`] and [`Map`] never nest deeper than [`MAX_DEPTH`]. Their fields
 //! are private, so every constructible [`Value`] has exactly one encoding and decodes back to itself.
 //!
@@ -59,6 +60,14 @@ pub use map::{Entries, Map, MapShape};
 /// tree height (under 92, see [`Map`]); dropping releases parts from an explicit worklist; and [`fmt::Debug`], which
 /// recurses through the formatter, stops at [`DEBUG_DEPTH`] levels.
 pub const MAX_DEPTH: usize = crate::generated::limits::as_usize::CANONICAL_MAX_DEPTH;
+
+/// The widest numerator or denominator a [`Rational`] has, in Java `bitLength` bits (docs/specs/canonical-encoding.md
+/// section 1): the width of `10^10000`, so every rational a JSON decimal reads to fits, and far past every JLVM number
+/// (4096 bits). Checking lowest terms takes a gcd, superlinear in its operands, so a decoder refuses a wider part
+/// before any gcd: a rational's decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and
+/// stays linear in its input. Every constructor refuses a wider rational too, so no value is built that no decoder
+/// accepts.
+pub const MAX_RATIONAL_BITS: u64 = crate::generated::limits::CANONICAL_MAX_RATIONAL_BITS;
 
 /// The greatest [`Value::weight`]: weights saturate here (the Scala reference's `Long.MaxValue`), never wrap.
 pub const MAX_WEIGHT: u64 = crate::generated::limits::CANONICAL_MAX_WEIGHT;
@@ -153,17 +162,20 @@ impl Value {
         Self::Bytes(b.into())
     }
 
-    /// `unscaled / 10^scale`, reduced with only the primes 2 and 5 (a JSON decimal's denominator has no others).
-    pub(crate) fn decimal(unscaled: &BigInt, scale: usize) -> Self {
+    /// `unscaled / 10^scale`, reduced with only the primes 2 and 5 (a JSON decimal's denominator has no others), or
+    /// [`CanonicalError::RationalTooWide`] for a rational wider than [`MAX_RATIONAL_BITS`] (which JSON's digit and
+    /// scale bounds never reach).
+    pub(crate) fn decimal(unscaled: &BigInt, scale: usize) -> Result<Self, CanonicalError> {
         match Rational::reduce_decimal(unscaled, scale) {
-            Reduced::Integer(n) => Self::int(n),
-            Reduced::Fraction(r) => Self::Rational(r),
+            Some(Reduced::Integer(n)) => Ok(Self::int(n)),
+            Some(Reduced::Fraction(r)) => Ok(Self::Rational(r)),
+            None => Err(CanonicalError::RationalTooWide { limit: MAX_RATIONAL_BITS }),
         }
     }
 
     /// The number `numerator / denominator` in the single numeric domain: an integer when it is one, otherwise a
-    /// reduced [`Rational`].
-    pub fn number(numerator: &BigInt, denominator: &BigInt) -> Result<Self, DivisionByZero> {
+    /// reduced [`Rational`], refused when its numerator or denominator is wider than [`MAX_RATIONAL_BITS`].
+    pub fn number(numerator: &BigInt, denominator: &BigInt) -> Result<Self, NumberError> {
         Rational::reduce(numerator, denominator).map(|r| match r {
             Reduced::Integer(n) => Self::int(n),
             Reduced::Fraction(r) => Self::Rational(r),
@@ -482,19 +494,33 @@ impl fmt::Display for Int {
     }
 }
 
-/// A zero denominator.
+/// Why [`Value::number`] has no value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct DivisionByZero;
+pub enum NumberError {
+    /// A zero denominator.
+    DivisionByZero,
+    /// A rational, in lowest terms, whose numerator or denominator is wider than [`MAX_RATIONAL_BITS`].
+    RationalTooWide,
+}
 
-impl fmt::Display for DivisionByZero {
+impl fmt::Display for NumberError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("division by zero")
+        match self {
+            Self::DivisionByZero => f.write_str("division by zero"),
+            Self::RationalTooWide => write!(f, "a rational part wider than {MAX_RATIONAL_BITS} bits"),
+        }
     }
 }
 
-impl core::error::Error for DivisionByZero {}
+impl core::error::Error for NumberError {}
 
-/// A rational `n/d` with `d >= 2` and `gcd(|n|, d) = 1`: never an integer. Shared: clones in O(1).
+/// The parts of a rational are within [`MAX_RATIONAL_BITS`].
+fn within_rational_bits(numerator: &BigInt, denominator: &BigInt) -> bool {
+    bit_length(numerator) <= MAX_RATIONAL_BITS && bit_length(denominator) <= MAX_RATIONAL_BITS
+}
+
+/// A rational `n/d` with `d >= 2`, `gcd(|n|, d) = 1` and both within [`MAX_RATIONAL_BITS`]: never an integer. Shared:
+/// clones in O(1).
 #[derive(Clone, PartialEq, Eq)]
 pub struct Rational(Arc<RationalParts>);
 
@@ -526,27 +552,34 @@ pub(crate) enum Reduced {
 }
 
 impl Rational {
-    /// The only way to build one: callers have checked the invariants.
-    fn checked(numerator: BigInt, denominator: BigInt) -> Self {
+    /// The only way to build one: callers have checked that it is reduced and not an integer, and it checks the width
+    /// itself, so no wider rational exists.
+    fn checked(numerator: BigInt, denominator: BigInt) -> Option<Self> {
         let (numerator_bits, denominator_bits) = (bit_length(&numerator), bit_length(&denominator));
+        let within = numerator_bits <= MAX_RATIONAL_BITS && denominator_bits <= MAX_RATIONAL_BITS;
         let weight = add_weight(add_weight(2, numerator_bits / 64), denominator_bits / 64);
-        Self(Arc::new(RationalParts { numerator, denominator, numerator_bits, denominator_bits, weight }))
+        within
+            .then(|| Self(Arc::new(RationalParts { numerator, denominator, numerator_bits, denominator_bits, weight })))
     }
 
-    /// `n/d` exactly as given, if it already satisfies the invariants (as a decoder must check).
+    /// `n/d` exactly as given, if it already satisfies the invariants (as a decoder must check): `d >= 2`, both within
+    /// [`MAX_RATIONAL_BITS`] (checked first, so a wide one runs no gcd), and in lowest terms.
     pub fn new(numerator: BigInt, denominator: BigInt) -> Option<Self> {
-        let valid = denominator > BigInt::one() && numerator.gcd(&denominator).is_one();
-        valid.then(|| Self::checked(numerator, denominator))
+        let valid = denominator > BigInt::one()
+            && within_rational_bits(&numerator, &denominator)
+            && numerator.gcd(&denominator).is_one();
+        valid.then(|| Self::checked(numerator, denominator)).flatten()
     }
 
     /// `unscaled / 10^scale` in lowest terms. `10^scale`'s only primes are 2 and 5, so the common factor is
     /// `2^min(v2, scale) 5^min(v5, scale)`: the twos go in one shift, and the fives by trial division by `5^(2^i)` from
     /// the largest `2^i <= scale` down, which builds `min(v5, scale)` bit by bit (about 14 divisions for a scale of
     /// 10000). The same result as [`Rational::reduce`] against `10^scale`, without its general gcd.
-    pub(crate) fn reduce_decimal(unscaled: &BigInt, scale: usize) -> Reduced {
+    /// `None` for a rational wider than [`MAX_RATIONAL_BITS`].
+    pub(crate) fn reduce_decimal(unscaled: &BigInt, scale: usize) -> Option<Reduced> {
         let magnitude = unscaled.magnitude();
         if magnitude.is_zero() {
-            return Reduced::Integer(BigInt::zero());
+            return Some(Reduced::Integer(BigInt::zero()));
         }
         let twos = magnitude.trailing_zeros().map_or(0, |t| usize::try_from(t).unwrap_or(usize::MAX)).min(scale);
         let (rest, fives) = strip_fives(magnitude >> twos, scale);
@@ -555,22 +588,26 @@ impl Rational {
             num_traits::pow(BigUint::from(5u8), scale.saturating_sub(fives)) << scale.saturating_sub(twos),
         );
         if denominator.is_one() {
-            Reduced::Integer(numerator)
+            Some(Reduced::Integer(numerator))
         } else {
-            Reduced::Fraction(Self::checked(numerator, denominator))
+            Self::checked(numerator, denominator).map(Reduced::Fraction)
         }
     }
 
-    pub(crate) fn reduce(numerator: &BigInt, denominator: &BigInt) -> Result<Reduced, DivisionByZero> {
+    pub(crate) fn reduce(numerator: &BigInt, denominator: &BigInt) -> Result<Reduced, NumberError> {
         if denominator.is_zero() {
-            return Err(DivisionByZero);
+            return Err(NumberError::DivisionByZero);
         }
         let g = numerator.gcd(denominator);
         let sign = if denominator.is_negative() { -BigInt::one() } else { BigInt::one() };
         // g >= 1 here: the denominator is non-zero, so the divisions are exact and cannot fail
         let n = numerator.div_floor(&g) * &sign;
         let d = denominator.div_floor(&g) * sign;
-        Ok(if d.is_one() { Reduced::Integer(n) } else { Reduced::Fraction(Self::checked(n, d)) })
+        if d.is_one() {
+            Ok(Reduced::Integer(n))
+        } else {
+            Self::checked(n, d).map(Reduced::Fraction).ok_or(NumberError::RationalTooWide)
+        }
     }
 
     /// The numerator, carrying the sign.
@@ -1018,8 +1055,9 @@ mod decimal_tests {
             .chain([num_traits::pow(BigInt::from(5u8), 20_000), num_traits::pow(BigInt::from(2u8), 20_000) * 3]);
         for n in numerators {
             for scale in [0usize, 1, 2, 3, 7, 8, 9, 64, 1000, 10_000] {
-                let general = Value::number(&n, &num_traits::pow(ten.clone(), scale)).unwrap();
-                assert_eq!(Value::decimal(&n, scale), general, "{} / 10^{scale}", n.bits());
+                // the same value, or both refused as too wide (5^20000 over a small scale)
+                let general = Value::number(&n, &num_traits::pow(ten.clone(), scale)).ok();
+                assert_eq!(Value::decimal(&n, scale).ok(), general, "{} / 10^{scale}", n.bits());
             }
         }
     }

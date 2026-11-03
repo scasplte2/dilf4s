@@ -836,8 +836,11 @@ impl<'a> Machine<'a> {
         } else if i == 0 {
             self.combine(op, rest, i, &acc)
         } else {
-            let g = self.sized(op, core::slice::from_ref(&acc.to_value()));
-            Step::Charge(g, Then::Accumulate { op, rest, i, acc })
+            // the accumulator was checked against the number bound when it was made, so this is its value
+            match values::num(op, &acc) {
+                Ok(a) => Step::Charge(self.sized(op, core::slice::from_ref(&a)), Then::Accumulate { op, rest, i, acc }),
+                Err(e) => Step::Fail(e),
+            }
         }
     }
 

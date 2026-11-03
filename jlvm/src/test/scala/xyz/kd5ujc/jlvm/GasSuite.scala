@@ -47,7 +47,8 @@ object GasSuite extends SimpleIOSuite {
     import xyz.kd5ujc.core.canonical.CanonicalValue
     import xyz.kd5ujc.numerics.Ratio
     val big = CanonicalValue.CInt(BigInt(1) << 4000)
-    val q = CanonicalValue.number(Ratio.of(BigInt(1) << 1000, (BigInt(1) << 600) + 1).toOption.get)
+    val q =
+      CanonicalValue.number(Ratio.of(BigInt(1) << 1000, (BigInt(1) << 600) + 1).toOption.get).fold(e => sys.error(e.toString), identity)
     expect
       .same(62L * 62, GasSchedule.units(SizeUnit.Limbs2, big))
       .and(expect.same(0L, GasSchedule.units(SizeUnit.RationalLimbs2, big)))

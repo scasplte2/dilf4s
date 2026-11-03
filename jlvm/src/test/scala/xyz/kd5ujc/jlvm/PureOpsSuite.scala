@@ -21,9 +21,10 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
   private def run(op: Op, args: CanonicalValue*): Either[JlvmError, CanonicalValue] =
     PureOps(op, args.toVector, Kernels.Default).getOrElse(Left(JlvmError.Malformed(s"${op.wire} is evaluator-owned")))
 
-  private def t(s:   String): CanonicalValue = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
-  private def i(n:   Long): CanonicalValue = CInt(BigInt(n))
-  private def q(n:   Long, d: Long): CanonicalValue = CanonicalValue.number(Ratio.of(n, d).fold(e => sys.error(e.toString), identity))
+  private def t(s: String): CanonicalValue = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
+  private def i(n: Long): CanonicalValue = CInt(BigInt(n))
+  private def q(n: Long, d: Long): CanonicalValue =
+    CanonicalValue.number(Ratio.of(n, d).fold(e => sys.error(e.toString), identity)).fold(e => sys.error(e.toString), identity)
   private def a(vs:  CanonicalValue*): CanonicalValue = CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)
   private def m(kvs: (String, CanonicalValue)*): CanonicalValue = CanonicalValue.map(kvs).fold(e => sys.error(e.toString), identity)
   private def ok(v:  CanonicalValue): Either[JlvmError, CanonicalValue] = Right(v)
@@ -34,7 +35,10 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
   }
 
   private val number: Gen[CanonicalValue] =
-    Gen.oneOf(CanonicalGens.bigInt.map(CInt(_)), CanonicalGens.ratio.map(CanonicalValue.number))
+    Gen.oneOf(
+      CanonicalGens.bigInt.map(CInt(_)),
+      CanonicalGens.ratio.map(r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity))
+    )
 
   private val evaluatorOwned: Set[Op] = {
     import Op.{Map => MapOp, None => NoneOp, Some => SomeOp, _}
@@ -147,7 +151,7 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
 
   test("rounding: half-even within 1/2, floor <= x < floor + 1, ceil - 1 < x <= ceil") {
     forall(CanonicalGens.ratio) { r =>
-      val v = CanonicalValue.number(r)
+      val v = CanonicalValue.number(r).fold(e => sys.error(e.toString), identity)
       val half = Ratio.of(1, 2).toOption.get
       def n(x: Either[JlvmError, CanonicalValue]): Ratio = x.toOption.flatMap(Values.number).get
       val (rd, fl, ce) = (n(run(Op.Round, v)), n(run(Op.Floor, v)), n(run(Op.Ceil, v)))

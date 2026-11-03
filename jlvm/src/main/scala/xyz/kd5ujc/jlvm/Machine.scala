@@ -338,7 +338,7 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
     if (i >= rest.size) result(Values.num(op, acc))
     else {
       def next(): Step = PureOps.combine(op, acc, rest(i)).fold(Fail(_), accumulate(op, rest, i + 1, _))
-      if (i == 0) next() else Charge(sized(op, Vector(CanonicalValue.number(acc))), () => next())
+      if (i == 0) next() else Values.num(op, acc).fold(Fail(_), a => Charge(sized(op, Vector(a)), () => next()))
     }
 
   // ---- lazy forms

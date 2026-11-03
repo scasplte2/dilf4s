@@ -34,7 +34,7 @@ object CanonicalGens {
     Gen.const(CNull),
     Gen.oneOf(True, False),
     bigInt.map(CInt(_)),
-    ratio.map(CanonicalValue.number),
+    ratio.map(r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity)),
     text.map(t => CanonicalValue.text(t).fold(e => sys.error(e.toString), identity)),
     Gen.listOf(Gen.choose(Byte.MinValue, Byte.MaxValue)).map(bs => CBytes(ByteVector(bs)))
   )
@@ -62,7 +62,7 @@ object CanonicalGens {
     Gen.const(CNull),
     Gen.oneOf(True, False),
     bigInt.map(CInt(_)),
-    decimal.map(CanonicalValue.number),
+    decimal.map(r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity)),
     text.map(t => CanonicalValue.text(t).fold(e => sys.error(e.toString), identity))
   )
 

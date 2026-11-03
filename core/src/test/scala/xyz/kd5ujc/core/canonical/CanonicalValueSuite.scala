@@ -46,7 +46,10 @@ object CanonicalValueSuite extends SimpleIOSuite with Checkers {
   pureTest("weights match the Rust SDK's (sdk/rust/core/tests/shared_value.rs), including bitLength on negative powers of two") {
     val two = BigInt(2)
     def rational(n: BigInt, d: BigInt) =
-      CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(n, d).fold(e => sys.error(e.toString), identity)).weight
+      CanonicalValue
+        .number(xyz.kd5ujc.numerics.Ratio.of(n, d).fold(e => sys.error(e.toString), identity))
+        .fold(e => sys.error(e.toString), identity)
+        .weight
     def leaf = CanonicalValue.map(List("pk" -> CBytes(scodec.bits.ByteVector.fill(33)(0)), "type" -> t("dlog"))).toOption.get
     expect
       .same(List(1L, 1L, 1L, 6L, 4L), List(CNull.weight, True.weight, t("").weight, t("é€").weight, bytesOf(3).weight))

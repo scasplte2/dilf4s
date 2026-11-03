@@ -130,26 +130,56 @@ object CanonicalVectors {
   val modelInputs: List[(String, CanonicalValue)] = List(
     "bytes(empty)"    -> CanonicalValue.bytes(ByteVector.empty),
     "bytes(01020304)" -> CanonicalValue.bytes(hex"01020304"),
-    "rational(1/3)"   -> CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(1, 3).fold(e => sys.error(e.toString), identity)),
-    "rational(-2^70/3)" -> CanonicalValue.number(
-      xyz.kd5ujc.numerics.Ratio.of(-(BigInt(1) << 70), 3).fold(e => sys.error(e.toString), identity)
-    ),
-    "rational(1/2^64)" -> CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(1, BigInt(1) << 64).fold(e => sys.error(e.toString), identity))
+    "rational(1/3)" -> CanonicalValue
+      .number(xyz.kd5ujc.numerics.Ratio.of(1, 3).fold(e => sys.error(e.toString), identity))
+      .fold(e => sys.error(e.toString), identity),
+    "rational(-2^70/3)" -> CanonicalValue
+      .number(
+        xyz.kd5ujc.numerics.Ratio.of(-(BigInt(1) << 70), 3).fold(e => sys.error(e.toString), identity)
+      )
+      .fold(e => sys.error(e.toString), identity),
+    "rational(1/2^64)" -> CanonicalValue
+      .number(
+        xyz.kd5ujc.numerics.Ratio.of(1, BigInt(1) << 64).fold(e => sys.error(e.toString), identity)
+      )
+      .fold(e => sys.error(e.toString), identity),
+    // the widest parts a rational has (CanonicalValue.MaxRationalBits, the bit length of 10^10000), for either sign; the last pair
+    // is consecutive Fibonacci numbers, coprime and the slowest gcd of its width
+    "rational((2^33220-1)/2)"     -> rational(Edge - 1, 2),
+    "rational(-2^33220/3)"        -> rational(-Edge, 3),
+    "rational(2/(2^33220-1))"     -> rational(2, Edge - 1),
+    "rational(F(47851)/F(47850))" -> rational(fibonacci._1, fibonacci._2)
   )
 
   private def rational(n: BigInt, d: BigInt): CanonicalValue =
-    CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(n, d).fold(e => sys.error(e.toString), identity))
+    CanonicalValue
+      .number(xyz.kd5ujc.numerics.Ratio.of(n, d).fold(e => sys.error(e.toString), identity))
+      .fold(e => sys.error(e.toString), identity)
+
+  /** `2^MaxRationalBits`: one bit wider than a rational's part may be. */
+  private lazy val Edge: BigInt = BigInt(1) << CanonicalValue.MaxRationalBits
+
+  /** The consecutive Fibonacci numbers `(F(k + 1), F(k))` with `F(k + 1)` exactly `MaxRationalBits` wide. */
+  private lazy val fibonacci: (BigInt, BigInt) = {
+    @scala.annotation.tailrec
+    def go(a: BigInt, b: BigInt): (BigInt, BigInt) = if (b.bitLength >= CanonicalValue.MaxRationalBits) (b, a) else go(b, a + b)
+    go(BigInt(1), BigInt(1))
+  }
+
+  /** Tag 30 around `[n, d]`, whatever `n` and `d` are. */
+  private def rationalBytes(n: BigInt, d: BigInt): ByteVector =
+    hex"d81e82" ++ Cbor.encode(CanonicalValue.CInt(n)) ++ Cbor.encode(CanonicalValue.CInt(d))
 
   /**
    * Values with a CBOR form whose JSON form would break the bounds parsing enforces, so rendering refuses them: 10^10000
-   * (10,001 digits), a scale of 10,001, a significand of 10,001 digits within the scale, and a denominator too wide for
-   * any scale within bounds (refused before it is factored).
+   * (10,001 digits), a scale of 10,001, a significand of 10,001 digits within the scale, and a denominator of the widest
+   * a rational has (5^14306, 33,218 bits) whose scale is past the bound.
    */
   val renderRejections: List[CanonicalValue] = List(
     CanonicalValue.CInt(BigInt(10).pow(10000)),
     rational(1, BigInt(1) << 10001),
     rational(BigInt(10).pow(10000) + 1, 2),
-    rational(1, BigInt(5).pow(14400))
+    rational(1, BigInt(5).pow(14306))
   )
 
   val cborRejections: List[ByteVector] = List(
@@ -196,7 +226,20 @@ object CanonicalVectors {
     // 257 levels: 256 arrays around an empty array, and 257 arrays around 0
     ByteVector.fill(256)(0x81) ++ hex"80",
     ByteVector.fill(256)(0x81) ++ hex"a0",
-    ByteVector.fill(257)(0x81) ++ hex"00"
+    ByteVector.fill(257)(0x81) ++ hex"00",
+    // a rational part one bit wider than CanonicalValue.MaxRationalBits, for either sign and either part, is outside the data
+    // model: refused before any gcd, so before lowest terms (the first), before the denominator's range (the fifth) and
+    // before the denominator is read (the sixth)
+    rationalBytes(Edge * 2, Edge + 2),
+    rationalBytes(Edge, 3),
+    rationalBytes(-Edge - 1, 2),
+    rationalBytes(3, Edge),
+    rationalBytes(1, -Edge * 2),
+    hex"d81e82" ++ Cbor.encode(CanonicalValue.CInt(Edge)) ++ hex"6161",
+    rationalBytes(1, BigInt(5).pow(14400)),
+    // a numerator whose bignum has a leading zero byte and 4154 bytes in all: its form is checked before its width, so
+    // it is non-canonical, not too wide
+    hex"d81e82c259103a00" ++ ByteVector.fill(4153)(0xff) ++ hex"03"
   )
 
   private val tagMessages: List[ByteVector] = List(ByteVector.empty, ByteVector("abc".getBytes(UTF_8)), hex"00ff00ff")

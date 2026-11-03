@@ -167,7 +167,11 @@ object CanonicalJson {
         InvalidNumber(described, Some(ArithmeticError.ScaleOutOfRange(saturated, maxScale))).asLeft
       } else {
         val unscaled = BigInt(intDigits + fracDigits) * (if (negative) -1 else 1)
-        Ratio.fromDecimal(unscaled, scale.toInt, maxScale).bimap(e => InvalidNumber(described, Some(e)), r => (number(r), end))
+        // the digit and scale bounds keep both parts within CanonicalValue.MaxRationalBits, so number never refuses here
+        Ratio
+          .fromDecimal(unscaled, scale.toInt, maxScale)
+          .leftMap(e => InvalidNumber(described, Some(e)))
+          .flatMap(r => number(r).map((_, end)))
       }
     }
   }
@@ -254,7 +258,7 @@ object CanonicalJson {
         val unscaled = BigInt(bd.bigDecimal.unscaledValue)
         val digits = if (unscaled.bitLength > MaxDigitBits) MaxDigits + 1 else unscaled.abs.toString.length
         if (digits > MaxDigits) InvalidNumber(sized(bd), Some(ArithmeticError.DigitsOutOfRange(digits, MaxDigits))).asLeft
-        else Ratio.fromBigDecimal(bd, maxScale).bimap(e => InvalidNumber(sized(bd), Some(e)), number)
+        else Ratio.fromBigDecimal(bd, maxScale).leftMap(e => InvalidNumber(sized(bd), Some(e))).flatMap(number)
       }
 
   // a decimal-backed number is described by its size: rendering its coefficient is superlinear and unpaid

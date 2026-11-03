@@ -9,6 +9,7 @@ object CanonicalError {
   // data model
   final case class UnpairedSurrogate(value: String) extends CanonicalError
   final case class DuplicateKey(key: String) extends CanonicalError
+  final case class RationalTooWide(limit: Int) extends CanonicalError
 
   // JSON mapping
   final case class JsonSyntax(offset: Int, reason: String) extends CanonicalError
