@@ -351,4 +351,52 @@ object TrieListingSuite extends SimpleIOSuite with Checkers {
     }
       .reduce(_ and _)
   }
+
+  // ------------------------------------------------------------------ operands built as ropes
+
+  /** `n` zero bytes as a rope of `n` one-byte prepends, which scodec indexes recursively (time and stack its depth). */
+  private def rope(n: Int): ByteVector = (1 to n).foldLeft(ByteVector.empty)((acc, _) => ByteVector.low(1) ++ acc)
+
+  pureTest("rope-built bounds and claims are read flat: the same answers and work as flat ones") {
+    val n = 600
+    val (root, proof) = chain(n)
+    val v = TrieProofs.verify(variableMax, root, proof).toOption.get
+    val tail = chainListing(n, n - 1, None)
+    val ropeTail = tail.map { case (k, h) => (rope((k.size / 8).toInt).bits, h) }
+    val flat = v.checkRange(zeros(n - 1), None, tail)
+    val roped = v.checkRange(rope(n - 1).bits, None, ropeTail)
+    val prefixFlat = v.checkPrefix(zeros(n - 1), tail)
+    val prefixRoped = v.checkPrefix(rope(n - 1).bits, ropeTail)
+    expect
+      .same(Right(true), roped.value)
+      .and(expect.same(flat, roped))
+      .and(expect.same(Right(true), prefixRoped.value))
+      .and(expect.same(prefixFlat, prefixRoped))
+  }
+
+  pureTest("a 60000-byte rope key, bound, prefix or segment is stack-safe") {
+    val k = 60000
+    val deep = rope(k)
+    val leaf = T.leaf(deep.bits, value(1))
+    val proof = TrieProof[Sha256](Some(PLeaf(deep.bits, value(1))))
+    val v = TrieProofs.verify(variableMax, leaf, proof).toOption.get
+    val claim = List(rope(k).bits -> value(1))
+    expect
+      .same(Right(true), v.listsRange(rope(k).bits, None, claim))
+      .and(expect.same(Right(true), v.listsRange(BitVector.empty, Some(rope(k + 1).bits), claim)))
+      .and(expect.same(Right(true), v.listsPrefix(rope(k - 1).bits, claim)))
+      .and(expect.same(Some(List(deep.bits -> value(1))), v.range(rope(k).bits, None)))
+  }
+
+  pureTest("a bound longer than any path compares as its first PathCap bits do") {
+    val (root, proof) = chain(8)
+    val v = TrieProofs.verify(variableMax, root, proof).toOption.get
+    val huge = BitVector.low(Bits.PathCap + 64)
+    val all = chainListing(8, 0, None)
+    expect
+      .same(Right(true), v.listsRange(BitVector.empty, Some(huge), all))
+      .and(expect.same(Right(true), v.listsRange(huge, None, Nil)))
+      .and(expect.same(QuadraticListing.range(proof.top, huge, None)._1, v.range(huge, None)))
+      .and(expect.same(Right(true), v.listsPrefix(huge, Nil)))
+  }
 }

@@ -186,22 +186,50 @@ private[trie] object Bits {
     go(0L)
   }
 
+  /** No path is longer in any mode (`KeyMode.MaxVariableBytes` bytes): a bound compares with paths as these bits do. */
+  val PathCap: Long = KeyMode.MaxVariableBytes.toLong * 8 + 1
+
+  /** The most bits `compact` holds in one array (2^31 - 1 bytes): it refuses more. */
+  private val Compactable: Long = Int.MaxValue.toLong * 8
+
   /**
-   * Whether the path held as `pieces` (newest first) and `depth` bits long is `key`, and the bits compared. The length
-   * is compared first, so the work is bounded by the key's length.
+   * `bits` in one flat array, so reading a bit is O(1) and stack-safe however the vector was built (a rope of appends
+   * indexes recursively, in time and stack its depth); and the bits copied. Callers pass at most `PathCap` bits, far
+   * below what `compact` refuses. Flattening is a no-op on a vector that is already flat.
+   */
+  def flat(bits: BitVector): (BitVector, Long) = (bits.compact, bits.size)
+
+  /**
+   * A bound or prefix flattened for reading, cut to its first `PathCap` bits: a walk reads no further, since every
+   * verified path is shorter, and a path compares with the cut bound as with the whole (docs/specs/trie.md §4). With
+   * the bits copied: the whole vector when flattened before cutting, which is stack-safe on any rope `compact` holds.
+   */
+  def readable(bits: BitVector): (BitVector, Long) =
+    if (bits.size <= PathCap) flat(bits)
+    else if (bits.size <= Compactable) (bits.compact.take(PathCap), bits.size)
+    else (bits.take(PathCap).compact, PathCap)
+
+  /**
+   * Whether the path held as `pieces` (newest first, each flat) and `depth` bits long is `key`, and the bits compared
+   * or copied. The length is compared first, so the work is bounded by the key's length.
    */
   def spells(pieces: List[BitVector], depth: Long, key: BitVector): (Boolean, Long) = {
     @tailrec
-    def go(rest: List[BitVector], end: Long, steps: Long): (Boolean, Long) =
+    def go(k: BitVector, rest: List[BitVector], end: Long, steps: Long): (Boolean, Long) =
       rest match {
         case Nil => (true, steps)
         case p :: older =>
           val start = end - p.size
-          val same = agreeing(p, 0L, key, start, p.size)
-          if (same < p.size) (false, steps + same + 1) else go(older, start, steps + same + 1)
+          val same = agreeing(p, 0L, k, start, p.size)
+          if (same < p.size) (false, steps + same + 1) else go(k, older, start, steps + same + 1)
       }
-    if (key.size != depth) (false, 1L) else go(pieces, depth, 1L)
+    if (key.size != depth) (false, 1L)
+    else {
+      val (k, copied) = flat(key)
+      go(k, pieces, depth, copied + 1)
+    }
   }
+
 }
 
 /**
@@ -264,6 +292,13 @@ private[trie] object Bounds {
 
   /** Every key. */
   val All: Bounds = Bounds(BitVector.empty, None)
+
+  /** `[from, until)` with each bound readable (`Bits.readable`), and the bits copied. */
+  def readable(from: BitVector, until: Option[BitVector]): (Bounds, Long) = {
+    val (f, nf) = Bits.readable(from)
+    val (u, nu) = until.map(Bits.readable).fold((Option.empty[BitVector], 0L)) { case (b, n) => (Some(b), n) }
+    (Bounds(f, u), nf + nu)
+  }
 }
 
 /**

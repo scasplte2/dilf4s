@@ -86,18 +86,20 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
         case Nil               => Counted(Some(s), steps)
         case (Stub(_), _) :: _ => Counted(None, steps + 1)
         case (PLeaf(segment, v), c) :: rest =>
-          val (here, n) = bounds.extend(c, segment, grow)
+          val (seg, f) = Bits.flat(segment)
+          val (here, n) = bounds.extend(c, seg, grow)
           val (next, m) = within(s, here, v)
-          go(rest, next, steps + n + m)
+          go(rest, next, steps + f + n + m)
         case (PBranch(segment, value, left, right), c) :: rest =>
-          val (here, n) = bounds.extend(c, segment, grow)
+          val (seg, f) = Bits.flat(segment)
+          val (here, n) = bounds.extend(c, seg, grow)
           val (later, k) = List(left.map(false -> _), right.map(true -> _)).flatten.foldRight((rest, 0L)) {
             case ((bit, child), (todo2, j)) =>
               val (below, i) = bounds.extend(here, BitVector.bit(bit), grow)
               (if (bounds.meets(below)) (child, below) :: todo2 else todo2, i + j)
           }
           val (next, m) = value.fold((s, 0L))(within(s, here, _))
-          go(later, next, steps + n + k + m)
+          go(later, next, steps + f + n + k + m)
       }
     go(List(start -> at), z, 0L)
   }
@@ -106,19 +108,22 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
   private def ranged[P, S](from: BitVector, until: Option[BitVector], empty: P, grow: (P, BitVector) => P, z: S)(
     visit: (S, Cursor[P], Digest[H]) => (S, Long)
   ): Counted[Option[S]] = {
-    val bounds = Bounds(from, until)
+    val (bounds, copied) = Bounds.readable(from, until)
     top
       .filter(_ => bounds.meets(Cursor.origin(empty)))
       .fold(Counted(Option(z), 1L))(walk(_, Cursor.origin(empty), bounds, grow, z)(visit))
+      .add(copied)
   }
 
   /**
    * The walk of the subtree holding exactly the keys that start with `p`: `z` if there is none, `None` if a stub lies
    * on the way or under it. Each node on the way compares only its own bits with `p`'s.
    */
-  private def prefixed[P, S](p: BitVector, empty: P, grow: (P, BitVector) => P, z: S)(
+  private def prefixed[P, S](prefix: BitVector, empty: P, grow: (P, BitVector) => P, z: S)(
     visit: (S, Cursor[P], Digest[H]) => (S, Long)
   ): Counted[Option[S]] = {
+    // read from `p`, flat and cut where no path reaches, against the whole prefix's length
+    val (p, copied) = Bits.readable(prefix)
     // the subtree's keys all start with `p`'s first `pos` bits: the walk below needs no bounds
     def under(node: ProofNode[H], pos: Long, steps: Long): Counted[Option[S]] = {
       val (at, n) = Bounds.All.extend(Cursor.origin(empty), p.take(pos), grow)
@@ -129,23 +134,25 @@ final class VerifiedProof[H] private[trie] (top: Option[ProofNode[H]]) {
       node match {
         case Stub(_) => Counted(None, steps + 1)
         case PLeaf(segment, _) =>
-          val remaining = p.size - pos
-          val same = Bits.agreeing(segment, 0L, p, pos, segment.size.min(remaining))
-          if (same == remaining) under(node, pos, steps + same + 1) else Counted(Option(z), steps + same + 1)
+          val remaining = prefix.size - pos
+          val (seg, f) = Bits.flat(segment)
+          val same = Bits.agreeing(seg, 0L, p, pos, seg.size.min(remaining))
+          if (same == remaining) under(node, pos, steps + f + same + 1) else Counted(Option(z), steps + f + same + 1)
         case PBranch(segment, _, left, right) =>
-          val remaining = p.size - pos
-          val same = Bits.agreeing(segment, 0L, p, pos, segment.size.min(remaining))
-          if (same == remaining) under(node, pos, steps + same + 1)
-          else if (same < segment.size) Counted(Option(z), steps + same + 1)
+          val remaining = prefix.size - pos
+          val (seg, f) = Bits.flat(segment)
+          val same = Bits.agreeing(seg, 0L, p, pos, seg.size.min(remaining))
+          if (same == remaining) under(node, pos, steps + f + same + 1)
+          else if (same < seg.size) Counted(Option(z), steps + f + same + 1)
           else {
-            val at = pos + segment.size
+            val at = pos + seg.size
             ((if (p(at)) right else left): Option[ProofNode[H]]) match {
-              case None        => Counted(Option(z), steps + same + 2)
-              case Some(child) => locate(child, at + 1, steps + same + 2)
+              case None        => Counted(Option(z), steps + f + same + 2)
+              case Some(child) => locate(child, at + 1, steps + f + same + 2)
             }
           }
       }
-    top.fold(Counted(Option(z), 1L))(locate(_, 0L, 0L))
+    top.fold(Counted(Option(z), 1L))(locate(_, 0L, copied))
   }
 
   private def listed(acc: List[Entry], c: Cursor[BitVector], v: Digest[H]): (List[Entry], Long) = ((c.path, v) :: acc, 1L)
@@ -250,7 +257,7 @@ object TrieProofs {
   private def expanded[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], root: Digest[H], queries: List[Query]): F[Map[Digest[H], Node[H]]] =
     queries.foldLeftM(Map.empty[Digest[H], Node[H]]) {
       case (acc, Range(from, until)) =>
-        val bounds = Bounds(from, until)
+        val (bounds, _) = Bounds.readable(from, until)
         if (bounds.meets(Cursor.origin(()))) rangeNodes(lookup, root, bounds, acc) else acc.pure[F]
       case (acc, Key(p))    => pathNodes(lookup, root, p, isPrefix = false, acc)
       case (acc, Prefix(p)) => pathNodes(lookup, root, p, isPrefix = true, acc)
@@ -273,7 +280,7 @@ object TrieProofs {
         lookup(h).map {
           case l: Leaf[H] => (rest, acc.updated(h, l)).asLeft
           case b: Branch[H] =>
-            val (here, _) = bounds.extend(at, b.segment, unit)
+            val (here, _) = bounds.extend(at, Bits.flat(b.segment)._1, unit)
             val next = List(b.left.map(false -> _), b.right.map(true -> _)).flatten.flatMap {
               case (bit, child) =>
                 val (below, _) = bounds.extend(here, BitVector.bit(bit), unit)

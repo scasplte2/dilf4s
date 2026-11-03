@@ -107,6 +107,9 @@ both cost Θ(N²) bits for N records. Conforming implementations instead:
 - **Carry the comparison with each bound down the walk.** A path is a prefix of a bound, or has sorted below or above
   it for good, so each node compares only the bits it adds: its segment, then the bit to a child.
 - **Locate a prefix in place.** Compare each segment on the way with the prefix at its offset, never copying either.
+- **Read every bit in O(1).** An operand held as a rope of appends, whose indexing costs its depth, is flattened once
+  first. A bound or prefix past the longest path any mode allows (524,280 bits) is read no further than that, since
+  every path compares with it as with its first 524,281 bits.
 - **Compare the claim as the walk reaches each key.** Its next entry's key length comes first, so the key bits compared
   never exceed the claim's. After the first difference the walk still goes on, since a stub anywhere in the query
   leaves it not covered, whatever the claim.
