@@ -163,9 +163,9 @@ object JlvmVectorsSuite extends IOSuite {
         // dilf4s's dlog sigma_verify costs less than metakit's limit: it runs, and metakit's BN254 proof is malformed here
         val finishes = Set(
           "metakit gas oog: sigma_verify dlog at 90004",
-          "dilf4s gas boundary: nested + at its cost 361",
-          "dilf4s gas boundary: var lookup at its cost 19",
-          "dilf4s gas boundary: map callback at its cost 1235"
+          "dilf4s gas boundary: nested + at its cost 313",
+          "dilf4s gas boundary: var lookup at its cost 41",
+          "dilf4s gas boundary: map callback at its cost 1207"
         )
         val read = GasSchedule.V1.varAccess.value + GasSchedule.V1.perPathSegment.value
         def named(name: String): Option[Outcome] = in.cases.find(_.name == name).map(JlvmVectors.run(jlvm, _))
@@ -189,8 +189,8 @@ object JlvmVectorsSuite extends IOSuite {
           // one gas short of the cost runs out exactly at the last charge
           .and(
             expect.same(
-              Option(Outcome(Gas(360), Left(JlvmError.OutOfGas(361, 360)))),
-              named("dilf4s gas boundary: nested + one short, 360")
+              Option(Outcome(Gas(312), Left(JlvmError.OutOfGas(313, 312)))),
+              named("dilf4s gas boundary: nested + one short, 312")
             )
           )
       }

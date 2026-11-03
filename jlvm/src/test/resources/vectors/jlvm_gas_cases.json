@@ -56,40 +56,40 @@
    "gasLimit": 44999
   },
   {
-   "name": "dilf4s gas boundary: nested + at its cost 361",
+   "name": "dilf4s gas boundary: nested + at its cost 313",
    "program": "{\"+\":[1,{\"+\":[2,3]}]}",
    "data": "{}",
-   "gasLimit": 361
+   "gasLimit": 313
   },
   {
-   "name": "dilf4s gas boundary: nested + one short, 360",
+   "name": "dilf4s gas boundary: nested + one short, 312",
    "program": "{\"+\":[1,{\"+\":[2,3]}]}",
    "data": "{}",
-   "gasLimit": 360
+   "gasLimit": 312
   },
   {
-   "name": "dilf4s gas boundary: var lookup at its cost 19",
+   "name": "dilf4s gas boundary: var lookup at its cost 41",
    "program": "{\"var\":\"x\"}",
    "data": "{\"x\":42}",
-   "gasLimit": 19
+   "gasLimit": 41
   },
   {
-   "name": "dilf4s gas boundary: var lookup one short, 18",
+   "name": "dilf4s gas boundary: var lookup one short, 40",
    "program": "{\"var\":\"x\"}",
    "data": "{\"x\":42}",
-   "gasLimit": 18
+   "gasLimit": 40
   },
   {
-   "name": "dilf4s gas boundary: map callback at its cost 1235",
+   "name": "dilf4s gas boundary: map callback at its cost 1207",
    "program": "{\"map\":[[1,2,3,4,5],{\"+\":[{\"var\":\"\"},1]}]}",
    "data": "{}",
-   "gasLimit": 1235
+   "gasLimit": 1207
   },
   {
-   "name": "dilf4s gas boundary: map callback one short, 1234",
+   "name": "dilf4s gas boundary: map callback one short, 1206",
    "program": "{\"map\":[[1,2,3,4,5],{\"+\":[{\"var\":\"\"},1]}]}",
    "data": "{}",
-   "gasLimit": 1234
+   "gasLimit": 1206
   }
  ]
 }

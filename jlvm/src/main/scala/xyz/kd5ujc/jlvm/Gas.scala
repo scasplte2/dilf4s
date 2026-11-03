@@ -30,6 +30,21 @@ object Gas {
 final case class Rate(perUnit: Gas, unit: SizeUnit)
 
 /**
+ * Searching a map (argument 0) for a key (argument 1), as `get`, `has`, `set` and `unset` do: `perLevel`, plus `perBlock`
+ * per [[Values.SearchBlock]] of the key's length, for each of the search's [[GasSchedule.levels]] (the map's depth bound,
+ * plus one for the key itself, which is compared or measured once more).
+ */
+final case class Search(perLevel: Gas, perBlock: Gas)
+
+/**
+ * Merging maps (`merge` when every argument is a map): each entry of the maps after the first is set into the result,
+ * a search of a map of at most all their entries. So `perLevel` per such entry, plus `perBlock` per
+ * [[Values.SearchBlock]] of their weight (which bounds their keys' length), for each of [[GasSchedule.levels]] of the
+ * entries of all of them.
+ */
+final case class Merging(perLevel: Gas, perBlock: Gas)
+
+/**
  * What an operation costs: a base charge, plus a charge per unit of each argument's size. Every argument is charged at
  * the operation's rate, unless `byArgument` gives its position a rate of its own (a message that is only hashed costs
  * far less per byte than a proof that drives curve arithmetic). Every size charge is taken **before** the work it pays
@@ -40,7 +55,9 @@ final case class OpCost(
   perUnit:    Gas,
   unit:       SizeUnit,
   byArgument: Map[Int, Rate] = Map.empty,
-  extra:      Vector[Rate] = Vector.empty
+  extra:      Vector[Rate] = Vector.empty,
+  search:     Option[Search] = scala.None,
+  merging:    Option[Merging] = scala.None
 ) {
   def rate(position: Int): Rate = byArgument.getOrElse(position, Rate(perUnit, unit))
 
@@ -50,6 +67,12 @@ final case class OpCost(
 
   /** Every argument is also charged `perUnit` per `unit`: a second term, such as a quadratic one. */
   def plus(perUnit: Long, unit: SizeUnit): OpCost = copy(extra = extra :+ Rate(Gas(perUnit), unit))
+
+  /** The operation searches its map argument for its key argument ([[Search]]). */
+  def searching(perLevel: Long, perBlock: Long): OpCost = copy(search = Option(Search(Gas(perLevel), Gas(perBlock))))
+
+  /** The operation merges its map arguments ([[Merging]]). */
+  def mergingMaps(perLevel: Long, perBlock: Long): OpCost = copy(merging = Option(Merging(Gas(perLevel), Gas(perBlock))))
 }
 
 /**
@@ -63,20 +86,17 @@ enum SizeUnit {
   case None, Elements, Weight
 
   /**
-   * For a number, the square of its 64-bit limbs, numerator and denominator together (`⌊bits/64⌋` each); 0 for anything
-   * else. The gcd that normalises a quotient, or a sum or product of rationals, is quadratic in the operands' size.
+   * For a number, the square of its 64-bit limbs, numerator and denominator together (`⌊bits/64⌋` each), plus
+   * [[GasSchedule.GcdLimbs]] for a non-integer rational; 0 for anything else. The gcd that normalises a quotient, or a
+   * sum or product of rationals, is quadratic in the operands' size, and has a fixed cost of its own.
    */
   case Limbs2
 
   /** [[Limbs2]] for a non-integer rational, and 0 for an integer: integer sums and products are linear. */
   case RationalLimbs2
 
-  /**
-   * For text used as a key, `⌊length/32⌋`, its length in UTF-16 units ([[Values.KeyBlock]]); 0 for anything else. A key is
-   * compared with the map's key on every hit, so a long key costs more than a short one; keys under 32 units cost nothing
-   * extra.
-   */
-  case Key
+  /** The weight of a non-integer rational, and 0 for anything else: comparing rationals multiplies across. */
+  case RationalWeight
 }
 
 /**
@@ -104,18 +124,21 @@ final case class GasSchedule(
   /**
    * Rendering numbers as decimal text (`cat`, `join`): `rendering` per unit of `(4 + ⌊bits/64⌋)^2`, for the bits of each
    * expansion ([[Values.renderedBits]]). The conversion is quadratic in the expansion, which can be far larger than the
-   * number's weight (`1/2^4095` weighs 66 and renders as 4,097 characters); the 4 limbs are the fixed cost of a
+   * number's weight (`1/2^4095` weighs 66 and renders as 4,097 characters); [[GasSchedule.RenderLimbs]] are the fixed
+   * cost of a
    * conversion, fitted with GasCalibration.
    */
   def rendered(numbers: Vector[CanonicalValue]): Gas =
-    numbers.foldLeft(Gas.Zero)((g, v) => g + rendering * GasSchedule.square(4L + Values.renderedBits(v) / 64))
+    numbers.foldLeft(Gas.Zero)((g, v) => g + rendering * GasSchedule.square(GasSchedule.RenderLimbs + Values.renderedBits(v) / 64))
 
   /** The size charge of `op` on its evaluated arguments: each argument at its position's rate. */
   def sized(op: Op, args: Vector[CanonicalValue]): Gas = {
     val c = cost(op)
-    args.zipWithIndex.foldLeft(Gas.Zero) {
+    val each = args.zipWithIndex.foldLeft(Gas.Zero) {
       case (total, (v, i)) => (c.rate(i) +: c.extra).foldLeft(total)((t, r) => t + r.perUnit * GasSchedule.units(r.unit, v))
     }
+    val searched = c.search.fold(each)(s => each + GasSchedule.searched(s, args))
+    c.merging.fold(searched)(mg => searched + GasSchedule.merged(mg, args))
   }
 }
 
@@ -129,64 +152,105 @@ object GasSchedule {
       case SizeUnit.Weight         => v.weight
       case SizeUnit.Limbs2         => limbs(v, integers = true)
       case SizeUnit.RationalLimbs2 => limbs(v, integers = false)
-      case SizeUnit.Key            => Values.keyBlocks(v)
+      case SizeUnit.RationalWeight =>
+        v match {
+          case CanonicalValue.CRational(_) => v.weight
+          case _                           => 0L
+        }
     }
+
+  /** The fixed cost of a decimal conversion, in limbs ([[GasSchedule.rendered]]). */
+  val RenderLimbs: Long = 6L
+
+  /** The fixed cost of a gcd, in limbs ([[SizeUnit.Limbs2]]): measured on rationals of 256 bits and up. */
+  val GcdLimbs: Long = 8L
 
   private def limbs(v: CanonicalValue, integers: Boolean): Long =
     v match {
       case CanonicalValue.CInt(i) if integers => square((i.bitLength / 64).toLong)
-      case CanonicalValue.CRational(r)        => square((r.numerator.bitLength / 64 + r.denominator.bitLength / 64).toLong)
+      case CanonicalValue.CRational(r)        => square(GcdLimbs + r.numerator.bitLength / 64 + r.denominator.bitLength / 64)
       case _                                  => 0L
     }
 
   private[jlvm] def square(n: Long): Long = n * n
 
+  /**
+   * A map's depth bound: `⌈log2(n + 1)⌉` for `n` entries, the height of a perfectly balanced tree. Scala's red-black
+   * tree is at most twice that and Rust's AVL tree at most 1.45 times; the search rates absorb the factor.
+   */
+  def depth(entries: Long): Long = 64L - java.lang.Long.numberOfLeadingZeros(entries.max(0L))
+
+  /** The levels a search of a map of `entries` entries pays for: its [[depth]], plus one for the key itself. */
+  def levels(entries: Long): Long = depth(entries) + 1L
+
+  /** [[Search]]'s charge on an operation's arguments: 0 unless argument 0 is a map and argument 1 text. */
+  def searched(s: Search, args: Vector[CanonicalValue]): Gas =
+    args match {
+      case CanonicalValue.CMap(m) +: CanonicalValue.CText(k) +: _ =>
+        (s.perLevel + s.perBlock * (k.length / Values.SearchBlock).toLong) * levels(m.size.toLong)
+      case _ => Gas.Zero
+    }
+
+  /** [[Merging]]'s charge on an operation's arguments: 0 unless every one is a map. */
+  def merged(mg: Merging, args: Vector[CanonicalValue]): Gas = {
+    val maps = args.collect { case m: CanonicalValue.CMap => m }
+    if (args.isEmpty || maps.size != args.size) Gas.Zero
+    else {
+      val total = maps.foldLeft(0L)((n, m) => n + m.entries.size.toLong)
+      val later = maps.drop(1)
+      val entries = later.foldLeft(0L)((n, m) => n + m.entries.size.toLong)
+      val weight = later.foldLeft(Gas.Zero)((g, m) => g + Gas(m.weight))
+      (mg.perLevel * entries + mg.perBlock * (weight.value / Values.SearchBlock)) * levels(total)
+    }
+  }
+
   private def c(base: Long, perUnit: Long = 0, unit: SizeUnit = SizeUnit.None): OpCost = OpCost(Gas(base), Gas(perUnit), unit)
 
   import Op.{Map => MapOp, None => NoneOp, Set => SetOp, Some => SomeOp, _}
-  import SizeUnit.{Elements, Key, Limbs2, RationalLimbs2, Weight}
+  import SizeUnit.{Elements, Limbs2, RationalLimbs2, RationalWeight, Weight}
 
   /**
-   * Version 1. Base costs start from metakit's table; size terms now cover the work metakit left unpriced: everything
-   * that reads content (comparison, arithmetic, text, bytes, hashing, signature messages) pays by weight, and
-   * everything that walks a collection pays per element.
+   * Version 1. Everything that reads content (comparison, arithmetic, text, bytes, hashing, signature messages) pays by
+   * weight, and everything that walks a collection pays per element.
+   *
+   * Priced against `secp256k1_verify`, the anchor (7,318 gas for an 18-byte message): each charge is at least the work's
+   * time as a ratio to the anchor's, times the anchor's charge, on the slower of the two node backends (the JVM and
+   * Rust), measured with `benchmarks` GasRatios (docs/specs/jlvm.md §7). A per-unit rate of 1 is the floor for work that
+   * grows with its input, even where the measured rate is lower.
    */
   val V1: GasSchedule = GasSchedule(
     version = 1,
-    // Calibrated at 150 gas/us on the direct driver (benchmarks: GasCalibration), the rate the
-    // cryptographic operations are priced at. A per-unit rate of 1 is the floor for work that grows with its input,
-    // even where the measured rate is lower.
     ops = scala.collection.immutable.Map(
       If       -> c(20),
       And      -> c(15),
       Or       -> c(15),
-      Not      -> c(40),
-      Truthy   -> c(40),
+      Not      -> c(20),
+      Truthy   -> c(20),
       Default  -> c(15),
       Let      -> c(30),
       Eq       -> c(50, 1, Weight),
       Ne       -> c(50, 1, Weight),
       StrictEq -> c(50, 1, Weight),
       StrictNe -> c(50, 1, Weight),
-      Lt       -> c(55, 1, Weight),
-      Le       -> c(55, 1, Weight),
-      Gt       -> c(55, 1, Weight),
-      Ge       -> c(55, 1, Weight),
+      Lt       -> c(55, 1, Weight).plus(10, RationalWeight),
+      Le       -> c(55, 1, Weight).plus(10, RationalWeight),
+      Gt       -> c(55, 1, Weight).plus(10, RationalWeight),
+      Ge       -> c(55, 1, Weight).plus(10, RationalWeight),
       // integer sums and products are linear; rational ones, and every quotient, normalise through a quadratic gcd
-      Add         -> c(140, 9, Weight).plus(8, RationalLimbs2),
-      Sub         -> c(140, 10, Weight).plus(8, RationalLimbs2),
-      Mul         -> c(100, 17, Weight).plus(10, RationalLimbs2),
-      Div         -> c(200, 2, Weight).plus(8, Limbs2),
-      Mod         -> c(200, 2, Weight).plus(8, Limbs2),
+      Add         -> c(140, 3, Weight).plus(7, RationalLimbs2),
+      Sub         -> c(140, 3, Weight).plus(7, RationalLimbs2),
+      Mul         -> c(100, 10, Weight).plus(7, RationalLimbs2),
+      Div         -> c(340, 2, Weight).plus(8, Limbs2),
+      Mod         -> c(340, 2, Weight).plus(8, Limbs2).plus(8, RationalLimbs2),
       Min         -> c(90, 1, Weight),
       Max         -> c(90, 1, Weight),
-      Abs         -> c(60),
-      Round       -> c(60, 1, Weight),
-      RoundHalfUp -> c(60, 1, Weight),
-      Floor       -> c(60, 1, Weight),
-      Ceil        -> c(60, 1, Weight),
+      Abs         -> c(60).plus(2, RationalLimbs2),
+      Round       -> c(60, 8, Weight),
+      RoundHalfUp -> c(60, 8, Weight),
+      Floor       -> c(60, 8, Weight),
+      Ceil        -> c(60, 8, Weight),
       // priced at its worst case, a 4096-bit rational result: the result's size is not known from the arguments
-      Pow       -> c(50000),
+      Pow       -> c(20000),
       MapOp     -> c(40, 8, Elements),
       Filter    -> c(40, 8, Elements),
       Reduce    -> c(40, 8, Elements),
@@ -195,84 +259,88 @@ object GasSchedule {
       NoneOp    -> c(40, 8, Elements),
       Find      -> c(40, 8, Elements),
       Count     -> c(45, 8, Elements),
-      Merge     -> c(210, 1, Weight),
-      In        -> c(70, 1, Weight),
-      Intersect -> c(50, 12, Weight),
+      Merge     -> c(210, 3, Weight).mergingMaps(12, 2),
+      In        -> c(70, 1, Weight).plus(1, Elements),
+      Intersect -> c(50, 17, Weight),
       Unique    -> c(50, 18, Weight),
-      Slice     -> c(45, 5, Elements),
-      Reverse   -> c(55, 9, Elements),
-      Flatten   -> c(60, 5, Weight),
+      Slice     -> c(60, 3, Elements),
+      Reverse   -> c(55, 5, Elements),
+      Flatten   -> c(60, 3, Weight),
       Length    -> c(45, 1, Weight),
-      // each piece of cat and join (and each element cat concatenates) costs ~30 gas besides its bytes: GasCalibration
-      Cat        -> c(65, 1, Weight).plus(32, Elements),
+      // each piece of cat and join (and each element cat concatenates) costs a few gas besides its bytes
+      Cat        -> c(65, 1, Weight).plus(4, Elements),
       Substr     -> c(75, 1, Weight),
       Lower      -> c(45, 1, Weight),
       Upper      -> c(50, 1, Weight),
-      Join       -> c(110, 2, Weight).plus(32, Elements),
+      Join       -> c(110, 1, Weight).plus(14, Elements),
       Split      -> c(85, 6, Weight),
       Trim       -> c(75, 1, Weight),
       StartsWith -> c(50, 1, Weight),
       EndsWith   -> c(50, 1, Weight),
-      Keys       -> c(50, 12, Weight),
-      Values     -> c(50, 12, Weight),
-      Entries    -> c(50, 18, Weight),
-      Get        -> c(30).at(1, 1, Key),
-      Has        -> c(40).at(1, 1, Key),
-      // one entry changes in O(log n): a map keeps its weight and its values' depths up to date
-      SetOp       -> c(105).at(1, 1, Key),
-      Unset       -> c(65).at(1, 1, Key),
-      Exists      -> c(50, 1, Elements),
+      Keys       -> c(90, 4, Weight),
+      Values     -> c(50, 5, Weight),
+      Entries    -> c(120, 10, Weight),
+      Get        -> c(30).searching(3, 1),
+      Has        -> c(40).searching(3, 1),
+      // a search per level of the map's depth bound (Search); the JVM's set and unset search twice, and Rust's set
+      // on a map of 2^20 entries misses the cache at every level
+      SetOp       -> c(60).searching(18, 2),
+      Unset       -> c(60).searching(18, 2),
+      Exists      -> c(60, 1, Elements),
       Missing     -> c(50, 20, Elements),
       MissingSome -> c(60, 20, Elements),
-      TypeOf      -> c(45),
+      TypeOf      -> c(30),
       Hex         -> c(45, 1, Weight),
-      Unhex       -> c(80, 3, Weight),
-      HexToInt    -> c(80, 3, Weight),
+      Unhex       -> c(80, 2, Weight),
+      HexToInt    -> c(80, 6, Weight),
       BytesToInt  -> c(45, 1, Weight),
-      IntToBytes  -> c(70, 1, Weight),
-      Sha256      -> c(80, 1, Weight),
+      IntToBytes  -> c(70, 2, Weight),
+      Sha256      -> c(95, 1, Weight),
       Sha3_256    -> c(130, 1, Weight),
       Keccak256   -> c(150, 1, Weight),
       Blake2b256  -> c(115, 1, Weight),
-      // measured at 150 gas/us: secp256k1 (native) ~48us, BIP-340 ~53us, Ed25519 ~240us, BLS ~1.55ms plus ~170us a key
-      Ed25519Verify   -> c(36000, 1, Weight),
+      // the anchor: libsecp256k1 (native, JNI) on the JVM, k256 on Rust. Ed25519 (ZIP-215) is the pure-Scala
+      // edwards25519 core on the JVM, its slowest node; BLS is blst (JNI) on the JVM and zkcrypto's bls12_381 on Rust
+      Ed25519Verify   -> c(20000, 1, Weight),
       Secp256k1Verify -> c(7200, 1, Weight),
-      Bip340Verify    -> c(8000, 1, Weight),
-      Ecrecover       -> c(30000),
-      BlsVerify       -> c(233000, 1, Weight),
+      Bip340Verify    -> c(9000, 1, Weight),
+      Ecrecover       -> c(32500),
+      BlsVerify       -> c(290000, 1, Weight),
       // a key is an element; the message is hashed to G2, so it pays the hashing rate by weight, as bls_verify's does
-      BlsAggregateVerify -> c(230000, 25000, Elements).at(1, 1, Weight),
-      // measured at 150 gas/us: BN254 on gnark, a pairing ~480us plus ~25k gas a pair (weight ~195), Groth16 ~1.45ms;
-      // ecvrf ~1ms. Close to EIP-1108. Through GasCalibration, Poseidon ~36us for one input and ~107-114us for four
-      // (convex in the width, so the linear fit bounds two and three); pmt_verify ~73us a level, whose elements are its
-      // siblings plus three.
+      BlsAggregateVerify -> c(250000, 33000, Elements).at(1, 1, Weight),
+      // BN254 and Groth16: gnark (JNI) on the JVM, substrate-bn on Rust, which is the slower (a pairing about 2.3 times
+      // the JVM's), so they are priced from Rust, well above EIP-1108. Poseidon is convex in the width, so the linear
+      // fit bounds two and three inputs; pmt_verify's elements are its siblings plus three. ecvrf_verify's base pays for
+      // 64 hash-to-curve counters: an alpha whose first k counters fail takes about 2^k tries to find (jlvm.md §7)
       Poseidon      -> c(1800, 3900, Elements),
       PmtVerify     -> c(1000, 11000, Elements),
-      Groth16Verify -> c(218000, 1, Weight),
-      EcvrfVerify   -> c(150000, 1, Weight),
-      Bn254Add      -> c(150),
-      Bn254Mul      -> c(7700),
-      Bn254Pairing  -> c(55000, 128, Weight),
-      // ~300us per dlog leaf on BouncyCastle; a leaf of proposition and proof weighs ~105, a DH tuple ~215 (4 muls)
-      // the message is only hashed: it pays the hashing rate (as blake2b256), not the curve rate
-      SchnorrVerify -> c(5000, 430, Weight).at(1, 1, Weight),
-      SigmaVerify   -> c(5000, 430, Weight).at(2, 1, Weight),
-      // measured at ~150 gas/us: a 16-digest Merkle path (weight 548) in ~46us, a 129-record trie proof (3495) in ~700us
+      Groth16Verify -> c(370000, 1, Weight),
+      EcvrfVerify   -> c(130000, 1, Weight),
+      Bn254Add      -> c(520),
+      Bn254Mul      -> c(12500),
+      Bn254Pairing  -> c(130000, 440, Weight),
+      // BouncyCastle on the JVM; a leaf of proposition and proof weighs ~105, a DH tuple ~215 (4 muls). The message is
+      // only hashed: it pays the hashing rate (as blake2b256), not the curve rate
+      SchnorrVerify -> c(5000, 450, Weight).at(1, 1, Weight),
+      SigmaVerify   -> c(5000, 450, Weight).at(2, 1, Weight),
+      // trie_prefix_verify and trie_range_verify are priced from their current algorithms; another change makes them
+      // linear in their bounds
       MerkleVerify            -> c(500, 13, Weight),
-      MerkleConsistencyVerify -> c(500, 13, Weight),
+      MerkleConsistencyVerify -> c(4000, 13, Weight),
       TrieVerify              -> c(500, 30, Weight),
       TriePrefixVerify        -> c(1000, 30, Weight),
       TrieRangeVerify         -> c(1000, 30, Weight)
     ),
-    // per node, measured: a literal in an array ~25, a var read ~29, a callback run ~38 (with its body), an untaken
-    // if branch ~34 (its condition plus one element charge)
-    literal = Gas(15),
-    element = Gas(12),
-    varAccess = Gas(18),
-    perPathSegment = Gas(1),
-    callbackRun = Gas(10),
-    // per unit of (4 + bits/64)^2 of a decimal expansion: measured ~1.5-2 gas a unit for 4000-bit integers and 1/2^4000
-    rendering = Gas(4)
+    // per node: a literal in an array ~12 (with its element charge), a var read ~21 more on a map of 8 to 2^20
+    // entries, a callback run ~29 (with a literal body), an untaken if branch ~11 (its condition plus an element)
+    literal = Gas(7),
+    element = Gas(8),
+    varAccess = Gas(38),
+    perPathSegment = Gas(3),
+    callbackRun = Gas(18),
+    // per unit of (6 + bits/64)^2 of a decimal expansion: about 1 gas a unit for the widest numbers (Rust's 1/5^1700
+    // the most), and the 6 limbs pay for a small integer's ~100
+    rendering = Gas(2)
   )
 
   val Latest: GasSchedule = V1
@@ -283,7 +351,7 @@ final case class GasLimit(amount: Gas)
 
 object GasLimit {
 
-  /** 2^24, Ethereum's per-transaction cap (EIP-7825): about 110ms of work at the schedule's 150 gas/us. */
+  /** 2^24, Ethereum's per-transaction cap (EIP-7825): about 70 ms of work on the JVM, 140 ms on Rust (jlvm.md §7). */
   val Default: GasLimit = GasLimit(Gas(1L << 24))
 }
 

@@ -14,14 +14,14 @@ import xyz.kd5ujc.numerics.Ratio
 import scodec.bits.ByteVector
 
 /**
- * Calibrates JLVM gas schedule v1 against wall-clock time, at a reference rate of [[Rate]] gas per microsecond: the rate
- * the cryptographic operations are priced at. Every operation is timed through `Jlvm.evaluate` at a small and a large
- * argument size, less a baseline that evaluates the same argument reads, and a base and per-unit charge are fitted to the
- * two points. The node charges are fitted the same way, from programs of growing size.
+ * A quick, single-process look at JLVM gas schedule v1 against wall-clock time, at a nominal [[Rate]] gas per
+ * microsecond. The schedule is priced by [[GasRatios]] instead (ratios to the `secp256k1_verify` anchor on both node
+ * backends, docs/specs/jlvm.md §7): absolute rates drift with the machine and its clock, ratios do not. What remains
+ * useful here is the shape of a fit (every operation timed through `Jlvm.evaluate` at a small and a large argument size,
+ * less a baseline that evaluates the same argument reads) and the metering shares ([[shares]]): the timed
+ * denial-of-service checks, kept out of the test gate.
  *
- * Results are machine-specific; run on the reference hardware, then apply the suggestions to `GasSchedule`:
  * `sbt "benchmarks/Test/runMain xyz.kd5ujc.benchmarks.GasCalibration"` (add `metering` for the metering charges alone).
- * Both end with the metering shares ([[shares]]): the timed denial-of-service checks, kept out of the test gate.
  */
 object GasCalibration extends IOApp {
 
@@ -201,14 +201,14 @@ object GasCalibration extends IOApp {
       f"$label%-34s ${(tl - ts) * Rate / (ul - us).toDouble}%8.2f gas per $unit%-14s now $charged%4d   $ts%9.2f / $tl%10.2f us"
     }
 
-  /** `(4 + bits/64)^2` for a number's decimal expansion: the unit of the `rendering` charge. */
+  /** `(6 + bits/64)^2` for a number's decimal expansion: the unit of the `rendering` charge. */
   private def rendering(v: CanonicalValue): Long = {
     val bits = v match {
       case CInt(i)      => i.bitLength.toLong
       case CRational(r) => r.numerator.bitLength.toLong + (7L * r.denominator.bitLength + 2) / 3
       case _            => 0L
     }
-    (4L + bits / 64) * (4L + bits / 64)
+    (GasSchedule.RenderLimbs + bits / 64) * (GasSchedule.RenderLimbs + bits / 64)
   }
 
   /**

@@ -307,8 +307,11 @@ fn get_has_set_and_unset_pay_for_long_keys() {
     let data = |k: &str| obj(vec![("xs", arr(vec![int(1); 200])), ("k", t(k)), ("m", obj(vec![(k, int(1))]))]);
     assert!(eval(build, &data(&long)).result.is_ok());
     assert_eq!(eval(lookup, &data(&long)).result, Ok(int(200)));
+    // every search pays per SearchBlock (128 units) of its key at each of its levels: 2 for a map of one entry
+    let per_block = S.cost(Op::Get).search.map_or(0, |s| s.per_block);
     let gap = gas(&eval(lookup, &data(&long))) - gas(&eval(lookup, &data("k")));
-    assert!(gap >= 200 * ((1 << 20) / 32), "get pays per block of its key: {gap}");
+    assert!(per_block > 0, "get searches");
+    assert_eq!(gap, 200 * per_block * ((1 << 20) / 128) * 2, "get pays per block of its key at each level");
 }
 
 // ---- 7. programs are bounded before compilation

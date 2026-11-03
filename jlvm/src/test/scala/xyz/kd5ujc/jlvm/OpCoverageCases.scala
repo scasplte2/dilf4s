@@ -13,6 +13,7 @@ import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue}
 import xyz.kd5ujc.core.circe.CanonicalCirce
 import xyz.kd5ujc.crypto.sigma.Secp256k1Group
 import xyz.kd5ujc.crypto.signing._
+import xyz.kd5ujc.crypto.vrf.{EcVrfTai, Vrf}
 
 import io.circe.Json
 import io.circe.syntax._
@@ -413,6 +414,53 @@ object OpCoverageCases extends IOApp {
     ).map { case (name, program, data) => Case(s"dilf4s surface: $name", program, data) }
   }
 
+  /**
+   * The charges of schedule v1 that grow with more than one argument, or with a number's limbs, pinned across languages
+   * (docs/specs/jlvm.md §7): map searches over maps of 0 to 1000 entries with keys sharing a 300-unit prefix, merging maps,
+   * rational arithmetic and comparison (the gcd's fixed cost), a substring search at KMP's worst, and a verified
+   * `ecvrf_verify`.
+   */
+  val gasShapes: List[Case] = {
+    def keyed(n: Int, prefix: Int): CanonicalValue = m((0 until n).map(i => ("k" * prefix + f"$i%04d") -> int(i))*)
+    val long = "k" * 300
+    val searches = for {
+      n  <- List(0, 1, 64, 1000)
+      op <- List(Op.Get, Op.Has, Op.Set, Op.Unset)
+    } yield {
+      val args = Vector(keyed(n, 300), text(long + "0007")) ++ Option.when(op == Op.Set)(int(1)).toVector
+      probe(s"$n entries with a 300-unit common prefix", op, args*)
+    }
+    val merges = List(
+      probe("three maps of 40, 10 and 3 entries", Op.Merge, keyed(40, 1), keyed(10, 200), keyed(3, 1)),
+      probe("a map and an array: concatenated, not merged", Op.Merge, keyed(40, 1), a(int(1)))
+    )
+    def q(op: Op, name: String, n: BigInt, d: BigInt, k: BigInt, e: BigInt): Case =
+      Case(
+        s"dilf4s ${op.wire}: $name",
+        s"""{"${op.wire}": [{"/": [{"var": "a0"}, {"var": "a1"}]}, {"/": [{"var": "a2"}, {"var": "a3"}]}]}""",
+        m("a0" -> int(n), "a1" -> int(d), "a2" -> int(k), "a3" -> int(e))
+      )
+    val big = (BigInt(1) << 700) + 12345
+    val rationals =
+      List(Op.Add, Op.Mul, Op.Div, Op.Mod, Op.Lt).map(op => q(op, "two 700-bit rationals", big, big * 3 + 2, big + 7, big * 5 + 4)) ++
+      List(
+        Case(
+          "dilf4s abs: a 700-bit rational",
+          """{"abs": [{"/": [{"var": "a0"}, {"var": "a1"}]}]}""",
+          m("a0" -> int(-big), "a1" -> int(big * 3 + 2))
+        )
+      )
+    val kmp = List(probe("a needle of 1000 a's and a b, in 4000 a's", Op.In, text("a" * 1000 + "b"), text("a" * 4000)))
+    val kp = get(Vrf.fromSeed[EcVrfTai](ByteVector.fill(32)(5)))
+    val alpha = ByteVector("alpha".getBytes(UTF_8))
+    val (proof, _) = get(Vrf[EcVrfTai].prove(kp.signing, alpha))
+    val vrf = List(
+      probe("verifies", Op.EcvrfVerify, CBytes(kp.verifying.bytes), CBytes(alpha), CBytes(proof.bytes)),
+      probe("another alpha", Op.EcvrfVerify, CBytes(kp.verifying.bytes), bytes("00"), CBytes(proof.bytes))
+    )
+    searches ++ merges ++ rationals ++ kmp ++ vrf
+  }
+
   private def render(cases: List[Case]): String =
     Json
       .obj(
@@ -433,7 +481,7 @@ object OpCoverageCases extends IOApp {
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
       .mapN((secp, mk, tr) =>
         sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ proofWeight(mk) ++ tries(tr) ++ sigmaBounds ++
-        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading
+        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)

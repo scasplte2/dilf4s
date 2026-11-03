@@ -47,7 +47,7 @@ pub use crypto::{
 };
 pub use dilf4s_core::Value;
 pub use error::JlvmError;
-pub use gas::{Gas, GasLimit, GasSchedule, OpCost, Rate, SizeUnit};
+pub use gas::{GCD_LIMBS, Gas, GasLimit, GasSchedule, Merging, OpCost, RENDER_LIMBS, Rate, Search, SizeUnit};
 pub use machine::{MAX_WARNINGS, Warning};
 pub use native::Native;
 pub use op::Op;
