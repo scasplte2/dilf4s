@@ -8,6 +8,7 @@
  */
 import { byteLimit, Meter } from "./budget.js";
 import type { CanonicalError, TooLarge } from "./error.js";
+import { KeySet } from "./keyset.js";
 import { err, ok, type Result } from "./result.js";
 import { compareCodePoints } from "./utf8.js";
 import { ArrayValue, BoolValue, entriesView, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
@@ -27,7 +28,7 @@ const MAX_DIGIT_BITS = 33220;
 
 const leadingZeros = (s: string): number => s.length - s.replace(/^0+/, "").length;
 
-type Frame = { readonly object: false; readonly items: Value[] } | { readonly object: true; readonly entries: [string, Value][]; readonly seen: Set<string>; key: string };
+type Frame = { readonly object: false; readonly items: Value[] } | { readonly object: true; readonly entries: [string, Value][]; readonly seen: KeySet; key: string };
 
 type State = { readonly step: "value" } | { readonly step: "key" } | { readonly step: "deliver"; readonly value: Value };
 
@@ -81,7 +82,7 @@ class Parser {
             } else if (stack.length >= MAX_DEPTH) {
               return err({ kind: "DepthExceeded", limit: MAX_DEPTH });
             } else {
-              stack.push(object ? { object: true, entries: [], seen: new Set(), key: "" } : { object: false, items: [] });
+              stack.push(object ? { object: true, entries: [], seen: new KeySet(), key: "" } : { object: false, items: [] });
               state = object ? { step: "key" } : { step: "value" };
               pos = q;
             }

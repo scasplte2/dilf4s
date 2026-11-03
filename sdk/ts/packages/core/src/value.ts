@@ -26,6 +26,7 @@
 import { bitLength } from "./bigint.js";
 import type { CanonicalError } from "./error.js";
 import { toHex } from "./hex.js";
+import { KeySet, search } from "./keyset.js";
 import { err, ok, type Result } from "./result.js";
 import { compareBytes, encodeUtf8, isWellFormed } from "./utf8.js";
 
@@ -380,10 +381,10 @@ export function canonicalKeyOrder(a: Uint8Array, b: Uint8Array): number {
   return a.length !== b.length ? a.length - b.length : compareBytes(a, b);
 }
 
+/** A map: its entries in canonical key order, found by binary search. Keys are compared, never hashed (see keyset.ts). */
 export class MapValue {
   readonly kind = "map";
   readonly #entries: readonly Entry[];
-  readonly #index: ReadonlyMap<string, Value>;
   private constructor(
     entries: readonly Entry[],
     readonly depth: number,
@@ -391,7 +392,6 @@ export class MapValue {
     readonly weight: bigint,
   ) {
     this.#entries = entries;
-    this.#index = new Map(entries.map((e) => [e.key, e.value]));
     Object.freeze(this);
   }
 
@@ -404,12 +404,11 @@ export class MapValue {
    * unpaired surrogate is `UnpairedSurrogate`; null values are dropped; excess depth is `DepthExceeded`.
    */
   static of(entries: Iterable<readonly [string, Value]>): Result<MapValue, CanonicalError> {
-    const seen = new Set<string>();
+    const seen = new KeySet();
     const kept: Entry[] = [];
     for (const [key, value] of entries) {
-      if (seen.has(key)) return err({ kind: "DuplicateKey", key });
+      if (!seen.add(key)) return err({ kind: "DuplicateKey", key });
       if (!isWellFormed(key)) return err({ kind: "UnpairedSurrogate" });
-      seen.add(key);
       if (value.kind !== "null") kept.push({ key, utf8: encodeUtf8(key), value });
     }
     kept.sort((a, b) => canonicalKeyOrder(a.utf8, b.utf8));
@@ -417,9 +416,12 @@ export class MapValue {
     return depth > MAX_DEPTH ? err(depthExceeded) : ok(new MapValue(Object.freeze(kept), depth, weight));
   }
 
-  /** The value at `key`, if present. */
+  /**
+   * The value at `key`, if present: O(|key| + log n). A key with an unpaired surrogate encodes to bytes no well-formed
+   * key has, so it is never found.
+   */
   get(key: string): Value | undefined {
-    return this.#index.get(key);
+    return this.#entries[search(this.#entries, (e) => e.utf8, encodeUtf8(key), canonicalKeyOrder)]?.value;
   }
 
   /** The entries in canonical key order. */

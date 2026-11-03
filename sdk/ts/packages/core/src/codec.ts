@@ -7,9 +7,10 @@ import { bitLength } from "./bigint.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
 import { at, decodeFailure as failure, type CanonicalError, type DecodeFailure } from "./error.js";
 import { parse as parseJson } from "./json.js";
+import { search } from "./keyset.js";
 import { err, ok, type Err, type Ok, type Result } from "./result.js";
-import { utf8Length } from "./utf8.js";
-import { ArrayValue, BoolValue, BytesValue, IntValue, MapValue, MAX_DEPTH, TextValue, type Value } from "./value.js";
+import { encodeUtf8, utf8Length } from "./utf8.js";
+import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, MapValue, MAX_DEPTH, TextValue, type Value } from "./value.js";
 
 export type { Value } from "./value.js";
 export { ok } from "./result.js";
@@ -223,7 +224,46 @@ export function vector<T>(element: Codec<T>, min: number, max: number | null): C
   };
 }
 
-/** A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`). */
+/**
+ * A decoded text-keyed map: its entries in canonical key order, found by binary search. Its keys are the encoder's, so
+ * they are compared, never hashed (a `Map` would hash them: see keyset.ts).
+ */
+class TextMap<T> implements ReadonlyMap<string, T> {
+  readonly #entries: readonly (readonly [string, Uint8Array, T])[];
+  constructor(entries: readonly (readonly [string, Uint8Array, T])[]) {
+    this.#entries = entries;
+    Object.freeze(this);
+  }
+  get size(): number {
+    return this.#entries.length;
+  }
+  get(key: string): T | undefined {
+    return this.#entries[this.#find(key)]?.[2];
+  }
+  has(key: string): boolean {
+    return this.#find(key) >= 0;
+  }
+  forEach(f: (value: T, key: string, map: ReadonlyMap<string, T>) => void, thisArg?: unknown): void {
+    for (const [k, , v] of this.#entries) f.call(thisArg, v, k, this);
+  }
+  entries(): MapIterator<[string, T]> {
+    return this.#entries.map(([k, , v]): [string, T] => [k, v]).values();
+  }
+  keys(): MapIterator<string> {
+    return this.#entries.map(([k]) => k).values();
+  }
+  values(): MapIterator<T> {
+    return this.#entries.map(([, , v]) => v).values();
+  }
+  [Symbol.iterator](): MapIterator<[string, T]> {
+    return this.entries();
+  }
+  #find(key: string): number {
+    return search(this.#entries, (e) => e[1], encodeUtf8(key), canonicalKeyOrder);
+  }
+}
+
+/** A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`), decoded in canonical key order. */
 export function textMap<T>(value: Codec<T>): Codec<ReadonlyMap<string, T>> {
   return {
     encode: (m, depth = 0) => {
@@ -238,13 +278,13 @@ export function textMap<T>(value: Codec<T>): Codec<ReadonlyMap<string, T>> {
     },
     decode: (v) => {
       if (v.kind !== "map") return expected("map", v);
-      const out = new Map<string, T>();
-      for (const [k, x] of v.entries()) {
-        const d = value.decode(x);
-        if (!d.ok) return err(at(d.error, k));
-        out.set(k, d.value);
+      const out: (readonly [string, Uint8Array, T])[] = [];
+      for (const e of entriesView(v)) {
+        const d = value.decode(e.value);
+        if (!d.ok) return err(at(d.error, e.key));
+        out.push([e.key, e.utf8, d.value]);
       }
-      return ok(out);
+      return ok(new TextMap(out));
     },
   };
 }
