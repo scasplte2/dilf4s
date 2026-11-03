@@ -78,6 +78,18 @@ object CollidingKeysSuite extends SimpleIOSuite {
     o.comparisons.get
   }
 
+  /**
+   * The comparisons of merging, left to right, trees each built by [[inserting]] one part: exactly what a merge of the
+   * parts' maps must make, as their trees' union.
+   */
+  private def unioning(parts: Vector[Vector[String]]): Long = {
+    val o = new Counting
+    val trees = parts.map(_.foldLeft(TreeMap.empty[String, Int](using o))(_.updated(_, 1)))
+    val before = o.comparisons.get
+    val _ = trees.foldLeft(TreeMap.empty[String, Int](using o))(_ ++ _)
+    o.comparisons.get - before
+  }
+
   /** The hash code `String.hashCode` computes. */
   private def javaHash(s: String): Int = s.foldLeft(0)((h, c) => 31 * h + c)
 
@@ -211,16 +223,22 @@ object CollidingKeysSuite extends SimpleIOSuite {
     }
   }
 
-  test("merged: O(n log n) comparisons, each key of the result measured once") {
-    val (left, right) = colliding(K).splitAt(N / 2)
-    counting { o =>
-      val maps = Vector(left, right, left.take(10)).map(ks => get(CanonicalValue.map(ks.map(_ -> CInt(1)), o)))
+  test("merged: the union of its maps' trees, in O(n log n) comparisons, each key of the result measured once") {
+    // interleaved halves, so the union compares throughout, and a repeat of a few keys
+    def parts(keys: Vector[String]) = {
+      val (evens, odds) = keys.zipWithIndex.partition(_._2 % 2 == 0)
+      Vector(evens.map(_._1), odds.map(_._1), keys.take(10))
+    }
+    def merging(keys: Vector[String]) = counting { o =>
+      val maps = parts(keys).map(ks => get(CanonicalValue.map(ks.map(_ -> CInt(1)), o)))
       val (c, _, ms) = o.counts
       (CanonicalValue.merged(maps, o), o, c, ms)
-    }.map {
-      case ((m, o, c0, m0), comparisons, _, measures) =>
-        // a union of disjoint key ranges compares little, so only the upper bound applies
+    }
+    (merging(colliding(K)), merging(control(K))).mapN {
+      case (((m, o, c0, m0), comparisons, _, measures), ((_, _, p0, _), plain, _, _)) =>
         expect(comparisons - c0 <= 2L * nLogN(N), s"merged: ${comparisons - c0} comparisons for $N keys")
+          .and(expect.same(unioning(parts(colliding(K))), comparisons - c0))
+          .and(expect.same(unioning(parts(control(K))), plain - p0))
           .and(expect.same(N.toLong, measures - m0))
           .and(ordered("merged", m, o))
           .and(expect.same(N, keysOf(m).size))
@@ -241,6 +259,8 @@ object CollidingKeysSuite extends SimpleIOSuite {
         }
         val (equal, equality) = cost(m == same && m != other)
         val (decoded, decoding) = cost(Codec.textMap(Codec.uint).decoder.decode(m))
+        val plain = get(CanonicalValue.map(control(K).map(_ -> CInt(1)), o))
+        val (_, plainDecoding) = cost(Codec.textMap(Codec.uint).decoder.decode(plain))
         val (record, recording) = cost(CanonicalDecoder.record(Set("a", "b"))(f => f.optional[BigInt]("a")).decode(m))
         val (alternative, choosing) =
           cost(Codec.selectAlternative(m, List((Set("a"), Set("a", "b"), CanonicalDecoder.record(Set("a", "b"))(_ => 1.asRight)))))
@@ -250,6 +270,9 @@ object CollidingKeysSuite extends SimpleIOSuite {
           .and(expect(decoded.map(_.size) == Right(N), s"textMap decodes: ${decoded.map(_.size)}"))
           .and(expect(decoded.exists(_.ordering eq o), "textMap decodes in the order of the map it reads"))
           .and(within("textMap", N, decoding, nLogN(N)))
+          // decoded entries are inserted in the map's order: a hashed step on the way would reorder the control's keys
+          .and(expect.same(inserting(keysOf(m)), decoding))
+          .and(expect.same(inserting(keysOf(plain)), plainDecoding))
           .and(expect(record.isLeft && alternative.isLeft, "4096 unknown keys are refused"))
           // the refusal names the unknown keys: each is looked up among the allowed ones, in the map's order
           .and(within("record", N, recording, 4L * nLogN(N)))
