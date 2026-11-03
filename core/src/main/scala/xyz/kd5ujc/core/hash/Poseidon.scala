@@ -74,7 +74,7 @@ final private[hash] case class PoseidonParams(
  */
 object Poseidon {
 
-  val MaxInputs: Int = 4
+  val MaxInputs: Int = xyz.kd5ujc.models.limits.PoseidonMaxInputs
 
   def hash1(a: Fr): Fr = permute(W2, Vector(a))
   def hash2(a: Fr, b: Fr): Fr = permute(W3, Vector(a, b))

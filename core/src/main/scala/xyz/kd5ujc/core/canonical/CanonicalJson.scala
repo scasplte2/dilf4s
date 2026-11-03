@@ -25,10 +25,10 @@ object CanonicalJson {
    * exponent may have, read or written. Decimal conversion is superlinear, so the bound is checked on the text before
    * any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
    */
-  val MaxDigits: Int = 10000
+  val MaxDigits: Int = xyz.kd5ujc.models.limits.CanonicalMaxDigits
 
   // 10^MaxDigits has 33220 bits: a number any wider has more than MaxDigits digits
-  private val MaxDigitBits: Int = 33220
+  private val MaxDigitBits: Int = xyz.kd5ujc.models.limits.CanonicalMaxDigitBits
 
   // ------------------------------------------------------------------ parse
 

@@ -5,6 +5,7 @@ export * as crypto from "./crypto.js";
 export * as jlvm from "./jlvm.js";
 export * as jlvmVectors from "./jlvm_vectors.js";
 export * as kesVectors from "./kes_vectors.js";
+export * as limits from "./limits.js";
 export * as merkle from "./merkle.js";
 export * as merkleVectors from "./merkle_vectors.js";
 export * as poseidon from "./poseidon.js";

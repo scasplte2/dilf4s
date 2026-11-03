@@ -24,10 +24,11 @@ Bits are numbered MSB-first. Typed values are added as the canonical CBOR of the
 ```cddl
 ; dilf4s Bloom filter (docs/specs/bloom.md). "m" is the number of bits, a power of two (checked by the domain
 ; decoder); "k" the number of hash functions; "b" the m bits, MSB-first, as m / 8 bytes.
+;# import limits as limits
 
 bloom-filter = {
-  "m": 64..16777216,
-  "k": 1..32,
+  "m": limits.bloom-min-bits .. limits.bloom-max-bits,
+  "k": 1 .. limits.bloom-max-hashes,
   "b": bytes,
 }
 ```

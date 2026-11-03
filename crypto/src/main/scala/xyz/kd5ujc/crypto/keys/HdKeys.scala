@@ -58,10 +58,10 @@ object ChildIndex {
     Either.cond(i >= 0 && i < 0x80000000L, Hardened(i), KeyError.InvalidDerivation(s"index $i out of range"))
 
   /** The most digits a segment may have: 2^31 - 1 has ten. */
-  val MaxSegmentDigits: Int = 10
+  val MaxSegmentDigits: Int = xyz.kd5ujc.models.limits.PathMaxSegmentDigits
 
   /** The most segments a path may have after `m`: BIP32 serialises the depth in one byte. */
-  val MaxDepth: Int = 255
+  val MaxDepth: Int = xyz.kd5ujc.models.limits.PathMaxDepth
 
   /**
    * `m/44'/0'/0'/0/7` (or `h` in place of `'`), relative to the master key; `m` alone is the empty path. A segment is

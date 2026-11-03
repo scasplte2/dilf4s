@@ -44,9 +44,9 @@ pub enum KeyMode {
 }
 
 /// The largest fixed key width.
-pub const MAX_FIXED_KEY_BYTES: u32 = 1024;
+pub const MAX_FIXED_KEY_BYTES: u32 = dilf4s_core::generated::limits::as_u32::TRIE_MAX_FIXED_KEY_BYTES;
 /// The largest variable key limit.
-pub const MAX_VARIABLE_KEY_BYTES: u32 = 65535;
+pub const MAX_VARIABLE_KEY_BYTES: u32 = dilf4s_core::generated::limits::as_u32::TRIE_MAX_VARIABLE_KEY_BYTES;
 
 impl KeyMode {
     fn admits(self, key: &[u8]) -> bool {
@@ -198,11 +198,11 @@ pub trait CryptoBackend {
 /// The BN254 scalar field modulus `r`.
 const BN254_R: &str = "21888242871839275222246405745257275088548364400416034343698204186575808495617";
 /// The most pairs `bn254_pairing` accepts.
-const MAX_PAIRS: usize = 64;
+const MAX_PAIRS: usize = dilf4s_core::generated::limits::as_usize::JLVM_MAX_PAIRS;
 /// The most siblings `pmt_verify` accepts: the deepest Poseidon Merkle tree.
-const MAX_SIBLINGS: usize = 256;
+const MAX_SIBLINGS: usize = dilf4s_core::generated::limits::as_usize::POSEIDON_MAX_DEPTH;
 /// The most inputs `poseidon` accepts.
-const MAX_POSEIDON_INPUTS: usize = 4;
+const MAX_POSEIDON_INPUTS: usize = dilf4s_core::generated::limits::as_usize::POSEIDON_MAX_INPUTS;
 const FIELD_BYTES: usize = 32;
 const G1_BYTES: usize = 64;
 const G2_BYTES: usize = 128;

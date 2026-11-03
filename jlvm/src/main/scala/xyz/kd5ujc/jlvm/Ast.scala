@@ -213,7 +213,7 @@ object Program {
   val Version: Int = 1
 
   /** Expression nesting: an operation's arguments, an array's items and a map's fields are one level deeper. */
-  val MaxDepth: Int = 256
+  val MaxDepth: Int = xyz.kd5ujc.models.limits.JlvmMaxProgramDepth
 
   /** JSON nesting of the rendered program ([[Parser.render]]), as the canonical JSON parser bounds it. */
   val MaxSurfaceDepth: Int = CanonicalValue.MaxDepth
@@ -254,7 +254,7 @@ object Program {
    * each object key, binding name and path segment, and one per segment. Compilation is linear in the size and uses no gas, so the bound is
    * checked first, by a walk that stops as soon as it is exceeded. The largest conformance programs are under 2^14.
    */
-  val MaxSize: Long = 1L << 18
+  val MaxSize: Long = xyz.kd5ujc.models.limits.JlvmMaxProgramSize
 
   /** A path's segments, each with its length. */
   private def segments(p: Vector[String]): Long = p.foldLeft(0L)((n, s) => n + 1L + s.length)

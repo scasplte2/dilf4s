@@ -18,15 +18,15 @@ use crate::error::{CanonicalError, DigitsOutOfRange, JsonSyntaxError, NotJson, N
 use crate::value::{Array, MAX_DEPTH, Map, Rational, Text, Value};
 
 /// The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises.
-pub const DEFAULT_MAX_SCALE: u32 = 10_000;
+pub const DEFAULT_MAX_SCALE: u32 = crate::generated::limits::as_u32::CANONICAL_MAX_SCALE;
 
 /// The most significant digits a JSON number's significand (integer and fraction digits, leading zeros aside) or
 /// exponent may have, read or written. Decimal conversion is superlinear, so the bound is checked on the text before
 /// any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
-pub const MAX_DIGITS: usize = 10_000;
+pub const MAX_DIGITS: usize = crate::generated::limits::as_usize::CANONICAL_MAX_DIGITS;
 
 /// `10^MAX_DIGITS` has 33220 bits: a number any wider has more than [`MAX_DIGITS`] digits.
-const MAX_DIGIT_BITS: u64 = 33_220;
+const MAX_DIGIT_BITS: u64 = crate::generated::limits::CANONICAL_MAX_DIGIT_BITS;
 
 /// Parses JSON text into a canonical value with the default scale bound.
 pub fn parse(text: &str) -> Result<Value, CanonicalError> {

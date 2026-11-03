@@ -6,6 +6,7 @@ pub mod crypto;
 pub mod jlvm;
 pub mod jlvm_vectors;
 pub mod kes_vectors;
+pub mod limits;
 pub mod merkle;
 pub mod merkle_vectors;
 pub mod poseidon;

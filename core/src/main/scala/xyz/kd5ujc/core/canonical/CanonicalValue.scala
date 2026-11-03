@@ -30,7 +30,7 @@ sealed trait CanonicalValue extends Product with Serializable {
 
 object CanonicalValue {
 
-  val MaxDepth: Int = 256
+  val MaxDepth: Int = xyz.kd5ujc.models.limits.CanonicalMaxDepth
 
   implicit val canonicalValueShow: Show[CanonicalValue] = Show.fromToString
 

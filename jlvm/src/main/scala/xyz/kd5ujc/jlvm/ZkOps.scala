@@ -212,7 +212,7 @@ final class ZkOps(engine: Bn254Engine) {
 object ZkOps {
 
   /** The most pairs `bn254_pairing` accepts (metakit has no bound; gas already grows with the count). */
-  val MaxPairs: Int = 64
+  val MaxPairs: Int = xyz.kd5ujc.models.limits.JlvmMaxPairs
 
   /** The most siblings `pmt_verify` accepts: the deepest Poseidon Merkle tree. */
   val MaxSiblings: Int = PoseidonMerkleTree.MaxDepth

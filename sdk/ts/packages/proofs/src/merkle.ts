@@ -19,7 +19,7 @@ export type MerkleError =
   | { readonly kind: "TooLarge"; readonly limit: number };
 
 /** The largest tree size or index: the schema's `tree-index`. */
-export const MAX_TREE_INDEX = 2n ** 63n - 1n;
+export const MAX_TREE_INDEX = models.limits.MERKLE_MAX_TREE_INDEX;
 
 export const LEAF_TAG = "dilf4s/merkle/leaf/v1";
 export const NODE_TAG = "dilf4s/merkle/node/v1";

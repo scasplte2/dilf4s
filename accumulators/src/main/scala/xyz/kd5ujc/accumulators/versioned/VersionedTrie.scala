@@ -25,13 +25,13 @@ object VersionedTrie {
   final case class Head[V, H](version: V, stateRoot: Digest[H], historyRoot: Digest[H])
 
   /** The largest value a key may hold, as canonical CBOR: every entry then fits in one snapshot chunk (§7). */
-  val MaxValueBytes: Long = 1L << 20
+  val MaxValueBytes: Long = xyz.kd5ujc.models.limits.VersionedMaxValueBytes
 
   /** At most this many entries or versions in one snapshot chunk. */
-  val MaxChunkEntries: Int = 1024
+  val MaxChunkEntries: Int = xyz.kd5ujc.models.limits.VersionedMaxChunkEntries
 
   /** The largest snapshot chunk, as canonical CBOR: refused before it is decoded. */
-  val MaxChunkBytes: Long = 1L << 22
+  val MaxChunkBytes: Long = xyz.kd5ujc.models.limits.VersionedMaxChunkBytes
 
   /**
    * The deepest any wire record wraps a value: a delta's `{"upserts": [{"k", "v"}]}` and a snapshot chunk's
@@ -40,7 +40,7 @@ object VersionedTrie {
   val ValueWrapperDepth: Int = 3
 
   /** The deepest value a key may hold, so that every record carrying it stays within `CanonicalValue.MaxDepth`. */
-  val MaxValueDepth: Int = CanonicalValue.MaxDepth - ValueWrapperDepth
+  val MaxValueDepth: Int = xyz.kd5ujc.models.limits.VersionedMaxValueDepth
 
   /**
    * A value every wire format can carry: at most `MaxValueDepth` deep and `MaxValueBytes` long. Never encodes the value:

@@ -34,7 +34,7 @@ pub enum Warning {
 }
 
 /// At most this many distinct warnings are kept per evaluation.
-pub const MAX_WARNINGS: usize = 64;
+pub const MAX_WARNINGS: usize = dilf4s_core::generated::limits::as_usize::JLVM_MAX_WARNINGS;
 
 /// Gas used so far, against the limit; and the distinct warnings so far.
 struct Meter {

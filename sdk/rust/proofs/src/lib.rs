@@ -24,7 +24,7 @@ pub use bits::Bits;
 /// (docs/specs/conformance.md section 5). 2^24, four times the largest snapshot chunk, so range proofs over large
 /// listings fit. A heavier input is refused in O(1), from its cached weight, before it is decoded, as the verifier's
 /// malformed-input error: a value with shared parts is small in memory, and decoding walks it as written out.
-pub const MAX_PROOF_WEIGHT: u64 = 1 << 24;
+pub const MAX_PROOF_WEIGHT: u64 = dilf4s_core::generated::limits::MAX_PROOF_WEIGHT;
 
 /// Whether claims of these weights (a leaf, a value, a listing's values) are together within [`MAX_PROOF_WEIGHT`]:
 /// a verifier checks this before hashing any and before decoding the proof.

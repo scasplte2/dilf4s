@@ -8,23 +8,24 @@
  */
 import { byteLimit, Meter } from "./budget.js";
 import type { CanonicalError, TooLarge } from "./error.js";
+import { CANONICAL_MAX_DIGIT_BITS, CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
 import { KeySet } from "./keyset.js";
 import { err, ok, type Result } from "./result.js";
 import { compareCodePoints } from "./utf8.js";
 import { ArrayValue, BoolValue, entriesView, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
 
 /** The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises. */
-export const DEFAULT_MAX_SCALE = 10000;
+export const DEFAULT_MAX_SCALE = CANONICAL_MAX_SCALE;
 
 /**
  * The most significant digits a JSON number's significand (integer and fraction digits, leading zeros aside) or
  * exponent may have, read or written. Decimal conversion is superlinear, so the bound is checked on the text before
  * any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
  */
-export const MAX_DIGITS = 10000;
+export const MAX_DIGITS = CANONICAL_MAX_DIGITS;
 
 // 10^MAX_DIGITS has 33220 bits: a number any wider has more than MAX_DIGITS digits
-const MAX_DIGIT_BITS = 33220;
+const MAX_DIGIT_BITS = CANONICAL_MAX_DIGIT_BITS;
 
 const leadingZeros = (s: string): number => s.length - s.replace(/^0+/, "").length;
 

@@ -78,7 +78,9 @@ object SchemaConformanceSuite extends SimpleIOSuite {
   }
 
   private val schemas =
-    List("merkle", "trie", "poseidon", "storage", "bloom", "crypto", "versioned-trie").map(m => m -> read("shared", "schemas", s"$m.cddl"))
+    List("merkle", "trie", "poseidon", "storage", "bloom", "crypto", "versioned-trie", "limits").map(m =>
+      m -> read("shared", "schemas", s"$m.cddl")
+    )
 
   private val codecs: Map[String, Codec[?]] = Map(
     "merkle-inclusion"                -> MerkleInclusion.codec,

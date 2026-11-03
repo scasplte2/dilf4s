@@ -53,10 +53,10 @@ object SigmaProp {
   }
 
   /** Nesting bound: the verifier and prover recurse on the tree. */
-  val MaxDepth: Int = 64
+  val MaxDepth: Int = xyz.kd5ujc.models.limits.SigmaMaxDepth
 
   /** Leaf bound: each leaf costs curve work, and a threshold evaluates at most 255 points. */
-  val MaxLeaves: Int = 4096
+  val MaxLeaves: Int = xyz.kd5ujc.models.limits.SigmaMaxLeaves
 
   /** A threshold's points are the bytes 1..n. */
   val MaxChildren: Int = ChildPoint.Max
@@ -135,7 +135,7 @@ object SigmaProp {
    * §3): 4096 `dhtuple` leaves (158 each) at depth 64, under `1 + 255 + 61·4096` one-`k` thresholds (29 each, plus
    * their children). A heavier value is refused before any of it is decoded.
    */
-  val MaxWeight: Long = 7900416L
+  val MaxWeight: Long = xyz.kd5ujc.models.limits.SigmaMaxWeight
 
   /** A connective as read, before its children are decoded; a threshold's `k` as given. */
   private enum Kind {

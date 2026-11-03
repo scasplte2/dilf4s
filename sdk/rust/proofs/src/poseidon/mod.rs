@@ -19,7 +19,7 @@ pub mod constants;
 pub type Fr = ark_bn254::Fr;
 
 /// The most inputs.
-pub const MAX_INPUTS: usize = 4;
+pub const MAX_INPUTS: usize = dilf4s_core::generated::limits::as_usize::POSEIDON_MAX_INPUTS;
 /// Full rounds.
 pub const FULL_ROUNDS: usize = 8;
 

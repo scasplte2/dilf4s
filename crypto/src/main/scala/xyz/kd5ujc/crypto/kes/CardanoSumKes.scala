@@ -176,9 +176,16 @@ final class CardanoSumKes private (val depth: Int) {
 
 object CardanoSumKes {
 
+  /** The greatest depth: `Sum7KES`. */
+  val MaxDepth: Int = xyz.kd5ujc.models.limits.CardanoKesMaxDepth
+
   /** `SumKES` of depth 0..7 (`Sum0KES` .. `Sum7KES`). */
   def apply(depth: Int): Either[KesError, CardanoSumKes] =
-    Either.cond(depth >= 0 && depth <= 7, new CardanoSumKes(depth), KesError.Malformed("KES depth", s"expected 0..7, got $depth"))
+    Either.cond(
+      depth >= 0 && depth <= MaxDepth,
+      new CardanoSumKes(depth),
+      KesError.Malformed("KES depth", s"expected 0..$MaxDepth, got $depth")
+    )
 
   /** The Praos hot-key scheme. */
   val Sum6: CardanoSumKes = new CardanoSumKes(6)
