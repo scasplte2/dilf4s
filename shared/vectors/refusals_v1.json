@@ -674,6 +674,29 @@
       }
     },
     {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "trie prefix verify: an entry with an empty key and a null value: the null is refused first",
+      "check" : "trie-prefix-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "prefix" : "",
+      "entries" : [
+        {
+          "key" : "",
+          "value" : {
+            "leaf" : "f6"
+          }
+        }
+      ],
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      }
+    },
+    {
       "outcome" : "accepted",
       "name" : "merkle verify: a leaf of weight exactly 2^24",
       "check" : "merkle-verify",

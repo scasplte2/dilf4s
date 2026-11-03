@@ -432,7 +432,20 @@ object RefusalVectors {
           input(literal(proof))
         )
       )
+    // competing refusals in a listing: an entry's missing value is refused before its key is checked
+    val nullEntry = Case(
+      "trie prefix verify: an entry with an empty key and a null value: the null is refused first",
+      "trie-prefix-verify",
+      List(
+        "mode"    -> Json.obj("fixed" -> 1.asJson),
+        "root"    -> hex(t.root.bytes),
+        "prefix"  -> hex(ByteVector.empty),
+        "entries" -> List(Json.obj("key" -> hex(ByteVector.empty), "value" -> BuiltValues.json(BuiltValues.of(CNull)))).asJson,
+        input(literal(proof))
+      )
+    )
     List(
+      nullEntry,
       leaf("a leaf of weight exactly 2^24", BuiltValues.ofWeight(cap)),
       leaf("a leaf of weight 2^24 + 1, refused before it is hashed", BuiltValues.ofWeight(cap + 1)),
       leaf("a leaf of saturated weight", BuiltValues.of(CNull).wrap(Pair, 70)),

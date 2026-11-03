@@ -29,11 +29,12 @@ fn claimed<H: Hasher>(
     mode: KeyMode,
     entries: &[(&[u8], &Value)],
 ) -> Result<Listing<H>, TrieError> {
+    // the entry's shape (a value) before its key, as Scala and TypeScript check them
     for (k, v) in entries {
-        mode.check_key(k)?;
         if **v == Value::Null {
             return Err(encoding("an entry is [key, value], with a value"));
         }
+        mode.check_key(k)?;
     }
     within(entries.iter().map(|(_, v)| v.weight()))?;
     Ok(entries.iter().map(|(k, v)| (k.to_vec(), hashing.value_of(v))).collect())
