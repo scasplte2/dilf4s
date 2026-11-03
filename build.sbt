@@ -64,7 +64,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, modelsGen, jlvm, benchmarks)
+  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, modelsGen, jlvm, benchmarks, scalafixRules, scalafixInput, scalafixTests)
 
 // ─── Shared Test Utilities ───
 lazy val sharedTest = project.in(file("shared-test"))
@@ -130,7 +130,7 @@ lazy val core = project.in(file("core"))
       cached(inputs).toSeq.sortBy(_.getAbsolutePath)
     }.taskValue
   )
-  .dependsOn(numerics, sharedTest % Test)
+  .dependsOn(numerics, sharedTest % Test, scalafixRules % ScalafixConfig)
 
 // ─── Crypto: typed signature schemes, VRF, KES, BLS, zk primitives ───
 lazy val crypto = project.in(file("crypto"))
@@ -240,3 +240,61 @@ lazy val benchmarks = project.in(file("benchmarks"))
     publish / skip := true
   )
   .dependsOn(core, accumulators, jlvm)
+
+// ─── scalafix-rules: core's semantic lint (NoHashing), the code it must refuse, and the testkit suite that checks it ───
+lazy val scalafixRules = project.in(file("scalafix-rules/rules"))
+  .settings(
+    name := "dilf4s-scalafix-rules",
+    scalaVersion := _root_.scalafix.sbt.BuildInfo.scala213,
+    libraryDependencies ++= Seq(
+      "ch.epfl.scala" %% "scalafix-core" % _root_.scalafix.sbt.BuildInfo.scalafixVersion,
+      // the classpath symbol table (scalafix's own runtime provides it): a Scala 3 SemanticDB omits library symbols
+      ("org.scalameta" % "semanticdb-scalac-core" % "4.17.4" % Provided).cross(CrossVersion.full)
+    ),
+    // the Scala 2.13 library the rule reads library symbols from: Scala 3.8's own carries TASTy, not Scala 2 signatures
+    Compile / resourceGenerators += Def.task {
+      val library = (Compile / dependencyClasspath).value.files
+        .find(f => f.getName.startsWith("scala-library-2.13"))
+        .getOrElse(sys.error("NoHashing needs a Scala 2.13 scala-library on its classpath"))
+      val out = (Compile / resourceManaged).value / "xyz" / "kd5ujc" / "scalafix" / "scala-library.path"
+      IO.write(out, library.getAbsolutePath)
+      Seq(out)
+    }.taskValue,
+    publish / skip := true
+  )
+
+// every way of hashing a key the rule must refuse, each line marked with the diagnostic it must produce
+lazy val scalafixInput = project.in(file("scalafix-rules/input"))
+  .settings(
+    name := "dilf4s-scalafix-input",
+    publish / skip := true
+  )
+  .dependsOn(core)
+
+lazy val scalafixTests = project.in(file("scalafix-rules/tests"))
+  .enablePlugins(ScalafixTestkitPlugin)
+  .settings(
+    name := "dilf4s-scalafix-tests",
+    scalaVersion := _root_.scalafix.sbt.BuildInfo.scala213,
+    publish / skip := true,
+    libraryDependencies +=
+      ("ch.epfl.scala" % "scalafix-testkit" % _root_.scalafix.sbt.BuildInfo.scalafixVersion % Test).cross(CrossVersion.full),
+    // the fixtures as the testkit expects them back: a lint changes nothing, less their config header and assertions
+    scalafixTestkitOutputSourceDirectories := Seq(target.value / "fixtures-expected"),
+    Test / resourceGenerators += Def.task {
+      val out = target.value / "fixtures-expected"
+      (scalafixInput / Compile / unmanagedSourceDirectories).value.flatMap { dir =>
+        (dir ** "*.scala").get.map { f =>
+          val text = IO.read(f).replaceFirst("(?s)\\A/\\*\\nrules = .*?\\n \\*/\\n", "").replace("// assert: NoHashing", "")
+          val dest = out / IO.relativize(dir, f).getOrElse(f.getName)
+          IO.write(dest, text)
+          dest
+        }
+      }
+    }.taskValue,
+    scalafixTestkitInputSourceDirectories := (scalafixInput / Compile / unmanagedSourceDirectories).value,
+    scalafixTestkitInputClasspath := (scalafixInput / Compile / fullClasspath).value,
+    scalafixTestkitInputScalacOptions := (scalafixInput / Compile / scalacOptions).value,
+    scalafixTestkitInputScalaVersion := (scalafixInput / Compile / scalaVersion).value
+  )
+  .dependsOn(scalafixRules)
