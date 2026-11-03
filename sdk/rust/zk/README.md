@@ -65,7 +65,7 @@ CI runs the same commands in the `sp1-guest` job of `.github/workflows/ci.yml`.
 | Sigma | Both vector files |
 | BN254 and SP1 Groth16 | Every add, mul, pairing and `sp1Groth16` case |
 | Poseidon | Hashes and Merkle roots |
-| VRF (TAI, ELL2, draft-03) | Every committed proof and rejection row of `vrf_v1.json`, one family per suite; also prints the guest cycles per verification |
+| VRF (TAI, ELL2, draft-03) | Every committed proof and rejection row of `vrf_v1.json`, one family per suite; also prints the guest's cycles and gas per verification |
 | JLVM | 264 cases: every case that calls a cryptographic operation on real inputs, and every 50th other case |
 
 For each family the test asserts four things:
@@ -284,15 +284,33 @@ saves nothing. `dilf4s-signing` keeps two scalar multiplications per leaf on eve
 
 ## VRF verification in the guest
 
-Each VRF family prints the guest's cycles per verification of a committed proof. A cycle here is an instruction or a
-syscall; the figure is the run less an empty run, divided by the 9 proofs per suite.
+Each VRF family prints the guest's cost per verification of a committed proof: the run less an empty run, divided by
+the 9 proofs per suite. A cycle is an instruction or a syscall. Gas is SP1's proving-cost estimate, which also counts
+the precompiles' rows, so it is the fairer figure once verification leans on precompiles.
 
-| Suite | Cycles per verification |
-|---|---|
-| ECVRF-EDWARDS25519-SHA512-TAI | 1,719,548 |
-| ECVRF-EDWARDS25519-SHA512-ELL2 | 1,745,443 |
-| ECVRF-ED25519-SHA512-Elligator2 (draft-03) | 1,646,979 |
+| Step | TAI cycles | TAI gas | ELL2 cycles | ELL2 gas | draft-03 cycles | draft-03 gas |
+|---|---|---|---|---|---|---|
+| Before: `vartime_multiscalar_mul` for `U` and `V` | 1,719,548 | 1,637,457 | 1,745,443 | 1,660,900 | 1,646,979 | 1,558,030 |
+| 1. `U` as one double-base multiplication | 1,076,338 | 1,061,968 | 1,099,594 | 1,083,023 | 1,003,108 | 984,971 |
+| 2. `V` as two variable-base multiplications | 433,495 | 485,839 | 454,043 | 504,671 | 359,717 | 411,454 |
+| 3. No re-encoding to decode or to hash `Y` | 278,937 | 320,966 | 338,074 | 380,955 | 321,027 | 370,155 |
 
-The figures include the one-exponentiation Elligator maps. None of the suites calls the `ED_ADD` precompile:
-verification combines its points with curve25519-dalek's `vartime_multiscalar_mul`, which SP1's patch leaves in
-software. Only decompression (`ED_DECOMPRESS`) is accelerated.
+Each row includes the ones above it; all of them give the same outcomes as native code on every VRF row.
+
+1. **`U = s B - c Y`** is `vartime_double_scalar_mul_basepoint` (`equation_base` in `signing/src/vrf.rs`), on every
+   target. SP1's patch runs it on `ED_ADD`, about 700 calls per verification. Natively it is faster as well: about
+   34 µs, against 39 µs for the multiscalar multiplication.
+2. **`V = s H - c Gamma`** is two variable-base multiplications in the guest (`lincomb`), which the patch also runs
+   on `ED_ADD`. The patch leaves `vartime_multiscalar_mul` in software. Natively `V` stays one multiscalar
+   multiplication: about 41 µs, where the two constant-time multiplications take about 82 µs. The choice is gated
+   on `target_os = "zkvm"` and `target_vendor = "succinct"`.
+3. **Re-encoding.** Each `compress` is a field inversion in software, about 38,000 cycles in the guest (about 4 µs
+   natively). Strict decoding used to decode and then re-encode to compare; it now checks `y < p` and refuses the
+   sign bit at `y = ±1`, the only points with `x = 0`, which refuses exactly the same encodings
+   (`strict_decoding_refuses_exactly_what_re_encoding_does`). Hash-to-curve hashes the key's bytes in place of
+   re-encoding `Y`: a key that decodes and is not of small order re-encodes to itself, under both suites' rules
+   (`a_decoded_key_re_encodes_to_itself`). This saves three inversions per verification for ELL2, one for draft-03,
+   and for TAI one more per hash-to-curve attempt.
+
+The four inversions that remain encode `H`, `U`, `V` and `8 Gamma`, about 150,000 cycles. Each is needed: the
+challenge hashes those encodings, and `beta` hashes the last one.

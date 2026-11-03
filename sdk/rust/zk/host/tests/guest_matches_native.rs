@@ -136,15 +136,19 @@ fn cycles(report: &sp1_sdk::ExecutionReport) -> u64 {
     report.total_instruction_count().saturating_add(report.total_syscall_count())
 }
 
-/// One VRF suite: every committed proof and rejection row, then the guest's cycles per verification of a committed
-/// proof (its run less an empty run's).
+/// One VRF suite: every committed proof and rejection row, then the guest's cycles and gas per verification of a
+/// committed proof (its run less an empty run's), and its `ED_ADD` calls.
 async fn vrf(suite: &str) {
-    check(suite, vectors::vrf(suite, true).unwrap(), &[SyscallCode::ED_DECOMPRESS]).await;
+    check(suite, vectors::vrf(suite, true).unwrap(), &[SyscallCode::ED_ADD, SyscallCode::ED_DECOMPRESS]).await;
     let proofs: Vec<_> = vectors::vrf(suite, false).unwrap().into_iter().map(|n| n.case).collect();
     let (_, empty) = execute(&Request::Run(Vec::new())).await.unwrap();
     let (_, report) = execute(&Request::Run(proofs.clone())).await.unwrap();
-    let per = cycles(&report).saturating_sub(cycles(&empty)).checked_div(u64::try_from(proofs.len()).unwrap()).unwrap();
-    println!("{suite}: {per} cycles per verification ({} proofs)", proofs.len());
+    let n = u64::try_from(proofs.len()).unwrap();
+    let per = |run: u64, base: u64| run.saturating_sub(base).checked_div(n).unwrap();
+    let cycles_per = per(cycles(&report), cycles(&empty));
+    let gas_per = per(report.gas().unwrap(), empty.gas().unwrap());
+    let ed_add = report.syscall_counts[SyscallCode::ED_ADD].checked_div(n).unwrap();
+    println!("{suite}: {cycles_per} cycles, {gas_per} gas, {ed_add} ED_ADD per verification ({} proofs)", proofs.len());
 }
 
 #[tokio::test]
