@@ -135,7 +135,7 @@ impl<K: VersionKey, H: Hasher> Replica<K, H> {
         }
         for (k, v) in &delta.upserts {
             if *v == Value::Null {
-                return Err(malformed(alloc::format!("{k} is upserted as null")));
+                return Err(malformed(alloc::format!("{} is upserted as null", k.preview().short())));
             }
             check_value(k, v)?;
         }

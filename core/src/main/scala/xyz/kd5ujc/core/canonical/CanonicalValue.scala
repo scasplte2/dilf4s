@@ -172,7 +172,7 @@ object CanonicalValue {
     )(CInt(_).asRight)
 
   def text(value: String): Either[CanonicalError, CText] =
-    Either.cond(Utf16.isWellFormed(value), new CText(value) {}, CanonicalError.UnpairedSurrogate(value))
+    Either.cond(Utf16.isWellFormed(value), new CText(value) {}, CanonicalError.UnpairedSurrogate)
 
   def bytes(value: ByteVector): CanonicalValue = CBytes(value)
 
@@ -209,7 +209,7 @@ object CanonicalValue {
       val sorted = present.map(_._1.value).sorted(using keys)
       sorted
         .zip(sorted.drop(1))
-        .collectFirst { case (a, b) if keys.equiv(a, b) => CanonicalError.DuplicateKey(a) }
+        .collectFirst { case (a, b) if keys.equiv(a, b) => CanonicalError.DuplicateKey(Preview.of(a)) }
         .toLeft(m)
         .flatMap(withinDepth)
     }
@@ -262,10 +262,10 @@ object CanonicalValue {
       case Nil => (new MapNode(acc.filter { case (_, v) => v != CNull }, keys, depths, weight): CMap).asRight
       case (k, v) :: rest =>
         val next = acc.updated(k, v)
-        if (next.size == acc.size) CanonicalError.DuplicateKey(k).asLeft
+        if (next.size == acc.size) CanonicalError.DuplicateKey(Preview.of(k)).asLeft
         else {
           val length = keys.measure(k)
-          if (length < 0) CanonicalError.UnpairedSurrogate(k).asLeft
+          if (length < 0) CanonicalError.UnpairedSurrogate.asLeft
           else if (v == CNull) collect(rest, keys, next, depths, weight)
           else collect(rest, keys, next, counted(depths, v.depth, 1), Weight.add(weight, Weight.add(1L + length, v.weight)))
         }

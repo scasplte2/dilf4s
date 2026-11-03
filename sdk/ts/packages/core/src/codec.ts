@@ -7,10 +7,11 @@ import { bitLength } from "./bigint.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
 import { at, decodeFailure as failure, type CanonicalError, type DecodeFailure, type TooLarge } from "./error.js";
 import { parse as parseJson } from "./json.js";
+import { Preview } from "./preview.js";
 import { search } from "./keyset.js";
 import { err, ok, type Err, type Ok, type Result } from "./result.js";
 import { encodeUtf8, utf8Length } from "./utf8.js";
-import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, MapValue, MAX_DEPTH, TextValue, type Value } from "./value.js";
+import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, MapValue, MAX_DEPTH, MAX_WEIGHT, TextValue, type Value } from "./value.js";
 
 export type { Value } from "./value.js";
 export { ok } from "./result.js";
@@ -34,10 +35,13 @@ export type ModelError = { readonly kind: "Canonical"; readonly error: Canonical
 
 /**
  * `codec.decode(value)`, if `value` weighs at most `maxWeight`: a heavier value is refused in O(1), from its cached
- * weight, before any of it is read or copied. Decode a caller's value with this, never with `decode` alone.
+ * weight, before any of it is read or copied. Decode a caller's value with this, never with `decode` alone. The budget
+ * is first brought into the weight range `0..MAX_WEIGHT` (weights are at least 1 and saturate at `MAX_WEIGHT`, so no
+ * outcome changes), so a refusal names a 64-bit budget, never a caller's integer of any size.
  */
 export function decodeWithin<T>(codec: Codec<T>, value: Value, maxWeight: bigint): Result<T, DecodeFailure> {
-  return value.weight > maxWeight ? err(failure(`the value weighs over ${maxWeight.toString()}`)) : codec.decode(value);
+  const budget = maxWeight < 0n ? 0n : maxWeight > MAX_WEIGHT ? MAX_WEIGHT : maxWeight;
+  return value.weight > budget ? err(failure(`the value weighs over ${budget.toString()}`)) : codec.decode(value);
 }
 
 /** The canonical CBOR of `value`, as `cbor.encode`: a model holding caller values (`any`) may share parts. */
@@ -166,7 +170,7 @@ export function matching(pattern: TextPattern): Codec<string> {
     encode: (s) => (matches(pattern, s) ? TextValue.of(s) : typeMismatch(`text does not match ${pattern}`)),
     decode: (v) => {
       if (v.kind !== "text") return expected("text", v);
-      return matches(pattern, v.value) ? ok(v.value) : decodeFailure(`${JSON.stringify(v.value)} does not match ${pattern}`);
+      return matches(pattern, v.value) ? ok(v.value) : decodeFailure(`${Preview.of(v.value).toString()} does not match ${pattern}`);
     },
   };
 }
@@ -177,7 +181,7 @@ export function literalText<S extends string>(literal: S): Codec<S> {
     encode: () => TextValue.of(literal),
     decode: (v) => {
       if (v.kind !== "text") return expected("text", v);
-      return v.value === literal ? ok(literal) : decodeFailure(`expected ${JSON.stringify(literal)}, got ${JSON.stringify(v.value)}`);
+      return v.value === literal ? ok(literal) : decodeFailure(`expected ${JSON.stringify(literal)}, got ${Preview.of(v.value).toString()}`);
     },
   };
 }
@@ -195,7 +199,7 @@ export function literalInt<N extends bigint>(literal: N): Codec<N> {
 
 /** One of `texts`, for the text alternatives of a choice. */
 export function oneOfText(t: string, texts: readonly string[]): Result<Value, CanonicalError> {
-  return texts.includes(t) ? TextValue.of(t) : typeMismatch(`${JSON.stringify(t)} is not an alternative`);
+  return texts.includes(t) ? TextValue.of(t) : typeMismatch(`${Preview.of(t).toString()} is not an alternative`);
 }
 
 /** A codec referenced by name and resolved on use, so rules may refer to each other in any order, recursively. */
@@ -302,7 +306,7 @@ export function intEnum<L extends string>(name: string, cases: readonly (readonl
   return {
     encode: (label) => {
       const c = cases.find(([l]) => l === label);
-      return c === undefined ? typeMismatch(`${label} is not a ${name}`) : ok(IntValue.of(c[1]));
+      return c === undefined ? typeMismatch(`${Preview.of(label).toString()} is not a ${name}`) : ok(IntValue.of(c[1]));
     },
     decode: (v) => {
       if (v.kind !== "int") return expected("int", v);
@@ -356,8 +360,10 @@ export interface Fields {
 /** The fields of `v`, which must be a map whose keys are all in `allowed`. */
 export function fields(v: Value, allowed: readonly string[]): Ok<Fields> | Err<DecodeFailure> {
   if (v.kind !== "map") return expected("map", v);
+  // the keys come in canonical order: the refusal counts the unknown ones and previews the first, never lists them
   const unknown = v.keys().filter((k) => !allowed.includes(k));
-  if (unknown.length > 0) return decodeFailure(`unknown keys ${[...unknown].sort().join(", ")}`);
+  const first = unknown[0];
+  if (first !== undefined) return decodeFailure(`${unknown.length.toString()} unknown ${unknown.length === 1 ? "key" : "keys"}, the first ${Preview.of(first).toString()}`);
   const decodeAt = <T>(key: string, codec: Codec<T>, x: Value): Result<T, DecodeFailure> => {
     const d = codec.decode(x);
     return d.ok ? d : err(at(d.error, key));
@@ -399,11 +405,11 @@ export function selectAlternative(v: Value, records: readonly (readonly [readonl
   if (v.kind === "map") {
     const keys = v.keys();
     const i = records.findIndex(([required, allowed]) => required.every((k) => keys.includes(k)) && keys.every((k) => allowed.includes(k)));
-    return i >= 0 ? ok(i) : decodeFailure(`no alternative has keys ${[...keys].sort().join(", ")}`);
+    return i >= 0 ? ok(i) : decodeFailure(`no alternative fits a map of ${keys.length.toString()} keys`);
   }
   if (v.kind === "text") {
     const i = texts.indexOf(v.value);
-    return i >= 0 ? ok(records.length + i) : decodeFailure(`${JSON.stringify(v.value)} is not an alternative`);
+    return i >= 0 ? ok(records.length + i) : decodeFailure(`${Preview.of(v.value).toString()} is not an alternative`);
   }
   return decodeFailure("expected a map or one of the text alternatives");
 }

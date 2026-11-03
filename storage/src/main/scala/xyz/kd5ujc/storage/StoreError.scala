@@ -1,5 +1,9 @@
 package xyz.kd5ujc.storage
 
+import xyz.kd5ujc.core.canonical.Preview
+
+import scodec.bits.ByteVector
+
 /** Typed storage failures, raised through `cats.mtl.Raise[F, StoreError]`. */
 sealed trait StoreError extends Product with Serializable
 
@@ -8,7 +12,15 @@ object StoreError {
   /** A key or value failed to encode or decode. */
   final case class Codec(context: String, reason: String) extends StoreError
 
-  final case class NotFound(key: String) extends StoreError
+  /**
+   * No value at a key: the key's length in bytes, and the hex of at most its first 16 bytes as a preview, so a
+   * caller's key of any length is never hex-encoded or kept whole (docs/specs/conformance.md §8).
+   */
+  final case class NotFound(keyBytes: Long, prefix: Preview) extends StoreError
+
+  object NotFound {
+    def of(key: ByteVector): NotFound = NotFound(key.size, Preview.of(key.take(16).toHex))
+  }
 
   /** Optimistic concurrency: the caller committed against a version that is no longer the latest. */
   final case class VersionConflict(expected: Long, actual: Long) extends StoreError

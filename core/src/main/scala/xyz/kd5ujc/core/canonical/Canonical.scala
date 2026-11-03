@@ -5,8 +5,9 @@ import cats.syntax.either._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.numerics.Ratio
 
+import io.circe.DecodingFailure.Reason
 import io.circe.syntax._
-import io.circe.{Decoder, Encoder}
+import io.circe.{Decoder, DecodingFailure, Encoder}
 import scodec.bits.ByteVector
 
 /** How a type maps into the canonical data model. */
@@ -30,7 +31,18 @@ object Canonical {
 
   /** Decode a canonical value into typed data through its circe `Decoder`; the inverse of [[fromEncoder]]. */
   def decode[A: Decoder](value: CanonicalValue): Either[CanonicalError, A] =
-    CanonicalJson.toCirce(value).flatMap(_.as[A].leftMap(e => CanonicalError.TypeMismatch(e.getMessage)))
+    CanonicalJson.toCirce(value).flatMap(_.as[A].leftMap(e => CanonicalError.TypeMismatch(failure(e))))
+
+  // circe's own message quotes the whole value it refused, and a path or custom reason may hold caller keys: the value
+  // is named by its kind, the rest previewed
+  private def failure(e: DecodingFailure): String = {
+    val where = e.pathToRootString.fold("")(p => s" at ${Preview.of(p)}")
+    e.reason match {
+      case Reason.WrongTypeExpectation(expected, json) => s"expected $expected, got ${json.name}$where"
+      case Reason.MissingField                         => s"missing field$where"
+      case Reason.CustomReason(message)                => s"${Preview.of(message)}$where"
+    }
+  }
 
   implicit val canonicalValue: Canonical[CanonicalValue] = total(identity)
   implicit val canonicalBoolean: Canonical[Boolean] = total(CBool(_))

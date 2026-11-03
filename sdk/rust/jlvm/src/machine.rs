@@ -11,7 +11,7 @@ use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use dilf4s_core::Value;
+use dilf4s_core::{Preview, Value};
 
 use dilf4s_core::value::{Array, MapShape, Text};
 
@@ -29,8 +29,9 @@ use crate::values::{self, at, kind, path_segments, segment_count, truthy};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Warning {
     /// Inside a callback, a plain path resolved in an element, and an outer element or the data holds the same first
-    /// key: `$current` (or an explicit outer path) says which one is meant.
-    AmbiguousPath(String),
+    /// key: `$current` (or an explicit outer path) says which one is meant. The path is the caller's, so it is held as
+    /// a preview (docs/specs/conformance.md section 8): two long paths that share their preview count as one warning.
+    AmbiguousPath(Preview),
 }
 
 /// At most this many distinct warnings are kept per evaluation.
@@ -751,13 +752,20 @@ impl<'a> Machine<'a> {
             VarRef::Data(path) => {
                 let (v, ambiguous) = resolve(self.data, scope, path);
                 let value = or_default(v);
-                if ambiguous { Step::Note(Warning::AmbiguousPath(r.render()), value) } else { Step::Done(value) }
+                if ambiguous {
+                    Step::Note(Warning::AmbiguousPath(Preview::of(&r.render())), value)
+                } else {
+                    Step::Done(value)
+                }
             }
             VarRef::Bound(name, path) => match binding(&self.slots, scope, name) {
                 Some(v) => Step::Done(or_default(at(v, path))),
                 None => match default {
                     Some(d) => Step::Done(d.clone()),
-                    None => Step::Fail(JlvmError::malformed(alloc::format!("${name} is not bound"))),
+                    None => Step::Fail(JlvmError::malformed(alloc::format!(
+                        "the binding {} is not bound",
+                        Preview::of(name)
+                    ))),
                 },
             },
         }

@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use dilf4s_core::codec::Model;
 use dilf4s_core::generated::jlvm as w;
 use dilf4s_core::hash::{DomainTag, HashAlgorithm};
-use dilf4s_core::{CanonicalError, Value, cbor};
+use dilf4s_core::{CanonicalError, Preview, Value, cbor};
 
 use crate::error::JlvmError;
 use crate::op::{Op, call_name};
@@ -49,14 +49,14 @@ impl VarRef {
         }
         let segments = Self::segments(s);
         if segments.iter().any(String::is_empty) {
-            return Err(JlvmError::malformed(alloc::format!("empty segment in var path \"{s}\"")));
+            return Err(JlvmError::malformed(alloc::format!("empty segment in var path {}", Preview::of(s))));
         }
         let mut it = segments.into_iter();
         match it.next() {
             Some(h) if h.starts_with('$') => {
                 let name = String::from(h.get(1..).unwrap_or(""));
                 if name.is_empty() {
-                    Err(JlvmError::malformed(alloc::format!("empty binding name in \"{s}\"")))
+                    Err(JlvmError::malformed(alloc::format!("empty binding name in {}", Preview::of(s))))
                 } else {
                     Ok(Self::Bound(name, it.collect()))
                 }
@@ -225,9 +225,9 @@ fn measure(root: &Expr) -> Result<(), JlvmError> {
 
 fn unspellable(r: &VarRef) -> JlvmError {
     JlvmError::malformed(alloc::format!(
-        "the var path {r:?} has no text form: \"{}\" reads back as another path; read a key holding '.', an empty key \
-         or a key starting with '$' with the exact-segment form {{\"var\": [[...]]}}",
-        r.render()
+        "the var path {} has no text form: it reads back as another path; read a key holding '.', an empty key or a \
+         key starting with '$' with the exact-segment form {{\"var\": [[...]]}}",
+        Preview::of(&r.render())
     ))
 }
 

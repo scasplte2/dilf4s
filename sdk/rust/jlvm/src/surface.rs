@@ -8,7 +8,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use dilf4s_core::{CanonicalError, Value, json};
+use dilf4s_core::{CanonicalError, Preview, Value, json};
 
 use crate::ast::{Expr, Program, VarRef, canonical_error};
 use crate::error::JlvmError;
@@ -211,7 +211,8 @@ fn single(key: &String, arg: &Json<'_>) -> Result<Expr, JlvmError> {
             (Some(hint), _) => malformed(alloc::format!("\"{name}\" is not an operation: {hint}")),
             (None, Some(op)) => operation(op, arg),
             (None, None) => malformed(alloc::format!(
-                "unknown operation \"{name}\": write single-key data as {{\"object\": {{...}}}} or {{\"literal\": {{...}}}}"
+                "unknown operation {}: write single-key data as {{\"object\": {{...}}}} or {{\"literal\": {{...}}}}",
+                Preview::of(name)
             )),
         },
     }

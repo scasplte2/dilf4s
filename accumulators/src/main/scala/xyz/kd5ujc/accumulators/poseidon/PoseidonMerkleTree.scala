@@ -18,12 +18,12 @@ object PoseidonMerkleError {
    * A position outside `[0, 2^depth)`, or more than `MaxDepth` siblings. `depth` (the number of siblings, or the
    * tree's depth) is normative (docs/specs/conformance.md §3); the position echoes the caller's input and is not.
    */
-  // a caller's position can be any size: it is shown by its bit length, never its digits
-  final case class Position(position: BigInt, depth: Int) extends PoseidonMerkleError {
-    override def toString: String = s"Position(a ${position.bitLength}-bit position, depth $depth)"
+  // a caller's position can be any size: it is held and shown by its bit length, never its digits (conformance.md §8)
+  final case class Position(positionBits: Int, depth: Int) extends PoseidonMerkleError {
+    override def toString: String = s"Position(a $positionBits-bit position, depth $depth)"
   }
   final case class Depth(depth: Int) extends PoseidonMerkleError
-  final case class OccupiedPosition(position: BigInt) extends PoseidonMerkleError
+  final case class OccupiedPosition(positionBits: Int) extends PoseidonMerkleError
   final case class Encoding(reason: String) extends PoseidonMerkleError
 }
 
@@ -42,7 +42,7 @@ object PoseidonMerkleProof {
     Either.cond(
       siblings.size <= PoseidonMerkleTree.MaxDepth && position >= 0 && position < (BigInt(1) << siblings.size),
       new PoseidonMerkleProof(position, siblings),
-      PoseidonMerkleError.Position(position, siblings.size)
+      PoseidonMerkleError.Position(position.bitLength, siblings.size)
     )
 
   /** The wire form of shared/schemas/poseidon.cddl, through its generated codec. */
@@ -84,7 +84,7 @@ final class PoseidonMerkleTree private (
   private def node(level: Int, idx: BigInt): Fr = nodes.lift(level).flatMap(_.get(idx)).getOrElse(zeroHashes(level))
 
   private def checkPosition(position: BigInt): Either[PoseidonMerkleError, BigInt] =
-    Either.cond(position >= 0 && position < capacity, position, PoseidonMerkleError.Position(position, depth))
+    Either.cond(position >= 0 && position < capacity, position, PoseidonMerkleError.Position(position.bitLength, depth))
 
   def leafAt(position: BigInt): Either[PoseidonMerkleError, Fr] = checkPosition(position).map(leaves.getOrElse(_, Fr.Zero))
 
@@ -126,7 +126,7 @@ final class PoseidonMerkleTree private (
 
   def absenceProof(position: BigInt): Either[PoseidonMerkleError, PoseidonMerkleProof] =
     leafAt(position)
-      .flatMap(l => Either.cond(l == Fr.Zero, (), PoseidonMerkleError.OccupiedPosition(position)))
+      .flatMap(l => Either.cond(l == Fr.Zero, (), PoseidonMerkleError.OccupiedPosition(position.bitLength)))
       .flatMap(_ => proof(position))
 }
 

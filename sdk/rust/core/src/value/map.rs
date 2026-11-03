@@ -21,6 +21,7 @@ use core::iter::FusedIterator;
 
 use super::{Array, MAX_DEPTH, MAX_WEIGHT, Text, Value, canonical_key_order};
 use crate::error::CanonicalError;
+use crate::preview::Preview;
 
 type Link = Option<Arc<Node>>;
 
@@ -286,7 +287,7 @@ impl Map {
         let mut kept: Vec<(String, Value)> = Vec::new();
         for (k, v) in entries {
             if seen.contains(&k) {
-                return Err(CanonicalError::DuplicateKey { key: k });
+                return Err(CanonicalError::DuplicateKey { key: Preview::of(&k) });
             }
             seen.insert(k.clone());
             if v != Value::Null {
@@ -409,7 +410,7 @@ impl MapShape {
         order.sort_by(|a, b| canonical_key_order(key(a), key(b)));
         if let Some(w) = order.windows(2).find(|w| matches!(w, [a, b] if key(a) == key(b))) {
             let repeated = w.first().map_or("", key);
-            return Err(CanonicalError::DuplicateKey { key: String::from(repeated) });
+            return Err(CanonicalError::DuplicateKey { key: Preview::of(repeated) });
         }
         Ok(Self { keys, order })
     }

@@ -5,6 +5,7 @@ import { keccak_256, sha3_256, sha3_512 } from "@noble/hashes/sha3.js";
 
 import { encodeIntoWithin, Feeding, MAX_ENCODED_BYTES } from "./cbor.js";
 import type { TooLarge } from "./error.js";
+import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { encodeUtf8 } from "./utf8.js";
 import type { Value } from "./value.js";
@@ -69,7 +70,7 @@ export function digest(algorithm: HashAlgorithm, data: Uint8Array): Uint8Array {
 
 export interface InvalidDomainTag {
   readonly kind: "InvalidDomainTag";
-  readonly tag: string;
+  readonly tag: Preview;
 }
 
 /** The DomainTag grammar of section 4. Without the `m` flag, `$` matches only at the very end, as Java's `matches`. */
@@ -91,7 +92,7 @@ export class DomainTag {
 
   /** The tag, if it matches the grammar. */
   static of(tag: string): Result<DomainTag, InvalidDomainTag> {
-    return DOMAIN_TAG.test(tag) ? ok(new DomainTag(tag)) : err({ kind: "InvalidDomainTag", tag });
+    return DOMAIN_TAG.test(tag) ? ok(new DomainTag(tag)) : err({ kind: "InvalidDomainTag", tag: Preview.of(tag) });
   }
 }
 

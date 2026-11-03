@@ -14,6 +14,7 @@ pub use num_bigint::BigInt;
 use num_bigint::Sign;
 
 pub use crate::error::{CanonicalError, DecodeFailure};
+pub use crate::preview::Preview;
 pub use crate::value::Value;
 use crate::value::{MAX_DEPTH, Map, bit_length};
 use crate::{cbor, json};
@@ -471,7 +472,7 @@ impl Codec for Matching {
     fn decode(&self, value: &Value) -> Result<String, DecodeFailure> {
         match value {
             Value::Text(t) if self.0.matches(t) => Ok(String::from(t.as_str())),
-            Value::Text(t) => Err(DecodeFailure::new(format!("{t:?} does not match {}", self.0.source()))),
+            Value::Text(t) => Err(DecodeFailure::new(format!("{} does not match {}", Preview::of(t), self.0.source()))),
             other => Err(expected("text", other)),
         }
     }
@@ -489,7 +490,7 @@ impl Codec for LiteralText {
     fn decode(&self, value: &Value) -> Result<(), DecodeFailure> {
         match value {
             Value::Text(t) if t == self.0 => Ok(()),
-            Value::Text(t) => Err(DecodeFailure::new(format!("expected {:?}, got {t:?}", self.0))),
+            Value::Text(t) => Err(DecodeFailure::new(format!("expected {:?}, got {}", self.0, Preview::of(t)))),
             other => Err(expected("text", other)),
         }
     }
@@ -686,17 +687,19 @@ pub fn record(entries: impl IntoIterator<Item = Option<(String, Value)>>) -> Res
 pub struct Fields<'a>(&'a Map);
 
 impl<'a> Fields<'a> {
-    /// The fields of `value`, which must be a map whose keys are all in `allowed`.
+    /// The fields of `value`, which must be a map whose keys are all in `allowed`. A refusal counts the unknown keys and
+    /// previews the first in canonical order, in one pass; it never lists them.
     pub fn of(value: &'a Value, allowed: &[&str]) -> Result<Self, DecodeFailure> {
         match value {
             Value::Map(m) => {
-                let mut unknown: Vec<&str> =
-                    m.entries().map(|(k, _)| k.as_str()).filter(|k| !allowed.contains(k)).collect();
-                if unknown.is_empty() {
-                    Ok(Self(m))
-                } else {
-                    unknown.sort_unstable();
-                    Err(DecodeFailure::new(format!("unknown keys {}", unknown.join(", "))))
+                let mut unknown = m.entries().map(|(k, _)| k.as_str()).filter(|k| !allowed.contains(k));
+                match unknown.next() {
+                    None => Ok(Self(m)),
+                    Some(first) => {
+                        let count = unknown.count().saturating_add(1);
+                        let noun = if count == 1 { "key" } else { "keys" };
+                        Err(DecodeFailure::new(format!("{count} unknown {noun}, the first {}", Preview::of(first))))
+                    }
                 }
             }
             other => Err(expected("map", other)),
@@ -732,25 +735,19 @@ pub fn select_alternative(
     texts: &[&str],
 ) -> Result<Alternative, DecodeFailure> {
     match value {
-        Value::Map(m) => {
-            let keys: Vec<&str> = m.entries().map(|(k, _)| k.as_str()).collect();
-            records
-                .iter()
-                .position(|(required, all)| {
-                    required.iter().all(|r| keys.contains(r)) && keys.iter().all(|k| all.contains(k))
-                })
-                .map(Alternative::Record)
-                .ok_or_else(|| {
-                    let mut sorted = keys.clone();
-                    sorted.sort_unstable();
-                    DecodeFailure::new(format!("no alternative has keys {}", sorted.join(", ")))
-                })
-        }
+        // the schema's keys are looked up in the map, and the map's checked against the schema's: nothing is copied
+        Value::Map(m) => records
+            .iter()
+            .position(|(required, all)| {
+                required.iter().all(|r| m.get(r).is_some()) && m.entries().all(|(k, _)| all.contains(&k.as_str()))
+            })
+            .map(Alternative::Record)
+            .ok_or_else(|| DecodeFailure::new(format!("no alternative fits a map of {} keys", m.entries().len()))),
         Value::Text(t) => texts
             .iter()
             .position(|x| x == t)
             .map(Alternative::Text)
-            .ok_or_else(|| DecodeFailure::new(format!("{t:?} is not an alternative"))),
+            .ok_or_else(|| DecodeFailure::new(format!("{} is not an alternative", Preview::of(t)))),
         _ => Err(DecodeFailure::new("expected a map or one of the text alternatives")),
     }
 }

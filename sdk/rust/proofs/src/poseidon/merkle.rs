@@ -17,12 +17,13 @@ use super::{Fr, compress, fr_from_int, fr_to_int};
 pub const MAX_DEPTH: usize = dilf4s_core::generated::limits::as_usize::POSEIDON_MAX_DEPTH;
 
 /// Why a Poseidon Merkle proof is malformed.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PoseidonMerkleError {
     /// A position outside `[0, 2^depth)`, or more than 256 siblings.
     Position {
-        /// The position: it echoes the caller's input, so it is informative.
-        position: BigUint,
+        /// The position's bit length, never the position, whose size the caller chose: informative
+        /// (docs/specs/conformance.md section 8).
+        position_bits: u64,
         /// The depth (the number of siblings, or the tree's depth): normative (docs/specs/conformance.md section 3).
         depth: usize,
     },
@@ -36,22 +37,10 @@ pub enum PoseidonMerkleError {
 impl fmt::Display for PoseidonMerkleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Position { position, depth } => {
-                write!(f, "a position of {} bits is out of range for depth {depth}", position.bits())
+            Self::Position { position_bits, depth } => {
+                write!(f, "a position of {position_bits} bits is out of range for depth {depth}")
             }
             Self::Encoding { reason } => write!(f, "encoding: {reason}"),
-        }
-    }
-}
-
-// a caller's position can be any size: Debug, like Display, shows its bit length, never its digits
-impl fmt::Debug for PoseidonMerkleError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Position { position, depth } => {
-                f.debug_struct("Position").field("position_bits", &position.bits()).field("depth", depth).finish()
-            }
-            Self::Encoding { reason } => f.debug_struct("Encoding").field("reason", reason).finish(),
         }
     }
 }
@@ -83,7 +72,7 @@ impl PoseidonMerkleProof {
         if depth <= MAX_DEPTH && fits {
             Ok(Self { position, siblings })
         } else {
-            Err(PoseidonMerkleError::Position { position, depth })
+            Err(PoseidonMerkleError::Position { position_bits: position.bits(), depth })
         }
     }
 

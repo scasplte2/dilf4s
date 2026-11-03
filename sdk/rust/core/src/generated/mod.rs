@@ -3,6 +3,7 @@
 pub mod bloom;
 pub mod canonical_vectors;
 pub mod crypto;
+pub mod diagnostic_vectors;
 pub mod jlvm;
 pub mod jlvm_vectors;
 pub mod kes_vectors;

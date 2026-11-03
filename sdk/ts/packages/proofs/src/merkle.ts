@@ -8,10 +8,18 @@ import { bitLength, describeFailure, digest, err, hashParts, models, ok, outputS
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
 import { decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
+declare const INT64: unique symbol;
+
+/**
+ * A refusal's size or index: 64-bit, as Scala's `Long`. The brand's symbol is not exported, so only this module's
+ * saturating `int64` makes one, and a caller's wider value is never kept whole (docs/specs/conformance.md section 8).
+ */
+export type Int64 = bigint & { readonly [INT64]: true };
+
 /** Why a Merkle proof could not be checked, by Scala's `MerkleError` names. */
 export type MerkleError =
-  | { readonly kind: "IndexOutOfRange"; readonly index: bigint; readonly size: bigint }
-  | { readonly kind: "InvalidSizes"; readonly oldSize: bigint; readonly newSize: bigint }
+  | { readonly kind: "IndexOutOfRange"; readonly index: Int64; readonly size: Int64 }
+  | { readonly kind: "InvalidSizes"; readonly oldSize: Int64; readonly newSize: Int64 }
   | { readonly kind: "InvalidProof"; readonly reason: string }
   | { readonly kind: "RootMismatch"; readonly expected: string; readonly computed: string }
   | { readonly kind: "Encoding"; readonly reason: string }
@@ -118,6 +126,10 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
 
 const withinIndex = (n: bigint): boolean => n >= 0n && n <= MAX_TREE_INDEX;
 
+const INT64_MAX = (1n << 63n) - 1n;
+// the one way to an Int64: a wider caller value is saturated
+const int64 = (n: bigint): Int64 => (n > INT64_MAX ? INT64_MAX : n < -INT64_MAX - 1n ? -INT64_MAX - 1n : n) as Int64;
+
 /** An audit path for leaf `index` of a tree of `size` leaves, `0 <= index < size`. */
 export class InclusionProof {
   readonly #path: readonly Uint8Array[];
@@ -136,7 +148,7 @@ export class InclusionProof {
   }
 
   static of(index: bigint, size: bigint, path: readonly Uint8Array[]): Result<InclusionProof, MerkleError> {
-    return index >= 0n && index < size && withinIndex(size) ? ok(new InclusionProof(index, size, path)) : err({ kind: "IndexOutOfRange", index, size });
+    return index >= 0n && index < size && withinIndex(size) ? ok(new InclusionProof(index, size, path)) : err({ kind: "IndexOutOfRange", index: int64(index), size: int64(size) });
   }
 
   /**
@@ -177,7 +189,7 @@ export class ConsistencyProof {
   static of(oldSize: bigint, newSize: bigint, path: readonly Uint8Array[]): Result<ConsistencyProof, MerkleError> {
     return oldSize >= 0n && oldSize <= newSize && withinIndex(newSize)
       ? ok(new ConsistencyProof(oldSize, newSize, path))
-      : err({ kind: "InvalidSizes", oldSize, newSize });
+      : err({ kind: "InvalidSizes", oldSize: int64(oldSize), newSize: int64(newSize) });
   }
 
   /**
@@ -226,7 +238,7 @@ function shiftUntilOddOrZero(fn: bigint, sn: bigint): readonly [bigint, bigint] 
 export function checkInclusion(hashing: MerkleHashing<unknown>, root: Uint8Array, leafHash: Uint8Array, proof: InclusionProof): Result<undefined, MerkleError> {
   const lengths = [sized(hashing, "root", root), sized(hashing, "leaf hash", leafHash), digests(hashing, proof.path)].find((r) => !r.ok);
   if (lengths !== undefined) return lengths;
-  if (proof.index < 0n || proof.index >= proof.size) return err({ kind: "IndexOutOfRange", index: proof.index, size: proof.size });
+  if (proof.index < 0n || proof.index >= proof.size) return err({ kind: "IndexOutOfRange", index: int64(proof.index), size: int64(proof.size) });
   let fn = proof.index;
   let sn = proof.size - 1n;
   let r = leafHash;
@@ -248,7 +260,7 @@ export function checkConsistency(hashing: MerkleHashing<unknown>, oldRoot: Uint8
   const lengths = [sized(hashing, "old root", oldRoot), sized(hashing, "new root", newRoot), digests(hashing, given)].find((r) => !r.ok);
   if (lengths !== undefined) return lengths;
   const [m, n] = [proof.oldSize, proof.newSize];
-  if (m < 0n || m > n) return err({ kind: "InvalidSizes", oldSize: m, newSize: n });
+  if (m < 0n || m > n) return err({ kind: "InvalidSizes", oldSize: int64(m), newSize: int64(n) });
   if (m === 0n) return given.length === 0 && bytesEqual(oldRoot, hashing.empty) ? ok(undefined) : invalid("size 0 needs an empty proof and the empty root");
   if (m === n) return given.length === 0 && bytesEqual(oldRoot, newRoot) ? ok(undefined) : invalid("equal sizes need an empty proof and equal roots");
   const path = (m & (m - 1n)) === 0n ? [oldRoot, ...given] : given;

@@ -20,6 +20,7 @@ object VectorSchemasSuite extends SimpleIOSuite {
 
   private val files: List[(String, Codec[?])] = List(
     "canonical_encoding_v1.json" -> canonical_vectors.CanonicalVectors.codec,
+    "diagnostics_v1.json"        -> diagnostic_vectors.DiagnosticVectors.codec,
     "merkle_v1.json"             -> merkle_vectors.MerkleVectors.codec,
     "trie_v1.json"               -> trie_vectors.TrieVectors.codec,
     "poseidon_v1.json"           -> poseidon_vectors.PoseidonVectors.codec,

@@ -106,7 +106,7 @@ object Replica {
       // the limits a commit and a snapshot enforce, so no replication path accepts a value another refuses
       _ <- delta.upserts.traverse_ {
         case (k, v) =>
-          if (v == CNull) VersionedTrieError.Malformed(s"${k.value} is upserted as null").asLeft else VersionedTrie.checkValue(k, v)
+          if (v == CNull) VersionedTrieError.Malformed(s"${k.preview.short} is upserted as null").asLeft else VersionedTrie.checkValue(k, v)
       }
       ops = delta.removes.map(k => k.bytes -> Option.empty[Digest[H]]) ++ delta.upserts.map {
         case (k, v) => k.bytes -> Option(VersionedTrie.valueHash[H](v))

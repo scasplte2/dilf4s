@@ -83,7 +83,7 @@ object CanonicalJson {
         else
           string(s, p) match {
             case Left(e)                               => e.asLeft
-            case Right((key, _)) if seen.contains(key) => DuplicateKey(key).asLeft
+            case Right((key, _)) if seen.contains(key) => DuplicateKey(Preview.of(key)).asLeft
             case Right((key, next)) =>
               val colon = skipWs(s, next)
               if (!charAt(s, colon).contains(':')) syntax(colon, "expected ':'").asLeft
@@ -143,7 +143,7 @@ object CanonicalJson {
     val hasExp = charAt(s, fracEnd).exists(c => c == 'e' || c == 'E')
     val expSignEnd = if (hasExp && charAt(s, fracEnd + 1).exists(c => c == '+' || c == '-')) fracEnd + 2 else fracEnd + 1
     val end = if (hasExp) digits(s, expSignEnd) else fracEnd
-    val described = s"a number of ${end - p} characters at offset $p"
+    val described = NumberSource.Text(end - p, p)
     val intDigits = s.substring(intStart, intEnd)
     val fracDigits = if (hasFrac) s.substring(intEnd + 1, fracEnd) else ""
     val expDigits = if (hasExp) s.substring(expSignEnd, end) else "0"
@@ -247,13 +247,13 @@ object CanonicalJson {
     io.circe.CirceNumberSource(n).fold(convertedNumber(n, maxScale)) { text =>
       parseNumber(text, 0, maxScale).flatMap {
         case (v, end) if end == text.length => v.asRight
-        case _                              => InvalidNumber(s"a number of ${text.length} characters at offset 0", None).asLeft
+        case _                              => InvalidNumber(NumberSource.Text(text.length, 0), None).asLeft
       }
     }
 
   private def convertedNumber(n: JsonNumber, maxScale: Int): Either[CanonicalError, CanonicalValue] =
     n.toBigDecimal
-      .toRight(InvalidNumber("a number with no decimal value", None))
+      .toRight(InvalidNumber(NumberSource.NoDecimal, None))
       .flatMap { bd =>
         val unscaled = BigInt(bd.bigDecimal.unscaledValue)
         val digits = if (unscaled.bitLength > MaxDigitBits) MaxDigits + 1 else unscaled.abs.toString.length
@@ -262,8 +262,7 @@ object CanonicalJson {
       }
 
   // a decimal-backed number is described by its size: rendering its coefficient is superlinear and unpaid
-  private def sized(bd: BigDecimal): String =
-    s"a number of scale ${bd.scale} with a ${bd.bigDecimal.unscaledValue.bitLength}-bit coefficient"
+  private def sized(bd: BigDecimal): NumberSource = NumberSource.Decimal(bd.scale, bd.bigDecimal.unscaledValue.bitLength)
 
   /** The inverse bridge, for decoding into typed data. Numbers stay exact; fails where [[render]] fails. */
   def toCirce(value: CanonicalValue): Either[CanonicalError, Json] = toCirceEval(value).value
@@ -347,7 +346,7 @@ object CanonicalJson {
       case c            => c.toString
     }.prepended('"').appended('"')
 
-  private object CodePointOrder extends Ordering[String] {
+  private[canonical] object CodePointOrder extends Ordering[String] {
     def compare(a: String, b: String): Int = {
       @tailrec
       def go(i: Int, j: Int): Int =

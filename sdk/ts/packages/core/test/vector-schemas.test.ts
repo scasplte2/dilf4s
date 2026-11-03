@@ -17,6 +17,7 @@ function roundTrip<T>(codec: Codec<T>): (value: Value) => Result<Value, string> 
 /** Every vector file and the generated type of its schema (shared/schemas/<name>-vectors.cddl). */
 const schemas: Readonly<Record<string, (value: Value) => Result<Value, string>>> = {
   "canonical_encoding_v1.json": roundTrip(models.canonicalVectors.CanonicalVectors),
+  "diagnostics_v1.json": roundTrip(models.diagnosticVectors.DiagnosticVectors),
   "jlvm_v1.json": roundTrip(models.jlvmVectors.JlvmVectors),
   "kes_v1.json": roundTrip(models.kesVectors.KesVectors),
   "merkle_v1.json": roundTrip(models.merkleVectors.MerkleVectors),

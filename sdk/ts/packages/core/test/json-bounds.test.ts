@@ -17,7 +17,7 @@ describe("JSON number bounds", () => {
   });
 
   it("more digits are refused by their length", () => {
-    expect(json.parse(digits(10001))).toEqual({ ok: false, error: { kind: "InvalidNumber", source: "a number of 10001 characters at offset 0", digits: 10001 } });
+    expect(json.parse(digits(10001))).toEqual({ ok: false, error: { kind: "InvalidNumber", length: 10001, offset: 0, digits: 10001 } });
     expect(json.parse(`0.${"1".repeat(10001)}e1`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber", digits: 10001 } });
     expect(json.parse(`1e${"1".repeat(10001)}`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber", digits: 10001 } });
     expect(json.parse(`1e${"9".repeat(20)}`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber" } });
@@ -43,7 +43,7 @@ describe("JSON number bounds", () => {
     ];
     for (const [text, length] of cases) {
       const r = json.parse(text);
-      expect(r).toEqual({ ok: false, error: { kind: "InvalidNumber", source: `a number of ${length.toString()} characters at offset 1` } });
+      expect(r).toEqual({ ok: false, error: { kind: "InvalidNumber", length, offset: 1 } });
       expect(JSON.stringify(r, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v))).not.toContain("99999");
     }
   });

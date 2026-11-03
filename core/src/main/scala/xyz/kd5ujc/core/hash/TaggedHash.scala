@@ -2,7 +2,7 @@ package xyz.kd5ujc.core.hash
 
 import java.nio.charset.StandardCharsets.UTF_8
 
-import xyz.kd5ujc.core.canonical.{ByteSource, Canonical, CanonicalError, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{ByteSource, Canonical, CanonicalError, CanonicalValue, Cbor, Preview}
 
 import scodec.bits.ByteVector
 
@@ -14,7 +14,7 @@ object DomainTag {
   private val Grammar = "^[a-z0-9]+(/[a-z0-9][a-z0-9._-]*)*/v[0-9]+$".r.pattern
 
   def apply(value: String): Either[HashError, DomainTag] =
-    Either.cond(Grammar.matcher(value).matches(), new DomainTag(value) {}, HashError.InvalidDomainTag(value))
+    Either.cond(Grammar.matcher(value).matches(), new DomainTag(value) {}, HashError.InvalidDomainTag(Preview.of(value)))
 
   /**
    * For dilf4s's own compile-time tags only: skips validation instead of throwing. Every library tag is checked

@@ -19,8 +19,10 @@ pub mod generated;
 pub mod hash;
 pub mod hex;
 pub mod json;
+pub mod preview;
 pub mod value;
 
 pub use error::{CanonicalError, DecodeFailure};
 pub use num_bigint::BigInt;
+pub use preview::Preview;
 pub use value::{Array, Int, MAX_DEPTH, MAX_RATIONAL_BITS, MAX_WEIGHT, Map, NumberError, Rational, Text, Value};

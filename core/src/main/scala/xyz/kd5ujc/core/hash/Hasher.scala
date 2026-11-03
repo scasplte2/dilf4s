@@ -7,7 +7,7 @@ import cats.{Eq, Show}
 
 import scala.annotation.tailrec
 
-import xyz.kd5ujc.core.canonical.{ByteSink, ByteSource, FlatBytes}
+import xyz.kd5ujc.core.canonical.{ByteSink, ByteSource, FlatBytes, Preview}
 
 import org.bouncycastle.crypto.ExtendedDigest
 import org.bouncycastle.crypto.digests.{Blake2bDigest, KeccakDigest, SHA256Digest, SHA3Digest, SHA512Digest}
@@ -34,8 +34,13 @@ object Digest {
   def fromBytes[H](bytes: ByteVector)(implicit H: Hasher[H]): Either[HashError, Digest[H]] =
     Either.cond(bytes.size == H.outputSize, new Digest[H](bytes) {}, HashError.InvalidLength(H.name, H.outputSize, bytes.size))
 
-  def fromHex[H: Hasher](hex: String): Either[HashError, Digest[H]] =
-    ByteVector.fromHexDescriptive(hex).leftMap(HashError.InvalidHex(_)).flatMap(fromBytes[H])
+  /**
+   * The digest of its hex (an `0x` prefix allowed). A text longer than the width's digits and a prefix is refused by
+   * its length, as `InvalidLength` with half its length, before it is decoded (docs/specs/conformance.md §8).
+   */
+  def fromHex[H](hex: String)(implicit H: Hasher[H]): Either[HashError, Digest[H]] =
+    if (hex.length > 2 * H.outputSize + 2) HashError.InvalidLength(H.name, H.outputSize, hex.length / 2L).asLeft
+    else ByteVector.fromHexDescriptive(hex).leftMap(HashError.InvalidHex(_)).flatMap(fromBytes[H])
 
   private[hash] def unsafe[H](bytes: ByteVector): Digest[H] = new Digest[H](bytes) {}
 
@@ -175,6 +180,6 @@ sealed trait HashError extends Product with Serializable
 object HashError {
   final case class InvalidLength(algorithm: String, expected: Long, actual: Long) extends HashError
   final case class InvalidHex(reason: String) extends HashError
-  final case class InvalidDomainTag(tag: String) extends HashError
+  final case class InvalidDomainTag(tag: Preview) extends HashError
   final case class InvalidExpansion(reason: String) extends HashError
 }

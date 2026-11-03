@@ -1,0 +1,72 @@
+{
+  "spec": "docs/specs/conformance.md",
+  "version": 1,
+  "previews": [
+    {
+      "json": "{\"\":1,\"\":2}",
+      "head": "",
+      "length": 0,
+      "truncated": false
+    },
+    {
+      "json": "{\"abc\":1,\"abc\":2}",
+      "head": "abc",
+      "length": 3,
+      "truncated": false
+    },
+    {
+      "json": "{\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\":1,\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\":2}",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "length": 32,
+      "truncated": false
+    },
+    {
+      "json": "{\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\":1,\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\":2}",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "length": 33,
+      "truncated": true
+    },
+    {
+      "json": "{\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\ud83d\\ude00\":1,\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\ud83d\\ude00\":2}",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀",
+      "length": 35,
+      "truncated": false
+    },
+    {
+      "json": "{\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\ud83d\\ude00\":1,\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\ud83d\\ude00\":2}",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "length": 36,
+      "truncated": true
+    },
+    {
+      "json": "{\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\ud83d\\ude00b\":1,\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\ud83d\\ude00b\":2}",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀",
+      "length": 36,
+      "truncated": true
+    },
+    {
+      "json": "{\"\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\":1,\"\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\":2}",
+      "head": "éééééééééééééééééééééééééééééééé",
+      "length": 80,
+      "truncated": true
+    },
+    {
+      "json": "{\"\\ud800x\":1,\"\\ud800x\":2}",
+      "head": "�x",
+      "length": 4,
+      "truncated": false
+    },
+    {
+      "json": "{\"\\udc00\\ud800\":1,\"\\udc00\\ud800\":2}",
+      "head": "��",
+      "length": 6,
+      "truncated": false
+    },
+    {
+      "json": "{\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\ud800zz\":1,\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\ud800zz\":2}",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa�",
+      "length": 36,
+      "truncated": true
+    }
+  ]
+}

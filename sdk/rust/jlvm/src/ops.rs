@@ -334,7 +334,11 @@ fn piece(op: Op, v: Value) -> Result<(Text, u64)> {
             let s = decimal(q).map_err(|_| {
                 JlvmError::arithmetic(
                     op.wire(),
-                    alloc::format!("{}/{} has no finite decimal form", r.numerator(), r.denominator()),
+                    alloc::format!(
+                        "a rational of {}/{} bits has no finite decimal form",
+                        r.numerator().bits(),
+                        r.denominator().bits()
+                    ),
                 )
             })?;
             Ok(rendered(s))

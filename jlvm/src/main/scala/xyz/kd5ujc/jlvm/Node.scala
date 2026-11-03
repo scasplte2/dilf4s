@@ -4,8 +4,8 @@ import cats.syntax.all._
 
 import scala.collection.immutable.TreeSet
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue.{CArray, CText}
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview}
 
 /**
  * The checked form of a program. Every special form's shape (`if`, `let`, the callbacks) is validated once, by
@@ -95,10 +95,10 @@ object Node {
     e match {
       case Expr.Lit(v) => Const(v).asRight
       case Expr.Var(ref @ VarRef.Data(path), _) if path.headOption.exists(lets.contains) =>
-        val n = path.headOption.getOrElse("")
+        val n = Preview.of(path.headOption.getOrElse(""))
         malformed(
-          s"\"${ref.render}\" starts with \"$n\", which let binds: read the binding as \"$$$n\", the data as " +
-          s"{\"var\": [[\"$n\", ...]]}, or a callback element's field as \"$$current.$n\""
+          s"${Preview.of(ref.render)} starts with $n, which let binds: read the binding with a leading '$$', the data as " +
+          s"{\"var\": [[name, ...]]}, or a callback element's field as \"$$current.\" and the name"
         )
       case Expr.Var(ref, d) => Read(ref, d).asRight
       case Expr.VarAt(p, d) => node(p, lets).map(ReadAt(_, d))
@@ -171,7 +171,11 @@ object Node {
   /** `[[[name, expr], ...], body]`, or `[{name: expr, ...}, body]` with bindings in code-point order of the names. */
   private def let(args: Vector[Expr], lets: TreeSet[String])(using kernels: Kernels): Either[JlvmError, Node] = {
     def name(n: String): Either[JlvmError, String] =
-      Either.cond(bindable(n), n, JlvmError.Malformed(s"let cannot bind \"$n\": names are non-empty, without '.' or a leading '$$'"))
+      Either.cond(
+        bindable(n),
+        n,
+        JlvmError.Malformed(s"let cannot bind ${Preview.of(n)}: names are non-empty, without '.' or a leading '$$'")
+      )
     val bindings: Either[JlvmError, Vector[(String, Expr)]] = args.headOption match {
       case scala.Some(Expr.Arr(pairs)) =>
         pairs.traverse {

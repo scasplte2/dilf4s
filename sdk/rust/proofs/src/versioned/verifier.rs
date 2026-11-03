@@ -41,7 +41,7 @@ impl<H: Hasher> VerifiedState<'_, H> {
         match self.proof.lookup(key.as_bytes()) {
             Lookup::Present(h) => Ok(Some(h)),
             Lookup::Absent => Ok(None),
-            Lookup::NotCovered => Err(not_covered(alloc::format!("key {key}"))),
+            Lookup::NotCovered => Err(not_covered(alloc::format!("key {}", key.preview().short()))),
         }
     }
 
@@ -66,7 +66,11 @@ impl<H: Hasher> VerifiedState<'_, H> {
 
     /// Every entry under the namespace, complete, in key order.
     pub fn namespace(&self, ns: &StateNamespace) -> Result<Vec<(StateKey, Digest<H>)>, VersionedTrieError> {
-        keyed(self.proof.prefix(&ns.prefix()).ok_or_else(|| not_covered(alloc::format!("namespace {}", ns.as_str())))?)
+        keyed(
+            self.proof
+                .prefix(&ns.prefix())
+                .ok_or_else(|| not_covered(alloc::format!("namespace {}", ns.preview().short())))?,
+        )
     }
 
     /// Every entry in `[from, until)`, complete, in key order.
@@ -76,10 +80,10 @@ impl<H: Hasher> VerifiedState<'_, H> {
         until: Option<&StateKey>,
     ) -> Result<Vec<(StateKey, Digest<H>)>, VersionedTrieError> {
         let listing = self.proof.range(from.as_bytes(), until.map(StateKey::as_bytes));
-        keyed(
-            listing
-                .ok_or_else(|| not_covered(alloc::format!("range [{from}, {})", until.map_or("", StateKey::as_str))))?,
-        )
+        keyed(listing.ok_or_else(|| {
+            let end = until.map(|u| alloc::format!("{}", u.preview().short())).unwrap_or_default();
+            not_covered(alloc::format!("range [{}, {end})", from.preview().short()))
+        })?)
     }
 }
 

@@ -72,7 +72,7 @@ object PoseidonMerkleTreeSuite extends SimpleIOSuite with Checkers {
     val absent = t.absenceProof(6).toOption.get
     val cleared = t.insert(5, Fr.Zero).toOption.get
     expect(PoseidonMerkleTree.verifyAbsence(absent, t.root))
-      .and(expect.same(Left(PoseidonMerkleError.OccupiedPosition(5)), t.absenceProof(5)))
+      .and(expect.same(Left(PoseidonMerkleError.OccupiedPosition(3)), t.absenceProof(5)))
       .and(expect(!PoseidonMerkleTree.verifyAbsence(tree0.absenceProof(5).toOption.get, t.root), "stale absence proof"))
       .and(expect.same(tree0.root, cleared.root))
       .and(expect(t.insert(256, fr(1)).isLeft, "position out of range"))

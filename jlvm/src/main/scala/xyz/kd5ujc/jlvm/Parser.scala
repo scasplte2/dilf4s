@@ -5,7 +5,7 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 import scala.collection.immutable.TreeMap
 
-import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, CanonicalValue, Cbor, Preview}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
 import xyz.kd5ujc.models.{jlvm => W}
 
@@ -132,7 +132,7 @@ object Parser {
       case name =>
         Op.fromWire(name)
           .fold(
-            malformed[Expr](s"unknown operation \"$name\": write single-key data as {\"object\": {...}} or {\"literal\": {...}}")
+            malformed[Expr](s"unknown operation ${Preview.of(name)}: write single-key data as {\"object\": {...}} or {\"literal\": {...}}")
           )(operation(_, arg))
     }
 
@@ -336,7 +336,7 @@ object Parser {
 
   /** The canonical form names operations by their own names only; aliases are a surface convenience. */
   private def wireOp(name: String): Either[JlvmError, Op] =
-    Op.values.find(_.wire == name).toRight(JlvmError.Malformed(s"unknown operation \"$name\""))
+    Op.values.find(_.wire == name).toRight(JlvmError.Malformed(s"unknown operation ${Preview.of(name)}"))
 
   def canonical(p: Program): Either[JlvmError, CanonicalValue] =
     W.JlvmProgram.codec.encode(W.JlvmProgram(1, toWire(p.expr))).leftMap(canonicalError)

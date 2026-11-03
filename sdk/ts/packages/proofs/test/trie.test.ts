@@ -89,6 +89,9 @@ describe("trie_v1.json", () => {
       expect(expectOk(trie.verify(T, mode, other, proof), "verdict")).toBeNull();
       const mismatch = expectErr(trie.check(T, mode, other, proof), "mismatch");
       expect(mismatch.kind).toBe("RootMismatch");
+      // conformance.md section 8: a root of the wrong width is named by its length, never hex-encoded whole
+      const huge = expectErr(trie.check(T, mode, new Uint8Array(1 << 20), proof), "a 1 MiB root");
+      expect(huge).toMatchObject({ kind: "RootMismatch", expected: "a root of 1048576 bytes" });
     });
   });
 });

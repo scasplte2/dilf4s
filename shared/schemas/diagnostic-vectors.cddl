@@ -1,0 +1,12 @@
+; Schema of shared/vectors/diagnostics_v1.json (conformance vectors for docs/specs/conformance.md section 8): the
+; preview a refusal holds of caller text. "json" is an object that repeats one member name; every implementation
+; refuses it as DuplicateKey, whose preview has this head (the first 32 code points, unpaired surrogates as U+FFFD),
+; length (UTF-8 bytes, an unpaired surrogate counting 3) and truncation.
+
+diagnostic-vectors = {
+  "spec": "docs/specs/conformance.md",
+  "version": 1,
+  "previews": [* diagnostic-preview],
+}
+
+diagnostic-preview = { "json": text, "head": text, "length": uint, "truncated": bool }

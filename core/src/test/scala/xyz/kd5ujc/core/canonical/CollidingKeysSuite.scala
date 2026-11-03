@@ -166,7 +166,9 @@ object CollidingKeysSuite extends SimpleIOSuite {
           .and(expect.same(N.toLong, measures))
           .and(ordered("parse", v, o))
           .and(neverHashed("parse", keysOf(v)))
-          .and(expect(dup == Left(CanonicalError.DuplicateKey(keys(N / 2))), s"the repeat is found: ${dup.leftMap(_.toString)}"))
+          .and(
+            expect(dup == Left(CanonicalError.DuplicateKey(Preview.of(keys(N / 2)))), s"the repeat is found: ${dup.leftMap(_.toString)}")
+          )
           .and(expect(dupComparisons <= 2L * nLogN(N + 1), s"$dupComparisons comparisons to find the repeat"))
     }
   }

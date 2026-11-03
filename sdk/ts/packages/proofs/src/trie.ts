@@ -402,12 +402,20 @@ function hashProof(hashing: TrieHashing, mode: KeyMode, top: ProofNode): Result<
   return root === undefined ? invalidProof("no root") : ok(root);
 }
 
+/**
+ * A trusted root as a `RootMismatch` names it: its hex when it has the digest's `width`, otherwise its length, so a
+ * caller's root of any length is never hex-encoded whole (docs/specs/conformance.md section 8).
+ */
+export function rootText(root: Uint8Array, width: number): string {
+  return root.length === width ? toHex(root) : `a root of ${root.length.toString()} bytes`;
+}
+
 /** {@link verify} with a root mismatch as the error `RootMismatch` (as Scala's `TrieProofs.verify`), for composed checks. */
 export function check(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: TrieProof): Result<VerifiedTrieProof, TrieError> {
   const top = topOf(proof);
   const computed = top === undefined ? ok(hashing.empty) : hashProof(hashing, mode, top);
   if (!computed.ok) return computed;
-  return bytesEqual(computed.value, root) ? ok(createVerified(mode, top)) : err({ kind: "RootMismatch", expected: toHex(root), computed: toHex(computed.value) });
+  return bytesEqual(computed.value, root) ? ok(createVerified(mode, top)) : err({ kind: "RootMismatch", expected: rootText(root, computed.value.length), computed: toHex(computed.value) });
 }
 
 /**

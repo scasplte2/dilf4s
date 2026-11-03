@@ -105,7 +105,7 @@ object KeyValueStore {
       def get(key: K): F[Option[V]] = raw.get(rawKey(key)).flatMap(_.traverse(decodeValue))
 
       def getOrRaise(key: K): F[V] =
-        get(key).flatMap(_.fold(R.raise[StoreError, V](StoreError.NotFound(K.encode(key).toHex)))(_.pure[F]))
+        get(key).flatMap(_.fold(R.raise[StoreError, V](StoreError.NotFound.of(K.encode(key))))(_.pure[F]))
 
       def contains(key: K): F[Boolean] = raw.get(rawKey(key)).map(_.isDefined)
 

@@ -262,9 +262,11 @@ object PureOps {
 
   // ---- text
 
-  /** Exact decimal text of a number; a non-terminating rational has none. */
+  /** Exact decimal text of a number; a non-terminating rational has none, and is named by its size, never its digits. */
   private def render(op: Op, r: Ratio): Either[JlvmError, String] =
-    r.toDecimalString.toRight(JlvmError.Arithmetic(op.wire, s"$r has no finite decimal form"))
+    r.toDecimalString.toRight(
+      JlvmError.Arithmetic(op.wire, s"a rational of ${r.numerator.bitLength}/${r.denominator.bitLength} bits has no finite decimal form")
+    )
 
   /**
    * A piece of `cat` or `join`, with its UTF-8 length: a string, a number (exact decimal) or a boolean; null (absent) is
