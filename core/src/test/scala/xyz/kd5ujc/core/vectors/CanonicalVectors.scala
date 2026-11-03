@@ -228,7 +228,10 @@ object CanonicalVectors {
     rationalBytes(3, Edge),
     rationalBytes(1, -Edge * 2),
     hex"d81e82" ++ Cbor.encode(CanonicalValue.CInt(Edge)) ++ hex"6161",
-    rationalBytes(1, BigInt(5).pow(14400))
+    rationalBytes(1, BigInt(5).pow(14400)),
+    // a numerator whose bignum has a leading zero byte and 4154 bytes in all: its form is checked before its width, so
+    // it is non-canonical, not too wide
+    hex"d81e82c259103a00" ++ ByteVector.fill(4153)(0xff) ++ hex"03"
   )
 
   private val tagMessages: List[ByteVector] = List(ByteVector.empty, ByteVector("abc".getBytes(UTF_8)), hex"00ff00ff")

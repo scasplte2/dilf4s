@@ -29,10 +29,9 @@ The data model has no floating-point numbers, no NaN or infinity, no negative ze
 `-2^33220` is 33220 bits wide and `-2^33220 - 1` is 33221). 33220 is the bit length of `10^10000`, the bound on a JSON
 number's digits and scale (§3), so every rational JSON reads is within it, and every JLVM number (4096 bits) is too.
 Integers have no such bound. The reason is cost: a rational is valid only in lowest terms, and checking that takes a gcd,
-which is superlinear in its operands (about 10 ms in Rust, 14 ms on the JVM and 15 ms in TypeScript for two 33220-bit
-Fibonacci neighbours, the slowest pair of that width). With the bound, decoding a rational costs at most one gcd of
-operands at most 33220 bits wide, and its encoding is over 8 KiB, so decoding stays linear in its input; without it a
-rational of n bytes would cost O(n²).
+which is superlinear in its operands. With the bound, decoding a rational costs at most one gcd of operands at most
+33220 bits wide, and a rational that wide takes over 8 KiB to encode, so decoding stays linear in its input; without it
+a rational of n bytes would cost O(n²).
 
 For other-language implementers, here is the same model in CDDL (RFC 8610). This block is **informative**: it is not
 in `shared/schemas`, because tags and recursion are outside the code generator's profile. The prose above, and the
