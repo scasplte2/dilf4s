@@ -442,7 +442,9 @@ object OpCoverageCases extends IOApp {
       )
     val big = (BigInt(1) << 700) + 12345
     val rationals =
-      List(Op.Add, Op.Mul, Op.Div, Op.Mod, Op.Lt).map(op => q(op, "two 700-bit rationals", big, big * 3 + 2, big + 7, big * 5 + 4)) ++
+      List(Op.Add, Op.Mul, Op.Div, Op.Mod, Op.Lt, Op.Min, Op.Max).map(op =>
+        q(op, "two 700-bit rationals", big, big * 3 + 2, big + 7, big * 5 + 4)
+      ) ++
       List(
         Case(
           "dilf4s abs: a 700-bit rational",

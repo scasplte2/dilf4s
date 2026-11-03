@@ -51,8 +51,8 @@ pub(crate) fn apply(op: Op, args: Vec<Value>) -> Result<Value> {
         Op::Gt => ordering(op, &args, Ordering::is_gt, false),
         Op::Ge => ordering(op, &args, Ordering::is_ge, false),
         Op::Add | Op::Mul => total(op, &args),
-        Op::Min => fold(op, &args, |a, b| if a.cmp(&b).is_le() { a } else { b }),
-        Op::Max => fold(op, &args, |a, b| if a.cmp(&b).is_ge() { a } else { b }),
+        Op::Min => fold(op, &args, |a, b| a.cmp(b).is_le()),
+        Op::Max => fold(op, &args, |a, b| a.cmp(b).is_ge()),
         Op::Sub => subtract(op, &args),
         Op::Div => num_binary(op, args, |a, b| a.div(&b).ok_or_else(|| division_by_zero(op))),
         Op::Mod => num_binary(op, args, |a, b| a.rem(&b).ok_or_else(|| division_by_zero(op))),
@@ -253,10 +253,16 @@ fn ordering(op: Op, args: &[Value], holds: fn(Ordering) -> bool, between: bool) 
     }
 }
 
-fn fold(op: Op, args: &[Value], f: impl Fn(Ratio, Ratio) -> Ratio) -> Result<Value> {
+/// `min` or `max`: the argument `keep` chooses, returned as it is. It is already a canonical number, so it is not
+/// converted back from a ratio (which would reduce a rational again, through a gcd).
+fn fold(op: Op, args: &[Value], keep: impl Fn(&Ratio, &Ratio) -> bool) -> Result<Value> {
     let rs = args.iter().map(|v| numeric(op, v)).collect::<Result<Vec<_>>>()?;
-    let r = rs.into_iter().reduce(f).ok_or_else(|| JlvmError::arity(op.wire(), "takes at least 1 argument"))?;
-    num(op, &r)
+    let chosen = rs
+        .iter()
+        .enumerate()
+        .reduce(|a, b| if keep(a.1, b.1) { a } else { b })
+        .ok_or_else(|| JlvmError::arity(op.wire(), "takes at least 1 argument"))?;
+    args.get(chosen.0).cloned().ok_or_else(|| JlvmError::arity(op.wire(), "takes at least 1 argument"))
 }
 
 /// The operands of `+` or `*`, each within the number bound.

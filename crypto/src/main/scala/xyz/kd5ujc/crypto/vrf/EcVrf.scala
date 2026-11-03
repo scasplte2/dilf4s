@@ -11,6 +11,7 @@ import xyz.kd5ujc.crypto.curve25519.Point
 import xyz.kd5ujc.crypto.signing.{KeyPair, PublicKeyOf, SigningKey, VerifyingKey}
 
 import cafe.cryptography.curve25519.{CompressedEdwardsY, Constants, EdwardsPoint, Scalar}
+import org.bouncycastle.crypto.digests.SHA512Digest
 import scodec.bits.ByteVector
 
 /** ECVRF-EDWARDS25519-SHA512-TAI (RFC 9381, suite 0x03). */
@@ -107,12 +108,32 @@ object Vrf {
     val name = "ECVRF-EDWARDS25519-SHA512-TAI"
     val suite: Int = 0x03
 
+    /**
+     * The counters' hashes share the prefix `suite || 01 || pk || alpha`, which is hashed once: each counter finishes a
+     * copy of that state. A caller can choose an alpha whose first counters fail, which must not make it hashed again
+     * for each of them. The digests are local to this call and never escape it.
+     */
+    private def counterHashes(pk: ByteVector, alpha: ByteVector): Int => ByteVector = {
+      val prefix = new SHA512Digest()
+      val head = (ByteVector(suite, 0x01) ++ pk ++ alpha).toArray
+      prefix.update(head, 0, head.length)
+      ctr => {
+        val d = new SHA512Digest(prefix)
+        val out = new Array[Byte](64)
+        d.update(ctr.toByte)
+        d.update(0.toByte)
+        d.doFinal(out, 0)
+        ByteVector.view(out)
+      }
+    }
+
     /** §5.4.1.1: the first counter whose hash decodes to a point; the point times the cofactor. */
     def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, Point] = {
+      val hashed = counterHashes(pk, alpha)
       @tailrec def loop(ctr: Int): Either[VrfError, Point] =
         if (ctr > 255) VrfError.HashToCurveFailed("no counter in 0..255 gave a curve point").asLeft
         else
-          Curve25519Maps.decodeStrict(hash(ByteVector(suite, 0x01), pk, alpha, ByteVector(ctr, 0x00)).take(32)) match {
+          Curve25519Maps.decodeStrict(hashed(ctr).take(32)) match {
             case Some(pt) => pt.multiplyByCofactor().asRight
             case None     => loop(ctr + 1)
           }

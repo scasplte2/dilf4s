@@ -123,7 +123,7 @@ object GasCases {
     List(Op.Add, Op.Sub, Op.Div, Op.Mod, Op.Min, Op.Max, Op.Lt, Op.Le, Op.Gt, Op.Ge, Op.Eq, Op.Ne, Op.StrictEq, Op.StrictNe)
       .flatMap(numbers(_, 64, 4000)) ++
     numbers(Op.Mul, 64, 2000) ++
-    List(Op.Add, Op.Sub, Op.Mul, Op.Div, Op.Mod, Op.Lt).flatMap(rationals(_, 256, 1000, 2000)) ++
+    List(Op.Add, Op.Sub, Op.Mul, Op.Div, Op.Mod, Op.Lt, Op.Min, Op.Max).flatMap(rationals(_, 256, 1000, 2000)) ++
     List(Op.Abs, Op.Round, Op.RoundHalfUp, Op.Floor, Op.Ceil).flatMap(o =>
       List(256, 2000).map { n =>
         val q = Json.obj("/" -> Json.fromValues(reads(2)))
@@ -469,11 +469,11 @@ object GasCases {
       .exists(p => ByteVector.view(p.compress().toByteArray) == h)
   }
 
-  /** The first alpha (`i` big-endian, from 0) whose first `k` TAI counters all fail to decode. */
-  private def ground(pk: ByteVector, k: Int): ByteVector =
+  /** The first alpha (`prefix`, then `i` big-endian, from 0) whose first `k` TAI counters all fail to decode. */
+  private def ground(pk: ByteVector, k: Int, prefix: ByteVector = ByteVector.empty): ByteVector =
     LazyList
       .from(0)
-      .map(i => ByteVector.fromInt(i))
+      .map(i => prefix ++ ByteVector.fromInt(i))
       .find(alpha => (0 until k).forall(c => !taiDecodes(pk, alpha, c)))
       .getOrElse(ByteVector.empty)
 
@@ -485,7 +485,15 @@ object GasCases {
     List(
       op("valid, counter 0", Op.EcvrfVerify, b(pk), b(first), b(proved(first))),
       op("valid, 64,000-byte alpha", Op.EcvrfVerify, b(pk), b(long), b(proved(long))),
-      op("valid, 12 counters fail first", Op.EcvrfVerify, b(pk), b(ground(pk, 12)), b(proved(ground(pk, 12))))
+      op("valid, 12 counters fail first", Op.EcvrfVerify, b(pk), b(ground(pk, 12)), b(proved(ground(pk, 12)))),
+      // each counter must not hash alpha again
+      op(
+        "valid, 64,000-byte alpha, 10 counters fail first",
+        Op.EcvrfVerify,
+        b(pk),
+        b(ground(pk, 10, long)),
+        b(proved(ground(pk, 10, long)))
+      )
     )
   }
 
