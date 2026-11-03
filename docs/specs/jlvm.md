@@ -564,7 +564,9 @@ The gcd that normalises a result is quadratic in its operands' size. `/` and `%`
 multiplies and subtracts, so it charges `RationalLimbs2` as well; so does `abs` (the Rust node re-checks that its result
 is in lowest terms). `<`, `<=`, `>`, `>=`, `min` and `max` charge `RationalWeight`: two rationals are compared by
 multiplying across (`min` and `max` return the argument they choose as it is, never reduced again).
-`pow` is priced at its worst case, a 4096-bit rational result.
+`+`, `-`, `*`, `min` and `max` also charge per operand (`Elements`, which is 1 for a number): converting and combining
+an operand has a fixed cost, which a spread over thousands of operands multiplies. `pow` is priced at its worst case,
+a 4096-bit rational result.
 
 **Work an argument's size does not bound** has charges of its own, each taken before the work:
 - **Accumulators.** `+` and `*` fold left, and each step is the binary operation on the accumulator and the next
@@ -639,13 +641,13 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `<=` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
 | `>` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
 | `>=` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
-| `+` | 140 | 3 per `Weight` | plus 7 per `RationalLimbs2` |
-| `-` | 140 | 3 per `Weight` | plus 7 per `RationalLimbs2` |
-| `*` | 100 | 10 per `Weight` | plus 7 per `RationalLimbs2` |
+| `+` | 40 | 3 per `Weight` | plus 7 per `RationalLimbs2`; plus 40 per `Elements` |
+| `-` | 40 | 3 per `Weight` | plus 7 per `RationalLimbs2`; plus 60 per `Elements` |
+| `*` | 40 | 10 per `Weight` | plus 7 per `RationalLimbs2`; plus 40 per `Elements` |
 | `/` | 340 | 2 per `Weight` | plus 8 per `Limbs2` |
 | `%` | 340 | 2 per `Weight` | plus 8 per `Limbs2`; plus 8 per `RationalLimbs2` |
-| `min` | 90 | 1 per `Weight` | plus 14 per `RationalWeight` |
-| `max` | 90 | 1 per `Weight` | plus 14 per `RationalWeight` |
+| `min` | 30 | 1 per `Weight` | plus 14 per `RationalWeight`; plus 35 per `Elements` |
+| `max` | 30 | 1 per `Weight` | plus 14 per `RationalWeight`; plus 35 per `Elements` |
 | `abs` | 60 |  | plus 2 per `RationalLimbs2` |
 | `round` | 60 | 8 per `Weight` |  |
 | `round_half_up` | 60 | 8 per `Weight` |  |

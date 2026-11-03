@@ -2,12 +2,16 @@ package xyz.kd5ujc.benchmarks
 
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Paths}
+import java.util.concurrent.Executors
 
 import cats.effect.std.SecureRandom
-import cats.effect.{ExitCode, IO, IOApp}
+import cats.effect.unsafe.IORuntimeConfig
+import cats.effect.{ExitCode, IO, IOApp, Resource}
 import cats.syntax.all._
 
 import scala.annotation.tailrec
+import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.Duration
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.crypto.bls.Bls12381
@@ -36,6 +40,13 @@ import GasCases.GasCase
  * `... GasRatios measure [rounds] [regex]` (run it with a fixed heap, pinned to one CPU, several times).
  */
 object GasRatios extends IOApp {
+
+  /** No starvation checker: it is a fiber of its own, and nothing but the timed rounds may run while they do. */
+  override def runtimeConfig: IORuntimeConfig = super.runtimeConfig.copy(cpuStarvationCheckInitialDelay = Duration.Inf)
+
+  /** The thread every timed round runs on, alone: no other fiber is ever scheduled there. */
+  private val dedicated: Resource[IO, ExecutionContext] =
+    Resource.make(IO(Executors.newSingleThreadExecutor()))(e => IO(e.shutdown())).map(ExecutionContext.fromExecutor)
 
   private val unlimited = Config(limit = GasLimit(Gas(Long.MaxValue / 4)))
 
@@ -166,11 +177,15 @@ object GasRatios extends IOApp {
                 s"# backend JVM ${System.getProperty("java.version")}; ${chosen.size} cases; $rounds rounds; probe $ProbeSteps steps"
               )
               _ <- IO.println(s"# anchor ${anchor.charged(jlvm)}; reference ${reference.charged(jlvm)}")
-              _ <- warm(jlvm, anchor :: reference :: chosen.map(_._1), 2e8)
-              _ <- size(jlvm, anchor, anchor.program, 3e9)
-              a <- unit(jlvm, anchor)
-              r <- unit(jlvm, reference)
-              _ <- chosen.foldLeftM(0x2545f4914f6cdd1dL) { case (seed, (c, i)) => measure(jlvm, a, r, i, c, rounds, seed) }
+              _ <- dedicated.use { ec =>
+                (for {
+                  _ <- warm(jlvm, anchor :: reference :: chosen.map(_._1), 2e8)
+                  _ <- size(jlvm, anchor, anchor.program, 3e9)
+                  a <- unit(jlvm, anchor)
+                  r <- unit(jlvm, reference)
+                  _ <- chosen.foldLeftM(0x2545f4914f6cdd1dL) { case (seed, (c, i)) => measure(jlvm, a, r, i, c, rounds, seed) }
+                } yield ()).evalOn(ec)
+              }
             } yield ExitCode.Success
         }
       case _ => IO.println("usage: GasRatios export <file> | measure [rounds] [regex]").as(ExitCode.Error)
