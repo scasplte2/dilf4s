@@ -2,6 +2,8 @@ package xyz.kd5ujc.jlvm
 
 import cats.Show
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.hash.Sha256
@@ -102,11 +104,11 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     expect(p("""{"price": 5}""").isLeft, "an unknown single key is an error")
       .and(expect(p("""{"iff": [true, 1, 2]}""").isLeft, "a typo is rejected"))
       .and(expect(p("""{"": "a"}""").isLeft, "the empty key is no operation"))
-      .and(expect.same(Right(Expr.Obj(Map("price" -> int(5)))), p("""{"object": {"price": 5}}""")))
+      .and(expect.same(Right(Expr.Obj(TreeMap("price" -> int(5)))), p("""{"object": {"price": 5}}""")))
       .and(expect.same(Right(Expr.Apply(Op.Round, Vector(int(1)))), p("""{"round": [1]}""")))
-      .and(expect.same(Right(Expr.Obj(Map("price" -> int(5), "qty" -> int(1)))), p("""{"price": 5, "qty": 1}""")))
+      .and(expect.same(Right(Expr.Obj(TreeMap("price" -> int(5), "qty" -> int(1)))), p("""{"price": 5, "qty": 1}""")))
       .and(expect.same(Right(Expr.Lit(CanonicalValue.map(List("if" -> CInt(1))).toOption.get)), p("""{"literal": {"if": 1}}""")))
-      .and(expect.same(Right(Expr.Obj(Map("a" -> Expr.Lit(CNull), "b" -> int(1)))), p("""{"a": null, "b": 1}""")))
+      .and(expect.same(Right(Expr.Obj(TreeMap("a" -> Expr.Lit(CNull), "b" -> int(1)))), p("""{"a": null, "b": 1}""")))
   }
 
   pureTest("strictly valid JSON only: duplicate keys and excessive depth are rejected") {
@@ -130,19 +132,19 @@ object ParserSuite extends SimpleIOSuite with Checkers {
 
   pureTest("{\"object\": ...} is a map expression with any keys, including operation names") {
     expect
-      .same(Right(Expr.Obj(Map("count" -> Expr.Apply(Op.Add, Vector(int(1), int(2)))))), p("""{"object": {"count": {"+": [1, 2]}}}"""))
-      .and(expect.same(Right(Expr.Obj(Map.empty)), p("""{"object": {}}""")))
-      .and(expect.same(Right(Expr.Obj(Map("a" -> int(1), "b" -> int(2)))), p("""{"object": {"a": 1, "b": 2}}""")))
+      .same(Right(Expr.Obj(TreeMap("count" -> Expr.Apply(Op.Add, Vector(int(1), int(2)))))), p("""{"object": {"count": {"+": [1, 2]}}}"""))
+      .and(expect.same(Right(Expr.Obj(TreeMap.empty)), p("""{"object": {}}""")))
+      .and(expect.same(Right(Expr.Obj(TreeMap("a" -> int(1), "b" -> int(2)))), p("""{"object": {"a": 1, "b": 2}}""")))
       .and(expect(p("""{"object": [1]}""").isLeft, "object takes an object"))
   }
 
   pureTest("a single key starting with _ is data: host triggers read as map expressions") {
     expect
       .same(
-        Right(Expr.Obj(Map("_result" -> Expr.Obj(Map("valid" -> Expr.Lit(CBool(false)), "error" -> text("no")))))),
+        Right(Expr.Obj(TreeMap("_result" -> Expr.Obj(TreeMap("valid" -> Expr.Lit(CBool(false)), "error" -> text("no")))))),
         p("""{"_result": {"valid": false, "error": "no"}}""")
       )
-      .and(expect.same(Right(Expr.Obj(Map("_emit" -> Expr.Arr(Vector(v("x")))))), p("""{"_emit": [{"var": "x"}]}""")))
+      .and(expect.same(Right(Expr.Obj(TreeMap("_emit" -> Expr.Arr(Vector(v("x")))))), p("""{"_emit": [{"var": "x"}]}""")))
       .and(expect(Op.values.forall(o => !o.wire.startsWith(Parser.DataPrefix)), "no operation name starts with _"))
       .and(
         expect(
@@ -234,7 +236,7 @@ object ParserSuite extends SimpleIOSuite with Checkers {
           .map { case (o, a) => Expr.Spread(o, a) },
         1 -> Gen.zip(sub, Gen.option(default)).map { case (q, d) => Expr.VarAt(q, d) },
         1 -> Gen.listOfN(2, sub).map(is => Expr.Arr(is.toVector)),
-        2 -> Gen.choose(0, 3).flatMap(n => Gen.listOfN(n, Gen.zip(keys, sub))).map(fs => Expr.Obj(fs.toMap))
+        2 -> Gen.choose(0, 3).flatMap(n => Gen.listOfN(n, Gen.zip(keys, sub))).map(fs => Expr.Obj(TreeMap.from(fs)))
       )
     }
   }
@@ -377,10 +379,10 @@ object ParserSuite extends SimpleIOSuite with Checkers {
           Gen.oneOf(structured, Gen.const(CInt(0))).map(d => Expr.VarAt(e, Some(d))),
           Gen.const(Expr.Apply(Op.Not, Vector(e))),
           Gen.const(Expr.Arr(Vector(e))),
-          Gen.const(Expr.Obj(Map("k" -> e))),
-          Gen.const(Expr.Obj(Map("_k" -> e))),
+          Gen.const(Expr.Obj(TreeMap("k" -> e))),
+          Gen.const(Expr.Obj(TreeMap("_k" -> e))),
           Gen.const(e match {
-            case Expr.Arr(_) => Expr.Spread(Op.Add, Expr.Obj(Map("k" -> e)))
+            case Expr.Arr(_) => Expr.Spread(Op.Add, Expr.Obj(TreeMap("k" -> e)))
             case other       => Expr.Spread(Op.Add, other)
           })
         )

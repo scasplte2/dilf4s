@@ -2,6 +2,8 @@ package xyz.kd5ujc.core.canonical
 
 import cats.syntax.all._
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 
 import scodec.bits.ByteVector
@@ -99,13 +101,18 @@ object Codec {
       CanonicalDecoder.text.emap(t => Either.cond(pattern.matches(t), t, s"\"$t\" does not match ${pattern.regex}"))
     )
 
-  /** A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`). */
-  def textMap[A](value: Codec[A]): Codec[Map[String, A]] =
+  /**
+   * A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`). Its keys are the caller's, so it is
+   * ordered, never hashed: decoded, in [[KeyOrder.Default]]; to encode, in any order (the encoding sorts them).
+   */
+  def textMap[A](value: Codec[A]): Codec[TreeMap[String, A]] =
     Codec(
       m => m.toList.traverse { case (k, v) => value.encode(v).map(k -> _) }.flatMap(CanonicalValue.map),
       {
-        case CMap(entries) => entries.toList.traverse { case (k, v) => value.decoder.decode(v).leftMap(_.at(k)).map(k -> _) }.map(_.toMap)
-        case _             => DecodeFailure(Nil, "expected a map").asLeft
+        case CMap(entries) =>
+          entries.toList.traverse { case (k, v) => value.decoder.decode(v).leftMap(_.at(k)).map(k -> _) }
+            .map(TreeMap.from(_)(using KeyOrder.Default))
+        case _ => DecodeFailure(Nil, "expected a map").asLeft
       }
     )
 
@@ -143,7 +150,8 @@ object Codec {
           case _        => DecodeFailure(Nil, "expected a map or one of the text alternatives").asLeft
         }
       case Some(keys) =>
-        alternatives.collectFirst { case (required, all, d) if required.subsetOf(keys) && keys.subsetOf(all) => d }
+        // the schema's sets are iterated and looked up in the value's keys, in their order: no caller key is hashed
+        alternatives.collectFirst { case (required, all, d) if required.subsetOf(keys) && all.count(keys.contains) == keys.size => d }
           .toRight(DecodeFailure(Nil, s"no alternative has keys ${keys.toList.sorted.mkString(", ")}"))
           .flatMap(_.decode(value))
     }

@@ -46,7 +46,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     case FieldType.Matching(pattern)  => ("String", s"Codec.matching(${literal(pattern)}.r)")
     case FieldType.TextMap(value) =>
       val (t, c) = tc(rule, value)
-      (s"Map[String, $t]", s"Codec.textMap($c)")
+      (s"TreeMap[String, $t]", s"Codec.textMap($c)")
     case FieldType.Vec(element, min, max) =>
       val (et, ec) = tc(rule, element)
       (s"Vector[$et]", s"Codec.vector($ec, $min, ${max.fold("None")(m => s"Some($m)")})")
@@ -183,6 +183,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
           rules.traverse(q => profile.rule(q).flatMap(emitRule(q, _))).map { bodies =>
             val code = bodies.mkString("\n")
             val imports = List(
+              Option.when(code.contains("TreeMap"))("import scala.collection.immutable.TreeMap"),
               Option.when(code.contains("ByteVector"))("import scodec.bits.ByteVector"),
               Some(
                 s"import xyz.kd5ujc.core.canonical.{${List("Canonical", "CanonicalDecoder", "CanonicalValue", "Codec").filter(i => s"\\b$i\\b".r.findFirstIn(code).isDefined).mkString(", ")}}"
