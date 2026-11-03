@@ -134,9 +134,10 @@ export class PoseidonMerkleProof {
     return this.#siblings.length;
   }
 
+  /** The depth is checked first, so the capacity `2^depth` it is compared with never exceeds `2^MAX_DEPTH`. */
   static of(position: bigint, siblings: readonly Fr[]): Result<PoseidonMerkleProof, PoseidonMerkleError> {
-    const capacity = 1n << BigInt(siblings.length);
-    return siblings.length <= MAX_DEPTH && position >= 0n && position < capacity ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", position, depth: siblings.length });
+    const depth = siblings.length;
+    return depth <= MAX_DEPTH && position >= 0n && position < 1n << BigInt(depth) ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", position, depth });
   }
 
   /**

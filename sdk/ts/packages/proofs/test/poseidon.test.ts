@@ -164,3 +164,32 @@ describe("treeRoot: caller-chosen positions are compared, never hashed", () => {
     expect(expectErr(poseidon.treeRoot(6, [[5n, one], [64n, one]]), "out of range")).toEqual({ kind: "Position", position: 64n, depth: 6 });
   });
 });
+
+describe("PoseidonMerkleProof.of: the depth is checked before any work in it", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("an over-deep path is refused without reading a sibling or making a 2^depth bigint", () => {
+    const reads: PropertyKey[] = [];
+    // a sparse array of 2^31 slots costs nothing to make; 2^(2^31) is past V8's largest bigint, so computing it throws
+    const deep = new Proxy(new Array<poseidon.Fr>(2 ** 31), {
+      get: (target, key, receiver) => {
+        if (key !== "length") reads.push(key);
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    });
+    const made = vi.spyOn(globalThis, "BigInt");
+    const refused = poseidon.PoseidonMerkleProof.of(0n, deep);
+    const largest = made.mock.calls.reduce((max, [x]) => (typeof x === "number" && x > max ? x : max), 0);
+    expect(refused).toEqual({ ok: false, error: { kind: "Position", position: 0n, depth: 2 ** 31 } });
+    expect(reads).toEqual([]);
+    expect(largest).toBeLessThanOrEqual(poseidon.MAX_DEPTH);
+  });
+
+  it("depth MAX_DEPTH is accepted, and one more is refused", () => {
+    const zeros = (n: number): poseidon.Fr[] => Array.from({ length: n }, () => poseidon.Fr.zero);
+    expect(expectOk(poseidon.PoseidonMerkleProof.of((1n << 256n) - 1n, zeros(256)), "depth 256").depth).toBe(256);
+    expect(expectErr(poseidon.PoseidonMerkleProof.of(0n, zeros(257)), "depth 257")).toEqual({ kind: "Position", position: 0n, depth: 257 });
+  });
+});
