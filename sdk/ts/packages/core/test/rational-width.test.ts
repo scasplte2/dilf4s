@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { bitLength, cbor, RationalValue, Value, type CanonicalError, type Result } from "../src/index.js";
+import { gcdSteps } from "../src/value.js";
 import { expectOk } from "./vectors.js";
 
 // A rational's numerator and denominator are at most cbor.MAX_RATIONAL_BITS wide (canonical-encoding.md section 1), so
@@ -8,6 +9,13 @@ import { expectOk } from "./vectors.js";
 describe("rational width", () => {
   const max = cbor.MAX_RATIONAL_BITS;
   const edge = 1n << BigInt(max);
+
+  /** `(F(k + 1), F(k))` with `F(k + 1)` exactly `bits` wide: coprime, and the pair whose gcd takes the most steps. */
+  const fibonacci = (bits: number): readonly [bigint, bigint] => {
+    let [a, b] = [1n, 1n];
+    while (bitLength(b) < bits) [a, b] = [b, a + b];
+    return [b, a];
+  };
 
   const rational = (n: bigint, d: bigint): Value => {
     const v = Value.number(n, d);
@@ -43,6 +51,49 @@ describe("rational width", () => {
     expect(Value.equals(decoded, maximal)).toBe(true);
     expect(of).toHaveBeenCalledTimes(k);
     expect(Math.max(...of.mock.calls.flat().map(bitLength))).toBe(max);
+  });
+
+  it("a gcd of the widest parts takes a bounded number of multi-precision steps", () => {
+    const [n, d] = fibonacci(max);
+    const [g, steps] = gcdSteps(n, d);
+    expect(g).toBe(1n);
+    // Lehmer's algorithm takes about 13 bits a step (2,487 here); Euclid's took 47,849 remainders
+    expect(steps).toBeLessThanOrEqual(max / 10);
+    expect(gcdSteps(edge - 1n, edge - 3n)[1]).toBeLessThanOrEqual(max / 10);
+  });
+
+  it("Lehmer's gcd is Euclid's, for either sign, zero and shared factors", () => {
+    const euclid = (a: bigint, b: bigint): bigint => {
+      let [x, y] = [a < 0n ? -a : a, b < 0n ? -b : b];
+      while (y !== 0n) [x, y] = [y, x % y];
+      return x;
+    };
+    let seed = 0x2545f4914f6cdd1dn;
+    const random = (bits: number): bigint => {
+      let v = 0n;
+      for (let i = 0; i < bits; i += 32) {
+        seed = (seed * 6364136223846793005n + 1442695040888963407n) & ((1n << 64n) - 1n);
+        v = (v << 32n) | (seed >> 32n);
+      }
+      return v & ((1n << BigInt(bits)) - 1n);
+    };
+    const pairs: (readonly [bigint, bigint])[] = [
+      [0n, 0n],
+      [0n, 7n],
+      [7n, 0n],
+      [1n, 1n],
+      [-6n, 4n],
+      [1n << 100n, 1n << 99n],
+      [(1n << 4000n) - 1n, (1n << 3999n) - 1n],
+      [edge - 1n, 3n],
+      fibonacci(2000),
+    ];
+    for (let i = 0; i < 400; i++) {
+      const g = random(1 + Number(random(8) % 300n));
+      const sign = random(1) === 0n ? 1n : -1n;
+      pairs.push([sign * random(1 + Number(random(12) % 3000n)) * g, random(1 + Number(random(12) % 3000n)) * g]);
+    }
+    for (const [a, b] of pairs) expect(gcdSteps(a, b)[0]).toBe(euclid(a, b));
   });
 
   it("a part one bit too wide is refused before any gcd, even when the rational is not in lowest terms either", () => {

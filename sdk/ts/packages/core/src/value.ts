@@ -153,12 +153,52 @@ export class IntValue {
 
 const abs = (n: bigint): bigint => (n < 0n ? -n : n);
 
-function gcd(a: bigint, b: bigint): bigint {
-  let x = abs(a);
-  let y = abs(b);
-  while (y !== 0n) [x, y] = [y, x % y];
-  return x;
+/** Once the larger number fits 64 bits, Euclid's remainders are cheap: Lehmer's algorithm hands over to them. */
+const LEHMER_FROM_BITS = 64;
+/** The leading bits Lehmer's algorithm simulates Euclid on, in exact double arithmetic: every value stays below 2^31. */
+const LEHMER_DIGIT = 30;
+
+/** The bit length of `x >= 0`, given a bound `hint` on it: shifts that leave at most 64 bits, so O(1) each. */
+function bitsWithin(x: bigint, hint: number): number {
+  for (let h = hint; ; ) {
+    const s = Math.max(h - 64, 0);
+    const top = x >> BigInt(s);
+    if (top !== 0n || s === 0) return top === 0n ? 0 : s + bitLength(top);
+    h = s;
+  }
 }
+
+/**
+ * `gcd(|a|, |b|)`, and the multi-precision steps it took: Lehmer's algorithm (Knuth, TAOCP vol. 2, 4.5.2, Algorithm L).
+ * A BigInt remainder costs about as much as twenty multiplications by a small number, so each step runs Euclid on the
+ * leading 30 bits alone, in doubles, for as long as their quotients are certainly the true ones, then applies them to
+ * the full numbers at once: about 13 bits a step, where Euclid takes a remainder per bit or two. 33,220-bit Fibonacci
+ * neighbours (the slowest pair of that width) take about 2,500 steps instead of 47,849 remainders.
+ */
+export function gcdSteps(a: bigint, b: bigint): readonly [bigint, number] {
+  let [x, y] = abs(a) >= abs(b) ? [abs(a), abs(b)] : [abs(b), abs(a)];
+  let bits = bitLength(x);
+  let steps = 0;
+  for (; bits > LEHMER_FROM_BITS && y !== 0n; steps++) {
+    const shift = BigInt(bits - LEHMER_DIGIT);
+    let [xh, yh] = [Number(x >> shift), Number(y >> shift)];
+    let [p, q, r, s] = [1, 0, 0, 1];
+    while (yh + r !== 0 && yh + s !== 0) {
+      const quotient = Math.floor((xh + p) / (yh + r));
+      if (quotient !== Math.floor((xh + q) / (yh + s))) break;
+      [p, r] = [r, p - quotient * r];
+      [q, s] = [s, q - quotient * s];
+      [xh, yh] = [yh, xh - quotient * yh];
+    }
+    // q = 0: not one quotient was certain (y is far shorter than x), so take one full remainder
+    [x, y] = q === 0 ? [y, x % y] : [BigInt(p) * x + BigInt(q) * y, BigInt(r) * x + BigInt(s) * y];
+    bits = bitsWithin(x, bits);
+  }
+  for (; y !== 0n; steps++) [x, y] = [y, x % y];
+  return [x, steps];
+}
+
+const gcd = (a: bigint, b: bigint): bigint => gcdSteps(a, b)[0];
 
 /** A rational `n/d` with `d >= 2` and `gcd(|n|, d) = 1`: never an integer. */
 export class RationalValue {
