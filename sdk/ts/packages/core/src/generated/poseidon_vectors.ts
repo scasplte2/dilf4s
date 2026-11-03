@@ -11,6 +11,60 @@ export type DecimalLeaves = ReadonlyMap<string, Decimal>;
 
 export const DecimalLeaves: c.Codec<DecimalLeaves> = c.textMap(c.defer(() => Decimal));
 
+/** `poseidon-build-vector` (`shared/schemas/poseidon-vectors.cddl`). */
+export interface PoseidonBuildVector {
+  readonly depth: bigint;
+  readonly entries: readonly PoseidonEntry[];
+  readonly root: Decimal;
+}
+
+export const PoseidonBuildVector: c.Codec<PoseidonBuildVector> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("depth", c.uint, a.depth, e),
+        c.field("entries", c.vector(c.defer(() => PoseidonEntry), 0, null), a.entries, e),
+        c.field("root", c.defer(() => Decimal), a.root, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["depth", "entries", "root"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("depth", c.uint);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("entries", c.vector(c.defer(() => PoseidonEntry), 0, null));
+    if (!r1.ok) return r1;
+    const r2 = f.value.required("root", c.defer(() => Decimal));
+    if (!r2.ok) return r2;
+    return c.ok({ depth: r0.value, entries: r1.value, root: r2.value });
+  },
+};
+
+/** `poseidon-entry` (`shared/schemas/poseidon-vectors.cddl`). */
+export interface PoseidonEntry {
+  readonly position: Decimal;
+  readonly leaf: Decimal;
+}
+
+export const PoseidonEntry: c.Codec<PoseidonEntry> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("position", c.defer(() => Decimal), a.position, e),
+        c.field("leaf", c.defer(() => Decimal), a.leaf, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["position", "leaf"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("position", c.defer(() => Decimal));
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("leaf", c.defer(() => Decimal));
+    if (!r1.ok) return r1;
+    return c.ok({ position: r0.value, leaf: r1.value });
+  },
+};
+
 /** `poseidon-hash-vector` (`shared/schemas/poseidon-vectors.cddl`). */
 export interface PoseidonHashVector {
   readonly inputs: readonly Decimal[];
@@ -100,6 +154,7 @@ export interface PoseidonVectors {
   readonly version: 1n;
   readonly poseidon: readonly PoseidonHashVector[];
   readonly merkle: PoseidonMerkleVector;
+  readonly builds: readonly PoseidonBuildVector[];
 }
 
 export const PoseidonVectors: c.Codec<PoseidonVectors> = {
@@ -110,10 +165,11 @@ export const PoseidonVectors: c.Codec<PoseidonVectors> = {
         c.field("version", c.literalInt(1n), a.version, e),
         c.field("poseidon", c.vector(c.defer(() => PoseidonHashVector), 0, null), a.poseidon, e),
         c.field("merkle", c.defer(() => PoseidonMerkleVector), a.merkle, e),
+        c.field("builds", c.vector(c.defer(() => PoseidonBuildVector), 0, null), a.builds, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "poseidon", "merkle"]);
+    const f = c.fields(v, ["spec", "version", "poseidon", "merkle", "builds"]);
     if (!f.ok) return f;
     const r0 = f.value.required("spec", c.literalText("docs/specs/zk.md"));
     if (!r0.ok) return r0;
@@ -123,6 +179,8 @@ export const PoseidonVectors: c.Codec<PoseidonVectors> = {
     if (!r2.ok) return r2;
     const r3 = f.value.required("merkle", c.defer(() => PoseidonMerkleVector));
     if (!r3.ok) return r3;
-    return c.ok({ spec: r0.value, version: r1.value, poseidon: r2.value, merkle: r3.value });
+    const r4 = f.value.required("builds", c.vector(c.defer(() => PoseidonBuildVector), 0, null));
+    if (!r4.ok) return r4;
+    return c.ok({ spec: r0.value, version: r1.value, poseidon: r2.value, merkle: r3.value, builds: r4.value });
   },
 };

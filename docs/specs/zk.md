@@ -110,6 +110,7 @@ shielded-transfer circuit.
   position replaces an earlier one, and a later 0 empties it. Every position is checked against `2^d` first. Positions
   are the caller's choice and some runtimes hash large integers by their low bits only, so implementations order
   positions and never hash them: building from `n` entries costs O(n log n) comparisons and O(n · d) compressions.
+  `shared/vectors/poseidon_v1.json` pins it (`builds`).
 
 ### Proof encoding
 

@@ -17,6 +17,11 @@ describe("poseidon_v1.json", () => {
     expect(expectOk(poseidon.hash(v.inputs.map(fr)), "hashes").toString()).toBe(v.output);
   });
 
+  it.each(vectors.builds.map((b) => [b.entries.map((e) => `${e.position}:${e.leaf}`).join(","), b] as const))("a tree built from the entries [%s] in order", (_, b) => {
+    const entries = b.entries.map((e) => [BigInt(e.position), fr(e.leaf)] as const);
+    expect(expectOk(poseidon.treeRoot(Number(b.depth), entries), "root").toString()).toBe(b.root);
+  });
+
   const m = vectors.merkle;
   const depth = Number(m.depth);
   const root = fr(m.root);
