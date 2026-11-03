@@ -255,6 +255,11 @@ lazy val benchmarks = project.in(file("benchmarks"))
   .settings(
     name := "dilf4s-benchmarks",
     commonSettings,
-    publish / skip := true
+    publish / skip := true,
+    libraryDependencies ++= Seq(
+      // the gas calibration's cases are written as JSON program text
+      Libraries.circeCore   % Test,
+      Libraries.circeParser % Test
+    )
   )
   .dependsOn(core, accumulators, jlvm)
