@@ -145,33 +145,51 @@ private[crypto] object Point {
 
   // ------------------------------------------------------------------ variable-time multi-scalar multiplication
 
+  /** A nonzero digit of a NAF: `value · 2^position`. */
+  final private case class Digit(position: Int, value: Int)
+
   /**
-   * The width-`w` NAF of a scalar (dalek's `non_adjacent_form`), one digit per bit position, index 0 the lowest: each
-   * digit is 0 or odd, below `2^(w-1)` in magnitude, and nonzero digits are at least `w` apart. A [[Scalar]] holds a
-   * value below `L < 2^253` (its reduced constructors; the unreduced bit constructor is refused by the build), so no carry is left
+   * The width-`w` NAF of a scalar (dalek's `non_adjacent_form`): its nonzero digits, highest position first. Each is
+   * odd, below `2^(w-1)` in magnitude, and they are at least `w` positions apart. A [[Scalar]] holds a value below
+   * `L < 2^253` (its reduced constructors; the unreduced bit constructor is refused by the build), so no carry is left
    * over at the top.
    */
-  private def naf(scalar: Scalar, w: Int): IArray[Int] = {
+  private def naf(scalar: Scalar, w: Int): List[Digit] = {
     val bytes = ByteVector.view(scalar.toByteArray)
     def word(i: Int): Long =
       if (i < 4) bytes.slice(8L * i, 8L * i + 8).toLong(signed = false, ordering = ByteOrdering.LittleEndian) else 0L
     val words = IArray.tabulate(5)(word)
     val width = 1L << w
-    // digits are prepended, so `digits` runs from the highest position down; a digit's next w - 1 positions are zero
-    @tailrec def go(position: Int, carry: Long, digits: List[Int]): List[Int] =
+    @tailrec def go(position: Int, carry: Long, digits: List[Digit]): List[Digit] =
       if (position >= 256) digits
       else {
         val i = position / 64
         val bit = position % 64
         val buffer = if (bit < 64 - w) words(i) >>> bit else (words(i) >>> bit) | (words(i + 1) << (64 - bit))
         val window = carry + (buffer & (width - 1))
-        val zeros = math.min(w - 1, 255 - position)
-        if ((window & 1L) == 0L) go(position + 1, carry, 0 :: digits)
-        else if (window < width / 2) go(position + w, 0L, List.fill(zeros)(0) ++ (window.toInt :: digits))
-        else go(position + w, 1L, List.fill(zeros)(0) ++ ((window - width).toInt :: digits))
+        if ((window & 1L) == 0L) go(position + 1, carry, digits)
+        else if (window < width / 2) go(position + w, 0L, Digit(position, window.toInt) :: digits)
+        else go(position + w, 1L, Digit(position, (window - width).toInt) :: digits)
       }
-    IArray.from(go(0, 0L, Nil).reverse)
+    go(0, 0L, Nil)
   }
+
+  /** The digit at `position` (0 if none), for digits consumed from the highest position down. */
+  private def digit(digits: List[Digit], position: Int): Int =
+    digits match {
+      case Digit(`position`, v) :: _ => v
+      case _                         => 0
+    }
+
+  /** The digits below `position`. */
+  private def below(digits: List[Digit], position: Int): List[Digit] =
+    digits match {
+      case Digit(`position`, _) :: rest => rest
+      case _                            => digits
+    }
+
+  /** The highest position with a digit, or -1. */
+  private def top(digits: List[Digit]*): Int = digits.foldLeft(-1)((m, d) => d.headOption.fold(m)(x => math.max(m, x.position)))
 
   /** `[P, 3P, ..., 15P]`: the odd multiples a width-5 NAF digit selects. */
   private def oddMultiples(p: Point): IArray[Cached] = {
@@ -179,10 +197,10 @@ private[crypto] object Point {
     IArray.iterate(p, 8)(q => q.add(twice).toPoint).map(_.cached)
   }
 
-  /** `[B, 3B, ..., 127B]`, affine, for width-8 digits of the basepoint scalar; built once. */
-  private val basepointTable: IArray[Niels] = {
-    val twice = Basepoint.projective.double.toPoint.cached
-    IArray.iterate(Basepoint, 64)(q => q.add(twice).toPoint).map { q =>
+  /** `[P, 3P, ..., 127P]`, affine, for width-8 digits on a fixed point. */
+  private def affineOddMultiples(p: Point): IArray[Niels] = {
+    val twice = p.projective.double.toPoint.cached
+    IArray.iterate(p, 64)(q => q.add(twice).toPoint).map { q =>
       val zi = q.z.invert
       val ax = q.x * zi
       val ay = q.y * zi
@@ -190,40 +208,85 @@ private[crypto] object Point {
     }
   }
 
+  /** The tables for `B` and `2^128 B`, built once. */
+  private val basepointTable: IArray[Niels] = affineOddMultiples(Basepoint)
+  private val basepoint128Table: IArray[Niels] = {
+    @tailrec def doubled(q: Point, n: Int): Point = if (n == 0) q else doubled(q.projective.double.toPoint, n - 1)
+    affineOddMultiples(doubled(Basepoint, 128))
+  }
+
   private def withVariable(c: Completed, table: IArray[Cached], digit: Int): Completed =
     if (digit == 0) c else if (digit > 0) c.toPoint.add(table(digit / 2)) else c.toPoint.sub(table(-digit / 2))
 
-  private def withBasepoint(c: Completed, digit: Int): Completed =
-    if (digit == 0) c
-    else if (digit > 0) c.toPoint.addAffine(basepointTable(digit / 2))
-    else c.toPoint.subAffine(basepointTable(-digit / 2))
+  private def withFixed(c: Completed, table: IArray[Niels], digit: Int): Completed =
+    if (digit == 0) c else if (digit > 0) c.toPoint.addAffine(table(digit / 2)) else c.toPoint.subAffine(table(-digit / 2))
 
   private val IdentityCompleted: Completed = new Completed(Fe.Zero, Fe.One, Fe.One, Fe.One)
-
-  /** The highest position where either digit array is nonzero, or -1. */
-  @tailrec private def top(as: IArray[Int], bs: IArray[Int], position: Int): Int =
-    if (position < 0 || as(position) != 0 || bs(position) != 0) position else top(as, bs, position - 1)
 
   /** `aP + bQ`: Straus, width-5 NAF for both. */
   def doubleScalarMultiply(a: Scalar, p: Point, b: Scalar, q: Point): Point = {
     val ta = oddMultiples(p)
     val tb = oddMultiples(q)
-    val as = naf(a, 5)
-    val bs = naf(b, 5)
-    @tailrec def go(position: Int, c: Completed): Point =
+    @tailrec def go(position: Int, c: Completed, as: List[Digit], bs: List[Digit]): Point =
       if (position < 0) c.toPoint
-      else go(position - 1, withVariable(withVariable(c.toProjective.double, ta, as(position)), tb, bs(position)))
-    go(top(as, bs, 255), IdentityCompleted)
+      else {
+        val next = withVariable(withVariable(c.toProjective.double, ta, digit(as, position)), tb, digit(bs, position))
+        go(position - 1, next, below(as, position), below(bs, position))
+      }
+    val (as, bs) = (naf(a, 5), naf(b, 5))
+    go(top(as, bs), IdentityCompleted, as, bs)
   }
 
   /** `aP + bB`: width-5 NAF for `a`, width 8 on the fixed table for `b`. */
   def doubleScalarMultiplyBasepoint(a: Scalar, p: Point, b: Scalar): Point = {
     val ta = oddMultiples(p)
-    val as = naf(a, 5)
-    val bs = naf(b, 8)
-    @tailrec def go(position: Int, c: Completed): Point =
+    @tailrec def go(position: Int, c: Completed, as: List[Digit], bs: List[Digit]): Point =
       if (position < 0) c.toPoint
-      else go(position - 1, withBasepoint(withVariable(c.toProjective.double, ta, as(position)), bs(position)))
-    go(top(as, bs, 255), IdentityCompleted)
+      else {
+        val next = withFixed(withVariable(c.toProjective.double, ta, digit(as, position)), basepointTable, digit(bs, position))
+        go(position - 1, next, below(as, position), below(bs, position))
+      }
+    val (as, bs) = (naf(a, 5), naf(b, 8))
+    go(top(as, bs), IdentityCompleted, as, bs)
+  }
+
+  /**
+   * ZIP-215's cofactored equation: whether `[8]([s]B - [k]A - R)` is the identity, for any `A` and `R` (mixed-order ones
+   * included).
+   *
+   * With `k = v0 / v1 (mod L)` from [[Lattice.split]] (both about 127 bits, `v1` not 0 mod L), it checks
+   * `W = [v1 s mod L]B - [v0]A - [v1]R` instead, with every multi-scalar product about 128 bits long (the `B` scalar is
+   * split at bit 128 over the tables of `B` and `2^128 B`), so half the doublings. Exact, for any `A` and `R`: let
+   * `Q = [s]B - [k]A - R` and `v1 k = v0 + mL`. Then `W - [v1]Q = [v1 s mod L - v1 s]B + [mL]A = [mL]A` (B has order L),
+   * and `[8][mL]A = [m][L]([8]A) = 0`, since `[8]A` lies in the subgroup of order L. So `[8]W = [v1]([8]Q)`, and as
+   * `[8]Q` lies in that subgroup and `v1` is not 0 mod L, `[8]W` is the identity exactly when `[8]Q` is. Should no split be
+   * found (the bounds of [[Lattice]] rule it out, but its arithmetic is checked rather than trusted), the equation is
+   * evaluated directly, as `[8]([-k mod L]A + [s]B - R)`: `[8][L]A = 0` again.
+   */
+  def cofactoredEquation(s: Scalar, k: Scalar, a: Point, r: Point): Boolean =
+    Lattice
+      .split(k)
+      .fold((doubleScalarMultiplyBasepoint(Scalar.ZERO.subtract(k), a, s) - r).multiplyByCofactor().isIdentity) { split =>
+        val v1s = split.magnitude.multiply(s)
+        val t = ByteVector.view((if (split.negative) Scalar.ZERO.subtract(v1s) else v1s).toByteArray)
+        def half(b: ByteVector): Scalar = Scalar.fromBytesModOrder(b.padRight(32).toArray)
+        // -[v1]R: [|v1|](-R) for a positive v1, [|v1|]R for a negative one
+        val w = straus4(split.v0, a.negate, split.magnitude, if (split.negative) r else r.negate, half(t.take(16)), half(t.drop(16)))
+        w.multiplyByCofactor().isIdentity
+      }
+
+  /** `aP + bQ + cB + d 2^128 B`: width-5 NAF for `a` and `b`, width 8 on the fixed tables for `c` and `d`. */
+  private def straus4(a: Scalar, p: Point, b: Scalar, q: Point, c: Scalar, d: Scalar): Point = {
+    val ta = oddMultiples(p)
+    val tb = oddMultiples(q)
+    @tailrec def go(position: Int, acc: Completed, as: List[Digit], bs: List[Digit], cs: List[Digit], ds: List[Digit]): Point =
+      if (position < 0) acc.toPoint
+      else {
+        val variables = withVariable(withVariable(acc.toProjective.double, ta, digit(as, position)), tb, digit(bs, position))
+        val next = withFixed(withFixed(variables, basepointTable, digit(cs, position)), basepoint128Table, digit(ds, position))
+        go(position - 1, next, below(as, position), below(bs, position), below(cs, position), below(ds, position))
+      }
+    val (as, bs, cs, ds) = (naf(a, 5), naf(b, 5), naf(c, 8), naf(d, 8))
+    go(top(as, bs, cs, ds), IdentityCompleted, as, bs, cs, ds)
   }
 }

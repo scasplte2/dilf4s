@@ -140,6 +140,74 @@ object Curve25519CrossCheckSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  // ------------------------------------------------------------------ the half-length split of k
+
+  private def int(s:      Scalar): BigInt = BigInt(1, s.toByteArray.reverse)
+  private def scalarOf(n: BigInt): Scalar = Scalar.fromBytesModOrder(le32(n.mod(l)).toArray)
+
+  /** Edge values of k: tiny, around the 2^126 bound (huge first quotients), near L, and many quotients of 1 (L/phi). */
+  private val edgeKs: List[BigInt] = {
+    // L F(n) / F(n + 1) for F(n + 1) > L: its continued fraction against L starts with a long run of 1s
+    val fibs = LazyList.iterate((BigInt(0), BigInt(1))) { case (a, b) => (b, a + b) }.map(_._2)
+    val n = fibs.indexWhere(_ > l)
+    val fib = l * fibs(n) / fibs(n + 1)
+    List(0, 1, 2, 3).map(BigInt(_)) ++ List(BigInt(2).pow(126) - 1, BigInt(2).pow(126), BigInt(2).pow(126) + 1, BigInt(2).pow(127) + 3) ++
+    List(BigInt(2).pow(252), l - 1, l - 2, (l - 1) / 2, l / 3, fib - 1, fib, fib + 1)
+  }
+
+  private def splitHolds(k: Scalar) =
+    Lattice.split(k) match {
+      case None => failure(s"no split for ${int(k)}")
+      case Some(sp) =>
+        val v1 = if (sp.negative) -int(sp.magnitude) else int(sp.magnitude)
+        expect(int(sp.v0) < BigInt(2).pow(126), s"v0 has ${int(sp.v0).bitLength} bits")
+          .and(expect(int(sp.magnitude) < BigInt(2).pow(127) && v1 != 0, s"v1 has ${v1.bitLength} bits"))
+          .and(expect(((v1 * int(k) - int(sp.v0)).mod(l)) == 0, s"v0 = v1 k (mod L) for k = ${int(k)}"))
+    }
+
+  test("every k below L splits into v0 = v1 k (mod L) with v0 below 2^126 and |v1| below 2^127") {
+    forall(scalarGen)(splitHolds)
+  }
+
+  pureTest("the split of edge values of k: tiny, at the 2^126 bound, near L, and the longest Euclidean chains") {
+    edgeKs.foldMap(k => splitHolds(scalarOf(k)))
+  }
+
+  /** The equation as the previous verifier evaluated it: `[8]([-k mod L]A + [s]B - R)`. */
+  private def fullEquation(s: Scalar, k: Scalar, a: EdwardsPoint, r: EdwardsPoint): Boolean =
+    EdwardsPoint.vartimeDoubleScalarMultiplyBasepoint(Scalar.ZERO.subtract(k), a, s).subtract(r).multiplyByCofactor().isIdentity
+
+  /** `R = [s]B - [k]A + T`: the equation holds exactly when T is a torsion point; any `A`, mixed order included. */
+  private def equationAgrees(s: Scalar, k: Scalar, a: EdwardsPoint, t: EdwardsPoint) = {
+    val r = EdwardsPoint.vartimeDoubleScalarMultiplyBasepoint(Scalar.ZERO.subtract(k), a, s).add(t)
+    val expected = fullEquation(s, k, a, r)
+    expect(Point.cofactoredEquation(s, k, fromE(a), fromE(r)) == expected, s"k = ${int(k)}: expected $expected")
+  }
+
+  test("the split equation agrees with the direct one: valid with torsion in R, invalid off by a non-torsion point") {
+    forall(Gen.zip(scalarGen, scalarGen, pointGen, Gen.choose(0, 7), pointGen)) {
+      case (s, k, a, t, off) =>
+        equationAgrees(s, k, a, torsion(t))
+          .and(equationAgrees(s, k, a, torsion(t).add(off)))
+          .and(
+            expect(
+              Point.cofactoredEquation(
+                s,
+                k,
+                fromE(a),
+                fromE(EdwardsPoint.vartimeDoubleScalarMultiplyBasepoint(Scalar.ZERO.subtract(k), a, s).add(torsion(t)))
+              )
+            )
+          )
+    }
+  }
+
+  pureTest("the split equation at edge values of k and s, with mixed-order A and R") {
+    val a = Constants.ED25519_BASEPOINT_TABLE.multiply(scalarOf(BigInt(77))).add(torsion(5))
+    val ss = List(BigInt(0), BigInt(1), l - 1, BigInt(2).pow(128), BigInt(2).pow(252)).map(scalarOf)
+    edgeKs.map(scalarOf).foldMap(k => ss.foldMap(s => equationAgrees(s, k, a, torsion(3)).and(equationAgrees(s, k, a, torsion(2).add(a)))))
+  }
+
   // ------------------------------------------------------------------ Ed25519
 
   private def sha512(b: ByteVector): Array[Byte] = {
