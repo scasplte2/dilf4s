@@ -26,6 +26,16 @@ object CanonicalValueSuite extends SimpleIOSuite with Checkers {
     forall(CanonicalGens.value(3))(v => expect.same(recount(v), v.weight))
   }
 
+  pureTest("textKeyed refuses a repeated key rather than counting it twice in the weight") {
+    val one = CInt(1)
+    val distinct = CanonicalValue.textKeyed(Vector(t("b") -> one, t("a") -> one, t("c") -> CNull))
+    expect
+      .same(CanonicalValue.map(List("a" -> one, "b" -> one)), distinct)
+      .and(
+        expect.same(Left(CanonicalError.DuplicateKey("b")), CanonicalValue.textKeyed(Vector(t("b") -> one, t("a") -> one, t("b") -> True)))
+      )
+  }
+
   pureTest("weight counts shared sub-values every time and saturates instead of overflowing") {
     val doubled = (1 to 80).foldLeft[CanonicalValue](CNull)((v, _) => CanonicalValue.array(Vector(v, v)).toOption.get)
     expect

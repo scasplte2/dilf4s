@@ -3,6 +3,7 @@ package xyz.kd5ujc.jlvm
 import cats.syntax.all._
 
 import scala.annotation.tailrec
+import scala.collection.immutable.TreeMap
 
 import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
@@ -106,7 +107,7 @@ object Parser {
     }
 
   private def mapExpr(fields: List[(String, Json)]): Either[JlvmError, Expr] =
-    fields.traverse { case (k, v) => fromJson(v).map(k -> _) }.map(fs => Expr.Obj(fs.toMap))
+    fields.traverse { case (k, v) => fromJson(v).map(k -> _) }.map(fs => Expr.Obj(TreeMap.from(fs)))
 
   private def single(key: String, arg: Json): Either[JlvmError, Expr] =
     key match {
@@ -317,7 +318,7 @@ object Parser {
       case W.JlvmApply(op, as) => wireOp(op).flatMap(o => as.traverse(fromWire).map(Expr.Apply(o, _)))
       case W.JlvmSpread(op, a) => (wireOp(op), fromWire(a)).mapN(Expr.Spread(_, _))
       case W.JlvmArray(items)  => items.traverse(fromWire).map(Expr.Arr(_))
-      case W.JlvmMap(fields)   => fields.toList.traverse { case (k, v) => fromWire(v).map(k -> _) }.map(fs => Expr.Obj(fs.toMap))
+      case W.JlvmMap(fields)   => fields.toList.traverse { case (k, v) => fromWire(v).map(k -> _) }.map(fs => Expr.Obj(TreeMap.from(fs)))
     }
 
   /** The canonical form names operations by their own names only; aliases are a surface convenience. */

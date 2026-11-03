@@ -151,15 +151,19 @@ object Cbor {
    * succeeds. An explicit frame stack bounds nesting by `maxDepth` instead of the JVM call stack.
    */
   def decode(bytes: ByteVector, maxDepth: Int = DefaultMaxDepth): Either[CanonicalError, CanonicalValue] =
-    run(bytes, math.min(maxDepth, CanonicalValue.MaxDepth), Read(0L, Nil, 0))
+    decode(bytes, maxDepth, KeyOrder.Default)
+
+  /** [[decode]] building maps in `keys`'s order: production passes [[KeyOrder.Default]]. */
+  private[kd5ujc] def decode(bytes: ByteVector, maxDepth: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
+    run(bytes, math.min(maxDepth, CanonicalValue.MaxDepth), keys, Read(0L, Nil, 0))
 
   sealed private trait Frame
   final private case class ArrayFrame(remaining: Long, acc: Vector[CanonicalValue]) extends Frame
   final private case class MapFrame(
     remaining:  Long,
-    acc:        Vector[(String, CanonicalValue)],
+    acc:        Vector[(CText, CanonicalValue)],
     lastKey:    Option[ByteVector],
-    pendingKey: Option[(String, ByteVector)]
+    pendingKey: Option[(CText, ByteVector)]
   ) extends Frame
 
   sealed private trait Step
@@ -174,31 +178,31 @@ object Cbor {
   final private case class Head(major: Int, argument: BigInt, end: Long)
 
   @tailrec
-  private def run(in: ByteVector, maxDepth: Int, step: Step): Either[CanonicalError, CanonicalValue] =
+  private def run(in: ByteVector, maxDepth: Int, keys: KeyOrder, step: Step): Either[CanonicalError, CanonicalValue] =
     step match {
       case Read(pos, stack, depth) =>
         readItem(in, pos) match {
           case Left(e)                       => e.asLeft
-          case Right(Scalar(v, end))         => run(in, maxDepth, Deliver(v, pos, end, stack, depth))
+          case Right(Scalar(v, end))         => run(in, maxDepth, keys, Deliver(v, pos, end, stack, depth))
           case Right(_) if depth >= maxDepth => DepthExceeded(maxDepth).asLeft // an empty array or map is one level too
-          case Right(OpenArray(0L, end))     => run(in, maxDepth, Deliver(EmptyArray, pos, end, stack, depth))
-          case Right(OpenMap(0L, end))       => run(in, maxDepth, Deliver(EmptyMap, pos, end, stack, depth))
-          case Right(OpenArray(n, end))      => run(in, maxDepth, Read(end, ArrayFrame(n, Vector.empty) :: stack, depth + 1))
-          case Right(OpenMap(n, end))        => run(in, maxDepth, Read(end, MapFrame(n, Vector.empty, None, None) :: stack, depth + 1))
+          case Right(OpenArray(0L, end))     => run(in, maxDepth, keys, Deliver(EmptyArray, pos, end, stack, depth))
+          case Right(OpenMap(0L, end))       => run(in, maxDepth, keys, Deliver(EmptyMap, pos, end, stack, depth))
+          case Right(OpenArray(n, end))      => run(in, maxDepth, keys, Read(end, ArrayFrame(n, Vector.empty) :: stack, depth + 1))
+          case Right(OpenMap(n, end)) => run(in, maxDepth, keys, Read(end, MapFrame(n, Vector.empty, None, None) :: stack, depth + 1))
         }
 
       case Deliver(v, _, end, Nil, _) =>
         Either.cond(end == in.size, v, TrailingBytes(end))
 
       case Deliver(v, _, end, ArrayFrame(remaining, acc) :: rest, depth) =>
-        if (remaining == 1) run(in, maxDepth, Deliver(CanonicalValue.decodedArray(acc :+ v), -1, end, rest, depth - 1))
-        else run(in, maxDepth, Read(end, ArrayFrame(remaining - 1, acc :+ v) :: rest, depth))
+        if (remaining == 1) run(in, maxDepth, keys, Deliver(CanonicalValue.decodedArray(acc :+ v), -1, end, rest, depth - 1))
+        else run(in, maxDepth, keys, Read(end, ArrayFrame(remaining - 1, acc :+ v) :: rest, depth))
 
       case Deliver(key: CText, start, end, MapFrame(remaining, acc, lastKey, None) :: rest, depth) =>
         val keyBytes = in.slice(start, end)
         if (lastKey.exists(compareBytes(_, keyBytes) >= 0))
           NonCanonical(start, "map keys must be unique and in ascending encoded order").asLeft
-        else run(in, maxDepth, Read(end, MapFrame(remaining, acc, lastKey, Some((key.value, keyBytes))) :: rest, depth))
+        else run(in, maxDepth, keys, Read(end, MapFrame(remaining, acc, lastKey, Some((key, keyBytes))) :: rest, depth))
 
       case Deliver(_, start, _, MapFrame(_, _, _, None) :: _, _) =>
         Unsupported(start, "map keys must be text").asLeft
@@ -207,8 +211,8 @@ object Cbor {
         NonCanonical(start, "map values must not be null (null and absent are the same value)").asLeft
 
       case Deliver(v, _, end, MapFrame(remaining, acc, _, Some((key, keyBytes))) :: rest, depth) =>
-        if (remaining == 1) run(in, maxDepth, Deliver(CanonicalValue.decodedMap(acc :+ (key -> v)), -1, end, rest, depth - 1))
-        else run(in, maxDepth, Read(end, MapFrame(remaining - 1, acc :+ (key -> v), Some(keyBytes), None) :: rest, depth))
+        if (remaining == 1) run(in, maxDepth, keys, Deliver(CanonicalValue.decodedMap(acc :+ (key -> v), keys), -1, end, rest, depth - 1))
+        else run(in, maxDepth, keys, Read(end, MapFrame(remaining - 1, acc :+ (key -> v), Some(keyBytes), None) :: rest, depth))
     }
 
   private def readItem(in: ByteVector, pos: Long): Either[CanonicalError, Item] =

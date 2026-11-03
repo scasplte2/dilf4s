@@ -186,7 +186,9 @@ enum Expr {
   /** A [[Op.Variadic]] operation whose arguments are the elements of one array value. */
   case Spread(op: Op, arg: Expr)
   case Arr(items: Vector[Expr])
-  case Obj(fields: scala.collection.immutable.Map[String, Expr])
+
+  /** Its keys are the program's own, so they are ordered, never hashed. */
+  case Obj(fields: scala.collection.immutable.TreeMap[String, Expr])
 }
 
 /**
