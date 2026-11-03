@@ -36,6 +36,34 @@ export function drop(s: Bits, n: number): Bits {
   return slice(s, n, s.length);
 }
 
+/** The concatenation of `parts`. */
+export function concat(parts: readonly Bits[]): Bits {
+  let n = 0;
+  for (const p of parts) n += p.length;
+  const out = new Uint8Array((n + 7) >> 3);
+  let at = 0;
+  for (const p of parts) {
+    // whole bytes, shifted into place: padding bits are zero, as are the output's bits beyond `at`
+    const [base, shift] = [at >> 3, at & 7];
+    const used = (p.length + 7) >> 3;
+    for (let j = 0; j < used; j++) {
+      const v = p.bytes[j] ?? 0;
+      out[base + j] = (out[base + j] ?? 0) | (v >> shift);
+      if (shift !== 0 && base + j + 1 < out.length) out[base + j + 1] = (out[base + j + 1] ?? 0) | ((v << (8 - shift)) & 0xff);
+    }
+    at += p.length;
+  }
+  return { bytes: out, length: n };
+}
+
+/** `s` followed by one bit. */
+export function append(s: Bits, b: boolean): Bits {
+  const out = new Uint8Array((s.length + 8) >> 3);
+  out.set(s.bytes.subarray(0, (s.length + 7) >> 3));
+  if (b) setBit(out, s.length);
+  return { bytes: out, length: s.length + 1 };
+}
+
 /** The length of the longest common prefix of `a` from bit `ia` and `b` from bit `ib`. */
 export function commonPrefixFrom(a: Bits, ia: number, b: Bits, ib: number): number {
   const n = Math.min(a.length - ia, b.length - ib);
