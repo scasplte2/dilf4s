@@ -161,17 +161,28 @@ object CollidingKeysSuite extends SimpleIOSuite {
 
   test("JSON: a repeated member name is found by comparing names as they are read, in O(n log n)") {
     val keys = colliding(K)
-    val json = keys.map(k => s"\"$k\":1").mkString("{", ",", "}")
-    val repeated = keys.map(k => s"\"$k\":1").appended(s"\"${keys(N / 2)}\":2").mkString("{", ",", "}")
-    (counting(o => (CanonicalJson.parse(json, 0, o), o)), counting(o => CanonicalJson.parse(repeated, 0, o))).mapN {
-      case (((result, o), comparisons, _, measures), (dup, dupComparisons, _, _)) =>
+    val members = keys.map(k => s"\"$k\":1")
+    val json = members.mkString("{", ",", "}")
+    val repeated = members.appended(s"\"${keys(N / 2)}\":2").mkString("{", ",", "}")
+    // every member read, then the input ends where the next name would start: no lookup of a next name is made
+    val prefix = members.mkString("{", ",", ",")
+    (
+      counting(o => (CanonicalJson.parse(json, 0, o), o)),
+      counting(o => CanonicalJson.parse(repeated, 0, o)),
+      counting(o => CanonicalJson.parse(prefix, 0, o))
+    ).mapN {
+      case (((result, o), comparisons, _, measures), (dup, dupComparisons, _, _), (cut, prefixComparisons, _, _)) =>
         val v = get(result)
+        val lookup = dupComparisons - prefixComparisons
         within("parse", N, comparisons, 2L * nLogN(N))
           .and(expect.same(N.toLong, measures))
           .and(ordered("parse", v, o))
           .and(expect(dup == Left(CanonicalError.DuplicateKey(keys(N / 2))), s"the repeat is found: ${dup.leftMap(_.toString)}"))
+          .and(expect(cut.isLeft, "the cut input ends before a name"))
           // the repeat ends the parse before any map is built: only the check of the names read so far compared them
-          .and(within("the repeat", N, dupComparisons, 2L * nLogN(N + 1)))
+          .and(within("the names before the repeat", N, prefixComparisons, 2L * nLogN(N)))
+          // and the repeat itself is found by one descent of the names read so far, never by scanning them
+          .and(expect(lookup >= 1L && lookup <= 2L * log2(N) + 1L, s"finding the repeat among $N names made $lookup comparisons"))
     }
   }
 
