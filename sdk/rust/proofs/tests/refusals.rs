@@ -192,7 +192,11 @@ fn run(vt: &Vt, c: &RefusalCase) -> Option<Refused> {
         RefusalCheck::PoseidonProof => PoseidonMerkleProof::from_value(&input()).err().map(|e| poseidon_kind(&e)),
         RefusalCheck::VtCommit => commit(c),
         RefusalCheck::MerkleVerify => {
-            let head = TreeHead::<H> { root: root(), size: c.size.expect("a size") };
+            // the trusted head is parsed by the caller, before the claim: a root of the wrong length is Encoding
+            let Ok(root) = Digest::<H>::from_slice(&bytes(c.root.as_ref().expect("a root"))) else {
+                return Some(kind("Encoding"));
+            };
+            let head = TreeHead::<H> { root, size: c.size.expect("a size") };
             let leaf = built(c.claim.as_ref().expect("a leaf"));
             merkle::merkle_verify(&Tagged::<H>::new(), &head, &leaf, &input()).err().map(|e| merkle_kind(&e))
         }

@@ -291,6 +291,14 @@ object OpCoverageCases extends IOApp {
         m("head" -> m("root" -> CBytes(tree.root.bytes), "size" -> int(1)), "proof" -> inclusion),
         Option(1L << 30),
         Map("leaf" -> BuiltValues.ofWeight(ProofInput.MaxProofWeight + 1))
+      ),
+      // the head is checked before the claim: a root that is not bytes is Type, not the claim's Crypto
+      Case(
+        "dilf4s proof weight: merkle_verify, a text root and a leaf over the cap: the head first, Type",
+        leafProgram,
+        m("head" -> m("root" -> get(CanonicalValue.text("x")), "size" -> int(1)), "proof" -> inclusion),
+        Option(1L << 30),
+        Map("leaf" -> BuiltValues.ofWeight(ProofInput.MaxProofWeight + 1))
       )
     )
   }

@@ -936,6 +936,115 @@
       }
     },
     {
+      "outcome" : {
+        "kind" : "Encoding"
+      },
+      "name" : "merkle verify: a leaf over the cap with a 31-byte root: the head is checked first",
+      "check" : "merkle-verify",
+      "root" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5",
+      "size" : 1,
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          }
+        ]
+      },
+      "input" : {
+        "leaf" : "a36470617468806473697a650165696e64657800"
+      }
+    },
+    {
       "outcome" : "accepted",
       "name" : "trie verify: absence claimed",
       "check" : "trie-verify",

@@ -88,9 +88,9 @@ so they need no weight check. The JLVM's proof operations surface the refusal as
 Merkle leaf, a trie value, the values of a claimed listing) are hashed by their commitment, which costs O(their
 weight). Together they must weigh at most `MaxProofWeight`: heavier is `TooLarge` with that `limit` (`Crypto` in the
 JLVM), refused from their cached weights before any is hashed and before the proof is decoded. A listing's values are
-summed, so many entries sharing one heavy value are refused as a whole. In the boolean forms a key's validity and an
-entry's shape are checked first, then the claims, then the root and the proof, each step only once the last has
-passed, so a refused claim costs no decoding. A Merkle leaf given as raw bytes (RFC 6962) weighs one
+summed, so many entries sharing one heavy value are refused as a whole. In the boolean forms the arguments that say what is
+asked are checked first (a Merkle tree head, a trie mode, a key's validity, an entry's shape), then the claims, then a
+trie's root and the proof, each step only once the last has passed, so a refused claim costs no decoding. A Merkle leaf given as raw bytes (RFC 6962) weighs one
 more than its length. The versioned trie's `holds` already answers `false` in O(1) for a claim no commit accepts (over
 1 MiB), which is stricter.
 
@@ -136,7 +136,7 @@ outcome, and `"accepted"` means every step succeeded.
 | `merkle-consistency` | `oldRoot`, `root`, `input` | decode the proof, check it |
 | `trie-lookup` | `mode`, `root`, `key`, `input` | decode the proof, check it against `root` under `mode`, the key's path, look the key up |
 | `poseidon-proof` | `input` | decode the proof |
-| `merkle-verify` | `root`, `size`, `claim`, `input` | `merkle_verify`: the leaf claim's weight, decode the proof, the size, check it (tagged profile) |
+| `merkle-verify` | `root`, `size`, `claim`, `input` | `merkle_verify`: the head (the root's length), the leaf claim's weight, decode the proof, the size, check it (tagged profile) |
 | `trie-verify` | `mode`, `root`, `key`, `claim` (absent: absence), `input` | `trie_verify`: the key's path, the claim's weight, the root's length, decode the proof, check it against `root`, look the key up |
 | `vt-commit` | `batch` | commit the batch at version 1 to an empty store: each value's `checkValue`, then the weight of the delta it would serve (no parent; the head's version key and both roots at their widths) against `MaxProofWeight`. An SDK without a store checks the same, building that delta |
 | `trie-prefix-verify` | `mode`, `root`, `prefix`, `entries`, `input` | `trie_prefix_verify`: each entry's key and value, the values' weight together, the root's length, decode the proof, check it, list the prefix |

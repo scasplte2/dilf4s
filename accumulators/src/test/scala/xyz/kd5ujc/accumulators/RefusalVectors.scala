@@ -145,9 +145,15 @@ object RefusalVectors {
           } yield held)(trie)
         }
       case "poseidon-proof" => input.map(v => outcome(PoseidonMerkleProof.fromCanonical(v))(poseidon))
-      case "merkle-verify" =>
-        (digest(c, "root"), field[Long](c, "size"), built(c.downField("claim")), input).mapN { (r, n, leaf, v) =>
-          outcome(MerkleCodec.verifyLeaf[H](r, n, leaf, v)(using summon[xyz.kd5ujc.core.hash.Hasher[H]], M))(merkle)
+      case "merkle-verify"  =>
+        // the trusted head is checked first (an SDK takes it parsed): a root of the wrong length is Encoding
+        (bytes(c, "root"), field[Long](c, "size"), built(c.downField("claim")), input).mapN { (rb, n, leaf, v) =>
+          Digest
+            .fromBytes[H](rb)
+            .fold(
+              _ => Refused("Encoding"),
+              r => outcome(MerkleCodec.verifyLeaf[H](r, n, leaf, v)(using summon[xyz.kd5ujc.core.hash.Hasher[H]], M))(merkle)
+            )
         }
       case "trie-verify" =>
         val claim = c.downField("claim").success.traverse(built(_))
@@ -449,6 +455,17 @@ object RefusalVectors {
       leaf("a leaf of weight exactly 2^24", BuiltValues.ofWeight(cap)),
       leaf("a leaf of weight 2^24 + 1, refused before it is hashed", BuiltValues.ofWeight(cap + 1)),
       leaf("a leaf of saturated weight", BuiltValues.of(CNull).wrap(Pair, 70)),
+      // competing refusals: the trusted head is checked before the claim
+      Case(
+        "merkle verify: a leaf over the cap with a 31-byte root: the head is checked first",
+        "merkle-verify",
+        List(
+          "root"  -> hex(one.root.bytes.take(31)),
+          "size"  -> 1.asJson,
+          "claim" -> BuiltValues.json(BuiltValues.ofWeight(cap + 1)),
+          input(literal(inclusion))
+        )
+      ),
       claim("absence claimed", None),
       claim("a value of weight exactly 2^24", Some(BuiltValues.ofWeight(cap))),
       claim("a value of weight 2^24 + 1, refused before it is hashed", Some(BuiltValues.ofWeight(cap + 1))),
