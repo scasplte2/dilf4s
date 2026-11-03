@@ -113,7 +113,7 @@ object CanonicalDecoder {
   def record[A](allowed: Set[String])(f: Fields => Either[DecodeFailure, A]): CanonicalDecoder[A] = {
     case CMap(entries) =>
       if (allowed.count(entries.contains) < entries.size) {
-        val known = TreeSet.from(allowed)(using KeyOrder.Default)
+        val known = TreeSet.from(allowed)(using entries.ordering)
         fail(s"unknown keys ${entries.keysIterator.filterNot(known.contains).toList.sorted.mkString(", ")}")
       } else f(new Fields(entries))
     case other => expected("map", other)
