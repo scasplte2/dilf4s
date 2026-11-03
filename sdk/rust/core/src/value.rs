@@ -67,7 +67,7 @@ pub const MAX_DEPTH: usize = crate::generated::limits::as_usize::CANONICAL_MAX_D
 /// before any gcd: a rational's decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and
 /// stays linear in its input. Every constructor refuses a wider rational too, so no value is built that no decoder
 /// accepts.
-pub const MAX_RATIONAL_BITS: u64 = 33_220;
+pub const MAX_RATIONAL_BITS: u64 = crate::generated::limits::CANONICAL_MAX_RATIONAL_BITS;
 
 /// The greatest [`Value::weight`]: weights saturate here (the Scala reference's `Long.MaxValue`), never wrap.
 pub const MAX_WEIGHT: u64 = crate::generated::limits::CANONICAL_MAX_WEIGHT;

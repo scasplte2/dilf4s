@@ -25,7 +25,7 @@
  */
 import { bitLength } from "./bigint.js";
 import type { CanonicalError } from "./error.js";
-import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
+import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_RATIONAL_BITS, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
 import { toHex } from "./hex.js";
 import { KeySet, search } from "./keyset.js";
 import { err, ok, type Result } from "./result.js";
@@ -207,7 +207,7 @@ const gcd = (a: bigint, b: bigint): bigint => gcdSteps(a, b)[0];
  * any gcd: a rational's decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and stays
  * linear in its input. Every constructor refuses a wider rational too, so no value is built that no decoder accepts.
  */
-export const MAX_RATIONAL_BITS = 33220;
+export const MAX_RATIONAL_BITS = CANONICAL_MAX_RATIONAL_BITS;
 
 /** A rational past {@link MAX_RATIONAL_BITS}. */
 export type RationalTooWide = Extract<CanonicalError, { readonly kind: "RationalTooWide" }>;

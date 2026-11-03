@@ -18,6 +18,9 @@ export const CANONICAL_MAX_DIGIT_BITS = 33220;
 /** `canonical-max-digits` (`shared/schemas/limits.cddl`). */
 export const CANONICAL_MAX_DIGITS = 10000;
 
+/** `canonical-max-rational-bits` (`shared/schemas/limits.cddl`). */
+export const CANONICAL_MAX_RATIONAL_BITS = 33220;
+
 /** `canonical-max-scale` (`shared/schemas/limits.cddl`). */
 export const CANONICAL_MAX_SCALE = 10000;
 

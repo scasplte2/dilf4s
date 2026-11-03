@@ -20,6 +20,8 @@ object LimitsSuite extends FunSuite {
       .same(limits.CanonicalMaxDepth, VersionedTrie.MaxValueDepth + VersionedTrie.ValueWrapperDepth)
       .and(expect.same(StateKey.MaxLength - 2, StateNamespace.MaxLength))
       .and(expect.same(BigInt(10).pow(limits.CanonicalMaxDigits).bitLength, limits.CanonicalMaxDigitBits))
+      .and(expect.same(BigInt(10).pow(limits.CanonicalMaxScale).bitLength, limits.CanonicalMaxRationalBits))
+      .and(expect.same(limits.CanonicalMaxRationalBits, xyz.kd5ujc.core.canonical.CanonicalValue.MaxRationalBits))
       .and(expect.same(4L * limits.VersionedMaxChunkBytes, limits.MaxProofWeight.toLong))
       .and(expect.same(Long.MaxValue, limits.CanonicalMaxWeight))
       .and(expect.same(Long.MaxValue, limits.MerkleMaxTreeIndex))

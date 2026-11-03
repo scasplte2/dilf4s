@@ -163,8 +163,8 @@ loading and evolution (`Exhausted`, `InconsistentKey`) are checked natively only
 (`crypto-error-kind`, `key-error-kind`, `vrf-result`, `kes-outcome`, `sigma-outcome`, `zk-error`), so each SDK's
 generated model is a closed type: a vector naming a kind the schema does not list does not load.
 
-**Limits.** Every limit the specs state (`MaxValueBytes`, `MaxChunkBytes`, `MaxProofWeight`, the depth, digit, key,
-chunk, sigma, KES and JLVM limits) is defined once, in `shared/schemas/limits.cddl`, and generated into each SDK
+**Limits.** Every limit the specs state (`MaxValueBytes`, `MaxChunkBytes`, `MaxProofWeight`, the depth, digit, rational,
+key, chunk, sigma, KES and JLVM limits) is defined once, in `shared/schemas/limits.cddl`, and generated into each SDK
 (`xyz.kd5ujc.models.limits`, `dilf4s_core::generated::limits`, `models.limits`); every implementation reads it from
 there. A limit the specs derive from others is stated there as its spec states it, and the reference's `LimitsSuite`
 checks the derivation.

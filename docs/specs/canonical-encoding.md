@@ -24,9 +24,9 @@ The data model has no floating-point numbers, no NaN or infinity, no negative ze
 
 **Integers and rationals are one numeric domain.** A number whose value is an integer is always the integer kind. The rational kind only ever holds non-integers.
 
-**`MaxRationalBits` = 33220**: a rational's numerator and its denominator each have a `bitLength` of at most 33220
-(`bitLength` is Java's `BigInteger.bitLength`, `jlvm.md` §2: for `n < 0` it is the bit length of `-n - 1`, so
-`-2^33220` is 33220 bits wide and `-2^33220 - 1` is 33221). 33220 is the bit length of `10^10000`, the bound on a JSON
+**`MaxRationalBits` = 33220** (`canonical-max-rational-bits` in `shared/schemas/limits.cddl`): a rational's numerator
+and its denominator each have a `bitLength` of at most 33220 (`bitLength` is Java's `BigInteger.bitLength`, `jlvm.md`
+§2: for `n < 0` it is the bit length of `-n - 1`, so `-2^33220` is 33220 bits wide and `-2^33220 - 1` is 33221). 33220 is the bit length of `10^10000`, the bound on a JSON
 number's digits and scale (§3), so every rational JSON reads is within it, and every JLVM number (4096 bits) is too.
 Integers have no such bound. The reason is cost: a rational is valid only in lowest terms, and checking that takes a gcd,
 which is superlinear in its operands. With the bound, decoding a rational costs at most one gcd of operands at most

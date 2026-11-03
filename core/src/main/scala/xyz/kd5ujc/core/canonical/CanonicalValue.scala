@@ -40,7 +40,7 @@ object CanonicalValue {
    * rational's decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and stays linear in its
    * input. [[number]] refuses a wider rational too, so no value is built that no decoder accepts.
    */
-  val MaxRationalBits: Int = 33220
+  val MaxRationalBits: Int = xyz.kd5ujc.models.limits.CanonicalMaxRationalBits
 
   implicit val canonicalValueShow: Show[CanonicalValue] = Show.fromToString
 
