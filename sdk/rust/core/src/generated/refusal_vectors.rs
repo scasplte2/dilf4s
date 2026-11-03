@@ -421,6 +421,11 @@ impl c::Model for RefusalOutcome {
     }
 }
 
+impl RefusalOutcome {
+    /// Every text alternative (not the records), in schema order.
+    pub const TEXTS: [Self; 1] = [Self::Accepted];
+}
+
 /// `refusal-upsert` (`shared/schemas/refusal-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefusalUpsert {

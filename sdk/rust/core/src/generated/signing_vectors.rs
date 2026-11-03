@@ -619,6 +619,11 @@ impl c::Model for PathResult {
     }
 }
 
+impl PathResult {
+    /// Every text alternative (not the records), in schema order.
+    pub const TEXTS: [Self; 6] = [Self::MissingMaster, Self::Malformed, Self::LeadingZero, Self::TooManyDigits, Self::OutOfRange, Self::TooDeep];
+}
+
 /// `signed-message` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignedMessage {
@@ -932,4 +937,9 @@ impl c::Model for VerificationResult {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl VerificationResult {
+    /// Every text alternative (not the records), in schema order.
+    pub const TEXTS: [Self; 2] = [Self::Valid, Self::Invalid];
 }

@@ -17,8 +17,8 @@ mod common;
 
 use common::{bytes, load};
 use dilf4s_core::generated::signing_vectors::{
-    CryptoErrorKind, KeyDecodingResult, KeyPart, PathResult, SigningVectors, VerificationPart, VerificationRefusal,
-    VerificationResult,
+    CryptoErrorKind, KeyDecodingResult, KeyPart, PathIndices, PathResult, SigningVectors, VerificationPart,
+    VerificationRefusal, VerificationResult,
 };
 use dilf4s_signing::keys::path;
 use dilf4s_signing::{PathRefusal, SchemeId, SigningError, bls, ecdsa, ed25519, ristretto255, schnorr};
@@ -179,30 +179,43 @@ fn verifying_key_decoding() {
     assert!(rows.len() >= 40, "{} verifying-key rows", rows.len());
 }
 
+/// The schema's spelling of a path refusal. Exhaustive: a refusal the SDK adds does not compile until it is mapped.
+const fn path_result(r: PathRefusal) -> PathResult {
+    match r {
+        PathRefusal::MissingMaster => PathResult::MissingMaster,
+        PathRefusal::Malformed => PathResult::Malformed,
+        PathRefusal::LeadingZero => PathResult::LeadingZero,
+        PathRefusal::TooManyDigits => PathResult::TooManyDigits,
+        PathRefusal::OutOfRange => PathResult::OutOfRange,
+        PathRefusal::TooDeep => PathResult::TooDeep,
+    }
+}
+
 /// Every `paths` row: nothing trimmed, ASCII digits only, no empty segment or leading zero, at most ten digits and 255
 /// segments; accepted paths give these indices, and a refused one is `InvalidPath` with the row's refusal.
 #[test]
 fn path_strictness() {
     let v: SigningVectors = load("signing_v1.json");
     assert!(v.paths.len() >= 54, "{} path rows", v.paths.len());
-    let mut seen = std::collections::HashSet::new();
     for c in &v.paths {
-        let actual = path::parse(&c.path)
-            .map(|is| is.into_iter().map(|i| u64::from(i.serialized())).collect::<Vec<_>>())
-            .map_err(|e| e.refusal);
-        let expected = match &c.result {
-            PathResult::PathIndices(p) => Ok(p.indices.clone()),
-            PathResult::MissingMaster => Err(PathRefusal::MissingMaster),
-            PathResult::Malformed => Err(PathRefusal::Malformed),
-            PathResult::LeadingZero => Err(PathRefusal::LeadingZero),
-            PathResult::TooManyDigits => Err(PathRefusal::TooManyDigits),
-            PathResult::OutOfRange => Err(PathRefusal::OutOfRange),
-            PathResult::TooDeep => Err(PathRefusal::TooDeep),
-        };
-        assert_eq!(actual, expected, "path {:?}", c.path.get(..40).unwrap_or(&c.path));
-        if let Err(r) = expected {
-            seen.insert(r);
-        }
+        let actual = path::parse(&c.path).map_or_else(
+            |e| path_result(e.refusal),
+            |is| {
+                PathResult::PathIndices(PathIndices {
+                    indices: is.into_iter().map(|i| u64::from(i.serialized())).collect(),
+                })
+            },
+        );
+        assert_eq!(actual, c.result, "path {:?}", c.path.get(..40).unwrap_or(&c.path));
     }
-    assert_eq!(seen.len(), 6, "every refusal has a row: {seen:?}");
+}
+
+/// The coverage gate (conformance.md section 6) for `PathRefusal`: every refusal the schema lists (`TEXTS`, beside
+/// the indices) has a row. [`path_result`] maps every SDK refusal onto one of them, so every SDK refusal has a row too.
+#[test]
+fn every_path_refusal_has_a_row() {
+    let v: SigningVectors = load("signing_v1.json");
+    for refusal in PathResult::TEXTS {
+        assert!(v.paths.iter().any(|c| c.result == refusal), "no paths row pins {refusal:?}");
+    }
 }

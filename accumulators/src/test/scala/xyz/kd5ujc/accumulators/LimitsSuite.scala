@@ -6,7 +6,6 @@ import java.nio.file.{Files, Paths}
 import xyz.kd5ujc.accumulators.versioned.{StateKey, StateNamespace, VersionedTrie}
 import xyz.kd5ujc.models.limits
 import xyz.kd5ujc.modelsgen.{CddlParser, FieldType, ModelRule, Profile, ProfileField, QName, Schema}
-import xyz.kd5ujc.numerics.Ratio
 
 import weaver.FunSuite
 
@@ -26,10 +25,10 @@ object LimitsSuite extends FunSuite {
       .and(expect.same(Long.MaxValue, limits.MerkleMaxTreeIndex))
   }
 
-  test("numerics sits below core's generated sources, so its default scale is checked against the limit") {
+  test("the canonical scale is the digit bound, so every decimal of an accepted scale has a form within it") {
     expect
-      .same(limits.CanonicalMaxScale, Ratio.DefaultMaxDecimalScale)
-      .and(expect.same(limits.CanonicalMaxDigits, limits.CanonicalMaxScale))
+      .same(limits.CanonicalMaxDigits, limits.CanonicalMaxScale)
+      .and(expect.same(limits.CanonicalMaxScale, xyz.kd5ujc.core.canonical.CanonicalJson.MaxScale))
   }
 
   test("a snapshot chunk's occurrence bounds, which CDDL writes as literals, are versioned-max-chunk-entries") {

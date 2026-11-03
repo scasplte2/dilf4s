@@ -23,7 +23,8 @@ object ProofInput {
    * from their cached weights, before any is hashed and before the proof is decoded.
    */
   def claimed[E](values: Iterable[CanonicalValue])(refuse: Long => E): Either[E, Unit] = {
-    val total = values.foldLeft(0L)((t, v) => if (t > Long.MaxValue - v.weight) Long.MaxValue else t + v.weight)
+    val max = xyz.kd5ujc.models.limits.CanonicalMaxWeight
+    val total = values.foldLeft(0L)((t, v) => if (t > max - v.weight) max else t + v.weight)
     Either.cond(total <= MaxProofWeight, (), refuse(MaxProofWeight))
   }
 }
