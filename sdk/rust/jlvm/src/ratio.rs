@@ -55,8 +55,12 @@ impl Ratio {
         Self::integer(BigInt::one())
     }
 
-    /// Callers guarantee `d != 0`.
+    /// Callers guarantee `d != 0`. A denominator of one is already reduced: integer sums and products skip the gcd,
+    /// whose binary algorithm is quadratic in the numerator's length even against one.
     fn reduced(n: &BigInt, d: &BigInt) -> Self {
+        if d.is_one() {
+            return Self::integer(n.clone());
+        }
         let g = n.gcd(d);
         if g.is_zero() {
             // only when d == 0, which callers exclude
