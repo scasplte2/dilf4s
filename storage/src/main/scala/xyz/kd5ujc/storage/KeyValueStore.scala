@@ -4,6 +4,8 @@ import cats.mtl.Raise
 import cats.syntax.all._
 import cats.{Monad, Monoid}
 
+import scala.collection.immutable.TreeMap
+
 import fs2.Stream
 import scodec.bits.ByteVector
 
@@ -18,17 +20,15 @@ object Op {
 final case class Batch[K, V](ops: Vector[Op[K, V]]) {
   def ++(that: Batch[K, V]): Batch[K, V] = Batch(ops ++ that.ops)
 
-  /** The final effect per key, in first-touched order. */
-  def last: Vector[(K, Option[V])] = {
-    val finals = ops.foldLeft(Map.empty[K, Option[V]]) {
-      case (acc, Op.Put(k, v)) => acc.updated(k, Some(v))
-      case (acc, Op.Delete(k)) => acc.updated(k, None)
-    }
-    ops.map {
-      case Op.Put(k, _) => k
-      case Op.Delete(k) => k
-    }.distinct.map(k => k -> finals.getOrElse(k, None))
-  }
+  /**
+   * The final effect per key, in first-touched order. Keys are the caller's, so they are only compared in `order`, never
+   * hashed: O(n log n) comparisons whatever the keys.
+   */
+  def last(implicit order: Ordering[K]): Vector[(K, Option[V])] =
+    Batch.finals(ops.map {
+      case Op.Put(k, v) => k -> Some(v)
+      case Op.Delete(k) => k -> None
+    })
 }
 
 object Batch {
@@ -39,6 +39,19 @@ object Batch {
   def deletes[K, V](keys: Iterable[K]): Batch[K, V] = Batch(keys.toVector.map(Op.Delete(_)))
 
   implicit def batchMonoid[K, V]: Monoid[Batch[K, V]] = Monoid.instance(empty, _ ++ _)
+
+  /**
+   * The last of `writes` per key, in the order keys were first written: one `TreeMap` in `order` holds each key's first
+   * index and latest value, two lookups per write, then the survivors are sorted by first index.
+   */
+  def finals[K, V](writes: Vector[(K, Option[V])])(implicit order: Ordering[K]): Vector[(K, Option[V])] =
+    writes.zipWithIndex
+      .foldLeft(TreeMap.empty[K, (Int, Option[V])]) {
+        case (acc, ((k, v), i)) => acc.updated(k, (acc.get(k).fold(i)(_._1), v))
+      }
+      .toVector
+      .sortBy { case (_, (first, _)) => first }
+      .map { case (k, (_, v)) => k -> v }
 }
 
 /** A key range in the key type's order; `prefix` takes raw encoded bytes for composite or string keys. */

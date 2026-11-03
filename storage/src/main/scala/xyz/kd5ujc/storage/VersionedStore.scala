@@ -7,6 +7,8 @@ import cats.mtl.Raise
 import cats.syntax.all._
 import cats.{Order, Show}
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.core.canonical.Cbor
 import xyz.kd5ujc.models.storage.VersionedRecord
 
@@ -86,7 +88,8 @@ object VersionedStore {
 
   /**
    * A mutation computed but not written: `writeIf(guards, batch)` applies it. `version` is the latest version after it.
-   * A stage built on a draft carries the draft's guards and writes, so it applies both or neither.
+   * A stage built on a draft carries the draft's guards and writes, so it applies both or neither. `data` is the values
+   * the drafts wrote, by encoded key: the keys are the callers', so they are ordered, never hashed.
    */
   final case class Staged private[storage] (
     guards:                        List[(ByteVector, Option[ByteVector])],
@@ -94,7 +97,7 @@ object VersionedStore {
     version:                       Version,
     private[storage] val expected: Long,
     private[storage] val floor:    Long,
-    private[storage] val data:     Map[ByteVector, Option[ByteVector]]
+    private[storage] val data:     TreeMap[ByteVector, Option[ByteVector]]
   )
 
   /**
@@ -107,13 +110,23 @@ object VersionedStore {
   def make[F[_]: Concurrent, K: KeyCodec, V: ValueCodec](raw: RawStore[F], name: String)(
     implicit R: Raise[F, StoreError]
   ): F[VersionedStore[F, K, V]] =
+    ordered[F, K, V](raw, name, ByteOrder.unsigned)
+
+  /**
+   * As [[make]], comparing encoded keys in `keys` wherever a stage collects them, so a test can count the comparisons.
+   * It must agree with the unsigned byte order on equality: it finds each key's latest write, and never orders what is
+   * stored.
+   */
+  private[storage] def ordered[F[_]: Concurrent, K: KeyCodec, V: ValueCodec](raw: RawStore[F], name: String, keys: Ordering[ByteVector])(
+    implicit R: Raise[F, StoreError]
+  ): F[VersionedStore[F, K, V]] =
     (
       lift(Namespace(s"$name/data")),
       lift(Namespace(s"$name/log")),
       lift(Namespace(s"$name/hist")),
       lift(Namespace(s"$name/meta"))
     ).mapN { (dataNs, logNs, histNs, metaNs) =>
-      new Impl[F, K, V](raw, dataNs.prefix, logNs.prefix, histNs.prefix, metaNs.prefix)
+      new Impl[F, K, V](raw, dataNs.prefix, logNs.prefix, histNs.prefix, metaNs.prefix, keys)
     }
 
   private def lift[F[_]: Concurrent, A](e: Either[StoreError, A])(implicit R: Raise[F, StoreError]): F[A] =
@@ -124,7 +137,8 @@ object VersionedStore {
     dataNs: ByteVector,
     logNs:  ByteVector,
     histNs: ByteVector,
-    metaNs: ByteVector
+    metaNs: ByteVector,
+    keys:   Ordering[ByteVector]
   )(implicit R: Raise[F, StoreError])
       extends VersionedStore[F, K, V] {
 
@@ -265,29 +279,42 @@ object VersionedStore {
         (parseVersion(records.latest), parseVersion(records.floor)).tupled.flatMap {
           case (current, f) =>
             if (current != expected.value) fail(StoreError.VersionConflict(expected.value, current))
-            else stageCommit(records.guards, records.advance, current, current, f, Map.empty, batch)
+            else stageCommit(records.guards, records.advance, current, current, f, TreeMap.empty(using keys), batch)
         }
       }
 
     def stageOn(base: Staged, batch: Batch[K, V]): F[Staged] =
       stageCommit(base.guards, base.batch, base.expected, base.version.value, base.floor, base.data, batch)
 
-    /** One commit after `current`, reading current values through `overlay` (the writes of the drafts below it). */
+    /**
+     * One commit after `current`, reading current values through `overlay` (the writes of the drafts below it). Each key
+     * is encoded once, and its writes collapse by encoded key, the store's own identity for it, compared in `keys`.
+     */
     private def stageCommit(
       guards:   List[(ByteVector, Option[ByteVector])],
       below:    RawBatch,
       expected: Long,
       current:  Long,
       f:        Long,
-      overlay:  Map[ByteVector, Option[ByteVector]],
+      overlay:  TreeMap[ByteVector, Option[ByteVector]],
       batch:    Batch[K, V]
     ): F[Staged] = {
       val next = current + 1
-      val finals = batch.last.map { case (k, v) => (K.encode(k), v) }
-      val unread = finals.toList.map(_._1).filterNot(overlay.contains)
+      val finals = Batch.finals(batch.ops.map {
+        case Op.Put(k, v) => K.encode(k) -> Some(v)
+        case Op.Delete(k) => K.encode(k) -> None
+      })(using keys)
+      val drafted = finals.map { case (ek, _) => overlay.get(ek) }
+      val unread = finals.zip(drafted).collect { case ((ek, _), None) => ek }
       for {
-        stored <- raw.getAll(unread.map(dataKey)).map(unread.zip(_).toMap)
-        befores = finals.map { case (ek, _) => overlay.getOrElse(ek, stored.getOrElse(ek, None)) }
+        // the stored values come back in the order of `unread`: each key no draft wrote takes the next one
+        stored <- raw.getAll(unread.toList.map(dataKey))
+        befores = drafted
+          .foldLeft((stored, Vector.empty[Option[ByteVector]])) {
+            case ((rest, acc), Some(d)) => (rest, acc :+ d)
+            case ((rest, acc), None)    => (rest.drop(1), acc :+ rest.headOption.flatten)
+          }
+          ._2
         afters <- finals.traverse { case (_, v) => v.traverse(x => liftE(V.encode(x))) }
         writes <- finals.zip(befores).zip(afters).foldLeftM(RawBatch.empty) {
           case (acc, (((ek, _), before), after)) =>
@@ -298,7 +325,7 @@ object VersionedStore {
               RawBatch.put(histPrefix(ek) ++ ver(next), histRecord)
             }
         }
-        written = finals.map(_._1).zip(afters).toMap
+        written = finals.map(_._1).zip(afters)
       } yield Staged(guards, below ++ writes ++ RawBatch.put(latestKey, ver(next)), Version.unsafe(next), expected, f, overlay ++ written)
     }
 
@@ -317,7 +344,7 @@ object VersionedStore {
               at,
               0L,
               at.value,
-              encoded.map { case (ek, b) => ek -> Option(b) }.toMap
+              TreeMap.from(encoded.map { case (ek, b) => ek -> Option(b) })(using keys)
             )
           }
       }
@@ -329,7 +356,7 @@ object VersionedStore {
             logEntries(to.value + 1, current + 1).flatMap { entries =>
               entries.traverse { case (v, ek, r) => readRecord(r).map { case (before, _) => (v, ek, before) } }.map { decoded =>
                 // the earliest change after `to` holds each key's value as of `to`
-                val restore = decoded.foldLeft(Map.empty[ByteVector, Option[ByteVector]]) {
+                val restore = decoded.foldLeft(TreeMap.empty[ByteVector, Option[ByteVector]](using keys)) {
                   case (acc, (_, ek, before)) =>
                     if (acc.contains(ek)) acc else acc.updated(ek, before)
                 }
@@ -363,7 +390,7 @@ object VersionedStore {
                 Version.unsafe(current),
                 current,
                 through.value,
-                Map.empty
+                TreeMap.empty(using keys)
               )
             }
         }
