@@ -2,7 +2,9 @@ package xyz.kd5ujc.crypto.signing
 
 import cats.syntax.all._
 
-import cafe.cryptography.curve25519.{CompressedEdwardsY, EdwardsPoint, Scalar}
+import xyz.kd5ujc.crypto.curve25519.Point
+
+import cafe.cryptography.curve25519.Scalar
 import org.bouncycastle.crypto.digests.SHA512Digest
 import org.bouncycastle.math.ec.rfc8032.{Ed25519 => Rfc8032}
 import scodec.bits.ByteVector
@@ -27,7 +29,7 @@ object Ed25519 {
 
   /** Verifying keys must decode to a curve point under ZIP-215 rules (non-canonical encodings allowed). */
   implicit val codec: SchemeCodec[Ed25519] =
-    SchemeCodec.fixed[Ed25519]("Ed25519", KeyLength, KeyLength, SignatureLength, vk => Zip215.decode(vk).isRight)
+    SchemeCodec.fixed[Ed25519]("Ed25519", KeyLength, KeyLength, SignatureLength, vk => Zip215.decode(vk).isDefined)
 
   implicit val publicKeyOf: PublicKeyOf[Ed25519] = (key: SigningKey[Ed25519]) => {
     val pk = new Array[Byte](Rfc8032.PUBLIC_KEY_SIZE)
@@ -67,15 +69,17 @@ object Ed25519 {
       codec.signingKey(seed).map(sk => KeyPair(sk, publicKeyOf.verifyingKey(sk)))
   }
 
-  /** ZIP-215 decoding and the cofactored verification equation; touches only public data. */
+  /**
+   * ZIP-215 decoding and the cofactored verification equation, on the variable-time edwards25519 core
+   * ([[xyz.kd5ujc.crypto.curve25519.Point]]): it touches only public data.
+   */
   private[signing] object Zip215 {
 
     /** Decompression accepting non-canonical `y` (and `-0`), rejecting non-curve encodings. */
-    def decode(bytes: ByteVector): Either[Throwable, EdwardsPoint] =
-      Either.catchNonFatal(new CompressedEdwardsY(bytes.toArray).decompress())
+    def decode(bytes: ByteVector): Option[Point] = Point.decode(bytes)
 
-    private def canonicalScalar(bytes: ByteVector): Either[Throwable, Scalar] =
-      Either.catchNonFatal(Scalar.fromCanonicalBytes(bytes.toArray))
+    private def canonicalScalar(bytes: ByteVector): Option[Scalar] =
+      Either.catchNonFatal(Scalar.fromCanonicalBytes(bytes.toArray)).toOption
 
     private def sha512(bytes: ByteVector): Array[Byte] = {
       val d = new SHA512Digest()
@@ -89,21 +93,25 @@ object Ed25519 {
     private val p: BigInt = BigInt(2).pow(255) - 19
     private def canonicalY(b: ByteVector): Boolean = BigInt(1, b.update(31, (b(31) & 0x7f).toByte).reverse.toArray) < p
 
+    /** `k = SHA-512(R || A || M) mod L`. */
+    private def challenge(signature: ByteVector, key: ByteVector, message: ByteVector): Scalar =
+      Scalar.fromBytesModOrderWide(sha512(signature.take(32) ++ key ++ message))
+
     def verifyLibsodium(key: ByteVector, message: ByteVector, signature: ByteVector): Boolean =
       signature.size == SignatureLength && key.size == KeyLength && canonicalY(key) && (for {
-        a <- decode(key).filterOrElse(!_.multiplyByCofactor().isIdentity, new IllegalArgumentException("small-order key"))
+        a <- decode(key).filterNot(_.isSmallOrder)
         s <- canonicalScalar(signature.drop(32))
-        k = Scalar.fromBytesModOrderWide(sha512(signature.take(32) ++ key ++ message))
-        r = EdwardsPoint.vartimeDoubleScalarMultiplyBasepoint(k, a.negate(), s)
-      } yield ByteVector.view(r.compress().toByteArray) == signature.take(32) && !r.multiplyByCofactor().isIdentity).getOrElse(false)
+        // [S]B - [k]A with k itself (not -k mod L): the check is cofactorless, so the torsion part of A matters
+        r = Point.doubleScalarMultiplyBasepoint(challenge(signature, key, message), a.negate, s)
+      } yield r.compress == signature.take(32) && !r.isSmallOrder).getOrElse(false)
 
     def verify(key: ByteVector, message: ByteVector, signature: ByteVector): Boolean =
       signature.size == SignatureLength && key.size == KeyLength && (for {
         a <- decode(key)
         r <- decode(signature.take(32))
         s <- canonicalScalar(signature.drop(32))
-        k = Scalar.fromBytesModOrderWide(sha512(signature.take(32) ++ key ++ message))
-      } yield EdwardsPoint.vartimeDoubleScalarMultiplyBasepoint(Scalar.ZERO.subtract(k), a, s).subtract(r).multiplyByCofactor().isIdentity)
+        k = challenge(signature, key, message)
+      } yield (Point.doubleScalarMultiplyBasepoint(Scalar.ZERO.subtract(k), a, s) - r).multiplyByCofactor().isIdentity)
         .getOrElse(false)
   }
 }
