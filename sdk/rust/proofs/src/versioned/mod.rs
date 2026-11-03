@@ -8,7 +8,7 @@ use core::fmt;
 
 use dilf4s_core::cbor;
 use dilf4s_core::hash::{Digest, Hasher};
-use dilf4s_core::value::{MAX_DEPTH, Value};
+use dilf4s_core::value::Value;
 
 use crate::tag::hex;
 use crate::trie::{KeyMode, TrieError, TrieHashing, root_from_entries};
@@ -161,15 +161,15 @@ pub(crate) fn mismatch<H: Hasher>(
 }
 
 /// The largest value a key may hold, as canonical CBOR (1 MiB).
-pub const MAX_VALUE_BYTES: u64 = 1 << 20;
+pub const MAX_VALUE_BYTES: u64 = dilf4s_core::generated::limits::VERSIONED_MAX_VALUE_BYTES;
 /// At most this many entries or versions in one snapshot chunk.
-pub const MAX_CHUNK_ENTRIES: usize = 1024;
+pub const MAX_CHUNK_ENTRIES: usize = dilf4s_core::generated::limits::as_usize::VERSIONED_MAX_CHUNK_ENTRIES;
 /// The largest snapshot chunk, as canonical CBOR (4 MiB): refused before it is decoded.
-pub const MAX_CHUNK_BYTES: u64 = 1 << 22;
+pub const MAX_CHUNK_BYTES: u64 = dilf4s_core::generated::limits::VERSIONED_MAX_CHUNK_BYTES;
 /// The deepest value a key may hold: a delta or snapshot chunk wraps it in a map, an array and a map.
-pub const MAX_VALUE_DEPTH: usize = MAX_DEPTH - 3;
+pub const MAX_VALUE_DEPTH: usize = dilf4s_core::generated::limits::as_usize::VERSIONED_MAX_VALUE_DEPTH;
 /// The state trie's key limit: a state key's 256 bytes.
-pub const STATE_KEY_BYTES: u64 = 256;
+pub const STATE_KEY_BYTES: u64 = dilf4s_core::generated::limits::STATE_KEY_MAX_LENGTH;
 
 /// The top trie's slots.
 pub const VERSION_SLOT: u8 = 0x00;

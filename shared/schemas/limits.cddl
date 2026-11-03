@@ -1,0 +1,65 @@
+; dilf4s spec limits, v1. Every limit a spec in docs/specs states, defined once: models-gen gives each language these
+; as constants (README "constants"), and every implementation reads them from there. What a limit bounds, and the
+; refusal past it, is the spec's. A limit derived from others (a namespace is a key less "/" and a segment) is stated
+; here as its spec states it, and the reference's tests check the derivation. Implementation ceilings, such as the
+; TypeScript SDK's 2^31 - 1 encoding bytes (conformance.md section 4), are not spec limits and are not here.
+
+; The canonical data model (canonical-encoding.md)
+canonical-max-depth = 256                    ; nesting levels of a value
+canonical-max-digits = 10000                 ; significant digits of a JSON number's significand or exponent
+canonical-max-scale = 10000                  ; a JSON decimal's effective scale
+canonical-max-digit-bits = 33220             ; bits of an integer within canonical-max-digits digits (10^10000 has 33220)
+canonical-max-weight = 9223372036854775807   ; weights saturate here, 2^63 - 1 (jlvm.md section 2)
+
+; Verifier input (conformance.md section 5)
+max-proof-weight = 16777216                  ; 2^24
+
+; Merkle tree (merkle.md)
+merkle-max-tree-index = 9223372036854775807  ; the largest tree size or index, 2^63 - 1
+
+; Patricia trie key modes (trie.md section 1)
+trie-max-fixed-key-bytes = 1024
+trie-max-variable-key-bytes = 65535
+
+; Poseidon (zk.md section 4)
+poseidon-max-inputs = 4
+poseidon-max-depth = 256                     ; the deepest Poseidon Merkle tree
+
+; Versioned trie (versioned-trie.md)
+versioned-max-value-bytes = 1048576          ; 2^20, a value's canonical CBOR
+versioned-max-value-depth = 253              ; canonical-max-depth less the 3 levels a delta or chunk wraps a value in
+versioned-max-chunk-entries = 1024           ; entries or versions in one snapshot chunk
+versioned-max-chunk-bytes = 4194304          ; 2^22, a snapshot chunk's canonical CBOR
+state-key-max-segment-length = 64
+state-key-max-segments = 16
+state-key-max-length = 256
+state-namespace-max-length = 254             ; a key under a namespace adds "/" and a segment
+
+; Bloom filters (bloom.md)
+bloom-min-bits = 64
+bloom-max-bits = 16777216                    ; 2^24
+bloom-max-hashes = 32
+
+; Derivation paths (signing.md section 3)
+path-max-segment-digits = 10                 ; 2^31 - 1 has ten
+path-max-depth = 255                         ; BIP32 serialises the depth in one byte
+
+; KES (kes.md)
+kes-max-height = 30                          ; a sum tree's height, or a product's super and sub heights together
+cardano-kes-max-depth = 7                    ; Sum0KES .. Sum7KES
+
+; Sigma propositions (sigma.md section 3)
+sigma-max-depth = 64
+sigma-max-leaves = 4096
+sigma-max-children = 255                     ; a threshold's evaluation points are the nonzero bytes
+sigma-max-weight = 7900416                   ; the heaviest valid proposition's canonical form
+
+; JLVM (jlvm.md)
+jlvm-max-program-depth = 256                 ; expression nesting
+jlvm-max-program-size = 262144               ; 2^18
+jlvm-max-number-bits = 4096                  ; of a numerator or a denominator
+jlvm-max-value-weight = 16777216             ; 2^24, the heaviest value an operation may produce
+jlvm-max-pairs = 64                          ; bn254_pairing
+jlvm-max-exponent = 999                      ; pow
+jlvm-max-int-bytes = 1024                    ; int_to_bytes
+jlvm-max-warnings = 64                       ; distinct warnings kept per evaluation

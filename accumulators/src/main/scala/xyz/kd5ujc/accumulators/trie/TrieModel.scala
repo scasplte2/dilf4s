@@ -24,8 +24,8 @@ sealed trait KeyMode extends Product with Serializable {
 
 object KeyMode {
 
-  val MaxFixedBytes: Int = 1024
-  val MaxVariableBytes: Int = 65535
+  val MaxFixedBytes: Int = xyz.kd5ujc.models.limits.TrieMaxFixedKeyBytes
+  val MaxVariableBytes: Int = xyz.kd5ujc.models.limits.TrieMaxVariableKeyBytes
 
   sealed abstract case class Fixed(bytes: Int) extends KeyMode {
     def path(key: ByteVector): Either[TrieError, BitVector] =

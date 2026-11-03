@@ -19,10 +19,14 @@ sealed abstract case class BloomParams(bits: Int, hashes: Int)
 
 object BloomParams {
 
+  val MinBits: Int = xyz.kd5ujc.models.limits.BloomMinBits
+  val MaxBits: Int = xyz.kd5ujc.models.limits.BloomMaxBits
+  val MaxHashes: Int = xyz.kd5ujc.models.limits.BloomMaxHashes
+
   def apply(bits: Int, hashes: Int): Either[BloomError, BloomParams] =
-    if (bits < 64 || bits > (1 << 24) || Integer.bitCount(bits) != 1)
-      BloomError.InvalidParams(s"bits must be a power of two in 64..2^24, got $bits").asLeft
-    else if (hashes < 1 || hashes > 32) BloomError.InvalidParams(s"hashes must be 1..32, got $hashes").asLeft
+    if (bits < MinBits || bits > MaxBits || Integer.bitCount(bits) != 1)
+      BloomError.InvalidParams(s"bits must be a power of two in $MinBits..$MaxBits, got $bits").asLeft
+    else if (hashes < 1 || hashes > MaxHashes) BloomError.InvalidParams(s"hashes must be 1..$MaxHashes, got $hashes").asLeft
     else (new BloomParams(bits, hashes) {}).asRight
 
   /** 2048 bits, 4 hashes: the Ethereum-style ledger bloom (the original Bifrost size). */

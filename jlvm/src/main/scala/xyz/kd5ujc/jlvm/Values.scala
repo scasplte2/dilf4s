@@ -30,10 +30,10 @@ object Values {
    * checked, so arithmetic (including the gcd that keeps rationals reduced) works on bounded operands and its cost is
    * a constant the gas schedule can price.
    */
-  val MaxNumberBits: Int = 4096
+  val MaxNumberBits: Int = xyz.kd5ujc.models.limits.JlvmMaxNumberBits
 
   /** The largest [[CanonicalValue.weight]] an operation may produce: bounds memory and the cost of later traversals. */
-  val MaxWeight: Long = 1L << 24
+  val MaxWeight: Long = xyz.kd5ujc.models.limits.JlvmMaxValueWeight
 
   def number(v: CanonicalValue): Option[Ratio] = v match {
     case CInt(i)      => Some(Ratio.integer(i))

@@ -1,6 +1,7 @@
 ; Schema of shared/vectors/sigma_v1.json and sigma_dilf4s_v1.json (conformance vectors for docs/specs/sigma.md).
 ; sigma_v1.json: proofs made by Ergo's prover; sigma_dilf4s_v1.json: proofs made by ours. Both were produced, with
 ; Ergo's verdict on each case, by tools/sigma-vectors over sigmastate 5.0.13. Hex is in the JLVM surface form, 0x-prefixed.
+;# import limits as limits
 
 sigma-vectors = {
   "spec": "docs/specs/sigma.md",
@@ -32,7 +33,7 @@ sigma-proposition = {
   ? "h": hex0x,
   ? "u": hex0x,
   ? "v": hex0x,
-  ? "k": 1..255,
+  ? "k": 1 .. limits.sigma-max-children,
   ? "children": [* sigma-proposition],
 }
 

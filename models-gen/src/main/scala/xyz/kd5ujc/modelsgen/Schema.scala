@@ -307,15 +307,9 @@ final class Schema(val modules: Map[String, Module]):
                 success(RT.IntRange(0, (BigInt(1) << (8 * n.toInt)) - 1))
               case _ => success(RT.Unsupported(UnsupportedFeature.UnsignedSize(arg)))
           case (RT.Prim(PrimKind.Bytes), "size") =>
-            success(
-              sizes(arg).fold(RT.Unsupported(UnsupportedFeature.SizeBound(arg)))(
-                RT.SizedBytes(_, _)
-              )
-            )
+            sizes(arg, scope, env, ctx).map(_.fold(RT.Unsupported(UnsupportedFeature.SizeBound(arg)))(RT.SizedBytes(_, _)))
           case (RT.Prim(PrimKind.Text), "size") =>
-            success(
-              sizes(arg).fold(RT.Unsupported(UnsupportedFeature.SizeBound(arg)))(RT.SizedText(_, _))
-            )
+            sizes(arg, scope, env, ctx).map(_.fold(RT.Unsupported(UnsupportedFeature.SizeBound(arg)))(RT.SizedText(_, _)))
           case (RT.Prim(PrimKind.Text), "regexp") =>
             arg match
               case Ast.Ty.Literal(Ast.Lit.TextL(pattern)) => success(RT.MatchingText(pattern))
@@ -331,12 +325,19 @@ final class Schema(val modules: Map[String, Module]):
       }
     }
 
-  private def sizes(arg: Ast.Ty): Option[(Int, Int)] = arg match
-    case Ast.Ty.Literal(Ast.Lit.IntL(n)) if n.isValidInt && n >= 0 => Some((n.toInt, n.toInt))
-    case Ast.Ty.Range(Ast.Ty.Literal(Ast.Lit.IntL(a)), Ast.Ty.Literal(Ast.Lit.IntL(b)), inc)
-        if a.isValidInt && b.isValidInt && a >= 0 && b >= a && (inc || b > a) =>
-      Some((a.toInt, if inc then b.toInt else b.toInt - 1))
-    case _ => None
+  /** A `.size` bound, `n` or `lo..hi`; each end a literal or the name of a constant rule (`0..max-value-bytes`). */
+  private def sizes(arg: Ast.Ty, scope: Scope, env: Map[String, RT], ctx: String): GenResult[Option[(Int, Int)]] =
+    def end(t: Ast.Ty): GenResult[BigInt] = t match
+      case Ast.Ty.Literal(Ast.Lit.IntL(n)) => success(n)
+      case _                               => intOf(t, scope, env, ctx)
+    arg match
+      case Ast.Ty.Range(lo, hi, inc) =>
+        (end(lo), end(hi)).mapN { (a, b) =>
+          Option.when(a.isValidInt && b.isValidInt && a >= 0 && b >= a && (inc || b > a))((a.toInt, if inc then b.toInt else b.toInt - 1))
+        }
+      case Ast.Ty.Literal(_) | Ast.Ty.Name(_, Vector()) =>
+        end(arg).map(n => Option.when(n.isValidInt && n >= 0)((n.toInt, n.toInt)))
+      case _ => success(None)
 
   private def composite(
     g:         Ast.Group,

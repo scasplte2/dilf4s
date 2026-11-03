@@ -51,37 +51,39 @@ object Sigma {
     case Node(prop: SigmaProp, challenge: ByteVector, children: Vector[Checked])
   }
 
-  private type Read[A] = StateT[Either[String, *], ByteVector, A]
+  private type Read[A] = StateT[Either[SigmaError, *], ByteVector, A]
 
-  private def take(n: Long, what: String): Read[ByteVector] =
+  private def take(n: Long, short: SigmaError): Read[ByteVector] =
     StateT { bytes =>
-      Either.cond(bytes.size >= n, (bytes.drop(n), bytes.take(n)), s"the proof ends inside $what")
+      Either.cond(bytes.size >= n, (bytes.drop(n), bytes.take(n)), short)
     }
 
   /** Verifier steps 2 and 3: challenges top-down, read or computed; responses at the leaves. */
-  private def parse(prop: SigmaProp, known: Option[ByteVector]): Read[Checked] =
-    known.fold(take(ChallengeSize.toLong, "a challenge"))(_.pure[Read]).flatMap { e =>
+  private def parse(prop: SigmaProp, known: Option[ByteVector], short: SigmaError): Read[Checked] =
+    known.fold(take(ChallengeSize.toLong, short))(_.pure[Read]).flatMap { e =>
       prop match {
         case leaf: (Dlog | DhTuple) =>
-          take(Secp256k1Group.ScalarSize.toLong, "a response").flatMapF { zb =>
+          take(Secp256k1Group.ScalarSize.toLong, short).flatMapF { zb =>
             val z = BigInt(1, zb.toArray)
-            Either.cond(z < Secp256k1Group.Order, Checked.Leaf(leaf, e, z), "a response must be below the group order")
+            Either.cond(z < Secp256k1Group.Order, Checked.Leaf(leaf, e, z), SigmaError.ResponseOutOfRange)
           }
-        case And(cs) => cs.traverse(parse(_, Option(e))).map(Checked.Node(prop, e, _))
+        case And(cs) => cs.traverse(parse(_, Option(e), short)).map(Checked.Node(prop, e, _))
         case Or(cs) =>
-          cs.dropRight(1).traverse(parse(_, scala.None)).flatMap { simulated =>
+          cs.dropRight(1).traverse(parse(_, scala.None, short)).flatMap { simulated =>
             val last = simulated.foldLeft(e)((x, c) => x ^ challengeOf(c))
-            cs.lastOption.traverse(parse(_, Option(last))).map(l => Checked.Node(prop, e, simulated ++ l.toVector))
+            cs.lastOption.traverse(parse(_, Option(last), short)).map(l => Checked.Node(prop, e, simulated ++ l.toVector))
           }
         case Threshold(k, cs) =>
-          take(ChallengeSize.toLong * (cs.size - k), "a threshold polynomial").flatMapF { coefficients =>
+          take(ChallengeSize.toLong * (cs.size - k), short).flatMapF { coefficients =>
             (Gf2_192.fromBytes(e), Option(coefficients))
               .flatMapN(Gf2Poly.fromBytes)
-              .toRight("a malformed threshold polynomial")
+              .toRight(short)
           }.flatMap { q =>
             StateT
-              .liftF[Either[String, *], ByteVector, Vector[(SigmaProp, ChildPoint)]](ChildPoint.number(cs))
-              .flatMap(_.traverse { case (c, x) => parse(c, Option(q(x).bytes)) })
+              .liftF[Either[SigmaError, *], ByteVector, Vector[(SigmaProp, ChildPoint)]](
+                ChildPoint.number(cs).leftMap(SigmaError.InvalidProposition(_))
+              )
+              .flatMap(_.traverse { case (c, x) => parse(c, Option(q(x).bytes), short) })
               .map(Checked.Node(prop, e, _))
           }
       }
@@ -140,11 +142,16 @@ object Sigma {
    * update), or the proof can be replayed. The proposition is checked first ([[SigmaProp.validate]]): one built
    * around the smart constructors (a product mirror) may be trivial, such as `dlog` of the identity or an empty `and`.
    */
-  def verify(prop: SigmaProp, proof: ByteVector, message: ByteVector): Either[String, Boolean] =
+  def check(prop: SigmaProp, proof: ByteVector, message: ByteVector): Either[SigmaError, Boolean] =
     for {
       _ <- SigmaProp.validate(prop)
-      _ <- Either.cond(proof.size == proofLength(prop), (), s"a proof of this proposition is ${proofLength(prop)} bytes, got ${proof.size}")
-      checked <- parse(prop, scala.None).runA(proof)
+      wrongLength = SigmaError.ProofLength(proofLength(prop), proof.size)
+      _       <- Either.cond(proof.size == proofLength(prop), (), wrongLength)
+      checked <- parse(prop, scala.None, wrongLength).runA(proof)
       commitments = leaves(checked).map(l => commitment(l.prop, l.challenge, l.z))
     } yield challenge(fiatShamir(prop, commitments), message) == challengeOf(checked)
+
+  /** [[check]], its refusal as a message: the JLVM reports it as `Crypto`. */
+  def verify(prop: SigmaProp, proof: ByteVector, message: ByteVector): Either[String, Boolean] =
+    check(prop, proof, message).leftMap(_.message)
 }

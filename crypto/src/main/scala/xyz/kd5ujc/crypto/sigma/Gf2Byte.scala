@@ -34,7 +34,7 @@ opaque type ChildPoint <: Gf2Byte = Int
 object ChildPoint {
 
   /** The most children a connective may have: the nonzero bytes. */
-  val Max: Int = 255
+  val Max: Int = xyz.kd5ujc.models.limits.SigmaMaxChildren
 
   /** `i` when it is a child's point, `1..`[[Max]]. */
   def from(i: Int): Option[ChildPoint] = Option.when(i >= 1 && i <= Max)(i)

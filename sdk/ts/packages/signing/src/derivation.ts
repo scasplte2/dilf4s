@@ -1,5 +1,5 @@
 /** Indices and paths (`signing.md` 3), SLIP-10 Ed25519 (2.2), BIP32 secp256k1 (2.3) and BIP32-Ed25519 Icarus (2.4). */
-import { err, ok, type Result } from "@kd5ujc/dilf4s-core";
+import { err, models, ok, type Result } from "@kd5ujc/dilf4s-core";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hmac } from "@noble/hashes/hmac.js";
 import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
@@ -47,10 +47,10 @@ export class ChildIndex {
 const SEGMENT = /^([0-9]+)(['h]?)$/;
 
 /** The most digits a segment may have: 2^31 - 1 has ten. */
-export const MAX_SEGMENT_DIGITS = 10;
+export const MAX_SEGMENT_DIGITS = models.limits.PATH_MAX_SEGMENT_DIGITS;
 
 /** The most segments a path may have after `m`: BIP32 serialises the depth in one byte. */
-export const MAX_DEPTH = 255;
+export const MAX_DEPTH = models.limits.PATH_MAX_DEPTH;
 
 /**
  * `m/44'/0'/0'/0/7` (or `h` for `'`), relative to the master key; `m` alone is the master. A segment is `0` or a

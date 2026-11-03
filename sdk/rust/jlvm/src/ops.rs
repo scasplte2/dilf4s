@@ -28,10 +28,10 @@ use crate::values::{
 type Result<T> = core::result::Result<T, JlvmError>;
 
 /// The largest exponent magnitude `pow` accepts.
-pub const MAX_EXPONENT: u64 = 999;
+pub const MAX_EXPONENT: u64 = dilf4s_core::generated::limits::JLVM_MAX_EXPONENT;
 
 /// The largest `int_to_bytes` width.
-pub const MAX_INT_BYTES: u64 = 1024;
+pub const MAX_INT_BYTES: u64 = dilf4s_core::generated::limits::JLVM_MAX_INT_BYTES;
 
 fn n_args(n: usize) -> u64 {
     u64::try_from(n).unwrap_or(u64::MAX)

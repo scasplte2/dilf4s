@@ -42,9 +42,9 @@ const mismatch = (component: string, expected: Uint8Array, computed: Uint8Array)
 
 // ------------------------------------------------------------------ keys (section 2)
 
-export const MAX_SEGMENT_LENGTH = 64;
-export const MAX_SEGMENTS = 16;
-export const MAX_KEY_LENGTH = 256;
+export const MAX_SEGMENT_LENGTH = models.limits.STATE_KEY_MAX_SEGMENT_LENGTH;
+export const MAX_SEGMENTS = models.limits.STATE_KEY_MAX_SEGMENTS;
+export const MAX_KEY_LENGTH = models.limits.STATE_KEY_MAX_LENGTH;
 
 const SEGMENT = /^[a-z0-9][a-z0-9._-]*$/;
 
@@ -86,7 +86,7 @@ export class StateNamespace {
     Object.freeze(this);
   }
 
-  static readonly MAX_LENGTH = MAX_KEY_LENGTH - 2;
+  static readonly MAX_LENGTH = models.limits.STATE_NAMESPACE_MAX_LENGTH;
 
   static parse(s: string): Result<StateNamespace, StateKeyError> {
     const k = StateKey.parse(s);
@@ -202,12 +202,12 @@ export interface Snapshot<V> {
 }
 
 /** The largest value, in canonical CBOR bytes, so that every entry fits one snapshot chunk. */
-export const MAX_VALUE_BYTES = 1 << 20;
+export const MAX_VALUE_BYTES = models.limits.VERSIONED_MAX_VALUE_BYTES;
 /** The deepest value: every record carrying one (a map, an array and a map around it) stays within depth 256. */
-export const MAX_VALUE_DEPTH = 253;
-export const MAX_CHUNK_ENTRIES = 1024;
+export const MAX_VALUE_DEPTH = models.limits.VERSIONED_MAX_VALUE_DEPTH;
+export const MAX_CHUNK_ENTRIES = models.limits.VERSIONED_MAX_CHUNK_ENTRIES;
 /** The largest snapshot chunk, refused before it is decoded. */
-export const MAX_CHUNK_BYTES = 1 << 22;
+export const MAX_CHUNK_BYTES = models.limits.VERSIONED_MAX_CHUNK_BYTES;
 
 export const VERSION_SLOT = Uint8Array.of(0x00);
 export const STATE_SLOT = Uint8Array.of(0x01);

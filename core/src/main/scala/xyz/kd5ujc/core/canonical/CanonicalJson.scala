@@ -25,14 +25,17 @@ object CanonicalJson {
    * exponent may have, read or written. Decimal conversion is superlinear, so the bound is checked on the text before
    * any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
    */
-  val MaxDigits: Int = 10000
+  val MaxDigits: Int = xyz.kd5ujc.models.limits.CanonicalMaxDigits
+
+  /** The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises. */
+  val MaxScale: Int = xyz.kd5ujc.models.limits.CanonicalMaxScale
 
   // 10^MaxDigits has 33220 bits: a number any wider has more than MaxDigits digits
-  private val MaxDigitBits: Int = 33220
+  private val MaxDigitBits: Int = xyz.kd5ujc.models.limits.CanonicalMaxDigitBits
 
   // ------------------------------------------------------------------ parse
 
-  def parse(text: String, maxScale: Int = Ratio.DefaultMaxDecimalScale): Either[CanonicalError, CanonicalValue] =
+  def parse(text: String, maxScale: Int = MaxScale): Either[CanonicalError, CanonicalValue] =
     parse(text, maxScale, KeyOrder.Default)
 
   /** [[parse]] building maps, and checking for repeated member names, in `keys`'s order: production passes [[KeyOrder.Default]]. */
@@ -215,7 +218,7 @@ object CanonicalJson {
   // ------------------------------------------------------------------ circe bridge
 
   /** Converts circe JSON built from typed data; stack-safe. Numbers use their exact decimal value. */
-  def fromCirce(json: Json, maxScale: Int = Ratio.DefaultMaxDecimalScale): Either[CanonicalError, CanonicalValue] =
+  def fromCirce(json: Json, maxScale: Int = MaxScale): Either[CanonicalError, CanonicalValue] =
     circe(json, maxScale).value
 
   private def circe(json: Json, maxScale: Int): Eval[Either[CanonicalError, CanonicalValue]] =
@@ -283,7 +286,7 @@ object CanonicalJson {
     )
 
   private val overLong: CanonicalError =
-    NotJsonRepresentable(s"a number of more than $MaxDigits digits or a scale above ${Ratio.DefaultMaxDecimalScale}")
+    NotJsonRepresentable(s"a number of more than $MaxDigits digits or a scale above $MaxScale")
 
   /**
    * A number's JSON text, within the bounds [[parse]] accepts, so that rendering always reads back. A wider numerator
@@ -304,7 +307,7 @@ object CanonicalJson {
     val point = unsigned.indexOf('.')
     val scale = if (point < 0) 0 else unsigned.length - point - 1
     val significand = unsigned.filter(_ != '.').dropWhile(_ == '0').length
-    Either.cond(significand <= MaxDigits && scale <= Ratio.DefaultMaxDecimalScale, text, overLong)
+    Either.cond(significand <= MaxDigits && scale <= MaxScale, text, overLong)
   }
 
   // ------------------------------------------------------------------ render (display view)

@@ -30,7 +30,7 @@ sealed trait CanonicalValue extends Product with Serializable {
 
 object CanonicalValue {
 
-  val MaxDepth: Int = 256
+  val MaxDepth: Int = xyz.kd5ujc.models.limits.CanonicalMaxDepth
 
   implicit val canonicalValueShow: Show[CanonicalValue] = Show.fromToString
 
@@ -129,7 +129,7 @@ object CanonicalValue {
     val depths = after.fold(without)(v => counted(without, v.depth, 1))
     def entry(v: CanonicalValue): Long = Weight.add(key.weight, v.weight)
     val weight =
-      if (m.weight == Long.MaxValue) recounted(entries, m.keys)
+      if (m.weight == Weight.Max) recounted(entries, m.keys)
       else Weight.add(m.weight - before.fold(0L)(entry), after.fold(0L)(entry))
     new MapNode(entries, m.keys, depths, weight)
   }
@@ -247,7 +247,11 @@ object CanonicalValue {
 }
 
 private[canonical] object Weight {
-  def add(a: Long, b: Long): Long = if (a > Long.MaxValue - b) Long.MaxValue else a + b
+
+  /** Weights saturate here (`canonical-max-weight`, 2^63 - 1), never wrap. */
+  val Max: Long = xyz.kd5ujc.models.limits.CanonicalMaxWeight
+
+  def add(a: Long, b: Long): Long = if (a > Max - b) Max else a + b
 }
 
 /** UTF-16 well-formedness: every surrogate is part of a high/low pair. */

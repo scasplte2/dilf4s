@@ -23,19 +23,27 @@ object SigningRejections {
 
   private def get[A](e: Either[?, A]): A = e.fold(err => sys.error(err.toString), identity)
 
-  /** The verdict of a scheme's decoders and verifier, in that order. */
-  private def verdict[S](vk: ByteVector, m: ByteVector, sig: ByteVector)(implicit C: SchemeCodec[S], V: Verifier[S]): String =
+  /**
+   * The verdict of a scheme's decoders and verifier, in that order: `valid` or `invalid`, or the part whose decoding
+   * failed (`malformedKey`, `malformedSignature`) with the [[CryptoError]] kind of the refusal.
+   */
+  private def verdict[S](vk: ByteVector, m: ByteVector, sig: ByteVector)(implicit C: SchemeCodec[S], V: Verifier[S]): (String, Json) =
     C.verifyingKey(vk)
       .fold(
-        _ => "malformedKey",
-        k => C.signature(sig).fold(_ => "malformedSignature", s => if (V.verify(k, m, s)) "valid" else "invalid")
+        e => "malformedKey" -> Json.obj("part" -> "verifyingKey".asJson, "kind" -> e.productPrefix.asJson),
+        k =>
+          C.signature(sig)
+            .fold(
+              e => "malformedSignature" -> Json.obj("part" -> "signature".asJson, "kind" -> e.productPrefix.asJson),
+              s => if (V.verify(k, m, s)) "valid" -> "valid".asJson else "invalid" -> "invalid".asJson
+            )
       )
 
   private def row[S](scheme: String, name: String, vk: ByteVector, m: ByteVector, sig: ByteVector, expected: String)(
     implicit C: SchemeCodec[S],
     V:          Verifier[S]
   ): Json = {
-    val result = verdict[S](vk, m, sig)
+    val (result, recorded) = verdict[S](vk, m, sig)
     require(expected == result, s"$scheme $name: expected $expected, got $result")
     Json.obj(
       "scheme"       -> scheme.asJson,
@@ -43,7 +51,7 @@ object SigningRejections {
       "verifyingKey" -> vk.toHex.asJson,
       "message"      -> m.toHex.asJson,
       "signature"    -> sig.toHex.asJson,
-      "result"       -> result.asJson
+      "result"       -> recorded
     )
   }
 
@@ -408,4 +416,28 @@ object SigningRejections {
   }
 
   def vrf: List[Json] = vrfSuite[EcVrfTai] ++ vrfSuite[EcVrfEll2] ++ vrfSuite[EcVrfDraft03]
+
+  private def vrfKeyRow[S](name: String, bytes: ByteVector, expected: String)(implicit V: Vrf[S]): Json = {
+    val result = V.signingKey(bytes).fold(_.productPrefix, _ => "accepted")
+    require(result == expected, s"${V.name} signing key $name: expected $expected, got $result")
+    Json.obj("suite" -> V.name.asJson, "name" -> name.asJson, "bytes" -> bytes.toHex.asJson, "result" -> result.asJson)
+  }
+
+  private def vrfKeys[S](implicit V: Vrf[S]): List[Json] = {
+    val sk = get(Vrf.fromSeed[S](CryptoVectors.seeds.head)).signing.bytes
+    List(
+      vrfKeyRow[S]("valid", sk, "accepted"),
+      vrfKeyRow[S]("short", sk.dropRight(1), "Malformed"),
+      vrfKeyRow[S]("long", sk :+ 0.toByte, "Malformed"),
+      vrfKeyRow[S]("empty", ByteVector.empty, "Malformed")
+    )
+  }
+
+  /** How every suite decodes signing keys; a draft-03 key whose stored public key is another seed's is `KeyMismatch`. */
+  def vrfKeyDecoding: List[Json] = {
+    val other = get(Vrf.fromSeed[EcVrfDraft03](CryptoVectors.seeds(1))).signing.bytes
+    val sk = get(Vrf.fromSeed[EcVrfDraft03](CryptoVectors.seeds.head)).signing.bytes
+    vrfKeys[EcVrfTai] ++ vrfKeys[EcVrfEll2] ++ vrfKeys[EcVrfDraft03] :+
+    vrfKeyRow[EcVrfDraft03]("other-public-key", sk.take(32) ++ other.drop(32), "KeyMismatch")
+  }
 }

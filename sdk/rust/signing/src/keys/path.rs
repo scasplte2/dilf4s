@@ -64,10 +64,10 @@ impl ChildIndex {
 }
 
 /// The most digits a segment may have: `2^31 - 1` has ten.
-pub const MAX_SEGMENT_DIGITS: usize = 10;
+pub const MAX_SEGMENT_DIGITS: usize = dilf4s_core::generated::limits::as_usize::PATH_MAX_SEGMENT_DIGITS;
 
 /// The most segments a path may have after `m`: BIP32 serialises the depth in one byte.
-pub const MAX_DEPTH: usize = 255;
+pub const MAX_DEPTH: usize = dilf4s_core::generated::limits::as_usize::PATH_MAX_DEPTH;
 
 /// Parses `m/44'/0'/0'/0/7` (or `h` in place of `'`), relative to the master key. `m` alone is the empty path.
 /// A segment is `0` or a nonzero ASCII digit and more digits, then an optional hardening mark, so each index has one

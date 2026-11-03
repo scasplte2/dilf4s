@@ -252,6 +252,11 @@ impl c::Model for VtKind {
     }
 }
 
+impl VtKind {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 6] = [Self::State, Self::Historical, Self::Version, Self::AsOf, Self::Head, Self::Versions];
+}
+
 /// `vt-listing` (`shared/schemas/versioned-trie-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtListing {

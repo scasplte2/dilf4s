@@ -118,6 +118,11 @@ impl c::Model for ZkError {
     }
 }
 
+impl ZkError {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::Malformed, Self::InvalidPoint];
+}
+
 /// `zk-failure` (`shared/schemas/zk-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ZkFailure {
@@ -176,6 +181,11 @@ impl c::Model for ZkGroth16Result {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl ZkGroth16Result {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 5] = [Self::Verified, Self::Malformed, Self::InvalidProof, Self::PairingCheckFailed, Self::Rejected];
 }
 
 /// `zk-mul` (`shared/schemas/zk-vectors.cddl`).

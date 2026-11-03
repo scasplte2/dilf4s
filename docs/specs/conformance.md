@@ -114,19 +114,51 @@ TypeScript. The versioned trie's store does the same for its proofs and deltas (
 ## 6. Vectors
 
 `shared/vectors/refusals_v1.json` holds calls and their outcomes: `"accepted"`, or `{kind, …normative fields}`. Every
-refusal kind a spec defines must have a row. This version gates the verifier families: the Merkle tree, the trie, the
-Poseidon tree and the versioned trie. Each of their kinds has a row, in that file or in a family file's `malformed`
-section (`merkle_v1.json`, `trie_v1.json`), except the kinds below, which no verifier can return and no SDK implements.
-The other families (signing, VRF, KES, sigma, the zk operations, the canonical codecs, the JLVM's own errors) record
-some outcomes in their own vector files but are not yet gated kind by kind; they are next.
+refusal kind a spec defines must have a row. The gated families, and where their rows are:
+
+| Family | Error type | Rows |
+|---|---|---|
+| Merkle tree, trie, Poseidon tree, versioned trie | `MerkleError`, `TrieError`, `PoseidonMerkleError`, `VersionedTrieError` | `refusals_v1.json`; the `malformed` sections of `merkle_v1.json` and `trie_v1.json` |
+| signatures and their keys | `CryptoError` | `signing_v1.json`: `keyDecoding` (the kind of each key decoding) and `verification` (the part refused, `verifyingKey` or `signature`, and its kind) |
+| key derivation | `KeyError`, `PathRefusal` | `signing_v1.json`: `keyRefusals` (BIP-39 entropy and phrases, word lists, SLIP-10, BIP32 and public derivation) and `paths` (`InvalidPath`, by refusal) |
+| VRF | `VrfError` | `vrf_v1.json`: `rejections` (verification) and `keyDecoding` (signing keys) |
+| KES | `KesError` | `kes_v1.json`: `refusals` (parameters, generation, loading, evolution, verification) |
+| sigma | `SigmaError` | `sigma_refusals_v1.json`: `cases`, and the reference's outcome on every case of `sigma_v1.json` and `sigma_dilf4s_v1.json` (whose own verdicts are Ergo's) |
+| zk | `ZkError`, `Groth16Error` | `zk_v1.json` |
+
+Each kind of these families has a row, except the kinds below, which no input reaches through an SDK's verifier.
+The canonical codecs and the JLVM's own errors record outcomes in their own vector files but are not yet gated kind by
+kind (conformance step 2, part B).
 
 | Family | Kind | Why it has no row |
 |---|---|---|
 | versioned trie | `Empty`, `VersionConflict`, `CommitRewrite`, `NotRetained`, `Store` | the store's own refusals: committing and serving, not verifying |
 | trie | `MissingNode`, `InvalidNode` | a store read that finds no node, or an invalid one |
 | Poseidon tree | `Depth`, `OccupiedPosition` | building a tree, not decoding or verifying a proof |
+| signatures | `BackendFailure` | a JVM provider's own failure; no SDK has one |
+| VRF | `HashToCurveFailed` | no input is known that reaches it (TAI: all 256 counters fail, probability about 2^-256) |
 
-The reference's `RefusalCoverageSuite` fails if a kind of these families has neither a row nor an entry here.
+**The gate, in every language.** The reference's `RefusalCoverageSuite` (the verifier families) and
+`CryptoRefusalCoverageSuite` (the others) list each error type's cases through the compiler (`Mirror.SumOf`) and fail
+if a kind has neither a row nor an entry here. The Rust tests map each SDK error onto the schema's kind with an
+exhaustive `match`, so a new variant does not compile until it is mapped, and check that every kind the schema lists
+(the generated `ALL` of each kind choice) has a row. The TypeScript tests list each SDK error's kinds in a `Record`
+keyed by its `kind` union, so a new kind does not compile until it is listed, and check its row; they also check that
+every kind the schema names is one of the SDK's. The SP1 guest harness runs every verification call of these files in
+the guest and checks each refusal by its exact kind: signatures, VRF verification, KES verification and parameters,
+sigma (its refusal calls, and every case of the Ergo-checked files) and zk. The guest builds the signing SDK without
+its `sign` feature, so key derivation (`KeyError`), VRF signing-key decoding (`KeyMismatch`) and KES generation,
+loading and evolution (`Exhausted`, `InconsistentKey`) are checked natively only.
+
+**Kinds in the schemas.** Every kind field of these files is a choice of text literals in its schema
+(`crypto-error-kind`, `key-error-kind`, `vrf-result`, `kes-outcome`, `sigma-outcome`, `zk-error`), so each SDK's
+generated model is a closed type: a vector naming a kind the schema does not list does not load.
+
+**Limits.** Every limit the specs state (`MaxValueBytes`, `MaxChunkBytes`, `MaxProofWeight`, the depth, digit, key,
+chunk, sigma, KES and JLVM limits) is defined once, in `shared/schemas/limits.cddl`, and generated into each SDK
+(`xyz.kd5ujc.models.limits`, `dilf4s_core::generated::limits`, `models.limits`); every implementation reads it from
+there. A limit the specs derive from others is stated there as its spec states it, and the reference's `LimitsSuite`
+checks the derivation.
 
 **Inputs.** A heavy input is a **built value** (`built-value`): a leaf (canonical CBOR) and steps, each a template
 (every text `"$"` in it replaced by the value so far, `times` times over) or `copies` (an array of that many of it).

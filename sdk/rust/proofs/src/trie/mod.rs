@@ -116,9 +116,9 @@ fn invalid_key(reason: impl fmt::Display) -> TrieError {
 }
 
 /// The longest fixed key, in bytes.
-pub const MAX_FIXED_BYTES: u16 = 1024;
+pub const MAX_FIXED_BYTES: u16 = dilf4s_core::generated::limits::as_u16::TRIE_MAX_FIXED_KEY_BYTES;
 /// The largest variable-mode key limit, in bytes.
-pub const MAX_VARIABLE_BYTES: u16 = u16::MAX;
+pub const MAX_VARIABLE_BYTES: u16 = dilf4s_core::generated::limits::as_u16::TRIE_MAX_VARIABLE_KEY_BYTES;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Mode {

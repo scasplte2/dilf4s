@@ -24,9 +24,9 @@ sealed abstract case class StateKey(value: String) {
 
 object StateKey {
 
-  val MaxSegmentLength: Int = 64
-  val MaxSegments: Int = 16
-  val MaxLength: Int = 256
+  val MaxSegmentLength: Int = xyz.kd5ujc.models.limits.StateKeyMaxSegmentLength
+  val MaxSegments: Int = xyz.kd5ujc.models.limits.StateKeyMaxSegments
+  val MaxLength: Int = xyz.kd5ujc.models.limits.StateKeyMaxLength
 
   private val segment = "[a-z0-9][a-z0-9._-]*".r
 
@@ -69,7 +69,7 @@ sealed abstract case class StateNamespace(value: String) {
 
 object StateNamespace {
 
-  val MaxLength: Int = StateKey.MaxLength - 2
+  val MaxLength: Int = xyz.kd5ujc.models.limits.StateNamespaceMaxLength
 
   def parse(s: String): Either[StateKeyError, StateNamespace] =
     StateKey.parse(s).flatMap { k =>

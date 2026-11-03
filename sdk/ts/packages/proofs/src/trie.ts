@@ -36,8 +36,8 @@ const invalidProof = (reason: string): Result<never, TrieError> => err({ kind: "
 
 // ------------------------------------------------------------------ key modes (section 1)
 
-export const MAX_FIXED_BYTES = 1024;
-export const MAX_VARIABLE_BYTES = 65535;
+export const MAX_FIXED_BYTES = models.limits.TRIE_MAX_FIXED_KEY_BYTES;
+export const MAX_VARIABLE_BYTES = models.limits.TRIE_MAX_VARIABLE_KEY_BYTES;
 
 /** How keys are validated: `fixed(n)`, exactly `n` bytes, or `variable(max)`, at most `max` bytes. */
 export class KeyMode {

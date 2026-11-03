@@ -43,18 +43,18 @@ pub const ELEMENT_LENGTH: usize = 33;
 pub const SCALAR_LENGTH: usize = 32;
 
 /// The deepest a proposition nests (a leaf alone is depth 1).
-pub const MAX_DEPTH: usize = 64;
+pub const MAX_DEPTH: usize = dilf4s_core::generated::limits::as_usize::SIGMA_MAX_DEPTH;
 
 /// The most leaves a proposition has.
-pub const MAX_LEAVES: usize = 4096;
+pub const MAX_LEAVES: usize = dilf4s_core::generated::limits::as_usize::SIGMA_MAX_LEAVES;
 
 /// The most children of one connective: a threshold's evaluation points are the bytes `1..=n`.
-pub const MAX_CHILDREN: usize = 255;
+pub const MAX_CHILDREN: usize = dilf4s_core::generated::limits::as_usize::SIGMA_MAX_CHILDREN;
 
 /// The weight of the heaviest valid proposition in its canonical form (section 3): 4096 `dhtuple` leaves (158 each)
 /// at depth 64, under `1 + 255 + 61·4096` one-`k` thresholds (29 each, plus their children). A heavier value is
 /// refused before any of it is decoded.
-pub const MAX_WEIGHT: u64 = 7_900_416;
+pub const MAX_WEIGHT: u64 = dilf4s_core::generated::limits::SIGMA_MAX_WEIGHT;
 
 type Challenge = [u8; CHALLENGE_LENGTH];
 

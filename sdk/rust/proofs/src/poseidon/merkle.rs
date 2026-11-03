@@ -14,7 +14,7 @@ use num_bigint::{BigInt, BigUint};
 use super::{Fr, compress, fr_from_int, fr_to_int};
 
 /// The deepest tree.
-pub const MAX_DEPTH: usize = 256;
+pub const MAX_DEPTH: usize = dilf4s_core::generated::limits::as_usize::POSEIDON_MAX_DEPTH;
 
 /// Why a Poseidon Merkle proof is malformed.
 #[derive(Clone, PartialEq, Eq)]

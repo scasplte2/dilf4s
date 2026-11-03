@@ -113,6 +113,7 @@ async fn ecrecover() {
 async fn sigma() {
     let mut cases = vectors::sigma("sigma_v1.json").unwrap();
     cases.extend(vectors::sigma("sigma_dilf4s_v1.json").unwrap());
+    cases.extend(vectors::sigma_refusals().unwrap());
     check("sigma", cases, &[SyscallCode::SECP256K1_ADD, SyscallCode::SECP256K1_DOUBLE]).await;
 }
 
@@ -124,6 +125,11 @@ async fn bn254_and_groth16() {
         &[SyscallCode::BN254_FP_ADD, SyscallCode::BN254_FP_MUL, SyscallCode::BN254_FP2_MUL],
     )
     .await;
+}
+
+#[tokio::test]
+async fn kes() {
+    check("kes", vectors::kes().unwrap(), &[SyscallCode::ED_ADD, SyscallCode::ED_DECOMPRESS]).await;
 }
 
 #[tokio::test]

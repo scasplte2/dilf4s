@@ -13,6 +13,7 @@ signing-vectors = {
   "verification": [* verification-case],
   "keyDecoding": [* key-decoding-case],
   "paths": [* path-case],
+  "keyRefusals": [* key-refusal],
 }
 
 ; How a scheme's decoder classifies an encoded signing or verifying key: "accepted", or the kind of its typed
@@ -44,9 +45,10 @@ path-indices = { "indices": [* uint] }
 ; PopProve of each seed's BLS key (DST BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_).
 bls-pop-vector = { "signingKey": hex, "verifyingKey": hex, "proof": hex }
 
-; A verdict to reproduce. The verifying key is decoded first, then the signature: a malformed one is a typed error
-; ("malformedKey", "malformedSignature"); a decoded pair verifies ("valid") or not ("invalid"). "scheme" is a scheme
-; of the signing list; "Ed25519" verifies under ZIP-215 and "Ed25519-libsodium" under libsodium's rule.
+; A verdict to reproduce. The verifying key is decoded first, then the signature: a malformed one is a typed error,
+; recorded as the part refused and its CryptoError kind; a decoded pair verifies ("valid") or not ("invalid").
+; "scheme" is a scheme of the signing list; "Ed25519" verifies under ZIP-215 and "Ed25519-libsodium" under libsodium's
+; rule.
 verification-case = {
   "scheme": text,
   "name": text,
@@ -56,7 +58,36 @@ verification-case = {
   "result": verification-result,
 }
 
-verification-result = "valid" / "invalid" / "malformedKey" / "malformedSignature"
+verification-result = "valid" / "invalid" / verification-refusal
+
+verification-refusal = { "part": verification-part, "kind": crypto-error-kind }
+
+verification-part = "verifyingKey" / "signature"
+
+; A CryptoError kind (signing.md section 4). BackendFailure, a JVM provider's own failure, has no row.
+crypto-error-kind = "InvalidEncoding" / "InvalidKey"
+
+; A key-derivation call the reference refuses, with its KeyError kind (signing.md sections 2 and 3). "check" names it:
+; "bip39-entropy" (BIP-39 entropy to a mnemonic: "entropy"), "bip39-phrase" (a phrase to its entropy, English list:
+; "phrase"), "word-list" (a word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
+; "bip32-public" and "icarus-public" (public derivation from "verifyingKey" and "chainCode" along "path"). Every
+; path given parses; a refused path is a "paths" row (InvalidPath).
+key-refusal = {
+  "name": text,
+  "check": key-check,
+  ? "entropy": hex,
+  ? "phrase": text,
+  ? "words": [* text],
+  ? "seed": hex,
+  ? "verifyingKey": hex,
+  ? "chainCode": hex,
+  ? "path": text,
+  "kind": key-error-kind,
+}
+
+key-check = "bip39-entropy" / "bip39-phrase" / "word-list" / "slip10" / "bip32" / "bip32-public" / "icarus-public"
+
+key-error-kind = "InvalidEntropy" / "InvalidMnemonic" / "InvalidWordList" / "InvalidDerivation"
 
 signing-scheme = { "scheme": text, "keys": [* signing-key] }
 

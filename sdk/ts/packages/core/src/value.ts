@@ -25,13 +25,14 @@
  */
 import { bitLength } from "./bigint.js";
 import type { CanonicalError } from "./error.js";
+import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
 import { toHex } from "./hex.js";
 import { KeySet, search } from "./keyset.js";
 import { err, ok, type Result } from "./result.js";
 import { compareBytes, encodeUtf8, isWellFormed } from "./utf8.js";
 
 /** The nesting limit: a scalar has depth 0, an array or map one more than its deepest element (1 when empty). */
-export const MAX_DEPTH = 256;
+export const MAX_DEPTH = CANONICAL_MAX_DEPTH;
 
 /**
  * The greatest weight; weights saturate here (the Scala reference's `Long.MaxValue`), never wrap. A value's weight, as
@@ -40,7 +41,7 @@ export const MAX_DEPTH = 256;
  * part counts every time it occurs, so the weight bounds the work of any full traversal, and every canonical encoding
  * is at least as long as its value's weight.
  */
-export const MAX_WEIGHT: bigint = (1n << 63n) - 1n;
+export const MAX_WEIGHT: bigint = CANONICAL_MAX_WEIGHT;
 
 /** `w`, saturated at {@link MAX_WEIGHT}: every term is non-negative, so clamping the exact sum once is saturating each step. */
 const saturated = (w: bigint): bigint => (w > MAX_WEIGHT ? MAX_WEIGHT : w);

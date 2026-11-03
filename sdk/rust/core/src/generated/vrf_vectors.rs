@@ -44,6 +44,75 @@ impl c::Model for VrfKey {
     }
 }
 
+/// `vrf-key-case` (`shared/schemas/vrf-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VrfKeyCase {
+    /// The `suite` entry.
+    pub suite: String,
+    /// The `name` entry.
+    pub name: String,
+    /// The `bytes` entry.
+    pub bytes: Hex,
+    /// The `result` entry.
+    pub result: VrfKeyResult,
+}
+
+impl c::Model for VrfKeyCase {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("suite", &c::Text, &self.suite, inner)?,
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("bytes", &HEX, &self.bytes, inner)?,
+            c::field("result", &c::ModelOf::<VrfKeyResult>::NEW, &self.result, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["suite", "name", "bytes", "result"])?;
+        let f0 = fields.required("suite", &c::Text)?;
+        let f1 = fields.required("name", &c::Text)?;
+        let f2 = fields.required("bytes", &HEX)?;
+        let f3 = fields.required("result", &c::ModelOf::<VrfKeyResult>::NEW)?;
+        Ok(Self { suite: f0, name: f1, bytes: f2, result: f3 })
+    }
+}
+
+/// `vrf-key-result` (`shared/schemas/vrf-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VrfKeyResult {
+    /// The text `accepted`.
+    Accepted,
+    /// The text `Malformed`.
+    Malformed,
+    /// The text `KeyMismatch`.
+    KeyMismatch,
+}
+
+impl c::Model for VrfKeyResult {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Accepted => Ok(c::Value::text("accepted")),
+            Self::Malformed => Ok(c::Value::text("Malformed")),
+            Self::KeyMismatch => Ok(c::Value::text("KeyMismatch")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["accepted", "Malformed", "KeyMismatch"])? {
+            c::Alternative::Text(0) => Ok(Self::Accepted),
+            c::Alternative::Text(1) => Ok(Self::Malformed),
+            c::Alternative::Text(2) => Ok(Self::KeyMismatch),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl VrfKeyResult {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 3] = [Self::Accepted, Self::Malformed, Self::KeyMismatch];
+}
+
 /// `vrf-proof` (`shared/schemas/vrf-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VrfProof {
@@ -88,7 +157,7 @@ pub struct VrfRejection {
     /// The `pi` entry.
     pub pi: Hex,
     /// The `result` entry.
-    pub result: String,
+    pub result: VrfResult,
 }
 
 impl c::Model for VrfRejection {
@@ -100,7 +169,7 @@ impl c::Model for VrfRejection {
             c::field("verifyingKey", &HEX, &self.verifying_key, inner)?,
             c::field("alpha", &HEX, &self.alpha, inner)?,
             c::field("pi", &HEX, &self.pi, inner)?,
-            c::field("result", &c::Text, &self.result, inner)?,
+            c::field("result", &c::ModelOf::<VrfResult>::NEW, &self.result, inner)?,
         ])
     }
 
@@ -111,9 +180,60 @@ impl c::Model for VrfRejection {
         let f2 = fields.required("verifyingKey", &HEX)?;
         let f3 = fields.required("alpha", &HEX)?;
         let f4 = fields.required("pi", &HEX)?;
-        let f5 = fields.required("result", &c::Text)?;
+        let f5 = fields.required("result", &c::ModelOf::<VrfResult>::NEW)?;
         Ok(Self { suite: f0, name: f1, verifying_key: f2, alpha: f3, pi: f4, result: f5 })
     }
+}
+
+/// `vrf-result` (`shared/schemas/vrf-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VrfResult {
+    /// The text `valid`.
+    Valid,
+    /// The text `Malformed`.
+    Malformed,
+    /// The text `InvalidPublicKey`.
+    InvalidPublicKey,
+    /// The text `SmallOrderPublicKey`.
+    SmallOrderPublicKey,
+    /// The text `InvalidGamma`.
+    InvalidGamma,
+    /// The text `NonCanonicalScalar`.
+    NonCanonicalScalar,
+    /// The text `ChallengeMismatch`.
+    ChallengeMismatch,
+}
+
+impl c::Model for VrfResult {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Valid => Ok(c::Value::text("valid")),
+            Self::Malformed => Ok(c::Value::text("Malformed")),
+            Self::InvalidPublicKey => Ok(c::Value::text("InvalidPublicKey")),
+            Self::SmallOrderPublicKey => Ok(c::Value::text("SmallOrderPublicKey")),
+            Self::InvalidGamma => Ok(c::Value::text("InvalidGamma")),
+            Self::NonCanonicalScalar => Ok(c::Value::text("NonCanonicalScalar")),
+            Self::ChallengeMismatch => Ok(c::Value::text("ChallengeMismatch")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["valid", "Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch"])? {
+            c::Alternative::Text(0) => Ok(Self::Valid),
+            c::Alternative::Text(1) => Ok(Self::Malformed),
+            c::Alternative::Text(2) => Ok(Self::InvalidPublicKey),
+            c::Alternative::Text(3) => Ok(Self::SmallOrderPublicKey),
+            c::Alternative::Text(4) => Ok(Self::InvalidGamma),
+            c::Alternative::Text(5) => Ok(Self::NonCanonicalScalar),
+            c::Alternative::Text(6) => Ok(Self::ChallengeMismatch),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl VrfResult {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 7] = [Self::Valid, Self::Malformed, Self::InvalidPublicKey, Self::SmallOrderPublicKey, Self::InvalidGamma, Self::NonCanonicalScalar, Self::ChallengeMismatch];
 }
 
 /// `vrf-suite` (`shared/schemas/vrf-vectors.cddl`).
@@ -149,6 +269,8 @@ pub struct VrfVectors {
     pub suites: Vec<VrfSuite>,
     /// The `rejections` entry.
     pub rejections: Vec<VrfRejection>,
+    /// The `keyDecoding` entry.
+    pub key_decoding: Vec<VrfKeyCase>,
 }
 
 impl c::Model for VrfVectors {
@@ -159,15 +281,17 @@ impl c::Model for VrfVectors {
             c::field("version", &c::LiteralInt(1), &(), inner)?,
             c::field("suites", &c::VecOf { element: c::ModelOf::<VrfSuite>::NEW, min: 0, max: None }, &self.suites, inner)?,
             c::field("rejections", &c::VecOf { element: c::ModelOf::<VrfRejection>::NEW, min: 0, max: None }, &self.rejections, inner)?,
+            c::field("keyDecoding", &c::VecOf { element: c::ModelOf::<VrfKeyCase>::NEW, min: 0, max: None }, &self.key_decoding, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "suites", "rejections"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "suites", "rejections", "keyDecoding"])?;
         fields.required("spec", &c::LiteralText("docs/specs/vrf.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         let f2 = fields.required("suites", &c::VecOf { element: c::ModelOf::<VrfSuite>::NEW, min: 0, max: None })?;
         let f3 = fields.required("rejections", &c::VecOf { element: c::ModelOf::<VrfRejection>::NEW, min: 0, max: None })?;
-        Ok(Self { suites: f2, rejections: f3 })
+        let f4 = fields.required("keyDecoding", &c::VecOf { element: c::ModelOf::<VrfKeyCase>::NEW, min: 0, max: None })?;
+        Ok(Self { suites: f2, rejections: f3, key_decoding: f4 })
     }
 }

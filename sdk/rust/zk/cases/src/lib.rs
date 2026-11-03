@@ -21,13 +21,14 @@ use alloc::vec::Vec;
 use core::cell::OnceCell;
 use core::fmt::Debug;
 
+use dilf4s_core::hash::HashAlgorithm;
 use dilf4s_core::{built, cbor};
 use dilf4s_jlvm::{Config, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, parse, parse_value};
 use dilf4s_proofs::poseidon::merkle::{PoseidonMerkleProof, compute_root};
 use dilf4s_proofs::poseidon::{self, Fr, fr_from_be_bytes, fr_to_be_bytes};
 use dilf4s_proofs::zk::{self, groth16};
 use dilf4s_signing::vrf::SuiteId;
-use dilf4s_signing::{SchemeId, bls, ecrecover, sigma};
+use dilf4s_signing::{SchemeId, bls, ecrecover, kes, sigma};
 use serde::{Deserialize, Serialize};
 
 use crate::leaves::Leaf;
@@ -120,6 +121,19 @@ pub enum Case {
         /// The proof `pi`.
         proof: Vec<u8>,
     },
+    /// KES verification: the construction from its parameters (a refusal there is the outcome), then the signature.
+    KesVerify {
+        /// The construction and its parameters.
+        scheme: KesScheme,
+        /// The verifying key.
+        key: Vec<u8>,
+        /// The period.
+        period: u64,
+        /// The message.
+        message: Vec<u8>,
+        /// The signature.
+        signature: Vec<u8>,
+    },
     /// A JLVM evaluation, as the conformance vectors run it.
     Jlvm {
         /// The program text.
@@ -133,6 +147,55 @@ pub enum Case {
         /// The gas limit.
         gas_limit: u64,
     },
+}
+
+/// A KES construction and its parameters, as `kes-vectors.cddl` gives them.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum KesScheme {
+    /// The dilf4s sum composition.
+    Sum {
+        /// The hash, by name.
+        hash: String,
+        /// The height.
+        height: u64,
+    },
+    /// The dilf4s product composition.
+    Product {
+        /// The hash, by name.
+        hash: String,
+        /// The super tree's height.
+        super_height: u64,
+        /// The sub trees' height.
+        sub_height: u64,
+    },
+    /// Cardano's `SumKES`.
+    Cardano {
+        /// The depth.
+        depth: u64,
+    },
+}
+
+/// A KES height as the SDK takes it: one past `u32` is past every limit, so it is refused as such.
+fn kes_height(h: u64) -> u32 {
+    u32::try_from(h).unwrap_or(u32::MAX)
+}
+
+fn kes_verify(scheme: &KesScheme, key: &[u8], period: u64, message: &[u8], signature: &[u8]) -> Outcome {
+    let hash = |name: &str| HashAlgorithm::from_name(name).map_err(debug);
+    match scheme {
+        KesScheme::Sum { hash: h, height } => kes::KesSum::new(hash(h)?, kes_height(*height))
+            .and_then(|k| k.verify(key, period, message, signature))
+            .map_err(debug),
+        KesScheme::Product { hash: h, super_height, sub_height } => {
+            kes::KesProduct::new(hash(h)?, kes_height(*super_height), kes_height(*sub_height))
+                .and_then(|k| k.verify(key, period, message, signature))
+                .map_err(debug)
+        }
+        KesScheme::Cardano { depth } => kes::CardanoSumKes::new(kes_height(*depth))
+            .and_then(|k| k.verify(key, period, message, signature))
+            .map_err(debug),
+    }
+    .map(Output::Bool)
 }
 
 /// A `built-value` recipe, its leaf and templates as canonical CBOR: built by `dilf4s_core::built::build` on whichever
@@ -335,6 +398,9 @@ pub fn run(cases: &[Case]) -> Vec<Outcome> {
                 .ok_or_else(|| format!("unknown VRF suite {suite}"))
                 .and_then(|id| id.verify_bytes(key, alpha, proof).map_err(debug))
                 .map(|beta| Output::Bytes(beta.to_vec())),
+            Case::KesVerify { scheme, key, period, message, signature } => {
+                kes_verify(scheme, key, *period, message, signature)
+            }
             Case::Jlvm { program, data, env, built, gas_limit } => {
                 let jlvm = jlvm.get_or_init(|| Native::new().map(Jlvm::new).map_err(debug));
                 jlvm_case(jlvm, program, data, env, built, *gas_limit)

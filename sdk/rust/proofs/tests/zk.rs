@@ -94,6 +94,30 @@ fn sp1_groth16() {
     }
 }
 
+/// The coverage gate (conformance.md section 6) for `ZkError` and `Groth16Error`: every kind of the schema has a row.
+/// `kind` and `outcome` map every SDK variant onto a schema kind (exhaustively, so a new variant does not compile until
+/// it is mapped), so every SDK kind has a row too.
+#[test]
+fn every_zk_error_kind_has_a_row() {
+    let v = vectors();
+    let failures = |r: &ZkPointResult| match r {
+        ZkPointResult::ZkFailure(f) => Some(f.error.clone()),
+        ZkPointResult::ZkPoint(_) => None,
+    };
+    let mut pinned: Vec<Kind> =
+        v.add.iter().map(|c| &c.result).chain(v.mul.iter().map(|c| &c.result)).filter_map(failures).collect();
+    pinned.extend(v.pairing.iter().filter_map(|c| match &c.result {
+        ZkBoolResult::ZkFailure(f) => Some(f.error.clone()),
+        ZkBoolResult::ZkBool(_) => None,
+    }));
+    for k in Kind::ALL {
+        assert!(pinned.contains(&k), "no zk_v1.json row pins {k:?}");
+    }
+    for k in ZkGroth16Result::ALL {
+        assert!(v.sp1_groth16.iter().any(|c| c.result == k), "no sp1Groth16 row has result {k:?}");
+    }
+}
+
 #[test]
 fn sp1_verify_builds_its_own_key() {
     let c = vectors().sp1_groth16.into_iter().next().unwrap();

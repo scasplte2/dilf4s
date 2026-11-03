@@ -127,6 +127,58 @@ object CryptoVectors {
 
   private def extended[S](k: ExtendedKey[S]): Json = Json.obj("key" -> k.key.bytes.toHex.asJson, "chainCode" -> k.chainCode.toHex.asJson)
 
+  /**
+   * Key-derivation calls the reference refuses, one or more per [[KeyError]] kind but `InvalidPath` (the `paths` rows):
+   * each row's kind is the reference's, and `expected` checks it is the kind the case is for.
+   */
+  def keyRefusals(english: WordList, bip32: Bip32Secp256k1, secp: Secp256k1, hdSeed: Secret): List[Json] = {
+    def row(name: String, check: String, fields: List[(String, Json)], expected: String)(r: Either[KeyError, ?]): Json = {
+      val kind = r.fold(_.productPrefix, _ => "accepted")
+      require(kind == expected, s"$check $name: expected $expected, got $kind")
+      Json.obj((List("name" -> name.asJson, "check" -> check.asJson) ++ fields :+ ("kind" -> kind.asJson))*)
+    }
+    def entropy(name: String, e: ByteVector) =
+      row(name, "bip39-entropy", List("entropy" -> e.toHex.asJson), "InvalidEntropy")(Bip39.toMnemonic(Secret(e), english))
+    def phrase(name: String, p: String) =
+      row(name, "bip39-phrase", List("phrase" -> p.asJson), "InvalidMnemonic")(Bip39.toEntropy(p, english))
+    def derived(name: String, check: String, seed: ByteVector, p: String)(derive: (Secret, List[ChildIndex]) => Either[KeyError, ?]) =
+      row(name, check, List("seed" -> seed.toHex.asJson, "path" -> p.asJson), "InvalidDerivation")(
+        ChildIndex.path(p).flatMap(derive(Secret(seed), _))
+      )
+    def public(name: String, check: String, vk: ByteVector, cc: ByteVector, p: String)(child: ChildIndex => Either[KeyError, ?]) =
+      row(name, check, List("verifyingKey" -> vk.toHex.asJson, "chainCode" -> cc.toHex.asJson, "path" -> p.asJson), "InvalidDerivation")(
+        ChildIndex.path(p).flatMap(_.traverse(child))
+      )
+    val abandon = List.fill(11)("abandon")
+    val account = get(ChildIndex.path("m/44'/0'/0'").flatMap(bip32.derive(hdSeed, _)))
+    val accountVk = secp.ecdsaPublicKeyOf.verifyingKey(account.key)
+    val icarusAccount =
+      get(ChildIndex.path("m/1852'/1815'/0'").flatMap(Ed25519Bip32.derive(get(Ed25519Bip32.icarus(Secret(seeds.head.take(16)))), _)))
+    val icarusVk = Ed25519Bip32.publicKeyOf.verifyingKey(icarusAccount.key)
+    List(
+      entropy("empty", ByteVector.empty),
+      entropy("15-bytes", seeds.head.take(15)),
+      entropy("17-bytes", seeds.head.take(17)),
+      entropy("36-bytes", seeds.head ++ seeds.head.take(4)),
+      phrase("11-words", abandon.mkString(" ")),
+      phrase("checksum", (abandon :+ "abandon").mkString(" ")),
+      phrase("unknown-word", (abandon :+ "dilf4s").mkString(" ")),
+      phrase("empty", ""),
+      row("two-words", "word-list", List("words" -> List("abandon", "ability").asJson), "InvalidWordList")(
+        WordList(Bip39.Language.English, Vector("abandon", "ability"))
+      ),
+      derived("soft-index", "slip10", hdSeed.bytes, "m/0")(Slip10Ed25519.derive),
+      derived("15-byte-seed", "slip10", seeds.head.take(15), "m")(Slip10Ed25519.derive),
+      derived("65-byte-seed", "slip10", hdSeed.bytes :+ 0.toByte, "m")(Slip10Ed25519.derive),
+      derived("15-byte-seed", "bip32", seeds.head.take(15), "m")(bip32.derive),
+      derived("65-byte-seed", "bip32", hdSeed.bytes :+ 0.toByte, "m")(bip32.derive),
+      public("hardened", "bip32-public", accountVk.bytes, account.chainCode, "m/0'")(bip32.publicChild(accountVk, account.chainCode, _)),
+      public("hardened", "icarus-public", icarusVk.bytes, icarusAccount.chainCode, "m/0'")(
+        Ed25519Bip32.publicChild(icarusVk, icarusAccount.chainCode, _)
+      )
+    )
+  }
+
   def build(secp: Secp256k1, english: WordList, bls: xyz.kd5ujc.crypto.bls.Bls12381): Json = {
     val instances = new Secp256k1.Instances(secp)
     import instances._
@@ -220,7 +272,8 @@ object CryptoVectors {
       "blsPop"       -> SigningRejections.blsPop(bls).asJson,
       "verification" -> SigningRejections.signing(secp, bls).asJson,
       "keyDecoding"  -> SigningRejections.keyDecoding(secp, bls).asJson,
-      "paths"        -> paths.asJson
+      "paths"        -> paths.asJson,
+      "keyRefusals"  -> keyRefusals(english, bip32, secp, Secret(hdSeed.bytes)).asJson
     )
   }
 

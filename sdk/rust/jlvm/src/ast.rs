@@ -114,14 +114,14 @@ pub struct Program {
 pub const VERSION: u32 = 1;
 
 /// Expression nesting: an operation's arguments, an array's items and a map's fields are one level deeper.
-pub const MAX_DEPTH: u64 = 256;
+pub const MAX_DEPTH: u64 = dilf4s_core::generated::limits::JLVM_MAX_PROGRAM_DEPTH;
 
 /// JSON nesting of the rendered program, as the canonical JSON parser bounds it.
-pub const MAX_SURFACE_DEPTH: u64 = 256;
+pub const MAX_SURFACE_DEPTH: u64 = dilf4s_core::generated::limits::CANONICAL_MAX_DEPTH;
 
 /// The largest program, in size: one per expression, plus the weight of each literal and default, plus the UTF-16
 /// length of each object key, binding name and path segment, plus one per segment.
-pub const MAX_SIZE: u64 = 1 << 18;
+pub const MAX_SIZE: u64 = dilf4s_core::generated::limits::JLVM_MAX_PROGRAM_SIZE;
 
 /// The tag of a program's identity.
 pub const PROGRAM_TAG: &str = "dilf4s/jlvm/program/v1";

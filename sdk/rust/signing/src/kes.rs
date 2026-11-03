@@ -19,7 +19,7 @@ const NODE_TAG: &str = "dilf4s/kes/node/v1";
 const PRODUCT_TAG: &str = "dilf4s/kes/product/v1";
 
 /// The largest sum-tree height (and super + sub height of a product).
-pub const MAX_HEIGHT: u32 = 30;
+pub const MAX_HEIGHT: u32 = dilf4s_core::generated::limits::as_u32::KES_MAX_HEIGHT;
 
 /// `taggedHash_H(tag, parts...) = H(H(tag) || H(tag) || parts...)` (`canonical-encoding.md` section 4).
 fn tagged(hash: HashAlgorithm, tag: &str, parts: &[&[u8]]) -> Vec<u8> {
@@ -256,12 +256,18 @@ impl CardanoSumKes {
     /// `Sum6KES`, the Praos hot key: 64 periods, 448-byte signatures and 608-byte keys.
     pub const SUM6: Self = Self { depth: 6 };
 
-    /// `SumKES` of `depth` 0 to 7.
+    /// The greatest depth: `Sum7KES`.
+    pub const MAX_DEPTH: u32 = dilf4s_core::generated::limits::as_u32::CARDANO_KES_MAX_DEPTH;
+
+    /// `SumKES` of `depth` 0 to [`Self::MAX_DEPTH`].
     pub fn new(depth: u32) -> Result<Self, KesError> {
-        if depth <= 7 {
+        if depth <= Self::MAX_DEPTH {
             Ok(Self { depth })
         } else {
-            Err(KesError::Malformed { what: "KES depth", reason: format!("expected 0..7, got {depth}") })
+            Err(KesError::Malformed {
+                what: "KES depth",
+                reason: format!("expected 0..{}, got {depth}", Self::MAX_DEPTH),
+            })
         }
     }
 

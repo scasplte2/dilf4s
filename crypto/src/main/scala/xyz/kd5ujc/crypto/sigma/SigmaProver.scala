@@ -227,7 +227,7 @@ object SigmaProver {
     seed:    ByteVector
   ): Either[String, ByteVector] =
     // a proposition built around the smart constructors may be trivial: proving it would prove nothing
-    SigmaProp.validate(prop).flatMap(proveChecked(_, secrets, message, seed))
+    SigmaProp.validate(prop).leftMap(_.message).flatMap(proveChecked(_, secrets, message, seed))
 
   private def proveChecked(
     prop:    SigmaProp,

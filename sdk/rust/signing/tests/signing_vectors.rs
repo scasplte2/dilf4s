@@ -21,10 +21,12 @@
 mod common;
 
 use common::{bytes, load};
-use dilf4s_core::generated::signing_vectors::{KeyDecodingResult, KeyPart, SigningVectors};
+use dilf4s_core::generated::signing_vectors::{
+    KeyCheck, KeyDecodingResult, KeyErrorKind, KeyPart, KeyRefusal, SigningVectors,
+};
 use dilf4s_core::hex;
 use dilf4s_signing::keys::{bip32, bip39, icarus, path, slip10};
-use dilf4s_signing::{SchemeId, SigningError, bls, ecdsa, ed25519, ed25519_bip32, ristretto255, schnorr};
+use dilf4s_signing::{KeyError, SchemeId, SigningError, bls, ecdsa, ed25519, ed25519_bip32, ristretto255, schnorr};
 
 /// Checks every case, collecting failures so one run reports all of them; returns the number of cases.
 fn run<T>(cases: &[T], check: impl Fn(&T) -> Result<(), String>) -> usize {
@@ -246,4 +248,75 @@ fn signing_key_decoding() {
         same(&format!("{} {}", c.scheme, c.name), expected, actual)
     });
     assert!(n >= 40, "{n} signing-key rows");
+}
+
+/// The schema's kind of a key-derivation error, or `None` for `InvalidPath`, which the `paths` rows pin. Exhaustive: a
+/// kind the SDK adds does not compile until it is mapped.
+const fn key_kind(e: &KeyError) -> Option<KeyErrorKind> {
+    match e {
+        KeyError::InvalidEntropy { .. } => Some(KeyErrorKind::InvalidEntropy),
+        KeyError::InvalidMnemonic { .. } => Some(KeyErrorKind::InvalidMnemonic),
+        KeyError::InvalidWordList { .. } => Some(KeyErrorKind::InvalidWordList),
+        KeyError::InvalidDerivation { .. } => Some(KeyErrorKind::InvalidDerivation),
+        KeyError::InvalidPath { .. } => None,
+    }
+}
+
+/// What a `keyRefusals` row's call gives: `Ok` when it is accepted, else the error.
+fn key_call(c: &KeyRefusal) -> Result<(), KeyError> {
+    let field = |f: &Option<String>| f.clone().unwrap_or_default();
+    let english = bip39::WordList::english();
+    let parsed = || path::parse(&field(&c.path));
+    match c.check {
+        KeyCheck::Bip39Entropy => bip39::to_mnemonic(&bytes(&field(&c.entropy)), &english).map(|_| ()),
+        KeyCheck::Bip39Phrase => bip39::to_entropy(&field(&c.phrase), &english).map(|_| ()),
+        KeyCheck::WordList => bip39::WordList::new(c.words.clone().unwrap_or_default(), ' ').map(|_| ()),
+        KeyCheck::Slip10 => slip10::derive(&bytes(&field(&c.seed)), &parsed()?).map(|_| ()),
+        KeyCheck::Bip32 => bip32::derive(&bytes(&field(&c.seed)), &parsed()?).map(|_| ()),
+        KeyCheck::Bip32Public => {
+            let mut vk = ecdsa::secp256k1::VerifyingKey::from_bytes(&bytes(&field(&c.verifying_key))).unwrap();
+            let mut cc: [u8; 32] = bytes(&field(&c.chain_code)).try_into().unwrap();
+            for index in parsed()? {
+                (vk, cc) = bip32::public_child(&vk, &cc, index)?;
+            }
+            Ok(())
+        }
+        KeyCheck::IcarusPublic => {
+            let mut vk = ed25519::VerifyingKey::from_bytes(&bytes(&field(&c.verifying_key))).unwrap();
+            let mut cc: [u8; 32] = bytes(&field(&c.chain_code)).try_into().unwrap();
+            for index in parsed()? {
+                (vk, cc) = icarus::public_child(&vk, &cc, index)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Every `keyRefusals` row is refused with its kind.
+#[test]
+fn key_derivation_refusals() {
+    let v: SigningVectors = load("signing_v1.json");
+    let n = run(&v.key_refusals, |c| match key_call(c) {
+        Ok(()) => Err(format!("{:?} {}: accepted, expected {:?}", c.check, c.name, c.kind)),
+        Err(e) if key_kind(&e).as_ref() == Some(&c.kind) => Ok(()),
+        Err(e) => Err(format!("{:?} {}: expected {:?}, got {}", c.check, c.name, c.kind, e.kind())),
+    });
+    assert!(n >= 16, "{n} key refusal rows");
+}
+
+/// The coverage gate (conformance.md section 6) for `KeyError`: every kind of the schema has a `keyRefusals` row, and
+/// `InvalidPath` has `paths` rows. [`key_kind`] maps every SDK variant onto one of those (exhaustively, so a new
+/// variant does not compile until it is mapped), so every SDK kind has a row too.
+#[test]
+fn every_key_error_kind_has_a_row() {
+    let v: SigningVectors = load("signing_v1.json");
+    for kind in KeyErrorKind::ALL {
+        assert!(v.key_refusals.iter().any(|c| c.kind == kind), "no keyRefusals row pins {kind:?}");
+    }
+    assert!(
+        v.paths
+            .iter()
+            .any(|c| !matches!(c.result, dilf4s_core::generated::signing_vectors::PathResult::PathIndices(_))),
+        "the paths rows pin InvalidPath"
+    );
 }

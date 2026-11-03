@@ -16,5 +16,5 @@ enum Warning {
 object Warning {
 
   /** At most this many distinct warnings are kept per evaluation. */
-  val Max: Int = 64
+  val Max: Int = xyz.kd5ujc.models.limits.JlvmMaxWarnings
 }

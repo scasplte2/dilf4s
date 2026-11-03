@@ -5,12 +5,23 @@ vrf-vectors = {
   "version": 1,
   "suites": [* vrf-suite],
   "rejections": [* vrf-rejection],
+  "keyDecoding": [* vrf-key-case],
 }
 
-; A verification verdict: "valid", or the VrfError kind (vrf.md section 3): "Malformed" (a wrong length; the proof's
-; is checked before the key's), "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar" or
-; "ChallengeMismatch". "suite" is a suite name of the suites list.
-vrf-rejection = { "suite": text, "name": text, "verifyingKey": hex, "alpha": hex, "pi": hex, "result": text }
+; A verification verdict: "valid", or the VrfError kind (vrf.md section 3). "Malformed" is a wrong length (the
+; proof's is checked before the key's). "suite" is a suite name of the suites list.
+vrf-rejection = { "suite": text, "name": text, "verifyingKey": hex, "alpha": hex, "pi": hex, "result": vrf-result }
+
+vrf-result =
+  "valid" / "Malformed" / "InvalidPublicKey" / "SmallOrderPublicKey" / "InvalidGamma" / "NonCanonicalScalar" /
+  "ChallengeMismatch"
+
+; How a suite's decoder classifies an encoded signing key: "accepted", or its VrfError kind. A wrong length is
+; "Malformed"; a draft-03 key (seed || pk) whose pk is not its seed's is "KeyMismatch". Verification decodes the
+; verifying keys, so the rejections pin those.
+vrf-key-case = { "suite": text, "name": text, "bytes": hex, "result": vrf-key-result }
+
+vrf-key-result = "accepted" / "Malformed" / "KeyMismatch"
 
 vrf-suite = { "suite": text, "keys": [* vrf-key] }
 

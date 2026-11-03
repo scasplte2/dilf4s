@@ -58,10 +58,10 @@ pub use map::{Entries, Map, MapShape};
 /// stacks of at most `MAX_DEPTH` (256) open containers; a map's entries come from an explicit stack of at most its
 /// tree height (under 92, see [`Map`]); dropping releases parts from an explicit worklist; and [`fmt::Debug`], which
 /// recurses through the formatter, stops at [`DEBUG_DEPTH`] levels.
-pub const MAX_DEPTH: usize = 256;
+pub const MAX_DEPTH: usize = crate::generated::limits::as_usize::CANONICAL_MAX_DEPTH;
 
 /// The greatest [`Value::weight`]: weights saturate here (the Scala reference's `Long.MaxValue`), never wrap.
-pub const MAX_WEIGHT: u64 = i64::MAX.unsigned_abs();
+pub const MAX_WEIGHT: u64 = crate::generated::limits::CANONICAL_MAX_WEIGHT;
 
 /// `a + b`, saturating at [`MAX_WEIGHT`].
 fn add_weight(a: u64, b: u64) -> u64 {

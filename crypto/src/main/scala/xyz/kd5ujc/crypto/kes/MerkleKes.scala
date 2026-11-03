@@ -67,13 +67,29 @@ private[kes] final class MerkleKesOps[H](implicit H: Hasher[H]) {
     case Node(_, _, l, r) => node(l, r)
   }
 
-  def gen(seed: ByteVector, d: Int): Tree =
-    if (d == 0) Leaf(Some(seed), leafVk(seed))
-    else {
-      val (r0, r1) = expand(seed)
-      val sub = gen(r0, d - 1)
-      Node(sub, Some(r1), root(sub), root(gen(r1, d - 1)))
+  /**
+   * The period-0 tree of height `d` from `seed`: a stack machine, so the height never reaches the call stack. Each
+   * node's right subtree is built only for its root, and dropped at its join.
+   */
+  def gen(seed: ByteVector, d: Int): Tree = {
+    @scala.annotation.tailrec
+    def loop(work: List[GenStep], built: List[Tree]): Tree = (work, built) match {
+      case (GenStep.Visit(s, 0) :: rest, _) => loop(rest, Leaf(Some(s), leafVk(s)) :: built)
+      case (GenStep.Visit(s, h) :: rest, _) =>
+        val (r0, r1) = expand(s)
+        loop(GenStep.Visit(r0, h - 1) :: GenStep.Visit(r1, h - 1) :: GenStep.Join(r1) :: rest, built)
+      case (GenStep.Join(r1) :: rest, right :: left :: done) => loop(rest, Node(left, Some(r1), root(left), root(right)) :: done)
+      case (Nil, tree :: _)                                  => tree
+      // not reached: each Visit leaves one tree, and each Join follows its two Visits
+      case _ => Leaf(Some(seed), leafVk(seed))
     }
+    loop(List(GenStep.Visit(seed, d)), Nil)
+  }
+
+  private enum GenStep {
+    case Visit(seed: ByteVector, height: Int)
+    case Join(rightSeed: ByteVector)
+  }
 
   /** `vk || sig || witnesses (bottom-up)`, or `None` if the active leaf was erased. */
   def sign(t: Tree, d: Int, period: Long, msg: ByteVector): Option[ByteVector] = t match {
@@ -220,6 +236,10 @@ final class KesSum[H] private (val height: Int)(implicit H: Hasher[H]) {
 }
 
 object KesSum {
+
+  /** The greatest height: of a sum tree, or of a product's super and sub heights together. */
+  val MaxHeight: Int = xyz.kd5ujc.models.limits.KesMaxHeight
+
   def apply[H](height: Int)(implicit H: Hasher[H]): Either[KesError, KesSum[H]] =
     for {
       _ <- Either.cond(
@@ -227,7 +247,7 @@ object KesSum {
         (),
         KesError.Malformed("KES hash", s"${H.name} has a ${H.outputSize}-byte output; at least 32 required")
       )
-      _ <- Either.cond(height >= 0 && height <= 30, (), KesError.Malformed("KES height", s"expected 0..30, got $height"))
+      _ <- Either.cond(height >= 0 && height <= MaxHeight, (), KesError.Malformed("KES height", s"expected 0..$MaxHeight, got $height"))
     } yield new KesSum[H](height)
 }
 
@@ -350,9 +370,10 @@ object KesProduct {
         KesError.Malformed("KES hash", s"${H.name} has a ${H.outputSize}-byte output; at least 32 required")
       )
       _ <- Either.cond(
-        superHeight >= 0 && subHeight >= 0 && superHeight + subHeight <= 30,
+        superHeight >= 0 && subHeight >= 0 && superHeight.toLong + subHeight.toLong <= KesSum.MaxHeight,
         (),
-        KesError.Malformed("KES heights", s"expected non-negative heights summing to at most 30, got ($superHeight, $subHeight)")
+        KesError
+          .Malformed("KES heights", s"expected non-negative heights summing to at most ${KesSum.MaxHeight}, got ($superHeight, $subHeight)")
       )
     } yield new KesProduct[H](superHeight, subHeight)
 }

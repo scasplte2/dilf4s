@@ -1,7 +1,9 @@
 # dilf4s key-evolving signatures (v1)
 
 Status: normative. Conformance vectors: `shared/vectors/kes_v1.json`. Reference data for Cardano is in
-`docs/test-vectors/kes/cardano/`.
+`docs/test-vectors/kes/cardano/`. The vectors' `refusals` pin every `KesError` kind: the parameter checks (each height, and a
+product's two heights summed without overflow, at most 30; a Cardano depth at most 7), generation, loading, evolution,
+and verification's checks in their order (the key's length, the signature's, then the period).
 Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 A KES key signs for one period at a time and evolves forward. A key leaked at period `t` cannot sign for any earlier

@@ -30,10 +30,10 @@ object PureOps {
   type Result = Either[JlvmError, CanonicalValue]
 
   /** The largest exponent magnitude `pow` accepts (metakit's bound). */
-  val MaxExponent: Int = 999
+  val MaxExponent: Int = xyz.kd5ujc.models.limits.JlvmMaxExponent
 
   /** The largest `int_to_bytes` width. */
-  val MaxIntBytes: Int = 1024
+  val MaxIntBytes: Int = xyz.kd5ujc.models.limits.JlvmMaxIntBytes
 
   /**
    * `None` for operations the evaluator owns; otherwise the result of applying `op` to `args`. `kernels` orders the

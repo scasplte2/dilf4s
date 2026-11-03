@@ -49,7 +49,7 @@ export class Fr {
   }
 }
 
-export const MAX_INPUTS = 4;
+export const MAX_INPUTS = models.limits.POSEIDON_MAX_INPUTS;
 
 const add = (a: bigint, b: bigint): bigint => (a + b) % FR_MODULUS;
 const mul = (a: bigint, b: bigint): bigint => (a * b) % FR_MODULUS;
@@ -113,7 +113,7 @@ export type PoseidonMerkleError =
   | { readonly kind: "Depth"; readonly depth: number }
   | { readonly kind: "Encoding"; readonly reason: string };
 
-export const MAX_DEPTH = 256;
+export const MAX_DEPTH = models.limits.POSEIDON_MAX_DEPTH;
 
 /** A path of siblings, root-first, with `0 <= position < 2^depth` (depth = the number of siblings). */
 export class PoseidonMerkleProof {

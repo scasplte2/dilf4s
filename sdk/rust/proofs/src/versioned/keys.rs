@@ -31,11 +31,11 @@ pub struct StateKey(String);
 
 impl StateKey {
     /// The longest segment.
-    pub const MAX_SEGMENT_LENGTH: usize = 64;
+    pub const MAX_SEGMENT_LENGTH: usize = dilf4s_core::generated::limits::as_usize::STATE_KEY_MAX_SEGMENT_LENGTH;
     /// The most segments.
-    pub const MAX_SEGMENTS: usize = 16;
+    pub const MAX_SEGMENTS: usize = dilf4s_core::generated::limits::as_usize::STATE_KEY_MAX_SEGMENTS;
     /// The longest key.
-    pub const MAX_LENGTH: usize = 256;
+    pub const MAX_LENGTH: usize = dilf4s_core::generated::limits::as_usize::STATE_KEY_MAX_LENGTH;
 
     /// Parses a key.
     pub fn parse(s: &str) -> Result<Self, StateKeyError> {
@@ -98,7 +98,7 @@ pub struct StateNamespace(String);
 
 impl StateNamespace {
     /// The longest namespace.
-    pub const MAX_LENGTH: usize = StateKey::MAX_LENGTH - 2;
+    pub const MAX_LENGTH: usize = dilf4s_core::generated::limits::as_usize::STATE_NAMESPACE_MAX_LENGTH;
 
     /// Parses a namespace.
     pub fn parse(s: &str) -> Result<Self, StateKeyError> {

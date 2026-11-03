@@ -282,7 +282,7 @@ impl fmt::Display for KesError {
 impl core::error::Error for KesError {}
 
 /// Malformed sigma input (`docs/specs/sigma.md` section 6). A well-formed proof that fails is `Ok(false)`, never one
-/// of these. The Scala reference reports malformed input as a message; the kinds are this SDK's.
+/// of these. The kinds are the Scala reference's `SigmaError` cases.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SigmaError {
     /// A proposition breaking section 3: an unknown type, a missing or extra field, an identity statement point, a

@@ -12,6 +12,8 @@ import xyz.kd5ujc.modelsgen.Ast.Occ
  *   - a labelled integer enumeration `&(a: 1, b: 2)` is a [[ModelRule.Enumeration]]
  *   - a choice of map rules and text literals is a [[ModelRule.Union]], decoded by key set; it must be unambiguous (some
  *     required key of one alternative is outside the other, for every pair), which is checked here
+ *   - a rule whose whole body is an unsigned integer literal (`max-depth = 256`) is a [[ModelRule.Constant]]: a named
+ *     value, not a type. Range bounds and sizes may name it (`0..max-depth`); a field or element may not
  *   - anything else in the profile (a primitive, a range, a sized string, a homogeneous array, a text-keyed map, a
  *     reference) is a [[ModelRule.Alias]]
  *
@@ -56,6 +58,9 @@ enum ModelRule {
   case Enumeration(cases: Vector[(String, BigInt)])
   case Union(alternatives: Vector[UnionAlternative], texts: Vector[String])
   case Alias(tpe: FieldType)
+
+  /** A named unsigned integer (a spec limit), emitted as a constant in every language. */
+  case Constant(value: BigInt)
 }
 
 final class Profile(val schema: Schema) {
@@ -64,17 +69,22 @@ final class Profile(val schema: Schema) {
 
   /** A type in field, element or alias position. */
   def fieldType(rule: QName, t: RT): Either[GenError, FieldType] = t match {
-    case RT.Prim(PrimKind.Uint)                                 => FieldType.Uint.asRight
-    case RT.Prim(PrimKind.Int)                                  => FieldType.Int.asRight
-    case RT.Prim(PrimKind.Nint)                                 => FieldType.Nint.asRight
-    case RT.Prim(PrimKind.Bytes)                                => FieldType.Bytes.asRight
-    case RT.Prim(PrimKind.Text)                                 => FieldType.Text.asRight
-    case RT.Prim(PrimKind.Bool)                                 => FieldType.Bool.asRight
-    case RT.Prim(PrimKind.Any)                                  => FieldType.AnyValue.asRight
-    case RT.IntRange(lo, hi)                                    => FieldType.IntRange(lo, hi).asRight
-    case RT.SizedBytes(lo, hi)                                  => FieldType.SizedBytes(lo, hi).asRight
-    case RT.SizedText(lo, hi)                                   => FieldType.SizedText(lo, hi).asRight
-    case RT.Ref(q)                                              => FieldType.Ref(q).asRight
+    case RT.Prim(PrimKind.Uint)  => FieldType.Uint.asRight
+    case RT.Prim(PrimKind.Int)   => FieldType.Int.asRight
+    case RT.Prim(PrimKind.Nint)  => FieldType.Nint.asRight
+    case RT.Prim(PrimKind.Bytes) => FieldType.Bytes.asRight
+    case RT.Prim(PrimKind.Text)  => FieldType.Text.asRight
+    case RT.Prim(PrimKind.Bool)  => FieldType.Bool.asRight
+    case RT.Prim(PrimKind.Any)   => FieldType.AnyValue.asRight
+    case RT.IntRange(lo, hi)     => FieldType.IntRange(lo, hi).asRight
+    case RT.SizedBytes(lo, hi)   => FieldType.SizedBytes(lo, hi).asRight
+    case RT.SizedText(lo, hi)    => FieldType.SizedText(lo, hi).asRight
+    case RT.Ref(q) =>
+      schema.rule(q).flatMap {
+        case RuleDef(_, RuleBody.Type(RT.LitInt(_))) =>
+          outside(rule, s"constant ${q.name} in field position (a constant is a value: name it in a range or size bound)").asLeft
+        case _ => FieldType.Ref(q).asRight
+      }
     case RT.LitInt(v) if v >= Int.MinValue && v <= Int.MaxValue => FieldType.LitInt(v.toInt).asRight
     case RT.LitText(v)                                          => FieldType.LitText(v).asRight
     case RT.MatchingText(pattern) =>
@@ -158,6 +168,8 @@ final class Profile(val schema: Schema) {
       case RuleDef(_, RuleBody.Type(t @ Profile.TextMapOf(_))) => fieldType(q, t).map(ModelRule.Alias(_))
       case RuleDef(_, RuleBody.Type(RT.MapT(es)))              => fields(q, es).map(ModelRule.Record(_))
       case RuleDef(_, RuleBody.Type(RT.IntEnum(cs)))           => enumeration(q, cs)
+      case RuleDef(_, RuleBody.Type(RT.LitInt(v))) =>
+        Either.cond(v >= 0 && v <= Profile.UintMax, ModelRule.Constant(v), outside(q, s"constant $v (a constant is a uint, 0..2^64-1)"))
       case RuleDef(_, RuleBody.Type(RT.Choice(alts))) =>
         alts.traverse {
           case RT.Ref(a)     => Left(a).some
@@ -206,6 +218,9 @@ object Profile {
   /** CDDL `int` (RFC 8610: major types 0 and 1). */
   val IntMin: BigInt = -(BigInt(1) << 64)
   val IntMax: BigInt = (BigInt(1) << 64) - 1
+
+  /** CDDL `uint` (major type 0): the range of a constant. */
+  val UintMax: BigInt = IntMax
 
   val Patterns: Vector[String] =
     Vector("([0-9a-f]{2})*", "0x([0-9a-f]{2})*", "0|[1-9][0-9]*", "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*")

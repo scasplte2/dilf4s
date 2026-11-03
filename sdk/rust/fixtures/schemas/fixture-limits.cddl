@@ -1,0 +1,7 @@
+; Emitter fixture (not a dilf4s format): constants, as u64 and through the module's macro, and a size bound naming one.
+
+max-small = 1024
+
+max-wide = 18446744073709551615
+
+bounded = bytes .size (0..max-small)

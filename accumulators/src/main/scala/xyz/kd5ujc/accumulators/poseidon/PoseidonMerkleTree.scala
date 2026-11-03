@@ -126,7 +126,7 @@ final class PoseidonMerkleTree private (
 object PoseidonMerkleTree {
 
   val DefaultDepth: Int = 32
-  val MaxDepth: Int = 256
+  val MaxDepth: Int = xyz.kd5ujc.models.limits.PoseidonMaxDepth
 
   def zeroHashes(depth: Int): Vector[Fr] =
     (1 to depth).scanLeft(Fr.Zero)((prev, _) => Poseidon.compress(prev, prev)).toVector

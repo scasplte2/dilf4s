@@ -10,10 +10,14 @@ use std::path::PathBuf;
 
 use dilf4s_core::codec::Model;
 use dilf4s_core::generated::jlvm_vectors::{JlvmOutcome, JlvmVectors};
+use dilf4s_core::generated::kes_vectors::{
+    KesCheck, KesConstruction, KesOutcome, KesParameters, KesRefusal, KesVectors,
+};
 use dilf4s_core::generated::poseidon_vectors::PoseidonVectors;
+use dilf4s_core::generated::sigma_refusal_vectors::{SigmaOutcome, SigmaRefusalVectors};
 use dilf4s_core::generated::sigma_vectors::{SigmaKind, SigmaProposition, SigmaType, SigmaVectors};
 use dilf4s_core::generated::signing_vectors::{SigningVectors, VerificationResult};
-use dilf4s_core::generated::vrf_vectors::VrfVectors;
+use dilf4s_core::generated::vrf_vectors::{VrfResult, VrfVectors};
 use dilf4s_core::generated::zk_vectors::{ZkBoolResult, ZkFailure, ZkGroth16Result, ZkPointResult, ZkVectors};
 use dilf4s_core::hash::{Hasher as _, Sha256};
 use dilf4s_core::{Value, cbor, hex, json};
@@ -23,7 +27,7 @@ use dilf4s_signing::ecrecover::address_of_key;
 use num_bigint::{BigInt, BigUint};
 
 use crate::leaves::Leaf;
-use crate::{Case, Outcome, Output, Recipe, RecipeStep};
+use crate::{Case, KesScheme, Outcome, Output, Recipe, RecipeStep};
 
 /// A failure reading the vectors.
 pub type Error = String;
@@ -33,16 +37,12 @@ pub type Error = String;
 pub enum Expect {
     /// Exactly this output.
     Output(Output),
-    /// An error whose `Debug` rendering starts with this variant name.
-    Failure(&'static str),
-    /// An error that is exactly this variant (its `Debug` rendering is the name, alone or before its fields).
-    FailureNamed(String),
-    /// Any error.
+    /// An error of exactly this kind: its `Debug` rendering is the kind's variant name, alone or before its fields.
+    Kind(String),
+    /// Any error: only the fixed `ecrecover` refusal of an invalid `v`, which no vector file records.
     AnyFailure,
     /// Some bytes: a verified output the vector does not give.
     Verified,
-    /// `false` or an error.
-    Rejected,
     /// A JLVM outcome: the value's canonical CBOR or the error kind, the gas and the number of warnings.
     Jlvm {
         /// The canonical CBOR, or the error kind.
@@ -65,13 +65,11 @@ impl Expect {
     pub fn holds(&self, outcome: &Outcome) -> bool {
         match (self, outcome) {
             (Self::Output(want), Ok(got)) => want == got,
-            (Self::Failure(variant), Err(e)) => e.starts_with(variant),
-            (Self::FailureNamed(name), Err(e)) => {
+            (Self::Kind(name), Err(e)) => {
                 e.strip_prefix(name.as_str()).is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
             }
             (Self::AnyFailure, Err(_))
             | (Self::Verified, Ok(Output::Bytes(_)))
-            | (Self::Rejected, Ok(Output::Bool(false)) | Err(_))
             | (Self::SignerParity { .. }, Ok(Output::Address(_))) => true,
             (Self::Jlvm { result, gas, warnings }, Ok(Output::Jlvm { result: got, gas: g, warnings: w })) => {
                 let got = got.clone().map_err(|(kind, _)| kind);
@@ -145,10 +143,11 @@ pub fn signatures(keep: impl Fn(&str) -> bool) -> Result<Vec<Named>, Error> {
     let v: SigningVectors = load("signing_v1.json")?;
     let mut out = Vec::new();
     for (i, c) in v.verification.iter().enumerate().filter(|(_, c)| keep(&c.scheme)) {
-        let expect = match c.result {
+        let expect = match &c.result {
             VerificationResult::Valid => Expect::Output(Output::Bool(true)),
             VerificationResult::Invalid => Expect::Output(Output::Bool(false)),
-            VerificationResult::MalformedKey | VerificationResult::MalformedSignature => Expect::AnyFailure,
+            // the guest verifies the pair at once, so the refused part shows only through the kind
+            VerificationResult::VerificationRefusal(r) => Expect::Kind(format!("{:?}", r.kind)),
         };
         let case = Case::Verify {
             scheme: c.scheme.clone(),
@@ -262,18 +261,33 @@ fn proposition_value(p: &SigmaProposition) -> Result<Value, Error> {
     Value::map(entries).map_err(|e| format!("{e}"))
 }
 
-/// Every case of a sigma vector file (`sigma_v1.json` or `sigma_dilf4s_v1.json`), with Ergo's verdict.
+/// What a sigma outcome of `sigma_refusals_v1.json` says a case gives.
+fn sigma_expect(o: &SigmaOutcome) -> Expect {
+    match o {
+        SigmaOutcome::Accepted => Expect::Output(Output::Bool(true)),
+        SigmaOutcome::Rejected => Expect::Output(Output::Bool(false)),
+        kind => Expect::Kind(format!("{kind:?}")),
+    }
+}
+
+/// Every case of a sigma vector file (`sigma_v1.json` or `sigma_dilf4s_v1.json`), with the reference's outcome on it,
+/// by kind, from `sigma_refusals_v1.json` (the file itself carries Ergo's verdict).
 pub fn sigma(file: &str) -> Result<Vec<Named>, Error> {
     let v: SigmaVectors = load(file)?;
+    let r: SigmaRefusalVectors = load("sigma_refusals_v1.json")?;
+    let outcomes = match file {
+        "sigma_v1.json" => &r.ergo_cases,
+        "sigma_dilf4s_v1.json" => &r.dilf4s_cases,
+        other => return Err(format!("no outcomes for {other}")),
+    };
+    if outcomes.len() != v.cases.len() {
+        return Err(format!("{file}: {} cases, {} outcomes", v.cases.len(), outcomes.len()));
+    }
     v.cases
         .iter()
-        .map(|c| {
-            let expect = match (&c.kind, c.ergo) {
-                (SigmaKind::Valid, true) => Expect::Output(Output::Bool(true)),
-                (SigmaKind::TrailingByte | SigmaKind::Truncated, _) => Expect::Failure("ProofLength"),
-                // a flipped response may leave the scalar range: then an error, as `sigma_vectors.rs` allows
-                _ => Expect::Rejected,
-            };
+        .zip(outcomes)
+        .map(|(c, outcome)| {
+            let expect = sigma_expect(outcome);
             let case = Case::Sigma {
                 proposition: cbor::encode(&proposition_value(&c.proposition)?),
                 proof: bytes(&c.proof)?,
@@ -284,11 +298,82 @@ pub fn sigma(file: &str) -> Result<Vec<Named>, Error> {
         .collect()
 }
 
+/// The guest's form of a KES construction and its parameters.
+fn kes_scheme(construction: &KesConstruction, parameters: &KesParameters) -> Result<KesScheme, Error> {
+    match (construction, parameters) {
+        (KesConstruction::Dilf4sSum, KesParameters::KesSumParameters(p)) => {
+            Ok(KesScheme::Sum { hash: p.hash.clone(), height: p.height })
+        }
+        (KesConstruction::Dilf4sProduct, KesParameters::KesProductParameters(p)) => {
+            Ok(KesScheme::Product { hash: p.hash.clone(), super_height: p.super_height, sub_height: p.sub_height })
+        }
+        (KesConstruction::CardanoSum, KesParameters::KesCardanoParameters(p)) => {
+            Ok(KesScheme::Cardano { depth: p.depth })
+        }
+        other => Err(format!("unexpected KES construction {other:?}")),
+    }
+}
+
+/// Every period's signature of `kes_v1.json`, and every `verify` row and refused `parameters` row of its refusals, by
+/// kind (the guest has no key generation, loading or evolution: those need the `sign` feature).
+pub fn kes() -> Result<Vec<Named>, Error> {
+    let v: KesVectors = load("kes_v1.json")?;
+    let mut out = Vec::new();
+    for (i, vector) in v.vectors.iter().enumerate() {
+        let scheme = kes_scheme(&vector.construction, &vector.parameters)?;
+        for p in &vector.periods {
+            let case = Case::KesVerify {
+                scheme: scheme.clone(),
+                key: bytes(&vector.verifying_key)?,
+                period: p.period,
+                message: bytes(&vector.message)?,
+                signature: bytes(&p.signature)?,
+            };
+            out.push(named(format!("kes {i} period {}", p.period), case, Expect::Output(Output::Bool(true))));
+        }
+    }
+    let in_guest = |c: &&KesRefusal| match c.check {
+        KesCheck::Verify => true,
+        KesCheck::Parameters => c.outcome != KesOutcome::Accepted,
+        KesCheck::Generate | KesCheck::Load | KesCheck::Evolve => false,
+    };
+    for c in v.refusals.iter().filter(in_guest) {
+        let expect = match &c.outcome {
+            KesOutcome::Accepted => Expect::Output(Output::Bool(true)),
+            KesOutcome::Rejected => Expect::Output(Output::Bool(false)),
+            kind => Expect::Kind(format!("{kind:?}")),
+        };
+        let field = |f: &Option<String>| bytes(f.as_deref().unwrap_or_default());
+        let case = Case::KesVerify {
+            scheme: kes_scheme(&c.construction, &c.parameters)?,
+            key: field(&c.verifying_key)?,
+            period: c.period.unwrap_or_default(),
+            message: field(&c.message)?,
+            signature: field(&c.signature)?,
+        };
+        out.push(named(format!("kes refusal {:?} {:?} {}", c.construction, c.check, c.name), case, expect));
+    }
+    Ok(out)
+}
+
+/// Every call of `sigma_refusals_v1.json`: the proposition's canonical CBOR, its proof and message, by kind.
+pub fn sigma_refusals() -> Result<Vec<Named>, Error> {
+    let v: SigmaRefusalVectors = load("sigma_refusals_v1.json")?;
+    v.cases
+        .iter()
+        .map(|c| {
+            let case = Case::Sigma {
+                proposition: bytes(&c.proposition)?,
+                proof: bytes(&c.proof)?,
+                message: bytes(&c.message)?,
+            };
+            Ok(named(format!("sigma refusal {}", c.name), case, sigma_expect(&c.outcome)))
+        })
+        .collect()
+}
+
 fn zk_failure(f: &ZkFailure) -> Expect {
-    Expect::Failure(match f.error {
-        dilf4s_core::generated::zk_vectors::ZkError::Malformed => "Malformed",
-        dilf4s_core::generated::zk_vectors::ZkError::InvalidPoint => "InvalidPoint",
-    })
+    Expect::Kind(format!("{:?}", f.error))
 }
 
 fn zk_point(r: &ZkPointResult) -> Result<Expect, Error> {
@@ -319,12 +404,9 @@ pub fn bn254() -> Result<Vec<Named>, Error> {
         out.push(named(format!("pairing {}", c.name), Case::Bn254Pairing { pairs }, expect));
     }
     for c in &v.sp1_groth16 {
-        let expect = match c.result {
+        let expect = match &c.result {
             ZkGroth16Result::Verified => Expect::Output(Output::Unit),
-            ZkGroth16Result::Malformed => Expect::Failure("Malformed"),
-            ZkGroth16Result::InvalidProof => Expect::Failure("InvalidProof"),
-            ZkGroth16Result::PairingCheckFailed => Expect::Failure("PairingCheckFailed"),
-            ZkGroth16Result::Rejected => Expect::Failure("Rejected"),
+            kind => Expect::Kind(format!("{kind:?}")),
         };
         let case = Case::Sp1Groth16 {
             program_vkey: bytes(&c.program_vkey)?,
@@ -396,7 +478,10 @@ pub fn vrf(suite: &str, rejections: bool) -> Result<Vec<Named>, Error> {
         }
     }
     for r in v.rejections.iter().filter(|r| rejections && r.suite == suite) {
-        let expect = if r.result == "valid" { Expect::Verified } else { Expect::FailureNamed(r.result.clone()) };
+        let expect = match &r.result {
+            VrfResult::Valid => Expect::Verified,
+            kind => Expect::Kind(format!("{kind:?}")),
+        };
         let case = Case::Vrf {
             suite: suite.to_owned(),
             key: bytes(&r.verifying_key)?,

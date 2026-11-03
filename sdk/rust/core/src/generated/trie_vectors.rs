@@ -272,6 +272,11 @@ impl c::Model for TrieLookupResult {
     }
 }
 
+impl TrieLookupResult {
+    /// Every text alternative (not the records), in schema order.
+    pub const TEXTS: [Self; 2] = [Self::Absent, Self::NotCovered];
+}
+
 /// `trie-malformed` (`shared/schemas/trie-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrieMalformed {
@@ -334,6 +339,11 @@ impl c::Model for TrieMalformedError {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl TrieMalformedError {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::Encoding, Self::InvalidProof];
 }
 
 /// `trie-mode` (`shared/schemas/trie-vectors.cddl`).
@@ -584,6 +594,11 @@ impl c::Model for TrieRangeResult {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl TrieRangeResult {
+    /// Every text alternative (not the records), in schema order.
+    pub const TEXTS: [Self; 1] = [Self::NotCovered];
 }
 
 /// `trie-variable-mode` (`shared/schemas/trie-vectors.cddl`).

@@ -11,7 +11,7 @@ import xyz.kd5ujc.core.canonical.CanonicalValue
 object ProofInput {
 
   /** The heaviest input a verifier decodes: 2^24, four times the largest snapshot chunk, so range proofs fit. */
-  val MaxProofWeight: Long = 1L << 24
+  val MaxProofWeight: Long = xyz.kd5ujc.models.limits.MaxProofWeight
 
   /** `v` if its weight is at most [[MaxProofWeight]]; otherwise `refuse` of a reason (not normative). */
   def bounded[E](v: CanonicalValue)(refuse: String => E): Either[E, CanonicalValue] =
@@ -23,7 +23,8 @@ object ProofInput {
    * from their cached weights, before any is hashed and before the proof is decoded.
    */
   def claimed[E](values: Iterable[CanonicalValue])(refuse: Long => E): Either[E, Unit] = {
-    val total = values.foldLeft(0L)((t, v) => if (t > Long.MaxValue - v.weight) Long.MaxValue else t + v.weight)
+    val max = xyz.kd5ujc.models.limits.CanonicalMaxWeight
+    val total = values.foldLeft(0L)((t, v) => if (t > max - v.weight) max else t + v.weight)
     Either.cond(total <= MaxProofWeight, (), refuse(MaxProofWeight))
   }
 }

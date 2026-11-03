@@ -14,10 +14,10 @@ use crate::op::Op;
 use crate::ratio::Ratio;
 
 /// The largest number, in bits of the numerator and of the denominator.
-pub const MAX_NUMBER_BITS: u64 = 4096;
+pub const MAX_NUMBER_BITS: u64 = dilf4s_core::generated::limits::JLVM_MAX_NUMBER_BITS;
 
 /// The largest weight an operation may produce.
-pub const MAX_WEIGHT: u64 = 1 << 24;
+pub const MAX_WEIGHT: u64 = dilf4s_core::generated::limits::JLVM_MAX_VALUE_WEIGHT;
 
 /// Keys and path segments count once more per block of this many UTF-16 units.
 pub const KEY_BLOCK: u64 = 32;
