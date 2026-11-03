@@ -121,7 +121,10 @@ object Values {
 
   private def index(seg: String): Option[Int] = Option.when(Decimal.matches(seg))(seg.toInt)
 
-  def bytesValue(op: Op, b: ByteVector): Either[JlvmError, CanonicalValue] = bounded(op, CBytes(b))
+  /** A byte string an operation made: flat ([[FlatBytes]]), so what reads it later never depends on how it was built. */
+  def bytes(b: FlatBytes): CanonicalValue = CBytes(b)
+
+  def bytesValue(op: Op, b: FlatBytes): Either[JlvmError, CanonicalValue] = bounded(op, bytes(b))
 
   /** The kind name reported by `typeof`. There is one number kind. */
   def kind(v: CanonicalValue): String = v match {
@@ -209,7 +212,8 @@ object Values {
    * A sort key for deduplicating: kinds first; scalars then compare structurally (numbers by numerator and
    * denominator, text by UTF-16 unit, bytes bytewise), and arrays and maps by their canonical encoding, computed once.
    * The order is total and consistent with equality, and nothing is hashed, so values a program chooses cannot be made
-   * to collide.
+   * to collide. A key's `encoding` is one whole array (bytes' own, copied once if they are a slice or a rope), so a
+   * comparison reads it in place and never copies.
    */
   final case class SortKey(rank: Int, value: CanonicalValue, encoding: ByteVector)
 
@@ -224,7 +228,6 @@ object Values {
         case (CInt(x), CInt(y))           => x.compare(y)
         case (CRational(x), CRational(y)) => Ordering[(BigInt, BigInt)].compare((x.numerator, x.denominator), (y.numerator, y.denominator))
         case (CText(x), CText(y))         => x.compareTo(y)
-        case (CBytes(x), CBytes(y))       => unsigned(x, y)
         case _                            => unsigned(a.encoding, b.encoding)
       }
 
@@ -234,7 +237,7 @@ object Values {
     case CInt(_)      => SortKey(2, v, ByteVector.empty)
     case CRational(_) => SortKey(3, v, ByteVector.empty)
     case CText(_)     => SortKey(4, v, ByteVector.empty)
-    case CBytes(_)    => SortKey(5, v, ByteVector.empty)
+    case CBytes(b)    => SortKey(5, v, ByteVector.view(b.toArrayUnsafe))
     case CArray(_)    => SortKey(6, v, Cbor.encode(v).compact)
     case CMap(_)      => SortKey(7, v, Cbor.encode(v).compact)
   }
@@ -294,6 +297,7 @@ object Values {
   def indexOf(haystack: String, needle: String, from: Int): Int =
     indexOf(i => haystack.charAt(i).toInt, haystack.length, i => needle.charAt(i).toInt, needle.length, from)
 
-  def indexOf(haystack: ByteVector, needle: ByteVector): Long =
+  /** Flat operands: each byte read is O(1), so the search stays linear whatever built them. */
+  def indexOf(haystack: FlatBytes, needle: FlatBytes): Long =
     indexOf(i => haystack(i.toLong).toInt, haystack.size.toInt, i => needle(i.toLong).toInt, needle.size.toInt, 0).toLong
 }

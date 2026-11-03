@@ -166,9 +166,10 @@ object PureOps {
       case other    => tpe(op, s"expected a string key, got ${kind(other)}")
     }
 
-  private def rawBytes(op: Op, v: CanonicalValue): Either[JlvmError, ByteVector] =
+  /** Bytes, flat: every caller charges them by weight, which pays for flattening one that is not ([[FlatBytes]]). */
+  private def rawBytes(op: Op, v: CanonicalValue): Either[JlvmError, FlatBytes] =
     v match {
-      case CBytes(b) => b.asRight
+      case CBytes(b) => FlatBytes(b).asRight
       case other     => tpe(op, s"expected bytes, got ${kind(other)}")
     }
 
@@ -309,11 +310,16 @@ object PureOps {
     }
   }
 
-  /** Concatenates text; when every argument is an array, or every one is bytes, concatenates those instead. */
+  /**
+   * Concatenates text; when every argument is an array, or every one is bytes, concatenates those instead. Bytes are
+   * copied once into a flat result ([[FlatBytes]]), never chained into a rope: the size charge, 1 per unit of each
+   * argument's weight, already pays for every byte copied, and the result's weight is checked before the copy.
+   */
   private def cat(op: Op, args: Vector[CanonicalValue]): Result = {
     val bytes = args.collect { case CBytes(b) => b }
     if (args.nonEmpty && args.forall(isArray)) array(op, args.flatMap(spread))
-    else if (args.nonEmpty && bytes.size == args.size) Values.bytesValue(op, bytes.foldLeft(ByteVector.empty)(_ ++ _))
+    else if (args.nonEmpty && bytes.size == args.size)
+      fits(op, bytes.foldLeft(1L)((n, b) => plus(n, b.size))).flatMap(_ => Values.bytesValue(op, FlatBytes.concat(bytes)))
     else args.traverse(piece(op, _)).flatMap(ps => fits(op, projected(ps, 0L)).flatMap(_ => text(op, ps.map(_._1).mkString)))
   }
 
@@ -409,7 +415,7 @@ object PureOps {
     (needle, haystack) match {
       case (CNull, _)             => bool(false).asRight
       case (CText(n), CText(h))   => bool(indexOf(h, n, 0) >= 0).asRight
-      case (CBytes(n), CBytes(h)) => bool(indexOf(h, n) >= 0).asRight
+      case (CBytes(n), CBytes(h)) => bool(indexOf(FlatBytes(h), FlatBytes(n)) >= 0).asRight
       case (n, CArray(vs))        => bool(vs.contains(n)).asRight
       case (n, h)                 => tpe(op, s"cannot look for ${kind(n)} in ${kind(h)}")
     }
@@ -485,12 +491,13 @@ object PureOps {
   // ---- bytes
 
   /** Bytes, or text of the form `0x` + lowercase hex (metakit's hex syntax), e.g. text built at runtime by `cat`. */
-  private def hexBytes(op: Op, v: CanonicalValue): Either[JlvmError, ByteVector] =
+  private def hexBytes(op: Op, v: CanonicalValue): Either[JlvmError, FlatBytes] =
     v match {
-      case CBytes(b) => b.asRight
+      case CBytes(b) => FlatBytes(b).asRight
       case CText(s) =>
         JsonSurface
           .hexBytes(s)
+          .map(FlatBytes(_))
           .toRight(JlvmError.Domain(op.wire, "expected 0x followed by an even number of lowercase hex digits"))
       case other => tpe(op, s"expected bytes or hex text, got ${kind(other)}")
     }
@@ -498,13 +505,13 @@ object PureOps {
   /** Hashes bytes, or the UTF-8 encoding of a string. */
   private def digest[H: Hasher](op: Op)(v: CanonicalValue): Result =
     v match {
-      case CBytes(b) => CBytes(Hasher[H].digest(b).bytes).asRight
-      case CText(s)  => CBytes(Hasher[H].digest(ByteVector(s.getBytes(UTF_8))).bytes).asRight
+      case CBytes(b) => bytes(FlatBytes(Hasher[H].digest(FlatBytes(b)).bytes)).asRight
+      case CText(s)  => bytes(FlatBytes(Hasher[H].digest(ByteVector(s.getBytes(UTF_8))).bytes)).asRight
       case other     => tpe(op, s"expected bytes or a string, got ${kind(other)}")
     }
 
   /** A big-endian unsigned integer, within the number bound. */
-  private def unsignedInt(op: Op)(b: ByteVector): Result =
+  private def unsignedInt(op: Op)(b: FlatBytes): Result =
     Either
       .cond(b.dropWhile(_ == 0).size * 8 <= MaxNumberBits.toLong, b, JlvmError.Limit(s"${op.wire}: a number exceeds $MaxNumberBits bits"))
       .flatMap(bs => int(op, BigInt(1, bs.toArray)))
@@ -520,11 +527,15 @@ object PureOps {
         Either.cond(n >= 0 && n <= MaxIntBytes, n.toLong, JlvmError.Domain(op.wire, s"the width must be in 0..$MaxIntBytes"))
       )
     args match {
-      case Vector(i) => unsigned(i).map(CBytes(_))
+      case Vector(i) => unsigned(i).map(b => bytes(FlatBytes(b)))
       case Vector(i, n) =>
         (unsigned(i), width(n)).tupled.flatMap {
           case (raw, w) =>
-            Either.cond(raw.size <= w, CBytes(raw.padLeft(w)), JlvmError.Domain(op.wire, s"the integer does not fit in $w bytes"))
+            Either.cond(
+              raw.size <= w,
+              bytes(FlatBytes.concat(Vector(ByteVector.low(w - raw.size), raw))),
+              JlvmError.Domain(op.wire, s"the integer does not fit in $w bytes")
+            )
         }
       case _ => arity(op, "takes [integer] or [integer, width]")
     }

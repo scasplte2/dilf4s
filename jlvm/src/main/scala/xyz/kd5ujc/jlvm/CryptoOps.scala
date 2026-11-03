@@ -40,13 +40,23 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
 
   private def crypto[A](op: Op)(e: CryptoError): JlvmError = JlvmError.Crypto(op.wire, e.toString)
 
-  private def bytes(op: Op, v: CanonicalValue): Either[JlvmError, ByteVector] =
+  private def raw(op: Op, v: CanonicalValue): Either[JlvmError, ByteVector] =
     v match {
       case CBytes(b) => b.asRight
       case other     => JlvmError.Type(op.wire, s"expected bytes, got ${Values.kind(other)}").asLeft
     }
 
-  private def triple(op: Op, args: Vector[CanonicalValue]): Either[JlvmError, (ByteVector, ByteVector, ByteVector)] =
+  /** Bytes charged by weight, flattened ([[FlatBytes]]): the charge pays for the copy when they are not already flat. */
+  private def bytes(op: Op, v: CanonicalValue): Either[JlvmError, FlatBytes] = raw(op, v).map(FlatBytes(_))
+
+  /**
+   * Bytes charged per argument, never by size (`ecrecover`'s, and `bls_aggregate_verify`'s keys and signature), passed
+   * as they are: flattening them would copy bytes nobody paid for. Their backends check the fixed width first, from the
+   * size alone, and only then read, and bytes of a fixed width have fewer segments than bytes: each read is bounded.
+   */
+  private def fixed(op: Op, v: CanonicalValue): Either[JlvmError, ByteVector] = raw(op, v)
+
+  private def triple(op: Op, args: Vector[CanonicalValue]): Either[JlvmError, (FlatBytes, FlatBytes, FlatBytes)] =
     args match {
       case Vector(k, m, s) => (bytes(op, k), bytes(op, m), bytes(op, s)).tupled
       case _               => JlvmError.Arity(op.wire, s"takes [key, message, signature], got ${args.size} arguments").asLeft
@@ -79,12 +89,12 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
   private def ecrecover(op: Op, args: Vector[CanonicalValue]): Result =
     args match {
       case Vector(d, s) =>
-        (bytes(op, d), bytes(op, s)).tupled.flatMap {
+        (fixed(op, d), fixed(op, s)).tupled.flatMap {
           case (digest, sig) =>
             Ecrecover
               .recover(digest, sig)
               .flatMap(_.toRight("the signature recovers no key (r or s out of range, high s, or r not an x-coordinate)"))
-              .bimap(JlvmError.Crypto(op.wire, _), CBytes(_))
+              .bimap(JlvmError.Crypto(op.wire, _), address => Values.bytes(FlatBytes(address)))
         }
       case _ => JlvmError.Arity(op.wire, s"takes [digest, signature], got ${args.size} arguments").asLeft
     }
@@ -117,7 +127,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
   private def blsAggregate(op: Op, args: Vector[CanonicalValue]): Result =
     args match {
       case Vector(CArray(ks), m, s) =>
-        (ks.traverse(bytes(op, _)), bytes(op, m), bytes(op, s)).tupled.flatMap {
+        (ks.traverse(fixed(op, _)), bytes(op, m), fixed(op, s)).tupled.flatMap {
           case (keys, msg, sig) =>
             (keys.traverse(bls.codec.verifyingKey), bls.codec.signature(sig)).tupled
               .leftMap(crypto(op))

@@ -374,6 +374,13 @@ array argument; only the syntax spreads (§1).
 | `int_to_bytes [n]`, `int_to_bytes [n, width]` | Unsigned, big-endian, minimal (`0` is empty), or left-padded to `width` (`0..1024`). |
 | `sha256` `sha3_256` `blake2b256` `keccak256` | The 32-byte digest of bytes, or of the UTF-8 encoding of text. `keccak256` is Ethereum's Keccak-256, with the original padding, not SHA3-256's. |
 
+**Byte strings are flat.** Every byte string an operation produces is one contiguous array, so reading a byte costs the
+same however the string was built. `cat` copies its arguments into a fresh array. Its size charge, 1 per unit of each
+argument's weight, already pays for every byte copied, and the result's weight is checked before the copy. This matters
+on the JVM, whose byte strings (scodec `ByteVector`) are otherwise ropes: a loop that prepends would build a rope about
+`sqrt(2 × gas)` levels deep, and each later byte read would walk, and recurse through, every level. Hosts pass flat
+byte strings in data and bindings, as decoding a flat buffer gives.
+
 ## 6. Cryptographic operations
 
 The backends are loaded once, at the edge (`Jlvm.load`). Every node therefore evaluates with the same complete set:

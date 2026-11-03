@@ -48,9 +48,10 @@ object ProofOps {
   private def claims(op: Op)(values: Iterable[CanonicalValue]): Either[JlvmError, Unit] =
     ProofInput.claimed(values)(limit => crypto(op)(s"the claims weigh over $limit"))
 
-  private def bytes(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, ByteVector] =
+  /** Every proof operation charges its arguments by weight, which pays for flattening bytes that are not ([[FlatBytes]]). */
+  private def bytes(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, FlatBytes] =
     v match {
-      case CBytes(b) => b.asRight
+      case CBytes(b) => FlatBytes(b).asRight
       case other     => JlvmError.Type(op.wire, s"$what is bytes, got ${Values.kind(other)}").asLeft
     }
 

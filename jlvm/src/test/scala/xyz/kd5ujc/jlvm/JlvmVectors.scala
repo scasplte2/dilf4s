@@ -6,7 +6,7 @@ import java.nio.file.{Files, Path, Paths}
 import cats.effect.{ExitCode, IO, IOApp, Resource}
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.{BuiltValues, Cbor}
+import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue, Cbor}
 
 import io.circe.syntax._
 import io.circe.{Decoder, Json}
@@ -187,6 +187,27 @@ object JlvmVectorsSuite extends IOSuite {
               named("dilf4s gas boundary: nested + one short, 360")
             )
           )
+      }
+  }
+
+  test("every byte string in every vector outcome is one flat chunk (docs/specs/jlvm.md §5.5)") {
+    case (jlvm, in) =>
+      IO {
+
+        /** How many byte strings `todo` holds, and how many of them are not one chunk. */
+        @scala.annotation.tailrec
+        def scan(todo: List[CanonicalValue], seen: Int, rough: Int): (Int, Int) = todo match {
+          case Nil                               => (seen, rough)
+          case CanonicalValue.CBytes(b) :: rest  => scan(rest, seen + 1, if (FlatBytes.isFlat(b)) rough else rough + 1)
+          case CanonicalValue.CArray(vs) :: rest => scan(vs.toList ++ rest, seen, rough)
+          case (m: CanonicalValue.CMap) :: rest  => scan(m.entries.values.toList ++ rest, seen, rough)
+          case _ :: rest                         => scan(rest, seen, rough)
+        }
+        val scanned = in.cases.map(i => i.name -> JlvmVectors.run(jlvm, i).result.fold(_ => (0, 0), v => scan(List(v), 0, 0)))
+        val rough = scanned.collect { case (name, (_, r)) if r > 0 => name }
+        val seen = scanned.map(_._2._1).sum
+        expect(seen >= 50, s"the outcomes hold $seen byte strings")
+          .and(expect(rough.isEmpty, s"${rough.size} outcomes hold a rope: ${rough.take(5).mkString("; ")}"))
       }
   }
 
