@@ -121,7 +121,10 @@ object Values {
 
   private def index(seg: String): Option[Int] = Option.when(Decimal.matches(seg))(seg.toInt)
 
-  def bytesValue(op: Op, b: ByteVector): Either[JlvmError, CanonicalValue] = bounded(op, CBytes(b))
+  /** A byte string an operation made: flat ([[FlatBytes]]), so what reads it later never depends on how it was built. */
+  def bytes(b: FlatBytes): CanonicalValue = CBytes(b)
+
+  def bytesValue(op: Op, b: FlatBytes): Either[JlvmError, CanonicalValue] = bounded(op, bytes(b))
 
   /** The kind name reported by `typeof`. There is one number kind. */
   def kind(v: CanonicalValue): String = v match {
@@ -294,6 +297,7 @@ object Values {
   def indexOf(haystack: String, needle: String, from: Int): Int =
     indexOf(i => haystack.charAt(i).toInt, haystack.length, i => needle.charAt(i).toInt, needle.length, from)
 
-  def indexOf(haystack: ByteVector, needle: ByteVector): Long =
+  /** Flat operands: each byte read is O(1), so the search stays linear whatever built them. */
+  def indexOf(haystack: FlatBytes, needle: FlatBytes): Long =
     indexOf(i => haystack(i.toLong).toInt, haystack.size.toInt, i => needle(i.toLong).toInt, needle.size.toInt, 0).toLong
 }
