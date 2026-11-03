@@ -137,12 +137,9 @@ fn cycles(report: &sp1_sdk::ExecutionReport) -> u64 {
 }
 
 /// One VRF suite: every committed proof and rejection row, then the guest's cycles and gas per verification of a
-/// committed proof (its run less an empty run's), and its `ED_ADD` and `UINT256_MUL` calls. The suites with an
-/// Elligator map must call `UINT256_MUL` (`sys_bigint`, issue #69).
-async fn vrf(suite: &str, elligator: bool) {
-    let syscalls = [SyscallCode::ED_ADD, SyscallCode::ED_DECOMPRESS, SyscallCode::UINT256_MUL];
-    let required = if elligator { &syscalls[..] } else { &syscalls[..2] };
-    check(suite, vectors::vrf(suite, true).unwrap(), required).await;
+/// committed proof (its run less an empty run's), and its `ED_ADD` calls.
+async fn vrf(suite: &str) {
+    check(suite, vectors::vrf(suite, true).unwrap(), &[SyscallCode::ED_ADD, SyscallCode::ED_DECOMPRESS]).await;
     let proofs: Vec<_> = vectors::vrf(suite, false).unwrap().into_iter().map(|n| n.case).collect();
     let (_, empty) = execute(&Request::Run(Vec::new())).await.unwrap();
     let (_, report) = execute(&Request::Run(proofs.clone())).await.unwrap();
@@ -150,28 +147,23 @@ async fn vrf(suite: &str, elligator: bool) {
     let per = |run: u64, base: u64| run.saturating_sub(base).checked_div(n).unwrap();
     let cycles_per = per(cycles(&report), cycles(&empty));
     let gas_per = per(report.gas().unwrap(), empty.gas().unwrap());
-    let calls = |code: SyscallCode| report.syscall_counts[code].checked_div(n).unwrap();
-    println!(
-        "{suite}: {cycles_per} cycles, {gas_per} gas, {} ED_ADD, {} UINT256_MUL per verification ({} proofs)",
-        calls(SyscallCode::ED_ADD),
-        calls(SyscallCode::UINT256_MUL),
-        proofs.len()
-    );
+    let ed_add = report.syscall_counts[SyscallCode::ED_ADD].checked_div(n).unwrap();
+    println!("{suite}: {cycles_per} cycles, {gas_per} gas, {ed_add} ED_ADD per verification ({} proofs)", proofs.len());
 }
 
 #[tokio::test]
 async fn vrf_tai() {
-    vrf("ECVRF-EDWARDS25519-SHA512-TAI", false).await;
+    vrf("ECVRF-EDWARDS25519-SHA512-TAI").await;
 }
 
 #[tokio::test]
 async fn vrf_ell2() {
-    vrf("ECVRF-EDWARDS25519-SHA512-ELL2", true).await;
+    vrf("ECVRF-EDWARDS25519-SHA512-ELL2").await;
 }
 
 #[tokio::test]
 async fn vrf_draft03() {
-    vrf("ECVRF-ED25519-SHA512-Elligator2 (draft-03)", true).await;
+    vrf("ECVRF-ED25519-SHA512-Elligator2 (draft-03)").await;
 }
 
 /// The cryptographic operations' names, as JLVM programs call them.

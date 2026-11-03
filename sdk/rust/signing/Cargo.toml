@@ -40,32 +40,5 @@ ed25519-dalek = { version = "2", default-features = false, features = ["alloc"] 
 # Big-integer test helpers, and the VRF field's previous BigUint implementation, kept as its reference
 num-bigint.workspace = true
 
-# The workspace's lints, but `unsafe_code` is "deny", not "forbid": the one module that calls SP1's `sys_bigint`
-# (`src/vrf/field/zkvm.rs`, compiled only for SP1's guest, issue #69) allows it, which a forbid from Cargo would
-# refuse. Cargo cannot override one inherited lint, so the table is a copy, and `tests/lints.rs` fails if it drifts
-# from the workspace's. `src/lib.rs` still forbids unsafe code on every target but SP1's guest.
-[lints.rust]
-unsafe_code = "deny"
-missing_docs = "deny"
-# SP1's guest target (riscv64im-succinct-zkvm-elf), which code specific to SP1's patches and syscalls is gated on
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_vendor, values("succinct"))'] }
-
-[lints.clippy]
-all = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
-missing_errors_doc = "allow"
-arithmetic_side_effects = "deny"
-as_conversions = "deny"
-expect_used = "deny"
-indexing_slicing = "deny"
-panic = "deny"
-panic_in_result_fn = "deny"
-todo = "deny"
-unimplemented = "deny"
-unreachable = "deny"
-unwrap_used = "deny"
-alloc_instead_of_core = "deny"
-std_instead_of_alloc = "deny"
-std_instead_of_core = "deny"
+[lints]
+workspace = true

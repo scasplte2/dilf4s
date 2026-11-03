@@ -10,7 +10,6 @@
 )]
 
 use alloc::vec::Vec;
-use core::convert::Infallible;
 
 use num_bigint::BigUint;
 use subtle::{Choice, ConstantTimeEq as _};
@@ -181,12 +180,6 @@ mod reference {
 
 use reference::{Fp, le32, p};
 
-/// A native field result, which cannot be an error.
-fn ok<T>(r: Result<T, Infallible>) -> T {
-    let Ok(t) = r;
-    t
-}
-
 fn b(c: Choice) -> bool {
     c.into()
 }
@@ -323,8 +316,8 @@ fn exponentiations_agree_with_the_reference() {
     let ys: Vec<BigUint> = xs.iter().rev().cloned().collect();
     for (x, y) in xs.iter().zip(&ys) {
         let (a, c) = (fe(x), fe(y));
-        assert_eq!(big(ok(a.pow_p58())), x.modpow(&p58, &f.p), "{x:x}^((p - 5) / 8)");
-        let (beta, inv) = ok(Fe::pow_p58_and_inverse(a.or_one(), c.or_one()));
+        assert_eq!(big(a.pow_p58()), x.modpow(&p58, &f.p), "{x:x}^((p - 5) / 8)");
+        let (beta, inv) = Fe::pow_p58_and_inverse(a.or_one(), c.or_one());
         let (x1, y1) = (big(a.or_one()), big(c.or_one()));
         assert_eq!(big(beta), x1.modpow(&p58, &f.p), "the first half of pow_p58_and_inverse({x:x}, {y:x})");
         assert_eq!(big(inv), f.inv0(&y1), "the second half of pow_p58_and_inverse({x:x}, {y:x})");
@@ -337,17 +330,17 @@ fn exponentiations_agree_with_the_reference() {
 #[test]
 fn exponentiation_edge_cases() {
     let f = fp();
-    assert!(b(ok(Fe::zero().pow_p58()).is_zero()));
+    assert!(b(Fe::zero().pow_p58().is_zero()));
     assert_eq!(big(Fe::zero().or_one()), BigUint::from(1u8), "or_one(0) = 1");
     assert_eq!(big(fe(&f.p).or_one()), BigUint::from(1u8), "or_one(p) = 1");
     assert_eq!(big(Fe::from_u32(7).or_one()), BigUint::from(7u8));
-    let (beta, inv) = ok(Fe::pow_p58_and_inverse(Fe::one(), Fe::one().neg()));
+    let (beta, inv) = Fe::pow_p58_and_inverse(Fe::one(), Fe::one().neg());
     assert_eq!(big(beta), BigUint::from(1u8));
     assert_eq!(big(inv), &f.p - 1u8, "(-1)^-1 = -1");
     // 2 is a non-square for p = 5 mod 8, -1 a square
-    let (beta, _) = ok(Fe::pow_p58_and_inverse(Fe::from_u32(2), Fe::one()));
+    let (beta, _) = Fe::pow_p58_and_inverse(Fe::from_u32(2), Fe::one());
     assert!(b(beta.square().square().mul(Fe::from_u32(4)).ct_eq(&Fe::one().neg())));
-    let (beta, _) = ok(Fe::pow_p58_and_inverse(Fe::one().neg(), Fe::one()));
+    let (beta, _) = Fe::pow_p58_and_inverse(Fe::one().neg(), Fe::one());
     assert!(b(beta.square().square().ct_eq(&Fe::one())));
 }
 
@@ -448,7 +441,7 @@ fn the_exceptional_branches_reachable_are_covered() {
 fn draft03_from_uniform_agrees_with_the_reference() {
     for input in draft03_inputs() {
         assert_eq!(
-            encode(&ok(from_uniform(&input))),
+            encode(&from_uniform(&input)),
             encode(&reference::from_uniform(&input)),
             "from_uniform({input:02x?})"
         );
@@ -463,7 +456,7 @@ fn ell2_map_agrees_with_the_reference() {
     us.extend(exceptional_representatives());
     for u in us {
         assert_eq!(
-            encode(&ok(map_to_curve_ell2(fe(&u)))),
+            encode(&map_to_curve_ell2(fe(&u))),
             encode(&reference::map_to_curve_ell2(&u)),
             "map_to_curve_ell2({u:x})"
         );
@@ -475,7 +468,7 @@ fn ell2_encode_to_curve_agrees_with_the_reference() {
     for (i, m) in stream("ell2", 500).iter().enumerate() {
         let dst: &[u8] = if i % 2 == 0 { b"ECVRF_edwards25519_XMD:SHA-512_ELL2_NU_\x04" } else { b"D" };
         assert_eq!(
-            encode(&ok(encode_to_curve_ell2(&[m, &m[..i % 32]], dst))),
+            encode(&encode_to_curve_ell2(&[m, &m[..i % 32]], dst)),
             encode(&reference::encode_to_curve_ell2(&[m, &m[..i % 32]], dst)),
             "encode_to_curve_ell2 #{i}"
         );

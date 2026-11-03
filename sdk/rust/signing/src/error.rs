@@ -187,8 +187,7 @@ pub enum VrfError {
     ChallengeMismatch,
     /// A draft-03 secret key whose stored public key is not its seed's.
     KeyMismatch,
-    /// Hash-to-curve found no point (TAI: all 256 counters failed, probability about 2^-256). In the SP1 guest only,
-    /// also an Elligator map's `sys_bigint` product that is not below `p`, which a correct precompile never returns.
+    /// Hash-to-curve found no point (TAI: all 256 counters failed, probability about 2^-256).
     HashToCurveFailed {
         /// Why.
         reason: String,
