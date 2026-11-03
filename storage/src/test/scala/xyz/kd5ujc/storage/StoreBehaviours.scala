@@ -4,6 +4,9 @@ import cats.effect.IO
 import cats.mtl.{Handle, Raise}
 import cats.syntax.all._
 
+import xyz.kd5ujc.core.canonical.CanonicalValue
+import xyz.kd5ujc.core.canonical.CanonicalValue.CText
+
 import io.circe.{Decoder, Encoder}
 import org.scalacheck.Gen
 import scodec.bits.{ByteVector, hex}
@@ -31,6 +34,7 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
   implicit private val intValue: ValueCodec[Int] = ValueCodec.fromCirce[Int](using Encoder[Int], Decoder[Int])
 
   private def ns(name: String): Namespace = Namespace(name).fold(e => sys.error(e.toString), identity)
+  private def t(s:     String): CText = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
 
   // ------------------------------------------------------------------ raw
 
@@ -87,14 +91,14 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
   test(s"$backend: typed put, get, contains, getAll, remove") {
     expectOk { implicit r =>
       withRaw { raw =>
-        val kv = KeyValueStore[IO, String, Int](raw, ns("kv"))
-        kv.put("a", 1) >> kv.put("b", 2) >> kv.remove("a") >>
-        (kv.get("a"), kv.get("b"), kv.contains("b"), kv.getAll(List("a", "b", "c"))).mapN { (a, b, cb, all) =>
+        val kv = KeyValueStore[IO, CText, Int](raw, ns("kv"))
+        kv.put(t("a"), 1) >> kv.put(t("b"), 2) >> kv.remove(t("a")) >>
+        (kv.get(t("a")), kv.get(t("b")), kv.contains(t("b")), kv.getAll(List("a", "b", "c").map(t))).mapN { (a, b, cb, all) =>
           expect
             .same(None, a)
             .and(expect.same(Some(2), b))
             .and(expect(cb))
-            .and(expect.same(List("a" -> None, "b" -> Some(2), "c" -> None), all))
+            .and(expect.same(List(t("a") -> None, t("b") -> Some(2), t("c") -> None), all))
         }
       }
     }
@@ -102,7 +106,7 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
 
   test(s"$backend: getOrRaise raises a typed NotFound") {
     attempt { implicit r =>
-      withRaw(raw => KeyValueStore[IO, String, Int](raw, ns("kv")).getOrRaise("missing"))
+      withRaw(raw => KeyValueStore[IO, CText, Int](raw, ns("kv")).getOrRaise(t("missing")))
     }.map {
       case Left(StoreError.NotFound(_)) => success
       case other                        => failure(s"expected NotFound, got $other")
@@ -125,11 +129,11 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
   test(s"$backend: namespaces are isolated") {
     expectOk { implicit r =>
       withRaw { raw =>
-        val a = KeyValueStore[IO, String, Int](raw, ns("a"))
-        val ab = KeyValueStore[IO, String, Int](raw, ns("ab"))
-        a.put("k", 1) >> ab.put("k", 2) >>
-        (a.get("k"), ab.get("k"), a.scan().compile.toList).mapN { (x, y, scanned) =>
-          expect.same(Some(1), x).and(expect.same(Some(2), y)).and(expect.same(List("k" -> 1), scanned))
+        val a = KeyValueStore[IO, CText, Int](raw, ns("a"))
+        val ab = KeyValueStore[IO, CText, Int](raw, ns("ab"))
+        a.put(t("k"), 1) >> ab.put(t("k"), 2) >>
+        (a.get(t("k")), ab.get(t("k")), a.scan().compile.toList).mapN { (x, y, scanned) =>
+          expect.same(Some(1), x).and(expect.same(Some(2), y)).and(expect.same(List(t("k") -> 1), scanned))
         }
       }
     }
@@ -143,9 +147,9 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
     }
     expectOk { implicit h =>
       withRaw { raw =>
-        val kv = KeyValueStore[IO, String, Int](raw, ns("kv"))(using implicitly, implicitly, refuse13, h)
-        h.attempt(kv.commit(Batch.puts(List("a" -> 1, "b" -> 13))))
-          .flatMap(result => kv.get("a").map(a => expect(result.isLeft, "the commit fails").and(expect.same(None, a))))
+        val kv = KeyValueStore[IO, CText, Int](raw, ns("kv"))(using implicitly, implicitly, refuse13, h)
+        h.attempt(kv.commit(Batch.puts(List(t("a") -> 1, t("b") -> 13))))
+          .flatMap(result => kv.get(t("a")).map(a => expect(result.isLeft, "the commit fails").and(expect.same(None, a))))
       }
     }
   }

@@ -6,6 +6,7 @@ import cats.syntax.all._
 
 import scala.annotation.tailrec
 
+import xyz.kd5ujc.core.canonical.CanonicalValue.CText
 import xyz.kd5ujc.core.canonical.{Canonical, CanonicalValue, Cbor, Utf8}
 import xyz.kd5ujc.core.hash.{Digest, Hasher}
 
@@ -49,10 +50,17 @@ object KeyCodec {
 
   implicit val bytesKey: KeyCodec[ByteVector] = instance(identity, _.asRight)
 
-  /** UTF-8 byte order is code-point order. */
-  implicit val stringKey: KeyCodec[String] = instance(
-    s => ByteVector(s.getBytes(UTF_8)),
-    b => Either.cond(Utf8.isWellFormed(b.toArray), new String(b.toArray, UTF_8), StoreError.Codec("key", "invalid UTF-8"))
+  /**
+   * Text keys in UTF-8, whose byte order is code-point order. A key is [[CText]], well-formed text by construction: a
+   * `String` may hold an unpaired surrogate, which has no UTF-8 form (encoding it would write `?`, so "\ud800" and "?"
+   * would be one key), and the type rules that out instead of the encoder.
+   */
+  implicit val textKey: KeyCodec[CText] = instance(
+    t => ByteVector(t.value.getBytes(UTF_8)),
+    b =>
+      Either
+        .cond(Utf8.isWellFormed(b.toArray), new String(b.toArray, UTF_8), StoreError.Codec("key", "invalid UTF-8"))
+        .flatMap(s => CanonicalValue.text(s).leftMap(_ => StoreError.Codec("key", "invalid UTF-8")))
   )
 
   /** Big-endian with the sign bit flipped, so negative values sort before positive ones. */
