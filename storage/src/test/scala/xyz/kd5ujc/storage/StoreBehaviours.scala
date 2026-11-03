@@ -4,10 +4,9 @@ import cats.effect.IO
 import cats.mtl.{Handle, Raise}
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue.CText
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Codec}
 
-import io.circe.{Decoder, Encoder}
 import org.scalacheck.Gen
 import scodec.bits.{ByteVector, hex}
 import weaver.scalacheck.Checkers
@@ -31,7 +30,7 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
   def expectOk(f: Handle[IO, StoreError] => IO[Expectations]): IO[Expectations] =
     attempt(f).map(_.fold(e => failure(s"unexpected store error $e"), identity))
 
-  implicit private val intValue: ValueCodec[Int] = ValueCodec.fromCirce[Int](using Encoder[Int], Decoder[Int])
+  implicit private val intValue: ValueCodec[Int] = ValueCodec.fromCodec(Codec.intIn(Int.MinValue, Int.MaxValue))
 
   private def ns(name: String): Namespace = Namespace(name).fold(e => sys.error(e.toString), identity)
   private def t(s:     String): CText = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)

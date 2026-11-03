@@ -10,6 +10,7 @@ import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.accumulators.merkle.MerkleCodec
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue}
+import xyz.kd5ujc.core.circe.CanonicalCirce
 import xyz.kd5ujc.crypto.sigma.Secp256k1Group
 import xyz.kd5ujc.crypto.signing._
 
@@ -420,7 +421,7 @@ object OpCoverageCases extends IOApp {
           Json.fromFields(
             List("name" -> c.name.asJson, "program" -> c.program.asJson, "data" -> get(JsonSurface.render(c.data)).asJson) ++
             Option.when(c.built.nonEmpty)("built" -> Json.fromFields(c.built.toList.sortBy(_._1).map {
-              case (k, b) => k -> BuiltValues.json(b)
+              case (k, b) => k -> get(CanonicalCirce.toCirce(BuiltValues.value(b)))
             })) ++
             c.gasLimit.map(l => "gasLimit" -> l.asJson)
           )

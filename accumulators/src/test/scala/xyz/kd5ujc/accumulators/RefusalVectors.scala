@@ -14,6 +14,7 @@ import xyz.kd5ujc.accumulators.versioned._
 import xyz.kd5ujc.core.canonical.BuiltValues.{Built, Pair}
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue}
+import xyz.kd5ujc.core.circe.CanonicalCirce
 import xyz.kd5ujc.core.hash.{Digest, Sha256}
 import xyz.kd5ujc.storage.Batch
 
@@ -86,7 +87,11 @@ object RefusalVectors {
     bytes(c, name).flatMap(Digest.fromBytes[H](_).leftMap(_.toString))
 
   /** A `built-value` from its JSON. */
-  def built(j: ACursor): Either[String, CanonicalValue] = BuiltValues.fromJsonValue(j)
+  def built(j: ACursor): Either[String, CanonicalValue] =
+    j.focus.toRight("no built-value").flatMap(CanonicalCirce.fromCirce(_).leftMap(_.toString)).flatMap(BuiltValues.built)
+
+  /** A recipe as the schemas' `built-value`. */
+  private def builtJson(b: Built): Json = get(CanonicalCirce.toCirce(BuiltValues.value(b)))
 
   private def mode(c: ACursor): Either[String, KeyMode] = {
     val m = c.downField("mode")
@@ -185,7 +190,7 @@ object RefusalVectors {
     def json: Json = Json.fromFields(List("name" -> name.asJson, "check" -> check.asJson) ++ fields)
   }
 
-  private def input(b:   Built): (String, Json) = "input" -> BuiltValues.json(b)
+  private def input(b:   Built): (String, Json) = "input" -> builtJson(b)
   private def literal(v: CanonicalValue): Built = BuiltValues.of(v)
 
   private def get[A](e: Either[?, A]): A = e.fold(err => throw new IllegalStateException(err.toString), identity)
@@ -380,11 +385,11 @@ object RefusalVectors {
       "vt-historical",
       List("root" -> hex(s.root.bytes), input(literal(s.absent3)), "at" -> 3.asJson, "stateKey" -> "a/1".asJson)
     ),
-    Case("replica: the first delta", "vt-replica", List("inputs" -> List(BuiltValues.json(literal(s.delta1))).asJson)),
+    Case("replica: the first delta", "vt-replica", List("inputs" -> List(builtJson(literal(s.delta1))).asJson)),
     Case(
       "replica: the first delta, then version 1 again",
       "vt-replica",
-      List("inputs" -> List(BuiltValues.json(literal(s.delta1)), BuiltValues.json(literal(s.replay1))).asJson)
+      List("inputs" -> List(builtJson(literal(s.delta1)), builtJson(literal(s.replay1))).asJson)
     )
   )
 
@@ -491,7 +496,7 @@ object RefusalVectors {
       Case(
         s"merkle verify: $name",
         "merkle-verify",
-        List("root" -> hex(one.root.bytes), "size" -> 1.asJson, "claim" -> BuiltValues.json(b), input(literal(inclusion)))
+        List("root" -> hex(one.root.bytes), "size" -> 1.asJson, "claim" -> builtJson(b), input(literal(inclusion)))
       )
     val m = get(KeyMode.fixed(1))
     val t = get(Trie.fromEntries[H](m, List(0x01, 0x02).map(b => ByteVector(b) -> T.value(ValueCommitment.bytes(int(b))))))
@@ -501,7 +506,7 @@ object RefusalVectors {
         s"trie verify: $name",
         "trie-verify",
         List("mode" -> Json.obj("fixed" -> 1.asJson), "root" -> hex(t.root.bytes), "key" -> hex(ByteVector(0x01)), input(literal(proof))) ++
-        b.map(x => "claim" -> BuiltValues.json(x))
+        b.map(x => "claim" -> builtJson(x))
       )
     def listing(name: String, w1: Long, w2: Long) =
       Case(
@@ -512,7 +517,7 @@ object RefusalVectors {
           "root"   -> hex(t.root.bytes),
           "prefix" -> hex(ByteVector.empty),
           "entries" -> List(0x01 -> w1, 0x02 -> w2).map {
-            case (k, w) => Json.obj("key" -> hex(ByteVector(k)), "value" -> BuiltValues.json(BuiltValues.ofWeight(w)))
+            case (k, w) => Json.obj("key" -> hex(ByteVector(k)), "value" -> builtJson(BuiltValues.ofWeight(w)))
           }.asJson,
           input(literal(proof))
         )
@@ -525,7 +530,7 @@ object RefusalVectors {
         "mode"    -> Json.obj("fixed" -> 1.asJson),
         "root"    -> hex(t.root.bytes),
         "prefix"  -> hex(ByteVector.empty),
-        "entries" -> List(Json.obj("key" -> hex(ByteVector.empty), "value" -> BuiltValues.json(BuiltValues.of(CNull)))).asJson,
+        "entries" -> List(Json.obj("key" -> hex(ByteVector.empty), "value" -> builtJson(BuiltValues.of(CNull)))).asJson,
         input(literal(proof))
       )
     )
@@ -541,7 +546,7 @@ object RefusalVectors {
         List(
           "root"  -> hex(one.root.bytes.take(31)),
           "size"  -> 1.asJson,
-          "claim" -> BuiltValues.json(BuiltValues.ofWeight(cap + 1)),
+          "claim" -> builtJson(BuiltValues.ofWeight(cap + 1)),
           input(literal(inclusion))
         )
       ),
@@ -557,7 +562,7 @@ object RefusalVectors {
           "root" -> hex(t.root.bytes.take(31)),
           "key"  -> hex(ByteVector(0x01)),
           input(literal(proof)),
-          "claim" -> BuiltValues.json(BuiltValues.ofWeight(cap + 1))
+          "claim" -> builtJson(BuiltValues.ofWeight(cap + 1))
         )
       ),
       claim("a value within the cap with a 31-byte root", None).copy(
@@ -593,8 +598,8 @@ object RefusalVectors {
       val pad = BuiltValues.ofWeight(target - around)
       // weights add, so the pad sets the delta's weight; within the cap the encoder confirms it
       require(target > cap || deltaWeight(get(BuiltValues.build(pad))) == target, s"a delta of weight $target")
-      "batch" -> (keys.map(k => Json.obj("stateKey" -> k.asJson, "value" -> BuiltValues.json(full))) :+
-      Json.obj("stateKey" -> "pad".asJson, "value" -> BuiltValues.json(pad))).asJson
+      "batch" -> (keys.map(k => Json.obj("stateKey" -> k.asJson, "value" -> builtJson(full))) :+
+      Json.obj("stateKey" -> "pad".asJson, "value" -> builtJson(pad))).asJson
     }
     List(
       Case("commit: a batch whose delta weighs exactly 2^24", "vt-commit", List(batch(cap))),

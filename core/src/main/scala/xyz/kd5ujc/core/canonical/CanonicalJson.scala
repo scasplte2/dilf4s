@@ -10,12 +10,11 @@ import xyz.kd5ujc.core.canonical.CanonicalError._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.numerics.{ArithmeticError, Ratio}
 
-import io.circe.{Json, JsonNumber}
-
 /**
  * The JSON mapping (docs/specs/canonical-encoding.md §3). [[parse]] is a strict, stack-safe RFC 8259 parser that reads
- * numbers exactly from their source text and rejects duplicate member names; [[fromCirce]] bridges typed data that
- * already has a circe `Encoder`; [[render]] is a display view and fails for values JSON cannot represent.
+ * numbers exactly from their source text and rejects duplicate member names; [[render]] is a display view and fails
+ * for values JSON cannot represent. Core has no circe dependency: typed data with circe codecs crosses into the model
+ * through the `circeInterop` module (`xyz.kd5ujc.core.circe.CanonicalCirce`), which uses this object's public API.
  */
 object CanonicalJson {
 
@@ -217,69 +216,6 @@ object CanonicalJson {
   private def isDigit(c:     Char): Boolean = c >= '0' && c <= '9'
   private def isHex(c:       Char): Boolean = isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
   private def syntax(offset: Int, reason: String): CanonicalError = JsonSyntax(offset, reason)
-
-  // ------------------------------------------------------------------ circe bridge
-
-  /** Converts circe JSON built from typed data; stack-safe. Numbers use their exact decimal value. */
-  def fromCirce(json: Json, maxScale: Int = MaxScale): Either[CanonicalError, CanonicalValue] =
-    circe(json, maxScale).value
-
-  private def circe(json: Json, maxScale: Int): Eval[Either[CanonicalError, CanonicalValue]] =
-    json.fold(
-      jsonNull = Eval.now(CNull.asRight),
-      jsonBoolean = b => Eval.now(CBool(b).asRight),
-      jsonNumber = n => Eval.now(circeNumber(n, maxScale)),
-      jsonString = s => Eval.now(text(s)),
-      jsonArray = vs => Eval.defer(vs.traverse(circe(_, maxScale))).map(_.sequence.flatMap(CanonicalValue.array)),
-      jsonObject = o =>
-        Eval
-          .defer(o.toVector.traverse { case (k, v) => circe(v, maxScale).map(_.map(k -> _)) })
-          .map(_.sequence.flatMap(CanonicalValue.map))
-    )
-
-  /**
-   * A number circe parsed keeps its source text, which is read exactly as [[parse]] reads it, before circe converts
-   * anything: so the bridge accepts and refuses exactly what [[parse]] does. A number built from a converted value has
-   * its coefficient's width checked before it is ever rendered.
-   */
-  private def circeNumber(n: JsonNumber, maxScale: Int): Either[CanonicalError, CanonicalValue] =
-    io.circe.CirceNumberSource(n).fold(convertedNumber(n, maxScale)) { text =>
-      parseNumber(text, 0, maxScale).flatMap {
-        case (v, end) if end == text.length => v.asRight
-        case _                              => InvalidNumber(NumberSource.Text(text.length, 0), None).asLeft
-      }
-    }
-
-  private def convertedNumber(n: JsonNumber, maxScale: Int): Either[CanonicalError, CanonicalValue] =
-    n.toBigDecimal
-      .toRight(InvalidNumber(NumberSource.NoDecimal, None))
-      .flatMap { bd =>
-        val unscaled = BigInt(bd.bigDecimal.unscaledValue)
-        val digits = if (unscaled.bitLength > MaxDigitBits) MaxDigits + 1 else unscaled.abs.toString.length
-        if (digits > MaxDigits) InvalidNumber(sized(bd), Some(ArithmeticError.DigitsOutOfRange(digits, MaxDigits))).asLeft
-        else Ratio.fromBigDecimal(bd, maxScale).leftMap(e => InvalidNumber(sized(bd), Some(e))).flatMap(number)
-      }
-
-  // a decimal-backed number is described by its size: rendering its coefficient is superlinear and unpaid
-  private def sized(bd: BigDecimal): NumberSource = NumberSource.Decimal(bd.scale, bd.bigDecimal.unscaledValue.bitLength)
-
-  /** The inverse bridge, for decoding into typed data. Numbers stay exact; fails where [[render]] fails. */
-  def toCirce(value: CanonicalValue): Either[CanonicalError, Json] = toCirceEval(value).value
-
-  private def toCirceEval(value: CanonicalValue): Eval[Either[CanonicalError, Json]] =
-    value match {
-      case CNull        => Eval.now(Json.Null.asRight)
-      case CBool(b)     => Eval.now(Json.fromBoolean(b).asRight)
-      case CInt(n)      => Eval.now(numberText(value).map(_ => Json.fromBigInt(n)))
-      case r: CRational => Eval.now(numberText(r).map(d => Json.fromBigDecimal(BigDecimal(d))))
-      case t: CText     => Eval.now(Json.fromString(t.value).asRight)
-      case CBytes(_)    => Eval.now(NotJsonRepresentable("bytes").asLeft)
-      case CArray(vs)   => Eval.defer(vs.traverse(toCirceEval)).map(_.sequence.map(Json.fromValues))
-      case CMap(m) =>
-        Eval
-          .defer(m.toVector.traverse { case (k, v) => toCirceEval(v).map(_.map(k -> _)) })
-          .map(_.sequence.map(Json.fromFields))
-    }
 
   // its size, never its digits: a decoded rational can be far larger than the cost of rendering it allows
   private def nonTerminating(r: CRational): CanonicalError =

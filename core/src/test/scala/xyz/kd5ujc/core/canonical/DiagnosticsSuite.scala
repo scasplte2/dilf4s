@@ -127,11 +127,6 @@ object DiagnosticsSuite extends SimpleIOSuite {
     }
   }
 
-  pureTest("a circe decoding failure names the value by kind, never by its text") {
-    val r = Canonical.decode[Int](txt("x" * Huge))
-    expect(r.isLeft, "text is not an int").and(bounded("circe failure", r.left.toOption.fold("")(_.toString)))
-  }
-
   pureTest("an invalid domain tag is previewed") {
     DomainTag("X" * Huge) match {
       case Left(e @ HashError.InvalidDomainTag(p)) => kept(p).and(bounded("InvalidDomainTag", e.toString))

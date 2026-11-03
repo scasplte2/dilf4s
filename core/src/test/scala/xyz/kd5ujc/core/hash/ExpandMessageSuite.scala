@@ -5,25 +5,42 @@ import java.nio.file.{Files, Paths}
 
 import cats.syntax.all._
 
-import io.circe.{Json, parser}
+import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue}
+
 import scodec.bits.ByteVector
 import weaver.SimpleIOSuite
 
 object ExpandMessageSuite extends SimpleIOSuite {
 
-  private val vectors: Json =
-    parser.parse(new String(Files.readAllBytes(Paths.get("docs", "test-vectors", "vrf", "rfc9380.json")), UTF_8)).toOption.get
+  private val vectors: CanonicalValue =
+    CanonicalJson.parse(new String(Files.readAllBytes(Paths.get("docs", "test-vectors", "vrf", "rfc9380.json")), UTF_8)).toOption.get
+
+  private def at(v: CanonicalValue, key: String): CanonicalValue =
+    v match {
+      case CMap(m) => m.getOrElse(key, CNull)
+      case _       => CNull
+    }
+
+  private def text(v: CanonicalValue): String =
+    v match {
+      case CText(s) => s
+      case other    => sys.error(s"expected text, got $other")
+    }
 
   private def check[H: Hasher](section: String, expectedCount: Int) = {
-    val c = vectors.hcursor.downField(section)
-    val dst = ByteVector(c.downField("header").get[String]("DST").toOption.get.getBytes(US_ASCII))
-    val rows = c.downField("vectors").as[List[Map[String, String]]].toOption.get
+    val c = at(vectors, section)
+    val dst = ByteVector(text(at(at(c, "header"), "DST")).getBytes(US_ASCII))
+    val rows = at(c, "vectors") match {
+      case CArray(vs) => vs.toList
+      case _          => Nil
+    }
     expect
       .same(expectedCount, rows.size)
       .and(rows.foldMap { r =>
-        val msg = ByteVector(r("msg").getBytes(US_ASCII))
-        val len = Integer.decode(r("len_in_bytes")).intValue
-        expect.same(Right(ByteVector.fromValidHex(r("uniform_bytes"))), ExpandMessage.xmd[H](msg, dst, len))
+        val msg = ByteVector(text(at(r, "msg")).getBytes(US_ASCII))
+        val len = Integer.decode(text(at(r, "len_in_bytes"))).intValue
+        expect.same(Right(ByteVector.fromValidHex(text(at(r, "uniform_bytes")))), ExpandMessage.xmd[H](msg, dst, len))
       })
   }
 

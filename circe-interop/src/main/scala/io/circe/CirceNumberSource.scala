@@ -2,8 +2,9 @@ package io.circe
 
 /**
  * The source text circe keeps for a number it parsed. circe exposes it only through `toString`, which for a number
- * built from a `BigDecimal` renders the coefficient instead, a superlinear conversion; its number classes are
- * `private[circe]`, so this bridge lives in circe's package, and a change to those classes fails to compile here.
+ * built from a `BigDecimal` renders the coefficient instead, a superlinear conversion; no public method tells the two
+ * apart without converting. Its number classes are `private[circe]`, so this bridge lives in circe's package (in the
+ * interop module, never in core), and a change to those classes fails to compile here.
  */
 object CirceNumberSource {
 

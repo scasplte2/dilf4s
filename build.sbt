@@ -64,7 +64,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(sharedTest, numerics, core, accumulators, storage, storageRocksDb, crypto, modelsGen, jlvm, benchmarks)
+  .aggregate(sharedTest, numerics, core, circeInterop, accumulators, storage, storageRocksDb, crypto, modelsGen, jlvm, benchmarks)
 
 // ─── Shared Test Utilities ───
 lazy val sharedTest = project.in(file("shared-test"))
@@ -102,11 +102,9 @@ lazy val core = project.in(file("core"))
       Libraries.bc,
       Libraries.cats,
       Libraries.catsEffect,
-      Libraries.circeCore,
-      Libraries.circeGeneric,
-      Libraries.circeParser,
       Libraries.scodecBits
     ),
+    // no circe, in main or test: JSON is CanonicalJson's alone, and circe interop lives in circeInterop
     // wire types and canonical codecs, generated from shared/schemas at build time (package xyz.kd5ujc.models). The
     // generator is referenced by id: its tests depend on core, so naming its project value here would be a cycle.
     Compile / sourceGenerators += Def.task {
@@ -129,6 +127,21 @@ lazy val core = project.in(file("core"))
     }.taskValue
   )
   .dependsOn(numerics, sharedTest % Test)
+
+// ─── circe interop: typed data with circe codecs, in and out of the canonical model (core has no circe) ───
+lazy val circeInterop = project.in(file("circe-interop"))
+  .settings(
+    name := "dilf4s-circe-interop",
+    commonSettings,
+    commonTestSettings,
+    libraryDependencies ++= Seq(
+      Libraries.cats,
+      Libraries.circeCore,
+      Libraries.circeGeneric % Test,
+      Libraries.circeParser  % Test
+    )
+  )
+  .dependsOn(core % "compile->compile;test->test", sharedTest % Test)
 
 // ─── Crypto: typed signature schemes, VRF, KES, BLS, zk primitives ───
 lazy val crypto = project.in(file("crypto"))
@@ -162,12 +175,18 @@ lazy val accumulators = project.in(file("accumulators"))
       Libraries.cats,
       Libraries.catsEffect,
       Libraries.catsMtl,
-      Libraries.circeCore,
-      Libraries.circeGeneric,
-      Libraries.circeParser,
+      // the vector generators only
+      Libraries.circeCore   % Test,
+      Libraries.circeParser % Test
     )
   )
-  .dependsOn(core % "compile->compile;test->test", storage % "compile->compile;test->test", modelsGen % "test->test", sharedTest % Test)
+  .dependsOn(
+    core % "compile->compile;test->test",
+    storage % "compile->compile;test->test",
+    modelsGen % "test->test",
+    circeInterop % Test,
+    sharedTest % Test
+  )
 
 // ─── Storage: Store, VersionedStore (self-contained) ───
 lazy val storage = project.in(file("storage"))
@@ -225,7 +244,7 @@ lazy val jlvm = project.in(file("jlvm"))
       Libraries.circeParser % Test
     )
   )
-  .dependsOn(core % "compile->compile;test->test", crypto, accumulators, sharedTest % Test)
+  .dependsOn(core % "compile->compile;test->test", crypto, accumulators, circeInterop % Test, sharedTest % Test)
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll; scalafmtSbtCheck")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll; scalafmtSbt")

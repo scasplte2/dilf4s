@@ -4,8 +4,6 @@ import xyz.kd5ujc.core.canonical.CanonicalError._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.numerics.{ArithmeticError, Ratio}
 
-import io.circe.syntax._
-import io.circe.{Json, parser}
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
 
@@ -29,9 +27,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
         Ratio.of(BigInt(1) << 1000000, BigInt(3)).toOption.map(CanonicalValue.number).get
       )
       .and(expect.same(Left(refusal), CanonicalJson.render(third)))
-      .and(expect.same(Left(refusal), CanonicalJson.toCirce(third)))
       .and(expect.same(Left(overLong), CanonicalJson.render(huge)))
-      .and(expect.same(Left(overLong), CanonicalJson.toCirce(huge)))
   }
 
   pureTest("numbers are read and written within 10,000 significant digits, counted before any conversion") {
@@ -58,15 +54,6 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
       )
   }
 
-  pureTest("a number refused for its scale is named by its size, never its digits") {
-    val wide = Json.fromBigDecimal(BigDecimal(new java.math.BigDecimal((BigInt(1) << 1000000).bigInteger, 10001)))
-    CanonicalJson.fromCirce(wide) match {
-      case Left(InvalidNumber(source, Some(_))) =>
-        expect.same(NumberSource.Decimal(10001, 1000001), source)
-      case other => failure(s"expected a scale refusal, got ${other.isRight}")
-    }
-  }
-
   pureTest("a malformed or over-long number is described by its length and offset, never its text") {
     val nines = "9" * 10001
     List(
@@ -83,22 +70,6 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
           case other => failure(s"expected a refusal of a $length-character number, got ${other.isRight}")
         }
     }.reduce(_ and _)
-  }
-
-  pureTest("circe-parsed numbers are read from their source text, exactly as the parser reads them") {
-    def viaCirce(text: String) = parser.parse(text).left.map(e => JsonSyntax(0, e.message)).flatMap(CanonicalJson.fromCirce(_))
-    val numbers = xyz.kd5ujc.core.vectors.CanonicalVectors.jsonInputs.filter(t => t.headOption.exists(c => c == '-' || c.isDigit))
-    val agree = numbers
-      .filter(t => parser.parse(t).isRight)
-      .map(t => expect.same(parse(t), viaCirce(t)))
-      .reduce(_ and _)
-    expect
-      .same(
-        Left(InvalidNumber(NumberSource.Text(640000, 0), Some(ArithmeticError.DigitsOutOfRange(640000, 10000)))),
-        viaCirce("9" * 640000)
-      )
-      .and(expect(viaCirce("0e" + "1" * 10001).isLeft, "a zero with a 10,001-digit exponent is refused, as the parser refuses it"))
-      .and(agree)
   }
 
   pureTest("numbers are read exactly from source text") {
@@ -163,46 +134,10 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
     }
   }
 
-  test("the circe bridge agrees with the parser") {
-    forall(CanonicalGens.jsonValue(4)) { v =>
-      val viaCirce =
-        CanonicalJson.render(v).flatMap(s => parser.parse(s).left.map(e => JsonSyntax(0, e.message))).flatMap(CanonicalJson.fromCirce(_))
-      expect.same(Right(v), viaCirce)
-    }
-  }
-
   pureTest("render fails for values JSON cannot represent") {
     expect(CanonicalJson.render(CBytes(scodec.bits.ByteVector(1, 2))).isLeft, "bytes have no JSON form")
       .and(expect(CanonicalJson.render(ratio(1, 3)).isLeft, "1/3 has no exact decimal"))
       .and(expect.same(Right("0.1"), CanonicalJson.render(ratio(1, 10))))
-  }
-
-  pureTest("typed data derives through its circe Encoder") {
-    final case class Payment(to: String, amount: BigInt, memo: Option[String])
-    implicit val enc: io.circe.Encoder[Payment] = io.circe.generic.semiauto.deriveEncoder[Payment]
-    val c = Canonical.fromEncoder[Payment]
-    val withoutMemo = c.canonical(Payment("x", BigInt("9007199254740993"), None))
-    val legacyShape = CanonicalJson.fromCirce(Json.obj("to" -> "x".asJson, "amount" -> BigInt("9007199254740993").asJson))
-    expect.same(legacyShape, withoutMemo)
-  }
-
-  test("typed data round-trips through the canonical model and its encoding") {
-    final case class Note(id: Long, label: String, amount: BigInt, rate: BigDecimal, tags: List[String], parent: Option[Long])
-    implicit val enc: io.circe.Encoder[Note] = io.circe.generic.semiauto.deriveEncoder[Note]
-    implicit val dec: io.circe.Decoder[Note] = io.circe.generic.semiauto.deriveDecoder[Note]
-    val gen = for {
-      id     <- org.scalacheck.Gen.long
-      label  <- CanonicalGens.text
-      amount <- CanonicalGens.bigInt
-      rate   <- CanonicalGens.decimal.map(r => BigDecimal(r.toDecimalString.get))
-      tags   <- org.scalacheck.Gen.listOf(CanonicalGens.text)
-      parent <- org.scalacheck.Gen.option(org.scalacheck.Gen.long)
-    } yield Note(id, label, amount, rate, tags, parent)
-    implicit val show: cats.Show[Note] = cats.Show.fromToString
-    forall(gen) { note =>
-      val roundTrip = Canonical.fromEncoder[Note].canonical(note).map(Cbor.encode).flatMap(Cbor.decode(_)).flatMap(Canonical.decode[Note])
-      expect.same(Right(note), roundTrip)
-    }
   }
 
   pureTest("array nulls are positional: removing one changes the encoding") {

@@ -4,6 +4,27 @@
 ## Description
 This repository contains cryptographic functionalities designed to support the development of distributed ledger protocols using Scala.
 
+## Modules
+| sbt project | What it holds |
+|---|---|
+| `numerics` | Exact rational arithmetic. |
+| `core` | The canonical data model, its CBOR and JSON mappings (`docs/specs/canonical-encoding.md`), tagged hashing and the generated wire models. |
+| `circeInterop` (`circe-interop/`) | circe `Encoder`/`Decoder` interop with the canonical model: `CanonicalCirce.fromEncoder`, `decode`, `codec`, `fromCirce`, `toCirce`. |
+| `crypto` | Signature schemes, VRF, KES, BLS, sigma protocols and zk primitives. |
+| `storage`, `storageRocksDb` | Stores and versioned stores, in memory and on RocksDB. |
+| `accumulators` | Merkle trees, the binary trie and the versioned trie. |
+| `jlvm` | The JLVM (`docs/specs/jlvm.md`). |
+| `modelsGen`, `benchmarks`, `sharedTest` | The CDDL model generator, JMH benchmarks and test helpers. |
+
+**JSON and circe.** Only `circeInterop` depends on circe in its main sources. `core` has no circe dependency, main or
+test, so nothing in it can reach circe's parser or its hashed `JsonObject`, and `storage`, `accumulators` and `jlvm`
+compile without circe. JSON text, a program's above all, is read by `CanonicalJson.parse` alone: one parser, with the
+same grammar, number bounds and refusal of repeated member names as the Rust and TypeScript SDKs (pinned in
+`shared/vectors`). `circeInterop` is for typed data a program built (`a.asJson`). It is not a way in for untrusted
+text: by the time circe has parsed JSON, its `JsonObject` has merged repeated member names and hashed the keys. (It
+still reads a circe-parsed number from its source text, so that the number reads as the parser reads it.) Some test
+suites outside `core` still use circe to write and read the vector files.
+
 ## Installation
 *Work In Progress*
 

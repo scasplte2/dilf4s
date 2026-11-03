@@ -6,7 +6,7 @@ import java.nio.file.{Files, Path, Paths}
 import cats.effect.{ExitCode, IO, IOApp}
 import cats.syntax.all._
 
-import io.circe.{ACursor, Json}
+import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue}
 
 /**
  * Writes `PoseidonConstants.scala` from [[PoseidonDerivation]]. Run from the repository root:
@@ -75,28 +75,47 @@ object PoseidonConstantsGen extends IOApp {
  */
 object PoseidonCircomlibCheck extends IOApp {
 
-  private def load(dir: Path, name: String): IO[Json] =
+  private def load(dir: Path, name: String): IO[CanonicalValue] =
     IO.blocking(new String(Files.readAllBytes(dir.resolve(name)), UTF_8)).flatMap { text =>
       // `export default { ... };`: the object is JSON
-      io.circe.parser.parse(text.drop(text.indexOf('{')).trim.stripSuffix(";")).liftTo[IO]
+      CanonicalJson
+        .parse(text.drop(text.indexOf('{')).trim.stripSuffix(";"))
+        .leftMap(e => new IllegalArgumentException(e.toString))
+        .liftTo[IO]
     }
 
-  private def numbers(c: ACursor): Either[String, Vector[BigInt]] =
-    c.as[Vector[String]]
-      .leftMap(_.getMessage)
-      .flatMap(_.traverse(h => Either.catchNonFatal(BigInt(h.stripPrefix("0x"), 16)).leftMap(_.toString)))
+  private def items(v: CanonicalValue): Either[String, Vector[CanonicalValue]] =
+    v match {
+      case CanonicalValue.CArray(vs) => vs.asRight
+      case _                         => "not an array".asLeft
+    }
 
-  private def table(c: ACursor): Either[String, Vector[Vector[BigInt]]] =
-    c.values.toRight("not an array").flatMap(_.toVector.traverse(j => numbers(j.hcursor)))
+  private def numbers(v: CanonicalValue): Either[String, Vector[BigInt]] =
+    items(v).flatMap(_.traverse {
+      case CanonicalValue.CText(h) => Either.catchNonFatal(BigInt(h.stripPrefix("0x"), 16)).leftMap(_.toString)
+      case other                   => s"expected hex text, got $other".asLeft
+    })
+
+  private def table(v: CanonicalValue): Either[String, Vector[Vector[BigInt]]] = items(v).flatMap(_.traverse(numbers))
 
   final case class Circom(base: PoseidonDerivation.Base, opt: PoseidonParams)
 
   /** circomlibjs's tables for width `t`. Its optimised `M` and `P` are stored transposed (`new_i = Σ_j M_ji s_j`). */
-  private def circom(base: Json, opt: Json, t: Int, rp: Int): Either[String, Circom] = {
+  private def circom(base: CanonicalValue, opt: CanonicalValue, t: Int, rp: Int): Either[String, Circom] = {
     val k = t - 2
-    def at(j: Json, key: String) = j.hcursor.downField(key).downN(k)
-    (numbers(at(base, "C")), table(at(base, "M")), numbers(at(opt, "C")), numbers(at(opt, "S")), table(at(opt, "M")), table(at(opt, "P")))
-      .mapN((bc, bm, c, s, m, p) => Circom(PoseidonDerivation.Base(t, rp, bc, bm), PoseidonParams(t, rp, c, s, m.transpose, p.transpose)))
+    def at(j: CanonicalValue, key: String): Either[String, CanonicalValue] =
+      j match {
+        case CanonicalValue.CMap(m) => m.get(key).toRight(s"no $key").flatMap(items).flatMap(_.lift(k).toRight(s"no $key[$k]"))
+        case _                      => s"no $key".asLeft
+      }
+    (
+      at(base, "C").flatMap(numbers),
+      at(base, "M").flatMap(table),
+      at(opt, "C").flatMap(numbers),
+      at(opt, "S").flatMap(numbers),
+      at(opt, "M").flatMap(table),
+      at(opt, "P").flatMap(table)
+    ).mapN((bc, bm, c, s, m, p) => Circom(PoseidonDerivation.Base(t, rp, bc, bm), PoseidonParams(t, rp, c, s, m.transpose, p.transpose)))
   }
 
   def run(args: List[String]): IO[ExitCode] =
