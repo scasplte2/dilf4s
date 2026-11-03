@@ -5,7 +5,7 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 import scala.collection.immutable.TreeMap
 
-import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalError, CanonicalJson, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
 import xyz.kd5ujc.models.{jlvm => W}
 
@@ -318,7 +318,8 @@ object Parser {
       case Expr.Apply(op, args)           => W.JlvmApply(op.wire, args.map(toWire))
       case Expr.Spread(op, arg)           => W.JlvmSpread(op.wire, toWire(arg))
       case Expr.Arr(items)                => W.JlvmArray(items.map(toWire))
-      case Expr.Obj(fields)               => W.JlvmMap(fields.map { case (k, v) => k -> toWire(v) })
+      case Expr.Obj(fields) =>
+        W.JlvmMap(fields.foldLeft(CanonicalEntries.empty[W.JlvmExpr]) { case (acc, (k, v)) => acc.updated(k, toWire(v)) })
     }
 
   def fromWire(w: W.JlvmExpr): Either[JlvmError, Expr] =

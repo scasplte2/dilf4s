@@ -7,7 +7,7 @@ package xyz.kd5ujc.core.canonical
  * operations on adversarial keys without timing them. The order is the map's own: the encoder sorts entries by their
  * encoded keys whatever it is.
  */
-abstract class KeyOrder private[kd5ujc] () extends Ordering[String] {
+abstract class KeyOrder private[canonical] () extends Ordering[String] {
 
   /** The UTF-8 length of `key`, or -1 when it holds an unpaired surrogate: one pass over it. */
   def measure(key: String): Long

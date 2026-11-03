@@ -7,7 +7,7 @@ import cats.effect.{ExitCode, IO, IOApp}
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue}
+import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalJson, CanonicalValue}
 
 import io.circe.Json
 import scodec.bits.ByteVector
@@ -48,7 +48,7 @@ object SigmaVectors {
 
   def proposition(v: CanonicalValue): Either[String, SigmaProp] = bytesIn(v).flatMap(SigmaProp.fromCanonical)
 
-  private def field(m: Map[String, CanonicalValue], k: String): Either[String, CanonicalValue] = m.get(k).toRight(s"missing $k")
+  private def field(m: CanonicalEntries[CanonicalValue], k: String): Either[String, CanonicalValue] = m.get(k).toRight(s"missing $k")
   private def text(v: CanonicalValue): Either[String, String] = v match {
     case CText(s) => s.asRight
     case other    => s"expected text, got $other".asLeft

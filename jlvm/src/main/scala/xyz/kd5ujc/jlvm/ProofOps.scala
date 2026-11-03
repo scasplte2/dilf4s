@@ -57,7 +57,7 @@ object ProofOps {
 
   private def head(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, (Digest[H], Long)] =
     v match {
-      case CMap(m) if m.keySet == Set("root", "size") =>
+      case CMap(m) if m.size == 2 && m.contains("root") && m.contains("size") =>
         (
           m.get("root").toRight(crypto(op)(s"$what.root")).flatMap(digest(op, s"$what.root")),
           m.get("size") match {

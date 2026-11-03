@@ -70,12 +70,12 @@ object CanonicalValueSuite extends SimpleIOSuite with Checkers {
       case (m: CMap, n: CMap, k, v) =>
         val key = t(k)
         expect
-          .same(CanonicalValue.map(m.entries.updated(k, v)), CanonicalValue.updated(m, key, v))
-          .and(expect.same(CanonicalValue.map(m.entries - k), Right(CanonicalValue.removed(m, key))))
-          .and(expect.same(CanonicalValue.map(m.entries ++ n.entries), Right(CanonicalValue.merged(Vector(m, n)))))
+          .same(CanonicalValue.map(m.entries.updated(k, v).toList), CanonicalValue.updated(m, key, v))
+          .and(expect.same(CanonicalValue.map(m.entries.removed(k).toList), Right(CanonicalValue.removed(m, key))))
+          .and(expect.same(CanonicalValue.map(m.entries.concat(n.entries).toList), Right(CanonicalValue.merged(Vector(m, n)))))
           // equality is on entries alone: check the cached depth and weight too
-          .and(expect.same(shape(CanonicalValue.map(m.entries.updated(k, v))), shape(CanonicalValue.updated(m, key, v))))
-          .and(expect.same(shape(CanonicalValue.map(m.entries - k)), shape(Right(CanonicalValue.removed(m, key)))))
+          .and(expect.same(shape(CanonicalValue.map(m.entries.updated(k, v).toList)), shape(CanonicalValue.updated(m, key, v))))
+          .and(expect.same(shape(CanonicalValue.map(m.entries.removed(k).toList)), shape(Right(CanonicalValue.removed(m, key)))))
       case _ => failure("the generator only yields maps")
     }
   }
@@ -90,7 +90,7 @@ object CanonicalValueSuite extends SimpleIOSuite with Checkers {
       val (_, checks) = steps.foldLeft((CanonicalValue.EmptyMap, success)) {
         case ((m, acc), (k, v)) =>
           val next = CanonicalValue.updated(m, t(k), v).toOption.getOrElse(m)
-          val fresh = CanonicalValue.map(next.entries)
+          val fresh = CanonicalValue.map(next.entries.toList)
           (next, acc.and(expect.same(shape(fresh), shape(Right(next)))))
       }
       checks

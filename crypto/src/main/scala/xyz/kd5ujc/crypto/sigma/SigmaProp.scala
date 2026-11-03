@@ -4,8 +4,8 @@ import cats.syntax.all._
 
 import scala.annotation.tailrec
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalValue}
 
 import scodec.bits.ByteVector
 
@@ -226,7 +226,11 @@ object SigmaProp {
         def leaf(p: => Either[String, SigmaProp]): Either[String, Read] =
           Either.cond(leaves < MaxLeaves, (), s"a proposition has at most $MaxLeaves leaves") >> p.map(Read.Leaf(_))
         def fields(ks: String*): Either[String, Unit] =
-          Either.cond(m.keySet == (ks.toSet + "type"), (), s"${typeName(m)} takes exactly the fields ${ks.mkString(", ")}")
+          Either.cond(
+            m.size == ks.size + 1 && ("type" +: ks).forall(k => m.contains(k)),
+            (),
+            s"${typeName(m)} takes exactly the fields ${ks.mkString(", ")}"
+          )
         m.get("type") match {
           case scala.Some(CText("dlog")) => fields("pk") >> leaf(point("pk").flatMap(dlog))
           case scala.Some(CText("dhtuple")) =>
@@ -243,7 +247,7 @@ object SigmaProp {
       case _ => "a proposition is an object".asLeft
     }
 
-  private def typeName(m: Map[String, CanonicalValue]): String =
+  private def typeName(m: CanonicalEntries[CanonicalValue]): String =
     m.get("type").collect { case CText(t) => t }.getOrElse("a proposition")
 
   // ---- the Fiat-Shamir statement bytes of a leaf: Ergo's ErgoTree for SigmaPropConstant(leaf), constants segregated

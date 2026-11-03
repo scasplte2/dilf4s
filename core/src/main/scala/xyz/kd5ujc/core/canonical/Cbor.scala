@@ -154,7 +154,7 @@ object Cbor {
     decode(bytes, maxDepth, KeyOrder.Default)
 
   /** [[decode]] building maps in `keys`'s order: production passes [[KeyOrder.Default]]. */
-  private[kd5ujc] def decode(bytes: ByteVector, maxDepth: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
+  private[canonical] def decode(bytes: ByteVector, maxDepth: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
     run(bytes, math.min(maxDepth, CanonicalValue.MaxDepth), keys, Read(0L, Nil, 0))
 
   sealed private trait Frame

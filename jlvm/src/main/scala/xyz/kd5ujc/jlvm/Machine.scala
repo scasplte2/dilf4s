@@ -4,7 +4,7 @@ import cats.Monad
 import cats.mtl.{Raise, Stateful}
 import cats.syntax.all._
 
-import scala.collection.immutable.TreeMap
+import scala.collection.immutable.SortedMap
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
@@ -50,7 +50,7 @@ enum Frame {
  */
 final case class Scope private (
   data:       CanonicalValue,
-  bindings:   TreeMap[String, CanonicalValue],
+  bindings:   SortedMap[String, CanonicalValue],
   frames:     List[Frame],
   frameCount: Long
 ) {
@@ -76,7 +76,7 @@ final case class Scope private (
 }
 
 object Scope {
-  def apply(data: CanonicalValue, bindings: TreeMap[String, CanonicalValue]): Scope = new Scope(data, bindings, Nil, 0L)
+  def apply(data: CanonicalValue, bindings: SortedMap[String, CanonicalValue]): Scope = new Scope(data, bindings, Nil, 0L)
 }
 
 /**

@@ -69,11 +69,11 @@ object CanonicalValue {
 
   /**
    * Besides its entries, a map keeps how many of its values have each depth, and its weight: [[updated]] and [[removed]]
-   * then change one entry in O(log n) instead of a pass over all of them. Its entries are a `TreeMap` in [[KeyOrder]]
-   * (UTF-16 order): keys are compared, never hashed, so keys chosen to collide cannot slow a map down. They iterate in
-   * that order, not the encoding's. Equality is on the entries alone.
+   * then change one entry in O(log n) instead of a pass over all of them. Its entries are [[CanonicalEntries]], in
+   * [[KeyOrder.Default]] (UTF-16 order) and no other: keys are compared, never hashed, so keys chosen to collide cannot
+   * slow a map down. They iterate in that order, not the encoding's. Equality is on the entries alone.
    */
-  sealed abstract case class CMap(entries: TreeMap[String, CanonicalValue]) extends CanonicalValue {
+  sealed abstract case class CMap(entries: CanonicalEntries[CanonicalValue]) extends CanonicalValue {
     private[canonical] def childDepths: TreeMap[Int, Int]
 
     /** The order `entries` is in, which also measures keys. */
@@ -81,7 +81,7 @@ object CanonicalValue {
   }
 
   final private class MapNode(
-    entries:         TreeMap[String, CanonicalValue],
+    entries:         CanonicalEntries[CanonicalValue],
     val keys:        KeyOrder,
     val childDepths: TreeMap[Int, Int],
     val weight:      Long
@@ -95,11 +95,11 @@ object CanonicalValue {
   }
 
   /** The weight of `entries`, measuring each key once: for keys known to be well-formed. */
-  private def recounted(entries: TreeMap[String, CanonicalValue], keys: KeyOrder): Long =
+  private def recounted(entries: CanonicalEntries[CanonicalValue], keys: KeyOrder): Long =
     entries.foldLeft(1L) { case (w, (k, v)) => Weight.add(w, Weight.add(1L + keys.measure(k), v.weight)) }
 
   /** A map from entries in `keys`'s order with well-formed keys: one pass for the depth counts and the weight. */
-  private def mapOf(entries: TreeMap[String, CanonicalValue], keys: KeyOrder): CMap =
+  private def mapOf(entries: CanonicalEntries[CanonicalValue], keys: KeyOrder): CMap =
     new MapNode(
       entries,
       keys,
@@ -113,7 +113,7 @@ object CanonicalValue {
    */
   private def ofText(entries: Vector[(CText, CanonicalValue)], keys: KeyOrder): CMap =
     new MapNode(
-      TreeMap.from(entries.iterator.map { case (k, v) => k.value -> v })(using keys),
+      CanonicalEntries.inserted(entries.iterator.map { case (k, v) => k.value -> v }, keys),
       keys,
       entries.foldLeft(TreeMap.empty[Int, Int]) { case (h, (_, v)) => counted(h, v.depth, 1) },
       entries.foldLeft(1L) { case (w, (k, v)) => Weight.add(w, Weight.add(k.weight, v.weight)) }
@@ -124,7 +124,7 @@ object CanonicalValue {
    * its [[CText]] cached, so a change never rescans the key.
    */
   private def changed(m: CMap, key: CText, before: Option[CanonicalValue], after: Option[CanonicalValue]): CMap = {
-    val entries = after.fold(m.entries - key.value)(m.entries.updated(key.value, _))
+    val entries = after.fold(m.entries.removed(key.value))(m.entries.updated(key.value, _))
     val without = before.fold(m.childDepths)(v => counted(m.childDepths, v.depth, -1))
     val depths = after.fold(without)(v => counted(without, v.depth, 1))
     def entry(v: CanonicalValue): Long = Weight.add(key.weight, v.weight)
@@ -137,7 +137,7 @@ object CanonicalValue {
   val True: CanonicalValue = CBool(true)
   val False: CanonicalValue = CBool(false)
   val EmptyArray: CArray = new CArray(Vector.empty) {}
-  val EmptyMap: CMap = mapOf(TreeMap.empty(using KeyOrder.Default), KeyOrder.Default)
+  val EmptyMap: CMap = mapOf(CanonicalEntries.empty, KeyOrder.Default)
 
   def int(value: BigInt): CanonicalValue = CInt(value)
 
@@ -160,8 +160,8 @@ object CanonicalValue {
   def map(entries: Iterable[(String, CanonicalValue)]): Either[CanonicalError, CMap] = map(entries, KeyOrder.Default)
 
   /** [[map]] in `keys`'s order: production passes [[KeyOrder.Default]]. */
-  private[kd5ujc] def map(entries: Iterable[(String, CanonicalValue)], keys: KeyOrder): Either[CanonicalError, CMap] =
-    collect(entries.toList, keys, TreeMap.empty(using keys), TreeMap.empty, 1L).flatMap(withinDepth)
+  private[canonical] def map(entries: Iterable[(String, CanonicalValue)], keys: KeyOrder): Either[CanonicalError, CMap] =
+    collect(entries.toList, keys, CanonicalEntries.emptyIn(keys), TreeMap.empty, 1L).flatMap(withinDepth)
 
   /**
    * A map whose keys are text values already, and distinct: for keys checked once and reused, such as a program's
@@ -175,7 +175,7 @@ object CanonicalValue {
    * [[textKeyed]] in `keys`'s order: production passes [[KeyOrder.Default]]. A repeated key, which would otherwise be
    * counted twice in the weight, is refused: the map then has fewer entries than it was given.
    */
-  private[kd5ujc] def textKeyed(entries: Vector[(CText, CanonicalValue)], keys: KeyOrder): Either[CanonicalError, CMap] = {
+  private[canonical] def textKeyed(entries: Vector[(CText, CanonicalValue)], keys: KeyOrder): Either[CanonicalError, CMap] = {
     val present = entries.filter { case (_, v) => v != CNull }
     val m = ofText(present, keys)
     if (m.entries.size == present.size) withinDepth(m)
@@ -203,15 +203,15 @@ object CanonicalValue {
   def merged(maps: Vector[CMap]): CMap = merged(maps, KeyOrder.Default)
 
   /** [[merged]] in `keys`'s order: production passes [[KeyOrder.Default]]. Each key of the result is measured once. */
-  private[kd5ujc] def merged(maps: Vector[CMap], keys: KeyOrder): CMap =
-    mapOf(maps.foldLeft(TreeMap.empty[String, CanonicalValue](using keys))(_ ++ _.entries), keys)
+  private[canonical] def merged(maps: Vector[CMap], keys: KeyOrder): CMap =
+    mapOf(maps.foldLeft(CanonicalEntries.emptyIn[CanonicalValue](keys))((acc, m) => acc.concat(m.entries)), keys)
 
   /**
    * For dilf4s's own fixed-shape records (e.g. trie node commitments): distinct ASCII keys known at compile time and
    * shallow values. Null values are still dropped. Never use with external input.
    */
   private[kd5ujc] def trustedMap(entries: List[(String, CanonicalValue)]): CMap =
-    mapOf(TreeMap.from(entries.filter { case (_, v) => v != CNull })(using KeyOrder.Default), KeyOrder.Default)
+    mapOf(CanonicalEntries.inserted(entries.filter { case (_, v) => v != CNull }, KeyOrder.Default), KeyOrder.Default)
 
   /** For the strict decoder, which bounds depth and has verified unique, ordered text keys and non-null values. */
   private[canonical] def decodedArray(values: Vector[CanonicalValue]): CArray = new CArray(values) {}
@@ -228,7 +228,7 @@ object CanonicalValue {
   private def collect(
     entries: List[(String, CanonicalValue)],
     keys:    KeyOrder,
-    acc:     TreeMap[String, CanonicalValue],
+    acc:     CanonicalEntries[CanonicalValue],
     depths:  TreeMap[Int, Int],
     weight:  Long
   ): Either[CanonicalError, CMap] =

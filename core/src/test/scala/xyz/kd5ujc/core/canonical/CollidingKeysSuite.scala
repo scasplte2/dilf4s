@@ -99,7 +99,7 @@ object CollidingKeysSuite extends SimpleIOSuite {
   }
 
   private def ordered(what: String, v: CanonicalValue, keys: KeyOrder): Expectations = v match {
-    case CMap(m) => expect(m.ordering eq keys, s"$what: the entries are ordered by ${m.ordering}, not the order passed")
+    case CMap(m) => expect(CanonicalEntries.ordering(m) eq keys, s"$what: the entries are not in the order passed")
     case other   => failure(s"$what: not a map: $other")
   }
 
@@ -279,7 +279,7 @@ object CollidingKeysSuite extends SimpleIOSuite {
           // two trees in one order are walked side by side, their keys compared by `equals`: the order is barely asked
           .and(expect(equality <= 2L * log2(N), s"equality made $equality comparisons"))
           .and(expect(decoded.map(_.size) == Right(N), s"textMap decodes: ${decoded.map(_.size)}"))
-          .and(expect(decoded.exists(_.ordering eq o), "textMap decodes in the order of the map it reads"))
+          .and(expect(decoded.exists(e => CanonicalEntries.ordering(e) eq o), "textMap decodes in the order of the map it reads"))
           .and(within("textMap", N, decoding, nLogN(N)))
           // decoded entries are inserted in the map's order: a hashed step on the way would reorder the control's keys
           .and(expect.same(inserting(keysOf(m)), decoding))

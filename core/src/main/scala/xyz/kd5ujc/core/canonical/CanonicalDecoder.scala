@@ -2,8 +2,6 @@ package xyz.kd5ujc.core.canonical
 
 import cats.syntax.all._
 
-import scala.collection.immutable.{SortedSet, TreeMap, TreeSet}
-
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 
 import scodec.bits.ByteVector
@@ -102,7 +100,7 @@ object CanonicalDecoder {
   }
 
   /** The fields of a map with exactly the given keys allowed; unknown keys are rejected. */
-  final class Fields private[CanonicalDecoder] (entries: TreeMap[String, CanonicalValue]) {
+  final class Fields private[CanonicalDecoder] (entries: CanonicalEntries[CanonicalValue]) {
     def required[A](key: String)(implicit D: CanonicalDecoder[A]): Either[DecodeFailure, A] =
       entries.get(key).toRight(DecodeFailure(Nil, s"missing required key \"$key\"")).flatMap(v => D.decode(v).leftMap(_.at(key)))
     def optional[A](key: String)(implicit D: CanonicalDecoder[A]): Either[DecodeFailure, Option[A]] =
@@ -112,15 +110,15 @@ object CanonicalDecoder {
   /** The map's keys are only compared, never hashed: `allowed` is looked up in the map, and ordered to name the rest. */
   def record[A](allowed: Set[String])(f: Fields => Either[DecodeFailure, A]): CanonicalDecoder[A] = {
     case CMap(entries) =>
-      if (allowed.count(entries.contains) < entries.size) {
-        val known = TreeSet.from(allowed)(using entries.ordering)
-        fail(s"unknown keys ${entries.keysIterator.filterNot(known.contains).toList.sorted.mkString(", ")}")
+      if (allowed.count(k => entries.contains(k)) < entries.size) {
+        val known = CanonicalKeys.like(entries, allowed)
+        fail(s"unknown keys ${entries.keysIterator.filterNot(k => known.contains(k)).toList.sorted.mkString(", ")}")
       } else f(new Fields(entries))
     case other => expected("map", other)
   }
 
   /** The keys present in a map value, for choosing between record alternatives. */
-  def keysOf(value: CanonicalValue): Option[SortedSet[String]] = value match {
+  def keysOf(value: CanonicalValue): Option[CanonicalKeys] = value match {
     case CMap(entries) => Some(entries.keySet)
     case _             => None
   }

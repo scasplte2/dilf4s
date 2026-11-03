@@ -100,8 +100,8 @@ object BloomFilter {
   def decode[H](v: CanonicalValue): Either[BloomError, BloomFilter[H]] =
     v match {
       case CMap(m) if m.size == 3 && List("m", "k", "b").forall(m.contains) =>
-        (m("m"), m("k"), m("b")) match {
-          case (CInt(bits), CInt(k), CBytes(b)) if bits.isValidInt && k.isValidInt =>
+        (m.get("m"), m.get("k"), m.get("b")) match {
+          case (Some(CInt(bits)), Some(CInt(k)), Some(CBytes(b))) if bits.isValidInt && k.isValidInt =>
             BloomParams(bits.toInt, k.toInt).flatMap { p =>
               Either.cond(
                 b.size * 8 == p.bits.toLong,
