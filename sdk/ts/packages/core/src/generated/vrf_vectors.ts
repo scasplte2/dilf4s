@@ -39,6 +39,63 @@ export const VrfKey: c.Codec<VrfKey> = {
   },
 };
 
+/** `vrf-key-case` (`shared/schemas/vrf-vectors.cddl`). */
+export interface VrfKeyCase {
+  readonly suite: string;
+  readonly name: string;
+  readonly bytes: Hex;
+  readonly result: VrfKeyResult;
+}
+
+export const VrfKeyCase: c.Codec<VrfKeyCase> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("suite", c.text, a.suite, e),
+        c.field("name", c.text, a.name, e),
+        c.field("bytes", c.defer(() => Hex), a.bytes, e),
+        c.field("result", c.defer(() => VrfKeyResult), a.result, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["suite", "name", "bytes", "result"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("suite", c.text);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("name", c.text);
+    if (!r1.ok) return r1;
+    const r2 = f.value.required("bytes", c.defer(() => Hex));
+    if (!r2.ok) return r2;
+    const r3 = f.value.required("result", c.defer(() => VrfKeyResult));
+    if (!r3.ok) return r3;
+    return c.ok({ suite: r0.value, name: r1.value, bytes: r2.value, result: r3.value });
+  },
+};
+
+/** `vrf-key-result` (`shared/schemas/vrf-vectors.cddl`). */
+export type VrfKeyResult = "accepted" | "Malformed" | "KeyMismatch";
+
+export const VrfKeyResult: c.Codec<VrfKeyResult> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["KeyMismatch", "Malformed", "accepted"]);
+    return c.typeMismatch("no alternative of VrfKeyResult fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["accepted", "Malformed", "KeyMismatch"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<VrfKeyResult>("accepted");
+      case 1:
+        return c.ok<VrfKeyResult>("Malformed");
+      case 2:
+        return c.ok<VrfKeyResult>("KeyMismatch");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
 /** `vrf-proof` (`shared/schemas/vrf-vectors.cddl`). */
 export interface VrfProof {
   readonly alpha: Hex;
@@ -75,7 +132,7 @@ export interface VrfRejection {
   readonly verifyingKey: Hex;
   readonly alpha: Hex;
   readonly pi: Hex;
-  readonly result: string;
+  readonly result: VrfResult;
 }
 
 export const VrfRejection: c.Codec<VrfRejection> = {
@@ -87,7 +144,7 @@ export const VrfRejection: c.Codec<VrfRejection> = {
         c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey, e),
         c.field("alpha", c.defer(() => Hex), a.alpha, e),
         c.field("pi", c.defer(() => Hex), a.pi, e),
-        c.field("result", c.text, a.result, e),
+        c.field("result", c.defer(() => VrfResult), a.result, e),
       ]),
     ),
   decode: (v) => {
@@ -103,9 +160,41 @@ export const VrfRejection: c.Codec<VrfRejection> = {
     if (!r3.ok) return r3;
     const r4 = f.value.required("pi", c.defer(() => Hex));
     if (!r4.ok) return r4;
-    const r5 = f.value.required("result", c.text);
+    const r5 = f.value.required("result", c.defer(() => VrfResult));
     if (!r5.ok) return r5;
     return c.ok({ suite: r0.value, name: r1.value, verifyingKey: r2.value, alpha: r3.value, pi: r4.value, result: r5.value });
+  },
+};
+
+/** `vrf-result` (`shared/schemas/vrf-vectors.cddl`). */
+export type VrfResult = "valid" | "Malformed" | "InvalidPublicKey" | "SmallOrderPublicKey" | "InvalidGamma" | "NonCanonicalScalar" | "ChallengeMismatch";
+
+export const VrfResult: c.Codec<VrfResult> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["ChallengeMismatch", "InvalidGamma", "InvalidPublicKey", "Malformed", "NonCanonicalScalar", "SmallOrderPublicKey", "valid"]);
+    return c.typeMismatch("no alternative of VrfResult fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["valid", "Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<VrfResult>("valid");
+      case 1:
+        return c.ok<VrfResult>("Malformed");
+      case 2:
+        return c.ok<VrfResult>("InvalidPublicKey");
+      case 3:
+        return c.ok<VrfResult>("SmallOrderPublicKey");
+      case 4:
+        return c.ok<VrfResult>("InvalidGamma");
+      case 5:
+        return c.ok<VrfResult>("NonCanonicalScalar");
+      case 6:
+        return c.ok<VrfResult>("ChallengeMismatch");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
   },
 };
 
@@ -140,6 +229,7 @@ export interface VrfVectors {
   readonly version: 1n;
   readonly suites: readonly VrfSuite[];
   readonly rejections: readonly VrfRejection[];
+  readonly keyDecoding: readonly VrfKeyCase[];
 }
 
 export const VrfVectors: c.Codec<VrfVectors> = {
@@ -150,10 +240,11 @@ export const VrfVectors: c.Codec<VrfVectors> = {
         c.field("version", c.literalInt(1n), a.version, e),
         c.field("suites", c.vector(c.defer(() => VrfSuite), 0, null), a.suites, e),
         c.field("rejections", c.vector(c.defer(() => VrfRejection), 0, null), a.rejections, e),
+        c.field("keyDecoding", c.vector(c.defer(() => VrfKeyCase), 0, null), a.keyDecoding, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "suites", "rejections"]);
+    const f = c.fields(v, ["spec", "version", "suites", "rejections", "keyDecoding"]);
     if (!f.ok) return f;
     const r0 = f.value.required("spec", c.literalText("docs/specs/vrf.md"));
     if (!r0.ok) return r0;
@@ -163,6 +254,8 @@ export const VrfVectors: c.Codec<VrfVectors> = {
     if (!r2.ok) return r2;
     const r3 = f.value.required("rejections", c.vector(c.defer(() => VrfRejection), 0, null));
     if (!r3.ok) return r3;
-    return c.ok({ spec: r0.value, version: r1.value, suites: r2.value, rejections: r3.value });
+    const r4 = f.value.required("keyDecoding", c.vector(c.defer(() => VrfKeyCase), 0, null));
+    if (!r4.ok) return r4;
+    return c.ok({ spec: r0.value, version: r1.value, suites: r2.value, rejections: r3.value, keyDecoding: r4.value });
   },
 };

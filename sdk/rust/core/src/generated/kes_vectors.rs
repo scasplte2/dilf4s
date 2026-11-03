@@ -32,6 +32,44 @@ impl c::Model for KesCardanoParameters {
     }
 }
 
+/// `kes-check` (`shared/schemas/kes-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KesCheck {
+    /// The text `parameters`.
+    Parameters,
+    /// The text `generate`.
+    Generate,
+    /// The text `load`.
+    Load,
+    /// The text `evolve`.
+    Evolve,
+    /// The text `verify`.
+    Verify,
+}
+
+impl c::Model for KesCheck {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Parameters => Ok(c::Value::text("parameters")),
+            Self::Generate => Ok(c::Value::text("generate")),
+            Self::Load => Ok(c::Value::text("load")),
+            Self::Evolve => Ok(c::Value::text("evolve")),
+            Self::Verify => Ok(c::Value::text("verify")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["parameters", "generate", "load", "evolve", "verify"])? {
+            c::Alternative::Text(0) => Ok(Self::Parameters),
+            c::Alternative::Text(1) => Ok(Self::Generate),
+            c::Alternative::Text(2) => Ok(Self::Load),
+            c::Alternative::Text(3) => Ok(Self::Evolve),
+            c::Alternative::Text(4) => Ok(Self::Verify),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
 /// `kes-construction` (`shared/schemas/kes-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KesConstruction {
@@ -57,6 +95,48 @@ impl c::Model for KesConstruction {
             c::Alternative::Text(0) => Ok(Self::Dilf4sSum),
             c::Alternative::Text(1) => Ok(Self::Dilf4sProduct),
             c::Alternative::Text(2) => Ok(Self::CardanoSum),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+/// `kes-outcome` (`shared/schemas/kes-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KesOutcome {
+    /// The text `accepted`.
+    Accepted,
+    /// The text `rejected`.
+    Rejected,
+    /// The text `Malformed`.
+    Malformed,
+    /// The text `PeriodOutOfRange`.
+    PeriodOutOfRange,
+    /// The text `Exhausted`.
+    Exhausted,
+    /// The text `InconsistentKey`.
+    InconsistentKey,
+}
+
+impl c::Model for KesOutcome {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Accepted => Ok(c::Value::text("accepted")),
+            Self::Rejected => Ok(c::Value::text("rejected")),
+            Self::Malformed => Ok(c::Value::text("Malformed")),
+            Self::PeriodOutOfRange => Ok(c::Value::text("PeriodOutOfRange")),
+            Self::Exhausted => Ok(c::Value::text("Exhausted")),
+            Self::InconsistentKey => Ok(c::Value::text("InconsistentKey")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["accepted", "rejected", "Malformed", "PeriodOutOfRange", "Exhausted", "InconsistentKey"])? {
+            c::Alternative::Text(0) => Ok(Self::Accepted),
+            c::Alternative::Text(1) => Ok(Self::Rejected),
+            c::Alternative::Text(2) => Ok(Self::Malformed),
+            c::Alternative::Text(3) => Ok(Self::PeriodOutOfRange),
+            c::Alternative::Text(4) => Ok(Self::Exhausted),
+            c::Alternative::Text(5) => Ok(Self::InconsistentKey),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -152,6 +232,68 @@ impl c::Model for KesProductParameters {
     }
 }
 
+/// `kes-refusal` (`shared/schemas/kes-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KesRefusal {
+    /// The `name` entry.
+    pub name: String,
+    /// The `check` entry.
+    pub check: KesCheck,
+    /// The `construction` entry.
+    pub construction: KesConstruction,
+    /// The `parameters` entry.
+    pub parameters: KesParameters,
+    /// The `seed` entry.
+    pub seed: Option<Hex>,
+    /// The `key` entry.
+    pub key: Option<Hex>,
+    /// The `verifyingKey` entry.
+    pub verifying_key: Option<Hex>,
+    /// The `message` entry.
+    pub message: Option<Hex>,
+    /// The `signature` entry.
+    pub signature: Option<Hex>,
+    /// The `period` entry.
+    pub period: Option<u64>,
+    /// The `outcome` entry.
+    pub outcome: KesOutcome,
+}
+
+impl c::Model for KesRefusal {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("check", &c::ModelOf::<KesCheck>::NEW, &self.check, inner)?,
+            c::field("construction", &c::ModelOf::<KesConstruction>::NEW, &self.construction, inner)?,
+            c::field("parameters", &c::ModelOf::<KesParameters>::NEW, &self.parameters, inner)?,
+            c::optional_field("seed", &HEX, self.seed.as_ref(), inner)?,
+            c::optional_field("key", &HEX, self.key.as_ref(), inner)?,
+            c::optional_field("verifyingKey", &HEX, self.verifying_key.as_ref(), inner)?,
+            c::optional_field("message", &HEX, self.message.as_ref(), inner)?,
+            c::optional_field("signature", &HEX, self.signature.as_ref(), inner)?,
+            c::optional_field("period", &c::UINT, self.period.as_ref(), inner)?,
+            c::field("outcome", &c::ModelOf::<KesOutcome>::NEW, &self.outcome, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["name", "check", "construction", "parameters", "seed", "key", "verifyingKey", "message", "signature", "period", "outcome"])?;
+        let f0 = fields.required("name", &c::Text)?;
+        let f1 = fields.required("check", &c::ModelOf::<KesCheck>::NEW)?;
+        let f2 = fields.required("construction", &c::ModelOf::<KesConstruction>::NEW)?;
+        let f3 = fields.required("parameters", &c::ModelOf::<KesParameters>::NEW)?;
+        let f4 = fields.optional("seed", &HEX)?;
+        let f5 = fields.optional("key", &HEX)?;
+        let f6 = fields.optional("verifyingKey", &HEX)?;
+        let f7 = fields.optional("message", &HEX)?;
+        let f8 = fields.optional("signature", &HEX)?;
+        let f9 = fields.optional("period", &c::UINT)?;
+        let f10 = fields.required("outcome", &c::ModelOf::<KesOutcome>::NEW)?;
+        Ok(Self { name: f0, check: f1, construction: f2, parameters: f3, seed: f4, key: f5, verifying_key: f6, message: f7, signature: f8, period: f9, outcome: f10 })
+    }
+}
+
 /// `kes-sum-parameters` (`shared/schemas/kes-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KesSumParameters {
@@ -225,6 +367,8 @@ impl c::Model for KesVector {
 pub struct KesVectors {
     /// The `vectors` entry.
     pub vectors: Vec<KesVector>,
+    /// The `refusals` entry.
+    pub refusals: Vec<KesRefusal>,
 }
 
 impl c::Model for KesVectors {
@@ -234,14 +378,16 @@ impl c::Model for KesVectors {
             c::field("spec", &c::LiteralText("docs/specs/kes.md"), &(), inner)?,
             c::field("version", &c::LiteralInt(1), &(), inner)?,
             c::field("vectors", &c::VecOf { element: c::ModelOf::<KesVector>::NEW, min: 0, max: None }, &self.vectors, inner)?,
+            c::field("refusals", &c::VecOf { element: c::ModelOf::<KesRefusal>::NEW, min: 0, max: None }, &self.refusals, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "vectors"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "vectors", "refusals"])?;
         fields.required("spec", &c::LiteralText("docs/specs/kes.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         let f2 = fields.required("vectors", &c::VecOf { element: c::ModelOf::<KesVector>::NEW, min: 0, max: None })?;
-        Ok(Self { vectors: f2 })
+        let f3 = fields.required("refusals", &c::VecOf { element: c::ModelOf::<KesRefusal>::NEW, min: 0, max: None })?;
+        Ok(Self { vectors: f2, refusals: f3 })
     }
 }

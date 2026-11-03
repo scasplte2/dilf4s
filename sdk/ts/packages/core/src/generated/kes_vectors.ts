@@ -27,6 +27,34 @@ export const KesCardanoParameters: c.Codec<KesCardanoParameters> = {
   },
 };
 
+/** `kes-check` (`shared/schemas/kes-vectors.cddl`). */
+export type KesCheck = "parameters" | "generate" | "load" | "evolve" | "verify";
+
+export const KesCheck: c.Codec<KesCheck> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["evolve", "generate", "load", "parameters", "verify"]);
+    return c.typeMismatch("no alternative of KesCheck fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["parameters", "generate", "load", "evolve", "verify"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<KesCheck>("parameters");
+      case 1:
+        return c.ok<KesCheck>("generate");
+      case 2:
+        return c.ok<KesCheck>("load");
+      case 3:
+        return c.ok<KesCheck>("evolve");
+      case 4:
+        return c.ok<KesCheck>("verify");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
 /** `kes-construction` (`shared/schemas/kes-vectors.cddl`). */
 export type KesConstruction = "dilf4s-sum" | "dilf4s-product" | "cardano-sum";
 
@@ -45,6 +73,36 @@ export const KesConstruction: c.Codec<KesConstruction> = {
         return c.ok<KesConstruction>("dilf4s-product");
       case 2:
         return c.ok<KesConstruction>("cardano-sum");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
+/** `kes-outcome` (`shared/schemas/kes-vectors.cddl`). */
+export type KesOutcome = "accepted" | "rejected" | "Malformed" | "PeriodOutOfRange" | "Exhausted" | "InconsistentKey";
+
+export const KesOutcome: c.Codec<KesOutcome> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["Exhausted", "InconsistentKey", "Malformed", "PeriodOutOfRange", "accepted", "rejected"]);
+    return c.typeMismatch("no alternative of KesOutcome fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["accepted", "rejected", "Malformed", "PeriodOutOfRange", "Exhausted", "InconsistentKey"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<KesOutcome>("accepted");
+      case 1:
+        return c.ok<KesOutcome>("rejected");
+      case 2:
+        return c.ok<KesOutcome>("Malformed");
+      case 3:
+        return c.ok<KesOutcome>("PeriodOutOfRange");
+      case 4:
+        return c.ok<KesOutcome>("Exhausted");
+      case 5:
+        return c.ok<KesOutcome>("InconsistentKey");
       default:
         return c.decodeFailure("unknown alternative");
     }
@@ -136,6 +194,67 @@ export const KesProductParameters: c.Codec<KesProductParameters> = {
   },
 };
 
+/** `kes-refusal` (`shared/schemas/kes-vectors.cddl`). */
+export interface KesRefusal {
+  readonly name: string;
+  readonly check: KesCheck;
+  readonly construction: KesConstruction;
+  readonly parameters: KesParameters;
+  readonly seed?: Hex;
+  readonly key?: Hex;
+  readonly verifyingKey?: Hex;
+  readonly message?: Hex;
+  readonly signature?: Hex;
+  readonly period?: bigint;
+  readonly outcome: KesOutcome;
+}
+
+export const KesRefusal: c.Codec<KesRefusal> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("name", c.text, a.name, e),
+        c.field("check", c.defer(() => KesCheck), a.check, e),
+        c.field("construction", c.defer(() => KesConstruction), a.construction, e),
+        c.field("parameters", c.defer(() => KesParameters), a.parameters, e),
+        c.optionalField("seed", c.defer(() => Hex), a.seed, e),
+        c.optionalField("key", c.defer(() => Hex), a.key, e),
+        c.optionalField("verifyingKey", c.defer(() => Hex), a.verifyingKey, e),
+        c.optionalField("message", c.defer(() => Hex), a.message, e),
+        c.optionalField("signature", c.defer(() => Hex), a.signature, e),
+        c.optionalField("period", c.uint, a.period, e),
+        c.field("outcome", c.defer(() => KesOutcome), a.outcome, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["name", "check", "construction", "parameters", "seed", "key", "verifyingKey", "message", "signature", "period", "outcome"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("name", c.text);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("check", c.defer(() => KesCheck));
+    if (!r1.ok) return r1;
+    const r2 = f.value.required("construction", c.defer(() => KesConstruction));
+    if (!r2.ok) return r2;
+    const r3 = f.value.required("parameters", c.defer(() => KesParameters));
+    if (!r3.ok) return r3;
+    const r4 = f.value.optional("seed", c.defer(() => Hex));
+    if (!r4.ok) return r4;
+    const r5 = f.value.optional("key", c.defer(() => Hex));
+    if (!r5.ok) return r5;
+    const r6 = f.value.optional("verifyingKey", c.defer(() => Hex));
+    if (!r6.ok) return r6;
+    const r7 = f.value.optional("message", c.defer(() => Hex));
+    if (!r7.ok) return r7;
+    const r8 = f.value.optional("signature", c.defer(() => Hex));
+    if (!r8.ok) return r8;
+    const r9 = f.value.optional("period", c.uint);
+    if (!r9.ok) return r9;
+    const r10 = f.value.required("outcome", c.defer(() => KesOutcome));
+    if (!r10.ok) return r10;
+    return c.ok({ name: r0.value, check: r1.value, construction: r2.value, parameters: r3.value, seed: r4.value, key: r5.value, verifyingKey: r6.value, message: r7.value, signature: r8.value, period: r9.value, outcome: r10.value });
+  },
+};
+
 /** `kes-sum-parameters` (`shared/schemas/kes-vectors.cddl`). */
 export interface KesSumParameters {
   readonly hash: string;
@@ -207,6 +326,7 @@ export interface KesVectors {
   readonly spec: "docs/specs/kes.md";
   readonly version: 1n;
   readonly vectors: readonly KesVector[];
+  readonly refusals: readonly KesRefusal[];
 }
 
 export const KesVectors: c.Codec<KesVectors> = {
@@ -216,10 +336,11 @@ export const KesVectors: c.Codec<KesVectors> = {
         c.field("spec", c.literalText("docs/specs/kes.md"), a.spec, e),
         c.field("version", c.literalInt(1n), a.version, e),
         c.field("vectors", c.vector(c.defer(() => KesVector), 0, null), a.vectors, e),
+        c.field("refusals", c.vector(c.defer(() => KesRefusal), 0, null), a.refusals, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "vectors"]);
+    const f = c.fields(v, ["spec", "version", "vectors", "refusals"]);
     if (!f.ok) return f;
     const r0 = f.value.required("spec", c.literalText("docs/specs/kes.md"));
     if (!r0.ok) return r0;
@@ -227,6 +348,8 @@ export const KesVectors: c.Codec<KesVectors> = {
     if (!r1.ok) return r1;
     const r2 = f.value.required("vectors", c.vector(c.defer(() => KesVector), 0, null));
     if (!r2.ok) return r2;
-    return c.ok({ spec: r0.value, version: r1.value, vectors: r2.value });
+    const r3 = f.value.required("refusals", c.vector(c.defer(() => KesRefusal), 0, null));
+    if (!r3.ok) return r3;
+    return c.ok({ spec: r0.value, version: r1.value, vectors: r2.value, refusals: r3.value });
   },
 };

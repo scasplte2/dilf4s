@@ -631,7 +631,10 @@
       "verifyingKey" : "0200000000000000000000000000000000000000000000000000000000000000",
       "message" : "616263",
       "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "Ed25519-libsodium",
@@ -639,7 +642,10 @@
       "verifyingKey" : "0200000000000000000000000000000000000000000000000000000000000000",
       "message" : "616263",
       "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "Ed25519",
@@ -647,7 +653,10 @@
       "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531",
       "message" : "616263",
       "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "Ed25519-libsodium",
@@ -655,7 +664,10 @@
       "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531",
       "message" : "616263",
       "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a407",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "Ed25519",
@@ -663,7 +675,10 @@
       "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
       "message" : "616263",
       "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a4",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "Ed25519-libsodium",
@@ -671,7 +686,10 @@
       "verifyingKey" : "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
       "message" : "616263",
       "signature" : "cc46d62d3754f41754b27b6ea2cb2c272bafa7a5a1f6062bd060f414e50caaeac2da66ad39cef4424a90236ea907b7d8057e3443dc5abfc9986967ee7213a4",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "Ed25519",
@@ -3831,7 +3849,10 @@
       "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
       "message" : "616263",
       "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e8bec346a02f3f7d163aceb4384fcbd5ed7d5465bb2a4077fbedce8815fe005e4",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "P-256-ECDSA",
@@ -3839,7 +3860,10 @@
       "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
       "message" : "616263",
       "signature" : "00000000000000000000000000000000000000000000000000000000000000007413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "P-256-ECDSA",
@@ -3847,7 +3871,10 @@
       "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
       "message" : "616263",
       "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e0000000000000000000000000000000000000000000000000000000000000000",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "P-256-ECDSA",
@@ -3855,7 +3882,10 @@
       "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
       "message" : "616263",
       "signature" : "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc6325517413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "P-256-ECDSA",
@@ -3863,7 +3893,10 @@
       "verifyingKey" : "020000000000000000000000000000000000000000000000000000000000000001",
       "message" : "616263",
       "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e7413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "P-256-ECDSA",
@@ -3871,7 +3904,10 @@
       "verifyingKey" : "057a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
       "message" : "616263",
       "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e7413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "P-256-ECDSA",
@@ -3879,7 +3915,10 @@
       "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b27a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
       "message" : "616263",
       "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e7413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f6d",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "P-256-ECDSA",
@@ -3887,7 +3926,10 @@
       "verifyingKey" : "027a593180860c4037c83c12749845c8ee1424dd297fadcb895e358255d2c7d2b2",
       "message" : "616263",
       "signature" : "4a05e96304c4da94ed91d8232b1caeba1b42721d7e5240ab4b4e77ee9d11d78e7413cb94fd0c082f9c5314bc7b0342a0e511b451f473970534dce2419c831f",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "secp256k1-ECDSA",
@@ -3911,7 +3953,10 @@
       "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
       "message" : "616263",
       "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef4fe00db8f4f4af69069a86452f3ae30e99e2d4bd2d5ffb2f7877f65b8af48f41b",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "secp256k1-ECDSA",
@@ -3919,7 +3964,10 @@
       "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
       "message" : "616263",
       "signature" : "000000000000000000000000000000000000000000000000000000000000000001ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "secp256k1-ECDSA",
@@ -3927,7 +3975,10 @@
       "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
       "message" : "616263",
       "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef40000000000000000000000000000000000000000000000000000000000000000",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "secp256k1-ECDSA",
@@ -3935,7 +3986,10 @@
       "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
       "message" : "616263",
       "signature" : "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036414101ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "secp256k1-ECDSA",
@@ -3943,7 +3997,10 @@
       "verifyingKey" : "020000000000000000000000000000000000000000000000000000000000000005",
       "message" : "616263",
       "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef401ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "secp256k1-ECDSA",
@@ -3951,7 +4008,10 @@
       "verifyingKey" : "056d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
       "message" : "616263",
       "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef401ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "secp256k1-ECDSA",
@@ -3959,7 +4019,10 @@
       "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e26d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
       "message" : "616263",
       "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef401ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d26",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "secp256k1-ECDSA",
@@ -3967,7 +4030,10 @@
       "verifyingKey" : "036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
       "message" : "616263",
       "signature" : "5f34abcb03415a546d0e73c127ca3416cd8419ae4a3bf5c2df03218fe786eef401ff2470b0b5096f96579bad0c51cf151c819113d948ed443852f8d420ed4d",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "BIP-340",
@@ -4007,7 +4073,10 @@
       "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000005",
       "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
       "signature" : "bc1e36a75bbd52fa15f1e721a6a36310a85c3fd9f73bb2b6d80c4d44edf7d5e8cc3c081d832efcb1b67aedd0141da9c68b608c616a6f2644b46ea0a0bcf35299",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "BIP-340",
@@ -4015,7 +4084,10 @@
       "verifyingKey" : "6d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
       "message" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
       "signature" : "bc1e36a75bbd52fa15f1e721a6a36310a85c3fd9f73bb2b6d80c4d44edf7d5e8cc3c081d832efcb1b67aedd0141da9c68b608c616a6f2644b46ea0a0bcf352",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "secp256k1-tagged-Schnorr",
@@ -4071,7 +4143,10 @@
       "verifyingKey" : "0000000000000000000000000000000000000000000000000000000000000000",
       "message" : "616263",
       "signature" : "748e4eab887b5db916991ac66139be09d4b1807bb0fb0354316e6a4d6101965bd8aa6260a9695f884979222f66cc4f4293180e58f46697e2c9755ea715c7f40a",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "ristretto255-Schnorr",
@@ -4079,7 +4154,10 @@
       "verifyingKey" : "0100000000000000000000000000000000000000000000000000000000000000",
       "message" : "616263",
       "signature" : "748e4eab887b5db916991ac66139be09d4b1807bb0fb0354316e6a4d6101965bd8aa6260a9695f884979222f66cc4f4293180e58f46697e2c9755ea715c7f40a",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "ristretto255-Schnorr",
@@ -4087,7 +4165,10 @@
       "verifyingKey" : "d64a13d307f563cb51b994c7942248e036113983b9666cd52e4ab8b92fd58a7b",
       "message" : "616263",
       "signature" : "0000000000000000000000000000000000000000000000000000000000000000d8aa6260a9695f884979222f66cc4f4293180e58f46697e2c9755ea715c7f40a",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "ristretto255-Schnorr",
@@ -4095,7 +4176,10 @@
       "verifyingKey" : "d64a13d307f563cb51b994c7942248e036113983b9666cd52e4ab8b92fd58a7b",
       "message" : "616263",
       "signature" : "748e4eab887b5db916991ac66139be09d4b1807bb0fb0354316e6a4d6101965bc57e58bdc3cc71e01f161ad244c62e5793180e58f46697e2c9755ea715c7f41a",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "ristretto255-Schnorr",
@@ -4103,7 +4187,10 @@
       "verifyingKey" : "d64a13d307f563cb51b994c7942248e036113983b9666cd52e4ab8b92fd58a7b",
       "message" : "616263",
       "signature" : "748e4eab887b5db916991ac66139be09d4b1807bb0fb0354316e6a4d6101965bd8aa6260a9695f884979222f66cc4f4293180e58f46697e2c9755ea715c7f4",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "BLS12-381-PoP",
@@ -4151,7 +4238,10 @@
       "verifyingKey" : "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
       "message" : "616263",
       "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "BLS12-381-PoP",
@@ -4159,7 +4249,10 @@
       "verifyingKey" : "1112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
       "message" : "616263",
       "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "BLS12-381-PoP",
@@ -4167,7 +4260,10 @@
       "verifyingKey" : "9112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
       "message" : "616263",
       "signature" : "0aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     },
     {
       "scheme" : "BLS12-381-PoP",
@@ -4175,7 +4271,10 @@
       "verifyingKey" : "800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
       "message" : "616263",
       "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab4b",
-      "result" : "malformedKey"
+      "result" : {
+        "part" : "verifyingKey",
+        "kind" : "InvalidKey"
+      }
     },
     {
       "scheme" : "BLS12-381-PoP",
@@ -4183,7 +4282,10 @@
       "verifyingKey" : "9112a0386a2340714ba0c6d2df235377a8679c3899d03e6ef04dba7a50ef49e5a1dc93105e9374e93ed301b63487e17c",
       "message" : "616263",
       "signature" : "8aa7045c01536c9a17aeb42fcebb2e77c64317a930d180ac501c12587c8229fd0ba5cf392328f0fe0fd347e6013da7480457006f3ba2f8988dacad37493cb527658e5d0ca11f4cf5fc610b177df2eafda790aefa8c435726a960a0c7f56cab",
-      "result" : "malformedSignature"
+      "result" : {
+        "part" : "signature",
+        "kind" : "InvalidEncoding"
+      }
     }
   ],
   "keyDecoding" : [
@@ -5664,6 +5766,116 @@
     {
       "path" : "m/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/x",
       "result" : "tooDeep"
+    }
+  ],
+  "keyRefusals" : [
+    {
+      "name" : "empty",
+      "check" : "bip39-entropy",
+      "entropy" : "",
+      "kind" : "InvalidEntropy"
+    },
+    {
+      "name" : "15-bytes",
+      "check" : "bip39-entropy",
+      "entropy" : "000102030405060708090a0b0c0d0e",
+      "kind" : "InvalidEntropy"
+    },
+    {
+      "name" : "17-bytes",
+      "check" : "bip39-entropy",
+      "entropy" : "000102030405060708090a0b0c0d0e0f10",
+      "kind" : "InvalidEntropy"
+    },
+    {
+      "name" : "36-bytes",
+      "check" : "bip39-entropy",
+      "entropy" : "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00010203",
+      "kind" : "InvalidEntropy"
+    },
+    {
+      "name" : "11-words",
+      "check" : "bip39-phrase",
+      "phrase" : "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon",
+      "kind" : "InvalidMnemonic"
+    },
+    {
+      "name" : "checksum",
+      "check" : "bip39-phrase",
+      "phrase" : "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon",
+      "kind" : "InvalidMnemonic"
+    },
+    {
+      "name" : "unknown-word",
+      "check" : "bip39-phrase",
+      "phrase" : "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon dilf4s",
+      "kind" : "InvalidMnemonic"
+    },
+    {
+      "name" : "empty",
+      "check" : "bip39-phrase",
+      "phrase" : "",
+      "kind" : "InvalidMnemonic"
+    },
+    {
+      "name" : "two-words",
+      "check" : "word-list",
+      "words" : [
+        "abandon",
+        "ability"
+      ],
+      "kind" : "InvalidWordList"
+    },
+    {
+      "name" : "soft-index",
+      "check" : "slip10",
+      "seed" : "0a6d060f6242aece4b074e48e7d8166f792a9b2bb7b295fa5ac289eda7647290c3d80e7436d6e9e34e72769c06f6582192d0b57ae4a97e9e24c8972a770a57d9",
+      "path" : "m/0",
+      "kind" : "InvalidDerivation"
+    },
+    {
+      "name" : "15-byte-seed",
+      "check" : "slip10",
+      "seed" : "000102030405060708090a0b0c0d0e",
+      "path" : "m",
+      "kind" : "InvalidDerivation"
+    },
+    {
+      "name" : "65-byte-seed",
+      "check" : "slip10",
+      "seed" : "0a6d060f6242aece4b074e48e7d8166f792a9b2bb7b295fa5ac289eda7647290c3d80e7436d6e9e34e72769c06f6582192d0b57ae4a97e9e24c8972a770a57d900",
+      "path" : "m",
+      "kind" : "InvalidDerivation"
+    },
+    {
+      "name" : "15-byte-seed",
+      "check" : "bip32",
+      "seed" : "000102030405060708090a0b0c0d0e",
+      "path" : "m",
+      "kind" : "InvalidDerivation"
+    },
+    {
+      "name" : "65-byte-seed",
+      "check" : "bip32",
+      "seed" : "0a6d060f6242aece4b074e48e7d8166f792a9b2bb7b295fa5ac289eda7647290c3d80e7436d6e9e34e72769c06f6582192d0b57ae4a97e9e24c8972a770a57d900",
+      "path" : "m",
+      "kind" : "InvalidDerivation"
+    },
+    {
+      "name" : "hardened",
+      "check" : "bip32-public",
+      "verifyingKey" : "03371a60bf759652c61ba2f2a381c2ad7cbde457490213a5cf1671c1625f053442",
+      "chainCode" : "d9f36b43a389074c955807a5d93d0db68fd4ce1abeef9c6d57554960505f3437",
+      "path" : "m/0'",
+      "kind" : "InvalidDerivation"
+    },
+    {
+      "name" : "hardened",
+      "check" : "icarus-public",
+      "verifyingKey" : "4c32058b53e4df920ac3b50f0859d7d8a4f5c92e92c65d1075f1d8a9a0e07b25",
+      "chainCode" : "91db495d11691045874102cbf1bb9f6c9c868ebfa5ce6d3056d976175b0064d4",
+      "path" : "m/0'",
+      "kind" : "InvalidDerivation"
     }
   ]
 }

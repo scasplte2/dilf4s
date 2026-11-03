@@ -65,6 +65,39 @@ describe("vrf_v1.json", { timeout: 60_000 }, () => {
     });
     expect(mismatches).toEqual([]);
   });
+
+  test("signing-key decoding: a wrong length is Malformed, a draft-03 key holding another seed's public key KeyMismatch", () => {
+    expect(vectors.keyDecoding.length).toBeGreaterThanOrEqual(13);
+    const mismatches = vectors.keyDecoding.flatMap((c) => {
+      const r = suite(c.suite).signingKey(h(c.bytes));
+      const actual = r.ok ? "accepted" : r.error.kind;
+      return actual === c.result ? [] : [`${c.suite}/${c.name}: expected ${c.result}, got ${actual}`];
+    });
+    expect(mismatches).toEqual([]);
+  });
+
+  test("coverage (conformance.md section 6): every VrfError kind has a row by kind, or is exempt", () => {
+    type Verdict = models.vrfVectors.VrfResult | models.vrfVectors.VrfKeyResult;
+    // and every refusal kind the schema names is one of the SDK's
+    const toSdk = (k: Exclude<Verdict, "valid" | "accepted">): VrfError["kind"] => k;
+    expect(toSdk("Malformed")).toBe("Malformed");
+    // a Record over the SDK's kinds: a kind added to VrfError does not compile until it is listed here
+    const coverage: Record<VrfError["kind"], Verdict | "exempt"> = {
+      Malformed: "Malformed",
+      InvalidPublicKey: "InvalidPublicKey",
+      SmallOrderPublicKey: "SmallOrderPublicKey",
+      InvalidGamma: "InvalidGamma",
+      NonCanonicalScalar: "NonCanonicalScalar",
+      ChallengeMismatch: "ChallengeMismatch",
+      KeyMismatch: "KeyMismatch",
+      // no input is known that reaches it (TAI: all 256 counters fail, probability about 2^-256)
+      HashToCurveFailed: "exempt",
+    };
+    const pinned = new Set<string>([...vectors.rejections.map((r) => r.result), ...vectors.keyDecoding.map((c) => c.result)]);
+    const unpinned = Object.entries(coverage).filter(([, v]) => v !== "exempt" && !pinned.has(v));
+    expect(unpinned).toEqual([]);
+    expect(pinned.has("HashToCurveFailed")).toBe(false);
+  });
 });
 
 describe("RFC 9380 J.5.2, edwards25519_XMD:SHA-512_ELL2_NU_", { timeout: 60_000 }, () => {

@@ -28,8 +28,7 @@ interface FaceKey {
   evolve(): Result<FaceKey, KesError>;
 }
 
-function faceOf(v: models.kesVectors.KesVector): Face {
-  const p = v.parameters;
+function schemeOf(construction: models.kesVectors.KesConstruction, p: models.kesVectors.KesParameters): Result<Face, KesError> {
   const hash = (name: string): HashAlgorithm => {
     const a = hashAlgorithm(name);
     if (a === undefined) throw new Error(`unknown hash ${name}`);
@@ -53,24 +52,83 @@ function faceOf(v: models.kesVectors.KesVector): Face {
     });
     return (r: Result<K, KesError>): Result<FaceKey, KesError> => (r.ok ? { ok: true, value: key(r.value) } : r);
   };
-  switch (v.construction) {
+  switch (construction) {
     case "dilf4s-sum": {
-      const s = expectOk(KesSum.of(hash(sumP.hash), Number(sumP.height)), "scheme");
+      const r = KesSum.of(hash(sumP.hash), Number(sumP.height));
+      if (!r.ok) return r;
+      const s = r.value;
       const w = wrap<KesSumKey>((k, m) => expectOk(k.sign(m), "sign"));
-      return { totalPeriods: s.totalPeriods, generate: (x) => w(s.generate(x)), load: (x, t) => w(s.load(x, t)), verify: (...a) => s.verify(...a) };
+      return { ok: true, value: { totalPeriods: s.totalPeriods, generate: (x) => w(s.generate(x)), load: (x, t) => w(s.load(x, t)), verify: (...a) => s.verify(...a) } };
     }
     case "dilf4s-product": {
-      const s = expectOk(KesProduct.of(hash(productP.hash), Number(productP.superHeight), Number(productP.subHeight)), "scheme");
+      const r = KesProduct.of(hash(productP.hash), Number(productP.superHeight), Number(productP.subHeight));
+      if (!r.ok) return r;
+      const s = r.value;
       const w = wrap<KesProductKey>((k, m) => expectOk(k.sign(m), "sign"));
-      return { totalPeriods: s.totalPeriods, generate: (x) => w(s.generate(x)), load: (x, t) => w(s.load(x, t)), verify: (...a) => s.verify(...a) };
+      return { ok: true, value: { totalPeriods: s.totalPeriods, generate: (x) => w(s.generate(x)), load: (x, t) => w(s.load(x, t)), verify: (...a) => s.verify(...a) } };
     }
     case "cardano-sum": {
-      const s = expectOk(CardanoSumKes.of(Number(cardanoP.depth)), "scheme");
+      const r = CardanoSumKes.of(Number(cardanoP.depth));
+      if (!r.ok) return r;
+      const s = r.value;
       const w = wrap<CardanoSumKesKey>((k, m) => k.sign(m));
-      return { totalPeriods: s.totalPeriods, generate: (x) => w(s.generate(x)), load: (x, t) => w(s.load(x, t)), verify: (...a) => s.verify(...a) };
+      return { ok: true, value: { totalPeriods: s.totalPeriods, generate: (x) => w(s.generate(x)), load: (x, t) => w(s.load(x, t)), verify: (...a) => s.verify(...a) } };
     }
   }
 }
+
+const faceOf = (v: models.kesVectors.KesVector): Face => expectOk(schemeOf(v.construction, v.parameters), "scheme");
+
+/** What a `refusals` row's call gives. */
+function refusalOutcome(c: models.kesVectors.KesRefusal): models.kesVectors.KesOutcome {
+  const face = schemeOf(c.construction, c.parameters);
+  if (!face.ok) return face.error.kind;
+  const f = face.value;
+  const period = Number(c.period ?? 0n);
+  const outcome = (r: Result<unknown, KesError>): models.kesVectors.KesOutcome => (r.ok ? "accepted" : r.error.kind);
+  switch (c.check) {
+    case "parameters":
+      return "accepted";
+    case "generate":
+      return outcome(f.generate(h(c.seed ?? "")));
+    case "load":
+      return outcome(f.load(h(c.key ?? ""), period));
+    case "evolve": {
+      const k = f.load(h(c.key ?? ""), period);
+      return outcome(k.ok ? k.value.evolve() : k);
+    }
+    case "verify": {
+      const r = f.verify(h(c.verifyingKey ?? ""), period, h(c.message ?? ""), h(c.signature ?? ""));
+      return r.ok ? (r.value ? "accepted" : "rejected") : r.error.kind;
+    }
+  }
+}
+
+describe("kes_v1.json refusals", { timeout: 60_000 }, () => {
+  test("every row's call gives its outcome, by kind (issue #92: heights that wrap as 32-bit sums among them)", () => {
+    expect(vectors.refusals.length).toBeGreaterThanOrEqual(60);
+    const mismatches = vectors.refusals.flatMap((c) => {
+      const actual = refusalOutcome(c);
+      return actual === c.outcome ? [] : [`${c.construction} ${c.check} ${c.name}: expected ${c.outcome}, got ${actual}`];
+    });
+    expect(mismatches).toEqual([]);
+  });
+
+  test("coverage (conformance.md section 6): every KesError kind has a row", () => {
+    // a Record over the SDK's kinds: a kind added to KesError does not compile until it is listed here
+    const coverage: Record<KesError["kind"], models.kesVectors.KesOutcome> = {
+      Malformed: "Malformed",
+      PeriodOutOfRange: "PeriodOutOfRange",
+      Exhausted: "Exhausted",
+      InconsistentKey: "InconsistentKey",
+    };
+    // and every refusal kind the schema names is one of the SDK's
+    const toSdk = (k: Exclude<models.kesVectors.KesOutcome, "accepted" | "rejected">): KesError["kind"] => k;
+    expect(toSdk("Exhausted")).toBe("Exhausted");
+    const pinned = new Set<string>(vectors.refusals.map((c) => c.outcome));
+    expect(Object.values(coverage).filter((k) => !pinned.has(k))).toEqual([]);
+  });
+});
 
 describe("kes_v1.json", { timeout: 60_000 }, () => {
   test("covers the three constructions", () => {

@@ -23,6 +23,7 @@ mod common;
 
 use common::{bytes, load};
 use dilf4s_core::Value;
+use dilf4s_core::generated::sigma_refusal_vectors::{SigmaOutcome, SigmaRefusalVectors};
 use dilf4s_core::generated::sigma_vectors::{SigmaCase, SigmaKind, SigmaProposition, SigmaType, SigmaVectors};
 use dilf4s_signing::SigmaError;
 use dilf4s_signing::sigma::{self, MAX_DEPTH, MAX_WEIGHT, Proposition};
@@ -428,4 +429,67 @@ fn a_proof_is_bound_to_its_proposition() {
     let two_of_three = Proposition::threshold(2, vec![leaf(), leaf(), leaf()]).unwrap();
     assert_eq!(two_of_three.proof_length(), 24 + 24 + 96);
     assert_eq!(kind(sigma::verify(&or, &proof, &message)), "ProofLength");
+}
+
+/// The schema's outcome of a verification. Exhaustive: a kind the SDK adds does not compile until it is mapped.
+fn sigma_outcome(r: &Result<bool, SigmaError>) -> SigmaOutcome {
+    match r {
+        Ok(true) => SigmaOutcome::Accepted,
+        Ok(false) => SigmaOutcome::Rejected,
+        Err(SigmaError::InvalidProposition { .. }) => SigmaOutcome::InvalidProposition,
+        Err(SigmaError::InvalidPoint { .. }) => SigmaOutcome::InvalidPoint,
+        Err(SigmaError::ProofLength { .. }) => SigmaOutcome::ProofLength,
+        Err(SigmaError::ResponseOutOfRange) => SigmaOutcome::ResponseOutOfRange,
+    }
+}
+
+/// Every `sigma_refusals_v1.json` case gives its outcome by kind, the proposition decoded from its canonical CBOR.
+#[test]
+fn refusals_by_kind() {
+    let v: SigmaRefusalVectors = load("sigma_refusals_v1.json");
+    let failures: Vec<String> = v
+        .cases
+        .iter()
+        .filter_map(|c| {
+            let proposition = dilf4s_core::cbor::decode(&bytes(&c.proposition)).unwrap();
+            let actual = sigma_outcome(&sigma::verify_value(&proposition, &bytes(&c.proof), &bytes(&c.message)));
+            (actual != c.outcome).then(|| format!("{}: expected {:?}, got {actual:?}", c.name, c.outcome))
+        })
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(v.cases.len() >= 20, "{} cases", v.cases.len());
+}
+
+/// The reference's outcome on every case of the two Ergo-checked files, in order: exact where those files allow
+/// `false` or an error.
+#[test]
+fn ergo_checked_cases_by_kind() {
+    let v: SigmaRefusalVectors = load("sigma_refusals_v1.json");
+    for (file, outcomes) in [("sigma_v1.json", &v.ergo_cases), ("sigma_dilf4s_v1.json", &v.dilf4s_cases)] {
+        let cases: SigmaVectors = load(file);
+        assert_eq!(cases.cases.len(), outcomes.len(), "{file}: one outcome per case");
+        for (i, (c, expected)) in cases.cases.iter().zip(outcomes).enumerate() {
+            let actual =
+                sigma_outcome(&sigma::verify_value(&to_value(&c.proposition), &hex0x(&c.proof), &hex0x(&c.message)));
+            assert_eq!(&actual, expected, "{file} case {i} {} ({:?})", c.name, c.kind);
+        }
+    }
+}
+
+/// The coverage gate (conformance.md section 6) for `SigmaError`: every kind has a row. The samples are one of each
+/// variant, and [`sigma_outcome`] is exhaustive, so a new kind does not compile until it is mapped.
+#[test]
+fn every_sigma_error_kind_has_a_row() {
+    let v: SigmaRefusalVectors = load("sigma_refusals_v1.json");
+    let samples = [
+        SigmaError::InvalidProposition { reason: String::new() },
+        SigmaError::InvalidPoint { what: "pk", reason: String::new() },
+        SigmaError::ProofLength { expected: 0, actual: 0 },
+        SigmaError::ResponseOutOfRange,
+    ];
+    for e in samples {
+        let kind = e.kind();
+        let outcome = sigma_outcome(&Err(e));
+        assert!(v.cases.iter().any(|c| c.outcome == outcome), "no sigma_refusals_v1.json row pins {kind}");
+    }
 }

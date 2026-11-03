@@ -36,10 +36,11 @@ object VrfVectors {
   def render: String =
     Json
       .obj(
-        "spec"       -> "docs/specs/vrf.md".asJson,
-        "version"    -> 1.asJson,
-        "suites"     -> List(suite[EcVrfTai], suite[EcVrfEll2], suite[EcVrfDraft03]).asJson,
-        "rejections" -> xyz.kd5ujc.crypto.SigningRejections.vrf.asJson
+        "spec"        -> "docs/specs/vrf.md".asJson,
+        "version"     -> 1.asJson,
+        "suites"      -> List(suite[EcVrfTai], suite[EcVrfEll2], suite[EcVrfDraft03]).asJson,
+        "rejections"  -> xyz.kd5ujc.crypto.SigningRejections.vrf.asJson,
+        "keyDecoding" -> xyz.kd5ujc.crypto.SigningRejections.vrfKeyDecoding.asJson
       )
       .spaces2 + "\n"
 }

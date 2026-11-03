@@ -13,6 +13,8 @@
     clippy::many_single_char_names,
     clippy::items_after_statements,
     clippy::doc_markdown,
+    clippy::panic_in_result_fn,
+    clippy::unnecessary_wraps,
     reason = "tests fail by panicking, and run with std"
 )]
 
@@ -22,7 +24,9 @@ mod common;
 use std::path::PathBuf;
 
 use common::{bytes, load};
-use dilf4s_core::generated::kes_vectors::{KesConstruction, KesParameters, KesVector, KesVectors};
+use dilf4s_core::generated::kes_vectors::{
+    KesCheck, KesConstruction, KesOutcome, KesParameters, KesRefusal, KesVector, KesVectors,
+};
 use dilf4s_core::hash::HashAlgorithm;
 use dilf4s_core::hex;
 use dilf4s_signing::KesError;
@@ -34,20 +38,119 @@ enum Kes {
     Cardano(CardanoSumKes),
 }
 
-fn scheme(v: &KesVector) -> Kes {
+/// The scheme of a construction and its parameters, or its refusal.
+fn scheme_of(construction: &KesConstruction, parameters: &KesParameters) -> Result<Kes, KesError> {
     let height = |h: u64| u32::try_from(h).unwrap();
-    match (&v.construction, &v.parameters) {
+    match (construction, parameters) {
         (KesConstruction::Dilf4sSum, KesParameters::KesSumParameters(p)) => {
-            Kes::Sum(KesSum::new(HashAlgorithm::from_name(&p.hash).unwrap(), height(p.height)).unwrap())
+            KesSum::new(HashAlgorithm::from_name(&p.hash).unwrap(), height(p.height)).map(Kes::Sum)
         }
-        (KesConstruction::Dilf4sProduct, KesParameters::KesProductParameters(p)) => Kes::Product(
+        (KesConstruction::Dilf4sProduct, KesParameters::KesProductParameters(p)) => {
             KesProduct::new(HashAlgorithm::from_name(&p.hash).unwrap(), height(p.super_height), height(p.sub_height))
-                .unwrap(),
-        ),
+                .map(Kes::Product)
+        }
         (KesConstruction::CardanoSum, KesParameters::KesCardanoParameters(p)) => {
-            Kes::Cardano(CardanoSumKes::new(height(p.depth)).unwrap())
+            CardanoSumKes::new(height(p.depth)).map(Kes::Cardano)
         }
         other => panic!("unexpected construction {other:?}"),
+    }
+}
+
+fn scheme(v: &KesVector) -> Kes {
+    scheme_of(&v.construction, &v.parameters).unwrap()
+}
+
+/// The schema's outcome of a refusal. Exhaustive: a kind the SDK adds does not compile until it is mapped.
+const fn kes_outcome(e: &KesError) -> KesOutcome {
+    match e {
+        KesError::Malformed { .. } => KesOutcome::Malformed,
+        KesError::PeriodOutOfRange { .. } => KesOutcome::PeriodOutOfRange,
+        KesError::Exhausted { .. } => KesOutcome::Exhausted,
+        KesError::InconsistentKey { .. } => KesOutcome::InconsistentKey,
+    }
+}
+
+#[cfg(feature = "sign")]
+fn outcome<T>(r: Result<T, KesError>) -> KesOutcome {
+    r.map_or_else(|e| kes_outcome(&e), |_| KesOutcome::Accepted)
+}
+
+/// What a `refusals` row's call gives, or `None` for a key operation without the `sign` feature.
+fn refusal_outcome(c: &KesRefusal) -> Option<KesOutcome> {
+    let field = |f: &Option<String>| bytes(f.as_deref().unwrap_or_default());
+    let kes = match scheme_of(&c.construction, &c.parameters) {
+        Err(e) => return Some(kes_outcome(&e)),
+        Ok(kes) => kes,
+    };
+    let period = c.period.unwrap_or_default();
+    match c.check {
+        KesCheck::Parameters => Some(KesOutcome::Accepted),
+        KesCheck::Verify => Some(
+            verify(&kes, &field(&c.verifying_key), period, &field(&c.message), &field(&c.signature))
+                .map_or_else(|e| kes_outcome(&e), |ok| if ok { KesOutcome::Accepted } else { KesOutcome::Rejected }),
+        ),
+        KesCheck::Generate | KesCheck::Load | KesCheck::Evolve => {
+            keyed(&kes, &c.check, &field(&c.seed), &field(&c.key), period)
+        }
+    }
+}
+
+/// Generating, loading or evolving a key, which needs the `sign` feature.
+#[cfg(feature = "sign")]
+fn keyed(kes: &Kes, check: &KesCheck, seed: &[u8], key: &[u8], period: u64) -> Option<KesOutcome> {
+    Some(match (kes, check) {
+        (Kes::Sum(k), KesCheck::Generate) => outcome(k.generate(seed)),
+        (Kes::Sum(k), KesCheck::Load) => outcome(k.load(key, period)),
+        (Kes::Sum(k), _) => outcome(k.load(key, period).and_then(|key| k.evolve(&key))),
+        (Kes::Product(k), KesCheck::Generate) => outcome(k.generate(seed)),
+        (Kes::Product(k), KesCheck::Load) => outcome(k.load(key, period)),
+        (Kes::Product(k), _) => outcome(k.load(key, period).and_then(|key| k.evolve(&key))),
+        (Kes::Cardano(k), KesCheck::Generate) => outcome(k.generate(seed)),
+        (Kes::Cardano(k), KesCheck::Load) => outcome(k.load(key, period)),
+        (Kes::Cardano(k), _) => outcome(k.load(key, period).and_then(|key| k.evolve(&key))),
+    })
+}
+
+#[cfg(not(feature = "sign"))]
+const fn keyed(_: &Kes, _: &KesCheck, _: &[u8], _: &[u8], _: u64) -> Option<KesOutcome> {
+    None
+}
+
+/// Every `refusals` row gives its outcome: parameter checks and verification always, and key generation, loading and
+/// evolution with the `sign` feature. Issue #92's parameters are among them: heights that wrap when added as 32-bit
+/// integers.
+#[test]
+fn refusals_by_kind() {
+    let v: KesVectors = load("kes_v1.json");
+    let mut checked = 0;
+    let failures: Vec<String> = v
+        .refusals
+        .iter()
+        .filter_map(|c| {
+            let actual = refusal_outcome(c)?;
+            checked += 1;
+            (actual != c.outcome).then(|| {
+                format!("{:?} {:?} {}: expected {:?}, got {actual:?}", c.construction, c.check, c.name, c.outcome)
+            })
+        })
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(checked >= if cfg!(feature = "sign") { 60 } else { 30 }, "{checked} refusal rows");
+}
+
+/// The coverage gate (conformance.md section 6) for `KesError`: every kind has a row. The samples are one of each
+/// variant, and [`kes_outcome`] is exhaustive, so a new kind does not compile until it is mapped.
+#[test]
+fn every_kes_error_kind_has_a_row() {
+    let v: KesVectors = load("kes_v1.json");
+    let samples = [
+        KesError::Malformed { what: "", reason: String::new() },
+        KesError::PeriodOutOfRange { period: 0, total: 0 },
+        KesError::Exhausted { period: 0 },
+        KesError::InconsistentKey { reason: String::new() },
+    ];
+    for e in &samples {
+        assert!(v.refusals.iter().any(|c| c.outcome == kes_outcome(e)), "no refusals row pins {}", e.kind());
     }
 }
 

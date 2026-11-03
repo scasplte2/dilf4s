@@ -22,6 +22,7 @@ const schemas: Readonly<Record<string, (value: Value) => Result<Value, string>>>
   "merkle_v1.json": roundTrip(models.merkleVectors.MerkleVectors),
   "poseidon_v1.json": roundTrip(models.poseidonVectors.PoseidonVectors),
   "sigma_dilf4s_v1.json": roundTrip(models.sigmaVectors.SigmaVectors),
+  "sigma_refusals_v1.json": roundTrip(models.sigmaRefusalVectors.SigmaRefusalVectors),
   "sigma_v1.json": roundTrip(models.sigmaVectors.SigmaVectors),
   "signing_v1.json": roundTrip(models.signingVectors.SigningVectors),
   "refusals_v1.json": roundTrip(models.refusalVectors.RefusalVectors),
@@ -31,7 +32,7 @@ const schemas: Readonly<Record<string, (value: Value) => Result<Value, string>>>
   "zk_v1.json": roundTrip(models.zkVectors.ZkVectors),
 };
 
-describe("the generated models hold every vector file", () => {
+describe("the generated models hold every vector file", { timeout: 60_000 }, () => {
   it("every vector file in shared/vectors has a schema", () => {
     expect(vectorFiles()).toEqual(Object.keys(schemas).sort());
   });

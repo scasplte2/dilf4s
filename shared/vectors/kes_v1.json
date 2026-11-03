@@ -140,5 +140,820 @@
         }
       ]
     }
+  ],
+  "refusals" : [
+    {
+      "name" : "height-30",
+      "check" : "parameters",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 30
+      },
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "height-31",
+      "check" : "parameters",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 31
+      },
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "height-2147483647",
+      "check" : "parameters",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2147483647
+      },
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "heights-15-15",
+      "check" : "parameters",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 15,
+        "subHeight" : 15
+      },
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "heights-0-30",
+      "check" : "parameters",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 0,
+        "subHeight" : 30
+      },
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "heights-1-30",
+      "check" : "parameters",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 30
+      },
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "heights-30-1",
+      "check" : "parameters",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 30,
+        "subHeight" : 1
+      },
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "heights-2147483647-2147483647",
+      "check" : "parameters",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 2147483647,
+        "subHeight" : 2147483647
+      },
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "heights-2147483647-1",
+      "check" : "parameters",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 2147483647,
+        "subHeight" : 1
+      },
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "depth-7",
+      "check" : "parameters",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 7
+      },
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "depth-8",
+      "check" : "parameters",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 8
+      },
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "depth-2147483647",
+      "check" : "parameters",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2147483647
+      },
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "seed-31-bytes",
+      "check" : "generate",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "seed" : "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "seed-33-bytes",
+      "check" : "generate",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "seed" : "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00",
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "period-0",
+      "check" : "load",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "key" : "ebcf17e50bbbfd81c0d18e3bb14d526bdeeeeadaeda4656afc3dab75cbef98d81018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c7bee8d881df9658004f74690e43d574a786b6e233b506a9a0e0adbcdccc1aed6eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 0,
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "short",
+      "check" : "load",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "key" : "ebcf17e50bbbfd81c0d18e3bb14d526bdeeeeadaeda4656afc3dab75cbef98d81018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c7bee8d881df9658004f74690e43d574a786b6e233b506a9a0e0adbcdccc1aed6eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ad",
+      "period" : 0,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "past-the-last-period",
+      "check" : "load",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "key" : "ebcf17e50bbbfd81c0d18e3bb14d526bdeeeeadaeda4656afc3dab75cbef98d81018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c7bee8d881df9658004f74690e43d574a786b6e233b506a9a0e0adbcdccc1aed6eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 4,
+      "outcome" : "PeriodOutOfRange"
+    },
+    {
+      "name" : "short-and-past-the-last-period",
+      "check" : "load",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "key" : "ebcf17e50bbbfd81c0d18e3bb14d526bdeeeeadaeda4656afc3dab75cbef98d81018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c7bee8d881df9658004f74690e43d574a786b6e233b506a9a0e0adbcdccc1aed6eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ad",
+      "period" : 4,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "period-0-key-at-period-1",
+      "check" : "load",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "key" : "ebcf17e50bbbfd81c0d18e3bb14d526bdeeeeadaeda4656afc3dab75cbef98d81018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c7bee8d881df9658004f74690e43d574a786b6e233b506a9a0e0adbcdccc1aed6eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 1,
+      "outcome" : "InconsistentKey"
+    },
+    {
+      "name" : "last-key-at-period-0",
+      "check" : "load",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "key" : "320bc93605c6fe4595c0c70c213b84430064401fb67bf793bf570f990bd3e86060805462b73a284f91aeea095c81458b7b974b6b67d8ef25e02cd63d81b1c2ae0000000000000000000000000000000000000000000000000000000000000000c3e6a78c52d2b4b5be3361e86c020b3d23791c5a7147f713def4714088982ea56846bb1a4fd4d2dba1893afc25eb295ef28b5515311c69d312308910fee6fba10000000000000000000000000000000000000000000000000000000000000000eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 0,
+      "outcome" : "InconsistentKey"
+    },
+    {
+      "name" : "period-0",
+      "check" : "evolve",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "key" : "ebcf17e50bbbfd81c0d18e3bb14d526bdeeeeadaeda4656afc3dab75cbef98d81018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c7bee8d881df9658004f74690e43d574a786b6e233b506a9a0e0adbcdccc1aed6eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 0,
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "last-period",
+      "check" : "evolve",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "key" : "320bc93605c6fe4595c0c70c213b84430064401fb67bf793bf570f990bd3e86060805462b73a284f91aeea095c81458b7b974b6b67d8ef25e02cd63d81b1c2ae0000000000000000000000000000000000000000000000000000000000000000c3e6a78c52d2b4b5be3361e86c020b3d23791c5a7147f713def4714088982ea56846bb1a4fd4d2dba1893afc25eb295ef28b5515311c69d312308910fee6fba10000000000000000000000000000000000000000000000000000000000000000eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 3,
+      "outcome" : "Exhausted"
+    },
+    {
+      "name" : "valid",
+      "check" : "verify",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "verifyingKey" : "7df240135c02ad5b484386ceb3389b48929cf3e16d64f875d77d4f443ff3bebb",
+      "message" : "6b6573",
+      "signature" : "80d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e61d0aceae7e1586ae5eac1ad953414607ec57ba02354bf59df3fc1323c3ae39db458136d8db2ce23b4622802b04c238be5746a4b0ffafe6da5d9f328c4bac805c6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 1,
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "other-period",
+      "check" : "verify",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "verifyingKey" : "7df240135c02ad5b484386ceb3389b48929cf3e16d64f875d77d4f443ff3bebb",
+      "message" : "6b6573",
+      "signature" : "80d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e61d0aceae7e1586ae5eac1ad953414607ec57ba02354bf59df3fc1323c3ae39db458136d8db2ce23b4622802b04c238be5746a4b0ffafe6da5d9f328c4bac805c6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 0,
+      "outcome" : "rejected"
+    },
+    {
+      "name" : "other-message",
+      "check" : "verify",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "verifyingKey" : "7df240135c02ad5b484386ceb3389b48929cf3e16d64f875d77d4f443ff3bebb",
+      "message" : "6b6574",
+      "signature" : "80d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e61d0aceae7e1586ae5eac1ad953414607ec57ba02354bf59df3fc1323c3ae39db458136d8db2ce23b4622802b04c238be5746a4b0ffafe6da5d9f328c4bac805c6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 1,
+      "outcome" : "rejected"
+    },
+    {
+      "name" : "short-key",
+      "check" : "verify",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "verifyingKey" : "7df240135c02ad5b484386ceb3389b48929cf3e16d64f875d77d4f443ff3be",
+      "message" : "6b6573",
+      "signature" : "80d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e61d0aceae7e1586ae5eac1ad953414607ec57ba02354bf59df3fc1323c3ae39db458136d8db2ce23b4622802b04c238be5746a4b0ffafe6da5d9f328c4bac805c6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 1,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "short-signature",
+      "check" : "verify",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "verifyingKey" : "7df240135c02ad5b484386ceb3389b48929cf3e16d64f875d77d4f443ff3bebb",
+      "message" : "6b6573",
+      "signature" : "80d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e61d0aceae7e1586ae5eac1ad953414607ec57ba02354bf59df3fc1323c3ae39db458136d8db2ce23b4622802b04c238be5746a4b0ffafe6da5d9f328c4bac805c6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ad",
+      "period" : 1,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "past-the-last-period",
+      "check" : "verify",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "verifyingKey" : "7df240135c02ad5b484386ceb3389b48929cf3e16d64f875d77d4f443ff3bebb",
+      "message" : "6b6573",
+      "signature" : "80d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e61d0aceae7e1586ae5eac1ad953414607ec57ba02354bf59df3fc1323c3ae39db458136d8db2ce23b4622802b04c238be5746a4b0ffafe6da5d9f328c4bac805c6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ada3",
+      "period" : 4,
+      "outcome" : "PeriodOutOfRange"
+    },
+    {
+      "name" : "short-key-short-signature-past-the-last-period",
+      "check" : "verify",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "verifyingKey" : "7df240135c02ad5b484386ceb3389b48929cf3e16d64f875d77d4f443ff3be",
+      "message" : "6b6573",
+      "signature" : "80d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e61d0aceae7e1586ae5eac1ad953414607ec57ba02354bf59df3fc1323c3ae39db458136d8db2ce23b4622802b04c238be5746a4b0ffafe6da5d9f328c4bac805c6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ad",
+      "period" : 4,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "short-signature-past-the-last-period",
+      "check" : "verify",
+      "construction" : "dilf4s-sum",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "height" : 2
+      },
+      "verifyingKey" : "7df240135c02ad5b484386ceb3389b48929cf3e16d64f875d77d4f443ff3bebb",
+      "message" : "6b6573",
+      "signature" : "80d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e61d0aceae7e1586ae5eac1ad953414607ec57ba02354bf59df3fc1323c3ae39db458136d8db2ce23b4622802b04c238be5746a4b0ffafe6da5d9f328c4bac805c6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70be8d6cbfbd4cdb2483fd67fee34a2f9667ec6f59ba1c082d0e407ca7dab05ad",
+      "period" : 4,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "seed-31-bytes",
+      "check" : "generate",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "seed" : "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "seed-33-bytes",
+      "check" : "generate",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "seed" : "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00",
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "period-0",
+      "check" : "load",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "key" : "00000000000000000000000000000000000000000000000000000000000000001018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c2437ae1713d5f55a83b782a5d51518d8fc91a930ba59c90535b4ca8daaaa53b48b56744c72fd91a15e9c83e3fdd2abaf85045d1849f5522249a22fc0411a813b66f03f11d0e8f0ca6b749aebd0132ee56cd99da26deec87b719d01d87be0bac9e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f27f90e53e6894587a3e0f357f7b092aa89bc5e7bcebbf72770b238958fcd74428213add607d1005d8d63d2bd64f6c3323ede3cb8f8f7cbf979a0f6d64f83e302b711035a48ca859afbe438f114f56ae7c4c4532a75c45f3ea3ef028ca73033657d2376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b320bc93605c6fe4595c0c70c213b84430064401fb67bf793bf570f990bd3e8601018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c",
+      "period" : 0,
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "short",
+      "check" : "load",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "key" : "00000000000000000000000000000000000000000000000000000000000000001018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c2437ae1713d5f55a83b782a5d51518d8fc91a930ba59c90535b4ca8daaaa53b48b56744c72fd91a15e9c83e3fdd2abaf85045d1849f5522249a22fc0411a813b66f03f11d0e8f0ca6b749aebd0132ee56cd99da26deec87b719d01d87be0bac9e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f27f90e53e6894587a3e0f357f7b092aa89bc5e7bcebbf72770b238958fcd74428213add607d1005d8d63d2bd64f6c3323ede3cb8f8f7cbf979a0f6d64f83e302b711035a48ca859afbe438f114f56ae7c4c4532a75c45f3ea3ef028ca73033657d2376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b320bc93605c6fe4595c0c70c213b84430064401fb67bf793bf570f990bd3e8601018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c49",
+      "period" : 0,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "past-the-last-period",
+      "check" : "load",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "key" : "00000000000000000000000000000000000000000000000000000000000000001018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c2437ae1713d5f55a83b782a5d51518d8fc91a930ba59c90535b4ca8daaaa53b48b56744c72fd91a15e9c83e3fdd2abaf85045d1849f5522249a22fc0411a813b66f03f11d0e8f0ca6b749aebd0132ee56cd99da26deec87b719d01d87be0bac9e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f27f90e53e6894587a3e0f357f7b092aa89bc5e7bcebbf72770b238958fcd74428213add607d1005d8d63d2bd64f6c3323ede3cb8f8f7cbf979a0f6d64f83e302b711035a48ca859afbe438f114f56ae7c4c4532a75c45f3ea3ef028ca73033657d2376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b320bc93605c6fe4595c0c70c213b84430064401fb67bf793bf570f990bd3e8601018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c",
+      "period" : 8,
+      "outcome" : "PeriodOutOfRange"
+    },
+    {
+      "name" : "short-and-past-the-last-period",
+      "check" : "load",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "key" : "00000000000000000000000000000000000000000000000000000000000000001018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c2437ae1713d5f55a83b782a5d51518d8fc91a930ba59c90535b4ca8daaaa53b48b56744c72fd91a15e9c83e3fdd2abaf85045d1849f5522249a22fc0411a813b66f03f11d0e8f0ca6b749aebd0132ee56cd99da26deec87b719d01d87be0bac9e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f27f90e53e6894587a3e0f357f7b092aa89bc5e7bcebbf72770b238958fcd74428213add607d1005d8d63d2bd64f6c3323ede3cb8f8f7cbf979a0f6d64f83e302b711035a48ca859afbe438f114f56ae7c4c4532a75c45f3ea3ef028ca73033657d2376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b320bc93605c6fe4595c0c70c213b84430064401fb67bf793bf570f990bd3e8601018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c49",
+      "period" : 8,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "period-0-key-at-period-1",
+      "check" : "load",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "key" : "00000000000000000000000000000000000000000000000000000000000000001018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c2437ae1713d5f55a83b782a5d51518d8fc91a930ba59c90535b4ca8daaaa53b48b56744c72fd91a15e9c83e3fdd2abaf85045d1849f5522249a22fc0411a813b66f03f11d0e8f0ca6b749aebd0132ee56cd99da26deec87b719d01d87be0bac9e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f27f90e53e6894587a3e0f357f7b092aa89bc5e7bcebbf72770b238958fcd74428213add607d1005d8d63d2bd64f6c3323ede3cb8f8f7cbf979a0f6d64f83e302b711035a48ca859afbe438f114f56ae7c4c4532a75c45f3ea3ef028ca73033657d2376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b320bc93605c6fe4595c0c70c213b84430064401fb67bf793bf570f990bd3e8601018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c",
+      "period" : 1,
+      "outcome" : "InconsistentKey"
+    },
+    {
+      "name" : "last-key-at-period-0",
+      "check" : "load",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "key" : "000000000000000000000000000000000000000000000000000000000000000080d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e0000000000000000000000000000000000000000000000000000000000000000c6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495cd02a7cee08ecde79e1ee99e71abc5e67e78547526a1a220ac19fec3ffc96dbff639f7321792958725c89f73d610598f4316ba6217663f4e0a985d4b0b759e9a70000000000000000000000000000000000000000000000000000000000000000211d18e512812309f7d33cafcba6548fc06ad96fc16d35d003577694aef51cba4e6f0c62c3fc26da86762f90669a28992304dfca0e5aac747e4c622572b0d10700000000000000000000000000000000000000000000000000000000000000004a230b541dc912d5b8305c922ee73b350cdbca04dc13f0233e6908b11322c6d98757fd10a867f9ccca8f5c98e3dca66889026cb6bcf63c6473bc6bb26e1174b5964b34e5faa2cd892604f8fb147d52d44679a450f4984072b933bce6b06b1ac180d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e722180cda154f93c674034d09649c8b3e7d5713c7946e8b7cd91a28b84145f32602a80a0bbf720a6fcdae5b81e1629979f88e8608e1a7bdc74aae42ac896360fc6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b",
+      "period" : 0,
+      "outcome" : "InconsistentKey"
+    },
+    {
+      "name" : "period-0",
+      "check" : "evolve",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "key" : "00000000000000000000000000000000000000000000000000000000000000001018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e294dd8f3910a9cf3b6eba12336af7842e47503695f00700856969536f20e61c7f1ec6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c2437ae1713d5f55a83b782a5d51518d8fc91a930ba59c90535b4ca8daaaa53b48b56744c72fd91a15e9c83e3fdd2abaf85045d1849f5522249a22fc0411a813b66f03f11d0e8f0ca6b749aebd0132ee56cd99da26deec87b719d01d87be0bac9e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f27f90e53e6894587a3e0f357f7b092aa89bc5e7bcebbf72770b238958fcd74428213add607d1005d8d63d2bd64f6c3323ede3cb8f8f7cbf979a0f6d64f83e302b711035a48ca859afbe438f114f56ae7c4c4532a75c45f3ea3ef028ca73033657d2376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b320bc93605c6fe4595c0c70c213b84430064401fb67bf793bf570f990bd3e8601018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495c",
+      "period" : 0,
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "last-period",
+      "check" : "evolve",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "key" : "000000000000000000000000000000000000000000000000000000000000000080d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e0000000000000000000000000000000000000000000000000000000000000000c6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b4d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495cd02a7cee08ecde79e1ee99e71abc5e67e78547526a1a220ac19fec3ffc96dbff639f7321792958725c89f73d610598f4316ba6217663f4e0a985d4b0b759e9a70000000000000000000000000000000000000000000000000000000000000000211d18e512812309f7d33cafcba6548fc06ad96fc16d35d003577694aef51cba4e6f0c62c3fc26da86762f90669a28992304dfca0e5aac747e4c622572b0d10700000000000000000000000000000000000000000000000000000000000000004a230b541dc912d5b8305c922ee73b350cdbca04dc13f0233e6908b11322c6d98757fd10a867f9ccca8f5c98e3dca66889026cb6bcf63c6473bc6bb26e1174b5964b34e5faa2cd892604f8fb147d52d44679a450f4984072b933bce6b06b1ac180d1845172ead44c96b4ac81da1e5787c51cffd417eca0ee735174de1900172e722180cda154f93c674034d09649c8b3e7d5713c7946e8b7cd91a28b84145f32602a80a0bbf720a6fcdae5b81e1629979f88e8608e1a7bdc74aae42ac896360fc6578fad155c904d6453705a2f25fafbd63e57473c6c91ae74901ecaac5ab70b",
+      "period" : 7,
+      "outcome" : "Exhausted"
+    },
+    {
+      "name" : "valid",
+      "check" : "verify",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "verifyingKey" : "eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1b",
+      "message" : "6b6573",
+      "signature" : "1018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495cbd8964d4e4ac5f9b0509de837964ac6ff6f1f10e238af8a6e2dfb554b74695a9e9c167ac64453d8a21cc2e42219a1a5b4e91ff62fe2e25db8f8e9b4d0a2950823869a19e54f9b893ce37053ab2f2c9af9a4c509e848ab1114a6bb52bac1581f1af9d58837f1ad65a27f0384a5c2dbc2847a35e7d6dc804551b4a950a7e57bb05e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f272376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b",
+      "period" : 1,
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "other-period",
+      "check" : "verify",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "verifyingKey" : "eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1b",
+      "message" : "6b6573",
+      "signature" : "1018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495cbd8964d4e4ac5f9b0509de837964ac6ff6f1f10e238af8a6e2dfb554b74695a9e9c167ac64453d8a21cc2e42219a1a5b4e91ff62fe2e25db8f8e9b4d0a2950823869a19e54f9b893ce37053ab2f2c9af9a4c509e848ab1114a6bb52bac1581f1af9d58837f1ad65a27f0384a5c2dbc2847a35e7d6dc804551b4a950a7e57bb05e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f272376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b",
+      "period" : 0,
+      "outcome" : "rejected"
+    },
+    {
+      "name" : "other-message",
+      "check" : "verify",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "verifyingKey" : "eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1b",
+      "message" : "6b6574",
+      "signature" : "1018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495cbd8964d4e4ac5f9b0509de837964ac6ff6f1f10e238af8a6e2dfb554b74695a9e9c167ac64453d8a21cc2e42219a1a5b4e91ff62fe2e25db8f8e9b4d0a2950823869a19e54f9b893ce37053ab2f2c9af9a4c509e848ab1114a6bb52bac1581f1af9d58837f1ad65a27f0384a5c2dbc2847a35e7d6dc804551b4a950a7e57bb05e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f272376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b",
+      "period" : 1,
+      "outcome" : "rejected"
+    },
+    {
+      "name" : "short-key",
+      "check" : "verify",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "verifyingKey" : "eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a",
+      "message" : "6b6573",
+      "signature" : "1018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495cbd8964d4e4ac5f9b0509de837964ac6ff6f1f10e238af8a6e2dfb554b74695a9e9c167ac64453d8a21cc2e42219a1a5b4e91ff62fe2e25db8f8e9b4d0a2950823869a19e54f9b893ce37053ab2f2c9af9a4c509e848ab1114a6bb52bac1581f1af9d58837f1ad65a27f0384a5c2dbc2847a35e7d6dc804551b4a950a7e57bb05e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f272376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b",
+      "period" : 1,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "short-signature",
+      "check" : "verify",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "verifyingKey" : "eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1b",
+      "message" : "6b6573",
+      "signature" : "1018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495cbd8964d4e4ac5f9b0509de837964ac6ff6f1f10e238af8a6e2dfb554b74695a9e9c167ac64453d8a21cc2e42219a1a5b4e91ff62fe2e25db8f8e9b4d0a2950823869a19e54f9b893ce37053ab2f2c9af9a4c509e848ab1114a6bb52bac1581f1af9d58837f1ad65a27f0384a5c2dbc2847a35e7d6dc804551b4a950a7e57bb05e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f272376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec92760262",
+      "period" : 1,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "past-the-last-period",
+      "check" : "verify",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "verifyingKey" : "eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1b",
+      "message" : "6b6573",
+      "signature" : "1018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495cbd8964d4e4ac5f9b0509de837964ac6ff6f1f10e238af8a6e2dfb554b74695a9e9c167ac64453d8a21cc2e42219a1a5b4e91ff62fe2e25db8f8e9b4d0a2950823869a19e54f9b893ce37053ab2f2c9af9a4c509e848ab1114a6bb52bac1581f1af9d58837f1ad65a27f0384a5c2dbc2847a35e7d6dc804551b4a950a7e57bb05e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f272376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec927602625b",
+      "period" : 8,
+      "outcome" : "PeriodOutOfRange"
+    },
+    {
+      "name" : "short-key-short-signature-past-the-last-period",
+      "check" : "verify",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "verifyingKey" : "eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a",
+      "message" : "6b6573",
+      "signature" : "1018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495cbd8964d4e4ac5f9b0509de837964ac6ff6f1f10e238af8a6e2dfb554b74695a9e9c167ac64453d8a21cc2e42219a1a5b4e91ff62fe2e25db8f8e9b4d0a2950823869a19e54f9b893ce37053ab2f2c9af9a4c509e848ab1114a6bb52bac1581f1af9d58837f1ad65a27f0384a5c2dbc2847a35e7d6dc804551b4a950a7e57bb05e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f272376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec92760262",
+      "period" : 8,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "short-signature-past-the-last-period",
+      "check" : "verify",
+      "construction" : "dilf4s-product",
+      "parameters" : {
+        "hash" : "BLAKE2b-256",
+        "superHeight" : 1,
+        "subHeight" : 2
+      },
+      "verifyingKey" : "eb6f536403199e8ae5795b88dc84c5201762bd56d88a294f699999f5f03e9a1b",
+      "message" : "6b6573",
+      "signature" : "1018354a5397800d7cd1768a5055b55434f13079f8e1b1c8cb8af3de4333e29498814a1a83245f603ebde88bb6a401b90ce63d847ce62df93776e03ebb7cca481ba8712ab18eb688b1bc7330e0d241e99befb9931312a8d09f705aa088bd7b044d2303e2b2c63cbc68bd59721bc03c19fdc4cc3153956e3210fe4960541c495cbd8964d4e4ac5f9b0509de837964ac6ff6f1f10e238af8a6e2dfb554b74695a9e9c167ac64453d8a21cc2e42219a1a5b4e91ff62fe2e25db8f8e9b4d0a2950823869a19e54f9b893ce37053ab2f2c9af9a4c509e848ab1114a6bb52bac1581f1af9d58837f1ad65a27f0384a5c2dbc2847a35e7d6dc804551b4a950a7e57bb05e57089290191c294fee03468551b49b50a63315f139c4be4b1d50edb445d1f272376cf13bf187bbbba1dc63d46d168ddb121a023fbbdc3375048ec92760262",
+      "period" : 8,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "seed-31-bytes",
+      "check" : "generate",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "seed" : "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "seed-33-bytes",
+      "check" : "generate",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "seed" : "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00",
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "period-0",
+      "check" : "load",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "key" : "213d96c515b8cad2c48339e28a7a82225c8d7f8eb0c3db1329c4e3d02fa71d1f759405122ac15891d008d2486268e0daaf8a04c120b62ec9699f9203a510135dbd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120302abf71c5b4ab901c81429865398872d618d47e6e5b5d76194fd5f7fce7d22bda7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 0,
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "short",
+      "check" : "load",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "key" : "213d96c515b8cad2c48339e28a7a82225c8d7f8eb0c3db1329c4e3d02fa71d1f759405122ac15891d008d2486268e0daaf8a04c120b62ec9699f9203a510135dbd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120302abf71c5b4ab901c81429865398872d618d47e6e5b5d76194fd5f7fce7d22bda7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a",
+      "period" : 0,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "past-the-last-period",
+      "check" : "load",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "key" : "213d96c515b8cad2c48339e28a7a82225c8d7f8eb0c3db1329c4e3d02fa71d1f759405122ac15891d008d2486268e0daaf8a04c120b62ec9699f9203a510135dbd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120302abf71c5b4ab901c81429865398872d618d47e6e5b5d76194fd5f7fce7d22bda7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 4,
+      "outcome" : "PeriodOutOfRange"
+    },
+    {
+      "name" : "short-and-past-the-last-period",
+      "check" : "load",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "key" : "213d96c515b8cad2c48339e28a7a82225c8d7f8eb0c3db1329c4e3d02fa71d1f759405122ac15891d008d2486268e0daaf8a04c120b62ec9699f9203a510135dbd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120302abf71c5b4ab901c81429865398872d618d47e6e5b5d76194fd5f7fce7d22bda7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a",
+      "period" : 4,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "period-0-key-at-period-1",
+      "check" : "load",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "key" : "213d96c515b8cad2c48339e28a7a82225c8d7f8eb0c3db1329c4e3d02fa71d1f759405122ac15891d008d2486268e0daaf8a04c120b62ec9699f9203a510135dbd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120302abf71c5b4ab901c81429865398872d618d47e6e5b5d76194fd5f7fce7d22bda7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 1,
+      "outcome" : "InconsistentKey"
+    },
+    {
+      "name" : "last-key-at-period-0",
+      "check" : "load",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "key" : "69800b2f053856b00e742a056db4dd7dddb8ee2cbd889a2bfa8c11bfd43b4a3a00000000000000000000000000000000000000000000000000000000000000000a03180273062b47c097ea12d5a0cf30c5e68e40c3dbaa1ed2240e870c36c2ef71074ade5fcd465a391f8c553c79659a2c1adc42f8532788f08c9c86c186a9e90000000000000000000000000000000000000000000000000000000000000000da7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 0,
+      "outcome" : "InconsistentKey"
+    },
+    {
+      "name" : "period-0",
+      "check" : "evolve",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "key" : "213d96c515b8cad2c48339e28a7a82225c8d7f8eb0c3db1329c4e3d02fa71d1f759405122ac15891d008d2486268e0daaf8a04c120b62ec9699f9203a510135dbd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120302abf71c5b4ab901c81429865398872d618d47e6e5b5d76194fd5f7fce7d22bda7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 0,
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "last-period",
+      "check" : "evolve",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "key" : "69800b2f053856b00e742a056db4dd7dddb8ee2cbd889a2bfa8c11bfd43b4a3a00000000000000000000000000000000000000000000000000000000000000000a03180273062b47c097ea12d5a0cf30c5e68e40c3dbaa1ed2240e870c36c2ef71074ade5fcd465a391f8c553c79659a2c1adc42f8532788f08c9c86c186a9e90000000000000000000000000000000000000000000000000000000000000000da7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 3,
+      "outcome" : "Exhausted"
+    },
+    {
+      "name" : "valid",
+      "check" : "verify",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "verifyingKey" : "a8d2054c49ecae30db583e634ac86e0e1a4b4e5fc317eb627599e8a8cef25821",
+      "message" : "6b6573",
+      "signature" : "34c794995c3ad663a5f3aae58334b4a1449bdaf6f7325b0ffc322894dbb62aea2ac24d9b82e3f00f89726f85642d8bfda846d1a80867f071fcb54283814f3f0abd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120da7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 1,
+      "outcome" : "accepted"
+    },
+    {
+      "name" : "other-period",
+      "check" : "verify",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "verifyingKey" : "a8d2054c49ecae30db583e634ac86e0e1a4b4e5fc317eb627599e8a8cef25821",
+      "message" : "6b6573",
+      "signature" : "34c794995c3ad663a5f3aae58334b4a1449bdaf6f7325b0ffc322894dbb62aea2ac24d9b82e3f00f89726f85642d8bfda846d1a80867f071fcb54283814f3f0abd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120da7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 0,
+      "outcome" : "rejected"
+    },
+    {
+      "name" : "other-message",
+      "check" : "verify",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "verifyingKey" : "a8d2054c49ecae30db583e634ac86e0e1a4b4e5fc317eb627599e8a8cef25821",
+      "message" : "6b6574",
+      "signature" : "34c794995c3ad663a5f3aae58334b4a1449bdaf6f7325b0ffc322894dbb62aea2ac24d9b82e3f00f89726f85642d8bfda846d1a80867f071fcb54283814f3f0abd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120da7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 1,
+      "outcome" : "rejected"
+    },
+    {
+      "name" : "short-key",
+      "check" : "verify",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "verifyingKey" : "a8d2054c49ecae30db583e634ac86e0e1a4b4e5fc317eb627599e8a8cef258",
+      "message" : "6b6573",
+      "signature" : "34c794995c3ad663a5f3aae58334b4a1449bdaf6f7325b0ffc322894dbb62aea2ac24d9b82e3f00f89726f85642d8bfda846d1a80867f071fcb54283814f3f0abd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120da7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 1,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "short-signature",
+      "check" : "verify",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "verifyingKey" : "a8d2054c49ecae30db583e634ac86e0e1a4b4e5fc317eb627599e8a8cef25821",
+      "message" : "6b6573",
+      "signature" : "34c794995c3ad663a5f3aae58334b4a1449bdaf6f7325b0ffc322894dbb62aea2ac24d9b82e3f00f89726f85642d8bfda846d1a80867f071fcb54283814f3f0abd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120da7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a",
+      "period" : 1,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "past-the-last-period",
+      "check" : "verify",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "verifyingKey" : "a8d2054c49ecae30db583e634ac86e0e1a4b4e5fc317eb627599e8a8cef25821",
+      "message" : "6b6573",
+      "signature" : "34c794995c3ad663a5f3aae58334b4a1449bdaf6f7325b0ffc322894dbb62aea2ac24d9b82e3f00f89726f85642d8bfda846d1a80867f071fcb54283814f3f0abd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120da7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a3f",
+      "period" : 4,
+      "outcome" : "PeriodOutOfRange"
+    },
+    {
+      "name" : "short-key-short-signature-past-the-last-period",
+      "check" : "verify",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "verifyingKey" : "a8d2054c49ecae30db583e634ac86e0e1a4b4e5fc317eb627599e8a8cef258",
+      "message" : "6b6573",
+      "signature" : "34c794995c3ad663a5f3aae58334b4a1449bdaf6f7325b0ffc322894dbb62aea2ac24d9b82e3f00f89726f85642d8bfda846d1a80867f071fcb54283814f3f0abd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120da7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a",
+      "period" : 4,
+      "outcome" : "Malformed"
+    },
+    {
+      "name" : "short-signature-past-the-last-period",
+      "check" : "verify",
+      "construction" : "cardano-sum",
+      "parameters" : {
+        "depth" : 2
+      },
+      "verifyingKey" : "a8d2054c49ecae30db583e634ac86e0e1a4b4e5fc317eb627599e8a8cef25821",
+      "message" : "6b6573",
+      "signature" : "34c794995c3ad663a5f3aae58334b4a1449bdaf6f7325b0ffc322894dbb62aea2ac24d9b82e3f00f89726f85642d8bfda846d1a80867f071fcb54283814f3f0abd7c6e24f30e3a1d29f4f30d7a2ba201b991d934aecab8a4f9ade9bf4ef394b9a1d71a2ce243c6611ecdfa028fa2e84ca7b9dbe754a77cfc35bd572e4c9cc120da7c11e2dd4fdfa532be5bce77b20057f0e95556baaa2c57c455c2f9794d8509baa9499626ab634df89821d1b2db347a11615e0e6dd296ada2774149e3da2a",
+      "period" : 4,
+      "outcome" : "Malformed"
+    }
   ]
 }

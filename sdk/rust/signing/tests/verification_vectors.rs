@@ -17,10 +17,32 @@ mod common;
 
 use common::{bytes, load};
 use dilf4s_core::generated::signing_vectors::{
-    KeyDecodingResult, KeyPart, PathResult, SigningVectors, VerificationResult,
+    CryptoErrorKind, KeyDecodingResult, KeyPart, PathResult, SigningVectors, VerificationPart, VerificationRefusal,
+    VerificationResult,
 };
 use dilf4s_signing::keys::path;
 use dilf4s_signing::{PathRefusal, SchemeId, SigningError, bls, ecdsa, ed25519, ristretto255, schnorr};
+
+/// The schema's kind of a signing error. Exhaustive both ways: a kind the SDK adds, or one the schema adds, does not
+/// compile until it is mapped (and then the coverage test asks for its row).
+pub const fn crypto_kind(e: &SigningError) -> CryptoErrorKind {
+    match e {
+        SigningError::InvalidEncoding { .. } => CryptoErrorKind::InvalidEncoding,
+        SigningError::InvalidKey { .. } => CryptoErrorKind::InvalidKey,
+    }
+}
+
+/// The SDK's spelling of a schema kind, the other direction of [`crypto_kind`].
+pub const fn crypto_kind_name(k: &CryptoErrorKind) -> &'static str {
+    match k {
+        CryptoErrorKind::InvalidEncoding => "InvalidEncoding",
+        CryptoErrorKind::InvalidKey => "InvalidKey",
+    }
+}
+
+fn refusal(part: VerificationPart, e: &SigningError) -> VerificationResult {
+    VerificationResult::VerificationRefusal(VerificationRefusal { part, kind: crypto_kind(e) })
+}
 
 /// Decodes just the verifying key of a scheme, to tell a malformed key from a malformed signature.
 fn key_decodes(id: SchemeId, key: &[u8]) -> Result<(), SigningError> {
@@ -47,13 +69,13 @@ fn verification_verdicts() {
             };
             let (key, message, signature) = (bytes(&c.verifying_key), bytes(&c.message), bytes(&c.signature));
             let verdict = id.verify_bytes(&key, &message, &signature);
-            // the key is decoded first, then the signature
+            // the key is decoded first, then the signature: the refusal is the key's exactly when the key alone fails
             let actual = match (key_decodes(id, &key), &verdict) {
-                (Err(_), Err(_)) => VerificationResult::MalformedKey,
                 (Err(_), Ok(_)) => return Some(format!("{} {}: a malformed key verified", c.scheme, c.name)),
+                (Err(_), Err(e)) => refusal(VerificationPart::VerifyingKey, e),
+                (Ok(()), Err(e)) => refusal(VerificationPart::Signature, e),
                 (Ok(()), Ok(true)) => VerificationResult::Valid,
                 (Ok(()), Ok(false)) => VerificationResult::Invalid,
-                (Ok(()), Err(_)) => VerificationResult::MalformedSignature,
             };
             (actual != c.result).then(|| format!("{} {}: expected {:?}, got {actual:?}", c.scheme, c.name, c.result))
         })
@@ -101,6 +123,34 @@ fn proofs_of_possession_verify() {
         assert!(!bls::verify(&vk, vk.as_bytes(), &proof), "a PoP is not a message signature");
     }
     assert_eq!(v.bls_pop.len(), 3);
+}
+
+/// The coverage gate (conformance.md section 6) for `SigningError`: every kind has a `keyDecoding` row and a
+/// `verification` row, by kind. The samples are one of each variant; [`crypto_kind`] is exhaustive, so a new variant
+/// does not compile until it is mapped, and then fails here until its sample and rows exist.
+#[test]
+fn every_signing_error_kind_has_a_row() {
+    let v: SigningVectors = load("signing_v1.json");
+    let samples = [
+        SigningError::InvalidEncoding { what: "", reason: String::new() },
+        SigningError::InvalidKey { reason: String::new() },
+    ];
+    for e in &samples {
+        let kind = crypto_kind(e);
+        assert_eq!(crypto_kind_name(&kind), e.kind(), "the schema and the SDK spell the kind alike");
+        assert!(
+            v.key_decoding.iter().any(|c| expected_kind(&c.result) == e.kind()),
+            "no keyDecoding row pins {}",
+            e.kind()
+        );
+        assert!(
+            v.verification
+                .iter()
+                .any(|c| matches!(&c.result, VerificationResult::VerificationRefusal(r) if r.kind == kind)),
+            "no verification row pins {}",
+            e.kind()
+        );
+    }
 }
 
 /// The kind a `keyDecoding` row records, as `SigningError::kind` names it.

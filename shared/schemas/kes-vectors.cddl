@@ -4,7 +4,31 @@ kes-vectors = {
   "spec": "docs/specs/kes.md",
   "version": 1,
   "vectors": [* kes-vector],
+  "refusals": [* kes-refusal],
 }
+
+; A call and its outcome (kes.md section 5). "check" names it: "parameters" (the construction of these parameters),
+; "generate" (the period-0 key of "seed"), "load" (the encoded "key" at "period"), "evolve" (load, then evolve once),
+; "verify" ("signature" on "message" by "verifyingKey" at "period"; its checks run in that order: the key's length,
+; the signature's, then the period). Every check but "parameters" uses valid parameters. The outcome is "accepted"
+; (a key, or a signature that verifies), "rejected" (a well-formed signature that does not), or the KesError kind.
+kes-refusal = {
+  "name": text,
+  "check": kes-check,
+  "construction": kes-construction,
+  "parameters": kes-parameters,
+  ? "seed": hex,
+  ? "key": hex,
+  ? "verifyingKey": hex,
+  ? "message": hex,
+  ? "signature": hex,
+  ? "period": uint,
+  "outcome": kes-outcome,
+}
+
+kes-check = "parameters" / "generate" / "load" / "evolve" / "verify"
+
+kes-outcome = "accepted" / "rejected" / "Malformed" / "PeriodOutOfRange" / "Exhausted" / "InconsistentKey"
 
 kes-vector = {
   "construction": kes-construction,

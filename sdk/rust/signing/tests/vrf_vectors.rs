@@ -23,6 +23,7 @@ mod common;
 use std::path::PathBuf;
 
 use common::bytes;
+use dilf4s_core::generated::vrf_vectors::{VrfKeyResult, VrfResult};
 use dilf4s_core::hex;
 use dilf4s_signing::VrfError;
 #[cfg(feature = "sign")]
@@ -113,16 +114,103 @@ fn vrf_v1_rejections() {
         .iter()
         .filter_map(|r| {
             let id = SuiteId::from_name(&r.suite)?;
-            let actual = match id.verify_bytes(&bytes(&r.verifying_key), &bytes(&r.alpha), &bytes(&r.pi)) {
-                Ok(_) => "valid",
-                Err(e) => e.kind(),
-            };
-            (actual != r.result).then(|| format!("{} {}: expected {}, got {actual}", r.suite, r.name, r.result))
+            let actual = id.verify_bytes(&bytes(&r.verifying_key), &bytes(&r.alpha), &bytes(&r.pi)).map_or_else(
+                |e| {
+                    verify_result(&e)
+                        .ok_or_else(|| format!("{} {}: {} is not a verification verdict", r.suite, r.name, e.kind()))
+                },
+                |_| Ok(VrfResult::Valid),
+            );
+            match actual {
+                Ok(a) => (a != r.result).then(|| format!("{} {}: expected {:?}, got {a:?}", r.suite, r.name, r.result)),
+                Err(e) => Some(e),
+            }
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(v.rejections.len() > 10, "{} rejection cases", v.rejections.len());
     assert!(v.rejections.iter().all(|r| SuiteId::from_name(&r.suite).is_some()));
+}
+
+/// The schema's verification verdict of a refusal, or `None` for a kind verification never gives. Exhaustive: a kind
+/// the SDK adds does not compile until it is mapped.
+const fn verify_result(e: &VrfError) -> Option<VrfResult> {
+    match e {
+        VrfError::Malformed { .. } => Some(VrfResult::Malformed),
+        VrfError::InvalidPublicKey => Some(VrfResult::InvalidPublicKey),
+        VrfError::SmallOrderPublicKey => Some(VrfResult::SmallOrderPublicKey),
+        VrfError::InvalidGamma => Some(VrfResult::InvalidGamma),
+        VrfError::NonCanonicalScalar => Some(VrfResult::NonCanonicalScalar),
+        VrfError::ChallengeMismatch => Some(VrfResult::ChallengeMismatch),
+        VrfError::KeyMismatch | VrfError::HashToCurveFailed { .. } => None,
+    }
+}
+
+/// The schema's signing-key verdict of a refusal, or `None` for a kind decoding never gives.
+const fn key_result(e: &VrfError) -> Option<VrfKeyResult> {
+    match e {
+        VrfError::Malformed { .. } => Some(VrfKeyResult::Malformed),
+        VrfError::KeyMismatch => Some(VrfKeyResult::KeyMismatch),
+        VrfError::InvalidPublicKey
+        | VrfError::SmallOrderPublicKey
+        | VrfError::InvalidGamma
+        | VrfError::NonCanonicalScalar
+        | VrfError::ChallengeMismatch
+        | VrfError::HashToCurveFailed { .. } => None,
+    }
+}
+
+/// Every `keyDecoding` row: a wrong length is `Malformed`, a draft-03 key holding another seed's public key
+/// `KeyMismatch`.
+#[cfg(feature = "sign")]
+#[test]
+fn vrf_v1_signing_key_decoding() {
+    fn decode<S: vrf::Suite>(b: &[u8]) -> Result<(), VrfError> {
+        vrf::SigningKey::<S>::from_bytes(b).map(|_| ())
+    }
+    let v: dilf4s_core::generated::vrf_vectors::VrfVectors = common::load("vrf_v1.json");
+    let failures: Vec<String> = v
+        .key_decoding
+        .iter()
+        .filter_map(|c| {
+            let b = bytes(&c.bytes);
+            let r = match SuiteId::from_name(&c.suite)? {
+                SuiteId::Tai => decode::<vrf::Tai>(&b),
+                SuiteId::Ell2 => decode::<vrf::Ell2>(&b),
+                SuiteId::Draft03 => decode::<vrf::Draft03>(&b),
+            };
+            let actual = r.map_or_else(|e| key_result(&e), |()| Some(VrfKeyResult::Accepted));
+            (actual.as_ref() != Some(&c.result))
+                .then(|| format!("{} {}: expected {:?}, got {actual:?}", c.suite, c.name, c.result))
+        })
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(v.key_decoding.len() >= 13, "{} key rows", v.key_decoding.len());
+}
+
+/// The coverage gate (conformance.md section 6) for `VrfError`: every kind has a row by kind, but
+/// `HashToCurveFailed` (exempt: no input is known that reaches it). The samples are one of each variant, and
+/// [`verify_result`] and [`key_result`] are exhaustive, so a new kind does not compile until it is mapped.
+#[test]
+fn every_vrf_error_kind_has_a_row() {
+    let v: dilf4s_core::generated::vrf_vectors::VrfVectors = common::load("vrf_v1.json");
+    let samples = [
+        VrfError::Malformed { what: "", reason: String::new() },
+        VrfError::InvalidPublicKey,
+        VrfError::SmallOrderPublicKey,
+        VrfError::InvalidGamma,
+        VrfError::NonCanonicalScalar,
+        VrfError::ChallengeMismatch,
+        VrfError::KeyMismatch,
+        VrfError::HashToCurveFailed { reason: String::new() },
+    ];
+    for e in &samples {
+        let verified = verify_result(e).is_some_and(|k| v.rejections.iter().any(|r| r.result == k));
+        let decoded = key_result(e).is_some_and(|k| v.key_decoding.iter().any(|c| c.result == k));
+        let exempt = matches!(e, VrfError::HashToCurveFailed { .. });
+        assert!(verified || decoded || exempt, "no row pins {}", e.kind());
+        assert!(!(exempt && (verified || decoded)), "{} is exempt but pinned", e.kind());
+    }
 }
 
 /// RFC 9381 B.3 (TAI) / B.4 (ELL2) and draft-03 A.4: keys, proofs, outputs, and the intermediate `H`.

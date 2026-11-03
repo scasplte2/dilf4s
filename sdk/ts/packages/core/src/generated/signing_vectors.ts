@@ -145,6 +145,28 @@ export const BlsPopVector: c.Codec<BlsPopVector> = {
   },
 };
 
+/** `crypto-error-kind` (`shared/schemas/signing-vectors.cddl`). */
+export type CryptoErrorKind = "InvalidEncoding" | "InvalidKey";
+
+export const CryptoErrorKind: c.Codec<CryptoErrorKind> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["InvalidEncoding", "InvalidKey"]);
+    return c.typeMismatch("no alternative of CryptoErrorKind fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["InvalidEncoding", "InvalidKey"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<CryptoErrorKind>("InvalidEncoding");
+      case 1:
+        return c.ok<CryptoErrorKind>("InvalidKey");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
 /** `extended-key` (`shared/schemas/signing-vectors.cddl`). */
 export interface ExtendedKey {
   readonly key: Hex;
@@ -232,6 +254,38 @@ export const IcarusVector: c.Codec<IcarusVector> = {
   },
 };
 
+/** `key-check` (`shared/schemas/signing-vectors.cddl`). */
+export type KeyCheck = "bip39-entropy" | "bip39-phrase" | "word-list" | "slip10" | "bip32" | "bip32-public" | "icarus-public";
+
+export const KeyCheck: c.Codec<KeyCheck> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["bip32", "bip32-public", "bip39-entropy", "bip39-phrase", "icarus-public", "slip10", "word-list"]);
+    return c.typeMismatch("no alternative of KeyCheck fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["bip39-entropy", "bip39-phrase", "word-list", "slip10", "bip32", "bip32-public", "icarus-public"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<KeyCheck>("bip39-entropy");
+      case 1:
+        return c.ok<KeyCheck>("bip39-phrase");
+      case 2:
+        return c.ok<KeyCheck>("word-list");
+      case 3:
+        return c.ok<KeyCheck>("slip10");
+      case 4:
+        return c.ok<KeyCheck>("bip32");
+      case 5:
+        return c.ok<KeyCheck>("bip32-public");
+      case 6:
+        return c.ok<KeyCheck>("icarus-public");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
 /** `key-decoding-case` (`shared/schemas/signing-vectors.cddl`). */
 export interface KeyDecodingCase {
   readonly scheme: string;
@@ -293,6 +347,32 @@ export const KeyDecodingResult: c.Codec<KeyDecodingResult> = {
   },
 };
 
+/** `key-error-kind` (`shared/schemas/signing-vectors.cddl`). */
+export type KeyErrorKind = "InvalidEntropy" | "InvalidMnemonic" | "InvalidWordList" | "InvalidDerivation";
+
+export const KeyErrorKind: c.Codec<KeyErrorKind> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["InvalidDerivation", "InvalidEntropy", "InvalidMnemonic", "InvalidWordList"]);
+    return c.typeMismatch("no alternative of KeyErrorKind fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidDerivation"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<KeyErrorKind>("InvalidEntropy");
+      case 1:
+        return c.ok<KeyErrorKind>("InvalidMnemonic");
+      case 2:
+        return c.ok<KeyErrorKind>("InvalidWordList");
+      case 3:
+        return c.ok<KeyErrorKind>("InvalidDerivation");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
 /** `key-part` (`shared/schemas/signing-vectors.cddl`). */
 export type KeyPart = "signingKey" | "verifyingKey";
 
@@ -312,6 +392,63 @@ export const KeyPart: c.Codec<KeyPart> = {
       default:
         return c.decodeFailure("unknown alternative");
     }
+  },
+};
+
+/** `key-refusal` (`shared/schemas/signing-vectors.cddl`). */
+export interface KeyRefusal {
+  readonly name: string;
+  readonly check: KeyCheck;
+  readonly entropy?: Hex;
+  readonly phrase?: string;
+  readonly words?: readonly string[];
+  readonly seed?: Hex;
+  readonly verifyingKey?: Hex;
+  readonly chainCode?: Hex;
+  readonly path?: string;
+  readonly kind: KeyErrorKind;
+}
+
+export const KeyRefusal: c.Codec<KeyRefusal> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("name", c.text, a.name, e),
+        c.field("check", c.defer(() => KeyCheck), a.check, e),
+        c.optionalField("entropy", c.defer(() => Hex), a.entropy, e),
+        c.optionalField("phrase", c.text, a.phrase, e),
+        c.optionalField("words", c.vector(c.text, 0, null), a.words, e),
+        c.optionalField("seed", c.defer(() => Hex), a.seed, e),
+        c.optionalField("verifyingKey", c.defer(() => Hex), a.verifyingKey, e),
+        c.optionalField("chainCode", c.defer(() => Hex), a.chainCode, e),
+        c.optionalField("path", c.text, a.path, e),
+        c.field("kind", c.defer(() => KeyErrorKind), a.kind, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["name", "check", "entropy", "phrase", "words", "seed", "verifyingKey", "chainCode", "path", "kind"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("name", c.text);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("check", c.defer(() => KeyCheck));
+    if (!r1.ok) return r1;
+    const r2 = f.value.optional("entropy", c.defer(() => Hex));
+    if (!r2.ok) return r2;
+    const r3 = f.value.optional("phrase", c.text);
+    if (!r3.ok) return r3;
+    const r4 = f.value.optional("words", c.vector(c.text, 0, null));
+    if (!r4.ok) return r4;
+    const r5 = f.value.optional("seed", c.defer(() => Hex));
+    if (!r5.ok) return r5;
+    const r6 = f.value.optional("verifyingKey", c.defer(() => Hex));
+    if (!r6.ok) return r6;
+    const r7 = f.value.optional("chainCode", c.defer(() => Hex));
+    if (!r7.ok) return r7;
+    const r8 = f.value.optional("path", c.text);
+    if (!r8.ok) return r8;
+    const r9 = f.value.required("kind", c.defer(() => KeyErrorKind));
+    if (!r9.ok) return r9;
+    return c.ok({ name: r0.value, check: r1.value, entropy: r2.value, phrase: r3.value, words: r4.value, seed: r5.value, verifyingKey: r6.value, chainCode: r7.value, path: r8.value, kind: r9.value });
   },
 };
 
@@ -492,6 +629,7 @@ export interface SigningVectors {
   readonly verification: readonly VerificationCase[];
   readonly keyDecoding: readonly KeyDecodingCase[];
   readonly paths: readonly PathCase[];
+  readonly keyRefusals: readonly KeyRefusal[];
 }
 
 export const SigningVectors: c.Codec<SigningVectors> = {
@@ -510,10 +648,11 @@ export const SigningVectors: c.Codec<SigningVectors> = {
         c.field("verification", c.vector(c.defer(() => VerificationCase), 0, null), a.verification, e),
         c.field("keyDecoding", c.vector(c.defer(() => KeyDecodingCase), 0, null), a.keyDecoding, e),
         c.field("paths", c.vector(c.defer(() => PathCase), 0, null), a.paths, e),
+        c.field("keyRefusals", c.vector(c.defer(() => KeyRefusal), 0, null), a.keyRefusals, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "randomness", "signing", "bip39", "slip10Ed25519", "bip32Secp256k1", "ed25519Bip32", "blsPop", "verification", "keyDecoding", "paths"]);
+    const f = c.fields(v, ["spec", "version", "randomness", "signing", "bip39", "slip10Ed25519", "bip32Secp256k1", "ed25519Bip32", "blsPop", "verification", "keyDecoding", "paths", "keyRefusals"]);
     if (!f.ok) return f;
     const r0 = f.value.required("spec", c.literalText("docs/specs/signing.md"));
     if (!r0.ok) return r0;
@@ -539,7 +678,9 @@ export const SigningVectors: c.Codec<SigningVectors> = {
     if (!r10.ok) return r10;
     const r11 = f.value.required("paths", c.vector(c.defer(() => PathCase), 0, null));
     if (!r11.ok) return r11;
-    return c.ok({ spec: r0.value, version: r1.value, randomness: r2.value, signing: r3.value, bip39: r4.value, slip10Ed25519: r5.value, bip32Secp256k1: r6.value, ed25519Bip32: r7.value, blsPop: r8.value, verification: r9.value, keyDecoding: r10.value, paths: r11.value });
+    const r12 = f.value.required("keyRefusals", c.vector(c.defer(() => KeyRefusal), 0, null));
+    if (!r12.ok) return r12;
+    return c.ok({ spec: r0.value, version: r1.value, randomness: r2.value, signing: r3.value, bip39: r4.value, slip10Ed25519: r5.value, bip32Secp256k1: r6.value, ed25519Bip32: r7.value, blsPop: r8.value, verification: r9.value, keyDecoding: r10.value, paths: r11.value, keyRefusals: r12.value });
   },
 };
 
@@ -617,26 +758,73 @@ export const VerificationCase: c.Codec<VerificationCase> = {
   },
 };
 
-/** `verification-result` (`shared/schemas/signing-vectors.cddl`). */
-export type VerificationResult = "valid" | "invalid" | "malformedKey" | "malformedSignature";
+/** `verification-part` (`shared/schemas/signing-vectors.cddl`). */
+export type VerificationPart = "verifyingKey" | "signature";
 
-export const VerificationResult: c.Codec<VerificationResult> = {
+export const VerificationPart: c.Codec<VerificationPart> = {
   encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["invalid", "malformedKey", "malformedSignature", "valid"]);
-    return c.typeMismatch("no alternative of VerificationResult fits");
+    if (typeof a === "string") return c.oneOfText(a, ["signature", "verifyingKey"]);
+    return c.typeMismatch("no alternative of VerificationPart fits");
   },
   decode: (v) => {
-    const s = c.selectAlternative(v, [], ["valid", "invalid", "malformedKey", "malformedSignature"]);
+    const s = c.selectAlternative(v, [], ["verifyingKey", "signature"]);
     if (!s.ok) return s;
     switch (s.value) {
       case 0:
-        return c.ok<VerificationResult>("valid");
+        return c.ok<VerificationPart>("verifyingKey");
       case 1:
-        return c.ok<VerificationResult>("invalid");
+        return c.ok<VerificationPart>("signature");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
+/** `verification-refusal` (`shared/schemas/signing-vectors.cddl`). */
+export interface VerificationRefusal {
+  readonly part: VerificationPart;
+  readonly kind: CryptoErrorKind;
+}
+
+export const VerificationRefusal: c.Codec<VerificationRefusal> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("part", c.defer(() => VerificationPart), a.part, e),
+        c.field("kind", c.defer(() => CryptoErrorKind), a.kind, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["part", "kind"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("part", c.defer(() => VerificationPart));
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("kind", c.defer(() => CryptoErrorKind));
+    if (!r1.ok) return r1;
+    return c.ok({ part: r0.value, kind: r1.value });
+  },
+};
+
+/** `verification-result` (`shared/schemas/signing-vectors.cddl`). */
+export type VerificationResult = VerificationRefusal | "valid" | "invalid";
+
+export const VerificationResult: c.Codec<VerificationResult> = {
+  encode: (a, d) => {
+    if (typeof a === "string") return c.oneOfText(a, ["invalid", "valid"]);
+    const known = ["kind", "part"];
+    if (c.hasFields(a, VerificationRefusal, ["kind", "part"], ["kind", "part"], known)) return VerificationRefusal.encode(a, d);
+    return c.typeMismatch("no alternative of VerificationResult fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [[["kind", "part"], ["kind", "part"]]], ["valid", "invalid"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return VerificationRefusal.decode(v);
+      case 1:
+        return c.ok<VerificationResult>("valid");
       case 2:
-        return c.ok<VerificationResult>("malformedKey");
-      case 3:
-        return c.ok<VerificationResult>("malformedSignature");
+        return c.ok<VerificationResult>("invalid");
       default:
         return c.decodeFailure("unknown alternative");
     }

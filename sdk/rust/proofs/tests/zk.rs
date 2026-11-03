@@ -94,6 +94,35 @@ fn sp1_groth16() {
     }
 }
 
+/// The coverage gate (conformance.md section 6) for `ZkError` and `Groth16Error`: every kind has a row by kind. The
+/// samples are one of each variant, and `kind` and `outcome` are exhaustive, so a new kind does not compile until it
+/// is mapped.
+#[test]
+fn every_zk_error_kind_has_a_row() {
+    let v = vectors();
+    let failures = |r: &ZkPointResult| match r {
+        ZkPointResult::ZkFailure(f) => Some(f.error.clone()),
+        ZkPointResult::ZkPoint(_) => None,
+    };
+    let mut pinned: Vec<Kind> = v.add.iter().chain(&v.mul).filter_map(|c| failures(&c.result)).collect();
+    pinned.extend(v.pairing.iter().filter_map(|c| match &c.result {
+        ZkBoolResult::ZkFailure(f) => Some(f.error.clone()),
+        ZkBoolResult::ZkBool(_) => None,
+    }));
+    for e in [ZkError::Malformed { reason: String::new() }, ZkError::InvalidPoint { reason: String::new() }] {
+        assert!(pinned.contains(&kind(&e)), "no zk_v1.json row pins {e:?}");
+    }
+    for e in [
+        Groth16Error::Malformed { reason: String::new() },
+        Groth16Error::InvalidProof { reason: String::new() },
+        Groth16Error::PairingCheckFailed,
+        Groth16Error::Rejected { reason: String::new() },
+    ] {
+        let o = outcome(&Err(e.clone()));
+        assert!(v.sp1_groth16.iter().any(|c| c.result == o), "no sp1Groth16 row pins {e:?}");
+    }
+}
+
 #[test]
 fn sp1_verify_builds_its_own_key() {
     let c = vectors().sp1_groth16.into_iter().next().unwrap();

@@ -1,0 +1,22 @@
+; Schema of shared/vectors/sigma_refusals_v1.json (conformance vectors for docs/specs/sigma.md section 6), made by the
+; reference (SigmaRefusalVectors). "cases" are calls to sigma_verify: the proposition's canonical value (as canonical
+; CBOR, so that a malformed one can be written), the proof and the message, with the outcome. "ergoCases" and
+; "dilf4sCases" are the reference's outcome on each case of sigma_v1.json and sigma_dilf4s_v1.json, in their order:
+; those files carry Ergo's verdict, which is not ours for a proof of the wrong length or a response out of range.
+
+sigma-refusal-vectors = {
+  "spec": "docs/specs/sigma.md",
+  "version": 1,
+  "cases": [* sigma-refusal],
+  "ergoCases": [* sigma-outcome],
+  "dilf4sCases": [* sigma-outcome],
+}
+
+sigma-refusal = { "name": text, "proposition": hex, "proof": hex, "message": hex, "outcome": sigma-outcome }
+
+; "accepted" (the proof verifies), "rejected" (a well-formed proof that does not), or the SigmaError kind. The
+; proposition is decoded first, then the proof's length, then its responses.
+sigma-outcome =
+  "accepted" / "rejected" / "InvalidProposition" / "InvalidPoint" / "ProofLength" / "ResponseOutOfRange"
+
+hex = text .regexp "([0-9a-f]{2})*"

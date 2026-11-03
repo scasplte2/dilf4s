@@ -152,6 +152,32 @@ impl c::Model for BlsPopVector {
     }
 }
 
+/// `crypto-error-kind` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CryptoErrorKind {
+    /// The text `InvalidEncoding`.
+    InvalidEncoding,
+    /// The text `InvalidKey`.
+    InvalidKey,
+}
+
+impl c::Model for CryptoErrorKind {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::InvalidEncoding => Ok(c::Value::text("InvalidEncoding")),
+            Self::InvalidKey => Ok(c::Value::text("InvalidKey")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["InvalidEncoding", "InvalidKey"])? {
+            c::Alternative::Text(0) => Ok(Self::InvalidEncoding),
+            c::Alternative::Text(1) => Ok(Self::InvalidKey),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
 /// `extended-key` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExtendedKey {
@@ -242,6 +268,52 @@ impl c::Model for IcarusVector {
     }
 }
 
+/// `key-check` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeyCheck {
+    /// The text `bip39-entropy`.
+    Bip39Entropy,
+    /// The text `bip39-phrase`.
+    Bip39Phrase,
+    /// The text `word-list`.
+    WordList,
+    /// The text `slip10`.
+    Slip10,
+    /// The text `bip32`.
+    Bip32,
+    /// The text `bip32-public`.
+    Bip32Public,
+    /// The text `icarus-public`.
+    IcarusPublic,
+}
+
+impl c::Model for KeyCheck {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Bip39Entropy => Ok(c::Value::text("bip39-entropy")),
+            Self::Bip39Phrase => Ok(c::Value::text("bip39-phrase")),
+            Self::WordList => Ok(c::Value::text("word-list")),
+            Self::Slip10 => Ok(c::Value::text("slip10")),
+            Self::Bip32 => Ok(c::Value::text("bip32")),
+            Self::Bip32Public => Ok(c::Value::text("bip32-public")),
+            Self::IcarusPublic => Ok(c::Value::text("icarus-public")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["bip39-entropy", "bip39-phrase", "word-list", "slip10", "bip32", "bip32-public", "icarus-public"])? {
+            c::Alternative::Text(0) => Ok(Self::Bip39Entropy),
+            c::Alternative::Text(1) => Ok(Self::Bip39Phrase),
+            c::Alternative::Text(2) => Ok(Self::WordList),
+            c::Alternative::Text(3) => Ok(Self::Slip10),
+            c::Alternative::Text(4) => Ok(Self::Bip32),
+            c::Alternative::Text(5) => Ok(Self::Bip32Public),
+            c::Alternative::Text(6) => Ok(Self::IcarusPublic),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
 /// `key-decoding-case` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyDecodingCase {
@@ -310,6 +382,40 @@ impl c::Model for KeyDecodingResult {
     }
 }
 
+/// `key-error-kind` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeyErrorKind {
+    /// The text `InvalidEntropy`.
+    InvalidEntropy,
+    /// The text `InvalidMnemonic`.
+    InvalidMnemonic,
+    /// The text `InvalidWordList`.
+    InvalidWordList,
+    /// The text `InvalidDerivation`.
+    InvalidDerivation,
+}
+
+impl c::Model for KeyErrorKind {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::InvalidEntropy => Ok(c::Value::text("InvalidEntropy")),
+            Self::InvalidMnemonic => Ok(c::Value::text("InvalidMnemonic")),
+            Self::InvalidWordList => Ok(c::Value::text("InvalidWordList")),
+            Self::InvalidDerivation => Ok(c::Value::text("InvalidDerivation")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidDerivation"])? {
+            c::Alternative::Text(0) => Ok(Self::InvalidEntropy),
+            c::Alternative::Text(1) => Ok(Self::InvalidMnemonic),
+            c::Alternative::Text(2) => Ok(Self::InvalidWordList),
+            c::Alternative::Text(3) => Ok(Self::InvalidDerivation),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
 /// `key-part` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KeyPart {
@@ -333,6 +439,64 @@ impl c::Model for KeyPart {
             c::Alternative::Text(1) => Ok(Self::VerifyingKey),
             other => Err(c::unknown_alternative(other)),
         }
+    }
+}
+
+/// `key-refusal` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyRefusal {
+    /// The `name` entry.
+    pub name: String,
+    /// The `check` entry.
+    pub check: KeyCheck,
+    /// The `entropy` entry.
+    pub entropy: Option<Hex>,
+    /// The `phrase` entry.
+    pub phrase: Option<String>,
+    /// The `words` entry.
+    pub words: Option<Vec<String>>,
+    /// The `seed` entry.
+    pub seed: Option<Hex>,
+    /// The `verifyingKey` entry.
+    pub verifying_key: Option<Hex>,
+    /// The `chainCode` entry.
+    pub chain_code: Option<Hex>,
+    /// The `path` entry.
+    pub path: Option<String>,
+    /// The `kind` entry.
+    pub kind: KeyErrorKind,
+}
+
+impl c::Model for KeyRefusal {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("check", &c::ModelOf::<KeyCheck>::NEW, &self.check, inner)?,
+            c::optional_field("entropy", &HEX, self.entropy.as_ref(), inner)?,
+            c::optional_field("phrase", &c::Text, self.phrase.as_ref(), inner)?,
+            c::optional_field("words", &c::VecOf { element: c::Text, min: 0, max: None }, self.words.as_ref(), inner)?,
+            c::optional_field("seed", &HEX, self.seed.as_ref(), inner)?,
+            c::optional_field("verifyingKey", &HEX, self.verifying_key.as_ref(), inner)?,
+            c::optional_field("chainCode", &HEX, self.chain_code.as_ref(), inner)?,
+            c::optional_field("path", &c::Text, self.path.as_ref(), inner)?,
+            c::field("kind", &c::ModelOf::<KeyErrorKind>::NEW, &self.kind, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["name", "check", "entropy", "phrase", "words", "seed", "verifyingKey", "chainCode", "path", "kind"])?;
+        let f0 = fields.required("name", &c::Text)?;
+        let f1 = fields.required("check", &c::ModelOf::<KeyCheck>::NEW)?;
+        let f2 = fields.optional("entropy", &HEX)?;
+        let f3 = fields.optional("phrase", &c::Text)?;
+        let f4 = fields.optional("words", &c::VecOf { element: c::Text, min: 0, max: None })?;
+        let f5 = fields.optional("seed", &HEX)?;
+        let f6 = fields.optional("verifyingKey", &HEX)?;
+        let f7 = fields.optional("chainCode", &HEX)?;
+        let f8 = fields.optional("path", &c::Text)?;
+        let f9 = fields.required("kind", &c::ModelOf::<KeyErrorKind>::NEW)?;
+        Ok(Self { name: f0, check: f1, entropy: f2, phrase: f3, words: f4, seed: f5, verifying_key: f6, chain_code: f7, path: f8, kind: f9 })
     }
 }
 
@@ -539,6 +703,8 @@ pub struct SigningVectors {
     pub key_decoding: Vec<KeyDecodingCase>,
     /// The `paths` entry.
     pub paths: Vec<PathCase>,
+    /// The `keyRefusals` entry.
+    pub key_refusals: Vec<KeyRefusal>,
 }
 
 impl c::Model for SigningVectors {
@@ -557,11 +723,12 @@ impl c::Model for SigningVectors {
             c::field("verification", &c::VecOf { element: c::ModelOf::<VerificationCase>::NEW, min: 0, max: None }, &self.verification, inner)?,
             c::field("keyDecoding", &c::VecOf { element: c::ModelOf::<KeyDecodingCase>::NEW, min: 0, max: None }, &self.key_decoding, inner)?,
             c::field("paths", &c::VecOf { element: c::ModelOf::<PathCase>::NEW, min: 0, max: None }, &self.paths, inner)?,
+            c::field("keyRefusals", &c::VecOf { element: c::ModelOf::<KeyRefusal>::NEW, min: 0, max: None }, &self.key_refusals, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "randomness", "signing", "bip39", "slip10Ed25519", "bip32Secp256k1", "ed25519Bip32", "blsPop", "verification", "keyDecoding", "paths"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "randomness", "signing", "bip39", "slip10Ed25519", "bip32Secp256k1", "ed25519Bip32", "blsPop", "verification", "keyDecoding", "paths", "keyRefusals"])?;
         fields.required("spec", &c::LiteralText("docs/specs/signing.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         let f2 = fields.required("randomness", &HEX)?;
@@ -574,7 +741,8 @@ impl c::Model for SigningVectors {
         let f9 = fields.required("verification", &c::VecOf { element: c::ModelOf::<VerificationCase>::NEW, min: 0, max: None })?;
         let f10 = fields.required("keyDecoding", &c::VecOf { element: c::ModelOf::<KeyDecodingCase>::NEW, min: 0, max: None })?;
         let f11 = fields.required("paths", &c::VecOf { element: c::ModelOf::<PathCase>::NEW, min: 0, max: None })?;
-        Ok(Self { randomness: f2, signing: f3, bip39: f4, slip10_ed25519: f5, bip32_secp256k1: f6, ed25519_bip32: f7, bls_pop: f8, verification: f9, key_decoding: f10, paths: f11 })
+        let f12 = fields.required("keyRefusals", &c::VecOf { element: c::ModelOf::<KeyRefusal>::NEW, min: 0, max: None })?;
+        Ok(Self { randomness: f2, signing: f3, bip39: f4, slip10_ed25519: f5, bip32_secp256k1: f6, ed25519_bip32: f7, bls_pop: f8, verification: f9, key_decoding: f10, paths: f11, key_refusals: f12 })
     }
 }
 
@@ -654,35 +822,83 @@ impl c::Model for VerificationCase {
     }
 }
 
-/// `verification-result` (`shared/schemas/signing-vectors.cddl`).
+/// `verification-part` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum VerificationResult {
-    /// The text `valid`.
-    Valid,
-    /// The text `invalid`.
-    Invalid,
-    /// The text `malformedKey`.
-    MalformedKey,
-    /// The text `malformedSignature`.
-    MalformedSignature,
+pub enum VerificationPart {
+    /// The text `verifyingKey`.
+    VerifyingKey,
+    /// The text `signature`.
+    Signature,
 }
 
-impl c::Model for VerificationResult {
+impl c::Model for VerificationPart {
     fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
-            Self::Valid => Ok(c::Value::text("valid")),
-            Self::Invalid => Ok(c::Value::text("invalid")),
-            Self::MalformedKey => Ok(c::Value::text("malformedKey")),
-            Self::MalformedSignature => Ok(c::Value::text("malformedSignature")),
+            Self::VerifyingKey => Ok(c::Value::text("verifyingKey")),
+            Self::Signature => Ok(c::Value::text("signature")),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["valid", "invalid", "malformedKey", "malformedSignature"])? {
+        match c::select_alternative(value, &[], &["verifyingKey", "signature"])? {
+            c::Alternative::Text(0) => Ok(Self::VerifyingKey),
+            c::Alternative::Text(1) => Ok(Self::Signature),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+/// `verification-refusal` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerificationRefusal {
+    /// The `part` entry.
+    pub part: VerificationPart,
+    /// The `kind` entry.
+    pub kind: CryptoErrorKind,
+}
+
+impl c::Model for VerificationRefusal {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("part", &c::ModelOf::<VerificationPart>::NEW, &self.part, inner)?,
+            c::field("kind", &c::ModelOf::<CryptoErrorKind>::NEW, &self.kind, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["part", "kind"])?;
+        let f0 = fields.required("part", &c::ModelOf::<VerificationPart>::NEW)?;
+        let f1 = fields.required("kind", &c::ModelOf::<CryptoErrorKind>::NEW)?;
+        Ok(Self { part: f0, kind: f1 })
+    }
+}
+
+/// `verification-result` (`shared/schemas/signing-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VerificationResult {
+    /// A [`VerificationRefusal`].
+    VerificationRefusal(VerificationRefusal),
+    /// The text `valid`.
+    Valid,
+    /// The text `invalid`.
+    Invalid,
+}
+
+impl c::Model for VerificationResult {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::VerificationRefusal(a) => c::Model::to_value_at(a, depth),
+            Self::Valid => Ok(c::Value::text("valid")),
+            Self::Invalid => Ok(c::Value::text("invalid")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[(&["kind", "part"], &["kind", "part"])], &["valid", "invalid"])? {
+            c::Alternative::Record(0) => <VerificationRefusal as c::Model>::from_value(value).map(Self::VerificationRefusal),
             c::Alternative::Text(0) => Ok(Self::Valid),
             c::Alternative::Text(1) => Ok(Self::Invalid),
-            c::Alternative::Text(2) => Ok(Self::MalformedKey),
-            c::Alternative::Text(3) => Ok(Self::MalformedSignature),
             other => Err(c::unknown_alternative(other)),
         }
     }

@@ -12,6 +12,7 @@ pub mod merkle_vectors;
 pub mod poseidon;
 pub mod poseidon_vectors;
 pub mod refusal_vectors;
+pub mod sigma_refusal_vectors;
 pub mod sigma_vectors;
 pub mod signing_vectors;
 pub mod storage;

@@ -3,9 +3,11 @@
 Status: normative. Conformance vectors:
 - `shared/vectors/sigma_v1.json`: proofs made by Ergo's prover.
 - `shared/vectors/sigma_dilf4s_v1.json`: proofs made by ours, each accepted by Ergo's verifier.
+- `shared/vectors/sigma_refusals_v1.json`: malformed calls, each with its refusal kind (§6), and our outcome on every case
+  of the two files above.
 Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
-Both files carry Ergo's verdict on every case. They are produced by `tools/sigma-vectors` (dev-only, Scala 2.13,
+The first two carry Ergo's verdict on every case. They are produced by `tools/sigma-vectors` (dev-only, Scala 2.13,
 outside the build) over sigmastate 5.0.13.
 
 A sigma proof shows knowledge of secret keys for a tree of statements joined by `and`, `or` and `threshold`, without
@@ -166,11 +168,12 @@ A proposition fixes its proof's length exactly:
    proof.
 4. Serialize the transcript (§4) and accept if and only if its challenge equals the root challenge.
 
-**Malformed input is an error, never `false`:**
-- a proposition breaking §3;
-- a proof of the wrong length;
-- `z ≥ q`;
-- a non-canonical point.
+**Malformed input is an error, never `false`,** of one of these kinds (`SigmaError`), checked in this order: the
+proposition, then the proof's length, then each response:
+- `InvalidPoint`: a group element that is not the canonical encoding of a point (§1);
+- `InvalidProposition`: any other break of §3, an identity statement point among them;
+- `ProofLength`: a proof of the wrong length;
+- `ResponseOutOfRange`: `z ≥ q`.
 
 A well-formed proof that fails step 4 is `false`.
 

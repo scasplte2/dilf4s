@@ -3,16 +3,24 @@ import { describe, expect, test } from "vitest";
 import { models, toHex, type Result } from "@kd5ujc/dilf4s-core";
 
 import {
+  bip32Secp256k1,
   bip340,
   blsPop,
+  type ChildIndex,
   ed25519,
   ed25519Bip32,
+  icarus,
   Message32,
   p256Ecdsa,
   parsePath,
   ristretto255Schnorr,
   secp256k1Ecdsa,
+  slip10Ed25519,
   taggedSchnorr,
+  toEntropy,
+  toMnemonic,
+  WordList,
+  type KeyError,
   type PathRefusal,
   type SigningError,
 } from "../src/index.js";
@@ -130,17 +138,95 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
     });
   }
 
-  test("verification verdicts (valid, invalid, malformedKey, malformedSignature)", { timeout: 60_000 }, () => {
+  test("verification verdicts: valid, invalid, or the part refused and its kind", { timeout: 60_000 }, () => {
     expect(vectors.verification.length).toBeGreaterThan(400);
     const mismatches: string[] = [];
     for (const c of vectors.verification) {
       const a = adapter(c.scheme);
       const r = a.verifyBytes(h(c.verifyingKey), h(c.message), h(c.signature));
       // the key is decoded first, so an error is the key's exactly when the key alone fails to decode
-      const actual = r.ok ? (r.value ? "valid" : "invalid") : a.verifyingKey(h(c.verifyingKey)).ok ? "malformedSignature" : "malformedKey";
-      if (actual !== c.result) mismatches.push(`${c.scheme}/${c.name}: expected ${c.result}, got ${actual} ${r.ok ? "" : JSON.stringify(r.error)}`);
+      const actual: models.signingVectors.VerificationResult = r.ok
+        ? r.value
+          ? "valid"
+          : "invalid"
+        : { part: a.verifyingKey(h(c.verifyingKey)).ok ? "signature" : "verifyingKey", kind: r.error.kind };
+      if (JSON.stringify(actual) !== JSON.stringify(c.result)) mismatches.push(`${c.scheme}/${c.name}: expected ${JSON.stringify(c.result)}, got ${JSON.stringify(actual)}`);
     }
     expect(mismatches).toEqual([]);
+  });
+
+  /** What a `keyRefusals` row's call gives. */
+  const keyCall = (c: models.signingVectors.KeyRefusal): Result<unknown, KeyError> => {
+    const path = (): Result<readonly ChildIndex[], KeyError> => parsePath(c.path ?? "");
+    const publicPath = <K>(start: K, step: (k: K, i: ChildIndex) => Result<K, KeyError>): Result<unknown, KeyError> => {
+      const p = path();
+      if (!p.ok) return p;
+      let at: Result<K, KeyError> = { ok: true, value: start };
+      for (const i of p.value) at = at.ok ? step(at.value, i) : at;
+      return at;
+    };
+    switch (c.check) {
+      case "bip39-entropy":
+        return toMnemonic(h(c.entropy ?? ""));
+      case "bip39-phrase":
+        return toEntropy(c.phrase ?? "");
+      case "word-list":
+        return WordList.of(c.words ?? []);
+      case "slip10": {
+        const p = path();
+        return p.ok ? slip10Ed25519.derive(h(c.seed ?? ""), p.value) : p;
+      }
+      case "bip32": {
+        const p = path();
+        return p.ok ? bip32Secp256k1.derive(h(c.seed ?? ""), p.value) : p;
+      }
+      case "bip32-public": {
+        const vk = expectOk(secp256k1Ecdsa.verifyingKey(h(c.verifyingKey ?? "")), "vk");
+        return publicPath({ key: vk, chainCode: h(c.chainCode ?? "") }, (k, i) => {
+          const r = bip32Secp256k1.publicChild(k.key, k.chainCode, i);
+          return r.ok ? { ok: true, value: { key: r.value.key, chainCode: r.value.chainCode } } : r;
+        });
+      }
+      case "icarus-public": {
+        const vk = expectOk(ed25519Bip32.verifyingKey(h(c.verifyingKey ?? "")), "vk");
+        return publicPath({ key: vk, chainCode: h(c.chainCode ?? "") }, (k, i) => {
+          const r = icarus.publicChild(k.key, k.chainCode, i);
+          return r.ok ? { ok: true, value: { key: r.value.key, chainCode: r.value.chainCode } } : r;
+        });
+      }
+    }
+  };
+
+  test("key-derivation refusals: each row's call is refused with its KeyError kind", () => {
+    expect(vectors.keyRefusals.length).toBeGreaterThanOrEqual(16);
+    const mismatches = vectors.keyRefusals.flatMap((c) => {
+      const r = keyCall(c);
+      const actual = r.ok ? "accepted" : r.error.kind;
+      return actual === c.kind ? [] : [`${c.check}/${c.name}: expected ${c.kind}, got ${actual}`];
+    });
+    expect(mismatches).toEqual([]);
+  });
+
+  test("coverage (conformance.md section 6): every SigningError and KeyError kind has a row by kind", () => {
+    // Records over the SDK's kinds: a kind added to either type does not compile until it is listed here
+    const signing: Record<SigningError["kind"], models.signingVectors.CryptoErrorKind> = { InvalidEncoding: "InvalidEncoding", InvalidKey: "InvalidKey" };
+    const keys: Record<KeyError["kind"], models.signingVectors.KeyErrorKind | "paths"> = {
+      InvalidEntropy: "InvalidEntropy",
+      InvalidMnemonic: "InvalidMnemonic",
+      InvalidWordList: "InvalidWordList",
+      InvalidDerivation: "InvalidDerivation",
+      InvalidPath: "paths",
+    };
+    // and every kind the schema names is one of the SDK's
+    const toSdkSigning = (k: models.signingVectors.CryptoErrorKind): SigningError["kind"] => k;
+    const toSdkKey = (k: models.signingVectors.KeyErrorKind): KeyError["kind"] => k;
+    expect(toSdkSigning("InvalidKey")).toBe("InvalidKey");
+    expect(toSdkKey("InvalidEntropy")).toBe("InvalidEntropy");
+    const decoded = new Set<string>(vectors.keyDecoding.map((c) => c.result));
+    const verified = new Set<string>(vectors.verification.flatMap((c) => (typeof c.result === "string" ? [] : [c.result.kind])));
+    expect(Object.values(signing).filter((k) => !decoded.has(k) || !verified.has(k))).toEqual([]);
+    const refused = new Set<string>(vectors.keyRefusals.map((c) => c.kind));
+    expect(Object.values(keys).filter((k) => (k === "paths" ? !vectors.paths.some((p) => typeof p.result === "string") : !refused.has(k)))).toEqual([]);
   });
 
   // a signing-key decoder per scheme, and the verifying-key decoder of each (Ed25519-BIP32 keys verify as Ed25519)

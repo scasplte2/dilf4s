@@ -21,7 +21,8 @@ use common::{read_vectors, vectors_dir};
 use dilf4s_core::codec::Model;
 use dilf4s_core::generated::{
     canonical_vectors, crypto, jlvm, jlvm_vectors, kes_vectors, merkle, merkle_vectors, poseidon_vectors,
-    refusal_vectors, sigma_vectors, signing_vectors, trie_vectors, versioned_trie_vectors, vrf_vectors, zk_vectors,
+    refusal_vectors, sigma_refusal_vectors, sigma_vectors, signing_vectors, trie_vectors, versioned_trie_vectors,
+    vrf_vectors, zk_vectors,
 };
 use dilf4s_core::{Value, json};
 
@@ -32,7 +33,7 @@ fn round_trip<T: Model>(value: &Value) -> Result<Value, String> {
 
 type Check = fn(&Value) -> Result<Value, String>;
 
-const SCHEMAS: [(&str, Check); 13] = [
+const SCHEMAS: [(&str, Check); 14] = [
     ("canonical_encoding_v1.json", round_trip::<canonical_vectors::CanonicalVectors>),
     ("jlvm_v1.json", round_trip::<jlvm_vectors::JlvmVectors>),
     ("kes_v1.json", round_trip::<kes_vectors::KesVectors>),
@@ -40,6 +41,7 @@ const SCHEMAS: [(&str, Check); 13] = [
     ("poseidon_v1.json", round_trip::<poseidon_vectors::PoseidonVectors>),
     ("refusals_v1.json", round_trip::<refusal_vectors::RefusalVectors>),
     ("sigma_dilf4s_v1.json", round_trip::<sigma_vectors::SigmaVectors>),
+    ("sigma_refusals_v1.json", round_trip::<sigma_refusal_vectors::SigmaRefusalVectors>),
     ("sigma_v1.json", round_trip::<sigma_vectors::SigmaVectors>),
     ("signing_v1.json", round_trip::<signing_vectors::SigningVectors>),
     ("trie_v1.json", round_trip::<trie_vectors::TrieVectors>),
