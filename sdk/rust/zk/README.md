@@ -294,6 +294,7 @@ the precompiles' rows, so it is the fairer figure once verification leans on pre
 | 1. `U` as one double-base multiplication | 1,076,338 | 1,061,968 | 1,099,594 | 1,083,023 | 1,003,108 | 984,971 |
 | 2. `V` as two variable-base multiplications | 433,495 | 485,839 | 454,043 | 504,671 | 359,717 | 411,454 |
 | 3. No re-encoding to decode or to hash `Y` | 278,937 | 320,966 | 338,074 | 380,955 | 321,027 | 370,155 |
+| 4. The Elligator maps' exponentiation on `sys_bigint` | 279,004 | 321,333 | 326,847 | 364,863 | 309,737 | 354,024 |
 
 Each row includes the ones above it; all of them give the same outcomes as native code on every VRF row.
 
@@ -311,6 +312,26 @@ Each row includes the ones above it; all of them give the same outcomes as nativ
    re-encoding `Y`: a key that decodes and is not of small order re-encodes to itself, under both suites' rules
    (`a_decoded_key_re_encodes_to_itself`). This saves three inversions per verification for ELL2, one for draft-03,
    and for TAI one more per hash-to-curve attempt.
+
+4. **`sys_bigint` (issue #69).** Both Elligator maps spend one exponentiation, `x^((p - 5) / 8)`: 251 squarings and
+   11 multiplications. In the guest its 262 multiplications go to the `UINT256_MUL` precompile through `sys_bigint`
+   (`signing/src/vrf/field/zkvm.rs`), on the same addition chain as fiat-crypto's (`pow_p58_chain`). This saves
+   about 11,200 cycles (3.3–3.5%) and 16,100 gas (4.2–4.4%) per ELL2 or draft-03 verification; TAI has no map.
+   The rest of the maps, about 45 multiplications, stays on fiat-crypto: moving it would mean a second field
+   implementation for a few thousand cycles. Natively nothing changes.
+   - **The one `unsafe` block in `dilf4s-signing`.** It compiles only for SP1's guest. The module's `Canonical`
+     type holds a value below `p`, so both inputs are reduced. The modulus is `p`, not zero, and every product is
+     checked to be below `p` before use. A product that is not would be a `HashToCurveFailed` rejection, never a
+     panic; a correct precompile never returns one.
+   - **Lints.** `dilf4s-signing`'s `Cargo.toml` copies the workspace's lint table with `unsafe_code = "deny"` in
+     place of `"forbid"`. A forbid passed by Cargo cannot be lowered by the module's `allow`, and Cargo cannot
+     override one inherited lint. `signing/tests/lints.rs` fails if the copy drifts. `src/lib.rs` still forbids
+     unsafe code on every other target.
+   - **The declaration.** `sys_bigint` is declared in the module, with `sp1-zkvm` 6.10.0's signature, rather than
+     taken from `sp1-lib`, which would add `sp1-lib` and its dependencies to `sdk/rust/Cargo.lock` for one line.
+     The gate on `target_vendor = "succinct"` as well as `target_os = "zkvm"` keeps it off RISC Zero, whose
+     `sys_bigint` differs.
+   - **The harness** requires `UINT256_MUL` calls in the ELL2 and draft-03 families.
 
 The four inversions that remain encode `H`, `U`, `V` and `8 Gamma`, about 150,000 cycles. Each is needed: the
 challenge hashes those encodings, and `beta` hashes the last one.
