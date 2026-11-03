@@ -94,9 +94,9 @@ fn sp1_groth16() {
     }
 }
 
-/// The coverage gate (conformance.md section 6) for `ZkError` and `Groth16Error`: every kind has a row by kind. The
-/// samples are one of each variant, and `kind` and `outcome` are exhaustive, so a new kind does not compile until it
-/// is mapped.
+/// The coverage gate (conformance.md section 6) for `ZkError` and `Groth16Error`: every kind of the schema has a row.
+/// `kind` and `outcome` map every SDK variant onto a schema kind (exhaustively, so a new variant does not compile until
+/// it is mapped), so every SDK kind has a row too.
 #[test]
 fn every_zk_error_kind_has_a_row() {
     let v = vectors();
@@ -104,22 +104,17 @@ fn every_zk_error_kind_has_a_row() {
         ZkPointResult::ZkFailure(f) => Some(f.error.clone()),
         ZkPointResult::ZkPoint(_) => None,
     };
-    let mut pinned: Vec<Kind> = v.add.iter().chain(&v.mul).filter_map(|c| failures(&c.result)).collect();
+    let mut pinned: Vec<Kind> =
+        v.add.iter().map(|c| &c.result).chain(v.mul.iter().map(|c| &c.result)).filter_map(failures).collect();
     pinned.extend(v.pairing.iter().filter_map(|c| match &c.result {
         ZkBoolResult::ZkFailure(f) => Some(f.error.clone()),
         ZkBoolResult::ZkBool(_) => None,
     }));
-    for e in [ZkError::Malformed { reason: String::new() }, ZkError::InvalidPoint { reason: String::new() }] {
-        assert!(pinned.contains(&kind(&e)), "no zk_v1.json row pins {e:?}");
+    for k in Kind::ALL {
+        assert!(pinned.contains(&k), "no zk_v1.json row pins {k:?}");
     }
-    for e in [
-        Groth16Error::Malformed { reason: String::new() },
-        Groth16Error::InvalidProof { reason: String::new() },
-        Groth16Error::PairingCheckFailed,
-        Groth16Error::Rejected { reason: String::new() },
-    ] {
-        let o = outcome(&Err(e.clone()));
-        assert!(v.sp1_groth16.iter().any(|c| c.result == o), "no sp1Groth16 row pins {e:?}");
+    for k in ZkGroth16Result::ALL {
+        assert!(v.sp1_groth16.iter().any(|c| c.result == k), "no sp1Groth16 row has result {k:?}");
     }
 }
 

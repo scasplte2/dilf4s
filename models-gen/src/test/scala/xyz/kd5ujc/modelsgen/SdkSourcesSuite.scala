@@ -294,6 +294,12 @@ object SdkSourcesSuite extends SimpleIOSuite {
       .and(expect(scala.exists(s => !s.contains("import ")), "a constants module imports nothing"))
   }
 
+  pureTest("Rust: a choice of text literals lists every alternative in ALL; a choice with records does not") {
+    val out = gen("kind = \"a\" / \"b-c\"\nr = { \"x\": uint }\nmixed = r / \"d\"\n").map(_.rust.toMap.getOrElse("t.rs", ""))
+    expect(out.exists(_.contains("pub const ALL: [Self; 2] = [Self::A, Self::BC];")), out.fold(_.message, identity))
+      .and(expect(out.exists(_.split("impl Mixed \\{").length == 1), "no ALL for a choice with a record"))
+  }
+
   pureTest("a constant bounds a range or a size, and is never a field's type") {
     val bounded = gen("max-n = 1024\nr = { \"n\": 0..max-n, \"b\": bytes .size (0..max-n) }\n").map(_.rust.toMap.getOrElse("t.rs", ""))
     expect(bounded.exists(_.contains("c::U32In { lo: 0, hi: 1024 }")), bounded.fold(_.message, identity))

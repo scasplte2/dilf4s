@@ -137,10 +137,14 @@ kind (conformance step 2, part B).
 **The gate, in every language.** The reference's `RefusalCoverageSuite` (the verifier families) and
 `CryptoRefusalCoverageSuite` (the others) list each error type's cases through the compiler (`Mirror.SumOf`) and fail
 if a kind has neither a row nor an entry here. The Rust tests map each SDK error onto the schema's kind with an
-exhaustive `match`, so a new variant does not compile until it is mapped, and then check that its kind has a row. The
-TypeScript tests list each SDK error's kinds in a `Record` keyed by its `kind` union, so a new kind does not compile
-until it is listed, and check its row; they also check that every kind the schema names is one of the SDK's. The SP1
-guest harness runs every verification row of these files and checks each refusal by its exact kind.
+exhaustive `match`, so a new variant does not compile until it is mapped, and check that every kind the schema lists
+(the generated `ALL` of each kind choice) has a row. The TypeScript tests list each SDK error's kinds in a `Record`
+keyed by its `kind` union, so a new kind does not compile until it is listed, and check its row; they also check that
+every kind the schema names is one of the SDK's. The SP1 guest harness runs every verification call of these files in
+the guest and checks each refusal by its exact kind: signatures, VRF verification, KES verification and parameters,
+sigma (its refusal calls, and every case of the Ergo-checked files) and zk. The guest builds the signing SDK without
+its `sign` feature, so key derivation (`KeyError`), VRF signing-key decoding (`KeyMismatch`) and KES generation,
+loading and evolution (`Exhausted`, `InconsistentKey`) are checked natively only.
 
 **Kinds in the schemas.** Every kind field of these files is a choice of text literals in its schema
 (`crypto-error-kind`, `key-error-kind`, `vrf-result`, `kes-outcome`, `sigma-outcome`, `zk-error`), so each SDK's

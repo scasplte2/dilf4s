@@ -98,6 +98,11 @@ impl c::Model for SigmaKind {
     }
 }
 
+impl SigmaKind {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 6] = [Self::Valid, Self::OtherMessage, Self::FlippedResponse, Self::FlippedChallenge, Self::TrailingByte, Self::Truncated];
+}
+
 /// `sigma-proposition` (`shared/schemas/sigma-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SigmaProposition {
@@ -184,6 +189,11 @@ impl c::Model for SigmaType {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl SigmaType {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 5] = [Self::Dlog, Self::Dhtuple, Self::And, Self::Or, Self::Threshold];
 }
 
 /// `sigma-vectors` (`shared/schemas/sigma-vectors.cddl`).

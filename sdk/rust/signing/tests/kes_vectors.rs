@@ -138,19 +138,14 @@ fn refusals_by_kind() {
     assert!(checked >= if cfg!(feature = "sign") { 60 } else { 30 }, "{checked} refusal rows");
 }
 
-/// The coverage gate (conformance.md section 6) for `KesError`: every kind has a row. The samples are one of each
-/// variant, and [`kes_outcome`] is exhaustive, so a new kind does not compile until it is mapped.
+/// The coverage gate (conformance.md section 6) for `KesError`: every outcome of the schema has a row.
+/// [`kes_outcome`] maps every SDK variant onto a schema kind (exhaustively, so a new variant does not compile until it
+/// is mapped), so every SDK kind has a row too.
 #[test]
 fn every_kes_error_kind_has_a_row() {
     let v: KesVectors = load("kes_v1.json");
-    let samples = [
-        KesError::Malformed { what: "", reason: String::new() },
-        KesError::PeriodOutOfRange { period: 0, total: 0 },
-        KesError::Exhausted { period: 0 },
-        KesError::InconsistentKey { reason: String::new() },
-    ];
-    for e in &samples {
-        assert!(v.refusals.iter().any(|c| c.outcome == kes_outcome(e)), "no refusals row pins {}", e.kind());
+    for kind in KesOutcome::ALL {
+        assert!(v.refusals.iter().any(|c| c.outcome == kind), "no refusals row has outcome {kind:?}");
     }
 }
 

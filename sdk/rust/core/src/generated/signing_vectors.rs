@@ -178,6 +178,11 @@ impl c::Model for CryptoErrorKind {
     }
 }
 
+impl CryptoErrorKind {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::InvalidEncoding, Self::InvalidKey];
+}
+
 /// `extended-key` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExtendedKey {
@@ -314,6 +319,11 @@ impl c::Model for KeyCheck {
     }
 }
 
+impl KeyCheck {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 7] = [Self::Bip39Entropy, Self::Bip39Phrase, Self::WordList, Self::Slip10, Self::Bip32, Self::Bip32Public, Self::IcarusPublic];
+}
+
 /// `key-decoding-case` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyDecodingCase {
@@ -382,6 +392,11 @@ impl c::Model for KeyDecodingResult {
     }
 }
 
+impl KeyDecodingResult {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 3] = [Self::Accepted, Self::InvalidEncoding, Self::InvalidKey];
+}
+
 /// `key-error-kind` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KeyErrorKind {
@@ -416,6 +431,11 @@ impl c::Model for KeyErrorKind {
     }
 }
 
+impl KeyErrorKind {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 4] = [Self::InvalidEntropy, Self::InvalidMnemonic, Self::InvalidWordList, Self::InvalidDerivation];
+}
+
 /// `key-part` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KeyPart {
@@ -440,6 +460,11 @@ impl c::Model for KeyPart {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl KeyPart {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::SigningKey, Self::VerifyingKey];
 }
 
 /// `key-refusal` (`shared/schemas/signing-vectors.cddl`).
@@ -846,6 +871,11 @@ impl c::Model for VerificationPart {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl VerificationPart {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::VerifyingKey, Self::Signature];
 }
 
 /// `verification-refusal` (`shared/schemas/signing-vectors.cddl`).

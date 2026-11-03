@@ -336,6 +336,11 @@ impl c::Model for TrieMalformedError {
     }
 }
 
+impl TrieMalformedError {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::Encoding, Self::InvalidProof];
+}
+
 /// `trie-mode` (`shared/schemas/trie-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TrieMode {

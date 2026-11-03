@@ -252,6 +252,17 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
       val dec = recordVariants.zipWithIndex.map {
         case ((v, t), i) => s"            c::Alternative::Record($i) => <$t as c::Model>::from_value(value).map(Self::$v),"
       } ++ textVariants.zipWithIndex.map { case ((v, _), i) => s"            c::Alternative::Text($i) => Ok(Self::$v)," }
+      // a choice of text literals only lists its values, so a test can ask for something of each (a vector row per kind)
+      val all = Option
+        .when(recordVariants.isEmpty)(
+          s"""
+             |impl $n {
+             |    /// Every alternative, in schema order.
+             |    pub const ALL: [Self; ${textVariants.size}] = [${textVariants.map { case (v, _) => s"Self::$v" }.mkString(", ")}];
+             |}
+             |""".stripMargin
+        )
+        .getOrElse("")
       s"""${doc(rule)}
          |#[derive(Clone, Debug, PartialEq, Eq)]
          |pub enum $n {
@@ -272,7 +283,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |        }
          |    }
          |}
-         |""".stripMargin
+         |$all""".stripMargin
     }
   }
 

@@ -108,6 +108,11 @@ impl c::Model for VrfKeyResult {
     }
 }
 
+impl VrfKeyResult {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 3] = [Self::Accepted, Self::Malformed, Self::KeyMismatch];
+}
+
 /// `vrf-proof` (`shared/schemas/vrf-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VrfProof {
@@ -224,6 +229,11 @@ impl c::Model for VrfResult {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl VrfResult {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 7] = [Self::Valid, Self::Malformed, Self::InvalidPublicKey, Self::SmallOrderPublicKey, Self::InvalidGamma, Self::NonCanonicalScalar, Self::ChallengeMismatch];
 }
 
 /// `vrf-suite` (`shared/schemas/vrf-vectors.cddl`).

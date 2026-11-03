@@ -52,6 +52,11 @@ impl c::Model for SigmaOutcome {
     }
 }
 
+impl SigmaOutcome {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 6] = [Self::Accepted, Self::Rejected, Self::InvalidProposition, Self::InvalidPoint, Self::ProofLength, Self::ResponseOutOfRange];
+}
+
 /// `sigma-refusal` (`shared/schemas/sigma-refusal-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SigmaRefusal {

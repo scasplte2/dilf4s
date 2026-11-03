@@ -237,6 +237,11 @@ impl c::Model for JlvmErrorKind {
     }
 }
 
+impl JlvmErrorKind {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 8] = [Self::Malformed, Self::Type, Self::Arity, Self::Arithmetic, Self::Domain, Self::Crypto, Self::Limit, Self::OutOfGas];
+}
+
 /// `jlvm-outcome` (`shared/schemas/jlvm-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum JlvmOutcome {

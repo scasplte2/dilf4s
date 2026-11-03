@@ -304,22 +304,14 @@ fn key_derivation_refusals() {
     assert!(n >= 16, "{n} key refusal rows");
 }
 
-/// The coverage gate (conformance.md section 6) for `KeyError`: every kind has a vector row, by kind. The samples are
-/// one of each variant; [`key_kind`] is an exhaustive match, so a new variant does not compile until it is mapped, and
-/// then fails here until its sample and its row exist.
+/// The coverage gate (conformance.md section 6) for `KeyError`: every kind of the schema has a `keyRefusals` row, and
+/// `InvalidPath` has `paths` rows. [`key_kind`] maps every SDK variant onto one of those (exhaustively, so a new
+/// variant does not compile until it is mapped), so every SDK kind has a row too.
 #[test]
 fn every_key_error_kind_has_a_row() {
     let v: SigningVectors = load("signing_v1.json");
-    let rows: Vec<&KeyErrorKind> = v.key_refusals.iter().map(|c| &c.kind).collect();
-    let samples = [
-        KeyError::InvalidEntropy { reason: String::new() },
-        KeyError::InvalidMnemonic { reason: String::new() },
-        KeyError::InvalidWordList { reason: String::new() },
-        KeyError::InvalidDerivation { reason: String::new() },
-    ];
-    for e in &samples {
-        let kind = key_kind(e).unwrap();
-        assert!(rows.contains(&&kind), "no keyRefusals row pins {kind:?}");
+    for kind in KeyErrorKind::ALL {
+        assert!(v.key_refusals.iter().any(|c| c.kind == kind), "no keyRefusals row pins {kind:?}");
     }
     assert!(
         v.paths

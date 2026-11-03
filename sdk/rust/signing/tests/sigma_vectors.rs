@@ -476,20 +476,13 @@ fn ergo_checked_cases_by_kind() {
     }
 }
 
-/// The coverage gate (conformance.md section 6) for `SigmaError`: every kind has a row. The samples are one of each
-/// variant, and [`sigma_outcome`] is exhaustive, so a new kind does not compile until it is mapped.
+/// The coverage gate (conformance.md section 6) for `SigmaError`: every outcome of the schema has a row.
+/// [`sigma_outcome`] maps every SDK variant onto a schema kind (exhaustively, so a new variant does not compile until it
+/// is mapped), so every SDK kind has a row too.
 #[test]
 fn every_sigma_error_kind_has_a_row() {
     let v: SigmaRefusalVectors = load("sigma_refusals_v1.json");
-    let samples = [
-        SigmaError::InvalidProposition { reason: String::new() },
-        SigmaError::InvalidPoint { what: "pk", reason: String::new() },
-        SigmaError::ProofLength { expected: 0, actual: 0 },
-        SigmaError::ResponseOutOfRange,
-    ];
-    for e in samples {
-        let kind = e.kind();
-        let outcome = sigma_outcome(&Err(e));
-        assert!(v.cases.iter().any(|c| c.outcome == outcome), "no sigma_refusals_v1.json row pins {kind}");
+    for kind in SigmaOutcome::ALL {
+        assert!(v.cases.iter().any(|c| c.outcome == kind), "no sigma_refusals_v1.json row has outcome {kind:?}");
     }
 }

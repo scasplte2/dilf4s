@@ -188,29 +188,20 @@ fn vrf_v1_signing_key_decoding() {
     assert!(v.key_decoding.len() >= 13, "{} key rows", v.key_decoding.len());
 }
 
-/// The coverage gate (conformance.md section 6) for `VrfError`: every kind has a row by kind, but
-/// `HashToCurveFailed` (exempt: no input is known that reaches it). The samples are one of each variant, and
-/// [`verify_result`] and [`key_result`] are exhaustive, so a new kind does not compile until it is mapped.
+/// The coverage gate (conformance.md section 6) for `VrfError`: every refusal kind of the schema has a row.
+/// [`verify_result`] and [`key_result`] map every SDK variant onto a schema kind or `None` (exhaustively, so a new
+/// variant does not compile until it is mapped); `None` for both is the exemption, `HashToCurveFailed` alone.
 #[test]
 fn every_vrf_error_kind_has_a_row() {
     let v: dilf4s_core::generated::vrf_vectors::VrfVectors = common::load("vrf_v1.json");
-    let samples = [
-        VrfError::Malformed { what: "", reason: String::new() },
-        VrfError::InvalidPublicKey,
-        VrfError::SmallOrderPublicKey,
-        VrfError::InvalidGamma,
-        VrfError::NonCanonicalScalar,
-        VrfError::ChallengeMismatch,
-        VrfError::KeyMismatch,
-        VrfError::HashToCurveFailed { reason: String::new() },
-    ];
-    for e in &samples {
-        let verified = verify_result(e).is_some_and(|k| v.rejections.iter().any(|r| r.result == k));
-        let decoded = key_result(e).is_some_and(|k| v.key_decoding.iter().any(|c| c.result == k));
-        let exempt = matches!(e, VrfError::HashToCurveFailed { .. });
-        assert!(verified || decoded || exempt, "no row pins {}", e.kind());
-        assert!(!(exempt && (verified || decoded)), "{} is exempt but pinned", e.kind());
+    for kind in VrfResult::ALL.into_iter().filter(|k| *k != VrfResult::Valid) {
+        assert!(v.rejections.iter().any(|r| r.result == kind), "no rejections row pins {kind:?}");
     }
+    for kind in VrfKeyResult::ALL.into_iter().filter(|k| *k != VrfKeyResult::Accepted) {
+        assert!(v.key_decoding.iter().any(|c| c.result == kind), "no keyDecoding row pins {kind:?}");
+    }
+    let exempt = VrfError::HashToCurveFailed { reason: String::new() };
+    assert_eq!((verify_result(&exempt), key_result(&exempt)), (None, None), "the one exemption maps to no kind");
 }
 
 /// RFC 9381 B.3 (TAI) / B.4 (ELL2) and draft-03 A.4: keys, proofs, outputs, and the intermediate `H`.

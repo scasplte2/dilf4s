@@ -70,6 +70,11 @@ impl c::Model for KesCheck {
     }
 }
 
+impl KesCheck {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 5] = [Self::Parameters, Self::Generate, Self::Load, Self::Evolve, Self::Verify];
+}
+
 /// `kes-construction` (`shared/schemas/kes-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KesConstruction {
@@ -98,6 +103,11 @@ impl c::Model for KesConstruction {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl KesConstruction {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 3] = [Self::Dilf4sSum, Self::Dilf4sProduct, Self::CardanoSum];
 }
 
 /// `kes-outcome` (`shared/schemas/kes-vectors.cddl`).
@@ -140,6 +150,11 @@ impl c::Model for KesOutcome {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl KesOutcome {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 6] = [Self::Accepted, Self::Rejected, Self::Malformed, Self::PeriodOutOfRange, Self::Exhausted, Self::InconsistentKey];
 }
 
 /// `kes-parameters` (`shared/schemas/kes-vectors.cddl`).

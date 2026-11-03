@@ -282,6 +282,11 @@ impl c::Model for RefusalCheck {
     }
 }
 
+impl RefusalCheck {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 15] = [Self::VtValue, Self::VtChunk, Self::VtDelta, Self::VtProof, Self::VtState, Self::VtHistorical, Self::VtReplica, Self::MerkleInclusion, Self::MerkleConsistency, Self::TrieLookup, Self::PoseidonProof, Self::MerkleVerify, Self::TrieVerify, Self::TriePrefixVerify, Self::VtCommit];
+}
+
 /// `refusal-entry` (`shared/schemas/refusal-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefusalEntry {

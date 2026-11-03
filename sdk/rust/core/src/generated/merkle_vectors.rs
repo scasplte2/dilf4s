@@ -40,6 +40,11 @@ impl c::Model for MerkleDecodeError {
     }
 }
 
+impl MerkleDecodeError {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 3] = [Self::IndexOutOfRange, Self::InvalidSizes, Self::Encoding];
+}
+
 /// `merkle-malformed` (`shared/schemas/merkle-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MerkleMalformed {
@@ -98,6 +103,11 @@ impl c::Model for MerkleProofKind {
             other => Err(c::unknown_alternative(other)),
         }
     }
+}
+
+impl MerkleProofKind {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::Inclusion, Self::Consistency];
 }
 
 /// `merkle-value-commitment` (`shared/schemas/merkle-vectors.cddl`).

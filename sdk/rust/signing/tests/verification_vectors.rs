@@ -125,31 +125,27 @@ fn proofs_of_possession_verify() {
     assert_eq!(v.bls_pop.len(), 3);
 }
 
-/// The coverage gate (conformance.md section 6) for `SigningError`: every kind has a `keyDecoding` row and a
-/// `verification` row, by kind. The samples are one of each variant; [`crypto_kind`] is exhaustive, so a new variant
-/// does not compile until it is mapped, and then fails here until its sample and rows exist.
+/// The coverage gate (conformance.md section 6) for `SigningError`: every kind of the schema has a `keyDecoding` row
+/// and a `verification` row. [`crypto_kind`] maps every SDK variant onto a schema kind (exhaustively, so a new variant
+/// does not compile until it is mapped), so every SDK kind has its rows too.
 #[test]
 fn every_signing_error_kind_has_a_row() {
     let v: SigningVectors = load("signing_v1.json");
-    let samples = [
-        SigningError::InvalidEncoding { what: "", reason: String::new() },
-        SigningError::InvalidKey { reason: String::new() },
-    ];
-    for e in &samples {
-        let kind = crypto_kind(e);
-        assert_eq!(crypto_kind_name(&kind), e.kind(), "the schema and the SDK spell the kind alike");
-        assert!(
-            v.key_decoding.iter().any(|c| expected_kind(&c.result) == e.kind()),
-            "no keyDecoding row pins {}",
-            e.kind()
-        );
+    for kind in CryptoErrorKind::ALL {
+        let name = crypto_kind_name(&kind);
+        assert!(v.key_decoding.iter().any(|c| expected_kind(&c.result) == name), "no keyDecoding row pins {name}");
         assert!(
             v.verification
                 .iter()
                 .any(|c| matches!(&c.result, VerificationResult::VerificationRefusal(r) if r.kind == kind)),
-            "no verification row pins {}",
-            e.kind()
+            "no verification row pins {name}"
         );
+    }
+    for e in [
+        SigningError::InvalidEncoding { what: "", reason: String::new() },
+        SigningError::InvalidKey { reason: String::new() },
+    ] {
+        assert_eq!(crypto_kind_name(&crypto_kind(&e)), e.kind(), "the schema and the SDK spell {} alike", e.kind());
     }
 }
 

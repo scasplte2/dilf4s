@@ -22,6 +22,7 @@ After changing a schema, regenerate them with
 | `bloom.cddl` | Bloom filter encoding | `docs/specs/bloom.md` (embedded) |
 | `crypto.cddl` | sizes of keys, signatures, VRF/KES/zk proofs | `docs/specs/signing.md` §4 (embedded) |
 | `versioned-trie.cddl` | versioned-trie heads, proofs and deltas (wire) | `docs/specs/versioned-trie.md` §5 (embedded) |
+| `limits.cddl` | every spec limit, as constants (see "constants" below) | each limit's own spec; `docs/specs/conformance.md` §6 |
 | `*-vectors.cddl` | The conformance vector files in `shared/vectors/` | the matching spec |
 
 Every vector file in `shared/vectors/` must have a schema here. `VectorSchemasSuite` checks this, and checks that each
@@ -41,7 +42,8 @@ file round-trips through its schema without loss.
     validator in every SDK core (`Profile.Patterns`);
   - homogeneous arrays;
   - literal values;
-  - choices of named map rules and text literals that can be told apart by their keys;
+  - choices of named map rules and text literals that can be told apart by their keys. A choice of text literals only
+    (an error kind, such as `kes-outcome`) is a closed type in every SDK, and Rust lists its values in `ALL`;
   - **constants**: a rule whose whole body is a `uint` literal (`max-depth = 256`). A constant is a value, not a type:
     a range or `.size` bound may name it (`0..max-depth`, `bytes .size (0..max-value-bytes)`), a field or element may
     not. Each language gets it as a constant: Scala a `final val` (`Int`, else `Long`, else `BigInt`), TypeScript an
