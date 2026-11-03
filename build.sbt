@@ -219,9 +219,10 @@ lazy val jlvm = project.in(file("jlvm"))
     libraryDependencies ++= Seq(
       Libraries.cats,
       Libraries.catsEffect,
-      Libraries.circeCore,
-      Libraries.circeParser,
-      Libraries.scodecBits
+      Libraries.scodecBits,
+      // the vector generators and the corpus tests only: programs are read by core's parser (docs/specs/jlvm.md)
+      Libraries.circeCore   % Test,
+      Libraries.circeParser % Test
     )
   )
   .dependsOn(core % "compile->compile;test->test", crypto, accumulators, sharedTest % Test)

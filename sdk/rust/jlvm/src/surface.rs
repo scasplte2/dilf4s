@@ -2,11 +2,14 @@
 //!
 //! Text is validated by the strict canonical JSON parser first (duplicate keys, depth, exact numbers), then read
 //! structurally with nulls and member order still visible, so a null field cannot turn a map expression into an
-//! operation. Scalars and literal values are converted by the canonical parser itself, from their source text.
+//! operation. Scalars and literal values are converted by the canonical parser itself, from their source text: where a
+//! string or an integer is looked for, only a string's or a scalar's span is read, so no span is read once per level of
+//! the containers around it ([`Spans`] counts what is read).
 
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cell::Cell;
 
 use dilf4s_core::{CanonicalError, Preview, Value, json};
 
@@ -29,23 +32,48 @@ enum Kind<'t> {
     Obj(Vec<(String, Json<'t>)>),
 }
 
+/// The spans read back through the strict parser, by total length (`Steps.spanned` in the reference).
+#[derive(Default)]
+pub(crate) struct Spans(Cell<usize>);
+
+impl Spans {
+    fn read(&self, span: &str) -> Result<Value, CanonicalError> {
+        self.0.set(self.0.get().saturating_add(span.len()));
+        json::parse(span)
+    }
+}
+
 impl Json<'_> {
-    /// The text of a JSON string.
-    fn as_str(&self) -> Option<String> {
-        match (&self.kind, json::parse(self.span)) {
-            (Kind::Str, Ok(Value::Text(s))) => Some(String::from(s.as_str())),
+    /// The text of a JSON string; nothing is read for any other node.
+    fn as_str(&self, r: &Spans) -> Option<String> {
+        match self.kind {
+            Kind::Str => match r.read(self.span) {
+                Ok(Value::Text(s)) => Some(String::from(s.as_str())),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The integer a number denotes, as path text; nothing is read for any other node.
+    fn as_integer(&self, r: &Spans) -> Option<String> {
+        match self.kind {
+            Kind::Scalar => match r.read(self.span) {
+                Ok(Value::Int(i)) => Some(alloc::string::ToString::to_string(&i)),
+                _ => None,
+            },
             _ => None,
         }
     }
 
     /// The canonical value of this JSON, with `0x`-hex strings as bytes (`JsonSurface.value`).
-    fn value(&self) -> Result<Value, JlvmError> {
-        json::parse(self.span).map(from_canonical_json).map_err(|e| JlvmError::malformed(alloc::format!("{e}")))
+    fn value(&self, r: &Spans) -> Result<Value, JlvmError> {
+        r.read(self.span).map(from_canonical_json).map_err(|e| JlvmError::malformed(alloc::format!("{e}")))
     }
 }
 
 /// The structure of `text`, which the strict parser has accepted: an explicit stack, no recursion.
-fn tree(text: &str) -> Option<Json<'_>> {
+fn tree<'t>(text: &'t str, r: &Spans) -> Option<Json<'t>> {
     enum Open<'t> {
         Arr(usize, Vec<Json<'t>>),
         Obj(usize, Vec<(String, Json<'t>)>, Option<String>),
@@ -90,7 +118,7 @@ fn tree(text: &str) -> Option<Json<'_>> {
                 let span = text.get(start..i)?;
                 // in an object awaiting a key, a string is the key
                 if let Some(Open::Obj(_, _, key @ None)) = stack.last_mut() {
-                    match json::parse(span) {
+                    match r.read(span) {
                         Ok(Value::Text(k)) => *key = Some(String::from(k.as_str())),
                         _ => return None,
                     }
@@ -124,9 +152,14 @@ fn strict(text: &str, depth_is_limit: bool) -> Result<Value, JlvmError> {
 
 /// Parses a program from its JSON surface text (`Parser.parse`).
 pub fn parse(text: &str) -> Result<Program, JlvmError> {
+    parse_counted(text, &Spans::default())
+}
+
+/// [`parse`], telling `r` of each span read back.
+pub(crate) fn parse_counted(text: &str, r: &Spans) -> Result<Program, JlvmError> {
     strict(text, true)?;
-    let j = tree(text).ok_or_else(|| JlvmError::malformed("not JSON"))?;
-    let expr = from_json(&j)?;
+    let j = tree(text, r).ok_or_else(|| JlvmError::malformed("not JSON"))?;
+    let expr = from_json(&j, r)?;
     drop(j);
     Program::from(expr)
 }
@@ -142,21 +175,21 @@ fn malformed<A>(m: impl Into<String>) -> Result<A, JlvmError> {
 }
 
 /// Recursion is bounded by the strict parser's depth bound (256), which the text has passed.
-fn from_json(j: &Json<'_>) -> Result<Expr, JlvmError> {
+fn from_json(j: &Json<'_>, r: &Spans) -> Result<Expr, JlvmError> {
     match &j.kind {
         Kind::Null => Ok(Expr::Lit(Value::Null)),
-        Kind::Scalar | Kind::Str => j.value().map(Expr::Lit),
-        Kind::Arr(items) => array(items),
+        Kind::Scalar | Kind::Str => j.value(r).map(Expr::Lit),
+        Kind::Arr(items) => array(items, r),
         Kind::Obj(fields) => match fields.as_slice() {
-            [(key, arg)] => single(key, arg),
-            _ => map_expr(fields.iter().map(|(k, x)| (k, x))),
+            [(key, arg)] => single(key, arg, r),
+            _ => map_expr(fields.iter().map(|(k, x)| (k, x)), r),
         },
     }
 }
 
 /// An array headed by a call's name is rejected, so text shaped like a call is never read as data by accident.
-fn array(items: &[Json<'_>]) -> Result<Expr, JlvmError> {
-    match items.first().and_then(Json::as_str).filter(|s| call_name(s)) {
+fn array(items: &[Json<'_>], r: &Spans) -> Result<Expr, JlvmError> {
+    match items.first().and_then(|j| j.as_str(r)).filter(|s| call_name(s)) {
         Some(name) => {
             let call = removed(&name).map_or_else(
                 || alloc::format!("write the call as {{\"{name}\": [...]}}"),
@@ -167,49 +200,52 @@ fn array(items: &[Json<'_>]) -> Result<Expr, JlvmError> {
                  {{\"literal\": [...]}}, or start it with {{\"literal\": \"{name}\"}}"
             ))
         }
-        None => elements(items),
+        None => elements(items, r),
     }
 }
 
-fn elements(items: &[Json<'_>]) -> Result<Expr, JlvmError> {
-    items.iter().map(from_json).collect::<Result<Vec<_>, _>>().map(Expr::Arr)
+fn elements(items: &[Json<'_>], r: &Spans) -> Result<Expr, JlvmError> {
+    items.iter().map(|j| from_json(j, r)).collect::<Result<Vec<_>, _>>().map(Expr::Arr)
 }
 
 /// A `let`'s `[name, expression]` pairs: a name is never code, so a pair is exempt from the array check.
-fn let_bindings(j: &Json<'_>) -> Result<Expr, JlvmError> {
+fn let_bindings(j: &Json<'_>, r: &Spans) -> Result<Expr, JlvmError> {
     match &j.kind {
         Kind::Arr(pairs) => pairs
             .iter()
             .map(|pair| match &pair.kind {
-                Kind::Arr(items) => elements(items),
-                _ => from_json(pair),
+                Kind::Arr(items) => elements(items, r),
+                _ => from_json(pair, r),
             })
             .collect::<Result<Vec<_>, _>>()
             .map(Expr::Arr),
-        _ => from_json(j),
+        _ => from_json(j, r),
     }
 }
 
 /// A map expression: fields kept in code-point order of their (distinct) keys.
-fn map_expr<'a, 't: 'a>(fields: impl Iterator<Item = (&'a String, &'a Json<'t>)>) -> Result<Expr, JlvmError> {
+fn map_expr<'a, 't: 'a>(
+    fields: impl Iterator<Item = (&'a String, &'a Json<'t>)>,
+    r: &Spans,
+) -> Result<Expr, JlvmError> {
     let mut out: Vec<(String, Expr)> =
-        fields.map(|(k, x)| from_json(x).map(|e| (k.clone(), e))).collect::<Result<_, _>>()?;
+        fields.map(|(k, x)| from_json(x, r).map(|e| (k.clone(), e))).collect::<Result<_, _>>()?;
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(Expr::Obj(out))
 }
 
-fn single(key: &String, arg: &Json<'_>) -> Result<Expr, JlvmError> {
+fn single(key: &String, arg: &Json<'_>, r: &Spans) -> Result<Expr, JlvmError> {
     match key.as_str() {
-        "literal" => arg.value().map(Expr::Lit),
-        "var" => variable(arg),
+        "literal" => arg.value(r).map(Expr::Lit),
+        "var" => variable(arg, r),
         "object" => match &arg.kind {
-            Kind::Obj(fields) => map_expr(fields.iter().map(|(k, x)| (k, x))),
+            Kind::Obj(fields) => map_expr(fields.iter().map(|(k, x)| (k, x)), r),
             _ => malformed("object takes an object: {\"object\": {key: expression, ...}}"),
         },
-        data if data.starts_with('_') => map_expr(core::iter::once((key, arg))),
+        data if data.starts_with('_') => map_expr(core::iter::once((key, arg)), r),
         name => match (removed(name), Op::from_wire(name)) {
             (Some(hint), _) => malformed(alloc::format!("\"{name}\" is not an operation: {hint}")),
-            (None, Some(op)) => operation(op, arg),
+            (None, Some(op)) => operation(op, arg, r),
             (None, None) => malformed(alloc::format!(
                 "unknown operation {}: write single-key data as {{\"object\": {{...}}}} or {{\"literal\": {{...}}}}",
                 Preview::of(name)
@@ -218,58 +254,54 @@ fn single(key: &String, arg: &Json<'_>) -> Result<Expr, JlvmError> {
     }
 }
 
-fn operation(op: Op, arg: &Json<'_>) -> Result<Expr, JlvmError> {
+fn operation(op: Op, arg: &Json<'_>, r: &Spans) -> Result<Expr, JlvmError> {
     match &arg.kind {
         Kind::Arr(items) => match items.as_slice() {
             [bindings, body] if op == Op::Let => {
-                let b = let_bindings(bindings)?;
-                let x = from_json(body)?;
+                let b = let_bindings(bindings, r)?;
+                let x = from_json(body, r)?;
                 Ok(Expr::Apply(op, alloc::vec![b, x]))
             }
-            _ => items.iter().map(from_json).collect::<Result<Vec<_>, _>>().map(|xs| Expr::Apply(op, xs)),
+            _ => items.iter().map(|j| from_json(j, r)).collect::<Result<Vec<_>, _>>().map(|xs| Expr::Apply(op, xs)),
         },
-        _ if op.is_variadic() => from_json(arg).map(|x| Expr::Spread(op, Box::new(x))),
-        _ => from_json(arg).map(|x| Expr::Apply(op, alloc::vec![x])),
+        _ if op.is_variadic() => from_json(arg, r).map(|x| Expr::Spread(op, Box::new(x))),
+        _ => from_json(arg, r).map(|x| Expr::Apply(op, alloc::vec![x])),
     }
 }
 
-/// A path is text or an integer; an object or an array is an expression computing the path.
-fn path(j: &Json<'_>, default: Option<Value>) -> Result<Expr, JlvmError> {
-    let text = match (&j.kind, json::parse(j.span)) {
-        (Kind::Str, Ok(Value::Text(s))) => Some(String::from(s.as_str())),
-        (Kind::Scalar, Ok(Value::Int(i))) => Some(alloc::string::ToString::to_string(&i)),
-        _ => None,
-    };
-    if let Some(t) = text {
+/// A path is text or an integer; an object or an array is an expression computing the path. Only a string's or a
+/// number's span is read back, so a nested computed path is read once, not once per level.
+fn path(j: &Json<'_>, default: Option<Value>, r: &Spans) -> Result<Expr, JlvmError> {
+    if let Some(t) = j.as_str(r).or_else(|| j.as_integer(r)) {
         return VarRef::parse(&t).map(|r| Expr::Var(r, default));
     }
     match &j.kind {
-        Kind::Obj(_) => from_json(j).map(|p| Expr::VarAt(Box::new(p), default)),
+        Kind::Obj(_) => from_json(j, r).map(|p| Expr::VarAt(Box::new(p), default)),
         // a literal array here is the path's segments, not code, so it is exempt from the array check
-        Kind::Arr(items) => elements(items).map(|p| Expr::VarAt(Box::new(p), default)),
+        Kind::Arr(items) => elements(items, r).map(|p| Expr::VarAt(Box::new(p), default)),
         _ => malformed("a var path is text, an integer, or an expression computing one"),
     }
 }
 
-fn variable(arg: &Json<'_>) -> Result<Expr, JlvmError> {
+fn variable(arg: &Json<'_>, r: &Spans) -> Result<Expr, JlvmError> {
     match &arg.kind {
         Kind::Arr(items) => match items.as_slice() {
-            [p] => path(p, None),
+            [p] => path(p, None, r),
             [p, d] => {
-                let d = default_value(d)?;
-                path(p, Some(d).filter(|v| *v != Value::Null))
+                let d = default_value(d, r)?;
+                path(p, Some(d).filter(|v| *v != Value::Null), r)
             }
             _ => malformed("var takes a path, or [path, default]"),
         },
-        _ => path(arg, None),
+        _ => path(arg, None, r),
     }
 }
 
 /// A default is a literal value, never evaluated; an object or array default is quoted, `{"literal": ...}`.
-fn default_value(j: &Json<'_>) -> Result<Value, JlvmError> {
+fn default_value(j: &Json<'_>, r: &Spans) -> Result<Value, JlvmError> {
     match &j.kind {
         Kind::Obj(fields) => match fields.as_slice() {
-            [(k, x)] if k == "literal" => x.value(),
+            [(k, x)] if k == "literal" => x.value(r),
             _ => {
                 malformed("a var default is a literal value: quote an object or array default with {\"literal\": ...}")
             }
@@ -277,7 +309,7 @@ fn default_value(j: &Json<'_>) -> Result<Value, JlvmError> {
         Kind::Arr(_) => {
             malformed("a var default is a literal value: quote an object or array default with {\"literal\": ...}")
         }
-        _ => j.value(),
+        _ => j.value(r),
     }
 }
 
@@ -287,13 +319,14 @@ mod tests {
 
     #[test]
     fn trees_keep_nulls_and_order() {
-        let t = tree(r#"{"b": null, "a": [1, "x\"y", {}], "c": true}"#).map(|j| match j.kind {
+        let r = Spans::default();
+        let t = tree(r#"{"b": null, "a": [1, "x\"y", {}], "c": true}"#, &r).map(|j| match j.kind {
             Kind::Obj(fs) => fs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>(),
             _ => Vec::new(),
         });
         assert_eq!(t, Some(alloc::vec![String::from("b"), String::from("a"), String::from("c")]));
-        assert!(tree("[]").is_some_and(|j| matches!(j.kind, Kind::Arr(_))));
-        assert!(tree("{}").is_some_and(|j| matches!(j.kind, Kind::Obj(_))));
+        assert!(tree("[]", &r).is_some_and(|j| matches!(j.kind, Kind::Arr(_))));
+        assert!(tree("{}", &r).is_some_and(|j| matches!(j.kind, Kind::Obj(_))));
     }
 
     #[test]
@@ -312,5 +345,25 @@ mod tests {
         // two keys, one null: a map expression, not the operation +
         let p = parse(r#"{"+": [1, 2], "x": null}"#).map(|p| p.expr);
         assert!(matches!(p, Ok(Expr::Obj(fs)) if fs.len() == 2));
+    }
+
+    /// What reading `text` reads back. An array's leading string is read twice (once to check it names no call, once
+    /// as its value) and every other span at most once, so this is at most twice the text however deep it nests.
+    fn spans_read(text: &str) -> usize {
+        let r = Spans::default();
+        assert!(parse_counted(text, &r).is_ok(), "parses: {text:.80}");
+        r.0.get()
+    }
+
+    #[test]
+    fn spans_are_read_once_not_once_per_level() {
+        let arrays = alloc::format!("{}1{}", "[".repeat(100), "]".repeat(100));
+        let headed = alloc::format!("{}\"a\"{}", "[\"x\", ".repeat(100), "]".repeat(100));
+        let paths = alloc::format!("{}\"a\"{}", "{\"var\": ".repeat(120), "}".repeat(120));
+        let defaults = alloc::format!("{}\"a\"{}", "{\"var\": [".repeat(40), ", 1]}".repeat(40));
+        for text in [&arrays, &headed, &paths, &defaults] {
+            let read = spans_read(text);
+            assert!(read <= 2 * text.len(), "{read} bytes read back for {} bytes of text", text.len());
+        }
     }
 }

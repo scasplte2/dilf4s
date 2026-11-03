@@ -71,7 +71,7 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
       .use(in => IO.blocking(new String(in.readAllBytes(), UTF_8)))
       .flatMap(text => IO.fromEither(parser.parse(text).flatMap(_.hcursor.downField("cases").as[List[Case]])))
 
-  private def surface(j: Json): CanonicalValue = JsonSurface.value(j).fold(e => sys.error(e.toString), identity)
+  private def surface(j: Json): CanonicalValue = JsonSurface.parse(j.noSpaces).fold(e => sys.error(e.toString), identity)
 
   private def check(c: Case)(using zk: ZkOps) = {
     val clue = s"${c.category} ${c.op} ${c.note.getOrElse("")}"

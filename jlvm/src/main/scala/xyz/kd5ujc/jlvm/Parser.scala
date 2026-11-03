@@ -7,9 +7,9 @@ import scala.collection.immutable.TreeMap
 
 import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalError, CanonicalJson, CanonicalValue, Cbor, Preview}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
+import xyz.kd5ujc.jlvm.SurfaceTree.{Kind, Source}
 import xyz.kd5ujc.models.{jlvm => W}
 
-import io.circe.{Json, JsonObject}
 import scodec.bits.ByteVector
 
 /**
@@ -30,8 +30,9 @@ import scodec.bits.ByteVector
  *     null is the null literal; `0x`-hex strings are bytes ([[JsonSurface]]).
  *
  * Input is validated by the strict canonical JSON parser first (duplicate keys, depth, exact numbers), then read
- * structurally with nulls still visible, so a null field cannot turn a map expression into an operation. [[render]]
- * writes the surface back.
+ * structurally with nulls still visible, so a null field cannot turn a map expression into an operation
+ * ([[SurfaceTree]]); every scalar and literal is read by that parser from its own span. No other JSON parser reads a
+ * program. [[render]] writes the surface back.
  */
 object Parser {
 
@@ -61,40 +62,42 @@ object Parser {
 
   private def malformed[A](m: String): Either[JlvmError, A] = JlvmError.Malformed(m).asLeft
 
-  private def value(j: Json): Either[JlvmError, CanonicalValue] = JsonSurface.value(j)
-
   def parse(json: String): Either[JlvmError, Program] = parse(json, Kernels.Default)
 
-  /** [[parse]] with `kernels` ordering object keys and told of each expression read: production passes the default. */
+  /**
+   * [[parse]] with `kernels` ordering object keys, and told of each expression read and each span of text read back:
+   * production passes the default.
+   */
   private[jlvm] def parse(json: String, kernels: Kernels): Either[JlvmError, Program] =
     for {
-      _    <- CanonicalJson.parse(json).leftMap(canonicalError)
-      j    <- io.circe.parser.parse(json).leftMap(e => JlvmError.Malformed(e.message))
-      expr <- expression(j)(using kernels)
+      read <- SurfaceTree.read(json, kernels.steps.spanned).leftMap(canonicalError)
+      src  <- read.toRight(JlvmError.Malformed("not JSON"))
+      expr <- expression(src.root)(using src, kernels)
       prog <- Program.from(expr, kernels)
     } yield prog
 
-  def fromJson(j: Json): Either[JlvmError, Expr] = expression(j)(using Kernels.Default)
+  /** A scalar, a literal or a default: its span through the strict parser, then `0x`-hex strings as bytes. */
+  private def value(j: SurfaceTree)(using src: Source): Either[JlvmError, CanonicalValue] =
+    src.value(j).bimap(e => JlvmError.Malformed(e.toString), JsonSurface.fromCanonicalJson)
 
   /**
    * One step per JSON value read. Depth is bounded by the canonical parser that validated the text (256), so this
    * recursion is bounded too.
    */
-  private def expression(j: Json)(using kernels: Kernels): Either[JlvmError, Expr] = {
+  private def expression(j: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] = {
     kernels.steps.step()
-    j.fold(
-      Expr.Lit(CanonicalValue.CNull).asRight,
-      _ => value(j).map(Expr.Lit(_)),
-      _ => value(j).map(Expr.Lit(_)),
-      _ => value(j).map(Expr.Lit(_)),
-      array,
-      fromObject
-    )
+    j.kind match {
+      case Kind.Null                    => Expr.Lit(CanonicalValue.CNull).asRight
+      case Kind.Scalar | Kind.Str       => value(j).map(Expr.Lit(_))
+      case Kind.Arr(items)              => array(items)
+      case Kind.Obj(Vector((key, arg))) => single(key, arg)
+      case Kind.Obj(fields)             => mapExpr(fields)
+    }
   }
 
   /** An array headed by a call's name is rejected, so text shaped like a call is never read as data by accident. */
-  private def array(items: Vector[Json])(using kernels: Kernels): Either[JlvmError, Expr] =
-    items.headOption.flatMap(_.asString).filter(callName) match {
+  private def array(items: Vector[SurfaceTree])(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+    items.headOption.flatMap(src.string).filter(callName) match {
       case Some(name) =>
         val call = Removed.get(name).fold(s"write the call as {\"$name\": [...]}")(hint => s"\"$name\" is not an operation: $hint")
         malformed(
@@ -104,29 +107,36 @@ object Parser {
       case scala.None => elements(items)
     }
 
-  private def elements(items: Vector[Json])(using kernels: Kernels): Either[JlvmError, Expr] = items.traverse(expression).map(Expr.Arr(_))
+  private def elements(items: Vector[SurfaceTree])(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+    items.traverse(expression).map(Expr.Arr(_))
 
   /** A `let`'s `[name, expression]` pairs: a name is never code, so a pair is exempt from the array check. */
-  private def letBindings(j: Json)(using kernels: Kernels): Either[JlvmError, Expr] =
-    j.asArray.fold(expression(j))(_.traverse(pair => pair.asArray.fold(expression(pair))(elements)).map(Expr.Arr(_)))
-
-  private def fromObject(obj: JsonObject)(using kernels: Kernels): Either[JlvmError, Expr] =
-    obj.toList match {
-      case (key, arg) :: Nil => single(key, arg)
-      case fields            => mapExpr(fields)
+  private def letBindings(j: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+    j.kind match {
+      case Kind.Arr(pairs) =>
+        pairs.traverse { pair =>
+          pair.kind match {
+            case Kind.Arr(items) => elements(items)
+            case _               => expression(pair)
+          }
+        }.map(Expr.Arr(_))
+      case _ => expression(j)
     }
 
   /** The fields in [[Kernels.keys]] order: keys a program chooses are compared, never hashed. */
-  private def mapExpr(fields: List[(String, Json)])(using kernels: Kernels): Either[JlvmError, Expr] =
+  private def mapExpr(fields: Vector[(String, SurfaceTree)])(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
     fields.traverse { case (k, v) => expression(v).map(k -> _) }.map(fs => Expr.Obj(TreeMap.from(fs)(using kernels.keys)))
 
-  private def single(key: String, arg: Json)(using kernels: Kernels): Either[JlvmError, Expr] =
+  private def single(key: String, arg: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
     key match {
       case Literal  => value(arg).map(Expr.Lit(_))
       case Variable => variable(arg)
       case ObjectKey =>
-        arg.asObject.fold(malformed[Expr]("object takes an object: {\"object\": {key: expression, ...}}"))(o => mapExpr(o.toList))
-      case data if data.startsWith(DataPrefix) => mapExpr(List(data -> arg))
+        arg.kind match {
+          case Kind.Obj(fields) => mapExpr(fields)
+          case _                => malformed("object takes an object: {\"object\": {key: expression, ...}}")
+        }
+      case data if data.startsWith(DataPrefix) => mapExpr(Vector(data -> arg))
       case removed if Removed.contains(removed) =>
         malformed(s"\"$removed\" is not an operation: ${Removed.getOrElse(removed, "")}")
       case name =>
@@ -136,43 +146,47 @@ object Parser {
           )(operation(_, arg))
     }
 
-  private def operation(op: Op, arg: Json)(using kernels: Kernels): Either[JlvmError, Expr] =
-    arg.asArray match {
-      case Some(Vector(bindings, body)) if op == Op.Let =>
+  private def operation(op: Op, arg: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+    arg.kind match {
+      case Kind.Arr(Vector(bindings, body)) if op == Op.Let =>
         (letBindings(bindings), expression(body)).mapN((b, x) => Expr.Apply(op, Vector(b, x)))
-      case Some(items)                      => items.traverse(expression).map(Expr.Apply(op, _))
-      case None if Op.Variadic.contains(op) => expression(arg).map(Expr.Spread(op, _))
-      case None                             => expression(arg).map(a => Expr.Apply(op, Vector(a)))
+      case Kind.Arr(items)               => items.traverse(expression).map(Expr.Apply(op, _))
+      case _ if Op.Variadic.contains(op) => expression(arg).map(Expr.Spread(op, _))
+      case _                             => expression(arg).map(a => Expr.Apply(op, Vector(a)))
     }
 
-  /** A path is text or an integer; an object or an array is an expression computing the path. */
-  private def path(j: Json, default: Option[CanonicalValue])(using kernels: Kernels): Either[JlvmError, Expr] =
-    j.asString
-      .orElse(j.asNumber.flatMap(_.toBigInt).map(_.toString))
-      .map(VarRef.parse(_).map(Expr.Var(_, default)))
-      .getOrElse(
-        // a literal array here is the path's segments, not code, so it is exempt from the array check
-        if (j.isObject) expression(j).map(Expr.VarAt(_, default))
-        else if (j.isArray) j.asArray.fold(expression(j))(elements).map(Expr.VarAt(_, default))
-        else malformed("a var path is text, an integer, or an expression computing one")
-      )
+  /**
+   * A path is text or an integer; an object or an array is an expression computing the path. Only a string's or a
+   * number's span is read back, so a nested computed path is read once, not once per level.
+   */
+  private def path(j: SurfaceTree, default: Option[CanonicalValue])(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+    src.string(j).orElse(src.integer(j).map(_.toString)) match {
+      case Some(p) => VarRef.parse(p).map(Expr.Var(_, default))
+      case scala.None =>
+        j.kind match {
+          case Kind.Obj(_) => expression(j).map(Expr.VarAt(_, default))
+          // a literal array here is the path's segments, not code, so it is exempt from the array check
+          case Kind.Arr(items) => elements(items).map(Expr.VarAt(_, default))
+          case _               => malformed("a var path is text, an integer, or an expression computing one")
+        }
+    }
 
-  private def variable(arg: Json)(using kernels: Kernels): Either[JlvmError, Expr] =
-    arg.asArray match {
-      case Some(Vector(p))          => path(p, None)
-      case Some(Vector(p, default)) => defaultValue(default).flatMap(d => path(p, Some(d).filter(_ != CanonicalValue.CNull)))
-      case Some(_)                  => malformed("var takes a path, or [path, default]")
-      case None                     => path(arg, None)
+  private def variable(arg: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+    arg.kind match {
+      case Kind.Arr(Vector(p))          => path(p, None)
+      case Kind.Arr(Vector(p, default)) => defaultValue(default).flatMap(d => path(p, Some(d).filter(_ != CanonicalValue.CNull)))
+      case Kind.Arr(_)                  => malformed("var takes a path, or [path, default]")
+      case _                            => path(arg, None)
     }
 
   /**
    * A default is a literal value, never evaluated. An object or array default could be mistaken for code, so it is
    * quoted, `{"literal": ...}`.
    */
-  private def defaultValue(j: Json): Either[JlvmError, CanonicalValue] =
-    j.asObject.map(_.toList) match {
-      case Some(List((Literal, x))) => value(x)
-      case _ if j.isObject || j.isArray =>
+  private def defaultValue(j: SurfaceTree)(using src: Source): Either[JlvmError, CanonicalValue] =
+    j.kind match {
+      case Kind.Obj(Vector((Literal, x))) => value(x)
+      case Kind.Obj(_) | Kind.Arr(_) =>
         malformed("a var default is a literal value: quote an object or array default with {\"literal\": ...}")
       case _ => value(j)
     }
@@ -181,27 +195,66 @@ object Parser {
 
   /**
    * The surface text of a program: [[parse]] reads it back as the same program. A literal holding `0x`-hex text or a
-   * non-terminating rational has no surface form (only the canonical form can carry it), and is an error.
+   * non-terminating rational has no surface form (only the canonical form can carry it), and is an error. Scalars and
+   * literals are written by [[JsonSurface.render]].
    */
-  def render(p: Program): Either[JlvmError, Json] = toJson(p.expr)
+  def render(p: Program): Either[JlvmError, String] = toJson(p.expr).map(Out.print)
 
-  private def quoted(v: CanonicalValue): Either[JlvmError, Json] = JsonSurface.json(v).map(j => Json.obj(Literal -> j))
+  /** JSON being written: text already rendered, or a container of it. A map expression may hold null fields, which no value can. */
+  private enum Out {
+    case Raw(text: String)
+    case Arr(items: Vector[Out])
 
-  private def defaultJson(v: CanonicalValue): Either[JlvmError, Json] =
+    /** Each member's name already written as JSON text. */
+    case Obj(fields: Vector[(String, Out)])
+  }
+
+  private object Out {
+
+    /** Compact text from a worklist: no recursion, and no text copied once per level. */
+    def print(o: Out): String = {
+      @tailrec
+      def go(todo: List[Either[String, Out]], acc: Vector[String]): String =
+        todo match {
+          case Nil                           => acc.mkString
+          case Left(text) :: rest            => go(rest, acc :+ text)
+          case Right(Out.Raw(text)) :: rest  => go(rest, acc :+ text)
+          case Right(Out.Arr(items)) :: rest => go(within("[", items.map(i => List(Right(i))), "]") ::: rest, acc)
+          case Right(Out.Obj(fields)) :: rest =>
+            go(within("{", fields.map { case (k, v) => List(Left(k), Left(":"), Right(v)) }, "}") ::: rest, acc)
+        }
+      go(List(Right(o)), Vector.empty)
+    }
+
+    private def within(open: String, parts: Vector[List[Either[String, Out]]], close: String): List[Either[String, Out]] =
+      Left(open) :: parts.toList.zipWithIndex.flatMap { case (part, i) => if (i == 0) part else Left(",") :: part } ::: List(Left(close))
+  }
+
+  private def text(s: String): Either[JlvmError, String] =
+    CanonicalValue.text(s).flatMap(CanonicalJson.render).leftMap(e => JlvmError.Malformed(e.toString))
+
+  private def member(name: String, arg: Out): Either[JlvmError, Out] = text(name).map(k => Out.Obj(Vector(k -> arg)))
+
+  private def literal(v: CanonicalValue): Either[JlvmError, Out] = JsonSurface.render(v).map(Out.Raw(_))
+
+  private def quoted(v: CanonicalValue): Either[JlvmError, Out] = literal(v).flatMap(member(Literal, _))
+
+  private def defaultJson(v: CanonicalValue): Either[JlvmError, Out] =
     v match {
       case CanonicalValue.CArray(_) | CanonicalValue.CMap(_) => quoted(v)
-      case other                                             => JsonSurface.json(other)
+      case other                                             => literal(other)
     }
 
   /** Depth is bounded by [[Program.MaxDepth]], so this recursion is bounded too. */
-  private def toJson(e: Expr): Either[JlvmError, Json] =
+  private def toJson(e: Expr): Either[JlvmError, Out] =
     e match {
       case Expr.Lit(v @ (CanonicalValue.CArray(_) | CanonicalValue.CMap(_))) => quoted(v)
-      case Expr.Lit(v)                                                       => JsonSurface.json(v)
+      case Expr.Lit(v)                                                       => literal(v)
       case Expr.Var(ref, default) =>
-        default
-          .fold(Json.fromString(ref.render).asRight[JlvmError])(d => defaultJson(d).map(dj => Json.arr(Json.fromString(ref.render), dj)))
-          .map(a => Json.obj(Variable -> a))
+        text(ref.render)
+          .map(Out.Raw(_))
+          .flatMap(r => default.fold(r.asRight[JlvmError])(d => defaultJson(d).map(dj => Out.Arr(Vector(r, dj)))))
+          .flatMap(member(Variable, _))
       case Expr.VarAt(path, default) =>
         // a literal path is quoted, or it would read as a static one; an object path with no default is written bare,
         // so a computed path adds one JSON level, as in the canonical form; a bare array would read as [path, default]
@@ -209,31 +262,31 @@ object Parser {
           case Expr.Lit(v) => quoted(v)
           case other       => toJson(other)
         }
-        (pathJson, default.traverse(defaultJson)).mapN {
-          case (pj, scala.None) if pj.isObject => Json.obj(Variable -> pj)
-          case (pj, dj)                        => Json.obj(Variable -> Json.fromValues(pj +: dj.toVector))
+        (pathJson, default.traverse(defaultJson)).tupled.flatMap {
+          case (pj @ Out.Obj(_), scala.None) => member(Variable, pj)
+          case (pj, dj)                      => member(Variable, Out.Arr(pj +: dj.toVector))
         }
       case Expr.Apply(Op.Let, Vector(Expr.Arr(pairs), body)) =>
         // binding names are written plainly: letBindings reads them back as names, whatever they spell
         (
           pairs.traverse {
-            case Expr.Arr(Vector(n @ Expr.Lit(CanonicalValue.CText(_)), x)) => (toJson(n), toJson(x)).mapN(Json.arr(_, _))
+            case Expr.Arr(Vector(n @ Expr.Lit(CanonicalValue.CText(_)), x)) => (toJson(n), toJson(x)).mapN((a, b) => Out.Arr(Vector(a, b)))
             case other                                                      => toJson(other)
           },
           toJson(body)
-        ).mapN((ps, b) => Json.obj(Op.Let.wire -> Json.arr(Json.fromValues(ps), b)))
-      case Expr.Apply(op, args) => args.traverse(toJson).map(as => Json.obj(op.wire -> Json.fromValues(as)))
-      case Expr.Spread(op, arg) => toJson(arg).map(a => Json.obj(op.wire -> a))
+        ).tupled.flatMap((ps, b) => member(Op.Let.wire, Out.Arr(Vector(Out.Arr(ps), b))))
+      case Expr.Apply(op, args) => args.traverse(toJson).flatMap(as => member(op.wire, Out.Arr(as)))
+      case Expr.Spread(op, arg) => toJson(arg).flatMap(member(op.wire, _))
       case Expr.Arr(items)      =>
         // a leading text naming a call is quoted: unquoted, the array would not parse
         items.zipWithIndex.traverse {
           case (Expr.Lit(t @ CanonicalValue.CText(s)), 0) if callName(s) => quoted(t)
           case (x, _)                                                    => toJson(x)
-        }.map(Json.fromValues)
+        }.map(Out.Arr(_))
       case Expr.Obj(fields) =>
-        fields.toList.traverse { case (k, x) => toJson(x).map(k -> _) }.map {
-          case List((k, x)) if !k.startsWith(DataPrefix) => Json.obj(ObjectKey -> Json.obj(k -> x))
-          case fs                                        => Json.fromFields(fs)
+        fields.toVector.traverse { case (k, x) => (text(k), toJson(x)).tupled.map(k -> _) }.flatMap {
+          case Vector((k, (_, x))) if !k.startsWith(DataPrefix) => member(k, x).flatMap(member(ObjectKey, _))
+          case fs                                               => Out.Obj(fs.map(_._2)).asRight
         }
     }
 

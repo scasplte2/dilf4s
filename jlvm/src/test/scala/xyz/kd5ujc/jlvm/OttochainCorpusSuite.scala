@@ -82,7 +82,7 @@ object OttochainCorpusSuite extends IOSuite {
       p     <- Parser.parse(e.program.noSpaces).leftMap(err => s"parse: ${err.message}")
       _     <- Compiled(p).leftMap(err => s"compile: ${err.message}")
       text  <- Parser.render(p).leftMap(err => s"render: ${err.message}")
-      back  <- Parser.parse(text.noSpaces).leftMap(err => s"rendered text does not parse: ${err.message}")
+      back  <- Parser.parse(text).leftMap(err => s"rendered text does not parse: ${err.message}")
       _     <- Either.cond(back == p, (), "the rendered text reads back as another program")
       bytes <- Parser.encode(p).leftMap(err => s"encode: ${err.message}")
       dec   <- Parser.decode(bytes).leftMap(err => s"decode: ${err.message}")

@@ -23,8 +23,8 @@ import ProofFixtures._
  * Writes `vectors/jlvm_op_cases.json`, so that every operation has vectors: a sweep of each operation over 0 to 3
  * arguments of each kind, which pins argument counts, type checks, the order they run in and what they cost; then
  * cases with real inputs for the operations no other vector file reaches, ASCII-only case mapping on non-ASCII text,
- * the order in which `sigma_verify` refuses an oversized proposition, and reads that search callback frames with long
- * keys. Every signature here is deterministic, so the file regenerates identically:
+ * the order in which `sigma_verify` refuses an oversized proposition, reads that search callback frames with long
+ * keys, and how program text is read (repeated names, numbers as paths and literals, null fields, depth). Every signature here is deterministic, so the file regenerates identically:
  * `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.OpCoverageCases"`, then `JlvmVectorGen`.
  */
 object OpCoverageCases extends IOApp {
@@ -376,6 +376,42 @@ object OpCoverageCases extends IOApp {
     ).map { case (name, read) => Case(s"dilf4s frames: $name, with a 70-character first key", nested(read), data) }
   }
 
+  /**
+   * How program text is read (jlvm.md §1): by the strict canonical parser alone, so every implementation refuses a
+   * repeated member name wherever it is, reads numbers by one grammar and its bounds, and keeps a null field in a map
+   * expression. Each program is written out as text, since no JSON writer could produce some of them.
+   */
+  val surfaceReading: List[Case] = {
+    val digits = "9" * 10000
+    val keyed = surface("""{"1": "one", "0": "zero", "100": "hundred"}""")
+    List(
+      ("a null field keeps a map expression, not the operation +", """{"+": [1, 2], "x": null}""", CNull),
+      ("a repeated member name is refused", """{"a": 1, "a": 2}""", CNull),
+      ("a repeated member name is refused when its first value is null", """{"a": null, "a": 2}""", CNull),
+      ("a repeated member name inside a literal is refused", """{"literal": {"a": 1, "a": 2}}""", CNull),
+      ("a repeated operation name is refused", """{"+": [1], "+": [2]}""", CNull),
+      ("a repeated member name in an object expression is refused", """{"object": {"k": 1, "k": {"var": "x"}}}""", CNull),
+      ("an escaped member name is the name it spells", """{"\u002b": [1, 2]}""", CNull),
+      ("an array headed by an escaped call name is refused", """["v\u0061r", "a"]""", CNull),
+      ("a member name with an unpaired surrogate is refused", """{"\ud800": 1}""", CNull),
+      ("whitespace around every token", " \t\n{ \"+\" :\r[ 1 , 2 ] } \n", CNull),
+      ("trailing content is refused", """{"+": [1, 2]} 3""", CNull),
+      ("a path written 1.0 is the integer path 1", """{"var": 1.0}""", keyed),
+      ("a path written 1e2 is the integer path 100", """{"var": 1e2}""", keyed),
+      ("a path written 100e-2 is the integer path 1", """{"var": 100e-2}""", keyed),
+      ("a path written -0 is the integer path 0", """{"var": -0}""", keyed),
+      ("a path written 0.5 is refused", """{"var": 0.5}""", keyed),
+      ("a path written true is refused", """{"var": true}""", keyed),
+      ("a literal of 10,000 significant digits is read", s"""{"if": [true, "read", $digits]}""", CNull),
+      ("a literal of 10,001 significant digits is refused", s"""{"if": [true, "read", ${digits}9]}""", CNull),
+      ("a path of 10,000 digits", s"""{"var": $digits}""", CNull),
+      ("a path of 10,001 digits is refused", s"""{"var": ${digits}9}""", CNull),
+      ("a literal with a 10,001-digit exponent is refused", s"""{"if": [true, "read", 1e${"1" * 10001}]}""", CNull),
+      ("a literal 1e-7 is exact", """{"+": [1e-7, 0.0000001]}""", CNull),
+      ("text nested 257 levels deep is Limit", "[" * 256 + "[]" + "]" * 256, CNull)
+    ).map { case (name, program, data) => Case(s"dilf4s surface: $name", program, data) }
+  }
+
   private def render(cases: List[Case]): String =
     Json
       .obj(
@@ -396,7 +432,7 @@ object OpCoverageCases extends IOApp {
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
       .mapN((secp, mk, tr) =>
         sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ proofWeight(mk) ++ tries(tr) ++ sigmaBounds ++
-        frameLookups ++ nonCanonicalEd25519
+        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)

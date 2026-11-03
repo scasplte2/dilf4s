@@ -518,23 +518,26 @@ object MeteringSuite extends IOSuite {
    * The work of parsing and compiling a program: expressions visited, and object-key and name comparisons, with the key
    * comparisons parsing made apart from compiling's (each sorts the keys it holds: one could hash while the other sorts).
    */
-  private final case class Work(ok: Boolean, steps: Long, keys: Long, parsedKeys: Long, names: Long) {
+  private final case class Work(ok: Boolean, steps: Long, keys: Long, parsedKeys: Long, names: Long, spanned: Long) {
     def compiledKeys: Long = keys - parsedKeys
   }
 
-  /** Parses (with [[Program.from]]'s passes) and compiles `json`, counting steps and comparisons. */
+  /** Parses (with [[Program.from]]'s passes) and compiles `json`, counting steps, comparisons and text read back. */
   private def work(json: String): IO[Work] =
-    (IO(new AtomicLong), IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (steps, keys, names) =>
+    (IO(new AtomicLong), IO(new AtomicLong), IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (steps, keys, names, spans) =>
       IO {
         val kernels = Kernels.Default.copy(
           names = counted(Ordering.String, names),
           keys = counted(Kernels.CodePoints, keys),
-          steps = new Steps { def step(): Unit = { steps.incrementAndGet(); () } }
+          steps = new Steps {
+            def step(): Unit = { steps.incrementAndGet(); () }
+            override def spanned(length: Int): Unit = { spans.addAndGet(length.toLong); () }
+          }
         )
         val parsed = Parser.parse(json, kernels)
         val parsedKeys = keys.get
         val ok = parsed.flatMap(Compiled(_, kernels)).isRight
-        Work(ok, steps.get, keys.get, parsedKeys, names.get)
+        Work(ok, steps.get, keys.get, parsedKeys, names.get, spans.get)
       }
     }
 
@@ -581,6 +584,30 @@ object MeteringSuite extends IOSuite {
         .and(expect(w.compiledKeys >= N - 1 && w.compiledKeys <= 2 * N * log2(N), s"compiling them compared keys ${w.compiledKeys} times"))
         .and(expect(w.names >= N - 1 && w.names <= 3 * N * log2(N), s"$N bindings compared names ${w.names} times"))
     }
+  }
+
+  /**
+   * The strict parser reads the whole text once, then each scalar, member name and literal from its own span: at most
+   * twice the text (an array's leading string is read to check it names no call, then as its value), however deeply
+   * the containers around the spans nest. Reading a container's span where a string or an integer is looked for would
+   * read it once per level instead.
+   */
+  test("the text read back from spans is at most twice the program, however deeply it nests") { _ =>
+    val fields = List.tabulate(N)(i => s""""k$i": {"literal": [$i, "t", {"a": null}]}""").mkString(", ")
+    val texts = List(
+      "nested arrays"                 -> ("[" * 100 + "1" + "]" * 100),
+      "arrays headed by text"         -> ("[\"x\", " * 100 + "\"a\"" + "]" * 100),
+      "computed paths"                -> ("{\"var\": " * 120 + "\"a\"" + "}" * 120),
+      "computed paths with a default" -> ("{\"var\": [" * 40 + "\"a\"" + ", 1]}" * 40),
+      "literals and fields"           -> s"{$fields}"
+    )
+    texts.traverse {
+      case (name, text) =>
+        work(text).map { w =>
+          expect(w.ok, s"$name compiles").and(expect(w.spanned <= 2L * text.length, s"$name: ${w.spanned} read back of ${text.length}"))
+        }
+    }
+      .map(_.reduce(_ and _))
   }
 
   test("a program nested d deep is parsed and compiled in O(d) steps") { _ =>
