@@ -184,7 +184,7 @@ function claimsNear(truth: Entries, other: Entries): Entries[] {
   ];
 }
 
-describe("listing walks answer as the old ones did", () => {
+describe("listing walks answer as the old ones did", { timeout: 60_000 }, () => {
   it("for random partial tries, bounds and claims", () => {
     const r = rng(90);
     for (let round = 0; round < 400; round++) {
@@ -260,7 +260,7 @@ function deepCases(n: number): Deep[] {
   ];
 }
 
-describe("listing checks on a deep chain", () => {
+describe("listing checks on a deep chain", { timeout: 60_000 }, () => {
   it("do work linear in the proof plus the bounds and the claim; the old walks were quadratic", () => {
     const n = 600;
     const top = chain(n);

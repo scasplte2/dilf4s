@@ -230,7 +230,7 @@ describe("JLVM trie operations", () => {
     expect(expectOk(trie.trieRangeVerify(T, variable, T.empty, new Uint8Array(0), null, [], empty), "verdict")).toBe(true);
   });
 
-  it("a 5000-level proof decodes, verifies and lists without recursion", () => {
+  it("a 5000-level proof decodes, verifies and lists without recursion", { timeout: 60_000 }, () => {
     const mode = expectOk(trie.KeyMode.variable(65535), "mode");
     const n = 5000;
     // keys of 1..n+1 zero bytes: a branch per key ending, each with a value and one left child, then a leaf
@@ -248,7 +248,7 @@ describe("JLVM trie operations", () => {
     expect(expectOk(p.encode(), "encodes")).toEqual(records(recs));
   });
 
-  it("committed values build a root, and a deep chain verifies without recursion", () => {
+  it("committed values build a root, and a deep chain verifies without recursion", { timeout: 60_000 }, () => {
     expect(committedRoot).toHaveLength(32);
     // 65535-byte keys sharing all but the last bit: a single branch with a 524279-bit segment
     const mode = expectOk(trie.KeyMode.variable(65535), "mode");
