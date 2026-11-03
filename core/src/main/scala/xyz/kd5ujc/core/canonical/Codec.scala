@@ -148,9 +148,10 @@ object Codec {
           case _        => DecodeFailure(Nil, "expected a map or one of the text alternatives").asLeft
         }
       case Some(keys) =>
-        // the schema's sets are iterated and looked up in the value's keys, in their order: no caller key is hashed
+        // the schema's names are looked up in the value's keys, and the value's keys in the alternative's names (a key
+        // set in the same order, where a name listed twice counts once): no caller key is hashed
         alternatives.collectFirst {
-          case (required, all, d) if required.forall(k => keys.contains(k)) && all.count(k => keys.contains(k)) == keys.size => d
+          case (required, all, d) if required.forall(k => keys.contains(k)) && keys.iterator.forall(CanonicalKeys.within(keys, all)) => d
         }
           .toRight(DecodeFailure(Nil, s"no alternative has keys ${keys.toList.sorted.mkString(", ")}"))
           .flatMap(_.decode(value))

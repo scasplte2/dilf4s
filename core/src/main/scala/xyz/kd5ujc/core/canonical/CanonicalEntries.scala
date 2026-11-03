@@ -88,6 +88,12 @@ object CanonicalKeys {
   private[canonical] def like(like: CanonicalEntries[Any], keys: Iterable[String]): CanonicalKeys =
     TreeSet.from(keys)(using CanonicalEntries.ordering(like))
 
+  /** Whether a key is among `names`, ordered as `like` is: a key set built once, then only compared against. */
+  private[canonical] def within(like: CanonicalKeys, names: Iterable[String]): String => Boolean = {
+    val set = TreeSet.from(names)(using like.ordering)
+    key => set.contains(key)
+  }
+
   extension (k: CanonicalKeys) {
     def contains(key: String): Boolean = k.contains(key)
     def size: Int = k.size

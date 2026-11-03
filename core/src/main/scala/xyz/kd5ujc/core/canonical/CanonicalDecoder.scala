@@ -107,13 +107,15 @@ object CanonicalDecoder {
       entries.get(key).traverse(v => D.decode(v).leftMap(_.at(key)))
   }
 
-  /** The map's keys are only compared, never hashed: `allowed` is looked up in the map, and ordered to name the rest. */
+  /**
+   * The map's keys are only compared, never hashed: `allowed` becomes a key set in the map's order (a name listed twice
+   * counts once), and every key of the map is looked up in it.
+   */
   def record[A](allowed: Iterable[String])(f: Fields => Either[DecodeFailure, A]): CanonicalDecoder[A] = {
     case CMap(entries) =>
-      if (allowed.count(k => entries.contains(k)) < entries.size) {
-        val known = CanonicalKeys.like(entries, allowed)
-        fail(s"unknown keys ${entries.keysIterator.filterNot(k => known.contains(k)).toList.sorted.mkString(", ")}")
-      } else f(new Fields(entries))
+      val known = CanonicalKeys.like(entries, allowed)
+      if (entries.keysIterator.forall(k => known.contains(k))) f(new Fields(entries))
+      else fail(s"unknown keys ${entries.keysIterator.filterNot(k => known.contains(k)).toList.sorted.mkString(", ")}")
     case other => expected("map", other)
   }
 
