@@ -205,7 +205,13 @@ fn snapshot_restores_the_root() {
     for c in &v.commits {
         followed.apply_delta(&vt.decode_delta(&value(&c.delta)).unwrap()).unwrap();
     }
-    assert_eq!(followed.values(), replica.values());
+    assert_eq!(followed.entries().collect::<Vec<_>>(), replica.entries().collect::<Vec<_>>());
+    assert_eq!(
+        replica.entries().map(|(k, v)| (k.clone(), v.clone())).collect::<Vec<_>>(),
+        snapshot.entries,
+        "the replica holds the snapshot's entries, in key order"
+    );
+    assert!(snapshot.entries.iter().all(|(k, v)| replica.get(k) == Some(v)));
 
     // refusals: another trusted head, reordered, truncated, a second head, state after history
     let other = Head { version: trusted.version + 1, ..trusted.clone() };
