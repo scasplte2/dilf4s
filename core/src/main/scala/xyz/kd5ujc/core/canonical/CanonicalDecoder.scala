@@ -108,7 +108,7 @@ object CanonicalDecoder {
   }
 
   /** The map's keys are only compared, never hashed: `allowed` is looked up in the map, and ordered to name the rest. */
-  def record[A](allowed: Set[String])(f: Fields => Either[DecodeFailure, A]): CanonicalDecoder[A] = {
+  def record[A](allowed: Iterable[String])(f: Fields => Either[DecodeFailure, A]): CanonicalDecoder[A] = {
     case CMap(entries) =>
       if (allowed.count(k => entries.contains(k)) < entries.size) {
         val known = CanonicalKeys.like(entries, allowed)

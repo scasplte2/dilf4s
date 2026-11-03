@@ -19,16 +19,16 @@ object CanonicalEntries {
   def empty[A]: CanonicalEntries[A] = TreeMap.empty(using KeyOrder.Default)
 
   /** The entries of `pairs`, inserted in order; a repeated key is refused, the first repeat in input order. */
-  def from[A](pairs: Iterable[(String, A)]): Either[CanonicalError, CanonicalEntries[A]] = distinct(pairs.toList, empty)
+  def from[A](pairs: Iterable[(String, A)]): Either[CanonicalError, CanonicalEntries[A]] = unique(pairs.toList, empty)
 
   /** No entries, in `keys`'s order: for the package's own seams. */
   private[canonical] def emptyIn[A](keys: KeyOrder): CanonicalEntries[A] = TreeMap.empty(using keys)
 
-  /** `pairs`, distinct keys inserted one at a time in input order, in `keys`'s order. */
+  /** `pairs`, each key once, inserted one at a time in input order, in `keys`'s order. */
   private[canonical] def inserted[A](pairs: IterableOnce[(String, A)], keys: KeyOrder): CanonicalEntries[A] =
     TreeMap.from(pairs)(using keys)
 
-  /** `pairs`, distinct keys inserted one at a time in input order, in the order of `like`. */
+  /** `pairs`, each key once, inserted one at a time in input order, in the order of `like`. */
   private[canonical] def insertedLike[A](like: CanonicalEntries[Any], pairs: IterableOnce[(String, A)]): CanonicalEntries[A] =
     TreeMap.from(pairs)(using like.ordering)
 
@@ -36,12 +36,12 @@ object CanonicalEntries {
   private[canonical] def ordering(e: CanonicalEntries[Any]): Ordering[String] = e.ordering
 
   @tailrec
-  private def distinct[A](pairs: List[(String, A)], acc: TreeMap[String, A]): Either[CanonicalError, CanonicalEntries[A]] =
+  private def unique[A](pairs: List[(String, A)], acc: TreeMap[String, A]): Either[CanonicalError, CanonicalEntries[A]] =
     pairs match {
       case Nil => Right(acc)
       case (k, v) :: rest =>
         val next = acc.updated(k, v)
-        if (next.size == acc.size) Left(CanonicalError.DuplicateKey(k)) else distinct(rest, next)
+        if (next.size == acc.size) Left(CanonicalError.DuplicateKey(k)) else unique(rest, next)
     }
 
   extension [A](e: CanonicalEntries[A]) {

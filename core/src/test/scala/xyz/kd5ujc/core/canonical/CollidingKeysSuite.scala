@@ -15,9 +15,11 @@ import weaver.{Expectations, SimpleIOSuite}
  * Hash-flooding regressions for canonical maps. Java's `String.hashCode` is trivially collidable (every combination of
  * "Aa" and "BB" blocks has one hash code), and a hashed map degrades to linear scans on colliding keys. A map is a
  * `TreeMap` in [[KeyOrder]] instead. Nothing here measures time or looks inside a key: every path runs through a
- * counting [[KeyOrder]], whose comparisons are bounded below (a hashed path compares nothing) and above (n log n), and,
- * where a path is given its keys in a known order, counted exactly (a hashed step on the way reorders them, which
- * changes the count).
+ * counting [[KeyOrder]], whose comparisons are bounded below (a path that hashes in place of comparing compares
+ * nothing) and above (n log n), and, where a path is given its keys in a known order, counted exactly (a step that
+ * reorders them changes the count). These are complexity checks: a hashed step that keeps its input's order compares
+ * exactly as often, so that no key is hashed at all is enforced structurally, by the opaque [[CanonicalEntries]] and
+ * [[CanonicalKeys]] types and by the lint rules of .scalafix-core.conf, which refuse any hashing in core's sources.
  */
 object CollidingKeysSuite extends SimpleIOSuite {
 

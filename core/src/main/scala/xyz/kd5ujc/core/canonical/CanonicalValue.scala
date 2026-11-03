@@ -108,7 +108,7 @@ object CanonicalValue {
     )
 
   /**
-   * A map of distinct text keys and non-null values: each key's weight is the one its [[CText]] cached, so no key is
+   * A map of unique text keys and non-null values: each key's weight is the one its [[CText]] cached, so no key is
    * rescanned; the keys are only compared, O(n log n) times.
    */
   private def ofText(entries: Vector[(CText, CanonicalValue)], keys: KeyOrder): CMap =
@@ -164,7 +164,7 @@ object CanonicalValue {
     collect(entries.toList, keys, CanonicalEntries.emptyIn(keys), TreeMap.empty, 1L).flatMap(withinDepth)
 
   /**
-   * A map whose keys are text values already, and distinct: for keys checked once and reused, such as a program's
+   * A map whose keys are text values already, each once: for keys checked once and reused, such as a program's
    * literal keys. Each key's weight is the one its [[CText]] cached, so no key is rescanned. Null values are dropped;
    * depth is checked.
    */
@@ -207,7 +207,7 @@ object CanonicalValue {
     mapOf(maps.foldLeft(CanonicalEntries.emptyIn[CanonicalValue](keys))((acc, m) => acc.concat(m.entries)), keys)
 
   /**
-   * For dilf4s's own fixed-shape records (e.g. trie node commitments): distinct ASCII keys known at compile time and
+   * For dilf4s's own fixed-shape records (e.g. trie node commitments): unique ASCII keys known at compile time and
    * shallow values. Null values are still dropped. Never use with external input.
    */
   private[kd5ujc] def trustedMap(entries: List[(String, CanonicalValue)]): CMap =

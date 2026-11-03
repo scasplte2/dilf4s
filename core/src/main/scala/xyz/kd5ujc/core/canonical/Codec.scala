@@ -138,7 +138,7 @@ object Codec {
    */
   def selectAlternative[A](
     value:        CanonicalValue,
-    alternatives: List[(Set[String], Set[String], CanonicalDecoder[A])],
+    alternatives: List[(Iterable[String], Iterable[String], CanonicalDecoder[A])],
     texts:        List[(String, A)] = Nil
   ): Either[DecodeFailure, A] =
     CanonicalDecoder.keysOf(value) match {

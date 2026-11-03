@@ -1,7 +1,7 @@
 /*
  * Ported from the user's Bifrost BloomFilter (co.topl.modifier.block.BloomFilter, 2020, MPL-2.0), itself modelled on
  * the Ethereum logs bloom. Changes: parameterised size and hash count; Kirsch–Mitzenmacher double hashing from one
- * tagged digest (k distinct bits per item, one hash call instead of four); immutable bits with consistent equality;
+ * tagged digest (k different bits per item, one hash call instead of four); immutable bits with consistent equality;
  * typed errors instead of `require`; union, intersection and a canonical encoding.
  */
 package xyz.kd5ujc.core.bloom
@@ -40,7 +40,7 @@ object BloomError {
 /**
  * A Bloom filter over byte strings. `contains` never gives a false negative; false positives occur at roughly
  * `(1 - e^(-k n / m))^k` for `n` items. Items are hashed once with a tagged hash; the `k` indices are
- * `h1 + i * h2 (mod m)` with `h2` odd, which for power-of-two `m` are always distinct.
+ * `h1 + i * h2 (mod m)` with `h2` odd, which for power-of-two `m` always differ.
  */
 final case class BloomFilter[H] private (params: BloomParams, bits: BitVector) {
 
