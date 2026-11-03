@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { models, Value } from "@kd5ujc/dilf4s-core";
 
@@ -97,5 +97,70 @@ describe("Poseidon", () => {
       .map((w) => [w.t.toString(), w.partialRounds.toString(), w.constants.join(","), w.sparse.join(","), w.mds.flat().join(","), w.preSparse.flat().join(",")].join(";"))
       .join("|");
     expect(createHash("sha256").update(canonical).digest("hex")).toBe("5256c4656304dfef72d933d6daff7a22a363b60d49a723d7146d730b7b99b530");
+  });
+});
+
+// V8 hashes a bigint by its low 64 bits, with no seed: positions 2^64 apart share a bucket of a `Map` or `Set`, and n
+// of them cost O(n^2) to insert. Positions are the caller's, so `treeRoot` must only ever compare them. Nothing here
+// measures time: the test watches every `Map` and `Set` lookup and insertion of a bigint instead.
+describe("treeRoot: caller-chosen positions are compared, never hashed", () => {
+  type Placed = readonly [bigint, poseidon.Fr];
+
+  /** The previous algorithm, a `Map` per level, as the reference. */
+  const reference = (depth: number, leaves: readonly Placed[]): poseidon.Fr => {
+    const zeros = expectOk(poseidon.zeroHashes(depth), "zeros");
+    let level = new Map<bigint, poseidon.Fr>();
+    for (const [p, l] of leaves) {
+      if (l.equals(poseidon.Fr.zero)) level.delete(p);
+      else level.set(p, l);
+    }
+    for (let i = 0; i < depth; i++) {
+      const zero = zeros[i] ?? poseidon.Fr.zero;
+      const next = new Map<bigint, poseidon.Fr>();
+      for (const p of level.keys()) {
+        const parent = p >> 1n;
+        if (!next.has(parent)) next.set(parent, poseidon.compress(level.get(parent << 1n) ?? zero, level.get((parent << 1n) | 1n) ?? zero));
+      }
+      level = next;
+    }
+    return level.get(0n) ?? zeros[depth] ?? poseidon.Fr.zero;
+  };
+
+  const watch = () => [vi.spyOn(Map.prototype, "get"), vi.spyOn(Map.prototype, "set"), vi.spyOn(Map.prototype, "has"), vi.spyOn(Set.prototype, "add"), vi.spyOn(Set.prototype, "has")];
+  const hashed = (spies: ReturnType<typeof watch>): number => spies.reduce((sum, s) => sum + s.mock.calls.filter((args) => typeof args[0] === "bigint").length, 0);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("the watch sees a bigint put in a Map", () => {
+    const spies = watch();
+    new Map<bigint, number>().set(1n, 1);
+    expect(hashed(spies)).toBe(1);
+  });
+
+  it("positions 2^64 apart: no Map or Set sees one, and the root is the reference's", () => {
+    // depth 69 holds 32 positions 2^64 apart; Poseidon is slow here, so the tree stays small
+    const depth = 69;
+    const leaves: Placed[] = Array.from({ length: 32 }, (_, i) => [BigInt(i) << 64n, fr(BigInt(i + 1))] as const);
+    const expected = reference(depth, leaves);
+    const spies = watch();
+    const root = expectOk(poseidon.treeRoot(depth, leaves), "root");
+    expect(hashed(spies)).toBe(0);
+    expect(root.equals(expected)).toBe(true);
+  }, 120_000);
+
+  it("entries apply in order: a later entry for a position replaces an earlier one, and a later 0 empties it", () => {
+    // a fixed pseudo-random walk over a depth-6 tree, so positions repeat and siblings pair up
+    const leaves: Placed[] = Array.from({ length: 200 }, (_, i) => [BigInt((i * 37 + 11) % 64), fr(BigInt(i % 7 === 0 ? 0 : i))] as const);
+    for (const n of [0, 1, 2, 3, 63, 64, 65, 200]) {
+      const some = leaves.slice(0, n);
+      expect(expectOk(poseidon.treeRoot(6, some), "root").equals(reference(6, some)), `the first ${n.toString()} entries`).toBe(true);
+    }
+    const one = fr(1n);
+    const two = fr(2n);
+    expect(expectOk(poseidon.treeRoot(6, [[5n, one], [5n, two]]), "replaced").equals(expectOk(poseidon.treeRoot(6, [[5n, two]]), "two"))).toBe(true);
+    expect(expectOk(poseidon.treeRoot(6, [[5n, one], [5n, poseidon.Fr.zero]]), "emptied").equals(expectOk(poseidon.zeroHashes(6), "zeros")[6] ?? one)).toBe(true);
+    expect(expectErr(poseidon.treeRoot(6, [[5n, one], [64n, one]]), "out of range")).toEqual({ kind: "Position", position: 64n, depth: 6 });
   });
 });
