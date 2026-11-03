@@ -7,6 +7,7 @@ use num_bigint::{BigInt, Sign};
 use num_traits::One;
 
 use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem};
+use crate::hash::{Hasher, Hashing};
 use crate::value::{Array, Entries, MAX_DEPTH, MAX_RATIONAL_BITS, MAX_WEIGHT, Map, Rational, Text, Value, bit_length};
 
 const TAG_POSITIVE_BIGNUM: u64 = 2;
@@ -33,6 +34,18 @@ pub fn encode(value: &Value) -> Vec<u8> {
     let mut out = Vec::new();
     match write_value(&mut out, value) {
         Ok(()) => out,
+        Err(never) => match never {},
+    }
+}
+
+/// Streams the canonical encoding of `value` into `hashing`, as [`encode`] would write it, without building it: the
+/// same walk, writing into the hash instead of a buffer. O([`Value::weight`]) time, as [`encode`]; the memory is the
+/// hash's state, [`STAGED_BYTES`] staged and the walk's stacks (one entry per level of nesting, and a map's own height),
+/// never the encoding.
+pub fn encode_into<H: Hasher>(hashing: &mut Hashing<H>, value: &Value) {
+    let mut staged = Staged::new(hashing);
+    match write_value(&mut staged, value) {
+        Ok(()) => staged.flush(),
         Err(never) => match never {},
     }
 }
@@ -91,7 +104,7 @@ fn within(value: &Value, max: usize, countable: usize, out: Option<&mut Vec<u8>>
 }
 
 /// Where encoded bytes go.
-trait Sink {
+pub(crate) trait Sink {
     type Error;
     fn put(&mut self, bytes: &[u8]) -> Result<(), Self::Error>;
     /// Whether `n` more bytes fit, checked before they are produced.
@@ -102,6 +115,55 @@ impl Sink for Vec<u8> {
     type Error = core::convert::Infallible;
     fn put(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
         self.extend_from_slice(bytes);
+        Ok(())
+    }
+    fn room(&mut self, _: u64) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+/// The most bytes a [`Staged`] sink holds: the walk's small pieces (heads, keys, limbs) reach the hash this many at a
+/// time instead of one call each.
+pub const STAGED_BYTES: usize = 1024;
+
+/// Writes into a hash: small pieces are staged in a fixed array and absorbed together; a piece that does not fit goes
+/// to the hash in place. It holds at most [`STAGED_BYTES`] of the encoding; call [`Staged::flush`] when done.
+pub(crate) struct Staged<'a, H: Hasher> {
+    into: &'a mut Hashing<H>,
+    buf: [u8; STAGED_BYTES],
+    len: usize,
+}
+
+impl<'a, H: Hasher> Staged<'a, H> {
+    pub(crate) const fn new(into: &'a mut Hashing<H>) -> Self {
+        Self { into, buf: [0; STAGED_BYTES], len: 0 }
+    }
+
+    /// Absorbs what is staged.
+    pub(crate) fn flush(&mut self) {
+        if let Some(staged) = self.buf.get(..self.len) {
+            self.into.update(staged);
+        }
+        self.len = 0;
+    }
+}
+
+impl<H: Hasher> Sink for Staged<'_, H> {
+    type Error = core::convert::Infallible;
+    fn put(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        let end = self.len.saturating_add(bytes.len());
+        if let Some(room) = self.buf.get_mut(self.len..end) {
+            room.copy_from_slice(bytes);
+            self.len = end;
+        } else {
+            self.flush();
+            if let Some(room) = self.buf.get_mut(..bytes.len()) {
+                room.copy_from_slice(bytes);
+                self.len = bytes.len();
+            } else {
+                self.into.update(bytes);
+            }
+        }
         Ok(())
     }
     fn room(&mut self, _: u64) -> Result<(), Self::Error> {
@@ -160,7 +222,7 @@ enum Open<'a> {
 /// Never recursive: an explicit stack holds one open container per level of nesting (at most [`MAX_DEPTH`]), and a
 /// map's entries come from its own explicit stack. Every node writes its first byte before its children (the budget
 /// relies on it).
-fn write_value<S: Sink>(out: &mut S, value: &Value) -> Result<(), S::Error> {
+pub(crate) fn write_value<S: Sink>(out: &mut S, value: &Value) -> Result<(), S::Error> {
     let mut stack: Vec<Open<'_>> = Vec::new();
     let mut next = Some(value);
     loop {
@@ -736,5 +798,72 @@ mod tests {
         assert_eq!(within(&ints, 500, 1000, None), Err(TooLarge { limit: 500 }));
         // and a countable length within the limit is exact
         assert_eq!(within(&ints, 1279, 2000, None), Ok(1279));
+    }
+
+    /// What the walk hands a sink: how many bytes, and the longest piece it made itself (a head, or an integer's
+    /// limb). Any other piece must be a text or byte string of the value, lent in place.
+    struct Pieces<'v> {
+        total: usize,
+        longest_made: usize,
+        lent: &'v [&'v [u8]],
+    }
+
+    impl super::Sink for Pieces<'_> {
+        type Error = core::convert::Infallible;
+        fn put(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+            self.total = self.total.saturating_add(bytes.len());
+            // only a long piece is looked up among the lent ones: the bound is on those
+            let long = bytes.len() > 9;
+            if long && !self.lent.iter().any(|l| core::ptr::eq(l.as_ptr(), bytes.as_ptr()) && l.len() == bytes.len()) {
+                self.longest_made = self.longest_made.max(bytes.len());
+            }
+            Ok(())
+        }
+        fn room(&mut self, _: u64) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
+
+    /// The pieces of `value`'s encoding: (total, longest piece made by the walk rather than lent from the value).
+    fn pieces(value: &Value, lent: &[&[u8]]) -> (usize, usize) {
+        let mut p = Pieces { total: 0, longest_made: 0, lent };
+        match super::write_value(&mut p, value) {
+            Ok(()) => (p.total, p.longest_made),
+            Err(never) => match never {},
+        }
+    }
+
+    /// The streamed hashing path holds no part of the encoding: whatever the value's size, every piece the walk makes
+    /// is at most 9 bytes (a head or a limb), and text and byte strings are lent from the value, never copied. The
+    /// hashing sink then stages at most [`super::STAGED_BYTES`] and the hash a block, so memory is independent of the
+    /// encoding's length.
+    #[test]
+    fn the_hashing_path_buffers_nothing_proportional_to_the_value() {
+        use alloc::vec::Vec;
+        use num_bigint::BigInt;
+        for n in [10usize, 1_000, 100_000] {
+            let wide = Value::array((0..n).map(|i| Value::int(u64::try_from(i).unwrap() << 40)).collect()).unwrap();
+            let keyed =
+                Value::map((0..n).map(|i| (alloc::format!("k{i}"), Value::Bool(i % 2 == 0))).collect::<Vec<_>>())
+                    .unwrap();
+            let big = Value::int(BigInt::from(1) << (n * 8));
+            let text = Value::text("é".repeat(n));
+            let bytes = Value::bytes(vec![0x5a; n]);
+            let lent_text = [text.as_str().unwrap().as_bytes()];
+            let lent_bytes = [bytes.as_bytes().unwrap()];
+            let Value::Map(m) = &keyed else { panic!("a map") };
+            let lent_keys: Vec<&[u8]> = m.keys().map(|k| k.as_str().as_bytes()).collect();
+            for (name, v, lent) in [
+                ("wide", &wide, &[][..]),
+                ("keyed", &keyed, &lent_keys[..]),
+                ("big", &big, &[][..]),
+                ("text", &text, &lent_text[..]),
+                ("bytes", &bytes, &lent_bytes[..]),
+            ] {
+                let (total, longest_made) = pieces(v, lent);
+                assert_eq!(total, super::encode(v).len(), "{name} of {n}: every byte, once");
+                assert!(longest_made <= 9, "{name} of {n}: the walk made a piece of {longest_made} bytes");
+            }
+        }
     }
 }

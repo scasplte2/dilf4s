@@ -2,7 +2,8 @@
 
 use alloc::vec::Vec;
 
-use crate::cbor;
+use crate::cbor::{self, Sink, Staged};
+use crate::hash::{Hasher, Hashing};
 use crate::value::Value;
 
 /// The commitment tag of a byte string.
@@ -14,20 +15,35 @@ pub const CBOR_TAG: u8 = 0x01;
 /// the bytes `0x6161` and the text `"a"` (whose CBOR is `0x6161`) commit apart.
 ///
 /// O([`Value::weight`]) time and memory, as [`cbor::encode`]: bound the weight of a value built with shared parts first.
+/// To hash a commitment, stream it with [`value_commitment_into`] instead.
 pub fn value_commitment(value: &Value) -> Vec<u8> {
+    let mut out = Vec::new();
+    match write_commitment(&mut out, value) {
+        Ok(()) => out,
+        Err(never) => match never {},
+    }
+}
+
+/// Streams [`value_commitment`]'s bytes into `hashing`, without building them: O([`Value::weight`]) time, and no
+/// memory proportional to the commitment (see [`cbor::encode_into`]).
+pub fn value_commitment_into<H: Hasher>(hashing: &mut Hashing<H>, value: &Value) {
+    let mut staged = Staged::new(hashing);
+    match write_commitment(&mut staged, value) {
+        Ok(()) => staged.flush(),
+        Err(never) => match never {},
+    }
+}
+
+/// The one writer of a commitment, into a buffer or a hash.
+fn write_commitment<S: Sink>(out: &mut S, value: &Value) -> Result<(), S::Error> {
     match value {
         Value::Bytes(b) => {
-            let mut out = Vec::with_capacity(b.len().saturating_add(1));
-            out.push(BYTES_TAG);
-            out.extend_from_slice(b);
-            out
+            out.put(&[BYTES_TAG])?;
+            out.put(b)
         }
         other => {
-            let encoded = cbor::encode(other);
-            let mut out = Vec::with_capacity(encoded.len().saturating_add(1));
-            out.push(CBOR_TAG);
-            out.extend_from_slice(&encoded);
-            out
+            out.put(&[CBOR_TAG])?;
+            cbor::write_value(out, other)
         }
     }
 }

@@ -10,7 +10,6 @@ use core::fmt;
 use core::marker::PhantomData;
 
 use dilf4s_core::codec::Model;
-use dilf4s_core::commitment::value_commitment;
 use dilf4s_core::generated::merkle::{MerkleConsistency, MerkleInclusion};
 use dilf4s_core::hash::{Digest, Hasher};
 use dilf4s_core::value::Value;
@@ -149,7 +148,7 @@ impl<H: Hasher> MerkleHashing<H> for Tagged<H> {
 
     /// `leafHash(commit(v))`: O([`Value::weight`]), which the JLVM prices before calling (jlvm.md section 7).
     fn leaf_hash(&self, leaf: &Value) -> Digest<H> {
-        self.leaf.hash(&[&value_commitment(leaf)])
+        self.leaf.commitment(leaf)
     }
 
     fn leaf_weight(&self, leaf: &Value) -> u64 {

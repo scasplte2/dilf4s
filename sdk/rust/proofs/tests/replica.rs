@@ -39,13 +39,25 @@ impl Hasher for Counted {
     const NAME: &'static str = Sha256::NAME;
     const OUTPUT_SIZE: usize = Sha256::OUTPUT_SIZE;
     type Output = <Sha256 as Hasher>::Output;
+    /// SHA-256's state, and whether nothing has been absorbed yet: a hash's first part tells a node hash.
+    type State = (<Sha256 as Hasher>::State, bool);
 
-    fn hash_parts(parts: &[&[u8]]) -> Self::Output {
-        let node = parts.first().is_some_and(|p| NODE_TAGS.with(|tags| tags.iter().any(|t| t.as_slice() == *p)));
-        if node {
-            NODE_HASHES.with(|n| n.set(n.get() + 1));
+    fn start() -> Self::State {
+        (Sha256::start(), true)
+    }
+
+    fn absorb(state: &mut Self::State, data: &[u8]) {
+        if state.1 {
+            state.1 = false;
+            if NODE_TAGS.with(|tags| tags.iter().any(|t| t.as_slice() == data)) {
+                NODE_HASHES.with(|n| n.set(n.get() + 1));
+            }
         }
-        Sha256::hash_parts(parts)
+        Sha256::absorb(&mut state.0, data);
+    }
+
+    fn finish(state: Self::State) -> Self::Output {
+        Sha256::finish(state.0)
     }
 
     fn output_from_slice(bytes: &[u8]) -> Option<Self::Output> {
