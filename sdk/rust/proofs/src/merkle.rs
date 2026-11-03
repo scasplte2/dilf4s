@@ -509,6 +509,10 @@ pub fn merkle_verify<H: Hasher, M: MerkleHashing<H>>(
     leaf: &M::Leaf,
     proof: &Value,
 ) -> Result<bool, MerkleError> {
+    // the head first, as every SDK checks it: a size past the tree-index range (2^63 - 1) is malformed
+    if i64::try_from(head.size).is_err() {
+        return Err(encoding("head.size is a tree size"));
+    }
     if !crate::claims_within([profile.leaf_weight(leaf)]) {
         return Err(MerkleError::TooLarge { limit: crate::MAX_PROOF_WEIGHT });
     }

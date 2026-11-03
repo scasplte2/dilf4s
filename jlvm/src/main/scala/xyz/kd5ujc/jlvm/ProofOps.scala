@@ -157,7 +157,8 @@ object ProofOps {
 
   /** Checks the proof against the root: a mismatch is a well-formed proof of another trie, so `None`. */
   private def verified(op: Op, m: KeyMode, root: CanonicalValue, proof: CanonicalValue): Either[JlvmError, Option[VerifiedProof[H]]] =
-    (digest(op, "root")(root), TrieProofs.decode[H](proof).leftMap(e => crypto(op)(e.toString))).tupled.flatMap {
+    // the root first, and the proof decoded only once it is valid
+    digest(op, "root")(root).flatMap(r => TrieProofs.decode[H](proof).bimap(e => crypto(op)(e.toString), r -> _)).flatMap {
       case (r, p) =>
         TrieProofs.verify(m, r, p)(using T) match {
           case Right(v)                           => Option(v).asRight
