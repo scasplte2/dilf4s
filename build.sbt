@@ -150,7 +150,7 @@ lazy val crypto = project.in(file("crypto"))
       Libraries.circeParser % Test,
       Libraries.catsKernelLaws % Test
     ),
-    // dilf4s-jvm-ffi (sdk/rust/jvm-ffi), built by cargo for this platform and bundled for Ed25519Native (project/JvmFfi.scala)
+    // dilf4s-jvm-ffi (sdk/rust/jvm-ffi), built by cargo for this platform and bundled for Edwards25519Native (project/JvmFfi.scala)
     Compile / resourceGenerators += Def.task {
       JvmFfi.build((LocalRootProject / baseDirectory).value / "sdk" / "rust", (Compile / resourceManaged).value, streams.value.log)
     }.taskValue

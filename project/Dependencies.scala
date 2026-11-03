@@ -40,7 +40,7 @@ object Dependencies {
     val jblst = ("tech.pegasys" % "jblst" % V.jblst).exclude("com.google.guava", "guava")
     // gnark-crypto (Consensys) through Besu's JNI build: BN254 per EIP-196/197, as Besu's precompiles use it.
     val besuGnark = "org.hyperledger.besu" % "gnark" % V.besuNative
-    // JNA's direct mapping binds dilf4s-jvm-ffi (sdk/rust/jvm-ffi), the native Ed25519 verifier
+    // JNA's direct mapping binds dilf4s-jvm-ffi (sdk/rust/jvm-ffi), the native Ed25519 and ECVRF verifier
     val jna = "net.java.dev.jna"                  % "jna"                      % V.jna
     val catsKernelLaws = "org.typelevel"         %% "cats-kernel-laws"         % V.cats
     val cats = "org.typelevel"                   %% "cats-core"                % V.cats

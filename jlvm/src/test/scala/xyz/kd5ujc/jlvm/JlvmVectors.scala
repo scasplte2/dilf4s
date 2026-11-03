@@ -7,7 +7,7 @@ import cats.effect.{ExitCode, IO, IOApp, Resource}
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
-import xyz.kd5ujc.crypto.signing.Ed25519Backend
+import xyz.kd5ujc.crypto.signing.Edwards25519Backend
 
 import io.circe.syntax._
 import io.circe.{Decoder, Json}
@@ -133,13 +133,17 @@ object JlvmVectorsSuite extends IOSuite {
       }
   }
 
-  test("the pure-Scala Ed25519 backend gives every ed25519_verify case the native one's outcome and gas") {
+  test("the pure-Scala edwards25519 backend gives every ed25519_verify and ecvrf_verify case the native one's outcome and gas") {
     case (jlvm, in) =>
-      Jlvm.withEd25519[IO](Ed25519Backend.reference).map { pure =>
-        val cases = in.cases.filter(_.program.contains("ed25519_verify"))
+      Jlvm.withEdwards25519[IO](Edwards25519Backend.reference).map { pure =>
+        val cases = in.cases.filter(i => i.program.contains("ed25519_verify") || i.program.contains("ecvrf_verify"))
+        val vrf = cases.filter(_.program.contains("ecvrf_verify"))
         val nonCanonical = cases.filter(_.name.contains("non-canonical"))
         cases
-          .foldLeft(expect(nonCanonical.size >= 5, s"${nonCanonical.size} non-canonical cases")) { (acc, i) =>
+          .foldLeft(
+            expect(nonCanonical.size >= 5, s"${nonCanonical.size} non-canonical cases")
+              .and(expect(vrf.size >= 30, s"${vrf.size} ecvrf_verify cases"))
+          ) { (acc, i) =>
             val (n, p) = (JlvmVectors.run(jlvm, i), JlvmVectors.run(pure, i))
             acc.and(expect(n.result == p.result && n.gasUsed == p.gasUsed, s"${i.name}: native $n, pure Scala $p"))
           }

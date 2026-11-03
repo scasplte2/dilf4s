@@ -4,11 +4,13 @@ import java.nio.charset.StandardCharsets.UTF_8
 
 import cats.Show
 import cats.effect.{IO, Resource}
+import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.hash.{Fr, Poseidon => PoseidonHash}
-import xyz.kd5ujc.crypto.zk.Bn254
+import xyz.kd5ujc.crypto.signing.Edwards25519Backend
+import xyz.kd5ujc.crypto.zk.{Bn254, Bn254Engine}
 
 import io.circe.{Decoder, Json, parser}
 import org.scalacheck.Gen
@@ -236,6 +238,10 @@ object ZkOpsSuite extends ZkOpsChecks {
   def sharedResource: Resource[IO, ZkOps] = Resource.pure(ZkOps.reference)
 }
 
+/** On the native engines: gnark for BN254, dilf4s-signing for ECVRF. */
 object ZkOpsGnarkSuite extends ZkOpsChecks {
-  def sharedResource: Resource[IO, ZkOps] = Resource.eval(xyz.kd5ujc.crypto.zk.Bn254Engine.gnark[IO].map(new ZkOps(_)))
+  def sharedResource: Resource[IO, ZkOps] =
+    Resource.eval(
+      (Bn254Engine.gnark[IO], Edwards25519Backend.native[IO]).mapN((e, b) => new ZkOps(e, b.vrfTai))
+    )
 }

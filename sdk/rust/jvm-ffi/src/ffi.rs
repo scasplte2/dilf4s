@@ -2,10 +2,14 @@
 //!
 //! Every buffer is a pointer and an `int32_t` length (a Java array's length). A length of zero is the empty slice
 //! whatever the pointer is (JNA may pass null for an empty array); a negative length, or a null pointer with a positive
-//! length, is [`Verdict::BadArgument`]. No call writes through a pointer, keeps one past its return, or panics.
+//! length, is [`Verdict::BadArgument`]. Only `dilf4s_vrf_verify` writes, its 64-byte output, once every input has been
+//! read. No call keeps a pointer past its return, or panics.
 
-use core::slice;
+use core::{ptr, slice};
 
+use dilf4s_signing::vrf::OUTPUT_LENGTH;
+
+use crate::vrf::{self, VrfVerdict};
 use crate::{ABI_VERSION, Rule, Verdict, check_key, verify};
 
 /// `len` bytes at `ptr`, or `None` for a negative length or a null pointer with bytes.
@@ -110,17 +114,85 @@ pub unsafe extern "C" fn dilf4s_ed25519_verify_libsodium(
     unsafe { verify_raw(Rule::Libsodium, key, key_len, msg, msg_len, sig, sig_len) }
 }
 
+/// Whether `key` is a verifying key of the ECVRF suite `suite` (`0` TAI, `1` ELL2, `2` draft-03): `1` if it decodes,
+/// else `-11` (not 32 bytes), `-12` (not a point), `-13` (small order) or `-4` (bad arguments, or an unknown suite).
+///
+/// # Safety
+///
+/// As for [`dilf4s_ed25519_check_key`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dilf4s_vrf_check_key(suite: i32, key: *const u8, key_len: i32) -> i32 {
+    // SAFETY: the key buffer, by this function's contract.
+    let key = unsafe { bytes(key, key_len) };
+    match (vrf::suite(suite), key) {
+        (Some(s), Some(k)) => vrf::check_key(s, k).code(),
+        _ => VrfVerdict::BadArgument.code(),
+    }
+}
+
+/// ECVRF verification (`dilf4s_signing::vrf`) of `proof` on `alpha` under `key`, in the suite `suite` (`0` TAI, `1`
+/// ELL2, `2` draft-03). `1` if the proof verifies, with `beta` written to `out`; else a [`VrfVerdict`] code, with `out`
+/// left as it was. `out_len` must be 64, and the arguments are checked before anything is read.
+///
+/// # Safety
+///
+/// Each input buffer as for [`dilf4s_ed25519_verify_zip215`]. `out` must point to 64 writable bytes that overlap none
+/// of the inputs.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dilf4s_vrf_verify(
+    suite: i32,
+    key: *const u8,
+    key_len: i32,
+    alpha: *const u8,
+    alpha_len: i32,
+    proof: *const u8,
+    proof_len: i32,
+    out: *mut u8,
+    out_len: i32,
+) -> i32 {
+    let out_ok = !out.is_null() && usize::try_from(out_len).ok() == Some(OUTPUT_LENGTH);
+    // SAFETY: the key buffer, by this function's contract.
+    let key = unsafe { bytes(key, key_len) };
+    // SAFETY: the alpha buffer, by this function's contract.
+    let alpha = unsafe { bytes(alpha, alpha_len) };
+    // SAFETY: the proof buffer, by this function's contract.
+    let proof = unsafe { bytes(proof, proof_len) };
+    let result = match (vrf::suite(suite), key, alpha, proof) {
+        (Some(s), Some(k), Some(a), Some(p)) if out_ok => vrf::verify(s, k, a, p),
+        _ => Err(VrfVerdict::BadArgument),
+    };
+    match result {
+        Ok(beta) => {
+            // SAFETY: `out` is non-null and, by this function's contract, points to 64 writable bytes (`out_len` was
+            // checked to be 64); `beta` is a local array, so the two do not overlap.
+            unsafe { ptr::copy_nonoverlapping(beta.as_ptr(), out, OUTPUT_LENGTH) };
+            VrfVerdict::Valid.code()
+        }
+        Err(v) => v.code(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::indexing_slicing, reason = "tests fail by panicking")]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::indexing_slicing,
+        clippy::many_single_char_names,
+        reason = "tests fail by panicking, and name the vectors' fields"
+    )]
 
     use core::ptr;
 
+    use dilf4s_core::hex;
+    use dilf4s_signing::vrf::SuiteId;
+
     use super::{
         dilf4s_ed25519_check_key, dilf4s_ed25519_verify_libsodium, dilf4s_ed25519_verify_zip215,
-        dilf4s_jvm_ffi_abi_version,
+        dilf4s_jvm_ffi_abi_version, dilf4s_vrf_check_key, dilf4s_vrf_verify,
     };
     use crate::tests::{bytes, expected, rule, vectors};
+    use crate::vrf::VrfVerdict;
+    use crate::vrf::tests::{code, expected as vrf_expected, vectors as vrf_vectors};
     use crate::{ABI_VERSION, Rule, Verdict};
 
     fn len(b: &[u8]) -> i32 {
@@ -185,5 +257,77 @@ mod tests {
     #[test]
     fn the_abi_version() {
         assert_eq!(dilf4s_jvm_ffi_abi_version(), ABI_VERSION);
+    }
+
+    /// The code and, when valid, `beta`; `out` starts as `0xaa` bytes, so an untouched buffer is visible.
+    fn vrf_call(suite: i32, k: &[u8], a: &[u8], p: &[u8]) -> (i32, [u8; 64]) {
+        let mut out = [0xaa; 64];
+        // SAFETY: each input is a live slice; `out` is a separate live array of 64 bytes.
+        let code = unsafe {
+            dilf4s_vrf_verify(suite, k.as_ptr(), len(k), a.as_ptr(), len(a), p.as_ptr(), len(p), out.as_mut_ptr(), 64)
+        };
+        (code, out)
+    }
+
+    #[test]
+    fn every_vrf_proof_and_rejection_through_the_c_abi() {
+        let v = vrf_vectors();
+        for s in &v.suites {
+            let suite = code(SuiteId::from_name(&s.suite).unwrap());
+            for key in &s.keys {
+                let vk = bytes(&key.verifying_key);
+                // SAFETY: a live slice.
+                assert_eq!(unsafe { dilf4s_vrf_check_key(suite, vk.as_ptr(), 32) }, VrfVerdict::Valid.code());
+                for p in &key.proofs {
+                    let (c, beta) = vrf_call(suite, &vk, &bytes(&p.alpha), &bytes(&p.pi));
+                    assert_eq!((c, hex::encode(&beta)), (VrfVerdict::Valid.code(), p.beta.clone()), "{}", s.suite);
+                }
+            }
+        }
+        for r in &v.rejections {
+            let suite = code(SuiteId::from_name(&r.suite).unwrap());
+            let (k, a, p) = (bytes(&r.verifying_key), bytes(&r.alpha), bytes(&r.pi));
+            let (c, out) = vrf_call(suite, &k, &a, &p);
+            assert_eq!(c, vrf_expected(&r.result, &k, &p).code(), "{} {}", r.suite, r.name);
+            if c != VrfVerdict::Valid.code() {
+                assert_eq!(out, [0xaa; 64], "{} {}: a rejection writes nothing", r.suite, r.name);
+            }
+        }
+    }
+
+    #[test]
+    fn vrf_arguments_are_checked_before_anything_is_read_or_written() {
+        let v = vrf_vectors();
+        let (key, p) = (&v.suites[0].keys[0], &v.suites[0].keys[0].proofs[0]);
+        let (vk, alpha, pi) = (bytes(&key.verifying_key), bytes(&p.alpha), bytes(&p.pi));
+        let mut out = [0xaa; 64];
+        let bad = VrfVerdict::BadArgument.code();
+        for (suite, out_ptr, out_len) in
+            [(3, out.as_mut_ptr(), 64), (-1, out.as_mut_ptr(), 64), (0, ptr::null_mut(), 64), (0, out.as_mut_ptr(), 63)]
+        {
+            // SAFETY: live inputs; `out` is a live array of 64 bytes, or null, or described as shorter than it is.
+            let c = unsafe {
+                dilf4s_vrf_verify(
+                    suite,
+                    vk.as_ptr(),
+                    32,
+                    alpha.as_ptr(),
+                    len(&alpha),
+                    pi.as_ptr(),
+                    80,
+                    out_ptr,
+                    out_len,
+                )
+            };
+            assert_eq!(c, bad, "suite {suite}, out length {out_len}");
+        }
+        assert_eq!(out, [0xaa; 64]);
+        // SAFETY: a null key with a positive length is refused without reading.
+        assert_eq!(unsafe { dilf4s_vrf_check_key(0, ptr::null(), 32) }, bad);
+        // SAFETY: an unknown suite is refused before the key is read.
+        assert_eq!(unsafe { dilf4s_vrf_check_key(7, vk.as_ptr(), 32) }, bad);
+        // SAFETY: the empty alpha may be null.
+        let c = unsafe { dilf4s_vrf_verify(0, vk.as_ptr(), 32, ptr::null(), 0, pi.as_ptr(), 80, out.as_mut_ptr(), 64) };
+        assert_eq!(c, if alpha.is_empty() { VrfVerdict::Valid.code() } else { VrfVerdict::ChallengeMismatch.code() });
     }
 }

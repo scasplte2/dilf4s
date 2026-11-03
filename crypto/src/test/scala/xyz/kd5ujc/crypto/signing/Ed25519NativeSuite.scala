@@ -30,10 +30,10 @@ object Ed25519NativeSuite extends IOSuite with Checkers {
   final case class Signed(key: ByteVector, message: ByteVector, signature: ByteVector)
   final case class Vectors(rows: List[Row], keys: List[KeyRow], signed: List[Signed])
 
-  type Res = (Ed25519Backend, Vectors)
-  def sharedResource: Resource[IO, Res] = Resource.eval((Ed25519Backend.native[IO], vectors).tupled)
+  type Res = (Edwards25519Backend, Vectors)
+  def sharedResource: Resource[IO, Res] = Resource.eval((Edwards25519Backend.native[IO], vectors).tupled)
 
-  private val reference = Ed25519Backend.reference
+  private val reference = Edwards25519Backend.reference
 
   private def hex(c: ACursor, field: String): Decoder.Result[ByteVector] =
     c.get[String](field).flatMap(ByteVector.fromHex(_).toRight(io.circe.DecodingFailure(s"$field is not hex", Nil)))
@@ -89,7 +89,7 @@ object Ed25519NativeSuite extends IOSuite with Checkers {
     }
 
   /** The vectors' verdict: the key is decoded first, then the signature. */
-  private def verdict(b: Ed25519Backend, libsodium: Boolean)(key: ByteVector, message: ByteVector, signature: ByteVector): String =
+  private def verdict(b: Edwards25519Backend, libsodium: Boolean)(key: ByteVector, message: ByteVector, signature: ByteVector): String =
     b.codec
       .verifyingKey(key)
       .fold(
@@ -107,7 +107,7 @@ object Ed25519NativeSuite extends IOSuite with Checkers {
     expect(pure == native, s"$what: pure Scala gives $pure, native gives $native")
 
   /** Every result the two backends can be compared on, for one input. */
-  private def same(native: Ed25519Backend)(key: ByteVector, message: ByteVector, signature: ByteVector): Expectations = {
+  private def same(native: Edwards25519Backend)(key: ByteVector, message: ByteVector, signature: ByteVector): Expectations = {
     val (vk, sig) = (VerifyingKey[Ed25519](key), Signature[Ed25519](signature))
     val label = s"key ${key.toHex}, message ${message.size} bytes, signature ${signature.toHex}"
     agree(s"verifying key ($label)", reference.codec.verifyingKey(key), native.codec.verifyingKey(key))
@@ -264,20 +264,20 @@ object Ed25519NativeSuite extends IOSuite with Checkers {
   test("loading again, in sequence and concurrently, leaves every loaded backend working") {
     case (first, v) =>
       val valid = v.signed.head
-      def works(b: Ed25519Backend): Expectations =
+      def works(b: Edwards25519Backend): Expectations =
         expect
           .same(Right(true), b.verifyBytes(valid.key, valid.message, valid.signature))
           .and(expect.same(Right(false), b.verifyBytes(valid.key, valid.message ++ ByteVector(0), valid.signature)))
       for {
-        again      <- Ed25519Backend.native[IO]
-        concurrent <- (1 to 8).toList.parTraverse(_ => Ed25519Backend.native[IO])
+        again      <- Edwards25519Backend.native[IO]
+        concurrent <- (1 to 8).toList.parTraverse(_ => Edwards25519Backend.native[IO])
         _          <- IO(System.gc())
         calls      <- (first :: again :: concurrent).parTraverse(b => IO(works(b)))
       } yield calls.combineAll
   }
 
   pureTest("platform names follow os.name and os.arch") {
-    import Ed25519Native.{LoadError, Platform}
+    import Edwards25519Native.{LoadError, Platform}
     expect
       .same(Right("native/linux-x86_64/libdilf4s_jvm_ffi.so"), Platform.of("Linux", "amd64").map(_.resource))
       .and(expect.same(Right("native/linux-aarch64/libdilf4s_jvm_ffi.so"), Platform.of("Linux", "aarch64").map(_.resource)))
@@ -293,8 +293,8 @@ object Ed25519NativeSuite extends IOSuite with Checkers {
       .make(IO.blocking(Files.createTempFile("not-a-library", ".so")))(f => IO.blocking(Files.deleteIfExists(f)).void)
       .use { text =>
         IO.blocking(Files.write(text, "not ELF".getBytes(UTF_8))) >>
-        (Ed25519Native.loadFrom[IO](missing).attempt, Ed25519Native.loadFrom[IO](text).attempt).mapN { (a, b) =>
-          def linkFailed(r: Either[Throwable, ?]): Boolean = r.left.exists(_.isInstanceOf[Ed25519Native.LoadError.LinkFailed])
+        (Edwards25519Native.loadFrom[IO](missing).attempt, Edwards25519Native.loadFrom[IO](text).attempt).mapN { (a, b) =>
+          def linkFailed(r: Either[Throwable, ?]): Boolean = r.left.exists(_.isInstanceOf[Edwards25519Native.LoadError.LinkFailed])
           expect(linkFailed(a), s"a missing file: $a").and(expect(linkFailed(b), s"a file that is not a library: $b"))
         }
       }

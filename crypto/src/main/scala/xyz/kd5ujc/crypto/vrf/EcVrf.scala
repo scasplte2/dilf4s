@@ -40,6 +40,9 @@ object VrfError {
 
   /** Hash-to-curve found no point (TAI: all 256 counters failed, probability ~2^-256). */
   final case class HashToCurveFailed(reason: String) extends VrfError
+
+  /** A native backend failed or answered outside its ABI: never a verdict on the input (Edwards25519Native). */
+  final case class BackendFailure(operation: String, reason: String) extends VrfError
 }
 
 /** An 80-byte proof `Gamma || c (16) || s (32)`; its fields are checked only by verification. */
@@ -68,6 +71,10 @@ object Vrf {
 
   val ProofLength: Long = 80
   val OutputLength: Long = 64
+
+  /** Each suite's hash-to-curve failure, shared with the native backend so both report it alike. */
+  private[crypto] val TaiNoPoint: VrfError = VrfError.HashToCurveFailed("no counter in 0..255 gave a curve point")
+  private[crypto] val Elligator2NoPoint: VrfError = VrfError.HashToCurveFailed("Elligator 2 produced no point")
 
   private val sha512 = Hasher[Sha512]
   private def hash(parts: ByteVector*): ByteVector = sha512.digest(parts.foldLeft(ByteVector.empty)(_ ++ _)).bytes
@@ -101,7 +108,7 @@ object Vrf {
     /** §5.4.1.1: the first counter whose hash decodes to a point; the point times the cofactor. */
     def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, EdwardsPoint] = {
       @tailrec def loop(ctr: Int): Either[VrfError, EdwardsPoint] =
-        if (ctr > 255) VrfError.HashToCurveFailed("no counter in 0..255 gave a curve point").asLeft
+        if (ctr > 255) TaiNoPoint.asLeft
         else
           Curve25519Maps.decodeStrict(hash(ByteVector(suite, 0x01), pk, alpha, ByteVector(ctr, 0x00)).take(32)) match {
             case Some(pt) => pt.multiplyByCofactor().asRight
@@ -118,7 +125,7 @@ object Vrf {
 
     /** §5.4.1.2: `encode_to_curve(PK || alpha)` with DST `"ECVRF_" || h2c_suite_ID_string || suite_string`. */
     def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, EdwardsPoint] =
-      Curve25519Maps.encodeToCurveEll2(pk ++ alpha, dst).toRight(VrfError.HashToCurveFailed("Elligator 2 produced no point"))
+      Curve25519Maps.encodeToCurveEll2(pk ++ alpha, dst).toRight(Elligator2NoPoint)
   }
 
   /**
@@ -130,7 +137,7 @@ object Vrf {
     val suite: Int = 0x04
     def decode(b: ByteVector): Option[EdwardsPoint] = Curve25519Maps.decodeDraft03(b)
     def hashToCurve(pk: ByteVector, alpha: ByteVector): Either[VrfError, EdwardsPoint] =
-      Curve25519Maps.hashToCurveDraft03(pk, alpha).toRight(VrfError.HashToCurveFailed("Elligator 2 produced no point"))
+      Curve25519Maps.hashToCurveDraft03(pk, alpha).toRight(Elligator2NoPoint)
     def challenge(pk: ByteVector, h: ByteVector, gamma: ByteVector, u: ByteVector, v: ByteVector): ByteVector =
       hash(ByteVector(suite, 0x02), h, gamma, u, v).take(16)
     def equation(p: EdwardsPoint, q: EdwardsPoint, c: Scalar, s: Scalar): EdwardsPoint =

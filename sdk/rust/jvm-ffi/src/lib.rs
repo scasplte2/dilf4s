@@ -1,19 +1,20 @@
-//! The JVM's native Ed25519 verification: a C ABI over `dilf4s-signing`, so a JVM node runs the code the Rust SDK and
-//! the SP1 guest run, at the cost `ed25519_verify` is priced from. The Scala `crypto` module loads it through JNA
-//! (`Ed25519Native`).
+//! The JVM's native edwards25519 verification (Ed25519 signatures and ECVRF): a C ABI over `dilf4s-signing`, so a JVM
+//! node runs the code the Rust SDK and the SP1 guest run, at the cost `ed25519_verify` and `ecvrf_verify` are priced
+//! from. The Scala `crypto` module loads it through JNA (`Edwards25519Native`).
 //!
-//! Each function returns a [`Verdict`] code. Nothing here can panic: the verdicts are computed by `dilf4s-signing`'s
-//! verifiers, which reject every input with a value rather than a panic, and the crate's own code is held to the
-//! workspace's lints (no indexing, unwrapping, arithmetic overflow or `as`). The C ABI and its `unsafe` are in [`ffi`],
-//! and only there.
+//! Each function returns a [`Verdict`] or [`vrf::VrfVerdict`] code. Nothing here can panic: the verdicts are computed
+//! by `dilf4s-signing`'s verifiers, which reject every input with a value rather than a panic, and the crate's own code
+//! is held to the workspace's lints (no indexing, unwrapping, arithmetic overflow or `as`). The C ABI and its `unsafe`
+//! are in [`ffi`], and only there.
 
 use dilf4s_signing::ed25519::{self, SIGNATURE_LENGTH, Signature, VERIFYING_KEY_LENGTH, VerifyingKey};
 
 #[allow(unsafe_code, reason = "the C ABI: exported symbols and caller-provided pointers")]
 pub mod ffi;
+pub mod vrf;
 
-/// The ABI this library implements; the loader refuses any other.
-pub const ABI_VERSION: i32 = 1;
+/// The ABI this library implements; the loader refuses any other. 2 added the ECVRF functions.
+pub const ABI_VERSION: i32 = 2;
 
 /// The outcome of a call, as the integer code the C ABI returns. The key is decoded before the signature, so a call
 /// with both malformed reports the key, as the Scala reference and the conformance vectors do.

@@ -21,7 +21,7 @@ import scodec.bits.ByteVector
  * encode the expected object (wrong width, a non-canonical field element, a point off the curve or outside the subgroup)
  * a [[JlvmError.Crypto]]. A well-formed proof that does not verify is `false`, never an error.
  */
-final class ZkOps(engine: Bn254Engine) {
+final class ZkOps(engine: Bn254Engine, ecvrf: Vrf[EcVrfTai]) {
 
   import ZkOps._
 
@@ -104,9 +104,10 @@ final class ZkOps(engine: Bn254Engine) {
           pk    <- sized(op, "pk", pkV, VrfKeyBytes)
           alpha <- bytes(op, "alpha", alphaV)
           proof <- sized(op, "proof", proofV, Vrf.ProofLength)
-          out <- Vrf[EcVrfTai].verifyBytes(pk, alpha, proof) match {
-            case Right(beta)                            => Values.map(op, List("valid" -> True, "beta" -> CBytes(beta.bytes)))
-            case Left(VrfError.Malformed(what, reason)) => crypto(op, s"$what: $reason").asLeft
+          out <- ecvrf.verifyBytes(pk, alpha, proof) match {
+            case Right(beta)                                      => Values.map(op, List("valid" -> True, "beta" -> CBytes(beta.bytes)))
+            case Left(VrfError.Malformed(what, reason))           => crypto(op, s"$what: $reason").asLeft
+            case Left(VrfError.BackendFailure(operation, reason)) => crypto(op, s"$operation: $reason").asLeft
             case Left(
                   VrfError.InvalidPublicKey | VrfError.SmallOrderPublicKey | VrfError.InvalidGamma | VrfError.NonCanonicalScalar |
                   VrfError.ChallengeMismatch | VrfError.KeyMismatch | VrfError.HashToCurveFailed(_)
@@ -222,6 +223,6 @@ object ZkOps {
   private val G1Bytes: Long = 64L
   private val G2Bytes: Long = 128L
 
-  /** On the pure-Scala engine: the reference, for tests. */
-  val reference: ZkOps = new ZkOps(Bn254Engine.reference)
+  /** On the pure-Scala engines: the reference, for tests. */
+  val reference: ZkOps = new ZkOps(Bn254Engine.reference, Vrf.tai)
 }

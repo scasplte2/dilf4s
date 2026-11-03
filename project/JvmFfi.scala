@@ -5,9 +5,9 @@ import sbt._
 import sbt.util.Logger
 
 /**
- * The JVM's native Ed25519 library (`sdk/rust/jvm-ffi`), compiled by cargo for this machine and bundled in the crypto
- * jar where `Ed25519Native` looks for it: `xyz/kd5ujc/crypto/signing/native/<os>-<arch>/`. The platform names here and
- * in `Ed25519Native.Platform` must agree.
+ * The JVM's native edwards25519 library (`sdk/rust/jvm-ffi`: Ed25519 and ECVRF verification), compiled by cargo for this
+ * machine and bundled in the crypto jar where `Edwards25519Native` looks for it:
+ * `xyz/kd5ujc/crypto/signing/native/<os>-<arch>/`. The platform names here and in `Edwards25519Native.Platform` must agree.
  *
  * The Rust side is pinned: the toolchain (`sdk/rust/rust-toolchain.toml`), the dependencies (`--locked`), one codegen
  * unit, and the checkout's and cargo's paths remapped, so the library embeds no machine's paths and two builds on one
@@ -21,7 +21,7 @@ object JvmFfi {
   val profile = "jvm-ffi"
   val library = "dilf4s_jvm_ffi"
 
-  /** `(os, arch)` as `Ed25519Native.Platform` names them, for the platforms with a build. */
+  /** `(os, arch)` as `Edwards25519Native.Platform` names them, for the platforms with a build. */
   def platform: Option[(String, String)] = {
     val os = sys.props.getOrElse("os.name", "").toLowerCase match {
       case "linux"                                        => Some("linux")
@@ -66,7 +66,7 @@ object JvmFfi {
   def build(rustDir: File, out: File, log: Logger): Seq[File] =
     platform match {
       case None =>
-        log.warn(s"$crate: no build for ${sys.props("os.name")} on ${sys.props("os.arch")}; Ed25519Native will not load")
+        log.warn(s"$crate: no build for ${sys.props("os.name")} on ${sys.props("os.arch")}; Edwards25519Native will not load")
         Nil
       case Some((os, arch)) =>
         val host = run(Seq("rustc", "-vV"), rustDir, Nil, log).collectFirst { case l if l.startsWith("host: ") => l.stripPrefix("host: ") }

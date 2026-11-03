@@ -15,13 +15,13 @@ import scodec.bits.ByteVector
 /**
  * The cryptographic operations, over the dilf4s backends. Four backends are native libraries, loaded as an effect at the
  * edge ([[CryptoOps.load]]): every node evaluates with the same complete set, so no operation's availability depends on
- * the classpath. Ed25519 is dilf4s-signing's (Rust), the code `ed25519_verify` is priced from; the pure-Scala backend
- * gives the same verdicts and is used only when asked for ([[CryptoOps.withEd25519]]).
+ * the classpath. Ed25519 and ECVRF are dilf4s-signing's (Rust), the code `ed25519_verify` and `ecvrf_verify` are priced
+ * from; the pure-Scala backend gives the same verdicts and is used only when asked for ([[CryptoOps.withEdwards25519]]).
  *
  * Malformed input (a wrong length, a key that is not a curve point) is a [[JlvmError.Crypto]] error; a well-formed
  * signature that does not verify is `false`.
  */
-final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps, ed25519: Ed25519Backend) {
+final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps, edwards25519: Edwards25519Backend) {
 
   type Result = Either[JlvmError, CanonicalValue]
 
@@ -65,7 +65,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps, ed2551
 
   /** [[signature]] for Ed25519, in one call to the backend, which decodes the key once. */
   private def ed25519Verify(op: Op, args: Vector[CanonicalValue]): Result =
-    triple(op, args).flatMap { case (k, m, s) => ed25519.verifyBytes(k, m, s).bimap(crypto(op), Values.bool) }
+    triple(op, args).flatMap { case (k, m, s) => edwards25519.verifyBytes(k, m, s).bimap(crypto(op), Values.bool) }
 
   /** Standard BIP-340: the message is exactly 32 bytes. */
   private def bip340(op: Op, args: Vector[CanonicalValue]): Result =
@@ -135,10 +135,12 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps, ed2551
 
 object CryptoOps {
 
-  /** Loads the native backends (secp256k1, BLS12-381, gnark for BN254, dilf4s-signing for Ed25519); fails without them. */
-  def load[F[_]: Sync]: F[CryptoOps] = Ed25519Backend.native[F].flatMap(withEd25519[F])
+  /** Loads the native backends (secp256k1, BLS12-381, gnark for BN254, dilf4s-signing for edwards25519); fails without them. */
+  def load[F[_]: Sync]: F[CryptoOps] = Edwards25519Backend.native[F].flatMap(withEdwards25519[F])
 
-  /** [[load]], with the given Ed25519 backend: the pure-Scala one cross-checks the native one. */
-  def withEd25519[F[_]: Sync](ed25519: Ed25519Backend): F[CryptoOps] =
-    (Secp256k1.load[F], Bls12381.load[F], Bn254Engine.gnark[F]).mapN((s, b, e) => new CryptoOps(s, b, new ZkOps(e), ed25519))
+  /** [[load]], with the given edwards25519 backend (Ed25519 and ECVRF): the pure-Scala one cross-checks the native one. */
+  def withEdwards25519[F[_]: Sync](edwards25519: Edwards25519Backend): F[CryptoOps] =
+    (Secp256k1.load[F], Bls12381.load[F], Bn254Engine.gnark[F]).mapN((s, b, e) =>
+      new CryptoOps(s, b, new ZkOps(e, edwards25519.vrfTai), edwards25519)
+    )
 }
