@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { json, RationalValue, Value } from "../src/index.js";
+import { json, RationalValue, Value, type Result } from "../src/index.js";
 import { expectOk } from "./vectors.js";
 
 // JSON numbers have at most 10,000 significant digits, counted on the text before any conversion, and render only
@@ -25,11 +25,12 @@ describe("JSON number bounds", () => {
 
   it("rendering refuses what would not read back", () => {
     expect(json.renderWithin(Value.int(10n ** 10000n), json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
-    const wide = Value.number(1n, 5n ** 14400n);
-    expect(wide).toBeDefined();
-    if (wide !== undefined) expect(json.renderWithin(wide, json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
-    const third = Value.number(1n, 3n);
-    if (third !== undefined) expect(json.renderWithin(third, json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "non-terminating rational" } });
+    // 1/5^14400 (33436 bits) is no value at all (MAX_RATIONAL_BITS); 1/5^14306 (33218 bits) is, at a scale past the bound
+    expect(Value.number(1n, 5n ** 14400n)).toEqual({ ok: false, error: { kind: "RationalTooWide", limit: 33220 } });
+    const wide = expectOk(Value.number(1n, 5n ** 14306n), "1/5^14306");
+    expect(json.renderWithin(wide, json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
+    const third = expectOk(Value.number(1n, 3n), "1/3");
+    expect(json.renderWithin(third, json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "non-terminating rational" } });
   });
 
   it("a malformed number is described by its length and offset, never its text", () => {
@@ -49,9 +50,11 @@ describe("JSON number bounds", () => {
 
   it("a decimal is reduced by 2 and 5 alone, exactly as by its gcd with 10^scale", () => {
     const numerators = [0n, 1n, -1n, 2n, 5n, 10n, 16n, 25n, 125n, 640n, 3125n, -7812500n, 999n, 1000000n, 2048000000n, 5n ** 20000n, 3n * 2n ** 20000n];
-    // the parts themselves: toEqual does not see private fields
-    const parts = (v: Value | undefined): readonly [string, bigint, bigint] | undefined =>
-      v?.kind === "int" ? ["int", v.value, 1n] : v?.kind === "rational" ? ["rational", v.numerator, v.denominator] : undefined;
+    // the parts themselves (toEqual does not see private fields), or both refused as too wide (5^20000 over a small scale)
+    const parts = (r: Result<Value, unknown>): readonly [string, bigint, bigint] | undefined => {
+      const v = r.ok ? r.value : undefined;
+      return v?.kind === "int" ? ["int", v.value, 1n] : v?.kind === "rational" ? ["rational", v.numerator, v.denominator] : undefined;
+    };
     for (const n of numerators)
       for (const scale of [0, 1, 2, 3, 7, 8, 9, 64, 1000, 10000])
         expect(parts(RationalValue.decimal(n, scale))).toEqual(parts(RationalValue.number(n, 10n ** BigInt(scale))));

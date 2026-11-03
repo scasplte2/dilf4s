@@ -11,17 +11,24 @@ import weaver.scalacheck.Checkers
 
 object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
 
-  private def ratio(n: Int, d: Int): CanonicalValue = CanonicalValue.number(Ratio.of(n, d).toOption.get)
+  private def ratio(n: Int, d: Int): CanonicalValue =
+    CanonicalValue.number(Ratio.of(n, d).toOption.get).fold(e => sys.error(e.toString), identity)
   private def parse(s: String) = CanonicalJson.parse(s)
 
   pureTest("a refused rational is named by its size, never its digits") {
-    def rational(n: BigInt, d: BigInt) = Ratio.of(n, d).fold(e => sys.error(e.toString), CanonicalValue.number)
+    def rational(n: BigInt, d: BigInt) =
+      Ratio.of(n, d).fold(e => sys.error(e.toString), r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity))
     val third = rational(BigInt(1) << 30000, BigInt(3))
     val refusal = NotJsonRepresentable("non-terminating rational of 30001/2 bits")
-    val huge = rational(BigInt(1) << 1000000, BigInt(3))
+    // a rational that wide is no value (CanonicalValue.MaxRationalBits); an integer that wide is, and too long to render
+    val huge = CInt(BigInt(1) << 1000000)
     val overLong = NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")
     expect
-      .same(Left(refusal), CanonicalJson.render(third))
+      .same(
+        Left(RationalTooWide(CanonicalValue.MaxRationalBits)),
+        Ratio.of(BigInt(1) << 1000000, BigInt(3)).toOption.map(CanonicalValue.number).get
+      )
+      .and(expect.same(Left(refusal), CanonicalJson.render(third)))
       .and(expect.same(Left(refusal), CanonicalJson.toCirce(third)))
       .and(expect.same(Left(overLong), CanonicalJson.render(huge)))
       .and(expect.same(Left(overLong), CanonicalJson.toCirce(huge)))

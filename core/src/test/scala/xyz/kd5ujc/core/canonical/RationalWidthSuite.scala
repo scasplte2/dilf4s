@@ -16,12 +16,12 @@ import scodec.bits.{ByteVector, hex}
 import weaver.SimpleIOSuite
 
 /**
- * A rational's numerator and denominator are at most [[Cbor.MaxRationalBits]] wide (canonical-encoding.md §1), so
+ * A rational's numerator and denominator are at most [[CanonicalValue.MaxRationalBits]] wide (canonical-encoding.md §1), so
  * decoding one costs at most one gcd of bounded operands: work linear in the input, counted, never timed.
  */
 object RationalWidthSuite extends SimpleIOSuite {
 
-  private val Max = Cbor.MaxRationalBits
+  private val Max = CanonicalValue.MaxRationalBits
   private val Edge = BigInt(1) << Max
 
   /** `(F(k + 1), F(k))` with `F(k + 1)` exactly `bits` wide: coprime, and the pair whose gcd takes the most steps. */
@@ -32,14 +32,14 @@ object RationalWidthSuite extends SimpleIOSuite {
   }
 
   private def rational(n: BigInt, d: BigInt): CanonicalValue =
-    CanonicalValue.number(Ratio.of(n, d).fold(e => sys.error(e.toString), identity))
+    CanonicalValue.number(Ratio.of(n, d).fold(e => sys.error(e.toString), identity)).fold(e => sys.error(e.toString), identity)
 
   /** Tag 30 around `[n, d]`, whatever `n` and `d` are. */
   private def rationalBytes(n: BigInt, d: BigInt): ByteVector = hex"d81e82" ++ Cbor.encode(CInt(n)) ++ Cbor.encode(CInt(d))
 
   private def tooWide(e: Either[CanonicalError, CanonicalValue]): Boolean = e match {
-    case Left(Unsupported(0L, _)) => true
-    case _                        => false
+    case Left(RationalTooWide(Max)) => true
+    case _                          => false
   }
 
   /** Decodes through a [[Cbor.lowestTerms]] that counts its calls (each one gcd) and the widest operand it was given. */
@@ -110,5 +110,16 @@ object RationalWidthSuite extends SimpleIOSuite {
     val narrow = hex"d81e82016161"
     expect(tooWide(Cbor.decode(wide)), "the numerator's width first")
       .and(expect(Cbor.decode(narrow).swap.exists(_.isInstanceOf[NonCanonical]), "a narrow numerator reads on to the denominator"))
+  }
+
+  pureTest("no rational is built that decoding refuses: the constructor checks the width after reducing") {
+    def built(n: BigInt, d: BigInt) = Ratio.of(n, d).fold(e => sys.error(e.toString), identity)
+    expect
+      .same(Left(RationalTooWide(Max)), CanonicalValue.number(built(Edge, 3)))
+      .and(expect.same(Left(RationalTooWide(Max)), CanonicalValue.number(built(3, Edge))))
+      .and(expect.same(Left(RationalTooWide(Max)), CanonicalValue.number(built(Edge * 2, 6))))
+      .and(expect.same(Right(CInt(2)), CanonicalValue.number(built(Edge * 2, Edge))))
+      .and(expect.same(Left(RationalTooWide(Max)), Canonical[Ratio].canonical(built(Edge, 3))))
+      .and(expect.same(Right(CInt(Edge * Edge)), Cbor.decode(Cbor.encode(CInt(Edge * Edge)))))
   }
 }

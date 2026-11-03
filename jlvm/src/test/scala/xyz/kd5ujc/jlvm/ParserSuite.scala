@@ -291,7 +291,18 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     expect(Parser.render(Program.from(Expr.Lit(CanonicalValue.text("0xab").toOption.get)).toOption.get).isLeft, "0x-hex text")
       .and(
         expect(
-          Parser.render(Program.from(Expr.Lit(CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(1, 3).toOption.get))).toOption.get).isLeft,
+          Parser
+            .render(
+              Program
+                .from(
+                  Expr.Lit(
+                    CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(1, 3).toOption.get).fold(e => sys.error(e.toString), identity)
+                  )
+                )
+                .toOption
+                .get
+            )
+            .isLeft,
           "1/3"
         )
       )

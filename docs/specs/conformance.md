@@ -37,7 +37,7 @@ them. Every other field is informative. The normative fields are:
 | versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` |
 | Merkle tree, trie | `TooLarge` | `limit`: `MaxProofWeight` (2^24), for claims (§5) or a trie proof a producer would emit |
 | Poseidon tree | `Position` | `depth`: the number of siblings (or the tree's depth); the position itself echoes the caller's input and is informative |
-| canonical CBOR | `Unsupported` | none: a rational part wider than `MaxRationalBits` (33220 bits, `canonical-encoding.md` §1) is this kind, like any other item outside the data model; the bound is a spec constant, and the part's width is not reported |
+| canonical value | `RationalTooWide` | `limit`: `MaxRationalBits` (33220), for a rational part wider than it, from any producer (`canonical-encoding.md` §1); the part's width is not reported |
 | every other kind | | none: the kind alone |
 
 A field is normative only when every implementation can produce it exactly at no more cost than the refusal itself:
@@ -65,8 +65,8 @@ A refusal costs no more than the spec says, whatever the input:
   compare it with a bound from bit 0, and never build the listing to compare it. So their answer and their refusal
   cost no more than the weight their operands are charged by.
 - **Rationals.** Decoding a CBOR rational (`canonical-encoding.md` §2) runs at most one gcd, and only of a numerator and
-  denominator each at most `MaxRationalBits` (33220) wide: a wider part is refused as `Unsupported` as soon as it is
-  read, before the other part is read and before any gcd. A gcd is superlinear in its operands; with the bound, the
+  denominator each at most `MaxRationalBits` (33220) wide: a wider part is refused as `RationalTooWide` as soon as it
+  is read, before the other part is read and before any gcd. A gcd is superlinear in its operands; with the bound, the
   work of decoding is linear in the input (at most one gcd of bounded operands per 8 KiB of rational).
 
 ## 5. Verifier input weight
@@ -111,7 +111,7 @@ proof's records in order, its structure before its root (`InvalidProof` before `
 before its root; a Poseidon proof's siblings before its position; the versioned trie's records in the order
 `versioned-trie.md` §5 gives. Within canonical CBOR, a rational's faults come in the order `canonical-encoding.md` §2
 gives: its pair, its numerator then the numerator's width, its denominator then the denominator's width, the
-denominator's range, and lowest terms last (so a part too wide is `Unsupported` even when the denominator is below 2
+denominator's range, and lowest terms last (so a part too wide is `RationalTooWide` even when the denominator is below 2
 or the rational is not in lowest terms; `canonical_encoding_v1.json`'s `cborRejections` pin each pair). The refusal
 vectors pin each pair of faults that would otherwise answer differently, shape against meaning as well as meaning
 against meaning.

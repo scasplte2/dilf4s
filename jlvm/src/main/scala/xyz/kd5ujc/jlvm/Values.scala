@@ -60,7 +60,7 @@ object Values {
 
   /** A number result, within [[MaxNumberBits]]. */
   def num(op: Op, r: Ratio): Either[JlvmError, CanonicalValue] =
-    Either.cond(fits(r), CanonicalValue.number(r), tooLarge(op))
+    if (fits(r)) CanonicalValue.number(r).leftMap(_ => tooLarge(op)) else tooLarge(op).asLeft
 
   def int(op: Op, i: BigInt): Either[JlvmError, CanonicalValue] =
     Either.cond(i.bitLength <= MaxNumberBits, CInt(i), tooLarge(op))

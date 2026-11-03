@@ -130,14 +130,20 @@ object CanonicalVectors {
   val modelInputs: List[(String, CanonicalValue)] = List(
     "bytes(empty)"    -> CanonicalValue.bytes(ByteVector.empty),
     "bytes(01020304)" -> CanonicalValue.bytes(hex"01020304"),
-    "rational(1/3)"   -> CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(1, 3).fold(e => sys.error(e.toString), identity)),
-    "rational(-2^70/3)" -> CanonicalValue.number(
-      xyz.kd5ujc.numerics.Ratio.of(-(BigInt(1) << 70), 3).fold(e => sys.error(e.toString), identity)
-    ),
-    "rational(1/2^64)" -> CanonicalValue.number(
-      xyz.kd5ujc.numerics.Ratio.of(1, BigInt(1) << 64).fold(e => sys.error(e.toString), identity)
-    ),
-    // the widest parts a rational has (Cbor.MaxRationalBits, the bit length of 10^10000), for either sign; the last pair
+    "rational(1/3)" -> CanonicalValue
+      .number(xyz.kd5ujc.numerics.Ratio.of(1, 3).fold(e => sys.error(e.toString), identity))
+      .fold(e => sys.error(e.toString), identity),
+    "rational(-2^70/3)" -> CanonicalValue
+      .number(
+        xyz.kd5ujc.numerics.Ratio.of(-(BigInt(1) << 70), 3).fold(e => sys.error(e.toString), identity)
+      )
+      .fold(e => sys.error(e.toString), identity),
+    "rational(1/2^64)" -> CanonicalValue
+      .number(
+        xyz.kd5ujc.numerics.Ratio.of(1, BigInt(1) << 64).fold(e => sys.error(e.toString), identity)
+      )
+      .fold(e => sys.error(e.toString), identity),
+    // the widest parts a rational has (CanonicalValue.MaxRationalBits, the bit length of 10^10000), for either sign; the last pair
     // is consecutive Fibonacci numbers, coprime and the slowest gcd of its width
     "rational((2^33220-1)/2)"     -> rational(Edge - 1, 2),
     "rational(-2^33220/3)"        -> rational(-Edge, 3),
@@ -146,15 +152,17 @@ object CanonicalVectors {
   )
 
   private def rational(n: BigInt, d: BigInt): CanonicalValue =
-    CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(n, d).fold(e => sys.error(e.toString), identity))
+    CanonicalValue
+      .number(xyz.kd5ujc.numerics.Ratio.of(n, d).fold(e => sys.error(e.toString), identity))
+      .fold(e => sys.error(e.toString), identity)
 
   /** `2^MaxRationalBits`: one bit wider than a rational's part may be. */
-  private lazy val Edge: BigInt = BigInt(1) << Cbor.MaxRationalBits
+  private lazy val Edge: BigInt = BigInt(1) << CanonicalValue.MaxRationalBits
 
   /** The consecutive Fibonacci numbers `(F(k + 1), F(k))` with `F(k + 1)` exactly `MaxRationalBits` wide. */
   private lazy val fibonacci: (BigInt, BigInt) = {
     @scala.annotation.tailrec
-    def go(a: BigInt, b: BigInt): (BigInt, BigInt) = if (b.bitLength >= Cbor.MaxRationalBits) (b, a) else go(b, a + b)
+    def go(a: BigInt, b: BigInt): (BigInt, BigInt) = if (b.bitLength >= CanonicalValue.MaxRationalBits) (b, a) else go(b, a + b)
     go(BigInt(1), BigInt(1))
   }
 
@@ -219,7 +227,7 @@ object CanonicalVectors {
     ByteVector.fill(256)(0x81) ++ hex"80",
     ByteVector.fill(256)(0x81) ++ hex"a0",
     ByteVector.fill(257)(0x81) ++ hex"00",
-    // a rational part one bit wider than Cbor.MaxRationalBits, for either sign and either part, is outside the data
+    // a rational part one bit wider than CanonicalValue.MaxRationalBits, for either sign and either part, is outside the data
     // model: refused before any gcd, so before lowest terms (the first), before the denominator's range (the fifth) and
     // before the denominator is read (the sixth)
     rationalBytes(Edge * 2, Edge + 2),

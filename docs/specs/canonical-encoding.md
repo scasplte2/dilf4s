@@ -33,6 +33,22 @@ which is superlinear in its operands. With the bound, decoding a rational costs 
 33220 bits wide, and a rational that wide takes over 8 KiB to encode, so decoding stays linear in its input; without it
 a rational of n bytes would cost O(n²).
 
+The bound is a property of the value model, not only of decoding: **no canonical value has a rational part wider than
+33220 bits**, so every value that can be built encodes to bytes every decoder accepts, and a value committed or stored
+can always be read back. Every producer refuses a wider rational, after reducing it (`2^33221/6` is `2^33220/3`, still
+too wide; `2^33221/2^33220` is the integer 2), with kind `RationalTooWide` and normative field `limit` = 33220
+(`conformance.md` §3):
+
+| Producer | Refusal |
+|---|---|
+| CBOR decoding (§2) | `RationalTooWide`, before any gcd |
+| building a number from a numerator and denominator (Scala `CanonicalValue.number` and `Canonical[Ratio]`, Rust `Value::number`, TypeScript `Value.number`) | `RationalTooWide` (Rust `NumberError::RationalTooWide`, beside `DivisionByZero`) |
+| building a rational exactly as given (Rust `Rational::new`, TypeScript `RationalValue.of`) | none: no rational (`None`, `undefined`), as for one not in lowest terms |
+| JSON (§3) | never reached: the digit and scale bounds keep both parts within `10^10000` |
+| JLVM arithmetic (`jlvm.md` §2) | never reached: every number an operation reads or produces is within 4096 bits, or it is a `Limit` error |
+
+Each SDK's rational type has no other constructor, so no wider rational can be made without one of these refusing it.
+
 For other-language implementers, here is the same model in CDDL (RFC 8610). This block is **informative**: it is not
 in `shared/schemas`, because tags and recursion are outside the code generator's profile. The prose above, and the
 deterministic encoding rules in §2, are normative.
@@ -70,7 +86,7 @@ Further rules:
 - **Decoders** MUST reject trailing bytes after the top-level item and MUST enforce a maximum nesting depth. The default limit is 256 and counts arrays and maps, empty ones included: a scalar has depth 0, and an array or map has depth one more than its deepest element (1 when empty).
 - **Rationals** are checked in this order, and the first failure is the refusal: tag 30 wraps a 2-element array
   (`NonCanonical`); the numerator is a canonical integer (`NonCanonical`) at most `MaxRationalBits` wide
-  (`Unsupported`: outside the data model, §1); the same for the denominator; the denominator is at least 2
+  (`RationalTooWide`, §1); the same for the denominator; the denominator is at least 2
   (`NonCanonical`); and last, `gcd(|n|, d) = 1` (`NonCanonical`). A part's width is checked as soon as it is read, so a
   part too wide is refused before the next is read and before any gcd, and a decoder runs at most one gcd per rational.
 

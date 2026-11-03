@@ -23,4 +23,4 @@ pub mod value;
 
 pub use error::{CanonicalError, DecodeFailure};
 pub use num_bigint::BigInt;
-pub use value::{Array, Int, MAX_DEPTH, MAX_WEIGHT, Map, Rational, Text, Value};
+pub use value::{Array, Int, MAX_DEPTH, MAX_RATIONAL_BITS, MAX_WEIGHT, Map, NumberError, Rational, Text, Value};

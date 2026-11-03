@@ -20,16 +20,8 @@ object Cbor {
   val DefaultMaxDepth: Int = CanonicalValue.MaxDepth
 
   /**
-   * The widest numerator or denominator a rational has, in `bitLength` bits (docs/specs/canonical-encoding.md §1): the
-   * width of `10^10000`, so every rational a JSON decimal reads to fits. Checking lowest terms takes a gcd, superlinear
-   * in its operands, so the decoder refuses a wider part before any gcd: a rational's decoding then costs at most one
-   * gcd of two numbers this wide, about 4 KiB each, and decoding stays linear in its input.
-   */
-  val MaxRationalBits: Int = 33220
-
-  /**
-   * `n/d` (`d >= 2`, both within [[MaxRationalBits]]) if it is in lowest terms: one gcd. A test passes one that counts
-   * its calls.
+   * `n/d` (`d >= 2`, both within [[CanonicalValue.MaxRationalBits]]) if it is in lowest terms: one gcd. A test passes
+   * one that counts its calls.
    */
   private[kd5ujc] type LowestTerms = (BigInt, BigInt) => Option[Ratio]
 
@@ -339,17 +331,21 @@ object Cbor {
     for {
       pair <- readHead(in, end)
       _    <- Either.cond(pair.major == 4 && pair.argument == BigInt(2), (), NonCanonical(pos, "rational must wrap a 2-element array"))
-      num  <- readPart(in, pos, pair.end)
-      den  <- readPart(in, pos, num._2)
+      num  <- readPart(in, pair.end)
+      den  <- readPart(in, num._2)
       _    <- Either.cond(den._1 >= 2, (), NonCanonical(pos, "rational denominator must be >= 2"))
       r    <- reduce(num._1, den._1).toRight(NonCanonical(pos, "rational must be reduced"))
-    } yield (CanonicalValue.number(r), den._2)
+      v    <- CanonicalValue.number(r)
+    } yield (v, den._2)
 
-  /** A rational's numerator or denominator, refused when wider than [[MaxRationalBits]]. */
-  private def readPart(in: ByteVector, rational: Long, pos: Long): Either[CanonicalError, (BigInt, Long)] =
+  /**
+   * A rational's numerator or denominator, refused when wider than [[CanonicalValue.MaxRationalBits]]: decoding checks
+   * the width before any gcd, so a wide part costs no more than reading it.
+   */
+  private def readPart(in: ByteVector, pos: Long): Either[CanonicalError, (BigInt, Long)] =
     readInteger(in, pos).flatMap {
       case part @ (n, _) =>
-        Either.cond(n.bitLength <= MaxRationalBits, part, Unsupported(rational, s"a rational part wider than $MaxRationalBits bits"))
+        Either.cond(n.bitLength <= CanonicalValue.MaxRationalBits, part, RationalTooWide(CanonicalValue.MaxRationalBits))
     }
 
   private def readText(in: ByteVector, pos: Long, len: BigInt): Either[CanonicalError, (CText, Long)] =

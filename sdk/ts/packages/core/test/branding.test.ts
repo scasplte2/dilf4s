@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { RationalValue, taggedHash, type ArrayValue, type BoolValue, type DomainTag, type IntValue, type NullValue, type Value } from "../src/index.js";
+import { expectOk } from "./vectors.js";
 
 // Each `@ts-expect-error` is the test: typecheck fails if a structural look-alike were accepted as a canonical value,
 // which would let invariants (reduced rationals, bounded depth) be bypassed without a cast.
@@ -25,7 +26,7 @@ describe("canonical values only come from their factories", () => {
   });
 
   it("factory values read as before", () => {
-    const half: Value | undefined = RationalValue.number(2n, 4n);
-    expect(half?.kind === "rational" && [half.numerator, half.denominator]).toEqual([1n, 2n]);
+    const half: Value = expectOk(RationalValue.number(2n, 4n), "1/2");
+    expect(half.kind === "rational" && [half.numerator, half.denominator]).toEqual([1n, 2n]);
   });
 });

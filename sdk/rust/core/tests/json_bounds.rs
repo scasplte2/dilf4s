@@ -11,7 +11,7 @@
 
 use dilf4s_core::error::{DigitsOutOfRange, NotJson, NumberBound};
 use dilf4s_core::value::Rational;
-use dilf4s_core::{BigInt, CanonicalError, Value, json};
+use dilf4s_core::{BigInt, CanonicalError, NumberError, Value, json};
 
 fn digits(n: usize) -> String {
     "9".repeat(n)
@@ -63,7 +63,13 @@ fn malformed_numbers_are_described_by_length_and_offset_never_their_text() {
 fn rendering_refuses_what_would_not_read_back() {
     let over_long = Err(json::RenderError::Canonical(CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong }));
     assert_eq!(json::render_within(&Value::int(num_traits::pow(BigInt::from(10u8), 10_000)), usize::MAX), over_long);
-    let wide = Value::number(&BigInt::from(1u8), &num_traits::pow(BigInt::from(5u8), 14_400)).unwrap();
+    // 1/5^14400 (33436 bits) is no value at all (MAX_RATIONAL_BITS); 1/5^14306 (33218 bits) is, at a scale past the bound
+    let five = BigInt::from(5u8);
+    assert_eq!(
+        Value::number(&BigInt::from(1u8), &num_traits::pow(five.clone(), 14_400)),
+        Err(NumberError::RationalTooWide)
+    );
+    let wide = Value::number(&BigInt::from(1u8), &num_traits::pow(five, 14_306)).unwrap();
     let Value::Rational(r) = &wide else { panic!("a rational") };
     assert_eq!(json::decimal(r), Err(NotJson::OverLong));
     assert_eq!(json::render_within(&wide, usize::MAX), over_long);

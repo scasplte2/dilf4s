@@ -12,8 +12,9 @@ import scodec.bits.ByteVector
 
 /**
  * The canonical data model (docs/specs/canonical-encoding.md §1). Invariants are enforced by the smart constructors in
- * the companion: rationals are never integers, text holds no unpaired surrogates, maps hold unique keys and no null
- * values, and nesting never exceeds [[CanonicalValue.MaxDepth]] — so every constructible value is decodable.
+ * the companion: rationals are never integers and their parts are within [[CanonicalValue.MaxRationalBits]], text
+ * holds no unpaired surrogates, maps hold unique keys and no null values, and nesting never exceeds
+ * [[CanonicalValue.MaxDepth]] — so every constructible value is decodable.
  */
 sealed trait CanonicalValue extends Product with Serializable {
 
@@ -31,6 +32,15 @@ sealed trait CanonicalValue extends Product with Serializable {
 object CanonicalValue {
 
   val MaxDepth: Int = xyz.kd5ujc.models.limits.CanonicalMaxDepth
+
+  /**
+   * The widest numerator or denominator a rational has, in `bitLength` bits (docs/specs/canonical-encoding.md §1): the
+   * width of `10^10000`, so every rational a JSON decimal reads to fits, and far past every JLVM number (4096 bits).
+   * Checking lowest terms takes a gcd, superlinear in its operands, so a decoder refuses a wider part before any gcd: a
+   * rational's decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and stays linear in its
+   * input. [[number]] refuses a wider rational too, so no value is built that no decoder accepts.
+   */
+  val MaxRationalBits: Int = 33220
 
   implicit val canonicalValueShow: Show[CanonicalValue] = Show.fromToString
 
@@ -141,9 +151,18 @@ object CanonicalValue {
 
   def int(value: BigInt): CanonicalValue = CInt(value)
 
-  /** A number in the single numeric domain: integral values are always [[CInt]]. */
-  def number(value: Ratio): CanonicalValue =
-    value.toBigIntExact.fold[CanonicalValue](new CRational(value) {})(CInt(_))
+  /**
+   * A number in the single numeric domain: integral values are always [[CInt]], and a rational is refused when its
+   * numerator or denominator is wider than [[MaxRationalBits]] (its only constructor).
+   */
+  def number(value: Ratio): Either[CanonicalError, CanonicalValue] =
+    value.toBigIntExact.fold[Either[CanonicalError, CanonicalValue]](
+      Either.cond(
+        value.numerator.bitLength <= MaxRationalBits && value.denominator.bitLength <= MaxRationalBits,
+        new CRational(value) {},
+        CanonicalError.RationalTooWide(MaxRationalBits)
+      )
+    )(CInt(_).asRight)
 
   def text(value: String): Either[CanonicalError, CText] =
     Either.cond(Utf16.isWellFormed(value), new CText(value) {}, CanonicalError.UnpairedSurrogate(value))

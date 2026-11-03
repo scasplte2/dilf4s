@@ -44,7 +44,7 @@ object GasCalibration extends IOApp {
   }
   private def int(bits: Int, seed: Int): CanonicalValue = CInt(word(bits, seed))
   private def rat(bits: Int, seed: Int): CanonicalValue =
-    CanonicalValue.number(get(Ratio.of(word(bits, seed), word(bits, seed + 7).setBit(0))))
+    CanonicalValue.number(get(Ratio.of(word(bits, seed), word(bits, seed + 7).setBit(0)))).fold(e => sys.error(e.toString), identity)
   private def ints(n:  Int): CanonicalValue = a(Vector.tabulate(n)(i => CInt(BigInt(i))))
   private def texts(n: Int): CanonicalValue = a(Vector.tabulate(n)(i => t(s"t$i")))
   private def map(n:   Int): CanonicalValue = m(Vector.tabulate(n)(i => s"k$i" -> CInt(BigInt(i))))
@@ -221,8 +221,8 @@ object GasCalibration extends IOApp {
     val joinPiece = schedule.cost(Op.Join).extra.headOption.fold(0L)(_.perUnit.value)
     val small = int(64, 1)
     val wide = int(4000, 1)
-    val fraction = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4000)))
-    val fifths = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1700))))
+    val fraction = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4000))).fold(e => sys.error(e.toString), identity)
+    val fifths = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1700)))).fold(e => sys.error(e.toString), identity)
     def words(n: Int) = Vector.fill(n)(t("w"))
     def path(n:  Int) = t(Vector.fill(n)("a").mkString("."))
     // the map's key and the key looked up are equal but distinct strings, so the hit compares them
@@ -304,8 +304,8 @@ object GasCalibration extends IOApp {
       (rate(compiled(p), d), rate(against._1, against._2)).mapN((r, ref) => f"share $label%-52s ${r / ref}%8.3f   floor $floor%.2f")
     def xs(v:         CanonicalValue, n: Int) = m(Vector("xs" -> a(Vector.fill(n)(v))))
     def counted(body: String) = s"""{"count": [{"var": "xs"}, $body]}"""
-    val fifth = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1764))))
-    val half = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4095)))
+    val fifth = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1764)))).fold(e => sys.error(e.toString), identity)
+    val half = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4095))).fold(e => sys.error(e.toString), identity)
     val cat = """{"cat": {"var": "xs"}}"""
     val longPath = t(Vector.fill(50001)("a").mkString("."))
     val ones = a(Vector.fill(20)(CInt(1)))

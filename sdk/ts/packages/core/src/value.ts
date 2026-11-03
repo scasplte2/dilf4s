@@ -200,7 +200,24 @@ export function gcdSteps(a: bigint, b: bigint): readonly [bigint, number] {
 
 const gcd = (a: bigint, b: bigint): bigint => gcdSteps(a, b)[0];
 
-/** A rational `n/d` with `d >= 2` and `gcd(|n|, d) = 1`: never an integer. */
+/**
+ * The widest numerator or denominator a rational has, in Java `bitLength` bits (docs/specs/canonical-encoding.md
+ * section 1): the width of `10^10000`, so every rational a JSON decimal reads to fits, and far past every JLVM number
+ * (4096 bits). Checking lowest terms takes a gcd, superlinear in its operands, so a decoder refuses a wider part before
+ * any gcd: a rational's decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and stays
+ * linear in its input. Every constructor refuses a wider rational too, so no value is built that no decoder accepts.
+ */
+export const MAX_RATIONAL_BITS = 33220;
+
+/** A rational past {@link MAX_RATIONAL_BITS}. */
+export type RationalTooWide = Extract<CanonicalError, { readonly kind: "RationalTooWide" }>;
+
+const tooWide: RationalTooWide = { kind: "RationalTooWide", limit: MAX_RATIONAL_BITS };
+
+/** Why {@link RationalValue.number} has no value: a zero denominator, or a rational too wide. */
+export type NumberError = { readonly kind: "DivisionByZero" } | RationalTooWide;
+
+/** A rational `n/d` with `d >= 2`, `gcd(|n|, d) = 1` and both within {@link MAX_RATIONAL_BITS}: never an integer. */
 export class RationalValue {
   readonly kind = "rational";
   readonly depth = 0;
@@ -210,13 +227,22 @@ export class RationalValue {
   readonly #denominator: bigint;
   readonly #numeratorBits: number;
   readonly #denominatorBits: number;
-  private constructor(numerator: bigint, denominator: bigint) {
+  private constructor(numerator: bigint, denominator: bigint, numeratorBits: number, denominatorBits: number) {
     this.#numerator = numerator;
     this.#denominator = denominator;
-    this.#numeratorBits = bitLength(numerator);
-    this.#denominatorBits = bitLength(denominator);
-    this.weight = saturated(2n + limbs(this.#numeratorBits) + limbs(this.#denominatorBits));
+    this.#numeratorBits = numeratorBits;
+    this.#denominatorBits = denominatorBits;
+    this.weight = saturated(2n + limbs(numeratorBits) + limbs(denominatorBits));
     Object.freeze(this);
+  }
+
+  /**
+   * The only way to build one: callers have checked that it is reduced and not an integer, and this checks the width,
+   * so no wider rational exists.
+   */
+  private static checked(numerator: bigint, denominator: bigint): RationalValue | undefined {
+    const [n, d] = [bitLength(numerator), bitLength(denominator)];
+    return n <= MAX_RATIONAL_BITS && d <= MAX_RATIONAL_BITS ? new RationalValue(numerator, denominator, n, d) : undefined;
   }
 
   /** The numerator, carrying the sign. */
@@ -239,29 +265,39 @@ export class RationalValue {
     return this.#denominatorBits;
   }
 
-  /** `n/d` exactly as given, if it already satisfies the invariants (as a decoder must check). */
+  /**
+   * `n/d` exactly as given, if it already satisfies the invariants (as a decoder must check): `d >= 2`, both within
+   * {@link MAX_RATIONAL_BITS} (checked first, so a wide one runs no gcd), and in lowest terms.
+   */
   static of(numerator: bigint, denominator: bigint): RationalValue | undefined {
-    return denominator >= 2n && gcd(numerator, denominator) === 1n ? new RationalValue(numerator, denominator) : undefined;
+    const valid = denominator >= 2n && bitLength(numerator) <= MAX_RATIONAL_BITS && bitLength(denominator) <= MAX_RATIONAL_BITS;
+    return valid && gcd(numerator, denominator) === 1n ? RationalValue.checked(numerator, denominator) : undefined;
   }
 
-  /** The number `n/d` in the single numeric domain: an integer when it is one; `undefined` when `d` is zero. */
-  static number(numerator: bigint, denominator: bigint): IntValue | RationalValue | undefined {
-    if (denominator === 0n) return undefined;
+  /**
+   * The number `n/d` in the single numeric domain: an integer when it is one, otherwise a reduced rational, refused when
+   * its numerator or denominator is wider than {@link MAX_RATIONAL_BITS}.
+   */
+  static number(numerator: bigint, denominator: bigint): Result<IntValue | RationalValue, NumberError> {
+    if (denominator === 0n) return err({ kind: "DivisionByZero" });
     const g = gcd(numerator, denominator);
     const sign = denominator < 0n ? -1n : 1n;
     const n = (sign * numerator) / g;
     const d = (sign * denominator) / g;
-    return d === 1n ? IntValue.of(n) : new RationalValue(n, d);
+    if (d === 1n) return ok(IntValue.of(n));
+    const r = RationalValue.checked(n, d);
+    return r === undefined ? err(tooWide) : ok(r);
   }
 
   /**
    * `unscaled / 10^scale` in lowest terms. `10^scale`'s only primes are 2 and 5, so the common factor is
    * `2^min(v2, scale) 5^min(v5, scale)`: the twos go in one shift, and the fives by trial division by `5^(2^i)` from the
    * largest `2^i <= scale` down, which builds `min(v5, scale)` bit by bit (about 14 divisions for a scale of 10000).
-   * The same result as {@link number} against `10^scale`, without its general gcd.
+   * The same result as {@link number} against `10^scale`, without its general gcd; refused, like it, past
+   * {@link MAX_RATIONAL_BITS} (which JSON's digit and scale bounds never reach).
    */
-  static decimal(unscaled: bigint, scale: number): IntValue | RationalValue {
-    if (unscaled === 0n) return IntValue.of(0n);
+  static decimal(unscaled: bigint, scale: number): Result<IntValue | RationalValue, RationalTooWide> {
+    if (unscaled === 0n) return ok(IntValue.of(0n));
     const sign = unscaled < 0n ? -1n : 1n;
     const magnitude = sign * unscaled;
     const twos = Math.min(bitLength(magnitude & -magnitude) - 1, scale);
@@ -272,7 +308,9 @@ export class RationalValue {
       [magnitude >> BigInt(twos), 0],
     );
     const d = 5n ** BigInt(scale - fives) << BigInt(scale - twos);
-    return d === 1n ? IntValue.of(sign * rest) : new RationalValue(sign * rest, d);
+    if (d === 1n) return ok(IntValue.of(sign * rest));
+    const r = RationalValue.checked(sign * rest, d);
+    return r === undefined ? err(tooWide) : ok(r);
   }
   toString(): string {
     return inspect(this);
@@ -674,7 +712,7 @@ export const Value = {
   null: NullValue.instance,
   bool: (b: boolean): BoolValue => BoolValue.of(b),
   int: (n: bigint): IntValue => IntValue.of(n),
-  number: (n: bigint, d: bigint): IntValue | RationalValue | undefined => RationalValue.number(n, d),
+  number: (n: bigint, d: bigint): Result<IntValue | RationalValue, NumberError> => RationalValue.number(n, d),
   text: (s: string): Result<TextValue, CanonicalError> => TextValue.of(s),
   bytes: (b: Uint8Array): BytesValue => BytesValue.of(b),
   array: (items: readonly Value[]): Result<ArrayValue, CanonicalError> => ArrayValue.of(items),

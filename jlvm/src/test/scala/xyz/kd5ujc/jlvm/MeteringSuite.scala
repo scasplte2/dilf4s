@@ -116,8 +116,8 @@ object MeteringSuite extends IOSuite {
   }
 
   test("cat and join charge for rendering numbers, which can be far longer than their weight") { jlvm =>
-    val fifth = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1764))))
-    val half = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4095)))
+    val fifth = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1764)))).fold(e => sys.error(e.toString), identity)
+    val half = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4095))).fold(e => sys.error(e.toString), identity)
     val cat = program("""{"cat": {"var": "xs"}}""")
     val join = program("""{"join": [{"var": "xs"}, ""]}""")
     // the rendering charge grows with each number's decimal expansion ((4 + bits/64)^2 units), and is taken before it

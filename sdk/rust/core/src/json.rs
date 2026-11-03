@@ -262,7 +262,7 @@ impl Parser<'_> {
         let magnitude = usize::try_from(scale.unsigned_abs()).map_err(|_| invalid(None))?;
         // a decimal's denominator is 10^scale: reduced by its primes 2 and 5 alone, never by a general gcd
         let value = if scale >= 0 {
-            Value::decimal(&unscaled, magnitude)
+            Value::decimal(&unscaled, magnitude)?
         } else {
             Value::int(unscaled * pow(BigInt::from(10u8), magnitude))
         };

@@ -7,13 +7,7 @@ use num_bigint::{BigInt, Sign};
 use num_traits::One;
 
 use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem};
-use crate::value::{Array, Entries, MAX_DEPTH, MAX_WEIGHT, Map, Rational, Text, Value, bit_length};
-
-/// The widest numerator or denominator a rational has, in Java `bitLength` bits (docs/specs/canonical-encoding.md
-/// section 1): the width of `10^10000`, so every rational a JSON decimal reads to fits. Checking lowest terms takes a
-/// gcd, superlinear in its operands, so a decoder refuses a wider part before any gcd: a rational's decoding then costs
-/// at most one gcd of two numbers this wide, about 4 KiB each, and decoding stays linear in its input.
-pub const MAX_RATIONAL_BITS: u64 = 33_220;
+use crate::value::{Array, Entries, MAX_DEPTH, MAX_RATIONAL_BITS, MAX_WEIGHT, Map, Rational, Text, Value, bit_length};
 
 const TAG_POSITIVE_BIGNUM: u64 = 2;
 const TAG_NEGATIVE_BIGNUM: u64 = 3;
@@ -530,8 +524,8 @@ impl Decoder<'_> {
         if pair.major != MAJOR_ARRAY || pair.argument != 2 {
             return Err(non_canonical(NonCanonicalReason::RationalNotPair));
         }
-        let (numerator, after_numerator) = self.read_part(pos, pair.end)?;
-        let (denominator, after) = self.read_part(pos, after_numerator)?;
+        let (numerator, after_numerator) = self.read_part(pair.end)?;
+        let (denominator, after) = self.read_part(after_numerator)?;
         if denominator < BigInt::from(2) {
             return Err(non_canonical(NonCanonicalReason::RationalDenominator));
         }
@@ -540,11 +534,12 @@ impl Decoder<'_> {
             .ok_or_else(|| non_canonical(NonCanonicalReason::RationalNotReduced))
     }
 
-    /// A rational's numerator or denominator, refused when wider than [`MAX_RATIONAL_BITS`].
-    fn read_part(&self, rational: usize, pos: usize) -> Result<(BigInt, usize), CanonicalError> {
+    /// A rational's numerator or denominator, refused when wider than [`MAX_RATIONAL_BITS`]: before any gcd, so a wide
+    /// part costs no more than reading it.
+    fn read_part(&self, pos: usize) -> Result<(BigInt, usize), CanonicalError> {
         let (n, end) = self.read_integer(pos)?;
         if bit_length(&n) > MAX_RATIONAL_BITS {
-            Err(CanonicalError::Unsupported { offset: rational, item: UnsupportedItem::RationalTooWide })
+            Err(CanonicalError::RationalTooWide { limit: MAX_RATIONAL_BITS })
         } else {
             Ok((n, end))
         }
@@ -580,7 +575,7 @@ mod tests {
     use num_traits::One;
 
     use super::{MAX_RATIONAL_BITS, Rational, TooLarge, Value, decode, decode_with, encode, within};
-    use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem};
+    use crate::error::{CanonicalError, NonCanonicalReason};
     use crate::value::{MAX_DEPTH, bit_length};
 
     /// The consecutive Fibonacci numbers `(F(k + 1), F(k))` with `F(k + 1)` exactly `bits` wide: coprime, and the
@@ -613,7 +608,24 @@ mod tests {
     }
 
     fn too_wide() -> Result<Value, CanonicalError> {
-        Err(CanonicalError::Unsupported { offset: 0, item: UnsupportedItem::RationalTooWide })
+        Err(CanonicalError::RationalTooWide { limit: MAX_RATIONAL_BITS })
+    }
+
+    /// No rational is built that a decoder refuses: every constructor checks the width, after reducing.
+    #[test]
+    fn constructors_refuse_what_decoding_refuses() {
+        let edge = BigInt::one() << MAX_RATIONAL_BITS;
+        let three = BigInt::from(3u8);
+        assert_eq!(Value::number(&edge, &three), Err(crate::value::NumberError::RationalTooWide));
+        assert_eq!(Value::number(&three, &edge), Err(crate::value::NumberError::RationalTooWide));
+        assert_eq!(Rational::new(edge.clone(), three.clone()), None);
+        // reduced first: (2^33221 / 6) is 2^33220 / 3, still too wide; 2^33221 / 2^33220 is the integer 2
+        assert_eq!(Value::number(&(&edge * 2u8), &(&three * 2u8)), Err(crate::value::NumberError::RationalTooWide));
+        assert_eq!(Value::number(&(&edge * 2u8), &edge), Ok(Value::int(2u8)));
+        // integers are unbounded
+        assert_eq!(decode(&encode(&Value::int(&edge * &edge))), Ok(Value::int(&edge * &edge)));
+        let at_bound = rational(&(&edge - BigInt::one()), &BigInt::from(2u8));
+        assert_eq!(decode(&encode(&at_bound)), Ok(at_bound));
     }
 
     #[test]

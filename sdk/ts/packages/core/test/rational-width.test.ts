@@ -18,8 +18,8 @@ describe("rational width", () => {
   };
 
   const rational = (n: bigint, d: bigint): Value => {
-    const v = Value.number(n, d);
-    if (v?.kind !== "rational") throw new Error(`${bitLength(n).toString()} / ${bitLength(d).toString()} bits is not a rational`);
+    const v = expectOk(Value.number(n, d), `${bitLength(n).toString()} / ${bitLength(d).toString()} bits`);
+    expect(v.kind).toBe("rational");
     return v;
   };
 
@@ -104,7 +104,7 @@ describe("rational width", () => {
       [-edge - 1n, 2n],
       [1n, -edge * 2n],
     ] as const) {
-      expect(cbor.decode(rationalBytes(n, d))).toMatchObject({ ok: false, error: { kind: "Unsupported", offset: 0 } });
+      expect(cbor.decode(rationalBytes(n, d))).toEqual({ ok: false, error: { kind: "RationalTooWide", limit: max } });
     }
     expect(of).not.toHaveBeenCalled();
   });
@@ -123,13 +123,27 @@ describe("rational width", () => {
       [-edge - 1n, 2n],
       [3n, edge],
     ] as const) {
-      expect(kind(cbor.decode(rationalBytes(n, d)))).toBe("Unsupported");
+      expect(kind(cbor.decode(rationalBytes(n, d)))).toBe("RationalTooWide");
     }
   });
 
   it("a wide numerator is refused before the denominator is read", () => {
     const wide = Uint8Array.from([0xd8, 0x1e, 0x82, ...expectOk(cbor.encode(Value.int(edge)), "n"), 0x61, 0x61]);
-    expect(kind(cbor.decode(wide))).toBe("Unsupported");
+    expect(kind(cbor.decode(wide))).toBe("RationalTooWide");
     expect(kind(cbor.decode(Uint8Array.from([0xd8, 0x1e, 0x82, 0x01, 0x61, 0x61])))).toBe("NonCanonical");
+  });
+
+  it("no rational is built that decoding refuses: every constructor checks the width after reducing", () => {
+    const tooWide = { ok: false, error: { kind: "RationalTooWide", limit: max } };
+    expect(Value.number(edge, 3n)).toEqual(tooWide);
+    expect(Value.number(3n, edge)).toEqual(tooWide);
+    expect(Value.number(edge * 2n, 6n)).toEqual(tooWide);
+    expect(RationalValue.of(edge, 3n)).toBeUndefined();
+    expect(Value.number(1n, 0n)).toEqual({ ok: false, error: { kind: "DivisionByZero" } });
+    const two = expectOk(Value.number(edge * 2n, edge), "2");
+    expect(Value.equals(two, Value.int(2n))).toBe(true);
+    // integers are unbounded
+    const square = Value.int(edge * edge);
+    expect(Value.equals(expectOk(cbor.decode(expectOk(cbor.encode(square), "encodes")), "decodes"), square)).toBe(true);
   });
 });

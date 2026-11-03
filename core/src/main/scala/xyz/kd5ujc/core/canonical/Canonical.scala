@@ -37,7 +37,7 @@ object Canonical {
   implicit val canonicalInt: Canonical[Int] = total(i => CInt(BigInt(i)))
   implicit val canonicalLong: Canonical[Long] = total(l => CInt(BigInt(l)))
   implicit val canonicalBigInt: Canonical[BigInt] = total(CInt(_))
-  implicit val canonicalRatio: Canonical[Ratio] = total(CanonicalValue.number)
+  implicit val canonicalRatio: Canonical[Ratio] = instance(CanonicalValue.number)
   implicit val canonicalString: Canonical[String] = instance(CanonicalValue.text)
   implicit val canonicalBytes: Canonical[ByteVector] = total(CBytes(_))
 }

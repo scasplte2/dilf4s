@@ -61,8 +61,8 @@ object CborSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("rationals are tag 30 over a reduced [numerator, denominator] pair") {
-    val half = CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(1, 2).toOption.get)
-    val negThird = CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(-2, 6).toOption.get)
+    val half = CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(1, 2).toOption.get).fold(e => sys.error(e.toString), identity)
+    val negThird = CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(-2, 6).toOption.get).fold(e => sys.error(e.toString), identity)
     expect.same(hex"d81e820102", Cbor.encode(half)).and(expect.same(hex"d81e822003", Cbor.encode(negThird)))
   }
 

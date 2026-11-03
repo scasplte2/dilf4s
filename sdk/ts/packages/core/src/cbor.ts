@@ -14,6 +14,7 @@ import {
   IntValue,
   MapValue,
   MAX_DEPTH,
+  MAX_RATIONAL_BITS,
   NullValue,
   RationalValue,
   TextValue,
@@ -22,13 +23,7 @@ import {
   type Value,
 } from "./value.js";
 
-/**
- * The widest numerator or denominator a rational has, in Java `bitLength` bits (docs/specs/canonical-encoding.md
- * section 1): the width of `10^10000`, so every rational a JSON decimal reads to fits. Checking lowest terms takes a
- * gcd, superlinear in its operands, so the decoder refuses a wider part before any gcd: a rational's decoding then
- * costs at most one gcd of two numbers this wide, about 4 KiB each, and decoding stays linear in its input.
- */
-export const MAX_RATIONAL_BITS = 33220;
+export { MAX_RATIONAL_BITS } from "./value.js";
 
 const TAG_POSITIVE_BIGNUM = 2n;
 const TAG_NEGATIVE_BIGNUM = 3n;
@@ -481,22 +476,22 @@ class Decoder {
     const pair = this.readHead(end);
     if (!pair.ok) return pair;
     if (pair.value.major !== 4 || pair.value.argument !== 2n) return err(nonCanonical(pos, "rational must wrap a 2-element array"));
-    const num = this.readPart(pos, pair.value.end);
+    const num = this.readPart(pair.value.end);
     if (!num.ok) return num;
-    const den = this.readPart(pos, num.value.end);
+    const den = this.readPart(num.value.end);
     if (!den.ok) return den;
     if (den.value.value < 2n) return err(nonCanonical(pos, "rational denominator must be >= 2"));
     const r = RationalValue.of(num.value.value, den.value.value);
     return r === undefined ? err(nonCanonical(pos, "rational must be reduced")) : ok({ value: r, end: den.value.end });
   }
 
-  /** A rational's numerator or denominator, refused when wider than {@link MAX_RATIONAL_BITS}. */
-  private readPart(rational: number, pos: number): Result<{ readonly value: bigint; readonly end: number }, CanonicalError> {
+  /**
+   * A rational's numerator or denominator, refused when wider than {@link MAX_RATIONAL_BITS}: before any gcd, so a wide
+   * part costs no more than reading it.
+   */
+  private readPart(pos: number): Result<{ readonly value: bigint; readonly end: number }, CanonicalError> {
     const n = this.readInteger(pos);
-    if (n.ok && bitLength(n.value.value) > MAX_RATIONAL_BITS) {
-      return err(unsupported(rational, `a rational part wider than ${MAX_RATIONAL_BITS.toString()} bits`));
-    }
-    return n;
+    return n.ok && bitLength(n.value.value) > MAX_RATIONAL_BITS ? err({ kind: "RationalTooWide", limit: MAX_RATIONAL_BITS }) : n;
   }
 
   /** `len` bytes from `pos`, and the offset after them. */

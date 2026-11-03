@@ -115,8 +115,8 @@ describe("weight", { timeout: 60_000 }, () => {
       expect(Value.int(n).bitLength, "bitLength").toBe(javaBits(n));
     }
     // a negative power-of-two numerator: Java counts 63 bits, so no whole limb
-    expect(Value.number(-pow(63n), 3n)?.weight, "-2^63/3").toBe(2n);
-    expect(Value.number(1n, pow(64n))?.weight, "1/2^64").toBe(3n);
+    expect(expectOk(Value.number(-pow(63n), 3n), "-2^63/3").weight, "-2^63/3").toBe(2n);
+    expect(expectOk(Value.number(1n, pow(64n)), "1/2^64").weight, "1/2^64").toBe(3n);
     expect(text("é😀").weight, "text weighs its UTF-8 bytes").toBe(7n);
     expect(Value.bytes(new Uint8Array(5)).weight).toBe(6n);
     expect(map([["é", Value.int(1n)], ["n", Value.null]]).weight, "1 + (1 + 2 + 1); the null entry is dropped").toBe(5n);
@@ -404,7 +404,7 @@ describe("inspect", { timeout: 60_000 }, () => {
     const small = map([
       ["a", array([Value.int(1n), text("x")])],
       ["b", Value.bytes(Uint8Array.of(0, 255))],
-      ["c", Value.number(1n, 3n) ?? Value.null],
+      ["c", expectOk(Value.number(1n, 3n), "1/3")],
     ]);
     expect(inspect(small)).toBe(`{"a": [1, "x"], "b": h'00ff', "c": 1/3}`);
     expect(String(small)).toBe(inspect(small));
