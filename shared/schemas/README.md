@@ -41,7 +41,13 @@ file round-trips through its schema without loss.
     validator in every SDK core (`Profile.Patterns`);
   - homogeneous arrays;
   - literal values;
-  - choices of named map rules and text literals that can be told apart by their keys.
+  - choices of named map rules and text literals that can be told apart by their keys;
+  - **constants**: a rule whose whole body is a `uint` literal (`max-depth = 256`). A constant is a value, not a type:
+    a range or `.size` bound may name it (`0..max-depth`, `bytes .size (0..max-value-bytes)`), a field or element may
+    not. Each language gets it as a constant: Scala a `final val` (`Int`, else `Long`, else `BigInt`), TypeScript an
+    `export const` (a `number` up to 2^53 − 1, else a `bigint`), Rust a `u64` plus the same value in each narrower type
+    it fits (`as_u16`, `as_u32`, and `as_usize` up to 2^32 − 1), so no site casts. CDDL occurrence bounds
+    (`[1*1024 x]`) take literals only, so a bound that is a limit there is pinned by a test against the constant.
 - **Rejected at generation time:** integer map keys, floats, tags, groups, inline choices and ambiguous alternatives.
 - **What generated decoders check:** shape and ranges only. Domain invariants, such as trie segment padding or Poseidon
   `position < 2^depth`, stay with the domain decoders and types.

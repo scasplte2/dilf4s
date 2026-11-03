@@ -266,4 +266,41 @@ object SdkSourcesSuite extends SimpleIOSuite {
     val out = gen("r = { \"type\": uint, \"self\": uint }\n").map(_.rust.toMap.getOrElse("t.rs", ""))
     expect(out.exists(s => s.contains("pub r#type: u64,") && s.contains("pub self_: u64,")), out.fold(_.message, identity))
   }
+
+  private val constants = "max-depth = 256\nmax-weight = 9223372036854775807\nmax-uint = 18446744073709551615\n"
+
+  pureTest("a uint rule is a constant in every language, with nothing imported") {
+    val out = gen(constants)
+    val rust = out.map(_.rust.toMap.getOrElse("t.rs", ""))
+    val ts = out.map(_.typescript.toMap.getOrElse("t.ts", ""))
+    val scala = Main.generate(Vector("t" -> constants), "p").map(_.foldMap(_._2))
+    expect(rust.exists(_.contains("pub const MAX_DEPTH: u64 = 256;")), rust.fold(_.message, identity))
+      .and(expect(rust.exists(_.contains("pub const MAX_UINT: u64 = 18_446_744_073_709_551_615;")), "a uint fits u64"))
+      .and(
+        expect(
+          rust.exists(_.contains("pub mod as_usize {\n    /// [`super::MAX_DEPTH`] as a `usize`.\n    pub const MAX_DEPTH: usize = 256;")),
+          "narrowed"
+        )
+      )
+      .and(expect(rust.exists(_.contains("    pub const MAX_DEPTH: u16 = 256;")), "a u16"))
+      .and(expect(rust.exists(s => !s.contains("MAX_WEIGHT: u32") && !s.contains("MAX_WEIGHT: usize")), "only where it fits"))
+      .and(expect(rust.exists(s => !s.contains("use ")), "a constants module imports nothing"))
+      .and(expect(ts.exists(_.contains("export const MAX_DEPTH = 256;")), ts.fold(_.message, identity)))
+      .and(expect(ts.exists(_.contains("export const MAX_WEIGHT = 9223372036854775807n;")), "past 2^53 - 1, a bigint"))
+      .and(expect(ts.exists(s => !s.contains("import ")), "a constants module imports nothing"))
+      .and(expect(scala.exists(_.contains("final val MaxDepth = 256\n")), scala.fold(_.message, identity)))
+      .and(expect(scala.exists(_.contains("final val MaxWeight = 9223372036854775807L\n")), "a Long"))
+      .and(expect(scala.exists(_.contains("val MaxUint: BigInt = BigInt(\"18446744073709551615\")")), "past Long, a BigInt"))
+      .and(expect(scala.exists(s => !s.contains("import ")), "a constants module imports nothing"))
+  }
+
+  pureTest("a constant bounds a range or a size, and is never a field's type") {
+    val bounded = gen("max-n = 1024\nr = { \"n\": 0..max-n, \"b\": bytes .size (0..max-n) }\n").map(_.rust.toMap.getOrElse("t.rs", ""))
+    expect(bounded.exists(_.contains("c::U32In { lo: 0, hi: 1024 }")), bounded.fold(_.message, identity))
+      .and(expect(bounded.exists(_.contains("c::SizedBytes { lo: 0, hi: Some(1024) }")), "a size bound"))
+      .and(expect(outside(gen("max-n = 1024\nr = { \"n\": max-n }\n")), "a constant as a field type"))
+      .and(expect(outside(gen("max-n = 1024\nr = [* max-n]\n")), "a constant as an element type"))
+      .and(expect(outside(Main.generate(Vector("t" -> "max-n = 1024\nr = { \"n\": max-n }\n"), "p")), "and in Scala"))
+      .and(expect(outside(gen("min-n = -1\n")), "a negative constant"))
+  }
 }
