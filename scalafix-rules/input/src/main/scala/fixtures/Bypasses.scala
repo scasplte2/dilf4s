@@ -125,6 +125,15 @@ object Bypasses {
   def deepHash(s: String): Int =
     java.util.Arrays.deepHashCode(Array[Object](s)) // assert: NoHashing
 
+  def streamDistinct(s: String, t: String): Long =
+    java.util.stream.Stream.of(s, t).distinct().count() // assert: NoHashing
+
+  def formatHash(s: String): String =
+    String.format("%h", s) // assert: NoHashing
+
+  def interpolatedHash(s: String): String =
+    f"$s%h" // assert: NoHashing
+
   // a library symbol the rule cannot read (Scala 3's own library keeps it in TASTy): refused, not assumed safe
   def unknowable: Int =
     scala.util.boundary(1) // assert: NoHashing

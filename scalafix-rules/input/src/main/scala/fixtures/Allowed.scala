@@ -37,6 +37,13 @@ object Allowed {
   def libraries(s: String): Either[String, io.circe.Json] =
     cats.syntax.either.catsSyntaxEitherId(io.circe.Json.fromString(s)).asRight[String]
 
+  // a sorted set's intersect and diff look elements up in the sets, which compare
+  def sortedIntersect(xs: TreeSet[String], ys: TreeSet[String]): TreeSet[String] = xs.intersect(ys)
+
+  def sortedDiff(xs: TreeSet[String], ys: TreeSet[String]): TreeSet[String] = xs.diff(ys)
+
+  def hex(c: Char): String = f"\\u${c.toInt}%04x"
+
   def matched(v: Any): Int = v match {
     case s: String => s.length
     case _         => 0

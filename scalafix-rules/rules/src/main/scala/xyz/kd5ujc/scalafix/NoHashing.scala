@@ -53,6 +53,10 @@ final class NoHashing(project: Map[String, s.SymbolInformation]) extends Semanti
         targs.values.headOption.flatMap(typeTest(_, n.pos)).toList
       case n: Term.Name => term(n).map(finding(n.pos, _)).toList
       case n: Type.Name => typeName(n).map(finding(n.pos, _)).toList
+      case Term.Interpolate(Term.Name("f"), parts, _) if hashingFormat(Some(parts.map(_.value).mkString)) =>
+        List(finding(parts.head.pos, "a %h in a format string hashes its argument"))
+      case Term.Apply.After_4_6_0(fun, args) if Formats(fun.symbol.value) && hashingFormat(formatText(fun, args.values)) =>
+        List(finding(fun.pos, "this format string hashes an argument (%h), or is not a literal that could be checked"))
     }.flatten
       .groupBy(_.position.start)
       .values
@@ -95,7 +99,7 @@ final class NoHashing(project: Map[String, s.SymbolInformation]) extends Semanti
     else if (reference && (name == "##" || name.toLowerCase.contains("hashcode") || name == "anyHash")) Some(s"$name hashes")
     else if (HashFunctions(sym) || (HashOwners.exists(sym.startsWith) && !sym.endsWith("#"))) Some(s"$name is a hash function")
     else if (sym == "java/lang/String#intern().") Some("intern puts the text in the JVM's hashed string table")
-    else if (HashingMethods(name) && fromCollections(sym)) Some(s"$name counts its elements in a hash map")
+    else if (HashingMethods(name) && fromCollections(sym) && !ofSet(sym)) Some(s"$name counts its elements in a hash map")
     else
       lookup(sym) match {
         case None if unknowable(n.symbol) => Some(s"NoHashing cannot see what $name is ($sym), so cannot rule out hashing")
@@ -106,6 +110,14 @@ final class NoHashing(project: Map[String, s.SymbolInformation]) extends Semanti
           else None
       }
   }
+
+  /** The format string of `fun(args)`, if a literal: the receiver of `s.format(...)`, else the first argument. */
+  private def formatText(fun: Term, args: List[Term])(implicit doc: SemanticDocument): Option[String] =
+    if (ReceiverFormats(fun.symbol.value)) fun match {
+      case Term.Select(Lit.String(t), _) => Some(t)
+      case _                             => None
+    }
+    else args.headOption.collect { case Lit.String(t) => t }
 
   /** Whether `n` names what is being defined, not something it refers to: its type is checked, its name is not. */
   private def definesName(n: Term.Name): Boolean = n.parent.exists {
@@ -185,7 +197,28 @@ object NoHashing {
 
   private def fromCollections(sym: String): Boolean =
     sym.startsWith("scala/collection/") || sym.startsWith("scala/runtime/") || sym.startsWith("scala/Predef") ||
-    sym.startsWith("java/lang/String#")
+    sym.startsWith("java/lang/String#") || sym.startsWith("java/util/stream/")
+
+  /**
+   * A set's own `diff` / `intersect`: they look elements up in the sets, so they hash only if a set does, and a hashed
+   * set is refused by its type; a sorted set's compare.
+   */
+  private def ofSet(sym: String): Boolean = sym.split('/').lastOption.exists(_.takeWhile(c => c != '#' && c != '.').contains("Set"))
+
+  private val Formats = Set(
+    "java/lang/String#format().",
+    "java/lang/String#formatted().",
+    "scala/collection/StringOps#format().",
+    "scala/collection/StringOps#formatLocal().",
+    "java/util/Formatter#format().",
+    "java/io/PrintStream#printf()."
+  )
+
+  private val ReceiverFormats =
+    Set("scala/collection/StringOps#format().", "scala/collection/StringOps#formatLocal().", "java/lang/String#formatted().")
+
+  /** A format string with `%h` hashes its argument; one that is not a literal might. */
+  private def hashingFormat(text: Option[String]): Boolean = text.forall(t => t.contains("%h") || t.contains("%H"))
 
   /**
    * Scala 2.13 builds of the Scala library and of core's libraries, whose class files carry the signatures this table
