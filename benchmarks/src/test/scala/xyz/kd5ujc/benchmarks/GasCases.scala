@@ -156,6 +156,29 @@ object GasCases {
       Option.when(o != Op.Lt)(op("equal 8000-int arrays", o, ints(8000), ints(8000))).toList
     )
 
+  /** Variadic arithmetic over a spread: every element is an operand, converted, combined or compared. */
+  private lazy val spreads: List[GasCase] = {
+    def rat(n: BigInt, d: BigInt) = get(CanonicalValue.number(get(xyz.kd5ujc.numerics.Ratio.of(n, d))))
+    val operands = List(
+      "10,000 ones"             -> Vector.fill(10000)(int(1)),
+      "10,000 64-bit integers"  -> Vector.tabulate(10000)(i => wint(64, i + 1)),
+      "1000 1000-bit rationals" -> Vector.tabulate(1000)(i => rat(word(1000, i + 1).setBit(0), BigInt(1) << 1000)),
+      "5000 ones, 5000 halves"  -> Vector.tabulate(10000)(i => if (i % 2 == 0) int(1) else rat(BigInt(1), BigInt(2)))
+    )
+    for {
+      o          <- List(Op.Add, Op.Mul, Op.Min, Op.Max)
+      (name, xs) <- operands
+      if o != Op.Mul || name == "10,000 ones" // any other product passes the number bound
+    } yield
+      pair(
+        s"${o.wire}: a spread of $name",
+        o.wire,
+        Json.obj(o.wire -> Json.obj("var" -> "a0".asJson)).noSpaces,
+        """{"var": "a0"}""",
+        m("a0" -> a(xs))
+      )
+  }
+
   private val logic: List[GasCase] =
     List(Op.Not, Op.Truthy, Op.TypeOf, Op.Exists).flatMap(unary(_, ints, 1, 8000)) ++
     List(
@@ -664,7 +687,7 @@ object GasCases {
       anchor(secp) :: op("reference", Op.Sha256, bytes(1024)).copy(
         name = ReferenceName,
         group = "reference"
-      ) :: (nodes ++ logic ++ arithmetic ++ textOps ++ arrays ++ callbacks ++ maps ++ lookups ++ bytesOps ++
+      ) :: (nodes ++ logic ++ arithmetic ++ spreads ++ textOps ++ arrays ++ callbacks ++ maps ++ lookups ++ bytesOps ++
       signatures(secp, bls) ++ vrf ++ sg ++ z ++ merkle ++ tries ++ trieChains)
     }
 }

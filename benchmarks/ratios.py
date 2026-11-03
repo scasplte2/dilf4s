@@ -10,7 +10,8 @@ Reads the raw rounds that GasRatios (JVM) and gas_ratios (Rust) print, one file 
 - rounds are clustered by probe time into two clusters (performance and efficiency cores), when the clusters' centres
   differ by more than 10%; within each cluster, rounds whose probe is more than 3 MADs from its median are rejected;
 - per process and cluster, the median ratio and a bootstrap 95% interval of it; the case's ratio in a process is the
-  HIGHER of its clusters' (each with at least 15 rounds), so no op is priced from the faster core type alone;
+  HIGHER of its clusters', so no op is priced from the faster core type alone. A cluster of fewer than 15 rounds
+  still counts towards that, but has no interval, which leaves the case unconverged;
 - across processes, the HIGHEST (a process's heap and code layout moves allocation-heavy operations by up to tens of
   percent, and a node runs in whichever layout it gets), and the spread (max - min) / median;
 - the cross-check: median(case/reference) x median(reference/anchor) against median(case/anchor).
@@ -113,11 +114,10 @@ def process(path):
                 rejected += 1
         per = {}
         for name, v in by.items():
-            if len(v) < MIN_ROUNDS:
-                continue
+            # a cluster with too few rounds still counts towards the highest ratio, but leaves the case unconverged
             ratios = [t[0] for t in v]
             m = median(ratios)
-            lo, hi = bootstrap_ci(ratios)
+            lo, hi = bootstrap_ci(ratios) if len(v) >= MIN_ROUNDS else (float('-inf'), float('inf'))
             cross = median([t[1] for t in v]) * median([t[2] for t in v])
             per[name] = dict(ratio=m, half=(hi - lo) / 2 / abs(m) if m else float('inf'),
                              cross=abs(cross - m) / abs(m) if m else float('inf'), n=len(v),
@@ -126,8 +126,10 @@ def process(path):
             out[idx] = None
             continue
         top = max(per.values(), key=lambda c: c['ratio'])
-        out[idx] = dict(meta=meta[idx], ratio=top['ratio'], half=top['half'], cross=top['cross'],
-                        clusters={k: v['ratio'] for k, v in per.items()}, rejected=rejected,
+        # the widest interval and cross-check of any cluster: an undersampled cluster makes the whole case unconverged
+        out[idx] = dict(meta=meta[idx], ratio=top['ratio'], half=max(c['half'] for c in per.values()),
+                        cross=max(c['cross'] for c in per.values()),
+                        clusters={k: v['ratio'] for k, v in per.items()}, rounds={k: v['n'] for k, v in per.items()}, rejected=rejected,
                         accepted=sum(c['n'] for c in per.values()), x_ns=top['x_ns'], a_ns=top['a_ns'])
     return anchor, out
 
@@ -149,7 +151,7 @@ def main(d, filt=''):
             results[idx][be] = dict(
                 meta=per[0]['meta'], ratio=max(ratios), spread=(max(ratios) - min(ratios)) / abs(m) if m else float('inf'),
                 half=max(p['half'] for p in per), cross=median([p['cross'] for p in per]),
-                clusters=per[0]['clusters'], rejected=sum(p['rejected'] for p in per),
+                clusters=per[0]['clusters'], rounds=per[0]['rounds'], rejected=sum(p['rejected'] for p in per),
                 accepted=sum(p['accepted'] for p in per), procs=len(per),
                 x_us=median([p['x_ns'] for p in per]) / 1000, a_us=median([p['a_ns'] for p in per]) / 1000)
     cols = ['name', 'group', 'charged']
@@ -172,7 +174,7 @@ def main(d, filt=''):
                 continue
             g = x['ratio'] * anchors[be]
             worst = max(worst, g)
-            cl = '/'.join(f"{k}:{v * anchors[be]:.0f}" for k, v in sorted(x['clusters'].items()))
+            cl = '/'.join(f"{k}:{v * anchors[be]:.0f}({x['rounds'][k]})" for k, v in sorted(x['clusters'].items()))
             row += [f'{g:.0f}', f"{100 * x['half']:.1f}", f"{100 * x['spread']:.1f}", f"{100 * x['cross']:.1f}", cl,
                     f"{x['rejected']}/{x['accepted']}", f"{x['x_us']:.3f}"]
             if x['procs'] < 3:
