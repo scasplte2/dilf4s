@@ -225,6 +225,8 @@ object Program {
    * a `var` path is what its text reads back as, and no default is null (the canonical form drops null). Then requires
    * the rendered surface and the canonical form to fit the depth bound, so every program has an identity and an exact
    * rendering: an operation takes two canonical levels, so about 127 nest, fewer around deep literals and defaults.
+   *
+   * Literal byte strings are expected to be arrays or slices of one, as the parser makes them (see `Jlvm.evaluate`).
    */
   def from(expr: Expr): Either[JlvmError, Program] = from(expr, Kernels.Default)
 

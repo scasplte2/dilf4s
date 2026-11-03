@@ -181,7 +181,16 @@ object FlatBytesSuite extends IOSuite {
       "sha256"              -> run(Op.Sha256, rope),
       "keccak256 of text"   -> run(Op.Keccak256, get(CanonicalValue.text("a")))
     )
-    IO.pure(made.foldMap { case (name, r) => expect(r.exists(isFlat), s"$name: $r") })
+    // a copy is one whole array, read in place, never a lazy view over its operands
+    def wholeArray(v: CanonicalValue): Boolean = v match {
+      case CBytes(b) => b.toArrayUnsafe eq b.toArrayUnsafe
+      case _         => false
+    }
+    val copies = made.filter { case (name, _) => name.startsWith("cat") || name == "unhex of bytes" || name == "sha256" }
+    IO.pure(
+      made.foldMap { case (name, r) => expect(r.exists(isFlat), s"$name: $r") }
+        .and(copies.foldMap { case (name, r) => expect(r.exists(wholeArray), s"$name is one whole array") })
+    )
   }
 
   test("a byte string's sort key is one whole array, so comparing two never copies either") { _ =>

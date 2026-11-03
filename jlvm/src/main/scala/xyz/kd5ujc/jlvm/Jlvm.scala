@@ -67,10 +67,12 @@ final class Jlvm private (crypto: CryptoOps) {
    * Evaluates `compiled` against `data`. `env` holds the host bindings, read as `$name` (e.g. `$ordinal`); `let` and
    * callback bindings shadow them. Out of gas, the whole limit is used.
    *
-   * Byte strings in `data` and `env` are expected flat, one chunk each, as `Cbor.decode` and `0x` literals give from a
-   * flat buffer: every byte string the program makes is flat ([[FlatBytes]]), and an operation that reads bytes flattens
-   * its own operands under its size charge, but equality compares bytes nested in arrays and objects as the host built
-   * them. They are not walked here: that would be work proportional to the whole input on every evaluation.
+   * Byte strings in `data` and `env`, and in the literals of a program built with `Program.from`, are expected to be
+   * arrays or slices of one, as `Cbor.decode` and `0x` literals give from an array: never ropes, nor lazy views such as
+   * scodec's `viewAt`, `map` or `reverse`, whose reads run host code. Every byte string the program makes is an array
+   * ([[FlatBytes]]), and an operation that reads bytes flattens a rope operand under its size charge, but equality
+   * compares bytes nested in arrays and objects as the host built them. Nothing is walked here: that would be work
+   * proportional to the whole input on every evaluation.
    */
   def evaluate(
     compiled: Compiled,

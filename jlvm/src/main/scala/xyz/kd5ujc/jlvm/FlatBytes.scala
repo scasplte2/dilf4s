@@ -12,6 +12,11 @@ import scodec.bits.ByteVector
  * further: values are core's `CBytes(ByteVector)`, which any code may build, and core's equality compares the bytes
  * nested in arrays and objects as they are. Bytes from the host (data, bindings, decoded programs) are flat when decoded
  * from a flat buffer, as `Cbor.decode` and `0x` literals are (`Jlvm.evaluate` states the precondition).
+ *
+ * "One chunk" is scodec's notion, and covers an array (or a slice of one), which is what every operation, the parser and
+ * the decoders make. It also covers a host's lazy view (`ByteVector.viewAt`, `map`, `reverse`), whose reads run host
+ * code that no public scodec API can tell apart from an array, or copy without running: such bytes are outside the
+ * precondition, and nothing a program does can make them.
  */
 opaque type FlatBytes <: ByteVector = ByteVector
 
