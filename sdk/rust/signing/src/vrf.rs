@@ -388,9 +388,10 @@ fn equation(suite: SuiteId, p: &EdwardsPoint, q: &EdwardsPoint, c: &Scalar, s: &
     }
 }
 
-/// [`equation`] with `Q = B`, as one double-base multiplication, faster on both targets than the multiscalar
-/// multiplication [`lincomb`] uses natively: natively about 34 µs against 39 µs; in the SP1 guest, whose patch runs it on
-/// the `ED_ADD` precompile, about 640,000 fewer cycles per verification (`sdk/rust/zk/README.md`).
+/// [`equation`] with `Q = B`, as one double-base multiplication. In the SP1 guest, whose patch runs it on the `ED_ADD`
+/// precompile, it costs about 640,000 fewer cycles than the multiscalar multiplication [`lincomb`] uses natively
+/// (`sdk/rust/zk/README.md`). Natively it costs no more: about 34 µs against 36 µs with RFC 9381's 128-bit `c`, the
+/// same 35 µs with draft-03's full-width `-c`.
 fn equation_base(suite: SuiteId, p: &EdwardsPoint, c: &Scalar, s: &Scalar) -> EdwardsPoint {
     match suite {
         SuiteId::Tai | SuiteId::Ell2 => EdwardsPoint::vartime_double_scalar_mul_basepoint(c, &-p, s),
@@ -398,8 +399,8 @@ fn equation_base(suite: SuiteId, p: &EdwardsPoint, c: &Scalar, s: &Scalar) -> Ed
     }
 }
 
-/// `a A + b B`, natively as one multiscalar multiplication, which shares its doublings: about 41 µs, where two
-/// separate (constant-time) multiplications take about 82 µs.
+/// `a A + b B`, natively as one multiscalar multiplication, which shares its doublings: about 35 µs, where two
+/// separate (constant-time) multiplications take about 68 µs.
 #[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
 fn lincomb(a: &Scalar, pa: &EdwardsPoint, b: &Scalar, pb: &EdwardsPoint) -> EdwardsPoint {
     use curve25519_dalek::traits::VartimeMultiscalarMul as _;
