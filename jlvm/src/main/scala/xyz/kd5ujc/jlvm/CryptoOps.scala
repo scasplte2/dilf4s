@@ -13,21 +13,22 @@ import xyz.kd5ujc.crypto.zk.Bn254Engine
 import scodec.bits.ByteVector
 
 /**
- * The cryptographic operations, over the dilf4s backends. Two backends are native libraries, loaded as an effect at the
+ * The cryptographic operations, over the dilf4s backends. Four backends are native libraries, loaded as an effect at the
  * edge ([[CryptoOps.load]]): every node evaluates with the same complete set, so no operation's availability depends on
- * the classpath.
+ * the classpath. Ed25519 is dilf4s-signing's (Rust), the code `ed25519_verify` is priced from; the pure-Scala backend
+ * gives the same verdicts and is used only when asked for ([[CryptoOps.withEd25519]]).
  *
  * Malformed input (a wrong length, a key that is not a curve point) is a [[JlvmError.Crypto]] error; a well-formed
  * signature that does not verify is `false`.
  */
-final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
+final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps, ed25519: Ed25519Backend) {
 
   type Result = Either[JlvmError, CanonicalValue]
 
   /** `None` for operations not implemented here. */
   def apply(op: Op, args: Vector[CanonicalValue]): Option[Result] =
     op match {
-      case Op.Ed25519Verify      => Option(signature(op, args)(Ed25519.codec, Ed25519.verifier))
+      case Op.Ed25519Verify      => Option(ed25519Verify(op, args))
       case Op.Secp256k1Verify    => Option(signature(op, args)(secp.ecdsaCodec, secp.ecdsaVerifier))
       case Op.BlsVerify          => Option(signature(op, args)(bls.codec, bls.verifier))
       case Op.Bip340Verify       => Option(bip340(op, args))
@@ -61,6 +62,10 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
             Values.bool(verifier.verify(key, m, sig))
         }
     }
+
+  /** [[signature]] for Ed25519, in one call to the backend, which decodes the key once. */
+  private def ed25519Verify(op: Op, args: Vector[CanonicalValue]): Result =
+    triple(op, args).flatMap { case (k, m, s) => ed25519.verifyBytes(k, m, s).bimap(crypto(op), Values.bool) }
 
   /** Standard BIP-340: the message is exactly 32 bytes. */
   private def bip340(op: Op, args: Vector[CanonicalValue]): Result =
@@ -130,7 +135,10 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
 
 object CryptoOps {
 
-  /** Loads the native backends (secp256k1, BLS12-381, gnark for BN254); fails on a platform without them. */
-  def load[F[_]: Sync]: F[CryptoOps] =
-    (Secp256k1.load[F], Bls12381.load[F], Bn254Engine.gnark[F]).mapN((s, b, e) => new CryptoOps(s, b, new ZkOps(e)))
+  /** Loads the native backends (secp256k1, BLS12-381, gnark for BN254, dilf4s-signing for Ed25519); fails without them. */
+  def load[F[_]: Sync]: F[CryptoOps] = Ed25519Backend.native[F].flatMap(withEd25519[F])
+
+  /** [[load]], with the given Ed25519 backend: the pure-Scala one cross-checks the native one. */
+  def withEd25519[F[_]: Sync](ed25519: Ed25519Backend): F[CryptoOps] =
+    (Secp256k1.load[F], Bls12381.load[F], Bn254Engine.gnark[F]).mapN((s, b, e) => new CryptoOps(s, b, new ZkOps(e), ed25519))
 }

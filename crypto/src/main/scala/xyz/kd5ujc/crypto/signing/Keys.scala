@@ -57,6 +57,9 @@ object SchemeCodec {
   def sized(what: String, expected: Long, bytes: ByteVector): Either[CryptoError, ByteVector] =
     Either.cond(bytes.size == expected, bytes, CryptoError.InvalidEncoding(what, s"expected $expected bytes, got ${bytes.size}"))
 
+  /** The refusal of a verifying key of the right length that is not a curve point. */
+  def notAPoint(scheme: String): CryptoError = CryptoError.InvalidKey(s"$scheme verifying key is not a valid point")
+
   /** A SEC1 compressed tag (02 or 03) leads `b`; SEC1 parsers also take other tags (00, 04, 06, 07) at other lengths. */
   def compressedTag(b: ByteVector): Boolean = b.headOption.exists(t => t == 0x02 || t == 0x03)
 
@@ -76,7 +79,7 @@ object SchemeCodec {
         length("signing key", skLength, bytes).map(new SigningKey[S](_))
       def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[S]] =
         length("verifying key", vkLength, bytes)
-          .flatMap(b => Either.cond(validVk(b), VerifyingKey[S](b), CryptoError.InvalidKey(s"$scheme verifying key is not a valid point")))
+          .flatMap(b => Either.cond(validVk(b), VerifyingKey[S](b), notAPoint(scheme)))
       def signature(bytes: ByteVector): Either[CryptoError, Signature[S]] = length("signature", sigLength, bytes).map(Signature[S](_))
     }
 }

@@ -23,6 +23,8 @@ object Dependencies {
     val curve25519Elisabeth = "0.1.0"
     // pinned (project/Pinned.scala) and vendored (vendor/maven): 2.0.0 has had months in Besu releases; 2.1.0 is days old
     val besuNative = "2.0.0"
+    // pinned (project/Pinned.scala): the version besu-native-common 2.0.0 brings, which also binds dilf4s-jvm-ffi
+    val jna = "5.12.1"
   }
 
   object Libraries {
@@ -37,7 +39,9 @@ object Dependencies {
     // Its Guava dependency is unused by the bindings.
     val jblst = ("tech.pegasys" % "jblst" % V.jblst).exclude("com.google.guava", "guava")
     // gnark-crypto (Consensys) through Besu's JNI build: BN254 per EIP-196/197, as Besu's precompiles use it.
-    val besuGnark = "org.hyperledger.besu"        % "gnark"                    % V.besuNative
+    val besuGnark = "org.hyperledger.besu" % "gnark" % V.besuNative
+    // JNA's direct mapping binds dilf4s-jvm-ffi (sdk/rust/jvm-ffi), the native Ed25519 verifier
+    val jna = "net.java.dev.jna"                  % "jna"                      % V.jna
     val catsKernelLaws = "org.typelevel"         %% "cats-kernel-laws"         % V.cats
     val cats = "org.typelevel"                   %% "cats-core"                % V.cats
     val catsEffect = "org.typelevel"             %% "cats-effect"              % V.catsEffect

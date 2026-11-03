@@ -7,6 +7,7 @@ import cats.syntax.functor._
 import scala.collection.immutable.TreeMap
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
+import xyz.kd5ujc.crypto.signing.Ed25519Backend
 
 /**
  * A program checked for evaluation ([[Node.compile]]): its special forms are well-formed. Not a case class, so no
@@ -89,4 +90,7 @@ object Jlvm {
 
   /** Loads the cryptographic backends (native libraries) and returns an evaluator. */
   def load[F[_]: Sync]: F[Jlvm] = CryptoOps.load[F].map(new Jlvm(_))
+
+  /** [[load]], with the given Ed25519 backend ([[CryptoOps.withEd25519]]). */
+  def withEd25519[F[_]: Sync](ed25519: Ed25519Backend): F[Jlvm] = CryptoOps.withEd25519[F](ed25519).map(new Jlvm(_))
 }

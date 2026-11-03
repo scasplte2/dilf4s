@@ -6,7 +6,8 @@ import java.nio.file.{Files, Path, Paths}
 import cats.effect.{ExitCode, IO, IOApp, Resource}
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.Cbor
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.crypto.signing.Ed25519Backend
 
 import io.circe.syntax._
 import io.circe.{Decoder, Json}
@@ -129,6 +130,20 @@ object JlvmVectorsSuite extends IOSuite {
             a.and(expect(o.result == reference.result && o.gasUsed == reference.gasUsed, s"${i.name}: $d disagrees"))
           }
         }
+      }
+  }
+
+  test("the pure-Scala Ed25519 backend gives every ed25519_verify case the native one's outcome and gas") {
+    case (jlvm, in) =>
+      Jlvm.withEd25519[IO](Ed25519Backend.reference).map { pure =>
+        val cases = in.cases.filter(_.program.contains("ed25519_verify"))
+        val nonCanonical = cases.filter(_.name.contains("non-canonical"))
+        cases
+          .foldLeft(expect(nonCanonical.size >= 5, s"${nonCanonical.size} non-canonical cases")) { (acc, i) =>
+            val (n, p) = (JlvmVectors.run(jlvm, i), JlvmVectors.run(pure, i))
+            acc.and(expect(n.result == p.result && n.gasUsed == p.gasUsed, s"${i.name}: native $n, pure Scala $p"))
+          }
+          .and(nonCanonical.foldMap(i => expect(JlvmVectors.run(jlvm, i).result == Right(CanonicalValue.True), s"${i.name} verifies")))
       }
   }
 
