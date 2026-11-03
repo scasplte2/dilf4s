@@ -19,7 +19,7 @@ import weaver.{Expectations, IOSuite}
  * here measures time, so a loaded machine cannot fail it. A test either reads the bound off the gas (the charge a piece
  * of work pays grows with its size), or counts the comparisons the evaluator makes through counting [[Kernels]] and
  * bounds them by the input's size: a program-chosen name or value is only ever compared, never hashed, and in
- * O(n log n) comparisons. How fast a unit of work runs is calibration, measured by the `benchmarks` GasCalibration job.
+ * O(n log n) comparisons. How fast a unit of work runs is calibration, measured by the `benchmarks` GasRatios job.
  */
 object MeteringSuite extends IOSuite {
 
@@ -120,7 +120,7 @@ object MeteringSuite extends IOSuite {
     val half = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4095))).fold(e => sys.error(e.toString), identity)
     val cat = program("""{"cat": {"var": "xs"}}""")
     val join = program("""{"join": [{"var": "xs"}, ""]}""")
-    // the rendering charge grows with each number's decimal expansion ((4 + bits/64)^2 units), and is taken before it
+    // the rendering charge grows with each number's decimal expansion ((6 + bits/64)^2 units), and is taken before it
     def rendersPaid(p: Program, v: CanonicalValue): Expectations = {
       val numbers = Vector.fill(20)(v)
       val o = eval(jlvm, p, obj("xs" -> arr(numbers)))
@@ -412,7 +412,7 @@ object MeteringSuite extends IOSuite {
 
   // ---- keys and path segments compared on every lookup
 
-  test("get and set pay for a long key, which a hit compares: the Key unit, read off the gas") { jlvm =>
+  test("get and set pay for a long key at every level of their search, read off the gas") { jlvm =>
     val long = "k" * (1 << 20)
     val short = "k"
     val build =
@@ -421,15 +421,19 @@ object MeteringSuite extends IOSuite {
     def data(k: String, n: Int) =
       // the map's key and the looked-up key are equal but distinct strings, so a hit compares them
       obj("xs" -> arr(Vector.fill(n)(CInt(1))), "k" -> t(k), "m" -> obj(new String(k.toCharArray) -> CInt(1)))
-    // each of the 200 sets and gets pays the key's length (the Key unit: one per KeyBlock), which a hit compares
-    val blocks = 200L * (long.length / Values.KeyBlock)
+    // each search pays per SearchBlock of the key at each level: the first set's map is empty, the others hold the key
+    val blocks = (long.length / Values.SearchBlock).toLong
+    def perBlock(op: Op) = S.cost(op).search.fold(0L)(_.perBlock.value)
+    val sets = perBlock(Op.Set) * blocks * (GasSchedule.levels(0L) + 199L * GasSchedule.levels(1L))
+    val gets = perBlock(Op.Get) * blocks * 200L * GasSchedule.levels(1L)
     val (b, bs) = (eval(jlvm, build, data(long, 200)), eval(jlvm, build, data(short, 200)))
     val (l, ls) = (eval(jlvm, lookup, data(long, 200)), eval(jlvm, lookup, data(short, 200)))
     IO(
       expect(b.result.isRight, s"builds: ${b.result.leftMap(_.toString)}")
         .and(expect.same(Right(CInt(BigInt(200))), l.result))
-        .and(expect(b.gasUsed.value - bs.gasUsed.value >= blocks, s"set with a 1 MB key pays ${b.gasUsed.value - bs.gasUsed.value} more"))
-        .and(expect(l.gasUsed.value - ls.gasUsed.value >= blocks, s"get with a 1 MB key pays ${l.gasUsed.value - ls.gasUsed.value} more"))
+        .and(expect(sets > 0 && gets > 0, "both search a key per block"))
+        .and(expect.same(sets, b.gasUsed.value - bs.gasUsed.value))
+        .and(expect.same(gets, l.gasUsed.value - ls.gasUsed.value))
     )
   }
 
@@ -615,5 +619,52 @@ object MeteringSuite extends IOSuite {
     work((1 to d).foldLeft("1")((inner, _) => s"""{"!": $inner}""")).map { w =>
       expect(w.ok, "compiles").and(expect(w.steps <= Passes * (d + 1), s"$d levels took ${w.steps} steps"))
     }
+  }
+
+  // ---- map searches: comparisons per level of the depth bound, whatever order the map was built in
+
+  test("get, has, set and unset compare at most 2 keys per level they pay for (4 for set and unset), each read in full") { jlvm =>
+    val n = 1000
+    val prefix = "k" * 300
+    val keys = Vector.tabulate(n)(i => prefix + f"$i%04d")
+    val order = new xyz.kd5ujc.core.canonical.CountingKeys
+    def built(ks: Vector[String]): CanonicalValue =
+      ks.foldLeft[CanonicalValue](get(order.map(Vector.empty))) {
+        case (m: CMap, k) =>
+          t(k) match {
+            case key: CText => get(CanonicalValue.updated(m, key, CInt(BigInt(1))))
+            case _          => m
+          }
+        case (m, _) => m
+      }
+    // decoded maps are built from their entries; programs build them one key at a time, here in the worst orders
+    val maps = List(
+      "from entries" -> get(order.map(keys.map(_ -> CInt(BigInt(1))))),
+      "ascending"    -> built(keys),
+      "descending"   -> built(keys.reverse)
+    )
+    val levels = GasSchedule.levels(n.toLong)
+    val ops = List("get" -> 2L, "has" -> 2L, "set" -> 4L, "unset" -> 4L)
+    val searches = for {
+      (shape, mp) <- maps
+      (op, per)   <- ops
+      k           <- keys.take(64) ++ keys.takeRight(64) :+ (prefix + "zzzz")
+    } yield {
+      val p = program(if (op == "set") s"""{"set": [{"var": "m"}, {"var": "k"}, 2]}""" else s"""{"$op": [{"var": "m"}, {"var": "k"}]}""")
+      val (c0, u0) = (order.comparisons.get, order.units.get)
+      val o = eval(jlvm, p, obj("m" -> mp, "k" -> t(k)))
+      (shape, op, per, o.result.isRight, order.comparisons.get - c0, order.units.get - u0)
+    }
+    val worst = searches.groupBy(s => (s._1, s._2)).view.mapValues(_.map(_._5).max).toMap
+    IO(
+      searches
+        .foldLeft(expect(searches.forall(_._4), "every search succeeds")) {
+          case (acc, (shape, op, per, _, comparisons, units)) =>
+            acc
+              .and(expect(comparisons <= per * levels, s"$op on a map built $shape: $comparisons comparisons, $levels levels"))
+              .and(expect(units <= comparisons * (prefix.length + 5), s"$op on a map built $shape: $units units read"))
+        }
+        .and(expect(worst.values.max >= levels, s"the bound is reached: ${worst.toList.sortBy(_._1.toString).mkString(", ")}"))
+    )
   }
 }

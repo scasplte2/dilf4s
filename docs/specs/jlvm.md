@@ -494,13 +494,43 @@ A versioned trie (`versioned-trie.md`) is verified with these same trie ops. Its
 - optionally, a rate of their own for particular argument positions, and further rates charged on every argument;
 - the scalar charges `literal`, `element`, `varAccess`, `perPathSegment`, `callbackRun` and `rendering`.
 
-**Calibration.** Schedule v1 prices work at **150 gas per µs**, on the direct driver. Every operation and node charge
-was fitted to measured time at a small and a large size (`benchmarks`: `GasCalibration`). A per-unit rate of 1 is the
-floor for work that grows with its input. The cryptographic operations sit at the same rate; the BN254 ones land near
-Ethereum's EIP-1108 prices.
+**What gas pays for.** Gas meters the work a validating node does to execute a program, on every supported node backend:
+the JVM (the reference, the primary server backend) and Rust (`sdk/rust/jlvm`). Prover, SP1-guest and client costs play
+no part. Every charge is at least the work's cost on the **slowest** backend, so no backend is underpaid and no
+operation is cheaper than its work (a denial-of-service vector).
 
-**The default limit** is 2^24 = 16,777,216 gas, Ethereum's per-transaction cap (EIP-7825): about 110 ms of work. Hosts
-pass their own limit per evaluation.
+**The anchor.** `secp256k1_verify` of an 18-byte message is the unit everything is priced against: its own charge
+(`7200 + weight`, 7,318 gas) is what it costs on each backend. Every other charge is the work's time **as a ratio to
+the anchor's on the same backend**, times the anchor's charge, taken at the higher of the two backends' ratios. The JVM
+runs the anchor in libsecp256k1 (native, through ACINQ's JNI bindings) and Rust in k256 (pure Rust), so each backend's
+gas runs at its own rate (on the reference machine, about 240 gas per µs on the JVM and 120 on Rust), and an operation
+is priced by how much slower than secp256k1 it is where it is slowest.
+
+**Calibration** (`benchmarks`: `GasCases`, `GasRatios`, `ratios.py`; `sdk/rust/jlvm/examples/gas_ratios.rs`). Both
+harnesses time the same cases (each a program, a baseline that evaluates the same argument reads, and data, exported
+by `GasRatios export`), through the evaluator on the direct driver:
+- **Rounds.** A case is timed in rounds in one thread: `probe, s1, s2, reference, s2, s1, probe`, where `(s1, s2)` is
+  (anchor, case) or (case, anchor), chosen at random. A round is a palindrome a few milliseconds long, so drift that
+  is linear across it cancels in each ratio. The anchor, the case and the reference (`sha256` of 1024 bytes) are each
+  timed net of their baselines.
+- **Probes.** The probe is a fixed compute-bound kernel (a chain of 2^17 xorshift steps). A round whose two probes
+  differ by more than 10% (a migration or a clock change inside it) is rejected; so is one whose probe is more than 3
+  MADs from its cluster's median.
+- **Clusters.** Rounds are split by probe time into two clusters when their centres differ by more than 10%
+  (performance and efficiency cores), and a case's ratio is the higher of its clusters'.
+- **Statistics.** A case's ratio in a process is the median over its rounds, with a bootstrap 95% interval, cross-
+  checked against `case/reference × reference/anchor`. Each backend runs at least three processes, pinned to one CPU
+  with a fixed heap; the ratio is the highest of them, and processes more than 5% apart are reported (a process's
+  heap and code layout moves allocation-heavy operations by up to tens of percent). A process's result that does not
+  reproduce when the case is re-run alone, in three more processes, is set aside as an outlier. A case is converged
+  when its interval is within ±5% and the cross-check agrees within 5%.
+- **Pricing.** A base and per-unit rates are fitted to cases at small and large sizes and at adversarial shapes (keys
+  sharing long prefixes, deep maps, worst-case substring searches, long trie keys, ground VRF counters), so that each
+  charge is at least the measured cost. Where the data lie far below a charge, the charge is lowered to within about
+  2× of it. A per-unit rate of 1 is the floor for work that grows with its input.
+
+**The default limit** is 2^24 = 16,777,216 gas, Ethereum's per-transaction cap (EIP-7825): about 70 ms of work on the
+JVM and 140 ms on Rust on the reference machine. Hosts pass their own limit per evaluation.
 
 **Size units.** An operation's size charge is summed over its evaluated arguments, each at its position's rate (by
 default the operation's). For example, `sigma_verify` and `schnorr_verify` charge the message at the hashing rate,
@@ -508,27 +538,44 @@ default the operation's). For example, `sigma_verify` and `schnorr_verify` charg
 element and the message at the hashing rate, since hashing it to G2 is linear in its length. Each argument is measured in its rate's unit:
 - `Elements`: the top-level entries of arrays and objects, and 1 for anything else;
 - `Weight`: the weight (§2);
-- `Limbs2`: for a number, the square of its 64-bit limbs, numerator and denominator together (`⌊bits/64⌋` each); 0
-  for anything else;
+- `Limbs2`: for a number, the square of its 64-bit limbs, numerator and denominator together (`⌊bits/64⌋` each), plus 8
+  (`GcdLimbs`, the fixed cost of a gcd) for a non-integer rational: `(8 + L)^2`; 0 for anything else;
 - `RationalLimbs2`: `Limbs2` for a non-integer rational, 0 for an integer;
-- `Key`: for text, `⌊length/32⌋` in UTF-16 units; 0 for anything else. `get`, `has`, `set` and `unset` charge their key
-  at 1 per unit: a hit compares the whole key, so a long key costs more, and keys under 32 units nothing extra;
+- `RationalWeight`: the weight of a non-integer rational, 0 for anything else (comparing two rationals multiplies
+  across);
 - `None`: zero.
 
+**Map searches.** `get`, `has`, `set` and `unset` search their map (argument 0) for their key (argument 1). Besides
+the base, each pays `levels × (perLevel + perBlock × ⌊length/128⌋)`, where `length` is the key's in UTF-16 units and
+`levels = ⌈log2(n + 1)⌉ + 1` for a map of `n` entries: the height of a perfectly balanced tree of `n`, and one more for
+the key itself. A search compares the key with one entry's per level, and each comparison reads the keys' common
+prefix, so a key sharing a long prefix with the map's costs per level. The rates absorb the trees' real heights (the
+JVM's red-black tree is at most twice as tall as balanced, Rust's AVL tree at most 1.45 times) and the JVM's `set` and
+`unset`, which search twice. The charge is 0 when argument 0 is not a map or argument 1 not text (the operation then
+fails with `Type`).
+
+**Merging maps.** When every argument of `merge` is a map, each entry of the maps after the first is set into the
+result, which holds at most all their entries. Besides the size charge, `merge` then pays
+`levels × (perLevel × entries + perBlock × ⌊weight/128⌋)`, where `entries` and `weight` are those of the maps after the
+first, and `levels = ⌈log2(N + 1)⌉ + 1` for the `N` entries of all of them.
+
 The gcd that normalises a result is quadratic in its operands' size. `/` and `%` therefore also charge `Limbs2`, and
-`+`, `-` and `*` also charge `RationalLimbs2`: integer sums and products are linear. `pow` is priced at its
-worst case, a 4096-bit rational result.
+`+`, `-` and `*` also charge `RationalLimbs2`: integer sums and products are linear. `%` of rationals divides,
+multiplies and subtracts, so it charges `RationalLimbs2` as well; so does `abs` (the Rust node re-checks that its result
+is in lowest terms). `<`, `<=`, `>` and `>=` charge `RationalWeight`: two rationals are compared by multiplying across.
+`pow` is priced at its worst case, a 4096-bit rational result.
 
 **Work an argument's size does not bound** has charges of its own, each taken before the work:
 - **Accumulators.** `+` and `*` fold left, and each step is the binary operation on the accumulator and the next
   operand. The operands are paid by the size charge; each step after the first also pays the size charge of its
   accumulator, as if it were an argument. Every intermediate is checked against the number bound (§2), so `*` of 10,000
   twos is `Limit` at the 4097th bit, not a 10,000-bit product.
-- **Rendering numbers** (`cat`, `join`): `rendering` per unit of `(4 + ⌊b/64⌋)^2` for each number rendered, where `b`
+- **Rendering numbers** (`cat`, `join`): `rendering` per unit of `(6 + ⌊b/64⌋)^2` for each number rendered, where `b`
   bounds the bits of its decimal expansion: the numerator's bits for an integer, and `bits(p) + ⌊(7 bits(q) + 2)/3⌋`
   for a rational `p/q` (the expansion of `p/(2^a 5^c)` is `p 2^(s-a) 5^(s-c)`, `s = max(a, c)`). The conversion is
   quadratic in the expansion, which can be far longer than the number's weight: `1/2^4095` weighs 66 and renders as
-  4,097 characters. Measured at about 1.5–2 gas a unit; the 4 limbs are the fixed cost of a conversion.
+  4,097 characters. Measured at about 1 gas a unit for the widest numbers; the 6 limbs are the fixed cost of a conversion (about 100 gas
+  for a small integer).
 - **Pieces.** `cat` and `join` also charge 32 per element of each argument: a piece costs about 30 gas besides its bytes.
 - **Separators.** `join` renders its pieces, checks the result's weight (saturating) against the bound, which is
   `Limit` before anything is built, and then charges `perUnit(join)` per byte of separator the result will copy.
@@ -560,6 +607,114 @@ GasCalibration measures these with the argument `metering`.
 | Callback | `base(op)`, then the collection, then `perUnit(op) × elements`, then for each body run: `callbackRun` plus the body. For `some` with a quorum, `min` is evaluated after the collection. For `reduce`, `initial` is evaluated after the collection. |
 
 A program that does not compile uses no gas.
+
+**`ecvrf_verify`** runs RFC 9381's try-and-increment hash-to-curve before it checks the proof, and an attacker can
+choose `alpha`: one whose first `k` counters fail takes about `2^k` attempts to find, and then serves forever. Its base
+is priced for 64 counters, a number no search for `alpha` reaches; honest inputs need about two.
+
+**The table.** Every operation's charges in schedule v1 (the charge points above say when each is taken):
+
+<!-- gas-table: generated from GasSchedule.V1 by GasTableGen; do not edit -->
+
+Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathSegment` 3, `callbackRun` 18, `rendering` 2.
+
+| Operation | Base | Per unit | Other rates |
+|---|---|---|---|
+| `if` | 20 |  |  |
+| `and` | 15 |  |  |
+| `or` | 15 |  |  |
+| `!` | 20 |  |  |
+| `!!` | 20 |  |  |
+| `default` | 15 |  |  |
+| `let` | 30 |  |  |
+| `==` | 50 | 1 per `Weight` |  |
+| `!=` | 50 | 1 per `Weight` |  |
+| `===` | 50 | 1 per `Weight` |  |
+| `!==` | 50 | 1 per `Weight` |  |
+| `<` | 55 | 1 per `Weight` | plus 10 per `RationalWeight` |
+| `<=` | 55 | 1 per `Weight` | plus 10 per `RationalWeight` |
+| `>` | 55 | 1 per `Weight` | plus 10 per `RationalWeight` |
+| `>=` | 55 | 1 per `Weight` | plus 10 per `RationalWeight` |
+| `+` | 140 | 3 per `Weight` | plus 7 per `RationalLimbs2` |
+| `-` | 140 | 3 per `Weight` | plus 7 per `RationalLimbs2` |
+| `*` | 100 | 10 per `Weight` | plus 7 per `RationalLimbs2` |
+| `/` | 340 | 2 per `Weight` | plus 8 per `Limbs2` |
+| `%` | 340 | 2 per `Weight` | plus 8 per `Limbs2`; plus 8 per `RationalLimbs2` |
+| `min` | 90 | 1 per `Weight` |  |
+| `max` | 90 | 1 per `Weight` |  |
+| `abs` | 60 |  | plus 2 per `RationalLimbs2` |
+| `round` | 60 | 8 per `Weight` |  |
+| `round_half_up` | 60 | 8 per `Weight` |  |
+| `floor` | 60 | 8 per `Weight` |  |
+| `ceil` | 60 | 8 per `Weight` |  |
+| `pow` | 20000 |  |  |
+| `map` | 40 | 8 per `Elements` |  |
+| `filter` | 40 | 8 per `Elements` |  |
+| `reduce` | 40 | 8 per `Elements` |  |
+| `all` | 40 | 8 per `Elements` |  |
+| `some` | 40 | 8 per `Elements` |  |
+| `none` | 40 | 8 per `Elements` |  |
+| `find` | 40 | 8 per `Elements` |  |
+| `count` | 45 | 8 per `Elements` |  |
+| `merge` | 210 | 3 per `Weight` | merging: 12 per level and entry, 2 per level and weight block |
+| `in` | 70 | 1 per `Weight` | plus 1 per `Elements` |
+| `intersect` | 50 | 17 per `Weight` |  |
+| `unique` | 50 | 18 per `Weight` |  |
+| `slice` | 60 | 3 per `Elements` |  |
+| `reverse` | 55 | 5 per `Elements` |  |
+| `flatten` | 60 | 3 per `Weight` |  |
+| `length` | 45 | 1 per `Weight` |  |
+| `cat` | 65 | 1 per `Weight` | plus 4 per `Elements` |
+| `substr` | 75 | 1 per `Weight` |  |
+| `lower` | 45 | 1 per `Weight` |  |
+| `upper` | 50 | 1 per `Weight` |  |
+| `join` | 110 | 1 per `Weight` | plus 14 per `Elements` |
+| `split` | 85 | 6 per `Weight` |  |
+| `trim` | 75 | 1 per `Weight` |  |
+| `startsWith` | 50 | 1 per `Weight` |  |
+| `endsWith` | 50 | 1 per `Weight` |  |
+| `keys` | 90 | 4 per `Weight` |  |
+| `values` | 50 | 5 per `Weight` |  |
+| `entries` | 120 | 10 per `Weight` |  |
+| `get` | 30 |  | search: 3 per level, 1 per level and key block |
+| `has` | 40 |  | search: 3 per level, 1 per level and key block |
+| `set` | 60 |  | search: 18 per level, 2 per level and key block |
+| `unset` | 60 |  | search: 18 per level, 2 per level and key block |
+| `exists` | 60 | 1 per `Elements` |  |
+| `missing` | 50 | 20 per `Elements` |  |
+| `missing_some` | 60 | 20 per `Elements` |  |
+| `typeof` | 30 |  |  |
+| `hex` | 45 | 1 per `Weight` |  |
+| `unhex` | 80 | 2 per `Weight` |  |
+| `hex_to_int` | 80 | 6 per `Weight` |  |
+| `bytes_to_int` | 45 | 1 per `Weight` |  |
+| `int_to_bytes` | 70 | 2 per `Weight` |  |
+| `sha256` | 95 | 1 per `Weight` |  |
+| `sha3_256` | 130 | 1 per `Weight` |  |
+| `keccak256` | 150 | 1 per `Weight` |  |
+| `blake2b256` | 115 | 1 per `Weight` |  |
+| `ed25519_verify` | 20000 | 1 per `Weight` |  |
+| `secp256k1_verify` | 7200 | 1 per `Weight` |  |
+| `bip340_verify` | 9000 | 1 per `Weight` |  |
+| `ecrecover` | 32500 |  |  |
+| `bls_verify` | 290000 | 1 per `Weight` |  |
+| `bls_aggregate_verify` | 250000 | 33000 per `Elements` | argument 1: 1 per `Weight` |
+| `poseidon` | 1800 | 3900 per `Elements` |  |
+| `pmt_verify` | 1000 | 11000 per `Elements` |  |
+| `groth16_verify` | 370000 | 1 per `Weight` |  |
+| `ecvrf_verify` | 130000 | 1 per `Weight` |  |
+| `bn254_add` | 520 |  |  |
+| `bn254_mul` | 12500 |  |  |
+| `bn254_pairing` | 130000 | 440 per `Weight` |  |
+| `schnorr_verify` | 5000 | 450 per `Weight` | argument 1: 1 per `Weight` |
+| `sigma_verify` | 5000 | 450 per `Weight` | argument 2: 1 per `Weight` |
+| `merkle_verify` | 500 | 13 per `Weight` |  |
+| `merkle_consistency_verify` | 4000 | 13 per `Weight` |  |
+| `trie_verify` | 500 | 30 per `Weight` |  |
+| `trie_prefix_verify` | 1000 | 30 per `Weight` |  |
+| `trie_range_verify` | 1000 | 30 per `Weight` |  |
+
+<!-- gas-table: end -->
 
 **Drivers.** Three drivers run the same small-step rules:
 - **direct (production):** the explicit continuation stack as one pure tail-recursive function of (step, stack,

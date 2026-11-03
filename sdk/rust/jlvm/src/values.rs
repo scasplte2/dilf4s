@@ -22,6 +22,9 @@ pub const MAX_WEIGHT: u64 = dilf4s_core::generated::limits::JLVM_MAX_VALUE_WEIGH
 /// Keys and path segments count once more per block of this many UTF-16 units.
 pub const KEY_BLOCK: u64 = 32;
 
+/// A map search (`gas::Search`) pays once more per this many UTF-16 units of its key, at each level.
+pub const SEARCH_BLOCK: u64 = 128;
+
 static NULL: Value = Value::Null;
 
 /// Java's `BigInteger.bitLength`: the bits of the minimal two's-complement form, without the sign bit. For a negative
@@ -261,14 +264,6 @@ pub(crate) fn path_segments(v: &Value) -> u64 {
     match v {
         Value::Text(t) => text_segment_count(t),
         _ => 1,
-    }
-}
-
-/// The blocks of text used as a key; 0 for anything else.
-pub(crate) fn key_blocks(v: &Value) -> u64 {
-    match v {
-        Value::Text(s) => s.utf16_len() / KEY_BLOCK,
-        _ => 0,
     }
 }
 

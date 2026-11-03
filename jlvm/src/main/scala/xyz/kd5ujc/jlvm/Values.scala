@@ -251,11 +251,11 @@ object Values {
   /** A path segment's count: 1, plus one per [[KeyBlock]] of its length. */
   def segmentCount(s: String): Long = 1L + s.length / KeyBlock
 
-  /** The blocks of text used as a key ([[GasSchedule]]'s `Key` unit); 0 for anything else. */
-  def keyBlocks(v: CanonicalValue): Long = v match {
-    case CText(s) => (s.length / KeyBlock).toLong
-    case _        => 0L
-  }
+  /**
+   * A map search ([[Search]]) pays once more per this many UTF-16 units of its key, at each level: a comparison reads
+   * the keys' common prefix.
+   */
+  val SearchBlock: Int = 128
 
   /** Top-level size, for operations that only touch the outermost collection. */
   def elements(v: CanonicalValue): Long = v match {
