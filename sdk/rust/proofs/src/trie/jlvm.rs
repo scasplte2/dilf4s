@@ -4,9 +4,9 @@
 //! length, an undecodable proof, a key invalid for the mode, a structurally invalid proof) is an error, and so is a
 //! proof that does not reach the query (`TrieError::NotCovered`): it establishes neither answer.
 //!
-//! Each costs O(the weight of its arguments): claimed values are committed and proofs decoded in full. The JLVM prices
-//! them by weight before calling (jlvm.md section 7); any other caller holding a value built with shared parts should
-//! bound its [`Value::weight`] first.
+//! Claimed values together, and the proof, are each bounded by [`crate::MAX_PROOF_WEIGHT`] before anything is hashed
+//! or decoded (claims first, as `TooLarge`; the proof as `Encoding`), so the work is bounded whatever the arguments
+//! share (docs/specs/conformance.md section 5).
 
 use dilf4s_core::hash::{Digest, Hasher};
 use dilf4s_core::value::Value;
@@ -17,22 +17,26 @@ fn root<H: Hasher>(bytes: &[u8]) -> Result<Digest<H>, TrieError> {
     Digest::<H>::from_slice(bytes).map_err(encoding)
 }
 
-/// Claimed entries as a listing: each key valid for the mode, each value non-null and committed by `commit(v)`.
+/// The claims' weight, checked before any is hashed.
+fn within(values: impl IntoIterator<Item = u64>) -> Result<(), TrieError> {
+    if crate::claims_within(values) { Ok(()) } else { Err(TrieError::TooLarge { limit: crate::MAX_PROOF_WEIGHT }) }
+}
+
+/// Claimed entries as a listing: each key valid for the mode, each value non-null; then the values together within
+/// [`crate::MAX_PROOF_WEIGHT`]; then each committed by `commit(v)`.
 fn claimed<H: Hasher>(
     hashing: &TrieHashing<H>,
     mode: KeyMode,
     entries: &[(&[u8], &Value)],
 ) -> Result<Listing<H>, TrieError> {
-    entries
-        .iter()
-        .map(|(k, v)| {
-            mode.check_key(k)?;
-            if **v == Value::Null {
-                return Err(encoding("an entry is [key, value], with a value"));
-            }
-            Ok((k.to_vec(), hashing.value_of(v)))
-        })
-        .collect()
+    for (k, v) in entries {
+        mode.check_key(k)?;
+        if **v == Value::Null {
+            return Err(encoding("an entry is [key, value], with a value"));
+        }
+    }
+    within(entries.iter().map(|(_, v)| v.weight()))?;
+    Ok(entries.iter().map(|(k, v)| (k.to_vec(), hashing.value_of(v))).collect())
 }
 
 fn listing(matched: Option<bool>) -> Result<bool, TrieError> {
@@ -51,6 +55,7 @@ pub fn trie_verify<H: Hasher>(
 ) -> Result<bool, TrieError> {
     let path = mode.path(key)?;
     let r = root::<H>(root_bytes)?;
+    within((*value != Value::Null).then(|| value.weight()))?;
     let p = TrieProof::<H>::from_value(proof)?;
     let Some(v) = p.verify(hashing, mode, &r)? else { return Ok(false) };
     match v.lookup_bits(&path) {

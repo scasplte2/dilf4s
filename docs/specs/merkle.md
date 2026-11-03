@@ -46,7 +46,8 @@ An `rfc6962` profile exists only for interoperability tests: `leafHash(d) = H(0x
 digest of the hash's length, is `Encoding`. An inclusion proof with `index ≥ size` is `IndexOutOfRange`. A consistency
 proof with `old > new` is `InvalidSizes`: it names two sizes, not an index, and the verifier reports sizes out of order
 the same way. A proof heavier than `MaxProofWeight` (2^24) is `Encoding`, refused before it is decoded
-(`conformance.md` §5). The `malformed` vectors record each kind.
+(`conformance.md` §5). A claimed leaf heavier than `MaxProofWeight` is `TooLarge`, refused before it is hashed and
+before the proof is decoded. The `malformed` vectors record each kind.
 
 ## 4. Proof encoding
 

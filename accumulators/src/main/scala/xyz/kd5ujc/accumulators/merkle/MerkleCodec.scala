@@ -2,7 +2,7 @@ package xyz.kd5ujc.accumulators.merkle
 
 import cats.syntax.all._
 
-import xyz.kd5ujc.accumulators.ProofInput
+import xyz.kd5ujc.accumulators.{ProofInput, ValueCommitment}
 import xyz.kd5ujc.core.canonical.{Canonical, CanonicalError, CanonicalValue}
 import xyz.kd5ujc.core.hash.{Digest, Hasher}
 import xyz.kd5ujc.models.merkle.{MerkleConsistency, MerkleInclusion}
@@ -41,6 +41,28 @@ object MerkleCodec {
       path  <- digests[H](w.path)
       proof <- ConsistencyProof.from(w.old, w.`new`, path)
     } yield proof
+
+  /**
+   * `merkle_verify [head, leaf, proof]` under `M` (docs/specs/jlvm.md §6): whether `leaf`, committed by `commit(v)`, is
+   * at the proof's index of the tree `(root, size)`. The leaf is a claim: heavier than `ProofInput.MaxProofWeight` it is
+   * `TooLarge`, before the proof is decoded. A proof of another size or root is `false`; a malformed one an error.
+   */
+  def verifyLeaf[H](root: Digest[H], size: Long, leaf: CanonicalValue, proof: CanonicalValue)(
+    implicit H: Hasher[H],
+    M:          MerkleHashing[H]
+  ): Either[MerkleError, Boolean] =
+    for {
+      _ <- ProofInput.claimed(List(leaf))(MerkleError.TooLarge(_))
+      p <- decodeInclusion[H](proof)
+      verdict <-
+        if (p.size != size) false.asRight
+        else
+          MerkleVerifier.inclusion(root, M.leaf(ValueCommitment.bytes(leaf)), p) match {
+            case Right(())                                                          => true.asRight
+            case Left(MerkleError.InvalidProof(_) | MerkleError.RootMismatch(_, _)) => false.asRight
+            case Left(other)                                                        => other.asLeft
+          }
+    } yield verdict
 
   implicit def inclusionCanonical[H]: Canonical[InclusionProof[H]] =
     Canonical.instance(p => encodeInclusion(p).leftMap(e => CanonicalError.TypeMismatch(e.toString)))

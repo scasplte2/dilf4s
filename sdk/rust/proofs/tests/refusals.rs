@@ -19,9 +19,9 @@ use dilf4s_core::generated::refusal_vectors::{
 };
 use dilf4s_core::hash::{Digest, Sha256};
 use dilf4s_core::value::Value;
-use dilf4s_proofs::merkle::{self, ConsistencyProof, InclusionProof, MerkleError, Tagged};
+use dilf4s_proofs::merkle::{self, ConsistencyProof, InclusionProof, MerkleError, Tagged, TreeHead};
 use dilf4s_proofs::poseidon::merkle::{PoseidonMerkleError, PoseidonMerkleProof};
-use dilf4s_proofs::trie::{KeyMode, Lookup, TrieError, TrieHashing, TrieProof};
+use dilf4s_proofs::trie::{self, KeyMode, Lookup, TrieError, TrieHashing, TrieProof};
 use dilf4s_proofs::versioned::{Replica, StateKey, U64Key, VersionedTrie, VersionedTrieError, check_value};
 
 type H = Sha256;
@@ -57,11 +57,25 @@ fn versioned(e: &VersionedTrieError) -> Refused {
 }
 
 fn merkle_kind(e: &MerkleError) -> Refused {
-    kind(e.kind())
+    match e {
+        MerkleError::TooLarge { limit } => Refused { limit: Some(*limit), ..kind("TooLarge") },
+        other => kind(other.kind()),
+    }
 }
 
 fn trie_kind(e: &TrieError) -> Refused {
-    kind(e.kind())
+    match e {
+        TrieError::TooLarge { limit } => Refused { limit: Some(*limit), ..kind("TooLarge") },
+        other => kind(other.kind()),
+    }
+}
+
+fn mode_of(m: Option<&RefusalMode>) -> KeyMode {
+    match m.expect("a mode") {
+        RefusalMode::RefusalFixedMode(m) => KeyMode::fixed(m.fixed),
+        RefusalMode::RefusalVariableMode(m) => KeyMode::variable(m.variable),
+    }
+    .unwrap()
 }
 
 fn poseidon_kind(e: &PoseidonMerkleError) -> Refused {
@@ -142,11 +156,7 @@ fn run(vt: &Vt, c: &RefusalCase) -> Option<Refused> {
                 .map(|e| merkle_kind(&e))
         }
         RefusalCheck::TrieLookup => {
-            let mode = match c.mode.as_ref().expect("a mode") {
-                RefusalMode::RefusalFixedMode(m) => KeyMode::fixed(m.fixed),
-                RefusalMode::RefusalVariableMode(m) => KeyMode::variable(m.variable),
-            }
-            .unwrap();
+            let mode = mode_of(c.mode.as_ref());
             let key = bytes(c.key.as_ref().expect("a key"));
             let hashing = TrieHashing::<H>::new();
             let answer = TrieProof::<H>::from_value(&input()).and_then(|p| {
@@ -160,6 +170,36 @@ fn run(vt: &Vt, c: &RefusalCase) -> Option<Refused> {
             answer.err().map(|e| trie_kind(&e))
         }
         RefusalCheck::PoseidonProof => PoseidonMerkleProof::from_value(&input()).err().map(|e| poseidon_kind(&e)),
+        RefusalCheck::MerkleVerify => {
+            let head = TreeHead::<H> { root: root(), size: c.size.expect("a size") };
+            let leaf = built(c.claim.as_ref().expect("a leaf"));
+            merkle::merkle_verify(&Tagged::<H>::new(), &head, &leaf, &input()).err().map(|e| merkle_kind(&e))
+        }
+        RefusalCheck::TrieVerify => {
+            let claim = c.claim.as_ref().map_or(Value::Null, built);
+            let key = bytes(c.key.as_ref().expect("a key"));
+            let root = bytes(c.root.as_ref().expect("a root"));
+            trie::trie_verify(&TrieHashing::<H>::new(), mode_of(c.mode.as_ref()), &root, &key, &claim, &input())
+                .err()
+                .map(|e| trie_kind(&e))
+        }
+        RefusalCheck::TriePrefixVerify => {
+            let entries: Vec<(Vec<u8>, Value)> =
+                c.entries.iter().flatten().map(|e| (bytes(&e.key), built(&e.value))).collect();
+            let claimed: Vec<(&[u8], &Value)> = entries.iter().map(|(k, v)| (k.as_slice(), v)).collect();
+            let prefix = bytes(c.prefix.as_ref().expect("a prefix"));
+            let root = bytes(c.root.as_ref().expect("a root"));
+            trie::trie_prefix_verify(
+                &TrieHashing::<H>::new(),
+                mode_of(c.mode.as_ref()),
+                &root,
+                &prefix,
+                &claimed,
+                &input(),
+            )
+            .err()
+            .map(|e| trie_kind(&e))
+        }
     }
 }
 

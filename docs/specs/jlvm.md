@@ -468,6 +468,9 @@ A versioned trie (`versioned-trie.md`) is verified with these same trie ops. Its
   prefix or range, is a `Crypto` error, never `false`: it establishes neither presence nor absence.
 - **Gas** is priced by weight. As measured: about 13 per unit of weight for Merkle proofs, and 30 for trie proofs,
   whose records are larger and hashed through CBOR.
+- **Claims heavier than `MaxProofWeight`** together (a leaf, a value, a listing's values; `conformance.md` §5) are a
+  `Crypto` error, refused from their weights before any is hashed and before the proof is decoded (after the key and
+  the entries' shapes are checked).
 - **A proof heavier than `MaxProofWeight`** (2^24, `conformance.md` §5) is a `Crypto` error, refused from its weight
   before it is decoded, as every malformed proof is. The size charge comes first, so at the default limit such a proof
   is `OutOfGas` (its weight alone costs over 2^24); a host limit that pays for it reaches the refusal. No result is

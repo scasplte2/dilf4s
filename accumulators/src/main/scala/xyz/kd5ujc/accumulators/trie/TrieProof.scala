@@ -5,13 +5,13 @@ import cats.{Eval, Monad}
 
 import scala.annotation.tailrec
 
-import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.accumulators.trie.Node.{Branch, Leaf}
+import xyz.kd5ujc.accumulators.{ProofInput, ValueCommitment}
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.hash.{Digest, Hasher}
 import xyz.kd5ujc.models.{trie => W}
 
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
 /** A node of a partial trie (docs/specs/trie.md §4). */
 sealed trait ProofNode[H] extends Product with Serializable
@@ -262,6 +262,58 @@ object TrieProofs {
             }
         }
     }
+
+  // ---- the JLVM's trie operations over caller values (docs/specs/jlvm.md §6), as the SDKs' trie_verify and
+  // trie_prefix_verify: claims are capped by weight before any is hashed and before the proof is decoded
+
+  private def claimHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Digest[H] = T.value(ValueCommitment.bytes(v))
+
+  /** A verified proof, or `None` for one of another trie (`false`). */
+  private def verifiedOrNone[H](mode: KeyMode, root: Digest[H], proof: CanonicalValue)(
+    implicit H: Hasher[H],
+    T:          TrieHashing[H]
+  ): Either[TrieError, Option[VerifiedProof[H]]] =
+    decode[H](proof).flatMap(verify(mode, root, _) match {
+      case Right(v)                           => Option(v).asRight
+      case Left(TrieError.RootMismatch(_, _)) => None.asRight
+      case Left(other)                        => other.asLeft
+    })
+
+  /** `trie_verify`: whether `key` holds `claim` (`None` or null: is absent). */
+  def verifyClaim[H](mode: KeyMode, root: Digest[H], key: ByteVector, claim: Option[CanonicalValue], proof: CanonicalValue)(
+    implicit H: Hasher[H],
+    T:          TrieHashing[H]
+  ): Either[TrieError, Boolean] =
+    for {
+      path <- mode.path(key)
+      present = claim.filterNot(_ == CanonicalValue.CNull)
+      _        <- ProofInput.claimed(present.toList)(TrieError.TooLarge(_))
+      verified <- verifiedOrNone(mode, root, proof)
+      held     <- verified.fold(false.asRight[TrieError])(_.holds(path, present.map(claimHash[H])))
+    } yield held
+
+  /** `trie_prefix_verify`: whether `entries`, in key order, are exactly the trie's entries under `prefix`. */
+  def verifyPrefixClaims[H](
+    mode:    KeyMode,
+    root:    Digest[H],
+    prefix:  ByteVector,
+    entries: List[(ByteVector, CanonicalValue)],
+    proof:   CanonicalValue
+  )(
+    implicit H: Hasher[H],
+    T:          TrieHashing[H]
+  ): Either[TrieError, Boolean] =
+    for {
+      paths <- entries.traverse {
+        case (k, v) =>
+          if (v == CanonicalValue.CNull) TrieError.Encoding("an entry is [key, value], with a value").asLeft
+          else mode.path(k).map(_ -> v)
+      }
+      _ <- ProofInput.claimed(entries.map(_._2))(TrieError.TooLarge(_))
+      claimed = paths.map { case (p, v) => p -> claimHash[H](v) }
+      verified <- verifiedOrNone(mode, root, proof)
+      listed   <- verified.fold(false.asRight[TrieError])(_.listsPrefix(prefix.bits, claimed))
+    } yield listed
 
   /** Recomputes the root, enforcing the branch invariant, the mode, and the key-length bound. */
   def verify[H](mode: KeyMode, root: Digest[H], proof: TrieProof[H])(implicit T: TrieHashing[H]): Either[TrieError, VerifiedProof[H]] =

@@ -59,8 +59,15 @@ object RefusalVectors {
     case other                                       => Refused(other.productPrefix)
   }
 
-  def merkle(e: MerkleError): Refused = Refused(e.productPrefix)
-  def trie(e:   TrieError): Refused = Refused(e.productPrefix)
+  def merkle(e: MerkleError): Refused = e match {
+    case MerkleError.TooLarge(limit) => Refused("TooLarge", limit = Some(limit))
+    case other                       => Refused(other.productPrefix)
+  }
+
+  def trie(e: TrieError): Refused = e match {
+    case TrieError.TooLarge(limit) => Refused("TooLarge", limit = Some(limit))
+    case other                     => Refused(other.productPrefix)
+  }
   def poseidon(e: PoseidonMerkleError): Refused = e match {
     case PoseidonMerkleError.Position(_, depth) => Refused("Position", depth = Some(depth))
     case other                                  => Refused(other.productPrefix)
@@ -138,7 +145,27 @@ object RefusalVectors {
           } yield held)(trie)
         }
       case "poseidon-proof" => input.map(v => outcome(PoseidonMerkleProof.fromCanonical(v))(poseidon))
-      case other            => s"unknown check $other".asLeft
+      case "merkle-verify" =>
+        (digest(c, "root"), field[Long](c, "size"), built(c.downField("claim")), input).mapN { (r, n, leaf, v) =>
+          outcome(MerkleCodec.verifyLeaf[H](r, n, leaf, v)(using summon[xyz.kd5ujc.core.hash.Hasher[H]], M))(merkle)
+        }
+      case "trie-verify" =>
+        val claim = c.downField("claim").success.traverse(built(_))
+        (mode(c), digest(c, "root"), bytes(c, "key"), claim, input).mapN { (m, r, k, cl, v) =>
+          outcome(TrieProofs.verifyClaim[H](m, r, k, cl, v)(using summon[xyz.kd5ujc.core.hash.Hasher[H]], T))(trie)
+        }
+      case "trie-prefix-verify" =>
+        val entries = c
+          .downField("entries")
+          .as[List[Json]]
+          .leftMap(_.toString)
+          .flatMap(_.traverse { e =>
+            (bytes(e.hcursor, "key"), built(e.hcursor.downField("value"))).tupled
+          })
+        (mode(c), digest(c, "root"), bytes(c, "prefix"), entries, input).mapN { (m, r, p, es, v) =>
+          outcome(TrieProofs.verifyPrefixClaims[H](m, r, p, es, v)(using summon[xyz.kd5ujc.core.hash.Hasher[H]], T))(trie)
+        }
+      case other => s"unknown check $other".asLeft
     }
   }
 
@@ -365,8 +392,60 @@ object RefusalVectors {
     )
   }
 
+  /**
+   * Claims against `ProofInput.MaxProofWeight`, together, refused before they are hashed: a Merkle leaf, a trie value,
+   * and a listing whose values are each under the cap but together over it.
+   */
+  private def claimCases: List[Case] = {
+    implicit val M: MerkleHashing[H] = MerkleHashing.tagged[H]
+    val T: TrieHashing[H] = TrieHashing[H]
+    val cap = ProofInput.MaxProofWeight
+    val one = MerkleTree.fromLeafHashes[H](List(M.leaf(ValueCommitment.bytes(int(1)))))
+    val inclusion = get(MerkleCodec.encodeInclusion(get(one.inclusionProof(0L))))
+    def leaf(name: String, b: Built) =
+      Case(
+        s"merkle verify: $name",
+        "merkle-verify",
+        List("root" -> hex(one.root.bytes), "size" -> 1.asJson, "claim" -> BuiltValues.json(b), input(literal(inclusion)))
+      )
+    val m = get(KeyMode.fixed(1))
+    val t = get(Trie.fromEntries[H](m, List(0x01, 0x02).map(b => ByteVector(b) -> T.value(ValueCommitment.bytes(int(b))))))
+    val proof = get(TrieProofs.encode(get(t.prove(Nil, List(ByteVector.empty)))))
+    def claim(name: String, b: Option[Built]) =
+      Case(
+        s"trie verify: $name",
+        "trie-verify",
+        List("mode" -> Json.obj("fixed" -> 1.asJson), "root" -> hex(t.root.bytes), "key" -> hex(ByteVector(0x01)), input(literal(proof))) ++
+        b.map(x => "claim" -> BuiltValues.json(x))
+      )
+    def listing(name: String, w1: Long, w2: Long) =
+      Case(
+        s"trie prefix verify: $name",
+        "trie-prefix-verify",
+        List(
+          "mode"   -> Json.obj("fixed" -> 1.asJson),
+          "root"   -> hex(t.root.bytes),
+          "prefix" -> hex(ByteVector.empty),
+          "entries" -> List(0x01 -> w1, 0x02 -> w2).map {
+            case (k, w) => Json.obj("key" -> hex(ByteVector(k)), "value" -> BuiltValues.json(BuiltValues.ofWeight(w)))
+          }.asJson,
+          input(literal(proof))
+        )
+      )
+    List(
+      leaf("a leaf of weight exactly 2^24", BuiltValues.ofWeight(cap)),
+      leaf("a leaf of weight 2^24 + 1, refused before it is hashed", BuiltValues.ofWeight(cap + 1)),
+      leaf("a leaf of saturated weight", BuiltValues.of(CNull).wrap(Pair, 70)),
+      claim("absence claimed", None),
+      claim("a value of weight exactly 2^24", Some(BuiltValues.ofWeight(cap))),
+      claim("a value of weight 2^24 + 1, refused before it is hashed", Some(BuiltValues.ofWeight(cap + 1))),
+      listing("two values of 2^23, together 2^24", cap / 2, cap / 2),
+      listing("values of 2^23 and 2^23 + 1, each under the cap, together over it", cap / 2, cap / 2 + 1)
+    )
+  }
+
   def cases: IO[List[Case]] =
-    store.map(s => valueCases ++ chunkCases ++ deltaCases ++ storeCases(s) ++ merkleCases ++ trieCases ++ poseidonCases)
+    store.map(s => valueCases ++ chunkCases ++ deltaCases ++ storeCases(s) ++ merkleCases ++ trieCases ++ poseidonCases ++ claimCases)
 
   def build: IO[Json] =
     cases

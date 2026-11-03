@@ -137,6 +137,14 @@ pub struct RefusalCase {
     pub state_key: Option<String>,
     /// The `at` entry.
     pub at: Option<u64>,
+    /// The `size` entry.
+    pub size: Option<u64>,
+    /// The `prefix` entry.
+    pub prefix: Option<Hex>,
+    /// The `claim` entry.
+    pub claim: Option<BuiltValue>,
+    /// The `entries` entry.
+    pub entries: Option<Vec<RefusalEntry>>,
     /// The `outcome` entry.
     pub outcome: RefusalOutcome,
 }
@@ -157,12 +165,16 @@ impl c::Model for RefusalCase {
             c::optional_field("key", &HEX, self.key.as_ref(), inner)?,
             c::optional_field("stateKey", &c::Text, self.state_key.as_ref(), inner)?,
             c::optional_field("at", &c::UINT, self.at.as_ref(), inner)?,
+            c::optional_field("size", &c::UINT, self.size.as_ref(), inner)?,
+            c::optional_field("prefix", &HEX, self.prefix.as_ref(), inner)?,
+            c::optional_field("claim", &c::ModelOf::<BuiltValue>::NEW, self.claim.as_ref(), inner)?,
+            c::optional_field("entries", &c::VecOf { element: c::ModelOf::<RefusalEntry>::NEW, min: 0, max: None }, self.entries.as_ref(), inner)?,
             c::field("outcome", &c::ModelOf::<RefusalOutcome>::NEW, &self.outcome, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["name", "check", "input", "inputs", "zeros", "mode", "root", "oldRoot", "leafHash", "key", "stateKey", "at", "outcome"])?;
+        let fields = c::Fields::of(value, &["name", "check", "input", "inputs", "zeros", "mode", "root", "oldRoot", "leafHash", "key", "stateKey", "at", "size", "prefix", "claim", "entries", "outcome"])?;
         let f0 = fields.required("name", &c::Text)?;
         let f1 = fields.required("check", &c::ModelOf::<RefusalCheck>::NEW)?;
         let f2 = fields.optional("input", &c::ModelOf::<BuiltValue>::NEW)?;
@@ -175,8 +187,12 @@ impl c::Model for RefusalCase {
         let f9 = fields.optional("key", &HEX)?;
         let f10 = fields.optional("stateKey", &c::Text)?;
         let f11 = fields.optional("at", &c::UINT)?;
-        let f12 = fields.required("outcome", &c::ModelOf::<RefusalOutcome>::NEW)?;
-        Ok(Self { name: f0, check: f1, input: f2, inputs: f3, zeros: f4, mode: f5, root: f6, old_root: f7, leaf_hash: f8, key: f9, state_key: f10, at: f11, outcome: f12 })
+        let f12 = fields.optional("size", &c::UINT)?;
+        let f13 = fields.optional("prefix", &HEX)?;
+        let f14 = fields.optional("claim", &c::ModelOf::<BuiltValue>::NEW)?;
+        let f15 = fields.optional("entries", &c::VecOf { element: c::ModelOf::<RefusalEntry>::NEW, min: 0, max: None })?;
+        let f16 = fields.required("outcome", &c::ModelOf::<RefusalOutcome>::NEW)?;
+        Ok(Self { name: f0, check: f1, input: f2, inputs: f3, zeros: f4, mode: f5, root: f6, old_root: f7, leaf_hash: f8, key: f9, state_key: f10, at: f11, size: f12, prefix: f13, claim: f14, entries: f15, outcome: f16 })
     }
 }
 
@@ -205,6 +221,12 @@ pub enum RefusalCheck {
     TrieLookup,
     /// The text `poseidon-proof`.
     PoseidonProof,
+    /// The text `merkle-verify`.
+    MerkleVerify,
+    /// The text `trie-verify`.
+    TrieVerify,
+    /// The text `trie-prefix-verify`.
+    TriePrefixVerify,
 }
 
 impl c::Model for RefusalCheck {
@@ -221,11 +243,14 @@ impl c::Model for RefusalCheck {
             Self::MerkleConsistency => Ok(c::Value::text("merkle-consistency")),
             Self::TrieLookup => Ok(c::Value::text("trie-lookup")),
             Self::PoseidonProof => Ok(c::Value::text("poseidon-proof")),
+            Self::MerkleVerify => Ok(c::Value::text("merkle-verify")),
+            Self::TrieVerify => Ok(c::Value::text("trie-verify")),
+            Self::TriePrefixVerify => Ok(c::Value::text("trie-prefix-verify")),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["vt-value", "vt-chunk", "vt-delta", "vt-proof", "vt-state", "vt-historical", "vt-replica", "merkle-inclusion", "merkle-consistency", "trie-lookup", "poseidon-proof"])? {
+        match c::select_alternative(value, &[], &["vt-value", "vt-chunk", "vt-delta", "vt-proof", "vt-state", "vt-historical", "vt-replica", "merkle-inclusion", "merkle-consistency", "trie-lookup", "poseidon-proof", "merkle-verify", "trie-verify", "trie-prefix-verify"])? {
             c::Alternative::Text(0) => Ok(Self::VtValue),
             c::Alternative::Text(1) => Ok(Self::VtChunk),
             c::Alternative::Text(2) => Ok(Self::VtDelta),
@@ -237,8 +262,37 @@ impl c::Model for RefusalCheck {
             c::Alternative::Text(8) => Ok(Self::MerkleConsistency),
             c::Alternative::Text(9) => Ok(Self::TrieLookup),
             c::Alternative::Text(10) => Ok(Self::PoseidonProof),
+            c::Alternative::Text(11) => Ok(Self::MerkleVerify),
+            c::Alternative::Text(12) => Ok(Self::TrieVerify),
+            c::Alternative::Text(13) => Ok(Self::TriePrefixVerify),
             other => Err(c::unknown_alternative(other)),
         }
+    }
+}
+
+/// `refusal-entry` (`shared/schemas/refusal-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RefusalEntry {
+    /// The `key` entry.
+    pub key: Hex,
+    /// The `value` entry.
+    pub value: BuiltValue,
+}
+
+impl c::Model for RefusalEntry {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("key", &HEX, &self.key, inner)?,
+            c::field("value", &c::ModelOf::<BuiltValue>::NEW, &self.value, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["key", "value"])?;
+        let f0 = fields.required("key", &HEX)?;
+        let f1 = fields.required("value", &c::ModelOf::<BuiltValue>::NEW)?;
+        Ok(Self { key: f0, value: f1 })
     }
 }
 

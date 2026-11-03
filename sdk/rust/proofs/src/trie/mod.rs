@@ -66,6 +66,12 @@ pub enum TrieError {
         /// Why.
         reason: String,
     },
+    /// Over [`crate::MAX_PROOF_WEIGHT`] in weight: claimed values a verifier would hash, or a proof a producer would
+    /// emit that every verifier refuses.
+    TooLarge {
+        /// The limit: [`crate::MAX_PROOF_WEIGHT`] (normative).
+        limit: u64,
+    },
 }
 
 impl TrieError {
@@ -78,6 +84,7 @@ impl TrieError {
             Self::RootMismatch { .. } => "RootMismatch",
             Self::NotCovered { .. } => "NotCovered",
             Self::Encoding { .. } => "Encoding",
+            Self::TooLarge { .. } => "TooLarge",
         }
     }
 }
@@ -93,6 +100,7 @@ impl fmt::Display for TrieError {
             }
             Self::NotCovered { what } => write!(f, "the proof does not cover {what}"),
             Self::Encoding { reason } => write!(f, "encoding: {reason}"),
+            Self::TooLarge { limit } => write!(f, "over weight {limit}"),
         }
     }
 }

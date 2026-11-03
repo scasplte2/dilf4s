@@ -35,6 +35,7 @@ them. Every other field is informative. The normative fields are:
 | versioned trie | `TooLarge` | `limit`: `MaxValueBytes` (2^20) or `MaxChunkBytes` (2^22) in bytes, or `MaxProofWeight` (2^24) in weight, for a delta or proof the store would produce (§5) |
 | versioned trie | `TooDeep` | `depth` (the value's depth) and `limit`: `MaxValueDepth` (253) |
 | versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` |
+| Merkle tree, trie | `TooLarge` | `limit`: `MaxProofWeight` (2^24), for claims (§5) |
 | Poseidon tree | `Position` | `depth`: the number of siblings (or the tree's depth); the position itself echoes the caller's input and is informative |
 | every other kind | | none: the kind alone |
 
@@ -54,9 +55,9 @@ A refusal costs no more than the spec says, whatever the input:
 - **Implementation ceilings.** An SDK whose runtime cannot hold an encoding of any length budgets its unbudgeted forms
   at a ceiling of its own and refuses past it as `TooLarge`, never with an exception: the TypeScript SDK encodes,
   commits and content-hashes within 2^31 - 1 bytes (`cbor.MAX_ENCODED_BYTES`, the largest array the JVM reference can
-  build), and renders JSON only within a limit the caller names (at most 2^29 - 24 bytes, its string ceiling). A claim
-  too large to commit under such a ceiling is the family's malformed-input kind (`Encoding`). Values that large are
-  far past every limit these specs set, so no vector depends on a ceiling.
+  build), and renders JSON only within a limit the caller names (at most 2^29 - 24 bytes, its string ceiling). Its
+  public leaf and value hashing refuse a commitment past that ceiling as `TooLarge` with the ceiling as its limit. Values
+  that large are far past every limit these specs set (§5 caps every claim at 2^24), so no vector depends on a ceiling.
 - **Verifier inputs** are bounded by weight before they are decoded (§5).
 
 ## 5. Verifier input weight
@@ -83,9 +84,14 @@ that, an accepted commit could serve a delta no replica decodes.
 Snapshot chunks arrive as bytes, bounded by `MaxChunkBytes`, and a value is never heavier than its encoding is long,
 so they need no weight check. The JLVM's proof operations surface the refusal as `Crypto` (`jlvm.md` §6).
 
-The cap covers the proof input, not the claim it is checked against. A claimed value, leaf or entry is hashed by its
-commitment, which costs O(its weight), as computing `commit(v)` does: the caller chooses it, and the JLVM charges for
-it by weight before the work. The versioned trie's `holds` answers `false` in O(1) for a claim no commit accepts.
+**Claims are capped too: one rule for every caller value a verifier takes.** The claims a proof is checked against (a
+Merkle leaf, a trie value, the values of a claimed listing) are hashed by their commitment, which costs O(their
+weight). Together they must weigh at most `MaxProofWeight`: heavier is `TooLarge` with that `limit` (`Crypto` in the
+JLVM), refused from their cached weights before any is hashed and before the proof is decoded. A listing's values are
+summed, so many entries sharing one heavy value are refused as a whole. In the boolean forms a key's validity and an
+entry's shape are checked first, then the claims, then the proof. A Merkle leaf given as raw bytes (RFC 6962) weighs one
+more than its length. The versioned trie's `holds` already answers `false` in O(1) for a claim no commit accepts (over
+1 MiB), which is stricter.
 
 ## 6. Vectors
 
@@ -125,6 +131,9 @@ outcome, and `"accepted"` means every step succeeded.
 | `merkle-consistency` | `oldRoot`, `root`, `input` | decode the proof, check it |
 | `trie-lookup` | `mode`, `root`, `key`, `input` | decode the proof, check it against `root` under `mode`, the key's path, look the key up |
 | `poseidon-proof` | `input` | decode the proof |
+| `merkle-verify` | `root`, `size`, `claim`, `input` | `merkle_verify`: the leaf claim's weight, decode the proof, the size, check it (tagged profile) |
+| `trie-verify` | `mode`, `root`, `key`, `claim` (absent: absence), `input` | `trie_verify`: the key's path, the claim's weight, decode the proof, check it against `root`, look the key up |
+| `trie-prefix-verify` | `mode`, `root`, `prefix`, `entries`, `input` | `trie_prefix_verify`: each entry's key and value, the values' weight together, decode the proof, check it, list the prefix |
 
 Versioned-trie checks use the default version key (8 bytes) and SHA-256.
 

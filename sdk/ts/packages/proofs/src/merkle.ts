@@ -6,7 +6,7 @@
 import { bitLength, describeFailure, digest, err, hashParts, models, ok, outputSize, toHex, valueCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
-import { decodeInput } from "./input.js";
+import { decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
 /** Why a Merkle proof could not be checked, by Scala's `MerkleError` names. */
 export type MerkleError =
@@ -14,7 +14,9 @@ export type MerkleError =
   | { readonly kind: "InvalidSizes"; readonly oldSize: bigint; readonly newSize: bigint }
   | { readonly kind: "InvalidProof"; readonly reason: string }
   | { readonly kind: "RootMismatch"; readonly expected: string; readonly computed: string }
-  | { readonly kind: "Encoding"; readonly reason: string };
+  | { readonly kind: "Encoding"; readonly reason: string }
+  /** A claimed leaf over `limit` (`MAX_PROOF_WEIGHT`, or this SDK's commitment ceiling), refused before it is hashed. */
+  | { readonly kind: "TooLarge"; readonly limit: number };
 
 /** The largest tree size or index: the schema's `tree-index`. */
 export const MAX_TREE_INDEX = 2n ** 63n - 1n;
@@ -37,6 +39,8 @@ export interface MerkleHashing<L> {
   readonly empty: Uint8Array;
   /** A leaf's hash; a tagged leaf whose commitment is over `cbor.MAX_ENCODED_BYTES` is `Encoding`. */
   leaf(input: L): Result<Uint8Array, MerkleError>;
+  /** A leaf's weight as a claim (a value's weight; raw bytes weigh one more than their length). */
+  leafWeight(input: L): bigint;
   node(left: Uint8Array, right: Uint8Array): Uint8Array;
 }
 
@@ -70,7 +74,11 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
    */
   leaf(value: Value): Result<Uint8Array, MerkleError> {
     const c = valueCommitment(value);
-    return c.ok ? ok(this.#leaf.hash(c.value)) : err({ kind: "Encoding", reason: `a leaf whose commitment is over ${c.error.limit.toString()} bytes` });
+    return c.ok ? ok(this.#leaf.hash(c.value)) : err({ kind: "TooLarge", limit: c.error.limit });
+  }
+
+  leafWeight(value: Value): bigint {
+    return value.weight;
   }
 
   node(left: Uint8Array, right: Uint8Array): Uint8Array {
@@ -97,6 +105,10 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
 
   leaf(data: Uint8Array): Result<Uint8Array, MerkleError> {
     return ok(hashParts(this.algorithm, [Uint8Array.of(0), data]));
+  }
+
+  leafWeight(data: Uint8Array): bigint {
+    return BigInt(data.length) + 1n;
   }
 
   node(left: Uint8Array, right: Uint8Array): Uint8Array {
@@ -295,6 +307,8 @@ function checkHead(hashing: MerkleHashing<unknown>, what: string, head: MerkleHe
 export function merkleVerify<L>(hashing: MerkleHashing<L>, head: MerkleHead, leaf: L, proof: Value): Result<boolean, MerkleError> {
   const h = checkHead(hashing, "head", head);
   if (!h.ok) return h;
+  // the leaf is a claim: bounded by weight before it is hashed and before the proof is decoded
+  if (hashing.leafWeight(leaf) > MAX_PROOF_WEIGHT) return err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
   const p = InclusionProof.decode(hashing, proof);
   if (!p.ok) return p;
   if (p.value.size !== head.size) return ok(false);

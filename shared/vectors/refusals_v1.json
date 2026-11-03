@@ -672,6 +672,898 @@
           }
         ]
       }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "merkle verify: a leaf of weight exactly 2^24",
+      "check" : "merkle-verify",
+      "root" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "size" : 1,
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          }
+        ]
+      },
+      "input" : {
+        "leaf" : "a36470617468806473697a650165696e64657800"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "merkle verify: a leaf of weight 2^24 + 1, refused before it is hashed",
+      "check" : "merkle-verify",
+      "root" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "size" : 1,
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          }
+        ]
+      },
+      "input" : {
+        "leaf" : "a36470617468806473697a650165696e64657800"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "merkle verify: a leaf of saturated weight",
+      "check" : "merkle-verify",
+      "root" : "48fb715f9497fc79d2ee408b17c445a25ada2a098c20dfe470b131ec046fc5cb",
+      "size" : 1,
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 70
+          }
+        ]
+      },
+      "input" : {
+        "leaf" : "a36470617468806473697a650165696e64657800"
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "trie verify: absence claimed",
+      "check" : "trie-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "key" : "01",
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "trie verify: a value of weight exactly 2^24",
+      "check" : "trie-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "key" : "01",
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      },
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "trie verify: a value of weight 2^24 + 1, refused before it is hashed",
+      "check" : "trie-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "key" : "01",
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      },
+      "claim" : {
+        "leaf" : "f6",
+        "steps" : [
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          },
+          {
+            "template" : "8361246124f6",
+            "times" : 1
+          },
+          {
+            "template" : "8261246124",
+            "times" : 1
+          }
+        ]
+      }
+    },
+    {
+      "outcome" : "accepted",
+      "name" : "trie prefix verify: two values of 2^23, together 2^24",
+      "check" : "trie-prefix-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "prefix" : "",
+      "entries" : [
+        {
+          "key" : "01",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "key" : "02",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        }
+      ],
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      }
+    },
+    {
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 16777216
+      },
+      "name" : "trie prefix verify: values of 2^23 and 2^23 + 1, each under the cap, together over it",
+      "check" : "trie-prefix-verify",
+      "mode" : {
+        "fixed" : 1
+      },
+      "root" : "4934d7752ce86341652d14720f0a771a28fb2851bb2d67a64361a9bdae202c04",
+      "prefix" : "",
+      "entries" : [
+        {
+          "key" : "01",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              }
+            ]
+          }
+        },
+        {
+          "key" : "02",
+          "value" : {
+            "leaf" : "f6",
+            "steps" : [
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              },
+              {
+                "template" : "8361246124f6",
+                "times" : 1
+              },
+              {
+                "template" : "8261246124",
+                "times" : 1
+              }
+            ]
+          }
+        }
+      ],
+      "input" : {
+        "leaf" : "83a26163036173a261624100616e06a26173a261624180616e0161765820c7114aee37d87470a87a89bdd112df0f96186992c4a4820ddc703ab752e627a9a26173a261624100616e016176582013bc821c142a9eb0dbe965bdd7885da9ca0a0d52e75471bcaf6871bbdf458eb6"
+      }
     }
   ]
 }

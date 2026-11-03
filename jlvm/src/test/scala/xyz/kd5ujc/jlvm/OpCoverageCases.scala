@@ -236,6 +236,11 @@ object OpCoverageCases extends IOApp {
     val data = m("head" -> m("root" -> CBytes(tree.root.bytes), "size" -> int(1)), "leaf" -> leaf)
     val trie = """{"trie_verify": [{"var": "mode"}, {"var": "root"}, {"var": "key"}, null, {"var": "$proof"}]}"""
     val trieData = m("mode" -> m("fixed" -> int(1)), "root" -> CBytes(ByteVector.fill(32)(0)), "key" -> CBytes(ByteVector(1)))
+    val claimed = """{"trie_verify": [{"var": "mode"}, {"var": "root"}, {"var": "key"}, {"var": "$value"}, {"var": "proof"}]}"""
+    val claimData =
+      m("mode" -> m("fixed" -> int(1)), "root" -> CBytes(ByteVector.fill(32)(0)), "key" -> CBytes(ByteVector(1)), "proof" -> a())
+    val leafProgram = """{"merkle_verify": [{"var": "head"}, {"var": "$leaf"}, {"var": "proof"}]}"""
+    val inclusion = get(tree.inclusionProof(0L).flatMap(MerkleCodec.encodeInclusion(_)))
     List(
       Case(
         s"dilf4s proof weight: merkle_verify, $within padded digests, within the cap, is decoded: false",
@@ -264,6 +269,28 @@ object OpCoverageCases extends IOApp {
         trieData,
         Option(1L << 30),
         Map("proof" -> BuiltValues.ofWeight(ProofInput.MaxProofWeight + 1))
+      ),
+      // claims: bounded the same way, before they are hashed and before the proof is decoded
+      Case(
+        "dilf4s proof weight: trie_verify, a claimed value of weight exactly 2^24, within the cap: false",
+        claimed,
+        claimData,
+        Option(1L << 30),
+        Map("value" -> BuiltValues.ofWeight(ProofInput.MaxProofWeight))
+      ),
+      Case(
+        "dilf4s proof weight: trie_verify, a claimed value one over the cap: Crypto",
+        claimed,
+        claimData,
+        Option(1L << 30),
+        Map("value" -> BuiltValues.ofWeight(ProofInput.MaxProofWeight + 1))
+      ),
+      Case(
+        "dilf4s proof weight: merkle_verify, a leaf one over the cap: Crypto",
+        leafProgram,
+        m("head" -> m("root" -> CBytes(tree.root.bytes), "size" -> int(1)), "proof" -> inclusion),
+        Option(1L << 30),
+        Map("leaf" -> BuiltValues.ofWeight(ProofInput.MaxProofWeight + 1))
       )
     )
   }

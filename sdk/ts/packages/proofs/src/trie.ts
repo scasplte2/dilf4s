@@ -10,7 +10,7 @@ import { bitLength, BYTES_TAG, describeFailure, err, models, ok, outputSize, toH
 
 import * as B from "./bits.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
-import { decodeInput } from "./input.js";
+import { decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
 /**
  * Why a trie operation failed, by Scala's `TrieError` names, plus `NotCovered`: the JLVM's "not covered" (a proof that
@@ -22,7 +22,13 @@ export type TrieError =
   | { readonly kind: "InvalidProof"; readonly reason: string }
   | { readonly kind: "RootMismatch"; readonly expected: string; readonly computed: string }
   | { readonly kind: "Encoding"; readonly reason: string }
-  | { readonly kind: "NotCovered"; readonly what: string };
+  | { readonly kind: "NotCovered"; readonly what: string }
+  /** Over `limit` in weight (`MAX_PROOF_WEIGHT`, or this SDK's commitment ceiling): claims, or a proof to emit. */
+  | { readonly kind: "TooLarge"; readonly limit: number };
+
+/** Claims together within `MAX_PROOF_WEIGHT`, from their weights, before any is hashed. */
+const claimsWithin = (values: readonly Value[]): Result<undefined, TrieError> =>
+  values.reduce((t, v) => t + v.weight, 0n) <= MAX_PROOF_WEIGHT ? ok(undefined) : err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
 
 const encoding = (reason: string): Result<never, TrieError> => err({ kind: "Encoding", reason });
 const invalidProof = (reason: string): Result<never, TrieError> => err({ kind: "InvalidProof", reason });
@@ -179,7 +185,7 @@ export class TrieHashing {
    */
   valueHash(value: Value): Result<Uint8Array, TrieError> {
     const c = valueCommitment(value);
-    return c.ok ? ok(this.#value.hash(c.value)) : encoding(`a value whose commitment is over ${c.error.limit.toString()} bytes`);
+    return c.ok ? ok(this.#value.hash(c.value)) : err({ kind: "TooLarge", limit: c.error.limit });
   }
 
   /** The hash a trie commits for a byte string, `valueHash(commit(b))`: linear in `b`, which the caller holds. */
@@ -562,6 +568,8 @@ const isAbsence = (v: Value | null): boolean => v === null || v.kind === "null";
 export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, key: Uint8Array, value: Value | null, proof: Value): Result<boolean, TrieError> {
   const k = mode.checkKey(key);
   if (!k.ok) return k;
+  const c = claimsWithin(value === null || isAbsence(value) ? [] : [value]);
+  if (!c.ok) return c;
   const v = verified(hashing, mode, root, proof);
   if (!v.ok || v.value === null) return v.ok ? ok(false) : v;
   const l = v.value.lookup(key);
@@ -580,11 +588,15 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
 }
 
 function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly ClaimedEntry[]): Result<readonly TrieEntry[], TrieError> {
-  const out: TrieEntry[] = [];
   for (const [key, value] of entries) {
     if (value.kind === "null") return encoding("an entry is [key, value], with a value");
     const k = mode.checkKey(key);
     if (!k.ok) return k;
+  }
+  const c = claimsWithin(entries.map(([, value]) => value));
+  if (!c.ok) return c;
+  const out: TrieEntry[] = [];
+  for (const [key, value] of entries) {
     const h = hashing.valueHash(value);
     if (!h.ok) return h;
     out.push({ key, valueHash: h.value });

@@ -48,7 +48,12 @@ const of =
   (r: { readonly ok: true } | { readonly ok: false; readonly error: E }): Outcome =>
     r.ok ? accepted : outcome(r.error);
 
-const byKind = (e: { readonly kind: string }): Outcome => ({ kind: e.kind });
+const byKind = (e: { readonly kind: string; readonly limit?: number }): Outcome => (e.limit === undefined ? { kind: e.kind } : { kind: e.kind, limit: BigInt(e.limit) });
+
+const modeOf = (m: models.refusalVectors.RefusalMode | undefined): trie.KeyMode => {
+  const x = m ?? { fixed: 0n };
+  return expectOk("fixed" in x ? trie.KeyMode.fixed(Number(x.fixed)) : trie.KeyMode.variable(Number(x.variable)), "mode");
+};
 
 /** The case's outcome, by its check (conformance.md section 6): the first refusal, or "accepted". */
 function run(c: Case): Outcome {
@@ -99,8 +104,7 @@ function run(c: Case): Outcome {
       return of(byKind)(p.ok ? merkle.checkConsistency(hashing, bytes(c.oldRoot ?? ""), root(), p.value) : p);
     }
     case "trie-lookup": {
-      const m = c.mode ?? { fixed: 0n };
-      const mode = expectOk("fixed" in m ? trie.KeyMode.fixed(Number(m.fixed)) : trie.KeyMode.variable(Number(m.variable)), "mode");
+      const mode = modeOf(c.mode);
       const hashing = trie.TrieHashing.of("SHA-256");
       const p = trie.TrieProof.decode(hashing, input());
       if (!p.ok) return byKind(p.error);
@@ -110,6 +114,19 @@ function run(c: Case): Outcome {
       if (!found.ok) return byKind(found.error);
       return found.value.kind === "notCovered" ? { kind: "NotCovered" } : accepted;
     }
+    case "merkle-verify": {
+      const hashing = merkle.TaggedMerkleHashing.of("SHA-256");
+      const head = { root: root(), size: c.size ?? 0n };
+      return of(byKind)(merkle.merkleVerify(hashing, head, built(c.claim ?? { leaf: "" }), input()));
+    }
+    case "trie-verify": {
+      const claim = c.claim === undefined ? null : built(c.claim);
+      return of(byKind)(trie.trieVerify(trie.TrieHashing.of("SHA-256"), modeOf(c.mode), root(), bytes(c.key ?? ""), claim, input()));
+    }
+    case "trie-prefix-verify": {
+      const entries: readonly trie.ClaimedEntry[] = (c.entries ?? []).map((e) => [bytes(e.key), built(e.value)] as const);
+      return of(byKind)(trie.triePrefixVerify(trie.TrieHashing.of("SHA-256"), modeOf(c.mode), root(), bytes(c.prefix ?? ""), entries, input()));
+    }
     case "poseidon-proof":
       return of((e: poseidon.PoseidonMerkleError): Outcome => (e.kind === "Position" ? { kind: e.kind, depth: BigInt(e.depth) } : byKind(e)))(poseidon.PoseidonMerkleProof.decode(input()));
   }
@@ -117,7 +134,7 @@ function run(c: Case): Outcome {
 
 describe("refusals_v1.json", { timeout: 120_000 }, () => {
   it("has a case for every check", () => {
-    expect(new Set(vectors.cases.map((c) => c.check)).size).toBe(11);
+    expect(new Set(vectors.cases.map((c) => c.check)).size).toBe(14);
   });
 
   for (const c of vectors.cases) {

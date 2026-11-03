@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { MAX_WEIGHT, models, Value } from "@kd5ujc/dilf4s-core";
+import { cbor, MAX_WEIGHT, models, Value } from "@kd5ujc/dilf4s-core";
 
-import { merkle, trie, versioned } from "../src/index.js";
+import { MAX_PROOF_WEIGHT, merkle, trie, versioned } from "../src/index.js";
 import { bytes, expectErr, expectOk, loadVectors, valueOf } from "./vectors.js";
 
 const vectors = loadVectors("versioned_trie_v1.json", models.versionedTrieVectors.VersionedTrieVectors);
@@ -75,15 +75,20 @@ describe("versioned values built with shared parts", { timeout: 60_000 }, () => 
 describe("claims built with shared parts", { timeout: 60_000 }, () => {
   const heavy = doubled(Value.null, 40);
 
-  it("a Merkle leaf or trie value too large to commit is Encoding, never a thrown allocation failure", () => {
+  it("a Merkle leaf or trie value too large to commit is TooLarge at the ceiling, never a thrown allocation failure; a claim over the cap is TooLarge first", () => {
     const ms = elapsed(() => {
-      expect(expectErr(merkle.TaggedMerkleHashing.of("SHA-256").leaf(heavy), "leaf").kind).toBe("Encoding");
+      const ceiling = { kind: "TooLarge", limit: cbor.MAX_ENCODED_BYTES };
+      const capped = { kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) };
+      expect(expectErr(merkle.TaggedMerkleHashing.of("SHA-256").leaf(heavy), "leaf")).toEqual(ceiling);
       const T = trie.TrieHashing.of("SHA-256");
-      expect(expectErr(T.valueHash(heavy), "value hash").kind).toBe("Encoding");
+      expect(expectErr(T.valueHash(heavy), "value hash")).toEqual(ceiling);
       const mode = expectOk(trie.KeyMode.fixed(1), "mode");
       const root = expectOk(trie.trieRoot(T, mode, [[Uint8Array.of(1), T.bytesHash(Uint8Array.of(1))]]), "root");
       const entries: readonly trie.ClaimedEntry[] = [[Uint8Array.of(1), heavy]];
-      expect(expectErr(trie.triePrefixVerify(T, mode, root, new Uint8Array(0), entries, Value.null), "entries").kind).toBe("Encoding");
+      expect(expectErr(trie.triePrefixVerify(T, mode, root, new Uint8Array(0), entries, Value.null), "entries")).toEqual(capped);
+      expect(expectErr(trie.trieVerify(T, mode, root, Uint8Array.of(1), heavy, Value.null), "claim")).toEqual(capped);
+      const head = { root: merkle.TaggedMerkleHashing.of("SHA-256").empty, size: 0n };
+      expect(expectErr(merkle.merkleVerify(merkle.TaggedMerkleHashing.of("SHA-256"), head, heavy, Value.null), "leaf claim")).toEqual(capped);
     });
     expect(ms).toBeLessThan(HANG);
   });
