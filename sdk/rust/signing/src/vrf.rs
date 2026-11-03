@@ -312,8 +312,8 @@ fn scalar16(c: &[u8; 16]) -> Scalar {
 fn hash_to_curve(suite: SuiteId, pk: &[u8; 32], alpha: &[u8]) -> Result<EdwardsPoint, VrfError> {
     match suite {
         SuiteId::Tai => hash_to_curve_tai(pk, alpha),
-        SuiteId::Ell2 => Ok(hash_to_curve_ell2(pk, alpha)),
-        SuiteId::Draft03 => Ok(hash_to_curve_draft03(pk, alpha)),
+        SuiteId::Ell2 => hash_to_curve_ell2(pk, alpha).map_err(field_error),
+        SuiteId::Draft03 => hash_to_curve_draft03(pk, alpha).map_err(field_error),
     }
 }
 
@@ -334,12 +334,12 @@ fn hash_to_curve_tai(pk: &[u8; 32], alpha: &[u8]) -> Result<EdwardsPoint, VrfErr
 const ELL2_DST: &[u8] = b"ECVRF_edwards25519_XMD:SHA-512_ELL2_NU_\x04";
 
 /// RFC 9381 section 5.4.1.2: `encode_to_curve(Y || alpha)` of RFC 9380's `edwards25519_XMD:SHA-512_ELL2_NU_`.
-fn hash_to_curve_ell2(pk: &[u8; 32], alpha: &[u8]) -> EdwardsPoint {
+fn hash_to_curve_ell2(pk: &[u8; 32], alpha: &[u8]) -> Result<EdwardsPoint, field::MulError> {
     field::encode_to_curve_ell2(&[pk, alpha], ELL2_DST)
 }
 
 /// draft-03 (libsodium): `r = SHA-512(04 || 01 || Y || alpha)[0:32]` with bit 255 cleared, then Elligator 2.
-fn hash_to_curve_draft03(pk: &[u8; 32], alpha: &[u8]) -> EdwardsPoint {
+fn hash_to_curve_draft03(pk: &[u8; 32], alpha: &[u8]) -> Result<EdwardsPoint, field::MulError> {
     let h = sha512(&[&[0x04, 0x01], pk, alpha]);
     let mut r = [0u8; 32];
     for (o, b) in r.iter_mut().zip(h.iter()) {
@@ -349,6 +349,19 @@ fn hash_to_curve_draft03(pk: &[u8; 32], alpha: &[u8]) -> EdwardsPoint {
         *last &= 0x7f;
     }
     field::from_uniform(&r)
+}
+
+/// A field multiplication's failure, which only the SP1 guest's can have, as a rejection.
+#[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+fn field_error(never: field::MulError) -> VrfError {
+    match never {}
+}
+
+/// A field multiplication's failure, which only the SP1 guest's can have, as a rejection: `sys_bigint` returned a
+/// product not below `p`, which a correct precompile never does.
+#[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
+fn field_error(_: field::MulError) -> VrfError {
+    VrfError::HashToCurveFailed { reason: "the zkVM's field multiplication returned a non-canonical product".into() }
 }
 
 fn challenge(suite: SuiteId, pk: &[u8; 32], h: &[u8; 32], gamma: &[u8; 32], u: &[u8; 32], v: &[u8; 32]) -> [u8; 16] {
@@ -447,10 +460,11 @@ fn verify_decoded(
 
 mod field;
 
-/// Intermediate steps, exposed for the libsodium oracle corpus's helper rows. Not a stable API.
+/// Intermediate steps, exposed for the libsodium oracle corpus's helper rows. Not a stable API, and native only: there
+/// the field multiplications cannot fail.
 #[doc(hidden)]
+#[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
 pub mod internals {
-    use curve25519_dalek::edwards::EdwardsPoint;
     use curve25519_dalek::scalar::Scalar;
 
     use super::SuiteId;
@@ -462,7 +476,8 @@ pub mod internals {
 
     /// libsodium's `ge25519_from_uniform`, re-encoded.
     pub fn from_uniform_draft03(input: &[u8; 32]) -> [u8; 32] {
-        super::field::from_uniform(input).compress().to_bytes()
+        let Ok(p) = super::field::from_uniform(input);
+        p.compress().to_bytes()
     }
 
     /// draft-03's `(-c mod L) P + s Q` on two draft-03 encodings, re-encoded; `None` if either does not decode.
@@ -484,7 +499,7 @@ pub mod internals {
         }
         let s = Scalar::from_bytes_mod_order(sb);
         let c = super::scalar16(&cb);
-        let h: EdwardsPoint = super::hash_to_curve_draft03(pk, alpha);
+        let Ok(h) = super::hash_to_curve_draft03(pk, alpha);
         let u = super::equation_base(suite, &y, &c, &s);
         let v = super::equation(suite, &gamma, &h, &c, &s);
         let (hb, ub, vb) = (super::encode(&h), super::encode(&u), super::encode(&v));
@@ -494,20 +509,23 @@ pub mod internals {
 
     /// RFC 9381 ELL2's hash-to-curve (`encode_to_curve(Y || alpha)`), re-encoded.
     pub fn hash_to_curve_ell2(pk: &[u8; 32], alpha: &[u8]) -> [u8; 32] {
-        super::hash_to_curve_ell2(pk, alpha).compress().to_bytes()
+        let Ok(p) = super::hash_to_curve_ell2(pk, alpha);
+        p.compress().to_bytes()
     }
 
     /// draft-03's hash-to-curve, re-encoded.
     pub fn hash_to_curve_draft03(pk: &[u8; 32], alpha: &[u8]) -> [u8; 32] {
-        super::hash_to_curve_draft03(pk, alpha).compress().to_bytes()
+        let Ok(p) = super::hash_to_curve_draft03(pk, alpha);
+        p.compress().to_bytes()
     }
 
     /// RFC 9380 `encode_to_curve` with `edwards25519_XMD:SHA-512_ELL2_NU_`, re-encoded; `None` unless the DST is 1 to
     /// 255 bytes (longer DSTs must first be hashed, section 5.3.3, which no suite here needs).
     pub fn encode_to_curve_ell2(message: &[u8], dst: &[u8]) -> Option<[u8; 32]> {
-        (1..=255)
-            .contains(&dst.len())
-            .then(|| super::field::encode_to_curve_ell2(&[message], dst).compress().to_bytes())
+        (1..=255).contains(&dst.len()).then(|| {
+            let Ok(p) = super::field::encode_to_curve_ell2(&[message], dst);
+            p.compress().to_bytes()
+        })
     }
 }
 

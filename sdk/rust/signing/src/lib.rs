@@ -12,7 +12,9 @@
 //! drop and compare in constant time. Randomised signers take their randomness explicitly.
 
 #![no_std]
-#![forbid(unsafe_code)]
+// Unsafe code is forbidden, except in SP1's guest, where `vrf::field::zkvm` calls the `sys_bigint` precompile.
+#![cfg_attr(not(all(target_os = "zkvm", target_vendor = "succinct")), forbid(unsafe_code))]
+#![cfg_attr(all(target_os = "zkvm", target_vendor = "succinct"), deny(unsafe_code))]
 #![allow(
     clippy::many_single_char_names,
     clippy::similar_names,
