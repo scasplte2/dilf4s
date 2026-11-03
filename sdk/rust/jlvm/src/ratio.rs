@@ -1,11 +1,9 @@
 //! Exact rational arithmetic for the operations (`numerics` `Ratio.scala`): always reduced, with a positive
 //! denominator. Not a value type: operations convert to and from [`Value`] at their edges.
 
-use alloc::string::{String, ToString};
 use core::cmp::Ordering;
 
-use dilf4s_core::Value;
-use dilf4s_core::json::decimal;
+use dilf4s_core::{NumberError, Value};
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, Zero};
@@ -82,14 +80,10 @@ impl Ratio {
         }
     }
 
-    /// The value in the single numeric domain: an integer when it is one.
-    pub(crate) fn to_value(&self) -> Value {
-        if self.d.is_one() {
-            Value::int(self.n.clone())
-        } else {
-            // reduced with d >= 2, so this is a valid rational; the fallback is unreachable
-            Value::number(&self.n, &self.d).unwrap_or(Value::Null)
-        }
+    /// The value in the single numeric domain: an integer when it is one, or the refusal of a rational wider than the
+    /// data model allows ([`dilf4s_core::MAX_RATIONAL_BITS`]; within the JLVM's number bound it never is).
+    pub(crate) fn to_value(&self) -> Result<Value, NumberError> {
+        if self.d.is_one() { Ok(Value::int(self.n.clone())) } else { Value::number(&self.n, &self.d) }
     }
 
     pub(crate) const fn numerator(&self) -> &BigInt {
@@ -182,13 +176,26 @@ impl Ratio {
     pub(crate) fn rem(&self, o: &Self) -> Option<Self> {
         self.div(o).map(|q| self.sub(&o.mul(&Self::integer(q.truncate()))))
     }
+}
 
-    /// The exact decimal text, when the value terminates.
-    pub(crate) fn to_decimal_string(&self) -> Option<String> {
-        match self.to_value() {
-            Value::Int(i) => Some(i.to_string()),
-            Value::Rational(r) => decimal(&r).ok(),
-            _ => None,
-        }
+#[cfg(test)]
+mod tests {
+    use dilf4s_core::{MAX_RATIONAL_BITS, NumberError, Value};
+    use num_bigint::BigInt;
+    use num_traits::One;
+
+    use super::Ratio;
+
+    /// A ratio past the data model's bound has no value: the refusal is typed, never a stand-in value.
+    #[test]
+    fn a_ratio_wider_than_the_data_model_is_refused_not_replaced() {
+        let wide = BigInt::one() << MAX_RATIONAL_BITS;
+        let three = BigInt::from(3u8);
+        assert_eq!(Ratio::of(&wide, &three).map(|r| r.to_value()), Some(Err(NumberError::RationalTooWide)));
+        assert_eq!(
+            Ratio::of(&BigInt::one(), &three).map(|r| r.to_value()),
+            Some(Value::number(&BigInt::one(), &three))
+        );
+        assert_eq!(Ratio::integer(wide.clone()).to_value(), Ok(Value::int(wide)));
     }
 }

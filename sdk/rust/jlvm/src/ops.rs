@@ -11,6 +11,7 @@ use core::cmp::Ordering;
 
 use alloc::sync::Arc;
 use dilf4s_core::hash::HashAlgorithm;
+use dilf4s_core::json::decimal;
 
 use dilf4s_core::value::Text;
 use dilf4s_core::{BigInt, Value};
@@ -327,9 +328,10 @@ fn piece(op: Op, v: Value) -> Result<(Text, u64)> {
         Value::Null => Ok(rendered(String::new())),
         Value::Bool(b) => Ok(rendered(String::from(if b { "true" } else { "false" }))),
         Value::Int(_) => Ok(rendered(integer(op, &v)?.to_string())),
-        Value::Rational(_) => {
+        Value::Rational(ref q) => {
             let r = numeric(op, &v)?;
-            let s = r.to_decimal_string().ok_or_else(|| {
+            // the exact decimal text, when it terminates (and is within JSON's bounds, which a JLVM number always is)
+            let s = decimal(q).map_err(|_| {
                 JlvmError::arithmetic(
                     op.wire(),
                     alloc::format!("{}/{} has no finite decimal form", r.numerator(), r.denominator()),
