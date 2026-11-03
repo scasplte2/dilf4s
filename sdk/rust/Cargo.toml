@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "fixtures", "jlvm", "proofs", "signing"]
+members = ["core", "fixtures", "jlvm", "jvm-ffi", "proofs", "signing"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,9 +9,10 @@ rust-version = "1.96"
 license = "Apache-2.0"
 publish = false
 
-# Pure Rust only: every crate here builds for no_std + alloc targets such as SP1's RISC-V guest. The cryptography is
-# pinned to the RustCrypto generation SP1 patches (digest 0.10, elliptic-curve 0.13): on the zkVM the patched crates
-# use its precompiles, elsewhere they are these same crates, so native code and the guest run one stack (issue #19).
+# Pure Rust only: every crate here but jvm-ffi (the JVM's native library, a host-only cdylib) builds for no_std + alloc
+# targets such as SP1's RISC-V guest. The cryptography is pinned to the RustCrypto generation SP1 patches (digest 0.10,
+# elliptic-curve 0.13): on the zkVM the patched crates use its precompiles, elsewhere they are these same crates, so
+# native code and the guest run one stack (issue #19).
 [workspace.dependencies]
 blake2 = { version = "0.10", default-features = false }
 num-bigint = { version = "0.5", default-features = false }
@@ -43,3 +44,11 @@ unwrap_used = "deny"
 alloc_instead_of_core = "deny"
 std_instead_of_alloc = "deny"
 std_instead_of_core = "deny"
+
+# The JVM's native library (jvm-ffi), as the sbt build compiles it. No panic may cross its C ABI and none can (its code
+# and the verification it calls are panic-free by construction); `abort` states that, and drops the unwinding tables.
+[profile.jvm-ffi]
+inherits = "release"
+panic = "abort"
+lto = "fat"
+codegen-units = 1

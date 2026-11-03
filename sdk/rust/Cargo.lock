@@ -405,6 +405,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dilf4s-jvm-ffi"
+version = "0.1.0"
+dependencies = [
+ "dilf4s-core",
+ "dilf4s-signing",
+]
+
+[[package]]
 name = "dilf4s-proofs"
 version = "0.1.0"
 dependencies = [
