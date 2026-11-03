@@ -90,7 +90,13 @@ weight). Together they must weigh at most `MaxProofWeight`: heavier is `TooLarge
 JLVM), refused from their cached weights before any is hashed and before the proof is decoded. A listing's values are
 summed, so many entries sharing one heavy value are refused as a whole. In the boolean forms the arguments that say what is
 asked are checked first (a Merkle tree head, a trie mode, a key's validity, an entry's shape), then the claims, then a
-trie's root and the proof, each step only once the last has passed, so a refused claim costs no decoding. A Merkle leaf given as raw bytes (RFC 6962) weighs one
+trie's root and the proof, each step only once the last has passed, so a refused claim costs no decoding.
+
+**Decoding order.** A decoder refuses a record with several faults for the first in a fixed order, the same in every
+implementation: a Merkle proof's path digests before its index and sizes; a trie proof's records in order, its
+structure before its root (`InvalidProof` before `RootMismatch`); a Merkle path's length before its root; a Poseidon
+proof's siblings before its position; the versioned trie's records in the order `versioned-trie.md` §5 gives. The
+refusal vectors pin each pair of faults that would otherwise answer differently. A Merkle leaf given as raw bytes (RFC 6962) weighs one
 more than its length. The versioned trie's `holds` already answers `false` in O(1) for a claim no commit accepts (over
 1 MiB), which is stricter.
 

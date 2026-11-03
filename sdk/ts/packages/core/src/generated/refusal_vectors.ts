@@ -108,6 +108,7 @@ export interface RefusalCase {
   readonly input?: BuiltValue;
   readonly inputs?: readonly BuiltValue[];
   readonly zeros?: bigint;
+  readonly chunk?: Hex;
   readonly mode?: RefusalMode;
   readonly root?: Hex;
   readonly oldRoot?: Hex;
@@ -132,6 +133,7 @@ export const RefusalCase: c.Codec<RefusalCase> = {
         c.optionalField("input", c.defer(() => BuiltValue), a.input, e),
         c.optionalField("inputs", c.vector(c.defer(() => BuiltValue), 0, null), a.inputs, e),
         c.optionalField("zeros", c.uint, a.zeros, e),
+        c.optionalField("chunk", c.defer(() => Hex), a.chunk, e),
         c.optionalField("mode", c.defer(() => RefusalMode), a.mode, e),
         c.optionalField("root", c.defer(() => Hex), a.root, e),
         c.optionalField("oldRoot", c.defer(() => Hex), a.oldRoot, e),
@@ -148,7 +150,7 @@ export const RefusalCase: c.Codec<RefusalCase> = {
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["name", "check", "input", "inputs", "zeros", "mode", "root", "oldRoot", "leafHash", "key", "stateKey", "at", "size", "prefix", "claim", "entries", "batch", "outcome"]);
+    const f = c.fields(v, ["name", "check", "input", "inputs", "zeros", "chunk", "mode", "root", "oldRoot", "leafHash", "key", "stateKey", "at", "size", "prefix", "claim", "entries", "batch", "outcome"]);
     if (!f.ok) return f;
     const r0 = f.value.required("name", c.text);
     if (!r0.ok) return r0;
@@ -160,33 +162,35 @@ export const RefusalCase: c.Codec<RefusalCase> = {
     if (!r3.ok) return r3;
     const r4 = f.value.optional("zeros", c.uint);
     if (!r4.ok) return r4;
-    const r5 = f.value.optional("mode", c.defer(() => RefusalMode));
+    const r5 = f.value.optional("chunk", c.defer(() => Hex));
     if (!r5.ok) return r5;
-    const r6 = f.value.optional("root", c.defer(() => Hex));
+    const r6 = f.value.optional("mode", c.defer(() => RefusalMode));
     if (!r6.ok) return r6;
-    const r7 = f.value.optional("oldRoot", c.defer(() => Hex));
+    const r7 = f.value.optional("root", c.defer(() => Hex));
     if (!r7.ok) return r7;
-    const r8 = f.value.optional("leafHash", c.defer(() => Hex));
+    const r8 = f.value.optional("oldRoot", c.defer(() => Hex));
     if (!r8.ok) return r8;
-    const r9 = f.value.optional("key", c.defer(() => Hex));
+    const r9 = f.value.optional("leafHash", c.defer(() => Hex));
     if (!r9.ok) return r9;
-    const r10 = f.value.optional("stateKey", c.text);
+    const r10 = f.value.optional("key", c.defer(() => Hex));
     if (!r10.ok) return r10;
-    const r11 = f.value.optional("at", c.uint);
+    const r11 = f.value.optional("stateKey", c.text);
     if (!r11.ok) return r11;
-    const r12 = f.value.optional("size", c.uint);
+    const r12 = f.value.optional("at", c.uint);
     if (!r12.ok) return r12;
-    const r13 = f.value.optional("prefix", c.defer(() => Hex));
+    const r13 = f.value.optional("size", c.uint);
     if (!r13.ok) return r13;
-    const r14 = f.value.optional("claim", c.defer(() => BuiltValue));
+    const r14 = f.value.optional("prefix", c.defer(() => Hex));
     if (!r14.ok) return r14;
-    const r15 = f.value.optional("entries", c.vector(c.defer(() => RefusalEntry), 0, null));
+    const r15 = f.value.optional("claim", c.defer(() => BuiltValue));
     if (!r15.ok) return r15;
-    const r16 = f.value.optional("batch", c.vector(c.defer(() => RefusalUpsert), 0, null));
+    const r16 = f.value.optional("entries", c.vector(c.defer(() => RefusalEntry), 0, null));
     if (!r16.ok) return r16;
-    const r17 = f.value.required("outcome", c.defer(() => RefusalOutcome));
+    const r17 = f.value.optional("batch", c.vector(c.defer(() => RefusalUpsert), 0, null));
     if (!r17.ok) return r17;
-    return c.ok({ name: r0.value, check: r1.value, input: r2.value, inputs: r3.value, zeros: r4.value, mode: r5.value, root: r6.value, oldRoot: r7.value, leafHash: r8.value, key: r9.value, stateKey: r10.value, at: r11.value, size: r12.value, prefix: r13.value, claim: r14.value, entries: r15.value, batch: r16.value, outcome: r17.value });
+    const r18 = f.value.required("outcome", c.defer(() => RefusalOutcome));
+    if (!r18.ok) return r18;
+    return c.ok({ name: r0.value, check: r1.value, input: r2.value, inputs: r3.value, zeros: r4.value, chunk: r5.value, mode: r6.value, root: r7.value, oldRoot: r8.value, leafHash: r9.value, key: r10.value, stateKey: r11.value, at: r12.value, size: r13.value, prefix: r14.value, claim: r15.value, entries: r16.value, batch: r17.value, outcome: r18.value });
   },
 };
 

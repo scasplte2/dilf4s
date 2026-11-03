@@ -132,8 +132,9 @@ fn run(vt: &Vt, c: &RefusalCase) -> Option<Refused> {
     match c.check {
         RefusalCheck::VtValue => check_value(&state_key(), &input()).err().map(|e| versioned(&e)),
         RefusalCheck::VtChunk => {
-            let n = usize::try_from(c.zeros.expect("zeros")).unwrap();
-            vt.decode_chunk(&vec![0u8; n]).err().map(|e| versioned(&e))
+            let chunk =
+                c.chunk.as_deref().map_or_else(|| vec![0u8; usize::try_from(c.zeros.expect("zeros")).unwrap()], bytes);
+            vt.decode_chunk(&chunk).err().map(|e| versioned(&e))
         }
         RefusalCheck::VtDelta => vt.decode_delta(&input()).err().map(|e| versioned(&e)),
         RefusalCheck::VtProof => vt.decode_proof(&input()).err().map(|e| versioned(&e)),

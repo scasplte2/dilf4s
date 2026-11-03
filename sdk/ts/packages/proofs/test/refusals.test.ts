@@ -65,7 +65,7 @@ function run(c: Case): Outcome {
     case "vt-value":
       return v(vt.checkValue(stateKey(), input()));
     case "vt-chunk":
-      return v(vt.decodeChunk(new Uint8Array(Number(c.zeros))));
+      return v(vt.decodeChunk(c.chunk === undefined ? new Uint8Array(Number(c.zeros)) : bytes(c.chunk)));
     case "vt-delta":
       return v(vt.decodeDelta(input()));
     case "vt-proof":

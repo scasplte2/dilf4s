@@ -108,7 +108,8 @@ object RefusalVectors {
     field[String](c, "check").flatMap {
       case "vt-value" => (stateKey, input).mapN((k, v) => outcome(VersionedTrie.checkValue(k, v))(versioned))
       case "vt-chunk" =>
-        field[Long](c, "zeros").map(n => outcome(VersionedTrieWire.decodeChunk[Long, H](ByteVector.fill(n)(0)))(versioned))
+        val chunk = c.get[Long]("zeros").toOption.fold(bytes(c, "chunk"))(n => ByteVector.fill(n)(0).asRight)
+        chunk.map(b => outcome(VersionedTrieWire.decodeChunk[Long, H](b))(versioned))
       case "vt-delta" => input.map(v => outcome(VersionedTrieWire.decodeDelta[Long, H](v))(versioned))
       case "vt-proof" => proof.map(outcome(_)(versioned))
       case "vt-state" =>
@@ -304,7 +305,54 @@ object RefusalVectors {
     case _ => proof
   }
 
-  private def storeCases(s: Store): List[Case] = List(
+  /** 2^63 as an 8-byte version key: no version key decodes it. */
+  private val badVersionKey: CanonicalValue = CBytes(ByteVector(0x80, 0, 0, 0, 0, 0, 0, 0))
+
+  /** `record` with field `name` replaced by `f` of its value (a record without the field is unchanged). */
+  private def edit(record: CanonicalValue, name: String)(f: CanonicalValue => CanonicalValue): CanonicalValue = record match {
+    case CMap(m) => m.get(name).fold(record)(v => obj((m.toList.filterNot(_._1 == name) :+ (name -> f(v)))*))
+    case _       => record
+  }
+
+  /** A trie proof's records with the first repeated at the end: a trailing record. */
+  private def trailing(records: CanonicalValue): CanonicalValue = records match {
+    case CArray(rs) if rs.nonEmpty => arr((rs :+ rs.head)*)
+    case other                     => other
+  }
+
+  /**
+   * Records with two faults each, of different kinds, so the order a decoder checks them in decides the refusal
+   * (versioned-trie.md §5): the first in that order is the one every implementation reports.
+   */
+  private def precedenceCases(s: Store): List[Case] = {
+    def proof(name: String, v: CanonicalValue) = Case(s"proof precedence: $name", "vt-proof", List(input(literal(v))))
+    def delta(name: String, v: CanonicalValue) = Case(s"delta precedence: $name", "vt-delta", List(input(literal(v))))
+    val badHeadV = edit(_: CanonicalValue, "head")(edit(_, "v")(_ => badVersionKey))
+    val shortS = edit(_: CanonicalValue, "s")(_ => CBytes(ByteVector.fill(31)(0)))
+    val withParent = obj("parent" -> head, "head" -> head, "upserts" -> arr(), "removes" -> arr())
+    val chunk = obj("history" -> arr(obj("v" -> badVersionKey, "s" -> CBytes(ByteVector.fill(31)(0)))))
+    List(
+      proof("head version 2^63, and a trailing top record: the head first", withTrailing(s.absent3, "top", badHeadV)),
+      proof("a trailing top record, and an at version 2^63: the top first", edit(badAt(s.absent3), "top")(trailing)),
+      proof("an at version 2^63, and a trailing history record: at first", edit(badAt(s.absent3), "history")(trailing)),
+      proof("head version 2^63, and a 31-byte state root in the head: v first", edit(badHeadV(s.absent3), "head")(shortS)),
+      delta("a 31-byte parent root, and head version 2^63: the parent first", badHeadV(edit(withParent, "parent")(shortS))),
+      delta(
+        "head version 2^63, and an upserted key the grammar refuses: the head first",
+        badHeadV(edit(withParent, "upserts")(_ => arr(obj("k" -> get(CanonicalValue.text("x" * 65)), "v" -> int(1)))))
+      ),
+      Case(
+        "chunk precedence: a history version 2^63 with a 31-byte state root: v first",
+        "vt-chunk",
+        List("chunk" -> hex(xyz.kd5ujc.core.canonical.Cbor.encode(chunk)))
+      )
+    )
+  }
+
+  private def withTrailing(proof: CanonicalValue, field: String, f: CanonicalValue => CanonicalValue): CanonicalValue =
+    f(edit(proof, field)(trailing))
+
+  private def storeCases(s: Store): List[Case] = precedenceCases(s) ++ List(
     Case("proof: a top trie with a trailing record", "vt-proof", List(input(literal(trailingTop(s.keys))))),
     Case("proof: an at version no version key decodes (2^63)", "vt-proof", List(input(literal(badAt(s.absent3))))),
     Case("proof: a saturated weight, refused before decoding", "vt-proof", List(input(BuiltValues.of(CNull).wrap(Pair, 70)))),
@@ -354,6 +402,13 @@ object RefusalVectors {
       inc("leaf 0 of 3", tree.root, leaves.head, literal(p0)),
       inc("against another root", other, leaves.head, literal(p0)),
       inc("a path one digest short", tree.root, leaves.head, literal(short)),
+      inc("precedence: a path one digest short, against another root: the path first", other, leaves.head, literal(short)),
+      inc(
+        "precedence: an index not below the size, and a 31-byte path digest: the path first",
+        tree.root,
+        leaves.head,
+        literal(obj("index" -> int(3), "size" -> int(3), "path" -> arr(CBytes(ByteVector.fill(31)(0)))))
+      ),
       inc(s"a path of $copies digests, over the weight cap", MerkleTree.fromLeafHashes[H](leaves.take(1)).root, leaves.head, padded),
       Case(
         "merkle consistency: 1 to 3",
@@ -385,7 +440,18 @@ object RefusalVectors {
       c("against another root", T.empty, ByteVector(0x01), literal(proof)),
       c("key 0x02, behind a stub", t.root, ByteVector(0x02), literal(proof)),
       c("a two-byte key in a fixed(1) trie", t.root, ByteVector(0x01, 0x00), literal(proof)),
-      c("a saturated weight", t.root, ByteVector(0x01), BuiltValues.of(CNull).wrap(Pair, 70))
+      c("a saturated weight", t.root, ByteVector(0x01), BuiltValues.of(CNull).wrap(Pair, 70)),
+      // a fixed(1) proof read as fixed(2): its leaf ends at bit 8, not 16; the structure is checked before the root
+      Case(
+        "trie: precedence: a proof invalid for the mode, against another root: the structure first",
+        "trie-lookup",
+        List(
+          "mode" -> Json.obj("fixed" -> 2.asJson),
+          "root" -> hex(T.empty.bytes),
+          "key"  -> hex(ByteVector(0x01, 0x00)),
+          input(literal(proof))
+        )
+      )
     )
   }
 
@@ -394,6 +460,11 @@ object RefusalVectors {
     List(
       Case("poseidon: position 3 of depth 2", "poseidon-proof", List(input(literal(proof(3, 2))))),
       Case("poseidon: position 4 of depth 2", "poseidon-proof", List(input(literal(proof(4, 2))))),
+      Case(
+        "poseidon: precedence: a sibling not below r, and position 4 of depth 2: the siblings first",
+        "poseidon-proof",
+        List(input(literal(obj("position" -> int(4), "siblings" -> arr(int(0), CInt(xyz.kd5ujc.core.hash.Fr.Modulus))))))
+      ),
       Case("poseidon: a saturated weight", "poseidon-proof", List(input(BuiltValues.of(CNull).wrap(Pair, 70))))
     )
   }

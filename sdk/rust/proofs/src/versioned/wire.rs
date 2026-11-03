@@ -70,19 +70,18 @@ impl<K: VersionKey, H: Hasher> VersionedTrie<K, H> {
     /// refused before it is decoded.
     pub fn decode_proof(&self, value: &Value) -> Result<VersionedTrieProof<K::Version, H>, VersionedTrieError> {
         let p = w::VersionedTrieProof::from_value_within(value, crate::MAX_PROOF_WEIGHT).map_err(malformed)?;
+        // the parts in the reference's order (versioned-trie.md section 5): head, top, at, history, state
+        let head = self.head_from_wire(&p.head)?;
+        let top = TrieProof::from_records(&p.top)?;
         let at = match &p.at {
             None => None,
             Some(a) => {
                 Some(At { version: self.key.decode(&a.v)?, state_root: a.s.as_deref().map(digest).transpose()? })
             }
         };
-        Ok(VersionedTrieProof {
-            head: self.head_from_wire(&p.head)?,
-            top: TrieProof::from_records(&p.top)?,
-            at,
-            history: p.history.as_deref().map(TrieProof::from_records).transpose()?,
-            state: p.state.as_deref().map(TrieProof::from_records).transpose()?,
-        })
+        let history = p.history.as_deref().map(TrieProof::from_records).transpose()?;
+        let state = p.state.as_deref().map(TrieProof::from_records).transpose()?;
+        Ok(VersionedTrieProof { head, top, at, history, state })
     }
 
     /// Decodes a `versioned-trie-delta` value. A value heavier than [`crate::MAX_PROOF_WEIGHT`] is `Malformed`,

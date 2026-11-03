@@ -211,6 +211,11 @@ Values travel separately, as everywhere in `trie.md` §5. A delta's values are c
 keys as text. A proof, delta or head decoded from a value heavier than `MaxProofWeight` (2^24) is `Malformed`,
 refused before it is decoded (`conformance.md` §5); its values are part of its weight.
 
+**Decoding order.** A record with more than one fault is refused for the first in this order, every implementation
+alike (`conformance.md` §5), and the refusal vectors pin each pair: a proof's `head`, `top`, `at`, `history`, then
+`state`; a delta's `parent`, `head`, each upsert's key in order, then each removed key; a head's `v`, `s`, then `h`; a
+history chunk's versions in order, each its `v` then its `s`.
+
 ## 6. Verification
 
 Every check is against a trusted root `R` and the configured width `w`. "Not covered" (a proof that reaches a stub

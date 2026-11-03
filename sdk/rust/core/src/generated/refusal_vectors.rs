@@ -123,6 +123,8 @@ pub struct RefusalCase {
     pub inputs: Option<Vec<BuiltValue>>,
     /// The `zeros` entry.
     pub zeros: Option<u64>,
+    /// The `chunk` entry.
+    pub chunk: Option<Hex>,
     /// The `mode` entry.
     pub mode: Option<RefusalMode>,
     /// The `root` entry.
@@ -160,6 +162,7 @@ impl c::Model for RefusalCase {
             c::optional_field("input", &c::ModelOf::<BuiltValue>::NEW, self.input.as_ref(), inner)?,
             c::optional_field("inputs", &c::VecOf { element: c::ModelOf::<BuiltValue>::NEW, min: 0, max: None }, self.inputs.as_ref(), inner)?,
             c::optional_field("zeros", &c::UINT, self.zeros.as_ref(), inner)?,
+            c::optional_field("chunk", &HEX, self.chunk.as_ref(), inner)?,
             c::optional_field("mode", &c::ModelOf::<RefusalMode>::NEW, self.mode.as_ref(), inner)?,
             c::optional_field("root", &HEX, self.root.as_ref(), inner)?,
             c::optional_field("oldRoot", &HEX, self.old_root.as_ref(), inner)?,
@@ -177,26 +180,27 @@ impl c::Model for RefusalCase {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["name", "check", "input", "inputs", "zeros", "mode", "root", "oldRoot", "leafHash", "key", "stateKey", "at", "size", "prefix", "claim", "entries", "batch", "outcome"])?;
+        let fields = c::Fields::of(value, &["name", "check", "input", "inputs", "zeros", "chunk", "mode", "root", "oldRoot", "leafHash", "key", "stateKey", "at", "size", "prefix", "claim", "entries", "batch", "outcome"])?;
         let f0 = fields.required("name", &c::Text)?;
         let f1 = fields.required("check", &c::ModelOf::<RefusalCheck>::NEW)?;
         let f2 = fields.optional("input", &c::ModelOf::<BuiltValue>::NEW)?;
         let f3 = fields.optional("inputs", &c::VecOf { element: c::ModelOf::<BuiltValue>::NEW, min: 0, max: None })?;
         let f4 = fields.optional("zeros", &c::UINT)?;
-        let f5 = fields.optional("mode", &c::ModelOf::<RefusalMode>::NEW)?;
-        let f6 = fields.optional("root", &HEX)?;
-        let f7 = fields.optional("oldRoot", &HEX)?;
-        let f8 = fields.optional("leafHash", &HEX)?;
-        let f9 = fields.optional("key", &HEX)?;
-        let f10 = fields.optional("stateKey", &c::Text)?;
-        let f11 = fields.optional("at", &c::UINT)?;
-        let f12 = fields.optional("size", &c::UINT)?;
-        let f13 = fields.optional("prefix", &HEX)?;
-        let f14 = fields.optional("claim", &c::ModelOf::<BuiltValue>::NEW)?;
-        let f15 = fields.optional("entries", &c::VecOf { element: c::ModelOf::<RefusalEntry>::NEW, min: 0, max: None })?;
-        let f16 = fields.optional("batch", &c::VecOf { element: c::ModelOf::<RefusalUpsert>::NEW, min: 0, max: None })?;
-        let f17 = fields.required("outcome", &c::ModelOf::<RefusalOutcome>::NEW)?;
-        Ok(Self { name: f0, check: f1, input: f2, inputs: f3, zeros: f4, mode: f5, root: f6, old_root: f7, leaf_hash: f8, key: f9, state_key: f10, at: f11, size: f12, prefix: f13, claim: f14, entries: f15, batch: f16, outcome: f17 })
+        let f5 = fields.optional("chunk", &HEX)?;
+        let f6 = fields.optional("mode", &c::ModelOf::<RefusalMode>::NEW)?;
+        let f7 = fields.optional("root", &HEX)?;
+        let f8 = fields.optional("oldRoot", &HEX)?;
+        let f9 = fields.optional("leafHash", &HEX)?;
+        let f10 = fields.optional("key", &HEX)?;
+        let f11 = fields.optional("stateKey", &c::Text)?;
+        let f12 = fields.optional("at", &c::UINT)?;
+        let f13 = fields.optional("size", &c::UINT)?;
+        let f14 = fields.optional("prefix", &HEX)?;
+        let f15 = fields.optional("claim", &c::ModelOf::<BuiltValue>::NEW)?;
+        let f16 = fields.optional("entries", &c::VecOf { element: c::ModelOf::<RefusalEntry>::NEW, min: 0, max: None })?;
+        let f17 = fields.optional("batch", &c::VecOf { element: c::ModelOf::<RefusalUpsert>::NEW, min: 0, max: None })?;
+        let f18 = fields.required("outcome", &c::ModelOf::<RefusalOutcome>::NEW)?;
+        Ok(Self { name: f0, check: f1, input: f2, inputs: f3, zeros: f4, chunk: f5, mode: f6, root: f7, old_root: f8, leaf_hash: f9, key: f10, state_key: f11, at: f12, size: f13, prefix: f14, claim: f15, entries: f16, batch: f17, outcome: f18 })
     }
 }
 
