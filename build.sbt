@@ -98,6 +98,8 @@ lazy val core = project.in(file("core"))
     buildInfoSettings,
     commonSettings,
     commonTestSettings,
+    // main sources hold no hashed collection: canonical maps carry caller-chosen keys (.scalafix-core.conf)
+    Compile / scalafixConfig := Some((LocalRootProject / baseDirectory).value / ".scalafix-core.conf"),
     libraryDependencies ++= Seq(
       Libraries.bc,
       Libraries.cats,

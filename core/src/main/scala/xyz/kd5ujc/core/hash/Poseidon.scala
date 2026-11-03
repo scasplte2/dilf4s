@@ -85,8 +85,7 @@ object Poseidon {
   def compress(l: Fr, r: Fr): Fr = hash2(l, r)
 
   def hash(inputs: Seq[Fr]): Either[PoseidonError, Fr] =
-    byWidth
-      .get(inputs.size + 1)
+    byWidth(inputs.size + 1)
       .toRight(PoseidonError.InputCount(inputs.size, MaxInputs))
       .map(m => permute(m, inputs.toVector))
 
@@ -114,7 +113,13 @@ object Poseidon {
   private val W3 = montgomery(PoseidonConstants.Width3)
   private val W4 = montgomery(PoseidonConstants.Width4)
   private val W5 = montgomery(PoseidonConstants.Width5)
-  private val byWidth: Map[Int, Mont] = Map(2 -> W2, 3 -> W3, 4 -> W4, 5 -> W5)
+  private def byWidth(width: Int): Option[Mont] = width match {
+    case 2 => Some(W2)
+    case 3 => Some(W3)
+    case 4 => Some(W4)
+    case 5 => Some(W5)
+    case _ => None
+  }
 
   private val Half: Int = PoseidonConstants.FullRounds / 2
 

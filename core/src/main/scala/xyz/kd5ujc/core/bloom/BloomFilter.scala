@@ -99,7 +99,7 @@ object BloomFilter {
 
   def decode[H](v: CanonicalValue): Either[BloomError, BloomFilter[H]] =
     v match {
-      case CMap(m) if m.keySet == Set("m", "k", "b") =>
+      case CMap(m) if m.size == 3 && List("m", "k", "b").forall(m.contains) =>
         (m("m"), m("k"), m("b")) match {
           case (CInt(bits), CInt(k), CBytes(b)) if bits.isValidInt && k.isValidInt =>
             BloomParams(bits.toInt, k.toInt).flatMap { p =>
