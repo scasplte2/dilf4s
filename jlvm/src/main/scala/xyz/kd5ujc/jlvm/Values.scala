@@ -266,9 +266,10 @@ object Values {
 
   /**
    * The first index at or after `from` where `needle` occurs in `haystack`, or -1: Knuth-Morris-Pratt, so the work is
-   * linear in both lengths (a naive search is quadratic, which no linear gas charge could price).
+   * linear in both lengths (a naive search is quadratic, which no linear gas charge could price). Inlined for each
+   * representation, so every step is a direct read of a string or an array rather than a call through a function.
    */
-  def indexOf(haystack: Int => Int, hayLength: Int, needle: Int => Int, needleLength: Int, from: Int): Int = {
+  private inline def kmp(inline haystack: Int => Int, hayLength: Int, inline needle: Int => Int, needleLength: Int, from: Int): Int = {
     val fail = failure(needle, needleLength)
 
     @tailrec
@@ -282,22 +283,30 @@ object Values {
     search(from, 0)
   }
 
-  /** The KMP failure function: for each prefix, the length of its longest proper prefix that is also a suffix. */
-  private def failure(needle: Int => Int, n: Int): Vector[Int] = {
-    @tailrec
-    def build(i: Int, k: Int, acc: Vector[Int]): Vector[Int] =
-      if (i >= n) acc
-      else if (needle(i) == needle(k)) build(i + 1, k + 1, acc :+ (k + 1))
-      else if (k > 0) build(i, acc(k - 1), acc)
-      else build(i + 1, 0, acc :+ 0)
+  /**
+   * The KMP failure function: for each prefix, the length of its longest proper prefix that is also a suffix. Each
+   * entry reads earlier ones, so it is built in an array local to this call, which never escapes it (a persistent
+   * vector of boxed integers made the search several times slower than its gas).
+   */
+  private inline def failure(inline needle: Int => Int, n: Int): Array[Int] = {
+    val table = new Array[Int](n.max(1))
 
-    if (n == 0) Vector.empty else build(1, 0, Vector(0))
+    @tailrec
+    def build(i: Int, k: Int): Array[Int] =
+      if (i >= n) table
+      else if (needle(i) == needle(k)) { table(i) = k + 1; build(i + 1, k + 1) }
+      else if (k > 0) build(i, table(k - 1))
+      else { table(i) = 0; build(i + 1, 0) }
+
+    build(1, 0)
   }
 
   def indexOf(haystack: String, needle: String, from: Int): Int =
-    indexOf(i => haystack.charAt(i).toInt, haystack.length, i => needle.charAt(i).toInt, needle.length, from)
+    kmp(haystack.charAt(_).toInt, haystack.length, needle.charAt(_).toInt, needle.length, from)
 
-  /** Flat operands: each byte read is O(1), so the search stays linear whatever built them. */
-  def indexOf(haystack: FlatBytes, needle: FlatBytes): Long =
-    indexOf(i => haystack(i.toLong).toInt, haystack.size.toInt, i => needle(i.toLong).toInt, needle.size.toInt, 0).toLong
+  /** Flat operands, copied once into arrays: each step of the search is a direct array read. */
+  def indexOf(haystack: FlatBytes, needle: FlatBytes): Long = {
+    val (h, n) = (haystack.toArray, needle.toArray)
+    kmp(h(_).toInt, h.length, n(_).toInt, n.length, 0).toLong
+  }
 }
