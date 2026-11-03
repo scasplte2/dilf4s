@@ -1,28 +1,29 @@
 //! A replica (docs/specs/versioned-trie.md §7): kept in memory, started empty or from a snapshot checked against a
 //! trusted head, and following deltas, recomputing both roots itself.
 //!
-//! The roots are rebuilt from the entries on every delta, which costs time linear in the state's size.
+//! The state and the history are each one persistent trie that holds the entries and caches every node's hash, so a
+//! delta re-hashes only the paths of the keys it changes: O(changed keys × key length), whatever the state's size. No
+//! key a peer sends is ever hashed into a table: keys are walked bit by bit, or compared.
 
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use dilf4s_core::hash::{Digest, Hasher};
 use dilf4s_core::value::Value;
 
 use super::snapshot::{Snapshot, SnapshotChunk};
+use super::trie_map::TrieMap;
 use super::wire::Delta;
 use super::{
     Head, MAX_CHUNK_ENTRIES, StateKey, VersionKey, VersionedTrie, VersionedTrieError, check_value, malformed, mismatch,
 };
-use crate::trie::root_from_sorted;
 
 /// A replica of a versioned trie.
 pub struct Replica<K: VersionKey, H: Hasher> {
     vt: VersionedTrie<K, H>,
     head: Option<Head<K::Version, H>>,
-    state: BTreeMap<Vec<u8>, Digest<H>>,
-    history: BTreeMap<Vec<u8>, Digest<H>>,
-    values: BTreeMap<StateKey, Value>,
+    state: TrieMap<(StateKey, Value), H>,
+    history: TrieMap<(), H>,
 }
 
 fn none_or<H: Hasher>(d: Option<&Digest<H>>) -> alloc::string::String {
@@ -32,7 +33,9 @@ fn none_or<H: Hasher>(d: Option<&Digest<H>>) -> alloc::string::String {
 impl<K: VersionKey, H: Hasher> Replica<K, H> {
     /// An empty replica, before the first commit.
     pub const fn empty(vt: VersionedTrie<K, H>) -> Self {
-        Self { vt, head: None, state: BTreeMap::new(), history: BTreeMap::new(), values: BTreeMap::new() }
+        let state = TrieMap::empty(vt.state_mode());
+        let history = TrieMap::empty(vt.history_mode());
+        Self { vt, head: None, state, history }
     }
 
     /// A replica of `snapshot`, which must pass every check of the snapshot reader against `trusted` and rebuild
@@ -46,22 +49,26 @@ impl<K: VersionKey, H: Hasher> Replica<K, H> {
         chunks.extend(snapshot.entries.chunks(MAX_CHUNK_ENTRIES).map(|c| SnapshotChunk::State(c.to_vec())));
         chunks.extend(snapshot.history.chunks(MAX_CHUNK_ENTRIES).map(|c| SnapshotChunk::History(c.to_vec())));
         let checked = vt.read_snapshot(trusted.clone(), chunks)?;
-        let state: BTreeMap<Vec<u8>, Digest<H>> =
-            checked.entries.iter().map(|(k, v)| (k.as_bytes().to_vec(), vt.value_hash(v))).collect();
-        let mut history = BTreeMap::new();
-        for (u, s) in &checked.history {
-            history.insert(vt.vkey(u)?, vt.bytes_hash(s.as_bytes()));
-        }
-        let state_root = root_from_sorted(vt.hashing(), vt.state_mode(), &state)?;
+        // the reader has checked that keys and versions strictly increase, which the builder requires
+        let entries = checked.entries.into_iter().map(|(k, v)| {
+            let hash = vt.value_hash(&v);
+            (k.as_bytes().to_vec(), (k, v), hash)
+        });
+        let state = TrieMap::from_sorted(vt.hashing(), vt.state_mode(), entries)?;
+        let state_root = state.root(vt.hashing());
         if state_root != trusted.state_root {
             return Err(mismatch("state", &trusted.state_root, &state_root));
         }
-        let history_root = root_from_sorted(vt.hashing(), vt.history_mode(), &history)?;
+        let mut versions = Vec::with_capacity(checked.history.len());
+        for (u, s) in &checked.history {
+            versions.push((vt.vkey(u)?, (), vt.bytes_hash(s.as_bytes())));
+        }
+        let history = TrieMap::from_sorted(vt.hashing(), vt.history_mode(), versions)?;
+        let history_root = history.root(vt.hashing());
         if history_root != trusted.history_root {
             return Err(mismatch("history", &trusted.history_root, &history_root));
         }
-        let values = checked.entries.into_iter().collect();
-        Ok(Self { vt, head: Some(trusted), state, history, values })
+        Ok(Self { vt, head: Some(trusted), state, history })
     }
 
     /// The head, if anything was committed.
@@ -74,9 +81,24 @@ impl<K: VersionKey, H: Hasher> Replica<K, H> {
         self.head.as_ref().map(|h| self.vt.root(h)).transpose()
     }
 
-    /// The current values.
-    pub const fn values(&self) -> &BTreeMap<StateKey, Value> {
-        &self.values
+    /// The current value of `key`, if any: one walk down its path.
+    pub fn get(&self, key: &StateKey) -> Option<&Value> {
+        self.state.get(key.as_bytes()).map(|(_, v)| v)
+    }
+
+    /// Every current entry, in key order.
+    pub fn entries(&self) -> impl Iterator<Item = (&StateKey, &Value)> {
+        self.state.iter().map(|(k, v)| (k, v))
+    }
+
+    /// The number of current entries.
+    pub const fn len(&self) -> usize {
+        self.state.len()
+    }
+
+    /// Whether the state is empty.
+    pub const fn is_empty(&self) -> bool {
+        self.state.len() == 0
     }
 
     /// The configuration.
@@ -117,28 +139,23 @@ impl<K: VersionKey, H: Hasher> Replica<K, H> {
             }
             check_value(k, v)?;
         }
+        // new tries sharing every untouched subtree with the current ones, which stay as they are until both roots match
+        let hashing = self.vt.hashing();
         let mut state = self.state.clone();
         for k in &delta.removes {
-            state.remove(k.as_bytes());
+            state = state.remove(hashing, k.as_bytes())?;
         }
         for (k, v) in &delta.upserts {
-            state.insert(k.as_bytes().to_vec(), self.vt.value_hash(v));
+            state = state.insert(hashing, k.as_bytes(), (k.clone(), v.clone()), self.vt.value_hash(v))?;
         }
-        let state_root = root_from_sorted(self.vt.hashing(), self.vt.state_mode(), &state)?;
+        let state_root = state.root(hashing);
         if state_root != delta.head.state_root {
             return Err(mismatch("state", &delta.head.state_root, &state_root));
         }
-        let mut history = self.history.clone();
-        history.insert(nk, self.vt.bytes_hash(state_root.as_bytes()));
-        let history_root = root_from_sorted(self.vt.hashing(), self.vt.history_mode(), &history)?;
+        let history = self.history.insert(hashing, &nk, (), self.vt.bytes_hash(state_root.as_bytes()))?;
+        let history_root = history.root(hashing);
         if history_root != delta.head.history_root {
             return Err(mismatch("history", &delta.head.history_root, &history_root));
-        }
-        for k in &delta.removes {
-            self.values.remove(k);
-        }
-        for (k, v) in &delta.upserts {
-            self.values.insert(k.clone(), v.clone());
         }
         self.state = state;
         self.history = history;

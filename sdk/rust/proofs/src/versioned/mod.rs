@@ -16,6 +16,7 @@ use crate::trie::{KeyMode, TrieError, TrieHashing, root_from_entries};
 mod keys;
 mod replica;
 mod snapshot;
+mod trie_map;
 mod verifier;
 mod wire;
 

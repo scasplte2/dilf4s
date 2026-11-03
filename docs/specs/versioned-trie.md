@@ -265,7 +265,11 @@ Transport is out of scope; these are the data and the checks.
   the trusted history root. A snapshot that ends earlier is truncated.
 - **Replica.** A replica starts empty, or from a snapshot checked as above. A replica
   applies a delta only if the delta's parent is its head, its version is greater, no key is both written and removed,
-  and the head it recomputes (state root, then history root with the new version) is the delta's head.
+  and the head it recomputes (state root, then history root with the new version) is the delta's head. A refused
+  delta leaves the replica as it was. A replica keeps both tries with their node hashes and recomputes the roots
+  incrementally: a delta re-hashes only the paths of the keys it changes and of the new version, so its cost is
+  O(changed keys × key length), whatever the state's size; restoring from a snapshot hashes each node once. Its keys
+  come from peers, so it only ever compares them or walks them bit by bit, never keys a hash table by them.
 
 **Snapshot wire format.** Each chunk is one canonical CBOR record (`versioned-trie-snapshot-chunk`, §5) of at most
 4 MiB (4194304 bytes); a receiver refuses a larger chunk before decoding it. A head chunk is `{"head": head}`, a state

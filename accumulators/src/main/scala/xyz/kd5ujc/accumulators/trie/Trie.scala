@@ -108,13 +108,21 @@ object Trie {
         .map(built => assembleBuilt(mode, built))
     }
 
-  /** Validates keys, keeps the last value per key, and sorts by path (a prefix sorts before its extensions). */
+  /**
+   * Validates keys, keeps the last value per key, and sorts by path (a prefix sorts before its extensions). Keys are
+   * only compared, never hashed: they may be a peer's (a snapshot's), and a key's hash code is collidable.
+   */
   private def prepare[H](
     mode:    KeyMode,
     entries: List[(ByteVector, Digest[H])]
   ): Either[TrieError, Vector[(scodec.bits.BitVector, Digest[H])]] =
-    entries.traverse { case (k, v) => mode.path(k).map(_ -> v) }
-      .map(_.foldLeft(Map.empty[scodec.bits.BitVector, Digest[H]])(_ + _).toVector.sortWith((a, b) => Bulk.lessThan(a._1, b._1)))
+    entries.traverse { case (k, v) => mode.path(k).map(_ -> v) }.map { paths =>
+      // the sort is stable, so the last of a run of equal keys is the latest
+      paths.toVector.sortWith((a, b) => Bulk.lessThan(a._1, b._1)).foldLeft(Vector.empty[(scodec.bits.BitVector, Digest[H])]) {
+        case (acc, e) if acc.lastOption.exists(_._1 == e._1) => acc.updated(acc.size - 1, e)
+        case (acc, e)                                        => acc :+ e
+      }
+    }
 
   /** Every built node is new and has exactly the parents the build gave it, so counts follow from the edges. */
   private def assembleBuilt[H](mode: KeyMode, built: Option[(Node[H], List[Node[H]])])(implicit T: TrieHashing[H]): Trie[H] =
