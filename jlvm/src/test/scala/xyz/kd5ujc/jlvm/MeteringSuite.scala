@@ -456,8 +456,13 @@ object MeteringSuite extends IOSuite {
 
   // ---- parsing and compiling: work linear in the program, n log n where keys or names are sorted
 
-  /** The work of parsing and compiling a program: expressions visited, and object-key and name comparisons. */
-  private final case class Work(ok: Boolean, steps: Long, keys: Long, names: Long)
+  /**
+   * The work of parsing and compiling a program: expressions visited, and object-key and name comparisons, with the key
+   * comparisons parsing made apart from compiling's (each sorts the keys it holds: one could hash while the other sorts).
+   */
+  private final case class Work(ok: Boolean, steps: Long, keys: Long, parsedKeys: Long, names: Long) {
+    def compiledKeys: Long = keys - parsedKeys
+  }
 
   /** Parses (with [[Program.from]]'s passes) and compiles `json`, counting steps and comparisons. */
   private def work(json: String): IO[Work] =
@@ -468,8 +473,10 @@ object MeteringSuite extends IOSuite {
           keys = counted(Kernels.CodePoints, keys),
           steps = new Steps { def step(): Unit = { steps.incrementAndGet(); () } }
         )
-        val ok = Parser.parse(json, kernels).flatMap(Compiled(_, kernels)).isRight
-        Work(ok, steps.get, keys.get, names.get)
+        val parsed = Parser.parse(json, kernels)
+        val parsedKeys = keys.get
+        val ok = parsed.flatMap(Compiled(_, kernels)).isRight
+        Work(ok, steps.get, keys.get, parsedKeys, names.get)
       }
     }
 
@@ -494,7 +501,8 @@ object MeteringSuite extends IOSuite {
     work(s"""{${List.tabulate(N)(i => s""""k$i": 1""").mkString(", ")}}""").map { w =>
       expect(w.ok, "compiles")
         .and(expect(w.steps <= Passes * (N + 1), s"$N fields took ${w.steps} steps"))
-        .and(expect(w.keys >= N - 1 && w.keys <= 4 * N * log2(N), s"$N fields compared keys ${w.keys} times"))
+        .and(expect(w.parsedKeys >= N - 1 && w.parsedKeys <= 2 * N * log2(N), s"parsing $N fields compared keys ${w.parsedKeys} times"))
+        .and(expect(w.compiledKeys >= N - 1 && w.compiledKeys <= 2 * N * log2(N), s"compiling them compared keys ${w.compiledKeys} times"))
     }
   }
 
@@ -511,7 +519,8 @@ object MeteringSuite extends IOSuite {
     work(s"""{"let": [{${List.tabulate(N)(i => s""""n$i": 1""").mkString(", ")}}, 1]}""").map { w =>
       expect(w.ok, "compiles")
         .and(expect(w.steps <= Passes * (N + 3), s"$N bindings took ${w.steps} steps"))
-        .and(expect(w.keys >= N - 1 && w.keys <= 4 * N * log2(N), s"$N bindings compared keys ${w.keys} times"))
+        .and(expect(w.parsedKeys >= N - 1 && w.parsedKeys <= 2 * N * log2(N), s"parsing $N bindings compared keys ${w.parsedKeys} times"))
+        .and(expect(w.compiledKeys >= N - 1 && w.compiledKeys <= 2 * N * log2(N), s"compiling them compared keys ${w.compiledKeys} times"))
         .and(expect(w.names >= N - 1 && w.names <= 3 * N * log2(N), s"$N bindings compared names ${w.names} times"))
     }
   }
