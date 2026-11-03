@@ -69,7 +69,7 @@ final class Secp256k1 private (native: Native) {
   /** A key libsecp256k1 does not parse is not a key: `InvalidKey`, whatever the backend reports. */
   private def parsedPoint(scheme: String, point33: ByteVector): Either[CryptoError, Unit] =
     call("pubkeyParse")(native.pubkeyParse(point33.toArray))
-      .bimap(_ => CryptoError.InvalidKey(s"$scheme verifying key is not a valid point"), _ => ())
+      .bimap(_ => SchemeCodec.notAPoint(scheme), _ => ())
 
   // ------------------------------------------------------------------ ECDSA
 

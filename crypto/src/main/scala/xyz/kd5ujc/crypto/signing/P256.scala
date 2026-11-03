@@ -53,7 +53,7 @@ object P256Ecdsa {
           Option
             .when(SchemeCodec.compressedTag(b))(b)
             .flatMap(point(_).toOption)
-            .toRight(CryptoError.InvalidKey("P-256 verifying key is not a valid point"))
+            .toRight(SchemeCodec.notAPoint("P-256"))
             .as(VerifyingKey[P256Ecdsa](b))
         )
     def signature(bytes: ByteVector): Either[CryptoError, Signature[P256Ecdsa]] =
