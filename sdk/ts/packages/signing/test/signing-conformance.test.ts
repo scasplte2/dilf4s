@@ -271,7 +271,18 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
       expect(actual, JSON.stringify(c.path.slice(0, 40))).toEqual(c.result);
       if (typeof c.result === "string") seen.add(toSdk(c.result));
     }
-    expect([...seen].sort()).toEqual(["leadingZero", "malformed", "missingMaster", "outOfRange", "tooDeep", "tooManyDigits"]);
+    // coverage (conformance.md section 6): a Record over the SDK's refusals, so a refusal added to PathRefusal does not
+    // compile until it is listed here, and then needs a row
+    const refusals: Record<PathRefusal, true> = {
+      missingMaster: true,
+      malformed: true,
+      leadingZero: true,
+      tooManyDigits: true,
+      outOfRange: true,
+      tooDeep: true,
+    };
+    const pinned = new Set<string>(seen);
+    expect(Object.keys(refusals).filter((r) => !pinned.has(r))).toEqual([]);
   });
 
   test("BLS proofs of possession reproduce and verify", { timeout: 30_000 }, () => {
