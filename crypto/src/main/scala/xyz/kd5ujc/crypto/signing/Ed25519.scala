@@ -111,7 +111,6 @@ object Ed25519 {
         r <- decode(signature.take(32))
         s <- canonicalScalar(signature.drop(32))
         k = challenge(signature, key, message)
-      } yield (Point.doubleScalarMultiplyBasepoint(Scalar.ZERO.subtract(k), a, s) - r).multiplyByCofactor().isIdentity)
-        .getOrElse(false)
+      } yield Point.cofactoredEquation(s, k, a, r)).getOrElse(false)
   }
 }
