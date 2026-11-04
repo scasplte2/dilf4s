@@ -136,7 +136,7 @@ object ReplicaWorkSuite extends SimpleIOSuite with Checkers {
     val nodes: AtomicLong = new AtomicLong
     def hasher: xyz.kd5ujc.core.hash.Hasher[H] = T.hasher
     def empty: Digest[H] = T.empty
-    def value(bytes: ByteVector): Digest[H] = T.value(bytes)
+    def valueOf(bytes: xyz.kd5ujc.core.canonical.ByteSource): Digest[H] = T.valueOf(bytes)
     def leaf(segment: BitVector, value: Digest[H]): Digest[H] = {
       nodes.incrementAndGet()
       T.leaf(segment, value)

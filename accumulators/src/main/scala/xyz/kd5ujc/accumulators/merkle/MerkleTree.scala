@@ -6,7 +6,7 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.accumulators.ValueCommitment
-import xyz.kd5ujc.core.canonical.{Canonical, CanonicalError}
+import xyz.kd5ujc.core.canonical.{ByteSource, Canonical, CanonicalError}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
 
 import scodec.bits.ByteVector
@@ -14,8 +14,11 @@ import scodec.bits.ByteVector
 /** The three hash functions of a Merkle profile (docs/specs/merkle.md §2). */
 trait MerkleHashing[H] {
   def empty: Digest[H]
-  def leaf(data: ByteVector): Digest[H]
-  def node(left: Digest[H], right: Digest[H]): Digest[H]
+  def leaf(data: ByteVector): Digest[H] = leafOf(ByteSource.bytes(data))
+
+  /** The leaf hash of `data`'s bytes, absorbed as they are written: a value's commitment is never built whole. */
+  def leafOf(data: ByteSource): Digest[H]
+  def node(left:   Digest[H], right: Digest[H]): Digest[H]
 }
 
 object MerkleHashing {
@@ -34,15 +37,15 @@ object MerkleHashing {
     private val leafTag = TaggedHash[H](tag(LeafTag))
     private val nodeTag = TaggedHash[H](tag(NodeTag))
     val empty: Digest[H] = TaggedHash[H](tag(EmptyTag)).apply(ByteVector.empty)
-    def leaf(data: ByteVector): Digest[H] = leafTag(data)
-    def node(left: Digest[H], right: Digest[H]): Digest[H] = nodeTag(left.bytes ++ right.bytes)
+    def leafOf(data: ByteSource): Digest[H] = leafTag.of(data)
+    def node(left:   Digest[H], right: Digest[H]): Digest[H] = nodeTag(left.bytes ++ right.bytes)
   }
 
   /** RFC 6962 one-byte prefixes, for interoperability tests against Certificate Transparency vectors. */
   def rfc6962[H](implicit H: Hasher[H]): MerkleHashing[H] = new MerkleHashing[H] {
     val empty: Digest[H] = H.digest(ByteVector.empty)
-    def leaf(data: ByteVector): Digest[H] = H.digest(ByteVector(0) ++ data)
-    def node(left: Digest[H], right: Digest[H]): Digest[H] = H.digest(ByteVector(1) ++ left.bytes ++ right.bytes)
+    def leafOf(data: ByteSource): Digest[H] = H.digestOf(ByteSource.byte(0) ++ data)
+    def node(left:   Digest[H], right: Digest[H]): Digest[H] = H.digest(ByteVector(1) ++ left.bytes ++ right.bytes)
   }
 }
 
@@ -189,7 +192,7 @@ object MerkleTree {
 
   /** A value leaf's hash (docs/specs/merkle.md §2): the leaf hash of its [[ValueCommitment]] bytes. */
   def leaf[H, A](value: A)(implicit M: MerkleHashing[H], C: Canonical[A]): Either[CanonicalError, Digest[H]] =
-    C.canonical(value).map(v => M.leaf(ValueCommitment.bytes(v)))
+    C.canonical(value).map(v => M.leafOf(ValueCommitment.source(v)))
 
   /** Largest power of two strictly below `n` (n >= 2). */
   private[merkle] def splitPoint(n: Long): Long = java.lang.Long.highestOneBit(n - 1)

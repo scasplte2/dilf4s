@@ -2,9 +2,7 @@ package xyz.kd5ujc.core.canonical
 
 import java.nio.charset.StandardCharsets.UTF_8
 
-import cats.Eval
 import cats.syntax.either._
-import cats.syntax.traverse._
 
 import scala.annotation.tailrec
 
@@ -35,27 +33,79 @@ object Cbor {
 
   // ------------------------------------------------------------------ encoding
 
-  /** Total: every canonical value has exactly one encoding. Stack-safe for any nesting depth. */
-  def encode(value: CanonicalValue): ByteVector = encodeEval(value).value
+  /**
+   * Total: every canonical value has exactly one encoding. Stack-safe for any nesting depth. The result is flat: one
+   * array ([[FlatBytes]]), so reading or slicing it never walks a rope.
+   */
+  def encode(value: CanonicalValue): FlatBytes = FlatBytes(write(value, ByteSink.emptyBuffer))
 
-  private def encodeEval(value: CanonicalValue): Eval[ByteVector] =
-    value match {
-      case CNull        => Eval.now(ByteVector(0xf6))
-      case CBool(false) => Eval.now(ByteVector(0xf4))
-      case CBool(true)  => Eval.now(ByteVector(0xf5))
-      case CInt(n)      => Eval.now(integer(n))
+  /**
+   * The encoding of `value`, not yet built: written into a buffer it is [[encode]]; into a hash, it is hashed as it is
+   * written, and never held whole (`Hasher.digestOf`).
+   */
+  def source(value: CanonicalValue): ByteSource =
+    ByteSource.of(new ByteSource.Piece {
+      def writeTo[S](s: S)(implicit sink: ByteSink[S]): S = write(value, s)
+    })
+
+  /**
+   * The one encoder: an explicit stack of the containers still open (one per level of nesting) instead of the JVM's,
+   * writing each node's head before its children. What it writes itself is at most a head (9 bytes) at a time; a byte
+   * string goes to the sink as it is, a text or map key in UTF-8 windows of at most [[TextWindow]] characters, and a
+   * bignum's magnitude whole (a copy of that one integer, which the value holds whole). A map's entries are sorted into
+   * encoded-key order when it is opened, from each key's UTF-8 length and its code points ([[keyBefore]]), without
+   * encoding any key: the walk holds a reference and a length per entry of each map open on the current path.
+   */
+  private def write[S](value: CanonicalValue, s: S)(implicit out: ByteSink[S]): S = walk(List(Node(value)), s)
+
+  sealed private trait Open
+  final private case class Node(value: CanonicalValue) extends Open
+  final private case class Items(items: Vector[CanonicalValue], next: Int) extends Open
+  final private case class Entries(entries: Vector[(String, Long, CanonicalValue)], next: Int) extends Open
+
+  @tailrec
+  private def walk[S](stack: List[Open], s: S)(implicit out: ByteSink[S]): S =
+    stack match {
+      case Nil                      => s
+      case Node(CArray(vs)) :: rest => walk(Items(vs, 0) :: rest, head(s, 4, vs.size.toLong))
+      case Node(m: CMap) :: rest =>
+        val sorted = m.entries.toVector.map { case (k, v) => (k, Utf16.utf8Length(k), v) }.sortWith(keyBefore)
+        walk(Entries(sorted, 0) :: rest, head(s, 5, sorted.size.toLong))
+      case Node(scalar: CanonicalValue.Scalar) :: rest     => walk(rest, writeScalar(s, scalar))
+      case Items(items, next) :: rest if next < items.size => walk(Node(items(next)) :: Items(items, next + 1) :: rest, s)
+      case Entries(entries, next) :: rest if next < entries.size =>
+        val (key, length, v) = entries(next)
+        walk(Node(v) :: Entries(entries, next + 1) :: rest, utf8(head(s, 3, length), key, 0))
+      case Items(_, _) :: rest   => walk(rest, s) // the array is done
+      case Entries(_, _) :: rest => walk(rest, s) // the map is done
+    }
+
+  private def writeScalar[S](s: S, v: CanonicalValue.Scalar)(implicit out: ByteSink[S]): S =
+    v match {
+      case CBool(false) => out.byte(s, 0xf4)
+      case CBool(true)  => out.byte(s, 0xf5)
+      case CInt(n)      => integer(s, n)
       case r: CRational =>
-        Eval.now(head(6, TagRational.toLong) ++ head(4, 2L) ++ integer(r.value.numerator) ++ integer(r.value.denominator))
-      case t: CText   => Eval.now(text(t.value))
-      case CBytes(b)  => Eval.now(head(2, b.size) ++ b)
-      case CArray(vs) => Eval.defer(vs.traverse(encodeEval)).map(parts => parts.foldLeft(head(4, vs.size.toLong))(_ ++ _))
-      case m: CMap =>
-        Eval
-          .defer(m.entries.toVector.traverse { case (k, v) => encodeEval(v).map(ev => (text(k), ev)) })
-          .map { entries =>
-            entries.sortWith { case ((ka, _), (kb, _)) => compareBytes(ka, kb) < 0 }
-              .foldLeft(head(5, entries.size.toLong)) { case (acc, (k, v)) => acc ++ k ++ v }
-          }
+        integer(integer(head(head(s, 6, TagRational.toLong), 4, 2L), r.value.numerator), r.value.denominator)
+      case t: CText  => utf8(head(s, 3, t.weight - 1), t.value, 0) // a text weighs 1 plus its UTF-8 length
+      case CBytes(b) => out.bytes(head(s, 2, b.size), b)
+      case CNull     => out.byte(s, 0xf6)
+    }
+
+  /** The longest run of a text's characters converted to UTF-8 at once: a text's own bytes are never copied whole. */
+  private[kd5ujc] val TextWindow: Int = 4096
+
+  /** Where the window from `from` ends in a text of `length` characters: never past it, and no `Int` overflow near 2^31. */
+  private[canonical] def windowEnd(length: Int, from: Int): Int = from + math.min(TextWindow, length - from)
+
+  /** `t`'s UTF-8 from character `from`, a window at a time; a window never ends between the halves of a surrogate pair. */
+  @tailrec
+  private def utf8[S](s: S, t: String, from: Int)(implicit out: ByteSink[S]): S =
+    if (from >= t.length) s
+    else {
+      val end = windowEnd(t.length, from)
+      val cut = if (end < t.length && Character.isHighSurrogate(t.charAt(end - 1))) end - 1 else end
+      utf8(out.bytes(s, FlatBytes.view(t.substring(from, cut).getBytes(UTF_8))), t, cut)
     }
 
   /**
@@ -111,34 +161,54 @@ object Cbor {
     else if (argument < (1L << 32)) 5L
     else 9L
 
-  private def text(s: String): ByteVector = {
-    val utf8 = ByteVector(s.getBytes(UTF_8))
-    head(3, utf8.size) ++ utf8
+  /**
+   * Whether entry `a`'s encoded key sorts before `b`'s, bytewise (RFC 8949 §4.2.1), from their UTF-8 lengths alone and
+   * their code points: a key's head grows with its length, so a shorter key sorts first; keys of one length have one
+   * head, and their UTF-8 bytes order as their code points.
+   */
+  private def keyBefore(a: (String, Long, CanonicalValue), b: (String, Long, CanonicalValue)): Boolean =
+    a._2 < b._2 || (a._2 == b._2 && codePointCompare(a._1, b._1) < 0)
+
+  /**
+   * Code-point order of two strings, read as UTF-16 units: a surrogate (a code point past U+FFFF) sorts after every
+   * unit from U+E000 up, which UTF-16 order would put after it.
+   */
+  private[canonical] def codePointCompare(a: String, b: String): Int = {
+    def rank(c: Char): Int = if (c >= 0xe000) c - 0x800 else if (c >= 0xd800) c + 0x2000 else c.toInt
+    @tailrec
+    def go(i: Int): Int =
+      if (i >= a.length || i >= b.length) a.length.compare(b.length)
+      else if (a.charAt(i) == b.charAt(i)) go(i + 1)
+      else rank(a.charAt(i)).compare(rank(b.charAt(i)))
+    go(0)
   }
 
-  private def integer(n: BigInt): ByteVector =
-    if (n.signum >= 0) { if (n < TwoTo64) head(0, n) else bignum(TagPositiveBignum, n) }
+  private def integer[S](s: S, n: BigInt)(implicit out: ByteSink[S]): S =
+    if (n.signum >= 0) { if (n < TwoTo64) head(s, 0, n.toLong) else bignum(s, TagPositiveBignum, n) }
     else {
       val m = -1 - n
-      if (m < TwoTo64) head(1, m) else bignum(TagNegativeBignum, m)
+      if (m < TwoTo64) head(s, 1, m.toLong) else bignum(s, TagNegativeBignum, m)
     }
 
-  private def bignum(tag: Int, magnitude: BigInt): ByteVector = {
-    val bytes = ByteVector(magnitude.toByteArray).dropWhile(_ == 0)
-    head(6, tag.toLong) ++ head(2, bytes.size) ++ bytes
+  private def bignum[S](s: S, tag: Int, magnitude: BigInt)(implicit out: ByteSink[S]): S = {
+    val bytes = FlatBytes(ByteVector.view(magnitude.toByteArray).dropWhile(_ == 0))
+    out.bytes(head(head(s, 6, tag.toLong), 2, bytes.size), bytes)
   }
 
-  private def head(major: Int, argument: Long): ByteVector = head(major, BigInt(argument))
-
-  /** Shortest-form initial byte plus argument; callers guarantee `0 <= argument < 2^64`. */
-  private def head(major: Int, argument: BigInt): ByteVector = {
+  /**
+   * Shortest-form initial byte plus argument, the argument read as an unsigned 64-bit number: `BigInt.toLong` of an
+   * argument below 2^64 keeps exactly its bits.
+   */
+  private def head[S](s: S, major: Int, argument: Long)(implicit out: ByteSink[S]): S = {
     val mt = major << 5
-    def fixed(len: Int): ByteVector = ByteVector(argument.toByteArray).takeRight(len.toLong).padLeft(len.toLong)
-    if (argument < 24) ByteVector(mt | argument.toInt)
-    else if (argument < 0x100) ByteVector(mt | 24, argument.toInt)
-    else if (argument < 0x10000) ByteVector(mt | 25) ++ fixed(2)
-    else if (argument < (BigInt(1) << 32)) ByteVector(mt | 26) ++ fixed(4)
-    else ByteVector(mt | 27) ++ fixed(8)
+    def below(bound: Long): Boolean = java.lang.Long.compareUnsigned(argument, bound) < 0
+    @tailrec
+    def bigEndian(s: S, byte: Int): S = if (byte < 0) s else bigEndian(out.byte(s, ((argument >>> (8 * byte)) & 0xff).toInt), byte - 1)
+    if (below(24)) out.byte(s, mt | argument.toInt)
+    else if (below(0x100)) bigEndian(out.byte(s, mt | 24), 0)
+    else if (below(0x10000)) bigEndian(out.byte(s, mt | 25), 1)
+    else if (below(1L << 32)) bigEndian(out.byte(s, mt | 26), 3)
+    else bigEndian(out.byte(s, mt | 27), 7)
   }
 
   /** Unsigned bytewise lexicographic order (RFC 8949 §4.2.1). */
@@ -157,7 +227,9 @@ object Cbor {
 
   /**
    * Strict decoder: accepts exactly the canonical encodings, so `decode(b).map(encode) == Right(b)` whenever it
-   * succeeds. An explicit frame stack bounds nesting by `maxDepth` instead of the JVM call stack.
+   * succeeds. An explicit frame stack bounds nesting by `maxDepth` instead of the JVM call stack. The input is made
+   * flat once on entry ([[FlatBytes]]: O(1) when it already is, one copy otherwise), so every byte string decoded from
+   * it is a view of that one array, and every read of the input is O(1).
    */
   def decode(bytes: ByteVector, maxDepth: Int = DefaultMaxDepth): Either[CanonicalError, CanonicalValue] =
     decode(bytes, maxDepth, KeyOrder.Default)
@@ -173,7 +245,7 @@ object Cbor {
     keys:     KeyOrder,
     reduce:   LowestTerms
   ): Either[CanonicalError, CanonicalValue] =
-    run(bytes, math.min(maxDepth, CanonicalValue.MaxDepth), keys, reduce, Read(0L, Nil, 0))
+    run(FlatBytes(bytes), math.min(maxDepth, CanonicalValue.MaxDepth), keys, reduce, Read(0L, Nil, 0))
 
   sealed private trait Frame
   final private case class ArrayFrame(remaining: Long, acc: Vector[CanonicalValue]) extends Frame

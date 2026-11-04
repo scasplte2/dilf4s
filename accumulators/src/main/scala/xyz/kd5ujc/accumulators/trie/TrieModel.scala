@@ -5,7 +5,7 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{ByteSource, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
 
 import scodec.bits.{BitVector, ByteVector}
@@ -116,7 +116,10 @@ object Node {
 trait TrieHashing[H] {
   def hasher: Hasher[H]
   def empty: Digest[H]
-  def value(bytes:    ByteVector): Digest[H]
+  def value(bytes: ByteVector): Digest[H] = valueOf(ByteSource.bytes(bytes))
+
+  /** `valueHash` of `bytes`'s bytes, absorbed as they are written: a value's commitment is never built whole. */
+  def valueOf(bytes:  ByteSource): Digest[H]
   def leaf(segment:   BitVector, value: Digest[H]): Digest[H]
   def branch(segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]]): Digest[H]
 }
@@ -139,8 +142,8 @@ object TrieHashing {
     private val leafTag = TaggedHash[H](tag(LeafTag))
     private val branchTag = TaggedHash[H](tag(BranchTag))
     val empty: Digest[H] = TaggedHash[H](tag(EmptyTag)).apply(ByteVector.empty)
-    def value(bytes:  ByteVector): Digest[H] = valueTag(bytes)
-    def leaf(segment: BitVector, value: Digest[H]): Digest[H] = leafTag(Cbor.encode(NodeCodec.leaf(segment, value)))
+    def valueOf(bytes: ByteSource): Digest[H] = valueTag.of(bytes)
+    def leaf(segment:  BitVector, value: Digest[H]): Digest[H] = leafTag(Cbor.encode(NodeCodec.leaf(segment, value)))
     def branch(segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]]): Digest[H] =
       branchTag(Cbor.encode(NodeCodec.branch(segment, value.map(_.bytes), left.map(_.bytes), right.map(_.bytes))))
   }

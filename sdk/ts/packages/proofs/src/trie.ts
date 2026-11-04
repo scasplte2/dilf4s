@@ -6,7 +6,7 @@
  *
  * Every walk uses an explicit stack, never recursion: a proof's depth is bounded only by the mode (up to 524280 bits).
  */
-import { bitLength, BYTES_TAG, describeFailure, err, models, ok, outputSize, toHex, valueCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, BYTES_TAG, describeFailure, err, models, ok, outputSize, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
@@ -182,16 +182,16 @@ export class TrieHashing {
   /**
    * The hash a trie commits for a value: `valueHash(commit(v))`, as a JLVM program claims it. O(min(weight, the
    * ceiling)), as `valueCommitment`: a value whose commitment is over `cbor.MAX_ENCODED_BYTES` (2^31 - 1, this SDK's
-   * ceiling; Scala and Rust have none) is `Encoding`, never an allocation failure.
+   * ceiling; Scala and Rust have none) is `TooLarge`. The commitment is streamed into the hash, never built.
    */
   valueHash(value: Value): Result<Uint8Array, TrieError> {
-    const c = valueCommitment(value);
-    return c.ok ? ok(this.#value.hash(c.value)) : err({ kind: "TooLarge", limit: c.error.limit });
+    const c = this.#value.commitment(value);
+    return c.ok ? c : err({ kind: "TooLarge", limit: c.error.limit });
   }
 
   /** The hash a trie commits for a byte string, `valueHash(commit(b))`: linear in `b`, which the caller holds. */
   bytesHash(b: Uint8Array): Uint8Array {
-    return this.#value.hash(concatBytes([Uint8Array.of(BYTES_TAG), b]));
+    return this.#value.hashParts([Uint8Array.of(BYTES_TAG), b]);
   }
 
   /** A leaf's hash. */

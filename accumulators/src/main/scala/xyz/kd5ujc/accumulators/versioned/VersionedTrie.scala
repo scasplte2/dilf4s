@@ -70,7 +70,7 @@ object VersionedTrie {
     KeyMode.fixed(V.width).leftMap(VersionedTrieError.Trie(_))
 
   /** The hash a trie commits for a value: `valueHash(commit(v))`, as a JLVM program claims it. */
-  def valueHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Digest[H] = T.value(ValueCommitment.bytes(v))
+  def valueHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Digest[H] = T.valueOf(ValueCommitment.source(v))
 
   /** The hash a trie commits for a byte string: the top trie's slots and the history trie's state roots. */
   def bytesHash[H](b: ByteVector)(implicit T: TrieHashing[H]): Digest[H] = valueHash(CanonicalValue.bytes(b))

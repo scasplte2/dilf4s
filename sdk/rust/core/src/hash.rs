@@ -21,9 +21,26 @@ pub trait Hasher {
     const OUTPUT_SIZE: usize;
     /// The output, as a fixed-size byte array.
     type Output: AsRef<[u8]> + Clone + fmt::Debug + PartialEq + Eq;
+    /// The running state of an incremental hash: the chaining value and at most one block of input.
+    type State: Clone;
+
+    /// A fresh state, with nothing absorbed.
+    fn start() -> Self::State;
+
+    /// Absorbs `data`.
+    fn absorb(state: &mut Self::State, data: &[u8]);
+
+    /// The hash of everything absorbed.
+    fn finish(state: Self::State) -> Self::Output;
 
     /// The hash of the concatenation of `parts`.
-    fn hash_parts(parts: &[&[u8]]) -> Self::Output;
+    fn hash_parts(parts: &[&[u8]]) -> Self::Output {
+        let mut state = Self::start();
+        for p in parts {
+            Self::absorb(&mut state, p);
+        }
+        Self::finish(state)
+    }
 
     /// An output from its bytes, if the length is right.
     fn output_from_slice(bytes: &[u8]) -> Option<Self::Output>;
@@ -39,13 +56,18 @@ macro_rules! hasher {
             const NAME: &'static str = $label;
             const OUTPUT_SIZE: usize = $size;
             type Output = [u8; $size];
+            type State = $imp;
 
-            fn hash_parts(parts: &[&[u8]]) -> Self::Output {
-                let mut h = <$imp>::new();
-                for p in parts {
-                    h.update(p);
-                }
-                h.finalize().into()
+            fn start() -> Self::State {
+                <$imp>::new()
+            }
+
+            fn absorb(state: &mut Self::State, data: &[u8]) {
+                state.update(data);
+            }
+
+            fn finish(state: Self::State) -> Self::Output {
+                state.finalize().into()
             }
 
             fn output_from_slice(bytes: &[u8]) -> Option<Self::Output> {
@@ -138,6 +160,52 @@ impl<H: Hasher> Eq for Digest<H> {}
 impl<H: Hasher> fmt::Debug for Digest<H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Digest<{}>({})", H::NAME, crate::hex::encode(self.as_bytes()))
+    }
+}
+
+/// An incremental hash under `H`: absorb bytes as they come, then [`Hashing::finish`]. It holds `H`'s state only (the
+/// chaining value and at most one block), so an encoding streamed into it takes no memory proportional to its length.
+pub struct Hashing<H: Hasher> {
+    state: H::State,
+}
+
+impl<H: Hasher> Clone for Hashing<H> {
+    fn clone(&self) -> Self {
+        Self { state: self.state.clone() }
+    }
+}
+
+impl<H: Hasher> Default for Hashing<H> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<H: Hasher> fmt::Debug for Hashing<H> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Hashing<{}>", H::NAME)
+    }
+}
+
+impl<H: Hasher> Hashing<H> {
+    /// A hash with nothing absorbed.
+    pub fn new() -> Self {
+        Self { state: H::start() }
+    }
+
+    /// Absorbs `data`.
+    pub fn update(&mut self, data: &[u8]) {
+        H::absorb(&mut self.state, data);
+    }
+
+    /// Absorbs the canonical encoding of `value`, streamed: [`cbor::encode_into`].
+    pub fn update_value(&mut self, value: &Value) {
+        cbor::encode_into(self, value);
+    }
+
+    /// The digest of everything absorbed.
+    pub fn finish(self) -> Digest<H> {
+        Digest::from_output(H::finish(self.state))
     }
 }
 
@@ -242,16 +310,28 @@ impl<H: Hasher> TaggedHash<H> {
         &self.tag
     }
 
-    /// The tagged hash of `message`.
-    pub fn hash(&self, message: &[u8]) -> Digest<H> {
+    /// A hash with the prefix `H(tag) || H(tag)` absorbed: absorbing a message, then finishing, gives its tagged hash.
+    pub fn start(&self) -> Hashing<H> {
         let t = self.tag_hash.as_ref();
-        Digest::from_output(H::hash_parts(&[t, t, message]))
+        let mut h = Hashing::new();
+        h.update(t);
+        h.update(t);
+        h
     }
 
-    /// The content hash of a canonical value: the tagged hash of its canonical encoding.
-    /// O([`Value::weight`]), as [`cbor::encode`].
+    /// The tagged hash of `message`.
+    pub fn hash(&self, message: &[u8]) -> Digest<H> {
+        let mut h = self.start();
+        h.update(message);
+        h.finish()
+    }
+
+    /// The content hash of a canonical value: the tagged hash of its canonical encoding, streamed into the hash.
+    /// O([`Value::weight`]) time, as [`cbor::encode`], and no memory proportional to the encoding.
     pub fn content(&self, value: &Value) -> Digest<H> {
-        self.hash(&cbor::encode(value))
+        let mut h = self.start();
+        h.update_value(value);
+        h.finish()
     }
 }
 
@@ -342,8 +422,25 @@ impl HashAlgorithm {
         self.hash_parts(&[&t, &t, message])
     }
 
-    /// The content hash of a canonical value with this algorithm. O([`Value::weight`]), as [`cbor::encode`].
+    /// The content hash of a canonical value with this algorithm, as [`TaggedHash::content`]: O([`Value::weight`])
+    /// time, as [`cbor::encode`], and no memory proportional to the encoding.
     pub fn content_hash(self, tag: &DomainTag, value: &Value) -> Vec<u8> {
-        self.tagged_hash(tag, &cbor::encode(value))
+        fn run<H: Hasher>(tag: &DomainTag, value: &Value) -> Vec<u8> {
+            let t = H::hash_parts(&[tag.as_str().as_bytes()]);
+            let mut h = Hashing::<H>::new();
+            h.update(t.as_ref());
+            h.update(t.as_ref());
+            h.update_value(value);
+            h.finish().as_bytes().to_vec()
+        }
+        match self {
+            Self::Sha256 => run::<Sha256>(tag, value),
+            Self::Sha512 => run::<Sha512>(tag, value),
+            Self::Sha3_256 => run::<Sha3_256>(tag, value),
+            Self::Sha3_512 => run::<Sha3_512>(tag, value),
+            Self::Keccak256 => run::<Keccak256>(tag, value),
+            Self::Blake2b256 => run::<Blake2b256>(tag, value),
+            Self::Blake2b512 => run::<Blake2b512>(tag, value),
+        }
     }
 }

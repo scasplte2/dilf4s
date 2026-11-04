@@ -68,8 +68,15 @@ object CanonicalValue {
     final val weight: Long = 1L + Utf16.utf8Length(value)
   }
 
-  final case class CBytes(value: ByteVector) extends Scalar {
+  /** A byte string, flat by construction ([[FlatBytes]]): no rope or buffer reaches a canonical value. */
+  sealed abstract case class CBytes(value: FlatBytes) extends Scalar {
     final val weight: Long = 1L + value.size
+  }
+
+  object CBytes {
+
+    /** `value`, flattened: O(1) when it is one chunk (as decoded, encoded and JLVM-made bytes are), one copy otherwise. */
+    def apply(value: ByteVector): CBytes = new CBytes(FlatBytes(value)) {}
   }
 
   sealed abstract case class CArray(values: Vector[CanonicalValue]) extends CanonicalValue {

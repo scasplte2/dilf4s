@@ -3,7 +3,7 @@ import { blake2b } from "@noble/hashes/blake2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { keccak_256, sha3_256, sha3_512 } from "@noble/hashes/sha3.js";
 
-import { encodeWithin, MAX_ENCODED_BYTES } from "./cbor.js";
+import { encodeIntoWithin, Feeding, MAX_ENCODED_BYTES } from "./cbor.js";
 import type { TooLarge } from "./error.js";
 import { err, ok, type Result } from "./result.js";
 import { encodeUtf8 } from "./utf8.js";
@@ -14,10 +14,15 @@ export type HashAlgorithm = "SHA-256" | "SHA-512" | "SHA3-256" | "SHA3-512" | "K
 
 export const HASH_ALGORITHMS: readonly HashAlgorithm[] = ["SHA-256", "SHA-512", "SHA3-256", "SHA3-512", "Keccak-256", "BLAKE2b-256", "BLAKE2b-512"];
 
-/** An incremental hash: absorb parts, then produce the digest. */
-interface Hashing {
+/** An incremental hash: absorb parts, then produce the digest (once). It holds a block of input at most. */
+export interface Hashing {
   update(data: Uint8Array): Hashing;
   digest(): Uint8Array;
+}
+
+/** A fresh incremental hash under `algorithm`. */
+export function startHash(algorithm: HashAlgorithm): Hashing {
+  return start(algorithm);
 }
 
 function start(algorithm: HashAlgorithm): Hashing {
@@ -108,9 +113,26 @@ export class TaggedHash {
     return new TaggedHash(algorithm, tag);
   }
 
+  /** An incremental hash with the prefix `H(tag) || H(tag)` absorbed: absorb a message, then digest, for its tagged hash. */
+  start(): Hashing {
+    return this.#start();
+  }
+
+  /** `start`, bound to this instance: borrowed onto another receiver, it fails at `#tagHash` before anything is hashed. */
+  #start(): Hashing {
+    const t = this.#tag();
+    return start(this.algorithm).update(t).update(t);
+  }
+
+  /** A copy of the tag hash: a hash, whose methods any caller can replace, is never handed this instance's own state. */
+  #tag(): Uint8Array {
+    return Uint8Array.from(this.#tagHash);
+  }
+
   /** The tagged hash of `message`. */
   hash(message: Uint8Array): Uint8Array {
-    return hashParts(this.algorithm, [this.#tagHash, this.#tagHash, message]);
+    const t = this.#tag();
+    return hashParts(this.algorithm, [t, t, message]);
   }
 
   /**
@@ -121,10 +143,15 @@ export class TaggedHash {
     return this.contentWithin(value, MAX_ENCODED_BYTES);
   }
 
-  /** The content hash of a value whose canonical encoding is at most `maxBytes` long, with the bounds of `cbor.encodeWithin`. */
+  /**
+   * The content hash of a value whose canonical encoding is at most `maxBytes` long, with the bounds and refusals of
+   * `cbor.encodeWithin`, the encoding streamed into the hash: memory as `STAGED_BYTES` states.
+   */
   contentWithin(value: Value, maxBytes: number): Result<Uint8Array, TooLarge> {
-    const e = encodeWithin(value, maxBytes);
-    return e.ok ? ok(this.hash(e.value)) : e;
+    // the private factory, never the public `start`: a value's own bytes reach only a hash this package created
+    const h = this.#start();
+    const e = encodeIntoWithin(new Feeding(h), value, maxBytes);
+    return e.ok ? ok(h.digest()) : e;
   }
 }
 

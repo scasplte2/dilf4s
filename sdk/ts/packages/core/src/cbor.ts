@@ -31,8 +31,14 @@ const TAG_RATIONAL = 30n;
 
 // ------------------------------------------------------------------------------------------------ encoding
 
+/** Where the bytes of a walk that keeps them go. */
+interface Target {
+  byte(b: number): void;
+  bytes(b: Uint8Array): void;
+}
+
 /** A growable buffer that never grows past `cap` bytes. */
-class Growing {
+class Growing implements Target {
   #buf: Uint8Array;
   #len = 0;
 
@@ -70,11 +76,64 @@ interface Out {
   bytes(b: Uint8Array): void;
 }
 
+/** An incremental hash, as far as an encoding streamed into it needs one. */
+export interface Absorber {
+  update(data: Uint8Array): unknown;
+}
+
+/**
+ * The bytes the walk stages before handing them to a hash in one `update`: a fixed size, whatever the value's. Heads
+ * and an integer's bytes come one at a time and are gathered here; a text or byte string is copied through, so a hash
+ * (whose methods any caller can replace on its prototype) is only ever handed this staging array, never a value's own.
+ * Besides it, the walk holds one thing proportional to the value: a bignum's hexadecimal digits, while it writes that
+ * one integer (`integer`; JavaScript offers no other linear way to read a bigint's bytes), which the value holds whole.
+ */
+export const STAGED_BYTES = 1024;
+
+/**
+ * Feeds an {@link Absorber} as the walk writes: it holds at most {@link STAGED_BYTES} of the encoding, staged, and
+ * nothing else of it (the hash itself buffers at most a block). `peak` is the most it ever staged.
+ */
+export class Feeding implements Target {
+  readonly #staged = new Uint8Array(STAGED_BYTES);
+  #len = 0;
+  #peak = 0;
+
+  constructor(private readonly into: Absorber) {}
+
+  get peak(): number {
+    return this.#peak;
+  }
+
+  byte(b: number): void {
+    if (this.#len === STAGED_BYTES) this.flush();
+    this.#staged[this.#len++] = b;
+    if (this.#len > this.#peak) this.#peak = this.#len;
+  }
+
+  bytes(b: Uint8Array): void {
+    for (let at = 0; at < b.length; ) {
+      if (this.#len === STAGED_BYTES) this.flush();
+      const n = Math.min(b.length - at, STAGED_BYTES - this.#len);
+      this.#staged.set(b.subarray(at, at + n), this.#len);
+      this.#len += n;
+      at += n;
+      if (this.#len > this.#peak) this.#peak = this.#len;
+    }
+  }
+
+  /** Hands the staged bytes over; call once the walk is done, before taking the digest. */
+  flush(): void {
+    if (this.#len > 0) this.into.update(this.#staged.subarray(0, this.#len));
+    this.#len = 0;
+  }
+}
+
 /** Bytes counted against a limit, and kept only when there is somewhere to keep them (never more than the limit). */
 class Budgeted implements Out {
   constructor(
     readonly meter: Meter,
-    private readonly out: Growing | undefined,
+    private readonly out: Target | undefined,
   ) {}
   room(n: number): boolean {
     return this.meter.take(n);
@@ -84,9 +143,6 @@ class Budgeted implements Out {
   }
   bytes(b: Uint8Array): void {
     this.out?.bytes(b);
-  }
-  result(): Uint8Array {
-    return this.out?.result() ?? new Uint8Array(0);
   }
 }
 
@@ -226,12 +282,14 @@ export function encode(value: Value): Result<Uint8Array, TooLarge> {
   return encodeWithin(value, MAX_ENCODED_BYTES);
 }
 
-/** The walk of {@link encodeWithin} and {@link encodedLengthWithin}, keeping the bytes or only counting them. */
-function within(value: Value, maxBytes: number, keep: boolean): Result<Budgeted, TooLarge> {
-  const limit = byteLimit(maxBytes);
+/**
+ * The walk of {@link encodeWithin}, {@link encodedLengthWithin} and {@link encodeIntoWithin}: one walk and one budget,
+ * keeping the bytes, only counting them, or feeding them on. It returns the length.
+ */
+function within(value: Value, limit: number, target: Target | undefined): Result<number, TooLarge> {
   if (value.weight > BigInt(limit)) return err(tooLarge(limit));
-  const out = new Budgeted(new Meter(limit), keep ? new Growing(limit) : undefined);
-  return write(out, value) ? ok(out) : err(out.meter.refusal());
+  const out = new Budgeted(new Meter(limit), target);
+  return write(out, value) ? ok(out.meter.used) : err(out.meter.refusal());
 }
 
 /**
@@ -245,14 +303,26 @@ function within(value: Value, maxBytes: number, keep: boolean): Result<Budgeted,
  * budget before its bytes are produced.
  */
 export function encodeWithin(value: Value, maxBytes: number): Result<Uint8Array, TooLarge> {
-  const w = within(value, maxBytes, true);
-  return w.ok ? ok(w.value.result()) : w;
+  const limit = byteLimit(maxBytes);
+  const kept = new Growing(limit);
+  const w = within(value, limit, kept);
+  return w.ok ? ok(kept.result()) : w;
 }
 
 /** The length of `value`'s canonical encoding, if it is at most `maxBytes`, counted without encoding it, with the bounds of {@link encodeWithin}. */
 export function encodedLengthWithin(value: Value, maxBytes: number): Result<number, TooLarge> {
-  const w = within(value, maxBytes, false);
-  return w.ok ? ok(w.value.meter.used) : w;
+  return within(value, byteLimit(maxBytes), undefined);
+}
+
+/**
+ * Streams `value`'s canonical encoding into `feeding` (and so into its hash) as {@link encodeWithin} would write it,
+ * with the same budget and the same refusal at the same point, without building it: the same walk, feeding a hash
+ * instead of a buffer. Returns the length. On a refusal, the hash has absorbed a prefix of the encoding: discard it.
+ */
+export function encodeIntoWithin(feeding: Feeding, value: Value, maxBytes: number): Result<number, TooLarge> {
+  const w = within(value, byteLimit(maxBytes), feeding);
+  feeding.flush();
+  return w;
 }
 
 // ------------------------------------------------------------------------------------------------ decoding

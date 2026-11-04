@@ -15,12 +15,12 @@ mod common;
 
 use common::{bytes, load};
 use dilf4s_core::codec::Codec;
-use dilf4s_core::commitment::value_commitment;
+use dilf4s_core::commitment::{value_commitment, value_commitment_into};
 use dilf4s_core::generated::canonical_vectors::{CanonicalJsonCase, CanonicalVectors};
 use dilf4s_core::generated::merkle_vectors::MerkleVectors;
 use dilf4s_core::generated::versioned_trie::STATE_KEY;
 use dilf4s_core::generated::versioned_trie_vectors::VersionedTrieVectors;
-use dilf4s_core::hash::{DomainTag, HashAlgorithm};
+use dilf4s_core::hash::{DomainTag, HashAlgorithm, Sha256, TaggedHash};
 use dilf4s_core::{cbor, hex, json};
 
 /// Checks every case, collecting failures so one run reports all of them; returns the number of cases.
@@ -28,6 +28,11 @@ fn run<T>(cases: &[T], check: impl Fn(&T) -> Result<(), String>) -> usize {
     let failures: Vec<String> = cases.iter().filter_map(|c| check(c).err()).collect();
     assert!(failures.is_empty(), "{} of {} cases failed:\n{}", failures.len(), cases.len(), failures.join("\n"));
     cases.len()
+}
+
+/// The content hash the old way, as the oracle of the streamed one: the whole encoding built, then hashed.
+fn buffered(algorithm: HashAlgorithm, tag: &DomainTag, value: &dilf4s_core::Value) -> Vec<u8> {
+    algorithm.tagged_hash(tag, &cbor::encode(value))
 }
 
 fn same(what: &str, case: &str, expected: &str, actual: &str) -> Result<(), String> {
@@ -49,6 +54,7 @@ fn json_cases() {
             let value = json::parse(&c.json).map_err(|e| format!("{}: rejected with {e}", c.json))?;
             same("cbor", &c.json, &c.cbor, &hex::encode(&cbor::encode(&value)))?;
             same("content hash", &c.json, &c.content_hash, &hex::encode(&algorithm.content_hash(&tag, &value)))?;
+            same("buffered content hash", &c.json, &c.content_hash, &hex::encode(&buffered(algorithm, &tag, &value)))?;
             same("render", &c.json, &c.render, &json::render_within(&value, usize::MAX).map_err(|e| e.to_string())?)?;
             let decoded = cbor::decode(&bytes(&c.cbor)).map_err(|e| format!("{}: cbor rejected with {e}", c.json))?;
             same("decode then encode", &c.json, &c.cbor, &hex::encode(&cbor::encode(&decoded)))
@@ -67,7 +73,8 @@ fn model_cases() {
     let n = run(&v.model, |c| {
         let value = cbor::decode(&bytes(&c.cbor)).map_err(|e| format!("{}: {e}", c.value))?;
         same("cbor", &c.value, &c.cbor, &hex::encode(&cbor::encode(&value)))?;
-        same("content hash", &c.value, &c.content_hash, &hex::encode(&algorithm.content_hash(&tag, &value)))
+        same("content hash", &c.value, &c.content_hash, &hex::encode(&algorithm.content_hash(&tag, &value)))?;
+        same("buffered content hash", &c.value, &c.content_hash, &hex::encode(&buffered(algorithm, &tag, &value)))
     });
     eprintln!("model: {n} cases");
 }
@@ -151,7 +158,10 @@ fn value_commitments() {
         let value = cbor::decode(&bytes(&c.cbor)).map_err(|e| format!("{}: {e}", c.cbor))?;
         let commitment = value_commitment(&value);
         same("commitment", &c.cbor, &c.commitment, &hex::encode(&commitment))?;
-        same("leaf hash", &c.cbor, &c.leaf_hash, &hex::encode(&HashAlgorithm::Sha256.tagged_hash(&leaf, &commitment)))
+        same("leaf hash", &c.cbor, &c.leaf_hash, &hex::encode(&HashAlgorithm::Sha256.tagged_hash(&leaf, &commitment)))?;
+        let mut streamed = TaggedHash::<Sha256>::new(leaf.clone()).start();
+        value_commitment_into(&mut streamed, &value);
+        same("streamed leaf hash", &c.cbor, &c.leaf_hash, &hex::encode(streamed.finish().as_bytes()))
     });
     eprintln!("valueCommitments: {n} cases");
 }

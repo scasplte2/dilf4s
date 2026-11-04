@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 
 import { DomainTag, TaggedHash, toHex } from "@kd5ujc/dilf4s-core";
 import { p256 } from "@noble/curves/nist.js";
@@ -142,6 +142,26 @@ describe("BIP-340 and tagged Schnorr", { timeout: 60_000 }, () => {
       for (const alg of ["SHA-256", "BLAKE2b-256", "SHA3-512"] as const)
         expect(toHex(literalTaggedHash(alg, t)(utf8("x")))).toBe(toHex(TaggedHash.of(alg, tag).hash(utf8("x"))));
     }
+  });
+
+  test("a hash whose update a caller replaced cannot change a literal tag's later hashes", () => {
+    const tagged = literalTaggedHash("SHA-256", TAGS.schnorr);
+    // a fresh message each time: the replacement zeroes whatever it is handed, the caller's message included
+    const msg = (): Uint8Array => utf8("x");
+    const before = toHex(tagged(msg()));
+    const proto = Object.getPrototypeOf(sha256.create()) as { update: (d: Uint8Array) => unknown };
+    const original = proto.update;
+    proto.update = function (this: unknown, d: Uint8Array) {
+      const r = original.call(this, d);
+      d.fill(0);
+      return r;
+    };
+    onTestFinished(() => {
+      proto.update = original;
+    });
+    tagged(msg());
+    proto.update = original;
+    expect(toHex(tagged(msg())), "the kept tag hash is intact").toBe(before);
   });
 
   test("x-only keys must lift; signatures are length-checked only", () => {
