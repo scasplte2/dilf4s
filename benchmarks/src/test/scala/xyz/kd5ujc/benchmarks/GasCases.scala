@@ -305,6 +305,7 @@ object GasCases {
       List(
         op(name("last"), Op.Get, mp, t(prefixed(1, n - 1))),
         op(name("absent"), Op.Set, mp, t("k" + "zzzzzz"), int(1)),
+        op(name("last"), Op.Set, mp, t(prefixed(1, n - 1)), int(1)),
         op(name("last"), Op.Unset, mp, t(prefixed(1, n - 1)))
       )
     }
@@ -662,6 +663,43 @@ object GasCases {
     }
 
   /**
+   * Listings that grow with the trie: `n` entries under 32-byte keys from hashing, the whole trie by the empty prefix,
+   * and the middle half by a bounded range. Both checks are linear in the proof's weight and their bounds.
+   */
+  private val listings: List[GasCase] =
+    List(64, 512, 2048).flatMap { n =>
+      val mode = get(KeyMode.variable(65535))
+      val keys = List.tabulate(n)(i => Hasher[Sha256].digest(ByteVector.fromInt(i)).bytes)
+      def value(i: Int) = ByteVector.fromInt(i)
+      val trie = get(
+        Trie.fromEntries[Sha256](
+          mode,
+          keys.zipWithIndex.map { case (k, i) => k -> TrieHashing[Sha256].value(ValueCommitment.bytes(CBytes(value(i)))) }
+        )
+      )
+      val md = m("variable" -> int(65535))
+      val root = CBytes(trie.root.bytes)
+      val sorted = keys.zipWithIndex.sortBy(_._1.toHex)
+      def listed(es: List[(ByteVector, Int)]) = a(es.map { case (k, i) => a(Vector(CBytes(k), CBytes(value(i)))) }.toVector)
+      val (from, until) = (sorted(n / 4)._1, sorted(3 * n / 4)._1)
+      val prefixProof = get(trie.prove(Nil, List(ByteVector.empty)).flatMap(TrieProofs.encode(_)))
+      val rangeProof = get(trie.prove(Nil, Nil, List(from -> Some(until))).flatMap(TrieProofs.encode(_)))
+      List(
+        op(s"all $n entries, 32-byte keys", Op.TriePrefixVerify, md, root, CBytes(ByteVector.empty), listed(sorted), prefixProof),
+        op(
+          s"the middle ${n / 2} of $n entries, 32-byte keys",
+          Op.TrieRangeVerify,
+          md,
+          root,
+          CBytes(from),
+          CBytes(until),
+          listed(sorted.slice(n / 4, 3 * n / 4)),
+          rangeProof
+        )
+      )
+    }
+
+  /**
    * A chain of `n` branches along one key: entry `i` is `i × step` bytes of 0x01 then 0x00, so the path to the key of
    * `n × step` bytes of 0x01 passes a branch every `step` bytes, and the proof carries a node for each.
    */
@@ -697,6 +735,6 @@ object GasCases {
         name = ReferenceName,
         group = "reference"
       ) :: (nodes ++ logic ++ arithmetic ++ spreads ++ textOps ++ arrays ++ callbacks ++ maps ++ lookups ++ bytesOps ++
-      signatures(secp, bls) ++ vrf ++ sg ++ z ++ merkle ++ tries ++ trieChains)
+      signatures(secp, bls) ++ vrf ++ sg ++ z ++ merkle ++ tries ++ listings ++ trieChains)
     }
 }

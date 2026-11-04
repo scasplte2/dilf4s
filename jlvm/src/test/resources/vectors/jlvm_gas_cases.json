@@ -68,28 +68,28 @@
    "gasLimit": 276
   },
   {
-   "name": "dilf4s gas boundary: var lookup at its cost 41",
+   "name": "dilf4s gas boundary: var lookup at its cost 65",
    "program": "{\"var\":\"x\"}",
    "data": "{\"x\":42}",
-   "gasLimit": 41
+   "gasLimit": 65
   },
   {
-   "name": "dilf4s gas boundary: var lookup one short, 40",
+   "name": "dilf4s gas boundary: var lookup one short, 64",
    "program": "{\"var\":\"x\"}",
    "data": "{\"x\":42}",
-   "gasLimit": 40
+   "gasLimit": 64
   },
   {
-   "name": "dilf4s gas boundary: map callback at its cost 1117",
+   "name": "dilf4s gas boundary: map callback at its cost 1237",
    "program": "{\"map\":[[1,2,3,4,5],{\"+\":[{\"var\":\"\"},1]}]}",
    "data": "{}",
-   "gasLimit": 1117
+   "gasLimit": 1237
   },
   {
-   "name": "dilf4s gas boundary: map callback one short, 1116",
+   "name": "dilf4s gas boundary: map callback one short, 1236",
    "program": "{\"map\":[[1,2,3,4,5],{\"+\":[{\"var\":\"\"},1]}]}",
    "data": "{}",
-   "gasLimit": 1116
+   "gasLimit": 1236
   }
  ]
 }

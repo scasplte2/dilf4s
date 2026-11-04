@@ -244,13 +244,13 @@ object GasSchedule {
       Add         -> c(40, 4, Weight).plus(7, RationalLimbs2).plus(40, Elements),
       Sub         -> c(40, 3, Weight).plus(7, RationalLimbs2).plus(60, Elements),
       Mul         -> c(40, 10, Weight).plus(7, RationalLimbs2).plus(40, Elements),
-      Div         -> c(340, 2, Weight).plus(8, Limbs2),
-      Mod         -> c(340, 2, Weight).plus(8, Limbs2).plus(8, RationalLimbs2),
+      Div         -> c(340, 2, Weight).plus(9, Limbs2),
+      Mod         -> c(340, 2, Weight).plus(9, Limbs2).plus(8, RationalLimbs2),
       Min         -> c(30, 1, Weight).plus(14, RationalWeight).plus(35, Elements),
       Max         -> c(30, 1, Weight).plus(14, RationalWeight).plus(35, Elements),
       Abs         -> c(60).plus(2, RationalLimbs2),
       Round       -> c(60, 8, Weight),
-      RoundHalfUp -> c(60, 8, Weight),
+      RoundHalfUp -> c(140, 8, Weight),
       Floor       -> c(60, 8, Weight),
       Ceil        -> c(60, 8, Weight),
       // priced at its worst case, a 4096-bit rational result: the result's size is not known from the arguments
@@ -262,20 +262,20 @@ object GasSchedule {
       SomeOp    -> c(40, 8, Elements),
       NoneOp    -> c(40, 8, Elements),
       Find      -> c(40, 8, Elements),
-      Count     -> c(45, 8, Elements),
+      Count     -> c(45, 2, Elements),
       Merge     -> c(210, 3, Weight).mergingMaps(12, 2),
       In        -> c(70, 1, Weight).plus(1, Elements),
       Intersect -> c(50, 17, Weight),
-      Unique    -> c(50, 18, Weight),
-      Slice     -> c(60, 3, Elements),
+      Unique    -> c(60, 18, Weight),
+      Slice     -> c(120, 3, Elements),
       Reverse   -> c(55, 7, Elements),
       Flatten   -> c(60, 3, Weight),
       Length    -> c(45, 1, Weight),
       // each piece of cat and join (and each element cat concatenates) costs a few gas besides its bytes
-      Cat        -> c(65, 1, Weight).plus(4, Elements).plus(8, Arguments),
+      Cat        -> c(65, 1, Weight).plus(4, Elements).plus(12, Arguments),
       Substr     -> c(75, 1, Weight),
-      Lower      -> c(45, 2, Weight),
-      Upper      -> c(50, 2, Weight),
+      Lower      -> c(45, 1, Weight),
+      Upper      -> c(50, 1, Weight),
       Join       -> c(110, 1, Weight).plus(14, Elements),
       Split      -> c(85, 6, Weight),
       Trim       -> c(75, 1, Weight),
@@ -293,10 +293,10 @@ object GasSchedule {
       Exists      -> c(60, 1, Elements),
       Missing     -> c(50, 20, Elements),
       MissingSome -> c(60, 20, Elements),
-      TypeOf      -> c(30),
-      Hex         -> c(45, 2, Weight),
+      TypeOf      -> c(60),
+      Hex         -> c(45, 1, Weight),
       Unhex       -> c(80, 2, Weight),
-      HexToInt    -> c(80, 6, Weight),
+      HexToInt    -> c(80, 4, Weight),
       BytesToInt  -> c(45, 1, Weight),
       IntToBytes  -> c(70, 2, Weight),
       Sha256      -> c(95, 1, Weight),
@@ -327,19 +327,19 @@ object GasSchedule {
       // only hashed: it pays the hashing rate (as blake2b256), not the curve rate
       SchnorrVerify -> c(5000, 450, Weight).at(1, 1, Weight),
       SigmaVerify   -> c(5000, 450, Weight).at(2, 1, Weight),
-      // trie_prefix_verify and trie_range_verify are priced from their current algorithms; another change makes them
-      // linear in their bounds
-      MerkleVerify            -> c(2000, 13, Weight),
+      // the listing checks are linear in the proof's weight and their bounds: priced from listings of 16 to 2048 entries
+      MerkleVerify            -> c(1000, 8, Weight),
       MerkleConsistencyVerify -> c(4000, 13, Weight),
-      TrieVerify              -> c(500, 30, Weight),
-      TriePrefixVerify        -> c(1000, 30, Weight),
-      TrieRangeVerify         -> c(1000, 30, Weight)
+      TrieVerify              -> c(500, 15, Weight),
+      TriePrefixVerify        -> c(20000, 17, Weight),
+      TrieRangeVerify         -> c(20000, 17, Weight)
     ),
     // per node: a literal in an array ~12 (with its element charge), a var read ~21 more on a map of 8 to 2^20
-    // entries, a callback run ~29 (with a literal body), an untaken if branch ~11 (its condition plus an element)
+    // entries (up to 53 in a full calibration run, on 8000), a callback run ~29 (with a literal body), an untaken if
+    // branch ~11 (its condition plus an element)
     literal = Gas(7),
     element = Gas(8),
-    varAccess = Gas(38),
+    varAccess = Gas(62),
     perPathSegment = Gas(3),
     callbackRun = Gas(18),
     // per unit of (6 + bits/64)^2 of a decimal expansion: about 1 gas a unit for the widest numbers (Rust's 1/5^1700

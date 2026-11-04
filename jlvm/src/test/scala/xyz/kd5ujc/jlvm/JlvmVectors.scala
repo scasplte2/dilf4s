@@ -164,8 +164,8 @@ object JlvmVectorsSuite extends IOSuite {
         val finishes = Set(
           "metakit gas oog: sigma_verify dlog at 90004",
           "dilf4s gas boundary: nested + at its cost 277",
-          "dilf4s gas boundary: var lookup at its cost 41",
-          "dilf4s gas boundary: map callback at its cost 1117"
+          "dilf4s gas boundary: var lookup at its cost 65",
+          "dilf4s gas boundary: map callback at its cost 1237"
         )
         val read = GasSchedule.V1.varAccess.value + GasSchedule.V1.perPathSegment.value
         def named(name: String): Option[Outcome] = in.cases.find(_.name == name).map(JlvmVectors.run(jlvm, _))
