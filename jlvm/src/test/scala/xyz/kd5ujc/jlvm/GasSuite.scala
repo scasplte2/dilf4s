@@ -37,7 +37,12 @@ object GasSuite extends SimpleIOSuite {
       .and(expect.same(GasSchedule.V1.cost(Op.SigmaVerify).perUnit.value * 1000, sized(10, 1056, 32) - sized(10, 56, 32)))
       .and(
         expect.same(
-          GasSchedule.V1.cost(Op.Add).perUnit.value * 4,
+          // per unit of weight (2 each), and per operand: bytes have no limbs
+          GasSchedule.V1.cost(Op.Add).perUnit.value * 4 + 2 * GasSchedule.V1
+            .cost(Op.Add)
+            .extra
+            .map(r => GasSchedule.units(r.unit, CBytes(ByteVector(1))) * r.perUnit.value)
+            .sum,
           GasSchedule.V1.sized(Op.Add, Vector(CBytes(ByteVector(1)), CBytes(ByteVector(1)))).value
         )
       )

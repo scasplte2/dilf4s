@@ -543,6 +543,7 @@ element and the message at the hashing rate, since hashing it to G2 is linear in
 - `RationalLimbs2`: `Limbs2` for a non-integer rational, 0 for an integer;
 - `RationalWeight`: the weight of a non-integer rational, 0 for anything else (comparing two rationals multiplies
   across);
+- `Arguments`: 1 for every argument, whatever it holds (`cat` takes and walks each argument, even an empty array);
 - `None`: zero.
 
 **Map searches.** `get`, `has`, `set` and `unset` search their map (argument 0) for their key (argument 1). Besides
@@ -602,7 +603,7 @@ GasCalibration measures these with the argument `metering`.
 | Literal | `literal`. |
 | Variable | `varAccess + perPathSegment × segments`. A `$name` counts as one segment, and every segment counts once more per 32 UTF-16 units of its length (it is compared on a hit, and rendered in a warning). A non-empty plain path inside callbacks may consult every enclosing frame, and each compares the first segment with its element (work that grows with the length the keys share), so the first segment's count is added once more per enclosing frame. A computed path is evaluated first. Text then pays `perUnit(split) × weight` before it is parsed, and then the access and the segments it gives; an array pays the access and its segments (counted the same way) before they are converted. |
 | Array or map expression | `literal + element × n`, then each item. |
-| Strict operation | `base(op)`, then each argument, then `perUnit(op) × size(arguments)`, then the operation, with the charges above for `+`, `*`, `cat` and `join`. A spread is charged the same way, on the elements of its array. |
+| Strict operation | `base(op)`, then each argument, then `perUnit(op) × size(arguments)`, then the operation, with the charges above for `+`, `*`, `cat` and `join`. A spread first pays `element` per element of its array (each is an argument), then is charged the same way, on those elements. |
 | Lookup | `base(op)`, then each argument, then `perUnit(op) × size(arguments)` plus, for each key, `perUnit(split) × weight(key)` and, per enclosing frame, `perPathSegment` × the segment count of the whole key text (as `var` pays for its first segment; the whole text bounds the first segment, and prices the key without parsing it), then the lookup. |
 | `if` | `base(if)`, then for each condition tested `element` and the condition, then the branch taken. |
 | `and`, `or`, `default` | `base(op)`, then only the subexpressions actually evaluated. |
@@ -637,11 +638,11 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `!=` | 50 | 1 per `Weight` |  |
 | `===` | 50 | 1 per `Weight` |  |
 | `!==` | 50 | 1 per `Weight` |  |
-| `<` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
-| `<=` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
-| `>` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
-| `>=` | 55 | 1 per `Weight` | plus 14 per `RationalWeight` |
-| `+` | 40 | 3 per `Weight` | plus 7 per `RationalLimbs2`; plus 40 per `Elements` |
+| `<` | 65 | 1 per `Weight` | plus 14 per `RationalWeight` |
+| `<=` | 65 | 1 per `Weight` | plus 14 per `RationalWeight` |
+| `>` | 65 | 1 per `Weight` | plus 14 per `RationalWeight` |
+| `>=` | 65 | 1 per `Weight` | plus 14 per `RationalWeight` |
+| `+` | 40 | 4 per `Weight` | plus 7 per `RationalLimbs2`; plus 40 per `Elements` |
 | `-` | 40 | 3 per `Weight` | plus 7 per `RationalLimbs2`; plus 60 per `Elements` |
 | `*` | 40 | 10 per `Weight` | plus 7 per `RationalLimbs2`; plus 40 per `Elements` |
 | `/` | 340 | 2 per `Weight` | plus 8 per `Limbs2` |
@@ -667,19 +668,19 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `intersect` | 50 | 17 per `Weight` |  |
 | `unique` | 50 | 18 per `Weight` |  |
 | `slice` | 60 | 3 per `Elements` |  |
-| `reverse` | 55 | 5 per `Elements` |  |
+| `reverse` | 55 | 7 per `Elements` |  |
 | `flatten` | 60 | 3 per `Weight` |  |
 | `length` | 45 | 1 per `Weight` |  |
-| `cat` | 65 | 1 per `Weight` | plus 4 per `Elements` |
+| `cat` | 65 | 1 per `Weight` | plus 4 per `Elements`; plus 8 per `Arguments` |
 | `substr` | 75 | 1 per `Weight` |  |
-| `lower` | 45 | 1 per `Weight` |  |
-| `upper` | 50 | 1 per `Weight` |  |
+| `lower` | 45 | 2 per `Weight` |  |
+| `upper` | 50 | 2 per `Weight` |  |
 | `join` | 110 | 1 per `Weight` | plus 14 per `Elements` |
 | `split` | 85 | 6 per `Weight` |  |
 | `trim` | 75 | 1 per `Weight` |  |
 | `startsWith` | 50 | 1 per `Weight` |  |
 | `endsWith` | 50 | 1 per `Weight` |  |
-| `keys` | 90 | 4 per `Weight` |  |
+| `keys` | 110 | 4 per `Weight` |  |
 | `values` | 50 | 5 per `Weight` |  |
 | `entries` | 120 | 10 per `Weight` |  |
 | `get` | 30 |  | search: 3 per level, 1 per level and key block |
@@ -690,7 +691,7 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `missing` | 50 | 20 per `Elements` |  |
 | `missing_some` | 60 | 20 per `Elements` |  |
 | `typeof` | 30 |  |  |
-| `hex` | 45 | 1 per `Weight` |  |
+| `hex` | 45 | 2 per `Weight` |  |
 | `unhex` | 80 | 2 per `Weight` |  |
 | `hex_to_int` | 80 | 6 per `Weight` |  |
 | `bytes_to_int` | 45 | 1 per `Weight` |  |
@@ -709,12 +710,12 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `pmt_verify` | 1000 | 11000 per `Elements` |  |
 | `groth16_verify` | 370000 | 1 per `Weight` |  |
 | `ecvrf_verify` | 130000 | 1 per `Weight` |  |
-| `bn254_add` | 520 |  |  |
+| `bn254_add` | 700 |  |  |
 | `bn254_mul` | 12500 |  |  |
 | `bn254_pairing` | 130000 | 440 per `Weight` |  |
 | `schnorr_verify` | 5000 | 450 per `Weight` | argument 1: 1 per `Weight` |
 | `sigma_verify` | 5000 | 450 per `Weight` | argument 2: 1 per `Weight` |
-| `merkle_verify` | 500 | 13 per `Weight` |  |
+| `merkle_verify` | 2000 | 13 per `Weight` |  |
 | `merkle_consistency_verify` | 4000 | 13 per `Weight` |  |
 | `trie_verify` | 500 | 30 per `Weight` |  |
 | `trie_prefix_verify` | 1000 | 30 per `Weight` |  |

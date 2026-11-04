@@ -167,7 +167,8 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
               arg,
               scope,
               {
-                case CArray(vs) => Charge(sized(op, vs), () => operate(op, vs))
+                // each element is an argument: it pays `element` first, so sizing a long spread is paid for
+                case CArray(vs) => Charge(schedule.element * vs.size.toLong, () => Charge(sized(op, vs), () => operate(op, vs)))
                 case other      => Fail(JlvmError.Type(op.wire, s"a spread argument is an array, got ${Values.kind(other)}"))
               }
             )

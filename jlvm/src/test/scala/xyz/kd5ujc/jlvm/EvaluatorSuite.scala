@@ -399,9 +399,14 @@ object EvaluatorSuite extends IOSuite with Checkers {
   private val S = GasSchedule.V1
   private def add = S.cost(Op.Add)
 
+  /** `+`'s size charge on these arguments: per unit of weight, and per operand. */
+  private def addSized(args: CanonicalValue*): Long = S.sized(Op.Add, args.toVector).value
+  private val one = CanonicalValue.CInt(BigInt(1))
+  private val two = CanonicalValue.CInt(BigInt(2))
+
   check("gas follows the schedule: base, then arguments, then the size charge") {
-    // + base; two literals; size: perUnit x (weight 1 + weight 1), and no rational term for integers
-    val sum = add.base.value + 2 * S.literal.value + add.perUnit.value * 2
+    // + base; two literals; size: per unit of weight 1 + weight 1, per operand, and no rational term for integers
+    val sum = add.base.value + 2 * S.literal.value + addSized(one, two)
     expect
       .same(Gas(sum), eval("""{"+": [1, 2]}""").gasUsed)
       .and(expect.same(Gas(S.varAccess.value + S.perPathSegment.value * 2), eval("""{"var": "a.b"}""", """{"a": {"b": 1}}""").gasUsed))
@@ -409,11 +414,12 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   check("failures report the gas they used; running out uses the whole limit") {
     // "x" weighs 2: one node plus one byte
-    val sum = add.base.value + 2 * S.literal.value + add.perUnit.value * 2
+    val sum = add.base.value + 2 * S.literal.value + addSized(one, two)
+    val x = CanonicalValue.text("x").toOption.get
     val failed = eval("""{"+": [1, "x"]}""")
     val starved = eval("""{"+": [1, 2]}""", limit = sum - 1)
     expect(failed.result.isLeft, "type error")
-      .and(expect.same(Gas(sum + add.perUnit.value), failed.gasUsed))
+      .and(expect.same(Gas(add.base.value + 2 * S.literal.value + addSized(one, x)), failed.gasUsed))
       .and(expect.same(Gas(sum - 1), starved.gasUsed))
       .and(expect.same(Left(JlvmError.OutOfGas(sum, sum - 1)), starved.result))
   }
@@ -434,7 +440,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
   }
 
   check("a program costing exactly the limit succeeds; one gas less runs out, on every driver") {
-    val sum = add.base.value + 2 * S.literal.value + add.perUnit.value * 2
+    val sum = add.base.value + 2 * S.literal.value + addSized(one, two)
     Config.Driver.values.toList.foldLeft(success) { (acc, d) =>
       val exact = eval("""{"+": [1, 2]}""", driver = d, limit = sum)
       val short = eval("""{"+": [1, 2]}""", driver = d, limit = sum - 1)

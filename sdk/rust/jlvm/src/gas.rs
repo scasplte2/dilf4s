@@ -59,6 +59,8 @@ pub enum SizeUnit {
     RationalLimbs2,
     /// The weight of a non-integer rational, 0 for anything else.
     RationalWeight,
+    /// 1 for every argument, whatever it holds.
+    Arguments,
 }
 
 /// The fixed cost of a decimal conversion, in limbs ([`GasSchedule::rendered`]).
@@ -76,6 +78,7 @@ impl SizeUnit {
             Self::Weight => v.weight(),
             Self::Limbs2 => limbs(v, true),
             Self::RationalLimbs2 => limbs(v, false),
+            Self::Arguments => 1,
             Self::RationalWeight => match v {
                 Value::Rational(_) => v.weight(),
                 _ => 0,
@@ -348,7 +351,7 @@ impl<'v> Sizing<'v> {
 /// used.
 #[allow(clippy::match_same_arms, reason = "one row per operation, as in the reference table")]
 const fn v1(op: Op) -> OpCost {
-    use SizeUnit::{Elements, Limbs2, None, RationalLimbs2, RationalWeight, Weight};
+    use SizeUnit::{Arguments, Elements, Limbs2, None, RationalLimbs2, RationalWeight, Weight};
     let c = OpCost::new;
     match op {
         Op::If => c(20, 0, None),
@@ -362,12 +365,12 @@ const fn v1(op: Op) -> OpCost {
         Op::Ne => c(50, 1, Weight),
         Op::StrictEq => c(50, 1, Weight),
         Op::StrictNe => c(50, 1, Weight),
-        Op::Lt => c(55, 1, Weight).plus(14, RationalWeight),
-        Op::Le => c(55, 1, Weight).plus(14, RationalWeight),
-        Op::Gt => c(55, 1, Weight).plus(14, RationalWeight),
-        Op::Ge => c(55, 1, Weight).plus(14, RationalWeight),
+        Op::Lt => c(65, 1, Weight).plus(14, RationalWeight),
+        Op::Le => c(65, 1, Weight).plus(14, RationalWeight),
+        Op::Gt => c(65, 1, Weight).plus(14, RationalWeight),
+        Op::Ge => c(65, 1, Weight).plus(14, RationalWeight),
         // integer sums and products are linear; rational ones, and every quotient, normalise through a quadratic gcd
-        Op::Add => c(40, 3, Weight).plus(7, RationalLimbs2).plus(40, Elements),
+        Op::Add => c(40, 4, Weight).plus(7, RationalLimbs2).plus(40, Elements),
         Op::Sub => c(40, 3, Weight).plus(7, RationalLimbs2).plus(60, Elements),
         Op::Mul => c(40, 10, Weight).plus(7, RationalLimbs2).plus(40, Elements),
         Op::Div => c(340, 2, Weight).plus(8, Limbs2),
@@ -394,19 +397,19 @@ const fn v1(op: Op) -> OpCost {
         Op::Intersect => c(50, 17, Weight),
         Op::Unique => c(50, 18, Weight),
         Op::Slice => c(60, 3, Elements),
-        Op::Reverse => c(55, 5, Elements),
+        Op::Reverse => c(55, 7, Elements),
         Op::Flatten => c(60, 3, Weight),
         Op::Length => c(45, 1, Weight),
-        Op::Cat => c(65, 1, Weight).plus(4, Elements),
+        Op::Cat => c(65, 1, Weight).plus(4, Elements).plus(8, Arguments),
         Op::Substr => c(75, 1, Weight),
-        Op::Lower => c(45, 1, Weight),
-        Op::Upper => c(50, 1, Weight),
+        Op::Lower => c(45, 2, Weight),
+        Op::Upper => c(50, 2, Weight),
         Op::Join => c(110, 1, Weight).plus(14, Elements),
         Op::Split => c(85, 6, Weight),
         Op::Trim => c(75, 1, Weight),
         Op::StartsWith => c(50, 1, Weight),
         Op::EndsWith => c(50, 1, Weight),
-        Op::Keys => c(90, 4, Weight),
+        Op::Keys => c(110, 4, Weight),
         Op::Values => c(50, 5, Weight),
         Op::Entries => c(120, 10, Weight),
         Op::Get => c(30, 0, None).searching(3, 1),
@@ -417,7 +420,7 @@ const fn v1(op: Op) -> OpCost {
         Op::Missing => c(50, 20, Elements),
         Op::MissingSome => c(60, 20, Elements),
         Op::TypeOf => c(30, 0, None),
-        Op::Hex => c(45, 1, Weight),
+        Op::Hex => c(45, 2, Weight),
         Op::Unhex => c(80, 2, Weight),
         Op::HexToInt => c(80, 6, Weight),
         Op::BytesToInt => c(45, 1, Weight),
@@ -437,13 +440,13 @@ const fn v1(op: Op) -> OpCost {
         Op::PmtVerify => c(1000, 11000, Elements),
         Op::Groth16Verify => c(370_000, 1, Weight),
         Op::EcvrfVerify => c(130_000, 1, Weight),
-        Op::Bn254Add => c(520, 0, None),
+        Op::Bn254Add => c(700, 0, None),
         Op::Bn254Mul => c(12500, 0, None),
         Op::Bn254Pairing => c(130_000, 440, Weight),
         // the message is only hashed: it pays the hashing rate, not the curve rate
         Op::SchnorrVerify => c(5000, 450, Weight).at(1, 1, Weight),
         Op::SigmaVerify => c(5000, 450, Weight).at(2, 1, Weight),
-        Op::MerkleVerify => c(500, 13, Weight),
+        Op::MerkleVerify => c(2000, 13, Weight),
         Op::MerkleConsistencyVerify => c(4000, 13, Weight),
         Op::TrieVerify => c(500, 30, Weight),
         Op::TriePrefixVerify => c(1000, 30, Weight),

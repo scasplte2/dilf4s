@@ -97,6 +97,9 @@ enum SizeUnit {
 
   /** The weight of a non-integer rational, and 0 for anything else: comparing rationals multiplies across. */
   case RationalWeight
+
+  /** 1 for every argument, whatever it holds: an operation takes and walks each, even an empty array. */
+  case Arguments
 }
 
 /**
@@ -152,6 +155,7 @@ object GasSchedule {
       case SizeUnit.Weight         => v.weight
       case SizeUnit.Limbs2         => limbs(v, integers = true)
       case SizeUnit.RationalLimbs2 => limbs(v, integers = false)
+      case SizeUnit.Arguments      => 1L
       case SizeUnit.RationalWeight =>
         v match {
           case CanonicalValue.CRational(_) => v.weight
@@ -207,7 +211,7 @@ object GasSchedule {
   private def c(base: Long, perUnit: Long = 0, unit: SizeUnit = SizeUnit.None): OpCost = OpCost(Gas(base), Gas(perUnit), unit)
 
   import Op.{Map => MapOp, None => NoneOp, Set => SetOp, Some => SomeOp, _}
-  import SizeUnit.{Elements, Limbs2, RationalLimbs2, RationalWeight, Weight}
+  import SizeUnit.{Arguments, Elements, Limbs2, RationalLimbs2, RationalWeight, Weight}
 
   /**
    * Version 1. Everything that reads content (comparison, arithmetic, text, bytes, hashing, signature messages) pays by
@@ -232,12 +236,12 @@ object GasSchedule {
       Ne       -> c(50, 1, Weight),
       StrictEq -> c(50, 1, Weight),
       StrictNe -> c(50, 1, Weight),
-      Lt       -> c(55, 1, Weight).plus(14, RationalWeight),
-      Le       -> c(55, 1, Weight).plus(14, RationalWeight),
-      Gt       -> c(55, 1, Weight).plus(14, RationalWeight),
-      Ge       -> c(55, 1, Weight).plus(14, RationalWeight),
+      Lt       -> c(65, 1, Weight).plus(14, RationalWeight),
+      Le       -> c(65, 1, Weight).plus(14, RationalWeight),
+      Gt       -> c(65, 1, Weight).plus(14, RationalWeight),
+      Ge       -> c(65, 1, Weight).plus(14, RationalWeight),
       // integer sums and products are linear; rational ones, and every quotient, normalise through a quadratic gcd
-      Add         -> c(40, 3, Weight).plus(7, RationalLimbs2).plus(40, Elements),
+      Add         -> c(40, 4, Weight).plus(7, RationalLimbs2).plus(40, Elements),
       Sub         -> c(40, 3, Weight).plus(7, RationalLimbs2).plus(60, Elements),
       Mul         -> c(40, 10, Weight).plus(7, RationalLimbs2).plus(40, Elements),
       Div         -> c(340, 2, Weight).plus(8, Limbs2),
@@ -264,20 +268,20 @@ object GasSchedule {
       Intersect -> c(50, 17, Weight),
       Unique    -> c(50, 18, Weight),
       Slice     -> c(60, 3, Elements),
-      Reverse   -> c(55, 5, Elements),
+      Reverse   -> c(55, 7, Elements),
       Flatten   -> c(60, 3, Weight),
       Length    -> c(45, 1, Weight),
       // each piece of cat and join (and each element cat concatenates) costs a few gas besides its bytes
-      Cat        -> c(65, 1, Weight).plus(4, Elements),
+      Cat        -> c(65, 1, Weight).plus(4, Elements).plus(8, Arguments),
       Substr     -> c(75, 1, Weight),
-      Lower      -> c(45, 1, Weight),
-      Upper      -> c(50, 1, Weight),
+      Lower      -> c(45, 2, Weight),
+      Upper      -> c(50, 2, Weight),
       Join       -> c(110, 1, Weight).plus(14, Elements),
       Split      -> c(85, 6, Weight),
       Trim       -> c(75, 1, Weight),
       StartsWith -> c(50, 1, Weight),
       EndsWith   -> c(50, 1, Weight),
-      Keys       -> c(90, 4, Weight),
+      Keys       -> c(110, 4, Weight),
       Values     -> c(50, 5, Weight),
       Entries    -> c(120, 10, Weight),
       Get        -> c(30).searching(3, 1),
@@ -290,7 +294,7 @@ object GasSchedule {
       Missing     -> c(50, 20, Elements),
       MissingSome -> c(60, 20, Elements),
       TypeOf      -> c(30),
-      Hex         -> c(45, 1, Weight),
+      Hex         -> c(45, 2, Weight),
       Unhex       -> c(80, 2, Weight),
       HexToInt    -> c(80, 6, Weight),
       BytesToInt  -> c(45, 1, Weight),
@@ -316,7 +320,7 @@ object GasSchedule {
       PmtVerify     -> c(1000, 11000, Elements),
       Groth16Verify -> c(370000, 1, Weight),
       EcvrfVerify   -> c(130000, 1, Weight),
-      Bn254Add      -> c(520),
+      Bn254Add      -> c(700),
       Bn254Mul      -> c(12500),
       Bn254Pairing  -> c(130000, 440, Weight),
       // BouncyCastle on the JVM; a leaf of proposition and proof weighs ~105, a DH tuple ~215 (4 muls). The message is
@@ -325,7 +329,7 @@ object GasSchedule {
       SigmaVerify   -> c(5000, 450, Weight).at(2, 1, Weight),
       // trie_prefix_verify and trie_range_verify are priced from their current algorithms; another change makes them
       // linear in their bounds
-      MerkleVerify            -> c(500, 13, Weight),
+      MerkleVerify            -> c(2000, 13, Weight),
       MerkleConsistencyVerify -> c(4000, 13, Weight),
       TrieVerify              -> c(500, 30, Weight),
       TriePrefixVerify        -> c(1000, 30, Weight),
