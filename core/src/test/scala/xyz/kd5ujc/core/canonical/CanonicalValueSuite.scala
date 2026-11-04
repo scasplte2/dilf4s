@@ -32,7 +32,10 @@ object CanonicalValueSuite extends SimpleIOSuite with Checkers {
     expect
       .same(CanonicalValue.map(List("a" -> one, "b" -> one)), distinct)
       .and(
-        expect.same(Left(CanonicalError.DuplicateKey("b")), CanonicalValue.textKeyed(Vector(t("b") -> one, t("a") -> one, t("b") -> True)))
+        expect.same(
+          Left(CanonicalError.DuplicateKey(Preview.of("b"))),
+          CanonicalValue.textKeyed(Vector(t("b") -> one, t("a") -> one, t("b") -> True))
+        )
       )
   }
 

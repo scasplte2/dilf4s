@@ -3,6 +3,7 @@
 
 use alloc::vec::Vec;
 
+use dilf4s_core::Preview;
 use dilf4s_core::cbor;
 use dilf4s_core::codec::Model;
 use dilf4s_core::generated::versioned_trie as w;
@@ -77,8 +78,8 @@ fn increasing(previous: Option<&Vec<u8>>, keys: &[Vec<u8>], what: &str) -> Resul
         {
             return refuse(&alloc::format!(
                 "{what} {} does not follow {}",
-                dilf4s_core::hex::encode(k),
-                dilf4s_core::hex::encode(a)
+                Preview::of(&dilf4s_core::hex::encode(k)).short(),
+                Preview::of(&dilf4s_core::hex::encode(a)).short()
             ));
         }
         last = Some(k);
@@ -161,7 +162,7 @@ impl<K: VersionKey, H: Hasher> SnapshotReader<'_, K, H> {
                 sized(es.len(), "state")?;
                 for (k, v) in &es {
                     if *v == Value::Null {
-                        return refuse(&alloc::format!("{k} is null"));
+                        return refuse(&alloc::format!("{} is null", k.preview().short()));
                     }
                     check_value(k, v)?;
                 }

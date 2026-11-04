@@ -7,8 +7,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use dilf4s_core::Value;
 use dilf4s_core::value::{MapShape, Text};
+use dilf4s_core::{Preview, Value};
 
 use crate::ast::{Expr, Program, VarRef};
 use crate::error::JlvmError;
@@ -178,11 +178,11 @@ fn node<'e>(e: &'e Expr, lets: &mut Lets<'e>) -> Result<Node, JlvmError> {
     match e {
         Expr::Lit(v) => Ok(Node::Const(v.clone())),
         Expr::Var(r @ VarRef::Data(path), _) if path.first().is_some_and(|h| lets.contains(h)) => {
-            let n = path.first().map_or("", String::as_str);
+            let n = Preview::of(path.first().map_or("", String::as_str));
             malformed(alloc::format!(
-                "\"{}\" starts with \"{n}\", which let binds: read the binding as \"${n}\", the data as \
-                 {{\"var\": [[\"{n}\", ...]]}}, or a callback element's field as \"$current.{n}\"",
-                r.render()
+                "{} starts with {n}, which let binds: read the binding with a leading '$', the data as \
+                 {{\"var\": [[name, ...]]}}, or a callback element's field as \"$current.\" and the name",
+                Preview::of(&r.render())
             ))
         }
         Expr::Var(r, d) => {
@@ -286,7 +286,10 @@ fn let_form<'e>(args: &'e [Expr], lets: &mut Lets<'e>) -> Result<Node, JlvmError
         if bindable(n) {
             Ok(n)
         } else {
-            malformed(alloc::format!("let cannot bind \"{n}\": names are non-empty, without '.' or a leading '$'"))
+            malformed(alloc::format!(
+                "let cannot bind {}: names are non-empty, without '.' or a leading '$'",
+                Preview::of(n)
+            ))
         }
     };
     let bindings: Result<Vec<(&'e str, &'e Expr)>, JlvmError> = match args.first() {

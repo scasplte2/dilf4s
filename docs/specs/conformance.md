@@ -1,7 +1,8 @@
 # dilf4s conformance: refusals (v1)
 
 Status: normative. Conformance vectors: `shared/vectors/refusals_v1.json` (schema
-`shared/schemas/refusal-vectors.cddl`). Every other spec's refusals follow this one.
+`shared/schemas/refusal-vectors.cddl`) and, for previews (§8), `shared/vectors/diagnostics_v1.json` (schema
+`shared/schemas/diagnostic-vectors.cddl`). Every other spec's refusals follow this one.
 
 The Scala implementation is the reference; the Rust and TypeScript SDKs, and every later one, must give the same
 outcome for the same call. An outcome is a result (a value, `true`, `false`), or a **refusal**. This spec says what of
@@ -22,7 +23,8 @@ a refusal is compared across implementations, and how much work may come before 
 
 Messages, `reason`, `what` and every other text field are **not normative**. They are never compared across
 languages, and vectors never record them. An implementation may word them as it likes, but it must not render
-unbounded caller input or decimal digits of caller numbers into them (bit lengths are fine).
+unbounded caller input or decimal digits of caller numbers into them (bit lengths are fine): caller text appears only
+as a preview (§8).
 
 ## 3. Normative fields
 
@@ -36,12 +38,14 @@ them. Every other field is informative. The normative fields are:
 | versioned trie | `TooDeep` | `depth` (the value's depth) and `limit`: `MaxValueDepth` (253) |
 | versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` |
 | Merkle tree, trie | `TooLarge` | `limit`: `MaxProofWeight` (2^24), for claims (§5) or a trie proof a producer would emit |
-| Poseidon tree | `Position` | `depth`: the number of siblings (or the tree's depth); the position itself echoes the caller's input and is informative |
+| Poseidon tree | `Position` | `depth`: the number of siblings (or the tree's depth); the position, held as its bit length (§8), is informative |
 | canonical value | `RationalTooWide` | `limit`: `MaxRationalBits` (33220), for a rational part wider than it, from any producer (`canonical-encoding.md` §1); the part's width is not reported |
+| canonical encoding | `DuplicateKey` | `key`: the repeated key's preview, its `head` and `length` (§8) |
 | every other kind | | none: the kind alone |
 
 A field is normative only when every implementation can produce it exactly at no more cost than the refusal itself:
-a spec constant, a cached property of the input, or an enumerated name. A measured size never is (§4).
+a spec constant, a cached property of the input, or an enumerated name. A measured size never is (§4), but for a
+preview's length (§8), measured over text the refusal has already read whole.
 
 ## 4. Bounded work before a refusal
 
@@ -207,3 +211,96 @@ well-formed proof of something else:
 - Versioned trie: `holds` is `false` for a claim no commit accepts (too large or too deep), without hashing it.
 
 Every other kind is a refusal in both forms.
+
+## 8. Bounded diagnostics
+
+An error built from caller input holds that input as **sizes** (lengths, counts, bit lengths, offsets) or as a
+**preview**, never the input itself. What an error holds, and what its message, `toString`, `Display` or `Debug`
+renders, is then bounded by constants, however long the input was.
+
+**The preview.** The preview of a text has two normative fields:
+
+- `head`: its first **32 code points**, cut on a code-point boundary, each unpaired surrogate replaced by U+FFFD;
+- `length`: the whole text's length in **UTF-8 bytes**, an unpaired surrogate counting 3 (as its replacement does).
+
+It is truncated when the head is shorter than the text (`utf8(head) < length`). Only JSON `\u` escapes produce unpaired
+surrogates; they reach a preview through a repeated member name (below), since a repeat is found before the name is
+checked. The rendering is informative; every SDK writes the head quoted, with JSON's escapes for `"`, `\` and the
+control characters U+0000 to U+001F and U+007F, then `…` when truncated, then the length: `"abc" (UTF-8 length 3)`. A
+path segment renders as the escaped head and `…`, unquoted.
+
+The preview type admits no other construction: Scala's `Preview` is a sealed abstract case class built only by
+`Preview.of`, Rust's has private fields and `Preview::of`, TypeScript's a private constructor and `Preview.of`. Its head
+is a fresh copy, never a view of the caller's text (an engine may keep a slice's whole parent alive).
+
+**Where caller text appears.**
+
+| Error | Field | Holds |
+|---|---|---|
+| canonical `DuplicateKey` | `key` | the repeated key, previewed |
+| canonical `InvalidNumber` | `length`, `offset` (Scala: a `NumberSource`), and a bound's `scale` saturated at the 32-bit range (Rust: `i128`) | the number's size and place, never its digits |
+| canonical `UnpairedSurrogate` | none | the kind alone |
+| `DecodeFailure` | `path` | each segment (a map key, possibly the caller's, or `[i]`), previewed |
+| `DecodeFailure` | `reason` | unknown keys as their count and the first in canonical order (shorter UTF-8 first, then by code point), previewed; a map no alternative fits as its key count; a text that is not the literal, pattern or alternative expected, previewed |
+| `InvalidDomainTag`, `UnknownAlgorithm` | `tag`, `name` | previewed |
+| versioned trie `StateKeyError` | `input` | the key or namespace, previewed; none for an over-long key, refused by its length before it is read, nor for bytes that are not text |
+| JLVM `Malformed` | message | operation names, var paths and binding names, previewed |
+| JLVM warning `AmbiguousPath` | `path` | the path, previewed: long paths sharing a preview are one warning |
+| JLVM `Arithmetic` (`cat`, `join`) | message | a rational with no decimal form by its numerator and denominator bit lengths |
+| Poseidon `NonCanonical`, `Position`, `OccupiedPosition` | `bits`, `positionBits` (Rust: `position_bits`; its `NonCanonical` has no field) | the value's or position's bit length, never the number |
+| versioned-trie messages (`NotCovered`, `TooLarge`, `TooDeep`, `Malformed`) | `what`, `reason` | a state key or namespace previewed, in its path-segment form |
+| Merkle `IndexOutOfRange`, `InvalidSizes` | `index`, `size`, `oldSize`, `newSize` | 64-bit, as the reference's `Long`: TypeScript saturates a wider caller value |
+| trie and versioned-trie `RootMismatch` | `expected` | the trusted root's hex at the digest's width; any other width by its length |
+| storage `NotFound` (Scala) | `keyBytes`, `prefix` | the key's length, and the hex of at most its first 16 bytes, previewed |
+| signing paths (`signing.md` §3) | message | a segment by its position and, past the digit bound, its length |
+
+**Refused before converting.** An input over a length limit is refused by its length before it is split, decoded as
+text or hex-encoded: a state key over 256 characters before it is split into segments, trie-key bytes over 256 before
+they are read as UTF-8 or ASCII, a storage namespace over 255 characters and a word-list separator of more than one
+before they are encoded, a digest's hex longer than its width's digits (and an `0x` prefix) before it is decoded, a
+word list of other than 2048 words before any word is normalised, and an integer wider than a field element before
+its bytes are taken. Such a refusal holds the length alone, never a preview, since measuring a preview's
+length reads the whole text. A state-key refusal names a segment by its position, never its text.
+
+**Fixed-width keys.** Version keys and top-trie slots have the width the verifier trusts (at most 1024 bytes,
+`versioned-trie.md` §3), checked before they are read, so a message may name one in hex: its size is the verifier's
+configuration, not the caller's choice.
+
+**Exemptions.** Three things are outside the guarantee, each for a stated reason.
+
+- *Free text and raw-string fields.* Messages are not normative (§2). Generated decoders pass their own messages as
+  text, so `DecodeFailure.reason`, `TypeMismatch.reason` and the other free-text fields, and raw-string fields such as
+  a `RootMismatch`'s `expected` (built at its call sites by `rootText`, the digest's hex or a wrong width's length),
+  stay strings: the type guarantee covers the fields in the table above, and a message quotes caller text only by
+  rendering one of them, which every SDK's diagnostics tests check on 1 MiB inputs through the public decoding APIs. A
+  codec's expected literal is a schema constant, quoted as it is. The free-text limit closes when the error types are
+  generated from the schemas, reasons included (conformance step 2, part B).
+- *Bit lengths in TypeScript.* A refused integer is named by its bit length, never its digits. JavaScript has no
+  constant-time bit length of a `bigint`, so the TypeScript SDK measures one in a single linear pass over the integer
+  (a transient hexadecimal rendering) that the caller already supplied and holds; nothing of it is retained, and the
+  cost is linear, never superlinear. Every SDK reports the same exact bit length: a TypeScript-only saturated value
+  would make the three disagree.
+- *Operator configuration and library text.* A storage backend's path and the messages its native library raises
+  (RocksDB's) come from the operator and the library, not from a caller, and are kept as they are, so an operator
+  can diagnose them.
+
+**The preview table.** Each row is a JSON member name (as its escaped text) repeated in an object, `{"K":1,"K":2}`:
+every implementation refuses it as `DuplicateKey` with this preview. The head is given as escaped text too.
+
+| Name | Head | Length | Truncated |
+|---|---|---|---|
+| (empty) | (empty) | 0 | no |
+| `abc` | `abc` | 3 | no |
+| `a` × 32 | `a` × 32 | 32 | no |
+| `a` × 33 | `a` × 32 | 33 | yes |
+| `a` × 31, `\ud83d\ude00` | the same | 35 | no |
+| `a` × 32, `\ud83d\ude00` | `a` × 32 | 36 | yes |
+| `a` × 31, `\ud83d\ude00b` | `a` × 31, `\ud83d\ude00` | 36 | yes |
+| `\u00e9` × 40 | `\u00e9` × 32 | 80 | yes |
+| `\ud800x` | `\ufffdx` | 4 | no |
+| `\udc00\ud800` | `\ufffd\ufffd` | 6 | no |
+| `a` × 31, `\ud800zz` | `a` × 31, `\ufffd` | 36 | yes |
+
+The reference checks it in `DiagnosticsSuite`, the Rust SDK in `core/tests/diagnostics.rs` and the TypeScript SDK in
+`core/test/diagnostics.test.ts`, row for row, from `shared/vectors/diagnostics_v1.json` (schema
+`shared/schemas/diagnostic-vectors.cddl`): each case is the JSON text to parse and the preview it is refused with.

@@ -4,7 +4,7 @@ import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
 import xyz.kd5ujc.core.canonical.CanonicalValue.CNull
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor, Preview}
 import xyz.kd5ujc.core.hash.Digest
 
 import scodec.bits.ByteVector
@@ -90,8 +90,9 @@ final case class SnapshotReader[V, H] private (
 
   private def increasing(previous: Option[ByteVector], keys: Vector[ByteVector], what: String): Either[VersionedTrieError, Unit] =
     (previous.toVector ++ keys).sliding(2).toVector.traverse_ {
-      case Vector(a, b) if Cbor.compareBytes(a, b) >= 0 => malformed[Unit](s"$what ${b.toHex} does not follow ${a.toHex}")
-      case _                                            => ().asRight[VersionedTrieError]
+      case Vector(a, b) if Cbor.compareBytes(a, b) >= 0 =>
+        malformed[Unit](s"$what ${Preview.of(b.toHex).short} does not follow ${Preview.of(a.toHex).short}")
+      case _ => ().asRight[VersionedTrieError]
     }
 
   def feed(chunk: SnapshotChunk[V, H]): Either[VersionedTrieError, SnapshotReader[V, H]] =
@@ -103,7 +104,9 @@ final case class SnapshotReader[V, H] private (
       case (Stage.State, SnapshotChunk.State(es)) =>
         for {
           _ <- sized(es.size, "state")
-          _ <- es.traverse_ { case (k, v) => if (v == CNull) malformed[Unit](s"${k.value} is null") else VersionedTrie.checkValue(k, v) }
+          _ <- es.traverse_ {
+            case (k, v) => if (v == CNull) malformed[Unit](s"${k.preview.short} is null") else VersionedTrie.checkValue(k, v)
+          }
           keys = es.map(_._1.bytes)
           _ <- increasing(lastKey, keys, "key")
         } yield copy(lastKey = keys.lastOption.orElse(lastKey), entries = entries ++ es)

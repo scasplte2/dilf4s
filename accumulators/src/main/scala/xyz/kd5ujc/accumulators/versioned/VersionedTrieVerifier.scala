@@ -23,7 +23,7 @@ final class VerifiedState[H] private[versioned] (proof: VerifiedProof[H])(implic
       // `Lookup` is covariant, so its digest is re-typed through the checked constructor
       case Lookup.Present(h) => Digest.fromBytes[H](h.bytes)(using T.hasher).bimap(e => VersionedTrieError.Malformed(e.toString), Some(_))
       case Lookup.Absent     => None.asRight
-      case Lookup.NotCovered => VersionedTrieError.NotCovered(s"key ${key.value}").asLeft
+      case Lookup.NotCovered => VersionedTrieError.NotCovered(s"key ${key.preview.short}").asLeft
     }
 
   /**
@@ -43,11 +43,12 @@ final class VerifiedState[H] private[versioned] (proof: VerifiedProof[H])(implic
 
   /** Every entry under the namespace, complete. */
   def namespace(ns: StateNamespace): Either[VersionedTrieError, List[(StateKey, Digest[H])]] =
-    covered(s"namespace ${ns.value}")(proof.prefix(ns.prefix.bits)).flatMap(keyed)
+    covered(s"namespace ${ns.preview.short}")(proof.prefix(ns.prefix.bits)).flatMap(keyed)
 
   /** Every entry in `[from, until)`, complete. */
   def range(from: StateKey, until: Option[StateKey]): Either[VersionedTrieError, List[(StateKey, Digest[H])]] =
-    covered(s"range [${from.value}, ${until.fold("")(_.value)})")(proof.range(from.bytes.bits, until.map(_.bytes.bits))).flatMap(keyed)
+    covered(s"range [${from.preview.short}, ${until.fold("")(_.preview.short)})")(proof.range(from.bytes.bits, until.map(_.bytes.bits)))
+      .flatMap(keyed)
 }
 
 /**

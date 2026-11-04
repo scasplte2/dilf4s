@@ -260,6 +260,23 @@ fn state_keys() {
     eprintln!("versioned trie: {} state keys", v.state_keys.len());
 }
 
+/// conformance.md section 8: a 1 MiB key or trie key is refused by its length, as a preview or a size.
+#[test]
+fn a_huge_state_key_is_refused_with_a_bounded_error() {
+    let huge = 1usize << 20;
+    let text = StateKey::parse(&"a/".repeat(huge / 2)).unwrap_err();
+    let bytes = StateKey::from_bytes(&vec![0xff; huge]).unwrap_err();
+    let namespace = StateNamespace::parse(&"x".repeat(huge)).unwrap_err();
+    for e in [&text, &bytes, &namespace] {
+        let rendered = format!("{e}{e:?}");
+        assert!(rendered.len() <= 1024, "the refusal renders {} bytes", rendered.len());
+        assert!(e.input.as_ref().is_none_or(|p| p.head().chars().count() <= 32), "a preview of at most 32 code points");
+    }
+    assert_eq!((text.input, text.reason), (None, format!("{huge} bytes, longer than 256")));
+    assert_eq!((bytes.input, bytes.reason), (None, format!("{huge} bytes, longer than 256")));
+    assert_eq!(StateKey::parse("a/B/c").unwrap_err().reason, "segment 1 does not match [a-z0-9][a-z0-9._-]*");
+}
+
 #[test]
 fn version_keys() {
     let k = U64Key::default();

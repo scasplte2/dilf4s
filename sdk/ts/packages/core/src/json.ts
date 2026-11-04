@@ -10,9 +10,13 @@ import { byteLimit, Meter } from "./budget.js";
 import type { CanonicalError, TooLarge } from "./error.js";
 import { CANONICAL_MAX_DIGIT_BITS, CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
 import { KeySet } from "./keyset.js";
+import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { compareCodePoints } from "./utf8.js";
 import { ArrayValue, BoolValue, entriesView, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
+
+const INT32_MAX = 2n ** 31n - 1n;
+const INT32_MIN = -(2n ** 31n);
 
 /** The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises. */
 export const DEFAULT_MAX_SCALE = CANONICAL_MAX_SCALE;
@@ -104,7 +108,7 @@ class Parser {
           if (!k.ok) return k;
           const frame = stack.at(-1);
           if (!frame?.object) return err(syntax(p, "expected a value"));
-          if (frame.seen.has(k.value.text)) return err({ kind: "DuplicateKey", key: k.value.text });
+          if (frame.seen.has(k.value.text)) return err({ kind: "DuplicateKey", key: Preview.of(k.value.text) });
           const colon = this.skipWs(k.value.end);
           if (this.s[colon] !== ":") return err(syntax(colon, "expected ':'"));
           frame.seen.add(k.value.text);
@@ -184,18 +188,18 @@ class Parser {
     const malformed =
       intDigits.length === 0 || (intDigits.length > 1 && intDigits.startsWith("0")) || (hasFrac && fracDigits.length === 0) || (hasExp && expDigits.length === 0);
     // a refusal describes the number by its length and offset, never its text, whose size the caller chose
-    const described = `a number of ${(end - p).toString()} characters at offset ${p.toString()}`;
-    if (malformed) return err({ kind: "InvalidNumber", source: described });
+    const described = { length: end - p, offset: p } as const;
+    if (malformed) return err({ kind: "InvalidNumber", ...described });
     // the integer digits have no leading zeros but a lone 0, after which the fraction's leading zeros are not counted
     const significand = intDigits === "0" ? fracDigits.length - leadingZeros(fracDigits) : intDigits.length + fracDigits.length;
     const exponentDigits = expDigits.length - leadingZeros(expDigits);
     const digits = Math.max(significand, exponentDigits);
-    if (digits > MAX_DIGITS) return err({ kind: "InvalidNumber", source: described, digits });
+    if (digits > MAX_DIGITS) return err({ kind: "InvalidNumber", ...described, digits });
     // an exponent of more than 18 digits is past every scale a text this long can reach: saturate rather than convert
     const magnitude = exponentDigits > 18 ? 10n ** 19n : BigInt(expDigits);
     const exponent = magnitude * (hasExp && expSign === "-" ? -1n : 1n);
     const scale = BigInt(fracDigits.length) - exponent;
-    if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", source: described, scale });
+    if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", ...described, scale: Number(scale > INT32_MAX ? INT32_MAX : scale < INT32_MIN ? INT32_MIN : scale) });
     const unscaled = BigInt(intDigits + fracDigits) * (negative ? -1n : 1n);
     // a decimal's denominator is 10^scale: reduced by its primes 2 and 5 alone, never by a general gcd
     const value = scale >= 0n ? RationalValue.decimal(unscaled, Number(scale)) : ok(IntValue.of(unscaled * 10n ** -scale));

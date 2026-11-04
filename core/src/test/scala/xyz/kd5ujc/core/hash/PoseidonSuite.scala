@@ -39,8 +39,8 @@ object PoseidonSuite extends SimpleIOSuite with Checkers {
 
   pureTest("field elements are checked once, at construction") {
     expect
-      .same(Left(PoseidonError.NonCanonical(-1)), Fr.from(-1))
-      .and(expect.same(Left(PoseidonError.NonCanonical(Fr.Modulus)), Fr.from(Fr.Modulus)))
+      .same(Left(PoseidonError.NonCanonical(0)), Fr.from(-1))
+      .and(expect.same(Left(PoseidonError.NonCanonical(254)), Fr.from(Fr.Modulus)))
       .and(expect.same(BigInt(1), Fr.reduce(Fr.Modulus + 1).value))
   }
 

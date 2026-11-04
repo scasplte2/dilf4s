@@ -108,8 +108,22 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
     attempt { implicit r =>
       withRaw(raw => KeyValueStore[IO, CText, Int](raw, ns("kv")).getOrRaise(t("missing")))
     }.map {
-      case Left(StoreError.NotFound(_)) => success
-      case other                        => failure(s"expected NotFound, got $other")
+      case Left(StoreError.NotFound(_, _)) => success
+      case other                           => failure(s"expected NotFound, got $other")
+    }
+  }
+
+  test(s"$backend: a missing 1 MiB key is NotFound by its length and a 16-byte preview (conformance.md §8)") {
+    val key = "k" * (1 << 20)
+    attempt { implicit r =>
+      withRaw(raw => KeyValueStore[IO, CText, Int](raw, ns("kv")).getOrRaise(t(key)))
+    }.map {
+      case Left(e @ StoreError.NotFound(n, prefix)) =>
+        expect
+          .same(1L << 20, n)
+          .and(expect.same("6b" * 16, prefix.head))
+          .and(expect(e.toString.length <= 256, s"NotFound renders ${e.toString.length} characters"))
+      case other => failure(s"expected NotFound, got ${other.isRight}")
     }
   }
 

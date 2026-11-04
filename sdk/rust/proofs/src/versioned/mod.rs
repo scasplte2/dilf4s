@@ -224,7 +224,7 @@ impl<V: fmt::Debug, H: Hasher> fmt::Debug for Head<V, H> {
 /// O(min(weight, [`MAX_VALUE_BYTES`])) and allocation-free: the encoding is measured, not built, and the measure stops
 /// at the limit, so a compact value with a vast shared expansion is refused without expanding it.
 pub fn check_value(key: &StateKey, value: &Value) -> Result<(), VersionedTrieError> {
-    let what = || alloc::format!("the value of {}", key.as_str());
+    let what = || alloc::format!("the value of {}", key.preview().short());
     if value.depth() > MAX_VALUE_DEPTH {
         return Err(VersionedTrieError::TooDeep { what: what(), depth: value.depth(), limit: MAX_VALUE_DEPTH });
     }

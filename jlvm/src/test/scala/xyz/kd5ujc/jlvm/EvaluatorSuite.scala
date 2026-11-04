@@ -3,8 +3,8 @@ package xyz.kd5ujc.jlvm
 import cats.Show
 import cats.effect.{IO, Resource}
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview}
 
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -216,10 +216,16 @@ object EvaluatorSuite extends IOSuite with Checkers {
     val plain = """{"map": [{"var": "items"}, {"var": "x"}]}"""
     val explicit = """{"map": [{"var": "items"}, {"var": "$current.x"}]}"""
     expect
-      .same(Vector(Warning.AmbiguousPath("x")), eval(plain, data).warnings)
+      .same(Vector(Warning.AmbiguousPath(Preview.of("x"))), eval(plain, data).warnings)
       .and(expect.same(Vector.empty[Warning], eval("""{"map": [{"var": "ys"}, {"var": "y"}]}""", data).warnings))
       .and(expect.same(Vector.empty[Warning], eval(explicit, data).warnings))
       .and(expect.same(eval(plain, data, driver = Config.Driver.Recursive), eval(plain, data)))
+      .and {
+        // conformance.md §8: a long ambiguous path is held as a preview
+        val k = "x" * 4096
+        val long = eval(s"""{"map": [{"var": "items"}, {"var": "$k"}]}""", s"""{"$k": 1, "items": [{"$k": 2}]}""").warnings
+        expect.same(Vector(Warning.AmbiguousPath(Preview.of(k))), long).and(expect(long.toString.length <= 256, long.toString))
+      }
       .and(expect.same(ok("[2, 3]"), eval(plain, data).result))
   }
 
@@ -237,6 +243,16 @@ object EvaluatorSuite extends IOSuite with Checkers {
       .and(expect.same(ok("0"), result("""{"var": [{"cat": ["balances.", "bob"]}, 0]}""", data)))
       .and(expect.same(ok("9"), result("""{"var": {"cat": ["$", "ordinal"]}}""", data, env)))
       .and(expect.same(ok("null"), result("""{"var": [["$ordinal"]]}""", data, env)))
+  }
+
+  check("cat and join name a rational with no decimal form by its size, never its digits (conformance.md §2)") {
+    val n = "1" + "0" * 999 + "1"
+    List(s"""{"cat": [{"/": [$n, 3]}]}""", s"""{"join": [[{"/": [$n, 3]}], ""]}""").map { p =>
+      result(p).left.toOption.fold(failure(s"$p renders")) { e =>
+        expect(!e.toString.contains("0000000000"), s"no digits: $e")
+          .and(expect(e.message.contains("a rational of 3322/2 bits"), e.message))
+      }
+    }.reduce(_ and _)
   }
 
   check("a computed path of the wrong kind or form is an error") {

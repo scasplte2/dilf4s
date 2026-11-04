@@ -101,5 +101,6 @@ object KeyCodecSuite extends SimpleIOSuite with Checkers {
     expect(Namespace("a").map(_.prefix) != Namespace("ab").map(_.prefix).map(_.take(2)), "'a' is not a prefix of 'ab'")
       .and(expect(Namespace("").isLeft, "empty names are rejected"))
       .and(expect(Namespace("x" * 256).isLeft, "names over 255 bytes are rejected"))
+      .and(expect.same(Left(StoreError.Codec("namespace", "1048576 characters, more than 255 UTF-8 bytes")), Namespace("x" * (1 << 20))))
   }
 }

@@ -79,6 +79,22 @@ describe("merkle_v1.json", () => {
   });
 });
 
+// conformance.md section 8: a refusal's sizes and indices are 64-bit, as Scala's; a wider value is saturated
+describe("bounded Merkle refusals", () => {
+  it("a huge index or size is not kept whole", () => {
+    const huge = 1n << 100_000n;
+    const max = (1n << 63n) - 1n;
+    expect(expectErr(merkle.InclusionProof.of(huge, huge, []), "huge")).toEqual({ kind: "IndexOutOfRange", index: max, size: max });
+    expect(expectErr(merkle.ConsistencyProof.of(-huge, huge, []), "huge")).toEqual({ kind: "InvalidSizes", oldSize: -max - 1n, newSize: max });
+  });
+
+  it("an error cannot be built with an unbounded integer", () => {
+    // @ts-expect-error an index is an Int64, which only the module's saturating factory makes
+    const forged: merkle.MerkleError = { kind: "IndexOutOfRange", index: 1n << 100_000n, size: 0n };
+    expect(forged.kind).toBe("IndexOutOfRange");
+  });
+});
+
 describe("JLVM merkle_verify", () => {
   const tree = vectors.trees.find((t) => t.size === 5n);
   if (tree === undefined) throw new Error("a tree of 5 leaves");

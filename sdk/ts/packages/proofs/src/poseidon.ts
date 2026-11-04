@@ -5,7 +5,7 @@
  *
  * **Public data only**: the arithmetic is variable time. Never hash secrets here.
  */
-import { describeFailure, err, models, ok, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, describeFailure, err, models, ok, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { decodeInput } from "./input.js";
 import { FULL_ROUNDS, WIDTH2, WIDTH3, WIDTH4, WIDTH5, type PoseidonParams } from "./poseidon-constants.js";
@@ -13,7 +13,7 @@ import { FULL_ROUNDS, WIDTH2, WIDTH3, WIDTH4, WIDTH5, type PoseidonParams } from
 /** The BN254 scalar field modulus `r`. */
 export const FR_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
-export type PoseidonError = { readonly kind: "InputCount"; readonly count: number; readonly max: number } | { readonly kind: "NonCanonical"; readonly value: bigint };
+export type PoseidonError = { readonly kind: "InputCount"; readonly count: number; readonly max: number } | { readonly kind: "NonCanonical"; readonly bits: number };
 
 /** An element of the BN254 scalar field, `0 <= value < r`, valid by construction. */
 export class Fr {
@@ -27,7 +27,7 @@ export class Fr {
 
   /** The element `value`, if canonical: a value `>= r` is malformed, never reduced. */
   static of(value: bigint): Result<Fr, PoseidonError> {
-    return value >= 0n && value < FR_MODULUS ? ok(new Fr(value)) : err({ kind: "NonCanonical", value });
+    return value >= 0n && value < FR_MODULUS ? ok(new Fr(value)) : err({ kind: "NonCanonical", bits: bitLength(value) });
   }
 
   /** `value mod r`. */
@@ -109,7 +109,8 @@ export function compress(left: Fr, right: Fr): Fr {
 
 export type PoseidonMerkleError =
   /** `depth` (the number of siblings, or the tree's depth) is normative; the position echoes the caller's input. */
-  | { readonly kind: "Position"; readonly position: bigint; readonly depth: number }
+  // a caller's position or value can be any size: it is held by its bit length, never itself (conformance.md section 8)
+  | { readonly kind: "Position"; readonly positionBits: number; readonly depth: number }
   | { readonly kind: "Depth"; readonly depth: number }
   | { readonly kind: "Encoding"; readonly reason: string };
 
@@ -137,7 +138,7 @@ export class PoseidonMerkleProof {
   /** The depth is checked first, so the capacity `2^depth` it is compared with never exceeds `2^MAX_DEPTH`. */
   static of(position: bigint, siblings: readonly Fr[]): Result<PoseidonMerkleProof, PoseidonMerkleError> {
     const depth = siblings.length;
-    return depth <= MAX_DEPTH && position >= 0n && position < 1n << BigInt(depth) ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", position, depth });
+    return depth <= MAX_DEPTH && position >= 0n && position < 1n << BigInt(depth) ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", positionBits: bitLength(position), depth });
   }
 
   /**
@@ -211,7 +212,7 @@ export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, Po
   const entries: Placed[] = [];
   // each entry is copied as it is read: an iterable may yield one tuple again with new contents
   for (const [p, leaf] of leaves) {
-    if (p < 0n || p >= capacity) return err({ kind: "Position", position: p, depth });
+    if (p < 0n || p >= capacity) return err({ kind: "Position", positionBits: bitLength(p), depth });
     entries.push([p, leaf]);
   }
   // the sort is stable, so the last of a position's run of entries is its latest

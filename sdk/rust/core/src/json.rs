@@ -15,6 +15,7 @@ use num_integer::Integer;
 use num_traits::{Signed, Zero, pow};
 
 use crate::error::{CanonicalError, DigitsOutOfRange, JsonSyntaxError, NotJson, NumberBound, ScaleOutOfRange};
+use crate::preview::Preview;
 use crate::value::{Array, MAX_DEPTH, Map, Rational, Text, Value};
 
 /// The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises.
@@ -141,7 +142,7 @@ impl Parser<'_> {
             return Err(syntax(p, JsonSyntaxError::ExpectedValue));
         };
         if seen.contains(&name) {
-            return Err(CanonicalError::DuplicateKey { key: String::from_utf8_lossy(&name).into_owned() });
+            return Err(CanonicalError::DuplicateKey { key: Preview::of_wtf8(&name) });
         }
         let colon = self.skip_ws(next);
         if self.at(colon) != Some(b':') {
@@ -219,10 +220,7 @@ impl Parser<'_> {
         };
         let end = if has_exp { self.digits(exp_start) } else { frac_end };
         let slice = |a: usize, b: usize| self.text.get(a..b).unwrap_or("");
-        let invalid = |bound| CanonicalError::InvalidNumber {
-            source: alloc::format!("a number of {} characters at offset {p}", end.saturating_sub(p)),
-            bound,
-        };
+        let invalid = |bound| CanonicalError::InvalidNumber { length: end.saturating_sub(p), offset: p, bound };
         let bounded = |bound| invalid(Some(bound));
         let int_digits = slice(int_start, int_end);
         let frac_digits = if has_frac { slice(int_end.saturating_add(1), frac_end) } else { "" };

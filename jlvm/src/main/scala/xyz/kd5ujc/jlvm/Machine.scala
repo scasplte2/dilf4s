@@ -6,8 +6,8 @@ import cats.syntax.all._
 
 import scala.collection.immutable.TreeMap
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview}
 import xyz.kd5ujc.numerics.Ratio
 
 /** Gas used so far, against the limit; and the lint warnings so far, distinct, at most [[Warning.Max]]. */
@@ -277,11 +277,11 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
     ref match {
       case VarRef.Data(path) =>
         val r = scope.resolve(path)
-        if (r.ambiguous) Note(Warning.AmbiguousPath(ref.render), () => Done(orDefault(r.value))) else Done(orDefault(r.value))
+        if (r.ambiguous) Note(Warning.AmbiguousPath(Preview.of(ref.render)), () => Done(orDefault(r.value))) else Done(orDefault(r.value))
       case VarRef.Bound(name, path) =>
         scope.bindings.get(name) match {
           case scala.Some(v) => Done(orDefault(Values.at(v, path)))
-          case scala.None    => default.fold(Fail(JlvmError.Malformed(s"$$$name is not bound")))(Done(_))
+          case scala.None    => default.fold(Fail(JlvmError.Malformed(s"the binding ${Preview.of(name)} is not bound")))(Done(_))
         }
     }
   }

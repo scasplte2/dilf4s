@@ -20,11 +20,11 @@ use std::collections::BTreeSet;
 use common::{read_vectors, vectors_dir};
 use dilf4s_core::codec::Model;
 use dilf4s_core::generated::{
-    canonical_vectors, crypto, jlvm, jlvm_vectors, kes_vectors, merkle, merkle_vectors, poseidon_vectors,
-    refusal_vectors, sigma_refusal_vectors, sigma_vectors, signing_vectors, trie_vectors, versioned_trie_vectors,
-    vrf_vectors, zk_vectors,
+    canonical_vectors, crypto, diagnostic_vectors, jlvm, jlvm_vectors, kes_vectors, merkle, merkle_vectors,
+    poseidon_vectors, refusal_vectors, sigma_refusal_vectors, sigma_vectors, signing_vectors, trie_vectors,
+    versioned_trie_vectors, vrf_vectors, zk_vectors,
 };
-use dilf4s_core::{Value, json};
+use dilf4s_core::{Preview, Value, json};
 
 fn round_trip<T: Model>(value: &Value) -> Result<Value, String> {
     let decoded = T::from_value(value).map_err(|e| e.to_string())?;
@@ -33,8 +33,9 @@ fn round_trip<T: Model>(value: &Value) -> Result<Value, String> {
 
 type Check = fn(&Value) -> Result<Value, String>;
 
-const SCHEMAS: [(&str, Check); 14] = [
+const SCHEMAS: [(&str, Check); 15] = [
     ("canonical_encoding_v1.json", round_trip::<canonical_vectors::CanonicalVectors>),
+    ("diagnostics_v1.json", round_trip::<diagnostic_vectors::DiagnosticVectors>),
     ("jlvm_v1.json", round_trip::<jlvm_vectors::JlvmVectors>),
     ("kes_v1.json", round_trip::<kes_vectors::KesVectors>),
     ("merkle_v1.json", round_trip::<merkle_vectors::MerkleVectors>),
@@ -82,7 +83,8 @@ fn a_schema_violation_names_the_failing_path() {
         file.into_entries().into_iter().map(|(k, v)| if k == "leaves" { (k, not_hex.clone()) } else { (k, v) });
     let value = Value::map(entries).expect("a map");
     let failure = merkle_vectors::MerkleVectors::from_value(&value).expect_err("not hex");
-    assert_eq!(failure.path, vec!["leaves".to_owned(), "[0]".to_owned()], "{failure}");
+    assert_eq!(failure.path, vec![Preview::of("leaves"), Preview::of("[0]")], "{failure}");
+    assert!(failure.to_string().starts_with("leaves.[0]: "), "{failure}");
 }
 
 #[test]

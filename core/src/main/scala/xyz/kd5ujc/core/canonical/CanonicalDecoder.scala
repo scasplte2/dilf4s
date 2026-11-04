@@ -8,10 +8,14 @@ import xyz.kd5ujc.core.canonical.CanonicalValue._
 
 import scodec.bits.ByteVector
 
-/** Why a canonical value is not an `A`, and where: `path` runs from the root (map keys and `[i]` array indices). */
-final case class DecodeFailure(path: List[String], reason: String) {
-  def at(segment: String): DecodeFailure = copy(path = segment :: path)
-  def message: String = s"${if (path.isEmpty) "<root>" else path.mkString(".")}: $reason"
+/**
+ * Why a canonical value is not an `A`, and where: `path` runs from the root (map keys and `[i]` array indices). A key
+ * may be the caller's, so each segment is a [[Preview]]: the path holds at most `MaxDepth` of them, however long the
+ * keys. `reason` quotes caller input only through a [[Preview]] (docs/specs/conformance.md §8).
+ */
+final case class DecodeFailure(path: List[Preview], reason: String) {
+  def at(segment: String): DecodeFailure = copy(path = Preview.of(segment) :: path)
+  def message: String = s"${if (path.isEmpty) "<root>" else path.map(_.short).mkString(".")}: $reason"
 }
 
 /**
@@ -109,15 +113,24 @@ object CanonicalDecoder {
       entries.get(key).traverse(v => D.decode(v).leftMap(_.at(key)))
   }
 
-  /** The map's keys are only compared, never hashed: `allowed` is looked up in the map, and ordered to name the rest. */
+  /**
+   * The map's keys are only compared, never hashed: `allowed` is looked up in the map, and ordered to find the others.
+   * A refusal counts the unknown keys and previews the first in canonical order (shorter UTF-8 first, then by code
+   * point, as every SDK iterates a map), in one pass; it never lists them.
+   */
   def record[A](allowed: Set[String])(f: Fields => Either[DecodeFailure, A]): CanonicalDecoder[A] = {
     case CMap(entries) =>
-      if (allowed.count(entries.contains) < entries.size) {
+      val unknown = entries.size - allowed.count(entries.contains)
+      if (unknown > 0) {
         val known = TreeSet.from(allowed)(using KeyOrder.Default)
-        fail(s"unknown keys ${entries.keysIterator.filterNot(known.contains).toList.sorted.mkString(", ")}")
+        val first = entries.keysIterator.filterNot(known.contains).minOption(using CanonicalKeyOrder).getOrElse("")
+        fail(s"$unknown unknown ${if (unknown == 1) "key" else "keys"}, the first ${Preview.of(first)}")
       } else f(new Fields(entries))
     case other => expected("map", other)
   }
+
+  // the canonical order of encoded keys; each comparison measures both keys, so finding the least is linear in them
+  private val CanonicalKeyOrder: Ordering[String] = Ordering.by[String, Long](Utf16.utf8Length).orElse(CanonicalJson.CodePointOrder)
 
   /** The keys present in a map value, for choosing between record alternatives. */
   def keysOf(value: CanonicalValue): Option[SortedSet[String]] = value match {

@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { inspect } from "node:util";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { digest, models, toHex, type Result } from "@kd5ujc/dilf4s-core";
 
@@ -144,6 +144,17 @@ describe("BIP-39", { timeout: 60_000 }, () => {
     expect(kind(WordList.of([...ENGLISH.slice(1), "two words"]))).toBe("InvalidWordList");
     expect(kind(WordList.of(ENGLISH, ","))).toBe("InvalidWordList");
     expect(kind(WordList.of(ENGLISH, "  "))).toBe("InvalidWordList");
+    // conformance.md section 8: a long separator is refused by its length, unread and never echoed
+    const reads = vi.spyOn(String.prototype, "codePointAt");
+    const long = WordList.of(ENGLISH, " ".repeat(1 << 20));
+    expect(reads.mock.calls.length, "code points read").toBe(0);
+    reads.mockRestore();
+    expect(long.ok ? 0 : JSON.stringify(long.error).length).toBeLessThanOrEqual(512);
+    // a list of the wrong length is refused before any word is normalised
+    const normalised = vi.spyOn(String.prototype, "normalize");
+    expect(kind(WordList.of([...ENGLISH, "extra"]))).toBe("InvalidWordList");
+    expect(normalised.mock.calls.length, "words normalised").toBe(0);
+    normalised.mockRestore();
     const m = expectOk(toMnemonic(new Uint8Array(16)), "m");
     expect(kind(mnemonicToSeed(m, "\uD800"))).toBe("InvalidMnemonic");
     expect(kind(icarus.fromEntropy(new Uint8Array(16), "x\uDC00"))).toBe("InvalidDerivation");

@@ -40,6 +40,24 @@ object StateKeySuite extends SimpleIOSuite with Checkers {
       .and(expect(StateKey.fromBytes(scodec.bits.ByteVector(0xff)).isLeft, "not UTF-8"))
   }
 
+  pureTest("a 1 MiB key or trie key is refused by its length, as a preview or a size (conformance.md §8)") {
+    val huge = 1 << 20
+    val text = StateKey.parse("a/" * (huge / 2))
+    val bytes = StateKey.fromBytes(scodec.bits.ByteVector.fill(huge.toLong)(0xff))
+    val namespace = StateNamespace.parse("x" * huge)
+    def bounded(r: Either[StateKeyError, ?]) =
+      r.left.toOption.fold(failure("refused")) { e =>
+        expect(e.toString.length <= 512, s"the refusal renders ${e.toString.length} characters")
+          .and(expect(e.input.forall(_.head.length <= 64), "a preview of at most 32 code points"))
+      }
+    bounded(text)
+      .and(bounded(bytes))
+      .and(bounded(namespace))
+      .and(expect.same(Left(StateKeyError(None, s"$huge characters, longer than 256")), text))
+      .and(expect.same(Left(StateKeyError(None, s"$huge bytes, longer than 256")), bytes))
+      .and(expect.same(Left("segment 1 does not match [a-z0-9][a-z0-9._-]*"), StateKey.parse("a/B/c").leftMap(_.reason)))
+  }
+
   pureTest("a namespace prefix is segment-exact: `fiber` holds fiber/x, never fiber or fiberx/y") {
     val fiber = ns("fiber")
     expect(fiber.contains(key("fiber/x")))

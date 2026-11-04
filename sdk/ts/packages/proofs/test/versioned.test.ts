@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { cbor, models, toHex, Value } from "@kd5ujc/dilf4s-core";
 
@@ -170,13 +170,34 @@ describe("versioned trie checks", () => {
   });
 
   it("state keys and namespaces", () => {
-    expect(expectErr(versioned.StateKey.parse("a/"), "trailing slash").reason).toMatch(/segment ''/);
+    expect(expectErr(versioned.StateKey.parse("a/"), "trailing slash").reason).toBe("segment 1 does not match [a-z0-9][a-z0-9._-]*");
     expect(versioned.StateKey.fromBytes(Uint8Array.of(0xc3, 0xa9)).ok).toBe(false);
     expect(versioned.StateNamespace.parse(Array.from({ length: 16 }, () => "a").join("/")).ok).toBe(false);
     expect(versioned.StateNamespace.parse(Array.from({ length: 15 }, () => "a").join("/")).ok).toBe(true);
     expect(versioned.StateNamespace.parse("x".repeat(64) + "/" + "x".repeat(64) + "/" + "x".repeat(64) + "/" + "x".repeat(61)).ok).toBe(false);
     expect(ns("fiber").contains(key("fiber/1"))).toBe(true);
     expect(ns("fiber").contains(key("fiberx/1"))).toBe(false);
+  });
+
+  // conformance.md section 8: a 1 MiB key or trie key is refused by its length, as a preview or a size
+  it("a huge state key is refused with a bounded error", () => {
+    const huge = 1 << 20;
+    const text = expectErr(versioned.StateKey.parse("a/".repeat(huge / 2)), "a long key");
+    const fromBytes = expectErr(versioned.StateKey.fromBytes(new Uint8Array(huge).fill(0xff)), "long bytes");
+    const namespace = expectErr(versioned.StateNamespace.parse("x".repeat(huge)), "a long namespace");
+    for (const e of [text, fromBytes, namespace]) {
+      const rendered = `${e.input?.toString() ?? ""}${e.reason}`;
+      expect(rendered.length, "the refusal renders boundedly").toBeLessThanOrEqual(512);
+      expect(Array.from(e.input?.head ?? "").length, "a preview of at most 32 code points").toBeLessThanOrEqual(32);
+    }
+    expect(text).toEqual({ reason: `${huge.toString()} characters, longer than 256` });
+    // refused by its length alone: nothing reads the text (a preview would read every code point)
+    const reads = vi.spyOn(String.prototype, "codePointAt");
+    versioned.StateKey.parse("q".repeat(huge));
+    expect(reads.mock.calls.length, "code points read").toBe(0);
+    reads.mockRestore();
+    expect(fromBytes).toEqual({ reason: `${huge.toString()} bytes, longer than 256` });
+    expect(key("a".repeat(64)).preview().head).toBe("a".repeat(32));
   });
 
   it("version keys", () => {

@@ -47,8 +47,8 @@ object VersionedTrie {
    * see [[valueBytes]].
    */
   def checkValue(key: StateKey, v: CanonicalValue): Either[VersionedTrieError, Unit] =
-    if (v.depth > MaxValueDepth) VersionedTrieError.TooDeep(s"the value of ${key.value}", v.depth, MaxValueDepth).asLeft
-    else Either.cond(valueBytes(v) <= MaxValueBytes, (), VersionedTrieError.TooLarge(s"the value of ${key.value}", MaxValueBytes))
+    if (v.depth > MaxValueDepth) VersionedTrieError.TooDeep(s"the value of ${key.preview.short}", v.depth, MaxValueDepth).asLeft
+    else Either.cond(valueBytes(v) <= MaxValueBytes, (), VersionedTrieError.TooLarge(s"the value of ${key.preview.short}", MaxValueBytes))
 
   /**
    * The length of a value's canonical CBOR, without encoding it; or, for a value whose weight is already over

@@ -8,9 +8,9 @@ sealed trait PoseidonError extends Product with Serializable
 
 object PoseidonError {
   final case class InputCount(count: Int, max: Int) extends PoseidonError
-  // a caller's value can be any size: it is shown by its bit length, never its digits
-  final case class NonCanonical(value: BigInt) extends PoseidonError {
-    override def toString: String = s"NonCanonical(a ${value.bitLength}-bit value)"
+  // a caller's value can be any size: it is held and shown by its bit length, never its digits (conformance.md §8)
+  final case class NonCanonical(bits: Int) extends PoseidonError {
+    override def toString: String = s"NonCanonical(a $bits-bit value)"
   }
 }
 
@@ -29,7 +29,7 @@ object Fr {
   val Zero: Fr = BigInt(0)
 
   def from(value: BigInt): Either[PoseidonError, Fr] =
-    Either.cond(value >= 0 && value < Modulus, value, PoseidonError.NonCanonical(value))
+    Either.cond(value >= 0 && value < Modulus, value, PoseidonError.NonCanonical(value.bitLength))
 
   def reduce(value: BigInt): Fr = value.mod(Modulus)
 

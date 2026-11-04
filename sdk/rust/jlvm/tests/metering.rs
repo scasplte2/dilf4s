@@ -560,3 +560,42 @@ fn doubling_data_is_charged_by_its_logical_weight_before_any_walk() {
         assert_eq!(eval(r#"{"typeof": {"var": "d"}}"#, &data).result, Ok(t("array")));
     }
 }
+
+/// conformance.md section 2: a rational with no decimal form is named by its size, never its digits.
+#[test]
+fn cat_and_join_name_a_non_terminating_rational_by_its_size() {
+    let third = Value::number(&(num_traits::pow(BigInt::from(10), 1000) + 1), &BigInt::from(3)).unwrap();
+    for p in [r#"{"cat": {"var": "xs"}}"#, r#"{"join": [{"var": "xs"}, ""]}"#] {
+        let Err(e) = eval(p, &obj(vec![("xs", arr(vec![third.clone()]))])).result else { panic!("{p} renders") };
+        let rendered = format!("{e}{e:?}");
+        assert!(!rendered.contains("0000000000"), "{p}: no digits in {rendered}");
+        assert!(rendered.contains("a rational of 3322/2 bits"), "{p}: {rendered}");
+    }
+}
+
+/// conformance.md section 8: a long ambiguous path is held as a preview.
+#[test]
+fn an_ambiguous_long_path_warns_with_a_preview() {
+    let k = "x".repeat(4096);
+    let data = obj(vec![(k.as_str(), int(1)), ("items", arr(vec![obj(vec![(k.as_str(), int(2))])]))]);
+    let o = eval(&format!("{{\"map\": [{{\"var\": \"items\"}}, {{\"var\": \"{k}\"}}]}}"), &data);
+    assert_eq!(o.warnings, vec![Warning::AmbiguousPath(dilf4s_core::Preview::of(&k))]);
+    assert!(format!("{:?}", o.warnings).len() <= 256, "{:?}", o.warnings);
+}
+
+/// conformance.md section 8: a refusal previews a 1 MiB name or path, never echoes it.
+#[test]
+fn refusals_preview_a_huge_name_or_path() {
+    let huge = "q".repeat(1 << 20);
+    let programs = [
+        ("an unknown operation", format!("{{\"{huge}\": 1}}")),
+        ("an empty path segment", format!("{{\"var\": \"{huge}..x\"}}")),
+        ("an empty binding name", format!("{{\"var\": \"$.{huge}\"}}")),
+        ("an unbindable name", format!("{{\"let\": [[[\"{huge}.x\", 1]], 1]}}")),
+    ];
+    for (what, program) in programs {
+        let Err(e) = parse(&program) else { panic!("{what} is refused") };
+        let rendered = format!("{e}{e:?}");
+        assert!(rendered.len() <= 2048, "{what} renders {} bytes", rendered.len());
+    }
+}

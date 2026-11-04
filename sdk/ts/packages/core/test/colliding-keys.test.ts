@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cbor, codec, json, MapValue, Value } from "../src/index.js";
+import { cbor, codec, json, MapValue, Preview, Value } from "../src/index.js";
 import { KeySet } from "../src/keyset.js";
 import { expectOk } from "./vectors.js";
 
@@ -47,8 +47,8 @@ describe("caller-chosen map keys are compared, never hashed", () => {
     expect(decoded.kind === "map" && decoded.get(keys[n - 1] ?? "") !== undefined).toBe(true);
     expect(parsed.kind === "map" && parsed.size === n).toBe(true);
     expect([typed.size, typed.get(keys[3] ?? ""), typed.has("3"), [...typed.keys()].length]).toEqual([n, 1n, false, n]);
-    expect(repeated).toEqual({ ok: false, error: { kind: "DuplicateKey", key: keys[7] } });
-    expect(repeatedJson).toEqual({ ok: false, error: { kind: "DuplicateKey", key: keys[7] } });
+    expect(repeated).toEqual({ ok: false, error: { kind: "DuplicateKey", key: Preview.of(keys[7] ?? "") } });
+    expect(repeatedJson).toEqual({ ok: false, error: { kind: "DuplicateKey", key: Preview.of(keys[7] ?? "") } });
     expect(hashed(spies)).toBe(0);
   });
 

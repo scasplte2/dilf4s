@@ -224,7 +224,11 @@ pub fn fr_to_be_bytes(x: Fr) -> [u8; 32] {
 }
 
 /// A field element from an integer, which must be in `[0, r)`.
+/// A negative or wider integer is refused before it is converted.
 pub fn fr_from_int(n: &num_bigint::BigInt) -> Result<Fr, PoseidonError> {
+    if n.sign() == num_bigint::Sign::Minus || n.bits() > 256 {
+        return Err(PoseidonError::NonCanonical);
+    }
     let (sign, magnitude) = n.to_bytes_be();
     if sign == num_bigint::Sign::Minus || magnitude.len() > 32 {
         return Err(PoseidonError::NonCanonical);

@@ -28,6 +28,7 @@ import type { CanonicalError } from "./error.js";
 import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_RATIONAL_BITS, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
 import { toHex } from "./hex.js";
 import { KeySet, search } from "./keyset.js";
+import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { compareBytes, encodeUtf8, isWellFormed } from "./utf8.js";
 
@@ -486,7 +487,7 @@ export class MapValue {
     const seen = new KeySet();
     const kept: Entry[] = [];
     for (const [key, value] of entries) {
-      if (!seen.add(key)) return err({ kind: "DuplicateKey", key });
+      if (!seen.add(key)) return err({ kind: "DuplicateKey", key: Preview.of(key) });
       if (!isWellFormed(key)) return err({ kind: "UnpairedSurrogate" });
       if (value.kind !== "null") kept.push({ key, utf8: encodeUtf8(key), value });
     }

@@ -36,7 +36,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
 
   pureTest("numbers are read and written within 10,000 significant digits, counted before any conversion") {
     def digits(n: Int) = "9" * n
-    val rejectedDigits = (n: Int) => s"a number of $n characters at offset 0"
+    val rejectedDigits = (n: Int) => NumberSource.Text(n, 0)
     expect
       .same(Right(CInt(BigInt(digits(10000)))), parse(digits(10000)))
       .and(expect.same(Right(digits(10000)), parse(digits(10000)).flatMap(CanonicalJson.render)))
@@ -62,7 +62,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
     val wide = Json.fromBigDecimal(BigDecimal(new java.math.BigDecimal((BigInt(1) << 1000000).bigInteger, 10001)))
     CanonicalJson.fromCirce(wide) match {
       case Left(InvalidNumber(source, Some(_))) =>
-        expect.same("a number of scale 10001 with a 1000001-bit coefficient", source)
+        expect.same(NumberSource.Decimal(10001, 1000001), source)
       case other => failure(s"expected a scale refusal, got ${other.isRight}")
     }
   }
@@ -76,7 +76,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
       "-" + nines + "e+" -> 10004
     ).map {
       case (text, length) =>
-        val expected = s"a number of $length characters at offset 1"
+        val expected = NumberSource.Text(length, 1)
         parse(s"[$text]") match {
           case Left(e @ InvalidNumber(source, _)) =>
             expect.same(expected, source).and(expect(!e.toString.contains("99999"), s"its diagnostic keeps no digits: $e"))
@@ -94,7 +94,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
       .reduce(_ and _)
     expect
       .same(
-        Left(InvalidNumber("a number of 640000 characters at offset 0", Some(ArithmeticError.DigitsOutOfRange(640000, 10000)))),
+        Left(InvalidNumber(NumberSource.Text(640000, 0), Some(ArithmeticError.DigitsOutOfRange(640000, 10000)))),
         viaCirce("9" * 640000)
       )
       .and(expect(viaCirce("0e" + "1" * 10001).isLeft, "a zero with a 10,001-digit exponent is refused, as the parser refuses it"))
@@ -134,15 +134,15 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
   pureTest("objects drop null members and reject duplicate names") {
     expect
       .same(parse("""{"a":1}"""), parse("""{"a":1,"b":null}"""))
-      .and(expect.same(Left(DuplicateKey("a")), parse("""{"a":1,"a":2}""")))
-      .and(expect.same(Left(DuplicateKey("a")), parse("""{"a":null,"a":2}""")))
+      .and(expect.same(Left(DuplicateKey(Preview.of("a"))), parse("""{"a":1,"a":2}""")))
+      .and(expect.same(Left(DuplicateKey(Preview.of("a"))), parse("""{"a":null,"a":2}""")))
       .and(expect(parse("[null, 1]").map(_.depth).contains(1), "array nulls are kept"))
   }
 
   pureTest("escaped surrogates must pair up") {
     expect
       .same(parse("\"\\ud83d\\ude00\""), CanonicalValue.text("\ud83d\ude00"))
-      .and(expect(parse("\"\\ud800\"").left.exists(_.isInstanceOf[UnpairedSurrogate]), "a lone high surrogate is rejected"))
+      .and(expect(parse("\"\\ud800\"").swap.contains(UnpairedSurrogate), "a lone high surrogate is rejected"))
       .and(expect(parse("{\"\\udc00\":1}").isLeft, "a lone surrogate in a key is rejected"))
   }
 

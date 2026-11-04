@@ -74,7 +74,7 @@ object CborSuite extends SimpleIOSuite with Checkers {
   pureTest("null map values are dropped, so absent and null hash identically") {
     expect
       .same(Cbor.encode(obj("a" -> CInt(1))), Cbor.encode(obj("a" -> CInt(1), "b" -> CNull)))
-      .and(expect.same(Left(DuplicateKey("a")), CanonicalValue.map(List("a" -> CNull, "a" -> CInt(1)))))
+      .and(expect.same(Left(DuplicateKey(Preview.of("a"))), CanonicalValue.map(List("a" -> CNull, "a" -> CInt(1)))))
   }
 
   test("decode inverts encode") {

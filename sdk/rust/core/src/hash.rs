@@ -11,6 +11,7 @@ use core::marker::PhantomData;
 use sha2::Digest as _;
 
 use crate::cbor;
+use crate::preview::Preview;
 use crate::value::Value;
 
 /// A hash function with a fixed output.
@@ -223,13 +224,13 @@ pub enum HashError {
     },
     /// A tag outside the `DomainTag` grammar.
     InvalidDomainTag {
-        /// The tag given.
-        tag: String,
+        /// The tag given, previewed.
+        tag: Preview,
     },
     /// A hash function name that is not one of [`HashAlgorithm`]'s.
     UnknownAlgorithm {
-        /// The name given.
-        name: String,
+        /// The name given, previewed.
+        name: Preview,
     },
 }
 
@@ -239,8 +240,8 @@ impl fmt::Display for HashError {
             Self::InvalidLength { algorithm, expected, actual } => {
                 write!(f, "{algorithm} digest of {actual} bytes, expected {expected}")
             }
-            Self::InvalidDomainTag { tag } => write!(f, "invalid domain tag {tag:?}"),
-            Self::UnknownAlgorithm { name } => write!(f, "unknown hash function {name:?}"),
+            Self::InvalidDomainTag { tag } => write!(f, "invalid domain tag {tag}"),
+            Self::UnknownAlgorithm { name } => write!(f, "unknown hash function {name}"),
         }
     }
 }
@@ -258,7 +259,7 @@ impl DomainTag {
         if is_domain_tag(tag) {
             Ok(Self(String::from(tag)))
         } else {
-            Err(HashError::InvalidDomainTag { tag: String::from(tag) })
+            Err(HashError::InvalidDomainTag { tag: Preview::of(tag) })
         }
     }
 
@@ -384,7 +385,7 @@ impl HashAlgorithm {
         Self::ALL
             .into_iter()
             .find(|a| a.name() == name)
-            .ok_or_else(|| HashError::UnknownAlgorithm { name: String::from(name) })
+            .ok_or_else(|| HashError::UnknownAlgorithm { name: Preview::of(name) })
     }
 
     /// The output size in bytes.

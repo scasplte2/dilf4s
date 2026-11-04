@@ -9,6 +9,7 @@ import cats.{Applicative, Monoid}
 import scala.annotation.tailrec
 import scala.collection.immutable.TreeMap
 
+import xyz.kd5ujc.core.canonical.Preview
 import xyz.kd5ujc.storage.ByteOrder.unsigned
 
 import fs2.Stream
@@ -77,14 +78,20 @@ sealed abstract case class Namespace(prefix: ByteVector)
 
 object Namespace {
 
-  def apply(name: String): Either[StoreError, Namespace] = {
-    val bytes = ByteVector(name.getBytes(UTF_8))
-    Either.cond(
-      bytes.nonEmpty && bytes.size <= 255,
-      new Namespace(ByteVector(bytes.size.toInt) ++ bytes) {},
-      StoreError.Codec("namespace", s"'$name' must be 1..255 UTF-8 bytes")
-    )
-  }
+  /**
+   * A name of more than 255 UTF-16 units has more than 255 UTF-8 bytes: it is refused by its length alone, before it
+   * is encoded or previewed (docs/specs/conformance.md §8).
+   */
+  def apply(name: String): Either[StoreError, Namespace] =
+    if (name.length > 255) StoreError.Codec("namespace", s"${name.length} characters, more than 255 UTF-8 bytes").asLeft
+    else {
+      val bytes = ByteVector(name.getBytes(UTF_8))
+      Either.cond(
+        bytes.nonEmpty && bytes.size <= 255,
+        new Namespace(ByteVector(bytes.size.toInt) ++ bytes) {},
+        StoreError.Codec("namespace", s"${Preview.of(name)} must be 1..255 UTF-8 bytes")
+      )
+    }
 }
 
 /** The byte-level store every backend implements. Batches are atomic; scans are ordered and see one snapshot. */

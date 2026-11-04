@@ -53,6 +53,13 @@ describe("Poseidon", () => {
     expect(expectErr(poseidon.hash([1n, 2n, 3n, 4n, 5n].map(fr)), "five inputs").kind).toBe("InputCount");
     expect(expectErr(poseidon.Fr.of(poseidon.FR_MODULUS), "r").kind).toBe("NonCanonical");
     expect(expectErr(poseidon.Fr.of(-1n), "negative").kind).toBe("NonCanonical");
+    // conformance.md section 8: a refused value or position is held by its bit length, never itself
+    expect(expectErr(poseidon.Fr.of(1n << 1_000_000n), "huge")).toEqual({ kind: "NonCanonical", bits: 1_000_001 });
+    expect(expectErr(poseidon.PoseidonMerkleProof.of(1n << 1_000_000n, []), "huge")).toEqual({ kind: "Position", positionBits: 1_000_001, depth: 0 });
+    // a depth past MAX_DEPTH is refused before 2^depth is built, even for a sparse array of 2^32 - 1 slots
+    const sparse: poseidon.Fr[] = [];
+    sparse.length = 2 ** 32 - 1;
+    expect(expectErr(poseidon.PoseidonMerkleProof.of(0n, sparse), "too deep")).toEqual({ kind: "Position", positionBits: 0, depth: 2 ** 32 - 1 });
     expect(poseidon.Fr.reduce(poseidon.FR_MODULUS + 5n).value).toBe(5n);
     expect(poseidon.compress(fr(1n), fr(2n)).value).toBe(expectOk(poseidon.hash([fr(1n), fr(2n)]), "hash").value);
   });
@@ -166,7 +173,7 @@ describe("treeRoot: caller-chosen positions are compared, never hashed", () => {
     const two = fr(2n);
     expect(expectOk(poseidon.treeRoot(6, [[5n, one], [5n, two]]), "replaced").equals(expectOk(poseidon.treeRoot(6, [[5n, two]]), "two"))).toBe(true);
     expect(expectOk(poseidon.treeRoot(6, [[5n, one], [5n, poseidon.Fr.zero]]), "emptied").equals(expectOk(poseidon.zeroHashes(6), "zeros")[6] ?? one)).toBe(true);
-    expect(expectErr(poseidon.treeRoot(6, [[5n, one], [64n, one]]), "out of range")).toEqual({ kind: "Position", position: 64n, depth: 6 });
+    expect(expectErr(poseidon.treeRoot(6, [[5n, one], [64n, one]]), "out of range")).toEqual({ kind: "Position", positionBits: 7, depth: 6 });
   });
 
   it("an iterable that yields one tuple again with new contents builds the tree of what it yielded", () => {
@@ -201,7 +208,7 @@ describe("PoseidonMerkleProof.of: the depth is checked before any work in it", (
     const made = vi.spyOn(globalThis, "BigInt");
     const refused = poseidon.PoseidonMerkleProof.of(0n, deep);
     const largest = made.mock.calls.reduce((max, [x]) => (typeof x === "number" && x > max ? x : max), 0);
-    expect(refused).toEqual({ ok: false, error: { kind: "Position", position: 0n, depth: 2 ** 31 } });
+    expect(refused).toEqual({ ok: false, error: { kind: "Position", positionBits: 0, depth: 2 ** 31 } });
     expect(reads).toEqual([]);
     expect(largest).toBeLessThanOrEqual(poseidon.MAX_DEPTH);
   });
@@ -209,6 +216,6 @@ describe("PoseidonMerkleProof.of: the depth is checked before any work in it", (
   it("depth MAX_DEPTH is accepted, and one more is refused", () => {
     const zeros = (n: number): poseidon.Fr[] => Array.from({ length: n }, () => poseidon.Fr.zero);
     expect(expectOk(poseidon.PoseidonMerkleProof.of((1n << 256n) - 1n, zeros(256)), "depth 256").depth).toBe(256);
-    expect(expectErr(poseidon.PoseidonMerkleProof.of(0n, zeros(257)), "depth 257")).toEqual({ kind: "Position", position: 0n, depth: 257 });
+    expect(expectErr(poseidon.PoseidonMerkleProof.of(0n, zeros(257)), "depth 257")).toEqual({ kind: "Position", positionBits: 0, depth: 257 });
   });
 });

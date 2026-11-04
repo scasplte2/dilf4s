@@ -4,9 +4,12 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::preview::Preview;
+
 /// Why a canonical value, encoding or JSON text was refused (docs/specs/canonical-encoding.md).
 ///
-/// [`CanonicalError::kind`] names the variant exactly as the conformance vectors do.
+/// [`CanonicalError::kind`] names the variant exactly as the conformance vectors do. A refusal describes caller input
+/// by its size or by a [`Preview`], never by the input itself (docs/specs/conformance.md section 8).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CanonicalError {
     /// Text with an unpaired UTF-16 surrogate; only JSON `\u` escapes can produce one.
@@ -19,7 +22,7 @@ pub enum CanonicalError {
     /// A map or JSON object with the same key twice.
     DuplicateKey {
         /// The repeated key.
-        key: String,
+        key: Preview,
     },
     /// JSON text that is not RFC 8259 syntax.
     JsonSyntax {
@@ -30,8 +33,10 @@ pub enum CanonicalError {
     },
     /// A JSON number that is malformed, or outside the accepted digits or scale.
     InvalidNumber {
-        /// The number's length and offset, never its text, whose size the caller chose.
-        source: String,
+        /// The number's length: never its text, whose size the caller chose.
+        length: usize,
+        /// Byte offset of the number in the JSON text.
+        offset: usize,
         /// The bound it exceeds, when that is the problem.
         bound: Option<NumberBound>,
     },
@@ -107,13 +112,13 @@ impl fmt::Display for CanonicalError {
         match self {
             Self::UnpairedSurrogate => f.write_str("text contains an unpaired surrogate"),
             Self::RationalTooWide { limit } => write!(f, "a rational part wider than {limit} bits"),
-            Self::DuplicateKey { key } => write!(f, "duplicate key {key:?}"),
+            Self::DuplicateKey { key } => write!(f, "duplicate key {key}"),
             Self::JsonSyntax { offset, reason } => {
                 write!(f, "JSON syntax error at {offset}: {reason}")
             }
-            Self::InvalidNumber { source, bound } => match bound {
-                Some(b) => write!(f, "invalid number {source}: {b}"),
-                None => write!(f, "invalid number {source}"),
+            Self::InvalidNumber { length, offset, bound } => match bound {
+                Some(b) => write!(f, "invalid number of {length} characters at offset {offset}: {b}"),
+                None => write!(f, "invalid number of {length} characters at offset {offset}"),
             },
             Self::NotJsonRepresentable { kind } => write!(f, "{kind} has no JSON form"),
             Self::TypeMismatch { reason } => write!(f, "type mismatch: {reason}"),
@@ -312,11 +317,13 @@ impl fmt::Display for UnsupportedItem {
     }
 }
 
-/// Why a canonical value is not the expected type, and where: `path` runs from the root (map keys and `[i]`).
+/// Why a canonical value is not the expected type, and where: `path` runs from the root (map keys and `[i]`). A key
+/// may be the caller's, so each segment is a [`Preview`]; `reason` quotes caller input only through one
+/// (docs/specs/conformance.md section 8).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecodeFailure {
     /// Map keys and `[i]` array indices from the root to the failing value.
-    pub path: Vec<String>,
+    pub path: Vec<Preview>,
     /// What is wrong there.
     pub reason: String,
 }
@@ -329,8 +336,8 @@ impl DecodeFailure {
 
     /// This failure, one level further down: `segment` is prepended to the path.
     #[must_use]
-    pub fn at(mut self, segment: impl Into<String>) -> Self {
-        self.path.insert(0, segment.into());
+    pub fn at(mut self, segment: impl AsRef<str>) -> Self {
+        self.path.insert(0, Preview::of(segment.as_ref()));
         self
     }
 }
@@ -338,10 +345,15 @@ impl DecodeFailure {
 impl fmt::Display for DecodeFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.path.is_empty() {
-            write!(f, "<root>: {}", self.reason)
-        } else {
-            write!(f, "{}: {}", self.path.join("."), self.reason)
+            f.write_str("<root>")?;
         }
+        self.path.iter().enumerate().try_for_each(|(i, p)| {
+            if i > 0 {
+                f.write_str(".")?;
+            }
+            write!(f, "{}", p.short())
+        })?;
+        write!(f, ": {}", self.reason)
     }
 }
 

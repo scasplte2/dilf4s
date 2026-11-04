@@ -45,11 +45,17 @@ impl WordList {
     /// separator in them is `InvalidWordList`. `separator` joins phrases (U+3000 for Japanese, a space otherwise) and
     /// must be one that parsing splits on, so that every generated phrase parses back.
     pub fn new(words: Vec<String>, separator: char) -> Result<Self, KeyError> {
-        let words: Vec<String> = words.into_iter().map(|w| nfkd(&w)).collect();
-        let index: BTreeMap<String, u16> = words.iter().zip(0u16..).map(|(w, i)| (w.clone(), i)).collect();
         if !is_separator(separator) {
             return Err(KeyError::InvalidWordList { reason: format!("{separator:?} is not a phrase separator") });
         }
+        // the count is checked before any word is normalised or indexed
+        if words.len() != 2048 {
+            return Err(KeyError::InvalidWordList {
+                reason: format!("expected 2048 distinct words without separators, got {}", words.len()),
+            });
+        }
+        let words: Vec<String> = words.into_iter().map(|w| nfkd(&w)).collect();
+        let index: BTreeMap<String, u16> = words.iter().zip(0u16..).map(|(w, i)| (w.clone(), i)).collect();
         let well_formed = words.iter().all(|w| !w.is_empty() && !w.chars().any(is_separator));
         if words.len() == 2048 && index.len() == 2048 && well_formed {
             Ok(Self { words, index, separator })

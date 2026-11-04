@@ -32,7 +32,8 @@ fn more_digits_are_refused_by_their_length() {
     assert_eq!(
         refused,
         CanonicalError::InvalidNumber {
-            source: "a number of 10001 characters at offset 0".into(),
+            length: 10_001,
+            offset: 0,
             bound: Some(NumberBound::Digits(DigitsOutOfRange { digits: 10_001, max_digits: 10_000 })),
         }
     );
@@ -52,8 +53,8 @@ fn malformed_numbers_are_described_by_length_and_offset_never_their_text() {
     ];
     for (text, length) in cases {
         let e = json::parse(&text).unwrap_err();
-        let CanonicalError::InvalidNumber { source, .. } = &e else { panic!("an invalid number, got {e}") };
-        assert_eq!(source, &format!("a number of {length} characters at offset 1"));
+        let CanonicalError::InvalidNumber { length: l, offset, .. } = &e else { panic!("an invalid number, got {e}") };
+        assert_eq!((*l, *offset), (length, 1));
         assert!(!e.to_string().contains("99999"), "Display keeps no digits");
         assert!(!format!("{e:?}").contains("99999"), "Debug keeps no digits");
     }

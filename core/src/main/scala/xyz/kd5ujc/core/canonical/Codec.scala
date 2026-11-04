@@ -89,7 +89,7 @@ object Codec {
 
   /** Exactly the text `a`, as its singleton type. */
   def literalText[A <: String & Singleton](a: A): Codec[A] =
-    Codec(_ => CanonicalValue.text(a), CanonicalDecoder.text.emap(t => Either.cond(t == a, a, s"expected \"$a\", got \"$t\"")))
+    Codec(_ => CanonicalValue.text(a), CanonicalDecoder.text.emap(t => Either.cond(t == a, a, s"expected \"$a\", got ${Preview.of(t)}")))
 
   /**
    * Text matching the whole of `pattern` (CDDL `.regexp`). The generator compiles every pattern before emitting it, so
@@ -98,7 +98,7 @@ object Codec {
   def matching(pattern: scala.util.matching.Regex): Codec[String] =
     Codec(
       t => Either.cond(pattern.matches(t), t, mismatch(s"text does not match ${pattern.regex}")).flatMap(CanonicalValue.text),
-      CanonicalDecoder.text.emap(t => Either.cond(pattern.matches(t), t, s"\"$t\" does not match ${pattern.regex}"))
+      CanonicalDecoder.text.emap(t => Either.cond(pattern.matches(t), t, s"${Preview.of(t)} does not match ${pattern.regex}"))
     )
 
   /**
@@ -146,13 +146,13 @@ object Codec {
     CanonicalDecoder.keysOf(value) match {
       case None =>
         value match {
-          case CText(t) => texts.collectFirst { case (`t`, a) => a }.toRight(DecodeFailure(Nil, s"\"$t\" is not an alternative"))
+          case CText(t) => texts.collectFirst { case (`t`, a) => a }.toRight(DecodeFailure(Nil, s"${Preview.of(t)} is not an alternative"))
           case _        => DecodeFailure(Nil, "expected a map or one of the text alternatives").asLeft
         }
       case Some(keys) =>
         // the schema's sets are iterated and looked up in the value's keys, in their order: no caller key is hashed
         alternatives.collectFirst { case (required, all, d) if required.subsetOf(keys) && all.count(keys.contains) == keys.size => d }
-          .toRight(DecodeFailure(Nil, s"no alternative has keys ${keys.toList.sorted.mkString(", ")}"))
+          .toRight(DecodeFailure(Nil, s"no alternative fits a map of ${keys.size} keys"))
           .flatMap(_.decode(value))
     }
 }

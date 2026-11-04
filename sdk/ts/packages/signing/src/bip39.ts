@@ -1,5 +1,5 @@
 /** BIP-39 (`signing.md` 2.1): entropy to mnemonic and back, and mnemonic to seed. */
-import { err, ok, type Result } from "@kd5ujc/dilf4s-core";
+import { err, ok, Preview, type Result } from "@kd5ujc/dilf4s-core";
 import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -37,8 +37,11 @@ export class WordList {
   /** A list from 2048 words (each NFKD-normalised here); `separator` joins phrases (U+3000 for Japanese). */
   static of(words: readonly string[], separator = " "): Result<WordList, KeyError> {
     // the separator joins generated phrases, so it must be one that parsing splits on
-    if (separator.length !== 1 || !SEPARATORS.test(separator))
-      return err({ kind: "InvalidWordList", reason: `${JSON.stringify(separator)} is not a phrase separator` });
+    // a separator is one UTF-16 unit: a longer one is refused by its length, before it is read or previewed
+    if (separator.length !== 1) return err({ kind: "InvalidWordList", reason: `a separator of ${separator.length.toString()} characters is not a phrase separator` });
+    if (!SEPARATORS.test(separator)) return err({ kind: "InvalidWordList", reason: `${Preview.of(separator).toString()} is not a phrase separator` });
+    // the count is checked before any word is normalised
+    if (words.length !== 2048) return err({ kind: "InvalidWordList", reason: `expected 2048 distinct words without separators, got ${String(words.length)}` });
     const normalised = words.map(nfkd);
     const valid = normalised.every((w) => w.length > 0 && wellFormed(w) && !SEPARATORS.test(w));
     if (!valid || normalised.length !== 2048 || new Set(normalised).size !== 2048)

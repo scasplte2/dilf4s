@@ -4,20 +4,26 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use dilf4s_core::Preview;
+
 use super::VersionedTrieError;
 
-/// Why a state key or namespace was rejected.
+/// Why a state key or namespace was rejected: the input as a [`Preview`], or none for bytes that are not text
+/// (docs/specs/conformance.md section 8).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateKeyError {
-    /// The input (hex for bytes that are not UTF-8).
-    pub input: String,
+    /// The input, previewed; `None` for bytes refused before they were read as text.
+    pub input: Option<Preview>,
     /// Why.
     pub reason: String,
 }
 
 impl fmt::Display for StateKeyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "invalid state key {:?}: {}", self.input, self.reason)
+        match &self.input {
+            Some(input) => write!(f, "invalid state key {input}: {}", self.reason),
+            None => write!(f, "invalid state key: {}", self.reason),
+        }
     }
 }
 
@@ -37,46 +43,60 @@ impl StateKey {
     /// The longest key.
     pub const MAX_LENGTH: usize = dilf4s_core::generated::limits::as_usize::STATE_KEY_MAX_LENGTH;
 
-    /// Parses a key.
+    /// Parses a key. The length is checked before the text is split, so a refusal costs O([`Self::MAX_LENGTH`])
+    /// whatever the input; it names a segment by its position, never its text.
     pub fn parse(s: &str) -> Result<Self, StateKeyError> {
-        let bad = |reason: String| StateKeyError { input: String::from(s), reason };
+        let bad = |reason: String| StateKeyError { input: Some(Preview::of(s)), reason };
         if s.is_empty() {
             return Err(bad(String::from("empty key")));
         }
+        // refused by its length alone, as Scala and TypeScript, whose previews would measure the whole text
         if s.len() > Self::MAX_LENGTH {
-            return Err(bad(alloc::format!("longer than {} characters", Self::MAX_LENGTH)));
+            return Err(StateKeyError {
+                input: None,
+                reason: alloc::format!("{} bytes, longer than {}", s.len(), Self::MAX_LENGTH),
+            });
         }
         if s.split('/').count() > Self::MAX_SEGMENTS {
             return Err(bad(alloc::format!("more than {} segments", Self::MAX_SEGMENTS)));
         }
-        for segment in s.split('/') {
+        for (at, segment) in s.split('/').enumerate() {
             if segment.len() > Self::MAX_SEGMENT_LENGTH {
-                return Err(bad(alloc::format!(
-                    "segment '{segment}' is longer than {} characters",
-                    Self::MAX_SEGMENT_LENGTH
-                )));
+                return Err(bad(alloc::format!("segment {at} is longer than {} characters", Self::MAX_SEGMENT_LENGTH)));
             }
             let lower_digit = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
             let ok = segment.as_bytes().split_first().is_some_and(|(&h, t)| {
                 lower_digit(h) && t.iter().all(|&b| lower_digit(b) || matches!(b, b'.' | b'_' | b'-'))
             });
             if !ok {
-                return Err(bad(alloc::format!("segment '{segment}' does not match [a-z0-9][a-z0-9._-]*")));
+                return Err(bad(alloc::format!("segment {at} does not match [a-z0-9][a-z0-9._-]*")));
             }
         }
         Ok(Self(String::from(s)))
     }
 
-    /// A key from its trie key (UTF-8 bytes).
+    /// A key from its trie key (UTF-8 bytes). Bytes longer than [`Self::MAX_LENGTH`] are refused by their length,
+    /// before they are read as text.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, StateKeyError> {
+        if bytes.len() > Self::MAX_LENGTH {
+            return Err(StateKeyError {
+                input: None,
+                reason: alloc::format!("{} bytes, longer than {}", bytes.len(), Self::MAX_LENGTH),
+            });
+        }
         core::str::from_utf8(bytes)
-            .map_err(|_| StateKeyError { input: dilf4s_core::hex::encode(bytes), reason: String::from("not UTF-8") })
+            .map_err(|_| StateKeyError { input: None, reason: String::from("not UTF-8") })
             .and_then(Self::parse)
     }
 
     /// The key text.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// The key as a diagnostic names it (docs/specs/conformance.md section 8).
+    pub fn preview(&self) -> Preview {
+        Preview::of(&self.0)
     }
 
     /// The trie key: the UTF-8 bytes.
@@ -108,7 +128,7 @@ impl StateNamespace {
             Ok(Self(k.0))
         } else {
             Err(StateKeyError {
-                input: String::from(s),
+                input: Some(Preview::of(s)),
                 reason: String::from("a namespace must leave room for one more segment"),
             })
         }
@@ -117,6 +137,11 @@ impl StateNamespace {
     /// The namespace text.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// The namespace as a diagnostic names it (docs/specs/conformance.md section 8).
+    pub fn preview(&self) -> Preview {
+        Preview::of(&self.0)
     }
 
     /// The trie prefix, `utf8(ns + "/")`.

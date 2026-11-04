@@ -2,6 +2,7 @@
 export * as bloom from "./bloom.js";
 export * as canonicalVectors from "./canonical_vectors.js";
 export * as crypto from "./crypto.js";
+export * as diagnosticVectors from "./diagnostic_vectors.js";
 export * as jlvm from "./jlvm.js";
 export * as jlvmVectors from "./jlvm_vectors.js";
 export * as kesVectors from "./kes_vectors.js";

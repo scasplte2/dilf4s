@@ -72,5 +72,6 @@ object HasherSuite extends SimpleIOSuite with Checkers {
       .and(expect(Digest.fromBytes[Sha256](ByteVector.fill(31)(0)).isLeft, "31 bytes is not"))
       .and(expect(Digest.fromBytes[Sha3_512](ByteVector.fill(32)(0)).isLeft, "32 bytes is not a SHA3-512 digest"))
       .and(expect(Digest.fromHex[Sha256]("zz").isLeft, "invalid hex is rejected"))
+      .and(expect.same(Left(HashError.InvalidLength("SHA-256", 32, 1L << 19)), Digest.fromHex[Sha256]("ab" * (1 << 19))))
   }
 }

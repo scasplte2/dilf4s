@@ -29,6 +29,21 @@ object ParserSuite extends SimpleIOSuite with Checkers {
       .and(expect(p(s"""{"var": 1e${"1" * 10001}}""").isLeft, "and a 10,001-digit exponent"))
   }
 
+  pureTest("a refusal previews a 1 MiB name or path, never echoes it (conformance.md §8)") {
+    val huge = "q" * (1 << 20)
+    List(
+      "an unknown operation"  -> s"""{"$huge": 1}""",
+      "an empty path segment" -> s"""{"var": "$huge..x"}""",
+      "an empty binding name" -> s"""{"var": "$$.$huge"}""",
+      "an unbindable name"    -> s"""{"let": [[["$huge.x", 1]], 1]}"""
+    ).map {
+      case (what, program) =>
+        p(program).left.toOption.fold(failure(s"$what is refused")) { e =>
+          expect(e.message.length <= 1024, s"$what renders ${e.message.length} characters")
+        }
+    }.reduce(_ and _)
+  }
+
   pureTest("operations, arguments, arrays as data, and the null literal") {
     expect
       .same(Right(Expr.Apply(Op.Add, Vector(int(1), int(2)))), p("""{"+": [1, 2]}"""))

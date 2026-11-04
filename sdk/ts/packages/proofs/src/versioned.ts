@@ -3,16 +3,19 @@
  * head to one root, every check of Scala's `VersionedTrieVerifier`, proof / delta / snapshot-chunk decoding, the
  * chunk-by-chunk snapshot reader against a trusted head, and a replica that follows deltas.
  */
-import { bitLength, cbor, describeFailure, err, models, ok, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, cbor, describeFailure, err, models, ok, Preview, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { decodeInput } from "./input.js";
 import * as trie from "./trie.js";
 import { TrieMap } from "./trie-map.js";
 
-/** Why a state key or namespace was rejected. */
+/**
+ * Why a state key or namespace was rejected: the input as a `Preview`, or none for bytes refused before they were read
+ * as text (docs/specs/conformance.md section 8).
+ */
 export interface StateKeyError {
-  readonly input: string;
+  readonly input?: Preview;
   readonly reason: string;
 }
 
@@ -37,8 +40,9 @@ type R<T> = Result<T, VersionedTrieError>;
 const malformed = (reason: string): R<never> => err({ kind: "Malformed", reason });
 const notCovered = (what: string): R<never> => err({ kind: "NotCovered", what });
 const viaTrie = <T>(r: Result<T, trie.TrieError>): R<T> => (r.ok ? r : err({ kind: "Trie", error: r.error }));
+// a trusted root of the wrong width is the caller's: named by its length, never hex-encoded whole (conformance.md section 8)
 const mismatch = (component: string, expected: Uint8Array, computed: Uint8Array): R<never> =>
-  err({ kind: "RootMismatch", component, expected: toHex(expected), computed: toHex(computed) });
+  err({ kind: "RootMismatch", component, expected: trie.rootText(expected, computed.length), computed: toHex(computed) });
 
 // ------------------------------------------------------------------ keys (section 2)
 
@@ -54,25 +58,40 @@ export class StateKey {
     Object.freeze(this);
   }
 
+  /**
+   * The length is checked before the text is split, so a refusal costs O(MAX_KEY_LENGTH) whatever the input; it names a
+   * segment by its position, never its text.
+   */
   static parse(s: string): Result<StateKey, StateKeyError> {
-    const segments = s.split("/");
-    const bad = (reason: string): Result<never, StateKeyError> => err({ input: s, reason });
+    const bad = (reason: string): Result<never, StateKeyError> => err({ input: Preview.of(s), reason });
     if (s.length === 0) return bad("empty key");
-    if (s.length > MAX_KEY_LENGTH) return bad(`longer than ${MAX_KEY_LENGTH.toString()} characters`);
+    // refused by its length alone: a preview would measure the whole text
+    if (s.length > MAX_KEY_LENGTH) return err({ reason: `${s.length.toString()} characters, longer than ${MAX_KEY_LENGTH.toString()}` });
+    const segments = s.split("/");
     if (segments.length > MAX_SEGMENTS) return bad(`more than ${MAX_SEGMENTS.toString()} segments`);
-    const seg = segments.find((x) => x.length > MAX_SEGMENT_LENGTH || !SEGMENT.test(x));
-    if (seg === undefined) return ok(new StateKey(s));
-    return seg.length > MAX_SEGMENT_LENGTH ? bad(`segment '${seg}' is longer than ${MAX_SEGMENT_LENGTH.toString()} characters`) : bad(`segment '${seg}' does not match [a-z0-9][a-z0-9._-]*`);
+    const at = segments.findIndex((x) => x.length > MAX_SEGMENT_LENGTH || !SEGMENT.test(x));
+    if (at < 0) return ok(new StateKey(s));
+    const where = `segment ${at.toString()}`;
+    return (segments[at]?.length ?? 0) > MAX_SEGMENT_LENGTH ? bad(`${where} is longer than ${MAX_SEGMENT_LENGTH.toString()} characters`) : bad(`${where} does not match [a-z0-9][a-z0-9._-]*`);
   }
 
-  /** The key of trie-key bytes; the grammar is ASCII, so other bytes are refused. */
+  /**
+   * The key of trie-key bytes; the grammar is ASCII, so other bytes are refused. Bytes longer than `MAX_KEY_LENGTH` are
+   * refused by their length, before they are read.
+   */
   static fromBytes(bytes: Uint8Array): Result<StateKey, StateKeyError> {
-    return isAscii(bytes) ? StateKey.parse(fromAscii(bytes)) : err({ input: toHex(bytes), reason: "not an ASCII state key" });
+    if (bytes.length > MAX_KEY_LENGTH) return err({ reason: `${bytes.length.toString()} bytes, longer than ${MAX_KEY_LENGTH.toString()}` });
+    return isAscii(bytes) ? StateKey.parse(fromAscii(bytes)) : err({ reason: "not an ASCII state key" });
   }
 
   /** The trie key: the UTF-8 (here ASCII) bytes. */
   bytes(): Uint8Array {
     return ascii(this.value);
+  }
+
+  /** The key as a diagnostic names it (docs/specs/conformance.md section 8). */
+  preview(): Preview {
+    return Preview.of(this.value);
   }
 
   toString(): string {
@@ -92,11 +111,16 @@ export class StateNamespace {
     const k = StateKey.parse(s);
     if (!k.ok) return k;
     const slashes = s.split("/").length - 1;
-    return s.length <= StateNamespace.MAX_LENGTH && slashes < MAX_SEGMENTS - 1 ? ok(new StateNamespace(s)) : err({ input: s, reason: "a namespace must leave room for one more segment" });
+    return s.length <= StateNamespace.MAX_LENGTH && slashes < MAX_SEGMENTS - 1 ? ok(new StateNamespace(s)) : err({ input: Preview.of(s), reason: "a namespace must leave room for one more segment" });
   }
 
   prefix(): Uint8Array {
     return ascii(`${this.value}/`);
+  }
+
+  /** The namespace as a diagnostic names it (docs/specs/conformance.md section 8). */
+  preview(): Preview {
+    return Preview.of(this.value);
   }
 
   contains(key: StateKey): boolean {
@@ -217,8 +241,8 @@ const slotName = (slot: Uint8Array): string => toHex(slot);
 
 /** {@link VersionedTrie.checkValue}, which needs no profile. */
 function checkValue(key: StateKey, value: Value): R<undefined> {
-  if (value.depth > MAX_VALUE_DEPTH) return err({ kind: "TooDeep", what: `the value of ${key.value}`, depth: value.depth, limit: MAX_VALUE_DEPTH });
-  return cbor.encodedLengthWithin(value, MAX_VALUE_BYTES).ok ? ok(undefined) : err({ kind: "TooLarge", what: `the value of ${key.value}`, limit: MAX_VALUE_BYTES });
+  if (value.depth > MAX_VALUE_DEPTH) return err({ kind: "TooDeep", what: `the value of ${key.preview().short()}`, depth: value.depth, limit: MAX_VALUE_DEPTH });
+  return cbor.encodedLengthWithin(value, MAX_VALUE_BYTES).ok ? ok(undefined) : err({ kind: "TooLarge", what: `the value of ${key.preview().short()}`, limit: MAX_VALUE_BYTES });
 }
 
 /** An entry of a verified listing: a state key and its value hash. */
@@ -250,7 +274,7 @@ export class VerifiedState {
       case "absent":
         return ok(null);
       case "notCovered":
-        return notCovered(`key ${key.value}`);
+        return notCovered(`key ${key.preview().short()}`);
     }
   }
 
@@ -272,12 +296,12 @@ export class VerifiedState {
 
   /** Every entry under the namespace, complete. */
   namespace(ns: StateNamespace): R<readonly StateEntry[]> {
-    return keyed(`namespace ${ns.value}`, this.#proof.prefix(ns.prefix()));
+    return keyed(`namespace ${ns.preview().short()}`, this.#proof.prefix(ns.prefix()));
   }
 
   /** Every entry in `[from, until)`, complete; no `until` is unbounded. */
   range(from: StateKey, until?: StateKey): R<readonly StateEntry[]> {
-    return keyed(`range [${from.value}, ${until?.value ?? ""})`, this.#proof.range(from.bytes(), until?.bytes()));
+    return keyed(`range [${from.preview().short()}, ${until?.preview().short() ?? ""})`, this.#proof.range(from.bytes(), until?.bytes()));
   }
 }
 
@@ -713,14 +737,14 @@ export class SnapshotReader<V> {
       const es = chunk.entries;
       if (es.length < 1 || es.length > MAX_CHUNK_ENTRIES) return bad(`a state chunk holds 1..${MAX_CHUNK_ENTRIES.toString()} items, not ${es.length.toString()}`);
       for (const [k, v] of es) {
-        if (v.kind === "null") return bad(`${k.value} is null`);
+        if (v.kind === "null") return bad(`${k.preview().short()} is null`);
         const c = this.profile.checkValue(k, v);
         if (!c.ok) return c;
       }
       let previous = this.lastKey;
       for (const [k] of es) {
         const b = k.bytes();
-        if (previous !== undefined && compareBytes(previous, b) >= 0) return bad(`key ${toHex(b)} does not follow ${toHex(previous)}`);
+        if (previous !== undefined && compareBytes(previous, b) >= 0) return bad(`key ${Preview.of(toHex(b)).short()} does not follow ${Preview.of(toHex(previous)).short()}`);
         previous = b;
       }
       return ok(this.next({ ...(previous === undefined ? {} : { lastKey: previous }), state: es }));
@@ -739,7 +763,7 @@ export class SnapshotReader<V> {
     if (!hk.ok) return hk;
     let previous = this.lastVersion;
     for (const k of keys) {
-      if (previous !== undefined && compareBytes(previous, k) >= 0) return bad(`version ${toHex(k)} does not follow ${toHex(previous)}`);
+      if (previous !== undefined && compareBytes(previous, k) >= 0) return bad(`version ${Preview.of(toHex(k)).short()} does not follow ${Preview.of(toHex(previous)).short()}`);
       previous = k;
     }
     for (const [i, k] of keys.entries()) {
@@ -928,7 +952,7 @@ export class Replica<V> {
     if (delta.removes.some((k) => holds(written, k.bytes()))) return malformed("a key is both written and removed");
     if (repeats(written)) return malformed("a key is written twice");
     for (const [k, v] of delta.upserts) {
-      if (v.kind === "null") return malformed(`${k.value} is upserted as null`);
+      if (v.kind === "null") return malformed(`${k.preview().short()} is upserted as null`);
       const c = p.checkValue(k, v);
       if (!c.ok) return c;
     }
