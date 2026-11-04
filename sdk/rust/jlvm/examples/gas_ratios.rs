@@ -101,17 +101,21 @@ impl Bench {
         start.elapsed().as_nanos() as f64
     }
 
-    /// The batch size that takes at least `target` nanoseconds, doubling from 1.
-    fn size(&self, c: &Case, p: &Compiled, target: f64) -> u64 {
+    /// The batch size that takes at least `target` nanoseconds, doubling from 1, judged by the fastest of three
+    /// batches at each size (`tries`, as `GasRatios.size`): one interrupted batch cannot stop the doubling early. The
+    /// warm-up only needs the work done, once per size.
+    fn size(&self, c: &Case, p: &Compiled, target: f64, tries: usize) -> u64 {
         let mut n = 1u64;
-        while self.batch(c, p, n) * (n as f64) < target && n < (1 << 24) {
+        while (0..tries).map(|_| self.batch(c, p, n)).fold(f64::INFINITY, f64::min) * (n as f64) < target
+            && n < (1 << 24)
+        {
             n *= 2;
         }
         n
     }
 
     fn timed<'c>(&self, c: &'c Case) -> Timed<'c> {
-        Timed { c, n: self.size(c, &c.program, TARGET), n_base: self.size(c, &c.baseline, TARGET) }
+        Timed { c, n: self.size(c, &c.program, TARGET, 3), n_base: self.size(c, &c.baseline, TARGET, 3) }
     }
 
     fn net(&self, t: &Timed<'_>) -> f64 {
@@ -166,8 +170,8 @@ fn main() {
     println!("# backend Rust; {} cases; {rounds} rounds; probe {PROBE_STEPS} steps", chosen.len());
     println!("# anchor {}; reference {}", b.charged(anchor), b.charged(reference));
     for c in [anchor, reference].into_iter().chain(chosen.iter().map(|(_, c)| *c)) {
-        b.size(c, &c.program, 5e7);
-        b.size(c, &c.baseline, 5e7);
+        b.size(c, &c.program, 5e7, 1);
+        b.size(c, &c.baseline, 5e7, 1);
     }
     let a = b.timed(anchor);
     let r = b.timed(reference);
