@@ -44,7 +44,7 @@ Then:
 ```sh
 cd sdk/rust/zk
 ./check-toolchain.sh
-cargo test --locked --release --manifest-path host/Cargo.toml -- --nocapture
+cargo test --locked --release --manifest-path host/Cargo.toml -- --nocapture --test-threads=1
 cargo run --release --manifest-path cases/Cargo.toml --features vectors --example sigma_leaves
 ```
 
