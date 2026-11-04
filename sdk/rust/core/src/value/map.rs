@@ -164,8 +164,8 @@ fn build(entries: &mut impl Iterator<Item = (Text, Value)>, n: usize) -> Link {
 
 /// A part of a value being released whose children may still need releasing.
 enum Part {
-    /// A tree node, released only by whoever holds its last reference.
-    Node(Arc<Node>),
+    /// A tree node whose last reference was released here, its subtrees and value still to be looked at.
+    Node(Node),
     /// The elements of an array whose last reference was released here, still to be looked at.
     Items(alloc::vec::IntoIter<Value>),
 }
@@ -184,15 +184,20 @@ fn queue_items(work: &mut Vec<Part>, items: Option<Arc<Box<[Value]>>>) {
     }
 }
 
+/// Queues a subtree if this was its last reference; otherwise it only loses a reference, at once. Only owned nodes
+/// wait in `work`, so dropping a path copied by an update holds one or two parts at a time, not one shared sibling
+/// per level.
+fn queue_node(work: &mut Vec<Part>, link: Link) {
+    if let Some(node) = link.and_then(Arc::into_inner) {
+        work.push(Part::Node(node));
+    }
+}
+
 /// Queues what `v` holds, or lets it go at once: a scalar's drop never recurses.
 fn queue(work: &mut Vec<Part>, v: Value) {
     match v {
         Value::Array(mut array) => queue_items(work, array.items.take()),
-        Value::Map(mut m) => {
-            if let Some(root) = m.root.take() {
-                work.push(Part::Node(root));
-            }
-        }
+        Value::Map(mut m) => queue_node(work, m.root.take()),
         _ => {}
     }
 }
@@ -200,12 +205,8 @@ fn queue(work: &mut Vec<Part>, v: Value) {
 impl Node {
     /// Moves this node's subtrees and container value into `work`, leaving a node whose drop is flat.
     fn surrender(&mut self, work: &mut Vec<Part>) {
-        if let Some(left) = self.left.take() {
-            work.push(Part::Node(left));
-        }
-        if let Some(right) = self.right.take() {
-            work.push(Part::Node(right));
-        }
+        queue_node(work, self.left.take());
+        queue_node(work, self.right.take());
         if is_container(&self.value) {
             queue(work, core::mem::replace(&mut self.value, Value::Null));
         }
@@ -218,7 +219,7 @@ impl Node {
 /// when several threads drop clones at once; every other holder only loses its reference. The last holder moves the
 /// part's children into `work` before the part itself is dropped, so every drop that runs is flat. An array's
 /// elements are looked at one container at a time, so the worklist holds at most a few parts per level of nesting and
-/// of tree height, never a whole array's elements.
+/// of tree height, never a whole array's elements, and a shared subtree is never queued at all.
 ///
 /// Every `Drop` of a [`Value`]'s containers ([`Array`], [`Map`], and a tree node) starts here, and none of them ever
 /// lets a shared payload go by a plain field drop, so dropping any value, however deep and however large its maps,
@@ -226,11 +227,7 @@ impl Node {
 fn release(work: &mut Vec<Part>) {
     while let Some(part) = work.pop() {
         match part {
-            Part::Node(n) => {
-                if let Some(mut node) = Arc::into_inner(n) {
-                    node.surrender(work);
-                }
-            }
+            Part::Node(mut node) => node.surrender(work),
             Part::Items(mut items) => {
                 // scalars passed over are dropped here, flat
                 if let Some(child) = items.find(is_container) {
