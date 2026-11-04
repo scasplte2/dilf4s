@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { bitLength, cbor, RationalValue, Value, type CanonicalError, type Result } from "../src/index.js";
+import { twosAndFives } from "../src/bigint.js";
+import { bitLength, cbor, json, RationalValue, Value, type CanonicalError, type Result } from "../src/index.js";
 import { gcdSteps } from "../src/value.js";
 import { expectOk, int, integerBytes } from "./vectors.js";
 
@@ -144,5 +145,33 @@ describe("rational width", () => {
     expect(Value.equals(two, int(2n))).toBe(true);
     // an integer is bounded too (MAX_INTEGER_BITS), and checked after reducing
     expect(Value.number(edge * edge, 1n)).toEqual({ ok: false, error: { kind: "IntegerTooWide", limit: max } });
+  });
+
+  it("a denominator is factored in at most four divisions and exponentiations, whatever its width", () => {
+    const cases: (readonly [bigint, readonly [number, number] | undefined])[] = [
+      [2n ** 33219n, [33219, 0]],
+      [5n ** 14306n, [0, 14306]],
+      [2n ** 3n * 5n ** 9000n, [3, 9000]],
+      [5n ** 14000n * 3n, undefined],
+      [2n ** 100n * 3n, undefined],
+      [5n, [0, 1]],
+      [1n, [0, 0]],
+    ];
+    for (const [d, expected] of cases) {
+      const [factors, steps] = twosAndFives(d);
+      expect(factors, `${bitLength(d).toString()} bits`).toEqual(expected);
+      expect(steps, `${bitLength(d).toString()} bits`).toBeLessThanOrEqual(4);
+    }
+    for (const b of [...Array.from({ length: 300 }, (_, i) => i + 1), 1000, 4096, 9999, 10000, 10001, 14306]) {
+      const [factors, steps] = twosAndFives(5n ** BigInt(b));
+      expect(factors, `5^${b.toString()}`).toEqual([0, b]);
+      expect(steps, `5^${b.toString()}`).toBeLessThanOrEqual(4);
+    }
+    expect(twosAndFives(5n ** 14306n)[1], "one division and one exponentiation when the estimate is right").toBe(2);
+    // past the scale bound, refused from the factors, before any digit is produced
+    for (const d of [2n ** 33219n, 5n ** 14306n]) {
+      const r = expectOk(Value.number(1n, d), "a rational");
+      expect(json.renderWithin(r, json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
+    }
   });
 });

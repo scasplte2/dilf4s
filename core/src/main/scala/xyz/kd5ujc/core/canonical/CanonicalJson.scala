@@ -232,9 +232,15 @@ object CanonicalJson {
    */
   private def numberText(v: CanonicalValue): Either[CanonicalError, String] =
     v match {
-      case CInt(n)      => within(n.toString)
-      case r: CRational => r.value.toDecimalString.toRight(nonTerminating(r)).flatMap(within)
-      case _            => overLong.asLeft
+      case CInt(n) => within(n.toString)
+      // the scale from the denominator's factors first, so a scale past the bound builds no digit
+      case r: CRational =>
+        r.value.decimalScale match {
+          case scala.None                    => nonTerminating(r).asLeft
+          case scala.Some(s) if s > MaxScale => overLong.asLeft
+          case scala.Some(_)                 => r.value.toDecimalString.toRight(nonTerminating(r)).flatMap(within)
+        }
+      case _ => overLong.asLeft
     }
 
   // the digits of `text`, a plain decimal, leading zeros aside, and the digits after its point

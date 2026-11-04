@@ -154,6 +154,10 @@ Converting back to JSON (for display only) works as follows:
   33220 bits wide (§1), so converting one is bounded work, and only its digits or scale can refuse it: integers from
   `10^10000` up to `2^33220 - 1` (10001 digits) are values that do not render. Rendering them would need a digit bound
   of 10001 for integers, which this version does not have.
+- A rational's scale is found from its denominator's factors before any digit is produced: the twos are its low zero
+  bits, and the power of five is estimated from the bit length and checked by exponentiation, at most four big-number
+  divisions and exponentiations whatever the denominator, never one division per factor. A scale past the bound
+  (`1/2^33219`, `1/5^14306`) is refused then.
 - Bytes can't be written as JSON, and conversion fails.
 
 ## 4. Tagged hashing

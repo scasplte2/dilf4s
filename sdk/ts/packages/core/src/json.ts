@@ -6,6 +6,7 @@
  * so nesting is a typed error rather than a stack overflow. {@link render} is the display view, and fails for values
  * JSON cannot represent.
  */
+import { twosAndFives } from "./bigint.js";
 import { byteLimit, Meter } from "./budget.js";
 import type { CanonicalError, TooLarge } from "./error.js";
 import { CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
@@ -263,23 +264,13 @@ function integerText(n: IntValue): string | undefined {
 
 /**
  * The exact decimal of a rational, within the bounds {@link parse} accepts: `"non-terminating rational"` when its
- * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds. Both parts are within
- * `MAX_RATIONAL_BITS`, so factoring and scaling them is bounded work.
+ * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds, both found from the
+ * denominator's factors (`twosAndFives`) before any digit is produced.
  */
 export function decimalOf(r: RationalValue): Result<string, "non-terminating rational" | "over-long number"> {
-  let rest = r.denominator;
-  let twos = 0;
-  let fives = 0;
-  while (rest % 2n === 0n) {
-    rest /= 2n;
-    twos++;
-  }
-  while (rest % 5n === 0n) {
-    rest /= 5n;
-    fives++;
-  }
-  if (rest !== 1n) return err("non-terminating rational");
-  const scale = Math.max(twos, fives);
+  const [factors] = twosAndFives(r.denominator);
+  if (factors === undefined) return err("non-terminating rational");
+  const scale = Math.max(...factors);
   if (scale > DEFAULT_MAX_SCALE) return err("over-long number");
   const scaled = r.numerator * (10n ** BigInt(scale) / r.denominator);
   const digits = (scaled < 0n ? -scaled : scaled).toString().padStart(scale + 1, "0");

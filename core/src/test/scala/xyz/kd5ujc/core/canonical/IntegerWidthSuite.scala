@@ -137,6 +137,17 @@ object IntegerWidthSuite extends SimpleIOSuite {
       .and(expect.same(List(33220, 33221, 33221), List(ten, ten * 2, -ten * 2 - 1).map(_.bitLength)))
   }
 
+  pureTest("a rational whose decimal scale is past the bound is refused from its denominator's factors") {
+    val overLong = NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")
+    def rational(d: BigInt) = CanonicalValue.number(Ratio.of(1, d).fold(e => sys.error(e.toString), identity))
+    expect
+      .same(
+        List(Left(overLong), Left(overLong)),
+        List(BigInt(2).pow(33219), BigInt(5).pow(14306)).map(d => rational(d).flatMap(CanonicalJson.render))
+      )
+      .and(expect.same(Right("0.0001"), rational(BigInt(10000)).flatMap(CanonicalJson.render)))
+  }
+
   pureTest("every integer renders when it has at most 10000 digits; 10^10000 up to the bound cannot") {
     val overLong = NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")
     val nines = BigInt("9" * 10000)
