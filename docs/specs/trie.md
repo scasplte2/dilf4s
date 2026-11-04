@@ -189,3 +189,5 @@ the client) is a possible extension; it is not part of v1.
 ## 6. Storage (informative)
 
 Nodes are stored by digest and shared across versions, each as a 4-byte big-endian reference count followed by the canonical CBOR of its `trie-node` record (re-hashed and checked when loaded). Each retained version records its root. A node's reference count is the number of live parents plus the number of retained versions whose root it is. A commit writes its new nodes and increments the counts of the existing nodes they reference, all in one atomic batch. Pruning a version decrements its root's count, and any node whose count reaches zero is deleted and its children decremented, iteratively, in the same batch.
+
+A node's digest is content a peer may choose (a snapshot's nodes), so implementations key every in-memory collection of nodes, counts or staged changes by the digest's unsigned bytewise order, never by a hash of it: a 32-bit hash code of the bytes can be ground to collide, and a hashed map of colliding keys costs linear time per operation. Each operation then makes O(log n) comparisons whatever the digests.

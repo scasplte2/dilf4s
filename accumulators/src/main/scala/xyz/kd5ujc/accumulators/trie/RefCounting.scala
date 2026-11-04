@@ -3,6 +3,8 @@ package xyz.kd5ujc.accumulators.trie
 import cats.Monad
 import cats.syntax.all._
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.accumulators.trie.Node.{Branch, Leaf}
 import xyz.kd5ujc.core.hash.Digest
 
@@ -16,8 +18,11 @@ object RefCounting {
   /** The stored node and its count, or `None` if absent. */
   type View[F[_], H] = Digest[H] => F[Option[(Node[H], Int)]]
 
-  /** Final state per touched digest: `Some((node, count))` to store, `None` to delete. */
-  type Plan[H] = Map[Digest[H], Option[(Node[H], Int)]]
+  /**
+   * Final state per touched digest: `Some((node, count))` to store, `None` to delete. Digests are node content a peer may
+   * choose, so they are only compared in byte order, never hashed.
+   */
+  type Plan[H] = TreeMap[Digest[H], Option[(Node[H], Int)]]
 
   private def children[H](n: Node[H]): List[Digest[H]] = n match {
     case _: Leaf[H]   => Nil
@@ -26,9 +31,12 @@ object RefCounting {
 
   /**
    * Stores the delta's new nodes, adds one reference for the new root (if `retainNewRoot`), and releases one reference
-   * to each of `release`, cascading deletions of anything that drops to zero.
+   * to each of `release`, cascading deletions of anything that drops to zero. The plan is keyed in `order`; each
+   * adjustment is O(log n) comparisons.
    */
-  def plan[F[_]: Monad, H](view: View[F, H], delta: TrieDelta[H], retainNewRoot: Boolean, release: List[Digest[H]]): F[Plan[H]] = {
+  def plan[F[_]: Monad, H](view: View[F, H], delta: TrieDelta[H], retainNewRoot: Boolean, release: List[Digest[H]])(
+    implicit order: Ordering[Digest[H]]
+  ): F[Plan[H]] = {
     def read(overlay: Plan[H], h: Digest[H]): F[Option[(Node[H], Int)]] = overlay.get(h).fold(view(h))(_.pure[F])
 
     def adjust(overlay: Plan[H], h: Digest[H], by: Int): F[(Plan[H], Option[Node[H]])] =
@@ -42,7 +50,9 @@ object RefCounting {
     for {
       // 1. insert genuinely new nodes with count 0
       fresh <- delta.created.toList.filterA { case (h, _) => view(h).map(_.isEmpty) }
-      start = fresh.foldLeft(Map.empty: Plan[H]) { case (acc, (h, n)) => acc.updated(h, Some((n, 0))) }
+      start = fresh.foldLeft(TreeMap.empty[Digest[H], Option[(Node[H], Int)]](using order)) {
+        case (acc, (h, n)) => acc.updated(h, Some((n, 0)))
+      }
       // 2. each new node references its children
       linked <- fresh.flatMap { case (_, n) => children(n) }.foldLeftM(start)((acc, c) => adjust(acc, c, 1).map(_._1))
       // 3. the new root is retained

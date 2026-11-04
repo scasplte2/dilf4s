@@ -4,6 +4,8 @@ import cats.effect.Concurrent
 import cats.syntax.all._
 import cats.{Eval, Parallel}
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.accumulators.ValueCommitment
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.hash.Digest
@@ -13,22 +15,26 @@ import scodec.bits.{BitVector, ByteVector}
 /**
  * An immutable authenticated dictionary (docs/specs/trie.md): a binary Patricia Merkle trie in `fixed` or `variable` key
  * mode. Nodes are content-addressed and reference counted, so the map holds exactly the nodes the root reaches. Values
- * live with the caller; the trie commits to their hashes.
+ * live with the caller; the trie commits to their hashes. A snapshot's nodes are a peer's content, so the map is keyed
+ * in the digests' byte order and never hashed: O(log n) comparisons per node touched, whatever the digests.
  */
 final class Trie[H] private (
   val mode:             KeyMode,
   private val rootHash: Option[Digest[H]],
-  private val nodes:    Map[Digest[H], (Node[H], Int)]
+  private val nodes:    TreeMap[Digest[H], (Node[H], Int)]
 )(implicit T: TrieHashing[H]) {
 
   private type Result[A] = Either[TrieError, A]
+
+  // every map an update builds is keyed in the order this trie's nodes are
+  implicit private val order: Ordering[Digest[H]] = nodes.ordering
 
   def root: Digest[H] = rootHash.getOrElse(T.empty)
   def isEmpty: Boolean = rootHash.isEmpty
   def nodeCount: Int = nodes.size
 
   /** Every node with its reference count (parents plus one for the root): what a store holding this trie stores. */
-  private[trie] def storedNodes: Map[Digest[H], (Node[H], Int)] = nodes
+  private[trie] def storedNodes: TreeMap[Digest[H], (Node[H], Int)] = nodes
   private[trie] def rootOption: Option[Digest[H]] = rootHash
 
   private def node(h: Digest[H]): Result[Node[H]] = nodes.get(h).map(_._1).toRight(TrieError.MissingNode(h.hex))
@@ -89,11 +95,21 @@ final class Trie[H] private (
 }
 
 object Trie {
-  def empty[H: TrieHashing](mode: KeyMode): Trie[H] = new Trie[H](mode, None, Map.empty)
+  def empty[H: TrieHashing](mode: KeyMode): Trie[H] = emptyIn[H](mode, Digest.digestOrdering[H])
+
+  /** [[empty]] with its nodes keyed in `order`: the seam through which a test counts the comparisons a trie makes. */
+  private[trie] def emptyIn[H: TrieHashing](mode: KeyMode, order: Ordering[Digest[H]]): Trie[H] =
+    new Trie[H](mode, None, TreeMap.empty(using order))
 
   /** Builds a trie from entries in one pass (later duplicates win); equal to inserting them in any order. */
   def fromEntries[H](mode: KeyMode, entries: List[(ByteVector, Digest[H])])(implicit T: TrieHashing[H]): Either[TrieError, Trie[H]] =
-    prepare(mode, entries, PathOrder).map(sorted => assembleBuilt(mode, sorted.headOption.map(_ => Bulk.build[H](sorted, 0L).value)))
+    fromEntriesIn(mode, entries, Digest.digestOrdering[H])
+
+  /** [[fromEntries]] with the nodes keyed in `order` (see [[emptyIn]]). */
+  private[trie] def fromEntriesIn[H](mode: KeyMode, entries: List[(ByteVector, Digest[H])], order: Ordering[Digest[H]])(
+    implicit T: TrieHashing[H]
+  ): Either[TrieError, Trie[H]] =
+    prepare(mode, entries, PathOrder).map(sorted => assembleBuilt(mode, sorted.headOption.map(_ => Bulk.build[H](sorted, 0L).value), order))
 
   /**
    * As [[fromEntries]], building the top `parallelDepth` levels of independent subtrees in parallel. The result is
@@ -105,7 +121,7 @@ object Trie {
     prepare(mode, entries, PathOrder).traverse { sorted =>
       sorted.headOption
         .traverse(_ => Bulk.buildPar[F, H](sorted, 0L, parallelDepth))
-        .map(built => assembleBuilt(mode, built))
+        .map(built => assembleBuilt(mode, built, Digest.digestOrdering[H]))
     }
 
   /** Bitwise lexicographic order of paths, a proper prefix first, in one scan of their common prefix. */
@@ -129,17 +145,23 @@ object Trie {
       sorted.zipWithIndex.collect { case (e, i) if sorted.lift(i + 1).forall(n => order.compare(e._1, n._1) != 0) => e }
     }
 
-  /** Every built node is new and has exactly the parents the build gave it, so counts follow from the edges. */
-  private def assembleBuilt[H](mode: KeyMode, built: Option[(Node[H], List[Node[H]])])(implicit T: TrieHashing[H]): Trie[H] =
-    built.fold(empty[H](mode)) {
+  /**
+   * Every built node is new and has exactly the parents the build gave it, so counts follow from the edges. Identical
+   * subtrees share a digest, so the nodes are deduplicated, and the edges counted, in `order`: O(n log n) comparisons.
+   */
+  private def assembleBuilt[H](mode: KeyMode, built: Option[(Node[H], List[Node[H]])], order: Ordering[Digest[H]])(
+    implicit T: TrieHashing[H]
+  ): Trie[H] =
+    built.fold(emptyIn[H](mode, order)) {
       case (root, nodes) =>
-        val unique = nodes.map(n => n.hash -> n).toMap
-        val edges = unique.values.toList.flatMap {
+        val unique = nodes.foldLeft(TreeMap.empty[Digest[H], Node[H]](using order))((acc, n) => acc.updated(n.hash, n))
+        val edges = root.hash :: unique.valuesIterator.toList.flatMap {
           case b: Node.Branch[H] => b.left.toList ++ b.right.toList
           case _: Node.Leaf[H]   => Nil
-        } :+ root.hash
-        val counts = edges.groupBy(identity).view.mapValues(_.size).toMap
-        new Trie[H](mode, Some(root.hash), unique.map { case (h, n) => h -> (n, counts.getOrElse(h, 0)) })
+        }
+        val counts =
+          edges.foldLeft(unique.transform((_, n) => (n, 0)))((acc, h) => acc.get(h).fold(acc) { case (n, c) => acc.updated(h, (n, c + 1)) })
+        new Trie[H](mode, Some(root.hash), counts)
     }
 
   private object Bulk {

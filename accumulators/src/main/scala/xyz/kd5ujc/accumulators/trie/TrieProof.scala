@@ -4,6 +4,7 @@ import cats.syntax.all._
 import cats.{Eval, Monad}
 
 import scala.annotation.tailrec
+import scala.collection.immutable.TreeMap
 
 import xyz.kd5ujc.accumulators.trie.Node.{Branch, Leaf}
 import xyz.kd5ujc.accumulators.{ProofInput, ValueCommitment}
@@ -238,13 +239,18 @@ object TrieProofs {
   /** Every key in `[from, until)`, bitwise order with prefixes first; `None` is unbounded above. */
   final case class Range(from: BitVector, until: Option[BitVector]) extends Query
 
-  /** Builds the partial trie answering `queries`: gather the nodes to expand, then assemble with `Eval`. */
-  def prove[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], root: Option[Digest[H]], queries: List[Query]): F[TrieProof[H]] =
+  /**
+   * Builds the partial trie answering `queries`: gather the nodes to expand (keyed in `order`, never hashed), then
+   * assemble with `Eval`.
+   */
+  def prove[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], root: Option[Digest[H]], queries: List[Query])(
+    implicit order: Ordering[Digest[H]]
+  ): F[TrieProof[H]] =
     root.fold(TrieProof[H](None).pure[F]) { r =>
       expanded(lookup, r, queries).map(nodes => TrieProof(Some(assemble(r, nodes).value)))
     }
 
-  private def assemble[H](hash: Digest[H], nodes: Map[Digest[H], Node[H]]): Eval[ProofNode[H]] =
+  private def assemble[H](hash: Digest[H], nodes: TreeMap[Digest[H], Node[H]]): Eval[ProofNode[H]] =
     nodes.get(hash) match {
       case None             => Eval.now(Stub(hash))
       case Some(l: Leaf[H]) => Eval.now(PLeaf(l.segment, l.value))
@@ -254,8 +260,10 @@ object TrieProofs {
     }
 
   /** The nodes on every query path, plus whole subtrees under prefix queries. */
-  private def expanded[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], root: Digest[H], queries: List[Query]): F[Map[Digest[H], Node[H]]] =
-    queries.foldLeftM(Map.empty[Digest[H], Node[H]]) {
+  private def expanded[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], root: Digest[H], queries: List[Query])(
+    implicit order: Ordering[Digest[H]]
+  ): F[TreeMap[Digest[H], Node[H]]] =
+    queries.foldLeftM(TreeMap.empty[Digest[H], Node[H]](using order)) {
       case (acc, Range(from, until)) =>
         val (bounds, _) = Bounds.readable(from, until)
         if (bounds.meets(Cursor.origin(()))) rangeNodes(lookup, root, bounds, acc) else acc.pure[F]
@@ -271,11 +279,11 @@ object TrieProofs {
     lookup: Digest[H] => F[Node[H]],
     root:   Digest[H],
     bounds: Bounds,
-    seen:   Map[Digest[H], Node[H]]
-  ): F[Map[Digest[H], Node[H]]] = {
+    seen:   TreeMap[Digest[H], Node[H]]
+  ): F[TreeMap[Digest[H], Node[H]]] = {
     val unit: (Unit, BitVector) => Unit = (_, _) => ()
     (List((root, Cursor.origin(()))), seen).tailRecM {
-      case (Nil, acc) => acc.asRight[(List[(Digest[H], Cursor[Unit])], Map[Digest[H], Node[H]])].pure[F]
+      case (Nil, acc) => acc.asRight[(List[(Digest[H], Cursor[Unit])], TreeMap[Digest[H], Node[H]])].pure[F]
       case ((h, at) :: rest, acc) =>
         lookup(h).map {
           case l: Leaf[H] => (rest, acc.updated(h, l)).asLeft
@@ -297,24 +305,25 @@ object TrieProofs {
     root:     Digest[H],
     path:     BitVector,
     isPrefix: Boolean,
-    acc:      Map[Digest[H], Node[H]]
-  ): F[Map[Digest[H], Node[H]]] =
+    acc:      TreeMap[Digest[H], Node[H]]
+  ): F[TreeMap[Digest[H], Node[H]]] =
     (root, path, acc).tailRecM {
       case (hash, remaining, seen) =>
         lookup(hash).flatMap {
           case l: Leaf[H] =>
-            seen.updated(hash, l).asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F]
+            seen.updated(hash, l).asRight[(Digest[H], BitVector, TreeMap[Digest[H], Node[H]])].pure[F]
           case b: Branch[H] =>
             val withThis = seen.updated(hash, b)
-            if (isPrefix && b.segment.startsWith(remaining)) TrieEngine.collect(lookup, List(hash)).map(sub => (withThis ++ sub).asRight)
+            if (isPrefix && b.segment.startsWith(remaining))
+              TrieEngine.collect(lookup, List(hash))(using Monad[F], seen.ordering).map(sub => (withThis ++ sub).asRight)
             else {
               val rest = remaining.drop(b.segment.size)
               if (!remaining.startsWith(b.segment) || rest.isEmpty)
-                withThis.asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F]
+                withThis.asRight[(Digest[H], BitVector, TreeMap[Digest[H], Node[H]])].pure[F]
               else
                 b.child(rest.head)
-                  .fold(withThis.asRight[(Digest[H], BitVector, Map[Digest[H], Node[H]])].pure[F])(c =>
-                    (c, rest.tail, withThis).asLeft[Map[Digest[H], Node[H]]].pure[F]
+                  .fold(withThis.asRight[(Digest[H], BitVector, TreeMap[Digest[H], Node[H]])].pure[F])(c =>
+                    (c, rest.tail, withThis).asLeft[TreeMap[Digest[H], Node[H]]].pure[F]
                   )
             }
         }

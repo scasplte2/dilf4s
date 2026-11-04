@@ -3,6 +3,8 @@ package xyz.kd5ujc.accumulators.trie
 import cats.Monad
 import cats.syntax.all._
 
+import scala.collection.immutable.TreeMap
+
 import xyz.kd5ujc.accumulators.trie.Node.{Branch, Leaf}
 import xyz.kd5ujc.core.hash.Digest
 
@@ -14,8 +16,9 @@ final case class TrieOp[H](path: BitVector, value: Option[Digest[H]])
 /**
  * The result of applying operations: the new root, and every node created on the way that the new root still reaches.
  * Nodes are content-addressed, so a "created" node may already exist in the store (identical subtrees deduplicate).
+ * Node digests are content a peer may choose, so every map of them here is keyed in byte order, never hashed.
  */
-final case class TrieDelta[H](root: Option[Digest[H]], created: Map[Digest[H], Node[H]])
+final case class TrieDelta[H](root: Option[Digest[H]], created: TreeMap[Digest[H], Node[H]])
 
 /**
  * Insert, delete and lookup over any node source (docs/specs/trie.md §2). Descents are `tailRecM` loops and rebuilds
@@ -52,12 +55,13 @@ object TrieEngine {
       }
     }
 
-  /** Applies operations in order; later operations see earlier ones. */
+  /** Applies operations in order; later operations see earlier ones. Created nodes are keyed in `order`. */
   def apply[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], root: Option[Digest[H]], ops: List[TrieOp[H]])(
-    implicit T: TrieHashing[H]
+    implicit T: TrieHashing[H],
+    order:      Ordering[Digest[H]]
   ): F[TrieDelta[H]] =
     ops
-      .foldLeftM((root, Map.empty[Digest[H], Node[H]])) {
+      .foldLeftM((root, TreeMap.empty[Digest[H], Node[H]](using order))) {
         case ((r, created), op) =>
           val overlay: Digest[H] => F[Node[H]] = h => created.get(h).fold(lookup(h))(_.pure[F])
           applyOne(overlay, r, op).map { case (newRoot, made) => (newRoot, created ++ made.map(n => n.hash -> n)) }
@@ -65,9 +69,9 @@ object TrieEngine {
       .map { case (newRoot, created) => TrieDelta(newRoot, reachable(newRoot, created)) }
 
   /** The created nodes the root still reaches; superseded intermediates are dropped. */
-  private def reachable[H](root: Option[Digest[H]], created: Map[Digest[H], Node[H]]): Map[Digest[H], Node[H]] = {
+  private def reachable[H](root: Option[Digest[H]], created: TreeMap[Digest[H], Node[H]]): TreeMap[Digest[H], Node[H]] = {
     @scala.annotation.tailrec
-    def go(todo: List[Digest[H]], acc: Map[Digest[H], Node[H]]): Map[Digest[H], Node[H]] =
+    def go(todo: List[Digest[H]], acc: TreeMap[Digest[H], Node[H]]): TreeMap[Digest[H], Node[H]] =
       todo match {
         case Nil                          => acc
         case h :: rest if acc.contains(h) => go(rest, acc)
@@ -78,11 +82,12 @@ object TrieEngine {
             case Some(b: Branch[H]) => go(b.left.toList ++ b.right.toList ++ rest, acc.updated(h, b))
           }
       }
-    go(root.toList, Map.empty)
+    go(root.toList, TreeMap.empty(using created.ordering))
   }
 
   private def applyOne[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], root: Option[Digest[H]], op: TrieOp[H])(
-    implicit T: TrieHashing[H]
+    implicit T: TrieHashing[H],
+    order:      Ordering[Digest[H]]
   ): F[(Option[Digest[H]], List[Node[H]])] =
     descend(lookup, root, op.path).flatMap { stop =>
       op.value match {
@@ -171,7 +176,8 @@ object TrieEngine {
 
   /** `None` if the key is absent (no change); otherwise the replacement subtree, possibly empty. */
   private def deleteAt[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], stop: Stop[H])(
-    implicit T: TrieHashing[H]
+    implicit T: TrieHashing[H],
+    order:      Ordering[Digest[H]]
   ): F[Option[(Option[Node[H]], List[Node[H]])]] =
     stop.node match {
       case Some(l: Leaf[H]) if l.segment == stop.remaining => Option((Option.empty[Node[H]], List.empty[Node[H]])).pure[F]
@@ -191,8 +197,8 @@ object TrieEngine {
     left:    Option[Digest[H]],
     right:   Option[Digest[H]],
     known:   Option[Node[H]]
-  )(implicit T: TrieHashing[H]): F[Option[Node[H]]] = {
-    def fetch(h: Digest[H]): F[Node[H]] = known.filter(_.hash == h).fold(lookup(h))(_.pure[F])
+  )(implicit T: TrieHashing[H], order: Ordering[Digest[H]]): F[Option[Node[H]]] = {
+    def fetch(h: Digest[H]): F[Node[H]] = known.filter(n => order.equiv(n.hash, h)).fold(lookup(h))(_.pure[F])
     def merge(bit: Boolean, h: Digest[H]): F[Option[Node[H]]] =
       fetch(h).map {
         case l: Leaf[H]   => Some(Node.leaf(segment ++ BitVector.bit(bit) ++ l.segment, l.value))
@@ -213,20 +219,26 @@ object TrieEngine {
     frames:      List[Frame[H]],
     replacement: Option[Node[H]],
     made:        List[Node[H]]
-  )(implicit T: TrieHashing[H]): F[(Option[Digest[H]], List[Node[H]])] =
+  )(implicit T: TrieHashing[H], order: Ordering[Digest[H]]): F[(Option[Digest[H]], List[Node[H]])] =
     frames
       .foldLeftM((replacement, made)) {
         case ((child, acc), f) =>
           val (left, right) = withChild(f.bit, child.map(_.hash), f.left, f.right)
-          normalize(lookup, f.segment, f.value, left, right, child).map(parent => (parent, acc ++ parent.toList))
+          // prepended, so a rebuild is linear in the path; the order of `made` is immaterial (it is keyed by digest)
+          normalize(lookup, f.segment, f.value, left, right, child).map(parent => (parent, parent.fold(acc)(_ :: acc)))
       }
       .map { case (top, acc) => (top.map(_.hash), acc) }
 
-  /** Every node reachable from `root` (used to load whole subtrees for proofs and scans), gathered by a work list. */
-  def collect[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], roots: List[Digest[H]]): F[Map[Digest[H], Node[H]]] =
-    (roots, Map.empty[Digest[H], Node[H]]).tailRecM {
-      case (Nil, acc)                          => acc.asRight[(List[Digest[H]], Map[Digest[H], Node[H]])].pure[F]
-      case (h :: rest, acc) if acc.contains(h) => (rest, acc).asLeft[Map[Digest[H], Node[H]]].pure[F]
+  /**
+   * Every node reachable from `root` (used to load whole subtrees for proofs and scans), gathered by a work list and
+   * keyed in `order`.
+   */
+  def collect[F[_]: Monad, H](lookup: Digest[H] => F[Node[H]], roots: List[Digest[H]])(
+    implicit order: Ordering[Digest[H]]
+  ): F[TreeMap[Digest[H], Node[H]]] =
+    (roots, TreeMap.empty[Digest[H], Node[H]](using order)).tailRecM {
+      case (Nil, acc)                          => acc.asRight[(List[Digest[H]], TreeMap[Digest[H], Node[H]])].pure[F]
+      case (h :: rest, acc) if acc.contains(h) => (rest, acc).asLeft[TreeMap[Digest[H], Node[H]]].pure[F]
       case (h :: rest, acc) =>
         lookup(h).map {
           case l: Leaf[H]   => (rest, acc.updated(h, l)).asLeft

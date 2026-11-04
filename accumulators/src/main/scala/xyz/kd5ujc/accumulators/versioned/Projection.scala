@@ -32,8 +32,10 @@ object Projection {
   /**
    * The state root of a set of entries, built from scratch. Every value is checked as a commit checks it
    * (`VersionedTrie.checkValue`) before any is hashed, so a value too large for its weight alone is refused in O(1).
+   * The entries are a sorted map, as a view's states are: state keys are strings, and a hashed map of keys chosen to
+   * collide costs its builder quadratic time before the root is even asked for.
    */
-  def stateRoot[H: TrieHashing](entries: Map[StateKey, CanonicalValue]): Either[VersionedTrieError, Digest[H]] = {
+  def stateRoot[H: TrieHashing](entries: SortedMap[StateKey, CanonicalValue]): Either[VersionedTrieError, Digest[H]] = {
     val present = entries.toList.filter { case (_, v) => v != CanonicalValue.CNull }
     for {
       m <- VersionedTrie.stateMode
@@ -43,7 +45,7 @@ object Projection {
   }
 
   /** Whether committed state with root `stateRoot` is exactly `entries`: a `RootMismatch` on "state" if not. */
-  def verifyAgainst[H: TrieHashing](entries: Map[StateKey, CanonicalValue], stateRoot: Digest[H]): Either[VersionedTrieError, Unit] =
+  def verifyAgainst[H: TrieHashing](entries: SortedMap[StateKey, CanonicalValue], stateRoot: Digest[H]): Either[VersionedTrieError, Unit] =
     Projection
       .stateRoot[H](entries)
       .flatMap(computed => Either.cond(computed == stateRoot, (), VersionedTrieError.RootMismatch("state", stateRoot.hex, computed.hex)))

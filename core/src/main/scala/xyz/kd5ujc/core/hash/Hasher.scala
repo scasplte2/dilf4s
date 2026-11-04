@@ -44,6 +44,12 @@ object Digest {
     xyz.kd5ujc.core.canonical.Canonical.total(d => xyz.kd5ujc.core.canonical.CanonicalValue.bytes(d.bytes))
 
   implicit def digestEq[H]: Eq[Digest[H]] = Eq.fromUniversalEquals
+
+  /**
+   * Unsigned bytewise lexicographic order, read in place up to the first difference. Collections keyed by digests use
+   * it and never a hash code: a digest's JVM hash code is 32 bits of its bytes, which a peer choosing content can grind.
+   */
+  implicit def digestOrdering[H]: Ordering[Digest[H]] = (a, b) => xyz.kd5ujc.core.canonical.Cbor.compareBytes(a.bytes, b.bytes)
   implicit def digestShow[H]: Show[Digest[H]] = Show.show(_.hex)
 }
 
