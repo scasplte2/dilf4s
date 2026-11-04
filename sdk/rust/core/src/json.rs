@@ -26,9 +26,6 @@ pub const DEFAULT_MAX_SCALE: u32 = crate::generated::limits::as_u32::CANONICAL_M
 /// any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
 pub const MAX_DIGITS: usize = crate::generated::limits::as_usize::CANONICAL_MAX_DIGITS;
 
-/// `10^MAX_DIGITS` has 33220 bits: a number any wider has more than [`MAX_DIGITS`] digits.
-const MAX_DIGIT_BITS: u64 = crate::generated::limits::CANONICAL_MAX_DIGIT_BITS;
-
 /// Parses JSON text into a canonical value with the default scale bound.
 pub fn parse(text: &str) -> Result<Value, CanonicalError> {
     parse_with_max_scale(text, DEFAULT_MAX_SCALE)
@@ -262,7 +259,8 @@ impl Parser<'_> {
         let value = if scale >= 0 {
             Value::decimal(&unscaled, magnitude)?
         } else {
-            Value::int(unscaled * pow(BigInt::from(10u8), magnitude))
+            // a positive exponent can take an integer past MAX_INTEGER_BITS (2e10000): refused, as every producer does
+            Value::integer(unscaled * pow(BigInt::from(10u8), magnitude))?
         };
         Ok((value, end))
     }
@@ -541,13 +539,11 @@ fn write_json(out: &mut Budget, value: &Value) -> Result<(), RenderError> {
     }
 }
 
-/// An integer's decimal, within the bounds [`parse`] accepts.
+/// An integer's decimal, within the bounds [`parse`] accepts. Every integer is within
+/// [`crate::value::MAX_INTEGER_BITS`], so converting one is bounded work; one of 10001 digits (`10^10000` up to
+/// `2^33220 - 1`) is still refused, as no text within the digit bound reads back to it.
 fn integer_text(n: &crate::value::Int) -> Result<String, CanonicalError> {
-    let over_long = CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong };
-    if n.bit_length() > MAX_DIGIT_BITS {
-        return Err(over_long);
-    }
-    within(n.to_string()).ok_or(over_long)
+    within(n.to_string()).ok_or(CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong })
 }
 
 /// `text`, a plain decimal, when its significant digits and scale are within the bounds [`parse`] accepts.
@@ -596,13 +592,9 @@ fn quote(out: &mut String, s: &str) {
 }
 
 /// The exact decimal of `r`, within the bounds [`parse`] accepts: [`NotJson::NonTerminatingRational`] when its
-/// denominator has prime factors other than 2 and 5, [`NotJson::OverLong`] past the bounds. A numerator or denominator
-/// wider than `10^MAX_DIGITS` is refused before it is factored or scaled: `2^a 5^b` with `max(a, b)` within the scale
-/// bound is at most that, and the significand is at least the numerator.
+/// denominator has prime factors other than 2 and 5, [`NotJson::OverLong`] past the bounds. Both parts are within
+/// [`crate::value::MAX_RATIONAL_BITS`], so factoring and scaling them is bounded work.
 pub fn decimal(r: &Rational) -> Result<String, NotJson> {
-    if r.numerator_bit_length() > MAX_DIGIT_BITS || r.denominator_bit_length() > MAX_DIGIT_BITS {
-        return Err(NotJson::OverLong);
-    }
     let d = r.denominator();
     let twos = d.trailing_zeros().unwrap_or(0);
     let mut rest: BigInt = d >> twos;

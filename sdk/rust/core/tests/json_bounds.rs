@@ -63,7 +63,10 @@ fn malformed_numbers_are_described_by_length_and_offset_never_their_text() {
 #[test]
 fn rendering_refuses_what_would_not_read_back() {
     let over_long = Err(json::RenderError::Canonical(CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong }));
-    assert_eq!(json::render_within(&Value::int(num_traits::pow(BigInt::from(10u8), 10_000)), usize::MAX), over_long);
+    assert_eq!(
+        json::render_within(&Value::integer(num_traits::pow(BigInt::from(10u8), 10_000)).unwrap(), usize::MAX),
+        over_long
+    );
     // 1/5^14400 (33436 bits) is no value at all (MAX_RATIONAL_BITS); 1/5^14306 (33218 bits) is, at a scale past the bound
     let five = BigInt::from(5u8);
     assert_eq!(

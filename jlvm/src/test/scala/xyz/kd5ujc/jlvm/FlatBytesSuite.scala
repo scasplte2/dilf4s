@@ -177,8 +177,8 @@ object FlatBytesSuite extends IOSuite {
       "cat prepending"      -> run(Op.Cat, flat, rope),
       "unhex of bytes"      -> run(Op.Unhex, rope),
       "unhex of text"       -> run(Op.Unhex, get(CanonicalValue.text("0x0102"))),
-      "int_to_bytes"        -> run(Op.IntToBytes, CInt(BigInt(258))),
-      "int_to_bytes [n, w]" -> run(Op.IntToBytes, CInt(BigInt(258)), CInt(BigInt(32))),
+      "int_to_bytes"        -> run(Op.IntToBytes, CInt(258)),
+      "int_to_bytes [n, w]" -> run(Op.IntToBytes, CInt(258), CInt(32)),
       "sha256"              -> run(Op.Sha256, rope),
       "keccak256 of text"   -> run(Op.Keccak256, get(CanonicalValue.text("a")))
     )

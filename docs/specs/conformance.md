@@ -40,6 +40,7 @@ them. Every other field is informative. The normative fields are:
 | Merkle tree, trie | `TooLarge` | `limit`: `MaxProofWeight` (2^24), for claims (§5) or a trie proof a producer would emit |
 | Poseidon tree | `Position` | `depth`: the number of siblings (or the tree's depth); the position, held as its bit length (§8), is informative |
 | canonical value | `RationalTooWide` | `limit`: `MaxRationalBits` (33220), for a rational part wider than it, from any producer (`canonical-encoding.md` §1); the part's width is not reported |
+| canonical value | `IntegerTooWide` | `limit`: `MaxIntegerBits` (33220), for an integer wider than it, from any producer (`canonical-encoding.md` §1); the integer's width is not reported |
 | canonical encoding | `DuplicateKey` | `key`: the repeated key's preview, its `head` and `length` (§8) |
 | every other kind | | none: the kind alone |
 
@@ -72,6 +73,11 @@ A refusal costs no more than the spec says, whatever the input:
   denominator each at most `MaxRationalBits` (33220) wide: a wider part is refused as `RationalTooWide` as soon as it
   is read, before the other part is read and before any gcd. A gcd is superlinear in its operands; with the bound, the
   work of decoding is linear in the input (at most one gcd of bounded operands per 8 KiB of rational).
+- **Integers.** A CBOR bignum (`canonical-encoding.md` §2) wider than `MaxIntegerBits` (33220) is refused as
+  `IntegerTooWide` from its length and first byte, before its integer is built; a rational's part, as
+  `RationalTooWide`, the same way. So no decoder builds an integer, or a rational part, wider than 33220 bits, and
+  nothing that reads a value later (rendering, arithmetic, typed decoding) works on a wider one. A JSON integer is
+  checked once it is read: its digit and scale bounds already bound that work.
 
 ## 5. Verifier input weight
 
@@ -113,7 +119,8 @@ checked whole (any shape fault is the family's malformed kind, `Encoding` or `Ma
 read); then each field's **meaning**, in this order: a Merkle proof's path digests before its index and sizes; a trie
 proof's records in order, its structure before its root (`InvalidProof` before `RootMismatch`); a Merkle path's length
 before its root; a Poseidon proof's siblings before its position; the versioned trie's records in the order
-`versioned-trie.md` §5 gives. Within canonical CBOR, a rational's faults come in the order `canonical-encoding.md` §2
+`versioned-trie.md` §5 gives. Within canonical CBOR, a bignum's faults come in the order `canonical-encoding.md` §2
+gives (its byte string, present in full, in canonical form, then its width), and a rational's faults in the order it
 gives: its pair, its numerator then the numerator's width, its denominator then the denominator's width, the
 denominator's range, and lowest terms last (so a part too wide is `RationalTooWide` even when the denominator is below 2
 or the rational is not in lowest terms; `canonical_encoding_v1.json`'s `cborRejections` pin each pair). The refusal

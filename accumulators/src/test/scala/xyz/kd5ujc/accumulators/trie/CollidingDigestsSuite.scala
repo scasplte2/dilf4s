@@ -179,7 +179,7 @@ object CollidingDigestsSuite extends SimpleIOSuite {
           val (removed, added) = (key(i * 17), key(N + i))
           i % 3 match {
             case 2 => removed -> ((t: Trie[Sha256]) => t.remove(removed))
-            case 1 => added   -> ((t: Trie[Sha256]) => t.putCanonical(added, CanonicalValue.int(i)))
+            case 1 => added   -> ((t: Trie[Sha256]) => t.putCanonical(added, CanonicalValue.CInt(i)))
             case _ => added   -> ((t: Trie[Sha256]) => t.put(added, value(N + i)))
           }
         }

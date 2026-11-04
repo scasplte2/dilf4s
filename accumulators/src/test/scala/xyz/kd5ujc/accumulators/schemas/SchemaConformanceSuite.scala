@@ -137,7 +137,7 @@ object SchemaConformanceSuite extends SimpleIOSuite {
   pureTest("encoders refuse values outside the schema") {
     expect(MerkleInclusion.codec.encode(MerkleInclusion(-1L, 1L, Vector.empty)).isLeft, "negative index")
       .and(expect(TrieSegment.codec.encode(TrieSegment(-5L, ByteVector.empty)).isLeft, "negative bit length"))
-      .and(expect.same(Right(xyz.kd5ujc.core.canonical.CanonicalValue.int(3)), TrieChildren.codec.encode(TrieChildren.Both)))
+      .and(expect.same(Right(xyz.kd5ujc.core.canonical.CanonicalValue.CInt(3)), TrieChildren.codec.encode(TrieChildren.Both)))
   }
 
 }

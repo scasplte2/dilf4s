@@ -17,7 +17,7 @@ import weaver.{Expectations, SimpleIOSuite}
 object ParserSuite extends SimpleIOSuite with Checkers {
 
   private def p(json: String) = Parser.parse(json).map(_.expr)
-  private def int(i:  Int): Expr = Expr.Lit(CInt(BigInt(i)))
+  private def int(i:  Int): Expr = Expr.Lit(CInt(i))
   private def text(s: String): Expr = Expr.Lit(CanonicalValue.text(s).toOption.get)
 
   pureTest("a number of more than 10,000 digits is refused before it is converted, as a literal or a path") {
@@ -215,7 +215,7 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   private def lit: Gen[CanonicalValue] =
     Gen.oneOf[CanonicalValue](
       Gen.oneOf(CNull, CBool(true), CBool(false)),
-      Gen.choose(-5, 5).map(i => CInt(BigInt(i))),
+      Gen.choose(-5, 5).map(i => CInt(i)),
       texts.map(t => CanonicalValue.text(t).toOption.get),
       Gen.const(CBytes(hex"00ff")),
       Gen.const(CanonicalValue.array(Vector(CInt(1), CBytes(hex"01"))).toOption.get),

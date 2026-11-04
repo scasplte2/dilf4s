@@ -59,6 +59,19 @@ fn json_cases() {
             let decoded = cbor::decode(&bytes(&c.cbor)).map_err(|e| format!("{}: cbor rejected with {e}", c.json))?;
             same("decode then encode", &c.json, &c.cbor, &hex::encode(&cbor::encode(&decoded)))
         }
+        CanonicalJsonCase::CanonicalJsonUnrenderable(c) => {
+            let value = json::parse(&c.json).map_err(|e| format!("{}: rejected with {e}", c.json))?;
+            same("cbor", &c.json, &c.cbor, &hex::encode(&cbor::encode(&value)))?;
+            same("content hash", &c.json, &c.content_hash, &hex::encode(&algorithm.content_hash(&tag, &value)))?;
+            let kind = match json::render_within(&value, usize::MAX) {
+                Ok(_) => "rendered",
+                Err(json::RenderError::Canonical(e)) => e.kind(),
+                Err(json::RenderError::TooLarge(_)) => "TooLarge",
+            };
+            same("render error kind", &c.json, &c.render_error, kind)?;
+            let decoded = cbor::decode(&bytes(&c.cbor)).map_err(|e| format!("{}: cbor rejected with {e}", c.json))?;
+            same("decode then encode", &c.json, &c.cbor, &hex::encode(&cbor::encode(&decoded)))
+        }
         CanonicalJsonCase::CanonicalJsonRejected(c) => {
             let kind = json::parse(&c.json).map_or_else(|e| e.kind(), |_| "accepted");
             same("error kind", &c.json, &c.error, kind)

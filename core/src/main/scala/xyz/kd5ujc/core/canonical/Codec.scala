@@ -39,7 +39,9 @@ object Codec {
   def intRange(lo: Option[BigInt], hi: Option[BigInt]): Codec[BigInt] =
     Codec(
       i =>
-        Either.cond(lo.forall(i >= _) && hi.forall(i <= _), CInt(i), mismatch(s"integer of ${i.bitLength} bits outside the schema range")),
+        Either
+          .cond(lo.forall(i >= _) && hi.forall(i <= _), i, mismatch(s"integer of ${i.bitLength} bits outside the schema range"))
+          .flatMap(CanonicalValue.int),
       CanonicalDecoder.intRange(lo, hi)
     )
 
@@ -55,10 +57,10 @@ object Codec {
   val int: Codec[BigInt] = intRange(Some(NintMin), Some(UintMax))
 
   def intIn(lo: Int, hi: Int): Codec[Int] =
-    Codec(i => Either.cond(i >= lo && i <= hi, CInt(BigInt(i)), mismatch(s"integer $i outside $lo..$hi")), CanonicalDecoder.intIn(lo, hi))
+    Codec(i => Either.cond(i >= lo && i <= hi, CInt(i), mismatch(s"integer $i outside $lo..$hi")), CanonicalDecoder.intIn(lo, hi))
 
   def longIn(lo: Long, hi: Long): Codec[Long] =
-    Codec(i => Either.cond(i >= lo && i <= hi, CInt(BigInt(i)), mismatch(s"integer $i outside $lo..$hi")), CanonicalDecoder.longIn(lo, hi))
+    Codec(i => Either.cond(i >= lo && i <= hi, CInt(i), mismatch(s"integer $i outside $lo..$hi")), CanonicalDecoder.longIn(lo, hi))
 
   def sizedBytes(lo: Long, hi: Option[Long]): Codec[ByteVector] =
     Codec(
@@ -81,7 +83,7 @@ object Codec {
   /** Exactly the integer `a`; `A` is its singleton type, so the value is fixed by the type. */
   def literalInt[A <: Int & Singleton](a: A): Codec[A] =
     Codec(
-      _ => CInt(BigInt(a)).asRight,
+      _ => CInt(a).asRight,
       CanonicalDecoder.int.emap(i => Either.cond(i == BigInt(a), a, s"expected $a, got an integer of ${i.bitLength} bits"))
     )
 

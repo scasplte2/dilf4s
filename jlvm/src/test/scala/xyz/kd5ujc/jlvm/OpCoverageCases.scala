@@ -55,7 +55,7 @@ object OpCoverageCases extends IOApp {
 
   private def surface(json: String): CanonicalValue = get(JsonSurface.parse(json))
   private def text(s:       String): CanonicalValue = get(CanonicalValue.text(s))
-  private def int(n:        BigInt): CanonicalValue = CInt(n)
+  private def int(n:        BigInt): CanonicalValue = xyz.kd5ujc.core.canonical.CanonicalGens.int(n)
   private def bytes(h:      String): CanonicalValue = CBytes(hex(h))
 
   /** One value of each kind, and a rational. */
@@ -410,6 +410,17 @@ object OpCoverageCases extends IOApp {
       ("a path of 10,001 digits is refused", s"""{"var": ${digits}9}""", CNull),
       ("a literal with a 10,001-digit exponent is refused", s"""{"if": [true, "read", 1e${"1" * 10001}]}""", CNull),
       ("a literal 1e-7 is exact", """{"+": [1e-7, 0.0000001]}""", CNull),
+      // an integer is at most 33220 bits wide (canonical-encoding.md §1): 10^10000 is one, 2 * 10^10000 is not, and
+      // neither is a 10,000-digit significand times 10^10000; the number bound (4096 bits) then refuses arithmetic
+      ("a literal 1e10000 is an integer of 33220 bits", """{"if": [true, 1e10000, 0]}""", CNull),
+      ("a literal -1e10000 is an integer of 33220 bits", """{"if": [true, -1e10000, 0]}""", CNull),
+      ("a literal 1.5e10000 is an integer of 33220 bits", """{"if": [true, 1.5e10000, 0]}""", CNull),
+      ("a literal 2e10000, of 33221 bits, is refused", """{"if": [true, 2e10000, 0]}""", CNull),
+      ("a literal -2e10000, of 33221 bits, is refused", """{"if": [true, -2e10000, 0]}""", CNull),
+      ("a literal of 10,000 digits times 10^10000 is refused", s"""{"if": [true, 0, ${digits}e10000]}""", CNull),
+      ("a path written 2e10000 is refused", """{"var": 2e10000}""", CNull),
+      ("a 33220-bit operand is past the number bound", """{"+": [1e10000, 0]}""", CNull),
+      ("a 33220-bit operand is past the number bound when negative", """{"*": [-1e10000, 1]}""", CNull),
       ("text nested 257 levels deep is Limit", "[" * 256 + "[]" + "]" * 256, CNull)
     ).map { case (name, program, data) => Case(s"dilf4s surface: $name", program, data) }
   }

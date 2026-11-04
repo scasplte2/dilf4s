@@ -129,7 +129,7 @@ object MeteringSuite extends IOSuite {
         .and(expect(o.gasUsed.value >= out, s"at least 1 gas per output character: ${o.gasUsed.value} for $out"))
         .and(expect(S.rendered(numbers) <= o.gasUsed, s"pays the rendering charge ${S.rendered(numbers)}: ${o.gasUsed}"))
     }
-    val ints = Vector.tabulate(1000)(i => CInt(BigInt(i) * 1000003))
+    val ints = Vector.tabulate(1000)(i => CInt(i * 1000003L))
     val words = arr(Vector.fill(1000)(t("w")))
     val gasInts = eval(jlvm, cat, obj("xs" -> arr(ints))).gasUsed
     val gasWords = eval(jlvm, cat, obj("xs" -> words)).gasUsed
@@ -152,7 +152,7 @@ object MeteringSuite extends IOSuite {
     IO.pure(
       expect(isLimit(eval(jlvm, spread, twos).result), s"spread: ${eval(jlvm, spread, twos).result}")
         .and(expect(isLimit(eval(jlvm, strict, CNull).result), s"strict: ${eval(jlvm, strict, CNull).result}"))
-        .and(expect.same(Right(CInt(BigInt(5000))), eval(jlvm, sum, CNull).result))
+        .and(expect.same(Right(CInt(5000)), eval(jlvm, sum, CNull).result))
     )
   }
 
@@ -164,7 +164,7 @@ object MeteringSuite extends IOSuite {
     val accumulators = (1 until 4000).map(i => 1L + i / 64).sum
     IO(
       expect
-        .same(Right(CInt(BigInt(1) << 4000)), o.result)
+        .same(Right(xyz.kd5ujc.core.canonical.CanonicalGens.int(BigInt(1) << 4000)), o.result)
         .and(expect(o.gasUsed.value >= S.cost(Op.Mul).perUnit.value * accumulators, s"gas ${o.gasUsed.value}"))
     )
   }
@@ -203,7 +203,7 @@ object MeteringSuite extends IOSuite {
 
   test("intersect stops at the first element missing from the second array, before keying the rest") { jlvm =>
     // 8191 arrays after a missing 0: keying them would encode every one; only the 0 and the second array's [1] are keyed
-    val left = arr(CInt(0) +: Vector.fill(8191)(arr(Vector.tabulate(100)(i => CInt(BigInt(i))))))
+    val left = arr(CInt(0) +: Vector.fill(8191)(arr(Vector.tabulate(100)(i => CInt(i)))))
     val data = obj("a" -> left, "b" -> arr(Vector(CInt(1))))
     val intersect = program("""{"intersect": [{"var": "a"}, {"var": "b"}]}""")
     (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (consumed, keyed) =>
@@ -336,7 +336,7 @@ object MeteringSuite extends IOSuite {
   test("integer path segments are bounded before they are rendered as keys") { jlvm =>
     val p = program("""{"var": [["m", {"var": "i"}]]}""")
     val data = obj("m" -> obj("-1" -> CInt(7), "12" -> CInt(8)), "i" -> CInt(-1))
-    val huge = obj("m" -> obj("-1" -> CInt(7)), "i" -> CInt((BigInt(1) << 4095) + 1))
+    val huge = obj("m" -> obj("-1" -> CInt(7)), "i" -> xyz.kd5ujc.core.canonical.CanonicalGens.int((BigInt(1) << 4095) + 1))
     IO.pure(
       expect
         .same(Right(CInt(7)), eval(jlvm, p, data).result)
@@ -367,7 +367,7 @@ object MeteringSuite extends IOSuite {
     }
     IO(
       expect
-        .same(Right(CInt(BigInt(1000))), long.result)
+        .same(Right(CInt(1000)), long.result)
         .and(expect.same(eval(jlvm, p("k"), data).gasUsed, long.gasUsed))
         .and(expect(literal.exists(_.value == key), s"the compiled literal holds its key as CText: $literal"))
     )
@@ -395,7 +395,7 @@ object MeteringSuite extends IOSuite {
     (comparing(jlvm, program(lets(n, colliding(10))), CNull), comparing(jlvm, program(lets(n, control(10))), CNull)).mapN {
       case ((o, names, _), (c, _, _)) =>
         expect
-          .same(Right(CInt(BigInt(1))), o.result)
+          .same(Right(CInt(1)), o.result)
           .and(expect.same(o.gasUsed, c.gasUsed))
           .and(expect(names >= n - 1 && names <= 2 * n * log2(n), s"$n colliding bindings compared names $names times"))
     }
@@ -430,7 +430,7 @@ object MeteringSuite extends IOSuite {
     val (l, ls) = (eval(jlvm, lookup, data(long, 200)), eval(jlvm, lookup, data(short, 200)))
     IO(
       expect(b.result.isRight, s"builds: ${b.result.leftMap(_.toString)}")
-        .and(expect.same(Right(CInt(BigInt(200))), l.result))
+        .and(expect.same(Right(CInt(200)), l.result))
         .and(expect(sets > 0 && gets > 0, "both search a key per block"))
         .and(expect.same(sets, b.gasUsed.value - bs.gasUsed.value))
         .and(expect.same(gets, l.gasUsed.value - ls.gasUsed.value))
@@ -632,14 +632,14 @@ object MeteringSuite extends IOSuite {
       ks.foldLeft[CanonicalValue](get(order.map(Vector.empty))) {
         case (m: CMap, k) =>
           t(k) match {
-            case key: CText => get(CanonicalValue.updated(m, key, CInt(BigInt(1))))
+            case key: CText => get(CanonicalValue.updated(m, key, CInt(1)))
             case _          => m
           }
         case (m, _) => m
       }
     // decoded maps are built from their entries; programs build them one key at a time, here in the worst orders
     val maps = List(
-      "from entries" -> get(order.map(keys.map(_ -> CInt(BigInt(1))))),
+      "from entries" -> get(order.map(keys.map(_ -> CInt(1)))),
       "ascending"    -> built(keys),
       "descending"   -> built(keys.reverse)
     )

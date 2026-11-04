@@ -8,7 +8,7 @@
  */
 import { byteLimit, Meter } from "./budget.js";
 import type { CanonicalError, TooLarge } from "./error.js";
-import { CANONICAL_MAX_DIGIT_BITS, CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
+import { CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
 import { KeySet } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
@@ -27,9 +27,6 @@ export const DEFAULT_MAX_SCALE = CANONICAL_MAX_SCALE;
  * any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
  */
 export const MAX_DIGITS = CANONICAL_MAX_DIGITS;
-
-// 10^MAX_DIGITS has 33220 bits: a number any wider has more than MAX_DIGITS digits
-const MAX_DIGIT_BITS = CANONICAL_MAX_DIGIT_BITS;
 
 const leadingZeros = (s: string): number => s.length - s.replace(/^0+/, "").length;
 
@@ -202,7 +199,8 @@ class Parser {
     if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", ...described, scale: Number(scale > INT32_MAX ? INT32_MAX : scale < INT32_MIN ? INT32_MIN : scale) });
     const unscaled = BigInt(intDigits + fracDigits) * (negative ? -1n : 1n);
     // a decimal's denominator is 10^scale: reduced by its primes 2 and 5 alone, never by a general gcd
-    const value = scale >= 0n ? RationalValue.decimal(unscaled, Number(scale)) : ok(IntValue.of(unscaled * 10n ** -scale));
+    // a positive exponent can take an integer past MAX_INTEGER_BITS (2e10000): refused, as every producer does
+    const value = scale >= 0n ? RationalValue.decimal(unscaled, Number(scale)) : IntValue.of(unscaled * 10n ** -scale);
     return value.ok ? ok({ value: value.value, end }) : value;
   }
 
@@ -254,19 +252,21 @@ function within(text: string): string | undefined {
   return significand <= MAX_DIGITS && fracPart.length <= DEFAULT_MAX_SCALE ? text : undefined;
 }
 
-/** An integer's decimal, within the bounds {@link parse} accepts. */
+/**
+ * An integer's decimal, within the bounds {@link parse} accepts. Every integer is within `MAX_INTEGER_BITS`, so
+ * converting one is bounded work; one of 10001 digits (`10^10000` up to `2^33220 - 1`) is still refused, as no text
+ * within the digit bound reads back to it.
+ */
 function integerText(n: IntValue): string | undefined {
-  return n.bitLength > MAX_DIGIT_BITS ? undefined : within(n.value.toString());
+  return within(n.value.toString());
 }
 
 /**
  * The exact decimal of a rational, within the bounds {@link parse} accepts: `"non-terminating rational"` when its
- * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds. A numerator or denominator
- * wider than `10^MAX_DIGITS` is refused before it is factored or scaled: `2^a 5^b` with `max(a, b)` within the scale
- * bound is at most that, and the significand is at least the numerator.
+ * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds. Both parts are within
+ * `MAX_RATIONAL_BITS`, so factoring and scaling them is bounded work.
  */
 export function decimalOf(r: RationalValue): Result<string, "non-terminating rational" | "over-long number"> {
-  if (r.numeratorBitLength > MAX_DIGIT_BITS || r.denominatorBitLength > MAX_DIGIT_BITS) return err("over-long number");
   let rest = r.denominator;
   let twos = 0;
   let fives = 0;

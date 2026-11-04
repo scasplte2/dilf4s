@@ -24,11 +24,11 @@ object CborSuite extends SimpleIOSuite with Checkers {
     ("100", CInt(100), hex"1864"),
     ("1000", CInt(1000), hex"1903e8"),
     ("1000000", CInt(1000000), hex"1a000f4240"),
-    ("1000000000000", CInt(BigInt("1000000000000")), hex"1b000000e8d4a51000"),
-    ("2^64-1", CInt(BigInt("18446744073709551615")), hex"1bffffffffffffffff"),
-    ("2^64", CInt(BigInt("18446744073709551616")), hex"c249010000000000000000"),
-    ("-2^64", CInt(BigInt("-18446744073709551616")), hex"3bffffffffffffffff"),
-    ("-2^64-1", CInt(BigInt("-18446744073709551617")), hex"c349010000000000000000"),
+    ("1000000000000", CInt(1000000000000L), hex"1b000000e8d4a51000"),
+    ("2^64-1", CanonicalGens.int(BigInt("18446744073709551615")), hex"1bffffffffffffffff"),
+    ("2^64", CanonicalGens.int(BigInt("18446744073709551616")), hex"c249010000000000000000"),
+    ("-2^64", CanonicalGens.int(BigInt("-18446744073709551616")), hex"3bffffffffffffffff"),
+    ("-2^64-1", CanonicalGens.int(BigInt("-18446744073709551617")), hex"c349010000000000000000"),
     ("-1", CInt(-1), hex"20"),
     ("-10", CInt(-10), hex"29"),
     ("-100", CInt(-100), hex"3863"),
@@ -101,7 +101,7 @@ object CborSuite extends SimpleIOSuite with Checkers {
         CanonicalValue.map((0 until n).map(i => s"k$i" -> CInt(i))).fold(e => sys.error(e.toString), identity)
       )
     }
-    (ints.map(CInt(_)) ++ sized).foldLeft(success) { (acc, v) =>
+    (ints.map(CanonicalGens.int) ++ sized).foldLeft(success) { (acc, v) =>
       acc.and(expect.same(Cbor.encode(v).size, Cbor.encodedLength(v))).and(expect(Cbor.encodedLength(v) >= v.weight))
     }
   }

@@ -64,12 +64,12 @@ object SigmaRefusalVectors {
     List(
       row("valid", good, proof, message, "accepted"),
       row("other-message", good, proof, message.reverse, "rejected"),
-      row("not-an-object", CanonicalValue.int(5), proof, message, "InvalidProposition"),
+      row("not-an-object", CInt(5), proof, message, "InvalidProposition"),
       row("unknown-type", obj("type" -> text("schnorr"), "pk" -> CBytes(pk)), proof, message, "InvalidProposition"),
       row("missing-field", obj("type" -> text("dlog")), proof, message, "InvalidProposition"),
       row(
         "extra-field",
-        obj("type" -> text("dlog"), "pk" -> CBytes(pk), "k" -> CanonicalValue.int(1)),
+        obj("type" -> text("dlog"), "pk" -> CBytes(pk), "k" -> CInt(1)),
         proof,
         message,
         "InvalidProposition"
@@ -79,14 +79,14 @@ object SigmaRefusalVectors {
       row("empty-and", obj("type" -> text("and"), "children" -> array()), proof, message, "InvalidProposition"),
       row(
         "threshold-k-0",
-        obj("type" -> text("threshold"), "k" -> CanonicalValue.int(0), "children" -> array(good)),
+        obj("type" -> text("threshold"), "k" -> CInt(0), "children" -> array(good)),
         proof,
         message,
         "InvalidProposition"
       ),
       row(
         "threshold-k-over-n",
-        obj("type" -> text("threshold"), "k" -> CanonicalValue.int(2), "children" -> array(good)),
+        obj("type" -> text("threshold"), "k" -> CInt(2), "children" -> array(good)),
         proof,
         message,
         "InvalidProposition"

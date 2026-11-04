@@ -30,7 +30,7 @@ object KeyOrderingSuite extends SimpleIOSuite with Checkers {
   test("a map of such keys encodes as the old encoder, which sorted the encoded keys") {
     forall(Gen.listOfN(30, key)) { keys =>
       val m = CanonicalValue
-        .map(keys.zipWithIndex.map { case (k, i) => k -> CanonicalValue.int(i) }.toMap)
+        .map(keys.zipWithIndex.map { case (k, i) => k -> CanonicalValue.CInt(i) }.toMap)
         .fold(e => sys.error(e.toString), identity)
       expect(Cbor.encode(m) == BufferedCbor.encode(m))
     }

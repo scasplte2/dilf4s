@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { cbor, models, toHex, Value } from "@kd5ujc/dilf4s-core";
 
 import { versioned } from "../src/index.js";
-import { bytes, expectErr, expectOk, loadVectors, valueOf } from "./vectors.js";
+import { bytes, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
 
 const vectors = loadVectors("versioned_trie_v1.json", models.versionedTrieVectors.VersionedTrieVectors);
 const versionKey = expectOk(versioned.VersionKey.unsignedLong(Number(vectors.width)), "version key");
@@ -82,7 +82,7 @@ describe("versioned_trie_v1.json", () => {
             expect(expectOk(state.holds(key(c.key), claimed), "holds"), c.key).toBe(true);
             const looked = expectOk(state.lookup(key(c.key)), "lookup");
             expect(looked === null ? null : toHex(looked)).toBe(claimed === null ? null : toHex(expectOk(vt.valueHash(claimed), "encodes")));
-            if (claimed !== null) expect(expectOk(state.holds(key(c.key), Value.int(424242n)), "holds"), "another value").toBe(false);
+            if (claimed !== null) expect(expectOk(state.holds(key(c.key), int(424242n)), "holds"), "another value").toBe(false);
           }
           for (const l of p.listings ?? []) {
             expect(entriesHex(expectOk(state.namespace(ns(l.namespace)), "listing")), l.namespace).toEqual(l.entries.map((e) => [e.key, toHex(expectOk(vt.valueHash(valueOf(e.value)), "encodes"))]));
@@ -279,10 +279,10 @@ describe("snapshots and replicas", () => {
     expect(expectErr(one.applyDelta({ ...d2, upserts: d2.upserts.slice(1) }), "dropped write")).toMatchObject({ kind: "RootMismatch", component: "state" });
     expect(expectErr(one.applyDelta({ ...d2, head: { ...d2.head, historyRoot: vt.hashing.empty } }), "forged history")).toMatchObject({ kind: "RootMismatch", component: "history" });
     const k = key("fiber/1");
-    expect(expectErr(one.applyDelta({ ...d2, upserts: [[k, Value.int(1n)]], removes: [k] }), "both").kind).toBe("Malformed");
-    expect(expectErr(one.applyDelta({ ...d2, upserts: [[k, Value.int(1n)], [k, Value.int(2n)]] }), "twice").kind).toBe("Malformed");
+    expect(expectErr(one.applyDelta({ ...d2, upserts: [[k, int(1n)]], removes: [k] }), "both").kind).toBe("Malformed");
+    expect(expectErr(one.applyDelta({ ...d2, upserts: [[k, int(1n)], [k, int(2n)]] }), "twice").kind).toBe("Malformed");
     expect(expectErr(one.applyDelta({ ...d2, upserts: [[k, Value.null]] }), "null").kind).toBe("Malformed");
-    let deep: Value = Value.int(0n);
+    let deep: Value = int(0n);
     for (let i = 0; i < 254; i++) deep = expectOk(Value.array([deep]), "array");
     expect(expectErr(one.applyDelta({ ...d2, upserts: [[k, deep]] }), "too deep").kind).toBe("TooDeep");
     const big = Value.bytes(new Uint8Array(versioned.MAX_VALUE_BYTES));

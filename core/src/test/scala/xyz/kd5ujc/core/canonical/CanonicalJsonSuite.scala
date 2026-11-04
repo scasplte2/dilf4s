@@ -18,8 +18,8 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
       Ratio.of(n, d).fold(e => sys.error(e.toString), r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity))
     val third = rational(BigInt(1) << 30000, BigInt(3))
     val refusal = NotJsonRepresentable("non-terminating rational of 30001/2 bits")
-    // a rational that wide is no value (CanonicalValue.MaxRationalBits); an integer that wide is, and too long to render
-    val huge = CInt(BigInt(1) << 1000000)
+    // a rational that wide is no value (CanonicalValue.MaxRationalBits); the widest integer is, and too long to render
+    val huge = CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     val overLong = NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")
     expect
       .same(
@@ -34,7 +34,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
     def digits(n: Int) = "9" * n
     val rejectedDigits = (n: Int) => NumberSource.Text(n, 0)
     expect
-      .same(Right(CInt(BigInt(digits(10000)))), parse(digits(10000)))
+      .same(Right(CanonicalGens.int(BigInt(digits(10000)))), parse(digits(10000)))
       .and(expect.same(Right(digits(10000)), parse(digits(10000)).flatMap(CanonicalJson.render)))
       .and(expect(parse("0." + "0" * 4000 + digits(6000)).isRight, "leading zeros of a fraction are not counted"))
       .and(expect.same(Right(CInt(100)), parse("1e" + "0" * 20000 + "2")))
@@ -49,7 +49,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
       .and(
         expect.same(
           Left(NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")),
-          CanonicalJson.render(CInt(BigInt(10).pow(10000)))
+          CanonicalJson.render(CanonicalGens.int(BigInt(10).pow(10000)))
         )
       )
   }
@@ -80,7 +80,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Right(CInt(0)), parse("-0")))
       .and(expect.same(Right(CInt(1200)), parse("1.2E3")))
       .and(expect.same(Right(ratio(-3, 8)), parse("-0.375")))
-      .and(expect.same(Right(CInt(BigInt("123456789012345678901234567890"))), parse("123456789012345678901234567890")))
+      .and(expect.same(Right(CanonicalGens.int(BigInt("123456789012345678901234567890"))), parse("123456789012345678901234567890")))
   }
 
   pureTest("integers above 2^53 stay distinct, with distinct encodings") {

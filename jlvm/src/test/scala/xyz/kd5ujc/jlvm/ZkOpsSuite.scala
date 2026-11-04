@@ -112,7 +112,7 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
       .map(bs => CBytes(ByteVector(bs)))
 
   private val scalar: Gen[CanonicalValue] =
-    Gen.oneOf(rawBytes, Gen.choose(-3L, 300L).map(n => CInt(BigInt(n))), Gen.const(CNull), Gen.const(True))
+    Gen.oneOf(rawBytes, Gen.choose(-3L, 300L).map(n => CInt(n)), Gen.const(CNull), Gen.const(True))
 
   private val argument: Gen[CanonicalValue] =
     Gen.oneOf(
@@ -152,7 +152,7 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
       .and(expect.same(Right(b(hex"115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a")), variadic))
       .and(expect.same("Arity", kind(run(Op.Poseidon, a(one, one, one, one, one)))))
       .and(expect.same("Type", kind(run(Op.Poseidon, a()))))
-      .and(expect.same("Type", kind(run(Op.Poseidon, CInt(BigInt(1))))))
+      .and(expect.same("Type", kind(run(Op.Poseidon, CInt(1)))))
   }
 
   zkTest("bn254_pairing takes pairs as arguments or one array of pairs; e(P, Q) * e(-P, Q) is the identity") {
@@ -176,16 +176,16 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
       .and(expect.same(Right(g1Gen), run(Op.Bn254Add, infinity, g1Gen)))
       .and(expect(run(Op.Bn254Mul, g1Gen, b(ByteVector.high(32))).isRight, "mul takes any 256-bit scalar"))
       .and(expect.same("Arity", kind(run(Op.Bn254Add, g1Gen))))
-      .and(expect.same("Type", kind(run(Op.Bn254Mul, g1Gen, CInt(BigInt(2))))))
+      .and(expect.same("Type", kind(run(Op.Bn254Mul, g1Gen, CInt(2)))))
   }
 
   zkTest("pmt_verify: a depth-0 proof checks leaf == root; shapes and bounds are typed errors") {
-    val zero = CInt(BigInt(0))
+    val zero = CInt(0)
     expect
       .same(Right(True), run(Op.PmtVerify, one, one, zero, a()))
       .and(expect.same(Right(False), run(Op.PmtVerify, one, two, zero, a())))
-      .and(expect.same("Crypto", kind(run(Op.PmtVerify, one, one, CInt(BigInt(-1)), a()))))
-      .and(expect.same("Crypto", kind(run(Op.PmtVerify, one, one, CInt(BigInt(1)), a()))))
+      .and(expect.same("Crypto", kind(run(Op.PmtVerify, one, one, CInt(-1), a()))))
+      .and(expect.same("Crypto", kind(run(Op.PmtVerify, one, one, CInt(1), a()))))
       .and(expect.same("Crypto", kind(run(Op.PmtVerify, one, one, zero, a(Vector.fill(ZkOps.MaxSiblings + 1)(one)*)))))
       .and(expect.same("Type", kind(run(Op.PmtVerify, one, one, one, a()))))
       .and(expect.same("Type", kind(run(Op.PmtVerify, one, one, zero, one))))
@@ -193,7 +193,7 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
   }
 
   zkTest("pmt_verify: an index of any size is refused without rendering it") {
-    val huge = CInt(BigInt(1) << 1000000)
+    val huge = xyz.kd5ujc.core.canonical.CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect.same(
       Left(JlvmError.Crypto(Op.PmtVerify.wire, "index is out of range for depth 1")),
       run(Op.PmtVerify, one, one, huge, a(one))
@@ -207,7 +207,7 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
     expect
       .same(Right(invalid), run(Op.EcvrfVerify, pk, b(ByteVector.empty), proof))
       .and(expect.same("Crypto", kind(run(Op.EcvrfVerify, pk, b(ByteVector.empty), b(ByteVector.low(79))))))
-      .and(expect.same("Type", kind(run(Op.EcvrfVerify, pk, CInt(BigInt(1)), proof))))
+      .and(expect.same("Type", kind(run(Op.EcvrfVerify, pk, CInt(1), proof))))
       .and(expect.same("Arity", kind(run(Op.EcvrfVerify, pk, proof))))
       .and(expect.same("Crypto", kind(run(Op.Groth16Verify, b(ByteVector.low(32)), b(ByteVector.empty), b(ByteVector.low(355))))))
       .and(expect.same(Right(False), run(Op.Groth16Verify, b(ByteVector.low(32)), b(ByteVector.empty), b(ByteVector.low(356)))))
@@ -228,7 +228,7 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
       .map(h => b(Bn254.be32(h.value)))
     expect(expected.isDefined, s"the digest decodes as a field element: $digest")
       .and(expect.same(expected, digest.flatMap(d => run(Op.Poseidon, d)).toOption))
-      .and(expect.same(Right(True), digest.flatMap(d => run(Op.PmtVerify, d, d, CInt(BigInt(0)), a()))))
+      .and(expect.same(Right(True), digest.flatMap(d => run(Op.PmtVerify, d, d, CInt(0), a()))))
   }
 }
 

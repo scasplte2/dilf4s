@@ -8,7 +8,9 @@ use num_traits::One;
 
 use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem};
 use crate::hash::{Hasher, Hashing};
-use crate::value::{Array, Entries, MAX_DEPTH, MAX_RATIONAL_BITS, MAX_WEIGHT, Map, Rational, Text, Value, bit_length};
+use crate::value::{
+    Array, Entries, MAX_DEPTH, MAX_INTEGER_BITS, MAX_RATIONAL_BITS, MAX_WEIGHT, Map, Rational, Text, Value, bit_length,
+};
 
 const TAG_POSITIVE_BIGNUM: u64 = 2;
 const TAG_NEGATIVE_BIGNUM: u64 = 3;
@@ -349,16 +351,38 @@ pub fn decode(bytes: &[u8]) -> Result<Value, CanonicalError> {
 /// [`decode`] with a lower nesting limit (it never exceeds [`MAX_DEPTH`]). The decoder keeps its own frame stack,
 /// so input of any nesting is a typed error, never a stack overflow.
 pub fn decode_with_limit(bytes: &[u8], max_depth: usize) -> Result<Value, CanonicalError> {
-    decode_with(bytes, max_depth, &Rational::new)
+    decode_with(bytes, max_depth, &Rational::new, &magnitude)
 }
 
 /// What builds a decoded rational from parts within [`MAX_RATIONAL_BITS`]: [`Rational::new`], which runs the one gcd
 /// that checks lowest terms. A test passes one that counts its calls and the widths it sees.
 type Reduce<'a> = &'a dyn Fn(BigInt, BigInt) -> Option<Rational>;
 
-/// [`decode_with_limit`], building rationals with `reduce`.
-fn decode_with(bytes: &[u8], max_depth: usize, reduce: Reduce<'_>) -> Result<Value, CanonicalError> {
-    Decoder { input: bytes, max_depth: max_depth.min(MAX_DEPTH), stack: Vec::new(), reduce }.run()
+/// What builds a bignum's magnitude from its bytes, once their form and width are checked: [`magnitude`]. A test passes
+/// one that counts its calls.
+type Magnitude<'a> = &'a dyn Fn(&[u8]) -> BigInt;
+
+/// A bignum's magnitude: its big-endian bytes.
+fn magnitude(b: &[u8]) -> BigInt {
+    BigInt::from_bytes_be(Sign::Plus, b)
+}
+
+/// [`decode_with_limit`], building rationals with `reduce` and bignums' magnitudes with `magnitude`.
+fn decode_with(
+    bytes: &[u8],
+    max_depth: usize,
+    reduce: Reduce<'_>,
+    magnitude: Magnitude<'_>,
+) -> Result<Value, CanonicalError> {
+    Decoder { input: bytes, max_depth: max_depth.min(MAX_DEPTH), stack: Vec::new(), reduce, magnitude }.run()
+}
+
+/// The Java `bitLength` of a bignum's integer from its magnitude's bytes, `b[0]` non-zero: 8 bits per byte after the
+/// first, and the first byte's own. `m` and `-1 - m` have the same `bitLength`, so it holds for either tag.
+fn magnitude_bits(b: &[u8]) -> u64 {
+    let rest = u64::try_from(b.len().saturating_sub(1)).unwrap_or(u64::MAX).saturating_mul(8);
+    let first = b.first().map_or(0, |&f| u64::from(u8::BITS.saturating_sub(f.leading_zeros())));
+    rest.saturating_add(first)
 }
 
 struct Head {
@@ -390,6 +414,7 @@ struct Decoder<'a> {
     max_depth: usize,
     stack: Vec<Frame>,
     reduce: Reduce<'a>,
+    magnitude: Magnitude<'a>,
 }
 
 /// What to do after a value is complete: read the next item at an offset, or finish.
@@ -491,7 +516,7 @@ impl Decoder<'_> {
         let Head { major, argument, end } = self.read_head(pos)?;
         match major {
             MAJOR_UNSIGNED => Ok((Item::Scalar(Value::int(argument)), end)),
-            MAJOR_NEGATIVE => Ok((Item::Scalar(Value::int(-BigInt::from(argument) - BigInt::one())), end)),
+            MAJOR_NEGATIVE => Ok((Item::Scalar(Value::int((-1i128).saturating_sub(i128::from(argument)))), end)),
             MAJOR_BYTES => self.span(end, argument).map(|(b, e)| (Item::Scalar(Value::bytes(b)), e)),
             MAJOR_TEXT => {
                 let (b, e) = self.span(end, argument)?;
@@ -545,14 +570,25 @@ impl Decoder<'_> {
     fn read_tagged(&self, pos: usize, tag: u64, end: usize) -> Result<(Value, usize), CanonicalError> {
         match tag {
             TAG_POSITIVE_BIGNUM | TAG_NEGATIVE_BIGNUM => {
-                self.read_bignum(pos, tag, end).map(|(n, e)| (Value::int(n), e))
+                let too_wide = CanonicalError::IntegerTooWide { limit: MAX_INTEGER_BITS };
+                let (n, e) = self.read_bignum(pos, tag, end, MAX_INTEGER_BITS, too_wide)?;
+                Ok((Value::integer(n)?, e))
             }
             TAG_RATIONAL => self.read_rational(pos, end),
             _ => Err(CanonicalError::Unsupported { offset: pos, item: UnsupportedItem::Tag(tag) }),
         }
     }
 
-    fn read_bignum(&self, pos: usize, tag: u64, end: usize) -> Result<(BigInt, usize), CanonicalError> {
+    /// A bignum's integer, in order: a byte string (`NonCanonical`), present in full (`UnexpectedEnd`), in canonical
+    /// form (`NonCanonical`), and at most `limit` wide (`too_wide`), all before the integer is built.
+    fn read_bignum(
+        &self,
+        pos: usize,
+        tag: u64,
+        end: usize,
+        limit: u64,
+        too_wide: CanonicalError,
+    ) -> Result<(BigInt, usize), CanonicalError> {
         let body = self.read_head(end)?;
         if body.major != MAJOR_BYTES {
             return Err(CanonicalError::NonCanonical { offset: pos, reason: NonCanonicalReason::BignumNotBytes });
@@ -562,19 +598,11 @@ impl Decoder<'_> {
             Err(CanonicalError::NonCanonical { offset: pos, reason: NonCanonicalReason::BignumLeadingZero })
         } else if b.len() <= 8 {
             Err(CanonicalError::NonCanonical { offset: pos, reason: NonCanonicalReason::BignumInRange })
+        } else if magnitude_bits(b) > limit {
+            Err(too_wide)
         } else {
-            let magnitude = BigInt::from_bytes_be(Sign::Plus, b);
+            let magnitude = (self.magnitude)(b);
             Ok((if tag == TAG_POSITIVE_BIGNUM { magnitude } else { -magnitude - BigInt::one() }, e))
-        }
-    }
-
-    fn read_integer(&self, pos: usize) -> Result<(BigInt, usize), CanonicalError> {
-        let Head { major, argument, end } = self.read_head(pos)?;
-        match (major, argument) {
-            (MAJOR_UNSIGNED, n) => Ok((BigInt::from(n), end)),
-            (MAJOR_NEGATIVE, n) => Ok((-BigInt::from(n) - BigInt::one(), end)),
-            (MAJOR_TAG, t @ (TAG_POSITIVE_BIGNUM | TAG_NEGATIVE_BIGNUM)) => self.read_bignum(pos, t, end),
-            _ => Err(CanonicalError::NonCanonical { offset: pos, reason: NonCanonicalReason::RationalNotInteger }),
         }
     }
 
@@ -596,14 +624,18 @@ impl Decoder<'_> {
             .ok_or_else(|| non_canonical(NonCanonicalReason::RationalNotReduced))
     }
 
-    /// A rational's numerator or denominator, refused when wider than [`MAX_RATIONAL_BITS`]: before any gcd, so a wide
-    /// part costs no more than reading it.
+    /// A rational's numerator or denominator, refused when wider than [`MAX_RATIONAL_BITS`]: a bignum's width is
+    /// checked from its length, before it is built and before any gcd, so a wide part costs no more than reading it.
     fn read_part(&self, pos: usize) -> Result<(BigInt, usize), CanonicalError> {
-        let (n, end) = self.read_integer(pos)?;
-        if bit_length(&n) > MAX_RATIONAL_BITS {
-            Err(CanonicalError::RationalTooWide { limit: MAX_RATIONAL_BITS })
-        } else {
-            Ok((n, end))
+        let Head { major, argument, end } = self.read_head(pos)?;
+        match (major, argument) {
+            (MAJOR_UNSIGNED, n) => Ok((BigInt::from(n), end)),
+            (MAJOR_NEGATIVE, n) => Ok((-BigInt::from(n) - BigInt::one(), end)),
+            (MAJOR_TAG, t @ (TAG_POSITIVE_BIGNUM | TAG_NEGATIVE_BIGNUM)) => {
+                let too_wide = CanonicalError::RationalTooWide { limit: MAX_RATIONAL_BITS };
+                self.read_bignum(pos, t, end, MAX_RATIONAL_BITS, too_wide)
+            }
+            _ => Err(CanonicalError::NonCanonical { offset: pos, reason: NonCanonicalReason::RationalNotInteger }),
         }
     }
 
@@ -636,9 +668,9 @@ mod tests {
     use num_bigint::BigInt;
     use num_traits::One;
 
-    use super::{MAX_RATIONAL_BITS, Rational, TooLarge, Value, decode, decode_with, encode, within};
+    use super::{MAX_INTEGER_BITS, MAX_RATIONAL_BITS, Rational, TooLarge, Value, decode, decode_with, encode, within};
     use crate::error::{CanonicalError, NonCanonicalReason};
-    use crate::value::{MAX_DEPTH, bit_length};
+    use crate::value::{IntegerTooWide, MAX_DEPTH, NumberError, bit_length};
 
     /// The consecutive Fibonacci numbers `(F(k + 1), F(k))` with `F(k + 1)` exactly `bits` wide: coprime, and the
     /// pair whose gcd takes the most steps for its width.
@@ -665,7 +697,7 @@ mod tests {
             widest.set(widest.get().max(bit_length(&n)).max(bit_length(&d)));
             Rational::new(n, d)
         };
-        let decoded = decode_with(bytes, MAX_DEPTH, &reduce);
+        let decoded = decode_with(bytes, MAX_DEPTH, &reduce, &super::magnitude);
         (decoded, calls.get(), widest.get())
     }
 
@@ -684,8 +716,8 @@ mod tests {
         // reduced first: (2^33221 / 6) is 2^33220 / 3, still too wide; 2^33221 / 2^33220 is the integer 2
         assert_eq!(Value::number(&(&edge * 2u8), &(&three * 2u8)), Err(crate::value::NumberError::RationalTooWide));
         assert_eq!(Value::number(&(&edge * 2u8), &edge), Ok(Value::int(2u8)));
-        // integers are unbounded
-        assert_eq!(decode(&encode(&Value::int(&edge * &edge))), Ok(Value::int(&edge * &edge)));
+        // an integer is bounded too (MAX_INTEGER_BITS), and checked after reducing
+        assert_eq!(Value::number(&(&edge * &edge), &BigInt::one()), Err(NumberError::IntegerTooWide));
         let at_bound = rational(&(&edge - BigInt::one()), &BigInt::from(2u8));
         assert_eq!(decode(&encode(&at_bound)), Ok(at_bound));
     }
@@ -726,6 +758,89 @@ mod tests {
             assert_eq!(decoded, too_wide(), "{} / {} bits", bit_length(&numerator), bit_length(&denominator));
             assert_eq!(calls, 0, "no gcd");
         }
+    }
+
+    /// Decodes `bytes` through a magnitude builder that counts its calls and the widest magnitude it built, in bytes.
+    fn counted_magnitudes(bytes: &[u8]) -> (Result<Value, CanonicalError>, usize, usize) {
+        let (calls, widest) = (Cell::new(0usize), Cell::new(0usize));
+        let magnitude = |b: &[u8]| {
+            calls.set(calls.get().saturating_add(1));
+            widest.set(widest.get().max(b.len()));
+            super::magnitude(b)
+        };
+        let decoded = decode_with(bytes, MAX_DEPTH, &Rational::new, &magnitude);
+        (decoded, calls.get(), widest.get())
+    }
+
+    /// The CBOR of the integer `n` in canonical form, whatever its width.
+    fn integer_bytes(n: &BigInt) -> Vec<u8> {
+        let mut out = Vec::new();
+        super::write_integer(&mut out, n).unwrap();
+        out
+    }
+
+    fn integer_too_wide() -> Result<Value, CanonicalError> {
+        Err(CanonicalError::IntegerTooWide { limit: MAX_INTEGER_BITS })
+    }
+
+    /// An integer is at most [`MAX_INTEGER_BITS`] wide, in Java `bitLength`, for either sign: the only constructor of a
+    /// wider one checks it, and so does every number built from parts.
+    #[test]
+    fn the_integer_bound_holds_in_the_value_model_for_either_sign() {
+        let edge = BigInt::one() << MAX_INTEGER_BITS;
+        assert_eq!(MAX_INTEGER_BITS, MAX_RATIONAL_BITS);
+        for n in [&edge - BigInt::one(), -(&edge)] {
+            assert_eq!(Value::integer(n.clone()).map(|v| v.weight()), Ok(520), "{} bits", bit_length(&n));
+        }
+        for n in [edge.clone(), -(&edge) - BigInt::one()] {
+            assert_eq!(Value::integer(n.clone()), Err(IntegerTooWide), "{} bits", bit_length(&n));
+            assert_eq!(Value::number(&(&n * 3u8), &BigInt::from(3u8)), Err(NumberError::IntegerTooWide));
+        }
+        assert_eq!(CanonicalError::from(IntegerTooWide), CanonicalError::IntegerTooWide { limit: 33_220 });
+        assert_eq!(Value::int(i128::MIN).weight(), 2);
+    }
+
+    /// A bignum one bit too wide is refused from its length, for either tag, before its magnitude is built; `k` of the
+    /// widest build exactly `k` magnitudes, of 4153 bytes each.
+    #[test]
+    fn decoding_refuses_a_wide_bignum_before_building_it() {
+        let edge = BigInt::one() << MAX_INTEGER_BITS;
+        for n in [edge.clone(), -(&edge) - BigInt::one(), &edge * 255u8] {
+            let (decoded, calls, _) = counted_magnitudes(&integer_bytes(&n));
+            assert_eq!(decoded, integer_too_wide(), "{} bits", bit_length(&n));
+            assert_eq!(calls, 0, "{} bits built a magnitude", bit_length(&n));
+        }
+        let widest = [&edge - BigInt::one(), -(&edge)].map(|n| Value::integer(n).unwrap());
+        let array = Value::array([widest.clone(), widest].concat()).unwrap();
+        let (decoded, calls, bytes) = counted_magnitudes(&encode(&array));
+        assert_eq!(decoded, Ok(array));
+        assert_eq!((calls, bytes), (4, 4153));
+        // a rational part too wide is RationalTooWide, refused from its length too
+        let mut part = vec![0xd8, 0x1e, 0x82];
+        part.extend(integer_bytes(&edge));
+        part.push(0x03);
+        assert_eq!(counted_magnitudes(&part).0, too_wide());
+        assert_eq!(counted_magnitudes(&part).1, 0);
+    }
+
+    /// A bignum's form, and that it is present in full, are checked before its width.
+    #[test]
+    fn a_bignum_is_checked_for_form_and_length_before_width() {
+        let mut leading_zero = vec![0xc2, 0x59, 0x10, 0x3a, 0x00];
+        leading_zero.extend(core::iter::repeat_n(0xff, 4153));
+        assert!(matches!(
+            decode(&leading_zero),
+            Err(CanonicalError::NonCanonical { reason: NonCanonicalReason::BignumLeadingZero, .. })
+        ));
+        let truncated = [0xc3, 0x5a, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+        assert!(matches!(decode(&truncated), Err(CanonicalError::UnexpectedEnd { .. })));
+        // 4153 bytes, the first 0x0f: 33220 bits, -2^33220; the first 0x10: 33221
+        let mut widest = vec![0xc3, 0x59, 0x10, 0x39, 0x0f];
+        widest.extend(core::iter::repeat_n(0xff, 4152));
+        assert_eq!(decode(&widest), Value::integer(-(BigInt::one() << MAX_INTEGER_BITS)).map_err(CanonicalError::from));
+        let mut past = vec![0xc3, 0x59, 0x10, 0x39, 0x10];
+        past.extend(core::iter::repeat_n(0x00, 4152));
+        assert_eq!(decode(&past), integer_too_wide());
     }
 
     /// Tag 30 around `[n, d]`, whatever `n` and `d` are.
@@ -846,7 +961,7 @@ mod tests {
             let keyed =
                 Value::map((0..n).map(|i| (alloc::format!("k{i}"), Value::Bool(i % 2 == 0))).collect::<Vec<_>>())
                     .unwrap();
-            let big = Value::int(BigInt::from(1) << (n * 8));
+            let big = Value::integer(BigInt::from(1) << (n * 8).min(33_000)).unwrap();
             let text = Value::text("é".repeat(n));
             let bytes = Value::bytes(vec![0x5a; n]);
             let lent_text = [text.as_str().unwrap().as_bytes()];

@@ -110,7 +110,7 @@ fn number_weights_follow_java_bit_length() {
         (-pow(128), 3),
     ];
     for (n, w) in cases {
-        let v = Value::int(n.clone());
+        let v = Value::integer(n.clone()).unwrap();
         assert_eq!(v.weight(), w, "weight of {n}");
         assert_eq!(v.weight(), saturated(&recount(&v)), "recount of {n}");
     }
@@ -157,7 +157,7 @@ fn a_doubling_dag_weighs_its_logical_size_and_saturates() {
 fn clones_share_their_payloads() {
     let text = Value::text("shared text");
     let bytes = Value::bytes(vec![1u8, 2, 3]);
-    let int = Value::int(BigInt::from(7) << 200);
+    let int = Value::integer(BigInt::from(7) << 200).unwrap();
     let rational = Value::number(&BigInt::from(1), &BigInt::from(3)).unwrap();
     let array = Value::array(vec![text.clone(), int.clone()]).unwrap();
     let map = Value::map([("k".to_owned(), array.clone()), ("r".to_owned(), rational.clone())]).unwrap();
@@ -362,8 +362,8 @@ fn equality_compares_each_pair_of_large_payloads_once() {
     assert!(texts(&mib) == texts(&mib), "equal texts");
     let bytes = |b: &[u8]| Value::array(vec![Value::bytes(b); N]).unwrap();
     assert!(bytes(mib.as_bytes()) == bytes(mib.as_bytes()), "equal byte strings");
-    let big = BigInt::from(1) << (1 << 23);
-    let ints = |n: &BigInt| Value::array(vec![Value::int(n.clone()); N]).unwrap();
+    let big = (BigInt::from(1) << dilf4s_core::MAX_INTEGER_BITS) - 1;
+    let ints = |n: &BigInt| Value::array(vec![Value::integer(n.clone()).unwrap(); N]).unwrap();
     assert!(ints(&big) == ints(&big), "equal integers");
     let mut other = mib.clone();
     other.replace_range(..1, "y");
@@ -449,7 +449,7 @@ fn integers_are_streamed_exactly() {
         cases.push(-(p * BigInt::from(5)));
     }
     for n in &cases {
-        let v = Value::int(n.clone());
+        let v = Value::integer(n.clone()).unwrap();
         let expected = reference_integer(n);
         assert_eq!(cbor::encode(&v), expected, "encoding of {n}");
         assert_eq!(cbor::decode(&expected).unwrap(), v, "decodes back: {n}");
@@ -461,14 +461,15 @@ fn integers_are_streamed_exactly() {
 
 #[test]
 fn an_integer_over_the_budget_is_refused_from_its_length_alone() {
-    // weight 1 + 2^20/64 = 16,385 passes a 20,000-byte limit; its 131,079 bytes do not, known before any is produced
-    let n = BigInt::from(1) << (1 << 20);
-    let v = Value::int(n);
-    assert_eq!(v.weight(), 16_385);
-    assert_eq!(cbor::encode(&v).len(), 131_079);
-    let e = cbor::encoded_len_within(&v, 20_000).unwrap_err();
-    assert_eq!(e, cbor::TooLarge { limit: 20_000 }, "refused from the bit length");
-    assert_eq!(cbor::encode_within(&v, 20_000).unwrap_err(), e, "the same refusal when writing");
+    // the widest integer: weight 1 + 33219/64 = 520 passes a 4,000-byte limit; its 4,157 bytes do not, known before
+    // any is produced
+    let n = (BigInt::from(1) << dilf4s_core::MAX_INTEGER_BITS) - 1;
+    let v = Value::integer(n).unwrap();
+    assert_eq!(v.weight(), 520);
+    assert_eq!(cbor::encode(&v).len(), 4_157);
+    let e = cbor::encoded_len_within(&v, 4_000).unwrap_err();
+    assert_eq!(e, cbor::TooLarge { limit: 4_000 }, "refused from the bit length");
+    assert_eq!(cbor::encode_within(&v, 4_000).unwrap_err(), e, "the same refusal when writing");
 }
 
 fn keyed(n: usize) -> Vec<String> {

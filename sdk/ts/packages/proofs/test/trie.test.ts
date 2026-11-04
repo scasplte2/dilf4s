@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BytesValue, models, toHex, Value, type Result } from "@kd5ujc/dilf4s-core";
 
 import { MAX_PROOF_WEIGHT, trie } from "../src/index.js";
-import { bytes, expectErr, expectOk, loadVectors, valueOf } from "./vectors.js";
+import { bytes, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
 
 const vectors = loadVectors("trie_v1.json", models.trieVectors.TrieVectors);
 const T = trie.TrieHashing.of("SHA-256");
@@ -78,7 +78,7 @@ describe("trie_v1.json", () => {
       // the fixtures hash raw value bytes (Trie.putValue), which no JLVM claim can name, so only wrong claims are checked here
       for (const r of f.proof.rangeListings) {
         const until = r.until === undefined ? null : bytes(r.until);
-        const verdict = trie.trieRangeVerify(T, mode, root, bytes(r.from), until, [[bytes(f.entries[0]?.key ?? ""), Value.int(0n)]], valueOf(f.proof.cbor));
+        const verdict = trie.trieRangeVerify(T, mode, root, bytes(r.from), until, [[bytes(f.entries[0]?.key ?? ""), int(0n)]], valueOf(f.proof.cbor));
         if (r.result === "notCovered") expect(expectErr(verdict, "not covered").kind).toBe("NotCovered");
         else expect(expectOk(verdict, "verdict")).toBe(false);
       }
@@ -103,7 +103,7 @@ const text = (s: string): Value => expectOk(Value.text(s), "text");
 const committed: readonly (readonly [Uint8Array, Value])[] = [
   [Uint8Array.of(0x61), text("a")],
   [Uint8Array.of(0x61, 0x62), BytesValue.of(Uint8Array.of(0x61, 0x61))],
-  [Uint8Array.of(0x62), Value.int(7n)],
+  [Uint8Array.of(0x62), int(7n)],
   [Uint8Array.of(0x62, 0x00, 0x01), Value.bool(true)],
 ];
 const committedRoot = expectOk(trie.trieRoot(T, variable, committed.map(([k, v]) => [k, expectOk(T.valueHash(v), "encodes")] as const)), "root");
@@ -119,8 +119,8 @@ function records(value: readonly models.trie.TrieRecord[]): Value {
 describe("JLVM trie operations", () => {
   // the whole trie as a proof: a prefix listing of everything needs it fully expanded
   const segment = (n: bigint, b: number[]): models.trie.TrieSegment => ({ n, b: Uint8Array.from(b) });
-  const v1 = expectOk(T.valueHash(Value.int(1n)), "encodes");
-  const v2 = expectOk(T.valueHash(Value.int(2n)), "encodes");
+  const v1 = expectOk(T.valueHash(int(1n)), "encodes");
+  const v2 = expectOk(T.valueHash(int(2n)), "encodes");
   // "a" = 0x61 = 0110 0001, "ab" = 0x61 0x62: after the branch at bit 8 with bit 0 (0x62 = 0110 0010), 7 bits remain: 110 0010
   const full = records([
     { s: segment(8n, [0x61]), v: v1, c: "left" },
@@ -143,13 +143,13 @@ describe("JLVM trie operations", () => {
   });
 
   it("trie_verify: present, absent, wrong value, null value, wrong root", () => {
-    expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x61), Value.int(1n), full), "verdict")).toBe(true);
-    expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x61), Value.int(2n), full), "verdict")).toBe(false);
+    expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x61), int(1n), full), "verdict")).toBe(true);
+    expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x61), int(2n), full), "verdict")).toBe(false);
     expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x61), null, full), "verdict")).toBe(false);
     expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x62), null, full), "verdict")).toBe(true);
     expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x62), Value.null, full), "verdict")).toBe(true);
-    expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x62), Value.int(1n), full), "verdict")).toBe(false);
-    expect(expectOk(trie.trieVerify(T, variable, T.empty, Uint8Array.of(0x61), Value.int(1n), full), "verdict")).toBe(false);
+    expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x62), int(1n), full), "verdict")).toBe(false);
+    expect(expectOk(trie.trieVerify(T, variable, T.empty, Uint8Array.of(0x61), int(1n), full), "verdict")).toBe(false);
   });
 
   it("bytes and the text whose CBOR they are commit apart", () => {
@@ -162,20 +162,20 @@ describe("JLVM trie operations", () => {
 
   it("not covered is an error, never false", () => {
     const stubbed = records([{ s: segment(8n, [0x61]), v: v1, c: "left" }, { h: T.leafHash(expectOk(trie.Segment.of(7n, Uint8Array.of(0xc4)), "segment"), v2) }]);
-    expect(expectErr(trie.trieVerify(T, variable, root, Uint8Array.of(0x61, 0x62), Value.int(2n), stubbed), "not covered").kind).toBe("NotCovered");
-    expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x61), Value.int(1n), stubbed), "verdict")).toBe(true);
+    expect(expectErr(trie.trieVerify(T, variable, root, Uint8Array.of(0x61, 0x62), int(2n), stubbed), "not covered").kind).toBe("NotCovered");
+    expect(expectOk(trie.trieVerify(T, variable, root, Uint8Array.of(0x61), int(1n), stubbed), "verdict")).toBe(true);
     expect(expectErr(trie.triePrefixVerify(T, variable, root, new Uint8Array(0), [], stubbed), "not covered").kind).toBe("NotCovered");
     expect(expectErr(trie.trieRangeVerify(T, variable, root, Uint8Array.of(0x61, 0x00), null, [], stubbed), "not covered").kind).toBe("NotCovered");
     // a range that avoids the stub is covered
     expect(expectOk(trie.trieRangeVerify(T, variable, root, new Uint8Array(0), Uint8Array.of(0x61), [], stubbed), "verdict")).toBe(true);
     // [0x00, 0x6100) reaches the stub: at the bit level, keys between 0x61 and 0x6100 lie below it
-    expect(expectErr(trie.trieRangeVerify(T, variable, root, new Uint8Array(0), Uint8Array.of(0x61, 0x00), [[Uint8Array.of(0x61), Value.int(1n)]], stubbed), "not covered").kind).toBe("NotCovered");
+    expect(expectErr(trie.trieRangeVerify(T, variable, root, new Uint8Array(0), Uint8Array.of(0x61, 0x00), [[Uint8Array.of(0x61), int(1n)]], stubbed), "not covered").kind).toBe("NotCovered");
   });
 
   it("prefix and range verification compare the whole listing", () => {
     const all: readonly trie.ClaimedEntry[] = [
-      [Uint8Array.of(0x61), Value.int(1n)],
-      [Uint8Array.of(0x61, 0x62), Value.int(2n)],
+      [Uint8Array.of(0x61), int(1n)],
+      [Uint8Array.of(0x61, 0x62), int(2n)],
     ];
     expect(expectOk(trie.triePrefixVerify(T, variable, root, Uint8Array.of(0x61), all, full), "verdict")).toBe(true);
     expect(expectOk(trie.triePrefixVerify(T, variable, root, Uint8Array.of(0x61), all.slice(1), full), "verdict")).toBe(false);

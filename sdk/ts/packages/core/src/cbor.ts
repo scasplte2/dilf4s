@@ -1,5 +1,4 @@
 /** The dilf4s deterministic CBOR profile (docs/specs/canonical-encoding.md section 2). */
-import { bitLength } from "./bigint.js";
 import { byteLimit, Meter, tooLarge } from "./budget.js";
 import type { CanonicalError, TooLarge } from "./error.js";
 import { toHex } from "./hex.js";
@@ -14,6 +13,7 @@ import {
   IntValue,
   MapValue,
   MAX_DEPTH,
+  MAX_INTEGER_BITS,
   MAX_RATIONAL_BITS,
   NullValue,
   RationalValue,
@@ -23,7 +23,21 @@ import {
   type Value,
 } from "./value.js";
 
-export { MAX_RATIONAL_BITS } from "./value.js";
+export { MAX_INTEGER_BITS, MAX_RATIONAL_BITS } from "./value.js";
+
+/**
+ * How a decoder builds a bignum's magnitude from its bytes, once their form and width are checked: one conversion from
+ * hexadecimal, linear in the length (shifting in a byte at a time would be quadratic). A test counts its calls.
+ */
+export const bignums = {
+  magnitude: (b: Uint8Array): bigint => BigInt(`0x${toHex(b)}`),
+};
+
+/**
+ * The Java `bitLength` of a bignum's integer from its magnitude's bytes, `b[0]` non-zero: 8 bits per byte after the
+ * first, and the first byte's own. `m` and `-1 - m` have the same `bitLength`, so it holds for either tag.
+ */
+const magnitudeBits = (b: Uint8Array): number => 8 * (b.length - 1) + 32 - Math.clz32(b[0] ?? 0);
 
 const TAG_POSITIVE_BIGNUM = 2n;
 const TAG_NEGATIVE_BIGNUM = 3n;
@@ -436,9 +450,10 @@ class Decoder {
     const scalar = (value: Value, at: number): Result<Item, CanonicalError> => ok({ open: false, value, end: at });
     switch (major) {
       case 0:
-        return scalar(IntValue.of(argument), end);
-      case 1:
-        return scalar(IntValue.of(-1n - argument), end);
+      case 1: {
+        const n = IntValue.of(major === 0 ? argument : -1n - argument);
+        return n.ok ? scalar(n.value, end) : n;
+      }
       case 2: {
         const s = this.span(end, argument);
         return s.ok ? scalar(BytesValue.of(s.value.bytes), s.value.end) : s;
@@ -507,14 +522,26 @@ class Decoder {
 
   private readTagged(pos: number, tag: bigint, end: number): Result<{ readonly value: Value; readonly end: number }, CanonicalError> {
     if (tag === TAG_POSITIVE_BIGNUM || tag === TAG_NEGATIVE_BIGNUM) {
-      const b = this.readBignum(pos, tag, end);
-      return b.ok ? ok({ value: IntValue.of(b.value.value), end: b.value.end }) : b;
+      const b = this.readBignum(pos, tag, end, MAX_INTEGER_BITS, { kind: "IntegerTooWide", limit: MAX_INTEGER_BITS });
+      if (!b.ok) return b;
+      const n = IntValue.of(b.value.value);
+      return n.ok ? ok({ value: n.value, end: b.value.end }) : n;
     }
     if (tag === TAG_RATIONAL) return this.readRational(pos, end);
     return err(unsupported(pos, `tag ${tag.toString()}`));
   }
 
-  private readBignum(pos: number, tag: bigint, end: number): Result<{ readonly value: bigint; readonly end: number }, CanonicalError> {
+  /**
+   * A bignum's integer, in order: a byte string (`NonCanonical`), present in full (`UnexpectedEnd`), in canonical form
+   * (`NonCanonical`), and at most `limit` wide (`tooWide`), all before the integer is built.
+   */
+  private readBignum(
+    pos: number,
+    tag: bigint,
+    end: number,
+    limit: number,
+    tooWide: CanonicalError,
+  ): Result<{ readonly value: bigint; readonly end: number }, CanonicalError> {
     const h = this.readHead(end);
     if (!h.ok) return h;
     if (h.value.major !== 2) return err(nonCanonical(pos, "bignum tag must wrap a byte string"));
@@ -523,20 +550,11 @@ class Decoder {
     const b = s.value.bytes;
     if (b.length === 0 || b[0] === 0) return err(nonCanonical(pos, "bignum magnitude must be non-empty without leading zeros"));
     if (b.length <= 8) return err(nonCanonical(pos, "bignum used for a value that fits major type 0/1"));
-    // one conversion from hexadecimal, linear in the length: shifting in a byte at a time would be quadratic
-    const magnitude = BigInt(`0x${toHex(b)}`);
+    if (magnitudeBits(b) > limit) return err(tooWide);
+    const magnitude = bignums.magnitude(b);
     return ok({ value: tag === TAG_POSITIVE_BIGNUM ? magnitude : -1n - magnitude, end: s.value.end });
   }
 
-  private readInteger(pos: number): Result<{ readonly value: bigint; readonly end: number }, CanonicalError> {
-    const h = this.readHead(pos);
-    if (!h.ok) return h;
-    const { major, argument, end } = h.value;
-    if (major === 0) return ok({ value: argument, end });
-    if (major === 1) return ok({ value: -1n - argument, end });
-    if (major === 6 && (argument === TAG_POSITIVE_BIGNUM || argument === TAG_NEGATIVE_BIGNUM)) return this.readBignum(pos, argument, end);
-    return err(nonCanonical(pos, "expected an integer"));
-  }
 
   /**
    * In order: the pair, the numerator and its width, the denominator and its width, the denominator's range, and last
@@ -556,12 +574,18 @@ class Decoder {
   }
 
   /**
-   * A rational's numerator or denominator, refused when wider than {@link MAX_RATIONAL_BITS}: before any gcd, so a wide
-   * part costs no more than reading it.
+   * A rational's numerator or denominator, refused when wider than {@link MAX_RATIONAL_BITS}: a bignum's width is
+   * checked from its length, before it is built and before any gcd, so a wide part costs no more than reading it.
    */
   private readPart(pos: number): Result<{ readonly value: bigint; readonly end: number }, CanonicalError> {
-    const n = this.readInteger(pos);
-    return n.ok && bitLength(n.value.value) > MAX_RATIONAL_BITS ? err({ kind: "RationalTooWide", limit: MAX_RATIONAL_BITS }) : n;
+    const h = this.readHead(pos);
+    if (!h.ok) return h;
+    const { major, argument, end } = h.value;
+    if (major === 0) return ok({ value: argument, end });
+    if (major === 1) return ok({ value: -1n - argument, end });
+    if (major === 6 && (argument === TAG_POSITIVE_BIGNUM || argument === TAG_NEGATIVE_BIGNUM))
+      return this.readBignum(pos, argument, end, MAX_RATIONAL_BITS, { kind: "RationalTooWide", limit: MAX_RATIONAL_BITS });
+    return err(nonCanonical(pos, "expected an integer"));
   }
 
   /** `len` bytes from `pos`, and the offset after them. */

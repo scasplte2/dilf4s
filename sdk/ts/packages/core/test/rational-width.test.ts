@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { bitLength, cbor, RationalValue, Value, type CanonicalError, type Result } from "../src/index.js";
 import { gcdSteps } from "../src/value.js";
-import { expectOk } from "./vectors.js";
+import { expectOk, int, integerBytes } from "./vectors.js";
 
 // A rational's numerator and denominator are at most cbor.MAX_RATIONAL_BITS wide (canonical-encoding.md section 1), so
 // decoding one costs at most one gcd of bounded operands: work linear in the input, counted, never timed.
@@ -25,7 +25,7 @@ describe("rational width", () => {
 
   /** Tag 30 around `[n, d]`, whatever `n` and `d` are. */
   const rationalBytes = (n: bigint, d: bigint): Uint8Array =>
-    Uint8Array.from([0xd8, 0x1e, 0x82, ...expectOk(cbor.encode(Value.int(n)), "n"), ...expectOk(cbor.encode(Value.int(d)), "d")]);
+    Uint8Array.from([0xd8, 0x1e, 0x82, ...integerBytes(n), ...integerBytes(d)]);
 
   const kind = (r: Result<Value, CanonicalError>): string => (r.ok ? "accepted" : r.error.kind);
 
@@ -128,7 +128,7 @@ describe("rational width", () => {
   });
 
   it("a wide numerator is refused before the denominator is read", () => {
-    const wide = Uint8Array.from([0xd8, 0x1e, 0x82, ...expectOk(cbor.encode(Value.int(edge)), "n"), 0x61, 0x61]);
+    const wide = Uint8Array.from([0xd8, 0x1e, 0x82, ...integerBytes(edge), 0x61, 0x61]);
     expect(kind(cbor.decode(wide))).toBe("RationalTooWide");
     expect(kind(cbor.decode(Uint8Array.from([0xd8, 0x1e, 0x82, 0x01, 0x61, 0x61])))).toBe("NonCanonical");
   });
@@ -141,9 +141,8 @@ describe("rational width", () => {
     expect(RationalValue.of(edge, 3n)).toBeUndefined();
     expect(Value.number(1n, 0n)).toEqual({ ok: false, error: { kind: "DivisionByZero" } });
     const two = expectOk(Value.number(edge * 2n, edge), "2");
-    expect(Value.equals(two, Value.int(2n))).toBe(true);
-    // integers are unbounded
-    const square = Value.int(edge * edge);
-    expect(Value.equals(expectOk(cbor.decode(expectOk(cbor.encode(square), "encodes")), "decodes"), square)).toBe(true);
+    expect(Value.equals(two, int(2n))).toBe(true);
+    // an integer is bounded too (MAX_INTEGER_BITS), and checked after reducing
+    expect(Value.number(edge * edge, 1n)).toEqual({ ok: false, error: { kind: "IntegerTooWide", limit: max } });
   });
 });

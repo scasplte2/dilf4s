@@ -60,7 +60,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
   }
 
   check("$ reads host bindings, which let and callbacks shadow; an unbound name is an error unless defaulted") {
-    val env = Map("ordinal" -> CInt(BigInt(42)))
+    val env = Map("ordinal" -> CInt(42))
     expect
       .same(ok("43"), result("""{"+": [{"var": "$ordinal"}, 1]}""", env = env))
       .and(expect.same(ok("1"), result("""{"let": [[["ordinal", 1]], {"var": "$ordinal"}]}""", env = env)))
@@ -233,7 +233,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   check("a computed text path is read as a var path; an array path is exact segments, so a key may hold a dot") {
     val data = """{"balances": {"alice": 5}, "who": "alice", "m": {"x.y": 1, "x": {"y": 2}}, "xs": [7, 8]}"""
-    val env = Map("ordinal" -> CInt(BigInt(9)))
+    val env = Map("ordinal" -> CInt(9))
     expect
       .same(ok("5"), result("""{"var": {"cat": ["balances.", {"var": "who"}]}}""", data))
       .and(expect.same(ok("5"), result("""{"var": [["balances", {"var": "who"}]]}""", data)))
@@ -363,8 +363,8 @@ object EvaluatorSuite extends IOSuite with Checkers {
           case (k, n) =>
             op match {
               case "keys"   => text(k)
-              case "values" => CInt(BigInt(n))
-              case _        => CanonicalValue.array(Vector(text(k), CInt(BigInt(n)))).toOption.get
+              case "values" => CInt(n)
+              case _        => CanonicalValue.array(Vector(text(k), CInt(n))).toOption.get
             }
         })
         .toOption
@@ -375,7 +375,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
       Config.Driver.values.toList.map(d => summon[Jlvm].evaluate(p, data, Map.empty, Config(driver = d)))
     }
     def orders(op: String, sorted: List[(String, Int)], perms: List[List[(String, Int)]]): Expectations = {
-      val outcomes = perms.flatMap(p => runAll(op, CanonicalValue.map(p.map { case (k, n) => k -> CInt(BigInt(n)) }).toOption.get))
+      val outcomes = perms.flatMap(p => runAll(op, CanonicalValue.map(p.map { case (k, n) => k -> CInt(n) }).toOption.get))
       expect(outcomes.forall(_.result == Right(expected(op, sorted))), s"$op: every order gives the sorted result")
         .and(expect.same(1, outcomes.map(_.gasUsed).distinct.size))
     }
@@ -401,8 +401,8 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   /** `+`'s size charge on these arguments: per unit of weight, and per operand. */
   private def addSized(args: CanonicalValue*): Long = S.sized(Op.Add, args.toVector).value
-  private val one = CanonicalValue.CInt(BigInt(1))
-  private val two = CanonicalValue.CInt(BigInt(2))
+  private val one = CanonicalValue.CInt(1)
+  private val two = CanonicalValue.CInt(2)
 
   check("gas follows the schedule: base, then arguments, then the size charge") {
     // + base; two literals; size: per unit of weight 1 + weight 1, per operand, and no rational term for integers
@@ -561,13 +561,13 @@ object EvaluatorSuite extends IOSuite with Checkers {
   // ---- stack safety
 
   check("long iterations run in constant stack on every driver") {
-    val xs = CanonicalValue.array(Vector.tabulate(20000)(i => CInt(BigInt(i)))).toOption.get
+    val xs = CanonicalValue.array(Vector.tabulate(20000)(i => CInt(i))).toOption.get
     val p = program("""{"reduce": [{"var": "xs"}, {"+": [{"var": "$accumulator"}, {"var": "$current"}]}, 0]}""")
     val data = CanonicalValue.map(List("xs" -> xs)).toOption.get
     val outcomes =
       Config.Driver.values.toList.map(d => summon[Jlvm].evaluate(p, data, Map.empty, Config(limit = GasLimit(Gas(10000000L)), driver = d)))
     expect
-      .same(List.fill(Config.Driver.values.size)(Right(CInt(BigInt(20000L * 19999L / 2)))), outcomes.map(_.result))
+      .same(List.fill(Config.Driver.values.size)(Right(CInt(20000L * 19999L / 2))), outcomes.map(_.result))
       .and(expect.same(1, outcomes.distinct.size))
   }
 
@@ -596,7 +596,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
       case _                        => false
     }
     val yes = Expr.Lit(True)
-    val one = Expr.Lit(CanonicalValue.array(Vector(CInt(BigInt(1)))).toOption.get)
+    val one = Expr.Lit(CanonicalValue.array(Vector(CInt(1))).toOption.get)
     // map record (2) over its body: k operations over a var (2k + 1)
     def mapBody(k: Int): Expr = ap(Op.Map, one, nots(k, v("")))
     // the binding list's two arrays (2 each) sit between let and the binding
@@ -622,7 +622,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   private val dataJson = """{"n": 7, "xs": [3, 1, 4, 1, 5], "name": "jlvm", "o": {"k": 2}, "rs": [{"n": 1}, {"m": 2}, 4]}"""
 
-  private def lit(i:  Int): Expr = Expr.Lit(CInt(BigInt(i)))
+  private def lit(i:  Int): Expr = Expr.Lit(CInt(i))
   private def text(s: String): Expr = Expr.Lit(CanonicalValue.text(s).toOption.get)
   private def v(path: String): Expr = Expr.Var(VarRef.parse(path).toOption.get, scala.None)
   private def ap(op:  Op, args: Expr*): Expr = Expr.Apply(op, args.toVector)

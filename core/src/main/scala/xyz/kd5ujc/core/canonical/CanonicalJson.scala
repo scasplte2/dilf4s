@@ -28,9 +28,6 @@ object CanonicalJson {
   /** The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises. */
   val MaxScale: Int = xyz.kd5ujc.models.limits.CanonicalMaxScale
 
-  // 10^MaxDigits has 33220 bits: a number any wider has more than MaxDigits digits
-  private val MaxDigitBits: Int = xyz.kd5ujc.models.limits.CanonicalMaxDigitBits
-
   // ------------------------------------------------------------------ parse
 
   def parse(text: String, maxScale: Int = MaxScale): Either[CanonicalError, CanonicalValue] =
@@ -165,7 +162,8 @@ object CanonicalJson {
         InvalidNumber(described, Some(ArithmeticError.ScaleOutOfRange(saturated, maxScale))).asLeft
       } else {
         val unscaled = BigInt(intDigits + fracDigits) * (if (negative) -1 else 1)
-        // the digit and scale bounds keep both parts within CanonicalValue.MaxRationalBits, so number never refuses here
+        // the digit and scale bounds keep a rational's parts within CanonicalValue.MaxRationalBits; an integer read with a
+        // positive exponent can be wider than CanonicalValue.MaxIntegerBits (2e10000), and number refuses it
         Ratio
           .fromDecimal(unscaled, scale.toInt, maxScale)
           .leftMap(e => InvalidNumber(described, Some(e)))
@@ -227,16 +225,16 @@ object CanonicalJson {
     NotJsonRepresentable(s"a number of more than $MaxDigits digits or a scale above $MaxScale")
 
   /**
-   * A number's JSON text, within the bounds [[parse]] accepts, so that rendering always reads back. A wider numerator
-   * or denominator is refused before any conversion: `2^a 5^b` with scale `max(a, b)` within bounds is at most
-   * `10^MaxDigits`, and the significand is at least the numerator.
+   * A number's JSON text, within the bounds [[parse]] accepts, so that rendering always reads back. Every integer and
+   * every rational part is within 33220 bits ([[CanonicalValue.MaxIntegerBits]], [[CanonicalValue.MaxRationalBits]]),
+   * so converting one is bounded work; an integer of 10001 digits (`10^10000` up to `2^33220 - 1`) is still refused, as
+   * no text within the digit bound reads back to it.
    */
   private def numberText(v: CanonicalValue): Either[CanonicalError, String] =
     v match {
-      case CInt(n) if n.bitLength <= MaxDigitBits => within(n.toString)
-      case r: CRational if r.value.numerator.bitLength <= MaxDigitBits && r.value.denominator.bitLength <= MaxDigitBits =>
-        r.value.toDecimalString.toRight(nonTerminating(r)).flatMap(within)
-      case _ => overLong.asLeft
+      case CInt(n)      => within(n.toString)
+      case r: CRational => r.value.toDecimalString.toRight(nonTerminating(r)).flatMap(within)
+      case _            => overLong.asLeft
     }
 
   // the digits of `text`, a plain decimal, leading zeros aside, and the digits after its point

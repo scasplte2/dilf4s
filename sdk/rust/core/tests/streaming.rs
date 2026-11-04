@@ -97,7 +97,7 @@ fn edge_cases() -> Vec<(String, Value)> {
     // every head-size boundary, as an integer (both signs), a length of text and bytes, and a count of an array
     for n in [0u64, 23, 24, 255, 256, 65_535, 65_536, (1 << 32) - 1, 1 << 32, u64::MAX] {
         cases.push((format!("int {n}"), Value::int(n)));
-        cases.push((format!("int -1-{n}"), Value::int(-BigInt::from(n) - 1)));
+        cases.push((format!("int -1-{n}"), Value::int(-1i128 - i128::from(n))));
     }
     let staged = cbor::STAGED_BYTES;
     for n in [23usize, 24, 255, 256, staged - 1, staged, staged + 1, 65_535, 65_536] {
@@ -109,7 +109,7 @@ fn edge_cases() -> Vec<(String, Value)> {
     for bits in [64u32, 65, 127, 128, 129, 256] {
         let p = BigInt::from(1) << bits;
         for n in [p.clone() - 1, p.clone(), p.clone() + 1, -p.clone() - 1, -p.clone(), -p + 1] {
-            cases.push((format!("bignum {n}"), Value::int(n)));
+            cases.push((format!("bignum {n}"), Value::integer(n).unwrap()));
         }
     }
     cases
@@ -150,7 +150,7 @@ impl Gen {
             (true, 0) => Value::Null,
             (true, 1) => Value::Bool(self.below(2) == 0),
             (true, 2) => Value::int(self.next() >> self.below(64)),
-            (true, 3) => Value::int(-(BigInt::from(self.next()) << self.below(130))),
+            (true, 3) => Value::integer(-(BigInt::from(self.next()) << self.below(130))).unwrap(),
             (true, 4) => {
                 Value::number(&BigInt::from(self.next().cast_signed()), &BigInt::from(self.below(1000) + 1)).unwrap()
             }

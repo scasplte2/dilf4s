@@ -125,6 +125,8 @@ impl c::Model for CanonicalJsonAccepted {
 pub enum CanonicalJsonCase {
     /// A [`CanonicalJsonAccepted`].
     CanonicalJsonAccepted(CanonicalJsonAccepted),
+    /// A [`CanonicalJsonUnrenderable`].
+    CanonicalJsonUnrenderable(CanonicalJsonUnrenderable),
     /// A [`CanonicalJsonRejected`].
     CanonicalJsonRejected(CanonicalJsonRejected),
 }
@@ -133,14 +135,16 @@ impl c::Model for CanonicalJsonCase {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::CanonicalJsonAccepted(a) => c::Model::to_value_at(a, depth),
+            Self::CanonicalJsonUnrenderable(a) => c::Model::to_value_at(a, depth),
             Self::CanonicalJsonRejected(a) => c::Model::to_value_at(a, depth),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[(&["cbor", "contentHash", "json", "render"], &["cbor", "contentHash", "json", "render"]), (&["error", "json"], &["error", "json"])], &[])? {
+        match c::select_alternative(value, &[(&["cbor", "contentHash", "json", "render"], &["cbor", "contentHash", "json", "render"]), (&["cbor", "contentHash", "json", "renderError"], &["cbor", "contentHash", "json", "renderError"]), (&["error", "json"], &["error", "json"])], &[])? {
             c::Alternative::Record(0) => <CanonicalJsonAccepted as c::Model>::from_value(value).map(Self::CanonicalJsonAccepted),
-            c::Alternative::Record(1) => <CanonicalJsonRejected as c::Model>::from_value(value).map(Self::CanonicalJsonRejected),
+            c::Alternative::Record(1) => <CanonicalJsonUnrenderable as c::Model>::from_value(value).map(Self::CanonicalJsonUnrenderable),
+            c::Alternative::Record(2) => <CanonicalJsonRejected as c::Model>::from_value(value).map(Self::CanonicalJsonRejected),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -169,6 +173,40 @@ impl c::Model for CanonicalJsonRejected {
         let f0 = fields.required("json", &c::Text)?;
         let f1 = fields.required("error", &c::Text)?;
         Ok(Self { json: f0, error: f1 })
+    }
+}
+
+/// `canonical-json-unrenderable` (`shared/schemas/canonical-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalJsonUnrenderable {
+    /// The `json` entry.
+    pub json: String,
+    /// The `cbor` entry.
+    pub cbor: Hex,
+    /// The `contentHash` entry.
+    pub content_hash: Hex,
+    /// The `renderError` entry.
+    pub render_error: String,
+}
+
+impl c::Model for CanonicalJsonUnrenderable {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("json", &c::Text, &self.json, inner)?,
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::field("contentHash", &HEX, &self.content_hash, inner)?,
+            c::field("renderError", &c::Text, &self.render_error, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["json", "cbor", "contentHash", "renderError"])?;
+        let f0 = fields.required("json", &c::Text)?;
+        let f1 = fields.required("cbor", &HEX)?;
+        let f2 = fields.required("contentHash", &HEX)?;
+        let f3 = fields.required("renderError", &c::Text)?;
+        Ok(Self { json: f0, cbor: f1, content_hash: f2, render_error: f3 })
     }
 }
 

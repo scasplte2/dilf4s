@@ -26,6 +26,17 @@ object Cbor {
   /** [[LowestTerms]] with one gcd: reducing `n/d` leaves its denominator unchanged exactly when `gcd(n, d) = 1`. */
   private[kd5ujc] val lowestTerms: LowestTerms = (n, d) => Ratio.of(n, d).toOption.filter(_.denominator == d)
 
+  /**
+   * How a decoder builds numbers: the one gcd of a rational ([[LowestTerms]]), and a bignum's magnitude from its bytes,
+   * built only once its form and width are checked. Production passes [[Numbers.Default]]; a test passes ones that
+   * count their calls.
+   */
+  final private[kd5ujc] case class Numbers(lowestTerms: LowestTerms, magnitude: ByteVector => BigInt)
+
+  private[kd5ujc] object Numbers {
+    val Default: Numbers = Numbers(Cbor.lowestTerms, b => BigInt(1, b.toArray))
+  }
+
   private val TwoTo64: BigInt = BigInt(1) << 64
   private val TagPositiveBignum: Int = 2
   private val TagNegativeBignum: Int = 3
@@ -236,16 +247,16 @@ object Cbor {
 
   /** [[decode]] building maps in `keys`'s order: production passes [[KeyOrder.Default]]. */
   private[canonical] def decode(bytes: ByteVector, maxDepth: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
-    decode(bytes, maxDepth, keys, lowestTerms)
+    decode(bytes, maxDepth, keys, Numbers.Default)
 
-  /** [[decode]] building rationals with `reduce`: production passes [[lowestTerms]]. */
+  /** [[decode]] building numbers with `numbers`: production passes [[Numbers.Default]]. */
   private[canonical] def decode(
     bytes:    ByteVector,
     maxDepth: Int,
     keys:     KeyOrder,
-    reduce:   LowestTerms
+    numbers:  Numbers
   ): Either[CanonicalError, CanonicalValue] =
-    run(FlatBytes(bytes), math.min(maxDepth, CanonicalValue.MaxDepth), keys, reduce, Read(0L, Nil, 0))
+    run(FlatBytes(bytes), math.min(maxDepth, CanonicalValue.MaxDepth), keys, numbers, Read(0L, Nil, 0))
 
   sealed private trait Frame
   final private case class ArrayFrame(remaining: Long, acc: Vector[CanonicalValue]) extends Frame
@@ -272,34 +283,34 @@ object Cbor {
     in:       ByteVector,
     maxDepth: Int,
     keys:     KeyOrder,
-    reduce:   LowestTerms,
+    numbers:  Numbers,
     step:     Step
   ): Either[CanonicalError, CanonicalValue] =
     step match {
       case Read(pos, stack, depth) =>
-        readItem(in, pos, reduce) match {
+        readItem(in, pos, numbers) match {
           case Left(e)                       => e.asLeft
-          case Right(Scalar(v, end))         => run(in, maxDepth, keys, reduce, Deliver(v, pos, end, stack, depth))
+          case Right(Scalar(v, end))         => run(in, maxDepth, keys, numbers, Deliver(v, pos, end, stack, depth))
           case Right(_) if depth >= maxDepth => DepthExceeded(maxDepth).asLeft // an empty array or map is one level too
-          case Right(OpenArray(0L, end))     => run(in, maxDepth, keys, reduce, Deliver(EmptyArray, pos, end, stack, depth))
-          case Right(OpenMap(0L, end))       => run(in, maxDepth, keys, reduce, Deliver(EmptyMap, pos, end, stack, depth))
-          case Right(OpenArray(n, end))      => run(in, maxDepth, keys, reduce, Read(end, ArrayFrame(n, Vector.empty) :: stack, depth + 1))
+          case Right(OpenArray(0L, end))     => run(in, maxDepth, keys, numbers, Deliver(EmptyArray, pos, end, stack, depth))
+          case Right(OpenMap(0L, end))       => run(in, maxDepth, keys, numbers, Deliver(EmptyMap, pos, end, stack, depth))
+          case Right(OpenArray(n, end))      => run(in, maxDepth, keys, numbers, Read(end, ArrayFrame(n, Vector.empty) :: stack, depth + 1))
           case Right(OpenMap(n, end)) =>
-            run(in, maxDepth, keys, reduce, Read(end, MapFrame(n, Vector.empty, None, None) :: stack, depth + 1))
+            run(in, maxDepth, keys, numbers, Read(end, MapFrame(n, Vector.empty, None, None) :: stack, depth + 1))
         }
 
       case Deliver(v, _, end, Nil, _) =>
         Either.cond(end == in.size, v, TrailingBytes(end))
 
       case Deliver(v, _, end, ArrayFrame(remaining, acc) :: rest, depth) =>
-        if (remaining == 1) run(in, maxDepth, keys, reduce, Deliver(CanonicalValue.decodedArray(acc :+ v), -1, end, rest, depth - 1))
-        else run(in, maxDepth, keys, reduce, Read(end, ArrayFrame(remaining - 1, acc :+ v) :: rest, depth))
+        if (remaining == 1) run(in, maxDepth, keys, numbers, Deliver(CanonicalValue.decodedArray(acc :+ v), -1, end, rest, depth - 1))
+        else run(in, maxDepth, keys, numbers, Read(end, ArrayFrame(remaining - 1, acc :+ v) :: rest, depth))
 
       case Deliver(key: CText, start, end, MapFrame(remaining, acc, lastKey, None) :: rest, depth) =>
         val keyBytes = in.slice(start, end)
         if (lastKey.exists(compareBytes(_, keyBytes) >= 0))
           NonCanonical(start, "map keys must be unique and in ascending encoded order").asLeft
-        else run(in, maxDepth, keys, reduce, Read(end, MapFrame(remaining, acc, lastKey, Some((key, keyBytes))) :: rest, depth))
+        else run(in, maxDepth, keys, numbers, Read(end, MapFrame(remaining, acc, lastKey, Some((key, keyBytes))) :: rest, depth))
 
       case Deliver(_, start, _, MapFrame(_, _, _, None) :: _, _) =>
         Unsupported(start, "map keys must be text").asLeft
@@ -309,19 +320,19 @@ object Cbor {
 
       case Deliver(v, _, end, MapFrame(remaining, acc, _, Some((key, keyBytes))) :: rest, depth) =>
         if (remaining == 1)
-          run(in, maxDepth, keys, reduce, Deliver(CanonicalValue.decodedMap(acc :+ (key -> v), keys), -1, end, rest, depth - 1))
-        else run(in, maxDepth, keys, reduce, Read(end, MapFrame(remaining - 1, acc :+ (key -> v), Some(keyBytes), None) :: rest, depth))
+          run(in, maxDepth, keys, numbers, Deliver(CanonicalValue.decodedMap(acc :+ (key -> v), keys), -1, end, rest, depth - 1))
+        else run(in, maxDepth, keys, numbers, Read(end, MapFrame(remaining - 1, acc :+ (key -> v), Some(keyBytes), None) :: rest, depth))
     }
 
-  private def readItem(in: ByteVector, pos: Long, reduce: LowestTerms): Either[CanonicalError, Item] =
+  private def readItem(in: ByteVector, pos: Long, numbers: Numbers): Either[CanonicalError, Item] =
     readHead(in, pos).flatMap {
-      case Head(0, n, end) => Scalar(CInt(n), end).asRight
-      case Head(1, n, end) => Scalar(CInt(-1 - n), end).asRight
+      case Head(0, n, end) => CanonicalValue.int(n).map(Scalar(_, end))
+      case Head(1, n, end) => CanonicalValue.int(-1 - n).map(Scalar(_, end))
       case Head(2, n, end) => readSpan(in, end, n).map { case (b, e) => Scalar(CBytes(b), e) }
       case Head(3, n, end) => readText(in, end, n).map { case (t, e) => Scalar(t, e) }
       case Head(4, n, end) => count(in, end, n, 1).map(OpenArray(_, end))
       case Head(5, n, end) => count(in, end, n, 2).map(OpenMap(_, end))
-      case Head(6, t, end) => readTagged(in, pos, t, end, reduce).map { case (v, e) => Scalar(v, e) }
+      case Head(6, t, end) => readTagged(in, pos, t, end, numbers).map { case (v, e) => Scalar(v, e) }
       case Head(_, n, end) =>
         n.toInt match {
           case 20 => Scalar(False, end).asRight
@@ -354,40 +365,64 @@ object Cbor {
     }
 
   private def readTagged(
-    in:     ByteVector,
-    pos:    Long,
-    tag:    BigInt,
-    end:    Long,
-    reduce: LowestTerms
+    in:      ByteVector,
+    pos:     Long,
+    tag:     BigInt,
+    end:     Long,
+    numbers: Numbers
   ): Either[CanonicalError, (CanonicalValue, Long)] =
     tag.toInt match {
       case TagPositiveBignum | TagNegativeBignum if tag.isValidInt =>
-        readBignum(in, pos, tag.toInt, end).map { case (n, e) => (CInt(n), e) }
-      case TagRational if tag.isValidInt => readRational(in, pos, end, reduce)
+        val tooWide = IntegerTooWide(CanonicalValue.MaxIntegerBits)
+        readBignum(in, pos, tag.toInt, end, CanonicalValue.MaxIntegerBits, tooWide, numbers).flatMap {
+          case (n, e) => CanonicalValue.int(n).map((_, e))
+        }
+      case TagRational if tag.isValidInt => readRational(in, pos, end, numbers)
       case _                             => Unsupported(pos, s"tag $tag").asLeft
     }
 
-  private def readBignum(in: ByteVector, pos: Long, tag: Int, end: Long): Either[CanonicalError, (BigInt, Long)] =
+  /**
+   * A bignum's integer, in order: a byte string (`NonCanonical`), present in full (`UnexpectedEnd`), in canonical form
+   * (`NonCanonical`), and at most `limit` wide (`tooWide`), all before the integer is built. Java's `bitLength` of `m`
+   * and of `-1 - m` are both `m`'s, so either tag's width is its magnitude's: 8 bits per byte after the first, and the
+   * first byte's own.
+   */
+  private def readBignum(
+    in:      ByteVector,
+    pos:     Long,
+    tag:     Int,
+    end:     Long,
+    limit:   Int,
+    tooWide: CanonicalError,
+    numbers: Numbers
+  ): Either[CanonicalError, (BigInt, Long)] =
     readHead(in, end).flatMap {
       case Head(2, len, bodyStart) =>
         readSpan(in, bodyStart, len).flatMap {
           case (b, e) =>
             if (b.headOption.forall(_ == 0)) NonCanonical(pos, "bignum magnitude must be non-empty without leading zeros").asLeft
             else if (b.size <= 8) NonCanonical(pos, "bignum used for a value that fits major type 0/1").asLeft
+            else if (8L * (b.size - 1) + (32 - Integer.numberOfLeadingZeros(b(0) & 0xff)) > limit) tooWide.asLeft
             else {
-              val magnitude = BigInt(1, b.toArray)
+              val magnitude = numbers.magnitude(b)
               (if (tag == TagPositiveBignum) magnitude else -1 - magnitude, e).asRight
             }
         }
       case _ => NonCanonical(pos, "bignum tag must wrap a byte string").asLeft
     }
 
-  private def readInteger(in: ByteVector, pos: Long): Either[CanonicalError, (BigInt, Long)] =
+  /**
+   * A rational's numerator or denominator, refused when wider than [[CanonicalValue.MaxRationalBits]]: a bignum's width
+   * is checked from its length, before it is built and before any gcd, so a wide part costs no more than reading it.
+   */
+  private def readPart(in: ByteVector, pos: Long, numbers: Numbers): Either[CanonicalError, (BigInt, Long)] =
     readHead(in, pos).flatMap {
-      case Head(0, n, end)                                                     => (n, end).asRight
-      case Head(1, n, end)                                                     => (-1 - n, end).asRight
-      case Head(6, t, end) if t == TagPositiveBignum || t == TagNegativeBignum => readBignum(in, pos, t.toInt, end)
-      case _                                                                   => NonCanonical(pos, "expected an integer").asLeft
+      case Head(0, n, end) => (n, end).asRight
+      case Head(1, n, end) => (-1 - n, end).asRight
+      case Head(6, t, end) if t == TagPositiveBignum || t == TagNegativeBignum =>
+        val tooWide = RationalTooWide(CanonicalValue.MaxRationalBits)
+        readBignum(in, pos, t.toInt, end, CanonicalValue.MaxRationalBits, tooWide, numbers)
+      case _ => NonCanonical(pos, "expected an integer").asLeft
     }
 
   /**
@@ -395,30 +430,20 @@ object Cbor {
    * the one gcd that checks lowest terms (docs/specs/conformance.md §5).
    */
   private def readRational(
-    in:     ByteVector,
-    pos:    Long,
-    end:    Long,
-    reduce: LowestTerms
+    in:      ByteVector,
+    pos:     Long,
+    end:     Long,
+    numbers: Numbers
   ): Either[CanonicalError, (CanonicalValue, Long)] =
     for {
       pair <- readHead(in, end)
       _    <- Either.cond(pair.major == 4 && pair.argument == BigInt(2), (), NonCanonical(pos, "rational must wrap a 2-element array"))
-      num  <- readPart(in, pair.end)
-      den  <- readPart(in, num._2)
+      num  <- readPart(in, pair.end, numbers)
+      den  <- readPart(in, num._2, numbers)
       _    <- Either.cond(den._1 >= 2, (), NonCanonical(pos, "rational denominator must be >= 2"))
-      r    <- reduce(num._1, den._1).toRight(NonCanonical(pos, "rational must be reduced"))
+      r    <- numbers.lowestTerms(num._1, den._1).toRight(NonCanonical(pos, "rational must be reduced"))
       v    <- CanonicalValue.number(r)
     } yield (v, den._2)
-
-  /**
-   * A rational's numerator or denominator, refused when wider than [[CanonicalValue.MaxRationalBits]]: decoding checks
-   * the width before any gcd, so a wide part costs no more than reading it.
-   */
-  private def readPart(in: ByteVector, pos: Long): Either[CanonicalError, (BigInt, Long)] =
-    readInteger(in, pos).flatMap {
-      case part @ (n, _) =>
-        Either.cond(n.bitLength <= CanonicalValue.MaxRationalBits, part, RationalTooWide(CanonicalValue.MaxRationalBits))
-    }
 
   private def readText(in: ByteVector, pos: Long, len: BigInt): Either[CanonicalError, (CText, Long)] =
     readSpan(in, pos, len).flatMap {

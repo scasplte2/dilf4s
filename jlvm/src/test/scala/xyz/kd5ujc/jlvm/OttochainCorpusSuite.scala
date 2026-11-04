@@ -146,7 +146,7 @@ object OttochainCorpusSuite extends IOSuite {
 
   private def run(c: Corpus, at: At, data: String, ordinal: Long = 0): Either[String, CanonicalValue] =
     (find(c, at), value(data)).tupled.flatMap { (p, d) =>
-      c.jlvm.evaluate(p, d, Map("ordinal" -> CInt(BigInt(ordinal))), Config()).result.leftMap(e => s"$at: $e")
+      c.jlvm.evaluate(p, d, Map("ordinal" -> CInt(ordinal)), Config()).result.leftMap(e => s"$at: $e")
     }
 
   private def bool(b: Boolean): Either[String, CanonicalValue] = Right(CanonicalValue.CBool(b))

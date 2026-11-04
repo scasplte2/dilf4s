@@ -52,7 +52,7 @@ object HasherSuite extends SimpleIOSuite with Checkers {
   pureTest("different tags separate domains for identical content") {
     val leaf = TaggedHash[Sha256](DomainTag("dilf4s/mpt/leaf/v1").toOption.get)
     val node = TaggedHash[Sha256](DomainTag("dilf4s/mpt/branch/v1").toOption.get)
-    val v = CanonicalValue.int(42)
+    val v = CanonicalValue.CInt(42)
     expect(leaf.value(v) != node.value(v), "domains must not collide").and(expect.same(leaf(Cbor.encode(v)), leaf.value(v)))
   }
 

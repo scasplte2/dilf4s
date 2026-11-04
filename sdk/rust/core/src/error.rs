@@ -19,6 +19,11 @@ pub enum CanonicalError {
         /// [`crate::value::MAX_RATIONAL_BITS`].
         limit: u64,
     },
+    /// An integer wider than the data model allows.
+    IntegerTooWide {
+        /// [`crate::value::MAX_INTEGER_BITS`].
+        limit: u64,
+    },
     /// A map or JSON object with the same key twice.
     DuplicateKey {
         /// The repeated key.
@@ -92,6 +97,7 @@ impl CanonicalError {
         match self {
             Self::UnpairedSurrogate => "UnpairedSurrogate",
             Self::RationalTooWide { .. } => "RationalTooWide",
+            Self::IntegerTooWide { .. } => "IntegerTooWide",
             Self::DuplicateKey { .. } => "DuplicateKey",
             Self::JsonSyntax { .. } => "JsonSyntax",
             Self::InvalidNumber { .. } => "InvalidNumber",
@@ -112,6 +118,7 @@ impl fmt::Display for CanonicalError {
         match self {
             Self::UnpairedSurrogate => f.write_str("text contains an unpaired surrogate"),
             Self::RationalTooWide { limit } => write!(f, "a rational part wider than {limit} bits"),
+            Self::IntegerTooWide { limit } => write!(f, "an integer wider than {limit} bits"),
             Self::DuplicateKey { key } => write!(f, "duplicate key {key}"),
             Self::JsonSyntax { offset, reason } => {
                 write!(f, "JSON syntax error at {offset}: {reason}")

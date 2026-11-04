@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { cbor, type codec, describeFailure, fromHex, json, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { cbor, type codec, describeFailure, fromHex, type IntValue, json, type Result, Value } from "@kd5ujc/dilf4s-core";
 
 type Codec<T> = codec.Codec<T>;
 
@@ -15,6 +15,9 @@ export function expectOk<T, E>(r: Result<T, E>, what: string): T {
   if (!r.ok) throw new Error(`${what}: ${JSON.stringify(r.error, (_, x: unknown) => (typeof x === "bigint" ? x.toString() : x))}`);
   return r.value;
 }
+
+/** The integer `n`, which a test knows is within the data model's bound (`MAX_INTEGER_BITS`). */
+export const int = (n: bigint): IntValue => expectOk(Value.int(n), "an integer within MAX_INTEGER_BITS");
 
 /** The error of a failure; a success fails the test. */
 export function expectErr<T, E>(r: Result<T, E>, what: string): E {

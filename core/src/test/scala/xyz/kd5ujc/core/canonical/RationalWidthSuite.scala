@@ -35,7 +35,8 @@ object RationalWidthSuite extends SimpleIOSuite {
     CanonicalValue.number(Ratio.of(n, d).fold(e => sys.error(e.toString), identity)).fold(e => sys.error(e.toString), identity)
 
   /** Tag 30 around `[n, d]`, whatever `n` and `d` are. */
-  private def rationalBytes(n: BigInt, d: BigInt): ByteVector = hex"d81e82" ++ Cbor.encode(CInt(n)) ++ Cbor.encode(CInt(d))
+  private def rationalBytes(n: BigInt, d: BigInt): ByteVector =
+    hex"d81e82" ++ CanonicalGens.integerBytes(n) ++ CanonicalGens.integerBytes(d)
 
   private def tooWide(e: Either[CanonicalError, CanonicalValue]): Boolean = e match {
     case Left(RationalTooWide(Max)) => true
@@ -51,7 +52,9 @@ object RationalWidthSuite extends SimpleIOSuite {
           widest.accumulateAndGet(math.max(n.bitLength, d.bitLength).toLong, math.max)
           Cbor.lowestTerms(n, d)
         }
-        IO(Cbor.decode(bytes, Cbor.DefaultMaxDepth, KeyOrder.Default, reduce)).map(r => (r, calls.get, widest.get))
+        IO(Cbor.decode(bytes, Cbor.DefaultMaxDepth, KeyOrder.Default, Cbor.Numbers.Default.copy(lowestTerms = reduce))).map(r =>
+          (r, calls.get, widest.get)
+        )
     }
 
   pureTest("the bound is the width of 10^10000, the JSON digit and scale bound") {
@@ -106,7 +109,7 @@ object RationalWidthSuite extends SimpleIOSuite {
   }
 
   pureTest("a wide numerator is refused before the denominator is read") {
-    val wide = hex"d81e82" ++ Cbor.encode(CInt(Edge)) ++ hex"6161"
+    val wide = hex"d81e82" ++ CanonicalGens.integerBytes(Edge) ++ hex"6161"
     val narrow = hex"d81e82016161"
     expect(tooWide(Cbor.decode(wide)), "the numerator's width first")
       .and(expect(Cbor.decode(narrow).swap.exists(_.isInstanceOf[NonCanonical]), "a narrow numerator reads on to the denominator"))
@@ -120,6 +123,6 @@ object RationalWidthSuite extends SimpleIOSuite {
       .and(expect.same(Left(RationalTooWide(Max)), CanonicalValue.number(built(Edge * 2, 6))))
       .and(expect.same(Right(CInt(2)), CanonicalValue.number(built(Edge * 2, Edge))))
       .and(expect.same(Left(RationalTooWide(Max)), Canonical[Ratio].canonical(built(Edge, 3))))
-      .and(expect.same(Right(CInt(Edge * Edge)), Cbor.decode(Cbor.encode(CInt(Edge * Edge)))))
+      .and(expect.same(Left(IntegerTooWide(Max)), CanonicalValue.number(built(Edge * Edge, 1))))
   }
 }

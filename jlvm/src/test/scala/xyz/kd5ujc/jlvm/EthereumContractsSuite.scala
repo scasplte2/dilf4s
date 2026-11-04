@@ -200,7 +200,7 @@ object EthereumContractsSuite extends IOSuite with Checkers {
   // ---- vesting: a cliff, then linear
 
   private val grant = value("""{"beneficiary": "ann", "start": 1000, "cliff": 1250, "duration": 1000, "total": 3000, "released": 0}""")
-  private def at(t: Long) = "ordinal" -> CInt(BigInt(t))
+  private def at(t: Long) = "ordinal" -> CInt(t)
 
   check("vesting: nothing before the cliff, linear (floored) after it, everything at the end, never twice") { r =>
     val c = r("vesting")

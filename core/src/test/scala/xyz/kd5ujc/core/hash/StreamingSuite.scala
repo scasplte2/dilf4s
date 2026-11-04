@@ -129,7 +129,7 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
       "pair at the window edge" -> txt("a" * (Cbor.TextWindow - 1) + "😀" + "b"),
       "pairs throughout"        -> txt("😀" * (Cbor.TextWindow + 3))
     ) ++
-    boundaries.flatMap(n => List(s"int $n" -> CInt(n), s"int -1-$n" -> CInt(-1 - n))) ++
+    boundaries.flatMap(n => List(s"int $n" -> CanonicalGens.int(n), s"int -1-$n" -> CanonicalGens.int(-1 - n))) ++
     lengths.flatMap(n =>
       List(
         s"text of $n"  -> txt("t" * n),
@@ -137,7 +137,7 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
         s"array of $n" -> arr(Vector.fill(n)(CNull))
       )
     ) ++
-    bignums.map(n => s"bignum $n" -> CInt(n))
+    bignums.map(n => s"bignum $n" -> CanonicalGens.int(n))
   }
 
   edgeCases.foreach { case (name, v) => pureTest(s"streamed equals buffered: $name")(same(name, v)) }
@@ -190,7 +190,7 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
 
   private def structures(n: Int): List[(String, CanonicalValue, List[ByteVector])] =
     List(
-      ("wide", arr(Vector.tabulate(n / 10)(i => CInt(BigInt(i) << 40))), Nil),
+      ("wide", arr(Vector.tabulate(n / 10)(i => CanonicalGens.int(BigInt(i) << 40))), Nil),
       ("keyed", obj(List.tabulate(n / 20)(i => s"k$i" -> CBool(i % 2 == 0))), Nil),
       ("deep", nested(CanonicalValue.MaxDepth, arr(Vector.fill(n / 10)(txt("x"))), maps = true), Nil)
     )
@@ -240,12 +240,13 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
   }
 
   test("a bignum's magnitude is the one piece the walk copies whole, and the hash still takes it in windows") {
-    val v = CInt(BigInt(1) << 800000)
+    // the widest integer: 4153 bytes of magnitude, past the hash's window
+    val v = CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     IO(new Counting(new SHA256Digest())).map { counting =>
       val streamed = Hasher.bouncyCastle[Sha256]("SHA-256", () => counting).digestOf(Cbor.source(v))
       val pieces = Cbor.source(v).writeTo(Pieces(0L, 0L))(using piecesSink(Nil))
       expect
-        .same(100001L, pieces.longestMade)
+        .same(4153L, pieces.longestMade)
         .and(expect(counting.longest.get <= Hasher.Window.toLong))
         .and(expect(streamed.bytes == oneShot(() => new SHA256Digest(), BufferedCbor.encode(v))))
     }

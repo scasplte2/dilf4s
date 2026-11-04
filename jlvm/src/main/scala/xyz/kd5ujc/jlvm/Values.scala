@@ -58,15 +58,19 @@ object Values {
       case other   => JlvmError.Type(op.wire, s"expected an integer, got ${kind(other)}").asLeft
     }
 
-  /** A number result, within [[MaxNumberBits]]. */
+  /**
+   * A number result, within [[MaxNumberBits]]: far inside the data model's integer and rational bounds (33220 bits),
+   * so the constructor's refusal is never reached, and would be the same `Limit`.
+   */
   def num(op: Op, r: Ratio): Either[JlvmError, CanonicalValue] =
     if (fits(r)) CanonicalValue.number(r).leftMap(_ => tooLarge(op)) else tooLarge(op).asLeft
 
+  /** An integer result, within [[MaxNumberBits]], as [[num]]. */
   def int(op: Op, i: BigInt): Either[JlvmError, CanonicalValue] =
-    Either.cond(i.bitLength <= MaxNumberBits, CInt(i), tooLarge(op))
+    if (i.bitLength <= MaxNumberBits) CanonicalValue.int(i).leftMap(_ => tooLarge(op)) else tooLarge(op).asLeft
 
-  /** A count or a length: always small. */
-  def count(n: Long): CanonicalValue = CInt(BigInt(n))
+  /** A count or a length: a `Long`, so always within every bound. */
+  def count(n: Long): CanonicalValue = CInt(n)
 
   def bool(b: Boolean): CanonicalValue = CBool(b)
 

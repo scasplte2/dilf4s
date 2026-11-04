@@ -92,7 +92,7 @@ const show = (b: bigint | null): string => (b === null ? "" : b.toString());
 export function intRange(lo: bigint | null, hi: bigint | null): Codec<bigint> {
   const within = (n: bigint): boolean => (lo === null || n >= lo) && (hi === null || n <= hi);
   return {
-    encode: (n) => (within(n) ? ok(IntValue.of(n)) : typeMismatch(`integer of ${bitLength(n).toString()} bits outside ${show(lo)}..${show(hi)}`)),
+    encode: (n) => (within(n) ? IntValue.of(n) : typeMismatch(`integer of ${bitLength(n).toString()} bits outside ${show(lo)}..${show(hi)}`)),
     decode: (v) => {
       if (v.kind !== "int") return expected("int", v);
       return within(v.value) ? ok(v.value) : decodeFailure(`integer of ${bitLength(v.value).toString()} bits outside ${show(lo)}..${show(hi)}`);
@@ -189,7 +189,7 @@ export function literalText<S extends string>(literal: S): Codec<S> {
 /** Exactly the integer `literal`, as its literal type. */
 export function literalInt<N extends bigint>(literal: N): Codec<N> {
   return {
-    encode: () => ok(IntValue.of(literal)),
+    encode: () => IntValue.of(literal),
     decode: (v) => {
       if (v.kind !== "int") return expected("int", v);
       return v.value === literal ? ok(literal) : decodeFailure(`expected ${literal.toString()}, got an integer of ${bitLength(v.value).toString()} bits`);
@@ -306,7 +306,7 @@ export function intEnum<L extends string>(name: string, cases: readonly (readonl
   return {
     encode: (label) => {
       const c = cases.find(([l]) => l === label);
-      return c === undefined ? typeMismatch(`${Preview.of(label).toString()} is not a ${name}`) : ok(IntValue.of(c[1]));
+      return c === undefined ? typeMismatch(`${Preview.of(label).toString()} is not a ${name}`) : IntValue.of(c[1]);
     },
     decode: (v) => {
       if (v.kind !== "int") return expected("int", v);

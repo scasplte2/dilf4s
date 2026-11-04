@@ -67,7 +67,7 @@ object BloomFilterSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("a refused encoding never renders the values it was given") {
-    val huge = CanonicalValue.CInt(BigInt(1) << 1000000)
+    val huge = xyz.kd5ujc.core.canonical.CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     val fields = CanonicalValue.map(List("m" -> huge, "k" -> huge, "b" -> huge)).fold(e => sys.error(e.toString), identity)
     expect
       .same(Left(BloomError.Encoding("invalid bloom fields: m and k are 32-bit integers, b is bytes")), BloomFilter.decode[Sha256](fields))

@@ -11,7 +11,7 @@ A canonical value is exactly one of:
 |---|---|
 | null | |
 | boolean | `true`, `false` |
-| integer | any integer (unbounded) |
+| integer | an integer at most `MaxIntegerBits` wide |
 | rational | `n/d` with `d ≥ 2`, `gcd(\|n\|, d) = 1`, and `n` and `d` each at most `MaxRationalBits` wide |
 | text | a sequence of Unicode scalar values (no surrogate code points) |
 | bytes | a finite byte sequence |
@@ -28,7 +28,7 @@ The data model has no floating-point numbers, no NaN or infinity, no negative ze
 and its denominator each have a `bitLength` of at most 33220 (`bitLength` is Java's `BigInteger.bitLength`, `jlvm.md`
 §2: for `n < 0` it is the bit length of `-n - 1`, so `-2^33220` is 33220 bits wide and `-2^33220 - 1` is 33221). 33220 is the bit length of `10^10000`, the bound on a JSON
 number's digits and scale (§3), so every rational JSON reads is within it, and every JLVM number (4096 bits) is too.
-Integers have no such bound. The reason is cost: a rational is valid only in lowest terms, and checking that takes a gcd,
+The reason is cost: a rational is valid only in lowest terms, and checking that takes a gcd,
 which is superlinear in its operands. With the bound, decoding a rational costs at most one gcd of operands at most
 33220 bits wide, and a rational that wide takes over 8 KiB to encode, so decoding stays linear in its input; without it
 a rational of n bytes would cost O(n²).
@@ -49,6 +49,30 @@ too wide; `2^33221/2^33220` is the integer 2), with kind `RationalTooWide` and n
 
 Each SDK's rational type has no other constructor, so no wider rational can be made without one of these refusing it.
 
+**`MaxIntegerBits` = 33220** (`canonical-max-integer-bits` in `shared/schemas/limits.cddl`): an integer has a
+`bitLength` of at most 33220, the same width as a rational's parts, for either sign: `2^33220 - 1` and `-2^33220` are
+integers, `2^33220` and `-2^33220 - 1` are not. `10^10000` (JSON `1e10000`) is an integer; `2 * 10^10000` (`2e10000`)
+is not. Without the bound an integer could be as wide as its encoding allows, and every operation that reads one
+(rendering it, converting it to a decimal, arithmetic, typed decoding) would do work its producer chose; with it, all
+of them are bounded, and an integer that wide takes 4157 bytes to encode.
+
+The bound is a property of the value model too: **no canonical value holds an integer wider than 33220 bits**. Every
+producer refuses a wider one, with kind `IntegerTooWide` and normative field `limit` = 33220 (`conformance.md` §3):
+
+| Producer | Refusal |
+|---|---|
+| CBOR decoding (§2) | `IntegerTooWide` for a tag 2 or 3 bignum, from its length before the integer is built |
+| building an integer (Scala `CanonicalValue.int` and `Canonical[BigInt]`, Rust `Value::integer` and `Int::new`, TypeScript `Value.int` and `IntValue.of`) | `IntegerTooWide` (Rust `IntegerTooWide`) |
+| building a number that reduces to an integer (Scala `CanonicalValue.number`, Rust `Value::number`, TypeScript `Value.number`) | `IntegerTooWide` (Rust `NumberError::IntegerTooWide`), after reducing (`2^33221 / 2` is too wide, `2^33221 / 2^33220` is 2) |
+| JSON (§3) | `IntegerTooWide`: a significand within its digit bound times a positive power of ten within the scale bound reaches about `10^20000` (`9…9e10000`), so the bound is checked once the integer is read |
+| typed data (codecs for an integer range) | the range first (`TypeMismatch`), then `IntegerTooWide` for a range wider than the bound |
+| JLVM arithmetic (`jlvm.md` §2) | never reached: every number an operation reads or produces is within 4096 bits, or it is a `Limit` error |
+
+Integers that fit a primitive type are built without a check, since every one fits (Scala `CInt(Long)`, Rust
+`Value::int` and `From` for every primitive integer up to 128 bits); each SDK's integer type has no other constructor,
+so no wider integer can be made without one of these refusing it, and in Scala and Rust the compiler rejects an
+unchecked one.
+
 For other-language implementers, here is the same model in CDDL (RFC 8610). This block is **informative**: it is not
 in `shared/schemas`, because tags and recursion are outside the code generator's profile. The prose above, and the
 deterministic encoding rules in §2, are normative.
@@ -59,6 +83,7 @@ canonical-value = null / bool / int / rational / tstr / bstr
                 / { * tstr => canonical-value }        ; unique keys, no null values
 rational = #6.30([numerator: int, denominator: uint])  ; denominator >= 2, gcd(|n|, d) = 1,
                                                        ; bitLength of each <= 33220 (MaxRationalBits)
+                                                       ; every int: bitLength <= 33220 (MaxIntegerBits)
 ```
 
 ## 2. Encoding: deterministic CBOR profile
@@ -84,11 +109,18 @@ Further rules:
 - **Not allowed:** indefinite-length items, floats (major type 7 additional information 25/26/27), simple values other than false/true/null, and tags other than 2, 3 and 30.
 - **Tags 2 and 3** are only valid when the value is outside the major type 0/1 range.
 - **Decoders** MUST reject trailing bytes after the top-level item and MUST enforce a maximum nesting depth. The default limit is 256 and counts arrays and maps, empty ones included: a scalar has depth 0, and an array or map has depth one more than its deepest element (1 when empty).
+- **Bignums** (tags 2 and 3) are checked in this order, and the first failure is the refusal: the tag wraps a byte
+  string (`NonCanonical`), present in full (`UnexpectedEnd`), non-empty with no leading zero byte and longer than 8
+  bytes (`NonCanonical`), and at most `MaxIntegerBits` wide (`IntegerTooWide`, §1). The width is read from the length
+  alone, before the integer is built: Java's `bitLength` of `m` and of `-1 - m` are both `m`'s, so either tag's width
+  is `8 (len - 1)` plus the bit length of the first byte, and a bignum of 4153 bytes is within the bound exactly when its
+  first byte is below `0x10`. A rational's part is checked the same way, against `MaxRationalBits` (`RationalTooWide`).
 - **Rationals** are checked in this order, and the first failure is the refusal: tag 30 wraps a 2-element array
   (`NonCanonical`); the numerator is a canonical integer (`NonCanonical`) at most `MaxRationalBits` wide
   (`RationalTooWide`, §1); the same for the denominator; the denominator is at least 2
-  (`NonCanonical`); and last, `gcd(|n|, d) = 1` (`NonCanonical`). A part's width is checked as soon as it is read, so a
-  part too wide is refused before the next is read and before any gcd, and a decoder runs at most one gcd per rational.
+  (`NonCanonical`); and last, `gcd(|n|, d) = 1` (`NonCanonical`). A part's width is checked as soon as it is read, from
+  its length before it is built, so a part too wide is refused before the next is read and before any gcd, and a
+  decoder runs at most one gcd per rational.
 
 ## 3. JSON mapping
 
@@ -101,6 +133,8 @@ JSON is the human-facing and API format. It converts to the data model as follow
   zeros aside) each have at most 10000 digits; a longer one is rejected. Decimal conversion costs more than linear time
   in the digits, so both are counted on the source text before any conversion. The bound equals the scale bound, so
   every decimal of an accepted scale has a form within it (`0.` then 10000 zeros then `1e1` is 10^-10000).
+- An integer past `MaxIntegerBits` is refused when read (`IntegerTooWide`, §1), after the digit and scale bounds:
+  `2e10000` is too wide, `1e10001` is past the scale bound (`InvalidNumber`).
 
 **Strings** become text. A string containing unpaired surrogates is rejected.
 
@@ -115,9 +149,10 @@ Converting back to JSON (for display only) works as follows:
 - A number is written only when its decimal is within the bounds above (at most 10000 significant digits, and a scale
   of at most 10000), so that every rendering reads back; otherwise conversion fails. `10^10000` (10001 digits) and
   `1/2^10001` (scale 10001) can't be written. A short form can read beyond them (`1e10000` is `10^10000`), so reading
-  JSON and writing it back can fail; writing and reading back cannot. An integer wider than 33220 bits (the width of
-  `10^10000`) is refused before any conversion; no rational's numerator or denominator is that wide (§1), and a
-  denominator `2^a 5^b` with `max(a, b) <= 10000` is at most `10^10000`, so its factoring is bounded too.
+  JSON and writing it back can fail; writing and reading back cannot. Every integer and every rational part is at most
+  33220 bits wide (§1), so converting one is bounded work, and only its digits or scale can refuse it: integers from
+  `10^10000` up to `2^33220 - 1` (10001 digits) are values that do not render. Rendering them would need a digit bound
+  of 10001 for integers, which this version does not have.
 - Bytes can't be written as JSON, and conversion fails.
 
 ## 4. Tagged hashing

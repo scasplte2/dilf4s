@@ -23,7 +23,7 @@ import {
   type HashAlgorithm,
 } from "../src/index.js";
 import { bytesView, utf8View, type TextValue } from "../src/value.js";
-import { expectOk, loadVectors } from "./vectors.js";
+import { expectOk, int, loadVectors } from "./vectors.js";
 
 const tag = expectOk(DomainTag.of("dilf4s/test/streaming/v1"), "tag");
 const text = (s: string): TextValue => expectOk(Value.text(s), "text");
@@ -68,19 +68,19 @@ function edgeCases(): [string, Value][] {
     ["big rational", expectOk(Value.number((1n << 200n) + 1n, (1n << 70n) + 3n), "a rational")],
     ["long text", text("x".repeat(70_000))],
     ["long bytes", Value.bytes(new Uint8Array(70_000).fill(0xab))],
-    ["deep arrays", nested(MAX_DEPTH, Value.int(1n), false)],
+    ["deep arrays", nested(MAX_DEPTH, int(1n), false)],
     ["deep maps and arrays", nested(MAX_DEPTH, text("leaf"), true)],
-    ["keys of every length order", map(["", "a", "b", "aa", "z", "zz", "é", "\u{1F600}", "\u{FFFF}", "\u{E000}"].map((k, i) => [k, Value.int(BigInt(i))] as const))],
+    ["keys of every length order", map(["", "a", "b", "aa", "z", "zz", "é", "\u{1F600}", "\u{FFFF}", "\u{E000}"].map((k, i) => [k, int(BigInt(i))] as const))],
   ];
   for (const n of [0n, 23n, 24n, 255n, 256n, 65_535n, 65_536n, (1n << 32n) - 1n, 1n << 32n, (1n << 64n) - 1n]) {
-    cases.push([`int ${String(n)}`, Value.int(n)], [`int -1-${String(n)}`, Value.int(-n - 1n)]);
+    cases.push([`int ${String(n)}`, int(n)], [`int -1-${String(n)}`, int(-n - 1n)]);
   }
   for (const n of [23, 24, 255, 256, STAGED_BYTES - 1, STAGED_BYTES, STAGED_BYTES + 1, 65_535, 65_536]) {
     cases.push([`text of ${String(n)}`, text("t".repeat(n))], [`bytes of ${String(n)}`, Value.bytes(new Uint8Array(n).fill(7))], [`array of ${String(n)}`, array(Array<Value>(n).fill(Value.null))]);
   }
   for (const bits of [64n, 65n, 127n, 128n, 129n, 256n, 2048n + 3n]) {
     const p = 1n << bits;
-    for (const n of [p - 1n, p, p + 1n, -p - 1n, -p, -p + 1n]) cases.push([`bignum ${String(n)}`, Value.int(n)]);
+    for (const n of [p - 1n, p, p + 1n, -p - 1n, -p, -p + 1n]) cases.push([`bignum ${String(n)}`, int(n)]);
   }
   return cases;
 }
@@ -109,8 +109,8 @@ class Gen {
     if (scalar) {
       if (k === 0) return Value.null;
       if (k === 1) return Value.bool(this.below(2) === 0);
-      if (k === 2) return Value.int(BigInt(this.next()) << BigInt(this.below(80)));
-      if (k === 3) return Value.int(-(BigInt(this.next()) << BigInt(this.below(140))));
+      if (k === 2) return int(BigInt(this.next()) << BigInt(this.below(80)));
+      if (k === 3) return int(-(BigInt(this.next()) << BigInt(this.below(140))));
       if (k === 4) return expectOk(Value.number(BigInt(this.next()) - 2n ** 31n, BigInt(this.below(1000) + 1)), "a rational");
       if (k === 5) return text(this.text());
       return Value.bytes(Uint8Array.from({ length: this.below(40) }, () => this.below(256)));
@@ -163,7 +163,7 @@ describe("streamed hashing equals the buffered path", { timeout: 60_000 }, () =>
 
 describe("streamed hashing refuses as the buffered path does", { timeout: 60_000 }, () => {
   const cases: [string, Value][] = [
-    ["an int", Value.int(1n << 70n)],
+    ["an int", int(1n << 70n)],
     ["text", text("é".repeat(300))],
     ["bytes", Value.bytes(new Uint8Array(300).fill(1))],
     ["a nested value", nested(40, map([["k", text("v".repeat(50))]]), true)],
@@ -220,9 +220,9 @@ describe("the hashing path's memory is bounded", { timeout: 60_000 }, () => {
 
   it.each([1_000, 100_000])("for structures of about %i bytes", (n) => {
     check([
-      ["wide", array(Array.from({ length: n / 10 }, (_, i) => Value.int(BigInt(i) << 40n))), []],
+      ["wide", array(Array.from({ length: n / 10 }, (_, i) => int(BigInt(i) << 40n))), []],
       ["keyed", map(Array.from({ length: n / 20 }, (_, i) => [`k${String(i)}`, Value.bool(i % 2 === 0)] as const)), []],
-      ["big", Value.int(1n << BigInt(n)), []],
+      ["big", int(1n << BigInt(Math.min(n, 33_000))), []],
     ]);
   });
 
@@ -248,13 +248,13 @@ describe("the hashing path's memory is bounded", { timeout: 60_000 }, () => {
 describe("the streaming internals stay internal", () => {
   it("the public API hands no caller's hash a value's own bytes", () => {
     const names = new Set([...Object.keys(core), ...Object.keys(cbor)]);
-    for (const internal of ["Feeding", "encodeIntoWithin", "valueCommitmentInto", "valueCommitmentIntoWithin", "STAGED_BYTES"]) {
+    for (const internal of ["Feeding", "encodeIntoWithin", "valueCommitmentInto", "valueCommitmentIntoWithin", "STAGED_BYTES", "bignums"]) {
       expect(names.has(internal), `${internal} is not exported`).toBe(false);
     }
   });
 
   it("the public cbor namespace is everything cbor.ts exports but the streaming internals", () => {
-    const internals = new Set(["Feeding", "encodeIntoWithin", "STAGED_BYTES"]);
+    const internals = new Set(["Feeding", "encodeIntoWithin", "STAGED_BYTES", "bignums"]);
     const expected = Object.keys(cborModule).filter((k) => !internals.has(k)).sort();
     expect(Object.keys(cbor).sort()).toEqual(expected);
   });
