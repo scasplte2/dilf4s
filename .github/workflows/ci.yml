@@ -142,7 +142,10 @@ jobs:
       - run: cargo fmt --check --manifest-path host/Cargo.toml
       - run: cargo clippy --locked --manifest-path cases/Cargo.toml --all-targets --all-features -- -D warnings
       # host/build.rs refuses a stale guest/Cargo.lock, then builds the guest with the succinct toolchain, --locked
-      - run: cargo test --locked --release --manifest-path host/Cargo.toml -- --nocapture
+      # one family at a time: each test runs SP1's native executor in a child process backed by /dev/shm,
+      # which parallel tests can fill: SP1 reports that as a SIGBUS crash ("CrashDetails { signal: 7 }")
+      - run: df -h /dev/shm
+      - run: cargo test --locked --release --manifest-path host/Cargo.toml -- --nocapture --test-threads=1
       # after the tests: under clippy, sp1-build skips the guest build, and the host includes the guest's ELF
       - run: cargo clippy --locked --manifest-path host/Cargo.toml --all-targets -- -D warnings
       # no lockfile may change while checking
