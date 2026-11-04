@@ -62,7 +62,7 @@ object ContractsSuite extends IOSuite {
       .and(
         expect.same(
           Right(r.original.expr),
-          Parser.render(r.original).map(_.noSpaces).flatMap(Parser.parse(_)).map(_.expr)
+          Parser.render(r.original).flatMap(Parser.parse(_)).map(_.expr)
         )
       )
   }

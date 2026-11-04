@@ -572,7 +572,7 @@ object EvaluatorSuite extends IOSuite with Checkers {
       case _                        => false
     }
     val legal = Program.from(nots(127))
-    val text = Parser.render(legal.toOption.get).map(_.noSpaces)
+    val text = Parser.render(legal.toOption.get)
     expect(isLimit(Program.from(nots(100000))), "far too deep")
       .and(expect(isLimit(Program.from(nots(128))), "one operation past the canonical bound"))
       .and(expect(legal.flatMap(Parser.id[xyz.kd5ujc.core.hash.Sha256]).isRight, "the deepest legal program has an identity"))

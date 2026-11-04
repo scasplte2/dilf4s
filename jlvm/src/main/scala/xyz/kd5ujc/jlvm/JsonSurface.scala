@@ -5,7 +5,6 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue}
 
-import io.circe.Json
 import scodec.bits.ByteVector
 
 /**
@@ -41,26 +40,13 @@ object JsonSurface {
       case other      => other
     }
 
-  def value(j: Json): Either[JlvmError, CanonicalValue] =
-    CanonicalJson.fromCirce(j).bimap(e => JlvmError.Malformed(e.toString), fromCanonicalJson)
-
   /** Input data from JSON text: the strict canonical parser (duplicate keys, depth, exact numbers), then bytes. */
   def parse(text: String): Either[JlvmError, CanonicalValue] =
     CanonicalJson.parse(text).bimap(e => JlvmError.Malformed(e.toString), fromCanonicalJson)
 
   /**
-   * A value as JSON that reads back as the same value. Text in `0x`-hex form has no such rendering (it would read back
-   * as bytes), and neither has a non-terminating rational; both are errors.
-   */
-  def json(v: CanonicalValue): Either[JlvmError, Json] =
-    CanonicalJson
-      .toCirce(toCanonicalJson(v))
-      .leftMap(e => JlvmError.Malformed(e.toString))
-      .flatMap(j => value(j).filterOrElse(_ == v, JlvmError.Malformed("a value with 0x-hex text has no JSON surface form")).as(j))
-
-  /**
-   * A result as JSON text that [[parse]] reads back as the same value. As for [[json]], text in `0x`-hex form anywhere
-   * in the value (it would read back as bytes) and a non-terminating rational have no rendering, and are errors.
+   * A value as JSON text that [[parse]] reads back as the same value. Text in `0x`-hex form anywhere in the value (it
+   * would read back as bytes) and a non-terminating rational have no rendering, and are errors.
    */
   def render(v: CanonicalValue): Either[JlvmError, String] =
     CanonicalJson

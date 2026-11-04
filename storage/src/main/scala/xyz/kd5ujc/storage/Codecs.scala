@@ -7,10 +7,9 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalValue.CText
-import xyz.kd5ujc.core.canonical.{Canonical, CanonicalValue, Cbor, Utf8}
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor, Codec, Utf8}
 import xyz.kd5ujc.core.hash.{Digest, Hasher}
 
-import io.circe.{Decoder, Encoder}
 import scodec.bits.ByteVector
 
 /** Unsigned lexicographic order on bytes: the order every backend iterates in. */
@@ -129,12 +128,17 @@ object ValueCodec {
       Cbor.decode(bytes).leftMap(e => StoreError.Codec("value", e.toString))
   }
 
-  /** Canonical CBOR through the type's circe codecs. */
-  def fromCirce[V: Encoder: Decoder]: ValueCodec[V] = new ValueCodec[V] {
-    private val canonical = Canonical.fromEncoder[V]
+  /**
+   * Canonical CBOR through a [[Codec]]: a generated model's, or `CanonicalCirce.codec` (module `circeInterop`) for a
+   * type with circe codecs.
+   */
+  def fromCodec[V](codec: Codec[V]): ValueCodec[V] = new ValueCodec[V] {
     def encode(value: V): Either[StoreError, ByteVector] =
-      canonical.canonical(value).bimap(e => StoreError.Codec("value", e.toString), Cbor.encode)
+      codec.encode(value).bimap(e => StoreError.Codec("value", e.toString), Cbor.encode)
     def decode(bytes: ByteVector): Either[StoreError, V] =
-      Cbor.decode(bytes).flatMap(Canonical.decode[V]).leftMap(e => StoreError.Codec("value", e.toString))
+      Cbor
+        .decode(bytes)
+        .leftMap(e => StoreError.Codec("value", e.toString))
+        .flatMap(codec.decoder.decode(_).leftMap(f => StoreError.Codec("value", f.message)))
   }
 }

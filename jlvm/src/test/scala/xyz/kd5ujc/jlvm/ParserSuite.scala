@@ -75,12 +75,12 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   pureTest("let binding names are never code, even when they spell an operation's name") {
     val json = """{"let":[[["values",[1,2]],["max",3]],{"var":"$values"}]}"""
     expect(p(json).isRight, "binds values and max")
-      .and(expect.same(Right(json), Parser.parse(json).flatMap(Parser.render).map(_.noSpaces)))
+      .and(expect.same(Right(json), Parser.parse(json).flatMap(Parser.render)))
   }
 
   pureTest("an array headed by a call's name renders quoted, so it reads back as the same array") {
     val arr = Expr.Arr(Vector(text("max"), Expr.Var(VarRef.Data(Vector("x")), None)))
-    val back = Program.from(arr).flatMap(Parser.render).map(_.noSpaces).flatMap(Parser.parse(_)).map(_.expr)
+    val back = Program.from(arr).flatMap(Parser.render).flatMap(Parser.parse(_)).map(_.expr)
     expect.same(Right(arr), back)
   }
 
@@ -290,7 +290,7 @@ object ParserSuite extends SimpleIOSuite with Checkers {
 
   test("render writes the surface: parsing it back gives the same program") {
     forall(exprs)(accepted(_) { prog =>
-      expect.same(Right(prog), Parser.render(prog).map(_.noSpaces).flatMap(Parser.parse(_)))
+      expect.same(Right(prog), Parser.render(prog).flatMap(Parser.parse(_)))
     })
   }
 
@@ -372,11 +372,13 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     val src = ("""{"var":""" * 150) + "\"a\"" + ("}" * 150)
     val prog = Parser.parse(src)
     expect(prog.isRight, "parses")
-      .and(expect.same(prog, prog.flatMap(Parser.render).map(_.noSpaces).flatMap(Parser.parse(_))))
-      .and(expect.same(Right(src), prog.flatMap(Parser.render).map(_.noSpaces)))
+      .and(expect.same(prog, prog.flatMap(Parser.render).flatMap(Parser.parse(_))))
+      .and(expect.same(Right(src), prog.flatMap(Parser.render)))
   }
 
   /** Non-empty arrays and objects nested, as the canonical JSON parser counts them. */
+  private def textNesting(text: String): Int = io.circe.parser.parse(text).fold(_ => -1, j => nesting(j))
+
   private def nesting(j: Json): Int =
     j.arrayOrObject(
       0,
@@ -427,8 +429,8 @@ object ParserSuite extends SimpleIOSuite with Checkers {
         case Right(prog) =>
           val rendered = Parser.render(prog)
           expect
-            .same(Right(prog), rendered.map(_.noSpaces).flatMap(Parser.parse(_)))
-            .and(expect(rendered.forall(nesting(_) <= CanonicalValue.MaxDepth), "within the JSON depth bound"))
+            .same(Right(prog), rendered.flatMap(Parser.parse(_)))
+            .and(expect(rendered.forall(textNesting(_) <= CanonicalValue.MaxDepth), "within the JSON depth bound"))
       }
     }
   }
@@ -436,7 +438,7 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   test("the surface depth Program.from bounds is the depth of the rendered text") {
     // chains of 40 wrappers nest at most 3 levels each (surface or canonical), plus a few for the leaf: within the bound
     forall(Gen.oneOf(exprs, Gen.choose(1, 40).flatMap(chain)))(accepted(_) { prog =>
-      expect.same(Parser.render(prog).map(nesting), Right(Parser.surfaceDepth(prog.expr, Kernels.Default)))
+      expect.same(Parser.render(prog).map(textNesting), Right(Parser.surfaceDepth(prog.expr, Kernels.Default)))
     })
   }
 

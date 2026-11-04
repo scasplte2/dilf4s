@@ -19,7 +19,11 @@ exactly five things:
 ## 1. Programs
 
 **Surface.** Programs are written as JSON. The text must first pass `CanonicalJson.parse`
-(`canonical-encoding.md` §3), which bounds depth and requires exact numbers. Then:
+(`canonical-encoding.md` §3), which bounds depth, refuses a repeated member name and requires exact numbers. It is
+the only JSON parser that reads a program: the accepted text is then split into its structure, with null members and
+member order still visible, and each scalar, member name and literal is read by `CanonicalJson.parse` from its own
+span of the text. Where a string or an integer is looked for (an array's first element, a `var` path), only a
+string's or a number's span is read, so reading costs at most twice the text however deeply it nests. Then:
 
 - **Objects.**
   - A single-key object whose key is an operation of this version is that operation. Its value gives the arguments:
@@ -81,8 +85,8 @@ non-terminating rational, has no surface form and is an error.
 - **Size.** Compilation uses no gas, so a program's size is bounded before anything else is done: at most 2^18
   (`Program.MaxSize`), counting one per expression, plus the weight of each literal and default, plus the length of
   each object key, binding name and path segment, plus one per segment. A larger program is `Limit`. `let` carries its
-  scope forward in one pass, in a sorted set of names. Checking the canonical form still builds hashed maps of literal
-  keys, so compilation is not strictly linear in the worst case, but it is bounded by this size. The largest conformance
+  scope forward in one pass, in a sorted set of names. Checking the canonical form builds sorted maps of literal keys,
+  compared and never hashed, so compilation is O(n log n) rather than linear in this size. The largest conformance
   program is under 2^14. The host bounds the JSON text itself.
 
 **Compilation.** Before evaluation, a program is checked into its evaluation form. These are parse errors

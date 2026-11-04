@@ -2,8 +2,6 @@ package xyz.kd5ujc.core.canonical
 
 import cats.syntax.all._
 
-import scala.collection.immutable.TreeMap
-
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 
 import scodec.bits.ByteVector
@@ -103,15 +101,15 @@ object Codec {
 
   /**
    * A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`). Its keys are the caller's, so it is
-   * ordered, never hashed: decoded, in [[KeyOrder.Default]]; to encode, in any order (the encoding sorts them).
+   * ordered, never hashed: decoded, in the order of the map it is read from; to encode, in any order (the encoding sorts them).
    */
-  def textMap[A](value: Codec[A]): Codec[TreeMap[String, A]] =
+  def textMap[A](value: Codec[A]): Codec[CanonicalEntries[A]] =
     Codec(
       m => m.toList.traverse { case (k, v) => value.encode(v).map(k -> _) }.flatMap(CanonicalValue.map),
       {
         case CMap(entries) =>
           entries.toList.traverse { case (k, v) => value.decoder.decode(v).leftMap(_.at(k)).map(k -> _) }
-            .map(TreeMap.from(_)(using KeyOrder.Default))
+            .map(CanonicalEntries.insertedLike(entries, _))
         case _ => DecodeFailure(Nil, "expected a map").asLeft
       }
     )
@@ -140,7 +138,7 @@ object Codec {
    */
   def selectAlternative[A](
     value:        CanonicalValue,
-    alternatives: List[(Set[String], Set[String], CanonicalDecoder[A])],
+    alternatives: List[(Iterable[String], Iterable[String], CanonicalDecoder[A])],
     texts:        List[(String, A)] = Nil
   ): Either[DecodeFailure, A] =
     CanonicalDecoder.keysOf(value) match {
@@ -150,8 +148,11 @@ object Codec {
           case _        => DecodeFailure(Nil, "expected a map or one of the text alternatives").asLeft
         }
       case Some(keys) =>
-        // the schema's sets are iterated and looked up in the value's keys, in their order: no caller key is hashed
-        alternatives.collectFirst { case (required, all, d) if required.subsetOf(keys) && all.count(keys.contains) == keys.size => d }
+        // the schema's names are looked up in the value's keys, and the value's keys in the alternative's names (a key
+        // set in the same order, where a name listed twice counts once): no caller key is hashed
+        alternatives.collectFirst {
+          case (required, all, d) if required.forall(k => keys.contains(k)) && keys.iterator.forall(CanonicalKeys.within(keys, all)) => d
+        }
           .toRight(DecodeFailure(Nil, s"no alternative fits a map of ${keys.size} keys"))
           .flatMap(_.decode(value))
     }

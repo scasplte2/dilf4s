@@ -5,10 +5,9 @@ import java.nio.charset.StandardCharsets.UTF_8
 import cats.syntax.all._
 
 import scala.annotation.tailrec
-import scala.collection.immutable.{Map => SMap}
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalValue}
 import xyz.kd5ujc.core.hash.{Blake2b256 => B2b, Hasher, Keccak256 => K256, Sha256 => S256, Sha3_256 => S3}
 import xyz.kd5ujc.numerics.Ratio
 
@@ -151,7 +150,7 @@ object PureOps {
       case other      => tpe(op, s"expected an array, got ${kind(other)}")
     }
 
-  private def obj(op: Op, v: CanonicalValue): Either[JlvmError, SMap[String, CanonicalValue]] =
+  private def obj(op: Op, v: CanonicalValue): Either[JlvmError, CanonicalEntries[CanonicalValue]] =
     record(op, v).map(_.entries)
 
   private def record(op: Op, v: CanonicalValue): Either[JlvmError, CMap] =
@@ -460,8 +459,8 @@ object PureOps {
           val ks = sortedKeys(m).toVector
           op match {
             case Op.Keys   => ks.traverse(text(op, _)).flatMap(array(op, _))
-            case Op.Values => array(op, ks.map(m))
-            case _         => ks.traverse(k => text(op, k).flatMap(t => array(op, Vector(t, m(k))))).flatMap(array(op, _))
+            case Op.Values => array(op, ks.flatMap(k => m.get(k)))
+            case _         => ks.traverse(k => text(op, k).flatMap(t => array(op, t +: m.get(k).toVector))).flatMap(array(op, _))
           }
         }
     }

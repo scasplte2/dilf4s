@@ -7,9 +7,8 @@ import cats.effect.{ExitCode, IO, IOApp}
 
 import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash._
+import xyz.kd5ujc.core.vectors.VectorJson.{arr, bool, num, obj, str}
 
-import io.circe.Json
-import io.circe.syntax._
 import scodec.bits.{ByteVector, hex}
 
 /** The conformance vectors for docs/specs/canonical-encoding.md; every SDK must reproduce them. */
@@ -280,38 +279,38 @@ object CanonicalVectors {
     "dilf4s/é/v1"
   )
 
-  private def errorKind(e: Product): Json = e.productPrefix.asJson
+  private def errorKind(e: Product): VectorJson = str(e.productPrefix)
 
-  def build: Json = Json.obj(
-    "spec"                 -> "docs/specs/canonical-encoding.md".asJson,
-    "version"              -> 1.asJson,
-    "contentHashTag"       -> tagName.asJson,
-    "contentHashAlgorithm" -> "SHA-256".asJson,
-    "json" -> jsonInputs.map { in =>
+  def build: VectorJson = obj(
+    "spec"                 -> str("docs/specs/canonical-encoding.md"),
+    "version"              -> num(1),
+    "contentHashTag"       -> str(tagName),
+    "contentHashAlgorithm" -> str("SHA-256"),
+    "json" -> arr(jsonInputs.map { in =>
       CanonicalJson.parse(in) match {
         case Right(v) =>
           val bytes = Cbor.encode(v)
-          Json.obj(
-            "json"        -> in.asJson,
-            "cbor"        -> bytes.toHex.asJson,
-            "contentHash" -> sha256(bytes).hex.asJson,
-            "render"      -> CanonicalJson.render(v).fold(e => s"UNRENDERABLE $e", identity).asJson
+          obj(
+            "json"        -> str(in),
+            "cbor"        -> str(bytes.toHex),
+            "contentHash" -> str(sha256(bytes).hex),
+            "render"      -> str(CanonicalJson.render(v).fold(e => s"UNRENDERABLE $e", identity))
           )
-        case Left(e) => Json.obj("json" -> in.asJson, "error" -> errorKind(e))
+        case Left(e) => obj("json" -> str(in), "error" -> errorKind(e))
       }
-    }.asJson,
-    "model" -> modelInputs.map {
+    }),
+    "model" -> arr(modelInputs.map {
       case (name, v) =>
         val bytes = Cbor.encode(v)
-        Json.obj("value" -> name.asJson, "cbor" -> bytes.toHex.asJson, "contentHash" -> sha256(bytes).hex.asJson)
-    }.asJson,
-    "renderRejections" -> renderRejections.map { v =>
-      Json.obj("cbor" -> Cbor.encode(v).toHex.asJson, "error" -> CanonicalJson.render(v).fold(errorKind, r => s"RENDERED $r".asJson))
-    }.asJson,
-    "cborRejections" -> cborRejections.map { b =>
-      Json.obj("cbor" -> b.toHex.asJson, "error" -> Cbor.decode(b).fold(errorKind, v => s"ACCEPTED $v".asJson))
-    }.asJson,
-    "taggedHash" -> (for {
+        obj("value" -> str(name), "cbor" -> str(bytes.toHex), "contentHash" -> str(sha256(bytes).hex))
+    }),
+    "renderRejections" -> arr(renderRejections.map { v =>
+      obj("cbor" -> str(Cbor.encode(v).toHex), "error" -> CanonicalJson.render(v).fold(errorKind, r => str(s"RENDERED $r")))
+    }),
+    "cborRejections" -> arr(cborRejections.map { b =>
+      obj("cbor" -> str(b.toHex), "error" -> Cbor.decode(b).fold(errorKind, v => str(s"ACCEPTED $v")))
+    }),
+    "taggedHash" -> arr(for {
       m <- tagMessages
       (name, digest) <- List[(String, ByteVector => Digest[?])](
         "SHA-256"     -> TaggedHash[Sha256](tag).apply,
@@ -322,16 +321,15 @@ object CanonicalVectors {
         "BLAKE2b-256" -> TaggedHash[Blake2b256](tag).apply,
         "BLAKE2b-512" -> TaggedHash[Blake2b512](tag).apply
       )
-    } yield
-      Json.obj("algorithm" -> name.asJson, "tag" -> tagName.asJson, "message" -> m.toHex.asJson, "digest" -> digest(m).hex.asJson)).asJson,
-    "digests" -> (for {
+    } yield obj("algorithm" -> str(name), "tag" -> str(tagName), "message" -> str(m.toHex), "digest" -> str(digest(m).hex))),
+    "digests" -> arr(for {
       m              <- digestMessages
       (name, digest) <- digesters
-    } yield Json.obj("algorithm" -> name.asJson, "message" -> m.toHex.asJson, "digest" -> digest(m).toHex.asJson)).asJson,
-    "domainTags" -> domainTags.map(t => Json.obj("tag" -> t.asJson, "valid" -> DomainTag(t).isRight.asJson)).asJson
+    } yield obj("algorithm" -> str(name), "message" -> str(m.toHex), "digest" -> str(digest(m).toHex))),
+    "domainTags" -> arr(domainTags.map(t => obj("tag" -> str(t), "valid" -> bool(DomainTag(t).isRight))))
   )
 
-  def render: String = build.spaces2 + "\n"
+  def render: String = VectorJson.pretty(build) + "\n"
 }
 
 /** `sbt "core/Test/runMain xyz.kd5ujc.core.vectors.CanonicalVectorGen"` regenerates the committed vectors. */

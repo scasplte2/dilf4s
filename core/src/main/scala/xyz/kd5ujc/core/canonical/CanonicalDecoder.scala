@@ -2,8 +2,6 @@ package xyz.kd5ujc.core.canonical
 
 import cats.syntax.all._
 
-import scala.collection.immutable.{SortedSet, TreeMap, TreeSet}
-
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 
 import scodec.bits.ByteVector
@@ -106,7 +104,7 @@ object CanonicalDecoder {
   }
 
   /** The fields of a map with exactly the given keys allowed; unknown keys are rejected. */
-  final class Fields private[CanonicalDecoder] (entries: TreeMap[String, CanonicalValue]) {
+  final class Fields private[CanonicalDecoder] (entries: CanonicalEntries[CanonicalValue]) {
     def required[A](key: String)(implicit D: CanonicalDecoder[A]): Either[DecodeFailure, A] =
       entries.get(key).toRight(DecodeFailure(Nil, s"missing required key \"$key\"")).flatMap(v => D.decode(v).leftMap(_.at(key)))
     def optional[A](key: String)(implicit D: CanonicalDecoder[A]): Either[DecodeFailure, Option[A]] =
@@ -114,16 +112,17 @@ object CanonicalDecoder {
   }
 
   /**
-   * The map's keys are only compared, never hashed: `allowed` is looked up in the map, and ordered to find the others.
-   * A refusal counts the unknown keys and previews the first in canonical order (shorter UTF-8 first, then by code
-   * point, as every SDK iterates a map), in one pass; it never lists them.
+   * The map's keys are only compared, never hashed: `allowed` becomes a key set in the map's order (a name listed twice
+   * counts once), and every key of the map is looked up in it. A refusal counts the unknown keys and previews the first
+   * in canonical order (shorter UTF-8 first, then by code point, as every SDK iterates a map), in linear passes; it never
+   * lists them.
    */
-  def record[A](allowed: Set[String])(f: Fields => Either[DecodeFailure, A]): CanonicalDecoder[A] = {
+  def record[A](allowed: Iterable[String])(f: Fields => Either[DecodeFailure, A]): CanonicalDecoder[A] = {
     case CMap(entries) =>
-      val unknown = entries.size - allowed.count(entries.contains)
+      val known = CanonicalKeys.like(entries, allowed)
+      val unknown = entries.keysIterator.count(k => !known.contains(k))
       if (unknown > 0) {
-        val known = TreeSet.from(allowed)(using KeyOrder.Default)
-        val first = entries.keysIterator.filterNot(known.contains).minOption(using CanonicalKeyOrder).getOrElse("")
+        val first = entries.keysIterator.filterNot(k => known.contains(k)).minOption(using CanonicalKeyOrder).getOrElse("")
         fail(s"$unknown unknown ${if (unknown == 1) "key" else "keys"}, the first ${Preview.of(first)}")
       } else f(new Fields(entries))
     case other => expected("map", other)
@@ -133,7 +132,7 @@ object CanonicalDecoder {
   private val CanonicalKeyOrder: Ordering[String] = Ordering.by[String, Long](Utf16.utf8Length).orElse(CanonicalJson.CodePointOrder)
 
   /** The keys present in a map value, for choosing between record alternatives. */
-  def keysOf(value: CanonicalValue): Option[SortedSet[String]] = value match {
+  def keysOf(value: CanonicalValue): Option[CanonicalKeys] = value match {
     case CMap(entries) => Some(entries.keySet)
     case _             => None
   }

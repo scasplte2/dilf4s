@@ -35,6 +35,9 @@ private[jlvm] object Kernels {
 /** Told of each unit of parse and compile work: an expression visited by one pass. */
 private[jlvm] trait Steps {
   def step(): Unit
+
+  /** Told of each span of program text the parser reads back through the strict JSON parser, with its length. */
+  def spanned(length: Int): Unit = ()
 }
 
 private[jlvm] object Steps {

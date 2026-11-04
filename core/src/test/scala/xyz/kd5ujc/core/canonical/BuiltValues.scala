@@ -4,9 +4,8 @@ import cats.Eval
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.models.refusal_vectors.{BuiltCopies, BuiltStep, BuiltValue, BuiltWrap}
 
-import io.circe.syntax._
-import io.circe.{ACursor, Json}
 import scodec.bits.ByteVector
 
 /**
@@ -56,36 +55,38 @@ object BuiltValues {
     }
 
   /** The recipe as the schemas' `built-value`. */
-  def json(b: Built): Json =
-    Json.fromFields(
-      List("leaf" -> Cbor.encode(b.leaf).toHex.asJson) ++
-      Option.when(b.steps.nonEmpty)("steps" -> b.steps.map {
-        case Wrap(t, n) => Json.obj("template" -> Cbor.encode(t).toHex.asJson, "times" -> n.asJson)
-        case Copies(n)  => Json.obj("copies" -> n.asJson)
-      }.asJson)
+  def model(b: Built): BuiltValue =
+    BuiltValue(
+      Cbor.encode(b.leaf).toHex,
+      Option.when(b.steps.nonEmpty)(b.steps.toVector.map {
+        case Wrap(t, n) => BuiltWrap(Cbor.encode(t).toHex, BigInt(n))
+        case Copies(n)  => BuiltCopies(BigInt(n))
+      })
     )
 
+  /** The recipe as a canonical value: the schemas' `built-value`, for a vector file. */
+  def value(b: Built): CanonicalValue = get(BuiltValue.codec.encode(model(b)))
+
   /** A recipe from the schemas' `built-value`. */
-  def fromJson(j: ACursor): Either[String, Built] = {
-    def value(c: ACursor, name: String): Either[String, CanonicalValue] =
-      c.get[String](name).leftMap(_.toString).flatMap(ByteVector.fromHexDescriptive(_)).flatMap(Cbor.decode(_).leftMap(_.toString))
-    val steps = j.downField("steps").success.fold(List.empty[Step].asRight[String]) { s =>
-      s.as[List[Json]]
-        .leftMap(_.toString)
-        .flatMap(_.traverse { step =>
-          val c = step.hcursor
-          c.get[Int]("copies")
-            .toOption
-            .fold((value(c, "template"), c.get[Int]("times").leftMap(_.toString)).mapN(Wrap(_, _): Step))(n =>
-              (Copies(n): Step).asRight[String]
-            )
-        })
-    }
-    (value(j, "leaf"), steps).mapN(Built(_, _))
+  def fromModel(m: BuiltValue): Either[String, Built] = {
+    def decoded(hex: String): Either[String, CanonicalValue] =
+      ByteVector.fromHexDescriptive(hex).flatMap(Cbor.decode(_).leftMap(_.toString))
+    def count(n: BigInt): Either[String, Int] = Either.cond(n.isValidInt, n.toInt, s"a count of ${n.bitLength} bits")
+    def step(s: BuiltStep): Either[String, Step] =
+      s match {
+        case BuiltWrap(t, n) => (decoded(t), count(n)).mapN(Wrap(_, _))
+        case BuiltCopies(n)  => count(n).map(Copies(_))
+      }
+    val steps = m.steps.getOrElse(Vector.empty).toList.traverse(step)
+    (decoded(m.leaf), steps).mapN(Built(_, _))
   }
 
+  /** A recipe from a vector file's `built-value`, read by the canonical parser. */
+  def fromValue(v: CanonicalValue): Either[String, Built] =
+    BuiltValue.codec.decoder.decode(v).leftMap(_.message).flatMap(fromModel)
+
   /** The value a `built-value` describes. */
-  def fromJsonValue(j: ACursor): Either[String, CanonicalValue] = fromJson(j).flatMap(build(_).leftMap(_.toString))
+  def built(v: CanonicalValue): Either[String, CanonicalValue] = fromValue(v).flatMap(build(_).leftMap(_.toString))
 
   /**
    * A recipe whose value weighs exactly `target` (at least 1): from a leaf of weight 1 or 2, steps `[$, $]` (`w` to

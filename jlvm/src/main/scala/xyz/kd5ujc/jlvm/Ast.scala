@@ -188,7 +188,7 @@ enum Expr {
   case Arr(items: Vector[Expr])
 
   /** Its keys are the program's own, so they are ordered, never hashed. */
-  case Obj(fields: scala.collection.immutable.TreeMap[String, Expr])
+  case Obj(fields: scala.collection.immutable.SortedMap[String, Expr])
 }
 
 /**

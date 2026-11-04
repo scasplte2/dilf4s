@@ -235,11 +235,11 @@ object Cbor {
     decode(bytes, maxDepth, KeyOrder.Default)
 
   /** [[decode]] building maps in `keys`'s order: production passes [[KeyOrder.Default]]. */
-  private[kd5ujc] def decode(bytes: ByteVector, maxDepth: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
+  private[canonical] def decode(bytes: ByteVector, maxDepth: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
     decode(bytes, maxDepth, keys, lowestTerms)
 
   /** [[decode]] building rationals with `reduce`: production passes [[lowestTerms]]. */
-  private[kd5ujc] def decode(
+  private[canonical] def decode(
     bytes:    ByteVector,
     maxDepth: Int,
     keys:     KeyOrder,

@@ -7,6 +7,7 @@ import cats.effect.{ExitCode, IO, IOApp, Resource}
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.circe.CanonicalCirce
 
 import io.circe.syntax._
 import io.circe.{Decoder, Json}
@@ -72,7 +73,12 @@ object JlvmVectors {
       case (p, d, env) =>
         // a recipe that does not build is a broken vector file, not an outcome
         val built = i.built.getOrElse(Map.empty).toList.map {
-          case (k, b) => k -> BuiltValues.fromJsonValue(b.hcursor).fold(e => sys.error(s"${i.name}: $k: $e"), identity)
+          case (k, b) =>
+            k -> CanonicalCirce
+              .fromCirce(b)
+              .leftMap(_.toString)
+              .flatMap(BuiltValues.built)
+              .fold(e => sys.error(s"${i.name}: $k: $e"), identity)
         }
         (p, d, env ++ built)
     }
