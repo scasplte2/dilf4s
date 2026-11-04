@@ -18,6 +18,9 @@ pub const CANONICAL_MAX_DIGIT_BITS: u64 = 33_220;
 /// `canonical-max-digits` (`shared/schemas/limits.cddl`).
 pub const CANONICAL_MAX_DIGITS: u64 = 10_000;
 
+/// `canonical-max-integer-bits` (`shared/schemas/limits.cddl`).
+pub const CANONICAL_MAX_INTEGER_BITS: u64 = 33_220;
+
 /// `canonical-max-rational-bits` (`shared/schemas/limits.cddl`).
 pub const CANONICAL_MAX_RATIONAL_BITS: u64 = 33_220;
 
@@ -134,6 +137,9 @@ pub mod as_u16 {
     /// [`super::CANONICAL_MAX_DIGITS`] as a `u16`.
     pub const CANONICAL_MAX_DIGITS: u16 = 10_000;
 
+    /// [`super::CANONICAL_MAX_INTEGER_BITS`] as a `u16`.
+    pub const CANONICAL_MAX_INTEGER_BITS: u16 = 33_220;
+
     /// [`super::CANONICAL_MAX_RATIONAL_BITS`] as a `u16`.
     pub const CANONICAL_MAX_RATIONAL_BITS: u16 = 33_220;
 
@@ -229,6 +235,9 @@ pub mod as_u32 {
 
     /// [`super::CANONICAL_MAX_DIGITS`] as a `u32`.
     pub const CANONICAL_MAX_DIGITS: u32 = 10_000;
+
+    /// [`super::CANONICAL_MAX_INTEGER_BITS`] as a `u32`.
+    pub const CANONICAL_MAX_INTEGER_BITS: u32 = 33_220;
 
     /// [`super::CANONICAL_MAX_RATIONAL_BITS`] as a `u32`.
     pub const CANONICAL_MAX_RATIONAL_BITS: u32 = 33_220;
@@ -343,6 +352,9 @@ pub mod as_usize {
 
     /// [`super::CANONICAL_MAX_DIGITS`] as a `usize`.
     pub const CANONICAL_MAX_DIGITS: usize = 10_000;
+
+    /// [`super::CANONICAL_MAX_INTEGER_BITS`] as a `usize`.
+    pub const CANONICAL_MAX_INTEGER_BITS: usize = 33_220;
 
     /// [`super::CANONICAL_MAX_RATIONAL_BITS`] as a `usize`.
     pub const CANONICAL_MAX_RATIONAL_BITS: usize = 33_220;

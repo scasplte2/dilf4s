@@ -11,6 +11,8 @@ canonical-max-scale = 10000                  ; a JSON decimal's effective scale
 canonical-max-digit-bits = 33220             ; bits of an integer within canonical-max-digits digits (10^10000 has 33220)
 canonical-max-rational-bits = 33220          ; bits of a rational's numerator or of its denominator: 10^10000's, so
                                              ; every rational a JSON decimal reads to is within it
+canonical-max-integer-bits = 33220           ; bits of an integer, the same width as a rational's parts: 10^10000
+                                             ; (1e10000) is within it, 2 * 10^10000 is not
 canonical-max-weight = 9223372036854775807   ; weights saturate here, 2^63 - 1 (jlvm.md section 2)
 
 ; Verifier input (conformance.md section 5)

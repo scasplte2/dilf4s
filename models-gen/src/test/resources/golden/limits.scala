@@ -19,6 +19,9 @@ final val CanonicalMaxDigitBits = 33220
 /** `canonical-max-digits` (`shared/schemas/limits.cddl`). */
 final val CanonicalMaxDigits = 10000
 
+/** `canonical-max-integer-bits` (`shared/schemas/limits.cddl`). */
+final val CanonicalMaxIntegerBits = 33220
+
 /** `canonical-max-rational-bits` (`shared/schemas/limits.cddl`). */
 final val CanonicalMaxRationalBits = 33220
 
