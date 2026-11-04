@@ -318,11 +318,11 @@ object GasSchedule {
       // 64 hash-to-curve counters: an alpha whose first k counters fail takes about 2^k tries to find (jlvm.md §7)
       Poseidon      -> c(1800, 3900, Elements),
       PmtVerify     -> c(1000, 11000, Elements),
-      Groth16Verify -> c(370000, 1, Weight),
+      Groth16Verify -> c(480000, 1, Weight),
       EcvrfVerify   -> c(130000, 1, Weight),
       Bn254Add      -> c(700),
-      Bn254Mul      -> c(12500),
-      Bn254Pairing  -> c(130000, 440, Weight),
+      Bn254Mul      -> c(14500),
+      Bn254Pairing  -> c(135000, 470, Weight),
       // BouncyCastle on the JVM; a leaf of proposition and proof weighs ~105, a DH tuple ~215 (4 muls). The message is
       // only hashed: it pays the hashing rate (as blake2b256), not the curve rate
       SchnorrVerify -> c(5000, 450, Weight).at(1, 1, Weight),

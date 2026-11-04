@@ -580,7 +580,8 @@ a 4096-bit rational result.
   quadratic in the expansion, which can be far longer than the number's weight: `1/2^4095` weighs 66 and renders as
   4,097 characters. Measured at about 1 gas a unit for the widest numbers; the 6 limbs are the fixed cost of a conversion (about 100 gas
   for a small integer).
-- **Pieces.** `cat` and `join` also charge 32 per element of each argument: a piece costs about 30 gas besides its bytes.
+- **Pieces.** `cat` also charges 4 per element of each argument and 8 per argument, and `join` 14 per element of each
+  argument (the table): a piece costs a few gas besides its bytes, and `cat` walks every argument, even an empty array.
 - **Separators.** `join` renders its pieces, checks the result's weight (saturating) against the bound, which is
   `Limit` before anything is built, and then charges `perUnit(join)` per byte of separator the result will copy.
 - **Paths parsed at run time** (a computed `var` path given as text, a `missing` or `missing_some` key) are split on
@@ -708,11 +709,11 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `bls_aggregate_verify` | 250000 | 33000 per `Elements` | argument 1: 1 per `Weight` |
 | `poseidon` | 1800 | 3900 per `Elements` |  |
 | `pmt_verify` | 1000 | 11000 per `Elements` |  |
-| `groth16_verify` | 370000 | 1 per `Weight` |  |
+| `groth16_verify` | 480000 | 1 per `Weight` |  |
 | `ecvrf_verify` | 130000 | 1 per `Weight` |  |
 | `bn254_add` | 700 |  |  |
-| `bn254_mul` | 12500 |  |  |
-| `bn254_pairing` | 130000 | 440 per `Weight` |  |
+| `bn254_mul` | 14500 |  |  |
+| `bn254_pairing` | 135000 | 470 per `Weight` |  |
 | `schnorr_verify` | 5000 | 450 per `Weight` | argument 1: 1 per `Weight` |
 | `sigma_verify` | 5000 | 450 per `Weight` | argument 2: 1 per `Weight` |
 | `merkle_verify` | 2000 | 13 per `Weight` |  |

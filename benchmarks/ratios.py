@@ -6,8 +6,9 @@ Reads the raw rounds that GasRatios (JVM) and gas_ratios (Rust) print, one file 
 
 - per round, the case's ratio to the anchor is mean(case) / mean(anchor) over the palindrome, and the same against
   the reference (sha256 of 1024 bytes);
-- rounds a cluster's MAD rejects are kept aside: when at least 3 of them agree above the accepted ratio, they are a
-  minority mode (a slower core too rare to cluster), and the case is priced from them and left unconverged;
+- rounds a cluster's MAD rejects are kept aside: when at least 3 of them agree (within 5%) above the accepted ratio,
+  they are a minority mode (a slower core too rare to cluster), and the case is priced from the highest such group
+  and left unconverged;
 - a round is rejected when its two probes differ by more than 10% (the thread migrated or the clock moved inside it);
 - rounds are clustered by probe time into two clusters (performance and efficiency cores), when the clusters' centres
   differ by more than 10%; within each cluster, rounds whose probe is more than 3 MADs from its median are rejected;
@@ -49,6 +50,16 @@ def bootstrap_ci(xs, n=400, seed=1):
     k = len(xs)
     meds = sorted(median([xs[rnd.randrange(k)] for _ in range(k)]) for _ in range(n))
     return meds[int(0.025 * n)], meds[int(0.975 * n) - 1]
+
+
+def highest_mode(xs, band=1.05, support=3):
+    """The median of the highest group of at least `support` values within a factor `band` of one another, or None."""
+    s = sorted(xs, reverse=True)
+    for i, top in enumerate(s):
+        group = [x for x in s[i:] if x * band >= top]
+        if len(group) >= support:
+            return median(group)
+    return None
 
 
 def two_means(xs):
@@ -131,8 +142,10 @@ def process(path):
             continue
         # rejected rounds that agree with one another and sit above the accepted ratio are a mode of their own (a slower
         # core too rare to cluster): the case is priced from them and left unconverged
-        if len(outliers) >= 3 and median(outliers) > 1.05 * max(c['ratio'] for c in per.values()):
-            per['rejected'] = dict(ratio=median(outliers), half=float('inf'), cross=0.0, n=len(outliers),
+        # the highest coherent group among them, so cheaper rejected rounds cannot mask an expensive mode
+        mode = highest_mode(outliers)
+        if mode is not None and mode > 1.05 * max(c['ratio'] for c in per.values()):
+            per['rejected'] = dict(ratio=mode, half=float('inf'), cross=0.0, n=len(outliers),
                                    x_ns=float('nan'), a_ns=float('nan'))
         top = max(per.values(), key=lambda c: c['ratio'])
         # the widest interval and cross-check of any cluster: an undersampled cluster makes the whole case unconverged
@@ -204,25 +217,29 @@ def main(d, filt=''):
 
 
 def selftest():
-    """A case with 100 fast rounds at ratio 1 and 5 slow ones at ratio 3, in three processes: it must be priced from the
-    slow mode, and unconverged."""
+    """Rare slow modes that MAD rejects must price the case and leave it unconverged:
+    - 100 fast rounds at ratio 1 and 5 slow ones at ratio 3;
+    - the same, with 8 more rejected rounds at ratio 1, which must not mask the 5 at ratio 3."""
     import tempfile
     rnd = random.Random(7)
-    with tempfile.TemporaryDirectory() as d:
-        for be in ('jvm', 'rust'):
-            for i in range(1, 4):
-                with open(f'{d}/{be}-{i}.tsv', 'w') as f:
-                    f.write('# anchor 6000; reference 1000\nC\t2\tcase\tg\t6000\t1\t1\n')
-                    for k in range(105):
-                        slow = k % 21 == 20
-                        p = (360000 if slow else 180000) * (1 + rnd.uniform(-0.01, 0.01))
-                        a = 30000 * (1 + rnd.uniform(-0.01, 0.01))
-                        x = a * (3 if slow else 1)
-                        f.write(f'S\t2\t{k}\tAXA\t{p}\t{p}\t{a}\t{a}\t{x}\t{x}\t{a / 6}\n')
-        _, out = process(f'{d}/jvm-1.tsv')
-        case = out['2']
-        assert case['ratio'] > 2.5, f'priced from the slow mode: {case["ratio"]}'
-        assert case['half'] == float('inf'), 'and unconverged'
+
+    def case(shape):
+        with tempfile.TemporaryDirectory() as d:
+            path = f'{d}/jvm-1.tsv'
+            with open(path, 'w') as f:
+                f.write('# anchor 6000; reference 1000\nC\t2\tcase\tg\t6000\t1\t1\n')
+                for k, (probe, ratio) in enumerate(shape):
+                    p = probe * (1 + rnd.uniform(-0.01, 0.01))
+                    a = 30000 * (1 + rnd.uniform(-0.01, 0.01))
+                    x = a * ratio
+                    f.write(f'S\t2\t{k}\tAXA\t{p}\t{p}\t{a}\t{a}\t{x}\t{x}\t{a / 6}\n')
+            return process(path)[1]['2']
+
+    fast = [(180000, 1)] * 100
+    for name, shape in (('5 slow', fast + [(360000, 3)] * 5), ('5 slow, 8 cheap outliers', fast + [(240000, 1)] * 8 + [(360000, 3)] * 5)):
+        c = case(shape)
+        assert c['ratio'] > 2.5, f'{name}: priced from the slow mode, got {c["ratio"]}'
+        assert c['half'] == float('inf'), f'{name}: unconverged'
     print('selftest ok')
 
 
