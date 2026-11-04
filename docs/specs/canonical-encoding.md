@@ -109,7 +109,8 @@ Further rules:
 - **Not allowed:** indefinite-length items, floats (major type 7 additional information 25/26/27), simple values other than false/true/null, and tags other than 2, 3 and 30.
 - **Tags 2 and 3** are only valid when the value is outside the major type 0/1 range.
 - **Decoders** MUST reject trailing bytes after the top-level item and MUST enforce a maximum nesting depth. The default limit is 256 and counts arrays and maps, empty ones included: a scalar has depth 0, and an array or map has depth one more than its deepest element (1 when empty).
-- **Bignums** (tags 2 and 3) are checked in this order, and the first failure is the refusal: the tag wraps a byte
+- **Bignums** (tags 2 and 3) are checked in this order, and the first failure is the refusal: the item the tag wraps
+  has a well-formed head (its own refusal: `UnexpectedEnd` when truncated, `Unsupported` for a float), of a byte
   string (`NonCanonical`), present in full (`UnexpectedEnd`), non-empty with no leading zero byte and longer than 8
   bytes (`NonCanonical`), and at most `MaxIntegerBits` wide (`IntegerTooWide`, §1). The width is read from the length
   alone, before the integer is built: Java's `bitLength` of `m` and of `-1 - m` are both `m`'s, so either tag's width

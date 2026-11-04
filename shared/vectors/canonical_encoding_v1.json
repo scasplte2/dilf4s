@@ -868,6 +868,14 @@
     {
       "cbor" : "c35affffffffffffffff",
       "error" : "UnexpectedEnd"
+    },
+    {
+      "cbor" : "c2f90000",
+      "error" : "Unsupported"
+    },
+    {
+      "cbor" : "c279",
+      "error" : "UnexpectedEnd"
     }
   ],
   "taggedHash" : [

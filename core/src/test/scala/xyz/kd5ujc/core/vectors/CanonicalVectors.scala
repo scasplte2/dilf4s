@@ -270,7 +270,10 @@ object CanonicalVectors {
     // a bignum's form, and that it is present in full, are checked before its width: 4154 bytes with a leading zero is
     // non-canonical, and a 2^32 - 1-byte bignum with 4 bytes present is truncated
     hex"c259103a00" ++ ByteVector.fill(4153)(0xff),
-    hex"c35affffffff" ++ ByteVector.fill(4)(0xff)
+    hex"c35affffffff" ++ ByteVector.fill(4)(0xff),
+    // the wrapped item's head is read before its kind: a float is Unsupported, a truncated head UnexpectedEnd
+    hex"c2f90000",
+    hex"c279"
   )
 
   private val tagMessages: List[ByteVector] = List(ByteVector.empty, ByteVector("abc".getBytes(UTF_8)), hex"00ff00ff")

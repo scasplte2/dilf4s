@@ -120,7 +120,7 @@ read); then each field's **meaning**, in this order: a Merkle proof's path diges
 proof's records in order, its structure before its root (`InvalidProof` before `RootMismatch`); a Merkle path's length
 before its root; a Poseidon proof's siblings before its position; the versioned trie's records in the order
 `versioned-trie.md` §5 gives. Within canonical CBOR, a bignum's faults come in the order `canonical-encoding.md` §2
-gives (its byte string, present in full, in canonical form, then its width), and a rational's faults in the order it
+gives (the wrapped item's head, that it is a byte string, present in full, in canonical form, then its width), and a rational's faults in the order it
 gives: its pair, its numerator then the numerator's width, its denominator then the denominator's width, the
 denominator's range, and lowest terms last (so a part too wide is `RationalTooWide` even when the denominator is below 2
 or the rational is not in lowest terms; `canonical_encoding_v1.json`'s `cborRejections` pin each pair). The refusal
