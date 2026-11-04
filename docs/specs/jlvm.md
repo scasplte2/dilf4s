@@ -477,8 +477,10 @@ A versioned trie (`versioned-trie.md`) is verified with these same trie ops. Its
   exactly the trie's entries under the prefix, or in `[from, until)`.
 - **"Not covered" is an error.** A proof that does not reach the queried key, or reaches a stub inside the queried
   prefix or range, is a `Crypto` error, never `false`: it establishes neither presence nor absence.
-- **Gas** is priced by weight. As measured: about 13 per unit of weight for Merkle proofs, and 30 for trie proofs,
-  whose records are larger and hashed through CBOR.
+- **Gas** is priced by weight. As measured: about 8 per unit of weight for a Merkle inclusion proof and 13 for a
+  consistency proof, and 15 for a trie proof, whose records are larger and hashed through CBOR. A listing check
+  (`trie_prefix_verify`, `trie_range_verify`) is linear in its proof's weight and its bounds: 17 per unit of weight
+  over a base of 20,000.
 - **Claims heavier than `MaxProofWeight`** together (a leaf, a value, a listing's values; `conformance.md` §5) are a
   `Crypto` error, refused from their weights before any is hashed and before the proof is decoded (after the key and
   the entries' shapes are checked).
@@ -521,8 +523,9 @@ by `GasRatios export`), through the evaluator on the direct driver:
 - **Statistics.** A case's ratio in a process is the median over its rounds, with a bootstrap 95% interval, cross-
   checked against `case/reference × reference/anchor`. Each backend runs at least three processes, pinned to one CPU
   with a fixed heap; the ratio is the highest of them, and processes more than 5% apart are reported (a process's
-  heap and code layout moves allocation-heavy operations by up to tens of percent). A process's result that does not
-  reproduce when the case is re-run alone, in three more processes, is set aside as an outlier. A case is converged
+  heap and code layout moves allocation-heavy operations by up to tens of percent). A slow result is kept even when
+  the case is cheaper re-run alone: a full run's heap and code profile, shaped by every other case, are ones a node
+  can be in too. Re-runs alone only add measurements, for cases added after a full run. A case is converged
   when its interval is within ±5% and the cross-check agrees within 5%.
 - **Pricing.** A base and per-unit rates are fitted to cases at small and large sizes and at adversarial shapes (keys
   sharing long prefixes, deep maps, worst-case substring searches, long trie keys, ground VRF counters), so that each
@@ -580,7 +583,7 @@ a 4096-bit rational result.
   quadratic in the expansion, which can be far longer than the number's weight: `1/2^4095` weighs 66 and renders as
   4,097 characters. Measured at about 1 gas a unit for the widest numbers; the 6 limbs are the fixed cost of a conversion (about 100 gas
   for a small integer).
-- **Pieces.** `cat` also charges 4 per element of each argument and 8 per argument, and `join` 14 per element of each
+- **Pieces.** `cat` also charges 4 per element of each argument and 12 per argument, and `join` 14 per element of each
   argument (the table): a piece costs a few gas besides its bytes, and `cat` walks every argument, even an empty array.
 - **Separators.** `join` renders its pieces, checks the result's weight (saturating) against the bound, which is
   `Limit` before anything is built, and then charges `perUnit(join)` per byte of separator the result will copy.
@@ -624,7 +627,7 @@ times.
 
 <!-- gas-table: generated from GasSchedule.V1 by GasTableGen; do not edit -->
 
-Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathSegment` 3, `callbackRun` 18, `rendering` 2.
+Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 62, `perPathSegment` 3, `callbackRun` 18, `rendering` 2.
 
 | Operation | Base | Per unit | Other rates |
 |---|---|---|---|
@@ -646,13 +649,13 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `+` | 40 | 4 per `Weight` | plus 7 per `RationalLimbs2`; plus 40 per `Elements` |
 | `-` | 40 | 3 per `Weight` | plus 7 per `RationalLimbs2`; plus 60 per `Elements` |
 | `*` | 40 | 10 per `Weight` | plus 7 per `RationalLimbs2`; plus 40 per `Elements` |
-| `/` | 340 | 2 per `Weight` | plus 8 per `Limbs2` |
-| `%` | 340 | 2 per `Weight` | plus 8 per `Limbs2`; plus 8 per `RationalLimbs2` |
+| `/` | 340 | 2 per `Weight` | plus 9 per `Limbs2` |
+| `%` | 340 | 2 per `Weight` | plus 9 per `Limbs2`; plus 8 per `RationalLimbs2` |
 | `min` | 30 | 1 per `Weight` | plus 14 per `RationalWeight`; plus 35 per `Elements` |
 | `max` | 30 | 1 per `Weight` | plus 14 per `RationalWeight`; plus 35 per `Elements` |
 | `abs` | 60 |  | plus 2 per `RationalLimbs2` |
 | `round` | 60 | 8 per `Weight` |  |
-| `round_half_up` | 60 | 8 per `Weight` |  |
+| `round_half_up` | 140 | 8 per `Weight` |  |
 | `floor` | 60 | 8 per `Weight` |  |
 | `ceil` | 60 | 8 per `Weight` |  |
 | `pow` | 20000 |  |  |
@@ -663,19 +666,19 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `some` | 40 | 8 per `Elements` |  |
 | `none` | 40 | 8 per `Elements` |  |
 | `find` | 40 | 8 per `Elements` |  |
-| `count` | 45 | 8 per `Elements` |  |
+| `count` | 45 | 2 per `Elements` |  |
 | `merge` | 210 | 3 per `Weight` | merging: 12 per level and entry, 2 per level and weight block |
 | `in` | 70 | 1 per `Weight` | plus 1 per `Elements` |
 | `intersect` | 50 | 17 per `Weight` |  |
-| `unique` | 50 | 18 per `Weight` |  |
-| `slice` | 60 | 3 per `Elements` |  |
+| `unique` | 60 | 18 per `Weight` |  |
+| `slice` | 120 | 3 per `Elements` |  |
 | `reverse` | 55 | 7 per `Elements` |  |
 | `flatten` | 60 | 3 per `Weight` |  |
 | `length` | 45 | 1 per `Weight` |  |
-| `cat` | 65 | 1 per `Weight` | plus 4 per `Elements`; plus 8 per `Arguments` |
+| `cat` | 65 | 1 per `Weight` | plus 4 per `Elements`; plus 12 per `Arguments` |
 | `substr` | 75 | 1 per `Weight` |  |
-| `lower` | 45 | 2 per `Weight` |  |
-| `upper` | 50 | 2 per `Weight` |  |
+| `lower` | 45 | 1 per `Weight` |  |
+| `upper` | 50 | 1 per `Weight` |  |
 | `join` | 110 | 1 per `Weight` | plus 14 per `Elements` |
 | `split` | 85 | 6 per `Weight` |  |
 | `trim` | 75 | 1 per `Weight` |  |
@@ -691,10 +694,10 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `exists` | 60 | 1 per `Elements` |  |
 | `missing` | 50 | 20 per `Elements` |  |
 | `missing_some` | 60 | 20 per `Elements` |  |
-| `typeof` | 30 |  |  |
-| `hex` | 45 | 2 per `Weight` |  |
+| `typeof` | 60 |  |  |
+| `hex` | 45 | 1 per `Weight` |  |
 | `unhex` | 80 | 2 per `Weight` |  |
-| `hex_to_int` | 80 | 6 per `Weight` |  |
+| `hex_to_int` | 80 | 4 per `Weight` |  |
 | `bytes_to_int` | 45 | 1 per `Weight` |  |
 | `int_to_bytes` | 70 | 2 per `Weight` |  |
 | `sha256` | 95 | 1 per `Weight` |  |
@@ -716,11 +719,11 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 38, `perPathS
 | `bn254_pairing` | 135000 | 470 per `Weight` |  |
 | `schnorr_verify` | 5000 | 450 per `Weight` | argument 1: 1 per `Weight` |
 | `sigma_verify` | 5000 | 450 per `Weight` | argument 2: 1 per `Weight` |
-| `merkle_verify` | 2000 | 13 per `Weight` |  |
+| `merkle_verify` | 1000 | 8 per `Weight` |  |
 | `merkle_consistency_verify` | 4000 | 13 per `Weight` |  |
-| `trie_verify` | 500 | 30 per `Weight` |  |
-| `trie_prefix_verify` | 1000 | 30 per `Weight` |  |
-| `trie_range_verify` | 1000 | 30 per `Weight` |  |
+| `trie_verify` | 500 | 15 per `Weight` |  |
+| `trie_prefix_verify` | 20000 | 17 per `Weight` |  |
+| `trie_range_verify` | 20000 | 17 per `Weight` |  |
 
 <!-- gas-table: end -->
 

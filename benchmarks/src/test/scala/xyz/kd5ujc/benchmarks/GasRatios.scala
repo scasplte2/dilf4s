@@ -150,14 +150,19 @@ object GasRatios extends IOApp {
 
   def run(args: List[String]): IO[ExitCode] =
     args match {
-      // what each case is charged, and what its program evaluates to: a case that fails early times no operation
+      // what each case is charged, and what its program evaluates to: a case that fails early, or a check that comes
+      // out false, may not time the work it names
       case "check" :: Nil =>
         load.flatMap {
           case (jlvm, cases) =>
             IO.fromEither(cases.traverse(prepare).leftMap(e => new IllegalArgumentException(e.toString)))
               .flatMap(_.traverse_ { c =>
                 val o = jlvm.evaluate(c.program, c.data, Map.empty, unlimited)
-                IO.println(s"${c.c.name}\t${c.charged(jlvm)}\t${o.result.fold(e => s"error ${e.getClass.getSimpleName}", _ => "ok")}")
+                val shown = o.result.fold(
+                  e => s"error ${e.getClass.getSimpleName}",
+                  v => if (v == CanonicalValue.CBool(false)) "false" else "ok"
+                )
+                IO.println(s"${c.c.name}\t${c.charged(jlvm)}\t$shown")
               })
         }.as(ExitCode.Success)
       case "export" :: path :: Nil =>
