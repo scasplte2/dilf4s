@@ -6,6 +6,8 @@ Reads the raw rounds that GasRatios (JVM) and gas_ratios (Rust) print, one file 
 
 - per round, the case's ratio to the anchor is mean(case) / mean(anchor) over the palindrome, and the same against
   the reference (sha256 of 1024 bytes);
+- rounds a cluster's MAD rejects are kept aside: when at least 3 of them agree above the accepted ratio, they are a
+  minority mode (a slower core too rare to cluster), and the case is priced from them and left unconverged;
 - a round is rejected when its two probes differ by more than 10% (the thread migrated or the clock moved inside it);
 - rounds are clustered by probe time into two clusters (performance and efficiency cores), when the clusters' centres
   differ by more than 10%; within each cluster, rounds whose probe is more than 3 MADs from its median are rejected;
@@ -20,7 +22,7 @@ A case is converged when its interval half-width is at most 5% (the widest over 
 within 5%; processes that disagree by more than 5% are flagged `spread`, and priced from the highest. Gas is ratio x
 the anchor's own charge; the schedule's charge is beside it.
 
-usage: ratios.py <dir with jvm-*.tsv and rust-*.tsv> [regex]
+usage: ratios.py <dir with jvm-*.tsv and rust-*.tsv> [regex] | ratios.py --selftest
 """
 import glob
 import random
@@ -96,6 +98,7 @@ def process(path):
     for idx, rs in rounds.items():
         rejected = 0
         by = defaultdict(list)
+        outliers = []  # rounds a cluster's MAD rejected: a stable minority mode must not vanish with them
         for (p1, p2, a1, a2, x1, x2, r) in rs:
             p = (p1 + p2) / 2
             if abs(p1 - p2) > MIGRATION * p:
@@ -107,6 +110,7 @@ def process(path):
                     placed = True
                     if abs(p - m) > 3 * 1.4826 * max(d, 1e-9):
                         rejected += 1
+                        outliers.append((x1 + x2) / (a1 + a2))
                     else:
                         a, x = (a1 + a2) / 2, (x1 + x2) / 2
                         by[name].append((x / a, x / r, r / a, x, a))
@@ -125,6 +129,11 @@ def process(path):
         if not per:
             out[idx] = None
             continue
+        # rejected rounds that agree with one another and sit above the accepted ratio are a mode of their own (a slower
+        # core too rare to cluster): the case is priced from them and left unconverged
+        if len(outliers) >= 3 and median(outliers) > 1.05 * max(c['ratio'] for c in per.values()):
+            per['rejected'] = dict(ratio=median(outliers), half=float('inf'), cross=0.0, n=len(outliers),
+                                   x_ns=float('nan'), a_ns=float('nan'))
         top = max(per.values(), key=lambda c: c['ratio'])
         # the widest interval and cross-check of any cluster: an undersampled cluster makes the whole case unconverged
         out[idx] = dict(meta=meta[idx], ratio=top['ratio'], half=max(c['half'] for c in per.values()),
@@ -194,5 +203,31 @@ def main(d, filt=''):
         print('\t'.join(row))
 
 
+def selftest():
+    """A case with 100 fast rounds at ratio 1 and 5 slow ones at ratio 3, in three processes: it must be priced from the
+    slow mode, and unconverged."""
+    import tempfile
+    rnd = random.Random(7)
+    with tempfile.TemporaryDirectory() as d:
+        for be in ('jvm', 'rust'):
+            for i in range(1, 4):
+                with open(f'{d}/{be}-{i}.tsv', 'w') as f:
+                    f.write('# anchor 6000; reference 1000\nC\t2\tcase\tg\t6000\t1\t1\n')
+                    for k in range(105):
+                        slow = k % 21 == 20
+                        p = (360000 if slow else 180000) * (1 + rnd.uniform(-0.01, 0.01))
+                        a = 30000 * (1 + rnd.uniform(-0.01, 0.01))
+                        x = a * (3 if slow else 1)
+                        f.write(f'S\t2\t{k}\tAXA\t{p}\t{p}\t{a}\t{a}\t{x}\t{x}\t{a / 6}\n')
+        _, out = process(f'{d}/jvm-1.tsv')
+        case = out['2']
+        assert case['ratio'] > 2.5, f'priced from the slow mode: {case["ratio"]}'
+        assert case['half'] == float('inf'), 'and unconverged'
+    print('selftest ok')
+
+
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else '')
+    if sys.argv[1:] == ['--selftest']:
+        selftest()
+    else:
+        main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else '')

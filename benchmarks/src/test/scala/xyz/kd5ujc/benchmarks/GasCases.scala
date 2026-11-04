@@ -177,6 +177,15 @@ object GasCases {
         """{"var": "a0"}""",
         m("a0" -> a(xs))
       )
+  } ++ List(Op.Cat, Op.Merge, Op.Exists, Op.TypeOf).map { o =>
+    // arguments with no entries and no size: each is still an argument the operation takes and walks
+    pair(
+      s"${o.wire}: a spread of 10,000 empty arrays",
+      o.wire,
+      Json.obj(o.wire -> Json.obj("var" -> "a0".asJson)).noSpaces,
+      """{"var": "a0"}""",
+      m("a0" -> a(Vector.fill(10000)(a(Vector.empty))))
+    )
   }
 
   private val logic: List[GasCase] =

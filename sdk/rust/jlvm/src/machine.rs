@@ -610,8 +610,19 @@ impl<'a> Machine<'a> {
             }
             // the elements are sized where they are, and taken out of the array only once that is paid
             Kont::Spread { op } => match v {
+                // each element is an argument: it pays `element` first, so sizing a long spread is paid for
                 Value::Array(a) => {
-                    let g = self.schedule.sized_within(op, a.items(), self.left());
+                    let per = self.schedule.element.times(u64::try_from(a.items().len()).unwrap_or(u64::MAX));
+                    let left = self.left();
+                    let g = if per > left {
+                        per
+                    } else {
+                        per.plus(self.schedule.sized_within(
+                            op,
+                            a.items(),
+                            Gas::new(left.value().saturating_sub(per.value())),
+                        ))
+                    };
                     Step::Charge(g, Then::OperateOn { op, array: a })
                 }
                 other => Step::Fail(JlvmError::type_error(
