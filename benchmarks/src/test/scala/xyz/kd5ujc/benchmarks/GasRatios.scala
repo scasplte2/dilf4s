@@ -1,5 +1,6 @@
 package xyz.kd5ujc.benchmarks
 
+import java.lang.management.ManagementFactory
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Paths}
 import java.util.concurrent.Executors
@@ -12,6 +13,7 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
+import scala.jdk.CollectionConverters._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.crypto.bls.Bls12381
@@ -37,7 +39,8 @@ import GasCases.GasCase
  * harness (`sdk/rust/jlvm/examples/gas_ratios.rs`) reads the same cases (`export`) and runs the same rounds.
  *
  * `sbt "benchmarks/Test/runMain xyz.kd5ujc.benchmarks.GasRatios export <file>"`;
- * `... GasRatios measure [rounds] [regex]` (run it with a fixed heap, pinned to one CPU, several times).
+ * `... GasRatios measure [rounds] [regex]`, in the reference configuration ([[Reference]]) and several processes:
+ * `benchmarks/calibrate.sh` runs both harnesses as the schedule's prices are derived.
  */
 object GasRatios extends IOApp {
 
@@ -52,6 +55,39 @@ object GasRatios extends IOApp {
 
   /** Each batch of a unit takes at least this long. */
   val Target: Double = 2.5e5
+
+  /**
+   * The JVM configuration prices are derived under (docs/specs/jlvm.md §7): one CPU, a fixed 4 GiB heap touched in
+   * full at start, and the serial collector, so every collection runs on the measuring core, inside the round of the
+   * allocation that caused it. `measure` refuses to run in any other.
+   */
+  object Reference {
+    val Heap: Long = 4L << 30
+    val Flags: List[String] = List("-Xms4g", "-Xmx4g", "-XX:+UseSerialGC", "-XX:+AlwaysPreTouch")
+    val Collectors: Set[String] = Set("Copy", "MarkSweepCompact")
+
+    /** The configuration this JVM runs in, as the header names it, or what differs from the reference. */
+    val check: IO[Either[String, String]] = IO {
+      val heap = ManagementFactory.getMemoryMXBean.getHeapMemoryUsage
+      val flags = ManagementFactory.getRuntimeMXBean.getInputArguments.asScala.toList
+      val collectors = ManagementFactory.getGarbageCollectorMXBeans.asScala.map(_.getName).toSet
+      val cpus = Runtime.getRuntime.availableProcessors
+      val wrong = List(
+        // the reported maximum leaves out a survivor space; -Xmx4g is among the flags checked below
+        Option.when(heap.getInit != Heap)(s"initial heap ${heap.getInit} bytes, not $Heap"),
+        Option.when(!Flags.forall(flags.contains))(
+          s"flags ${flags.mkString(" ")}, missing ${Flags.filterNot(flags.contains).mkString(" ")}"
+        ),
+        Option.when(collectors != Collectors)(s"collectors ${collectors.mkString(", ")}, not serial"),
+        Option.when(cpus != 1)(s"$cpus CPUs, not pinned to one")
+      ).flatten
+      Either.cond(
+        wrong.isEmpty,
+        s"${Flags.mkString(" ")}; collectors ${Collectors.toList.sorted.mkString(", ")}; 1 CPU",
+        wrong.mkString("; ")
+      )
+    }
+  }
 
   /** Iterations of the probe: xorshift64, a dependent chain of shifts and xors, so its time is the core's speed. */
   val ProbeSteps: Int = 1 << 17
@@ -89,9 +125,16 @@ object GasRatios extends IOApp {
 
   private def probe: IO[Double] = timed(xorshift(ProbeSteps, 0x9e3779b97f4a7c15L)).map(_._1.toDouble)
 
-  /** The batch size that takes at least `target` ns, doubling from 1. */
-  private def size(jlvm: Jlvm, c: Prepared, p: Compiled, target: Double): IO[Int] = {
-    def go(n: Int): IO[Int] = batch(jlvm, c, p, n).flatMap(ns => if (ns * n >= target || n >= (1 << 24)) IO.pure(n) else go(n * 2))
+  /**
+   * The batch size that takes at least `target` ns, doubling from 1, judged by the fastest of three batches at each
+   * size (`tries`): one batch slowed by an interruption cannot stop the doubling early, and leave a case timed one
+   * evaluation at a time (its timer and cold caches with it). The warm-up only needs the work done, once per size.
+   */
+  private def size(jlvm: Jlvm, c: Prepared, p: Compiled, target: Double, tries: Int = 3): IO[Int] = {
+    def go(n: Int): IO[Int] =
+      List.fill(tries)(batch(jlvm, c, p, n)).sequence.map(_.min).flatMap { ns =>
+        if (ns * n >= target || n >= (1 << 24)) IO.pure(n) else go(n * 2)
+      }
     go(1)
   }
 
@@ -137,7 +180,7 @@ object GasRatios extends IOApp {
 
   /** Every case and baseline run for at least `nanos`: the JIT sees every operation before anything is timed. */
   private def warm(jlvm: Jlvm, cs: List[Prepared], nanos: Double): IO[Unit] =
-    cs.traverse_(c => size(jlvm, c, c.program, nanos) *> size(jlvm, c, c.baseline, nanos).void)
+    cs.traverse_(c => size(jlvm, c, c.program, nanos, 1) *> size(jlvm, c, c.baseline, nanos, 1).void)
 
   private def load: IO[(Jlvm, List[GasCase])] =
     for {
@@ -172,8 +215,11 @@ object GasRatios extends IOApp {
       case "measure" :: rest =>
         val rounds = rest.headOption.flatMap(_.toIntOption).getOrElse(101)
         val filter = rest.drop(1).headOption.filter(_.nonEmpty).map(_.r)
-        load.flatMap {
-          case (jlvm, cases) =>
+        (
+          Reference.check.flatMap(_.leftMap(w => new IllegalStateException(s"not the reference configuration: $w")).liftTo[IO]),
+          load
+        ).flatMapN {
+          case (configuration, (jlvm, cases)) =>
             for {
               prepared <- IO.fromEither(cases.traverse(prepare).leftMap(e => new IllegalArgumentException(e.toString)))
               (anchor, reference) = (prepared(0), prepared(1))
@@ -181,11 +227,12 @@ object GasRatios extends IOApp {
               _ <- IO.println(
                 s"# backend JVM ${System.getProperty("java.version")}; ${chosen.size} cases; $rounds rounds; probe $ProbeSteps steps"
               )
+              _ <- IO.println(s"# configuration $configuration")
               _ <- IO.println(s"# anchor ${anchor.charged(jlvm)}; reference ${reference.charged(jlvm)}")
               _ <- dedicated.use { ec =>
                 (for {
                   _ <- warm(jlvm, anchor :: reference :: chosen.map(_._1), 2e8)
-                  _ <- size(jlvm, anchor, anchor.program, 3e9)
+                  _ <- size(jlvm, anchor, anchor.program, 3e9, 1)
                   a <- unit(jlvm, anchor)
                   r <- unit(jlvm, reference)
                   _ <- chosen.foldLeftM(0x2545f4914f6cdd1dL) { case (seed, (c, i)) => measure(jlvm, a, r, i, c, rounds, seed) }

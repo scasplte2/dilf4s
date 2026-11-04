@@ -16,7 +16,9 @@ Reads the raw rounds that GasRatios (JVM) and gas_ratios (Rust) print, one file 
   HIGHER of its clusters', so no op is priced from the faster core type alone. A cluster of fewer than 15 rounds
   still counts towards that, but has no interval, which leaves the case unconverged;
 - across processes, the HIGHEST (a process's heap and code layout moves allocation-heavy operations by up to tens of
-  percent, and a node runs in whichever layout it gets), and the spread (max - min) / median;
+  percent, and a node runs in whichever layout it gets), the second-highest, how many processes lie within 5% of the
+  highest, and the spread (max - min) / median. The JVM runs in one reference configuration (GasRatios.Reference),
+  which every JVM file must name alike;
 - the cross-check: median(case/reference) x median(reference/anchor) against median(case/anchor).
 
 A case is converged when its interval half-width is at most 5% (the widest over processes) and the cross-check agrees
@@ -95,6 +97,16 @@ def load(path):
     return anchor, meta, rounds
 
 
+def configuration(path):
+    """The configuration a JVM process names in its header, or None."""
+    for line in open(path):
+        if line.startswith('# configuration '):
+            return line[len('# configuration '):].strip()
+        if not line.startswith('#'):
+            return None
+    return None
+
+
 def process(path):
     """Per case: (ratio, ci half-width, cluster ratios, cross-check disagreement, rejected, accepted, op ns, anchor ns)."""
     anchor, meta, rounds = load(path)
@@ -164,6 +176,10 @@ def main(d, filt=''):
         if not runs:
             continue
         anchors[be] = runs[0][0]
+        if be == 'jvm':
+            configs = {configuration(p) for p in glob.glob(f'{d}/jvm-*.tsv')}
+            if len(configs) != 1 or None in configs:
+                sys.exit(f'JVM processes in different or unnamed configurations: {configs}')
         for idx in set().union(*[r[1].keys() for r in runs]):
             per = [r[1][idx] for r in runs if r[1].get(idx)]
             if not per:
@@ -171,14 +187,16 @@ def main(d, filt=''):
             ratios = [p['ratio'] for p in per]
             m = median(ratios)
             results[idx][be] = dict(
-                meta=per[0]['meta'], ratio=max(ratios), spread=(max(ratios) - min(ratios)) / abs(m) if m else float('inf'),
+                meta=per[0]['meta'], ratio=max(ratios), second=sorted(ratios)[-2] if len(ratios) > 1 else max(ratios),
+                near=sum(1 for x in ratios if x >= 0.95 * max(ratios)), spread=(max(ratios) - min(ratios)) / abs(m) if m else float('inf'),
                 half=max(p['half'] for p in per), cross=median([p['cross'] for p in per]),
                 clusters=per[0]['clusters'], rounds=per[0]['rounds'], rejected=sum(p['rejected'] for p in per),
                 accepted=sum(p['accepted'] for p in per), procs=len(per),
                 x_us=median([p['x_ns'] for p in per]) / 1000, a_us=median([p['a_ns'] for p in per]) / 1000)
     cols = ['name', 'group', 'charged']
     for be in ('jvm', 'rust'):
-        cols += [f'{be}_gas', f'{be}_ci%', f'{be}_agree%', f'{be}_cross%', f'{be}_clusters', f'{be}_rej/acc', f'{be}_us']
+        cols += [f'{be}_gas', f'{be}_ci%', f'{be}_agree%', f'{be}_cross%', f'{be}_clusters', f'{be}_rej/acc', f'{be}_us',
+                 f'{be}_2nd', f'{be}_near']
     cols += ['worst', 'worst/charged', 'flags']
     print('# anchors ' + ', '.join(f'{k} {v}' for k, v in anchors.items()))
     print('\t'.join(cols))
@@ -192,13 +210,14 @@ def main(d, filt=''):
         for be in ('jvm', 'rust'):
             x = e.get(be)
             if not x:
-                row += ['-'] * 7
+                row += ['-'] * 9
                 continue
             g = x['ratio'] * anchors[be]
             worst = max(worst, g)
             cl = '/'.join(f"{k}:{v * anchors[be]:.0f}({x['rounds'][k]})" for k, v in sorted(x['clusters'].items()))
             row += [f'{g:.0f}', f"{100 * x['half']:.1f}", f"{100 * x['spread']:.1f}", f"{100 * x['cross']:.1f}", cl,
-                    f"{x['rejected']}/{x['accepted']}", f"{x['x_us']:.3f}"]
+                    f"{x['rejected']}/{x['accepted']}", f"{x['x_us']:.3f}", f"{x['second'] * anchors[be]:.0f}",
+                    f"{x['near']}/{x['procs']}"]
             if x['procs'] < 3:
                 flags.append(f'{be}:procs={x["procs"]}')
             if x['half'] > 0.05 or x['cross'] > 0.05:
