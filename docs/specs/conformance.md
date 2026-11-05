@@ -215,10 +215,10 @@ API's one error type (Scala `xyz.kd5ujc.core.hash.HashError`, Rust `dilf4s_core:
 
 | Kind | Fields | Raised by |
 |---|---|---|
-| `InvalidLength` | `algorithm`, `expected` (the output size), `actual` | a digest from bytes or hex of another length |
+| `InvalidLength` | `algorithm`, `expected` (the output size), `actual` | a digest from bytes or hex of another length; in TypeScript, until its result types widen to a kind for an argument of the wrong type (#116), also bytes that are not a `Uint8Array` (`actual` 0) |
 | `InvalidHex` | `offset` (normative, §3) | hex decoding, and a digest from hex |
 | `InvalidDomainTag` | `tag`, a preview | a domain tag outside the grammar |
-| `InvalidExpansion` | `refusal` (normative, §3), `algorithm`, `limit` (the most bytes it expands to) | `expand_message_xmd` |
+| `InvalidExpansion` | `refusal` (normative, §3), `algorithm`, `limit` (the most bytes it expands to) | `expand_message_xmd`; in TypeScript, until #116, `emptyDst` also for a DST that is not a `Uint8Array` |
 | `UnknownAlgorithm` | `name`, a preview | a hash function by name |
 
 For a digest's hex longer than its width, `actual` is half the text's length after the prefix, rounded up, in the

@@ -1,3 +1,5 @@
+import { runInNewContext } from "node:vm";
+
 import { describe, expect, it, test } from "vitest";
 
 import {
@@ -179,6 +181,46 @@ describe("a JavaScript caller's wrongly typed argument to the hash API is a type
     expect(expandMessageXmd(sha, new Uint8Array(0), Uint8Array.of(1), as("32"))).toEqual(refused("outputLength"));
     expect(expandMessageXmd(sha, new Uint8Array(0), Uint8Array.of(1), Number.NaN)).toEqual(refused("outputLength"));
     expect(expandMessageXmd(sha, new Uint8Array(0), Uint8Array.of(1), 1.5)).toEqual(refused("outputLength"));
+    // a string DST is not bytes: emptyDst stands in until the result types widen (#116)
+    expect(expandMessageXmd(sha, new Uint8Array(0), as("dst"), 32)).toEqual(refused("emptyDst"));
+    // an object claiming the typed array's name is not one
+    const claimed = { [Symbol.toStringTag]: "Uint8Array", length: 32, 0: 1 };
+    expect(digestFromBytes(sha, as(claimed))).toEqual({ ok: false, error: { kind: "InvalidLength", algorithm: sha, expected: 32, actual: 0 } });
+    expect(expandMessageXmd(sha, new Uint8Array(0), as(claimed), 32)).toEqual(refused("emptyDst"));
+  });
+  it("a message that is not a Uint8Array throws noble's TypeError: the result type has no room for it until #116", () => {
+    expect(() => expandMessageXmd(sha, as("abc"), Uint8Array.of(1), 32)).toThrow(TypeError);
+  });
+  it("a Buffer and another realm's Uint8Array are bytes", () => {
+    const expected = expectOk(expandMessageXmd(sha, Uint8Array.of(1, 2), Uint8Array.of(7, 8, 9), 32), "plain");
+    const buffer = Buffer.from(new Uint8Array(32).fill(5));
+    const foreign = runInNewContext("new Uint8Array(32).fill(5)") as Uint8Array;
+    for (const b of [buffer, foreign]) {
+      const d = expectOk(digestFromBytes(sha, b), "a digest");
+      expect(Object.getPrototypeOf(d), "a fresh plain array").toBe(Uint8Array.prototype);
+      expect(Array.from(d)).toEqual(Array(32).fill(5));
+    }
+    const dsts = [Buffer.from([7, 8, 9]), runInNewContext("Uint8Array.of(7, 8, 9)") as Uint8Array];
+    for (const dst of dsts) expect(expectOk(expandMessageXmd(sha, Uint8Array.of(1, 2), dst, 32), "expands")).toEqual(expected);
+  });
+  it("a Uint8Array's length is its own: a subclass or an own accessor cannot change it", () => {
+    class Liar extends Uint8Array {}
+    Object.defineProperty(Liar.prototype, "length", { get: () => 32 });
+    const liar = new Liar(5);
+    expect(liar.length, "the lie").toBe(32);
+    expect(digestFromBytes(sha, liar)).toEqual({ ok: false, error: { kind: "InvalidLength", algorithm: sha, expected: 32, actual: 5 } });
+    const own = new Uint8Array(5);
+    Object.defineProperty(own, "length", { get: () => 32 });
+    expect(digestFromBytes(sha, own)).toEqual({ ok: false, error: { kind: "InvalidLength", algorithm: sha, expected: 32, actual: 5 } });
+    // a DST claiming bytes it does not have is empty; one hiding the bytes it has expands as those bytes
+    const empty = new Liar(0);
+    expect(expandMessageXmd(sha, new Uint8Array(0), empty, 32)).toEqual({
+      ok: false,
+      error: { kind: "InvalidExpansion", refusal: "emptyDst", algorithm: sha, limit: 8160 },
+    });
+    const hiding = Uint8Array.of(7, 8, 9);
+    Object.defineProperty(hiding, "length", { get: () => 0 });
+    expect(expandMessageXmd(sha, Uint8Array.of(1, 2), hiding, 32)).toEqual(expandMessageXmd(sha, Uint8Array.of(1, 2), Uint8Array.of(7, 8, 9), 32));
   });
 });
 

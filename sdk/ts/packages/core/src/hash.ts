@@ -10,7 +10,7 @@ import { firstNonDigit, fromHex } from "./hex.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { encodeUtf8 } from "./utf8.js";
-import { copyBytes, isBytes, type Value } from "./value.js";
+import { isBytes, type Value } from "./value.js";
 
 /**
  * A hash refusal, by kind (docs/specs/conformance.md section 6): generated from `shared/schemas/hash-errors.cddl`, as the
@@ -95,16 +95,37 @@ export function parseHashAlgorithm(name: string): Result<HashAlgorithm, HashErro
   return isAlgorithm(name) ? ok(name) : err(unknownAlgorithm(name));
 }
 
+/** `%TypedArray%.prototype`'s `length` getter: it reads an array's internal length, whatever its own `length` says. */
+const typedArrayLength = Reflect.get(Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), "length") ?? {}, "get") as
+  | ((this: unknown) => unknown)
+  | undefined;
+
+/**
+ * The internal length of a caller's `Uint8Array` (`isBytes`), in O(1): never its `length` property, which a subclass
+ * or an own accessor can make say anything.
+ */
+function lengthOf(bytes: Uint8Array): number {
+  const n = typedArrayLength?.call(bytes);
+  return typeof n === "number" ? n : new Uint8Array(bytes).length;
+}
+
+/**
+ * A caller's `Uint8Array` (`isBytes`) as a fresh plain array: the constructor copies through the engine's internal
+ * slots, so no subclass's `length`, iterator or accessor decides what is copied.
+ */
+const ownBytes = (bytes: Uint8Array): Uint8Array => new Uint8Array(bytes);
+
 /**
  * A digest of `algorithm` from its bytes, which must be exactly its output size (a fresh copy). A JavaScript caller's
- * algorithm that is not one of {@link HASH_ALGORITHMS} is `UnknownAlgorithm`, and bytes that are not a `Uint8Array`
- * (`isBytes`) are `InvalidLength` with an `actual` of 0: they hold no byte of a digest.
+ * algorithm that is not one of {@link HASH_ALGORITHMS} is `UnknownAlgorithm`. Bytes that are not a `Uint8Array`
+ * (`isBytes`) are refused as `InvalidLength` with an `actual` of 0: a stand-in, since the family has no kind for an
+ * argument of the wrong type, until the TypeScript result types widen to one (#116).
  */
 export function digestFromBytes(algorithm: HashAlgorithm, bytes: Uint8Array): Result<Uint8Array, HashErrorOf<"InvalidLength" | "UnknownAlgorithm">> {
   if (!isAlgorithm(algorithm)) return err(unknownAlgorithm(algorithm));
   const expected = outputSize(algorithm);
-  const actual = isBytes(bytes) ? bytes.length : 0;
-  return actual === expected ? ok(copyBytes(bytes)) : err({ kind: "InvalidLength", algorithm, expected, actual });
+  const actual = isBytes(bytes) ? lengthOf(bytes) : 0;
+  return actual === expected ? ok(ownBytes(bytes)) : err({ kind: "InvalidLength", algorithm, expected, actual });
 }
 
 /**
@@ -140,10 +161,13 @@ const OVERSIZE_PREFIX = encodeUtf8("H2C-OVERSIZE-DST-");
  * RFC 9380 section 5.3.1 `expand_message_xmd`: `length` uniform bytes from `message` under the domain separation tag
  * `dst`. A DST over 255 bytes is first reduced to `H("H2C-OVERSIZE-DST-" || DST)` (section 5.3.3). Refused as
  * `InvalidExpansion`, before anything is hashed, for an empty DST (`emptyDst`), then for a length that is not an integer
- * in `1..`{@link expansionLimit} (`outputLength`). A JavaScript caller's algorithm that is not one of
- * {@link HASH_ALGORITHMS} is `UnknownAlgorithm`, a DST that is not a `Uint8Array` (`isBytes`) is `emptyDst` (it holds no
- * byte of a tag), and a length that is not a number is `outputLength`. A message that is not a `Uint8Array` has no
- * refusal in the family: it reaches the hash as given, as it does `digest` and `hashParts`.
+ * in `1..`{@link expansionLimit} (`outputLength`). The DST's length is its internal one, and it is copied before it is
+ * hashed, so a subclass cannot change either. For a JavaScript caller's argument of the wrong type: an algorithm that
+ * is not one of {@link HASH_ALGORITHMS} is `UnknownAlgorithm`, and a length that is not a number is `outputLength`. A
+ * DST that is not a `Uint8Array` (`isBytes`) is refused as `emptyDst`: a stand-in, since the family has no kind for an
+ * argument of the wrong type, until the TypeScript result types widen to one (#116). A message that is not a
+ * `Uint8Array` throws noble's `TypeError` from the hash, as `digest` and `hashParts` do: the result type has no room
+ * for it until then.
  */
 export function expandMessageXmd(
   algorithm: HashAlgorithm,
@@ -154,9 +178,10 @@ export function expandMessageXmd(
   if (!isAlgorithm(algorithm)) return err(unknownAlgorithm(algorithm));
   const limit = expansionLimit(algorithm);
   const refused = (refusal: ExpansionRefusal) => err<HashErrorOf<"InvalidExpansion">>({ kind: "InvalidExpansion", refusal, algorithm, limit });
-  if (!isBytes(dst) || dst.length === 0) return refused("emptyDst");
+  if (!isBytes(dst) || lengthOf(dst) === 0) return refused("emptyDst");
   if (!Number.isSafeInteger(length) || length < 1 || length > limit) return refused("outputLength");
-  const tag = dst.length > 255 ? hashParts(algorithm, [OVERSIZE_PREFIX, dst]) : dst;
+  const own = ownBytes(dst);
+  const tag = own.length > 255 ? hashParts(algorithm, [OVERSIZE_PREFIX, own]) : own;
   const suffix = new Uint8Array(tag.length + 1);
   suffix.set(tag);
   suffix[tag.length] = tag.length;

@@ -42,12 +42,25 @@ export class WordList {
     if (typeof (separator as unknown) !== "string") return err({ kind: "InvalidWordList", reason: "the separator is not a string" });
     if (separator.length !== 1) return err({ kind: "InvalidWordList", reason: `a separator of ${separator.length.toString()} characters is not one phrases are split on` });
     if (!SEPARATORS.test(separator)) return err({ kind: "InvalidWordList", reason: "the separator is not one phrases are split on", separator: Preview.of(separator) });
-    // the count is checked before any word is normalised
-    if (words.length !== 2048) return err({ kind: "InvalidWordList", reason: `expected 2048 distinct words without separators, got ${String(words.length)}` });
-    const normalised = words.map(nfkd);
+    // a JavaScript caller's words that are not an array are refused by their type, in O(1) and unread
+    if (!Array.isArray(words)) return err({ kind: "InvalidWordList", reason: "the words are not an array" });
+    // the count is checked before any word is normalised, read once and written only as a number (a Proxy's array
+    // could answer anything): never the caller's text
+    const count: unknown = words.length;
+    if (count !== 2048) {
+      return err({ kind: "InvalidWordList", reason: `expected 2048 distinct words without separators, got ${typeof count === "number" ? count.toString() : "no count"}` });
+    }
+    // each word is read by its index, once: one that is not a string is refused by its type, never converted
+    const normalised: string[] = [];
+    for (let i = 0; i < 2048; i++) {
+      const w: unknown = words[i];
+      if (typeof w !== "string") return err({ kind: "InvalidWordList", reason: `word ${i.toString()} is not a string` });
+      normalised.push(nfkd(w));
+    }
     const valid = normalised.every((w) => w.length > 0 && wellFormed(w) && !SEPARATORS.test(w));
-    if (!valid || normalised.length !== 2048 || new Set(normalised).size !== 2048)
-      return err({ kind: "InvalidWordList", reason: `expected 2048 distinct words without separators, got ${String(words.length)}` });
+    const distinct = new Set(normalised).size;
+    if (!valid || distinct !== 2048)
+      return err({ kind: "InvalidWordList", reason: `expected 2048 distinct words without separators, got ${distinct.toString()} distinct` });
     return ok(new WordList(normalised, separator));
   }
 
