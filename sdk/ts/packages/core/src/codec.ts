@@ -18,7 +18,7 @@ import { Preview } from "./preview.js";
 import { search } from "./keyset.js";
 import { err, ok, type Err, type Result } from "./result.js";
 import { encodeUtf8, utf8LengthOf } from "./utf8.js";
-import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
+import { arrayOfValues, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isValue, mapOfValues, MAX_DEPTH, type MapValue, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
 
 export type { Value } from "./value.js";
 export { ok } from "./result.js";
@@ -669,7 +669,8 @@ function encodeWith(root: Codec<unknown>, value: unknown, depth: number): Result
       }
       const top = stack.at(-1);
       if (!step.done.ok) return step.done;
-      // a hand-made codec is caller code, and may give what is not a value: refused here, where its place is known
+      // a hand-made codec is caller code, and may give what is not a value: refused here, where its place is known, so
+      // every part a container is built from is a value, and the containers are built without checking them again
       if (!isValue(step.done.value)) return typeMismatch(`a codec gave a non-value ${top === undefined ? "at the root" : place(top)}`);
       if (top === undefined) return step.done;
       step = nextEncoding(top, step.done.value, stack);
@@ -767,7 +768,7 @@ function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack
   if (top.kind === "vector") {
     if (top.at >= top.length) {
       stack.pop();
-      return { done: ArrayValue.of(top.out) };
+      return { done: arrayOfValues(top.out) };
     }
     const value: unknown = top.items[top.at++];
     return { codec: top.element, value, depth: top.depth };
@@ -775,7 +776,7 @@ function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack
   stack.pop();
   const entry: unknown = top.entries.next();
   if (!isResult(entry)) return { done: typeMismatch(NOT_A_RESULT) };
-  if (entry.done) return { done: MapValue.of(top.out) };
+  if (entry.done) return { done: mapOfValues(top.out) };
   const pair: unknown = entry.value;
   stack.push(top);
   // read by index, never destructured: an entry that is not an array, which destructuring throws a TypeError for, is
@@ -795,7 +796,7 @@ function nextField(top: Encoding & { readonly kind: "record" }, stack: Encoding[
     if (x !== undefined || !f.optional) return { codec: f.codec, value: x, depth: top.depth };
   }
   stack.pop();
-  return { done: MapValue.of(top.out) };
+  return { done: mapOfValues(top.out) };
 }
 
 /** A part still to decode, or the outcome of the part just decoded. */
