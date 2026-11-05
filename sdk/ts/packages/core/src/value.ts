@@ -34,6 +34,9 @@ import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { compareBytes, encodeUtf8, isWellFormed } from "./utf8.js";
 
+// the typed-array helpers live in bytes.ts, re-exported for the modules that import them from here
+export { isBytes, plainBytes, takeBytes } from "./bytes.js";
+
 /** The nesting limit: a scalar has depth 0, an array or map one more than its deepest element (1 when empty). */
 export const MAX_DEPTH = CANONICAL_MAX_DEPTH;
 
