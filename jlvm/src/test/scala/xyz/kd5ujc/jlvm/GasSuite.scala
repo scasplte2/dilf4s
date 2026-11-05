@@ -51,7 +51,7 @@ object GasSuite extends SimpleIOSuite {
   pureTest("limb-squared units: numbers only; integers count only under Limbs2; a rational's gcd costs GcdLimbs more") {
     import xyz.kd5ujc.core.canonical.CanonicalValue
     import xyz.kd5ujc.numerics.Ratio
-    val big = CanonicalValue.CInt(BigInt(1) << 4000)
+    val big = xyz.kd5ujc.core.canonical.CanonicalGens.int(BigInt(1) << 4000)
     val q =
       CanonicalValue.number(Ratio.of(BigInt(1) << 1000, (BigInt(1) << 600) + 1).toOption.get).fold(e => sys.error(e.toString), identity)
     val limbs = GasSchedule.GcdLimbs + 24
@@ -60,7 +60,7 @@ object GasSuite extends SimpleIOSuite {
       .and(expect.same(0L, GasSchedule.units(SizeUnit.RationalLimbs2, big)))
       .and(expect.same(limbs * limbs, GasSchedule.units(SizeUnit.RationalLimbs2, q)))
       .and(expect.same(limbs * limbs, GasSchedule.units(SizeUnit.Limbs2, q)))
-      .and(expect.same(0L, GasSchedule.units(SizeUnit.Limbs2, CanonicalValue.CInt(BigInt(7)))))
+      .and(expect.same(0L, GasSchedule.units(SizeUnit.Limbs2, CanonicalValue.CInt(7))))
       .and(expect.same(0L, GasSchedule.units(SizeUnit.Limbs2, CanonicalValue.True)))
       .and(expect.same(q.weight, GasSchedule.units(SizeUnit.RationalWeight, q)))
       .and(expect.same(0L, GasSchedule.units(SizeUnit.RationalWeight, big)))
@@ -76,7 +76,7 @@ object GasSuite extends SimpleIOSuite {
   pureTest("get, has, set and unset charge each level of the search, and each SearchBlock of the key at each level") {
     import xyz.kd5ujc.core.canonical.CanonicalValue
     def text(s: String) = CanonicalValue.text(s).toOption.get
-    val map = CanonicalValue.map((0 until 1000).map(i => s"k$i" -> CanonicalValue.CInt(BigInt(i)))).toOption.get
+    val map = CanonicalValue.map((0 until 1000).map(i => s"k$i" -> CanonicalValue.CInt(i))).toOption.get
     val key = text("k" * (3 * Values.SearchBlock + 5))
     List(Op.Get, Op.Has, Op.Set, Op.Unset).foldLeft(success) { (acc, op) =>
       val s = GasSchedule.V1.cost(op).search.get
@@ -90,13 +90,13 @@ object GasSuite extends SimpleIOSuite {
 
   pureTest("merging maps charges each entry after the first map at each level of all their entries; arrays do not") {
     import xyz.kd5ujc.core.canonical.CanonicalValue
-    def m(n: Int) = CanonicalValue.map((0 until n).map(i => s"k$i" -> CanonicalValue.CInt(BigInt(i)))).toOption.get
+    def m(n: Int) = CanonicalValue.map((0 until n).map(i => s"k$i" -> CanonicalValue.CInt(i))).toOption.get
     val (a, b, c) = (m(100), m(30), m(5))
     val mg = GasSchedule.V1.cost(Op.Merge).merging.get
     val perUnit = GasSchedule.V1.cost(Op.Merge).perUnit
     val plain = perUnit * (a.weight + b.weight + c.weight)
     val merged = (mg.perLevel * 35L + mg.perBlock * ((b.weight + c.weight) / Values.SearchBlock)) * GasSchedule.levels(135L)
-    val arr = CanonicalValue.array(Vector(CanonicalValue.CInt(BigInt(1)))).toOption.get
+    val arr = CanonicalValue.array(Vector(CanonicalValue.CInt(1))).toOption.get
     expect
       .same((plain + merged).value, GasSchedule.V1.sized(Op.Merge, Vector(a, b, c)).value)
       .and(expect.same((perUnit * a.weight).value, GasSchedule.V1.sized(Op.Merge, Vector(a)).value))

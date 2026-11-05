@@ -133,8 +133,8 @@ object ProofOpsSuite extends IOSuite {
       val rfc = MerkleHashing.rfc6962[Sha256]
       val tree = MerkleTree.fromLeafHashes[Sha256](leaves.map(rfc.leaf))(using rfc)
       val proof = get(tree.inclusionProof(2).flatMap(MerkleCodec.encodeInclusion(_)))
-      val head = m("root" -> CBytes(tree.root.bytes), "size" -> CInt(BigInt(tree.size)))
-      val outOfRange = m("index" -> CInt(BigInt(9)), "size" -> CInt(BigInt(8)), "path" -> a())
+      val head = m("root" -> CBytes(tree.root.bytes), "size" -> CInt(tree.size))
+      val outOfRange = m("index" -> CInt(9), "size" -> CInt(8), "path" -> a())
       expect
         .same(Right(True), call(f.jlvm, Op.MerkleVerify, head, CBytes(leaves(2)), proof, CanonicalValue.text("rfc6962").toOption.get))
         .and(expect.same(Right(False), call(f.jlvm, Op.MerkleVerify, head, CBytes(leaves(2)), proof)))
@@ -151,9 +151,9 @@ object ProofOpsSuite extends IOSuite {
   test("merkle_verify commits leaves as MerkleTree.leaf does: bytes as they are, other values as canonical CBOR") { f =>
     IO {
       val leaves =
-        List[CanonicalValue](CBytes(ByteVector(1, 2, 3)), m("to" -> CBytes(ByteVector(9)), "amount" -> CInt(BigInt(5))), CInt(BigInt(7)))
+        List[CanonicalValue](CBytes(ByteVector(1, 2, 3)), m("to" -> CBytes(ByteVector(9)), "amount" -> CInt(5)), CInt(7))
       val tree = get(MerkleTree.fromLeaves[Sha256, CanonicalValue](leaves))
-      val head = m("root" -> CBytes(tree.root.bytes), "size" -> CInt(BigInt(tree.size)))
+      val head = m("root" -> CBytes(tree.root.bytes), "size" -> CInt(tree.size))
       leaves.zipWithIndex.foldMap {
         case (leaf, i) =>
           expect.same(
@@ -168,14 +168,14 @@ object ProofOpsSuite extends IOSuite {
     IO {
       val bytes = CBytes(ByteVector(0x61, 0x61))
       val a = text("a")
-      val tree = get(MerkleTree.fromLeaves[Sha256, CanonicalValue](List(bytes, CInt(BigInt(1)))))
-      val head = m("root" -> CBytes(tree.root.bytes), "size" -> CInt(BigInt(tree.size)))
+      val tree = get(MerkleTree.fromLeaves[Sha256, CanonicalValue](List(bytes, CInt(1))))
+      val head = m("root" -> CBytes(tree.root.bytes), "size" -> CInt(tree.size))
       val proof = get(tree.inclusionProof(0L).flatMap(MerkleCodec.encodeInclusion(_)))
       val key = ByteVector(0x00, 0x01)
       val km = get(KeyMode.fixed(2))
       val trie = get(Trie.empty[Sha256](km).putCanonical(key, bytes))
       val trieProof = get(trie.prove(List(key)).flatMap(TrieProofs.encode(_)))
-      val md = m("fixed" -> CInt(BigInt(2)))
+      val md = m("fixed" -> CInt(2))
       def claim(v: CanonicalValue) = call(f.jlvm, Op.TrieVerify, md, CBytes(trie.root.bytes), CBytes(key), v, trieProof)
       expect
         .same(Right(True), call(f.jlvm, Op.MerkleVerify, head, bytes, proof))
@@ -188,7 +188,7 @@ object ProofOpsSuite extends IOSuite {
             call(
               f.jlvm,
               Op.TrieVerify,
-              m("fixed" -> CInt(BigInt(2)), "raw" -> True),
+              m("fixed" -> CInt(2), "raw" -> True),
               CBytes(trie.root.bytes),
               CBytes(key),
               bytes,
@@ -300,7 +300,7 @@ object ProofOpsSuite extends IOSuite {
       val keyProof = get(trie.prove(List(hex("0001"))).flatMap(TrieProofs.encode(_)))
       val inRange = vs.keys.toList.sorted.filter(k => k >= "0001" && k < "8000")
       val entries = (ks: List[String]) => a(ks.map(k => a(CBytes(hex(k)), CBytes(vs(k))))*)
-      val md = m("fixed" -> CInt(BigInt(2)))
+      val md = m("fixed" -> CInt(2))
       val root = CBytes(trie.root.bytes)
       expect
         .same(List("0001", "00ff", "7f80"), inRange)
@@ -328,7 +328,7 @@ object ProofOpsSuite extends IOSuite {
   test("trie_verify: a wrong root is false; an undecodable proof or a short root is a crypto error; a text root a type error") { f =>
     IO {
       val fx = fixture(f, "fixed-2")
-      val md = m("fixed" -> CInt(BigInt(2)))
+      val md = m("fixed" -> CInt(2))
       val key = CBytes(hex("0001"))
       val value = CBytes(values(fx)("0001"))
       val run = (root: CanonicalValue, v: CanonicalValue, proof: CanonicalValue) => call(f.jlvm, Op.TrieVerify, md, root, key, v, proof)
@@ -357,7 +357,7 @@ object ProofOpsSuite extends IOSuite {
       val full = fixture(f, "fixed-2-prefix")
       val partial = fixture(f, "fixed-2")
       val vs = values(full)
-      val md = m("fixed" -> CInt(BigInt(2)))
+      val md = m("fixed" -> CInt(2))
       val entries = (es: List[(String, ByteVector)]) => a(es.map(e => a(CBytes(hex(e._1)), CBytes(e._2)))*)
       val listed = List("0000", "0001", "00ff").map(k => k -> vs(k))
       val run = (es: List[(String, ByteVector)], proof: CanonicalValue) =>
@@ -384,7 +384,7 @@ object ProofOpsSuite extends IOSuite {
       )
       def gate(key: String) = {
         val data =
-          m("mode" -> m("fixed" -> CInt(BigInt(2))), "root" -> rootOf(fx), "key" -> CBytes(hex(key)), "proof" -> proofOf(fx))
+          m("mode" -> m("fixed" -> CInt(2)), "root" -> rootOf(fx), "key" -> CBytes(hex(key)), "proof" -> proofOf(fx))
         f.jlvm.evaluate(program, data, Map.empty, Config()).result
       }
       expect

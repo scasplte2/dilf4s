@@ -36,12 +36,12 @@ object ProjectionDiffSuite extends SimpleIOSuite {
 
   pureTest("diff: O(n log n) comparisons over colliding keys, and exactly the removes and puts between the states") {
     val order = new Counting
-    val prev = TreeMap.from(keys.zipWithIndex.map { case (k, i) => k -> CanonicalValue.int(i) })(using order)
+    val prev = TreeMap.from(keys.zipWithIndex.map { case (k, i) => k -> CanonicalValue.CInt(i) })(using order)
     // a third removed, a third changed, a third kept, and as many new keys
     val next = TreeMap.from(keys.zipWithIndex.collect {
-      case (k, i) if i % 3 == 1 => k -> CanonicalValue.int(-i)
-      case (k, i) if i % 3 == 2 => k -> CanonicalValue.int(i)
-    } ++ keys.map(k => key(s"${k.value}/new") -> CanonicalValue.int(0)))(using order)
+      case (k, i) if i % 3 == 1 => k -> CanonicalValue.CInt(-i)
+      case (k, i) if i % 3 == 2 => k -> CanonicalValue.CInt(i)
+    } ++ keys.map(k => key(s"${k.value}/new") -> CanonicalValue.CInt(0)))(using order)
     val before = order.comparisons.get
     val batch = Projection.diff(prev, next)
     val comparisons = order.comparisons.get - before
@@ -58,13 +58,13 @@ object ProjectionDiffSuite extends SimpleIOSuite {
 
   test("stateRoot and verifyAgainst over colliding keys: a sorted state built in O(n log n), read with no comparison") {
     val order = new Counting
-    val state = TreeMap.from(keys.zipWithIndex.map { case (k, i) => k -> CanonicalValue.int(i) })(using order)
+    val state = TreeMap.from(keys.zipWithIndex.map { case (k, i) => k -> CanonicalValue.CInt(i) })(using order)
     val built = order.comparisons.get
     val n = state.size
     attempt { implicit h =>
       fresh.flatMap { case (_, store) => store.commit(None, 1L, Batch.puts(state)) }
     }.map { committed =>
-      val other = state.updated(keys(7), CanonicalValue.int(-1))
+      val other = state.updated(keys(7), CanonicalValue.CInt(-1))
       val before = order.comparisons.get
       val root = Projection.stateRoot[Harness.H](state)
       val verified = committed.map(head => Projection.verifyAgainst[Harness.H](state, head.stateRoot))

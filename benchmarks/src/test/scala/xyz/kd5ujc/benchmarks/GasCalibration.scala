@@ -42,12 +42,12 @@ object GasCalibration extends IOApp {
     )
     (BigInt(1, stream.toArray) >> (stream.size.toInt * 8 - bits)).setBit(bits - 1)
   }
-  private def int(bits: Int, seed: Int): CanonicalValue = CInt(word(bits, seed))
+  private def int(bits: Int, seed: Int): CanonicalValue = CanonicalValue.int(word(bits, seed)).fold(e => sys.error(e.toString), identity)
   private def rat(bits: Int, seed: Int): CanonicalValue =
     CanonicalValue.number(get(Ratio.of(word(bits, seed), word(bits, seed + 7).setBit(0)))).fold(e => sys.error(e.toString), identity)
-  private def ints(n:  Int): CanonicalValue = a(Vector.tabulate(n)(i => CInt(BigInt(i))))
+  private def ints(n:  Int): CanonicalValue = a(Vector.tabulate(n)(i => CInt(i)))
   private def texts(n: Int): CanonicalValue = a(Vector.tabulate(n)(i => t(s"t$i")))
-  private def map(n:   Int): CanonicalValue = m(Vector.tabulate(n)(i => s"k$i" -> CInt(BigInt(i))))
+  private def map(n:   Int): CanonicalValue = m(Vector.tabulate(n)(i => s"k$i" -> CInt(i)))
   private def text(n:  Int): CanonicalValue = t(("ab c" * (n / 4 + 1)).take(n))
   private def bytes(n: Int): CanonicalValue = CBytes(ByteVector.fill(n.toLong)(0x5a))
 
@@ -62,7 +62,7 @@ object GasCalibration extends IOApp {
   )
 
   /** `pmt_verify` with `depth` siblings: the root does not match, but every level is hashed regardless. */
-  private def pmt(depth: Int): Vector[CanonicalValue] = Vector(fe(1000), fe(1001), CInt(BigInt(5)), a(fes(depth)))
+  private def pmt(depth: Int): Vector[CanonicalValue] = Vector(fe(1000), fe(1001), CInt(5), a(fes(depth)))
 
   /** Microseconds per call, from batches of at least 200ms, after a warm-up batch. */
   private def micros(f: () => Long): IO[Double] = {
@@ -327,7 +327,7 @@ object GasCalibration extends IOApp {
       share("cat: 20 x 1/5^1764", 0.1)(cat, xs(fifth, 20)),
       share("cat: 20 x 1/2^4095", 0.1)(cat, xs(half, 20)),
       share("join: 20 x 1/5^1764", 0.1)("""{"join": [{"var": "xs"}, ""]}""", xs(fifth, 20)),
-      share("cat: 1000 small integers", 0.1)(cat, m(Vector("xs" -> a(Vector.tabulate(1000)(i => CInt(BigInt(i) * 1000003)))))),
+      share("cat: 1000 small integers", 0.1)(cat, m(Vector("xs" -> a(Vector.tabulate(1000)(i => CInt(i * 1000003L)))))),
       share("*: a running product of 4000 twos", 0.1)("""{"*": {"var": "xs"}}""", xs(CInt(2), 4000)),
       share("missing_some: 20 x a 100,001-character key", 0.1)(
         counted("""{"missing_some": [0, [{"var": "p"}]]}"""),
@@ -384,7 +384,7 @@ object GasCalibration extends IOApp {
         Expr.Apply(
           Op.Map,
           Vector(
-            Expr.Apply(Op.Slice, Vector(Expr.Var(VarRef.Data(Vector("xs")), scala.None), Expr.Lit(CInt(0)), Expr.Lit(CInt(BigInt(n))))),
+            Expr.Apply(Op.Slice, Vector(Expr.Var(VarRef.Data(Vector("xs")), scala.None), Expr.Lit(CInt(0)), Expr.Lit(CInt(n)))),
             Expr.Lit(CInt(1))
           )
         )

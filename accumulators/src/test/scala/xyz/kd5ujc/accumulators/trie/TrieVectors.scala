@@ -117,7 +117,7 @@ object TrieVectors {
   private def record(fields: (String, CanonicalValue)*): CanonicalValue =
     CanonicalValue.map(fields).fold(e => sys.error(e.toString), identity)
 
-  private def seg(n: Long, b: ByteVector): CanonicalValue = record("n" -> CanonicalValue.int(n), "b" -> CanonicalValue.bytes(b))
+  private def seg(n: Long, b: ByteVector): CanonicalValue = record("n" -> CanonicalValue.CInt(n), "b" -> CanonicalValue.bytes(b))
 
   private val v0: Digest[Sha256] = T.value(hex"00")
   private val leaf7: ProofNode[Sha256] = PLeaf(BitVector.low(7), v0)
@@ -154,7 +154,7 @@ object TrieVectors {
       refusedByDecoder(
         "branch-no-children",
         variable1,
-        arrayOf(Vector(record("s" -> seg(0, ByteVector.empty), "c" -> CanonicalValue.int(0))))
+        arrayOf(Vector(record("s" -> seg(0, ByteVector.empty), "c" -> CanonicalValue.CInt(0))))
       ),
       refusedByDecoder(
         "non-zero-padding",

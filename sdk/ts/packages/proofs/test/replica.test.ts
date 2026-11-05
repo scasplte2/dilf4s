@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { toHex, Value } from "@kd5ujc/dilf4s-core";
+import { toHex, type Value } from "@kd5ujc/dilf4s-core";
 
 import { trie, versioned } from "../src/index.js";
-import { expectErr, expectOk } from "./vectors.js";
+import { expectErr, expectOk, int } from "./vectors.js";
 
 // The replica's tries (docs/specs/versioned-trie.md section 7): updated incrementally, equal to a full rebuild after
 // every delta (deletes, re-inserts, an emptied state, refused deltas), hashing only the changed keys' paths whatever
@@ -81,7 +81,7 @@ describe("a replica's incremental roots", { timeout: 60_000 }, () => {
         else
           for (let j = next(5); j >= 0; j--) {
             const k = universe[next(universe.length)] ?? key("a");
-            chosen.set(k.value, [k, next(3) === 0 ? undefined : Value.int(BigInt(next(1000)))]);
+            chosen.set(k.value, [k, next(3) === 0 ? undefined : int(BigInt(next(1000)))]);
           }
         const upserts = [...chosen.values()].flatMap(([k, v]) => (v === undefined ? [] : [[k, v] as const]));
         const removes = [...chosen.values()].flatMap(([k, v]) => (v === undefined ? [k] : []));
@@ -148,7 +148,7 @@ describe("a replica's work per delta", { timeout: 60_000 }, () => {
   const bound = (changes: number, stateDepth: number, historyDepth: number): number => 2 * 5 + changes * (stateDepth + 1 + 2) + (historyDepth + 1 + 2);
 
   const seeded = (keys: readonly versioned.StateKey[]): [versioned.Replica<bigint>, Model] => {
-    const [delta, model] = step(emptyModel, 1n, keys.map((k, i) => [k, Value.int(BigInt(i))] as const), []);
+    const [delta, model] = step(emptyModel, 1n, keys.map((k, i) => [k, int(BigInt(i))] as const), []);
     return [expectOk(versioned.Replica.fromSnapshot(vt, delta.head, snapshotOf(model)), "restores"), model];
   };
 
@@ -157,7 +157,7 @@ describe("a replica's work per delta", { timeout: 60_000 }, () => {
     const [replica, model] = seeded(keys);
     const m = keys.length;
     const fresh = key("fresh/key");
-    const [delta] = step(model, 2n, [[keys[Math.floor(m / 3)] ?? fresh, Value.int(-1n)], [fresh, Value.int(-2n)]], [keys[Math.floor((2 * m) / 3)] ?? fresh]);
+    const [delta] = step(model, 2n, [[keys[Math.floor(m / 3)] ?? fresh, int(-1n)], [fresh, int(-2n)]], [keys[Math.floor((2 * m) / 3)] ?? fresh]);
     const spies = watchNodes();
     expectOk(replica.applyDelta(delta), "applies");
     const hashes = calls(spies);
@@ -193,14 +193,14 @@ describe("a replica's work per delta", { timeout: 60_000 }, () => {
     const bulk = families[0]?.[1] ?? [];
     const [replica, model] = seeded([...chain, ...bulk]);
     const deepest = chain[chain.length - 1] ?? key("a");
-    const [d2, m2] = step(model, 2n, [[deepest, Value.int(7n)]], []);
+    const [d2, m2] = step(model, 2n, [[deepest, int(7n)]], []);
     let spies = watchNodes();
     const r2 = expectOk(replica.applyDelta(d2), "deep");
     const deep = calls(spies);
     vi.restoreAllMocks();
     expect(deep).toBeGreaterThan(chain.length);
     expect(deep).toBeLessThanOrEqual(bound(1, chain.length + 1, 2));
-    const [d3] = step(m2, 3n, [[bulk[7] ?? key("a"), Value.int(7n)]], []);
+    const [d3] = step(m2, 3n, [[bulk[7] ?? key("a"), int(7n)]], []);
     spies = watchNodes();
     expectOk(r2.applyDelta(d3), "shallow");
     const shallow = calls(spies);
@@ -211,12 +211,12 @@ describe("a replica's work per delta", { timeout: 60_000 }, () => {
     const keys = families[2]?.[1] ?? [];
     const names = new Set(keys.map((k) => k.value));
     const isPeerKey = (x: unknown): boolean => typeof x === "string" && /^[0-9]+$/.test(x) && Number(x) % 65536 === 0;
-    const [delta, model] = step(emptyModel, 1n, keys.map((k, i) => [k, Value.int(BigInt(i))] as const), []);
-    const [next] = step(model, 2n, keys.slice(0, 64).map((k) => [k, Value.int(-1n)] as const), keys.slice(64, 128));
+    const [delta, model] = step(emptyModel, 1n, keys.map((k, i) => [k, int(BigInt(i))] as const), []);
+    const [next] = step(model, 2n, keys.slice(0, 64).map((k) => [k, int(-1n)] as const), keys.slice(64, 128));
     const watch = [vi.spyOn(Map.prototype, "get"), vi.spyOn(Map.prototype, "set"), vi.spyOn(Map.prototype, "has"), vi.spyOn(Set.prototype, "add"), vi.spyOn(Set.prototype, "has")];
     const replica = expectOk(versioned.Replica.fromSnapshot(vt, delta.head, snapshotOf(model)), "restores");
     const applied = expectOk(replica.applyDelta(next), "applies");
-    expect(applied.get(keys[0] ?? key("a"))).toEqual(Value.int(-1n));
+    expect(applied.get(keys[0] ?? key("a"))).toEqual(int(-1n));
     expect(applied.get(keys[64] ?? key("a"))).toBeUndefined();
     expect(applied.size).toBe(n - 64);
     const hashed = watch.reduce((t, s) => t + s.mock.calls.filter((args) => isPeerKey(args[0])).length, 0);

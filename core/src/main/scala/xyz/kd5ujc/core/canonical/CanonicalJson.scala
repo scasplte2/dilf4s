@@ -28,9 +28,6 @@ object CanonicalJson {
   /** The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises. */
   val MaxScale: Int = xyz.kd5ujc.models.limits.CanonicalMaxScale
 
-  // 10^MaxDigits has 33220 bits: a number any wider has more than MaxDigits digits
-  private val MaxDigitBits: Int = xyz.kd5ujc.models.limits.CanonicalMaxDigitBits
-
   // ------------------------------------------------------------------ parse
 
   def parse(text: String, maxScale: Int = MaxScale): Either[CanonicalError, CanonicalValue] =
@@ -165,7 +162,9 @@ object CanonicalJson {
         InvalidNumber(described, Some(ArithmeticError.ScaleOutOfRange(saturated, maxScale))).asLeft
       } else {
         val unscaled = BigInt(intDigits + fracDigits) * (if (negative) -1 else 1)
-        // the digit and scale bounds keep both parts within CanonicalValue.MaxRationalBits, so number never refuses here
+        // the digit and scale bounds keep the work bounded, not the value: an integer of 10,000 digits can be wider than
+        // CanonicalValue.MaxIntegerBits (9e9999, 10,000 nines), and so can a rational's parts (0.000...1 at scale
+        // 10,000, whose denominator is 10^10000), and number refuses them
         Ratio
           .fromDecimal(unscaled, scale.toInt, maxScale)
           .leftMap(e => InvalidNumber(described, Some(e)))
@@ -227,16 +226,20 @@ object CanonicalJson {
     NotJsonRepresentable(s"a number of more than $MaxDigits digits or a scale above $MaxScale")
 
   /**
-   * A number's JSON text, within the bounds [[parse]] accepts, so that rendering always reads back. A wider numerator
-   * or denominator is refused before any conversion: `2^a 5^b` with scale `max(a, b)` within bounds is at most
-   * `10^MaxDigits`, and the significand is at least the numerator.
+   * An integer's JSON text, which [[parse]] reads back: total, since every integer is within
+   * [[CanonicalValue.MaxIntegerBits]], so it has at most [[MaxDigits]] digits and converting it is bounded work.
    */
-  private def numberText(v: CanonicalValue): Either[CanonicalError, String] =
-    v match {
-      case CInt(n) if n.bitLength <= MaxDigitBits => within(n.toString)
-      case r: CRational if r.value.numerator.bitLength <= MaxDigitBits && r.value.denominator.bitLength <= MaxDigitBits =>
-        r.value.toDecimalString.toRight(nonTerminating(r)).flatMap(within)
-      case _ => overLong.asLeft
+  def integerText(i: CInt): String = i.value.toString
+
+  /**
+   * A rational's JSON text, within the bounds [[parse]] accepts, so that rendering always reads back. Its scale comes
+   * from the denominator's factors first, so a scale past the bound builds no digit.
+   */
+  private def rationalText(r: CRational): Either[CanonicalError, String] =
+    r.value.decimalScale match {
+      case scala.None                    => nonTerminating(r).asLeft
+      case scala.Some(s) if s > MaxScale => overLong.asLeft
+      case scala.Some(_)                 => r.value.toDecimalString.toRight(nonTerminating(r)).flatMap(within)
     }
 
   // the digits of `text`, a plain decimal, leading zeros aside, and the digits after its point
@@ -250,15 +253,15 @@ object CanonicalJson {
 
   // ------------------------------------------------------------------ render (display view)
 
-  /** Compact JSON with keys in code-point order. Fails for bytes, non-terminating rationals and over-long numbers. */
+  /** Compact JSON with keys in code-point order. Fails for bytes, and for rationals that do not terminate or are too long. */
   def render(value: CanonicalValue): Either[CanonicalError, String] = renderEval(value).value
 
   private def renderEval(value: CanonicalValue): Eval[Either[CanonicalError, String]] =
     value match {
       case CNull        => Eval.now("null".asRight)
       case CBool(b)     => Eval.now(b.toString.asRight)
-      case CInt(_)      => Eval.now(numberText(value))
-      case r: CRational => Eval.now(numberText(r))
+      case i: CInt      => Eval.now(integerText(i).asRight)
+      case r: CRational => Eval.now(rationalText(r))
       case t: CText     => Eval.now(quote(t.value).asRight)
       case CBytes(_)    => Eval.now(NotJsonRepresentable("bytes").asLeft)
       case CArray(vs)   => Eval.defer(vs.traverse(renderEval)).map(_.sequence.map(_.mkString("[", ",", "]")))

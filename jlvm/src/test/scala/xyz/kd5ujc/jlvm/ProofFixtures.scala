@@ -29,7 +29,7 @@ object ProofFixtures {
   def str(c:       ACursor): String = get(c.as[String])
   def m(kvs:       (String, CanonicalValue)*): CanonicalValue = get(CanonicalValue.map(kvs))
   def a(vs:        CanonicalValue*): CanonicalValue = get(CanonicalValue.array(vs.toVector))
-  def headOf(root: String, size: Long): CanonicalValue = m("root" -> CBytes(hex(root)), "size" -> CInt(BigInt(size)))
+  def headOf(root: String, size: Long): CanonicalValue = m("root" -> CBytes(hex(root)), "size" -> CInt(size))
 
   /**
    * merkle_v1 and trie_v1 are built with the byte-level APIs. Programs verify value-committed structures, so the
@@ -43,8 +43,8 @@ object ProofFixtures {
     j.hcursor
       .downField("fixed")
       .as[Int]
-      .map(n => m("fixed" -> CInt(BigInt(n))))
-      .orElse(j.hcursor.downField("variable").as[Int].map(n => m("variable" -> CInt(BigInt(n)))))
+      .map(n => m("fixed" -> CInt(n)))
+      .orElse(j.hcursor.downField("variable").as[Int].map(n => m("variable" -> CInt(n))))
       .fold(e => sys.error(e.toString), identity)
 
   def keyMode(fx: Json): KeyMode =

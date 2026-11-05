@@ -122,7 +122,7 @@ fn add_and_mul_bound_every_intermediate() {
 #[test]
 fn each_step_pays_for_its_accumulator() {
     let o = eval(r#"{"*": {"var": "xs"}}"#, &obj(vec![("xs", arr(vec![int(2); 4000]))]));
-    assert_eq!(o.result, Ok(Value::int(BigInt::from(1) << 4000)));
+    assert_eq!(o.result, Ok(Value::integer(BigInt::from(1) << 4000).unwrap()));
     let accumulators: u64 = (1..4000u64).map(|i| 1 + i / 64).sum();
     assert!(gas(&o) >= S.cost(Op::Mul).per_unit * accumulators, "gas {}", gas(&o));
 }
@@ -217,7 +217,8 @@ fn integer_path_segments_are_bounded_before_they_are_rendered() {
     let data = obj(vec![("m", obj(vec![("-1", int(7)), ("12", int(8))])), ("i", int(-1))]);
     assert_eq!(eval(p, &data).result, Ok(int(7)));
     assert_eq!(eval(p, &obj(vec![("m", obj(vec![("12", int(8))])), ("i", int(12))])).result, Ok(int(8)));
-    let huge = obj(vec![("m", obj(vec![("-1", int(7))])), ("i", Value::int((BigInt::from(1) << 4095) + 1))]);
+    let huge =
+        obj(vec![("m", obj(vec![("-1", int(7))])), ("i", Value::integer((BigInt::from(1) << 4095) + 1).unwrap())]);
     assert!(matches!(eval(p, &huge).result, Err(JlvmError::Domain { op: "var", .. })));
 }
 
@@ -493,16 +494,17 @@ fn a_starved_charge_copies_nothing_it_has_not_paid_for() {
     assert!(matches!(read.result, Err(JlvmError::OutOfGas { .. })), "{:?}", read.result);
     let spread = eval_limit(r#"{"+": {"var": "xs"}}"#, &obj(vec![("xs", arr(vec![int(1); 1_000_000]))]), 200);
     assert!(matches!(spread.result, Err(JlvmError::OutOfGas { .. })), "{:?}", spread.result);
-    let huge = Value::int(BigInt::from(1) << 1_000_000);
+    // the widest integers a value holds (MAX_INTEGER_BITS), far past the number bound
+    let huge = Value::integer((BigInt::from(1) << dilf4s_core::MAX_INTEGER_BITS) - 1).unwrap();
     let abs = eval(r#"{"abs": {"var": "n"}}"#, &obj(vec![("n", huge.clone())]));
     assert!(is_limit(&abs), "{:?}", abs.result);
-    // -2^1,000,000: its bit length is cached, so neither abs nor pow (both charged by their base) scans or copies it
-    let negative = Value::int(-(BigInt::from(1) << 1_000_000usize));
+    // -2^33219: its bit length is cached, so neither abs nor pow (both charged by their base) scans or copies it
+    let negative = Value::integer(-(BigInt::from(1) << dilf4s_core::MAX_INTEGER_BITS)).unwrap();
     for p in [r#"{"abs": {"var": "n"}}"#, r#"{"pow": [{"var": "n"}, 2]}"#, r#"{"round": {"var": "n"}}"#] {
         let o = eval(p, &obj(vec![("n", negative.clone())]));
         assert!(is_limit(&o), "{p}: {:?}", o.result);
     }
-    // a pmt_verify index of a million bits, charged as one element, is refused before it is copied or rendered
+    // a pmt_verify index of 33219 bits, charged as one element, is refused before it is copied or rendered
     let zero = format!("0x{}", "00".repeat(32));
     let pmt = eval(&format!(r#"{{"pmt_verify": ["{zero}", "{zero}", {{"var": "n"}}, []]}}"#), &obj(vec![("n", huge)]));
     assert!(matches!(pmt.result, Err(JlvmError::Crypto { .. })), "{:?}", pmt.result);

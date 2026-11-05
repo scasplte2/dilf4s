@@ -31,7 +31,7 @@ object VersionedTrieProgramsSuite extends IOSuite {
   private def get[A](e: Either[?, A]): A = e.fold(err => sys.error(err.toString), identity)
   private def key(s:    String): StateKey = get(StateKey.parse(s))
   private def ns(s:     String): StateNamespace = get(StateNamespace.parse(s))
-  private def int(i:    Long): CanonicalValue = CInt(BigInt(i))
+  private def int(i:    Long): CanonicalValue = CInt(i)
   private def txt(s:    String): CanonicalValue = get(CanonicalValue.text(s))
   private def m(kvs:    (String, CanonicalValue)*): CanonicalValue = get(CanonicalValue.map(kvs))
   private def a(vs:     CanonicalValue*): CanonicalValue = get(CanonicalValue.array(vs.toVector))
@@ -375,7 +375,16 @@ object VersionedTrieProgramsSuite extends IOSuite {
       case (p, hs) =>
         val x = parts(p)
         def claim(u: BigInt, su: CanonicalValue) =
-          run(jlvm, versionCommitted, "root" -> x.root, "top" -> x.top, "h" -> x.h, "history" -> x.history, "u" -> CInt(u), "su" -> su)
+          run(
+            jlvm,
+            versionCommitted,
+            "root"    -> x.root,
+            "top"     -> x.top,
+            "h"       -> x.h,
+            "history" -> x.history,
+            "u"       -> xyz.kd5ujc.core.canonical.CanonicalGens.int(u),
+            "su"      -> su
+          )
         val cap = BigInt(Long.MaxValue)
         val head = CBytes(hs(300L).stateRoot.bytes)
         expect
@@ -471,7 +480,10 @@ object VersionedTrieProgramsSuite extends IOSuite {
       rows.foldMap { r =>
         val v = get(r.hcursor.get[BigInt]("version"))
         val key = get(ByteVector.fromHexDescriptive(get(r.hcursor.get[String]("key"))))
-        expect.same(Right(CBytes(key)), run(jlvm, """{"int_to_bytes": [{"var": "v"}, 8]}""", "v" -> CInt(v)))
+        expect.same(
+          Right(CBytes(key)),
+          run(jlvm, """{"int_to_bytes": [{"var": "v"}, 8]}""", "v" -> xyz.kd5ujc.core.canonical.CanonicalGens.int(v))
+        )
       }
     }
   }

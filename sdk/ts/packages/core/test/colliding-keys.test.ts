@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cbor, codec, json, MapValue, Preview, Value } from "../src/index.js";
+import { cbor, codec, json, MapValue, Preview } from "../src/index.js";
 import { KeySet } from "../src/keyset.js";
-import { expectOk } from "./vectors.js";
+import { expectOk, int } from "./vectors.js";
 
 // V8 hashes an integer-like string by its value, with no seed: keys 65536 apart share a bucket of a `Map` or `Set`, and
 // n of them cost O(n^2) to insert. A map's keys are the caller's, so they must only ever be compared: no `Map` or `Set`
@@ -33,15 +33,15 @@ describe("caller-chosen map keys are compared, never hashed", () => {
 
   it("building, looking up, encoding, decoding and parsing a map", () => {
     const spies = watch();
-    const m = expectOk(MapValue.of(keys.map((k) => [k, Value.int(1n)] as const)), "builds");
+    const m = expectOk(MapValue.of(keys.map((k) => [k, int(1n)] as const)), "builds");
     const decoded = expectOk(cbor.decode(expectOk(cbor.encode(m), "encodes")), "decodes");
     const parsed = expectOk(json.parse(`{${keys.map((k) => `"${k}":1`).join(",")}}`), "parses");
     const typed = expectOk(codec.textMap(codec.uint).decode(m), "decodes as a typed map");
-    const repeated = MapValue.of([...keys, keys[7] ?? ""].map((k) => [k, Value.int(1n)] as const));
+    const repeated = MapValue.of([...keys, keys[7] ?? ""].map((k) => [k, int(1n)] as const));
     const repeatedJson = json.parse(`{${[...keys, keys[7] ?? ""].map((k) => `"${k}":1`).join(",")}}`);
     expect(hashed(spies)).toBe(0);
     expect(m.size).toBe(n);
-    expect(m.get(keys[9] ?? "")).toEqual(Value.int(1n));
+    expect(m.get(keys[9] ?? "")).toEqual(int(1n));
     expect(m.get("1")).toBeUndefined();
     expect(m.get("\ud800")).toBeUndefined();
     expect(decoded.kind === "map" && decoded.get(keys[n - 1] ?? "") !== undefined).toBe(true);

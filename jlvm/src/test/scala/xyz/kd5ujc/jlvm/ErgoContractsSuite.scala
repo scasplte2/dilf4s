@@ -41,7 +41,7 @@ object ErgoContractsSuite extends IOSuite {
 
   private val tx = ByteVector.fill(32)(0x51)
   private val otherTx = ByteVector.fill(32)(0x52)
-  private def at(t: Long, txHash: ByteVector = tx) = List("ordinal" -> CInt(BigInt(t)), "txHash" -> CBytes(txHash))
+  private def at(t: Long, txHash: ByteVector = tx) = List("ordinal" -> CInt(t), "txHash" -> CBytes(txHash))
 
   private def field(v: CanonicalValue, k: String): CanonicalValue = v match {
     case CMap(m) => m.getOrElse(k, CanonicalValue.CNull)
@@ -114,13 +114,13 @@ object ErgoContractsSuite extends IOSuite {
     ).mapN { (four, stale, outsider) =>
       val updated = c.next(state, update(four), at(60)*)
       expect
-        .same(Right(CInt(BigInt(100))), updated.map(field(_, "rate")))
-        .and(expect.same(Right(CInt(BigInt(1))), updated.map(field(_, "epoch"))))
+        .same(Right(CInt(100)), updated.map(field(_, "rate")))
+        .and(expect.same(Right(CInt(1)), updated.map(field(_, "epoch"))))
         .and(expect(rejected(c.next(state, update(four), at(59)*)), "not before the epoch ends"))
         .and(expect(rejected(c.next(state, update(four.take(2) :+ stale), at(60)*)), "a datapoint for another epoch is invalid"))
         .and(expect(rejected(c.next(state, update(four.take(2) :+ outsider), at(60)*)), "a non-oracle's datapoint is invalid"))
         .and(expect(rejected(c.next(state, update(four.take(2) :+ four.head), at(60)*)), "one datapoint per oracle"))
-        .and(expect.same(Right(CInt(BigInt(100))), c.next(state, update(four.take(3) :+ outsider), at(60)*).map(field(_, "rate"))))
+        .and(expect.same(Right(CInt(100)), c.next(state, update(four.take(3) :+ outsider), at(60)*).map(field(_, "rate"))))
     }
   }
 
@@ -195,7 +195,7 @@ object ErgoContractsSuite extends IOSuite {
         .and(expect.same(Right(value("[]")), c.effects(start, bid(a, 100, pa), at(100)*)))
         .and(expect(rejected(first.flatMap(s => c.next(s, bid(b, 104, pb), at(200)*))), "at least 5% more"))
         .and(expect(rejected(first.flatMap(s => c.next(s, bid(b, 105, pa), at(200)*))), "the bidder's own proof"))
-        .and(expect.same(Right(CInt(BigInt(1120))), late.map(field(_, "end"))))
+        .and(expect.same(Right(CInt(1120)), late.map(field(_, "end"))))
         .and(
           expect.same(
             Right(value(s"""[{"kind": "transfer", "to": ${h(pk(a))}, "amount": 100}]""")),

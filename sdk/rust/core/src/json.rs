@@ -11,8 +11,7 @@ use alloc::vec::Vec;
 use core::fmt::Write as _;
 
 use num_bigint::BigInt;
-use num_integer::Integer;
-use num_traits::{Signed, Zero, pow};
+use num_traits::{One, Signed, Zero, pow};
 
 use crate::error::{CanonicalError, DigitsOutOfRange, JsonSyntaxError, NotJson, NumberBound, ScaleOutOfRange};
 use crate::preview::Preview;
@@ -25,9 +24,6 @@ pub const DEFAULT_MAX_SCALE: u32 = crate::generated::limits::as_u32::CANONICAL_M
 /// exponent may have, read or written. Decimal conversion is superlinear, so the bound is checked on the text before
 /// any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
 pub const MAX_DIGITS: usize = crate::generated::limits::as_usize::CANONICAL_MAX_DIGITS;
-
-/// `10^MAX_DIGITS` has 33220 bits: a number any wider has more than [`MAX_DIGITS`] digits.
-const MAX_DIGIT_BITS: u64 = crate::generated::limits::CANONICAL_MAX_DIGIT_BITS;
 
 /// Parses JSON text into a canonical value with the default scale bound.
 pub fn parse(text: &str) -> Result<Value, CanonicalError> {
@@ -262,7 +258,8 @@ impl Parser<'_> {
         let value = if scale >= 0 {
             Value::decimal(&unscaled, magnitude)?
         } else {
-            Value::int(unscaled * pow(BigInt::from(10u8), magnitude))
+            // a positive exponent can take an integer past MAX_INTEGER_BITS (9e9999): refused, as every producer does
+            Value::integer(unscaled * pow(BigInt::from(10u8), magnitude))?
         };
         Ok((value, end))
     }
@@ -486,7 +483,7 @@ fn write_json(out: &mut Budget, value: &Value) -> Result<(), RenderError> {
         match next.take() {
             Some(Value::Null) => out.push("null")?,
             Some(Value::Bool(b)) => out.push(if *b { "true" } else { "false" })?,
-            Some(Value::Int(n)) => out.push(&integer_text(n)?)?,
+            Some(Value::Int(n)) => out.push(&integer_text(n))?,
             Some(Value::Rational(r)) => {
                 out.push(&decimal(r).map_err(|kind| CanonicalError::NotJsonRepresentable { kind })?)?;
             }
@@ -541,13 +538,10 @@ fn write_json(out: &mut Budget, value: &Value) -> Result<(), RenderError> {
     }
 }
 
-/// An integer's decimal, within the bounds [`parse`] accepts.
-fn integer_text(n: &crate::value::Int) -> Result<String, CanonicalError> {
-    let over_long = CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong };
-    if n.bit_length() > MAX_DIGIT_BITS {
-        return Err(over_long);
-    }
-    within(n.to_string()).ok_or(over_long)
+/// An integer's decimal, which [`parse`] reads back: total, since every integer is within
+/// [`crate::value::MAX_INTEGER_BITS`], so it has at most [`MAX_DIGITS`] digits and converting it is bounded work.
+fn integer_text(n: &crate::value::Int) -> String {
+    n.to_string()
 }
 
 /// `text`, a plain decimal, when its significant digits and scale are within the bounds [`parse`] accepts.
@@ -595,30 +589,41 @@ fn quote(out: &mut String, s: &str) {
     out.push('"');
 }
 
-/// The exact decimal of `r`, within the bounds [`parse`] accepts: [`NotJson::NonTerminatingRational`] when its
-/// denominator has prime factors other than 2 and 5, [`NotJson::OverLong`] past the bounds. A numerator or denominator
-/// wider than `10^MAX_DIGITS` is refused before it is factored or scaled: `2^a 5^b` with `max(a, b)` within the scale
-/// bound is at most that, and the significand is at least the numerator.
-pub fn decimal(r: &Rational) -> Result<String, NotJson> {
-    if r.numerator_bit_length() > MAX_DIGIT_BITS || r.denominator_bit_length() > MAX_DIGIT_BITS {
-        return Err(NotJson::OverLong);
-    }
-    let d = r.denominator();
+/// `log2(5)` in millionths, rounded down: the bits per factor of five.
+const MICRO_BITS_PER_FIVE: u64 = 2_321_928;
+
+/// `Some((a, b))` when `d = 2^a 5^b`, so that `1/d` terminates, and the big-number divisions and exponentiations it
+/// took: at most four, whatever `d`. The twos are the low zero bits; the power of five is estimated from the bit length
+/// (`5^b` has `floor(b log2 5) + 1` bits, and the neighbours absorb any rounding) and checked by exponentiation, never
+/// found one division per factor (14,306 of them for `5^14306`, the widest a rational's denominator is).
+pub(crate) fn twos_and_fives(d: &BigInt) -> (Option<(u64, u64)>, u32) {
     let twos = d.trailing_zeros().unwrap_or(0);
-    let mut rest: BigInt = d >> twos;
+    let rest: BigInt = d >> twos;
+    if rest.is_one() {
+        return (Some((twos, 0)), 0);
+    }
+    if !(&rest % 5u8).is_zero() {
+        return (None, 1);
+    }
+    let estimate =
+        rest.bits().saturating_sub(1).saturating_mul(1_000_000).checked_div(MICRO_BITS_PER_FIVE).unwrap_or(0);
+    // b log2 5 lies in [bits - 1, bits), under half a factor wide, so b is the estimate's ceiling but for rounding
+    let candidates = [estimate.saturating_add(1), estimate, estimate.saturating_sub(1)];
     let five = BigInt::from(5u8);
-    let mut fives = 0u64;
-    loop {
-        let (q, rem) = rest.div_rem(&five);
-        if !rem.is_zero() {
-            break;
-        }
-        rest = q;
-        fives = fives.saturating_add(1);
-    }
-    if rest != BigInt::from(1u8) {
-        return Err(NotJson::NonTerminatingRational);
-    }
+    let (found, steps) = candidates.iter().fold((None, 1u32), |(found, steps), &b| match (found, usize::try_from(b)) {
+        (Some(f), _) => (Some(f), steps),
+        (None, Ok(e)) if b > 0 => ((pow(five.clone(), e) == rest).then_some(b), steps.saturating_add(1)),
+        (None, _) => (None, steps),
+    });
+    (found.map(|b| (twos, b)), steps)
+}
+
+/// The exact decimal of `r`, within the bounds [`parse`] accepts: [`NotJson::NonTerminatingRational`] when its
+/// denominator has prime factors other than 2 and 5, [`NotJson::OverLong`] past the bounds, both found from the
+/// denominator's factors ([`twos_and_fives`]) before any digit is produced.
+pub fn decimal(r: &Rational) -> Result<String, NotJson> {
+    let d = r.denominator();
+    let (twos, fives) = twos_and_fives(d).0.ok_or(NotJson::NonTerminatingRational)?;
     let scale = usize::try_from(twos.max(fives))
         .ok()
         .filter(|s| u32::try_from(*s).is_ok_and(|s| s <= DEFAULT_MAX_SCALE))
@@ -631,4 +636,47 @@ pub fn decimal(r: &Rational) -> Result<String, NotJson> {
     let (int_part, frac_part) = padded.split_at(padded.len().saturating_sub(scale));
     let sign = if scaled.is_negative() { "-" } else { "" };
     within(alloc::format!("{sign}{int_part}.{frac_part}")).ok_or(NotJson::OverLong)
+}
+
+#[cfg(test)]
+mod tests {
+    use num_bigint::BigInt;
+    use num_traits::{One, pow};
+
+    use super::twos_and_fives;
+
+    /// Factoring a denominator takes at most four big-number divisions and exponentiations, whatever its width:
+    /// 2^33219, 5^14306 or 3 5^14000 is factored (or found not to terminate) at once, never one division per factor,
+    /// and the scale bound then refuses 1/2^33218 and 1/5^14306, the widest of each, before any digit is produced.
+    #[test]
+    fn factoring_a_denominator_is_bounded_whatever_its_factors() {
+        let (two, five) = (BigInt::from(2u8), BigInt::from(5u8));
+        let cases = [
+            (pow(two.clone(), 33_219), Some((33_219, 0))),
+            (pow(five.clone(), 14_306), Some((0, 14_306))),
+            (pow(two.clone(), 3) * pow(five.clone(), 9_000), Some((3, 9_000))),
+            (pow(five.clone(), 14_000) * 3u8, None),
+            (pow(two, 100) * 3u8, None),
+            (five.clone(), Some((0, 1))),
+            (BigInt::one(), Some((0, 0))),
+        ];
+        for (d, expected) in cases {
+            let (factors, steps) = twos_and_fives(&d);
+            assert_eq!(factors, expected, "{} bits", d.bits());
+            assert!(steps <= 4, "{steps} divisions and exponentiations for {} bits", d.bits());
+        }
+        // every power of five up to the widest denominator is found from its estimate
+        for b in (1..=300).chain([1_000, 4_096, 9_999, 10_000, 10_001, 14_306]) {
+            let (factors, steps) = twos_and_fives(&pow(five.clone(), b));
+            assert_eq!(factors, Some((0, u64::try_from(b).unwrap())), "5^{b}");
+            assert!(steps <= 4, "{steps} steps for 5^{b}");
+        }
+        // one division and one exponentiation when the estimate is right
+        assert_eq!(twos_and_fives(&pow(five.clone(), 14_306)).1, 2);
+        // past the scale bound, refused from the factors, before any digit is produced
+        for d in [pow(BigInt::from(2u8), 33_218), pow(five, 14_306)] {
+            let Ok(crate::Value::Rational(r)) = crate::Value::number(&BigInt::one(), &d) else { panic!("a rational") };
+            assert_eq!(super::decimal(&r), Err(crate::error::NotJson::OverLong), "{} bits", d.bits());
+        }
+    }
 }

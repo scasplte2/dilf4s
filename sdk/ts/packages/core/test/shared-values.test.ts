@@ -12,6 +12,7 @@ import {
   inspect,
   json,
   MAX_DEPTH,
+  MAX_INTEGER_BITS,
   MAX_WEIGHT,
   models,
   TaggedHash,
@@ -20,7 +21,7 @@ import {
   valueCommitment,
   valueCommitmentWithin,
 } from "../src/index.js";
-import { expectOk, loadVectors, readVectors } from "./vectors.js";
+import { expectOk, int, loadVectors, readVectors } from "./vectors.js";
 
 const bytes = (hex: string): Uint8Array => expectOk(fromHex(hex), "hex");
 const text = (s: string): Value => expectOk(Value.text(s), "text");
@@ -111,15 +112,15 @@ describe("weight", { timeout: 60_000 }, () => {
       [-pow(128n), 3n],
     ];
     for (const [n, w] of cases) {
-      expect(Value.int(n).weight, `weight of an integer of ${javaBits(n).toString()} bits`).toBe(w);
-      expect(Value.int(n).bitLength, "bitLength").toBe(javaBits(n));
+      expect(int(n).weight, `weight of an integer of ${javaBits(n).toString()} bits`).toBe(w);
+      expect(int(n).bitLength, "bitLength").toBe(javaBits(n));
     }
     // a negative power-of-two numerator: Java counts 63 bits, so no whole limb
     expect(expectOk(Value.number(-pow(63n), 3n), "-2^63/3").weight, "-2^63/3").toBe(2n);
     expect(expectOk(Value.number(1n, pow(64n)), "1/2^64").weight, "1/2^64").toBe(3n);
     expect(text("é😀").weight, "text weighs its UTF-8 bytes").toBe(7n);
     expect(Value.bytes(new Uint8Array(5)).weight).toBe(6n);
-    expect(map([["é", Value.int(1n)], ["n", Value.null]]).weight, "1 + (1 + 2 + 1); the null entry is dropped").toBe(5n);
+    expect(map([["é", int(1n)], ["n", Value.null]]).weight, "1 + (1 + 2 + 1); the null entry is dropped").toBe(5n);
   });
 
   it("of a doubling value is its logical size, and saturates", () => {
@@ -172,7 +173,7 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
       expect(cbor.encodeWithin(dag, 1 << 20)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20 } });
       expect(cbor.encodedLengthWithin(dag, 1 << 20).ok).toBe(false);
       // within the weight bound but over in bytes (each 2^64 - 1 weighs 2 and takes 9 bytes): refused by the byte count
-      const ints = doubled(Value.int(2n ** 64n - 1n), 17);
+      const ints = doubled(int(2n ** 64n - 1n), 17);
       expect(ints.weight < 1n << 20n, "passes the weight check").toBe(true);
       const e = cbor.encodeWithin(ints, 1 << 20);
       expect(e, "refused at the limit").toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20 } });
@@ -234,7 +235,7 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
     };
     for (let e = 0n; e <= 4096n; e += e < 80n ? 1n : 61n) {
       for (const n of [2n ** e - 1n, 2n ** e, 2n ** e + 1n, -(2n ** e) + 1n, -(2n ** e), -(2n ** e) - 1n]) {
-        const v = Value.int(n);
+        const v = int(n);
         const encoded = toHex(expectOk(cbor.encode(v), "encodes"));
         expect(encoded, `±2^${e.toString()}`).toBe(reference(n));
         expect(toHex(expectOk(cbor.encodeWithin(v, encoded.length / 2), "budgeted"))).toBe(encoded);
@@ -244,14 +245,13 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
     }
   });
 
-  it("encodes and decodes a large integer in linear time", () => {
-    const n = -(1n << BigInt(8 << 20)) + 12345n;
-    const ms = elapsed(() => {
-      const encoded = expectOk(cbor.encode(Value.int(n)), "encodes");
-      const back = expectOk(cbor.decode(encoded), "decodes");
-      expect(back.kind === "int" && back.value === n).toBe(true);
-    });
-    expect(ms, "a 1 MiB bignum, shifted in byte by byte, would take hours").toBeLessThan(HANG);
+  // a wider bignum is refused from its length, before it is built (integer-width.test.ts)
+  it("encodes and decodes the widest integer", () => {
+    const n = -(1n << BigInt(MAX_INTEGER_BITS)) + 12345n;
+    const encoded = expectOk(cbor.encode(int(n)), "encodes");
+    expect(encoded.length).toBe(4157);
+    const back = expectOk(cbor.decode(encoded), "decodes");
+    expect(back.kind === "int" && back.value === n).toBe(true);
   });
 });
 
@@ -284,7 +284,7 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
       expect(valueCommitmentWithin(dag, 1 << 20)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20 } });
       expect(TaggedHash.of("SHA-256", tag).contentWithin(dag, 1 << 20).ok).toBe(false);
       // a doubling under the weight bound but over in JSON (each 2^64 - 1 weighs 2 and takes 20 digits)
-      const ints = doubled(Value.int(2n ** 64n - 1n), 16);
+      const ints = doubled(int(2n ** 64n - 1n), 16);
       expect(ints.weight < 1n << 20n, "passes the weight check").toBe(true);
       const e = json.renderWithin(ints, 1 << 20);
       expect(e).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20 } });
@@ -303,7 +303,7 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
   it("counts escaped text and keys before escaping them", () => {
     // every escape form, quotes, and one, two, three and four UTF-8 bytes
     const all = `${Array.from({ length: 0x20 }, (_, c) => String.fromCharCode(c)).join("")}"\\/aé€😀\u007f`;
-    for (const v of [text(all), map([[all, text(all)]]), array([text(all), map([["\n", Value.int(1n)]])])]) {
+    for (const v of [text(all), map([[all, text(all)]]), array([text(all), map([["\n", int(1n)]])])]) {
       const r = expectOk(json.renderWithin(v, json.MAX_RENDER_BYTES), "renders");
       const n = utf8Bytes(r);
       expect(json.renderWithin(v, n), "at the exact length").toEqual({ ok: true, value: r });
@@ -312,14 +312,14 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
     // NUL escapes to six bytes: refused by the escaped length, counted rather than built
     const nuls = text("\u0000".repeat(200_000));
     expect(json.renderWithin(nuls, 200_001)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 200_001 } });
-    const key = map([["\u0000".repeat(200_000), Value.int(1n)]]);
+    const key = map([["\u0000".repeat(200_000), int(1n)]]);
     expect(json.renderWithin(key, 200_010)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 200_010 } });
   });
 
   it("a budgeted commitment is the commitment, within its limit, tag included", () => {
     const tag = expectOk(DomainTag.of("dilf4s/test/v1"), "tag");
     const h = TaggedHash.of("SHA-256", tag);
-    for (const v of [text("a"), Value.bytes(Uint8Array.of(1, 2, 3)), array([Value.int(1n), Value.null]), Value.bytes(new Uint8Array(0))]) {
+    for (const v of [text("a"), Value.bytes(Uint8Array.of(1, 2, 3)), array([int(1n), Value.null]), Value.bytes(new Uint8Array(0))]) {
       const c = expectOk(valueCommitment(v), "encodes");
       expect(toHex(expectOk(valueCommitmentWithin(v, c.length), "fits"))).toBe(toHex(c));
       const over = valueCommitmentWithin(v, c.length - 1);
@@ -339,10 +339,10 @@ describe("equality", { timeout: 60_000 }, () => {
       const b = values[(i * 7919 + 13) % values.length] ?? a;
       expect(equals(a, b), `${inspect(a)} = ${inspect(b)}`).toBe(toHex(expectOk(cbor.encode(a), "encodes")) === toHex(expectOk(cbor.encode(b), "encodes")));
     }
-    expect(Value.equals(array([text("x"), Value.int(1n)]), array([text("x"), Value.int(1n)]))).toBe(true);
-    expect(equals(array([text("x"), Value.int(1n)]), array([text("x"), Value.int(2n)]))).toBe(false);
-    expect(equals(map([["k", Value.int(1n)]]), map([["l", Value.int(1n)]])), "keys differ").toBe(false);
-    expect(equals(Value.int(1n), Value.bool(true)), "kinds differ, same weight").toBe(false);
+    expect(Value.equals(array([text("x"), int(1n)]), array([text("x"), int(1n)]))).toBe(true);
+    expect(equals(array([text("x"), int(1n)]), array([text("x"), int(2n)]))).toBe(false);
+    expect(equals(map([["k", int(1n)]]), map([["l", int(1n)]])), "keys differ").toBe(false);
+    expect(equals(int(1n), Value.bool(true)), "kinds differ, same weight").toBe(false);
   });
 
   it("of shared values never expands them", () => {
@@ -366,8 +366,8 @@ describe("equality", { timeout: 60_000 }, () => {
             ]),
           leaf,
         );
-      expect(equals(mapDag(Value.int(1n)), mapDag(Value.int(1n))), "equal map DAGs").toBe(true);
-      expect(equals(mapDag(Value.int(1n)), mapDag(Value.int(2n))), "unequal map DAGs").toBe(false);
+      expect(equals(mapDag(int(1n)), mapDag(int(1n))), "equal map DAGs").toBe(true);
+      expect(equals(mapDag(int(1n)), mapDag(int(2n))), "unequal map DAGs").toBe(false);
     });
     expect(ms).toBeLessThan(HANG);
   });
@@ -379,7 +379,7 @@ describe("equality", { timeout: 60_000 }, () => {
     const kinds: (readonly [string, () => Value])[] = [
       ["texts", () => text("x".repeat(mib))],
       ["byte strings", () => Value.bytes(new Uint8Array(mib).fill(7))],
-      ["integers", () => Value.int((1n << BigInt(8 * mib)) + 1n)],
+      ["integers", () => int((1n << BigInt(MAX_INTEGER_BITS)) - 1n)],
     ];
     for (const [what, make] of kinds) {
       const [a, b] = [make(), make()];
@@ -402,14 +402,14 @@ describe("equality", { timeout: 60_000 }, () => {
 describe("inspect", { timeout: 60_000 }, () => {
   it("shows a small value in full, through toString and util.inspect too", () => {
     const small = map([
-      ["a", array([Value.int(1n), text("x")])],
+      ["a", array([int(1n), text("x")])],
       ["b", Value.bytes(Uint8Array.of(0, 255))],
       ["c", expectOk(Value.number(1n, 3n), "1/3")],
     ]);
     expect(inspect(small)).toBe(`{"a": [1, "x"], "b": h'00ff', "c": 1/3}`);
     expect(String(small)).toBe(inspect(small));
     expect(nodeInspect(small)).toBe(inspect(small));
-    expect(inspect(Value.int(1n << 300n))).toBe("<int of 301 bits>");
+    expect(inspect(int(1n << 300n))).toBe("<int of 301 bits>");
   });
 
   it("is bounded however often a part repeats, and however large or deep a value is", () => {
@@ -429,8 +429,8 @@ describe("inspect", { timeout: 60_000 }, () => {
 
 describe("stack safety", { timeout: 60_000 }, () => {
   it("every walk takes the deepest value without recursion", () => {
-    const deepArray = Array.from({ length: MAX_DEPTH }).reduce<Value>((v) => array([v, Value.int(1n)]), Value.null);
-    const deepMap = Array.from({ length: MAX_DEPTH }).reduce<Value>((v) => map([["k", v]]), Value.int(1n));
+    const deepArray = Array.from({ length: MAX_DEPTH }).reduce<Value>((v) => array([v, int(1n)]), Value.null);
+    const deepMap = Array.from({ length: MAX_DEPTH }).reduce<Value>((v) => map([["k", v]]), int(1n));
     for (const v of [deepArray, deepMap]) {
       const encoded = expectOk(cbor.encode(v), "encodes");
       expect(equals(v, expectOk(cbor.decode(encoded), "decodes"))).toBe(true);

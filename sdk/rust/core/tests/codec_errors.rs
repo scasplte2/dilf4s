@@ -9,10 +9,15 @@ fn huge() -> BigInt {
     BigInt::from(1u8) << 1_000_000u32
 }
 
+/// The widest integer a value holds (`MAX_INTEGER_BITS`).
+fn widest() -> Value {
+    Value::integer((BigInt::from(1u8) << dilf4s_core::MAX_INTEGER_BITS) - 1u8).unwrap()
+}
+
 #[test]
 fn native_range_refusal_names_the_size() {
-    let failure = INT.decode(&Value::int(huge())).unwrap_err();
-    assert_eq!(failure.reason, "integer of 1000001 bits outside -18446744073709551616..18446744073709551615");
+    let failure = INT.decode(&widest()).unwrap_err();
+    assert_eq!(failure.reason, "integer of 33219 bits outside -18446744073709551616..18446744073709551615");
 }
 
 #[test]
@@ -21,7 +26,7 @@ fn big_range_refusals_name_the_size() {
         lo: Some(BigBound { negative: false, magnitude: &[] }),
         hi: Some(BigBound { negative: false, magnitude: &[1] }),
     };
-    assert_eq!(codec.decode(&Value::int(huge())).unwrap_err().reason, "integer of 1000001 bits outside 0..1");
+    assert_eq!(codec.decode(&widest()).unwrap_err().reason, "integer of 33219 bits outside 0..1");
     assert_eq!(
         codec.encode(&huge()).unwrap_err(),
         CanonicalError::TypeMismatch { reason: "integer of 1000001 bits outside 0..1".into() }
@@ -30,8 +35,5 @@ fn big_range_refusals_name_the_size() {
 
 #[test]
 fn literal_refusal_names_the_size() {
-    assert_eq!(
-        LiteralInt(7).decode(&Value::int(huge())).unwrap_err().reason,
-        "expected 7, got an integer of 1000001 bits"
-    );
+    assert_eq!(LiteralInt(7).decode(&widest()).unwrap_err().reason, "expected 7, got an integer of 33219 bits");
 }

@@ -13,7 +13,7 @@ object ValueCommitmentSuite extends SimpleIOSuite with Checkers {
 
   private val value: Gen[CanonicalValue] = Gen.oneOf(
     Gen.alphaNumStr.map(s => CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)),
-    Gen.long.map(l => CanonicalValue.CInt(BigInt(l))),
+    Gen.long.map(l => CanonicalValue.CInt(l)),
     Gen.oneOf(CanonicalValue.True, CanonicalValue.False, CanonicalValue.CNull),
     Gen.listOf(Gen.choose(Byte.MinValue, Byte.MaxValue)).map(bs => CanonicalValue.CBytes(ByteVector(bs)))
   )

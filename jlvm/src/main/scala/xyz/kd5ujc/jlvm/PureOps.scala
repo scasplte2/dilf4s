@@ -228,7 +228,7 @@ object PureOps {
   def operands(op: Op, args: Vector[CanonicalValue]): Either[JlvmError, Vector[Ratio]] = args.traverse(numeric(op, _))
 
   /** `+` or `*` of no operands. */
-  def identity(op: Op): CanonicalValue = if (op == Op.Mul) CInt(BigInt(1)) else CInt(BigInt(0))
+  def identity(op: Op): CanonicalValue = if (op == Op.Mul) CInt(1) else CInt(0)
 
   /** One step of `+` or `*`: every intermediate is checked, so a fold never builds a number past the bound. */
   def combine(op: Op, acc: Ratio, x: Ratio): Either[JlvmError, Ratio] = combine(op, acc, x)(if (op == Op.Mul) _ * _ else _ + _)

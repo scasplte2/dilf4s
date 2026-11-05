@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { cbor, MAX_WEIGHT, models, Value } from "@kd5ujc/dilf4s-core";
 
 import { MAX_PROOF_WEIGHT, merkle, trie, versioned } from "../src/index.js";
-import { bytes, expectErr, expectOk, loadVectors, valueOf } from "./vectors.js";
+import { bytes, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
 
 const vectors = loadVectors("versioned_trie_v1.json", models.versionedTrieVectors.VersionedTrieVectors);
 const versionKey = expectOk(versioned.VersionKey.unsignedLong(Number(vectors.width)), "version key");
@@ -30,10 +30,10 @@ describe("versioned values built with shared parts", { timeout: 60_000 }, () => 
     const ms = elapsed(() => {
       expect(expectErr(vt.checkValue(k, dag), "2^60 leaves")).toEqual({ kind: "TooLarge", what: "the value of fiber/1", limit: versioned.MAX_VALUE_BYTES });
       // within the weight bound but over in bytes (each 2^64 - 1 weighs 2 and takes 9 bytes)
-      const ints = doubled(Value.int(2n ** 64n - 1n), 17);
+      const ints = doubled(int(2n ** 64n - 1n), 17);
       const e = expectErr(vt.checkValue(k, ints), "over in bytes");
       expect(e, "the limit, nothing measured").toEqual({ kind: "TooLarge", what: "the value of fiber/1", limit: versioned.MAX_VALUE_BYTES });
-      expect(vt.checkValue(k, doubled(Value.int(2n ** 64n - 1n), 16)).ok, "1.2 MiB of logical size, 655 KiB of CBOR").toBe(true);
+      expect(vt.checkValue(k, doubled(int(2n ** 64n - 1n), 16)).ok, "1.2 MiB of logical size, 655 KiB of CBOR").toBe(true);
       // the weight saturates within the depth limit: refused by weight, with the limit
       const saturated = doubled(expectOk(Value.text("a"), "text"), versioned.MAX_VALUE_DEPTH);
       expect(saturated.weight).toBe(MAX_WEIGHT);

@@ -42,7 +42,7 @@ object SharedValueSuite extends SimpleIOSuite {
 
   pureTest("checkValue: within the weight, the length is measured, and refused past the limit") {
     // 2^17 integers of 2^40 weigh 1 each but take 9 bytes each
-    val wide = get(CanonicalValue.array(Vector.fill(1 << 17)(CanonicalValue.int(BigInt(1) << 40))))
+    val wide = get(CanonicalValue.array(Vector.fill(1 << 17)(CanonicalValue.CInt(1L << 40))))
     val exact = Cbor.encode(wide).size.toLong
     val atLimit = CanonicalValue.bytes(ByteVector.fill(VersionedTrie.MaxValueBytes - 5)(1))
     expect(wide.weight <= VersionedTrie.MaxValueBytes, s"weight ${wide.weight}")
@@ -174,7 +174,7 @@ object SharedValueSuite extends SimpleIOSuite {
   test("a batch of many keys sharing one long value is refused by the delta's weight before any value is measured") {
     // 2^16 integers of 2^40 weigh 1 each and take 9 bytes: a value of weight 65,537 and 589,827 bytes of CBOR that a
     // commit accepts; 20,000 keys hold it, so measuring each would cost 2^34 steps; their weights alone pass 2^24
-    val long: CanonicalValue = get(CanonicalValue.array(Vector.fill(1 << 16)(CanonicalValue.int(BigInt(1) << 40))))
+    val long: CanonicalValue = get(CanonicalValue.array(Vector.fill(1 << 16)(CanonicalValue.CInt(1L << 40))))
     val batch = (1 to 20000).map(i => Batch.put(key(s"shared/$i"), long)).reduce(_ ++ _)
     attempt(implicit h => fresh.flatMap(s => h.attempt(s._2.commit(None, 1L, batch)))).map { r =>
       expect.same(Right(Left(VersionedTrieError.TooLarge("the delta", ProofInput.MaxProofWeight))), r)

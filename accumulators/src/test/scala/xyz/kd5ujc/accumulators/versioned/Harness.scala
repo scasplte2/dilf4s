@@ -26,7 +26,7 @@ object Harness {
 
   def key(s:  String): StateKey = get(StateKey.parse(s))
   def ns(s:   String): StateNamespace = get(StateNamespace.parse(s))
-  def int(i:  Int): CanonicalValue = CanonicalValue.int(BigInt(i))
+  def int(i:  Int): CanonicalValue = CanonicalValue.CInt(i)
   def text(s: String): CanonicalValue = get(CanonicalValue.text(s))
   def vk(v:   Long): ByteVector = get(VersionKey.long.encode(v))
 

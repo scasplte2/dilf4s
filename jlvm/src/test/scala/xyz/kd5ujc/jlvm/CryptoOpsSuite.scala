@@ -50,7 +50,7 @@ object CryptoOpsSuite extends IOSuite with Checkers {
       .same(Right(True), verify(jlvm, op, CBytes(pk), msg, sig))
       .and(expect.same(Right(False), verify(jlvm, op, CBytes(pk), other, sig)))
       .and(expect(crypto(verify(jlvm, op, CBytes(pk), msg, sig.dropRight(1))), s"${op.wire}: short signature"))
-      .and(expect(verify(jlvm, op, CInt(BigInt(1)), msg, sig).isLeft, "a number is not a key"))
+      .and(expect(verify(jlvm, op, CInt(1), msg, sig).isLeft, "a number is not a key"))
 
   test("ed25519_verify") { b =>
     IO {
@@ -225,7 +225,7 @@ object CryptoOpsSuite extends IOSuite with Checkers {
     def data(secret: ByteVector, proof: ByteVector) =
       s"""{"deadline": 100, "hx": ${h(hx)}, "secret": ${h(secret)}, "alice": ${h(pk(alice))}, "bob": ${h(pk(bob))},
          | "proof": ${h(proof)}, "msg": ${h(message)}}""".stripMargin
-    def at(height: Int) = Map("height" -> (CInt(BigInt(height)): CanonicalValue))
+    def at(height: Int) = Map("height" -> (CInt(height): CanonicalValue))
     (
       prove(b.random, Right(key(Secp256k1Group.base(bob))), Vector(bob), message),
       prove(b.random, Right(key(Secp256k1Group.base(alice))), Vector(alice), message)
@@ -544,7 +544,7 @@ object CryptoOpsSuite extends IOSuite with Checkers {
   private val cryptoArg: Gen[CanonicalValue] = Gen.frequency(
     6 -> biasedBytes,
     2 -> Gen.oneOf(knownBytes).map(CBytes(_)),
-    1 -> Gen.oneOf[CanonicalValue](CNull, True, CInt(BigInt(7)), text("0xabc")),
+    1 -> Gen.oneOf[CanonicalValue](CNull, True, CInt(7), text("0xabc")),
     1 -> Gen.choose(0, 4).flatMap(Gen.listOfN(_, biasedBytes)).map(array)
   )
 
@@ -566,7 +566,7 @@ object CryptoOpsSuite extends IOSuite with Checkers {
       }
       def arr(vs:   CanonicalValue*): CanonicalValue = array(vs)
       def node(kvs: (String, CanonicalValue)*): CanonicalValue = CanonicalValue.map(kvs.toList).fold(e => sys.error(e.toString), identity)
-      def int(n:    Int): CanonicalValue = CInt(BigInt(n))
+      def int(n:    Int): CanonicalValue = CInt(n)
       val g = CBytes(hex"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
       val identity33 = CBytes(ByteVector.low(33))
       val msg = CBytes(hex"00")
@@ -642,7 +642,7 @@ object CryptoOpsSuite extends IOSuite with Checkers {
           k  <- Gen.choose(-2, 8)
           n  <- Gen.choose(0, 5)
           cs <- Gen.listOfN(n, sigmaNode(depth - 1))
-        } yield m(List("type" -> t, "k" -> CInt(BigInt(k)), "children" -> array(cs))))
+        } yield m(List("type" -> t, "k" -> CInt(k), "children" -> array(cs))))
       )
   }
 
@@ -658,7 +658,7 @@ object CryptoOpsSuite extends IOSuite with Checkers {
   )
 
   test("sigma_verify is total over random proposition trees and proofs") { b =>
-    forall(Gen.zip(sigmaNode(4), sigmaProof, Gen.oneOf(biasedBytes, Gen.const(CInt(BigInt(1)): CanonicalValue)))) {
+    forall(Gen.zip(sigmaNode(4), sigmaProof, Gen.oneOf(biasedBytes, Gen.const(CInt(1): CanonicalValue)))) {
       case (prop, proof, msg) =>
         val o = outcome(b.ops(Op.SigmaVerify, Vector(prop, proof, msg)))
         expect(errors(o) || o == "boolean", s"unexpected outcome $o")

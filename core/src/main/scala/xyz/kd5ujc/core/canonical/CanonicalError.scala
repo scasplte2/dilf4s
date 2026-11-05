@@ -14,6 +14,7 @@ object CanonicalError {
   case object UnpairedSurrogate extends CanonicalError
   final case class DuplicateKey(key: Preview) extends CanonicalError
   final case class RationalTooWide(limit: Int) extends CanonicalError
+  final case class IntegerTooWide(limit: Int) extends CanonicalError
 
   // JSON mapping
   final case class JsonSyntax(offset: Int, reason: String) extends CanonicalError

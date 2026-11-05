@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { json, RationalValue, Value, type Result } from "../src/index.js";
-import { expectOk } from "./vectors.js";
+import { expectOk, int } from "./vectors.js";
 
 // JSON numbers have at most 10,000 significant digits, counted on the text before any conversion, and render only
 // within the same bounds, so that a rendering always reads back
@@ -9,11 +9,15 @@ describe("JSON number bounds", () => {
   const digits = (n: number): string => "9".repeat(n);
 
   it("10,000 digits read and write; leading zeros are not counted", () => {
-    const v = expectOk(json.parse(digits(10000)), "parses");
-    expect(json.renderWithin(v, json.MAX_RENDER_BYTES)).toEqual({ ok: true, value: digits(10000) });
-    const small = expectOk(json.parse(`0.${"0".repeat(10000)}1e1`), "parses");
-    expect(json.renderWithin(small, json.MAX_RENDER_BYTES)).toEqual({ ok: true, value: `0.${"0".repeat(9999)}1` });
-    expect(json.parse(`1e${"0".repeat(20000)}2`)).toEqual({ ok: true, value: Value.int(100n) });
+    const ones = "1".repeat(10000);
+    const v = expectOk(json.parse(ones), "parses");
+    expect(json.renderWithin(v, json.MAX_RENDER_BYTES)).toEqual({ ok: true, value: ones });
+    const small = expectOk(json.parse(`0.${"0".repeat(10000)}2e1`), "parses");
+    expect(json.renderWithin(small, json.MAX_RENDER_BYTES)).toEqual({ ok: true, value: `0.${"0".repeat(9999)}2` });
+    // within the digit and scale bounds, but past the data model's: 10,000 nines (33220 bits), 1/10^10000
+    expect(json.parse(digits(10000))).toEqual({ ok: false, error: { kind: "IntegerTooWide", limit: 33219 } });
+    expect(json.parse(`0.${"0".repeat(9999)}1`)).toEqual({ ok: false, error: { kind: "RationalTooWide", limit: 33219 } });
+    expect(json.parse(`1e${"0".repeat(20000)}2`)).toEqual({ ok: true, value: int(100n) });
   });
 
   it("more digits are refused by their length", () => {
@@ -24,9 +28,13 @@ describe("JSON number bounds", () => {
   });
 
   it("rendering refuses what would not read back", () => {
-    expect(json.renderWithin(Value.int(10n ** 10000n), json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
+    // every integer renders: the widest, of either sign, has 10,000 digits
+    for (const n of [(1n << 33219n) - 1n, -(1n << 33219n)]) {
+      expect(json.renderWithin(int(n), json.MAX_RENDER_BYTES)).toEqual({ ok: true, value: n.toString() });
+      expect(n.toString().replace("-", "").length).toBe(10000);
+    }
     // 1/5^14400 (33436 bits) is no value at all (MAX_RATIONAL_BITS); 1/5^14306 (33218 bits) is, at a scale past the bound
-    expect(Value.number(1n, 5n ** 14400n)).toEqual({ ok: false, error: { kind: "RationalTooWide", limit: 33220 } });
+    expect(Value.number(1n, 5n ** 14400n)).toEqual({ ok: false, error: { kind: "RationalTooWide", limit: 33219 } });
     const wide = expectOk(Value.number(1n, 5n ** 14306n), "1/5^14306");
     expect(json.renderWithin(wide, json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
     const third = expectOk(Value.number(1n, 3n), "1/3");

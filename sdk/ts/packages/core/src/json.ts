@@ -6,9 +6,10 @@
  * so nesting is a typed error rather than a stack overflow. {@link render} is the display view, and fails for values
  * JSON cannot represent.
  */
+import { twosAndFives } from "./bigint.js";
 import { byteLimit, Meter } from "./budget.js";
 import type { CanonicalError, TooLarge } from "./error.js";
-import { CANONICAL_MAX_DIGIT_BITS, CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
+import { CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
 import { KeySet } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
@@ -27,9 +28,6 @@ export const DEFAULT_MAX_SCALE = CANONICAL_MAX_SCALE;
  * any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
  */
 export const MAX_DIGITS = CANONICAL_MAX_DIGITS;
-
-// 10^MAX_DIGITS has 33220 bits: a number any wider has more than MAX_DIGITS digits
-const MAX_DIGIT_BITS = CANONICAL_MAX_DIGIT_BITS;
 
 const leadingZeros = (s: string): number => s.length - s.replace(/^0+/, "").length;
 
@@ -202,7 +200,8 @@ class Parser {
     if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", ...described, scale: Number(scale > INT32_MAX ? INT32_MAX : scale < INT32_MIN ? INT32_MIN : scale) });
     const unscaled = BigInt(intDigits + fracDigits) * (negative ? -1n : 1n);
     // a decimal's denominator is 10^scale: reduced by its primes 2 and 5 alone, never by a general gcd
-    const value = scale >= 0n ? RationalValue.decimal(unscaled, Number(scale)) : ok(IntValue.of(unscaled * 10n ** -scale));
+    // a positive exponent can take an integer past MAX_INTEGER_BITS (9e9999): refused, as every producer does
+    const value = scale >= 0n ? RationalValue.decimal(unscaled, Number(scale)) : IntValue.of(unscaled * 10n ** -scale);
     return value.ok ? ok({ value: value.value, end }) : value;
   }
 
@@ -254,32 +253,23 @@ function within(text: string): string | undefined {
   return significand <= MAX_DIGITS && fracPart.length <= DEFAULT_MAX_SCALE ? text : undefined;
 }
 
-/** An integer's decimal, within the bounds {@link parse} accepts. */
-function integerText(n: IntValue): string | undefined {
-  return n.bitLength > MAX_DIGIT_BITS ? undefined : within(n.value.toString());
+/**
+ * An integer's decimal, which {@link parse} reads back: total, since every integer is within `MAX_INTEGER_BITS`, so
+ * it has at most {@link MAX_DIGITS} digits and converting it is bounded work.
+ */
+function integerText(n: IntValue): string {
+  return n.value.toString();
 }
 
 /**
  * The exact decimal of a rational, within the bounds {@link parse} accepts: `"non-terminating rational"` when its
- * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds. A numerator or denominator
- * wider than `10^MAX_DIGITS` is refused before it is factored or scaled: `2^a 5^b` with `max(a, b)` within the scale
- * bound is at most that, and the significand is at least the numerator.
+ * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds, both found from the
+ * denominator's factors (`twosAndFives`) before any digit is produced.
  */
 export function decimalOf(r: RationalValue): Result<string, "non-terminating rational" | "over-long number"> {
-  if (r.numeratorBitLength > MAX_DIGIT_BITS || r.denominatorBitLength > MAX_DIGIT_BITS) return err("over-long number");
-  let rest = r.denominator;
-  let twos = 0;
-  let fives = 0;
-  while (rest % 2n === 0n) {
-    rest /= 2n;
-    twos++;
-  }
-  while (rest % 5n === 0n) {
-    rest /= 5n;
-    fives++;
-  }
-  if (rest !== 1n) return err("non-terminating rational");
-  const scale = Math.max(twos, fives);
+  const [factors] = twosAndFives(r.denominator);
+  if (factors === undefined) return err("non-terminating rational");
+  const scale = Math.max(...factors);
   if (scale > DEFAULT_MAX_SCALE) return err("over-long number");
   const scaled = r.numerator * (10n ** BigInt(scale) / r.denominator);
   const digits = (scaled < 0n ? -scaled : scaled).toString().padStart(scale + 1, "0");
@@ -379,11 +369,8 @@ export function renderWithin(value: Value, maxBytes: number): Result<string, Ren
         return ascii("null") ? undefined : meter.refusal();
       case "bool":
         return ascii(v.value ? "true" : "false") ? undefined : meter.refusal();
-      case "int": {
-        const t = integerText(v);
-        if (t === undefined) return { kind: "NotJsonRepresentable", what: "over-long number" };
-        return ascii(t) ? undefined : meter.refusal();
-      }
+      case "int":
+        return ascii(integerText(v)) ? undefined : meter.refusal();
       case "rational": {
         const d = decimalOf(v);
         if (!d.ok) return { kind: "NotJsonRepresentable", what: d.error };

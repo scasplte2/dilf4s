@@ -50,7 +50,7 @@ object GasCases {
   private def t(s:      String): CanonicalValue = get(CanonicalValue.text(s))
   private def a(vs:     Vector[CanonicalValue]): CanonicalValue = get(CanonicalValue.array(vs))
   private def m(kvs:    (String, CanonicalValue)*): CanonicalValue = get(CanonicalValue.map(kvs.toVector))
-  private def int(n:    BigInt): CanonicalValue = CInt(n)
+  private def int(n:    BigInt): CanonicalValue = get(CanonicalValue.int(n))
   private def b(bs:     ByteVector): CanonicalValue = CBytes(bs)
   private def render(v: CanonicalValue): String = get(JsonSurface.render(v))
 
@@ -80,10 +80,10 @@ object GasCases {
     )
     (BigInt(1, stream.toArray) >> (stream.size.toInt * 8 - bits)).setBit(bits - 1)
   }
-  private def wint(bits: Int, seed: Int): CanonicalValue = CInt(word(bits, seed))
-  private def ints(n:    Int): CanonicalValue = a(Vector.tabulate(n)(i => CInt(BigInt(i))))
+  private def wint(bits: Int, seed: Int): CanonicalValue = int(word(bits, seed))
+  private def ints(n:    Int): CanonicalValue = a(Vector.tabulate(n)(i => CInt(i)))
   private def texts(n:   Int): CanonicalValue = a(Vector.tabulate(n)(i => t(s"t$i")))
-  private def map(n:     Int): CanonicalValue = get(CanonicalValue.map(Vector.tabulate(n)(i => s"k$i" -> CInt(BigInt(i)))))
+  private def map(n:     Int): CanonicalValue = get(CanonicalValue.map(Vector.tabulate(n)(i => s"k$i" -> CInt(i))))
   private def chars(n:   Int): String = ("ab c" * (n / 4 + 1)).take(n)
   private def text(n:    Int): CanonicalValue = t(chars(n))
   private def bytes(n:   Int): CanonicalValue = CBytes(ByteVector.fill(n.toLong)(0x5a))
@@ -91,7 +91,7 @@ object GasCases {
   /** `n` keys sharing a prefix of `prefix` characters, then a 6-digit index: every comparison scans the prefix. */
   private def prefixed(prefix: Int, i: Int): String = "k" * prefix + f"$i%06d"
   private def prefixedMap(n: Int, prefix: Int): CanonicalValue =
-    get(CanonicalValue.map(Vector.tabulate(n)(i => prefixed(prefix, i) -> CInt(BigInt(i)))))
+    get(CanonicalValue.map(Vector.tabulate(n)(i => prefixed(prefix, i) -> CInt(i))))
   private def prefixedTexts(n: Int, prefix: Int): CanonicalValue = a(Vector.tabulate(n)(i => t(prefixed(prefix, n - 1 - i))))
 
   /** A BN254 scalar-field element: 250 bits, so below `r`. */
@@ -114,7 +114,7 @@ object GasCases {
         o.wire,
         Json.obj(o.wire -> Json.fromValues(q)).noSpaces,
         Json.fromValues(q).noSpaces,
-        m("a0" -> wint(n, 1), "a1" -> CInt(word(n, 2).setBit(0)), "a2" -> wint(n, 3), "a3" -> CInt(word(n, 4).setBit(0))),
+        m("a0" -> wint(n, 1), "a1" -> int(word(n, 2).setBit(0)), "a2" -> wint(n, 3), "a3" -> int(word(n, 4).setBit(0))),
         schedule.literal.value + schedule.element.value * 2
       )
     }
@@ -132,7 +132,7 @@ object GasCases {
           o.wire,
           Json.obj(o.wire -> Json.arr(q)).noSpaces,
           Json.arr(q).noSpaces,
-          m("a0" -> wint(n, 1), "a1" -> CInt(word(n, 2).setBit(0))),
+          m("a0" -> wint(n, 1), "a1" -> int(word(n, 2).setBit(0))),
           schedule.literal.value + schedule.element.value
         )
       }
@@ -330,7 +330,7 @@ object GasCases {
     List((8, 1), (8000, 1), (1 << 20, 1), (8, 4096), (1024, 4096), (64, 65536)).flatMap {
       case (n, prefix) if n > 8000 =>
         val data =
-          get(CanonicalValue.map(Vector.tabulate(n)(i => prefixed(prefix, i) -> CInt(BigInt(i))) :+ ("p" -> t(prefixed(prefix, n - 1)))))
+          get(CanonicalValue.map(Vector.tabulate(n)(i => prefixed(prefix, i) -> CInt(i)) :+ ("p" -> t(prefixed(prefix, n - 1)))))
         List(
           pair(
             s"var: a static key, $n keys, $prefix-character prefix",
@@ -349,7 +349,7 @@ object GasCases {
         )
       case (n, prefix) =>
         val data =
-          get(CanonicalValue.map(Vector.tabulate(n)(i => prefixed(prefix, i) -> CInt(BigInt(i))) :+ ("p" -> t(prefixed(prefix, n - 1)))))
+          get(CanonicalValue.map(Vector.tabulate(n)(i => prefixed(prefix, i) -> CInt(i)) :+ ("p" -> t(prefixed(prefix, n - 1)))))
         val key = prefixed(prefix, n - 1)
         List(
           pair(s"var: a static key, $n keys, $prefix-character prefix", "var", Json.obj("var" -> key.asJson).noSpaces, "1", data),

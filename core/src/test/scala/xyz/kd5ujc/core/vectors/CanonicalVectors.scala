@@ -5,7 +5,7 @@ import java.nio.file.{Files, Path, Paths}
 
 import cats.effect.{ExitCode, IO, IOApp}
 
-import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalGens, CanonicalJson, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash._
 import xyz.kd5ujc.core.vectors.VectorJson.{arr, bool, num, obj, str}
 
@@ -86,9 +86,16 @@ object CanonicalVectors {
     "0e10000",
     "0.000",
     // significant digits: 10,000 is the bound, and leading zeros (of the fraction, or of the exponent) are not counted
-    "9" * 10000,
-    "0." + "0" * 10000 + "1e1",
+    "1" * 10000,
+    // a scale of 10,000: within the rational bound only when the denominator loses a factor (2/10^10000 = 1/(2^9999 5^10000))
+    "0." + "0" * 10000 + "2e1",
     "1e0000000002",
+    // integers: 33219 bits is the bound (CanonicalValue.MaxIntegerBits), for either sign, and every integer within it
+    // has at most 10,000 digits, so it renders: 2^33219 - 1 and -2^33219 are the widest, 8e9999 is within it
+    (IntEdge - 1).toString,
+    "-" + IntEdge.toString,
+    "8e9999",
+    "-8e9999",
     // depth: 256 nested arrays is the limit, and an empty array is a level
     "[" * 255 + "[]" + "]" * 255,
     // rejected
@@ -112,6 +119,20 @@ object CanonicalVectors {
     "9" * 10001,
     "0." + "1" * 10001 + "e1",
     "1e" + "1" * 10001,
+    // one bit past the integer bound, for either sign, within the digit and scale bounds; 10,000 nines; 10^10000; a
+    // 10,000-digit significand times 10^10000
+    IntEdge.toString,
+    (-IntEdge - 1).toString,
+    "9" * 10000,
+    "9e9999",
+    "-9e9999",
+    "1e10000",
+    "-1e10000",
+    "9" * 10000 + "e10000",
+    // one bit past the rational bound: 1/10^10000, (10^10000 - 1)/10^10000
+    "0." + "0" * 9999 + "1",
+    "0." + "0" * 10000 + "1e1",
+    "0." + "9" * 10000,
     "[" * 256 + "[]" + "]" * 256,
     "[1,2",
     "{\"a\":1",
@@ -142,13 +163,23 @@ object CanonicalVectors {
         xyz.kd5ujc.numerics.Ratio.of(1, BigInt(1) << 64).fold(e => sys.error(e.toString), identity)
       )
       .fold(e => sys.error(e.toString), identity),
-    // the widest parts a rational has (CanonicalValue.MaxRationalBits, the bit length of 10^10000), for either sign; the last pair
+    // the widest parts a rational has (CanonicalValue.MaxRationalBits), for either sign; the last pair
     // is consecutive Fibonacci numbers, coprime and the slowest gcd of its width
-    "rational((2^33220-1)/2)"     -> rational(Edge - 1, 2),
-    "rational(-2^33220/3)"        -> rational(-Edge, 3),
-    "rational(2/(2^33220-1))"     -> rational(2, Edge - 1),
-    "rational(F(47851)/F(47850))" -> rational(fibonacci._1, fibonacci._2)
+    s"rational((2^$RationalBits-1)/2)"                     -> rational(Edge - 1, 2),
+    s"rational(-2^$RationalBits/3)"                        -> rational(-Edge, 3),
+    s"rational(2/(2^$RationalBits-1))"                     -> rational(2, Edge - 1),
+    s"rational(F(${fibonacci._3})/F(${fibonacci._3 - 1}))" -> rational(fibonacci._1, fibonacci._2),
+    // the widest integers (CanonicalValue.MaxIntegerBits), for either sign: 4153 bytes of magnitude
+    s"int(2^$IntegerBits-1)" -> CanonicalGens.int(IntEdge - 1),
+    s"int(-2^$IntegerBits)"  -> CanonicalGens.int(-IntEdge)
   )
+
+  // defs: modelInputs and jsonInputs are built before vals below them would be set
+  private def IntegerBits: Int = CanonicalValue.MaxIntegerBits
+  private def RationalBits: Int = CanonicalValue.MaxRationalBits
+
+  /** `2^MaxIntegerBits`: one bit wider than an integer may be. */
+  private def IntEdge: BigInt = BigInt(1) << IntegerBits
 
   private def rational(n: BigInt, d: BigInt): CanonicalValue =
     CanonicalValue
@@ -158,26 +189,27 @@ object CanonicalVectors {
   /** `2^MaxRationalBits`: one bit wider than a rational's part may be. */
   private lazy val Edge: BigInt = BigInt(1) << CanonicalValue.MaxRationalBits
 
-  /** The consecutive Fibonacci numbers `(F(k + 1), F(k))` with `F(k + 1)` exactly `MaxRationalBits` wide. */
-  private lazy val fibonacci: (BigInt, BigInt) = {
+  /** The consecutive Fibonacci numbers `(F(k + 1), F(k))` with `F(k + 1)` exactly `MaxRationalBits` wide, and `k + 1`. */
+  private lazy val fibonacci: (BigInt, BigInt, Int) = {
     @scala.annotation.tailrec
-    def go(a: BigInt, b: BigInt): (BigInt, BigInt) = if (b.bitLength >= CanonicalValue.MaxRationalBits) (b, a) else go(b, a + b)
-    go(BigInt(1), BigInt(1))
+    def go(a: BigInt, b: BigInt, k: Int): (BigInt, BigInt, Int) =
+      if (b.bitLength >= CanonicalValue.MaxRationalBits) (b, a, k) else go(b, a + b, k + 1)
+    go(BigInt(1), BigInt(1), 2)
   }
 
   /** Tag 30 around `[n, d]`, whatever `n` and `d` are. */
   private def rationalBytes(n: BigInt, d: BigInt): ByteVector =
-    hex"d81e82" ++ Cbor.encode(CanonicalValue.CInt(n)) ++ Cbor.encode(CanonicalValue.CInt(d))
+    hex"d81e82" ++ CanonicalGens.integerBytes(n) ++ CanonicalGens.integerBytes(d)
 
   /**
-   * Values with a CBOR form whose JSON form would break the bounds parsing enforces, so rendering refuses them: 10^10000
-   * (10,001 digits), a scale of 10,001, a significand of 10,001 digits within the scale, and a denominator of the widest
-   * a rational has (5^14306, 33,218 bits) whose scale is past the bound.
+   * Values with a CBOR form whose JSON form would break the bounds parsing enforces, so rendering refuses them: only
+   * rationals, since every integer renders: a scale of 10,001, a significand of 10,001 digits within the scale (the
+   * widest numerator over 2), and a denominator of the widest a rational has (5^14306, 33,218 bits) whose scale is past
+   * the bound.
    */
   val renderRejections: List[CanonicalValue] = List(
-    CanonicalValue.CInt(BigInt(10).pow(10000)),
     rational(1, BigInt(1) << 10001),
-    rational(BigInt(10).pow(10000) + 1, 2),
+    rational(Edge - 1, 2),
     rational(1, BigInt(5).pow(14306))
   )
 
@@ -234,11 +266,23 @@ object CanonicalVectors {
     rationalBytes(-Edge - 1, 2),
     rationalBytes(3, Edge),
     rationalBytes(1, -Edge * 2),
-    hex"d81e82" ++ Cbor.encode(CanonicalValue.CInt(Edge)) ++ hex"6161",
+    hex"d81e82" ++ CanonicalGens.integerBytes(Edge) ++ hex"6161",
     rationalBytes(1, BigInt(5).pow(14400)),
     // a numerator whose bignum has a leading zero byte and 4154 bytes in all: its form is checked before its width, so
     // it is non-canonical, not too wide
-    hex"d81e82c259103a00" ++ ByteVector.fill(4153)(0xff) ++ hex"03"
+    hex"d81e82c259103a00" ++ ByteVector.fill(4153)(0xff) ++ hex"03",
+    // an integer one bit wider than CanonicalValue.MaxIntegerBits, for either sign: refused from its length (4153 bytes,
+    // the first 0x08), before it is built; and one a byte wider still
+    CanonicalGens.integerBytes(IntEdge),
+    CanonicalGens.integerBytes(-IntEdge - 1),
+    CanonicalGens.integerBytes(IntEdge * 255),
+    // a bignum's form, and that it is present in full, are checked before its width: 4154 bytes with a leading zero is
+    // non-canonical, and a 2^32 - 1-byte bignum with 4 bytes present is truncated
+    hex"c259103a00" ++ ByteVector.fill(4153)(0xff),
+    hex"c35affffffff" ++ ByteVector.fill(4)(0xff),
+    // the wrapped item's head is read before its kind: a float is Unsupported, a truncated head UnexpectedEnd
+    hex"c2f90000",
+    hex"c279"
   )
 
   private val tagMessages: List[ByteVector] = List(ByteVector.empty, ByteVector("abc".getBytes(UTF_8)), hex"00ff00ff")
@@ -294,7 +338,8 @@ object CanonicalVectors {
             "json"        -> str(in),
             "cbor"        -> str(bytes.toHex),
             "contentHash" -> str(sha256(bytes).hex),
-            "render"      -> str(CanonicalJson.render(v).fold(e => s"UNRENDERABLE $e", identity))
+            // every value JSON reads renders and reads back (canonical-encoding.md section 3)
+            "render" -> str(CanonicalJson.render(v).fold(e => sys.error(s"$in reads but does not render: $e"), identity))
           )
         case Left(e) => obj("json" -> str(in), "error" -> errorKind(e))
       }

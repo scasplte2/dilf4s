@@ -12,7 +12,8 @@ import scodec.bits.ByteVector
 
 /**
  * The canonical data model (docs/specs/canonical-encoding.md §1). Invariants are enforced by the smart constructors in
- * the companion: rationals are never integers and their parts are within [[CanonicalValue.MaxRationalBits]], text
+ * the companion: integers are within [[CanonicalValue.MaxIntegerBits]], rationals are never integers and their parts
+ * are within [[CanonicalValue.MaxRationalBits]], text
  * holds no unpaired surrogates, maps hold unique keys and no null values, and nesting never exceeds
  * [[CanonicalValue.MaxDepth]] — so every constructible value is decodable.
  */
@@ -35,12 +36,21 @@ object CanonicalValue {
 
   /**
    * The widest numerator or denominator a rational has, in `bitLength` bits (docs/specs/canonical-encoding.md §1): the
-   * width of `10^10000`, so every rational a JSON decimal reads to fits, and far past every JLVM number (4096 bits).
+   * integer bound, [[MaxIntegerBits]], and far past every JLVM number (4096 bits).
    * Checking lowest terms takes a gcd, superlinear in its operands, so a decoder refuses a wider part before any gcd: a
    * rational's decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and stays linear in its
    * input. [[number]] refuses a wider rational too, so no value is built that no decoder accepts.
    */
   val MaxRationalBits: Int = xyz.kd5ujc.models.limits.CanonicalMaxRationalBits
+
+  /**
+   * The widest integer, in `bitLength` bits (docs/specs/canonical-encoding.md §1): the widest whose every integer has
+   * at most 10,000 digits (`2^33219 < 10^10000`), so every integer renders as JSON; `8e9999` is an integer and `9e9999`
+   * is not. Far past every JLVM number (4096 bits), and the width of a rational's parts too. [[int]] refuses a
+   * wider one, and a decoder refuses a wider bignum from its length, before it builds the integer: no value is built
+   * that no decoder accepts, and none is so wide that what reads it (rendering, arithmetic, hashing) is unbounded.
+   */
+  val MaxIntegerBits: Int = xyz.kd5ujc.models.limits.CanonicalMaxIntegerBits
 
   implicit val canonicalValueShow: Show[CanonicalValue] = Show.fromToString
 
@@ -56,8 +66,15 @@ object CanonicalValue {
     final val weight: Long = 1L
   }
 
-  final case class CInt(value: BigInt) extends Scalar {
+  /** An integer within [[MaxIntegerBits]]: built by [[int]], which checks the width, or from a `Long`, which fits. */
+  sealed abstract case class CInt(value: BigInt) extends Scalar {
     final val weight: Long = 1L + value.bitLength / 64
+  }
+
+  object CInt {
+
+    /** Any 64-bit integer, which is always within [[MaxIntegerBits]]. */
+    def apply(value: Long): CInt = new CInt(BigInt(value)) {}
   }
 
   sealed abstract case class CRational(value: Ratio) extends Scalar {
@@ -156,11 +173,14 @@ object CanonicalValue {
   val EmptyArray: CArray = new CArray(Vector.empty) {}
   val EmptyMap: CMap = mapOf(CanonicalEntries.empty, KeyOrder.Default)
 
-  def int(value: BigInt): CanonicalValue = CInt(value)
+  /** The integer `value`, refused when it is wider than [[MaxIntegerBits]] (the only constructor of a wider [[CInt]]). */
+  def int(value: BigInt): Either[CanonicalError, CInt] =
+    Either.cond(value.bitLength <= MaxIntegerBits, new CInt(value) {}, CanonicalError.IntegerTooWide(MaxIntegerBits))
 
   /**
-   * A number in the single numeric domain: integral values are always [[CInt]], and a rational is refused when its
-   * numerator or denominator is wider than [[MaxRationalBits]] (its only constructor).
+   * A number in the single numeric domain: integral values are always [[CInt]], refused when wider than
+   * [[MaxIntegerBits]], and a rational is refused when its numerator or denominator is wider than [[MaxRationalBits]]
+   * (its only constructor).
    */
   def number(value: Ratio): Either[CanonicalError, CanonicalValue] =
     value.toBigIntExact.fold[Either[CanonicalError, CanonicalValue]](
@@ -169,7 +189,7 @@ object CanonicalValue {
         new CRational(value) {},
         CanonicalError.RationalTooWide(MaxRationalBits)
       )
-    )(CInt(_).asRight)
+    )(int)
 
   def text(value: String): Either[CanonicalError, CText] =
     Either.cond(Utf16.isWellFormed(value), new CText(value) {}, CanonicalError.UnpairedSurrogate)

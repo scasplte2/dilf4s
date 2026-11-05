@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { codec, describeFailure, DomainTag, json, MapValue, MAX_PREVIEW_CODE_POINTS, models, Preview, Value } from "../src/index.js";
 import { decodeFailure, at } from "../src/error.js";
-import { expectOk, loadVectors } from "./vectors.js";
+import { expectOk, int, loadVectors } from "./vectors.js";
 
 // Bounded diagnostics (docs/specs/conformance.md section 8): a refusal holds caller text only as a `Preview`, so however
 // long the input, what an error holds and renders stays within a fixed bound.
@@ -57,8 +57,8 @@ describe("bounded refusals", () => {
     const key = "k".repeat(HUGE);
     const parsed = json.parse(`{"${key}":1,"${key}":2}`);
     const built = MapValue.of([
-      [key, Value.int(1n)],
-      [key, Value.int(2n)],
+      [key, int(1n)],
+      [key, int(2n)],
     ]);
     for (const r of [parsed, built]) {
       if (r.ok || r.error.kind !== "DuplicateKey") throw new Error("a duplicate key");
@@ -81,10 +81,10 @@ describe("bounded refusals", () => {
   });
 
   it("unknown keys are counted and the first, in canonical order, previewed; never listed", () => {
-    const small = expectOk(MapValue.of(["a", "zz", "é", "aaa", "b"].map((k) => [k, Value.int(1n)] as const)), "a map");
+    const small = expectOk(MapValue.of(["a", "zz", "é", "aaa", "b"].map((k) => [k, int(1n)] as const)), "a map");
     const f = codec.fields(small, ["a"]);
     expect(f.ok ? "accepted" : describeFailure(f.error)).toBe('<root>: 4 unknown keys, the first "b" (UTF-8 length 1)');
-    const many = expectOk(MapValue.of(Array.from({ length: 4096 }, (_, i) => [`${"u".repeat(256)}${i.toString()}`, Value.int(BigInt(i))] as const)), "a map");
+    const many = expectOk(MapValue.of(Array.from({ length: 4096 }, (_, i) => [`${"u".repeat(256)}${i.toString()}`, int(BigInt(i))] as const)), "a map");
     const g = codec.fields(many, ["a"]);
     expect(g.ok ? "accepted" : g.error.reason).toMatch(/^4096 unknown keys/);
     if (!g.ok) bounded("unknown keys", describeFailure(g.error));

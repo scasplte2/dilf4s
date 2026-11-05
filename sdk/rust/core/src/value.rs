@@ -1,7 +1,7 @@
 //! The canonical data model (docs/specs/canonical-encoding.md section 1).
 //!
-//! Every invariant is held by a type: [`Rational`] is reduced, never an integer and no wider than
-//! [`MAX_RATIONAL_BITS`], [`Map`] has unique keys in
+//! Every invariant is held by a type: [`Int`] is no wider than [`MAX_INTEGER_BITS`], [`Rational`] is reduced, never an
+//! integer and no wider than [`MAX_RATIONAL_BITS`], [`Map`] has unique keys in
 //! canonical order and no null values, and [`Array`] and [`Map`] never nest deeper than [`MAX_DEPTH`]. Their fields
 //! are private, so every constructible [`Value`] has exactly one encoding and decodes back to itself.
 //!
@@ -62,12 +62,19 @@ pub use map::{Entries, Map, MapShape};
 pub const MAX_DEPTH: usize = crate::generated::limits::as_usize::CANONICAL_MAX_DEPTH;
 
 /// The widest numerator or denominator a [`Rational`] has, in Java `bitLength` bits (docs/specs/canonical-encoding.md
-/// section 1): the width of `10^10000`, so every rational a JSON decimal reads to fits, and far past every JLVM number
-/// (4096 bits). Checking lowest terms takes a gcd, superlinear in its operands, so a decoder refuses a wider part
+/// section 1): the integer bound, [`MAX_INTEGER_BITS`], and far past every JLVM number (4096 bits). Checking lowest
+/// terms takes a gcd, superlinear in its operands, so a decoder refuses a wider part
 /// before any gcd: a rational's decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and
 /// stays linear in its input. Every constructor refuses a wider rational too, so no value is built that no decoder
 /// accepts.
 pub const MAX_RATIONAL_BITS: u64 = crate::generated::limits::CANONICAL_MAX_RATIONAL_BITS;
+
+/// The widest [`Int`], in Java `bitLength` bits (docs/specs/canonical-encoding.md section 1): the widest whose every
+/// integer has at most 10,000 digits (`2^33219 < 10^10000`), so every integer renders as JSON; `8e9999` is an integer
+/// and `9e9999` is not. Far past every JLVM number (4096 bits), and the width of a rational's parts too. [`Int::new`] refuses a
+/// wider one, and a decoder refuses a wider bignum from its length, before it builds the integer: no value is built that
+/// no decoder accepts, and none is so wide that what reads it (rendering, arithmetic, hashing) is unbounded.
+pub const MAX_INTEGER_BITS: u64 = crate::generated::limits::CANONICAL_MAX_INTEGER_BITS;
 
 /// The greatest [`Value::weight`]: weights saturate here (the Scala reference's `Long.MaxValue`), never wrap.
 pub const MAX_WEIGHT: u64 = crate::generated::limits::CANONICAL_MAX_WEIGHT;
@@ -101,7 +108,7 @@ pub enum Value {
     Null,
     /// `false` or `true`.
     Bool(bool),
-    /// An integer of any size.
+    /// An integer within [`MAX_INTEGER_BITS`].
     Int(Int),
     /// A non-integer rational in lowest terms.
     Rational(Rational),
@@ -147,9 +154,15 @@ impl Value {
         }
     }
 
-    /// The integer `n`.
-    pub fn int(n: impl Into<BigInt>) -> Self {
-        Self::Int(Int::new(n))
+    /// The integer `n`, of a primitive type: always within [`MAX_INTEGER_BITS`]. A [`BigInt`] goes through
+    /// [`Value::integer`], which checks the width.
+    pub fn int(n: impl Into<Int>) -> Self {
+        Self::Int(n.into())
+    }
+
+    /// The integer `n`, or [`IntegerTooWide`] when it is wider than [`MAX_INTEGER_BITS`].
+    pub fn integer(n: BigInt) -> Result<Self, IntegerTooWide> {
+        Int::new(n).map(Self::Int)
     }
 
     /// The text `s`.
@@ -163,23 +176,25 @@ impl Value {
     }
 
     /// `unscaled / 10^scale`, reduced with only the primes 2 and 5 (a JSON decimal's denominator has no others), or
-    /// [`CanonicalError::RationalTooWide`] for a rational wider than [`MAX_RATIONAL_BITS`] (which JSON's digit and
-    /// scale bounds never reach).
+    /// [`CanonicalError::RationalTooWide`] for a rational wider than [`MAX_RATIONAL_BITS`] (a JSON decimal can be:
+    /// `0.000...1` at a scale of 10,000 has the denominator `10^10000`), or `IntegerTooWide` for an integer wider than
+    /// [`MAX_INTEGER_BITS`].
     pub(crate) fn decimal(unscaled: &BigInt, scale: usize) -> Result<Self, CanonicalError> {
         match Rational::reduce_decimal(unscaled, scale) {
-            Some(Reduced::Integer(n)) => Ok(Self::int(n)),
+            Some(Reduced::Integer(n)) => Ok(Self::integer(n)?),
             Some(Reduced::Fraction(r)) => Ok(Self::Rational(r)),
             None => Err(CanonicalError::RationalTooWide { limit: MAX_RATIONAL_BITS }),
         }
     }
 
-    /// The number `numerator / denominator` in the single numeric domain: an integer when it is one, otherwise a
-    /// reduced [`Rational`], refused when its numerator or denominator is wider than [`MAX_RATIONAL_BITS`].
+    /// The number `numerator / denominator` in the single numeric domain: an integer when it is one, refused when
+    /// wider than [`MAX_INTEGER_BITS`], otherwise a reduced [`Rational`], refused when its numerator or denominator is
+    /// wider than [`MAX_RATIONAL_BITS`].
     pub fn number(numerator: &BigInt, denominator: &BigInt) -> Result<Self, NumberError> {
-        Rational::reduce(numerator, denominator).map(|r| match r {
-            Reduced::Integer(n) => Self::int(n),
-            Reduced::Fraction(r) => Self::Rational(r),
-        })
+        match Rational::reduce(numerator, denominator)? {
+            Reduced::Integer(n) => Ok(Self::integer(n)?),
+            Reduced::Fraction(r) => Ok(Self::Rational(r)),
+        }
     }
 
     /// An array of `items`, if within the depth limit.
@@ -384,7 +399,8 @@ impl From<Text> for Arc<str> {
 
 // ------------------------------------------------------------------------------------------------ numbers
 
-/// A shared, immutable integer: derefs to [`BigInt`], clones in O(1), and caches its weight.
+/// A shared, immutable integer within [`MAX_INTEGER_BITS`]: derefs to [`BigInt`], clones in O(1), and caches its
+/// weight. Built by [`Int::new`], which checks the width, or from a primitive integer, which always fits.
 #[derive(Clone)]
 pub struct Int {
     value: Arc<BigInt>,
@@ -392,12 +408,40 @@ pub struct Int {
     weight: u64,
 }
 
+/// An integer wider than [`MAX_INTEGER_BITS`]: no [`Int`] holds one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IntegerTooWide;
+
+impl fmt::Display for IntegerTooWide {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "an integer wider than {MAX_INTEGER_BITS} bits")
+    }
+}
+
+impl core::error::Error for IntegerTooWide {}
+
+impl From<IntegerTooWide> for CanonicalError {
+    fn from(_: IntegerTooWide) -> Self {
+        Self::IntegerTooWide { limit: MAX_INTEGER_BITS }
+    }
+}
+
 impl Int {
-    /// The integer `n`.
-    pub fn new(n: impl Into<BigInt>) -> Self {
-        let value = n.into();
-        let bits = bit_length(&value);
-        Self { value: Arc::new(value), bit_length: bits, weight: add_weight(1, bits / 64) }
+    /// The integer `n`, or [`IntegerTooWide`] when it is wider than [`MAX_INTEGER_BITS`]: the only way to build a
+    /// wide one.
+    pub fn new(n: BigInt) -> Result<Self, IntegerTooWide> {
+        let bits = bit_length(&n);
+        if bits > MAX_INTEGER_BITS {
+            Err(IntegerTooWide)
+        } else {
+            Ok(Self { value: Arc::new(n), bit_length: bits, weight: add_weight(1, bits / 64) })
+        }
+    }
+
+    /// A primitive integer, at most 128 bits: always within [`MAX_INTEGER_BITS`].
+    fn small(n: BigInt) -> Self {
+        let bits = bit_length(&n);
+        Self { value: Arc::new(n), bit_length: bits, weight: add_weight(1, bits / 64) }
     }
 
     /// The integer.
@@ -422,8 +466,22 @@ impl Int {
     }
 }
 
-impl From<BigInt> for Int {
-    fn from(n: BigInt) -> Self {
+/// Every primitive integer is at most 128 bits wide, so converting one is total.
+macro_rules! int_from_primitive {
+    ($($t:ty),*) => {$(
+        impl From<$t> for Int {
+            fn from(n: $t) -> Self {
+                Self::small(BigInt::from(n))
+            }
+        }
+    )*};
+}
+
+int_from_primitive!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
+
+impl TryFrom<BigInt> for Int {
+    type Error = IntegerTooWide;
+    fn try_from(n: BigInt) -> Result<Self, IntegerTooWide> {
         Self::new(n)
     }
 }
@@ -501,6 +559,14 @@ pub enum NumberError {
     DivisionByZero,
     /// A rational, in lowest terms, whose numerator or denominator is wider than [`MAX_RATIONAL_BITS`].
     RationalTooWide,
+    /// A number that reduces to an integer wider than [`MAX_INTEGER_BITS`].
+    IntegerTooWide,
+}
+
+impl From<IntegerTooWide> for NumberError {
+    fn from(_: IntegerTooWide) -> Self {
+        Self::IntegerTooWide
+    }
 }
 
 impl fmt::Display for NumberError {
@@ -508,6 +574,7 @@ impl fmt::Display for NumberError {
         match self {
             Self::DivisionByZero => f.write_str("division by zero"),
             Self::RationalTooWide => write!(f, "a rational part wider than {MAX_RATIONAL_BITS} bits"),
+            Self::IntegerTooWide => write!(f, "an integer wider than {MAX_INTEGER_BITS} bits"),
         }
     }
 }

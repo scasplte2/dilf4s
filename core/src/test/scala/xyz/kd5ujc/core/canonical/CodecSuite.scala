@@ -11,7 +11,7 @@ object CodecSuite extends SimpleIOSuite {
   private val two64 = BigInt(1) << 64
 
   pureTest("CDDL integers follow RFC 8610: uint, nint and int are major types 0, 1 and either") {
-    def fits(c: Codec[BigInt], n: BigInt): Boolean = c.encode(n).isRight && c.decoder.decode(CanonicalValue.CInt(n)).isRight
+    def fits(c: Codec[BigInt], n: BigInt): Boolean = c.encode(n).isRight && c.decoder.decode(CanonicalGens.int(n)).isRight
     expect(fits(Codec.uint, two64 - 1), "2^64 - 1 is a uint")
       .and(expect(!fits(Codec.uint, two64), "2^64 is not a uint"))
       .and(expect(!fits(Codec.uint, -1), "-1 is not a uint"))
@@ -43,18 +43,19 @@ object CodecSuite extends SimpleIOSuite {
 
   pureTest("a refused integer is named by its size, never its digits") {
     val huge = BigInt(1) << 1000000
+    val widest = CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect
       .same(
-        Left("integer of 1000001 bits outside 0..18446744073709551615"),
-        Codec.uint.decoder.decode(CanonicalValue.CInt(huge)).left.map(_.reason)
+        Left("integer of 33219 bits outside 0..18446744073709551615"),
+        Codec.uint.decoder.decode(widest).left.map(_.reason)
       )
       .and(expect.same(Left(CanonicalError.TypeMismatch("integer of 1000001 bits outside the schema range")), Codec.uint.encode(huge)))
   }
 
   pureTest("a refused literal is named by the size of what came instead") {
     expect.same(
-      Left("expected 7, got an integer of 1000001 bits"),
-      Codec.literalInt(7).decoder.decode(CanonicalValue.CInt(BigInt(1) << 1000000)).left.map(_.reason)
+      Left("expected 7, got an integer of 33219 bits"),
+      Codec.literalInt(7).decoder.decode(CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)).left.map(_.reason)
     )
   }
 

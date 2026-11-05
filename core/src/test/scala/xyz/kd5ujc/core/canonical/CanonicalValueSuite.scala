@@ -56,9 +56,14 @@ object CanonicalValueSuite extends SimpleIOSuite with Checkers {
     def leaf = CanonicalValue.map(List("pk" -> CBytes(scodec.bits.ByteVector.fill(33)(0)), "type" -> t("dlog"))).toOption.get
     expect
       .same(List(1L, 1L, 1L, 6L, 4L), List(CNull.weight, True.weight, t("").weight, t("é€").weight, bytesOf(3).weight))
-      .and(expect.same(List(1L, 1L, 2L), List(CInt(0).weight, CInt(two.pow(63) - 1).weight, CInt(two.pow(63)).weight)))
-      .and(expect.same(List(1L, 2L), List(CInt(-two.pow(63)).weight, CInt(-two.pow(63) - 1).weight)))
-      .and(expect.same(List(2L, 3L), List(CInt(-two.pow(127)).weight, CInt(-two.pow(127) - 1).weight)))
+      .and(
+        expect.same(
+          List(1L, 1L, 2L),
+          List(CInt(0).weight, CanonicalGens.int(two.pow(63) - 1).weight, CanonicalGens.int(two.pow(63)).weight)
+        )
+      )
+      .and(expect.same(List(1L, 2L), List(CanonicalGens.int(-two.pow(63)).weight, CanonicalGens.int(-two.pow(63) - 1).weight)))
+      .and(expect.same(List(2L, 3L), List(CanonicalGens.int(-two.pow(127)).weight, CanonicalGens.int(-two.pow(127) - 1).weight)))
       .and(expect.same(List(2L, 3L, 3L), List(rational(1, 2), rational(two.pow(64), 3), rational(-1, -two.pow(64)))))
       .and(expect.same(48L, leaf.weight))
       .and(expect.same(5L, CanonicalValue.array(Vector(CNull, t("ab"))).toOption.get.weight))
@@ -90,7 +95,7 @@ object CanonicalValueSuite extends SimpleIOSuite with Checkers {
 
   test("a chain of updates and removals keeps depth and weight exact, including replacing the deepest value") {
     val deep = (1 to 6).foldLeft[CanonicalValue](CNull)((v, _) => CanonicalValue.array(Vector(v)).toOption.get)
-    val values = Gen.oneOf(Gen.const(deep), Gen.const(CInt(BigInt(1))), Gen.const(CNull), CanonicalGens.value(2))
+    val values = Gen.oneOf(Gen.const(deep), Gen.const(CInt(1)), Gen.const(CNull), CanonicalGens.value(2))
     val step = Gen.zip(Gen.oneOf("a", "b", "c", "d"), values)
     forall(Gen.listOfN(30, step)) { steps =>
       val (_, checks) = steps.foldLeft((CanonicalValue.EmptyMap, success)) {

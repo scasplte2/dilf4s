@@ -125,13 +125,14 @@ pub(crate) fn integer(op: Op, v: &Value) -> Result<&BigInt, JlvmError> {
 
 /// A number result, within [`MAX_NUMBER_BITS`].
 pub(crate) fn num(op: Op, r: &Ratio) -> Result<Value, JlvmError> {
-    // within MAX_NUMBER_BITS, far inside the data model's MAX_RATIONAL_BITS: the constructor's refusal is the same bound
+    // within MAX_NUMBER_BITS, far inside the data model's MAX_INTEGER_BITS and MAX_RATIONAL_BITS: the constructor's
+    // refusal is never reached, and would be the same Limit
     if fits(r) { r.to_value().map_err(|_| too_large(op)) } else { Err(too_large(op)) }
 }
 
-/// An integer result, within [`MAX_NUMBER_BITS`].
+/// An integer result, within [`MAX_NUMBER_BITS`], as [`num`].
 pub(crate) fn int(op: Op, i: BigInt) -> Result<Value, JlvmError> {
-    if bit_length(&i) <= MAX_NUMBER_BITS { Ok(Value::int(i)) } else { Err(too_large(op)) }
+    if bit_length(&i) <= MAX_NUMBER_BITS { Value::integer(i).map_err(|_| too_large(op)) } else { Err(too_large(op)) }
 }
 
 /// A count or a length: always small.

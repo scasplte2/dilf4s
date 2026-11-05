@@ -201,7 +201,7 @@ impl Codec for BigIntIn {
     type Target = BigInt;
     fn encode(&self, value: &BigInt) -> Result<Value, CanonicalError> {
         if self.within(value) {
-            Ok(Value::int(value.clone()))
+            Ok(Value::integer(value.clone())?)
         } else {
             Err(mismatch(format!("integer of {} bits outside {}", bit_length(value), self.describe())))
         }

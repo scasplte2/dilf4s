@@ -81,13 +81,21 @@ sealed abstract case class Ratio(numerator: BigInt, denominator: BigInt) {
   def toDecimalString: Option[String] =
     if (isInteger) Option(numerator.toString)
     else
-      Ratio.twosAndFives(denominator).map {
+      Ratio.twosAndFives(denominator)._1.map {
         case (twos, fives) =>
           // 10^scale / (2^twos 5^fives), as a shift and a power rather than a division
           val scale = math.max(twos, fives)
           val scaled = (numerator * Ratio.Five.pow(scale - fives)) << (scale - twos)
           BigDecimal(scaled, scale).bigDecimal.toPlainString
       }
+
+  /**
+   * The scale of the terminating decimal, `max(a, b)` for a reduced denominator `2^a 5^b` (0 for an integer); `None`
+   * when it does not terminate. Found from the denominator's factors alone, so a caller can refuse a scale past its bound
+   * before [[toDecimalString]] builds any digit.
+   */
+  def decimalScale: Option[Int] =
+    if (isInteger) Option(0) else Ratio.twosAndFives(denominator)._1.map { case (twos, fives) => math.max(twos, fives) }
 
   override def toString: String = if (isInteger) numerator.toString else s"$numerator/$denominator"
 }
@@ -148,19 +156,25 @@ object Ratio {
   private val BitsPerFive: Double = math.log(5.0) / math.log(2.0)
 
   /**
-   * `(a, b)` when `denominator = 2^a 5^b`, so that `1/denominator` terminates. The power of five is found from the bit
-   * length and checked with one exponentiation, instead of one long division per factor (thousands, for a 4096-bit
-   * denominator).
+   * `(a, b)` when `denominator = 2^a 5^b`, so that `1/denominator` terminates, and the big-number divisions and
+   * exponentiations it took: at most four, whatever the denominator. The twos are the low zero bits; the power of five
+   * is found from the bit length and checked by exponentiation, instead of one long division per factor (14,306 for
+   * `5^14306`, the widest a canonical rational's denominator is).
    */
-  private def twosAndFives(denominator: BigInt): Option[(Int, Int)] = {
+  private[numerics] def twosAndFives(denominator: BigInt): (Option[(Int, Int)], Int) = {
     val twos = denominator.lowestSetBit
     val rest = denominator >> twos
-    if (rest == BigInt(1)) Option((twos, 0))
-    else if (rest % Five != BigInt(0)) Option.empty
+    if (rest == BigInt(1)) (Option((twos, 0)), 0)
+    else if (rest % Five != BigInt(0)) (Option.empty, 1)
     else {
-      // 5^b has floor(b log2 5) + 1 bits; the neighbours absorb any rounding in the estimate
+      // 5^b has floor(b log2 5) + 1 bits: b log2 5 lies in [bits - 1, bits), under half a factor wide, so b is the
+      // estimate's ceiling but for rounding, which the neighbours absorb
       val estimate = ((rest.bitLength - 1) / BitsPerFive).toInt
-      List(estimate, estimate + 1, estimate - 1).find(b => b > 0 && Five.pow(b) == rest).map(twos -> _)
+      List(estimate + 1, estimate, estimate - 1).foldLeft((Option.empty[(Int, Int)], 1)) {
+        case (done @ (scala.Some(_), _), _) => done
+        case ((_, steps), b) if b > 0       => (Option.when(Five.pow(b) == rest)((twos, b)), steps + 1)
+        case (skip, _)                      => skip
+      }
     }
   }
 

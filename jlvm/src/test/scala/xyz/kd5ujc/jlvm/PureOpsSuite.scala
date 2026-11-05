@@ -22,7 +22,7 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
     PureOps(op, args.toVector, Kernels.Default).getOrElse(Left(JlvmError.Malformed(s"${op.wire} is evaluator-owned")))
 
   private def t(s: String): CanonicalValue = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
-  private def i(n: Long): CanonicalValue = CInt(BigInt(n))
+  private def i(n: Long): CanonicalValue = CInt(n)
   private def q(n: Long, d: Long): CanonicalValue =
     CanonicalValue.number(Ratio.of(n, d).fold(e => sys.error(e.toString), identity)).fold(e => sys.error(e.toString), identity)
   private def a(vs:  CanonicalValue*): CanonicalValue = CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)
@@ -36,7 +36,7 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
 
   private val number: Gen[CanonicalValue] =
     Gen.oneOf(
-      CanonicalGens.bigInt.map(CInt(_)),
+      CanonicalGens.bigInt.map(CanonicalGens.int),
       CanonicalGens.ratio.map(r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity))
     )
 
@@ -129,7 +129,7 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
   test("+ and * are exact, commutative and associative; - and / invert them") {
     forall(Gen.zip(number, number, number)) {
       case (x, y, z) =>
-        val nonZero = y != CInt(BigInt(0))
+        val nonZero = y != CInt(0)
         expect
           .same(run(Op.Add, x, y), run(Op.Add, y, x))
           .and(expect.same(run(Op.Mul, x, y), run(Op.Mul, y, x)))
@@ -142,10 +142,10 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
   test("% truncates like the host languages: x = y * trunc(x / y) + r, |r| < |y|, r has x's sign") {
     forall(Gen.zip(CanonicalGens.bigInt, CanonicalGens.bigInt.suchThat(_ != 0))) {
       case (x, y) =>
-        val r = run(Op.Mod, CInt(x), CInt(y))
+        val r = run(Op.Mod, CanonicalGens.int(x), CanonicalGens.int(y))
         expect
-          .same(ok(CInt(x - y * (x / y))), r)
-          .and(expect.same(ok(CInt(x % y)), r))
+          .same(ok(CanonicalGens.int(x - y * (x / y))), r)
+          .and(expect.same(ok(CanonicalGens.int(x % y)), r))
     }
   }
 
@@ -192,7 +192,7 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
       .and(expect(run(Op.Pow, i(0), i(-1)).isLeft, "zero to a negative power"))
       .and(
         expect(
-          run(Op.Pow, CInt(BigInt(2).pow(1000)), i(999)) match {
+          run(Op.Pow, CanonicalGens.int(BigInt(2).pow(1000)), i(999)) match {
             case Left(JlvmError.Limit(_)) => true
             case _                        => false
           },
@@ -273,26 +273,26 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("substr and slice clamp lengths and indices beyond 64 bits") {
-    val huge = CInt(BigInt(10).pow(30))
+    val huge = CanonicalGens.int(BigInt(10).pow(30))
     expect
       .same(ok(t("bc")), run(Op.Substr, t("abc"), i(1), huge))
-      .and(expect.same(ok(t("abc")), run(Op.Substr, t("abc"), CInt(-huge.value))))
+      .and(expect.same(ok(t("abc")), run(Op.Substr, t("abc"), CanonicalGens.int(-huge.value))))
       .and(expect.same(ok(a(i(2))), run(Op.Slice, a(i(1), i(2)), i(1), huge)))
   }
 
   pureTest("numbers stay within MaxNumberBits, checked on operands and results") {
-    val big = CInt(BigInt(2).pow(Values.MaxNumberBits - 1))
+    val big = CanonicalGens.int(BigInt(2).pow(Values.MaxNumberBits - 1))
     def limited(r: Either[JlvmError, CanonicalValue]) = r match {
       case Left(JlvmError.Limit(_)) => true
       case _                        => false
     }
-    val half = CInt(BigInt(2).pow(Values.MaxNumberBits - 2))
+    val half = CanonicalGens.int(BigInt(2).pow(Values.MaxNumberBits - 2))
     expect
       .same(ok(big), run(Op.Add, half, half))
       .and(expect(limited(run(Op.Add, big, big)), "2^4096 has 4097 bits"))
       .and(expect(limited(run(Op.Mul, big, big)), "product too wide"))
-      .and(expect(limited(run(Op.Add, CInt(BigInt(2).pow(5000)), i(1))), "operand too wide"))
-      .and(expect(limited(run(Op.Lt, CInt(BigInt(2).pow(5000)), i(1))), "ordering reads the bound too"))
+      .and(expect(limited(run(Op.Add, CanonicalGens.int(BigInt(2).pow(5000)), i(1))), "operand too wide"))
+      .and(expect(limited(run(Op.Lt, CanonicalGens.int(BigInt(2).pow(5000)), i(1))), "ordering reads the bound too"))
       .and(expect(limited(run(Op.BytesToInt, CBytes(ByteVector.fill(600)(1)))), "bytes_to_int bound"))
       .and(expect.same(ok(i(1)), run(Op.BytesToInt, CBytes(ByteVector.fill(600)(0) :+ 1.toByte))))
   }
@@ -396,8 +396,8 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
         val b = CBytes(ByteVector(bs))
         expect
           .same(ok(b), run(Op.Hex, b).flatMap(run(Op.Unhex, _)))
-          .and(expect.same(ok(CInt(n)), run(Op.IntToBytes, CInt(n)).flatMap(run(Op.BytesToInt, _))))
-          .and(expect.same(ok(CInt(n)), run(Op.IntToBytes, CInt(n), i(40)).flatMap(run(Op.BytesToInt, _))))
+          .and(expect.same(ok(CanonicalGens.int(n)), run(Op.IntToBytes, CanonicalGens.int(n)).flatMap(run(Op.BytesToInt, _))))
+          .and(expect.same(ok(CanonicalGens.int(n)), run(Op.IntToBytes, CanonicalGens.int(n), i(40)).flatMap(run(Op.BytesToInt, _))))
     }
   }
 
@@ -435,8 +435,8 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
     vectors.map {
       case (h, n) =>
         expect
-          .same(ok(CInt(n)), run(Op.HexToInt, t(h)))
-          .and(expect.same(ok(CInt(n)), run(Op.HexToInt, CBytes(ByteVector.fromValidHex(h.drop(2))))))
+          .same(ok(CanonicalGens.int(n)), run(Op.HexToInt, t(h)))
+          .and(expect.same(ok(CanonicalGens.int(n)), run(Op.HexToInt, CBytes(ByteVector.fromValidHex(h.drop(2))))))
     }
       .foldLeft(success)(_ and _)
       .and(expect.same("Domain", outcome(run(Op.HexToInt, t("0xfff")))))

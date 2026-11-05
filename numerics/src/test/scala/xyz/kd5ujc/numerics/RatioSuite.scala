@@ -141,6 +141,33 @@ object RatioSuite extends SimpleIOSuite with Checkers {
       .reduce(_ and _)
   }
 
+  pureTest("a denominator is factored in at most four divisions and exponentiations, whatever its width") {
+    val (two, five) = (BigInt(2), BigInt(5))
+    val cases = List(
+      two.pow(33219)              -> Some((33219, 0)),
+      five.pow(14306)             -> Some((0, 14306)),
+      two.pow(3) * five.pow(9000) -> Some((3, 9000)),
+      five.pow(14000) * 3         -> None,
+      two.pow(100) * 3            -> None,
+      five                        -> Some((0, 1)),
+      BigInt(1)                   -> Some((0, 0))
+    )
+    val powers = ((1 to 300) ++ List(1000, 4096, 9999, 10000, 10001, 14306)).map(b => five.pow(b) -> Some((0, b)))
+    (cases ++ powers).map {
+      case (d, expected) =>
+        val (factors, steps) = Ratio.twosAndFives(d)
+        expect.same(expected, factors).and(expect(steps <= 4, s"$steps divisions and exponentiations for ${d.bitLength} bits"))
+    }
+      .reduce(_ and _)
+      .and(expect.same(2, Ratio.twosAndFives(five.pow(14306))._2))
+      .and(
+        expect.same(
+          List(Some(33219), Some(14306), scala.None),
+          List(two.pow(33219), five.pow(14306), five * 3).map(d => Ratio.of(1, d).toOption.flatMap(_.decimalScale))
+        )
+      )
+  }
+
   pureTest("decimal rendering is exact for terminating values and absent otherwise") {
     val third = Ratio.of(1, 3).toOption
     expect

@@ -19,10 +19,17 @@ fn digits(n: usize) -> String {
 
 #[test]
 fn ten_thousand_digits_read_and_write() {
-    let v = json::parse(&digits(10_000)).unwrap();
-    assert_eq!(json::render_within(&v, usize::MAX).unwrap(), digits(10_000));
-    let small = json::parse(&format!("0.{}1e1", "0".repeat(10_000))).unwrap();
-    assert_eq!(json::render_within(&small, usize::MAX).unwrap(), format!("0.{}1", "0".repeat(9_999)));
+    let ones = "1".repeat(10_000);
+    let v = json::parse(&ones).unwrap();
+    assert_eq!(json::render_within(&v, usize::MAX).unwrap(), ones);
+    let small = json::parse(&format!("0.{}2e1", "0".repeat(10_000))).unwrap();
+    assert_eq!(json::render_within(&small, usize::MAX).unwrap(), format!("0.{}2", "0".repeat(9_999)));
+    // within the digit and scale bounds, but past the data model's: 10,000 nines (33220 bits), 1/10^10000
+    assert_eq!(json::parse(&digits(10_000)), Err(CanonicalError::IntegerTooWide { limit: 33_219 }));
+    assert_eq!(
+        json::parse(&format!("0.{}1", "0".repeat(9_999))),
+        Err(CanonicalError::RationalTooWide { limit: 33_219 })
+    );
     assert_eq!(json::parse(&format!("1e{}2", "0".repeat(20_000))).unwrap(), Value::int(100));
 }
 
@@ -63,7 +70,13 @@ fn malformed_numbers_are_described_by_length_and_offset_never_their_text() {
 #[test]
 fn rendering_refuses_what_would_not_read_back() {
     let over_long = Err(json::RenderError::Canonical(CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong }));
-    assert_eq!(json::render_within(&Value::int(num_traits::pow(BigInt::from(10u8), 10_000)), usize::MAX), over_long);
+    // every integer renders: the widest, of either sign, has 10,000 digits
+    let edge = BigInt::from(1u8) << dilf4s_core::MAX_INTEGER_BITS;
+    for n in [&edge - 1u8, -edge] {
+        let text = json::render_within(&Value::integer(n.clone()).unwrap(), usize::MAX).unwrap();
+        assert_eq!(text, n.to_string());
+        assert_eq!(text.trim_start_matches('-').len(), 10_000);
+    }
     // 1/5^14400 (33436 bits) is no value at all (MAX_RATIONAL_BITS); 1/5^14306 (33218 bits) is, at a scale past the bound
     let five = BigInt::from(5u8);
     assert_eq!(

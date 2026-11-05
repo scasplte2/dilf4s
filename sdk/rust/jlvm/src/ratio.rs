@@ -84,10 +84,11 @@ impl Ratio {
         }
     }
 
-    /// The value in the single numeric domain: an integer when it is one, or the refusal of a rational wider than the
-    /// data model allows ([`dilf4s_core::MAX_RATIONAL_BITS`]; within the JLVM's number bound it never is).
+    /// The value in the single numeric domain, or the refusal of a number wider than the data model allows
+    /// ([`dilf4s_core::MAX_INTEGER_BITS`], [`dilf4s_core::MAX_RATIONAL_BITS`]; within the JLVM's number bound it never
+    /// is).
     pub(crate) fn to_value(&self) -> Result<Value, NumberError> {
-        if self.d.is_one() { Ok(Value::int(self.n.clone())) } else { Value::number(&self.n, &self.d) }
+        if self.d.is_one() { Ok(Value::integer(self.n.clone())?) } else { Value::number(&self.n, &self.d) }
     }
 
     pub(crate) const fn numerator(&self) -> &BigInt {
@@ -200,6 +201,8 @@ mod tests {
             Ratio::of(&BigInt::one(), &three).map(|r| r.to_value()),
             Some(Value::number(&BigInt::one(), &three))
         );
-        assert_eq!(Ratio::integer(wide.clone()).to_value(), Ok(Value::int(wide)));
+        assert_eq!(Ratio::integer(wide.clone()).to_value(), Err(NumberError::IntegerTooWide));
+        let widest = &wide - BigInt::one();
+        assert_eq!(Ratio::integer(widest.clone()).to_value(), Value::integer(widest).map_err(NumberError::from));
     }
 }

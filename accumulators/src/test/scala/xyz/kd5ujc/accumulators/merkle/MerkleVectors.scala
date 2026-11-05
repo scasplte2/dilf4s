@@ -52,7 +52,7 @@ object MerkleVectors {
   private def digests(sizes: Long*): CanonicalValue =
     CanonicalValue.array(sizes.map(n => CanonicalValue.bytes(ByteVector.fill(n)(0x11))).toVector).fold(e => sys.error(e.toString), identity)
 
-  private def int(i: BigInt): CanonicalValue = CanonicalValue.int(i)
+  private def int(i: BigInt): CanonicalValue = xyz.kd5ujc.core.canonical.CanonicalGens.int(i)
 
   /**
    * Proofs the decoders refuse, with the kind of error each gives: an index not below the size is `IndexOutOfRange`,

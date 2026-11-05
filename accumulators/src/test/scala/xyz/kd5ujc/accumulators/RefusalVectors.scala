@@ -199,7 +199,8 @@ object RefusalVectors {
   private val Hole = BuiltValues.Hole
 
   /** `[u64max, u32max]`: weight 4, 15 bytes of CBOR. Doubled 16 times, it weighs 327,679 and encodes in 2^20 - 1. */
-  private val dense: Built = BuiltValues.of(arr(CInt(BigInt(2).pow(64) - 1), CInt(BigInt(2).pow(32) - 1))).wrap(Pair, 16)
+  private val dense: Built =
+    BuiltValues.of(arr(xyz.kd5ujc.core.canonical.CanonicalGens.int(BigInt(2).pow(64) - 1), CInt((1L << 32) - 1))).wrap(Pair, 16)
 
   /** Values against `VersionedTrie.MaxValueBytes` (2^20) and `MaxValueDepth` (253). */
   private def valueCases: List[Case] = {
@@ -476,7 +477,16 @@ object RefusalVectors {
       Case(
         "poseidon: precedence: a sibling not below r, and position 4 of depth 2: the siblings first",
         "poseidon-proof",
-        List(input(literal(obj("position" -> int(4), "siblings" -> arr(int(0), CInt(xyz.kd5ujc.core.hash.Fr.Modulus))))))
+        List(
+          input(
+            literal(
+              obj(
+                "position" -> int(4),
+                "siblings" -> arr(int(0), xyz.kd5ujc.core.canonical.CanonicalGens.int(xyz.kd5ujc.core.hash.Fr.Modulus))
+              )
+            )
+          )
+        )
       ),
       Case("poseidon: a saturated weight", "poseidon-proof", List(input(BuiltValues.of(CNull).wrap(Pair, 70))))
     )

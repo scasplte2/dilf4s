@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { models, toHex, Value } from "@kd5ujc/dilf4s-core";
+import { models, toHex } from "@kd5ujc/dilf4s-core";
 
 import { trie } from "../src/index.js";
 import * as B from "../src/bits.js";
 import { bytesEqual, compareBytes } from "../src/bytes.js";
 import * as L from "../src/listing.js";
-import { expectOk } from "./vectors.js";
+import { expectOk, int } from "./vectors.js";
 
 const T = trie.TrieHashing.of("SHA-256");
 
@@ -210,7 +210,7 @@ describe("listing walks answer as the old ones did", { timeout: 60_000 }, () => 
 
 // ------------------------------------------------------------------ the deep chain (issue #91): work, not time
 
-const v = expectOk(T.valueHash(Value.int(1n)), "encodes");
+const v = expectOk(T.valueHash(int(1n)), "encodes");
 const seven: B.Bits = { bytes: Uint8Array.of(0), length: 7 };
 const zeros = (k: number): Uint8Array => new Uint8Array(k);
 
@@ -305,7 +305,7 @@ describe("listing checks on a deep chain", { timeout: 60_000 }, () => {
     const recs = chainRecords(n);
     const root = expectOk(trie.trieRoot(T, mode, Array.from({ length: n + 1 }, (_, k) => [zeros(k), v] as const)), "root");
     const proof = expectOk(models.trie.TrieProof.encode(recs), "records");
-    const one = Value.int(1n);
+    const one = int(1n);
     expect(expectOk(trie.trieRangeVerify(T, mode, root, zeros(n - 1), null, [], proof), "verdict")).toBe(false);
     expect(expectOk(trie.trieRangeVerify(T, mode, root, zeros(n - 1), null, [[zeros(n - 1), one], [zeros(n), one]], proof), "verdict")).toBe(true);
     expect(expectOk(trie.trieRangeVerify(T, mode, root, new Uint8Array(0), Uint8Array.from([...zeros(n - 1), 1]), [], proof), "verdict")).toBe(false);

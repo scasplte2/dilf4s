@@ -8,6 +8,31 @@ import scodec.bits.ByteVector
 
 object CanonicalGens {
 
+  /** The integer `n`, which a test knows is within [[CanonicalValue.MaxIntegerBits]]. */
+  def int(n: BigInt): CInt = CanonicalValue.int(n).fold(e => sys.error(e.toString), identity)
+
+  /**
+   * The CBOR of the integer `n` in canonical form, of any width: the bytes [[Cbor.encode]] writes when `n` is a value,
+   * and for a bignum too wide to be one, the bytes a decoder must refuse.
+   */
+  def integerBytes(n: BigInt): ByteVector = {
+    val twoTo64 = BigInt(1) << 64
+    def head(major: Int, argument: BigInt): ByteVector =
+      if (argument < 24) ByteVector(major << 5 | argument.toInt)
+      else {
+        val (info, size) =
+          if (argument < 0x100) (24, 1) else if (argument < 0x10000) (25, 2) else if (argument < (BigInt(1) << 32)) (26, 4) else (27, 8)
+        ByteVector(major << 5 | info) ++ ByteVector(argument.toByteArray).takeRight(size.toLong).padLeft(size.toLong)
+      }
+    if (n.signum >= 0 && n < twoTo64) head(0, n)
+    else if (n.signum < 0 && n >= -twoTo64) head(1, -1 - n)
+    else {
+      val (tag, magnitude) = if (n.signum >= 0) (2, n) else (3, -1 - n)
+      val bytes = ByteVector(magnitude.toByteArray).dropWhile(_ == 0)
+      head(6, tag) ++ head(2, bytes.size) ++ bytes
+    }
+  }
+
   val bigInt: Gen[BigInt] = Gen.oneOf(
     Gen.choose(-30L, 30L).map(BigInt(_)),
     Gen.long.map(BigInt(_)),
@@ -33,7 +58,7 @@ object CanonicalGens {
   val scalar: Gen[CanonicalValue] = Gen.oneOf(
     Gen.const(CNull),
     Gen.oneOf(True, False),
-    bigInt.map(CInt(_)),
+    bigInt.map(int),
     ratio.map(r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity)),
     text.map(t => CanonicalValue.text(t).fold(e => sys.error(e.toString), identity)),
     Gen.listOf(Gen.choose(Byte.MinValue, Byte.MaxValue)).map(bs => CBytes(ByteVector(bs)))
@@ -61,7 +86,7 @@ object CanonicalGens {
   private val jsonScalar: Gen[CanonicalValue] = Gen.oneOf(
     Gen.const(CNull),
     Gen.oneOf(True, False),
-    bigInt.map(CInt(_)),
+    bigInt.map(int),
     decimal.map(r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity)),
     text.map(t => CanonicalValue.text(t).fold(e => sys.error(e.toString), identity))
   )
