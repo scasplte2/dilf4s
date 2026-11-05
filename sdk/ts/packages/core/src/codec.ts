@@ -339,7 +339,9 @@ class TextMap<T> implements ReadonlyMap<string, T> {
 
 /**
  * A field present in every value of its record, written as `key`. The type is the field's exactly, in both
- * directions (`of`, never set, makes it invariant), so a record's fields are checked against its type.
+ * directions (`of`, never set, makes it invariant), so a record's fields are checked against its type. `V` is the
+ * codec's own type when inferred: an explicit wider `V` (`required<string>(key, literalText("x"))`) is accepted, as
+ * `Codec`'s methods are bivariant, and works as a cast does.
  */
 export interface RequiredField<V> {
   readonly key: string;
@@ -372,8 +374,8 @@ export type RecordFields<T> = { readonly [K in keyof Required<T>]: undefined ext
 /**
  * A map with the keys of `fields` and no others, read and written in the order `fields` lists them (an object's own
  * keys keep their order unless they are array indices, which no generated field name is): when encoding, the first
- * field refused is the refusal; when decoding, unknown keys are refused first, then the first field missing or refused,
- * under its key.
+ * field refused is the refusal, and no field after it is read; when decoding, unknown keys are refused first, then the
+ * first field missing or refused, under its key.
  */
 export function record<T>(fields: RecordFields<T>): Codec<T> {
   const spec: Readonly<Record<string, { readonly key: string; readonly codec: Codec<unknown>; readonly optional: boolean }>> = fields;
