@@ -52,27 +52,23 @@ const limbs = (bits: number): bigint => BigInt(Math.floor(bits / 64));
 
 export type Value = NullValue | BoolValue | IntValue | RationalValue | TextValue | BytesValue | ArrayValue | MapValue;
 
-/** One brand check a kind of value, `#field in x`, each set by its class's static block. */
 /**
- * Every value this module's factories made, by identity. A constructor is private to TypeScript alone, so JavaScript
- * can still call it (`new IntValue(5, 3)`, `Reflect.construct`), but what it builds is not in this set: only the
- * factories add to it, at each `new`.
+ * The key every constructor takes, private to this module. A constructor is private to TypeScript alone, so JavaScript
+ * can still call one (`new IntValue(5, 3)`, `Reflect.construct`), but without this key what it builds is not minted.
  */
-const made = new WeakSet();
+const KEY: unique symbol = Symbol("canonical value");
 
-const minted = <V extends object>(v: V): V => {
-  made.add(v);
-  return v;
-};
+/** One check a kind of value, `#minted in x && x.#minted`, each registered by its class's static block. */
+const minted: ((x: object) => boolean)[] = [];
 
 /**
  * Whether `x` is a canonical value made by this module's factories, in O(1): for what a caller may pass past the
- * types, such as a JavaScript caller's argument. It checks identity in a module-private set, never the prototype or a
- * field: an object borrowing a value's prototype is not one, nor is one built by calling a constructor from outside,
- * and a Proxy's traps do not run.
+ * types, such as a JavaScript caller's argument. It reads each class's private `#minted` brand, set from the key when
+ * the value is built, never the prototype or a public field and never a side table: an object borrowing a value's
+ * prototype is not one, nor is one built by calling a constructor from outside, and a Proxy's traps do not run.
  */
 export function isValue(x: unknown): x is Value {
-  return typeof x === "object" && x !== null && made.has(x);
+  return typeof x === "object" && x !== null && minted.some((is) => is(x));
 }
 
 /** `Uint8Array.prototype`'s `Symbol.toStringTag` getter, from `%TypedArray%`: it reads an array's internal type name. */
@@ -116,11 +112,16 @@ export const bytesView = (b: BytesValue): Uint8Array => bytesOf(b);
 export const entriesView = (m: MapValue): readonly Entry[] => entriesOf(m);
 
 export class NullValue {
+  readonly #minted: boolean;
+  static {
+    minted.push((x) => #minted in x && x.#minted);
+  }
   readonly kind = "null";
   readonly weight: bigint = 1n;
   readonly #depth = 0;
-  static readonly instance: NullValue = minted(new NullValue());
-  private constructor() {
+  static readonly instance: NullValue = new NullValue(KEY);
+  private constructor(key: symbol) {
+    this.#minted = key === KEY;
     Object.freeze(this);
   }
   get depth(): 0 {
@@ -135,13 +136,18 @@ export class NullValue {
 }
 
 export class BoolValue {
+  readonly #minted: boolean;
+  static {
+    minted.push((x) => #minted in x && x.#minted);
+  }
   readonly kind = "bool";
   readonly depth = 0;
   readonly weight: bigint = 1n;
   readonly #value: boolean;
-  static readonly true: BoolValue = minted(new BoolValue(true));
-  static readonly false: BoolValue = minted(new BoolValue(false));
-  private constructor(value: boolean) {
+  static readonly true: BoolValue = new BoolValue(KEY, true);
+  static readonly false: BoolValue = new BoolValue(KEY, false);
+  private constructor(key: symbol, value: boolean) {
+    this.#minted = key === KEY;
     this.#value = value;
     Object.freeze(this);
   }
@@ -176,13 +182,18 @@ const integerTooWide: IntegerTooWide = { kind: "IntegerTooWide", limit: MAX_INTE
 
 /** An integer within {@link MAX_INTEGER_BITS}. */
 export class IntValue {
+  readonly #minted: boolean;
+  static {
+    minted.push((x) => #minted in x && x.#minted);
+  }
   readonly kind = "int";
   readonly depth = 0;
   /** `1 + bitLength / 64`. */
   readonly weight: bigint;
   readonly #value: bigint;
   readonly #bitLength: number;
-  private constructor(value: bigint, bits: number) {
+  private constructor(key: symbol, value: bigint, bits: number) {
+    this.#minted = key === KEY;
     this.#value = value;
     this.#bitLength = bits;
     this.weight = saturated(1n + limbs(bits));
@@ -198,7 +209,7 @@ export class IntValue {
   /** The integer `value`, refused when it is wider than {@link MAX_INTEGER_BITS}: the only constructor. */
   static of(value: bigint): Result<IntValue, IntegerTooWide> {
     const bits = bitLength(value);
-    return bits <= MAX_INTEGER_BITS ? ok(minted(new IntValue(value, bits))) : err(integerTooWide);
+    return bits <= MAX_INTEGER_BITS ? ok(new IntValue(KEY, value, bits)) : err(integerTooWide);
   }
   toString(): string {
     return inspect(this);
@@ -281,6 +292,10 @@ export type NumberError = { readonly kind: "DivisionByZero" } | RationalTooWide 
 
 /** A rational `n/d` with `d >= 2`, `gcd(|n|, d) = 1` and both within {@link MAX_RATIONAL_BITS}: never an integer. */
 export class RationalValue {
+  readonly #minted: boolean;
+  static {
+    minted.push((x) => #minted in x && x.#minted);
+  }
   readonly kind = "rational";
   readonly depth = 0;
   /** `2 + bitLength(n) / 64 + bitLength(d) / 64`. */
@@ -289,7 +304,8 @@ export class RationalValue {
   readonly #denominator: bigint;
   readonly #numeratorBits: number;
   readonly #denominatorBits: number;
-  private constructor(numerator: bigint, denominator: bigint, numeratorBits: number, denominatorBits: number) {
+  private constructor(key: symbol, numerator: bigint, denominator: bigint, numeratorBits: number, denominatorBits: number) {
+    this.#minted = key === KEY;
     this.#numerator = numerator;
     this.#denominator = denominator;
     this.#numeratorBits = numeratorBits;
@@ -304,7 +320,7 @@ export class RationalValue {
    */
   private static checked(numerator: bigint, denominator: bigint): RationalValue | undefined {
     const [n, d] = [bitLength(numerator), bitLength(denominator)];
-    return n <= MAX_RATIONAL_BITS && d <= MAX_RATIONAL_BITS ? minted(new RationalValue(numerator, denominator, n, d)) : undefined;
+    return n <= MAX_RATIONAL_BITS && d <= MAX_RATIONAL_BITS ? new RationalValue(KEY, numerator, denominator, n, d) : undefined;
   }
 
   /** The numerator, carrying the sign. */
@@ -340,16 +356,17 @@ export class RationalValue {
   /**
    * The number `n/d` in the single numeric domain: an integer when it is one, refused when wider than
    * {@link MAX_INTEGER_BITS}, otherwise a reduced rational, refused when its numerator or denominator is wider than
-   * {@link MAX_RATIONAL_BITS}. A part that is not a `bigint` is converted with `BigInt` first, which reads an integral
-   * number as its integer and throws on anything with no integer value: the result type has no room for that refusal.
+   * {@link MAX_RATIONAL_BITS}. A part that is not a `bigint` throws a `TypeError` (bigint arithmetic refuses to mix
+   * it), as the other factories do: the result type has no room for that refusal, and nothing is converted.
    */
   static number(numerator: bigint, denominator: bigint): Result<IntValue | RationalValue, NumberError> {
-    const [num, den] = [toBigint(numerator), toBigint(denominator)];
-    if (den === 0n) return err({ kind: "DivisionByZero" });
-    const g = gcd(num, den);
-    const sign = den < 0n ? -1n : 1n;
-    const n = (sign * num) / g;
-    const d = (sign * den) / g;
+    if (denominator === 0n) return err({ kind: "DivisionByZero" });
+    // the sign first: bigint arithmetic throws its TypeError on a part that is not a bigint, before any gcd
+    const sign = denominator < 0n ? -1n : 1n;
+    const [sn, sd] = [sign * numerator, sign * denominator];
+    const g = gcd(sn, sd);
+    const n = sn / g;
+    const d = sd / g;
     if (d === 1n) return IntValue.of(n);
     const r = RationalValue.checked(n, d);
     return r === undefined ? err(tooWide) : ok(r);
@@ -361,12 +378,16 @@ export class RationalValue {
    * largest `2^i <= scale` down, which builds `min(v5, scale)` bit by bit (about 14 divisions for a scale of 10000).
    * The same result as {@link number} against `10^scale`, without its general gcd; refused, like it, past
    * {@link MAX_RATIONAL_BITS} (a JSON decimal can be: `0.000...1` at a scale of 10,000 has the denominator
-   * `10^10000`), and an integer past {@link MAX_INTEGER_BITS}.
+   * `10^10000`), and an integer past {@link MAX_INTEGER_BITS}. A scale more than {@link MAX_RATIONAL_BITS} past the
+   * unscaled integer's bit length is refused at once: its twos alone leave the denominator wider than that, and the
+   * powers of five it would build grow with the scale.
    */
   static decimal(unscaled: bigint, scale: number): Result<IntValue | RationalValue, RationalTooWide | IntegerTooWide> {
     if (unscaled === 0n) return IntValue.of(0n);
     const sign = unscaled < 0n ? -1n : 1n;
     const magnitude = sign * unscaled;
+    // the denominator keeps 2^(scale - twos), and twos is at most the magnitude's bit length
+    if (scale - bitLength(magnitude) > MAX_RATIONAL_BITS) return err(tooWide);
     const twos = Math.min(bitLength(magnitude & -magnitude) - 1, scale);
     const powers: (readonly [number, bigint])[] = [];
     for (let e = 1, p = 5n; e <= scale; e *= 2, p *= p) powers.push([e, p]);
@@ -388,13 +409,18 @@ export class RationalValue {
 }
 
 export class TextValue {
+  readonly #minted: boolean;
+  static {
+    minted.push((x) => #minted in x && x.#minted);
+  }
   readonly kind = "text";
   readonly depth = 0;
   /** `1 +` the UTF-8 length. */
   readonly weight: bigint;
   /** The UTF-8 encoding. */
   readonly #utf8: Uint8Array;
-  private constructor(readonly value: string) {
+  private constructor(key: symbol, readonly value: string) {
+    this.#minted = key === KEY;
     this.#utf8 = encodeUtf8(value);
     this.weight = 1n + BigInt(this.#utf8.length);
     Object.freeze(this);
@@ -406,7 +432,7 @@ export class TextValue {
 
   /** Text, if it has no unpaired surrogates. */
   static of(value: string): Result<TextValue, CanonicalError> {
-    return isWellFormed(value) ? ok(minted(new TextValue(value))) : err({ kind: "UnpairedSurrogate" });
+    return isWellFormed(value) ? ok(new TextValue(KEY, value)) : err({ kind: "UnpairedSurrogate" });
   }
 
   /** A copy of the UTF-8 encoding. */
@@ -427,12 +453,17 @@ export class TextValue {
 }
 
 export class BytesValue {
+  readonly #minted: boolean;
+  static {
+    minted.push((x) => #minted in x && x.#minted);
+  }
   readonly kind = "bytes";
   readonly depth = 0;
   /** `1 +` the length. */
   readonly weight: bigint;
   readonly #bytes: Uint8Array;
-  private constructor(bytes: Uint8Array) {
+  private constructor(key: symbol, bytes: Uint8Array) {
+    this.#minted = key === KEY;
     this.#bytes = copyBytes(bytes);
     this.weight = 1n + BigInt(this.#bytes.length);
     Object.freeze(this);
@@ -444,7 +475,7 @@ export class BytesValue {
 
   /** A byte string holding a copy of `bytes`. */
   static of(bytes: Uint8Array): BytesValue {
-    return minted(new BytesValue(bytes));
+    return new BytesValue(KEY, bytes);
   }
 
   /** A copy of the bytes. */
@@ -478,12 +509,18 @@ function measure<T>(parts: readonly T[], part: (p: T) => readonly [number, bigin
 export class ArrayValue {
   readonly kind = "array";
   readonly #items: readonly Value[];
+  readonly #minted: boolean;
+  static {
+    minted.push((x) => #minted in x && x.#minted);
+  }
   private constructor(
+    key: symbol,
     items: readonly Value[],
     readonly depth: number,
     /** One plus each element's weight. */
     readonly weight: bigint,
   ) {
+    this.#minted = key === KEY;
     this.#items = items;
     Object.freeze(this);
   }
@@ -502,7 +539,7 @@ export class ArrayValue {
   static of(items: readonly Value[]): Result<ArrayValue, CanonicalError> {
     const kept = Object.freeze([...items]);
     const [depth, weight] = measure(kept, (v) => [v.depth, v.weight]);
-    return depth > MAX_DEPTH ? err(depthExceeded) : ok(minted(new ArrayValue(kept, depth, weight)));
+    return depth > MAX_DEPTH ? err(depthExceeded) : ok(new ArrayValue(KEY, kept, depth, weight));
   }
   toString(): string {
     return inspect(this);
@@ -531,12 +568,18 @@ export function canonicalKeyOrder(a: Uint8Array, b: Uint8Array): number {
 export class MapValue {
   readonly kind = "map";
   readonly #entries: readonly Entry[];
+  readonly #minted: boolean;
+  static {
+    minted.push((x) => #minted in x && x.#minted);
+  }
   private constructor(
+    key: symbol,
     entries: readonly Entry[],
     readonly depth: number,
     /** One plus each entry's `1 + key UTF-8 length + value weight`. */
     readonly weight: bigint,
   ) {
+    this.#minted = key === KEY;
     this.#entries = entries;
     Object.freeze(this);
   }
@@ -559,7 +602,7 @@ export class MapValue {
     }
     kept.sort((a, b) => canonicalKeyOrder(a.utf8, b.utf8));
     const [depth, weight] = measure(kept, (e) => [e.value.depth, 1n + BigInt(e.utf8.length) + e.value.weight]);
-    return depth > MAX_DEPTH ? err(depthExceeded) : ok(minted(new MapValue(Object.freeze(kept), depth, weight)));
+    return depth > MAX_DEPTH ? err(depthExceeded) : ok(new MapValue(KEY, Object.freeze(kept), depth, weight));
   }
 
   /**
@@ -787,7 +830,7 @@ export const Value = {
    * no room for that refusal, so pass a `bigint`.
    */
   int: (n: bigint): Result<IntValue, IntegerTooWide> => IntValue.of(n),
-  /** `n / d` in lowest terms. A part that is not a `bigint` is converted with `BigInt`, which throws when it has no integer value (see {@link RationalValue.number}). */
+  /** `n / d` in lowest terms. A part that is not a `bigint` throws a `TypeError` (see {@link RationalValue.number}). */
   number: (n: bigint, d: bigint): Result<IntValue | RationalValue, NumberError> => RationalValue.number(n, d),
   /** The text `s`; a value that is not a string is a `TypeMismatch`. */
   text: (s: string): Result<TextValue, CanonicalError> => (typeof (s as unknown) === "string" ? TextValue.of(s) : err({ kind: "TypeMismatch", reason: "expected a string" })),

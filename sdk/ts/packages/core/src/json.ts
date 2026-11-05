@@ -40,12 +40,16 @@ const syntax = (offset: number, reason: string): CanonicalError => ({ kind: "Jso
 const isDigit = (c: string | undefined): boolean => c !== undefined && c >= "0" && c <= "9";
 
 /**
- * Parses JSON text into a canonical value. Text that is not a string, or a scale bound that is not a safe integer
- * from 0, is a `TypeMismatch`, before anything is read.
+ * Parses JSON text into a canonical value. `maxScale` may lower the scale bound, never raise it: the spec accepts no
+ * JSON number of a scale past {@link DEFAULT_MAX_SCALE} (canonical-encoding.md section 3). Text that is not a string,
+ * or a scale bound that is not an integer from 0 to {@link DEFAULT_MAX_SCALE}, is a `TypeMismatch`, before anything
+ * is read.
  */
 export function parse(text: string, maxScale: number = DEFAULT_MAX_SCALE): Result<Value, CanonicalError> {
   if (typeof (text as unknown) !== "string") return err({ kind: "TypeMismatch", reason: "the JSON text is not a string" });
-  if (!Number.isSafeInteger(maxScale) || maxScale < 0) return err({ kind: "TypeMismatch", reason: "the scale bound is not a safe integer from 0" });
+  if (!Number.isSafeInteger(maxScale) || maxScale < 0 || maxScale > DEFAULT_MAX_SCALE) {
+    return err({ kind: "TypeMismatch", reason: `the scale bound is not an integer from 0 to ${DEFAULT_MAX_SCALE.toString()}` });
+  }
   return new Parser(text, maxScale).run();
 }
 
@@ -271,8 +275,9 @@ function integerText(n: IntValue): string {
 /**
  * The exact decimal of a rational, within the bounds {@link parse} accepts: `"non-terminating rational"` when its
  * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds, both found from the
- * denominator's factors (`twosAndFives`) before any digit is produced. An argument that is not a `RationalValue` is not checked: it may throw, or be read as a
- * rational from its `numerator` and `denominator` (the result type has no room for that refusal).
+ * denominator's factors (`twosAndFives`) before any digit is produced. An argument that is not a `RationalValue` is
+ * not checked: it may throw, or be read as a rational from its `numerator` and `denominator` (the result type has no
+ * room for that refusal).
  */
 export function decimalOf(r: RationalValue): Result<string, "non-terminating rational" | "over-long number"> {
   const [factors] = twosAndFives(r.denominator);

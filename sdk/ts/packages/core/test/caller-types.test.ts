@@ -53,19 +53,35 @@ describe("what a caller passes past the types is refused, never thrown on or mis
     expect(real.kind === "int" && real.value).toBe(5n);
   });
 
-  it("a rational made from numbers ends: converted, refused or thrown on, never a loop", { timeout: 5_000 }, () => {
-    const half = expectOk(Value.number(bad(1), bad(2)), "integral numbers are read as their integers");
-    expect(half.kind === "rational" && [half.numerator, half.denominator]).toEqual([1n, 2n]);
-    expect(expectOk(RationalValue.number(bad(6), bad(4)), "and reduced").kind).toBe("rational");
+  it("a rational made from parts that are not bigints ends: refused or thrown on, never converted, never a loop", { timeout: 5_000 }, () => {
+    for (const [n, d] of [
+      [1, 2],
+      ["1", "3"],
+      [true, 2n],
+      [2 ** 53 + 1, 1n],
+      [1.5, 2n],
+    ] as const) {
+      expect(() => Value.number(bad(n), bad(d)), `${String(n)}/${String(d)}`).toThrow(TypeError);
+      expect(() => RationalValue.number(bad(n), bad(d)), `${String(n)}/${String(d)}`).toThrow(TypeError);
+    }
     expect(RationalValue.of(bad(1), bad(2))).toBeUndefined();
     expect(RationalValue.of(1n, bad(2))).toBeUndefined();
-    expect(() => Value.number(bad(1.5), 2n)).toThrow(RangeError);
+    // gcdSteps alone reads its operands as bigints, so no input can loop
     expect(gcdSteps(bad(6), bad(4))[0]).toBe(2n);
+    expect(() => gcdSteps(bad(1.5), 2n)).toThrow(RangeError);
+  });
+
+  it("a decimal far past the width is refused from its scale, before any power of five is built", { timeout: 5_000 }, () => {
+    expect(RationalValue.decimal(1n, Number.MAX_SAFE_INTEGER)).toEqual({ ok: false, error: { kind: "RationalTooWide", limit: 33219 } });
+    expect(RationalValue.decimal(1n, 33219 + 2)).toEqual({ ok: false, error: { kind: "RationalTooWide", limit: 33219 } });
+    // within reach of the check, the walk decides: 2^33218 / 10^33219 is 1 / (2 5^33219), too wide by its fives
+    expect(RationalValue.decimal(1n << 33218n, 33219).ok).toBe(false);
+    expect(expectOk(RationalValue.decimal(5n, 1), "0.5").kind).toBe("rational");
   });
 
   it("a value built by calling a constructor from outside is not a value", () => {
-    const fakeInt: unknown = Reflect.construct(IntValue as unknown as new (...args: unknown[]) => object, [5, 3]);
-    const fakeMap: unknown = Reflect.construct(MapValue as unknown as new (...args: unknown[]) => object, [[], 1, 1n]);
+    const fakeInt: unknown = Reflect.construct(IntValue as unknown as new (...args: unknown[]) => object, [Symbol("canonical value"), 5, 3]);
+    const fakeMap: unknown = Reflect.construct(MapValue as unknown as new (...args: unknown[]) => object, [Symbol("canonical value"), [], 1, 1n]);
     for (const fake of [fakeInt, fakeMap]) {
       expect(codec.any.encode(bad(fake))).toEqual(mismatch("expected a canonical value"));
       expect(codec.uint.decode(bad(fake))).toEqual({ ok: false, error: { path: [], reason: "expected a canonical value" } });
@@ -73,13 +89,14 @@ describe("what a caller passes past the types is refused, never thrown on or mis
     }
   });
 
-  it("text and JSON entry points refuse what is not text, and a scale bound that is not a safe integer from 0", () => {
+  it("text and JSON entry points refuse what is not text, and a scale bound that is not an integer from 0 to the spec's", { timeout: 5_000 }, () => {
     expect(Value.text(bad(5))).toEqual(mismatch("expected a string"));
     for (const x of [null, 5, undefined]) expect(json.parse(bad(x)), String(x)).toEqual(mismatch("the JSON text is not a string"));
-    for (const scale of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY]) {
-      expect(json.parse("1.5", scale), String(scale)).toEqual(mismatch("the scale bound is not a safe integer from 0"));
+    for (const scale of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY, json.DEFAULT_MAX_SCALE + 1, Number.MAX_SAFE_INTEGER]) {
+      expect(json.parse("1.5", scale), String(scale)).toEqual(mismatch(`the scale bound is not an integer from 0 to ${json.DEFAULT_MAX_SCALE.toString()}`));
     }
     expect(expectOk(json.parse("1.5", 1), "within the bound").kind).toBe("rational");
+    expect(json.parse("1.5", json.DEFAULT_MAX_SCALE).ok, "the spec's bound itself is a bound").toBe(true);
     const record = codec.record<{ readonly a: bigint }>({ a: codec.required("a", codec.uint) });
     expect(codec.fromJson(record, bad(5))).toEqual({ ok: false, error: { kind: "Canonical", error: { kind: "TypeMismatch", reason: "the JSON text is not a string" } } });
   });
