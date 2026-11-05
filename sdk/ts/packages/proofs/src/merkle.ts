@@ -78,11 +78,13 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
   /**
    * A value leaf's hash: the leaf hash of `commit(value)` (`MerkleTree.leaf`). O(min(weight, the ceiling)), as
    * `valueCommitment`: a commitment over `cbor.MAX_ENCODED_BYTES` (2^31 - 1, this SDK's ceiling; Scala and Rust have
-   * none) is `TooLarge`. The commitment is streamed into the hash, never built.
+   * none) is `TooLarge`, and what is not a canonical value is `Encoding`. The commitment is streamed into the hash, never
+   * built.
    */
   leaf(value: Value): Result<Uint8Array, MerkleError> {
     const c = this.#leaf.commitment(value);
-    return c.ok ? c : err({ kind: "TooLarge", limit: c.error.limit });
+    if (c.ok) return c;
+    return err(c.error.kind === "TooLarge" ? { kind: "TooLarge", limit: c.error.limit } : { kind: "Encoding", reason: c.error.reason });
   }
 
   leafWeight(value: Value): bigint {

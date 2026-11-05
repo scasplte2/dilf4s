@@ -2,15 +2,15 @@ import { runInNewContext } from "node:vm";
 
 import { describe, expect, it } from "vitest";
 
-import { BoolValue, BytesValue, cbor, codec, IntValue, json, MapValue, RationalValue, TextValue, Value } from "../src/index.js";
+import { BoolValue, BytesValue, cbor, codec, hashCommitment, IntValue, json, MapValue, RationalValue, TextValue, Value, valueCommitment, valueCommitmentWithin } from "../src/index.js";
 import { gcdSteps } from "../src/value.js";
 import { expectOk, int } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
 const bad = (x: unknown): never => x as never;
 const mismatch = (reason: string): unknown => ({ ok: false, error: { kind: "TypeMismatch", reason } });
-/** A test label for anything a caller may pass. */
-const label = (x: unknown): string => (typeof x === "object" && x !== null ? Object.prototype.toString.call(x) : typeof x === "symbol" ? x.toString() : `${typeof x} ${String(x)}`);
+/** A test label for anything a caller may pass: an object is not read, so a Proxy's traps do not run for it. */
+const label = (x: unknown): string => (typeof x === "object" && x !== null ? `object ${Array.isArray(x) ? "array" : "non-array"}` : typeof x === "symbol" ? x.toString() : `${typeof x} ${String(x)}`);
 
 describe("what a caller passes past the types is refused, never thrown on or misread", () => {
   it("bytes from another realm, and a Buffer, are bytes; an object claiming to be one is not", () => {
@@ -265,9 +265,14 @@ describe("bytes are read through the array's own slots, never its overridable pr
       expect(v.length).toBe(2);
       expect(codec.sizedBytes(32, 32).encode(liar), `liar ${i.toString()}`).toEqual(mismatch("byte string of 2 bytes outside the schema size"));
     }
+    const record = codec.record<{ readonly a: Uint8Array }>({ a: codec.required("a", codec.sizedBytes(1, 1)) });
     for (const [i, liar] of liars([0x41, 0x07]).entries()) {
       const d = expectOk(cbor.decode(liar), `liar ${i.toString()}`);
       expect(d.kind === "bytes" && [...d.bytes]).toEqual([7]);
+    }
+    // {"a": h'07'}: read to its true end, never past it, and nothing after it believed
+    for (const [i, liar] of liars([0xa1, 0x61, 0x61, 0x41, 0x07]).entries()) {
+      expect([...expectOk(codec.fromCbor(record, liar), `liar ${i.toString()}`).a]).toEqual([7]);
     }
   });
 
@@ -296,5 +301,52 @@ describe("a decimal is of a rational this package made", () => {
     for (const x of [5, null, undefined, "0.25", lookalike, Object.create(RationalValue.prototype), int(1n)]) {
       expect(json.decimal(bad(x)), label(x)).toEqual(mismatch("expected a RationalValue"));
     }
+  });
+});
+
+describe("the encoding and commitment entry points refuse what is not a value, or a limit that is not a number", () => {
+  const v = int(5n);
+  const b = expectOk(Value.bytes(Uint8Array.of(1, 2)), "bytes");
+  const notAValue = mismatch("expected a canonical value");
+  const notALimit = mismatch("the byte limit is not a number");
+
+  it("a value that is not one is refused before it is read, by every entry point that encodes", () => {
+    const traps: string[] = [];
+    const proxy: unknown = new Proxy(v, { get: (_t, name) => traps.push(String(name)) });
+    const fake: unknown = Reflect.construct(IntValue as unknown as new (...args: unknown[]) => object, [Symbol("canonical value"), 5, 3]);
+    for (const x of [5, 5n, null, undefined, "a", { kind: "int", value: 5n, weight: 1n, depth: 0 }, Object.create(IntValue.prototype), proxy, fake]) {
+      expect(cbor.encode(bad(x)), label(x)).toEqual(notAValue);
+      expect(cbor.encodeWithin(bad(x), 100), label(x)).toEqual(notAValue);
+      expect(cbor.encodedLengthWithin(bad(x), 100), label(x)).toEqual(notAValue);
+      expect(valueCommitment(bad(x)), label(x)).toEqual(notAValue);
+      expect(valueCommitmentWithin(bad(x), 100), label(x)).toEqual(notAValue);
+      expect(hashCommitment("SHA-256", [], bad(x)), label(x)).toEqual(notAValue);
+    }
+    expect(traps, "a Proxy of a value is not one, and none of its traps runs").toEqual([]);
+  });
+
+  it("a byte limit that is not a number is refused, for a byte string's commitment too; an odd number is still a limit", () => {
+    for (const limit of ["100", 100n, null, undefined, {}, [100]]) {
+      expect(cbor.encodeWithin(v, bad(limit)), label(limit)).toEqual(notALimit);
+      expect(cbor.encodedLengthWithin(v, bad(limit)), label(limit)).toEqual(notALimit);
+      expect(valueCommitmentWithin(v, bad(limit)), label(limit)).toEqual(notALimit);
+      expect(valueCommitmentWithin(b, bad(limit)), label(limit)).toEqual(notALimit);
+    }
+    expect(cbor.encodeWithin(v, Number.NaN)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 0 } });
+    expect(expectOk(cbor.encodedLengthWithin(v, Number.POSITIVE_INFINITY), "the largest limit")).toBe(1);
+  });
+
+  it("hashCommitment refuses an algorithm or a prefix of the wrong type before hashing, and reads prefix parts by their own length", () => {
+    for (const algorithm of ["MD5", "sha-256", undefined, null, 5]) {
+      expect(hashCommitment(bad(algorithm), [], v), label(algorithm)).toEqual(mismatch("expected a HashAlgorithm"));
+    }
+    for (const prefix of [null, undefined, "ab", Uint8Array.of(1), [5], [Uint8Array.of(1), "ab"], [new Uint16Array(1)], new Set([Uint8Array.of(1)])]) {
+      expect(hashCommitment("SHA-256", bad(prefix), v), label(prefix)).toEqual(mismatch("expected an array of Uint8Arrays"));
+    }
+    const liar = Object.defineProperty(Uint8Array.of(1, 2), "length", { get: () => 32 });
+    const honest = expectOk(hashCommitment("SHA-256", [Uint8Array.of(1, 2)], v), "honest prefix");
+    expect(expectOk(hashCommitment("SHA-256", [liar], v), "a lying prefix part")).toEqual(honest);
+    const foreign = runInNewContext("[new Uint8Array([1, 2])]") as Uint8Array[];
+    expect(expectOk(hashCommitment("SHA-256", foreign, v), "another realm's array and bytes")).toEqual(honest);
   });
 });

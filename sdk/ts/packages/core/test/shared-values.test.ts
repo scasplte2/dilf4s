@@ -210,7 +210,7 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
     for (const limit of [Number.NaN, -1, -Infinity, 3.99]) {
       const r = cbor.encodeWithin(v, limit);
       expect(r.ok, `limit ${limit.toString()}`).toBe(false);
-      if (!r.ok) expect(r.error.limit, `limit ${limit.toString()}`).toBe(limit === 3.99 ? 3 : 0);
+      expect(r.ok ? undefined : r.error, `limit ${limit.toString()}`).toEqual({ kind: "TooLarge", limit: limit === 3.99 ? 3 : 0 });
     }
     expect(expectOk(cbor.encodeWithin(v, Infinity), "Infinity is the largest limit").length).toBe(4);
   });

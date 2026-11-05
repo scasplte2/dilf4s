@@ -1,6 +1,6 @@
 /** The dilf4s deterministic CBOR profile (docs/specs/canonical-encoding.md section 2). */
-import { byteLimit, Meter, tooLarge } from "./budget.js";
-import type { CanonicalError, TooLarge } from "./error.js";
+import { byteLimit, checkedLimit, Meter, tooLarge } from "./budget.js";
+import type { CanonicalError, TooLarge, TypeMismatch } from "./error.js";
 import { toHex } from "./hex.js";
 import { err, ok, type Result } from "./result.js";
 import { compareBytes, decodeUtf8 } from "./utf8.js";
@@ -9,14 +9,15 @@ import {
   BoolValue,
   BytesValue,
   bytesView,
+  copyBytes,
   entriesView,
   IntValue,
+  isBytes,
   mapOfValues,
   MAX_DEPTH,
   MAX_INTEGER_BITS,
   MAX_RATIONAL_BITS,
   NullValue,
-  plainBytes,
   RationalValue,
   TextValue,
   utf8View,
@@ -288,12 +289,19 @@ function write(out: Out, value: Value): boolean {
 export const MAX_ENCODED_BYTES = 2 ** 31 - 1;
 
 /**
+ * Why a value was not encoded: its encoding is longer than the limit (`TooLarge`), or an argument is not of its type
+ * (`TypeMismatch`: a value that is not a canonical value, or a limit that is not a `number`), which is checked in O(1)
+ * before anything is read.
+ */
+export type EncodeError = TooLarge | TypeMismatch;
+
+/**
  * The canonical encoding of `value`: {@link encodeWithin} at {@link MAX_ENCODED_BYTES}. Every {@link Value} has exactly
  * one, but a value built with shared parts (`[x, x]` nested `k` deep weighs about `2^k`) can encode to far more than it
  * occupies: that is refused as `TooLarge`, from the weight alone when it is over. O(min(weight, the limit)): encode a
- * caller's value within a limit of the caller's own.
+ * caller's value within a limit of the caller's own. What is not a canonical value is a `TypeMismatch`.
  */
-export function encode(value: Value): Result<Uint8Array, TooLarge> {
+export function encode(value: Value): Result<Uint8Array, EncodeError> {
   return encodeWithin(value, MAX_ENCODED_BYTES);
 }
 
@@ -315,24 +323,31 @@ function within(value: Value, limit: number, target: Target | undefined): Result
  * weight (each node's head is a byte, text and byte strings add their length, a number of `l` whole limbs takes at
  * least `l` bytes more), so a weight over the limit is refused at once; each node visited writes a byte before its
  * parts, so the walk stops within `maxBytes + 1` nodes; and a string's or number's length is checked against the
- * budget before its bytes are produced.
+ * budget before its bytes are produced. A value that is not a canonical value (see `isValue`), or a limit that is not a
+ * `number`, is a `TypeMismatch`, checked in O(1) before anything is allocated.
  */
-export function encodeWithin(value: Value, maxBytes: number): Result<Uint8Array, TooLarge> {
-  const limit = byteLimit(maxBytes);
-  const kept = new Growing(limit);
-  const w = within(value, limit, kept);
+export function encodeWithin(value: Value, maxBytes: number): Result<Uint8Array, EncodeError> {
+  const limit = checkedLimit(value, maxBytes);
+  if (!limit.ok) return limit;
+  const kept = new Growing(limit.value);
+  const w = within(value, limit.value, kept);
   return w.ok ? ok(kept.result()) : w;
 }
 
-/** The length of `value`'s canonical encoding, if it is at most `maxBytes`, counted without encoding it, with the bounds of {@link encodeWithin}. */
-export function encodedLengthWithin(value: Value, maxBytes: number): Result<number, TooLarge> {
-  return within(value, byteLimit(maxBytes), undefined);
+/**
+ * The length of `value`'s canonical encoding, if it is at most `maxBytes`, counted without encoding it, with the bounds
+ * and refusals of {@link encodeWithin}.
+ */
+export function encodedLengthWithin(value: Value, maxBytes: number): Result<number, EncodeError> {
+  const limit = checkedLimit(value, maxBytes);
+  return limit.ok ? within(value, limit.value, undefined) : limit;
 }
 
 /**
  * Streams `value`'s canonical encoding into `feeding` (and so into its hash) as {@link encodeWithin} would write it,
  * with the same budget and the same refusal at the same point, without building it: the same walk, feeding a hash
  * instead of a buffer. Returns the length. On a refusal, the hash has absorbed a prefix of the encoding: discard it.
+ * Its arguments are not checked: its callers check them first (`checkedLimit`).
  */
 export function encodeIntoWithin(feeding: Feeding, value: Value, maxBytes: number): Result<number, TooLarge> {
   const w = within(value, byteLimit(maxBytes), feeding);
@@ -370,15 +385,16 @@ const unexpectedEnd = (offset: number): CanonicalError => ({ kind: "UnexpectedEn
  * Strictly decodes one canonical value: any other encoding of a value, trailing bytes, or nesting deeper than
  * `maxDepth` (at most {@link MAX_DEPTH}) is an error. When it succeeds, `encode(decode(b)) == b`. The decoder keeps
  * its own frame stack, so input of any nesting is a typed error, never a stack overflow. `bytes` that is not a
- * `Uint8Array`, or a `maxDepth` that is not a number, is a `TypeMismatch`; the bytes are read through `plainBytes`, so
- * a subclass's `length` is not believed.
+ * `Uint8Array`, or a `maxDepth` that is not a number, is a `TypeMismatch`. The bytes are copied first, through
+ * `copyBytes`: a subclass's `length`, accessors or iterator are not consulted, and nothing changes them while they are
+ * read.
  */
 export function decode(bytes: Uint8Array, maxDepth: number = MAX_DEPTH): Result<Value, CanonicalError> {
   // read through plainBytes: what is not bytes is refused, and a subclass's `length` is not believed
-  const input = plainBytes(bytes);
-  if (input === undefined) return err({ kind: "TypeMismatch", reason: "expected a Uint8Array" });
+  if (!isBytes(bytes)) return err({ kind: "TypeMismatch", reason: "expected a Uint8Array" });
   if (typeof (maxDepth as unknown) !== "number" || Number.isNaN(maxDepth)) return err({ kind: "TypeMismatch", reason: "the depth limit is not a number" });
-  return new Decoder(input, Math.min(maxDepth, MAX_DEPTH)).run();
+  // a copy: the decoder reads memory nothing else can change while it runs (a SharedArrayBuffer's other threads)
+  return new Decoder(copyBytes(bytes), Math.min(maxDepth, MAX_DEPTH)).run();
 }
 
 class Decoder {

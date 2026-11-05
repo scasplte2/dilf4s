@@ -39,6 +39,7 @@ export {
   equals,
   inspect,
   IntValue,
+  isValue,
   MapValue,
   MAX_DEPTH,
   MAX_INTEGER_BITS,

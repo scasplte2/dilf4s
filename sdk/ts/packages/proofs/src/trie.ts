@@ -182,11 +182,13 @@ export class TrieHashing {
   /**
    * The hash a trie commits for a value: `valueHash(commit(v))`, as a JLVM program claims it. O(min(weight, the
    * ceiling)), as `valueCommitment`: a value whose commitment is over `cbor.MAX_ENCODED_BYTES` (2^31 - 1, this SDK's
-   * ceiling; Scala and Rust have none) is `TooLarge`. The commitment is streamed into the hash, never built.
+   * ceiling; Scala and Rust have none) is `TooLarge`, and what is not a canonical value is `Encoding`. The commitment is
+   * streamed into the hash, never built.
    */
   valueHash(value: Value): Result<Uint8Array, TrieError> {
     const c = this.#value.commitment(value);
-    return c.ok ? c : err({ kind: "TooLarge", limit: c.error.limit });
+    if (c.ok) return c;
+    return err(c.error.kind === "TooLarge" ? { kind: "TooLarge", limit: c.error.limit } : { kind: "Encoding", reason: c.error.reason });
   }
 
   /** The hash a trie commits for a byte string, `valueHash(commit(b))`: linear in `b`, which the caller holds. */
