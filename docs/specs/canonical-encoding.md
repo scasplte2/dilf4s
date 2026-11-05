@@ -119,7 +119,7 @@ Further rules:
      length) `Unsupported`;
   2. by its major type: a simple value other than false, true and null `Unsupported`; a byte or text string present in
      full (`UnexpectedEnd`), and text well-formed UTF-8 (`InvalidUtf8`); an array or map whose count fits the bytes
-     left at one byte per element (`UnexpectedEnd`, before anything is allocated), then the depth limit
+     left at one byte per array element and two per map entry (`UnexpectedEnd`, before anything is allocated), then the depth limit
      (`DepthExceeded`, an empty array or map included); a tag other than 2, 3 and 30 `Unsupported`, and tags 2, 3 and
      30 in the bignum and rational orders above;
   3. in a map, each key once it is read whole: text (`Unsupported`), after the previous key in encoded order

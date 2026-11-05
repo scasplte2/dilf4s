@@ -284,6 +284,11 @@ object CanonicalVectors {
     ByteVector.fill(256)(0x81) ++ hex"80",
     ByteVector.fill(256)(0x81) ++ hex"a0",
     ByteVector.fill(257)(0x81) ++ hex"00",
+    // a container's count is checked against the bytes left before the depth limit: truncated, not too deep
+    ByteVector.fill(256)(0x81) ++ hex"9bffffffffffffffff",
+    ByteVector.fill(256)(0x81) ++ hex"81",
+    // a map key is read whole before it is checked as text: a key nested too deep is DepthExceeded, not Unsupported
+    hex"a1" ++ ByteVector.fill(256)(0x81) ++ hex"80",
     // a rational part one bit wider than CanonicalValue.MaxRationalBits, for either sign and either part, is outside the data
     // model: refused before any gcd, so before lowest terms (the first), before the denominator's range (the fifth) and
     // before the denominator is read (the sixth)
