@@ -181,6 +181,82 @@ describe("what the walks read and refuse", () => {
     expect(decoded(U.decode(Value.bool(true)))).toBe("<root>: expected a map or one of the text alternatives");
   });
 
+  it("a union reads the fields of every alternative in UTF-16 order, once per alternative it tries", () => {
+    interface Z {
+      readonly z: bigint;
+    }
+    interface A {
+      readonly a?: bigint;
+      readonly b: bigint;
+    }
+    const Z: Codec<Z> = record<Z>({ z: required("z", uint) });
+    const A: Codec<A> = record<A>({ a: optional("a", uint), b: required("b", uint) });
+    const U: Codec<Z | A> = union<Z | A>("U", [alternative(Z, [["z"], ["z"]], [["z"], ["z"]]), alternative(A, [["b"], ["a", "b"]], [["b"], ["a", "b"]])], []);
+    const read: string[] = [];
+    const value = {
+      get z(): undefined {
+        read.push("z");
+        return undefined;
+      },
+      get b(): bigint {
+        read.push("b");
+        return 2n;
+      },
+      get a(): undefined {
+        read.push("a");
+        return undefined;
+      },
+    } as unknown as A;
+    expect(expectOk(U.encode(value), "encodes").kind).toBe("map");
+    // a probe in sorted order for each alternative tried (Z, then A); then the record reads its fields in schema order
+    expect(read).toEqual(["a", "b", "z", "a", "b", "z", "a", "b"]);
+  });
+
+  it("a map is read entry by entry from its iterator, each entry's key and value as it is read", () => {
+    const shared: [string, bigint] = ["", 0n];
+    const reused: ReadonlyMap<string, bigint> = {
+      *[Symbol.iterator]() {
+        for (const [k, v] of [["a", 1n], ["b", 2n]] as const) {
+          shared[0] = k;
+          shared[1] = v;
+          yield shared;
+        }
+      },
+    } as unknown as ReadonlyMap<string, bigint>;
+    const v = expectOk(textMap(uint).encode(reused), "an iterator that reuses its entry");
+    expect(v.kind === "map" && v.entries()).toEqual([
+      ["a", int(1n)],
+      ["b", int(2n)],
+    ]);
+    // a refused entry stops the reading: nothing after it is read
+    let after = false;
+    const stops: ReadonlyMap<string, bigint> = {
+      *[Symbol.iterator]() {
+        yield ["a", -1n];
+        after = true;
+        yield ["b", 1n];
+      },
+    } as unknown as ReadonlyMap<string, bigint>;
+    expect(textMap(uint).encode(stops).ok).toBe(false);
+    expect(after).toBe(false);
+  });
+
+  it("a chain of 10,000 references is followed once per reference, each way", () => {
+    let resolved = 0;
+    const chain = Array.from({ length: 10_000 }).reduce<Codec<bigint>>(
+      (inner) =>
+        defer(() => {
+          resolved++;
+          return inner;
+        }),
+      uint,
+    );
+    const v = expectOk(chain.encode(5n), "encodes");
+    expect(resolved).toBe(10_000);
+    expect(expectOk(chain.decode(v), "decodes")).toBe(5n);
+    expect(resolved).toBe(20_000);
+  });
+
   it("a reference to itself, through no container, is refused instead of looping", () => {
     const loop: Codec<bigint> = defer(() => loop);
     expect(loop.encode(1n)).toMatchObject({ ok: false, error: { kind: "TypeMismatch", reason: "the codec refers to itself without writing a container" } });

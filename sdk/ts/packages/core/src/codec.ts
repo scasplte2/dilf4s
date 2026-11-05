@@ -400,8 +400,9 @@ export function alternative<A>(codec: Codec<A>, names: readonly [readonly string
  * {@link selectAlternative} picks. The generator only accepts unions where at most one alternative fits.
  */
 export function union<U>(name: string, alternatives: readonly Alternative<U>[], texts: readonly Extract<U, string>[]): Codec<U> {
+  // read in UTF-16 order, once each: a getter may observe the order the fields are read in
   const names = alternatives.flatMap((a) => a.allowed);
-  const known = names.filter((k, i) => names.indexOf(k) === i);
+  const known = names.filter((k, i) => names.indexOf(k) === i).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return codecOf({ kind: "union", name, alternatives, known, keys: alternatives.map((a) => a.keys), texts });
 }
 
@@ -451,11 +452,13 @@ type Choosing = Extract<CodecShape, { readonly kind: "defer" | "union" }>;
  * so it is refused as `circular`. Each step reads only the value's kind and keys, so this is O(the schema's chain).
  */
 function follow<V, D>(shape: CodecShape, value: V, choose: (s: Choosing, v: V) => { readonly to: CodecShape } | { readonly done: D }, circular: D): { readonly reading: Reading } | { readonly done: D } {
-  const passed: CodecShape[] = [];
+  // by identity, in O(1) a step: the shapes are the schema's, never caller data
+  let passed: Set<CodecShape> | undefined;
   let s = shape;
   while (s.kind === "defer" || s.kind === "union") {
-    if (passed.includes(s)) return { done: circular };
-    passed.push(s);
+    passed ??= new Set();
+    if (passed.has(s)) return { done: circular };
+    passed.add(s);
     const next = choose(s, value);
     if ("done" in next) return next;
     s = next.to;
@@ -466,10 +469,14 @@ function follow<V, D>(shape: CodecShape, value: V, choose: (s: Choosing, v: V) =
 /** A part still to encode, at `depth`, or the outcome of the part just encoded. */
 type EncodeStep = { readonly shape: CodecShape; readonly value: unknown; readonly depth: number; readonly done?: undefined } | { readonly done: Result<Value, CanonicalError> };
 
-/** A container being encoded: its parts, the one being encoded (`at`), the depth of its parts, and what they encoded to. */
+/**
+ * A container being encoded: its parts, the depth of its parts, and what they encoded to. A vector's or map's parts
+ * are read from its own iterator, one at a time, after the one before is encoded (a map's key and value as each entry
+ * is read), as a `for...of` reads them; a record's fields by index (`at`, the one being encoded).
+ */
 type Encoding =
-  | { readonly kind: "vector"; readonly items: readonly unknown[]; readonly element: CodecShape; readonly depth: number; at: number; readonly out: Value[] }
-  | { readonly kind: "textMap"; readonly entries: readonly (readonly [string, unknown])[]; readonly value: CodecShape; readonly depth: number; at: number; readonly out: (readonly [string, Value])[] }
+  | { readonly kind: "vector"; readonly items: Iterator<unknown>; readonly element: CodecShape; readonly depth: number; readonly out: Value[] }
+  | { readonly kind: "textMap"; readonly entries: Iterator<readonly [string, unknown]>; key: string; readonly value: CodecShape; readonly depth: number; readonly out: (readonly [string, Value])[] }
   | { readonly kind: "record"; readonly fields: readonly RecordField[]; readonly of: object; readonly depth: number; at: number; readonly out: (readonly [string, Value])[] };
 
 /** The encoder: one loop, an explicit stack of the containers open, and nothing recursive. */
@@ -509,13 +516,13 @@ function openEncoding(shape: CodecShape, value: unknown, depth: number, stack: E
       if (!Array.isArray(value)) return { done: typeMismatch("expected an array") };
       const items: readonly unknown[] = value;
       if (items.length < s.min || (s.max !== null && items.length > s.max)) return { done: typeMismatch(`array of ${items.length.toString()} elements outside the schema size`) };
-      return opened({ kind: "vector", items, element: s.element.shape, depth: depth + 1, at: 0, out: [] }, stack);
+      return opened({ kind: "vector", items: items[Symbol.iterator](), element: s.element.shape, depth: depth + 1, out: [] }, stack);
     }
     case "textMap": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
       if (typeof value !== "object" || value === null || !(Symbol.iterator in value)) return { done: typeMismatch("expected a map") };
-      const entries = Array.from(value as Iterable<readonly [string, unknown]>);
-      return opened({ kind: "textMap", entries, value: s.value.shape, depth: depth + 1, at: 0, out: [] }, stack);
+      const entries = (value as Iterable<readonly [string, unknown]>)[Symbol.iterator]();
+      return opened({ kind: "textMap", entries, key: "", value: s.value.shape, depth: depth + 1, out: [] }, stack);
     }
     case "record": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
@@ -538,26 +545,30 @@ function nextEncoding(top: Encoding, v: Value, stack: Encoding[]): EncodeStep {
       top.out.push(v);
       break;
     case "textMap":
-      top.out.push([top.entries[top.at]?.[0] ?? "", v]);
+      top.out.push([top.key, v]);
       break;
     case "record":
       top.out.push([top.fields[top.at]?.key ?? "", v]);
       top.at++;
       return nextField(top, stack);
   }
-  top.at++;
   return nextPart(top, stack);
 }
 
-/** The next element or entry of an open vector or map, or its outcome. */
+/** The next element or entry of an open vector or map, read from its iterator, or its outcome. */
 function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack: Encoding[]): EncodeStep {
   if (top.kind === "vector") {
-    if (top.at < top.items.length) return { shape: top.element, value: top.items[top.at], depth: top.depth };
+    const item = top.items.next();
+    if (item.done !== true) return { shape: top.element, value: item.value, depth: top.depth };
     stack.pop();
     return { done: ArrayValue.of(top.out) };
   }
-  const e = top.entries[top.at];
-  if (e !== undefined) return { shape: top.value, value: e[1], depth: top.depth };
+  const entry = top.entries.next();
+  if (entry.done !== true) {
+    const [key, x] = entry.value;
+    top.key = key;
+    return { shape: top.value, value: x, depth: top.depth };
+  }
   stack.pop();
   return { done: MapValue.of(top.out) };
 }
