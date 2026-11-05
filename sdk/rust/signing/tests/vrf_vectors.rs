@@ -24,6 +24,7 @@ use std::path::PathBuf;
 
 use common::bytes;
 use dilf4s_core::generated::vrf_vectors::{VrfKeyResult, VrfResult};
+use dilf4s_core::hash::HashAlgorithm;
 use dilf4s_core::hex;
 #[cfg(feature = "sign")]
 use dilf4s_signing::vrf;
@@ -202,7 +203,12 @@ fn examples(suite: SuiteId, cases: &[dilf4s_core::Value]) {
         assert!(suite.verify_bytes(&pk, &alpha, &tampered).is_err());
         let pk32: [u8; 32] = pk.clone().try_into().unwrap();
         match suite {
-            SuiteId::Ell2 => assert_eq!(hex::encode(&internals::hash_to_curve_ell2(&pk32, &alpha)), text(c, "H")),
+            SuiteId::Ell2 => {
+                assert_eq!(
+                    internals::hash_to_curve_ell2(&pk32, &alpha).map(|h| hex::encode(&h)),
+                    Ok(text(c, "H").into())
+                );
+            }
             SuiteId::Draft03 => assert_eq!(hex::encode(&internals::hash_to_curve_draft03(&pk32, &alpha)), text(c, "H")),
             SuiteId::Tai => {}
         }
@@ -235,7 +241,14 @@ fn rfc9380_ell2_encode_to_curve() {
     let vectors = list(field(section, "vectors"));
     assert_eq!(vectors.len(), 5);
     assert!(internals::encode_to_curve_ell2(b"", b"").is_none(), "an empty DST is refused, not a panic");
-    assert!(internals::encode_to_curve_ell2(b"", &[0; 256]).is_none(), "an oversize DST is refused");
+    // RFC 9380 section 5.3.3: a DST over 255 bytes is the hash of "H2C-OVERSIZE-DST-" and it
+    let reduced = HashAlgorithm::Sha512.digest(&[b"H2C-OVERSIZE-DST-".as_slice(), &[0; 256]].concat());
+    assert_eq!(
+        internals::encode_to_curve_ell2(b"abc", &[0; 256]),
+        internals::encode_to_curve_ell2(b"abc", &reduced),
+        "an oversize DST is reduced"
+    );
+    assert!(internals::encode_to_curve_ell2(b"abc", &[0; 256]).is_some());
     for v in vectors {
         // the affine (x, y) as an RFC 8032 encoding: little-endian y with the sign of x in bit 255
         let x = bytes(text(v, "P.x"));

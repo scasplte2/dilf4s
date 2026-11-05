@@ -279,7 +279,7 @@ fn expansions() {
         let case = format!("{} dst {} length {}", c.algorithm, c.dst, c.length);
         // a length past usize is past every limit, so it is refused as such
         let length = usize::try_from(c.length).unwrap_or(usize::MAX);
-        let r = algorithm.expand_message_xmd(&bytes(&c.message), &bytes(&c.dst), length);
+        let r = algorithm.expand_message_xmd(&[&bytes(&c.message)], &bytes(&c.dst), length);
         same_outcome(&case, (&c.outcome, None, c.refusal.as_ref()), &r)?;
         match (&r, &c.output) {
             (Ok(out), Some(expected)) => same("output", &case, expected, &hex::encode(out)),

@@ -147,7 +147,7 @@ fn digest_bytes(algorithm: &str, width: usize, text: &str) -> Result<Vec<u8>, Ha
 /// RFC 9380 section 5.3.1 `expand_message_xmd` under `H`, whose input block is `block` bytes. A DST over 255 bytes is
 /// first reduced to `H("H2C-OVERSIZE-DST-" || DST)` (section 5.3.3). Refused before anything is hashed, in this order:
 /// an empty DST (`EmptyDst`), and a length outside `1..=`[`HashAlgorithm::expansion_limit`] (`OutputLength`).
-fn xmd<H: Hasher>(block: usize, message: &[u8], dst: &[u8], length: usize) -> Result<Vec<u8>, HashError> {
+fn xmd<H: Hasher>(block: usize, message: &[&[u8]], dst: &[u8], length: usize) -> Result<Vec<u8>, HashError> {
     let limit = H::OUTPUT_SIZE.saturating_mul(255).min(65_535);
     let refused = |refusal| HashError::InvalidExpansion { refusal, algorithm: H::NAME.into(), limit: size(limit) };
     if dst.is_empty() {
@@ -160,8 +160,12 @@ fn xmd<H: Hasher>(block: usize, message: &[u8], dst: &[u8], length: usize) -> Re
     let dst = oversize.as_ref().map_or(dst, AsRef::as_ref);
     // both fit: a DST is now at most 255 bytes, and a length at most the limit
     let suffix = [dst, &[u8::try_from(dst.len()).unwrap_or(u8::MAX)]].concat();
-    let length_bytes = u16::try_from(length).unwrap_or(u16::MAX).to_be_bytes();
-    let b0 = H::hash_parts(&[&vec![0; block], message, &length_bytes, &[0], &suffix]);
+    let [high, low] = u16::try_from(length).unwrap_or(u16::MAX).to_be_bytes();
+    let zeros = vec![0; block];
+    let tail = [high, low, 0];
+    let parts: Vec<&[u8]> =
+        core::iter::once(zeros.as_slice()).chain(message.iter().copied()).chain([&tail[..], &suffix]).collect();
+    let b0 = H::hash_parts(&parts);
     let b1 = H::hash_parts(&[b0.as_ref(), &[1], &suffix]);
     let ell = length.div_ceil(H::OUTPUT_SIZE);
     let (_, mut out) = (2..=ell).fold((b1.clone(), b1.as_ref().to_vec()), |(prev, mut out), i| {
@@ -455,11 +459,12 @@ impl HashAlgorithm {
         digest_bytes(self.name(), self.output_size(), text)
     }
 
-    /// RFC 9380 section 5.3.1 `expand_message_xmd`: `length` uniform bytes from `message` under the domain separation
-    /// tag `dst`. A DST over 255 bytes is first reduced to `H("H2C-OVERSIZE-DST-" || DST)` (section 5.3.3). Refused as
+    /// RFC 9380 section 5.3.1 `expand_message_xmd`: `length` uniform bytes from the message, the concatenation of
+    /// `message` (as [`HashAlgorithm::hash_parts`] takes it, never copied whole), under the domain separation tag `dst`.
+    /// A DST over 255 bytes is first reduced to `H("H2C-OVERSIZE-DST-" || DST)` (section 5.3.3). Refused as
     /// `InvalidExpansion`, before anything is hashed, for an empty DST (`EmptyDst`), then for a length outside
     /// `1..=`[`HashAlgorithm::expansion_limit`] (`OutputLength`).
-    pub fn expand_message_xmd(self, message: &[u8], dst: &[u8], length: usize) -> Result<Vec<u8>, HashError> {
+    pub fn expand_message_xmd(self, message: &[&[u8]], dst: &[u8], length: usize) -> Result<Vec<u8>, HashError> {
         let block = self.block_size();
         match self {
             Self::Sha256 => xmd::<Sha256>(block, message, dst, length),

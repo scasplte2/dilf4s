@@ -6,9 +6,7 @@
 //! both maps compute every candidate and select between them: neither branches on a field value. Variable time remains
 //! only where the data is public: the final point decoding of each map (draft-03's `y < p` check and
 //! curve25519-dalek's decompression, which accept every map output by construction, and the branch on that result),
-//! the SHA-512 inputs' lengths, and `expand_message_xmd`'s DST length.
-
-use alloc::vec::Vec;
+//! the SHA-512 inputs' lengths, and `expand_message_xmd`'s DST length (the core's, `dilf4s_core::hash`).
 
 use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
 use fiat::{fiat_25519_loose_field_element as Loose, fiat_25519_tight_field_element as Tight};
@@ -18,7 +16,9 @@ use fiat_crypto::curve25519_32 as fiat;
 use fiat_crypto::curve25519_64 as fiat;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
-use super::{decode_draft03, sha512};
+use dilf4s_core::hash::HashAlgorithm;
+
+use super::decode_draft03;
 
 /// Curve25519's Montgomery `A`.
 const J: u32 = 486_662;
@@ -204,29 +204,12 @@ impl Fe {
     }
 }
 
-/// RFC 9380 section 5.3.1 `expand_message_xmd` with SHA-512 and `len_in_bytes = 48`, the one length `hash_to_field`
-/// asks of it here. `dst` is 1 to 255 bytes.
-fn expand_message_xmd_sha512_48(message: &[&[u8]], dst: &[u8]) -> [u8; 48] {
-    let dst_len = [u8::try_from(dst.len()).unwrap_or(u8::MAX)];
-    let mut parts: Vec<&[u8]> = Vec::with_capacity(message.len().saturating_add(5));
-    let z_pad = [0u8; 128];
-    let tail = [0u8, 48, 0u8];
-    parts.push(&z_pad);
-    parts.extend_from_slice(message);
-    parts.extend_from_slice(&[&tail, dst, &dst_len]);
-    let b0 = sha512(&parts);
-    let b1 = sha512(&[&b0, &[1u8], dst, &dst_len]);
-    let mut out = [0u8; 48];
-    for (o, b) in out.iter_mut().zip(b1) {
-        *o = b;
-    }
-    out
-}
-
-/// RFC 9380 `encode_to_curve` with `edwards25519_XMD:SHA-512_ELL2_NU_`: one field element from 48 uniform bytes, then
-/// [`map_to_curve_ell2`]. `dst` is 1 to 255 bytes.
-pub(super) fn encode_to_curve_ell2(message: &[&[u8]], dst: &[u8]) -> EdwardsPoint {
-    map_to_curve_ell2(Fe::from_be48(&expand_message_xmd_sha512_48(message, dst)))
+/// RFC 9380 `encode_to_curve` with `edwards25519_XMD:SHA-512_ELL2_NU_`: one field element from 48 uniform bytes (the
+/// core's `expand_message_xmd` with SHA-512, a DST over 255 bytes first hashed, section 5.3.3), then
+/// [`map_to_curve_ell2`]. `None` for a DST `expand_message_xmd` refuses: an empty one.
+pub(super) fn encode_to_curve_ell2(message: &[&[u8]], dst: &[u8]) -> Option<EdwardsPoint> {
+    let uniform = HashAlgorithm::Sha512.expand_message_xmd(message, dst, 48).ok()?;
+    <[u8; 48]>::try_from(uniform.as_slice()).ok().map(|u| map_to_curve_ell2(Fe::from_be48(&u)))
 }
 
 /// Elligator 2 onto curve25519 and the rational map to edwards25519, straight-line (RFC 9380 appendices G.2.1 and
