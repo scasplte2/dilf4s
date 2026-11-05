@@ -2,13 +2,15 @@ import { runInNewContext } from "node:vm";
 
 import { describe, expect, it } from "vitest";
 
-import { codec, IntValue, json, MapValue, RationalValue, Value } from "../src/index.js";
+import { BoolValue, BytesValue, cbor, codec, IntValue, json, MapValue, RationalValue, TextValue, Value } from "../src/index.js";
 import { gcdSteps } from "../src/value.js";
 import { expectOk, int } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
 const bad = (x: unknown): never => x as never;
 const mismatch = (reason: string): unknown => ({ ok: false, error: { kind: "TypeMismatch", reason } });
+/** A test label for anything a caller may pass. */
+const label = (x: unknown): string => (typeof x === "object" && x !== null ? Object.prototype.toString.call(x) : typeof x === "symbol" ? x.toString() : `${typeof x} ${String(x)}`);
 
 describe("what a caller passes past the types is refused, never thrown on or misread", () => {
   it("bytes from another realm, and a Buffer, are bytes; an object claiming to be one is not", () => {
@@ -53,17 +55,22 @@ describe("what a caller passes past the types is refused, never thrown on or mis
     expect(real.kind === "int" && real.value).toBe(5n);
   });
 
-  it("a rational made from parts that are not bigints ends: refused or thrown on, never converted, never a loop", { timeout: 5_000 }, () => {
+  it("a rational made from parts that are not bigints is refused: never thrown on, converted or looped on", { timeout: 5_000 }, () => {
+    const valueOf = { valueOf: () => 3n };
     for (const [n, d] of [
       [1, 2],
       ["1", "3"],
       [true, 2n],
       [2 ** 53 + 1, 1n],
       [1.5, 2n],
+      [1n, 0],
+      [valueOf, 2n],
+      [1n, valueOf],
     ] as const) {
-      expect(() => Value.number(bad(n), bad(d)), `${String(n)}/${String(d)}`).toThrow(TypeError);
-      expect(() => RationalValue.number(bad(n), bad(d)), `${String(n)}/${String(d)}`).toThrow(TypeError);
+      expect(Value.number(bad(n), bad(d)), `${String(n)}/${String(d)}`).toEqual(mismatch("expected a bigint"));
+      expect(RationalValue.number(bad(n), bad(d)), `${String(n)}/${String(d)}`).toEqual(mismatch("expected a bigint"));
     }
+    expect(Value.number(1n, 0n)).toEqual({ ok: false, error: { kind: "DivisionByZero" } });
     expect(RationalValue.of(bad(1), bad(2))).toBeUndefined();
     expect(RationalValue.of(1n, bad(2))).toBeUndefined();
     // gcdSteps alone reads its operands as bigints, so no input can loop
@@ -79,11 +86,12 @@ describe("what a caller passes past the types is refused, never thrown on or mis
     expect(expectOk(RationalValue.decimal(5n, 1), "0.5").kind).toBe("rational");
   });
 
-  it("a decimal's scale with no integer value is refused, a negative one multiplies, and nothing throws", { timeout: 5_000 }, () => {
-    const tooWide = { ok: false, error: { kind: "RationalTooWide", limit: 33219 } };
+  it("a decimal's scale with no integer value, or a part of the wrong type, is refused, a negative scale multiplies, and nothing throws", { timeout: 5_000 }, () => {
     const intTooWide = { ok: false, error: { kind: "IntegerTooWide", limit: 33219 } };
-    for (const scale of [Number.NaN, 0.5, -0.5, Number.POSITIVE_INFINITY]) expect(RationalValue.decimal(5n, scale), String(scale)).toEqual(tooWide);
-    expect(RationalValue.decimal(5n, Number.NEGATIVE_INFINITY)).toEqual(intTooWide);
+    for (const scale of [Number.NaN, 0.5, -0.5, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1n, "1", null]) {
+      expect(RationalValue.decimal(5n, bad(scale)), String(scale)).toEqual(mismatch("the scale is not an integer"));
+    }
+    for (const unscaled of [5, "5", null, 5.5]) expect(RationalValue.decimal(bad(unscaled), 1), String(unscaled)).toEqual(mismatch("expected a bigint"));
     const fifty = expectOk(RationalValue.decimal(5n, -1), "5 * 10");
     expect(fifty.kind === "int" && fifty.value).toBe(50n);
     expect(RationalValue.decimal(5n, -10_000)).toEqual(intTooWide);
@@ -112,5 +120,168 @@ describe("what a caller passes past the types is refused, never thrown on or mis
     expect(json.parse("1.5", json.DEFAULT_MAX_SCALE).ok, "the spec's bound itself is a bound").toBe(true);
     const record = codec.record<{ readonly a: bigint }>({ a: codec.required("a", codec.uint) });
     expect(codec.fromJson(record, bad(5))).toEqual({ ok: false, error: { kind: "Canonical", error: { kind: "TypeMismatch", reason: "the JSON text is not a string" } } });
+  });
+});
+
+describe("the constructors refuse a value of the wrong type, never reading it as another type", () => {
+  it("an integer is a bigint: a number, however integral, is refused, not kept as a number", () => {
+    for (const x of [5, 5.5, 2 ** 53, "5", true, null, undefined, {}, { valueOf: () => 5n }]) {
+      expect(Value.int(bad(x)), label(x)).toEqual(mismatch("expected a bigint"));
+      expect(IntValue.of(bad(x)), label(x)).toEqual(mismatch("expected a bigint"));
+    }
+    const five = expectOk(Value.int(5n), "5n");
+    expect(typeof five.value).toBe("bigint");
+  });
+
+  it("a boolean is a boolean: a truthy or falsy value is refused, not read as a condition", () => {
+    for (const x of [1, 0, "true", "", null, undefined, {}, new Boolean(true)]) {
+      expect(Value.bool(bad(x)), label(x)).toEqual(mismatch("expected a boolean"));
+      expect(BoolValue.of(bad(x)), label(x)).toEqual(mismatch("expected a boolean"));
+    }
+    expect(expectOk(Value.bool(false), "false")).toBe(BoolValue.false);
+    expect(expectOk(BoolValue.of(true), "true")).toBe(BoolValue.true);
+  });
+
+  it("bytes are a Uint8Array, from any realm: a string, a number or an array-like is refused, not copied as zeros or nothing", () => {
+    const claims = { [Symbol.toStringTag]: "Uint8Array", length: 2, 0: 1, 1: 2 };
+    for (const x of ["ab", 5, [1, 2], { length: 2 }, claims, null, undefined, new Uint16Array(2), new DataView(new ArrayBuffer(2)), new ArrayBuffer(2)]) {
+      expect(Value.bytes(bad(x)), label(x)).toEqual(mismatch("expected a Uint8Array"));
+      expect(BytesValue.of(bad(x)), label(x)).toEqual(mismatch("expected a Uint8Array"));
+    }
+    const foreign = runInNewContext("new Uint8Array([1, 2])") as Uint8Array;
+    expect([...expectOk(Value.bytes(foreign), "another realm's Uint8Array").bytes]).toEqual([1, 2]);
+    expect([...expectOk(BytesValue.of(Buffer.from([3])), "a Buffer").bytes]).toEqual([3]);
+  });
+
+  it("text is a string, through TextValue.of as through Value.text", () => {
+    for (const x of [5, null, undefined, {}, ["a"], Symbol("a")]) {
+      expect(Value.text(bad(x)), label(x)).toEqual(mismatch("expected a string"));
+      expect(TextValue.of(bad(x)), label(x)).toEqual(mismatch("expected a string"));
+    }
+    expect(TextValue.of("\uD800")).toEqual({ ok: false, error: { kind: "UnpairedSurrogate" } });
+  });
+});
+
+describe("an array's items and a map's entries are checked in the pass that reads them", () => {
+  const one = int(1n);
+
+  it("an array is an array, and each item a value, found at its index", () => {
+    for (const x of ["ab", 5, null, undefined, { length: 1, 0: one }, new Set([one])]) expect(Value.array(bad(x)), label(x)).toEqual(mismatch("expected an array"));
+    expect(Value.array(bad([one, 5]))).toEqual(mismatch("expected a canonical value at index 1"));
+    const holey: unknown[] = [one];
+    holey[2] = one;
+    expect(Value.array(bad(holey))).toEqual(mismatch("expected a canonical value at index 1"));
+    expect(Value.array(bad([Object.create(IntValue.prototype)]))).toEqual(mismatch("expected a canonical value at index 0"));
+    const traps: string[] = [];
+    const proxy: unknown = new Proxy(one, { get: (_t, name) => traps.push(String(name)) });
+    expect(Value.array(bad([one, proxy]))).toEqual(mismatch("expected a canonical value at index 1"));
+    expect(traps, "a Proxy of a value is not one, and none of its traps runs").toEqual([]);
+    const ok = expectOk(Value.array([one, one]), "two values");
+    expect(ok.items).toEqual([one, one]);
+  });
+
+  it("an array is read by index, its length once and each item once, never through its iterator, up to the first refused item", () => {
+    const reads: string[] = [];
+    const items = [one, one, 5, one];
+    const watched = new Proxy(items, {
+      get: (t, name, receiver) => {
+        reads.push(String(name));
+        return Reflect.get(t, name, receiver) as unknown;
+      },
+    });
+    expect(Value.array(bad(watched))).toEqual(mismatch("expected a canonical value at index 2"));
+    expect(reads).toEqual(["length", "0", "1", "2"]);
+    reads.length = 0;
+    items[2] = one;
+    expect(expectOk(Value.array(bad(watched)), "four values").length).toBe(4);
+    expect(reads, "n + 1 reads for n items").toEqual(["length", "0", "1", "2", "3"]);
+    const notALength = new Proxy([one], { get: (t, name) => (name === "length" ? Symbol("length") : (Reflect.get(t, name) as unknown)) });
+    expect(Value.array(bad(notALength))).toEqual(mismatch("expected an array"));
+  });
+
+  it("a map's entries are an iterable object of [string, value] arrays, each checked as it is read", () => {
+    for (const x of [5, "ab", null, undefined]) expect(Value.map(bad(x)), label(x)).toEqual(mismatch("expected an iterable object of [key, value] entries"));
+    const notOpened = "expected an iterable (its Symbol.iterator, iterator or next is not of the protocol's type)";
+    for (const x of [{}, { [Symbol.iterator]: 5 }, { [Symbol.iterator]: () => 5 }, { [Symbol.iterator]: () => ({ next: 5 }) }]) {
+      expect(Value.map(bad(x))).toEqual(mismatch(notOpened));
+    }
+    const notAResult = { [Symbol.iterator]: () => ({ next: () => 7 }) };
+    expect(Value.map(bad(notAResult))).toEqual(mismatch("an iterator's next() gave a result that is not an object"));
+    expect(Value.map(bad([["a", one], 5]))).toEqual(mismatch("expected a [key, value] array at index 1"));
+    expect(Value.map(bad([["a", one], new Set(["b", one])]))).toEqual(mismatch("expected a [key, value] array at index 1"));
+    expect(Value.map(bad([[1, one]]))).toEqual(mismatch("expected a string key at index 0"));
+    expect(Value.map(bad([["a", 1n]]))).toEqual(mismatch("expected a canonical value at index 0"));
+    expect(Value.map(bad([["a", undefined]]))).toEqual(mismatch("expected a canonical value at index 0"));
+    const m = expectOk(Value.map(new Map<string, Value>([["a", one], ["b", Value.null]])), "a Map");
+    expect(m.keys(), "a null value is dropped").toEqual(["a"]);
+  });
+
+  it("a map's iterator is closed when an entry is refused or caller code throws reading one, as for...of closes it", () => {
+    const log: string[] = [];
+    function* entries(xs: readonly unknown[]): Generator {
+      try {
+        yield* xs;
+      } finally {
+        log.push("closed");
+      }
+    }
+    expect(Value.map(bad(entries([["a", one], ["b", 5]])))).toEqual(mismatch("expected a canonical value at index 1"));
+    expect(log, "refused entry").toEqual(["closed"]);
+    log.length = 0;
+    expect(Value.map(bad(entries([["a", one], ["a", one]])))).toEqual({ ok: false, error: { kind: "DuplicateKey", key: expect.anything() as unknown } });
+    expect(log, "duplicate key").toEqual(["closed"]);
+    log.length = 0;
+    const throwing = Object.defineProperty([], 0, {
+      get: () => {
+        throw new Error("caller code threw");
+      },
+    });
+    expect(() => Value.map(bad(entries([throwing])))).toThrow("caller code threw");
+    expect(log, "caller code throwing while an entry is read").toEqual(["closed"]);
+    log.length = 0;
+    expect(expectOk(Value.map(bad(entries([["a", one]]))), "ends").size).toBe(1);
+    expect(log, "ended normally: the generator's own finally").toEqual(["closed"]);
+    // next() throwing, or a result that is not an object, does not close (for...of does not)
+    const closes: string[] = [];
+    const throwingNext = { [Symbol.iterator]: () => ({ next: () => { throw new Error("next threw"); }, return: () => closes.push("return") }) };
+    expect(() => Value.map(bad(throwingNext))).toThrow("next threw");
+    const sevens = { [Symbol.iterator]: () => ({ next: () => 7, return: () => closes.push("return") }) };
+    expect(Value.map(bad(sevens))).toEqual(mismatch("an iterator's next() gave a result that is not an object"));
+    expect(closes).toEqual([]);
+  });
+});
+
+describe("bytes are read through the array's own slots, never its overridable properties", () => {
+  /** A subclass and an instance whose `length` lies, as any caller can make one. */
+  class Liar extends Uint8Array {}
+  Object.defineProperty(Liar.prototype, "length", { get: () => 32 });
+  const liars = (xs: readonly number[]): readonly Uint8Array[] => [new Liar(xs), Object.defineProperty(Uint8Array.from(xs), "length", { get: () => 32 })];
+
+  it("a lying length is not believed by the constructors, the codecs or the decoder", () => {
+    for (const [i, liar] of liars([1, 2]).entries()) {
+      expect(liar.length, `liar ${i.toString()}`).toBe(32);
+      const v = expectOk(Value.bytes(liar), "a lying length");
+      expect([...v.bytes], `liar ${i.toString()}`).toEqual([1, 2]);
+      expect(v.length).toBe(2);
+      expect(codec.sizedBytes(32, 32).encode(liar), `liar ${i.toString()}`).toEqual(mismatch("byte string of 2 bytes outside the schema size"));
+    }
+    for (const [i, liar] of liars([0x41, 0x07]).entries()) {
+      const d = expectOk(cbor.decode(liar), `liar ${i.toString()}`);
+      expect(d.kind === "bytes" && [...d.bytes]).toEqual([7]);
+    }
+  });
+
+  it("a detached array is read as empty, never thrown on", () => {
+    const buffer = new ArrayBuffer(2);
+    const detached = new Uint8Array(buffer);
+    structuredClone(buffer, { transfer: [buffer] });
+    expect(expectOk(Value.bytes(detached), "detached").length).toBe(0);
+    expect(cbor.decode(detached)).toEqual({ ok: false, error: { kind: "UnexpectedEnd", offset: 0 } });
+  });
+
+  it("cbor.decode refuses what is not bytes, and a depth limit that is not a number", () => {
+    for (const x of ["ab", null, undefined, [0x01], { length: 1, 0: 1 }]) expect(cbor.decode(bad(x)), label(x)).toEqual(mismatch("expected a Uint8Array"));
+    for (const depth of ["1", Number.NaN, 1n, null]) expect(cbor.decode(Uint8Array.of(0x80), bad(depth)), label(depth)).toEqual(mismatch("the depth limit is not a number"));
+    expect(expectOk(cbor.decode(Uint8Array.of(0x80), Number.POSITIVE_INFINITY), "an unbounded limit is the largest").kind).toBe("array");
   });
 });

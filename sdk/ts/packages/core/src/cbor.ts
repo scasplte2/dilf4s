@@ -5,17 +5,18 @@ import { toHex } from "./hex.js";
 import { err, ok, type Result } from "./result.js";
 import { compareBytes, decodeUtf8 } from "./utf8.js";
 import {
-  ArrayValue,
+  arrayOfValues,
   BoolValue,
   BytesValue,
   bytesView,
   entriesView,
   IntValue,
-  MapValue,
+  mapOfValues,
   MAX_DEPTH,
   MAX_INTEGER_BITS,
   MAX_RATIONAL_BITS,
   NullValue,
+  plainBytes,
   RationalValue,
   TextValue,
   utf8View,
@@ -368,10 +369,16 @@ const unexpectedEnd = (offset: number): CanonicalError => ({ kind: "UnexpectedEn
 /**
  * Strictly decodes one canonical value: any other encoding of a value, trailing bytes, or nesting deeper than
  * `maxDepth` (at most {@link MAX_DEPTH}) is an error. When it succeeds, `encode(decode(b)) == b`. The decoder keeps
- * its own frame stack, so input of any nesting is a typed error, never a stack overflow.
+ * its own frame stack, so input of any nesting is a typed error, never a stack overflow. `bytes` that is not a
+ * `Uint8Array`, or a `maxDepth` that is not a number, is a `TypeMismatch`; the bytes are read through `plainBytes`, so
+ * a subclass's `length` is not believed.
  */
 export function decode(bytes: Uint8Array, maxDepth: number = MAX_DEPTH): Result<Value, CanonicalError> {
-  return new Decoder(bytes, Math.min(maxDepth, MAX_DEPTH)).run();
+  // read through plainBytes: what is not bytes is refused, and a subclass's `length` is not believed
+  const input = plainBytes(bytes);
+  if (input === undefined) return err({ kind: "TypeMismatch", reason: "expected a Uint8Array" });
+  if (typeof (maxDepth as unknown) !== "number" || Number.isNaN(maxDepth)) return err({ kind: "TypeMismatch", reason: "the depth limit is not a number" });
+  return new Decoder(input, Math.min(maxDepth, MAX_DEPTH)).run();
 }
 
 class Decoder {
@@ -392,7 +399,7 @@ class Decoder {
       if (!it.open) value = it.value;
       else if (this.#stack.length >= this.maxDepth) return err({ kind: "DepthExceeded", limit: this.maxDepth });
       else if (it.count === 0) {
-        const empty = it.map ? MapValue.of([]) : ArrayValue.of([]);
+        const empty = it.map ? mapOfValues([]) : arrayOfValues([]);
         if (!empty.ok) return empty;
         value = empty.value;
       } else {
@@ -436,7 +443,7 @@ class Decoder {
       }
       if (frame.remaining > 0) return ok({ done: false, pos: end });
       this.#stack.pop();
-      const closed = frame.map ? MapValue.of(frame.entries) : ArrayValue.of(frame.items);
+      const closed = frame.map ? mapOfValues(frame.entries) : arrayOfValues(frame.items);
       if (!closed.ok) return closed;
       current = closed.value;
       from = end;
@@ -456,7 +463,9 @@ class Decoder {
       }
       case 2: {
         const s = this.span(end, argument);
-        return s.ok ? scalar(BytesValue.of(s.value.bytes), s.value.end) : s;
+        if (!s.ok) return s;
+        const b = BytesValue.of(s.value.bytes);
+        return b.ok ? scalar(b.value, s.value.end) : b;
       }
       case 3: {
         const s = this.span(end, argument);

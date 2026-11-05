@@ -11,12 +11,13 @@
 import { bitLength } from "./bigint.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
 import { decodeFailure as failure, type CanonicalError, type DecodeFailure, type TooLarge } from "./error.js";
+import { close as closeIterator, isResult, NOT_A_RESULT, NOT_ITERABLE, open, type Reader } from "./iterator.js";
 import { parse as parseJson } from "./json.js";
 import { Preview } from "./preview.js";
 import { search } from "./keyset.js";
 import { err, ok, type Err, type Result } from "./result.js";
 import { encodeUtf8, utf8Length } from "./utf8.js";
-import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isBytes, isValue, MapValue, MAX_DEPTH, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
+import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, MAX_WEIGHT, plainBytes, TextValue, type Entry, type Value } from "./value.js";
 
 export type { Value } from "./value.js";
 export { ok } from "./result.js";
@@ -124,7 +125,7 @@ export function toCbor<T>(codec: Codec<T>, value: T): Result<Uint8Array, Canonic
 
 /** The typed value of canonical CBOR. */
 export function fromCbor<T>(codec: Codec<T>, bytes: Uint8Array): Result<T, ModelError> {
-  if (!isBytes(bytes)) return err({ kind: "Canonical", error: { kind: "TypeMismatch", reason: "expected a Uint8Array" } });
+  // cbor.decode refuses what is not bytes, and reads them through plainBytes
   const v = decodeCbor(bytes);
   if (!v.ok) return err({ kind: "Canonical", error: v.error });
   const d = codec.decode(v.value);
@@ -165,7 +166,7 @@ export const any: Codec<Value> = leaf(
 );
 
 export const bool: Codec<boolean> = leaf(
-  (b) => (typeof (b as unknown) === "boolean" ? ok(BoolValue.of(b)) : notA("a boolean")),
+  (b) => BoolValue.of(b),
   (v) => (v.kind === "bool" ? ok(v.value) : expected("bool", v)),
 );
 
@@ -200,8 +201,10 @@ export function sizedBytes(lo: number, hi: number | null): Codec<Uint8Array> {
   const fits = (n: number): boolean => n >= lo && (hi === null || n <= hi);
   return leaf(
     (b) => {
-      if (!isBytes(b)) return notA("a Uint8Array");
-      return fits(b.length) ? ok(BytesValue.of(b)) : typeMismatch(`byte string of ${b.length.toString()} bytes outside the schema size`);
+      // the array's own length, never a subclass's `length`
+      const view = plainBytes(b);
+      if (view === undefined) return notA("a Uint8Array");
+      return fits(view.length) ? BytesValue.of(view) : typeMismatch(`byte string of ${view.length.toString()} bytes outside the schema size`);
     },
     (v) => {
       if (v.kind !== "bytes") return expected("bytes", v);
@@ -539,14 +542,6 @@ function follow<V, D>(
   }
 }
 
-/** An iterator and its `next`, read once when it is opened, as `for...of` reads it. */
-interface Reader<T> {
-  readonly iterator: Iterator<T>;
-  readonly next: () => IteratorResult<T>;
-}
-
-const reader = <T>(iterator: Iterator<T>): Reader<T> => ({ iterator, next: iterator.next.bind(iterator) });
-
 /**
  * Closes the iterators of the vectors and maps still open, from the frame at `i` outwards, as leaving `for...of` loops
  * early does: an outer one is closed even when an inner one's `return` throws. One frame a level, and a depth is a
@@ -560,8 +555,8 @@ function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
   const frame = stack[i];
   if (frame === undefined) return;
   try {
-    if (frame.kind === "vector") frame.items.iterator.return?.();
-    else if (frame.kind === "textMap") frame.entries.iterator.return?.();
+    if (frame.kind === "vector") closeIterator(frame.items);
+    else if (frame.kind === "textMap") closeIterator(frame.entries);
   } finally {
     close(stack, i - 1);
   }
@@ -577,7 +572,7 @@ type EncodeStep = { readonly codec: Codec<unknown>; readonly value: unknown; rea
  */
 type Encoding =
   | { readonly kind: "vector"; readonly items: Reader<unknown>; readonly element: Codec<unknown>; readonly depth: number; readonly out: Value[] }
-  | { readonly kind: "textMap"; readonly entries: Reader<readonly [string, unknown]>; key: string; readonly value: Codec<unknown>; readonly depth: number; readonly out: (readonly [string, Value])[] }
+  | { readonly kind: "textMap"; readonly entries: Reader<unknown>; key: string; readonly value: Codec<unknown>; readonly depth: number; readonly out: (readonly [string, Value])[] }
   | { readonly kind: "record"; readonly fields: readonly RecordField[]; readonly of: object; readonly depth: number; at: number; readonly out: (readonly [string, Value])[] };
 
 /** The encoder: one loop, an explicit stack of the containers open, and nothing recursive. */
@@ -624,12 +619,15 @@ function openEncoding(codec: Codec<unknown>, value: unknown, depth: number, stac
       if (!Array.isArray(value)) return { done: typeMismatch("expected an array") };
       const items: readonly unknown[] = value;
       if (items.length < s.min || (s.max !== null && items.length > s.max)) return { done: typeMismatch(`array of ${items.length.toString()} elements outside the schema size`) };
-      return opened({ kind: "vector", items: reader(items[Symbol.iterator]()), element: s.element, depth: depth + 1, out: [] }, stack);
+      const read = open<unknown>(items);
+      if (read === undefined) return { done: typeMismatch(NOT_ITERABLE) };
+      return opened({ kind: "vector", items: read, element: s.element, depth: depth + 1, out: [] }, stack);
     }
     case "textMap": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
       if (typeof value !== "object" || value === null || !(Symbol.iterator in value)) return { done: typeMismatch("expected a map") };
-      const entries = reader((value as Iterable<readonly [string, unknown]>)[Symbol.iterator]());
+      const entries = open<unknown>(value);
+      if (entries === undefined) return { done: typeMismatch(NOT_ITERABLE) };
       return opened({ kind: "textMap", entries, key: "", value: s.value, depth: depth + 1, out: [] }, stack);
     }
     case "record": {
@@ -666,34 +664,31 @@ function nextEncoding(top: Encoding, v: Value, stack: Encoding[]): EncodeStep {
 /** The next element or entry of an open vector or map, read from its iterator, or its outcome. */
 function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack: Encoding[]): EncodeStep {
   // off the stack while its own next() runs and its result is read (done, then value), as for...of does not close an
-  // iterator for those; back on it for anything after, a map entry's destructuring included, which for...of does close
-  // it for. Any truthy `done` ends it. A result that is no object, which for...of throws a TypeError for without closing
+  // iterator for those; back on it for anything after, a map entry's reading included, which for...of does close it
+  // for. Any truthy `done` ends it. A result that is no object, which for...of throws a TypeError for without closing
   // that iterator, is refused (the iterators around it are closed, as that TypeError would close them)
   stack.pop();
   if (top.kind === "vector") {
     const item: unknown = top.items.next();
-    if (!isResult(item)) return { done: typeMismatch(notAResult) };
+    if (!isResult(item)) return { done: typeMismatch(NOT_A_RESULT) };
     if (item.done) return { done: ArrayValue.of(top.out) };
     const value: unknown = item.value;
     stack.push(top);
     return { codec: top.element, value, depth: top.depth };
   }
   const entry: unknown = top.entries.next();
-  if (!isResult(entry)) return { done: typeMismatch(notAResult) };
+  if (!isResult(entry)) return { done: typeMismatch(NOT_A_RESULT) };
   if (entry.done) return { done: MapValue.of(top.out) };
-  const pair = entry.value as readonly [string, unknown];
+  const pair: unknown = entry.value;
   stack.push(top);
-  const [key, x] = pair;
+  // read by index, never destructured: an entry that is not an array, which destructuring throws a TypeError for, is
+  // refused (and its iterator closed, as that TypeError would close it)
+  if (!Array.isArray(pair)) return { done: notA("a map entry (a [key, value] array)") };
+  const key: unknown = pair[0];
+  const x: unknown = pair[1];
   if (!isString(key)) return { done: notA("a text map key (a string)") };
   top.key = key;
   return { codec: top.value, value: x, depth: top.depth };
-}
-
-const notAResult = "an iterator's next() gave a result that is not an object";
-
-/** Whether `r` may be read as an iterator result: an object (a function included), as for...of requires. */
-function isResult(r: unknown): r is { readonly done?: unknown; readonly value?: unknown } {
-  return (typeof r === "object" && r !== null) || typeof r === "function";
 }
 
 /** The next field of an open record with a value (an absent optional field is left out), or the record's map. */

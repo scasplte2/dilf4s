@@ -14,7 +14,7 @@ import { KeySet } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { compareCodePoints } from "./utf8.js";
-import { ArrayValue, BoolValue, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
+import { arrayOfValues, BoolValue, entriesView, IntValue, isValue, mapOfValues, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
 
 const INT32_MAX = 2n ** 31n - 1n;
 const INT32_MIN = -(2n ** 31n);
@@ -91,7 +91,7 @@ class Parser {
             const q = this.skipWs(p + 1);
             const object = c === "{";
             if (this.s[q] === (object ? "}" : "]")) {
-              const empty = object ? MapValue.of([]) : ArrayValue.of([]);
+              const empty = object ? mapOfValues([]) : arrayOfValues([]);
               if (!empty.ok) return empty;
               state = { step: "deliver", value: empty.value };
               pos = q + 1;
@@ -138,7 +138,7 @@ class Parser {
               state = { step: "value" };
             } else {
               stack.pop();
-              const arr = ArrayValue.of(frame.items);
+              const arr = arrayOfValues(frame.items);
               if (!arr.ok) return arr;
               state = { step: "deliver", value: arr.value };
             }
@@ -149,7 +149,7 @@ class Parser {
               state = { step: "key" };
             } else {
               stack.pop();
-              const map = MapValue.of(frame.entries);
+              const map = mapOfValues(frame.entries);
               if (!map.ok) return map;
               state = { step: "deliver", value: map.value };
             }

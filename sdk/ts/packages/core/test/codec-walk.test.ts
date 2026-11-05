@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { codec, describeFailure, json, MAX_DEPTH, Value, type Result } from "../src/index.js";
 import type { Codec } from "../src/codec.js";
-import { expectOk, int } from "./vectors.js";
+import { boolValue, expectOk, int } from "./vectors.js";
 
 const { defer, leaf, optional, record, required, textMap, uint, union, alternative, vector } = codec;
 
@@ -127,7 +127,7 @@ describe("what the walks read and refuse", () => {
 
   it("a refusal names the path to it, outermost first", () => {
     const bad = map([
-      ["list", array([inner(int(1n)), inner(Value.bool(true))])],
+      ["list", array([inner(int(1n)), inner(boolValue(true))])],
       ["by-name", map([])],
     ]);
     expect(decoded(Outer.decode(bad))).toBe("list.[1].x: expected int, got bool");
@@ -178,7 +178,7 @@ describe("what the walks read and refuse", () => {
     expect(U.encode({ a: 1n, b: 2n })).toMatchObject({ ok: false, error: { reason: "no alternative of U fits" } });
     // a text where no text alternative exists (outside the type): a refusal, never a TypeError
     expect(NoText.encode("a" as unknown as A)).toMatchObject({ ok: false, error: { reason: "no alternative of NoText fits" } });
-    expect(decoded(U.decode(Value.bool(true)))).toBe("<root>: expected a map or one of the text alternatives");
+    expect(decoded(U.decode(boolValue(true)))).toBe("<root>: expected a map or one of the text alternatives");
   });
 
   it("a union reads the fields of every alternative in UTF-16 order, once per alternative it tries", () => {
@@ -475,11 +475,27 @@ describe("closing iterators as for...of does", () => {
     expect(log).toEqual(["return-outer"]);
   });
 
-  it("a map entry that cannot be destructured closes its iterator", () => {
-    const log: string[] = [];
-    const m = { [Symbol.iterator]: () => logged("map", [5], log) } as unknown as ReadonlyMap<string, bigint>;
-    expect(() => textMap(uint).encode(m)).toThrow(TypeError);
-    expect(log).toEqual(["return-map"]);
+  it("a map entry that is not an array is refused, never destructured, and closes its iterator", () => {
+    for (const [i, entry] of [5, null, "ab", new Set(["a", 1n])].entries()) {
+      const log: string[] = [];
+      const m = { [Symbol.iterator]: () => logged("map", [entry], log) } as unknown as ReadonlyMap<string, bigint>;
+      expect(textMap(uint).encode(m), `entry ${i.toString()}`).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "expected a map entry (a [key, value] array)" } });
+      expect(log, `entry ${i.toString()}`).toEqual(["return-map"]);
+    }
+  });
+
+  it("an iterable whose iterator for...of could not open is refused before anything is read", () => {
+    const notOpened = "expected an iterable (its Symbol.iterator, iterator or next is not of the protocol's type)";
+    const broken = [{ [Symbol.iterator]: 5 }, { [Symbol.iterator]: () => 5 }, { [Symbol.iterator]: () => ({ next: 5 }) }];
+    for (const m of broken) expect(textMap(uint).encode(m as unknown as ReadonlyMap<string, bigint>)).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: notOpened } });
+    const array = Object.assign([1n], { [Symbol.iterator]: () => 5 });
+    expect(vector(uint, 0, null).encode(array)).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: notOpened } });
+  });
+
+  it("a return that is not a function is skipped, as an absent one is", () => {
+    const it = { next: () => ({ done: false, value: [1, 1n] }), return: 5 };
+    const m = { [Symbol.iterator]: () => it } as unknown as ReadonlyMap<string, bigint>;
+    expect(textMap(uint).encode(m)).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "expected a text map key (a string)" } });
   });
 
   it("any truthy done ends the walk", () => {

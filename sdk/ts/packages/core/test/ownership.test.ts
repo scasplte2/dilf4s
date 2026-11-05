@@ -2,20 +2,20 @@ import { Buffer } from "node:buffer";
 
 import { describe, expect, it } from "vitest";
 
-import { BytesValue, cbor, codec, toHex } from "../src/index.js";
-import { expectOk } from "./vectors.js";
+import { cbor, codec, toHex } from "../src/index.js";
+import { bytesValue, expectOk } from "./vectors.js";
 
 // Buffer#slice and Buffer#subarray share memory, so a Buffer must be copied into a plain Uint8Array.
 describe("byte strings own their bytes", () => {
   it("a BytesValue made from a Buffer does not follow the Buffer", () => {
     const source = Buffer.from([1, 2]);
-    const v = BytesValue.of(source);
+    const v = bytesValue(source);
     source[0] = 9;
     expect(toHex(v.bytes)).toBe("0102");
   });
 
   it("the bytes getter hands out a copy, even from a Buffer", () => {
-    const v = BytesValue.of(Buffer.from([1, 2]));
+    const v = bytesValue(Buffer.from([1, 2]));
     const out = v.bytes;
     out[0] = 9;
     expect(toHex(v.bytes)).toBe("0102");

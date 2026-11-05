@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { cbor, type IntValue, json, type Result, Value } from "../src/index.js";
+import { type BoolValue, type BytesValue, cbor, type IntValue, json, type Result, Value } from "../src/index.js";
 import type { Codec } from "../src/codec.js";
 import { describeFailure } from "../src/error.js";
 
@@ -20,6 +20,12 @@ export function expectOk<T, E>(r: Result<T, E>, what: string): T {
 
 /** The integer `n`, which a test knows is within the data model's bound (`MAX_INTEGER_BITS`). */
 export const int = (n: bigint): IntValue => expectOk(Value.int(n), "an integer within MAX_INTEGER_BITS");
+
+/** The byte string holding a copy of `b`, which a test knows is a `Uint8Array`. */
+export const bytesValue = (b: Uint8Array): BytesValue => expectOk(Value.bytes(b), "a Uint8Array");
+
+/** The boolean `b`, which a test knows is a boolean. */
+export const boolValue = (b: boolean): BoolValue => expectOk(Value.bool(b), "a boolean");
 
 /**
  * The canonical CBOR of the integer `n`, whatever its width: what {@link cbor.encode} writes when `n` is a value, and for

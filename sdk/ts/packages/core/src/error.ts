@@ -38,6 +38,12 @@ export type CanonicalError =
   | { readonly kind: "InvalidUtf8"; readonly offset: number };
 
 /**
+ * The refusal of an argument that is not of its static type (a JavaScript caller's, or one cast past the types), found
+ * in O(1) before it is read: `CanonicalError`'s `TypeMismatch`. `reason` says what was expected, never what was given.
+ */
+export type TypeMismatch = Extract<CanonicalError, { readonly kind: "TypeMismatch" }>;
+
+/**
  * A value whose canonical CBOR, commitment or JSON is longer than a limit, found without producing more than the limit.
  * It carries the limit only: how far past it the value goes is never measured (docs/specs/conformance.md).
  */
