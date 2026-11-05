@@ -64,9 +64,7 @@ A refusal costs no more than the spec says, whatever the input:
   at a ceiling of its own and refuses past it as `TooLarge`, never with an exception: the TypeScript SDK encodes,
   commits and content-hashes within 2^31 - 1 bytes (`cbor.MAX_ENCODED_BYTES`, the largest array the JVM reference can
   build), and renders JSON only within a limit the caller names (at most 2^29 - 24 bytes, its string ceiling). Its
-  public leaf and value hashing refuse a commitment past that ceiling as `TooLarge` with the ceiling as its limit. The
-  JVM reference renders JSON within the same 2^29 - 24 bytes (`CanonicalJson.MaxRenderBytes`, which its string builder
-  holds whatever the text and however it grows), or within a smaller limit the caller names (`renderWithin`, refusing past it as `TooLarge`). Values
+  public leaf and value hashing refuse a commitment past that ceiling as `TooLarge` with the ceiling as its limit. Values
   that large are far past every limit these specs set (§5 caps every claim at 2^24), so no vector depends on a ceiling.
 - **Verifier inputs** are bounded by weight before they are decoded (§5).
 - **Listing checks.** `trie_prefix_verify` and `trie_range_verify` do work linear in the proof's weight plus the
