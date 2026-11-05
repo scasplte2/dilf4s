@@ -11,6 +11,7 @@ import cats.syntax.all._
  *   - every integer is a `bigint`; byte strings are `Uint8Array`; text-keyed maps are `ReadonlyMap`
  *   - an enumeration is a union of its labels; a union of records is a plain TypeScript union, told apart when
  *     encoding by the same key sets that select it when decoding
+ *   - an error family is a union of readonly object types told apart by `kind`; no codec
  *   - every reference is deferred, so modules may refer to rules in any order, recursively
  *
  * Codecs never throw: they return the core's `Result`.
@@ -113,8 +114,14 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
        |""".stripMargin
   }
 
-  private def union(rule: QName, alts: Vector[UnionAlternative], texts: Vector[String]): Either[GenError, String] = {
+  private def union(
+    rule:     QName,
+    alts:     Vector[UnionAlternative],
+    ownTexts: Vector[String],
+    choices:  Vector[TextChoice]
+  ): Either[GenError, String] = {
     val n = typeName(rule)
+    val texts = ownTexts ++ choices.flatMap(_.texts)
     // encoding tells record alternatives apart by their field names, decoding by their wire keys
     val fieldsOf: Either[GenError, Vector[(UnionAlternative, Vector[ProfileField])]] = alts.traverse { a =>
       models.get(a.rule) match {
@@ -141,7 +148,7 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
       val dec = names.zipWithIndex.map { case (t, i) => s"      case $i:\n        return $t.decode(v);" } ++
         texts.zipWithIndex.map { case (t, i) => s"      case ${alts.size + i}:\n        return c.ok<$n>(${string(t)});" }
       s"""${doc(rule)}
-         |export type $n = ${(names ++ texts.map(string)).mkString(" | ")};
+         |export type $n = ${(names ++ ownTexts.map(string) ++ choices.map(ch => qualified(rule.module, ch.rule))).mkString(" | ")};
          |
          |export const $n: c.Codec<$n> = {
          |  encode: (a${if (alts.isEmpty) "" else ", d"}) => {$textBranch$objectBranch
@@ -160,6 +167,39 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
          |""".stripMargin
     }
   }
+
+  /** Whether an error field is an integer, directly or through aliases. */
+  @scala.annotation.tailrec
+  private def integer(t: FieldType): Boolean = t match {
+    case FieldType.Uint | FieldType.Int | FieldType.Nint | FieldType.IntRange(_, _) => true
+    case FieldType.Ref(q) =>
+      models.get(q) match {
+        case Some(ModelRule.Alias(target)) => integer(target)
+        case _                             => false
+      }
+    case _ => false
+  }
+
+  /**
+   * A union of readonly object types, one per kind, each with its `kind`. An integer field is a `number`, the type of
+   * the SDK's own sizes and periods: an error is built from the SDK's arguments, never decoded.
+   */
+  private def errorFamily(rule: QName, kinds: QName, cases: Vector[ErrorCase]): Either[GenError, String] =
+    cases
+      .traverse(c =>
+        fields(rule, c.fields).map(fs => c -> fs.zip(c.fields).map { case (f, p) => if (integer(p.tpe)) f.copy(tpe = "number") else f })
+      )
+      .map { withFields =>
+        val members = withFields.map {
+          case (c, fs) =>
+            val props = s"readonly kind: ${string(c.kind)}" +: fs.map(f => s"readonly ${f.name}${if (f.optional) "?" else ""}: ${f.tpe}")
+            s"  | { ${props.mkString("; ")} }"
+        }
+        // members start with `|`, which stripMargin would take for the margin: they are appended after it
+        s"""/** `${rule.name}` (`shared/schemas/${rule.module}.cddl`): an error family, by `kind` (`${qualified(rule.module, kinds)}`). */
+         |export type ${typeName(rule)} =
+         |""".stripMargin + members.mkString("\n") + ";\n"
+      }
 
   private def alias(rule: QName, t: FieldType): String = {
     val (tpe, codec) = ts(rule, t)
@@ -192,11 +232,12 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
       )
     problem.toLeft(()).flatMap { _ =>
       rules.traverse {
-        case (q, ModelRule.Record(fs))       => record(q, fs)
-        case (q, ModelRule.Enumeration(cs))  => enumeration(q, cs).asRight
-        case (q, ModelRule.Union(as, texts)) => union(q, as, texts)
-        case (q, ModelRule.Alias(t))         => alias(q, t).asRight
-        case (q, ModelRule.Constant(v))      => constant(q, v).asRight
+        case (q, ModelRule.Record(fs))             => record(q, fs)
+        case (q, ModelRule.Enumeration(cs))        => enumeration(q, cs).asRight
+        case (q, ModelRule.Union(as, texts, cs))   => union(q, as, texts, cs)
+        case (q, ModelRule.ErrorFamily(ks, cases)) => errorFamily(q, ks, cases)
+        case (q, ModelRule.Alias(t))               => alias(q, t).asRight
+        case (q, ModelRule.Constant(v))            => constant(q, v).asRight
       }.map { bodies =>
         val code = bodies.mkString("\n")
         val others = models.keys.collect {
@@ -204,10 +245,16 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
         }.toList.distinct.sorted
         val imports =
           Option.when("(?<![A-Za-z0-9_$.])c\\.".r.findFirstIn(code).isDefined)(s"""import * as c from "../codec.js";""").toList ++
-          others.map(m => s"""import * as ${namespace(m)} from "./${CanonicalEmitter.packageSegment(m)}.js";""")
+          others.map { m =>
+            // a module named only in types (a choice of its texts) is imported as types: its codecs are not used
+            val ns = namespace(m)
+            val asValue = code.contains(s"() => $ns.") || s"\\b$ns\\.[A-Za-z0-9_]+\\.(encode|decode)\\(".r.findFirstIn(code).isDefined
+            s"""import ${if (asValue) "" else "type "}* as $ns from "./${CanonicalEmitter.packageSegment(m)}.js";"""
+          }
+        // the code is not margin-stripped again: an error family's members start with `|`
         s"""// GENERATED by models-gen from shared/schemas/$name.cddl. Do not edit.
            |${imports.map(_ + "\n").mkString}
-           |$code""".stripMargin
+           |""".stripMargin + code
       }
     }
   }

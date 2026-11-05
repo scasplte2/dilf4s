@@ -1,0 +1,14 @@
+; Emitter fixture (not a dilf4s format): an error family whose fields are text, integers, an optional integer and a
+; kind, beside a choice that names its kinds.
+
+failure-kind = "Broken" / "Gone" / "Refused"
+
+failure = {
+  "kind": "Broken", "what": text, "size": uint .le 9223372036854775807, ? "limit": 0..1024 //
+  "kind": "Gone" //
+  "kind": "Refused", "why": why, "type": text
+}
+
+why = "early" / "late"
+
+outcome = "fine" / failure-kind

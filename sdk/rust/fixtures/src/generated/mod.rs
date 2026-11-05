@@ -2,4 +2,5 @@
 
 pub mod fixture_a;
 pub mod fixture_b;
+pub mod fixture_errors;
 pub mod fixture_limits;
