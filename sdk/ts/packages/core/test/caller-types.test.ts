@@ -285,3 +285,16 @@ describe("bytes are read through the array's own slots, never its overridable pr
     expect(expectOk(cbor.decode(Uint8Array.of(0x80), Number.POSITIVE_INFINITY), "an unbounded limit is the largest").kind).toBe("array");
   });
 });
+
+describe("a decimal is of a rational this package made", () => {
+  it("json.decimal refuses what is not a RationalValue, never reading a numerator and denominator from it", () => {
+    const quarter = expectOk(Value.number(1n, 4n), "1/4");
+    expect(json.decimal(bad(quarter))).toEqual({ ok: true, value: "0.25" });
+    const third = expectOk(Value.number(1n, 3n), "1/3");
+    expect(json.decimal(bad(third))).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "non-terminating rational" } });
+    const lookalike = { kind: "rational", numerator: 1n, denominator: 4n };
+    for (const x of [5, null, undefined, "0.25", lookalike, Object.create(RationalValue.prototype), int(1n)]) {
+      expect(json.decimal(bad(x)), label(x)).toEqual(mismatch("expected a RationalValue"));
+    }
+  });
+});
