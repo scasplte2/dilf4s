@@ -23,8 +23,10 @@ export { ok } from "./result.js";
 
 /**
  * Encodes `T` to a canonical value and decodes it back. `depth` is the nesting level of the value being encoded (0 at
- * the root): containers refuse to go past {@link MAX_DEPTH} before descending, so a deeply nested model is a typed
- * `DepthExceeded`, never a stack overflow.
+ * the root, which is the default): containers refuse to go past {@link MAX_DEPTH} before descending, so a deeply nested
+ * model is a typed `DepthExceeded`, never a stack overflow. A depth that is not a whole number from 0 (negative, a
+ * fraction, `NaN`, infinite) is a `TypeMismatch`, before anything is read: such a depth would never reach the limit.
+ * A hand-made codec composing others passes on the depth it was given, plus one for each container it writes.
  *
  * Decoding walks the value as the schema reads it, so a value built with shared parts costs up to its weight, and every
  * byte string read is copied each time it occurs: decode a caller's value with {@link decodeWithin}. Neither direction
@@ -32,9 +34,10 @@ export { ok } from "./result.js";
  * is called through its own `encode` and `decode` wherever it is composed, and recurses as it does.
  *
  * `encode` and `decode` are methods, so TypeScript compares a codec's type parameter bivariantly: a `Codec<"x">` is
- * accepted where a `Codec<string>` is expected. An explicit type argument to a combinator (`required<string>(...)`,
- * `vector<T>(...)`, `defer<T>(...)`, ...) is therefore unchecked and acts as a cast; let inference pick it, and the
- * record and union combinators check each part against its property's type.
+ * accepted where a `Codec<string>` is expected. An explicit type argument to a combinator that is wider than its codec's
+ * type (`required<string>(key, literalText("x"))`, `vector<string>(literalText("x"), ...)`) is therefore unchecked and
+ * acts as a cast; a narrower one is refused, as `decode`'s result is still checked. Let inference pick it: the record
+ * and union combinators then check each part against its property's type.
  */
 export interface Codec<T> {
   encode(value: T, depth?: number): Result<Value, CanonicalError>;
@@ -81,7 +84,8 @@ const made = new WeakSet<Codec<unknown>>();
 function codecOf<T>(shape: CodecShape): Codec<T> {
   const codec: Codec<T> = Object.freeze({
     shape,
-    encode: (value: T, depth = 0) => encodeWith(codec, value, depth),
+    encode: (value: T, depth = 0) =>
+      Number.isSafeInteger(depth) && depth >= 0 ? encodeWith(codec, value, depth) : typeMismatch("the depth is not a whole number from 0"),
     // the combinators that built `shape` keep its parts' types, so what it decodes is a `T`
     decode: (value: Value) => decodeWith(codec, value) as Result<T, DecodeFailure>,
   });
@@ -89,7 +93,7 @@ function codecOf<T>(shape: CodecShape): Codec<T> {
   return codec;
 }
 
-/** A codec that reads and writes a value whole, calling no other codec. An explicit `T` is unchecked (see {@link Codec}). */
+/** A codec that reads and writes a value whole, calling no other codec. */
 export function leaf<T>(encode: (value: T) => Result<Value, CanonicalError>, decode: (value: Value) => Result<T, DecodeFailure>): Codec<T> {
   return codecOf({ kind: "leaf", encode, decode });
 }
@@ -288,14 +292,14 @@ export function intEnum<L extends string>(name: string, cases: readonly (readonl
 
 /**
  * A codec referenced by name and resolved on use, so rules may refer to each other in any order, recursively. An
- * explicit `T` is unchecked and acts as a cast (see {@link Codec}): let inference pick it.
+ * explicit wider `T` is unchecked and acts as a cast (see {@link Codec}): let inference pick it.
  */
 export function defer<T>(codec: () => Codec<T>): Codec<T> {
   return codecOf({ kind: "defer", resolve: codec });
 }
 
 /**
- * A homogeneous array of `min` to `max` elements (`max` unbounded when `null`). An explicit `T` is unchecked and acts
+ * A homogeneous array of `min` to `max` elements (`max` unbounded when `null`). An explicit wider `T` is unchecked and acts
  * as a cast (see {@link Codec}): let inference pick it.
  */
 export function vector<T>(element: Codec<T>, min: number, max: number | null): Codec<readonly T[]> {
@@ -304,7 +308,7 @@ export function vector<T>(element: Codec<T>, min: number, max: number | null): C
 
 /**
  * A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`), decoded in canonical key order. An
- * explicit `T` is unchecked and acts as a cast (see {@link Codec}): let inference pick it.
+ * explicit wider `T` is unchecked and acts as a cast (see {@link Codec}): let inference pick it.
  */
 export function textMap<T>(value: Codec<T>): Codec<ReadonlyMap<string, T>> {
   return codecOf({ kind: "textMap", value });
@@ -374,14 +378,14 @@ export interface OptionalField<V> {
 
 /**
  * A field of a record that every value has. Let inference pick `V`, the codec's own type, which {@link record} then
- * checks against the property's type exactly. An explicit `V` is unchecked and acts as a cast:
+ * checks against the property's type exactly. An explicit wider `V` is unchecked and acts as a cast:
  * `required<string>(key, literalText("x"))` compiles, and writes `"x"` whatever the property holds.
  */
 export function required<V>(key: string, codec: Codec<V>): RequiredField<V> {
   return { key, codec, optional: false };
 }
 
-/** An optional field of a record. As with {@link required}, an explicit `V` is unchecked and acts as a cast. */
+/** An optional field of a record. As with {@link required}, an explicit wider `V` is unchecked and acts as a cast. */
 export function optional<V>(key: string, codec: Codec<V>): OptionalField<V> {
   return { key, codec, optional: true };
 }
@@ -421,7 +425,7 @@ export interface Alternative<A> {
 
 /**
  * The alternative `codec`, with its required and allowed field names, then its required and allowed wire keys. An
- * explicit `A` is unchecked and acts as a cast (see {@link Codec}); {@link union} checks that `A` is one of its members.
+ * explicit wider `A` is unchecked and acts as a cast (see {@link Codec}); {@link union} checks that `A` is one of its members.
  */
 export function alternative<A>(codec: Codec<A>, names: readonly [readonly string[], readonly string[]], keys: readonly [readonly string[], readonly string[]]): Alternative<A> {
   return { codec, required: names[0], allowed: names[1], keys };
@@ -517,8 +521,12 @@ const reader = <T>(iterator: Iterator<T>): Reader<T> => ({ iterator, next: itera
 
 /**
  * Closes the iterators of the vectors and maps still open, from the frame at `i` outwards, as leaving `for...of` loops
- * early does: an outer one is closed even when an inner one's `return` throws (that error then propagates). One frame
- * a level, so the recursion is at most {@link MAX_DEPTH} deep.
+ * early does: an outer one is closed even when an inner one's `return` throws. One frame a level, and a depth is a
+ * whole number from 0, so the recursion is at most {@link MAX_DEPTH} deep.
+ *
+ * Unlike `for...of`, the error that surfaces is the last one thrown: a `return` that throws replaces any error already
+ * propagating (a caller's, or an inner `return`'s), where `for...of` keeps the first and drops the rest. Keeping the
+ * first would need a catch clause, which this SDK does not use.
  */
 function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
   const frame = stack[i];
@@ -629,20 +637,21 @@ function nextEncoding(top: Encoding, v: Value, stack: Encoding[]): EncodeStep {
 
 /** The next element or entry of an open vector or map, read from its iterator, or its outcome. */
 function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack: Encoding[]): EncodeStep {
+  // off the stack while its own next() runs, as for...of does not close an iterator whose next() threw; back on it for
+  // anything after, a map entry's destructuring included, which for...of does close it for. Any truthy `done` ends it
+  stack.pop();
   if (top.kind === "vector") {
     const item = top.items.next();
-    if (item.done !== true) return { codec: top.element, value: item.value, depth: top.depth };
-    stack.pop();
-    return { done: ArrayValue.of(top.out) };
+    if (item.done) return { done: ArrayValue.of(top.out) };
+    stack.push(top);
+    return { codec: top.element, value: item.value, depth: top.depth };
   }
   const entry = top.entries.next();
-  if (entry.done !== true) {
-    const [key, x] = entry.value;
-    top.key = key;
-    return { codec: top.value, value: x, depth: top.depth };
-  }
-  stack.pop();
-  return { done: MapValue.of(top.out) };
+  if (entry.done) return { done: MapValue.of(top.out) };
+  stack.push(top);
+  const [key, x] = entry.value;
+  top.key = key;
+  return { codec: top.value, value: x, depth: top.depth };
 }
 
 /** The next field of an open record with a value (an absent optional field is left out), or the record's map. */
