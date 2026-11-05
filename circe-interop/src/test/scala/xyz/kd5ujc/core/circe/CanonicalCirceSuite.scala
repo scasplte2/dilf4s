@@ -22,13 +22,11 @@ object CanonicalCirceSuite extends SimpleIOSuite with Checkers {
     def rational(n: BigInt, d: BigInt) =
       Ratio.of(n, d).fold(e => sys.error(e.toString), r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity))
     val third = rational(BigInt(1) << 30000, BigInt(3))
-    // a rational that wide is no value (CanonicalValue.MaxRationalBits); the widest integer is, and too long to render
+    // a rational that wide is no value (CanonicalValue.MaxRationalBits); the widest integer is, and converts
     val huge = xyz.kd5ujc.core.canonical.CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect
       .same(Left(NotJsonRepresentable("non-terminating rational of 30001/2 bits")), CanonicalCirce.toCirce(third))
-      .and(
-        expect.same(Left(NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")), CanonicalCirce.toCirce(huge))
-      )
+      .and(expect.same(Right(Json.fromBigInt(huge.value)), CanonicalCirce.toCirce(huge)))
       .and(expect.same(CanonicalJson.render(third).map(_ => ()), CanonicalCirce.toCirce(third).map(_ => ())))
   }
 

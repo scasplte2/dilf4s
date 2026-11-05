@@ -59,7 +59,7 @@ object Values {
     }
 
   /**
-   * A number result, within [[MaxNumberBits]]: far inside the data model's integer and rational bounds (33220 bits),
+   * A number result, within [[MaxNumberBits]]: far inside the data model's integer and rational bounds (33219 bits),
    * so the constructor's refusal is never reached, and would be the same `Limit`.
    */
   def num(op: Op, r: Ratio): Either[JlvmError, CanonicalValue] =

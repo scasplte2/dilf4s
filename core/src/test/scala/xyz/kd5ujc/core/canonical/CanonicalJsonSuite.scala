@@ -18,25 +18,26 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
       Ratio.of(n, d).fold(e => sys.error(e.toString), r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity))
     val third = rational(BigInt(1) << 30000, BigInt(3))
     val refusal = NotJsonRepresentable("non-terminating rational of 30001/2 bits")
-    // a rational that wide is no value (CanonicalValue.MaxRationalBits); the widest integer is, and too long to render
+    // a rational that wide is no value (CanonicalValue.MaxRationalBits); the widest integer is, and renders
     val huge = CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
-    val overLong = NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")
     expect
       .same(
         Left(RationalTooWide(CanonicalValue.MaxRationalBits)),
         Ratio.of(BigInt(1) << 1000000, BigInt(3)).toOption.map(CanonicalValue.number).get
       )
       .and(expect.same(Left(refusal), CanonicalJson.render(third)))
-      .and(expect.same(Left(overLong), CanonicalJson.render(huge)))
+      .and(expect.same(Right(huge.value.toString), CanonicalJson.render(huge)))
   }
 
   pureTest("numbers are read and written within 10,000 significant digits, counted before any conversion") {
     def digits(n: Int) = "9" * n
+    val ones = "1" * 10000
     val rejectedDigits = (n: Int) => NumberSource.Text(n, 0)
     expect
-      .same(Right(CanonicalGens.int(BigInt(digits(10000)))), parse(digits(10000)))
-      .and(expect.same(Right(digits(10000)), parse(digits(10000)).flatMap(CanonicalJson.render)))
-      .and(expect(parse("0." + "0" * 4000 + digits(6000)).isRight, "leading zeros of a fraction are not counted"))
+      .same(Right(CanonicalGens.int(BigInt(ones))), parse(ones))
+      .and(expect.same(Right(ones), parse(ones).flatMap(CanonicalJson.render)))
+      .and(expect(parse("0." + "0" * 4000 + "1" * 5999 + "2").isRight, "leading zeros of a fraction are not counted"))
+      .and(expect.same(Left(IntegerTooWide(CanonicalValue.MaxIntegerBits)), parse(digits(10000))))
       .and(expect.same(Right(CInt(100)), parse("1e" + "0" * 20000 + "2")))
       .and(parse(digits(10001)) match {
         case Left(InvalidNumber(source, Some(ArithmeticError.DigitsOutOfRange(10001, 10000)))) =>
@@ -46,12 +47,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
       .and(expect(parse("0." + digits(10001)).isLeft, "10,001 fraction digits"))
       .and(expect(parse("1e" + digits(10001)).isLeft, "an exponent of 10,001 digits"))
       .and(expect(parse("1e" + digits(20)).isLeft, "an exponent past every scale, saturated rather than converted"))
-      .and(
-        expect.same(
-          Left(NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")),
-          CanonicalJson.render(CanonicalGens.int(BigInt(10).pow(10000)))
-        )
-      )
+      .and(expect.same(Left(IntegerTooWide(CanonicalValue.MaxIntegerBits)), CanonicalValue.int(BigInt(10).pow(10000))))
   }
 
   pureTest("a malformed or over-long number is described by its length and offset, never its text") {

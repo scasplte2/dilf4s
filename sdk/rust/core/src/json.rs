@@ -258,7 +258,7 @@ impl Parser<'_> {
         let value = if scale >= 0 {
             Value::decimal(&unscaled, magnitude)?
         } else {
-            // a positive exponent can take an integer past MAX_INTEGER_BITS (2e10000): refused, as every producer does
+            // a positive exponent can take an integer past MAX_INTEGER_BITS (9e9999): refused, as every producer does
             Value::integer(unscaled * pow(BigInt::from(10u8), magnitude))?
         };
         Ok((value, end))
@@ -483,7 +483,7 @@ fn write_json(out: &mut Budget, value: &Value) -> Result<(), RenderError> {
         match next.take() {
             Some(Value::Null) => out.push("null")?,
             Some(Value::Bool(b)) => out.push(if *b { "true" } else { "false" })?,
-            Some(Value::Int(n)) => out.push(&integer_text(n)?)?,
+            Some(Value::Int(n)) => out.push(&integer_text(n))?,
             Some(Value::Rational(r)) => {
                 out.push(&decimal(r).map_err(|kind| CanonicalError::NotJsonRepresentable { kind })?)?;
             }
@@ -538,11 +538,10 @@ fn write_json(out: &mut Budget, value: &Value) -> Result<(), RenderError> {
     }
 }
 
-/// An integer's decimal, within the bounds [`parse`] accepts. Every integer is within
-/// [`crate::value::MAX_INTEGER_BITS`], so converting one is bounded work; one of 10001 digits (`10^10000` up to
-/// `2^33220 - 1`) is still refused, as no text within the digit bound reads back to it.
-fn integer_text(n: &crate::value::Int) -> Result<String, CanonicalError> {
-    within(n.to_string()).ok_or(CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong })
+/// An integer's decimal, which [`parse`] reads back: total, since every integer is within
+/// [`crate::value::MAX_INTEGER_BITS`], so it has at most [`MAX_DIGITS`] digits and converting it is bounded work.
+fn integer_text(n: &crate::value::Int) -> String {
+    n.to_string()
 }
 
 /// `text`, a plain decimal, when its significant digits and scale are within the bounds [`parse`] accepts.
@@ -648,7 +647,7 @@ mod tests {
 
     /// Factoring a denominator takes at most four big-number divisions and exponentiations, whatever its width:
     /// 2^33219, 5^14306 or 3 5^14000 is factored (or found not to terminate) at once, never one division per factor,
-    /// and the scale bound then refuses the first two before any digit is produced.
+    /// and the scale bound then refuses 1/2^33218 and 1/5^14306, the widest of each, before any digit is produced.
     #[test]
     fn factoring_a_denominator_is_bounded_whatever_its_factors() {
         let (two, five) = (BigInt::from(2u8), BigInt::from(5u8));
@@ -675,7 +674,7 @@ mod tests {
         // one division and one exponentiation when the estimate is right
         assert_eq!(twos_and_fives(&pow(five.clone(), 14_306)).1, 2);
         // past the scale bound, refused from the factors, before any digit is produced
-        for d in [pow(BigInt::from(2u8), 33_219), pow(five, 14_306)] {
+        for d in [pow(BigInt::from(2u8), 33_218), pow(five, 14_306)] {
             let Ok(crate::Value::Rational(r)) = crate::Value::number(&BigInt::one(), &d) else { panic!("a rational") };
             assert_eq!(super::decimal(&r), Err(crate::error::NotJson::OverLong), "{} bits", d.bits());
         }

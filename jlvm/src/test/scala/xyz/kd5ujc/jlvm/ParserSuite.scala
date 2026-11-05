@@ -21,8 +21,9 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   private def text(s: String): Expr = Expr.Lit(CanonicalValue.text(s).toOption.get)
 
   pureTest("a number of more than 10,000 digits is refused before it is converted, as a literal or a path") {
-    val most = "9" * 10000
+    val most = "1" * 10000
     expect(p(s"""{"var": $most}""").isRight, "a 10,000-digit path is read")
+      .and(expect(p(s"""{"+": [${"9" * 10000}, 1]}""").isLeft, "10,000 nines are past the integer bound (33219 bits)"))
       .and(expect(p(s"""{"+": [$most, 1]}""").isRight, "and a 10,000-digit literal"))
       .and(expect(p(s"""{"var": ${most}9}""").isLeft, "a 10,001-digit path is refused"))
       .and(expect(p(s"""{"+": [${most}9, 1]}""").isLeft, "and a 10,001-digit literal"))

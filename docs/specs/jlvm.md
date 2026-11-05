@@ -52,9 +52,9 @@ string's or a number's span is read, so reading costs at most twice the text how
 - **JSON `null`** is the null literal.
 - **Numbers**, as literals and as `var` paths, are read as canonical JSON numbers (`canonical-encoding.md` §3): at
   most 10,000 significant digits and a scale of at most 10,000, both checked on the text before any conversion, and an
-  integer at most 33220 bits wide (`MaxIntegerBits`, `canonical-encoding.md` §1). A program with a wider literal or
-  path, such as `2e10000`, does not parse (`Malformed`); `1e10000` parses, and is past the number bound (§2) for any
-  operation that reads it as a number.
+  integer at most 33219 bits wide (`MaxIntegerBits`, `canonical-encoding.md` §1), and a rational's parts the same. A
+  program with a wider literal or path, such as `9e9999`, `1e10000` or 10,000 nines, does not parse (`Malformed`);
+  `8e9999` parses, and is past the number bound (§2) for any operation that reads it as a number.
 - **Strings** of the form `0x` followed by an even number of lowercase hex digits are byte strings (§2). Every other
   string is text.
 
@@ -144,10 +144,10 @@ one byte, text and byte strings add their length, and an integer takes at least 
 | Result weight | 2^24 | results | `Limit` |
 | Depth | 256 | values | `Limit` |
 
-The number bound is far inside the data model's (33220 bits for an integer and for each part of a rational,
+The number bound is far inside the data model's (33219 bits for an integer and for each part of a rational,
 `canonical-encoding.md` §1), so no operation produces a number the data model refuses: a result past 4096 bits is
 `Limit` first. An operand is read against the number bound before any arithmetic, so data or a literal as wide as the
-data model allows (`1e10000`) is `Limit` to every operation that reads it as a number, and only passes through those
+data model allows (`8e9999`) is `Limit` to every operation that reads it as a number, and only passes through those
 that do not (`var`, `if`, `==`).
 
 **Truthiness.** The falsy values are null, `false`, `0`, `""`, empty bytes, `[]` and `{}`. Every other value is truthy,

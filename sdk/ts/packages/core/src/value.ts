@@ -122,10 +122,12 @@ export class BoolValue {
 }
 
 /**
- * The widest integer, in Java `bitLength` bits (docs/specs/canonical-encoding.md section 1): a rational part's width, so
- * `10^10000` is an integer and `2 * 10^10000` is not, and far past every JLVM number (4096 bits). {@link IntValue.of}
- * refuses a wider one, and a decoder refuses a wider bignum from its length, before it builds the integer: no value is
- * built that no decoder accepts, and none is so wide that what reads it (rendering, arithmetic, hashing) is unbounded.
+ * The widest integer, in Java `bitLength` bits (docs/specs/canonical-encoding.md section 1): the widest whose every
+ * integer has at most 10,000 digits (`2^33219 < 10^10000`), so every integer renders as JSON; `8e9999` is an integer
+ * and `9e9999` is not. Far past every JLVM number (4096 bits), and the width of a rational's parts too.
+ * {@link IntValue.of} refuses a wider one, and a decoder refuses a wider bignum from its length, before it builds the
+ * integer: no value is built that no decoder accepts, and none is so wide that what reads it (rendering, arithmetic,
+ * hashing) is unbounded.
  */
 export const MAX_INTEGER_BITS = CANONICAL_MAX_INTEGER_BITS;
 
@@ -219,10 +221,9 @@ const gcd = (a: bigint, b: bigint): bigint => gcdSteps(a, b)[0];
 
 /**
  * The widest numerator or denominator a rational has, in Java `bitLength` bits (docs/specs/canonical-encoding.md
- * section 1): the width of `10^10000`, so every rational a JSON decimal reads to fits, and far past every JLVM number
- * (4096 bits). Checking lowest terms takes a gcd, superlinear in its operands, so a decoder refuses a wider part before
- * any gcd: a rational's decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and stays
- * linear in its input. Every constructor refuses a wider rational too, so no value is built that no decoder accepts.
+ * section 1): the integer bound, {@link MAX_INTEGER_BITS}, and far past every JLVM number (4096 bits). Checking lowest
+ * terms takes a gcd, superlinear in its operands, so a decoder refuses a wider part before any gcd: a rational's
+ * decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and stays linear in its input. Every constructor refuses a wider rational too, so no value is built that no decoder accepts.
  */
 export const MAX_RATIONAL_BITS = CANONICAL_MAX_RATIONAL_BITS;
 
@@ -312,8 +313,8 @@ export class RationalValue {
    * `2^min(v2, scale) 5^min(v5, scale)`: the twos go in one shift, and the fives by trial division by `5^(2^i)` from the
    * largest `2^i <= scale` down, which builds `min(v5, scale)` bit by bit (about 14 divisions for a scale of 10000).
    * The same result as {@link number} against `10^scale`, without its general gcd; refused, like it, past
-   * {@link MAX_RATIONAL_BITS} (which JSON's digit and scale bounds never reach). An integer it reduces to is at most
-   * `unscaled`, but is checked as every integer is.
+   * {@link MAX_RATIONAL_BITS} (a JSON decimal can be: `0.000...1` at a scale of 10,000 has the denominator
+   * `10^10000`), and an integer past {@link MAX_INTEGER_BITS}.
    */
   static decimal(unscaled: bigint, scale: number): Result<IntValue | RationalValue, RationalTooWide | IntegerTooWide> {
     if (unscaled === 0n) return IntValue.of(0n);

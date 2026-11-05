@@ -62,15 +62,16 @@ pub use map::{Entries, Map, MapShape};
 pub const MAX_DEPTH: usize = crate::generated::limits::as_usize::CANONICAL_MAX_DEPTH;
 
 /// The widest numerator or denominator a [`Rational`] has, in Java `bitLength` bits (docs/specs/canonical-encoding.md
-/// section 1): the width of `10^10000`, so every rational a JSON decimal reads to fits, and far past every JLVM number
-/// (4096 bits). Checking lowest terms takes a gcd, superlinear in its operands, so a decoder refuses a wider part
+/// section 1): the integer bound, [`MAX_INTEGER_BITS`], and far past every JLVM number (4096 bits). Checking lowest
+/// terms takes a gcd, superlinear in its operands, so a decoder refuses a wider part
 /// before any gcd: a rational's decoding then costs at most one gcd of two numbers this wide, about 4 KiB each, and
 /// stays linear in its input. Every constructor refuses a wider rational too, so no value is built that no decoder
 /// accepts.
 pub const MAX_RATIONAL_BITS: u64 = crate::generated::limits::CANONICAL_MAX_RATIONAL_BITS;
 
-/// The widest [`Int`], in Java `bitLength` bits (docs/specs/canonical-encoding.md section 1): a rational part's width, so
-/// `10^10000` is an integer and `2 * 10^10000` is not, and far past every JLVM number (4096 bits). [`Int::new`] refuses a
+/// The widest [`Int`], in Java `bitLength` bits (docs/specs/canonical-encoding.md section 1): the widest whose every
+/// integer has at most 10,000 digits (`2^33219 < 10^10000`), so every integer renders as JSON; `8e9999` is an integer
+/// and `9e9999` is not. Far past every JLVM number (4096 bits), and the width of a rational's parts too. [`Int::new`] refuses a
 /// wider one, and a decoder refuses a wider bignum from its length, before it builds the integer: no value is built that
 /// no decoder accepts, and none is so wide that what reads it (rendering, arithmetic, hashing) is unbounded.
 pub const MAX_INTEGER_BITS: u64 = crate::generated::limits::CANONICAL_MAX_INTEGER_BITS;
@@ -175,8 +176,9 @@ impl Value {
     }
 
     /// `unscaled / 10^scale`, reduced with only the primes 2 and 5 (a JSON decimal's denominator has no others), or
-    /// [`CanonicalError::RationalTooWide`] for a rational wider than [`MAX_RATIONAL_BITS`] (which JSON's digit and
-    /// scale bounds never reach).
+    /// [`CanonicalError::RationalTooWide`] for a rational wider than [`MAX_RATIONAL_BITS`] (a JSON decimal can be:
+    /// `0.000...1` at a scale of 10,000 has the denominator `10^10000`), or `IntegerTooWide` for an integer wider than
+    /// [`MAX_INTEGER_BITS`].
     pub(crate) fn decimal(unscaled: &BigInt, scale: usize) -> Result<Self, CanonicalError> {
         match Rational::reduce_decimal(unscaled, scale) {
             Some(Reduced::Integer(n)) => Ok(Self::integer(n)?),

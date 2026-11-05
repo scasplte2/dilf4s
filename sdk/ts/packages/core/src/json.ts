@@ -200,7 +200,7 @@ class Parser {
     if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", ...described, scale: Number(scale > INT32_MAX ? INT32_MAX : scale < INT32_MIN ? INT32_MIN : scale) });
     const unscaled = BigInt(intDigits + fracDigits) * (negative ? -1n : 1n);
     // a decimal's denominator is 10^scale: reduced by its primes 2 and 5 alone, never by a general gcd
-    // a positive exponent can take an integer past MAX_INTEGER_BITS (2e10000): refused, as every producer does
+    // a positive exponent can take an integer past MAX_INTEGER_BITS (9e9999): refused, as every producer does
     const value = scale >= 0n ? RationalValue.decimal(unscaled, Number(scale)) : IntValue.of(unscaled * 10n ** -scale);
     return value.ok ? ok({ value: value.value, end }) : value;
   }
@@ -254,12 +254,11 @@ function within(text: string): string | undefined {
 }
 
 /**
- * An integer's decimal, within the bounds {@link parse} accepts. Every integer is within `MAX_INTEGER_BITS`, so
- * converting one is bounded work; one of 10001 digits (`10^10000` up to `2^33220 - 1`) is still refused, as no text
- * within the digit bound reads back to it.
+ * An integer's decimal, which {@link parse} reads back: total, since every integer is within `MAX_INTEGER_BITS`, so
+ * it has at most {@link MAX_DIGITS} digits and converting it is bounded work.
  */
-function integerText(n: IntValue): string | undefined {
-  return within(n.value.toString());
+function integerText(n: IntValue): string {
+  return n.value.toString();
 }
 
 /**
@@ -370,11 +369,8 @@ export function renderWithin(value: Value, maxBytes: number): Result<string, Ren
         return ascii("null") ? undefined : meter.refusal();
       case "bool":
         return ascii(v.value ? "true" : "false") ? undefined : meter.refusal();
-      case "int": {
-        const t = integerText(v);
-        if (t === undefined) return { kind: "NotJsonRepresentable", what: "over-long number" };
-        return ascii(t) ? undefined : meter.refusal();
-      }
+      case "int":
+        return ascii(integerText(v)) ? undefined : meter.refusal();
       case "rational": {
         const d = decimalOf(v);
         if (!d.ok) return { kind: "NotJsonRepresentable", what: d.error };

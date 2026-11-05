@@ -39,8 +39,8 @@ them. Every other field is informative. The normative fields are:
 | versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` |
 | Merkle tree, trie | `TooLarge` | `limit`: `MaxProofWeight` (2^24), for claims (§5) or a trie proof a producer would emit |
 | Poseidon tree | `Position` | `depth`: the number of siblings (or the tree's depth); the position, held as its bit length (§8), is informative |
-| canonical value | `RationalTooWide` | `limit`: `MaxRationalBits` (33220), for a rational part wider than it, from any producer (`canonical-encoding.md` §1); the part's width is not reported |
-| canonical value | `IntegerTooWide` | `limit`: `MaxIntegerBits` (33220), for an integer wider than it, from any producer (`canonical-encoding.md` §1); the integer's width is not reported |
+| canonical value | `RationalTooWide` | `limit`: `MaxRationalBits` (33219), for a rational part wider than it, from any producer (`canonical-encoding.md` §1); the part's width is not reported |
+| canonical value | `IntegerTooWide` | `limit`: `MaxIntegerBits` (33219), for an integer wider than it, from any producer (`canonical-encoding.md` §1); the integer's width is not reported |
 | canonical encoding | `DuplicateKey` | `key`: the repeated key's preview, its `head` and `length` (§8) |
 | every other kind | | none: the kind alone |
 
@@ -70,13 +70,13 @@ A refusal costs no more than the spec says, whatever the input:
   compare it with a bound from bit 0, and never build the listing to compare it. So their answer and their refusal
   cost no more than the weight their operands are charged by.
 - **Rationals.** Decoding a CBOR rational (`canonical-encoding.md` §2) runs at most one gcd, and only of a numerator and
-  denominator each at most `MaxRationalBits` (33220) wide: a wider part is refused as `RationalTooWide` as soon as it
+  denominator each at most `MaxRationalBits` (33219) wide: a wider part is refused as `RationalTooWide` as soon as it
   is read, before the other part is read and before any gcd. A gcd is superlinear in its operands; with the bound, the
   work of decoding is linear in the input (at most one gcd of bounded operands per 8 KiB of rational).
-- **Integers.** A CBOR bignum (`canonical-encoding.md` §2) wider than `MaxIntegerBits` (33220) is refused as
+- **Integers.** A CBOR bignum (`canonical-encoding.md` §2) wider than `MaxIntegerBits` (33219) is refused as
   `IntegerTooWide` from its length and first byte, before its integer is built; a rational's part, as
-  `RationalTooWide`, the same way. So no decoder builds an integer, or a rational part, wider than 33220 bits, and
-  nothing that reads a value later (rendering, arithmetic, typed decoding) works on a wider one. A JSON integer is
+  `RationalTooWide`, the same way. So no decoder builds an integer, or a rational part, wider than 33219 bits, and
+  nothing that reads a value later (rendering, arithmetic, typed decoding) works on a wider one. A JSON number is
   checked once it is read: its digit and scale bounds already bound that work.
 
 ## 5. Verifier input weight

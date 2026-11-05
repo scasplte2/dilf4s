@@ -57,8 +57,10 @@ object RationalWidthSuite extends SimpleIOSuite {
         )
     }
 
-  pureTest("the bound is the width of 10^10000, the JSON digit and scale bound") {
-    expect.same(Max, BigInt(10).pow(Ratio.DefaultMaxDecimalScale).bitLength)
+  pureTest("the bound is the widest bit length whose every integer has at most 10,000 digits") {
+    expect
+      .same(Max + 1, BigInt(10).pow(Ratio.DefaultMaxDecimalScale).bitLength)
+      .and(expect(Edge < BigInt(10).pow(Ratio.DefaultMaxDecimalScale), "2^33219 < 10^10000"))
   }
 
   test("k maximal rationals take exactly k gcds, each of operands within the bound") {

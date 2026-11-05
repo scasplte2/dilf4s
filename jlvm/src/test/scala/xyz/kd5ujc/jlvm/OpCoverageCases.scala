@@ -384,7 +384,8 @@ object OpCoverageCases extends IOApp {
    * expression. Each program is written out as text, since no JSON writer could produce some of them.
    */
   val surfaceReading: List[Case] = {
-    val digits = "9" * 10000
+    // the most significant digits a number has, and within every bound
+    val digits = "1" * 10000
     val keyed = surface("""{"1": "one", "0": "zero", "100": "hundred"}""")
     List(
       ("a null field keeps a map expression, not the operation +", """{"+": [1, 2], "x": null}""", CNull),
@@ -410,17 +411,19 @@ object OpCoverageCases extends IOApp {
       ("a path of 10,001 digits is refused", s"""{"var": ${digits}9}""", CNull),
       ("a literal with a 10,001-digit exponent is refused", s"""{"if": [true, "read", 1e${"1" * 10001}]}""", CNull),
       ("a literal 1e-7 is exact", """{"+": [1e-7, 0.0000001]}""", CNull),
-      // an integer is at most 33220 bits wide (canonical-encoding.md §1): 10^10000 is one, 2 * 10^10000 is not, and
-      // neither is a 10,000-digit significand times 10^10000; the number bound (4096 bits) then refuses arithmetic
-      ("a literal 1e10000 is an integer of 33220 bits", """{"if": [true, 1e10000, 0]}""", CNull),
-      ("a literal -1e10000 is an integer of 33220 bits", """{"if": [true, -1e10000, 0]}""", CNull),
-      ("a literal 1.5e10000 is an integer of 33220 bits", """{"if": [true, 1.5e10000, 0]}""", CNull),
-      ("a literal 2e10000, of 33221 bits, is refused", """{"if": [true, 2e10000, 0]}""", CNull),
-      ("a literal -2e10000, of 33221 bits, is refused", """{"if": [true, -2e10000, 0]}""", CNull),
+      // an integer is at most 33219 bits wide (canonical-encoding.md §1), so it has at most 10,000 digits: 8e9999 is
+      // one, 9e9999 and 10,000 nines are not, and neither is a 10,000-digit significand times 10^10000; the number bound
+      // (4096 bits) then refuses arithmetic
+      ("a literal 8e9999 is an integer of 33219 bits", """{"if": [true, 8e9999, 0]}""", CNull),
+      ("a literal -8e9999 is an integer of 33219 bits", """{"if": [true, -8e9999, 0]}""", CNull),
+      ("a literal 9e9999, of 33220 bits, is refused", """{"if": [true, 9e9999, 0]}""", CNull),
+      ("a literal -9e9999, of 33220 bits, is refused", """{"if": [true, -9e9999, 0]}""", CNull),
+      ("a literal 1e10000 is refused", """{"if": [true, 1e10000, 0]}""", CNull),
+      ("a literal of 10,000 nines, of 33220 bits, is refused", s"""{"if": [true, 0, ${"9" * 10000}]}""", CNull),
       ("a literal of 10,000 digits times 10^10000 is refused", s"""{"if": [true, 0, ${digits}e10000]}""", CNull),
-      ("a path written 2e10000 is refused", """{"var": 2e10000}""", CNull),
-      ("a 33220-bit operand is past the number bound", """{"+": [1e10000, 0]}""", CNull),
-      ("a 33220-bit operand is past the number bound when negative", """{"*": [-1e10000, 1]}""", CNull),
+      ("a path written 9e9999 is refused", """{"var": 9e9999}""", CNull),
+      ("a 33219-bit operand is past the number bound", """{"+": [8e9999, 0]}""", CNull),
+      ("a 33219-bit operand is past the number bound when negative", """{"*": [-8e9999, 1]}""", CNull),
       ("text nested 257 levels deep is Limit", "[" * 256 + "[]" + "]" * 256, CNull)
     ).map { case (name, program, data) => Case(s"dilf4s surface: $name", program, data) }
   }

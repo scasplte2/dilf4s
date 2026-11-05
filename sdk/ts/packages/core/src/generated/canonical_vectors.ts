@@ -114,25 +114,22 @@ export const CanonicalJsonAccepted: c.Codec<CanonicalJsonAccepted> = {
 };
 
 /** `canonical-json-case` (`shared/schemas/canonical-vectors.cddl`). */
-export type CanonicalJsonCase = CanonicalJsonAccepted | CanonicalJsonUnrenderable | CanonicalJsonRejected;
+export type CanonicalJsonCase = CanonicalJsonAccepted | CanonicalJsonRejected;
 
 export const CanonicalJsonCase: c.Codec<CanonicalJsonCase> = {
   encode: (a, d) => {
-    const known = ["cbor", "contentHash", "error", "json", "render", "renderError"];
+    const known = ["cbor", "contentHash", "error", "json", "render"];
     if (c.hasFields(a, CanonicalJsonAccepted, ["cbor", "contentHash", "json", "render"], ["cbor", "contentHash", "json", "render"], known)) return CanonicalJsonAccepted.encode(a, d);
-    if (c.hasFields(a, CanonicalJsonUnrenderable, ["cbor", "contentHash", "json", "renderError"], ["cbor", "contentHash", "json", "renderError"], known)) return CanonicalJsonUnrenderable.encode(a, d);
     if (c.hasFields(a, CanonicalJsonRejected, ["error", "json"], ["error", "json"], known)) return CanonicalJsonRejected.encode(a, d);
     return c.typeMismatch("no alternative of CanonicalJsonCase fits");
   },
   decode: (v) => {
-    const s = c.selectAlternative(v, [[["cbor", "contentHash", "json", "render"], ["cbor", "contentHash", "json", "render"]], [["cbor", "contentHash", "json", "renderError"], ["cbor", "contentHash", "json", "renderError"]], [["error", "json"], ["error", "json"]]], []);
+    const s = c.selectAlternative(v, [[["cbor", "contentHash", "json", "render"], ["cbor", "contentHash", "json", "render"]], [["error", "json"], ["error", "json"]]], []);
     if (!s.ok) return s;
     switch (s.value) {
       case 0:
         return CanonicalJsonAccepted.decode(v);
       case 1:
-        return CanonicalJsonUnrenderable.decode(v);
-      case 2:
         return CanonicalJsonRejected.decode(v);
       default:
         return c.decodeFailure("unknown alternative");
@@ -162,39 +159,6 @@ export const CanonicalJsonRejected: c.Codec<CanonicalJsonRejected> = {
     const r1 = f.value.required("error", c.text);
     if (!r1.ok) return r1;
     return c.ok({ json: r0.value, error: r1.value });
-  },
-};
-
-/** `canonical-json-unrenderable` (`shared/schemas/canonical-vectors.cddl`). */
-export interface CanonicalJsonUnrenderable {
-  readonly json: string;
-  readonly cbor: Hex;
-  readonly contentHash: Hex;
-  readonly renderError: string;
-}
-
-export const CanonicalJsonUnrenderable: c.Codec<CanonicalJsonUnrenderable> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("json", c.text, a.json, e),
-        c.field("cbor", c.defer(() => Hex), a.cbor, e),
-        c.field("contentHash", c.defer(() => Hex), a.contentHash, e),
-        c.field("renderError", c.text, a.renderError, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["json", "cbor", "contentHash", "renderError"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("json", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("cbor", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("contentHash", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("renderError", c.text);
-    if (!r3.ok) return r3;
-    return c.ok({ json: r0.value, cbor: r1.value, contentHash: r2.value, renderError: r3.value });
   },
 };
 

@@ -20,9 +20,10 @@ describe("integer width", () => {
     vi.restoreAllMocks();
   });
 
-  it("is a rational part's, the width of 10^10000", () => {
+  it("is a rational part's, the widest whose every integer has at most 10,000 digits", () => {
     expect(max).toBe(MAX_RATIONAL_BITS);
-    expect(bitLength(10n ** 10000n)).toBe(max);
+    expect(bitLength(10n ** 10000n)).toBe(max + 1);
+    expect(edge < 10n ** 10000n).toBe(true);
   });
 
   it("is checked by the only constructor, on Java bitLength, for either sign", () => {
@@ -63,10 +64,10 @@ describe("integer width", () => {
     // a byte string claimed 2^32 - 1 bytes long, with 4 present: truncated, not too wide
     const truncated = Uint8Array.from([0xc3, 0x5a, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
     expect(kind(cbor.decode(truncated))).toBe("UnexpectedEnd");
-    // 4153 bytes, the first 0x0f: 33220 bits, -2^33220; the first 0x10: 33221
-    const widest = Uint8Array.from([0xc3, 0x59, 0x10, 0x39, 0x0f, ...new Uint8Array(4152).fill(0xff)]);
+    // 4153 bytes, the first 0x07: 33219 bits, -2^33219; the first 0x08: 33220
+    const widest = Uint8Array.from([0xc3, 0x59, 0x10, 0x39, 0x07, ...new Uint8Array(4152).fill(0xff)]);
     expect(Value.equals(expectOk(cbor.decode(widest), "decodes"), int(-edge))).toBe(true);
-    const past = Uint8Array.from([0xc3, 0x59, 0x10, 0x39, 0x10, ...new Uint8Array(4152)]);
+    const past = Uint8Array.from([0xc3, 0x59, 0x10, 0x39, 0x08, ...new Uint8Array(4152)]);
     expect(cbor.decode(past)).toEqual(tooWide);
     expect(magnitude).toHaveBeenCalledTimes(1);
   });
@@ -79,19 +80,17 @@ describe("integer width", () => {
   });
 
   it("reads JSON integers up to the bound and refuses one past it, for either sign", () => {
-    const ten = 10n ** 10000n;
-    expect(Value.equals(expectOk(json.parse("1e10000"), "1e10000"), int(ten))).toBe(true);
-    expect(Value.equals(expectOk(json.parse("-1e10000"), "-1e10000"), int(-ten))).toBe(true);
-    expect(json.parse("2e10000")).toEqual(tooWide);
-    expect(json.parse("-2e10000")).toEqual(tooWide);
-    expect(json.parse(`[${"9".repeat(10000)}e10000]`)).toEqual(tooWide);
+    for (const n of accepted) expect(Value.equals(expectOk(json.parse(n.toString()), "within"), int(n))).toBe(true);
+    for (const n of refused) expect(json.parse(n.toString())).toEqual(tooWide);
+    expect(Value.equals(expectOk(json.parse("8e9999"), "8e9999"), int(8n * 10n ** 9999n))).toBe(true);
+    for (const text of ["9e9999", "-9e9999", "1e10000", "9".repeat(10000), `[${"9".repeat(10000)}e10000]`]) expect(json.parse(text)).toEqual(tooWide);
   });
 
-  it("renders every integer of at most 10000 digits; 10^10000 up to the bound cannot be", () => {
-    const nines = BigInt("9".repeat(10000));
-    const overLong = { ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } };
-    expect(json.renderWithin(int(nines), json.MAX_RENDER_BYTES)).toEqual({ ok: true, value: "9".repeat(10000) });
-    expect(json.renderWithin(int(-nines), json.MAX_RENDER_BYTES)).toEqual({ ok: true, value: `-${"9".repeat(10000)}` });
-    for (const n of [nines + 1n, edge - 1n, -edge]) expect(json.renderWithin(int(n), json.MAX_RENDER_BYTES)).toEqual(overLong);
+  it("renders every integer, the widest with 10,000 digits", () => {
+    for (const n of accepted) {
+      const r = expectOk(json.renderWithin(int(n), json.MAX_RENDER_BYTES), "renders");
+      expect(r).toBe(n.toString());
+      expect(r.replace("-", "").length).toBe(10000);
+    }
   });
 });

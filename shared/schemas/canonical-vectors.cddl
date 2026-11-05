@@ -14,14 +14,10 @@ canonical-vectors = {
   "domainTags": [* canonical-domain-tag],
 }
 
-canonical-json-case = canonical-json-accepted / canonical-json-unrenderable / canonical-json-rejected
+canonical-json-case = canonical-json-accepted / canonical-json-rejected
 
 ; "render" is the display JSON of section 3 (compact, keys in code-point order).
 canonical-json-accepted = { "json": text, "cbor": hex, "contentHash": hex, "render": text }
-
-; Text that reads to a value whose display JSON would exceed the bounds of section 3 (1e10000 reads to 10^10000, of
-; 10001 digits), so rendering it fails with "renderError".
-canonical-json-unrenderable = { "json": text, "cbor": hex, "contentHash": hex, "renderError": text }
 
 canonical-json-rejected = { "json": text, "error": text }
 

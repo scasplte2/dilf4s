@@ -498,13 +498,13 @@ fn a_starved_charge_copies_nothing_it_has_not_paid_for() {
     let huge = Value::integer((BigInt::from(1) << dilf4s_core::MAX_INTEGER_BITS) - 1).unwrap();
     let abs = eval(r#"{"abs": {"var": "n"}}"#, &obj(vec![("n", huge.clone())]));
     assert!(is_limit(&abs), "{:?}", abs.result);
-    // -2^33220: its bit length is cached, so neither abs nor pow (both charged by their base) scans or copies it
+    // -2^33219: its bit length is cached, so neither abs nor pow (both charged by their base) scans or copies it
     let negative = Value::integer(-(BigInt::from(1) << dilf4s_core::MAX_INTEGER_BITS)).unwrap();
     for p in [r#"{"abs": {"var": "n"}}"#, r#"{"pow": [{"var": "n"}, 2]}"#, r#"{"round": {"var": "n"}}"#] {
         let o = eval(p, &obj(vec![("n", negative.clone())]));
         assert!(is_limit(&o), "{p}: {:?}", o.result);
     }
-    // a pmt_verify index of 33220 bits, charged as one element, is refused before it is copied or rendered
+    // a pmt_verify index of 33219 bits, charged as one element, is refused before it is copied or rendered
     let zero = format!("0x{}", "00".repeat(32));
     let pmt = eval(&format!(r#"{{"pmt_verify": ["{zero}", "{zero}", {{"var": "n"}}, []]}}"#), &obj(vec![("n", huge)]));
     assert!(matches!(pmt.result, Err(JlvmError::Crypto { .. })), "{:?}", pmt.result);

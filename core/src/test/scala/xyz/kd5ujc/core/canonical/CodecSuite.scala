@@ -46,7 +46,7 @@ object CodecSuite extends SimpleIOSuite {
     val widest = CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect
       .same(
-        Left("integer of 33220 bits outside 0..18446744073709551615"),
+        Left("integer of 33219 bits outside 0..18446744073709551615"),
         Codec.uint.decoder.decode(widest).left.map(_.reason)
       )
       .and(expect.same(Left(CanonicalError.TypeMismatch("integer of 1000001 bits outside the schema range")), Codec.uint.encode(huge)))
@@ -54,7 +54,7 @@ object CodecSuite extends SimpleIOSuite {
 
   pureTest("a refused literal is named by the size of what came instead") {
     expect.same(
-      Left("expected 7, got an integer of 33220 bits"),
+      Left("expected 7, got an integer of 33219 bits"),
       Codec.literalInt(7).decoder.decode(CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)).left.map(_.reason)
     )
   }

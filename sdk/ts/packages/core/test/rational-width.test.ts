@@ -34,8 +34,9 @@ describe("rational width", () => {
     vi.restoreAllMocks();
   });
 
-  it("is the width of 10^10000, the JSON digit and scale bound", () => {
-    expect(bitLength(10n ** 10000n)).toBe(max);
+  it("is the widest bit length whose every integer has at most 10,000 digits", () => {
+    expect(bitLength(10n ** 10000n)).toBe(max + 1);
+    expect(1n << BigInt(max) < 10n ** 10000n).toBe(true);
   });
 
   it("k maximal rationals take exactly k gcds, each of operands within the bound", () => {
@@ -169,7 +170,7 @@ describe("rational width", () => {
     }
     expect(twosAndFives(5n ** 14306n)[1], "one division and one exponentiation when the estimate is right").toBe(2);
     // past the scale bound, refused from the factors, before any digit is produced
-    for (const d of [2n ** 33219n, 5n ** 14306n]) {
+    for (const d of [2n ** 33218n, 5n ** 14306n]) {
       const r = expectOk(Value.number(1n, d), "a rational");
       expect(json.renderWithin(r, json.MAX_RENDER_BYTES)).toEqual({ ok: false, error: { kind: "NotJsonRepresentable", what: "over-long number" } });
     }

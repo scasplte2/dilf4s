@@ -39,10 +39,11 @@ object IntegerWidthSuite extends SimpleIOSuite {
         IO(Cbor.decode(bytes, Cbor.DefaultMaxDepth, KeyOrder.Default, numbers)).map(r => (r, calls.get, widest.get))
     }
 
-  pureTest("the bound is a rational part's, the width of 10^10000") {
+  pureTest("the bound is a rational part's, the widest whose every integer has at most 10,000 digits") {
     expect
       .same(CanonicalValue.MaxRationalBits, Max)
-      .and(expect.same(Max, BigInt(10).pow(CanonicalJson.MaxDigits).bitLength))
+      .and(expect.same(Max + 1, BigInt(10).pow(CanonicalJson.MaxDigits).bitLength))
+      .and(expect(Edge < BigInt(10).pow(CanonicalJson.MaxDigits), "2^33219 < 10^10000"))
   }
 
   pureTest("the only constructor checks the width, on bitLength, for either sign") {
@@ -61,7 +62,7 @@ object IntegerWidthSuite extends SimpleIOSuite {
       .and(expect.same(CanonicalValue.int(Edge - 1), CanonicalValue.number(built((Edge - 1) * 3, 3))))
       .and(expect.same(Right(CInt(2)), CanonicalValue.number(built(Edge * 4, Edge * 2))))
       .and(expect.same(Left(tooWide), Canonical[BigInt].canonical(Edge)))
-      .and(expect.same(Left(TypeMismatch("integer of 33221 bits outside the schema range")), Codec.uint.encode(Edge)))
+      .and(expect.same(Left(TypeMismatch("integer of 33220 bits outside the schema range")), Codec.uint.encode(Edge)))
       .and(expect.same(Left(tooWide), Codec.intRange(None, None).encode(Edge)))
   }
 
@@ -100,9 +101,9 @@ object IntegerWidthSuite extends SimpleIOSuite {
     val leadingZero = hex"c25a0000103a00" ++ ByteVector.fill(4153)(0xff)
     // a byte string claimed 2^32 - 1 bytes long, with 4 present: truncated, not too wide
     val truncated = hex"c25affffffff" ++ ByteVector.fill(4)(0xff)
-    // 4153 bytes with a top byte of 0x0f: 33220 bits, the widest; 0x10: 33221
-    val widest = hex"c3591039" ++ ByteVector(0x0f) ++ ByteVector.fill(4152)(0xff)
-    val past = hex"c3591039" ++ ByteVector(0x10) ++ ByteVector.fill(4152)(0x00)
+    // 4153 bytes with a top byte of 0x07: 33219 bits, the widest; 0x08: 33220
+    val widest = hex"c3591039" ++ ByteVector(0x07) ++ ByteVector.fill(4152)(0xff)
+    val past = hex"c3591039" ++ ByteVector(0x08) ++ ByteVector.fill(4152)(0x00)
     for {
       a <- counted(leadingZero)
       b <- counted(truncated)
@@ -126,15 +127,13 @@ object IntegerWidthSuite extends SimpleIOSuite {
   }
 
   pureTest("JSON reads an integer up to the bound and refuses one past it, for either sign") {
-    val ten = BigInt(10).pow(10000)
+    val refusedTexts = List("9e9999", "-9e9999", "1e10000", "9" * 10000, "[" + "9" * 10000 + "e10000]")
     expect
-      .same(Right(CanonicalGens.int(ten)), CanonicalJson.parse("1e10000"))
-      .and(expect.same(Right(CanonicalGens.int(-ten)), CanonicalJson.parse("-1e10000")))
-      .and(expect.same(Right(CanonicalGens.int(ten * 3 / 2)), CanonicalJson.parse("1.5e10000")))
-      .and(expect.same(Left(tooWide), CanonicalJson.parse("2e10000")))
-      .and(expect.same(Left(tooWide), CanonicalJson.parse("-2e10000")))
-      .and(expect.same(Left(tooWide), CanonicalJson.parse("[" + "9" * 10000 + "e10000]")))
-      .and(expect.same(List(33220, 33221, 33221), List(ten, ten * 2, -ten * 2 - 1).map(_.bitLength)))
+      .same(accepted.map(n => Right(CanonicalGens.int(n))), accepted.map(n => CanonicalJson.parse(n.toString)))
+      .and(expect.same(refused.map(_ => Left(tooWide)), refused.map(n => CanonicalJson.parse(n.toString))))
+      .and(expect.same(List.fill(4)(10000), (accepted ++ refused).map(_.abs.toString.length)))
+      .and(expect.same(Right(CanonicalGens.int(BigInt(8) * BigInt(10).pow(9999))), CanonicalJson.parse("8e9999")))
+      .and(expect.same(refusedTexts.map(_ => Left(tooWide)), refusedTexts.map(CanonicalJson.parse(_))))
   }
 
   pureTest("a rational whose decimal scale is past the bound is refused from its denominator's factors") {
@@ -143,19 +142,16 @@ object IntegerWidthSuite extends SimpleIOSuite {
     expect
       .same(
         List(Left(overLong), Left(overLong)),
-        List(BigInt(2).pow(33219), BigInt(5).pow(14306)).map(d => rational(d).flatMap(CanonicalJson.render))
+        List(BigInt(2).pow(33218), BigInt(5).pow(14306)).map(d => rational(d).flatMap(CanonicalJson.render))
       )
       .and(expect.same(Right("0.0001"), rational(BigInt(10000)).flatMap(CanonicalJson.render)))
   }
 
-  pureTest("every integer renders when it has at most 10000 digits; 10^10000 up to the bound cannot") {
-    val overLong = NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")
-    val nines = BigInt("9" * 10000)
+  pureTest("every integer renders, the widest of either sign with 10,000 digits, and reads back") {
+    val rendered = accepted.map(n => CanonicalJson.integerText(CanonicalGens.int(n)))
     expect
-      .same(Right("9" * 10000), CanonicalJson.render(CanonicalGens.int(nines)))
-      .and(expect.same(Right("-" + "9" * 10000), CanonicalJson.render(CanonicalGens.int(-nines))))
-      .and(expect.same(Left(overLong), CanonicalJson.render(CanonicalGens.int(nines + 1))))
-      .and(expect.same(Left(overLong), CanonicalJson.render(CanonicalGens.int(Edge - 1))))
-      .and(expect.same(Left(overLong), CanonicalJson.render(CanonicalGens.int(-Edge))))
+      .same(accepted.map(_.toString), rendered)
+      .and(expect.same(List(10000, 10000), rendered.map(_.stripPrefix("-").length)))
+      .and(expect.same(accepted.map(n => Right(CanonicalGens.int(n))), rendered.map(CanonicalJson.parse(_))))
   }
 }

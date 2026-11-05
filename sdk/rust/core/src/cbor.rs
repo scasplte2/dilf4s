@@ -713,7 +713,7 @@ mod tests {
         assert_eq!(Value::number(&edge, &three), Err(crate::value::NumberError::RationalTooWide));
         assert_eq!(Value::number(&three, &edge), Err(crate::value::NumberError::RationalTooWide));
         assert_eq!(Rational::new(edge.clone(), three.clone()), None);
-        // reduced first: (2^33221 / 6) is 2^33220 / 3, still too wide; 2^33221 / 2^33220 is the integer 2
+        // reduced first: (2^33220 / 6) is 2^33219 / 3, still too wide; 2^33220 / 2^33219 is the integer 2
         assert_eq!(Value::number(&(&edge * 2u8), &(&three * 2u8)), Err(crate::value::NumberError::RationalTooWide));
         assert_eq!(Value::number(&(&edge * 2u8), &edge), Ok(Value::int(2u8)));
         // an integer is bounded too (MAX_INTEGER_BITS), and checked after reducing
@@ -722,10 +722,12 @@ mod tests {
         assert_eq!(decode(&encode(&at_bound)), Ok(at_bound));
     }
 
+    /// The bound is the widest bit length whose every integer has at most `MAX_DIGITS` digits: `2^b < 10^digits`.
     #[test]
-    fn the_rational_bound_is_the_width_of_ten_to_the_digit_bound() {
+    fn the_rational_bound_is_the_widest_within_the_digit_bound() {
         let ten_to_the_bound = num_traits::pow(BigInt::from(10u8), crate::json::MAX_DIGITS);
-        assert_eq!(bit_length(&ten_to_the_bound), MAX_RATIONAL_BITS);
+        assert_eq!(bit_length(&ten_to_the_bound), MAX_RATIONAL_BITS + 1);
+        assert!((BigInt::one() << MAX_RATIONAL_BITS) < ten_to_the_bound);
     }
 
     /// Decoding `k` maximal rationals runs exactly `k` gcds, each of parts within the bound: its work is at most `k`
@@ -796,7 +798,7 @@ mod tests {
             assert_eq!(Value::integer(n.clone()), Err(IntegerTooWide), "{} bits", bit_length(&n));
             assert_eq!(Value::number(&(&n * 3u8), &BigInt::from(3u8)), Err(NumberError::IntegerTooWide));
         }
-        assert_eq!(CanonicalError::from(IntegerTooWide), CanonicalError::IntegerTooWide { limit: 33_220 });
+        assert_eq!(CanonicalError::from(IntegerTooWide), CanonicalError::IntegerTooWide { limit: 33_219 });
         assert_eq!(Value::int(i128::MIN).weight(), 2);
     }
 
@@ -834,11 +836,11 @@ mod tests {
         ));
         let truncated = [0xc3, 0x5a, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
         assert!(matches!(decode(&truncated), Err(CanonicalError::UnexpectedEnd { .. })));
-        // 4153 bytes, the first 0x0f: 33220 bits, -2^33220; the first 0x10: 33221
-        let mut widest = vec![0xc3, 0x59, 0x10, 0x39, 0x0f];
+        // 4153 bytes, the first 0x07: 33219 bits, -2^33219; the first 0x08: 33220
+        let mut widest = vec![0xc3, 0x59, 0x10, 0x39, 0x07];
         widest.extend(core::iter::repeat_n(0xff, 4152));
         assert_eq!(decode(&widest), Value::integer(-(BigInt::one() << MAX_INTEGER_BITS)).map_err(CanonicalError::from));
-        let mut past = vec![0xc3, 0x59, 0x10, 0x39, 0x10];
+        let mut past = vec![0xc3, 0x59, 0x10, 0x39, 0x08];
         past.extend(core::iter::repeat_n(0x00, 4152));
         assert_eq!(decode(&past), integer_too_wide());
     }
@@ -855,7 +857,7 @@ mod tests {
     fn the_bound_is_on_java_bit_length_for_either_sign() {
         let edge = BigInt::one() << MAX_RATIONAL_BITS;
         let (two, three) = (BigInt::from(2u8), BigInt::from(3u8));
-        // 2^33220 - 1 and -2^33220 are 33220 bits wide; 2^33220 and -2^33220 - 1 are 33221
+        // 2^33219 - 1 and -2^33219 are 33219 bits wide; 2^33219 and -2^33219 - 1 are 33220
         for (n, d) in
             [(&edge - BigInt::one(), two.clone()), (-(&edge), three.clone()), (two.clone(), &edge - BigInt::one())]
         {

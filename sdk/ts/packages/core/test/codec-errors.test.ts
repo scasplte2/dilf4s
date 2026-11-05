@@ -11,7 +11,7 @@ describe("integer range refusals", () => {
   const uint = codec.intRange(0n, (1n << 64n) - 1n);
 
   it("decoding names the bit length", () => {
-    expect(uint.decode(widest)).toEqual({ ok: false, error: { path: [], reason: "integer of 33220 bits outside 0..18446744073709551615" } });
+    expect(uint.decode(widest)).toEqual({ ok: false, error: { path: [], reason: "integer of 33219 bits outside 0..18446744073709551615" } });
   });
 
   it("encoding names the bit length, Java's for negatives", () => {
@@ -20,8 +20,8 @@ describe("integer range refusals", () => {
   });
 
   it("literals and enums name the bit length", () => {
-    expect(codec.literalInt(7n).decode(widest)).toMatchObject({ ok: false, error: { reason: "expected 7, got an integer of 33220 bits" } });
+    expect(codec.literalInt(7n).decode(widest)).toMatchObject({ ok: false, error: { reason: "expected 7, got an integer of 33219 bits" } });
     const children = codec.intEnum("TrieChildren", [["Left", 1n]] as const);
-    expect(children.decode(widest)).toMatchObject({ ok: false, error: { reason: "an integer of 33220 bits is not a TrieChildren" } });
+    expect(children.decode(widest)).toMatchObject({ ok: false, error: { reason: "an integer of 33219 bits is not a TrieChildren" } });
   });
 });

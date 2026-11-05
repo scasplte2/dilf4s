@@ -10,8 +10,7 @@ const contentAlgorithm = hashAlgorithm(vectors.contentHashAlgorithm) ?? "SHA-256
 const bytes = (hex: string): Uint8Array => expectOk(fromHex(hex), "hex");
 
 describe("canonical_encoding_v1.json", () => {
-  const accepted = vectors.json.flatMap((c) => ("render" in c ? [c] : []));
-  const unrenderable = vectors.json.flatMap((c) => ("renderError" in c ? [c] : []));
+  const accepted = vectors.json.flatMap((c) => ("cbor" in c ? [c] : []));
   const rejected = vectors.json.flatMap((c) => ("error" in c ? [c] : []));
 
   it.each(accepted.map((c) => [c.json.slice(0, 60), c] as const))("JSON %s encodes, hashes and renders as the reference does", (_, c) => {
@@ -19,16 +18,6 @@ describe("canonical_encoding_v1.json", () => {
     expect(toHex(expectOk(cbor.encode(value), "encodes")), "canonical CBOR").toBe(c.cbor);
     expect(toHex(expectOk(contentHash(contentAlgorithm, tag, value), "encodes")), "content hash").toBe(c.contentHash);
     expect(expectOk(json.renderWithin(value, json.MAX_RENDER_BYTES), "renders"), "display JSON").toBe(c.render);
-    const decoded = expectOk(cbor.decode(bytes(c.cbor)), "the CBOR decodes");
-    expect(toHex(expectOk(cbor.encode(decoded), "encodes")), "decode then encode is the identity").toBe(c.cbor);
-  });
-
-  it.each(unrenderable.map((c) => [c.json.slice(0, 60), c] as const))("JSON %s encodes and hashes as the reference does, and does not render", (_, c) => {
-    const value = expectOk(json.parse(c.json), "parses");
-    expect(toHex(expectOk(cbor.encode(value), "encodes")), "canonical CBOR").toBe(c.cbor);
-    expect(toHex(expectOk(contentHash(contentAlgorithm, tag, value), "encodes")), "content hash").toBe(c.contentHash);
-    const r = json.renderWithin(value, json.MAX_RENDER_BYTES);
-    expect(r.ok ? "rendered" : r.error.kind, "display JSON").toBe(c.renderError);
     const decoded = expectOk(cbor.decode(bytes(c.cbor)), "the CBOR decodes");
     expect(toHex(expectOk(cbor.encode(decoded), "encodes")), "decode then encode is the identity").toBe(c.cbor);
   });
