@@ -485,11 +485,19 @@ function follow<V, D>(
   }
 }
 
+/** An iterator and its `next`, read once when it is opened, as `for...of` reads it. */
+interface Reader<T> {
+  readonly iterator: Iterator<T>;
+  readonly next: () => IteratorResult<T>;
+}
+
+const reader = <T>(iterator: Iterator<T>): Reader<T> => ({ iterator, next: iterator.next.bind(iterator) });
+
 /** Closes the iterators of the vectors and maps still open, innermost first, as leaving a `for...of` early does. */
 function close(stack: readonly Encoding[]): void {
   for (const frame of [...stack].reverse()) {
-    if (frame.kind === "vector") frame.items.return?.();
-    else if (frame.kind === "textMap") frame.entries.return?.();
+    if (frame.kind === "vector") frame.items.iterator.return?.();
+    else if (frame.kind === "textMap") frame.entries.iterator.return?.();
   }
 }
 
@@ -502,8 +510,8 @@ type EncodeStep = { readonly codec: Codec<unknown>; readonly value: unknown; rea
  * is read), as a `for...of` reads them; a record's fields by index (`at`, the one being encoded).
  */
 type Encoding =
-  | { readonly kind: "vector"; readonly items: Iterator<unknown>; readonly element: Codec<unknown>; readonly depth: number; readonly out: Value[] }
-  | { readonly kind: "textMap"; readonly entries: Iterator<readonly [string, unknown]>; key: string; readonly value: Codec<unknown>; readonly depth: number; readonly out: (readonly [string, Value])[] }
+  | { readonly kind: "vector"; readonly items: Reader<unknown>; readonly element: Codec<unknown>; readonly depth: number; readonly out: Value[] }
+  | { readonly kind: "textMap"; readonly entries: Reader<readonly [string, unknown]>; key: string; readonly value: Codec<unknown>; readonly depth: number; readonly out: (readonly [string, Value])[] }
   | { readonly kind: "record"; readonly fields: readonly RecordField[]; readonly of: object; readonly depth: number; at: number; readonly out: (readonly [string, Value])[] };
 
 /** The encoder: one loop, an explicit stack of the containers open, and nothing recursive. */
@@ -548,12 +556,12 @@ function openEncoding(codec: Codec<unknown>, value: unknown, depth: number, stac
       if (!Array.isArray(value)) return { done: typeMismatch("expected an array") };
       const items: readonly unknown[] = value;
       if (items.length < s.min || (s.max !== null && items.length > s.max)) return { done: typeMismatch(`array of ${items.length.toString()} elements outside the schema size`) };
-      return opened({ kind: "vector", items: items[Symbol.iterator](), element: s.element, depth: depth + 1, out: [] }, stack);
+      return opened({ kind: "vector", items: reader(items[Symbol.iterator]()), element: s.element, depth: depth + 1, out: [] }, stack);
     }
     case "textMap": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
       if (typeof value !== "object" || value === null || !(Symbol.iterator in value)) return { done: typeMismatch("expected a map") };
-      const entries = (value as Iterable<readonly [string, unknown]>)[Symbol.iterator]();
+      const entries = reader((value as Iterable<readonly [string, unknown]>)[Symbol.iterator]());
       return opened({ kind: "textMap", entries, key: "", value: s.value, depth: depth + 1, out: [] }, stack);
     }
     case "record": {

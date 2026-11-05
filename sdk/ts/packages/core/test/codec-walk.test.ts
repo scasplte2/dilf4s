@@ -256,6 +256,24 @@ describe("what the walks read and refuse", () => {
     expect(decoded(defer(() => nonZero).decode(int(0n)))).toBe("<root>: zero");
   });
 
+  it("an iterator's next is read once, when the container is opened", () => {
+    const producer = new Map([
+      ["a", 1n],
+      ["b", 2n],
+    ])[Symbol.iterator]();
+    let reads = 0;
+    const iterator = {
+      get next() {
+        reads++;
+        return reads === 1 ? producer.next.bind(producer) : () => ({ done: true, value: undefined });
+      },
+    };
+    const m = { [Symbol.iterator]: () => iterator } as unknown as ReadonlyMap<string, bigint>;
+    const v = expectOk(textMap(uint).encode(m), "encodes");
+    expect(v.kind === "map" && v.keys()).toEqual(["a", "b"]);
+    expect(reads).toBe(1);
+  });
+
   it("a refusal closes the iterators of the containers still open, innermost first", () => {
     const closed: string[] = [];
     function* entries(name: string, items: readonly (readonly [string, unknown])[]): Generator<readonly [string, unknown]> {
