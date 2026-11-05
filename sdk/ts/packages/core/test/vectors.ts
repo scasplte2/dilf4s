@@ -33,7 +33,7 @@ export const boolValue = (b: boolean): BoolValue => expectOk(Value.bool(b), "a b
  */
 export function integerBytes(n: bigint): Uint8Array {
   if (n >= -(1n << 64n) && n < 1n << 64n) return expectOk(cbor.encode(int(n)), "encodes");
-  const magnitude = cbor.magnitudeBytes(n < 0n ? -1n - n : n);
+  const magnitude = expectOk(cbor.magnitudeBytes(n < 0n ? -1n - n : n), "a magnitude");
   return Uint8Array.from([n < 0n ? 0xc3 : 0xc2, 0x59, magnitude.length >> 8, magnitude.length & 0xff, ...magnitude]);
 }
 

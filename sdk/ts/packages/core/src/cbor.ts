@@ -1,18 +1,17 @@
 /** The dilf4s deterministic CBOR profile (docs/specs/canonical-encoding.md section 2). */
 import { byteLimit, checkedLimit, Meter, tooLarge } from "./budget.js";
+import { takeBytes } from "./bytes.js";
 import type { CanonicalError, TooLarge, TypeMismatch } from "./error.js";
 import { toHex } from "./hex.js";
 import { err, ok, type Result } from "./result.js";
-import { compareBytes, decodeUtf8 } from "./utf8.js";
+import { compareBytes, utf8Text } from "./utf8.js";
 import {
   arrayOfValues,
   BoolValue,
   BytesValue,
   bytesView,
-  copyBytes,
   entriesView,
   IntValue,
-  isBytes,
   mapOfValues,
   MAX_DEPTH,
   MAX_INTEGER_BITS,
@@ -171,9 +170,13 @@ function hexBytes(write: (b: number, i: number) => void, hex: string, length: nu
   for (let i = 0; i < length; i++) write((nibble(digits.charCodeAt(2 * i)) << 4) | nibble(digits.charCodeAt(2 * i + 1)), i);
 }
 
-/** The big-endian bytes of a non-negative integer, with no leading zeros (empty for zero), linear in its size. */
-export function magnitudeBytes(n: bigint): Uint8Array {
-  if (n <= 0n) return new Uint8Array(0);
+/**
+ * The big-endian bytes of a non-negative integer, with no leading zeros (empty for zero), linear in its size. A value
+ * that is not a `bigint`, or a negative one, is a `TypeMismatch` (a negative one had been read as zero).
+ */
+export function magnitudeBytes(n: bigint): Result<Uint8Array, TypeMismatch> {
+  if (typeof (n as unknown) !== "bigint" || n < 0n) return err({ kind: "TypeMismatch", reason: "expected a non-negative bigint" });
+  if (n === 0n) return ok(new Uint8Array(0));
   const hex = n.toString(16);
   const out = new Uint8Array(Math.ceil(hex.length / 2));
   hexBytes(
@@ -183,7 +186,7 @@ export function magnitudeBytes(n: bigint): Uint8Array {
     hex,
     out.length,
   );
-  return out;
+  return ok(out);
 }
 
 /** The additional information of an argument `size` bytes long (1, 2, 4 or 8). */
@@ -386,15 +389,15 @@ const unexpectedEnd = (offset: number): CanonicalError => ({ kind: "UnexpectedEn
  * `maxDepth` (at most {@link MAX_DEPTH}) is an error. When it succeeds, `encode(decode(b)) == b`. The decoder keeps
  * its own frame stack, so input of any nesting is a typed error, never a stack overflow. `bytes` that is not a
  * `Uint8Array`, or a `maxDepth` that is not a number, is a `TypeMismatch`. The bytes are copied first, through
- * `copyBytes`: a subclass's `length`, accessors or iterator are not consulted, and nothing changes them while they are
+ * `takeBytes`: a subclass's `length`, accessors or iterator are not consulted, and nothing changes them while they are
  * read.
  */
 export function decode(bytes: Uint8Array, maxDepth: number = MAX_DEPTH): Result<Value, CanonicalError> {
-  // read through plainBytes: what is not bytes is refused, and a subclass's `length` is not believed
-  if (!isBytes(bytes)) return err({ kind: "TypeMismatch", reason: "expected a Uint8Array" });
   if (typeof (maxDepth as unknown) !== "number" || Number.isNaN(maxDepth)) return err({ kind: "TypeMismatch", reason: "the depth limit is not a number" });
-  // a copy: the decoder reads memory nothing else can change while it runs (a SharedArrayBuffer's other threads)
-  return new Decoder(copyBytes(bytes), Math.min(maxDepth, MAX_DEPTH)).run();
+  // a copy, read through the array's own slots: the decoder reads memory nothing else can change while it runs (a
+  // SharedArrayBuffer's other threads)
+  const input = takeBytes(bytes);
+  return input === undefined ? err({ kind: "TypeMismatch", reason: "expected a Uint8Array" }) : new Decoder(input, Math.min(maxDepth, MAX_DEPTH)).run();
 }
 
 class Decoder {
@@ -486,7 +489,7 @@ class Decoder {
       case 3: {
         const s = this.span(end, argument);
         if (!s.ok) return s;
-        const text = decodeUtf8(s.value.bytes);
+        const text = utf8Text(s.value.bytes);
         if (text === undefined) return err({ kind: "InvalidUtf8", offset: end });
         const t = TextValue.of(text);
         return t.ok ? scalar(t.value, s.value.end) : t;

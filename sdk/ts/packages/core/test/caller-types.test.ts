@@ -2,7 +2,7 @@ import { runInNewContext } from "node:vm";
 
 import { describe, expect, it } from "vitest";
 
-import { BoolValue, BytesValue, cbor, codec, hashCommitment, IntValue, json, MapValue, RationalValue, TextValue, Value, valueCommitment, valueCommitmentWithin } from "../src/index.js";
+import { BoolValue, BytesValue, cbor, codec, decodeUtf8, hashCommitment, IntValue, json, MapValue, RationalValue, TextValue, Value, valueCommitment, valueCommitmentWithin } from "../src/index.js";
 import { gcdSteps } from "../src/value.js";
 import { expectOk, int } from "./vectors.js";
 
@@ -348,5 +348,21 @@ describe("the encoding and commitment entry points refuse what is not a value, o
     expect(expectOk(hashCommitment("SHA-256", [liar], v), "a lying prefix part")).toEqual(honest);
     const foreign = runInNewContext("[new Uint8Array([1, 2])]") as Uint8Array[];
     expect(expectOk(hashCommitment("SHA-256", foreign, v), "another realm's array and bytes")).toEqual(honest);
+  });
+});
+
+describe("the public byte helpers check what they are given", () => {
+  it("decodeUtf8 reads a Uint8Array by its own length, and is undefined for anything else", () => {
+    for (const x of [5, "ab", null, [0x61], { length: 1, 0: 0x61 }]) expect(decodeUtf8(bad(x)), label(x)).toBeUndefined();
+    const longer = Object.defineProperty(Uint8Array.of(0x61, 0x62), "length", { get: () => 32 });
+    const shorter = Object.defineProperty(Uint8Array.of(0x61, 0x62), "length", { get: () => 1 });
+    expect(decodeUtf8(longer)).toBe("ab");
+    expect(decodeUtf8(shorter)).toBe("ab");
+  });
+
+  it("magnitudeBytes refuses what is not a non-negative bigint, never reading a negative one as zero", () => {
+    for (const x of [5, "5", null, -1n, -(2n ** 70n)]) expect(cbor.magnitudeBytes(bad(x)), label(x)).toEqual(mismatch("expected a non-negative bigint"));
+    expect([...expectOk(cbor.magnitudeBytes(0n), "zero")]).toEqual([]);
+    expect([...expectOk(cbor.magnitudeBytes(256n), "256")]).toEqual([1, 0]);
   });
 });

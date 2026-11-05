@@ -9,6 +9,7 @@
  * or refers to itself.
  */
 import { bitLength } from "./bigint.js";
+import { plainBytes } from "./bytes.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
 import { decodeFailure as failure, type CanonicalError, type DecodeFailure, type TooLarge } from "./error.js";
 import { close as closeIterator, isResult, NOT_A_RESULT, NOT_ITERABLE, open, type Reader } from "./iterator.js";
@@ -17,7 +18,7 @@ import { Preview } from "./preview.js";
 import { search } from "./keyset.js";
 import { err, ok, type Err, type Result } from "./result.js";
 import { encodeUtf8, utf8Length } from "./utf8.js";
-import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, MAX_WEIGHT, plainBytes, TextValue, type Entry, type Value } from "./value.js";
+import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
 
 export type { Value } from "./value.js";
 export { ok } from "./result.js";

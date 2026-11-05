@@ -24,6 +24,7 @@
  * containers. Values decoded from CBOR or parsed from JSON are trees, so their weight is bounded by their input.
  */
 import { bitLength } from "./bigint.js";
+import { copyBytes, takeBytes } from "./bytes.js";
 import type { CanonicalError, TypeMismatch } from "./error.js";
 import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_DIGITS, CANONICAL_MAX_INTEGER_BITS, CANONICAL_MAX_RATIONAL_BITS, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
 import { toHex } from "./hex.js";
@@ -59,77 +60,27 @@ export type Value = NullValue | BoolValue | IntValue | RationalValue | TextValue
  */
 const KEY: unique symbol = Symbol("canonical value");
 
-/** `#minted in x && x.#minted`: set once, by {@link Minted}'s static block. */
-let mintedBrand!: (x: object) => boolean;
-
-/**
- * The base of every kind of value: it holds the private `#minted` brand, true only when the constructor was given
- * {@link KEY}. One brand for all eight kinds makes {@link isValue} a single check. Not part of the package's API.
- */
-export abstract class Minted {
-  readonly #minted: boolean;
-  static {
-    mintedBrand = (x) => #minted in x && x.#minted;
-  }
-  protected constructor(key: symbol) {
-    this.#minted = key === KEY;
-  }
-}
+// Each kind's check, `#minted in x && x.#minted`, set once by its class's static block. isValue calls them in a fixed
+// chain, each from its own call site, so each stays monomorphic and inlinable: one array of them, called through
+// `some`, cost about 90 ns an item.
+let isNull!: (x: object) => boolean;
+let isBool!: (x: object) => boolean;
+let isInt!: (x: object) => boolean;
+let isRational!: (x: object) => boolean;
+let isText!: (x: object) => boolean;
+let isByteString!: (x: object) => boolean;
+let isArray!: (x: object) => boolean;
+let isMap!: (x: object) => boolean;
 
 /**
  * Whether `x` is a canonical value made by this module's factories, in O(1): for what a caller may pass past the
- * types, such as a JavaScript caller's argument. It reads the private `#minted` brand every value carries, set from the
- * key when the value is built, never the prototype or a public field and never a side table: an object borrowing a
- * value's prototype is not one, nor is one built by calling a constructor from outside, and a Proxy's traps do not run.
+ * types, such as a JavaScript caller's argument. It reads each class's private `#minted` brand, set from the key when
+ * the value is built, never the prototype or a public field and never a side table: an object borrowing a value's
+ * prototype is not one, nor is one built by calling a constructor from outside, and a Proxy's traps do not run.
  */
 export function isValue(x: unknown): x is Value {
-  return typeof x === "object" && x !== null && mintedBrand(x);
-}
-
-/** `%TypedArray%.prototype`, which every typed array's prototype inherits from. */
-const typedArrayPrototype: object = Object.getPrototypeOf(Uint8Array.prototype) as object;
-
-/** `%TypedArray%.prototype`'s own getter for `name`: it reads the array's internal slots, which nothing overrides. */
-const typedArrayGetter = (name: PropertyKey): ((this: unknown) => unknown) | undefined =>
-  Reflect.get(Object.getOwnPropertyDescriptor(typedArrayPrototype, name) ?? {}, "get") as ((this: unknown) => unknown) | undefined;
-
-/** `Uint8Array.prototype`'s `Symbol.toStringTag` getter, from `%TypedArray%`: it reads an array's internal type name. */
-const typedArrayName = typedArrayGetter(Symbol.toStringTag);
-const typedArrayBuffer = typedArrayGetter("buffer");
-const typedArrayOffset = typedArrayGetter("byteOffset");
-const typedArrayLength = typedArrayGetter("length");
-
-/**
- * Whether `x` is a `Uint8Array` (a `Buffer` included), from any realm, in O(1). It reads the typed array's internal
- * name through `%TypedArray%`'s own getter, which nothing can fake: unlike `instanceof`, it accepts another realm's
- * array and runs no Proxy trap, and unlike `Object.prototype.toString` or `constructor.name`, an object claiming the
- * name (by `Symbol.toStringTag`, or a renamed constructor) is not one.
- */
-export function isBytes(x: unknown): x is Uint8Array {
-  return typedArrayName === undefined ? x instanceof Uint8Array : typedArrayName.call(x) === "Uint8Array";
-}
-
-/**
- * `x` as a plain `Uint8Array` over the same memory, if it is bytes (see {@link isBytes}), in O(1). Its buffer, offset
- * and length are read through `%TypedArray%.prototype`'s own getters, from the array's internal slots: a subclass, or an
- * own property, that overrides `length`, `byteOffset` or `buffer` is not believed, and the view has no such overrides
- * (nor a `Buffer`'s methods). A detached or out-of-bounds array has length 0, and is read as empty.
- */
-export function plainBytes(x: unknown): Uint8Array | undefined {
-  if (!isBytes(x)) return undefined;
-  if (typedArrayBuffer === undefined || typedArrayOffset === undefined || typedArrayLength === undefined) return x;
-  const length = typedArrayLength.call(x) as number;
-  return length === 0 ? new Uint8Array(0) : new Uint8Array(typedArrayBuffer.call(x) as ArrayBufferLike, typedArrayOffset.call(x) as number, length);
-}
-
-/**
- * A fresh plain `Uint8Array` holding `bytes`, read through {@link plainBytes} (so its own `length` is not believed), and
- * empty if it is not bytes. `slice` would not do: on a Node `Buffer` it returns a view sharing memory.
- */
-export function copyBytes(bytes: Uint8Array): Uint8Array {
-  const view = plainBytes(bytes);
-  // the constructor copies from the view's internal slots: never its iterator, never element by element
-  return view === undefined || view.length === 0 ? new Uint8Array(0) : new Uint8Array(view);
+  if (typeof x !== "object" || x === null) return false;
+  return isInt(x) || isText(x) || isByteString(x) || isMap(x) || isArray(x) || isBool(x) || isNull(x) || isRational(x);
 }
 
 const depthExceeded: CanonicalError = { kind: "DepthExceeded", limit: MAX_DEPTH };
@@ -177,19 +128,23 @@ export const bytesView = (b: BytesValue): Uint8Array => bytesOf(b);
 /** The stored entries of `m` in canonical key order, uncopied: internal to this package. */
 export const entriesView = (m: MapValue): readonly Entry[] => entriesOf(m);
 
-export class NullValue extends Minted {
+export class NullValue {
+  readonly #minted: boolean;
+  static {
+    isNull = (x) => #minted in x && x.#minted;
+  }
   readonly kind = "null";
   readonly weight: bigint = 1n;
   readonly #depth = 0;
   static readonly instance: NullValue = new NullValue(KEY);
   private constructor(key: symbol) {
-    super(key);
+    this.#minted = key === KEY;
     Object.freeze(this);
   }
   get depth(): 0 {
     return this.#depth;
   }
-  override toString(): string {
+  toString(): string {
     return inspect(this);
   }
   [INSPECT](): string {
@@ -197,7 +152,11 @@ export class NullValue extends Minted {
   }
 }
 
-export class BoolValue extends Minted {
+export class BoolValue {
+  readonly #minted: boolean;
+  static {
+    isBool = (x) => #minted in x && x.#minted;
+  }
   readonly kind = "bool";
   readonly depth = 0;
   readonly weight: bigint = 1n;
@@ -205,7 +164,7 @@ export class BoolValue extends Minted {
   static readonly true: BoolValue = new BoolValue(KEY, true);
   static readonly false: BoolValue = new BoolValue(KEY, false);
   private constructor(key: symbol, value: boolean) {
-    super(key);
+    this.#minted = key === KEY;
     this.#value = value;
     Object.freeze(this);
   }
@@ -216,7 +175,7 @@ export class BoolValue extends Minted {
   static of(value: boolean): Result<BoolValue, TypeMismatch> {
     return typeof (value as unknown) !== "boolean" ? err(notABoolean) : ok(value ? BoolValue.true : BoolValue.false);
   }
-  override toString(): string {
+  toString(): string {
     return inspect(this);
   }
   [INSPECT](): string {
@@ -240,7 +199,11 @@ export type IntegerTooWide = Extract<CanonicalError, { readonly kind: "IntegerTo
 const integerTooWide: IntegerTooWide = { kind: "IntegerTooWide", limit: MAX_INTEGER_BITS };
 
 /** An integer within {@link MAX_INTEGER_BITS}. */
-export class IntValue extends Minted {
+export class IntValue {
+  readonly #minted: boolean;
+  static {
+    isInt = (x) => #minted in x && x.#minted;
+  }
   readonly kind = "int";
   readonly depth = 0;
   /** `1 + bitLength / 64`. */
@@ -248,7 +211,7 @@ export class IntValue extends Minted {
   readonly #value: bigint;
   readonly #bitLength: number;
   private constructor(key: symbol, value: bigint, bits: number) {
-    super(key);
+    this.#minted = key === KEY;
     this.#value = value;
     this.#bitLength = bits;
     this.weight = saturated(1n + limbs(bits));
@@ -270,7 +233,7 @@ export class IntValue extends Minted {
     const bits = bitLength(value);
     return bits <= MAX_INTEGER_BITS ? ok(new IntValue(KEY, value, bits)) : err(integerTooWide);
   }
-  override toString(): string {
+  toString(): string {
     return inspect(this);
   }
   [INSPECT](): string {
@@ -353,7 +316,11 @@ const tooWide: RationalTooWide = { kind: "RationalTooWide", limit: MAX_RATIONAL_
 export type NumberError = { readonly kind: "DivisionByZero" } | RationalTooWide | IntegerTooWide | TypeMismatch;
 
 /** A rational `n/d` with `d >= 2`, `gcd(|n|, d) = 1` and both within {@link MAX_RATIONAL_BITS}: never an integer. */
-export class RationalValue extends Minted {
+export class RationalValue {
+  readonly #minted: boolean;
+  static {
+    isRational = (x) => #minted in x && x.#minted;
+  }
   readonly kind = "rational";
   readonly depth = 0;
   /** `2 + bitLength(n) / 64 + bitLength(d) / 64`. */
@@ -363,7 +330,7 @@ export class RationalValue extends Minted {
   readonly #numeratorBits: number;
   readonly #denominatorBits: number;
   private constructor(key: symbol, numerator: bigint, denominator: bigint, numeratorBits: number, denominatorBits: number) {
-    super(key);
+    this.#minted = key === KEY;
     this.#numerator = numerator;
     this.#denominator = denominator;
     this.#numeratorBits = numeratorBits;
@@ -465,7 +432,7 @@ export class RationalValue extends Minted {
     const r = RationalValue.checked(sign * rest, d);
     return r === undefined ? err(tooWide) : ok(r);
   }
-  override toString(): string {
+  toString(): string {
     return inspect(this);
   }
   [INSPECT](): string {
@@ -473,7 +440,11 @@ export class RationalValue extends Minted {
   }
 }
 
-export class TextValue extends Minted {
+export class TextValue {
+  readonly #minted: boolean;
+  static {
+    isText = (x) => #minted in x && x.#minted;
+  }
   readonly kind = "text";
   readonly depth = 0;
   /** `1 +` the UTF-8 length. */
@@ -481,7 +452,7 @@ export class TextValue extends Minted {
   /** The UTF-8 encoding. */
   readonly #utf8: Uint8Array;
   private constructor(key: symbol, readonly value: string) {
-    super(key);
+    this.#minted = key === KEY;
     this.#utf8 = encodeUtf8(value);
     this.weight = 1n + BigInt(this.#utf8.length);
     Object.freeze(this);
@@ -506,7 +477,7 @@ export class TextValue extends Minted {
   get utf8Length(): number {
     return this.#utf8.length;
   }
-  override toString(): string {
+  toString(): string {
     return inspect(this);
   }
   [INSPECT](): string {
@@ -514,15 +485,20 @@ export class TextValue extends Minted {
   }
 }
 
-export class BytesValue extends Minted {
+export class BytesValue {
+  readonly #minted: boolean;
+  static {
+    isByteString = (x) => #minted in x && x.#minted;
+  }
   readonly kind = "bytes";
   readonly depth = 0;
   /** `1 +` the length. */
   readonly weight: bigint;
   readonly #bytes: Uint8Array;
+  /** `bytes` is a fresh copy, which the value now owns. */
   private constructor(key: symbol, bytes: Uint8Array) {
-    super(key);
-    this.#bytes = copyBytes(bytes);
+    this.#minted = key === KEY;
+    this.#bytes = bytes;
     this.weight = 1n + BigInt(this.#bytes.length);
     Object.freeze(this);
   }
@@ -532,13 +508,13 @@ export class BytesValue extends Minted {
   }
 
   /**
-   * A byte string holding a copy of `bytes`, read through {@link plainBytes}: its length is the array's own, whatever a
-   * subclass's `length` says. A value that is not a `Uint8Array` (see {@link isBytes}: another realm's and a `Buffer`
-   * are) is a `TypeMismatch`, never copied as `Uint8Array.from` would read it.
+   * A byte string holding a copy of `bytes`, taken from the array's internal slots (`takeBytes`): its length is its
+   * own, whatever a subclass's `length` says. A value that is not a `Uint8Array` (`isBytes`: another realm's and a
+   * `Buffer` are) is a `TypeMismatch`, never copied as `Uint8Array.from` would read it.
    */
   static of(bytes: Uint8Array): Result<BytesValue, TypeMismatch> {
-    const view = plainBytes(bytes);
-    return view === undefined ? err(notBytes) : ok(new BytesValue(KEY, view));
+    const copy = takeBytes(bytes);
+    return copy === undefined ? err(notBytes) : ok(new BytesValue(KEY, copy));
   }
 
   /** A copy of the bytes. */
@@ -549,7 +525,7 @@ export class BytesValue extends Minted {
   get length(): number {
     return this.#bytes.length;
   }
-  override toString(): string {
+  toString(): string {
     return inspect(this);
   }
   [INSPECT](): string {
@@ -569,7 +545,11 @@ function measure<T>(parts: readonly T[], part: (p: T) => readonly [number, bigin
   return [deepest + 1, saturated(weight)];
 }
 
-export class ArrayValue extends Minted {
+export class ArrayValue {
+  readonly #minted: boolean;
+  static {
+    isArray = (x) => #minted in x && x.#minted;
+  }
   readonly kind = "array";
   readonly #items: readonly Value[];
   private constructor(
@@ -579,7 +559,7 @@ export class ArrayValue extends Minted {
     /** One plus each element's weight. */
     readonly weight: bigint,
   ) {
-    super(key);
+    this.#minted = key === KEY;
     this.#items = items;
     Object.freeze(this);
   }
@@ -622,7 +602,7 @@ export class ArrayValue extends Minted {
       return depth > MAX_DEPTH ? err(depthExceeded) : ok(new ArrayValue(KEY, kept, depth, weight));
     };
   }
-  override toString(): string {
+  toString(): string {
     return inspect(this);
   }
   [INSPECT](): string {
@@ -646,7 +626,11 @@ export function canonicalKeyOrder(a: Uint8Array, b: Uint8Array): number {
 }
 
 /** A map: its entries in canonical key order, found by binary search. Keys are compared, never hashed (see keyset.ts). */
-export class MapValue extends Minted {
+export class MapValue {
+  readonly #minted: boolean;
+  static {
+    isMap = (x) => #minted in x && x.#minted;
+  }
   readonly kind = "map";
   readonly #entries: readonly Entry[];
   private constructor(
@@ -656,7 +640,7 @@ export class MapValue extends Minted {
     /** One plus each entry's `1 + key UTF-8 length + value weight`. */
     readonly weight: bigint,
   ) {
-    super(key);
+    this.#minted = key === KEY;
     this.#entries = entries;
     Object.freeze(this);
   }
@@ -759,7 +743,7 @@ export class MapValue extends Minted {
   get size(): number {
     return this.#entries.length;
   }
-  override toString(): string {
+  toString(): string {
     return inspect(this);
   }
   [INSPECT](): string {

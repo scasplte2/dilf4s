@@ -4,7 +4,8 @@ import { encodeIntoWithin, encodeWithin, Feeding, MAX_ENCODED_BYTES, type Absorb
 import type { TypeMismatch } from "./error.js";
 import { HASH_ALGORITHMS, startHash, type HashAlgorithm } from "./hash.js";
 import { err, ok, type Result } from "./result.js";
-import { bytesView, plainBytes, type Value } from "./value.js";
+import { plainBytes } from "./bytes.js";
+import { bytesView, type Value } from "./value.js";
 
 /** The commitment tag of a byte string. */
 export const BYTES_TAG = 0x00;

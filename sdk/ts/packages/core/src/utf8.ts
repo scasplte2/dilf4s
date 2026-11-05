@@ -3,6 +3,8 @@
  * `TextDecoder` drops a leading byte-order mark, either of which would change bytes without an error.
  */
 
+import { plainBytes } from "./bytes.js";
+
 const isHigh = (u: number): boolean => u >= 0xd800 && u <= 0xdbff;
 const isLow = (u: number): boolean => u >= 0xdc00 && u <= 0xdfff;
 
@@ -62,8 +64,18 @@ function sequenceWidth(a: Uint8Array, i: number): number {
   return 0;
 }
 
-/** The text of well-formed UTF-8, or `undefined` if `a` is not well-formed. */
+/**
+ * The text of well-formed UTF-8, or `undefined` if `a` is not well-formed, or not a `Uint8Array` at all (from a
+ * JavaScript caller, or a cast). The bytes are read through their own slots (`plainBytes`), so a subclass's `length`
+ * is not believed.
+ */
 export function decodeUtf8(a: Uint8Array): string | undefined {
+  const bytes = plainBytes(a);
+  return bytes === undefined ? undefined : utf8Text(bytes);
+}
+
+/** {@link decodeUtf8} of this package's own plain bytes, unchecked: for the CBOR decoder. */
+export function utf8Text(a: Uint8Array): string | undefined {
   const parts: string[] = [];
   const codes: number[] = [];
   let i = 0;
