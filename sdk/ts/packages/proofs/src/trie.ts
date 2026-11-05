@@ -6,12 +6,12 @@
  *
  * Every walk uses an explicit stack, never recursion: a proof's depth is bounded only by the mode (up to 524280 bits).
  */
-import { bitLength, BYTES_TAG, describeFailure, err, models, ok, outputSize, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { BYTES_TAG, describeFailure, err, models, ok, outputSize, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
-import { decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
+import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
 /**
  * Why a trie operation failed, by Scala's `TrieError` names, plus `NotCovered`: the JLVM's "not covered" (a proof that
@@ -119,7 +119,7 @@ function segmentBits(n: bigint, b: Uint8Array): Result<B.Bits, TrieError> {
   // bigint division truncates toward zero, so a negative length would pass the byte count: refuse it first
   if (n < 0n || n > len * 8n || len !== (n + 7n) / 8n) {
     // a count too wide for 64 bits is named by its size: its digits are superlinear and unpaid
-    const count = bitLength(n) <= 64 ? `${n.toString()} bits` : `a ${bitLength(n).toString()}-bit count of bits`;
+    const count = bitsOf(n) <= 64 ? `${n.toString()} bits` : `a ${bitsOf(n).toString()}-bit count of bits`;
     return encoding(`segment of ${count} in ${b.length.toString()} bytes`);
   }
   const bits = Number(n);

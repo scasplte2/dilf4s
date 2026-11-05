@@ -8,7 +8,7 @@
  * of the containers open (at most {@link MAX_DEPTH}), so no codec recurses on the native stack, however its schema nests
  * or refers to itself.
  */
-import { bitLength } from "./bigint.js";
+import { bitLengthOf } from "./bigint.js";
 import { plainBytes } from "./bytes.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
 import { decodeFailure as failure, type CanonicalError, type DecodeFailure, type TooLarge } from "./error.js";
@@ -17,7 +17,7 @@ import { parse as parseJson } from "./json.js";
 import { Preview } from "./preview.js";
 import { search } from "./keyset.js";
 import { err, ok, type Err, type Result } from "./result.js";
-import { encodeUtf8, utf8Length } from "./utf8.js";
+import { encodeUtf8, utf8LengthOf } from "./utf8.js";
 import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
 
 export type { Value } from "./value.js";
@@ -179,11 +179,11 @@ export function intRange(lo: bigint | null, hi: bigint | null): Codec<bigint> {
   return leaf(
     (n) => {
       if (!isBigint(n)) return notA("a bigint");
-      return within(n) ? IntValue.of(n) : typeMismatch(`integer of ${bitLength(n).toString()} bits outside ${show(lo)}..${show(hi)}`);
+      return within(n) ? IntValue.of(n) : typeMismatch(`integer of ${bitLengthOf(n).toString()} bits outside ${show(lo)}..${show(hi)}`);
     },
     (v) => {
       if (v.kind !== "int") return expected("int", v);
-      return within(v.value) ? ok(v.value) : decodeFailure(`integer of ${bitLength(v.value).toString()} bits outside ${show(lo)}..${show(hi)}`);
+      return within(v.value) ? ok(v.value) : decodeFailure(`integer of ${bitLengthOf(v.value).toString()} bits outside ${show(lo)}..${show(hi)}`);
     },
   );
 }
@@ -218,17 +218,17 @@ export const bytes: Codec<Uint8Array> = sizedBytes(0, null);
 
 /** Text whose UTF-8 encoding is `lo` to `hi` bytes long (RFC 8610 `.size` on a text string counts bytes). */
 export function sizedText(lo: number, hi: number | null): Codec<string> {
-  const fits = (s: string): boolean => utf8Length(s) >= lo && (hi === null || utf8Length(s) <= hi);
+  const fits = (s: string): boolean => utf8LengthOf(s) >= lo && (hi === null || utf8LengthOf(s) <= hi);
   return leaf(
     (s) => {
       if (!isString(s)) return notA("a string");
       const t = TextValue.of(s);
       if (!t.ok) return t;
-      return fits(s) ? t : typeMismatch(`text of ${utf8Length(s).toString()} UTF-8 bytes outside the schema size`);
+      return fits(s) ? t : typeMismatch(`text of ${utf8LengthOf(s).toString()} UTF-8 bytes outside the schema size`);
     },
     (v) => {
       if (v.kind !== "text") return expected("text", v);
-      return fits(v.value) ? ok(v.value) : decodeFailure(`text of ${utf8Length(v.value).toString()} UTF-8 bytes, expected ${lo.toString()}..${hi === null ? "" : hi.toString()}`);
+      return fits(v.value) ? ok(v.value) : decodeFailure(`text of ${utf8LengthOf(v.value).toString()} UTF-8 bytes, expected ${lo.toString()}..${hi === null ? "" : hi.toString()}`);
     },
   );
 }
@@ -289,7 +289,7 @@ export function literalInt<N extends bigint>(literal: N): Codec<N> {
     (n) => ((n as unknown) === literal ? IntValue.of(literal) : notA(literal.toString())),
     (v) => {
       if (v.kind !== "int") return expected("int", v);
-      return v.value === literal ? ok(literal) : decodeFailure(`expected ${literal.toString()}, got an integer of ${bitLength(v.value).toString()} bits`);
+      return v.value === literal ? ok(literal) : decodeFailure(`expected ${literal.toString()}, got an integer of ${bitLengthOf(v.value).toString()} bits`);
     },
   );
 }
@@ -311,7 +311,7 @@ export function intEnum<L extends string>(name: string, cases: readonly (readonl
     (v) => {
       if (v.kind !== "int") return expected("int", v);
       const c = cases.find(([, w]) => w === v.value);
-      return c === undefined ? decodeFailure(`an integer of ${bitLength(v.value).toString()} bits is not a ${name}`) : ok(c[0]);
+      return c === undefined ? decodeFailure(`an integer of ${bitLengthOf(v.value).toString()} bits is not a ${name}`) : ok(c[0]);
     },
   );
 }

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { bignums } from "../src/cbor.js";
-import { bitLength, cbor, codec, IntValue, json, MAX_INTEGER_BITS, MAX_RATIONAL_BITS, Value, type CanonicalError, type Result } from "../src/index.js";
+import { cbor, codec, IntValue, json, MAX_INTEGER_BITS, MAX_RATIONAL_BITS, Value, type CanonicalError, type Result } from "../src/index.js";
+import { bitLengthOf } from "../src/bigint.js";
 import { expectOk, int, integerBytes } from "./vectors.js";
 
 // An integer is at most MAX_INTEGER_BITS wide (canonical-encoding.md section 1), for either sign: the only constructor
@@ -22,14 +23,14 @@ describe("integer width", () => {
 
   it("is a rational part's, the widest whose every integer has at most 10,000 digits", () => {
     expect(max).toBe(MAX_RATIONAL_BITS);
-    expect(bitLength(10n ** 10000n)).toBe(max + 1);
+    expect(bitLengthOf(10n ** 10000n)).toBe(max + 1);
     expect(edge < 10n ** 10000n).toBe(true);
   });
 
   it("is checked by the only constructor, on Java bitLength, for either sign", () => {
     for (const n of accepted) expect(expectOk(IntValue.of(n), "within").bitLength).toBe(max);
     for (const n of refused) {
-      expect(bitLength(n)).toBe(max + 1);
+      expect(bitLengthOf(n)).toBe(max + 1);
       expect(IntValue.of(n)).toEqual(tooWide);
       expect(Value.int(n)).toEqual(tooWide);
       expect(Value.number(n * 3n, 3n)).toEqual(tooWide);

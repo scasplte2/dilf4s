@@ -23,7 +23,7 @@
  * No walk of a value recurses on the native stack: each keeps an explicit stack of at most {@link MAX_DEPTH} open
  * containers. Values decoded from CBOR or parsed from JSON are trees, so their weight is bounded by their input.
  */
-import { bitLength } from "./bigint.js";
+import { bitLengthOf } from "./bigint.js";
 import { copyBytes, takeBytes } from "./bytes.js";
 import type { CanonicalError, TypeMismatch } from "./error.js";
 import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_DIGITS, CANONICAL_MAX_INTEGER_BITS, CANONICAL_MAX_RATIONAL_BITS, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
@@ -245,7 +245,7 @@ export class IntValue {
    */
   static of(value: bigint): Result<IntValue, IntegerTooWide | TypeMismatch> {
     if (typeof (value as unknown) !== "bigint") return err(notABigint);
-    const bits = bitLength(value);
+    const bits = bitLengthOf(value);
     return bits <= MAX_INTEGER_BITS ? ok(new IntValue(KEY, value, bits)) : err(integerTooWide);
   }
   toString(): string {
@@ -268,7 +268,7 @@ function bitsWithin(x: bigint, hint: number): number {
   for (let h = hint; ; ) {
     const s = Math.max(h - 64, 0);
     const top = x >> BigInt(s);
-    if (top !== 0n || s === 0) return top === 0n ? 0 : s + bitLength(top);
+    if (top !== 0n || s === 0) return top === 0n ? 0 : s + bitLengthOf(top);
     h = s;
   }
 }
@@ -288,7 +288,7 @@ export function gcdSteps(a: bigint, b: bigint): readonly [bigint, number] {
   // an integral number and throws on anything with no integer value, so every input ends
   const [p0, q0] = [toBigint(a), toBigint(b)];
   let [x, y] = abs(p0) >= abs(q0) ? [abs(p0), abs(q0)] : [abs(q0), abs(p0)];
-  let bits = bitLength(x);
+  let bits = bitLengthOf(x);
   let steps = 0;
   for (; bits > LEHMER_FROM_BITS && y !== 0n; steps++) {
     const shift = BigInt(bits - LEHMER_DIGIT);
@@ -334,7 +334,7 @@ export type NumberError = { readonly kind: "DivisionByZero" } | RationalTooWide 
 export class RationalValue {
   readonly kind = "rational";
   readonly depth = 0;
-  /** `2 + bitLength(n) / 64 + bitLength(d) / 64`. */
+  /** `2 + bitLengthOf(n) / 64 + bitLengthOf(d) / 64`. */
   readonly weight: bigint;
   readonly #numerator: bigint;
   readonly #denominator: bigint;
@@ -355,7 +355,7 @@ export class RationalValue {
    * so no wider rational exists.
    */
   private static checked(numerator: bigint, denominator: bigint): RationalValue | undefined {
-    const [n, d] = [bitLength(numerator), bitLength(denominator)];
+    const [n, d] = [bitLengthOf(numerator), bitLengthOf(denominator)];
     return n <= MAX_RATIONAL_BITS && d <= MAX_RATIONAL_BITS ? new RationalValue(KEY, numerator, denominator, n, d) : undefined;
   }
 
@@ -385,7 +385,7 @@ export class RationalValue {
    */
   static of(numerator: bigint, denominator: bigint): RationalValue | undefined {
     if (typeof (numerator as unknown) !== "bigint" || typeof (denominator as unknown) !== "bigint") return undefined;
-    const valid = denominator >= 2n && bitLength(numerator) <= MAX_RATIONAL_BITS && bitLength(denominator) <= MAX_RATIONAL_BITS;
+    const valid = denominator >= 2n && bitLengthOf(numerator) <= MAX_RATIONAL_BITS && bitLengthOf(denominator) <= MAX_RATIONAL_BITS;
     return valid && gcd(numerator, denominator) === 1n ? RationalValue.checked(numerator, denominator) : undefined;
   }
 
@@ -430,8 +430,8 @@ export class RationalValue {
     const sign = unscaled < 0n ? -1n : 1n;
     const magnitude = sign * unscaled;
     // the denominator keeps 2^(scale - twos), and twos is at most the magnitude's bit length
-    if (scale - bitLength(magnitude) > MAX_RATIONAL_BITS) return err(tooWide);
-    const twos = Math.min(bitLength(magnitude & -magnitude) - 1, scale);
+    if (scale - bitLengthOf(magnitude) > MAX_RATIONAL_BITS) return err(tooWide);
+    const twos = Math.min(bitLengthOf(magnitude & -magnitude) - 1, scale);
     const powers: (readonly [number, bigint])[] = [];
     for (let e = 1, p = 5n; e <= scale; e *= 2, p *= p) powers.push([e, p]);
     const [rest, fives] = powers.reduceRight<readonly [bigint, number]>(
@@ -715,9 +715,11 @@ export class MapValue {
 
   /**
    * The value at `key`, if present: O(|key| + log n). A key with an unpaired surrogate encodes to bytes no well-formed
-   * key has, so it is never found.
+   * key has, so it is never found; nor is a key that is not a string (from a JavaScript caller, or a cast), which is
+   * never read.
    */
   get(key: string): Value | undefined {
+    if (typeof (key as unknown) !== "string") return undefined;
     return this.#entries[search(this.#entries, (e) => e.utf8, encodeUtf8(key), canonicalKeyOrder)]?.value;
   }
 

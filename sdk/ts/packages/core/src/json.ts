@@ -393,11 +393,14 @@ export type TextSink<S> = (s: S, piece: string) => S;
 /**
  * {@link renderWithin} into any {@link TextSink}, starting from `s`: the rendering reaches the sink in order, each of
  * its characters once, in pieces that are a scalar, a quoted text or key, or punctuation, never a container's text.
+ * A value that is not a canonical value, a limit that is not a number, or a sink that is not a function is a
+ * `TypeMismatch`, before anything is written.
  */
 export function renderInto<S>(value: Value, maxBytes: number, s: S, sink: TextSink<S>): Result<S, RenderError> {
   // what a caller can pass past the types is refused in O(1), never read: the parts of a value are its own
   if (!isValue(value)) return err({ kind: "TypeMismatch", reason: "expected a canonical value" });
   if (typeof (maxBytes as unknown) !== "number") return err({ kind: "TypeMismatch", reason: "the byte limit is not a number" });
+  if (typeof (sink as unknown) !== "function") return err({ kind: "TypeMismatch", reason: "the sink is not a function" });
   const meter = new Meter(Math.min(byteLimit(maxBytes), MAX_RENDER_BYTES));
   let out = s;
   const stack: Rendering[] = [];

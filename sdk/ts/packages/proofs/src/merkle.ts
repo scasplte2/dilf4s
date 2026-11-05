@@ -3,10 +3,10 @@
  * profile (any core hash algorithm) or the RFC 6962 profile, proof decoding from canonical values, and the JLVM's
  * `merkle_verify` / `merkle_consistency_verify` over a trusted head `{root, size}` (jlvm.md section 6).
  */
-import { bitLength, describeFailure, digest, err, hashParts, models, ok, outputSize, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { describeFailure, digest, err, hashParts, models, ok, outputSize, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
-import { decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
+import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
 declare const INT64: unique symbol;
 
@@ -309,7 +309,7 @@ export interface MerkleHead {
 }
 
 function checkHead(hashing: MerkleHashing<unknown>, what: string, head: MerkleHead): Result<undefined, MerkleError> {
-  if (!withinIndex(head.size)) return err({ kind: "Encoding", reason: `${what}.size of ${bitLength(head.size).toString()} bits is not a tree size` });
+  if (!withinIndex(head.size)) return err({ kind: "Encoding", reason: `${what}.size of ${bitsOf(head.size).toString()} bits is not a tree size` });
   return sized(hashing, `${what}.root`, head.root);
 }
 

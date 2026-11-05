@@ -2,7 +2,7 @@ import { runInNewContext } from "node:vm";
 
 import { describe, expect, it } from "vitest";
 
-import { BoolValue, BytesValue, cbor, codec, decodeUtf8, equals, hashCommitment, inspect, IntValue, json, MapValue, RationalValue, TextValue, Value, valueCommitment, valueCommitmentWithin } from "../src/index.js";
+import { bitLength, BoolValue, BytesValue, cbor, codec, decodeUtf8, describeFailure, equals, hashCommitment, inspect, IntValue, json, MapValue, Preview, RationalValue, TextValue, utf8Length, Value, valueCommitment, valueCommitmentWithin } from "../src/index.js";
 import { gcdSteps, NOT_A_VALUE } from "../src/value.js";
 import { expectOk, int } from "./vectors.js";
 
@@ -413,5 +413,63 @@ describe("cbor.decode reads its input in place, or copies it once when it may ch
     const larger = new Uint8Array(16).fill(0xff);
     larger.set(encoded, 5);
     expect(Value.equals(expectOk(cbor.decode(larger.subarray(5, 5 + encoded.length)), "a view"), expected)).toBe(true);
+  });
+});
+
+describe("the remaining exports check what they are given", () => {
+  it("a map lookup by a key that is not text finds nothing, and reads nothing", () => {
+    const m = expectOk(Value.map([["5", int(5n)]]), "a map");
+    const read: string[] = [];
+    const iterable = { [Symbol.iterator]: () => read.push("iterator"), toString: () => read.push("toString") };
+    for (const k of [5, null, undefined, iterable, ["5"]]) expect(m.get(bad(k)), label(k)).toBeUndefined();
+    expect(read).toEqual([]);
+    expect(m.get("5")).toBe(m.entries()[0]?.[1]);
+  });
+
+  it("bitLength and utf8Length refuse what is not a bigint or a string, never converting it", () => {
+    const converted: string[] = [];
+    const valueOf = { valueOf: () => converted.push("valueOf") };
+    for (const x of [5, 5.5, "5", null, valueOf]) expect(bitLength(bad(x)), label(x)).toEqual(mismatch("expected a bigint"));
+    for (const x of [5, null, ["a"], { [Symbol.iterator]: () => converted.push("iterator") }]) expect(utf8Length(bad(x)), label(x)).toEqual(mismatch("expected a string"));
+    expect(converted).toEqual([]);
+    expect(bitLength(255n)).toEqual({ ok: true, value: 8 });
+    expect(utf8Length("é")).toEqual({ ok: true, value: 2 });
+  });
+
+  it("describeFailure gives a fixed text for what is not a decode failure, reading its path by index", () => {
+    for (const x of [5, null, "f", {}, { path: "a", reason: "r" }, { path: [], reason: 5 }, { path: ["a"], reason: "r" }, { path: [{ short: () => "x" }], reason: "r" }]) {
+      expect(describeFailure(bad(x)), label(x)).toBe("<not a decode failure>");
+    }
+    expect(describeFailure({ path: [], reason: "r" })).toBe("<root>: r");
+    expect(describeFailure({ path: [Preview.of("a"), Preview.of("b")], reason: "r" })).toBe("a.b: r");
+  });
+
+  it("Preview.of gives a fixed preview for what is not text, never reading it", () => {
+    const read: string[] = [];
+    for (const x of [5, null, undefined, { length: 3, codePointAt: () => read.push("codePointAt") }]) {
+      const p = Preview.of(bad(x));
+      expect([p.head, p.length, p.truncated], label(x)).toEqual(["<not text>", 0, false]);
+    }
+    expect(read).toEqual([]);
+    expect(Preview.of("<not text>").length, "the text itself has a length").toBe(10);
+  });
+
+  it("json.renderInto refuses a sink that is not a function before writing", () => {
+    for (const sink of [null, 5, {}, "f"]) expect(json.renderInto(int(1n), 100, [], bad(sink)), label(sink)).toEqual(mismatch("the sink is not a function"));
+  });
+
+  it("a hashCommitment prefix part is copied when it is checked, so a later change cannot reach the hash", () => {
+    const part = Uint8Array.of(1, 2);
+    let reads = 0;
+    const prefix = [part];
+    const watched = new Proxy(prefix, {
+      get: (t, name) => {
+        if (name === "0") reads++;
+        return Reflect.get(t, name) as unknown;
+      },
+    });
+    const honest = expectOk(hashCommitment("SHA-256", [Uint8Array.of(1, 2)], int(1n)), "honest");
+    expect(expectOk(hashCommitment("SHA-256", watched, int(1n)), "watched")).toEqual(honest);
+    expect(reads, "each part read once").toBe(1);
   });
 });

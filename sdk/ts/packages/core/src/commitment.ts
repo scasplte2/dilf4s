@@ -4,7 +4,7 @@ import { encodeIntoWithin, encodeWithin, Feeding, MAX_ENCODED_BYTES, type Absorb
 import type { TypeMismatch } from "./error.js";
 import { HASH_ALGORITHMS, startHash, type HashAlgorithm } from "./hash.js";
 import { err, ok, type Result } from "./result.js";
-import { plainBytes } from "./bytes.js";
+import { takeBytes } from "./bytes.js";
 import { bytesView, type Value } from "./value.js";
 
 /** The commitment tag of a byte string. */
@@ -51,15 +51,16 @@ const notAnAlgorithm: TypeMismatch = { kind: "TypeMismatch", reason: "expected a
 const notAPrefix: TypeMismatch = { kind: "TypeMismatch", reason: "expected an array of Uint8Arrays" };
 
 /**
- * `prefix`'s parts as plain arrays (see `plainBytes`: a part's own `length` is not believed), read by index, its
- * length once and each part once; or `undefined` if it is not an array of `Uint8Array`s.
+ * `prefix`'s parts, each a fresh copy taken from its own slots (`takeBytes`: its own `length` is not believed, and it
+ * cannot change between this check and its hashing), read by index, its length once and each part once; or
+ * `undefined` if it is not an array of `Uint8Array`s. A prefix is a few tags, so copying them costs nothing that matters.
  */
 function prefixParts(prefix: unknown): readonly Uint8Array[] | undefined {
   const length: unknown = Array.isArray(prefix) ? prefix.length : undefined;
   if (typeof length !== "number" || !Array.isArray(prefix)) return undefined;
   const parts: Uint8Array[] = [];
   for (let i = 0; i < length; i++) {
-    const part = plainBytes(prefix[i]);
+    const part = takeBytes(prefix[i]);
     if (part === undefined) return undefined;
     parts.push(part);
   }

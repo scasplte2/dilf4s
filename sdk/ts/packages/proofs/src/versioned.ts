@@ -3,10 +3,10 @@
  * head to one root, every check of Scala's `VersionedTrieVerifier`, proof / delta / snapshot-chunk decoding, the
  * chunk-by-chunk snapshot reader against a trusted head, and a replica that follows deltas.
  */
-import { bitLength, cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, toHex, utf8Length, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, toHex, utf8Length, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
-import { decodeInput } from "./input.js";
+import { bitsOf, decodeInput } from "./input.js";
 import * as trie from "./trie.js";
 import { TrieMap } from "./trie-map.js";
 
@@ -79,7 +79,10 @@ export class StateKey {
   static parse(s: string): Result<StateKey, StateKeyError> {
     if (s.length === 0) return err({ kind: "Empty" });
     // refused by its length alone: a preview would measure the whole text
-    if (s.length > MAX_KEY_LENGTH || utf8Length(s) > MAX_KEY_LENGTH) return err({ kind: "TooLong", limit: MAX_KEY_LENGTH });
+    if (s.length > MAX_KEY_LENGTH) return err({ kind: "TooLong", limit: MAX_KEY_LENGTH });
+    // utf8Length refuses what is not a string, which this check reads as too long until StateKey checks its input
+    const utf8 = utf8Length(s);
+    if (!utf8.ok || utf8.value > MAX_KEY_LENGTH) return err({ kind: "TooLong", limit: MAX_KEY_LENGTH });
     const segments = s.split("/");
     if (segments.length > MAX_SEGMENTS) return err({ kind: "TooManySegments", key: Preview.of(s), limit: MAX_SEGMENTS });
     // the grammar is ASCII, so a segment that passes it has as many characters as bytes
@@ -165,7 +168,7 @@ function bigEndian(width: number, max: bigint): VersionKey<bigint> {
   return Object.freeze({
     width,
     encode: (v: bigint): R<Uint8Array> => {
-      if (v < 0n || v > max) return err({ kind: "InvalidVersion", reason: `version of ${bitLength(v).toString()} bits is outside 0..${max.toString()}` });
+      if (v < 0n || v > max) return err({ kind: "InvalidVersion", reason: `version of ${bitsOf(v).toString()} bits is outside 0..${max.toString()}` });
       const out = new Uint8Array(width);
       let x = v;
       for (let i = width - 1; i >= 0; i--) {

@@ -13,6 +13,12 @@ const escaped = (s: string): string =>
     return c === '"' || c === "\\" ? `\\${c}` : u < 0x20 || u === 0x7f ? `\\u${u.toString(16).padStart(4, "0")}` : c;
   }).join("");
 
+/** `#truncated in x`: whether `x` is a {@link Preview}, set once by its static block. */
+let previewBrand!: (x: object) => boolean;
+
+/** Whether `x` is a {@link Preview} built by {@link Preview.of}, in O(1): no Proxy trap runs. Internal to this package. */
+export const isPreview = (x: unknown): x is Preview => typeof x === "object" && x !== null && previewBrand(x);
+
 /**
  * Caller text as an error may hold it: its first {@link MAX_PREVIEW_CODE_POINTS} code points, each unpaired surrogate
  * replaced by U+FFFD, and its whole `length` in UTF-8 bytes, an unpaired surrogate counting 3. The constructor is
@@ -33,8 +39,13 @@ export class Preview {
     Object.freeze(this);
   }
 
-  /** The preview of `text`: O(MAX_PREVIEW_CODE_POINTS) to copy, and one scan, without allocation, to measure. */
+  /**
+   * The preview of `text`: O(MAX_PREVIEW_CODE_POINTS) to copy, and one scan, without allocation, to measure. A value
+   * that is not a string (from a JavaScript caller, or a cast) is never read: its preview is {@link Preview.notText},
+   * whose head `<not text>` with a length of 0 no text's preview has.
+   */
   static of(text: string): Preview {
+    if (typeof (text as unknown) !== "string") return Preview.notText;
     const kept: number[] = [];
     let length = 0;
     let keptBytes = 0;
@@ -48,6 +59,13 @@ export class Preview {
       i += c > 0xffff ? 2 : 1;
     }
     return new Preview(String.fromCodePoint(...kept), length, keptBytes);
+  }
+
+  /** The preview of something that is not text: the head `<not text>`, a length of 0, not truncated. */
+  static readonly notText: Preview = new Preview("<not text>", 0, 0);
+
+  static {
+    previewBrand = (x) => #truncated in x;
   }
 
   /** Whether the text was longer than {@link head}. */
