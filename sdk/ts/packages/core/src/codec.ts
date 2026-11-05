@@ -24,8 +24,8 @@ export { ok } from "./result.js";
 /**
  * Encodes `T` to a canonical value and decodes it back. `depth` is the nesting level of the value being encoded (0 at
  * the root, which is the default): containers refuse to go past {@link MAX_DEPTH} before descending, so a deeply nested
- * model is a typed `DepthExceeded`, never a stack overflow. A depth that is not a whole number from 0 (negative, a
- * fraction, `NaN`, infinite) is a `TypeMismatch`, before anything is read: such a depth would never reach the limit.
+ * model is a typed `DepthExceeded`, never a stack overflow. A depth that is not a safe integer from 0 (negative, a
+ * fraction, `NaN`, infinite, past 2^53 - 1) is a `TypeMismatch`, before anything is read: such a depth would never reach the limit.
  * A hand-made codec composing others passes on the depth it was given, plus one for each container it writes.
  *
  * Decoding walks the value as the schema reads it, so a value built with shared parts costs up to its weight, and every
@@ -85,7 +85,7 @@ function codecOf<T>(shape: CodecShape): Codec<T> {
   const codec: Codec<T> = Object.freeze({
     shape,
     encode: (value: T, depth = 0) =>
-      Number.isSafeInteger(depth) && depth >= 0 ? encodeWith(codec, value, depth) : typeMismatch("the depth is not a whole number from 0"),
+      Number.isSafeInteger(depth) && depth >= 0 ? encodeWith(codec, value, depth) : typeMismatch("the depth is not a safe integer from 0"),
     // the combinators that built `shape` keep its parts' types, so what it decodes is a `T`
     decode: (value: Value) => decodeWith(codec, value) as Result<T, DecodeFailure>,
   });
@@ -522,7 +522,7 @@ const reader = <T>(iterator: Iterator<T>): Reader<T> => ({ iterator, next: itera
 /**
  * Closes the iterators of the vectors and maps still open, from the frame at `i` outwards, as leaving `for...of` loops
  * early does: an outer one is closed even when an inner one's `return` throws. One frame a level, and a depth is a
- * whole number from 0, so the recursion is at most {@link MAX_DEPTH} deep.
+ * safe integer from 0, so the recursion is at most {@link MAX_DEPTH} deep.
  *
  * Unlike `for...of`, the error that surfaces is the last one thrown: a `return` that throws replaces any error already
  * propagating (a caller's, or an inner `return`'s), where `for...of` keeps the first and drops the rest. Keeping the
@@ -637,21 +637,34 @@ function nextEncoding(top: Encoding, v: Value, stack: Encoding[]): EncodeStep {
 
 /** The next element or entry of an open vector or map, read from its iterator, or its outcome. */
 function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack: Encoding[]): EncodeStep {
-  // off the stack while its own next() runs, as for...of does not close an iterator whose next() threw; back on it for
-  // anything after, a map entry's destructuring included, which for...of does close it for. Any truthy `done` ends it
+  // off the stack while its own next() runs and its result is read (done, then value), as for...of does not close an
+  // iterator for those; back on it for anything after, a map entry's destructuring included, which for...of does close
+  // it for. Any truthy `done` ends it. A result that is no object, which for...of throws a TypeError for without closing
+  // that iterator, is refused (the iterators around it are closed, as that TypeError would close them)
   stack.pop();
   if (top.kind === "vector") {
-    const item = top.items.next();
+    const item: unknown = top.items.next();
+    if (!isResult(item)) return { done: typeMismatch(notAResult) };
     if (item.done) return { done: ArrayValue.of(top.out) };
+    const value: unknown = item.value;
     stack.push(top);
-    return { codec: top.element, value: item.value, depth: top.depth };
+    return { codec: top.element, value, depth: top.depth };
   }
-  const entry = top.entries.next();
+  const entry: unknown = top.entries.next();
+  if (!isResult(entry)) return { done: typeMismatch(notAResult) };
   if (entry.done) return { done: MapValue.of(top.out) };
+  const pair = entry.value as readonly [string, unknown];
   stack.push(top);
-  const [key, x] = entry.value;
+  const [key, x] = pair;
   top.key = key;
   return { codec: top.value, value: x, depth: top.depth };
+}
+
+const notAResult = "an iterator's next() gave a result that is not an object";
+
+/** Whether `r` may be read as an iterator result: an object (a function included), as for...of requires. */
+function isResult(r: unknown): r is { readonly done?: unknown; readonly value?: unknown } {
+  return (typeof r === "object" && r !== null) || typeof r === "function";
 }
 
 /** The next field of an open record with a value (an absent optional field is left out), or the record's map. */

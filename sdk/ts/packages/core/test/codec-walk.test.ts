@@ -444,14 +444,77 @@ describe("closing iterators as for...of does", () => {
     expect(log).toEqual([]);
   });
 
-  it("a depth that is not a whole number from 0 is refused before anything is read, never a RangeError", () => {
+  it("a depth that is not a safe integer from 0 is refused before anything is read, never a RangeError", () => {
     type R = readonly R[];
     const R: Codec<R> = vector(defer(() => R), 0, null);
     const deep = Array.from({ length: 200_000 }).reduce<R>((v) => [v], []);
-    for (const depth of [-200_010, -1, 0.5, Number.NaN, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]) {
-      expect(R.encode(deep, depth), String(depth)).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "the depth is not a whole number from 0" } });
+    for (const depth of [-200_010, -1, 0.5, Number.NaN, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY, 2 ** 53]) {
+      expect(R.encode(deep, depth), String(depth)).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "the depth is not a safe integer from 0" } });
     }
     expect(R.encode(deep)).toEqual({ ok: false, error: { kind: "DepthExceeded", limit: MAX_DEPTH } });
     expect(R.encode(deep, MAX_DEPTH)).toEqual({ ok: false, error: { kind: "DepthExceeded", limit: MAX_DEPTH } });
+    // nothing of the value is touched: not its iterator, nor a record's getters
+    const touched: string[] = [];
+    const watched = through(() => {
+      touched.push("iterator");
+      return logged("watched", [], touched);
+    }, []);
+    const record1 = record<{ readonly a: bigint }>({ a: required("a", uint) });
+    const getter = {
+      get a(): bigint {
+        touched.push("getter");
+        return 1n;
+      },
+    };
+    for (const depth of [-1, Number.NaN]) {
+      expect(vector(uint, 0, null).encode(watched, depth).ok).toBe(false);
+      expect(record1.encode(getter, depth).ok).toBe(false);
+    }
+    expect(touched).toEqual([]);
+  });
+
+  it("a value's getter that throws on a result is not followed by return(), as for...of does not close for it", () => {
+    const log: string[] = [];
+    const it: Iterator<unknown> = {
+      next: () =>
+        ({
+          done: false,
+          get value(): unknown {
+            throw new Error("value getter");
+          },
+        }) as IteratorResult<unknown>,
+      return: () => {
+        log.push("return");
+        return { done: true, value: undefined };
+      },
+    };
+    expect(() => vector(uint, 0, null).encode(through(() => it, [1n]))).toThrow("value getter");
+    expect(log).toEqual([]);
+    const map = { [Symbol.iterator]: () => it } as unknown as ReadonlyMap<string, bigint>;
+    expect(() => textMap(uint).encode(map)).toThrow("value getter");
+    expect(log).toEqual([]);
+  });
+
+  it("an iterator result that is not an object is refused, that iterator left open and the ones around it closed", () => {
+    for (const result of [7, null, undefined, "x"]) {
+      const log: string[] = [];
+      const bad: Iterator<unknown> = {
+        next: () => result as unknown as IteratorResult<unknown>,
+        return: () => {
+          log.push("return-bad");
+          return { done: true, value: undefined };
+        },
+      };
+      const inner = through(() => bad, [1n]);
+      const outer = through(() => logged("outer", [inner], log), [inner]);
+      expect(nested(uint).encode(outer), String(result)).toEqual({
+        ok: false,
+        error: { kind: "TypeMismatch", reason: "an iterator's next() gave a result that is not an object" },
+      });
+      expect(log).toEqual(["return-outer"]);
+      const map = { [Symbol.iterator]: () => bad } as unknown as ReadonlyMap<string, bigint>;
+      expect(textMap(uint).encode(map).ok).toBe(false);
+      expect(log).toEqual(["return-outer"]);
+    }
   });
 });
