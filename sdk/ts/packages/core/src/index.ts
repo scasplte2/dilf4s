@@ -12,21 +12,30 @@ export { hashCommitment, valueCommitment, valueCommitmentWithin, BYTES_TAG, CBOR
 export type { CanonicalError, DecodeFailure, TooLarge } from "./error.js";
 export { describeFailure } from "./error.js";
 export {
+  blockSize,
   contentHash,
   digest,
+  digestFromBytes,
+  digestFromHex,
   DomainTag,
+  expandMessageXmd,
+  expansionLimit,
   HASH_ALGORITHMS,
   hashAlgorithm,
   hashParts,
+  parseHashAlgorithm,
   startHash,
   outputSize,
   TaggedHash,
   taggedHash,
+  type ExpansionRefusal,
   type HashAlgorithm,
+  type HashError,
+  type HashErrorKind,
+  type HashErrorOf,
   type Hashing,
-  type InvalidDomainTag,
 } from "./hash.js";
-export { fromHex, toHex, type InvalidHex } from "./hex.js";
+export { fromHex, toHex } from "./hex.js";
 export { MAX_PREVIEW_CODE_POINTS, Preview } from "./preview.js";
 export { all, andThen, err, map, ok, type Err, type Ok, type Result } from "./result.js";
 export { decodeUtf8, utf8Length } from "./utf8.js";

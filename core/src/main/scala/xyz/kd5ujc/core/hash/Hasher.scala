@@ -35,12 +35,22 @@ object Digest {
     Either.cond(bytes.size == H.outputSize, new Digest[H](bytes) {}, HashError.InvalidLength(H.name, H.outputSize, bytes.size))
 
   /**
-   * The digest of its hex (an `0x` prefix allowed). A text longer than the width's digits and a prefix is refused by
-   * its length, as `InvalidLength` with half its length, before it is decoded (docs/specs/conformance.md §8).
+   * The digest of its hex: an optional `0x`, then exactly twice the output size in ASCII hex digits, either case
+   * (docs/specs/canonical-encoding.md §4). Digits past that width are refused as `InvalidLength` before the text is
+   * decoded, reading at most one digit past it (docs/specs/conformance.md §8): a character that is not a hex digit
+   * within that reach is `InvalidHex` at its offset, so the outcome is the same in every language's string units.
    */
-  def fromHex[H](hex: String)(implicit H: Hasher[H]): Either[HashError, Digest[H]] =
-    if (hex.length > 2 * H.outputSize + 2) HashError.InvalidLength(H.name, H.outputSize, hex.length / 2L).asLeft
-    else ByteVector.fromHexDescriptive(hex).leftMap(HashError.InvalidHex(_)).flatMap(fromBytes[H])
+  def fromHex[H](text: String)(implicit H: Hasher[H]): Either[HashError, Digest[H]] = {
+    val from = if (text.startsWith("0x")) 2 else 0
+    val digits = (text.length - from).toLong
+    val width = 2 * H.outputSize
+    if (digits > width)
+      Hex
+        .firstNonDigit(text, from, from + width.toInt + 1)
+        .fold(HashError.InvalidLength(H.name, H.outputSize, (digits + 1) / 2): HashError)(i => HashError.InvalidHex(i.toLong))
+        .asLeft
+    else Hex.decode(text, from).flatMap(fromBytes[H])
+  }
 
   private[hash] def unsafe[H](bytes: ByteVector): Digest[H] = new Digest[H](bytes) {}
 
@@ -86,6 +96,12 @@ object Hasher {
   implicit val keccak256: Hasher[Keccak256] = bouncyCastle("Keccak-256", () => new KeccakDigest(256))
   implicit val blake2b256: Hasher[Blake2b256] = bouncyCastle("BLAKE2b-256", () => new Blake2bDigest(256))
   implicit val blake2b512: Hasher[Blake2b512] = bouncyCastle("BLAKE2b-512", () => new Blake2bDigest(512))
+
+  /** Every hash function of docs/specs/canonical-encoding.md §4. */
+  val all: Vector[Hasher[?]] = Vector(sha256, sha512, sha3_256, sha3_512, keccak256, blake2b256, blake2b512)
+
+  /** The hash function with this name, as the specs and vectors write it (`"SHA-256"`); any other is previewed. */
+  def named(name: String): Either[HashError, Hasher[?]] = all.find(_.name == name).toRight(HashError.UnknownAlgorithm(Preview.of(name)))
 
   /** The most of an encoding staged, or of a byte string copied out, at once to absorb it: nothing is copied whole. */
   val Window: Int = 512
@@ -175,11 +191,33 @@ object Hasher {
   }
 }
 
-sealed trait HashError extends Product with Serializable
+/**
+ * A hash refusal, by kind (docs/specs/conformance.md §6): generated from `shared/schemas/hash-errors.cddl`, as the
+ * Rust and TypeScript SDKs' are. Caller text is held as a [[Preview]], never as itself.
+ */
+export xyz.kd5ujc.models.hash_errors.{ExpansionRefusal, HashError}
 
-object HashError {
-  final case class InvalidLength(algorithm: String, expected: Long, actual: Long) extends HashError
-  final case class InvalidHex(reason: String) extends HashError
-  final case class InvalidDomainTag(tag: Preview) extends HashError
-  final case class InvalidExpansion(reason: String) extends HashError
+/** Hexadecimal text as the hash API reads it: ASCII digits and letters `a`-`f` in either case, two per byte. */
+private[hash] object Hex {
+
+  private def isDigit(c: Char): Boolean = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+
+  /** The offset of the first character in `[from, until)` of `s` that is not a hex digit. */
+  @tailrec
+  def firstNonDigit(s: String, from: Int, until: Int): Option[Int] =
+    if (from >= until || from >= s.length) None
+    else if (!isDigit(s.charAt(from))) Some(from)
+    else firstNonDigit(s, from + 1, until)
+
+  /**
+   * The bytes of `s` from `from` on. `InvalidHex` names the first character that is not a hex digit, or else, for an
+   * odd number of digits, the text's length: every character before either is ASCII, so the offset is the same in
+   * UTF-16 units, UTF-8 bytes and code points.
+   */
+  def decode(s: String, from: Int): Either[HashError, ByteVector] =
+    firstNonDigit(s, from, s.length)
+      .orElse(Option.when((s.length - from) % 2 != 0)(s.length))
+      .map(i => HashError.InvalidHex(i.toLong))
+      .toLeft(())
+      .flatMap(_ => ByteVector.fromHex(s.substring(from)).toRight(HashError.InvalidHex(from.toLong)))
 }

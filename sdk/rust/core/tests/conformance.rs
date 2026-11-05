@@ -16,13 +16,13 @@ mod common;
 use common::{bytes, load};
 use dilf4s_core::codec::Codec;
 use dilf4s_core::commitment::{value_commitment, value_commitment_into};
-use dilf4s_core::generated::canonical_vectors::{
-    CanonicalErrorKind, CanonicalJsonCase, CanonicalVectors, DomainTagOutcome,
-};
+use dilf4s_core::generated::canonical_vectors::{CanonicalErrorKind, CanonicalJsonCase, CanonicalVectors, HashOutcome};
 use dilf4s_core::generated::merkle_vectors::MerkleVectors;
 use dilf4s_core::generated::versioned_trie::STATE_KEY;
 use dilf4s_core::generated::versioned_trie_vectors::{VersionedTrieVectors, VtSchemaOutcome};
-use dilf4s_core::hash::{DomainTag, HashAlgorithm, HashError, Sha256, TaggedHash};
+use dilf4s_core::hash::{
+    Digest, DomainTag, ExpansionRefusal, HashAlgorithm, HashError, HashErrorKind, Hasher, Sha256, TaggedHash,
+};
 use dilf4s_core::{CanonicalError, cbor, hex, json};
 
 /// The schema's kind of a refusal. Exhaustive: a variant the SDK adds does not compile until it is mapped.
@@ -190,22 +190,125 @@ fn digests() {
     eprintln!("digests: {n} cases");
 }
 
+/// A hash call's outcome as a row records it: "accepted", or the refusal's kind (total: every kind of the generated
+/// family is a kind of the schema's), with its normative `offset` (`InvalidHex`) or `refusal` (`InvalidExpansion`).
+fn hash_outcome<T>(r: &Result<T, HashError>) -> (HashOutcome, Option<u64>, Option<ExpansionRefusal>) {
+    match r {
+        Ok(_) => (HashOutcome::Accepted, None, None),
+        Err(e) => (
+            HashOutcome::HashErrorKind(e.kind()),
+            match e {
+                HashError::InvalidHex { offset } => Some(*offset),
+                _ => None,
+            },
+            match e {
+                HashError::InvalidExpansion { refusal, .. } => Some(refusal.clone()),
+                _ => None,
+            },
+        ),
+    }
+}
+
+fn same_outcome<T>(
+    case: &str,
+    expected: (&HashOutcome, Option<u64>, Option<&ExpansionRefusal>),
+    actual: &Result<T, HashError>,
+) -> Result<(), String> {
+    let (kind, offset, refusal) = hash_outcome(actual);
+    if (&kind, offset, refusal.as_ref()) == expected {
+        Ok(())
+    } else {
+        Err(format!("{case}: expected {expected:?}, got {:?}", (kind, offset, refusal)))
+    }
+}
+
 #[test]
 fn domain_tags() {
     let (v, _, _) = vectors();
     let n = run(&v.domain_tags, |c| {
-        let outcome = match DomainTag::new(&c.tag) {
-            Ok(_) => Some(DomainTagOutcome::Accepted),
-            Err(HashError::InvalidDomainTag { .. }) => Some(DomainTagOutcome::InvalidDomainTag),
-            Err(HashError::InvalidLength { .. } | HashError::UnknownAlgorithm { .. }) => None,
-        };
-        if outcome.as_ref() == Some(&c.outcome) {
-            Ok(())
-        } else {
-            Err(format!("{:?}: expected {:?}, got {outcome:?}", c.tag, c.outcome))
-        }
+        same_outcome(&format!("{:?}", c.tag), (&c.outcome, None, None), &DomainTag::new(&c.tag))
     });
     eprintln!("domainTags: {n} cases");
+}
+
+#[test]
+fn algorithms() {
+    let (v, _, _) = vectors();
+    let n = run(&v.algorithms, |c| {
+        let r = HashAlgorithm::from_name(&c.name);
+        same_outcome(&format!("{:?}", c.name), (&c.outcome, None, None), &r)?;
+        r.map_or(Ok(()), |a| same("name", &c.name, &c.name, a.name()))
+    });
+    eprintln!("algorithms: {n} cases");
+}
+
+#[test]
+fn digest_hex() {
+    let (v, _, _) = vectors();
+    let n = run(&v.digest_hex, |c| {
+        let algorithm = HashAlgorithm::from_name(&c.algorithm).map_err(|e| e.to_string())?;
+        let case = format!("{} {:?}", c.algorithm, c.hex);
+        let r = algorithm.digest_from_hex(&c.hex);
+        same_outcome(&case, (&c.outcome, c.offset, None), &r)?;
+        r.map_or(Ok(()), |d| {
+            let lower = c.hex.strip_prefix("0x").unwrap_or(&c.hex).to_ascii_lowercase();
+            same("bytes", &case, &lower, &hex::encode(&d))
+        })
+    });
+    eprintln!("digestHex: {n} cases");
+}
+
+/// The typed form agrees with the run-time one on every row of its algorithm.
+#[test]
+fn typed_digest_hex() {
+    let (v, _, _) = vectors();
+    let rows: Vec<_> = v.digest_hex.iter().filter(|c| c.algorithm == Sha256::NAME).collect();
+    let n = run(&rows, |c| {
+        let typed = Digest::<Sha256>::from_hex(&c.hex).map(|d| d.as_bytes().to_vec());
+        let dynamic = HashAlgorithm::Sha256.digest_from_hex(&c.hex);
+        if typed == dynamic { Ok(()) } else { Err(format!("{:?}: {typed:?} and {dynamic:?}", c.hex)) }
+    });
+    assert!(n > 20, "{n} SHA-256 rows");
+}
+
+#[test]
+fn expansions() {
+    let (v, _, _) = vectors();
+    let n = run(&v.expansions, |c| {
+        let algorithm = HashAlgorithm::from_name(&c.algorithm).map_err(|e| e.to_string())?;
+        let case = format!("{} dst {} length {}", c.algorithm, c.dst, c.length);
+        // a length past usize is past every limit, so it is refused as such
+        let length = usize::try_from(c.length).unwrap_or(usize::MAX);
+        let r = algorithm.expand_message_xmd(&bytes(&c.message), &bytes(&c.dst), length);
+        same_outcome(&case, (&c.outcome, None, c.refusal.as_ref()), &r)?;
+        match (&r, &c.output) {
+            (Ok(out), Some(expected)) => same("output", &case, expected, &hex::encode(out)),
+            (Err(_), None) => Ok(()),
+            _ => Err(format!("{case}: an output exactly when accepted")),
+        }
+    });
+    eprintln!("expansions: {n} cases");
+}
+
+/// The coverage gate (conformance.md section 6) for the hash family: every kind of the generated `HashErrorKind` has a
+/// row, in whichever section reaches it, and the expansion refusals each have one.
+#[test]
+fn every_hash_error_kind_has_a_row() {
+    let (v, _, _) = vectors();
+    let pinned: Vec<&HashOutcome> = v
+        .domain_tags
+        .iter()
+        .map(|c| &c.outcome)
+        .chain(v.algorithms.iter().map(|c| &c.outcome))
+        .chain(v.digest_hex.iter().map(|c| &c.outcome))
+        .chain(v.expansions.iter().map(|c| &c.outcome))
+        .collect();
+    for kind in HashErrorKind::ALL {
+        assert!(pinned.contains(&&HashOutcome::HashErrorKind(kind.clone())), "no row pins {kind:?}");
+    }
+    for refusal in ExpansionRefusal::ALL {
+        assert!(v.expansions.iter().any(|c| c.refusal.as_ref() == Some(&refusal)), "no row pins {refusal:?}");
+    }
 }
 
 #[test]

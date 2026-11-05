@@ -1,6 +1,28 @@
 import { describe, expect, it, test } from "vitest";
 
-import { cbor, type CanonicalError, contentHash, digest, DomainTag, fromHex, hashAlgorithm, json, models, taggedHash, toHex, Value, valueCommitment } from "../src/index.js";
+import {
+  cbor,
+  type CanonicalError,
+  contentHash,
+  digest,
+  digestFromHex,
+  DomainTag,
+  expandMessageXmd,
+  type ExpansionRefusal,
+  fromHex,
+  type HashAlgorithm,
+  hashAlgorithm,
+  type HashError,
+  type HashErrorKind,
+  json,
+  models,
+  parseHashAlgorithm,
+  type Result,
+  taggedHash,
+  toHex,
+  Value,
+  valueCommitment,
+} from "../src/index.js";
 import { expectOk, loadVectors } from "./vectors.js";
 
 const vectors = loadVectors("canonical_encoding_v1.json", models.canonicalVectors.CanonicalVectors);
@@ -100,10 +122,52 @@ describe("canonical_encoding_v1.json", () => {
   });
 
   it.each(vectors.domainTags.map((c) => [JSON.stringify(c.tag), c] as const))("domain tag %s", (_, c) => {
-    const r = DomainTag.of(c.tag);
-    expect(r.ok ? "accepted" : r.error.kind).toBe(c.outcome);
+    expect(outcome(DomainTag.of(c.tag))).toEqual({ outcome: c.outcome });
+  });
+
+  it.each(vectors.algorithms.map((c) => [JSON.stringify(c.name), c] as const))("hash function name %s", (_, c) => {
+    const r = parseHashAlgorithm(c.name);
+    expect(outcome(r)).toEqual({ outcome: c.outcome });
+    if (r.ok) expect(r.value).toBe(c.name);
+    expect(hashAlgorithm(c.name), "the lookup without the refusal agrees").toBe(r.ok ? r.value : undefined);
+  });
+
+  it.each(vectors.digestHex.map((c) => [c.algorithm, JSON.stringify(c.hex).slice(0, 40), c] as const))("%s digest from hex %s", (_, __, c) => {
+    const r = digestFromHex(known(c.algorithm), c.hex);
+    expect(outcome(r)).toEqual(c.offset === undefined ? { outcome: c.outcome } : { outcome: c.outcome, offset: c.offset });
+    if (r.ok) expect(toHex(r.value)).toBe((c.hex.startsWith("0x") ? c.hex.slice(2) : c.hex).toLowerCase());
+  });
+
+  it.each(vectors.expansions.map((c) => [c.algorithm, c.dst.length / 2, c.length, c] as const))(
+    "%s expand_message_xmd, a %i-byte DST, %i bytes",
+    (_, __, ___, c) => {
+      const r = expandMessageXmd(known(c.algorithm), bytes(c.message), bytes(c.dst), Number(c.length));
+      expect(outcome(r)).toEqual(c.refusal === undefined ? { outcome: c.outcome } : { outcome: c.outcome, refusal: c.refusal });
+      expect(r.ok ? toHex(r.value) : undefined, "an output exactly when accepted").toBe(c.output);
+    },
+  );
+
+  test("coverage (conformance.md section 6): every HashError kind has a row, and every expansion refusal", () => {
+    // a Record over the SDK's kinds: a kind added to hash-errors.cddl does not compile until it is listed here
+    const coverage: Record<HashErrorKind, true> = { InvalidLength: true, InvalidHex: true, InvalidDomainTag: true, InvalidExpansion: true, UnknownAlgorithm: true };
+    const refusals: Record<ExpansionRefusal, true> = { emptyDst: true, outputLength: true };
+    const pinned = new Set<string>([...vectors.domainTags, ...vectors.algorithms, ...vectors.digestHex, ...vectors.expansions].map((c) => c.outcome));
+    expect(Object.keys(coverage).filter((k) => !pinned.has(k))).toEqual([]);
+    const refused = new Set(vectors.expansions.flatMap((c) => (c.refusal === undefined ? [] : [c.refusal])));
+    expect(Object.keys(refusals).filter((k) => !refused.has(k as ExpansionRefusal))).toEqual([]);
   });
 });
+
+/** A hash call's outcome as a row records it: "accepted", or the kind, with its normative offset or refusal. */
+function outcome(r: Result<unknown, HashError>): { outcome: string; offset?: bigint; refusal?: ExpansionRefusal } {
+  if (r.ok) return { outcome: "accepted" };
+  const e = r.error;
+  return e.kind === "InvalidHex" ? { outcome: e.kind, offset: BigInt(e.offset) } : e.kind === "InvalidExpansion" ? { outcome: e.kind, refusal: e.refusal } : { outcome: e.kind };
+}
+
+function known(name: string): HashAlgorithm {
+  return expectOk(parseHashAlgorithm(name), "a known algorithm");
+}
 
 describe("versioned_trie_v1.json state keys", () => {
   const { StateKey } = models.versionedTrie;

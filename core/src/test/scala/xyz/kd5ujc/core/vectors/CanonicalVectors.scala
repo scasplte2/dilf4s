@@ -354,6 +354,124 @@ object CanonicalVectors {
     "dilf4s/é/v1"
   )
 
+  /** Candidate hash function names: the seven of section 4, then near misses of each kind. */
+  val algorithmNames: List[String] = Hasher.all.map(_.name).toList ++ List(
+    "sha-256",
+    "SHA256",
+    "SHA-1",
+    "SHA3-384",
+    "Keccak256",
+    "keccak-256",
+    "BLAKE2b",
+    "BLAKE2B-256",
+    "",
+    " SHA-256",
+    "SHA-256 ",
+    "SHA-256\u0000",
+    "SHA‐256",
+    "é"
+  )
+
+  private val sha256Hex = Hasher[Sha256].digest(ByteVector("abc".getBytes(UTF_8))).hex
+  private val sha512Hex = Hasher[Sha512].digest(ByteVector("abc".getBytes(UTF_8))).hex
+  private val blake2bHex = Hasher[Blake2b256].digest(ByteVector("abc".getBytes(UTF_8))).hex
+
+  /**
+   * Digest hex, by algorithm (section 4): an optional `0x` and exactly the width's ASCII hex digits, either case.
+   * Refusals: the width's digits and one more are read before the length is (conformance.md section 8), so a non-ASCII
+   * character is refused at the same offset in every language's string units.
+   */
+  val digestHex: List[(String, String)] = {
+    val d = sha256Hex
+    List(
+      "SHA-256"     -> d,
+      "SHA-256"     -> d.toUpperCase,
+      "SHA-256"     -> ("0x" + d),
+      "SHA-256"     -> ("0x" + d.toUpperCase),
+      "SHA-512"     -> sha512Hex,
+      "BLAKE2b-256" -> blake2bHex,
+      "Keccak-256"  -> d,
+      // the prefix is "0x" alone, read once, and counted in an offset
+      "SHA-256" -> ("0X" + d),
+      "SHA-256" -> ("0x0x" + d.drop(4)),
+      "SHA-256" -> ("x" + d.drop(1)),
+      // lengths: empty, short, odd (the missing digit's offset), long by one digit and by one byte, twice the width
+      "SHA-256"     -> "",
+      "SHA-256"     -> "0x",
+      "SHA-256"     -> d.dropRight(2),
+      "SHA-256"     -> d.dropRight(1),
+      "SHA-256"     -> ("0x" + d.dropRight(1)),
+      "SHA-256"     -> (d + "0"),
+      "SHA-256"     -> (d + "00"),
+      "SHA-256"     -> ("0x" + d + "0"),
+      "SHA-256"     -> (d * 2),
+      "SHA-512"     -> d,
+      "BLAKE2b-256" -> sha512Hex,
+      // characters that are not ASCII hex digits: letters past f, space, underscore, a fullwidth digit, non-ASCII
+      // text whose UTF-8 is longer than the width while its UTF-16 is not, and a non-digit one past the width
+      "SHA-256" -> ("zz" + d.drop(2)),
+      "SHA-256" -> (d.take(10) + "g" + d.drop(11)),
+      "SHA-256" -> (d.take(2) + " " + d.drop(3)),
+      "SHA-256" -> (d.take(1) + "_" + d.drop(2)),
+      "SHA-256" -> ("１" + d.drop(1)),
+      "SHA-256" -> ("é" + d.drop(1)),
+      "SHA-256" -> (d.take(62) + "é"),
+      "SHA-256" -> ("é" * 33),
+      "SHA-256" -> ("é" * 40),
+      "SHA-256" -> ("😀" * 20),
+      "SHA-256" -> (d + "é"),
+      "SHA-256" -> (d + "g" + d)
+    )
+  }
+
+  private def ascii(s: String): ByteVector = ByteVector(s.getBytes(UTF_8))
+  private val quux256 = ascii("QUUX-V01-CS02-with-expander-SHA256-128")
+  private val quux512 = ascii("QUUX-V01-CS02-with-expander-SHA512-256")
+  private val expandTag = ascii("dilf4s/vectors/expand/v1")
+
+  /**
+   * `expand_message_xmd` (RFC 9380 section 5.3.1): (algorithm, message, DST, length). RFC 9380's own K.1 and K.3
+   * cases, every algorithm, DSTs at and past 255 bytes, the longest output; refusals in their order.
+   */
+  val expansions: List[(String, ByteVector, ByteVector, Long)] = List(
+    ("SHA-256", ByteVector.empty, quux256, 32L),
+    ("SHA-256", ascii("abc"), quux256, 32L),
+    ("SHA-256", ascii("abcdef0123456789"), quux256, 32L),
+    ("SHA-256", ByteVector.empty, quux256, 128L),
+    ("SHA-512", ByteVector.empty, quux512, 32L),
+    ("SHA-512", ascii("abc"), quux512, 128L),
+    ("SHA3-256", ascii("abc"), expandTag, 48L),
+    ("SHA3-512", ascii("abc"), expandTag, 48L),
+    ("Keccak-256", ascii("abc"), expandTag, 48L),
+    ("BLAKE2b-256", ascii("abc"), expandTag, 48L),
+    ("BLAKE2b-512", ascii("abc"), expandTag, 48L),
+    ("SHA-256", ascii("abc"), ByteVector.fill(255)(0x41), 32L),
+    ("SHA-256", ascii("abc"), ByteVector.fill(256)(0x41), 32L),
+    ("SHA-512", ascii("abc"), ByteVector.fill(300)(0x42), 64L),
+    ("SHA-256", ascii("abc"), ByteVector(1), 1L),
+    ("SHA-256", ByteVector.empty, expandTag, 8160L),
+    ("SHA-256", ByteVector.empty, expandTag, 8161L),
+    ("SHA-256", ByteVector.empty, expandTag, 0L),
+    ("SHA-512", ByteVector.empty, expandTag, 16321L),
+    ("SHA3-512", ByteVector.empty, expandTag, 65536L),
+    ("SHA-256", ByteVector.empty, ByteVector.fill(256)(0x41), 4294967296L),
+    ("SHA-256", ascii("abc"), ByteVector.empty, 32L),
+    ("SHA-256", ascii("abc"), ByteVector.empty, 0L),
+    ("SHA-512", ascii("abc"), ByteVector.empty, 99999L)
+  )
+
+  private def hashOutcome(r: Either[HashError, ?]): List[(String, VectorJson)] =
+    "outcome" -> r.fold(e => str(e.kind), _ => str("accepted")) :: (r match {
+      case Left(HashError.InvalidHex(offset))              => List("offset" -> num(offset))
+      case Left(HashError.InvalidExpansion(refusal, _, _)) => List("refusal" -> str(refusal))
+      case _                                               => Nil
+    })
+
+  private def fromHex[H](h: Hasher[H], text: String): Either[HashError, ByteVector] = Digest.fromHex[H](text)(using h).map(_.bytes)
+
+  private def expand[H](h: Hasher[H], msg: ByteVector, dst: ByteVector, length: Long): Either[HashError, ByteVector] =
+    ExpandMessage.xmd[H](msg, dst, math.min(length, Int.MaxValue.toLong).toInt)(using h)
+
   private def errorKind(e: Product): VectorJson = str(e.productPrefix)
 
   /** A refusal's fields: its kind, and its normative `limit` when it has one (conformance.md §3). */
@@ -410,7 +528,24 @@ object CanonicalVectors {
       m              <- digestMessages
       (name, digest) <- digesters
     } yield obj("algorithm" -> str(name), "message" -> str(m.toHex), "digest" -> str(digest(m).toHex))),
-    "domainTags" -> arr(domainTags.map(t => obj("tag" -> str(t), "outcome" -> DomainTag(t).fold(errorKind, _ => str("accepted")))))
+    "domainTags" -> arr(domainTags.map(t => obj(("tag" -> str(t)) :: hashOutcome(DomainTag(t))*))),
+    "algorithms" -> arr(algorithmNames.map(n => obj(("name" -> str(n)) :: hashOutcome(Hasher.named(n))*))),
+    "digestHex" -> arr(digestHex.map {
+      case (name, text) =>
+        obj(("algorithm" -> str(name)) :: ("hex" -> str(text)) :: hashOutcome(Hasher.named(name).flatMap(fromHex(_, text)))*)
+    }),
+    "expansions" -> arr(expansions.map {
+      case (name, msg, dst, length) =>
+        val r = Hasher.named(name).flatMap(expand(_, msg, dst, length))
+        obj(
+          List(
+            "algorithm" -> str(name),
+            "message"   -> str(msg.toHex),
+            "dst"       -> str(dst.toHex),
+            "length"    -> num(length)
+          ) ++ hashOutcome(r) ++ r.toOption.map(o => "output" -> str(o.toHex)).toList*
+        )
+    })
   )
 
   def render: String = VectorJson.pretty(build) + "\n"

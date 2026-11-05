@@ -4,6 +4,7 @@
 //! digests of different functions never compare or mix. [`HashAlgorithm`] selects one at run time by name.
 
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 use core::marker::PhantomData;
@@ -13,6 +14,15 @@ use sha2::Digest as _;
 use crate::cbor;
 use crate::preview::Preview;
 use crate::value::Value;
+
+/// A hash refusal, by kind (docs/specs/conformance.md section 6): generated from `shared/schemas/hash-errors.cddl`, as
+/// the reference's and the TypeScript SDK's are. Caller text is held as a [`Preview`], never as itself.
+pub use crate::generated::hash_errors::{ExpansionRefusal, HashError, HashErrorKind};
+
+/// A size as an error holds it.
+fn size(n: usize) -> u64 {
+    u64::try_from(n).unwrap_or(u64::MAX)
+}
 
 /// A hash function with a fixed output.
 pub trait Hasher {
@@ -107,6 +117,63 @@ hasher!(
     Blake2b512, "BLAKE2b-512", 64, blake2::Blake2b512
 );
 
+/// The bytes of a digest of `width` bytes from its hex (canonical-encoding.md section 4): an optional `0x`, then exactly
+/// `2 * width` ASCII hex digits, either case. Digits past that width are refused as `InvalidLength` before the text is
+/// decoded, reading at most one digit past it (conformance.md section 8): a byte that is not a hex digit within that
+/// reach is `InvalidHex` at its offset, the same offset in every language's string units.
+fn digest_bytes(algorithm: &str, width: usize, text: &str) -> Result<Vec<u8>, HashError> {
+    let (from, digits): (usize, &str) = text.strip_prefix("0x").map_or((0, text), |d| (2, d));
+    let at = |offset: usize| HashError::InvalidHex { offset: size(from.saturating_add(offset)) };
+    let length = |actual: usize| HashError::InvalidLength {
+        algorithm: algorithm.into(),
+        expected: size(width),
+        actual: size(actual),
+    };
+    let span = width.saturating_mul(2);
+    if digits.len() > span {
+        let reach = digits.as_bytes().get(..span.saturating_add(1)).unwrap_or(digits.as_bytes());
+        return Err(reach
+            .iter()
+            .position(|b| !b.is_ascii_hexdigit())
+            .map_or_else(|| length(digits.len().div_ceil(2)), at));
+    }
+    let bytes = crate::hex::decode(digits).map_err(|e| match e {
+        HashError::InvalidHex { offset } => HashError::InvalidHex { offset: offset.saturating_add(size(from)) },
+        other => other,
+    })?;
+    if bytes.len() == width { Ok(bytes) } else { Err(length(bytes.len())) }
+}
+
+/// RFC 9380 section 5.3.1 `expand_message_xmd` under `H`, whose input block is `block` bytes. A DST over 255 bytes is
+/// first reduced to `H("H2C-OVERSIZE-DST-" || DST)` (section 5.3.3). Refused before anything is hashed, in this order:
+/// an empty DST (`EmptyDst`), and a length outside `1..=`[`HashAlgorithm::expansion_limit`] (`OutputLength`).
+fn xmd<H: Hasher>(block: usize, message: &[u8], dst: &[u8], length: usize) -> Result<Vec<u8>, HashError> {
+    let limit = H::OUTPUT_SIZE.saturating_mul(255).min(65_535);
+    let refused = |refusal| HashError::InvalidExpansion { refusal, algorithm: H::NAME.into(), limit: size(limit) };
+    if dst.is_empty() {
+        return Err(refused(ExpansionRefusal::EmptyDst));
+    }
+    if length == 0 || length > limit {
+        return Err(refused(ExpansionRefusal::OutputLength));
+    }
+    let oversize = (dst.len() > 255).then(|| H::hash_parts(&[b"H2C-OVERSIZE-DST-", dst]));
+    let dst = oversize.as_ref().map_or(dst, AsRef::as_ref);
+    // both fit: a DST is now at most 255 bytes, and a length at most the limit
+    let suffix = [dst, &[u8::try_from(dst.len()).unwrap_or(u8::MAX)]].concat();
+    let length_bytes = u16::try_from(length).unwrap_or(u16::MAX).to_be_bytes();
+    let b0 = H::hash_parts(&[&vec![0; block], message, &length_bytes, &[0], &suffix]);
+    let b1 = H::hash_parts(&[b0.as_ref(), &[1], &suffix]);
+    let ell = length.div_ceil(H::OUTPUT_SIZE);
+    let (_, mut out) = (2..=ell).fold((b1.clone(), b1.as_ref().to_vec()), |(prev, mut out), i| {
+        let mixed: Vec<u8> = b0.as_ref().iter().zip(prev.as_ref()).map(|(a, b)| a ^ b).collect();
+        let bi = H::hash_parts(&[&mixed, &[u8::try_from(i).unwrap_or(u8::MAX)], &suffix]);
+        out.extend_from_slice(bi.as_ref());
+        (bi, out)
+    });
+    out.truncate(length);
+    Ok(out)
+}
+
 /// A digest produced by `H`.
 pub struct Digest<H: Hasher> {
     bytes: H::Output,
@@ -126,11 +193,17 @@ impl<H: Hasher> Digest<H> {
 
     /// A digest from its bytes, which must be exactly the output size.
     pub fn from_slice(bytes: &[u8]) -> Result<Self, HashError> {
-        H::output_from_slice(bytes).map(Self::from_output).ok_or(HashError::InvalidLength {
-            algorithm: H::NAME,
-            expected: H::OUTPUT_SIZE,
-            actual: bytes.len(),
+        H::output_from_slice(bytes).map(Self::from_output).ok_or_else(|| HashError::InvalidLength {
+            algorithm: H::NAME.into(),
+            expected: size(H::OUTPUT_SIZE),
+            actual: size(bytes.len()),
         })
+    }
+
+    /// A digest from its hex: an optional `0x`, then exactly twice the output size in hex digits, either case
+    /// ([`HashAlgorithm::digest_from_hex`]).
+    pub fn from_hex(text: &str) -> Result<Self, HashError> {
+        digest_bytes(H::NAME, H::OUTPUT_SIZE, text).and_then(|b| Self::from_slice(&b))
     }
 
     /// The digest bytes.
@@ -209,44 +282,6 @@ impl<H: Hasher> Hashing<H> {
         Digest::from_output(H::finish(self.state))
     }
 }
-
-/// Errors of hashing inputs: digest lengths and domain tags.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HashError {
-    /// Bytes of the wrong length for a digest.
-    InvalidLength {
-        /// The hash function.
-        algorithm: &'static str,
-        /// Its output size.
-        expected: usize,
-        /// The length given.
-        actual: usize,
-    },
-    /// A tag outside the `DomainTag` grammar.
-    InvalidDomainTag {
-        /// The tag given, previewed.
-        tag: Preview,
-    },
-    /// A hash function name that is not one of [`HashAlgorithm`]'s.
-    UnknownAlgorithm {
-        /// The name given, previewed.
-        name: Preview,
-    },
-}
-
-impl fmt::Display for HashError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidLength { algorithm, expected, actual } => {
-                write!(f, "{algorithm} digest of {actual} bytes, expected {expected}")
-            }
-            Self::InvalidDomainTag { tag } => write!(f, "invalid domain tag {tag}"),
-            Self::UnknownAlgorithm { name } => write!(f, "unknown hash function {name}"),
-        }
-    }
-}
-
-impl core::error::Error for HashError {}
 
 /// A versioned domain-separation tag matching `^[a-z0-9]+(/[a-z0-9][a-z0-9._-]*)*/v[0-9]+$`, such as
 /// `dilf4s/mpt/leaf/v1`.
@@ -393,6 +428,47 @@ impl HashAlgorithm {
         match self {
             Self::Sha256 | Self::Sha3_256 | Self::Keccak256 | Self::Blake2b256 => 32,
             Self::Sha512 | Self::Sha3_512 | Self::Blake2b512 => 64,
+        }
+    }
+
+    /// The input block size in bytes (a sponge's rate): `expand_message_xmd`'s `s_in_bytes`.
+    pub const fn block_size(self) -> usize {
+        match self {
+            Self::Sha256 => 64,
+            Self::Sha3_512 => 72,
+            Self::Sha512 | Self::Blake2b256 | Self::Blake2b512 => 128,
+            Self::Sha3_256 | Self::Keccak256 => 136,
+        }
+    }
+
+    /// The most bytes [`HashAlgorithm::expand_message_xmd`] expands to: `min(255 * output size, 65535)`.
+    pub const fn expansion_limit(self) -> usize {
+        let limit = self.output_size().saturating_mul(255);
+        if limit < 65_535 { limit } else { 65_535 }
+    }
+
+    /// A digest's bytes from its hex: an optional `0x`, then exactly twice the output size in ASCII hex digits, either
+    /// case. `InvalidHex` at the first character that is not a hex digit (or, for an odd number of digits, the text's
+    /// length), `InvalidLength` for any other number of digits; digits past the width are refused reading at most one
+    /// past it, before the text is decoded.
+    pub fn digest_from_hex(self, text: &str) -> Result<Vec<u8>, HashError> {
+        digest_bytes(self.name(), self.output_size(), text)
+    }
+
+    /// RFC 9380 section 5.3.1 `expand_message_xmd`: `length` uniform bytes from `message` under the domain separation
+    /// tag `dst`. A DST over 255 bytes is first reduced to `H("H2C-OVERSIZE-DST-" || DST)` (section 5.3.3). Refused as
+    /// `InvalidExpansion`, before anything is hashed, for an empty DST (`EmptyDst`), then for a length outside
+    /// `1..=`[`HashAlgorithm::expansion_limit`] (`OutputLength`).
+    pub fn expand_message_xmd(self, message: &[u8], dst: &[u8], length: usize) -> Result<Vec<u8>, HashError> {
+        let block = self.block_size();
+        match self {
+            Self::Sha256 => xmd::<Sha256>(block, message, dst, length),
+            Self::Sha512 => xmd::<Sha512>(block, message, dst, length),
+            Self::Sha3_256 => xmd::<Sha3_256>(block, message, dst, length),
+            Self::Sha3_512 => xmd::<Sha3_512>(block, message, dst, length),
+            Self::Keccak256 => xmd::<Keccak256>(block, message, dst, length),
+            Self::Blake2b256 => xmd::<Blake2b256>(block, message, dst, length),
+            Self::Blake2b512 => xmd::<Blake2b512>(block, message, dst, length),
         }
     }
 

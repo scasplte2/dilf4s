@@ -9,22 +9,23 @@ object ExpandMessage {
 
   private val oversizePrefix = ByteVector("H2C-OVERSIZE-DST-".getBytes(US_ASCII))
 
+  /** The most bytes `H` expands to: `min(255 * outputSize, 65535)`. */
+  def limit[H](implicit H: Hasher[H]): Long = math.min(255L * H.outputSize, 65535L)
+
   /**
    * `lenInBytes` uniform bytes from `msg` under domain separation tag `dst`. A DST over 255 bytes is first reduced to
-   * `H("H2C-OVERSIZE-DST-" || DST)` (§5.3.3). Lengths beyond `255 * outputSize` or 65535, and an empty DST, are errors.
+   * `H("H2C-OVERSIZE-DST-" || DST)` (§5.3.3). It is refused (`InvalidExpansion`), in this order, for an empty DST
+   * (`emptyDst`) and for a length outside `1..`[[limit]] (`outputLength`), before anything is hashed.
    */
   def xmd[H](msg: ByteVector, dst: ByteVector, lenInBytes: Int)(implicit H: Hasher[H]): Either[HashError, ByteVector] = {
-    val bIn = H.outputSize.toInt
-    val ell = (lenInBytes + bIn - 1) / bIn
-    val dstEff = if (dst.size > 255L) H.digest(oversizePrefix ++ dst).bytes else dst
+    def refused(r: ExpansionRefusal): HashError = HashError.InvalidExpansion(r, H.name, limit[H])
     for {
-      _ <- Either.cond(dst.nonEmpty, (), HashError.InvalidExpansion("the domain separation tag must not be empty"))
-      _ <- Either.cond(
-        lenInBytes > 0 && ell <= 255 && lenInBytes <= 65535,
-        (),
-        HashError.InvalidExpansion(s"cannot expand to $lenInBytes bytes with ${H.name}")
-      )
+      _ <- Either.cond(dst.nonEmpty, (), refused("emptyDst"))
+      _ <- Either.cond(lenInBytes > 0 && lenInBytes <= limit[H], (), refused("outputLength"))
     } yield {
+      val bIn = H.outputSize.toInt
+      val ell = (lenInBytes + bIn - 1) / bIn
+      val dstEff = if (dst.size > 255L) H.digest(oversizePrefix ++ dst).bytes else dst
       val dstPrime = dstEff ++ ByteVector(dstEff.size.toByte)
       val msgPrime = ByteVector.low(H.blockSize) ++ msg ++ ByteVector.fromShort(lenInBytes.toShort) ++ ByteVector(0) ++ dstPrime
       val b0 = H.digest(msgPrime).bytes

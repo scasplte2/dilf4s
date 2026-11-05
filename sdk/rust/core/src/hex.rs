@@ -2,7 +2,8 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::fmt;
+
+use crate::hash::HashError;
 
 const DIGITS: &[u8; 16] = b"0123456789abcdef";
 
@@ -17,20 +18,25 @@ pub fn encode(bytes: &[u8]) -> String {
     out
 }
 
-/// The bytes of hexadecimal text (either case), which must have an even number of digits.
-pub fn decode(text: &str) -> Result<Vec<u8>, HexError> {
-    let (pairs, rest) = text.as_bytes().as_chunks::<2>();
+/// The bytes of hexadecimal text: ASCII digits and `a`-`f` in either case, two per byte. Refused as
+/// [`HashError::InvalidHex`] at the first byte that is not a hex digit, or else, for an odd number of digits, at the
+/// text's length: every byte before either is ASCII, so the offset is the same in UTF-8 bytes, UTF-16 units and code
+/// points (docs/specs/canonical-encoding.md section 4).
+pub fn decode(text: &str) -> Result<Vec<u8>, HashError> {
+    let bytes = text.as_bytes();
+    let invalid = |at: usize| HashError::InvalidHex { offset: u64::try_from(at).unwrap_or(u64::MAX) };
+    if let Some(at) = bytes.iter().position(|b| !b.is_ascii_hexdigit()) {
+        return Err(invalid(at));
+    }
+    let (pairs, rest) = bytes.as_chunks::<2>();
     if !rest.is_empty() {
-        return Err(HexError::OddLength);
+        return Err(invalid(bytes.len()));
     }
     pairs
         .iter()
         .enumerate()
         .map(|(i, [h, l])| {
-            nibble(*h)
-                .zip(nibble(*l))
-                .map(|(h, l)| (h << 4) | l)
-                .ok_or(HexError::InvalidDigit { offset: i.saturating_mul(2) })
+            nibble(*h).zip(nibble(*l)).map(|(h, l)| (h << 4) | l).ok_or_else(|| invalid(i.saturating_mul(2)))
         })
         .collect()
 }
@@ -38,26 +44,3 @@ pub fn decode(text: &str) -> Result<Vec<u8>, HexError> {
 fn nibble(c: u8) -> Option<u8> {
     char::from(c).to_digit(16).and_then(|d| u8::try_from(d).ok())
 }
-
-/// Text that is not hexadecimal.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HexError {
-    /// An odd number of digits.
-    OddLength,
-    /// A character that is not a hex digit, in the pair at this offset.
-    InvalidDigit {
-        /// Offset of the pair.
-        offset: usize,
-    },
-}
-
-impl fmt::Display for HexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::OddLength => f.write_str("odd number of hex digits"),
-            Self::InvalidDigit { offset } => write!(f, "invalid hex digit near offset {offset}"),
-        }
-    }
-}
-
-impl core::error::Error for HexError {}
