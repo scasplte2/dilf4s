@@ -74,7 +74,11 @@ class Parser {
         case "value": {
           const p = this.skipWs(pos);
           const c = this.s[p];
-          if (c === "{" || c === "[") {
+          if ((c === "{" || c === "[") && stack.length >= MAX_DEPTH) {
+            // a container opened inside MAX_DEPTH open ones is refused at its bracket, an empty one too
+            // (canonical-encoding.md section 3): the first fault in reading order
+            return err({ kind: "DepthExceeded", limit: MAX_DEPTH });
+          } else if (c === "{" || c === "[") {
             const q = this.skipWs(p + 1);
             const object = c === "{";
             if (this.s[q] === (object ? "}" : "]")) {
@@ -82,8 +86,6 @@ class Parser {
               if (!empty.ok) return empty;
               state = { step: "deliver", value: empty.value };
               pos = q + 1;
-            } else if (stack.length >= MAX_DEPTH) {
-              return err({ kind: "DepthExceeded", limit: MAX_DEPTH });
             } else {
               stack.push(object ? { object: true, entries: [], seen: new KeySet(), key: "" } : { object: false, items: [] });
               state = object ? { step: "key" } : { step: "value" };

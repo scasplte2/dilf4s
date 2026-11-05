@@ -16,6 +16,13 @@ const finalHead = expectOk(vt.decodeHead(valueOf(vectors.head.cbor)), "head deco
 
 const entriesHex = (es: readonly versioned.StateEntry[]): unknown => es.map(([k, h]) => [k.value, toHex(h)]);
 
+/** A state-key outcome as the vectors record it: "accepted", or the kind and its normative segment. */
+function keyOutcome(r: { readonly ok: true } | { readonly ok: false; readonly error: versioned.StateKeyError }): models.versionedTrieVectors.VtStateKeyOutcome {
+  if (r.ok) return "accepted";
+  const e = r.error;
+  return e.kind === "InvalidSegment" || e.kind === "SegmentTooLong" ? { kind: e.kind, segment: BigInt(e.segment) } : { kind: e.kind };
+}
+
 describe("versioned_trie_v1.json", () => {
   it("the empty state root", () => {
     expect(toHex(vt.hashing.empty)).toBe(vectors.emptyStateRoot);
@@ -59,9 +66,36 @@ describe("versioned_trie_v1.json", () => {
   });
 
   it.each(vectors.stateKeys.map((c) => [JSON.stringify(c.key).slice(0, 40), c] as const))("state key %s", (_, c) => {
-    expect(versioned.StateKey.parse(c.key).ok, "the grammar with its limits").toBe(c.valid);
+    expect(keyOutcome(versioned.StateKey.parse(c.key)), "the grammar with its limits").toEqual(c.outcome);
     const text = Value.text(c.key);
-    if (text.ok) expect(models.versionedTrie.StateKey.decode(text.value).ok, "the schema pattern").toBe(c.schema);
+    if (text.ok) expect(models.versionedTrie.StateKey.decode(text.value).ok, "the schema pattern").toBe(c.schema === "accepted");
+  });
+
+  it.each(vectors.stateKeyBytes.map((c) => [c.bytes.slice(0, 40), c] as const))("state key bytes %s", (_, c) => {
+    expect(keyOutcome(versioned.StateKey.fromBytes(bytes(c.bytes)))).toEqual(c.outcome);
+  });
+
+  it.each(vectors.namespaces.map((c) => [JSON.stringify(c.namespace).slice(0, 40), c] as const))("namespace %s", (_, c) => {
+    expect(keyOutcome(versioned.StateNamespace.parse(c.namespace))).toEqual(c.outcome);
+  });
+
+  it("coverage (conformance.md section 6): every StateKeyError kind has a row", () => {
+    // a Record over the SDK's kinds: a kind added to StateKeyError does not compile until it is listed here
+    const coverage: Record<versioned.StateKeyError["kind"], models.versionedTrieVectors.StateKeyErrorKind> = {
+      Empty: "Empty",
+      TooLong: "TooLong",
+      NotUtf8: "NotUtf8",
+      TooManySegments: "TooManySegments",
+      InvalidSegment: "InvalidSegment",
+      SegmentTooLong: "SegmentTooLong",
+      NamespaceFull: "NamespaceFull",
+    };
+    // and every kind the schema names is one of the SDK's
+    const toSdk = (k: models.versionedTrieVectors.StateKeyErrorKind): versioned.StateKeyError["kind"] => k;
+    expect(toSdk("NamespaceFull")).toBe("NamespaceFull");
+    const outcomes = [...vectors.stateKeys, ...vectors.stateKeyBytes, ...vectors.namespaces].map((c) => c.outcome);
+    const pinned = new Set<string>(outcomes.flatMap((o) => (o === "accepted" ? [] : [o.kind])));
+    expect(Object.values(coverage).filter((k) => !pinned.has(k))).toEqual([]);
   });
 
   describe.each(vectors.proofs.map((p) => [p.name, p] as const))("proof %s", (_, p) => {
@@ -170,8 +204,15 @@ describe("versioned trie checks", () => {
   });
 
   it("state keys and namespaces", () => {
-    expect(expectErr(versioned.StateKey.parse("a/"), "trailing slash").reason).toBe("segment 1 does not match [a-z0-9][a-z0-9._-]*");
-    expect(versioned.StateKey.fromBytes(Uint8Array.of(0xc3, 0xa9)).ok).toBe(false);
+    expect(expectErr(versioned.StateKey.parse("a/"), "trailing slash")).toMatchObject({ kind: "InvalidSegment", segment: 1 });
+    expect(expectErr(versioned.StateKey.fromBytes(Uint8Array.of(0xc3, 0xa9)), "not ASCII")).toMatchObject({ kind: "InvalidSegment", segment: 0 });
+    expect(expectErr(versioned.StateKey.fromBytes(Uint8Array.of(0xed, 0xa0, 0x80)), "a surrogate")).toEqual({ kind: "NotUtf8" });
+    // versioned-trie.md section 2: an unpaired surrogate counts 3 UTF-8 bytes (no vector holds one: Rust's text cannot)
+    expect(expectErr(versioned.StateKey.parse("\ud800".repeat(86)), "258 bytes")).toEqual({ kind: "TooLong", limit: 256 });
+    expect(expectErr(versioned.StateKey.parse("\ud800".repeat(85)), "255 bytes")).toMatchObject({ kind: "InvalidSegment", segment: 0 });
+    expect(expectErr(versioned.StateKey.parse("a".repeat(254) + "\ud800"), "257 bytes in 255 units")).toEqual({ kind: "TooLong", limit: 256 });
+    expect(expectErr(versioned.StateKey.parse("a".repeat(253) + "\u{1f600}"), "257 bytes")).toEqual({ kind: "TooLong", limit: 256 });
+    expect(expectErr(versioned.StateKey.parse("a".repeat(252) + "\u{1f600}"), "256 bytes")).toMatchObject({ kind: "InvalidSegment", segment: 0 });
     expect(versioned.StateNamespace.parse(Array.from({ length: 16 }, () => "a").join("/")).ok).toBe(false);
     expect(versioned.StateNamespace.parse(Array.from({ length: 15 }, () => "a").join("/")).ok).toBe(true);
     expect(versioned.StateNamespace.parse("x".repeat(64) + "/" + "x".repeat(64) + "/" + "x".repeat(64) + "/" + "x".repeat(61)).ok).toBe(false);
@@ -186,17 +227,19 @@ describe("versioned trie checks", () => {
     const fromBytes = expectErr(versioned.StateKey.fromBytes(new Uint8Array(huge).fill(0xff)), "long bytes");
     const namespace = expectErr(versioned.StateNamespace.parse("x".repeat(huge)), "a long namespace");
     for (const e of [text, fromBytes, namespace]) {
-      const rendered = `${e.input?.toString() ?? ""}${e.reason}`;
+      const rendered = JSON.stringify(e);
       expect(rendered.length, "the refusal renders boundedly").toBeLessThanOrEqual(512);
-      expect(Array.from(e.input?.head ?? "").length, "a preview of at most 32 code points").toBeLessThanOrEqual(32);
     }
-    expect(text).toEqual({ reason: `${huge.toString()} characters, longer than 256` });
+    expect(text).toEqual({ kind: "TooLong", limit: 256 });
+    expect(namespace).toEqual({ kind: "TooLong", limit: 256 });
     // refused by its length alone: nothing reads the text (a preview would read every code point)
     const reads = vi.spyOn(String.prototype, "codePointAt");
     versioned.StateKey.parse("q".repeat(huge));
     expect(reads.mock.calls.length, "code points read").toBe(0);
     reads.mockRestore();
-    expect(fromBytes).toEqual({ reason: `${huge.toString()} bytes, longer than 256` });
+    expect(fromBytes).toEqual({ kind: "TooLong", limit: 256 });
+    const segments = expectErr(versioned.StateKey.parse("a/".repeat(100) + "a"), "too many segments");
+    expect(segments.kind === "TooManySegments" ? Array.from(segments.key.head).length : -1, "a preview of at most 32 code points").toBe(32);
     expect(key("a".repeat(64)).preview().head).toBe("a".repeat(32));
   });
 

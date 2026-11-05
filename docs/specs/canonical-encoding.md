@@ -110,6 +110,23 @@ Further rules:
   (`NonCanonical`); and last, `gcd(|n|, d) = 1` (`NonCanonical`). A part's width is checked as soon as it is read, from
   its length before it is built, so a part too wide is refused before the next is read and before any gcd, and a
   decoder runs at most one gcd per rational.
+- **Refusal order.** A decoder reads the encoding once, item by item in encoding order (a container's items before
+  what follows it), and the refusal is the first fault it meets; the kinds are `CanonicalError`'s
+  (`docs/specs/conformance.md` §1). For each item, in order:
+  1. its head: the initial byte present (`UnexpectedEnd`); major type 7 with additional information 24 to 31 (a float,
+     or a simple value with a one-byte argument) `Unsupported`; additional information 24 to 27 with its argument
+     bytes present (`UnexpectedEnd`) and in shortest form (`NonCanonical`); 28 to 30 (reserved) and 31 (indefinite
+     length) `Unsupported`;
+  2. by its major type: a simple value other than false, true and null `Unsupported`; a byte or text string present in
+     full (`UnexpectedEnd`), and text well-formed UTF-8 (`InvalidUtf8`); an array or map whose count fits the bytes
+     left at one byte per array element and two per map entry (`UnexpectedEnd`, before anything is allocated), then the depth limit
+     (`DepthExceeded`, an empty array or map included); a tag other than 2, 3 and 30 `Unsupported`, and tags 2, 3 and
+     30 in the bignum and rational orders above;
+  3. in a map, each key once it is read whole: text (`Unsupported`), after the previous key in encoded order
+     (`NonCanonical`); then each value once it is read whole: not null (`NonCanonical`).
+
+  After the top-level item, any byte left is `TrailingBytes`. `canonical_encoding_v1.json`'s `cborRejections` pin
+  each kind and each pair of faults that an order could otherwise answer differently.
 
 ## 3. JSON mapping
 
@@ -132,6 +149,34 @@ JSON is the human-facing and API format. It converts to the data model as follow
 **Objects** become maps, with null-valued members dropped. Duplicate member names are rejected.
 
 **Arrays** become arrays, and `null`, `true` and `false` map to themselves. The data model's bytes kind has no JSON form, so it only arises from typed data.
+
+**Text, not bytes.** The parser reads text. Whitespace is RFC 8259's four characters only: space, tab, line feed and
+carriage return. Anything else between tokens is a syntax error (`JsonSyntax`): a byte-order mark U+FEFF (at the
+start too: an SDK that turns bytes into text for the parser must keep a leading U+FEFF, as `TextDecoder` by default
+does not), the other Unicode spaces such as U+00A0, and the controls U+000B and U+000C.
+
+**Refusal order.** The parser reads the text once, left to right, and the refusal is the first fault it meets, with
+one exception, a member name's surrogates (the last item):
+
+1. syntax (`JsonSyntax`): a character that cannot start or continue a value where it stands, an unterminated string,
+   an unescaped U+0000 to U+001F in a string, an unknown or truncated escape, or anything after the top-level value;
+2. depth (`DepthExceeded`): a `[` or `{` opened while 256 containers are open, empty or not, is refused at its bracket,
+   before anything after it is read (`[` × 256 then `{}` is refused, `[` × 255 then `{}` accepted), as the CBOR
+   decoder counts depth (§2);
+3. a number, once its text `-? digits (. digits)? ([eE] [+-]? digits)?` is read: malformed (`01`, `1.`, `-`:
+   `InvalidNumber`), then its significand's digits, its exponent's digits and its scale (each `InvalidNumber`), then
+   its value's width (`IntegerTooWide`, `RationalTooWide`);
+4. a string value's unpaired surrogate (`UnpairedSurrogate`), at its closing quote;
+5. a member name repeated in its object (`DuplicateKey`), as soon as the repeat is read, before its `:`. Names are
+   compared as the text their escapes decode to, unpaired surrogates included (`"a"` repeats `"a"`);
+6. a member name's unpaired surrogate (`UnpairedSurrogate`), only when its object closes: after every value in the
+   object and every repeat of a name in it have been read. So a repeated name with an unpaired surrogate is
+   `DuplicateKey`, with its preview (`docs/specs/conformance.md` §8), and an object closes before what follows it is
+   read: `{"a":{"\udc00":1},"a":2}` is `UnpairedSurrogate`.
+
+So `{"\ud800":1,"\ud800":2}` is `DuplicateKey`, `{"\udc00":01}` `InvalidNumber`, `{"\udc00":1` `JsonSyntax`, and
+`{"\udc00":` then 300 nested arrays `DepthExceeded`. `canonical_encoding_v1.json` pins each of them, and each pair of
+faults that an order could otherwise answer differently.
 
 Converting back to JSON (for display only) works as follows:
 - Output is compact (no whitespace), and object members are written in ascending Unicode code-point order of their names.

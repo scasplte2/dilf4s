@@ -5,9 +5,9 @@ import java.nio.file.{Files, Path, Paths}
 
 import cats.effect.{ExitCode, IO, IOApp}
 
-import xyz.kd5ujc.core.canonical.{CanonicalGens, CanonicalJson, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalGens, CanonicalJson, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash._
-import xyz.kd5ujc.core.vectors.VectorJson.{arr, bool, num, obj, str}
+import xyz.kd5ujc.core.vectors.VectorJson.{arr, num, obj, str}
 
 import scodec.bits.{ByteVector, hex}
 
@@ -96,8 +96,11 @@ object CanonicalVectors {
     "-" + IntEdge.toString,
     "8e9999",
     "-8e9999",
-    // depth: 256 nested arrays is the limit, and an empty array is a level
+    // depth: 256 nested arrays is the limit, and an empty array or object is a level
     "[" * 255 + "[]" + "]" * 255,
+    "[" * 255 + "{}" + "]" * 255,
+    // JSON's four whitespace characters, around and between every token
+    " \t\n\r[ \t\n\r1 \t\n\r, \t\n\r{ \t\n\r\"a\" \t\n\r: \t\n\r2 \t\n\r} \t\n\r] \t\n\r",
     // rejected
     "{\"a\":1,\"a\":2}",
     "{\"a\":null,\"a\":2}",
@@ -134,6 +137,29 @@ object CanonicalVectors {
     "0." + "0" * 10000 + "1e1",
     "0." + "9" * 10000,
     "[" * 256 + "[]" + "]" * 256,
+    // an empty container is refused at its bracket, so before what follows it is read
+    "[" * 256 + "{}" + "]" * 256,
+    "[" * 256 + "{}",
+    // refusal order (canonical-encoding.md section 3): the first fault in reading order, but a member name's unpaired
+    // surrogate is refused when its object closes, after its values and the check for a repeat
+    "{\"\\ud800\":1,\"\\ud800\":2}",
+    "{\"\\udc00\":01}",
+    "{\"\\udc00\":1",
+    "{\"\\udc00\":" + "[" * 300 + "]" * 300 + "}",
+    "{\"\\udc00\":\"\\ud800\"}",
+    "{\"a\":{\"\\udc00\":1},\"a\":2}",
+    "{\"\\udc00\":1,\"a\":1,\"a\":2}",
+    "{\"a\":1,\"\\u0061\":2}",
+    "{\"\\ud83d\\ude00\":1,\"\ud83d\ude00\":2}",
+    // a byte-order mark is not whitespace, nor are the other Unicode spaces and JSON's excluded controls
+    "\ufeff1",
+    "\ufeff{}",
+    "\u00a01",
+    "[1,\u00a02]",
+    "\u000b1",
+    "1\u000c",
+    "[1,\u000b2]",
+    "{\"a\"\u000c:1}",
     "[1,2",
     "{\"a\":1",
     "\"abc",
@@ -258,6 +284,11 @@ object CanonicalVectors {
     ByteVector.fill(256)(0x81) ++ hex"80",
     ByteVector.fill(256)(0x81) ++ hex"a0",
     ByteVector.fill(257)(0x81) ++ hex"00",
+    // a container's count is checked against the bytes left before the depth limit: truncated, not too deep
+    ByteVector.fill(256)(0x81) ++ hex"9bffffffffffffffff",
+    ByteVector.fill(256)(0x81) ++ hex"81",
+    // a map key is read whole before it is checked as text: a key nested too deep is DepthExceeded, not Unsupported
+    hex"a1" ++ ByteVector.fill(256)(0x81) ++ hex"80",
     // a rational part one bit wider than CanonicalValue.MaxRationalBits, for either sign and either part, is outside the data
     // model: refused before any gcd, so before lowest terms (the first), before the denominator's range (the fifth) and
     // before the denominator is read (the sixth)
@@ -325,6 +356,14 @@ object CanonicalVectors {
 
   private def errorKind(e: Product): VectorJson = str(e.productPrefix)
 
+  /** A refusal's fields: its kind, and its normative `limit` when it has one (conformance.md §3). */
+  private def refusal(e: CanonicalError): List[(String, VectorJson)] =
+    ("error" -> errorKind(e)) :: (e match {
+      case CanonicalError.RationalTooWide(limit) => List("limit" -> num(limit))
+      case CanonicalError.IntegerTooWide(limit)  => List("limit" -> num(limit))
+      case _                                     => Nil
+    })
+
   def build: VectorJson = obj(
     "spec"                 -> str("docs/specs/canonical-encoding.md"),
     "version"              -> num(1),
@@ -341,7 +380,7 @@ object CanonicalVectors {
             // every value JSON reads renders and reads back (canonical-encoding.md section 3)
             "render" -> str(CanonicalJson.render(v).fold(e => sys.error(s"$in reads but does not render: $e"), identity))
           )
-        case Left(e) => obj("json" -> str(in), "error" -> errorKind(e))
+        case Left(e) => obj(("json" -> str(in)) :: refusal(e)*)
       }
     }),
     "model" -> arr(modelInputs.map {
@@ -350,10 +389,10 @@ object CanonicalVectors {
         obj("value" -> str(name), "cbor" -> str(bytes.toHex), "contentHash" -> str(sha256(bytes).hex))
     }),
     "renderRejections" -> arr(renderRejections.map { v =>
-      obj("cbor" -> str(Cbor.encode(v).toHex), "error" -> CanonicalJson.render(v).fold(errorKind, r => str(s"RENDERED $r")))
+      CanonicalJson.render(v).fold(e => obj(("cbor" -> str(Cbor.encode(v).toHex)) :: refusal(e)*), r => sys.error(s"$v renders as $r"))
     }),
     "cborRejections" -> arr(cborRejections.map { b =>
-      obj("cbor" -> str(b.toHex), "error" -> Cbor.decode(b).fold(errorKind, v => str(s"ACCEPTED $v")))
+      Cbor.decode(b).fold(e => obj(("cbor" -> str(b.toHex)) :: refusal(e)*), v => sys.error(s"${b.toHex} decodes as $v"))
     }),
     "taggedHash" -> arr(for {
       m <- tagMessages
@@ -371,7 +410,7 @@ object CanonicalVectors {
       m              <- digestMessages
       (name, digest) <- digesters
     } yield obj("algorithm" -> str(name), "message" -> str(m.toHex), "digest" -> str(digest(m).toHex))),
-    "domainTags" -> arr(domainTags.map(t => obj("tag" -> str(t), "valid" -> bool(DomainTag(t).isRight))))
+    "domainTags" -> arr(domainTags.map(t => obj("tag" -> str(t), "outcome" -> DomainTag(t).fold(errorKind, _ => str("accepted")))))
   )
 
   def render: String = VectorJson.pretty(build) + "\n"

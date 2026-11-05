@@ -33,7 +33,7 @@ export function encodeUtf8(s: string): Uint8Array {
   return Uint8Array.from(out);
 }
 
-/** The UTF-8 length of well-formed text, without encoding it. */
+/** The UTF-8 length of text, without encoding it; an unpaired surrogate counts 3, as its replacement U+FFFD does. */
 export function utf8Length(s: string): number {
   let n = 0;
   for (const ch of s) {

@@ -88,6 +88,14 @@ describe("bounded Merkle refusals", () => {
     expect(expectErr(merkle.ConsistencyProof.of(-huge, huge, []), "huge")).toEqual({ kind: "InvalidSizes", oldSize: -max - 1n, newSize: max });
   });
 
+  it("the constructors take sizes up to 2^63 - 1, as Rust's and Scala's", () => {
+    const max = (1n << 63n) - 1n;
+    expect(merkle.InclusionProof.of(max - 1n, max, []).ok).toBe(true);
+    expect(expectErr(merkle.InclusionProof.of(max, 1n << 63n, []), "past the range").kind).toBe("IndexOutOfRange");
+    expect(merkle.ConsistencyProof.of(max, max, []).ok).toBe(true);
+    expect(expectErr(merkle.ConsistencyProof.of(0n, 1n << 63n, []), "past the range").kind).toBe("InvalidSizes");
+  });
+
   it("an error cannot be built with an unbounded integer", () => {
     // @ts-expect-error an index is an Int64, which only the module's saturating factory makes
     const forged: merkle.MerkleError = { kind: "IndexOutOfRange", index: 1n << 100_000n, size: 0n };

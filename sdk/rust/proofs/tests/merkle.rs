@@ -298,3 +298,22 @@ fn merkle_verify_checks_the_head_before_the_claim() {
     let ok_head = TreeHead::<H> { root: tagged.empty_hash(), size: 0 };
     assert_eq!(merkle::merkle_verify(&tagged, &ok_head, &heavy, &Value::Null).map_err(|e| e.kind()), Err("TooLarge"));
 }
+
+/// The constructors take the schema's `tree-index` range (sizes up to 2^63 - 1), as Scala's `Long` and TypeScript's
+/// `of` do: a size past it is the constructor's own kind, never a proof its encoder would then refuse.
+#[test]
+fn constructors_refuse_sizes_past_2_63_minus_1() {
+    let max = (1u64 << 63) - 1;
+    let inclusion = |index, size| InclusionProof::<H>::new(index, size, Vec::new()).map_err(|e| e.kind());
+    let consistency = |old, new| ConsistencyProof::<H>::new(old, new, Vec::new()).map_err(|e| e.kind());
+    assert!(inclusion(max - 1, max).is_ok());
+    assert_eq!(inclusion(max, 1 << 63).err(), Some("IndexOutOfRange"));
+    assert_eq!(inclusion(0, u64::MAX).err(), Some("IndexOutOfRange"));
+    assert!(consistency(max, max).is_ok());
+    assert!(consistency(0, max).is_ok());
+    assert_eq!(consistency(0, 1 << 63).err(), Some("InvalidSizes"));
+    assert_eq!(consistency(1 << 63, u64::MAX).err(), Some("InvalidSizes"));
+    // every proof a constructor accepts encodes
+    assert!(InclusionProof::<H>::new(max - 1, max, Vec::new()).unwrap().to_value().is_ok());
+    assert!(ConsistencyProof::<H>::new(max, max, Vec::new()).unwrap().to_value().is_ok());
+}

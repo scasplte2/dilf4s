@@ -57,6 +57,7 @@ fn versioned(e: &VersionedTrieError) -> Refused {
             Refused { component: Some((*component).into()), ..kind("RootMismatch") }
         }
         VersionedTrieError::Trie(t) => kind(&format!("Trie.{}", t.kind())),
+        VersionedTrieError::Key(k) => kind(&format!("Key.{}", k.kind())),
         other => kind(other.kind()),
     }
 }

@@ -16,12 +16,57 @@ mod common;
 use common::{bytes, load};
 use dilf4s_core::codec::Codec;
 use dilf4s_core::commitment::{value_commitment, value_commitment_into};
-use dilf4s_core::generated::canonical_vectors::{CanonicalJsonCase, CanonicalVectors};
+use dilf4s_core::generated::canonical_vectors::{
+    CanonicalErrorKind, CanonicalJsonCase, CanonicalVectors, DomainTagOutcome,
+};
 use dilf4s_core::generated::merkle_vectors::MerkleVectors;
 use dilf4s_core::generated::versioned_trie::STATE_KEY;
-use dilf4s_core::generated::versioned_trie_vectors::VersionedTrieVectors;
-use dilf4s_core::hash::{DomainTag, HashAlgorithm, Sha256, TaggedHash};
-use dilf4s_core::{cbor, hex, json};
+use dilf4s_core::generated::versioned_trie_vectors::{VersionedTrieVectors, VtSchemaOutcome};
+use dilf4s_core::hash::{DomainTag, HashAlgorithm, HashError, Sha256, TaggedHash};
+use dilf4s_core::{CanonicalError, cbor, hex, json};
+
+/// The schema's kind of a refusal. Exhaustive: a variant the SDK adds does not compile until it is mapped.
+const fn schema_kind(e: &CanonicalError) -> CanonicalErrorKind {
+    match e {
+        CanonicalError::UnpairedSurrogate => CanonicalErrorKind::UnpairedSurrogate,
+        CanonicalError::RationalTooWide { .. } => CanonicalErrorKind::RationalTooWide,
+        CanonicalError::IntegerTooWide { .. } => CanonicalErrorKind::IntegerTooWide,
+        CanonicalError::DuplicateKey { .. } => CanonicalErrorKind::DuplicateKey,
+        CanonicalError::JsonSyntax { .. } => CanonicalErrorKind::JsonSyntax,
+        CanonicalError::InvalidNumber { .. } => CanonicalErrorKind::InvalidNumber,
+        CanonicalError::NotJsonRepresentable { .. } => CanonicalErrorKind::NotJsonRepresentable,
+        CanonicalError::TypeMismatch { .. } => CanonicalErrorKind::TypeMismatch,
+        CanonicalError::UnexpectedEnd { .. } => CanonicalErrorKind::UnexpectedEnd,
+        CanonicalError::TrailingBytes { .. } => CanonicalErrorKind::TrailingBytes,
+        CanonicalError::DepthExceeded { .. } => CanonicalErrorKind::DepthExceeded,
+        CanonicalError::NonCanonical { .. } => CanonicalErrorKind::NonCanonical,
+        CanonicalError::Unsupported { .. } => CanonicalErrorKind::Unsupported,
+        CanonicalError::InvalidUtf8 { .. } => CanonicalErrorKind::InvalidUtf8,
+    }
+}
+
+/// A refusal's normative limit (conformance.md section 3): `RationalTooWide` and `IntegerTooWide` carry one.
+const fn normative_limit(e: &CanonicalError) -> Option<u64> {
+    match e {
+        CanonicalError::RationalTooWide { limit } | CanonicalError::IntegerTooWide { limit } => Some(*limit),
+        _ => None,
+    }
+}
+
+/// A refusal as a row records it: its kind and its normative limit.
+fn refused(
+    case: &str,
+    kind: &CanonicalErrorKind,
+    limit: Option<u64>,
+    actual: Option<&CanonicalError>,
+) -> Result<(), String> {
+    let actual = actual.map(|e| (schema_kind(e), normative_limit(e)));
+    if actual.as_ref().is_some_and(|(k, l)| k == kind && *l == limit) {
+        Ok(())
+    } else {
+        Err(format!("{case}: expected {kind:?} (limit {limit:?}), got {actual:?}"))
+    }
+}
 
 /// Checks every case, collecting failures so one run reports all of them; returns the number of cases.
 fn run<T>(cases: &[T], check: impl Fn(&T) -> Result<(), String>) -> usize {
@@ -60,8 +105,7 @@ fn json_cases() {
             same("decode then encode", &c.json, &c.cbor, &hex::encode(&cbor::encode(&decoded)))
         }
         CanonicalJsonCase::CanonicalJsonRejected(c) => {
-            let kind = json::parse(&c.json).map_or_else(|e| e.kind(), |_| "accepted");
-            same("error kind", &c.json, &c.error, kind)
+            refused(&c.json, &c.error, c.limit, json::parse(&c.json).err().as_ref())
         }
     });
     eprintln!("json: {n} cases");
@@ -84,12 +128,10 @@ fn render_rejections() {
     let (v, _, _) = vectors();
     let n = run(&v.render_rejections, |c| {
         let value = cbor::decode(&bytes(&c.cbor)).map_err(|e| format!("{}: {e}", c.cbor))?;
-        let kind = match json::render_within(&value, usize::MAX) {
-            Ok(_) => "rendered",
-            Err(json::RenderError::Canonical(e)) => e.kind(),
-            Err(json::RenderError::TooLarge(_)) => "TooLarge",
-        };
-        same("error kind", &c.cbor, &c.error, kind)
+        match json::render_within(&value, usize::MAX) {
+            Err(json::RenderError::Canonical(e)) => refused(&c.cbor, &c.error, None, Some(&e)),
+            other => Err(format!("{}: expected {:?}, got {other:?}", c.cbor, c.error)),
+        }
     });
     eprintln!("renderRejections: {n} cases");
 }
@@ -97,11 +139,34 @@ fn render_rejections() {
 #[test]
 fn cbor_rejections() {
     let (v, _, _) = vectors();
-    let n = run(&v.cbor_rejections, |c| {
-        let kind = cbor::decode(&bytes(&c.cbor)).map_or_else(|e| e.kind(), |_| "accepted");
-        same("error kind", &c.cbor, &c.error, kind)
-    });
+    let n =
+        run(&v.cbor_rejections, |c| refused(&c.cbor, &c.error, c.limit, cbor::decode(&bytes(&c.cbor)).err().as_ref()));
     eprintln!("cborRejections: {n} cases");
+}
+
+/// The coverage gate (conformance.md section 6) for `CanonicalError`: every kind of the schema's `canonical-error-kind`
+/// has a row. [`schema_kind`] maps every SDK variant onto a schema kind (exhaustively, so a new variant does not compile
+/// until it is mapped), so every SDK kind has a row too.
+#[test]
+fn every_canonical_error_kind_has_a_row() {
+    let (v, _, _) = vectors();
+    let vt: VersionedTrieVectors = load("versioned_trie_v1.json");
+    let json = v.json.iter().filter_map(|c| match c {
+        CanonicalJsonCase::CanonicalJsonRejected(r) => Some(r.error.clone()),
+        CanonicalJsonCase::CanonicalJsonAccepted(_) => None,
+    });
+    let typed = vt.state_keys.iter().filter_map(|c| match c.schema {
+        VtSchemaOutcome::TypeMismatch => Some(CanonicalErrorKind::TypeMismatch),
+        VtSchemaOutcome::Accepted => None,
+    });
+    let pinned: Vec<CanonicalErrorKind> = json
+        .chain(v.render_rejections.iter().map(|c| c.error.clone()))
+        .chain(v.cbor_rejections.iter().map(|c| c.error.clone()))
+        .chain(typed)
+        .collect();
+    for kind in CanonicalErrorKind::ALL {
+        assert!(pinned.contains(&kind), "no row pins {kind:?}");
+    }
 }
 
 #[test]
@@ -129,8 +194,16 @@ fn digests() {
 fn domain_tags() {
     let (v, _, _) = vectors();
     let n = run(&v.domain_tags, |c| {
-        let valid = DomainTag::new(&c.tag).is_ok();
-        if valid == c.valid { Ok(()) } else { Err(format!("{:?}: expected valid = {}, got {valid}", c.tag, c.valid)) }
+        let outcome = match DomainTag::new(&c.tag) {
+            Ok(_) => Some(DomainTagOutcome::Accepted),
+            Err(HashError::InvalidDomainTag { .. }) => Some(DomainTagOutcome::InvalidDomainTag),
+            Err(HashError::InvalidLength { .. } | HashError::UnknownAlgorithm { .. }) => None,
+        };
+        if outcome.as_ref() == Some(&c.outcome) {
+            Ok(())
+        } else {
+            Err(format!("{:?}: expected {:?}, got {outcome:?}", c.tag, c.outcome))
+        }
     });
     eprintln!("domainTags: {n} cases");
 }
@@ -140,11 +213,17 @@ fn state_keys() {
     let vt: VersionedTrieVectors = load("versioned_trie_v1.json");
     let n = run(&vt.state_keys, |c| {
         let decoded = STATE_KEY.decode(&dilf4s_core::Value::text(c.key.clone())).is_ok();
-        let encoded = STATE_KEY.encode(&c.key).is_ok();
-        if decoded == c.schema && encoded == c.schema {
+        let encoded = match STATE_KEY.encode(&c.key) {
+            Ok(_) => Some(VtSchemaOutcome::Accepted),
+            Err(e) => match schema_kind(&e) {
+                CanonicalErrorKind::TypeMismatch => Some(VtSchemaOutcome::TypeMismatch),
+                _ => None,
+            },
+        };
+        if decoded == (c.schema == VtSchemaOutcome::Accepted) && encoded.as_ref() == Some(&c.schema) {
             Ok(())
         } else {
-            Err(format!("{:?}: expected schema = {}, decoded {decoded}, encoded {encoded}", c.key, c.schema))
+            Err(format!("{:?}: expected schema {:?}, decoded {decoded}, encoded {encoded:?}", c.key, c.schema))
         }
     });
     eprintln!("stateKeys: {n} cases");

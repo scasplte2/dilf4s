@@ -57,6 +57,7 @@ object RefusalVectors {
     case VersionedTrieError.TooDeep(_, depth, limit) => Refused("TooDeep", limit = Some(limit.toLong), depth = Some(depth))
     case VersionedTrieError.RootMismatch(c, _, _)    => Refused("RootMismatch", component = Some(c))
     case VersionedTrieError.Trie(t)                  => Refused(s"Trie.${t.productPrefix}")
+    case VersionedTrieError.Key(k)                   => Refused(s"Key.${k.productPrefix}")
     case other                                       => Refused(other.productPrefix)
   }
 

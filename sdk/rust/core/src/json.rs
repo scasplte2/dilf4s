@@ -103,6 +103,9 @@ impl Parser<'_> {
     fn expect_value(&self, stack: &mut Vec<Frame>, pos: usize) -> Result<(State, usize), CanonicalError> {
         let p = self.skip_ws(pos);
         match self.at(p) {
+            // a container opened inside MAX_DEPTH open ones is refused at its bracket, an empty one too
+            // (canonical-encoding.md section 3): the first fault in reading order
+            Some(b'{' | b'[') if stack.len() >= MAX_DEPTH => Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH }),
             Some(open @ (b'{' | b'[')) => {
                 let q = self.skip_ws(p.saturating_add(1));
                 let is_object = open == b'{';
@@ -113,8 +116,6 @@ impl Parser<'_> {
                         Value::Array(Array::new(Vec::new())?)
                     };
                     Ok((State::Deliver(empty), q.saturating_add(1)))
-                } else if stack.len() >= MAX_DEPTH {
-                    Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH })
                 } else if is_object {
                     stack.push(Frame::InObject { entries: Vec::new(), seen: BTreeSet::new(), key: Vec::new() });
                     Ok((State::ExpectKey, q))
