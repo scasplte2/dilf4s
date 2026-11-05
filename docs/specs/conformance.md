@@ -237,10 +237,11 @@ kind's row in whichever section reaches it.
 `InvalidExpansion`. The reference's `HashRefusalCoverageSuite` lists `HashError`'s cases through the compiler and the
 expansion refusals through their generated `values`, and fails if one has no row; the Rust (`core/tests/conformance.rs`)
 and TypeScript (`core/test/conformance.test.ts`) tests check every row's kind and normative field, and that every kind
-of `HashErrorKind` (Rust `ALL`, TypeScript a `Record` on the kind) and every expansion refusal has a row. Every kind is reachable from shared input in every language: each SDK has
-the four operations that produce them (a digest from hex, which decodes the hex, a domain tag, a hash function by
-name, and `expand_message_xmd`). The Rust and TypeScript SDKs also expose hex decoding itself (`hex::decode`,
-`fromHex`), refusing with the same `InvalidHex`; the reference keeps its hex reader private to the digest.
+of `HashErrorKind` (Rust `ALL`, TypeScript a `Record` on the kind) and every expansion refusal has a row. Every kind is
+reachable from shared input in every language: each SDK has the four operations that produce them (a digest from hex,
+which decodes the hex, a domain tag, a hash function by name, and `expand_message_xmd`). The Rust and TypeScript SDKs
+also expose hex decoding itself (`hex::decode`, `fromHex`), refusing with the same `InvalidHex`; the reference keeps its
+hex reader private to the digest.
 
 **The codec families.** `canonical-error-kind` lists every kind of `CanonicalError`; the state keys' `schema` records
 `TypeMismatch` (`vt-schema-outcome`). The reference's `CodecRefusalCoverageSuite` gates `CanonicalError` as above,
