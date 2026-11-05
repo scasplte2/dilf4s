@@ -499,3 +499,48 @@ describe("the remaining exports check what they are given", () => {
     expect(reads, "each part read once").toBe(1);
   });
 });
+
+describe("forged previews and schema arguments of the wrong type", () => {
+  it("a Preview built by calling the constructor from outside is not one, so describeFailure never reads its head", () => {
+    const read: string[] = [];
+    const head = { [Symbol.iterator]: () => read.push("iterator"), toString: () => read.push("toString") };
+    for (const args of [[head, 0, 0], [Symbol("preview"), head, 0, 0], [Symbol("preview"), "x".repeat(1 << 20), 0, 0]]) {
+      const forged: unknown = Reflect.construct(Preview as unknown as new (...a: unknown[]) => object, args);
+      expect(describeFailure(bad({ path: [forged], reason: "r" }))).toBe("<not a decode failure>");
+    }
+    expect(read).toEqual([]);
+    expect(describeFailure({ path: [Preview.of("a")], reason: "r" })).toBe("a: r");
+  });
+
+  it("fields, selectAlternative and hasFields refuse schema names that are not arrays of strings", () => {
+    const m = expectOk(Value.map([["a", int(1n)]]), "a map");
+    const names = { ok: false, error: { path: [], reason: "the schema's names are not arrays of strings" } };
+    for (const x of [5, null, "a", [5], { length: 1, 0: "a" }]) {
+      expect(codec.fields(m, bad(x)), label(x)).toEqual(names);
+      expect(codec.selectAlternative(m, bad(x), []), label(x)).toEqual(names);
+      expect(codec.selectAlternative(m, [], bad(x)), label(x)).toEqual(names);
+      expect(codec.selectAlternative(m, bad([[x, ["a"]]]), []), label(x)).toEqual(names);
+      expect(codec.hasFields({ a: 1 }, bad(x), ["a"], ["a"]), label(x)).toBe(false);
+    }
+    expect(expectOk(codec.fields(m, ["a"]), "allowed")).toBe(m);
+    expect(codec.selectAlternative(m, [[["a"], ["a"]]], [])).toEqual({ ok: true, value: 0 });
+    expect(codec.hasFields({ a: 1 }, ["a"], ["a"], ["a"])).toBe(true);
+  });
+
+  it("a codec built from bounds of the wrong type refuses every value, both ways", () => {
+    const sizes = "the schema's size bounds are not numbers";
+    for (const [lo, hi] of [["1", null], [Number.NaN, null], [0, "5"], [0, Number.NaN], [0n, null]] as const) {
+      const v = codec.vector(codec.uint, bad(lo), bad(hi));
+      expect(v.encode([1n]), `${String(lo)}..${String(hi)}`).toEqual(mismatch(sizes));
+      expect(v.decode(expectOk(Value.array([int(1n)]), "array"))).toEqual({ ok: false, error: { path: [], reason: sizes } });
+      expect(codec.sizedBytes(bad(lo), bad(hi)).encode(Uint8Array.of(1))).toEqual(mismatch(sizes));
+      expect(codec.sizedText(bad(lo), bad(hi)).encode("a")).toEqual(mismatch(sizes));
+    }
+    const ints = "the schema's integer bounds are not bigints";
+    for (const [lo, hi] of [[0, 5n], [0n, 5], ["0", null]] as const) {
+      expect(codec.intRange(bad(lo), bad(hi)).encode(1n)).toEqual(mismatch(ints));
+      expect(codec.intRange(bad(lo), bad(hi)).decode(int(1n))).toEqual({ ok: false, error: { path: [], reason: ints } });
+    }
+    expect(expectOk(codec.intRange(0n, null).encode(1n), "valid bounds").kind).toBe("int");
+  });
+});

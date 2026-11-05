@@ -173,8 +173,21 @@ export const bool: Codec<boolean> = leaf(
 
 const show = (b: bigint | null): string => (b === null ? "" : b.toString());
 
-/** An integer in `lo..hi`, either side unbounded when `null`. */
+/** A codec that refuses everything, both ways, for a schema built from bounds of the wrong type. */
+const refusing = <T>(reason: string): Codec<T> => leaf<T>(() => typeMismatch(reason), () => decodeFailure(reason));
+
+/** Whether `lo` and `hi` are size bounds: `lo` a number, `hi` a number or `null`, neither `NaN`. */
+const sizeBounds = (lo: unknown, hi: unknown): boolean =>
+  typeof lo === "number" && !Number.isNaN(lo) && (hi === null || (typeof hi === "number" && !Number.isNaN(hi)));
+const NOT_SIZE_BOUNDS = "the schema's size bounds are not numbers";
+
+/**
+ * An integer in `lo..hi`, either side unbounded when `null`. Bounds that are not `bigint`s or `null` (from a JavaScript
+ * caller, or a cast) make a codec that refuses every value, both ways, as `TypeMismatch` and a decode failure.
+ */
 export function intRange(lo: bigint | null, hi: bigint | null): Codec<bigint> {
+  const bound = (b: unknown): boolean => b === null || typeof b === "bigint";
+  if (!bound(lo) || !bound(hi)) return refusing("the schema's integer bounds are not bigints");
   const within = (n: bigint): boolean => (lo === null || n >= lo) && (hi === null || n <= hi);
   return leaf(
     (n) => {
@@ -197,8 +210,12 @@ export const uint: Codec<bigint> = intRange(0n, 2n ** 64n - 1n);
 /** CDDL `nint`: -2^64..-1. */
 export const nint: Codec<bigint> = intRange(-(2n ** 64n), -1n);
 
-/** A byte string of `lo` to `hi` bytes (`hi` unbounded when `null`). */
+/**
+ * A byte string of `lo` to `hi` bytes (`hi` unbounded when `null`). Bounds that are not numbers make a codec that
+ * refuses every value, as for {@link intRange}.
+ */
 export function sizedBytes(lo: number, hi: number | null): Codec<Uint8Array> {
+  if (!sizeBounds(lo, hi)) return refusing(NOT_SIZE_BOUNDS);
   const fits = (n: number): boolean => n >= lo && (hi === null || n <= hi);
   return leaf(
     (b) => {
@@ -216,8 +233,12 @@ export function sizedBytes(lo: number, hi: number | null): Codec<Uint8Array> {
 
 export const bytes: Codec<Uint8Array> = sizedBytes(0, null);
 
-/** Text whose UTF-8 encoding is `lo` to `hi` bytes long (RFC 8610 `.size` on a text string counts bytes). */
+/**
+ * Text whose UTF-8 encoding is `lo` to `hi` bytes long (RFC 8610 `.size` on a text string counts bytes). Bounds that
+ * are not numbers make a codec that refuses every value, as for {@link intRange}.
+ */
 export function sizedText(lo: number, hi: number | null): Codec<string> {
+  if (!sizeBounds(lo, hi)) return refusing(NOT_SIZE_BOUNDS);
   const fits = (s: string): boolean => utf8LengthOf(s) >= lo && (hi === null || utf8LengthOf(s) <= hi);
   return leaf(
     (s) => {
@@ -328,9 +349,11 @@ export function defer<T>(codec: () => Codec<T>): Codec<T> {
 
 /**
  * A homogeneous array of `min` to `max` elements (`max` unbounded when `null`). An explicit wider `T` is unchecked and acts
- * as a cast (see {@link Codec}): let inference pick it.
+ * as a cast (see {@link Codec}): let inference pick it. Bounds that are not numbers make a codec that refuses every
+ * value, as for {@link intRange}.
  */
 export function vector<T>(element: Codec<T>, min: number, max: number | null): Codec<readonly T[]> {
+  if (!sizeBounds(min, max)) return refusing(NOT_SIZE_BOUNDS);
   return codecOf({ kind: "vector", element, min, max });
 }
 
@@ -433,15 +456,58 @@ export function record<T>(fields: RecordFields<T>): Codec<T> {
   return codecOf({ kind: "record", fields: list, allowed: list.map((f) => f.key) });
 }
 
-/** The keys of a map that may be read as a record allowing `allowed`, which must hold all of them. */
+/**
+ * The keys of a map that may be read as a record allowing `allowed`, which must hold all of them. `allowed` that is not
+ * an array of strings (read by index, its length once) is a decode failure, before the map is read.
+ */
 export function fields(v: Value, allowed: readonly string[]): Result<MapValue, DecodeFailure> {
   if (!isValue(v)) return notAValue();
+  const names = stringList(allowed);
+  return names === undefined ? decodeFailure(NOT_NAMES) : fieldsOf(v, names);
+}
+
+/** {@link fields} of a value and names this package holds (a decode walk's, a schema's), unchecked. */
+function fieldsOf(v: Value, allowed: readonly string[]): Result<MapValue, DecodeFailure> {
   if (v.kind !== "map") return expected("map", v);
   // the keys come in canonical order: the refusal counts the unknown ones and previews the first, never lists them
   const unknown = v.keys().filter((k) => !allowed.includes(k));
   const first = unknown[0];
   if (first !== undefined) return decodeFailure(`${unknown.length.toString()} unknown ${unknown.length === 1 ? "key" : "keys"}, the first ${Preview.of(first).toString()}`);
   return ok(v);
+}
+
+/** The refusal of a schema argument (key names, alternatives) that is not of its type. */
+const NOT_NAMES = "the schema's names are not arrays of strings";
+
+/**
+ * `x` as an array of strings, copied: read by index, its length once and each item once (never through its iterator
+ * or its own methods), or `undefined` if it is not an array of strings.
+ */
+function stringList(x: unknown): readonly string[] | undefined {
+  const length: unknown = Array.isArray(x) ? (x as readonly unknown[]).length : undefined;
+  if (typeof length !== "number") return undefined;
+  const out: string[] = [];
+  for (let i = 0; i < length; i++) {
+    const s: unknown = (x as readonly unknown[])[i];
+    if (typeof s !== "string") return undefined;
+    out.push(s);
+  }
+  return out;
+}
+
+/** `x` as an array of `[required, allowed]` pairs of string arrays, copied as {@link stringList} copies, or `undefined`. */
+function recordList(x: unknown): readonly (readonly [readonly string[], readonly string[]])[] | undefined {
+  const length: unknown = Array.isArray(x) ? (x as readonly unknown[]).length : undefined;
+  if (typeof length !== "number") return undefined;
+  const out: (readonly [readonly string[], readonly string[]])[] = [];
+  for (let i = 0; i < length; i++) {
+    const pair: unknown = (x as readonly unknown[])[i];
+    const required = Array.isArray(pair) ? stringList((pair as readonly unknown[])[0]) : undefined;
+    const allowed = Array.isArray(pair) ? stringList((pair as readonly unknown[])[1]) : undefined;
+    if (required === undefined || allowed === undefined) return undefined;
+    out.push([required, allowed]);
+  }
+  return out;
 }
 
 /** A record alternative of a union, `codec`, told apart by its field names when encoding and its wire keys when decoding. */
@@ -479,6 +545,13 @@ export function union<U>(name: string, alternatives: readonly Alternative<U>[], 
  * record encoder reads them, so getters count and unrelated properties do not.
  */
 export function hasFields(a: object, required: readonly string[], allowed: readonly string[], known: readonly string[]): boolean {
+  // the schema's names, as arrays of strings read by index: anything else fits nothing
+  const [r, al, k] = [stringList(required), stringList(allowed), stringList(known)];
+  return r !== undefined && al !== undefined && k !== undefined && hasFieldsOf(a, r, al, k);
+}
+
+/** {@link hasFields} with a schema this package holds, unchecked. */
+function hasFieldsOf(a: object, required: readonly string[], allowed: readonly string[], known: readonly string[]): boolean {
   const x: unknown = a;
   if ((typeof x !== "object" || x === null) && typeof x !== "function") return false;
   const present = known.filter((k) => Reflect.get(a, k) !== undefined);
@@ -491,14 +564,21 @@ export function hasFields(a: object, required: readonly string[], allowed: reado
  */
 export function selectAlternative(v: Value, records: readonly (readonly [readonly string[], readonly string[]])[], texts: readonly string[]): Result<number, DecodeFailure> {
   if (!isValue(v)) return notAValue();
+  const alternatives = recordList(records);
+  const names = stringList(texts);
+  return alternatives === undefined || names === undefined ? decodeFailure(NOT_NAMES) : selectAlternativeOf(v, alternatives, names);
+}
+
+/** {@link selectAlternative} of a value and schema this package holds, unchecked. */
+function selectAlternativeOf(v: Value, alternatives: readonly (readonly [readonly string[], readonly string[]])[], names: readonly string[]): Result<number, DecodeFailure> {
   if (v.kind === "map") {
     const keys = v.keys();
-    const i = records.findIndex(([required, allowed]) => required.every((k) => keys.includes(k)) && keys.every((k) => allowed.includes(k)));
+    const i = alternatives.findIndex(([required, allowed]) => required.every((k) => keys.includes(k)) && keys.every((k) => allowed.includes(k)));
     return i >= 0 ? ok(i) : decodeFailure(`no alternative fits a map of ${keys.length.toString()} keys`);
   }
   if (v.kind === "text") {
-    const i = texts.indexOf(v.value);
-    return i >= 0 ? ok(records.length + i) : decodeFailure(`${Preview.of(v.value).toString()} is not an alternative`);
+    const i = names.indexOf(v.value);
+    return i >= 0 ? ok(alternatives.length + i) : decodeFailure(`${Preview.of(v.value).toString()} is not an alternative`);
   }
   return decodeFailure("expected a map or one of the text alternatives");
 }
@@ -607,7 +687,7 @@ function openEncoding(codec: Codec<unknown>, value: unknown, depth: number, stac
     (s, v): { readonly to: Codec<unknown> } | { readonly done: Result<Value, CanonicalError> } => {
       if (s.kind === "defer") return { to: s.resolve() };
       if (typeof v === "string" && s.texts.length > 0) return { done: oneOfText(v, s.texts) };
-      const fit = typeof v === "object" && v !== null ? s.alternatives.find((a) => hasFields(v, a.required, a.allowed, s.known)) : undefined;
+      const fit = typeof v === "object" && v !== null ? s.alternatives.find((a) => hasFieldsOf(v, a.required, a.allowed, s.known)) : undefined;
       return fit === undefined ? { done: typeMismatch(`no alternative of ${s.name} fits`) } : { to: fit.codec };
     },
     typeMismatch("the codec refers to itself without writing a container"),
@@ -762,7 +842,7 @@ function openDecoding(codec: Codec<unknown>, value: Value, stack: Decoding[]): D
     value,
     (s, v): { readonly to: Codec<unknown> } | { readonly done: Result<unknown, DecodeFailure> } => {
       if (s.kind === "defer") return { to: s.resolve() };
-      const i = selectAlternative(v, s.keys, s.texts);
+      const i = selectAlternativeOf(v, s.keys, s.texts);
       if (!i.ok) return { done: i };
       const alt = s.alternatives[i.value];
       return alt === undefined ? { done: ok(s.texts[i.value - s.alternatives.length]) } : { to: alt.codec };
@@ -790,7 +870,7 @@ function openDecoding(codec: Codec<unknown>, value: Value, stack: Decoding[]): D
       return nextItem(frame, stack);
     }
     case "record": {
-      const m = fields(value, s.allowed);
+      const m = fieldsOf(value, s.allowed);
       if (!m.ok) return { done: m };
       const frame: Decoding & { readonly kind: "record" } = { kind: "record", fields: s.fields, map: m.value, at: 0, out: [] };
       stack.push(frame);

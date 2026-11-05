@@ -13,10 +13,19 @@ const escaped = (s: string): string =>
     return c === '"' || c === "\\" ? `\\${c}` : u < 0x20 || u === 0x7f ? `\\u${u.toString(16).padStart(4, "0")}` : c;
   }).join("");
 
-/** `#truncated in x`: whether `x` is a {@link Preview}, set once by its static block. */
+/**
+ * The key the constructor takes, private to this module: a constructor is private to TypeScript alone, so JavaScript can
+ * call it (`Reflect.construct(Preview, [head, 0, 0])`), but what it builds without this key is not minted.
+ */
+const KEY: unique symbol = Symbol("preview");
+
+/** `#minted in x && x.#minted`: whether `x` is a {@link Preview} this module built, set once by its static block. */
 let previewBrand!: (x: object) => boolean;
 
-/** Whether `x` is a {@link Preview} built by {@link Preview.of}, in O(1): no Proxy trap runs. Internal to this package. */
+/**
+ * Whether `x` is a {@link Preview} built by {@link Preview.of}, in O(1): no Proxy trap runs, and one built by calling the
+ * constructor from outside (whose head could be anything, of any length) is not one. Internal to this package.
+ */
 export const isPreview = (x: unknown): x is Preview => typeof x === "object" && x !== null && previewBrand(x);
 
 /**
@@ -29,12 +38,15 @@ export const isPreview = (x: unknown): x is Preview => typeof x === "object" && 
 export class Preview {
   // #private state makes the class nominal: an object of the same shape is not a Preview, so only `of` builds one
   readonly #truncated: boolean;
+  readonly #minted: boolean;
 
   private constructor(
+    key: symbol,
     readonly head: string,
     readonly length: number,
     keptBytes: number,
   ) {
+    this.#minted = key === KEY;
     this.#truncated = keptBytes < length;
     Object.freeze(this);
   }
@@ -58,14 +70,14 @@ export class Preview {
       length += width(c);
       i += c > 0xffff ? 2 : 1;
     }
-    return new Preview(String.fromCodePoint(...kept), length, keptBytes);
+    return new Preview(KEY, String.fromCodePoint(...kept), length, keptBytes);
   }
 
   /** The preview of something that is not text: the head `<not text>`, a length of 0, not truncated. */
-  static readonly notText: Preview = new Preview("<not text>", 0, 0);
+  static readonly notText: Preview = new Preview(KEY, "<not text>", 0, 0);
 
   static {
-    previewBrand = (x) => #truncated in x;
+    previewBrand = (x) => #minted in x && x.#minted;
   }
 
   /** Whether the text was longer than {@link head}. */
