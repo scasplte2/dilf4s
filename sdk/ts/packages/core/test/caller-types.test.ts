@@ -3,7 +3,7 @@ import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
 import { bitLength, BoolValue, BytesValue, cbor, codec, decodeUtf8, describeFailure, equals, hashCommitment, inspect, IntValue, json, MapValue, Preview, RationalValue, TextValue, utf8Length, Value, valueCommitment, valueCommitmentWithin } from "../src/index.js";
-import { gcdSteps, NOT_A_VALUE } from "../src/value.js";
+import { bytesView, gcdSteps, NOT_A_VALUE } from "../src/value.js";
 import { expectOk, int } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
@@ -485,18 +485,89 @@ describe("the remaining exports check what they are given", () => {
   });
 
   it("a hashCommitment prefix part is copied when it is checked, so a later change cannot reach the hash", () => {
-    const part = Uint8Array.of(1, 2);
-    let reads = 0;
-    const prefix = [part];
-    const watched = new Proxy(prefix, {
+    const [first, second] = [Uint8Array.of(1, 2), Uint8Array.of(3, 4)];
+    const reads: string[] = [];
+    // reading the second part changes the first, after the first was checked
+    const watched = new Proxy([first, second], {
       get: (t, name) => {
-        if (name === "0") reads++;
+        if (name === "0" || name === "1") reads.push(name);
+        if (name === "1") first.fill(9);
         return Reflect.get(t, name) as unknown;
       },
     });
-    const honest = expectOk(hashCommitment("SHA-256", [Uint8Array.of(1, 2)], int(1n)), "honest");
-    expect(expectOk(hashCommitment("SHA-256", watched, int(1n)), "watched")).toEqual(honest);
-    expect(reads, "each part read once").toBe(1);
+    const honest = expectOk(hashCommitment("SHA-256", [Uint8Array.of(1, 2), Uint8Array.of(3, 4)], int(1n)), "the bytes as checked");
+    const changed = expectOk(hashCommitment("SHA-256", [Uint8Array.of(9, 9), Uint8Array.of(3, 4)], int(1n)), "the bytes as changed");
+    expect(expectOk(hashCommitment("SHA-256", watched, int(1n)), "watched"), "the first part as it was when checked").toEqual(honest);
+    expect(honest).not.toEqual(changed);
+    expect([...first], "the caller's array did change").toEqual([9, 9]);
+    expect(reads, "each part read once").toEqual(["0", "1"]);
+  });
+});
+
+describe("the Value.map fast path observes what for...of observes", () => {
+  const one = int(1n);
+
+  it("a Proxy of an entry array sees the same traps as for...of: the iterator method, then length and each index", () => {
+    const traps = (log: string[]): (readonly [string, Value])[] =>
+      new Proxy(
+        [
+          ["a", one] as const,
+          ["b", one] as const,
+        ],
+        {
+          get: (t, name, receiver) => {
+            log.push(String(name));
+            return Reflect.get(t, name, receiver) as unknown;
+          },
+        },
+      );
+    const byForOf: string[] = [];
+    for (const entry of traps(byForOf)) expect(entry).toBeDefined();
+    const byMap: string[] = [];
+    expect(expectOk(Value.map(traps(byMap)), "a Proxy of entries").size).toBe(2);
+    expect(byMap).toEqual(["Symbol(Symbol.iterator)", "length", "0", "length", "1", "length"]);
+    expect(byMap).toEqual(byForOf);
+  });
+
+  it("falls back to the iterator when the array iterators' next has been replaced", () => {
+    const arrayIterator = Object.getPrototypeOf([][Symbol.iterator]()) as { next: (this: Iterator<unknown>) => IteratorResult<unknown> };
+    const original = arrayIterator.next;
+    const steps: string[] = [];
+    const entry = ["a", one] as const;
+    // other arrays are iterated too (inside Uint8Array.from, say): only a step that yields this entry is noted
+    arrayIterator.next = function (this: Iterator<unknown>) {
+      const r = original.call(this);
+      if (r.value === entry) steps.push("entry");
+      return r;
+    };
+    const entries: (readonly [string, Value])[] = [entry];
+    const run = (): unknown => {
+      steps.length = 0;
+      try {
+        return Value.map(entries);
+      } finally {
+        arrayIterator.next = original;
+      }
+    };
+    const patched = run();
+    const patchedSteps = [...steps];
+    const restored = run();
+    expect(patched).toEqual(restored);
+    expect(patchedSteps, "the patched next walked the entries").toEqual(["entry"]);
+    expect(steps, "restored, the fast path reads by index").toEqual([]);
+  });
+});
+
+describe("a byte string decoded from shared memory shares none of it", () => {
+  it("writing the SharedArrayBuffer after decoding changes nothing in the value", () => {
+    const encoded = [0x43, 0x01, 0x02, 0x03]; // h'010203'
+    const shared = new Uint8Array(new SharedArrayBuffer(encoded.length));
+    shared.set(encoded);
+    const v = expectOk(cbor.decode(shared), "decodes");
+    shared.fill(0xff);
+    expect(v.kind === "bytes" && [...v.bytes]).toEqual([1, 2, 3]);
+    const view = v.kind === "bytes" ? bytesView(v) : new Uint8Array(0);
+    expect(Object.getPrototypeOf(view.buffer), "its own ArrayBuffer").toBe(ArrayBuffer.prototype);
   });
 });
 

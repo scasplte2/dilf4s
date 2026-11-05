@@ -57,6 +57,11 @@ const ARRAY_NEXT: unknown = Reflect.get(ARRAY_ITERATOR, "next");
  * array iterator: an array whose method is `Array.prototype[Symbol.iterator]`, with the array iterators' `next`
  * unchanged. Such a walk reads the length and then the item at each index in turn, and closes nothing (the array
  * iterator has no `return`), so reading the array by index, the length each step, observes exactly what it would.
+ *
+ * It trusts the intrinsics as they were when this module loaded: `Array.prototype[Symbol.iterator]` and the array
+ * iterators' `next` are compared with the functions captured then. Code that replaced either before this module loaded
+ * is taken as the intrinsic (and its replacement then bypassed); a replacement made after is seen, and the walk goes
+ * through the iterator. The array iterator's internal steps (reading `length`, then the index) are the language's own.
  */
 export function walksAsArray(iterable: object, method: unknown): iterable is readonly unknown[] {
   return method === ARRAY_VALUES && Array.isArray(iterable) && Reflect.get(ARRAY_ITERATOR, "next") === ARRAY_NEXT;
