@@ -353,13 +353,32 @@ export type RenderError = CanonicalError | TooLarge;
  * Iterative, with an explicit stack of at most {@link MAX_DEPTH} open containers.
  */
 export function renderWithin(value: Value, maxBytes: number): Result<string, RenderError> {
-  const meter = new Meter(Math.min(byteLimit(maxBytes), MAX_RENDER_BYTES));
   const out: string[] = [];
+  const written = renderInto(value, maxBytes, out, (pieces, piece) => {
+    pieces.push(piece);
+    return pieces;
+  });
+  return written.ok ? ok(written.value.join("")) : written;
+}
+
+/**
+ * Where rendered text goes, as a state `S` threaded through every write: {@link renderInto} uses each state once,
+ * passing on the one a write returns, so a sink may append in place.
+ */
+export type TextSink<S> = (s: S, piece: string) => S;
+
+/**
+ * {@link renderWithin} into any {@link TextSink}, starting from `s`: the rendering reaches the sink in order, each of
+ * its characters once, in pieces that are a scalar, a quoted text or key, or punctuation, never a container's text.
+ */
+export function renderInto<S>(value: Value, maxBytes: number, s: S, sink: TextSink<S>): Result<S, RenderError> {
+  const meter = new Meter(Math.min(byteLimit(maxBytes), MAX_RENDER_BYTES));
+  let out = s;
   const stack: Rendering[] = [];
   /** Adds the piece `build` makes, of `bytes` UTF-8 bytes, if they fit: nothing is built before it is paid for. */
   const emit = (bytes: number, build: () => string): boolean => {
     const fits = meter.take(bytes);
-    if (fits) out.push(build());
+    if (fits) out = sink(out, build());
     return fits;
   };
   const ascii = (piece: string): boolean => emit(piece.length, () => piece);
@@ -417,10 +436,10 @@ export function renderWithin(value: Value, maxBytes: number): Result<string, Ren
         stack.pop();
         continue;
       }
-      if (!ascii(comma)) return err(meter.refusal());
+      if (i > 0 && !ascii(",")) return err(meter.refusal());
       const e = node(item);
       if (e !== undefined) return err(e);
     }
   }
-  return ok(out.join(""));
+  return ok(out);
 }

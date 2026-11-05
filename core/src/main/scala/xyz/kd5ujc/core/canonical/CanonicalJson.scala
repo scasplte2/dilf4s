@@ -339,12 +339,13 @@ object CanonicalJson {
 
     // runs of characters that need no escape are written straight from the text
     private def escaped(t: String)(using sink: TextSink[S]): S = {
+      def unescaped(acc: S, from: Int, until: Int): S = if (from < until) sink.chars(acc, t, from, until) else acc
       @tailrec
       def go(acc: S, run: Int, i: Int): S =
-        if (i >= t.length) sink.chars(sink.chars(acc, t, run, i), "\"", 0, 1)
+        if (i >= t.length) sink.chars(unescaped(acc, run, i), "\"", 0, 1)
         else
           escape(t.charAt(i)) match {
-            case Some(e) => go(sink.chars(sink.chars(acc, t, run, i), e, 0, e.length), i + 1, i + 1)
+            case Some(e) => go(sink.chars(unescaped(acc, run, i), e, 0, e.length), i + 1, i + 1)
             case None    => go(acc, run, i + 1)
           }
       go(sink.chars(s, "\"", 0, 1), 0, 0)

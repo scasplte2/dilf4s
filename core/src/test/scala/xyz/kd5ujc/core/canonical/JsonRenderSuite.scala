@@ -18,13 +18,13 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
 
   private def get[A](e: Either[CanonicalError, A]): A = e.fold(err => sys.error(err.toString), identity)
 
-  /** Characters appended, and appends. */
-  final private case class Count(chars: Long, appends: Long)
+  /** What reached the sink, as counts alone: characters, appends, and the longest append. */
+  final private case class Count(chars: Long, appends: Long, longest: Int)
 
-  private given TextSink[Count] = (c, _, from, until) => Count(c.chars + (until - from), c.appends + 1)
+  private given TextSink[Count] = (c, _, from, until) => Count(c.chars + (until - from), c.appends + 1, c.longest.max(until - from))
 
   private def counted(v: CanonicalValue, maxBytes: Long = CanonicalJson.MaxRenderBytes): Either[RenderError, Count] =
-    CanonicalJson.renderInto(v, maxBytes, Count(0L, 0L))
+    CanonicalJson.renderInto(v, maxBytes, Count(0L, 0L, 0))
 
   /**
    * The renderer before it was one pass: each level built its children's strings and joined them, so a character was
@@ -84,14 +84,16 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("every character of a depth-256 chain, a deep map chain and a wide map is appended once") {
-    List("array chain" -> chain, "map chain" -> mapChain, "wide map" -> wide).foldMap {
-      case (name, v) =>
+    // the longest append is a scalar, a run of a text or key, or an escape: never a container's text
+    List(("array chain", chain, 1), ("map chain", mapChain, "\\u0001".length), ("wide map", wide, "key00000".length)).foldMap {
+      case (name, v, longest) =>
         val text = get(CanonicalJson.render(v))
         counted(v) match {
-          case Right(Count(chars, appends)) =>
-            // the rendering level by level copied each character once per level above it: about 33,000 for the chain
+          case Right(Count(chars, appends, longestAppend)) =>
+            // rendering level by level copied each character once per level above it: about 66,000 for the chain
             expect(chars == text.length.toLong, s"$name: $chars characters appended for a rendering of ${text.length}")
               .and(expect(appends <= 4L * v.weight, s"$name: $appends appends for a value of weight ${v.weight}"))
+              .and(expect(longestAppend == longest, s"$name: the longest append is $longestAppend characters"))
               .and(expect.same(byLevels(v), Right(text)))
           case Left(e) => failure(s"$name: $e")
         }
@@ -100,7 +102,7 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
 
   pureTest("the chain's rendering is its 513 characters, written in 513 appends") {
     expect
-      .same(Right(Count(513L, 513L)), counted(chain))
+      .same(Right(Count(513L, 513L, 1)), counted(chain))
       .and(expect.same(Right("[" * 256 + "7" + "]" * 256), CanonicalJson.render(chain)))
   }
 
