@@ -228,8 +228,8 @@ object GasSchedule {
       If       -> c(20),
       And      -> c(15),
       Or       -> c(15),
-      Not      -> c(20),
-      Truthy   -> c(20),
+      Not      -> c(25),
+      Truthy   -> c(25),
       Default  -> c(15),
       Let      -> c(30),
       Eq       -> c(50, 1, Weight),
@@ -255,24 +255,24 @@ object GasSchedule {
       Ceil        -> c(60, 8, Weight),
       // priced at its worst case, a 4096-bit rational result: the result's size is not known from the arguments
       Pow       -> c(20000),
-      MapOp     -> c(40, 8, Elements),
-      Filter    -> c(40, 8, Elements),
+      MapOp     -> c(40, 15, Elements),
+      Filter    -> c(40, 15, Elements),
       Reduce    -> c(40, 8, Elements),
       All       -> c(40, 8, Elements),
       SomeOp    -> c(40, 8, Elements),
       NoneOp    -> c(40, 8, Elements),
       Find      -> c(40, 8, Elements),
       Count     -> c(45, 2, Elements),
-      Merge     -> c(210, 3, Weight).mergingMaps(12, 2),
+      Merge     -> c(210, 8, Weight).mergingMaps(12, 2),
       In        -> c(70, 1, Weight).plus(1, Elements),
       Intersect -> c(50, 17, Weight),
-      Unique    -> c(60, 18, Weight),
-      Slice     -> c(120, 3, Elements),
-      Reverse   -> c(55, 7, Elements),
-      Flatten   -> c(60, 3, Weight),
+      Unique    -> c(60, 23, Weight),
+      Slice     -> c(120, 7, Elements),
+      Reverse   -> c(55, 12, Elements),
+      Flatten   -> c(70, 7, Weight),
       Length    -> c(45, 1, Weight),
       // each piece of cat and join (and each element cat concatenates) costs a few gas besides its bytes
-      Cat        -> c(65, 1, Weight).plus(4, Elements).plus(12, Arguments),
+      Cat        -> c(65, 1, Weight).plus(4, Elements).plus(14, Arguments),
       Substr     -> c(75, 1, Weight),
       Lower      -> c(45, 1, Weight),
       Upper      -> c(50, 1, Weight),
@@ -281,18 +281,18 @@ object GasSchedule {
       Trim       -> c(75, 1, Weight),
       StartsWith -> c(50, 1, Weight),
       EndsWith   -> c(50, 1, Weight),
-      Keys       -> c(110, 4, Weight),
-      Values     -> c(50, 5, Weight),
-      Entries    -> c(120, 10, Weight),
-      Get        -> c(30).searching(3, 1),
+      Keys       -> c(130, 5, Weight),
+      Values     -> c(80, 7, Weight),
+      Entries    -> c(160, 11, Weight),
+      Get        -> c(40).searching(3, 1),
       Has        -> c(40).searching(3, 1),
       // a search per level of the map's depth bound (Search); the JVM's set and unset search twice, and Rust's set
       // on a map of 2^20 entries misses the cache at every level
       SetOp       -> c(60).searching(18, 2),
       Unset       -> c(60).searching(18, 2),
       Exists      -> c(60, 1, Elements),
-      Missing     -> c(50, 20, Elements),
-      MissingSome -> c(60, 20, Elements),
+      Missing     -> c(65, 20, Elements),
+      MissingSome -> c(80, 20, Elements),
       TypeOf      -> c(60),
       Hex         -> c(45, 1, Weight),
       Unhex       -> c(80, 2, Weight),
@@ -329,18 +329,19 @@ object GasSchedule {
       SigmaVerify   -> c(5000, 450, Weight).at(2, 1, Weight),
       // the listing checks are linear in the proof's weight and their bounds: priced from listings of 16 to 2048 entries
       MerkleVerify            -> c(1000, 8, Weight),
-      MerkleConsistencyVerify -> c(4000, 13, Weight),
+      MerkleConsistencyVerify -> c(500, 8, Weight),
       TrieVerify              -> c(500, 15, Weight),
       TriePrefixVerify        -> c(20000, 17, Weight),
       TrieRangeVerify         -> c(20000, 17, Weight)
     ),
-    // per node: a literal in an array ~12 (with its element charge), a var read ~21 more on a map of 8 to 2^20
-    // entries (up to 53 in a full calibration run, on 8000), a callback run ~29 (with a literal body), an untaken if
-    // branch ~11 (its condition plus an element)
-    literal = Gas(7),
-    element = Gas(8),
-    varAccess = Gas(62),
-    perPathSegment = Gas(3),
+    // per node, at the highest of ten JVM processes: a literal in an array up to ~19 (with its element charge); a var
+    // read ~25 on a small map and up to 58 on one of 8000 entries (not monotone in the map's size, so one flat charge);
+    // a map callback ~40 (with a literal body; map and filter pay for the result they build); an untaken if branch ~11
+    // (its condition plus an element)
+    literal = Gas(10),
+    element = Gas(11),
+    varAccess = Gas(70),
+    perPathSegment = Gas(4),
     callbackRun = Gas(18),
     // per unit of (6 + bits/64)^2 of a decimal expansion: about 1 gas a unit for the widest numbers (Rust's 1/5^1700
     // the most), and the 6 limbs pay for a small integer's ~100

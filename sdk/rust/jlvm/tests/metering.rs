@@ -518,7 +518,7 @@ fn a_map_to_a_large_value_shares_it_and_stops_at_the_weight_bound() {
     let start = std::time::Instant::now();
     let o = eval(r#"{"map": [{"var": "xs"}, {"var": "big"}]}"#, &data);
     assert!(is_limit(&o), "{:?}", o.result);
-    assert!(gas(&o) < 1_000_000, "{} gas", gas(&o));
+    assert!(gas(&o) < 2_000_000, "{} gas", gas(&o));
     assert!(start.elapsed().as_secs() < 10, "{:?}", start.elapsed());
     // the same text kept by a filter is shared too
     let kept = eval(
