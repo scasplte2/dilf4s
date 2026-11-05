@@ -544,7 +544,7 @@ function follow<V, D>(
 }
 
 /**
- * Closes the iterators of the vectors and maps still open, from the frame at `i` outwards, as leaving `for...of` loops
+ * Closes the iterators of the maps still open, from the frame at `i` outwards, as leaving `for...of` loops
  * early does: an outer one is closed even when an inner one's `return` throws. One frame a level, and a depth is a
  * safe integer from 0, so the recursion is at most {@link MAX_DEPTH} deep.
  *
@@ -556,8 +556,7 @@ function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
   const frame = stack[i];
   if (frame === undefined) return;
   try {
-    if (frame.kind === "vector") closeIterator(frame.items);
-    else if (frame.kind === "textMap") closeIterator(frame.entries);
+    if (frame.kind === "textMap") closeIterator(frame.entries);
   } finally {
     close(stack, i - 1);
   }
@@ -567,12 +566,13 @@ function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
 type EncodeStep = { readonly codec: Codec<unknown>; readonly value: unknown; readonly depth: number; readonly done?: undefined } | { readonly done: Result<Value, CanonicalError> };
 
 /**
- * A container being encoded: its parts, the depth of its parts, and what they encoded to. A vector's or map's parts
- * are read from its own iterator, one at a time, after the one before is encoded (a map's key and value as each entry
- * is read), as a `for...of` reads them; a record's fields by index (`at`, the one being encoded).
+ * A container being encoded: its parts, the depth of its parts, and what they encoded to. A vector's items are read by
+ * index (`at`, the next one; its length read once, when it is opened), as `ArrayValue.of` reads them; a map's entries
+ * from its own iterator, one at a time, after the one before is encoded (its key and value as each entry is read), as
+ * a `for...of` reads them; a record's fields by index (`at`, the one being encoded).
  */
 type Encoding =
-  | { readonly kind: "vector"; readonly items: Reader<unknown>; readonly element: Codec<unknown>; readonly depth: number; readonly out: Value[] }
+  | { readonly kind: "vector"; readonly items: readonly unknown[]; readonly length: number; at: number; readonly element: Codec<unknown>; readonly depth: number; readonly out: Value[] }
   | { readonly kind: "textMap"; readonly entries: Reader<unknown>; key: string; readonly value: Codec<unknown>; readonly depth: number; readonly out: (readonly [string, Value])[] }
   | { readonly kind: "record"; readonly fields: readonly RecordField[]; readonly of: object; readonly depth: number; at: number; readonly out: (readonly [string, Value])[] };
 
@@ -588,7 +588,10 @@ function encodeWith(root: Codec<unknown>, value: unknown, depth: number): Result
         continue;
       }
       const top = stack.at(-1);
-      if (top === undefined || !step.done.ok) return step.done;
+      if (!step.done.ok) return step.done;
+      // a hand-made codec is caller code, and may give what is not a value: refused here, where its place is known
+      if (!isValue(step.done.value)) return typeMismatch(`a codec gave a non-value ${top === undefined ? "at the root" : place(top)}`);
+      if (top === undefined) return step.done;
       step = nextEncoding(top, step.done.value, stack);
     }
   } finally {
@@ -617,16 +620,17 @@ function openEncoding(codec: Codec<unknown>, value: unknown, depth: number, stac
       return { done: s.encode(value) };
     case "vector": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
-      if (!Array.isArray(value)) return { done: typeMismatch("expected an array") };
-      const items: readonly unknown[] = value;
-      if (items.length < s.min || (s.max !== null && items.length > s.max)) return { done: typeMismatch(`array of ${items.length.toString()} elements outside the schema size`) };
-      const read = open<unknown>(items);
-      if (read === undefined) return { done: typeMismatch(NOT_ITERABLE) };
-      return opened({ kind: "vector", items: read, element: s.element, depth: depth + 1, out: [] }, stack);
+      // read as ArrayValue.of reads one: the length once (a Proxy's need not be a number), then each item by index,
+      // never through the array's iterator, so the size checked is the size written
+      const length: unknown = Array.isArray(value) ? (value as readonly unknown[]).length : undefined;
+      if (typeof length !== "number") return { done: typeMismatch("expected an array") };
+      if (length < s.min || (s.max !== null && length > s.max)) return { done: typeMismatch(`array of ${length.toString()} elements outside the schema size`) };
+      return opened({ kind: "vector", items: value as readonly unknown[], length, at: 0, element: s.element, depth: depth + 1, out: [] }, stack);
     }
     case "textMap": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
-      if (typeof value !== "object" || value === null || !(Symbol.iterator in value)) return { done: typeMismatch("expected a map") };
+      // its iterator method is read once, by open (an `in` check first would run a Proxy's has trap and read it twice)
+      if (typeof value !== "object" || value === null) return { done: typeMismatch("expected a map") };
       const entries = open<unknown>(value);
       if (entries === undefined) return { done: typeMismatch(NOT_ITERABLE) };
       return opened({ kind: "textMap", entries, key: "", value: s.value, depth: depth + 1, out: [] }, stack);
@@ -662,21 +666,33 @@ function nextEncoding(top: Encoding, v: Value, stack: Encoding[]): EncodeStep {
   return nextPart(top, stack);
 }
 
-/** The next element or entry of an open vector or map, read from its iterator, or its outcome. */
+/** Where in an open container the part being encoded goes, for a refusal: a field by its schema key, else its kind. */
+function place(top: Encoding): string {
+  switch (top.kind) {
+    case "vector":
+      return "for an element of an array";
+    case "textMap":
+      return "for a value of a text map";
+    case "record":
+      return `for the field ${JSON.stringify(top.fields[top.at]?.key ?? "")}`;
+  }
+}
+
+/** The next element of an open vector, read by index, or the next entry of an open map, read from its iterator. */
 function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack: Encoding[]): EncodeStep {
   // off the stack while its own next() runs and its result is read (done, then value), as for...of does not close an
   // iterator for those; back on it for anything after, a map entry's reading included, which for...of does close it
   // for. Any truthy `done` ends it. A result that is no object, which for...of throws a TypeError for without closing
   // that iterator, is refused (the iterators around it are closed, as that TypeError would close them)
-  stack.pop();
   if (top.kind === "vector") {
-    const item: unknown = top.items.next();
-    if (!isResult(item)) return { done: typeMismatch(NOT_A_RESULT) };
-    if (item.done) return { done: ArrayValue.of(top.out) };
-    const value: unknown = item.value;
-    stack.push(top);
+    if (top.at >= top.length) {
+      stack.pop();
+      return { done: ArrayValue.of(top.out) };
+    }
+    const value: unknown = top.items[top.at++];
     return { codec: top.element, value, depth: top.depth };
   }
+  stack.pop();
   const entry: unknown = top.entries.next();
   if (!isResult(entry)) return { done: typeMismatch(NOT_A_RESULT) };
   if (entry.done) return { done: MapValue.of(top.out) };
