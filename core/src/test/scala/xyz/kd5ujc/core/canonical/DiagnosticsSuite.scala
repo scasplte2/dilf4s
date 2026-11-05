@@ -142,7 +142,8 @@ object DiagnosticsSuite extends SimpleIOSuite {
   }
 
   pureTest("a 1 MiB digest hex is refused by its width, holding sizes only") {
-    val refusals = List("a" * Huge, "0x" + "a" * Huge, "a" * 64 + "é" * Huge, "é" * Huge).map(Digest.fromHex[Sha256](_))
+    val refusals =
+      List("a" * Huge, "0x" + "a" * Huge, "a" * 64 + "é" * Huge, "é" * Huge, "a" * 65 + "é" * Huge).map(Digest.fromHex[Sha256](_))
     expect
       .same(
         List(
@@ -151,8 +152,10 @@ object DiagnosticsSuite extends SimpleIOSuite {
           Left(HashError.InvalidHex(64)),
           Left(HashError.InvalidHex(0))
         ),
-        refusals
+        refusals.take(4)
       )
+      // past the one digit it reads beyond the width, the text is not read: its length refuses it, whatever follows
+      .and(expect.same(List("InvalidLength"), refusals.drop(4).map(_.fold(_.kind: String, _ => "accepted"))))
       .and(refusals.foldMap(r => bounded("digest hex", r.fold(_.toString, _.toString))))
   }
 }

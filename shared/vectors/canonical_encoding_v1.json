@@ -1586,6 +1586,33 @@
       "hex" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015adgba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
       "outcome" : "InvalidHex",
       "offset" : 64
+    },
+    {
+      "algorithm" : "SHA-256",
+      "hex" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad0g",
+      "outcome" : "InvalidLength"
+    },
+    {
+      "algorithm" : "SHA-256",
+      "hex" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad000g",
+      "outcome" : "InvalidLength"
+    },
+    {
+      "algorithm" : "SHA-256",
+      "hex" : "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad0g",
+      "outcome" : "InvalidLength"
+    },
+    {
+      "algorithm" : "SHA-256",
+      "hex" : "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015adg",
+      "outcome" : "InvalidHex",
+      "offset" : 66
+    },
+    {
+      "algorithm" : "SHA-256",
+      "hex" : "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015g",
+      "outcome" : "InvalidHex",
+      "offset" : 62
     }
   ],
   "expansions" : [
@@ -1754,6 +1781,22 @@
       "message" : "",
       "dst" : "41414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141",
       "length" : 4294967296,
+      "outcome" : "InvalidExpansion",
+      "refusal" : "outputLength"
+    },
+    {
+      "algorithm" : "SHA-256",
+      "message" : "616263",
+      "dst" : "64696c6634732f766563746f72732f657870616e642f7631",
+      "length" : 65568,
+      "outcome" : "InvalidExpansion",
+      "refusal" : "outputLength"
+    },
+    {
+      "algorithm" : "SHA-256",
+      "message" : "616263",
+      "dst" : "64696c6634732f766563746f72732f657870616e642f7631",
+      "length" : 4294967328,
       "outcome" : "InvalidExpansion",
       "refusal" : "outputLength"
     },

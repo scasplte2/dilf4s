@@ -11,7 +11,6 @@ import scala.deriving.Mirror
 
 import xyz.kd5ujc.core.canonical.{CanonicalJson, Preview}
 import xyz.kd5ujc.models.canonical_vectors.CanonicalVectors
-import xyz.kd5ujc.models.hash_errors.HashErrorKind
 
 import weaver.SimpleIOSuite
 
@@ -49,6 +48,20 @@ object HashRefusalCoverageSuite extends SimpleIOSuite {
       val all = kinds[HashError]
       expect(all.filterNot(rows).isEmpty, s"no vector row pins ${all.filterNot(rows).mkString(", ")}")
         .and(expect((rows -- all).isEmpty, s"rows name kinds HashError does not have: ${rows -- all}"))
+    }
+  }
+
+  test("every expansion refusal has a row, and only an InvalidExpansion row names one") {
+    vectors.map { v =>
+      val refused = v.expansions.flatMap(_.refusal).map(identity[String]).toSet
+      val all = ExpansionRefusal.values.toList.map(identity[String])
+      expect(all.filterNot(refused).isEmpty, s"no row pins the expansion refusals ${all.filterNot(refused).mkString(", ")}")
+        .and(
+          expect(
+            v.expansions.forall(e => e.refusal.isDefined == ((e.outcome: String) == "InvalidExpansion")),
+            "refusal exactly with InvalidExpansion"
+          )
+        )
     }
   }
 

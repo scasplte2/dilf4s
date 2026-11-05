@@ -195,7 +195,7 @@ object Hasher {
  * A hash refusal, by kind (docs/specs/conformance.md §6): generated from `shared/schemas/hash-errors.cddl`, as the
  * Rust and TypeScript SDKs' are. Caller text is held as a [[Preview]], never as itself.
  */
-export xyz.kd5ujc.models.hash_errors.{ExpansionRefusal, HashError}
+export xyz.kd5ujc.models.hash_errors.{ExpansionRefusal, HashError, HashErrorKind}
 
 /** Hexadecimal text as the hash API reads it: ASCII digits and letters `a`-`f` in either case, two per byte. */
 private[hash] object Hex {

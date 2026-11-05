@@ -143,5 +143,9 @@ describe("bounded refusals", () => {
       { kind: "InvalidHex", offset: 0 },
     ]);
     for (const r of refusals) bounded("digest hex", rendered(r));
+    // past the one digit it reads beyond the width, the text is not read: its length refuses it, whatever follows
+    const past = digestFromHex("SHA-256", "a".repeat(65) + "é".repeat(HUGE));
+    expect(past.ok ? "accepted" : past.error.kind).toBe("InvalidLength");
+    bounded("digest hex", rendered(past));
   });
 });

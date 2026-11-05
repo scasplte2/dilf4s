@@ -420,7 +420,15 @@ object CanonicalVectors {
       "SHA-256" -> ("é" * 40),
       "SHA-256" -> ("😀" * 20),
       "SHA-256" -> (d + "é"),
-      "SHA-256" -> (d + "g" + d)
+      "SHA-256" -> (d + "g" + d),
+      // the reach is one digit past the width, not the whole text: a non-digit past it is not read, so the text is
+      // refused by its length; a non-digit within it, after a prefix, is refused at its offset counting the prefix
+      "SHA-256" -> (d + "0g"),
+      "SHA-256" -> (d + "000g"),
+      "SHA-256" -> ("0x" + d + "0g"),
+      "SHA-256" -> ("0x" + d + "g"),
+      // a non-digit before an odd length is refused at its offset, in every string unit (ASCII)
+      "SHA-256" -> (d.take(62) + "g")
     )
   }
 
@@ -455,6 +463,9 @@ object CanonicalVectors {
     ("SHA-512", ByteVector.empty, expandTag, 16321L),
     ("SHA3-512", ByteVector.empty, expandTag, 65536L),
     ("SHA-256", ByteVector.empty, ByteVector.fill(256)(0x41), 4294967296L),
+    // lengths checked before any narrowing: 2^16 + 32 and 2^32 + 32 are 32 in 16 or 32 bits, which would be accepted
+    ("SHA-256", ascii("abc"), expandTag, 65568L),
+    ("SHA-256", ascii("abc"), expandTag, 4294967328L),
     ("SHA-256", ascii("abc"), ByteVector.empty, 32L),
     ("SHA-256", ascii("abc"), ByteVector.empty, 0L),
     ("SHA-512", ascii("abc"), ByteVector.empty, 99999L)

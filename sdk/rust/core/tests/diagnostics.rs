@@ -10,7 +10,7 @@ use dilf4s_core::codec::{
 };
 use dilf4s_core::generated::diagnostic_vectors::DiagnosticVectors;
 use dilf4s_core::generated::merkle_vectors::MerkleVectors;
-use dilf4s_core::hash::{DomainTag, HashAlgorithm, HashError};
+use dilf4s_core::hash::{DomainTag, HashAlgorithm, HashError, HashErrorKind};
 use dilf4s_core::preview::MAX_CODE_POINTS;
 use dilf4s_core::{CanonicalError, DecodeFailure, Preview, Value, json};
 
@@ -144,4 +144,8 @@ fn a_1_mib_digest_hex_is_refused_by_its_width_holding_sizes_only() {
         assert_eq!(e, expected);
         bounded("digest hex", &rendered(&e));
     }
+    // past the one digit it reads beyond the width, the text is not read: its length refuses it, whatever follows
+    let past = HashAlgorithm::Sha256.digest_from_hex(&format!("{}{}", "a".repeat(65), "é".repeat(HUGE))).unwrap_err();
+    assert_eq!(past.kind(), HashErrorKind::InvalidLength);
+    bounded("digest hex", &rendered(&past));
 }
