@@ -55,8 +55,8 @@ const codec: SchemeCodec<typeof NAME> = {
   signingKey: (bytes) => {
     const b = sized("BLS signing key", 32, bytes);
     if (!b.ok) return b;
-    const x = beToBig(b.value);
-    return x > 0n && x < R ? ok(signingKeyOf(NAME, b.value)) : err(invalidKey("BLS secret key must be a 32-byte scalar in [1, r)"));
+    const x = beToBig(bytes);
+    return x > 0n && x < R ? ok(signingKeyOf(NAME, bytes)) : err(invalidKey("BLS secret key must be a 32-byte scalar in [1, r)"));
   },
   verifyingKey: (bytes) => {
     const p = g1(bytes);

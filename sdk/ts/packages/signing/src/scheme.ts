@@ -3,7 +3,6 @@ import { err, ok, type Result } from "@kd5ujc/dilf4s-core";
 
 import { lengthError, type CryptoError } from "./errors.js";
 import { Signature, SigningKey, VerifyingKey, type KeyPair, type SchemeName } from "./keys.js";
-import { view } from "./internal/bytes.js";
 import { INTERNAL } from "./internal/token.js";
 
 /** Validating decoders: a wrong length is `InvalidEncoding`; a key failing the scheme's rules is `InvalidKey`. */
@@ -33,12 +32,9 @@ export const verifyingKeyOf = <S extends SchemeName>(scheme: S, bytes: Uint8Arra
   new VerifyingKey(INTERNAL, scheme, bytes);
 export const signatureOf = <S extends SchemeName>(scheme: S, bytes: Uint8Array): Signature<S> => new Signature(INTERNAL, scheme, bytes);
 
-/** The bytes, as a plain view over their own memory, if they have the expected length (the array's own, never a subclass's `length`). */
-export function sized(what: string, expected: number, bytes: Uint8Array): Result<Uint8Array, CryptoError> {
-  // read through the array's own slots: a subclass's `length` is not believed, and what follows reads the plain view
-  const b = view(bytes);
-  return b.length === expected ? ok(b) : err(lengthError(what, expected, b.length));
-}
+/** The bytes, if they have the expected length. */
+export const sized = (what: string, expected: number, bytes: Uint8Array): Result<Uint8Array, CryptoError> =>
+  bytes.length === expected ? ok(bytes) : err(lengthError(what, expected, bytes.length));
 
 /** Composes the decoders with `verify`: key first, then signature. */
 export function verifyBytesWith<S extends SchemeName, M>(

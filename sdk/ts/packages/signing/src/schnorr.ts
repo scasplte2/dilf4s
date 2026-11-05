@@ -9,7 +9,7 @@ import { randomBytes } from "@noble/hashes/utils.js";
 import { invalidKey, lengthError, type CryptoError } from "./errors.js";
 import type { Signature, SigningKey, VerifyingKey } from "./keys.js";
 import { attempt } from "./internal/attempt.js";
-import { beToBig, concat, copy, view } from "./internal/bytes.js";
+import { beToBig, concat, copy } from "./internal/bytes.js";
 import { literalTaggedHash, TAGS } from "./internal/tags.js";
 import {
   seedIsKey,
@@ -32,9 +32,7 @@ export class Message32 {
   }
 
   static of(bytes: Uint8Array): Result<Message32, CryptoError> {
-    // the array's own length, never a subclass's `length`
-    const b = view(bytes);
-    return b.length === 32 ? ok(new Message32(b)) : err(lengthError("BIP-340 message", 32, b.length));
+    return bytes.length === 32 ? ok(new Message32(bytes)) : err(lengthError("BIP-340 message", 32, bytes.length));
   }
 
   get bytes(): Uint8Array {
