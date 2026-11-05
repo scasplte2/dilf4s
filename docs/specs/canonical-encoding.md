@@ -61,6 +61,17 @@ Integers that fit a primitive type are built without a check, since every one fi
 other constructor, so no wider number can be made without one of these refusing it, and in Scala and Rust the compiler
 rejects an unchecked integer.
 
+TypeScript's types are checked only at compile time, so its SDK also checks at run time what a caller passes past
+them (from JavaScript, or a cast), and refuses an argument of the wrong type with `TypeMismatch`, never a throw or a
+value read as another type. Each argument is checked in O(1) before it is read: the constructors (`Value.int` and
+`IntValue.of`, `Value.bool` and `BoolValue.of`, `Value.bytes` and `BytesValue.of`, `Value.text` and `TextValue.of`,
+`Value.number` and `RationalValue.number`, `RationalValue.decimal`, whose scale must be an integer), `cbor.decode`, and
+every entry point that encodes or commits a value (`cbor.encode`, `cbor.encodeWithin`, `cbor.encodedLengthWithin`,
+`valueCommitment`, `valueCommitmentWithin`, `hashCommitment`) and `json.decimal`. `Value.array` and `Value.map` check
+each item or entry in the one pass that reads it. Bytes are read through the typed array's internal slots, so a
+subclass that overrides `length` is not believed. Scala's and Rust's types rule these arguments out, so this refusal
+is the TypeScript SDK's alone and has no conformance vector.
+
 For other-language implementers, here is the same model in CDDL (RFC 8610). This block is **informative**: it is not
 in `shared/schemas`, because tags and recursion are outside the code generator's profile. The prose above, and the
 deterministic encoding rules in §2, are normative.
