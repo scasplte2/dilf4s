@@ -390,3 +390,28 @@ describe("equality and inspection of what is not a value", () => {
     expect(inspect(int(5n))).toBe("5");
   });
 });
+
+describe("cbor.decode reads its input in place, or copies it once when it may change", () => {
+  const encoded = [0x82, 0x42, 0x01, 0x02, 0x61, 0x61]; // [h'0102', "a"]
+
+  it("a decoded byte string holds no view of the input", () => {
+    const input = Uint8Array.from(encoded);
+    const v = expectOk(cbor.decode(input), "decodes");
+    input.fill(0);
+    const first = v.kind === "array" ? v.items[0] : undefined;
+    expect(first?.kind === "bytes" && [...first.bytes]).toEqual([1, 2]);
+  });
+
+  it("a SharedArrayBuffer's or another realm's bytes decode as the same value", () => {
+    const shared = new Uint8Array(new SharedArrayBuffer(encoded.length));
+    shared.set(encoded);
+    const foreign = runInNewContext(`new Uint8Array([${encoded.join(",")}])`) as Uint8Array;
+    const expected = expectOk(cbor.decode(Uint8Array.from(encoded)), "local");
+    expect(Value.equals(expectOk(cbor.decode(shared), "shared"), expected)).toBe(true);
+    expect(Value.equals(expectOk(cbor.decode(foreign), "another realm"), expected)).toBe(true);
+    // a view into a larger buffer is read from its own offset and length
+    const larger = new Uint8Array(16).fill(0xff);
+    larger.set(encoded, 5);
+    expect(Value.equals(expectOk(cbor.decode(larger.subarray(5, 5 + encoded.length)), "a view"), expected)).toBe(true);
+  });
+});

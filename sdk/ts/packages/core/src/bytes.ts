@@ -41,6 +41,17 @@ export function plainBytes(x: unknown): Uint8Array | undefined {
 }
 
 /**
+ * Whether `view`'s memory is an `ArrayBuffer` of this realm, which only code running in this thread can change: not a
+ * `SharedArrayBuffer` (another thread may write it at any time) nor another realm's buffer. It reads the buffer through
+ * `%TypedArray%.prototype`'s own getter and compares its prototype, so nothing throws and no caller code runs. A
+ * `SharedArrayBuffer` given `ArrayBuffer.prototype` passes: only the caller's own threads can race on it.
+ */
+export function isLocalBuffer(view: Uint8Array): boolean {
+  const buffer: unknown = typedArrayBuffer === undefined ? undefined : typedArrayBuffer.call(view);
+  return typeof buffer === "object" && buffer !== null && Object.getPrototypeOf(buffer) === ArrayBuffer.prototype;
+}
+
+/**
  * A fresh plain copy of caller bytes, or `undefined` if they are not bytes (see {@link isBytes}). The `Uint8Array`
  * constructor, given a typed array, copies from its internal slots in one block: a subclass's `length`, accessors or
  * iterator are never consulted. A detached or out-of-bounds array, which that constructor throws on, has length 0 (read

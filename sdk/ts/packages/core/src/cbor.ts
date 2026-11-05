@@ -1,6 +1,6 @@
 /** The dilf4s deterministic CBOR profile (docs/specs/canonical-encoding.md section 2). */
 import { byteLimit, checkedLimit, Meter, tooLarge } from "./budget.js";
-import { takeBytes } from "./bytes.js";
+import { isLocalBuffer, plainBytes } from "./bytes.js";
 import type { CanonicalError, TooLarge, TypeMismatch } from "./error.js";
 import { toHex } from "./hex.js";
 import { err, ok, type Result } from "./result.js";
@@ -8,7 +8,7 @@ import { compareBytes, utf8Text } from "./utf8.js";
 import {
   arrayOfValues,
   BoolValue,
-  BytesValue,
+  bytesOfValues,
   bytesView,
   entriesView,
   IntValue,
@@ -388,16 +388,21 @@ const unexpectedEnd = (offset: number): CanonicalError => ({ kind: "UnexpectedEn
  * Strictly decodes one canonical value: any other encoding of a value, trailing bytes, or nesting deeper than
  * `maxDepth` (at most {@link MAX_DEPTH}) is an error. When it succeeds, `encode(decode(b)) == b`. The decoder keeps
  * its own frame stack, so input of any nesting is a typed error, never a stack overflow. `bytes` that is not a
- * `Uint8Array`, or a `maxDepth` that is not a number, is a `TypeMismatch`. The bytes are copied first, through
- * `takeBytes`: a subclass's `length`, accessors or iterator are not consulted, and nothing changes them while they are
- * read.
+ * `Uint8Array`, or a `maxDepth` that is not a number, is a `TypeMismatch`.
+ *
+ * The bytes are read through a plain view of their own memory (`plainBytes`): a subclass's `length`, accessors or
+ * iterator are never consulted. They are read in place when that memory is an `ArrayBuffer` of this realm, which
+ * nothing can change while the decoder runs (it runs no caller code); a `SharedArrayBuffer`, which another thread may
+ * write at any time, or another realm's buffer is copied once first. Each byte string decoded is copied once into its
+ * value, which then holds no view of the input.
  */
 export function decode(bytes: Uint8Array, maxDepth: number = MAX_DEPTH): Result<Value, CanonicalError> {
   if (typeof (maxDepth as unknown) !== "number" || Number.isNaN(maxDepth)) return err({ kind: "TypeMismatch", reason: "the depth limit is not a number" });
-  // a copy, read through the array's own slots: the decoder reads memory nothing else can change while it runs (a
-  // SharedArrayBuffer's other threads)
-  const input = takeBytes(bytes);
-  return input === undefined ? err({ kind: "TypeMismatch", reason: "expected a Uint8Array" }) : new Decoder(input, Math.min(maxDepth, MAX_DEPTH)).run();
+  const view = plainBytes(bytes);
+  if (view === undefined) return err({ kind: "TypeMismatch", reason: "expected a Uint8Array" });
+  // read in place unless another thread, or another realm, may hold the memory: then one copy, read alone
+  const input = isLocalBuffer(view) ? view : new Uint8Array(view);
+  return new Decoder(input, Math.min(maxDepth, MAX_DEPTH)).run();
 }
 
 class Decoder {
@@ -483,8 +488,8 @@ class Decoder {
       case 2: {
         const s = this.span(end, argument);
         if (!s.ok) return s;
-        const b = BytesValue.of(s.value.bytes);
-        return b.ok ? scalar(b.value, s.value.end) : b;
+        // the one copy each byte string needs: its value holds no view of the input
+        return scalar(bytesOfValues(s.value.bytes), s.value.end);
       }
       case 3: {
         const s = this.span(end, argument);

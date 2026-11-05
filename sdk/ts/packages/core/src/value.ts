@@ -128,9 +128,15 @@ let utf8Of!: (t: TextValue) => Uint8Array;
 let bytesOf!: (b: BytesValue) => Uint8Array;
 let entriesOf!: (m: MapValue) => readonly Entry[];
 
+let bytesOfOwn!: (bytes: Uint8Array) => BytesValue;
 let arrayOfOwn!: (items: readonly Value[]) => Result<ArrayValue, CanonicalError>;
 let mapOfOwn!: (entries: readonly (readonly [string, Value])[]) => Result<MapValue, CanonicalError>;
 
+/**
+ * A byte string holding a copy of `bytes`, a plain array this package holds (the CBOR decoder's input): {@link
+ * BytesValue.of} without its type check. Internal to this package.
+ */
+export const bytesOfValues = (bytes: Uint8Array): BytesValue => bytesOfOwn(bytes);
 /**
  * {@link ArrayValue.of} without its type checks, for this package's decoders: their items are values they made.
  * Internal to this package.
@@ -502,6 +508,7 @@ export class BytesValue {
 
   static {
     bytesOf = (b) => b.#bytes;
+    bytesOfOwn = (b) => new BytesValue(KEY, copyBytes(b));
   }
 
   /**
