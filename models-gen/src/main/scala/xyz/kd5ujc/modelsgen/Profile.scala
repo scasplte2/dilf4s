@@ -17,6 +17,9 @@ import xyz.kd5ujc.modelsgen.Ast.Occ
  *     type, not a wire format, with its kinds in the rule named like it with `-kind`
  *   - a rule whose whole body is an unsigned integer literal (`max-depth = 256`) is a [[ModelRule.Constant]]: a named
  *     value, not a type. Range bounds and sizes may name it (`0..max-depth`); a field or element may not
+ *   - a rule named `preview` is [[ModelRule.PreviewType]]: each SDK's `Preview` (caller text as an error holds it,
+ *     conformance.md section 8), so its body must be the preview's normative fields, `{ "head": text, "length": uint }`.
+ *     Nothing is emitted for it; an error's field may name it, a wire type may not
  *   - anything else in the profile (a primitive, a range, a sized string, a homogeneous array, a text-keyed map, a
  *     reference) is a [[ModelRule.Alias]]
  *
@@ -48,6 +51,9 @@ enum FieldType {
   case Ref(target: QName)
   case TextMap(value: FieldType)
   case Vec(element: FieldType, min: scala.Int, max: Option[scala.Int])
+
+  /** The SDK's `Preview` of caller text: an error's field only, never part of a wire type. */
+  case Preview
 }
 
 /** A record field: its wire key, whether it may be absent, and its type. */
@@ -76,6 +82,9 @@ enum ModelRule {
 
   /** A named unsigned integer (a spec limit), emitted as a constant in every language. */
   case Constant(value: BigInt)
+
+  /** The rule `preview`: the SDK's own `Preview` type, which an error's field may hold. Nothing is emitted for it. */
+  case PreviewType
 }
 
 final class Profile(val schema: Schema) {
@@ -100,7 +109,8 @@ final class Profile(val schema: Schema) {
           outside(rule, s"constant ${q.name} in field position (a constant is a value: name it in a range or size bound)").asLeft
         case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(_))) =>
           outside(rule, s"error family ${q.name} in field position (an error is not a wire type: name its kinds)").asLeft
-        case _ => FieldType.Ref(q).asRight
+        case _ if q.name == Profile.PreviewRule => FieldType.Preview.asRight
+        case _                                  => FieldType.Ref(q).asRight
       }
     case RT.LitInt(v) if v >= Int.MinValue && v <= Int.MaxValue => FieldType.LitInt(v.toInt).asRight
     case RT.LitText(v)                                          => FieldType.LitText(v).asRight
@@ -145,6 +155,14 @@ final class Profile(val schema: Schema) {
         .toLeft(fs)
     }
 
+  /** A wire type never holds a preview, at any depth: a preview is built from caller text, never decoded. */
+  private def wire(rule: QName, t: FieldType): Either[GenError, Unit] = t match {
+    case FieldType.Preview            => outside(rule, "preview in a wire type (a preview is an error's field only)").asLeft
+    case FieldType.TextMap(value)     => wire(rule, value)
+    case FieldType.Vec(element, _, _) => wire(rule, element)
+    case _                            => ().asRight
+  }
+
   private def enumeration(rule: QName, cases: Vector[(String, BigInt)]): Either[GenError, ModelRule] = {
     val names = cases.map { case (l, _) => CanonicalEmitter.pascal(l) }
     val unnamed = cases.collect { case (l, _) if !Profile.isIdentifier(CanonicalEmitter.pascal(l)) => l }
@@ -160,6 +178,8 @@ final class Profile(val schema: Schema) {
   /** Required and permitted keys of a map rule (a choice alternative). */
   private def keySets(alt: QName): Either[GenError, UnionAlternative] =
     schema.rule(alt).flatMap {
+      case _ if alt.name == Profile.PreviewRule =>
+        outside(alt, "preview as a choice alternative (a preview is an error's field only)").asLeft
       case RuleDef(_, RuleBody.Type(RT.MapT(es))) =>
         fields(alt, es).map(fs => UnionAlternative(alt, fs.filterNot(_.optional).map(_.key).toSet, fs.map(_.key).toSet))
       case _ => outside(alt, "choice alternative that is not a map rule").asLeft
@@ -200,12 +220,14 @@ final class Profile(val schema: Schema) {
     }
 
   /**
-   * An error family's field holds text, an integer, a boolean or a kind (an enumeration or a choice of texts), through
-   * aliases: never bytes, a collection or a record, so what an error holds stays bounded by what its kind admits.
+   * An error family's field holds text, an integer, a boolean, a kind (an enumeration or a choice of texts) or a
+   * preview, through aliases: never bytes, a collection or a record, so what an error holds stays bounded by what its
+   * kind admits.
    */
   private def errorField(rule: QName, t: FieldType, seen: Set[QName]): Either[GenError, Unit] = t match {
     case FieldType.Uint | FieldType.Int | FieldType.Nint | FieldType.Text | FieldType.Bool => ().asRight
     case FieldType.IntRange(_, _) | FieldType.SizedText(_, _) | FieldType.Matching(_)      => ().asRight
+    case FieldType.Preview                                                                 => ().asRight
     case FieldType.Ref(q) if seen(q) => outside(rule, s"alias cycle through ${q.name}").asLeft
     case FieldType.Ref(q) =>
       this.rule(q).flatMap {
@@ -244,9 +266,16 @@ final class Profile(val schema: Schema) {
   /** The model of one rule, or the first profile violation. */
   def rule(q: QName): Either[GenError, ModelRule] =
     schema.rule(q).flatMap {
-      case RuleDef(_, RuleBody.Type(t @ Profile.TextMapOf(_))) => fieldType(q, t).map(ModelRule.Alias(_))
-      case RuleDef(_, RuleBody.Type(RT.MapT(es)))              => fields(q, es).map(ModelRule.Record(_))
-      case RuleDef(_, RuleBody.Type(RT.IntEnum(cs)))           => enumeration(q, cs)
+      case RuleDef(_, body) if q.name == Profile.PreviewRule =>
+        val shape = outside(q, "preview that is not { \"head\": text, \"length\": uint }")
+        body match {
+          case RuleBody.Type(RT.MapT(es)) =>
+            fields(q, es).flatMap(fs => Either.cond(fs == Profile.PreviewFields, ModelRule.PreviewType, shape))
+          case _ => shape.asLeft
+        }
+      case RuleDef(_, RuleBody.Type(t @ Profile.TextMapOf(_))) => fieldType(q, t).flatTap(wire(q, _)).map(ModelRule.Alias(_))
+      case RuleDef(_, RuleBody.Type(RT.MapT(es)))    => fields(q, es).flatTap(_.traverse_(f => wire(q, f.tpe))).map(ModelRule.Record(_))
+      case RuleDef(_, RuleBody.Type(RT.IntEnum(cs))) => enumeration(q, cs)
       case RuleDef(_, RuleBody.Type(RT.LitInt(v))) =>
         Either.cond(v >= 0 && v <= Profile.UintMax, ModelRule.Constant(v), outside(q, s"constant $v (a constant is a uint, 0..2^64-1)"))
       case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(alternatives))) => errorFamily(q, alternatives)
@@ -258,7 +287,7 @@ final class Profile(val schema: Schema) {
         }
           .toRight(outside(q, "inline choice (a choice is of named map rules and text literals; use an enumeration for integers)"))
           .flatMap(as => union(q, as.collect { case Left(a) => a }, as.collect { case Right(t) => t }))
-      case RuleDef(_, RuleBody.Type(t))      => fieldType(q, t).map(ModelRule.Alias(_))
+      case RuleDef(_, RuleBody.Type(t))      => fieldType(q, t).flatTap(wire(q, _)).map(ModelRule.Alias(_))
       case RuleDef(_, RuleBody.GroupBody(_)) => outside(q, "group rule").asLeft
     }
 
@@ -294,6 +323,11 @@ object Profile {
     "__lookupGetter__",
     "__lookupSetter__"
   )
+
+  /** The rule that is each SDK's `Preview`, and the fields its body must have: the preview's normative fields. */
+  val PreviewRule: String = "preview"
+  val PreviewFields: Vector[ProfileField] =
+    Vector(ProfileField("head", false, FieldType.Text), ProfileField("length", false, FieldType.Uint))
 
   /** CDDL `int` (RFC 8610: major types 0 and 1). */
   val IntMin: BigInt = -(BigInt(1) << 64)

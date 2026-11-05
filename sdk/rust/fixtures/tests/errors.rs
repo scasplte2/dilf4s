@@ -1,7 +1,8 @@
 //! An error family: struct and unit variants, `kind()`, `Display` and `Error`; a choice naming its kinds round-trips.
 
-#![allow(clippy::expect_used, reason = "tests fail by panicking")]
+#![allow(clippy::expect_used, clippy::unreachable, reason = "tests fail by panicking")]
 
+use dilf4s_core::Preview;
 use dilf4s_core::codec::Model;
 use dilf4s_fixtures::generated::fixture_errors::{Failure, FailureKind, Outcome, Why};
 
@@ -16,6 +17,17 @@ fn each_variant_gives_its_kind_and_renders_its_fields() {
     assert_eq!(Failure::Gone.to_string(), "Gone");
     assert_eq!(refused.to_string(), "Refused (why: Late, type: x)");
     let _: &dyn core::error::Error = &broken;
+}
+
+#[test]
+fn a_preview_field_holds_the_core_preview_and_renders_bounded() {
+    let long = "x".repeat(1 << 20);
+    let unknown = Failure::Unknown { name: Preview::of(&long) };
+    assert_eq!(unknown.kind(), FailureKind::Unknown);
+    let Failure::Unknown { name } = &unknown else { unreachable!("built as Unknown") };
+    assert_eq!((name.head().len(), name.length()), (32, 1 << 20));
+    let shown = unknown.to_string();
+    assert_eq!(shown, format!("Unknown (name: \"{}\"… (UTF-8 length {}))", "x".repeat(32), 1 << 20));
 }
 
 #[test]
