@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { twosAndFives } from "../src/bigint.js";
-import { bitLength, cbor, json, RationalValue, Value, type CanonicalError, type Result } from "../src/index.js";
+import { cbor, json, RationalValue, Value, type CanonicalError, type Result } from "../src/index.js";
+import { bitLengthOf } from "../src/bigint.js";
 import { gcdSteps } from "../src/value.js";
 import { expectOk, int, integerBytes } from "./vectors.js";
 
@@ -14,12 +15,12 @@ describe("rational width", () => {
   /** `(F(k + 1), F(k))` with `F(k + 1)` exactly `bits` wide: coprime, and the pair whose gcd takes the most steps. */
   const fibonacci = (bits: number): readonly [bigint, bigint] => {
     let [a, b] = [1n, 1n];
-    while (bitLength(b) < bits) [a, b] = [b, a + b];
+    while (bitLengthOf(b) < bits) [a, b] = [b, a + b];
     return [b, a];
   };
 
   const rational = (n: bigint, d: bigint): Value => {
-    const v = expectOk(Value.number(n, d), `${bitLength(n).toString()} / ${bitLength(d).toString()} bits`);
+    const v = expectOk(Value.number(n, d), `${bitLengthOf(n).toString()} / ${bitLengthOf(d).toString()} bits`);
     expect(v.kind).toBe("rational");
     return v;
   };
@@ -35,7 +36,7 @@ describe("rational width", () => {
   });
 
   it("is the widest bit length whose every integer has at most 10,000 digits", () => {
-    expect(bitLength(10n ** 10000n)).toBe(max + 1);
+    expect(bitLengthOf(10n ** 10000n)).toBe(max + 1);
     expect(1n << BigInt(max) < 10n ** 10000n).toBe(true);
   });
 
@@ -43,7 +44,7 @@ describe("rational width", () => {
     // as wide as a rational's parts may be, and coprime (gcd(2^a - 1, 2^b - 1) = 2^gcd(a, b) - 1); counting the gcds
     // does not need the slowest pair, which the gcd's own step count covers
     const [n, d] = [edge - 1n, (edge >> 1n) - 1n];
-    expect([bitLength(n), bitLength(d)]).toEqual([max, max - 1]);
+    expect([bitLengthOf(n), bitLengthOf(d)]).toEqual([max, max - 1]);
     const k = 4;
     const maximal = expectOk(Value.array(Array.from({ length: k }, () => rational(n, d))), "array");
     const bytes = expectOk(cbor.encode(maximal), "encodes");
@@ -52,7 +53,7 @@ describe("rational width", () => {
     const decoded = expectOk(cbor.decode(bytes), "decodes");
     expect(Value.equals(decoded, maximal)).toBe(true);
     expect(of).toHaveBeenCalledTimes(k);
-    expect(Math.max(...of.mock.calls.flat().map(bitLength))).toBe(max);
+    expect(Math.max(...of.mock.calls.flat().map(bitLengthOf))).toBe(max);
   });
 
   it("a gcd of the widest parts takes a bounded number of multi-precision steps", () => {
@@ -117,7 +118,7 @@ describe("rational width", () => {
       [-edge, 3n],
       [2n, edge - 1n],
     ] as const) {
-      const decoded = expectOk(cbor.decode(rationalBytes(n, d)), `${bitLength(n).toString()} / ${bitLength(d).toString()} bits`);
+      const decoded = expectOk(cbor.decode(rationalBytes(n, d)), `${bitLengthOf(n).toString()} / ${bitLengthOf(d).toString()} bits`);
       expect(Value.equals(decoded, rational(n, d))).toBe(true);
     }
     for (const [n, d] of [
@@ -160,8 +161,8 @@ describe("rational width", () => {
     ];
     for (const [d, expected] of cases) {
       const [factors, steps] = twosAndFives(d);
-      expect(factors, `${bitLength(d).toString()} bits`).toEqual(expected);
-      expect(steps, `${bitLength(d).toString()} bits`).toBeLessThanOrEqual(4);
+      expect(factors, `${bitLengthOf(d).toString()} bits`).toEqual(expected);
+      expect(steps, `${bitLengthOf(d).toString()} bits`).toBeLessThanOrEqual(4);
     }
     for (const b of [...Array.from({ length: 300 }, (_, i) => i + 1), 1000, 4096, 9999, 10000, 10001, 14306]) {
       const [factors, steps] = twosAndFives(5n ** BigInt(b));

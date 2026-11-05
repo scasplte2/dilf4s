@@ -8,15 +8,17 @@
  * of the containers open (at most {@link MAX_DEPTH}), so no codec recurses on the native stack, however its schema nests
  * or refers to itself.
  */
-import { bitLength } from "./bigint.js";
+import { bitLengthOf } from "./bigint.js";
+import { plainBytes } from "./bytes.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
 import { decodeFailure as failure, type CanonicalError, type DecodeFailure, type TooLarge } from "./error.js";
+import { close as closeIterator, isResult, NOT_A_RESULT, NOT_ITERABLE, open, type Reader } from "./iterator.js";
 import { parse as parseJson } from "./json.js";
 import { Preview } from "./preview.js";
 import { search } from "./keyset.js";
 import { err, ok, type Err, type Result } from "./result.js";
-import { encodeUtf8, utf8Length } from "./utf8.js";
-import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isBytes, isValue, MapValue, MAX_DEPTH, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
+import { encodeUtf8, utf8LengthOf } from "./utf8.js";
+import { arrayOfValues, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isValue, mapOfValues, MAX_DEPTH, type MapValue, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
 
 export type { Value } from "./value.js";
 export { ok } from "./result.js";
@@ -124,7 +126,7 @@ export function toCbor<T>(codec: Codec<T>, value: T): Result<Uint8Array, Canonic
 
 /** The typed value of canonical CBOR. */
 export function fromCbor<T>(codec: Codec<T>, bytes: Uint8Array): Result<T, ModelError> {
-  if (!isBytes(bytes)) return err({ kind: "Canonical", error: { kind: "TypeMismatch", reason: "expected a Uint8Array" } });
+  // cbor.decode refuses what is not bytes, and reads them through their own slots (plainBytes)
   const v = decodeCbor(bytes);
   if (!v.ok) return err({ kind: "Canonical", error: v.error });
   const d = codec.decode(v.value);
@@ -165,23 +167,36 @@ export const any: Codec<Value> = leaf(
 );
 
 export const bool: Codec<boolean> = leaf(
-  (b) => (typeof (b as unknown) === "boolean" ? ok(BoolValue.of(b)) : notA("a boolean")),
+  (b) => BoolValue.of(b),
   (v) => (v.kind === "bool" ? ok(v.value) : expected("bool", v)),
 );
 
 const show = (b: bigint | null): string => (b === null ? "" : b.toString());
 
-/** An integer in `lo..hi`, either side unbounded when `null`. */
+/** A codec that refuses everything, both ways, for a schema built from bounds of the wrong type. */
+const refusing = <T>(reason: string): Codec<T> => leaf<T>(() => typeMismatch(reason), () => decodeFailure(reason));
+
+/** Whether `lo` and `hi` are size bounds: `lo` a number, `hi` a number or `null`, neither `NaN`. */
+const sizeBounds = (lo: unknown, hi: unknown): boolean =>
+  typeof lo === "number" && !Number.isNaN(lo) && (hi === null || (typeof hi === "number" && !Number.isNaN(hi)));
+const NOT_SIZE_BOUNDS = "the schema's size bounds are not numbers";
+
+/**
+ * An integer in `lo..hi`, either side unbounded when `null`. Bounds that are not `bigint`s or `null` (from a JavaScript
+ * caller, or a cast) make a codec that refuses every value, both ways, as `TypeMismatch` and a decode failure.
+ */
 export function intRange(lo: bigint | null, hi: bigint | null): Codec<bigint> {
+  const bound = (b: unknown): boolean => b === null || typeof b === "bigint";
+  if (!bound(lo) || !bound(hi)) return refusing("the schema's integer bounds are not bigints");
   const within = (n: bigint): boolean => (lo === null || n >= lo) && (hi === null || n <= hi);
   return leaf(
     (n) => {
       if (!isBigint(n)) return notA("a bigint");
-      return within(n) ? IntValue.of(n) : typeMismatch(`integer of ${bitLength(n).toString()} bits outside ${show(lo)}..${show(hi)}`);
+      return within(n) ? IntValue.of(n) : typeMismatch(`integer of ${bitLengthOf(n).toString()} bits outside ${show(lo)}..${show(hi)}`);
     },
     (v) => {
       if (v.kind !== "int") return expected("int", v);
-      return within(v.value) ? ok(v.value) : decodeFailure(`integer of ${bitLength(v.value).toString()} bits outside ${show(lo)}..${show(hi)}`);
+      return within(v.value) ? ok(v.value) : decodeFailure(`integer of ${bitLengthOf(v.value).toString()} bits outside ${show(lo)}..${show(hi)}`);
     },
   );
 }
@@ -195,13 +210,19 @@ export const uint: Codec<bigint> = intRange(0n, 2n ** 64n - 1n);
 /** CDDL `nint`: -2^64..-1. */
 export const nint: Codec<bigint> = intRange(-(2n ** 64n), -1n);
 
-/** A byte string of `lo` to `hi` bytes (`hi` unbounded when `null`). */
+/**
+ * A byte string of `lo` to `hi` bytes (`hi` unbounded when `null`). Bounds that are not numbers make a codec that
+ * refuses every value, as for {@link intRange}.
+ */
 export function sizedBytes(lo: number, hi: number | null): Codec<Uint8Array> {
+  if (!sizeBounds(lo, hi)) return refusing(NOT_SIZE_BOUNDS);
   const fits = (n: number): boolean => n >= lo && (hi === null || n <= hi);
   return leaf(
     (b) => {
-      if (!isBytes(b)) return notA("a Uint8Array");
-      return fits(b.length) ? ok(BytesValue.of(b)) : typeMismatch(`byte string of ${b.length.toString()} bytes outside the schema size`);
+      // the array's own length, never a subclass's `length`
+      const view = plainBytes(b);
+      if (view === undefined) return notA("a Uint8Array");
+      return fits(view.length) ? BytesValue.of(view) : typeMismatch(`byte string of ${view.length.toString()} bytes outside the schema size`);
     },
     (v) => {
       if (v.kind !== "bytes") return expected("bytes", v);
@@ -212,19 +233,23 @@ export function sizedBytes(lo: number, hi: number | null): Codec<Uint8Array> {
 
 export const bytes: Codec<Uint8Array> = sizedBytes(0, null);
 
-/** Text whose UTF-8 encoding is `lo` to `hi` bytes long (RFC 8610 `.size` on a text string counts bytes). */
+/**
+ * Text whose UTF-8 encoding is `lo` to `hi` bytes long (RFC 8610 `.size` on a text string counts bytes). Bounds that
+ * are not numbers make a codec that refuses every value, as for {@link intRange}.
+ */
 export function sizedText(lo: number, hi: number | null): Codec<string> {
-  const fits = (s: string): boolean => utf8Length(s) >= lo && (hi === null || utf8Length(s) <= hi);
+  if (!sizeBounds(lo, hi)) return refusing(NOT_SIZE_BOUNDS);
+  const fits = (s: string): boolean => utf8LengthOf(s) >= lo && (hi === null || utf8LengthOf(s) <= hi);
   return leaf(
     (s) => {
       if (!isString(s)) return notA("a string");
       const t = TextValue.of(s);
       if (!t.ok) return t;
-      return fits(s) ? t : typeMismatch(`text of ${utf8Length(s).toString()} UTF-8 bytes outside the schema size`);
+      return fits(s) ? t : typeMismatch(`text of ${utf8LengthOf(s).toString()} UTF-8 bytes outside the schema size`);
     },
     (v) => {
       if (v.kind !== "text") return expected("text", v);
-      return fits(v.value) ? ok(v.value) : decodeFailure(`text of ${utf8Length(v.value).toString()} UTF-8 bytes, expected ${lo.toString()}..${hi === null ? "" : hi.toString()}`);
+      return fits(v.value) ? ok(v.value) : decodeFailure(`text of ${utf8LengthOf(v.value).toString()} UTF-8 bytes, expected ${lo.toString()}..${hi === null ? "" : hi.toString()}`);
     },
   );
 }
@@ -285,7 +310,7 @@ export function literalInt<N extends bigint>(literal: N): Codec<N> {
     (n) => ((n as unknown) === literal ? IntValue.of(literal) : notA(literal.toString())),
     (v) => {
       if (v.kind !== "int") return expected("int", v);
-      return v.value === literal ? ok(literal) : decodeFailure(`expected ${literal.toString()}, got an integer of ${bitLength(v.value).toString()} bits`);
+      return v.value === literal ? ok(literal) : decodeFailure(`expected ${literal.toString()}, got an integer of ${bitLengthOf(v.value).toString()} bits`);
     },
   );
 }
@@ -307,7 +332,7 @@ export function intEnum<L extends string>(name: string, cases: readonly (readonl
     (v) => {
       if (v.kind !== "int") return expected("int", v);
       const c = cases.find(([, w]) => w === v.value);
-      return c === undefined ? decodeFailure(`an integer of ${bitLength(v.value).toString()} bits is not a ${name}`) : ok(c[0]);
+      return c === undefined ? decodeFailure(`an integer of ${bitLengthOf(v.value).toString()} bits is not a ${name}`) : ok(c[0]);
     },
   );
 }
@@ -324,9 +349,11 @@ export function defer<T>(codec: () => Codec<T>): Codec<T> {
 
 /**
  * A homogeneous array of `min` to `max` elements (`max` unbounded when `null`). An explicit wider `T` is unchecked and acts
- * as a cast (see {@link Codec}): let inference pick it.
+ * as a cast (see {@link Codec}): let inference pick it. Bounds that are not numbers make a codec that refuses every
+ * value, as for {@link intRange}.
  */
 export function vector<T>(element: Codec<T>, min: number, max: number | null): Codec<readonly T[]> {
+  if (!sizeBounds(min, max)) return refusing(NOT_SIZE_BOUNDS);
   return codecOf({ kind: "vector", element, min, max });
 }
 
@@ -429,15 +456,58 @@ export function record<T>(fields: RecordFields<T>): Codec<T> {
   return codecOf({ kind: "record", fields: list, allowed: list.map((f) => f.key) });
 }
 
-/** The keys of a map that may be read as a record allowing `allowed`, which must hold all of them. */
+/**
+ * The keys of a map that may be read as a record allowing `allowed`, which must hold all of them. `allowed` that is not
+ * an array of strings (read by index, its length once) is a decode failure, before the map is read.
+ */
 export function fields(v: Value, allowed: readonly string[]): Result<MapValue, DecodeFailure> {
   if (!isValue(v)) return notAValue();
+  const names = stringList(allowed);
+  return names === undefined ? decodeFailure(NOT_NAMES) : fieldsOf(v, names);
+}
+
+/** {@link fields} of a value and names this package holds (a decode walk's, a schema's), unchecked. */
+function fieldsOf(v: Value, allowed: readonly string[]): Result<MapValue, DecodeFailure> {
   if (v.kind !== "map") return expected("map", v);
   // the keys come in canonical order: the refusal counts the unknown ones and previews the first, never lists them
   const unknown = v.keys().filter((k) => !allowed.includes(k));
   const first = unknown[0];
   if (first !== undefined) return decodeFailure(`${unknown.length.toString()} unknown ${unknown.length === 1 ? "key" : "keys"}, the first ${Preview.of(first).toString()}`);
   return ok(v);
+}
+
+/** The refusal of a schema argument (key names, alternatives) that is not of its type. */
+const NOT_NAMES = "the schema's names are not arrays of strings";
+
+/**
+ * `x` as an array of strings, copied: read by index, its length once and each item once (never through its iterator
+ * or its own methods), or `undefined` if it is not an array of strings.
+ */
+function stringList(x: unknown): readonly string[] | undefined {
+  const length: unknown = Array.isArray(x) ? (x as readonly unknown[]).length : undefined;
+  if (typeof length !== "number") return undefined;
+  const out: string[] = [];
+  for (let i = 0; i < length; i++) {
+    const s: unknown = (x as readonly unknown[])[i];
+    if (typeof s !== "string") return undefined;
+    out.push(s);
+  }
+  return out;
+}
+
+/** `x` as an array of `[required, allowed]` pairs of string arrays, copied as {@link stringList} copies, or `undefined`. */
+function recordList(x: unknown): readonly (readonly [readonly string[], readonly string[]])[] | undefined {
+  const length: unknown = Array.isArray(x) ? (x as readonly unknown[]).length : undefined;
+  if (typeof length !== "number") return undefined;
+  const out: (readonly [readonly string[], readonly string[]])[] = [];
+  for (let i = 0; i < length; i++) {
+    const pair: unknown = (x as readonly unknown[])[i];
+    const required = Array.isArray(pair) ? stringList((pair as readonly unknown[])[0]) : undefined;
+    const allowed = Array.isArray(pair) ? stringList((pair as readonly unknown[])[1]) : undefined;
+    if (required === undefined || allowed === undefined) return undefined;
+    out.push([required, allowed]);
+  }
+  return out;
 }
 
 /** A record alternative of a union, `codec`, told apart by its field names when encoding and its wire keys when decoding. */
@@ -475,6 +545,13 @@ export function union<U>(name: string, alternatives: readonly Alternative<U>[], 
  * record encoder reads them, so getters count and unrelated properties do not.
  */
 export function hasFields(a: object, required: readonly string[], allowed: readonly string[], known: readonly string[]): boolean {
+  // the schema's names, as arrays of strings read by index: anything else fits nothing
+  const [r, al, k] = [stringList(required), stringList(allowed), stringList(known)];
+  return r !== undefined && al !== undefined && k !== undefined && hasFieldsOf(a, r, al, k);
+}
+
+/** {@link hasFields} with a schema this package holds, unchecked. */
+function hasFieldsOf(a: object, required: readonly string[], allowed: readonly string[], known: readonly string[]): boolean {
   const x: unknown = a;
   if ((typeof x !== "object" || x === null) && typeof x !== "function") return false;
   const present = known.filter((k) => Reflect.get(a, k) !== undefined);
@@ -487,14 +564,21 @@ export function hasFields(a: object, required: readonly string[], allowed: reado
  */
 export function selectAlternative(v: Value, records: readonly (readonly [readonly string[], readonly string[]])[], texts: readonly string[]): Result<number, DecodeFailure> {
   if (!isValue(v)) return notAValue();
+  const alternatives = recordList(records);
+  const names = stringList(texts);
+  return alternatives === undefined || names === undefined ? decodeFailure(NOT_NAMES) : selectAlternativeOf(v, alternatives, names);
+}
+
+/** {@link selectAlternative} of a value and schema this package holds, unchecked. */
+function selectAlternativeOf(v: Value, alternatives: readonly (readonly [readonly string[], readonly string[]])[], names: readonly string[]): Result<number, DecodeFailure> {
   if (v.kind === "map") {
     const keys = v.keys();
-    const i = records.findIndex(([required, allowed]) => required.every((k) => keys.includes(k)) && keys.every((k) => allowed.includes(k)));
+    const i = alternatives.findIndex(([required, allowed]) => required.every((k) => keys.includes(k)) && keys.every((k) => allowed.includes(k)));
     return i >= 0 ? ok(i) : decodeFailure(`no alternative fits a map of ${keys.length.toString()} keys`);
   }
   if (v.kind === "text") {
-    const i = texts.indexOf(v.value);
-    return i >= 0 ? ok(records.length + i) : decodeFailure(`${Preview.of(v.value).toString()} is not an alternative`);
+    const i = names.indexOf(v.value);
+    return i >= 0 ? ok(alternatives.length + i) : decodeFailure(`${Preview.of(v.value).toString()} is not an alternative`);
   }
   return decodeFailure("expected a map or one of the text alternatives");
 }
@@ -539,16 +623,8 @@ function follow<V, D>(
   }
 }
 
-/** An iterator and its `next`, read once when it is opened, as `for...of` reads it. */
-interface Reader<T> {
-  readonly iterator: Iterator<T>;
-  readonly next: () => IteratorResult<T>;
-}
-
-const reader = <T>(iterator: Iterator<T>): Reader<T> => ({ iterator, next: iterator.next.bind(iterator) });
-
 /**
- * Closes the iterators of the vectors and maps still open, from the frame at `i` outwards, as leaving `for...of` loops
+ * Closes the iterators of the maps still open, from the frame at `i` outwards, as leaving `for...of` loops
  * early does: an outer one is closed even when an inner one's `return` throws. One frame a level, and a depth is a
  * safe integer from 0, so the recursion is at most {@link MAX_DEPTH} deep.
  *
@@ -560,8 +636,7 @@ function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
   const frame = stack[i];
   if (frame === undefined) return;
   try {
-    if (frame.kind === "vector") frame.items.iterator.return?.();
-    else if (frame.kind === "textMap") frame.entries.iterator.return?.();
+    if (frame.kind === "textMap") closeIterator(frame.entries);
   } finally {
     close(stack, i - 1);
   }
@@ -571,13 +646,14 @@ function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
 type EncodeStep = { readonly codec: Codec<unknown>; readonly value: unknown; readonly depth: number; readonly done?: undefined } | { readonly done: Result<Value, CanonicalError> };
 
 /**
- * A container being encoded: its parts, the depth of its parts, and what they encoded to. A vector's or map's parts
- * are read from its own iterator, one at a time, after the one before is encoded (a map's key and value as each entry
- * is read), as a `for...of` reads them; a record's fields by index (`at`, the one being encoded).
+ * A container being encoded: its parts, the depth of its parts, and what they encoded to. A vector's items are read by
+ * index (`at`, the next one; its length read once, when it is opened), as `ArrayValue.of` reads them; a map's entries
+ * from its own iterator, one at a time, after the one before is encoded (its key and value as each entry is read), as
+ * a `for...of` reads them; a record's fields by index (`at`, the one being encoded).
  */
 type Encoding =
-  | { readonly kind: "vector"; readonly items: Reader<unknown>; readonly element: Codec<unknown>; readonly depth: number; readonly out: Value[] }
-  | { readonly kind: "textMap"; readonly entries: Reader<readonly [string, unknown]>; key: string; readonly value: Codec<unknown>; readonly depth: number; readonly out: (readonly [string, Value])[] }
+  | { readonly kind: "vector"; readonly items: readonly unknown[]; readonly length: number; at: number; readonly element: Codec<unknown>; readonly depth: number; readonly out: Value[] }
+  | { readonly kind: "textMap"; readonly entries: Reader<unknown>; key: string; readonly value: Codec<unknown>; readonly depth: number; readonly out: (readonly [string, Value])[] }
   | { readonly kind: "record"; readonly fields: readonly RecordField[]; readonly of: object; readonly depth: number; at: number; readonly out: (readonly [string, Value])[] };
 
 /** The encoder: one loop, an explicit stack of the containers open, and nothing recursive. */
@@ -592,7 +668,11 @@ function encodeWith(root: Codec<unknown>, value: unknown, depth: number): Result
         continue;
       }
       const top = stack.at(-1);
-      if (top === undefined || !step.done.ok) return step.done;
+      if (!step.done.ok) return step.done;
+      // a hand-made codec is caller code, and may give what is not a value: refused here, where its place is known, so
+      // every part a container is built from is a value, and the containers are built without checking them again
+      if (!isValue(step.done.value)) return typeMismatch(`a codec gave a non-value ${top === undefined ? "at the root" : place(top)}`);
+      if (top === undefined) return step.done;
       step = nextEncoding(top, step.done.value, stack);
     }
   } finally {
@@ -608,7 +688,7 @@ function openEncoding(codec: Codec<unknown>, value: unknown, depth: number, stac
     (s, v): { readonly to: Codec<unknown> } | { readonly done: Result<Value, CanonicalError> } => {
       if (s.kind === "defer") return { to: s.resolve() };
       if (typeof v === "string" && s.texts.length > 0) return { done: oneOfText(v, s.texts) };
-      const fit = typeof v === "object" && v !== null ? s.alternatives.find((a) => hasFields(v, a.required, a.allowed, s.known)) : undefined;
+      const fit = typeof v === "object" && v !== null ? s.alternatives.find((a) => hasFieldsOf(v, a.required, a.allowed, s.known)) : undefined;
       return fit === undefined ? { done: typeMismatch(`no alternative of ${s.name} fits`) } : { to: fit.codec };
     },
     typeMismatch("the codec refers to itself without writing a container"),
@@ -621,15 +701,19 @@ function openEncoding(codec: Codec<unknown>, value: unknown, depth: number, stac
       return { done: s.encode(value) };
     case "vector": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
-      if (!Array.isArray(value)) return { done: typeMismatch("expected an array") };
-      const items: readonly unknown[] = value;
-      if (items.length < s.min || (s.max !== null && items.length > s.max)) return { done: typeMismatch(`array of ${items.length.toString()} elements outside the schema size`) };
-      return opened({ kind: "vector", items: reader(items[Symbol.iterator]()), element: s.element, depth: depth + 1, out: [] }, stack);
+      // read as ArrayValue.of reads one: the length once (a Proxy's need not be a number), then each item by index,
+      // never through the array's iterator, so the size checked is the size written
+      const length: unknown = Array.isArray(value) ? (value as readonly unknown[]).length : undefined;
+      if (typeof length !== "number") return { done: typeMismatch("expected an array") };
+      if (length < s.min || (s.max !== null && length > s.max)) return { done: typeMismatch(`array of ${length.toString()} elements outside the schema size`) };
+      return opened({ kind: "vector", items: value as readonly unknown[], length, at: 0, element: s.element, depth: depth + 1, out: [] }, stack);
     }
     case "textMap": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
-      if (typeof value !== "object" || value === null || !(Symbol.iterator in value)) return { done: typeMismatch("expected a map") };
-      const entries = reader((value as Iterable<readonly [string, unknown]>)[Symbol.iterator]());
+      // its iterator method is read once, by open (an `in` check first would run a Proxy's has trap and read it twice)
+      if (typeof value !== "object" || value === null) return { done: typeMismatch("expected a map") };
+      const entries = open<unknown>(value);
+      if (entries === undefined) return { done: typeMismatch(NOT_ITERABLE) };
       return opened({ kind: "textMap", entries, key: "", value: s.value, depth: depth + 1, out: [] }, stack);
     }
     case "record": {
@@ -663,37 +747,46 @@ function nextEncoding(top: Encoding, v: Value, stack: Encoding[]): EncodeStep {
   return nextPart(top, stack);
 }
 
-/** The next element or entry of an open vector or map, read from its iterator, or its outcome. */
+/** Where in an open container the part being encoded goes, for a refusal: a field by its schema key, else its kind. */
+function place(top: Encoding): string {
+  switch (top.kind) {
+    case "vector":
+      return "for an element of an array";
+    case "textMap":
+      return "for a value of a text map";
+    case "record":
+      return `for the field ${JSON.stringify(top.fields[top.at]?.key ?? "")}`;
+  }
+}
+
+/** The next element of an open vector, read by index, or the next entry of an open map, read from its iterator. */
 function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack: Encoding[]): EncodeStep {
   // off the stack while its own next() runs and its result is read (done, then value), as for...of does not close an
-  // iterator for those; back on it for anything after, a map entry's destructuring included, which for...of does close
-  // it for. Any truthy `done` ends it. A result that is no object, which for...of throws a TypeError for without closing
+  // iterator for those; back on it for anything after, a map entry's reading included, which for...of does close it
+  // for. Any truthy `done` ends it. A result that is no object, which for...of throws a TypeError for without closing
   // that iterator, is refused (the iterators around it are closed, as that TypeError would close them)
-  stack.pop();
   if (top.kind === "vector") {
-    const item: unknown = top.items.next();
-    if (!isResult(item)) return { done: typeMismatch(notAResult) };
-    if (item.done) return { done: ArrayValue.of(top.out) };
-    const value: unknown = item.value;
-    stack.push(top);
+    if (top.at >= top.length) {
+      stack.pop();
+      return { done: arrayOfValues(top.out) };
+    }
+    const value: unknown = top.items[top.at++];
     return { codec: top.element, value, depth: top.depth };
   }
+  stack.pop();
   const entry: unknown = top.entries.next();
-  if (!isResult(entry)) return { done: typeMismatch(notAResult) };
-  if (entry.done) return { done: MapValue.of(top.out) };
-  const pair = entry.value as readonly [string, unknown];
+  if (!isResult(entry)) return { done: typeMismatch(NOT_A_RESULT) };
+  if (entry.done) return { done: mapOfValues(top.out) };
+  const pair: unknown = entry.value;
   stack.push(top);
-  const [key, x] = pair;
+  // read by index, never destructured: an entry that is not an array, which destructuring throws a TypeError for, is
+  // refused (and its iterator closed, as that TypeError would close it)
+  if (!Array.isArray(pair)) return { done: notA("a map entry (a [key, value] array)") };
+  const key: unknown = pair[0];
+  const x: unknown = pair[1];
   if (!isString(key)) return { done: notA("a text map key (a string)") };
   top.key = key;
   return { codec: top.value, value: x, depth: top.depth };
-}
-
-const notAResult = "an iterator's next() gave a result that is not an object";
-
-/** Whether `r` may be read as an iterator result: an object (a function included), as for...of requires. */
-function isResult(r: unknown): r is { readonly done?: unknown; readonly value?: unknown } {
-  return (typeof r === "object" && r !== null) || typeof r === "function";
 }
 
 /** The next field of an open record with a value (an absent optional field is left out), or the record's map. */
@@ -703,7 +796,7 @@ function nextField(top: Encoding & { readonly kind: "record" }, stack: Encoding[
     if (x !== undefined || !f.optional) return { codec: f.codec, value: x, depth: top.depth };
   }
   stack.pop();
-  return { done: MapValue.of(top.out) };
+  return { done: mapOfValues(top.out) };
 }
 
 /** A part still to decode, or the outcome of the part just decoded. */
@@ -750,7 +843,7 @@ function openDecoding(codec: Codec<unknown>, value: Value, stack: Decoding[]): D
     value,
     (s, v): { readonly to: Codec<unknown> } | { readonly done: Result<unknown, DecodeFailure> } => {
       if (s.kind === "defer") return { to: s.resolve() };
-      const i = selectAlternative(v, s.keys, s.texts);
+      const i = selectAlternativeOf(v, s.keys, s.texts);
       if (!i.ok) return { done: i };
       const alt = s.alternatives[i.value];
       return alt === undefined ? { done: ok(s.texts[i.value - s.alternatives.length]) } : { to: alt.codec };
@@ -778,7 +871,7 @@ function openDecoding(codec: Codec<unknown>, value: Value, stack: Decoding[]): D
       return nextItem(frame, stack);
     }
     case "record": {
-      const m = fields(value, s.allowed);
+      const m = fieldsOf(value, s.allowed);
       if (!m.ok) return { done: m };
       const frame: Decoding & { readonly kind: "record" } = { kind: "record", fields: s.fields, map: m.value, at: 0, out: [] };
       stack.push(frame);

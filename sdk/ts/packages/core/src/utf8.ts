@@ -3,6 +3,10 @@
  * `TextDecoder` drops a leading byte-order mark, either of which would change bytes without an error.
  */
 
+import { plainBytes } from "./bytes.js";
+import type { TypeMismatch } from "./error.js";
+import { err, ok, type Result } from "./result.js";
+
 const isHigh = (u: number): boolean => u >= 0xd800 && u <= 0xdbff;
 const isLow = (u: number): boolean => u >= 0xdc00 && u <= 0xdfff;
 
@@ -33,8 +37,16 @@ export function encodeUtf8(s: string): Uint8Array {
   return Uint8Array.from(out);
 }
 
-/** The UTF-8 length of text, without encoding it; an unpaired surrogate counts 3, as its replacement U+FFFD does. */
-export function utf8Length(s: string): number {
+/**
+ * The UTF-8 length of text, without encoding it; an unpaired surrogate counts 3, as its replacement U+FFFD does. A value
+ * that is not a string (from a JavaScript caller, or a cast) is a `TypeMismatch`, never iterated.
+ */
+export function utf8Length(s: string): Result<number, TypeMismatch> {
+  return typeof (s as unknown) === "string" ? ok(utf8LengthOf(s)) : err({ kind: "TypeMismatch", reason: "expected a string" });
+}
+
+/** {@link utf8Length} of a string this package holds, unchecked. Internal to this package. */
+export function utf8LengthOf(s: string): number {
   let n = 0;
   for (const ch of s) {
     const c = ch.codePointAt(0) ?? 0;
@@ -62,8 +74,18 @@ function sequenceWidth(a: Uint8Array, i: number): number {
   return 0;
 }
 
-/** The text of well-formed UTF-8, or `undefined` if `a` is not well-formed. */
+/**
+ * The text of well-formed UTF-8, or `undefined` if `a` is not well-formed, or not a `Uint8Array` at all (from a
+ * JavaScript caller, or a cast). The bytes are read through their own slots (`plainBytes`), so a subclass's `length`
+ * is not believed.
+ */
 export function decodeUtf8(a: Uint8Array): string | undefined {
+  const bytes = plainBytes(a);
+  return bytes === undefined ? undefined : utf8Text(bytes);
+}
+
+/** {@link decodeUtf8} of this package's own plain bytes, unchecked: for the CBOR decoder. */
+export function utf8Text(a: Uint8Array): string | undefined {
   const parts: string[] = [];
   const codes: number[] = [];
   let i = 0;

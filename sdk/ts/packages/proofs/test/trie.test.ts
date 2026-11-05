@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { BytesValue, models, toHex, Value, type Result } from "@kd5ujc/dilf4s-core";
+import { models, toHex, Value, type Result } from "@kd5ujc/dilf4s-core";
 
 import { MAX_PROOF_WEIGHT, trie } from "../src/index.js";
-import { bytes, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
+import { boolValue, bytes, bytesValue, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
 
 const vectors = loadVectors("trie_v1.json", models.trieVectors.TrieVectors);
 const T = trie.TrieHashing.of("SHA-256");
@@ -102,9 +102,9 @@ const fixed2 = expectOk(trie.KeyMode.fixed(2), "mode");
 const text = (s: string): Value => expectOk(Value.text(s), "text");
 const committed: readonly (readonly [Uint8Array, Value])[] = [
   [Uint8Array.of(0x61), text("a")],
-  [Uint8Array.of(0x61, 0x62), BytesValue.of(Uint8Array.of(0x61, 0x61))],
+  [Uint8Array.of(0x61, 0x62), bytesValue(Uint8Array.of(0x61, 0x61))],
   [Uint8Array.of(0x62), int(7n)],
-  [Uint8Array.of(0x62, 0x00, 0x01), Value.bool(true)],
+  [Uint8Array.of(0x62, 0x00, 0x01), boolValue(true)],
 ];
 const committedRoot = expectOk(trie.trieRoot(T, variable, committed.map(([k, v]) => [k, expectOk(T.valueHash(v), "encodes")] as const)), "root");
 
@@ -157,7 +157,7 @@ describe("JLVM trie operations", () => {
     const r = hashOf(trie.trieRoot(T, variable, [[k, expectOk(T.valueHash(text("a")), "encodes")]]));
     const proof = records([{ s: segment(8n, [0x6b]), v: expectOk(T.valueHash(text("a")), "encodes") }]);
     expect(expectOk(trie.trieVerify(T, variable, r, k, text("a"), proof), "verdict")).toBe(true);
-    expect(expectOk(trie.trieVerify(T, variable, r, k, BytesValue.of(Uint8Array.of(0x61, 0x61)), proof), "verdict")).toBe(false);
+    expect(expectOk(trie.trieVerify(T, variable, r, k, bytesValue(Uint8Array.of(0x61, 0x61)), proof), "verdict")).toBe(false);
   });
 
   it("not covered is an error, never false", () => {

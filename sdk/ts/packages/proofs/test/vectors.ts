@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { cbor, type codec, describeFailure, fromHex, type IntValue, json, type Result, Value } from "@kd5ujc/dilf4s-core";
+import { type BoolValue, type BytesValue, cbor, type codec, describeFailure, fromHex, type IntValue, json, type Result, Value } from "@kd5ujc/dilf4s-core";
 
 type Codec<T> = codec.Codec<T>;
 
@@ -18,6 +18,12 @@ export function expectOk<T, E>(r: Result<T, E>, what: string): T {
 
 /** The integer `n`, which a test knows is within the data model's bound (`MAX_INTEGER_BITS`). */
 export const int = (n: bigint): IntValue => expectOk(Value.int(n), "an integer within MAX_INTEGER_BITS");
+
+/** The byte string holding a copy of `b`, which a test knows is a `Uint8Array`. */
+export const bytesValue = (b: Uint8Array): BytesValue => expectOk(Value.bytes(b), "a Uint8Array");
+
+/** The boolean `b`, which a test knows is a boolean. */
+export const boolValue = (b: boolean): BoolValue => expectOk(Value.bool(b), "a boolean");
 
 /** The error of a failure; a success fails the test. */
 export function expectErr<T, E>(r: Result<T, E>, what: string): E {

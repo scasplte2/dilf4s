@@ -8,13 +8,13 @@
  */
 import { twosAndFives } from "./bigint.js";
 import { byteLimit, Meter } from "./budget.js";
-import type { CanonicalError, TooLarge } from "./error.js";
+import type { CanonicalError, TooLarge, TypeMismatch } from "./error.js";
 import { CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
 import { KeySet } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { compareCodePoints } from "./utf8.js";
-import { ArrayValue, BoolValue, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
+import { arrayOfValues, BoolValue, entriesView, IntValue, isValue, mapOfValues, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
 
 const INT32_MAX = 2n ** 31n - 1n;
 const INT32_MIN = -(2n ** 31n);
@@ -91,7 +91,7 @@ class Parser {
             const q = this.skipWs(p + 1);
             const object = c === "{";
             if (this.s[q] === (object ? "}" : "]")) {
-              const empty = object ? MapValue.of([]) : ArrayValue.of([]);
+              const empty = object ? mapOfValues([]) : arrayOfValues([]);
               if (!empty.ok) return empty;
               state = { step: "deliver", value: empty.value };
               pos = q + 1;
@@ -138,7 +138,7 @@ class Parser {
               state = { step: "value" };
             } else {
               stack.pop();
-              const arr = ArrayValue.of(frame.items);
+              const arr = arrayOfValues(frame.items);
               if (!arr.ok) return arr;
               state = { step: "deliver", value: arr.value };
             }
@@ -149,7 +149,7 @@ class Parser {
               state = { step: "key" };
             } else {
               stack.pop();
-              const map = MapValue.of(frame.entries);
+              const map = mapOfValues(frame.entries);
               if (!map.ok) return map;
               state = { step: "deliver", value: map.value };
             }
@@ -272,31 +272,40 @@ function integerText(n: IntValue): string {
   return n.value.toString();
 }
 
-/**
- * The exact decimal of a rational, within the bounds {@link parse} accepts: `"non-terminating rational"` when its
- * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds, both found from the
- * denominator's factors (`twosAndFives`) before any digit is produced. An argument that is not a `RationalValue` is
- * not checked: it may throw, or be read as a rational from its `numerator` and `denominator` (the result type has no
- * room for that refusal).
- */
-export function decimalOf(r: RationalValue): Result<string, "non-terminating rational" | "over-long number"> {
+/** Why a rational has no JSON decimal: none terminates, or it is past the bounds {@link parse} accepts. */
+export interface NoDecimal {
+  readonly kind: "NotJsonRepresentable";
+  readonly what: "non-terminating rational" | "over-long number";
+}
+
+/** Why {@link decimal} gave no decimal: the rational has none, or the argument is not a rational. */
+export type DecimalError = NoDecimal | TypeMismatch;
+
+const nonTerminating: NoDecimal = { kind: "NotJsonRepresentable", what: "non-terminating rational" };
+const overLong: NoDecimal = { kind: "NotJsonRepresentable", what: "over-long number" };
+
+/** {@link decimal} of a rational this package holds, unchecked: what {@link renderInto} writes. */
+function decimalText(r: RationalValue): Result<string, NoDecimal> {
   const [factors] = twosAndFives(r.denominator);
-  if (factors === undefined) return err("non-terminating rational");
+  if (factors === undefined) return err(nonTerminating);
   const scale = Math.max(...factors);
-  if (scale > DEFAULT_MAX_SCALE) return err("over-long number");
+  if (scale > DEFAULT_MAX_SCALE) return err(overLong);
   const scaled = r.numerator * (10n ** BigInt(scale) / r.denominator);
   const digits = (scaled < 0n ? -scaled : scaled).toString().padStart(scale + 1, "0");
   const text = within(`${scaled < 0n ? "-" : ""}${digits.slice(0, digits.length - scale)}.${digits.slice(digits.length - scale)}`);
-  return text === undefined ? err("over-long number") : ok(text);
+  return text === undefined ? err(overLong) : ok(text);
 }
 
 /**
- * The exact decimal of a rational, when it has one within the bounds {@link parse} accepts. An argument that is not a
- * `RationalValue` is not checked, as for {@link decimalOf}: it may throw, or be read as a rational.
+ * The exact decimal of a rational, within the bounds {@link parse} accepts: `NotJsonRepresentable` with
+ * `"non-terminating rational"` when its denominator has prime factors other than 2 and 5, or `"over-long number"` past
+ * the bounds, both found from the denominator's factors (`twosAndFives`) before any digit is produced. An argument that
+ * is not a `RationalValue` made by this package (see `isValue`) is a `TypeMismatch`, never read through its
+ * `numerator` and `denominator`.
  */
-export function decimal(r: RationalValue): string | undefined {
-  const d = decimalOf(r);
-  return d.ok ? d.value : undefined;
+export function decimal(r: RationalValue): Result<string, DecimalError> {
+  const given: unknown = r;
+  return isValue(given) && given.kind === "rational" ? decimalText(given) : err({ kind: "TypeMismatch", reason: "expected a RationalValue" });
 }
 
 function quote(s: string): string {
@@ -384,11 +393,14 @@ export type TextSink<S> = (s: S, piece: string) => S;
 /**
  * {@link renderWithin} into any {@link TextSink}, starting from `s`: the rendering reaches the sink in order, each of
  * its characters once, in pieces that are a scalar, a quoted text or key, or punctuation, never a container's text.
+ * A value that is not a canonical value, a limit that is not a number, or a sink that is not a function is a
+ * `TypeMismatch`, before anything is written.
  */
 export function renderInto<S>(value: Value, maxBytes: number, s: S, sink: TextSink<S>): Result<S, RenderError> {
   // what a caller can pass past the types is refused in O(1), never read: the parts of a value are its own
   if (!isValue(value)) return err({ kind: "TypeMismatch", reason: "expected a canonical value" });
   if (typeof (maxBytes as unknown) !== "number") return err({ kind: "TypeMismatch", reason: "the byte limit is not a number" });
+  if (typeof (sink as unknown) !== "function") return err({ kind: "TypeMismatch", reason: "the sink is not a function" });
   const meter = new Meter(Math.min(byteLimit(maxBytes), MAX_RENDER_BYTES));
   let out = s;
   const stack: Rendering[] = [];
@@ -410,8 +422,8 @@ export function renderInto<S>(value: Value, maxBytes: number, s: S, sink: TextSi
       case "int":
         return ascii(integerText(v)) ? undefined : meter.refusal();
       case "rational": {
-        const d = decimalOf(v);
-        if (!d.ok) return { kind: "NotJsonRepresentable", what: d.error };
+        const d = decimalText(v);
+        if (!d.ok) return d.error;
         return ascii(d.value) ? undefined : meter.refusal();
       }
       case "text": {

@@ -9,7 +9,7 @@ export * as codec from "./codec.js";
 export * as json from "./json.js";
 export * as models from "./generated/index.js";
 export { hashCommitment, valueCommitment, valueCommitmentWithin, BYTES_TAG, CBOR_TAG } from "./commitment.js";
-export type { CanonicalError, DecodeFailure, TooLarge } from "./error.js";
+export type { CanonicalError, DecodeFailure, TooLarge, TypeMismatch } from "./error.js";
 export { describeFailure } from "./error.js";
 export {
   contentHash,
@@ -39,6 +39,7 @@ export {
   equals,
   inspect,
   IntValue,
+  isValue,
   MapValue,
   MAX_DEPTH,
   MAX_INTEGER_BITS,

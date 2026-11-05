@@ -1,8 +1,17 @@
+import type { TypeMismatch } from "./error.js";
+import { err, ok, type Result } from "./result.js";
+
 /**
  * Java's `BigInteger.bitLength`, as the weight counts it. A refusal names an integer by this, never by its digits:
- * decimal rendering is superlinear, and nothing pays for it. Linear in the integer's size (its hexadecimal form).
+ * decimal rendering is superlinear, and nothing pays for it. Linear in the integer's size (its hexadecimal form). A
+ * value that is not a `bigint` (from a JavaScript caller, or a cast) is a `TypeMismatch`, never converted.
  */
-export const bitLength = (n: bigint): number => {
+export function bitLength(n: bigint): Result<number, TypeMismatch> {
+  return typeof (n as unknown) === "bigint" ? ok(bitLengthOf(n)) : err({ kind: "TypeMismatch", reason: "expected a bigint" });
+}
+
+/** {@link bitLength} of a bigint this package holds, unchecked. Internal to this package. */
+export const bitLengthOf = (n: bigint): number => {
   const m = n < 0n ? -n - 1n : n;
   if (m < 0x100000000n) return 32 - Math.clz32(Number(m));
   const hex = m.toString(16);
@@ -20,11 +29,11 @@ const MICRO_BITS_PER_FIVE = 2_321_928;
  * denominator is).
  */
 export function twosAndFives(d: bigint): readonly [readonly [number, number] | undefined, number] {
-  const twos = bitLength(d & -d) - 1;
+  const twos = bitLengthOf(d & -d) - 1;
   const rest = d >> BigInt(twos);
   if (rest === 1n) return [[twos, 0], 0];
   if (rest % 5n !== 0n) return [undefined, 1];
-  const estimate = Math.floor(((bitLength(rest) - 1) * 1_000_000) / MICRO_BITS_PER_FIVE);
+  const estimate = Math.floor(((bitLengthOf(rest) - 1) * 1_000_000) / MICRO_BITS_PER_FIVE);
   // b log2 5 lies in [bits - 1, bits), under half a factor wide, so b is the estimate's ceiling but for rounding
   return [estimate + 1, estimate, estimate - 1].reduce<readonly [readonly [number, number] | undefined, number]>(
     ([found, steps], b) => (found !== undefined || b <= 0 ? [found, steps] : [5n ** BigInt(b) === rest ? [twos, b] : undefined, steps + 1]),

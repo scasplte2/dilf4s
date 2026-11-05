@@ -1,4 +1,4 @@
-import { Preview } from "./preview.js";
+import { isPreview, Preview } from "./preview.js";
 
 /**
  * Why a canonical value, encoding or JSON text was refused (docs/specs/canonical-encoding.md). `kind` names each case
@@ -38,6 +38,12 @@ export type CanonicalError =
   | { readonly kind: "InvalidUtf8"; readonly offset: number };
 
 /**
+ * The refusal of an argument that is not of its static type (a JavaScript caller's, or one cast past the types), found
+ * in O(1) before it is read: `CanonicalError`'s `TypeMismatch`. `reason` says what was expected, never what was given.
+ */
+export type TypeMismatch = Extract<CanonicalError, { readonly kind: "TypeMismatch" }>;
+
+/**
  * A value whose canonical CBOR, commitment or JSON is longer than a limit, found without producing more than the limit.
  * It carries the limit only: how far past it the value goes is never measured (docs/specs/conformance.md).
  */
@@ -65,6 +71,26 @@ export function at(failure: DecodeFailure, segment: string): DecodeFailure {
   return { path: [Preview.of(segment), ...failure.path], reason: failure.reason };
 }
 
+/** What {@link describeFailure} gives for something that is not a {@link DecodeFailure}. */
+export const NOT_A_FAILURE = "<not a decode failure>";
+
+/**
+ * `failure` as text: its path from the root (`<root>` when empty), then its reason. Something that is not a
+ * `DecodeFailure` (from a JavaScript caller, or a cast) is {@link NOT_A_FAILURE}: its path must be an array of
+ * previews and its reason a string, each read once, the path by index and its length once.
+ */
 export function describeFailure(failure: DecodeFailure): string {
-  return `${failure.path.length === 0 ? "<root>" : failure.path.map((p) => p.short()).join(".")}: ${failure.reason}`;
+  const given: unknown = failure;
+  if (typeof given !== "object" || given === null) return NOT_A_FAILURE;
+  const path: unknown = Reflect.get(given, "path");
+  const reason: unknown = Reflect.get(given, "reason");
+  const length: unknown = Array.isArray(path) ? (path as readonly unknown[]).length : undefined;
+  if (typeof length !== "number" || typeof reason !== "string") return NOT_A_FAILURE;
+  const segments: Preview[] = [];
+  for (let i = 0; i < length; i++) {
+    const p: unknown = (path as readonly unknown[])[i];
+    if (!isPreview(p)) return NOT_A_FAILURE;
+    segments.push(p);
+  }
+  return `${segments.length === 0 ? "<root>" : segments.map((p) => p.short()).join(".")}: ${reason}`;
 }

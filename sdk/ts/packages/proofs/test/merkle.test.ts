@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { BytesValue, cbor, models, toHex, Value, valueCommitment } from "@kd5ujc/dilf4s-core";
+import { cbor, models, toHex, Value, valueCommitment } from "@kd5ujc/dilf4s-core";
 
 import { merkle } from "../src/index.js";
-import { bytes, expectErr, expectOk, loadVectors, valueOf } from "./vectors.js";
+import { bytes, bytesValue, expectErr, expectOk, loadVectors, valueOf } from "./vectors.js";
 
 const vectors = loadVectors("merkle_v1.json", models.merkleVectors.MerkleVectors);
 const tagged = merkle.TaggedMerkleHashing.of("SHA-256");
@@ -116,7 +116,7 @@ describe("JLVM merkle_verify", () => {
     const r = expectOk(merkle.merkleRoot(tagged, hashes), "root");
     const proof = valueOf(tree.inclusion[0] ?? "");
     expect(expectOk(merkle.merkleVerify(tagged, { root: r, size: 5n }, leafValue.value, proof), "verdict")).toBe(true);
-    expect(expectOk(merkle.merkleVerify(tagged, { root: r, size: 5n }, BytesValue.of(Uint8Array.of(0x61)), proof), "verdict")).toBe(false);
+    expect(expectOk(merkle.merkleVerify(tagged, { root: r, size: 5n }, bytesValue(Uint8Array.of(0x61)), proof), "verdict")).toBe(false);
   });
 
   it("a head whose size differs from the proof's is false, even with the right root", () => {
@@ -164,7 +164,7 @@ describe("JLVM merkle_verify", () => {
     const rfcTree = bytes(tree.rfc6962Root);
     const p = valueOf(tree.rfc6962Inclusion[2] ?? "");
     expect(expectOk(merkle.merkleVerify(rfc, { root: rfcTree, size: 5n }, leaves[2] ?? new Uint8Array(0), p), "verdict")).toBe(true);
-    expect(expectOk(merkle.merkleVerify(tagged, { root: rfcTree, size: 5n }, BytesValue.of(leaves[2] ?? new Uint8Array(0)), p), "verdict")).toBe(false);
+    expect(expectOk(merkle.merkleVerify(tagged, { root: rfcTree, size: 5n }, bytesValue(leaves[2] ?? new Uint8Array(0)), p), "verdict")).toBe(false);
   });
 });
 
