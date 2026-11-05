@@ -23,7 +23,10 @@ export default tseslint.config(
       "no-restricted-syntax": [
         "error",
         { selector: "ThrowStatement", message: "Library code returns a Result; it never throws." },
-        { selector: "TryStatement", message: "Library code returns a Result; it has nothing to catch." },
+        // try/finally (no catch) is allowed, only to close iterators or release resources when caller code (a getter,
+        // an iterator, a callback, a hand-made codec) throws mid-walk, as for...of closes its iterator. A catch clause
+        // stays banned: errors are never swallowed or turned into values, outside signing's one attempt.ts boundary.
+        { selector: "TryStatement[handler]", message: "Library code returns a Result; it has nothing to catch (try/finally is allowed only to release resources)." },
       ],
     },
   },

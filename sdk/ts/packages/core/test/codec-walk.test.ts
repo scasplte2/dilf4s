@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { codec, describeFailure, MAX_DEPTH, Value, type Result } from "../src/index.js";
+import { codec, describeFailure, json, MAX_DEPTH, Value, type Result } from "../src/index.js";
 import type { Codec } from "../src/codec.js";
 import { expectOk, int } from "./vectors.js";
 
@@ -321,5 +321,38 @@ describe("what the walks read and refuse", () => {
     // @ts-expect-error a field's type is exactly its property's: a narrower codec does not write a wider type
     record<{ readonly a: string }>({ a: required("a", codec.literalText("x")) });
     expect(true).toBe(true);
+  });
+
+  it("an explicit wider type argument is unchecked and acts as a cast (Codec is bivariant, deliberately)", () => {
+    // this compiles: if Codec's variance changes, this line fails to typecheck, and the change is a deliberate one
+    const cast = record<{ readonly a: string }>({ a: required<string>("a", codec.literalText("x")) });
+    const v = expectOk(cast.encode({ a: "y" }), "the literal codec writes its literal, whatever the property holds");
+    expect(expectOk(json.renderWithin(v, json.MAX_RENDER_BYTES), "renders")).toBe('{"a":"x"}');
+  });
+
+  it("when caller code throws mid-walk, every iterator still open is closed, innermost first, and the error propagates", () => {
+    const closed: string[] = [];
+    function* items(name: string, xs: readonly unknown[]): Generator {
+      try {
+        yield* xs;
+      } finally {
+        closed.push(name);
+      }
+    }
+    // a hand-made codec that throws on its second element, inside a map inside a vector
+    const boom: Codec<bigint> = {
+      ...uint,
+      encode: (n, depth) => {
+        if (n === 2n) throw new Error("caller code threw");
+        return uint.encode(n, depth);
+      },
+    };
+    const inner = { [Symbol.iterator]: () => items("inner", [["a", 1n], ["b", 2n], ["c", 3n]]) } as unknown as ReadonlyMap<string, bigint>;
+    // an array read through its own iterator, which notes when it is closed
+    const outer: ReadonlyMap<string, bigint>[] = [inner, inner];
+    Object.defineProperty(outer, Symbol.iterator, { value: () => items("outer", [inner, inner]) });
+    const nested = vector(textMap(boom), 0, null);
+    expect(() => nested.encode(outer)).toThrow("caller code threw");
+    expect(closed).toEqual(["inner", "outer"]);
   });
 });

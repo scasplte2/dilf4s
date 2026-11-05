@@ -30,6 +30,11 @@ export { ok } from "./result.js";
  * byte string read is copied each time it occurs: decode a caller's value with {@link decodeWithin}. Neither direction
  * recurses: both walk {@link shape} with an explicit stack. A codec made otherwise than by this module's combinators
  * is called through its own `encode` and `decode` wherever it is composed, and recurses as it does.
+ *
+ * `encode` and `decode` are methods, so TypeScript compares a codec's type parameter bivariantly: a `Codec<"x">` is
+ * accepted where a `Codec<string>` is expected. An explicit type argument to a combinator (`required<string>(...)`,
+ * `vector<T>(...)`, `defer<T>(...)`, ...) is therefore unchecked and acts as a cast; let inference pick it, and the
+ * record and union combinators check each part against its property's type.
  */
 export interface Codec<T> {
   encode(value: T, depth?: number): Result<Value, CanonicalError>;
@@ -84,7 +89,7 @@ function codecOf<T>(shape: CodecShape): Codec<T> {
   return codec;
 }
 
-/** A codec that reads and writes a value whole, calling no other codec. */
+/** A codec that reads and writes a value whole, calling no other codec. An explicit `T` is unchecked (see {@link Codec}). */
 export function leaf<T>(encode: (value: T) => Result<Value, CanonicalError>, decode: (value: Value) => Result<T, DecodeFailure>): Codec<T> {
   return codecOf({ kind: "leaf", encode, decode });
 }
@@ -281,17 +286,26 @@ export function intEnum<L extends string>(name: string, cases: readonly (readonl
 
 // ------------------------------------------------------------------------------------------------ containers
 
-/** A codec referenced by name and resolved on use, so rules may refer to each other in any order, recursively. */
+/**
+ * A codec referenced by name and resolved on use, so rules may refer to each other in any order, recursively. An
+ * explicit `T` is unchecked and acts as a cast (see {@link Codec}): let inference pick it.
+ */
 export function defer<T>(codec: () => Codec<T>): Codec<T> {
   return codecOf({ kind: "defer", resolve: codec });
 }
 
-/** A homogeneous array of `min` to `max` elements (`max` unbounded when `null`). */
+/**
+ * A homogeneous array of `min` to `max` elements (`max` unbounded when `null`). An explicit `T` is unchecked and acts
+ * as a cast (see {@link Codec}): let inference pick it.
+ */
 export function vector<T>(element: Codec<T>, min: number, max: number | null): Codec<readonly T[]> {
   return codecOf({ kind: "vector", element, min, max });
 }
 
-/** A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`), decoded in canonical key order. */
+/**
+ * A map with arbitrary text keys and values of one type (CDDL `{ * text => T }`), decoded in canonical key order. An
+ * explicit `T` is unchecked and acts as a cast (see {@link Codec}): let inference pick it.
+ */
 export function textMap<T>(value: Codec<T>): Codec<ReadonlyMap<string, T>> {
   return codecOf({ kind: "textMap", value });
 }
@@ -358,12 +372,16 @@ export interface OptionalField<V> {
   readonly of?: (v: V) => V;
 }
 
-/** A field of a record: required, or optional if it may be absent. */
+/**
+ * A field of a record that every value has. Let inference pick `V`, the codec's own type, which {@link record} then
+ * checks against the property's type exactly. An explicit `V` is unchecked and acts as a cast:
+ * `required<string>(key, literalText("x"))` compiles, and writes `"x"` whatever the property holds.
+ */
 export function required<V>(key: string, codec: Codec<V>): RequiredField<V> {
   return { key, codec, optional: false };
 }
 
-/** An optional field of a record. */
+/** An optional field of a record. As with {@link required}, an explicit `V` is unchecked and acts as a cast. */
 export function optional<V>(key: string, codec: Codec<V>): OptionalField<V> {
   return { key, codec, optional: true };
 }
@@ -401,7 +419,10 @@ export interface Alternative<A> {
   readonly keys: readonly [readonly string[], readonly string[]];
 }
 
-/** The alternative `codec`, with its required and allowed field names, then its required and allowed wire keys. */
+/**
+ * The alternative `codec`, with its required and allowed field names, then its required and allowed wire keys. An
+ * explicit `A` is unchecked and acts as a cast (see {@link Codec}); {@link union} checks that `A` is one of its members.
+ */
 export function alternative<A>(codec: Codec<A>, names: readonly [readonly string[], readonly string[]], keys: readonly [readonly string[], readonly string[]]): Alternative<A> {
   return { codec, required: names[0], allowed: names[1], keys };
 }
@@ -409,7 +430,8 @@ export function alternative<A>(codec: Codec<A>, names: readonly [readonly string
 /**
  * A choice of record alternatives and text alternatives (`texts`). Encoding takes a text as a text alternative, and an
  * object as the first record alternative it fits ({@link hasFields}); decoding takes the alternative
- * {@link selectAlternative} picks. The generator only accepts unions where at most one alternative fits.
+ * {@link selectAlternative} picks. The generator only accepts unions where at most one alternative fits. `U` is the
+ * union's type, given explicitly by the generated models; each alternative's codec must decode to a member of it.
  */
 export function union<U>(name: string, alternatives: readonly Alternative<U>[], texts: readonly Extract<U, string>[]): Codec<U> {
   // read in UTF-16 order, once each: a getter may observe the order the fields are read in
@@ -493,11 +515,19 @@ interface Reader<T> {
 
 const reader = <T>(iterator: Iterator<T>): Reader<T> => ({ iterator, next: iterator.next.bind(iterator) });
 
-/** Closes the iterators of the vectors and maps still open, innermost first, as leaving a `for...of` early does. */
-function close(stack: readonly Encoding[]): void {
-  for (const frame of [...stack].reverse()) {
+/**
+ * Closes the iterators of the vectors and maps still open, from the frame at `i` outwards, as leaving `for...of` loops
+ * early does: an outer one is closed even when an inner one's `return` throws (that error then propagates). One frame
+ * a level, so the recursion is at most {@link MAX_DEPTH} deep.
+ */
+function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
+  const frame = stack[i];
+  if (frame === undefined) return;
+  try {
     if (frame.kind === "vector") frame.items.iterator.return?.();
     else if (frame.kind === "textMap") frame.entries.iterator.return?.();
+  } finally {
+    close(stack, i - 1);
   }
 }
 
@@ -517,18 +547,20 @@ type Encoding =
 /** The encoder: one loop, an explicit stack of the containers open, and nothing recursive. */
 function encodeWith(root: Codec<unknown>, value: unknown, depth: number): Result<Value, CanonicalError> {
   const stack: Encoding[] = [];
-  for (let step = openEncoding(root, value, depth, stack); ; ) {
-    if (step.done === undefined) {
-      step = openEncoding(step.codec, step.value, step.depth, stack);
-      continue;
+  // the iterators still open when the walk ends, by a refusal or by caller code (a getter, an iterator, a hand-made
+  // codec) throwing, are closed: a finished container's frame is already off the stack
+  try {
+    for (let step = openEncoding(root, value, depth, stack); ; ) {
+      if (step.done === undefined) {
+        step = openEncoding(step.codec, step.value, step.depth, stack);
+        continue;
+      }
+      const top = stack.at(-1);
+      if (top === undefined || !step.done.ok) return step.done;
+      step = nextEncoding(top, step.done.value, stack);
     }
-    const top = stack.at(-1);
-    if (top === undefined) return step.done;
-    if (!step.done.ok) {
-      close(stack);
-      return step.done;
-    }
-    step = nextEncoding(top, step.done.value, stack);
+  } finally {
+    close(stack);
   }
 }
 
