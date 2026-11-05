@@ -52,21 +52,31 @@ const limbs = (bits: number): bigint => BigInt(Math.floor(bits / 64));
 
 export type Value = NullValue | BoolValue | IntValue | RationalValue | TextValue | BytesValue | ArrayValue | MapValue;
 
+/** One brand check a kind of value, `#field in x`, each set by its class's static block. */
+const brands: ((x: object) => boolean)[] = [];
+
 /**
  * Whether `x` is a canonical value (this module's constructors alone make one), in O(1): for what a caller may pass
- * past the types, such as a JavaScript caller's argument.
+ * past the types, such as a JavaScript caller's argument. It checks each class's private brand (`#field in x`), never
+ * the prototype: an object borrowing a value's prototype is not one, and a Proxy's traps do not run.
  */
 export function isValue(x: unknown): x is Value {
-  return (
-    x instanceof NullValue ||
-    x instanceof BoolValue ||
-    x instanceof IntValue ||
-    x instanceof RationalValue ||
-    x instanceof TextValue ||
-    x instanceof BytesValue ||
-    x instanceof ArrayValue ||
-    x instanceof MapValue
-  );
+  return typeof x === "object" && x !== null && brands.some((has) => has(x));
+}
+
+/** `Uint8Array.prototype`'s `Symbol.toStringTag` getter, from `%TypedArray%`: it reads an array's internal type name. */
+const typedArrayName = Reflect.get(Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), Symbol.toStringTag) ?? {}, "get") as
+  | ((this: unknown) => unknown)
+  | undefined;
+
+/**
+ * Whether `x` is a `Uint8Array` (a `Buffer` included), from any realm, in O(1). It reads the typed array's internal
+ * name through `%TypedArray%`'s own getter, which nothing can fake: unlike `instanceof`, it accepts another realm's
+ * array and runs no Proxy trap, and unlike `Object.prototype.toString` or `constructor.name`, an object claiming the
+ * name (by `Symbol.toStringTag`, or a renamed constructor) is not one.
+ */
+export function isBytes(x: unknown): x is Uint8Array {
+  return typedArrayName === undefined ? x instanceof Uint8Array : typedArrayName.call(x) === "Uint8Array";
 }
 
 /**
@@ -98,6 +108,9 @@ export class NullValue {
   readonly kind = "null";
   readonly weight: bigint = 1n;
   readonly #depth = 0;
+  static {
+    brands.push((x) => #depth in x);
+  }
   static readonly instance: NullValue = new NullValue();
   private constructor() {
     Object.freeze(this);
@@ -118,6 +131,9 @@ export class BoolValue {
   readonly depth = 0;
   readonly weight: bigint = 1n;
   readonly #value: boolean;
+  static {
+    brands.push((x) => #value in x);
+  }
   static readonly true: BoolValue = new BoolValue(true);
   static readonly false: BoolValue = new BoolValue(false);
   private constructor(value: boolean) {
@@ -160,6 +176,9 @@ export class IntValue {
   /** `1 + bitLength / 64`. */
   readonly weight: bigint;
   readonly #value: bigint;
+  static {
+    brands.push((x) => #value in x);
+  }
   readonly #bitLength: number;
   private constructor(value: bigint, bits: number) {
     this.#value = value;
@@ -259,6 +278,9 @@ export class RationalValue {
   /** `2 + bitLength(n) / 64 + bitLength(d) / 64`. */
   readonly weight: bigint;
   readonly #numerator: bigint;
+  static {
+    brands.push((x) => #numerator in x);
+  }
   readonly #denominator: bigint;
   readonly #numeratorBits: number;
   readonly #denominatorBits: number;
@@ -364,6 +386,9 @@ export class TextValue {
   readonly weight: bigint;
   /** The UTF-8 encoding. */
   readonly #utf8: Uint8Array;
+  static {
+    brands.push((x) => #utf8 in x);
+  }
   private constructor(readonly value: string) {
     this.#utf8 = encodeUtf8(value);
     this.weight = 1n + BigInt(this.#utf8.length);
@@ -402,6 +427,9 @@ export class BytesValue {
   /** `1 +` the length. */
   readonly weight: bigint;
   readonly #bytes: Uint8Array;
+  static {
+    brands.push((x) => #bytes in x);
+  }
   private constructor(bytes: Uint8Array) {
     this.#bytes = copyBytes(bytes);
     this.weight = 1n + BigInt(this.#bytes.length);
@@ -448,6 +476,9 @@ function measure<T>(parts: readonly T[], part: (p: T) => readonly [number, bigin
 export class ArrayValue {
   readonly kind = "array";
   readonly #items: readonly Value[];
+  static {
+    brands.push((x) => #items in x);
+  }
   private constructor(
     items: readonly Value[],
     readonly depth: number,
@@ -501,6 +532,9 @@ export function canonicalKeyOrder(a: Uint8Array, b: Uint8Array): number {
 export class MapValue {
   readonly kind = "map";
   readonly #entries: readonly Entry[];
+  static {
+    brands.push((x) => #entries in x);
+  }
   private constructor(
     entries: readonly Entry[],
     readonly depth: number,
@@ -747,10 +781,24 @@ export function inspect(value: Value): string {
 /** Factories for every kind of value, and equality. */
 export const Value = {
   null: NullValue.instance,
+  /**
+   * The boolean `b`. A value of another type (from a JavaScript caller, or a cast) is not checked: it is read as
+   * JavaScript reads a condition. The result type has no room for a refusal.
+   */
   bool: (b: boolean): BoolValue => BoolValue.of(b),
+  /**
+   * The integer `n`, refused past {@link MAX_INTEGER_BITS}. A value of another type is not checked: the result type has
+   * no room for that refusal, so pass a `bigint`.
+   */
   int: (n: bigint): Result<IntValue, IntegerTooWide> => IntValue.of(n),
+  /** `n / d` in lowest terms. A part of another type than `bigint` throws: the result type has no room for that refusal. */
   number: (n: bigint, d: bigint): Result<IntValue | RationalValue, NumberError> => RationalValue.number(n, d),
-  text: (s: string): Result<TextValue, CanonicalError> => TextValue.of(s),
+  /** The text `s`; a value that is not a string is a `TypeMismatch`. */
+  text: (s: string): Result<TextValue, CanonicalError> => (typeof (s as unknown) === "string" ? TextValue.of(s) : err({ kind: "TypeMismatch", reason: "expected a string" })),
+  /**
+   * A copy of the bytes `b`. A value that is not a `Uint8Array` (see {@link isBytes}) is not checked: it is copied as
+   * `Uint8Array.from` reads it. The result type has no room for a refusal.
+   */
   bytes: (b: Uint8Array): BytesValue => BytesValue.of(b),
   array: (items: readonly Value[]): Result<ArrayValue, CanonicalError> => ArrayValue.of(items),
   map: (entries: Iterable<readonly [string, Value]>): Result<MapValue, CanonicalError> => MapValue.of(entries),

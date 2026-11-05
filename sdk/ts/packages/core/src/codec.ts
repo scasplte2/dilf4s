@@ -16,7 +16,7 @@ import { Preview } from "./preview.js";
 import { search } from "./keyset.js";
 import { err, ok, type Err, type Result } from "./result.js";
 import { encodeUtf8, utf8Length } from "./utf8.js";
-import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
+import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isBytes, isValue, MapValue, MAX_DEPTH, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
 
 export type { Value } from "./value.js";
 export { ok } from "./result.js";
@@ -124,6 +124,7 @@ export function toCbor<T>(codec: Codec<T>, value: T): Result<Uint8Array, Canonic
 
 /** The typed value of canonical CBOR. */
 export function fromCbor<T>(codec: Codec<T>, bytes: Uint8Array): Result<T, ModelError> {
+  if (!isBytes(bytes)) return err({ kind: "Canonical", error: { kind: "TypeMismatch", reason: "expected a Uint8Array" } });
   const v = decodeCbor(bytes);
   if (!v.ok) return err({ kind: "Canonical", error: v.error });
   const d = codec.decode(v.value);
@@ -199,7 +200,7 @@ export function sizedBytes(lo: number, hi: number | null): Codec<Uint8Array> {
   const fits = (n: number): boolean => n >= lo && (hi === null || n <= hi);
   return leaf(
     (b) => {
-      if (!((b as unknown) instanceof Uint8Array)) return notA("a Uint8Array");
+      if (!isBytes(b)) return notA("a Uint8Array");
       return fits(b.length) ? ok(BytesValue.of(b)) : typeMismatch(`byte string of ${b.length.toString()} bytes outside the schema size`);
     },
     (v) => {

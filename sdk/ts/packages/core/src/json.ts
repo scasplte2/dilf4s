@@ -39,8 +39,13 @@ const syntax = (offset: number, reason: string): CanonicalError => ({ kind: "Jso
 
 const isDigit = (c: string | undefined): boolean => c !== undefined && c >= "0" && c <= "9";
 
-/** Parses JSON text into a canonical value. */
+/**
+ * Parses JSON text into a canonical value. Text that is not a string, or a scale bound that is not a safe integer
+ * from 0, is a `TypeMismatch`, before anything is read.
+ */
 export function parse(text: string, maxScale: number = DEFAULT_MAX_SCALE): Result<Value, CanonicalError> {
+  if (typeof (text as unknown) !== "string") return err({ kind: "TypeMismatch", reason: "the JSON text is not a string" });
+  if (!Number.isSafeInteger(maxScale) || maxScale < 0) return err({ kind: "TypeMismatch", reason: "the scale bound is not a safe integer from 0" });
   return new Parser(text, maxScale).run();
 }
 
@@ -266,7 +271,8 @@ function integerText(n: IntValue): string {
 /**
  * The exact decimal of a rational, within the bounds {@link parse} accepts: `"non-terminating rational"` when its
  * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds, both found from the
- * denominator's factors (`twosAndFives`) before any digit is produced.
+ * denominator's factors (`twosAndFives`) before any digit is produced. An argument that is not a `RationalValue` throws:
+ * the result type has no room for that refusal.
  */
 export function decimalOf(r: RationalValue): Result<string, "non-terminating rational" | "over-long number"> {
   const [factors] = twosAndFives(r.denominator);
@@ -279,7 +285,10 @@ export function decimalOf(r: RationalValue): Result<string, "non-terminating rat
   return text === undefined ? err("over-long number") : ok(text);
 }
 
-/** The exact decimal of a rational, when it has one within the bounds {@link parse} accepts. */
+/**
+ * The exact decimal of a rational, when it has one within the bounds {@link parse} accepts. An argument that is not a
+ * `RationalValue` throws, as {@link decimalOf} does.
+ */
 export function decimal(r: RationalValue): string | undefined {
   const d = decimalOf(r);
   return d.ok ? d.value : undefined;
