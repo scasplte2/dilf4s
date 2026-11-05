@@ -43,6 +43,7 @@ them. Every other field is informative. The normative fields are:
 | canonical value | `IntegerTooWide` | `limit`: `MaxIntegerBits` (33219), for an integer wider than it, from any producer (`canonical-encoding.md` §1); the integer's width is not reported |
 | canonical encoding | `DuplicateKey` | `key`: the repeated key's preview, its `head` and `length` (§8) |
 | state key | `InvalidSegment`, `SegmentTooLong` | `segment`: the first refused segment's position, from 0 (`versioned-trie.md` §2) |
+| JLVM | `Type`, `Arity`, `Arithmetic`, `Domain`, `Crypto` | `op`: the operation's wire name, or `var` (`jlvm.md` §3). `OutOfGas` has none: its `required` may be summed only as far as the limit, and the gas used (the limit) is pinned |
 | every other kind | | none: the kind alone |
 
 A field is normative only when every implementation can produce it exactly at no more cost than the refusal itself:
@@ -156,10 +157,9 @@ refusal kind a spec defines must have a row. The gated families, and where their
 | zk | `ZkError`, `Groth16Error` | `zk_v1.json` |
 | canonical codecs | `CanonicalError` | `canonical_encoding_v1.json`: `json`, `renderRejections` and `cborRejections` (each kind with its normative `limit`); `TypeMismatch`, a typed encoder's refusal, by the `schema` outcome of `versioned_trie_v1.json`'s `stateKeys` |
 | state keys | `StateKeyError` | `versioned_trie_v1.json`: `stateKeys`, `stateKeyBytes` and `namespaces` (each kind with its normative `segment`); `refusals_v1.json`'s `Key.` kinds |
+| JLVM | `JlvmError` and its `Site` | `jlvm_v1.json`: each failing case's `outcome` (`error`, and `op` where the kind has one) |
 
 Each kind of these families has a row, except the kinds below, which no input reaches through an SDK's verifier.
-The JLVM's own errors record outcomes in their own vector file but are not yet gated kind by kind (conformance step
-2, part B).
 
 | Family | Kind | Why it has no row |
 |---|---|---|
@@ -216,6 +216,17 @@ reading the rows through their generated models; the Rust (`core/tests/conforman
 kind and `limit`, and check that every kind has a row. `state-key-error-kind` lists every kind of `StateKeyError`: the
 reference's `RefusalCoverageSuite` gates it with the verifier families, and the Rust (`proofs/tests/versioned.rs`)
 and TypeScript (`proofs/test/versioned.test.ts`) tests do the same with its `segment`.
+
+**The JLVM's gate.** The reference's `JlvmErrorCoverageSuite` lists `JlvmError`'s cases and `Site`'s (an operation,
+or `var`) through the compiler and fails if one has no row, or if a row's `op` names no site. The Rust tests map
+`JlvmError` onto `jlvm-error-kind` with an exhaustive `match`, check every kind of the generated `ALL` has a row, and
+compare every case's kind and `op`; an `op` is present exactly for the kinds that carry one. The TypeScript SDK has no
+JLVM evaluator, so its test checks the schema's side only: every kind, listed in a `Record` keyed by the generated
+union, has a row, and `op` is present exactly where it should be. The SP1 guest runs, besides its sample, the first
+case of each kind and of the `var` site, and compares kind and `op`. `jlvm-error-kind` is a closed choice of texts,
+so a vector naming another kind does not load; the `op` is text, since most operation names (`+`, `==`) have no
+identifier form for the generated types, and these gates check that each names a site. A JLVM `Crypto` error does
+not yet name the refusal it wraps (§1, `jlvm.md` §3).
 
 **Limits.** Every limit the specs state (`MaxValueBytes`, `MaxChunkBytes`, `MaxProofWeight`, the depth, digit, rational,
 key, chunk, sigma, KES and JLVM limits) is defined once, in `shared/schemas/limits.cddl`, and generated into each SDK

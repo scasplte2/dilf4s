@@ -13161,6 +13161,37 @@
       "name" : "dilf4s ecvrf_verify: another alpha",
       "program" : "{\"ecvrf_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
       "data" : "{\"a0\":\"0x6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1\",\"a1\":\"0x00\",\"a2\":\"0x6a7294c4b20e0676e7b949647b6fcf9a716074ea3e93dab582e2236892340c4bd4a66c8eb25a5f526ecca6e1d9a1a26ce52c20db42a0db6d4a55816e413fccbb2541ec56af9c2c23d3560a8ba6d72200\"}"
+    },
+    {
+      "name" : "dilf4s var: a computed text path with an empty segment is Domain",
+      "program" : "{\"var\":{\"literal\":\"a..b\"}}",
+      "data" : "{\"a\":{\"b\":1}}"
+    },
+    {
+      "name" : "dilf4s var: a computed path that is neither text nor an array is Type",
+      "program" : "{\"var\":{\"literal\":true}}",
+      "data" : "{\"a\":{\"b\":1}}"
+    },
+    {
+      "name" : "dilf4s var: a computed integer segment past 64 bits is Domain",
+      "program" : "{\"var\":{\"literal\":[18446744073709551616]}}",
+      "data" : "{\"a\":{\"b\":1}}"
+    },
+    {
+      "name" : "dilf4s var: a computed segment that is neither text nor an integer is Type",
+      "program" : "{\"var\":{\"literal\":[true]}}",
+      "data" : "{\"a\":{\"b\":1}}"
+    },
+    {
+      "name" : "dilf4s op: the innermost operation that refuses is the op",
+      "program" : "{\"+\": [1, {\"abs\": \"x\"}]}",
+      "data" : "null"
+    },
+    {
+      "name" : "dilf4s spread: out of gas while its elements are sized, at 210",
+      "program" : "{\"+\": {\"var\": \"xs\"}}",
+      "data" : "{\"xs\":[1,2,3,4,5,6,7,8]}",
+      "gasLimit" : 210
     }
   ]
 }

@@ -192,8 +192,8 @@ const CRYPTO_OPS: [&str; 16] = [
     "trie",
 ];
 
-/// Every JLVM case that calls a cryptographic operation on real inputs (not the argument-kind sweeps), and every
-/// 50th other case.
+/// Every JLVM case that calls a cryptographic operation on real inputs (not the argument-kind sweeps), every 50th
+/// other case, and the first case of each error kind and of the `var` site (`vectors::jlvm`).
 #[tokio::test]
 async fn jlvm() {
     let cases = vectors::jlvm(|i, c| {

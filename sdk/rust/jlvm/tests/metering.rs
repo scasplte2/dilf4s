@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 
 use dilf4s_core::BigInt;
 use dilf4s_jlvm::{
-    Compiled, Config, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Op, Outcome, Value, Warning, parse,
+    Compiled, Config, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Op, Outcome, Site, Value, Warning, parse,
     parse_value,
 };
 
@@ -219,7 +219,7 @@ fn integer_path_segments_are_bounded_before_they_are_rendered() {
     assert_eq!(eval(p, &obj(vec![("m", obj(vec![("12", int(8))])), ("i", int(12))])).result, Ok(int(8)));
     let huge =
         obj(vec![("m", obj(vec![("-1", int(7))])), ("i", Value::integer((BigInt::from(1) << 4095) + 1).unwrap())]);
-    assert!(matches!(eval(p, &huge).result, Err(JlvmError::Domain { op: "var", .. })));
+    assert!(matches!(eval(p, &huge).result, Err(JlvmError::Domain { op: Site::Var, .. })));
 }
 
 #[test]

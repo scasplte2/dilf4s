@@ -9,7 +9,7 @@ use alloc::{format, vec};
 use std::path::PathBuf;
 
 use dilf4s_core::codec::Model;
-use dilf4s_core::generated::jlvm_vectors::{JlvmOutcome, JlvmVectors};
+use dilf4s_core::generated::jlvm_vectors::{JlvmErrorKind, JlvmOutcome, JlvmVectors};
 use dilf4s_core::generated::kes_vectors::{
     KesCheck, KesConstruction, KesOutcome, KesParameters, KesRefusal, KesVectors,
 };
@@ -43,10 +43,10 @@ pub enum Expect {
     AnyFailure,
     /// Some bytes: a verified output the vector does not give.
     Verified,
-    /// A JLVM outcome: the value's canonical CBOR or the error kind, the gas and the number of warnings.
+    /// A JLVM outcome: the value's canonical CBOR or the error, the gas and the number of warnings.
     Jlvm {
-        /// The canonical CBOR, or the error kind.
-        result: Result<Vec<u8>, String>,
+        /// The canonical CBOR, or the error's kind and normative `op`.
+        result: Result<Vec<u8>, (String, Option<String>)>,
         /// The gas used.
         gas: u64,
         /// The number of warnings.
@@ -72,7 +72,7 @@ impl Expect {
             | (Self::Verified, Ok(Output::Bytes(_)))
             | (Self::SignerParity { .. }, Ok(Output::Address(_))) => true,
             (Self::Jlvm { result, gas, warnings }, Ok(Output::Jlvm { result: got, gas: g, warnings: w })) => {
-                let got = got.clone().map_err(|(kind, _)| kind);
+                let got = got.clone().map_err(|(kind, op, _)| (kind, op));
                 got == *result && g == gas && w == warnings
             }
             _ => false,
@@ -493,19 +493,47 @@ pub fn vrf(suite: &str, rejections: bool) -> Result<Vec<Named>, Error> {
     Ok(out)
 }
 
-/// The JLVM cases `keep` picks (by index and case), run as the conformance vectors run them.
+/// The index of the first case with each error kind of the schema, and of the first whose `op` is `var`: so every
+/// kind and both kinds of site run wherever the picked cases do. A kind with no row is an error (the coverage gate,
+/// conformance.md section 6).
+fn first_errors(v: &JlvmVectors) -> Result<Vec<usize>, Error> {
+    let error = |c: &dilf4s_core::generated::jlvm_vectors::JlvmCase| match &c.outcome {
+        JlvmOutcome::JlvmError(e) => Some(e.clone()),
+        JlvmOutcome::JlvmValue(_) => None,
+    };
+    let mut firsts = JlvmErrorKind::ALL
+        .iter()
+        .map(|k| {
+            v.cases
+                .iter()
+                .position(|c| error(c).is_some_and(|e| e.error == *k))
+                .ok_or_else(|| format!("jlvm_v1.json: no row has error {k:?}"))
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    let var = v
+        .cases
+        .iter()
+        .position(|c| error(c).is_some_and(|e| e.op.as_deref() == Some("var")))
+        .ok_or_else(|| String::from("jlvm_v1.json: no row has op var"))?;
+    firsts.push(var);
+    Ok(firsts)
+}
+
+/// The JLVM cases `keep` picks (by index and case), and the first case of each error kind and of the `var` site, run
+/// as the conformance vectors run them.
 pub fn jlvm(
     keep: impl Fn(usize, &dilf4s_core::generated::jlvm_vectors::JlvmCase) -> bool,
 ) -> Result<Vec<Named>, Error> {
     let v: JlvmVectors = load("jlvm_v1.json")?;
+    let firsts = first_errors(&v)?;
     v.cases
         .iter()
         .enumerate()
-        .filter(|(i, c)| keep(*i, c))
+        .filter(|(i, c)| keep(*i, c) || firsts.contains(i))
         .map(|(_, c)| {
             let result = match &c.outcome {
                 JlvmOutcome::JlvmValue(x) => Ok(bytes(&x.cbor)?),
-                JlvmOutcome::JlvmError(e) => Err(format!("{:?}", e.error)),
+                JlvmOutcome::JlvmError(e) => Err((format!("{:?}", e.error), e.op.clone())),
             };
             let case = Case::Jlvm {
                 program: c.program.clone(),

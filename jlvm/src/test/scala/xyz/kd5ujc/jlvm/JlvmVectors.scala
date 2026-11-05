@@ -8,6 +8,7 @@ import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.circe.CanonicalCirce
+import xyz.kd5ujc.models.jlvm_vectors.JlvmErrorKind
 
 import io.circe.syntax._
 import io.circe.{Decoder, Json}
@@ -53,7 +54,8 @@ object JlvmVectors {
   val inputs: IO[Inputs] =
     files.traverse(read).map(all => Inputs(all.map(_.source).mkString("; "), all.flatMap(_.cases)))
 
-  def kind(e: JlvmError): String = e match {
+  /** The error's kind, as the schema's closed choice (`jlvm-error-kind`): a new case does not compile until it is mapped. */
+  def kind(e: JlvmError): JlvmErrorKind = e match {
     case _: JlvmError.Malformed  => "Malformed"
     case _: JlvmError.Type       => "Type"
     case _: JlvmError.Arity      => "Arity"
@@ -92,7 +94,7 @@ object JlvmVectors {
 
   private def outcome(o: Outcome): Json =
     o.result.fold(
-      e => Json.obj("error" -> kind(e).asJson),
+      e => Json.fromFields(List("error" -> (kind(e): String).asJson) ++ JlvmError.site(e).map(s => "op" -> s.wire.asJson)),
       v =>
         Json
           .obj("cbor" -> Cbor.encode(v).toHex.asJson)

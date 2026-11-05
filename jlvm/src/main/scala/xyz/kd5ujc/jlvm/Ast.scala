@@ -5,10 +5,24 @@ import scala.annotation.tailrec
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview}
 
 /**
+ * Where an operation-level error arose (docs/specs/jlvm.md §3): an operation, or the `var` read of a computed path. It
+ * is the error's normative `op` field, so it is always one of these names, never caller text.
+ */
+sealed trait Site {
+  def wire: String
+}
+
+object Site {
+  case object Var extends Site {
+    val wire: String = "var"
+  }
+}
+
+/**
  * The operations of language version 1, by wire name. A program naming anything else does not parse, so adding an
  * operation in a later version never changes what an existing program means.
  */
-enum Op(val wire: String) {
+enum Op(val wire: String) extends Site {
   // control and logic
   case If extends Op("if")
   case And extends Op("and")

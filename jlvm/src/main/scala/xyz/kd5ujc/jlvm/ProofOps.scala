@@ -39,7 +39,7 @@ object ProofOps {
       case _                          => scala.None
     }
 
-  private def crypto(op: Op)(message: String): JlvmError = JlvmError.Crypto(op.wire, message)
+  private def crypto(op: Op)(message: String): JlvmError = JlvmError.Crypto(op, message)
 
   /**
    * Claims (a leaf, a value, a listing's values) together at most `ProofInput.MaxProofWeight`, checked from their
@@ -52,7 +52,7 @@ object ProofOps {
   private def bytes(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, FlatBytes] =
     v match {
       case CBytes(b) => FlatBytes(b).asRight
-      case other     => JlvmError.Type(op.wire, s"$what is bytes, got ${Values.kind(other)}").asLeft
+      case other     => JlvmError.Type(op, s"$what is bytes, got ${Values.kind(other)}").asLeft
     }
 
   private def digest(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, Digest[H]] =
@@ -89,7 +89,7 @@ object ProofOps {
       case Vector() => (MerkleHashing.tagged[H], (v: CanonicalValue) => committed(v).asRight[JlvmError]).asRight
       case Vector(CText("rfc6962")) =>
         (MerkleHashing.rfc6962[H], (v: CanonicalValue) => bytes(op, "an rfc6962 leaf")(v).map(ByteSource.bytes)).asRight
-      case _ => JlvmError.Domain(op.wire, "the only optional profile is \"rfc6962\"").asLeft
+      case _ => JlvmError.Domain(op, "the only optional profile is \"rfc6962\"").asLeft
     }
 
   /** A proof that verifies is true; one that is well formed but proves something else is false. */
@@ -117,7 +117,7 @@ object ProofOps {
               if (p.size != size) False.asRight else outcome(op)(MerkleVerifier.inclusion(root, m.leafOf(d), p)(using m))
             )
         }
-      case _ => JlvmError.Arity(op.wire, "takes [head, leaf, proof] or [head, leaf, proof, profile]").asLeft
+      case _ => JlvmError.Arity(op, "takes [head, leaf, proof] or [head, leaf, proof, profile]").asLeft
     }
 
   private def consistency(op: Op, args: Vector[CanonicalValue]): Result =
@@ -133,7 +133,7 @@ object ProofOps {
             if (p.oldSize != oldSize || p.newSize != newSize) False.asRight
             else outcome(op)(MerkleVerifier.consistency(oldRoot, newRoot, p)(using m))
         }
-      case _ => JlvmError.Arity(op.wire, "takes [oldHead, newHead, proof] or [oldHead, newHead, proof, profile]").asLeft
+      case _ => JlvmError.Arity(op, "takes [oldHead, newHead, proof] or [oldHead, newHead, proof, profile]").asLeft
     }
 
   // ---- binary Patricia tries (trie.md)
@@ -144,11 +144,11 @@ object ProofOps {
     v match {
       case CMap(m) =>
         m.toList match {
-          case List(("fixed", CInt(n))) if n.isValidInt    => KeyMode.fixed(n.toInt).leftMap(e => JlvmError.Domain(op.wire, e.toString))
-          case List(("variable", CInt(n))) if n.isValidInt => KeyMode.variable(n.toInt).leftMap(e => JlvmError.Domain(op.wire, e.toString))
-          case _ => JlvmError.Domain(op.wire, "a mode is {\"fixed\": n} or {\"variable\": max}").asLeft
+          case List(("fixed", CInt(n))) if n.isValidInt    => KeyMode.fixed(n.toInt).leftMap(e => JlvmError.Domain(op, e.toString))
+          case List(("variable", CInt(n))) if n.isValidInt => KeyMode.variable(n.toInt).leftMap(e => JlvmError.Domain(op, e.toString))
+          case _                                           => JlvmError.Domain(op, "a mode is {\"fixed\": n} or {\"variable\": max}").asLeft
         }
-      case other => JlvmError.Type(op.wire, s"a mode is an object, got ${Values.kind(other)}").asLeft
+      case other => JlvmError.Type(op, s"a mode is an object, got ${Values.kind(other)}").asLeft
     }
 
   /** A claimed value's hash, by its [[ValueCommitment]] bytes: bytes and a value whose CBOR equals them differ. */
@@ -185,7 +185,7 @@ object ProofOps {
             case (p, scala.Some(v)) =>
               v.holds(p, Option.when(value != CNull)(valueHash(value))).bimap(e => crypto(op)(e.toString), Values.bool)
           }
-      case _ => JlvmError.Arity(op.wire, "takes [mode, root, key, value, proof]").asLeft
+      case _ => JlvmError.Arity(op, "takes [mode, root, key, value, proof]").asLeft
     }
 
   private def entries(op: Op, m: KeyMode)(v: CanonicalValue): Either[JlvmError, List[(BitVector, Digest[H])]] =
@@ -193,11 +193,11 @@ object ProofOps {
       case CArray(es) =>
         es.toList.traverse {
           case CArray(Vector(k, x)) if x != CNull => path(op, m)(k).map(_ -> x)
-          case _                                  => JlvmError.Type(op.wire, "an entry is [key, value], with a value").asLeft
+          case _                                  => JlvmError.Type(op, "an entry is [key, value], with a value").asLeft
         }
           .flatTap(pxs => claims(op)(pxs.map(_._2)))
           .map(_.map { case (p, x) => p -> valueHash(x) })
-      case other => JlvmError.Type(op.wire, s"entries is an array, got ${Values.kind(other)}").asLeft
+      case other => JlvmError.Type(op, s"entries is an array, got ${Values.kind(other)}").asLeft
     }
 
   /** Whether the claimed entries, in key order, are exactly the proven listing; one that reaches a stub is no answer. */
@@ -216,7 +216,7 @@ object ProofOps {
             case (pre, claimed, scala.Some(v)) => listing(op)(v.listsPrefix(pre.bits, claimed))
           }
         }
-      case _ => JlvmError.Arity(op.wire, "takes [mode, root, prefix, entries, proof]").asLeft
+      case _ => JlvmError.Arity(op, "takes [mode, root, prefix, entries, proof]").asLeft
     }
 
   private def trieRange(op: Op, args: Vector[CanonicalValue]): Result =
@@ -237,6 +237,6 @@ object ProofOps {
             case (lo, hi, claimed, scala.Some(v)) => listing(op)(v.listsRange(lo.bits, hi, claimed))
           }
         }
-      case _ => JlvmError.Arity(op.wire, "takes [mode, root, from, until, entries, proof]").asLeft
+      case _ => JlvmError.Arity(op, "takes [mode, root, from, until, entries, proof]").asLeft
     }
 }

@@ -250,8 +250,9 @@ pub enum Output {
     Unit,
     /// A JLVM outcome: the value's canonical CBOR or the error, the gas and the number of warnings.
     Jlvm {
-        /// The value's canonical CBOR, or the error's kind and `Debug` rendering.
-        result: Result<Vec<u8>, (String, String)>,
+        /// The value's canonical CBOR, or the error's kind, its normative `op` (jlvm.md section 3) and its `Debug`
+        /// rendering.
+        result: Result<Vec<u8>, (String, Option<String>, String)>,
         /// The gas used.
         gas: u64,
         /// The number of warnings.
@@ -333,7 +334,9 @@ fn jlvm_case(
         }
     };
     Ok(Output::Jlvm {
-        result: result.map(|v| cbor::encode(&v)).map_err(|e| (String::from(e.kind()), debug(&e))),
+        result: result
+            .map(|v| cbor::encode(&v))
+            .map_err(|e| (String::from(e.kind()), e.site().map(|s| String::from(s.wire())), debug(&e))),
         gas: gas.value(),
         warnings: u64::try_from(warnings).unwrap_or(u64::MAX),
     })

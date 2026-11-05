@@ -17,7 +17,7 @@ use dilf4s_core::value::{Array, MapShape, Text};
 
 use crate::ast::VarRef;
 use crate::crypto::{self, CryptoBackend};
-use crate::error::JlvmError;
+use crate::error::{JlvmError, Site};
 use crate::gas::{Gas, GasSchedule};
 use crate::node::{self, Iteration, Logical, Node, Segments};
 use crate::op::Op;
@@ -512,7 +512,7 @@ impl<'a> Machine<'a> {
             Then::Lookup { path, default, scope } => self.lookup(path.get(), default, &scope),
             Then::ParsePath { text, default, scope } => match VarRef::parse(&text) {
                 Ok(r) => self.read(PathRef::Owned(r), default, scope),
-                Err(e) => Step::Fail(JlvmError::domain("var", alloc::format!("{e}"))),
+                Err(e) => Step::Fail(JlvmError::domain(Site::Var, alloc::format!("{e}"))),
             },
             Then::SegmentPath { segments, default, scope } => {
                 match segments.items().iter().map(segment).collect::<Result<Vec<_>, _>>() {
@@ -600,7 +600,7 @@ impl<'a> Machine<'a> {
                     Step::Charge(g, Then::SegmentPath { segments: ss, default, scope })
                 }
                 other => Step::Fail(JlvmError::type_error(
-                    "var",
+                    Site::Var,
                     alloc::format!("a computed path is text or an array of segments, got {}", kind(&other)),
                 )),
             },
@@ -626,7 +626,7 @@ impl<'a> Machine<'a> {
                     Step::Charge(g, Then::OperateOn { op, array: a })
                 }
                 other => Step::Fail(JlvmError::type_error(
-                    op.wire(),
+                    op,
                     alloc::format!("a spread argument is an array, got {}", kind(&other)),
                 )),
             },
@@ -669,10 +669,9 @@ impl<'a> Machine<'a> {
                     Ok(empty) => self.proceed(then, empty),
                     Err(e) => Step::Fail(JlvmError::limit(alloc::format!("{e}"))),
                 },
-                other => Step::Fail(JlvmError::type_error(
-                    op.wire(),
-                    alloc::format!("expected an array, got {}", kind(&other)),
-                )),
+                other => {
+                    Step::Fail(JlvmError::type_error(op, alloc::format!("expected an array, got {}", kind(&other))))
+                }
             },
             Kont::QuorumMin { vs, body, scope } => match values::integer(Op::Some, &v) {
                 Ok(n) => {
@@ -1021,9 +1020,9 @@ fn segment(v: &Value) -> Result<String, JlvmError> {
     match v {
         Value::Text(t) => Ok(String::from(t.as_str())),
         Value::Int(i) => values::small_integer_text(i)
-            .ok_or_else(|| JlvmError::domain("var", "an integer path segment must fit in 64 bits")),
+            .ok_or_else(|| JlvmError::domain(Site::Var, "an integer path segment must fit in 64 bits")),
         other => Err(JlvmError::type_error(
-            "var",
+            Site::Var,
             alloc::format!("a path segment is text or an integer, got {}", kind(other)),
         )),
     }
@@ -1050,9 +1049,7 @@ fn lookups(op: Op, args: &[Value], absent: impl Fn(&[String]) -> bool) -> Result
         list.iter()
             .map(|k| match k {
                 Value::Text(t) => Ok(String::from(t.as_str())),
-                other => {
-                    Err(JlvmError::type_error(op.wire(), alloc::format!("a key is a string path, got {}", kind(other))))
-                }
+                other => Err(JlvmError::type_error(op, alloc::format!("a key is a string path, got {}", kind(other)))),
             })
             .collect()
     };
@@ -1077,7 +1074,7 @@ fn lookups(op: Op, args: &[Value], absent: impl Fn(&[String]) -> bool) -> Result
                     values::array(op.wire(), gone)
                 }
             }
-            _ => Err(JlvmError::arity(op.wire(), "takes [minimum, [keys]]")),
+            _ => Err(JlvmError::arity(op, "takes [minimum, [keys]]")),
         },
         other => Err(JlvmError::malformed(alloc::format!("{} is not a lookup", other.wire()))),
     }

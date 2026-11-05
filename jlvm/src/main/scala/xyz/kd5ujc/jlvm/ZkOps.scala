@@ -51,10 +51,10 @@ final class ZkOps(engine: Bn254Engine) {
       _ <- Either.cond(
         inputs.nonEmpty && inputs.size <= PoseidonHash.MaxInputs,
         (),
-        JlvmError.Arity(op.wire, s"takes 1 to ${PoseidonHash.MaxInputs} field elements, got ${inputs.size}")
+        JlvmError.Arity(op, s"takes 1 to ${PoseidonHash.MaxInputs} field elements, got ${inputs.size}")
       )
       xs     <- inputs.zipWithIndex.traverse { case (v, i) => fr(op, s"input[$i]", v) }
-      digest <- PoseidonHash.hash(xs).leftMap(e => JlvmError.Crypto(op.wire, e.toString))
+      digest <- PoseidonHash.hash(xs).leftMap(e => JlvmError.Crypto(op, e.toString))
       out    <- Values.bytesValue(op, FlatBytes(Bn254.be32(digest.value)))
     } yield out
   }
@@ -74,7 +74,7 @@ final class ZkOps(engine: Bn254Engine) {
           // the index is charged as one element, whatever its size: the error never renders it
           proof <- PoseidonMerkleProof.from(index, sibs).leftMap(_ => crypto(op, s"index is out of range for depth ${sibs.size}"))
         } yield Values.bool(PoseidonMerkleTree.verifyInclusion(leaf, proof, root))
-      case _ => JlvmError.Arity(op.wire, s"takes [root, leaf, index, siblings], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, s"takes [root, leaf, index, siblings], got ${args.size} arguments").asLeft
     }
 
   // ---- groth16_verify [programVKey (32), publicValues, proof (SP1 Groth16 v6.1.0)] -> bool
@@ -92,7 +92,7 @@ final class ZkOps(engine: Bn254Engine) {
             case Left(Groth16Error.InvalidProof(_) | Groth16Error.PairingCheckFailed | Groth16Error.Rejected(_)) => false.asRight
           }
         } yield Values.bool(valid)
-      case _ => JlvmError.Arity(op.wire, s"takes [vkey, publicValues, proof], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, s"takes [vkey, publicValues, proof], got ${args.size} arguments").asLeft
     }
 
   // ---- ecvrf_verify [pk (32), alpha, proof (80)] -> {valid: true, beta: 64 bytes} | {valid: false}
@@ -114,7 +114,7 @@ final class ZkOps(engine: Bn254Engine) {
               Values.map(op, List("valid" -> False))
           }
         } yield out
-      case _ => JlvmError.Arity(op.wire, s"takes [pk, alpha, proof], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, s"takes [pk, alpha, proof], got ${args.size} arguments").asLeft
     }
 
   // ---- bn254_add [a (64), b (64)] -> 64; bn254_mul [p (64), scalar (32)] -> 64 (EIP-196)
@@ -128,7 +128,7 @@ final class ZkOps(engine: Bn254Engine) {
           sum <- engine.add(a, b).leftMap(zkError(op, "a + b"))
           out <- Values.bytesValue(op, FlatBytes(sum))
         } yield out
-      case _ => JlvmError.Arity(op.wire, s"takes [a, b], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, s"takes [a, b], got ${args.size} arguments").asLeft
     }
 
   /** Any 256-bit scalar; G1 has prime order r, so reducing it mod r first gives the same point. */
@@ -141,7 +141,7 @@ final class ZkOps(engine: Bn254Engine) {
           q   <- engine.mul(p, s).leftMap(zkError(op, "point"))
           out <- Values.bytesValue(op, FlatBytes(q))
         } yield out
-      case _ => JlvmError.Arity(op.wire, s"takes [point, scalar], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, s"takes [point, scalar], got ${args.size} arguments").asLeft
     }
 
   // ---- bn254_pairing [[g1, g2], ..] or [[[g1, g2], ..]] -> bool (EIP-197; no pairs is true)
@@ -163,12 +163,12 @@ final class ZkOps(engine: Bn254Engine) {
     v match {
       case CArray(Vector(a, b)) => (sized(op, s"pair[$i].g1", a, G1Bytes), sized(op, s"pair[$i].g2", b, G2Bytes)).tupled
       case CArray(vs)           => crypto(op, s"pair[$i]: expected [g1, g2], got ${vs.size} elements").asLeft
-      case other                => JlvmError.Type(op.wire, s"pair[$i]: expected an array, got ${Values.kind(other)}").asLeft
+      case other                => JlvmError.Type(op, s"pair[$i]: expected an array, got ${Values.kind(other)}").asLeft
     }
 
   // ---- argument decoding
 
-  private def crypto(op: Op, message: String): JlvmError = JlvmError.Crypto(op.wire, message)
+  private def crypto(op: Op, message: String): JlvmError = JlvmError.Crypto(op, message)
 
   private def isArray(v: CanonicalValue): Boolean = v match {
     case CArray(_) => true
@@ -178,7 +178,7 @@ final class ZkOps(engine: Bn254Engine) {
   private def raw(op: Op, role: String, v: CanonicalValue): Either[JlvmError, ByteVector] =
     v match {
       case CBytes(b) => b.asRight
-      case other     => JlvmError.Type(op.wire, s"$role: expected bytes, got ${Values.kind(other)}").asLeft
+      case other     => JlvmError.Type(op, s"$role: expected bytes, got ${Values.kind(other)}").asLeft
     }
 
   /** Bytes charged by weight (`groth16_verify`'s, `ecvrf_verify`'s alpha), flattened: the charge pays for the copy. */
@@ -191,13 +191,13 @@ final class ZkOps(engine: Bn254Engine) {
   private def integer(op: Op, role: String, v: CanonicalValue): Either[JlvmError, BigInt] =
     v match {
       case CInt(i) => i.asRight
-      case other   => JlvmError.Type(op.wire, s"$role: expected an integer, got ${Values.kind(other)}").asLeft
+      case other   => JlvmError.Type(op, s"$role: expected an integer, got ${Values.kind(other)}").asLeft
     }
 
   private def array(op: Op, role: String, v: CanonicalValue): Either[JlvmError, Vector[CanonicalValue]] =
     v match {
       case CArray(vs) => vs.asRight
-      case other      => JlvmError.Type(op.wire, s"$role: expected an array, got ${Values.kind(other)}").asLeft
+      case other      => JlvmError.Type(op, s"$role: expected an array, got ${Values.kind(other)}").asLeft
     }
 
   /** 32 bytes, big-endian, below the BN254 scalar field modulus r. */

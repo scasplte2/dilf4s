@@ -34,7 +34,7 @@ object Lookups {
       case ks                 => ks
     }).traverse {
       case t: CText => t.asRight
-      case other    => JlvmError.Type(op.wire, s"a key is a string path, got ${Values.kind(other)}").asLeft
+      case other    => JlvmError.Type(op, s"a key is a string path, got ${Values.kind(other)}").asLeft
     }
 
   private def missing(ks: Vector[CText], data: Vector[String] => CanonicalValue): Vector[CText] =
@@ -52,6 +52,6 @@ object Lookups {
             val gone = missing(all, data)
             if (BigInt(all.size - gone.size) >= n) Values.array(op, Vector.empty) else Values.array(op, gone)
         }
-      case _ => JlvmError.Arity(op.wire, "takes [minimum, [keys]]").asLeft
+      case _ => JlvmError.Arity(op, "takes [minimum, [keys]]").asLeft
     }
 }
