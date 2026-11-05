@@ -116,6 +116,12 @@ object ParserSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Right("\"0xabcd\""), JsonSurface.render(CBytes(hex"abcd"))))
   }
 
+  pureTest("a shared value too heavy to render is refused from its weight, before it is converted") {
+    // [$, $] applied 70 times: a weight that saturates, built in 70 steps; converting it whole would never end
+    val dag = (1 to 70).foldLeft(CInt(1): CanonicalValue)((v, _) => CanonicalValue.array(Vector(v, v)).toOption.get)
+    expect.same(Left(JlvmError.Malformed(xyz.kd5ujc.core.canonical.CanonicalJson.TooLongToRender.toString)), JsonSurface.render(dag))
+  }
+
   pureTest("single-key objects are always operations; data is quoted") {
     expect(p("""{"price": 5}""").isLeft, "an unknown single key is an error")
       .and(expect(p("""{"iff": [true, 1, 2]}""").isLeft, "a typo is rejected"))

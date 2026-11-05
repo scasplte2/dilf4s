@@ -28,6 +28,9 @@ sealed trait CanonicalValue extends Product with Serializable {
    * time they occur, so the weight bounds the work of any full traversal; it saturates at `Long.MaxValue`.
    */
   def weight: Long
+
+  /** A readable form, bounded however often the value repeats a shared part ([[CanonicalValue.inspect]]). */
+  final override def toString: String = CanonicalValue.inspect(this)
 }
 
 object CanonicalValue {
@@ -53,6 +56,88 @@ object CanonicalValue {
   val MaxIntegerBits: Int = xyz.kd5ujc.models.limits.CanonicalMaxIntegerBits
 
   implicit val canonicalValueShow: Show[CanonicalValue] = Show.fromToString
+
+  /** How much of a value [[inspect]] shows, in units of weight; the rest is `…` (the SDKs' `DEBUG_BUDGET`). */
+  val DebugBudget: Long = 1L << 16
+
+  /** How many arrays and maps deep [[inspect]] shows; deeper ones are `…` (the SDKs' `DEBUG_DEPTH`). */
+  val DebugDepth: Int = 16
+
+  /** Numbers up to this many bits are shown in decimal, wider ones by their bit length: decimal conversion is superlinear. */
+  private val ShownBits = 256
+
+  /**
+   * A readable form of `value` (CBOR diagnostic style, as the TypeScript SDK's `inspect`: `[1, "a", h'00ff', 1/3,
+   * {"k": null}]`, a map's keys in its own order), bounded however often it repeats a shared part: scalars spend their
+   * weight and containers and map keys theirs from a budget of [[DebugBudget]], nothing deeper than [[DebugDepth]] is
+   * shown, and what is not shown is `…`. One stack-safe pass; a map's entries are read lazily, as they are shown.
+   */
+  def inspect(value: CanonicalValue): String = {
+    @tailrec
+    def go(todo: List[Inspecting], units: Long, out: Vector[String]): String =
+      todo match {
+        case Nil => out.mkString
+        case Inspecting.Show(v, open) :: rest =>
+          v match {
+            case CArray(vs) if units >= 1 && open < DebugDepth => go(Inspecting.Items(vs, 0, open + 1) :: rest, units - 1, out :+ "[")
+            case m: CMap if units >= 1 && open < DebugDepth =>
+              go(Inspecting.Members(m.entries.iterator.to(LazyList), first = true, open + 1) :: rest, units - 1, out :+ "{")
+            // an elided container still costs a unit, so the output stays within the budget
+            case CArray(_) | CMap(_)    => go(rest, (units - 1).max(0L), out :+ Elided)
+            case s if s.weight <= units => go(rest, units - s.weight, out :+ scalarText(s))
+            case _                      => go(rest, 0L, out :+ Elided)
+          }
+        case Inspecting.Items(vs, i, open) :: rest =>
+          if (i >= vs.size) go(rest, units, out :+ "]")
+          else {
+            val sep = if (i > 0) Vector(", ") else Vector.empty
+            if (units == 0L) go(rest, units, out ++ sep :+ Elided :+ "]")
+            else go(Inspecting.Show(vs(i), open) :: Inspecting.Items(vs, i + 1, open) :: rest, units, out ++ sep)
+          }
+        case Inspecting.Members(entries, first, open) :: rest =>
+          entries match {
+            case (k, v) #:: more =>
+              val sep = if (first) Vector.empty else Vector(", ")
+              // a key has at least as many UTF-8 bytes as UTF-16 units: one too long is refused before it is measured
+              val key = if (units == 0L || k.length >= units) units + 1 else 1L + Utf16.utf8Length(k)
+              if (key > units) go(rest, 0L, out ++ sep :+ Elided :+ "}")
+              else
+                go(
+                  Inspecting.Show(v, open) :: Inspecting.Members(more, first = false, open) :: rest,
+                  units - key,
+                  out ++ sep :+ quotedText(k) :+ ": "
+                )
+            case _ => go(rest, units, out :+ "}")
+          }
+      }
+    go(List(Inspecting.Show(value, 0)), DebugBudget, Vector.empty)
+  }
+
+  private val Elided = "…"
+
+  /** What [[inspect]] has still to show, innermost first: a value under `open` containers, or the rest of one. */
+  sealed private trait Inspecting
+
+  private object Inspecting {
+    final case class Show(value: CanonicalValue, open: Int) extends Inspecting
+    final case class Items(values: Vector[CanonicalValue], next: Int, open: Int) extends Inspecting
+    final case class Members(rest: LazyList[(String, CanonicalValue)], first: Boolean, open: Int) extends Inspecting
+  }
+
+  private def quotedText(s: String): String = CanonicalJson.render(new CText(s) {}).getOrElse(Elided)
+
+  private def scalarText(v: CanonicalValue): String =
+    v match {
+      case CNull    => "null"
+      case CBool(b) => b.toString
+      case CInt(n)  => if (n.bitLength <= ShownBits) n.toString else s"<int of ${n.bitLength} bits>"
+      case CRational(r) =>
+        if (r.numerator.bitLength <= ShownBits && r.denominator.bitLength <= ShownBits) s"${r.numerator}/${r.denominator}"
+        else s"<rational of ${r.numerator.bitLength}/${r.denominator.bitLength} bits>"
+      case CText(s)  => quotedText(s)
+      case CBytes(b) => s"h'${b.toHex}'"
+      case _         => Elided
+    }
 
   sealed trait Scalar extends CanonicalValue {
     final val depth: Int = 0

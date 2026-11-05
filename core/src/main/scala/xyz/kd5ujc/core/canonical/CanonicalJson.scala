@@ -277,9 +277,15 @@ object CanonicalJson {
    */
   def render(value: CanonicalValue): Either[CanonicalError, String] =
     renderWithin(value, MaxRenderBytes).leftMap {
-      case RenderError.Canonical(e)    => e
-      case RenderError.TooLarge(limit) => NotJsonRepresentable(s"a rendering of more than $limit bytes")
+      case RenderError.Canonical(e) => e
+      case RenderError.TooLarge(_)  => TooLongToRender
     }
+
+  /**
+   * [[render]]'s refusal of a value whose JSON is longer than [[MaxRenderBytes]]: every value heavier than that, since
+   * a value's JSON is never shorter than its weight.
+   */
+  val TooLongToRender: CanonicalError = NotJsonRepresentable(s"a rendering of more than $MaxRenderBytes bytes")
 
   /**
    * [[render]], if the JSON is at most `maxBytes` long in UTF-8 (a negative limit is 0, and no limit is above
