@@ -100,6 +100,12 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
     }
   }
 
+  pureTest("the ceiling leaves the builder room to double and then inflate to two bytes a unit") {
+    // a builder of capacity 2n + 2 units, inflated past Latin-1, holds 4n + 4 bytes: within the JVM's largest array
+    val largestArray = Int.MaxValue.toLong - 8
+    expect(4 * CanonicalJson.MaxRenderBytes + 4 <= largestArray, s"${4 * CanonicalJson.MaxRenderBytes + 4} bytes")
+  }
+
   pureTest("the chain's rendering is its 513 characters, written in 513 appends") {
     expect
       .same(Right(Count(513L, 513L, 1)), counted(chain))

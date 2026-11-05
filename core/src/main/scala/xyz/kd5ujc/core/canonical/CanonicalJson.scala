@@ -253,11 +253,12 @@ object CanonicalJson {
   // ------------------------------------------------------------------ render (display view)
 
   /**
-   * The longest JSON [[render]] writes, in UTF-8 bytes. Each UTF-16 unit of the text is at least one UTF-8 byte and
-   * takes at most two bytes of a JVM string, so the text always fits the JVM's largest array (just below 2^31 bytes):
-   * rendering never throws.
+   * The longest JSON [[render]] writes, in UTF-8 bytes: 2^29 - 24, the TypeScript SDK's ceiling too. Each UTF-16 unit
+   * of the text is at least one UTF-8 byte; the builder may hold twice the text's units (it doubles as it grows) at two
+   * bytes each once a unit past Latin-1 arrives, so it never asks for more than about 2^31 - 92 bytes, within the JVM's
+   * largest array: rendering never throws for want of an array that size.
    */
-  val MaxRenderBytes: Long = (1L << 30) - 8
+  val MaxRenderBytes: Long = (1L << 29) - 24
 
   /** Why a value was not rendered within a limit: JSON cannot represent it, or its JSON is longer than the limit. */
   sealed trait RenderError extends Product with Serializable
