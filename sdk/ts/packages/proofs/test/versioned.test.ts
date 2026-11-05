@@ -207,6 +207,12 @@ describe("versioned trie checks", () => {
     expect(expectErr(versioned.StateKey.parse("a/"), "trailing slash")).toMatchObject({ kind: "InvalidSegment", segment: 1 });
     expect(expectErr(versioned.StateKey.fromBytes(Uint8Array.of(0xc3, 0xa9)), "not ASCII")).toMatchObject({ kind: "InvalidSegment", segment: 0 });
     expect(expectErr(versioned.StateKey.fromBytes(Uint8Array.of(0xed, 0xa0, 0x80)), "a surrogate")).toEqual({ kind: "NotUtf8" });
+    // versioned-trie.md section 2: an unpaired surrogate counts 3 UTF-8 bytes (no vector holds one: Rust's text cannot)
+    expect(expectErr(versioned.StateKey.parse("\ud800".repeat(86)), "258 bytes")).toEqual({ kind: "TooLong", limit: 256 });
+    expect(expectErr(versioned.StateKey.parse("\ud800".repeat(85)), "255 bytes")).toMatchObject({ kind: "InvalidSegment", segment: 0 });
+    expect(expectErr(versioned.StateKey.parse("a".repeat(254) + "\ud800"), "257 bytes in 255 units")).toEqual({ kind: "TooLong", limit: 256 });
+    expect(expectErr(versioned.StateKey.parse("a".repeat(253) + "\u{1f600}"), "257 bytes")).toEqual({ kind: "TooLong", limit: 256 });
+    expect(expectErr(versioned.StateKey.parse("a".repeat(252) + "\u{1f600}"), "256 bytes")).toMatchObject({ kind: "InvalidSegment", segment: 0 });
     expect(versioned.StateNamespace.parse(Array.from({ length: 16 }, () => "a").join("/")).ok).toBe(false);
     expect(versioned.StateNamespace.parse(Array.from({ length: 15 }, () => "a").join("/")).ok).toBe(true);
     expect(versioned.StateNamespace.parse("x".repeat(64) + "/" + "x".repeat(64) + "/" + "x".repeat(64) + "/" + "x".repeat(61)).ok).toBe(false);

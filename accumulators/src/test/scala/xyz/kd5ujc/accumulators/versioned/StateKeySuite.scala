@@ -76,6 +76,14 @@ object StateKeySuite extends SimpleIOSuite with Checkers {
         expect
           .same(Some(StateKeyError.InvalidSegment(Preview.of(e), 0)), StateKey.fromBytes(scodec.bits.ByteVector(0xc3, 0xa9)).left.toOption)
       )
+      // an unpaired surrogate counts 3 UTF-8 bytes (no vector holds one: Rust's text cannot): 86 are 258 bytes, 85 are
+      // 255, and 254 letters and one surrogate are 255 code units but 257 bytes
+      .and(expect.same(Some(StateKeyError.TooLong(256)), parsed("\ud800" * 86)))
+      .and(expect.same(Some(StateKeyError.InvalidSegment(Preview.of("\ud800" * 85), 0)), parsed("\ud800" * 85)))
+      .and(expect.same(Some(StateKeyError.TooLong(256)), parsed("a" * 254 + "\ud800")))
+      // a pair is 4 bytes: 253 letters and one are 257, 252 and one exactly 256
+      .and(expect.same(Some(StateKeyError.TooLong(256)), parsed("a" * 253 + "😀")))
+      .and(expect.same(Some(StateKeyError.InvalidSegment(Preview.of("a" * 252 + "😀"), 0)), parsed("a" * 252 + "😀")))
       .and(namespaceFull(List("a" * 64, "a" * 64, "a" * 64, "a" * 61).mkString("/")))
       .and(namespaceFull(List.fill(16)("a").mkString("/")))
   }
