@@ -32,7 +32,7 @@ object CanonicalCirce {
    * from its source text only so that it reads as the parser reads it.
    */
   def fromCirce(json: Json, maxScale: Int = CanonicalJson.MaxScale): Either[CanonicalError, CanonicalValue] =
-    circe(json, maxScale).value
+    CanonicalJson.scaleBound(maxScale).flatMap(circe(json, _).value)
 
   private def circe(json: Json, maxScale: Int): Eval[Either[CanonicalError, CanonicalValue]] =
     json.fold(

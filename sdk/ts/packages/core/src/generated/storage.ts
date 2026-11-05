@@ -7,21 +7,7 @@ export interface VersionedRecord {
   readonly a?: Uint8Array;
 }
 
-export const VersionedRecord: c.Codec<VersionedRecord> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.optionalField("b", c.bytes, a.b, e),
-        c.optionalField("a", c.bytes, a.a, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["b", "a"]);
-    if (!f.ok) return f;
-    const r0 = f.value.optional("b", c.bytes);
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("a", c.bytes);
-    if (!r1.ok) return r1;
-    return c.ok({ b: r0.value, a: r1.value });
-  },
-};
+export const VersionedRecord: c.Codec<VersionedRecord> = c.record<VersionedRecord>({
+  b: c.optional("b", c.bytes),
+  a: c.optional("a", c.bytes),
+});

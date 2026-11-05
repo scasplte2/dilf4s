@@ -1,8 +1,6 @@
 package xyz.kd5ujc.core.canonical
 
-import cats.Eval
 import cats.syntax.either._
-import cats.syntax.traverse._
 
 import scala.annotation.tailrec
 
@@ -30,8 +28,17 @@ object CanonicalJson {
 
   // ------------------------------------------------------------------ parse
 
+  /**
+   * JSON text as a canonical value. `maxScale` may lower the scale bound, never raise it: the spec accepts no JSON number
+   * of a scale past [[MaxScale]] (docs/specs/canonical-encoding.md §3), so a bound outside `0..MaxScale` is a
+   * `TypeMismatch`, before anything is read, as in the Rust and TypeScript SDKs.
+   */
   def parse(text: String, maxScale: Int = MaxScale): Either[CanonicalError, CanonicalValue] =
-    parse(text, maxScale, KeyOrder.Default)
+    scaleBound(maxScale).flatMap(parse(text, _, KeyOrder.Default))
+
+  /** `maxScale`, if it is a bound [[parse]] accepts: from 0 to [[MaxScale]]. */
+  private[kd5ujc] def scaleBound(maxScale: Int): Either[CanonicalError, Int] =
+    Either.cond(maxScale >= 0 && maxScale <= MaxScale, maxScale, TypeMismatch(s"the scale bound is not an integer from 0 to $MaxScale"))
 
   /** [[parse]] building maps, and checking for repeated member names, in `keys`'s order: production passes [[KeyOrder.Default]]. */
   private[canonical] def parse(text: String, maxScale: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
@@ -254,36 +261,176 @@ object CanonicalJson {
 
   // ------------------------------------------------------------------ render (display view)
 
-  /** Compact JSON with keys in code-point order. Fails for bytes, and for rationals that do not terminate or are too long. */
-  def render(value: CanonicalValue): Either[CanonicalError, String] = renderEval(value).value
+  /**
+   * The longest JSON [[render]] writes, in UTF-8 bytes: 2^29 - 24, the TypeScript SDK's ceiling too. Each UTF-16 unit
+   * of the text is at least one UTF-8 byte; the builder may hold twice the text's units (it doubles as it grows) at two
+   * bytes each once a unit past Latin-1 arrives, so it never asks for more than about 2^31 - 92 bytes, within the JVM's
+   * largest array: rendering never throws for want of an array that size.
+   */
+  val MaxRenderBytes: Long = (1L << 29) - 24
 
-  private def renderEval(value: CanonicalValue): Eval[Either[CanonicalError, String]] =
-    value match {
-      case CNull        => Eval.now("null".asRight)
-      case CBool(b)     => Eval.now(b.toString.asRight)
-      case i: CInt      => Eval.now(integerText(i).asRight)
-      case r: CRational => Eval.now(rationalText(r))
-      case t: CText     => Eval.now(quote(t.value).asRight)
-      case CBytes(_)    => Eval.now(NotJsonRepresentable("bytes").asLeft)
-      case CArray(vs)   => Eval.defer(vs.traverse(renderEval)).map(_.sequence.map(_.mkString("[", ",", "]")))
-      case CMap(m) =>
-        Eval
-          .defer(m.toVector.sortBy(_._1)(using CodePointOrder).traverse { case (k, v) => renderEval(v).map(_.map(quote(k) + ":" + _)) })
-          .map(_.sequence.map(_.mkString("{", ",", "}")))
+  /** Why a value was not rendered within a limit: JSON cannot represent it, or its JSON is longer than the limit. */
+  sealed trait RenderError extends Product with Serializable
+
+  object RenderError {
+
+    /** Bytes, a rational with no terminating decimal, or a number past the bounds [[parse]] accepts. */
+    final case class Canonical(error: CanonicalError) extends RenderError
+
+    /** The JSON is longer than `limit` UTF-8 bytes (docs/specs/conformance.md §4: the limit alone, nothing measured). */
+    final case class TooLarge(limit: Long) extends RenderError
+  }
+
+  /**
+   * Compact JSON with keys in code-point order. Fails for bytes, for rationals that do not terminate or are too long,
+   * and for a value whose JSON is longer than [[MaxRenderBytes]], which no JVM string could hold.
+   */
+  def render(value: CanonicalValue): Either[CanonicalError, String] =
+    renderWithin(value, MaxRenderBytes).leftMap {
+      case RenderError.Canonical(e) => e
+      case RenderError.TooLarge(_)  => TooLongToRender
     }
 
-  private def quote(s: String): String =
-    s.flatMap {
-      case '"'          => "\\\""
-      case '\\'         => "\\\\"
-      case '\n'         => "\\n"
-      case '\r'         => "\\r"
-      case '\t'         => "\\t"
-      case '\b'         => "\\b"
-      case '\f'         => "\\f"
-      case c if c < ' ' => f"\\u${c.toInt}%04x"
-      case c            => c.toString
-    }.prepended('"').appended('"')
+  /**
+   * [[render]]'s refusal of a value whose JSON is longer than [[MaxRenderBytes]]: every value heavier than that, since
+   * a value's JSON is never shorter than its weight.
+   */
+  val TooLongToRender: CanonicalError = NotJsonRepresentable(s"a rendering of more than $MaxRenderBytes bytes")
+
+  /**
+   * [[render]], if the JSON is at most `maxBytes` long in UTF-8 (a negative limit is 0, and no limit is above
+   * [[MaxRenderBytes]]). Fails with `TooLarge` at the first part found past the limit, or for what JSON cannot
+   * represent, whichever comes first, as the Rust and TypeScript SDKs do.
+   *
+   * O(min(weight, `maxBytes`)) apart from sorting map keys, in one pass: a value's JSON is at least as long in UTF-8 as
+   * its weight (each node writes at least a byte, a text or key its UTF-8 and quotes, a number of `l` whole limbs more
+   * than `l` digits), so each part is refused in O(1) when its weight is over what is left, and each character of the
+   * text is written once, into one builder. The builder is local to this call and never escapes it: each of its states
+   * is used once ([[TextSink]]) and only the finished text leaves, so the function is pure.
+   */
+  def renderWithin(value: CanonicalValue, maxBytes: Long): Either[RenderError, String] =
+    renderInto(value, maxBytes, new java.lang.StringBuilder)(using TextSink.builder).map(_.toString)
+
+  /**
+   * Where rendered text goes, as a state `S` threaded through every write, as [[ByteSink]] is for bytes: the renderer
+   * uses each state once, passing on the one a write returns, so a sink may append in place.
+   */
+  private[canonical] trait TextSink[S] {
+
+    /** `s` with the characters of `text` from `from` until `until` appended. */
+    def chars(s: S, text: String, from: Int, until: Int): S
+  }
+
+  private[canonical] object TextSink {
+    val builder: TextSink[java.lang.StringBuilder] = (s, text, from, until) => s.append(text, from, until)
+  }
+
+  /** [[renderWithin]] into any [[TextSink]]: each character of the rendering reaches the sink once, and nothing else does. */
+  private[canonical] def renderInto[S](value: CanonicalValue, maxBytes: Long, s: S)(using TextSink[S]): Either[RenderError, S] =
+    write(List(Pending.Node(value)), Written(s, 0L, maxBytes.max(0L).min(MaxRenderBytes)))
+
+  /** What is still to be written, innermost first: a value, or the rest of an open array or map. */
+  sealed private trait Pending
+
+  private object Pending {
+    final case class Node(value: CanonicalValue) extends Pending
+    final case class Items(items: Vector[CanonicalValue], next: Int) extends Pending
+    final case class Members(members: Vector[(String, CanonicalValue)], next: Int) extends Pending
+  }
+
+  /** The sink's state, the UTF-8 bytes written to it, and the limit. */
+  final private case class Written[S](s: S, used: Long, max: Long) {
+    def left: Long = max - used
+    def refused: RenderError = RenderError.TooLarge(max)
+
+    /** `piece`, ASCII, if it fits. */
+    def ascii(piece: String)(using sink: TextSink[S]): Either[RenderError, Written[S]] =
+      Either.cond(piece.length <= left, Written(sink.chars(s, piece, 0, piece.length), used + piece.length, max), refused)
+
+    /** `t` quoted and escaped, if it fits: its length is counted before any of it is written. */
+    def quoted(t: String)(using TextSink[S]): Either[RenderError, Written[S]] = {
+      val length = quotedLength(t)
+      Either.cond(length <= left, Written(escaped(t), used + length, max), refused)
+    }
+
+    // runs of characters that need no escape are written straight from the text
+    private def escaped(t: String)(using sink: TextSink[S]): S = {
+      def unescaped(acc: S, from: Int, until: Int): S = if (from < until) sink.chars(acc, t, from, until) else acc
+      @tailrec
+      def go(acc: S, run: Int, i: Int): S =
+        if (i >= t.length) sink.chars(unescaped(acc, run, i), "\"", 0, 1)
+        else
+          escape(t.charAt(i)) match {
+            case Some(e) => go(sink.chars(unescaped(acc, run, i), e, 0, e.length), i + 1, i + 1)
+            case None    => go(acc, run, i + 1)
+          }
+      go(sink.chars(s, "\"", 0, 1), 0, 0)
+    }
+  }
+
+  @tailrec
+  private def write[S](todo: List[Pending], out: Written[S])(using TextSink[S]): Either[RenderError, S] = {
+    val step: Either[RenderError, (List[Pending], Written[S])] =
+      todo match {
+        case Nil                     => (Nil, out).asRight
+        case Pending.Node(v) :: rest => node(v, out).map { case (opened, next) => (opened.fold(rest)(_ :: rest), next) }
+        case Pending.Items(items, i) :: rest =>
+          if (i >= items.size) out.ascii("]").map((rest, _))
+          else separated(out, i).map((Pending.Node(items(i)) :: Pending.Items(items, i + 1) :: rest, _))
+        case Pending.Members(members, i) :: rest =>
+          if (i >= members.size) out.ascii("}").map((rest, _))
+          else {
+            val (key, v) = members(i)
+            separated(out, i)
+              .flatMap(_.quoted(key))
+              .flatMap(_.ascii(":"))
+              .map((Pending.Node(v) :: Pending.Members(members, i + 1) :: rest, _))
+          }
+      }
+    step match {
+      case Right((Nil, done))     => done.s.asRight
+      case Right((next, written)) => write(next, written)
+      case Left(e)                => e.asLeft
+    }
+  }
+
+  // a comma before every part but the first
+  private def separated[S](out: Written[S], i: Int)(using TextSink[S]): Either[RenderError, Written[S]] =
+    if (i == 0) out.asRight else out.ascii(",")
+
+  /** One value: a scalar, written whole, or a container's opening bracket, its parts now pending. */
+  private def node[S](v: CanonicalValue, out: Written[S])(using TextSink[S]): Either[RenderError, (Option[Pending], Written[S])] =
+    if (v.weight > out.left) out.refused.asLeft
+    else
+      v match {
+        case CNull        => out.ascii("null").map((None, _))
+        case CBool(b)     => out.ascii(b.toString).map((None, _))
+        case i: CInt      => out.ascii(integerText(i)).map((None, _))
+        case r: CRational => rationalText(r).leftMap(RenderError.Canonical(_)).flatMap(out.ascii).map((None, _))
+        case t: CText     => out.quoted(t.value).map((None, _))
+        case CBytes(_)    => RenderError.Canonical(NotJsonRepresentable("bytes")).asLeft
+        case CArray(vs)   => out.ascii("[").map((Some(Pending.Items(vs, 0)), _))
+        case CMap(m)      => out.ascii("{").map((Some(Pending.Members(m.toVector.sortBy(_._1)(using CodePointOrder), 0)), _))
+      }
+
+  private def escape(c: Char): Option[String] =
+    c match {
+      case '"'          => Some("\\\"")
+      case '\\'         => Some("\\\\")
+      case '\n'         => Some("\\n")
+      case '\r'         => Some("\\r")
+      case '\t'         => Some("\\t")
+      case '\b'         => Some("\\b")
+      case '\f'         => Some("\\f")
+      case c if c < ' ' => Some(f"\\u${c.toInt}%04x")
+      case _            => None
+    }
+
+  /** The UTF-8 length of `t` quoted and escaped; a surrogate is half of a 4-byte pair, as text has no lone surrogates. */
+  private def quotedLength(t: String): Long =
+    t.foldLeft(2L) { (n, c) =>
+      n + escape(c).fold(if (c < 0x80) 1L else if (c < 0x800 || c.isSurrogate) 2L else 3L)(_.length.toLong)
+    }
 
   private[canonical] object CodePointOrder extends Ordering[String] {
     def compare(a: String, b: String): Int = {

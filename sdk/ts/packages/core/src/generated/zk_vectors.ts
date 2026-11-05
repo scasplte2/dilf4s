@@ -15,124 +15,43 @@ export interface ZkAdd {
   readonly result: ZkPointResult;
 }
 
-export const ZkAdd: c.Codec<ZkAdd> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("name", c.text, a.name, e),
-        c.field("a", c.defer(() => Hex), a.a, e),
-        c.field("b", c.defer(() => Hex), a.b, e),
-        c.field("result", c.defer(() => ZkPointResult), a.result, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["name", "a", "b", "result"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("name", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("a", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("b", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("result", c.defer(() => ZkPointResult));
-    if (!r3.ok) return r3;
-    return c.ok({ name: r0.value, a: r1.value, b: r2.value, result: r3.value });
-  },
-};
+export const ZkAdd: c.Codec<ZkAdd> = c.record<ZkAdd>({
+  name: c.required("name", c.text),
+  a: c.required("a", c.defer(() => Hex)),
+  b: c.required("b", c.defer(() => Hex)),
+  result: c.required("result", c.defer(() => ZkPointResult)),
+});
 
 /** `zk-bool` (`shared/schemas/zk-vectors.cddl`). */
 export interface ZkBool {
   readonly value: boolean;
 }
 
-export const ZkBool: c.Codec<ZkBool> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("value", c.bool, a.value, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["value"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("value", c.bool);
-    if (!r0.ok) return r0;
-    return c.ok({ value: r0.value });
-  },
-};
+export const ZkBool: c.Codec<ZkBool> = c.record<ZkBool>({
+  value: c.required("value", c.bool),
+});
 
 /** `zk-bool-result` (`shared/schemas/zk-vectors.cddl`). */
 export type ZkBoolResult = ZkBool | ZkFailure;
 
-export const ZkBoolResult: c.Codec<ZkBoolResult> = {
-  encode: (a, d) => {
-    const known = ["error", "value"];
-    if (c.hasFields(a, ZkBool, ["value"], ["value"], known)) return ZkBool.encode(a, d);
-    if (c.hasFields(a, ZkFailure, ["error"], ["error"], known)) return ZkFailure.encode(a, d);
-    return c.typeMismatch("no alternative of ZkBoolResult fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["value"], ["value"]], [["error"], ["error"]]], []);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return ZkBool.decode(v);
-      case 1:
-        return ZkFailure.decode(v);
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const ZkBoolResult: c.Codec<ZkBoolResult> = c.union<ZkBoolResult>("ZkBoolResult", [
+  c.alternative(c.defer(() => ZkBool), [["value"], ["value"]], [["value"], ["value"]]),
+  c.alternative(c.defer(() => ZkFailure), [["error"], ["error"]], [["error"], ["error"]]),
+], []);
 
 /** `zk-failure` (`shared/schemas/zk-vectors.cddl`). */
 export interface ZkFailure {
   readonly error: cryptoErrors.ZkErrorKind;
 }
 
-export const ZkFailure: c.Codec<ZkFailure> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("error", c.defer(() => cryptoErrors.ZkErrorKind), a.error, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["error"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("error", c.defer(() => cryptoErrors.ZkErrorKind));
-    if (!r0.ok) return r0;
-    return c.ok({ error: r0.value });
-  },
-};
+export const ZkFailure: c.Codec<ZkFailure> = c.record<ZkFailure>({
+  error: c.required("error", c.defer(() => cryptoErrors.ZkErrorKind)),
+});
 
 /** `zk-groth16-result` (`shared/schemas/zk-vectors.cddl`). */
 export type ZkGroth16Result = "verified" | cryptoErrors.Groth16ErrorKind;
 
-export const ZkGroth16Result: c.Codec<ZkGroth16Result> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["InvalidProof", "Malformed", "PairingCheckFailed", "Rejected", "verified"]);
-    return c.typeMismatch("no alternative of ZkGroth16Result fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["verified", "Malformed", "InvalidProof", "PairingCheckFailed", "Rejected"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<ZkGroth16Result>("verified");
-      case 1:
-        return c.ok<ZkGroth16Result>("Malformed");
-      case 2:
-        return c.ok<ZkGroth16Result>("InvalidProof");
-      case 3:
-        return c.ok<ZkGroth16Result>("PairingCheckFailed");
-      case 4:
-        return c.ok<ZkGroth16Result>("Rejected");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const ZkGroth16Result: c.Codec<ZkGroth16Result> = c.union<ZkGroth16Result>("ZkGroth16Result", [], ["verified", "Malformed", "InvalidProof", "PairingCheckFailed", "Rejected"]);
 
 /** `zk-mul` (`shared/schemas/zk-vectors.cddl`). */
 export interface ZkMul {
@@ -142,30 +61,12 @@ export interface ZkMul {
   readonly result: ZkPointResult;
 }
 
-export const ZkMul: c.Codec<ZkMul> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("name", c.text, a.name, e),
-        c.field("point", c.defer(() => Hex), a.point, e),
-        c.field("scalar", c.defer(() => Hex), a.scalar, e),
-        c.field("result", c.defer(() => ZkPointResult), a.result, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["name", "point", "scalar", "result"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("name", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("point", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("scalar", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("result", c.defer(() => ZkPointResult));
-    if (!r3.ok) return r3;
-    return c.ok({ name: r0.value, point: r1.value, scalar: r2.value, result: r3.value });
-  },
-};
+export const ZkMul: c.Codec<ZkMul> = c.record<ZkMul>({
+  name: c.required("name", c.text),
+  point: c.required("point", c.defer(() => Hex)),
+  scalar: c.required("scalar", c.defer(() => Hex)),
+  result: c.required("result", c.defer(() => ZkPointResult)),
+});
 
 /** `zk-pair` (`shared/schemas/zk-vectors.cddl`). */
 export interface ZkPair {
@@ -173,24 +74,10 @@ export interface ZkPair {
   readonly g2: Hex;
 }
 
-export const ZkPair: c.Codec<ZkPair> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("g1", c.defer(() => Hex), a.g1, e),
-        c.field("g2", c.defer(() => Hex), a.g2, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["g1", "g2"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("g1", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("g2", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    return c.ok({ g1: r0.value, g2: r1.value });
-  },
-};
+export const ZkPair: c.Codec<ZkPair> = c.record<ZkPair>({
+  g1: c.required("g1", c.defer(() => Hex)),
+  g2: c.required("g2", c.defer(() => Hex)),
+});
 
 /** `zk-pairing` (`shared/schemas/zk-vectors.cddl`). */
 export interface ZkPairing {
@@ -199,72 +86,28 @@ export interface ZkPairing {
   readonly result: ZkBoolResult;
 }
 
-export const ZkPairing: c.Codec<ZkPairing> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("name", c.text, a.name, e),
-        c.field("pairs", c.vector(c.defer(() => ZkPair), 0, null), a.pairs, e),
-        c.field("result", c.defer(() => ZkBoolResult), a.result, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["name", "pairs", "result"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("name", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("pairs", c.vector(c.defer(() => ZkPair), 0, null));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("result", c.defer(() => ZkBoolResult));
-    if (!r2.ok) return r2;
-    return c.ok({ name: r0.value, pairs: r1.value, result: r2.value });
-  },
-};
+export const ZkPairing: c.Codec<ZkPairing> = c.record<ZkPairing>({
+  name: c.required("name", c.text),
+  pairs: c.required("pairs", c.vector(c.defer(() => ZkPair), 0, null)),
+  result: c.required("result", c.defer(() => ZkBoolResult)),
+});
 
 /** `zk-point` (`shared/schemas/zk-vectors.cddl`). */
 export interface ZkPoint {
   readonly point: Hex;
 }
 
-export const ZkPoint: c.Codec<ZkPoint> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("point", c.defer(() => Hex), a.point, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["point"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("point", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    return c.ok({ point: r0.value });
-  },
-};
+export const ZkPoint: c.Codec<ZkPoint> = c.record<ZkPoint>({
+  point: c.required("point", c.defer(() => Hex)),
+});
 
 /** `zk-point-result` (`shared/schemas/zk-vectors.cddl`). */
 export type ZkPointResult = ZkPoint | ZkFailure;
 
-export const ZkPointResult: c.Codec<ZkPointResult> = {
-  encode: (a, d) => {
-    const known = ["error", "point"];
-    if (c.hasFields(a, ZkPoint, ["point"], ["point"], known)) return ZkPoint.encode(a, d);
-    if (c.hasFields(a, ZkFailure, ["error"], ["error"], known)) return ZkFailure.encode(a, d);
-    return c.typeMismatch("no alternative of ZkPointResult fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["point"], ["point"]], [["error"], ["error"]]], []);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return ZkPoint.decode(v);
-      case 1:
-        return ZkFailure.decode(v);
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const ZkPointResult: c.Codec<ZkPointResult> = c.union<ZkPointResult>("ZkPointResult", [
+  c.alternative(c.defer(() => ZkPoint), [["point"], ["point"]], [["point"], ["point"]]),
+  c.alternative(c.defer(() => ZkFailure), [["error"], ["error"]], [["error"], ["error"]]),
+], []);
 
 /** `zk-sp1-groth16` (`shared/schemas/zk-vectors.cddl`). */
 export interface ZkSp1Groth16 {
@@ -275,33 +118,13 @@ export interface ZkSp1Groth16 {
   readonly result: ZkGroth16Result;
 }
 
-export const ZkSp1Groth16: c.Codec<ZkSp1Groth16> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("name", c.text, a.name, e),
-        c.field("programVKey", c.defer(() => Hex), a.programVKey, e),
-        c.field("publicValues", c.defer(() => Hex), a.publicValues, e),
-        c.field("proofBytes", c.defer(() => Hex), a.proofBytes, e),
-        c.field("result", c.defer(() => ZkGroth16Result), a.result, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["name", "programVKey", "publicValues", "proofBytes", "result"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("name", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("programVKey", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("publicValues", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("proofBytes", c.defer(() => Hex));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("result", c.defer(() => ZkGroth16Result));
-    if (!r4.ok) return r4;
-    return c.ok({ name: r0.value, programVKey: r1.value, publicValues: r2.value, proofBytes: r3.value, result: r4.value });
-  },
-};
+export const ZkSp1Groth16: c.Codec<ZkSp1Groth16> = c.record<ZkSp1Groth16>({
+  name: c.required("name", c.text),
+  programVKey: c.required("programVKey", c.defer(() => Hex)),
+  publicValues: c.required("publicValues", c.defer(() => Hex)),
+  proofBytes: c.required("proofBytes", c.defer(() => Hex)),
+  result: c.required("result", c.defer(() => ZkGroth16Result)),
+});
 
 /** `zk-vectors` (`shared/schemas/zk-vectors.cddl`). */
 export interface ZkVectors {
@@ -314,36 +137,12 @@ export interface ZkVectors {
   readonly sp1Groth16: readonly ZkSp1Groth16[];
 }
 
-export const ZkVectors: c.Codec<ZkVectors> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spec", c.literalText("docs/specs/zk.md"), a.spec, e),
-        c.field("version", c.literalInt(1n), a.version, e),
-        c.field("source", c.text, a.source, e),
-        c.field("add", c.vector(c.defer(() => ZkAdd), 0, null), a.add, e),
-        c.field("mul", c.vector(c.defer(() => ZkMul), 0, null), a.mul, e),
-        c.field("pairing", c.vector(c.defer(() => ZkPairing), 0, null), a.pairing, e),
-        c.field("sp1Groth16", c.vector(c.defer(() => ZkSp1Groth16), 0, null), a.sp1Groth16, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "source", "add", "mul", "pairing", "sp1Groth16"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spec", c.literalText("docs/specs/zk.md"));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("version", c.literalInt(1n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("source", c.text);
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("add", c.vector(c.defer(() => ZkAdd), 0, null));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("mul", c.vector(c.defer(() => ZkMul), 0, null));
-    if (!r4.ok) return r4;
-    const r5 = f.value.required("pairing", c.vector(c.defer(() => ZkPairing), 0, null));
-    if (!r5.ok) return r5;
-    const r6 = f.value.required("sp1Groth16", c.vector(c.defer(() => ZkSp1Groth16), 0, null));
-    if (!r6.ok) return r6;
-    return c.ok({ spec: r0.value, version: r1.value, source: r2.value, add: r3.value, mul: r4.value, pairing: r5.value, sp1Groth16: r6.value });
-  },
-};
+export const ZkVectors: c.Codec<ZkVectors> = c.record<ZkVectors>({
+  spec: c.required("spec", c.literalText("docs/specs/zk.md")),
+  version: c.required("version", c.literalInt(1n)),
+  source: c.required("source", c.text),
+  add: c.required("add", c.vector(c.defer(() => ZkAdd), 0, null)),
+  mul: c.required("mul", c.vector(c.defer(() => ZkMul), 0, null)),
+  pairing: c.required("pairing", c.vector(c.defer(() => ZkPairing), 0, null)),
+  sp1Groth16: c.required("sp1Groth16", c.vector(c.defer(() => ZkSp1Groth16), 0, null)),
+});

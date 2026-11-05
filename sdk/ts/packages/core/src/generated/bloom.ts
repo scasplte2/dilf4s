@@ -8,24 +8,8 @@ export interface BloomFilter {
   readonly b: Uint8Array;
 }
 
-export const BloomFilter: c.Codec<BloomFilter> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("m", c.intRange(64n, 16777216n), a.m, e),
-        c.field("k", c.intRange(1n, 32n), a.k, e),
-        c.field("b", c.bytes, a.b, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["m", "k", "b"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("m", c.intRange(64n, 16777216n));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("k", c.intRange(1n, 32n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("b", c.bytes);
-    if (!r2.ok) return r2;
-    return c.ok({ m: r0.value, k: r1.value, b: r2.value });
-  },
-};
+export const BloomFilter: c.Codec<BloomFilter> = c.record<BloomFilter>({
+  m: c.required("m", c.intRange(64n, 16777216n)),
+  k: c.required("k", c.intRange(1n, 32n)),
+  b: c.required("b", c.bytes),
+});

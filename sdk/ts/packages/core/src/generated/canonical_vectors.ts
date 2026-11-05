@@ -8,27 +8,11 @@ export interface CanonicalCborRejection {
   readonly limit?: bigint;
 }
 
-export const CanonicalCborRejection: c.Codec<CanonicalCborRejection> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("cbor", c.defer(() => Hex), a.cbor, e),
-        c.field("error", c.defer(() => CanonicalErrorKind), a.error, e),
-        c.optionalField("limit", c.uint, a.limit, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["cbor", "error", "limit"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("cbor", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("error", c.defer(() => CanonicalErrorKind));
-    if (!r1.ok) return r1;
-    const r2 = f.value.optional("limit", c.uint);
-    if (!r2.ok) return r2;
-    return c.ok({ cbor: r0.value, error: r1.value, limit: r2.value });
-  },
-};
+export const CanonicalCborRejection: c.Codec<CanonicalCborRejection> = c.record<CanonicalCborRejection>({
+  cbor: c.required("cbor", c.defer(() => Hex)),
+  error: c.required("error", c.defer(() => CanonicalErrorKind)),
+  limit: c.optional("limit", c.uint),
+});
 
 /** `canonical-digest` (`shared/schemas/canonical-vectors.cddl`). */
 export interface CanonicalDigest {
@@ -37,27 +21,11 @@ export interface CanonicalDigest {
   readonly digest: Hex;
 }
 
-export const CanonicalDigest: c.Codec<CanonicalDigest> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("algorithm", c.text, a.algorithm, e),
-        c.field("message", c.defer(() => Hex), a.message, e),
-        c.field("digest", c.defer(() => Hex), a.digest, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["algorithm", "message", "digest"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("algorithm", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("message", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("digest", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    return c.ok({ algorithm: r0.value, message: r1.value, digest: r2.value });
-  },
-};
+export const CanonicalDigest: c.Codec<CanonicalDigest> = c.record<CanonicalDigest>({
+  algorithm: c.required("algorithm", c.text),
+  message: c.required("message", c.defer(() => Hex)),
+  digest: c.required("digest", c.defer(() => Hex)),
+});
 
 /** `canonical-domain-tag` (`shared/schemas/canonical-vectors.cddl`). */
 export interface CanonicalDomainTag {
@@ -65,70 +33,15 @@ export interface CanonicalDomainTag {
   readonly outcome: DomainTagOutcome;
 }
 
-export const CanonicalDomainTag: c.Codec<CanonicalDomainTag> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("tag", c.text, a.tag, e),
-        c.field("outcome", c.defer(() => DomainTagOutcome), a.outcome, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["tag", "outcome"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("tag", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("outcome", c.defer(() => DomainTagOutcome));
-    if (!r1.ok) return r1;
-    return c.ok({ tag: r0.value, outcome: r1.value });
-  },
-};
+export const CanonicalDomainTag: c.Codec<CanonicalDomainTag> = c.record<CanonicalDomainTag>({
+  tag: c.required("tag", c.text),
+  outcome: c.required("outcome", c.defer(() => DomainTagOutcome)),
+});
 
 /** `canonical-error-kind` (`shared/schemas/canonical-vectors.cddl`). */
 export type CanonicalErrorKind = "UnpairedSurrogate" | "DuplicateKey" | "RationalTooWide" | "IntegerTooWide" | "JsonSyntax" | "InvalidNumber" | "NotJsonRepresentable" | "TypeMismatch" | "UnexpectedEnd" | "TrailingBytes" | "DepthExceeded" | "NonCanonical" | "Unsupported" | "InvalidUtf8";
 
-export const CanonicalErrorKind: c.Codec<CanonicalErrorKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["DepthExceeded", "DuplicateKey", "IntegerTooWide", "InvalidNumber", "InvalidUtf8", "JsonSyntax", "NonCanonical", "NotJsonRepresentable", "RationalTooWide", "TrailingBytes", "TypeMismatch", "UnexpectedEnd", "UnpairedSurrogate", "Unsupported"]);
-    return c.typeMismatch("no alternative of CanonicalErrorKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["UnpairedSurrogate", "DuplicateKey", "RationalTooWide", "IntegerTooWide", "JsonSyntax", "InvalidNumber", "NotJsonRepresentable", "TypeMismatch", "UnexpectedEnd", "TrailingBytes", "DepthExceeded", "NonCanonical", "Unsupported", "InvalidUtf8"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<CanonicalErrorKind>("UnpairedSurrogate");
-      case 1:
-        return c.ok<CanonicalErrorKind>("DuplicateKey");
-      case 2:
-        return c.ok<CanonicalErrorKind>("RationalTooWide");
-      case 3:
-        return c.ok<CanonicalErrorKind>("IntegerTooWide");
-      case 4:
-        return c.ok<CanonicalErrorKind>("JsonSyntax");
-      case 5:
-        return c.ok<CanonicalErrorKind>("InvalidNumber");
-      case 6:
-        return c.ok<CanonicalErrorKind>("NotJsonRepresentable");
-      case 7:
-        return c.ok<CanonicalErrorKind>("TypeMismatch");
-      case 8:
-        return c.ok<CanonicalErrorKind>("UnexpectedEnd");
-      case 9:
-        return c.ok<CanonicalErrorKind>("TrailingBytes");
-      case 10:
-        return c.ok<CanonicalErrorKind>("DepthExceeded");
-      case 11:
-        return c.ok<CanonicalErrorKind>("NonCanonical");
-      case 12:
-        return c.ok<CanonicalErrorKind>("Unsupported");
-      case 13:
-        return c.ok<CanonicalErrorKind>("InvalidUtf8");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const CanonicalErrorKind: c.Codec<CanonicalErrorKind> = c.union<CanonicalErrorKind>("CanonicalErrorKind", [], ["UnpairedSurrogate", "DuplicateKey", "RationalTooWide", "IntegerTooWide", "JsonSyntax", "InvalidNumber", "NotJsonRepresentable", "TypeMismatch", "UnexpectedEnd", "TrailingBytes", "DepthExceeded", "NonCanonical", "Unsupported", "InvalidUtf8"]);
 
 /** `canonical-json-accepted` (`shared/schemas/canonical-vectors.cddl`). */
 export interface CanonicalJsonAccepted {
@@ -138,54 +51,20 @@ export interface CanonicalJsonAccepted {
   readonly render: string;
 }
 
-export const CanonicalJsonAccepted: c.Codec<CanonicalJsonAccepted> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("json", c.text, a.json, e),
-        c.field("cbor", c.defer(() => Hex), a.cbor, e),
-        c.field("contentHash", c.defer(() => Hex), a.contentHash, e),
-        c.field("render", c.text, a.render, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["json", "cbor", "contentHash", "render"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("json", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("cbor", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("contentHash", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("render", c.text);
-    if (!r3.ok) return r3;
-    return c.ok({ json: r0.value, cbor: r1.value, contentHash: r2.value, render: r3.value });
-  },
-};
+export const CanonicalJsonAccepted: c.Codec<CanonicalJsonAccepted> = c.record<CanonicalJsonAccepted>({
+  json: c.required("json", c.text),
+  cbor: c.required("cbor", c.defer(() => Hex)),
+  contentHash: c.required("contentHash", c.defer(() => Hex)),
+  render: c.required("render", c.text),
+});
 
 /** `canonical-json-case` (`shared/schemas/canonical-vectors.cddl`). */
 export type CanonicalJsonCase = CanonicalJsonAccepted | CanonicalJsonRejected;
 
-export const CanonicalJsonCase: c.Codec<CanonicalJsonCase> = {
-  encode: (a, d) => {
-    const known = ["cbor", "contentHash", "error", "json", "limit", "render"];
-    if (c.hasFields(a, CanonicalJsonAccepted, ["cbor", "contentHash", "json", "render"], ["cbor", "contentHash", "json", "render"], known)) return CanonicalJsonAccepted.encode(a, d);
-    if (c.hasFields(a, CanonicalJsonRejected, ["error", "json"], ["error", "json", "limit"], known)) return CanonicalJsonRejected.encode(a, d);
-    return c.typeMismatch("no alternative of CanonicalJsonCase fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["cbor", "contentHash", "json", "render"], ["cbor", "contentHash", "json", "render"]], [["error", "json"], ["error", "json", "limit"]]], []);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return CanonicalJsonAccepted.decode(v);
-      case 1:
-        return CanonicalJsonRejected.decode(v);
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const CanonicalJsonCase: c.Codec<CanonicalJsonCase> = c.union<CanonicalJsonCase>("CanonicalJsonCase", [
+  c.alternative(c.defer(() => CanonicalJsonAccepted), [["cbor", "contentHash", "json", "render"], ["cbor", "contentHash", "json", "render"]], [["cbor", "contentHash", "json", "render"], ["cbor", "contentHash", "json", "render"]]),
+  c.alternative(c.defer(() => CanonicalJsonRejected), [["error", "json"], ["error", "json", "limit"]], [["error", "json"], ["error", "json", "limit"]]),
+], []);
 
 /** `canonical-json-rejected` (`shared/schemas/canonical-vectors.cddl`). */
 export interface CanonicalJsonRejected {
@@ -194,27 +73,11 @@ export interface CanonicalJsonRejected {
   readonly limit?: bigint;
 }
 
-export const CanonicalJsonRejected: c.Codec<CanonicalJsonRejected> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("json", c.text, a.json, e),
-        c.field("error", c.defer(() => CanonicalErrorKind), a.error, e),
-        c.optionalField("limit", c.uint, a.limit, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["json", "error", "limit"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("json", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("error", c.defer(() => CanonicalErrorKind));
-    if (!r1.ok) return r1;
-    const r2 = f.value.optional("limit", c.uint);
-    if (!r2.ok) return r2;
-    return c.ok({ json: r0.value, error: r1.value, limit: r2.value });
-  },
-};
+export const CanonicalJsonRejected: c.Codec<CanonicalJsonRejected> = c.record<CanonicalJsonRejected>({
+  json: c.required("json", c.text),
+  error: c.required("error", c.defer(() => CanonicalErrorKind)),
+  limit: c.optional("limit", c.uint),
+});
 
 /** `canonical-model-case` (`shared/schemas/canonical-vectors.cddl`). */
 export interface CanonicalModelCase {
@@ -223,27 +86,11 @@ export interface CanonicalModelCase {
   readonly contentHash: Hex;
 }
 
-export const CanonicalModelCase: c.Codec<CanonicalModelCase> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("value", c.text, a.value, e),
-        c.field("cbor", c.defer(() => Hex), a.cbor, e),
-        c.field("contentHash", c.defer(() => Hex), a.contentHash, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["value", "cbor", "contentHash"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("value", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("cbor", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("contentHash", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    return c.ok({ value: r0.value, cbor: r1.value, contentHash: r2.value });
-  },
-};
+export const CanonicalModelCase: c.Codec<CanonicalModelCase> = c.record<CanonicalModelCase>({
+  value: c.required("value", c.text),
+  cbor: c.required("cbor", c.defer(() => Hex)),
+  contentHash: c.required("contentHash", c.defer(() => Hex)),
+});
 
 /** `canonical-render-rejection` (`shared/schemas/canonical-vectors.cddl`). */
 export interface CanonicalRenderRejection {
@@ -251,24 +98,10 @@ export interface CanonicalRenderRejection {
   readonly error: CanonicalErrorKind;
 }
 
-export const CanonicalRenderRejection: c.Codec<CanonicalRenderRejection> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("cbor", c.defer(() => Hex), a.cbor, e),
-        c.field("error", c.defer(() => CanonicalErrorKind), a.error, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["cbor", "error"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("cbor", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("error", c.defer(() => CanonicalErrorKind));
-    if (!r1.ok) return r1;
-    return c.ok({ cbor: r0.value, error: r1.value });
-  },
-};
+export const CanonicalRenderRejection: c.Codec<CanonicalRenderRejection> = c.record<CanonicalRenderRejection>({
+  cbor: c.required("cbor", c.defer(() => Hex)),
+  error: c.required("error", c.defer(() => CanonicalErrorKind)),
+});
 
 /** `canonical-tagged-hash` (`shared/schemas/canonical-vectors.cddl`). */
 export interface CanonicalTaggedHash {
@@ -278,30 +111,12 @@ export interface CanonicalTaggedHash {
   readonly digest: Hex;
 }
 
-export const CanonicalTaggedHash: c.Codec<CanonicalTaggedHash> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("algorithm", c.text, a.algorithm, e),
-        c.field("tag", c.text, a.tag, e),
-        c.field("message", c.defer(() => Hex), a.message, e),
-        c.field("digest", c.defer(() => Hex), a.digest, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["algorithm", "tag", "message", "digest"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("algorithm", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("tag", c.text);
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("message", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("digest", c.defer(() => Hex));
-    if (!r3.ok) return r3;
-    return c.ok({ algorithm: r0.value, tag: r1.value, message: r2.value, digest: r3.value });
-  },
-};
+export const CanonicalTaggedHash: c.Codec<CanonicalTaggedHash> = c.record<CanonicalTaggedHash>({
+  algorithm: c.required("algorithm", c.text),
+  tag: c.required("tag", c.text),
+  message: c.required("message", c.defer(() => Hex)),
+  digest: c.required("digest", c.defer(() => Hex)),
+});
 
 /** `canonical-vectors` (`shared/schemas/canonical-vectors.cddl`). */
 export interface CanonicalVectors {
@@ -318,73 +133,24 @@ export interface CanonicalVectors {
   readonly domainTags: readonly CanonicalDomainTag[];
 }
 
-export const CanonicalVectors: c.Codec<CanonicalVectors> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spec", c.literalText("docs/specs/canonical-encoding.md"), a.spec, e),
-        c.field("version", c.literalInt(1n), a.version, e),
-        c.field("contentHashTag", c.text, a.contentHashTag, e),
-        c.field("contentHashAlgorithm", c.text, a.contentHashAlgorithm, e),
-        c.field("json", c.vector(c.defer(() => CanonicalJsonCase), 0, null), a.json, e),
-        c.field("model", c.vector(c.defer(() => CanonicalModelCase), 0, null), a.model, e),
-        c.field("renderRejections", c.vector(c.defer(() => CanonicalRenderRejection), 0, null), a.renderRejections, e),
-        c.field("cborRejections", c.vector(c.defer(() => CanonicalCborRejection), 0, null), a.cborRejections, e),
-        c.field("taggedHash", c.vector(c.defer(() => CanonicalTaggedHash), 0, null), a.taggedHash, e),
-        c.field("digests", c.vector(c.defer(() => CanonicalDigest), 0, null), a.digests, e),
-        c.field("domainTags", c.vector(c.defer(() => CanonicalDomainTag), 0, null), a.domainTags, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "contentHashTag", "contentHashAlgorithm", "json", "model", "renderRejections", "cborRejections", "taggedHash", "digests", "domainTags"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spec", c.literalText("docs/specs/canonical-encoding.md"));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("version", c.literalInt(1n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("contentHashTag", c.text);
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("contentHashAlgorithm", c.text);
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("json", c.vector(c.defer(() => CanonicalJsonCase), 0, null));
-    if (!r4.ok) return r4;
-    const r5 = f.value.required("model", c.vector(c.defer(() => CanonicalModelCase), 0, null));
-    if (!r5.ok) return r5;
-    const r6 = f.value.required("renderRejections", c.vector(c.defer(() => CanonicalRenderRejection), 0, null));
-    if (!r6.ok) return r6;
-    const r7 = f.value.required("cborRejections", c.vector(c.defer(() => CanonicalCborRejection), 0, null));
-    if (!r7.ok) return r7;
-    const r8 = f.value.required("taggedHash", c.vector(c.defer(() => CanonicalTaggedHash), 0, null));
-    if (!r8.ok) return r8;
-    const r9 = f.value.required("digests", c.vector(c.defer(() => CanonicalDigest), 0, null));
-    if (!r9.ok) return r9;
-    const r10 = f.value.required("domainTags", c.vector(c.defer(() => CanonicalDomainTag), 0, null));
-    if (!r10.ok) return r10;
-    return c.ok({ spec: r0.value, version: r1.value, contentHashTag: r2.value, contentHashAlgorithm: r3.value, json: r4.value, model: r5.value, renderRejections: r6.value, cborRejections: r7.value, taggedHash: r8.value, digests: r9.value, domainTags: r10.value });
-  },
-};
+export const CanonicalVectors: c.Codec<CanonicalVectors> = c.record<CanonicalVectors>({
+  spec: c.required("spec", c.literalText("docs/specs/canonical-encoding.md")),
+  version: c.required("version", c.literalInt(1n)),
+  contentHashTag: c.required("contentHashTag", c.text),
+  contentHashAlgorithm: c.required("contentHashAlgorithm", c.text),
+  json: c.required("json", c.vector(c.defer(() => CanonicalJsonCase), 0, null)),
+  model: c.required("model", c.vector(c.defer(() => CanonicalModelCase), 0, null)),
+  renderRejections: c.required("renderRejections", c.vector(c.defer(() => CanonicalRenderRejection), 0, null)),
+  cborRejections: c.required("cborRejections", c.vector(c.defer(() => CanonicalCborRejection), 0, null)),
+  taggedHash: c.required("taggedHash", c.vector(c.defer(() => CanonicalTaggedHash), 0, null)),
+  digests: c.required("digests", c.vector(c.defer(() => CanonicalDigest), 0, null)),
+  domainTags: c.required("domainTags", c.vector(c.defer(() => CanonicalDomainTag), 0, null)),
+});
 
 /** `domain-tag-outcome` (`shared/schemas/canonical-vectors.cddl`). */
 export type DomainTagOutcome = "accepted" | "InvalidDomainTag";
 
-export const DomainTagOutcome: c.Codec<DomainTagOutcome> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["InvalidDomainTag", "accepted"]);
-    return c.typeMismatch("no alternative of DomainTagOutcome fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["accepted", "InvalidDomainTag"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<DomainTagOutcome>("accepted");
-      case 1:
-        return c.ok<DomainTagOutcome>("InvalidDomainTag");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const DomainTagOutcome: c.Codec<DomainTagOutcome> = c.union<DomainTagOutcome>("DomainTagOutcome", [], ["accepted", "InvalidDomainTag"]);
 
 /** `hex` (`shared/schemas/canonical-vectors.cddl`). */
 export type Hex = string;

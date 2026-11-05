@@ -6,45 +6,17 @@ export interface BuiltCopies {
   readonly copies: bigint;
 }
 
-export const BuiltCopies: c.Codec<BuiltCopies> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("copies", c.uint, a.copies, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["copies"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("copies", c.uint);
-    if (!r0.ok) return r0;
-    return c.ok({ copies: r0.value });
-  },
-};
+export const BuiltCopies: c.Codec<BuiltCopies> = c.record<BuiltCopies>({
+  copies: c.required("copies", c.uint),
+});
 
 /** `built-step` (`shared/schemas/refusal-vectors.cddl`). */
 export type BuiltStep = BuiltWrap | BuiltCopies;
 
-export const BuiltStep: c.Codec<BuiltStep> = {
-  encode: (a, d) => {
-    const known = ["copies", "template", "times"];
-    if (c.hasFields(a, BuiltWrap, ["template", "times"], ["template", "times"], known)) return BuiltWrap.encode(a, d);
-    if (c.hasFields(a, BuiltCopies, ["copies"], ["copies"], known)) return BuiltCopies.encode(a, d);
-    return c.typeMismatch("no alternative of BuiltStep fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["template", "times"], ["template", "times"]], [["copies"], ["copies"]]], []);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return BuiltWrap.decode(v);
-      case 1:
-        return BuiltCopies.decode(v);
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const BuiltStep: c.Codec<BuiltStep> = c.union<BuiltStep>("BuiltStep", [
+  c.alternative(c.defer(() => BuiltWrap), [["template", "times"], ["template", "times"]], [["template", "times"], ["template", "times"]]),
+  c.alternative(c.defer(() => BuiltCopies), [["copies"], ["copies"]], [["copies"], ["copies"]]),
+], []);
 
 /** `built-value` (`shared/schemas/refusal-vectors.cddl`). */
 export interface BuiltValue {
@@ -52,24 +24,10 @@ export interface BuiltValue {
   readonly steps?: readonly BuiltStep[];
 }
 
-export const BuiltValue: c.Codec<BuiltValue> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("leaf", c.defer(() => Hex), a.leaf, e),
-        c.optionalField("steps", c.vector(c.defer(() => BuiltStep), 0, null), a.steps, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["leaf", "steps"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("leaf", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("steps", c.vector(c.defer(() => BuiltStep), 0, null));
-    if (!r1.ok) return r1;
-    return c.ok({ leaf: r0.value, steps: r1.value });
-  },
-};
+export const BuiltValue: c.Codec<BuiltValue> = c.record<BuiltValue>({
+  leaf: c.required("leaf", c.defer(() => Hex)),
+  steps: c.optional("steps", c.vector(c.defer(() => BuiltStep), 0, null)),
+});
 
 /** `built-wrap` (`shared/schemas/refusal-vectors.cddl`). */
 export interface BuiltWrap {
@@ -77,24 +35,10 @@ export interface BuiltWrap {
   readonly times: bigint;
 }
 
-export const BuiltWrap: c.Codec<BuiltWrap> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("template", c.defer(() => Hex), a.template, e),
-        c.field("times", c.uint, a.times, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["template", "times"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("template", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("times", c.uint);
-    if (!r1.ok) return r1;
-    return c.ok({ template: r0.value, times: r1.value });
-  },
-};
+export const BuiltWrap: c.Codec<BuiltWrap> = c.record<BuiltWrap>({
+  template: c.required("template", c.defer(() => Hex)),
+  times: c.required("times", c.uint),
+});
 
 /** `hex` (`shared/schemas/refusal-vectors.cddl`). */
 export type Hex = string;
@@ -124,123 +68,32 @@ export interface RefusalCase {
   readonly outcome: RefusalOutcome;
 }
 
-export const RefusalCase: c.Codec<RefusalCase> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("name", c.text, a.name, e),
-        c.field("check", c.defer(() => RefusalCheck), a.check, e),
-        c.optionalField("input", c.defer(() => BuiltValue), a.input, e),
-        c.optionalField("inputs", c.vector(c.defer(() => BuiltValue), 0, null), a.inputs, e),
-        c.optionalField("zeros", c.uint, a.zeros, e),
-        c.optionalField("chunk", c.defer(() => Hex), a.chunk, e),
-        c.optionalField("mode", c.defer(() => RefusalMode), a.mode, e),
-        c.optionalField("root", c.defer(() => Hex), a.root, e),
-        c.optionalField("oldRoot", c.defer(() => Hex), a.oldRoot, e),
-        c.optionalField("leafHash", c.defer(() => Hex), a.leafHash, e),
-        c.optionalField("key", c.defer(() => Hex), a.key, e),
-        c.optionalField("stateKey", c.text, a.stateKey, e),
-        c.optionalField("at", c.uint, a.at, e),
-        c.optionalField("size", c.uint, a.size, e),
-        c.optionalField("prefix", c.defer(() => Hex), a.prefix, e),
-        c.optionalField("claim", c.defer(() => BuiltValue), a.claim, e),
-        c.optionalField("entries", c.vector(c.defer(() => RefusalEntry), 0, null), a.entries, e),
-        c.optionalField("batch", c.vector(c.defer(() => RefusalUpsert), 0, null), a.batch, e),
-        c.field("outcome", c.defer(() => RefusalOutcome), a.outcome, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["name", "check", "input", "inputs", "zeros", "chunk", "mode", "root", "oldRoot", "leafHash", "key", "stateKey", "at", "size", "prefix", "claim", "entries", "batch", "outcome"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("name", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("check", c.defer(() => RefusalCheck));
-    if (!r1.ok) return r1;
-    const r2 = f.value.optional("input", c.defer(() => BuiltValue));
-    if (!r2.ok) return r2;
-    const r3 = f.value.optional("inputs", c.vector(c.defer(() => BuiltValue), 0, null));
-    if (!r3.ok) return r3;
-    const r4 = f.value.optional("zeros", c.uint);
-    if (!r4.ok) return r4;
-    const r5 = f.value.optional("chunk", c.defer(() => Hex));
-    if (!r5.ok) return r5;
-    const r6 = f.value.optional("mode", c.defer(() => RefusalMode));
-    if (!r6.ok) return r6;
-    const r7 = f.value.optional("root", c.defer(() => Hex));
-    if (!r7.ok) return r7;
-    const r8 = f.value.optional("oldRoot", c.defer(() => Hex));
-    if (!r8.ok) return r8;
-    const r9 = f.value.optional("leafHash", c.defer(() => Hex));
-    if (!r9.ok) return r9;
-    const r10 = f.value.optional("key", c.defer(() => Hex));
-    if (!r10.ok) return r10;
-    const r11 = f.value.optional("stateKey", c.text);
-    if (!r11.ok) return r11;
-    const r12 = f.value.optional("at", c.uint);
-    if (!r12.ok) return r12;
-    const r13 = f.value.optional("size", c.uint);
-    if (!r13.ok) return r13;
-    const r14 = f.value.optional("prefix", c.defer(() => Hex));
-    if (!r14.ok) return r14;
-    const r15 = f.value.optional("claim", c.defer(() => BuiltValue));
-    if (!r15.ok) return r15;
-    const r16 = f.value.optional("entries", c.vector(c.defer(() => RefusalEntry), 0, null));
-    if (!r16.ok) return r16;
-    const r17 = f.value.optional("batch", c.vector(c.defer(() => RefusalUpsert), 0, null));
-    if (!r17.ok) return r17;
-    const r18 = f.value.required("outcome", c.defer(() => RefusalOutcome));
-    if (!r18.ok) return r18;
-    return c.ok({ name: r0.value, check: r1.value, input: r2.value, inputs: r3.value, zeros: r4.value, chunk: r5.value, mode: r6.value, root: r7.value, oldRoot: r8.value, leafHash: r9.value, key: r10.value, stateKey: r11.value, at: r12.value, size: r13.value, prefix: r14.value, claim: r15.value, entries: r16.value, batch: r17.value, outcome: r18.value });
-  },
-};
+export const RefusalCase: c.Codec<RefusalCase> = c.record<RefusalCase>({
+  name: c.required("name", c.text),
+  check: c.required("check", c.defer(() => RefusalCheck)),
+  input: c.optional("input", c.defer(() => BuiltValue)),
+  inputs: c.optional("inputs", c.vector(c.defer(() => BuiltValue), 0, null)),
+  zeros: c.optional("zeros", c.uint),
+  chunk: c.optional("chunk", c.defer(() => Hex)),
+  mode: c.optional("mode", c.defer(() => RefusalMode)),
+  root: c.optional("root", c.defer(() => Hex)),
+  oldRoot: c.optional("oldRoot", c.defer(() => Hex)),
+  leafHash: c.optional("leafHash", c.defer(() => Hex)),
+  key: c.optional("key", c.defer(() => Hex)),
+  stateKey: c.optional("stateKey", c.text),
+  at: c.optional("at", c.uint),
+  size: c.optional("size", c.uint),
+  prefix: c.optional("prefix", c.defer(() => Hex)),
+  claim: c.optional("claim", c.defer(() => BuiltValue)),
+  entries: c.optional("entries", c.vector(c.defer(() => RefusalEntry), 0, null)),
+  batch: c.optional("batch", c.vector(c.defer(() => RefusalUpsert), 0, null)),
+  outcome: c.required("outcome", c.defer(() => RefusalOutcome)),
+});
 
 /** `refusal-check` (`shared/schemas/refusal-vectors.cddl`). */
 export type RefusalCheck = "vt-value" | "vt-chunk" | "vt-delta" | "vt-proof" | "vt-state" | "vt-historical" | "vt-replica" | "merkle-inclusion" | "merkle-consistency" | "trie-lookup" | "poseidon-proof" | "merkle-verify" | "trie-verify" | "trie-prefix-verify" | "vt-commit";
 
-export const RefusalCheck: c.Codec<RefusalCheck> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["merkle-consistency", "merkle-inclusion", "merkle-verify", "poseidon-proof", "trie-lookup", "trie-prefix-verify", "trie-verify", "vt-chunk", "vt-commit", "vt-delta", "vt-historical", "vt-proof", "vt-replica", "vt-state", "vt-value"]);
-    return c.typeMismatch("no alternative of RefusalCheck fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["vt-value", "vt-chunk", "vt-delta", "vt-proof", "vt-state", "vt-historical", "vt-replica", "merkle-inclusion", "merkle-consistency", "trie-lookup", "poseidon-proof", "merkle-verify", "trie-verify", "trie-prefix-verify", "vt-commit"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<RefusalCheck>("vt-value");
-      case 1:
-        return c.ok<RefusalCheck>("vt-chunk");
-      case 2:
-        return c.ok<RefusalCheck>("vt-delta");
-      case 3:
-        return c.ok<RefusalCheck>("vt-proof");
-      case 4:
-        return c.ok<RefusalCheck>("vt-state");
-      case 5:
-        return c.ok<RefusalCheck>("vt-historical");
-      case 6:
-        return c.ok<RefusalCheck>("vt-replica");
-      case 7:
-        return c.ok<RefusalCheck>("merkle-inclusion");
-      case 8:
-        return c.ok<RefusalCheck>("merkle-consistency");
-      case 9:
-        return c.ok<RefusalCheck>("trie-lookup");
-      case 10:
-        return c.ok<RefusalCheck>("poseidon-proof");
-      case 11:
-        return c.ok<RefusalCheck>("merkle-verify");
-      case 12:
-        return c.ok<RefusalCheck>("trie-verify");
-      case 13:
-        return c.ok<RefusalCheck>("trie-prefix-verify");
-      case 14:
-        return c.ok<RefusalCheck>("vt-commit");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const RefusalCheck: c.Codec<RefusalCheck> = c.union<RefusalCheck>("RefusalCheck", [], ["vt-value", "vt-chunk", "vt-delta", "vt-proof", "vt-state", "vt-historical", "vt-replica", "merkle-inclusion", "merkle-consistency", "trie-lookup", "poseidon-proof", "merkle-verify", "trie-verify", "trie-prefix-verify", "vt-commit"]);
 
 /** `refusal-entry` (`shared/schemas/refusal-vectors.cddl`). */
 export interface RefusalEntry {
@@ -248,24 +101,10 @@ export interface RefusalEntry {
   readonly value: BuiltValue;
 }
 
-export const RefusalEntry: c.Codec<RefusalEntry> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("key", c.defer(() => Hex), a.key, e),
-        c.field("value", c.defer(() => BuiltValue), a.value, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["key", "value"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("key", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("value", c.defer(() => BuiltValue));
-    if (!r1.ok) return r1;
-    return c.ok({ key: r0.value, value: r1.value });
-  },
-};
+export const RefusalEntry: c.Codec<RefusalEntry> = c.record<RefusalEntry>({
+  key: c.required("key", c.defer(() => Hex)),
+  value: c.required("value", c.defer(() => BuiltValue)),
+});
 
 /** `refusal-error` (`shared/schemas/refusal-vectors.cddl`). */
 export interface RefusalError {
@@ -275,99 +114,36 @@ export interface RefusalError {
   readonly component?: string;
 }
 
-export const RefusalError: c.Codec<RefusalError> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("kind", c.text, a.kind, e),
-        c.optionalField("limit", c.uint, a.limit, e),
-        c.optionalField("depth", c.uint, a.depth, e),
-        c.optionalField("component", c.text, a.component, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["kind", "limit", "depth", "component"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("kind", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("limit", c.uint);
-    if (!r1.ok) return r1;
-    const r2 = f.value.optional("depth", c.uint);
-    if (!r2.ok) return r2;
-    const r3 = f.value.optional("component", c.text);
-    if (!r3.ok) return r3;
-    return c.ok({ kind: r0.value, limit: r1.value, depth: r2.value, component: r3.value });
-  },
-};
+export const RefusalError: c.Codec<RefusalError> = c.record<RefusalError>({
+  kind: c.required("kind", c.text),
+  limit: c.optional("limit", c.uint),
+  depth: c.optional("depth", c.uint),
+  component: c.optional("component", c.text),
+});
 
 /** `refusal-fixed-mode` (`shared/schemas/refusal-vectors.cddl`). */
 export interface RefusalFixedMode {
   readonly fixed: bigint;
 }
 
-export const RefusalFixedMode: c.Codec<RefusalFixedMode> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("fixed", c.uint, a.fixed, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["fixed"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("fixed", c.uint);
-    if (!r0.ok) return r0;
-    return c.ok({ fixed: r0.value });
-  },
-};
+export const RefusalFixedMode: c.Codec<RefusalFixedMode> = c.record<RefusalFixedMode>({
+  fixed: c.required("fixed", c.uint),
+});
 
 /** `refusal-mode` (`shared/schemas/refusal-vectors.cddl`). */
 export type RefusalMode = RefusalFixedMode | RefusalVariableMode;
 
-export const RefusalMode: c.Codec<RefusalMode> = {
-  encode: (a, d) => {
-    const known = ["fixed", "variable"];
-    if (c.hasFields(a, RefusalFixedMode, ["fixed"], ["fixed"], known)) return RefusalFixedMode.encode(a, d);
-    if (c.hasFields(a, RefusalVariableMode, ["variable"], ["variable"], known)) return RefusalVariableMode.encode(a, d);
-    return c.typeMismatch("no alternative of RefusalMode fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["fixed"], ["fixed"]], [["variable"], ["variable"]]], []);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return RefusalFixedMode.decode(v);
-      case 1:
-        return RefusalVariableMode.decode(v);
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const RefusalMode: c.Codec<RefusalMode> = c.union<RefusalMode>("RefusalMode", [
+  c.alternative(c.defer(() => RefusalFixedMode), [["fixed"], ["fixed"]], [["fixed"], ["fixed"]]),
+  c.alternative(c.defer(() => RefusalVariableMode), [["variable"], ["variable"]], [["variable"], ["variable"]]),
+], []);
 
 /** `refusal-outcome` (`shared/schemas/refusal-vectors.cddl`). */
 export type RefusalOutcome = RefusalError | "accepted";
 
-export const RefusalOutcome: c.Codec<RefusalOutcome> = {
-  encode: (a, d) => {
-    if (typeof a === "string") return c.oneOfText(a, ["accepted"]);
-    const known = ["component", "depth", "kind", "limit"];
-    if (c.hasFields(a, RefusalError, ["kind"], ["component", "depth", "kind", "limit"], known)) return RefusalError.encode(a, d);
-    return c.typeMismatch("no alternative of RefusalOutcome fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["kind"], ["component", "depth", "kind", "limit"]]], ["accepted"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return RefusalError.decode(v);
-      case 1:
-        return c.ok<RefusalOutcome>("accepted");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const RefusalOutcome: c.Codec<RefusalOutcome> = c.union<RefusalOutcome>("RefusalOutcome", [
+  c.alternative(c.defer(() => RefusalError), [["kind"], ["component", "depth", "kind", "limit"]], [["kind"], ["component", "depth", "kind", "limit"]]),
+], ["accepted"]);
 
 /** `refusal-upsert` (`shared/schemas/refusal-vectors.cddl`). */
 export interface RefusalUpsert {
@@ -375,45 +151,19 @@ export interface RefusalUpsert {
   readonly value: BuiltValue;
 }
 
-export const RefusalUpsert: c.Codec<RefusalUpsert> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("stateKey", c.text, a.stateKey, e),
-        c.field("value", c.defer(() => BuiltValue), a.value, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["stateKey", "value"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("stateKey", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("value", c.defer(() => BuiltValue));
-    if (!r1.ok) return r1;
-    return c.ok({ stateKey: r0.value, value: r1.value });
-  },
-};
+export const RefusalUpsert: c.Codec<RefusalUpsert> = c.record<RefusalUpsert>({
+  stateKey: c.required("stateKey", c.text),
+  value: c.required("value", c.defer(() => BuiltValue)),
+});
 
 /** `refusal-variable-mode` (`shared/schemas/refusal-vectors.cddl`). */
 export interface RefusalVariableMode {
   readonly variable: bigint;
 }
 
-export const RefusalVariableMode: c.Codec<RefusalVariableMode> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("variable", c.uint, a.variable, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["variable"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("variable", c.uint);
-    if (!r0.ok) return r0;
-    return c.ok({ variable: r0.value });
-  },
-};
+export const RefusalVariableMode: c.Codec<RefusalVariableMode> = c.record<RefusalVariableMode>({
+  variable: c.required("variable", c.uint),
+});
 
 /** `refusal-vectors` (`shared/schemas/refusal-vectors.cddl`). */
 export interface RefusalVectors {
@@ -423,27 +173,9 @@ export interface RefusalVectors {
   readonly cases: readonly RefusalCase[];
 }
 
-export const RefusalVectors: c.Codec<RefusalVectors> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spec", c.literalText("docs/specs/conformance.md"), a.spec, e),
-        c.field("version", c.literalInt(1n), a.version, e),
-        c.field("hash", c.literalText("SHA-256"), a.hash, e),
-        c.field("cases", c.vector(c.defer(() => RefusalCase), 0, null), a.cases, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "hash", "cases"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spec", c.literalText("docs/specs/conformance.md"));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("version", c.literalInt(1n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("hash", c.literalText("SHA-256"));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("cases", c.vector(c.defer(() => RefusalCase), 0, null));
-    if (!r3.ok) return r3;
-    return c.ok({ spec: r0.value, version: r1.value, hash: r2.value, cases: r3.value });
-  },
-};
+export const RefusalVectors: c.Codec<RefusalVectors> = c.record<RefusalVectors>({
+  spec: c.required("spec", c.literalText("docs/specs/conformance.md")),
+  version: c.required("version", c.literalInt(1n)),
+  hash: c.required("hash", c.literalText("SHA-256")),
+  cases: c.required("cases", c.vector(c.defer(() => RefusalCase), 0, null)),
+});

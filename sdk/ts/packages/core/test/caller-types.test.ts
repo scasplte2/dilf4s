@@ -1,0 +1,116 @@
+import { runInNewContext } from "node:vm";
+
+import { describe, expect, it } from "vitest";
+
+import { codec, IntValue, json, MapValue, RationalValue, Value } from "../src/index.js";
+import { gcdSteps } from "../src/value.js";
+import { expectOk, int } from "./vectors.js";
+
+/** What a JavaScript caller, or a cast, can pass past the types. */
+const bad = (x: unknown): never => x as never;
+const mismatch = (reason: string): unknown => ({ ok: false, error: { kind: "TypeMismatch", reason } });
+
+describe("what a caller passes past the types is refused, never thrown on or misread", () => {
+  it("bytes from another realm, and a Buffer, are bytes; an object claiming to be one is not", () => {
+    const foreign = runInNewContext("new Uint8Array([1, 2])") as Uint8Array;
+    expect(foreign instanceof Uint8Array, "another realm's array is no instance of this realm's").toBe(false);
+    const v = expectOk(codec.bytes.encode(foreign), "another realm's Uint8Array");
+    expect(v.kind === "bytes" && [...v.bytes]).toEqual([1, 2]);
+    expect(expectOk(codec.bytes.encode(Buffer.from([3])), "a Buffer").kind).toBe("bytes");
+    const claims = { [Symbol.toStringTag]: "Uint8Array", length: 2, 0: 1, 1: 2 };
+    expect(codec.bytes.encode(bad(claims))).toEqual(mismatch("expected a Uint8Array"));
+    expect(codec.bytes.encode(bad(new DataView(new ArrayBuffer(2))))).toEqual(mismatch("expected a Uint8Array"));
+    expect(codec.bytes.encode(bad(new Uint16Array(2)))).toEqual(mismatch("expected a Uint8Array"));
+    const record = codec.record<{ readonly a: bigint }>({ a: codec.required("a", codec.uint) });
+    const cbor = expectOk(codec.toCbor(record, { a: 1n }), "encodes");
+    const foreignCbor = runInNewContext(`new Uint8Array([${cbor.join(",")}])`) as Uint8Array;
+    expect(expectOk(codec.fromCbor(record, foreignCbor), "another realm's CBOR")).toEqual({ a: 1n });
+    for (const x of [null, "a1", [161, 97, 97, 1]]) {
+      expect(codec.fromCbor(record, bad(x)), JSON.stringify(x)).toEqual({ ok: false, error: { kind: "Canonical", error: { kind: "TypeMismatch", reason: "expected a Uint8Array" } } });
+    }
+  });
+
+  it("an object borrowing a value's prototype, or a Proxy of a value, is not a value, and no trap runs", () => {
+    const borrowed: unknown = Object.create(IntValue.prototype);
+    expect(codec.any.encode(bad(borrowed))).toEqual(mismatch("expected a canonical value"));
+    expect(json.renderWithin(bad(borrowed), 100)).toEqual(mismatch("expected a canonical value"));
+    const traps: string[] = [];
+    const logAll = new Proxy(
+      {},
+      {
+        get: (_t, name) => () => {
+          traps.push(String(name));
+          return undefined;
+        },
+      },
+    );
+    const proxy: unknown = new Proxy(int(5n), logAll);
+    expect(codec.any.encode(bad(proxy))).toEqual(mismatch("expected a canonical value"));
+    expect(codec.uint.decode(bad(proxy))).toEqual({ ok: false, error: { path: [], reason: "expected a canonical value" } });
+    expect(traps).toEqual([]);
+    // a real value still is one
+    const real = expectOk(codec.any.encode(int(5n)), "a value");
+    expect(real.kind === "int" && real.value).toBe(5n);
+  });
+
+  it("a rational made from parts that are not bigints ends: refused or thrown on, never converted, never a loop", { timeout: 5_000 }, () => {
+    for (const [n, d] of [
+      [1, 2],
+      ["1", "3"],
+      [true, 2n],
+      [2 ** 53 + 1, 1n],
+      [1.5, 2n],
+    ] as const) {
+      expect(() => Value.number(bad(n), bad(d)), `${String(n)}/${String(d)}`).toThrow(TypeError);
+      expect(() => RationalValue.number(bad(n), bad(d)), `${String(n)}/${String(d)}`).toThrow(TypeError);
+    }
+    expect(RationalValue.of(bad(1), bad(2))).toBeUndefined();
+    expect(RationalValue.of(1n, bad(2))).toBeUndefined();
+    // gcdSteps alone reads its operands as bigints, so no input can loop
+    expect(gcdSteps(bad(6), bad(4))[0]).toBe(2n);
+    expect(() => gcdSteps(bad(1.5), 2n)).toThrow(RangeError);
+  });
+
+  it("a decimal far past the width is refused from its scale, before any power of five is built", { timeout: 5_000 }, () => {
+    expect(RationalValue.decimal(1n, Number.MAX_SAFE_INTEGER)).toEqual({ ok: false, error: { kind: "RationalTooWide", limit: 33219 } });
+    expect(RationalValue.decimal(1n, 33219 + 2)).toEqual({ ok: false, error: { kind: "RationalTooWide", limit: 33219 } });
+    // within reach of the check, the walk decides: 2^33218 / 10^33219 is 1 / (2 5^33219), too wide by its fives
+    expect(RationalValue.decimal(1n << 33218n, 33219).ok).toBe(false);
+    expect(expectOk(RationalValue.decimal(5n, 1), "0.5").kind).toBe("rational");
+  });
+
+  it("a decimal's scale with no integer value is refused, a negative one multiplies, and nothing throws", { timeout: 5_000 }, () => {
+    const tooWide = { ok: false, error: { kind: "RationalTooWide", limit: 33219 } };
+    const intTooWide = { ok: false, error: { kind: "IntegerTooWide", limit: 33219 } };
+    for (const scale of [Number.NaN, 0.5, -0.5, Number.POSITIVE_INFINITY]) expect(RationalValue.decimal(5n, scale), String(scale)).toEqual(tooWide);
+    expect(RationalValue.decimal(5n, Number.NEGATIVE_INFINITY)).toEqual(intTooWide);
+    const fifty = expectOk(RationalValue.decimal(5n, -1), "5 * 10");
+    expect(fifty.kind === "int" && fifty.value).toBe(50n);
+    expect(RationalValue.decimal(5n, -10_000)).toEqual(intTooWide);
+    expect(RationalValue.decimal(5n, -Number.MAX_SAFE_INTEGER)).toEqual(intTooWide);
+    const zero = expectOk(RationalValue.decimal(0n, -1), "0");
+    expect(zero.kind === "int" && zero.value).toBe(0n);
+  });
+
+  it("a value built by calling a constructor from outside is not a value", () => {
+    const fakeInt: unknown = Reflect.construct(IntValue as unknown as new (...args: unknown[]) => object, [Symbol("canonical value"), 5, 3]);
+    const fakeMap: unknown = Reflect.construct(MapValue as unknown as new (...args: unknown[]) => object, [Symbol("canonical value"), [], 1, 1n]);
+    for (const fake of [fakeInt, fakeMap]) {
+      expect(codec.any.encode(bad(fake))).toEqual(mismatch("expected a canonical value"));
+      expect(codec.uint.decode(bad(fake))).toEqual({ ok: false, error: { path: [], reason: "expected a canonical value" } });
+      expect(json.renderWithin(bad(fake), 100)).toEqual(mismatch("expected a canonical value"));
+    }
+  });
+
+  it("text and JSON entry points refuse what is not text, and a scale bound that is not an integer from 0 to the spec's", { timeout: 5_000 }, () => {
+    expect(Value.text(bad(5))).toEqual(mismatch("expected a string"));
+    for (const x of [null, 5, undefined]) expect(json.parse(bad(x)), String(x)).toEqual(mismatch("the JSON text is not a string"));
+    for (const scale of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY, json.DEFAULT_MAX_SCALE + 1, Number.MAX_SAFE_INTEGER]) {
+      expect(json.parse("1.5", scale), String(scale)).toEqual(mismatch(`the scale bound is not an integer from 0 to ${json.DEFAULT_MAX_SCALE.toString()}`));
+    }
+    expect(expectOk(json.parse("1.5", 1), "within the bound").kind).toBe("rational");
+    expect(json.parse("1.5", json.DEFAULT_MAX_SCALE).ok, "the spec's bound itself is a bound").toBe(true);
+    const record = codec.record<{ readonly a: bigint }>({ a: codec.required("a", codec.uint) });
+    expect(codec.fromJson(record, bad(5))).toEqual({ ok: false, error: { kind: "Canonical", error: { kind: "TypeMismatch", reason: "the JSON text is not a string" } } });
+  });
+});

@@ -10,32 +10,7 @@ export const Hex: c.Codec<Hex> = c.matching("([0-9a-f]{2})*");
 /** `sigma-outcome` (`shared/schemas/sigma-refusal-vectors.cddl`). */
 export type SigmaOutcome = "accepted" | "rejected" | cryptoErrors.SigmaErrorKind;
 
-export const SigmaOutcome: c.Codec<SigmaOutcome> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["InvalidPoint", "InvalidProposition", "ProofLength", "ResponseOutOfRange", "accepted", "rejected"]);
-    return c.typeMismatch("no alternative of SigmaOutcome fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["accepted", "rejected", "InvalidProposition", "InvalidPoint", "ProofLength", "ResponseOutOfRange"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<SigmaOutcome>("accepted");
-      case 1:
-        return c.ok<SigmaOutcome>("rejected");
-      case 2:
-        return c.ok<SigmaOutcome>("InvalidProposition");
-      case 3:
-        return c.ok<SigmaOutcome>("InvalidPoint");
-      case 4:
-        return c.ok<SigmaOutcome>("ProofLength");
-      case 5:
-        return c.ok<SigmaOutcome>("ResponseOutOfRange");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const SigmaOutcome: c.Codec<SigmaOutcome> = c.union<SigmaOutcome>("SigmaOutcome", [], ["accepted", "rejected", "InvalidProposition", "InvalidPoint", "ProofLength", "ResponseOutOfRange"]);
 
 /** `sigma-refusal` (`shared/schemas/sigma-refusal-vectors.cddl`). */
 export interface SigmaRefusal {
@@ -46,33 +21,13 @@ export interface SigmaRefusal {
   readonly outcome: SigmaOutcome;
 }
 
-export const SigmaRefusal: c.Codec<SigmaRefusal> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("name", c.text, a.name, e),
-        c.field("proposition", c.defer(() => Hex), a.proposition, e),
-        c.field("proof", c.defer(() => Hex), a.proof, e),
-        c.field("message", c.defer(() => Hex), a.message, e),
-        c.field("outcome", c.defer(() => SigmaOutcome), a.outcome, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["name", "proposition", "proof", "message", "outcome"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("name", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("proposition", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("proof", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("message", c.defer(() => Hex));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("outcome", c.defer(() => SigmaOutcome));
-    if (!r4.ok) return r4;
-    return c.ok({ name: r0.value, proposition: r1.value, proof: r2.value, message: r3.value, outcome: r4.value });
-  },
-};
+export const SigmaRefusal: c.Codec<SigmaRefusal> = c.record<SigmaRefusal>({
+  name: c.required("name", c.text),
+  proposition: c.required("proposition", c.defer(() => Hex)),
+  proof: c.required("proof", c.defer(() => Hex)),
+  message: c.required("message", c.defer(() => Hex)),
+  outcome: c.required("outcome", c.defer(() => SigmaOutcome)),
+});
 
 /** `sigma-refusal-vectors` (`shared/schemas/sigma-refusal-vectors.cddl`). */
 export interface SigmaRefusalVectors {
@@ -83,30 +38,10 @@ export interface SigmaRefusalVectors {
   readonly dilf4sCases: readonly SigmaOutcome[];
 }
 
-export const SigmaRefusalVectors: c.Codec<SigmaRefusalVectors> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spec", c.literalText("docs/specs/sigma.md"), a.spec, e),
-        c.field("version", c.literalInt(1n), a.version, e),
-        c.field("cases", c.vector(c.defer(() => SigmaRefusal), 0, null), a.cases, e),
-        c.field("ergoCases", c.vector(c.defer(() => SigmaOutcome), 0, null), a.ergoCases, e),
-        c.field("dilf4sCases", c.vector(c.defer(() => SigmaOutcome), 0, null), a.dilf4sCases, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "cases", "ergoCases", "dilf4sCases"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spec", c.literalText("docs/specs/sigma.md"));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("version", c.literalInt(1n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("cases", c.vector(c.defer(() => SigmaRefusal), 0, null));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("ergoCases", c.vector(c.defer(() => SigmaOutcome), 0, null));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("dilf4sCases", c.vector(c.defer(() => SigmaOutcome), 0, null));
-    if (!r4.ok) return r4;
-    return c.ok({ spec: r0.value, version: r1.value, cases: r2.value, ergoCases: r3.value, dilf4sCases: r4.value });
-  },
-};
+export const SigmaRefusalVectors: c.Codec<SigmaRefusalVectors> = c.record<SigmaRefusalVectors>({
+  spec: c.required("spec", c.literalText("docs/specs/sigma.md")),
+  version: c.required("version", c.literalInt(1n)),
+  cases: c.required("cases", c.vector(c.defer(() => SigmaRefusal), 0, null)),
+  ergoCases: c.required("ergoCases", c.vector(c.defer(() => SigmaOutcome), 0, null)),
+  dilf4sCases: c.required("dilf4sCases", c.vector(c.defer(() => SigmaOutcome), 0, null)),
+});

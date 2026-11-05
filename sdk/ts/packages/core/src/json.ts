@@ -14,7 +14,7 @@ import { KeySet } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { compareCodePoints } from "./utf8.js";
-import { ArrayValue, BoolValue, entriesView, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
+import { ArrayValue, BoolValue, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
 
 const INT32_MAX = 2n ** 31n - 1n;
 const INT32_MIN = -(2n ** 31n);
@@ -39,8 +39,17 @@ const syntax = (offset: number, reason: string): CanonicalError => ({ kind: "Jso
 
 const isDigit = (c: string | undefined): boolean => c !== undefined && c >= "0" && c <= "9";
 
-/** Parses JSON text into a canonical value. */
+/**
+ * Parses JSON text into a canonical value. `maxScale` may lower the scale bound, never raise it: the spec accepts no
+ * JSON number of a scale past {@link DEFAULT_MAX_SCALE} (canonical-encoding.md section 3). Text that is not a string,
+ * or a scale bound that is not an integer from 0 to {@link DEFAULT_MAX_SCALE}, is a `TypeMismatch`, before anything
+ * is read.
+ */
 export function parse(text: string, maxScale: number = DEFAULT_MAX_SCALE): Result<Value, CanonicalError> {
+  if (typeof (text as unknown) !== "string") return err({ kind: "TypeMismatch", reason: "the JSON text is not a string" });
+  if (!Number.isSafeInteger(maxScale) || maxScale < 0 || maxScale > DEFAULT_MAX_SCALE) {
+    return err({ kind: "TypeMismatch", reason: `the scale bound is not an integer from 0 to ${DEFAULT_MAX_SCALE.toString()}` });
+  }
   return new Parser(text, maxScale).run();
 }
 
@@ -266,7 +275,9 @@ function integerText(n: IntValue): string {
 /**
  * The exact decimal of a rational, within the bounds {@link parse} accepts: `"non-terminating rational"` when its
  * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds, both found from the
- * denominator's factors (`twosAndFives`) before any digit is produced.
+ * denominator's factors (`twosAndFives`) before any digit is produced. An argument that is not a `RationalValue` is
+ * not checked: it may throw, or be read as a rational from its `numerator` and `denominator` (the result type has no
+ * room for that refusal).
  */
 export function decimalOf(r: RationalValue): Result<string, "non-terminating rational" | "over-long number"> {
   const [factors] = twosAndFives(r.denominator);
@@ -279,7 +290,10 @@ export function decimalOf(r: RationalValue): Result<string, "non-terminating rat
   return text === undefined ? err("over-long number") : ok(text);
 }
 
-/** The exact decimal of a rational, when it has one within the bounds {@link parse} accepts. */
+/**
+ * The exact decimal of a rational, when it has one within the bounds {@link parse} accepts. An argument that is not a
+ * `RationalValue` is not checked, as for {@link decimalOf}: it may throw, or be read as a rational.
+ */
 export function decimal(r: RationalValue): string | undefined {
   const d = decimalOf(r);
   return d.ok ? d.value : undefined;
@@ -353,13 +367,35 @@ export type RenderError = CanonicalError | TooLarge;
  * Iterative, with an explicit stack of at most {@link MAX_DEPTH} open containers.
  */
 export function renderWithin(value: Value, maxBytes: number): Result<string, RenderError> {
-  const meter = new Meter(Math.min(byteLimit(maxBytes), MAX_RENDER_BYTES));
   const out: string[] = [];
+  const written = renderInto(value, maxBytes, out, (pieces, piece) => {
+    pieces.push(piece);
+    return pieces;
+  });
+  return written.ok ? ok(written.value.join("")) : written;
+}
+
+/**
+ * Where rendered text goes, as a state `S` threaded through every write: {@link renderInto} uses each state once,
+ * passing on the one a write returns, so a sink may append in place.
+ */
+export type TextSink<S> = (s: S, piece: string) => S;
+
+/**
+ * {@link renderWithin} into any {@link TextSink}, starting from `s`: the rendering reaches the sink in order, each of
+ * its characters once, in pieces that are a scalar, a quoted text or key, or punctuation, never a container's text.
+ */
+export function renderInto<S>(value: Value, maxBytes: number, s: S, sink: TextSink<S>): Result<S, RenderError> {
+  // what a caller can pass past the types is refused in O(1), never read: the parts of a value are its own
+  if (!isValue(value)) return err({ kind: "TypeMismatch", reason: "expected a canonical value" });
+  if (typeof (maxBytes as unknown) !== "number") return err({ kind: "TypeMismatch", reason: "the byte limit is not a number" });
+  const meter = new Meter(Math.min(byteLimit(maxBytes), MAX_RENDER_BYTES));
+  let out = s;
   const stack: Rendering[] = [];
   /** Adds the piece `build` makes, of `bytes` UTF-8 bytes, if they fit: nothing is built before it is paid for. */
   const emit = (bytes: number, build: () => string): boolean => {
     const fits = meter.take(bytes);
-    if (fits) out.push(build());
+    if (fits) out = sink(out, build());
     return fits;
   };
   const ascii = (piece: string): boolean => emit(piece.length, () => piece);
@@ -417,10 +453,10 @@ export function renderWithin(value: Value, maxBytes: number): Result<string, Ren
         stack.pop();
         continue;
       }
-      if (!ascii(comma)) return err(meter.refusal());
+      if (i > 0 && !ascii(",")) return err(meter.refusal());
       const e = node(item);
       if (e !== undefined) return err(e);
     }
   }
-  return ok(out.join(""));
+  return ok(out);
 }

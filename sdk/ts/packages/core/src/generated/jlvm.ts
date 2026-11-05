@@ -7,87 +7,33 @@ export interface JlvmApply {
   readonly args: readonly JlvmExpr[];
 }
 
-export const JlvmApply: c.Codec<JlvmApply> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("op", c.text, a.op, e),
-        c.field("args", c.vector(c.defer(() => JlvmExpr), 0, null), a.args, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["op", "args"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("op", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("args", c.vector(c.defer(() => JlvmExpr), 0, null));
-    if (!r1.ok) return r1;
-    return c.ok({ op: r0.value, args: r1.value });
-  },
-};
+export const JlvmApply: c.Codec<JlvmApply> = c.record<JlvmApply>({
+  op: c.required("op", c.text),
+  args: c.required("args", c.vector(c.defer(() => JlvmExpr), 0, null)),
+});
 
 /** `jlvm-array` (`shared/schemas/jlvm.cddl`). */
 export interface JlvmArray {
   readonly arr: readonly JlvmExpr[];
 }
 
-export const JlvmArray: c.Codec<JlvmArray> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("arr", c.vector(c.defer(() => JlvmExpr), 0, null), a.arr, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["arr"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("arr", c.vector(c.defer(() => JlvmExpr), 0, null));
-    if (!r0.ok) return r0;
-    return c.ok({ arr: r0.value });
-  },
-};
+export const JlvmArray: c.Codec<JlvmArray> = c.record<JlvmArray>({
+  arr: c.required("arr", c.vector(c.defer(() => JlvmExpr), 0, null)),
+});
 
 /** `jlvm-expr` (`shared/schemas/jlvm.cddl`). */
 export type JlvmExpr = JlvmNull | JlvmLit | JlvmVar | JlvmVarAt | JlvmApply | JlvmSpread | JlvmArray | JlvmMap;
 
-export const JlvmExpr: c.Codec<JlvmExpr> = {
-  encode: (a, d) => {
-    const known = ["arg", "args", "arr", "default", "lit", "map", "op", "path", "spread", "var"];
-    if (c.hasFields(a, JlvmNull, [], [], known)) return JlvmNull.encode(a, d);
-    if (c.hasFields(a, JlvmLit, ["lit"], ["lit"], known)) return JlvmLit.encode(a, d);
-    if (c.hasFields(a, JlvmVar, ["var"], ["default", "var"], known)) return JlvmVar.encode(a, d);
-    if (c.hasFields(a, JlvmVarAt, ["path"], ["default", "path"], known)) return JlvmVarAt.encode(a, d);
-    if (c.hasFields(a, JlvmApply, ["args", "op"], ["args", "op"], known)) return JlvmApply.encode(a, d);
-    if (c.hasFields(a, JlvmSpread, ["arg", "spread"], ["arg", "spread"], known)) return JlvmSpread.encode(a, d);
-    if (c.hasFields(a, JlvmArray, ["arr"], ["arr"], known)) return JlvmArray.encode(a, d);
-    if (c.hasFields(a, JlvmMap, ["map"], ["map"], known)) return JlvmMap.encode(a, d);
-    return c.typeMismatch("no alternative of JlvmExpr fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[[], []], [["lit"], ["lit"]], [["var"], ["default", "var"]], [["path"], ["default", "path"]], [["args", "op"], ["args", "op"]], [["arg", "spread"], ["arg", "spread"]], [["arr"], ["arr"]], [["map"], ["map"]]], []);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return JlvmNull.decode(v);
-      case 1:
-        return JlvmLit.decode(v);
-      case 2:
-        return JlvmVar.decode(v);
-      case 3:
-        return JlvmVarAt.decode(v);
-      case 4:
-        return JlvmApply.decode(v);
-      case 5:
-        return JlvmSpread.decode(v);
-      case 6:
-        return JlvmArray.decode(v);
-      case 7:
-        return JlvmMap.decode(v);
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const JlvmExpr: c.Codec<JlvmExpr> = c.union<JlvmExpr>("JlvmExpr", [
+  c.alternative(c.defer(() => JlvmNull), [[], []], [[], []]),
+  c.alternative(c.defer(() => JlvmLit), [["lit"], ["lit"]], [["lit"], ["lit"]]),
+  c.alternative(c.defer(() => JlvmVar), [["var"], ["default", "var"]], [["var"], ["default", "var"]]),
+  c.alternative(c.defer(() => JlvmVarAt), [["path"], ["default", "path"]], [["path"], ["default", "path"]]),
+  c.alternative(c.defer(() => JlvmApply), [["args", "op"], ["args", "op"]], [["args", "op"], ["args", "op"]]),
+  c.alternative(c.defer(() => JlvmSpread), [["arg", "spread"], ["arg", "spread"]], [["arg", "spread"], ["arg", "spread"]]),
+  c.alternative(c.defer(() => JlvmArray), [["arr"], ["arr"]], [["arr"], ["arr"]]),
+  c.alternative(c.defer(() => JlvmMap), [["map"], ["map"]], [["map"], ["map"]]),
+], []);
 
 /** `jlvm-fields` (`shared/schemas/jlvm.cddl`). */
 export type JlvmFields = ReadonlyMap<string, JlvmExpr>;
@@ -99,57 +45,23 @@ export interface JlvmLit {
   readonly lit: c.Value;
 }
 
-export const JlvmLit: c.Codec<JlvmLit> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("lit", c.any, a.lit, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["lit"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("lit", c.any);
-    if (!r0.ok) return r0;
-    return c.ok({ lit: r0.value });
-  },
-};
+export const JlvmLit: c.Codec<JlvmLit> = c.record<JlvmLit>({
+  lit: c.required("lit", c.any),
+});
 
 /** `jlvm-map` (`shared/schemas/jlvm.cddl`). */
 export interface JlvmMap {
   readonly map: JlvmFields;
 }
 
-export const JlvmMap: c.Codec<JlvmMap> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("map", c.defer(() => JlvmFields), a.map, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["map"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("map", c.defer(() => JlvmFields));
-    if (!r0.ok) return r0;
-    return c.ok({ map: r0.value });
-  },
-};
+export const JlvmMap: c.Codec<JlvmMap> = c.record<JlvmMap>({
+  map: c.required("map", c.defer(() => JlvmFields)),
+});
 
 /** `jlvm-null` (`shared/schemas/jlvm.cddl`). */
 export type JlvmNull = Readonly<Record<string, never>>;
 
-export const JlvmNull: c.Codec<JlvmNull> = {
-  encode: (_a, d = 0) =>
-    c.nested(d, () =>
-      c.record([]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, []);
-    if (!f.ok) return f;
-    return c.ok({});
-  },
-};
+export const JlvmNull: c.Codec<JlvmNull> = c.record<JlvmNull>({});
 
 /** `jlvm-program` (`shared/schemas/jlvm.cddl`). */
 export interface JlvmProgram {
@@ -157,24 +69,10 @@ export interface JlvmProgram {
   readonly expr: JlvmExpr;
 }
 
-export const JlvmProgram: c.Codec<JlvmProgram> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("jlvm", c.literalInt(1n), a.jlvm, e),
-        c.field("expr", c.defer(() => JlvmExpr), a.expr, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["jlvm", "expr"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("jlvm", c.literalInt(1n));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("expr", c.defer(() => JlvmExpr));
-    if (!r1.ok) return r1;
-    return c.ok({ jlvm: r0.value, expr: r1.value });
-  },
-};
+export const JlvmProgram: c.Codec<JlvmProgram> = c.record<JlvmProgram>({
+  jlvm: c.required("jlvm", c.literalInt(1n)),
+  expr: c.required("expr", c.defer(() => JlvmExpr)),
+});
 
 /** `jlvm-spread` (`shared/schemas/jlvm.cddl`). */
 export interface JlvmSpread {
@@ -182,24 +80,10 @@ export interface JlvmSpread {
   readonly arg: JlvmExpr;
 }
 
-export const JlvmSpread: c.Codec<JlvmSpread> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spread", c.text, a.spread, e),
-        c.field("arg", c.defer(() => JlvmExpr), a.arg, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spread", "arg"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spread", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("arg", c.defer(() => JlvmExpr));
-    if (!r1.ok) return r1;
-    return c.ok({ spread: r0.value, arg: r1.value });
-  },
-};
+export const JlvmSpread: c.Codec<JlvmSpread> = c.record<JlvmSpread>({
+  spread: c.required("spread", c.text),
+  arg: c.required("arg", c.defer(() => JlvmExpr)),
+});
 
 /** `jlvm-var` (`shared/schemas/jlvm.cddl`). */
 export interface JlvmVar {
@@ -207,24 +91,10 @@ export interface JlvmVar {
   readonly default?: c.Value;
 }
 
-export const JlvmVar: c.Codec<JlvmVar> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("var", c.text, a.var, e),
-        c.optionalField("default", c.any, a.default, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["var", "default"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("var", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("default", c.any);
-    if (!r1.ok) return r1;
-    return c.ok({ var: r0.value, default: r1.value });
-  },
-};
+export const JlvmVar: c.Codec<JlvmVar> = c.record<JlvmVar>({
+  var: c.required("var", c.text),
+  default: c.optional("default", c.any),
+});
 
 /** `jlvm-var-at` (`shared/schemas/jlvm.cddl`). */
 export interface JlvmVarAt {
@@ -232,21 +102,7 @@ export interface JlvmVarAt {
   readonly default?: c.Value;
 }
 
-export const JlvmVarAt: c.Codec<JlvmVarAt> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("path", c.defer(() => JlvmExpr), a.path, e),
-        c.optionalField("default", c.any, a.default, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["path", "default"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("path", c.defer(() => JlvmExpr));
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("default", c.any);
-    if (!r1.ok) return r1;
-    return c.ok({ path: r0.value, default: r1.value });
-  },
-};
+export const JlvmVarAt: c.Codec<JlvmVarAt> = c.record<JlvmVarAt>({
+  path: c.required("path", c.defer(() => JlvmExpr)),
+  default: c.optional("default", c.any),
+});

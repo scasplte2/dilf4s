@@ -12,24 +12,10 @@ export interface PoseidonMerkleProof {
   readonly siblings: readonly FieldElement[];
 }
 
-export const PoseidonMerkleProof: c.Codec<PoseidonMerkleProof> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("position", c.defer(() => TreePosition), a.position, e),
-        c.field("siblings", c.vector(c.defer(() => FieldElement), 0, 256), a.siblings, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["position", "siblings"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("position", c.defer(() => TreePosition));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("siblings", c.vector(c.defer(() => FieldElement), 0, 256));
-    if (!r1.ok) return r1;
-    return c.ok({ position: r0.value, siblings: r1.value });
-  },
-};
+export const PoseidonMerkleProof: c.Codec<PoseidonMerkleProof> = c.record<PoseidonMerkleProof>({
+  position: c.required("position", c.defer(() => TreePosition)),
+  siblings: c.required("siblings", c.vector(c.defer(() => FieldElement), 0, 256)),
+});
 
 /** `tree-position` (`shared/schemas/poseidon.cddl`). */
 export type TreePosition = bigint;

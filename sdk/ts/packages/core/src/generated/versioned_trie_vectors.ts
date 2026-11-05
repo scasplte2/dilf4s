@@ -9,34 +9,7 @@ export const Hex: c.Codec<Hex> = c.matching("([0-9a-f]{2})*");
 /** `state-key-error-kind` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export type StateKeyErrorKind = "Empty" | "TooLong" | "NotUtf8" | "TooManySegments" | "InvalidSegment" | "SegmentTooLong" | "NamespaceFull";
 
-export const StateKeyErrorKind: c.Codec<StateKeyErrorKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["Empty", "InvalidSegment", "NamespaceFull", "NotUtf8", "SegmentTooLong", "TooLong", "TooManySegments"]);
-    return c.typeMismatch("no alternative of StateKeyErrorKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["Empty", "TooLong", "NotUtf8", "TooManySegments", "InvalidSegment", "SegmentTooLong", "NamespaceFull"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<StateKeyErrorKind>("Empty");
-      case 1:
-        return c.ok<StateKeyErrorKind>("TooLong");
-      case 2:
-        return c.ok<StateKeyErrorKind>("NotUtf8");
-      case 3:
-        return c.ok<StateKeyErrorKind>("TooManySegments");
-      case 4:
-        return c.ok<StateKeyErrorKind>("InvalidSegment");
-      case 5:
-        return c.ok<StateKeyErrorKind>("SegmentTooLong");
-      case 6:
-        return c.ok<StateKeyErrorKind>("NamespaceFull");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const StateKeyErrorKind: c.Codec<StateKeyErrorKind> = c.union<StateKeyErrorKind>("StateKeyErrorKind", [], ["Empty", "TooLong", "NotUtf8", "TooManySegments", "InvalidSegment", "SegmentTooLong", "NamespaceFull"]);
 
 /** `versioned-trie-vectors` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VersionedTrieVectors {
@@ -56,60 +29,22 @@ export interface VersionedTrieVectors {
   readonly versionKeys: readonly VtVersionKey[];
 }
 
-export const VersionedTrieVectors: c.Codec<VersionedTrieVectors> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spec", c.literalText("docs/specs/versioned-trie.md"), a.spec, e),
-        c.field("version", c.literalInt(1n), a.version, e),
-        c.field("hash", c.literalText("SHA-256"), a.hash, e),
-        c.field("width", c.uint, a.width, e),
-        c.field("emptyStateRoot", c.defer(() => Hex), a.emptyStateRoot, e),
-        c.field("head", c.defer(() => VtHeadKat), a.head, e),
-        c.field("commits", c.vector(c.defer(() => VtCommit), 0, null), a.commits, e),
-        c.field("root", c.defer(() => Hex), a.root, e),
-        c.field("proofs", c.vector(c.defer(() => VtProof), 0, null), a.proofs, e),
-        c.field("snapshot", c.defer(() => VtSnapshot), a.snapshot, e),
-        c.field("stateKeys", c.vector(c.defer(() => VtStateKey), 0, null), a.stateKeys, e),
-        c.field("stateKeyBytes", c.vector(c.defer(() => VtStateKeyBytes), 0, null), a.stateKeyBytes, e),
-        c.field("namespaces", c.vector(c.defer(() => VtNamespace), 0, null), a.namespaces, e),
-        c.field("versionKeys", c.vector(c.defer(() => VtVersionKey), 0, null), a.versionKeys, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys", "stateKeyBytes", "namespaces", "versionKeys"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spec", c.literalText("docs/specs/versioned-trie.md"));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("version", c.literalInt(1n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("hash", c.literalText("SHA-256"));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("width", c.uint);
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("emptyStateRoot", c.defer(() => Hex));
-    if (!r4.ok) return r4;
-    const r5 = f.value.required("head", c.defer(() => VtHeadKat));
-    if (!r5.ok) return r5;
-    const r6 = f.value.required("commits", c.vector(c.defer(() => VtCommit), 0, null));
-    if (!r6.ok) return r6;
-    const r7 = f.value.required("root", c.defer(() => Hex));
-    if (!r7.ok) return r7;
-    const r8 = f.value.required("proofs", c.vector(c.defer(() => VtProof), 0, null));
-    if (!r8.ok) return r8;
-    const r9 = f.value.required("snapshot", c.defer(() => VtSnapshot));
-    if (!r9.ok) return r9;
-    const r10 = f.value.required("stateKeys", c.vector(c.defer(() => VtStateKey), 0, null));
-    if (!r10.ok) return r10;
-    const r11 = f.value.required("stateKeyBytes", c.vector(c.defer(() => VtStateKeyBytes), 0, null));
-    if (!r11.ok) return r11;
-    const r12 = f.value.required("namespaces", c.vector(c.defer(() => VtNamespace), 0, null));
-    if (!r12.ok) return r12;
-    const r13 = f.value.required("versionKeys", c.vector(c.defer(() => VtVersionKey), 0, null));
-    if (!r13.ok) return r13;
-    return c.ok({ spec: r0.value, version: r1.value, hash: r2.value, width: r3.value, emptyStateRoot: r4.value, head: r5.value, commits: r6.value, root: r7.value, proofs: r8.value, snapshot: r9.value, stateKeys: r10.value, stateKeyBytes: r11.value, namespaces: r12.value, versionKeys: r13.value });
-  },
-};
+export const VersionedTrieVectors: c.Codec<VersionedTrieVectors> = c.record<VersionedTrieVectors>({
+  spec: c.required("spec", c.literalText("docs/specs/versioned-trie.md")),
+  version: c.required("version", c.literalInt(1n)),
+  hash: c.required("hash", c.literalText("SHA-256")),
+  width: c.required("width", c.uint),
+  emptyStateRoot: c.required("emptyStateRoot", c.defer(() => Hex)),
+  head: c.required("head", c.defer(() => VtHeadKat)),
+  commits: c.required("commits", c.vector(c.defer(() => VtCommit), 0, null)),
+  root: c.required("root", c.defer(() => Hex)),
+  proofs: c.required("proofs", c.vector(c.defer(() => VtProof), 0, null)),
+  snapshot: c.required("snapshot", c.defer(() => VtSnapshot)),
+  stateKeys: c.required("stateKeys", c.vector(c.defer(() => VtStateKey), 0, null)),
+  stateKeyBytes: c.required("stateKeyBytes", c.vector(c.defer(() => VtStateKeyBytes), 0, null)),
+  namespaces: c.required("namespaces", c.vector(c.defer(() => VtNamespace), 0, null)),
+  versionKeys: c.required("versionKeys", c.vector(c.defer(() => VtVersionKey), 0, null)),
+});
 
 /** `vt-claim` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtClaim {
@@ -117,24 +52,10 @@ export interface VtClaim {
   readonly value?: Hex;
 }
 
-export const VtClaim: c.Codec<VtClaim> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("key", c.text, a.key, e),
-        c.optionalField("value", c.defer(() => Hex), a.value, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["key", "value"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("key", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("value", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    return c.ok({ key: r0.value, value: r1.value });
-  },
-};
+export const VtClaim: c.Codec<VtClaim> = c.record<VtClaim>({
+  key: c.required("key", c.text),
+  value: c.optional("value", c.defer(() => Hex)),
+});
 
 /** `vt-commit` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtCommit {
@@ -147,39 +68,15 @@ export interface VtCommit {
   readonly delta: Hex;
 }
 
-export const VtCommit: c.Codec<VtCommit> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("version", c.uint, a.version, e),
-        c.field("upserts", c.vector(c.defer(() => VtEntry), 0, null), a.upserts, e),
-        c.field("removes", c.vector(c.text, 0, null), a.removes, e),
-        c.field("stateRoot", c.defer(() => Hex), a.stateRoot, e),
-        c.field("historyRoot", c.defer(() => Hex), a.historyRoot, e),
-        c.field("root", c.defer(() => Hex), a.root, e),
-        c.field("delta", c.defer(() => Hex), a.delta, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["version", "upserts", "removes", "stateRoot", "historyRoot", "root", "delta"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("version", c.uint);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("upserts", c.vector(c.defer(() => VtEntry), 0, null));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("removes", c.vector(c.text, 0, null));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("stateRoot", c.defer(() => Hex));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("historyRoot", c.defer(() => Hex));
-    if (!r4.ok) return r4;
-    const r5 = f.value.required("root", c.defer(() => Hex));
-    if (!r5.ok) return r5;
-    const r6 = f.value.required("delta", c.defer(() => Hex));
-    if (!r6.ok) return r6;
-    return c.ok({ version: r0.value, upserts: r1.value, removes: r2.value, stateRoot: r3.value, historyRoot: r4.value, root: r5.value, delta: r6.value });
-  },
-};
+export const VtCommit: c.Codec<VtCommit> = c.record<VtCommit>({
+  version: c.required("version", c.uint),
+  upserts: c.required("upserts", c.vector(c.defer(() => VtEntry), 0, null)),
+  removes: c.required("removes", c.vector(c.text, 0, null)),
+  stateRoot: c.required("stateRoot", c.defer(() => Hex)),
+  historyRoot: c.required("historyRoot", c.defer(() => Hex)),
+  root: c.required("root", c.defer(() => Hex)),
+  delta: c.required("delta", c.defer(() => Hex)),
+});
 
 /** `vt-entry` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtEntry {
@@ -187,24 +84,10 @@ export interface VtEntry {
   readonly value: Hex;
 }
 
-export const VtEntry: c.Codec<VtEntry> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("key", c.text, a.key, e),
-        c.field("value", c.defer(() => Hex), a.value, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["key", "value"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("key", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("value", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    return c.ok({ key: r0.value, value: r1.value });
-  },
-};
+export const VtEntry: c.Codec<VtEntry> = c.record<VtEntry>({
+  key: c.required("key", c.text),
+  value: c.required("value", c.defer(() => Hex)),
+});
 
 /** `vt-head-kat` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtHeadKat {
@@ -216,66 +99,19 @@ export interface VtHeadKat {
   readonly root: Hex;
 }
 
-export const VtHeadKat: c.Codec<VtHeadKat> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("version", c.uint, a.version, e),
-        c.field("vkey", c.defer(() => Hex), a.vkey, e),
-        c.field("stateRoot", c.defer(() => Hex), a.stateRoot, e),
-        c.field("historyRoot", c.defer(() => Hex), a.historyRoot, e),
-        c.field("cbor", c.defer(() => Hex), a.cbor, e),
-        c.field("root", c.defer(() => Hex), a.root, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["version", "vkey", "stateRoot", "historyRoot", "cbor", "root"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("version", c.uint);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("vkey", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("stateRoot", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("historyRoot", c.defer(() => Hex));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("cbor", c.defer(() => Hex));
-    if (!r4.ok) return r4;
-    const r5 = f.value.required("root", c.defer(() => Hex));
-    if (!r5.ok) return r5;
-    return c.ok({ version: r0.value, vkey: r1.value, stateRoot: r2.value, historyRoot: r3.value, cbor: r4.value, root: r5.value });
-  },
-};
+export const VtHeadKat: c.Codec<VtHeadKat> = c.record<VtHeadKat>({
+  version: c.required("version", c.uint),
+  vkey: c.required("vkey", c.defer(() => Hex)),
+  stateRoot: c.required("stateRoot", c.defer(() => Hex)),
+  historyRoot: c.required("historyRoot", c.defer(() => Hex)),
+  cbor: c.required("cbor", c.defer(() => Hex)),
+  root: c.required("root", c.defer(() => Hex)),
+});
 
 /** `vt-kind` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export type VtKind = "state" | "historical" | "version" | "asOf" | "head" | "versions";
 
-export const VtKind: c.Codec<VtKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["asOf", "head", "historical", "state", "version", "versions"]);
-    return c.typeMismatch("no alternative of VtKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["state", "historical", "version", "asOf", "head", "versions"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<VtKind>("state");
-      case 1:
-        return c.ok<VtKind>("historical");
-      case 2:
-        return c.ok<VtKind>("version");
-      case 3:
-        return c.ok<VtKind>("asOf");
-      case 4:
-        return c.ok<VtKind>("head");
-      case 5:
-        return c.ok<VtKind>("versions");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const VtKind: c.Codec<VtKind> = c.union<VtKind>("VtKind", [], ["state", "historical", "version", "asOf", "head", "versions"]);
 
 /** `vt-listing` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtListing {
@@ -283,24 +119,10 @@ export interface VtListing {
   readonly entries: readonly VtEntry[];
 }
 
-export const VtListing: c.Codec<VtListing> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("namespace", c.text, a.namespace, e),
-        c.field("entries", c.vector(c.defer(() => VtEntry), 0, null), a.entries, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["namespace", "entries"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("namespace", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("entries", c.vector(c.defer(() => VtEntry), 0, null));
-    if (!r1.ok) return r1;
-    return c.ok({ namespace: r0.value, entries: r1.value });
-  },
-};
+export const VtListing: c.Codec<VtListing> = c.record<VtListing>({
+  namespace: c.required("namespace", c.text),
+  entries: c.required("entries", c.vector(c.defer(() => VtEntry), 0, null)),
+});
 
 /** `vt-namespace` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtNamespace {
@@ -308,24 +130,10 @@ export interface VtNamespace {
   readonly outcome: VtStateKeyOutcome;
 }
 
-export const VtNamespace: c.Codec<VtNamespace> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("namespace", c.text, a.namespace, e),
-        c.field("outcome", c.defer(() => VtStateKeyOutcome), a.outcome, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["namespace", "outcome"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("namespace", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("outcome", c.defer(() => VtStateKeyOutcome));
-    if (!r1.ok) return r1;
-    return c.ok({ namespace: r0.value, outcome: r1.value });
-  },
-};
+export const VtNamespace: c.Codec<VtNamespace> = c.record<VtNamespace>({
+  namespace: c.required("namespace", c.text),
+  outcome: c.required("outcome", c.defer(() => VtStateKeyOutcome)),
+});
 
 /** `vt-proof` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtProof {
@@ -340,67 +148,22 @@ export interface VtProof {
   readonly versions?: readonly VtVersion[];
 }
 
-export const VtProof: c.Codec<VtProof> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("name", c.text, a.name, e),
-        c.field("kind", c.defer(() => VtKind), a.kind, e),
-        c.optionalField("at", c.uint, a.at, e),
-        c.optionalField("until", c.uint, a.until, e),
-        c.field("cbor", c.defer(() => Hex), a.cbor, e),
-        c.optionalField("claims", c.vector(c.defer(() => VtClaim), 0, null), a.claims, e),
-        c.optionalField("listings", c.vector(c.defer(() => VtListing), 0, null), a.listings, e),
-        c.optionalField("answer", c.defer(() => VtVersion), a.answer, e),
-        c.optionalField("versions", c.vector(c.defer(() => VtVersion), 0, null), a.versions, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["name", "kind", "at", "until", "cbor", "claims", "listings", "answer", "versions"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("name", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("kind", c.defer(() => VtKind));
-    if (!r1.ok) return r1;
-    const r2 = f.value.optional("at", c.uint);
-    if (!r2.ok) return r2;
-    const r3 = f.value.optional("until", c.uint);
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("cbor", c.defer(() => Hex));
-    if (!r4.ok) return r4;
-    const r5 = f.value.optional("claims", c.vector(c.defer(() => VtClaim), 0, null));
-    if (!r5.ok) return r5;
-    const r6 = f.value.optional("listings", c.vector(c.defer(() => VtListing), 0, null));
-    if (!r6.ok) return r6;
-    const r7 = f.value.optional("answer", c.defer(() => VtVersion));
-    if (!r7.ok) return r7;
-    const r8 = f.value.optional("versions", c.vector(c.defer(() => VtVersion), 0, null));
-    if (!r8.ok) return r8;
-    return c.ok({ name: r0.value, kind: r1.value, at: r2.value, until: r3.value, cbor: r4.value, claims: r5.value, listings: r6.value, answer: r7.value, versions: r8.value });
-  },
-};
+export const VtProof: c.Codec<VtProof> = c.record<VtProof>({
+  name: c.required("name", c.text),
+  kind: c.required("kind", c.defer(() => VtKind)),
+  at: c.optional("at", c.uint),
+  until: c.optional("until", c.uint),
+  cbor: c.required("cbor", c.defer(() => Hex)),
+  claims: c.optional("claims", c.vector(c.defer(() => VtClaim), 0, null)),
+  listings: c.optional("listings", c.vector(c.defer(() => VtListing), 0, null)),
+  answer: c.optional("answer", c.defer(() => VtVersion)),
+  versions: c.optional("versions", c.vector(c.defer(() => VtVersion), 0, null)),
+});
 
 /** `vt-schema-outcome` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export type VtSchemaOutcome = "accepted" | "TypeMismatch";
 
-export const VtSchemaOutcome: c.Codec<VtSchemaOutcome> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["TypeMismatch", "accepted"]);
-    return c.typeMismatch("no alternative of VtSchemaOutcome fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["accepted", "TypeMismatch"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<VtSchemaOutcome>("accepted");
-      case 1:
-        return c.ok<VtSchemaOutcome>("TypeMismatch");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const VtSchemaOutcome: c.Codec<VtSchemaOutcome> = c.union<VtSchemaOutcome>("VtSchemaOutcome", [], ["accepted", "TypeMismatch"]);
 
 /** `vt-snapshot` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtSnapshot {
@@ -408,24 +171,10 @@ export interface VtSnapshot {
   readonly chunks: readonly Hex[];
 }
 
-export const VtSnapshot: c.Codec<VtSnapshot> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("chunkEntries", c.uint, a.chunkEntries, e),
-        c.field("chunks", c.vector(c.defer(() => Hex), 1, null), a.chunks, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["chunkEntries", "chunks"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("chunkEntries", c.uint);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("chunks", c.vector(c.defer(() => Hex), 1, null));
-    if (!r1.ok) return r1;
-    return c.ok({ chunkEntries: r0.value, chunks: r1.value });
-  },
-};
+export const VtSnapshot: c.Codec<VtSnapshot> = c.record<VtSnapshot>({
+  chunkEntries: c.required("chunkEntries", c.uint),
+  chunks: c.required("chunks", c.vector(c.defer(() => Hex), 1, null)),
+});
 
 /** `vt-state-key` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtStateKey {
@@ -434,27 +183,11 @@ export interface VtStateKey {
   readonly outcome: VtStateKeyOutcome;
 }
 
-export const VtStateKey: c.Codec<VtStateKey> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("key", c.text, a.key, e),
-        c.field("schema", c.defer(() => VtSchemaOutcome), a.schema, e),
-        c.field("outcome", c.defer(() => VtStateKeyOutcome), a.outcome, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["key", "schema", "outcome"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("key", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("schema", c.defer(() => VtSchemaOutcome));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("outcome", c.defer(() => VtStateKeyOutcome));
-    if (!r2.ok) return r2;
-    return c.ok({ key: r0.value, schema: r1.value, outcome: r2.value });
-  },
-};
+export const VtStateKey: c.Codec<VtStateKey> = c.record<VtStateKey>({
+  key: c.required("key", c.text),
+  schema: c.required("schema", c.defer(() => VtSchemaOutcome)),
+  outcome: c.required("outcome", c.defer(() => VtStateKeyOutcome)),
+});
 
 /** `vt-state-key-bytes` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtStateKeyBytes {
@@ -462,48 +195,17 @@ export interface VtStateKeyBytes {
   readonly outcome: VtStateKeyOutcome;
 }
 
-export const VtStateKeyBytes: c.Codec<VtStateKeyBytes> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("bytes", c.defer(() => Hex), a.bytes, e),
-        c.field("outcome", c.defer(() => VtStateKeyOutcome), a.outcome, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["bytes", "outcome"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("bytes", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("outcome", c.defer(() => VtStateKeyOutcome));
-    if (!r1.ok) return r1;
-    return c.ok({ bytes: r0.value, outcome: r1.value });
-  },
-};
+export const VtStateKeyBytes: c.Codec<VtStateKeyBytes> = c.record<VtStateKeyBytes>({
+  bytes: c.required("bytes", c.defer(() => Hex)),
+  outcome: c.required("outcome", c.defer(() => VtStateKeyOutcome)),
+});
 
 /** `vt-state-key-outcome` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export type VtStateKeyOutcome = VtStateKeyRefusal | "accepted";
 
-export const VtStateKeyOutcome: c.Codec<VtStateKeyOutcome> = {
-  encode: (a, d) => {
-    if (typeof a === "string") return c.oneOfText(a, ["accepted"]);
-    const known = ["kind", "segment"];
-    if (c.hasFields(a, VtStateKeyRefusal, ["kind"], ["kind", "segment"], known)) return VtStateKeyRefusal.encode(a, d);
-    return c.typeMismatch("no alternative of VtStateKeyOutcome fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["kind"], ["kind", "segment"]]], ["accepted"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return VtStateKeyRefusal.decode(v);
-      case 1:
-        return c.ok<VtStateKeyOutcome>("accepted");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const VtStateKeyOutcome: c.Codec<VtStateKeyOutcome> = c.union<VtStateKeyOutcome>("VtStateKeyOutcome", [
+  c.alternative(c.defer(() => VtStateKeyRefusal), [["kind"], ["kind", "segment"]], [["kind"], ["kind", "segment"]]),
+], ["accepted"]);
 
 /** `vt-state-key-refusal` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtStateKeyRefusal {
@@ -511,24 +213,10 @@ export interface VtStateKeyRefusal {
   readonly segment?: bigint;
 }
 
-export const VtStateKeyRefusal: c.Codec<VtStateKeyRefusal> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("kind", c.defer(() => StateKeyErrorKind), a.kind, e),
-        c.optionalField("segment", c.uint, a.segment, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["kind", "segment"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("kind", c.defer(() => StateKeyErrorKind));
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("segment", c.uint);
-    if (!r1.ok) return r1;
-    return c.ok({ kind: r0.value, segment: r1.value });
-  },
-};
+export const VtStateKeyRefusal: c.Codec<VtStateKeyRefusal> = c.record<VtStateKeyRefusal>({
+  kind: c.required("kind", c.defer(() => StateKeyErrorKind)),
+  segment: c.optional("segment", c.uint),
+});
 
 /** `vt-version` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtVersion {
@@ -536,24 +224,10 @@ export interface VtVersion {
   readonly stateRoot?: Hex;
 }
 
-export const VtVersion: c.Codec<VtVersion> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.optionalField("version", c.uint, a.version, e),
-        c.optionalField("stateRoot", c.defer(() => Hex), a.stateRoot, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["version", "stateRoot"]);
-    if (!f.ok) return f;
-    const r0 = f.value.optional("version", c.uint);
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("stateRoot", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    return c.ok({ version: r0.value, stateRoot: r1.value });
-  },
-};
+export const VtVersion: c.Codec<VtVersion> = c.record<VtVersion>({
+  version: c.optional("version", c.uint),
+  stateRoot: c.optional("stateRoot", c.defer(() => Hex)),
+});
 
 /** `vt-version-key` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtVersionKey {
@@ -562,24 +236,8 @@ export interface VtVersionKey {
   readonly valid: boolean;
 }
 
-export const VtVersionKey: c.Codec<VtVersionKey> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("version", c.uint, a.version, e),
-        c.field("key", c.defer(() => Hex), a.key, e),
-        c.field("valid", c.bool, a.valid, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["version", "key", "valid"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("version", c.uint);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("key", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("valid", c.bool);
-    if (!r2.ok) return r2;
-    return c.ok({ version: r0.value, key: r1.value, valid: r2.value });
-  },
-};
+export const VtVersionKey: c.Codec<VtVersionKey> = c.record<VtVersionKey>({
+  version: c.required("version", c.uint),
+  key: c.required("key", c.defer(() => Hex)),
+  valid: c.required("valid", c.bool),
+});

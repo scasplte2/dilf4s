@@ -15,30 +15,12 @@ export interface VrfKey {
   readonly proofs: readonly VrfProof[];
 }
 
-export const VrfKey: c.Codec<VrfKey> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("seed", c.defer(() => Hex), a.seed, e),
-        c.field("signingKey", c.defer(() => Hex), a.signingKey, e),
-        c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey, e),
-        c.field("proofs", c.vector(c.defer(() => VrfProof), 0, null), a.proofs, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["seed", "signingKey", "verifyingKey", "proofs"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("seed", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("signingKey", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("verifyingKey", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("proofs", c.vector(c.defer(() => VrfProof), 0, null));
-    if (!r3.ok) return r3;
-    return c.ok({ seed: r0.value, signingKey: r1.value, verifyingKey: r2.value, proofs: r3.value });
-  },
-};
+export const VrfKey: c.Codec<VrfKey> = c.record<VrfKey>({
+  seed: c.required("seed", c.defer(() => Hex)),
+  signingKey: c.required("signingKey", c.defer(() => Hex)),
+  verifyingKey: c.required("verifyingKey", c.defer(() => Hex)),
+  proofs: c.required("proofs", c.vector(c.defer(() => VrfProof), 0, null)),
+});
 
 /** `vrf-key-case` (`shared/schemas/vrf-vectors.cddl`). */
 export interface VrfKeyCase {
@@ -48,66 +30,17 @@ export interface VrfKeyCase {
   readonly result: VrfKeyResult;
 }
 
-export const VrfKeyCase: c.Codec<VrfKeyCase> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("suite", c.text, a.suite, e),
-        c.field("name", c.text, a.name, e),
-        c.field("bytes", c.defer(() => Hex), a.bytes, e),
-        c.field("result", c.defer(() => VrfKeyResult), a.result, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["suite", "name", "bytes", "result"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("suite", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("name", c.text);
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("bytes", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("result", c.defer(() => VrfKeyResult));
-    if (!r3.ok) return r3;
-    return c.ok({ suite: r0.value, name: r1.value, bytes: r2.value, result: r3.value });
-  },
-};
+export const VrfKeyCase: c.Codec<VrfKeyCase> = c.record<VrfKeyCase>({
+  suite: c.required("suite", c.text),
+  name: c.required("name", c.text),
+  bytes: c.required("bytes", c.defer(() => Hex)),
+  result: c.required("result", c.defer(() => VrfKeyResult)),
+});
 
 /** `vrf-key-result` (`shared/schemas/vrf-vectors.cddl`). */
 export type VrfKeyResult = "accepted" | cryptoErrors.VrfErrorKind;
 
-export const VrfKeyResult: c.Codec<VrfKeyResult> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["ChallengeMismatch", "HashToCurveFailed", "InvalidGamma", "InvalidPublicKey", "KeyMismatch", "Malformed", "NonCanonicalScalar", "SmallOrderPublicKey", "accepted"]);
-    return c.typeMismatch("no alternative of VrfKeyResult fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["accepted", "Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch", "KeyMismatch", "HashToCurveFailed"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<VrfKeyResult>("accepted");
-      case 1:
-        return c.ok<VrfKeyResult>("Malformed");
-      case 2:
-        return c.ok<VrfKeyResult>("InvalidPublicKey");
-      case 3:
-        return c.ok<VrfKeyResult>("SmallOrderPublicKey");
-      case 4:
-        return c.ok<VrfKeyResult>("InvalidGamma");
-      case 5:
-        return c.ok<VrfKeyResult>("NonCanonicalScalar");
-      case 6:
-        return c.ok<VrfKeyResult>("ChallengeMismatch");
-      case 7:
-        return c.ok<VrfKeyResult>("KeyMismatch");
-      case 8:
-        return c.ok<VrfKeyResult>("HashToCurveFailed");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const VrfKeyResult: c.Codec<VrfKeyResult> = c.union<VrfKeyResult>("VrfKeyResult", [], ["accepted", "Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch", "KeyMismatch", "HashToCurveFailed"]);
 
 /** `vrf-proof` (`shared/schemas/vrf-vectors.cddl`). */
 export interface VrfProof {
@@ -116,27 +49,11 @@ export interface VrfProof {
   readonly beta: Hex;
 }
 
-export const VrfProof: c.Codec<VrfProof> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("alpha", c.defer(() => Hex), a.alpha, e),
-        c.field("pi", c.defer(() => Hex), a.pi, e),
-        c.field("beta", c.defer(() => Hex), a.beta, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["alpha", "pi", "beta"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("alpha", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("pi", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("beta", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    return c.ok({ alpha: r0.value, pi: r1.value, beta: r2.value });
-  },
-};
+export const VrfProof: c.Codec<VrfProof> = c.record<VrfProof>({
+  alpha: c.required("alpha", c.defer(() => Hex)),
+  pi: c.required("pi", c.defer(() => Hex)),
+  beta: c.required("beta", c.defer(() => Hex)),
+});
 
 /** `vrf-rejection` (`shared/schemas/vrf-vectors.cddl`). */
 export interface VrfRejection {
@@ -148,72 +65,19 @@ export interface VrfRejection {
   readonly result: VrfResult;
 }
 
-export const VrfRejection: c.Codec<VrfRejection> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("suite", c.text, a.suite, e),
-        c.field("name", c.text, a.name, e),
-        c.field("verifyingKey", c.defer(() => Hex), a.verifyingKey, e),
-        c.field("alpha", c.defer(() => Hex), a.alpha, e),
-        c.field("pi", c.defer(() => Hex), a.pi, e),
-        c.field("result", c.defer(() => VrfResult), a.result, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["suite", "name", "verifyingKey", "alpha", "pi", "result"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("suite", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("name", c.text);
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("verifyingKey", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("alpha", c.defer(() => Hex));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("pi", c.defer(() => Hex));
-    if (!r4.ok) return r4;
-    const r5 = f.value.required("result", c.defer(() => VrfResult));
-    if (!r5.ok) return r5;
-    return c.ok({ suite: r0.value, name: r1.value, verifyingKey: r2.value, alpha: r3.value, pi: r4.value, result: r5.value });
-  },
-};
+export const VrfRejection: c.Codec<VrfRejection> = c.record<VrfRejection>({
+  suite: c.required("suite", c.text),
+  name: c.required("name", c.text),
+  verifyingKey: c.required("verifyingKey", c.defer(() => Hex)),
+  alpha: c.required("alpha", c.defer(() => Hex)),
+  pi: c.required("pi", c.defer(() => Hex)),
+  result: c.required("result", c.defer(() => VrfResult)),
+});
 
 /** `vrf-result` (`shared/schemas/vrf-vectors.cddl`). */
 export type VrfResult = "valid" | cryptoErrors.VrfErrorKind;
 
-export const VrfResult: c.Codec<VrfResult> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["ChallengeMismatch", "HashToCurveFailed", "InvalidGamma", "InvalidPublicKey", "KeyMismatch", "Malformed", "NonCanonicalScalar", "SmallOrderPublicKey", "valid"]);
-    return c.typeMismatch("no alternative of VrfResult fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["valid", "Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch", "KeyMismatch", "HashToCurveFailed"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<VrfResult>("valid");
-      case 1:
-        return c.ok<VrfResult>("Malformed");
-      case 2:
-        return c.ok<VrfResult>("InvalidPublicKey");
-      case 3:
-        return c.ok<VrfResult>("SmallOrderPublicKey");
-      case 4:
-        return c.ok<VrfResult>("InvalidGamma");
-      case 5:
-        return c.ok<VrfResult>("NonCanonicalScalar");
-      case 6:
-        return c.ok<VrfResult>("ChallengeMismatch");
-      case 7:
-        return c.ok<VrfResult>("KeyMismatch");
-      case 8:
-        return c.ok<VrfResult>("HashToCurveFailed");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const VrfResult: c.Codec<VrfResult> = c.union<VrfResult>("VrfResult", [], ["valid", "Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch", "KeyMismatch", "HashToCurveFailed"]);
 
 /** `vrf-suite` (`shared/schemas/vrf-vectors.cddl`). */
 export interface VrfSuite {
@@ -221,24 +85,10 @@ export interface VrfSuite {
   readonly keys: readonly VrfKey[];
 }
 
-export const VrfSuite: c.Codec<VrfSuite> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("suite", c.text, a.suite, e),
-        c.field("keys", c.vector(c.defer(() => VrfKey), 0, null), a.keys, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["suite", "keys"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("suite", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("keys", c.vector(c.defer(() => VrfKey), 0, null));
-    if (!r1.ok) return r1;
-    return c.ok({ suite: r0.value, keys: r1.value });
-  },
-};
+export const VrfSuite: c.Codec<VrfSuite> = c.record<VrfSuite>({
+  suite: c.required("suite", c.text),
+  keys: c.required("keys", c.vector(c.defer(() => VrfKey), 0, null)),
+});
 
 /** `vrf-vectors` (`shared/schemas/vrf-vectors.cddl`). */
 export interface VrfVectors {
@@ -249,30 +99,10 @@ export interface VrfVectors {
   readonly keyDecoding: readonly VrfKeyCase[];
 }
 
-export const VrfVectors: c.Codec<VrfVectors> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spec", c.literalText("docs/specs/vrf.md"), a.spec, e),
-        c.field("version", c.literalInt(1n), a.version, e),
-        c.field("suites", c.vector(c.defer(() => VrfSuite), 0, null), a.suites, e),
-        c.field("rejections", c.vector(c.defer(() => VrfRejection), 0, null), a.rejections, e),
-        c.field("keyDecoding", c.vector(c.defer(() => VrfKeyCase), 0, null), a.keyDecoding, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "suites", "rejections", "keyDecoding"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spec", c.literalText("docs/specs/vrf.md"));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("version", c.literalInt(1n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("suites", c.vector(c.defer(() => VrfSuite), 0, null));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("rejections", c.vector(c.defer(() => VrfRejection), 0, null));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("keyDecoding", c.vector(c.defer(() => VrfKeyCase), 0, null));
-    if (!r4.ok) return r4;
-    return c.ok({ spec: r0.value, version: r1.value, suites: r2.value, rejections: r3.value, keyDecoding: r4.value });
-  },
-};
+export const VrfVectors: c.Codec<VrfVectors> = c.record<VrfVectors>({
+  spec: c.required("spec", c.literalText("docs/specs/vrf.md")),
+  version: c.required("version", c.literalInt(1n)),
+  suites: c.required("suites", c.vector(c.defer(() => VrfSuite), 0, null)),
+  rejections: c.required("rejections", c.vector(c.defer(() => VrfRejection), 0, null)),
+  keyDecoding: c.required("keyDecoding", c.vector(c.defer(() => VrfKeyCase), 0, null)),
+});

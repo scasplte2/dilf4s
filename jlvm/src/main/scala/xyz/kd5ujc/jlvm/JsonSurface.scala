@@ -46,11 +46,15 @@ object JsonSurface {
 
   /**
    * A value as JSON text that [[parse]] reads back as the same value. Text in `0x`-hex form anywhere in the value (it
-   * would read back as bytes) and a non-terminating rational have no rendering, and are errors.
+   * would read back as bytes) and a non-terminating rational have no rendering, and are errors. A value too heavy to
+   * render is refused from its weight, before it is converted: converting walks it whole, its shared parts each time.
    */
   def render(v: CanonicalValue): Either[JlvmError, String] =
-    CanonicalJson
-      .render(toCanonicalJson(v))
-      .leftMap(e => JlvmError.Malformed(e.toString))
+    renderable(v)
+      .flatMap(w => CanonicalJson.render(toCanonicalJson(w)).leftMap(e => JlvmError.Malformed(e.toString)))
       .flatMap(text => parse(text).filterOrElse(_ == v, JlvmError.Malformed("a value with 0x-hex text has no JSON surface form")).as(text))
+
+  // converting bytes to hex text only adds weight, so a value heavier than the ceiling renders past it
+  private def renderable(v: CanonicalValue): Either[JlvmError, CanonicalValue] =
+    Either.cond(v.weight <= CanonicalJson.MaxRenderBytes, v, JlvmError.Malformed(CanonicalJson.TooLongToRender.toString))
 }

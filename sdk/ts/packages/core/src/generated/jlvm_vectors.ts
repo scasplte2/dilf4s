@@ -6,45 +6,17 @@ export interface BuiltCopies {
   readonly copies: bigint;
 }
 
-export const BuiltCopies: c.Codec<BuiltCopies> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("copies", c.uint, a.copies, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["copies"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("copies", c.uint);
-    if (!r0.ok) return r0;
-    return c.ok({ copies: r0.value });
-  },
-};
+export const BuiltCopies: c.Codec<BuiltCopies> = c.record<BuiltCopies>({
+  copies: c.required("copies", c.uint),
+});
 
 /** `built-step` (`shared/schemas/jlvm-vectors.cddl`). */
 export type BuiltStep = BuiltWrap | BuiltCopies;
 
-export const BuiltStep: c.Codec<BuiltStep> = {
-  encode: (a, d) => {
-    const known = ["copies", "template", "times"];
-    if (c.hasFields(a, BuiltWrap, ["template", "times"], ["template", "times"], known)) return BuiltWrap.encode(a, d);
-    if (c.hasFields(a, BuiltCopies, ["copies"], ["copies"], known)) return BuiltCopies.encode(a, d);
-    return c.typeMismatch("no alternative of BuiltStep fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["template", "times"], ["template", "times"]], [["copies"], ["copies"]]], []);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return BuiltWrap.decode(v);
-      case 1:
-        return BuiltCopies.decode(v);
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const BuiltStep: c.Codec<BuiltStep> = c.union<BuiltStep>("BuiltStep", [
+  c.alternative(c.defer(() => BuiltWrap), [["template", "times"], ["template", "times"]], [["template", "times"], ["template", "times"]]),
+  c.alternative(c.defer(() => BuiltCopies), [["copies"], ["copies"]], [["copies"], ["copies"]]),
+], []);
 
 /** `built-value` (`shared/schemas/jlvm-vectors.cddl`). */
 export interface BuiltValue {
@@ -52,24 +24,10 @@ export interface BuiltValue {
   readonly steps?: readonly BuiltStep[];
 }
 
-export const BuiltValue: c.Codec<BuiltValue> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("leaf", c.defer(() => Hex), a.leaf, e),
-        c.optionalField("steps", c.vector(c.defer(() => BuiltStep), 0, null), a.steps, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["leaf", "steps"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("leaf", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("steps", c.vector(c.defer(() => BuiltStep), 0, null));
-    if (!r1.ok) return r1;
-    return c.ok({ leaf: r0.value, steps: r1.value });
-  },
-};
+export const BuiltValue: c.Codec<BuiltValue> = c.record<BuiltValue>({
+  leaf: c.required("leaf", c.defer(() => Hex)),
+  steps: c.optional("steps", c.vector(c.defer(() => BuiltStep), 0, null)),
+});
 
 /** `built-wrap` (`shared/schemas/jlvm-vectors.cddl`). */
 export interface BuiltWrap {
@@ -77,24 +35,10 @@ export interface BuiltWrap {
   readonly times: bigint;
 }
 
-export const BuiltWrap: c.Codec<BuiltWrap> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("template", c.defer(() => Hex), a.template, e),
-        c.field("times", c.uint, a.times, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["template", "times"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("template", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("times", c.uint);
-    if (!r1.ok) return r1;
-    return c.ok({ template: r0.value, times: r1.value });
-  },
-};
+export const BuiltWrap: c.Codec<BuiltWrap> = c.record<BuiltWrap>({
+  template: c.required("template", c.defer(() => Hex)),
+  times: c.required("times", c.uint),
+});
 
 /** `hex` (`shared/schemas/jlvm-vectors.cddl`). */
 export type Hex = string;
@@ -114,45 +58,17 @@ export interface JlvmCase {
   readonly warnings: bigint;
 }
 
-export const JlvmCase: c.Codec<JlvmCase> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("name", c.text, a.name, e),
-        c.field("program", c.text, a.program, e),
-        c.field("data", c.text, a.data, e),
-        c.optionalField("env", c.textMap(c.text), a.env, e),
-        c.optionalField("built", c.textMap(c.defer(() => BuiltValue)), a.built, e),
-        c.optionalField("gasLimit", c.uint, a.gasLimit, e),
-        c.field("outcome", c.defer(() => JlvmOutcome), a.outcome, e),
-        c.field("gasUsed", c.uint, a.gasUsed, e),
-        c.field("warnings", c.uint, a.warnings, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["name", "program", "data", "env", "built", "gasLimit", "outcome", "gasUsed", "warnings"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("name", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("program", c.text);
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("data", c.text);
-    if (!r2.ok) return r2;
-    const r3 = f.value.optional("env", c.textMap(c.text));
-    if (!r3.ok) return r3;
-    const r4 = f.value.optional("built", c.textMap(c.defer(() => BuiltValue)));
-    if (!r4.ok) return r4;
-    const r5 = f.value.optional("gasLimit", c.uint);
-    if (!r5.ok) return r5;
-    const r6 = f.value.required("outcome", c.defer(() => JlvmOutcome));
-    if (!r6.ok) return r6;
-    const r7 = f.value.required("gasUsed", c.uint);
-    if (!r7.ok) return r7;
-    const r8 = f.value.required("warnings", c.uint);
-    if (!r8.ok) return r8;
-    return c.ok({ name: r0.value, program: r1.value, data: r2.value, env: r3.value, built: r4.value, gasLimit: r5.value, outcome: r6.value, gasUsed: r7.value, warnings: r8.value });
-  },
-};
+export const JlvmCase: c.Codec<JlvmCase> = c.record<JlvmCase>({
+  name: c.required("name", c.text),
+  program: c.required("program", c.text),
+  data: c.required("data", c.text),
+  env: c.optional("env", c.textMap(c.text)),
+  built: c.optional("built", c.textMap(c.defer(() => BuiltValue))),
+  gasLimit: c.optional("gasLimit", c.uint),
+  outcome: c.required("outcome", c.defer(() => JlvmOutcome)),
+  gasUsed: c.required("gasUsed", c.uint),
+  warnings: c.required("warnings", c.uint),
+});
 
 /** `jlvm-error` (`shared/schemas/jlvm-vectors.cddl`). */
 export interface JlvmError {
@@ -160,82 +76,23 @@ export interface JlvmError {
   readonly op?: string;
 }
 
-export const JlvmError: c.Codec<JlvmError> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("error", c.defer(() => JlvmErrorKind), a.error, e),
-        c.optionalField("op", c.text, a.op, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["error", "op"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("error", c.defer(() => JlvmErrorKind));
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("op", c.text);
-    if (!r1.ok) return r1;
-    return c.ok({ error: r0.value, op: r1.value });
-  },
-};
+export const JlvmError: c.Codec<JlvmError> = c.record<JlvmError>({
+  error: c.required("error", c.defer(() => JlvmErrorKind)),
+  op: c.optional("op", c.text),
+});
 
 /** `jlvm-error-kind` (`shared/schemas/jlvm-vectors.cddl`). */
 export type JlvmErrorKind = "Malformed" | "Type" | "Arity" | "Arithmetic" | "Domain" | "Crypto" | "Limit" | "OutOfGas";
 
-export const JlvmErrorKind: c.Codec<JlvmErrorKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["Arithmetic", "Arity", "Crypto", "Domain", "Limit", "Malformed", "OutOfGas", "Type"]);
-    return c.typeMismatch("no alternative of JlvmErrorKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["Malformed", "Type", "Arity", "Arithmetic", "Domain", "Crypto", "Limit", "OutOfGas"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<JlvmErrorKind>("Malformed");
-      case 1:
-        return c.ok<JlvmErrorKind>("Type");
-      case 2:
-        return c.ok<JlvmErrorKind>("Arity");
-      case 3:
-        return c.ok<JlvmErrorKind>("Arithmetic");
-      case 4:
-        return c.ok<JlvmErrorKind>("Domain");
-      case 5:
-        return c.ok<JlvmErrorKind>("Crypto");
-      case 6:
-        return c.ok<JlvmErrorKind>("Limit");
-      case 7:
-        return c.ok<JlvmErrorKind>("OutOfGas");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const JlvmErrorKind: c.Codec<JlvmErrorKind> = c.union<JlvmErrorKind>("JlvmErrorKind", [], ["Malformed", "Type", "Arity", "Arithmetic", "Domain", "Crypto", "Limit", "OutOfGas"]);
 
 /** `jlvm-outcome` (`shared/schemas/jlvm-vectors.cddl`). */
 export type JlvmOutcome = JlvmValue | JlvmError;
 
-export const JlvmOutcome: c.Codec<JlvmOutcome> = {
-  encode: (a, d) => {
-    const known = ["cbor", "error", "json", "op"];
-    if (c.hasFields(a, JlvmValue, ["cbor"], ["cbor", "json"], known)) return JlvmValue.encode(a, d);
-    if (c.hasFields(a, JlvmError, ["error"], ["error", "op"], known)) return JlvmError.encode(a, d);
-    return c.typeMismatch("no alternative of JlvmOutcome fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["cbor"], ["cbor", "json"]], [["error"], ["error", "op"]]], []);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return JlvmValue.decode(v);
-      case 1:
-        return JlvmError.decode(v);
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const JlvmOutcome: c.Codec<JlvmOutcome> = c.union<JlvmOutcome>("JlvmOutcome", [
+  c.alternative(c.defer(() => JlvmValue), [["cbor"], ["cbor", "json"]], [["cbor"], ["cbor", "json"]]),
+  c.alternative(c.defer(() => JlvmError), [["error"], ["error", "op"]], [["error"], ["error", "op"]]),
+], []);
 
 /** `jlvm-value` (`shared/schemas/jlvm-vectors.cddl`). */
 export interface JlvmValue {
@@ -243,24 +100,10 @@ export interface JlvmValue {
   readonly json?: string;
 }
 
-export const JlvmValue: c.Codec<JlvmValue> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("cbor", c.defer(() => Hex), a.cbor, e),
-        c.optionalField("json", c.text, a.json, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["cbor", "json"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("cbor", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("json", c.text);
-    if (!r1.ok) return r1;
-    return c.ok({ cbor: r0.value, json: r1.value });
-  },
-};
+export const JlvmValue: c.Codec<JlvmValue> = c.record<JlvmValue>({
+  cbor: c.required("cbor", c.defer(() => Hex)),
+  json: c.optional("json", c.text),
+});
 
 /** `jlvm-vectors` (`shared/schemas/jlvm-vectors.cddl`). */
 export interface JlvmVectors {
@@ -272,33 +115,11 @@ export interface JlvmVectors {
   readonly cases: readonly JlvmCase[];
 }
 
-export const JlvmVectors: c.Codec<JlvmVectors> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spec", c.literalText("docs/specs/jlvm.md"), a.spec, e),
-        c.field("version", c.literalInt(1n), a.version, e),
-        c.field("schedule", c.literalInt(1n), a.schedule, e),
-        c.field("gasLimit", c.uint, a.gasLimit, e),
-        c.field("source", c.text, a.source, e),
-        c.field("cases", c.vector(c.defer(() => JlvmCase), 0, null), a.cases, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "schedule", "gasLimit", "source", "cases"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spec", c.literalText("docs/specs/jlvm.md"));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("version", c.literalInt(1n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("schedule", c.literalInt(1n));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("gasLimit", c.uint);
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("source", c.text);
-    if (!r4.ok) return r4;
-    const r5 = f.value.required("cases", c.vector(c.defer(() => JlvmCase), 0, null));
-    if (!r5.ok) return r5;
-    return c.ok({ spec: r0.value, version: r1.value, schedule: r2.value, gasLimit: r3.value, source: r4.value, cases: r5.value });
-  },
-};
+export const JlvmVectors: c.Codec<JlvmVectors> = c.record<JlvmVectors>({
+  spec: c.required("spec", c.literalText("docs/specs/jlvm.md")),
+  version: c.required("version", c.literalInt(1n)),
+  schedule: c.required("schedule", c.literalInt(1n)),
+  gasLimit: c.required("gasLimit", c.uint),
+  source: c.required("source", c.text),
+  cases: c.required("cases", c.vector(c.defer(() => JlvmCase), 0, null)),
+});

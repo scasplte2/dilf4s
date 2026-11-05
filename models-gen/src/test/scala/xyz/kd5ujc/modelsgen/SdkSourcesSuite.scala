@@ -197,6 +197,15 @@ object SdkSourcesSuite extends SimpleIOSuite {
       .and(expect(rust("r = uint\n", "class").isRight, "nor a module named class"))
   }
 
+  pureTest("TypeScript: a record lists its fields in schema order; a union its alternatives, then its texts") {
+    val out = typescript("r = { \"b\": uint, ? \"a\": text }\nu = r / \"x\" / \"y\"\n")
+    val record = "export const R: c.Codec<R> = c.record<R>({\n  b: c.required(\"b\", c.uint),\n  a: c.optional(\"a\", c.text),\n});"
+    val union =
+      "c.union<U>(\"U\", [\n  c.alternative(c.defer(() => R), [[\"b\"], [\"a\", \"b\"]], [[\"b\"], [\"a\", \"b\"]]),\n], [\"x\", \"y\"]);"
+    expect(out.exists(_.contains(record)), out.fold(_.message, identity))
+      .and(expect(out.exists(_.contains(union)), out.fold(_.message, identity)))
+  }
+
   pureTest("TypeScript: a clash lists only the rules that collide") {
     val byHand = Map(
       QName("t", "r") -> ModelRule.Record(

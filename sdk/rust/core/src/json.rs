@@ -8,7 +8,6 @@
 use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::fmt::Write as _;
 
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero, pow};
@@ -30,8 +29,15 @@ pub fn parse(text: &str) -> Result<Value, CanonicalError> {
     parse_with_max_scale(text, DEFAULT_MAX_SCALE)
 }
 
-/// Parses JSON text into a canonical value, rejecting numbers whose scale exceeds `max_scale`.
+/// Parses JSON text into a canonical value, rejecting numbers whose scale exceeds `max_scale`. The bound may be
+/// lowered, never raised: the spec accepts no JSON number of a scale past [`DEFAULT_MAX_SCALE`]
+/// (canonical-encoding.md section 3), so a larger `max_scale` is a `TypeMismatch`, before anything is read.
 pub fn parse_with_max_scale(text: &str, max_scale: u32) -> Result<Value, CanonicalError> {
+    if max_scale > DEFAULT_MAX_SCALE {
+        return Err(CanonicalError::TypeMismatch {
+            reason: alloc::format!("the scale bound is not an integer from 0 to {DEFAULT_MAX_SCALE}"),
+        });
+    }
     Parser { text, bytes: text.as_bytes(), max_scale }.run()
 }
 
@@ -423,24 +429,36 @@ impl From<CanonicalError> for RenderError {
 /// `l` digits), so each part is refused in O(1) when its weight is over what is left, and every part written fits;
 /// escaped text is counted before it is written. There is no render without a limit.
 pub fn render_within(value: &Value, max_bytes: usize) -> Result<String, RenderError> {
-    let mut out = Budget { out: String::new(), max: max_bytes };
+    let mut out = Budget { out: String::new(), used: 0, max: max_bytes };
     write_json(&mut out, value)?;
     Ok(out.out)
 }
 
-/// The output so far and its limit, in UTF-8 bytes.
-struct Budget {
-    out: String,
+/// Where rendered text goes. The renderer gives it each byte of the rendering once, in order, and nothing else.
+trait TextOut {
+    fn put(&mut self, piece: &str);
+}
+
+impl TextOut for String {
+    fn put(&mut self, piece: &str) {
+        self.push_str(piece);
+    }
+}
+
+/// The output so far, the UTF-8 bytes written to it, and its limit.
+struct Budget<O> {
+    out: O,
+    used: usize,
     max: usize,
 }
 
-impl Budget {
+impl<O: TextOut> Budget<O> {
     fn refused(&self) -> RenderError {
         RenderError::TooLarge(crate::cbor::TooLarge { limit: self.max })
     }
 
     fn left(&self) -> usize {
-        self.max.saturating_sub(self.out.len())
+        self.max.saturating_sub(self.used)
     }
 
     /// Whether a part of at least `weight` bytes can still fit.
@@ -453,16 +471,34 @@ impl Budget {
         if piece.len() > self.left() {
             return Err(self.refused());
         }
-        self.out.push_str(piece);
+        self.out.put(piece);
+        self.used = self.used.saturating_add(piece.len());
         Ok(())
     }
 
-    /// Writes `s` quoted and escaped, counted before it is built.
+    /// Writes `s` quoted and escaped, counted before it is written: runs that need no escape go straight from `s`.
     fn quote(&mut self, s: &str) -> Result<(), RenderError> {
-        if quoted_len(s) > self.left() {
+        let length = quoted_len(s);
+        if length > self.left() {
             return Err(self.refused());
         }
-        quote(&mut self.out, s);
+        let unescaped = |out: &mut O, run: Option<&str>| {
+            if let Some(r) = run.filter(|r| !r.is_empty()) {
+                out.put(r);
+            }
+        };
+        self.out.put("\"");
+        let mut run = 0;
+        for (i, c) in s.char_indices() {
+            if let Some(e) = escape(c) {
+                unescaped(&mut self.out, s.get(run..i));
+                e.write(&mut self.out);
+                run = i.saturating_add(c.len_utf8());
+            }
+        }
+        unescaped(&mut self.out, s.get(run..));
+        self.out.put("\"");
+        self.used = self.used.saturating_add(length);
         Ok(())
     }
 }
@@ -474,7 +510,7 @@ enum Open<'a> {
 }
 
 /// Never recursive: an explicit stack holds one open container per level of nesting (at most [`MAX_DEPTH`]).
-fn write_json(out: &mut Budget, value: &Value) -> Result<(), RenderError> {
+fn write_json<O: TextOut>(out: &mut Budget<O>, value: &Value) -> Result<(), RenderError> {
     let mut stack: Vec<Open<'_>> = Vec::new();
     let mut next = Some(value);
     loop {
@@ -558,36 +594,53 @@ fn within(text: String) -> Option<String> {
     (significand <= MAX_DIGITS && scale_ok).then_some(text)
 }
 
-/// The length of `s` quoted and escaped as [`quote`] writes it, in UTF-8 bytes.
-fn quoted_len(s: &str) -> usize {
-    s.chars().fold(2usize, |n, c| {
-        let w = match c {
-            '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
-            c if c < ' ' => 6,
-            c => c.len_utf8(),
-        };
-        n.saturating_add(w)
-    })
+/// How JSON writes a character it escapes: a short escape, or `\u00` and two hex digits for the other controls.
+enum Escape {
+    Short(&'static str),
+    Control([u8; 2]),
 }
 
-fn quote(out: &mut String, s: &str) {
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{8}' => out.push_str("\\b"),
-            '\u{c}' => out.push_str("\\f"),
-            c if c < ' ' => {
-                let _ = write!(out, "\\u{:04x}", u32::from(c));
+impl Escape {
+    fn write<O: TextOut>(&self, out: &mut O) {
+        match self {
+            Self::Short(e) => out.put(e),
+            Self::Control(hex) => {
+                out.put("\\u00");
+                out.put(core::str::from_utf8(hex).unwrap_or_default());
             }
-            c => out.push(c),
         }
     }
-    out.push('"');
+
+    const fn len(&self) -> usize {
+        match self {
+            Self::Short(e) => e.len(),
+            Self::Control(_) => 6,
+        }
+    }
+}
+
+fn escape(c: char) -> Option<Escape> {
+    match c {
+        '"' => Some(Escape::Short("\\\"")),
+        '\\' => Some(Escape::Short("\\\\")),
+        '\n' => Some(Escape::Short("\\n")),
+        '\r' => Some(Escape::Short("\\r")),
+        '\t' => Some(Escape::Short("\\t")),
+        '\u{8}' => Some(Escape::Short("\\b")),
+        '\u{c}' => Some(Escape::Short("\\f")),
+        c if c < ' ' => {
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            let digit = |d: u32| usize::try_from(d).ok().and_then(|d| HEX.get(d)).copied().unwrap_or(b'0');
+            let code = u32::from(c);
+            Some(Escape::Control([digit(code >> 4), digit(code & 0xf)]))
+        }
+        _ => None,
+    }
+}
+
+/// The length of `s` quoted and escaped as [`Budget::quote`] writes it, in UTF-8 bytes.
+fn quoted_len(s: &str) -> usize {
+    s.chars().fold(2usize, |n, c| n.saturating_add(escape(c).map_or(c.len_utf8(), |e| e.len())))
 }
 
 /// `log2(5)` in millionths, rounded down: the bits per factor of five.
@@ -644,7 +697,68 @@ mod tests {
     use num_bigint::BigInt;
     use num_traits::{One, pow};
 
-    use super::twos_and_fives;
+    use alloc::format;
+    use alloc::string::String;
+    use alloc::vec;
+
+    use super::{Budget, TextOut, render_within, twos_and_fives, write_json};
+    use crate::Value;
+    use crate::value::MAX_DEPTH;
+
+    /// What reached the output, as counts alone: bytes, pieces, and the longest piece.
+    #[derive(Default)]
+    struct Count {
+        bytes: usize,
+        pieces: usize,
+        longest: usize,
+    }
+
+    impl TextOut for Count {
+        fn put(&mut self, piece: &str) {
+            self.bytes = self.bytes.saturating_add(piece.len());
+            self.pieces = self.pieces.saturating_add(1);
+            self.longest = self.longest.max(piece.len());
+        }
+    }
+
+    fn counted(v: &Value) -> Count {
+        let mut out = Budget { out: Count::default(), used: 0, max: usize::MAX };
+        write_json(&mut out, v).unwrap();
+        out.out
+    }
+
+    /// Each byte of a rendering is written once, whatever the value's depth or width: counted, not timed, for a
+    /// depth-256 chain of arrays, a depth-256 chain of maps with escaped text at the bottom, and a 20,000-entry map.
+    #[test]
+    fn every_byte_of_a_rendering_is_written_once() {
+        let chain = (0..MAX_DEPTH).fold(Value::int(7u8), |v, _| Value::array(vec![v]).unwrap());
+        let map_chain = (0..MAX_DEPTH).fold(Value::text("a\"b\n\u{1}é😀"), |v, i| {
+            Value::map([(format!("k{i}"), v), (String::from("z"), Value::int(i))]).unwrap()
+        });
+        let wide =
+            Value::map((0..20_000u32).map(|i| {
+                (format!("key{i:05}"), if i % 2 == 0 { Value::int(i) } else { Value::text(format!("v\t{i}")) })
+            }))
+            .unwrap();
+        // the longest piece is a scalar, a run of a text or key, or an escape: never a container's text
+        let cases =
+            [("array chain", &chain, 1), ("map chain", &map_chain, "é😀".len()), ("wide map", &wide, "key00000".len())];
+        for (name, v, longest) in cases {
+            let text = render_within(v, usize::MAX).unwrap();
+            let count = counted(v);
+            assert_eq!(count.bytes, text.len(), "{name}: bytes written for a rendering of {}", text.len());
+            assert!(
+                u64::try_from(count.pieces).unwrap() <= 4 * v.weight(),
+                "{name}: {} pieces for weight {}",
+                count.pieces,
+                v.weight()
+            );
+            assert_eq!(count.longest, longest, "{name}: the longest piece");
+        }
+        let Count { bytes, pieces, longest } = counted(&chain);
+        assert_eq!((bytes, pieces, longest), (513, 513, 1));
+        assert_eq!(render_within(&chain, usize::MAX).unwrap(), format!("{}7{}", "[".repeat(256), "]".repeat(256)));
+    }
 
     /// Factoring a denominator takes at most four big-number divisions and exponentiations, whatever its width:
     /// 2^33219, 5^14306 or 3 5^14000 is factored (or found not to terminate) at once, never one division per factor,

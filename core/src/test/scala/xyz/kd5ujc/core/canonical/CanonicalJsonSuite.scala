@@ -119,6 +119,16 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
     }.reduce(_ and _)
   }
 
+  pureTest("a scale bound may be lowered, never raised past the spec's, as in the Rust and TypeScript SDKs") {
+    val refused = Left(TypeMismatch(s"the scale bound is not an integer from 0 to ${CanonicalJson.MaxScale}"))
+    expect
+      .same(refused, CanonicalJson.parse("1.5", CanonicalJson.MaxScale + 1))
+      .and(expect.same(refused, CanonicalJson.parse("1.5", Int.MaxValue)))
+      .and(expect.same(refused, CanonicalJson.parse("1.5", -1)))
+      .and(expect(CanonicalJson.parse("1.5", CanonicalJson.MaxScale).isRight, "the spec's bound itself"))
+      .and(expect(CanonicalJson.parse("1.5", 0).isLeft, "a scale of 1 past a bound of 0"))
+  }
+
   pureTest("deeply nested JSON text is a typed error, never a stack overflow") {
     val bomb = "[" * 200000 + "]" * 200000
     expect.same(Left(DepthExceeded(CanonicalValue.MaxDepth)), parse(bomb))
