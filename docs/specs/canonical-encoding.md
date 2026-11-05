@@ -81,8 +81,9 @@ Where a result has no room for a refusal, the answer is still defined and reads 
 false when either side is not a value, `MapValue.get` finds nothing for a key that is not text, `decodeUtf8` gives
 `undefined` for what is not bytes, and the diagnostics `inspect`, `describeFailure` and `Preview.of` give fixed
 placeholders (`<not a canonical value>`, `<not a decode failure>`, and a preview with the head `<not text>` and a
-length of 0). One exception remains until the hash API is converted: `contentHash`, `TaggedHash.content` and
-`TaggedHash.contentWithin` still throw on an argument that is not a value.
+length of 0). One exception remains: `contentHash`, `TaggedHash.content` and `TaggedHash.contentWithin` still throw
+on an argument that is not a value, until the hash API is converted in a later change, with the proofs and signing
+packages' caller input.
 
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the
