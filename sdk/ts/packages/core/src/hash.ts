@@ -5,10 +5,21 @@ import { keccak_256, sha3_256, sha3_512 } from "@noble/hashes/sha3.js";
 
 import { encodeIntoWithin, Feeding, MAX_ENCODED_BYTES } from "./cbor.js";
 import type { TooLarge } from "./error.js";
+import type { ExpansionRefusal, HashError, HashErrorKind } from "./generated/hash_errors.js";
+import { firstNonDigit, fromHex } from "./hex.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { encodeUtf8 } from "./utf8.js";
-import type { Value } from "./value.js";
+import { isBytes, type Value } from "./value.js";
+
+/**
+ * A hash refusal, by kind (docs/specs/conformance.md section 6): generated from `shared/schemas/hash-errors.cddl`, as the
+ * reference's and the Rust SDK's are. Caller text is held as a {@link Preview}, never as itself.
+ */
+export type { ExpansionRefusal, HashError, HashErrorKind };
+
+/** The members of {@link HashError} of the kinds `K`: what a function that refuses only those returns. */
+export type HashErrorOf<K extends HashErrorKind> = Extract<HashError, { readonly kind: K }>;
 
 /** The hash functions the specs use, by the names the specs and vectors give them. */
 export type HashAlgorithm = "SHA-256" | "SHA-512" | "SHA3-256" | "SHA3-512" | "Keccak-256" | "BLAKE2b-256" | "BLAKE2b-512";
@@ -51,9 +62,141 @@ export function outputSize(algorithm: HashAlgorithm): number {
   return algorithm === "SHA-512" || algorithm === "SHA3-512" || algorithm === "BLAKE2b-512" ? 64 : 32;
 }
 
-/** The algorithm with this name, if it is one of {@link HASH_ALGORITHMS}. */
-export function hashAlgorithm(name: string): HashAlgorithm | undefined {
-  return HASH_ALGORITHMS.find((a) => a === name);
+/** The input block size of `algorithm` in bytes (a sponge's rate): `expand_message_xmd`'s `s_in_bytes`. */
+export function blockSize(algorithm: HashAlgorithm): number {
+  switch (algorithm) {
+    case "SHA-256":
+      return 64;
+    case "SHA3-512":
+      return 72;
+    case "SHA3-256":
+    case "Keccak-256":
+      return 136;
+    case "SHA-512":
+    case "BLAKE2b-256":
+    case "BLAKE2b-512":
+      return 128;
+  }
+}
+
+/**
+ * A JavaScript caller's argument as a refusal previews it: a string's preview, or, for anything else, its type in
+ * parentheses (`(number)`), never read or converted (a conversion would run the caller's own `toString`).
+ */
+const previewOf = (x: unknown): Preview => (typeof x === "string" ? Preview.of(x) : Preview.of(`(${typeof x})`));
+
+/** Whether a JavaScript caller's argument is one of {@link HASH_ALGORITHMS}. */
+const isAlgorithm = (x: unknown): x is HashAlgorithm => HASH_ALGORITHMS.some((a) => a === x);
+
+const unknownAlgorithm = (x: unknown): HashErrorOf<"UnknownAlgorithm"> => ({ kind: "UnknownAlgorithm", name: previewOf(x) });
+
+/** The algorithm with this name, or `UnknownAlgorithm` with the name previewed (anything not a string by its type). */
+export function parseHashAlgorithm(name: string): Result<HashAlgorithm, HashErrorOf<"UnknownAlgorithm">> {
+  return isAlgorithm(name) ? ok(name) : err(unknownAlgorithm(name));
+}
+
+/** `%TypedArray%.prototype`'s `length` getter: it reads an array's internal length, whatever its own `length` says. */
+const typedArrayLength = Reflect.get(Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), "length") ?? {}, "get") as
+  | ((this: unknown) => unknown)
+  | undefined;
+
+/**
+ * The internal length of a caller's `Uint8Array` (`isBytes`), in O(1): never its `length` property, which a subclass
+ * or an own accessor can make say anything.
+ */
+function lengthOf(bytes: Uint8Array): number {
+  const n = typedArrayLength?.call(bytes);
+  return typeof n === "number" ? n : new Uint8Array(bytes).length;
+}
+
+/**
+ * A caller's `Uint8Array` (`isBytes`) as a fresh plain array: the constructor copies through the engine's internal
+ * slots, so no subclass's `length`, iterator or accessor decides what is copied.
+ */
+const ownBytes = (bytes: Uint8Array): Uint8Array => new Uint8Array(bytes);
+
+/**
+ * A digest of `algorithm` from its bytes, which must be exactly its output size (a fresh copy). A JavaScript caller's
+ * algorithm that is not one of {@link HASH_ALGORITHMS} is `UnknownAlgorithm`. Bytes that are not a `Uint8Array`
+ * (`isBytes`) are refused as `InvalidLength` with an `actual` of 0: a stand-in, since the family has no kind for an
+ * argument of the wrong type, until the TypeScript result types widen to one (#116).
+ */
+export function digestFromBytes(algorithm: HashAlgorithm, bytes: Uint8Array): Result<Uint8Array, HashErrorOf<"InvalidLength" | "UnknownAlgorithm">> {
+  if (!isAlgorithm(algorithm)) return err(unknownAlgorithm(algorithm));
+  const expected = outputSize(algorithm);
+  const actual = isBytes(bytes) ? lengthOf(bytes) : 0;
+  return actual === expected ? ok(ownBytes(bytes)) : err({ kind: "InvalidLength", algorithm, expected, actual });
+}
+
+/**
+ * A digest of `algorithm` from its hex (docs/specs/canonical-encoding.md section 4): an optional `0x`, then exactly
+ * twice the output size in ASCII hex digits, either case. `InvalidHex` at the first character that is not a hex digit
+ * (or, for an odd number of digits, the text's length), `InvalidLength` for any other number of digits. Digits past the
+ * width are refused reading at most one past it, before the text is decoded (conformance.md section 8). A JavaScript
+ * caller's algorithm that is not one of {@link HASH_ALGORITHMS} is `UnknownAlgorithm`, and text that is not a string
+ * is `InvalidHex` at 0, unread.
+ */
+export function digestFromHex(algorithm: HashAlgorithm, text: string): Result<Uint8Array, HashErrorOf<"InvalidLength" | "InvalidHex" | "UnknownAlgorithm">> {
+  if (!isAlgorithm(algorithm)) return err(unknownAlgorithm(algorithm));
+  if (typeof (text as unknown) !== "string") return err({ kind: "InvalidHex", offset: 0 });
+  const from = text.startsWith("0x") ? 2 : 0;
+  const digits = text.length - from;
+  const expected = outputSize(algorithm);
+  if (digits > 2 * expected) {
+    const bad = firstNonDigit(text, from, from + 2 * expected + 1);
+    return err(bad >= 0 ? { kind: "InvalidHex", offset: bad } : { kind: "InvalidLength", algorithm, expected, actual: Math.ceil(digits / 2) });
+  }
+  const bytes = fromHex(text.slice(from));
+  return bytes.ok ? digestFromBytes(algorithm, bytes.value) : err({ kind: "InvalidHex", offset: bytes.error.offset + from });
+}
+
+/** The most bytes {@link expandMessageXmd} expands to with `algorithm`: `min(255 * output size, 65535)`. */
+export function expansionLimit(algorithm: HashAlgorithm): number {
+  return Math.min(255 * outputSize(algorithm), 65535);
+}
+
+const OVERSIZE_PREFIX = encodeUtf8("H2C-OVERSIZE-DST-");
+
+/**
+ * RFC 9380 section 5.3.1 `expand_message_xmd`: `length` uniform bytes from `message` under the domain separation tag
+ * `dst`. A DST over 255 bytes is first reduced to `H("H2C-OVERSIZE-DST-" || DST)` (section 5.3.3). Refused as
+ * `InvalidExpansion`, before anything is hashed, for an empty DST (`emptyDst`), then for a length that is not an integer
+ * in `1..`{@link expansionLimit} (`outputLength`). The DST's length is its internal one, and it is copied before it is
+ * hashed, so a subclass cannot change either. For a JavaScript caller's argument of the wrong type: an algorithm that
+ * is not one of {@link HASH_ALGORITHMS} is `UnknownAlgorithm`, and a length that is not a number is `outputLength`. A
+ * DST that is not a `Uint8Array` (`isBytes`) is refused as `emptyDst`: a stand-in, since the family has no kind for an
+ * argument of the wrong type, until the TypeScript result types widen to one (#116). A message that is not a
+ * `Uint8Array` throws noble's `TypeError` from the hash, as `digest` and `hashParts` do: the result type has no room
+ * for it until then.
+ */
+export function expandMessageXmd(
+  algorithm: HashAlgorithm,
+  message: Uint8Array,
+  dst: Uint8Array,
+  length: number,
+): Result<Uint8Array, HashErrorOf<"InvalidExpansion" | "UnknownAlgorithm">> {
+  if (!isAlgorithm(algorithm)) return err(unknownAlgorithm(algorithm));
+  const limit = expansionLimit(algorithm);
+  const refused = (refusal: ExpansionRefusal) => err<HashErrorOf<"InvalidExpansion">>({ kind: "InvalidExpansion", refusal, algorithm, limit });
+  if (!isBytes(dst) || lengthOf(dst) === 0) return refused("emptyDst");
+  if (!Number.isSafeInteger(length) || length < 1 || length > limit) return refused("outputLength");
+  const own = ownBytes(dst);
+  const tag = own.length > 255 ? hashParts(algorithm, [OVERSIZE_PREFIX, own]) : own;
+  const suffix = new Uint8Array(tag.length + 1);
+  suffix.set(tag);
+  suffix[tag.length] = tag.length;
+  const b0 = hashParts(algorithm, [new Uint8Array(blockSize(algorithm)), message, Uint8Array.of(length >> 8, length & 0xff), Uint8Array.of(0), suffix]);
+  const size = outputSize(algorithm);
+  const ell = Math.ceil(length / size);
+  const out = new Uint8Array(ell * size);
+  let prev = hashParts(algorithm, [b0, Uint8Array.of(1), suffix]);
+  out.set(prev, 0);
+  for (let i = 2; i <= ell; i++) {
+    const last = prev;
+    prev = hashParts(algorithm, [b0.map((b, j) => b ^ (last[j] ?? 0)), Uint8Array.of(i), suffix]);
+    out.set(prev, (i - 1) * size);
+  }
+  return ok(out.slice(0, length));
 }
 
 /** The hash of the concatenation of `parts`. */
@@ -66,11 +209,6 @@ export function hashParts(algorithm: HashAlgorithm, parts: readonly Uint8Array[]
 /** The hash of `data`. */
 export function digest(algorithm: HashAlgorithm, data: Uint8Array): Uint8Array {
   return hashParts(algorithm, [data]);
-}
-
-export interface InvalidDomainTag {
-  readonly kind: "InvalidDomainTag";
-  readonly tag: Preview;
 }
 
 /** The DomainTag grammar of section 4. Without the `m` flag, `$` matches only at the very end, as Java's `matches`. */
@@ -90,9 +228,12 @@ export class DomainTag {
     return this.#value;
   }
 
-  /** The tag, if it matches the grammar. */
-  static of(tag: string): Result<DomainTag, InvalidDomainTag> {
-    return DOMAIN_TAG.test(tag) ? ok(new DomainTag(tag)) : err({ kind: "InvalidDomainTag", tag: Preview.of(tag) });
+  /**
+   * The tag, if it matches the grammar. A JavaScript caller's tag that is not a string is `InvalidDomainTag`, previewed
+   * by its type and never converted (a regular expression would run its `toString`).
+   */
+  static of(tag: string): Result<DomainTag, HashErrorOf<"InvalidDomainTag">> {
+    return typeof (tag as unknown) === "string" && DOMAIN_TAG.test(tag) ? ok(new DomainTag(tag)) : err({ kind: "InvalidDomainTag", tag: previewOf(tag) });
   }
 }
 

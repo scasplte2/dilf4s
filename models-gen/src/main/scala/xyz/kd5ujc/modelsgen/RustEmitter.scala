@@ -84,6 +84,8 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
     case FieldType.Matching(p)                    => Rs("String", "c::Matching", s"c::Matching(c::TextPattern::${patternName(p)})").asRight
     case FieldType.LitInt(v)                      => Rs("()", "c::LiteralInt", s"c::LiteralInt($v)").asRight
     case FieldType.LitText(v)                     => Rs("()", "c::LiteralText", s"c::LiteralText(${string(v)})").asRight
+    // an error's field only (Profile refuses it in a wire type): the codec runtime re-exports the core's Preview
+    case FieldType.Preview => Rs("c::Preview", "", "").asRight
     case FieldType.Ref(q) =>
       models.get(q).toRight(GenError.UnresolvedName(rule.module, q.name)).flatMap {
         case ModelRule.Alias(_) if resolving(q) => outside(rule, s"alias cycle through ${q.name}").asLeft
@@ -451,15 +453,16 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
     val rules = models.toVector.collect { case (q, m) if q.module == name => q -> m }.sortBy(_._1.name)
     namespaceClash(name, rules).toLeft(()).flatMap { _ =>
       rules.traverse {
-        case (q, ModelRule.Record(fs))             => record(q, fs)
-        case (q, ModelRule.Enumeration(cs))        => enumeration(q, cs)
-        case (q, ModelRule.Union(as, texts, cs))   => union(q, as, texts, cs)
-        case (q, ModelRule.ErrorFamily(ks, cases)) => errorFamily(q, ks, cases)
-        case (q, ModelRule.Alias(t))               => alias(q, t)
-        case (q, ModelRule.Constant(v))            => constant(q, v).asRight
+        case (q, ModelRule.Record(fs))             => record(q, fs).map(Some(_))
+        case (q, ModelRule.Enumeration(cs))        => enumeration(q, cs).map(Some(_))
+        case (q, ModelRule.Union(as, texts, cs))   => union(q, as, texts, cs).map(Some(_))
+        case (q, ModelRule.ErrorFamily(ks, cases)) => errorFamily(q, ks, cases).map(Some(_))
+        case (q, ModelRule.Alias(t))               => alias(q, t).map(Some(_))
+        case (q, ModelRule.Constant(v))            => Some(constant(q, v)).asRight
+        case (_, ModelRule.PreviewType)            => None.asRight
       }.map { bodies =>
         val constants = rules.collect { case (q, ModelRule.Constant(v)) => q -> v }
-        val code = (bodies ++ narrowed(constants)).mkString("\n")
+        val code = (bodies.flatten ++ narrowed(constants)).mkString("\n")
         // imports follow the code itself: doc comments and string literals removed, then whole identifiers only, so
         // a type named `ByteString` does not import `String`
         val body = code.linesIterator.filterNot(_.trim.startsWith("//")).mkString("\n").replaceAll("\"(\\\\.|[^\"\\\\])*\"", "\"\"")

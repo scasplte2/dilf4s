@@ -281,6 +281,8 @@ pub enum KeyError {
     InvalidWordList {
         /// Its `reason`.
         reason: String,
+        /// Its `separator`.
+        separator: Option<c::Preview>,
     },
     /// The kind `InvalidDerivation`.
     InvalidDerivation {
@@ -314,7 +316,7 @@ impl core::fmt::Display for KeyError {
         match self {
             Self::InvalidEntropy { reason: a0 } => write!(f, "InvalidEntropy (reason: {a0})"),
             Self::InvalidMnemonic { reason: a0 } => write!(f, "InvalidMnemonic (reason: {a0})"),
-            Self::InvalidWordList { reason: a0 } => write!(f, "InvalidWordList (reason: {a0})"),
+            Self::InvalidWordList { reason: a0, separator: a1 } => write!(f, "InvalidWordList (reason: {a0}, separator: {a1:?})"),
             Self::InvalidDerivation { reason: a0 } => write!(f, "InvalidDerivation (reason: {a0})"),
             Self::InvalidPath { refusal: a0, reason: a1 } => write!(f, "InvalidPath (refusal: {a0:?}, reason: {a1})"),
         }

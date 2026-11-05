@@ -312,7 +312,7 @@ fn scalar16(c: &[u8; 16]) -> Scalar {
 fn hash_to_curve(suite: SuiteId, pk: &[u8; 32], alpha: &[u8]) -> Result<EdwardsPoint, VrfError> {
     match suite {
         SuiteId::Tai => hash_to_curve_tai(pk, alpha),
-        SuiteId::Ell2 => Ok(hash_to_curve_ell2(pk, alpha)),
+        SuiteId::Ell2 => hash_to_curve_ell2(pk, alpha),
         SuiteId::Draft03 => Ok(hash_to_curve_draft03(pk, alpha)),
     }
 }
@@ -336,9 +336,12 @@ fn hash_to_curve_tai(pk: &[u8; 32], alpha: &[u8]) -> Result<EdwardsPoint, VrfErr
 /// The ELL2 hash-to-curve DST: `"ECVRF_" || h2c_suite_ID_string || suite_string`.
 const ELL2_DST: &[u8] = b"ECVRF_edwards25519_XMD:SHA-512_ELL2_NU_\x04";
 
-/// RFC 9381 section 5.4.1.2: `encode_to_curve(Y || alpha)` of RFC 9380's `edwards25519_XMD:SHA-512_ELL2_NU_`.
-fn hash_to_curve_ell2(pk: &[u8; 32], alpha: &[u8]) -> EdwardsPoint {
+/// RFC 9381 section 5.4.1.2: `encode_to_curve(Y || alpha)` of RFC 9380's `edwards25519_XMD:SHA-512_ELL2_NU_`. The
+/// suite's DST is never empty, so `expand_message_xmd` never refuses it; the refusal would be `HashToCurveFailed`, as
+/// the reference reports it.
+fn hash_to_curve_ell2(pk: &[u8; 32], alpha: &[u8]) -> Result<EdwardsPoint, VrfError> {
     field::encode_to_curve_ell2(&[pk, alpha], ELL2_DST)
+        .ok_or_else(|| VrfError::HashToCurveFailed { reason: "Elligator 2 produced no point".into() })
 }
 
 /// draft-03 (libsodium): `r = SHA-512(04 || 01 || Y || alpha)[0:32]` with bit 255 cleared, then Elligator 2.
@@ -497,8 +500,8 @@ pub mod internals {
     }
 
     /// RFC 9381 ELL2's hash-to-curve (`encode_to_curve(Y || alpha)`), re-encoded.
-    pub fn hash_to_curve_ell2(pk: &[u8; 32], alpha: &[u8]) -> [u8; 32] {
-        super::hash_to_curve_ell2(pk, alpha).compress().to_bytes()
+    pub fn hash_to_curve_ell2(pk: &[u8; 32], alpha: &[u8]) -> Result<[u8; 32], super::VrfError> {
+        super::hash_to_curve_ell2(pk, alpha).map(|p| p.compress().to_bytes())
     }
 
     /// draft-03's hash-to-curve, re-encoded.
@@ -506,12 +509,10 @@ pub mod internals {
         super::hash_to_curve_draft03(pk, alpha).compress().to_bytes()
     }
 
-    /// RFC 9380 `encode_to_curve` with `edwards25519_XMD:SHA-512_ELL2_NU_`, re-encoded; `None` unless the DST is 1 to
-    /// 255 bytes (longer DSTs must first be hashed, section 5.3.3, which no suite here needs).
+    /// RFC 9380 `encode_to_curve` with `edwards25519_XMD:SHA-512_ELL2_NU_`, re-encoded; `None` for an empty DST. A
+    /// DST over 255 bytes is first hashed (section 5.3.3), as the core's `expand_message_xmd` does.
     pub fn encode_to_curve_ell2(message: &[u8], dst: &[u8]) -> Option<[u8; 32]> {
-        (1..=255)
-            .contains(&dst.len())
-            .then(|| super::field::encode_to_curve_ell2(&[message], dst).compress().to_bytes())
+        super::field::encode_to_curve_ell2(&[message], dst).map(|p| p.compress().to_bytes())
     }
 }
 

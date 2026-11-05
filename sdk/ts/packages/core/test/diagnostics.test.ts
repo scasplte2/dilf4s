@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { codec, describeFailure, DomainTag, json, MapValue, MAX_PREVIEW_CODE_POINTS, models, Preview, Value } from "../src/index.js";
+import { codec, describeFailure, digestFromHex, DomainTag, json, MapValue, MAX_PREVIEW_CODE_POINTS, models, parseHashAlgorithm, Preview, Value } from "../src/index.js";
 import { decodeFailure, at } from "../src/error.js";
 import { expectOk, int, loadVectors } from "./vectors.js";
 
@@ -122,5 +122,30 @@ describe("bounded refusals", () => {
       kept(r.error.tag);
       bounded("InvalidDomainTag", rendered(r.error));
     }
+  });
+
+  it("a 1 MiB hash function name is a preview", () => {
+    const r = parseHashAlgorithm("X".repeat(HUGE));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      kept(r.error.name);
+      bounded("UnknownAlgorithm", rendered(r.error));
+    }
+  });
+
+  it("a 1 MiB digest hex is refused by its width, holding sizes only", () => {
+    const cases = ["a".repeat(HUGE), `0x${"a".repeat(HUGE)}`, "a".repeat(64) + "é".repeat(HUGE), "é".repeat(HUGE)];
+    const refusals = cases.map((t) => digestFromHex("SHA-256", t));
+    expect(refusals.map((r) => (r.ok ? "accepted" : r.error))).toEqual([
+      { kind: "InvalidLength", algorithm: "SHA-256", expected: 32, actual: HUGE / 2 },
+      { kind: "InvalidLength", algorithm: "SHA-256", expected: 32, actual: HUGE / 2 },
+      { kind: "InvalidHex", offset: 64 },
+      { kind: "InvalidHex", offset: 0 },
+    ]);
+    for (const r of refusals) bounded("digest hex", rendered(r));
+    // past the one digit it reads beyond the width, the text is not read: its length refuses it, whatever follows
+    const past = digestFromHex("SHA-256", "a".repeat(65) + "é".repeat(HUGE));
+    expect(past.ok ? "accepted" : past.error.kind).toBe("InvalidLength");
+    bounded("digest hex", rendered(past));
   });
 });

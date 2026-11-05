@@ -52,6 +52,8 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     case FieldType.Vec(element, min, max) =>
       val (et, ec) = tc(rule, element)
       (s"Vector[$et]", s"Codec.vector($ec, $min, ${max.fold("None")(m => s"Some($m)")})")
+    // an error's field only (Profile refuses it in a wire type), so it has no codec
+    case FieldType.Preview => ("xyz.kd5ujc.core.canonical.Preview", "")
   }
 
   private def bound(hi: Int, suffix: String): String = if (hi == Int.MaxValue) "None" else s"Some($hi$suffix)"
@@ -208,13 +210,15 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
        |""".stripMargin
   }
 
-  private def emitRule(q: QName, model: ModelRule): Either[GenError, String] = model match {
-    case ModelRule.Record(fs)                  => record(q, fs)
-    case ModelRule.Enumeration(cs)             => enumeration(q, cs)
-    case ModelRule.Union(alts, texts, choices) => union(q, alts, texts, choices).asRight
-    case ModelRule.ErrorFamily(kinds, cases)   => errorFamily(q, kinds, cases)
-    case ModelRule.Alias(t)                    => alias(q, t).asRight
-    case ModelRule.Constant(v)                 => constant(q, v).asRight
+  /** A rule's source, or none: the rule `preview` is `xyz.kd5ujc.core.canonical.Preview`, not a generated type. */
+  private def emitRule(q: QName, model: ModelRule): Either[GenError, Option[String]] = model match {
+    case ModelRule.Record(fs)                  => record(q, fs).map(Some(_))
+    case ModelRule.Enumeration(cs)             => enumeration(q, cs).map(Some(_))
+    case ModelRule.Union(alts, texts, choices) => Some(union(q, alts, texts, choices)).asRight
+    case ModelRule.ErrorFamily(kinds, cases)   => errorFamily(q, kinds, cases).map(Some(_))
+    case ModelRule.Alias(t)                    => Some(alias(q, t)).asRight
+    case ModelRule.Constant(v)                 => Some(constant(q, v)).asRight
+    case ModelRule.PreviewType                 => None.asRight
   }
 
   /** The source of one module, or the first profile violation. */
@@ -231,7 +235,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
         case Some(e) => e.asLeft
         case None =>
           rules.traverse(q => profile.rule(q).flatMap(emitRule(q, _))).map { bodies =>
-            val code = bodies.mkString("\n")
+            val code = bodies.flatten.mkString("\n")
             val canonical =
               List("Canonical", "CanonicalDecoder", "CanonicalEntries", "CanonicalValue", "Codec")
                 .filter(i => s"\\b$i\\b".r.findFirstIn(code).isDefined)

@@ -47,9 +47,20 @@ object ExpandMessageSuite extends SimpleIOSuite {
   pureTest("expand_message_xmd(SHA-256): RFC 9380 K.1")(check[Sha256]("expand_message_xmd_sha256", 10))
   pureTest("expand_message_xmd(SHA-512): RFC 9380 K.3")(check[Sha512]("expand_message_xmd_sha512", 10))
 
-  pureTest("over-long outputs and empty tags are typed errors") {
-    expect(ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector(1), 255 * 32 + 1).isLeft)
-      .and(expect(ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector.empty, 32).isLeft))
+  pureTest("an empty tag, then a length outside 1..limit, is InvalidExpansion by its refusal") {
+    val length = HashError.InvalidExpansion("outputLength", "SHA-256", 8160)
+    expect
+      .same(Left(length), ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector(1), 255 * 32 + 1))
+      .and(expect.same(Left(length), ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector(1), 0)))
+      .and(expect.same(Left(length), ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector.fill(256)(7), -1)))
+      .and(
+        expect.same(
+          Left(HashError.InvalidExpansion("emptyDst", "SHA-256", 8160)),
+          ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector.empty, 0)
+        )
+      )
+      .and(expect.same(16320L, ExpandMessage.limit[Sha512]))
+      .and(expect.same(8160, ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector(1), 8160).map(_.size.toInt).getOrElse(0)))
       .and(expect(ExpandMessage.xmd[Sha512](ByteVector.empty, ByteVector.fill(256)(7), 64).isRight, "oversize DST is reduced"))
   }
 }

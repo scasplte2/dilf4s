@@ -2,7 +2,7 @@ import { inspect } from "node:util";
 
 import { describe, expect, test } from "vitest";
 
-import { digest, hashAlgorithm, models, toHex, type HashAlgorithm, type Result } from "@kd5ujc/dilf4s-core";
+import { digest, models, parseHashAlgorithm, toHex, type HashAlgorithm, type Result } from "@kd5ujc/dilf4s-core";
 import { sha256 } from "@noble/hashes/sha2.js";
 
 import { CardanoSumKes, KesProduct, KesSum, type CardanoSumKesKey, type KesError, type KesProductKey, type KesSumKey } from "../src/index.js";
@@ -29,11 +29,7 @@ interface FaceKey {
 }
 
 function schemeOf(construction: models.kesVectors.KesConstruction, p: models.kesVectors.KesParameters): Result<Face, KesError> {
-  const hash = (name: string): HashAlgorithm => {
-    const a = hashAlgorithm(name);
-    if (a === undefined) throw new Error(`unknown hash ${name}`);
-    return a;
-  };
+  const hash = (name: string): HashAlgorithm => expectOk(parseHashAlgorithm(name), "a known hash function");
   const sumP = p as models.kesVectors.KesSumParameters;
   const productP = p as models.kesVectors.KesProductParameters;
   const cardanoP = p as models.kesVectors.KesCardanoParameters;

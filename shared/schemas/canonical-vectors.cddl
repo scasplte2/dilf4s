@@ -1,4 +1,5 @@
 ; Schema of shared/vectors/canonical_encoding_v1.json (conformance vectors for docs/specs/canonical-encoding.md).
+;# import hash-errors as errors
 
 canonical-vectors = {
   "spec": "docs/specs/canonical-encoding.md",
@@ -12,6 +13,9 @@ canonical-vectors = {
   "taggedHash": [* canonical-tagged-hash],
   "digests": [* canonical-digest],
   "domainTags": [* canonical-domain-tag],
+  "algorithms": [* canonical-algorithm],
+  "digestHex": [* canonical-digest-hex],
+  "expansions": [* canonical-expansion],
 }
 
 canonical-json-case = canonical-json-accepted / canonical-json-rejected
@@ -39,9 +43,29 @@ canonical-tagged-hash = { "algorithm": text, "tag": text, "message": hex, "diges
 ; A plain (untagged) digest of each hash function the specs use.
 canonical-digest = { "algorithm": text, "message": hex, "digest": hex }
 
-; Whether a candidate tag matches the DomainTag grammar of section 4: "accepted", or refused by its kind.
-canonical-domain-tag = { "tag": text, "outcome": domain-tag-outcome }
+; The outcome of a hash call of section 4: "accepted", or refused by its kind (conformance.md section 6).
+hash-outcome = "accepted" / errors.hash-error-kind
 
-domain-tag-outcome = "accepted" / "InvalidDomainTag"
+; Whether a candidate tag matches the DomainTag grammar of section 4.
+canonical-domain-tag = { "tag": text, "outcome": hash-outcome }
+
+; Whether a name is one of the hash functions of section 4.
+canonical-algorithm = { "name": text, "outcome": hash-outcome }
+
+; A digest of `algorithm` from its hex (section 4): accepted (its bytes are the hex's), or refused by its kind, with
+; "offset" exactly when the kind is InvalidHex (conformance.md section 3).
+canonical-digest-hex = { "algorithm": text, "hex": text, "outcome": hash-outcome, ? "offset": uint }
+
+; `expand_message_xmd` (RFC 9380 section 5.3.1) of `message` under `dst` to `length` bytes with `algorithm`: accepted
+; with its "output", or refused by its kind, with "refusal" exactly when the kind is InvalidExpansion.
+canonical-expansion = {
+  "algorithm": text,
+  "message": hex,
+  "dst": hex,
+  "length": uint,
+  "outcome": hash-outcome,
+  ? "output": hex,
+  ? "refusal": errors.expansion-refusal,
+}
 
 hex = text .regexp "([0-9a-f]{2})*"

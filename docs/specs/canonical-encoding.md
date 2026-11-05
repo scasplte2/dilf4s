@@ -209,3 +209,21 @@ contentHash_H(tag, value) = taggedHash_H(tag, encode(value))
 Every structure and message type has its own tag, so a digest produced in one context can never be valid in another. The tag ends with a version, so a format change takes a new tag rather than silently changing bytes.
 
 This is the BIP-340 tagged-hash construction, extended from SHA-256 to any `H`.
+
+**Names, digests and hex.** Each SDK takes a hash function by the name above (`SHA-256`, `BLAKE2b-256`, exactly as
+written); any other name is refused as `UnknownAlgorithm`. A digest of `H` is exactly `H`'s output size in bytes
+(`InvalidLength` otherwise). Hex, as the vectors and the hash API read it, is ASCII digits and `a`-`f` in either case,
+two per byte, nothing else (no whitespace, separators or other scripts' digits); a digest's hex may start with `0x`
+(lowercase `x`). Hex is refused as `InvalidHex` at the first character that is not a hex digit, or else, for an odd
+number of digits, at the text's length; the offset counts any `0x`. A digest's hex with more digits than twice the
+output size is `InvalidLength`, refused reading at most one digit past that width (so a non-digit within it is
+`InvalidHex` first), before the text is decoded.
+
+**`expand_message_xmd`.** RFC 9380 §5.3.1 over any `H` above, its `s_in_bytes` the input block size (the rate of a
+sponge: SHA-256 64, SHA-512 128, SHA3-256 and Keccak-256 136, SHA3-512 72, BLAKE2b 128). A DST over 255 bytes is
+first reduced to `H("H2C-OVERSIZE-DST-" || DST)` (§5.3.3). It is refused as `InvalidExpansion`, before anything is
+hashed, for an empty DST (`emptyDst`), then for a length outside 1 to `min(255 * output size, 65535)`
+(`outputLength`).
+
+Every refusal of this section is a kind of the generated hash family (`shared/schemas/hash-errors.cddl`,
+`conformance.md` §6); the vectors pin each, with the outcome of every name, digest hex and expansion row.

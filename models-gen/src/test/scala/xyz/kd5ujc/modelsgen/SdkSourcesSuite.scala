@@ -391,6 +391,76 @@ object SdkSourcesSuite extends SimpleIOSuite {
       .and(expect(outside(gen("k = \"a\" / \"b\"\nr = \"a\" / k\n")), "a text twice"))
   }
 
+  private val previewed =
+    "e-kind = \"Unknown\" / \"Gone\"\n" +
+    "e = { \"kind\": \"Unknown\", \"name\": preview, ? \"alias\": preview // \"kind\": \"Gone\" }\n" +
+    "preview = { \"head\": text, \"length\": uint }\n"
+
+  pureTest("an error's preview field is each SDK's Preview, and the rule preview is not generated") {
+    val out = gen(previewed)
+    val rust = out.map(_.rust.toMap.getOrElse("t.rs", ""))
+    val ts = out.map(_.typescript.toMap.getOrElse("t.ts", ""))
+    val scala = Main.generate(Vector("t" -> previewed), "p").map(_.foldMap(_._2))
+    expect(
+      scala.exists(
+        _.contains("final case class Unknown(name: xyz.kd5ujc.core.canonical.Preview, alias: Option[xyz.kd5ujc.core.canonical.Preview])")
+      ),
+      scala.fold(_.message, identity)
+    )
+      .and(expect(scala.exists(s => !s.contains("class Preview") && !s.contains("object Preview")), "no Scala Preview type"))
+      .and(expect(rust.exists(_.contains("        name: c::Preview,\n")), rust.fold(_.message, identity)))
+      .and(expect(rust.exists(_.contains("alias: Option<c::Preview>,")), "an optional preview"))
+      .and(
+        expect(
+          rust.exists(_.contains("Self::Unknown { name: a0, alias: a1 } => write!(f, \"Unknown (name: {a0}, alias: {a1:?})\"),")),
+          "a preview renders by its Display"
+        )
+      )
+      .and(expect(rust.exists(s => !s.contains("pub struct Preview")), "no Rust Preview type"))
+      .and(expect(ts.exists(_.contains("import type { Preview } from \"../preview.js\";")), ts.fold(_.message, identity)))
+      .and(
+        expect(ts.exists(_.contains("  | { readonly kind: \"Unknown\"; readonly name: Preview; readonly alias?: Preview }")), "TS field")
+      )
+      .and(expect(ts.exists(s => !s.contains("export interface Preview") && !s.contains("export const Preview")), "no TS Preview type"))
+      .and(expect(gen(family).exists(_.typescript.forall(!_._2.contains("../preview.js"))), "no import without a preview field"))
+  }
+
+  pureTest("a preview is an error's field only, and the rule preview has the preview's fields") {
+    def both(cddl: String) = outside(gen(cddl)) && outside(Main.generate(Vector("t" -> cddl), "p"))
+    val p = "preview = { \"head\": text, \"length\": uint }\n"
+    expect(both(p + "r = { \"p\": preview }\n"), "a record field")
+      .and(expect(both(p + "r = [* preview]\n"), "an array element"))
+      .and(expect(both(p + "r = { * text => preview }\n"), "a map value"))
+      .and(expect(both(p + "r = preview\n"), "an alias"))
+      .and(expect(both(p + "r = preview / s\ns = { \"x\": uint }\n"), "a choice alternative"))
+      .and(
+        expect(
+          both("e-kind = \"A\" / \"B\"\ne = { \"kind\": \"A\", \"p\": preview // \"kind\": \"B\" }\npreview = text\n"),
+          "a text preview"
+        )
+      )
+      .and(expect(both("preview = { \"head\": text }\n"), "a preview without its length"))
+      .and(expect(both("preview = { \"head\": text, \"length\": uint, \"x\": uint }\n"), "a preview with another field"))
+      .and(expect(gen(p).isRight, "the rule alone is fine"))
+      .and(
+        expect(
+          SdkSources
+            .generate(
+              Vector(
+                "a" -> p,
+                "b" -> ";# import a as a\ne-kind = \"A\" / \"B\"\ne = { \"kind\": \"A\", \"p\": a.preview // \"kind\": \"B\" }\nPreview = uint\n"
+              )
+            )
+            .swap
+            .exists {
+              case GenError.ReservedName(_, Language.TypeScript, "Preview") => true
+              case _                                                        => false
+            },
+          "a type named Preview beside an error holding the imported Preview"
+        )
+      )
+  }
+
   pureTest("an error family's shape is checked in every language") {
     def both(cddl: String) = outside(gen(cddl)) && outside(Main.generate(Vector("t" -> cddl), "p"))
     val kinds = "e-kind = \"A\" / \"B\"\n"

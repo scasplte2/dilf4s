@@ -149,9 +149,10 @@ export class PoseidonMerkleProof {
     const w = decodeInput(models.poseidon.PoseidonMerkleProof, value);
     if (!w.ok) return err({ kind: "Encoding", reason: describeFailure(w.error) });
     const siblings: Fr[] = [];
-    for (const x of w.value.siblings) {
+    for (const [i, x] of w.value.siblings.entries()) {
       const f = Fr.of(x);
-      if (!f.ok) return err({ kind: "Encoding", reason: `sibling ${x.toString()} is not below r` });
+      // a caller's number by its position and bit length, never its digits (conformance.md section 2)
+      if (!f.ok) return err({ kind: "Encoding", reason: `sibling ${i.toString()} is not below r (${bitLength(x).toString()} bits)` });
       siblings.push(f.value);
     }
     return PoseidonMerkleProof.of(w.value.position, siblings);

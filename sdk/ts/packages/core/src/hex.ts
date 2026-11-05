@@ -1,10 +1,6 @@
 /** Hexadecimal text, as the conformance vectors write bytes. */
+import type { HashErrorOf } from "./hash.js";
 import { err, ok, type Result } from "./result.js";
-
-export interface InvalidHex {
-  readonly kind: "InvalidHex";
-  readonly offset: number;
-}
 
 /** Lowercase hexadecimal of `bytes`. */
 export function toHex(bytes: Uint8Array): string {
@@ -13,14 +9,28 @@ export function toHex(bytes: Uint8Array): string {
   return out;
 }
 
-/** The bytes of hexadecimal text (either case), which must have an even number of digits. */
-export function fromHex(text: string): Result<Uint8Array, InvalidHex> {
+/** The value of an ASCII hex digit's code unit, or -1. */
+const nibble = (c: number): number => (c >= 0x30 && c <= 0x39 ? c - 0x30 : c >= 0x61 && c <= 0x66 ? c - 0x57 : c >= 0x41 && c <= 0x46 ? c - 0x37 : -1);
+
+/** The offset in `text`, from `from` to `until`, of the first code unit that is not an ASCII hex digit, or -1. */
+export function firstNonDigit(text: string, from: number, until: number): number {
+  for (let i = from; i < Math.min(until, text.length); i++) if (nibble(text.charCodeAt(i)) < 0) return i;
+  return -1;
+}
+
+/**
+ * The bytes of hexadecimal text: ASCII digits and `a`-`f` in either case, two per byte. Refused as `InvalidHex` at the
+ * first character that is not a hex digit, or else, for an odd number of digits, at the text's length: every character
+ * before either is ASCII, so the offset is the same in UTF-16 units, UTF-8 bytes and code points
+ * (docs/specs/canonical-encoding.md section 4). A JavaScript caller's argument that is not a string is `InvalidHex` at
+ * 0, unread: a stand-in until the TypeScript result types widen to a kind for an argument of the wrong type (#116).
+ */
+export function fromHex(text: string): Result<Uint8Array, HashErrorOf<"InvalidHex">> {
+  if (typeof (text as unknown) !== "string") return err({ kind: "InvalidHex", offset: 0 });
+  const bad = firstNonDigit(text, 0, text.length);
+  if (bad >= 0) return err({ kind: "InvalidHex", offset: bad });
   if (text.length % 2 !== 0) return err({ kind: "InvalidHex", offset: text.length });
   const out = new Uint8Array(text.length / 2);
-  for (let i = 0; i < out.length; i++) {
-    const pair = text.slice(2 * i, 2 * i + 2);
-    if (!/^[0-9a-fA-F]{2}$/.test(pair)) return err({ kind: "InvalidHex", offset: 2 * i });
-    out[i] = Number.parseInt(pair, 16);
-  }
+  for (let i = 0; i < out.length; i++) out[i] = (nibble(text.charCodeAt(2 * i)) << 4) | nibble(text.charCodeAt(2 * i + 1));
   return ok(out);
 }

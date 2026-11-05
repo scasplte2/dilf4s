@@ -4,6 +4,32 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use crate::codec as c;
 
+/// `canonical-algorithm` (`shared/schemas/canonical-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalAlgorithm {
+    /// The `name` entry.
+    pub name: String,
+    /// The `outcome` entry.
+    pub outcome: HashOutcome,
+}
+
+impl c::Model for CanonicalAlgorithm {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("outcome", &c::ModelOf::<HashOutcome>::NEW, &self.outcome, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["name", "outcome"])?;
+        let f0 = fields.required("name", &c::Text)?;
+        let f1 = fields.required("outcome", &c::ModelOf::<HashOutcome>::NEW)?;
+        Ok(Self { name: f0, outcome: f1 })
+    }
+}
+
 /// `canonical-cbor-rejection` (`shared/schemas/canonical-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalCborRejection {
@@ -64,13 +90,47 @@ impl c::Model for CanonicalDigest {
     }
 }
 
+/// `canonical-digest-hex` (`shared/schemas/canonical-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalDigestHex {
+    /// The `algorithm` entry.
+    pub algorithm: String,
+    /// The `hex` entry.
+    pub hex: String,
+    /// The `outcome` entry.
+    pub outcome: HashOutcome,
+    /// The `offset` entry.
+    pub offset: Option<u64>,
+}
+
+impl c::Model for CanonicalDigestHex {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("algorithm", &c::Text, &self.algorithm, inner)?,
+            c::field("hex", &c::Text, &self.hex, inner)?,
+            c::field("outcome", &c::ModelOf::<HashOutcome>::NEW, &self.outcome, inner)?,
+            c::optional_field("offset", &c::UINT, self.offset.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["algorithm", "hex", "outcome", "offset"])?;
+        let f0 = fields.required("algorithm", &c::Text)?;
+        let f1 = fields.required("hex", &c::Text)?;
+        let f2 = fields.required("outcome", &c::ModelOf::<HashOutcome>::NEW)?;
+        let f3 = fields.optional("offset", &c::UINT)?;
+        Ok(Self { algorithm: f0, hex: f1, outcome: f2, offset: f3 })
+    }
+}
+
 /// `canonical-domain-tag` (`shared/schemas/canonical-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalDomainTag {
     /// The `tag` entry.
     pub tag: String,
     /// The `outcome` entry.
-    pub outcome: DomainTagOutcome,
+    pub outcome: HashOutcome,
 }
 
 impl c::Model for CanonicalDomainTag {
@@ -78,14 +138,14 @@ impl c::Model for CanonicalDomainTag {
         let inner = c::nested(depth)?;
         c::record([
             c::field("tag", &c::Text, &self.tag, inner)?,
-            c::field("outcome", &c::ModelOf::<DomainTagOutcome>::NEW, &self.outcome, inner)?,
+            c::field("outcome", &c::ModelOf::<HashOutcome>::NEW, &self.outcome, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["tag", "outcome"])?;
         let f0 = fields.required("tag", &c::Text)?;
-        let f1 = fields.required("outcome", &c::ModelOf::<DomainTagOutcome>::NEW)?;
+        let f1 = fields.required("outcome", &c::ModelOf::<HashOutcome>::NEW)?;
         Ok(Self { tag: f0, outcome: f1 })
     }
 }
@@ -167,6 +227,52 @@ impl c::Model for CanonicalErrorKind {
 impl CanonicalErrorKind {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 14] = [Self::UnpairedSurrogate, Self::DuplicateKey, Self::RationalTooWide, Self::IntegerTooWide, Self::JsonSyntax, Self::InvalidNumber, Self::NotJsonRepresentable, Self::TypeMismatch, Self::UnexpectedEnd, Self::TrailingBytes, Self::DepthExceeded, Self::NonCanonical, Self::Unsupported, Self::InvalidUtf8];
+}
+
+/// `canonical-expansion` (`shared/schemas/canonical-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalExpansion {
+    /// The `algorithm` entry.
+    pub algorithm: String,
+    /// The `message` entry.
+    pub message: Hex,
+    /// The `dst` entry.
+    pub dst: Hex,
+    /// The `length` entry.
+    pub length: u64,
+    /// The `outcome` entry.
+    pub outcome: HashOutcome,
+    /// The `output` entry.
+    pub output: Option<Hex>,
+    /// The `refusal` entry.
+    pub refusal: Option<super::hash_errors::ExpansionRefusal>,
+}
+
+impl c::Model for CanonicalExpansion {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("algorithm", &c::Text, &self.algorithm, inner)?,
+            c::field("message", &HEX, &self.message, inner)?,
+            c::field("dst", &HEX, &self.dst, inner)?,
+            c::field("length", &c::UINT, &self.length, inner)?,
+            c::field("outcome", &c::ModelOf::<HashOutcome>::NEW, &self.outcome, inner)?,
+            c::optional_field("output", &HEX, self.output.as_ref(), inner)?,
+            c::optional_field("refusal", &c::ModelOf::<super::hash_errors::ExpansionRefusal>::NEW, self.refusal.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["algorithm", "message", "dst", "length", "outcome", "output", "refusal"])?;
+        let f0 = fields.required("algorithm", &c::Text)?;
+        let f1 = fields.required("message", &HEX)?;
+        let f2 = fields.required("dst", &HEX)?;
+        let f3 = fields.required("length", &c::UINT)?;
+        let f4 = fields.required("outcome", &c::ModelOf::<HashOutcome>::NEW)?;
+        let f5 = fields.optional("output", &HEX)?;
+        let f6 = fields.optional("refusal", &c::ModelOf::<super::hash_errors::ExpansionRefusal>::NEW)?;
+        Ok(Self { algorithm: f0, message: f1, dst: f2, length: f3, outcome: f4, output: f5, refusal: f6 })
+    }
 }
 
 /// `canonical-json-accepted` (`shared/schemas/canonical-vectors.cddl`).
@@ -370,6 +476,12 @@ pub struct CanonicalVectors {
     pub digests: Vec<CanonicalDigest>,
     /// The `domainTags` entry.
     pub domain_tags: Vec<CanonicalDomainTag>,
+    /// The `algorithms` entry.
+    pub algorithms: Vec<CanonicalAlgorithm>,
+    /// The `digestHex` entry.
+    pub digest_hex: Vec<CanonicalDigestHex>,
+    /// The `expansions` entry.
+    pub expansions: Vec<CanonicalExpansion>,
 }
 
 impl c::Model for CanonicalVectors {
@@ -387,11 +499,14 @@ impl c::Model for CanonicalVectors {
             c::field("taggedHash", &c::VecOf { element: c::ModelOf::<CanonicalTaggedHash>::NEW, min: 0, max: None }, &self.tagged_hash, inner)?,
             c::field("digests", &c::VecOf { element: c::ModelOf::<CanonicalDigest>::NEW, min: 0, max: None }, &self.digests, inner)?,
             c::field("domainTags", &c::VecOf { element: c::ModelOf::<CanonicalDomainTag>::NEW, min: 0, max: None }, &self.domain_tags, inner)?,
+            c::field("algorithms", &c::VecOf { element: c::ModelOf::<CanonicalAlgorithm>::NEW, min: 0, max: None }, &self.algorithms, inner)?,
+            c::field("digestHex", &c::VecOf { element: c::ModelOf::<CanonicalDigestHex>::NEW, min: 0, max: None }, &self.digest_hex, inner)?,
+            c::field("expansions", &c::VecOf { element: c::ModelOf::<CanonicalExpansion>::NEW, min: 0, max: None }, &self.expansions, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "contentHashTag", "contentHashAlgorithm", "json", "model", "renderRejections", "cborRejections", "taggedHash", "digests", "domainTags"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "contentHashTag", "contentHashAlgorithm", "json", "model", "renderRejections", "cborRejections", "taggedHash", "digests", "domainTags", "algorithms", "digestHex", "expansions"])?;
         fields.required("spec", &c::LiteralText("docs/specs/canonical-encoding.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         let f2 = fields.required("contentHashTag", &c::Text)?;
@@ -403,39 +518,46 @@ impl c::Model for CanonicalVectors {
         let f8 = fields.required("taggedHash", &c::VecOf { element: c::ModelOf::<CanonicalTaggedHash>::NEW, min: 0, max: None })?;
         let f9 = fields.required("digests", &c::VecOf { element: c::ModelOf::<CanonicalDigest>::NEW, min: 0, max: None })?;
         let f10 = fields.required("domainTags", &c::VecOf { element: c::ModelOf::<CanonicalDomainTag>::NEW, min: 0, max: None })?;
-        Ok(Self { content_hash_tag: f2, content_hash_algorithm: f3, json: f4, model: f5, render_rejections: f6, cbor_rejections: f7, tagged_hash: f8, digests: f9, domain_tags: f10 })
+        let f11 = fields.required("algorithms", &c::VecOf { element: c::ModelOf::<CanonicalAlgorithm>::NEW, min: 0, max: None })?;
+        let f12 = fields.required("digestHex", &c::VecOf { element: c::ModelOf::<CanonicalDigestHex>::NEW, min: 0, max: None })?;
+        let f13 = fields.required("expansions", &c::VecOf { element: c::ModelOf::<CanonicalExpansion>::NEW, min: 0, max: None })?;
+        Ok(Self { content_hash_tag: f2, content_hash_algorithm: f3, json: f4, model: f5, render_rejections: f6, cbor_rejections: f7, tagged_hash: f8, digests: f9, domain_tags: f10, algorithms: f11, digest_hex: f12, expansions: f13 })
     }
 }
 
-/// `domain-tag-outcome` (`shared/schemas/canonical-vectors.cddl`).
+/// `hash-outcome` (`shared/schemas/canonical-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum DomainTagOutcome {
+pub enum HashOutcome {
     /// The text `accepted`.
     Accepted,
-    /// The text `InvalidDomainTag`.
-    InvalidDomainTag,
+    /// A [`super::hash_errors::HashErrorKind`].
+    HashErrorKind(super::hash_errors::HashErrorKind),
 }
 
-impl c::Model for DomainTagOutcome {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+impl c::Model for HashOutcome {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Accepted => Ok(c::Value::text("accepted")),
-            Self::InvalidDomainTag => Ok(c::Value::text("InvalidDomainTag")),
+            Self::HashErrorKind(a) => c::Model::to_value_at(a, depth),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["accepted", "InvalidDomainTag"])? {
+        match c::select_alternative(value, &[], &["accepted", "InvalidLength", "InvalidHex", "InvalidDomainTag", "InvalidExpansion", "UnknownAlgorithm"])? {
             c::Alternative::Text(0) => Ok(Self::Accepted),
-            c::Alternative::Text(1) => Ok(Self::InvalidDomainTag),
+            c::Alternative::Text(1) => Ok(Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidLength)),
+            c::Alternative::Text(2) => Ok(Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidHex)),
+            c::Alternative::Text(3) => Ok(Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidDomainTag)),
+            c::Alternative::Text(4) => Ok(Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidExpansion)),
+            c::Alternative::Text(5) => Ok(Self::HashErrorKind(super::hash_errors::HashErrorKind::UnknownAlgorithm)),
             other => Err(c::unknown_alternative(other)),
         }
     }
 }
 
-impl DomainTagOutcome {
+impl HashOutcome {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 2] = [Self::Accepted, Self::InvalidDomainTag];
+    pub const ALL: [Self; 6] = [Self::Accepted, Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidLength), Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidHex), Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidDomainTag), Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidExpansion), Self::HashErrorKind(super::hash_errors::HashErrorKind::UnknownAlgorithm)];
 }
 
 /// `hex` (`shared/schemas/canonical-vectors.cddl`).

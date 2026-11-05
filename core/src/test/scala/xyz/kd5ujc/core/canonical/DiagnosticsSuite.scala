@@ -6,7 +6,7 @@ import java.nio.file.{Files, Paths}
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.hash.{DomainTag, HashError}
+import xyz.kd5ujc.core.hash.{Digest, DomainTag, HashError, Hasher, Sha256}
 import xyz.kd5ujc.models.diagnostic_vectors.DiagnosticVectors
 
 import weaver.SimpleIOSuite
@@ -132,5 +132,30 @@ object DiagnosticsSuite extends SimpleIOSuite {
       case Left(e @ HashError.InvalidDomainTag(p)) => kept(p).and(bounded("InvalidDomainTag", e.toString))
       case other                                   => failure(s"expected an invalid tag, got ${other.isRight}")
     }
+  }
+
+  pureTest("an unknown hash function's name is previewed") {
+    Hasher.named("X" * Huge) match {
+      case Left(e @ HashError.UnknownAlgorithm(p)) => kept(p).and(bounded("UnknownAlgorithm", e.toString))
+      case other                                   => failure(s"expected an unknown algorithm, got ${other.isRight}")
+    }
+  }
+
+  pureTest("a 1 MiB digest hex is refused by its width, holding sizes only") {
+    val refusals =
+      List("a" * Huge, "0x" + "a" * Huge, "a" * 64 + "é" * Huge, "é" * Huge, "a" * 65 + "é" * Huge).map(Digest.fromHex[Sha256](_))
+    expect
+      .same(
+        List(
+          Left(HashError.InvalidLength("SHA-256", 32, Huge / 2L)),
+          Left(HashError.InvalidLength("SHA-256", 32, Huge / 2L)),
+          Left(HashError.InvalidHex(64)),
+          Left(HashError.InvalidHex(0))
+        ),
+        refusals.take(4)
+      )
+      // past the one digit it reads beyond the width, the text is not read: its length refuses it, whatever follows
+      .and(expect.same(List("InvalidLength"), refusals.drop(4).map(_.fold(_.kind: String, _ => "accepted"))))
+      .and(refusals.foldMap(r => bounded("digest hex", r.fold(_.toString, _.toString))))
   }
 }
