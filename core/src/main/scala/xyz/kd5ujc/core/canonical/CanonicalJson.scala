@@ -54,15 +54,16 @@ object CanonicalJson {
       case ExpectValue(p0, stack, depth) =>
         val p = skipWs(s, p0)
         charAt(s, p) match {
+          // a container opened inside MaxDepth open ones is refused at its bracket, an empty one too
+          // (canonical-encoding.md section 3): the first fault in reading order
+          case Some('{' | '[') if depth >= MaxDepth => DepthExceeded(MaxDepth).asLeft
           case Some('{') =>
             val q = skipWs(s, p + 1)
             if (charAt(s, q).contains('}')) run(s, maxScale, keys, Deliver(EmptyMap, q + 1, stack, depth))
-            else if (depth >= MaxDepth) DepthExceeded(MaxDepth).asLeft
             else run(s, maxScale, keys, ExpectKey(q, Vector.empty, CanonicalKeys.emptyIn(keys), stack, depth + 1))
           case Some('[') =>
             val q = skipWs(s, p + 1)
             if (charAt(s, q).contains(']')) run(s, maxScale, keys, Deliver(EmptyArray, q + 1, stack, depth))
-            else if (depth >= MaxDepth) DepthExceeded(MaxDepth).asLeft
             else run(s, maxScale, keys, ExpectValue(q, InArray(Vector.empty) :: stack, depth + 1))
           case Some(_) =>
             scalar(s, p, maxScale) match {

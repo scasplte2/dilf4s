@@ -96,8 +96,11 @@ object CanonicalVectors {
     "-" + IntEdge.toString,
     "8e9999",
     "-8e9999",
-    // depth: 256 nested arrays is the limit, and an empty array is a level
+    // depth: 256 nested arrays is the limit, and an empty array or object is a level
     "[" * 255 + "[]" + "]" * 255,
+    "[" * 255 + "{}" + "]" * 255,
+    // JSON's four whitespace characters, around and between every token
+    " \t\n\r[ \t\n\r1 \t\n\r, \t\n\r{ \t\n\r\"a\" \t\n\r: \t\n\r2 \t\n\r} \t\n\r] \t\n\r",
     // rejected
     "{\"a\":1,\"a\":2}",
     "{\"a\":null,\"a\":2}",
@@ -134,6 +137,29 @@ object CanonicalVectors {
     "0." + "0" * 10000 + "1e1",
     "0." + "9" * 10000,
     "[" * 256 + "[]" + "]" * 256,
+    // an empty container is refused at its bracket, so before what follows it is read
+    "[" * 256 + "{}" + "]" * 256,
+    "[" * 256 + "{}",
+    // refusal order (canonical-encoding.md section 3): the first fault in reading order, but a member name's unpaired
+    // surrogate is refused when its object closes, after its values and the check for a repeat
+    "{\"\\ud800\":1,\"\\ud800\":2}",
+    "{\"\\udc00\":01}",
+    "{\"\\udc00\":1",
+    "{\"\\udc00\":" + "[" * 300 + "]" * 300 + "}",
+    "{\"\\udc00\":\"\\ud800\"}",
+    "{\"a\":{\"\\udc00\":1},\"a\":2}",
+    "{\"\\udc00\":1,\"a\":1,\"a\":2}",
+    "{\"a\":1,\"\\u0061\":2}",
+    "{\"\\ud83d\\ude00\":1,\"\ud83d\ude00\":2}",
+    // a byte-order mark is not whitespace, nor are the other Unicode spaces and JSON's excluded controls
+    "\ufeff1",
+    "\ufeff{}",
+    "\u00a01",
+    "[1,\u00a02]",
+    "\u000b1",
+    "1\u000c",
+    "[1,\u000b2]",
+    "{\"a\"\u000c:1}",
     "[1,2",
     "{\"a\":1",
     "\"abc",

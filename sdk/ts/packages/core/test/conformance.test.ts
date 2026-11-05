@@ -27,6 +27,13 @@ describe("canonical_encoding_v1.json", () => {
     expect(r.ok ? "accepted" : r.error.kind).toBe(c.error);
   });
 
+  it("the byte-order mark rows reach the parser with their mark (no decoder stripped it)", () => {
+    // TextDecoder drops a leading U+FEFF by default: the rows hold it inside a string, and this checks it arrived
+    const marked = rejected.filter((c) => c.json.charCodeAt(0) === 0xfeff);
+    expect(marked.map((c) => c.json)).toEqual(["﻿1", "﻿{}"]);
+    expect(marked.map((c) => c.error)).toEqual(["JsonSyntax", "JsonSyntax"]);
+  });
+
   it.each(vectors.model.map((c) => [c.value, c] as const))("model value %s decodes, re-encodes and hashes", (_, c) => {
     const value = expectOk(cbor.decode(bytes(c.cbor)), "decodes");
     expect(toHex(expectOk(cbor.encode(value), "encodes"))).toBe(c.cbor);

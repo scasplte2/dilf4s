@@ -127,6 +127,12 @@ or the rational is not in lowest terms; `canonical_encoding_v1.json`'s `cborReje
 vectors pin each pair of faults that would otherwise answer differently, shape against meaning as well as meaning
 against meaning.
 
+**Codec order.** Canonical CBOR and canonical JSON are refused in the orders `canonical-encoding.md` §2 and §3 state:
+one pass in reading order, the first fault met is the refusal, a container that would pass the depth limit is refused
+at its head or bracket (an empty one too), and the one deferred check is a JSON member name's unpaired surrogate, at
+its object's close. `canonical_encoding_v1.json` pins each kind and each pair of faults an order could otherwise
+answer differently.
+
 What a verifier refuses, no producer emits. A trie proof heavier than `MaxProofWeight` is `TooLarge` where it would be
 emitted: `Trie.prove` and `TrieProofs.encode` in Scala, `TrieProof::to_value` in Rust and `TrieProof.encode` in
 TypeScript. The versioned trie's store does the same for its proofs and deltas (above).

@@ -10,6 +10,7 @@ use core::fmt;
 use core::marker::PhantomData;
 
 use dilf4s_core::codec::Model;
+use dilf4s_core::generated::limits::MERKLE_MAX_TREE_INDEX as MAX_TREE_INDEX;
 use dilf4s_core::generated::merkle::{MerkleConsistency, MerkleInclusion};
 use dilf4s_core::hash::{Digest, Hasher};
 use dilf4s_core::value::Value;
@@ -223,9 +224,14 @@ pub struct InclusionProof<H: Hasher> {
 }
 
 impl<H: Hasher> InclusionProof<H> {
-    /// The proof, if `index < size`.
+    /// The proof, if `index < size <= MERKLE_MAX_TREE_INDEX` (2^63 - 1, the schema's `tree-index`), as in Scala's
+    /// `InclusionProof.from` (a `Long`) and TypeScript's `InclusionProof.of`; otherwise `IndexOutOfRange`.
     pub fn new(index: u64, size: u64, path: Vec<Digest<H>>) -> Result<Self, MerkleError> {
-        if index < size { Ok(Self { index, size, path }) } else { Err(MerkleError::IndexOutOfRange { index, size }) }
+        if index < size && size <= MAX_TREE_INDEX {
+            Ok(Self { index, size, path })
+        } else {
+            Err(MerkleError::IndexOutOfRange { index, size })
+        }
     }
 
     /// Decodes a `merkle-inclusion` value: the schema, digest lengths for `H`, and `index < size`. A value heavier than
@@ -271,10 +277,11 @@ pub struct ConsistencyProof<H: Hasher> {
 }
 
 impl<H: Hasher> ConsistencyProof<H> {
-    /// The proof, if `old_size <= new_size`. Sizes out of order are `InvalidSizes`, as in Scala's
-    /// `ConsistencyProof.from` and the verifier.
+    /// The proof, if `old_size <= new_size <= MERKLE_MAX_TREE_INDEX` (2^63 - 1, the schema's `tree-index`). Sizes out
+    /// of order or out of range are `InvalidSizes`, as in Scala's `ConsistencyProof.from` (a `Long`), TypeScript's
+    /// `ConsistencyProof.of` and the verifier.
     pub fn new(old_size: u64, new_size: u64, path: Vec<Digest<H>>) -> Result<Self, MerkleError> {
-        if old_size <= new_size {
+        if old_size <= new_size && new_size <= MAX_TREE_INDEX {
             Ok(Self { old_size, new_size, path })
         } else {
             Err(MerkleError::InvalidSizes { old_size, new_size })
