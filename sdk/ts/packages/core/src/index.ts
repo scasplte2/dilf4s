@@ -11,7 +11,6 @@ export * as models from "./generated/index.js";
 export { hashCommitment, valueCommitment, valueCommitmentWithin, BYTES_TAG, CBOR_TAG } from "./commitment.js";
 export type { CanonicalError, DecodeFailure, TooLarge, TypeMismatch } from "./error.js";
 export { describeFailure } from "./error.js";
-export { isBytes, plainBytes, takeBytes } from "./bytes.js";
 export {
   contentHash,
   digest,

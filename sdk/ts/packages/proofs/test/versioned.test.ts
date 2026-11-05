@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { cbor, models, toHex, type TypeMismatch, Value } from "@kd5ujc/dilf4s-core";
+import { cbor, models, toHex, Value } from "@kd5ujc/dilf4s-core";
 
 import { versioned } from "../src/index.js";
 import { bytes, bytesValue, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
@@ -17,11 +17,9 @@ const finalHead = expectOk(vt.decodeHead(valueOf(vectors.head.cbor)), "head deco
 const entriesHex = (es: readonly versioned.StateEntry[]): unknown => es.map(([k, h]) => [k.value, toHex(h)]);
 
 /** A state-key outcome as the vectors record it: "accepted", or the kind and its normative segment. */
-function keyOutcome(r: { readonly ok: true } | { readonly ok: false; readonly error: versioned.StateKeyError | TypeMismatch }): models.versionedTrieVectors.VtStateKeyOutcome {
+function keyOutcome(r: { readonly ok: true } | { readonly ok: false; readonly error: versioned.StateKeyError }): models.versionedTrieVectors.VtStateKeyOutcome {
   if (r.ok) return "accepted";
   const e = r.error;
-  // the vectors pass text and bytes: TypeScript's own refusal of other types never arises here
-  if (e.kind === "TypeMismatch") throw new Error(e.reason);
   return e.kind === "InvalidSegment" || e.kind === "SegmentTooLong" ? { kind: e.kind, segment: BigInt(e.segment) } : { kind: e.kind };
 }
 

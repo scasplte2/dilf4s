@@ -6,7 +6,7 @@
  *
  * Every walk uses an explicit stack, never recursion: a proof's depth is bounded only by the mode (up to 524280 bits).
  */
-import { bitLength, BYTES_TAG, describeFailure, err, isValue, models, ok, outputSize, plainBytes, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, BYTES_TAG, describeFailure, err, models, ok, outputSize, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
@@ -27,19 +27,11 @@ export type TrieError =
   /** Over `limit` in weight (`MAX_PROOF_WEIGHT`, or this SDK's commitment ceiling): claims, or a proof to emit. */
   | { readonly kind: "TooLarge"; readonly limit: number };
 
+/** Claims together within `MAX_PROOF_WEIGHT`, from their weights, before any is hashed. */
+const claimsWithin = (values: readonly Value[]): Result<undefined, TrieError> =>
+  values.reduce((t, v) => t + v.weight, 0n) <= MAX_PROOF_WEIGHT ? ok(undefined) : err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
+
 const encoding = (reason: string): Result<never, TrieError> => err({ kind: "Encoding", reason });
-
-/** The refusal of a claimed value that is not a canonical value (from a JavaScript caller, or a cast). */
-const NOT_A_CLAIM = "a claimed value is not a canonical value";
-
-/**
- * Claims together within `MAX_PROOF_WEIGHT`, from their weights, before any is hashed. A claim that is not a canonical
- * value is `Encoding`, before any weight is read.
- */
-function claimsWithin(values: readonly Value[]): Result<undefined, TrieError> {
-  if (!values.every((v) => isValue(v))) return encoding(NOT_A_CLAIM);
-  return values.reduce((t, v) => t + v.weight, 0n) <= MAX_PROOF_WEIGHT ? ok(undefined) : err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
-}
 const invalidProof = (reason: string): Result<never, TrieError> => err({ kind: "InvalidProof", reason });
 
 // ------------------------------------------------------------------ key modes (section 1)
@@ -78,16 +70,11 @@ export class KeyMode {
     return this.kind === "variable";
   }
 
-  /**
-   * `undefined` if `key` is valid in this mode, else why not. Its length is the array's own (core's `plainBytes`), never
-   * a subclass's `length`; what is not a `Uint8Array` is `InvalidKey`.
-   */
+  /** `undefined` if `key` is valid in this mode, else why not. */
   checkKey(key: Uint8Array): Result<undefined, TrieError> {
-    const k = plainBytes(key);
-    if (k === undefined) return err({ kind: "InvalidKey", reason: "expected a Uint8Array" });
     if (this.kind === "fixed")
-      return k.length === this.bytes ? ok(undefined) : err({ kind: "InvalidKey", reason: `fixed(${this.bytes.toString()}) mode needs ${this.bytes.toString()}-byte keys, got ${k.length.toString()}` });
-    return k.length <= this.bytes ? ok(undefined) : err({ kind: "InvalidKey", reason: `variable(${this.bytes.toString()}) mode allows at most ${this.bytes.toString()} bytes, got ${k.length.toString()}` });
+      return key.length === this.bytes ? ok(undefined) : err({ kind: "InvalidKey", reason: `fixed(${this.bytes.toString()}) mode needs ${this.bytes.toString()}-byte keys, got ${key.length.toString()}` });
+    return key.length <= this.bytes ? ok(undefined) : err({ kind: "InvalidKey", reason: `variable(${this.bytes.toString()}) mode allows at most ${this.bytes.toString()} bytes, got ${key.length.toString()}` });
   }
 
   toString(): string {
@@ -422,8 +409,7 @@ function hashProof(hashing: TrieHashing, mode: KeyMode, top: ProofNode): Result<
  * caller's root of any length is never hex-encoded whole (docs/specs/conformance.md section 8).
  */
 export function rootText(root: Uint8Array, width: number): string {
-  const r = plainBytes(root) ?? new Uint8Array(0);
-  return r.length === width ? toHex(r) : `a root of ${r.length.toString()} bytes`;
+  return root.length === width ? toHex(root) : `a root of ${root.length.toString()} bytes`;
 }
 
 /** {@link verify} with a root mismatch as the error `RootMismatch` (as Scala's `TrieProofs.verify`), for composed checks. */
@@ -558,7 +544,6 @@ const isAbsence = (v: Value | null): boolean => v === null || v.kind === "null";
 export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, key: Uint8Array, value: Value | null, proof: Value): Result<boolean, TrieError> {
   const k = mode.checkKey(key);
   if (!k.ok) return k;
-  if (value !== null && !isValue(value)) return encoding(NOT_A_CLAIM);
   const c = claimsWithin(value === null || isAbsence(value) ? [] : [value]);
   if (!c.ok) return c;
   const v = verified(hashing, mode, root, proof);
@@ -580,7 +565,6 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
 
 function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly ClaimedEntry[]): Result<readonly TrieEntry[], TrieError> {
   for (const [key, value] of entries) {
-    if (!isValue(value)) return encoding(NOT_A_CLAIM);
     if (value.kind === "null") return encoding("an entry is [key, value], with a value");
     const k = mode.checkKey(key);
     if (!k.ok) return k;
