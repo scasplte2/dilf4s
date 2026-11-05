@@ -477,8 +477,8 @@ A versioned trie (`versioned-trie.md`) is verified with these same trie ops. Its
   exactly the trie's entries under the prefix, or in `[from, until)`.
 - **"Not covered" is an error.** A proof that does not reach the queried key, or reaches a stub inside the queried
   prefix or range, is a `Crypto` error, never `false`: it establishes neither presence nor absence.
-- **Gas** is priced by weight. As measured: about 8 per unit of weight for a Merkle inclusion proof and 13 for a
-  consistency proof, and 15 for a trie proof, whose records are larger and hashed through CBOR. A listing check
+- **Gas** is priced by weight. As measured: about 8 per unit of weight for a Merkle proof (inclusion or
+  consistency), and 15 for a trie proof, whose records are larger and hashed through CBOR. A listing check
   (`trie_prefix_verify`, `trie_range_verify`) is linear in its proof's weight and its bounds: 17 per unit of weight
   over a base of 20,000.
 - **Claims heavier than `MaxProofWeight`** together (a leaf, a value, a listing's values; `conformance.md` §5) are a
@@ -520,13 +520,29 @@ by `GasRatios export`), through the evaluator on the direct driver:
   MADs from its cluster's median.
 - **Clusters.** Rounds are split by probe time into two clusters when their centres differ by more than 10%
   (performance and efficiency cores), and a case's ratio is the higher of its clusters'.
+- **Batches.** Each of anchor, case and reference is timed in batches of at least 250 µs. A batch's size doubles from
+  1 until the fastest of three batches at that size takes that long, so one interrupted batch cannot leave a case
+  timed one evaluation at a time.
+- **Reference configuration.** The prices hold for a node that runs the JVM as calibrated: OpenJDK 21 pinned to one
+  CPU with `-Xms4g -Xmx4g -XX:+UseSerialGC -XX:+AlwaysPreTouch` (`GasRatios.Reference`, which `GasRatios measure`
+  checks and names before it measures; `benchmarks/calibrate.sh` runs the calibration). The serial collector runs
+  every collection on the measuring core, inside the round of the allocation that caused it, so collection is paid
+  by the work that allocated and no collector thread competes with a round. The heap is fixed and touched in full at
+  start, so it never resizes and no round meets a first-touch page fault. 4 GiB holds the calibration's live set
+  (about 1.4 GiB after each young collection: maps of 2^20 entries, texts of 64,000 units) in the old generation
+  with room, so no full collection runs while rounds are timed. Rust runs the release build, pinned to one CPU. A
+  node that runs the JVM otherwise (another collector, a smaller heap, collector threads sharing its cores) is
+  outside this guarantee: its costs can differ in either direction, and it must measure its own.
 - **Statistics.** A case's ratio in a process is the median over its rounds, with a bootstrap 95% interval, cross-
-  checked against `case/reference × reference/anchor`. Each backend runs at least three processes, pinned to one CPU
-  with a fixed heap; the ratio is the highest of them, and processes more than 5% apart are reported (a process's
-  heap and code layout moves allocation-heavy operations by up to tens of percent). A slow result is kept even when
-  the case is cheaper re-run alone: a full run's heap and code profile, shaped by every other case, are ones a node
-  can be in too. Re-runs alone only add measurements, for cases added after a full run. A case is converged
-  when its interval is within ±5% and the cross-check agrees within 5%.
+  checked against `case/reference × reference/anchor`. The JVM runs ten processes and Rust three, more where a
+  price-setting case's processes are more than 5% apart. A process's heap and code layout move an operation by up to
+  tens of percent, and each process is an independent start of the reference configuration: whichever layout it
+  gets, a node starting the same way can get. So a case's ratio is the **highest** of its processes, not a
+  percentile: a state seen in one start of ten is a state about one node in ten is in. `ratios.py` also reports the
+  second-highest process and how many lie within 5% of the highest, so a lone slow process stands out. A slow
+  result is kept even when the case is cheaper re-run alone, for the same reason. Re-runs alone only add
+  measurements, for cases added after a full run. A case is converged when its interval is within ±5% and the
+  cross-check agrees within 5%.
 - **Pricing.** A base and per-unit rates are fitted to cases at small and large sizes and at adversarial shapes (keys
   sharing long prefixes, deep maps, worst-case substring searches, long trie keys, ground VRF counters), so that each
   charge is at least the measured cost. Where the data lie far below a charge, the charge is lowered to within about
@@ -627,15 +643,15 @@ times.
 
 <!-- gas-table: generated from GasSchedule.V1 by GasTableGen; do not edit -->
 
-Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 62, `perPathSegment` 3, `callbackRun` 18, `rendering` 2.
+Schedule v1. Scalar charges: `literal` 10, `element` 11, `varAccess` 70, `perPathSegment` 4, `callbackRun` 18, `rendering` 2.
 
 | Operation | Base | Per unit | Other rates |
 |---|---|---|---|
 | `if` | 20 |  |  |
 | `and` | 15 |  |  |
 | `or` | 15 |  |  |
-| `!` | 20 |  |  |
-| `!!` | 20 |  |  |
+| `!` | 25 |  |  |
+| `!!` | 25 |  |  |
 | `default` | 15 |  |  |
 | `let` | 30 |  |  |
 | `==` | 50 | 1 per `Weight` |  |
@@ -659,23 +675,23 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 62, `perPathS
 | `floor` | 60 | 8 per `Weight` |  |
 | `ceil` | 60 | 8 per `Weight` |  |
 | `pow` | 20000 |  |  |
-| `map` | 40 | 8 per `Elements` |  |
-| `filter` | 40 | 8 per `Elements` |  |
+| `map` | 40 | 15 per `Elements` |  |
+| `filter` | 40 | 15 per `Elements` |  |
 | `reduce` | 40 | 8 per `Elements` |  |
 | `all` | 40 | 8 per `Elements` |  |
 | `some` | 40 | 8 per `Elements` |  |
 | `none` | 40 | 8 per `Elements` |  |
 | `find` | 40 | 8 per `Elements` |  |
 | `count` | 45 | 2 per `Elements` |  |
-| `merge` | 210 | 3 per `Weight` | merging: 12 per level and entry, 2 per level and weight block |
+| `merge` | 210 | 8 per `Weight` | merging: 12 per level and entry, 2 per level and weight block |
 | `in` | 70 | 1 per `Weight` | plus 1 per `Elements` |
 | `intersect` | 50 | 17 per `Weight` |  |
-| `unique` | 60 | 18 per `Weight` |  |
-| `slice` | 120 | 3 per `Elements` |  |
-| `reverse` | 55 | 7 per `Elements` |  |
-| `flatten` | 60 | 3 per `Weight` |  |
+| `unique` | 60 | 23 per `Weight` |  |
+| `slice` | 120 | 7 per `Elements` |  |
+| `reverse` | 55 | 12 per `Elements` |  |
+| `flatten` | 70 | 7 per `Weight` |  |
 | `length` | 45 | 1 per `Weight` |  |
-| `cat` | 65 | 1 per `Weight` | plus 4 per `Elements`; plus 12 per `Arguments` |
+| `cat` | 65 | 1 per `Weight` | plus 4 per `Elements`; plus 14 per `Arguments` |
 | `substr` | 75 | 1 per `Weight` |  |
 | `lower` | 45 | 1 per `Weight` |  |
 | `upper` | 50 | 1 per `Weight` |  |
@@ -684,16 +700,16 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 62, `perPathS
 | `trim` | 75 | 1 per `Weight` |  |
 | `startsWith` | 50 | 1 per `Weight` |  |
 | `endsWith` | 50 | 1 per `Weight` |  |
-| `keys` | 110 | 4 per `Weight` |  |
-| `values` | 50 | 5 per `Weight` |  |
-| `entries` | 120 | 10 per `Weight` |  |
-| `get` | 30 |  | search: 3 per level, 1 per level and key block |
+| `keys` | 130 | 5 per `Weight` |  |
+| `values` | 80 | 7 per `Weight` |  |
+| `entries` | 160 | 11 per `Weight` |  |
+| `get` | 40 |  | search: 3 per level, 1 per level and key block |
 | `has` | 40 |  | search: 3 per level, 1 per level and key block |
 | `set` | 60 |  | search: 18 per level, 2 per level and key block |
 | `unset` | 60 |  | search: 18 per level, 2 per level and key block |
 | `exists` | 60 | 1 per `Elements` |  |
-| `missing` | 50 | 20 per `Elements` |  |
-| `missing_some` | 60 | 20 per `Elements` |  |
+| `missing` | 65 | 20 per `Elements` |  |
+| `missing_some` | 80 | 20 per `Elements` |  |
 | `typeof` | 60 |  |  |
 | `hex` | 45 | 1 per `Weight` |  |
 | `unhex` | 80 | 2 per `Weight` |  |
@@ -720,7 +736,7 @@ Schedule v1. Scalar charges: `literal` 7, `element` 8, `varAccess` 62, `perPathS
 | `schnorr_verify` | 5000 | 450 per `Weight` | argument 1: 1 per `Weight` |
 | `sigma_verify` | 5000 | 450 per `Weight` | argument 2: 1 per `Weight` |
 | `merkle_verify` | 1000 | 8 per `Weight` |  |
-| `merkle_consistency_verify` | 4000 | 13 per `Weight` |  |
+| `merkle_consistency_verify` | 500 | 8 per `Weight` |  |
 | `trie_verify` | 500 | 15 per `Weight` |  |
 | `trie_prefix_verify` | 20000 | 17 per `Weight` |  |
 | `trie_range_verify` | 20000 | 17 per `Weight` |  |
