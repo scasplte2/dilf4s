@@ -21,7 +21,6 @@ export {
   expandMessageXmd,
   expansionLimit,
   HASH_ALGORITHMS,
-  hashAlgorithm,
   hashParts,
   parseHashAlgorithm,
   startHash,

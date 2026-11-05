@@ -11,7 +11,6 @@ import {
   type ExpansionRefusal,
   fromHex,
   type HashAlgorithm,
-  hashAlgorithm,
   type HashError,
   type HashErrorKind,
   json,
@@ -35,7 +34,7 @@ const row = (c: { readonly error: string; readonly limit?: bigint }): { error: s
   c.limit === undefined ? { error: c.error } : { error: c.error, limit: c.limit };
 const merkle = loadVectors("merkle_v1.json", models.merkleVectors.MerkleVectors);
 const tag = expectOk(DomainTag.of(vectors.contentHashTag), "the content hash tag is a domain tag");
-const contentAlgorithm = hashAlgorithm(vectors.contentHashAlgorithm) ?? "SHA-256";
+const contentAlgorithm = known(vectors.contentHashAlgorithm);
 const bytes = (hex: string): Uint8Array => expectOk(fromHex(hex), "hex");
 
 describe("canonical_encoding_v1.json", () => {
@@ -107,18 +106,12 @@ describe("canonical_encoding_v1.json", () => {
   });
 
   it.each(vectors.taggedHash.map((c) => [c.algorithm, c.message, c] as const))("tagged %s of %s", (_, __, c) => {
-    const algorithm = hashAlgorithm(c.algorithm);
-    expect(algorithm, "a known algorithm").toBeDefined();
-    if (algorithm === undefined) return;
     const t = expectOk(DomainTag.of(c.tag), "tag");
-    expect(toHex(taggedHash(algorithm, t, bytes(c.message)))).toBe(c.digest);
+    expect(toHex(taggedHash(known(c.algorithm), t, bytes(c.message)))).toBe(c.digest);
   });
 
   it.each(vectors.digests.map((c) => [c.algorithm, c.message.length / 2, c] as const))("%s of %i bytes", (_, __, c) => {
-    const algorithm = hashAlgorithm(c.algorithm);
-    expect(algorithm, "a known algorithm").toBeDefined();
-    if (algorithm === undefined) return;
-    expect(toHex(digest(algorithm, bytes(c.message)))).toBe(c.digest);
+    expect(toHex(digest(known(c.algorithm), bytes(c.message)))).toBe(c.digest);
   });
 
   it.each(vectors.domainTags.map((c) => [JSON.stringify(c.tag), c] as const))("domain tag %s", (_, c) => {
@@ -129,7 +122,6 @@ describe("canonical_encoding_v1.json", () => {
     const r = parseHashAlgorithm(c.name);
     expect(outcome(r)).toEqual({ outcome: c.outcome });
     if (r.ok) expect(r.value).toBe(c.name);
-    expect(hashAlgorithm(c.name), "the lookup without the refusal agrees").toBe(r.ok ? r.value : undefined);
   });
 
   it.each(vectors.digestHex.map((c) => [c.algorithm, JSON.stringify(c.hex).slice(0, 40), c] as const))("%s digest from hex %s", (_, __, c) => {

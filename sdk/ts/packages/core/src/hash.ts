@@ -85,12 +85,6 @@ export function parseHashAlgorithm(name: string): Result<HashAlgorithm, HashErro
   return found === undefined ? err({ kind: "UnknownAlgorithm", name: Preview.of(name) }) : ok(found);
 }
 
-/** The algorithm with this name, if it is one of {@link HASH_ALGORITHMS}: {@link parseHashAlgorithm} without the refusal. */
-export function hashAlgorithm(name: string): HashAlgorithm | undefined {
-  const r = parseHashAlgorithm(name);
-  return r.ok ? r.value : undefined;
-}
-
 /** A digest of `algorithm` from its bytes, which must be exactly its output size (a fresh copy). */
 export function digestFromBytes(algorithm: HashAlgorithm, bytes: Uint8Array): Result<Uint8Array, HashErrorOf<"InvalidLength">> {
   const expected = outputSize(algorithm);
