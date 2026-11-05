@@ -28,7 +28,7 @@ import { copyBytes, takeBytes } from "./bytes.js";
 import type { CanonicalError, TypeMismatch } from "./error.js";
 import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_DIGITS, CANONICAL_MAX_INTEGER_BITS, CANONICAL_MAX_RATIONAL_BITS, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
 import { toHex } from "./hex.js";
-import { close, isResult, NOT_A_RESULT, NOT_ITERABLE, open } from "./iterator.js";
+import { close, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, walksAsArray } from "./iterator.js";
 import { KeySet, search } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
@@ -114,7 +114,7 @@ const notABigint = expected("a bigint");
 const notAString = expected("a string");
 const notBytes = expected("a Uint8Array");
 const notAnArray = expected("an array");
-const notEntries = expected("an iterable object of [key, value] entries");
+const notEntries = expected("an iterable of [key, value] entries");
 const notIterable: TypeMismatch = { kind: "TypeMismatch", reason: NOT_ITERABLE };
 const notAResult: TypeMismatch = { kind: "TypeMismatch", reason: NOT_A_RESULT };
 const scaleNotInteger: TypeMismatch = { kind: "TypeMismatch", reason: "the scale is not an integer" };
@@ -650,18 +650,32 @@ export class MapValue {
    * unpaired surrogate is `UnpairedSurrogate`; null values are dropped; excess depth is `DepthExceeded`.
    *
    * `entries` is read once, as `for...of` reads it, its iterator closed when an entry is refused or caller code throws
-   * while one is read. What does not match the types is a `TypeMismatch`, found in that pass: `entries` that is not
-   * an object, an iterator `for...of` could not open or a result that is not an object (each of which `for...of` throws
-   * a `TypeError` for), an entry that is not an array (read by index, never destructured), a key that is not a string,
-   * or a value that is not a canonical value (see {@link isValue}).
+   * while one is read. What does not match the types is a `TypeMismatch`, found in that pass: `entries` that is neither
+   * an object nor a function, an iterator `for...of` could not open or a result that is not an object (each of which
+   * `for...of` throws a `TypeError` for), an entry that is not an array (read by index, never destructured), a key that
+   * is not a string, or a value that is not a canonical value (see {@link isValue}).
+   *
+   * Unlike `for...of`, when caller code throws while an entry is read and the iterator's `return` then throws too, the
+   * error that surfaces is `return`'s, the last one thrown (`for...of` keeps the first): keeping the first would need a
+   * catch clause, which this SDK does not use.
    */
   static of(entries: Iterable<readonly [string, Value]>): Result<MapValue, CanonicalError> {
     const given: unknown = entries;
-    if (typeof given !== "object" || given === null) return err(notEntries);
-    const read = open<unknown>(given);
-    if (read === undefined) return err(notIterable);
+    // an object, or a function, as for...of accepts either
+    if (!isResult(given)) return err(notEntries);
+    const method: unknown = Reflect.get(given, Symbol.iterator);
     const seen = new KeySet();
     const kept: Entry[] = [];
+    // an array the intrinsic iterator would walk is read as it would, by index, with nothing to close
+    if (walksAsArray(given, method)) {
+      for (let i = 0; i < given.length; i++) {
+        const refused = MapValue.entry(seen, kept, given[i], i);
+        if (refused !== undefined) return err(refused);
+      }
+      return MapValue.closed(kept);
+    }
+    const read = openWith<unknown>(given, method);
+    if (read === undefined) return err(notIterable);
     // as for...of: the iterator is closed for a refusal, or a throw, while an entry is read, never for one from its own
     // next() or from reading its result
     let reading = false;
@@ -672,18 +686,23 @@ export class MapValue {
         if (r.done) return MapValue.closed(kept);
         const entry: unknown = r.value;
         reading = true;
-        if (!Array.isArray(entry)) return err(expected(`a [key, value] array at index ${i.toString()}`));
-        const key: unknown = entry[0];
-        const value: unknown = entry[1];
-        if (typeof key !== "string") return err(expected(`a string key at index ${i.toString()}`));
-        if (!isValue(value)) return err(expected(`a canonical value at index ${i.toString()}`));
-        const refused = MapValue.add(seen, kept, key, value);
+        const refused = MapValue.entry(seen, kept, entry, i);
         if (refused !== undefined) return err(refused);
         reading = false;
       }
     } finally {
       if (reading) close(read);
     }
+  }
+
+  /** Checks and keeps the `i`th entry read: a `[string, Value]` array (read by index), with a key not seen before. */
+  private static entry(seen: KeySet, kept: Entry[], entry: unknown, i: number): CanonicalError | undefined {
+    if (!Array.isArray(entry)) return expected(`a [key, value] array at index ${i.toString()}`);
+    const key: unknown = entry[0];
+    const value: unknown = entry[1];
+    if (typeof key !== "string") return expected(`a string key at index ${i.toString()}`);
+    if (!isValue(value)) return expected(`a canonical value at index ${i.toString()}`);
+    return MapValue.add(seen, kept, key, value);
   }
 
   /** Keeps the entry `key: value`, unless its key repeats one already seen or is not well-formed (why, then). */

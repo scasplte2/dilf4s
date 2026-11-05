@@ -24,19 +24,42 @@ export function isResult(r: unknown): r is { readonly done?: unknown; readonly v
 
 const NO_ARGUMENTS: readonly unknown[] = Object.freeze([]);
 
+/** `Function.prototype.bind`, read once when this module loads: a function's own `bind` may be the caller's. */
+const bind = Reflect.get(Function.prototype, "bind") as (this: unknown, self: unknown) => () => unknown;
+
 /**
  * `iterable`'s iterator, opened as `for...of` opens it (its `Symbol.iterator` method read and called once, then the
  * iterator's `next` read once), or `undefined` where `for...of` would throw a `TypeError` before reading any item: no
  * iterator method, an iterator that is not an object, or a `next` that is not a function.
  */
 export function open<T>(iterable: object): Reader<T> | undefined {
-  const method: unknown = Reflect.get(iterable, Symbol.iterator);
+  return openWith(iterable, Reflect.get(iterable, Symbol.iterator));
+}
+
+/** {@link open}, given the iterator method already read from `iterable` (once, as `for...of` reads it). */
+export function openWith<T>(iterable: object, method: unknown): Reader<T> | undefined {
   if (typeof method !== "function") return undefined;
   const iterator: unknown = Reflect.apply(method, iterable, NO_ARGUMENTS);
   if (!isResult(iterator)) return undefined;
   const next: unknown = Reflect.get(iterator, "next");
-  // called through Reflect.apply, never the function's own `call` or `bind`, which may be the caller's
-  return typeof next === "function" ? { iterator: iterator as Iterator<T>, next: () => Reflect.apply(next, iterator, NO_ARGUMENTS) as unknown } : undefined;
+  // bound once, through Function.prototype's own bind (never the function's own `bind` or `call`, which may be the
+  // caller's), so each step is one direct call
+  return typeof next === "function" ? { iterator: iterator as Iterator<T>, next: Reflect.apply(bind, next, [iterator]) } : undefined;
+}
+
+/** The intrinsic array iterator: `Array.prototype[Symbol.iterator]`, and its iterators' `next`, as this module loaded. */
+const ARRAY_VALUES: unknown = Reflect.get(Array.prototype, Symbol.iterator);
+const ARRAY_ITERATOR: object = Object.getPrototypeOf((ARRAY_VALUES as () => object).call([])) as object;
+const ARRAY_NEXT: unknown = Reflect.get(ARRAY_ITERATOR, "next");
+
+/**
+ * Whether `for...of` over `iterable`, whose iterator method is `method` (already read), walks it with the intrinsic
+ * array iterator: an array whose method is `Array.prototype[Symbol.iterator]`, with the array iterators' `next`
+ * unchanged. Such a walk reads the length and then the item at each index in turn, and closes nothing (the array
+ * iterator has no `return`), so reading the array by index, the length each step, observes exactly what it would.
+ */
+export function walksAsArray(iterable: object, method: unknown): iterable is readonly unknown[] {
+  return method === ARRAY_VALUES && Array.isArray(iterable) && Reflect.get(ARRAY_ITERATOR, "next") === ARRAY_NEXT;
 }
 
 /**

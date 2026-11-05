@@ -199,8 +199,14 @@ describe("an array's items and a map's entries are checked in the pass that read
     expect(Value.array(bad(notALength))).toEqual(mismatch("expected an array"));
   });
 
-  it("a map's entries are an iterable object of [string, value] arrays, each checked as it is read", () => {
-    for (const x of [5, "ab", null, undefined]) expect(Value.map(bad(x)), label(x)).toEqual(mismatch("expected an iterable object of [key, value] entries"));
+  it("a map's entries are an iterable of [string, value] arrays, each checked as it is read", () => {
+    for (const x of [5, "ab", null, undefined]) expect(Value.map(bad(x)), label(x)).toEqual(mismatch("expected an iterable of [key, value] entries"));
+    // an array is read through its own iterator when it has one, as for...of reads it
+    const own = Object.assign([["a", one]], { [Symbol.iterator]: () => [["b", one]][Symbol.iterator]() });
+    expect(expectOk(Value.map(bad(own)), "an array with its own iterator").keys()).toEqual(["b"]);
+    // a function with an iterator is iterable, as for...of and Iterable<T> accept it
+    const fn = Object.assign(() => undefined, { [Symbol.iterator]: () => [["a", one]][Symbol.iterator]() });
+    expect(expectOk(Value.map(bad(fn)), "an iterable function").keys()).toEqual(["a"]);
     const notOpened = "expected an iterable (its Symbol.iterator, iterator or next is not of the protocol's type)";
     for (const x of [{}, { [Symbol.iterator]: 5 }, { [Symbol.iterator]: () => 5 }, { [Symbol.iterator]: () => ({ next: 5 }) }]) {
       expect(Value.map(bad(x))).toEqual(mismatch(notOpened));
@@ -216,7 +222,27 @@ describe("an array's items and a map's entries are checked in the pass that read
     expect(m.keys(), "a null value is dropped").toEqual(["a"]);
   });
 
-  it("a map's iterator is closed when an entry is refused or caller code throws reading one, as for...of closes it", () => {
+  it("when caller code throws reading an entry and return() throws too, return's error surfaces, unlike for...of", () => {
+    const closed: string[] = [];
+    const it = {
+      next: () => ({
+        done: false,
+        value: Object.defineProperty([], 0, {
+          get: () => {
+            throw new Error("caller code threw");
+          },
+        }),
+      }),
+      return: () => {
+        closed.push("return");
+        throw new Error("return threw");
+      },
+    };
+    expect(() => Value.map(bad({ [Symbol.iterator]: () => it }))).toThrow("return threw");
+    expect(closed).toEqual(["return"]);
+  });
+
+  it("a map's iterator is closed when an entry is refused or caller code throws reading one", () => {
     const log: string[] = [];
     function* entries(xs: readonly unknown[]): Generator {
       try {
