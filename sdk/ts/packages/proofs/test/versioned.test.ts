@@ -61,7 +61,7 @@ describe("versioned_trie_v1.json", () => {
   it.each(vectors.stateKeys.map((c) => [JSON.stringify(c.key).slice(0, 40), c] as const))("state key %s", (_, c) => {
     expect(versioned.StateKey.parse(c.key).ok, "the grammar with its limits").toBe(c.valid);
     const text = Value.text(c.key);
-    if (text.ok) expect(models.versionedTrie.StateKey.decode(text.value).ok, "the schema pattern").toBe(c.schema);
+    if (text.ok) expect(models.versionedTrie.StateKey.decode(text.value).ok, "the schema pattern").toBe(c.schema === "accepted");
   });
 
   describe.each(vectors.proofs.map((p) => [p.name, p] as const))("proof %s", (_, p) => {

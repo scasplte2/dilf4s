@@ -265,127 +265,127 @@
   "stateKeys" : [
     {
       "key" : "a",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : true
     },
     {
       "key" : "0",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : true
     },
     {
       "key" : "fiber/1",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : true
     },
     {
       "key" : "oracle/a/b",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : true
     },
     {
       "key" : "a.b_c-d/0.9",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : true
     },
     {
       "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : true
     },
     {
       "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : false
     },
     {
       "key" : "a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : true
     },
     {
       "key" : "a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : false
     },
     {
       "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : true
     },
     {
       "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-      "schema" : true,
+      "schema" : "accepted",
       "valid" : false
     },
     {
       "key" : "",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "/",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "a/",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "/a",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "a//b",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "A",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "a/B",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : ".a",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "-a",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "_a",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "a/.b",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "a b",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "é",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     },
     {
       "key" : "a\n",
-      "schema" : false,
+      "schema" : "TypeMismatch",
       "valid" : false
     }
   ],

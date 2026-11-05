@@ -19,21 +19,29 @@ canonical-json-case = canonical-json-accepted / canonical-json-rejected
 ; "render" is the display JSON of section 3 (compact, keys in code-point order).
 canonical-json-accepted = { "json": text, "cbor": hex, "contentHash": hex, "render": text }
 
-canonical-json-rejected = { "json": text, "error": text }
+; A refusal: its kind, and "limit" exactly when the kind has one (RationalTooWide, IntegerTooWide: conformance.md
+; section 3). A DuplicateKey's normative preview is pinned by diagnostics_v1.json.
+canonical-json-rejected = { "json": text, "error": canonical-error-kind, ? "limit": uint }
 
 canonical-model-case = { "value": text, "cbor": hex, "contentHash": hex }
 
 ; A value with a CBOR form whose JSON form would exceed the bounds of section 3, so rendering it fails.
-canonical-render-rejection = { "cbor": hex, "error": text }
+canonical-render-rejection = { "cbor": hex, "error": canonical-error-kind }
 
-canonical-cbor-rejection = { "cbor": hex, "error": text }
+canonical-cbor-rejection = { "cbor": hex, "error": canonical-error-kind, ? "limit": uint }
+
+; Every kind of CanonicalError (conformance.md section 1). TypeMismatch, a typed encoder's refusal, is pinned by the
+; "schema" outcome of versioned_trie_v1.json's state keys.
+canonical-error-kind = "UnpairedSurrogate" / "DuplicateKey" / "RationalTooWide" / "IntegerTooWide" / "JsonSyntax" / "InvalidNumber" / "NotJsonRepresentable" / "TypeMismatch" / "UnexpectedEnd" / "TrailingBytes" / "DepthExceeded" / "NonCanonical" / "Unsupported" / "InvalidUtf8"
 
 canonical-tagged-hash = { "algorithm": text, "tag": text, "message": hex, "digest": hex }
 
 ; A plain (untagged) digest of each hash function the specs use.
 canonical-digest = { "algorithm": text, "message": hex, "digest": hex }
 
-; Whether a candidate tag matches the DomainTag grammar of section 4.
-canonical-domain-tag = { "tag": text, "valid": bool }
+; Whether a candidate tag matches the DomainTag grammar of section 4: "accepted", or refused by its kind.
+canonical-domain-tag = { "tag": text, "outcome": domain-tag-outcome }
+
+domain-tag-outcome = "accepted" / "InvalidDomainTag"
 
 hex = text .regexp "([0-9a-f]{2})*"

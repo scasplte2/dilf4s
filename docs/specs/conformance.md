@@ -151,10 +151,11 @@ refusal kind a spec defines must have a row. The gated families, and where their
 | KES | `KesError` | `kes_v1.json`: `refusals` (parameters, generation, loading, evolution, verification) |
 | sigma | `SigmaError` | `sigma_refusals_v1.json`: `cases`, and the reference's outcome on every case of `sigma_v1.json` and `sigma_dilf4s_v1.json` (whose own verdicts are Ergo's) |
 | zk | `ZkError`, `Groth16Error` | `zk_v1.json` |
+| canonical codecs | `CanonicalError` | `canonical_encoding_v1.json`: `json`, `renderRejections` and `cborRejections` (each kind with its normative `limit`); `TypeMismatch`, a typed encoder's refusal, by the `schema` outcome of `versioned_trie_v1.json`'s `stateKeys` |
 
 Each kind of these families has a row, except the kinds below, which no input reaches through an SDK's verifier.
-The canonical codecs and the JLVM's own errors record outcomes in their own vector files but are not yet gated kind by
-kind (conformance step 2, part B).
+The JLVM's own errors record outcomes in their own vector file but are not yet gated kind by kind (conformance step
+2, part B).
 
 | Family | Kind | Why it has no row |
 |---|---|---|
@@ -179,6 +180,13 @@ loading and evolution (`Exhausted`, `InconsistentKey`) are checked natively only
 **Kinds in the schemas.** Every kind field of these files is a choice of text literals in its schema
 (`crypto-error-kind`, `key-error-kind`, `vrf-result`, `kes-outcome`, `sigma-outcome`, `zk-error`), so each SDK's
 generated model is a closed type: a vector naming a kind the schema does not list does not load.
+
+**The codec families.** `canonical-error-kind` lists every kind of `CanonicalError`; the domain tags of
+`canonical_encoding_v1.json` record `InvalidDomainTag` (`domain-tag-outcome`) and the state keys' `schema` records
+`TypeMismatch` (`vt-schema-outcome`). The reference's `CodecRefusalCoverageSuite` gates `CanonicalError` as above,
+reading the rows through their generated models; the Rust (`core/tests/conformance.rs`) and TypeScript
+(`core/test/conformance.test.ts`) tests map the SDK's error onto `canonical-error-kind` exhaustively, check each row's
+kind and `limit`, and check that every kind has a row.
 
 **Limits.** Every limit the specs state (`MaxValueBytes`, `MaxChunkBytes`, `MaxProofWeight`, the depth, digit, rational,
 key, chunk, sigma, KES and JLVM limits) is defined once, in `shared/schemas/limits.cddl`, and generated into each SDK

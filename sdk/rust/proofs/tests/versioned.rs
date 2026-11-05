@@ -23,7 +23,7 @@ use common::{bytes, load};
 use dilf4s_core::cbor;
 use dilf4s_core::codec::{Model, TextPattern};
 use dilf4s_core::generated::trie::TrieRecord;
-use dilf4s_core::generated::versioned_trie_vectors::{VersionedTrieVectors, VtKind, VtProof};
+use dilf4s_core::generated::versioned_trie_vectors::{VersionedTrieVectors, VtKind, VtProof, VtSchemaOutcome};
 use dilf4s_core::hash::{Digest, Sha256};
 use dilf4s_core::value::Value;
 use dilf4s_proofs::trie::TrieProof;
@@ -248,7 +248,7 @@ fn state_keys() {
     let (v, _) = setup();
     for c in &v.state_keys {
         assert_eq!(StateKey::parse(&c.key).is_ok(), c.valid, "{:?} valid", c.key);
-        assert_eq!(TextPattern::StateKey.matches(&c.key), c.schema, "{:?} schema", c.key);
+        assert_eq!(TextPattern::StateKey.matches(&c.key), c.schema == VtSchemaOutcome::Accepted, "{:?} schema", c.key);
     }
     assert!(StateNamespace::parse("fiber").is_ok());
     assert!(StateNamespace::parse(&"x".repeat(255)).is_err());

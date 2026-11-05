@@ -10,7 +10,9 @@ pub struct CanonicalCborRejection {
     /// The `cbor` entry.
     pub cbor: Hex,
     /// The `error` entry.
-    pub error: String,
+    pub error: CanonicalErrorKind,
+    /// The `limit` entry.
+    pub limit: Option<u64>,
 }
 
 impl c::Model for CanonicalCborRejection {
@@ -18,15 +20,17 @@ impl c::Model for CanonicalCborRejection {
         let inner = c::nested(depth)?;
         c::record([
             c::field("cbor", &HEX, &self.cbor, inner)?,
-            c::field("error", &c::Text, &self.error, inner)?,
+            c::field("error", &c::ModelOf::<CanonicalErrorKind>::NEW, &self.error, inner)?,
+            c::optional_field("limit", &c::UINT, self.limit.as_ref(), inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["cbor", "error"])?;
+        let fields = c::Fields::of(value, &["cbor", "error", "limit"])?;
         let f0 = fields.required("cbor", &HEX)?;
-        let f1 = fields.required("error", &c::Text)?;
-        Ok(Self { cbor: f0, error: f1 })
+        let f1 = fields.required("error", &c::ModelOf::<CanonicalErrorKind>::NEW)?;
+        let f2 = fields.optional("limit", &c::UINT)?;
+        Ok(Self { cbor: f0, error: f1, limit: f2 })
     }
 }
 
@@ -65,8 +69,8 @@ impl c::Model for CanonicalDigest {
 pub struct CanonicalDomainTag {
     /// The `tag` entry.
     pub tag: String,
-    /// The `valid` entry.
-    pub valid: bool,
+    /// The `outcome` entry.
+    pub outcome: DomainTagOutcome,
 }
 
 impl c::Model for CanonicalDomainTag {
@@ -74,16 +78,95 @@ impl c::Model for CanonicalDomainTag {
         let inner = c::nested(depth)?;
         c::record([
             c::field("tag", &c::Text, &self.tag, inner)?,
-            c::field("valid", &c::Bool, &self.valid, inner)?,
+            c::field("outcome", &c::ModelOf::<DomainTagOutcome>::NEW, &self.outcome, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["tag", "valid"])?;
+        let fields = c::Fields::of(value, &["tag", "outcome"])?;
         let f0 = fields.required("tag", &c::Text)?;
-        let f1 = fields.required("valid", &c::Bool)?;
-        Ok(Self { tag: f0, valid: f1 })
+        let f1 = fields.required("outcome", &c::ModelOf::<DomainTagOutcome>::NEW)?;
+        Ok(Self { tag: f0, outcome: f1 })
     }
+}
+
+/// `canonical-error-kind` (`shared/schemas/canonical-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CanonicalErrorKind {
+    /// The text `UnpairedSurrogate`.
+    UnpairedSurrogate,
+    /// The text `DuplicateKey`.
+    DuplicateKey,
+    /// The text `RationalTooWide`.
+    RationalTooWide,
+    /// The text `IntegerTooWide`.
+    IntegerTooWide,
+    /// The text `JsonSyntax`.
+    JsonSyntax,
+    /// The text `InvalidNumber`.
+    InvalidNumber,
+    /// The text `NotJsonRepresentable`.
+    NotJsonRepresentable,
+    /// The text `TypeMismatch`.
+    TypeMismatch,
+    /// The text `UnexpectedEnd`.
+    UnexpectedEnd,
+    /// The text `TrailingBytes`.
+    TrailingBytes,
+    /// The text `DepthExceeded`.
+    DepthExceeded,
+    /// The text `NonCanonical`.
+    NonCanonical,
+    /// The text `Unsupported`.
+    Unsupported,
+    /// The text `InvalidUtf8`.
+    InvalidUtf8,
+}
+
+impl c::Model for CanonicalErrorKind {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::UnpairedSurrogate => Ok(c::Value::text("UnpairedSurrogate")),
+            Self::DuplicateKey => Ok(c::Value::text("DuplicateKey")),
+            Self::RationalTooWide => Ok(c::Value::text("RationalTooWide")),
+            Self::IntegerTooWide => Ok(c::Value::text("IntegerTooWide")),
+            Self::JsonSyntax => Ok(c::Value::text("JsonSyntax")),
+            Self::InvalidNumber => Ok(c::Value::text("InvalidNumber")),
+            Self::NotJsonRepresentable => Ok(c::Value::text("NotJsonRepresentable")),
+            Self::TypeMismatch => Ok(c::Value::text("TypeMismatch")),
+            Self::UnexpectedEnd => Ok(c::Value::text("UnexpectedEnd")),
+            Self::TrailingBytes => Ok(c::Value::text("TrailingBytes")),
+            Self::DepthExceeded => Ok(c::Value::text("DepthExceeded")),
+            Self::NonCanonical => Ok(c::Value::text("NonCanonical")),
+            Self::Unsupported => Ok(c::Value::text("Unsupported")),
+            Self::InvalidUtf8 => Ok(c::Value::text("InvalidUtf8")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["UnpairedSurrogate", "DuplicateKey", "RationalTooWide", "IntegerTooWide", "JsonSyntax", "InvalidNumber", "NotJsonRepresentable", "TypeMismatch", "UnexpectedEnd", "TrailingBytes", "DepthExceeded", "NonCanonical", "Unsupported", "InvalidUtf8"])? {
+            c::Alternative::Text(0) => Ok(Self::UnpairedSurrogate),
+            c::Alternative::Text(1) => Ok(Self::DuplicateKey),
+            c::Alternative::Text(2) => Ok(Self::RationalTooWide),
+            c::Alternative::Text(3) => Ok(Self::IntegerTooWide),
+            c::Alternative::Text(4) => Ok(Self::JsonSyntax),
+            c::Alternative::Text(5) => Ok(Self::InvalidNumber),
+            c::Alternative::Text(6) => Ok(Self::NotJsonRepresentable),
+            c::Alternative::Text(7) => Ok(Self::TypeMismatch),
+            c::Alternative::Text(8) => Ok(Self::UnexpectedEnd),
+            c::Alternative::Text(9) => Ok(Self::TrailingBytes),
+            c::Alternative::Text(10) => Ok(Self::DepthExceeded),
+            c::Alternative::Text(11) => Ok(Self::NonCanonical),
+            c::Alternative::Text(12) => Ok(Self::Unsupported),
+            c::Alternative::Text(13) => Ok(Self::InvalidUtf8),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl CanonicalErrorKind {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 14] = [Self::UnpairedSurrogate, Self::DuplicateKey, Self::RationalTooWide, Self::IntegerTooWide, Self::JsonSyntax, Self::InvalidNumber, Self::NotJsonRepresentable, Self::TypeMismatch, Self::UnexpectedEnd, Self::TrailingBytes, Self::DepthExceeded, Self::NonCanonical, Self::Unsupported, Self::InvalidUtf8];
 }
 
 /// `canonical-json-accepted` (`shared/schemas/canonical-vectors.cddl`).
@@ -138,7 +221,7 @@ impl c::Model for CanonicalJsonCase {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[(&["cbor", "contentHash", "json", "render"], &["cbor", "contentHash", "json", "render"]), (&["error", "json"], &["error", "json"])], &[])? {
+        match c::select_alternative(value, &[(&["cbor", "contentHash", "json", "render"], &["cbor", "contentHash", "json", "render"]), (&["error", "json"], &["error", "json", "limit"])], &[])? {
             c::Alternative::Record(0) => <CanonicalJsonAccepted as c::Model>::from_value(value).map(Self::CanonicalJsonAccepted),
             c::Alternative::Record(1) => <CanonicalJsonRejected as c::Model>::from_value(value).map(Self::CanonicalJsonRejected),
             other => Err(c::unknown_alternative(other)),
@@ -152,7 +235,9 @@ pub struct CanonicalJsonRejected {
     /// The `json` entry.
     pub json: String,
     /// The `error` entry.
-    pub error: String,
+    pub error: CanonicalErrorKind,
+    /// The `limit` entry.
+    pub limit: Option<u64>,
 }
 
 impl c::Model for CanonicalJsonRejected {
@@ -160,15 +245,17 @@ impl c::Model for CanonicalJsonRejected {
         let inner = c::nested(depth)?;
         c::record([
             c::field("json", &c::Text, &self.json, inner)?,
-            c::field("error", &c::Text, &self.error, inner)?,
+            c::field("error", &c::ModelOf::<CanonicalErrorKind>::NEW, &self.error, inner)?,
+            c::optional_field("limit", &c::UINT, self.limit.as_ref(), inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["json", "error"])?;
+        let fields = c::Fields::of(value, &["json", "error", "limit"])?;
         let f0 = fields.required("json", &c::Text)?;
-        let f1 = fields.required("error", &c::Text)?;
-        Ok(Self { json: f0, error: f1 })
+        let f1 = fields.required("error", &c::ModelOf::<CanonicalErrorKind>::NEW)?;
+        let f2 = fields.optional("limit", &c::UINT)?;
+        Ok(Self { json: f0, error: f1, limit: f2 })
     }
 }
 
@@ -208,7 +295,7 @@ pub struct CanonicalRenderRejection {
     /// The `cbor` entry.
     pub cbor: Hex,
     /// The `error` entry.
-    pub error: String,
+    pub error: CanonicalErrorKind,
 }
 
 impl c::Model for CanonicalRenderRejection {
@@ -216,14 +303,14 @@ impl c::Model for CanonicalRenderRejection {
         let inner = c::nested(depth)?;
         c::record([
             c::field("cbor", &HEX, &self.cbor, inner)?,
-            c::field("error", &c::Text, &self.error, inner)?,
+            c::field("error", &c::ModelOf::<CanonicalErrorKind>::NEW, &self.error, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["cbor", "error"])?;
         let f0 = fields.required("cbor", &HEX)?;
-        let f1 = fields.required("error", &c::Text)?;
+        let f1 = fields.required("error", &c::ModelOf::<CanonicalErrorKind>::NEW)?;
         Ok(Self { cbor: f0, error: f1 })
     }
 }
@@ -318,6 +405,37 @@ impl c::Model for CanonicalVectors {
         let f10 = fields.required("domainTags", &c::VecOf { element: c::ModelOf::<CanonicalDomainTag>::NEW, min: 0, max: None })?;
         Ok(Self { content_hash_tag: f2, content_hash_algorithm: f3, json: f4, model: f5, render_rejections: f6, cbor_rejections: f7, tagged_hash: f8, digests: f9, domain_tags: f10 })
     }
+}
+
+/// `domain-tag-outcome` (`shared/schemas/canonical-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DomainTagOutcome {
+    /// The text `accepted`.
+    Accepted,
+    /// The text `InvalidDomainTag`.
+    InvalidDomainTag,
+}
+
+impl c::Model for DomainTagOutcome {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Accepted => Ok(c::Value::text("accepted")),
+            Self::InvalidDomainTag => Ok(c::Value::text("InvalidDomainTag")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["accepted", "InvalidDomainTag"])? {
+            c::Alternative::Text(0) => Ok(Self::Accepted),
+            c::Alternative::Text(1) => Ok(Self::InvalidDomainTag),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl DomainTagOutcome {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::Accepted, Self::InvalidDomainTag];
 }
 
 /// `hex` (`shared/schemas/canonical-vectors.cddl`).

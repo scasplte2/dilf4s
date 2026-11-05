@@ -5,9 +5,9 @@ import java.nio.file.{Files, Path, Paths}
 
 import cats.effect.{ExitCode, IO, IOApp}
 
-import xyz.kd5ujc.core.canonical.{CanonicalGens, CanonicalJson, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalGens, CanonicalJson, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash._
-import xyz.kd5ujc.core.vectors.VectorJson.{arr, bool, num, obj, str}
+import xyz.kd5ujc.core.vectors.VectorJson.{arr, num, obj, str}
 
 import scodec.bits.{ByteVector, hex}
 
@@ -351,6 +351,14 @@ object CanonicalVectors {
 
   private def errorKind(e: Product): VectorJson = str(e.productPrefix)
 
+  /** A refusal's fields: its kind, and its normative `limit` when it has one (conformance.md §3). */
+  private def refusal(e: CanonicalError): List[(String, VectorJson)] =
+    ("error" -> errorKind(e)) :: (e match {
+      case CanonicalError.RationalTooWide(limit) => List("limit" -> num(limit))
+      case CanonicalError.IntegerTooWide(limit)  => List("limit" -> num(limit))
+      case _                                     => Nil
+    })
+
   def build: VectorJson = obj(
     "spec"                 -> str("docs/specs/canonical-encoding.md"),
     "version"              -> num(1),
@@ -367,7 +375,7 @@ object CanonicalVectors {
             // every value JSON reads renders and reads back (canonical-encoding.md section 3)
             "render" -> str(CanonicalJson.render(v).fold(e => sys.error(s"$in reads but does not render: $e"), identity))
           )
-        case Left(e) => obj("json" -> str(in), "error" -> errorKind(e))
+        case Left(e) => obj(("json" -> str(in)) :: refusal(e)*)
       }
     }),
     "model" -> arr(modelInputs.map {
@@ -376,10 +384,10 @@ object CanonicalVectors {
         obj("value" -> str(name), "cbor" -> str(bytes.toHex), "contentHash" -> str(sha256(bytes).hex))
     }),
     "renderRejections" -> arr(renderRejections.map { v =>
-      obj("cbor" -> str(Cbor.encode(v).toHex), "error" -> CanonicalJson.render(v).fold(errorKind, r => str(s"RENDERED $r")))
+      CanonicalJson.render(v).fold(e => obj(("cbor" -> str(Cbor.encode(v).toHex)) :: refusal(e)*), r => sys.error(s"$v renders as $r"))
     }),
     "cborRejections" -> arr(cborRejections.map { b =>
-      obj("cbor" -> str(b.toHex), "error" -> Cbor.decode(b).fold(errorKind, v => str(s"ACCEPTED $v")))
+      Cbor.decode(b).fold(e => obj(("cbor" -> str(b.toHex)) :: refusal(e)*), v => sys.error(s"${b.toHex} decodes as $v"))
     }),
     "taggedHash" -> arr(for {
       m <- tagMessages
@@ -397,7 +405,7 @@ object CanonicalVectors {
       m              <- digestMessages
       (name, digest) <- digesters
     } yield obj("algorithm" -> str(name), "message" -> str(m.toHex), "digest" -> str(digest(m).toHex))),
-    "domainTags" -> arr(domainTags.map(t => obj("tag" -> str(t), "valid" -> bool(DomainTag(t).isRight))))
+    "domainTags" -> arr(domainTags.map(t => obj("tag" -> str(t), "outcome" -> DomainTag(t).fold(errorKind, _ => str("accepted")))))
   )
 
   def render: String = VectorJson.pretty(build) + "\n"

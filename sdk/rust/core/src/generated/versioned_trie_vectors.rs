@@ -337,6 +337,37 @@ impl c::Model for VtProof {
     }
 }
 
+/// `vt-schema-outcome` (`shared/schemas/versioned-trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VtSchemaOutcome {
+    /// The text `accepted`.
+    Accepted,
+    /// The text `TypeMismatch`.
+    TypeMismatch,
+}
+
+impl c::Model for VtSchemaOutcome {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Accepted => Ok(c::Value::text("accepted")),
+            Self::TypeMismatch => Ok(c::Value::text("TypeMismatch")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["accepted", "TypeMismatch"])? {
+            c::Alternative::Text(0) => Ok(Self::Accepted),
+            c::Alternative::Text(1) => Ok(Self::TypeMismatch),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl VtSchemaOutcome {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::Accepted, Self::TypeMismatch];
+}
+
 /// `vt-snapshot` (`shared/schemas/versioned-trie-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtSnapshot {
@@ -369,7 +400,7 @@ pub struct VtStateKey {
     /// The `key` entry.
     pub key: String,
     /// The `schema` entry.
-    pub schema: bool,
+    pub schema: VtSchemaOutcome,
     /// The `valid` entry.
     pub valid: bool,
 }
@@ -379,7 +410,7 @@ impl c::Model for VtStateKey {
         let inner = c::nested(depth)?;
         c::record([
             c::field("key", &c::Text, &self.key, inner)?,
-            c::field("schema", &c::Bool, &self.schema, inner)?,
+            c::field("schema", &c::ModelOf::<VtSchemaOutcome>::NEW, &self.schema, inner)?,
             c::field("valid", &c::Bool, &self.valid, inner)?,
         ])
     }
@@ -387,7 +418,7 @@ impl c::Model for VtStateKey {
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["key", "schema", "valid"])?;
         let f0 = fields.required("key", &c::Text)?;
-        let f1 = fields.required("schema", &c::Bool)?;
+        let f1 = fields.required("schema", &c::ModelOf::<VtSchemaOutcome>::NEW)?;
         let f2 = fields.required("valid", &c::Bool)?;
         Ok(Self { key: f0, schema: f1, valid: f2 })
     }

@@ -135,8 +135,12 @@ object VersionedTrieVectors {
     "a\n"
   )
 
+  /** The generated state-key codec's encoding of `k`: "accepted", or its refusal's kind (TypeMismatch). */
+  def schemaOutcome(k: String): String =
+    xyz.kd5ujc.models.versioned_trie.StateKey.codec.encode(k).fold(_.productPrefix, _ => "accepted")
+
   private def stateKeyCase(k: String): Json =
-    Json.obj("key" -> k.asJson, "schema" -> k.matches(StateKeyPattern).asJson, "valid" -> StateKey.parse(k).isRight.asJson)
+    Json.obj("key" -> k.asJson, "schema" -> schemaOutcome(k).asJson, "valid" -> StateKey.parse(k).isRight.asJson)
 
   def build: IO[Json] =
     attempt { implicit h =>
@@ -285,6 +289,13 @@ object VersionedTrieVectorsSuite extends SimpleIOSuite {
         )
       )
       .and(expect(patternOnly.size >= 3, "the cases cover each limit"))
+  }
+
+  pureTest("the generated state-key codec encodes exactly the texts the schema pattern matches, and refuses the rest as TypeMismatch") {
+    VersionedTrieVectors.stateKeyCases.foldMap { k =>
+      val expected = if (k.matches(VersionedTrieVectors.StateKeyPattern)) "accepted" else "TypeMismatch"
+      expect.same(expected, VersionedTrieVectors.schemaOutcome(k))
+    }
   }
 
   test("committed versioned-trie vectors match the reference implementation") {

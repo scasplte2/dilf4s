@@ -315,6 +315,28 @@ export const VtProof: c.Codec<VtProof> = {
   },
 };
 
+/** `vt-schema-outcome` (`shared/schemas/versioned-trie-vectors.cddl`). */
+export type VtSchemaOutcome = "accepted" | "TypeMismatch";
+
+export const VtSchemaOutcome: c.Codec<VtSchemaOutcome> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["TypeMismatch", "accepted"]);
+    return c.typeMismatch("no alternative of VtSchemaOutcome fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["accepted", "TypeMismatch"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<VtSchemaOutcome>("accepted");
+      case 1:
+        return c.ok<VtSchemaOutcome>("TypeMismatch");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
 /** `vt-snapshot` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtSnapshot {
   readonly chunkEntries: bigint;
@@ -343,7 +365,7 @@ export const VtSnapshot: c.Codec<VtSnapshot> = {
 /** `vt-state-key` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtStateKey {
   readonly key: string;
-  readonly schema: boolean;
+  readonly schema: VtSchemaOutcome;
   readonly valid: boolean;
 }
 
@@ -352,7 +374,7 @@ export const VtStateKey: c.Codec<VtStateKey> = {
     c.nested(d, (e) =>
       c.record([
         c.field("key", c.text, a.key, e),
-        c.field("schema", c.bool, a.schema, e),
+        c.field("schema", c.defer(() => VtSchemaOutcome), a.schema, e),
         c.field("valid", c.bool, a.valid, e),
       ]),
     ),
@@ -361,7 +383,7 @@ export const VtStateKey: c.Codec<VtStateKey> = {
     if (!f.ok) return f;
     const r0 = f.value.required("key", c.text);
     if (!r0.ok) return r0;
-    const r1 = f.value.required("schema", c.bool);
+    const r1 = f.value.required("schema", c.defer(() => VtSchemaOutcome));
     if (!r1.ok) return r1;
     const r2 = f.value.required("valid", c.bool);
     if (!r2.ok) return r2;

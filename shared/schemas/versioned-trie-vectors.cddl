@@ -22,9 +22,12 @@ versioned-trie-vectors = {
 ; version and decoding the key alike.
 vt-version-key = { "version": uint, "key": hex, "valid": bool }
 
-; A candidate state key: whether it matches versioned-trie.cddl's state-key pattern ("schema"), and whether the full
-; grammar of section 2, with its length and segment limits, accepts it ("valid").
-vt-state-key = { "key": text, "schema": bool, "valid": bool }
+; A candidate state key: whether the generated codec of versioned-trie.cddl's state-key pattern encodes it ("schema":
+; "accepted", or TypeMismatch, the typed encoder's CanonicalError; its decoder refuses the same texts), and whether the
+; full grammar of section 2, with its length and segment limits, accepts it ("valid").
+vt-state-key = { "key": text, "schema": vt-schema-outcome, "valid": bool }
+
+vt-schema-outcome = "accepted" / "TypeMismatch"
 
 ; The final commit's snapshot, in chunks of at most "chunkEntries" items: each is the hex of a canonical
 ; versioned-trie-snapshot-chunk. Restoring it into an empty store reproduces "root".
