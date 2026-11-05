@@ -10,7 +10,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.crypto.bls.Bls12381
-import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, SigmaProp, SigmaProver}
+import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, SigmaError, SigmaProp, SigmaProver}
 import xyz.kd5ujc.crypto.signing._
 
 import io.circe.{Json, parser}
@@ -160,19 +160,19 @@ object CryptoOpsSuite extends IOSuite with Checkers {
       Config()
     )
 
-  private def key(pk: xyz.kd5ujc.crypto.sigma.GroupElement): SigmaProp = SigmaProp.dlog(pk).fold(sys.error, identity)
+  private def key(pk: xyz.kd5ujc.crypto.sigma.GroupElement): SigmaProp = SigmaProp.dlog(pk).fold(e => sys.error(e.message), identity)
   private def tuple(
     g: xyz.kd5ujc.crypto.sigma.GroupElement,
     h: xyz.kd5ujc.crypto.sigma.GroupElement,
     u: xyz.kd5ujc.crypto.sigma.GroupElement,
     v: xyz.kd5ujc.crypto.sigma.GroupElement
-  ): SigmaProp = SigmaProp.dhTuple(g, h, u, v).fold(sys.error, identity)
+  ): SigmaProp = SigmaProp.dhTuple(g, h, u, v).fold(e => sys.error(e.message), identity)
 
   private def h(b:  ByteVector): String = "\"0x" + b.toHex + "\""
   private def pk(w: BigInt): ByteVector = Secp256k1Group.base(w).bytes
 
-  private def prove(r: SecureRandom[IO], prop: Either[String, SigmaProp], secrets: Vector[BigInt], message: ByteVector): IO[ByteVector] =
-    IO.fromEither(prop.leftMap(new IllegalArgumentException(_)))
+  private def prove(r: SecureRandom[IO], prop: Either[SigmaError, SigmaProp], secrets: Vector[BigInt], message: ByteVector): IO[ByteVector] =
+    IO.fromEither(prop.leftMap(e => new IllegalArgumentException(e.message)))
       .flatMap(p => SigmaProver.prove[IO](p, secrets, message)(using summon, r))
       .flatMap(e => IO.fromEither(e.leftMap(new IllegalStateException(_))))
 

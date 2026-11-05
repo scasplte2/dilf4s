@@ -34,7 +34,7 @@ object ErgoContractsSuite extends IOSuite {
 
   private def pk(w:   BigInt): ByteVector = Secp256k1Group.base(w).bytes
   private def h(b:    ByteVector): String = "\"0x" + b.toHex + "\""
-  private def dlog(w: BigInt): SigmaProp = SigmaProp.dlog(Secp256k1Group.base(w)).fold(sys.error, identity)
+  private def dlog(w: BigInt): SigmaProp = SigmaProp.dlog(Secp256k1Group.base(w)).fold(e => sys.error(e.message), identity)
 
   private def prove(r: SecureRandom[IO], prop: SigmaProp, secrets: Vector[BigInt], message: ByteVector): IO[ByteVector] =
     SigmaProver.prove[IO](prop, secrets, message)(using summon, r).flatMap(e => IO.fromEither(e.leftMap(new IllegalStateException(_))))
@@ -161,7 +161,7 @@ object ErgoContractsSuite extends IOSuite {
     def boxJson(b: (GroupElement, GroupElement, GroupElement, GroupElement)) =
       s"""{"g": ${h(b._1.bytes)}, "h": ${h(b._2.bytes)}, "u": ${h(b._3.bytes)}, "v": ${h(b._4.bytes)}}"""
     def statement(b: (GroupElement, GroupElement, GroupElement, GroupElement)) =
-      SigmaProp.dhTuple(b._1, b._2, b._3, b._4).fold(sys.error, identity)
+      SigmaProp.dhTuple(b._1, b._2, b._3, b._4).fold(e => sys.error(e.message), identity)
     val (b1, b2) = (box(BigInt(1001)), box(BigInt(2002)))
     def spend(b: (GroupElement, GroupElement, GroupElement, GroupElement), p: ByteVector) =
       s"""{"method": "spend", "box": ${boxJson(b)}, "proof": ${h(p)}}"""
@@ -232,7 +232,7 @@ object ErgoContractsSuite extends IOSuite {
             .padLeft(32)
         )
         .bytes
-    val committee = SigmaProp.threshold(2, ws.map(dlog)).fold(sys.error, identity)
+    val committee = SigmaProp.threshold(2, ws.map(dlog)).fold(e => sys.error(e.message), identity)
     def spend(amount: Int, p: ByteVector) = s"""{"method": "spend", "to": ${h(to)}, "amount": $amount, "proof": ${h(p)}}"""
     (
       prove(e.random, committee, ws.take(2), message(0, 40)),

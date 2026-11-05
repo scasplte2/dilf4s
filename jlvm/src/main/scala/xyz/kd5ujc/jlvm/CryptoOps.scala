@@ -6,7 +6,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.crypto.bls.Bls12381
-import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, Sigma, SigmaProp}
+import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, Sigma, SigmaError, SigmaProp}
 import xyz.kd5ujc.crypto.signing._
 import xyz.kd5ujc.crypto.zk.Bn254Engine
 
@@ -103,11 +103,14 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
   private def sigma(op: Op, args: Vector[CanonicalValue]): Result =
     args match {
       case Vector(p, proof, message) =>
-        (SigmaProp.fromCanonical(p).leftMap(JlvmError.Crypto(op.wire, _)), bytes(op, proof), bytes(op, message)).tupled.flatMap {
-          case (prop, pf, m) => Sigma.verify(prop, pf, m).bimap(JlvmError.Crypto(op.wire, _), Values.bool)
+        (SigmaProp.decode(p).leftMap(sigmaRefusal(op)), bytes(op, proof), bytes(op, message)).tupled.flatMap {
+          case (prop, pf, m) => Sigma.check(prop, pf, m).bimap(sigmaRefusal(op), Values.bool)
         }
       case _ => JlvmError.Arity(op.wire, s"takes [proposition, proof, message], got ${args.size} arguments").asLeft
     }
+
+  /** A sigma refusal is the JLVM's `Crypto`, its message the refusal's (docs/specs/jlvm.md section 6). */
+  private def sigmaRefusal(op: Op)(e: SigmaError): JlvmError = JlvmError.Crypto(op.wire, e.message)
 
   /** `[key33, message, proof56]`: a single-key sigma proof, Ergo's P2PK signature. */
   private def schnorr(op: Op, args: Vector[CanonicalValue]): Result =
@@ -115,9 +118,8 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
       case (k, m, s) =>
         Secp256k1Group
           .decode(k)
-          .flatMap(SigmaProp.dlog)
-          .flatMap(Sigma.verify(_, s, m))
-          .bimap(JlvmError.Crypto(op.wire, _), Values.bool)
+          .leftMap(JlvmError.Crypto(op.wire, _))
+          .flatMap(SigmaProp.dlog(_).flatMap(Sigma.check(_, s, m)).bimap(sigmaRefusal(op), Values.bool))
     }
 
   /**

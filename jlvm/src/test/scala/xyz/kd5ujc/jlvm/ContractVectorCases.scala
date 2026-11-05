@@ -42,7 +42,7 @@ object ContractVectorCases extends IOApp {
 
   private def h(b:    ByteVector): String = "\"0x" + b.toHex + "\""
   private def pk(w:   BigInt): ByteVector = Secp256k1Group.base(w).bytes
-  private def dlog(w: BigInt): SigmaProp = SigmaProp.dlog(Secp256k1Group.base(w)).fold(sys.error, identity)
+  private def dlog(w: BigInt): SigmaProp = SigmaProp.dlog(Secp256k1Group.base(w)).fold(e => sys.error(e.message), identity)
   private def be(i:   BigInt, n: Int): ByteVector = ByteVector(i.toByteArray).takeRight(n.toLong).padLeft(n.toLong)
   private def s(v:    String) = "sender" -> text(v)
   private def t(n:    Long) = "ordinal"  -> CInt(n)
@@ -295,7 +295,7 @@ object ContractVectorCases extends IOApp {
         val bh = u * r
         val bu = g * (y * r)
         val bv = u * (y * r)
-        prove(random, SigmaProp.dhTuple(bg, bh, bu, bv).fold(sys.error, identity), Vector(y), tx).map { p =>
+        prove(random, SigmaProp.dhTuple(bg, bh, bu, bv).fold(e => sys.error(e.message), identity), Vector(y), tx).map { p =>
           val call = s"""{"method": "spend", "box": {"g": ${h(bg.bytes)}, "h": ${h(bh.bytes)}, "u": ${h(bu.bytes)}, "v": ${h(
               bv.bytes
             )}}, "proof": ${h(p)}}"""
@@ -341,7 +341,7 @@ object ContractVectorCases extends IOApp {
         val treasury = ByteVector.fill(8)(0x7e)
         val to = ByteVector.fill(20)(0x0c)
         val msg = Hasher[Blake2b256].digest(treasury ++ be(0, 8) ++ to ++ be(40, 32)).bytes
-        prove(random, SigmaProp.threshold(2, ws.map(dlog)).fold(sys.error, identity), ws.take(2), msg).map { p =>
+        prove(random, SigmaProp.threshold(2, ws.map(dlog)).fold(e => sys.error(e.message), identity), ws.take(2), msg).map { p =>
           def state(n: Int) =
             value(s"""{"treasury": ${h(treasury)}, "signers": [${ws.map(w => h(pk(w))).mkString(", ")}], "k": 2, "nonce": $n}""")
           List(

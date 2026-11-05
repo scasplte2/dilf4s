@@ -150,8 +150,4 @@ object Sigma {
       checked <- parse(prop, scala.None, wrongLength).runA(proof)
       commitments = leaves(checked).map(l => commitment(l.prop, l.challenge, l.z))
     } yield challenge(fiatShamir(prop, commitments), message) == challengeOf(checked)
-
-  /** [[check]], its refusal as a message: the JLVM reports it as `Crypto`. */
-  def verify(prop: SigmaProp, proof: ByteVector, message: ByteVector): Either[String, Boolean] =
-    check(prop, proof, message).leftMap(_.message)
 }
