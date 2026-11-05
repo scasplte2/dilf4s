@@ -13,24 +13,10 @@ export interface VersionedTrieAt {
   readonly s?: Uint8Array;
 }
 
-export const VersionedTrieAt: c.Codec<VersionedTrieAt> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("v", c.bytes, a.v, e),
-        c.optionalField("s", c.bytes, a.s, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["v", "s"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("v", c.bytes);
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("s", c.bytes);
-    if (!r1.ok) return r1;
-    return c.ok({ v: r0.value, s: r1.value });
-  },
-};
+export const VersionedTrieAt: c.Codec<VersionedTrieAt> = c.record<VersionedTrieAt>({
+  v: c.required("v", c.bytes),
+  s: c.optional("s", c.bytes),
+});
 
 /** `versioned-trie-delta` (`shared/schemas/versioned-trie.cddl`). */
 export interface VersionedTrieDelta {
@@ -40,30 +26,12 @@ export interface VersionedTrieDelta {
   readonly removes: readonly StateKey[];
 }
 
-export const VersionedTrieDelta: c.Codec<VersionedTrieDelta> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.optionalField("parent", c.defer(() => VersionedTrieHead), a.parent, e),
-        c.field("head", c.defer(() => VersionedTrieHead), a.head, e),
-        c.field("upserts", c.vector(c.defer(() => VersionedTrieUpsert), 0, null), a.upserts, e),
-        c.field("removes", c.vector(c.defer(() => StateKey), 0, null), a.removes, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["parent", "head", "upserts", "removes"]);
-    if (!f.ok) return f;
-    const r0 = f.value.optional("parent", c.defer(() => VersionedTrieHead));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("head", c.defer(() => VersionedTrieHead));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("upserts", c.vector(c.defer(() => VersionedTrieUpsert), 0, null));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("removes", c.vector(c.defer(() => StateKey), 0, null));
-    if (!r3.ok) return r3;
-    return c.ok({ parent: r0.value, head: r1.value, upserts: r2.value, removes: r3.value });
-  },
-};
+export const VersionedTrieDelta: c.Codec<VersionedTrieDelta> = c.record<VersionedTrieDelta>({
+  parent: c.optional("parent", c.defer(() => VersionedTrieHead)),
+  head: c.required("head", c.defer(() => VersionedTrieHead)),
+  upserts: c.required("upserts", c.vector(c.defer(() => VersionedTrieUpsert), 0, null)),
+  removes: c.required("removes", c.vector(c.defer(() => StateKey), 0, null)),
+});
 
 /** `versioned-trie-head` (`shared/schemas/versioned-trie.cddl`). */
 export interface VersionedTrieHead {
@@ -72,27 +40,11 @@ export interface VersionedTrieHead {
   readonly h: Uint8Array;
 }
 
-export const VersionedTrieHead: c.Codec<VersionedTrieHead> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("v", c.bytes, a.v, e),
-        c.field("s", c.bytes, a.s, e),
-        c.field("h", c.bytes, a.h, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["v", "s", "h"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("v", c.bytes);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("s", c.bytes);
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("h", c.bytes);
-    if (!r2.ok) return r2;
-    return c.ok({ v: r0.value, s: r1.value, h: r2.value });
-  },
-};
+export const VersionedTrieHead: c.Codec<VersionedTrieHead> = c.record<VersionedTrieHead>({
+  v: c.required("v", c.bytes),
+  s: c.required("s", c.bytes),
+  h: c.required("h", c.bytes),
+});
 
 /** `versioned-trie-proof` (`shared/schemas/versioned-trie.cddl`). */
 export interface VersionedTrieProof {
@@ -103,123 +55,49 @@ export interface VersionedTrieProof {
   readonly state?: trie.TrieProof;
 }
 
-export const VersionedTrieProof: c.Codec<VersionedTrieProof> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("head", c.defer(() => VersionedTrieHead), a.head, e),
-        c.field("top", c.defer(() => trie.TrieProof), a.top, e),
-        c.optionalField("at", c.defer(() => VersionedTrieAt), a.at, e),
-        c.optionalField("history", c.defer(() => trie.TrieProof), a.history, e),
-        c.optionalField("state", c.defer(() => trie.TrieProof), a.state, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["head", "top", "at", "history", "state"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("head", c.defer(() => VersionedTrieHead));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("top", c.defer(() => trie.TrieProof));
-    if (!r1.ok) return r1;
-    const r2 = f.value.optional("at", c.defer(() => VersionedTrieAt));
-    if (!r2.ok) return r2;
-    const r3 = f.value.optional("history", c.defer(() => trie.TrieProof));
-    if (!r3.ok) return r3;
-    const r4 = f.value.optional("state", c.defer(() => trie.TrieProof));
-    if (!r4.ok) return r4;
-    return c.ok({ head: r0.value, top: r1.value, at: r2.value, history: r3.value, state: r4.value });
-  },
-};
+export const VersionedTrieProof: c.Codec<VersionedTrieProof> = c.record<VersionedTrieProof>({
+  head: c.required("head", c.defer(() => VersionedTrieHead)),
+  top: c.required("top", c.defer(() => trie.TrieProof)),
+  at: c.optional("at", c.defer(() => VersionedTrieAt)),
+  history: c.optional("history", c.defer(() => trie.TrieProof)),
+  state: c.optional("state", c.defer(() => trie.TrieProof)),
+});
 
 /** `versioned-trie-snapshot-chunk` (`shared/schemas/versioned-trie.cddl`). */
 export type VersionedTrieSnapshotChunk = VersionedTrieSnapshotHead | VersionedTrieSnapshotState | VersionedTrieSnapshotHistory;
 
-export const VersionedTrieSnapshotChunk: c.Codec<VersionedTrieSnapshotChunk> = {
-  encode: (a, d) => {
-    const known = ["head", "history", "state"];
-    if (c.hasFields(a, VersionedTrieSnapshotHead, ["head"], ["head"], known)) return VersionedTrieSnapshotHead.encode(a, d);
-    if (c.hasFields(a, VersionedTrieSnapshotState, ["state"], ["state"], known)) return VersionedTrieSnapshotState.encode(a, d);
-    if (c.hasFields(a, VersionedTrieSnapshotHistory, ["history"], ["history"], known)) return VersionedTrieSnapshotHistory.encode(a, d);
-    return c.typeMismatch("no alternative of VersionedTrieSnapshotChunk fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["head"], ["head"]], [["state"], ["state"]], [["history"], ["history"]]], []);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return VersionedTrieSnapshotHead.decode(v);
-      case 1:
-        return VersionedTrieSnapshotState.decode(v);
-      case 2:
-        return VersionedTrieSnapshotHistory.decode(v);
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const VersionedTrieSnapshotChunk: c.Codec<VersionedTrieSnapshotChunk> = c.union<VersionedTrieSnapshotChunk>("VersionedTrieSnapshotChunk", [
+  c.alternative(c.defer(() => VersionedTrieSnapshotHead), [["head"], ["head"]], [["head"], ["head"]]),
+  c.alternative(c.defer(() => VersionedTrieSnapshotState), [["state"], ["state"]], [["state"], ["state"]]),
+  c.alternative(c.defer(() => VersionedTrieSnapshotHistory), [["history"], ["history"]], [["history"], ["history"]]),
+], []);
 
 /** `versioned-trie-snapshot-head` (`shared/schemas/versioned-trie.cddl`). */
 export interface VersionedTrieSnapshotHead {
   readonly head: VersionedTrieHead;
 }
 
-export const VersionedTrieSnapshotHead: c.Codec<VersionedTrieSnapshotHead> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("head", c.defer(() => VersionedTrieHead), a.head, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["head"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("head", c.defer(() => VersionedTrieHead));
-    if (!r0.ok) return r0;
-    return c.ok({ head: r0.value });
-  },
-};
+export const VersionedTrieSnapshotHead: c.Codec<VersionedTrieSnapshotHead> = c.record<VersionedTrieSnapshotHead>({
+  head: c.required("head", c.defer(() => VersionedTrieHead)),
+});
 
 /** `versioned-trie-snapshot-history` (`shared/schemas/versioned-trie.cddl`). */
 export interface VersionedTrieSnapshotHistory {
   readonly history: readonly VersionedTrieVersion[];
 }
 
-export const VersionedTrieSnapshotHistory: c.Codec<VersionedTrieSnapshotHistory> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("history", c.vector(c.defer(() => VersionedTrieVersion), 1, 1024), a.history, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["history"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("history", c.vector(c.defer(() => VersionedTrieVersion), 1, 1024));
-    if (!r0.ok) return r0;
-    return c.ok({ history: r0.value });
-  },
-};
+export const VersionedTrieSnapshotHistory: c.Codec<VersionedTrieSnapshotHistory> = c.record<VersionedTrieSnapshotHistory>({
+  history: c.required("history", c.vector(c.defer(() => VersionedTrieVersion), 1, 1024)),
+});
 
 /** `versioned-trie-snapshot-state` (`shared/schemas/versioned-trie.cddl`). */
 export interface VersionedTrieSnapshotState {
   readonly state: readonly VersionedTrieUpsert[];
 }
 
-export const VersionedTrieSnapshotState: c.Codec<VersionedTrieSnapshotState> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("state", c.vector(c.defer(() => VersionedTrieUpsert), 1, 1024), a.state, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["state"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("state", c.vector(c.defer(() => VersionedTrieUpsert), 1, 1024));
-    if (!r0.ok) return r0;
-    return c.ok({ state: r0.value });
-  },
-};
+export const VersionedTrieSnapshotState: c.Codec<VersionedTrieSnapshotState> = c.record<VersionedTrieSnapshotState>({
+  state: c.required("state", c.vector(c.defer(() => VersionedTrieUpsert), 1, 1024)),
+});
 
 /** `versioned-trie-upsert` (`shared/schemas/versioned-trie.cddl`). */
 export interface VersionedTrieUpsert {
@@ -227,24 +105,10 @@ export interface VersionedTrieUpsert {
   readonly v: c.Value;
 }
 
-export const VersionedTrieUpsert: c.Codec<VersionedTrieUpsert> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("k", c.defer(() => StateKey), a.k, e),
-        c.field("v", c.any, a.v, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["k", "v"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("k", c.defer(() => StateKey));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("v", c.any);
-    if (!r1.ok) return r1;
-    return c.ok({ k: r0.value, v: r1.value });
-  },
-};
+export const VersionedTrieUpsert: c.Codec<VersionedTrieUpsert> = c.record<VersionedTrieUpsert>({
+  k: c.required("k", c.defer(() => StateKey)),
+  v: c.required("v", c.any),
+});
 
 /** `versioned-trie-version` (`shared/schemas/versioned-trie.cddl`). */
 export interface VersionedTrieVersion {
@@ -252,21 +116,7 @@ export interface VersionedTrieVersion {
   readonly s: Uint8Array;
 }
 
-export const VersionedTrieVersion: c.Codec<VersionedTrieVersion> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("v", c.bytes, a.v, e),
-        c.field("s", c.bytes, a.s, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["v", "s"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("v", c.bytes);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("s", c.bytes);
-    if (!r1.ok) return r1;
-    return c.ok({ v: r0.value, s: r1.value });
-  },
-};
+export const VersionedTrieVersion: c.Codec<VersionedTrieVersion> = c.record<VersionedTrieVersion>({
+  v: c.required("v", c.bytes),
+  s: c.required("s", c.bytes),
+});

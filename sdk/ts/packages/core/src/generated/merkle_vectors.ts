@@ -9,26 +9,7 @@ export const Hex: c.Codec<Hex> = c.matching("([0-9a-f]{2})*");
 /** `merkle-decode-error` (`shared/schemas/merkle-vectors.cddl`). */
 export type MerkleDecodeError = "IndexOutOfRange" | "InvalidSizes" | "Encoding";
 
-export const MerkleDecodeError: c.Codec<MerkleDecodeError> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["Encoding", "IndexOutOfRange", "InvalidSizes"]);
-    return c.typeMismatch("no alternative of MerkleDecodeError fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["IndexOutOfRange", "InvalidSizes", "Encoding"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<MerkleDecodeError>("IndexOutOfRange");
-      case 1:
-        return c.ok<MerkleDecodeError>("InvalidSizes");
-      case 2:
-        return c.ok<MerkleDecodeError>("Encoding");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const MerkleDecodeError: c.Codec<MerkleDecodeError> = c.union<MerkleDecodeError>("MerkleDecodeError", [], ["IndexOutOfRange", "InvalidSizes", "Encoding"]);
 
 /** `merkle-malformed` (`shared/schemas/merkle-vectors.cddl`). */
 export interface MerkleMalformed {
@@ -38,52 +19,17 @@ export interface MerkleMalformed {
   readonly error: MerkleDecodeError;
 }
 
-export const MerkleMalformed: c.Codec<MerkleMalformed> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("name", c.text, a.name, e),
-        c.field("kind", c.defer(() => MerkleProofKind), a.kind, e),
-        c.field("cbor", c.defer(() => Hex), a.cbor, e),
-        c.field("error", c.defer(() => MerkleDecodeError), a.error, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["name", "kind", "cbor", "error"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("name", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("kind", c.defer(() => MerkleProofKind));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("cbor", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("error", c.defer(() => MerkleDecodeError));
-    if (!r3.ok) return r3;
-    return c.ok({ name: r0.value, kind: r1.value, cbor: r2.value, error: r3.value });
-  },
-};
+export const MerkleMalformed: c.Codec<MerkleMalformed> = c.record<MerkleMalformed>({
+  name: c.required("name", c.text),
+  kind: c.required("kind", c.defer(() => MerkleProofKind)),
+  cbor: c.required("cbor", c.defer(() => Hex)),
+  error: c.required("error", c.defer(() => MerkleDecodeError)),
+});
 
 /** `merkle-proof-kind` (`shared/schemas/merkle-vectors.cddl`). */
 export type MerkleProofKind = "inclusion" | "consistency";
 
-export const MerkleProofKind: c.Codec<MerkleProofKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["consistency", "inclusion"]);
-    return c.typeMismatch("no alternative of MerkleProofKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["inclusion", "consistency"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<MerkleProofKind>("inclusion");
-      case 1:
-        return c.ok<MerkleProofKind>("consistency");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const MerkleProofKind: c.Codec<MerkleProofKind> = c.union<MerkleProofKind>("MerkleProofKind", [], ["inclusion", "consistency"]);
 
 /** `merkle-value-commitment` (`shared/schemas/merkle-vectors.cddl`). */
 export interface MerkleValueCommitment {
@@ -92,27 +38,11 @@ export interface MerkleValueCommitment {
   readonly leafHash: Hex;
 }
 
-export const MerkleValueCommitment: c.Codec<MerkleValueCommitment> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("cbor", c.defer(() => Hex), a.cbor, e),
-        c.field("commitment", c.defer(() => Hex), a.commitment, e),
-        c.field("leafHash", c.defer(() => Hex), a.leafHash, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["cbor", "commitment", "leafHash"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("cbor", c.defer(() => Hex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("commitment", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("leafHash", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    return c.ok({ cbor: r0.value, commitment: r1.value, leafHash: r2.value });
-  },
-};
+export const MerkleValueCommitment: c.Codec<MerkleValueCommitment> = c.record<MerkleValueCommitment>({
+  cbor: c.required("cbor", c.defer(() => Hex)),
+  commitment: c.required("commitment", c.defer(() => Hex)),
+  leafHash: c.required("leafHash", c.defer(() => Hex)),
+});
 
 /** `merkle-vector-tree` (`shared/schemas/merkle-vectors.cddl`). */
 export interface MerkleVectorTree {
@@ -125,39 +55,15 @@ export interface MerkleVectorTree {
   readonly rfc6962Consistency: readonly Hex[];
 }
 
-export const MerkleVectorTree: c.Codec<MerkleVectorTree> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("size", c.uint, a.size, e),
-        c.field("root", c.defer(() => Hex), a.root, e),
-        c.field("rfc6962Root", c.defer(() => Hex), a.rfc6962Root, e),
-        c.field("inclusion", c.vector(c.defer(() => Hex), 0, null), a.inclusion, e),
-        c.field("consistency", c.vector(c.defer(() => Hex), 0, null), a.consistency, e),
-        c.field("rfc6962Inclusion", c.vector(c.defer(() => Hex), 0, null), a.rfc6962Inclusion, e),
-        c.field("rfc6962Consistency", c.vector(c.defer(() => Hex), 0, null), a.rfc6962Consistency, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["size", "root", "rfc6962Root", "inclusion", "consistency", "rfc6962Inclusion", "rfc6962Consistency"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("size", c.uint);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("root", c.defer(() => Hex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("rfc6962Root", c.defer(() => Hex));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("inclusion", c.vector(c.defer(() => Hex), 0, null));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("consistency", c.vector(c.defer(() => Hex), 0, null));
-    if (!r4.ok) return r4;
-    const r5 = f.value.required("rfc6962Inclusion", c.vector(c.defer(() => Hex), 0, null));
-    if (!r5.ok) return r5;
-    const r6 = f.value.required("rfc6962Consistency", c.vector(c.defer(() => Hex), 0, null));
-    if (!r6.ok) return r6;
-    return c.ok({ size: r0.value, root: r1.value, rfc6962Root: r2.value, inclusion: r3.value, consistency: r4.value, rfc6962Inclusion: r5.value, rfc6962Consistency: r6.value });
-  },
-};
+export const MerkleVectorTree: c.Codec<MerkleVectorTree> = c.record<MerkleVectorTree>({
+  size: c.required("size", c.uint),
+  root: c.required("root", c.defer(() => Hex)),
+  rfc6962Root: c.required("rfc6962Root", c.defer(() => Hex)),
+  inclusion: c.required("inclusion", c.vector(c.defer(() => Hex), 0, null)),
+  consistency: c.required("consistency", c.vector(c.defer(() => Hex), 0, null)),
+  rfc6962Inclusion: c.required("rfc6962Inclusion", c.vector(c.defer(() => Hex), 0, null)),
+  rfc6962Consistency: c.required("rfc6962Consistency", c.vector(c.defer(() => Hex), 0, null)),
+});
 
 /** `merkle-vectors` (`shared/schemas/merkle-vectors.cddl`). */
 export interface MerkleVectors {
@@ -171,39 +77,13 @@ export interface MerkleVectors {
   readonly malformed: readonly MerkleMalformed[];
 }
 
-export const MerkleVectors: c.Codec<MerkleVectors> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spec", c.literalText("docs/specs/merkle.md"), a.spec, e),
-        c.field("version", c.literalInt(1n), a.version, e),
-        c.field("hash", c.literalText("SHA-256"), a.hash, e),
-        c.field("leaves", c.vector(c.defer(() => Hex), 0, null), a.leaves, e),
-        c.field("leafHashes", c.vector(c.defer(() => Hex), 0, null), a.leafHashes, e),
-        c.field("trees", c.vector(c.defer(() => MerkleVectorTree), 0, null), a.trees, e),
-        c.field("valueCommitments", c.vector(c.defer(() => MerkleValueCommitment), 0, null), a.valueCommitments, e),
-        c.field("malformed", c.vector(c.defer(() => MerkleMalformed), 0, null), a.malformed, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "hash", "leaves", "leafHashes", "trees", "valueCommitments", "malformed"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spec", c.literalText("docs/specs/merkle.md"));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("version", c.literalInt(1n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("hash", c.literalText("SHA-256"));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("leaves", c.vector(c.defer(() => Hex), 0, null));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("leafHashes", c.vector(c.defer(() => Hex), 0, null));
-    if (!r4.ok) return r4;
-    const r5 = f.value.required("trees", c.vector(c.defer(() => MerkleVectorTree), 0, null));
-    if (!r5.ok) return r5;
-    const r6 = f.value.required("valueCommitments", c.vector(c.defer(() => MerkleValueCommitment), 0, null));
-    if (!r6.ok) return r6;
-    const r7 = f.value.required("malformed", c.vector(c.defer(() => MerkleMalformed), 0, null));
-    if (!r7.ok) return r7;
-    return c.ok({ spec: r0.value, version: r1.value, hash: r2.value, leaves: r3.value, leafHashes: r4.value, trees: r5.value, valueCommitments: r6.value, malformed: r7.value });
-  },
-};
+export const MerkleVectors: c.Codec<MerkleVectors> = c.record<MerkleVectors>({
+  spec: c.required("spec", c.literalText("docs/specs/merkle.md")),
+  version: c.required("version", c.literalInt(1n)),
+  hash: c.required("hash", c.literalText("SHA-256")),
+  leaves: c.required("leaves", c.vector(c.defer(() => Hex), 0, null)),
+  leafHashes: c.required("leafHashes", c.vector(c.defer(() => Hex), 0, null)),
+  trees: c.required("trees", c.vector(c.defer(() => MerkleVectorTree), 0, null)),
+  valueCommitments: c.required("valueCommitments", c.vector(c.defer(() => MerkleValueCommitment), 0, null)),
+  malformed: c.required("malformed", c.vector(c.defer(() => MerkleMalformed), 0, null)),
+});

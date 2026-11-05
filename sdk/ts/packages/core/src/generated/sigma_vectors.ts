@@ -17,69 +17,20 @@ export interface SigmaCase {
   readonly ergo: boolean;
 }
 
-export const SigmaCase: c.Codec<SigmaCase> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("name", c.text, a.name, e),
-        c.field("kind", c.defer(() => SigmaKind), a.kind, e),
-        c.field("proposition", c.defer(() => SigmaProposition), a.proposition, e),
-        c.field("secrets", c.vector(c.defer(() => Hex0x), 0, null), a.secrets, e),
-        c.field("message", c.defer(() => Hex0x), a.message, e),
-        c.field("proof", c.defer(() => Hex0x), a.proof, e),
-        c.field("ergo", c.bool, a.ergo, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["name", "kind", "proposition", "secrets", "message", "proof", "ergo"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("name", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("kind", c.defer(() => SigmaKind));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("proposition", c.defer(() => SigmaProposition));
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("secrets", c.vector(c.defer(() => Hex0x), 0, null));
-    if (!r3.ok) return r3;
-    const r4 = f.value.required("message", c.defer(() => Hex0x));
-    if (!r4.ok) return r4;
-    const r5 = f.value.required("proof", c.defer(() => Hex0x));
-    if (!r5.ok) return r5;
-    const r6 = f.value.required("ergo", c.bool);
-    if (!r6.ok) return r6;
-    return c.ok({ name: r0.value, kind: r1.value, proposition: r2.value, secrets: r3.value, message: r4.value, proof: r5.value, ergo: r6.value });
-  },
-};
+export const SigmaCase: c.Codec<SigmaCase> = c.record<SigmaCase>({
+  name: c.required("name", c.text),
+  kind: c.required("kind", c.defer(() => SigmaKind)),
+  proposition: c.required("proposition", c.defer(() => SigmaProposition)),
+  secrets: c.required("secrets", c.vector(c.defer(() => Hex0x), 0, null)),
+  message: c.required("message", c.defer(() => Hex0x)),
+  proof: c.required("proof", c.defer(() => Hex0x)),
+  ergo: c.required("ergo", c.bool),
+});
 
 /** `sigma-kind` (`shared/schemas/sigma-vectors.cddl`). */
 export type SigmaKind = "valid" | "other-message" | "flipped-response" | "flipped-challenge" | "trailing-byte" | "truncated";
 
-export const SigmaKind: c.Codec<SigmaKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["flipped-challenge", "flipped-response", "other-message", "trailing-byte", "truncated", "valid"]);
-    return c.typeMismatch("no alternative of SigmaKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["valid", "other-message", "flipped-response", "flipped-challenge", "trailing-byte", "truncated"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<SigmaKind>("valid");
-      case 1:
-        return c.ok<SigmaKind>("other-message");
-      case 2:
-        return c.ok<SigmaKind>("flipped-response");
-      case 3:
-        return c.ok<SigmaKind>("flipped-challenge");
-      case 4:
-        return c.ok<SigmaKind>("trailing-byte");
-      case 5:
-        return c.ok<SigmaKind>("truncated");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const SigmaKind: c.Codec<SigmaKind> = c.union<SigmaKind>("SigmaKind", [], ["valid", "other-message", "flipped-response", "flipped-challenge", "trailing-byte", "truncated"]);
 
 /** `sigma-proposition` (`shared/schemas/sigma-vectors.cddl`). */
 export interface SigmaProposition {
@@ -93,70 +44,21 @@ export interface SigmaProposition {
   readonly children?: readonly SigmaProposition[];
 }
 
-export const SigmaProposition: c.Codec<SigmaProposition> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("type", c.defer(() => SigmaType), a.type, e),
-        c.optionalField("pk", c.defer(() => Hex0x), a.pk, e),
-        c.optionalField("g", c.defer(() => Hex0x), a.g, e),
-        c.optionalField("h", c.defer(() => Hex0x), a.h, e),
-        c.optionalField("u", c.defer(() => Hex0x), a.u, e),
-        c.optionalField("v", c.defer(() => Hex0x), a.v, e),
-        c.optionalField("k", c.intRange(1n, 255n), a.k, e),
-        c.optionalField("children", c.vector(c.defer(() => SigmaProposition), 0, null), a.children, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["type", "pk", "g", "h", "u", "v", "k", "children"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("type", c.defer(() => SigmaType));
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("pk", c.defer(() => Hex0x));
-    if (!r1.ok) return r1;
-    const r2 = f.value.optional("g", c.defer(() => Hex0x));
-    if (!r2.ok) return r2;
-    const r3 = f.value.optional("h", c.defer(() => Hex0x));
-    if (!r3.ok) return r3;
-    const r4 = f.value.optional("u", c.defer(() => Hex0x));
-    if (!r4.ok) return r4;
-    const r5 = f.value.optional("v", c.defer(() => Hex0x));
-    if (!r5.ok) return r5;
-    const r6 = f.value.optional("k", c.intRange(1n, 255n));
-    if (!r6.ok) return r6;
-    const r7 = f.value.optional("children", c.vector(c.defer(() => SigmaProposition), 0, null));
-    if (!r7.ok) return r7;
-    return c.ok({ type: r0.value, pk: r1.value, g: r2.value, h: r3.value, u: r4.value, v: r5.value, k: r6.value, children: r7.value });
-  },
-};
+export const SigmaProposition: c.Codec<SigmaProposition> = c.record<SigmaProposition>({
+  type: c.required("type", c.defer(() => SigmaType)),
+  pk: c.optional("pk", c.defer(() => Hex0x)),
+  g: c.optional("g", c.defer(() => Hex0x)),
+  h: c.optional("h", c.defer(() => Hex0x)),
+  u: c.optional("u", c.defer(() => Hex0x)),
+  v: c.optional("v", c.defer(() => Hex0x)),
+  k: c.optional("k", c.intRange(1n, 255n)),
+  children: c.optional("children", c.vector(c.defer(() => SigmaProposition), 0, null)),
+});
 
 /** `sigma-type` (`shared/schemas/sigma-vectors.cddl`). */
 export type SigmaType = "dlog" | "dhtuple" | "and" | "or" | "threshold";
 
-export const SigmaType: c.Codec<SigmaType> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["and", "dhtuple", "dlog", "or", "threshold"]);
-    return c.typeMismatch("no alternative of SigmaType fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["dlog", "dhtuple", "and", "or", "threshold"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<SigmaType>("dlog");
-      case 1:
-        return c.ok<SigmaType>("dhtuple");
-      case 2:
-        return c.ok<SigmaType>("and");
-      case 3:
-        return c.ok<SigmaType>("or");
-      case 4:
-        return c.ok<SigmaType>("threshold");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const SigmaType: c.Codec<SigmaType> = c.union<SigmaType>("SigmaType", [], ["dlog", "dhtuple", "and", "or", "threshold"]);
 
 /** `sigma-vectors` (`shared/schemas/sigma-vectors.cddl`). */
 export interface SigmaVectors {
@@ -166,27 +68,9 @@ export interface SigmaVectors {
   readonly cases: readonly SigmaCase[];
 }
 
-export const SigmaVectors: c.Codec<SigmaVectors> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spec", c.literalText("docs/specs/sigma.md"), a.spec, e),
-        c.field("version", c.literalInt(1n), a.version, e),
-        c.field("source", c.text, a.source, e),
-        c.field("cases", c.vector(c.defer(() => SigmaCase), 0, null), a.cases, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "source", "cases"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spec", c.literalText("docs/specs/sigma.md"));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("version", c.literalInt(1n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("source", c.text);
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("cases", c.vector(c.defer(() => SigmaCase), 0, null));
-    if (!r3.ok) return r3;
-    return c.ok({ spec: r0.value, version: r1.value, source: r2.value, cases: r3.value });
-  },
-};
+export const SigmaVectors: c.Codec<SigmaVectors> = c.record<SigmaVectors>({
+  spec: c.required("spec", c.literalText("docs/specs/sigma.md")),
+  version: c.required("version", c.literalInt(1n)),
+  source: c.required("source", c.text),
+  cases: c.required("cases", c.vector(c.defer(() => SigmaCase), 0, null)),
+});

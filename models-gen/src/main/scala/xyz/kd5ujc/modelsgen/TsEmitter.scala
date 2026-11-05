@@ -13,6 +13,8 @@ import cats.syntax.all._
  *     encoding by the same key sets that select it when decoding
  *   - an error family is a union of readonly object types told apart by `kind`; no codec
  *   - every reference is deferred, so modules may refer to rules in any order, recursively
+ *   - a codec is a description (`c.record`, `c.union`, `c.vector`, ...) that the runtime's one encoder and one decoder
+ *     walk iteratively, so no schema's nesting reaches the native stack
  *
  * Codecs never throw: they return the core's `Result`.
  */
@@ -73,35 +75,13 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
       val tpe =
         if (fs.isEmpty) s"export type $n = Readonly<Record<string, never>>;"
         else s"export interface $n {\n${fs.map(f => s"  readonly ${f.name}${if (f.optional) "?" else ""}: ${f.tpe};").mkString("\n")}\n}"
-      val enc = fs.map { f =>
-        s"        c.${if (f.optional) "optionalField" else "field"}(${string(f.key)}, ${f.codec}, a.${f.name}, e),"
-      }.mkString("\n")
-      val keys = fs.map(f => string(f.key)).mkString(", ")
-      val dec = fs.zipWithIndex.map {
-        case (f, i) =>
-          s"    const r$i = f.value.${if (f.optional) "optional" else "required"}(${string(f.key)}, ${f.codec});\n    if (!r$i.ok) return r$i;"
-      }.mkString("\n")
-      val build = fs.zipWithIndex.map { case (f, i) => s"${f.name}: r$i.value" }.mkString(", ")
+      // in schema order, which an object literal keeps: the profile gives every field an identifier, never an index
+      val body = fs.map(f => s"  ${f.name}: c.${if (f.optional) "optional" else "required"}(${string(f.key)}, ${f.codec}),\n").mkString
       s"""${doc(rule)}
          |$tpe
          |
-         |export const $n: c.Codec<$n> = {
-         |  encode: (${if (fs.isEmpty) "_a" else "a"}, d = 0) =>
-         |    c.nested(d, (${if (fs.isEmpty) "" else "e"}) =>
-         |      c.record([
-         |$enc
-         |      ]),
-         |    ),
-         |  decode: (v) => {
-         |    const f = c.fields(v, [$keys]);
-         |    if (!f.ok) return f;
-         |$dec
-         |    return c.ok({ $build });
-         |  },
-         |};
+         |export const $n: c.Codec<$n> = c.record<$n>({${if (fs.isEmpty) "" else s"\n$body"}});
          |""".stripMargin
-        .replace("c.record([\n\n      ])", "c.record([])")
-        .replace("    if (!f.ok) return f;\n\n    return c.ok({  });", "    if (!f.ok) return f;\n    return c.ok({});")
     }
 
   private def enumeration(rule: QName, cases: Vector[(String, BigInt)]): String = {
@@ -132,38 +112,19 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
     fieldsOf.map { withFields =>
       val names = alts.map(a => qualified(rule.module, a.rule))
       def list(xs: Iterable[String]) = s"[${xs.toList.sorted.map(string).mkString(", ")}]"
-      val known = list(withFields.flatMap(_._2.map(f => fieldName(f.key))).distinct)
-      val guards = withFields.zip(names).map {
-        case ((_, fs), t) =>
+      val alternatives = withFields.zip(names).map {
+        case ((a, fs), t) =>
           val required = fs.filterNot(_.optional).map(f => fieldName(f.key))
           val allowed = fs.map(f => fieldName(f.key))
-          s"    if (c.hasFields(a, $t, ${list(required)}, ${list(allowed)}, known)) return $t.encode(a, d);"
+          s"  c.alternative(c.defer(() => $t), [${list(required)}, ${list(allowed)}], [${list(a.required)}, ${list(a.allowed)}]),\n"
       }
-      val objectBranch =
-        if (alts.isEmpty) ""
-        else s"\n    const known = $known;\n${guards.mkString("\n")}"
-      val textBranch =
-        if (texts.isEmpty) "" else s"\n    if (typeof a === \"string\") return c.oneOfText(a, ${list(texts)});"
-      val records = alts.map(a => s"[${list(a.required)}, ${list(a.allowed)}]").mkString(", ")
-      val dec = names.zipWithIndex.map { case (t, i) => s"      case $i:\n        return $t.decode(v);" } ++
-        texts.zipWithIndex.map { case (t, i) => s"      case ${alts.size + i}:\n        return c.ok<$n>(${string(t)});" }
+      // the texts in schema order: decoding numbers them after the records, in this order
+      val textList = texts.map(string).mkString(", ")
+      val records = if (alts.isEmpty) "" else s"\n${alternatives.mkString}"
       s"""${doc(rule)}
          |export type $n = ${(names ++ ownTexts.map(string) ++ choices.map(ch => qualified(rule.module, ch.rule))).mkString(" | ")};
          |
-         |export const $n: c.Codec<$n> = {
-         |  encode: (a${if (alts.isEmpty) "" else ", d"}) => {$textBranch$objectBranch
-         |    return c.typeMismatch(${string(s"no alternative of $n fits")});
-         |  },
-         |  decode: (v) => {
-         |    const s = c.selectAlternative(v, [$records], [${texts.map(string).mkString(", ")}]);
-         |    if (!s.ok) return s;
-         |    switch (s.value) {
-         |${dec.mkString("\n")}
-         |      default:
-         |        return c.decodeFailure("unknown alternative");
-         |    }
-         |  },
-         |};
+         |export const $n: c.Codec<$n> = c.union<$n>(${string(n)}, [$records], [$textList]);
          |""".stripMargin
     }
   }

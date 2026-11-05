@@ -8,27 +8,11 @@ export interface TrieBranch {
   readonly c: TrieChildren;
 }
 
-export const TrieBranch: c.Codec<TrieBranch> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("s", c.defer(() => TrieSegment), a.s, e),
-        c.optionalField("v", c.bytes, a.v, e),
-        c.field("c", c.defer(() => TrieChildren), a.c, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["s", "v", "c"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("s", c.defer(() => TrieSegment));
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("v", c.bytes);
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("c", c.defer(() => TrieChildren));
-    if (!r2.ok) return r2;
-    return c.ok({ s: r0.value, v: r1.value, c: r2.value });
-  },
-};
+export const TrieBranch: c.Codec<TrieBranch> = c.record<TrieBranch>({
+  s: c.required("s", c.defer(() => TrieSegment)),
+  v: c.optional("v", c.bytes),
+  c: c.required("c", c.defer(() => TrieChildren)),
+});
 
 /** `trie-children` (`shared/schemas/trie.cddl`). */
 export type TrieChildren = "left" | "right" | "both";
@@ -41,24 +25,10 @@ export interface TrieLeaf {
   readonly v: Uint8Array;
 }
 
-export const TrieLeaf: c.Codec<TrieLeaf> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("s", c.defer(() => TrieSegment), a.s, e),
-        c.field("v", c.bytes, a.v, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["s", "v"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("s", c.defer(() => TrieSegment));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("v", c.bytes);
-    if (!r1.ok) return r1;
-    return c.ok({ s: r0.value, v: r1.value });
-  },
-};
+export const TrieLeaf: c.Codec<TrieLeaf> = c.record<TrieLeaf>({
+  s: c.required("s", c.defer(() => TrieSegment)),
+  v: c.required("v", c.bytes),
+});
 
 /** `trie-node` (`shared/schemas/trie.cddl`). */
 export interface TrieNode {
@@ -68,30 +38,12 @@ export interface TrieNode {
   readonly r?: Uint8Array;
 }
 
-export const TrieNode: c.Codec<TrieNode> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("s", c.defer(() => TrieSegment), a.s, e),
-        c.optionalField("v", c.bytes, a.v, e),
-        c.optionalField("l", c.bytes, a.l, e),
-        c.optionalField("r", c.bytes, a.r, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["s", "v", "l", "r"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("s", c.defer(() => TrieSegment));
-    if (!r0.ok) return r0;
-    const r1 = f.value.optional("v", c.bytes);
-    if (!r1.ok) return r1;
-    const r2 = f.value.optional("l", c.bytes);
-    if (!r2.ok) return r2;
-    const r3 = f.value.optional("r", c.bytes);
-    if (!r3.ok) return r3;
-    return c.ok({ s: r0.value, v: r1.value, l: r2.value, r: r3.value });
-  },
-};
+export const TrieNode: c.Codec<TrieNode> = c.record<TrieNode>({
+  s: c.required("s", c.defer(() => TrieSegment)),
+  v: c.optional("v", c.bytes),
+  l: c.optional("l", c.bytes),
+  r: c.optional("r", c.bytes),
+});
 
 /** `trie-proof` (`shared/schemas/trie.cddl`). */
 export type TrieProof = readonly TrieRecord[];
@@ -101,29 +53,11 @@ export const TrieProof: c.Codec<TrieProof> = c.vector(c.defer(() => TrieRecord),
 /** `trie-record` (`shared/schemas/trie.cddl`). */
 export type TrieRecord = TrieStub | TrieLeaf | TrieBranch;
 
-export const TrieRecord: c.Codec<TrieRecord> = {
-  encode: (a, d) => {
-    const known = ["c", "h", "s", "v"];
-    if (c.hasFields(a, TrieStub, ["h"], ["h"], known)) return TrieStub.encode(a, d);
-    if (c.hasFields(a, TrieLeaf, ["s", "v"], ["s", "v"], known)) return TrieLeaf.encode(a, d);
-    if (c.hasFields(a, TrieBranch, ["c", "s"], ["c", "s", "v"], known)) return TrieBranch.encode(a, d);
-    return c.typeMismatch("no alternative of TrieRecord fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [[["h"], ["h"]], [["s", "v"], ["s", "v"]], [["c", "s"], ["c", "s", "v"]]], []);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return TrieStub.decode(v);
-      case 1:
-        return TrieLeaf.decode(v);
-      case 2:
-        return TrieBranch.decode(v);
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const TrieRecord: c.Codec<TrieRecord> = c.union<TrieRecord>("TrieRecord", [
+  c.alternative(c.defer(() => TrieStub), [["h"], ["h"]], [["h"], ["h"]]),
+  c.alternative(c.defer(() => TrieLeaf), [["s", "v"], ["s", "v"]], [["s", "v"], ["s", "v"]]),
+  c.alternative(c.defer(() => TrieBranch), [["c", "s"], ["c", "s", "v"]], [["c", "s"], ["c", "s", "v"]]),
+], []);
 
 /** `trie-segment` (`shared/schemas/trie.cddl`). */
 export interface TrieSegment {
@@ -131,42 +65,16 @@ export interface TrieSegment {
   readonly b: Uint8Array;
 }
 
-export const TrieSegment: c.Codec<TrieSegment> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("n", c.intRange(0n, 9223372036854775807n), a.n, e),
-        c.field("b", c.bytes, a.b, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["n", "b"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("n", c.intRange(0n, 9223372036854775807n));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("b", c.bytes);
-    if (!r1.ok) return r1;
-    return c.ok({ n: r0.value, b: r1.value });
-  },
-};
+export const TrieSegment: c.Codec<TrieSegment> = c.record<TrieSegment>({
+  n: c.required("n", c.intRange(0n, 9223372036854775807n)),
+  b: c.required("b", c.bytes),
+});
 
 /** `trie-stub` (`shared/schemas/trie.cddl`). */
 export interface TrieStub {
   readonly h: Uint8Array;
 }
 
-export const TrieStub: c.Codec<TrieStub> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("h", c.bytes, a.h, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["h"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("h", c.bytes);
-    if (!r0.ok) return r0;
-    return c.ok({ h: r0.value });
-  },
-};
+export const TrieStub: c.Codec<TrieStub> = c.record<TrieStub>({
+  h: c.required("h", c.bytes),
+});

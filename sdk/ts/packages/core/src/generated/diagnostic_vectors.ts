@@ -9,30 +9,12 @@ export interface DiagnosticPreview {
   readonly truncated: boolean;
 }
 
-export const DiagnosticPreview: c.Codec<DiagnosticPreview> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("json", c.text, a.json, e),
-        c.field("head", c.text, a.head, e),
-        c.field("length", c.uint, a.length, e),
-        c.field("truncated", c.bool, a.truncated, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["json", "head", "length", "truncated"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("json", c.text);
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("head", c.text);
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("length", c.uint);
-    if (!r2.ok) return r2;
-    const r3 = f.value.required("truncated", c.bool);
-    if (!r3.ok) return r3;
-    return c.ok({ json: r0.value, head: r1.value, length: r2.value, truncated: r3.value });
-  },
-};
+export const DiagnosticPreview: c.Codec<DiagnosticPreview> = c.record<DiagnosticPreview>({
+  json: c.required("json", c.text),
+  head: c.required("head", c.text),
+  length: c.required("length", c.uint),
+  truncated: c.required("truncated", c.bool),
+});
 
 /** `diagnostic-vectors` (`shared/schemas/diagnostic-vectors.cddl`). */
 export interface DiagnosticVectors {
@@ -41,24 +23,8 @@ export interface DiagnosticVectors {
   readonly previews: readonly DiagnosticPreview[];
 }
 
-export const DiagnosticVectors: c.Codec<DiagnosticVectors> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("spec", c.literalText("docs/specs/conformance.md"), a.spec, e),
-        c.field("version", c.literalInt(1n), a.version, e),
-        c.field("previews", c.vector(c.defer(() => DiagnosticPreview), 0, null), a.previews, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "previews"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("spec", c.literalText("docs/specs/conformance.md"));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("version", c.literalInt(1n));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("previews", c.vector(c.defer(() => DiagnosticPreview), 0, null));
-    if (!r2.ok) return r2;
-    return c.ok({ spec: r0.value, version: r1.value, previews: r2.value });
-  },
-};
+export const DiagnosticVectors: c.Codec<DiagnosticVectors> = c.record<DiagnosticVectors>({
+  spec: c.required("spec", c.literalText("docs/specs/conformance.md")),
+  version: c.required("version", c.literalInt(1n)),
+  previews: c.required("previews", c.vector(c.defer(() => DiagnosticPreview), 0, null)),
+});

@@ -10,26 +10,7 @@ export type CryptoError =
 /** `crypto-error-kind` (`shared/schemas/crypto-errors.cddl`). */
 export type CryptoErrorKind = "InvalidEncoding" | "InvalidKey" | "BackendFailure";
 
-export const CryptoErrorKind: c.Codec<CryptoErrorKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["BackendFailure", "InvalidEncoding", "InvalidKey"]);
-    return c.typeMismatch("no alternative of CryptoErrorKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["InvalidEncoding", "InvalidKey", "BackendFailure"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<CryptoErrorKind>("InvalidEncoding");
-      case 1:
-        return c.ok<CryptoErrorKind>("InvalidKey");
-      case 2:
-        return c.ok<CryptoErrorKind>("BackendFailure");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const CryptoErrorKind: c.Codec<CryptoErrorKind> = c.union<CryptoErrorKind>("CryptoErrorKind", [], ["InvalidEncoding", "InvalidKey", "BackendFailure"]);
 
 /** `groth16-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`Groth16ErrorKind`). */
 export type Groth16Error =
@@ -41,28 +22,7 @@ export type Groth16Error =
 /** `groth16-error-kind` (`shared/schemas/crypto-errors.cddl`). */
 export type Groth16ErrorKind = "Malformed" | "InvalidProof" | "PairingCheckFailed" | "Rejected";
 
-export const Groth16ErrorKind: c.Codec<Groth16ErrorKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["InvalidProof", "Malformed", "PairingCheckFailed", "Rejected"]);
-    return c.typeMismatch("no alternative of Groth16ErrorKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["Malformed", "InvalidProof", "PairingCheckFailed", "Rejected"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<Groth16ErrorKind>("Malformed");
-      case 1:
-        return c.ok<Groth16ErrorKind>("InvalidProof");
-      case 2:
-        return c.ok<Groth16ErrorKind>("PairingCheckFailed");
-      case 3:
-        return c.ok<Groth16ErrorKind>("Rejected");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const Groth16ErrorKind: c.Codec<Groth16ErrorKind> = c.union<Groth16ErrorKind>("Groth16ErrorKind", [], ["Malformed", "InvalidProof", "PairingCheckFailed", "Rejected"]);
 
 /** `kes-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`KesErrorKind`). */
 export type KesError =
@@ -74,28 +34,7 @@ export type KesError =
 /** `kes-error-kind` (`shared/schemas/crypto-errors.cddl`). */
 export type KesErrorKind = "Malformed" | "PeriodOutOfRange" | "Exhausted" | "InconsistentKey";
 
-export const KesErrorKind: c.Codec<KesErrorKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["Exhausted", "InconsistentKey", "Malformed", "PeriodOutOfRange"]);
-    return c.typeMismatch("no alternative of KesErrorKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["Malformed", "PeriodOutOfRange", "Exhausted", "InconsistentKey"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<KesErrorKind>("Malformed");
-      case 1:
-        return c.ok<KesErrorKind>("PeriodOutOfRange");
-      case 2:
-        return c.ok<KesErrorKind>("Exhausted");
-      case 3:
-        return c.ok<KesErrorKind>("InconsistentKey");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const KesErrorKind: c.Codec<KesErrorKind> = c.union<KesErrorKind>("KesErrorKind", [], ["Malformed", "PeriodOutOfRange", "Exhausted", "InconsistentKey"]);
 
 /** `key-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`KeyErrorKind`). */
 export type KeyError =
@@ -108,60 +47,12 @@ export type KeyError =
 /** `key-error-kind` (`shared/schemas/crypto-errors.cddl`). */
 export type KeyErrorKind = "InvalidEntropy" | "InvalidMnemonic" | "InvalidWordList" | "InvalidDerivation" | "InvalidPath";
 
-export const KeyErrorKind: c.Codec<KeyErrorKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["InvalidDerivation", "InvalidEntropy", "InvalidMnemonic", "InvalidPath", "InvalidWordList"]);
-    return c.typeMismatch("no alternative of KeyErrorKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidDerivation", "InvalidPath"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<KeyErrorKind>("InvalidEntropy");
-      case 1:
-        return c.ok<KeyErrorKind>("InvalidMnemonic");
-      case 2:
-        return c.ok<KeyErrorKind>("InvalidWordList");
-      case 3:
-        return c.ok<KeyErrorKind>("InvalidDerivation");
-      case 4:
-        return c.ok<KeyErrorKind>("InvalidPath");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const KeyErrorKind: c.Codec<KeyErrorKind> = c.union<KeyErrorKind>("KeyErrorKind", [], ["InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidDerivation", "InvalidPath"]);
 
 /** `path-refusal` (`shared/schemas/crypto-errors.cddl`). */
 export type PathRefusal = "missingMaster" | "malformed" | "leadingZero" | "tooManyDigits" | "outOfRange" | "tooDeep";
 
-export const PathRefusal: c.Codec<PathRefusal> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["leadingZero", "malformed", "missingMaster", "outOfRange", "tooDeep", "tooManyDigits"]);
-    return c.typeMismatch("no alternative of PathRefusal fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["missingMaster", "malformed", "leadingZero", "tooManyDigits", "outOfRange", "tooDeep"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<PathRefusal>("missingMaster");
-      case 1:
-        return c.ok<PathRefusal>("malformed");
-      case 2:
-        return c.ok<PathRefusal>("leadingZero");
-      case 3:
-        return c.ok<PathRefusal>("tooManyDigits");
-      case 4:
-        return c.ok<PathRefusal>("outOfRange");
-      case 5:
-        return c.ok<PathRefusal>("tooDeep");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const PathRefusal: c.Codec<PathRefusal> = c.union<PathRefusal>("PathRefusal", [], ["missingMaster", "malformed", "leadingZero", "tooManyDigits", "outOfRange", "tooDeep"]);
 
 /** `sigma-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`SigmaErrorKind`). */
 export type SigmaError =
@@ -173,28 +64,7 @@ export type SigmaError =
 /** `sigma-error-kind` (`shared/schemas/crypto-errors.cddl`). */
 export type SigmaErrorKind = "InvalidProposition" | "InvalidPoint" | "ProofLength" | "ResponseOutOfRange";
 
-export const SigmaErrorKind: c.Codec<SigmaErrorKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["InvalidPoint", "InvalidProposition", "ProofLength", "ResponseOutOfRange"]);
-    return c.typeMismatch("no alternative of SigmaErrorKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["InvalidProposition", "InvalidPoint", "ProofLength", "ResponseOutOfRange"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<SigmaErrorKind>("InvalidProposition");
-      case 1:
-        return c.ok<SigmaErrorKind>("InvalidPoint");
-      case 2:
-        return c.ok<SigmaErrorKind>("ProofLength");
-      case 3:
-        return c.ok<SigmaErrorKind>("ResponseOutOfRange");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const SigmaErrorKind: c.Codec<SigmaErrorKind> = c.union<SigmaErrorKind>("SigmaErrorKind", [], ["InvalidProposition", "InvalidPoint", "ProofLength", "ResponseOutOfRange"]);
 
 /** `vrf-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`VrfErrorKind`). */
 export type VrfError =
@@ -210,36 +80,7 @@ export type VrfError =
 /** `vrf-error-kind` (`shared/schemas/crypto-errors.cddl`). */
 export type VrfErrorKind = "Malformed" | "InvalidPublicKey" | "SmallOrderPublicKey" | "InvalidGamma" | "NonCanonicalScalar" | "ChallengeMismatch" | "KeyMismatch" | "HashToCurveFailed";
 
-export const VrfErrorKind: c.Codec<VrfErrorKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["ChallengeMismatch", "HashToCurveFailed", "InvalidGamma", "InvalidPublicKey", "KeyMismatch", "Malformed", "NonCanonicalScalar", "SmallOrderPublicKey"]);
-    return c.typeMismatch("no alternative of VrfErrorKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch", "KeyMismatch", "HashToCurveFailed"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<VrfErrorKind>("Malformed");
-      case 1:
-        return c.ok<VrfErrorKind>("InvalidPublicKey");
-      case 2:
-        return c.ok<VrfErrorKind>("SmallOrderPublicKey");
-      case 3:
-        return c.ok<VrfErrorKind>("InvalidGamma");
-      case 4:
-        return c.ok<VrfErrorKind>("NonCanonicalScalar");
-      case 5:
-        return c.ok<VrfErrorKind>("ChallengeMismatch");
-      case 6:
-        return c.ok<VrfErrorKind>("KeyMismatch");
-      case 7:
-        return c.ok<VrfErrorKind>("HashToCurveFailed");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const VrfErrorKind: c.Codec<VrfErrorKind> = c.union<VrfErrorKind>("VrfErrorKind", [], ["Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch", "KeyMismatch", "HashToCurveFailed"]);
 
 /** `zk-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`ZkErrorKind`). */
 export type ZkError =
@@ -249,21 +90,4 @@ export type ZkError =
 /** `zk-error-kind` (`shared/schemas/crypto-errors.cddl`). */
 export type ZkErrorKind = "Malformed" | "InvalidPoint";
 
-export const ZkErrorKind: c.Codec<ZkErrorKind> = {
-  encode: (a) => {
-    if (typeof a === "string") return c.oneOfText(a, ["InvalidPoint", "Malformed"]);
-    return c.typeMismatch("no alternative of ZkErrorKind fits");
-  },
-  decode: (v) => {
-    const s = c.selectAlternative(v, [], ["Malformed", "InvalidPoint"]);
-    if (!s.ok) return s;
-    switch (s.value) {
-      case 0:
-        return c.ok<ZkErrorKind>("Malformed");
-      case 1:
-        return c.ok<ZkErrorKind>("InvalidPoint");
-      default:
-        return c.decodeFailure("unknown alternative");
-    }
-  },
-};
+export const ZkErrorKind: c.Codec<ZkErrorKind> = c.union<ZkErrorKind>("ZkErrorKind", [], ["Malformed", "InvalidPoint"]);

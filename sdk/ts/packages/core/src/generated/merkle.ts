@@ -8,27 +8,11 @@ export interface MerkleConsistency {
   readonly path: readonly Uint8Array[];
 }
 
-export const MerkleConsistency: c.Codec<MerkleConsistency> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("old", c.defer(() => TreeIndex), a.old, e),
-        c.field("new", c.defer(() => TreeIndex), a.new, e),
-        c.field("path", c.vector(c.bytes, 0, null), a.path, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["old", "new", "path"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("old", c.defer(() => TreeIndex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("new", c.defer(() => TreeIndex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("path", c.vector(c.bytes, 0, null));
-    if (!r2.ok) return r2;
-    return c.ok({ old: r0.value, new: r1.value, path: r2.value });
-  },
-};
+export const MerkleConsistency: c.Codec<MerkleConsistency> = c.record<MerkleConsistency>({
+  old: c.required("old", c.defer(() => TreeIndex)),
+  new: c.required("new", c.defer(() => TreeIndex)),
+  path: c.required("path", c.vector(c.bytes, 0, null)),
+});
 
 /** `merkle-inclusion` (`shared/schemas/merkle.cddl`). */
 export interface MerkleInclusion {
@@ -37,27 +21,11 @@ export interface MerkleInclusion {
   readonly path: readonly Uint8Array[];
 }
 
-export const MerkleInclusion: c.Codec<MerkleInclusion> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("index", c.defer(() => TreeIndex), a.index, e),
-        c.field("size", c.defer(() => TreeIndex), a.size, e),
-        c.field("path", c.vector(c.bytes, 0, null), a.path, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["index", "size", "path"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("index", c.defer(() => TreeIndex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("size", c.defer(() => TreeIndex));
-    if (!r1.ok) return r1;
-    const r2 = f.value.required("path", c.vector(c.bytes, 0, null));
-    if (!r2.ok) return r2;
-    return c.ok({ index: r0.value, size: r1.value, path: r2.value });
-  },
-};
+export const MerkleInclusion: c.Codec<MerkleInclusion> = c.record<MerkleInclusion>({
+  index: c.required("index", c.defer(() => TreeIndex)),
+  size: c.required("size", c.defer(() => TreeIndex)),
+  path: c.required("path", c.vector(c.bytes, 0, null)),
+});
 
 /** `merkle-log-state` (`shared/schemas/merkle.cddl`). */
 export interface MerkleLogState {
@@ -65,24 +33,10 @@ export interface MerkleLogState {
   readonly generation: TreeIndex;
 }
 
-export const MerkleLogState: c.Codec<MerkleLogState> = {
-  encode: (a, d = 0) =>
-    c.nested(d, (e) =>
-      c.record([
-        c.field("size", c.defer(() => TreeIndex), a.size, e),
-        c.field("generation", c.defer(() => TreeIndex), a.generation, e),
-      ]),
-    ),
-  decode: (v) => {
-    const f = c.fields(v, ["size", "generation"]);
-    if (!f.ok) return f;
-    const r0 = f.value.required("size", c.defer(() => TreeIndex));
-    if (!r0.ok) return r0;
-    const r1 = f.value.required("generation", c.defer(() => TreeIndex));
-    if (!r1.ok) return r1;
-    return c.ok({ size: r0.value, generation: r1.value });
-  },
-};
+export const MerkleLogState: c.Codec<MerkleLogState> = c.record<MerkleLogState>({
+  size: c.required("size", c.defer(() => TreeIndex)),
+  generation: c.required("generation", c.defer(() => TreeIndex)),
+});
 
 /** `tree-index` (`shared/schemas/merkle.cddl`). */
 export type TreeIndex = bigint;
