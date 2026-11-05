@@ -20,6 +20,8 @@ import xyz.kd5ujc.crypto.bls.Bls12381
 import xyz.kd5ujc.crypto.signing.Secp256k1
 import xyz.kd5ujc.jlvm._
 
+import com.sun.management.HotSpotDiagnosticMXBean
+
 import GasCases.GasCase
 
 /**
@@ -65,28 +67,76 @@ object GasRatios extends IOApp {
     val Heap: Long = 4L << 30
     val Flags: List[String] = List("-Xms4g", "-Xmx4g", "-XX:+UseSerialGC", "-XX:+AlwaysPreTouch")
     val Collectors: Set[String] = Set("Copy", "MarkSweepCompact")
+    val JavaFeature: Int = 21
 
-    /** The configuration this JVM runs in, as the header names it, or what differs from the reference. */
-    val check: IO[Either[String, String]] = IO {
-      val heap = ManagementFactory.getMemoryMXBean.getHeapMemoryUsage
-      val flags = ManagementFactory.getRuntimeMXBean.getInputArguments.asScala.toList
-      val collectors = ManagementFactory.getGarbageCollectorMXBeans.asScala.map(_.getName).toSet
-      val cpus = Runtime.getRuntime.availableProcessors
+    /**
+     * What the configuration check reads: the JVM's effective settings (whatever flags set them, in whatever order),
+     * its collectors, and the CPUs the process may run on.
+     */
+    final case class Settings(
+      javaFeature:          Int,
+      initialHeap:          Long,
+      maxHeap:              Long,
+      preTouch:             Boolean,
+      serial:               Boolean,
+      activeProcessorCount: Long,
+      collectors:           Set[String],
+      allowedCpus:          Option[Int]
+    )
+
+    /** The CPUs in a `Cpus_allowed_list` such as `4` or `0-3,8`, or None when it cannot be read. */
+    def cpuCount(list: String): Option[Int] =
+      list.trim
+        .split(',')
+        .toList
+        .traverse { part =>
+          part.split('-').toList.traverse(_.trim.toIntOption).flatMap {
+            case List(_)              => Some(1)
+            case List(a, b) if b >= a => Some(b - a + 1)
+            case _                    => None
+          }
+        }
+        .map(_.sum)
+
+    /** The configuration, as the header names it, or what differs from the reference. */
+    def verify(s: Settings): Either[String, String] = {
       val wrong = List(
-        // the reported maximum leaves out a survivor space; -Xmx4g is among the flags checked below
-        Option.when(heap.getInit != Heap)(s"initial heap ${heap.getInit} bytes, not $Heap"),
-        Option.when(!Flags.forall(flags.contains))(
-          s"flags ${flags.mkString(" ")}, missing ${Flags.filterNot(flags.contains).mkString(" ")}"
-        ),
-        Option.when(collectors != Collectors)(s"collectors ${collectors.mkString(", ")}, not serial"),
-        Option.when(cpus != 1)(s"$cpus CPUs, not pinned to one")
+        Option.when(s.javaFeature != JavaFeature)(s"Java ${s.javaFeature}, not $JavaFeature"),
+        Option.when(s.initialHeap != Heap || s.maxHeap != Heap)(s"heap ${s.initialHeap} to ${s.maxHeap} bytes, not fixed at $Heap"),
+        Option.when(!s.preTouch)("the heap is not touched at start (AlwaysPreTouch is off)"),
+        Option.when(!s.serial || s.collectors != Collectors)(s"collectors ${s.collectors.toList.sorted.mkString(", ")}, not serial"),
+        Option.when(s.activeProcessorCount != -1L)(s"ActiveProcessorCount ${s.activeProcessorCount} overrides the CPU count"),
+        Option.when(!s.allowedCpus.contains(1))(s"allowed CPUs ${s.allowedCpus.fold("unknown")(_.toString)}, not pinned to one")
       ).flatten
       Either.cond(
         wrong.isEmpty,
-        s"${Flags.mkString(" ")}; collectors ${Collectors.toList.sorted.mkString(", ")}; 1 CPU",
+        s"${Flags.mkString(" ")}; Java ${s.javaFeature}; collectors ${Collectors.toList.sorted.mkString(", ")}; 1 CPU",
         wrong.mkString("; ")
       )
     }
+
+    /** This JVM's effective settings: the HotSpot values the flags resolved to, and the process's CPU affinity. */
+    val current: IO[Settings] = IO.blocking {
+      val hotspot = ManagementFactory.getPlatformMXBean(classOf[HotSpotDiagnosticMXBean])
+      def option(name: String): String = hotspot.getVMOption(name).getValue
+      val affinity = Paths.get("/proc/self/status")
+      val allowed = Option
+        .when(Files.isReadable(affinity))(Files.readAllLines(affinity, UTF_8).asScala.toList)
+        .flatMap(_.collectFirst { case l if l.startsWith("Cpus_allowed_list:") => l.stripPrefix("Cpus_allowed_list:") })
+        .flatMap(cpuCount)
+      Settings(
+        javaFeature = Runtime.version.feature,
+        initialHeap = option("InitialHeapSize").toLongOption.getOrElse(-1L),
+        maxHeap = option("MaxHeapSize").toLongOption.getOrElse(-1L),
+        preTouch = option("AlwaysPreTouch") == "true",
+        serial = option("UseSerialGC") == "true",
+        activeProcessorCount = option("ActiveProcessorCount").toLongOption.getOrElse(0L),
+        collectors = ManagementFactory.getGarbageCollectorMXBeans.asScala.map(_.getName).toSet,
+        allowedCpus = allowed
+      )
+    }
+
+    val check: IO[Either[String, String]] = current.map(verify)
   }
 
   /** Iterations of the probe: xorshift64, a dependent chain of shifts and xors, so its time is the core's speed. */

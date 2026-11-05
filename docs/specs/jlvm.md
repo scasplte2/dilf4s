@@ -524,8 +524,10 @@ by `GasRatios export`), through the evaluator on the direct driver:
   1 until the fastest of three batches at that size takes that long, so one interrupted batch cannot leave a case
   timed one evaluation at a time.
 - **Reference configuration.** The prices hold for a node that runs the JVM as calibrated: OpenJDK 21 pinned to one
-  CPU with `-Xms4g -Xmx4g -XX:+UseSerialGC -XX:+AlwaysPreTouch` (`GasRatios.Reference`, which `GasRatios measure`
-  checks and names before it measures; `benchmarks/calibrate.sh` runs the calibration). The serial collector runs
+  CPU with `-Xms4g -Xmx4g -XX:+UseSerialGC -XX:+AlwaysPreTouch` (`GasRatios.Reference`; `benchmarks/calibrate.sh`
+  runs the calibration). Before it measures, `GasRatios measure` checks the settings in effect, whatever flags set
+  them: Java 21, the HotSpot heap sizes, pre-touch and collector, no `ActiveProcessorCount`, and a CPU affinity of
+  exactly one CPU. It refuses any other configuration and names this one in its output. The serial collector runs
   every collection on the measuring core, inside the round of the allocation that caused it, so collection is paid
   by the work that allocated and no collector thread competes with a round. The heap is fixed and touched in full at
   start, so it never resizes and no round meets a first-touch page fault. 4 GiB holds the calibration's live set
@@ -599,8 +601,9 @@ a 4096-bit rational result.
   quadratic in the expansion, which can be far longer than the number's weight: `1/2^4095` weighs 66 and renders as
   4,097 characters. Measured at about 1 gas a unit for the widest numbers; the 6 limbs are the fixed cost of a conversion (about 100 gas
   for a small integer).
-- **Pieces.** `cat` also charges 4 per element of each argument and 12 per argument, and `join` 14 per element of each
-  argument (the table): a piece costs a few gas besides its bytes, and `cat` walks every argument, even an empty array.
+- **Pieces.** `cat` also charges per element of each argument and per argument, and `join` per element of each
+  argument, at the rates in the table: a piece costs a few gas besides its bytes, and `cat` walks every argument, even
+  an empty array.
 - **Separators.** `join` renders its pieces, checks the result's weight (saturating) against the bound, which is
   `Limit` before anything is built, and then charges `perUnit(join)` per byte of separator the result will copy.
 - **Paths parsed at run time** (a computed `var` path given as text, a `missing` or `missing_some` key) are split on
