@@ -3,7 +3,24 @@
  * head to one root, every check of Scala's `VersionedTrieVerifier`, proof / delta / snapshot-chunk decoding, the
  * chunk-by-chunk snapshot reader against a trusted head, and a replica that follows deltas.
  */
-import { bitLength, cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, toHex, utf8Length, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import {
+  bitLength,
+  cbor,
+  decodeUtf8,
+  describeFailure,
+  err,
+  isValue,
+  models,
+  ok,
+  plainBytes,
+  Preview,
+  toHex,
+  utf8Length,
+  type HashAlgorithm,
+  type Result,
+  type TypeMismatch,
+  type Value,
+} from "@kd5ujc/dilf4s-core";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { decodeInput } from "./input.js";
@@ -36,7 +53,7 @@ export type StateKeyError =
  * The store-only kinds (`Empty`, `VersionConflict`, `CommitRewrite`, `NotRetained`, `Store`) do not arise here.
  */
 export type VersionedTrieError =
-  | { readonly kind: "Key"; readonly error: StateKeyError }
+  | { readonly kind: "Key"; readonly error: StateKeyError | TypeMismatch }
   | { readonly kind: "InvalidVersion"; readonly reason: string }
   | { readonly kind: "VersionNotIncreasing"; readonly head: Uint8Array; readonly next: Uint8Array }
   | { readonly kind: "UnknownVersion"; readonly version: Uint8Array }
@@ -64,6 +81,10 @@ export const MAX_KEY_LENGTH = models.limits.STATE_KEY_MAX_LENGTH;
 
 const SEGMENT = /^[a-z0-9][a-z0-9._-]*$/;
 
+// what a caller passes past the types: TypeScript's own refusal, beside the StateKeyError family
+const notAString: TypeMismatch = { kind: "TypeMismatch", reason: "expected a string" };
+const notBytes: TypeMismatch = { kind: "TypeMismatch", reason: "expected a Uint8Array" };
+
 /** A state key: `segment *("/" segment)`, each segment `[a-z0-9][a-z0-9._-]*`, within the length limits. */
 export class StateKey {
   private constructor(readonly value: string) {
@@ -76,7 +97,8 @@ export class StateKey {
    * the text is split, and only within `MAX_KEY_LENGTH` code units (a UTF-8 length is never shorter), so a refusal costs
    * O(MAX_KEY_LENGTH) whatever the input; it names a segment by its position, never its text.
    */
-  static parse(s: string): Result<StateKey, StateKeyError> {
+  static parse(s: string): Result<StateKey, StateKeyError | TypeMismatch> {
+    if (typeof (s as unknown) !== "string") return err(notAString);
     if (s.length === 0) return err({ kind: "Empty" });
     // refused by its length alone: a preview would measure the whole text
     if (s.length > MAX_KEY_LENGTH || utf8Length(s) > MAX_KEY_LENGTH) return err({ kind: "TooLong", limit: MAX_KEY_LENGTH });
@@ -92,12 +114,15 @@ export class StateKey {
 
   /**
    * The key of trie-key bytes (UTF-8). Bytes longer than `MAX_KEY_LENGTH` are refused by their length, before they are
-   * read; then bytes that are not well-formed UTF-8; then {@link StateKey.parse}.
+   * read; then bytes that are not well-formed UTF-8; then {@link StateKey.parse}. The length is the array's own (core's
+   * `plainBytes`), never a subclass's `length`; what is not a `Uint8Array` is a `TypeMismatch` (TypeScript's alone).
    */
-  static fromBytes(bytes: Uint8Array): Result<StateKey, StateKeyError> {
-    if (bytes.length > MAX_KEY_LENGTH) return err({ kind: "TooLong", limit: MAX_KEY_LENGTH });
-    if (isAscii(bytes)) return StateKey.parse(fromAscii(bytes));
-    const text = decodeUtf8(bytes);
+  static fromBytes(bytes: Uint8Array): Result<StateKey, StateKeyError | TypeMismatch> {
+    const b = plainBytes(bytes);
+    if (b === undefined) return err(notBytes);
+    if (b.length > MAX_KEY_LENGTH) return err({ kind: "TooLong", limit: MAX_KEY_LENGTH });
+    if (isAscii(b)) return StateKey.parse(fromAscii(b));
+    const text = decodeUtf8(b);
     return text === undefined ? err({ kind: "NotUtf8" }) : StateKey.parse(text);
   }
 
@@ -124,7 +149,7 @@ export class StateNamespace {
 
   static readonly MAX_LENGTH = models.limits.STATE_NAMESPACE_MAX_LENGTH;
 
-  static parse(s: string): Result<StateNamespace, StateKeyError> {
+  static parse(s: string): Result<StateNamespace, StateKeyError | TypeMismatch> {
     const k = StateKey.parse(s);
     if (!k.ok) return k;
     const slashes = s.split("/").length - 1;

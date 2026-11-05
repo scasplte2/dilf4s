@@ -1,34 +1,46 @@
-/** Byte-string helpers shared by the verifiers. */
-import { type cbor, digest, hashCommitment, hashParts, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+/**
+ * Byte-string helpers shared by the verifiers. A caller's `Uint8Array` may be a subclass whose `length`, accessors or
+ * iterator are its own, so each helper reads bytes through core's `plainBytes` (the array's internal slots), and reads
+ * what is not bytes as empty: the public entry points refuse such input first, where their result has room.
+ */
+import { type cbor, digest, hashCommitment, hashParts, plainBytes, takeBytes, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
-/** A fresh plain copy: `slice` on a Node `Buffer` would share memory. */
+const EMPTY = new Uint8Array(0);
+
+/** `b` as a plain view over its own memory, its length the array's own; empty if it is not bytes. */
+export const view = (b: Uint8Array): Uint8Array => plainBytes(b) ?? EMPTY;
+
+/** A fresh plain copy, from the array's internal slots (core's `takeBytes`): `slice` on a Node `Buffer` would share memory. */
 export function copyBytes(bytes: Uint8Array): Uint8Array {
-  return Uint8Array.from(bytes);
+  return takeBytes(bytes) ?? new Uint8Array(0);
 }
 
 export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  const [x, y] = [view(a), view(b)];
+  if (x.length !== y.length) return false;
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
   return true;
 }
 
 /** Unsigned lexicographic order, a proper prefix first (Scala's `Cbor.compareBytes`). */
 export function compareBytes(a: Uint8Array, b: Uint8Array): number {
-  const n = Math.min(a.length, b.length);
+  const [p, q] = [view(a), view(b)];
+  const n = Math.min(p.length, q.length);
   for (let i = 0; i < n; i++) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
+    const x = p[i] ?? 0;
+    const y = q[i] ?? 0;
     if (x !== y) return x - y;
   }
-  return a.length - b.length;
+  return p.length - q.length;
 }
 
 export function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
+  const views = parts.map(view);
   let n = 0;
-  for (const p of parts) n += p.length;
+  for (const p of views) n += p.length;
   const out = new Uint8Array(n);
   let at = 0;
-  for (const p of parts) {
+  for (const p of views) {
     out.set(p, at);
     at += p.length;
   }
@@ -44,13 +56,13 @@ export function ascii(s: string): Uint8Array {
 
 /** Whether every byte is ASCII. */
 export function isAscii(bytes: Uint8Array): boolean {
-  return bytes.every((b) => b < 0x80);
+  return view(bytes).every((b) => b < 0x80);
 }
 
 /** The string of ASCII bytes. */
 export function fromAscii(bytes: Uint8Array): string {
   let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
+  for (const b of view(bytes)) s += String.fromCharCode(b);
   return s;
 }
 
