@@ -74,7 +74,7 @@ const edCodec: SchemeCodec<"Ed25519"> = {
   verifyingKey: (bytes) => {
     const b = sized("Ed25519 verifying key", 32, bytes);
     if (!b.ok) return b;
-    return decodeZip215(bytes) === undefined ? err(invalidKey("Ed25519 verifying key is not a curve point")) : ok(verifyingKeyOf("Ed25519", bytes));
+    return decodeZip215(b.value) === undefined ? err(invalidKey("Ed25519 verifying key is not a curve point")) : ok(verifyingKeyOf("Ed25519", b.value));
   },
   // only the length: a non-canonical S, or an R that does not decode, verifies false
   signature: (bytes) => {
@@ -129,8 +129,8 @@ const bip32Codec: SchemeCodec<"Ed25519-BIP32"> = {
   signingKey: (bytes) => {
     const b = sized("Ed25519-BIP32 signing key", 64, bytes);
     if (!b.ok) return b;
-    return validKL(bytes.subarray(0, 32))
-      ? ok(signingKeyOf("Ed25519-BIP32", bytes))
+    return validKL(b.value.subarray(0, 32))
+      ? ok(signingKeyOf("Ed25519-BIP32", b.value))
       : err(invalidKey("kL must be a multiple of 8 with bit 255 clear"));
   },
   verifyingKey: (bytes) => {

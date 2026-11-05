@@ -47,21 +47,21 @@ const codec: SchemeCodec<typeof NAME> = {
   signingKey: (bytes) => {
     const b = sized("ristretto255 signing key", 32, bytes);
     if (!b.ok) return b;
-    const s = canonicalScalar(bytes);
-    return s !== undefined && s !== 0n ? ok(signingKeyOf(NAME, bytes)) : err(invalidKey("ristretto255 secret key must be a canonical non-zero scalar"));
+    const s = canonicalScalar(b.value);
+    return s !== undefined && s !== 0n ? ok(signingKeyOf(NAME, b.value)) : err(invalidKey("ristretto255 secret key must be a canonical non-zero scalar"));
   },
   verifyingKey: (bytes) => {
     const b = sized("ristretto255 verifying key", 32, bytes);
     if (!b.ok) return b;
-    return element(bytes) === undefined
+    return element(b.value) === undefined
       ? err(invalidKey("ristretto255 verifying key is not a canonical non-identity element"))
-      : ok(verifyingKeyOf(NAME, bytes));
+      : ok(verifyingKeyOf(NAME, b.value));
   },
   signature: (bytes) => {
     const b = sized("ristretto255 signature", 64, bytes);
     if (!b.ok) return b;
-    return element(bytes.subarray(0, 32)) !== undefined && canonicalScalar(bytes.subarray(32)) !== undefined
-      ? ok(signatureOf(NAME, bytes))
+    return element(b.value.subarray(0, 32)) !== undefined && canonicalScalar(b.value.subarray(32)) !== undefined
+      ? ok(signatureOf(NAME, b.value))
       : err(invalidEncoding("ristretto255 signature", "expected R (non-identity element) || z (canonical scalar)"));
   },
   publicKey: (key) => verifyingKeyOf(NAME, mulBase(leToBig(key.bytes)).toBytes()),
@@ -107,7 +107,7 @@ export const ristretto255Schnorr: Ristretto255Scheme = Object.freeze({
   fromSeed: (seed: Uint8Array) => {
     const s = sized("ristretto255 seed", 32, seed);
     if (!s.ok) return s;
-    const sk = codec.signingKey(scalarBytes(leToBig(sha512(seed))));
+    const sk = codec.signingKey(scalarBytes(leToBig(sha512(s.value))));
     return sk.ok ? ok({ signing: sk.value, verifying: codec.publicKey(sk.value) }) : sk;
   },
 });

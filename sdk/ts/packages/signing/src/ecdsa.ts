@@ -39,26 +39,26 @@ function ecdsaScheme<S extends EcdsaSchemeName>(name: S, curve: ECDSA, label: st
     signingKey: (bytes) => {
       const b = sized(`${label} signing key`, 32, bytes);
       if (!b.ok) return b;
-      const d = beToBig(bytes);
-      return d >= 1n && d < n ? ok(signingKeyOf(name, bytes)) : err(invalidKey(`${label} secret key must be a scalar in [1, n)`));
+      const d = beToBig(b.value);
+      return d >= 1n && d < n ? ok(signingKeyOf(name, b.value)) : err(invalidKey(`${label} secret key must be a scalar in [1, n)`));
     },
     // 33-byte compressed SEC1, on the curve (noble's decoder alone would also take 65-byte keys)
     verifyingKey: (bytes) => {
       const b = sized(`${label} verifying key`, 33, bytes);
       if (!b.ok) return b;
-      const prefixOk = bytes[0] === 0x02 || bytes[0] === 0x03;
-      return prefixOk && attempt(() => curve.Point.fromBytes(bytes)) !== undefined
-        ? ok(verifyingKeyOf(name, bytes))
+      const prefixOk = b.value[0] === 0x02 || b.value[0] === 0x03;
+      return prefixOk && attempt(() => curve.Point.fromBytes(b.value)) !== undefined
+        ? ok(verifyingKeyOf(name, b.value))
         : err(invalidKey(`${label} verifying key is not a valid point`));
     },
     // r, s in [1, n) and s <= n/2: the high-S twin is a decode error (one encoding per signature)
     signature: (bytes) => {
       const b = sized(`${label} signature`, 64, bytes);
       if (!b.ok) return b;
-      const r = beToBig(bytes.subarray(0, 32));
-      const s = beToBig(bytes.subarray(32, 64));
+      const r = beToBig(b.value.subarray(0, 32));
+      const s = beToBig(b.value.subarray(32, 64));
       return r >= 1n && r < n && s >= 1n && s <= half
-        ? ok(signatureOf(name, bytes))
+        ? ok(signatureOf(name, b.value))
         : err(invalidEncoding(`${label} signature`, "r and s must be in range and s must be low (canonical)"));
     },
     publicKey: (key) => verifyingKeyOf(name, curve.getPublicKey(key.bytes, true)),
