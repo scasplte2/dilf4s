@@ -1,9 +1,9 @@
 //! One verification interface over every signature scheme, by type ([`Scheme`]) or by name ([`SchemeId`]).
 //!
-//! Decoding is the malformed check (a typed [`SigningError`]); `verify` on decoded values is the validity check
+//! Decoding is the malformed check (a typed [`CryptoError`]); `verify` on decoded values is the validity check
 //! (`bool`). The bytes-level form decodes the key first, then the signature, then the message.
 
-use crate::error::SigningError;
+use crate::error::CryptoError;
 use crate::{bls, ecdsa, ed25519, ristretto255, schnorr};
 
 /// A signature scheme's decoders and verifier.
@@ -18,16 +18,16 @@ pub trait Scheme {
     type Message: ?Sized;
 
     /// Decodes a verifying key.
-    fn verifying_key(bytes: &[u8]) -> Result<Self::VerifyingKey, SigningError>;
+    fn verifying_key(bytes: &[u8]) -> Result<Self::VerifyingKey, CryptoError>;
     /// Decodes a signature.
-    fn signature(bytes: &[u8]) -> Result<Self::Signature, SigningError>;
+    fn signature(bytes: &[u8]) -> Result<Self::Signature, CryptoError>;
     /// Views bytes as a message.
-    fn message(bytes: &[u8]) -> Result<&Self::Message, SigningError>;
+    fn message(bytes: &[u8]) -> Result<&Self::Message, CryptoError>;
     /// Verifies decoded values.
     fn verify(key: &Self::VerifyingKey, message: &Self::Message, signature: &Self::Signature) -> bool;
 
     /// Decodes the key, then the signature, then the message, and verifies.
-    fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, SigningError> {
+    fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
         let key = Self::verifying_key(key)?;
         let signature = Self::signature(signature)?;
         let message = Self::message(message)?;
@@ -47,13 +47,13 @@ macro_rules! scheme {
             type Signature = $sig;
             type Message = [u8];
 
-            fn verifying_key(bytes: &[u8]) -> Result<$vk, SigningError> {
+            fn verifying_key(bytes: &[u8]) -> Result<$vk, CryptoError> {
                 <$vk>::from_bytes(bytes)
             }
-            fn signature(bytes: &[u8]) -> Result<$sig, SigningError> {
+            fn signature(bytes: &[u8]) -> Result<$sig, CryptoError> {
                 <$sig>::from_bytes(bytes)
             }
-            fn message(bytes: &[u8]) -> Result<&[u8], SigningError> {
+            fn message(bytes: &[u8]) -> Result<&[u8], CryptoError> {
                 Ok(bytes)
             }
             fn verify(key: &$vk, message: &[u8], signature: &$sig) -> bool {
@@ -105,15 +105,15 @@ impl Scheme for Bip340 {
     type Signature = schnorr::bip340::Signature;
     type Message = [u8; 32];
 
-    fn verifying_key(bytes: &[u8]) -> Result<Self::VerifyingKey, SigningError> {
+    fn verifying_key(bytes: &[u8]) -> Result<Self::VerifyingKey, CryptoError> {
         Self::VerifyingKey::from_bytes(bytes)
     }
-    fn signature(bytes: &[u8]) -> Result<Self::Signature, SigningError> {
+    fn signature(bytes: &[u8]) -> Result<Self::Signature, CryptoError> {
         Self::Signature::from_bytes(bytes)
     }
-    fn message(bytes: &[u8]) -> Result<&[u8; 32], SigningError> {
-        <&[u8; 32]>::try_from(bytes).map_err(|_| SigningError::InvalidEncoding {
-            what: "BIP-340 message",
+    fn message(bytes: &[u8]) -> Result<&[u8; 32], CryptoError> {
+        <&[u8; 32]>::try_from(bytes).map_err(|_| CryptoError::InvalidEncoding {
+            what: "BIP-340 message".into(),
             reason: alloc::format!("expected 32 bytes, got {}", bytes.len()),
         })
     }
@@ -176,7 +176,7 @@ impl SchemeId {
     }
 
     /// Bytes-level verification: the key is decoded first, then the signature, then the message.
-    pub fn verify_bytes(self, key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, SigningError> {
+    pub fn verify_bytes(self, key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
         match self {
             Self::Ed25519 => Ed25519::verify_bytes(key, message, signature),
             Self::Ed25519Libsodium => Ed25519Libsodium::verify_bytes(key, message, signature),

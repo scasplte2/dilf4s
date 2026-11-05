@@ -143,7 +143,7 @@ impl CryptoBackend for Native {
     fn ecvrf_verify(&self, key: &[u8], alpha: &[u8], proof: &[u8]) -> R<Option<Vec<u8>>> {
         match SuiteId::Tai.verify_bytes(key, alpha, proof) {
             Ok(beta) => Ok(Some(beta.to_vec())),
-            Err(e) if e.is_malformed() => Err(fail(e)),
+            Err(e @ dilf4s_signing::VrfError::Malformed { .. }) => Err(fail(e)),
             Err(_) => Ok(None),
         }
     }

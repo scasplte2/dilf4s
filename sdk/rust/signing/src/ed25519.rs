@@ -8,7 +8,7 @@ use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::IsIdentity;
 
-use crate::error::SigningError;
+use crate::error::CryptoError;
 use crate::util::{canonical_y, exact, halves, sha512};
 
 /// Verifying key length.
@@ -27,10 +27,10 @@ pub struct VerifyingKey {
 
 impl VerifyingKey {
     /// Decodes 32 bytes: a wrong length is `InvalidEncoding`, a non-point `InvalidKey`.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
         let bytes: [u8; 32] = exact("Ed25519 verifying key", bytes)?;
         let point = decode_zip215(&bytes)
-            .ok_or_else(|| SigningError::InvalidKey { reason: "Ed25519 verifying key is not a valid point".into() })?;
+            .ok_or_else(|| CryptoError::InvalidKey { reason: "Ed25519 verifying key is not a valid point".into() })?;
         Ok(Self { bytes, point })
     }
 
@@ -60,7 +60,7 @@ pub struct Signature([u8; 64]);
 
 impl Signature {
     /// Decodes 64 bytes.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
         exact("Ed25519 signature", bytes).map(Self)
     }
 
@@ -136,14 +136,14 @@ pub fn verify_libsodium(key: &VerifyingKey, message: &[u8], signature: &Signatur
 }
 
 /// ZIP-215 verification over raw encodings: the key is decoded first, then the signature.
-pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, SigningError> {
+pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
     let key = VerifyingKey::from_bytes(key)?;
     let signature = Signature::from_bytes(signature)?;
     Ok(verify(&key, message, &signature))
 }
 
 /// libsodium verification over raw encodings.
-pub fn verify_libsodium_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, SigningError> {
+pub fn verify_libsodium_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
     let key = VerifyingKey::from_bytes(key)?;
     let signature = Signature::from_bytes(signature)?;
     Ok(verify_libsodium(&key, message, &signature))
@@ -162,7 +162,7 @@ mod signing {
     use zeroize::{Zeroize, ZeroizeOnDrop};
 
     use super::{Signature, VerifyingKey};
-    use crate::error::SigningError;
+    use crate::error::CryptoError;
     use crate::util::{exact, join, sha512};
 
     /// An RFC 8032 secret key: the 32-byte seed.
@@ -173,7 +173,7 @@ mod signing {
 
     impl SigningKey {
         /// Any 32 bytes are a seed; a wrong length is `InvalidEncoding`.
-        pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+        pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
             exact("Ed25519 signing key", bytes).map(|seed| Self { seed })
         }
 
@@ -211,7 +211,7 @@ mod signing {
     impl Eq for SigningKey {}
 
     /// Ed25519 seed derivation (`signing.md` section 1.7): the seed is the key.
-    pub fn from_seed(seed: &[u8]) -> Result<(SigningKey, VerifyingKey), SigningError> {
+    pub fn from_seed(seed: &[u8]) -> Result<(SigningKey, VerifyingKey), CryptoError> {
         let sk = SigningKey::from_bytes(seed)?;
         let vk = sk.verifying_key();
         Ok((sk, vk))

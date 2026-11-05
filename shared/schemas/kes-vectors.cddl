@@ -1,4 +1,5 @@
 ; Schema of shared/vectors/kes_v1.json (conformance vectors for docs/specs/kes.md).
+;# import crypto-errors as errors
 
 kes-vectors = {
   "spec": "docs/specs/kes.md",
@@ -28,7 +29,7 @@ kes-refusal = {
 
 kes-check = "parameters" / "generate" / "load" / "evolve" / "verify"
 
-kes-outcome = "accepted" / "rejected" / "Malformed" / "PeriodOutOfRange" / "Exhausted" / "InconsistentKey"
+kes-outcome = "accepted" / "rejected" / errors.kes-error-kind
 
 kes-vector = {
   "construction": kes-construction,

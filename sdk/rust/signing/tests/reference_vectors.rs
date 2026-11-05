@@ -28,7 +28,7 @@ use common::bytes;
 use dilf4s_core::{Value, hex};
 use dilf4s_signing::keys::path::{self, ChildIndex};
 use dilf4s_signing::keys::{ExtendedKey, bip32, bip39, icarus, slip10};
-use dilf4s_signing::{bls, ed25519, ed25519_bip32};
+use dilf4s_signing::{KeyErrorKind, bls, ed25519, ed25519_bip32};
 
 fn docs(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../docs/test-vectors").join(path)
@@ -204,11 +204,11 @@ fn bip32_ed25519_rejections() {
     unclamped[0] = 1;
     assert!(matches!(
         ed25519_bip32::SigningKey::from_bytes(&unclamped),
-        Err(dilf4s_signing::SigningError::InvalidKey { .. })
+        Err(dilf4s_signing::CryptoError::InvalidKey { .. })
     ));
     assert!(matches!(
         ed25519_bip32::SigningKey::from_bytes(&[0; 63]),
-        Err(dilf4s_signing::SigningError::InvalidEncoding { .. })
+        Err(dilf4s_signing::CryptoError::InvalidEncoding { .. })
     ));
     assert!(icarus::root(&[0; 95]).is_err());
     // a non-canonical encoding of the parent key is refused for public derivation
@@ -326,10 +326,10 @@ fn bip39_every_bundled_word_list_round_trips() {
 fn bip39_typed_errors() {
     let words = english();
     let kind = |phrase: &str| bip39::to_entropy(phrase, &words).map(|_| ()).unwrap_err().kind();
-    assert_eq!(kind(&["abandon"; 12].join(" ")), "InvalidMnemonic", "checksum mismatch");
-    assert_eq!(kind(&format!("{} abou", ["abandon"; 11].join(" "))), "InvalidMnemonic", "unknown word");
-    assert_eq!(kind(&["abandon"; 11].join(" ")), "InvalidMnemonic", "11 words");
-    assert_eq!(bip39::to_mnemonic(&[0; 17], &words).unwrap_err().kind(), "InvalidEntropy");
+    assert_eq!(kind(&["abandon"; 12].join(" ")), KeyErrorKind::InvalidMnemonic, "checksum mismatch");
+    assert_eq!(kind(&format!("{} abou", ["abandon"; 11].join(" "))), KeyErrorKind::InvalidMnemonic, "unknown word");
+    assert_eq!(kind(&["abandon"; 11].join(" ")), KeyErrorKind::InvalidMnemonic, "11 words");
+    assert_eq!(bip39::to_mnemonic(&[0; 17], &words).unwrap_err().kind(), KeyErrorKind::InvalidEntropy);
     assert!(
         bip39::to_entropy(
             "  abandon  abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon   about ",
@@ -339,19 +339,19 @@ fn bip39_typed_errors() {
         "whitespace is normalised"
     );
     let short: Vec<String> = (0..2047).map(|i| format!("w{i}")).collect();
-    assert_eq!(bip39::WordList::new(short, ' ').unwrap_err().kind(), "InvalidWordList");
+    assert_eq!(bip39::WordList::new(short, ' ').unwrap_err().kind(), KeyErrorKind::InvalidWordList);
     let mut dup: Vec<String> = (0..2048).map(|i| format!("w{i}")).collect();
     dup[1] = "w0".into();
-    assert_eq!(bip39::WordList::new(dup, ' ').unwrap_err().kind(), "InvalidWordList");
+    assert_eq!(bip39::WordList::new(dup, ' ').unwrap_err().kind(), KeyErrorKind::InvalidWordList);
     // a word with a separator in it would make generated phrases unparsable, and so would a separator parsing ignores
     let mut spaced: Vec<String> = (0..2048).map(|i| format!("w{i}")).collect();
     spaced[0] = "abandon abandon".into();
-    assert_eq!(bip39::WordList::new(spaced, ' ').unwrap_err().kind(), "InvalidWordList");
+    assert_eq!(bip39::WordList::new(spaced, ' ').unwrap_err().kind(), KeyErrorKind::InvalidWordList);
     let mut ideographic: Vec<String> = (0..2048).map(|i| format!("w{i}")).collect();
     ideographic[0] = "a\u{3000}b".into();
-    assert_eq!(bip39::WordList::new(ideographic, ' ').unwrap_err().kind(), "InvalidWordList");
+    assert_eq!(bip39::WordList::new(ideographic, ' ').unwrap_err().kind(), KeyErrorKind::InvalidWordList);
     let plain: Vec<String> = (0..2048).map(|i| format!("w{i}")).collect();
-    assert_eq!(bip39::WordList::new(plain.clone(), ',').unwrap_err().kind(), "InvalidWordList");
+    assert_eq!(bip39::WordList::new(plain.clone(), ',').unwrap_err().kind(), KeyErrorKind::InvalidWordList);
     let custom = bip39::WordList::new(plain, '\u{3000}').unwrap();
     let generated = bip39::to_mnemonic(&[0; 16], &custom).unwrap();
     assert_eq!(
@@ -374,7 +374,7 @@ fn paths() {
     // an empty segment is malformed (section 3), as in Scala and TypeScript
     for bad in [" m/1/ ", "m/1/", "44'/0", "m/x", "m/2147483648", "m/-1", "m//1", "m/'", "m/1''", "M/1", "m/4294967296"]
     {
-        assert_eq!(path::parse(bad).unwrap_err().kind(), "InvalidPath", "{bad}");
+        assert_eq!(path::parse(bad).unwrap_err().kind(), KeyErrorKind::InvalidPath, "{bad}");
     }
     assert_eq!(serialized("m/2147483647'").unwrap(), vec![u32::MAX]);
 }

@@ -6,7 +6,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.crypto.bls.Bls12381
-import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, Sigma, SigmaError, SigmaProp}
+import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, Sigma, SigmaError, SigmaProp, message}
 import xyz.kd5ujc.crypto.signing._
 import xyz.kd5ujc.crypto.zk.Bn254Engine
 

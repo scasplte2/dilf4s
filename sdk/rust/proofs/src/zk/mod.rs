@@ -9,9 +9,7 @@
 //! A wrong length or a non-canonical coordinate is [`ZkError::Malformed`]; a point off the curve or twist, or outside
 //! the subgroup, is [`ZkError::InvalidPoint`]. **Public data only**: the arithmetic is variable time.
 
-use alloc::string::String;
 use alloc::vec::Vec;
-use core::fmt;
 
 use bn::{AffineG1, AffineG2, Fq, Fq2, Fr, G1, G2, Group, Gt};
 
@@ -24,29 +22,10 @@ pub const G2_BYTES: usize = 128;
 /// A field element's or scalar's width.
 pub const WORD_BYTES: usize = 32;
 
-/// Why a BN254 operation refused its input.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ZkError {
-    /// A wrong length, or a coordinate not below `p`.
-    Malformed {
-        /// What was wrong.
-        reason: String,
-    },
-    /// A point off the curve or twist, or a G2 point outside the order-`r` subgroup.
-    InvalidPoint {
-        /// What was wrong.
-        reason: String,
-    },
-}
-
-impl fmt::Display for ZkError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { reason } => write!(f, "malformed: {reason}"),
-            Self::InvalidPoint { reason } => write!(f, "invalid point: {reason}"),
-        }
-    }
-}
+/// Why a BN254 operation refused its input: a wrong length or a coordinate not below `p` (`Malformed`), or a point off
+/// the curve or twist, or a G2 point outside the order-`r` subgroup (`InvalidPoint`). Generated from
+/// `shared/schemas/crypto-errors.cddl`.
+pub use dilf4s_core::generated::crypto_errors::{ZkError, ZkErrorKind};
 
 fn malformed(reason: &str) -> ZkError {
     ZkError::Malformed { reason: reason.into() }

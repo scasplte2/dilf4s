@@ -116,7 +116,7 @@ fn check(c: &SigmaCase, tally: &mut Tally) -> Result<(), String> {
             let off_by = if c.kind == SigmaKind::TrailingByte { *expected + 1 } else { *expected - 1 };
             tally.wrong_length += 1;
             tally.ergo_accepts_trailing += usize::from(c.kind == SigmaKind::TrailingByte && c.ergo);
-            if *actual == off_by && *expected == prop.proof_length() {
+            if *actual == off_by && *expected == u64::try_from(prop.proof_length()).unwrap() {
                 Ok(())
             } else {
                 Err(format!("{what}: expected {expected}, actual {actual}"))
@@ -185,8 +185,9 @@ fn off_curve() -> Vec<u8> {
     p
 }
 
-fn kind<T: std::fmt::Debug>(r: Result<T, SigmaError>) -> &'static str {
-    r.err().map_or("Ok", |e| e.kind())
+/// The refusal's kind as its name, or `Ok`.
+fn kind<T: std::fmt::Debug>(r: Result<T, SigmaError>) -> String {
+    r.err().map_or_else(|| "Ok".into(), |e| format!("{:?}", e.kind()))
 }
 
 #[test]
@@ -299,7 +300,7 @@ fn threshold_of(k: i64, children: Vec<Value>) -> Value {
 fn reason(v: &Value) -> String {
     match Proposition::from_value(v) {
         Err(SigmaError::InvalidProposition { reason }) => reason,
-        other => kind(other).to_owned(),
+        other => kind(other),
     }
 }
 
@@ -431,15 +432,12 @@ fn a_proof_is_bound_to_its_proposition() {
     assert_eq!(kind(sigma::verify(&or, &proof, &message)), "ProofLength");
 }
 
-/// The schema's outcome of a verification. Exhaustive: a kind the SDK adds does not compile until it is mapped.
+/// The schema's outcome of a verification: a result, or the refusal's kind.
 fn sigma_outcome(r: &Result<bool, SigmaError>) -> SigmaOutcome {
     match r {
         Ok(true) => SigmaOutcome::Accepted,
         Ok(false) => SigmaOutcome::Rejected,
-        Err(SigmaError::InvalidProposition { .. }) => SigmaOutcome::InvalidProposition,
-        Err(SigmaError::InvalidPoint { .. }) => SigmaOutcome::InvalidPoint,
-        Err(SigmaError::ProofLength { .. }) => SigmaOutcome::ProofLength,
-        Err(SigmaError::ResponseOutOfRange) => SigmaOutcome::ResponseOutOfRange,
+        Err(e) => SigmaOutcome::SigmaErrorKind(e.kind()),
     }
 }
 
@@ -476,9 +474,9 @@ fn ergo_checked_cases_by_kind() {
     }
 }
 
-/// The coverage gate (conformance.md section 6) for `SigmaError`: every outcome of the schema has a row.
-/// [`sigma_outcome`] maps every SDK variant onto a schema kind (exhaustively, so a new variant does not compile until it
-/// is mapped), so every SDK kind has a row too.
+/// The coverage gate (conformance.md section 6) for `SigmaError`: every outcome of the schema has a row. The outcomes
+/// are both results and every `SigmaErrorKind`, and the SDK's `SigmaError` is generated with those kinds, so a kind
+/// added to the schema is a variant here, and needs a row.
 #[test]
 fn every_sigma_error_kind_has_a_row() {
     let v: SigmaRefusalVectors = load("sigma_refusals_v1.json");

@@ -9,7 +9,7 @@ macro_rules! ecdsa_scheme {
         use $krate::ecdsa::signature::hazmat::PrehashVerifier;
         use $krate::elliptic_curve::scalar::IsHigh;
 
-        use crate::error::SigningError;
+        use crate::error::CryptoError;
         use crate::util::{exact, halves, sha256};
 
         /// Verifying key length (compressed SEC1).
@@ -29,9 +29,9 @@ macro_rules! ecdsa_scheme {
         impl VerifyingKey {
             /// Decodes 33 bytes: a wrong length is `InvalidEncoding`, anything but a compressed curve point
             /// `InvalidKey`.
-            pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+            pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
                 let bytes: [u8; 33] = exact(concat!($label, " verifying key"), bytes)?;
-                let invalid = || SigningError::InvalidKey {
+                let invalid = || CryptoError::InvalidKey {
                     reason: concat!($label, " verifying key is not a valid point").into(),
                 };
                 // the SEC1 parser also takes other tags (0x05 parses); only the compressed tags are keys here
@@ -54,10 +54,10 @@ macro_rules! ecdsa_scheme {
 
             #[cfg(feature = "sign")]
             #[allow(dead_code, reason = "not every curve derives keys")]
-            pub(crate) fn from_affine(point: $krate::AffinePoint) -> Result<Self, SigningError> {
+            pub(crate) fn from_affine(point: $krate::AffinePoint) -> Result<Self, CryptoError> {
                 use $krate::elliptic_curve::group::GroupEncoding as _;
                 let inner = $krate::ecdsa::VerifyingKey::from_affine(point)
-                    .map_err(|_| SigningError::InvalidKey { reason: "the identity is not a verifying key".into() })?;
+                    .map_err(|_| CryptoError::InvalidKey { reason: "the identity is not a verifying key".into() })?;
                 Ok(Self { bytes: point.to_bytes().into(), inner })
             }
         }
@@ -71,16 +71,17 @@ macro_rules! ecdsa_scheme {
 
         impl Signature {
             /// Decodes 64 bytes: a wrong length, `r` or `s` outside `[1, n)`, or `s > n/2`, is `InvalidEncoding`.
-            pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+            pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
                 const WHAT: &str = concat!($label, " signature");
                 let bytes: [u8; 64] = exact(WHAT, bytes)?;
                 let (r, s) = halves(&bytes);
-                let inner = $krate::ecdsa::Signature::from_scalars(r, s).map_err(|_| {
-                    SigningError::InvalidEncoding { what: WHAT, reason: "r and s must be in [1, n)".into() }
+                let inner = $krate::ecdsa::Signature::from_scalars(r, s).map_err(|_| CryptoError::InvalidEncoding {
+                    what: WHAT.into(),
+                    reason: "r and s must be in [1, n)".into(),
                 })?;
                 if bool::from(inner.s().is_high()) {
-                    return Err(SigningError::InvalidEncoding {
-                        what: WHAT,
+                    return Err(CryptoError::InvalidEncoding {
+                        what: WHAT.into(),
                         reason: "s must be low (s <= n/2)".into(),
                     });
                 }
@@ -99,7 +100,7 @@ macro_rules! ecdsa_scheme {
         }
 
         /// Verification over raw encodings: the key is decoded first, then the signature.
-        pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, SigningError> {
+        pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
             let key = VerifyingKey::from_bytes(key)?;
             let signature = Signature::from_bytes(signature)?;
             Ok(verify(&key, message, &signature))
@@ -115,7 +116,7 @@ macro_rules! ecdsa_scheme {
             use $krate::ecdsa::signature::hazmat::PrehashSigner;
 
             use super::{Signature, VerifyingKey};
-            use crate::error::SigningError;
+            use crate::error::CryptoError;
             use crate::util::{exact, sha256};
 
             /// A secret scalar in `[1, n)` (zeroized on drop by the wrapped key).
@@ -127,11 +128,11 @@ macro_rules! ecdsa_scheme {
             impl SigningKey {
                 /// Decodes 32 big-endian bytes: a wrong length is `InvalidEncoding`, a scalar outside `[1, n)`
                 /// `InvalidKey`.
-                pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+                pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
                     let bytes: [u8; 32] = exact(concat!($label, " signing key"), bytes)?;
                     let bytes = zeroize::Zeroizing::new(bytes);
                     $krate::ecdsa::SigningKey::from_bytes(&(*bytes).into()).map(|inner| Self { inner }).map_err(|_| {
-                        SigningError::InvalidKey {
+                        CryptoError::InvalidKey {
                             reason: concat!($label, " secret key must be a scalar in [1, n)").into(),
                         }
                     })
@@ -155,11 +156,11 @@ macro_rules! ecdsa_scheme {
                 }
 
                 /// RFC 6979 over `SHA-256(message)` with HMAC-SHA-256, then `s` replaced by `n - s` if high.
-                pub fn sign(&self, message: &[u8]) -> Result<Signature, SigningError> {
+                pub fn sign(&self, message: &[u8]) -> Result<Signature, CryptoError> {
                     let inner: $krate::ecdsa::Signature = self
                         .inner
                         .sign_prehash(&sha256(&[message]))
-                        .map_err(|_| SigningError::InvalidKey { reason: "signing failed".into() })?;
+                        .map_err(|_| CryptoError::InvalidKey { reason: "signing failed".into() })?;
                     // `normalize_s` is `None` when `s` is already low
                     let inner = inner.normalize_s().unwrap_or(inner);
                     Ok(Signature { bytes: inner.to_bytes().into(), inner })
@@ -185,7 +186,7 @@ macro_rules! ecdsa_scheme {
             impl zeroize::ZeroizeOnDrop for SigningKey {}
 
             /// Seed derivation (`signing.md` section 1.7): the big-endian scalar, which must lie in `[1, n)`.
-            pub fn from_seed(seed: &[u8]) -> Result<(SigningKey, VerifyingKey), SigningError> {
+            pub fn from_seed(seed: &[u8]) -> Result<(SigningKey, VerifyingKey), CryptoError> {
                 let sk = SigningKey::from_bytes(seed)?;
                 let vk = sk.verifying_key();
                 Ok((sk, vk))

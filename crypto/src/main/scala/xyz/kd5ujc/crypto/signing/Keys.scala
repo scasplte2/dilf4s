@@ -6,13 +6,8 @@ import cats.{Eq, Show}
 
 import scodec.bits.ByteVector
 
-sealed trait CryptoError extends Product with Serializable
-
-object CryptoError {
-  final case class InvalidEncoding(what: String, reason: String) extends CryptoError
-  final case class InvalidKey(reason: String) extends CryptoError
-  final case class BackendFailure(operation: String, reason: String) extends CryptoError
-}
+/** A key or signature its scheme does not accept, by kind: generated from `shared/schemas/crypto-errors.cddl`. */
+export xyz.kd5ujc.models.crypto_errors.CryptoError
 
 /**
  * A secret signing key for scheme `S`. Its bytes never appear in `toString`, and equality is constant-time. Built only

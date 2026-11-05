@@ -92,55 +92,24 @@ impl c::Model for ZkBoolResult {
     }
 }
 
-/// `zk-error` (`shared/schemas/zk-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ZkError {
-    /// The text `Malformed`.
-    Malformed,
-    /// The text `InvalidPoint`.
-    InvalidPoint,
-}
-
-impl c::Model for ZkError {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
-        match self {
-            Self::Malformed => Ok(c::Value::text("Malformed")),
-            Self::InvalidPoint => Ok(c::Value::text("InvalidPoint")),
-        }
-    }
-
-    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["Malformed", "InvalidPoint"])? {
-            c::Alternative::Text(0) => Ok(Self::Malformed),
-            c::Alternative::Text(1) => Ok(Self::InvalidPoint),
-            other => Err(c::unknown_alternative(other)),
-        }
-    }
-}
-
-impl ZkError {
-    /// Every alternative, in schema order.
-    pub const ALL: [Self; 2] = [Self::Malformed, Self::InvalidPoint];
-}
-
 /// `zk-failure` (`shared/schemas/zk-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ZkFailure {
     /// The `error` entry.
-    pub error: ZkError,
+    pub error: super::crypto_errors::ZkErrorKind,
 }
 
 impl c::Model for ZkFailure {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         let inner = c::nested(depth)?;
         c::record([
-            c::field("error", &c::ModelOf::<ZkError>::NEW, &self.error, inner)?,
+            c::field("error", &c::ModelOf::<super::crypto_errors::ZkErrorKind>::NEW, &self.error, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["error"])?;
-        let f0 = fields.required("error", &c::ModelOf::<ZkError>::NEW)?;
+        let f0 = fields.required("error", &c::ModelOf::<super::crypto_errors::ZkErrorKind>::NEW)?;
         Ok(Self { error: f0 })
     }
 }
@@ -150,34 +119,25 @@ impl c::Model for ZkFailure {
 pub enum ZkGroth16Result {
     /// The text `verified`.
     Verified,
-    /// The text `Malformed`.
-    Malformed,
-    /// The text `InvalidProof`.
-    InvalidProof,
-    /// The text `PairingCheckFailed`.
-    PairingCheckFailed,
-    /// The text `Rejected`.
-    Rejected,
+    /// A [`super::crypto_errors::Groth16ErrorKind`].
+    Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind),
 }
 
 impl c::Model for ZkGroth16Result {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Verified => Ok(c::Value::text("verified")),
-            Self::Malformed => Ok(c::Value::text("Malformed")),
-            Self::InvalidProof => Ok(c::Value::text("InvalidProof")),
-            Self::PairingCheckFailed => Ok(c::Value::text("PairingCheckFailed")),
-            Self::Rejected => Ok(c::Value::text("Rejected")),
+            Self::Groth16ErrorKind(a) => c::Model::to_value_at(a, depth),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         match c::select_alternative(value, &[], &["verified", "Malformed", "InvalidProof", "PairingCheckFailed", "Rejected"])? {
             c::Alternative::Text(0) => Ok(Self::Verified),
-            c::Alternative::Text(1) => Ok(Self::Malformed),
-            c::Alternative::Text(2) => Ok(Self::InvalidProof),
-            c::Alternative::Text(3) => Ok(Self::PairingCheckFailed),
-            c::Alternative::Text(4) => Ok(Self::Rejected),
+            c::Alternative::Text(1) => Ok(Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::Malformed)),
+            c::Alternative::Text(2) => Ok(Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::InvalidProof)),
+            c::Alternative::Text(3) => Ok(Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::PairingCheckFailed)),
+            c::Alternative::Text(4) => Ok(Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::Rejected)),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -185,7 +145,7 @@ impl c::Model for ZkGroth16Result {
 
 impl ZkGroth16Result {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 5] = [Self::Verified, Self::Malformed, Self::InvalidProof, Self::PairingCheckFailed, Self::Rejected];
+    pub const ALL: [Self; 5] = [Self::Verified, Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::Malformed), Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::InvalidProof), Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::PairingCheckFailed), Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::Rejected)];
 }
 
 /// `zk-mul` (`shared/schemas/zk-vectors.cddl`).

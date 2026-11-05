@@ -10,7 +10,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.crypto.bls.Bls12381
-import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, SigmaError, SigmaProp, SigmaProver}
+import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, SigmaError, SigmaProp, SigmaProver, message}
 import xyz.kd5ujc.crypto.signing._
 
 import io.circe.{Json, parser}
@@ -171,7 +171,12 @@ object CryptoOpsSuite extends IOSuite with Checkers {
   private def h(b:  ByteVector): String = "\"0x" + b.toHex + "\""
   private def pk(w: BigInt): ByteVector = Secp256k1Group.base(w).bytes
 
-  private def prove(r: SecureRandom[IO], prop: Either[SigmaError, SigmaProp], secrets: Vector[BigInt], message: ByteVector): IO[ByteVector] =
+  private def prove(
+    r:       SecureRandom[IO],
+    prop:    Either[SigmaError, SigmaProp],
+    secrets: Vector[BigInt],
+    message: ByteVector
+  ): IO[ByteVector] =
     IO.fromEither(prop.leftMap(e => new IllegalArgumentException(e.message)))
       .flatMap(p => SigmaProver.prove[IO](p, secrets, message)(using summon, r))
       .flatMap(e => IO.fromEither(e.leftMap(new IllegalStateException(_))))

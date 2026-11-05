@@ -11,17 +11,11 @@ import cats.syntax.all._
 import org.bouncycastle.crypto.digests.SHA256Digest
 import scodec.bits.{BitVector, ByteVector}
 
-sealed trait KeyError extends Product with Serializable
-
-object KeyError {
-  final case class InvalidEntropy(reason: String) extends KeyError
-  final case class InvalidMnemonic(reason: String) extends KeyError
-  final case class InvalidWordList(reason: String) extends KeyError
-  final case class InvalidDerivation(reason: String) extends KeyError
-
-  /** A derivation path refused by `ChildIndex.path`; `reason` is a message, `refusal` the typed rule it broke. */
-  final case class InvalidPath(refusal: PathRefusal, reason: String) extends KeyError
-}
+/**
+ * A key derivation refused, by kind: generated from `shared/schemas/crypto-errors.cddl`. `InvalidPath` is a path
+ * `ChildIndex.path` refuses, `refusal` the typed rule it broke.
+ */
+export xyz.kd5ujc.models.crypto_errors.KeyError
 
 /** Secret byte material (seeds, entropy): never printed. */
 final class Secret private[crypto] (val bytes: ByteVector) {

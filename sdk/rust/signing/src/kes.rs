@@ -46,7 +46,7 @@ fn bit(period: u64, level: u32) -> bool {
 }
 
 fn malformed(what: &'static str, expected: usize, got: usize) -> KesError {
-    KesError::Malformed { what, reason: format!("expected {expected} bytes, got {got}") }
+    KesError::Malformed { what: what.into(), reason: format!("expected {expected} bytes, got {got}") }
 }
 
 fn check_period(period: u64, total: u64) -> Result<(), KesError> {
@@ -99,7 +99,7 @@ fn hash_ok(hash: HashAlgorithm) -> Result<(), KesError> {
         Ok(())
     } else {
         Err(KesError::Malformed {
-            what: "KES hash",
+            what: "KES hash".into(),
             reason: format!("{} has a {}-byte output; at least 32 required", hash.name(), hash.output_size()),
         })
     }
@@ -117,7 +117,10 @@ impl KesSum {
     pub fn new(hash: HashAlgorithm, height: u32) -> Result<Self, KesError> {
         hash_ok(hash)?;
         if height > MAX_HEIGHT {
-            return Err(KesError::Malformed { what: "KES height", reason: format!("expected 0..30, got {height}") });
+            return Err(KesError::Malformed {
+                what: "KES height".into(),
+                reason: format!("expected 0..30, got {height}"),
+            });
         }
         Ok(Self { ops: Ops { hash }, height })
     }
@@ -184,7 +187,7 @@ impl KesProduct {
         hash_ok(hash)?;
         if super_height.saturating_add(sub_height) > MAX_HEIGHT {
             return Err(KesError::Malformed {
-                what: "KES heights",
+                what: "KES heights".into(),
                 reason: format!("expected heights summing to at most 30, got ({super_height}, {sub_height})"),
             });
         }
@@ -265,7 +268,7 @@ impl CardanoSumKes {
             Ok(Self { depth })
         } else {
             Err(KesError::Malformed {
-                what: "KES depth",
+                what: "KES depth".into(),
                 reason: format!("expected 0..{}, got {depth}", Self::MAX_DEPTH),
             })
         }

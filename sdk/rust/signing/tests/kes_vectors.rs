@@ -60,14 +60,9 @@ fn scheme(v: &KesVector) -> Kes {
     scheme_of(&v.construction, &v.parameters).unwrap()
 }
 
-/// The schema's outcome of a refusal. Exhaustive: a kind the SDK adds does not compile until it is mapped.
+/// The schema's outcome of a refusal: its kind, the type the schema's outcomes name.
 const fn kes_outcome(e: &KesError) -> KesOutcome {
-    match e {
-        KesError::Malformed { .. } => KesOutcome::Malformed,
-        KesError::PeriodOutOfRange { .. } => KesOutcome::PeriodOutOfRange,
-        KesError::Exhausted { .. } => KesOutcome::Exhausted,
-        KesError::InconsistentKey { .. } => KesOutcome::InconsistentKey,
-    }
+    KesOutcome::KesErrorKind(e.kind())
 }
 
 #[cfg(feature = "sign")]
@@ -138,9 +133,9 @@ fn refusals_by_kind() {
     assert!(checked >= if cfg!(feature = "sign") { 60 } else { 30 }, "{checked} refusal rows");
 }
 
-/// The coverage gate (conformance.md section 6) for `KesError`: every outcome of the schema has a row.
-/// [`kes_outcome`] maps every SDK variant onto a schema kind (exhaustively, so a new variant does not compile until it
-/// is mapped), so every SDK kind has a row too.
+/// The coverage gate (conformance.md section 6) for `KesError`: every outcome of the schema has a row. The outcomes are
+/// both results and every `KesErrorKind`, and the SDK's `KesError` is generated with those kinds, so a kind added to
+/// the schema is a variant here, and needs a row.
 #[test]
 fn every_kes_error_kind_has_a_row() {
     let v: KesVectors = load("kes_v1.json");

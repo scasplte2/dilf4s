@@ -7,16 +7,11 @@ import xyz.kd5ujc.crypto.signing.{Ed25519, Signature, SigningKey, VerifyingKey}
 
 import scodec.bits.ByteVector
 
-sealed trait KesError extends Product with Serializable
-
-object KesError {
-  final case class Malformed(what: String, reason: String) extends KesError
-  final case class PeriodOutOfRange(period: Long, total: Long) extends KesError
-
-  /** The key cannot evolve further: its last period has been reached. */
-  final case class Exhausted(period: Long) extends KesError
-  final case class InconsistentKey(reason: String) extends KesError
-}
+/**
+ * A KES refusal, by kind: generated from `shared/schemas/crypto-errors.cddl`. `Exhausted` is a key that cannot evolve
+ * further: its last period has been reached.
+ */
+export xyz.kd5ujc.models.crypto_errors.KesError
 
 /**
  * Cardano's `SumKES Blake2b_256 (... (SingleKES Ed25519DSIGN))` of depth `d` (cardano-crypto-class

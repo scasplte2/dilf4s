@@ -15,19 +15,12 @@
 mod common;
 
 use common::{bytes, load};
-use dilf4s_core::generated::zk_vectors::{ZkBoolResult, ZkError as Kind, ZkGroth16Result, ZkPointResult, ZkVectors};
-use dilf4s_proofs::zk::groth16::{Groth16Error, sp1};
-use dilf4s_proofs::zk::{self, ZkError};
+use dilf4s_core::generated::zk_vectors::{ZkBoolResult, ZkGroth16Result, ZkPointResult, ZkVectors};
+use dilf4s_proofs::zk::groth16::{Groth16Error, Groth16ErrorKind, sp1};
+use dilf4s_proofs::zk::{self, ZkError, ZkErrorKind};
 
 fn vectors() -> ZkVectors {
     load("zk_v1.json")
-}
-
-fn kind(e: &ZkError) -> Kind {
-    match e {
-        ZkError::Malformed { .. } => Kind::Malformed,
-        ZkError::InvalidPoint { .. } => Kind::InvalidPoint,
-    }
 }
 
 fn point(r: Result<[u8; 64], ZkError>) -> ZkPointResult {
@@ -35,7 +28,7 @@ fn point(r: Result<[u8; 64], ZkError>) -> ZkPointResult {
         Ok(p) => {
             ZkPointResult::ZkPoint(dilf4s_core::generated::zk_vectors::ZkPoint { point: dilf4s_core::hex::encode(&p) })
         }
-        Err(e) => ZkPointResult::ZkFailure(dilf4s_core::generated::zk_vectors::ZkFailure { error: kind(&e) }),
+        Err(e) => ZkPointResult::ZkFailure(dilf4s_core::generated::zk_vectors::ZkFailure { error: e.kind() }),
     }
 }
 
@@ -66,20 +59,14 @@ fn pairing() {
         let pairs: Vec<(&[u8], &[u8])> = owned.iter().map(|(a, b)| (a.as_slice(), b.as_slice())).collect();
         let got = match zk::pairing(&pairs) {
             Ok(value) => ZkBoolResult::ZkBool(dilf4s_core::generated::zk_vectors::ZkBool { value }),
-            Err(e) => ZkBoolResult::ZkFailure(dilf4s_core::generated::zk_vectors::ZkFailure { error: kind(&e) }),
+            Err(e) => ZkBoolResult::ZkFailure(dilf4s_core::generated::zk_vectors::ZkFailure { error: e.kind() }),
         };
         assert_eq!(got, c.result, "{}", c.name);
     }
 }
 
 fn outcome(r: &Result<(), Groth16Error>) -> ZkGroth16Result {
-    match r {
-        Ok(()) => ZkGroth16Result::Verified,
-        Err(Groth16Error::Malformed { .. }) => ZkGroth16Result::Malformed,
-        Err(Groth16Error::InvalidProof { .. }) => ZkGroth16Result::InvalidProof,
-        Err(Groth16Error::PairingCheckFailed) => ZkGroth16Result::PairingCheckFailed,
-        Err(Groth16Error::Rejected { .. }) => ZkGroth16Result::Rejected,
-    }
+    r.as_ref().map_or_else(|e| ZkGroth16Result::Groth16ErrorKind(e.kind()), |()| ZkGroth16Result::Verified)
 }
 
 #[test]
@@ -94,9 +81,8 @@ fn sp1_groth16() {
     }
 }
 
-/// The coverage gate (conformance.md section 6) for `ZkError` and `Groth16Error`: every kind of the schema has a row.
-/// `kind` and `outcome` map every SDK variant onto a schema kind (exhaustively, so a new variant does not compile until
-/// it is mapped), so every SDK kind has a row too.
+/// The coverage gate (conformance.md section 6) for `ZkError` and `Groth16Error`: every kind has a row. The SDK's errors
+/// are generated from the schema with their kinds, so a kind added there is a variant here, and needs a row.
 #[test]
 fn every_zk_error_kind_has_a_row() {
     let v = vectors();
@@ -104,18 +90,20 @@ fn every_zk_error_kind_has_a_row() {
         ZkPointResult::ZkFailure(f) => Some(f.error.clone()),
         ZkPointResult::ZkPoint(_) => None,
     };
-    let mut pinned: Vec<Kind> =
+    let mut pinned: Vec<ZkErrorKind> =
         v.add.iter().map(|c| &c.result).chain(v.mul.iter().map(|c| &c.result)).filter_map(failures).collect();
     pinned.extend(v.pairing.iter().filter_map(|c| match &c.result {
         ZkBoolResult::ZkFailure(f) => Some(f.error.clone()),
         ZkBoolResult::ZkBool(_) => None,
     }));
-    for k in Kind::ALL {
+    for k in ZkErrorKind::ALL {
         assert!(pinned.contains(&k), "no zk_v1.json row pins {k:?}");
     }
-    for k in ZkGroth16Result::ALL {
-        assert!(v.sp1_groth16.iter().any(|c| c.result == k), "no sp1Groth16 row has result {k:?}");
+    for k in Groth16ErrorKind::ALL {
+        let row = ZkGroth16Result::Groth16ErrorKind(k);
+        assert!(v.sp1_groth16.iter().any(|c| c.result == row), "no sp1Groth16 row has result {row:?}");
     }
+    assert!(v.sp1_groth16.iter().any(|c| c.result == ZkGroth16Result::Verified), "no sp1Groth16 row verifies");
 }
 
 #[test]

@@ -1,53 +1,29 @@
-/** Typed errors. Kinds carry Scala's case-class names (docs: `.workspace/sdk-step2-notes.md`, contract). */
-
-/** A signature-scheme decode or signing failure (Scala `CryptoError`). */
-export type SigningError =
-  | { readonly kind: "InvalidEncoding"; readonly what: string; readonly reason: string }
-  | { readonly kind: "InvalidKey"; readonly reason: string };
-
-/** A key-derivation failure (Scala `KeyError`). */
-export type KeyError =
-  | { readonly kind: "InvalidEntropy"; readonly reason: string }
-  | { readonly kind: "InvalidMnemonic"; readonly reason: string }
-  | { readonly kind: "InvalidWordList"; readonly reason: string }
-  | { readonly kind: "InvalidDerivation"; readonly reason: string }
-  | InvalidPath;
-
 /**
- * Why a derivation path is refused: the first rule it breaks, its segments checked in order (`signing.md` 3). Its
- * spelling in the `paths` vectors.
+ * Typed errors, generated from `shared/schemas/crypto-errors.cddl` (`models.cryptoErrors`): each family is a union on
+ * `kind`, its kinds the Scala reference's cases, which the conformance vectors use. A kind added to the schema is a
+ * member here.
  */
-export type PathRefusal = "missingMaster" | "malformed" | "leadingZero" | "tooManyDigits" | "outOfRange" | "tooDeep";
+import type { models } from "@kd5ujc/dilf4s-core";
 
-/** A derivation path `parsePath` refuses (Scala `KeyError.InvalidPath`); `reason` is a message, not normative. */
-export interface InvalidPath {
-  readonly kind: "InvalidPath";
-  readonly refusal: PathRefusal;
-  readonly reason: string;
-}
+/** A key or signature its scheme does not accept, or a signing failure. `BackendFailure` is the JVM's alone. */
+export type CryptoError = models.cryptoErrors.CryptoError;
 
-/**
- * A VRF failure (Scala `VrfError`). `Malformed` is a wrong length; every other kind is a rejection (the JLVM's
- * `{valid: false}`).
- */
-export type VrfError =
-  | { readonly kind: "Malformed"; readonly what: string; readonly reason: string }
-  | { readonly kind: "InvalidPublicKey" }
-  | { readonly kind: "SmallOrderPublicKey" }
-  | { readonly kind: "InvalidGamma" }
-  | { readonly kind: "NonCanonicalScalar" }
-  | { readonly kind: "ChallengeMismatch" }
-  | { readonly kind: "KeyMismatch" }
-  | { readonly kind: "HashToCurveFailed"; readonly reason: string };
+/** A key-derivation failure. */
+export type KeyError = models.cryptoErrors.KeyError;
 
-/** A KES failure (Scala `KesError`). */
-export type KesError =
-  | { readonly kind: "Malformed"; readonly what: string; readonly reason: string }
-  | { readonly kind: "PeriodOutOfRange"; readonly period: number; readonly total: number }
-  | { readonly kind: "Exhausted"; readonly period: number }
-  | { readonly kind: "InconsistentKey"; readonly reason: string };
+/** Why a derivation path is refused: the first rule it breaks, its segments checked in order (`signing.md` 3). */
+export type PathRefusal = models.cryptoErrors.PathRefusal;
 
-export const invalidEncoding = (what: string, reason: string): SigningError => ({ kind: "InvalidEncoding", what, reason });
-export const invalidKey = (reason: string): SigningError => ({ kind: "InvalidKey", reason });
-export const lengthError = (what: string, expected: number, got: number): SigningError =>
+/** A derivation path `parsePath` refuses; `reason` is a message, not normative. */
+export type InvalidPath = Extract<KeyError, { readonly kind: "InvalidPath" }>;
+
+/** A VRF failure. `Malformed` is a wrong length; every other kind is a rejection (the JLVM's `{valid: false}`). */
+export type VrfError = models.cryptoErrors.VrfError;
+
+/** A KES failure. */
+export type KesError = models.cryptoErrors.KesError;
+
+export const invalidEncoding = (what: string, reason: string): CryptoError => ({ kind: "InvalidEncoding", what, reason });
+export const invalidKey = (reason: string): CryptoError => ({ kind: "InvalidKey", reason });
+export const lengthError = (what: string, expected: number, got: number): CryptoError =>
   invalidEncoding(what, `expected ${String(expected)} bytes, got ${String(got)}`);

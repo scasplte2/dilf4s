@@ -31,7 +31,7 @@ object Bn254Suite extends IOSuite with Checkers {
   def sharedResource: Resource[IO, Bn254Engine] = Resource.eval(Bn254Engine.gnark[IO])
 
   private def replay(name: String, count: Int, on: String = "the precompile functions")(
-    f: Bn254Engine => ByteVector => Either[Bn254.ZkError, ByteVector]
+    f: Bn254Engine => ByteVector => Either[ZkError, ByteVector]
   ) =
     test(s"$name: go-ethereum vectors, on $on") { gnark =>
       IO {
@@ -58,7 +58,7 @@ object Bn254Suite extends IOSuite with Checkers {
       engineOf(gnark).mul(x.take(64), x.drop(64))
     }
     replay("bn256Pairing", 14, label) { gnark => in =>
-      if (in.size % 192 != 0) Left(Bn254.ZkError.Malformed("not whole pairs"))
+      if (in.size % 192 != 0) Left(ZkError.Malformed("not whole pairs"))
       else engineOf(gnark).pairing(in.grouped(192).map(c => c.take(64) -> c.drop(64)).toVector).map(word)
     }
   }

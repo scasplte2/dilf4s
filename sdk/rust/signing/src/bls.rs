@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use bls12_381::hash_to_curve::{ExpandMsgXmd, HashToCurve};
 use bls12_381::{G1Affine, G1Projective, G2Affine, G2Prepared, G2Projective, Gt, multi_miller_loop};
 
-use crate::error::SigningError;
+use crate::error::CryptoError;
 use crate::util::exact;
 
 /// Verifying key length (compressed G1).
@@ -32,13 +32,12 @@ pub struct VerifyingKey {
 
 impl VerifyingKey {
     /// `KeyValidate` over 48 bytes: a wrong length is `InvalidEncoding`, anything else that fails `InvalidKey`.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
         let bytes: [u8; 48] = exact("BLS public key", bytes)?;
         let point: Option<G1Affine> = G1Affine::from_compressed(&bytes).into();
-        let point =
-            point.ok_or_else(|| SigningError::InvalidKey { reason: "BLS public key does not decode".into() })?;
+        let point = point.ok_or_else(|| CryptoError::InvalidKey { reason: "BLS public key does not decode".into() })?;
         if bool::from(point.is_identity()) {
-            return Err(SigningError::InvalidKey { reason: "BLS public key is the identity".into() });
+            return Err(CryptoError::InvalidKey { reason: "BLS public key is the identity".into() });
         }
         Ok(Self { bytes, point })
     }
@@ -58,12 +57,12 @@ pub struct Signature {
 
 impl Signature {
     /// Decodes 96 bytes; a wrong length, a non-point or a point outside G2 is `InvalidEncoding`.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
         const WHAT: &str = "BLS signature";
         let bytes: [u8; 96] = exact(WHAT, bytes)?;
         let point: Option<G2Affine> = G2Affine::from_compressed(&bytes).into();
-        point.map(|point| Self { bytes, point }).ok_or_else(|| SigningError::InvalidEncoding {
-            what: WHAT,
+        point.map(|point| Self { bytes, point }).ok_or_else(|| CryptoError::InvalidEncoding {
+            what: WHAT.into(),
             reason: "does not decode to a point of G2".into(),
         })
     }
@@ -109,17 +108,17 @@ pub fn verify(key: &VerifyingKey, message: &[u8], signature: &Signature) -> bool
 }
 
 /// Verification over raw encodings: the key is decoded first, then the signature.
-pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, SigningError> {
+pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
     let key = VerifyingKey::from_bytes(key)?;
     let signature = Signature::from_bytes(signature)?;
     Ok(verify(&key, message, &signature))
 }
 
 /// `Aggregate`: the sum of one or more signatures. None is `InvalidEncoding`.
-pub fn aggregate(signatures: &[Signature]) -> Result<Signature, SigningError> {
+pub fn aggregate(signatures: &[Signature]) -> Result<Signature, CryptoError> {
     if signatures.is_empty() {
-        return Err(SigningError::InvalidEncoding {
-            what: "BLS aggregate",
+        return Err(CryptoError::InvalidEncoding {
+            what: "BLS aggregate".into(),
             reason: "at least one signature is required".into(),
         });
     }
@@ -168,7 +167,7 @@ mod signing {
     use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
     use super::{POP_DST, SIGNATURE_DST, Signature, VerifyingKey, hash_to_g2};
-    use crate::error::SigningError;
+    use crate::error::CryptoError;
     use crate::util::{exact, sha256};
 
     /// A secret scalar in `[1, r)`, kept as its 32 big-endian bytes.
@@ -187,7 +186,7 @@ mod signing {
     impl SigningKey {
         /// Decodes 32 big-endian bytes: a wrong length is `InvalidEncoding`, a scalar outside `[1, r)`
         /// `InvalidKey`.
-        pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+        pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
             let bytes: [u8; 32] = exact("BLS signing key", bytes)?;
             let key = Self { bytes };
             key.scalar().map(|_| key)
@@ -198,10 +197,10 @@ mod signing {
             &self.bytes
         }
 
-        fn scalar(&self) -> Result<Zeroizing<Scalar>, SigningError> {
+        fn scalar(&self) -> Result<Zeroizing<Scalar>, CryptoError> {
             scalar_of(&self.bytes)
                 .map(Zeroizing::new)
-                .ok_or_else(|| SigningError::InvalidKey { reason: "BLS secret key must be a scalar in [1, r)".into() })
+                .ok_or_else(|| CryptoError::InvalidKey { reason: "BLS secret key must be a scalar in [1, r)".into() })
         }
 
         /// `SkToPk`.
@@ -241,7 +240,7 @@ mod signing {
     impl Eq for SigningKey {}
 
     /// EIP-2333 `HKDF_mod_r(IKM)` with an empty `key_info`.
-    fn hkdf_mod_r(ikm: &[u8]) -> Result<SigningKey, SigningError> {
+    fn hkdf_mod_r(ikm: &[u8]) -> Result<SigningKey, CryptoError> {
         let mut salt = sha256(&[b"BLS-SIG-KEYGEN-SALT-"]);
         let mut input = Zeroizing::new(Vec::with_capacity(ikm.len().saturating_add(1)));
         input.extend_from_slice(ikm);
@@ -251,7 +250,7 @@ mod signing {
             let mut okm = Zeroizing::new([0u8; 48]);
             Hkdf::<sha2::Sha256>::new(Some(&salt), &input)
                 .expand(&[0, 48], &mut *okm)
-                .map_err(|_| SigningError::InvalidKey { reason: "HKDF expansion failed".into() })?;
+                .map_err(|_| CryptoError::InvalidKey { reason: "HKDF expansion failed".into() })?;
             let mut wide = Zeroizing::new([0u8; 64]);
             for (w, o) in wide.iter_mut().zip(okm.iter().rev()) {
                 *w = *o;
@@ -266,23 +265,23 @@ mod signing {
             }
             salt = sha256(&[&salt]);
         }
-        Err(SigningError::InvalidKey { reason: "HKDF_mod_r found no non-zero key".into() })
+        Err(CryptoError::InvalidKey { reason: "HKDF_mod_r found no non-zero key".into() })
     }
 
     /// EIP-2333 `derive_master_SK(seed)`; the seed is at least 32 bytes.
-    pub fn derive_master_sk(seed: &[u8]) -> Result<SigningKey, SigningError> {
+    pub fn derive_master_sk(seed: &[u8]) -> Result<SigningKey, CryptoError> {
         if seed.len() < 32 {
-            return Err(SigningError::InvalidKey { reason: "EIP-2333 seeds are at least 32 bytes".into() });
+            return Err(CryptoError::InvalidKey { reason: "EIP-2333 seeds are at least 32 bytes".into() });
         }
         hkdf_mod_r(seed)
     }
 
     /// EIP-2333 `IKM_to_lamport_SK`: 255 chunks of 32 bytes.
-    fn lamport_hashes(ikm: &[u8; 32], salt: [u8; 4], out: &mut Vec<u8>) -> Result<(), SigningError> {
+    fn lamport_hashes(ikm: &[u8; 32], salt: [u8; 4], out: &mut Vec<u8>) -> Result<(), CryptoError> {
         let mut okm = Zeroizing::new(alloc::vec![0u8; 32 * 255]);
         Hkdf::<sha2::Sha256>::new(Some(&salt), ikm)
             .expand(&[], &mut okm)
-            .map_err(|_| SigningError::InvalidKey { reason: "HKDF expansion failed".into() })?;
+            .map_err(|_| CryptoError::InvalidKey { reason: "HKDF expansion failed".into() })?;
         for chunk in okm.chunks(32) {
             out.extend_from_slice(&sha256(&[chunk]));
         }
@@ -290,7 +289,7 @@ mod signing {
     }
 
     /// EIP-2333 `derive_child_SK(parent_SK, index)`.
-    pub fn derive_child_sk(parent: &SigningKey, index: u32) -> Result<SigningKey, SigningError> {
+    pub fn derive_child_sk(parent: &SigningKey, index: u32) -> Result<SigningKey, CryptoError> {
         let salt = index.to_be_bytes();
         let ikm = Zeroizing::new(parent.bytes);
         let mut not_ikm = Zeroizing::new(parent.bytes);
@@ -304,7 +303,7 @@ mod signing {
     }
 
     /// Seed derivation (`signing.md` section 1.7): EIP-2333 `derive_master_SK(seed)`.
-    pub fn from_seed(seed: &[u8]) -> Result<(SigningKey, VerifyingKey), SigningError> {
+    pub fn from_seed(seed: &[u8]) -> Result<(SigningKey, VerifyingKey), CryptoError> {
         let sk = derive_master_sk(seed)?;
         let vk = sk.verifying_key();
         Ok((sk, vk))

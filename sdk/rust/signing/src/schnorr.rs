@@ -14,7 +14,7 @@ use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::{AffineCoordinates as _, DecompactPoint as _};
 use k256::{AffinePoint, FieldBytes, ProjectivePoint, Scalar, U256};
 
-use crate::error::SigningError;
+use crate::error::CryptoError;
 use crate::util::{SECP256K1_P, be_less_than, exact, halves, tagged_sha256};
 
 /// The dilf4s tag for [`tagged`] signatures.
@@ -28,12 +28,12 @@ struct XOnly {
 }
 
 impl XOnly {
-    fn decode(what: &'static str, bytes: &[u8]) -> Result<Self, SigningError> {
+    fn decode(what: &'static str, bytes: &[u8]) -> Result<Self, CryptoError> {
         let x: [u8; 32] = exact(what, bytes)?;
         let point: Option<AffinePoint> = AffinePoint::decompact(&FieldBytes::from(x)).into();
         point
             .map(|point| Self { x, point })
-            .ok_or_else(|| SigningError::InvalidKey { reason: "x-only key does not lift to a curve point".into() })
+            .ok_or_else(|| CryptoError::InvalidKey { reason: "x-only key does not lift to a curve point".into() })
     }
 }
 
@@ -62,7 +62,7 @@ fn verify_raw(key: &XOnly, message: &[u8], signature: &[u8; 64]) -> bool {
 
 macro_rules! schnorr_scheme {
     ($label:literal, $message:ty, $prepare:path) => {
-        use crate::error::SigningError;
+        use crate::error::CryptoError;
         use crate::util::exact;
 
         /// Verifying key length (x-only).
@@ -78,7 +78,7 @@ macro_rules! schnorr_scheme {
 
         impl VerifyingKey {
             /// Decodes 32 bytes: a wrong length is `InvalidEncoding`, an `x` with no curve point `InvalidKey`.
-            pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+            pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
                 super::XOnly::decode(concat!($label, " verifying key"), bytes).map(Self)
             }
 
@@ -94,7 +94,7 @@ macro_rules! schnorr_scheme {
 
         impl Signature {
             /// Decodes 64 bytes.
-            pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+            pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
                 exact(concat!($label, " signature"), bytes).map(Self)
             }
 
@@ -116,7 +116,7 @@ macro_rules! schnorr_scheme {
             use zeroize::{Zeroize, ZeroizeOnDrop};
 
             use super::{Signature, VerifyingKey};
-            use crate::error::SigningError;
+            use crate::error::CryptoError;
             use crate::util::exact;
 
             /// A secret scalar in `[1, n)`.
@@ -128,7 +128,7 @@ macro_rules! schnorr_scheme {
             impl SigningKey {
                 /// Decodes 32 big-endian bytes: a wrong length is `InvalidEncoding`, a scalar outside `[1, n)`
                 /// `InvalidKey`.
-                pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+                pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
                     let bytes: [u8; 32] = exact(concat!($label, " signing key"), bytes)?;
                     let key = Self { bytes };
                     super::super::secret_scalar(&key.bytes).map(|_| key)
@@ -140,12 +140,12 @@ macro_rules! schnorr_scheme {
                 }
 
                 /// The x-only public key.
-                pub fn verifying_key(&self) -> Result<VerifyingKey, SigningError> {
+                pub fn verifying_key(&self) -> Result<VerifyingKey, CryptoError> {
                     super::super::x_only(&self.bytes).map(VerifyingKey)
                 }
 
                 /// BIP-340 signing with explicit 32-byte auxiliary randomness (fresh per signature in production).
-                pub fn sign(&self, message: &$message, aux: &[u8; 32]) -> Result<Signature, SigningError> {
+                pub fn sign(&self, message: &$message, aux: &[u8; 32]) -> Result<Signature, CryptoError> {
                     super::super::sign_raw(&self.bytes, &$prepare(message), aux).map(Signature)
                 }
 
@@ -154,7 +154,7 @@ macro_rules! schnorr_scheme {
                     &self,
                     message: &$message,
                     rng: &mut R,
-                ) -> Result<Signature, SigningError> {
+                ) -> Result<Signature, CryptoError> {
                     let mut aux = zeroize::Zeroizing::new([0u8; 32]);
                     rng.fill_bytes(&mut *aux);
                     self.sign(message, &aux)
@@ -177,7 +177,7 @@ macro_rules! schnorr_scheme {
             impl Eq for SigningKey {}
 
             /// Seed derivation (`signing.md` section 1.7): the big-endian scalar, which must lie in `[1, n)`.
-            pub fn from_seed(seed: &[u8]) -> Result<(SigningKey, VerifyingKey), SigningError> {
+            pub fn from_seed(seed: &[u8]) -> Result<(SigningKey, VerifyingKey), CryptoError> {
                 let sk = SigningKey::from_bytes(seed)?;
                 let vk = sk.verifying_key()?;
                 Ok((sk, vk))
@@ -203,7 +203,7 @@ pub mod bip340 {
     schnorr_scheme!("BIP-340", [u8; 32], crate::schnorr::exact_message);
 
     /// Verification over raw encodings: the key, then the signature, then the 32-byte message are decoded.
-    pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, SigningError> {
+    pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
         let key = VerifyingKey::from_bytes(key)?;
         let signature = Signature::from_bytes(signature)?;
         let message: [u8; 32] = exact("BIP-340 message", message)?;
@@ -216,7 +216,7 @@ pub mod tagged {
     schnorr_scheme!("secp256k1-tagged-Schnorr", [u8], crate::schnorr::tagged_digest);
 
     /// Verification over raw encodings: the key is decoded first, then the signature.
-    pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, SigningError> {
+    pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
         let key = VerifyingKey::from_bytes(key)?;
         let signature = Signature::from_bytes(signature)?;
         Ok(verify(&key, message, &signature))
@@ -224,13 +224,13 @@ pub mod tagged {
 }
 
 #[cfg(feature = "sign")]
-fn secret_scalar(bytes: &[u8; 32]) -> Result<k256::NonZeroScalar, SigningError> {
+fn secret_scalar(bytes: &[u8; 32]) -> Result<k256::NonZeroScalar, CryptoError> {
     Option::from(k256::NonZeroScalar::from_repr(FieldBytes::from(*bytes)))
-        .ok_or_else(|| SigningError::InvalidKey { reason: "secp256k1 secret key must be a scalar in [1, n)".into() })
+        .ok_or_else(|| CryptoError::InvalidKey { reason: "secp256k1 secret key must be a scalar in [1, n)".into() })
 }
 
 #[cfg(feature = "sign")]
-fn x_only(secret: &[u8; 32]) -> Result<XOnly, SigningError> {
+fn x_only(secret: &[u8; 32]) -> Result<XOnly, CryptoError> {
     let d = secret_scalar(secret)?;
     let point = (<ProjectivePoint as Group>::generator() * *d).to_affine();
     let x: [u8; 32] = point.x().into();
@@ -240,7 +240,7 @@ fn x_only(secret: &[u8; 32]) -> Result<XOnly, SigningError> {
 
 /// BIP-340 `Sign(sk, m, a)`.
 #[cfg(feature = "sign")]
-fn sign_raw(secret: &[u8; 32], message: &[u8], aux: &[u8; 32]) -> Result<[u8; 64], SigningError> {
+fn sign_raw(secret: &[u8; 32], message: &[u8], aux: &[u8; 32]) -> Result<[u8; 64], CryptoError> {
     use k256::elliptic_curve::subtle::ConditionallySelectable as _;
     use zeroize::Zeroizing;
 
@@ -256,7 +256,7 @@ fn sign_raw(secret: &[u8; 32], message: &[u8], aux: &[u8; 32]) -> Result<[u8; 64
     let rand = Zeroizing::new(tagged_sha256(b"BIP0340/nonce", &[&*t, &px, message]));
     let k0 = Zeroizing::new(<Scalar as Reduce<U256>>::reduce_bytes(&FieldBytes::from(*rand)));
     if bool::from(k0.is_zero()) {
-        return Err(SigningError::InvalidKey { reason: "the derived nonce is zero; use other randomness".into() });
+        return Err(CryptoError::InvalidKey { reason: "the derived nonce is zero; use other randomness".into() });
     }
     let big_r = (<ProjectivePoint as Group>::generator() * *k0).to_affine();
     let k = Zeroizing::new(Scalar::conditional_select(&k0, &-*k0, big_r.y_is_odd()));

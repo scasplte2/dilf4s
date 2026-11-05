@@ -7,7 +7,7 @@ import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.hash.{Fr, Poseidon => PoseidonHash}
 import xyz.kd5ujc.crypto.vrf.{EcVrfTai, Vrf, VrfError}
-import xyz.kd5ujc.crypto.zk.{Bn254, Bn254Engine, Groth16Error, Sp1Groth16}
+import xyz.kd5ujc.crypto.zk.{Bn254, Bn254Engine, Groth16Error, Sp1Groth16, ZkError}
 
 import scodec.bits.ByteVector
 
@@ -207,9 +207,9 @@ final class ZkOps(engine: Bn254Engine) {
     )
 
   /** For the curve operations a point off the curve or outside the subgroup is malformed input, as in metakit. */
-  private def zkError(op: Op, role: String)(e: Bn254.ZkError): JlvmError = e match {
-    case Bn254.ZkError.Malformed(reason)    => crypto(op, s"$role: $reason")
-    case Bn254.ZkError.InvalidPoint(reason) => crypto(op, s"$role: $reason")
+  private def zkError(op: Op, role: String)(e: ZkError): JlvmError = e match {
+    case ZkError.Malformed(reason)    => crypto(op, s"$role: $reason")
+    case ZkError.InvalidPoint(reason) => crypto(op, s"$role: $reason")
   }
 }
 

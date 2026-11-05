@@ -21,12 +21,12 @@
 mod common;
 
 use common::{bytes, load};
-use dilf4s_core::generated::signing_vectors::{
-    KeyCheck, KeyDecodingResult, KeyErrorKind, KeyPart, KeyRefusal, SigningVectors,
-};
+use dilf4s_core::generated::signing_vectors::{KeyCheck, KeyDecodingResult, KeyPart, KeyRefusal, SigningVectors};
 use dilf4s_core::hex;
 use dilf4s_signing::keys::{bip32, bip39, icarus, path, slip10};
-use dilf4s_signing::{KeyError, SchemeId, SigningError, bls, ecdsa, ed25519, ed25519_bip32, ristretto255, schnorr};
+use dilf4s_signing::{
+    CryptoError, KeyError, KeyErrorKind, SchemeId, bls, ecdsa, ed25519, ed25519_bip32, ristretto255, schnorr,
+};
 
 /// Checks every case, collecting failures so one run reports all of them; returns the number of cases.
 fn run<T>(cases: &[T], check: impl Fn(&T) -> Result<(), String>) -> usize {
@@ -216,7 +216,7 @@ fn slip10_bip32_and_icarus_derivations() {
 }
 
 /// Decodes a signing key of the named scheme.
-fn signing_key_decodes(scheme: &str, b: &[u8]) -> Option<Result<(), SigningError>> {
+fn signing_key_decodes(scheme: &str, b: &[u8]) -> Option<Result<(), CryptoError>> {
     Some(match scheme {
         "Ed25519" => ed25519::SigningKey::from_bytes(b).map(|_| ()),
         "Ed25519-BIP32" => ed25519_bip32::SigningKey::from_bytes(b).map(|_| ()),
@@ -239,27 +239,14 @@ fn signing_key_decoding() {
     let n = run(&rows, |c| {
         let actual = signing_key_decodes(&c.scheme, &bytes(&c.bytes))
             .ok_or_else(|| format!("unknown scheme {}", c.scheme))?
-            .map_or_else(|e| e.kind(), |()| "accepted");
-        let expected = match c.result {
-            KeyDecodingResult::Accepted => "accepted",
-            KeyDecodingResult::InvalidEncoding => "InvalidEncoding",
-            KeyDecodingResult::InvalidKey => "InvalidKey",
-        };
-        same(&format!("{} {}", c.scheme, c.name), expected, actual)
+            .map_or_else(|e| KeyDecodingResult::CryptoErrorKind(e.kind()), |()| KeyDecodingResult::Accepted);
+        if actual == c.result {
+            Ok(())
+        } else {
+            Err(format!("{} {}: expected {:?}, got {actual:?}", c.scheme, c.name, c.result))
+        }
     });
     assert!(n >= 40, "{n} signing-key rows");
-}
-
-/// The schema's kind of a key-derivation error, or `None` for `InvalidPath`, which the `paths` rows pin. Exhaustive: a
-/// kind the SDK adds does not compile until it is mapped.
-const fn key_kind(e: &KeyError) -> Option<KeyErrorKind> {
-    match e {
-        KeyError::InvalidEntropy { .. } => Some(KeyErrorKind::InvalidEntropy),
-        KeyError::InvalidMnemonic { .. } => Some(KeyErrorKind::InvalidMnemonic),
-        KeyError::InvalidWordList { .. } => Some(KeyErrorKind::InvalidWordList),
-        KeyError::InvalidDerivation { .. } => Some(KeyErrorKind::InvalidDerivation),
-        KeyError::InvalidPath { .. } => None,
-    }
 }
 
 /// What a `keyRefusals` row's call gives: `Ok` when it is accepted, else the error.
@@ -298,19 +285,19 @@ fn key_derivation_refusals() {
     let v: SigningVectors = load("signing_v1.json");
     let n = run(&v.key_refusals, |c| match key_call(c) {
         Ok(()) => Err(format!("{:?} {}: accepted, expected {:?}", c.check, c.name, c.kind)),
-        Err(e) if key_kind(&e).as_ref() == Some(&c.kind) => Ok(()),
-        Err(e) => Err(format!("{:?} {}: expected {:?}, got {}", c.check, c.name, c.kind, e.kind())),
+        Err(e) if e.kind() == c.kind => Ok(()),
+        Err(e) => Err(format!("{:?} {}: expected {:?}, got {:?}", c.check, c.name, c.kind, e.kind())),
     });
     assert!(n >= 16, "{n} key refusal rows");
 }
 
-/// The coverage gate (conformance.md section 6) for `KeyError`: every kind of the schema has a `keyRefusals` row, and
-/// `InvalidPath` has `paths` rows. [`key_kind`] maps every SDK variant onto one of those (exhaustively, so a new
-/// variant does not compile until it is mapped), so every SDK kind has a row too.
+/// The coverage gate (conformance.md section 6) for `KeyError`: every kind of the schema has a `keyRefusals` row, but
+/// `InvalidPath`, which has `paths` rows. The SDK's `KeyError` is generated with those kinds, so a kind added to the
+/// schema is a variant here, and needs a row.
 #[test]
 fn every_key_error_kind_has_a_row() {
     let v: SigningVectors = load("signing_v1.json");
-    for kind in KeyErrorKind::ALL {
+    for kind in KeyErrorKind::ALL.into_iter().filter(|k| *k != KeyErrorKind::InvalidPath) {
         assert!(v.key_refusals.iter().any(|c| c.kind == kind), "no keyRefusals row pins {kind:?}");
     }
     assert!(

@@ -1,0 +1,96 @@
+; The error families of the cryptographic specs (docs/specs/conformance.md section 6). Each family `x-error` is a
+; choice of maps, each led by a distinct "kind" literal and holding that kind's fields; `x-error-kind` lists the same
+; kinds in the same order (the generator checks both). Each SDK gets the family as its error type (Scala a sealed
+; trait, Rust an enum with `kind()`, TypeScript a union on `kind`) and the kinds as a closed type, which the vector
+; schemas name, so a kind added here is a new case in every language. An error is a value, not a wire format: no
+; codec is generated for a family. Its fields are informative (conformance.md sections 2 and 3): text the
+; implementation writes, naming caller input only by size or position, and sizes.
+
+; Sizes and periods are `uint .le 9223372036854775807`: the reference holds them as a 64-bit signed integer that is
+; never negative. TypeScript holds an error's integers as `number`s, the type of its own sizes and periods: an error
+; is built by the SDK from its arguments, never decoded.
+
+; A signing key, verifying key or signature that its scheme does not accept (signing.md section 4). BackendFailure is
+; a JVM provider's own failure: no SDK produces it.
+crypto-error-kind = "InvalidEncoding" / "InvalidKey" / "BackendFailure"
+
+crypto-error = {
+  "kind": "InvalidEncoding", "what": text, "reason": text //
+  "kind": "InvalidKey", "reason": text //
+  "kind": "BackendFailure", "operation": text, "reason": text
+}
+
+; A key derivation the reference refuses (signing.md sections 2 and 3). InvalidPath carries the first rule the path
+; breaks.
+key-error-kind = "InvalidEntropy" / "InvalidMnemonic" / "InvalidWordList" / "InvalidDerivation" / "InvalidPath"
+
+key-error = {
+  "kind": "InvalidEntropy", "reason": text //
+  "kind": "InvalidMnemonic", "reason": text //
+  "kind": "InvalidWordList", "reason": text //
+  "kind": "InvalidDerivation", "reason": text //
+  "kind": "InvalidPath", "refusal": path-refusal, "reason": text
+}
+
+; Why a derivation path is refused (signing.md section 3), its segments checked in order: "missingMaster" (it is not
+; `m` and does not start with `m/`), "malformed" (a segment is not ASCII digits and an optional `'` or `h`),
+; "leadingZero", "tooManyDigits" (more than 10), "outOfRange" (2^31 or more), "tooDeep" (a 256th segment).
+path-refusal = "missingMaster" / "malformed" / "leadingZero" / "tooManyDigits" / "outOfRange" / "tooDeep"
+
+; A VRF refusal (vrf.md section 3). Malformed is a wrong length; KeyMismatch a draft-03 signing key whose stored
+; public key is not its seed's; HashToCurveFailed is TAI finding no point in 256 counters (probability about 2^-256).
+vrf-error-kind =
+  "Malformed" / "InvalidPublicKey" / "SmallOrderPublicKey" / "InvalidGamma" / "NonCanonicalScalar" /
+  "ChallengeMismatch" / "KeyMismatch" / "HashToCurveFailed"
+
+vrf-error = {
+  "kind": "Malformed", "what": text, "reason": text //
+  "kind": "InvalidPublicKey" //
+  "kind": "SmallOrderPublicKey" //
+  "kind": "InvalidGamma" //
+  "kind": "NonCanonicalScalar" //
+  "kind": "ChallengeMismatch" //
+  "kind": "KeyMismatch" //
+  "kind": "HashToCurveFailed", "reason": text
+}
+
+; A KES refusal (kes.md section 5): a wrong size, a period outside [0, total), a key at its last period asked to
+; evolve, or a key whose parts disagree.
+kes-error-kind = "Malformed" / "PeriodOutOfRange" / "Exhausted" / "InconsistentKey"
+
+kes-error = {
+  "kind": "Malformed", "what": text, "reason": text //
+  "kind": "PeriodOutOfRange", "period": uint .le 9223372036854775807, "total": uint .le 9223372036854775807 //
+  "kind": "Exhausted", "period": uint .le 9223372036854775807 //
+  "kind": "InconsistentKey", "reason": text
+}
+
+; Malformed sigma input (sigma.md section 6). A well-formed proof that fails is a result (false), never one of these.
+sigma-error-kind = "InvalidProposition" / "InvalidPoint" / "ProofLength" / "ResponseOutOfRange"
+
+sigma-error = {
+  "kind": "InvalidProposition", "reason": text //
+  "kind": "InvalidPoint", "what": text, "reason": text //
+  "kind": "ProofLength", "expected": uint .le 9223372036854775807, "actual": uint .le 9223372036854775807 //
+  "kind": "ResponseOutOfRange"
+}
+
+; A BN254 operation's refusal (zk.md section 1): a wrong length or a coordinate not below p; or a point off the curve
+; or twist, or a G2 point outside the order-r subgroup.
+zk-error-kind = "Malformed" / "InvalidPoint"
+
+zk-error = {
+  "kind": "Malformed", "reason": text //
+  "kind": "InvalidPoint", "reason": text
+}
+
+; A Groth16 refusal (zk.md section 2): a wrong shape; a point off the curve, outside the subgroup or the identity, or
+; an input not in Fr; the pairing equation failing; or a wrapper's framing (SP1's selector, exit code or VK root).
+groth16-error-kind = "Malformed" / "InvalidProof" / "PairingCheckFailed" / "Rejected"
+
+groth16-error = {
+  "kind": "Malformed", "reason": text //
+  "kind": "InvalidProof", "reason": text //
+  "kind": "PairingCheckFailed" //
+  "kind": "Rejected", "reason": text
+}

@@ -152,37 +152,6 @@ impl c::Model for BlsPopVector {
     }
 }
 
-/// `crypto-error-kind` (`shared/schemas/signing-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CryptoErrorKind {
-    /// The text `InvalidEncoding`.
-    InvalidEncoding,
-    /// The text `InvalidKey`.
-    InvalidKey,
-}
-
-impl c::Model for CryptoErrorKind {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
-        match self {
-            Self::InvalidEncoding => Ok(c::Value::text("InvalidEncoding")),
-            Self::InvalidKey => Ok(c::Value::text("InvalidKey")),
-        }
-    }
-
-    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["InvalidEncoding", "InvalidKey"])? {
-            c::Alternative::Text(0) => Ok(Self::InvalidEncoding),
-            c::Alternative::Text(1) => Ok(Self::InvalidKey),
-            other => Err(c::unknown_alternative(other)),
-        }
-    }
-}
-
-impl CryptoErrorKind {
-    /// Every alternative, in schema order.
-    pub const ALL: [Self; 2] = [Self::InvalidEncoding, Self::InvalidKey];
-}
-
 /// `extended-key` (`shared/schemas/signing-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExtendedKey {
@@ -367,26 +336,24 @@ impl c::Model for KeyDecodingCase {
 pub enum KeyDecodingResult {
     /// The text `accepted`.
     Accepted,
-    /// The text `InvalidEncoding`.
-    InvalidEncoding,
-    /// The text `InvalidKey`.
-    InvalidKey,
+    /// A [`super::crypto_errors::CryptoErrorKind`].
+    CryptoErrorKind(super::crypto_errors::CryptoErrorKind),
 }
 
 impl c::Model for KeyDecodingResult {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Accepted => Ok(c::Value::text("accepted")),
-            Self::InvalidEncoding => Ok(c::Value::text("InvalidEncoding")),
-            Self::InvalidKey => Ok(c::Value::text("InvalidKey")),
+            Self::CryptoErrorKind(a) => c::Model::to_value_at(a, depth),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["accepted", "InvalidEncoding", "InvalidKey"])? {
+        match c::select_alternative(value, &[], &["accepted", "InvalidEncoding", "InvalidKey", "BackendFailure"])? {
             c::Alternative::Text(0) => Ok(Self::Accepted),
-            c::Alternative::Text(1) => Ok(Self::InvalidEncoding),
-            c::Alternative::Text(2) => Ok(Self::InvalidKey),
+            c::Alternative::Text(1) => Ok(Self::CryptoErrorKind(super::crypto_errors::CryptoErrorKind::InvalidEncoding)),
+            c::Alternative::Text(2) => Ok(Self::CryptoErrorKind(super::crypto_errors::CryptoErrorKind::InvalidKey)),
+            c::Alternative::Text(3) => Ok(Self::CryptoErrorKind(super::crypto_errors::CryptoErrorKind::BackendFailure)),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -394,46 +361,7 @@ impl c::Model for KeyDecodingResult {
 
 impl KeyDecodingResult {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 3] = [Self::Accepted, Self::InvalidEncoding, Self::InvalidKey];
-}
-
-/// `key-error-kind` (`shared/schemas/signing-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum KeyErrorKind {
-    /// The text `InvalidEntropy`.
-    InvalidEntropy,
-    /// The text `InvalidMnemonic`.
-    InvalidMnemonic,
-    /// The text `InvalidWordList`.
-    InvalidWordList,
-    /// The text `InvalidDerivation`.
-    InvalidDerivation,
-}
-
-impl c::Model for KeyErrorKind {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
-        match self {
-            Self::InvalidEntropy => Ok(c::Value::text("InvalidEntropy")),
-            Self::InvalidMnemonic => Ok(c::Value::text("InvalidMnemonic")),
-            Self::InvalidWordList => Ok(c::Value::text("InvalidWordList")),
-            Self::InvalidDerivation => Ok(c::Value::text("InvalidDerivation")),
-        }
-    }
-
-    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidDerivation"])? {
-            c::Alternative::Text(0) => Ok(Self::InvalidEntropy),
-            c::Alternative::Text(1) => Ok(Self::InvalidMnemonic),
-            c::Alternative::Text(2) => Ok(Self::InvalidWordList),
-            c::Alternative::Text(3) => Ok(Self::InvalidDerivation),
-            other => Err(c::unknown_alternative(other)),
-        }
-    }
-}
-
-impl KeyErrorKind {
-    /// Every alternative, in schema order.
-    pub const ALL: [Self; 4] = [Self::InvalidEntropy, Self::InvalidMnemonic, Self::InvalidWordList, Self::InvalidDerivation];
+    pub const ALL: [Self; 4] = [Self::Accepted, Self::CryptoErrorKind(super::crypto_errors::CryptoErrorKind::InvalidEncoding), Self::CryptoErrorKind(super::crypto_errors::CryptoErrorKind::InvalidKey), Self::CryptoErrorKind(super::crypto_errors::CryptoErrorKind::BackendFailure)];
 }
 
 /// `key-part` (`shared/schemas/signing-vectors.cddl`).
@@ -489,7 +417,7 @@ pub struct KeyRefusal {
     /// The `path` entry.
     pub path: Option<String>,
     /// The `kind` entry.
-    pub kind: KeyErrorKind,
+    pub kind: super::crypto_errors::KeyErrorKind,
 }
 
 impl c::Model for KeyRefusal {
@@ -505,7 +433,7 @@ impl c::Model for KeyRefusal {
             c::optional_field("verifyingKey", &HEX, self.verifying_key.as_ref(), inner)?,
             c::optional_field("chainCode", &HEX, self.chain_code.as_ref(), inner)?,
             c::optional_field("path", &c::Text, self.path.as_ref(), inner)?,
-            c::field("kind", &c::ModelOf::<KeyErrorKind>::NEW, &self.kind, inner)?,
+            c::field("kind", &c::ModelOf::<super::crypto_errors::KeyErrorKind>::NEW, &self.kind, inner)?,
         ])
     }
 
@@ -520,7 +448,7 @@ impl c::Model for KeyRefusal {
         let f6 = fields.optional("verifyingKey", &HEX)?;
         let f7 = fields.optional("chainCode", &HEX)?;
         let f8 = fields.optional("path", &c::Text)?;
-        let f9 = fields.required("kind", &c::ModelOf::<KeyErrorKind>::NEW)?;
+        let f9 = fields.required("kind", &c::ModelOf::<super::crypto_errors::KeyErrorKind>::NEW)?;
         Ok(Self { name: f0, check: f1, entropy: f2, phrase: f3, words: f4, seed: f5, verifying_key: f6, chain_code: f7, path: f8, kind: f9 })
     }
 }
@@ -578,42 +506,27 @@ impl c::Model for PathIndices {
 pub enum PathResult {
     /// A [`PathIndices`].
     PathIndices(PathIndices),
-    /// The text `missingMaster`.
-    MissingMaster,
-    /// The text `malformed`.
-    Malformed,
-    /// The text `leadingZero`.
-    LeadingZero,
-    /// The text `tooManyDigits`.
-    TooManyDigits,
-    /// The text `outOfRange`.
-    OutOfRange,
-    /// The text `tooDeep`.
-    TooDeep,
+    /// A [`super::crypto_errors::PathRefusal`].
+    PathRefusal(super::crypto_errors::PathRefusal),
 }
 
 impl c::Model for PathResult {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::PathIndices(a) => c::Model::to_value_at(a, depth),
-            Self::MissingMaster => Ok(c::Value::text("missingMaster")),
-            Self::Malformed => Ok(c::Value::text("malformed")),
-            Self::LeadingZero => Ok(c::Value::text("leadingZero")),
-            Self::TooManyDigits => Ok(c::Value::text("tooManyDigits")),
-            Self::OutOfRange => Ok(c::Value::text("outOfRange")),
-            Self::TooDeep => Ok(c::Value::text("tooDeep")),
+            Self::PathRefusal(a) => c::Model::to_value_at(a, depth),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         match c::select_alternative(value, &[(&["indices"], &["indices"])], &["missingMaster", "malformed", "leadingZero", "tooManyDigits", "outOfRange", "tooDeep"])? {
             c::Alternative::Record(0) => <PathIndices as c::Model>::from_value(value).map(Self::PathIndices),
-            c::Alternative::Text(0) => Ok(Self::MissingMaster),
-            c::Alternative::Text(1) => Ok(Self::Malformed),
-            c::Alternative::Text(2) => Ok(Self::LeadingZero),
-            c::Alternative::Text(3) => Ok(Self::TooManyDigits),
-            c::Alternative::Text(4) => Ok(Self::OutOfRange),
-            c::Alternative::Text(5) => Ok(Self::TooDeep),
+            c::Alternative::Text(0) => Ok(Self::PathRefusal(super::crypto_errors::PathRefusal::MissingMaster)),
+            c::Alternative::Text(1) => Ok(Self::PathRefusal(super::crypto_errors::PathRefusal::Malformed)),
+            c::Alternative::Text(2) => Ok(Self::PathRefusal(super::crypto_errors::PathRefusal::LeadingZero)),
+            c::Alternative::Text(3) => Ok(Self::PathRefusal(super::crypto_errors::PathRefusal::TooManyDigits)),
+            c::Alternative::Text(4) => Ok(Self::PathRefusal(super::crypto_errors::PathRefusal::OutOfRange)),
+            c::Alternative::Text(5) => Ok(Self::PathRefusal(super::crypto_errors::PathRefusal::TooDeep)),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -621,7 +534,7 @@ impl c::Model for PathResult {
 
 impl PathResult {
     /// Every text alternative (not the records), in schema order.
-    pub const TEXTS: [Self; 6] = [Self::MissingMaster, Self::Malformed, Self::LeadingZero, Self::TooManyDigits, Self::OutOfRange, Self::TooDeep];
+    pub const TEXTS: [Self; 6] = [Self::PathRefusal(super::crypto_errors::PathRefusal::MissingMaster), Self::PathRefusal(super::crypto_errors::PathRefusal::Malformed), Self::PathRefusal(super::crypto_errors::PathRefusal::LeadingZero), Self::PathRefusal(super::crypto_errors::PathRefusal::TooManyDigits), Self::PathRefusal(super::crypto_errors::PathRefusal::OutOfRange), Self::PathRefusal(super::crypto_errors::PathRefusal::TooDeep)];
 }
 
 /// `signed-message` (`shared/schemas/signing-vectors.cddl`).
@@ -889,7 +802,7 @@ pub struct VerificationRefusal {
     /// The `part` entry.
     pub part: VerificationPart,
     /// The `kind` entry.
-    pub kind: CryptoErrorKind,
+    pub kind: super::crypto_errors::CryptoErrorKind,
 }
 
 impl c::Model for VerificationRefusal {
@@ -897,14 +810,14 @@ impl c::Model for VerificationRefusal {
         let inner = c::nested(depth)?;
         c::record([
             c::field("part", &c::ModelOf::<VerificationPart>::NEW, &self.part, inner)?,
-            c::field("kind", &c::ModelOf::<CryptoErrorKind>::NEW, &self.kind, inner)?,
+            c::field("kind", &c::ModelOf::<super::crypto_errors::CryptoErrorKind>::NEW, &self.kind, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["part", "kind"])?;
         let f0 = fields.required("part", &c::ModelOf::<VerificationPart>::NEW)?;
-        let f1 = fields.required("kind", &c::ModelOf::<CryptoErrorKind>::NEW)?;
+        let f1 = fields.required("kind", &c::ModelOf::<super::crypto_errors::CryptoErrorKind>::NEW)?;
         Ok(Self { part: f0, kind: f1 })
     }
 }

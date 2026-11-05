@@ -77,26 +77,21 @@ describe("vrf_v1.json", { timeout: 60_000 }, () => {
   });
 
   test("coverage (conformance.md section 6): every VrfError kind has a row by kind, or is exempt", () => {
-    type Verdict = models.vrfVectors.VrfResult | models.vrfVectors.VrfKeyResult;
-    // and every refusal kind the schema names is one of the SDK's
-    const toSdk = (k: Exclude<Verdict, "valid" | "accepted">): VrfError["kind"] => k;
-    expect(toSdk("Malformed")).toBe("Malformed");
-    // a Record over the SDK's kinds: a kind added to VrfError does not compile until it is listed here
-    const coverage: Record<VrfError["kind"], Verdict | "exempt"> = {
-      Malformed: "Malformed",
-      InvalidPublicKey: "InvalidPublicKey",
-      SmallOrderPublicKey: "SmallOrderPublicKey",
-      InvalidGamma: "InvalidGamma",
-      NonCanonicalScalar: "NonCanonicalScalar",
-      ChallengeMismatch: "ChallengeMismatch",
-      KeyMismatch: "KeyMismatch",
+    // VrfError is generated from the schema with its kinds (models.cryptoErrors), and this Record over them does not
+    // compile until a kind added there is listed here
+    const coverage: Record<VrfError["kind"], "row" | "exempt"> = {
+      Malformed: "row",
+      InvalidPublicKey: "row",
+      SmallOrderPublicKey: "row",
+      InvalidGamma: "row",
+      NonCanonicalScalar: "row",
+      ChallengeMismatch: "row",
+      KeyMismatch: "row",
       // no input is known that reaches it (TAI: all 256 counters fail, probability about 2^-256)
       HashToCurveFailed: "exempt",
     };
     const pinned = new Set<string>([...vectors.rejections.map((r) => r.result), ...vectors.keyDecoding.map((c) => c.result)]);
-    const unpinned = Object.entries(coverage).filter(([, v]) => v !== "exempt" && !pinned.has(v));
-    expect(unpinned).toEqual([]);
-    expect(pinned.has("HashToCurveFailed")).toBe(false);
+    expect(Object.entries(coverage).filter(([k, v]) => (v === "row") !== pinned.has(k))).toEqual([]);
   });
 });
 

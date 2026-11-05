@@ -6,6 +6,9 @@ import scala.annotation.tailrec
 
 import scodec.bits.ByteVector
 
+/** A BN254 operation's refusal, by kind: generated from `shared/schemas/crypto-errors.cddl`. */
+export xyz.kd5ujc.models.crypto_errors.ZkError
+
 /**
  * BN254 (alt_bn128) in pure Scala `BigInt`: the base field, G1, G2 on the sextic twist, and the optimal ate pairing,
  * byte-compatible with the EVM precompiles (EIP-196/197).
@@ -196,12 +199,6 @@ object Bn254 {
       .pow(FinalExponent) == Fp12.One
 
   // ------------------------------------------------------------------ EIP-196/197 encodings
-
-  sealed trait ZkError extends Product with Serializable
-  object ZkError {
-    final case class Malformed(reason: String) extends ZkError
-    final case class InvalidPoint(reason: String) extends ZkError
-  }
 
   private def word(b: ByteVector): BigInt = BigInt(1, b.toArray)
   def be32(x:         BigInt): ByteVector = ByteVector.view(x.toByteArray).takeRight(32).padLeft(32)

@@ -8,7 +8,7 @@ import { expand, extract } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
-import { invalidEncoding, invalidKey, lengthError, type SigningError } from "./errors.js";
+import { invalidEncoding, invalidKey, lengthError, type CryptoError } from "./errors.js";
 import type { KeyPair, Signature, SigningKey, VerifyingKey } from "./keys.js";
 import { attempt } from "./internal/attempt.js";
 import { beToBig, bigToBE, concat, u32be } from "./internal/bytes.js";
@@ -33,7 +33,7 @@ export const R: bigint = bls12_381.fields.Fr.ORDER;
 const G2_INFINITY = concat(Uint8Array.of(0xc0), new Uint8Array(95));
 
 /** KeyValidate: a compressed G1 point in the subgroup, not the identity. */
-function g1(bytes: Uint8Array): Result<G1Point, SigningError> {
+function g1(bytes: Uint8Array): Result<G1Point, CryptoError> {
   if (bytes.length !== 48) return err(lengthError("BLS public key", 48, bytes.length));
   const p = attempt(() => G1.fromBytes(bytes));
   if (p === undefined) return err(invalidKey("BLS public key does not decode"));
@@ -41,7 +41,7 @@ function g1(bytes: Uint8Array): Result<G1Point, SigningError> {
 }
 
 /** A compressed G2 point in the subgroup; the identity decodes (and never verifies). */
-function g2(bytes: Uint8Array): Result<G2Point, SigningError> {
+function g2(bytes: Uint8Array): Result<G2Point, CryptoError> {
   if (bytes.length !== 96) return err(lengthError("BLS signature", 96, bytes.length));
   const p = attempt(() => sigs.Signature.fromBytes(bytes));
   if (p === undefined) return err(invalidEncoding("BLS signature", "does not decode"));
@@ -120,7 +120,7 @@ function lamportPublicKey(parent: Uint8Array, index: number): Uint8Array {
 export interface BlsScheme extends SchemeCodec<typeof NAME>, Verifier<typeof NAME> {
   readonly sign: (key: SigningKey<typeof NAME>, message: Uint8Array) => Signature<typeof NAME>;
   /** The sum of one or more signatures; an empty list is an error. */
-  readonly aggregate: (signatures: readonly Signature<typeof NAME>[]) => Result<Signature<typeof NAME>, SigningError>;
+  readonly aggregate: (signatures: readonly Signature<typeof NAME>[]) => Result<Signature<typeof NAME>, CryptoError>;
   /** One message signed by every key (the keys must carry proofs of possession); no keys verifies false. */
   readonly fastAggregateVerify: (keys: readonly VerifyingKey<typeof NAME>[], message: Uint8Array, signature: Signature<typeof NAME>) => boolean;
   /** `prod e(pk_i, H(m_i)) == e(g1, sig)`; no pairs, or the identity signature, verifies false. */
@@ -134,16 +134,16 @@ export interface BlsScheme extends SchemeCodec<typeof NAME>, Verifier<typeof NAM
   readonly popProve: (key: SigningKey<typeof NAME>) => Signature<typeof NAME>;
   readonly popVerify: (key: VerifyingKey<typeof NAME>, proof: Signature<typeof NAME>) => boolean;
   /** `hash_to_curve` into G2 under `dst` (1 to 255 bytes), uncompressed `x.c1 || x.c0 || y.c1 || y.c0` (192 bytes). */
-  readonly hashToG2: (message: Uint8Array, dst: Uint8Array) => Result<Uint8Array, SigningError>;
+  readonly hashToG2: (message: Uint8Array, dst: Uint8Array) => Result<Uint8Array, CryptoError>;
   /** EIP-2333 `derive_master_SK` (seeds of at least 32 bytes). */
-  readonly deriveMasterSk: (seed: Uint8Array) => Result<SigningKey<typeof NAME>, SigningError>;
+  readonly deriveMasterSk: (seed: Uint8Array) => Result<SigningKey<typeof NAME>, CryptoError>;
   /** EIP-2333 `derive_child_SK` (32-bit indices). */
-  readonly deriveChildSk: (parent: SigningKey<typeof NAME>, index: number) => Result<SigningKey<typeof NAME>, SigningError>;
+  readonly deriveChildSk: (parent: SigningKey<typeof NAME>, index: number) => Result<SigningKey<typeof NAME>, CryptoError>;
   /** Key pairs from a seed through EIP-2333 `derive_master_SK` (`signing.md` 1.7). */
-  readonly fromSeed: (seed: Uint8Array) => Result<KeyPair<typeof NAME>, SigningError>;
+  readonly fromSeed: (seed: Uint8Array) => Result<KeyPair<typeof NAME>, CryptoError>;
 }
 
-const deriveMasterSk = (seed: Uint8Array): Result<SigningKey<typeof NAME>, SigningError> =>
+const deriveMasterSk = (seed: Uint8Array): Result<SigningKey<typeof NAME>, CryptoError> =>
   seed.length >= 32 ? codec.signingKey(bigToBE(hkdfModR(seed), 32)) : err(invalidKey("EIP-2333 seeds are at least 32 bytes"));
 
 export const blsPop: BlsScheme = Object.freeze({
