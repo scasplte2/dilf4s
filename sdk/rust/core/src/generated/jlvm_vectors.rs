@@ -170,6 +170,8 @@ impl c::Model for JlvmCase {
 pub struct JlvmError {
     /// The `error` entry.
     pub error: JlvmErrorKind,
+    /// The `op` entry.
+    pub op: Option<String>,
 }
 
 impl c::Model for JlvmError {
@@ -177,13 +179,15 @@ impl c::Model for JlvmError {
         let inner = c::nested(depth)?;
         c::record([
             c::field("error", &c::ModelOf::<JlvmErrorKind>::NEW, &self.error, inner)?,
+            c::optional_field("op", &c::Text, self.op.as_ref(), inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["error"])?;
+        let fields = c::Fields::of(value, &["error", "op"])?;
         let f0 = fields.required("error", &c::ModelOf::<JlvmErrorKind>::NEW)?;
-        Ok(Self { error: f0 })
+        let f1 = fields.optional("op", &c::Text)?;
+        Ok(Self { error: f0, op: f1 })
     }
 }
 
@@ -260,7 +264,7 @@ impl c::Model for JlvmOutcome {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[(&["cbor"], &["cbor", "json"]), (&["error"], &["error"])], &[])? {
+        match c::select_alternative(value, &[(&["cbor"], &["cbor", "json"]), (&["error"], &["error", "op"])], &[])? {
             c::Alternative::Record(0) => <JlvmValue as c::Model>::from_value(value).map(Self::JlvmValue),
             c::Alternative::Record(1) => <JlvmError as c::Model>::from_value(value).map(Self::JlvmError),
             other => Err(c::unknown_alternative(other)),

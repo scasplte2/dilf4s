@@ -157,6 +157,7 @@ export const JlvmCase: c.Codec<JlvmCase> = {
 /** `jlvm-error` (`shared/schemas/jlvm-vectors.cddl`). */
 export interface JlvmError {
   readonly error: JlvmErrorKind;
+  readonly op?: string;
 }
 
 export const JlvmError: c.Codec<JlvmError> = {
@@ -164,14 +165,17 @@ export const JlvmError: c.Codec<JlvmError> = {
     c.nested(d, (e) =>
       c.record([
         c.field("error", c.defer(() => JlvmErrorKind), a.error, e),
+        c.optionalField("op", c.text, a.op, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["error"]);
+    const f = c.fields(v, ["error", "op"]);
     if (!f.ok) return f;
     const r0 = f.value.required("error", c.defer(() => JlvmErrorKind));
     if (!r0.ok) return r0;
-    return c.ok({ error: r0.value });
+    const r1 = f.value.optional("op", c.text);
+    if (!r1.ok) return r1;
+    return c.ok({ error: r0.value, op: r1.value });
   },
 };
 
@@ -214,13 +218,13 @@ export type JlvmOutcome = JlvmValue | JlvmError;
 
 export const JlvmOutcome: c.Codec<JlvmOutcome> = {
   encode: (a, d) => {
-    const known = ["cbor", "error", "json"];
+    const known = ["cbor", "error", "json", "op"];
     if (c.hasFields(a, JlvmValue, ["cbor"], ["cbor", "json"], known)) return JlvmValue.encode(a, d);
-    if (c.hasFields(a, JlvmError, ["error"], ["error"], known)) return JlvmError.encode(a, d);
+    if (c.hasFields(a, JlvmError, ["error"], ["error", "op"], known)) return JlvmError.encode(a, d);
     return c.typeMismatch("no alternative of JlvmOutcome fits");
   },
   decode: (v) => {
-    const s = c.selectAlternative(v, [[["cbor"], ["cbor", "json"]], [["error"], ["error"]]], []);
+    const s = c.selectAlternative(v, [[["cbor"], ["cbor", "json"]], [["error"], ["error", "op"]]], []);
     if (!s.ok) return s;
     switch (s.value) {
       case 0:

@@ -169,8 +169,8 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(ok(i(3)), run(Op.RoundHalfUp, q(5, 2))))
       .and(expect.same(ok(i(-3)), run(Op.RoundHalfUp, q(-5, 2))))
       .and(expect.same(ok(q(1, 3)), run(Op.Div, i(1), i(3))))
-      .and(expect.same(Left(JlvmError.Arithmetic("/", "division by zero")), run(Op.Div, i(1), i(0))))
-      .and(expect.same(Left(JlvmError.Arithmetic("%", "division by zero")), run(Op.Mod, i(1), i(0))))
+      .and(expect.same(Left(JlvmError.Arithmetic(Op.Div, "division by zero")), run(Op.Div, i(1), i(0))))
+      .and(expect.same(Left(JlvmError.Arithmetic(Op.Mod, "division by zero")), run(Op.Mod, i(1), i(0))))
       .and(expect(isType(run(Op.Add, i(1), CNull)), "null arithmetic is a type error"))
       .and(expect(isType(run(Op.Add, i(1), t("2"))), "no numeric strings"))
       .and(expect.same(ok(i(0)), run(Op.Add)))
@@ -222,7 +222,7 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
   pureTest("split keeps empty pieces; an empty separator is a domain error") {
     expect
       .same(ok(a(t(""), t("a"), t(""), t("b"), t(""))), run(Op.Split, t(",a,,b,"), t(",")))
-      .and(expect.same(Left(JlvmError.Domain("split", "the separator must not be empty")), run(Op.Split, t("ab"), t(""))))
+      .and(expect.same(Left(JlvmError.Domain(Op.Split, "the separator must not be empty")), run(Op.Split, t("ab"), t(""))))
   }
 
   pureTest("length and substr count code points") {

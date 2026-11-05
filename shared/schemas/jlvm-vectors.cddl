@@ -26,12 +26,14 @@ jlvm-case = {
 }
 
 ; A value as its canonical CBOR (canonical-encoding.md), with its JSON surface text when it has one; or an error by
-; kind only (jlvm.md section 3). Messages are not part of conformance.
+; its kind and normative fields (jlvm.md section 3). Messages are not part of conformance.
 jlvm-outcome = jlvm-value / jlvm-error
 
 jlvm-value = { "cbor": hex, ? "json": text }
 
-jlvm-error = { "error": jlvm-error-kind }
+; "op" is present exactly for the kinds Type, Arity, Arithmetic, Domain and Crypto: the wire name of the operation that
+; refused (jlvm.cddl), or "var" for the read of a computed path. OutOfGas is pinned by its kind and the case's gasUsed.
+jlvm-error = { "error": jlvm-error-kind, ? "op": text }
 
 jlvm-error-kind = "Malformed" / "Type" / "Arity" / "Arithmetic" / "Domain" / "Crypto" / "Limit" / "OutOfGas"
 

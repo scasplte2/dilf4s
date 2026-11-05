@@ -106,7 +106,7 @@ pub(crate) fn too_large(op: Op) -> JlvmError {
 /// `pow`) must not copy a huge input to find it too large.
 pub(crate) fn numeric(op: Op, v: &Value) -> Result<Ratio, JlvmError> {
     let (n, d) = bit_lengths(v)
-        .ok_or_else(|| JlvmError::type_error(op.wire(), alloc::format!("expected a number, got {}", kind(v))))?;
+        .ok_or_else(|| JlvmError::type_error(op, alloc::format!("expected a number, got {}", kind(v))))?;
     if n <= MAX_NUMBER_BITS && d <= MAX_NUMBER_BITS {
         Ratio::from_value(v).ok_or_else(|| too_large(op))
     } else {
@@ -119,7 +119,7 @@ pub(crate) fn integer(op: Op, v: &Value) -> Result<&BigInt, JlvmError> {
     match v {
         Value::Int(i) if i.bit_length() <= MAX_NUMBER_BITS => Ok(i),
         Value::Int(_) => Err(too_large(op)),
-        other => Err(JlvmError::type_error(op.wire(), alloc::format!("expected an integer, got {}", kind(other)))),
+        other => Err(JlvmError::type_error(op, alloc::format!("expected an integer, got {}", kind(other)))),
     }
 }
 
@@ -210,7 +210,7 @@ pub(crate) fn compare(op: Op, a: &Value, b: &Value) -> Result<Ordering, JlvmErro
             let y = numeric(op, b)?;
             Ok(x.cmp(&y))
         }
-        _ => Err(JlvmError::type_error(op.wire(), alloc::format!("cannot order {} and {}", kind(a), kind(b)))),
+        _ => Err(JlvmError::type_error(op, alloc::format!("cannot order {} and {}", kind(a), kind(b)))),
     }
 }
 

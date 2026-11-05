@@ -344,8 +344,8 @@ object MeteringSuite extends IOSuite {
         .and(
           expect(
             eval(jlvm, p, huge).result match {
-              case Left(JlvmError.Domain("var", _)) => true
-              case _                                => false
+              case Left(JlvmError.Domain(Site.Var, _)) => true
+              case _                                   => false
             },
             s"a 4096-bit segment is out of domain: ${eval(jlvm, p, huge).result}"
           )

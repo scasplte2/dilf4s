@@ -48,14 +48,14 @@ object Values {
   /** A number operand, within [[MaxNumberBits]]. */
   def numeric(op: Op, v: CanonicalValue): Either[JlvmError, Ratio] =
     number(v)
-      .toRight(JlvmError.Type(op.wire, s"expected a number, got ${kind(v)}"))
+      .toRight(JlvmError.Type(op, s"expected a number, got ${kind(v)}"))
       .flatMap(r => Either.cond(fits(r), r, tooLarge(op)))
 
   /** An integer operand, within [[MaxNumberBits]]. */
   def integer(op: Op, v: CanonicalValue): Either[JlvmError, BigInt] =
     v match {
       case CInt(i) => Either.cond(i.bitLength <= MaxNumberBits, i, tooLarge(op))
-      case other   => JlvmError.Type(op.wire, s"expected an integer, got ${kind(other)}").asLeft
+      case other   => JlvmError.Type(op, s"expected an integer, got ${kind(other)}").asLeft
     }
 
   /**
@@ -81,7 +81,7 @@ object Values {
     Either.cond(v.weight <= MaxWeight, v, JlvmError.Limit(s"$where: the result exceeds weight $MaxWeight"))
 
   def text(op: Op, s: String): Either[JlvmError, CanonicalValue] =
-    CanonicalValue.text(s).leftMap(_ => JlvmError.Type(op.wire, "the result is not well-formed text")).flatMap(bounded(op, _))
+    CanonicalValue.text(s).leftMap(_ => JlvmError.Type(op, "the result is not well-formed text")).flatMap(bounded(op, _))
 
   def array(op: Op, vs: Vector[CanonicalValue]): Either[JlvmError, CanonicalValue] = array(op.wire, vs)
 
@@ -149,7 +149,7 @@ object Values {
     (a, b) match {
       case (CText(x), CText(y))                            => compareCodePoints(x, y).asRight
       case _ if number(a).isDefined && number(b).isDefined => (numeric(op, a), numeric(op, b)).mapN(_.compare(_))
-      case _                                               => JlvmError.Type(op.wire, s"cannot order ${kind(a)} and ${kind(b)}").asLeft
+      case _                                               => JlvmError.Type(op, s"cannot order ${kind(a)} and ${kind(b)}").asLeft
     }
 
   def compareCodePoints(x: String, y: String): Int = {

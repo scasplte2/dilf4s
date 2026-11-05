@@ -133,14 +133,14 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
             case t @ CText(text) =>
               Charge(
                 schedule.pathText(t),
-                () => VarRef.parse(text).fold(e => Fail(JlvmError.Domain("var", e.message)), read(_, default, scope))
+                () => VarRef.parse(text).fold(e => Fail(JlvmError.Domain(Site.Var, e.message)), read(_, default, scope))
               )
             case CArray(ss) =>
               Charge(
                 readCost(ss.foldLeft(0L)((n, s) => n + segments(s))) + frameCost(scope, ss.headOption.fold(0L)(segments)),
                 () => ss.traverse(segment).fold(Fail(_), p => lookup(VarRef.Data(p), default, scope))
               )
-            case other => Fail(JlvmError.Type("var", s"a computed path is text or an array of segments, got ${Values.kind(other)}"))
+            case other => Fail(JlvmError.Type(Site.Var, s"a computed path is text or an array of segments, got ${Values.kind(other)}"))
           }
         )
 
@@ -169,7 +169,7 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
               {
                 // each element is an argument: it pays `element` first, so sizing a long spread is paid for
                 case CArray(vs) => Charge(schedule.element * vs.size.toLong, () => Charge(sized(op, vs), () => operate(op, vs)))
-                case other      => Fail(JlvmError.Type(op.wire, s"a spread argument is an array, got ${Values.kind(other)}"))
+                case other      => Fail(JlvmError.Type(op, s"a spread argument is an array, got ${Values.kind(other)}"))
               }
             )
         )
@@ -236,7 +236,7 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
           base(op),
           () =>
             all(args, scope) { vs =>
-              Charge(sized(op, vs), () => crypto(op, vs).fold(Fail(JlvmError.Crypto(op.wire, "not available yet")))(result))
+              Charge(sized(op, vs), () => crypto(op, vs).fold(Fail(JlvmError.Crypto(op, "not available yet")))(result))
             }
         )
     }
@@ -295,8 +295,8 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
     v match {
       case CText(t)                 => t.asRight
       case CInt(i) if i.isValidLong => i.toLong.toString.asRight
-      case CInt(_)                  => JlvmError.Domain("var", "an integer path segment must fit in 64 bits").asLeft
-      case other                    => JlvmError.Type("var", s"a path segment is text or an integer, got ${Values.kind(other)}").asLeft
+      case CInt(_)                  => JlvmError.Domain(Site.Var, "an integer path segment must fit in 64 bits").asLeft
+      case other                    => JlvmError.Type(Site.Var, s"a path segment is text or an integer, got ${Values.kind(other)}").asLeft
     }
 
   // ---- operations
@@ -390,7 +390,7 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
       {
         case CArray(vs) => Charge(schedule.cost(op).perUnit * vs.size.toLong, () => k(vs))
         case CNull      => k(Vector.empty)
-        case other      => Fail(JlvmError.Type(op.wire, s"expected an array, got ${Values.kind(other)}"))
+        case other      => Fail(JlvmError.Type(op, s"expected an array, got ${Values.kind(other)}"))
       }
     )
 

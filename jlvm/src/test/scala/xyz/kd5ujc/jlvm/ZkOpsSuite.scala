@@ -195,7 +195,7 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
   zkTest("pmt_verify: an index of any size is refused without rendering it") {
     val huge = xyz.kd5ujc.core.canonical.CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect.same(
-      Left(JlvmError.Crypto(Op.PmtVerify.wire, "index is out of range for depth 1")),
+      Left(JlvmError.Crypto(Op.PmtVerify, "index is out of range for depth 1")),
       run(Op.PmtVerify, one, one, huge, a(one))
     )
   }

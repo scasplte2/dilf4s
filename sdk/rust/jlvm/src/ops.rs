@@ -124,7 +124,7 @@ fn unary(op: Op, args: Vec<Value>, f: impl FnOnce(Value) -> Result<Value>) -> Re
     let n = args.len();
     match <[Value; 1]>::try_from(args) {
         Ok([a]) => f(a),
-        Err(_) => Err(JlvmError::arity(op.wire(), alloc::format!("takes 1 argument, got {n}"))),
+        Err(_) => Err(JlvmError::arity(op, alloc::format!("takes 1 argument, got {n}"))),
     }
 }
 
@@ -132,7 +132,7 @@ fn binary(op: Op, args: Vec<Value>, f: impl FnOnce(Value, Value) -> Result<Value
     let n = args.len();
     match <[Value; 2]>::try_from(args) {
         Ok([a, b]) => f(a, b),
-        Err(_) => Err(JlvmError::arity(op.wire(), alloc::format!("takes 2 arguments, got {n}"))),
+        Err(_) => Err(JlvmError::arity(op, alloc::format!("takes 2 arguments, got {n}"))),
     }
 }
 
@@ -149,11 +149,11 @@ fn num_binary(op: Op, args: Vec<Value>, f: impl FnOnce(Ratio, Ratio) -> Result<R
 }
 
 fn type_error<A>(op: Op, message: String) -> Result<A> {
-    Err(JlvmError::type_error(op.wire(), message))
+    Err(JlvmError::type_error(op, message))
 }
 
 fn division_by_zero(op: Op) -> JlvmError {
-    JlvmError::arithmetic(op.wire(), "division by zero")
+    JlvmError::arithmetic(op, "division by zero")
 }
 
 fn str(op: Op, v: Value) -> Result<Text> {
@@ -249,7 +249,7 @@ fn ordering(op: Op, args: &[Value], holds: fn(Ordering) -> bool, between: bool) 
             let y = compare(op, b, c)?;
             Ok(Value::Bool(holds(x) && holds(y)))
         }
-        _ => Err(JlvmError::arity(op.wire(), if between { "takes 2 or 3 arguments" } else { "takes 2 arguments" })),
+        _ => Err(JlvmError::arity(op, if between { "takes 2 or 3 arguments" } else { "takes 2 arguments" })),
     }
 }
 
@@ -261,8 +261,8 @@ fn fold(op: Op, args: &[Value], keep: impl Fn(&Ratio, &Ratio) -> bool) -> Result
         .iter()
         .enumerate()
         .reduce(|a, b| if keep(a.1, b.1) { a } else { b })
-        .ok_or_else(|| JlvmError::arity(op.wire(), "takes at least 1 argument"))?;
-    args.get(chosen.0).cloned().ok_or_else(|| JlvmError::arity(op.wire(), "takes at least 1 argument"))
+        .ok_or_else(|| JlvmError::arity(op, "takes at least 1 argument"))?;
+    args.get(chosen.0).cloned().ok_or_else(|| JlvmError::arity(op, "takes at least 1 argument"))
 }
 
 /// The operands of `+` or `*`, each within the number bound.
@@ -293,7 +293,7 @@ fn subtract(op: Op, args: &[Value]) -> Result<Value> {
     match rs.as_slice() {
         [a] => num(op, &a.neg()),
         [a, b] => num(op, &a.sub(b)),
-        other => Err(JlvmError::arity(op.wire(), alloc::format!("takes 1 or 2 arguments, got {}", other.len()))),
+        other => Err(JlvmError::arity(op, alloc::format!("takes 1 or 2 arguments, got {}", other.len()))),
     }
 }
 
@@ -306,7 +306,7 @@ fn power(op: Op, base: &Ratio, exponent: &Ratio) -> Result<Ratio> {
         .filter(|e| e.unsigned_abs() <= MAX_EXPONENT)
         .ok_or_else(|| {
             JlvmError::arithmetic(
-                op.wire(),
+                op,
                 alloc::format!("the exponent must be an integer in -{MAX_EXPONENT}..{MAX_EXPONENT}"),
             )
         })?;
@@ -339,7 +339,7 @@ fn piece(op: Op, v: Value) -> Result<(Text, u64)> {
             // the exact decimal text, when it terminates (and is within JSON's bounds, which a JLVM number always is)
             let s = decimal(q).map_err(|_| {
                 JlvmError::arithmetic(
-                    op.wire(),
+                    op,
                     alloc::format!(
                         "a rational of {}/{} bits has no finite decimal form",
                         r.numerator().bits(),
@@ -440,7 +440,7 @@ fn substr(op: Op, args: &[Value]) -> Result<Value> {
             let taken = to.max(from).saturating_sub(from);
             text(op, t.chars().skip(from).take(taken).collect())
         }
-        _ => Err(JlvmError::arity(op.wire(), "takes [text, start] or [text, start, length]")),
+        _ => Err(JlvmError::arity(op, "takes [text, start] or [text, start, length]")),
     }
 }
 
@@ -453,7 +453,7 @@ fn affix(op: Op, args: &[Value]) -> Result<Value> {
             let b = str_ref(op, p)?;
             Ok(Value::Bool(if op == Op::StartsWith { a.starts_with(b) } else { a.ends_with(b) }))
         }
-        _ => Err(JlvmError::arity(op.wire(), alloc::format!("takes 2 arguments, got {}", args.len()))),
+        _ => Err(JlvmError::arity(op, alloc::format!("takes 2 arguments, got {}", args.len()))),
     }
 }
 
@@ -476,7 +476,7 @@ pub(crate) fn joining(args: Vec<Value>) -> Result<Joining> {
     let op = Op::Join;
     let n = args.len();
     let Ok([a, sep]) = <[Value; 2]>::try_from(args) else {
-        return Err(JlvmError::arity(op.wire(), alloc::format!("takes 2 arguments, got {n}")));
+        return Err(JlvmError::arity(op, alloc::format!("takes 2 arguments, got {n}")));
     };
     let vs = arr(op, a)?;
     let separator = match sep {
@@ -500,7 +500,7 @@ fn split(op: Op, args: Vec<Value>) -> Result<Value> {
         let t = str(op, a)?;
         let s = str(op, b)?;
         if s.is_empty() {
-            return Err(JlvmError::domain(op.wire(), "the separator must not be empty"));
+            return Err(JlvmError::domain(op, "the separator must not be empty"));
         }
         let parts = t.split(s.as_str()).map(|p| text(op, String::from(p))).collect::<Result<Vec<_>>>()?;
         values::array(op.wire(), parts)
@@ -573,7 +573,7 @@ fn subset(op: Op, sub: &Value, sup: &Value) -> Result<Value> {
 fn slice(op: Op, args: Vec<Value>) -> Result<Value> {
     let n = args.len();
     if !(2..=3).contains(&n) {
-        return Err(JlvmError::arity(op.wire(), "takes [array, start] or [array, start, end]"));
+        return Err(JlvmError::arity(op, "takes [array, start] or [array, start, end]"));
     }
     let mut it = args.into_iter();
     let a = it.next().unwrap_or(Value::Null);
@@ -625,7 +625,7 @@ fn get(op: Op, args: &[Value]) -> Result<Value> {
             let key = str_ref(op, k)?;
             Ok(o.get(key).or_else(|| rest.first()).cloned().unwrap_or(Value::Null))
         }
-        _ => Err(JlvmError::arity(op.wire(), "takes [object, key] or [object, key, default]")),
+        _ => Err(JlvmError::arity(op, "takes [object, key] or [object, key, default]")),
     }
 }
 
@@ -633,7 +633,7 @@ fn get(op: Op, args: &[Value]) -> Result<Value> {
 fn set(op: Op, args: Vec<Value>) -> Result<Value> {
     let n = args.len();
     let Ok([m, k, v]) = <[Value; 3]>::try_from(args) else {
-        return Err(JlvmError::arity(op.wire(), alloc::format!("takes [object, key, value], got {n} arguments")));
+        return Err(JlvmError::arity(op, alloc::format!("takes [object, key, value], got {n} arguments")));
     };
     let o = record(op, m)?;
     let key = text_key(op, k)?;
@@ -648,9 +648,9 @@ fn set(op: Op, args: Vec<Value>) -> Result<Value> {
 fn hex_bytes(op: Op, v: Value) -> Result<Arc<[u8]>> {
     match v {
         Value::Bytes(b) => Ok(b),
-        Value::Text(s) => values::hex_bytes(&s).map(Arc::from).ok_or_else(|| {
-            JlvmError::domain(op.wire(), "expected 0x followed by an even number of lowercase hex digits")
-        }),
+        Value::Text(s) => values::hex_bytes(&s)
+            .map(Arc::from)
+            .ok_or_else(|| JlvmError::domain(op, "expected 0x followed by an even number of lowercase hex digits")),
         other => type_error(op, alloc::format!("expected bytes or hex text, got {}", kind(&other))),
     }
 }
@@ -678,7 +678,7 @@ fn int_to_bytes(op: Op, args: &[Value]) -> Result<Value> {
     let unsigned = |v: &Value| {
         let i = integer(op, v)?;
         if i.is_negative() {
-            return Err(JlvmError::domain(op.wire(), "negative integer"));
+            return Err(JlvmError::domain(op, "negative integer"));
         }
         Ok(if i.is_zero() { Vec::new() } else { i.to_bytes_be().1 })
     };
@@ -686,7 +686,7 @@ fn int_to_bytes(op: Op, args: &[Value]) -> Result<Value> {
         let n = integer(op, v)?;
         n.to_u64()
             .filter(|w| *w <= MAX_INT_BYTES)
-            .ok_or_else(|| JlvmError::domain(op.wire(), alloc::format!("the width must be in 0..{MAX_INT_BYTES}")))
+            .ok_or_else(|| JlvmError::domain(op, alloc::format!("the width must be in 0..{MAX_INT_BYTES}")))
     };
     match args {
         [i] => unsigned(i).map(Value::bytes),
@@ -695,13 +695,13 @@ fn int_to_bytes(op: Op, args: &[Value]) -> Result<Value> {
             let w = width(n)?;
             let size = n_args(raw.len());
             if size > w {
-                return Err(JlvmError::domain(op.wire(), alloc::format!("the integer does not fit in {w} bytes")));
+                return Err(JlvmError::domain(op, alloc::format!("the integer does not fit in {w} bytes")));
             }
             let pad = usize::try_from(w.saturating_sub(size)).unwrap_or(0);
             let mut out = alloc::vec![0u8; pad];
             out.extend(raw);
             Ok(Value::bytes(out))
         }
-        _ => Err(JlvmError::arity(op.wire(), "takes [integer] or [integer, width]")),
+        _ => Err(JlvmError::arity(op, "takes [integer] or [integer, width]")),
     }
 }

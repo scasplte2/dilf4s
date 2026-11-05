@@ -106,8 +106,8 @@ object ContractsSuite extends IOSuite {
       .and(
         expect(
           original match {
-            case Left(JlvmError.Type("+", _)) => true
-            case _                            => false
+            case Left(JlvmError.Type(Op.Add, _)) => true
+            case _                               => false
           },
           s"null + 10 is a type error, got $original"
         )
@@ -134,8 +134,8 @@ object ContractsSuite extends IOSuite {
     val unfunded = call("""{"method": "transfer", "from": "erin", "to": "bob", "amount": 1}""", List("erin"))
     val noAllowance = call("""{"method": "transferFrom", "from": "bob", "spender": "carol", "to": "alice", "amount": 1}""", List("carol"))
     def typeError(o: Outcome) = o.result match {
-      case Left(JlvmError.Type(">=", _)) => true
-      case _                             => false
+      case Left(JlvmError.Type(Op.Ge, _)) => true
+      case _                              => false
     }
     expect
       .same(updates("\"Failed transfer checks\""), run(r.ported, unfunded).result)

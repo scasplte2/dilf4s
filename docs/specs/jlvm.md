@@ -2,9 +2,9 @@
 
 Status: normative. Every operation of language version 1 is specified and available.
 Conformance vectors: `shared/vectors/jlvm_v1.json` (schema `shared/schemas/jlvm-vectors.cddl`). Each case is a program
-and its data, with the outcome (a value's canonical CBOR, or an error kind) and the gas used under schedule v1. Most
-are metakit's own test programs, rewritten into this surface and stored as its text. They agree with metakit's
-results, except where §8 says otherwise.
+and its data, with the outcome (a value's canonical CBOR, or an error's kind and `op`, §3) and the gas used under
+schedule v1. Most are metakit's own test programs, rewritten into this surface and stored as its text. They agree with
+metakit's results, except where §8 says otherwise.
 Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
 
 The JLVM is a strict, metered expression language for ledgers, written in JsonLogic syntax. A result is a function of
@@ -192,6 +192,24 @@ An evaluation ends with a value or one of the following errors. **Either way it 
 | `Crypto` | Malformed cryptographic input. A well-formed but invalid proof is `false`, not an error. |
 | `Limit` | A bound of §2. |
 | `OutOfGas(required, available)` | The gas limit was reached. |
+
+**What conformance compares** (`conformance.md` §1-3). An error's kind, and for `Type`, `Arity`, `Arithmetic`,
+`Domain` and `Crypto` its **`op`**: where it arose, the wire name of the operation that refused (its own name, never an
+alias), or `var` for the read of a computed path (§4.1: a path that is neither text nor an array, text that does not
+parse as a path, or a segment of the wrong kind or wider than 64 bits). The innermost operation that refuses names it:
+`{"+": [1, {"abs": "x"}]}` is `Type` with `op` `abs`. The vectors record the kind and the `op`. `Malformed` and
+`Limit` have no normative field.
+
+`OutOfGas` is pinned by its kind and the gas used, which is the whole limit (§7). Its `available` is that limit.
+Its `required` is informative: it is more than `available`, but an implementation may stop adding up a charge once
+the sum is past what is left (a spread's per-element sizing, §7), so two conforming implementations can report
+different values.
+
+A `Crypto` error does not yet name the refusal it wraps (a signature's `MalformedKey`, a trie's `NotCovered`), as
+`conformance.md` §1 asks of a wrapping refusal: the cryptographic operations carry it as a message only, which is not
+compared. Naming it (`Crypto.MalformedKey`) waits for every operation to keep its family's typed refusal (the sigma
+operations already call the typed `SigmaProp.decode` and `Sigma.check`, but report only the message); until then,
+two implementations may refuse the same input for different inner reasons and conform.
 
 ## 4. Evaluation
 

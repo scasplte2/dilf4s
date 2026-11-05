@@ -477,6 +477,29 @@ object OpCoverageCases extends IOApp {
     searches ++ merges ++ rationals ++ kmp ++ vrf
   }
 
+  /**
+   * Error rows the sweep does not reach (jlvm.md §3): each refusal a computed `var` path gives, whose site is `var`
+   * rather than an operation; a nested refusal, whose `op` is the inner operation's; and a spread that runs out of gas
+   * while its elements are sized, where `OutOfGas` is pinned by its kind and the gas used (the whole limit) alone.
+   */
+  val errorSites: List[Case] = {
+    def computed(name: String, path: Json): Case =
+      Case(s"dilf4s var: $name", Json.obj("var" -> Json.obj("literal" -> path)).noSpaces, m("a" -> m("b" -> int(1))))
+    List(
+      computed("a computed text path with an empty segment is Domain", "a..b".asJson),
+      computed("a computed path that is neither text nor an array is Type", true.asJson),
+      computed("a computed integer segment past 64 bits is Domain", Json.arr(Json.fromBigInt(BigInt(1) << 64))),
+      computed("a computed segment that is neither text nor an integer is Type", Json.arr(true.asJson)),
+      Case("dilf4s op: the innermost operation that refuses is the op", """{"+": [1, {"abs": "x"}]}""", CNull),
+      Case(
+        "dilf4s spread: out of gas while its elements are sized, at 210",
+        """{"+": {"var": "xs"}}""",
+        m("xs" -> a((1 to 8).map(i => int(i))*)),
+        gasLimit = Some(210L)
+      )
+    )
+  }
+
   private def render(cases: List[Case]): String =
     Json
       .obj(
@@ -497,7 +520,7 @@ object OpCoverageCases extends IOApp {
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
       .mapN((secp, mk, tr) =>
         sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ proofWeight(mk) ++ tries(tr) ++ sigmaBounds ++
-        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes
+        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)

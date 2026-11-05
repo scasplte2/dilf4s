@@ -133,10 +133,10 @@ object PureOps {
 
   // ---- kinds
 
-  private def tpe[A](op:         Op, msg: String): Either[JlvmError, A] = JlvmError.Type(op.wire, msg).asLeft
-  private def arity[A](op:       Op, msg: String): Either[JlvmError, A] = JlvmError.Arity(op.wire, msg).asLeft
-  private def domain[A](op:      Op, msg: String): Either[JlvmError, A] = JlvmError.Domain(op.wire, msg).asLeft
-  private def divisionByZero(op: Op): JlvmError = JlvmError.Arithmetic(op.wire, "division by zero")
+  private def tpe[A](op:         Op, msg: String): Either[JlvmError, A] = JlvmError.Type(op, msg).asLeft
+  private def arity[A](op:       Op, msg: String): Either[JlvmError, A] = JlvmError.Arity(op, msg).asLeft
+  private def domain[A](op:      Op, msg: String): Either[JlvmError, A] = JlvmError.Domain(op, msg).asLeft
+  private def divisionByZero(op: Op): JlvmError = JlvmError.Arithmetic(op, "division by zero")
 
   private def str(op: Op, v: CanonicalValue): Either[JlvmError, String] =
     v match {
@@ -217,7 +217,7 @@ object PureOps {
   private def fold(op: Op, args: Vector[CanonicalValue])(f: (Ratio, Ratio) => Ratio): Result =
     args
       .traverse(numeric(op, _))
-      .flatMap(_.reduceLeftOption(f).toRight(JlvmError.Arity(op.wire, "takes at least 1 argument")))
+      .flatMap(_.reduceLeftOption(f).toRight(JlvmError.Arity(op, "takes at least 1 argument")))
       .flatMap(num(op, _))
 
   /** `+` and `*` of no arguments are their identities, so a spread over an empty array is 0 or 1. */
@@ -252,7 +252,7 @@ object PureOps {
   private def power(op: Op)(base: Ratio, exponent: Ratio): Either[JlvmError, Ratio] =
     exponent.toBigIntExact.filter(_.abs <= MaxExponent) match {
       case scala.None =>
-        JlvmError.Arithmetic(op.wire, s"the exponent must be an integer in -$MaxExponent..$MaxExponent").asLeft
+        JlvmError.Arithmetic(op, s"the exponent must be an integer in -$MaxExponent..$MaxExponent").asLeft
       case scala.Some(e) =>
         val bits = math.max(base.numerator.bitLength, base.denominator.bitLength).toLong * e.abs.toLong
         if (bits > MaxNumberBits) JlvmError.Limit(s"${op.wire}: the result would exceed $MaxNumberBits bits").asLeft
@@ -264,7 +264,7 @@ object PureOps {
   /** Exact decimal text of a number; a non-terminating rational has none, and is named by its size, never its digits. */
   private def render(op: Op, r: Ratio): Either[JlvmError, String] =
     r.toDecimalString.toRight(
-      JlvmError.Arithmetic(op.wire, s"a rational of ${r.numerator.bitLength}/${r.denominator.bitLength} bits has no finite decimal form")
+      JlvmError.Arithmetic(op, s"a rational of ${r.numerator.bitLength}/${r.denominator.bitLength} bits has no finite decimal form")
     )
 
   /**
@@ -499,7 +499,7 @@ object PureOps {
         JsonSurface
           .hexBytes(s)
           .map(FlatBytes(_))
-          .toRight(JlvmError.Domain(op.wire, "expected 0x followed by an even number of lowercase hex digits"))
+          .toRight(JlvmError.Domain(op, "expected 0x followed by an even number of lowercase hex digits"))
       case other => tpe(op, s"expected bytes or hex text, got ${kind(other)}")
     }
 
@@ -521,11 +521,11 @@ object PureOps {
   private def intToBytes(op: Op, args: Vector[CanonicalValue]): Result = {
     def unsigned(v: CanonicalValue): Either[JlvmError, ByteVector] =
       integer(op, v).flatMap(i =>
-        Either.cond(i.signum >= 0, ByteVector(i.toByteArray).dropWhile(_ == 0), JlvmError.Domain(op.wire, "negative integer"))
+        Either.cond(i.signum >= 0, ByteVector(i.toByteArray).dropWhile(_ == 0), JlvmError.Domain(op, "negative integer"))
       )
     def width(v: CanonicalValue): Either[JlvmError, Long] =
       integer(op, v).flatMap(n =>
-        Either.cond(n >= 0 && n <= MaxIntBytes, n.toLong, JlvmError.Domain(op.wire, s"the width must be in 0..$MaxIntBytes"))
+        Either.cond(n >= 0 && n <= MaxIntBytes, n.toLong, JlvmError.Domain(op, s"the width must be in 0..$MaxIntBytes"))
       )
     args match {
       case Vector(i) => unsigned(i).map(b => bytes(FlatBytes(b)))
@@ -535,7 +535,7 @@ object PureOps {
             Either.cond(
               raw.size <= w,
               bytes(FlatBytes.concat(Vector(ByteVector.low(w - raw.size), raw))),
-              JlvmError.Domain(op.wire, s"the integer does not fit in $w bytes")
+              JlvmError.Domain(op, s"the integer does not fit in $w bytes")
             )
         }
       case _ => arity(op, "takes [integer] or [integer, width]")

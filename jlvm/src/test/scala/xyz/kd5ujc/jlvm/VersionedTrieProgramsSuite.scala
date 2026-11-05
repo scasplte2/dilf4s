@@ -396,8 +396,8 @@ object VersionedTrieProgramsSuite extends IOSuite {
           .and(
             expect(
               claim(BigInt(2).pow(64), CNull) match {
-                case Left(JlvmError.Domain("int_to_bytes", _)) => true
-                case _                                         => false
+                case Left(JlvmError.Domain(Op.IntToBytes, _)) => true
+                case _                                        => false
               },
               "2^64 does not fit 8 bytes"
             )

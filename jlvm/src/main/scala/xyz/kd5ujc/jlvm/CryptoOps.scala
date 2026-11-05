@@ -38,12 +38,12 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
       case _                     => ProofOps(op, args).orElse(zk(op, args))
     }
 
-  private def crypto[A](op: Op)(e: CryptoError): JlvmError = JlvmError.Crypto(op.wire, e.toString)
+  private def crypto[A](op: Op)(e: CryptoError): JlvmError = JlvmError.Crypto(op, e.toString)
 
   private def raw(op: Op, v: CanonicalValue): Either[JlvmError, ByteVector] =
     v match {
       case CBytes(b) => b.asRight
-      case other     => JlvmError.Type(op.wire, s"expected bytes, got ${Values.kind(other)}").asLeft
+      case other     => JlvmError.Type(op, s"expected bytes, got ${Values.kind(other)}").asLeft
     }
 
   /** Bytes charged by weight, flattened ([[FlatBytes]]): the charge pays for the copy when they are not already flat. */
@@ -59,7 +59,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
   private def triple(op: Op, args: Vector[CanonicalValue]): Either[JlvmError, (FlatBytes, FlatBytes, FlatBytes)] =
     args match {
       case Vector(k, m, s) => (bytes(op, k), bytes(op, m), bytes(op, s)).tupled
-      case _               => JlvmError.Arity(op.wire, s"takes [key, message, signature], got ${args.size} arguments").asLeft
+      case _               => JlvmError.Arity(op, s"takes [key, message, signature], got ${args.size} arguments").asLeft
     }
 
   /** `[key, message, signature]`, all bytes. */
@@ -94,9 +94,9 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
             Ecrecover
               .recover(digest, sig)
               .flatMap(_.toRight("the signature recovers no key (r or s out of range, high s, or r not an x-coordinate)"))
-              .bimap(JlvmError.Crypto(op.wire, _), address => Values.bytes(FlatBytes(address)))
+              .bimap(JlvmError.Crypto(op, _), address => Values.bytes(FlatBytes(address)))
         }
-      case _ => JlvmError.Arity(op.wire, s"takes [digest, signature], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, s"takes [digest, signature], got ${args.size} arguments").asLeft
     }
 
   /** `[proposition, proof, message]` (docs/specs/sigma.md): the proposition is the tagged-map form. */
@@ -106,11 +106,11 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
         (SigmaProp.decode(p).leftMap(sigmaRefusal(op)), bytes(op, proof), bytes(op, message)).tupled.flatMap {
           case (prop, pf, m) => Sigma.check(prop, pf, m).bimap(sigmaRefusal(op), Values.bool)
         }
-      case _ => JlvmError.Arity(op.wire, s"takes [proposition, proof, message], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, s"takes [proposition, proof, message], got ${args.size} arguments").asLeft
     }
 
   /** A sigma refusal is the JLVM's `Crypto`, its message the refusal's (docs/specs/jlvm.md section 6). */
-  private def sigmaRefusal(op: Op)(e: SigmaError): JlvmError = JlvmError.Crypto(op.wire, e.message)
+  private def sigmaRefusal(op: Site)(e: SigmaError): JlvmError = JlvmError.Crypto(op, e.message)
 
   /** `[key33, message, proof56]`: a single-key sigma proof, Ergo's P2PK signature. */
   private def schnorr(op: Op, args: Vector[CanonicalValue]): Result =
@@ -118,7 +118,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
       case (k, m, s) =>
         Secp256k1Group
           .decode(k)
-          .leftMap(JlvmError.Crypto(op.wire, _))
+          .leftMap(JlvmError.Crypto(op, _))
           .flatMap(SigmaProp.dlog(_).flatMap(Sigma.check(_, s, m)).bimap(sigmaRefusal(op), Values.bool))
     }
 
@@ -135,8 +135,8 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
               .leftMap(crypto(op))
               .map { case (vks, signature) => Values.bool(bls.fastAggregateVerify(vks.toList, msg, signature)) }
         }
-      case Vector(other, _, _) => JlvmError.Type(op.wire, s"expected an array of keys, got ${Values.kind(other)}").asLeft
-      case _                   => JlvmError.Arity(op.wire, s"takes [[key, ...], message, signature], got ${args.size} arguments").asLeft
+      case Vector(other, _, _) => JlvmError.Type(op, s"expected an array of keys, got ${Values.kind(other)}").asLeft
+      case _                   => JlvmError.Arity(op, s"takes [[key, ...], message, signature], got ${args.size} arguments").asLeft
     }
 }
 
