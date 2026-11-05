@@ -1,10 +1,12 @@
+;# import hash-errors as hash
 ; The error families of the cryptographic specs (docs/specs/conformance.md section 6). Each family `x-error` is a
 ; choice of maps, each led by a distinct "kind" literal and holding that kind's fields; `x-error-kind` lists the same
 ; kinds in the same order (the generator checks both). Each SDK gets the family as its error type (Scala a sealed
 ; trait, Rust an enum with `kind()`, TypeScript a union on `kind`) and the kinds as a closed type, which the vector
 ; schemas name, so a kind added here is a new case in every language. An error is a value, not a wire format: no
 ; codec is generated for a family. Its fields are informative (conformance.md sections 2 and 3): text the
-; implementation writes, naming caller input only by size or position, and sizes.
+; implementation writes, naming caller input only by size or position, sizes, and previews of caller text (the rule
+; `preview` of hash-errors.cddl: each SDK's own Preview, conformance.md section 8).
 
 ; Sizes and periods are `uint .le 9223372036854775807`: the reference holds them as a 64-bit signed integer that is
 ; never negative. TypeScript holds an error's integers as `number`s, the type of its own sizes and periods: an error
@@ -21,13 +23,15 @@ crypto-error = {
 }
 
 ; A key derivation the reference refuses (signing.md sections 2 and 3). InvalidPath carries the first rule the path
-; breaks.
+; breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
+; (a separator of more than one character is refused by its length, before it is read, and has none); the reference's
+; word lists are its own languages', so it never names one.
 key-error-kind = "InvalidEntropy" / "InvalidMnemonic" / "InvalidWordList" / "InvalidDerivation" / "InvalidPath"
 
 key-error = {
   "kind": "InvalidEntropy", "reason": text //
   "kind": "InvalidMnemonic", "reason": text //
-  "kind": "InvalidWordList", "reason": text //
+  "kind": "InvalidWordList", "reason": text, ? "separator": hash.preview //
   "kind": "InvalidDerivation", "reason": text //
   "kind": "InvalidPath", "refusal": path-refusal, "reason": text
 }

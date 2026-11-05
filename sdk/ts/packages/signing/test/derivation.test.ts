@@ -3,7 +3,7 @@ import { inspect } from "node:util";
 
 import { describe, expect, test, vi } from "vitest";
 
-import { digest, models, toHex, type Result } from "@kd5ujc/dilf4s-core";
+import { digest, models, Preview, toHex, type Result } from "@kd5ujc/dilf4s-core";
 
 import {
   bip32Secp256k1,
@@ -142,8 +142,11 @@ describe("BIP-39", { timeout: 60_000 }, () => {
     expect(kind(WordList.of(ENGLISH.slice(1)))).toBe("InvalidWordList");
     expect(kind(WordList.of([...ENGLISH.slice(1), "ability"]))).toBe("InvalidWordList");
     expect(kind(WordList.of([...ENGLISH.slice(1), "two words"]))).toBe("InvalidWordList");
-    expect(kind(WordList.of(ENGLISH, ","))).toBe("InvalidWordList");
-    expect(kind(WordList.of(ENGLISH, "  "))).toBe("InvalidWordList");
+    // the caller's separator is held as a preview (conformance.md section 8), never as reason text
+    const comma = WordList.of(ENGLISH, ",");
+    expect(comma.ok ? undefined : comma.error).toEqual({ kind: "InvalidWordList", reason: "the separator is not one phrases are split on", separator: Preview.of(",") });
+    const two = WordList.of(ENGLISH, "  ");
+    expect(two.ok ? undefined : two.error, "a longer one by its length alone").toEqual({ kind: "InvalidWordList", reason: "a separator of 2 characters is not one phrases are split on" });
     // conformance.md section 8: a long separator is refused by its length, unread and never echoed
     const reads = vi.spyOn(String.prototype, "codePointAt");
     const long = WordList.of(ENGLISH, " ".repeat(1 << 20));

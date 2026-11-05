@@ -205,8 +205,9 @@ and periods), a boolean, a kind, or a **preview**; the generator refuses bytes, 
 field naming the rule `preview` (`{ "head": text, "length": uint }`, the preview's normative fields, §8) holds the
 SDK's own `Preview` (Scala `xyz.kd5ujc.core.canonical.Preview`, Rust `dilf4s_core::Preview`, TypeScript `Preview`):
 caller text in an error is typed as a preview, never as text. The rule itself is not generated, and no wire type may
-hold a preview. No crypto kind has a normative field, and no crypto field holds caller text (the one caller text a
-crypto message names, a BIP-39 phrase separator, is a single character).
+hold a preview. No crypto kind has a normative field, and no crypto `what` or `reason` holds caller text: the one caller
+text a crypto family names, a BIP-39 phrase separator parsing does not split on, is `InvalidWordList`'s `separator`, a
+preview.
 
 **The hash family.** `shared/schemas/hash-errors.cddl` defines `hash-error` the same way, in every language the hash
 API's one error type (Scala `xyz.kd5ujc.core.hash.HashError`, Rust `dilf4s_core::hash::HashError`, TypeScript
@@ -335,6 +336,7 @@ is a fresh copy, never a view of the caller's text (an engine may keep a slice's
 | `DecodeFailure` | `reason` | unknown keys as their count and the first in canonical order (shorter UTF-8 first, then by code point), previewed; a map no alternative fits as its key count; a text that is not the literal, pattern or alternative expected, previewed |
 | hash `InvalidDomainTag`, `UnknownAlgorithm` | `tag`, `name` | previewed: the generated field is the SDK's `Preview` (§6) |
 | hash `InvalidHex`, `InvalidLength` | `offset`, `actual` | a position and a size, never the text |
+| key `InvalidWordList` | `separator` | a phrase separator parsing does not split on, previewed; a separator of more than one character by its length alone, in `reason` |
 | versioned trie `StateKeyError` | `key`, `namespace` | the key or namespace, previewed; none for `Empty`, for `TooLong` (refused by its length before it is read) or for `NotUtf8` |
 | JLVM `Malformed` | message | operation names, var paths and binding names, previewed |
 | JLVM warning `AmbiguousPath` | `path` | the path, previewed: long paths sharing a preview are one warning |

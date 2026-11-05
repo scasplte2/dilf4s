@@ -25,10 +25,10 @@ mod common;
 use std::path::PathBuf;
 
 use common::bytes;
-use dilf4s_core::{Value, hex};
+use dilf4s_core::{Preview, Value, hex};
 use dilf4s_signing::keys::path::{self, ChildIndex};
 use dilf4s_signing::keys::{ExtendedKey, bip32, bip39, icarus, slip10};
-use dilf4s_signing::{KeyErrorKind, bls, ed25519, ed25519_bip32};
+use dilf4s_signing::{KeyError, KeyErrorKind, bls, ed25519, ed25519_bip32};
 
 fn docs(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../docs/test-vectors").join(path)
@@ -351,7 +351,14 @@ fn bip39_typed_errors() {
     ideographic[0] = "a\u{3000}b".into();
     assert_eq!(bip39::WordList::new(ideographic, ' ').unwrap_err().kind(), KeyErrorKind::InvalidWordList);
     let plain: Vec<String> = (0..2048).map(|i| format!("w{i}")).collect();
-    assert_eq!(bip39::WordList::new(plain.clone(), ',').unwrap_err().kind(), KeyErrorKind::InvalidWordList);
+    // the caller's separator is held as a preview (conformance.md section 8), never as reason text
+    assert_eq!(
+        bip39::WordList::new(plain.clone(), ','),
+        Err(KeyError::InvalidWordList {
+            reason: "the separator is not one phrases are split on".into(),
+            separator: Some(Preview::of(",")),
+        })
+    );
     let custom = bip39::WordList::new(plain, '\u{3000}').unwrap();
     let generated = bip39::to_mnemonic(&[0; 16], &custom).unwrap();
     assert_eq!(
