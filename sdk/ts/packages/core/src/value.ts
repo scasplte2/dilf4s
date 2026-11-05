@@ -825,8 +825,11 @@ function compare(proven: Proven, stack: Comparing[], a: Value, b: Value): boolea
 /**
  * Whether two values are equal (have the same canonical encoding). Iterative, with an explicit stack of at most
  * {@link MAX_DEPTH} open containers; O(1) when the weights or depths differ; and never expands a shared part twice.
+ * Something that is not a canonical value (see {@link isValue}: from a JavaScript caller, or a cast) equals nothing,
+ * itself included: the answer is `false`, found in O(1) before either side is read.
  */
 export function equals(a: Value, b: Value): boolean {
+  if (!isValue(a) || !isValue(b)) return false;
   const proven = new Proven();
   const stack: Comparing[] = [];
   if (!compare(proven, stack, a, b)) return false;
@@ -884,12 +887,18 @@ function scalarText(v: NullValue | BoolValue | IntValue | RationalValue | TextVa
 
 type Showing = { readonly map: false; readonly items: readonly Value[]; at: number } | { readonly map: true; readonly entries: readonly Entry[]; at: number };
 
+/** What {@link inspect} shows for something that is not a canonical value: fixed, so the input is never read. */
+export const NOT_A_VALUE = "<not a canonical value>";
+
 /**
  * A readable form of `value` (CBOR diagnostic style: `[1, "a", h'00ff', 1/3, {"k": null}]`), bounded however often it
  * repeats a shared part: scalars spend their weight and containers and map keys spend theirs from a budget of
  * {@link DEBUG_BUDGET}, nothing deeper than {@link DEBUG_DEPTH} is shown, and what is not shown is `…`. Iterative.
+ * Something that is not a canonical value (see {@link isValue}) is shown as {@link NOT_A_VALUE}, never read or
+ * stringified.
  */
 export function inspect(value: Value): string {
+  if (!isValue(value)) return NOT_A_VALUE;
   const out: string[] = [];
   const stack: Showing[] = [];
   let units = BigInt(DEBUG_BUDGET);

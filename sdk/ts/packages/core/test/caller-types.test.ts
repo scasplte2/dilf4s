@@ -2,8 +2,8 @@ import { runInNewContext } from "node:vm";
 
 import { describe, expect, it } from "vitest";
 
-import { BoolValue, BytesValue, cbor, codec, decodeUtf8, hashCommitment, IntValue, json, MapValue, RationalValue, TextValue, Value, valueCommitment, valueCommitmentWithin } from "../src/index.js";
-import { gcdSteps } from "../src/value.js";
+import { BoolValue, BytesValue, cbor, codec, decodeUtf8, equals, hashCommitment, inspect, IntValue, json, MapValue, RationalValue, TextValue, Value, valueCommitment, valueCommitmentWithin } from "../src/index.js";
+import { gcdSteps, NOT_A_VALUE } from "../src/value.js";
 import { expectOk, int } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
@@ -364,5 +364,29 @@ describe("the public byte helpers check what they are given", () => {
     for (const x of [5, "5", null, -1n, -(2n ** 70n)]) expect(cbor.magnitudeBytes(bad(x)), label(x)).toEqual(mismatch("expected a non-negative bigint"));
     expect([...expectOk(cbor.magnitudeBytes(0n), "zero")]).toEqual([]);
     expect([...expectOk(cbor.magnitudeBytes(256n), "256")]).toEqual([1, 0]);
+  });
+});
+
+describe("equality and inspection of what is not a value", () => {
+  const traps: string[] = [];
+  const proxy: unknown = new Proxy(int(5n), { get: (_t, name) => traps.push(String(name)) });
+  const notValues: readonly unknown[] = [5, 5n, null, undefined, "a", { kind: "int", value: 5n, weight: 1n, depth: 0 }, Object.create(IntValue.prototype), proxy];
+
+  it("a non-value equals nothing, itself included, and nothing of it is read", () => {
+    for (const x of notValues) {
+      expect(Value.equals(bad(x), int(5n)), label(x)).toBe(false);
+      expect(Value.equals(int(5n), bad(x)), label(x)).toBe(false);
+      expect(equals(bad(x), bad(x)), `${label(x)} with itself`).toBe(false);
+    }
+    expect(traps).toEqual([]);
+    expect(equals(int(5n), int(5n))).toBe(true);
+  });
+
+  it("a non-value is inspected as a fixed placeholder, never read or stringified", () => {
+    const loud = { toString: () => traps.push("toString"), [Symbol.toPrimitive]: () => traps.push("toPrimitive") };
+    for (const x of [...notValues, loud]) expect(inspect(bad(x)), label(x)).toBe(NOT_A_VALUE);
+    expect(NOT_A_VALUE).toBe("<not a canonical value>");
+    expect(traps).toEqual([]);
+    expect(inspect(int(5n))).toBe("5");
   });
 });
