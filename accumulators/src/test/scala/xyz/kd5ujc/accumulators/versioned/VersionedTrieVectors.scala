@@ -132,15 +132,60 @@ object VersionedTrieVectors {
     "a/.b",
     "a b",
     "\u00e9",
-    "a\n"
+    "a\n",
+    // refusal order (section 2): the length in UTF-8 bytes (129 two-byte characters are 258), the segment count before
+    // any segment, then each segment in order, its grammar before its length
+    "\u00e9" * 129,
+    "\u00e9" * 128,
+    "A/" * 16 + "a",
+    "\u00e9" * 40,
+    "A" + "x" * 70,
+    "x" * 70 + "/A",
+    "a/" + "x" * 65,
+    "a/b/C/" + "x" * 65
+  )
+
+  /** Trie-key bytes read as state keys: the length before UTF-8, UTF-8 before the grammar. */
+  val stateKeyBytesCases: List[ByteVector] = List(
+    ByteVector("fiber/1".getBytes(UTF_8)),
+    ByteVector(0xff),
+    ByteVector(0xc3, 0xa9),
+    ByteVector(0xed, 0xa0, 0x80),
+    ByteVector.fill(256)(0x61),
+    ByteVector(List("x" * 64, "x" * 64, "x" * 64, "x" * 61).mkString("/").getBytes(UTF_8)),
+    ByteVector.fill(257)(0x61),
+    ByteVector.fill(257)(0xff)
+  )
+
+  /** Candidate namespaces: a key that leaves room for one more segment. */
+  val namespaceCases: List[String] = List(
+    "fiber",
+    List.fill(15)("a").mkString("/"),
+    List.fill(16)("a").mkString("/"),
+    List("x" * 64, "x" * 64, "x" * 64, "x" * 59).mkString("/"),
+    List("x" * 64, "x" * 64, "x" * 64, "x" * 60).mkString("/"),
+    List("x" * 64, "x" * 64, "x" * 64, "x" * 61).mkString("/"),
+    "",
+    "Fiber"
   )
 
   /** The generated state-key codec's encoding of `k`: "accepted", or its refusal's kind (TypeMismatch). */
   def schemaOutcome(k: String): String =
     xyz.kd5ujc.models.versioned_trie.StateKey.codec.encode(k).fold(_.productPrefix, _ => "accepted")
 
+  /** A state-key outcome: "accepted", or the refusal's kind and its normative `segment` (conformance.md \u00a73). */
+  def keyOutcome(r: Either[StateKeyError, ?]): Json =
+    r.fold(
+      {
+        case e @ StateKeyError.InvalidSegment(_, at)    => Json.obj("kind" -> e.productPrefix.asJson, "segment" -> at.asJson)
+        case e @ StateKeyError.SegmentTooLong(_, at, _) => Json.obj("kind" -> e.productPrefix.asJson, "segment" -> at.asJson)
+        case e                                          => Json.obj("kind" -> e.productPrefix.asJson)
+      },
+      _ => "accepted".asJson
+    )
+
   private def stateKeyCase(k: String): Json =
-    Json.obj("key" -> k.asJson, "schema" -> schemaOutcome(k).asJson, "valid" -> StateKey.parse(k).isRight.asJson)
+    Json.obj("key" -> k.asJson, "schema" -> schemaOutcome(k).asJson, "outcome" -> keyOutcome(StateKey.parse(k)))
 
   def build: IO[Json] =
     attempt { implicit h =>
@@ -258,7 +303,13 @@ object VersionedTrieVectors {
           "proofs"         -> List(currentJ, nsJ, pastJ, v255J, v3J, as299J, as0J, hpJ, vsJ, vtJ).asJson,
           "snapshot"       -> Json.obj("chunkEntries" -> 2.asJson, "chunks" -> wire.map(hex).asJson),
           "stateKeys"      -> stateKeyCases.map(stateKeyCase).asJson,
-          "versionKeys"    -> versionKeyCases.map(versionKeyCase).asJson
+          "stateKeyBytes" -> stateKeyBytesCases
+            .map(b => Json.obj("bytes" -> hex(b), "outcome" -> keyOutcome(StateKey.fromBytes(b))))
+            .asJson,
+          "namespaces" -> namespaceCases
+            .map(n => Json.obj("namespace" -> n.asJson, "outcome" -> keyOutcome(StateNamespace.parse(n))))
+            .asJson,
+          "versionKeys" -> versionKeyCases.map(versionKeyCase).asJson
         )
     }.flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO])
 

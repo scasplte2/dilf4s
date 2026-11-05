@@ -3,7 +3,7 @@
  * head to one root, every check of Scala's `VersionedTrieVerifier`, proof / delta / snapshot-chunk decoding, the
  * chunk-by-chunk snapshot reader against a trusted head, and a replica that follows deltas.
  */
-import { bitLength, cbor, describeFailure, err, models, ok, Preview, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLength, cbor, decodeUtf8, describeFailure, err, models, ok, Preview, toHex, utf8Length, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { decodeInput } from "./input.js";
@@ -11,13 +11,25 @@ import * as trie from "./trie.js";
 import { TrieMap } from "./trie-map.js";
 
 /**
- * Why a state key or namespace was rejected: the input as a `Preview`, or none for bytes refused before they were read
- * as text (docs/specs/conformance.md section 8).
+ * Why a state key or namespace was refused, by Scala's `StateKeyError` names, in the order of
+ * docs/specs/versioned-trie.md section 2. The input appears as a `Preview`, or not at all when it was refused before it
+ * was read, and a segment by its position, never its text (docs/specs/conformance.md section 8).
  */
-export interface StateKeyError {
-  readonly input?: Preview;
-  readonly reason: string;
-}
+export type StateKeyError =
+  /** The empty text. */
+  | { readonly kind: "Empty" }
+  /** More than `limit` (`MAX_KEY_LENGTH`) UTF-8 bytes, refused by its length before it is read. */
+  | { readonly kind: "TooLong"; readonly limit: number }
+  /** Trie-key bytes that are not well-formed UTF-8. */
+  | { readonly kind: "NotUtf8" }
+  /** More than `limit` (`MAX_SEGMENTS`) segments. */
+  | { readonly kind: "TooManySegments"; readonly key: Preview; readonly limit: number }
+  /** Segment `segment` (from 0) does not match `[a-z0-9][a-z0-9._-]*`. */
+  | { readonly kind: "InvalidSegment"; readonly key: Preview; readonly segment: number }
+  /** Segment `segment` (from 0) is longer than `limit` (`MAX_SEGMENT_LENGTH`) characters. */
+  | { readonly kind: "SegmentTooLong"; readonly key: Preview; readonly segment: number; readonly limit: number }
+  /** A namespace that leaves no room for one more segment: over 254 characters, or 16 segments already. */
+  | { readonly kind: "NamespaceFull"; readonly namespace: Preview };
 
 /**
  * Typed failures of the versioned trie, by Scala's `VersionedTrieError` names. Versions appear as their version keys.
@@ -59,29 +71,34 @@ export class StateKey {
   }
 
   /**
-   * The length is checked before the text is split, so a refusal costs O(MAX_KEY_LENGTH) whatever the input; it names a
-   * segment by its position, never its text.
+   * Refusals come in the order of versioned-trie.md section 2: empty; over `MAX_KEY_LENGTH` UTF-8 bytes; over
+   * `MAX_SEGMENTS` segments; then each segment in order, its grammar before its length. The length is measured before
+   * the text is split, and only within `MAX_KEY_LENGTH` code units (a UTF-8 length is never shorter), so a refusal costs
+   * O(MAX_KEY_LENGTH) whatever the input; it names a segment by its position, never its text.
    */
   static parse(s: string): Result<StateKey, StateKeyError> {
-    const bad = (reason: string): Result<never, StateKeyError> => err({ input: Preview.of(s), reason });
-    if (s.length === 0) return bad("empty key");
+    if (s.length === 0) return err({ kind: "Empty" });
     // refused by its length alone: a preview would measure the whole text
-    if (s.length > MAX_KEY_LENGTH) return err({ reason: `${s.length.toString()} characters, longer than ${MAX_KEY_LENGTH.toString()}` });
+    if (s.length > MAX_KEY_LENGTH || utf8Length(s) > MAX_KEY_LENGTH) return err({ kind: "TooLong", limit: MAX_KEY_LENGTH });
     const segments = s.split("/");
-    if (segments.length > MAX_SEGMENTS) return bad(`more than ${MAX_SEGMENTS.toString()} segments`);
-    const at = segments.findIndex((x) => x.length > MAX_SEGMENT_LENGTH || !SEGMENT.test(x));
+    if (segments.length > MAX_SEGMENTS) return err({ kind: "TooManySegments", key: Preview.of(s), limit: MAX_SEGMENTS });
+    // the grammar is ASCII, so a segment that passes it has as many characters as bytes
+    const at = segments.findIndex((x) => !SEGMENT.test(x) || x.length > MAX_SEGMENT_LENGTH);
     if (at < 0) return ok(new StateKey(s));
-    const where = `segment ${at.toString()}`;
-    return (segments[at]?.length ?? 0) > MAX_SEGMENT_LENGTH ? bad(`${where} is longer than ${MAX_SEGMENT_LENGTH.toString()} characters`) : bad(`${where} does not match [a-z0-9][a-z0-9._-]*`);
+    return SEGMENT.test(segments[at] ?? "")
+      ? err({ kind: "SegmentTooLong", key: Preview.of(s), segment: at, limit: MAX_SEGMENT_LENGTH })
+      : err({ kind: "InvalidSegment", key: Preview.of(s), segment: at });
   }
 
   /**
-   * The key of trie-key bytes; the grammar is ASCII, so other bytes are refused. Bytes longer than `MAX_KEY_LENGTH` are
-   * refused by their length, before they are read.
+   * The key of trie-key bytes (UTF-8). Bytes longer than `MAX_KEY_LENGTH` are refused by their length, before they are
+   * read; then bytes that are not well-formed UTF-8; then {@link StateKey.parse}.
    */
   static fromBytes(bytes: Uint8Array): Result<StateKey, StateKeyError> {
-    if (bytes.length > MAX_KEY_LENGTH) return err({ reason: `${bytes.length.toString()} bytes, longer than ${MAX_KEY_LENGTH.toString()}` });
-    return isAscii(bytes) ? StateKey.parse(fromAscii(bytes)) : err({ reason: "not an ASCII state key" });
+    if (bytes.length > MAX_KEY_LENGTH) return err({ kind: "TooLong", limit: MAX_KEY_LENGTH });
+    if (isAscii(bytes)) return StateKey.parse(fromAscii(bytes));
+    const text = decodeUtf8(bytes);
+    return text === undefined ? err({ kind: "NotUtf8" }) : StateKey.parse(text);
   }
 
   /** The trie key: the UTF-8 (here ASCII) bytes. */
@@ -111,7 +128,7 @@ export class StateNamespace {
     const k = StateKey.parse(s);
     if (!k.ok) return k;
     const slashes = s.split("/").length - 1;
-    return s.length <= StateNamespace.MAX_LENGTH && slashes < MAX_SEGMENTS - 1 ? ok(new StateNamespace(s)) : err({ input: Preview.of(s), reason: "a namespace must leave room for one more segment" });
+    return s.length <= StateNamespace.MAX_LENGTH && slashes < MAX_SEGMENTS - 1 ? ok(new StateNamespace(s)) : err({ kind: "NamespaceFull", namespace: Preview.of(s) });
   }
 
   prefix(): Uint8Array {

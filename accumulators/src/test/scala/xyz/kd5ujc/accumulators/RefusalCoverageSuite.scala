@@ -12,7 +12,7 @@ import scala.deriving.Mirror
 import xyz.kd5ujc.accumulators.merkle.MerkleError
 import xyz.kd5ujc.accumulators.poseidon.PoseidonMerkleError
 import xyz.kd5ujc.accumulators.trie.TrieError
-import xyz.kd5ujc.accumulators.versioned.VersionedTrieError
+import xyz.kd5ujc.accumulators.versioned.{StateKeyError, VersionedTrieError}
 
 import io.circe.Json
 import weaver.SimpleIOSuite
@@ -38,7 +38,8 @@ object RefusalCoverageSuite extends SimpleIOSuite {
     ),
     Family("merkle", kinds[MerkleError], Map.empty),
     Family("trie", kinds[TrieError], List("MissingNode", "InvalidNode").map(_ -> "a store read").toMap),
-    Family("poseidon", kinds[PoseidonMerkleError], List("Depth", "OccupiedPosition").map(_ -> "building a tree").toMap)
+    Family("poseidon", kinds[PoseidonMerkleError], List("Depth", "OccupiedPosition").map(_ -> "building a tree").toMap),
+    Family("state keys", kinds[StateKeyError], Map.empty)
   )
 
   /** A family's kinds with neither a row nor an exemption. */
@@ -54,17 +55,28 @@ object RefusalCoverageSuite extends SimpleIOSuite {
     else if (check.startsWith("poseidon-")) "poseidon"
     else check
 
-  /** The kinds each family's rows pin; a nested kind (`Trie.Encoding`) pins its outer kind. */
+  /**
+   * The kinds each family's rows pin; a nested kind (`Trie.Encoding`) pins its outer kind, and `Key.InvalidSegment` a
+   * state-key kind too. State keys are pinned by the outcomes of `versioned_trie_v1.json`'s keys, bytes and namespaces.
+   */
   val pinned: IO[Map[String, Set[String]]] =
-    (read("refusals_v1.json"), read("merkle_v1.json"), read("trie_v1.json")).mapN { (refusals, merkle, trie) =>
-      val rows = refusals.hcursor.downField("cases").as[List[Json]].getOrElse(Nil).flatMap { c =>
-        (c.hcursor.get[String]("check").toOption, c.hcursor.downField("outcome").get[String]("kind").toOption).mapN { (check, kind) =>
-          family(check) -> kind.takeWhile(_ != '.')
+    (read("refusals_v1.json"), read("merkle_v1.json"), read("trie_v1.json"), read("versioned_trie_v1.json")).mapN {
+      (refusals, merkle, trie, vt) =>
+        val kinds = refusals.hcursor.downField("cases").as[List[Json]].getOrElse(Nil).flatMap { c =>
+          (c.hcursor.get[String]("check").toOption, c.hcursor.downField("outcome").get[String]("kind").toOption).tupled
         }
-      }
-      def malformed(name: String, j: Json) =
-        j.hcursor.downField("malformed").as[List[Json]].getOrElse(Nil).flatMap(_.hcursor.get[String]("error").toOption).map(name -> _)
-      (rows ++ malformed("merkle", merkle) ++ malformed("trie", trie)).groupMap(_._1)(_._2).view.mapValues(_.toSet).toMap
+        val rows = kinds.map { case (check, kind) => family(check) -> kind.takeWhile(_ != '.') }
+        val nestedKeys = kinds.collect { case (_, kind) if kind.startsWith("Key.") => "state keys" -> kind.stripPrefix("Key.") }
+        def malformed(name: String, j: Json) =
+          j.hcursor.downField("malformed").as[List[Json]].getOrElse(Nil).flatMap(_.hcursor.get[String]("error").toOption).map(name -> _)
+        val keyRows = List("stateKeys", "stateKeyBytes", "namespaces").flatMap { section =>
+          vt.hcursor.downField(section).as[List[Json]].getOrElse(Nil).flatMap(_.hcursor.downField("outcome").get[String]("kind").toOption)
+        }
+        (rows ++ nestedKeys ++ keyRows.map("state keys" -> _) ++ malformed("merkle", merkle) ++ malformed("trie", trie))
+          .groupMap(_._1)(_._2)
+          .view
+          .mapValues(_.toSet)
+          .toMap
     }
 
   test("every refusal kind of the verifiers and the versioned trie has a vector row, or is exempt with a reason") {

@@ -40,6 +40,7 @@ function versionedOutcome(e: versioned.VersionedTrieError): Outcome {
   if (e.kind === "TooDeep") return { kind: e.kind, limit: BigInt(e.limit), depth: BigInt(e.depth) };
   if (e.kind === "RootMismatch") return { kind: e.kind, component: e.component };
   if (e.kind === "Trie") return { kind: `Trie.${e.error.kind}` };
+  if (e.kind === "Key") return { kind: `Key.${e.error.kind}` };
   return { kind: e.kind };
 }
 

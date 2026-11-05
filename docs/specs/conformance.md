@@ -42,6 +42,7 @@ them. Every other field is informative. The normative fields are:
 | canonical value | `RationalTooWide` | `limit`: `MaxRationalBits` (33219), for a rational part wider than it, from any producer (`canonical-encoding.md` §1); the part's width is not reported |
 | canonical value | `IntegerTooWide` | `limit`: `MaxIntegerBits` (33219), for an integer wider than it, from any producer (`canonical-encoding.md` §1); the integer's width is not reported |
 | canonical encoding | `DuplicateKey` | `key`: the repeated key's preview, its `head` and `length` (§8) |
+| state key | `InvalidSegment`, `SegmentTooLong` | `segment`: the first refused segment's position, from 0 (`versioned-trie.md` §2) |
 | every other kind | | none: the kind alone |
 
 A field is normative only when every implementation can produce it exactly at no more cost than the refusal itself:
@@ -130,8 +131,10 @@ against meaning.
 **Codec order.** Canonical CBOR and canonical JSON are refused in the orders `canonical-encoding.md` §2 and §3 state:
 one pass in reading order, the first fault met is the refusal, a container that would pass the depth limit is refused
 at its head or bracket (an empty one too), and the one deferred check is a JSON member name's unpaired surrogate, at
-its object's close. `canonical_encoding_v1.json` pins each kind and each pair of faults an order could otherwise
-answer differently.
+its object's close. A state key is refused in the order `versioned-trie.md` §2 gives. `canonical_encoding_v1.json` and
+`versioned_trie_v1.json` pin each kind and each pair of faults an order could otherwise answer differently. A nested
+refusal in `refusals_v1.json` (`Key.SegmentTooLong`, `Trie.Encoding`) records both kinds; its inner kind's normative
+fields are pinned by that family's own rows.
 
 What a verifier refuses, no producer emits. A trie proof heavier than `MaxProofWeight` is `TooLarge` where it would be
 emitted: `Trie.prove` and `TrieProofs.encode` in Scala, `TrieProof::to_value` in Rust and `TrieProof.encode` in
@@ -152,6 +155,7 @@ refusal kind a spec defines must have a row. The gated families, and where their
 | sigma | `SigmaError` | `sigma_refusals_v1.json`: `cases`, and the reference's outcome on every case of `sigma_v1.json` and `sigma_dilf4s_v1.json` (whose own verdicts are Ergo's) |
 | zk | `ZkError`, `Groth16Error` | `zk_v1.json` |
 | canonical codecs | `CanonicalError` | `canonical_encoding_v1.json`: `json`, `renderRejections` and `cborRejections` (each kind with its normative `limit`); `TypeMismatch`, a typed encoder's refusal, by the `schema` outcome of `versioned_trie_v1.json`'s `stateKeys` |
+| state keys | `StateKeyError` | `versioned_trie_v1.json`: `stateKeys`, `stateKeyBytes` and `namespaces` (each kind with its normative `segment`); `refusals_v1.json`'s `Key.` kinds |
 
 Each kind of these families has a row, except the kinds below, which no input reaches through an SDK's verifier.
 The JLVM's own errors record outcomes in their own vector file but are not yet gated kind by kind (conformance step
@@ -186,7 +190,9 @@ generated model is a closed type: a vector naming a kind the schema does not lis
 `TypeMismatch` (`vt-schema-outcome`). The reference's `CodecRefusalCoverageSuite` gates `CanonicalError` as above,
 reading the rows through their generated models; the Rust (`core/tests/conformance.rs`) and TypeScript
 (`core/test/conformance.test.ts`) tests map the SDK's error onto `canonical-error-kind` exhaustively, check each row's
-kind and `limit`, and check that every kind has a row.
+kind and `limit`, and check that every kind has a row. `state-key-error-kind` lists every kind of `StateKeyError`: the
+reference's `RefusalCoverageSuite` gates it with the verifier families, and the Rust (`proofs/tests/versioned.rs`)
+and TypeScript (`proofs/test/versioned.test.ts`) tests do the same with its `segment`.
 
 **Limits.** Every limit the specs state (`MaxValueBytes`, `MaxChunkBytes`, `MaxProofWeight`, the depth, digit, rational,
 key, chunk, sigma, KES and JLVM limits) is defined once, in `shared/schemas/limits.cddl`, and generated into each SDK
@@ -264,7 +270,7 @@ is a fresh copy, never a view of the caller's text (an engine may keep a slice's
 | `DecodeFailure` | `path` | each segment (a map key, possibly the caller's, or `[i]`), previewed |
 | `DecodeFailure` | `reason` | unknown keys as their count and the first in canonical order (shorter UTF-8 first, then by code point), previewed; a map no alternative fits as its key count; a text that is not the literal, pattern or alternative expected, previewed |
 | `InvalidDomainTag`, `UnknownAlgorithm` | `tag`, `name` | previewed |
-| versioned trie `StateKeyError` | `input` | the key or namespace, previewed; none for an over-long key, refused by its length before it is read, nor for bytes that are not text |
+| versioned trie `StateKeyError` | `key`, `namespace` | the key or namespace, previewed; none for `Empty`, for `TooLong` (refused by its length before it is read) or for `NotUtf8` |
 | JLVM `Malformed` | message | operation names, var paths and binding names, previewed |
 | JLVM warning `AmbiguousPath` | `path` | the path, previewed: long paths sharing a preview are one warning |
 | JLVM `Arithmetic` (`cat`, `join`) | message | a rational with no decimal form by its numerator and denominator bit lengths |

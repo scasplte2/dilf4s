@@ -266,127 +266,330 @@
     {
       "key" : "a",
       "schema" : "accepted",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "key" : "0",
       "schema" : "accepted",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "key" : "fiber/1",
       "schema" : "accepted",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "key" : "oracle/a/b",
       "schema" : "accepted",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "key" : "a.b_c-d/0.9",
       "schema" : "accepted",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "schema" : "accepted",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "schema" : "accepted",
-      "valid" : false
+      "outcome" : {
+        "kind" : "SegmentTooLong",
+        "segment" : 0
+      }
     },
     {
       "key" : "a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a",
       "schema" : "accepted",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "key" : "a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a",
       "schema" : "accepted",
-      "valid" : false
+      "outcome" : {
+        "kind" : "TooManySegments"
+      }
     },
     {
       "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "schema" : "accepted",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "schema" : "accepted",
-      "valid" : false
+      "outcome" : {
+        "kind" : "TooLong"
+      }
     },
     {
       "key" : "",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "Empty"
+      }
     },
     {
       "key" : "/",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
     },
     {
       "key" : "a/",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 1
+      }
     },
     {
       "key" : "/a",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
     },
     {
       "key" : "a//b",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 1
+      }
     },
     {
       "key" : "A",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
     },
     {
       "key" : "a/B",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 1
+      }
     },
     {
       "key" : ".a",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
     },
     {
       "key" : "-a",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
     },
     {
       "key" : "_a",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
     },
     {
       "key" : "a/.b",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 1
+      }
     },
     {
       "key" : "a b",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
     },
     {
       "key" : "é",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
     },
     {
       "key" : "a\n",
       "schema" : "TypeMismatch",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
+    },
+    {
+      "key" : "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+      "schema" : "TypeMismatch",
+      "outcome" : {
+        "kind" : "TooLong"
+      }
+    },
+    {
+      "key" : "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+      "schema" : "TypeMismatch",
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
+    },
+    {
+      "key" : "A/A/A/A/A/A/A/A/A/A/A/A/A/A/A/A/a",
+      "schema" : "TypeMismatch",
+      "outcome" : {
+        "kind" : "TooManySegments"
+      }
+    },
+    {
+      "key" : "éééééééééééééééééééééééééééééééééééééééé",
+      "schema" : "TypeMismatch",
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
+    },
+    {
+      "key" : "Axxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "schema" : "TypeMismatch",
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
+    },
+    {
+      "key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/A",
+      "schema" : "TypeMismatch",
+      "outcome" : {
+        "kind" : "SegmentTooLong",
+        "segment" : 0
+      }
+    },
+    {
+      "key" : "a/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "schema" : "accepted",
+      "outcome" : {
+        "kind" : "SegmentTooLong",
+        "segment" : 1
+      }
+    },
+    {
+      "key" : "a/b/C/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "schema" : "TypeMismatch",
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 2
+      }
+    }
+  ],
+  "stateKeyBytes" : [
+    {
+      "bytes" : "66696265722f31",
+      "outcome" : "accepted"
+    },
+    {
+      "bytes" : "ff",
+      "outcome" : {
+        "kind" : "NotUtf8"
+      }
+    },
+    {
+      "bytes" : "c3a9",
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
+    },
+    {
+      "bytes" : "eda080",
+      "outcome" : {
+        "kind" : "NotUtf8"
+      }
+    },
+    {
+      "bytes" : "61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "outcome" : {
+        "kind" : "SegmentTooLong",
+        "segment" : 0
+      }
+    },
+    {
+      "bytes" : "787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878782f787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878782f787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878782f78787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "outcome" : "accepted"
+    },
+    {
+      "bytes" : "6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "outcome" : {
+        "kind" : "TooLong"
+      }
+    },
+    {
+      "bytes" : "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "outcome" : {
+        "kind" : "TooLong"
+      }
+    }
+  ],
+  "namespaces" : [
+    {
+      "namespace" : "fiber",
+      "outcome" : "accepted"
+    },
+    {
+      "namespace" : "a/a/a/a/a/a/a/a/a/a/a/a/a/a/a",
+      "outcome" : "accepted"
+    },
+    {
+      "namespace" : "a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a",
+      "outcome" : {
+        "kind" : "NamespaceFull"
+      }
+    },
+    {
+      "namespace" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "outcome" : "accepted"
+    },
+    {
+      "namespace" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "outcome" : {
+        "kind" : "NamespaceFull"
+      }
+    },
+    {
+      "namespace" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "outcome" : {
+        "kind" : "NamespaceFull"
+      }
+    },
+    {
+      "namespace" : "",
+      "outcome" : {
+        "kind" : "Empty"
+      }
+    },
+    {
+      "namespace" : "Fiber",
+      "outcome" : {
+        "kind" : "InvalidSegment",
+        "segment" : 0
+      }
     }
   ],
   "versionKeys" : [

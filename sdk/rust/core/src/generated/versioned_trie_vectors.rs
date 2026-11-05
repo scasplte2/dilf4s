@@ -10,6 +10,57 @@ pub type Hex = String;
 /// The codec of [`Hex`].
 pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 
+/// `state-key-error-kind` (`shared/schemas/versioned-trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StateKeyErrorKind {
+    /// The text `Empty`.
+    Empty,
+    /// The text `TooLong`.
+    TooLong,
+    /// The text `NotUtf8`.
+    NotUtf8,
+    /// The text `TooManySegments`.
+    TooManySegments,
+    /// The text `InvalidSegment`.
+    InvalidSegment,
+    /// The text `SegmentTooLong`.
+    SegmentTooLong,
+    /// The text `NamespaceFull`.
+    NamespaceFull,
+}
+
+impl c::Model for StateKeyErrorKind {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Empty => Ok(c::Value::text("Empty")),
+            Self::TooLong => Ok(c::Value::text("TooLong")),
+            Self::NotUtf8 => Ok(c::Value::text("NotUtf8")),
+            Self::TooManySegments => Ok(c::Value::text("TooManySegments")),
+            Self::InvalidSegment => Ok(c::Value::text("InvalidSegment")),
+            Self::SegmentTooLong => Ok(c::Value::text("SegmentTooLong")),
+            Self::NamespaceFull => Ok(c::Value::text("NamespaceFull")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["Empty", "TooLong", "NotUtf8", "TooManySegments", "InvalidSegment", "SegmentTooLong", "NamespaceFull"])? {
+            c::Alternative::Text(0) => Ok(Self::Empty),
+            c::Alternative::Text(1) => Ok(Self::TooLong),
+            c::Alternative::Text(2) => Ok(Self::NotUtf8),
+            c::Alternative::Text(3) => Ok(Self::TooManySegments),
+            c::Alternative::Text(4) => Ok(Self::InvalidSegment),
+            c::Alternative::Text(5) => Ok(Self::SegmentTooLong),
+            c::Alternative::Text(6) => Ok(Self::NamespaceFull),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl StateKeyErrorKind {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 7] = [Self::Empty, Self::TooLong, Self::NotUtf8, Self::TooManySegments, Self::InvalidSegment, Self::SegmentTooLong, Self::NamespaceFull];
+}
+
 /// `versioned-trie-vectors` (`shared/schemas/versioned-trie-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VersionedTrieVectors {
@@ -29,6 +80,10 @@ pub struct VersionedTrieVectors {
     pub snapshot: VtSnapshot,
     /// The `stateKeys` entry.
     pub state_keys: Vec<VtStateKey>,
+    /// The `stateKeyBytes` entry.
+    pub state_key_bytes: Vec<VtStateKeyBytes>,
+    /// The `namespaces` entry.
+    pub namespaces: Vec<VtNamespace>,
     /// The `versionKeys` entry.
     pub version_keys: Vec<VtVersionKey>,
 }
@@ -48,12 +103,14 @@ impl c::Model for VersionedTrieVectors {
             c::field("proofs", &c::VecOf { element: c::ModelOf::<VtProof>::NEW, min: 0, max: None }, &self.proofs, inner)?,
             c::field("snapshot", &c::ModelOf::<VtSnapshot>::NEW, &self.snapshot, inner)?,
             c::field("stateKeys", &c::VecOf { element: c::ModelOf::<VtStateKey>::NEW, min: 0, max: None }, &self.state_keys, inner)?,
+            c::field("stateKeyBytes", &c::VecOf { element: c::ModelOf::<VtStateKeyBytes>::NEW, min: 0, max: None }, &self.state_key_bytes, inner)?,
+            c::field("namespaces", &c::VecOf { element: c::ModelOf::<VtNamespace>::NEW, min: 0, max: None }, &self.namespaces, inner)?,
             c::field("versionKeys", &c::VecOf { element: c::ModelOf::<VtVersionKey>::NEW, min: 0, max: None }, &self.version_keys, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys", "versionKeys"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys", "stateKeyBytes", "namespaces", "versionKeys"])?;
         fields.required("spec", &c::LiteralText("docs/specs/versioned-trie.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         fields.required("hash", &c::LiteralText("SHA-256"))?;
@@ -65,8 +122,10 @@ impl c::Model for VersionedTrieVectors {
         let f8 = fields.required("proofs", &c::VecOf { element: c::ModelOf::<VtProof>::NEW, min: 0, max: None })?;
         let f9 = fields.required("snapshot", &c::ModelOf::<VtSnapshot>::NEW)?;
         let f10 = fields.required("stateKeys", &c::VecOf { element: c::ModelOf::<VtStateKey>::NEW, min: 0, max: None })?;
-        let f11 = fields.required("versionKeys", &c::VecOf { element: c::ModelOf::<VtVersionKey>::NEW, min: 0, max: None })?;
-        Ok(Self { width: f3, empty_state_root: f4, head: f5, commits: f6, root: f7, proofs: f8, snapshot: f9, state_keys: f10, version_keys: f11 })
+        let f11 = fields.required("stateKeyBytes", &c::VecOf { element: c::ModelOf::<VtStateKeyBytes>::NEW, min: 0, max: None })?;
+        let f12 = fields.required("namespaces", &c::VecOf { element: c::ModelOf::<VtNamespace>::NEW, min: 0, max: None })?;
+        let f13 = fields.required("versionKeys", &c::VecOf { element: c::ModelOf::<VtVersionKey>::NEW, min: 0, max: None })?;
+        Ok(Self { width: f3, empty_state_root: f4, head: f5, commits: f6, root: f7, proofs: f8, snapshot: f9, state_keys: f10, state_key_bytes: f11, namespaces: f12, version_keys: f13 })
     }
 }
 
@@ -283,6 +342,32 @@ impl c::Model for VtListing {
     }
 }
 
+/// `vt-namespace` (`shared/schemas/versioned-trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtNamespace {
+    /// The `namespace` entry.
+    pub namespace: String,
+    /// The `outcome` entry.
+    pub outcome: VtStateKeyOutcome,
+}
+
+impl c::Model for VtNamespace {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("namespace", &c::Text, &self.namespace, inner)?,
+            c::field("outcome", &c::ModelOf::<VtStateKeyOutcome>::NEW, &self.outcome, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["namespace", "outcome"])?;
+        let f0 = fields.required("namespace", &c::Text)?;
+        let f1 = fields.required("outcome", &c::ModelOf::<VtStateKeyOutcome>::NEW)?;
+        Ok(Self { namespace: f0, outcome: f1 })
+    }
+}
+
 /// `vt-proof` (`shared/schemas/versioned-trie-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtProof {
@@ -401,8 +486,8 @@ pub struct VtStateKey {
     pub key: String,
     /// The `schema` entry.
     pub schema: VtSchemaOutcome,
-    /// The `valid` entry.
-    pub valid: bool,
+    /// The `outcome` entry.
+    pub outcome: VtStateKeyOutcome,
 }
 
 impl c::Model for VtStateKey {
@@ -411,16 +496,99 @@ impl c::Model for VtStateKey {
         c::record([
             c::field("key", &c::Text, &self.key, inner)?,
             c::field("schema", &c::ModelOf::<VtSchemaOutcome>::NEW, &self.schema, inner)?,
-            c::field("valid", &c::Bool, &self.valid, inner)?,
+            c::field("outcome", &c::ModelOf::<VtStateKeyOutcome>::NEW, &self.outcome, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["key", "schema", "valid"])?;
+        let fields = c::Fields::of(value, &["key", "schema", "outcome"])?;
         let f0 = fields.required("key", &c::Text)?;
         let f1 = fields.required("schema", &c::ModelOf::<VtSchemaOutcome>::NEW)?;
-        let f2 = fields.required("valid", &c::Bool)?;
-        Ok(Self { key: f0, schema: f1, valid: f2 })
+        let f2 = fields.required("outcome", &c::ModelOf::<VtStateKeyOutcome>::NEW)?;
+        Ok(Self { key: f0, schema: f1, outcome: f2 })
+    }
+}
+
+/// `vt-state-key-bytes` (`shared/schemas/versioned-trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtStateKeyBytes {
+    /// The `bytes` entry.
+    pub bytes: Hex,
+    /// The `outcome` entry.
+    pub outcome: VtStateKeyOutcome,
+}
+
+impl c::Model for VtStateKeyBytes {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("bytes", &HEX, &self.bytes, inner)?,
+            c::field("outcome", &c::ModelOf::<VtStateKeyOutcome>::NEW, &self.outcome, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["bytes", "outcome"])?;
+        let f0 = fields.required("bytes", &HEX)?;
+        let f1 = fields.required("outcome", &c::ModelOf::<VtStateKeyOutcome>::NEW)?;
+        Ok(Self { bytes: f0, outcome: f1 })
+    }
+}
+
+/// `vt-state-key-outcome` (`shared/schemas/versioned-trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VtStateKeyOutcome {
+    /// A [`VtStateKeyRefusal`].
+    VtStateKeyRefusal(VtStateKeyRefusal),
+    /// The text `accepted`.
+    Accepted,
+}
+
+impl c::Model for VtStateKeyOutcome {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::VtStateKeyRefusal(a) => c::Model::to_value_at(a, depth),
+            Self::Accepted => Ok(c::Value::text("accepted")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[(&["kind"], &["kind", "segment"])], &["accepted"])? {
+            c::Alternative::Record(0) => <VtStateKeyRefusal as c::Model>::from_value(value).map(Self::VtStateKeyRefusal),
+            c::Alternative::Text(0) => Ok(Self::Accepted),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl VtStateKeyOutcome {
+    /// Every text alternative (not the records), in schema order.
+    pub const TEXTS: [Self; 1] = [Self::Accepted];
+}
+
+/// `vt-state-key-refusal` (`shared/schemas/versioned-trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtStateKeyRefusal {
+    /// The `kind` entry.
+    pub kind: StateKeyErrorKind,
+    /// The `segment` entry.
+    pub segment: Option<u64>,
+}
+
+impl c::Model for VtStateKeyRefusal {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("kind", &c::ModelOf::<StateKeyErrorKind>::NEW, &self.kind, inner)?,
+            c::optional_field("segment", &c::UINT, self.segment.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["kind", "segment"])?;
+        let f0 = fields.required("kind", &c::ModelOf::<StateKeyErrorKind>::NEW)?;
+        let f1 = fields.optional("segment", &c::UINT)?;
+        Ok(Self { kind: f0, segment: f1 })
     }
 }
 

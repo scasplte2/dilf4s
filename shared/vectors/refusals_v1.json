@@ -359,7 +359,7 @@
     },
     {
       "outcome" : {
-        "kind" : "Key"
+        "kind" : "Key.SegmentTooLong"
       },
       "name" : "delta: a key the schema pattern accepts but the grammar refuses (a 65-byte segment)",
       "check" : "vt-delta",

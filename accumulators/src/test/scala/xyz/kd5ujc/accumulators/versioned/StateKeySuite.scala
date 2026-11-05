@@ -5,7 +5,7 @@ import cats.syntax.all._
 import scala.collection.immutable.SortedMap
 
 import xyz.kd5ujc.accumulators.versioned.Harness._
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor, Preview}
 import xyz.kd5ujc.storage.{Batch, KeyCodec}
 
 import org.scalacheck.Gen
@@ -53,10 +53,37 @@ object StateKeySuite extends SimpleIOSuite with Checkers {
     bounded(text)
       .and(bounded(bytes))
       .and(bounded(namespace))
-      .and(expect.same(Left(StateKeyError(None, s"$huge characters, longer than 256")), text))
-      .and(expect.same(Left(StateKeyError(None, s"$huge bytes, longer than 256")), bytes))
-      .and(expect.same(Left("segment 1 does not match [a-z0-9][a-z0-9._-]*"), StateKey.parse("a/B/c").leftMap(_.reason)))
+      .and(expect.same(Left(StateKeyError.TooLong(256)), text))
+      .and(expect.same(Left(StateKeyError.TooLong(256)), bytes))
+      .and(expect.same(Left(StateKeyError.InvalidSegment(Preview.of("a/B/c"), 1)), StateKey.parse("a/B/c")))
+      .and(expect.same(Left(StateKeyError.TooLong(256)), namespace))
   }
+
+  pureTest("refusal order (versioned-trie.md §2): empty, UTF-8 length, segment count, then each segment's grammar before its length") {
+    val e = "é"
+    def parsed(s: String) = StateKey.parse(s).left.toOption
+    expect
+      .same(Some(StateKeyError.Empty), parsed(""))
+      // 129 code units, 258 UTF-8 bytes: the length is in UTF-8 bytes
+      .and(expect.same(Some(StateKeyError.TooLong(256)), parsed(e * 129)))
+      .and(expect.same(Some(StateKeyError.TooManySegments(Preview.of("A/" * 16 + "a"), 16)), parsed("A/" * 16 + "a")))
+      // 40 two-byte characters: refused by the grammar, which comes before the segment's length
+      .and(expect.same(Some(StateKeyError.InvalidSegment(Preview.of(e * 40), 0)), parsed(e * 40)))
+      .and(expect.same(Some(StateKeyError.InvalidSegment(Preview.of("A" + "x" * 70), 0)), parsed("A" + "x" * 70)))
+      .and(expect.same(Some(StateKeyError.SegmentTooLong(Preview.of("x" * 70 + "/A"), 0, 64)), parsed("x" * 70 + "/A")))
+      .and(expect.same(Some(StateKeyError.NotUtf8), StateKey.fromBytes(scodec.bits.ByteVector(0xff)).left.toOption))
+      .and(
+        expect
+          .same(Some(StateKeyError.InvalidSegment(Preview.of(e), 0)), StateKey.fromBytes(scodec.bits.ByteVector(0xc3, 0xa9)).left.toOption)
+      )
+      .and(namespaceFull(List("a" * 64, "a" * 64, "a" * 64, "a" * 61).mkString("/")))
+      .and(namespaceFull(List.fill(16)("a").mkString("/")))
+  }
+
+  /** A valid key that is no namespace: 255 or 256 characters, or 16 segments, leave no room for one more. */
+  private def namespaceFull(s: String) =
+    expect(StateKey.parse(s).isRight, s"$s is a key")
+      .and(expect.same(Some(StateKeyError.NamespaceFull(Preview.of(s))), StateNamespace.parse(s).left.toOption))
 
   pureTest("a namespace prefix is segment-exact: `fiber` holds fiber/x, never fiber or fiberx/y") {
     val fiber = ns("fiber")

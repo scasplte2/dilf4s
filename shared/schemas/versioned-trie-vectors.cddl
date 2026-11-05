@@ -14,6 +14,8 @@ versioned-trie-vectors = {
   "proofs": [* vt-proof],
   "snapshot": vt-snapshot,
   "stateKeys": [* vt-state-key],
+  "stateKeyBytes": [* vt-state-key-bytes],
+  "namespaces": [* vt-namespace],
   "versionKeys": [* vt-version-key],
 }
 
@@ -23,11 +25,26 @@ versioned-trie-vectors = {
 vt-version-key = { "version": uint, "key": hex, "valid": bool }
 
 ; A candidate state key: whether the generated codec of versioned-trie.cddl's state-key pattern encodes it ("schema":
-; "accepted", or TypeMismatch, the typed encoder's CanonicalError; its decoder refuses the same texts), and whether the
-; full grammar of section 2, with its length and segment limits, accepts it ("valid").
-vt-state-key = { "key": text, "schema": vt-schema-outcome, "valid": bool }
+; "accepted", or TypeMismatch, the typed encoder's CanonicalError; its decoder refuses the same texts), and the
+; outcome of the full grammar of section 2, with its length and segment limits ("outcome").
+vt-state-key = { "key": text, "schema": vt-schema-outcome, "outcome": vt-state-key-outcome }
 
 vt-schema-outcome = "accepted" / "TypeMismatch"
+
+; Trie-key bytes read as a state key: the length, then UTF-8, then the grammar of a text key.
+vt-state-key-bytes = { "bytes": hex, "outcome": vt-state-key-outcome }
+
+; A candidate namespace: a state key that leaves room for one more segment.
+vt-namespace = { "namespace": text, "outcome": vt-state-key-outcome }
+
+; "accepted", or a refusal: its kind, and the segment (from 0) exactly when the kind names one (InvalidSegment,
+; SegmentTooLong).
+vt-state-key-outcome = vt-state-key-refusal / "accepted"
+
+vt-state-key-refusal = { "kind": state-key-error-kind, ? "segment": uint }
+
+; Every kind of StateKeyError (versioned-trie.md section 2).
+state-key-error-kind = "Empty" / "TooLong" / "NotUtf8" / "TooManySegments" / "InvalidSegment" / "SegmentTooLong" / "NamespaceFull"
 
 ; The final commit's snapshot, in chunks of at most "chunkEntries" items: each is the hex of a canonical
 ; versioned-trie-snapshot-chunk. Restoring it into an empty store reproduces "root".

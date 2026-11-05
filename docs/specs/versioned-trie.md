@@ -33,6 +33,24 @@ A **namespace** `ns` is a key naming the keys below `ns/`. Its prefix is `utf8(n
 matches `fiberx/…`. A key under a namespace has at least one more segment, so a namespace has at most 254 characters
 and 15 segments. Namespaces carry no meaning to the trie: none is reserved.
 
+**Refusals** (`StateKeyError`), in this order; the first that applies is the refusal:
+
+1. `Empty`: the empty text;
+2. `TooLong`: more than 256 UTF-8 bytes. It is measured before the text is split or read further: an
+   implementation holding UTF-16 refuses more than 256 code units at once (a UTF-8 length is never shorter) and
+   otherwise counts the UTF-8 length of at most 256 units, an unpaired surrogate as 3 bytes. So 129 × `é` (258
+   bytes) is `TooLong` everywhere. It holds no preview;
+3. `TooManySegments`: more than 16 segments;
+4. each segment in order, from 0: `InvalidSegment` when it does not match the grammar (an empty segment included),
+   then `SegmentTooLong` when it has more than 64 characters. The grammar is ASCII, so a segment's length is only
+   measured once it is ASCII, where characters, bytes and code units agree: 40 × `é` is `InvalidSegment`;
+5. for a namespace, after the key's own refusals, `NamespaceFull`: more than 254 characters, or 16 segments.
+
+A key read from its trie-key bytes is refused first as `TooLong` (more than 256 bytes, before they are read), then
+`NotUtf8` (not well-formed UTF-8), then as text. `InvalidSegment` and `SegmentTooLong` name the segment's position,
+which is normative (`conformance.md` §3); each refusal names the key only by its preview. `versioned_trie_v1.json`'s
+`stateKeys`, `stateKeyBytes` and `namespaces` pin every kind and each order above.
+
 Keys are not hashed (`trie.md` §1), which is what makes namespace and range proofs possible. An application chooses
 its keys, so a key layout can deepen a path: proof size and gas grow with the bits shared along it, up to 2048 bits.
 Applications that accept keys from untrusted parties should bound or hash those keys themselves.

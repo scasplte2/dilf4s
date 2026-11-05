@@ -29,6 +29,7 @@ export {
 export { fromHex, toHex, type InvalidHex } from "./hex.js";
 export { MAX_PREVIEW_CODE_POINTS, Preview } from "./preview.js";
 export { all, andThen, err, map, ok, type Err, type Ok, type Result } from "./result.js";
+export { decodeUtf8, utf8Length } from "./utf8.js";
 export {
   ArrayValue,
   BoolValue,

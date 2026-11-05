@@ -6,6 +6,38 @@ export type Hex = string;
 
 export const Hex: c.Codec<Hex> = c.matching("([0-9a-f]{2})*");
 
+/** `state-key-error-kind` (`shared/schemas/versioned-trie-vectors.cddl`). */
+export type StateKeyErrorKind = "Empty" | "TooLong" | "NotUtf8" | "TooManySegments" | "InvalidSegment" | "SegmentTooLong" | "NamespaceFull";
+
+export const StateKeyErrorKind: c.Codec<StateKeyErrorKind> = {
+  encode: (a) => {
+    if (typeof a === "string") return c.oneOfText(a, ["Empty", "InvalidSegment", "NamespaceFull", "NotUtf8", "SegmentTooLong", "TooLong", "TooManySegments"]);
+    return c.typeMismatch("no alternative of StateKeyErrorKind fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [], ["Empty", "TooLong", "NotUtf8", "TooManySegments", "InvalidSegment", "SegmentTooLong", "NamespaceFull"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return c.ok<StateKeyErrorKind>("Empty");
+      case 1:
+        return c.ok<StateKeyErrorKind>("TooLong");
+      case 2:
+        return c.ok<StateKeyErrorKind>("NotUtf8");
+      case 3:
+        return c.ok<StateKeyErrorKind>("TooManySegments");
+      case 4:
+        return c.ok<StateKeyErrorKind>("InvalidSegment");
+      case 5:
+        return c.ok<StateKeyErrorKind>("SegmentTooLong");
+      case 6:
+        return c.ok<StateKeyErrorKind>("NamespaceFull");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
 /** `versioned-trie-vectors` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VersionedTrieVectors {
   readonly spec: "docs/specs/versioned-trie.md";
@@ -19,6 +51,8 @@ export interface VersionedTrieVectors {
   readonly proofs: readonly VtProof[];
   readonly snapshot: VtSnapshot;
   readonly stateKeys: readonly VtStateKey[];
+  readonly stateKeyBytes: readonly VtStateKeyBytes[];
+  readonly namespaces: readonly VtNamespace[];
   readonly versionKeys: readonly VtVersionKey[];
 }
 
@@ -37,11 +71,13 @@ export const VersionedTrieVectors: c.Codec<VersionedTrieVectors> = {
         c.field("proofs", c.vector(c.defer(() => VtProof), 0, null), a.proofs, e),
         c.field("snapshot", c.defer(() => VtSnapshot), a.snapshot, e),
         c.field("stateKeys", c.vector(c.defer(() => VtStateKey), 0, null), a.stateKeys, e),
+        c.field("stateKeyBytes", c.vector(c.defer(() => VtStateKeyBytes), 0, null), a.stateKeyBytes, e),
+        c.field("namespaces", c.vector(c.defer(() => VtNamespace), 0, null), a.namespaces, e),
         c.field("versionKeys", c.vector(c.defer(() => VtVersionKey), 0, null), a.versionKeys, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys", "versionKeys"]);
+    const f = c.fields(v, ["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys", "stateKeyBytes", "namespaces", "versionKeys"]);
     if (!f.ok) return f;
     const r0 = f.value.required("spec", c.literalText("docs/specs/versioned-trie.md"));
     if (!r0.ok) return r0;
@@ -65,9 +101,13 @@ export const VersionedTrieVectors: c.Codec<VersionedTrieVectors> = {
     if (!r9.ok) return r9;
     const r10 = f.value.required("stateKeys", c.vector(c.defer(() => VtStateKey), 0, null));
     if (!r10.ok) return r10;
-    const r11 = f.value.required("versionKeys", c.vector(c.defer(() => VtVersionKey), 0, null));
+    const r11 = f.value.required("stateKeyBytes", c.vector(c.defer(() => VtStateKeyBytes), 0, null));
     if (!r11.ok) return r11;
-    return c.ok({ spec: r0.value, version: r1.value, hash: r2.value, width: r3.value, emptyStateRoot: r4.value, head: r5.value, commits: r6.value, root: r7.value, proofs: r8.value, snapshot: r9.value, stateKeys: r10.value, versionKeys: r11.value });
+    const r12 = f.value.required("namespaces", c.vector(c.defer(() => VtNamespace), 0, null));
+    if (!r12.ok) return r12;
+    const r13 = f.value.required("versionKeys", c.vector(c.defer(() => VtVersionKey), 0, null));
+    if (!r13.ok) return r13;
+    return c.ok({ spec: r0.value, version: r1.value, hash: r2.value, width: r3.value, emptyStateRoot: r4.value, head: r5.value, commits: r6.value, root: r7.value, proofs: r8.value, snapshot: r9.value, stateKeys: r10.value, stateKeyBytes: r11.value, namespaces: r12.value, versionKeys: r13.value });
   },
 };
 
@@ -262,6 +302,31 @@ export const VtListing: c.Codec<VtListing> = {
   },
 };
 
+/** `vt-namespace` (`shared/schemas/versioned-trie-vectors.cddl`). */
+export interface VtNamespace {
+  readonly namespace: string;
+  readonly outcome: VtStateKeyOutcome;
+}
+
+export const VtNamespace: c.Codec<VtNamespace> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("namespace", c.text, a.namespace, e),
+        c.field("outcome", c.defer(() => VtStateKeyOutcome), a.outcome, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["namespace", "outcome"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("namespace", c.text);
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("outcome", c.defer(() => VtStateKeyOutcome));
+    if (!r1.ok) return r1;
+    return c.ok({ namespace: r0.value, outcome: r1.value });
+  },
+};
+
 /** `vt-proof` (`shared/schemas/versioned-trie-vectors.cddl`). */
 export interface VtProof {
   readonly name: string;
@@ -366,7 +431,7 @@ export const VtSnapshot: c.Codec<VtSnapshot> = {
 export interface VtStateKey {
   readonly key: string;
   readonly schema: VtSchemaOutcome;
-  readonly valid: boolean;
+  readonly outcome: VtStateKeyOutcome;
 }
 
 export const VtStateKey: c.Codec<VtStateKey> = {
@@ -375,19 +440,93 @@ export const VtStateKey: c.Codec<VtStateKey> = {
       c.record([
         c.field("key", c.text, a.key, e),
         c.field("schema", c.defer(() => VtSchemaOutcome), a.schema, e),
-        c.field("valid", c.bool, a.valid, e),
+        c.field("outcome", c.defer(() => VtStateKeyOutcome), a.outcome, e),
       ]),
     ),
   decode: (v) => {
-    const f = c.fields(v, ["key", "schema", "valid"]);
+    const f = c.fields(v, ["key", "schema", "outcome"]);
     if (!f.ok) return f;
     const r0 = f.value.required("key", c.text);
     if (!r0.ok) return r0;
     const r1 = f.value.required("schema", c.defer(() => VtSchemaOutcome));
     if (!r1.ok) return r1;
-    const r2 = f.value.required("valid", c.bool);
+    const r2 = f.value.required("outcome", c.defer(() => VtStateKeyOutcome));
     if (!r2.ok) return r2;
-    return c.ok({ key: r0.value, schema: r1.value, valid: r2.value });
+    return c.ok({ key: r0.value, schema: r1.value, outcome: r2.value });
+  },
+};
+
+/** `vt-state-key-bytes` (`shared/schemas/versioned-trie-vectors.cddl`). */
+export interface VtStateKeyBytes {
+  readonly bytes: Hex;
+  readonly outcome: VtStateKeyOutcome;
+}
+
+export const VtStateKeyBytes: c.Codec<VtStateKeyBytes> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("bytes", c.defer(() => Hex), a.bytes, e),
+        c.field("outcome", c.defer(() => VtStateKeyOutcome), a.outcome, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["bytes", "outcome"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("bytes", c.defer(() => Hex));
+    if (!r0.ok) return r0;
+    const r1 = f.value.required("outcome", c.defer(() => VtStateKeyOutcome));
+    if (!r1.ok) return r1;
+    return c.ok({ bytes: r0.value, outcome: r1.value });
+  },
+};
+
+/** `vt-state-key-outcome` (`shared/schemas/versioned-trie-vectors.cddl`). */
+export type VtStateKeyOutcome = VtStateKeyRefusal | "accepted";
+
+export const VtStateKeyOutcome: c.Codec<VtStateKeyOutcome> = {
+  encode: (a, d) => {
+    if (typeof a === "string") return c.oneOfText(a, ["accepted"]);
+    const known = ["kind", "segment"];
+    if (c.hasFields(a, VtStateKeyRefusal, ["kind"], ["kind", "segment"], known)) return VtStateKeyRefusal.encode(a, d);
+    return c.typeMismatch("no alternative of VtStateKeyOutcome fits");
+  },
+  decode: (v) => {
+    const s = c.selectAlternative(v, [[["kind"], ["kind", "segment"]]], ["accepted"]);
+    if (!s.ok) return s;
+    switch (s.value) {
+      case 0:
+        return VtStateKeyRefusal.decode(v);
+      case 1:
+        return c.ok<VtStateKeyOutcome>("accepted");
+      default:
+        return c.decodeFailure("unknown alternative");
+    }
+  },
+};
+
+/** `vt-state-key-refusal` (`shared/schemas/versioned-trie-vectors.cddl`). */
+export interface VtStateKeyRefusal {
+  readonly kind: StateKeyErrorKind;
+  readonly segment?: bigint;
+}
+
+export const VtStateKeyRefusal: c.Codec<VtStateKeyRefusal> = {
+  encode: (a, d = 0) =>
+    c.nested(d, (e) =>
+      c.record([
+        c.field("kind", c.defer(() => StateKeyErrorKind), a.kind, e),
+        c.optionalField("segment", c.uint, a.segment, e),
+      ]),
+    ),
+  decode: (v) => {
+    const f = c.fields(v, ["kind", "segment"]);
+    if (!f.ok) return f;
+    const r0 = f.value.required("kind", c.defer(() => StateKeyErrorKind));
+    if (!r0.ok) return r0;
+    const r1 = f.value.optional("segment", c.uint);
+    if (!r1.ok) return r1;
+    return c.ok({ kind: r0.value, segment: r1.value });
   },
 };
 

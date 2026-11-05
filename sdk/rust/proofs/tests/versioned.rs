@@ -23,17 +23,36 @@ use common::{bytes, load};
 use dilf4s_core::cbor;
 use dilf4s_core::codec::{Model, TextPattern};
 use dilf4s_core::generated::trie::TrieRecord;
-use dilf4s_core::generated::versioned_trie_vectors::{VersionedTrieVectors, VtKind, VtProof, VtSchemaOutcome};
+use dilf4s_core::generated::versioned_trie_vectors::{
+    StateKeyErrorKind, VersionedTrieVectors, VtKind, VtProof, VtSchemaOutcome, VtStateKeyOutcome, VtStateKeyRefusal,
+};
 use dilf4s_core::hash::{Digest, Sha256};
 use dilf4s_core::value::Value;
 use dilf4s_proofs::trie::TrieProof;
 use dilf4s_proofs::versioned::{
-    BytesKey, Head, Replica, SnapshotChunk, StateKey, StateNamespace, U64Key, VersionKey, VersionedTrie,
+    BytesKey, Head, Replica, SnapshotChunk, StateKey, StateKeyError, StateNamespace, U64Key, VersionKey, VersionedTrie,
     VersionedTrieError, VersionedTrieProof,
 };
 
 type H = Sha256;
 type Vt = VersionedTrie<U64Key, H>;
+
+/// The schema's outcome of a state-key refusal: its kind and normative segment. Exhaustive: a variant the SDK adds does
+/// not compile until it is mapped.
+fn key_outcome<T>(r: &Result<T, StateKeyError>) -> VtStateKeyOutcome {
+    let Err(e) = r else { return VtStateKeyOutcome::Accepted };
+    let position = |at: &usize| Some(u64::try_from(*at).unwrap());
+    let (kind, segment) = match e {
+        StateKeyError::Empty => (StateKeyErrorKind::Empty, None),
+        StateKeyError::TooLong { .. } => (StateKeyErrorKind::TooLong, None),
+        StateKeyError::NotUtf8 => (StateKeyErrorKind::NotUtf8, None),
+        StateKeyError::TooManySegments { .. } => (StateKeyErrorKind::TooManySegments, None),
+        StateKeyError::InvalidSegment { segment, .. } => (StateKeyErrorKind::InvalidSegment, position(segment)),
+        StateKeyError::SegmentTooLong { segment, .. } => (StateKeyErrorKind::SegmentTooLong, position(segment)),
+        StateKeyError::NamespaceFull { .. } => (StateKeyErrorKind::NamespaceFull, None),
+    };
+    VtStateKeyOutcome::VtStateKeyRefusal(VtStateKeyRefusal { kind, segment })
+}
 
 fn d(hex: &str) -> Digest<H> {
     Digest::from_slice(&bytes(hex)).unwrap()
@@ -247,8 +266,14 @@ fn snapshot_restores_the_root() {
 fn state_keys() {
     let (v, _) = setup();
     for c in &v.state_keys {
-        assert_eq!(StateKey::parse(&c.key).is_ok(), c.valid, "{:?} valid", c.key);
+        assert_eq!(key_outcome(&StateKey::parse(&c.key)), c.outcome, "{:?}", c.key);
         assert_eq!(TextPattern::StateKey.matches(&c.key), c.schema == VtSchemaOutcome::Accepted, "{:?} schema", c.key);
+    }
+    for c in &v.state_key_bytes {
+        assert_eq!(key_outcome(&StateKey::from_bytes(&bytes(&c.bytes))), c.outcome, "bytes {}", c.bytes);
+    }
+    for c in &v.namespaces {
+        assert_eq!(key_outcome(&StateNamespace::parse(&c.namespace)), c.outcome, "namespace {:?}", c.namespace);
     }
     assert!(StateNamespace::parse("fiber").is_ok());
     assert!(StateNamespace::parse(&"x".repeat(255)).is_err());
@@ -258,6 +283,29 @@ fn state_keys() {
     assert!(ns.contains(&key("fiber/1")) && !ns.contains(&key("fiberx/1")) && !ns.contains(&key("fiber")));
     assert!(StateKey::from_bytes(&[0xff]).is_err());
     eprintln!("versioned trie: {} state keys", v.state_keys.len());
+}
+
+/// The coverage gate (conformance.md section 6) for `StateKeyError`: every kind of the schema's `state-key-error-kind`
+/// has a row. [`key_outcome`] maps every SDK variant onto a schema kind (exhaustively, so a new variant does not
+/// compile until it is mapped), so every SDK kind has a row too.
+#[test]
+fn every_state_key_error_kind_has_a_row() {
+    let (v, _) = setup();
+    let outcomes = v
+        .state_keys
+        .iter()
+        .map(|c| &c.outcome)
+        .chain(v.state_key_bytes.iter().map(|c| &c.outcome))
+        .chain(v.namespaces.iter().map(|c| &c.outcome));
+    let pinned: Vec<StateKeyErrorKind> = outcomes
+        .filter_map(|o| match o {
+            VtStateKeyOutcome::VtStateKeyRefusal(r) => Some(r.kind.clone()),
+            VtStateKeyOutcome::Accepted => None,
+        })
+        .collect();
+    for kind in StateKeyErrorKind::ALL {
+        assert!(pinned.contains(&kind), "no row pins {kind:?}");
+    }
 }
 
 /// conformance.md section 8: a 1 MiB key or trie key is refused by its length, as a preview or a size.
@@ -270,11 +318,15 @@ fn a_huge_state_key_is_refused_with_a_bounded_error() {
     for e in [&text, &bytes, &namespace] {
         let rendered = format!("{e}{e:?}");
         assert!(rendered.len() <= 1024, "the refusal renders {} bytes", rendered.len());
-        assert!(e.input.as_ref().is_none_or(|p| p.head().chars().count() <= 32), "a preview of at most 32 code points");
+        assert!(e.input().is_none_or(|p| p.head().chars().count() <= 32), "a preview of at most 32 code points");
     }
-    assert_eq!((text.input, text.reason), (None, format!("{huge} bytes, longer than 256")));
-    assert_eq!((bytes.input, bytes.reason), (None, format!("{huge} bytes, longer than 256")));
-    assert_eq!(StateKey::parse("a/B/c").unwrap_err().reason, "segment 1 does not match [a-z0-9][a-z0-9._-]*");
+    assert_eq!(text, StateKeyError::TooLong { limit: 256 });
+    assert_eq!(bytes, StateKeyError::TooLong { limit: 256 });
+    assert_eq!(namespace, StateKeyError::TooLong { limit: 256 });
+    assert_eq!(
+        StateKey::parse("a/B/c").unwrap_err(),
+        StateKeyError::InvalidSegment { key: dilf4s_core::Preview::of("a/B/c"), segment: 1 }
+    );
 }
 
 #[test]
