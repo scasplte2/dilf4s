@@ -271,8 +271,8 @@ function integerText(n: IntValue): string {
 /**
  * The exact decimal of a rational, within the bounds {@link parse} accepts: `"non-terminating rational"` when its
  * denominator has prime factors other than 2 and 5, `"over-long number"` past the bounds, both found from the
- * denominator's factors (`twosAndFives`) before any digit is produced. An argument that is not a `RationalValue` throws:
- * the result type has no room for that refusal.
+ * denominator's factors (`twosAndFives`) before any digit is produced. An argument that is not a `RationalValue` is not checked: it may throw, or be read as a
+ * rational from its `numerator` and `denominator` (the result type has no room for that refusal).
  */
 export function decimalOf(r: RationalValue): Result<string, "non-terminating rational" | "over-long number"> {
   const [factors] = twosAndFives(r.denominator);
@@ -287,7 +287,7 @@ export function decimalOf(r: RationalValue): Result<string, "non-terminating rat
 
 /**
  * The exact decimal of a rational, when it has one within the bounds {@link parse} accepts. An argument that is not a
- * `RationalValue` throws, as {@link decimalOf} does.
+ * `RationalValue` is not checked, as for {@link decimalOf}: it may throw, or be read as a rational.
  */
 export function decimal(r: RationalValue): string | undefined {
   const d = decimalOf(r);

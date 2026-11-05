@@ -2,7 +2,8 @@ import { runInNewContext } from "node:vm";
 
 import { describe, expect, it } from "vitest";
 
-import { codec, IntValue, json, Value } from "../src/index.js";
+import { codec, IntValue, json, MapValue, RationalValue, Value } from "../src/index.js";
+import { gcdSteps } from "../src/value.js";
 import { expectOk, int } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
@@ -50,6 +51,26 @@ describe("what a caller passes past the types is refused, never thrown on or mis
     // a real value still is one
     const real = expectOk(codec.any.encode(int(5n)), "a value");
     expect(real.kind === "int" && real.value).toBe(5n);
+  });
+
+  it("a rational made from numbers ends: converted, refused or thrown on, never a loop", { timeout: 5_000 }, () => {
+    const half = expectOk(Value.number(bad(1), bad(2)), "integral numbers are read as their integers");
+    expect(half.kind === "rational" && [half.numerator, half.denominator]).toEqual([1n, 2n]);
+    expect(expectOk(RationalValue.number(bad(6), bad(4)), "and reduced").kind).toBe("rational");
+    expect(RationalValue.of(bad(1), bad(2))).toBeUndefined();
+    expect(RationalValue.of(1n, bad(2))).toBeUndefined();
+    expect(() => Value.number(bad(1.5), 2n)).toThrow(RangeError);
+    expect(gcdSteps(bad(6), bad(4))[0]).toBe(2n);
+  });
+
+  it("a value built by calling a constructor from outside is not a value", () => {
+    const fakeInt: unknown = Reflect.construct(IntValue as unknown as new (...args: unknown[]) => object, [5, 3]);
+    const fakeMap: unknown = Reflect.construct(MapValue as unknown as new (...args: unknown[]) => object, [[], 1, 1n]);
+    for (const fake of [fakeInt, fakeMap]) {
+      expect(codec.any.encode(bad(fake))).toEqual(mismatch("expected a canonical value"));
+      expect(codec.uint.decode(bad(fake))).toEqual({ ok: false, error: { path: [], reason: "expected a canonical value" } });
+      expect(json.renderWithin(bad(fake), 100)).toEqual(mismatch("expected a canonical value"));
+    }
   });
 
   it("text and JSON entry points refuse what is not text, and a scale bound that is not a safe integer from 0", () => {

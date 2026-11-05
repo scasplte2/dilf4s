@@ -53,15 +53,26 @@ const limbs = (bits: number): bigint => BigInt(Math.floor(bits / 64));
 export type Value = NullValue | BoolValue | IntValue | RationalValue | TextValue | BytesValue | ArrayValue | MapValue;
 
 /** One brand check a kind of value, `#field in x`, each set by its class's static block. */
-const brands: ((x: object) => boolean)[] = [];
+/**
+ * Every value this module's factories made, by identity. A constructor is private to TypeScript alone, so JavaScript
+ * can still call it (`new IntValue(5, 3)`, `Reflect.construct`), but what it builds is not in this set: only the
+ * factories add to it, at each `new`.
+ */
+const made = new WeakSet();
+
+const minted = <V extends object>(v: V): V => {
+  made.add(v);
+  return v;
+};
 
 /**
- * Whether `x` is a canonical value (this module's constructors alone make one), in O(1): for what a caller may pass
- * past the types, such as a JavaScript caller's argument. It checks each class's private brand (`#field in x`), never
- * the prototype: an object borrowing a value's prototype is not one, and a Proxy's traps do not run.
+ * Whether `x` is a canonical value made by this module's factories, in O(1): for what a caller may pass past the
+ * types, such as a JavaScript caller's argument. It checks identity in a module-private set, never the prototype or a
+ * field: an object borrowing a value's prototype is not one, nor is one built by calling a constructor from outside,
+ * and a Proxy's traps do not run.
  */
 export function isValue(x: unknown): x is Value {
-  return typeof x === "object" && x !== null && brands.some((has) => has(x));
+  return typeof x === "object" && x !== null && made.has(x);
 }
 
 /** `Uint8Array.prototype`'s `Symbol.toStringTag` getter, from `%TypedArray%`: it reads an array's internal type name. */
@@ -108,10 +119,7 @@ export class NullValue {
   readonly kind = "null";
   readonly weight: bigint = 1n;
   readonly #depth = 0;
-  static {
-    brands.push((x) => #depth in x);
-  }
-  static readonly instance: NullValue = new NullValue();
+  static readonly instance: NullValue = minted(new NullValue());
   private constructor() {
     Object.freeze(this);
   }
@@ -131,11 +139,8 @@ export class BoolValue {
   readonly depth = 0;
   readonly weight: bigint = 1n;
   readonly #value: boolean;
-  static {
-    brands.push((x) => #value in x);
-  }
-  static readonly true: BoolValue = new BoolValue(true);
-  static readonly false: BoolValue = new BoolValue(false);
+  static readonly true: BoolValue = minted(new BoolValue(true));
+  static readonly false: BoolValue = minted(new BoolValue(false));
   private constructor(value: boolean) {
     this.#value = value;
     Object.freeze(this);
@@ -176,9 +181,6 @@ export class IntValue {
   /** `1 + bitLength / 64`. */
   readonly weight: bigint;
   readonly #value: bigint;
-  static {
-    brands.push((x) => #value in x);
-  }
   readonly #bitLength: number;
   private constructor(value: bigint, bits: number) {
     this.#value = value;
@@ -196,7 +198,7 @@ export class IntValue {
   /** The integer `value`, refused when it is wider than {@link MAX_INTEGER_BITS}: the only constructor. */
   static of(value: bigint): Result<IntValue, IntegerTooWide> {
     const bits = bitLength(value);
-    return bits <= MAX_INTEGER_BITS ? ok(new IntValue(value, bits)) : err(integerTooWide);
+    return bits <= MAX_INTEGER_BITS ? ok(minted(new IntValue(value, bits))) : err(integerTooWide);
   }
   toString(): string {
     return inspect(this);
@@ -223,6 +225,9 @@ function bitsWithin(x: bigint, hint: number): number {
   }
 }
 
+/** `x` as a bigint: itself, or what `BigInt` makes of it (an integral number's integer; a throw if it has none). */
+const toBigint = (x: unknown): bigint => (typeof x === "bigint" ? x : BigInt(x as number));
+
 /**
  * `gcd(|a|, |b|)`, and the multi-precision steps it took: Lehmer's algorithm (Knuth, TAOCP vol. 2, 4.5.2, Algorithm L).
  * A BigInt remainder costs about as much as twenty multiplications by a small number, so each step runs Euclid on the
@@ -231,7 +236,10 @@ function bitsWithin(x: bigint, hint: number): number {
  * neighbours (the slowest pair of that width) take about 2,500 steps instead of 47,849 remainders.
  */
 export function gcdSteps(a: bigint, b: bigint): readonly [bigint, number] {
-  let [x, y] = abs(a) >= abs(b) ? [abs(a), abs(b)] : [abs(b), abs(a)];
+  // read as bigints, whatever was passed: a number would make a remainder NaN and the loop never end; BigInt converts
+  // an integral number and throws on anything with no integer value, so every input ends
+  const [p0, q0] = [toBigint(a), toBigint(b)];
+  let [x, y] = abs(p0) >= abs(q0) ? [abs(p0), abs(q0)] : [abs(q0), abs(p0)];
   let bits = bitLength(x);
   let steps = 0;
   for (; bits > LEHMER_FROM_BITS && y !== 0n; steps++) {
@@ -278,9 +286,6 @@ export class RationalValue {
   /** `2 + bitLength(n) / 64 + bitLength(d) / 64`. */
   readonly weight: bigint;
   readonly #numerator: bigint;
-  static {
-    brands.push((x) => #numerator in x);
-  }
   readonly #denominator: bigint;
   readonly #numeratorBits: number;
   readonly #denominatorBits: number;
@@ -299,7 +304,7 @@ export class RationalValue {
    */
   private static checked(numerator: bigint, denominator: bigint): RationalValue | undefined {
     const [n, d] = [bitLength(numerator), bitLength(denominator)];
-    return n <= MAX_RATIONAL_BITS && d <= MAX_RATIONAL_BITS ? new RationalValue(numerator, denominator, n, d) : undefined;
+    return n <= MAX_RATIONAL_BITS && d <= MAX_RATIONAL_BITS ? minted(new RationalValue(numerator, denominator, n, d)) : undefined;
   }
 
   /** The numerator, carrying the sign. */
@@ -327,6 +332,7 @@ export class RationalValue {
    * {@link MAX_RATIONAL_BITS} (checked first, so a wide one runs no gcd), and in lowest terms.
    */
   static of(numerator: bigint, denominator: bigint): RationalValue | undefined {
+    if (typeof (numerator as unknown) !== "bigint" || typeof (denominator as unknown) !== "bigint") return undefined;
     const valid = denominator >= 2n && bitLength(numerator) <= MAX_RATIONAL_BITS && bitLength(denominator) <= MAX_RATIONAL_BITS;
     return valid && gcd(numerator, denominator) === 1n ? RationalValue.checked(numerator, denominator) : undefined;
   }
@@ -334,14 +340,16 @@ export class RationalValue {
   /**
    * The number `n/d` in the single numeric domain: an integer when it is one, refused when wider than
    * {@link MAX_INTEGER_BITS}, otherwise a reduced rational, refused when its numerator or denominator is wider than
-   * {@link MAX_RATIONAL_BITS}.
+   * {@link MAX_RATIONAL_BITS}. A part that is not a `bigint` is converted with `BigInt` first, which reads an integral
+   * number as its integer and throws on anything with no integer value: the result type has no room for that refusal.
    */
   static number(numerator: bigint, denominator: bigint): Result<IntValue | RationalValue, NumberError> {
-    if (denominator === 0n) return err({ kind: "DivisionByZero" });
-    const g = gcd(numerator, denominator);
-    const sign = denominator < 0n ? -1n : 1n;
-    const n = (sign * numerator) / g;
-    const d = (sign * denominator) / g;
+    const [num, den] = [toBigint(numerator), toBigint(denominator)];
+    if (den === 0n) return err({ kind: "DivisionByZero" });
+    const g = gcd(num, den);
+    const sign = den < 0n ? -1n : 1n;
+    const n = (sign * num) / g;
+    const d = (sign * den) / g;
     if (d === 1n) return IntValue.of(n);
     const r = RationalValue.checked(n, d);
     return r === undefined ? err(tooWide) : ok(r);
@@ -386,9 +394,6 @@ export class TextValue {
   readonly weight: bigint;
   /** The UTF-8 encoding. */
   readonly #utf8: Uint8Array;
-  static {
-    brands.push((x) => #utf8 in x);
-  }
   private constructor(readonly value: string) {
     this.#utf8 = encodeUtf8(value);
     this.weight = 1n + BigInt(this.#utf8.length);
@@ -401,7 +406,7 @@ export class TextValue {
 
   /** Text, if it has no unpaired surrogates. */
   static of(value: string): Result<TextValue, CanonicalError> {
-    return isWellFormed(value) ? ok(new TextValue(value)) : err({ kind: "UnpairedSurrogate" });
+    return isWellFormed(value) ? ok(minted(new TextValue(value))) : err({ kind: "UnpairedSurrogate" });
   }
 
   /** A copy of the UTF-8 encoding. */
@@ -427,9 +432,6 @@ export class BytesValue {
   /** `1 +` the length. */
   readonly weight: bigint;
   readonly #bytes: Uint8Array;
-  static {
-    brands.push((x) => #bytes in x);
-  }
   private constructor(bytes: Uint8Array) {
     this.#bytes = copyBytes(bytes);
     this.weight = 1n + BigInt(this.#bytes.length);
@@ -442,7 +444,7 @@ export class BytesValue {
 
   /** A byte string holding a copy of `bytes`. */
   static of(bytes: Uint8Array): BytesValue {
-    return new BytesValue(bytes);
+    return minted(new BytesValue(bytes));
   }
 
   /** A copy of the bytes. */
@@ -476,9 +478,6 @@ function measure<T>(parts: readonly T[], part: (p: T) => readonly [number, bigin
 export class ArrayValue {
   readonly kind = "array";
   readonly #items: readonly Value[];
-  static {
-    brands.push((x) => #items in x);
-  }
   private constructor(
     items: readonly Value[],
     readonly depth: number,
@@ -503,7 +502,7 @@ export class ArrayValue {
   static of(items: readonly Value[]): Result<ArrayValue, CanonicalError> {
     const kept = Object.freeze([...items]);
     const [depth, weight] = measure(kept, (v) => [v.depth, v.weight]);
-    return depth > MAX_DEPTH ? err(depthExceeded) : ok(new ArrayValue(kept, depth, weight));
+    return depth > MAX_DEPTH ? err(depthExceeded) : ok(minted(new ArrayValue(kept, depth, weight)));
   }
   toString(): string {
     return inspect(this);
@@ -532,9 +531,6 @@ export function canonicalKeyOrder(a: Uint8Array, b: Uint8Array): number {
 export class MapValue {
   readonly kind = "map";
   readonly #entries: readonly Entry[];
-  static {
-    brands.push((x) => #entries in x);
-  }
   private constructor(
     entries: readonly Entry[],
     readonly depth: number,
@@ -563,7 +559,7 @@ export class MapValue {
     }
     kept.sort((a, b) => canonicalKeyOrder(a.utf8, b.utf8));
     const [depth, weight] = measure(kept, (e) => [e.value.depth, 1n + BigInt(e.utf8.length) + e.value.weight]);
-    return depth > MAX_DEPTH ? err(depthExceeded) : ok(new MapValue(Object.freeze(kept), depth, weight));
+    return depth > MAX_DEPTH ? err(depthExceeded) : ok(minted(new MapValue(Object.freeze(kept), depth, weight)));
   }
 
   /**
@@ -791,7 +787,7 @@ export const Value = {
    * no room for that refusal, so pass a `bigint`.
    */
   int: (n: bigint): Result<IntValue, IntegerTooWide> => IntValue.of(n),
-  /** `n / d` in lowest terms. A part of another type than `bigint` throws: the result type has no room for that refusal. */
+  /** `n / d` in lowest terms. A part that is not a `bigint` is converted with `BigInt`, which throws when it has no integer value (see {@link RationalValue.number}). */
   number: (n: bigint, d: bigint): Result<IntValue | RationalValue, NumberError> => RationalValue.number(n, d),
   /** The text `s`; a value that is not a string is a `TypeMismatch`. */
   text: (s: string): Result<TextValue, CanonicalError> => (typeof (s as unknown) === "string" ? TextValue.of(s) : err({ kind: "TypeMismatch", reason: "expected a string" })),
