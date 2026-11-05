@@ -29,8 +29,15 @@ pub fn parse(text: &str) -> Result<Value, CanonicalError> {
     parse_with_max_scale(text, DEFAULT_MAX_SCALE)
 }
 
-/// Parses JSON text into a canonical value, rejecting numbers whose scale exceeds `max_scale`.
+/// Parses JSON text into a canonical value, rejecting numbers whose scale exceeds `max_scale`. The bound may be
+/// lowered, never raised: the spec accepts no JSON number of a scale past [`DEFAULT_MAX_SCALE`]
+/// (canonical-encoding.md section 3), so a larger `max_scale` is a `TypeMismatch`, before anything is read.
 pub fn parse_with_max_scale(text: &str, max_scale: u32) -> Result<Value, CanonicalError> {
+    if max_scale > DEFAULT_MAX_SCALE {
+        return Err(CanonicalError::TypeMismatch {
+            reason: alloc::format!("the scale bound is not an integer from 0 to {DEFAULT_MAX_SCALE}"),
+        });
+    }
     Parser { text, bytes: text.as_bytes(), max_scale }.run()
 }
 

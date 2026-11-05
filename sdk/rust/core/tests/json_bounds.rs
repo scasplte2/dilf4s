@@ -17,6 +17,17 @@ fn digits(n: usize) -> String {
     "9".repeat(n)
 }
 
+/// A scale bound may be lowered, never raised past the spec's: a larger one is a `TypeMismatch`, as in Scala and TS.
+#[test]
+fn a_scale_bound_past_the_spec_is_refused() {
+    let refused = CanonicalError::TypeMismatch { reason: "the scale bound is not an integer from 0 to 10000".into() };
+    for max_scale in [json::DEFAULT_MAX_SCALE + 1, u32::MAX] {
+        assert_eq!(json::parse_with_max_scale("1.5", max_scale), Err(refused.clone()), "{max_scale}");
+    }
+    assert!(json::parse_with_max_scale("1.5", json::DEFAULT_MAX_SCALE).is_ok());
+    assert!(json::parse_with_max_scale("1.5", 0).is_err(), "scale 1 past a bound of 0");
+}
+
 #[test]
 fn ten_thousand_digits_read_and_write() {
     let ones = "1".repeat(10_000);

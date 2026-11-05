@@ -79,6 +79,19 @@ describe("what a caller passes past the types is refused, never thrown on or mis
     expect(expectOk(RationalValue.decimal(5n, 1), "0.5").kind).toBe("rational");
   });
 
+  it("a decimal's scale with no integer value is refused, a negative one multiplies, and nothing throws", { timeout: 5_000 }, () => {
+    const tooWide = { ok: false, error: { kind: "RationalTooWide", limit: 33219 } };
+    const intTooWide = { ok: false, error: { kind: "IntegerTooWide", limit: 33219 } };
+    for (const scale of [Number.NaN, 0.5, -0.5, Number.POSITIVE_INFINITY]) expect(RationalValue.decimal(5n, scale), String(scale)).toEqual(tooWide);
+    expect(RationalValue.decimal(5n, Number.NEGATIVE_INFINITY)).toEqual(intTooWide);
+    const fifty = expectOk(RationalValue.decimal(5n, -1), "5 * 10");
+    expect(fifty.kind === "int" && fifty.value).toBe(50n);
+    expect(RationalValue.decimal(5n, -10_000)).toEqual(intTooWide);
+    expect(RationalValue.decimal(5n, -Number.MAX_SAFE_INTEGER)).toEqual(intTooWide);
+    const zero = expectOk(RationalValue.decimal(0n, -1), "0");
+    expect(zero.kind === "int" && zero.value).toBe(0n);
+  });
+
   it("a value built by calling a constructor from outside is not a value", () => {
     const fakeInt: unknown = Reflect.construct(IntValue as unknown as new (...args: unknown[]) => object, [Symbol("canonical value"), 5, 3]);
     const fakeMap: unknown = Reflect.construct(MapValue as unknown as new (...args: unknown[]) => object, [Symbol("canonical value"), [], 1, 1n]);

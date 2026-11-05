@@ -25,7 +25,7 @@
  */
 import { bitLength } from "./bigint.js";
 import type { CanonicalError } from "./error.js";
-import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_INTEGER_BITS, CANONICAL_MAX_RATIONAL_BITS, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
+import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_DIGITS, CANONICAL_MAX_INTEGER_BITS, CANONICAL_MAX_RATIONAL_BITS, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
 import { toHex } from "./hex.js";
 import { KeySet, search } from "./keyset.js";
 import { Preview } from "./preview.js";
@@ -356,8 +356,9 @@ export class RationalValue {
   /**
    * The number `n/d` in the single numeric domain: an integer when it is one, refused when wider than
    * {@link MAX_INTEGER_BITS}, otherwise a reduced rational, refused when its numerator or denominator is wider than
-   * {@link MAX_RATIONAL_BITS}. A part that is not a `bigint` throws a `TypeError` (bigint arithmetic refuses to mix
-   * it), as the other factories do: the result type has no room for that refusal, and nothing is converted.
+   * {@link MAX_RATIONAL_BITS}. Parts are not checked: bigint arithmetic throws a `TypeError` on a part that is not a
+   * `bigint`, as the other factories do (the result type has no room for that refusal), unless the part is an object
+   * whose `valueOf` gives a `bigint`, which the arithmetic then uses.
    */
   static number(numerator: bigint, denominator: bigint): Result<IntValue | RationalValue, NumberError> {
     if (denominator === 0n) return err({ kind: "DivisionByZero" });
@@ -380,9 +381,17 @@ export class RationalValue {
    * {@link MAX_RATIONAL_BITS} (a JSON decimal can be: `0.000...1` at a scale of 10,000 has the denominator
    * `10^10000`), and an integer past {@link MAX_INTEGER_BITS}. A scale more than {@link MAX_RATIONAL_BITS} past the
    * unscaled integer's bit length is refused at once: its twos alone leave the denominator wider than that, and the
-   * powers of five it would build grow with the scale.
+   * powers of five it would build grow with the scale. A negative scale multiplies, exactly: `unscaled * 10^-scale`,
+   * refused as {@link IntegerTooWide} from `-scale >= CANONICAL_MAX_DIGITS` before any power is built. A scale with no
+   * integer value (`NaN`, a fraction, `+Infinity`) names no decimal and is refused as {@link RationalTooWide}
+   * (`-Infinity` as {@link IntegerTooWide}): the result type has no room for a `TypeMismatch`. Nothing throws.
    */
   static decimal(unscaled: bigint, scale: number): Result<IntValue | RationalValue, RationalTooWide | IntegerTooWide> {
+    // a scale with no integer value (NaN, a fraction) names no decimal: with no room for a TypeMismatch, it is refused
+    // as a rational too wide, as +Infinity is (its denominator would be unbounded)
+    if (!Number.isInteger(scale)) return scale === Number.NEGATIVE_INFINITY ? err(integerTooWide) : err(tooWide);
+    // a negative scale multiplies: 10^k is wider than every integer from k = CANONICAL_MAX_DIGITS (2^33219 < 10^10000)
+    if (scale < 0) return unscaled === 0n ? IntValue.of(0n) : -scale >= CANONICAL_MAX_DIGITS ? err(integerTooWide) : IntValue.of(unscaled * 10n ** BigInt(-scale));
     if (unscaled === 0n) return IntValue.of(0n);
     const sign = unscaled < 0n ? -1n : 1n;
     const magnitude = sign * unscaled;

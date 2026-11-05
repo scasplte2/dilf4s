@@ -28,8 +28,17 @@ object CanonicalJson {
 
   // ------------------------------------------------------------------ parse
 
+  /**
+   * JSON text as a canonical value. `maxScale` may lower the scale bound, never raise it: the spec accepts no JSON number
+   * of a scale past [[MaxScale]] (docs/specs/canonical-encoding.md §3), so a bound outside `0..MaxScale` is a
+   * `TypeMismatch`, before anything is read, as in the Rust and TypeScript SDKs.
+   */
   def parse(text: String, maxScale: Int = MaxScale): Either[CanonicalError, CanonicalValue] =
-    parse(text, maxScale, KeyOrder.Default)
+    scaleBound(maxScale).flatMap(parse(text, _, KeyOrder.Default))
+
+  /** `maxScale`, if it is a bound [[parse]] accepts: from 0 to [[MaxScale]]. */
+  private[kd5ujc] def scaleBound(maxScale: Int): Either[CanonicalError, Int] =
+    Either.cond(maxScale >= 0 && maxScale <= MaxScale, maxScale, TypeMismatch(s"the scale bound is not an integer from 0 to $MaxScale"))
 
   /** [[parse]] building maps, and checking for repeated member names, in `keys`'s order: production passes [[KeyOrder.Default]]. */
   private[canonical] def parse(text: String, maxScale: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
