@@ -255,6 +255,7 @@ lazy val benchmarks = project.in(file("benchmarks"))
   .settings(
     name := "dilf4s-benchmarks",
     commonSettings,
+    commonTestSettings,
     publish / skip := true,
     libraryDependencies ++= Seq(
       // the gas calibration's cases are written as JSON program text
