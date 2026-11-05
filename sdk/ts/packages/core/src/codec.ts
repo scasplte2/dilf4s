@@ -126,7 +126,7 @@ export function toCbor<T>(codec: Codec<T>, value: T): Result<Uint8Array, Canonic
 
 /** The typed value of canonical CBOR. */
 export function fromCbor<T>(codec: Codec<T>, bytes: Uint8Array): Result<T, ModelError> {
-  // cbor.decode refuses what is not bytes, and reads them through plainBytes
+  // cbor.decode refuses what is not bytes, and reads them through their own slots (plainBytes)
   const v = decodeCbor(bytes);
   if (!v.ok) return err({ kind: "Canonical", error: v.error });
   const d = codec.decode(v.value);

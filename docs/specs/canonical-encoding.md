@@ -63,15 +63,33 @@ rejects an unchecked integer.
 
 TypeScript's types are checked only at compile time, so its SDK also checks at run time what a caller passes past
 them (from JavaScript, or a cast), and refuses an argument of the wrong type with `TypeMismatch`, never a throw or a
-value read as another type. Each argument is checked in O(1) before it is read: the constructors (`Value.int` and
-`IntValue.of`, `Value.bool` and `BoolValue.of`, `Value.bytes` and `BytesValue.of`, `Value.text` and `TextValue.of`,
-`Value.number` and `RationalValue.number`, `RationalValue.decimal`, whose scale must be an integer), `cbor.decode`, and
-every entry point that encodes or commits a value (`cbor.encode`, `cbor.encodeWithin`, `cbor.encodedLengthWithin`,
-`valueCommitment`, `valueCommitmentWithin`, `hashCommitment`), `json.decimal` and `cbor.magnitudeBytes`
-(`decodeUtf8`, whose result is text or `undefined`, gives `undefined`). `Value.array` and `Value.map` check each item
-or entry in the one pass that reads it. Caller bytes are read, and copied, through the typed array's internal slots,
-so a subclass that overrides `length`, its accessors or its iterator is not believed. Scala's and Rust's types rule
-these arguments out, so this refusal is the TypeScript SDK's alone and has no conformance vector.
+value read as another type. Each argument is checked in O(1) before it is read:
+
+- the constructors: `Value.int` and `IntValue.of`, `Value.bool` and `BoolValue.of`, `Value.bytes` and
+  `BytesValue.of`, `Value.text` and `TextValue.of`, `Value.number` and `RationalValue.number`, and
+  `RationalValue.decimal`, whose scale must be an integer. `Value.array` and `Value.map` check each item or entry in
+  the one pass that reads it;
+- decoding and parsing: `cbor.decode`, `codec.fromCbor`, `codec.fromJson`, `json.parse` (and its scale bound), and
+  each codec's `decode`, `decodeWithin`, `fields` and `selectAlternative`;
+- encoding, rendering and committing: `cbor.encode`, `cbor.encodeWithin`, `cbor.encodedLengthWithin`, each codec's
+  `encode` and `codec.toCbor` (a hand-made codec that gives what is not a value is refused by its place),
+  `json.renderWithin` and `json.renderInto` (its sink too), `valueCommitment`, `valueCommitmentWithin` and
+  `hashCommitment` (its algorithm and prefix too);
+- helpers: `json.decimal`, `cbor.magnitudeBytes`, `bitLength` and `utf8Length`.
+
+Where a result has no room for a refusal, the answer is still defined and reads nothing of the argument: `equals` is
+false when either side is not a value, `MapValue.get` finds nothing for a key that is not text, `decodeUtf8` gives
+`undefined` for what is not bytes, and the diagnostics `inspect`, `describeFailure` and `Preview.of` give fixed
+placeholders (`<not a canonical value>`, `<not a decode failure>`, and a preview with the head `<not text>` and a
+length of 0). One exception remains until the hash API is converted: `contentHash`, `TaggedHash.content` and
+`TaggedHash.contentWithin` still throw on an argument that is not a value.
+
+Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
+or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the
+caller's realm, which nothing can change while the decoder runs, and copies it once first when it is a
+`SharedArrayBuffer` (another thread may write it) or another realm's; each decoded byte string is copied once into its
+value, which holds no view of the input. Scala's and Rust's types rule these arguments out, so this refusal is the
+TypeScript SDK's alone and has no conformance vector.
 
 For other-language implementers, here is the same model in CDDL (RFC 8610). This block is **informative**: it is not
 in `shared/schemas`, because tags and recursion are outside the code generator's profile. The prose above, and the
