@@ -16,7 +16,7 @@ import { Preview } from "./preview.js";
 import { search } from "./keyset.js";
 import { err, ok, type Err, type Result } from "./result.js";
 import { encodeUtf8, utf8Length } from "./utf8.js";
-import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, MapValue, MAX_DEPTH, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
+import { ArrayValue, BoolValue, BytesValue, canonicalKeyOrder, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, MAX_WEIGHT, TextValue, type Entry, type Value } from "./value.js";
 
 export type { Value } from "./value.js";
 export { ok } from "./result.js";
@@ -25,7 +25,9 @@ export { ok } from "./result.js";
  * Encodes `T` to a canonical value and decodes it back. `depth` is the nesting level of the value being encoded (0 at
  * the root, which is the default): containers refuse to go past {@link MAX_DEPTH} before descending, so a deeply nested
  * model is a typed `DepthExceeded`, never a stack overflow. A depth that is not a safe integer from 0 (negative, a
- * fraction, `NaN`, infinite, past 2^53 - 1) is a `TypeMismatch`, before anything is read: such a depth would never reach the limit.
+ * fraction, `NaN`, infinite, past 2^53 - 1) is a `TypeMismatch`, before anything is read: the walk adds one level a
+ * container and compares with the limit, which needs a whole number it can count exactly (a negative or `NaN` depth
+ * would never reach the limit, and past 2^53 - 1 adding one is not exact).
  * A hand-made codec composing others passes on the depth it was given, plus one for each container it writes.
  *
  * Decoding walks the value as the schema reads it, so a value built with shared parts costs up to its weight, and every
@@ -87,7 +89,7 @@ function codecOf<T>(shape: CodecShape): Codec<T> {
     encode: (value: T, depth = 0) =>
       Number.isSafeInteger(depth) && depth >= 0 ? encodeWith(codec, value, depth) : typeMismatch("the depth is not a safe integer from 0"),
     // the combinators that built `shape` keep its parts' types, so what it decodes is a `T`
-    decode: (value: Value) => decodeWith(codec, value) as Result<T, DecodeFailure>,
+    decode: (value: Value) => (isValue(value) ? (decodeWith(codec, value) as Result<T, DecodeFailure>) : notAValue()),
   });
   made.add(codec);
   return codec;
@@ -108,6 +110,8 @@ export type ModelError = { readonly kind: "Canonical"; readonly error: Canonical
  * outcome changes), so a refusal names a 64-bit budget, never a caller's integer of any size.
  */
 export function decodeWithin<T>(codec: Codec<T>, value: Value, maxWeight: bigint): Result<T, DecodeFailure> {
+  if (!isValue(value)) return notAValue();
+  if (!isBigint(maxWeight)) return decodeFailure("the weight budget is not a bigint");
   const budget = maxWeight < 0n ? 0n : maxWeight > MAX_WEIGHT ? MAX_WEIGHT : maxWeight;
   return value.weight > budget ? err(failure(`the value weighs over ${budget.toString()}`)) : codec.decode(value);
 }
@@ -146,14 +150,21 @@ export function decodeFailure(reason: string): Err<DecodeFailure> {
 
 const expected = (what: string, v: Value): Err<DecodeFailure> => decodeFailure(`expected ${what}, got ${v.kind}`);
 
+// What a caller can pass past the types (a JavaScript caller, a cast, a missing field) is checked in O(1) before it is
+// read, so it is refused as TypeMismatch rather than thrown on. These take `unknown`: the static type says it holds.
+const isBigint = (x: unknown): x is bigint => typeof x === "bigint";
+const isString = (x: unknown): x is string => typeof x === "string";
+const notA = (what: string): Err<CanonicalError> => typeMismatch(`expected ${what}`);
+const notAValue = (): Err<DecodeFailure> => decodeFailure("expected a canonical value");
+
 /** Any canonical value, unchanged (CDDL `any`). */
 export const any: Codec<Value> = leaf(
-  (v) => ok(v),
+  (v) => (isValue(v) ? ok(v) : notA("a canonical value")),
   (v) => ok(v),
 );
 
 export const bool: Codec<boolean> = leaf(
-  (b) => ok(BoolValue.of(b)),
+  (b) => (typeof (b as unknown) === "boolean" ? ok(BoolValue.of(b)) : notA("a boolean")),
   (v) => (v.kind === "bool" ? ok(v.value) : expected("bool", v)),
 );
 
@@ -163,7 +174,10 @@ const show = (b: bigint | null): string => (b === null ? "" : b.toString());
 export function intRange(lo: bigint | null, hi: bigint | null): Codec<bigint> {
   const within = (n: bigint): boolean => (lo === null || n >= lo) && (hi === null || n <= hi);
   return leaf(
-    (n) => (within(n) ? IntValue.of(n) : typeMismatch(`integer of ${bitLength(n).toString()} bits outside ${show(lo)}..${show(hi)}`)),
+    (n) => {
+      if (!isBigint(n)) return notA("a bigint");
+      return within(n) ? IntValue.of(n) : typeMismatch(`integer of ${bitLength(n).toString()} bits outside ${show(lo)}..${show(hi)}`);
+    },
     (v) => {
       if (v.kind !== "int") return expected("int", v);
       return within(v.value) ? ok(v.value) : decodeFailure(`integer of ${bitLength(v.value).toString()} bits outside ${show(lo)}..${show(hi)}`);
@@ -184,7 +198,10 @@ export const nint: Codec<bigint> = intRange(-(2n ** 64n), -1n);
 export function sizedBytes(lo: number, hi: number | null): Codec<Uint8Array> {
   const fits = (n: number): boolean => n >= lo && (hi === null || n <= hi);
   return leaf(
-    (b) => (fits(b.length) ? ok(BytesValue.of(b)) : typeMismatch(`byte string of ${b.length.toString()} bytes outside the schema size`)),
+    (b) => {
+      if (!((b as unknown) instanceof Uint8Array)) return notA("a Uint8Array");
+      return fits(b.length) ? ok(BytesValue.of(b)) : typeMismatch(`byte string of ${b.length.toString()} bytes outside the schema size`);
+    },
     (v) => {
       if (v.kind !== "bytes") return expected("bytes", v);
       return fits(v.length) ? ok(v.bytes) : decodeFailure(`byte string of ${v.length.toString()} bytes, expected ${lo.toString()}..${hi === null ? "" : hi.toString()}`);
@@ -199,6 +216,7 @@ export function sizedText(lo: number, hi: number | null): Codec<string> {
   const fits = (s: string): boolean => utf8Length(s) >= lo && (hi === null || utf8Length(s) <= hi);
   return leaf(
     (s) => {
+      if (!isString(s)) return notA("a string");
       const t = TextValue.of(s);
       if (!t.ok) return t;
       return fits(s) ? t : typeMismatch(`text of ${utf8Length(s).toString()} UTF-8 bytes outside the schema size`);
@@ -238,7 +256,10 @@ export function matches(pattern: TextPattern, text: string): boolean {
 /** Text matching a {@link TextPattern} (CDDL `text .regexp`). */
 export function matching(pattern: TextPattern): Codec<string> {
   return leaf(
-    (s) => (matches(pattern, s) ? TextValue.of(s) : typeMismatch(`text does not match ${pattern}`)),
+    (s) => {
+      if (!isString(s)) return notA("a string");
+      return matches(pattern, s) ? TextValue.of(s) : typeMismatch(`text does not match ${pattern}`);
+    },
     (v) => {
       if (v.kind !== "text") return expected("text", v);
       return matches(pattern, v.value) ? ok(v.value) : decodeFailure(`${Preview.of(v.value).toString()} does not match ${pattern}`);
@@ -246,10 +267,10 @@ export function matching(pattern: TextPattern): Codec<string> {
   );
 }
 
-/** Exactly the text `literal`, as its literal type. */
+/** Exactly the text `literal`, as its literal type: any other value is refused, as decoding refuses it. */
 export function literalText<S extends string>(literal: S): Codec<S> {
   return leaf(
-    () => TextValue.of(literal),
+    (s) => ((s as unknown) === literal ? TextValue.of(literal) : notA(JSON.stringify(literal))),
     (v) => {
       if (v.kind !== "text") return expected("text", v);
       return v.value === literal ? ok(literal) : decodeFailure(`expected ${JSON.stringify(literal)}, got ${Preview.of(v.value).toString()}`);
@@ -257,10 +278,10 @@ export function literalText<S extends string>(literal: S): Codec<S> {
   );
 }
 
-/** Exactly the integer `literal`, as its literal type. */
+/** Exactly the integer `literal`, as its literal type: any other value is refused, as decoding refuses it. */
 export function literalInt<N extends bigint>(literal: N): Codec<N> {
   return leaf(
-    () => IntValue.of(literal),
+    (n) => ((n as unknown) === literal ? IntValue.of(literal) : notA(literal.toString())),
     (v) => {
       if (v.kind !== "int") return expected("int", v);
       return v.value === literal ? ok(literal) : decodeFailure(`expected ${literal.toString()}, got an integer of ${bitLength(v.value).toString()} bits`);
@@ -270,6 +291,7 @@ export function literalInt<N extends bigint>(literal: N): Codec<N> {
 
 /** One of `texts`, for the text alternatives of a choice. */
 export function oneOfText(t: string, texts: readonly string[]): Result<Value, CanonicalError> {
+  if (!isString(t)) return notA("a string");
   return texts.includes(t) ? TextValue.of(t) : typeMismatch(`${Preview.of(t).toString()} is not an alternative`);
 }
 
@@ -277,6 +299,7 @@ export function oneOfText(t: string, texts: readonly string[]): Result<Value, Ca
 export function intEnum<L extends string>(name: string, cases: readonly (readonly [L, bigint])[]): Codec<L> {
   return leaf(
     (label) => {
+      if (!isString(label)) return notA(`a ${name} label`);
       const c = cases.find(([l]) => l === label);
       return c === undefined ? typeMismatch(`${Preview.of(label).toString()} is not a ${name}`) : IntValue.of(c[1]);
     },
@@ -379,7 +402,7 @@ export interface OptionalField<V> {
 /**
  * A field of a record that every value has. Let inference pick `V`, the codec's own type, which {@link record} then
  * checks against the property's type exactly. An explicit wider `V` is unchecked and acts as a cast:
- * `required<string>(key, literalText("x"))` compiles, and writes `"x"` whatever the property holds.
+ * `required<string>(key, literalText("x"))` compiles, and the literal codec then refuses any other value when encoding.
  */
 export function required<V>(key: string, codec: Codec<V>): RequiredField<V> {
   return { key, codec, optional: false };
@@ -407,6 +430,7 @@ export function record<T>(fields: RecordFields<T>): Codec<T> {
 
 /** The keys of a map that may be read as a record allowing `allowed`, which must hold all of them. */
 export function fields(v: Value, allowed: readonly string[]): Result<MapValue, DecodeFailure> {
+  if (!isValue(v)) return notAValue();
   if (v.kind !== "map") return expected("map", v);
   // the keys come in canonical order: the refusal counts the unknown ones and previews the first, never lists them
   const unknown = v.keys().filter((k) => !allowed.includes(k));
@@ -450,6 +474,8 @@ export function union<U>(name: string, alternatives: readonly Alternative<U>[], 
  * record encoder reads them, so getters count and unrelated properties do not.
  */
 export function hasFields(a: object, required: readonly string[], allowed: readonly string[], known: readonly string[]): boolean {
+  const x: unknown = a;
+  if ((typeof x !== "object" || x === null) && typeof x !== "function") return false;
   const present = known.filter((k) => Reflect.get(a, k) !== undefined);
   return required.every((k) => present.includes(k)) && present.every((k) => allowed.includes(k));
 }
@@ -459,6 +485,7 @@ export function hasFields(a: object, required: readonly string[], allowed: reado
  * keys) that fits a map, then the text alternatives, numbered after the records.
  */
 export function selectAlternative(v: Value, records: readonly (readonly [readonly string[], readonly string[]])[], texts: readonly string[]): Result<number, DecodeFailure> {
+  if (!isValue(v)) return notAValue();
   if (v.kind === "map") {
     const keys = v.keys();
     const i = records.findIndex(([required, allowed]) => required.every((k) => keys.includes(k)) && keys.every((k) => allowed.includes(k)));
@@ -656,6 +683,7 @@ function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack
   const pair = entry.value as readonly [string, unknown];
   stack.push(top);
   const [key, x] = pair;
+  if (!isString(key)) return { done: notA("a text map key (a string)") };
   top.key = key;
   return { codec: top.value, value: x, depth: top.depth };
 }

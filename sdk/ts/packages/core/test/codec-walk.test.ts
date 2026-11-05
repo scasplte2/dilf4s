@@ -326,8 +326,53 @@ describe("what the walks read and refuse", () => {
   it("an explicit wider type argument is unchecked and acts as a cast (Codec is bivariant, deliberately)", () => {
     // this compiles: if Codec's variance changes, this line fails to typecheck, and the change is a deliberate one
     const cast = record<{ readonly a: string }>({ a: required<string>("a", codec.literalText("x")) });
-    const v = expectOk(cast.encode({ a: "y" }), "the literal codec writes its literal, whatever the property holds");
+    // at run time the literal codec still refuses any value but its literal, as its decoder does
+    expect(cast.encode({ a: "y" })).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: 'expected "x"' } });
+    const v = expectOk(cast.encode({ a: "x" }), "its literal");
     expect(expectOk(json.renderWithin(v, json.MAX_RENDER_BYTES), "renders")).toBe('{"a":"x"}');
+  });
+
+  it("a value that does not match its static type is refused, never thrown on (a JavaScript caller, a cast)", () => {
+    const bad = (x: unknown): never => x as never;
+    const mismatch = (reason: string): unknown => ({ ok: false, error: { kind: "TypeMismatch", reason } });
+    // leaves
+    expect(codec.bool.encode(bad(1))).toEqual(mismatch("expected a boolean"));
+    expect(uint.encode(bad(5))).toEqual(mismatch("expected a bigint"));
+    expect(codec.bytes.encode(bad("00ff"))).toEqual(mismatch("expected a Uint8Array"));
+    expect(codec.text.encode(bad(7))).toEqual(mismatch("expected a string"));
+    expect(codec.matching("0|[1-9][0-9]*").encode(bad(7))).toEqual(mismatch("expected a string"));
+    expect(codec.literalText("x").encode(bad(7))).toEqual(mismatch('expected "x"'));
+    expect(codec.literalInt(7n).encode(bad(7))).toEqual(mismatch("expected 7"));
+    expect(codec.literalInt(7n).encode(bad(8n))).toEqual(mismatch("expected 7"));
+    expect(codec.intEnum("E", [["a", 1n]] as const).encode(bad(1))).toEqual(mismatch("expected a E label"));
+    expect(codec.any.encode(bad({ kind: "int" }))).toEqual(mismatch("expected a canonical value"));
+    expect(codec.oneOfText(bad(1), ["a"])).toEqual(mismatch("expected a string"));
+    // containers and records
+    expect(vector(uint, 0, null).encode(bad("ab"))).toEqual(mismatch("expected an array"));
+    expect(textMap(uint).encode(bad(5))).toEqual(mismatch("expected a map"));
+    expect(textMap(uint).encode(bad(new Map([[1, 1n]])))).toEqual(mismatch("expected a text map key (a string)"));
+    const r = record<{ readonly a: bigint }>({ a: required("a", uint) });
+    for (const x of [null, undefined, 5, "a"]) expect(r.encode(bad(x)), String(x)).toEqual(mismatch("expected a record"));
+    expect(r.encode(bad({}))).toEqual(mismatch("expected a bigint"));
+    expect(codec.hasFields(bad(null), [], [], ["a"])).toBe(false);
+    // decoding something that is not a canonical value
+    for (const x of [null, undefined, 5, { kind: "map" }]) {
+      expect(r.decode(bad(x)), typeof x).toEqual({ ok: false, error: { path: [], reason: "expected a canonical value" } });
+      expect(codec.decodeWithin(r, bad(x), 10n).ok).toBe(false);
+      expect(codec.fields(bad(x), ["a"]).ok).toBe(false);
+      expect(codec.selectAlternative(bad(x), [], []).ok).toBe(false);
+    }
+    expect(codec.decodeWithin(r, Value.null, bad(10))).toEqual({ ok: false, error: { path: [], reason: "the weight budget is not a bigint" } });
+    // rendering
+    expect(json.renderWithin(bad(null), 100)).toEqual(mismatch("expected a canonical value"));
+    expect(json.renderWithin(Value.null, bad("100"))).toEqual(mismatch("the byte limit is not a number"));
+  });
+
+  it("a map key that is not text is refused, and the map's iterator is closed, as for...of closes it for a throw", () => {
+    const log: string[] = [];
+    const m = { [Symbol.iterator]: () => logged("keys", [[1, 1n]], log) } as unknown as ReadonlyMap<string, bigint>;
+    expect(textMap(uint).encode(m)).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "expected a text map key (a string)" } });
+    expect(log).toEqual(["return-keys"]);
   });
 
   it("when caller code throws mid-walk, every iterator still open is closed, innermost first, and the error propagates", () => {

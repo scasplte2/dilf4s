@@ -14,7 +14,7 @@ import { KeySet } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { compareCodePoints } from "./utf8.js";
-import { ArrayValue, BoolValue, entriesView, IntValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
+import { ArrayValue, BoolValue, entriesView, IntValue, isValue, MapValue, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
 
 const INT32_MAX = 2n ** 31n - 1n;
 const INT32_MIN = -(2n ** 31n);
@@ -372,6 +372,9 @@ export type TextSink<S> = (s: S, piece: string) => S;
  * its characters once, in pieces that are a scalar, a quoted text or key, or punctuation, never a container's text.
  */
 export function renderInto<S>(value: Value, maxBytes: number, s: S, sink: TextSink<S>): Result<S, RenderError> {
+  // what a caller can pass past the types is refused in O(1), never read: the parts of a value are its own
+  if (!isValue(value)) return err({ kind: "TypeMismatch", reason: "expected a canonical value" });
+  if (typeof (maxBytes as unknown) !== "number") return err({ kind: "TypeMismatch", reason: "the byte limit is not a number" });
   const meter = new Meter(Math.min(byteLimit(maxBytes), MAX_RENDER_BYTES));
   let out = s;
   const stack: Rendering[] = [];

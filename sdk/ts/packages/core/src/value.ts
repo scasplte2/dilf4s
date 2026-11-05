@@ -53,6 +53,23 @@ const limbs = (bits: number): bigint => BigInt(Math.floor(bits / 64));
 export type Value = NullValue | BoolValue | IntValue | RationalValue | TextValue | BytesValue | ArrayValue | MapValue;
 
 /**
+ * Whether `x` is a canonical value (this module's constructors alone make one), in O(1): for what a caller may pass
+ * past the types, such as a JavaScript caller's argument.
+ */
+export function isValue(x: unknown): x is Value {
+  return (
+    x instanceof NullValue ||
+    x instanceof BoolValue ||
+    x instanceof IntValue ||
+    x instanceof RationalValue ||
+    x instanceof TextValue ||
+    x instanceof BytesValue ||
+    x instanceof ArrayValue ||
+    x instanceof MapValue
+  );
+}
+
+/**
  * A fresh plain `Uint8Array` holding `bytes`. `slice` would not do: on a Node `Buffer` it returns a view sharing memory.
  */
 export function copyBytes(bytes: Uint8Array): Uint8Array {
