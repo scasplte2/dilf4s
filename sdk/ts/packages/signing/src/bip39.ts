@@ -38,6 +38,8 @@ export class WordList {
   static of(words: readonly string[], separator = " "): Result<WordList, KeyError> {
     // the separator joins generated phrases, so it must be one that parsing splits on
     // a separator is one UTF-16 unit: a longer one is refused by its length, before it is read or previewed
+    // a JavaScript caller's separator that is not a string is refused by its type, unread
+    if (typeof (separator as unknown) !== "string") return err({ kind: "InvalidWordList", reason: "the separator is not a string" });
     if (separator.length !== 1) return err({ kind: "InvalidWordList", reason: `a separator of ${separator.length.toString()} characters is not one phrases are split on` });
     if (!SEPARATORS.test(separator)) return err({ kind: "InvalidWordList", reason: "the separator is not one phrases are split on", separator: Preview.of(separator) });
     // the count is checked before any word is normalised

@@ -5,6 +5,7 @@ import {
   type CanonicalError,
   contentHash,
   digest,
+  digestFromBytes,
   digestFromHex,
   DomainTag,
   expandMessageXmd,
@@ -16,6 +17,7 @@ import {
   json,
   models,
   parseHashAlgorithm,
+  Preview,
   type Result,
   taggedHash,
   toHex,
@@ -147,6 +149,36 @@ describe("canonical_encoding_v1.json", () => {
     expect(Object.keys(coverage).filter((k) => !pinned.has(k))).toEqual([]);
     const refused = new Set(vectors.expansions.flatMap((c) => (c.refusal === undefined ? [] : [c.refusal])));
     expect(Object.keys(refusals).filter((k) => !refused.has(k as ExpansionRefusal))).toEqual([]);
+  });
+});
+
+describe("a JavaScript caller's wrongly typed argument to the hash API is a typed refusal, never a throw", () => {
+  // the argument as any type, as a JavaScript caller may pass it
+  const as = (x: unknown): never => x as never;
+  const hostile = { toString: (): string => { throw new Error("read"); } };
+  const sha = "SHA-256";
+  it("names, tags and hex that are not strings", () => {
+    expect(parseHashAlgorithm(as(42))).toEqual({ ok: false, error: { kind: "UnknownAlgorithm", name: Preview.of("(number)") } });
+    expect(DomainTag.of(as(hostile))).toEqual({ ok: false, error: { kind: "InvalidDomainTag", tag: Preview.of("(object)") } });
+    expect(fromHex(as(hostile))).toEqual({ ok: false, error: { kind: "InvalidHex", offset: 0 } });
+    expect(digestFromHex(sha, as(null))).toEqual({ ok: false, error: { kind: "InvalidHex", offset: 0 } });
+  });
+  it("algorithms that are not one of the seven", () => {
+    const unknown = { ok: false, error: { kind: "UnknownAlgorithm", name: Preview.of("SHA-1") } };
+    expect(digestFromHex(as("SHA-1"), "00")).toEqual(unknown);
+    expect(digestFromBytes(as("SHA-1"), new Uint8Array(32))).toEqual(unknown);
+    expect(expandMessageXmd(as("SHA-1"), new Uint8Array(0), Uint8Array.of(1), 32)).toEqual(unknown);
+    expect(digestFromBytes(as(hostile), new Uint8Array(32))).toEqual({ ok: false, error: { kind: "UnknownAlgorithm", name: Preview.of("(object)") } });
+  });
+  it("bytes that are not a Uint8Array, and lengths that are not numbers", () => {
+    const fake = { length: 32, 0: 1 };
+    expect(digestFromBytes(sha, as(fake))).toEqual({ ok: false, error: { kind: "InvalidLength", algorithm: sha, expected: 32, actual: 0 } });
+    expect(digestFromBytes(sha, as("x".repeat(32)))).toEqual({ ok: false, error: { kind: "InvalidLength", algorithm: sha, expected: 32, actual: 0 } });
+    const refused = (refusal: ExpansionRefusal) => ({ ok: false, error: { kind: "InvalidExpansion", refusal, algorithm: sha, limit: 8160 } });
+    expect(expandMessageXmd(sha, new Uint8Array(0), as(fake), 32)).toEqual(refused("emptyDst"));
+    expect(expandMessageXmd(sha, new Uint8Array(0), Uint8Array.of(1), as("32"))).toEqual(refused("outputLength"));
+    expect(expandMessageXmd(sha, new Uint8Array(0), Uint8Array.of(1), Number.NaN)).toEqual(refused("outputLength"));
+    expect(expandMessageXmd(sha, new Uint8Array(0), Uint8Array.of(1), 1.5)).toEqual(refused("outputLength"));
   });
 });
 

@@ -10,7 +10,7 @@ import { firstNonDigit, fromHex } from "./hex.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
 import { encodeUtf8 } from "./utf8.js";
-import type { Value } from "./value.js";
+import { copyBytes, isBytes, type Value } from "./value.js";
 
 /**
  * A hash refusal, by kind (docs/specs/conformance.md section 6): generated from `shared/schemas/hash-errors.cddl`, as the
@@ -79,25 +79,45 @@ export function blockSize(algorithm: HashAlgorithm): number {
   }
 }
 
-/** The algorithm with this name, or `UnknownAlgorithm` with the name previewed. */
+/**
+ * A JavaScript caller's argument as a refusal previews it: a string's preview, or, for anything else, its type in
+ * parentheses (`(number)`), never read or converted (a conversion would run the caller's own `toString`).
+ */
+const previewOf = (x: unknown): Preview => (typeof x === "string" ? Preview.of(x) : Preview.of(`(${typeof x})`));
+
+/** Whether a JavaScript caller's argument is one of {@link HASH_ALGORITHMS}. */
+const isAlgorithm = (x: unknown): x is HashAlgorithm => HASH_ALGORITHMS.some((a) => a === x);
+
+const unknownAlgorithm = (x: unknown): HashErrorOf<"UnknownAlgorithm"> => ({ kind: "UnknownAlgorithm", name: previewOf(x) });
+
+/** The algorithm with this name, or `UnknownAlgorithm` with the name previewed (anything not a string by its type). */
 export function parseHashAlgorithm(name: string): Result<HashAlgorithm, HashErrorOf<"UnknownAlgorithm">> {
-  const found = HASH_ALGORITHMS.find((a) => a === name);
-  return found === undefined ? err({ kind: "UnknownAlgorithm", name: Preview.of(name) }) : ok(found);
+  return isAlgorithm(name) ? ok(name) : err(unknownAlgorithm(name));
 }
 
-/** A digest of `algorithm` from its bytes, which must be exactly its output size (a fresh copy). */
-export function digestFromBytes(algorithm: HashAlgorithm, bytes: Uint8Array): Result<Uint8Array, HashErrorOf<"InvalidLength">> {
+/**
+ * A digest of `algorithm` from its bytes, which must be exactly its output size (a fresh copy). A JavaScript caller's
+ * algorithm that is not one of {@link HASH_ALGORITHMS} is `UnknownAlgorithm`, and bytes that are not a `Uint8Array`
+ * (`isBytes`) are `InvalidLength` with an `actual` of 0: they hold no byte of a digest.
+ */
+export function digestFromBytes(algorithm: HashAlgorithm, bytes: Uint8Array): Result<Uint8Array, HashErrorOf<"InvalidLength" | "UnknownAlgorithm">> {
+  if (!isAlgorithm(algorithm)) return err(unknownAlgorithm(algorithm));
   const expected = outputSize(algorithm);
-  return bytes.length === expected ? ok(Uint8Array.from(bytes)) : err({ kind: "InvalidLength", algorithm, expected, actual: bytes.length });
+  const actual = isBytes(bytes) ? bytes.length : 0;
+  return actual === expected ? ok(copyBytes(bytes)) : err({ kind: "InvalidLength", algorithm, expected, actual });
 }
 
 /**
  * A digest of `algorithm` from its hex (docs/specs/canonical-encoding.md section 4): an optional `0x`, then exactly
  * twice the output size in ASCII hex digits, either case. `InvalidHex` at the first character that is not a hex digit
  * (or, for an odd number of digits, the text's length), `InvalidLength` for any other number of digits. Digits past the
- * width are refused reading at most one past it, before the text is decoded (conformance.md section 8).
+ * width are refused reading at most one past it, before the text is decoded (conformance.md section 8). A JavaScript
+ * caller's algorithm that is not one of {@link HASH_ALGORITHMS} is `UnknownAlgorithm`, and text that is not a string
+ * is `InvalidHex` at 0, unread.
  */
-export function digestFromHex(algorithm: HashAlgorithm, text: string): Result<Uint8Array, HashErrorOf<"InvalidLength" | "InvalidHex">> {
+export function digestFromHex(algorithm: HashAlgorithm, text: string): Result<Uint8Array, HashErrorOf<"InvalidLength" | "InvalidHex" | "UnknownAlgorithm">> {
+  if (!isAlgorithm(algorithm)) return err(unknownAlgorithm(algorithm));
+  if (typeof (text as unknown) !== "string") return err({ kind: "InvalidHex", offset: 0 });
   const from = text.startsWith("0x") ? 2 : 0;
   const digits = text.length - from;
   const expected = outputSize(algorithm);
@@ -120,17 +140,21 @@ const OVERSIZE_PREFIX = encodeUtf8("H2C-OVERSIZE-DST-");
  * RFC 9380 section 5.3.1 `expand_message_xmd`: `length` uniform bytes from `message` under the domain separation tag
  * `dst`. A DST over 255 bytes is first reduced to `H("H2C-OVERSIZE-DST-" || DST)` (section 5.3.3). Refused as
  * `InvalidExpansion`, before anything is hashed, for an empty DST (`emptyDst`), then for a length that is not an integer
- * in `1..`{@link expansionLimit} (`outputLength`).
+ * in `1..`{@link expansionLimit} (`outputLength`). A JavaScript caller's algorithm that is not one of
+ * {@link HASH_ALGORITHMS} is `UnknownAlgorithm`, a DST that is not a `Uint8Array` (`isBytes`) is `emptyDst` (it holds no
+ * byte of a tag), and a length that is not a number is `outputLength`. A message that is not a `Uint8Array` has no
+ * refusal in the family: it reaches the hash as given, as it does `digest` and `hashParts`.
  */
 export function expandMessageXmd(
   algorithm: HashAlgorithm,
   message: Uint8Array,
   dst: Uint8Array,
   length: number,
-): Result<Uint8Array, HashErrorOf<"InvalidExpansion">> {
+): Result<Uint8Array, HashErrorOf<"InvalidExpansion" | "UnknownAlgorithm">> {
+  if (!isAlgorithm(algorithm)) return err(unknownAlgorithm(algorithm));
   const limit = expansionLimit(algorithm);
   const refused = (refusal: ExpansionRefusal) => err<HashErrorOf<"InvalidExpansion">>({ kind: "InvalidExpansion", refusal, algorithm, limit });
-  if (dst.length === 0) return refused("emptyDst");
+  if (!isBytes(dst) || dst.length === 0) return refused("emptyDst");
   if (!Number.isSafeInteger(length) || length < 1 || length > limit) return refused("outputLength");
   const tag = dst.length > 255 ? hashParts(algorithm, [OVERSIZE_PREFIX, dst]) : dst;
   const suffix = new Uint8Array(tag.length + 1);
@@ -179,9 +203,12 @@ export class DomainTag {
     return this.#value;
   }
 
-  /** The tag, if it matches the grammar. */
+  /**
+   * The tag, if it matches the grammar. A JavaScript caller's tag that is not a string is `InvalidDomainTag`, previewed
+   * by its type and never converted (a regular expression would run its `toString`).
+   */
   static of(tag: string): Result<DomainTag, HashErrorOf<"InvalidDomainTag">> {
-    return DOMAIN_TAG.test(tag) ? ok(new DomainTag(tag)) : err({ kind: "InvalidDomainTag", tag: Preview.of(tag) });
+    return typeof (tag as unknown) === "string" && DOMAIN_TAG.test(tag) ? ok(new DomainTag(tag)) : err({ kind: "InvalidDomainTag", tag: previewOf(tag) });
   }
 }
 

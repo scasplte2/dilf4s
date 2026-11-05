@@ -145,6 +145,8 @@ describe("BIP-39", { timeout: 60_000 }, () => {
     // the caller's separator is held as a preview (conformance.md section 8), never as reason text
     const comma = WordList.of(ENGLISH, ",");
     expect(comma.ok ? undefined : comma.error).toEqual({ kind: "InvalidWordList", reason: "the separator is not one phrases are split on", separator: Preview.of(",") });
+    const notText = WordList.of(ENGLISH, 32 as unknown as string);
+    expect(notText.ok ? undefined : notText.error, "a separator that is not a string, by its type").toEqual({ kind: "InvalidWordList", reason: "the separator is not a string" });
     const two = WordList.of(ENGLISH, "  ");
     expect(two.ok ? undefined : two.error, "a longer one by its length alone").toEqual({ kind: "InvalidWordList", reason: "a separator of 2 characters is not one phrases are split on" });
     // conformance.md section 8: a long separator is refused by its length, unread and never echoed

@@ -22,9 +22,11 @@ export function firstNonDigit(text: string, from: number, until: number): number
  * The bytes of hexadecimal text: ASCII digits and `a`-`f` in either case, two per byte. Refused as `InvalidHex` at the
  * first character that is not a hex digit, or else, for an odd number of digits, at the text's length: every character
  * before either is ASCII, so the offset is the same in UTF-16 units, UTF-8 bytes and code points
- * (docs/specs/canonical-encoding.md section 4).
+ * (docs/specs/canonical-encoding.md section 4). A JavaScript caller's argument that is not a string is `InvalidHex` at
+ * 0, unread: it holds no hex digit.
  */
 export function fromHex(text: string): Result<Uint8Array, HashErrorOf<"InvalidHex">> {
+  if (typeof (text as unknown) !== "string") return err({ kind: "InvalidHex", offset: 0 });
   const bad = firstNonDigit(text, 0, text.length);
   if (bad >= 0) return err({ kind: "InvalidHex", offset: bad });
   if (text.length % 2 !== 0) return err({ kind: "InvalidHex", offset: text.length });
