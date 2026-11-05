@@ -241,6 +241,36 @@ describe("what the walks read and refuse", () => {
     expect(after).toBe(false);
   });
 
+  it("a codec made by hand keeps its own checks wherever it is composed", () => {
+    // a codec spread from uint, its methods replaced to refuse zero: its shape is still uint's
+    const nonZero: Codec<bigint> = {
+      ...uint,
+      encode: (n, depth) => (n === 0n ? codec.typeMismatch("zero") : uint.encode(n, depth)),
+      decode: (v) => (v.kind === "int" && v.value === 0n ? codec.decodeFailure("zero") : uint.decode(v)),
+    };
+    const many = vector(nonZero, 0, null);
+    expect(many.encode([1n, 0n])).toMatchObject({ ok: false, error: { reason: "zero" } });
+    expect(decoded(many.decode(array([int(1n), int(0n)])))).toBe("[1]: zero");
+    const inRecord = record<{ readonly n: bigint }>({ n: required("n", nonZero) });
+    expect(inRecord.encode({ n: 0n })).toMatchObject({ ok: false, error: { reason: "zero" } });
+    expect(decoded(defer(() => nonZero).decode(int(0n)))).toBe("<root>: zero");
+  });
+
+  it("a refusal closes the iterators of the containers still open, innermost first", () => {
+    const closed: string[] = [];
+    function* entries(name: string, items: readonly (readonly [string, unknown])[]): Generator<readonly [string, unknown]> {
+      try {
+        yield* items;
+      } finally {
+        closed.push(name);
+      }
+    }
+    const inner = { [Symbol.iterator]: () => entries("inner", [["x", -1n]]) } as unknown as ReadonlyMap<string, bigint>;
+    const outer = { [Symbol.iterator]: () => entries("outer", [["m", inner]]) } as unknown as ReadonlyMap<string, ReadonlyMap<string, bigint>>;
+    expect(textMap(textMap(uint)).encode(outer).ok).toBe(false);
+    expect(closed).toEqual(["inner", "outer"]);
+  });
+
   it("a chain of 10,000 references is followed once per reference, each way", () => {
     let resolved = 0;
     const chain = Array.from({ length: 10_000 }).reduce<Codec<bigint>>(

@@ -28,7 +28,8 @@ export { ok } from "./result.js";
  *
  * Decoding walks the value as the schema reads it, so a value built with shared parts costs up to its weight, and every
  * byte string read is copied each time it occurs: decode a caller's value with {@link decodeWithin}. Neither direction
- * recurses: both walk {@link shape} with an explicit stack.
+ * recurses: both walk {@link shape} with an explicit stack. A codec made otherwise than by this module's combinators
+ * is called through its own `encode` and `decode` wherever it is composed, and recurses as it does.
  */
 export interface Codec<T> {
   encode(value: T, depth?: number): Result<Value, CanonicalError>;
@@ -66,13 +67,22 @@ interface RecordField {
   readonly optional: boolean;
 }
 
-const codecOf = <T>(shape: CodecShape): Codec<T> =>
-  Object.freeze({
+/**
+ * The codecs this module's combinators made, whose `shape` is what they do. Any other object with a codec's methods
+ * (one spread from a codec, its methods replaced, say) is called through its methods, so composing it keeps its checks.
+ */
+const made = new WeakSet<Codec<unknown>>();
+
+function codecOf<T>(shape: CodecShape): Codec<T> {
+  const codec: Codec<T> = Object.freeze({
     shape,
-    encode: (value: T, depth = 0) => encodeWith(shape, value, depth),
+    encode: (value: T, depth = 0) => encodeWith(codec, value, depth),
     // the combinators that built `shape` keep its parts' types, so what it decodes is a `T`
-    decode: (value: Value) => decodeWith(shape, value) as Result<T, DecodeFailure>,
+    decode: (value: Value) => decodeWith(codec, value) as Result<T, DecodeFailure>,
   });
+  made.add(codec);
+  return codec;
+}
 
 /** A codec that reads and writes a value whole, calling no other codec. */
 export function leaf<T>(encode: (value: T) => Result<Value, CanonicalError>, decode: (value: Value) => Result<T, DecodeFailure>): Codec<T> {
@@ -447,27 +457,42 @@ type Reading = Exclude<CodecShape, { readonly kind: "defer" | "union" }>;
 type Choosing = Extract<CodecShape, { readonly kind: "defer" | "union" }>;
 
 /**
- * What `shape` stands for, for `value`: references and unions followed (`choose` takes one step, to a shape, or to an
- * outcome) until a leaf or a container. A step back to a shape already passed reads nothing new and would never end,
- * so it is refused as `circular`. Each step reads only the value's kind and keys, so this is O(the schema's chain).
+ * What `codec` stands for, for `value`: references and unions followed (`choose` takes one step, to a codec, or to an
+ * outcome) until a leaf, a container, or a codec this module did not make (`foreign`, called through its methods). A
+ * step back to a shape already passed reads nothing new and would never end, so it is refused as `circular`. Each step
+ * reads only the value's kind and keys, so this is O(the schema's chain).
  */
-function follow<V, D>(shape: CodecShape, value: V, choose: (s: Choosing, v: V) => { readonly to: CodecShape } | { readonly done: D }, circular: D): { readonly reading: Reading } | { readonly done: D } {
+function follow<V, D>(
+  codec: Codec<unknown>,
+  value: V,
+  choose: (s: Choosing, v: V) => { readonly to: Codec<unknown> } | { readonly done: D },
+  circular: D,
+): { readonly reading: Reading } | { readonly foreign: Codec<unknown> } | { readonly done: D } {
   // by identity, in O(1) a step: the shapes are the schema's, never caller data
   let passed: Set<CodecShape> | undefined;
-  let s = shape;
-  while (s.kind === "defer" || s.kind === "union") {
+  for (let c = codec; ; ) {
+    if (!made.has(c)) return { foreign: c };
+    const s = c.shape;
+    if (s.kind !== "defer" && s.kind !== "union") return { reading: s };
     passed ??= new Set();
     if (passed.has(s)) return { done: circular };
     passed.add(s);
     const next = choose(s, value);
     if ("done" in next) return next;
-    s = next.to;
+    c = next.to;
   }
-  return { reading: s };
+}
+
+/** Closes the iterators of the vectors and maps still open, innermost first, as leaving a `for...of` early does. */
+function close(stack: readonly Encoding[]): void {
+  for (const frame of [...stack].reverse()) {
+    if (frame.kind === "vector") frame.items.return?.();
+    else if (frame.kind === "textMap") frame.entries.return?.();
+  }
 }
 
 /** A part still to encode, at `depth`, or the outcome of the part just encoded. */
-type EncodeStep = { readonly shape: CodecShape; readonly value: unknown; readonly depth: number; readonly done?: undefined } | { readonly done: Result<Value, CanonicalError> };
+type EncodeStep = { readonly codec: Codec<unknown>; readonly value: unknown; readonly depth: number; readonly done?: undefined } | { readonly done: Result<Value, CanonicalError> };
 
 /**
  * A container being encoded: its parts, the depth of its parts, and what they encoded to. A vector's or map's parts
@@ -475,38 +500,43 @@ type EncodeStep = { readonly shape: CodecShape; readonly value: unknown; readonl
  * is read), as a `for...of` reads them; a record's fields by index (`at`, the one being encoded).
  */
 type Encoding =
-  | { readonly kind: "vector"; readonly items: Iterator<unknown>; readonly element: CodecShape; readonly depth: number; readonly out: Value[] }
-  | { readonly kind: "textMap"; readonly entries: Iterator<readonly [string, unknown]>; key: string; readonly value: CodecShape; readonly depth: number; readonly out: (readonly [string, Value])[] }
+  | { readonly kind: "vector"; readonly items: Iterator<unknown>; readonly element: Codec<unknown>; readonly depth: number; readonly out: Value[] }
+  | { readonly kind: "textMap"; readonly entries: Iterator<readonly [string, unknown]>; key: string; readonly value: Codec<unknown>; readonly depth: number; readonly out: (readonly [string, Value])[] }
   | { readonly kind: "record"; readonly fields: readonly RecordField[]; readonly of: object; readonly depth: number; at: number; readonly out: (readonly [string, Value])[] };
 
 /** The encoder: one loop, an explicit stack of the containers open, and nothing recursive. */
-function encodeWith(root: CodecShape, value: unknown, depth: number): Result<Value, CanonicalError> {
+function encodeWith(root: Codec<unknown>, value: unknown, depth: number): Result<Value, CanonicalError> {
   const stack: Encoding[] = [];
   for (let step = openEncoding(root, value, depth, stack); ; ) {
     if (step.done === undefined) {
-      step = openEncoding(step.shape, step.value, step.depth, stack);
+      step = openEncoding(step.codec, step.value, step.depth, stack);
       continue;
     }
     const top = stack.at(-1);
-    if (top === undefined || !step.done.ok) return step.done;
+    if (top === undefined) return step.done;
+    if (!step.done.ok) {
+      close(stack);
+      return step.done;
+    }
     step = nextEncoding(top, step.done.value, stack);
   }
 }
 
-/** Starts encoding `value` with `shape`: a leaf's outcome, or a container now open and its first part. */
-function openEncoding(shape: CodecShape, value: unknown, depth: number, stack: Encoding[]): EncodeStep {
+/** Starts encoding `value` with `codec`: a leaf's outcome, or a container now open and its first part. */
+function openEncoding(codec: Codec<unknown>, value: unknown, depth: number, stack: Encoding[]): EncodeStep {
   const followed = follow(
-    shape,
+    codec,
     value,
-    (s, v): { readonly to: CodecShape } | { readonly done: Result<Value, CanonicalError> } => {
-      if (s.kind === "defer") return { to: s.resolve().shape };
+    (s, v): { readonly to: Codec<unknown> } | { readonly done: Result<Value, CanonicalError> } => {
+      if (s.kind === "defer") return { to: s.resolve() };
       if (typeof v === "string" && s.texts.length > 0) return { done: oneOfText(v, s.texts) };
       const fit = typeof v === "object" && v !== null ? s.alternatives.find((a) => hasFields(v, a.required, a.allowed, s.known)) : undefined;
-      return fit === undefined ? { done: typeMismatch(`no alternative of ${s.name} fits`) } : { to: fit.codec.shape };
+      return fit === undefined ? { done: typeMismatch(`no alternative of ${s.name} fits`) } : { to: fit.codec };
     },
     typeMismatch("the codec refers to itself without writing a container"),
   );
   if ("done" in followed) return followed;
+  if ("foreign" in followed) return { done: followed.foreign.encode(value, depth) };
   const s = followed.reading;
   switch (s.kind) {
     case "leaf":
@@ -516,13 +546,13 @@ function openEncoding(shape: CodecShape, value: unknown, depth: number, stack: E
       if (!Array.isArray(value)) return { done: typeMismatch("expected an array") };
       const items: readonly unknown[] = value;
       if (items.length < s.min || (s.max !== null && items.length > s.max)) return { done: typeMismatch(`array of ${items.length.toString()} elements outside the schema size`) };
-      return opened({ kind: "vector", items: items[Symbol.iterator](), element: s.element.shape, depth: depth + 1, out: [] }, stack);
+      return opened({ kind: "vector", items: items[Symbol.iterator](), element: s.element, depth: depth + 1, out: [] }, stack);
     }
     case "textMap": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
       if (typeof value !== "object" || value === null || !(Symbol.iterator in value)) return { done: typeMismatch("expected a map") };
       const entries = (value as Iterable<readonly [string, unknown]>)[Symbol.iterator]();
-      return opened({ kind: "textMap", entries, key: "", value: s.value.shape, depth: depth + 1, out: [] }, stack);
+      return opened({ kind: "textMap", entries, key: "", value: s.value, depth: depth + 1, out: [] }, stack);
     }
     case "record": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
@@ -559,7 +589,7 @@ function nextEncoding(top: Encoding, v: Value, stack: Encoding[]): EncodeStep {
 function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack: Encoding[]): EncodeStep {
   if (top.kind === "vector") {
     const item = top.items.next();
-    if (item.done !== true) return { shape: top.element, value: item.value, depth: top.depth };
+    if (item.done !== true) return { codec: top.element, value: item.value, depth: top.depth };
     stack.pop();
     return { done: ArrayValue.of(top.out) };
   }
@@ -567,7 +597,7 @@ function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack
   if (entry.done !== true) {
     const [key, x] = entry.value;
     top.key = key;
-    return { shape: top.value, value: x, depth: top.depth };
+    return { codec: top.value, value: x, depth: top.depth };
   }
   stack.pop();
   return { done: MapValue.of(top.out) };
@@ -577,27 +607,27 @@ function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack
 function nextField(top: Encoding & { readonly kind: "record" }, stack: Encoding[]): EncodeStep {
   for (let f = top.fields[top.at]; f !== undefined; f = top.fields[++top.at]) {
     const x: unknown = Reflect.get(top.of, f.prop);
-    if (x !== undefined || !f.optional) return { shape: f.codec.shape, value: x, depth: top.depth };
+    if (x !== undefined || !f.optional) return { codec: f.codec, value: x, depth: top.depth };
   }
   stack.pop();
   return { done: MapValue.of(top.out) };
 }
 
 /** A part still to decode, or the outcome of the part just decoded. */
-type DecodeStep = { readonly shape: CodecShape; readonly value: Value; readonly done?: undefined } | { readonly done: Result<unknown, DecodeFailure> };
+type DecodeStep = { readonly codec: Codec<unknown>; readonly value: Value; readonly done?: undefined } | { readonly done: Result<unknown, DecodeFailure> };
 
 /** A container being decoded: its parts, the one being decoded (`at`), and what they decoded to. */
 type Decoding =
-  | { readonly kind: "vector"; readonly items: readonly Value[]; readonly element: CodecShape; at: number; readonly out: unknown[] }
-  | { readonly kind: "textMap"; readonly entries: readonly Entry[]; readonly value: CodecShape; at: number; readonly out: (readonly [string, Uint8Array, unknown])[] }
+  | { readonly kind: "vector"; readonly items: readonly Value[]; readonly element: Codec<unknown>; at: number; readonly out: unknown[] }
+  | { readonly kind: "textMap"; readonly entries: readonly Entry[]; readonly value: Codec<unknown>; at: number; readonly out: (readonly [string, Uint8Array, unknown])[] }
   | { readonly kind: "record"; readonly fields: readonly RecordField[]; readonly map: MapValue; at: number; readonly out: (readonly [string, unknown])[] };
 
 /** The decoder: one loop, an explicit stack of the containers open, and nothing recursive. */
-function decodeWith(root: CodecShape, value: Value): Result<unknown, DecodeFailure> {
+function decodeWith(root: Codec<unknown>, value: Value): Result<unknown, DecodeFailure> {
   const stack: Decoding[] = [];
   for (let step = openDecoding(root, value, stack); ; ) {
     if (step.done === undefined) {
-      step = openDecoding(step.shape, step.value, stack);
+      step = openDecoding(step.codec, step.value, stack);
       continue;
     }
     const top = stack.at(-1);
@@ -620,21 +650,22 @@ function segment(d: Decoding): string {
   }
 }
 
-/** Starts decoding `value` with `shape`: a leaf's outcome, or a container now open and its first part. */
-function openDecoding(shape: CodecShape, value: Value, stack: Decoding[]): DecodeStep {
+/** Starts decoding `value` with `codec`: a leaf's outcome, or a container now open and its first part. */
+function openDecoding(codec: Codec<unknown>, value: Value, stack: Decoding[]): DecodeStep {
   const followed = follow(
-    shape,
+    codec,
     value,
-    (s, v): { readonly to: CodecShape } | { readonly done: Result<unknown, DecodeFailure> } => {
-      if (s.kind === "defer") return { to: s.resolve().shape };
+    (s, v): { readonly to: Codec<unknown> } | { readonly done: Result<unknown, DecodeFailure> } => {
+      if (s.kind === "defer") return { to: s.resolve() };
       const i = selectAlternative(v, s.keys, s.texts);
       if (!i.ok) return { done: i };
       const alt = s.alternatives[i.value];
-      return alt === undefined ? { done: ok(s.texts[i.value - s.alternatives.length]) } : { to: alt.codec.shape };
+      return alt === undefined ? { done: ok(s.texts[i.value - s.alternatives.length]) } : { to: alt.codec };
     },
     decodeFailure("the codec refers to itself without reading a container"),
   );
   if ("done" in followed) return followed;
+  if ("foreign" in followed) return { done: followed.foreign.decode(value) };
   const s = followed.reading;
   switch (s.kind) {
     case "leaf":
@@ -643,13 +674,13 @@ function openDecoding(shape: CodecShape, value: Value, stack: Decoding[]): Decod
       if (value.kind !== "array") return { done: expected("array", value) };
       const n = value.items.length;
       if (n < s.min || (s.max !== null && n > s.max)) return { done: decodeFailure(`array of ${n.toString()} elements, expected ${s.min.toString()}..${s.max === null ? "" : s.max.toString()}`) };
-      const frame: Decoding & { readonly kind: "vector" } = { kind: "vector", items: value.items, element: s.element.shape, at: 0, out: [] };
+      const frame: Decoding & { readonly kind: "vector" } = { kind: "vector", items: value.items, element: s.element, at: 0, out: [] };
       stack.push(frame);
       return nextItem(frame, stack);
     }
     case "textMap": {
       if (value.kind !== "map") return { done: expected("map", value) };
-      const frame: Decoding & { readonly kind: "textMap" } = { kind: "textMap", entries: entriesView(value), value: s.value.shape, at: 0, out: [] };
+      const frame: Decoding & { readonly kind: "textMap" } = { kind: "textMap", entries: entriesView(value), value: s.value, at: 0, out: [] };
       stack.push(frame);
       return nextItem(frame, stack);
     }
@@ -687,12 +718,12 @@ function nextDecoding(top: Decoding, v: unknown, stack: Decoding[]): DecodeStep 
 function nextItem(top: Decoding & { readonly kind: "vector" | "textMap" }, stack: Decoding[]): DecodeStep {
   if (top.kind === "vector") {
     const item = top.items[top.at];
-    if (item !== undefined) return { shape: top.element, value: item };
+    if (item !== undefined) return { codec: top.element, value: item };
     stack.pop();
     return { done: ok(top.out) };
   }
   const e = top.entries[top.at];
-  if (e !== undefined) return { shape: top.value, value: e.value };
+  if (e !== undefined) return { codec: top.value, value: e.value };
   stack.pop();
   return { done: ok(new TextMap(top.out)) };
 }
@@ -704,7 +735,7 @@ function nextItem(top: Decoding & { readonly kind: "vector" | "textMap" }, stack
 function nextMember(top: Decoding & { readonly kind: "record" }, stack: Decoding[]): DecodeStep {
   for (let f = top.fields[top.at]; f !== undefined; f = top.fields[++top.at]) {
     const x = top.map.get(f.key);
-    if (x !== undefined) return { shape: f.codec.shape, value: x };
+    if (x !== undefined) return { codec: f.codec, value: x };
     if (!f.optional) {
       stack.pop();
       return { done: decodeFailure(`missing required key ${JSON.stringify(f.key)}`) };
