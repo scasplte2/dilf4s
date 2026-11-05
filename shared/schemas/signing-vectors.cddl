@@ -1,4 +1,5 @@
 ; Schema of shared/vectors/signing_v1.json (conformance vectors for docs/specs/signing.md).
+;# import crypto-errors as errors
 
 signing-vectors = {
   "spec": "docs/specs/signing.md",
@@ -17,7 +18,8 @@ signing-vectors = {
 }
 
 ; How a scheme's decoder classifies an encoded signing or verifying key: "accepted", or the kind of its typed
-; error. A wrong length is "InvalidEncoding"; bytes of the right length that are not a key are "InvalidKey".
+; error (CryptoError, crypto-errors.cddl). A wrong length is "InvalidEncoding"; bytes of the right length that are not
+; a key are "InvalidKey".
 ; "Ed25519-BIP32" has signing keys only (its verifying keys are Ed25519's).
 key-decoding-case = {
   "scheme": text,
@@ -29,16 +31,13 @@ key-decoding-case = {
 
 key-part = "signingKey" / "verifyingKey"
 
-key-decoding-result = "accepted" / "InvalidEncoding" / "InvalidKey"
+key-decoding-result = "accepted" / errors.crypto-error-kind
 
 ; A derivation path (section 3) and its serialised indices (bit 31 set when hardened), or why it is refused.
 path-case = { "path": text, "result": path-result }
 
-; A refusal names the first rule the path breaks, its segments checked in order: "missingMaster" (it is not `m` and
-; does not start with `m/`), "malformed" (a segment is not ASCII digits and an optional `'` or `h`), "leadingZero",
-; "tooManyDigits" (more than 10), "outOfRange" (2^31 or more), "tooDeep" (a 256th segment, whatever it holds).
-path-result =
-  path-indices / "missingMaster" / "malformed" / "leadingZero" / "tooManyDigits" / "outOfRange" / "tooDeep"
+; A refusal names the first rule the path breaks (PathRefusal, crypto-errors.cddl).
+path-result = path-indices / errors.path-refusal
 
 path-indices = { "indices": [* uint] }
 
@@ -60,12 +59,9 @@ verification-case = {
 
 verification-result = "valid" / "invalid" / verification-refusal
 
-verification-refusal = { "part": verification-part, "kind": crypto-error-kind }
+verification-refusal = { "part": verification-part, "kind": errors.crypto-error-kind }
 
 verification-part = "verifyingKey" / "signature"
-
-; A CryptoError kind (signing.md section 4). BackendFailure, a JVM provider's own failure, has no row.
-crypto-error-kind = "InvalidEncoding" / "InvalidKey"
 
 ; A key-derivation call the reference refuses, with its KeyError kind (signing.md sections 2 and 3). "check" names it:
 ; "bip39-entropy" (BIP-39 entropy to a mnemonic: "entropy"), "bip39-phrase" (a phrase to its entropy, English list:
@@ -82,12 +78,10 @@ key-refusal = {
   ? "verifyingKey": hex,
   ? "chainCode": hex,
   ? "path": text,
-  "kind": key-error-kind,
+  "kind": errors.key-error-kind,
 }
 
 key-check = "bip39-entropy" / "bip39-phrase" / "word-list" / "slip10" / "bip32" / "bip32-public" / "icarus-public"
-
-key-error-kind = "InvalidEntropy" / "InvalidMnemonic" / "InvalidWordList" / "InvalidDerivation"
 
 signing-scheme = { "scheme": text, "keys": [* signing-key] }
 

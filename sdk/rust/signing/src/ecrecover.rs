@@ -16,7 +16,7 @@ use k256::{AffinePoint, FieldBytes, ProjectivePoint, Scalar, U256};
 
 use dilf4s_core::hash::{Hasher, Keccak256};
 
-use crate::error::SigningError;
+use crate::error::CryptoError;
 use crate::util::exact;
 
 /// A digest's width.
@@ -30,7 +30,7 @@ pub const ADDRESS_BYTES: usize = 20;
 ///
 /// Wrong sizes or another `v` are malformed (`Err`). A well-formed signature that recovers no key is `Ok(None)`: `r`
 /// or `s` zero or not below the order, a high `s`, an `r` that is no point's x-coordinate, or a recovered identity.
-pub fn recover(digest: &[u8], signature: &[u8]) -> Result<Option<[u8; ADDRESS_BYTES]>, SigningError> {
+pub fn recover(digest: &[u8], signature: &[u8]) -> Result<Option<[u8; ADDRESS_BYTES]>, CryptoError> {
     let digest: [u8; DIGEST_BYTES] = exact("ecrecover digest", digest)?;
     let signature: [u8; SIGNATURE_BYTES] = exact("ecrecover signature", signature)?;
     let (rs, v) = signature.split_at(64);
@@ -38,8 +38,8 @@ pub fn recover(digest: &[u8], signature: &[u8]) -> Result<Option<[u8; ADDRESS_BY
         [0 | 27] => 0u8,
         [1 | 28] => 1u8,
         _ => {
-            return Err(SigningError::InvalidEncoding {
-                what: "ecrecover signature",
+            return Err(CryptoError::InvalidEncoding {
+                what: "ecrecover signature".into(),
                 reason: alloc::format!("v is 27 or 28 (or 0 or 1), got {v:?}"),
             });
         }
@@ -74,8 +74,8 @@ fn address(key: &AffinePoint) -> [u8; ADDRESS_BYTES] {
 }
 
 /// The address of a SEC1-encoded secp256k1 public key (33 or 65 bytes).
-pub fn address_of_key(key: &[u8]) -> Result<[u8; ADDRESS_BYTES], SigningError> {
+pub fn address_of_key(key: &[u8]) -> Result<[u8; ADDRESS_BYTES], CryptoError> {
     let point = k256::PublicKey::from_sec1_bytes(key)
-        .map_err(|_| SigningError::InvalidKey { reason: "not a secp256k1 public key".into() })?;
+        .map_err(|_| CryptoError::InvalidKey { reason: "not a secp256k1 public key".into() })?;
     Ok(address(point.as_affine()))
 }

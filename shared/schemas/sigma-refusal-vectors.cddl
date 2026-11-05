@@ -3,6 +3,7 @@
 ; CBOR, so that a malformed one can be written), the proof and the message, with the outcome. "ergoCases" and
 ; "dilf4sCases" are the reference's outcome on each case of sigma_v1.json and sigma_dilf4s_v1.json, in their order:
 ; those files carry Ergo's verdict, which is not ours for a proof of the wrong length or a response out of range.
+;# import crypto-errors as errors
 
 sigma-refusal-vectors = {
   "spec": "docs/specs/sigma.md",
@@ -16,7 +17,6 @@ sigma-refusal = { "name": text, "proposition": hex, "proof": hex, "message": hex
 
 ; "accepted" (the proof verifies), "rejected" (a well-formed proof that does not), or the SigmaError kind. The
 ; proposition is decoded first, then the proof's length, then its responses.
-sigma-outcome =
-  "accepted" / "rejected" / "InvalidProposition" / "InvalidPoint" / "ProofLength" / "ResponseOutOfRange"
+sigma-outcome = "accepted" / "rejected" / errors.sigma-error-kind
 
 hex = text .regexp "([0-9a-f]{2})*"

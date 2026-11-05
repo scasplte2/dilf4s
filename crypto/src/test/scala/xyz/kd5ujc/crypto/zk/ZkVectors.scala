@@ -51,12 +51,12 @@ object ZkVectors {
     )
   )
 
-  private def kind(e: Bn254.ZkError): String = e match {
-    case Bn254.ZkError.Malformed(_)    => "Malformed"
-    case Bn254.ZkError.InvalidPoint(_) => "InvalidPoint"
+  private def kind(e: ZkError): String = e match {
+    case ZkError.Malformed(_)    => "Malformed"
+    case ZkError.InvalidPoint(_) => "InvalidPoint"
   }
 
-  private def point(r: Either[Bn254.ZkError, ByteVector]): Json =
+  private def point(r: Either[ZkError, ByteVector]): Json =
     r.fold(e => Json.obj("error" -> kind(e).asJson), p => Json.obj("point" -> p.toHex.asJson))
 
   private def add(name: String, a: ByteVector, b: ByteVector): Json =

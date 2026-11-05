@@ -17,9 +17,9 @@ import weaver.{Expectations, SimpleIOSuite}
 
 object SigmaSuite extends SimpleIOSuite with Checkers {
 
-  private def key(pk: GroupElement): SigmaProp = SigmaProp.dlog(pk).fold(sys.error, identity)
+  private def key(pk: GroupElement): SigmaProp = SigmaProp.dlog(pk).fold(e => sys.error(e.message), identity)
   private def tuple(g: GroupElement, h: GroupElement, u: GroupElement, v: GroupElement): SigmaProp =
-    SigmaProp.dhTuple(g, h, u, v).fold(sys.error, identity)
+    SigmaProp.dhTuple(g, h, u, v).fold(e => sys.error(e.message), identity)
 
   // ---- GF(2^192)
 
@@ -197,7 +197,7 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     hex"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f817980214487635ebffa60b13a166bd0721c5f0ab603fc74168d7764d7ec5ef2107f5d40334c5b7efa5a4a22b83d102d2e6521eaa660fa911c5a213af63c8460f2327513b026a0be2a277291d42daad3830cb16a4ef20e4f1f7c36384f3fee065f0f143a355"
   )
 
-  private def p(e: Either[String, SigmaProp]): SigmaProp = e.fold(sys.error, identity)
+  private def p(e: Either[SigmaError, SigmaProp]): SigmaProp = e.fold(e => sys.error(e.message), identity)
 
   private val vectors: List[(String, SigmaProp, ByteVector)] = List(
     (
@@ -260,11 +260,11 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
       pureTest(s"Ergo vector: $name verifies; another message, a flipped byte or a changed length do not") {
         val flipped = proof.update(proof.size - 1, (proof(proof.size - 1) ^ 1).toByte)
         expect
-          .same(Right(true), Sigma.verify(prop, proof, msg))
-          .and(expect.same(Right(false), Sigma.verify(prop, proof, msg.reverse)))
-          .and(expect(Sigma.verify(prop, flipped, msg) != Right(true), "a flipped response byte"))
-          .and(expect(Sigma.verify(prop, proof ++ hex"00", msg).isLeft, "trailing bytes (Ergo ignores them)"))
-          .and(expect(Sigma.verify(prop, proof.dropRight(1), msg).isLeft, "a short proof"))
+          .same(Right(true), Sigma.check(prop, proof, msg))
+          .and(expect.same(Right(false), Sigma.check(prop, proof, msg.reverse)))
+          .and(expect(Sigma.check(prop, flipped, msg) != Right(true), "a flipped response byte"))
+          .and(expect(Sigma.check(prop, proof ++ hex"00", msg).isLeft, "trailing bytes (Ergo ignores them)"))
+          .and(expect(Sigma.check(prop, proof.dropRight(1), msg).isLeft, "a short proof"))
       }
   }
 
@@ -338,12 +338,12 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
   cases.foreach {
     case (name, prop, ws) =>
       pureTest(s"our prover: $name verifies; a fresh seed gives a different proof; another message does not verify") {
-        val one = Sigma.verify(prop, SigmaProver.proveWith(prop, ws, msg, hex"01").toOption.get, msg)
+        val one = Sigma.check(prop, SigmaProver.proveWith(prop, ws, msg, hex"01").toOption.get, msg)
         val proofs = List(hex"01", hex"02").map(seed => SigmaProver.proveWith(prop, ws, msg, seed))
         expect
           .same(Right(true), one)
           .and(expect(proofs.distinct.size == 2, "fresh randomness"))
-          .and(expect.same(Right(false), proofs.head.flatMap(Sigma.verify(prop, _, msg.reverse))))
+          .and(expect.same(Right(false), proofs.head.flatMap(Sigma.check(prop, _, msg.reverse))))
           .and(expect.same(Right(Sigma.proofLength(prop)), proofs.head.map(_.size)))
       }
   }
@@ -359,7 +359,7 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
         val ws = (1 to n).toVector.map(i => BigInt(seed) * i + 1)
         val ring = p(SigmaProp.or(ws.map(w => key(Secp256k1Group.base(w)))))
         val proof = SigmaProver.proveWith(ring, Vector(ws(who % n)), msg, ByteVector.fromLong(seed))
-        expect.same(Right(true), proof.flatMap(Sigma.verify(ring, _, msg)))
+        expect.same(Right(true), proof.flatMap(Sigma.check(ring, _, msg)))
     }
   }
 
@@ -372,7 +372,7 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
       .and(
         expect(
           SigmaProp
-            .fromCanonical(
+            .decode(
               CanonicalValue
                 .map(List("type" -> CanonicalValue.text("dlog").toOption.get, "pk" -> CanonicalValue.CBytes(o.bytes)))
                 .toOption
@@ -400,7 +400,7 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
         val prop = p(SigmaProp.threshold(k, ws.map(w => key(Secp256k1Group.base(w)))))
         val proof = SigmaProver.proveWith(prop, who.map(ws), msg, ByteVector.fromLong(seed))
         expect
-          .same(Right(true), proof.flatMap(Sigma.verify(prop, _, msg)))
+          .same(Right(true), proof.flatMap(Sigma.check(prop, _, msg)))
           .and(expect.same(Right(Sigma.proofLength(prop)), proof.map(_.size)))
     }
   }
@@ -428,7 +428,7 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
         val proof = SigmaProver.proveWith(prop, known, message, seed)
         acc
           .and(expect(proof.map(_.sha256) == Right(digest), s"$name: the proof differs from the recorded one"))
-          .and(expect(proof.flatMap(Sigma.verify(prop, _, message)) == Right(true), s"$name: the proof does not verify"))
+          .and(expect(proof.flatMap(Sigma.check(prop, _, message)) == Right(true), s"$name: the proof does not verify"))
     }
   }
 
@@ -436,8 +436,8 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
 
   pureTest("a proposition nests at most 64 deep, has 1 to 255 children per connective and at most 4096 leaves") {
     val leaf = keys(0)
-    def nest(depth: Int): Either[String, SigmaProp] =
-      (1 until depth).foldLeft(leaf.asRight[String])((acc, _) => acc.flatMap(c => SigmaProp.and(Vector(c))))
+    def nest(depth: Int): Either[SigmaError, SigmaProp] =
+      (1 until depth).foldLeft(leaf.asRight[SigmaError])((acc, _) => acc.flatMap(c => SigmaProp.and(Vector(c))))
     def wide(n: Int) = SigmaProp.or(Vector.fill(n)(leaf))
     // groups of 241 leaves: 16 of them are 3856 leaves, 17 are 4097
     def leaves(groups: Int) = SigmaProp.and(Vector.fill(241)(leaf)).flatMap(g => SigmaProp.and(Vector.fill(groups)(g)))
@@ -506,11 +506,11 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     val honestThreshold = honestRoot ++ hq.higherBytes ++ answer(0, r) ++ answer(1, r2) ++ zb(z(3))
 
     expect
-      .same(Right(false), Sigma.verify(ring, ringForgery, msg))
+      .same(Right(false), Sigma.check(ring, ringForgery, msg))
       .and(expect(q(point(3)) != e3, "the polynomial cannot also pass through the third chosen challenge"))
-      .and(expect.same(Right(false), Sigma.verify(t, thresholdForgery, msg)))
-      .and(expect.same(Right(true), Sigma.verify(ring, honestRing, msg)))
-      .and(expect.same(Right(true), Sigma.verify(t, honestThreshold, msg)))
+      .and(expect.same(Right(false), Sigma.check(t, thresholdForgery, msg)))
+      .and(expect.same(Right(true), Sigma.check(ring, honestRing, msg)))
+      .and(expect.same(Right(true), Sigma.check(t, honestThreshold, msg)))
   }
 
   pureTest("a proof is bound to its proposition: another of the same length gives false, another length is malformed") {
@@ -518,9 +518,9 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     val andProof = SigmaProver.proveWith(p(SigmaProp.and(keys.take(2))), secrets.take(2), msg, hex"01").toOption.get
     expect
       .same(Sigma.proofLength(keys(0)), Sigma.proofLength(dhtX))
-      .and(expect.same(Right(false), Sigma.verify(dhtX, dlogProof, msg)))
-      .and(expect(Sigma.verify(p(SigmaProp.and(keys)), andProof, msg).isLeft, "a proof for two children against three"))
-      .and(expect(Sigma.verify(keys(0), andProof, msg).isLeft, "an and proof against a single leaf"))
+      .and(expect.same(Right(false), Sigma.check(dhtX, dlogProof, msg)))
+      .and(expect(Sigma.check(p(SigmaProp.and(keys)), andProof, msg).isLeft, "a proof for two children against three"))
+      .and(expect(Sigma.check(keys(0), andProof, msg).isLeft, "an and proof against a single leaf"))
   }
 
   pureTest("a DH-tuple proof does not verify once any statement point changes, or for a tuple that is not DH") {
@@ -537,8 +537,8 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
       "another base h"  -> tuple(g, other, g * w, h * w)
     )
     expect
-      .same(Right(true), Sigma.verify(good, proof, msg))
-      .and(variants.foldMap { case (name, prop) => expect(Sigma.verify(prop, proof, msg) == Right(false), name) })
+      .same(Right(true), Sigma.check(good, proof, msg))
+      .and(variants.foldMap { case (name, prop) => expect(Sigma.check(prop, proof, msg) == Right(false), name) })
       .and(expect(SigmaProver.proveWith(notDh, Vector(w), msg, hex"01").isLeft, "no proof of a tuple that is not DH"))
   }
 
@@ -560,8 +560,8 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     val proof = handProof(forged, BigInt(0))
     expect
       .same(56L, proof.size)
-      .and(expect(Sigma.verify(forged, proof, msg).isLeft, "the identity is no statement"))
-      .and(expect.same(Right(true), Sigma.verify(dlog(sk1), handProof(dlog(sk1), BigInt(sk1)), msg)))
+      .and(expect(Sigma.check(forged, proof, msg).isLeft, "the identity is no statement"))
+      .and(expect.same(Right(true), Sigma.check(dlog(sk1), handProof(dlog(sk1), BigInt(sk1)), msg)))
   }
 
   pureTest("a mirror-built empty connective is rejected by the verifier and the prover; so is a bad threshold") {
@@ -569,11 +569,11 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     val emptyProof = Sigma.challenge(Sigma.fiatShamir(empty, Vector.empty), msg)
     val zeroOfOne = mirrorThreshold.fromProduct((0, Vector(dlog(sk1))))
     val twoOfOne = mirrorThreshold.fromProduct((2, Vector(dlog(sk1))))
-    expect(Sigma.verify(empty, emptyProof, msg).isLeft, "an empty and verifies for anyone")
+    expect(Sigma.check(empty, emptyProof, msg).isLeft, "an empty and verifies for anyone")
       .and(expect(SigmaProver.proveWith(empty, Vector.empty, msg, hex"01").isLeft, "nor is one proven"))
-      .and(expect(Sigma.verify(zeroOfOne, ByteVector.fill(Sigma.proofLength(zeroOfOne))(1), msg).isLeft, "k = 0"))
+      .and(expect(Sigma.check(zeroOfOne, ByteVector.fill(Sigma.proofLength(zeroOfOne))(1), msg).isLeft, "k = 0"))
       .and(expect(SigmaProver.proveWith(zeroOfOne, Vector.empty, msg, hex"01").isLeft, "k = 0 proves with no secret"))
-      .and(expect(Sigma.verify(twoOfOne, ByteVector.fill(Sigma.proofLength(twoOfOne).max(0L))(1), msg).isLeft, "k > n"))
+      .and(expect(Sigma.check(twoOfOne, ByteVector.fill(Sigma.proofLength(twoOfOne).max(0L))(1), msg).isLeft, "k > n"))
   }
 
   pureTest("a mirror-built proposition too deep, too wide or with too many leaves is rejected, without overflowing") {
@@ -583,12 +583,12 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     val proof = SigmaProver.proveWith(nest(SigmaProp.MaxDepth - 1), Vector(BigInt(sk1)), msg, hex"01")
     val wide = mirrorAnd.fromProduct(Tuple1(Vector.fill(SigmaProp.MaxChildren + 1)(leaf)))
     val many = mirrorAnd.fromProduct(Tuple1(Vector.fill(17)(mirrorAnd.fromProduct(Tuple1(Vector.fill(250)(leaf))))))
-    expect(proof.flatMap(Sigma.verify(nest(SigmaProp.MaxDepth - 1), _, msg)) == Right(true), "64 deep is fine")
-      .and(expect(proof.flatMap(Sigma.verify(deep, _, msg)).isLeft, "65 deep is not"))
+    expect(proof.flatMap(Sigma.check(nest(SigmaProp.MaxDepth - 1), _, msg)) == Right(true), "64 deep is fine")
+      .and(expect(proof.flatMap(Sigma.check(deep, _, msg)).isLeft, "65 deep is not"))
       .and(expect(SigmaProver.proveWith(deep, Vector(BigInt(sk1)), msg, hex"01").isLeft, "nor is it proven"))
-      .and(expect(Sigma.verify(nest(100000), ByteVector.empty, msg).isLeft, "a very deep tree is malformed, not a stack overflow"))
-      .and(expect(Sigma.verify(wide, ByteVector.empty, msg).isLeft, "256 children"))
-      .and(expect(Sigma.verify(many, ByteVector.empty, msg).isLeft, "4250 leaves"))
+      .and(expect(Sigma.check(nest(100000), ByteVector.empty, msg).isLeft, "a very deep tree is malformed, not a stack overflow"))
+      .and(expect(Sigma.check(wide, ByteVector.empty, msg).isLeft, "256 children"))
+      .and(expect(Sigma.check(many, ByteVector.empty, msg).isLeft, "4250 leaves"))
   }
 
   pureTest("a mirror-built point off secp256k1 is rejected by the smart constructors and at the boundary") {
@@ -597,7 +597,7 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     val forged = mirrorDlog.fromProduct(Tuple1(alien))
     expect(SigmaProp.dlog(alien).isLeft, "dlog")
       .and(expect(SigmaProp.dhTuple(g, g, g, alien).isLeft, "dhTuple"))
-      .and(expect(Sigma.verify(forged, ByteVector.fill(56L)(1), msg).isLeft, "verify"))
+      .and(expect(Sigma.check(forged, ByteVector.fill(56L)(1), msg).isLeft, "verify"))
       .and(expect(SigmaProver.proveWith(forged, Vector(BigInt(1)), msg, hex"01").isLeft, "prove"))
   }
 }

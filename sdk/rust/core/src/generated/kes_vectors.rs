@@ -117,25 +117,16 @@ pub enum KesOutcome {
     Accepted,
     /// The text `rejected`.
     Rejected,
-    /// The text `Malformed`.
-    Malformed,
-    /// The text `PeriodOutOfRange`.
-    PeriodOutOfRange,
-    /// The text `Exhausted`.
-    Exhausted,
-    /// The text `InconsistentKey`.
-    InconsistentKey,
+    /// A [`super::crypto_errors::KesErrorKind`].
+    KesErrorKind(super::crypto_errors::KesErrorKind),
 }
 
 impl c::Model for KesOutcome {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Accepted => Ok(c::Value::text("accepted")),
             Self::Rejected => Ok(c::Value::text("rejected")),
-            Self::Malformed => Ok(c::Value::text("Malformed")),
-            Self::PeriodOutOfRange => Ok(c::Value::text("PeriodOutOfRange")),
-            Self::Exhausted => Ok(c::Value::text("Exhausted")),
-            Self::InconsistentKey => Ok(c::Value::text("InconsistentKey")),
+            Self::KesErrorKind(a) => c::Model::to_value_at(a, depth),
         }
     }
 
@@ -143,10 +134,10 @@ impl c::Model for KesOutcome {
         match c::select_alternative(value, &[], &["accepted", "rejected", "Malformed", "PeriodOutOfRange", "Exhausted", "InconsistentKey"])? {
             c::Alternative::Text(0) => Ok(Self::Accepted),
             c::Alternative::Text(1) => Ok(Self::Rejected),
-            c::Alternative::Text(2) => Ok(Self::Malformed),
-            c::Alternative::Text(3) => Ok(Self::PeriodOutOfRange),
-            c::Alternative::Text(4) => Ok(Self::Exhausted),
-            c::Alternative::Text(5) => Ok(Self::InconsistentKey),
+            c::Alternative::Text(2) => Ok(Self::KesErrorKind(super::crypto_errors::KesErrorKind::Malformed)),
+            c::Alternative::Text(3) => Ok(Self::KesErrorKind(super::crypto_errors::KesErrorKind::PeriodOutOfRange)),
+            c::Alternative::Text(4) => Ok(Self::KesErrorKind(super::crypto_errors::KesErrorKind::Exhausted)),
+            c::Alternative::Text(5) => Ok(Self::KesErrorKind(super::crypto_errors::KesErrorKind::InconsistentKey)),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -154,7 +145,7 @@ impl c::Model for KesOutcome {
 
 impl KesOutcome {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 6] = [Self::Accepted, Self::Rejected, Self::Malformed, Self::PeriodOutOfRange, Self::Exhausted, Self::InconsistentKey];
+    pub const ALL: [Self; 6] = [Self::Accepted, Self::Rejected, Self::KesErrorKind(super::crypto_errors::KesErrorKind::Malformed), Self::KesErrorKind(super::crypto_errors::KesErrorKind::PeriodOutOfRange), Self::KesErrorKind(super::crypto_errors::KesErrorKind::Exhausted), Self::KesErrorKind(super::crypto_errors::KesErrorKind::InconsistentKey)];
 }
 
 /// `kes-parameters` (`shared/schemas/kes-vectors.cddl`).

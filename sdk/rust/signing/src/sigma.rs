@@ -94,7 +94,7 @@ impl Eq for Element {}
 /// A group element from its canonical encoding (section 1); `None` is the identity. Only canonical encodings decode:
 /// 33 bytes, prefix `02` or `03` with `x` below the field modulus and on the curve, or 33 zero bytes.
 fn decode_element(what: &'static str, bytes: &[u8]) -> Result<Option<Element>, SigmaError> {
-    let invalid = |reason: String| SigmaError::InvalidPoint { what, reason };
+    let invalid = |reason: String| SigmaError::InvalidPoint { what: what.into(), reason };
     let encoded: Encoded = bytes
         .try_into()
         .map_err(|_| invalid(format!("a group element is {ELEMENT_LENGTH} bytes, got {}", bytes.len())))?;
@@ -424,6 +424,12 @@ fn fields(m: &Map, ty: &str, keys: &[&str]) -> Result<(), SigmaError> {
     if exact { Ok(()) } else { Err(invalid(format!("{ty} takes exactly the fields {}", keys.join(", ")))) }
 }
 
+/// A proof of `actual` bytes where the proposition fixes `expected`.
+fn proof_length(expected: usize, actual: usize) -> SigmaError {
+    let bytes = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
+    SigmaError::ProofLength { expected: bytes(expected), actual: bytes(actual) }
+}
+
 /// The proof, read front to back.
 struct Reader<'a> {
     rest: &'a [u8],
@@ -433,8 +439,7 @@ struct Reader<'a> {
 impl Reader<'_> {
     /// The next `N` bytes. The proof's length is checked before reading, so this never runs out.
     fn take<const N: usize>(&mut self, expected: usize) -> Result<[u8; N], SigmaError> {
-        let (head, rest) =
-            self.rest.split_first_chunk::<N>().ok_or(SigmaError::ProofLength { expected, actual: self.length })?;
+        let (head, rest) = self.rest.split_first_chunk::<N>().ok_or_else(|| proof_length(expected, self.length))?;
         self.rest = rest;
         Ok(*head)
     }
@@ -608,7 +613,7 @@ fn challenge(transcript: &[u8], message: &[u8]) -> Challenge {
 pub fn verify(proposition: &Proposition, proof: &[u8], message: &[u8]) -> Result<bool, SigmaError> {
     let expected = proposition.proof_length();
     if proof.len() != expected {
-        return Err(SigmaError::ProofLength { expected, actual: proof.len() });
+        return Err(proof_length(expected, proof.len()));
     }
     let (root, transcript) = walk(proposition, proof)?;
     Ok(challenge(&transcript, message) == root)

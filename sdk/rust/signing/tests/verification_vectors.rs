@@ -17,35 +17,18 @@ mod common;
 
 use common::{bytes, load};
 use dilf4s_core::generated::signing_vectors::{
-    CryptoErrorKind, KeyDecodingResult, KeyPart, PathIndices, PathResult, SigningVectors, VerificationPart,
-    VerificationRefusal, VerificationResult,
+    KeyDecodingResult, KeyPart, PathIndices, PathResult, SigningVectors, VerificationPart, VerificationRefusal,
+    VerificationResult,
 };
 use dilf4s_signing::keys::path;
-use dilf4s_signing::{PathRefusal, SchemeId, SigningError, bls, ecdsa, ed25519, ristretto255, schnorr};
+use dilf4s_signing::{CryptoError, CryptoErrorKind, SchemeId, bls, ecdsa, ed25519, ristretto255, schnorr};
 
-/// The schema's kind of a signing error. Exhaustive both ways: a kind the SDK adds, or one the schema adds, does not
-/// compile until it is mapped (and then the coverage test asks for its row).
-pub const fn crypto_kind(e: &SigningError) -> CryptoErrorKind {
-    match e {
-        SigningError::InvalidEncoding { .. } => CryptoErrorKind::InvalidEncoding,
-        SigningError::InvalidKey { .. } => CryptoErrorKind::InvalidKey,
-    }
-}
-
-/// The SDK's spelling of a schema kind, the other direction of [`crypto_kind`].
-pub const fn crypto_kind_name(k: &CryptoErrorKind) -> &'static str {
-    match k {
-        CryptoErrorKind::InvalidEncoding => "InvalidEncoding",
-        CryptoErrorKind::InvalidKey => "InvalidKey",
-    }
-}
-
-fn refusal(part: VerificationPart, e: &SigningError) -> VerificationResult {
-    VerificationResult::VerificationRefusal(VerificationRefusal { part, kind: crypto_kind(e) })
+fn refusal(part: VerificationPart, e: &CryptoError) -> VerificationResult {
+    VerificationResult::VerificationRefusal(VerificationRefusal { part, kind: e.kind() })
 }
 
 /// Decodes just the verifying key of a scheme, to tell a malformed key from a malformed signature.
-fn key_decodes(id: SchemeId, key: &[u8]) -> Result<(), SigningError> {
+fn key_decodes(id: SchemeId, key: &[u8]) -> Result<(), CryptoError> {
     match id {
         SchemeId::Ed25519 | SchemeId::Ed25519Libsodium => ed25519::VerifyingKey::from_bytes(key).map(|_| ()),
         SchemeId::P256Ecdsa => ecdsa::p256::VerifyingKey::from_bytes(key).map(|_| ()),
@@ -125,36 +108,25 @@ fn proofs_of_possession_verify() {
     assert_eq!(v.bls_pop.len(), 3);
 }
 
-/// The coverage gate (conformance.md section 6) for `SigningError`: every kind of the schema has a `keyDecoding` row
-/// and a `verification` row. [`crypto_kind`] maps every SDK variant onto a schema kind (exhaustively, so a new variant
-/// does not compile until it is mapped), so every SDK kind has its rows too.
+/// The coverage gate (conformance.md section 6) for `CryptoError`: every kind of the schema has a `keyDecoding` row
+/// and a `verification` row, but `BackendFailure` (a JVM provider's own failure, which no SDK has), which has none. The
+/// SDK's `CryptoError` is generated with those kinds, so a kind added to the schema is a variant here, and needs rows.
 #[test]
 fn every_signing_error_kind_has_a_row() {
     let v: SigningVectors = load("signing_v1.json");
+    let exempt = |k: &CryptoErrorKind| *k == CryptoErrorKind::BackendFailure;
     for kind in CryptoErrorKind::ALL {
-        let name = crypto_kind_name(&kind);
-        assert!(v.key_decoding.iter().any(|c| expected_kind(&c.result) == name), "no keyDecoding row pins {name}");
-        assert!(
-            v.verification
-                .iter()
-                .any(|c| matches!(&c.result, VerificationResult::VerificationRefusal(r) if r.kind == kind)),
-            "no verification row pins {name}"
-        );
-    }
-    for e in [
-        SigningError::InvalidEncoding { what: "", reason: String::new() },
-        SigningError::InvalidKey { reason: String::new() },
-    ] {
-        assert_eq!(crypto_kind_name(&crypto_kind(&e)), e.kind(), "the schema and the SDK spell {} alike", e.kind());
-    }
-}
-
-/// The kind a `keyDecoding` row records, as `SigningError::kind` names it.
-pub fn expected_kind(r: &KeyDecodingResult) -> &'static str {
-    match r {
-        KeyDecodingResult::Accepted => "accepted",
-        KeyDecodingResult::InvalidEncoding => "InvalidEncoding",
-        KeyDecodingResult::InvalidKey => "InvalidKey",
+        let decoded = v.key_decoding.iter().any(|c| c.result == KeyDecodingResult::CryptoErrorKind(kind.clone()));
+        let verified = v
+            .verification
+            .iter()
+            .any(|c| matches!(&c.result, VerificationResult::VerificationRefusal(r) if r.kind == kind));
+        if exempt(&kind) {
+            assert!(!decoded && !verified, "{kind:?} is exempt, but has a row");
+        } else {
+            assert!(decoded, "no keyDecoding row pins {kind:?}");
+            assert!(verified, "no verification row pins {kind:?}");
+        }
     }
 }
 
@@ -170,25 +142,13 @@ fn verifying_key_decoding() {
             let Some(id) = SchemeId::from_name(&c.scheme) else {
                 return Some(format!("unknown scheme {}", c.scheme));
             };
-            let actual = key_decodes(id, &bytes(&c.bytes)).map_or_else(|e| e.kind(), |()| "accepted");
-            let expected = expected_kind(&c.result);
-            (actual != expected).then(|| format!("{} {}: expected {expected}, got {actual}", c.scheme, c.name))
+            let actual = key_decodes(id, &bytes(&c.bytes))
+                .map_or_else(|e| KeyDecodingResult::CryptoErrorKind(e.kind()), |()| KeyDecodingResult::Accepted);
+            (actual != c.result).then(|| format!("{} {}: expected {:?}, got {actual:?}", c.scheme, c.name, c.result))
         })
         .collect();
     assert!(failures.is_empty(), "{} failures:\n{}", failures.len(), failures.join("\n"));
     assert!(rows.len() >= 40, "{} verifying-key rows", rows.len());
-}
-
-/// The schema's spelling of a path refusal. Exhaustive: a refusal the SDK adds does not compile until it is mapped.
-const fn path_result(r: PathRefusal) -> PathResult {
-    match r {
-        PathRefusal::MissingMaster => PathResult::MissingMaster,
-        PathRefusal::Malformed => PathResult::Malformed,
-        PathRefusal::LeadingZero => PathResult::LeadingZero,
-        PathRefusal::TooManyDigits => PathResult::TooManyDigits,
-        PathRefusal::OutOfRange => PathResult::OutOfRange,
-        PathRefusal::TooDeep => PathResult::TooDeep,
-    }
 }
 
 /// Every `paths` row: nothing trimmed, ASCII digits only, no empty segment or leading zero, at most ten digits and 255
@@ -199,7 +159,7 @@ fn path_strictness() {
     assert!(v.paths.len() >= 54, "{} path rows", v.paths.len());
     for c in &v.paths {
         let actual = path::parse(&c.path).map_or_else(
-            |e| path_result(e.refusal),
+            |e| PathResult::PathRefusal(e.refusal),
             |is| {
                 PathResult::PathIndices(PathIndices {
                     indices: is.into_iter().map(|i| u64::from(i.serialized())).collect(),
@@ -211,7 +171,7 @@ fn path_strictness() {
 }
 
 /// The coverage gate (conformance.md section 6) for `PathRefusal`: every refusal the schema lists (`TEXTS`, beside
-/// the indices) has a row. [`path_result`] maps every SDK refusal onto one of them, so every SDK refusal has a row too.
+/// the indices) has a row. The SDK's `PathRefusal` is the schema's, so every refusal it has has a row too.
 #[test]
 fn every_path_refusal_has_a_row() {
     let v: SigningVectors = load("signing_v1.json");

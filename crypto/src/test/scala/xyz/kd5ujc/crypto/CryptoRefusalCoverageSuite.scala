@@ -14,17 +14,17 @@ import xyz.kd5ujc.crypto.keys.{KeyError, PathRefusal}
 import xyz.kd5ujc.crypto.sigma.SigmaError
 import xyz.kd5ujc.crypto.signing.CryptoError
 import xyz.kd5ujc.crypto.vrf.VrfError
-import xyz.kd5ujc.crypto.zk.Bn254.ZkError
-import xyz.kd5ujc.crypto.zk.Groth16Error
+import xyz.kd5ujc.crypto.zk.{Groth16Error, ZkError}
 
 import io.circe.{ACursor, Json}
 import weaver.SimpleIOSuite
 
 /**
  * The coverage gate of docs/specs/conformance.md §6 for the signing, key, VRF, KES, sigma and zk families: every case
- * of their error types has a vector row pinning it by kind, or an exemption with its reason. The cases come from the
- * compiler (`Mirror.SumOf`), so a new case fails this suite until it is pinned or exempted; the pinned kinds come from
- * the committed vector files.
+ * of their error types has a vector row pinning it by kind, or an exemption with its reason. The error types are
+ * generated from `shared/schemas/crypto-errors.cddl`; their cases come from the compiler (`Mirror.SumOf`), and the
+ * path refusals (a choice of texts) from the generated `values`, so a new kind fails this suite until it is pinned or
+ * exempted; the pinned kinds come from the committed vector files.
  */
 object CryptoRefusalCoverageSuite extends SimpleIOSuite {
 
@@ -37,7 +37,7 @@ object CryptoRefusalCoverageSuite extends SimpleIOSuite {
   val families: List[Family] = List(
     Family("signing", kinds[CryptoError], Map("BackendFailure" -> "a JVM provider's own failure")),
     Family("keys", kinds[KeyError], Map.empty),
-    Family("paths", kinds[PathRefusal], Map.empty),
+    Family("paths", PathRefusal.values.toList, Map.empty),
     Family("vrf", kinds[VrfError], Map("HashToCurveFailed" -> "no input is known that reaches it")),
     Family("kes", kinds[KesError], Map.empty),
     Family("sigma", kinds[SigmaError], Map.empty),
@@ -68,7 +68,7 @@ object CryptoRefusalCoverageSuite extends SimpleIOSuite {
         Map(
           "signing" -> (texts(list(s, "keyDecoding"), "result") ++ verification),
           "keys"    -> (texts(list(s, "keyRefusals"), "kind") ++ Option.when(paths.nonEmpty)("InvalidPath")),
-          "paths"   -> paths.map(_.capitalize).toSet,
+          "paths"   -> paths.toSet,
           "vrf"     -> (texts(list(vrf.hcursor, "rejections"), "result") ++ texts(list(vrf.hcursor, "keyDecoding"), "result")),
           "kes"     -> texts(list(kes.hcursor, "refusals"), "outcome"),
           "sigma"   -> texts(list(sigma.hcursor, "cases"), "outcome"),

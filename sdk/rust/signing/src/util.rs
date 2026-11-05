@@ -5,12 +5,14 @@ use alloc::vec::Vec;
 
 use dilf4s_core::hash::{Hasher, Sha256, Sha512};
 
-use crate::error::SigningError;
+use crate::error::CryptoError;
 
 /// Exactly `N` bytes, or `InvalidEncoding` naming `what`.
-pub(crate) fn exact<const N: usize>(what: &'static str, bytes: &[u8]) -> Result<[u8; N], SigningError> {
-    <[u8; N]>::try_from(bytes)
-        .map_err(|_| SigningError::InvalidEncoding { what, reason: format!("expected {N} bytes, got {}", bytes.len()) })
+pub(crate) fn exact<const N: usize>(what: &'static str, bytes: &[u8]) -> Result<[u8; N], CryptoError> {
+    <[u8; N]>::try_from(bytes).map_err(|_| CryptoError::InvalidEncoding {
+        what: what.into(),
+        reason: format!("expected {N} bytes, got {}", bytes.len()),
+    })
 }
 
 /// The two 32-byte halves of 64 bytes.

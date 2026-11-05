@@ -231,7 +231,7 @@ pub fn verify_bytes<S: Suite>(key: &[u8], alpha: &[u8], proof: &[u8]) -> Result<
 
 fn proof_bytes(suite: SuiteId, bytes: &[u8]) -> Result<[u8; 80], VrfError> {
     <[u8; 80]>::try_from(bytes).map_err(|_| VrfError::Malformed {
-        what: proof_what(suite),
+        what: proof_what(suite).into(),
         reason: format!("expected {PROOF_LENGTH} bytes, got {}", bytes.len()),
     })
 }
@@ -254,7 +254,7 @@ const fn key_what(suite: SuiteId) -> &'static str {
 
 fn decode_key(suite: SuiteId, bytes: &[u8]) -> Result<([u8; 32], EdwardsPoint), VrfError> {
     let bytes: [u8; 32] = bytes.try_into().map_err(|_| VrfError::Malformed {
-        what: key_what(suite),
+        what: key_what(suite).into(),
         reason: format!("expected 32 bytes, got {}", bytes.len()),
     })?;
     let point = decode(suite, &bytes).ok_or(VrfError::InvalidPublicKey)?;
@@ -555,7 +555,7 @@ mod signing {
             let length = S::ID.signing_key_length();
             if bytes.len() != length {
                 return Err(VrfError::Malformed {
-                    what: "VRF signing key",
+                    what: "VRF signing key".into(),
                     reason: alloc::format!("expected {length} bytes, got {}", bytes.len()),
                 });
             }
@@ -627,7 +627,7 @@ mod signing {
     /// A key pair from a 32-byte seed (draft-03 keys become `seed || pk`).
     pub fn from_seed<S: Suite>(seed: &[u8]) -> Result<(SigningKey<S>, VerifyingKey<S>), VrfError> {
         let seed: [u8; 32] = seed.try_into().map_err(|_| VrfError::Malformed {
-            what: "VRF seed",
+            what: "VRF seed".into(),
             reason: alloc::format!("expected 32 bytes, got {}", seed.len()),
         })?;
         let sk = SigningKey { seed, public: public_of(&seed), suite: PhantomData };

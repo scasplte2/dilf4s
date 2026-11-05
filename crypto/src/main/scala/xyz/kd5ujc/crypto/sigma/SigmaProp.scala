@@ -15,7 +15,7 @@ import scodec.bits.ByteVector
  * every byte layout are Ergo's (sigmastate 5.0.13); docs/specs/sigma.md is normative.
  *
  * Built through the smart constructors, which reject trivial trees (they verify for anyone) and bound the size. A
- * product mirror can build one around them, so [[Sigma.verify]] and [[SigmaProver]] check every tree again
+ * product mirror can build one around them, so [[Sigma.check]] and [[SigmaProver]] check every tree again
  * ([[SigmaProp.validate]]).
  */
 sealed trait SigmaProp {
@@ -76,7 +76,7 @@ object SigmaProp {
   /**
    * Checks every constraint the smart constructors enforce, over the whole tree: statement points on the curve and not
    * the identity, 1 to [[MaxChildren]] children per connective, `1 <= k <= n`, depth and leaf bounds. Scala 3 product
-   * mirrors build these case classes around their private constructors, so [[Sigma.verify]] and [[SigmaProver.prove]]
+   * mirrors build these case classes around their private constructors, so [[Sigma.check]] and [[SigmaProver.prove]]
    * check here rather than trust the type. A worklist that stops at the first violation, so a tree of any depth or
    * width is rejected without overflowing the stack.
    */
@@ -107,25 +107,17 @@ object SigmaProp {
     go(List(prop -> 1), 0).as(prop)
   }
 
-  // The smart constructors report a message: they build propositions (the JLVM's `schnorr_verify` among their callers).
-  // Decoding a caller's proposition ([[decode]]) reports the kind, through the typed forms below.
+  // The smart constructors report the refusal's kind, as decoding a caller's proposition ([[decode]]) does.
 
-  def dlog(pk: GroupElement): Either[String, Dlog] = typedDlog(pk).leftMap(_.message)
+  def dlog(pk: GroupElement): Either[SigmaError, Dlog] = statementPoint("pk", pk).map(Dlog(_))
 
-  def dhTuple(g: GroupElement, h: GroupElement, u: GroupElement, v: GroupElement): Either[String, DhTuple] =
-    typedDhTuple(g, h, u, v).leftMap(_.message)
-
-  def and(children: Vector[SigmaProp]): Either[String, SigmaProp] = conjecture(children)(And(children)).leftMap(_.message)
-  def or(children:  Vector[SigmaProp]): Either[String, SigmaProp] = conjecture(children)(Or(children)).leftMap(_.message)
-
-  def threshold(k: Int, children: Vector[SigmaProp]): Either[String, SigmaProp] = typedThreshold(k, children).leftMap(_.message)
-
-  private def typedDlog(pk: GroupElement): Either[SigmaError, Dlog] = statementPoint("pk", pk).map(Dlog(_))
-
-  private def typedDhTuple(g: GroupElement, h: GroupElement, u: GroupElement, v: GroupElement): Either[SigmaError, DhTuple] =
+  def dhTuple(g: GroupElement, h: GroupElement, u: GroupElement, v: GroupElement): Either[SigmaError, DhTuple] =
     (statementPoint("g", g), statementPoint("h", h), statementPoint("u", u), statementPoint("v", v)).mapN(DhTuple(_, _, _, _))
 
-  private def typedThreshold(k: Int, children: Vector[SigmaProp]): Either[SigmaError, SigmaProp] =
+  def and(children: Vector[SigmaProp]): Either[SigmaError, SigmaProp] = conjecture(children)(And(children))
+  def or(children:  Vector[SigmaProp]): Either[SigmaError, SigmaProp] = conjecture(children)(Or(children))
+
+  def threshold(k: Int, children: Vector[SigmaProp]): Either[SigmaError, SigmaProp] =
     Either
       .cond(k >= 1 && k <= children.size, (), invalid(s"a threshold needs 1 <= k <= ${children.size} children, got k = $k"))
       .flatMap(_ => conjecture(children)(Threshold(k, children)))
@@ -183,9 +175,6 @@ object SigmaProp {
     if (v.weight > MaxWeight) invalid(s"a proposition weighs at most $MaxWeight").asLeft
     else decode(Step.Decode(v), Nil, 0)
 
-  /** [[decode]], its refusal as a message: the JLVM reports it as `Crypto`. */
-  def fromCanonical(v: CanonicalValue): Either[String, SigmaProp] = decode(v).leftMap(_.message)
-
   /** `leaves` counts every leaf decoded so far, in the whole proposition. */
   @tailrec
   private def decode(step: Step, open: List[Open], leaves: Int): Either[SigmaError, SigmaProp] =
@@ -219,7 +208,7 @@ object SigmaProp {
         (o.kind match {
           case Kind.AllOf      => conjecture(o.done)(And(o.done))
           case Kind.AnyOf      => conjecture(o.done)(Or(o.done))
-          case Kind.AtLeast(k) => typedThreshold(k, o.done)
+          case Kind.AtLeast(k) => threshold(k, o.done)
         }).map(p => (Step.Done(p), up))
     }
 
@@ -247,9 +236,9 @@ object SigmaProp {
             invalid(s"${typeName(m)} takes exactly the fields ${ks.mkString(", ")}")
           )
         m.get("type") match {
-          case scala.Some(CText("dlog")) => fields("pk") >> leaf(point("pk").flatMap(typedDlog))
+          case scala.Some(CText("dlog")) => fields("pk") >> leaf(point("pk").flatMap(dlog))
           case scala.Some(CText("dhtuple")) =>
-            fields("g", "h", "u", "v") >> leaf((point("g"), point("h"), point("u"), point("v")).tupled.flatMap(typedDhTuple.tupled))
+            fields("g", "h", "u", "v") >> leaf((point("g"), point("h"), point("u"), point("v")).tupled.flatMap(dhTuple.tupled))
           case scala.Some(CText("and")) => fields("children") >> node(Kind.AllOf)
           case scala.Some(CText("or"))  => fields("children") >> node(Kind.AnyOf)
           case scala.Some(CText("threshold")) =>

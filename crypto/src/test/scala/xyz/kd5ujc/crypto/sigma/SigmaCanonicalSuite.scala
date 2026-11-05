@@ -7,7 +7,7 @@ import scodec.bits.ByteVector
 import weaver.SimpleIOSuite
 
 /**
- * The order in which `SigmaProp.fromCanonical` refuses a proposition (docs/specs/sigma.md §3), as the Rust SDK's
+ * The order in which `SigmaProp.decode` refuses a proposition (docs/specs/sigma.md §3), as the Rust SDK's
  * `Proposition::from_value` does (`sdk/rust/signing/tests/sigma_vectors.rs`): its weight before anything is decoded, a
  * connective's width before its children, the leaf bound before a leaf's points; everything else as before.
  */
@@ -29,11 +29,17 @@ object SigmaCanonicalSuite extends SimpleIOSuite {
   private def threshold(k: Int, children: Vector[CanonicalValue]): CanonicalValue =
     map("type" -> text("threshold"), "k" -> CInt(k), "children" -> array(children))
 
-  /** The error, `InvalidPoint` for a point that does not decode (Rust's kind), or `Ok`. */
+  /** The error, `InvalidPoint` for a point that does not decode (its kind), or `Ok`. */
   private def reason(v: CanonicalValue): String =
     SigmaProp
-      .fromCanonical(v)
-      .fold(e => if (List("pk", "g", "h", "u", "v").exists(f => e.startsWith(s"$f: "))) "InvalidPoint" else e, _ => "Ok")
+      .decode(v)
+      .fold(
+        {
+          case SigmaError.InvalidPoint(_, _) => "InvalidPoint"
+          case e                             => e.message
+        },
+        _ => "Ok"
+      )
 
   /** `n` children, the first `bad` of them with an off-curve point. */
   private def withBadFirst(n: Int, bad: Int): Vector[CanonicalValue] =
@@ -93,7 +99,7 @@ object SigmaCanonicalSuite extends SimpleIOSuite {
   pureTest("a proposition heavier than the heaviest valid one is refused before decoding") {
     // a dlog weighs 15 plus its key's length
     def at(n: Long) = dlog(ByteVector.fill(n)(2))
-    val decoded = SigmaProp.fromCanonical(heaviest)
+    val decoded = SigmaProp.decode(heaviest)
     expect
       .same(SigmaProp.MaxWeight, heaviest.weight)
       .and(expect.same(Right((SigmaProp.MaxDepth, SigmaProp.MaxLeaves)), decoded.map(p => (p.depth, p.leaves))))

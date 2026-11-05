@@ -2,7 +2,7 @@
 import { err, ok, type Result } from "@kd5ujc/dilf4s-core";
 import { ed25519 as noble } from "@noble/curves/ed25519.js";
 
-import { invalidKey, type SigningError } from "./errors.js";
+import { invalidKey, type CryptoError } from "./errors.js";
 import type { Signature, SigningKey, VerifyingKey } from "./keys.js";
 import { equal, leToBig } from "./internal/bytes.js";
 import {
@@ -61,7 +61,7 @@ export interface Ed25519Scheme extends SchemeCodec<"Ed25519">, Verifier<"Ed25519
   readonly sign: (key: SigningKey<"Ed25519">, message: Uint8Array) => Signature<"Ed25519">;
   /** libsodium's rule (Cardano KES leaves); `verify` is ZIP-215. */
   readonly verifyLibsodium: (key: VerifyingKey<"Ed25519">, message: Uint8Array, signature: Signature<"Ed25519">) => boolean;
-  readonly verifyLibsodiumBytes: (key: Uint8Array, message: Uint8Array, signature: Uint8Array) => Result<boolean, SigningError>;
+  readonly verifyLibsodiumBytes: (key: Uint8Array, message: Uint8Array, signature: Uint8Array) => Result<boolean, CryptoError>;
 }
 
 const edCodec: SchemeCodec<"Ed25519"> = {

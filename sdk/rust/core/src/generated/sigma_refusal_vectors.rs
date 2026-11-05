@@ -17,25 +17,16 @@ pub enum SigmaOutcome {
     Accepted,
     /// The text `rejected`.
     Rejected,
-    /// The text `InvalidProposition`.
-    InvalidProposition,
-    /// The text `InvalidPoint`.
-    InvalidPoint,
-    /// The text `ProofLength`.
-    ProofLength,
-    /// The text `ResponseOutOfRange`.
-    ResponseOutOfRange,
+    /// A [`super::crypto_errors::SigmaErrorKind`].
+    SigmaErrorKind(super::crypto_errors::SigmaErrorKind),
 }
 
 impl c::Model for SigmaOutcome {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Accepted => Ok(c::Value::text("accepted")),
             Self::Rejected => Ok(c::Value::text("rejected")),
-            Self::InvalidProposition => Ok(c::Value::text("InvalidProposition")),
-            Self::InvalidPoint => Ok(c::Value::text("InvalidPoint")),
-            Self::ProofLength => Ok(c::Value::text("ProofLength")),
-            Self::ResponseOutOfRange => Ok(c::Value::text("ResponseOutOfRange")),
+            Self::SigmaErrorKind(a) => c::Model::to_value_at(a, depth),
         }
     }
 
@@ -43,10 +34,10 @@ impl c::Model for SigmaOutcome {
         match c::select_alternative(value, &[], &["accepted", "rejected", "InvalidProposition", "InvalidPoint", "ProofLength", "ResponseOutOfRange"])? {
             c::Alternative::Text(0) => Ok(Self::Accepted),
             c::Alternative::Text(1) => Ok(Self::Rejected),
-            c::Alternative::Text(2) => Ok(Self::InvalidProposition),
-            c::Alternative::Text(3) => Ok(Self::InvalidPoint),
-            c::Alternative::Text(4) => Ok(Self::ProofLength),
-            c::Alternative::Text(5) => Ok(Self::ResponseOutOfRange),
+            c::Alternative::Text(2) => Ok(Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::InvalidProposition)),
+            c::Alternative::Text(3) => Ok(Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::InvalidPoint)),
+            c::Alternative::Text(4) => Ok(Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::ProofLength)),
+            c::Alternative::Text(5) => Ok(Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::ResponseOutOfRange)),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -54,7 +45,7 @@ impl c::Model for SigmaOutcome {
 
 impl SigmaOutcome {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 6] = [Self::Accepted, Self::Rejected, Self::InvalidProposition, Self::InvalidPoint, Self::ProofLength, Self::ResponseOutOfRange];
+    pub const ALL: [Self; 6] = [Self::Accepted, Self::Rejected, Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::InvalidProposition), Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::InvalidPoint), Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::ProofLength), Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::ResponseOutOfRange)];
 }
 
 /// `sigma-refusal` (`shared/schemas/sigma-refusal-vectors.cddl`).

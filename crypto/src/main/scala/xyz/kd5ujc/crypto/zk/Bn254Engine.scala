@@ -3,7 +3,7 @@ package xyz.kd5ujc.crypto.zk
 import cats.effect.Sync
 import cats.syntax.all._
 
-import xyz.kd5ujc.crypto.zk.Bn254.ZkError
+import xyz.kd5ujc.crypto.zk.ZkError
 
 import org.hyperledger.besu.nativelib.gnark.LibGnarkEIP196
 import scodec.bits.ByteVector

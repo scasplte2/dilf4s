@@ -10,7 +10,9 @@ import cats.syntax.all._
  *   - a map of text-literal keys (each required or `?` optional) is a case class
  *   - a labelled integer enumeration `&(a: 1, b: 2)` is an enum carrying its wire values
  *   - a choice of map rules is a union type, decoded by key set; the choice must be unambiguous (some required key of
- *     one alternative is outside the other, for every pair), which is checked here, not at run time
+ *     one alternative is outside the other, for every pair), which is checked here, not at run time. A choice of texts
+ *     only also lists them (`values`)
+ *   - an error family is a sealed trait with a case class (or object) per kind, each giving its `kind`; no codec
  *   - anything else in the profile (a primitive, a range, a sized string, a homogeneous array, a reference) is an alias
  *
  * Everything outside the profile (integer map keys, tags, floats, groups, inline choices) is a typed [[GenError]].
@@ -122,20 +124,24 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     }
   }
 
-  private def union(rule: QName, ks: Vector[UnionAlternative], texts: Vector[String]): String = {
+  private def union(rule: QName, ks: Vector[UnionAlternative], texts: Vector[String], choices: Vector[TextChoice]): String = {
     val n = typeName(rule)
     val names = ks.map(a => qualified(rule.module, a.rule))
+    val allTexts = texts ++ choices.flatMap(_.texts)
     val enc = (names.map(t => s"      case a: $t => $t.codec.encode(a)") ++
-      texts.map(t => s"      case ${literal(t)} => Codec.literalText[${literal(t)}](${literal(t)}).encode(${literal(t)})"))
+      allTexts.map(t => s"      case ${literal(t)} => Codec.literalText[${literal(t)}](${literal(t)}).encode(${literal(t)})"))
       .mkString("\n")
-    val textAlts = texts.map(t => s"(${literal(t)}, ${literal(t)}: $n)").mkString(", ")
+    val textAlts = allTexts.map(t => s"(${literal(t)}, ${literal(t)}: $n)").mkString(", ")
+    val values =
+      if (ks.nonEmpty) ""
+      else s"\n  /** Every alternative, in schema order. */\n  val values: Vector[$n] = Vector(${allTexts.map(literal).mkString(", ")})\n"
     def set(s: Set[String]) = s"Set(${s.toList.sorted.map(k => s""""$k"""").mkString(", ")})"
     val sel = ks.map { a =>
       s"        (${set(a.required)}, ${set(a.allowed)}, ${qualified(rule.module, a.rule)}.codec.decoder.map(x => x: $n))"
     }.mkString(",\n")
-    s"""type $n = ${(names ++ texts.map(literal)).mkString(" | ")}
+    s"""type $n = ${(names ++ texts.map(literal) ++ choices.map(c => qualified(rule.module, c.rule))).mkString(" | ")}
        |
-       |object $n {
+       |object $n {$values
        |  lazy val codec: Codec[$n] = Codec(
        |    {
        |$enc
@@ -147,6 +153,36 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
        |  )
        |}
        |""".stripMargin
+  }
+
+  /** A sealed trait with one case per kind; a kind without fields is a case object. */
+  private def errorFamily(rule: QName, kinds: QName, cases: Vector[ErrorCase]): Either[GenError, String] = {
+    val n = typeName(rule)
+    val k = qualified(rule.module, kinds)
+    val clash = cases.collectFirst {
+      case c if reservedTypes(c.kind) || c.kind == n || c.kind == typeName(kinds) =>
+        GenError.ReservedName(rule.toString, Language.Scala, c.kind)
+    }
+    clash.toLeft(()).flatMap(_ => cases.traverse(c => fields(rule, c.fields).map(c -> _))).map { withFields =>
+      val members = withFields.map {
+        case (c, fs) =>
+          val body = s" extends $n {\n    def kind: $k = ${literal(c.kind)}\n  }"
+          if (fs.isEmpty) s"  case object ${c.kind}$body"
+          else
+            s"  final case class ${c.kind}(${fs.map(f => s"${f.name}: ${if (f.optional) s"Option[${f.tpe}]" else f.tpe}").mkString(", ")})$body"
+      }
+      s"""/** `${rule.name}` (`shared/schemas/${rule.module}.cddl`): an error family, by kind ([[$k]]). */
+         |sealed trait $n extends Product with Serializable {
+         |
+         |  /** This error's kind. */
+         |  def kind: $k
+         |}
+         |
+         |object $n {
+         |${members.mkString("\n\n")}
+         |}
+         |""".stripMargin
+    }
   }
 
   private def alias(rule: QName, t: FieldType): String = {
@@ -173,11 +209,12 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
   }
 
   private def emitRule(q: QName, model: ModelRule): Either[GenError, String] = model match {
-    case ModelRule.Record(fs)         => record(q, fs)
-    case ModelRule.Enumeration(cs)    => enumeration(q, cs)
-    case ModelRule.Union(alts, texts) => union(q, alts, texts).asRight
-    case ModelRule.Alias(t)           => alias(q, t).asRight
-    case ModelRule.Constant(v)        => constant(q, v).asRight
+    case ModelRule.Record(fs)                  => record(q, fs)
+    case ModelRule.Enumeration(cs)             => enumeration(q, cs)
+    case ModelRule.Union(alts, texts, choices) => union(q, alts, texts, choices).asRight
+    case ModelRule.ErrorFamily(kinds, cases)   => errorFamily(q, kinds, cases)
+    case ModelRule.Alias(t)                    => alias(q, t).asRight
+    case ModelRule.Constant(v)                 => constant(q, v).asRight
   }
 
   /** The source of one module, or the first profile violation. */

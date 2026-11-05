@@ -22,7 +22,7 @@ import {
   WordList,
   type KeyError,
   type PathRefusal,
-  type SigningError,
+  type CryptoError,
 } from "../src/index.js";
 import { expectOk, h, loadVectors } from "./vectors.js";
 
@@ -32,8 +32,8 @@ const randomness = h(vectors.randomness);
 /** A scheme seen through bytes: derive from a seed, sign a message, verify encodings. */
 interface Adapter {
   fromSeed(seed: Uint8Array): { readonly sk: Uint8Array; readonly vk: Uint8Array; sign(message: Uint8Array): Uint8Array };
-  verifyBytes(vk: Uint8Array, message: Uint8Array, sig: Uint8Array): Result<boolean, SigningError>;
-  verifyingKey(vk: Uint8Array): Result<unknown, SigningError>;
+  verifyBytes(vk: Uint8Array, message: Uint8Array, sig: Uint8Array): Result<boolean, CryptoError>;
+  verifyingKey(vk: Uint8Array): Result<unknown, CryptoError>;
 }
 
 const m32 = (m: Uint8Array): Message32 => expectOk(Message32.of(m), "32-byte message");
@@ -207,30 +207,31 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
     expect(mismatches).toEqual([]);
   });
 
-  test("coverage (conformance.md section 6): every SigningError and KeyError kind has a row by kind", () => {
-    // Records over the SDK's kinds: a kind added to either type does not compile until it is listed here
-    const signing: Record<SigningError["kind"], models.signingVectors.CryptoErrorKind> = { InvalidEncoding: "InvalidEncoding", InvalidKey: "InvalidKey" };
-    const keys: Record<KeyError["kind"], models.signingVectors.KeyErrorKind | "paths"> = {
-      InvalidEntropy: "InvalidEntropy",
-      InvalidMnemonic: "InvalidMnemonic",
-      InvalidWordList: "InvalidWordList",
-      InvalidDerivation: "InvalidDerivation",
+  test("coverage (conformance.md section 6): every CryptoError and KeyError kind has a row by kind", () => {
+    // both types are generated from the schema with their kinds (models.cryptoErrors), and these Records over them do
+    // not compile until a kind added there is listed here
+    const signing: Record<CryptoError["kind"], "rows" | "exempt"> = {
+      InvalidEncoding: "rows",
+      InvalidKey: "rows",
+      // a JVM provider's own failure: no SDK has one
+      BackendFailure: "exempt",
+    };
+    const keys: Record<KeyError["kind"], "keyRefusals" | "paths"> = {
+      InvalidEntropy: "keyRefusals",
+      InvalidMnemonic: "keyRefusals",
+      InvalidWordList: "keyRefusals",
+      InvalidDerivation: "keyRefusals",
       InvalidPath: "paths",
     };
-    // and every kind the schema names is one of the SDK's
-    const toSdkSigning = (k: models.signingVectors.CryptoErrorKind): SigningError["kind"] => k;
-    const toSdkKey = (k: models.signingVectors.KeyErrorKind): KeyError["kind"] => k;
-    expect(toSdkSigning("InvalidKey")).toBe("InvalidKey");
-    expect(toSdkKey("InvalidEntropy")).toBe("InvalidEntropy");
     const decoded = new Set<string>(vectors.keyDecoding.map((c) => c.result));
     const verified = new Set<string>(vectors.verification.flatMap((c) => (typeof c.result === "string" ? [] : [c.result.kind])));
-    expect(Object.values(signing).filter((k) => !decoded.has(k) || !verified.has(k))).toEqual([]);
+    expect(Object.entries(signing).filter(([k, v]) => (v === "rows") !== (decoded.has(k) && verified.has(k)) || (v === "exempt" && (decoded.has(k) || verified.has(k))))).toEqual([]);
     const refused = new Set<string>(vectors.keyRefusals.map((c) => c.kind));
-    expect(Object.values(keys).filter((k) => (k === "paths" ? !vectors.paths.some((p) => typeof p.result === "string") : !refused.has(k)))).toEqual([]);
+    expect(Object.entries(keys).filter(([k, v]) => (v === "paths" ? !vectors.paths.some((p) => typeof p.result === "string") : !refused.has(k)))).toEqual([]);
   });
 
   // a signing-key decoder per scheme, and the verifying-key decoder of each (Ed25519-BIP32 keys verify as Ed25519)
-  const signingKeyOf: Record<string, (b: Uint8Array) => Result<unknown, SigningError>> = {
+  const signingKeyOf: Record<string, (b: Uint8Array) => Result<unknown, CryptoError>> = {
     Ed25519: ed25519.signingKey,
     "Ed25519-BIP32": ed25519Bip32.signingKey,
     "P-256-ECDSA": p256Ecdsa.signingKey,

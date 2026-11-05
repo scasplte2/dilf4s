@@ -27,22 +27,11 @@ sealed trait EcVrfEll2
  */
 sealed trait EcVrfDraft03
 
-sealed trait VrfError extends Product with Serializable
-
-object VrfError {
-
-  /** Wrong lengths: the input is not a key or proof of this suite at all. */
-  final case class Malformed(what: String, reason: String) extends VrfError
-  case object InvalidPublicKey extends VrfError
-  case object SmallOrderPublicKey extends VrfError
-  case object InvalidGamma extends VrfError
-  case object NonCanonicalScalar extends VrfError
-  case object ChallengeMismatch extends VrfError
-  case object KeyMismatch extends VrfError
-
-  /** Hash-to-curve found no point (TAI: all 256 counters failed, probability ~2^-256). */
-  final case class HashToCurveFailed(reason: String) extends VrfError
-}
+/**
+ * A VRF refusal, by kind: generated from `shared/schemas/crypto-errors.cddl`. `Malformed` is a wrong length (the input
+ * is not a key or proof of this suite at all); `HashToCurveFailed` is TAI finding no point (probability ~2^-256).
+ */
+export xyz.kd5ujc.models.crypto_errors.VrfError
 
 /** An 80-byte proof `Gamma || c (16) || s (32)`; its fields are checked only by verification. */
 final case class VrfProof[S] private[crypto] (bytes: ByteVector)

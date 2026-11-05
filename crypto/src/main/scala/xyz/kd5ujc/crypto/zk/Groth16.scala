@@ -3,28 +3,21 @@ package xyz.kd5ujc.crypto.zk
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.hash.{Hasher, Sha256}
-import xyz.kd5ujc.crypto.zk.Bn254.{G1, G2, ZkError}
+import xyz.kd5ujc.crypto.zk.Bn254.{G1, G2}
 
 import scodec.bits.{ByteVector, hex}
 
-sealed trait Groth16Error extends Product with Serializable
+/**
+ * A Groth16 refusal, by kind: generated from `shared/schemas/crypto-errors.cddl`. `Malformed` is a wrong shape
+ * (lengths, non-canonical field elements); `InvalidProof` well-formed but invalid (off-curve, outside the subgroup, the
+ * identity, or an input outside Fr); `Rejected` a wrapper's framing check (SP1's selector, exit code or VK root).
+ */
+export xyz.kd5ujc.models.crypto_errors.Groth16Error
 
-object Groth16Error {
-
-  /** The bytes are not a proof or input of the expected shape (lengths, non-canonical field elements). */
-  final case class Malformed(reason: String) extends Groth16Error
-
-  /** Well-formed but invalid: off-curve, outside the subgroup, the identity, or an input outside Fr. */
-  final case class InvalidProof(reason: String) extends Groth16Error
-  case object PairingCheckFailed extends Groth16Error
-
-  /** A framing check of a wrapper (such as SP1's selector, exit code or VK root) failed. */
-  final case class Rejected(reason: String) extends Groth16Error
-
-  private[zk] def fromZk(e: ZkError): Groth16Error = e match {
-    case ZkError.Malformed(r)    => Malformed(r)
-    case ZkError.InvalidPoint(r) => InvalidProof(r)
-  }
+/** A BN254 refusal inside a Groth16 check: a malformed encoding is malformed, an invalid point an invalid proof. */
+private[zk] def groth16Of(e: ZkError): Groth16Error = e match {
+  case ZkError.Malformed(r)    => Groth16Error.Malformed(r)
+  case ZkError.InvalidPoint(r) => Groth16Error.InvalidProof(r)
 }
 
 /**
@@ -68,7 +61,7 @@ object Groth16 {
       val x = BigInt(1, w.toArray)
       Either.cond(x < Bn254.P, x, Groth16Error.Malformed(s"$role is not a canonical field element"))
     }
-    def zk[A](r: Either[ZkError, A]): Either[Groth16Error, A] = r.leftMap(Groth16Error.fromZk)
+    def zk[A](r: Either[ZkError, A]): Either[Groth16Error, A] = r.leftMap(groth16Of)
     for {
       _  <- Either.cond(proof.size == ProofSize, (), Groth16Error.Malformed(s"a proof is $ProofSize bytes, got ${proof.size}"))
       _  <- nonIdentity(a, "A") >> nonIdentity(b, "B") >> nonIdentity(c, "C")

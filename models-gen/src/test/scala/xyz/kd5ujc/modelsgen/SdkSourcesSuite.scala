@@ -310,4 +310,109 @@ object SdkSourcesSuite extends SimpleIOSuite {
       .and(expect(outside(Main.generate(Vector("t" -> "max-n = 1024\nr = { \"n\": max-n }\n"), "p")), "and in Scala"))
       .and(expect(outside(gen("min-n = -1\n")), "a negative constant"))
   }
+
+  private val family =
+    "e-kind = \"Bad\" / \"Gone\" / \"Hit\"\n" +
+    "e = { \"kind\": \"Bad\", \"what\": text, ? \"count\": uint .le 10 // \"kind\": \"Gone\" // \"kind\": \"Hit\", \"r\": refusal }\n" +
+    "refusal = \"a\" / \"b\"\n" +
+    "outcome = \"fine\" / e-kind\n"
+
+  pureTest("an error family is a sealed trait, an enum with kind(), and a union on kind; no codec") {
+    val out = gen(family)
+    val rust = out.map(_.rust.toMap.getOrElse("t.rs", ""))
+    val ts = out.map(_.typescript.toMap.getOrElse("t.ts", ""))
+    val scala = Main.generate(Vector("t" -> family), "p").map(_.foldMap(_._2))
+    expect(scala.exists(_.contains("sealed trait E extends Product with Serializable {")), scala.fold(_.message, identity))
+      .and(
+        expect(
+          scala.exists(_.contains("final case class Bad(what: String, count: Option[Int]) extends E {\n    def kind: EKind = \"Bad\"")),
+          "a kind with fields"
+        )
+      )
+      .and(expect(scala.exists(_.contains("case object Gone extends E {")), "a kind without fields"))
+      .and(expect(scala.exists(s => !s.contains("object E {\n  lazy val codec")), "no Scala codec"))
+      .and(expect(rust.exists(_.contains("pub enum E {")), rust.fold(_.message, identity)))
+      .and(
+        expect(
+          rust.exists(
+            _.contains(
+              "    Bad {\n        /// Its `what`.\n        what: String,\n        /// Its `count`.\n        count: Option<u32>,\n    },"
+            )
+          ),
+          "struct variants"
+        )
+      )
+      .and(expect(rust.exists(_.contains("Self::Gone => EKind::Gone,")), "kind()"))
+      .and(
+        expect(rust.exists(_.contains("Self::Bad { what: a0, count: a1 } => write!(f, \"Bad (what: {a0}, count: {a1:?})\"),")), "Display")
+      )
+      .and(expect(rust.exists(_.contains("Self::Hit { r: a0 } => write!(f, \"Hit (r: {a0:?})\"),")), "a kind field renders by Debug"))
+      .and(expect(rust.exists(_.contains("impl core::error::Error for E {}")), "Error"))
+      .and(expect(rust.exists(s => !s.contains("impl c::Model for E ")), "no Rust codec"))
+      .and(
+        expect(
+          ts.exists(_.contains("  | { readonly kind: \"Bad\"; readonly what: string; readonly count?: number }")),
+          ts.fold(_.message, identity)
+        )
+      )
+      .and(expect(ts.exists(_.contains("  | { readonly kind: \"Gone\" }")), "a kind without fields"))
+      .and(expect(ts.exists(s => !s.contains("export const E:")), "no TypeScript codec"))
+  }
+
+  pureTest("a choice naming a choice of texts takes its texts, and is typed by it") {
+    val out = gen(family)
+    val rust = out.map(_.rust.toMap.getOrElse("t.rs", ""))
+    val ts = out.map(_.typescript.toMap.getOrElse("t.ts", ""))
+    val scala = Main.generate(Vector("t" -> family), "p").map(_.foldMap(_._2))
+    expect(rust.exists(_.contains("    /// A [`EKind`].\n    EKind(EKind),")), rust.fold(_.message, identity))
+      .and(expect(rust.exists(_.contains("c::Alternative::Text(3) => Ok(Self::EKind(EKind::Hit)),")), "its texts select it"))
+      .and(
+        expect(
+          rust.exists(
+            _.contains(
+              "pub const ALL: [Self; 4] = [Self::Fine, Self::EKind(EKind::Bad), Self::EKind(EKind::Gone), Self::EKind(EKind::Hit)];"
+            )
+          ),
+          "ALL"
+        )
+      )
+      .and(expect(ts.exists(_.contains("export type Outcome = \"fine\" | EKind;")), ts.fold(_.message, identity)))
+      .and(expect(scala.exists(_.contains("type Outcome = \"fine\" | EKind")), scala.fold(_.message, identity)))
+      .and(expect(scala.exists(_.contains("val values: Vector[Outcome] = Vector(\"fine\", \"Bad\", \"Gone\", \"Hit\")")), "values"))
+      .and(expect(outside(gen("k = \"a\" / \"b\"\nr = \"a\" / k\n")), "a text twice"))
+  }
+
+  pureTest("an error family's shape is checked in every language") {
+    def both(cddl: String) = outside(gen(cddl)) && outside(Main.generate(Vector("t" -> cddl), "p"))
+    val kinds = "e-kind = \"A\" / \"B\"\n"
+    expect(both("e = { \"kind\": \"A\" // \"kind\": \"B\" }\n"), "no kind rule")
+      .and(expect(both("e-kind = \"B\" / \"A\"\ne = { \"kind\": \"A\" // \"kind\": \"B\" }\n"), "kinds out of order"))
+      .and(expect(both("e-kind = \"A\" / \"A\"\ne = { \"kind\": \"A\" // \"kind\": \"A\" }\n"), "a repeated kind"))
+      .and(expect(both("e-kind = \"a\" / \"B\"\ne = { \"kind\": \"a\" // \"kind\": \"B\" }\n"), "a kind that is not PascalCase"))
+      .and(expect(both(kinds + "e = { \"kind\": \"A\" // \"x\": uint }\n"), "an alternative without a kind"))
+      .and(expect(both(kinds + "e = { \"kind\": \"A\", \"b\": bytes // \"kind\": \"B\" }\n"), "a bytes field"))
+      .and(expect(both(kinds + "e = { \"kind\": \"A\", \"b\": [* uint] // \"kind\": \"B\" }\n"), "a collection field"))
+      .and(expect(both(kinds + "e = { \"kind\": \"A\" // \"kind\": \"B\" }\nr = { \"e\": e }\n"), "an error as a wire field"))
+      .and(
+        expect(
+          gen("e-kind = \"Ok\" / \"B\"\ne = { \"kind\": \"Ok\" // \"kind\": \"B\" }\n").swap.exists {
+            case GenError.ReservedName(_, Language.Rust, "Ok") => true
+            case _                                             => false
+          },
+          "a variant named like what the generated Rust refers to"
+        )
+      )
+      .and(
+        expect(
+          Main
+            .generate(Vector("t" -> "e-kind = \"String\" / \"B\"\ne = { \"kind\": \"String\", \"a\": text // \"kind\": \"B\" }\n"), "p")
+            .swap
+            .exists {
+              case GenError.ReservedName(_, Language.Scala, "String") => true
+              case _                                                  => false
+            },
+          "a case named like a type the generated Scala refers to"
+        )
+      )
+  }
 }

@@ -25,10 +25,10 @@ use std::path::PathBuf;
 use common::bytes;
 use dilf4s_core::generated::vrf_vectors::{VrfKeyResult, VrfResult};
 use dilf4s_core::hex;
-use dilf4s_signing::VrfError;
 #[cfg(feature = "sign")]
 use dilf4s_signing::vrf;
 use dilf4s_signing::vrf::{SuiteId, internals};
+use dilf4s_signing::{VrfError, VrfErrorKind};
 
 fn docs(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../docs/test-vectors").join(path)
@@ -114,50 +114,15 @@ fn vrf_v1_rejections() {
         .iter()
         .filter_map(|r| {
             let id = SuiteId::from_name(&r.suite)?;
-            let actual = id.verify_bytes(&bytes(&r.verifying_key), &bytes(&r.alpha), &bytes(&r.pi)).map_or_else(
-                |e| {
-                    verify_result(&e)
-                        .ok_or_else(|| format!("{} {}: {} is not a verification verdict", r.suite, r.name, e.kind()))
-                },
-                |_| Ok(VrfResult::Valid),
-            );
-            match actual {
-                Ok(a) => (a != r.result).then(|| format!("{} {}: expected {:?}, got {a:?}", r.suite, r.name, r.result)),
-                Err(e) => Some(e),
-            }
+            let actual = id
+                .verify_bytes(&bytes(&r.verifying_key), &bytes(&r.alpha), &bytes(&r.pi))
+                .map_or_else(|e| VrfResult::VrfErrorKind(e.kind()), |_| VrfResult::Valid);
+            (actual != r.result).then(|| format!("{} {}: expected {:?}, got {actual:?}", r.suite, r.name, r.result))
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(v.rejections.len() > 10, "{} rejection cases", v.rejections.len());
     assert!(v.rejections.iter().all(|r| SuiteId::from_name(&r.suite).is_some()));
-}
-
-/// The schema's verification verdict of a refusal, or `None` for a kind verification never gives. Exhaustive: a kind
-/// the SDK adds does not compile until it is mapped.
-const fn verify_result(e: &VrfError) -> Option<VrfResult> {
-    match e {
-        VrfError::Malformed { .. } => Some(VrfResult::Malformed),
-        VrfError::InvalidPublicKey => Some(VrfResult::InvalidPublicKey),
-        VrfError::SmallOrderPublicKey => Some(VrfResult::SmallOrderPublicKey),
-        VrfError::InvalidGamma => Some(VrfResult::InvalidGamma),
-        VrfError::NonCanonicalScalar => Some(VrfResult::NonCanonicalScalar),
-        VrfError::ChallengeMismatch => Some(VrfResult::ChallengeMismatch),
-        VrfError::KeyMismatch | VrfError::HashToCurveFailed { .. } => None,
-    }
-}
-
-/// The schema's signing-key verdict of a refusal, or `None` for a kind decoding never gives.
-const fn key_result(e: &VrfError) -> Option<VrfKeyResult> {
-    match e {
-        VrfError::Malformed { .. } => Some(VrfKeyResult::Malformed),
-        VrfError::KeyMismatch => Some(VrfKeyResult::KeyMismatch),
-        VrfError::InvalidPublicKey
-        | VrfError::SmallOrderPublicKey
-        | VrfError::InvalidGamma
-        | VrfError::NonCanonicalScalar
-        | VrfError::ChallengeMismatch
-        | VrfError::HashToCurveFailed { .. } => None,
-    }
 }
 
 /// Every `keyDecoding` row: a wrong length is `Malformed`, a draft-03 key holding another seed's public key
@@ -179,29 +144,47 @@ fn vrf_v1_signing_key_decoding() {
                 SuiteId::Ell2 => decode::<vrf::Ell2>(&b),
                 SuiteId::Draft03 => decode::<vrf::Draft03>(&b),
             };
-            let actual = r.map_or_else(|e| key_result(&e), |()| Some(VrfKeyResult::Accepted));
-            (actual.as_ref() != Some(&c.result))
-                .then(|| format!("{} {}: expected {:?}, got {actual:?}", c.suite, c.name, c.result))
+            let actual = r.map_or_else(|e| VrfKeyResult::VrfErrorKind(e.kind()), |()| VrfKeyResult::Accepted);
+            (actual != c.result).then(|| format!("{} {}: expected {:?}, got {actual:?}", c.suite, c.name, c.result))
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(v.key_decoding.len() >= 13, "{} key rows", v.key_decoding.len());
 }
 
-/// The coverage gate (conformance.md section 6) for `VrfError`: every refusal kind of the schema has a row.
-/// [`verify_result`] and [`key_result`] map every SDK variant onto a schema kind or `None` (exhaustively, so a new
-/// variant does not compile until it is mapped); `None` for both is the exemption, `HashToCurveFailed` alone.
+/// The coverage gate (conformance.md section 6) for `VrfError`: every kind of the schema has a `rejections` or a
+/// `keyDecoding` row, but the one exemption, `HashToCurveFailed`, which has none. The SDK's `VrfError` is generated
+/// with those kinds, so a kind added to the schema is a variant here, and needs a row.
 #[test]
 fn every_vrf_error_kind_has_a_row() {
     let v: dilf4s_core::generated::vrf_vectors::VrfVectors = common::load("vrf_v1.json");
-    for kind in VrfResult::ALL.into_iter().filter(|k| *k != VrfResult::Valid) {
-        assert!(v.rejections.iter().any(|r| r.result == kind), "no rejections row pins {kind:?}");
+    for kind in VrfErrorKind::ALL {
+        let pinned = v.rejections.iter().any(|r| r.result == VrfResult::VrfErrorKind(kind.clone()))
+            || v.key_decoding.iter().any(|c| c.result == VrfKeyResult::VrfErrorKind(kind.clone()));
+        if kind == VrfErrorKind::HashToCurveFailed {
+            assert!(!pinned, "{kind:?} is exempt, but has a row");
+        } else {
+            assert!(pinned, "no rejections or keyDecoding row pins {kind:?}");
+        }
     }
-    for kind in VrfKeyResult::ALL.into_iter().filter(|k| *k != VrfKeyResult::Accepted) {
-        assert!(v.key_decoding.iter().any(|c| c.result == kind), "no keyDecoding row pins {kind:?}");
+    // and each section pins every kind its check reaches: verification refuses malformed input and rejects the rest,
+    // signing-key decoding refuses a wrong length and a draft-03 key holding another seed's public key
+    let verification = [
+        VrfErrorKind::Malformed,
+        VrfErrorKind::InvalidPublicKey,
+        VrfErrorKind::SmallOrderPublicKey,
+        VrfErrorKind::InvalidGamma,
+        VrfErrorKind::NonCanonicalScalar,
+        VrfErrorKind::ChallengeMismatch,
+    ];
+    for kind in verification {
+        let row = VrfResult::VrfErrorKind(kind);
+        assert!(v.rejections.iter().any(|r| r.result == row), "no rejections row pins {row:?}");
     }
-    let exempt = VrfError::HashToCurveFailed { reason: String::new() };
-    assert_eq!((verify_result(&exempt), key_result(&exempt)), (None, None), "the one exemption maps to no kind");
+    for kind in [VrfErrorKind::Malformed, VrfErrorKind::KeyMismatch] {
+        let row = VrfKeyResult::VrfErrorKind(kind);
+        assert!(v.key_decoding.iter().any(|c| c.result == row), "no keyDecoding row pins {row:?}");
+    }
 }
 
 /// RFC 9381 B.3 (TAI) / B.4 (ELL2) and draft-03 A.4: keys, proofs, outputs, and the intermediate `H`.
@@ -320,7 +303,7 @@ fn outcome(row: &[String]) -> String {
     }
     match SuiteId::Draft03.verify_bytes(&bytes(&row[1]), &bytes(&row[3]), &bytes(&row[2])) {
         Ok(beta) => format!("VALID:{}", hex::encode(&beta)),
-        Err(e) if e.is_malformed() => "MALFORMED".into(),
+        Err(VrfError::Malformed { .. }) => "MALFORMED".into(),
         Err(_) => "INVALID".into(),
     }
 }
@@ -407,8 +390,14 @@ fn draft03_helper_rows() {
 fn malformed_envelopes_and_typed_rejections() {
     let key = bytes("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
     let pi = [0u8; 80];
-    assert!(SuiteId::Tai.verify_bytes(&key[1..], &[], &pi).unwrap_err().is_malformed(), "31-byte key");
-    assert!(SuiteId::Tai.verify_bytes(&key, &[], &pi[1..]).unwrap_err().is_malformed(), "79-byte proof");
+    assert!(
+        SuiteId::Tai.verify_bytes(&key[1..], &[], &pi).unwrap_err().kind() == VrfErrorKind::Malformed,
+        "31-byte key"
+    );
+    assert!(
+        SuiteId::Tai.verify_bytes(&key, &[], &pi[1..]).unwrap_err().kind() == VrfErrorKind::Malformed,
+        "79-byte proof"
+    );
     let identity = arr::<32>("0100000000000000000000000000000000000000000000000000000000000000");
     let neg_zero = arr::<32>("0100000000000000000000000000000000000000000000000000000000000080");
     let non_canonical = arr::<32>("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");

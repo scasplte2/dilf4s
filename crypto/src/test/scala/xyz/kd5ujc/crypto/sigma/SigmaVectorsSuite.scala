@@ -10,7 +10,7 @@ object SigmaVectorsSuite extends SimpleIOSuite {
   import SigmaVectors.Case
 
   private def agrees(c: Case): Expectations = {
-    val ours = Sigma.verify(c.prop, c.proof, c.message)
+    val ours = Sigma.check(c.prop, c.proof, c.message)
     c.kind match {
       case "valid"                       => expect.same(Right(true), ours).and(expect(c.ergo, s"${c.name}: Ergo accepts"))
       case "trailing-byte" | "truncated" => expect(ours.isLeft, s"${c.name} ${c.kind}: malformed for us (Ergo: ${c.ergo}), got $ours")

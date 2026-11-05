@@ -11,33 +11,10 @@ import xyz.kd5ujc.crypto.signing._
 import scodec.bits.ByteVector
 
 /**
- * Why a derivation path is refused: the first rule it breaks, its segments checked in order (docs/specs/signing.md §3).
- * `name` is its spelling in the `paths` vectors.
+ * Why a derivation path is refused: the first rule it breaks, its segments checked in order (docs/specs/signing.md §3),
+ * as the `paths` vectors spell it. Generated from `shared/schemas/crypto-errors.cddl`; `PathRefusal.values` lists them.
  */
-sealed abstract class PathRefusal(val name: String) extends Product with Serializable
-
-object PathRefusal {
-
-  /** The path is not `m` and does not start with `m/`. */
-  case object MissingMaster extends PathRefusal("missingMaster")
-
-  /** A segment is not ASCII digits and an optional `'` or `h`. */
-  case object Malformed extends PathRefusal("malformed")
-
-  /** A segment other than `0` starts with `0`. */
-  case object LeadingZero extends PathRefusal("leadingZero")
-
-  /** More than [[ChildIndex.MaxSegmentDigits]] digits. */
-  case object TooManyDigits extends PathRefusal("tooManyDigits")
-
-  /** An index of 2^31 or more. */
-  case object OutOfRange extends PathRefusal("outOfRange")
-
-  /** More than [[ChildIndex.MaxDepth]] segments. */
-  case object TooDeep extends PathRefusal("tooDeep")
-
-  val all: List[PathRefusal] = List(MissingMaster, Malformed, LeadingZero, TooManyDigits, OutOfRange, TooDeep)
-}
+export xyz.kd5ujc.models.crypto_errors.PathRefusal
 
 /** A child index below 2^31; hardened indices are serialised with the top bit set. */
 sealed trait ChildIndex extends Product with Serializable {
@@ -79,7 +56,7 @@ object ChildIndex {
       val end = if (slash < 0) p.length else slash
       val parsed =
         if (at < MaxDepth) segment(p.substring(from, end), at)
-        else KeyError.InvalidPath(PathRefusal.TooDeep, s"path has more than $MaxDepth segments").asLeft
+        else KeyError.InvalidPath("tooDeep", s"path has more than $MaxDepth segments").asLeft
       parsed match {
         case Left(e)               => e.asLeft
         case Right(c) if slash < 0 => (c :: acc).reverse.asRight
@@ -88,7 +65,7 @@ object ChildIndex {
     }
     if (p == "m") Nil.asRight
     else if (p.startsWith("m/")) scan(2, 0, Nil)
-    else KeyError.InvalidPath(PathRefusal.MissingMaster, "path must start with m").asLeft
+    else KeyError.InvalidPath("missingMaster", "path must start with m").asLeft
   }
 
   private def segment(seg: String, at: Int): Either[KeyError.InvalidPath, ChildIndex] = {
@@ -98,21 +75,21 @@ object ChildIndex {
       _ <- Either.cond(
         digits.nonEmpty && digits.forall(c => c >= '0' && c <= '9'),
         (),
-        KeyError.InvalidPath(PathRefusal.Malformed, s"path segment $at is malformed")
+        KeyError.InvalidPath("malformed", s"path segment $at is malformed")
       )
       _ <- Either.cond(
         digits == "0" || !digits.startsWith("0"),
         (),
-        KeyError.InvalidPath(PathRefusal.LeadingZero, s"path segment $at has a leading zero")
+        KeyError.InvalidPath("leadingZero", s"path segment $at has a leading zero")
       )
       _ <- Either.cond(
         digits.length <= MaxSegmentDigits,
         (),
-        KeyError.InvalidPath(PathRefusal.TooManyDigits, s"path segment $at has ${digits.length} digits, more than $MaxSegmentDigits")
+        KeyError.InvalidPath("tooManyDigits", s"path segment $at has ${digits.length} digits, more than $MaxSegmentDigits")
       )
       // at most ten digits: no overflow
       i = digits.foldLeft(0L)((acc, c) => acc * 10 + (c - '0'))
-      index <- Either.cond(i < 0x80000000L, i, KeyError.InvalidPath(PathRefusal.OutOfRange, s"path segment $at is out of range"))
+      index <- Either.cond(i < 0x80000000L, i, KeyError.InvalidPath("outOfRange", s"path segment $at is out of range"))
     } yield if (hard) Hardened(index) else Soft(index)
   }
 

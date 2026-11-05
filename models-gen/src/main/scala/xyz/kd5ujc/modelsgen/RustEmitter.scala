@@ -9,7 +9,9 @@ import cats.syntax.all._
  *
  *   - a record is a struct; a field holding a literal (`"version": 1`) carries no data, so it is left out of the struct
  *     and written and checked by the codec
- *   - an enumeration is a fieldless enum; a union is an enum with one variant per alternative
+ *   - an enumeration is a fieldless enum; a union is an enum with one variant per alternative (a choice of texts it
+ *     names is one variant holding that choice's enum)
+ *   - an error family is an enum with a variant per kind, `kind()`, `Display` and `core::error::Error`; no codec
  *   - an alias is a type alias plus a codec constant (`TREE_INDEX`)
  *   - integer ranges use the smallest of `u32`, `u64`, `i32`, `i64` that holds them, otherwise `BigInt`; a byte
  *     string of one fixed size is an array `[u8; N]`
@@ -36,10 +38,11 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
       case _                => Set.empty
     }
     models.map {
-      case (q, ModelRule.Record(fs))   => q -> fs.flatMap(f => refs(f.tpe)).toSet
-      case (q, ModelRule.Union(as, _)) => q -> as.map(_.rule).toSet
-      case (q, ModelRule.Alias(t))     => q -> refs(t)
-      case (q, _)                      => q -> Set.empty[QName]
+      case (q, ModelRule.Record(fs))            => q -> fs.flatMap(f => refs(f.tpe)).toSet
+      case (q, ModelRule.Union(as, _, cs))      => q -> (as.map(_.rule) ++ cs.map(_.rule)).toSet
+      case (q, ModelRule.ErrorFamily(_, cases)) => q -> cases.flatMap(_.fields.flatMap(f => refs(f.tpe))).toSet
+      case (q, ModelRule.Alias(t))              => q -> refs(t)
+      case (q, _)                               => q -> Set.empty[QName]
     }
   }
 
@@ -226,13 +229,22 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
       }
     } { case (l, _) => outside(rule, s"enumeration case $l beyond CDDL int").asLeft }
 
-  private def union(rule: QName, alts: Vector[UnionAlternative], texts: Vector[String]): Either[GenError, String] = {
+  private def union(
+    rule:    QName,
+    alts:    Vector[UnionAlternative],
+    texts:   Vector[String],
+    choices: Vector[TextChoice]
+  ): Either[GenError, String] = {
     val n = typeName(rule)
     val recordVariants = alts.map(a => typeName(a.rule) -> path(rule.module, a.rule, typeName(a.rule)))
     val textVariants = texts.map(t => CanonicalEmitter.pascal(t) -> t)
+    // a named choice of texts is one variant holding its enum; each of its texts selects that variant
+    val choiceVariants = choices.map(ch => (typeName(ch.rule), path(rule.module, ch.rule, typeName(ch.rule)), ch.texts))
+    val choiceTexts = choiceVariants.flatMap { case (v, t, ts) => ts.map(x => (v, s"$t::${CanonicalEmitter.pascal(x)}", x)) }
     // each variant with the alternative it comes from: a rule name, or a text literal as written in CDDL
     val sources =
-      alts.map(a => typeName(a.rule) -> a.rule.name) ++ texts.map(t => CanonicalEmitter.pascal(t) -> CanonicalEmitter.literal(t))
+      alts.map(a => typeName(a.rule) -> a.rule.name) ++ texts.map(t => CanonicalEmitter.pascal(t) -> CanonicalEmitter.literal(t)) ++
+      choices.map(ch => typeName(ch.rule) -> ch.rule.name)
     val problem = sources
       .groupBy(_._1)
       .toVector
@@ -244,24 +256,28 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
       .orElse(sources.collectFirst { case (v, _) if reserved(v) => GenError.ReservedName(rule.toString, Language.Rust, v) })
     problem.toLeft {
       val variants = recordVariants.map { case (v, t) => s"    /// A [`$t`].\n    $v($t)," } ++
-        textVariants.map { case (v, t) => s"    /// The text `${string(t).drop(1).dropRight(1)}`.\n    $v," }
+        textVariants.map { case (v, t) => s"    /// The text `${string(t).drop(1).dropRight(1)}`.\n    $v," } ++
+        choiceVariants.map { case (v, t, _) => s"    /// A [`$t`].\n    $v($t)," }
       val enc = recordVariants.map { case (v, _) => s"            Self::$v(a) => c::Model::to_value_at(a, depth)," } ++
-        textVariants.map { case (v, t) => s"            Self::$v => Ok(c::Value::text(${string(t)}))," }
+        textVariants.map { case (v, t) => s"            Self::$v => Ok(c::Value::text(${string(t)}))," } ++
+        choiceVariants.map { case (v, _, _) => s"            Self::$v(a) => c::Model::to_value_at(a, depth)," }
       def keys(s: Set[String]) = s"&[${s.toList.sorted.map(string).mkString(", ")}]"
       val records = alts.map(a => s"(${keys(a.required)}, ${keys(a.allowed)})").mkString(", ")
       val dec = recordVariants.zipWithIndex.map {
         case ((v, t), i) => s"            c::Alternative::Record($i) => <$t as c::Model>::from_value(value).map(Self::$v),"
-      } ++ textVariants.zipWithIndex.map { case ((v, _), i) => s"            c::Alternative::Text($i) => Ok(Self::$v)," }
+      } ++ textVariants.zipWithIndex.map { case ((v, _), i) => s"            c::Alternative::Text($i) => Ok(Self::$v)," } ++
+        choiceTexts.zipWithIndex.map { case ((v, c, _), i) => s"            c::Alternative::Text(${texts.size + i}) => Ok(Self::$v($c))," }
+      val values = textVariants.map { case (v, _) => s"Self::$v" } ++ choiceTexts.map { case (v, c, _) => s"Self::$v($c)" }
       // a choice lists its text alternatives, so a test can ask for something of each (a vector row per kind): all of
       // them (`ALL`) when they are all it has, or `TEXTS` beside its records
       val (listName, listDoc) =
         if (recordVariants.isEmpty) ("ALL", "Every alternative") else ("TEXTS", "Every text alternative (not the records)")
       val all = Option
-        .when(textVariants.nonEmpty)(
+        .when(values.nonEmpty)(
           s"""
              |impl $n {
              |    /// $listDoc, in schema order.
-             |    pub const $listName: [Self; ${textVariants.size}] = [${textVariants.map { case (v, _) => s"Self::$v" }.mkString(", ")}];
+             |    pub const $listName: [Self; ${values.size}] = [${values.mkString(", ")}];
              |}
              |""".stripMargin
         )
@@ -273,14 +289,16 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |}
          |
          |impl c::Model for $n {
-         |    fn to_value_at(&self, ${if (recordVariants.isEmpty) "_depth" else "depth"}: usize) -> Result<c::Value, c::CanonicalError> {
+         |    fn to_value_at(&self, ${
+          if (recordVariants.isEmpty && choiceVariants.isEmpty) "_depth" else "depth"
+        }: usize) -> Result<c::Value, c::CanonicalError> {
          |        match self {
          |${enc.mkString("\n")}
          |        }
          |    }
          |
          |    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-         |        match c::select_alternative(value, &[$records], &[${texts.map(string).mkString(", ")}])? {
+         |        match c::select_alternative(value, &[$records], &[${(texts ++ choiceTexts.map(_._3)).map(string).mkString(", ")}])? {
          |${dec.mkString("\n")}
          |            other => Err(c::unknown_alternative(other)),
          |        }
@@ -288,6 +306,80 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |}
          |$all""".stripMargin
     }
+  }
+
+  /** Whether a field type renders with `Display` (text and integers) rather than `Debug` (a kind, an option). */
+  @scala.annotation.tailrec
+  private def displayed(t: FieldType): Boolean = t match {
+    case FieldType.Ref(q) =>
+      models.get(q) match {
+        case Some(ModelRule.Alias(target)) => displayed(target)
+        case _                             => false
+      }
+    case _ => true
+  }
+
+  /** An enum with a variant per kind (struct variants for kinds with fields), its `kind()`, `Display` and `Error`. */
+  private def errorFamily(rule: QName, kinds: QName, cases: Vector[ErrorCase]): Either[GenError, String] = {
+    val n = typeName(rule)
+    val k = path(rule.module, kinds, typeName(kinds))
+    cases.collectFirst { case c if reserved(c.kind) => GenError.ReservedName(rule.toString, Language.Rust, c.kind) }
+      .toLeft(())
+      .flatMap(_ => cases.traverse(c => fields(rule, c.fields).map(c -> _)))
+      .map { withFields =>
+        def escaped(text: String) = string(text).drop(1).dropRight(1).replace("{", "{{").replace("}", "}}")
+        val variants = withFields.map {
+          case (c, fs) =>
+            val body =
+              if (fs.isEmpty) ""
+              else
+                s" {\n${fs.map { f =>
+                    s"        /// Its `${string(f.key).drop(1).dropRight(1)}`.\n        ${f.name}: ${
+                        if (f.optional) s"Option<${f.rs.tpe}>" else f.rs.tpe
+                      },"
+                  }.mkString("\n")}\n    }"
+            s"    /// The kind `${c.kind}`.\n    ${c.kind}$body,"
+        }
+        val kindArms = withFields.map {
+          case (c, fs) => s"            Self::${c.kind}${if (fs.isEmpty) "" else " { .. }"} => $k::${CanonicalEmitter.pascal(c.kind)},"
+        }
+        val displayArms = withFields.map {
+          case (c, Vector()) => s"            Self::${c.kind} => f.write_str(${string(c.kind)}),"
+          case (c, fs) =>
+            val bindings = fs.zipWithIndex.map { case (f, i) => s"${f.name}: a$i" }.mkString(", ")
+            val shown = fs.zipWithIndex.map {
+              case (f, i) =>
+                val spec = if (!f.optional && displayed(c.fields.find(_.key == f.key).fold[FieldType](FieldType.Text)(_.tpe))) "" else ":?"
+                s"${escaped(f.key)}: {a$i$spec}"
+            }
+            s"""            Self::${c.kind} { $bindings } => write!(f, "${c.kind} (${shown.mkString(", ")})"),"""
+        }
+        s"""${doc(rule)} An error family: its kinds are [`$k`].
+           |#[derive(Clone, Debug, PartialEq, Eq)]
+           |pub enum $n {
+           |${variants.mkString("\n")}
+           |}
+           |
+           |impl $n {
+           |    /// This error's kind.
+           |    pub const fn kind(&self) -> $k {
+           |        match self {
+           |${kindArms.mkString("\n")}
+           |        }
+           |    }
+           |}
+           |
+           |impl core::fmt::Display for $n {
+           |    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+           |        match self {
+           |${displayArms.mkString("\n")}
+           |        }
+           |    }
+           |}
+           |
+           |impl core::error::Error for $n {}
+           |""".stripMargin
+      }
   }
 
   private def alias(rule: QName, t: FieldType): Either[GenError, String] =
@@ -359,11 +451,12 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
     val rules = models.toVector.collect { case (q, m) if q.module == name => q -> m }.sortBy(_._1.name)
     namespaceClash(name, rules).toLeft(()).flatMap { _ =>
       rules.traverse {
-        case (q, ModelRule.Record(fs))       => record(q, fs)
-        case (q, ModelRule.Enumeration(cs))  => enumeration(q, cs)
-        case (q, ModelRule.Union(as, texts)) => union(q, as, texts)
-        case (q, ModelRule.Alias(t))         => alias(q, t)
-        case (q, ModelRule.Constant(v))      => constant(q, v).asRight
+        case (q, ModelRule.Record(fs))             => record(q, fs)
+        case (q, ModelRule.Enumeration(cs))        => enumeration(q, cs)
+        case (q, ModelRule.Union(as, texts, cs))   => union(q, as, texts, cs)
+        case (q, ModelRule.ErrorFamily(ks, cases)) => errorFamily(q, ks, cases)
+        case (q, ModelRule.Alias(t))               => alias(q, t)
+        case (q, ModelRule.Constant(v))            => constant(q, v).asRight
       }.map { bodies =>
         val constants = rules.collect { case (q, ModelRule.Constant(v)) => q -> v }
         val code = (bodies ++ narrowed(constants)).mkString("\n")

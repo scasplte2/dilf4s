@@ -266,7 +266,7 @@ fn sigma_expect(o: &SigmaOutcome) -> Expect {
     match o {
         SigmaOutcome::Accepted => Expect::Output(Output::Bool(true)),
         SigmaOutcome::Rejected => Expect::Output(Output::Bool(false)),
-        kind => Expect::Kind(format!("{kind:?}")),
+        SigmaOutcome::SigmaErrorKind(kind) => Expect::Kind(format!("{kind:?}")),
     }
 }
 
@@ -341,7 +341,7 @@ pub fn kes() -> Result<Vec<Named>, Error> {
         let expect = match &c.outcome {
             KesOutcome::Accepted => Expect::Output(Output::Bool(true)),
             KesOutcome::Rejected => Expect::Output(Output::Bool(false)),
-            kind => Expect::Kind(format!("{kind:?}")),
+            KesOutcome::KesErrorKind(kind) => Expect::Kind(format!("{kind:?}")),
         };
         let field = |f: &Option<String>| bytes(f.as_deref().unwrap_or_default());
         let case = Case::KesVerify {
@@ -406,7 +406,7 @@ pub fn bn254() -> Result<Vec<Named>, Error> {
     for c in &v.sp1_groth16 {
         let expect = match &c.result {
             ZkGroth16Result::Verified => Expect::Output(Output::Unit),
-            kind => Expect::Kind(format!("{kind:?}")),
+            ZkGroth16Result::Groth16ErrorKind(kind) => Expect::Kind(format!("{kind:?}")),
         };
         let case = Case::Sp1Groth16 {
             program_vkey: bytes(&c.program_vkey)?,
@@ -480,7 +480,7 @@ pub fn vrf(suite: &str, rejections: bool) -> Result<Vec<Named>, Error> {
     for r in v.rejections.iter().filter(|r| rejections && r.suite == suite) {
         let expect = match &r.result {
             VrfResult::Valid => Expect::Verified,
-            kind => Expect::Kind(format!("{kind:?}")),
+            VrfResult::VrfErrorKind(kind) => Expect::Kind(format!("{kind:?}")),
         };
         let case = Case::Vrf {
             suite: suite.to_owned(),

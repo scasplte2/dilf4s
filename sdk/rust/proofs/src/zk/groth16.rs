@@ -5,9 +5,7 @@
 //! `e(-A, B) e(alpha, beta) e(L, gamma) e(C, delta) = 1`. The checks run in the reference's order, so each refusal is
 //! the same [`Groth16Error`] kind.
 
-use alloc::string::String;
 use alloc::vec::Vec;
-use core::fmt;
 
 use bn::{Fr, G1, G2, Group, Gt};
 
@@ -22,45 +20,18 @@ const R: [u8; WORD_BYTES] = [
     0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00, 0x00, 0x01,
 ];
 
-/// Why a proof was not accepted.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Groth16Error {
-    /// Not a proof or input of the expected shape: lengths, non-canonical field elements, the number of inputs.
-    Malformed {
-        /// What was wrong.
-        reason: String,
-    },
-    /// Well formed but invalid: a point off the curve, outside the subgroup or the identity, or an input not below `r`.
-    InvalidProof {
-        /// What was wrong.
-        reason: String,
-    },
-    /// The pairing equation does not hold.
-    PairingCheckFailed,
-    /// A framing check of a wrapper (SP1's selector, exit code or VK root) failed.
-    Rejected {
-        /// What was wrong.
-        reason: String,
-    },
-}
+/// Why a proof was not accepted: not a proof or input of the expected shape (`Malformed`: lengths, non-canonical field
+/// elements, the number of inputs); well formed but invalid (`InvalidProof`: a point off the curve, outside the
+/// subgroup or the identity, or an input not below `r`); the pairing equation failing (`PairingCheckFailed`); or a
+/// wrapper's framing check (`Rejected`: SP1's selector, exit code or VK root). Generated from
+/// `shared/schemas/crypto-errors.cddl`.
+pub use dilf4s_core::generated::crypto_errors::{Groth16Error, Groth16ErrorKind};
 
-impl fmt::Display for Groth16Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { reason } => write!(f, "malformed: {reason}"),
-            Self::InvalidProof { reason } => write!(f, "invalid proof: {reason}"),
-            Self::PairingCheckFailed => f.write_str("the pairing check failed"),
-            Self::Rejected { reason } => write!(f, "rejected: {reason}"),
-        }
-    }
-}
-
-impl From<ZkError> for Groth16Error {
-    fn from(e: ZkError) -> Self {
-        match e {
-            ZkError::Malformed { reason } => Self::Malformed { reason },
-            ZkError::InvalidPoint { reason } => Self::InvalidProof { reason },
-        }
+/// A BN254 refusal inside a Groth16 check: a malformed encoding is malformed, an invalid point an invalid proof.
+fn groth16_of(e: ZkError) -> Groth16Error {
+    match e {
+        ZkError::Malformed { reason } => Groth16Error::Malformed { reason },
+        ZkError::InvalidPoint { reason } => Groth16Error::InvalidProof { reason },
     }
 }
 
@@ -112,12 +83,12 @@ impl VerifyingKey {
 }
 
 fn finite_g1(bytes: &[u8; G1_BYTES], role: &str) -> Result<G1, Groth16Error> {
-    let p = decode_g1(bytes)?;
+    let p = decode_g1(bytes).map_err(groth16_of)?;
     if p.is_zero() { Err(malformed(&alloc::format!("the key's {role} is the identity"))) } else { Ok(p) }
 }
 
 fn finite_g2(bytes: &[u8; G2_BYTES], role: &str) -> Result<G2, Groth16Error> {
-    let p = decode_g2(bytes)?;
+    let p = decode_g2(bytes).map_err(groth16_of)?;
     if p.is_zero() { Err(malformed(&alloc::format!("the key's {role} is the identity"))) } else { Ok(p) }
 }
 
@@ -149,8 +120,8 @@ pub fn verify(vk: &VerifyingKey, proof: &[u8], inputs: &[[u8; WORD_BYTES]]) -> R
     let l = inputs.iter().zip(&vk.ic).try_fold(vk.ic0, |acc, (x, p)| {
         Fr::from_slice(x).map(|s| acc + *p * s).map_err(|_| invalid("a public input is not in Fr"))
     })?;
-    let neg_a = decode_g1(&a)?;
-    let (b, c) = (decode_g2(b)?, decode_g1(c)?);
+    let neg_a = decode_g1(&a).map_err(groth16_of)?;
+    let (b, c) = (decode_g2(b).map_err(groth16_of)?, decode_g1(c).map_err(groth16_of)?);
     let pairs: Vec<(G1, G2)> = [(neg_a, b), (vk.alpha, vk.beta), (l, vk.gamma), (c, vk.delta)]
         .into_iter()
         .filter(|(p, q)| !p.is_zero() && !q.is_zero())

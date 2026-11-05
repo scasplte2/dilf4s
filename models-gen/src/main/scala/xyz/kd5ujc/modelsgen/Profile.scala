@@ -11,7 +11,10 @@ import xyz.kd5ujc.modelsgen.Ast.Occ
  *   - a map of text-literal keys (each required or `?` optional) is a [[ModelRule.Record]]
  *   - a labelled integer enumeration `&(a: 1, b: 2)` is a [[ModelRule.Enumeration]]
  *   - a choice of map rules and text literals is a [[ModelRule.Union]], decoded by key set; it must be unambiguous (some
- *     required key of one alternative is outside the other, for every pair), which is checked here
+ *     required key of one alternative is outside the other, for every pair), which is checked here. A choice may also
+ *     name a choice of text literals (an error family's kinds), whose texts it then takes as its own
+ *   - a choice of inline maps, each led by a distinct `"kind"` text literal, is a [[ModelRule.ErrorFamily]]: an error
+ *     type, not a wire format, with its kinds in the rule named like it with `-kind`
  *   - a rule whose whole body is an unsigned integer literal (`max-depth = 256`) is a [[ModelRule.Constant]]: a named
  *     value, not a type. Range bounds and sizes may name it (`0..max-depth`); a field or element may not
  *   - anything else in the profile (a primitive, a range, a sized string, a homogeneous array, a text-keyed map, a
@@ -53,10 +56,22 @@ final case class ProfileField(key: String, optional: Boolean, tpe: FieldType)
 /** A record alternative of a union, with the keys it requires and the keys it allows. */
 final case class UnionAlternative(rule: QName, required: Set[String], allowed: Set[String])
 
+/** A choice of text literals that a union names, whose texts are among the union's. */
+final case class TextChoice(rule: QName, texts: Vector[String])
+
+/** One kind of an error family, with its fields in schema order. */
+final case class ErrorCase(kind: String, fields: Vector[ProfileField])
+
 enum ModelRule {
   case Record(fields: Vector[ProfileField])
   case Enumeration(cases: Vector[(String, BigInt)])
-  case Union(alternatives: Vector[UnionAlternative], texts: Vector[String])
+  case Union(alternatives: Vector[UnionAlternative], texts: Vector[String], choices: Vector[TextChoice])
+
+  /**
+   * An error family: one case per kind, its kinds the text choice `kinds` lists in the same order. A type the SDKs
+   * construct and match, never encoded: no codec is generated, and no wire type may hold one.
+   */
+  case ErrorFamily(kinds: QName, cases: Vector[ErrorCase])
   case Alias(tpe: FieldType)
 
   /** A named unsigned integer (a spec limit), emitted as a constant in every language. */
@@ -83,6 +98,8 @@ final class Profile(val schema: Schema) {
       schema.rule(q).flatMap {
         case RuleDef(_, RuleBody.Type(RT.LitInt(_))) =>
           outside(rule, s"constant ${q.name} in field position (a constant is a value: name it in a range or size bound)").asLeft
+        case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(_))) =>
+          outside(rule, s"error family ${q.name} in field position (an error is not a wire type: name its kinds)").asLeft
         case _ => FieldType.Ref(q).asRight
       }
     case RT.LitInt(v) if v >= Int.MinValue && v <= Int.MaxValue => FieldType.LitInt(v.toInt).asRight
@@ -148,7 +165,27 @@ final class Profile(val schema: Schema) {
       case _ => outside(alt, "choice alternative that is not a map rule").asLeft
     }
 
-  private def union(rule: QName, alts: Vector[QName], texts: Vector[String]): Either[GenError, ModelRule] =
+  /** The texts of a choice of text literals only, which a union may name as one of its alternatives. */
+  private def textChoice(alt: QName): Either[GenError, Option[TextChoice]] =
+    schema.rule(alt).map {
+      case RuleDef(_, RuleBody.Type(RT.Choice(as))) =>
+        as.traverse {
+          case RT.LitText(t) => Some(t)
+          case _             => None
+        }.map(TextChoice(alt, _))
+      case _ => None
+    }
+
+  private def union(rule: QName, refs: Vector[QName], texts: Vector[String]): Either[GenError, ModelRule] =
+    refs.traverse(a => textChoice(a).map(_.toRight(a))).flatMap { classified =>
+      val choices = classified.collect { case Right(c) => c }
+      val all = texts ++ choices.flatMap(_.texts)
+      val repeated = all.diff(all.distinct).distinct
+      if (repeated.nonEmpty) outside(rule, s"choice with repeated texts: ${repeated.map(CanonicalEmitter.literal).mkString(", ")}").asLeft
+      else records(rule, classified.collect { case Left(a) => a }, texts, choices)
+    }
+
+  private def records(rule: QName, alts: Vector[QName], texts: Vector[String], choices: Vector[TextChoice]): Either[GenError, ModelRule] =
     alts.traverse(keySets).flatMap { ks =>
       // ambiguous by wire keys (decoding), or by field names (TypeScript encodes a union by its present fields)
       val ambiguous = (for {
@@ -159,8 +196,50 @@ final class Profile(val schema: Schema) {
         (a.required.map(name) -- b.allowed.map(name)).isEmpty && (b.required.map(name) -- a.allowed.map(name)).isEmpty
       } yield s"${a.rule.name}/${b.rule.name}").distinct
       if (ambiguous.nonEmpty) GenError.Unsupported(rule.toString, UnsupportedFeature.AmbiguousAlternatives(ambiguous)).asLeft
-      else ModelRule.Union(ks, texts).asRight
+      else ModelRule.Union(ks, texts, choices).asRight
     }
+
+  /**
+   * An error family's field holds text, an integer, a boolean or a kind (an enumeration or a choice of texts), through
+   * aliases: never bytes, a collection or a record, so what an error holds stays bounded by what its kind admits.
+   */
+  private def errorField(rule: QName, t: FieldType, seen: Set[QName]): Either[GenError, Unit] = t match {
+    case FieldType.Uint | FieldType.Int | FieldType.Nint | FieldType.Text | FieldType.Bool => ().asRight
+    case FieldType.IntRange(_, _) | FieldType.SizedText(_, _) | FieldType.Matching(_)      => ().asRight
+    case FieldType.Ref(q) if seen(q) => outside(rule, s"alias cycle through ${q.name}").asLeft
+    case FieldType.Ref(q) =>
+      this.rule(q).flatMap {
+        case ModelRule.Alias(target)                => errorField(rule, target, seen + q)
+        case ModelRule.Enumeration(_)               => ().asRight
+        case ModelRule.Union(Vector(), _, Vector()) => ().asRight
+        case _ => outside(rule, s"error field of type ${q.name} (text, an integer, a boolean or a kind)").asLeft
+      }
+    case other => outside(rule, s"error field of type $other (text, an integer, a boolean or a kind)").asLeft
+  }
+
+  private def errorFamily(q: QName, alternatives: Vector[Vector[REntry]]): Either[GenError, ModelRule] = {
+    val kindRule = QName(q.module, s"${q.name}-kind")
+    alternatives.traverse { es =>
+      es.collect { case REntry(occ, _, Some(RKey.TextKey("kind")), RT.LitText(k)) if occ == Occ.Once => k } match {
+        case Vector(k) if k.matches("[A-Z][A-Za-z0-9]*") =>
+          fields(q, es.filterNot(_.key.contains(RKey.TextKey("kind"))))
+            .flatMap(fs => fs.traverse_(f => errorField(q, f.tpe, Set.empty)).as(ErrorCase(k, fs)))
+        case Vector(k) => outside(q, s"error kind ${CanonicalEmitter.literal(k)} (a kind is a PascalCase identifier)").asLeft
+        case _         => outside(q, "error family alternative without one required \"kind\" text literal").asLeft
+      }
+    }.flatMap { cases =>
+      val kinds = cases.map(_.kind)
+      val listed = textChoice(kindRule).toOption.flatten.map(_.texts)
+      if (kinds.distinct.size != kinds.size)
+        outside(q, s"error family with repeated kinds: ${kinds.diff(kinds.distinct).mkString(", ")}").asLeft
+      else if (!listed.contains(kinds))
+        outside(
+          q,
+          s"error family whose kinds are not listed, in order, by ${kindRule.name} = ${kinds.map(CanonicalEmitter.literal).mkString(" / ")}"
+        ).asLeft
+      else ModelRule.ErrorFamily(kindRule, cases).asRight
+    }
+  }
 
   /** The model of one rule, or the first profile violation. */
   def rule(q: QName): Either[GenError, ModelRule] =
@@ -170,6 +249,7 @@ final class Profile(val schema: Schema) {
       case RuleDef(_, RuleBody.Type(RT.IntEnum(cs)))           => enumeration(q, cs)
       case RuleDef(_, RuleBody.Type(RT.LitInt(v))) =>
         Either.cond(v >= 0 && v <= Profile.UintMax, ModelRule.Constant(v), outside(q, s"constant $v (a constant is a uint, 0..2^64-1)"))
+      case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(alternatives))) => errorFamily(q, alternatives)
       case RuleDef(_, RuleBody.Type(RT.Choice(alts))) =>
         alts.traverse {
           case RT.Ref(a)     => Left(a).some
@@ -231,6 +311,18 @@ object Profile {
     "camelCase"  -> (k => CanonicalEmitter.fieldName(k).stripPrefix("`").stripSuffix("`")),
     "snake_case" -> RustEmitter.fieldName
   )
+
+  /** A choice of inline maps, its alternatives `//` in one map rule: an error family's shape (`{ "kind": "A", ... // "kind": "B" }`). */
+  object ErrorFamilyOf {
+    def unapply(t: RT): Option[Vector[Vector[REntry]]] = t match {
+      case RT.Choice(alts) if alts.size > 1 =>
+        alts.traverse {
+          case RT.MapT(es) if !TextMapOf.unapply(RT.MapT(es)).isDefined => Some(es)
+          case _                                                        => None
+        }
+      case _ => None
+    }
+  }
 
   /** `{ * text => T }`: a map with arbitrary text keys. */
   object TextMapOf {

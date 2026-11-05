@@ -6,7 +6,7 @@ use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::IsIdentity as _;
 
-use crate::error::SigningError;
+use crate::error::CryptoError;
 use crate::util::{exact, halves, sha512};
 
 /// Verifying key length.
@@ -41,9 +41,9 @@ pub struct VerifyingKey {
 
 impl VerifyingKey {
     /// Decodes 32 bytes: a wrong length is `InvalidEncoding`; a non-canonical encoding or the identity `InvalidKey`.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
         let bytes: [u8; 32] = exact("ristretto255 verifying key", bytes)?;
-        let point = element(&bytes).ok_or_else(|| SigningError::InvalidKey {
+        let point = element(&bytes).ok_or_else(|| CryptoError::InvalidKey {
             reason: "ristretto255 verifying key is not a canonical non-identity element".into(),
         })?;
         Ok(Self { bytes, point })
@@ -73,7 +73,7 @@ pub struct Signature {
 
 impl Signature {
     /// Decodes 64 bytes; anything but `R (canonical, non-identity) || z (canonical)` is `InvalidEncoding`.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
         const WHAT: &str = "ristretto255 signature";
         let bytes: [u8; 64] = exact(WHAT, bytes)?;
         let (r_bytes, z_bytes) = halves(&bytes);
@@ -81,8 +81,8 @@ impl Signature {
         let z: Option<Scalar> = Scalar::from_canonical_bytes(z_bytes).into();
         match (r, z) {
             (Some(r), Some(z)) => Ok(Self { bytes, r, z }),
-            _ => Err(SigningError::InvalidEncoding {
-                what: WHAT,
+            _ => Err(CryptoError::InvalidEncoding {
+                what: WHAT.into(),
                 reason: "expected R (non-identity element) || z (canonical scalar)".into(),
             }),
         }
@@ -110,7 +110,7 @@ pub fn verify(key: &VerifyingKey, message: &[u8], signature: &Signature) -> bool
 }
 
 /// Verification over raw encodings: the key is decoded first, then the signature.
-pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, SigningError> {
+pub fn verify_bytes(key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
     let key = VerifyingKey::from_bytes(key)?;
     let signature = Signature::from_bytes(signature)?;
     Ok(verify(&key, message, &signature))
@@ -129,7 +129,7 @@ mod signing {
     use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
     use super::{Signature, VerifyingKey, hash_to_scalar};
-    use crate::error::SigningError;
+    use crate::error::CryptoError;
     use crate::util::{exact, join, sha512};
 
     /// A canonical, non-zero scalar.
@@ -141,13 +141,11 @@ mod signing {
     impl SigningKey {
         /// Decodes 32 little-endian bytes: a wrong length is `InvalidEncoding`, a non-canonical or zero scalar
         /// `InvalidKey`.
-        pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+        pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
             let bytes = Zeroizing::new(exact::<32>("ristretto255 signing key", bytes)?);
             let scalar: Option<Scalar> = Scalar::from_canonical_bytes(*bytes).into();
-            scalar.filter(|s| *s != Scalar::ZERO).map(|scalar| Self { scalar }).ok_or_else(|| {
-                SigningError::InvalidKey {
-                    reason: "ristretto255 secret key must be a canonical non-zero scalar".into(),
-                }
+            scalar.filter(|s| *s != Scalar::ZERO).map(|scalar| Self { scalar }).ok_or_else(|| CryptoError::InvalidKey {
+                reason: "ristretto255 secret key must be a canonical non-zero scalar".into(),
             })
         }
 
@@ -202,7 +200,7 @@ mod signing {
     impl Eq for SigningKey {}
 
     /// Seed derivation (`signing.md` section 1.7): `SHA-512(seed) mod L`, which must be non-zero.
-    pub fn from_seed(seed: &[u8]) -> Result<(SigningKey, VerifyingKey), SigningError> {
+    pub fn from_seed(seed: &[u8]) -> Result<(SigningKey, VerifyingKey), CryptoError> {
         let seed = Zeroizing::new(exact::<32>("ristretto255 seed", seed)?);
         let wide = Zeroizing::new(sha512(&[&*seed]));
         let scalar = Scalar::from_bytes_mod_order_wide(&wide);

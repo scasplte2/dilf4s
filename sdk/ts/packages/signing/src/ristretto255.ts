@@ -4,7 +4,7 @@ import { ristretto255 } from "@noble/curves/ed25519.js";
 import { sha512 } from "@noble/hashes/sha2.js";
 import { randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
-import { invalidEncoding, invalidKey, type SigningError } from "./errors.js";
+import { invalidEncoding, invalidKey, type CryptoError } from "./errors.js";
 import type { Signature, SigningKey, VerifyingKey } from "./keys.js";
 import { attempt } from "./internal/attempt.js";
 import { concat, leToBig, mod } from "./internal/bytes.js";
@@ -89,7 +89,7 @@ const verify = (key: VerifyingKey<typeof NAME>, message: Uint8Array, signature: 
 
 export interface Ristretto255Scheme extends SchemeCodec<typeof NAME>, Verifier<typeof NAME>, SeedDerivation<typeof NAME> {
   /** `k = H3(randomness || sk)`: caller-supplied 32 bytes of nonce randomness (known answers, external RNGs). */
-  readonly sign: (key: SigningKey<typeof NAME>, message: Uint8Array, randomness: Uint8Array) => Result<Signature<typeof NAME>, SigningError>;
+  readonly sign: (key: SigningKey<typeof NAME>, message: Uint8Array, randomness: Uint8Array) => Result<Signature<typeof NAME>, CryptoError>;
   /** With fresh randomness from `@noble/hashes` `randomBytes`. */
   readonly signRandom: (key: SigningKey<typeof NAME>, message: Uint8Array) => Signature<typeof NAME>;
 }

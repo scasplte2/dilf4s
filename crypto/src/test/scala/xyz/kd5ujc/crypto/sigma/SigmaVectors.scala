@@ -46,7 +46,7 @@ object SigmaVectors {
       case other   => other.asRight
     }
 
-  def proposition(v: CanonicalValue): Either[String, SigmaProp] = bytesIn(v).flatMap(SigmaProp.fromCanonical)
+  def proposition(v: CanonicalValue): Either[String, SigmaProp] = bytesIn(v).flatMap(SigmaProp.decode(_).leftMap(_.message))
 
   private def field(m: CanonicalEntries[CanonicalValue], k: String): Either[String, CanonicalValue] = m.get(k).toRight(s"missing $k")
   private def text(v: CanonicalValue): Either[String, String] = v match {

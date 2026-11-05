@@ -83,26 +83,29 @@ impl c::Model for VrfKeyCase {
 pub enum VrfKeyResult {
     /// The text `accepted`.
     Accepted,
-    /// The text `Malformed`.
-    Malformed,
-    /// The text `KeyMismatch`.
-    KeyMismatch,
+    /// A [`super::crypto_errors::VrfErrorKind`].
+    VrfErrorKind(super::crypto_errors::VrfErrorKind),
 }
 
 impl c::Model for VrfKeyResult {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Accepted => Ok(c::Value::text("accepted")),
-            Self::Malformed => Ok(c::Value::text("Malformed")),
-            Self::KeyMismatch => Ok(c::Value::text("KeyMismatch")),
+            Self::VrfErrorKind(a) => c::Model::to_value_at(a, depth),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["accepted", "Malformed", "KeyMismatch"])? {
+        match c::select_alternative(value, &[], &["accepted", "Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch", "KeyMismatch", "HashToCurveFailed"])? {
             c::Alternative::Text(0) => Ok(Self::Accepted),
-            c::Alternative::Text(1) => Ok(Self::Malformed),
-            c::Alternative::Text(2) => Ok(Self::KeyMismatch),
+            c::Alternative::Text(1) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::Malformed)),
+            c::Alternative::Text(2) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidPublicKey)),
+            c::Alternative::Text(3) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::SmallOrderPublicKey)),
+            c::Alternative::Text(4) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidGamma)),
+            c::Alternative::Text(5) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::NonCanonicalScalar)),
+            c::Alternative::Text(6) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::ChallengeMismatch)),
+            c::Alternative::Text(7) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::KeyMismatch)),
+            c::Alternative::Text(8) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::HashToCurveFailed)),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -110,7 +113,7 @@ impl c::Model for VrfKeyResult {
 
 impl VrfKeyResult {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 3] = [Self::Accepted, Self::Malformed, Self::KeyMismatch];
+    pub const ALL: [Self; 9] = [Self::Accepted, Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::Malformed), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidPublicKey), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::SmallOrderPublicKey), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidGamma), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::NonCanonicalScalar), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::ChallengeMismatch), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::KeyMismatch), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::HashToCurveFailed)];
 }
 
 /// `vrf-proof` (`shared/schemas/vrf-vectors.cddl`).
@@ -190,42 +193,29 @@ impl c::Model for VrfRejection {
 pub enum VrfResult {
     /// The text `valid`.
     Valid,
-    /// The text `Malformed`.
-    Malformed,
-    /// The text `InvalidPublicKey`.
-    InvalidPublicKey,
-    /// The text `SmallOrderPublicKey`.
-    SmallOrderPublicKey,
-    /// The text `InvalidGamma`.
-    InvalidGamma,
-    /// The text `NonCanonicalScalar`.
-    NonCanonicalScalar,
-    /// The text `ChallengeMismatch`.
-    ChallengeMismatch,
+    /// A [`super::crypto_errors::VrfErrorKind`].
+    VrfErrorKind(super::crypto_errors::VrfErrorKind),
 }
 
 impl c::Model for VrfResult {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
             Self::Valid => Ok(c::Value::text("valid")),
-            Self::Malformed => Ok(c::Value::text("Malformed")),
-            Self::InvalidPublicKey => Ok(c::Value::text("InvalidPublicKey")),
-            Self::SmallOrderPublicKey => Ok(c::Value::text("SmallOrderPublicKey")),
-            Self::InvalidGamma => Ok(c::Value::text("InvalidGamma")),
-            Self::NonCanonicalScalar => Ok(c::Value::text("NonCanonicalScalar")),
-            Self::ChallengeMismatch => Ok(c::Value::text("ChallengeMismatch")),
+            Self::VrfErrorKind(a) => c::Model::to_value_at(a, depth),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["valid", "Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch"])? {
+        match c::select_alternative(value, &[], &["valid", "Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch", "KeyMismatch", "HashToCurveFailed"])? {
             c::Alternative::Text(0) => Ok(Self::Valid),
-            c::Alternative::Text(1) => Ok(Self::Malformed),
-            c::Alternative::Text(2) => Ok(Self::InvalidPublicKey),
-            c::Alternative::Text(3) => Ok(Self::SmallOrderPublicKey),
-            c::Alternative::Text(4) => Ok(Self::InvalidGamma),
-            c::Alternative::Text(5) => Ok(Self::NonCanonicalScalar),
-            c::Alternative::Text(6) => Ok(Self::ChallengeMismatch),
+            c::Alternative::Text(1) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::Malformed)),
+            c::Alternative::Text(2) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidPublicKey)),
+            c::Alternative::Text(3) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::SmallOrderPublicKey)),
+            c::Alternative::Text(4) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidGamma)),
+            c::Alternative::Text(5) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::NonCanonicalScalar)),
+            c::Alternative::Text(6) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::ChallengeMismatch)),
+            c::Alternative::Text(7) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::KeyMismatch)),
+            c::Alternative::Text(8) => Ok(Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::HashToCurveFailed)),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -233,7 +223,7 @@ impl c::Model for VrfResult {
 
 impl VrfResult {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 7] = [Self::Valid, Self::Malformed, Self::InvalidPublicKey, Self::SmallOrderPublicKey, Self::InvalidGamma, Self::NonCanonicalScalar, Self::ChallengeMismatch];
+    pub const ALL: [Self; 9] = [Self::Valid, Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::Malformed), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidPublicKey), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::SmallOrderPublicKey), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidGamma), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::NonCanonicalScalar), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::ChallengeMismatch), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::KeyMismatch), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::HashToCurveFailed)];
 }
 
 /// `vrf-suite` (`shared/schemas/vrf-vectors.cddl`).

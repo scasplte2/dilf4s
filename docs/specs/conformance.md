@@ -170,20 +170,43 @@ The JLVM's own errors record outcomes in their own vector file but are not yet g
 | VRF | `HashToCurveFailed` | no input is known that reaches it (TAI: all 256 counters fail, probability about 2^-256) |
 
 **The gate, in every language.** The reference's `RefusalCoverageSuite` (the verifier families) and
-`CryptoRefusalCoverageSuite` (the others) list each error type's cases through the compiler (`Mirror.SumOf`) and fail
-if a kind has neither a row nor an entry here. The Rust tests map each SDK error onto the schema's kind with an
-exhaustive `match`, so a new variant does not compile until it is mapped, and check that every kind the schema lists
-(the generated `ALL` of each kind choice) has a row. The TypeScript tests list each SDK error's kinds in a `Record`
-keyed by its `kind` union, so a new kind does not compile until it is listed, and check its row; they also check that
-every kind the schema names is one of the SDK's. The SP1 guest harness runs every verification call of these files in
+`CryptoRefusalCoverageSuite` (the others) list each error type's cases through the compiler (`Mirror.SumOf`; the path
+refusals, a choice of texts, through their generated `values`) and fail if a kind has neither a row nor an entry here.
+The crypto families' error types are generated in every language (below), so the SDK's kinds are the schema's: the
+Rust tests check that every kind of the generated kind enum (`ALL`) has a row, but the exempt ones, which have none;
+the TypeScript tests list each error's kinds in a `Record` keyed by its `kind` union, so a kind added to the schema does
+not compile until it is listed, and check its row. The SP1 guest harness runs every verification call of these files in
 the guest and checks each refusal by its exact kind: signatures, VRF verification, KES verification and parameters,
 sigma (its refusal calls, and every case of the Ergo-checked files) and zk. The guest builds the signing SDK without
 its `sign` feature, so key derivation (`KeyError`), VRF signing-key decoding (`KeyMismatch`) and KES generation,
 loading and evolution (`Exhausted`, `InconsistentKey`) are checked natively only.
 
-**Kinds in the schemas.** Every kind field of these files is a choice of text literals in its schema
-(`crypto-error-kind`, `key-error-kind`, `vrf-result`, `kes-outcome`, `sigma-outcome`, `zk-error`), so each SDK's
-generated model is a closed type: a vector naming a kind the schema does not list does not load.
+**Generated error types.** `shared/schemas/crypto-errors.cddl` defines each crypto family once: `x-error` is a choice
+of maps, each led by a distinct `"kind"` text literal (the reference's case name) and holding that kind's fields, and
+`x-error-kind` lists the same kinds in order (`crypto-error`, `key-error`, `vrf-error`, `kes-error`, `sigma-error`,
+`zk-error`, `groth16-error`, and the path refusals `path-refusal`). The generator checks the two agree and emits the
+family as each language's error type, and the kinds as a closed type:
+
+- Scala: a sealed trait with a case class per kind (a case object without fields), each with its `kind`, exported
+  under the family's package (`xyz.kd5ujc.crypto.kes.KesError`);
+- Rust: an enum with a variant per kind, `kind()` returning the kind enum, `Display` and `core::error::Error`
+  (`dilf4s_core::generated::crypto_errors`, re-exported by `dilf4s-signing` and `dilf4s-proofs`);
+- TypeScript: a union of readonly object types on `kind` (`models.cryptoErrors`, re-exported by the signing package).
+
+Every SDK names a family as the reference does (`CryptoError`, not `SigningError`), and a kind added to the schema is a
+new case in every language. An error is a value, not a wire format: no codec is generated for a family, and no wire
+type may hold one. **Fields** are informative (§2, §3): a field holds text (`what`, `reason`, which the implementation
+writes, naming caller input only by size or position, or by a preview, §8), an integer (a size or period, `uint .le
+2^63 - 1`: Scala `Long`, Rust `u64`, TypeScript `number`, the type of the SDK's own sizes and periods), a boolean or a
+kind; the generator refuses bytes, collections and records in an error. A kind with a normative field (§3) would
+carry it as a field the vectors pin; no crypto kind has one.
+
+**Kinds in the schemas.** Every kind field of these files names its family's kind choice from `crypto-errors.cddl`,
+beside its results (`kes-outcome = "accepted" / "rejected" / errors.kes-error-kind`): a choice that names a choice of
+texts takes its texts, and is typed by it (Scala and TypeScript a union including the kind type, Rust a variant holding
+the kind enum). So each SDK's model of a vector is the error's own kind type, and a vector naming a kind the schema does
+not list does not load. A section that only one check fills may name any kind of the family; the gate asks for each
+kind's row in whichever section reaches it.
 
 **The codec families.** `canonical-error-kind` lists every kind of `CanonicalError`; the domain tags of
 `canonical_encoding_v1.json` record `InvalidDomainTag` (`domain-tag-outcome`) and the state keys' `schema` records
@@ -300,8 +323,10 @@ configuration, not the caller's choice.
   a `RootMismatch`'s `expected` (built at its call sites by `rootText`, the digest's hex or a wrong width's length),
   stay strings: the type guarantee covers the fields in the table above, and a message quotes caller text only by
   rendering one of them, which every SDK's diagnostics tests check on 1 MiB inputs through the public decoding APIs. A
-  codec's expected literal is a schema constant, quoted as it is. The free-text limit closes when the error types are
-  generated from the schemas, reasons included (conformance step 2, part B).
+  codec's expected literal is a schema constant, quoted as it is. The crypto families' error types are generated from
+  `crypto-errors.cddl` (§6), which admits text, integers, booleans and kinds as fields and never bytes or collections;
+  their `what` and `reason` stay informative text, written by the implementation from sizes, positions and previews.
+  The codec families' free text closes when their error types are generated too (conformance step 2, part B).
 - *Bit lengths in TypeScript.* A refused integer is named by its bit length, never its digits. JavaScript has no
   constant-time bit length of a `bigint`, so the TypeScript SDK measures one in a single linear pass over the integer
   (a transient hexadecimal rendering) that the caller already supplied and holds; nothing of it is retained, and the

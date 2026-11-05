@@ -25,7 +25,7 @@ use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::IsIdentity as _;
 use dilf4s_core::hash::{DomainTag, Sha256, TaggedHash};
 use dilf4s_core::hex;
-use dilf4s_signing::{SchemeId, SigningError, bls, ecdsa, ed25519, ristretto255, schnorr};
+use dilf4s_signing::{CryptoError, KeyErrorKind, SchemeId, bls, ecdsa, ed25519, ristretto255, schnorr};
 
 fn sha512(parts: &[&[u8]]) -> [u8; 64] {
     dilf4s_core::hash::HashAlgorithm::Sha512.digest(&parts.concat()).try_into().unwrap()
@@ -46,8 +46,8 @@ fn paths_parse_hardened_and_soft_segments_and_reject_malformed_ones() {
     assert_eq!(serialized("m"), Vec::<u32>::new());
     assert_eq!(serialized("m/2147483647'"), [0xffff_ffff]);
     // an index is only built checked, so bit 31 of the serialised form and is_hardened always agree
-    assert_eq!(path::ChildIndex::soft(0x8000_0000).unwrap_err().kind(), "InvalidDerivation");
-    assert_eq!(path::ChildIndex::hardened(0x8000_0000).unwrap_err().kind(), "InvalidDerivation");
+    assert_eq!(path::ChildIndex::soft(0x8000_0000).unwrap_err().kind(), KeyErrorKind::InvalidDerivation);
+    assert_eq!(path::ChildIndex::hardened(0x8000_0000).unwrap_err().kind(), KeyErrorKind::InvalidDerivation);
     for i in [path::ChildIndex::soft(0x7fff_ffff).unwrap(), path::ChildIndex::hardened(0).unwrap()] {
         assert_eq!(i.is_hardened(), i.serialized() >= path::HARDENED_OFFSET, "{i:?}");
     }
@@ -55,7 +55,7 @@ fn paths_parse_hardened_and_soft_segments_and_reject_malformed_ones() {
     for bad in
         ["44'/0", "m/x", "m/2147483648", "m/-1", "m/+1", "m/0/", "m//0", "m/0''", " m/0", "M/0", "m/1e3", "m/0x1"]
     {
-        assert_eq!(path::parse(bad).unwrap_err().kind(), "InvalidPath", "{bad}");
+        assert_eq!(path::parse(bad).unwrap_err().kind(), KeyErrorKind::InvalidPath, "{bad}");
     }
 }
 
@@ -113,9 +113,15 @@ fn a_million_digit_segment_a_million_leading_zeros_and_a_million_segments_are_re
     let (l, p, d) = (path::parse(&long), path::parse(&padded), path::parse(&deep));
     let took = start.elapsed();
     assert!(took.as_millis() < 1000, "took {took:?}");
-    assert_eq!(l.unwrap_err().to_string(), "InvalidPath: path segment 0 has 1000000 digits, more than 10");
-    assert_eq!(p.unwrap_err().to_string(), "InvalidPath: path segment 0 has a leading zero");
-    assert_eq!(d.unwrap_err().to_string(), "InvalidPath: path has more than 255 segments");
+    assert_eq!(
+        l.unwrap_err().to_string(),
+        "InvalidPath (refusal: TooManyDigits, reason: path segment 0 has 1000000 digits, more than 10)"
+    );
+    assert_eq!(
+        p.unwrap_err().to_string(),
+        "InvalidPath (refusal: LeadingZero, reason: path segment 0 has a leading zero)"
+    );
+    assert_eq!(d.unwrap_err().to_string(), "InvalidPath (refusal: TooDeep, reason: path has more than 255 segments)");
 }
 
 /// `parse` returns the narrow `PathError`; `?` turns it into `KeyError::InvalidPath` with the same refusal and reason.
@@ -243,10 +249,10 @@ fn small_order_and_non_canonical_keys_under_libsodium() {
     // an encoding that is no curve point is a malformed key
     let off_curve = b32("0200000000000000000000000000000000000000000000000000000000000000");
     assert!(CompressedEdwardsY(off_curve).decompress().is_none());
-    assert!(matches!(SchemeId::Ed25519.verify_bytes(&off_curve, b"", &sig), Err(SigningError::InvalidKey { .. })));
+    assert!(matches!(SchemeId::Ed25519.verify_bytes(&off_curve, b"", &sig), Err(CryptoError::InvalidKey { .. })));
     // lengths
-    assert!(matches!(ed25519::verify_bytes(&identity[1..], b"", &sig), Err(SigningError::InvalidEncoding { .. })));
-    assert!(matches!(ed25519::verify_bytes(&identity, b"", &sig[1..]), Err(SigningError::InvalidEncoding { .. })));
+    assert!(matches!(ed25519::verify_bytes(&identity[1..], b"", &sig), Err(CryptoError::InvalidEncoding { .. })));
+    assert!(matches!(ed25519::verify_bytes(&identity, b"", &sig[1..]), Err(CryptoError::InvalidEncoding { .. })));
 }
 
 #[test]
@@ -280,33 +286,33 @@ fn ecdsa_high_s_and_ranges_are_invalid_encodings() {
     let sig = sk.sign(b"m").unwrap();
     assert!(ecdsa::p256::verify(&vk, b"m", &sig));
     let twin = high_s(sig.as_bytes(), p256_n);
-    assert!(matches!(ecdsa::p256::Signature::from_bytes(&twin), Err(SigningError::InvalidEncoding { .. })));
+    assert!(matches!(ecdsa::p256::Signature::from_bytes(&twin), Err(CryptoError::InvalidEncoding { .. })));
     let (sk, vk) = ecdsa::secp256k1::from_seed(&[7; 32]).unwrap();
     let sig = sk.sign(b"m").unwrap();
     assert!(ecdsa::secp256k1::verify(&vk, b"m", &sig));
     let twin = high_s(sig.as_bytes(), k256_n);
-    assert!(matches!(ecdsa::secp256k1::Signature::from_bytes(&twin), Err(SigningError::InvalidEncoding { .. })));
+    assert!(matches!(ecdsa::secp256k1::Signature::from_bytes(&twin), Err(CryptoError::InvalidEncoding { .. })));
     // r = 0, s = 0, r = n
     let zero = [0u8; 64];
     assert!(ecdsa::secp256k1::Signature::from_bytes(&zero).is_err());
     let r_is_n = [hex::decode(k256_n).unwrap(), vec![1; 32]].concat();
     assert!(ecdsa::secp256k1::Signature::from_bytes(&r_is_n).is_err());
     // keys: identity, off-curve x, x >= p, wrong tags, wrong lengths
-    assert!(matches!(ecdsa::secp256k1::VerifyingKey::from_bytes(&[0; 33]), Err(SigningError::InvalidKey { .. })));
+    assert!(matches!(ecdsa::secp256k1::VerifyingKey::from_bytes(&[0; 33]), Err(CryptoError::InvalidKey { .. })));
     let x_is_p =
         [vec![2], hex::decode("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f").unwrap()].concat();
     assert!(ecdsa::secp256k1::VerifyingKey::from_bytes(&x_is_p).is_err());
     let mut wrong_tag = vk.as_bytes().to_vec();
     wrong_tag[0] = 0x04;
     assert!(ecdsa::secp256k1::VerifyingKey::from_bytes(&wrong_tag).is_err());
-    assert!(matches!(ecdsa::p256::VerifyingKey::from_bytes(&[2; 32]), Err(SigningError::InvalidEncoding { .. })));
+    assert!(matches!(ecdsa::p256::VerifyingKey::from_bytes(&[2; 32]), Err(CryptoError::InvalidEncoding { .. })));
     // signing keys: zero and n are invalid keys; a wrong length is an encoding error
-    assert!(matches!(ecdsa::p256::SigningKey::from_bytes(&[0; 32]), Err(SigningError::InvalidKey { .. })));
+    assert!(matches!(ecdsa::p256::SigningKey::from_bytes(&[0; 32]), Err(CryptoError::InvalidKey { .. })));
     assert!(matches!(
         ecdsa::secp256k1::SigningKey::from_bytes(&hex::decode(k256_n).unwrap()),
-        Err(SigningError::InvalidKey { .. })
+        Err(CryptoError::InvalidKey { .. })
     ));
-    assert!(matches!(ecdsa::p256::SigningKey::from_bytes(&[1; 31]), Err(SigningError::InvalidEncoding { .. })));
+    assert!(matches!(ecdsa::p256::SigningKey::from_bytes(&[1; 31]), Err(CryptoError::InvalidEncoding { .. })));
 }
 
 // ------------------------------------------------------------------ Schnorr
@@ -335,7 +341,7 @@ fn bip340_and_tagged_schnorr_reject_each_other() {
     // a BIP-340 message of any other length is malformed at the bytes level
     assert!(matches!(
         SchemeId::Bip340.verify_bytes(vk.as_bytes(), &[0; 31], plain.as_bytes()),
-        Err(SigningError::InvalidEncoding { .. })
+        Err(CryptoError::InvalidEncoding { .. })
     ));
     // r >= p and s >= n verify false (only the length is checked)
     let mut r_high = *plain.as_bytes();
@@ -345,8 +351,8 @@ fn bip340_and_tagged_schnorr_reject_each_other() {
     s_high[32..].copy_from_slice(&[0xff; 32]);
     assert_eq!(schnorr::bip340::verify_bytes(vk.as_bytes(), &m32, &s_high), Ok(false));
     // x with no curve point; zero key
-    assert!(matches!(schnorr::bip340::VerifyingKey::from_bytes(&[0; 32]), Err(SigningError::InvalidKey { .. })));
-    assert!(matches!(schnorr::tagged::SigningKey::from_bytes(&[0; 32]), Err(SigningError::InvalidKey { .. })));
+    assert!(matches!(schnorr::bip340::VerifyingKey::from_bytes(&[0; 32]), Err(CryptoError::InvalidKey { .. })));
+    assert!(matches!(schnorr::tagged::SigningKey::from_bytes(&[0; 32]), Err(CryptoError::InvalidKey { .. })));
 }
 
 /// The BIP-340 reference vectors 0-3 (secret key, aux, message, signature).
@@ -391,16 +397,16 @@ fn bip340_reference_vectors() {
 #[test]
 fn ristretto255_identity_and_non_canonical_encodings() {
     let identity = [0u8; 32];
-    assert!(matches!(ristretto255::VerifyingKey::from_bytes(&identity), Err(SigningError::InvalidKey { .. })));
+    assert!(matches!(ristretto255::VerifyingKey::from_bytes(&identity), Err(CryptoError::InvalidKey { .. })));
     let (sk, vk) = ristretto255::from_seed(&[1; 32]).unwrap();
     let sig = sk.sign(b"m", &[0x42; 32]);
     assert!(ristretto255::verify(&vk, b"m", &sig));
     let mut r_identity = *sig.as_bytes();
     r_identity[..32].copy_from_slice(&identity);
-    assert!(matches!(ristretto255::Signature::from_bytes(&r_identity), Err(SigningError::InvalidEncoding { .. })));
+    assert!(matches!(ristretto255::Signature::from_bytes(&r_identity), Err(CryptoError::InvalidEncoding { .. })));
     let mut z_high = *sig.as_bytes();
     z_high[32..].copy_from_slice(&[0xff; 32]);
-    assert!(matches!(ristretto255::Signature::from_bytes(&z_high), Err(SigningError::InvalidEncoding { .. })));
+    assert!(matches!(ristretto255::Signature::from_bytes(&z_high), Err(CryptoError::InvalidEncoding { .. })));
     assert!(ristretto255::SigningKey::from_bytes(&[0; 32]).is_err(), "zero scalar");
     assert!(ristretto255::SigningKey::from_bytes(&[0xff; 32]).is_err(), "non-canonical scalar");
     assert!(!ristretto255::verify(&vk, b"n", &sig));
@@ -409,7 +415,7 @@ fn ristretto255_identity_and_non_canonical_encodings() {
 #[test]
 fn bls_identity_key_and_signature() {
     let identity_g1 = hex::decode(&format!("c0{}", "00".repeat(47))).unwrap();
-    assert!(matches!(bls::VerifyingKey::from_bytes(&identity_g1), Err(SigningError::InvalidKey { .. })));
+    assert!(matches!(bls::VerifyingKey::from_bytes(&identity_g1), Err(CryptoError::InvalidKey { .. })));
     let identity_g2 = hex::decode(&format!("c0{}", "00".repeat(95))).unwrap();
     let sig = bls::Signature::from_bytes(&identity_g2).unwrap();
     let (_, vk) = bls::from_seed(&[1; 32]).unwrap();

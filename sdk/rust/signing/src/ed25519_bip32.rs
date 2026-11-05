@@ -11,7 +11,7 @@ use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::ed25519::{Signature, VerifyingKey, sign_expanded};
-use crate::error::SigningError;
+use crate::error::CryptoError;
 use crate::util::{exact, halves};
 
 /// Signing key length (`kL || kR`).
@@ -31,13 +31,13 @@ pub(crate) fn valid_kl(kl: &[u8; 32]) -> bool {
 
 impl SigningKey {
     /// Decodes `kL || kR`: a wrong length is `InvalidEncoding`, an unclamped `kL` is `InvalidKey`.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SigningError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
         let bytes: [u8; 64] = exact("Ed25519-BIP32 signing key", bytes)?;
         let (kl, kr) = halves(&bytes);
         if valid_kl(&kl) {
             Ok(Self { kl, kr })
         } else {
-            Err(SigningError::InvalidKey { reason: "kL must be a multiple of 8 with bit 255 clear".into() })
+            Err(CryptoError::InvalidKey { reason: "kL must be a multiple of 8 with bit 255 clear".into() })
         }
     }
 

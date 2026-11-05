@@ -115,18 +115,11 @@ describe("kes_v1.json refusals", { timeout: 60_000 }, () => {
   });
 
   test("coverage (conformance.md section 6): every KesError kind has a row", () => {
-    // a Record over the SDK's kinds: a kind added to KesError does not compile until it is listed here
-    const coverage: Record<KesError["kind"], models.kesVectors.KesOutcome> = {
-      Malformed: "Malformed",
-      PeriodOutOfRange: "PeriodOutOfRange",
-      Exhausted: "Exhausted",
-      InconsistentKey: "InconsistentKey",
-    };
-    // and every refusal kind the schema names is one of the SDK's
-    const toSdk = (k: Exclude<models.kesVectors.KesOutcome, "accepted" | "rejected">): KesError["kind"] => k;
-    expect(toSdk("Exhausted")).toBe("Exhausted");
+    // KesError is generated from the schema with its kinds (models.cryptoErrors), and this Record over them does not
+    // compile until a kind added there is listed here
+    const coverage: Record<KesError["kind"], true> = { Malformed: true, PeriodOutOfRange: true, Exhausted: true, InconsistentKey: true };
     const pinned = new Set<string>(vectors.refusals.map((c) => c.outcome));
-    expect(Object.values(coverage).filter((k) => !pinned.has(k))).toEqual([]);
+    expect(Object.keys(coverage).filter((k) => !pinned.has(k))).toEqual([]);
   });
 });
 

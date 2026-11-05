@@ -23,6 +23,7 @@ After changing a schema, regenerate them with
 | `crypto.cddl` | sizes of keys, signatures, VRF/KES/zk proofs | `docs/specs/signing.md` §4 (embedded) |
 | `versioned-trie.cddl` | versioned-trie heads, proofs and deltas (wire) | `docs/specs/versioned-trie.md` §5 (embedded) |
 | `limits.cddl` | every spec limit, as constants (see "constants" below) | each limit's own spec; `docs/specs/conformance.md` §6 |
+| `crypto-errors.cddl` | the crypto error families and their kinds (see "error families" below) | `docs/specs/conformance.md` §6 |
 | `*-vectors.cddl` | The conformance vector files in `shared/vectors/` | the matching spec |
 
 Every vector file in `shared/vectors/` must have a schema here. `VectorSchemasSuite` checks this, and checks that each
@@ -43,7 +44,14 @@ file round-trips through its schema without loss.
   - homogeneous arrays;
   - literal values;
   - choices of named map rules and text literals that can be told apart by their keys. A choice of text literals only
-    (an error kind, such as `kes-outcome`) is a closed type in every SDK, and Rust lists its values in `ALL`;
+    (an error kind, such as `kes-error-kind`) is a closed type in every SDK; Rust lists its values in `ALL`, Scala in
+    `values`. A choice may name such a choice of texts (`kes-outcome = "accepted" / "rejected" /
+    errors.kes-error-kind`): it takes those texts, and is typed by the named choice (Rust: a variant holding its enum);
+  - **error families**: a choice of inline maps, each led by a distinct `"kind"` text literal in PascalCase
+    (`kes-error = { "kind": "Malformed", "what": text, "reason": text // "kind": "Exhausted", ... }`), beside a rule
+    `kes-error-kind` that lists the same kinds in order. It is an error type (Scala a sealed trait, Rust an enum with
+    `kind()`, `Display` and `Error`, TypeScript a union on `kind`), never a wire type: no codec is generated, and no
+    field or alternative may hold one. Its fields are text, integers (TypeScript: `number`), booleans or kinds;
   - **constants**: a rule whose whole body is a `uint` literal (`max-depth = 256`). A constant is a value, not a type:
     a range or `.size` bound may name it (`0..max-depth`, `bytes .size (0..max-value-bytes)`), a field or element may
     not. Each language gets it as a constant: Scala a `final val` (`Int`, else `Long`, else `BigInt`), TypeScript an

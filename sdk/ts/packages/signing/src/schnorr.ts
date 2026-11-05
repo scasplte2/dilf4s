@@ -6,7 +6,7 @@ import { err, ok, type Result } from "@kd5ujc/dilf4s-core";
 import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
 import { randomBytes } from "@noble/hashes/utils.js";
 
-import { invalidKey, lengthError, type SigningError } from "./errors.js";
+import { invalidKey, lengthError, type CryptoError } from "./errors.js";
 import type { Signature, SigningKey, VerifyingKey } from "./keys.js";
 import { attempt } from "./internal/attempt.js";
 import { beToBig, concat, copy } from "./internal/bytes.js";
@@ -31,7 +31,7 @@ export class Message32 {
     Object.freeze(this);
   }
 
-  static of(bytes: Uint8Array): Result<Message32, SigningError> {
+  static of(bytes: Uint8Array): Result<Message32, CryptoError> {
     return bytes.length === 32 ? ok(new Message32(bytes)) : err(lengthError("BIP-340 message", 32, bytes.length));
   }
 
@@ -68,9 +68,9 @@ function schnorrCodec<S extends SchnorrName>(name: S): SchemeCodec<S> {
   };
 }
 
-const auxOf = (aux: Uint8Array): Result<Uint8Array, SigningError> => sized("BIP-340 auxiliary randomness", 32, aux);
+const auxOf = (aux: Uint8Array): Result<Uint8Array, CryptoError> => sized("BIP-340 auxiliary randomness", 32, aux);
 
-function signRaw<S extends SchnorrName>(name: S, key: SigningKey<S>, message32: Uint8Array, aux: Uint8Array): Result<Signature<S>, SigningError> {
+function signRaw<S extends SchnorrName>(name: S, key: SigningKey<S>, message32: Uint8Array, aux: Uint8Array): Result<Signature<S>, CryptoError> {
   const a = auxOf(aux);
   return a.ok ? ok(signatureOf(name, schnorr.sign(message32, key.bytes, a.value))) : a;
 }
@@ -80,7 +80,7 @@ const verifyRaw = (key: Uint8Array, message32: Uint8Array, signature: Uint8Array
 
 export interface Bip340Scheme extends SchemeCodec<"BIP-340">, Verifier<"BIP-340", Message32>, SeedDerivation<"BIP-340"> {
   /** With caller-supplied 32-byte auxiliary randomness (known answers, external RNGs). */
-  readonly sign: (key: SigningKey<"BIP-340">, message: Message32, aux: Uint8Array) => Result<Signature<"BIP-340">, SigningError>;
+  readonly sign: (key: SigningKey<"BIP-340">, message: Message32, aux: Uint8Array) => Result<Signature<"BIP-340">, CryptoError>;
   /** With fresh auxiliary randomness from `@noble/hashes` `randomBytes`. */
   readonly signRandom: (key: SigningKey<"BIP-340">, message: Message32) => Signature<"BIP-340">;
 }
@@ -105,7 +105,7 @@ export interface TaggedSchnorrScheme
   extends SchemeCodec<"secp256k1-tagged-Schnorr">,
     Verifier<"secp256k1-tagged-Schnorr">,
     SeedDerivation<"secp256k1-tagged-Schnorr"> {
-  readonly sign: (key: SigningKey<"secp256k1-tagged-Schnorr">, message: Uint8Array, aux: Uint8Array) => Result<Signature<"secp256k1-tagged-Schnorr">, SigningError>;
+  readonly sign: (key: SigningKey<"secp256k1-tagged-Schnorr">, message: Uint8Array, aux: Uint8Array) => Result<Signature<"secp256k1-tagged-Schnorr">, CryptoError>;
   readonly signRandom: (key: SigningKey<"secp256k1-tagged-Schnorr">, message: Uint8Array) => Signature<"secp256k1-tagged-Schnorr">;
 }
 
