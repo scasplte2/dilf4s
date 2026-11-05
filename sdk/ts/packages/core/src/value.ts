@@ -63,27 +63,45 @@ export type Value = NullValue | BoolValue | IntValue | RationalValue | TextValue
  */
 const KEY: unique symbol = Symbol("canonical value");
 
-// Each kind's check, `#minted in x && x.#minted`, set once by its class's static block. isValue calls them in a fixed
-// chain, each from its own call site, so each stays monomorphic and inlinable: one array of them, called through
-// `some`, cost about 90 ns an item.
-let isNull!: (x: object) => boolean;
-let isBool!: (x: object) => boolean;
-let isInt!: (x: object) => boolean;
-let isRational!: (x: object) => boolean;
-let isText!: (x: object) => boolean;
-let isByteString!: (x: object) => boolean;
-let isArray!: (x: object) => boolean;
-let isMap!: (x: object) => boolean;
+/** Its constructor returns the object it is given, so a subclass's private fields are installed on that object. */
+// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- the constructor's return is the point: see Minted
+class Identity {
+  constructor(o: object) {
+    return o;
+  }
+}
+
+/** `#minted in x`: set once, by {@link Minted}'s static block. */
+let minted!: (x: object) => boolean;
+
+/**
+ * The one private brand of every kind of value, stamped onto a value as it is built with {@link KEY}: constructing a
+ * `Minted` around an object installs `#minted` on that object (a derived class's fields go on what its base constructor
+ * returns). So {@link isValue} is one check whatever the kind (a chain of eight per-class brands cost about 64 ns a
+ * call where a call site saw many kinds), and the value classes need no common base, whose derived constructors made
+ * building values about twice as slow.
+ */
+class Minted extends Identity {
+  readonly #minted = true;
+  static {
+    minted = (x) => #minted in x;
+  }
+}
+
+/** Brands `o` as a value: its constructor calls this, before it freezes, only when it was given {@link KEY}. */
+const stamp = (o: object): void => {
+  new Minted(o);
+};
 
 /**
  * Whether `x` is a canonical value made by this module's factories, in O(1): for what a caller may pass past the
- * types, such as a JavaScript caller's argument. It reads each class's private `#minted` brand, set from the key when
- * the value is built, never the prototype or a public field and never a side table: an object borrowing a value's
- * prototype is not one, nor is one built by calling a constructor from outside, and a Proxy's traps do not run.
+ * types, such as a JavaScript caller's argument. It reads the one private `#minted` brand every value carries, stamped
+ * when the value is built with the key, never the prototype or a public field and never a side table: an object
+ * borrowing a value's prototype is not one, nor is one built by calling a constructor from outside, and a Proxy's traps
+ * do not run.
  */
 export function isValue(x: unknown): x is Value {
-  if (typeof x !== "object" || x === null) return false;
-  return isInt(x) || isText(x) || isByteString(x) || isMap(x) || isArray(x) || isBool(x) || isNull(x) || isRational(x);
+  return typeof x === "object" && x !== null && minted(x);
 }
 
 const depthExceeded: CanonicalError = { kind: "DepthExceeded", limit: MAX_DEPTH };
@@ -132,16 +150,12 @@ export const bytesView = (b: BytesValue): Uint8Array => bytesOf(b);
 export const entriesView = (m: MapValue): readonly Entry[] => entriesOf(m);
 
 export class NullValue {
-  readonly #minted: boolean;
-  static {
-    isNull = (x) => #minted in x && x.#minted;
-  }
   readonly kind = "null";
   readonly weight: bigint = 1n;
   readonly #depth = 0;
   static readonly instance: NullValue = new NullValue(KEY);
   private constructor(key: symbol) {
-    this.#minted = key === KEY;
+    if (key === KEY) stamp(this);
     Object.freeze(this);
   }
   get depth(): 0 {
@@ -156,10 +170,6 @@ export class NullValue {
 }
 
 export class BoolValue {
-  readonly #minted: boolean;
-  static {
-    isBool = (x) => #minted in x && x.#minted;
-  }
   readonly kind = "bool";
   readonly depth = 0;
   readonly weight: bigint = 1n;
@@ -167,7 +177,7 @@ export class BoolValue {
   static readonly true: BoolValue = new BoolValue(KEY, true);
   static readonly false: BoolValue = new BoolValue(KEY, false);
   private constructor(key: symbol, value: boolean) {
-    this.#minted = key === KEY;
+    if (key === KEY) stamp(this);
     this.#value = value;
     Object.freeze(this);
   }
@@ -203,10 +213,6 @@ const integerTooWide: IntegerTooWide = { kind: "IntegerTooWide", limit: MAX_INTE
 
 /** An integer within {@link MAX_INTEGER_BITS}. */
 export class IntValue {
-  readonly #minted: boolean;
-  static {
-    isInt = (x) => #minted in x && x.#minted;
-  }
   readonly kind = "int";
   readonly depth = 0;
   /** `1 + bitLength / 64`. */
@@ -214,7 +220,7 @@ export class IntValue {
   readonly #value: bigint;
   readonly #bitLength: number;
   private constructor(key: symbol, value: bigint, bits: number) {
-    this.#minted = key === KEY;
+    if (key === KEY) stamp(this);
     this.#value = value;
     this.#bitLength = bits;
     this.weight = saturated(1n + limbs(bits));
@@ -320,10 +326,6 @@ export type NumberError = { readonly kind: "DivisionByZero" } | RationalTooWide 
 
 /** A rational `n/d` with `d >= 2`, `gcd(|n|, d) = 1` and both within {@link MAX_RATIONAL_BITS}: never an integer. */
 export class RationalValue {
-  readonly #minted: boolean;
-  static {
-    isRational = (x) => #minted in x && x.#minted;
-  }
   readonly kind = "rational";
   readonly depth = 0;
   /** `2 + bitLength(n) / 64 + bitLength(d) / 64`. */
@@ -333,7 +335,7 @@ export class RationalValue {
   readonly #numeratorBits: number;
   readonly #denominatorBits: number;
   private constructor(key: symbol, numerator: bigint, denominator: bigint, numeratorBits: number, denominatorBits: number) {
-    this.#minted = key === KEY;
+    if (key === KEY) stamp(this);
     this.#numerator = numerator;
     this.#denominator = denominator;
     this.#numeratorBits = numeratorBits;
@@ -444,10 +446,6 @@ export class RationalValue {
 }
 
 export class TextValue {
-  readonly #minted: boolean;
-  static {
-    isText = (x) => #minted in x && x.#minted;
-  }
   readonly kind = "text";
   readonly depth = 0;
   /** `1 +` the UTF-8 length. */
@@ -455,7 +453,7 @@ export class TextValue {
   /** The UTF-8 encoding. */
   readonly #utf8: Uint8Array;
   private constructor(key: symbol, readonly value: string) {
-    this.#minted = key === KEY;
+    if (key === KEY) stamp(this);
     this.#utf8 = encodeUtf8(value);
     this.weight = 1n + BigInt(this.#utf8.length);
     Object.freeze(this);
@@ -489,10 +487,6 @@ export class TextValue {
 }
 
 export class BytesValue {
-  readonly #minted: boolean;
-  static {
-    isByteString = (x) => #minted in x && x.#minted;
-  }
   readonly kind = "bytes";
   readonly depth = 0;
   /** `1 +` the length. */
@@ -500,7 +494,7 @@ export class BytesValue {
   readonly #bytes: Uint8Array;
   /** `bytes` is a fresh copy, which the value now owns. */
   private constructor(key: symbol, bytes: Uint8Array) {
-    this.#minted = key === KEY;
+    if (key === KEY) stamp(this);
     this.#bytes = bytes;
     this.weight = 1n + BigInt(this.#bytes.length);
     Object.freeze(this);
@@ -549,10 +543,6 @@ function measure<T>(parts: readonly T[], part: (p: T) => readonly [number, bigin
 }
 
 export class ArrayValue {
-  readonly #minted: boolean;
-  static {
-    isArray = (x) => #minted in x && x.#minted;
-  }
   readonly kind = "array";
   readonly #items: readonly Value[];
   private constructor(
@@ -562,7 +552,7 @@ export class ArrayValue {
     /** One plus each element's weight. */
     readonly weight: bigint,
   ) {
-    this.#minted = key === KEY;
+    if (key === KEY) stamp(this);
     this.#items = items;
     Object.freeze(this);
   }
@@ -630,10 +620,6 @@ export function canonicalKeyOrder(a: Uint8Array, b: Uint8Array): number {
 
 /** A map: its entries in canonical key order, found by binary search. Keys are compared, never hashed (see keyset.ts). */
 export class MapValue {
-  readonly #minted: boolean;
-  static {
-    isMap = (x) => #minted in x && x.#minted;
-  }
   readonly kind = "map";
   readonly #entries: readonly Entry[];
   private constructor(
@@ -643,7 +629,7 @@ export class MapValue {
     /** One plus each entry's `1 + key UTF-8 length + value weight`. */
     readonly weight: bigint,
   ) {
-    this.#minted = key === KEY;
+    if (key === KEY) stamp(this);
     this.#entries = entries;
     Object.freeze(this);
   }
