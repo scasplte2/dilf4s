@@ -167,6 +167,24 @@ fn every_vrf_error_kind_has_a_row() {
             assert!(pinned, "no rejections or keyDecoding row pins {kind:?}");
         }
     }
+    // and each section pins every kind its check reaches: verification refuses malformed input and rejects the rest,
+    // signing-key decoding refuses a wrong length and a draft-03 key holding another seed's public key
+    let verification = [
+        VrfErrorKind::Malformed,
+        VrfErrorKind::InvalidPublicKey,
+        VrfErrorKind::SmallOrderPublicKey,
+        VrfErrorKind::InvalidGamma,
+        VrfErrorKind::NonCanonicalScalar,
+        VrfErrorKind::ChallengeMismatch,
+    ];
+    for kind in verification {
+        let row = VrfResult::VrfErrorKind(kind);
+        assert!(v.rejections.iter().any(|r| r.result == row), "no rejections row pins {row:?}");
+    }
+    for kind in [VrfErrorKind::Malformed, VrfErrorKind::KeyMismatch] {
+        let row = VrfKeyResult::VrfErrorKind(kind);
+        assert!(v.key_decoding.iter().any(|c| c.result == row), "no keyDecoding row pins {row:?}");
+    }
 }
 
 /// RFC 9381 B.3 (TAI) / B.4 (ELL2) and draft-03 A.4: keys, proofs, outputs, and the intermediate `H`.
