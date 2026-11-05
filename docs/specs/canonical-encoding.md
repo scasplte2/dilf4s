@@ -70,8 +70,8 @@ every entry point that encodes or commits a value (`cbor.encode`, `cbor.encodeWi
 `valueCommitment`, `valueCommitmentWithin`, `hashCommitment`), `json.decimal` and `cbor.magnitudeBytes`
 (`decodeUtf8`, whose result is text or `undefined`, gives `undefined`). `Value.array` and `Value.map` check each item
 or entry in the one pass that reads it. Caller bytes are read, and copied, through the typed array's internal slots,
-so a subclass that overrides `length`, its accessors or its iterator is not believed. Scala's and Rust's types rule these arguments out, so this refusal
-is the TypeScript SDK's alone and has no conformance vector.
+so a subclass that overrides `length`, its accessors or its iterator is not believed. Scala's and Rust's types rule
+these arguments out, so this refusal is the TypeScript SDK's alone and has no conformance vector.
 
 For other-language implementers, here is the same model in CDDL (RFC 8610). This block is **informative**: it is not
 in `shared/schemas`, because tags and recursion are outside the code generator's profile. The prose above, and the
