@@ -21,7 +21,7 @@ import {
   valueCommitment,
   valueCommitmentWithin,
 } from "../src/index.js";
-import { expectOk, int, loadVectors, readVectors } from "./vectors.js";
+import { boolValue, bytesValue, expectOk, int, loadVectors, readVectors } from "./vectors.js";
 
 const bytes = (hex: string): Uint8Array => expectOk(fromHex(hex), "hex");
 const text = (s: string): Value => expectOk(Value.text(s), "text");
@@ -119,7 +119,7 @@ describe("weight", { timeout: 60_000 }, () => {
     expect(expectOk(Value.number(-pow(63n), 3n), "-2^63/3").weight, "-2^63/3").toBe(2n);
     expect(expectOk(Value.number(1n, pow(64n)), "1/2^64").weight, "1/2^64").toBe(3n);
     expect(text("é😀").weight, "text weighs its UTF-8 bytes").toBe(7n);
-    expect(Value.bytes(new Uint8Array(5)).weight).toBe(6n);
+    expect(bytesValue(new Uint8Array(5)).weight).toBe(6n);
     expect(map([["é", int(1n)], ["n", Value.null]]).weight, "1 + (1 + 2 + 1); the null entry is dropped").toBe(5n);
   });
 
@@ -210,7 +210,7 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
     for (const limit of [Number.NaN, -1, -Infinity, 3.99]) {
       const r = cbor.encodeWithin(v, limit);
       expect(r.ok, `limit ${limit.toString()}`).toBe(false);
-      if (!r.ok) expect(r.error.limit, `limit ${limit.toString()}`).toBe(limit === 3.99 ? 3 : 0);
+      expect(r.ok ? undefined : r.error, `limit ${limit.toString()}`).toEqual({ kind: "TooLarge", limit: limit === 3.99 ? 3 : 0 });
     }
     expect(expectOk(cbor.encodeWithin(v, Infinity), "Infinity is the largest limit").length).toBe(4);
   });
@@ -230,7 +230,7 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
       }
       const hex = m.toString(16);
       const body = hex.length % 2 === 0 ? hex : `0${hex}`;
-      const length = expectOk(cbor.encodeWithin(Value.bytes(bytes(body)), Number.MAX_SAFE_INTEGER), "bytes");
+      const length = expectOk(cbor.encodeWithin(bytesValue(bytes(body)), Number.MAX_SAFE_INTEGER), "bytes");
       return (negative ? "c3" : "c2") + toHex(length);
     };
     for (let e = 0n; e <= 4096n; e += e < 80n ? 1n : 61n) {
@@ -319,7 +319,7 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
   it("a budgeted commitment is the commitment, within its limit, tag included", () => {
     const tag = expectOk(DomainTag.of("dilf4s/test/v1"), "tag");
     const h = TaggedHash.of("SHA-256", tag);
-    for (const v of [text("a"), Value.bytes(Uint8Array.of(1, 2, 3)), array([int(1n), Value.null]), Value.bytes(new Uint8Array(0))]) {
+    for (const v of [text("a"), bytesValue(Uint8Array.of(1, 2, 3)), array([int(1n), Value.null]), bytesValue(new Uint8Array(0))]) {
       const c = expectOk(valueCommitment(v), "encodes");
       expect(toHex(expectOk(valueCommitmentWithin(v, c.length), "fits"))).toBe(toHex(c));
       const over = valueCommitmentWithin(v, c.length - 1);
@@ -342,7 +342,7 @@ describe("equality", { timeout: 60_000 }, () => {
     expect(Value.equals(array([text("x"), int(1n)]), array([text("x"), int(1n)]))).toBe(true);
     expect(equals(array([text("x"), int(1n)]), array([text("x"), int(2n)]))).toBe(false);
     expect(equals(map([["k", int(1n)]]), map([["l", int(1n)]])), "keys differ").toBe(false);
-    expect(equals(int(1n), Value.bool(true)), "kinds differ, same weight").toBe(false);
+    expect(equals(int(1n), boolValue(true)), "kinds differ, same weight").toBe(false);
   });
 
   it("of shared values never expands them", () => {
@@ -378,7 +378,7 @@ describe("equality", { timeout: 60_000 }, () => {
     // separately built (outside the timing), equal: without the memo, n arrays cost n full comparisons of 1 MiB
     const kinds: (readonly [string, () => Value])[] = [
       ["texts", () => text("x".repeat(mib))],
-      ["byte strings", () => Value.bytes(new Uint8Array(mib).fill(7))],
+      ["byte strings", () => bytesValue(new Uint8Array(mib).fill(7))],
       ["integers", () => int((1n << BigInt(MAX_INTEGER_BITS)) - 1n)],
     ];
     for (const [what, make] of kinds) {
@@ -403,7 +403,7 @@ describe("inspect", { timeout: 60_000 }, () => {
   it("shows a small value in full, through toString and util.inspect too", () => {
     const small = map([
       ["a", array([int(1n), text("x")])],
-      ["b", Value.bytes(Uint8Array.of(0, 255))],
+      ["b", bytesValue(Uint8Array.of(0, 255))],
       ["c", expectOk(Value.number(1n, 3n), "1/3")],
     ]);
     expect(inspect(small)).toBe(`{"a": [1, "x"], "b": h'00ff', "c": 1/3}`);

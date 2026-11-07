@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { cbor, models, toHex, Value } from "@kd5ujc/dilf4s-core";
 
 import { versioned } from "../src/index.js";
-import { bytes, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
+import { bytes, bytesValue, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
 
 const vectors = loadVectors("versioned_trie_v1.json", models.versionedTrieVectors.VersionedTrieVectors);
 const versionKey = expectOk(versioned.VersionKey.unsignedLong(Number(vectors.width)), "version key");
@@ -328,7 +328,7 @@ describe("snapshots and replicas", () => {
     let deep: Value = int(0n);
     for (let i = 0; i < 254; i++) deep = expectOk(Value.array([deep]), "array");
     expect(expectErr(one.applyDelta({ ...d2, upserts: [[k, deep]] }), "too deep").kind).toBe("TooDeep");
-    const big = Value.bytes(new Uint8Array(versioned.MAX_VALUE_BYTES));
+    const big = bytesValue(new Uint8Array(versioned.MAX_VALUE_BYTES));
     expect(expectErr(one.applyDelta({ ...d2, upserts: [[k, big]] }), "too large").kind).toBe("TooLarge");
   });
 });

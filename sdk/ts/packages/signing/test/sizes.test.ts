@@ -23,7 +23,7 @@ import { expectOk } from "./vectors.js";
 test("real outputs have the sizes of shared/schemas/crypto.cddl", () => {
   const c = models.crypto;
   const fits = (codec: { decode: (v: BytesValue) => { ok: boolean } }, bytes: Uint8Array, what: string): void => {
-    expect(codec.decode(BytesValue.of(bytes)).ok, `${what} (${String(bytes.length)} bytes)`).toBe(true);
+    expect(codec.decode(expectOk(BytesValue.of(bytes), "bytes")).ok, `${what} (${String(bytes.length)} bytes)`).toBe(true);
   };
   const seed = new Uint8Array(32).fill(7);
   const msg = Uint8Array.of(1, 2, 3);

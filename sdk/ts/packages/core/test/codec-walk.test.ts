@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { codec, describeFailure, json, MAX_DEPTH, Value, type Result } from "../src/index.js";
 import type { Codec } from "../src/codec.js";
-import { expectOk, int } from "./vectors.js";
+import { boolValue, expectOk, int } from "./vectors.js";
 
 const { defer, leaf, optional, record, required, textMap, uint, union, alternative, vector } = codec;
 
@@ -127,7 +127,7 @@ describe("what the walks read and refuse", () => {
 
   it("a refusal names the path to it, outermost first", () => {
     const bad = map([
-      ["list", array([inner(int(1n)), inner(Value.bool(true))])],
+      ["list", array([inner(int(1n)), inner(boolValue(true))])],
       ["by-name", map([])],
     ]);
     expect(decoded(Outer.decode(bad))).toBe("list.[1].x: expected int, got bool");
@@ -178,7 +178,7 @@ describe("what the walks read and refuse", () => {
     expect(U.encode({ a: 1n, b: 2n })).toMatchObject({ ok: false, error: { reason: "no alternative of U fits" } });
     // a text where no text alternative exists (outside the type): a refusal, never a TypeError
     expect(NoText.encode("a" as unknown as A)).toMatchObject({ ok: false, error: { reason: "no alternative of NoText fits" } });
-    expect(decoded(U.decode(Value.bool(true)))).toBe("<root>: expected a map or one of the text alternatives");
+    expect(decoded(U.decode(boolValue(true)))).toBe("<root>: expected a map or one of the text alternatives");
   });
 
   it("a union reads the fields of every alternative in UTF-16 order, once per alternative it tries", () => {
@@ -384,7 +384,7 @@ describe("what the walks read and refuse", () => {
         closed.push(name);
       }
     }
-    // a hand-made codec that throws on its second element, inside a map inside a vector
+    // a hand-made codec that throws on its second element, inside a map inside a map
     const boom: Codec<bigint> = {
       ...uint,
       encode: (n, depth) => {
@@ -393,10 +393,9 @@ describe("what the walks read and refuse", () => {
       },
     };
     const inner = { [Symbol.iterator]: () => items("inner", [["a", 1n], ["b", 2n], ["c", 3n]]) } as unknown as ReadonlyMap<string, bigint>;
-    // an array read through its own iterator, which notes when it is closed
-    const outer: ReadonlyMap<string, bigint>[] = [inner, inner];
-    Object.defineProperty(outer, Symbol.iterator, { value: () => items("outer", [inner, inner]) });
-    const nested = vector(textMap(boom), 0, null);
+    // a map read through its own iterator, which notes when it is closed
+    const outer = { [Symbol.iterator]: () => items("outer", [["x", inner], ["y", inner]]) } as unknown as ReadonlyMap<string, ReadonlyMap<string, bigint>>;
+    const nested = textMap(textMap(boom));
     expect(() => nested.encode(outer)).toThrow("caller code threw");
     expect(closed).toEqual(["inner", "outer"]);
   });
@@ -420,13 +419,6 @@ function logged(name: string, xs: readonly unknown[], log: string[], opts: { rea
   };
 }
 
-/** An array read through the iterator `it` makes. */
-function through<T>(it: () => Iterator<unknown>, xs: readonly T[]): T[] {
-  const a = [...xs];
-  Object.defineProperty(a, Symbol.iterator, { value: it });
-  return a;
-}
-
 /** `uint`, made by hand, throwing on 2. */
 const throwsOnTwo: Codec<bigint> = {
   ...codec.uint,
@@ -437,55 +429,85 @@ const throwsOnTwo: Codec<bigint> = {
 };
 
 describe("closing iterators as for...of does", () => {
-  const nested = (element: Codec<bigint>): Codec<readonly (readonly bigint[])[]> => vector(vector(element, 0, null), 0, null);
+  // maps are read through their iterators; vectors by index (see "a vector is read by index")
+  const nested = (element: Codec<bigint>): Codec<ReadonlyMap<string, ReadonlyMap<string, bigint>>> => textMap(textMap(element));
+  /** A map read through the iterator `it` makes. */
+  const iterable = <T>(it: () => Iterator<unknown>): ReadonlyMap<string, T> => ({ [Symbol.iterator]: it }) as unknown as ReadonlyMap<string, T>;
 
   it("normal completion closes nothing; a finished sibling is not closed; nothing is closed twice", () => {
     const log: string[] = [];
-    const a = through(() => logged("a", [1n], log), [1n]);
-    const b = through(() => logged("b", [1n, 3n], log), [1n, 3n]);
-    expect(nested(uint).encode(through(() => logged("outer", [a, b], log), [a, b])).ok).toBe(true);
+    const a = iterable<bigint>(() => logged("a", [["k", 1n]], log));
+    const b = iterable<bigint>(() => logged("b", [["k", 1n], ["l", 3n]], log));
+    expect(nested(uint).encode(iterable(() => logged("outer", [["a", a], ["b", b]], log))).ok).toBe(true);
     expect(log).toEqual([]);
     const thrown: string[] = [];
-    const a2 = through(() => logged("a", [1n], thrown), [1n]);
-    const b2 = through(() => logged("b", [1n, 2n], thrown), [1n, 2n]);
-    expect(() => nested(throwsOnTwo).encode(through(() => logged("outer", [a2, b2], thrown), [a2, b2]))).toThrow("E1");
+    const a2 = iterable<bigint>(() => logged("a", [["k", 1n]], thrown));
+    const b2 = iterable<bigint>(() => logged("b", [["k", 1n], ["l", 2n]], thrown));
+    expect(() => nested(throwsOnTwo).encode(iterable(() => logged("outer", [["a", a2], ["b", b2]], thrown)))).toThrow("E1");
     expect(thrown).toEqual(["return-b", "return-outer"]);
     const refused: string[] = [];
-    const a3 = through(() => logged("a", [1n], refused), [1n]);
-    const b3 = through(() => logged("b", [1n, -1n], refused), [1n, -1n]);
-    expect(nested(uint).encode(through(() => logged("outer", [a3, b3], refused), [a3, b3])).ok).toBe(false);
+    const a3 = iterable<bigint>(() => logged("a", [["k", 1n]], refused));
+    const b3 = iterable<bigint>(() => logged("b", [["k", 1n], ["l", -1n]], refused));
+    expect(nested(uint).encode(iterable(() => logged("outer", [["a", a3], ["b", b3]], refused))).ok).toBe(false);
     expect(refused).toEqual(["return-b", "return-outer"]);
   });
 
   it("a throwing return() still lets the outer iterators close, and its error is the one that surfaces", () => {
     const log: string[] = [];
-    const inner = through(() => logged("inner", [1n, 2n], log, { returnThrows: "E2" }), [1n, 2n]);
-    expect(() => nested(throwsOnTwo).encode(through(() => logged("outer", [inner], log), [inner]))).toThrow("E2");
+    const inner = iterable<bigint>(() => logged("inner", [["k", 1n], ["l", 2n]], log, { returnThrows: "E2" }));
+    expect(() => nested(throwsOnTwo).encode(iterable(() => logged("outer", [["i", inner]], log)))).toThrow("E2");
     expect(log).toEqual(["return-inner", "return-outer"]);
     const both: string[] = [];
-    const inner2 = through(() => logged("inner", [1n, -1n], both, { returnThrows: "E2" }), [1n, -1n]);
-    expect(() => nested(uint).encode(through(() => logged("outer", [inner2], both, { returnThrows: "E3" }), [inner2]))).toThrow("E3");
+    const inner2 = iterable<bigint>(() => logged("inner", [["k", 1n], ["l", -1n]], both, { returnThrows: "E2" }));
+    expect(() => nested(uint).encode(iterable(() => logged("outer", [["i", inner2]], both, { returnThrows: "E3" })))).toThrow("E3");
     expect(both).toEqual(["return-inner", "return-outer"]);
   });
 
   it("an iterator whose next() threw is not closed; the ones around it are", () => {
     const log: string[] = [];
-    const inner = through(() => logged("inner", [1n, 3n], log, { nextThrowsAt: 1 }), [1n, 3n]);
-    expect(() => nested(uint).encode(through(() => logged("outer", [inner], log), [inner]))).toThrow("next-inner");
+    const inner = iterable<bigint>(() => logged("inner", [["k", 1n], ["l", 3n]], log, { nextThrowsAt: 1 }));
+    expect(() => nested(uint).encode(iterable(() => logged("outer", [["i", inner]], log)))).toThrow("next-inner");
     expect(log).toEqual(["return-outer"]);
   });
 
-  it("a map entry that cannot be destructured closes its iterator", () => {
-    const log: string[] = [];
-    const m = { [Symbol.iterator]: () => logged("map", [5], log) } as unknown as ReadonlyMap<string, bigint>;
-    expect(() => textMap(uint).encode(m)).toThrow(TypeError);
-    expect(log).toEqual(["return-map"]);
+  it("a map entry that is not an array is refused, never destructured, and closes its iterator", () => {
+    for (const [i, entry] of [5, null, "ab", new Set(["a", 1n])].entries()) {
+      const log: string[] = [];
+      const m = iterable<bigint>(() => logged("map", [entry], log));
+      expect(textMap(uint).encode(m), `entry ${i.toString()}`).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "expected a map entry (a [key, value] array)" } });
+      expect(log, `entry ${i.toString()}`).toEqual(["return-map"]);
+    }
+  });
+
+  it("an iterable whose iterator for...of could not open is refused before anything is read, its method read once", () => {
+    const notOpened = "expected an iterable (its Symbol.iterator, iterator or next is not of the protocol's type)";
+    const broken = [{}, { [Symbol.iterator]: 5 }, { [Symbol.iterator]: () => 5 }, { [Symbol.iterator]: () => ({ next: 5 }) }];
+    for (const m of broken) expect(textMap(uint).encode(m as unknown as ReadonlyMap<string, bigint>)).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: notOpened } });
+    const traps: string[] = [];
+    const watched = new Proxy(new Map([["a", 1n]]), {
+      has: (t, name) => {
+        traps.push(`has ${String(name)}`);
+        return Reflect.has(t, name);
+      },
+      get: (t, name) => {
+        traps.push(`get ${String(name)}`);
+        const v: unknown = Reflect.get(t, name, t);
+        return typeof v === "function" ? (v as (...args: unknown[]) => unknown).bind(t) : v;
+      },
+    });
+    expect(expectOk(textMap(uint).encode(watched), "a Proxy of a Map").kind).toBe("map");
+    expect(traps, "Symbol.iterator read once, and no has trap").toEqual(["get Symbol(Symbol.iterator)"]);
+  });
+
+  it("a return that is not a function is skipped, as an absent one is", () => {
+    const it = { next: () => ({ done: false, value: [1, 1n] }), return: 5 };
+    expect(textMap(uint).encode(iterable(() => it as unknown as Iterator<unknown>))).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "expected a text map key (a string)" } });
   });
 
   it("any truthy done ends the walk", () => {
     const log: string[] = [];
-    const v = expectOk(vector(uint, 0, null).encode(through(() => logged("a", [1n, 3n], log, { done: "yes" }), [1n, 3n])), "encodes");
-    expect(v.kind === "array" && v.items.length).toBe(2);
+    const v = expectOk(textMap(uint).encode(iterable(() => logged("a", [["k", 1n], ["l", 3n]], log, { done: "yes" }))), "encodes");
+    expect(v.kind === "map" && v.size).toBe(2);
     expect(log).toEqual([]);
   });
 
@@ -498,12 +520,18 @@ describe("closing iterators as for...of does", () => {
     }
     expect(R.encode(deep)).toEqual({ ok: false, error: { kind: "DepthExceeded", limit: MAX_DEPTH } });
     expect(R.encode(deep, MAX_DEPTH)).toEqual({ ok: false, error: { kind: "DepthExceeded", limit: MAX_DEPTH } });
-    // nothing of the value is touched: not its iterator, nor a record's getters
+    // nothing of the value is touched: not a map's iterator, an array's length, nor a record's getters
     const touched: string[] = [];
-    const watched = through(() => {
+    const watchedMap = iterable<bigint>(() => {
       touched.push("iterator");
       return logged("watched", [], touched);
-    }, []);
+    });
+    const watchedArray = new Proxy([1n], {
+      get: (t, name) => {
+        touched.push(`array ${String(name)}`);
+        return Reflect.get(t, name) as unknown;
+      },
+    });
     const record1 = record<{ readonly a: bigint }>({ a: required("a", uint) });
     const getter = {
       get a(): bigint {
@@ -512,7 +540,8 @@ describe("closing iterators as for...of does", () => {
       },
     };
     for (const depth of [-1, Number.NaN]) {
-      expect(vector(uint, 0, null).encode(watched, depth).ok).toBe(false);
+      expect(textMap(uint).encode(watchedMap, depth).ok).toBe(false);
+      expect(vector(uint, 0, null).encode(watchedArray, depth).ok).toBe(false);
       expect(record1.encode(getter, depth).ok).toBe(false);
     }
     expect(touched).toEqual([]);
@@ -533,10 +562,7 @@ describe("closing iterators as for...of does", () => {
         return { done: true, value: undefined };
       },
     };
-    expect(() => vector(uint, 0, null).encode(through(() => it, [1n]))).toThrow("value getter");
-    expect(log).toEqual([]);
-    const map = { [Symbol.iterator]: () => it } as unknown as ReadonlyMap<string, bigint>;
-    expect(() => textMap(uint).encode(map)).toThrow("value getter");
+    expect(() => textMap(uint).encode(iterable(() => it))).toThrow("value getter");
     expect(log).toEqual([]);
   });
 
@@ -550,16 +576,48 @@ describe("closing iterators as for...of does", () => {
           return { done: true, value: undefined };
         },
       };
-      const inner = through(() => bad, [1n]);
-      const outer = through(() => logged("outer", [inner], log), [inner]);
-      expect(nested(uint).encode(outer), String(result)).toEqual({
+      const inner = iterable<bigint>(() => bad);
+      expect(nested(uint).encode(iterable(() => logged("outer", [["i", inner]], log))), String(result)).toEqual({
         ok: false,
         error: { kind: "TypeMismatch", reason: "an iterator's next() gave a result that is not an object" },
       });
       expect(log).toEqual(["return-outer"]);
-      const map = { [Symbol.iterator]: () => bad } as unknown as ReadonlyMap<string, bigint>;
-      expect(textMap(uint).encode(map).ok).toBe(false);
-      expect(log).toEqual(["return-outer"]);
     }
+  });
+});
+
+describe("a vector is read by index", () => {
+  it("its length is read once and each item once, never through its iterator, so the size checked is the size written", () => {
+    const one = Object.assign([1n], { [Symbol.iterator]: () => [1n, 2n, 3n][Symbol.iterator]() });
+    const v = expectOk(vector(uint, 0, 1).encode(one), "one element, whatever its iterator yields");
+    expect(v.kind === "array" && v.items.length).toBe(1);
+    const reads: string[] = [];
+    const watched = new Proxy([1n, 2n], {
+      get: (t, name) => {
+        reads.push(String(name));
+        return Reflect.get(t, name) as unknown;
+      },
+    });
+    expect(vector(uint, 0, null).encode(watched).ok).toBe(true);
+    expect(reads).toEqual(["length", "0", "1"]);
+  });
+
+  it("a length that is not a number is refused without being converted", () => {
+    const converted: string[] = [];
+    for (const length of ["1", { valueOf: () => converted.push("valueOf") }, Symbol("length")]) {
+      const proxy = new Proxy([1n], { get: (t, name) => (name === "length" ? length : (Reflect.get(t, name) as unknown)) });
+      expect(vector(uint, 0, null).encode(proxy)).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "expected an array" } });
+    }
+    expect(converted).toEqual([]);
+  });
+
+  it("a hand-made codec that gives a non-value is refused where it is, by its place", () => {
+    const five: Codec<bigint> = { ...uint, encode: () => ({ ok: true, value: 5 as unknown as Value }) };
+    expect(five.encode(1n).ok, "the codec itself").toBe(true);
+    const at = (reason: string): unknown => ({ ok: false, error: { kind: "TypeMismatch", reason: `a codec gave a non-value ${reason}` } });
+    expect(record<{ readonly a: bigint }>({ a: required("a", five) }).encode({ a: 1n })).toEqual(at('for the field "a"'));
+    expect(vector(five, 0, null).encode([1n])).toEqual(at("for an element of an array"));
+    expect(textMap(five).encode(new Map([["k", 1n]]))).toEqual(at("for a value of a text map"));
+    expect(vector(defer(() => five), 0, null).encode([1n])).toEqual(at("for an element of an array"));
   });
 });

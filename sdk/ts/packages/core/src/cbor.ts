@@ -1,17 +1,18 @@
 /** The dilf4s deterministic CBOR profile (docs/specs/canonical-encoding.md section 2). */
-import { byteLimit, Meter, tooLarge } from "./budget.js";
-import type { CanonicalError, TooLarge } from "./error.js";
+import { byteLimit, checkedLimit, Meter, tooLarge } from "./budget.js";
+import { isLocalBuffer, plainBytes } from "./bytes.js";
+import type { CanonicalError, TooLarge, TypeMismatch } from "./error.js";
 import { toHex } from "./hex.js";
 import { err, ok, type Result } from "./result.js";
-import { compareBytes, decodeUtf8 } from "./utf8.js";
+import { compareBytes, utf8Text } from "./utf8.js";
 import {
-  ArrayValue,
+  arrayOfValues,
   BoolValue,
-  BytesValue,
+  bytesOfValues,
   bytesView,
   entriesView,
   IntValue,
-  MapValue,
+  mapOfValues,
   MAX_DEPTH,
   MAX_INTEGER_BITS,
   MAX_RATIONAL_BITS,
@@ -169,9 +170,13 @@ function hexBytes(write: (b: number, i: number) => void, hex: string, length: nu
   for (let i = 0; i < length; i++) write((nibble(digits.charCodeAt(2 * i)) << 4) | nibble(digits.charCodeAt(2 * i + 1)), i);
 }
 
-/** The big-endian bytes of a non-negative integer, with no leading zeros (empty for zero), linear in its size. */
-export function magnitudeBytes(n: bigint): Uint8Array {
-  if (n <= 0n) return new Uint8Array(0);
+/**
+ * The big-endian bytes of a non-negative integer, with no leading zeros (empty for zero), linear in its size. A value
+ * that is not a `bigint`, or a negative one, is a `TypeMismatch` (a negative one had been read as zero).
+ */
+export function magnitudeBytes(n: bigint): Result<Uint8Array, TypeMismatch> {
+  if (typeof (n as unknown) !== "bigint" || n < 0n) return err({ kind: "TypeMismatch", reason: "expected a non-negative bigint" });
+  if (n === 0n) return ok(new Uint8Array(0));
   const hex = n.toString(16);
   const out = new Uint8Array(Math.ceil(hex.length / 2));
   hexBytes(
@@ -181,7 +186,7 @@ export function magnitudeBytes(n: bigint): Uint8Array {
     hex,
     out.length,
   );
-  return out;
+  return ok(out);
 }
 
 /** The additional information of an argument `size` bytes long (1, 2, 4 or 8). */
@@ -287,12 +292,19 @@ function write(out: Out, value: Value): boolean {
 export const MAX_ENCODED_BYTES = 2 ** 31 - 1;
 
 /**
+ * Why a value was not encoded: its encoding is longer than the limit (`TooLarge`), or an argument is not of its type
+ * (`TypeMismatch`: a value that is not a canonical value, or a limit that is not a `number`), which is checked in O(1)
+ * before anything is read.
+ */
+export type EncodeError = TooLarge | TypeMismatch;
+
+/**
  * The canonical encoding of `value`: {@link encodeWithin} at {@link MAX_ENCODED_BYTES}. Every {@link Value} has exactly
  * one, but a value built with shared parts (`[x, x]` nested `k` deep weighs about `2^k`) can encode to far more than it
  * occupies: that is refused as `TooLarge`, from the weight alone when it is over. O(min(weight, the limit)): encode a
- * caller's value within a limit of the caller's own.
+ * caller's value within a limit of the caller's own. What is not a canonical value is a `TypeMismatch`.
  */
-export function encode(value: Value): Result<Uint8Array, TooLarge> {
+export function encode(value: Value): Result<Uint8Array, EncodeError> {
   return encodeWithin(value, MAX_ENCODED_BYTES);
 }
 
@@ -314,24 +326,31 @@ function within(value: Value, limit: number, target: Target | undefined): Result
  * weight (each node's head is a byte, text and byte strings add their length, a number of `l` whole limbs takes at
  * least `l` bytes more), so a weight over the limit is refused at once; each node visited writes a byte before its
  * parts, so the walk stops within `maxBytes + 1` nodes; and a string's or number's length is checked against the
- * budget before its bytes are produced.
+ * budget before its bytes are produced. A value that is not a canonical value (see `isValue`), or a limit that is not a
+ * `number`, is a `TypeMismatch`, checked in O(1) before anything is allocated.
  */
-export function encodeWithin(value: Value, maxBytes: number): Result<Uint8Array, TooLarge> {
-  const limit = byteLimit(maxBytes);
-  const kept = new Growing(limit);
-  const w = within(value, limit, kept);
+export function encodeWithin(value: Value, maxBytes: number): Result<Uint8Array, EncodeError> {
+  const limit = checkedLimit(value, maxBytes);
+  if (!limit.ok) return limit;
+  const kept = new Growing(limit.value);
+  const w = within(value, limit.value, kept);
   return w.ok ? ok(kept.result()) : w;
 }
 
-/** The length of `value`'s canonical encoding, if it is at most `maxBytes`, counted without encoding it, with the bounds of {@link encodeWithin}. */
-export function encodedLengthWithin(value: Value, maxBytes: number): Result<number, TooLarge> {
-  return within(value, byteLimit(maxBytes), undefined);
+/**
+ * The length of `value`'s canonical encoding, if it is at most `maxBytes`, counted without encoding it, with the bounds
+ * and refusals of {@link encodeWithin}.
+ */
+export function encodedLengthWithin(value: Value, maxBytes: number): Result<number, EncodeError> {
+  const limit = checkedLimit(value, maxBytes);
+  return limit.ok ? within(value, limit.value, undefined) : limit;
 }
 
 /**
  * Streams `value`'s canonical encoding into `feeding` (and so into its hash) as {@link encodeWithin} would write it,
  * with the same budget and the same refusal at the same point, without building it: the same walk, feeding a hash
  * instead of a buffer. Returns the length. On a refusal, the hash has absorbed a prefix of the encoding: discard it.
+ * Its arguments are not checked: its callers check them first (`checkedLimit`).
  */
 export function encodeIntoWithin(feeding: Feeding, value: Value, maxBytes: number): Result<number, TooLarge> {
   const w = within(value, byteLimit(maxBytes), feeding);
@@ -368,10 +387,22 @@ const unexpectedEnd = (offset: number): CanonicalError => ({ kind: "UnexpectedEn
 /**
  * Strictly decodes one canonical value: any other encoding of a value, trailing bytes, or nesting deeper than
  * `maxDepth` (at most {@link MAX_DEPTH}) is an error. When it succeeds, `encode(decode(b)) == b`. The decoder keeps
- * its own frame stack, so input of any nesting is a typed error, never a stack overflow.
+ * its own frame stack, so input of any nesting is a typed error, never a stack overflow. `bytes` that is not a
+ * `Uint8Array`, or a `maxDepth` that is not a number, is a `TypeMismatch`.
+ *
+ * The bytes are read through a plain view of their own memory (`plainBytes`): a subclass's `length`, accessors or
+ * iterator are never consulted. They are read in place when that memory is an `ArrayBuffer` of this realm, which
+ * nothing can change while the decoder runs (it runs no caller code); a `SharedArrayBuffer`, which another thread may
+ * write at any time, or another realm's buffer is copied once first. Each byte string decoded is copied once into its
+ * value, which then holds no view of the input.
  */
 export function decode(bytes: Uint8Array, maxDepth: number = MAX_DEPTH): Result<Value, CanonicalError> {
-  return new Decoder(bytes, Math.min(maxDepth, MAX_DEPTH)).run();
+  if (typeof (maxDepth as unknown) !== "number" || Number.isNaN(maxDepth)) return err({ kind: "TypeMismatch", reason: "the depth limit is not a number" });
+  const view = plainBytes(bytes);
+  if (view === undefined) return err({ kind: "TypeMismatch", reason: "expected a Uint8Array" });
+  // read in place unless another thread, or another realm, may hold the memory: then one copy, read alone
+  const input = isLocalBuffer(view) ? view : new Uint8Array(view);
+  return new Decoder(input, Math.min(maxDepth, MAX_DEPTH)).run();
 }
 
 class Decoder {
@@ -392,7 +423,7 @@ class Decoder {
       if (!it.open) value = it.value;
       else if (this.#stack.length >= this.maxDepth) return err({ kind: "DepthExceeded", limit: this.maxDepth });
       else if (it.count === 0) {
-        const empty = it.map ? MapValue.of([]) : ArrayValue.of([]);
+        const empty = it.map ? mapOfValues([]) : arrayOfValues([]);
         if (!empty.ok) return empty;
         value = empty.value;
       } else {
@@ -436,7 +467,7 @@ class Decoder {
       }
       if (frame.remaining > 0) return ok({ done: false, pos: end });
       this.#stack.pop();
-      const closed = frame.map ? MapValue.of(frame.entries) : ArrayValue.of(frame.items);
+      const closed = frame.map ? mapOfValues(frame.entries) : arrayOfValues(frame.items);
       if (!closed.ok) return closed;
       current = closed.value;
       from = end;
@@ -456,12 +487,14 @@ class Decoder {
       }
       case 2: {
         const s = this.span(end, argument);
-        return s.ok ? scalar(BytesValue.of(s.value.bytes), s.value.end) : s;
+        if (!s.ok) return s;
+        // the one copy each byte string needs: its value holds no view of the input
+        return scalar(bytesOfValues(s.value.bytes), s.value.end);
       }
       case 3: {
         const s = this.span(end, argument);
         if (!s.ok) return s;
-        const text = decodeUtf8(s.value.bytes);
+        const text = utf8Text(s.value.bytes);
         if (text === undefined) return err({ kind: "InvalidUtf8", offset: end });
         const t = TextValue.of(text);
         return t.ok ? scalar(t.value, s.value.end) : t;

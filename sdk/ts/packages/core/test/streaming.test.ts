@@ -23,7 +23,7 @@ import {
   type HashAlgorithm,
 } from "../src/index.js";
 import { bytesView, utf8View, type TextValue } from "../src/value.js";
-import { expectOk, int, loadVectors } from "./vectors.js";
+import { boolValue, bytesValue, expectOk, int, loadVectors } from "./vectors.js";
 
 const tag = expectOk(DomainTag.of("dilf4s/test/streaming/v1"), "tag");
 const text = (s: string): TextValue => expectOk(Value.text(s), "text");
@@ -57,17 +57,17 @@ function nested(depth: number, leaf: Value, withMaps: boolean): Value {
 function edgeCases(): [string, Value][] {
   const cases: [string, Value][] = [
     ["null", Value.null],
-    ["false", Value.bool(false)],
-    ["true", Value.bool(true)],
+    ["false", boolValue(false)],
+    ["true", boolValue(true)],
     ["empty text", text("")],
-    ["empty bytes", Value.bytes(new Uint8Array(0))],
+    ["empty bytes", bytesValue(new Uint8Array(0))],
     ["empty array", array([])],
     ["empty map", map([])],
     ["non-ascii text", text("é\u{1F600}\u{FFFF}\u{E000}")],
     ["rational", expectOk(Value.number(-7n, 3n), "a rational")],
     ["big rational", expectOk(Value.number((1n << 200n) + 1n, (1n << 70n) + 3n), "a rational")],
     ["long text", text("x".repeat(70_000))],
-    ["long bytes", Value.bytes(new Uint8Array(70_000).fill(0xab))],
+    ["long bytes", bytesValue(new Uint8Array(70_000).fill(0xab))],
     ["deep arrays", nested(MAX_DEPTH, int(1n), false)],
     ["deep maps and arrays", nested(MAX_DEPTH, text("leaf"), true)],
     ["keys of every length order", map(["", "a", "b", "aa", "z", "zz", "é", "\u{1F600}", "\u{FFFF}", "\u{E000}"].map((k, i) => [k, int(BigInt(i))] as const))],
@@ -76,7 +76,7 @@ function edgeCases(): [string, Value][] {
     cases.push([`int ${String(n)}`, int(n)], [`int -1-${String(n)}`, int(-n - 1n)]);
   }
   for (const n of [23, 24, 255, 256, STAGED_BYTES - 1, STAGED_BYTES, STAGED_BYTES + 1, 65_535, 65_536]) {
-    cases.push([`text of ${String(n)}`, text("t".repeat(n))], [`bytes of ${String(n)}`, Value.bytes(new Uint8Array(n).fill(7))], [`array of ${String(n)}`, array(Array<Value>(n).fill(Value.null))]);
+    cases.push([`text of ${String(n)}`, text("t".repeat(n))], [`bytes of ${String(n)}`, bytesValue(new Uint8Array(n).fill(7))], [`array of ${String(n)}`, array(Array<Value>(n).fill(Value.null))]);
   }
   for (const bits of [64n, 65n, 127n, 128n, 129n, 256n, 2048n + 3n]) {
     const p = 1n << bits;
@@ -108,12 +108,12 @@ class Gen {
     const k = this.below(8);
     if (scalar) {
       if (k === 0) return Value.null;
-      if (k === 1) return Value.bool(this.below(2) === 0);
+      if (k === 1) return boolValue(this.below(2) === 0);
       if (k === 2) return int(BigInt(this.next()) << BigInt(this.below(80)));
       if (k === 3) return int(-(BigInt(this.next()) << BigInt(this.below(140))));
       if (k === 4) return expectOk(Value.number(BigInt(this.next()) - 2n ** 31n, BigInt(this.below(1000) + 1)), "a rational");
       if (k === 5) return text(this.text());
-      return Value.bytes(Uint8Array.from({ length: this.below(40) }, () => this.below(256)));
+      return bytesValue(Uint8Array.from({ length: this.below(40) }, () => this.below(256)));
     }
     if (k % 2 === 0) return array(Array.from({ length: this.below(5) }, () => this.value(depth - 1)));
     const entries = new Map<string, Value>();
@@ -165,7 +165,7 @@ describe("streamed hashing refuses as the buffered path does", { timeout: 60_000
   const cases: [string, Value][] = [
     ["an int", int(1n << 70n)],
     ["text", text("é".repeat(300))],
-    ["bytes", Value.bytes(new Uint8Array(300).fill(1))],
+    ["bytes", bytesValue(new Uint8Array(300).fill(1))],
     ["a nested value", nested(40, map([["k", text("v".repeat(50))]]), true)],
     ["null", Value.null],
   ];
@@ -221,14 +221,14 @@ describe("the hashing path's memory is bounded", { timeout: 60_000 }, () => {
   it.each([1_000, 100_000])("for structures of about %i bytes", (n) => {
     check([
       ["wide", array(Array.from({ length: n / 10 }, (_, i) => int(BigInt(i) << 40n))), []],
-      ["keyed", map(Array.from({ length: n / 20 }, (_, i) => [`k${String(i)}`, Value.bool(i % 2 === 0)] as const)), []],
+      ["keyed", map(Array.from({ length: n / 20 }, (_, i) => [`k${String(i)}`, boolValue(i % 2 === 0)] as const)), []],
       ["big", int(1n << BigInt(Math.min(n, 33_000))), []],
     ]);
   });
 
   it.each([1_000, 10_000_000])("for strings of about %i bytes", (n) => {
     const longText = text("é".repeat(n / 2));
-    const longBytes = Value.bytes(new Uint8Array(n).fill(0x5a));
+    const longBytes = bytesValue(new Uint8Array(n).fill(0x5a));
     check([
       ["text", longText, [utf8View(longText)]],
       ["bytes", longBytes, [bytesView(longBytes)]],
@@ -238,7 +238,7 @@ describe("the hashing path's memory is bounded", { timeout: 60_000 }, () => {
 
   it("and hashing the commitment of a large value matches a plain hash", () => {
     const a: HashAlgorithm = "SHA-256";
-    const v = Value.bytes(new Uint8Array(1 << 20).fill(3));
+    const v = bytesValue(new Uint8Array(1 << 20).fill(3));
     const h = startHash(a);
     expectOk(valueCommitmentInto(h, v), "commits");
     expect(toHex(h.digest())).toBe(toHex(hashParts(a, [expectOk(valueCommitment(v), "commits")])));
@@ -260,7 +260,7 @@ describe("the streaming internals stay internal", () => {
   });
 
   it("a borrowed contentWithin never hands a value's bytes to a caller's hash", () => {
-    const bytes = Value.bytes(new Uint8Array(2048).fill(7));
+    const bytes = bytesValue(new Uint8Array(2048).fill(7));
     const long = text("t".repeat(2048));
     for (const v of [bytes, long, array([bytes, long])]) {
       const writes: Uint8Array[] = [];
@@ -285,7 +285,7 @@ describe("the streaming internals stay internal", () => {
     onTestFinished(() => {
       proto.update = original;
     });
-    const bytes = Value.bytes(new Uint8Array(4096).fill(7));
+    const bytes = bytesValue(new Uint8Array(4096).fill(7));
     const long = text("t".repeat(4096));
     const own = [bytesView(bytes), utf8View(long)];
     for (const v of [bytes, long, array([bytes, long])]) {

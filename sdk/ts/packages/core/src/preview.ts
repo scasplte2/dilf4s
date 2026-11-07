@@ -14,6 +14,21 @@ const escaped = (s: string): string =>
   }).join("");
 
 /**
+ * The key the constructor takes, private to this module: a constructor is private to TypeScript alone, so JavaScript can
+ * call it (`Reflect.construct(Preview, [head, 0, 0])`), but what it builds without this key is not minted.
+ */
+const KEY: unique symbol = Symbol("preview");
+
+/** `#minted in x && x.#minted`: whether `x` is a {@link Preview} this module built, set once by its static block. */
+let previewBrand!: (x: object) => boolean;
+
+/**
+ * Whether `x` is a {@link Preview} built by {@link Preview.of}, in O(1): no Proxy trap runs, and one built by calling the
+ * constructor from outside (whose head could be anything, of any length) is not one. Internal to this package.
+ */
+export const isPreview = (x: unknown): x is Preview => typeof x === "object" && x !== null && previewBrand(x);
+
+/**
  * Caller text as an error may hold it: its first {@link MAX_PREVIEW_CODE_POINTS} code points, each unpaired surrogate
  * replaced by U+FFFD, and its whole `length` in UTF-8 bytes, an unpaired surrogate counting 3. The constructor is
  * private and {@link Preview.of} truncates, so an error holding a preview holds at most that much of what the caller
@@ -23,18 +38,26 @@ const escaped = (s: string): string =>
 export class Preview {
   // #private state makes the class nominal: an object of the same shape is not a Preview, so only `of` builds one
   readonly #truncated: boolean;
+  readonly #minted: boolean;
 
   private constructor(
+    key: symbol,
     readonly head: string,
     readonly length: number,
     keptBytes: number,
   ) {
+    this.#minted = key === KEY;
     this.#truncated = keptBytes < length;
     Object.freeze(this);
   }
 
-  /** The preview of `text`: O(MAX_PREVIEW_CODE_POINTS) to copy, and one scan, without allocation, to measure. */
+  /**
+   * The preview of `text`: O(MAX_PREVIEW_CODE_POINTS) to copy, and one scan, without allocation, to measure. A value
+   * that is not a string (from a JavaScript caller, or a cast) is never read: its preview is {@link Preview.notText},
+   * whose head `<not text>` with a length of 0 no text's preview has.
+   */
   static of(text: string): Preview {
+    if (typeof (text as unknown) !== "string") return Preview.notText;
     const kept: number[] = [];
     let length = 0;
     let keptBytes = 0;
@@ -47,7 +70,14 @@ export class Preview {
       length += width(c);
       i += c > 0xffff ? 2 : 1;
     }
-    return new Preview(String.fromCodePoint(...kept), length, keptBytes);
+    return new Preview(KEY, String.fromCodePoint(...kept), length, keptBytes);
+  }
+
+  /** The preview of something that is not text: the head `<not text>`, a length of 0, not truncated. */
+  static readonly notText: Preview = new Preview(KEY, "<not text>", 0, 0);
+
+  static {
+    previewBrand = (x) => #minted in x && x.#minted;
   }
 
   /** Whether the text was longer than {@link head}. */

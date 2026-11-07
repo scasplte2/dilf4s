@@ -5,9 +5,9 @@
  *
  * **Public data only**: the arithmetic is variable time. Never hash secrets here.
  */
-import { bitLength, describeFailure, err, models, ok, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { describeFailure, err, models, ok, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
-import { decodeInput } from "./input.js";
+import { bitsOf, decodeInput } from "./input.js";
 import { FULL_ROUNDS, WIDTH2, WIDTH3, WIDTH4, WIDTH5, type PoseidonParams } from "./poseidon-constants.js";
 
 /** The BN254 scalar field modulus `r`. */
@@ -27,7 +27,7 @@ export class Fr {
 
   /** The element `value`, if canonical: a value `>= r` is malformed, never reduced. */
   static of(value: bigint): Result<Fr, PoseidonError> {
-    return value >= 0n && value < FR_MODULUS ? ok(new Fr(value)) : err({ kind: "NonCanonical", bits: bitLength(value) });
+    return value >= 0n && value < FR_MODULUS ? ok(new Fr(value)) : err({ kind: "NonCanonical", bits: bitsOf(value) });
   }
 
   /** `value mod r`. */
@@ -138,7 +138,7 @@ export class PoseidonMerkleProof {
   /** The depth is checked first, so the capacity `2^depth` it is compared with never exceeds `2^MAX_DEPTH`. */
   static of(position: bigint, siblings: readonly Fr[]): Result<PoseidonMerkleProof, PoseidonMerkleError> {
     const depth = siblings.length;
-    return depth <= MAX_DEPTH && position >= 0n && position < 1n << BigInt(depth) ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", positionBits: bitLength(position), depth });
+    return depth <= MAX_DEPTH && position >= 0n && position < 1n << BigInt(depth) ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", positionBits: bitsOf(position), depth });
   }
 
   /**
@@ -213,7 +213,7 @@ export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, Po
   const entries: Placed[] = [];
   // each entry is copied as it is read: an iterable may yield one tuple again with new contents
   for (const [p, leaf] of leaves) {
-    if (p < 0n || p >= capacity) return err({ kind: "Position", positionBits: bitLength(p), depth });
+    if (p < 0n || p >= capacity) return err({ kind: "Position", positionBits: bitsOf(p), depth });
     entries.push([p, leaf]);
   }
   // the sort is stable, so the last of a position's run of entries is its latest
