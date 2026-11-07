@@ -407,15 +407,8 @@ function shiftUntilOddOrZero(fn: bigint, sn: bigint): readonly [bigint, bigint] 
   return [f, s];
 }
 
-/** The checked arguments of a verification: a profile, two digests (plain views), and a proof of this module's. */
-function checked<P>(hashing: unknown, a: unknown, b: unknown, proof: unknown, isProof: (x: unknown) => x is P, what: string): Result<readonly [Profile, Uint8Array, Uint8Array, P], TypeMismatch> {
-  const h = profileArg(hashing);
-  if (!h.ok) return h;
-  const x = plainBytes(a);
-  const y = plainBytes(b);
-  if (x === undefined || y === undefined) return err(NOT_BYTES);
-  return isProof(proof) ? ok([h.value, x, y, proof]) : err(expected(what));
-}
+const NOT_AN_INCLUSION = expected("an InclusionProof");
+const NOT_A_CONSISTENCY = expected("a ConsistencyProof");
 
 /**
  * RFC 9162 section 2.1.3.2: whether `leafHash` is leaf `proof.index` of the tree of `proof.size` leaves with `root`. A
@@ -423,8 +416,12 @@ function checked<P>(hashing: unknown, a: unknown, b: unknown, proof: unknown, is
  * not a profile, a `Uint8Array` or an `InclusionProof` is a `TypeMismatch`.
  */
 export function checkInclusion(hashing: MerkleHashing<unknown>, root: Uint8Array, leafHash: Uint8Array, proof: InclusionProof): Result<undefined, Refusal> {
-  const c = checked(hashing, root, leafHash, proof, isInclusion, "an InclusionProof");
-  return c.ok ? inclusionCheck(...c.value) : c;
+  // each check allocates nothing but the two digests' plain views; a refusal is a shared constant
+  if (!isTagged(hashing) && !isRfc(hashing)) return err(NOT_A_PROFILE);
+  const r = plainBytes(root);
+  const l = plainBytes(leafHash);
+  if (r === undefined || l === undefined) return err(NOT_BYTES);
+  return isInclusion(proof) ? inclusionCheck(hashing, r, l, proof) : err(NOT_AN_INCLUSION);
 }
 
 function inclusionCheck(h: Profile, root: Uint8Array, leafHash: Uint8Array, proof: InclusionProof): Result<undefined, MerkleError> {
@@ -452,8 +449,11 @@ function inclusionCheck(h: Profile, root: Uint8Array, leafHash: Uint8Array, proo
  * a `Uint8Array` or a `ConsistencyProof` is a `TypeMismatch`.
  */
 export function checkConsistency(hashing: MerkleHashing<unknown>, oldRoot: Uint8Array, newRoot: Uint8Array, proof: ConsistencyProof): Result<undefined, Refusal> {
-  const c = checked(hashing, oldRoot, newRoot, proof, isConsistency, "a ConsistencyProof");
-  return c.ok ? consistencyCheck(...c.value) : c;
+  if (!isTagged(hashing) && !isRfc(hashing)) return err(NOT_A_PROFILE);
+  const o = plainBytes(oldRoot);
+  const n = plainBytes(newRoot);
+  if (o === undefined || n === undefined) return err(NOT_BYTES);
+  return isConsistency(proof) ? consistencyCheck(hashing, o, n, proof) : err(NOT_A_CONSISTENCY);
 }
 
 function consistencyCheck(h: Profile, oldRoot: Uint8Array, newRoot: Uint8Array, proof: ConsistencyProof): Result<undefined, MerkleError> {

@@ -674,6 +674,8 @@ export class VersionedTrie<V> {
 
   /** A proof from its canonical value (`versioned-trie-proof`); one heavier than `MAX_PROOF_WEIGHT` is `Malformed`. */
   decodeProof(value: Value): C<VersionedTrieProof<V>> {
+    // a profile built by calling the constructor from outside holds the caller's hashing: it never mints a proof
+    if (!PROFILE.has(this)) return err(expected("a VersionedTrie"));
     const v = valueArg(value);
     if (!v.ok) return v;
     const w = decodeInput(models.versionedTrie.VersionedTrieProof, v.value);

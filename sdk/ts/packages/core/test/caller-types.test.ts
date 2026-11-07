@@ -172,6 +172,9 @@ describe("a Proxy of an array reporting a length no array has is refused, never 
       expect(codec.vector(codec.uint, 0, null).encode(proxy(1n)), String(length)).toEqual(mismatch("expected an array"));
       expect(describeFailure(bad({ path: proxy(Preview.of("a")), reason: "r" })), String(length)).toBe("<not a decode failure>");
       expect(hashCommitment("SHA-256", proxy(Uint8Array.of(1)), one), String(length)).toEqual(mismatch("expected an array of Uint8Arrays"));
+      // a Proxy of an array walks as an array: its length is read each step, and refused when no array has it
+      const entries = new Proxy([["a", one]], { get: (t, name) => (name === "length" ? length : (Reflect.get(t, name) as unknown)) });
+      expect(Value.map(bad(entries)), String(length)).toEqual(mismatch("expected an iterable of [key, value] entries"));
     }
   });
 });

@@ -45,6 +45,7 @@ function shared(bytes: readonly number[]): Uint8Array {
   return view;
 }
 
+const empty = new Uint8Array(0);
 const foreign = (bytes: readonly number[]): Uint8Array => runInNewContext(`Uint8Array.of(${bytes.join(",")})`) as Uint8Array;
 
 /** Values that are no bytes at all, each fresh: null, undefined, a number, objects posing as bytes. */
@@ -519,6 +520,26 @@ describe("what a constructor builds when JavaScript calls it from outside is ref
     expect(T.leafHash(bad(segment), v1)).toEqual(mismatch("expected a Segment"));
     // a forged constructor reads nothing it is given: a junk algorithm is never hashed with
     expect(() => forge(trie.TrieHashing, [{}])).not.toThrow();
+  });
+
+  it("a verified trie proof answers nothing it was not made to, and a forged profile mints no proof", () => {
+    const fake = Reflect.construct(trie.VerifiedTrieProof as unknown as new (...a: unknown[]) => object, [Symbol("dilf4s-proofs"), variable, { kind: "leaf" }]) as trie.VerifiedTrieProof;
+    expect(fake.lookup(Uint8Array.of(0x61))).toEqual(mismatch("expected a VerifiedTrieProof"));
+    expect(fake.prefix(empty)).toEqual(mismatch("expected a VerifiedTrieProof"));
+    expect(fake.range(empty)).toEqual(mismatch("expected a VerifiedTrieProof"));
+    expect(fake.listsPrefix(empty, [])).toEqual(mismatch("expected a VerifiedTrieProof"));
+    expect(fake.listsRange(empty, undefined, [])).toEqual(mismatch("expected a VerifiedTrieProof"));
+    const profile = forge(versioned.VersionedTrie, [{ size: 1 }, versioned.VersionKey.long, [variable, variable, variable]]) as versioned.VersionedTrie<bigint>;
+    expect(profile.decodeProof(int(1n))).toEqual(mismatch("expected a VersionedTrie"));
+  });
+
+  it("an iterable Proxy of an array reporting a length no array has is refused", { timeout: 5_000 }, () => {
+    for (const length of [Number.POSITIVE_INFINITY, -1, "2", 1.5, Symbol("length")]) {
+      const entries = new Proxy([[Uint8Array.of(0x61), v1]], { get: (t, name) => (name === "length" ? length : (Reflect.get(t, name) as unknown)) });
+      expect(expectErr(trie.trieRoot(T, variable, bad(entries)), String(length)).kind).toBe("TypeMismatch");
+      const leaves = new Proxy([[1n, expectOk(poseidon.Fr.of(1n), "fr")]], { get: (t, name) => (name === "length" ? length : (Reflect.get(t, name) as unknown)) });
+      expect(expectErr(poseidon.treeRoot(4, bad(leaves)), String(length)).kind).toBe("TypeMismatch");
+    }
   });
 
   it("merkle, versioned and poseidon", () => {

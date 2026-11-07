@@ -668,7 +668,11 @@ export class MapValue {
     const kept: Entry[] = [];
     // an array the intrinsic iterator would walk is read as it would, by index, with nothing to close
     if (walksAsArray(given, method)) {
-      for (let i = 0; i < given.length; i++) {
+      for (let i = 0; ; i++) {
+        // the length each step, as the array iterator reads it; a Proxy's may be one no array has, never looped up to
+        const length: unknown = given.length;
+        if (!isArrayLength(length)) return err(notEntries);
+        if (i >= length) break;
         const refused = MapValue.entry(seen, kept, given[i], i);
         if (refused !== undefined) return err(refused);
       }

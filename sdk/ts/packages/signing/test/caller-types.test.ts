@@ -17,7 +17,10 @@ import {
   generateMnemonic,
   icarus,
   KesProduct,
+  KesProductKey,
   KesSum,
+  KesSumKey,
+  CardanoSumKesKey,
   Message32,
   Mnemonic,
   mnemonicToSeed,
@@ -380,5 +383,29 @@ describe("BIP-39 and derivation refuse arguments of the wrong type", () => {
     // a chain code is read by its internal length and copied
     const cc = liar(new Uint8Array(32).fill(4), 3);
     expect(expectOk(ExtendedKey.of(master.key, cc), "32 bytes").chainCode).toEqual(new Uint8Array(32).fill(4));
+  });
+});
+
+describe("a KES key built by calling its constructor from outside never signs, and never evolves into a key of this package's", () => {
+  it("sum, product and Cardano keys", () => {
+    const sum = expectOk(KesSum.of("SHA-256", 2), "sum");
+    const product = expectOk(KesProduct.of("SHA-256", 1, 1), "product");
+    const cardano = expectOk(CardanoSumKes.of(1), "cardano");
+    let ran = 0;
+    // operations of the caller's own, which a forged key would run if any method trusted it
+    const ops = { sign: () => ((ran += 1), new Uint8Array(96)), evolve: () => ((ran += 1), { ok: true, value: {} }), root: () => new Uint8Array(32), encode: () => new Uint8Array(0) };
+    const forged = [
+      ["KesSumKey", Reflect.construct(KesSumKey, [Symbol("token"), sum, ops, { leaf: true }, 0]) as unknown, sum],
+      ["KesProductKey", Reflect.construct(KesProductKey, [Symbol("token"), product, ops, { superTree: {}, subTree: {}, nextSeed: new Uint8Array(32), superSig: new Uint8Array(0) }, 0]) as unknown, product],
+      ["CardanoSumKesKey", Reflect.construct(CardanoSumKesKey, [Symbol("token"), cardano, new Uint8Array(128), 0]) as unknown, cardano],
+    ] as const;
+    for (const [name, key, scheme] of forged) {
+      const k = key as { sign(m: Uint8Array): unknown; evolve(): unknown; evolveTo(t: number): unknown };
+      expect(k.evolve(), `${name}.evolve`).toEqual(mismatch(`expected a ${name}`));
+      expect(k.sign(empty), `${name}.sign`).toEqual(mismatch(`expected a ${name}`));
+      expect(k.evolveTo(1), `${name}.evolveTo`).toEqual(mismatch(`expected a ${name}`));
+      expect((scheme as { sign(k: unknown, m: Uint8Array): unknown }).sign(key, empty), `${name} scheme sign`).toEqual(mismatch(`expected a ${name}`));
+    }
+    expect(ran, "no operation of the caller's ran").toBe(0);
   });
 });

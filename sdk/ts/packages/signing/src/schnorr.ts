@@ -26,6 +26,7 @@ import {
   verifyBytesWith,
   verifyingKeyOf,
   type CryptoRefusal,
+  type MessageReader,
   type SchemeCodec,
   type SeedDerivation,
   type Verifier,
@@ -64,8 +65,12 @@ export class Message32 {
 /** A `Message32` made by `Message32.of` (a private-brand check: an object with `bytes` is not one), its own bytes. */
 const message32Arg = (m: unknown): Result<Uint8Array, TypeMismatch> => {
   const b = message32Of(m);
-  return b === undefined ? err(expected("a Message32")) : ok(b);
+  return b === undefined ? err(NOT_A_MESSAGE32) : ok(b);
 };
+const NOT_A_MESSAGE32 = expected("a Message32");
+
+/** {@link message32Arg} as a verification reads it: nothing allocated. */
+const message32s: MessageReader<Uint8Array> = Object.freeze({ read: (m: unknown) => message32Of(m), refusal: NOT_A_MESSAGE32 });
 
 type SchnorrName = "BIP-340" | "secp256k1-tagged-Schnorr";
 const N = secp256k1.Point.Fn.ORDER;
@@ -137,8 +142,8 @@ export const bip340: Bip340Scheme = Object.freeze({
   ...seedIsKey(bip340Codec),
   sign: (key: SigningKey<"BIP-340">, message: Message32, aux: Uint8Array) => signWith("BIP-340", key, message, message32Arg, own, () => auxOf(aux)),
   signRandom: (key: SigningKey<"BIP-340">, message: Message32) => signWith("BIP-340", key, message, message32Arg, own, fresh),
-  verify: checkedVerify("BIP-340", message32Arg, verifyRaw),
-  verifyBytes: verifyBytesWith(bip340Codec, message32Arg, verifyRaw),
+  verify: checkedVerify("BIP-340", message32s, verifyRaw),
+  verifyBytes: verifyBytesWith(bip340Codec, message32s, verifyRaw),
 });
 
 /** The dilf4s scheme signs `taggedHash_SHA256("dilf4s/sig/bip340/v1", message)` with BIP-340. */

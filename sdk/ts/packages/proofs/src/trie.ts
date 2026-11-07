@@ -10,13 +10,13 @@
  * item): an argument of the wrong type is core's `TypeMismatch` (check.ts). A caller's key or bound is read through
  * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
-import { BYTES_TAG, describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
+import { BYTES_TAG, describeFailure, err, isValue, models, ok, type Err, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
 import { bytesLength, mint, outputSizeOf, plainBytes, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_NUMBER, NOT_BYTES, readArray, readIterable, readPair, TOKEN, valueArg, type Token } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_NUMBER, NOT_A_VALUE, NOT_BYTES, readArray, readIterable, readPair, TOKEN, valueArg, type Token } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 import { TRIE } from "./trie-internal.js";
 
@@ -53,6 +53,9 @@ const MODE = mint();
 const SEGMENT = mint();
 const HASHING = mint();
 const PROOF = mint();
+const VERIFIED = mint();
+/** The refusal of a `VerifiedTrieProof` method called on what `verify` did not make (a constructor called from outside). */
+const NOT_VERIFIED = expected("a VerifiedTrieProof");
 
 let isMode!: (x: unknown) => x is KeyMode;
 
@@ -340,8 +343,6 @@ let topOf!: (p: TrieProof) => ProofNode | undefined;
 let isProof!: (x: unknown) => x is TrieProof;
 let createProof!: (top: ProofNode | undefined) => TrieProof;
 
-/** `x` if it is a {@link TrieProof} made here (a private-brand check: no Proxy trap or caller code runs). */
-const proofArg = (x: unknown): Result<TrieProof, TypeMismatch> => (isProof(x) ? ok(x) : err(expected("a TrieProof")));
 
 /** A decoded, well-formed partial trie (not yet checked against a root). An empty proof is the proof of the empty trie. */
 export class TrieProof {
@@ -551,25 +552,21 @@ function rootText(root: Uint8Array, width: number): string {
   return root.length === width ? toHexOf(root) : `a root of ${root.length.toString()} bytes`;
 }
 
-/** The checked arguments of a check against a root: a hashing, a mode, a root (a plain view) and a proof. */
-function checkArgs(hashing: unknown, mode: unknown, root: unknown, proof: unknown): Result<readonly [TrieHashing, KeyMode, Uint8Array, TrieProof], TypeMismatch> {
-  const h = hashingArg(hashing);
-  if (!h.ok) return h;
-  const m = modeArg(mode);
-  if (!m.ok) return m;
-  const r = bytesArg(root);
-  if (!r.ok) return r;
-  const p = proofArg(proof);
-  return p.ok ? ok([h.value, m.value, r.value, p.value]) : p;
-}
+const NOT_A_HASHING = expected("a TrieHashing");
+const NOT_A_MODE = expected("a KeyMode");
+const NOT_A_PROOF = expected("a TrieProof");
 
 /**
  * {@link verify} with a root mismatch as the error `RootMismatch` (as Scala's `TrieProofs.verify`), for composed checks.
  * What is not a `TrieHashing`, a `KeyMode`, a `Uint8Array` root or a `TrieProof` is a `TypeMismatch`.
  */
 export function check(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: TrieProof): Result<VerifiedTrieProof, Refusal> {
-  const a = checkArgs(hashing, mode, root, proof);
-  return a.ok ? checkOf(...a.value) : a;
+  // each check allocates nothing but the root's plain view; a refusal is a shared constant
+  if (!isHashing(hashing)) return err(NOT_A_HASHING);
+  if (!isMode(mode)) return err(NOT_A_MODE);
+  const r = plainBytes(root);
+  if (r === undefined) return err(NOT_BYTES);
+  return isProof(proof) ? checkOf(hashing, mode, r, proof) : err(NOT_A_PROOF);
 }
 
 function checkOf(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: TrieProof): Result<VerifiedTrieProof, TrieError> {
@@ -627,15 +624,18 @@ const claimedArg = (claimed: unknown): Result<TrieEntry[], TypeMismatch> =>
 export class VerifiedTrieProof {
   readonly #top: ProofNode | undefined;
   private constructor(
+    token: Token,
     readonly mode: KeyMode,
     top: ProofNode | undefined,
   ) {
-    this.#top = top;
+    // without the token the caller's tree is never kept, and no method answers for the instance
+    this.#top = token === TOKEN ? top : undefined;
+    if (token === TOKEN) VERIFIED.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    createVerified = (mode, top) => new VerifiedTrieProof(mode, top);
+    createVerified = (mode, top) => new VerifiedTrieProof(TOKEN, mode, top);
     verifiedTop = (v) => v.#top;
     lookupOf = (v, key, n) => {
       const valid = checkKeyLength(v.mode, n);
@@ -653,12 +653,14 @@ export class VerifiedTrieProof {
    * validity and the walk, which reads it by index only: O(1) to check, and nothing allocated.
    */
   lookup(key: Uint8Array): Result<Lookup, Refusal> {
+    if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
     const n = bytesLength(key);
     return n === undefined ? err(NOT_BYTES) : lookupOf(this, key, n);
   }
 
   /** Every entry whose key starts with `prefix`, in key order, if the proof covers the whole subtree. */
   prefix(prefix: Uint8Array): Result<Listing, TypeMismatch> {
+    if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
     const p = bytesArg(prefix);
     return p.ok ? ok(TRIE.prefix(this, p.value)) : p;
   }
@@ -669,6 +671,7 @@ export class VerifiedTrieProof {
    * `until` aside) are a `TypeMismatch`.
    */
   range(from: Uint8Array, until?: Uint8Array): Result<Listing, TypeMismatch> {
+    if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
     const f = bytesArg(from);
     if (!f.ok) return f;
     const u = boundArg(until);
@@ -681,6 +684,7 @@ export class VerifiedTrieProof {
    * of `TrieEntry` objects of `Uint8Array`s (each read once, by index) is a `TypeMismatch`.
    */
   listsPrefix(prefix: Uint8Array, claimed: readonly TrieEntry[]): Result<boolean, Refusal> {
+    if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
     const p = bytesArg(prefix);
     if (!p.ok) return p;
     const c = claimedArg(claimed);
@@ -689,6 +693,7 @@ export class VerifiedTrieProof {
 
   /** Whether `claimed`, in key order, is exactly the listing of `[from, until)`, as {@link listsPrefix} compares it. */
   listsRange(from: Uint8Array, until: Uint8Array | undefined, claimed: readonly TrieEntry[]): Result<boolean, Refusal> {
+    if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
     const f = bytesArg(from);
     if (!f.ok) return f;
     const u = boundArg(until);
@@ -732,16 +737,14 @@ const verdictOf = (v: boolean | undefined): Result<boolean, TrieError> =>
 /** A claimed entry: a key and its value (never null), committed by `commit(v)`. */
 export type ClaimedEntry = readonly [Uint8Array, Value];
 
-/** The checked profile and inputs every JLVM operation starts from: a hashing, a mode, a root and a proof value. */
-function opArgs(hashing: unknown, mode: unknown, root: unknown, proof: unknown): Result<readonly [TrieHashing, KeyMode, Uint8Array, Value], TypeMismatch> {
-  const h = hashingArg(hashing);
-  if (!h.ok) return h;
-  const m = modeArg(mode);
-  if (!m.ok) return m;
-  const r = bytesArg(root);
-  if (!r.ok) return r;
-  const p = valueArg(proof);
-  return p.ok ? ok([h.value, m.value, r.value, p.value]) : p;
+/**
+ * The refusal of the profile and proof every JLVM operation starts from (a hashing, a mode and a proof value), or
+ * `undefined` when all three are of their types: nothing is allocated for a check that passes.
+ */
+function refuseOp(hashing: unknown, mode: unknown, proof: unknown): Err<TypeMismatch> | undefined {
+  if (!isHashing(hashing)) return err(NOT_A_HASHING);
+  if (!isMode(mode)) return err(NOT_A_MODE);
+  return isValue(proof) ? undefined : err(NOT_A_VALUE);
 }
 
 function verified(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: Value): Result<VerifiedTrieProof | null, TrieError> {
@@ -765,9 +768,13 @@ const isAbsence = (v: Value | null): boolean => v === null || v.kind === "null";
  * nor a canonical value (an object posing as a null value included) is a `TypeMismatch`, never a claim of absence.
  */
 export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, key: Uint8Array, value: Value | null, proof: Value): Result<boolean, Refusal> {
-  const a = opArgs(hashing, mode, root, proof);
-  if (!a.ok) return a;
-  const [h, m, r, p] = a.value;
+  const refused = refuseOp(hashing, mode, proof);
+  if (refused !== undefined) return refused;
+  const h = hashing;
+  const m = mode;
+  const p = proof;
+  const r = plainBytes(root);
+  if (r === undefined) return err(NOT_BYTES);
   const n = bytesLength(key);
   if (n === undefined) return err(NOT_BYTES);
   const claim = claimArg(value);
@@ -826,9 +833,13 @@ function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly (
  * under `prefix`. Every argument's type is checked first; the entries are read by index, once each.
  */
 export function triePrefixVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, prefix: Uint8Array, entries: readonly ClaimedEntry[], proof: Value): Result<boolean, Refusal> {
-  const a = opArgs(hashing, mode, root, proof);
-  if (!a.ok) return a;
-  const [h, m, r, p] = a.value;
+  const refused = refuseOp(hashing, mode, proof);
+  if (refused !== undefined) return refused;
+  const h = hashing;
+  const m = mode;
+  const p = proof;
+  const r = plainBytes(root);
+  if (r === undefined) return err(NOT_BYTES);
   const pre = bytesArg(prefix);
   if (!pre.ok) return pre;
   const given = entriesArg(entries);
@@ -850,9 +861,13 @@ export function trieRangeVerify(
   entries: readonly ClaimedEntry[],
   proof: Value,
 ): Result<boolean, Refusal> {
-  const a = opArgs(hashing, mode, root, proof);
-  if (!a.ok) return a;
-  const [h, m, r, p] = a.value;
+  const refused = refuseOp(hashing, mode, proof);
+  if (refused !== undefined) return refused;
+  const h = hashing;
+  const m = mode;
+  const p = proof;
+  const r = plainBytes(root);
+  if (r === undefined) return err(NOT_BYTES);
   const f = bytesArg(from);
   if (!f.ok) return f;
   const u = until === null ? ok(undefined) : bytesArg(until);

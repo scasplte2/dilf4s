@@ -58,6 +58,9 @@ const signedMessageOf = (m: unknown): Result<Uint8Array, TypeMismatch> => {
 const keyArg = <K>(brand: Mint, x: unknown, what: string): Result<K, TypeMismatch> => (brand.has(x) ? ok(x as K) : err(expected(what)));
 
 const SUM_KEY = mint();
+const SUM_KEY_OF = "a KesSumKey";
+const PRODUCT_KEY_OF = "a KesProductKey";
+const CARDANO_KEY_OF = "a CardanoSumKesKey";
 const PRODUCT_KEY = mint();
 const CARDANO_KEY = mint();
 
@@ -221,7 +224,7 @@ function hashCheck(hash: HashAlgorithm): Result<HashAlgorithm, KesRefusal> {
   return outputSizeOf(hash) >= 32 ? ok(hash) : err(malformed("KES hash", `${hash} has an output below 32 bytes`));
 }
 
-function evolveTo<K extends KesKey>(key: K, target: unknown, total: number, evolve: (k: K) => Result<K, KesError>): Result<K, KesRefusal> {
+function evolveTo<K extends KesKey>(key: K, target: unknown, total: number, evolve: (k: K) => Result<K, KesRefusal>): Result<K, KesRefusal> {
   if (typeof target !== "number") return err(NOT_A_NUMBER);
   if (!Number.isInteger(target) || target < key.period || target >= total) return err(outOfRange(target, total));
   let k = key;
@@ -271,6 +274,7 @@ export class KesSumKey extends KesKey {
 
   /** A signature at this key's period; a message that is not a `Uint8Array` is a `TypeMismatch`. */
   sign(message: Uint8Array): Result<Uint8Array, KesRefusal> {
+    if (!SUM_KEY.has(this)) return err(expected(SUM_KEY_OF));
     const m = signedMessageOf(message);
     if (!m.ok) return m;
     const s = this.#ops.sign(this.#tree, this.scheme.height, this.period, m.value);
@@ -278,7 +282,9 @@ export class KesSumKey extends KesKey {
   }
 
   /** The key for the next period. */
-  evolve(): Result<KesSumKey, KesError> {
+  evolve(): Result<KesSumKey, KesRefusal> {
+    // a key built by calling the constructor from outside holds the caller's state: it never mints a key of this package
+    if (!SUM_KEY.has(this)) return err(expected(SUM_KEY_OF));
     const t = this.#ops.evolve(this.#tree, this.scheme.height, this.period);
     if (!t.ok) return t.error.kind === "Exhausted" ? err({ kind: "Exhausted", period: this.period }) : t;
     return ok(new KesSumKey(INTERNAL, this.scheme, this.#ops, t.value, this.period + 1));
@@ -294,7 +300,6 @@ export class KesSumKey extends KesKey {
   }
 }
 
-const SUM_KEY_OF = "a KesSumKey";
 
 /** The dilf4s sum composition over `H`: `2^height` periods, signatures `vk || Ed25519 sig || Merkle path`. */
 export class KesSum {
@@ -429,6 +434,7 @@ export class KesProductKey extends KesKey {
 
   /** `superSig || subRoot || subSig`; a message that is not a `Uint8Array` is a `TypeMismatch`. */
   sign(message: Uint8Array): Result<Uint8Array, KesRefusal> {
+    if (!PRODUCT_KEY.has(this)) return err(expected(PRODUCT_KEY_OF));
     const m = signedMessageOf(message);
     if (!m.ok) return m;
     const { subTree, superSig } = this.#parts;
@@ -437,7 +443,9 @@ export class KesProductKey extends KesKey {
   }
 
   /** Within a sub tree, evolve it; at its end, evolve the super tree and certify the next sub tree. */
-  evolve(): Result<KesProductKey, KesError> {
+  evolve(): Result<KesProductKey, KesRefusal> {
+    // a key built by calling the constructor from outside holds the caller's state: it never mints a key of this package
+    if (!PRODUCT_KEY.has(this)) return err(expected(PRODUCT_KEY_OF));
     const { superTree, subTree } = this.#parts;
     const subPeriods = 2 ** this.scheme.subHeight;
     const tSup = Math.floor(this.period / subPeriods);
@@ -462,7 +470,6 @@ export class KesProductKey extends KesKey {
   }
 }
 
-const PRODUCT_KEY_OF = "a KesProductKey";
 
 /** The dilf4s product composition: a super sum tree certifies `2^superHeight` successive sub sum trees. */
 export class KesProduct {
@@ -652,12 +659,15 @@ export class CardanoSumKesKey extends KesKey {
 
   /** A signature at this key's period; a message that is not a `Uint8Array` is a `TypeMismatch`. */
   sign(message: Uint8Array): Result<Uint8Array, TypeMismatch> {
+    if (!CARDANO_KEY.has(this)) return err(expected(CARDANO_KEY_OF));
     const m = signedMessageOf(message);
     return m.ok ? ok(cardanoSign(this.bytes, this.scheme.depth, this.period, m.value)) : m;
   }
 
   /** The key for the next period (`updateKES`); the last period cannot evolve. */
-  evolve(): Result<CardanoSumKesKey, KesError> {
+  evolve(): Result<CardanoSumKesKey, KesRefusal> {
+    // a key built by calling the constructor from outside holds the caller's state: it never mints a key of this package
+    if (!CARDANO_KEY.has(this)) return err(expected(CARDANO_KEY_OF));
     const next = cardanoUpdate(this.bytes, this.scheme.depth, this.period);
     if (!next.ok) return next;
     return next.value === undefined ? err({ kind: "Exhausted", period: this.period }) : ok(new CardanoSumKesKey(INTERNAL, this.scheme, next.value, this.period + 1));
@@ -673,7 +683,6 @@ export class CardanoSumKesKey extends KesKey {
   }
 }
 
-const CARDANO_KEY_OF = "a CardanoSumKesKey";
 
 /**
  * cardano-base `Cardano.Crypto.KES.Sum`, `SumKES Blake2b_256` over `SingleKES Ed25519DSIGN`, depths 0 to 7, byte for

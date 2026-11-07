@@ -82,7 +82,9 @@ export function foldIterable<S, E>(x: unknown, init: S, step: (s: S, v: unknown,
   const method: unknown = Reflect.get(x, Symbol.iterator);
   let state = init;
   if (walksAsArray(x, method)) {
-    const length = x.length;
+    // a Proxy of an array walks as one, and may report any length: only one an array can have is read up to
+    const length: unknown = x.length;
+    if (!isArrayLength(length)) return err(typeMismatch(NOT_ITERABLE));
     for (let i = 0; i < length; i++) {
       const r = step(state, x[i], i);
       if (!r.ok) return r;

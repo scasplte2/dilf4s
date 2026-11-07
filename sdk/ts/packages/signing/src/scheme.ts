@@ -10,8 +10,8 @@ import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
 import { copyBytes, plainBytes } from "@kd5ujc/dilf4s-core/internal";
 
 import { lengthError, type CryptoError } from "./errors.js";
-import { Signature, signatureBytes, signingKeyBytes, SigningKey, VerifyingKey, verifyingKeyBytes, type KeyPair, type SchemeName } from "./keys.js";
-import { NOT_BYTES, signedOf, verdict, viewOf } from "./internal/check.js";
+import { ownSignature, ownVerifyingKey, Signature, signingKeyBytes, SigningKey, VerifyingKey, type KeyPair, type SchemeName } from "./keys.js";
+import { expected, NOT_BYTES, signedOf, verdict, viewOf } from "./internal/check.js";
 import { INTERNAL } from "./internal/token.js";
 
 /** A scheme's refusal, or an argument of the wrong type. */
@@ -64,11 +64,17 @@ export function sized(what: string, expected: number, bytes: Uint8Array): Result
   return view.length === expected ? ok(copyBytes(view)) : err(lengthError(what, expected, view.length));
 }
 
-/** A message to verify, as a plain view (see `viewOf`), or a `TypeMismatch`. */
-export const verifiedMessage = (m: unknown): Result<Uint8Array, TypeMismatch> => {
-  const view = viewOf(m);
-  return view === undefined ? err(NOT_BYTES) : ok(view);
-};
+/**
+ * How a verification reads its message: `read` gives the message as the scheme checks it, or `undefined` when it is
+ * not of its type, refused then as `refusal`. Nothing is allocated for a message that passes but what `read` makes.
+ */
+export interface MessageReader<M> {
+  readonly read: (m: unknown) => M | undefined;
+  readonly refusal: TypeMismatch;
+}
+
+/** A message to verify, as a plain view (see `viewOf`); what is not a `Uint8Array` is a `TypeMismatch`. */
+export const verifiedMessage: MessageReader<Uint8Array> = Object.freeze({ read: viewOf, refusal: NOT_BYTES });
 
 /** A message to sign, read once into memory only this thread can change (see `signedOf`), or a `TypeMismatch`. */
 export const signedMessage = (m: unknown): Result<Uint8Array, TypeMismatch> => {
@@ -81,41 +87,45 @@ export type RawVerify<M> = (key: Uint8Array, message: M, signature: Uint8Array) 
 
 /**
  * `verify` for a scheme: the key and signature must be this scheme's (their own bytes are read, never copied), and the
- * message is checked by `messageOf`. The verdict is one of two shared results: nothing is allocated for it.
+ * message is read by `messages`. The checks allocate nothing (a refusal is a shared constant), the verdict is one of
+ * two shared results, and the one allocation is the message's plain view, where `messages` makes one.
  */
 export function checkedVerify<S extends SchemeName, M>(
   scheme: S,
-  messageOf: (m: unknown) => Result<M, TypeMismatch>,
+  messages: MessageReader<M>,
   raw: RawVerify<M>,
 ): (key: VerifyingKey<S>, message: unknown, signature: Signature<S>) => Result<boolean, TypeMismatch> {
+  const notKey = err(expected(`a ${scheme} VerifyingKey`));
+  const notSignature = err(expected(`a ${scheme} Signature`));
+  const notMessage = err(messages.refusal);
   return (key, message, signature) => {
-    const k = verifyingKeyBytes(key, scheme);
-    if (!k.ok) return k;
-    const s = signatureBytes(signature, scheme);
-    if (!s.ok) return s;
-    const m = messageOf(message);
-    return m.ok ? verdict(raw(k.value, m.value, s.value)) : m;
+    const k = ownVerifyingKey(key, scheme);
+    if (k === undefined) return notKey;
+    const s = ownSignature(signature, scheme);
+    if (s === undefined) return notSignature;
+    const m = messages.read(message);
+    return m === undefined ? notMessage : verdict(raw(k, m, s));
   };
 }
 
 /** Composes the decoders with a raw verification: the message's type, then the key, then the signature. */
 export function verifyBytesWith<S extends SchemeName, M>(
   codec: SchemeCodec<S>,
-  messageOf: (m: unknown) => Result<M, TypeMismatch>,
+  messages: MessageReader<M>,
   raw: RawVerify<M>,
 ): (key: Uint8Array, message: unknown, signature: Uint8Array) => Result<boolean, CryptoRefusal> {
+  const notMessage = err(messages.refusal);
   return (key, message, signature) => {
-    const m = messageOf(message);
-    if (!m.ok) return m;
+    const m = messages.read(message);
+    if (m === undefined) return notMessage;
     const k = codec.verifyingKey(key);
     if (!k.ok) return k;
     const s = codec.signature(signature);
     if (!s.ok) return s;
     // the decoded key and signature are this scheme's own: their bytes are read, never copied again
-    const kb = verifyingKeyBytes(k.value, codec.name);
-    if (!kb.ok) return kb;
-    const sb = signatureBytes(s.value, codec.name);
-    return sb.ok ? verdict(raw(kb.value, m.value, sb.value)) : sb;
+    const kb = ownVerifyingKey(k.value, codec.name);
+    const sb = ownSignature(s.value, codec.name);
+    return kb === undefined || sb === undefined ? err(expected(`a ${codec.name} key and signature`)) : verdict(raw(kb, m, sb));
   };
 }
 
