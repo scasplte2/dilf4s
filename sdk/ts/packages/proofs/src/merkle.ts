@@ -239,10 +239,14 @@ const INT64_MAX = (1n << 63n) - 1n;
 // the one way to an Int64: a wider caller value is saturated
 const int64 = (n: bigint): Int64 => (n > INT64_MAX ? INT64_MAX : n < -INT64_MAX - 1n ? -INT64_MAX - 1n : n) as Int64;
 
-/** A caller's path: an array of `Uint8Array`s, read by index, each copied from its own memory. */
-const pathArg = (path: unknown): Result<Uint8Array[], TypeMismatch> =>
+/**
+ * A caller's path: an array of `Uint8Array`s, read by index, each copied from its own memory. With `width` (the
+ * profile's digest size, for a caller that checks every digest's size before using any), a digest of another size is
+ * kept as its plain view, never copied, and refused by that check: an oversized one costs O(1), not a copy.
+ */
+const pathArg = (path: unknown, width?: number): Result<Uint8Array[], TypeMismatch> =>
   readArray(path, "an array of Uint8Arrays", (d, i) => {
-    const own = takeBytes(d);
+    const own = width === undefined ? takeBytes(d) : takeBytesWithin(d, width);
     return own === undefined ? err(expectedAt("a Uint8Array", i)) : ok(own);
   });
 
@@ -593,7 +597,8 @@ export function merkleConsistencyVerify(hashing: MerkleHashing<unknown>, oldHead
 export function merkleRoot(hashing: MerkleHashing<unknown>, leafHashes: readonly Uint8Array[]): Result<Uint8Array, Refusal> {
   const h = profileArg(hashing);
   if (!h.ok) return h;
-  const given = pathArg(leafHashes);
+  // each leaf hash owned if it has the digest's size; one of another size is refused below, uncopied
+  const given = pathArg(leafHashes, h.value.size);
   if (!given.ok) return given;
   const lengths = digests(h.value, given.value);
   if (!lengths.ok) return lengths;

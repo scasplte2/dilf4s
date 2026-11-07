@@ -48,6 +48,8 @@ const invalidProof = (reason: string): Result<never, TrieError> => err({ kind: "
 
 export const MAX_FIXED_BYTES = models.limits.TRIE_MAX_FIXED_KEY_BYTES;
 export const MAX_VARIABLE_BYTES = models.limits.TRIE_MAX_VARIABLE_KEY_BYTES;
+/** The longest key any mode allows, in bytes: a segment or a key longer is refused, by its length, wherever it is checked. */
+const MAX_KEY_BYTES = Math.max(MAX_FIXED_BYTES, MAX_VARIABLE_BYTES);
 
 const MODE = mint();
 const SEGMENT = mint();
@@ -396,7 +398,7 @@ export class TrieProof {
   static fromRecords(hashing: TrieHashing, records: models.trie.TrieProof): Result<TrieProof, Refusal> {
     const h = hashingArg(hashing);
     if (!h.ok) return h;
-    const rs = readArray(records, "an array of trie records", recordArg);
+    const rs = readArray(records, "an array of trie records", recordArg(h.value.size));
     return rs.ok ? fromRecords(h.value, rs.value) : rs;
   }
 
@@ -462,30 +464,34 @@ function fromRecords(hashing: TrieHashing, records: models.trie.TrieProof): Resu
 
 /**
  * A caller's trie record, its fields read once: a stub `{h}`, a leaf `{s, v}` or a branch `{s, v?, c}`. Each byte field
- * is copied as it is read, before the next getter runs: caller code a later read runs cannot change or detach it.
+ * is copied as it is read, before the next getter runs: caller code a later read runs cannot change or detach it. A
+ * digest longer than the hashing's `size`, or segment bytes longer than any key, is kept as its plain view, never
+ * copied: the records' checks refuse it by its length before anything of it is kept.
  */
-function recordArg(r: unknown, i: number): Result<models.trie.TrieRecord, TypeMismatch> {
+const recordArg =
+  (size: number) =>
+  (r: unknown, i: number): Result<models.trie.TrieRecord, TypeMismatch> => {
   const bad = err(expectedAt("a trie record of its types", i));
   if (!isObject(r)) return bad;
   // each read guarded: a getter run by an earlier read may have revoked the record; no field's check takes REVOKED
   const h: unknown = readGuarded(r, "h");
   if (h !== undefined) {
-    const hb = takeBytes(h);
+    const hb = takeBytesWithin(h, size);
     return hb === undefined ? bad : ok({ h: hb });
   }
   const s: unknown = readGuarded(r, "s");
   if (!isObject(s)) return bad;
   const n: unknown = readGuarded(s, "n");
-  const b = takeBytes(readGuarded(s, "b"));
+  const b = takeBytesWithin(readGuarded(s, "b"), MAX_KEY_BYTES);
   if (typeof n !== "bigint" || b === undefined) return bad;
   const v: unknown = readGuarded(r, "v");
-  const vb = v === undefined ? undefined : takeBytes(v);
+  const vb = v === undefined ? undefined : takeBytesWithin(v, size);
   if (v !== undefined && vb === undefined) return bad;
   const c: unknown = readGuarded(r, "c");
   if (c === undefined) return vb === undefined ? bad : ok({ s: { n, b }, v: vb });
   if (c !== "left" && c !== "right" && c !== "both") return bad;
   return ok(vb === undefined ? { s: { n, b }, c } : { s: { n, b }, v: vb, c });
-}
+};
 
 const wireSegment = (s: B.Bits): models.trie.TrieSegment => ({ n: BigInt(s.length), b: s.bytes.slice(0, (s.length + 7) >> 3) });
 

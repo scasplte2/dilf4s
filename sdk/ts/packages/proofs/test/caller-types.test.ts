@@ -1023,3 +1023,19 @@ describe("a snapshot chunk's size bound is checked before any of its items is re
     }
   });
 });
+
+describe("a digest of the wrong size is refused without being copied", () => {
+  // measured as the bytes held in ArrayBuffers: a 64 MiB copy shows as 64 MiB more, a view as nothing (a collection
+  // between the reads can only lower the count, so a copy is never missed by an increase that is not there)
+  const held = (): number => process.memoryUsage().arrayBuffers;
+  const big = new Uint8Array(64 << 20);
+
+  it("merkleRoot's leaf hashes, and a trie record's stub and value digests and segment bytes", () => {
+    const before = held();
+    expect(expectErr(merkle.merkleRoot(tagged, [big, big, big]), "a 64 MiB leaf hash").kind, "merkleRoot").toBe("Encoding");
+    expect(expectErr(trie.TrieProof.fromRecords(T, bad([{ h: big }])), "a 64 MiB stub").kind, "a stub").toBe("Encoding");
+    expect(expectErr(trie.TrieProof.fromRecords(T, bad([{ s: { n: 8n, b: Uint8Array.of(0x61) }, v: big }])), "a 64 MiB value").kind, "a leaf's value").toBe("Encoding");
+    expect(expectErr(trie.TrieProof.fromRecords(T, bad([{ s: { n: 8n, b: big }, v: v1 }])), "a 64 MiB segment").kind, "a segment").toBe("Encoding");
+    expect(held() - before, "no copy of the 64 MiB buffer was made").toBeLessThan(1 << 20);
+  });
+});
