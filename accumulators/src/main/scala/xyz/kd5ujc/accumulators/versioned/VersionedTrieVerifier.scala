@@ -37,7 +37,7 @@ final class VerifiedState[H] private[versioned] (proof: VerifiedProof[H])(implic
     lookup(key).map { found =>
       value.filterNot(_ == CanonicalValue.CNull) match {
         case None    => found.isEmpty
-        case Some(v) => found.exists(h => VersionedTrie.checkValue(key, v).isRight && h == VersionedTrie.valueHash[H](v))
+        case Some(v) => found.exists(h => VersionedTrie.checkValue(key, v).isRight && VersionedTrie.valueHash[H](v).contains(h))
       }
     }
 

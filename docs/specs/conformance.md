@@ -67,11 +67,16 @@ A refusal costs no more than the spec says, whatever the input:
   at a ceiling of its own and refuses past it as `TooLarge`, never with an exception.
   - **Encodings: 2^31 - 9 bytes** (`MaxEncodedBytes`), the largest array the JVM builds (`Int.MaxValue - 8`). The
     reference's `Cbor.encode` is `Cbor.encodeWithin` at it, and so is its built value commitment
-    (`ValueCommitment.bytes`); each of its own callers refuses past it in its family's kind (a store's `Codec`, the
-    JLVM's `Limit`), never with a throw. The TypeScript SDK encodes, commits and content-hashes within the same ceiling
-    (`cbor.MAX_ENCODED_BYTES`), and its public leaf and value hashing refuse a commitment past it as `TooLarge` with the
-    ceiling as its limit. The reference hashes an encoding as it streams it, never building it, and the Rust SDK
-    holds an encoding of any length: neither has an encoding ceiling.
+    (`ValueCommitment.bytes`). Its streamed forms take the same ceiling, so a hash refuses exactly what a buffer
+    refuses: the content hash (`TaggedHash.value`, `content`, and `valueWithin` for a caller's own limit) and the
+    commitment a Merkle leaf or trie value hashes (`ValueCommitment.source`) refuse past it as `TooLarge` with the
+    ceiling as its limit, checked before the hash absorbs a byte (from the weight when it is over, else measured).
+    Each of its own callers passes the refusal on in its family's kind (a store's `Codec`; a trie's, a Merkle tree's or
+    a versioned trie's `TooLarge`; the JLVM's `Limit`, or `Crypto` for a claim), never with a throw. The TypeScript SDK
+    encodes, commits and content-hashes within the same ceiling (`cbor.MAX_ENCODED_BYTES`), and a limit it is given
+    past the ceiling is the ceiling. The Rust SDK holds and hashes an encoding of any length: it has no ceiling, so a
+    content hash past 2^31 - 9 bytes is a digest there and `TooLarge` in the reference and the TypeScript SDK. No vector
+    pins that difference: no limit these specs set comes near it.
   - **JSON: 2^29 - 24 bytes** (`MaxRenderBytes`) in UTF-8: V8's longest string is 2^29 - 24 UTF-16 units, and a
     rendering has no more units than UTF-8 bytes; the reference's builder stays within the JVM's largest array however
     it grows. The reference's `CanonicalJson.render` is `renderWithin` at it, refusing past it as `TooLarge` with that

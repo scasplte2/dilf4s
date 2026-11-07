@@ -69,11 +69,20 @@ object VersionedTrie {
   def historyMode[V](implicit V: VersionKey[V]): Either[VersionedTrieError, KeyMode] =
     KeyMode.fixed(V.width).leftMap(VersionedTrieError.Trie(_))
 
-  /** The hash a trie commits for a value: `valueHash(commit(v))`, as a JLVM program claims it. */
-  def valueHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Digest[H] = T.valueOf(ValueCommitment.source(v))
+  /**
+   * The hash a trie commits for a value: `valueHash(commit(v))`, as a JLVM program claims it. A commitment past
+   * `Cbor.MaxEncodedBytes` is `TooLarge` with that limit, never hashed; every value a commit accepts is far within it
+   * ([[MaxValueBytes]]).
+   */
+  def valueHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Either[VersionedTrieError, Digest[H]] =
+    ValueCommitment.source(v).bimap(e => VersionedTrieError.TooLarge("the value's commitment", e.limit), T.valueOf)
 
-  /** The hash a trie commits for a byte string: the top trie's slots and the history trie's state roots. */
-  def bytesHash[H](b: ByteVector)(implicit T: TrieHashing[H]): Digest[H] = valueHash(CanonicalValue.bytes(b))
+  /**
+   * The hash a trie commits for one of this store's own fixed-width byte strings: the top trie's slots (a version key
+   * and two digests) and the history trie's state roots (digests). Never a caller's bytes, which go through
+   * [[valueHash]] and its ceiling: so it is not public.
+   */
+  private[versioned] def bytesHash[H](b: ByteVector)(implicit T: TrieHashing[H]): Digest[H] = T.valueOf(ValueCommitment.ofBytes(b))
 
   def trie[A](e: Either[TrieError, A]): Either[VersionedTrieError, A] = e.leftMap(VersionedTrieError.fromTrie)
 

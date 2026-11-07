@@ -107,7 +107,12 @@ object VersionedTrieProofSuite extends SimpleIOSuite {
         val state = get(VersionedTrieVerifier.verifyState(rootOf(head), proof))
         expect
           .same(
-            Right(List(key("fiber/1") -> VersionedTrie.valueHash[H](int(1)), key("fiber/2") -> VersionedTrie.valueHash[H](text("x")))),
+            Right(
+              List(
+                key("fiber/1") -> VersionedTrie.valueHash[H](int(1)).fold(e => sys.error(e.toString), identity),
+                key("fiber/2") -> VersionedTrie.valueHash[H](text("x")).fold(e => sys.error(e.toString), identity)
+              )
+            ),
             state.namespace(ns("fiber"))
           )
           .and(expect.same(Right(Nil), state.namespace(ns("absent"))))

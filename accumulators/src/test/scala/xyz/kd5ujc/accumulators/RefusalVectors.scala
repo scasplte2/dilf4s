@@ -400,7 +400,9 @@ object RefusalVectors {
   /** Merkle proofs over three leaves, under the tagged profile. */
   private def merkleCases: List[Case] = {
     implicit val M: MerkleHashing[H] = MerkleHashing.tagged[H]
-    val leaves = List(int(1), text("b"), CBytes(ByteVector(0x61, 0x61))).map(v => M.leafOf(ValueCommitment.source(v)))
+    val leaves = List(int(1), text("b"), CBytes(ByteVector(0x61, 0x61))).map(v =>
+      M.leafOf(ValueCommitment.source(v).fold(e => sys.error(e.toString), identity))
+    )
     val tree = MerkleTree.fromLeafHashes[H](leaves)
     val p0 = get(MerkleCodec.encodeInclusion(get(tree.inclusionProof(0L))))
     val c1 = get(MerkleCodec.encodeConsistency(get(tree.consistencyProof(1L))))
@@ -503,7 +505,7 @@ object RefusalVectors {
     implicit val M: MerkleHashing[H] = MerkleHashing.tagged[H]
     val T: TrieHashing[H] = TrieHashing[H]
     val cap = ProofInput.MaxProofWeight
-    val one = MerkleTree.fromLeafHashes[H](List(M.leafOf(ValueCommitment.source(int(1)))))
+    val one = MerkleTree.fromLeafHashes[H](List(M.leafOf(ValueCommitment.source(int(1)).fold(e => sys.error(e.toString), identity))))
     val inclusion = get(MerkleCodec.encodeInclusion(get(one.inclusionProof(0L))))
     def leaf(name: String, b: Built) =
       Case(
@@ -512,7 +514,12 @@ object RefusalVectors {
         List("root" -> hex(one.root.bytes), "size" -> 1.asJson, "claim" -> builtJson(b), input(literal(inclusion)))
       )
     val m = get(KeyMode.fixed(1))
-    val t = get(Trie.fromEntries[H](m, List(0x01, 0x02).map(b => ByteVector(b) -> T.valueOf(ValueCommitment.source(int(b))))))
+    val t = get(
+      Trie.fromEntries[H](
+        m,
+        List(0x01, 0x02).map(b => ByteVector(b) -> T.valueOf(ValueCommitment.source(int(b)).fold(e => sys.error(e.toString), identity)))
+      )
+    )
     val proof = get(TrieProofs.encode(get(t.prove(Nil, List(ByteVector.empty)))))
     def claim(name: String, b: Option[Built]) =
       Case(

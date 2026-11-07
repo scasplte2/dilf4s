@@ -406,7 +406,9 @@ object VersionedTrieVectorsSuite extends SimpleIOSuite {
             c.downField("listings").as[List[Json]].getOrElse(Nil).foldMap { l =>
               val n = ns(get(l.hcursor.get[String]("namespace")))
               val es = get(l.hcursor.downField("entries").as[List[Json]])
-                .map(e => key(get(e.hcursor.get[String]("key"))) -> VersionedTrie.valueHash[H](value(get(e.hcursor.get[String]("value")))))
+                .map(e =>
+                  key(get(e.hcursor.get[String]("key"))) -> get(VersionedTrie.valueHash[H](value(get(e.hcursor.get[String]("value")))))
+                )
               expect.same(Right(es), state.namespace(n))
             }
           case "historical" =>

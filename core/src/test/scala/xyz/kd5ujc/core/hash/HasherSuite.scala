@@ -56,7 +56,7 @@ object HasherSuite extends SimpleIOSuite with Checkers {
     val node = TaggedHash[Sha256](DomainTag("dilf4s/mpt/branch/v1").toOption.get)
     val v = CanonicalValue.CInt(42)
     expect(leaf.value(v) != node.value(v), "domains must not collide")
-      .and(expect.same(leaf(xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v)), leaf.value(v)))
+      .and(expect.same(Right(leaf(xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v))), leaf.value(v)))
   }
 
   pureTest("domain tags follow the grammar") {

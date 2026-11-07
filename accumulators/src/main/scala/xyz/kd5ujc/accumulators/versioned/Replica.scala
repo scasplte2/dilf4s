@@ -71,10 +71,9 @@ object Replica {
       // every structural check of the incremental reader: order, sizes, no nulls, the history ending at the head
       checked <- Snapshot.read(trusted, Snapshot.chunks(snapshot.copy(head = trusted)))
       keys    <- checked.history.traverse { case (u, _) => V.encode(u) }
-      state <- VersionedTrie.trie(
-        Trie.fromEntries[H](modes._1, checked.entries.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v) })
-      )
-      _ <- Either.cond(state.root == trusted.stateRoot, (), mismatch("state", trusted.stateRoot, state.root))
+      hashed  <- checked.entries.traverse { case (k, v) => VersionedTrie.valueHash[H](v).map(k.bytes -> _) }
+      state   <- VersionedTrie.trie(Trie.fromEntries[H](modes._1, hashed))
+      _       <- Either.cond(state.root == trusted.stateRoot, (), mismatch("state", trusted.stateRoot, state.root))
       history <- VersionedTrie.trie(
         Trie.fromEntries[H](modes._2, keys.zip(checked.history).map { case (k, (_, s)) => k -> VersionedTrie.bytesHash[H](s.bytes) })
       )
@@ -108,9 +107,8 @@ object Replica {
         case (k, v) =>
           if (v == CNull) VersionedTrieError.Malformed(s"${k.preview.short} is upserted as null").asLeft else VersionedTrie.checkValue(k, v)
       }
-      ops = delta.removes.map(k => k.bytes -> Option.empty[Digest[H]]) ++ delta.upserts.map {
-        case (k, v) => k.bytes -> Option(VersionedTrie.valueHash[H](v))
-      }
+      upserts <- delta.upserts.traverse { case (k, v) => VersionedTrie.valueHash[H](v).map(h => k.bytes -> Option(h)) }
+      ops = delta.removes.map(k => k.bytes -> Option.empty[Digest[H]]) ++ upserts
       state   <- VersionedTrie.trie(r.state.update(ops))
       _       <- Either.cond(state.root == delta.head.stateRoot, (), mismatch("state", delta.head.stateRoot, state.root))
       history <- VersionedTrie.trie(r.history.put(nk, VersionedTrie.bytesHash[H](state.root.bytes)))

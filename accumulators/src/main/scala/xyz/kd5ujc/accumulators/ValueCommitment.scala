@@ -18,12 +18,33 @@ object ValueCommitment {
   val BytesTag: Byte = 0x00
   val CborTag: Byte = 0x01
 
-  /** The commitment, not yet built: hashing it (`MerkleHashing.leafOf`, `TrieHashing.valueOf`) streams it. */
-  def source(v: CanonicalValue): ByteSource =
+  /**
+   * The commitment, not yet built: hashing it (`MerkleHashing.leafOf`, `TrieHashing.valueOf`) streams it.
+   * [[sourceWithin]] at `Cbor.MaxEncodedBytes`, the ceiling [[bytes]] builds within, as the TypeScript SDK's leaf and
+   * value hashes: a longer commitment is `TooLarge`, and is never hashed.
+   */
+  def source(v: CanonicalValue): Either[Cbor.TooLarge, ByteSource] = sourceWithin(v, Cbor.MaxEncodedBytes)
+
+  /**
+   * The commitment of bytes already held whole, which hashing streams and never copies: total, as the bytes are
+   * already in memory. A caller's value goes through [[source]].
+   */
+  private[accumulators] def ofBytes(b: ByteVector): ByteSource = ByteSource.byte(BytesTag.toInt) ++ ByteSource.bytes(b)
+
+  /**
+   * [[source]], if the commitment is at most `maxBytes` long, tag included, with the bounds and refusal of
+   * [[bytesWithin]]: checked before the source exists, from the weight first.
+   */
+  def sourceWithin(v: CanonicalValue, maxBytes: Long): Either[Cbor.TooLarge, ByteSource] = {
+    val limit = maxBytes.max(0L).min(Cbor.MaxEncodedBytes)
+    val refused = Cbor.TooLarge(limit)
     v match {
-      case CanonicalValue.CBytes(b) => ByteSource.byte(BytesTag.toInt) ++ ByteSource.bytes(b)
-      case other                    => ByteSource.byte(CborTag.toInt) ++ Cbor.source(other)
+      case CanonicalValue.CBytes(b) => Either.cond(b.size < limit, ofBytes(b), refused)
+      case other =>
+        if (limit == 0L) Left(refused)
+        else Cbor.sourceWithin(other, limit - 1).bimap(_ => refused, ByteSource.byte(CborTag.toInt) ++ _)
     }
+  }
 
   /**
    * The commitment, built: [[bytesWithin]] at `Cbor.MaxEncodedBytes`, the longest array a value's encoding is built

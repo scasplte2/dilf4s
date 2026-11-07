@@ -446,4 +446,62 @@ object TrieSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Right(true), proved))
       .and(expect.same(Trie.fromEntries[Sha256](mode, entries.drop(2500)).map(_.root), Right(halved.root)))
   }
+
+  pureTest("a proof segment longer than the bits left is InvalidProof, before its length is added or its node hashed") {
+    // a host's lazy BitVector of Long.MaxValue bits: adding it to a depth would wrap negative and pass the bound
+    val huge = BitVector.low(Long.MaxValue)
+    val stub = ProofNode.Stub(value(1))
+    def refused(node: ProofNode[Sha256], mode: KeyMode) =
+      TrieProofs.verify(mode, value(2), TrieProof(Some(node))) match {
+        case Left(TrieError.InvalidProof(_) | TrieError.Encoding(_)) => success
+        case other                                                   => failure(s"expected InvalidProof or Encoding, got $other")
+      }
+    refused(ProofNode.PLeaf(huge, value(3)), fixed2)
+      .and(refused(ProofNode.PLeaf(huge, value(3)), variable4))
+      .and(refused(ProofNode.PBranch(huge, None, Some(stub), Some(stub)), fixed2))
+      .and(refused(ProofNode.PBranch(huge, Some(value(3)), Some(stub), None), variable4))
+      .and(refused(ProofNode.PBranch(BitVector.low(16), None, Some(stub), Some(stub)), fixed2))
+      // and encoding one refuses it by the proof weight before its bytes are built
+      .and(expect.same(Left(TrieError.TooLarge(16777216L)), TrieProofs.encode(TrieProof(Some(ProofNode.PLeaf(huge, value(3)))))))
+      .and(
+        expect.same(
+          Left(TrieError.TooLarge(16777216L)),
+          TrieProofs.encode(TrieProof(Some(ProofNode.PBranch(BitVector.low(16), None, Some(ProofNode.PLeaf(huge, value(3))), Some(stub)))))
+        )
+      )
+  }
+
+  pureTest("a proof built in memory that shares a subtree is refused by its encoded weight before its records are expanded") {
+    // 64 levels of [x, x] over one leaf: 2^64 - 1 records, from 65 nodes
+    val leaf: ProofNode[Sha256] = ProofNode.PLeaf(BitVector.empty, value(1))
+    val shared = (1 to 64).foldLeft(leaf)((x, _) => ProofNode.PBranch(BitVector.empty, None, Some(x), Some(x)))
+    val proof = TrieProof(Some(shared))
+    expect
+      .same(Left(TrieError.TooLarge(16777216L)), TrieProofs.encode(proof))
+      .and(
+        TrieProofs.verify(fixed2, value(2), proof) match {
+          case Left(TrieError.Encoding(_)) => success
+          case other                       => failure(s"expected Encoding, got $other")
+        }
+      )
+  }
+
+  test("the preflight weight of a proof is exactly its encoding's weight") {
+    given cats.Show[(List[ByteVector], List[ByteVector])] = cats.Show.fromToString
+    forall(Gen.zip(Gen.listOfN(12, keyGen(variable4)), Gen.listOfN(3, keyGen(variable4)))) {
+      case (keys, asked) =>
+        val t = Trie.fromEntries[Sha256](variable4, keys.zipWithIndex.map { case (k, i) => k -> value(i) }).toOption.get
+        val proof = t.prove(asked, List(ByteVector.empty)).toOption.get
+        expect.same(TrieProofs.encode(proof).map(_.weight).toOption, proof.top.fold(Option(1L))(TrieProofs.wireWeight))
+    }
+  }
+
+  pureTest("a proof just past the weight limit through shared empty branches is refused before it is expanded or hashed") {
+    // 2^24 - 1 valueless, childless empty branches: 7 bytes of segment and 6 more each, far past the limit
+    val empty: ProofNode[Sha256] = ProofNode.PBranch(BitVector.empty, None, None, None)
+    val shared = (1 to 23).foldLeft(empty)((x, _) => ProofNode.PBranch(BitVector.empty, None, Some(x), Some(x)))
+    expect
+      .same(None, TrieProofs.wireWeight(shared))
+      .and(expect.same(Left(TrieError.TooLarge(16777216L)), TrieProofs.encode(TrieProof(Some(shared)))))
+  }
 }

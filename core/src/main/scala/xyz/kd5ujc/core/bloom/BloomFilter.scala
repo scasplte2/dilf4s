@@ -9,7 +9,7 @@ package xyz.kd5ujc.core.bloom
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{Canonical, CanonicalError, CanonicalValue}
+import xyz.kd5ujc.core.canonical.{Canonical, CanonicalError, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
 
 import scodec.bits.{BitVector, ByteVector}
@@ -50,8 +50,12 @@ final case class BloomFilter[H] private (params: BloomParams, bits: BitVector) {
 
   private def indices(item: ByteVector)(implicit H: Hasher[H]): List[Long] = indicesOf(BloomFilter.tagged[H].apply(item))
 
-  /** A value's indices: the tagged hash of its canonical encoding, streamed into the hash, as `add(Cbor.encode(v))`. */
-  private def valueIndices(v: CanonicalValue)(implicit H: Hasher[H]): List[Long] = indicesOf(BloomFilter.tagged[H].value(v))
+  /**
+   * A value's indices: the tagged hash of its canonical encoding, streamed into the hash, as `add(Cbor.encode(v))`, so an
+   * encoding past `Cbor.MaxEncodedBytes` is `TooLarge`, as `Cbor.encode` refuses it.
+   */
+  private def valueIndices(v: CanonicalValue)(implicit H: Hasher[H]): Either[Cbor.TooLarge, List[Long]] =
+    BloomFilter.tagged[H].value(v).map(indicesOf)
 
   private def indicesOf(digest: Digest[H]): List[Long] = {
     val d = digest.bytes
@@ -68,14 +72,14 @@ final case class BloomFilter[H] private (params: BloomParams, bits: BitVector) {
   def addAll(items: Iterable[ByteVector])(implicit H: Hasher[H]): BloomFilter[H] = items.foldLeft(this)(_ `add` _)
 
   /** Adds a typed value by its canonical encoding, streamed into the hash: never built whole. */
-  def addValue[A: Canonical](value: A)(implicit H: Hasher[H]): Either[CanonicalError, BloomFilter[H]] =
-    Canonical[A].canonical(value).map(v => setAll(valueIndices(v)))
+  def addValue[A: Canonical](value: A)(implicit H: Hasher[H]): Either[CanonicalError | Cbor.TooLarge, BloomFilter[H]] =
+    Canonical[A].canonical(value).flatMap(valueIndices).map(setAll)
 
   /** `false` means definitely absent; `true` means possibly present. */
   def contains(item: ByteVector)(implicit H: Hasher[H]): Boolean = indices(item).forall(bits.get)
 
-  def containsValue[A: Canonical](value: A)(implicit H: Hasher[H]): Either[CanonicalError, Boolean] =
-    Canonical[A].canonical(value).map(v => valueIndices(v).forall(bits.get))
+  def containsValue[A: Canonical](value: A)(implicit H: Hasher[H]): Either[CanonicalError | Cbor.TooLarge, Boolean] =
+    Canonical[A].canonical(value).flatMap(valueIndices).map(_.forall(bits.get))
 
   /** The filter of the union of both item sets. */
   def union(that: BloomFilter[H]): Either[BloomError, BloomFilter[H]] =

@@ -254,6 +254,9 @@ contentHash_H(tag, value) = taggedHash_H(tag, encode(value))
   BLAKE2b-256 is BLAKE2b with a 32-byte output parameter, not a truncated BLAKE2b-512. The conformance vectors give a
   plain digest and tagged hashes for each.
 - `tag` is a domain tag matching `^[a-z0-9]+(/[a-z0-9][a-z0-9._-]*)*/v[0-9]+$`, for example `dilf4s/mpt/leaf/v1`.
+- `encode(value)` is streamed into the hash as it is written, never built whole, and it is bounded as a built
+  encoding is: an SDK with an encoding ceiling refuses a content hash past it as `TooLarge` (§2, `conformance.md` §4),
+  before the hash absorbs a byte.
 
 Every structure and message type has its own tag, so a digest produced in one context can never be valid in another. The tag ends with a version, so a format change takes a new tag rather than silently changing bytes.
 

@@ -101,20 +101,41 @@ object Cbor {
   }
 
   /** [[encodeWithin]] into any sink: nothing reaches it unless the whole encoding fits. */
-  private[kd5ujc] def encodeInto[S](value: CanonicalValue, maxBytes: Long, s: S)(implicit sink: ByteSink[S]): Either[TooLarge, S] = {
+  private[kd5ujc] def encodeInto[S](value: CanonicalValue, maxBytes: Long, s: S)(implicit sink: ByteSink[S]): Either[TooLarge, S] =
+    fits(value, maxBytes).map(_ => write(value, s))
+
+  /**
+   * Whether `value`'s encoding is at most `maxBytes` long (as applied): from the weight alone when it is over the limit
+   * (O(1)) or within `1 / `[[EncodingPerWeight]] of it, and otherwise measured ([[encodedLength]], O(weight)).
+   */
+  private def fits(value: CanonicalValue, maxBytes: Long): Either[TooLarge, Unit] = {
     val max = budget(maxBytes)
-    val fits = if (value.weight <= max / EncodingPerWeight) ().asRight else encodedLengthWithin(value, max).void
-    fits.map(_ => write(value, s))
+    if (value.weight <= max / EncodingPerWeight) ().asRight else encodedLengthWithin(value, max).void
   }
 
   /** A caller's limit as it is applied: from 0 to [[MaxEncodedBytes]]. */
   private def budget(maxBytes: Long): Long = maxBytes.max(0L).min(MaxEncodedBytes)
 
   /**
-   * The encoding of `value`, not yet built: built, it is [[encode]], within its ceiling; into a hash, it is hashed as it is written, and never held whole
-   * (`Hasher.digestOf`).
+   * The encoding of `value`, not yet built: [[sourceWithin]] at [[MaxEncodedBytes]], the ceiling [[encode]] builds
+   * within, so a hash and a buffer refuse the same values. Into a hash it is hashed as it is written, and never held
+   * whole (`Hasher.digestOf`).
    */
-  def source(value: CanonicalValue): ByteSource =
+  def source(value: CanonicalValue): Either[TooLarge, ByteSource] = sourceWithin(value, MaxEncodedBytes)
+
+  /**
+   * [[source]], if the encoding is at most `maxBytes` long, with the bounds and refusal of [[encodeWithin]]: checked
+   * before the source exists, so a refused value is never hashed, not even in part.
+   */
+  def sourceWithin(value: CanonicalValue, maxBytes: Long): Either[TooLarge, ByteSource] =
+    fits(value, maxBytes).map(_ => recordSource(value))
+
+  /**
+   * The encoding of one of this library's own fixed-shape records (a trie node: a segment of at most the longest key's
+   * bits and three digests), whose length its shape bounds far within [[MaxEncodedBytes]]: never a caller's value,
+   * which goes through [[source]].
+   */
+  private[kd5ujc] def recordSource(value: CanonicalValue): ByteSource =
     ByteSource.of(new ByteSource.Piece {
       def writeTo[S](s: S)(implicit sink: ByteSink[S]): S = write(value, s)
     })

@@ -293,8 +293,8 @@ object VersionedTrieStore {
     private def valueBatch(fs: Vector[(StateKey, Option[CanonicalValue])]): Batch[StateKey, CanonicalValue] =
       Batch(fs.map { case (k, v) => v.fold[Op[StateKey, CanonicalValue]](Op.Delete(k))(Op.Put(k, _)) })
 
-    private def trieOps(fs: Vector[(StateKey, Option[CanonicalValue])]): List[(ByteVector, Option[Digest[H]])] =
-      fs.toList.map { case (k, v) => k.bytes -> v.map(VersionedTrie.valueHash[H]) }
+    private def trieOps(fs: Vector[(StateKey, Option[CanonicalValue])]): F[List[(ByteVector, Option[Digest[H]])]] =
+      lift(fs.toList.traverse { case (k, v) => v.traverse(VersionedTrie.valueHash[H]).map(k.bytes -> _) })
 
     /**
      * The delta a version will serve must decode in every replica: one heavier than `ProofInput.MaxProofWeight` is
@@ -359,7 +359,7 @@ object VersionedTrieStore {
       batch: Batch[StateKey, CanonicalValue]
     ): F[Draft[V, H]] = {
       val fs = finals(batch)
-      checkBatch(base.isDefined, next, fs) >> state.stage(version(n), trieOps(fs)).flatMap { s =>
+      checkBatch(base.isDefined, next, fs) >> trieOps(fs).flatMap(state.stage(version(n), _)).flatMap { s =>
         draft(
           base,
           rev,
@@ -393,8 +393,9 @@ object VersionedTrieStore {
           _  <- if (after(nk, dk)) ().pure[F] else fail[Unit](VersionedTrieError.VersionNotIncreasing(dk, nk))
           fs = finals(batch)
           // staged on a draft: it is the parent
-          _ <- checkBatch(hasParent = true, next, fs)
-          s <- state.stageOn(d.state, trieOps(fs))
+          _   <- checkBatch(hasParent = true, next, fs)
+          ops <- trieOps(fs)
+          s   <- state.stageOn(d.state, ops)
           nd <- draft(
             d.base,
             d.revision,
@@ -445,7 +446,8 @@ object VersionedTrieStore {
         _      <- if (ek == parent) ().pure[F] else fail[Unit](VersionedTrieError.VersionConflict(ek, Some(nk)))
         floor  <- state.floor
         _      <- if (n - 1 < floor.value) fail[Unit](VersionedTrieError.NotRetained(nk)) else ().pure[F]
-        root   <- state.rootAfter(version(n - 1), trieOps(finals(batch)))
+        ops    <- trieOps(finals(batch))
+        root   <- state.rootAfter(version(n - 1), ops)
         // every answer above is of one revision only if the store did not move while they were read
         _ <- unchangedSince(rev, Some(nk))
         _ <- if (root == h.stateRoot) ().pure[F] else fail[Unit](VersionedTrieError.CommitRewrite(nk))
