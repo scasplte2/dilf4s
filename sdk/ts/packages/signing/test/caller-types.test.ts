@@ -308,14 +308,20 @@ describe("bytes are read by their internal length; another realm's and shared by
     expect(expectOk(ed25519.sign(ed.signing, shared([1, 2])), "shared").equals(sig)).toBe(true);
   });
 
-  it("a message to sign in shared memory is read once, as a copy only this thread can change", () => {
+  it("a message to sign is read once, as a copy only this thread can change, wherever it lives", () => {
     const s = shared([1, 2, 3]);
     const own = signedOf(s);
     expect(own?.buffer instanceof SharedArrayBuffer, "copied out of the shared buffer").toBe(false);
     s.fill(9);
     expect(Array.from(own ?? []), "the bytes as they were when read").toEqual([1, 2, 3]);
+    // a SharedArrayBuffer given ArrayBuffer's prototype looks local: no memory is trusted, every message is copied
+    const disguised = shared([1, 2, 3]);
+    Object.setPrototypeOf(disguised.buffer, ArrayBuffer.prototype);
+    const copied = signedOf(disguised);
+    disguised.fill(9);
+    expect(Array.from(copied ?? []), "a disguised shared buffer is copied too").toEqual([1, 2, 3]);
     const local = Uint8Array.of(1, 2, 3);
-    expect(signedOf(local)?.buffer, "local memory is read in place").toBe(local.buffer);
+    expect(signedOf(local)?.buffer === local.buffer, "local memory is copied as well").toBe(false);
     const other = foreign([1, 2, 3]);
     expect(signedOf(other)?.buffer instanceof ArrayBuffer, "another realm's memory is copied into this realm's").toBe(true);
   });

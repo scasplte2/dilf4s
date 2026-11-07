@@ -1,3 +1,4 @@
+import { isArrayLength } from "./iterator.js";
 import { isPreview, Preview } from "./preview.js";
 
 import type {
@@ -65,7 +66,7 @@ export function describeFailure(failure: DecodeFailure): string {
   const path: unknown = Reflect.get(given, "path");
   const reason: unknown = Reflect.get(given, "reason");
   const length: unknown = Array.isArray(path) ? (path as readonly unknown[]).length : undefined;
-  if (typeof length !== "number" || typeof reason !== "string") return NOT_A_FAILURE;
+  if (!isArrayLength(length) || typeof reason !== "string") return NOT_A_FAILURE;
   const segments: Preview[] = [];
   for (let i = 0; i < length; i++) {
     const p: unknown = (path as readonly unknown[])[i];

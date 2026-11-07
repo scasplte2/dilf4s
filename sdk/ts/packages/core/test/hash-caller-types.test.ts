@@ -235,6 +235,13 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     }
   });
 
+  it("a Proxy reporting a length no array has is refused, never looped over", { timeout: 5_000 }, () => {
+    for (const length of [Number.POSITIVE_INFINITY, 2 ** 53, 1.5, -1, Symbol("length")]) {
+      const parts = new Proxy([], { get: (t, name) => (name === "length" ? length : typeof name === "string" && /^[0-9]+$/.test(name) ? message : (Reflect.get(t, name) as unknown)) });
+      expect(hashParts(sha, parts), String(length)).toEqual(mismatch("expected an array of Uint8Arrays"));
+    }
+  });
+
   it("the algorithm list cannot be extended by a caller", () => {
     expect(Object.isFrozen(HASH_ALGORITHMS)).toBe(true);
     expect(() => (HASH_ALGORITHMS as HashAlgorithm[]).push(bad("MD5"))).toThrow(TypeError);

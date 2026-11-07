@@ -5,7 +5,7 @@
  * the package.
  */
 import { err, isValue, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { close, isAlgorithm, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, plainBytes, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
+import { close, isAlgorithm, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, plainBytes, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
 import type { HashAlgorithm } from "@kd5ujc/dilf4s-core";
 
 /**
@@ -54,7 +54,7 @@ export const isObject = (x: unknown): x is object => (typeof x === "object" && x
 export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: number) => Result<T, E>): Result<T[], E | TypeMismatch> {
   if (!Array.isArray(x)) return err(expected(what));
   const length: unknown = (x as readonly unknown[]).length;
-  if (typeof length !== "number") return err(expected(what));
+  if (!isArrayLength(length)) return err(expected(what));
   const out: T[] = [];
   for (let i = 0; i < length; i++) {
     const r = item((x as readonly unknown[])[i], i);

@@ -9,4 +9,4 @@ export { bitLengthOf } from "./bigint.js";
 export { blockSizeOf, digestOf, hashPartsOf, isAlgorithm, isDomainTag, outputSizeOf, startHashOf, typeMismatch, type RawHash } from "./hash.js";
 export { toHexOf } from "./hex.js";
 export { mint, type Mint } from "./mint.js";
-export { close, isResult, NOT_A_RESULT, NOT_ITERABLE, open, openWith, walksAsArray, type Reader } from "./iterator.js";
+export { close, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, open, openWith, walksAsArray, type Reader } from "./iterator.js";

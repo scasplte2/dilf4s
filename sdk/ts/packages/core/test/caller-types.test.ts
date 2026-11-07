@@ -162,6 +162,20 @@ describe("the constructors refuse a value of the wrong type, never reading it as
   });
 });
 
+describe("a Proxy of an array reporting a length no array has is refused, never looped over", () => {
+  it("Value.array, a codec's vector, describeFailure and hashCommitment's prefix", { timeout: 5_000 }, () => {
+    const one = int(1n);
+    for (const length of [Number.POSITIVE_INFINITY, 2 ** 53, 1.5, -1]) {
+      const proxy = (item: unknown): never =>
+        bad(new Proxy([], { get: (t, name) => (name === "length" ? length : typeof name === "string" && /^[0-9]+$/.test(name) ? item : (Reflect.get(t, name) as unknown)) }));
+      expect(Value.array(proxy(one)), String(length)).toEqual(mismatch("expected an array"));
+      expect(codec.vector(codec.uint, 0, null).encode(proxy(1n)), String(length)).toEqual(mismatch("expected an array"));
+      expect(describeFailure(bad({ path: proxy(Preview.of("a")), reason: "r" })), String(length)).toBe("<not a decode failure>");
+      expect(hashCommitment("SHA-256", proxy(Uint8Array.of(1)), one), String(length)).toEqual(mismatch("expected an array of Uint8Arrays"));
+    }
+  });
+});
+
 describe("an array's items and a map's entries are checked in the pass that reads them", () => {
   const one = int(1n);
 

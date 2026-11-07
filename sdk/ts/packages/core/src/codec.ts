@@ -12,7 +12,7 @@ import { bitLengthOf } from "./bigint.js";
 import { plainBytes } from "./bytes.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
 import { decodeFailure as failure, type CanonicalError, type DecodeFailure, type TooLarge } from "./error.js";
-import { close as closeIterator, isResult, NOT_A_RESULT, NOT_ITERABLE, open, type Reader } from "./iterator.js";
+import { close as closeIterator, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, open, type Reader } from "./iterator.js";
 import { parse as parseJson } from "./json.js";
 import { Preview } from "./preview.js";
 import { search } from "./keyset.js";
@@ -485,7 +485,7 @@ const NOT_NAMES = "the schema's names are not arrays of strings";
  */
 function stringList(x: unknown): readonly string[] | undefined {
   const length: unknown = Array.isArray(x) ? (x as readonly unknown[]).length : undefined;
-  if (typeof length !== "number") return undefined;
+  if (!isArrayLength(length)) return undefined;
   const out: string[] = [];
   for (let i = 0; i < length; i++) {
     const s: unknown = (x as readonly unknown[])[i];
@@ -498,7 +498,7 @@ function stringList(x: unknown): readonly string[] | undefined {
 /** `x` as an array of `[required, allowed]` pairs of string arrays, copied as {@link stringList} copies, or `undefined`. */
 function recordList(x: unknown): readonly (readonly [readonly string[], readonly string[]])[] | undefined {
   const length: unknown = Array.isArray(x) ? (x as readonly unknown[]).length : undefined;
-  if (typeof length !== "number") return undefined;
+  if (!isArrayLength(length)) return undefined;
   const out: (readonly [readonly string[], readonly string[]])[] = [];
   for (let i = 0; i < length; i++) {
     const pair: unknown = (x as readonly unknown[])[i];
@@ -704,7 +704,7 @@ function openEncoding(codec: Codec<unknown>, value: unknown, depth: number, stac
       // read as ArrayValue.of reads one: the length once (a Proxy's need not be a number), then each item by index,
       // never through the array's iterator, so the size checked is the size written
       const length: unknown = Array.isArray(value) ? (value as readonly unknown[]).length : undefined;
-      if (typeof length !== "number") return { done: typeMismatch("expected an array") };
+      if (!isArrayLength(length)) return { done: typeMismatch("expected an array") };
       if (length < s.min || (s.max !== null && length > s.max)) return { done: typeMismatch(`array of ${length.toString()} elements outside the schema size`) };
       return opened({ kind: "vector", items: value as readonly unknown[], length, at: 0, element: s.element, depth: depth + 1, out: [] }, stack);
     }

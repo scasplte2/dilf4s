@@ -4,6 +4,16 @@
  * does not throw. Caller code it runs (a getter, an iterator's methods) may throw. Internal to this package.
  */
 
+/** The greatest length an array can have: `2^32 - 1`. */
+const MAX_ARRAY_LENGTH = 2 ** 32 - 1;
+
+/**
+ * Whether `n`, read once from what a caller passes as an array, is a length an array can have: an integer from 0 to
+ * `2^32 - 1`. A real array's always is; a Proxy of one can report anything (`Infinity`, a fraction, a symbol), and a
+ * loop up to such a length would never end, or would compare a symbol and throw.
+ */
+export const isArrayLength = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= MAX_ARRAY_LENGTH;
+
 /** An iterator and its `next`, read once when it is opened, as `for...of` reads it. */
 export interface Reader<T> {
   readonly iterator: Iterator<T>;

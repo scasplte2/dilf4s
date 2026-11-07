@@ -12,6 +12,8 @@ import { invalidEncoding, invalidKey, lengthError, type CryptoError } from "./er
 import { signatureBytes, signingKeyBytes, verifyingKeyBytes } from "./keys.js";
 import { expectedAt, NOT_A_NUMBER, NOT_BYTES, readArray, verdict, viewOf } from "./internal/check.js";
 import type { KeyPair, Signature, SigningKey, VerifyingKey } from "./keys.js";
+import { takeBytes } from "@kd5ujc/dilf4s-core/internal";
+
 import { attempt } from "./internal/attempt.js";
 import { beToBig, bigToBE, concat, u32be } from "./internal/bytes.js";
 import {
@@ -237,7 +239,8 @@ export const blsPop: BlsScheme = Object.freeze({
   aggregateVerify: (pairs: readonly (readonly [VerifyingKey<typeof NAME>, Uint8Array])[], signature: Signature<typeof NAME>) => {
     const given = tuplesArg(pairs, "a [VerifyingKey, Uint8Array] pair", (t) => {
       const k = keyIn(t[0]);
-      const m = viewOf(t[1]);
+      // copied as read: caller code run by a later read (a Proxy's trap) cannot change an earlier message
+      const m = takeBytes(t[1]);
       return k === undefined || m === undefined ? undefined : ([k, m] as const);
     });
     if (!given.ok) return given;
@@ -256,7 +259,7 @@ export const blsPop: BlsScheme = Object.freeze({
   batchVerify: (triples: readonly (readonly [VerifyingKey<typeof NAME>, Uint8Array, Signature<typeof NAME>])[]) => {
     const given = tuplesArg(triples, "a [VerifyingKey, Uint8Array, Signature] triple", (t) => {
       const k = keyIn(t[0]);
-      const m = viewOf(t[1]);
+      const m = takeBytes(t[1]);
       const s = signatureIn(t[2]);
       return k === undefined || m === undefined || s === undefined ? undefined : ([k, m, s] as const);
     });

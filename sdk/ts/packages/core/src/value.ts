@@ -28,7 +28,7 @@ import { copyBytes, takeBytes } from "./bytes.js";
 import type { CanonicalError, TypeMismatch } from "./error.js";
 import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_DIGITS, CANONICAL_MAX_INTEGER_BITS, CANONICAL_MAX_RATIONAL_BITS, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
 import { toHexOf } from "./hex.js";
-import { close, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, walksAsArray } from "./iterator.js";
+import { close, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, walksAsArray } from "./iterator.js";
 import { KeySet, search } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
@@ -582,7 +582,7 @@ export class ArrayValue {
   static of(items: readonly Value[]): Result<ArrayValue, CanonicalError> {
     // the length read once: a real array's is a number, a Proxy's need not be (and comparing a symbol throws)
     const length: unknown = Array.isArray(items) ? items.length : undefined;
-    if (typeof length !== "number") return err(notAnArray);
+    if (!isArrayLength(length)) return err(notAnArray);
     const kept: Value[] = [];
     let [deepest, weight] = [0, 1n];
     for (let i = 0; i < length; i++) {

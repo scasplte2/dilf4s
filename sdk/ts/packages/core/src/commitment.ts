@@ -3,6 +3,7 @@ import { checkedLimit, tooLarge } from "./budget.js";
 import { encodeIntoWithin, encodeWithin, Feeding, MAX_ENCODED_BYTES, type Absorber, type EncodeError } from "./cbor.js";
 import type { TypeMismatch } from "./error.js";
 import { isAlgorithm, startHashOf, type HashAlgorithm } from "./hash.js";
+import { isArrayLength } from "./iterator.js";
 import { err, ok, type Result } from "./result.js";
 import { takeBytes } from "./bytes.js";
 import { bytesView, type Value } from "./value.js";
@@ -57,7 +58,7 @@ const notAPrefix: TypeMismatch = { kind: "TypeMismatch", reason: "expected an ar
  */
 function prefixParts(prefix: unknown): readonly Uint8Array[] | undefined {
   const length: unknown = Array.isArray(prefix) ? prefix.length : undefined;
-  if (typeof length !== "number" || !Array.isArray(prefix)) return undefined;
+  if (!isArrayLength(length) || !Array.isArray(prefix)) return undefined;
   const parts: Uint8Array[] = [];
   for (let i = 0; i < length; i++) {
     const part = takeBytes(prefix[i]);

@@ -17,6 +17,7 @@ import { encodeIntoWithin, Feeding, MAX_ENCODED_BYTES, type EncodeError } from "
 import type { TypeMismatch } from "./error.js";
 import type { ExpansionRefusal, HashError, HashErrorKind } from "./generated/hash_errors.js";
 import { firstNonDigit, fromHex } from "./hex.js";
+import { isArrayLength } from "./iterator.js";
 import { mint } from "./mint.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Err, type Result } from "./result.js";
@@ -308,7 +309,7 @@ export function hashParts(algorithm: HashAlgorithm, parts: readonly Uint8Array[]
   const refused = refuseAlgorithm(algorithm);
   if (refused !== undefined) return refused;
   const count: unknown = Array.isArray(parts) ? parts.length : undefined;
-  if (typeof count !== "number") return err(NOT_PARTS);
+  if (!isArrayLength(count)) return err(NOT_PARTS);
   const h = startHashOf(algorithm);
   for (let i = 0; i < count; i++) {
     const part = plainBytes(parts[i]);

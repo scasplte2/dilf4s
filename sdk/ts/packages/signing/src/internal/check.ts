@@ -5,7 +5,7 @@
  * schemes work on plain, owned data.
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { copyBytes, isLocalBuffer, plainBytes, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayLength, plainBytes, takeBytes, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 export const NOT_BYTES = typeMismatch("expected a Uint8Array");
 export const NOT_A_NUMBER = typeMismatch("expected a number");
@@ -27,14 +27,14 @@ export const isObject = (x: unknown): x is object => (typeof x === "object" && x
 export const viewOf = (x: unknown): Uint8Array | undefined => plainBytes(x);
 
 /**
- * Bytes to sign: a plain view when only this thread can change them, otherwise (a `SharedArrayBuffer`, or another
- * realm's memory) a copy taken once. Signing reads a message more than once (Ed25519 hashes it for the nonce and again
- * for the challenge, BIP-340 likewise): another thread rewriting it between the reads would give two signatures with one
- * nonce over two messages, which reveals the key.
+ * Bytes to sign: always a copy, taken once from the caller's memory. Signing reads a message more than once (Ed25519
+ * hashes it for the nonce and again for the challenge, BIP-340 likewise): another thread rewriting it between the
+ * reads would give two signatures with one nonce over two messages, which reveals the key. Whether memory is shared
+ * cannot be told for certain (a `SharedArrayBuffer` can be given `ArrayBuffer`'s prototype), so it is never trusted:
+ * the copy is linear in the message, beside a signature's fixed cost.
  */
 export function signedOf(x: unknown): Uint8Array | undefined {
-  const view = plainBytes(x);
-  return view === undefined || isLocalBuffer(view) ? view : copyBytes(view);
+  return takeBytes(x);
 }
 
 /** {@link viewOf} as a `Result`. */
@@ -50,7 +50,7 @@ export const bytesArg = (x: unknown): Result<Uint8Array, TypeMismatch> => {
 export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: number) => Result<T, E>): Result<T[], E | TypeMismatch> {
   if (!Array.isArray(x)) return err(expected(what));
   const length: unknown = (x as readonly unknown[]).length;
-  if (typeof length !== "number") return err(expected(what));
+  if (!isArrayLength(length)) return err(expected(what));
   const out: T[] = [];
   for (let i = 0; i < length; i++) {
     const r = item((x as readonly unknown[])[i], i);

@@ -11,7 +11,7 @@
  * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
 import { BYTES_TAG, describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { bytesLength, mint, outputSizeOf, plainBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, mint, outputSizeOf, plainBytes, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
@@ -617,8 +617,9 @@ const boundArg = optionalBytes;
 const claimedArg = (claimed: unknown): Result<TrieEntry[], TypeMismatch> =>
   readArray(claimed, "an array of TrieEntry", (e, i) => {
     if (!isObject(e)) return err(expectedAt("a TrieEntry", i));
-    const key = plainBytes(Reflect.get(e, "key"));
-    const valueHash = plainBytes(Reflect.get(e, "valueHash"));
+    // copied as read: caller code run by a later read (a getter, a Proxy's trap) cannot change an earlier entry
+    const key = takeBytes(Reflect.get(e, "key"));
+    const valueHash = takeBytes(Reflect.get(e, "valueHash"));
     return key === undefined || valueHash === undefined ? err(expectedAt("a TrieEntry of Uint8Arrays", i)) : ok({ key, valueHash });
   });
 
@@ -797,7 +798,7 @@ const entriesArg = (entries: unknown): Result<(readonly [Uint8Array, Value])[], 
   readArray(entries, "an array of [key, value] entries", (e, i) => {
     const pair = readPair(e);
     if (pair === undefined) return err(expectedAt("a [key, value] array", i));
-    const key = plainBytes(pair[0]);
+    const key = takeBytes(pair[0]);
     if (key === undefined) return err(expectedAt("a Uint8Array key", i));
     const value = valueArg(pair[1]);
     return value.ok ? ok([key, value.value] as const) : err(expectedAt("a canonical value", i));
@@ -882,9 +883,10 @@ export function trieRoot(hashing: TrieHashing, mode: KeyMode, entries: Iterable<
   if (!m.ok) return m;
   const given = readIterable(entries, (e, i) => {
     const pair = readPair(e);
-    const key = pair === undefined ? undefined : plainBytes(pair[0]);
-    const valueHash = pair === undefined ? undefined : plainBytes(pair[1]);
-    return key === undefined || valueHash === undefined ? err(expectedAt("a [key, valueHash] array of Uint8Arrays", i)) : ok([copyBytes(key), valueHash] as const);
+    const key = pair === undefined ? undefined : takeBytes(pair[0]);
+    const valueHash = pair === undefined ? undefined : takeBytes(pair[1]);
+    // both copied as read: an iterator may hand out one buffer again with new contents
+    return key === undefined || valueHash === undefined ? err(expectedAt("a [key, valueHash] array of Uint8Arrays", i)) : ok([key, valueHash] as const);
   });
   return given.ok ? trieRootOf(h.value, m.value, given.value) : given;
 }

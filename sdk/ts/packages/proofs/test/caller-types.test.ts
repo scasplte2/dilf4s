@@ -104,6 +104,28 @@ describe("a trie key is read by its internal length, for the check and the walk 
   it("a trie root built from lying keys is the root of what they hold", () => {
     expect(expectOk(trie.trieRoot(T, variable, [[liar([0x61], 5), v1], [liar([0x61, 0x62], 1), v2]]), "root")).toEqual(root);
   });
+
+  it("an iterator that hands out one buffer again with new contents is read as it was at each step", () => {
+    function* reused(): Generator<readonly [Uint8Array, Uint8Array]> {
+      const key = new Uint8Array(2);
+      const digest = new Uint8Array(32);
+      for (const [k, d] of [
+        [Uint8Array.of(0x61), v1],
+        [Uint8Array.of(0x61, 0x62), v2],
+      ] as const) {
+        digest.set(d);
+        yield [k.length === 1 ? key.subarray(0, 1).fill(0x61) : key.fill(0x61).fill(0x62, 1), digest];
+      }
+    }
+    expect(expectOk(trie.trieRoot(T, variable, reused()), "root")).toEqual(root);
+  });
+
+  it("a Proxy reporting a length no array has is refused, never looped over", { timeout: 5_000 }, () => {
+    for (const length of [Number.POSITIVE_INFINITY, 2 ** 53, 1.5, -1]) {
+      const fake = new Proxy([], { get: (t, name) => (name === "length" ? length : name === "0" ? [Uint8Array.of(0x61), int(1n)] : (Reflect.get(t, name) as unknown)) });
+      expect(trie.triePrefixVerify(T, variable, root, new Uint8Array(0), fake, full), String(length)).toEqual(mismatch("expected an array of [key, value] entries"));
+    }
+  });
 });
 
 describe("the trie refuses an argument of the wrong type as TypeMismatch", () => {
