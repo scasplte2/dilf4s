@@ -117,7 +117,7 @@ export class KeyMode {
   }
 }
 
-const VALID: Result<undefined, never> = ok(undefined);
+const VALID: Result<undefined, never> = Object.freeze(ok(undefined));
 
 /** {@link KeyMode.checkKey} of a key of `n` bytes (its internal length). */
 function checkKeyLength(mode: KeyMode, n: number): Result<undefined, TrieError> {
@@ -602,8 +602,9 @@ export interface TrieEntry {
 /** A complete listing in key order, or nothing (a stub lies inside the query). */
 export type Listing = { readonly kind: "listed"; readonly entries: readonly TrieEntry[] } | { readonly kind: "notCovered" };
 
-const ABSENT: Lookup = { kind: "absent" };
-const NOT_COVERED: Lookup & Listing = { kind: "notCovered" };
+// shared answers, frozen: one a caller changed would answer every later lookup
+const ABSENT: Lookup = Object.freeze({ kind: "absent" });
+const NOT_COVERED: Lookup & Listing = Object.freeze({ kind: "notCovered" });
 const listed = (entries: readonly TrieEntry[]): Listing => ({ kind: "listed", entries });
 
 let createVerified!: (mode: KeyMode, top: ProofNode | undefined) => VerifiedTrieProof;
@@ -779,7 +780,8 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
   const h = hashing;
   const m = mode;
   const p = proof;
-  const r = plainBytes(root);
+  // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
+  const r = takeBytes(root);
   if (r === undefined) return err(NOT_BYTES);
   const n = bytesLength(key);
   if (n === undefined) return err(NOT_BYTES);
@@ -806,7 +808,7 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
   }
 }
 
-/** A caller's claimed entries: an array of `[key, value]` arrays, read by index, keys as plain views. */
+/** A caller's claimed entries: an array of `[key, value]` arrays, read by index, each key copied before its value is read. */
 const entriesArg = (entries: unknown): Result<(readonly [Uint8Array, Value])[], TypeMismatch> =>
   readArray(entries, "an array of [key, value] entries", (e, i) => {
     const pair = readPair(e);
@@ -844,7 +846,8 @@ export function triePrefixVerify(hashing: TrieHashing, mode: KeyMode, root: Uint
   const h = hashing;
   const m = mode;
   const p = proof;
-  const r = plainBytes(root);
+  // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
+  const r = takeBytes(root);
   if (r === undefined) return err(NOT_BYTES);
   // the entries first: reading them may run caller code, and no view of a bound is held across it
   const given = entriesArg(entries);
@@ -873,7 +876,8 @@ export function trieRangeVerify(
   const h = hashing;
   const m = mode;
   const p = proof;
-  const r = plainBytes(root);
+  // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
+  const r = takeBytes(root);
   if (r === undefined) return err(NOT_BYTES);
   const given = entriesArg(entries);
   if (!given.ok) return given;

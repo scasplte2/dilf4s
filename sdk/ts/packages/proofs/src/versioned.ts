@@ -242,7 +242,7 @@ function bigEndian(width: number, max: bigint): VersionKey<bigint> {
   return key;
 }
 
-export const VersionKey = {
+export const VersionKey = Object.freeze({
   /**
    * Scala's `VersionKey.unsignedLong`: a non-negative 64-bit signed integer as `width` (1..8) bytes. At width 8 the
    * largest version is `2^63 - 1`, as for a JVM `Long`. A width that is not a number is a `TypeMismatch`.
@@ -255,7 +255,7 @@ export const VersionKey = {
 
   /** The default, Scala's `VersionKey.long`: 8 bytes, `0..2^63 - 1` (the JLVM's `int_to_bytes [v, 8]`). */
   long: bigEndian(8, 2n ** 63n - 1n),
-} as const;
+} as const);
 
 /** A caller's version key result, checked: a `Result` of its type, its error copied into one of this module's. */
 function keyResult<T>(r: unknown, value: (v: unknown) => T | undefined): C<T> {
@@ -415,7 +415,8 @@ const entriesArg = (x: unknown, what: string): Result<(readonly [StateKey, Value
   readArray(x, what, (e, i) => {
     const pair = readPair(e);
     if (pair === undefined) return err(expectedAt("a [StateKey, Value] array", i));
-    const [k, v] = pair;
+    const k: unknown = pair[0];
+    const v: unknown = pair[1];
     return isKey(k) && isValue(v) ? ok([k, v] as const) : err(expectedAt("a [StateKey, Value] array", i));
   });
 
@@ -423,8 +424,10 @@ const entriesArg = (x: unknown, what: string): Result<(readonly [StateKey, Value
 const versionsArg = <V>(x: unknown, what: string): Result<(readonly [V, Uint8Array])[], TypeMismatch> =>
   readArray(x, what, (e, i) => {
     const pair = readPair(e);
+    // the version first, then the root, copied as read: nothing read after it can change it
+    const version: unknown = pair?.[0];
     const root = pair === undefined ? undefined : takeBytes(pair[1]);
-    return pair === undefined || root === undefined ? err(expectedAt("a [version, Uint8Array] array", i)) : ok([pair[0] as V, root] as const);
+    return pair === undefined || root === undefined ? err(expectedAt("a [version, Uint8Array] array", i)) : ok([version as V, root] as const);
   });
 
 /** {@link VersionedTrie.checkValue} of a key and a value already checked to be of their types. */

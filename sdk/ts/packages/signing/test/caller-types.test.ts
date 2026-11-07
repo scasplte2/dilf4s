@@ -424,3 +424,16 @@ describe("a KES scheme built by calling its constructor from outside mints no ke
     expect(() => Reflect.construct(KesSum, [Symbol("token"), {}, -1]) as unknown).not.toThrow();
   });
 });
+
+describe("a shared refusal cannot be changed into a verdict", () => {
+  it("mutating a returned refusal leaves the next call's refusal as it was", () => {
+    const ed = expectOk(ed25519.fromSeed(seed), "ed");
+    const sig = expectOk(ed25519.sign(ed.signing, empty), "sig");
+    const first = ed25519.verify(bad(null), empty, sig);
+    expect(() => Object.assign(first, { ok: true, value: true })).toThrow(TypeError);
+    expect(ed25519.verify(bad(null), empty, sig)).toEqual(mismatch("expected a Ed25519 VerifyingKey"));
+    const noMessage = ed25519.verifyBytes(ed.verifying.bytes, bad(null), sig.bytes);
+    expect(Object.isFrozen(noMessage)).toBe(true);
+    expect(Object.isFrozen(ed25519.verify(ed.verifying, empty, sig))).toBe(true);
+  });
+});

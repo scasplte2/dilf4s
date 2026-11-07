@@ -533,6 +533,49 @@ describe("what a constructor builds when JavaScript calls it from outside is ref
     expect(profile.decodeProof(int(1n))).toEqual(mismatch("expected a VersionedTrie"));
   });
 
+  it("an entry's getter cannot change the trusted root, nor a key read before it", () => {
+    // another trie, "b" -> 1, and its proof: a getter swapping the root to this one must not make the claim verify
+    const otherRoot = expectOk(trie.trieRoot(T, variable, [[Uint8Array.of(0x62), v1]]), "other root");
+    const otherProof: Value = expectOk(models.trie.TrieProof.encode([{ s: { n: 8n, b: Uint8Array.of(0x62) }, v: v1 }]), "other proof");
+    const trusted = Uint8Array.from(root);
+    const swapping = [
+      [
+        Uint8Array.of(0x62),
+        {
+          get kind(): never {
+            throw new Error("never read: it is not a value");
+          },
+        },
+      ],
+    ];
+    Object.defineProperty(swapping, 0, {
+      get: () => {
+        trusted.set(otherRoot);
+        return [Uint8Array.of(0x62), int(1n)];
+      },
+    });
+    expect(trie.triePrefixVerify(T, variable, trusted, new Uint8Array(0), bad(swapping), otherProof)).toEqual({ ok: true, value: false });
+    // a pair whose value's getter rewrites its key: the key was copied before the value was read
+    const rewriting = (): unknown[] => {
+      const key = Uint8Array.of(0x61);
+      const pair: unknown[] = [key];
+      Object.defineProperty(pair, 1, {
+        get: () => {
+          key[0] = 0x62;
+          return int(1n);
+        },
+      });
+      return pair;
+    };
+    expect(expectOk(trie.triePrefixVerify(T, variable, root, Uint8Array.of(0x61), bad([rewriting(), [Uint8Array.of(0x61, 0x62), int(2n)]]), full), "verdict"), "a holds 1, read as a").toBe(true);
+  });
+
+  it("a shared answer cannot be changed by a caller", () => {
+    const absent = expectOk(verified().lookup(Uint8Array.of(0x63)), "absent");
+    expect(Object.isFrozen(absent)).toBe(true);
+    expect(Object.isFrozen(variable.checkKey(Uint8Array.of(1)))).toBe(true);
+  });
+
   it("a record's getter that detaches a field read before it changes nothing read: each field is copied as read", () => {
     const b = Uint8Array.of(0x61);
     const record = {

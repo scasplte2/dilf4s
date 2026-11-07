@@ -310,7 +310,8 @@ export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, Po
   const read = readIterable<Placed, PoseidonMerkleError | TypeMismatch>(leaves, (e, i) => {
     const pair = readPair(e);
     if (pair === undefined) return err(expectedAt("a [position, leaf] array", i));
-    const [p, leaf] = pair;
+    const p: unknown = pair[0];
+    const leaf: unknown = pair[1];
     if (typeof p !== "bigint" || !isFr(leaf)) return err(expectedAt("a [bigint, Fr] array", i));
     return p < 0n || p >= capacity ? err({ kind: "Position", positionBits: bitsOf(p), depth }) : ok([p, leaf] as const);
   });

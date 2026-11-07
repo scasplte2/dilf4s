@@ -64,11 +64,12 @@ export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: 
   return ok(out);
 }
 
-/** A caller's pair `[a, b]`: an array, its two items read by index, once each. */
-export function readPair(x: unknown): readonly [unknown, unknown] | undefined {
-  if (!Array.isArray(x)) return undefined;
-  const pair = x as readonly unknown[];
-  return [pair[0], pair[1]];
+/**
+ * A caller's pair `[a, b]`, if it is an array, for its reader to read by index, in order, once each: an item that is
+ * bytes is copied before the next is read, since reading it (a getter, a Proxy's trap) may run caller code.
+ */
+export function readPair(x: unknown): readonly unknown[] | undefined {
+  return Array.isArray(x) ? (x as readonly unknown[]) : undefined;
 }
 
 /**

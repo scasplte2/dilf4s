@@ -95,9 +95,10 @@ export function checkedVerify<S extends SchemeName, M>(
   messages: MessageReader<M>,
   raw: RawVerify<M>,
 ): (key: VerifyingKey<S>, message: unknown, signature: Signature<S>) => Result<boolean, TypeMismatch> {
-  const notKey = err(expected(`a ${scheme} VerifyingKey`));
-  const notSignature = err(expected(`a ${scheme} Signature`));
-  const notMessage = err(messages.refusal);
+  // shared refusals, frozen: one a caller changed would answer every later call
+  const notKey = Object.freeze(err(expected(`a ${scheme} VerifyingKey`)));
+  const notSignature = Object.freeze(err(expected(`a ${scheme} Signature`)));
+  const notMessage = Object.freeze(err(messages.refusal));
   return (key, message, signature) => {
     const k = ownVerifyingKey(key, scheme);
     if (k === undefined) return notKey;
@@ -114,7 +115,7 @@ export function verifyBytesWith<S extends SchemeName, M>(
   messages: MessageReader<M>,
   raw: RawVerify<M>,
 ): (key: Uint8Array, message: unknown, signature: Uint8Array) => Result<boolean, CryptoRefusal> {
-  const notMessage = err(messages.refusal);
+  const notMessage = Object.freeze(err(messages.refusal));
   return (key, message, signature) => {
     const m = messages.read(message);
     if (m === undefined) return notMessage;
