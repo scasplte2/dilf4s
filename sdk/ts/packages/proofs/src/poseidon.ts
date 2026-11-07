@@ -179,6 +179,8 @@ export class PoseidonMerkleProof {
     readonly position: bigint,
     siblings: readonly Fr[],
   ) {
+    // without the token none of the caller's arguments is kept: every field is a fixed default
+    if (token !== TOKEN) this.position = 0n;
     this.#siblings = Object.freeze(token === TOKEN ? [...siblings] : []);
     if (token === TOKEN) MERKLE_PROOF.stamp(this);
     Object.freeze(this);

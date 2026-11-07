@@ -44,7 +44,8 @@ export class SigningKey<S extends string> {
     readonly scheme: S,
     bytes: Uint8Array,
   ) {
-    // without the token, nothing of the caller's is read, and the instance is not branded
+    // without the token, nothing of the caller's is read or kept, and the instance is not branded
+    if (token !== INTERNAL) this.scheme = "" as S;
     this.#bytes = token === INTERNAL ? copy(bytes) : new Uint8Array(0);
     if (token === INTERNAL) SIGNING.stamp(this);
     Object.freeze(this);
@@ -89,7 +90,8 @@ export class VerifyingKey<S extends string> {
     readonly scheme: S,
     bytes: Uint8Array,
   ) {
-    // without the token, nothing of the caller's is read, and the instance is not branded
+    // without the token, nothing of the caller's is read or kept, and the instance is not branded
+    if (token !== INTERNAL) this.scheme = "" as S;
     this.#bytes = token === INTERNAL ? copy(bytes) : new Uint8Array(0);
     if (token === INTERNAL) VERIFYING.stamp(this);
     Object.freeze(this);
@@ -123,7 +125,8 @@ export class Signature<S extends string> {
     readonly scheme: S,
     bytes: Uint8Array,
   ) {
-    // without the token, nothing of the caller's is read, and the instance is not branded
+    // without the token, nothing of the caller's is read or kept, and the instance is not branded
+    if (token !== INTERNAL) this.scheme = "" as S;
     this.#bytes = token === INTERNAL ? copy(bytes) : new Uint8Array(0);
     if (token === INTERNAL) SIGNATURE.stamp(this);
     Object.freeze(this);

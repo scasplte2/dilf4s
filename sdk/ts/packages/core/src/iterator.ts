@@ -37,9 +37,6 @@ export function isResult(r: unknown): r is { readonly done?: unknown; readonly v
 
 const NO_ARGUMENTS: readonly unknown[] = Object.freeze([]);
 
-/** `Function.prototype.bind`, read once when this module loads: a function's own `bind` may be the caller's. */
-const bind = Reflect.get(Function.prototype, "bind") as (this: unknown, self: unknown) => () => unknown;
-
 /**
  * `iterable`'s iterator, opened as `for...of` opens it (its `Symbol.iterator` method read and called once, then the
  * iterator's `next` read once), or `undefined` where `for...of` would throw a `TypeError` before reading any item: no
@@ -58,11 +55,10 @@ export function openWith<T>(iterable: object, method: unknown): Reader<T> | unde
   if (!isResult(iterator)) return undefined;
   const next: unknown = Reflect.get(iterator, "next");
   if (typeof next !== "function" || isRevokedProxy(next)) return undefined;
-  // bound once, through Function.prototype's own bind (never the function's own `bind` or `call`, which may be the
-  // caller's), so each step is one direct call; a `next` revoked since (by caller code) gives no result, which a
-  // reader refuses as it refuses any result that is not an object
-  const bound: () => unknown = Reflect.apply(bind, next, [iterator]);
-  return { iterator: iterator as Iterator<T>, next: () => (isRevokedProxy(next) ? undefined : bound()) };
+  // each step one Reflect.apply: never the function's own `call` or `bind` (which may be the caller's), and never
+  // Function.prototype.bind, which reads the function's length and name (a Proxy's traps, which may revoke it). A
+  // `next` revoked since (by caller code) gives no result, which a reader refuses as any result not an object
+  return { iterator: iterator as Iterator<T>, next: (): unknown => (isRevokedProxy(next) ? undefined : (Reflect.apply(next, iterator, NO_ARGUMENTS) as unknown)) };
 }
 
 /** An iterator result, read as `for...of` reads it: `done` (any truthy value ends it), then `value` while not done. */

@@ -829,3 +829,136 @@ describe("an object or array a getter revokes while it is read is refused as a T
     expect(revokingError.root(finalHead)).toEqual(mismatch("expected a version key's result to be a Result of its type"));
   });
 });
+
+describe("a versioned query is encoded before the claims or the proof are read: no getter can redirect it", () => {
+  // an object-valued version key, as a caller may define: a version is { n }, encoded as VersionKey.long encodes n
+  interface Ver {
+    n: bigint;
+  }
+  const long = versioned.VersionKey.long;
+  const objectKey: versioned.VersionKey<Ver> = {
+    width: 8,
+    encode: (v) => long.encode(v.n),
+    decode: (b) => {
+      const r = long.decode(b);
+      return r.ok ? { ok: true, value: { n: r.value } } : r;
+    },
+  };
+  const ot = expectOk(versioned.VersionedTrie.of<Ver>("SHA-256", objectKey), "an object-keyed profile");
+  const root = bytes(vectors.root);
+  const proofNamed = (name: string): versioned.VersionedTrieProof<Ver> => expectOk(ot.decodeProof(valueOf(vectors.proofs.find((p) => p.name === name)?.cbor ?? "")), name);
+  /** `proof`, its head read through a getter that runs `then` first. */
+  const redirecting = (proof: versioned.VersionedTrieProof<Ver>, then: () => void): versioned.VersionedTrieProof<Ver> =>
+    bad({
+      get head() {
+        then();
+        return proof.head;
+      },
+      top: proof.top,
+      ...(proof.at === undefined ? {} : { at: proof.at }),
+      ...(proof.history === undefined ? {} : { history: proof.history }),
+      ...(proof.state === undefined ? {} : { state: proof.state }),
+    });
+
+  it("verifyVersions: a claim's getter cannot move the range's bounds", () => {
+    const p = vectors.proofs.find((x) => x.name === "versions-2-until-300");
+    if (p === undefined) throw new Error("the versions fixture");
+    const proof = proofNamed("versions-2-until-300");
+    const claims = (p.versions ?? []).map((v) => [{ n: v.version ?? -1n }, bytes(v.stateRoot ?? "")] as const);
+    expect(expectOk(ot.verifyVersions(root, proof, { n: 2n }, { n: 300n }, claims), "the claim of [2, 300)")).toBe(true);
+    // [3, 300) holds 255 and 256 only: a getter that moves `from` back to 2 must not make the [2, 255, 256] claim verify
+    const from = { n: 3n };
+    const moving: unknown[] = [...claims];
+    Object.defineProperty(moving, 0, {
+      get: () => {
+        from.n = 2n;
+        return claims[0];
+      },
+    });
+    expect(ot.verifyVersions(root, proof, from, { n: 300n }, bad(moving)), "the query as given, [3, 300)").toEqual({ ok: true, value: false });
+  });
+
+  it("verifyVersion, verifyHistoricalKey and verifyAsOf: a proof's getter cannot change the version asked about", () => {
+    const v255 = proofNamed("version-255");
+    expect(ot.verifyVersion(root, v255, { n: 255n }).ok, "version 255, asked as 255").toBe(true);
+    const u = { n: 3n };
+    expect(expectErr(ot.verifyVersion(root, redirecting(v255, () => (u.n = 255n)), u), "asked as 3").kind).toBe("Malformed");
+    const k1 = proofNamed("key-at-version-1");
+    expect(ot.verifyHistoricalKey(root, k1, { n: 1n }).ok, "the state at 1").toBe(true);
+    const h = { n: 3n };
+    expect(expectErr(ot.verifyHistoricalKey(root, redirecting(k1, () => (h.n = 1n)), h), "asked as 3").kind).toBe("Malformed");
+    const asOf = proofNamed("as-of-299");
+    expect(ot.verifyAsOf(root, asOf, { n: 299n }).ok, "as of 299").toBe(true);
+    const t = { n: 0n };
+    expect(expectErr(ot.verifyAsOf(root, redirecting(asOf, () => (t.n = 299n)), t), "asked as of 0").kind).toBe("Malformed");
+  });
+});
+
+describe("a hashing profile, mode or namespace built by calling its constructor from outside computes nothing", () => {
+  const forge = (c: unknown, args: readonly unknown[]): unknown => Reflect.construct(c as new (...a: unknown[]) => object, [Symbol("dilf4s-proofs"), ...args]);
+
+  it("Merkle and trie hashing: every method refuses, and the reported algorithm is never the caller's", () => {
+    const rfc = forge(merkle.Rfc6962MerkleHashing, ["bogus"]) as merkle.Rfc6962MerkleHashing;
+    const notAProfile = mismatch("expected a TaggedMerkleHashing or an Rfc6962MerkleHashing");
+    expect(rfc.leaf(empty), "rfc leaf").toEqual(notAProfile);
+    expect(rfc.leafWeight(empty), "rfc leafWeight").toEqual(notAProfile);
+    expect(rfc.node(empty, empty), "rfc node").toEqual(notAProfile);
+    expect([rfc.algorithm, rfc.size], "rfc reports its own default").toEqual(["SHA-256", 32]);
+    const tagged512 = forge(merkle.TaggedMerkleHashing, ["SHA-512"]) as merkle.TaggedMerkleHashing;
+    expect(tagged512.leaf(int(1n)), "tagged leaf").toEqual(notAProfile);
+    expect(tagged512.leafWeight(int(1n)), "tagged leafWeight").toEqual(notAProfile);
+    expect(tagged512.node(empty, empty), "tagged node").toEqual(notAProfile);
+    expect([tagged512.algorithm, tagged512.size], "never SHA-512 with 32-byte hashes").toEqual(["SHA-256", 32]);
+    const t512 = forge(trie.TrieHashing, ["SHA-512"]) as trie.TrieHashing;
+    const notAHashing = mismatch("expected a TrieHashing");
+    const segment = expectOk(trie.Segment.of(0n, empty), "segment");
+    expect(t512.valueHash(int(1n)), "valueHash").toEqual(notAHashing);
+    expect(t512.bytesHash(empty), "bytesHash").toEqual(notAHashing);
+    expect(t512.leafHash(segment, v1), "leafHash").toEqual(notAHashing);
+    expect(t512.branchHash(segment, v1, undefined, undefined), "branchHash").toEqual(notAHashing);
+    expect([t512.algorithm, t512.size], "never SHA-512 with 32-byte hashes").toEqual(["SHA-256", 32]);
+  });
+
+  it("modes, keys, namespaces, proofs, profiles and replicas keep none of the caller's arguments", () => {
+    const mode = forge(trie.KeyMode, ["variable", Symbol("bytes")]) as trie.KeyMode;
+    expect(mode.checkKey(empty), "checkKey").toEqual(mismatch("expected a KeyMode"));
+    expect([mode.kind, mode.bytes, mode.toString()], "a mode's defaults").toEqual(["fixed", 0, "fixed(0)"]);
+    const ns = forge(versioned.StateNamespace, [Symbol("ns")]) as versioned.StateNamespace;
+    expect(ns.contains(key("fiber/1")), "contains").toEqual(mismatch("expected a StateNamespace"));
+    expect([ns.value, ns.toString()], "a namespace's defaults").toEqual(["", ""]);
+    const sk = forge(versioned.StateKey, [Symbol("key")]) as versioned.StateKey;
+    expect(sk.value, "a key's default").toBe("");
+    const inclusion = forge(merkle.InclusionProof, [Symbol("index"), Symbol("size"), [v1]]) as merkle.InclusionProof;
+    expect([inclusion.index, inclusion.size, inclusion.path], "an inclusion proof's defaults").toEqual([0n, 0n, []]);
+    const consistency = forge(merkle.ConsistencyProof, [Symbol("old"), Symbol("new"), [v1]]) as merkle.ConsistencyProof;
+    expect([consistency.oldSize, consistency.newSize], "a consistency proof's defaults").toEqual([0n, 0n]);
+    const pm = forge(poseidon.PoseidonMerkleProof, [Symbol("position"), []]) as poseidon.PoseidonMerkleProof;
+    expect(pm.position, "a Poseidon proof's default").toBe(0n);
+    // the modes are never read: a forged profile with none is built without a throw
+    const profile = forge(versioned.VersionedTrie, [Symbol("hashing"), Symbol("key"), null]) as versioned.VersionedTrie<bigint>;
+    expect([profile.hashing.algorithm, profile.versionKey], "a profile's defaults").toEqual(["SHA-256", versioned.VersionKey.long]);
+    const replica = forge(versioned.Replica, [vt, revokingAfterFirstRead({}), revokingAfterFirstRead({}), revokingAfterFirstRead({})]) as versioned.Replica<bigint>;
+    expect([replica.head, replica.size, replica.entries(), replica.history()], "a replica answers as an empty one").toEqual([null, 0, [], []]);
+  });
+});
+
+describe("an iterator's next is called directly, never through bind", () => {
+  it("a next Proxy that revokes itself as its length or name is read is still called once, and refused only when revoked", () => {
+    for (const property of ["length", "name"]) {
+      const { proxy: next, revoke } = Proxy.revocable(() => ({ done: true, value: undefined }), {
+        get: (t, name) => {
+          const v: unknown = Reflect.get(t, name);
+          if (name === property) revoke();
+          return v;
+        },
+        getOwnPropertyDescriptor: (t, name) => {
+          const d = Reflect.getOwnPropertyDescriptor(t, name);
+          if (name === property) revoke();
+          return d;
+        },
+      });
+      // nothing reads its length or name, so it is never revoked, and the empty iterable gives the empty trie's root
+      expect(trie.trieRoot(T, variable, bad({ [Symbol.iterator]: () => ({ next }) })), property).toEqual({ ok: true, value: T.empty });
+    }
+  });
+});

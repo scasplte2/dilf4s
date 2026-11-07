@@ -2,8 +2,8 @@
  * Key-evolving signatures (`kes.md`): the dilf4s sum and product compositions over a hash `H`, and Cardano's SumKES.
  * Keys are immutable values: evolving returns a new key. Their bytes never print.
  */
-import { err, models, ok, type HashAlgorithm, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { copyBytes, isAlgorithm, mint, outputSizeOf, plainBytes, type Mint } from "@kd5ujc/dilf4s-core/internal";
+import { err, models, ok, type Err, type HashAlgorithm, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
+import { copyBytes, isAlgorithm, mint, outputSizeOf, plainBytes } from "@kd5ujc/dilf4s-core/internal";
 import { ed25519 as noble } from "@noble/curves/ed25519.js";
 import { blake2b } from "@noble/hashes/blake2.js";
 
@@ -11,7 +11,7 @@ import { verifyLibsodiumRule, verifyZip215 } from "./ed25519.js";
 import type { KesError } from "./errors.js";
 import { INSPECT } from "./keys.js";
 import { INTERNAL, type Internal } from "./internal/token.js";
-import { expected, NOT_A_NUMBER, NOT_BYTES, signedOf, viewOf } from "./internal/check.js";
+import { expected, NOT_A_NUMBER, NOT_BYTES, signedOf, verdict, viewOf } from "./internal/check.js";
 import { concat, copy, equal, isZero } from "./internal/bytes.js";
 import { literalTaggedHash, TAGS } from "./internal/tags.js";
 
@@ -34,28 +34,34 @@ const inRange = (period: number, total: number): boolean => Number.isInteger(per
 /** A KES refusal, or an argument of the wrong type. */
 export type KesRefusal = KesError | TypeMismatch;
 
-/** The caller's bytes, measured by their internal length and copied once if it is `expected`; else `Malformed`. */
-function kesSized(what: string, expected: number, bytes: unknown): Result<Uint8Array, KesRefusal> {
+/**
+ * The caller's bytes, measured by their internal length and copied once if it is `expected` (the copy itself, no
+ * wrapper around it); else the refusal: `TypeMismatch` for what is not a `Uint8Array`, `Malformed` for another size.
+ */
+function sized(what: string, expected: number, bytes: unknown): Uint8Array | Err<KesRefusal> {
   const view = plainBytes(bytes);
   if (view === undefined) return err(NOT_BYTES);
-  return view.length === expected ? ok(copyBytes(view)) : err(sizeError(what, expected, view.length));
+  return view.length === expected ? copyBytes(view) : err(sizeError(what, expected, view.length));
 }
 
-/** A period: a number (checked against the range by the caller of this), or a `TypeMismatch`. */
-const periodArg = (period: unknown): Result<number, TypeMismatch> => (typeof period === "number" ? ok(period) : err(NOT_A_NUMBER));
+/** A scheme's verification of checked arguments: a key and a signature of their lengths (copies), a period in range, a message's plain view. */
+type KesCheck<S> = (scheme: S, vk: Uint8Array, period: number, message: Uint8Array, signature: Uint8Array) => boolean;
 
-/** A message to verify (a plain view) or to sign (read once into memory only this thread can change). */
-const verifiedOf = (m: unknown): Result<Uint8Array, TypeMismatch> => {
-  const v = viewOf(m);
-  return v === undefined ? err(NOT_BYTES) : ok(v);
-};
-const signedMessageOf = (m: unknown): Result<Uint8Array, TypeMismatch> => {
-  const v = signedOf(m);
-  return v === undefined ? err(NOT_BYTES) : ok(v);
-};
-
-/** `x` if it carries `brand` (a key of the class it names, made by this package), else a `TypeMismatch`. */
-const keyArg = <K>(brand: Mint, x: unknown, what: string): Result<K, TypeMismatch> => (brand.has(x) ? ok(x as K) : err(expected(what)));
+/**
+ * A KES verification: the message (a plain view), the period (a number), the key and the signature (each measured,
+ * then copied), the period's range, in that order, then `check`'s verdict, shared and frozen. A passing check
+ * allocates the message's view and the two copies, nothing else.
+ */
+function verifyChecked<S>(scheme: S, vkLength: number, sigLength: number, total: number, check: KesCheck<S>, vk: unknown, period: unknown, message: unknown, signature: unknown): Result<boolean, KesRefusal> {
+  const m = viewOf(message);
+  if (m === undefined) return err(NOT_BYTES);
+  if (typeof period !== "number") return err(NOT_A_NUMBER);
+  const k = sized("KES verifying key", vkLength, vk);
+  if (!(k instanceof Uint8Array)) return k;
+  const s = sized("KES signature", sigLength, signature);
+  if (!(s instanceof Uint8Array)) return s;
+  return inRange(period, total) ? verdict(check(scheme, k, period, m, s)) : err(outOfRange(period, total));
+}
 
 const SUM_KEY = mint();
 const SUM = mint();
@@ -70,6 +76,13 @@ const PRODUCT_KEY_OF = "a KesProductKey";
 const CARDANO_KEY_OF = "a CardanoSumKesKey";
 const PRODUCT_KEY = mint();
 const CARDANO_KEY = mint();
+/** Whether `x` is a key of the class named, made by this package (one private-brand check). */
+const isSumKey = (x: unknown): x is KesSumKey => SUM_KEY.has(x);
+const isProductKey = (x: unknown): x is KesProductKey => PRODUCT_KEY.has(x);
+const isCardanoKey = (x: unknown): x is CardanoSumKesKey => CARDANO_KEY.has(x);
+let verifySum!: KesCheck<KesSum>;
+let verifyProduct!: KesCheck<KesProduct>;
+const verifyCardano: KesCheck<CardanoSumKes> = (scheme, k, p, m, s) => cardanoVerify(k, scheme.depth, p, m, s);
 
 /** A secret KES key at a known period; `bytes` is its canonical encoding (a copy). */
 abstract class KesKey {
@@ -243,19 +256,6 @@ function evolveTo<K extends KesKey>(key: K, target: unknown, total: number, evol
   return ok(k);
 }
 
-/** A KES verification's checked arguments: a key and a signature of their lengths (copied), a period in range, a message. */
-function verifyArgs(vkLength: number, sigLength: number, total: number, vk: unknown, period: unknown, message: unknown, signature: unknown): Result<readonly [Uint8Array, number, Uint8Array, Uint8Array], KesRefusal> {
-  const m = verifiedOf(message);
-  if (!m.ok) return m;
-  const p = periodArg(period);
-  if (!p.ok) return p;
-  const k = kesSized("KES verifying key", vkLength, vk);
-  if (!k.ok) return k;
-  const s = kesSized("KES signature", sigLength, signature);
-  if (!s.ok) return s;
-  return inRange(p.value, total) ? ok([k.value, p.value, m.value, s.value]) : err(outOfRange(p.value, total));
-}
-
 /** A `KesSum` signing key at a known period. */
 export class KesSumKey extends KesKey {
   readonly #ops: MerkleKesOps;
@@ -267,7 +267,7 @@ export class KesSumKey extends KesKey {
     tree: Tree,
     period: number,
   ) {
-    super(token === INTERNAL ? ops.encode(tree) : new Uint8Array(0), period);
+    super(token === INTERNAL ? ops.encode(tree) : new Uint8Array(0), token === INTERNAL ? period : 0);
     this.#ops = ops;
     this.#tree = tree;
     if (token === INTERNAL) SUM_KEY.stamp(this);
@@ -276,15 +276,16 @@ export class KesSumKey extends KesKey {
 
   /** The root: fixed for the key's lifetime. */
   get verifyingKey(): Uint8Array {
-    return this.#ops.root(this.#tree);
+    // a key built from outside holds the caller's state, which is never computed with: it has no verifying key
+    return SUM_KEY.has(this) ? this.#ops.root(this.#tree) : new Uint8Array(0);
   }
 
   /** A signature at this key's period; a message that is not a `Uint8Array` is a `TypeMismatch`. */
   sign(message: Uint8Array): Result<Uint8Array, KesRefusal> {
     if (!SUM_KEY.has(this)) return err(expected(SUM_KEY_OF));
-    const m = signedMessageOf(message);
-    if (!m.ok) return m;
-    const s = this.#ops.sign(this.#tree, this.scheme.height, this.period, m.value);
+    const m = signedOf(message);
+    if (m === undefined) return err(NOT_BYTES);
+    const s = this.#ops.sign(this.#tree, this.scheme.height, this.period, m);
     return s === undefined ? err(inconsistent("the active leaf is erased")) : ok(s);
   }
 
@@ -304,6 +305,7 @@ export class KesSumKey extends KesKey {
   }
 
   toString(): string {
+    if (!SUM_KEY.has(this)) return "KesSumKey(<not a key of this package>)";
     return `KesSumKey(${this.scheme.hash}, height=${String(this.scheme.height)}, period=${String(this.period)}, <redacted>)`;
   }
 }
@@ -321,7 +323,8 @@ export class KesSum {
     readonly hash: HashAlgorithm,
     readonly height: number,
   ) {
-    // without the token nothing of the caller's is computed with, and no method of the scheme answers
+    // without the token nothing of the caller's is computed with or kept, and no method of the scheme answers
+    if (token !== INTERNAL) [this.hash, this.height] = ["SHA-256", 0];
     this.#ops = new MerkleKesOps(token === INTERNAL ? hash : "SHA-256");
     const h = token === INTERNAL ? height : 0;
     this.totalPeriods = 2 ** h;
@@ -344,8 +347,8 @@ export class KesSum {
   /** The period-0 key of a 32-byte seed; what is not a `Uint8Array` is a `TypeMismatch`. */
   generate(seed: Uint8Array): Result<KesSumKey, KesRefusal> {
     if (!SUM.has(this)) return err(NOT_SUM);
-    const s = kesSized("KES seed", 32, seed);
-    return s.ok ? ok(new KesSumKey(INTERNAL, this, this.#ops, this.#ops.gen(s.value, this.height), 0)) : s;
+    const s = sized("KES seed", 32, seed);
+    return s instanceof Uint8Array ? ok(new KesSumKey(INTERNAL, this, this.#ops, this.#ops.gen(s, this.height), 0)) : s;
   }
 
   /**
@@ -356,12 +359,11 @@ export class KesSum {
     if (!SUM.has(this)) return err(NOT_SUM);
     // decoding retains slices of the input: it is measured by its internal length, then copied once, so a wrong-sized
     // input is refused without copying it, and the bytes decoded are the bytes measured
-    const raw = kesSized("KES key", this.keyLength, input);
-    if (!raw.ok) return raw;
-    const p = periodArg(period);
-    if (!p.ok) return p;
+    const raw = sized("KES key", this.keyLength, input);
+    if (!(raw instanceof Uint8Array)) return raw;
+    if (typeof (period as unknown) !== "number") return err(NOT_A_NUMBER);
     if (!inRange(period, this.totalPeriods)) return err(outOfRange(period, this.totalPeriods));
-    const t = this.#ops.decode(raw.value, this.height, period, false);
+    const t = this.#ops.decode(raw, this.height, period, false);
     return t.ok ? ok(new KesSumKey(INTERNAL, this, this.#ops, t.value, period)) : t;
   }
 
@@ -371,29 +373,25 @@ export class KesSum {
    */
   verifyingKey(key: KesSumKey): Result<Uint8Array, TypeMismatch> {
     if (!SUM.has(this)) return err(NOT_SUM);
-    const k = keyArg<KesSumKey>(SUM_KEY, key, SUM_KEY_OF);
-    return k.ok ? ok(k.value.verifyingKey) : k;
+    return isSumKey(key) ? ok(key.verifyingKey) : err(expected(SUM_KEY_OF));
   }
 
   /** {@link KesSumKey.sign} of `key`; a key not made by this package is a `TypeMismatch`. */
   sign(key: KesSumKey, message: Uint8Array): Result<Uint8Array, KesRefusal> {
     if (!SUM.has(this)) return err(NOT_SUM);
-    const k = keyArg<KesSumKey>(SUM_KEY, key, SUM_KEY_OF);
-    return k.ok ? k.value.sign(message) : k;
+    return isSumKey(key) ? key.sign(message) : err(expected(SUM_KEY_OF));
   }
 
   /** {@link KesSumKey.evolve} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolve(key: KesSumKey): Result<KesSumKey, KesRefusal> {
     if (!SUM.has(this)) return err(NOT_SUM);
-    const k = keyArg<KesSumKey>(SUM_KEY, key, SUM_KEY_OF);
-    return k.ok ? k.value.evolve() : k;
+    return isSumKey(key) ? key.evolve() : err(expected(SUM_KEY_OF));
   }
 
   /** {@link KesSumKey.evolveTo} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolveTo(key: KesSumKey, target: number): Result<KesSumKey, KesRefusal> {
     if (!SUM.has(this)) return err(NOT_SUM);
-    const k = keyArg<KesSumKey>(SUM_KEY, key, SUM_KEY_OF);
-    return k.ok ? k.value.evolveTo(target) : k;
+    return isSumKey(key) ? key.evolveTo(target) : err(expected(SUM_KEY_OF));
   }
 
   /**
@@ -402,10 +400,11 @@ export class KesSum {
    */
   verify(vk: Uint8Array, period: number, message: Uint8Array, signature: Uint8Array): Result<boolean, KesRefusal> {
     if (!SUM.has(this)) return err(NOT_SUM);
-    const a = verifyArgs(this.#ops.n, this.signatureLength, this.totalPeriods, vk, period, message, signature);
-    if (!a.ok) return a;
-    const [k, p, m, s] = a.value;
-    return ok(this.#ops.verify(k, this.height, p, m, s));
+    return verifyChecked(this, this.#ops.n, this.signatureLength, this.totalPeriods, verifySum, vk, period, message, signature);
+  }
+
+  static {
+    verifySum = (scheme, k, p, m, s) => scheme.#ops.verify(k, scheme.height, p, m, s);
   }
 }
 
@@ -439,7 +438,7 @@ export class KesProductKey extends KesKey {
     parts: ProductParts,
     period: number,
   ) {
-    super(token === INTERNAL ? concat(ops.encode(parts.superTree), ops.encode(parts.subTree), parts.nextSeed, parts.superSig) : new Uint8Array(0), period);
+    super(token === INTERNAL ? concat(ops.encode(parts.superTree), ops.encode(parts.subTree), parts.nextSeed, parts.superSig) : new Uint8Array(0), token === INTERNAL ? period : 0);
     this.#ops = ops;
     this.#parts = parts;
     if (token === INTERNAL) PRODUCT_KEY.stamp(this);
@@ -448,16 +447,16 @@ export class KesProductKey extends KesKey {
 
   /** The super tree's root: fixed for the key's lifetime. */
   get verifyingKey(): Uint8Array {
-    return this.#ops.root(this.#parts.superTree);
+    return PRODUCT_KEY.has(this) ? this.#ops.root(this.#parts.superTree) : new Uint8Array(0);
   }
 
   /** `superSig || subRoot || subSig`; a message that is not a `Uint8Array` is a `TypeMismatch`. */
   sign(message: Uint8Array): Result<Uint8Array, KesRefusal> {
     if (!PRODUCT_KEY.has(this)) return err(expected(PRODUCT_KEY_OF));
-    const m = signedMessageOf(message);
-    if (!m.ok) return m;
+    const m = signedOf(message);
+    if (m === undefined) return err(NOT_BYTES);
     const { subTree, superSig } = this.#parts;
-    const sub = this.#ops.sign(subTree, this.scheme.subHeight, this.period % 2 ** this.scheme.subHeight, m.value);
+    const sub = this.#ops.sign(subTree, this.scheme.subHeight, this.period % 2 ** this.scheme.subHeight, m);
     return sub === undefined ? err(inconsistent("the sub leaf is erased")) : ok(concat(superSig, this.#ops.root(subTree), sub));
   }
 
@@ -485,6 +484,7 @@ export class KesProductKey extends KesKey {
   }
 
   toString(): string {
+    if (!PRODUCT_KEY.has(this)) return "KesProductKey(<not a key of this package>)";
     const { hash, superHeight, subHeight } = this.scheme;
     return `KesProductKey(${hash}, heights=(${String(superHeight)},${String(subHeight)}), period=${String(this.period)}, <redacted>)`;
   }
@@ -504,7 +504,8 @@ export class KesProduct {
     readonly superHeight: number,
     readonly subHeight: number,
   ) {
-    // without the token nothing of the caller's is computed with, and no method of the scheme answers
+    // without the token nothing of the caller's is computed with or kept, and no method of the scheme answers
+    if (token !== INTERNAL) [this.hash, this.superHeight, this.subHeight] = ["SHA-256", 0, 0];
     this.#ops = new MerkleKesOps(token === INTERNAL ? hash : "SHA-256");
     const [sup, sub] = token === INTERNAL ? [superHeight, subHeight] : [0, 0];
     this.totalPeriods = 2 ** (sup + sub);
@@ -528,9 +529,9 @@ export class KesProduct {
   /** The period-0 key of a 32-byte seed; what is not a `Uint8Array` is a `TypeMismatch`. */
   generate(seed: Uint8Array): Result<KesProductKey, KesRefusal> {
     if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
-    const s = kesSized("KES seed", 32, seed);
-    if (!s.ok) return s;
-    const [superSeed, chainSeed] = this.#ops.expand(s.value);
+    const s = sized("KES seed", 32, seed);
+    if (!(s instanceof Uint8Array)) return s;
+    const [superSeed, chainSeed] = this.#ops.expand(s);
     return certify(this, this.#ops, this.#ops.gen(superSeed, this.superHeight), 0, chainSeed, 0);
   }
 
@@ -540,11 +541,9 @@ export class KesProduct {
    */
   load(input: Uint8Array, period: number): Result<KesProductKey, KesRefusal> {
     if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
-    const given = kesSized("KES key", this.keyLength, input);
-    if (!given.ok) return given;
-    const raw = given.value;
-    const p = periodArg(period);
-    if (!p.ok) return p;
+    const raw = sized("KES key", this.keyLength, input);
+    if (!(raw instanceof Uint8Array)) return raw;
+    if (typeof (period as unknown) !== "number") return err(NOT_A_NUMBER);
     if (!inRange(period, this.totalPeriods)) return err(outOfRange(period, this.totalPeriods));
     const ops = this.#ops;
     const subPeriods = 2 ** this.subHeight;
@@ -565,29 +564,25 @@ export class KesProduct {
   /** The scheme-level forms; each delegates to the key. A key not made by this package is a `TypeMismatch`. */
   verifyingKey(key: KesProductKey): Result<Uint8Array, TypeMismatch> {
     if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
-    const k = keyArg<KesProductKey>(PRODUCT_KEY, key, PRODUCT_KEY_OF);
-    return k.ok ? ok(k.value.verifyingKey) : k;
+    return isProductKey(key) ? ok(key.verifyingKey) : err(expected(PRODUCT_KEY_OF));
   }
 
   /** {@link KesProductKey.sign} of `key`; a key not made by this package is a `TypeMismatch`. */
   sign(key: KesProductKey, message: Uint8Array): Result<Uint8Array, KesRefusal> {
     if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
-    const k = keyArg<KesProductKey>(PRODUCT_KEY, key, PRODUCT_KEY_OF);
-    return k.ok ? k.value.sign(message) : k;
+    return isProductKey(key) ? key.sign(message) : err(expected(PRODUCT_KEY_OF));
   }
 
   /** {@link KesProductKey.evolve} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolve(key: KesProductKey): Result<KesProductKey, KesRefusal> {
     if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
-    const k = keyArg<KesProductKey>(PRODUCT_KEY, key, PRODUCT_KEY_OF);
-    return k.ok ? k.value.evolve() : k;
+    return isProductKey(key) ? key.evolve() : err(expected(PRODUCT_KEY_OF));
   }
 
   /** {@link KesProductKey.evolveTo} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolveTo(key: KesProductKey, target: number): Result<KesProductKey, KesRefusal> {
     if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
-    const k = keyArg<KesProductKey>(PRODUCT_KEY, key, PRODUCT_KEY_OF);
-    return k.ok ? k.value.evolveTo(target) : k;
+    return isProductKey(key) ? key.evolveTo(target) : err(expected(PRODUCT_KEY_OF));
   }
 
   /**
@@ -596,17 +591,20 @@ export class KesProduct {
    */
   verify(vk: Uint8Array, period: number, message: Uint8Array, signature: Uint8Array): Result<boolean, KesRefusal> {
     if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
-    const ops = this.#ops;
-    const a = verifyArgs(ops.n, this.signatureLength, this.totalPeriods, vk, period, message, signature);
-    if (!a.ok) return a;
-    const [k, p, m, s] = a.value;
-    const subPeriods = 2 ** this.subHeight;
-    const supLen = ops.signatureLength(this.superHeight);
-    const subRoot = s.subarray(supLen, supLen + ops.n);
-    return ok(
-      ops.verify(k, this.superHeight, Math.floor(p / subPeriods), ops.productMessage(subRoot), s.subarray(0, supLen)) &&
-        ops.verify(subRoot, this.subHeight, p % subPeriods, m, s.subarray(supLen + ops.n)),
-    );
+    return verifyChecked(this, this.#ops.n, this.signatureLength, this.totalPeriods, verifyProduct, vk, period, message, signature);
+  }
+
+  static {
+    verifyProduct = (scheme, k, p, m, s) => {
+      const ops = scheme.#ops;
+      const subPeriods = 2 ** scheme.subHeight;
+      const supLen = ops.signatureLength(scheme.superHeight);
+      const subRoot = s.subarray(supLen, supLen + ops.n);
+      return (
+        ops.verify(k, scheme.superHeight, Math.floor(p / subPeriods), ops.productMessage(subRoot), s.subarray(0, supLen)) &&
+        ops.verify(subRoot, scheme.subHeight, p % subPeriods, m, s.subarray(supLen + ops.n))
+      );
+    };
   }
 }
 
@@ -679,20 +677,20 @@ export class CardanoSumKesKey extends KesKey {
     tree: Uint8Array,
     period: number,
   ) {
-    super(token === INTERNAL ? tree : new Uint8Array(0), period);
+    super(token === INTERNAL ? tree : new Uint8Array(0), token === INTERNAL ? period : 0);
     if (token === INTERNAL) CARDANO_KEY.stamp(this);
     Object.freeze(this);
   }
 
   get verifyingKey(): Uint8Array {
-    return cardanoVk(this.bytes, this.scheme.depth);
+    return CARDANO_KEY.has(this) ? cardanoVk(this.bytes, this.scheme.depth) : new Uint8Array(0);
   }
 
   /** A signature at this key's period; a message that is not a `Uint8Array` is a `TypeMismatch`. */
   sign(message: Uint8Array): Result<Uint8Array, TypeMismatch> {
     if (!CARDANO_KEY.has(this)) return err(expected(CARDANO_KEY_OF));
-    const m = signedMessageOf(message);
-    return m.ok ? ok(cardanoSign(this.bytes, this.scheme.depth, this.period, m.value)) : m;
+    const m = signedOf(message);
+    return m === undefined ? err(NOT_BYTES) : ok(cardanoSign(this.bytes, this.scheme.depth, this.period, m));
   }
 
   /** The key for the next period (`updateKES`); the last period cannot evolve. */
@@ -711,6 +709,7 @@ export class CardanoSumKesKey extends KesKey {
   }
 
   toString(): string {
+    if (!CARDANO_KEY.has(this)) return "CardanoSumKesKey(<not a key of this package>)";
     return `CardanoSumKesKey(depth=${String(this.scheme.depth)}, period=${String(this.period)}, <redacted>)`;
   }
 }
@@ -729,7 +728,8 @@ export class CardanoSumKes {
     token: Internal,
     readonly depth: number,
   ) {
-    // without the token nothing of the caller's is computed with, and no method of the scheme answers
+    // without the token nothing of the caller's is computed with or kept, and no method of the scheme answers
+    if (token !== INTERNAL) this.depth = 0;
     const d = token === INTERNAL ? depth : 0;
     this.totalPeriods = 2 ** d;
     this.signingKeyLength = skLen(d);
@@ -750,8 +750,8 @@ export class CardanoSumKes {
   /** The period-0 key for a 32-byte seed (`genKeyKES`); what is not a `Uint8Array` is a `TypeMismatch`. */
   generate(seed: Uint8Array): Result<CardanoSumKesKey, KesRefusal> {
     if (!CARDANO.has(this)) return err(NOT_CARDANO);
-    const s = kesSized("KES seed", 32, seed);
-    return s.ok ? ok(new CardanoSumKesKey(INTERNAL, this, cardanoGen(s.value, this.depth), 0)) : s;
+    const s = sized("KES seed", 32, seed);
+    return s instanceof Uint8Array ? ok(new CardanoSumKesKey(INTERNAL, this, cardanoGen(s, this.depth), 0)) : s;
   }
 
   /**
@@ -761,49 +761,41 @@ export class CardanoSumKes {
   load(input: Uint8Array, period: number): Result<CardanoSumKesKey, KesRefusal> {
     if (!CARDANO.has(this)) return err(NOT_CARDANO);
     // the key keeps the encoding itself, so it must own it: measured, then copied once
-    const raw = kesSized("KES signing key", this.signingKeyLength, input);
-    if (!raw.ok) return raw;
-    const p = periodArg(period);
-    if (!p.ok) return p;
+    const raw = sized("KES signing key", this.signingKeyLength, input);
+    if (!(raw instanceof Uint8Array)) return raw;
+    if (typeof (period as unknown) !== "number") return err(NOT_A_NUMBER);
     if (!inRange(period, this.totalPeriods)) return err(outOfRange(period, this.totalPeriods));
-    const c = cardanoCheck(raw.value, this.depth, period);
-    return c.ok ? ok(new CardanoSumKesKey(INTERNAL, this, raw.value, period)) : c;
+    const c = cardanoCheck(raw, this.depth, period);
+    return c.ok ? ok(new CardanoSumKesKey(INTERNAL, this, raw, period)) : c;
   }
 
   /** The scheme-level forms; each delegates to the key. A key not made by this package is a `TypeMismatch`. */
   verifyingKey(key: CardanoSumKesKey): Result<Uint8Array, TypeMismatch> {
     if (!CARDANO.has(this)) return err(NOT_CARDANO);
-    const k = keyArg<CardanoSumKesKey>(CARDANO_KEY, key, CARDANO_KEY_OF);
-    return k.ok ? ok(k.value.verifyingKey) : k;
+    return isCardanoKey(key) ? ok(key.verifyingKey) : err(expected(CARDANO_KEY_OF));
   }
 
   /** {@link CardanoSumKesKey.sign} of `key`; a key not made by this package is a `TypeMismatch`. */
   sign(key: CardanoSumKesKey, message: Uint8Array): Result<Uint8Array, TypeMismatch> {
     if (!CARDANO.has(this)) return err(NOT_CARDANO);
-    const k = keyArg<CardanoSumKesKey>(CARDANO_KEY, key, CARDANO_KEY_OF);
-    return k.ok ? k.value.sign(message) : k;
+    return isCardanoKey(key) ? key.sign(message) : err(expected(CARDANO_KEY_OF));
   }
 
   /** {@link CardanoSumKesKey.evolve} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolve(key: CardanoSumKesKey): Result<CardanoSumKesKey, KesRefusal> {
     if (!CARDANO.has(this)) return err(NOT_CARDANO);
-    const k = keyArg<CardanoSumKesKey>(CARDANO_KEY, key, CARDANO_KEY_OF);
-    return k.ok ? k.value.evolve() : k;
+    return isCardanoKey(key) ? key.evolve() : err(expected(CARDANO_KEY_OF));
   }
 
   /** {@link CardanoSumKesKey.evolveTo} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolveTo(key: CardanoSumKesKey, target: number): Result<CardanoSumKesKey, KesRefusal> {
     if (!CARDANO.has(this)) return err(NOT_CARDANO);
-    const k = keyArg<CardanoSumKesKey>(CARDANO_KEY, key, CARDANO_KEY_OF);
-    return k.ok ? k.value.evolveTo(target) : k;
+    return isCardanoKey(key) ? key.evolveTo(target) : err(expected(CARDANO_KEY_OF));
   }
 
   /** `verifyKES` of `signature` under root key `vk` at relative `period`; arguments of the wrong type are a `TypeMismatch`. */
   verify(vk: Uint8Array, period: number, message: Uint8Array, signature: Uint8Array): Result<boolean, KesRefusal> {
     if (!CARDANO.has(this)) return err(NOT_CARDANO);
-    const a = verifyArgs(32, this.signatureLength, this.totalPeriods, vk, period, message, signature);
-    if (!a.ok) return a;
-    const [k, p, m, s] = a.value;
-    return ok(cardanoVerify(k, this.depth, p, m, s));
+    return verifyChecked(this, 32, this.signatureLength, this.totalPeriods, verifyCardano, vk, period, message, signature);
   }
 }

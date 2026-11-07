@@ -36,6 +36,8 @@ import {
   toEntropy,
   toMnemonic,
   VerifyingKey,
+  VrfOutput,
+  VrfProof,
   WordList,
   type SchemeName,
   type Vrf,
@@ -491,5 +493,48 @@ describe("an array or tuple a getter revokes while it is read is refused, never 
     const index = expectOk(ChildIndex.hardened(0), "index");
     expect(slip10Ed25519.derive(seed, revokingAfterFirstRead([index]))).toEqual(mismatch("expected an array of ChildIndex"));
     expect(WordList.of(revokingAfterFirstRead([...Array<string>(2048).keys()].map((i) => `w${i.toString()}`)))).toEqual({ ok: false, error: { kind: "InvalidWordList", reason: "word 0 is not a string" } });
+  });
+});
+
+describe("a key, index or output built by calling its constructor from outside keeps none of the caller's arguments", () => {
+  const forge = (c: unknown, args: readonly unknown[]): never => Reflect.construct(c as new (...a: unknown[]) => object, [Symbol("token"), ...args]) as never;
+
+  it("keys, signatures, indices, word lists, VRF proofs and outputs: their printing never runs caller code", () => {
+    const scheme = Symbol("scheme");
+    for (const c of [SigningKey, VerifyingKey, Signature]) {
+      const k: { scheme: unknown; toString(): string } = forge(c, [scheme, new Uint8Array(32)]);
+      expect(k.scheme, c.name).toBe("");
+      expect(() => k.toString(), `${c.name}.toString`).not.toThrow();
+    }
+    const index: ChildIndex = forge(ChildIndex, [{ valueOf: () => 1 }, true]);
+    expect([index.value, index.hardened, index.serialized], "an index's defaults").toEqual([0, false, 0]);
+    const list: WordList = forge(WordList, [["a"], Symbol("separator")]);
+    expect(list.separator, "a word list's default").toBe(" ");
+    const proof: VrfProof<"ECVRF-EDWARDS25519-SHA512-TAI"> = forge(VrfProof, [Symbol("suite"), new Uint8Array(80)]);
+    expect([proof.suite, proof.bytes], "a VRF proof's defaults").toEqual(["", new Uint8Array(0)]);
+    // an output reads nothing it is given either: bytes that are not bytes are never copied
+    const output: VrfOutput<"ECVRF-EDWARDS25519-SHA512-TAI"> = forge(VrfOutput, [Symbol("suite"), null]);
+    expect([output.suite, output.bytes], "a VRF output's defaults").toEqual(["", new Uint8Array(0)]);
+  });
+
+  it("KES keys built from outside have no verifying key, and print without reading the caller's scheme", () => {
+    const hostile = {
+      get hash(): never {
+        throw new Error("never read");
+      },
+      get depth(): never {
+        throw new Error("never read");
+      },
+    };
+    const ops = { root: (): never => { throw new Error("never run"); }, encode: () => new Uint8Array(0) };
+    const keys: { verifyingKey: Uint8Array; period: number; toString(): string }[] = [
+      forge(KesSumKey, [hostile, ops, {}, 5]),
+      forge(KesProductKey, [hostile, ops, { superTree: {}, subTree: {}, nextSeed: new Uint8Array(32), superSig: new Uint8Array(0) }, 5]),
+      forge(CardanoSumKesKey, [hostile, new Uint8Array(128), 5]),
+    ];
+    for (const k of keys) {
+      expect([k.verifyingKey, k.period], "no verifying key, period 0").toEqual([new Uint8Array(0), 0]);
+      expect(k.toString()).toMatch(/not a key of this package/);
+    }
   });
 });

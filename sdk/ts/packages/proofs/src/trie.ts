@@ -70,12 +70,15 @@ export class KeyMode {
     /** The key length (fixed) or the longest key (variable), in bytes. */
     readonly bytes: number,
   ) {
+    // without the token none of the caller's arguments is kept: every field is a fixed default
+    if (token !== TOKEN) [this.kind, this.bytes] = ["fixed", 0];
     if (token === TOKEN) MODE.stamp(this);
     Object.freeze(this);
   }
 
   static {
     isMode = (x): x is KeyMode => MODE.has(x);
+    TRIE.defaultMode = new KeyMode(TOKEN, "fixed", 1);
   }
 
   /** Keys of exactly `bytes` bytes, `1..MAX_FIXED_BYTES` (`InvalidKey`); a length that is not a number is a `TypeMismatch`. */
@@ -108,6 +111,7 @@ export class KeyMode {
    * `Uint8Array` is a `TypeMismatch`.
    */
   checkKey(key: Uint8Array): Result<undefined, Refusal> {
+    if (!isMode(this)) return err(expected("a KeyMode"));
     const n = bytesLength(key);
     return n === undefined ? err(NOT_BYTES) : checkKeyLength(this, n);
   }
@@ -222,18 +226,19 @@ function optionalBytes(x: unknown): Result<Uint8Array | undefined, TypeMismatch>
 
 /** Hashing and node commitments over one hash algorithm (trie.md section 3). */
 export class TrieHashing {
+  /** The hash algorithm. */
+  readonly algorithm: HashAlgorithm;
   /** The digest size in bytes. */
   readonly size: number;
   readonly #value: ConstantTag;
   readonly #leaf: ConstantTag;
   readonly #branch: ConstantTag;
   readonly #empty: Uint8Array;
-  private constructor(
-    token: Token,
-    readonly algorithm: HashAlgorithm,
-  ) {
-    // without the token, nothing of the caller's is read: its algorithm is never hashed with
+  private constructor(token: Token, algorithm: HashAlgorithm) {
+    // without the token, nothing of the caller's is read or kept: its algorithm is neither hashed with nor reported,
+    // and every method refuses the unbranded receiver
     const a: HashAlgorithm = token === TOKEN ? algorithm : "SHA-256";
+    this.algorithm = a;
     this.size = outputSizeOf(a);
     this.#value = new ConstantTag(a, VALUE_TAG);
     this.#leaf = new ConstantTag(a, LEAF_TAG);
@@ -267,6 +272,7 @@ export class TrieHashing {
     };
     TRIE.rootText = rootText;
     TRIE.checkKey = checkKey;
+    TRIE.defaultHashing = new TrieHashing(TOKEN, "SHA-256");
   }
 
   /** The hashing over `algorithm`; one that is not a `HashAlgorithm` (from a JavaScript caller) is a `TypeMismatch`. */
@@ -275,7 +281,7 @@ export class TrieHashing {
     return a.ok ? ok(new TrieHashing(TOKEN, a.value)) : a;
   }
 
-  /** The root of the empty trie. */
+  /** The root of the empty trie (for a receiver not made here, the SHA-256 one its reported algorithm names). */
   get empty(): Uint8Array {
     return copyBytes(this.#empty);
   }
@@ -287,6 +293,7 @@ export class TrieHashing {
    * commitment is streamed into the hash, never built.
    */
   valueHash(value: Value): Result<Uint8Array, Refusal> {
+    if (!HASHING.has(this)) return err(NOT_A_HASHING);
     const v = valueArg(value);
     return v.ok ? TRIE.valueHash(this, v.value) : v;
   }
@@ -296,12 +303,14 @@ export class TrieHashing {
    * not a `Uint8Array` is a `TypeMismatch`.
    */
   bytesHash(b: Uint8Array): Result<Uint8Array, TypeMismatch> {
+    if (!HASHING.has(this)) return err(NOT_A_HASHING);
     const bytes = bytesArg(b);
     return bytes.ok ? ok(TRIE.bytesHash(this, bytes.value)) : bytes;
   }
 
   /** A leaf's hash; a segment not made by `Segment.of`, or a digest that is not a `Uint8Array`, is a `TypeMismatch`. */
   leafHash(segment: Segment, valueHash: Uint8Array): Result<Uint8Array, TypeMismatch> {
+    if (!HASHING.has(this)) return err(NOT_A_HASHING);
     if (!isSegment(segment)) return err(expected("a Segment"));
     const v = bytesArg(valueHash);
     return v.ok ? ok(TRIE.leafBits(this, segmentBitsOf(segment), v.value)) : v;
@@ -309,6 +318,7 @@ export class TrieHashing {
 
   /** A branch's hash; absent fields are omitted. Arguments are checked as {@link leafHash} checks them. */
   branchHash(segment: Segment, valueHash: Uint8Array | undefined, left: Uint8Array | undefined, right: Uint8Array | undefined): Result<Uint8Array, TypeMismatch> {
+    if (!HASHING.has(this)) return err(NOT_A_HASHING);
     if (!isSegment(segment)) return err(expected("a Segment"));
     const v = optionalBytes(valueHash);
     if (!v.ok) return v;

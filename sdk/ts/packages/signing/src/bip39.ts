@@ -40,6 +40,8 @@ export class WordList {
     words: readonly string[],
     readonly separator: string,
   ) {
+    // without the token none of the caller's arguments is kept: every field is a fixed default
+    if (token !== INTERNAL) this.separator = " ";
     this.#words = Object.freeze(token === INTERNAL ? [...words] : []);
     this.#index = new Map(this.#words.map((w, i) => [w, i]));
     if (token === INTERNAL) WORD_LIST.stamp(this);
@@ -102,6 +104,8 @@ export class Mnemonic {
     words: readonly string[],
     readonly wordList: WordList,
   ) {
+    // without the token none of the caller's arguments is kept: every field is a fixed default
+    if (token !== INTERNAL) this.wordList = WordList.english;
     this.#words = Object.freeze(token === INTERNAL ? [...words] : []);
     if (token === INTERNAL) MNEMONIC.stamp(this);
     Object.freeze(this);

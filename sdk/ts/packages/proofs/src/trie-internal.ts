@@ -36,6 +36,9 @@ export interface TrieInternals {
   isProof(x: unknown): x is TrieProof;
   /** A trusted root as a `RootMismatch` names it: its hex when it has the digest's `width`, otherwise its length. */
   rootText(root: Uint8Array, width: number): string;
+  /** The SHA-256 hashing and the `fixed(1)` mode, for the fields of an instance built from outside (never used by it). */
+  defaultHashing: TrieHashing;
+  defaultMode: KeyMode;
 }
 
 /** Filled by `trie.ts` when it loads, before any of this package's functions can run. */

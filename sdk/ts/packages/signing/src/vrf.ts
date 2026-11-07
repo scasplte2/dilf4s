@@ -45,6 +45,8 @@ export class VrfProof<S extends VrfSuiteName> {
     readonly suite: S,
     bytes: Uint8Array,
   ) {
+    // without the token, nothing of the caller's is read or kept
+    if (token !== INTERNAL) this.suite = "" as S;
     this.#bytes = token === INTERNAL ? copy(bytes) : new Uint8Array(0);
     if (token === INTERNAL) PROOF.stamp(this);
     Object.freeze(this);
@@ -67,11 +69,13 @@ export class VrfProof<S extends VrfSuiteName> {
 export class VrfOutput<S extends VrfSuiteName> {
   readonly #bytes: Uint8Array;
   constructor(
-    _token: typeof INTERNAL,
+    token: typeof INTERNAL,
     readonly suite: S,
     bytes: Uint8Array,
   ) {
-    this.#bytes = copy(bytes);
+    // without the token, nothing of the caller's is read or kept
+    if (token !== INTERNAL) this.suite = "" as S;
+    this.#bytes = token === INTERNAL ? copy(bytes) : new Uint8Array(0);
     Object.freeze(this);
   }
 

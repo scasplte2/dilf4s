@@ -24,6 +24,7 @@ import {
   type ExpansionRefusal,
   type HashAlgorithm,
 } from "../src/index.js";
+import { isDomainTag as isDomainTagOf } from "../src/internal.js";
 import { expectOk, int } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
@@ -257,6 +258,23 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     });
     expect(hashParts(sha, bad(revoking))).toEqual(mismatch("expected a Uint8Array at index 0"));
     expect(digest(sha, bad(proxy))).toEqual(notBytes);
+  });
+
+  it("a TaggedHash built by calling its constructor from outside reads nothing it is given and hashes nothing", () => {
+    const tag = {
+      get value(): never {
+        throw new Error("never read");
+      },
+    };
+    const forged = Reflect.construct(TaggedHash as unknown as new (...a: unknown[]) => object, [Symbol("key"), "SHA-512", tag]) as TaggedHash;
+    expect([forged.algorithm, forged.tag.value], "its own defaults, never the caller's").toEqual(["SHA-256", ""]);
+    const notATaggedHash = mismatch("expected a TaggedHash");
+    expect(forged.hash(message), "hash").toEqual(notATaggedHash);
+    expect(forged.content(int(1n)), "content").toEqual(notATaggedHash);
+    expect(forged.contentWithin(int(1n), 64), "contentWithin").toEqual(notATaggedHash);
+    expect(isDomainTagOf(forged.tag), "its tag is no DomainTag").toBe(false);
+    const fakeTag = Reflect.construct(DomainTag as unknown as new (...a: unknown[]) => object, [Symbol("key"), "Not A Tag"]) as DomainTag;
+    expect(fakeTag.value, "a forged tag keeps nothing").toBe("");
   });
 
   it("the algorithm list cannot be extended by a caller", () => {

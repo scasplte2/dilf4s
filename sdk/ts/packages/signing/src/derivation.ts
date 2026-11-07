@@ -45,6 +45,8 @@ export class ChildIndex {
     readonly value: number,
     readonly hardened: boolean,
   ) {
+    // without the token none of the caller's arguments is kept: every field is a fixed default
+    if (token !== INTERNAL) [this.value, this.hardened] = [0, false];
     if (token === INTERNAL) INDEX.stamp(this);
     Object.freeze(this);
   }
@@ -170,7 +172,8 @@ export class ExtendedKey<S extends SchemeName> {
   }
 
   toString(): string {
-    return `ExtendedKey(${this.key.scheme}, <redacted>)`;
+    // a key built from outside holds the caller's key, which is never read
+    return EXTENDED.has(this) ? `ExtendedKey(${this.key.scheme}, <redacted>)` : "ExtendedKey(<not a key of this package>)";
   }
 
   toJSON(): string {

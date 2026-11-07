@@ -95,10 +95,12 @@ verification never answers for such an argument: a message that is not bytes is 
 claimed value that is not a canonical value (an object shaped like the null value included) is never a claim of
 absence. A key, signature, proof, profile, mode or index must be one the package made (a private brand, stamped only
 by a constructor given the package's token, so one built by calling a constructor from JavaScript fails the check)
-and, for keys and signatures, of the scheme at hand. A plain object a caller passes (a Merkle or versioned head, a
+and, for keys and signatures, of the scheme at hand. Such a built instance keeps none of its arguments (every field
+is a fixed default, so it never reports a caller's algorithm or scheme), and each of its methods with room for a
+refusal refuses it. A plain object a caller passes (a Merkle or versioned head, a
 proof, delta, chunk or snapshot) has each field read once into a copy the package owns. The query of a listing check
-(a prefix, or a range's bounds) is copied before the claim is read, so a claim's getter cannot change what it is
-compared with. Where a result has no room for a refusal, `equals` is false for anything not of its class. A message to sign is copied once before it is read, since
+(a prefix, or a range's bounds; for a versioned trie, the version asked about or a range's versions, encoded once)
+is copied before the claim or the proof is read, so their getters cannot change what is asked. Where a result has no room for a refusal, `equals` is false for anything not of its class. A message to sign is copied once before it is read, since
 a signer reads it more than once and shared memory cannot be told apart reliably.
 
 A revoked Proxy (or a Proxy whose target is one) is refused like any other argument of the wrong type, as a

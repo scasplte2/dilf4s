@@ -82,6 +82,8 @@ export class StateKey {
     token: Token,
     readonly value: string,
   ) {
+    // without the token none of the caller's arguments is kept: every field is a fixed default
+    if (token !== TOKEN) this.value = "";
     if (token === TOKEN) KEY.stamp(this);
     Object.freeze(this);
   }
@@ -160,6 +162,8 @@ export class StateNamespace {
     token: Token,
     readonly value: string,
   ) {
+    // without the token none of the caller's arguments is kept: every field is a fixed default
+    if (token !== TOKEN) this.value = "";
     if (token === TOKEN) NAMESPACE.stamp(this);
     Object.freeze(this);
   }
@@ -190,6 +194,7 @@ export class StateNamespace {
 
   /** Whether `key` lies below this namespace; what is not a `StateKey` is a `TypeMismatch`. */
   contains(key: StateKey): Result<boolean, TypeMismatch> {
+    if (!isNamespace(this)) return err(expected("a StateNamespace"));
     const k = keyArg(key);
     return k.ok ? ok(k.value.value.startsWith(`${this.value}/`)) : k;
   }
@@ -573,9 +578,12 @@ export class VersionedTrie<V> {
     readonly versionKey: VersionKey<V>,
     modes: readonly [trie.KeyMode, trie.KeyMode, trie.KeyMode],
   ) {
-    this.hashing = hashing;
-    [this.topMode, this.stateMode, this.historyMode] = token === TOKEN ? modes : [modes[0], modes[0], modes[0]];
-    if (token === TOKEN) PROFILE.stamp(this);
+    // without the token none of the caller's arguments is read or kept: the fields are this module's own defaults
+    const own = token === TOKEN;
+    this.hashing = own ? hashing : TRIE.defaultHashing;
+    if (!own) this.versionKey = VersionKey.long as VersionKey<V>;
+    [this.topMode, this.stateMode, this.historyMode] = own ? modes : [TRIE.defaultMode, TRIE.defaultMode, TRIE.defaultMode];
+    if (own) PROFILE.stamp(this);
     Object.freeze(this);
   }
 
@@ -827,8 +835,23 @@ export class VersionedTrie<V> {
     return p.ok ? ok([r, p.value]) : p;
   }
 
-  /** Rule 1: the head binds to `root`, and the proof's top trie holds the head's values in slots 0x00..0x02. */
-  #bind(root: Uint8Array, proof: VersionedTrieProof<V>): C<Head<V>> {
+  /**
+   * The trusted root (copied) and the version asked about, encoded once into bytes the module owns, both before the
+   * proof's fields are read: a proof's getter (caller code) cannot change the query, which is only ever used as these
+   * bytes from then on.
+   */
+  #asking(root: unknown, u: V): C<readonly [Uint8Array, Uint8Array]> {
+    const r = takeBytes(root);
+    if (r === undefined) return err(NOT_BYTES);
+    const k = this.versionKey.encode(u);
+    return k.ok ? ok([r, k.value]) : k;
+  }
+
+  /**
+   * Rule 1: the head binds to `root`, and the proof's top trie holds the head's values in slots 0x00..0x02. The head,
+   * with its version's key, encoded once here and used as these bytes from then on.
+   */
+  #bind(root: Uint8Array, proof: VersionedTrieProof<V>): C<{ readonly head: Head<V>; readonly vkey: Uint8Array }> {
     const claimed = this.#root(proof.head);
     if (!claimed.ok) return claimed;
     if (!bytesEqual(claimed.value, root)) return mismatch("root", root, claimed.value);
@@ -847,34 +870,31 @@ export class VersionedTrie<V> {
       if (l.value.kind === "notCovered") return notCovered(`top slot ${slotName(slot)}`);
       if (l.value.kind !== "present" || !bytesEqual(l.value.valueHash, this.#bytesHash(value))) return malformed(`top slot ${slotName(slot)} does not hold the head's value`);
     }
-    return ok(proof.head);
+    return ok({ head: proof.head, vkey: vkey.value });
   }
 
   #history(head: Head<V>, proof: VersionedTrieProof<V>): R<trie.VerifiedTrieProof> {
     return this.#verified(this.historyMode, head.historyRoot, "history", proof.history);
   }
 
-  #asked(proof: VersionedTrieProof<V>, u: V): C<At<V>> {
+  /** The proof's `at`, if it names the version asked about, whose key (`ukey`) the rule encoded before reading the proof. */
+  #asked(proof: VersionedTrieProof<V>, ukey: Uint8Array): C<At<V>> {
     const at = proof.at;
     if (at === undefined) return malformed("the proof names no version");
     const a = this.versionKey.encode(at.version);
     if (!a.ok) return a;
-    const b = this.versionKey.encode(u);
-    if (!b.ok) return b;
-    return bytesEqual(a.value, b.value) ? ok(at) : malformed(`the proof is about version ${toHexOf(a.value)}, not ${toHexOf(b.value)}`);
+    return bytesEqual(a.value, ukey) ? ok(at) : malformed(`the proof is about version ${toHexOf(a.value)}, not ${toHexOf(ukey)}`);
   }
 
-  /** The state root of `u` per the history trie: the root if committed, `null` if proven never committed. */
-  #versionRoot(head: Head<V>, proof: VersionedTrieProof<V>, u: V): C<Uint8Array | null> {
-    const at = this.#asked(proof, u);
+  /** The state root of the version keyed `ukey` per the history trie: the root if committed, `null` if proven never committed. */
+  #versionRoot(head: Head<V>, proof: VersionedTrieProof<V>, ukey: Uint8Array): C<Uint8Array | null> {
+    const at = this.#asked(proof, ukey);
     if (!at.ok) return at;
     const hist = this.#history(head, proof);
     if (!hist.ok) return hist;
-    const vkey = this.versionKey.encode(u);
-    if (!vkey.ok) return vkey;
-    const l = viaTrie(TRIE.lookup(hist.value, vkey.value));
+    const l = viaTrie(TRIE.lookup(hist.value, ukey));
     if (!l.ok) return l;
-    const k = toHexOf(vkey.value);
+    const k = toHexOf(ukey);
     const s = at.value.stateRoot;
     switch (l.value.kind) {
       case "notCovered":
@@ -897,16 +917,15 @@ export class VersionedTrie<V> {
     const a = this.#args(root, proof);
     if (!a.ok) return a;
     const [r, p] = a.value;
-    const head = this.#bind(r, p);
-    if (!head.ok) return head;
-    const hist = this.#history(head.value, p);
+    const bound = this.#bind(r, p);
+    if (!bound.ok) return bound;
+    const { head, vkey } = bound.value;
+    const hist = this.#history(head, p);
     if (!hist.ok) return hist;
-    const vkey = this.versionKey.encode(head.value.version);
-    if (!vkey.ok) return vkey;
-    const tail = TRIE.range(hist.value, vkey.value, undefined);
+    const tail = TRIE.range(hist.value, vkey, undefined);
     if (tail.kind === "notCovered") return notCovered("history from the head version up");
-    return sameEntries(tail.entries, [{ key: vkey.value, valueHash: this.#bytesHash(head.value.stateRoot) }])
-      ? head
+    return sameEntries(tail.entries, [{ key: vkey, valueHash: this.#bytesHash(head.stateRoot) }])
+      ? ok(head)
       : malformed("the history trie does not end at the head version with the head's state root");
   }
 
@@ -916,10 +935,10 @@ export class VersionedTrie<V> {
     const a = this.#args(root, proof);
     if (!a.ok) return a;
     const [r, p] = a.value;
-    const head = this.#bind(r, p);
-    if (!head.ok) return head;
+    const bound = this.#bind(r, p);
+    if (!bound.ok) return bound;
     if (p.at !== undefined) return malformed("a historical proof is not about the current state");
-    const state = this.#verified(this.stateMode, head.value.stateRoot, "state", p.state);
+    const state = this.#verified(this.stateMode, bound.value.head.stateRoot, "state", p.state);
     return state.ok ? ok(createState(state.value, this.hashing)) : state;
   }
 
@@ -929,27 +948,29 @@ export class VersionedTrie<V> {
    */
   verifyVersion(root: Uint8Array, proof: VersionedTrieProof<V>, u: V): C<Uint8Array | null> {
     if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
-    const a = this.#args(root, proof);
-    if (!a.ok) return a;
-    const [r, p] = a.value;
-    const head = this.#bind(r, p);
-    return head.ok ? this.#versionRoot(head.value, p, u) : head;
+    const q = this.#asking(root, u);
+    if (!q.ok) return q;
+    const [r, ukey] = q.value;
+    const p = proofArg<V>(proof);
+    if (!p.ok) return p;
+    const bound = this.#bind(r, p.value);
+    return bound.ok ? this.#versionRoot(bound.value.head, p.value, ukey) : bound;
   }
 
   /** Rule 4: the state of a past version `u`, its root taken from the history trie. Arguments as {@link verifyVersion}. */
   verifyHistoricalKey(root: Uint8Array, proof: VersionedTrieProof<V>, u: V): C<VerifiedState> {
     if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
-    const a = this.#args(root, proof);
-    if (!a.ok) return a;
-    const [r, p] = a.value;
-    const head = this.#bind(r, p);
-    if (!head.ok) return head;
-    const uk = this.versionKey.encode(u);
-    if (!uk.ok) return uk;
-    const s = this.#versionRoot(head.value, p, u);
+    const q = this.#asking(root, u);
+    if (!q.ok) return q;
+    const [r, ukey] = q.value;
+    const p = proofArg<V>(proof);
+    if (!p.ok) return p;
+    const bound = this.#bind(r, p.value);
+    if (!bound.ok) return bound;
+    const s = this.#versionRoot(bound.value.head, p.value, ukey);
     if (!s.ok) return s;
-    if (s.value === null) return err({ kind: "UnknownVersion", version: uk.value });
-    const state = this.#verified(this.stateMode, s.value, "state", p.state);
+    if (s.value === null) return err({ kind: "UnknownVersion", version: ukey });
+    const state = this.#verified(this.stateMode, s.value, "state", p.value.state);
     return state.ok ? ok(createState(state.value, this.hashing)) : state;
   }
 
@@ -959,30 +980,30 @@ export class VersionedTrie<V> {
    */
   verifyVersions(root: Uint8Array, proof: VersionedTrieProof<V>, from: V, until: V | null, claimed: readonly (readonly [V, Uint8Array])[]): C<boolean> {
     if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
-    // the trusted root copied before anything else is read: the claims' and the proof's getters are caller code
-    const trusted = takeBytes(root);
-    if (trusted === undefined) return err(NOT_BYTES);
-    const given = versionsArg<V>(claimed, "an array of [version, Uint8Array] claims");
-    if (!given.ok) return given;
-    const a = this.#args(trusted, proof);
-    if (!a.ok) return a;
-    const [r, p] = a.value;
-    const head = this.#bind(r, p);
-    if (!head.ok) return head;
-    const hist = this.#history(head.value, p);
-    if (!hist.ok) return hist;
-    const fk = this.versionKey.encode(from);
-    if (!fk.ok) return fk;
+    // the trusted root copied and the query encoded before anything else is read: the claims' and the proof's getters
+    // are caller code, and from here the query is only these bytes
+    const q = this.#asking(root, from);
+    if (!q.ok) return q;
+    const [r, fk] = q.value;
     const uk = until === null ? ok(undefined) : this.versionKey.encode(until);
     if (!uk.ok) return uk;
-    const listing = TRIE.range(hist.value, fk.value, uk.value);
-    if (listing.kind === "notCovered") return notCovered(`versions [${toHexOf(fk.value)}, ${uk.value === undefined ? "" : toHexOf(uk.value)})`);
+    // each claim encoded as it is read, before the proof's getters run
+    const given = versionsArg<V>(claimed, "an array of [version, Uint8Array] claims");
+    if (!given.ok) return given;
     const expected: trie.TrieEntry[] = [];
     for (const [v, s] of given.value) {
       const k = this.versionKey.encode(v);
       if (!k.ok) return k;
       expected.push({ key: k.value, valueHash: this.#bytesHash(s) });
     }
+    const p = proofArg<V>(proof);
+    if (!p.ok) return p;
+    const bound = this.#bind(r, p.value);
+    if (!bound.ok) return bound;
+    const hist = this.#history(bound.value.head, p.value);
+    if (!hist.ok) return hist;
+    const listing = TRIE.range(hist.value, fk, uk.value);
+    if (listing.kind === "notCovered") return notCovered(`versions [${toHexOf(fk)}, ${uk.value === undefined ? "" : toHexOf(uk.value)})`);
     return ok(sameEntries(listing.entries, expected));
   }
 
@@ -992,29 +1013,30 @@ export class VersionedTrie<V> {
    */
   verifyAsOf(root: Uint8Array, proof: VersionedTrieProof<V>, t: V): C<{ readonly version: V; readonly stateRoot: Uint8Array } | null> {
     if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
-    const a = this.#args(root, proof);
-    if (!a.ok) return a;
-    const [r, p] = a.value;
-    const head = this.#bind(r, p);
-    if (!head.ok) return head;
-    const hist = this.#history(head.value, p);
+    const q = this.#asking(root, t);
+    if (!q.ok) return q;
+    const [r, tkey] = q.value;
+    const pa = proofArg<V>(proof);
+    if (!pa.ok) return pa;
+    const p = pa.value;
+    const b = this.#bind(r, p);
+    if (!b.ok) return b;
+    const hist = this.#history(b.value.head, p);
     if (!hist.ok) return hist;
-    const tkey = this.versionKey.encode(t);
-    if (!tkey.ok) return tkey;
-    const bound = concatBytes([tkey.value, Uint8Array.of(0)]);
+    const bound = concatBytes([tkey, Uint8Array.of(0)]);
     let found: { readonly pkey: Uint8Array; readonly version: V; readonly stateRoot: Uint8Array } | undefined;
     if (p.at !== undefined) {
       const pkey = this.versionKey.encode(p.at.version);
       if (!pkey.ok) return pkey;
       const s = p.at.stateRoot;
       if (s === undefined) return malformed("an as-of answer names its state root");
-      if (compareBytes(pkey.value, tkey.value) > 0) return malformed(`the answer ${toHexOf(pkey.value)} is after ${toHexOf(tkey.value)}`);
+      if (compareBytes(pkey.value, tkey) > 0) return malformed(`the answer ${toHexOf(pkey.value)} is after ${toHexOf(tkey)}`);
       found = { pkey: pkey.value, version: p.at.version, stateRoot: s };
     }
     const listing = TRIE.range(hist.value, found?.pkey ?? new Uint8Array(0), bound);
-    if (listing.kind === "notCovered") return notCovered(`history up to ${toHexOf(tkey.value)}`);
+    if (listing.kind === "notCovered") return notCovered(`history up to ${toHexOf(tkey)}`);
     const expected = found === undefined ? [] : [{ key: found.pkey, valueHash: this.#bytesHash(found.stateRoot) }];
-    if (!sameEntries(listing.entries, expected)) return malformed(`the history up to ${toHexOf(tkey.value)} is not the claimed answer`);
+    if (!sameEntries(listing.entries, expected)) return malformed(`the history up to ${toHexOf(tkey)} is not the claimed answer`);
     return ok(found === undefined ? null : { version: found.version, stateRoot: found.stateRoot });
   }
 }
@@ -1270,7 +1292,8 @@ export class Replica<V> {
     private readonly state: TrieMap<StateSlot>,
     private readonly versions: TrieMap<VersionSlot<V>>,
   ) {
-    this.#head = head === null ? null : copyHead(head);
+    // without the token the caller's head is never read, and the replica's views answer as an empty one's
+    this.#head = token !== TOKEN || head === null ? null : copyHead(head);
     if (token === TOKEN) REPLICA.stamp(this);
     Object.freeze(this);
   }
@@ -1301,17 +1324,17 @@ export class Replica<V> {
 
   /** The number of current entries. */
   get size(): number {
-    return this.state.size;
+    return REPLICA.has(this) ? this.state.size : 0;
   }
 
-  /** Every current entry, in key order. */
+  /** Every current entry, in key order (none for a replica built from outside). */
   entries(): readonly (readonly [StateKey, Value])[] {
-    return this.state.values().map((s) => [s.key, s.value] as const);
+    return REPLICA.has(this) ? this.state.values().map((s) => [s.key, s.value] as const) : [];
   }
 
-  /** Every committed version with its state root, in order. */
+  /** Every committed version with its state root, in order (none for a replica built from outside). */
   history(): readonly (readonly [V, Uint8Array])[] {
-    return this.versions.values().map((s) => [s.version, copyBytes(s.stateRoot)] as const);
+    return REPLICA.has(this) ? this.versions.values().map((s) => [s.version, copyBytes(s.stateRoot)] as const) : [];
   }
 
   /**

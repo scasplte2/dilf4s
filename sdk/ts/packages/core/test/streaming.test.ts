@@ -252,7 +252,7 @@ describe("the streaming internals stay internal", () => {
       const receiver = { algorithm: "SHA-256", start: () => evil };
       // eslint-disable-next-line @typescript-eslint/unbound-method -- the point is a method borrowed onto another receiver
       const borrowed = TaggedHash.prototype.contentWithin;
-      expect(() => Reflect.apply(borrowed, receiver, [v, cbor.MAX_ENCODED_BYTES]), "refused at the brand check").toThrow(TypeError);
+      expect(Reflect.apply(borrowed, receiver, [v, cbor.MAX_ENCODED_BYTES]), "refused at the brand check").toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "expected a TaggedHash" } });
       expect(writes.length, "nothing reached the caller's hash").toBe(0);
     }
     expect(hexOf(bytes.bytes), "the value is unchanged").toBe("07".repeat(2048));

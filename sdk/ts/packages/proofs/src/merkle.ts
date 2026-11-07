@@ -119,16 +119,16 @@ function checkedNode(h: Profile, left: unknown, right: unknown): Result<Uint8Arr
 /** The dilf4s profile: tagged hashes per role, leaves committed by `commit(v)`. */
 export class TaggedMerkleHashing implements MerkleHashing<Value> {
   readonly profile = "tagged";
+  readonly algorithm: HashAlgorithm;
   readonly size: number;
   readonly #leaf: ConstantTag;
   readonly #node: ConstantTag;
   readonly #empty: Uint8Array;
-  private constructor(
-    token: Token,
-    readonly algorithm: HashAlgorithm,
-  ) {
-    // without the token, nothing of the caller's is read: its algorithm is never hashed with
+  private constructor(token: Token, algorithm: HashAlgorithm) {
+    // without the token, nothing of the caller's is read or kept: its algorithm is neither hashed with nor reported,
+    // and every method refuses the unbranded receiver
     const a: HashAlgorithm = token === TOKEN ? algorithm : "SHA-256";
+    this.algorithm = a;
     this.size = outputSizeOf(a);
     this.#leaf = new ConstantTag(a, LEAF_TAG);
     this.#node = new ConstantTag(a, NODE_TAG);
@@ -166,31 +166,35 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
    * the hash, never built.
    */
   leaf(value: Value): Result<Uint8Array, Refusal> {
+    if (!isTagged(this)) return err(NOT_A_PROFILE);
     const v = valueArg(value);
     return v.ok ? taggedLeaf(this, v.value) : v;
   }
 
   /** A value's weight; what is not a canonical value is a `TypeMismatch`. */
   leafWeight(value: Value): Result<bigint, TypeMismatch> {
+    if (!isTagged(this)) return err(NOT_A_PROFILE);
     const v = valueArg(value);
     return v.ok ? ok(v.value.weight) : v;
   }
 
   /** A node's hash; digests that are not `Uint8Array`s are a `TypeMismatch`. */
   node(left: Uint8Array, right: Uint8Array): Result<Uint8Array, TypeMismatch> {
-    return checkedNode(this, left, right);
+    return isTagged(this) ? checkedNode(this, left, right) : err(NOT_A_PROFILE);
   }
 }
 
 /** RFC 6962's one-byte prefixes, for external logs: leaves are raw bytes. */
 export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
   readonly profile = "rfc6962";
+  readonly algorithm: HashAlgorithm;
   readonly size: number;
-  private constructor(
-    token: Token,
-    readonly algorithm: HashAlgorithm,
-  ) {
-    this.size = token === TOKEN ? outputSizeOf(algorithm) : 0;
+  private constructor(token: Token, algorithm: HashAlgorithm) {
+    // without the token, nothing of the caller's is kept: its algorithm is neither hashed with nor reported, and every
+    // method refuses the unbranded receiver
+    const a: HashAlgorithm = token === TOKEN ? algorithm : "SHA-256";
+    this.algorithm = a;
+    this.size = outputSizeOf(a);
     if (token === TOKEN) RFC.stamp(this);
     Object.freeze(this);
   }
@@ -211,19 +215,21 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
 
   /** A raw leaf's hash, `H(0x00 || data)`; what is not a `Uint8Array` is a `TypeMismatch`. */
   leaf(data: Uint8Array): Result<Uint8Array, Refusal> {
+    if (!isRfc(this)) return err(NOT_A_PROFILE);
     const b = bytesArg(data);
     return b.ok ? ok(hashPartsOf(this.algorithm, [Uint8Array.of(0), b.value])) : b;
   }
 
   /** Raw bytes weigh one more than their length (their own, never their `length` property's). */
   leafWeight(data: Uint8Array): Result<bigint, TypeMismatch> {
+    if (!isRfc(this)) return err(NOT_A_PROFILE);
     const b = bytesArg(data);
     return b.ok ? ok(BigInt(b.value.length) + 1n) : b;
   }
 
   /** A node's hash, `H(0x01 || left || right)`; digests that are not `Uint8Array`s are a `TypeMismatch`. */
   node(left: Uint8Array, right: Uint8Array): Result<Uint8Array, TypeMismatch> {
-    return checkedNode(this, left, right);
+    return isRfc(this) ? checkedNode(this, left, right) : err(NOT_A_PROFILE);
   }
 }
 
@@ -253,6 +259,8 @@ export class InclusionProof {
     readonly size: bigint,
     path: readonly Uint8Array[],
   ) {
+    // without the token none of the caller's arguments is kept: every field is a fixed default
+    if (token !== TOKEN) [this.index, this.size] = [0n, 0n];
     this.#path = token === TOKEN ? Object.freeze(path) : [];
     if (token === TOKEN) INCLUSION.stamp(this);
     Object.freeze(this);
@@ -327,6 +335,8 @@ export class ConsistencyProof {
     readonly newSize: bigint,
     path: readonly Uint8Array[],
   ) {
+    // without the token none of the caller's arguments is kept: every field is a fixed default
+    if (token !== TOKEN) [this.oldSize, this.newSize] = [0n, 0n];
     this.#path = token === TOKEN ? Object.freeze(path) : [];
     if (token === TOKEN) CONSISTENCY.stamp(this);
     Object.freeze(this);

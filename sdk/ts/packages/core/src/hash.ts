@@ -340,13 +340,18 @@ let isTag!: (x: unknown) => x is DomainTag;
 /** The key `DomainTag`'s constructor takes, private to this module: without it, what a constructor call builds is no tag. */
 const TAG_KEY: unique symbol = Symbol("dilf4s domain tag");
 const TAG = mint();
+const TAGGED_HASH = mint();
+const NOT_A_TAGGED_HASH = typeMismatch("expected a TaggedHash");
+/** The tag a `TaggedHash` built from outside reports: an unbranded tag, holding nothing of the caller's. */
+let NO_TAG!: DomainTag;
 
 /** A versioned domain-separation tag, such as `dilf4s/mpt/leaf/v1`. */
 export class DomainTag {
   // #private state makes the class nominal: only DomainTag.of can produce one, so no unchecked tag reaches a hash
   readonly #value: string;
   private constructor(key: typeof TAG_KEY, value: string) {
-    this.#value = value;
+    // without the key nothing of the caller's is kept
+    this.#value = key === TAG_KEY ? value : "";
     // a JavaScript caller can call a private constructor; without the key it builds an object no check accepts
     if (key === TAG_KEY) TAG.stamp(this);
     Object.freeze(this);
@@ -354,6 +359,7 @@ export class DomainTag {
 
   static {
     isTag = (x): x is DomainTag => TAG.has(x);
+    NO_TAG = new DomainTag(undefined as unknown as typeof TAG_KEY, "");
   }
 
   /** The tag text. */
@@ -382,12 +388,17 @@ export const isDomainTag = (x: unknown): x is DomainTag => isTag(x);
  * tag once. A domain tag is ASCII by its grammar.
  */
 export class TaggedHash {
+  readonly algorithm: HashAlgorithm;
+  readonly tag: DomainTag;
   readonly #tagHash: Uint8Array;
-  private constructor(
-    readonly algorithm: HashAlgorithm,
-    readonly tag: DomainTag,
-  ) {
-    this.#tagHash = digestOf(algorithm, encodeUtf8(tag.value));
+  private constructor(key: typeof TAG_KEY, algorithm: HashAlgorithm, tag: DomainTag) {
+    // a JavaScript caller can call a private constructor: without the key nothing of the caller's is read or kept (its
+    // algorithm is never hashed with, its tag never read), and every method with room for a refusal refuses the instance
+    const own = key === TAG_KEY;
+    this.algorithm = own ? algorithm : "SHA-256";
+    this.tag = own ? tag : NO_TAG;
+    this.#tagHash = digestOf(this.algorithm, encodeUtf8(this.tag.value));
+    if (own) TAGGED_HASH.stamp(this);
     Object.freeze(this);
   }
 
@@ -398,10 +409,14 @@ export class TaggedHash {
   static of(algorithm: HashAlgorithm, tag: DomainTag): Result<TaggedHash, AlgorithmError> {
     const refused = refuseAlgorithm(algorithm);
     if (refused !== undefined) return refused;
-    return isTag(tag) ? ok(new TaggedHash(algorithm, tag)) : err(NOT_A_TAG);
+    return isTag(tag) ? ok(new TaggedHash(TAG_KEY, algorithm, tag)) : err(NOT_A_TAG);
   }
 
-  /** An incremental hash with the prefix `H(tag) || H(tag)` absorbed: absorb a message, then digest, for its tagged hash. */
+  /**
+   * An incremental hash with the prefix `H(tag) || H(tag)` absorbed: absorb a message, then digest, for its tagged hash.
+   * It has no room for a refusal: on an instance built from outside it is the hash its reported (default) algorithm and
+   * tag name, never one of the caller's.
+   */
   start(): Hashing {
     return new CheckedHashing(this.#start());
   }
@@ -422,6 +437,7 @@ export class TaggedHash {
 
   /** The tagged hash of `message`; what is not a `Uint8Array` is a `TypeMismatch`. Read once, through a plain view. */
   hash(message: Uint8Array): Result<Uint8Array, TypeMismatch> {
+    if (!TAGGED_HASH.has(this)) return err(NOT_A_TAGGED_HASH);
     const view = plainBytes(message);
     if (view === undefined) return err(NOT_BYTES);
     const h = this.#start();
@@ -443,6 +459,7 @@ export class TaggedHash {
    * before anything is hashed), the encoding streamed into the hash: memory as `STAGED_BYTES` states.
    */
   contentWithin(value: Value, maxBytes: number): Result<Uint8Array, EncodeError> {
+    if (!TAGGED_HASH.has(this)) return err(NOT_A_TAGGED_HASH);
     const limit = checkedLimit(value, maxBytes);
     if (!limit.ok) return limit;
     // the private factory, never the public `start`: a value's own bytes reach only a hash this package created
