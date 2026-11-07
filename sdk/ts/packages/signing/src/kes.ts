@@ -299,6 +299,7 @@ export class KesSumKey extends KesKey {
 
   /** The key at `target` (at or after this key's period), evolving one period at a time; a non-number is a `TypeMismatch`. */
   evolveTo(target: number): Result<KesSumKey, KesRefusal> {
+    if (!SUM_KEY.has(this)) return err(expected(SUM_KEY_OF));
     return evolveTo<KesSumKey>(this, target, this.scheme.totalPeriods, (k) => k.evolve());
   }
 
@@ -369,24 +370,28 @@ export class KesSum {
    * not made by this package is a `TypeMismatch`.
    */
   verifyingKey(key: KesSumKey): Result<Uint8Array, TypeMismatch> {
+    if (!SUM.has(this)) return err(NOT_SUM);
     const k = keyArg<KesSumKey>(SUM_KEY, key, SUM_KEY_OF);
     return k.ok ? ok(k.value.verifyingKey) : k;
   }
 
   /** {@link KesSumKey.sign} of `key`; a key not made by this package is a `TypeMismatch`. */
   sign(key: KesSumKey, message: Uint8Array): Result<Uint8Array, KesRefusal> {
+    if (!SUM.has(this)) return err(NOT_SUM);
     const k = keyArg<KesSumKey>(SUM_KEY, key, SUM_KEY_OF);
     return k.ok ? k.value.sign(message) : k;
   }
 
   /** {@link KesSumKey.evolve} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolve(key: KesSumKey): Result<KesSumKey, KesRefusal> {
+    if (!SUM.has(this)) return err(NOT_SUM);
     const k = keyArg<KesSumKey>(SUM_KEY, key, SUM_KEY_OF);
     return k.ok ? k.value.evolve() : k;
   }
 
   /** {@link KesSumKey.evolveTo} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolveTo(key: KesSumKey, target: number): Result<KesSumKey, KesRefusal> {
+    if (!SUM.has(this)) return err(NOT_SUM);
     const k = keyArg<KesSumKey>(SUM_KEY, key, SUM_KEY_OF);
     return k.ok ? k.value.evolveTo(target) : k;
   }
@@ -475,6 +480,7 @@ export class KesProductKey extends KesKey {
 
   /** The key at `target`; a non-number is a `TypeMismatch`. */
   evolveTo(target: number): Result<KesProductKey, KesRefusal> {
+    if (!PRODUCT_KEY.has(this)) return err(expected(PRODUCT_KEY_OF));
     return evolveTo<KesProductKey>(this, target, this.scheme.totalPeriods, (k) => k.evolve());
   }
 
@@ -558,24 +564,28 @@ export class KesProduct {
 
   /** The scheme-level forms; each delegates to the key. A key not made by this package is a `TypeMismatch`. */
   verifyingKey(key: KesProductKey): Result<Uint8Array, TypeMismatch> {
+    if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
     const k = keyArg<KesProductKey>(PRODUCT_KEY, key, PRODUCT_KEY_OF);
     return k.ok ? ok(k.value.verifyingKey) : k;
   }
 
   /** {@link KesProductKey.sign} of `key`; a key not made by this package is a `TypeMismatch`. */
   sign(key: KesProductKey, message: Uint8Array): Result<Uint8Array, KesRefusal> {
+    if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
     const k = keyArg<KesProductKey>(PRODUCT_KEY, key, PRODUCT_KEY_OF);
     return k.ok ? k.value.sign(message) : k;
   }
 
   /** {@link KesProductKey.evolve} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolve(key: KesProductKey): Result<KesProductKey, KesRefusal> {
+    if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
     const k = keyArg<KesProductKey>(PRODUCT_KEY, key, PRODUCT_KEY_OF);
     return k.ok ? k.value.evolve() : k;
   }
 
   /** {@link KesProductKey.evolveTo} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolveTo(key: KesProductKey, target: number): Result<KesProductKey, KesRefusal> {
+    if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
     const k = keyArg<KesProductKey>(PRODUCT_KEY, key, PRODUCT_KEY_OF);
     return k.ok ? k.value.evolveTo(target) : k;
   }
@@ -696,6 +706,7 @@ export class CardanoSumKesKey extends KesKey {
 
   /** The key at `target`; a non-number is a `TypeMismatch`. */
   evolveTo(target: number): Result<CardanoSumKesKey, KesRefusal> {
+    if (!CARDANO_KEY.has(this)) return err(expected(CARDANO_KEY_OF));
     return evolveTo<CardanoSumKesKey>(this, target, this.scheme.totalPeriods, (k) => k.evolve());
   }
 
@@ -761,24 +772,28 @@ export class CardanoSumKes {
 
   /** The scheme-level forms; each delegates to the key. A key not made by this package is a `TypeMismatch`. */
   verifyingKey(key: CardanoSumKesKey): Result<Uint8Array, TypeMismatch> {
+    if (!CARDANO.has(this)) return err(NOT_CARDANO);
     const k = keyArg<CardanoSumKesKey>(CARDANO_KEY, key, CARDANO_KEY_OF);
     return k.ok ? ok(k.value.verifyingKey) : k;
   }
 
   /** {@link CardanoSumKesKey.sign} of `key`; a key not made by this package is a `TypeMismatch`. */
   sign(key: CardanoSumKesKey, message: Uint8Array): Result<Uint8Array, TypeMismatch> {
+    if (!CARDANO.has(this)) return err(NOT_CARDANO);
     const k = keyArg<CardanoSumKesKey>(CARDANO_KEY, key, CARDANO_KEY_OF);
     return k.ok ? k.value.sign(message) : k;
   }
 
   /** {@link CardanoSumKesKey.evolve} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolve(key: CardanoSumKesKey): Result<CardanoSumKesKey, KesRefusal> {
+    if (!CARDANO.has(this)) return err(NOT_CARDANO);
     const k = keyArg<CardanoSumKesKey>(CARDANO_KEY, key, CARDANO_KEY_OF);
     return k.ok ? k.value.evolve() : k;
   }
 
   /** {@link CardanoSumKesKey.evolveTo} of `key`; a key not made by this package is a `TypeMismatch`. */
   evolveTo(key: CardanoSumKesKey, target: number): Result<CardanoSumKesKey, KesRefusal> {
+    if (!CARDANO.has(this)) return err(NOT_CARDANO);
     const k = keyArg<CardanoSumKesKey>(CARDANO_KEY, key, CARDANO_KEY_OF);
     return k.ok ? k.value.evolveTo(target) : k;
   }

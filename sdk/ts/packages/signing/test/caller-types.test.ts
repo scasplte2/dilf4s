@@ -404,6 +404,8 @@ describe("a KES key built by calling its constructor from outside never signs, a
       expect(k.evolve(), `${name}.evolve`).toEqual(mismatch(`expected a ${name}`));
       expect(k.sign(empty), `${name}.sign`).toEqual(mismatch(`expected a ${name}`));
       expect(k.evolveTo(1), `${name}.evolveTo`).toEqual(mismatch(`expected a ${name}`));
+      // a target at the key's own period evolved nothing, and handed the forged key back as a success
+      expect(k.evolveTo(0), `${name}.evolveTo its own period`).toEqual(mismatch(`expected a ${name}`));
       expect((scheme as { sign(k: unknown, m: Uint8Array): unknown }).sign(key, empty), `${name} scheme sign`).toEqual(mismatch(`expected a ${name}`));
     }
     expect(ran, "no operation of the caller's ran").toBe(0);
@@ -421,6 +423,12 @@ describe("a KES scheme built by calling its constructor from outside mints no ke
     expect(product.generate(seed)).toEqual(mismatch("expected a KesProduct"));
     // a depth of -1 used to recurse without end: the caller's depth is never computed with
     expect(cardano.generate(seed)).toEqual(mismatch("expected a CardanoSumKes"));
+    // nor does it sign or evolve a genuine key on the caller's behalf
+    const genuine = expectOk(expectOk(KesSum.of("SHA-256", 0), "sum").generate(seed), "key");
+    expect(sum.sign(genuine, empty)).toEqual(mismatch("expected a KesSum"));
+    expect(sum.evolve(genuine)).toEqual(mismatch("expected a KesSum"));
+    expect(sum.evolveTo(genuine, 0)).toEqual(mismatch("expected a KesSum"));
+    expect(sum.verifyingKey(genuine)).toEqual(mismatch("expected a KesSum"));
     expect(() => Reflect.construct(KesSum, [Symbol("token"), {}, -1]) as unknown).not.toThrow();
   });
 });

@@ -228,6 +228,12 @@ export function ownVerifyingKey(x: unknown, scheme: string): Uint8Array | undefi
   return b !== undefined && (x as { readonly scheme: unknown }).scheme === scheme ? b : undefined;
 }
 
+/** A signing key's own bytes, as {@link ownVerifyingKey}. */
+export function ownSigningKey(x: unknown, scheme: string): Uint8Array | undefined {
+  const b = signingOf(x);
+  return b !== undefined && (x as { readonly scheme: unknown }).scheme === scheme ? b : undefined;
+}
+
 /** A signature's own bytes, as {@link ownVerifyingKey}. */
 export function ownSignature(x: unknown, scheme: string): Uint8Array | undefined {
   const b = signatureBytesOf(x);

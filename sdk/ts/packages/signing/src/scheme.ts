@@ -10,7 +10,7 @@ import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
 import { copyBytes, plainBytes } from "@kd5ujc/dilf4s-core/internal";
 
 import { lengthError, type CryptoError } from "./errors.js";
-import { ownSignature, ownVerifyingKey, Signature, signingKeyBytes, SigningKey, VerifyingKey, type KeyPair, type SchemeName } from "./keys.js";
+import { ownSignature, ownSigningKey, ownVerifyingKey, Signature, SigningKey, VerifyingKey, type KeyPair, type SchemeName } from "./keys.js";
 import { expected, NOT_BYTES, signedOf, verdict, viewOf } from "./internal/check.js";
 import { INTERNAL } from "./internal/token.js";
 
@@ -132,19 +132,25 @@ export function verifyBytesWith<S extends SchemeName, M>(
 
 /** `publicKey` for a scheme: the key must be this scheme's `SigningKey`; `of` maps its own bytes to the public key's. */
 export function checkedPublicKey<S extends SchemeName>(scheme: S, of: (secret: Uint8Array) => Uint8Array): (key: SigningKey<S>) => Result<VerifyingKey<S>, TypeMismatch> {
+  const notKey = Object.freeze(err(expected(`a ${scheme} SigningKey`)));
   return (key) => {
-    const k = signingKeyBytes(key, scheme);
-    return k.ok ? ok(verifyingKeyOf(scheme, of(k.value))) : k;
+    const k = ownSigningKey(key, scheme);
+    return k === undefined ? notKey : ok(verifyingKeyOf(scheme, of(k)));
   };
 }
 
-/** `sign` for a scheme: the key must be this scheme's `SigningKey`, and the message is read once (see `signedOf`). */
+/**
+ * `sign` for a scheme: the key must be this scheme's `SigningKey` (its own bytes read, nothing allocated to check it),
+ * and the message is copied once (see `signedOf`), the one allocation a passing check makes.
+ */
 export function checkedSign<S extends SchemeName>(scheme: S, raw: (secret: Uint8Array, message: Uint8Array) => Uint8Array): (key: SigningKey<S>, message: Uint8Array) => Result<Signature<S>, TypeMismatch> {
+  const notKey = Object.freeze(err(expected(`a ${scheme} SigningKey`)));
+  const notMessage = Object.freeze(err(NOT_BYTES));
   return (key, message) => {
-    const k = signingKeyBytes(key, scheme);
-    if (!k.ok) return k;
-    const m = signedMessage(message);
-    return m.ok ? ok(signatureOf(scheme, raw(k.value, m.value))) : m;
+    const k = ownSigningKey(key, scheme);
+    if (k === undefined) return notKey;
+    const m = signedOf(message);
+    return m === undefined ? notMessage : ok(signatureOf(scheme, raw(k, m)));
   };
 }
 
