@@ -1103,6 +1103,8 @@ const NOT_A_READER = expected("a SnapshotReader");
 let startReader!: <V>(profile: VersionedTrie<V>, trusted: Head<V>) => SnapshotReader<V>;
 let feedChunk!: <V>(r: SnapshotReader<V>, chunk: SnapshotChunk<V>) => C<SnapshotReader<V>>;
 let finishReader!: <V>(r: SnapshotReader<V>) => R<Snapshot<V>>;
+/** The keys of a reader's history versions, in order, each encoded once as it was fed: no version is encoded again. */
+let readerKeys!: <V>(r: SnapshotReader<V>) => readonly Uint8Array[];
 
 /**
  * Checks a snapshot chunk by chunk against a head the caller already trusts, refusing it at the first chunk that
@@ -1121,15 +1123,18 @@ export class SnapshotReader<V> {
     private readonly lastVersion: Uint8Array | undefined,
     private readonly stateChunks: readonly (readonly (readonly [StateKey, Value])[])[],
     private readonly historyChunks: readonly (readonly (readonly [V, Uint8Array])[])[],
+    private readonly historyKeys: readonly (readonly Uint8Array[])[],
+    private readonly headKey: Uint8Array | undefined,
   ) {
     if (token === TOKEN) READER.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    startReader = <V>(profile: VersionedTrie<V>, trusted: Head<V>) => new SnapshotReader(TOKEN, profile, trusted, "head", undefined, undefined, [], []);
+    startReader = <V>(profile: VersionedTrie<V>, trusted: Head<V>) => new SnapshotReader(TOKEN, profile, trusted, "head", undefined, undefined, [], [], [], undefined);
     feedChunk = (r, chunk) => r.#feed(chunk);
     finishReader = (r) => r.#finish();
+    readerKeys = (r) => r.historyKeys.flat();
   }
 
   /**
@@ -1149,6 +1154,8 @@ export class SnapshotReader<V> {
     readonly lastVersion?: Uint8Array;
     readonly state?: readonly (readonly [StateKey, Value])[];
     readonly history?: readonly (readonly [V, Uint8Array])[];
+    readonly keys?: readonly Uint8Array[];
+    readonly headKey?: Uint8Array;
   }): SnapshotReader<V> {
     return new SnapshotReader(
       TOKEN,
@@ -1159,6 +1166,8 @@ export class SnapshotReader<V> {
       changes.lastVersion ?? this.lastVersion,
       changes.state === undefined ? this.stateChunks : [...this.stateChunks, changes.state],
       changes.history === undefined ? this.historyChunks : [...this.historyChunks, changes.history],
+      changes.keys === undefined ? this.historyKeys : [...this.historyKeys, changes.keys],
+      changes.headKey ?? this.headKey,
     );
   }
 
@@ -1181,7 +1190,8 @@ export class SnapshotReader<V> {
     const key = this.profile.versionKey;
     if (this.stage === "head") {
       if (chunk.kind !== "head") return bad("it starts with its head");
-      const same = this.profile.sameHead(chunk.head, this.trusted);
+      // the trusted head itself (as a restore from a snapshot feeds it) is the same head, its version never read again
+      const same = chunk.head === this.trusted ? ok(true) : this.profile.sameHead(chunk.head, this.trusted);
       if (!same.ok) return same;
       return same.value ? ok(this.#next({ stage: "state" })) : bad("its head is not the trusted head");
     }
@@ -1212,7 +1222,8 @@ export class SnapshotReader<V> {
       if (!k.ok) return k;
       keys.push(k.value);
     }
-    const hk = key.encode(this.trusted.version);
+    // the trusted head's version encoded once, for the first history chunk, and carried: never read again
+    const hk = this.headKey === undefined ? key.encode(this.trusted.version) : ok(this.headKey);
     if (!hk.ok) return hk;
     let previous = this.lastVersion;
     for (const k of keys) {
@@ -1225,7 +1236,9 @@ export class SnapshotReader<V> {
       if (bytesEqual(k, hk.value) && !bytesEqual(s, this.trusted.stateRoot)) return bad("the head version has another state root");
     }
     const last = keys[keys.length - 1];
-    return ok(this.#next({ stage: last !== undefined && bytesEqual(last, hk.value) ? "done" : "history", ...(last === undefined ? {} : { lastVersion: last }), history: vs }));
+    return ok(
+      this.#next({ stage: last !== undefined && bytesEqual(last, hk.value) ? "done" : "history", ...(last === undefined ? {} : { lastVersion: last }), history: vs, keys, headKey: hk.value }),
+    );
   }
 
   /** The snapshot, once its history has reached the head version. */
@@ -1393,8 +1406,8 @@ export class Replica<V> {
     if (!start.ok) return start;
     const fed = foldIterable<SnapshotReader<V>, VersionedRefusal>(chunks, start.value, (reader, c) => reader.feedBytes(c as Uint8Array));
     if (!fed.ok) return fed;
-    const snapshot = finishReader(fed.value);
-    return snapshot.ok ? fromSnapshot(fed.value.profile, fed.value.trusted, snapshot.value) : snapshot;
+    // the reader has checked every chunk: the replica is built from it, its versions' keys as it encoded them
+    return fromReader(fed.value);
   }
 
   /**
@@ -1473,8 +1486,18 @@ function fromSnapshot<V>(profile: VersionedTrie<V>, trusted: Head<V>, snapshot: 
     if (!r.ok) return r;
     reader = r.value;
   }
+  return fromReader(reader);
+}
+
+/**
+ * The replica of a reader's snapshot, once it has finished: each history version keyed by the bytes the reader
+ * encoded it to as it was fed, so no version (a caller's object) is encoded, or read, again.
+ */
+function fromReader<V>(reader: SnapshotReader<V>): C<Replica<V>> {
+  const { profile, trusted } = reader;
   const checked = finishReader(reader);
   if (!checked.ok) return checked;
+  const keys = readerKeys(reader);
   // the reader has checked that keys and versions strictly increase, which the builder requires
   const entries: (readonly [Uint8Array, StateSlot, Uint8Array])[] = [];
   for (const [key, value] of checked.value.entries) {
@@ -1486,10 +1509,10 @@ function fromSnapshot<V>(profile: VersionedTrie<V>, trusted: Head<V>, snapshot: 
   if (!state.ok) return state;
   if (!bytesEqual(state.value.root, trusted.stateRoot)) return mismatch("state", trusted.stateRoot, state.value.root);
   const versions: (readonly [Uint8Array, VersionSlot<V>, Uint8Array])[] = [];
-  for (const [version, stateRoot] of checked.value.history) {
-    const vkey = profile.versionKey.encode(version);
-    if (!vkey.ok) return vkey;
-    versions.push([vkey.value, { version, stateRoot: copyBytes(stateRoot) }, TRIE.bytesHash(profile.hashing, stateRoot)]);
+  for (const [i, [version, stateRoot]] of checked.value.history.entries()) {
+    const vkey = keys[i];
+    if (vkey === undefined) return malformed("snapshot: a history version has no key");
+    versions.push([vkey, { version, stateRoot: copyBytes(stateRoot) }, TRIE.bytesHash(profile.hashing, stateRoot)]);
   }
   const history = viaTrie(TrieMap.fromSorted(profile.hashing, profile.historyMode, versions));
   if (!history.ok) return history;

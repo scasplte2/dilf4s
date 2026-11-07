@@ -23,6 +23,7 @@ import {
   toHex,
   type ExpansionRefusal,
   type HashAlgorithm,
+  type Hashing,
 } from "../src/index.js";
 import { isDomainTag as isDomainTagOf } from "../src/internal.js";
 import { expectOk, int } from "./vectors.js";
@@ -279,6 +280,20 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     expect(isDomainTagOf(forged.tag), "its tag is no DomainTag").toBe(false);
     const fakeTag = Reflect.construct(DomainTag as unknown as new (...a: unknown[]) => object, [Symbol("key"), "Not A Tag"]) as DomainTag;
     expect(fakeTag.value, "a forged tag keeps nothing").toBe("");
+  });
+
+  it("a hash stream built from its constructor, or a Proxy of one, absorbs nothing and never throws", () => {
+    const genuine = expectOk(startHash(sha), "a stream");
+    const Stream = genuine.constructor as new (...a: unknown[]) => Hashing;
+    let ran = 0;
+    const fake = { update: () => (ran += 1), clone: () => ({ digest: () => ((ran += 1), new Uint8Array(32).fill(7)) }) };
+    const notAHashing = mismatch("expected a Hashing made by startHash or TaggedHash.start");
+    for (const forged of [new Stream({}), new Stream(fake), new Stream(Symbol("key"), fake), new Proxy(genuine, {})]) {
+      expect(forged.update(message), "update").toEqual(notAHashing);
+      expect(forged.digest(), "digest").toEqual(new Uint8Array(0));
+    }
+    expect(ran, "no method of the caller's ran").toBe(0);
+    expect(genuine.digest(), "the genuine stream absorbed nothing either").toEqual(expectOk(digest(sha, new Uint8Array(0)), "empty"));
   });
 
   it("the algorithm list cannot be extended by a caller", () => {

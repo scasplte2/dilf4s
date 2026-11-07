@@ -888,6 +888,16 @@ describe("a versioned query is encoded before the claims or the proof are read: 
     }
   });
 
+  it("a snapshot's versions are encoded once, as they are fed: a version that revokes itself after its first read restores", () => {
+    const trustedHead = expectOk(ot.decodeHead(valueOf(vectors.head.cbor)), "the head");
+    let reader = expectOk(versioned.SnapshotReader.start(ot, trustedHead), "reader");
+    for (const c of vectors.snapshot.chunks.map(bytes)) reader = expectOk(reader.feedBytes(c), "fed");
+    const snapshot = expectOk(reader.finish(), "the snapshot");
+    const once = { ...snapshot, history: snapshot.history.map(([v, s]) => [revokingAfterFirstRead({ ...v }), s] as const) };
+    const restored = expectOk(versioned.Replica.fromSnapshot(ot, trustedHead, once), "restores, every version read once");
+    expect(restored.history().length, "every version kept").toBe(snapshot.history.length);
+  });
+
   it("verifyVersions: a later claim's getter cannot rewrite an earlier claim's version", () => {
     const p = vectors.proofs.find((x) => x.name === "versions-2-until-300");
     if (p === undefined) throw new Error("the versions fixture");

@@ -538,3 +538,21 @@ describe("a key, index or output built by calling its constructor from outside k
     }
   });
 });
+
+describe("a BLS query is owned before caller code runs: a key's getter cannot change the message verified", () => {
+  it("fastAggregateVerify copies the message before it reads the keys", { timeout: 60_000 }, () => {
+    const b = expectOk(blsPop.fromSeed(seed), "bls");
+    const sig = expectOk(blsPop.sign(b.signing, Uint8Array.of(1)), "a signature over [1]");
+    expect(blsPop.fastAggregateVerify([b.verifying], Uint8Array.of(2), sig), "[2] was not signed").toEqual({ ok: true, value: false });
+    const message = Uint8Array.of(2);
+    const keys: unknown[] = [];
+    Object.defineProperty(keys, 0, {
+      get: () => {
+        message[0] = 1;
+        return b.verifying;
+      },
+    });
+    keys.length = 1;
+    expect(blsPop.fastAggregateVerify(bad(keys), message, sig), "the message as given, [2]").toEqual({ ok: true, value: false });
+  });
+});

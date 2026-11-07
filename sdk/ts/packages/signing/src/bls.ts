@@ -225,10 +225,11 @@ export const blsPop: BlsScheme = Object.freeze({
     return ok(signatureOf(NAME, encodeG2(acc)));
   },
   fastAggregateVerify: (keys: readonly VerifyingKey<typeof NAME>[], message: Uint8Array, signature: Signature<typeof NAME>) => {
+    // the message copied before the keys are read: their getters (caller code) cannot change what is verified
+    const m = takeBytes(message);
+    if (m === undefined) return err(NOT_BYTES);
     const ks = keysArg(keys);
     if (!ks.ok) return ks;
-    const m = viewOf(message);
-    if (m === undefined) return err(NOT_BYTES);
     const sb = signatureBytes(signature, NAME);
     if (!sb.ok) return sb;
     const sum = ks.value.length === 0 ? undefined : sumG1(ks.value);

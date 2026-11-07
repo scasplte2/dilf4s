@@ -159,26 +159,39 @@ export interface Hashing {
   digest(): Uint8Array;
 }
 
-/** {@link Hashing} over a hash of this package's: the hash itself never meets caller input it would throw on. */
+/** The key `CheckedHashing`'s constructor takes, private to this module, and the brand it stamps with it. */
+const HASHING_KEY: unique symbol = Symbol("dilf4s hashing");
+const HASHING = mint();
+const NOT_A_HASHING = typeMismatch("expected a Hashing made by startHash or TaggedHash.start");
+
+/**
+ * {@link Hashing} over a hash of this package's: the hash itself never meets caller input it would throw on. A
+ * JavaScript caller can reach the constructor (a stream's `constructor`); without the key it keeps nothing it is given
+ * (its hash is a fresh SHA-256 of nothing), and every method refuses, or answers for, the unbranded receiver, as it does
+ * a Proxy of a stream.
+ */
 class CheckedHashing implements Hashing {
   readonly #hash: RawHash;
-  constructor(hash: RawHash) {
-    this.#hash = hash;
+  constructor(key: typeof HASHING_KEY, hash: RawHash) {
+    const own = key === HASHING_KEY;
+    this.#hash = own ? hash : startHashOf("SHA-256");
+    if (own) HASHING.stamp(this);
     Object.freeze(this);
   }
 
-  /** {@link Hashing.update}: the data checked and read through a plain view. */
+  /** {@link Hashing.update}: the data checked and read through a plain view; a stream not made here is a `TypeMismatch`. */
   update(data: Uint8Array): Result<Hashing, TypeMismatch> {
+    if (!HASHING.has(this)) return err(NOT_A_HASHING);
     const view = plainBytes(data);
     if (view === undefined) return err(NOT_BYTES);
     this.#hash.update(view);
     return ok(this);
   }
 
-  /** {@link Hashing.digest}. */
+  /** {@link Hashing.digest}: a stream not made here has absorbed nothing, and its digest is empty. */
   digest(): Uint8Array {
     // a copy is finished, never the hash itself, so this may be called again and absorbing may go on
-    return this.#hash.clone().digest();
+    return HASHING.has(this) ? this.#hash.clone().digest() : new Uint8Array(0);
   }
 }
 
@@ -187,7 +200,7 @@ class CheckedHashing implements Hashing {
  * not one of {@link HASH_ALGORITHMS} is `UnknownAlgorithm`.
  */
 export function startHash(algorithm: HashAlgorithm): Result<Hashing, AlgorithmError> {
-  return refuseAlgorithm(algorithm) ?? ok(new CheckedHashing(startHashOf(algorithm)));
+  return refuseAlgorithm(algorithm) ?? ok(new CheckedHashing(HASHING_KEY, startHashOf(algorithm)));
 }
 
 /** The output size of `algorithm` in bytes; refused as {@link startHash} refuses an algorithm. */
@@ -418,7 +431,7 @@ export class TaggedHash {
    * hash, as its other methods hash nothing.
    */
   start(): Result<Hashing, TypeMismatch> {
-    return TAGGED_HASH.has(this) ? ok(new CheckedHashing(this.#start())) : err(NOT_A_TAGGED_HASH);
+    return TAGGED_HASH.has(this) ? ok(new CheckedHashing(HASHING_KEY, this.#start())) : err(NOT_A_TAGGED_HASH);
   }
 
   /** `start`, bound to this instance: borrowed onto another receiver, it fails at `#tagHash` before anything is hashed. */
