@@ -105,9 +105,9 @@ object StateKeySuite extends SimpleIOSuite with Checkers {
 
   pureTest("a state key is a bare string on the wire, checked by the schema's pattern and round-tripping") {
     val codec = xyz.kd5ujc.models.versioned_trie.StateKey.codec
-    val wire = codec.encode(key("fiber/1").value).map(Cbor.encode)
+    val wire = codec.encode(key("fiber/1").value).map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded)
     expect
-      .same(Right(CanonicalValue.text("fiber/1").map(Cbor.encode).toOption.get), wire)
+      .same(Right(CanonicalValue.text("fiber/1").map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded).toOption.get), wire)
       .and(
         expect
           .same(Right("fiber/1"), wire.flatMap(b => Cbor.decode(b).leftMap(_.toString)).flatMap(codec.decoder.decode(_).leftMap(_.message)))

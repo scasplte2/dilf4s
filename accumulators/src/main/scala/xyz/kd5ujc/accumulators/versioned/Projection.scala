@@ -38,9 +38,10 @@ object Projection {
   def stateRoot[H: TrieHashing](entries: SortedMap[StateKey, CanonicalValue]): Either[VersionedTrieError, Digest[H]] = {
     val present = entries.toList.filter { case (_, v) => v != CanonicalValue.CNull }
     for {
-      m <- VersionedTrie.stateMode
-      _ <- present.traverse_ { case (k, v) => VersionedTrie.checkValue(k, v) }
-      t <- VersionedTrie.trie(Trie.fromEntries[H](m, present.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v) }))
+      m      <- VersionedTrie.stateMode
+      _      <- present.traverse_ { case (k, v) => VersionedTrie.checkValue(k, v) }
+      hashed <- present.traverse { case (k, v) => VersionedTrie.valueHash[H](v).map(k.bytes -> _) }
+      t      <- VersionedTrie.trie(Trie.fromEntries[H](m, hashed))
     } yield t.root
   }
 

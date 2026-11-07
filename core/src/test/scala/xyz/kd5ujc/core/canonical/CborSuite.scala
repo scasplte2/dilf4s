@@ -56,35 +56,35 @@ object CborSuite extends SimpleIOSuite with Checkers {
   rfcExamples.foreach {
     case (name, value, bytes) =>
       pureTest(s"RFC 8949 Appendix A: $name") {
-        expect.same(bytes, Cbor.encode(value)).and(expect.same(Right(value), Cbor.decode(bytes)))
+        expect.same(bytes, CanonicalGens.encoded(value)).and(expect.same(Right(value), Cbor.decode(bytes)))
       }
   }
 
   pureTest("rationals are tag 30 over a reduced [numerator, denominator] pair") {
     val half = CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(1, 2).toOption.get).fold(e => sys.error(e.toString), identity)
     val negThird = CanonicalValue.number(xyz.kd5ujc.numerics.Ratio.of(-2, 6).toOption.get).fold(e => sys.error(e.toString), identity)
-    expect.same(hex"d81e820102", Cbor.encode(half)).and(expect.same(hex"d81e822003", Cbor.encode(negThird)))
+    expect.same(hex"d81e820102", CanonicalGens.encoded(half)).and(expect.same(hex"d81e822003", CanonicalGens.encoded(negThird)))
   }
 
   pureTest("map keys order by encoded bytes: shorter keys first, then bytewise") {
     val m = obj("aa" -> CInt(1), "b" -> CInt(2), "a" -> CInt(3), "é" -> CInt(4))
-    expect.same(hex"a46161036162026261610162c3a904", Cbor.encode(m))
+    expect.same(hex"a46161036162026261610162c3a904", CanonicalGens.encoded(m))
   }
 
   pureTest("null map values are dropped, so absent and null hash identically") {
     expect
-      .same(Cbor.encode(obj("a" -> CInt(1))), Cbor.encode(obj("a" -> CInt(1), "b" -> CNull)))
+      .same(CanonicalGens.encoded(obj("a" -> CInt(1))), CanonicalGens.encoded(obj("a" -> CInt(1), "b" -> CNull)))
       .and(expect.same(Left(DuplicateKey(Preview.of("a"))), CanonicalValue.map(List("a" -> CNull, "a" -> CInt(1)))))
   }
 
   test("decode inverts encode") {
-    forall(CanonicalGens.value(4))(v => expect.same(Right(v), Cbor.decode(Cbor.encode(v))))
+    forall(CanonicalGens.value(4))(v => expect.same(Right(v), Cbor.decode(CanonicalGens.encoded(v))))
   }
 
   test("encodedLength is the encoding's length, and never below the weight") {
     forall(CanonicalGens.value(4)) { v =>
       val length = Cbor.encodedLength(v)
-      expect.same(Cbor.encode(v).size, length).and(expect(length >= v.weight, s"length $length is below weight ${v.weight}"))
+      expect.same(CanonicalGens.encoded(v).size, length).and(expect(length >= v.weight, s"length $length is below weight ${v.weight}"))
     }
   }
 
@@ -102,14 +102,14 @@ object CborSuite extends SimpleIOSuite with Checkers {
       )
     }
     (ints.map(CanonicalGens.int) ++ sized).foldLeft(success) { (acc, v) =>
-      acc.and(expect.same(Cbor.encode(v).size, Cbor.encodedLength(v))).and(expect(Cbor.encodedLength(v) >= v.weight))
+      acc.and(expect.same(CanonicalGens.encoded(v).size, Cbor.encodedLength(v))).and(expect(Cbor.encodedLength(v) >= v.weight))
     }
   }
 
   test("every accepted encoding is the canonical one") {
     forall(CanonicalGens.value(4)) { v =>
-      val bytes = Cbor.encode(v)
-      expect.same(Right(bytes), Cbor.decode(bytes).map(Cbor.encode))
+      val bytes = CanonicalGens.encoded(v)
+      expect.same(Right(bytes), Cbor.decode(bytes).map(CanonicalGens.encoded))
     }
   }
 

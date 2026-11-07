@@ -58,8 +58,13 @@ object ProofOps {
   private def digest(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, Digest[H]] =
     bytes(op, what)(v).flatMap(Digest.fromBytes[H](_).leftMap(e => JlvmError.Crypto(op, s"$what: $e", Some(CryptoCause.Hash(e)))))
 
-  /** The bytes a leaf or value commits to: tagged, so bytes and a value whose CBOR equals them never coincide. */
-  private def committed(v: CanonicalValue): ByteSource = ValueCommitment.source(v)
+  /**
+   * The bytes a leaf or value commits to: tagged, so bytes and a value whose CBOR equals them never coincide. A
+   * commitment past `Cbor.MaxEncodedBytes` is `Crypto`, as every refused claim is, and never hashed: a claim reaches it
+   * only past `MaxProofWeight`, refused first.
+   */
+  private def committed(op: Op)(v: CanonicalValue): Either[JlvmError, ByteSource] =
+    ValueCommitment.source(v).leftMap(e => crypto(op)(s"a claim's commitment is over ${e.limit} bytes"))
 
   // ---- Merkle trees (merkle.md)
 
@@ -86,7 +91,7 @@ object ProofOps {
     rest: Vector[CanonicalValue]
   ): Either[JlvmError, (MerkleHashing[H], CanonicalValue => Either[JlvmError, ByteSource])] =
     rest match {
-      case Vector() => (MerkleHashing.tagged[H], (v: CanonicalValue) => committed(v).asRight[JlvmError]).asRight
+      case Vector() => (MerkleHashing.tagged[H], committed(op)).asRight
       case Vector(CText("rfc6962")) =>
         (MerkleHashing.rfc6962[H], (v: CanonicalValue) => bytes(op, "an rfc6962 leaf")(v).map(ByteSource.bytes)).asRight
       case _ => JlvmError.Domain(op, "the only optional profile is \"rfc6962\"").asLeft
@@ -152,7 +157,7 @@ object ProofOps {
     }
 
   /** A claimed value's hash, by its [[ValueCommitment]] bytes: bytes and a value whose CBOR equals them differ. */
-  private def valueHash(v: CanonicalValue): Digest[H] = T.valueOf(committed(v))
+  private def valueHash(op: Op)(v: CanonicalValue): Either[JlvmError, Digest[H]] = committed(op)(v).map(T.valueOf)
 
   private def path(op: Op, m: KeyMode)(key: CanonicalValue): Either[JlvmError, BitVector] =
     bytes(op, "a key")(key).flatMap(m.path(_).leftMap(e => crypto(op)(s"a key invalid for the mode: $e")))
@@ -183,7 +188,10 @@ object ProofOps {
           .flatMap {
             case (_, scala.None) => False.asRight
             case (p, scala.Some(v)) =>
-              v.holds(p, Option.when(value != CNull)(valueHash(value))).bimap(e => crypto(op)(e.toString), Values.bool)
+              Option
+                .when(value != CNull)(value)
+                .traverse(valueHash(op))
+                .flatMap(claim => v.holds(p, claim).bimap(e => crypto(op)(e.toString), Values.bool))
           }
       case _ => JlvmError.Arity(op, "takes [mode, root, key, value, proof]").asLeft
     }
@@ -196,7 +204,7 @@ object ProofOps {
           case _                                  => JlvmError.Type(op, "an entry is [key, value], with a value").asLeft
         }
           .flatTap(pxs => claims(op)(pxs.map(_._2)))
-          .map(_.map { case (p, x) => p -> valueHash(x) })
+          .flatMap(_.traverse { case (p, x) => valueHash(op)(x).map(p -> _) })
       case other => JlvmError.Type(op, s"entries is an array, got ${Values.kind(other)}").asLeft
     }
 

@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use dilf4s_core::value::Text;
-use dilf4s_core::{BigInt, Value, cbor};
+use dilf4s_core::{BigInt, CanonicalError, Value, cbor};
 use num_traits::{Signed, Zero};
 
 use crate::error::{JlvmError, Raise};
@@ -320,6 +320,10 @@ pub(crate) fn contains_slice(haystack: &[u8], needle: &[u8]) -> bool {
 /// limbs takes at most `8 (l + 1)` bytes and a tag besides, for weight at least `1 + l`.
 const ENCODING_PER_WEIGHT: u64 = 32;
 
+/// The longest sort key encoded: 2^31 - 9 bytes, the reference's encoding ceiling (`Cbor.MaxEncodedBytes`, the JVM's
+/// largest array). A longer key is a `Limit` on every backend (docs/specs/jlvm.md section 7), never an allocation.
+const MAX_KEY_BYTES: u64 = (1 << 31) - 9;
+
 struct SortKey<'v> {
     rank: u8,
     value: &'v Value,
@@ -328,10 +332,12 @@ struct SortKey<'v> {
 
 impl<'v> SortKey<'v> {
     /// A collection's encoding is budgeted by its weight, which the operation has paid for: no encoding is longer than
-    /// [`ENCODING_PER_WEIGHT`] bytes per unit of weight, so the budget only bounds the walk locally and is never hit.
+    /// [`ENCODING_PER_WEIGHT`] bytes per unit of weight, so that budget only bounds the walk locally and is never hit.
+    /// It is capped at [`MAX_KEY_BYTES`], as the reference caps it: a value heavier than the cap is refused from its
+    /// weight, before anything is written.
     fn of(op: Op, value: &'v Value) -> Result<Self, JlvmError> {
         let encoded = |v: &Value| {
-            let budget = v.weight().saturating_mul(ENCODING_PER_WEIGHT);
+            let budget = v.weight().saturating_mul(ENCODING_PER_WEIGHT).min(MAX_KEY_BYTES);
             cbor::encode_within(v, usize::try_from(budget).unwrap_or(usize::MAX))
                 .map_err(|e| JlvmError::limit(alloc::format!("{}: {e}", op.wire())))
         };
@@ -341,6 +347,13 @@ impl<'v> SortKey<'v> {
             Value::Int(_) => (2, Vec::new()),
             Value::Rational(_) => (3, Vec::new()),
             Value::Text(_) => (4, Vec::new()),
+            // a byte string is its own key: one past the cap is refused, as the reference refuses it
+            Value::Bytes(b) if u64::try_from(b.len()).map_or(true, |n| n > MAX_KEY_BYTES) => {
+                return Err(JlvmError::limit(alloc::format!(
+                    "{}: a byte string past {MAX_KEY_BYTES} bytes",
+                    op.wire()
+                )));
+            }
             Value::Bytes(_) => (5, Vec::new()),
             Value::Array(_) => (6, encoded(value)?),
             Value::Map(_) => (7, encoded(value)?),
@@ -408,8 +421,9 @@ pub(crate) fn hex_bytes(s: &str) -> Option<Vec<u8>> {
 }
 
 /// Every leaf of `v` through `f`, rebuilding the containers: an explicit stack, no recursion on the value. `f` keeps
-/// nulls null and maps to scalars only, so every rebuilt container is as valid as the original.
-pub(crate) fn map_leaves(v: Value, f: &impl Fn(Value) -> Value) -> Value {
+/// nulls null and maps to scalars only, so every rebuilt container is as valid as the original; a container that is
+/// not would be its constructor's refusal, never a stand-in.
+pub(crate) fn map_leaves(v: Value, f: &impl Fn(Value) -> Value) -> Result<Value, CanonicalError> {
     enum Open {
         Array(Vec<Value>, alloc::vec::IntoIter<Value>),
         Map(Vec<(String, Value)>, String, alloc::vec::IntoIter<(String, Value)>),
@@ -431,7 +445,7 @@ pub(crate) fn map_leaves(v: Value, f: &impl Fn(Value) -> Value) -> Value {
                     match stack.last_mut() {
                         Some(Open::Array(out, _)) => out.push(done),
                         Some(Open::Map(out, key, _)) => out.push((core::mem::take(key), done)),
-                        None => return done,
+                        None => return Ok(done),
                     }
                 }
             }
@@ -443,27 +457,27 @@ pub(crate) fn map_leaves(v: Value, f: &impl Fn(Value) -> Value) -> Value {
                 *key = k;
                 x
             }),
-            None => return Value::Null,
+            None => return Ok(Value::Null),
         };
         if next.is_some() {
             current = next;
             continue;
         }
         let built = match stack.pop() {
-            Some(Open::Array(out, _)) => Value::array(out).unwrap_or(Value::Null),
-            Some(Open::Map(out, _, _)) => Value::map(out).unwrap_or(Value::Null),
-            None => return Value::Null,
+            Some(Open::Array(out, _)) => Value::array(out)?,
+            Some(Open::Map(out, _, _)) => Value::map(out)?,
+            None => return Ok(Value::Null),
         };
         match stack.last_mut() {
             Some(Open::Array(out, _)) => out.push(built),
             Some(Open::Map(out, key, _)) => out.push((core::mem::take(key), built)),
-            None => return built,
+            None => return Ok(built),
         }
     }
 }
 
 /// Strings in `0x`-hex form become bytes, everywhere in the value (`JsonSurface.fromCanonicalJson`).
-pub(crate) fn from_canonical_json(v: Value) -> Value {
+pub(crate) fn from_canonical_json(v: Value) -> Result<Value, CanonicalError> {
     map_leaves(v, &|x| match x {
         Value::Text(s) => hex_bytes(&s).map_or(Value::Text(s), Value::bytes),
         other => other,

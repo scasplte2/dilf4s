@@ -332,7 +332,8 @@ object TrieProofs {
   // ---- the JLVM's trie operations over caller values (docs/specs/jlvm.md §6), as the SDKs' trie_verify and
   // trie_prefix_verify: claims are capped by weight before any is hashed and before the proof is decoded
 
-  private def claimHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Digest[H] = T.valueOf(ValueCommitment.source(v))
+  private def claimHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Either[TrieError, Digest[H]] =
+    ValueCommitment.source(v).bimap(e => TrieError.TooLarge(e.limit), T.valueOf)
 
   /** A verified proof, or `None` for one of another trie (`false`); a root of the wrong length is `Encoding`. */
   private def verifiedOrNone[H](mode: KeyMode, root: ByteVector, proof: CanonicalValue)(
@@ -359,7 +360,7 @@ object TrieProofs {
       present = claim.filterNot(_ == CanonicalValue.CNull)
       _        <- ProofInput.claimed(present.toList)(TrieError.TooLarge(_))
       verified <- verifiedOrNone(mode, root, proof)
-      held     <- verified.fold(false.asRight[TrieError])(_.holds(path, present.map(claimHash[H])))
+      held     <- verified.fold(false.asRight[TrieError])(v => present.traverse(claimHash[H]).flatMap(v.holds(path, _)))
     } yield held
 
   /** `trie_prefix_verify`: whether `entries`, in key order, are exactly the trie's entries under `prefix`. */
@@ -379,8 +380,8 @@ object TrieProofs {
           if (v == CanonicalValue.CNull) TrieError.Encoding("an entry is [key, value], with a value").asLeft
           else mode.path(k).map(_ -> v)
       }
-      _ <- ProofInput.claimed(entries.map(_._2))(TrieError.TooLarge(_))
-      claimed = paths.map { case (p, v) => p -> claimHash[H](v) }
+      _        <- ProofInput.claimed(entries.map(_._2))(TrieError.TooLarge(_))
+      claimed  <- paths.traverse { case (p, v) => claimHash[H](v).map(p -> _) }
       verified <- verifiedOrNone(mode, root, proof)
       listed   <- verified.fold(false.asRight[TrieError])(_.listsPrefix(prefix.bits, claimed))
     } yield listed
@@ -388,12 +389,22 @@ object TrieProofs {
   /** Recomputes the root, enforcing the branch invariant, the mode, and the key-length bound. */
   def verify[H](mode: KeyMode, root: Digest[H], proof: TrieProof[H])(implicit T: TrieHashing[H]): Either[TrieError, VerifiedProof[H]] =
     proof.top
-      .fold(T.empty.asRight[TrieError])(top => hash(mode, top, 0L).value)
+      .fold(T.empty.asRight[TrieError])(top =>
+        // one heavier than any decoder accepts (a shared subtree, a lazy segment), refused as decoding would refuse it
+        if (withinProofWeight(top)) hash(mode, top, 0L).value
+        else TrieError.Encoding(s"a proof heavier than ${ProofInput.MaxProofWeight}").asLeft
+      )
       .flatMap(computed => Either.cond(computed == root, new VerifiedProof[H](proof.top), TrieError.RootMismatch(root.hex, computed.hex)))
 
   private def hash[H](mode: KeyMode, node: ProofNode[H], depth: Long)(implicit T: TrieHashing[H]): Eval[Either[TrieError, Digest[H]]] =
     node match {
       case Stub(h) => Eval.now(h.asRight)
+      // a segment longer than the bits left is refused before any length is added: a host's lazy BitVector can be
+      // Long.MaxValue long, and the sum would wrap past every bound; depth is at most mode.maxBits, so nothing overflows
+      case PLeaf(segment, _) if segment.size > mode.maxBits - depth =>
+        Eval.now(TrieError.InvalidProof(s"a leaf segment of ${segment.size} bits passes $mode").asLeft)
+      case PBranch(segment, _, _, _) if segment.size > mode.maxBits - depth - 1 =>
+        Eval.now(TrieError.InvalidProof(s"a branch segment of ${segment.size} bits passes $mode").asLeft)
       case PLeaf(segment, v) =>
         val bits = depth + segment.size
         val lengthOk = mode match {
@@ -425,11 +436,48 @@ object TrieProofs {
    * never emitted: one heavier than `ProofInput.MaxProofWeight` is `TooLarge` (docs/specs/conformance.md §5).
    */
   def encode[H](proof: TrieProof[H]): Either[TrieError, CanonicalValue] =
-    W.TrieProof.codec
-      .encode(proof.top.fold(Vector.empty[W.TrieRecord])(t => records(List(t), Nil).toVector))
-      .leftMap(e => TrieError.Encoding(e.toString))
+    Either
+      .cond(proof.top.forall(withinProofWeight), (), TrieError.TooLarge(ProofInput.MaxProofWeight))
+      .flatMap(_ =>
+        W.TrieProof.codec
+          .encode(proof.top.fold(Vector.empty[W.TrieRecord])(t => records(List(t), Nil).toVector))
+          .leftMap(e => TrieError.Encoding(e.toString))
+      )
       .flatMap(v => Either.cond(v.weight <= ProofInput.MaxProofWeight, v, TrieError.TooLarge(ProofInput.MaxProofWeight)))
 
+  /**
+   * Whether the flat encoding of the proof under `top` weighs at most `MaxProofWeight`: its exact weight
+   * ([[wireWeight]]), counted only as far as the limit, so O(min(nodes, MaxProofWeight)) and nothing is built. A proof
+   * built in memory can share a subtree (`[x, x]` nested `k` deep is `2^k` records) or hold a host's lazy segment of any
+   * length; either is refused before a record is expanded or a node hashed.
+   */
+  private def withinProofWeight[H](top: ProofNode[H]): Boolean = wireWeight(top).isDefined
+
+  /**
+   * The weight of the flat encoding of the proof under `top` (trie.cddl's `trie-proof`, as `CanonicalValue.weight`
+   * counts it), if it is at most `MaxProofWeight`; counting stops past it. A map weighs 1 and each entry its key's
+   * (1 and its UTF-8) and its value's; bytes weigh 1 and their length; a version below 2^63 and a children code weigh 1.
+   * So a segment of `n` bits weighs `7 + ceil(n / 8)`, a stub `4 + |h|`, a leaf `6 + segment + |v|` and a branch
+   * `6 + segment`, and `3 + |v|` more with a value; the array weighs 1 more.
+   */
+  private[trie] def wireWeight[H](top: ProofNode[H]): Option[Long] = {
+    // a segment's bytes, rounded up without overflow, and every sum below the limit plus one record's: under 2^62
+    def segment(bits: BitVector): Long = 7L + bits.size / 8 + (if (bits.size % 8 == 0) 0L else 1L)
+    @tailrec
+    def go(todo: List[ProofNode[H]], spent: Long): Option[Long] =
+      if (spent > ProofInput.MaxProofWeight) None
+      else
+        todo match {
+          case Nil                 => Some(spent)
+          case Stub(h) :: rest     => go(rest, spent + 4L + h.bytes.size)
+          case PLeaf(s, v) :: rest => go(rest, spent + 6L + segment(s) + v.bytes.size)
+          case PBranch(s, v, l, r) :: rest =>
+            go(l.toList ++ r.toList ++ rest, spent + 6L + segment(s) + v.fold(0L)(d => 3L + d.bytes.size))
+        }
+    go(List(top), 1L)
+  }
+
+  /** The records, pre-order: only of a proof [[withinProofWeight]], so their number and their bytes are bounded. */
   @tailrec
   private def records[H](todo: List[ProofNode[H]], acc: List[W.TrieRecord]): List[W.TrieRecord] =
     todo match {

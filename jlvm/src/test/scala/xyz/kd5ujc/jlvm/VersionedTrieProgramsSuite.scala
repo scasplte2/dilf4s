@@ -473,17 +473,23 @@ object VersionedTrieProgramsSuite extends IOSuite {
     }
   }
 
-  test("versionKeys in versioned_trie_v1.json: the JLVM's int_to_bytes [v, 8] is each key, valid or not") { jlvm =>
+  test("versionKeys in versioned_trie_v1.json: the JLVM's int_to_bytes [v, 8] is each key, and its top bit the outcome") { jlvm =>
     IO(new String(Files.readAllBytes(Paths.get("shared", "vectors", "versioned_trie_v1.json")), UTF_8)).map { text =>
       val rows = get(get(io.circe.parser.parse(text)).hcursor.downField("versionKeys").as[List[Json]])
-      expect(rows.exists(r => r.hcursor.get[Boolean]("valid").contains(false)), "the vectors cross the cap") |+|
+      def outcome(r: Json): String = r.hcursor.get[String]("outcome").getOrElse(get(r.hcursor.downField("outcome").get[String]("kind")))
+      // a key whose top bit is set is the refusal's: the version is past 2^63 - 1, and a store never commits it
+      val topBitClear = """{"<": [{"bytes_to_int": [{"var": "k"}]}, 9223372036854775808]}"""
+      expect(rows.exists(r => outcome(r) == "InvalidVersion"), "the vectors cross the cap") |+|
+      expect(rows.forall(r => Set("accepted", "InvalidVersion").contains(outcome(r))), "every outcome is accepted or InvalidVersion") |+|
       rows.foldMap { r =>
         val v = get(r.hcursor.get[BigInt]("version"))
         val key = get(ByteVector.fromHexDescriptive(get(r.hcursor.get[String]("key"))))
-        expect.same(
-          Right(CBytes(key)),
-          run(jlvm, """{"int_to_bytes": [{"var": "v"}, 8]}""", "v" -> xyz.kd5ujc.core.canonical.CanonicalGens.int(v))
-        )
+        expect
+          .same(
+            Right(CBytes(key)),
+            run(jlvm, """{"int_to_bytes": [{"var": "v"}, 8]}""", "v" -> xyz.kd5ujc.core.canonical.CanonicalGens.int(v))
+          )
+          .and(expect.same(Right(CBool(outcome(r) == "accepted")), run(jlvm, topBitClear, "k" -> CBytes(key))))
       }
     }
   }

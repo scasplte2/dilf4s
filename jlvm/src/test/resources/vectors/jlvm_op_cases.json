@@ -13192,6 +13192,536 @@
       "program" : "{\"+\": {\"var\": \"xs\"}}",
       "data" : "{\"xs\":[1,2,3,4,5,6,7,8]}",
       "gasLimit" : 210
+    },
+    {
+      "name" : "dilf4s unique: an element past the sort-key ceiling is Limit",
+      "program" : "{\"unique\": {\"var\": \"$xs\"}}",
+      "data" : "null",
+      "built" : {
+        "xs" : {
+          "leaf" : "4100",
+          "steps" : [
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "copies" : 1
+            }
+          ]
+        }
+      },
+      "gasLimit" : 1099511627776
+    },
+    {
+      "name" : "dilf4s intersect: an element past the sort-key ceiling in the second array is Limit",
+      "program" : "{\"intersect\": [{\"var\": \"a\"}, {\"var\": \"$xs\"}]}",
+      "data" : "{\"a\":[1]}",
+      "built" : {
+        "xs" : {
+          "leaf" : "4100",
+          "steps" : [
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "copies" : 1
+            }
+          ]
+        }
+      },
+      "gasLimit" : 1099511627776
+    },
+    {
+      "name" : "dilf4s intersect: an element past the sort-key ceiling after one missing from the second array is not keyed: false",
+      "program" : "{\"intersect\": [{\"var\": \"$xs\"}, {\"var\": \"b\"}]}",
+      "data" : "{\"b\":[1]}",
+      "built" : {
+        "xs" : {
+          "leaf" : "4100",
+          "steps" : [
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "82006124",
+              "times" : 1
+            }
+          ]
+        }
+      },
+      "gasLimit" : 1099511627776
+    },
+    {
+      "name" : "dilf4s intersect: an element past the sort-key ceiling before one missing from the second array is Limit",
+      "program" : "{\"intersect\": [{\"var\": \"$xs\"}, {\"var\": \"b\"}]}",
+      "data" : "{\"b\":[1]}",
+      "built" : {
+        "xs" : {
+          "leaf" : "4100",
+          "steps" : [
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8261246124",
+              "times" : 1
+            },
+            {
+              "template" : "8361246124f6",
+              "times" : 1
+            },
+            {
+              "template" : "82612400",
+              "times" : 1
+            }
+          ]
+        }
+      },
+      "gasLimit" : 1099511627776
     }
   ]
 }

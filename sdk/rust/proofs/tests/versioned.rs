@@ -25,6 +25,7 @@ use dilf4s_core::codec::{Model, TextPattern};
 use dilf4s_core::generated::trie::TrieRecord;
 use dilf4s_core::generated::versioned_trie_vectors::{
     StateKeyErrorKind, VersionedTrieVectors, VtKind, VtProof, VtSchemaOutcome, VtStateKeyOutcome, VtStateKeyRefusal,
+    VtVersionKeyOutcome,
 };
 use dilf4s_core::hash::{Digest, Sha256};
 use dilf4s_core::value::Value;
@@ -411,18 +412,38 @@ fn refusals() {
     assert_eq!(vt.decode_proof(&Value::int(1)).unwrap_err().kind(), "Malformed");
 }
 
-/// The default version key stops at `2^63 - 1`: `key` is `int_to_bytes [version, 8]`, and the codec accepts it, both
-/// ways, exactly when `valid`.
+/// The default version key stops at `2^63 - 1`: `key` is `int_to_bytes [version, 8]`, and the codec's outcome, both
+/// ways, is the row's: the key, or a refusal of its kind.
 #[test]
 fn version_key_vectors() {
     let (v, _) = setup();
     let k = U64Key::default();
-    assert!(v.version_keys.iter().any(|c| !c.valid) && v.version_keys.iter().any(|c| c.valid));
+    let kind = |o: &VtVersionKeyOutcome| match o {
+        VtVersionKeyOutcome::Accepted => "accepted",
+        VtVersionKeyOutcome::VtVersionKeyRefusal(_) => "InvalidVersion",
+    };
+    assert!(v.version_keys.iter().any(|c| kind(&c.outcome) != "accepted"));
+    assert!(v.version_keys.iter().any(|c| kind(&c.outcome) == "accepted"));
     for c in &v.version_keys {
         let key = bytes(&c.key);
+        let expected = kind(&c.outcome);
         assert_eq!(key, c.version.to_be_bytes().to_vec(), "version {}: int_to_bytes [v, 8]", c.version);
-        assert_eq!(k.encode(&c.version).ok(), c.valid.then(|| key.clone()), "encode {}", c.version);
-        assert_eq!(k.decode(&key).ok(), c.valid.then_some(c.version), "decode {}", c.version);
+        let encoded = k.encode(&c.version);
+        assert_eq!(
+            encoded.as_ref().map_or_else(VersionedTrieError::kind, |_| "accepted"),
+            expected,
+            "encode {}",
+            c.version
+        );
+        assert!(encoded.is_err() || encoded.ok() == Some(key.clone()), "encode {}: the key", c.version);
+        let decoded = k.decode(&key);
+        assert_eq!(
+            decoded.as_ref().map_or_else(VersionedTrieError::kind, |_| "accepted"),
+            expected,
+            "decode {}",
+            c.version
+        );
+        assert!(decoded.is_err() || decoded.ok() == Some(c.version), "decode {}: the version", c.version);
     }
 }
 

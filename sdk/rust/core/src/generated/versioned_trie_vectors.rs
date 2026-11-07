@@ -623,16 +623,16 @@ impl c::Model for VtVersion {
 /// `vt-version-key` (`shared/schemas/versioned-trie-vectors.cddl`).
 ///
 /// The default version key (section 2) at its edges. "key" is "version" as 8 unsigned big-endian bytes, the JLVM's
-/// int_to_bytes \[version, 8\]; "valid" says whether the version key accepts it (versions 0..2^63-1), encoding the
-/// version and decoding the key alike.
+/// int_to_bytes \[version, 8\]; "outcome" is the version key's, encoding the version and decoding the key alike:
+/// "accepted" (versions 0..2^63-1), or refused by its kind.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtVersionKey {
     /// The `version` entry.
     pub version: u64,
     /// The `key` entry.
     pub key: Hex,
-    /// The `valid` entry.
-    pub valid: bool,
+    /// The `outcome` entry.
+    pub outcome: VtVersionKeyOutcome,
 }
 
 impl c::Model for VtVersionKey {
@@ -641,15 +641,67 @@ impl c::Model for VtVersionKey {
         c::record([
             c::field("version", &c::UINT, &self.version, inner)?,
             c::field("key", &HEX, &self.key, inner)?,
-            c::field("valid", &c::Bool, &self.valid, inner)?,
+            c::field("outcome", &c::ModelOf::<VtVersionKeyOutcome>::NEW, &self.outcome, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["version", "key", "valid"])?;
+        let fields = c::Fields::of(value, &["version", "key", "outcome"])?;
         let f0 = fields.required("version", &c::UINT)?;
         let f1 = fields.required("key", &HEX)?;
-        let f2 = fields.required("valid", &c::Bool)?;
-        Ok(Self { version: f0, key: f1, valid: f2 })
+        let f2 = fields.required("outcome", &c::ModelOf::<VtVersionKeyOutcome>::NEW)?;
+        Ok(Self { version: f0, key: f1, outcome: f2 })
+    }
+}
+
+/// `vt-version-key-outcome` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// "accepted", or the refusal of a version past the cap: InvalidVersion, a versioned-trie refusal with no normative field.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VtVersionKeyOutcome {
+    /// A [`VtVersionKeyRefusal`].
+    VtVersionKeyRefusal(VtVersionKeyRefusal),
+    /// The text `accepted`.
+    Accepted,
+}
+
+impl c::Model for VtVersionKeyOutcome {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::VtVersionKeyRefusal(a) => c::Model::to_value_at(a, depth),
+            Self::Accepted => Ok(c::Value::text("accepted")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[(&["kind"], &["kind"])], &["accepted"])? {
+            c::Alternative::Record(0) => <VtVersionKeyRefusal as c::Model>::from_value(value).map(Self::VtVersionKeyRefusal),
+            c::Alternative::Text(0) => Ok(Self::Accepted),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl VtVersionKeyOutcome {
+    /// Every text alternative (not the records), in schema order.
+    pub const TEXTS: [Self; 1] = [Self::Accepted];
+}
+
+/// `vt-version-key-refusal` (`shared/schemas/versioned-trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtVersionKeyRefusal;
+
+impl c::Model for VtVersionKeyRefusal {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("kind", &c::LiteralText("InvalidVersion"), &(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["kind"])?;
+        fields.required("kind", &c::LiteralText("InvalidVersion"))?;
+        Ok(Self)
     }
 }

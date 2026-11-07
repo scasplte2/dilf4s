@@ -6,7 +6,7 @@ import java.nio.file.{Files, Path, Paths}
 import cats.effect.{ExitCode, IO, IOApp}
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.hash.{Digest, Sha256}
 
 import io.circe.Json
@@ -65,7 +65,7 @@ object TrieVectors {
         "keys"     -> queries.map(_.toHex).asJson,
         "prefixes" -> prefixes.map(_.toHex).asJson,
         "ranges"   -> ranges.map { case (f, u) => Json.fromFields(bounds(f, u)) }.asJson,
-        "cbor"     -> orDie(TrieProofs.encode(proof)).pipe(Cbor.encode).toHex.asJson,
+        "cbor"     -> orDie(TrieProofs.encode(proof)).pipe(xyz.kd5ujc.core.canonical.CanonicalGens.encoded).toHex.asJson,
         "lookups"  -> probes.map(k => Json.obj("key" -> k.toHex.asJson, "result" -> lookupJson(verified.lookup(k.bits)))).asJson,
         "prefixListings" -> prefixes.map { p =>
           Json.obj(
@@ -130,7 +130,7 @@ object TrieVectors {
       "name"  -> name.asJson,
       "mode"  -> modeJson(mode),
       "root"  -> root.hex.asJson,
-      "cbor"  -> Cbor.encode(proof).toHex.asJson,
+      "cbor"  -> xyz.kd5ujc.core.canonical.CanonicalGens.encoded(proof).toHex.asJson,
       "error" -> result.asJson
     )
   }

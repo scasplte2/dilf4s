@@ -141,13 +141,12 @@ export const NonCanonicalReason: c.Codec<NonCanonicalReason> = c.union<NonCanoni
  * `not-json` (`shared/schemas/codec-errors.cddl`).
  *
  * What JSON could not hold: a byte string; a rational whose decimal does not terminate; a number whose JSON form would
- * pass the digit or scale bound, so it could not be read back; a rendering longer than the reference's `render` can
- * build (MaxRenderBytes). The last is the reference's only: the Rust and TypeScript SDKs render within a limit the caller
- * gives and refuse past it as TooLarge, not as a CanonicalError.
+ * pass the digit or scale bound, so it could not be read back. A rendering past a byte limit is no CanonicalError in any
+ * SDK: it is TooLarge, with the limit (the reference's render past MaxRenderBytes too).
  */
-export type NotJson = "bytes" | "non-terminating rational" | "over-long number" | "over-long rendering";
+export type NotJson = "bytes" | "non-terminating rational" | "over-long number";
 
-export const NotJson: c.Codec<NotJson> = c.union<NotJson>("NotJson", [], ["bytes", "non-terminating rational", "over-long number", "over-long rendering"]);
+export const NotJson: c.Codec<NotJson> = c.union<NotJson>("NotJson", [], ["bytes", "non-terminating rational", "over-long number"]);
 
 /**
  * `number-bound` (`shared/schemas/codec-errors.cddl`): an error family, by `kind` (`NumberBoundKind`).

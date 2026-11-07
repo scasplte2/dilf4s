@@ -83,7 +83,7 @@ object IntegerWidthSuite extends SimpleIOSuite {
   test("k of the widest integers build exactly k magnitudes, each within the bound, and decode to themselves") {
     val values = (accepted ++ accepted).map(CanonicalGens.int)
     val array = CanonicalValue.array(values.toVector).fold(e => sys.error(e.toString), identity)
-    val bytes = Cbor.encode(array)
+    val bytes = CanonicalGens.encoded(array)
     counted(bytes).map {
       case (decoded, calls, widest) =>
         expect
@@ -91,7 +91,10 @@ object IntegerWidthSuite extends SimpleIOSuite {
           .and(expect.same(values.size.toLong, calls))
           .and(expect.same(4153L, widest))
           .and(
-            expect.same(accepted.map(n => CanonicalGens.integerBytes(n)), accepted.map(n => Cbor.encode(CanonicalGens.int(n)): ByteVector))
+            expect.same(
+              accepted.map(n => CanonicalGens.integerBytes(n)),
+              accepted.map(n => CanonicalGens.encoded(CanonicalGens.int(n)): ByteVector)
+            )
           )
     }
   }
@@ -141,7 +144,7 @@ object IntegerWidthSuite extends SimpleIOSuite {
     def rational(d: BigInt) = CanonicalValue.number(Ratio.of(1, d).fold(e => sys.error(e.toString), identity))
     expect
       .same(
-        List(Left(overLong), Left(overLong)),
+        List(Left(CanonicalJson.RenderError.Canonical(overLong)), Left(CanonicalJson.RenderError.Canonical(overLong))),
         List(BigInt(2).pow(33218), BigInt(5).pow(14306)).map(d => rational(d).flatMap(CanonicalJson.render))
       )
       .and(expect.same(Right("0.0001"), rational(BigInt(10000)).flatMap(CanonicalJson.render)))

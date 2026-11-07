@@ -10,6 +10,7 @@ canonical-vectors = {
   "json": [* canonical-json-case],
   "model": [* canonical-model-case],
   "renderRejections": [* canonical-render-rejection],
+  "limits": [* canonical-limit-case],
   "cborRejections": [* canonical-cbor-rejection],
   "taggedHash": [* canonical-tagged-hash],
   "digests": [* canonical-digest],
@@ -32,6 +33,27 @@ canonical-model-case = { "value": text, "cbor": hex, "contentHash": hex }
 
 ; A value with a CBOR form whose JSON form would exceed the bounds of section 3, so rendering it fails.
 canonical-render-rejection = { "cbor": hex, "error": canonical-error-kind }
+
+; A budgeted call (sections 2 and 3): cbor.encodeWithin ("cbor") or json.renderWithin ("json") of "value" (its
+; canonical CBOR) within "maxBytes". "output" is its result, exactly when it is accepted: the encoding's hex, or the
+; JSON text.
+canonical-limit-case = {
+  "name": text,
+  "encoding": canonical-limit-encoding,
+  "value": hex,
+  "maxBytes": uint,
+  "outcome": canonical-limit-outcome,
+  ? "output": text,
+}
+
+canonical-limit-encoding = "cbor" / "json"
+
+; "accepted", or a refusal: its kind, and "limit" exactly when the kind is TooLarge (conformance.md section 3).
+canonical-limit-outcome = canonical-limit-refusal / "accepted"
+
+canonical-limit-refusal = { "kind": canonical-limit-kind, ? "limit": uint }
+
+canonical-limit-kind = "TooLarge" / codec.canonical-error-kind
 
 canonical-cbor-rejection = { "cbor": hex, "error": canonical-error-kind, ? "limit": uint }
 

@@ -5,7 +5,7 @@ import java.security.MessageDigest
 
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor, Preview}
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview}
 
 import scodec.bits.ByteVector
 import weaver.SimpleIOSuite
@@ -55,7 +55,8 @@ object HasherSuite extends SimpleIOSuite with Checkers {
     val leaf = TaggedHash[Sha256](DomainTag("dilf4s/mpt/leaf/v1").toOption.get)
     val node = TaggedHash[Sha256](DomainTag("dilf4s/mpt/branch/v1").toOption.get)
     val v = CanonicalValue.CInt(42)
-    expect(leaf.value(v) != node.value(v), "domains must not collide").and(expect.same(leaf(Cbor.encode(v)), leaf.value(v)))
+    expect(leaf.value(v) != node.value(v), "domains must not collide")
+      .and(expect.same(Right(leaf(xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v))), leaf.value(v)))
   }
 
   pureTest("domain tags follow the grammar") {

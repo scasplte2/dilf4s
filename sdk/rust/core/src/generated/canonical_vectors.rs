@@ -312,6 +312,204 @@ impl c::Model for CanonicalJsonRejected {
     }
 }
 
+/// `canonical-limit-case` (`shared/schemas/canonical-vectors.cddl`).
+///
+/// A budgeted call (sections 2 and 3): cbor.encodeWithin ("cbor") or json.renderWithin ("json") of "value" (its
+/// canonical CBOR) within "maxBytes". "output" is its result, exactly when it is accepted: the encoding's hex, or the
+/// JSON text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalLimitCase {
+    /// The `name` entry.
+    pub name: String,
+    /// The `encoding` entry.
+    pub encoding: CanonicalLimitEncoding,
+    /// The `value` entry.
+    pub value: Hex,
+    /// The `maxBytes` entry.
+    pub max_bytes: u64,
+    /// The `outcome` entry.
+    pub outcome: CanonicalLimitOutcome,
+    /// The `output` entry.
+    pub output: Option<String>,
+}
+
+impl c::Model for CanonicalLimitCase {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("encoding", &c::ModelOf::<CanonicalLimitEncoding>::NEW, &self.encoding, inner)?,
+            c::field("value", &HEX, &self.value, inner)?,
+            c::field("maxBytes", &c::UINT, &self.max_bytes, inner)?,
+            c::field("outcome", &c::ModelOf::<CanonicalLimitOutcome>::NEW, &self.outcome, inner)?,
+            c::optional_field("output", &c::Text, self.output.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["name", "encoding", "value", "maxBytes", "outcome", "output"])?;
+        let f0 = fields.required("name", &c::Text)?;
+        let f1 = fields.required("encoding", &c::ModelOf::<CanonicalLimitEncoding>::NEW)?;
+        let f2 = fields.required("value", &HEX)?;
+        let f3 = fields.required("maxBytes", &c::UINT)?;
+        let f4 = fields.required("outcome", &c::ModelOf::<CanonicalLimitOutcome>::NEW)?;
+        let f5 = fields.optional("output", &c::Text)?;
+        Ok(Self { name: f0, encoding: f1, value: f2, max_bytes: f3, outcome: f4, output: f5 })
+    }
+}
+
+/// `canonical-limit-encoding` (`shared/schemas/canonical-vectors.cddl`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CanonicalLimitEncoding {
+    /// The text `cbor`.
+    Cbor,
+    /// The text `json`.
+    Json,
+}
+
+impl c::Model for CanonicalLimitEncoding {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Cbor => Ok(c::Value::text("cbor")),
+            Self::Json => Ok(c::Value::text("json")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["cbor", "json"])? {
+            c::Alternative::Text(0) => Ok(Self::Cbor),
+            c::Alternative::Text(1) => Ok(Self::Json),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl CanonicalLimitEncoding {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::Cbor, Self::Json];
+}
+
+impl core::fmt::Display for CanonicalLimitEncoding {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Cbor => f.write_str("cbor"),
+            Self::Json => f.write_str("json"),
+        }
+    }
+}
+
+/// `canonical-limit-kind` (`shared/schemas/canonical-vectors.cddl`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CanonicalLimitKind {
+    /// The text `TooLarge`.
+    TooLarge,
+    /// A [`super::codec_errors::CanonicalErrorKind`].
+    CanonicalErrorKind(super::codec_errors::CanonicalErrorKind),
+}
+
+impl c::Model for CanonicalLimitKind {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::TooLarge => Ok(c::Value::text("TooLarge")),
+            Self::CanonicalErrorKind(a) => c::Model::to_value_at(a, depth),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["TooLarge", "UnpairedSurrogate", "DuplicateKey", "RationalTooWide", "IntegerTooWide", "JsonSyntax", "InvalidNumber", "NotJsonRepresentable", "TypeMismatch", "UnexpectedEnd", "TrailingBytes", "DepthExceeded", "NonCanonical", "Unsupported", "InvalidUtf8"])? {
+            c::Alternative::Text(0) => Ok(Self::TooLarge),
+            c::Alternative::Text(1) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::UnpairedSurrogate)),
+            c::Alternative::Text(2) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::DuplicateKey)),
+            c::Alternative::Text(3) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::RationalTooWide)),
+            c::Alternative::Text(4) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::IntegerTooWide)),
+            c::Alternative::Text(5) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::JsonSyntax)),
+            c::Alternative::Text(6) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::InvalidNumber)),
+            c::Alternative::Text(7) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::NotJsonRepresentable)),
+            c::Alternative::Text(8) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::TypeMismatch)),
+            c::Alternative::Text(9) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::UnexpectedEnd)),
+            c::Alternative::Text(10) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::TrailingBytes)),
+            c::Alternative::Text(11) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::DepthExceeded)),
+            c::Alternative::Text(12) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::NonCanonical)),
+            c::Alternative::Text(13) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::Unsupported)),
+            c::Alternative::Text(14) => Ok(Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::InvalidUtf8)),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl CanonicalLimitKind {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 15] = [Self::TooLarge, Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::UnpairedSurrogate), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::DuplicateKey), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::RationalTooWide), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::IntegerTooWide), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::JsonSyntax), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::InvalidNumber), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::NotJsonRepresentable), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::TypeMismatch), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::UnexpectedEnd), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::TrailingBytes), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::DepthExceeded), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::NonCanonical), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::Unsupported), Self::CanonicalErrorKind(super::codec_errors::CanonicalErrorKind::InvalidUtf8)];
+}
+
+impl core::fmt::Display for CanonicalLimitKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::TooLarge => f.write_str("TooLarge"),
+            Self::CanonicalErrorKind(a) => core::fmt::Display::fmt(a, f),
+        }
+    }
+}
+
+/// `canonical-limit-outcome` (`shared/schemas/canonical-vectors.cddl`).
+///
+/// "accepted", or a refusal: its kind, and "limit" exactly when the kind is TooLarge (conformance.md section 3).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CanonicalLimitOutcome {
+    /// A [`CanonicalLimitRefusal`].
+    CanonicalLimitRefusal(CanonicalLimitRefusal),
+    /// The text `accepted`.
+    Accepted,
+}
+
+impl c::Model for CanonicalLimitOutcome {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::CanonicalLimitRefusal(a) => c::Model::to_value_at(a, depth),
+            Self::Accepted => Ok(c::Value::text("accepted")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[(&["kind"], &["kind", "limit"])], &["accepted"])? {
+            c::Alternative::Record(0) => <CanonicalLimitRefusal as c::Model>::from_value(value).map(Self::CanonicalLimitRefusal),
+            c::Alternative::Text(0) => Ok(Self::Accepted),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl CanonicalLimitOutcome {
+    /// Every text alternative (not the records), in schema order.
+    pub const TEXTS: [Self; 1] = [Self::Accepted];
+}
+
+/// `canonical-limit-refusal` (`shared/schemas/canonical-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalLimitRefusal {
+    /// The `kind` entry.
+    pub kind: CanonicalLimitKind,
+    /// The `limit` entry.
+    pub limit: Option<u64>,
+}
+
+impl c::Model for CanonicalLimitRefusal {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("kind", &c::ModelOf::<CanonicalLimitKind>::NEW, &self.kind, inner)?,
+            c::optional_field("limit", &c::UINT, self.limit.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["kind", "limit"])?;
+        let f0 = fields.required("kind", &c::ModelOf::<CanonicalLimitKind>::NEW)?;
+        let f1 = fields.optional("limit", &c::UINT)?;
+        Ok(Self { kind: f0, limit: f1 })
+    }
+}
+
 /// `canonical-model-case` (`shared/schemas/canonical-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalModelCase {
@@ -417,6 +615,8 @@ pub struct CanonicalVectors {
     pub model: Vec<CanonicalModelCase>,
     /// The `renderRejections` entry.
     pub render_rejections: Vec<CanonicalRenderRejection>,
+    /// The `limits` entry.
+    pub limits: Vec<CanonicalLimitCase>,
     /// The `cborRejections` entry.
     pub cbor_rejections: Vec<CanonicalCborRejection>,
     /// The `taggedHash` entry.
@@ -444,6 +644,7 @@ impl c::Model for CanonicalVectors {
             c::field("json", &c::VecOf { element: c::ModelOf::<CanonicalJsonCase>::NEW, min: 0, max: None }, &self.json, inner)?,
             c::field("model", &c::VecOf { element: c::ModelOf::<CanonicalModelCase>::NEW, min: 0, max: None }, &self.model, inner)?,
             c::field("renderRejections", &c::VecOf { element: c::ModelOf::<CanonicalRenderRejection>::NEW, min: 0, max: None }, &self.render_rejections, inner)?,
+            c::field("limits", &c::VecOf { element: c::ModelOf::<CanonicalLimitCase>::NEW, min: 0, max: None }, &self.limits, inner)?,
             c::field("cborRejections", &c::VecOf { element: c::ModelOf::<CanonicalCborRejection>::NEW, min: 0, max: None }, &self.cbor_rejections, inner)?,
             c::field("taggedHash", &c::VecOf { element: c::ModelOf::<CanonicalTaggedHash>::NEW, min: 0, max: None }, &self.tagged_hash, inner)?,
             c::field("digests", &c::VecOf { element: c::ModelOf::<CanonicalDigest>::NEW, min: 0, max: None }, &self.digests, inner)?,
@@ -455,7 +656,7 @@ impl c::Model for CanonicalVectors {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "contentHashTag", "contentHashAlgorithm", "json", "model", "renderRejections", "cborRejections", "taggedHash", "digests", "domainTags", "algorithms", "digestHex", "expansions"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "contentHashTag", "contentHashAlgorithm", "json", "model", "renderRejections", "limits", "cborRejections", "taggedHash", "digests", "domainTags", "algorithms", "digestHex", "expansions"])?;
         fields.required("spec", &c::LiteralText("docs/specs/canonical-encoding.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         let f2 = fields.required("contentHashTag", &c::Text)?;
@@ -463,14 +664,15 @@ impl c::Model for CanonicalVectors {
         let f4 = fields.required("json", &c::VecOf { element: c::ModelOf::<CanonicalJsonCase>::NEW, min: 0, max: None })?;
         let f5 = fields.required("model", &c::VecOf { element: c::ModelOf::<CanonicalModelCase>::NEW, min: 0, max: None })?;
         let f6 = fields.required("renderRejections", &c::VecOf { element: c::ModelOf::<CanonicalRenderRejection>::NEW, min: 0, max: None })?;
-        let f7 = fields.required("cborRejections", &c::VecOf { element: c::ModelOf::<CanonicalCborRejection>::NEW, min: 0, max: None })?;
-        let f8 = fields.required("taggedHash", &c::VecOf { element: c::ModelOf::<CanonicalTaggedHash>::NEW, min: 0, max: None })?;
-        let f9 = fields.required("digests", &c::VecOf { element: c::ModelOf::<CanonicalDigest>::NEW, min: 0, max: None })?;
-        let f10 = fields.required("domainTags", &c::VecOf { element: c::ModelOf::<CanonicalDomainTag>::NEW, min: 0, max: None })?;
-        let f11 = fields.required("algorithms", &c::VecOf { element: c::ModelOf::<CanonicalAlgorithm>::NEW, min: 0, max: None })?;
-        let f12 = fields.required("digestHex", &c::VecOf { element: c::ModelOf::<CanonicalDigestHex>::NEW, min: 0, max: None })?;
-        let f13 = fields.required("expansions", &c::VecOf { element: c::ModelOf::<CanonicalExpansion>::NEW, min: 0, max: None })?;
-        Ok(Self { content_hash_tag: f2, content_hash_algorithm: f3, json: f4, model: f5, render_rejections: f6, cbor_rejections: f7, tagged_hash: f8, digests: f9, domain_tags: f10, algorithms: f11, digest_hex: f12, expansions: f13 })
+        let f7 = fields.required("limits", &c::VecOf { element: c::ModelOf::<CanonicalLimitCase>::NEW, min: 0, max: None })?;
+        let f8 = fields.required("cborRejections", &c::VecOf { element: c::ModelOf::<CanonicalCborRejection>::NEW, min: 0, max: None })?;
+        let f9 = fields.required("taggedHash", &c::VecOf { element: c::ModelOf::<CanonicalTaggedHash>::NEW, min: 0, max: None })?;
+        let f10 = fields.required("digests", &c::VecOf { element: c::ModelOf::<CanonicalDigest>::NEW, min: 0, max: None })?;
+        let f11 = fields.required("domainTags", &c::VecOf { element: c::ModelOf::<CanonicalDomainTag>::NEW, min: 0, max: None })?;
+        let f12 = fields.required("algorithms", &c::VecOf { element: c::ModelOf::<CanonicalAlgorithm>::NEW, min: 0, max: None })?;
+        let f13 = fields.required("digestHex", &c::VecOf { element: c::ModelOf::<CanonicalDigestHex>::NEW, min: 0, max: None })?;
+        let f14 = fields.required("expansions", &c::VecOf { element: c::ModelOf::<CanonicalExpansion>::NEW, min: 0, max: None })?;
+        Ok(Self { content_hash_tag: f2, content_hash_algorithm: f3, json: f4, model: f5, render_rejections: f6, limits: f7, cbor_rejections: f8, tagged_hash: f9, digests: f10, domain_tags: f11, algorithms: f12, digest_hex: f13, expansions: f14 })
     }
 }
 

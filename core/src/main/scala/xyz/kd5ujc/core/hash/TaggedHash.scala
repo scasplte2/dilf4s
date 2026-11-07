@@ -36,11 +36,20 @@ final class TaggedHash[H] private (val tag: DomainTag, prefix: ByteVector)(impli
   /** The tagged hash of `message`'s bytes, absorbed as they are written (`Hasher.digestOf`). */
   def of(message: ByteSource): Digest[H] = H.digestOf(prefixed ++ message)
 
-  /** Content hash of an already-canonical value, its encoding streamed into the hash: never built whole. */
-  def value(v: CanonicalValue): Digest[H] = of(Cbor.source(v))
+  /**
+   * Content hash of an already-canonical value, its encoding streamed into the hash: never built whole.
+   * [[valueWithin]] at `Cbor.MaxEncodedBytes`, as the TypeScript SDK's `content`: an encoding longer is `TooLarge`.
+   */
+  def value(v: CanonicalValue): Either[Cbor.TooLarge, Digest[H]] = valueWithin(v, Cbor.MaxEncodedBytes)
 
-  /** Content hash of typed data: canonicalise, encode deterministically, tagged-hash. */
-  def content[A](a: A)(implicit C: Canonical[A]): Either[CanonicalError, Digest[H]] = C.canonical(a).map(value)
+  /**
+   * [[value]], if the encoding is at most `maxBytes` long, with the bounds and refusal of `Cbor.encodeWithin`: a value
+   * heavier than the limit is refused from its weight, in O(1), and a refused value is never hashed, not even in part.
+   */
+  def valueWithin(v: CanonicalValue, maxBytes: Long): Either[Cbor.TooLarge, Digest[H]] = Cbor.sourceWithin(v, maxBytes).map(of)
+
+  /** Content hash of typed data: canonicalise, encode deterministically, tagged-hash, within [[value]]'s ceiling. */
+  def content[A](a: A)(implicit C: Canonical[A]): Either[CanonicalError | Cbor.TooLarge, Digest[H]] = C.canonical(a).flatMap(value)
 }
 
 object TaggedHash {

@@ -294,7 +294,12 @@ object ProofOpsSuite extends IOSuite {
       val vs = values(fx)
       val km = get(KeyMode.fixed(2))
       val T = TrieHashing[Sha256]
-      val trie = get(Trie.fromEntries[Sha256](km, vs.toList.map { case (k, v) => hex(k) -> T.value(ValueCommitment.bytes(CBytes(v))) }))
+      val trie = get(
+        Trie.fromEntries[Sha256](
+          km,
+          vs.toList.map { case (k, v) => hex(k) -> T.valueOf(ValueCommitment.source(CBytes(v)).fold(e => sys.error(e.toString), identity)) }
+        )
+      )
       val (from, until) = (hex("0001"), Option(hex("8000")))
       val proof = get(trie.prove(Nil, Nil, List(from -> until)).flatMap(TrieProofs.encode(_)))
       val keyProof = get(trie.prove(List(hex("0001"))).flatMap(TrieProofs.encode(_)))

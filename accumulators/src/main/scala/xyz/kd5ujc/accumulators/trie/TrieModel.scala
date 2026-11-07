@@ -101,11 +101,15 @@ object Node {
     def childCount: Int = left.fold(0)(_ => 1) + right.fold(0)(_ => 1)
   }
 
-  def leaf[H](segment: BitVector, value: Digest[H])(implicit T: TrieHashing[H]): Leaf[H] =
+  /**
+   * A node from a segment this package bounds: a key's path (at most its mode's longest key), a stored record's, or a
+   * proof's within its weight; far within the encoding ceiling its record is hashed under ([[TrieHashing]]).
+   */
+  private[trie] def leaf[H](segment: BitVector, value: Digest[H])(implicit T: TrieHashing[H]): Leaf[H] =
     Leaf(segment, value, T.leaf(segment, value))
 
-  /** Callers guarantee the branch invariant: two children, or one child and a value. */
-  def branch[H](segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]])(
+  /** Callers guarantee the branch invariant: two children, or one child and a value; and a bounded segment, as [[leaf]]. */
+  private[trie] def branch[H](segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]])(
     implicit T: TrieHashing[H]
   ): Branch[H] = Branch(segment, value, left, right, T.branch(segment, value, left, right))
 
@@ -119,9 +123,14 @@ trait TrieHashing[H] {
   def value(bytes: ByteVector): Digest[H] = valueOf(ByteSource.bytes(bytes))
 
   /** `valueHash` of `bytes`'s bytes, absorbed as they are written: a value's commitment is never built whole. */
-  def valueOf(bytes:  ByteSource): Digest[H]
-  def leaf(segment:   BitVector, value: Digest[H]): Digest[H]
-  def branch(segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]]): Digest[H]
+  def valueOf(bytes: ByteSource): Digest[H]
+
+  /**
+   * A node's hash from its record, streamed unbounded (`Cbor.recordSource`): only this library's trie code passes a
+   * segment, one it bounds far within the encoding ceiling, so these are not public.
+   */
+  private[kd5ujc] def leaf(segment:   BitVector, value: Digest[H]): Digest[H]
+  private[kd5ujc] def branch(segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]]): Digest[H]
 }
 
 object TrieHashing {
@@ -143,9 +152,9 @@ object TrieHashing {
     private val branchTag = TaggedHash[H](tag(BranchTag))
     val empty: Digest[H] = TaggedHash[H](tag(EmptyTag)).apply(ByteVector.empty)
     def valueOf(bytes: ByteSource): Digest[H] = valueTag.of(bytes)
-    def leaf(segment:  BitVector, value: Digest[H]): Digest[H] = leafTag(Cbor.encode(NodeCodec.leaf(segment, value)))
+    def leaf(segment:  BitVector, value: Digest[H]): Digest[H] = leafTag.of(Cbor.recordSource(NodeCodec.leaf(segment, value)))
     def branch(segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]]): Digest[H] =
-      branchTag(Cbor.encode(NodeCodec.branch(segment, value.map(_.bytes), left.map(_.bytes), right.map(_.bytes))))
+      branchTag.of(Cbor.recordSource(NodeCodec.branch(segment, value.map(_.bytes), left.map(_.bytes), right.map(_.bytes))))
   }
 }
 

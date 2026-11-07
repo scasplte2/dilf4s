@@ -238,7 +238,7 @@ object CanonicalJson {
    * A rational's JSON text, within the bounds [[parse]] accepts, so that rendering always reads back. Its scale comes
    * from the denominator's factors first, so a scale past the bound builds no digit.
    */
-  private def rationalText(r: CRational): Either[CanonicalError, String] =
+  private[kd5ujc] def rationalText(r: CRational): Either[CanonicalError, String] =
     r.value.decimalScale match {
       case scala.None                    => nonTerminating.asLeft
       case scala.Some(s) if s > MaxScale => overLong.asLeft
@@ -277,20 +277,11 @@ object CanonicalJson {
   }
 
   /**
-   * Compact JSON with keys in code-point order. Fails for bytes, for rationals that do not terminate or are too long,
-   * and for a value whose JSON is longer than [[MaxRenderBytes]], which no JVM string could hold.
+   * Compact JSON with keys in code-point order: [[renderWithin]] at [[MaxRenderBytes]]. Fails for bytes, for rationals
+   * that do not terminate or are too long (`Canonical`), and for a value whose JSON is longer than [[MaxRenderBytes]]
+   * (`TooLarge`, with that limit), which no JVM string could be relied on to hold (docs/specs/conformance.md §4).
    */
-  def render(value: CanonicalValue): Either[CanonicalError, String] =
-    renderWithin(value, MaxRenderBytes).leftMap {
-      case RenderError.Canonical(e) => e
-      case RenderError.TooLarge(_)  => TooLongToRender
-    }
-
-  /**
-   * [[render]]'s refusal of a value whose JSON is longer than [[MaxRenderBytes]]: every value heavier than that, since
-   * a value's JSON is never shorter than its weight.
-   */
-  val TooLongToRender: CanonicalError = NotJsonRepresentable("over-long rendering")
+  def render(value: CanonicalValue): Either[RenderError, String] = renderWithin(value, MaxRenderBytes)
 
   /**
    * [[render]], if the JSON is at most `maxBytes` long in UTF-8 (a negative limit is 0, and no limit is above
@@ -305,6 +296,17 @@ object CanonicalJson {
    */
   def renderWithin(value: CanonicalValue, maxBytes: Long): Either[RenderError, String] =
     renderInto(value, maxBytes, new java.lang.StringBuilder)(using TextSink.builder).map(_.toString)
+
+  /**
+   * [[renderWithin]], but a byte string is written as the text `"0x"` and its lowercase hex (the JLVM's JSON surface,
+   * docs/specs/jlvm.md), checked against the limit before its hex is built.
+   */
+  private[kd5ujc] def renderSurfaceWithin(value: CanonicalValue, maxBytes: Long): Either[RenderError, String] =
+    write(List(Pending.Node(value)), Written(new java.lang.StringBuilder, 0L, budget(maxBytes)), hexBytes = true)(using TextSink.builder)
+      .map(_.toString)
+
+  /** A caller's limit as it is applied: from 0 to [[MaxRenderBytes]]. */
+  private def budget(maxBytes: Long): Long = maxBytes.max(0L).min(MaxRenderBytes)
 
   /**
    * Where rendered text goes, as a state `S` threaded through every write, as [[ByteSink]] is for bytes: the renderer
@@ -322,7 +324,7 @@ object CanonicalJson {
 
   /** [[renderWithin]] into any [[TextSink]]: each character of the rendering reaches the sink once, and nothing else does. */
   private[canonical] def renderInto[S](value: CanonicalValue, maxBytes: Long, s: S)(using TextSink[S]): Either[RenderError, S] =
-    write(List(Pending.Node(value)), Written(s, 0L, maxBytes.max(0L).min(MaxRenderBytes)))
+    write(List(Pending.Node(value)), Written(s, 0L, budget(maxBytes)), hexBytes = false)
 
   /** What is still to be written, innermost first: a value, or the rest of an open array or map. */
   sealed private trait Pending
@@ -364,11 +366,11 @@ object CanonicalJson {
   }
 
   @tailrec
-  private def write[S](todo: List[Pending], out: Written[S])(using TextSink[S]): Either[RenderError, S] = {
+  private def write[S](todo: List[Pending], out: Written[S], hexBytes: Boolean)(using TextSink[S]): Either[RenderError, S] = {
     val step: Either[RenderError, (List[Pending], Written[S])] =
       todo match {
         case Nil                     => (Nil, out).asRight
-        case Pending.Node(v) :: rest => node(v, out).map { case (opened, next) => (opened.fold(rest)(_ :: rest), next) }
+        case Pending.Node(v) :: rest => node(v, out, hexBytes).map { case (opened, next) => (opened.fold(rest)(_ :: rest), next) }
         case Pending.Items(items, i) :: rest =>
           if (i >= items.size) out.ascii("]").map((rest, _))
           else separated(out, i).map((Pending.Node(items(i)) :: Pending.Items(items, i + 1) :: rest, _))
@@ -384,7 +386,7 @@ object CanonicalJson {
       }
     step match {
       case Right((Nil, done))     => done.s.asRight
-      case Right((next, written)) => write(next, written)
+      case Right((next, written)) => write(next, written, hexBytes)
       case Left(e)                => e.asLeft
     }
   }
@@ -394,7 +396,9 @@ object CanonicalJson {
     if (i == 0) out.asRight else out.ascii(",")
 
   /** One value: a scalar, written whole, or a container's opening bracket, its parts now pending. */
-  private def node[S](v: CanonicalValue, out: Written[S])(using TextSink[S]): Either[RenderError, (Option[Pending], Written[S])] =
+  private def node[S](v: CanonicalValue, out: Written[S], hexBytes: Boolean)(
+    using TextSink[S]
+  ): Either[RenderError, (Option[Pending], Written[S])] =
     if (v.weight > out.left) out.refused.asLeft
     else
       v match {
@@ -403,9 +407,12 @@ object CanonicalJson {
         case i: CInt      => out.ascii(integerText(i)).map((None, _))
         case r: CRational => rationalText(r).leftMap(RenderError.Canonical(_)).flatMap(out.ascii).map((None, _))
         case t: CText     => out.quoted(t.value).map((None, _))
-        case CBytes(_)    => RenderError.Canonical(NotJsonRepresentable("bytes")).asLeft
-        case CArray(vs)   => out.ascii("[").map((Some(Pending.Items(vs, 0)), _))
-        case CMap(m)      => out.ascii("{").map((Some(Pending.Members(m.toVector.sortBy(_._1)(using CodePointOrder), 0)), _))
+        // "0x" and two hex digits a byte, quoted: its length is known before the hex is built
+        case CBytes(b) if hexBytes =>
+          if (out.left < 4L || b.size > (out.left - 4L) / 2) out.refused.asLeft else out.ascii("\"0x" + b.toHex + "\"").map((None, _))
+        case CBytes(_)  => RenderError.Canonical(NotJsonRepresentable("bytes")).asLeft
+        case CArray(vs) => out.ascii("[").map((Some(Pending.Items(vs, 0)), _))
+        case CMap(m)    => out.ascii("{").map((Some(Pending.Members(m.toVector.sortBy(_._1)(using CodePointOrder), 0)), _))
       }
 
   private def escape(c: Char): Option[String] =

@@ -46,8 +46,9 @@ final class Trie[H] private (
   def putValue(key: ByteVector, value:     ByteVector): Result[Trie[H]] = put(key, T.value(value))
 
   /** A value committed by its [[ValueCommitment]] bytes, as a JLVM program claims it. */
-  def putCanonical(key: ByteVector, value: CanonicalValue): Result[Trie[H]] = put(key, T.valueOf(ValueCommitment.source(value)))
-  def remove(key:       ByteVector): Result[Trie[H]] = update(List(key -> None))
+  def putCanonical(key: ByteVector, value: CanonicalValue): Result[Trie[H]] =
+    ValueCommitment.source(value).leftMap(e => TrieError.TooLarge(e.limit)).flatMap(c => put(key, T.valueOf(c)))
+  def remove(key: ByteVector): Result[Trie[H]] = update(List(key -> None))
 
   /** Applies writes in order (`None` deletes) and garbage-collects what the old root no longer shares. */
   def update(ops: List[(ByteVector, Option[Digest[H]])]): Result[Trie[H]] =

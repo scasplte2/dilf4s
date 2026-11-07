@@ -191,7 +191,10 @@ object MeteringSuite extends IOSuite {
     (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (uniqueCount, subsetCount) =>
       IO {
         val unique = Either.catchNonFatal(Dedup.Sorting.distinct(xs)(using counted(byNumber, uniqueCount)).map(_.n)).leftMap(_.getMessage)
-        val subset = Either.catchNonFatal(Dedup.Sorting.subset(xs.iterator, xs)(using counted(byNumber, subsetCount))).leftMap(_.getMessage)
+        val subset = Either
+          .catchNonFatal(Dedup.Sorting.subset(xs.iterator.map(Right(_)), xs)(using counted(byNumber, subsetCount)))
+          .leftMap(_.getMessage)
+          .flatMap(_.leftMap(_.toString))
         expect
           .same(Right(Vector.range(0, n / 2)), unique)
           .and(expect.same(Right(true), subset))
@@ -210,18 +213,44 @@ object MeteringSuite extends IOSuite {
       IO {
         val generic = Dedup.Sorting.subset(
           Iterator.tabulate(8192) { i =>
-            consumed.incrementAndGet(); new Opaque(if (i == 0) -1 else i)
+            consumed.incrementAndGet(); Right(new Opaque(if (i == 0) -1 else i))
           },
           Vector(new Opaque(1))
         )(using byNumber)
         val kernels = Kernels.Default.copy(key = v => { keyed.incrementAndGet(); Values.sortKey(v) })
         val o = jlvm.evaluate(get(Compiled(intersect, kernels)), data, Map.empty, Config(), kernels)
-        expect(!generic, "the first element is missing")
+        expect
+          .same(Right(false), generic)
           .and(expect.same(1L, consumed.get))
           .and(expect.same(Right(False), o.result))
           .and(expect.same(2L, keyed.get))
       }
     }
+  }
+
+  test("a sort key past the encoding ceiling is a Limit in unique and intersect; intersect keys its first array lazily") { jlvm =>
+    // an array whose encoding is refused stands in for one past the JVM's largest array, which no test can build
+    val tooLarge = xyz.kd5ujc.core.canonical.Cbor.TooLarge(xyz.kd5ujc.core.canonical.Cbor.MaxEncodedBytes)
+    val bigText = get(CanonicalValue.text("big"))
+    val kernels = Kernels.Default.copy(key = {
+      case CArray(vs) if vs.contains(bigText) => Left(tooLarge)
+      case v                                  => Values.sortKey(v)
+    })
+    val big = arr(Vector(bigText))
+    def run(p: String, data: CanonicalValue) = jlvm.evaluate(get(Compiled(program(p), kernels)), data, Map.empty, Config(), kernels).result
+    def limit(o: Either[JlvmError, CanonicalValue]) = o match {
+      case Left(JlvmError.Limit(_)) => success
+      case other                    => failure(s"expected a Limit, got $other")
+    }
+    val unique = """{"unique": {"var": "a"}}"""
+    val intersect = """{"intersect": [{"var": "a"}, {"var": "b"}]}"""
+    IO(
+      limit(run(unique, obj("a" -> arr(Vector(CInt(1), big)))))
+        .and(limit(run(intersect, obj("a" -> arr(Vector(CInt(1))), "b" -> arr(Vector(big))))))
+        .and(limit(run(intersect, obj("a" -> arr(Vector(big, CInt(0))), "b" -> arr(Vector(CInt(1)))))))
+        .and(expect.same(Right(False), run(intersect, obj("a" -> arr(Vector(CInt(0), big)), "b" -> arr(Vector(CInt(1)))))))
+        .and(expect.same(Right(arr(Vector(CInt(1)))), run(unique, obj("a" -> arr(Vector(CInt(1), CInt(1)))))))
+    )
   }
 
   test("unique and intersect compare colliding strings through the evaluator's value order, O(n log n) times") { jlvm =>

@@ -5,7 +5,7 @@ import scala.collection.immutable.TreeMap
 import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.accumulators.versioned.Harness._
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.storage.Batch
 
 import scodec.bits.ByteVector
@@ -43,12 +43,12 @@ object SharedValueSuite extends SimpleIOSuite {
   pureTest("checkValue: within the weight, the length is measured, and refused past the limit") {
     // 2^17 integers of 2^40 weigh 1 each but take 9 bytes each
     val wide = get(CanonicalValue.array(Vector.fill(1 << 17)(CanonicalValue.CInt(1L << 40))))
-    val exact = Cbor.encode(wide).size.toLong
+    val exact = xyz.kd5ujc.core.canonical.CanonicalGens.encoded(wide).size.toLong
     val atLimit = CanonicalValue.bytes(ByteVector.fill(VersionedTrie.MaxValueBytes - 5)(1))
     expect(wide.weight <= VersionedTrie.MaxValueBytes, s"weight ${wide.weight}")
       .and(expect(exact > VersionedTrie.MaxValueBytes, s"length $exact"))
       .and(expect.same(Left(VersionedTrieError.TooLarge(ofK, VersionedTrie.MaxValueBytes)), VersionedTrie.checkValue(k, wide)))
-      .and(expect.same(VersionedTrie.MaxValueBytes, Cbor.encode(atLimit).size))
+      .and(expect.same(VersionedTrie.MaxValueBytes, xyz.kd5ujc.core.canonical.CanonicalGens.encoded(atLimit).size))
       .and(expect.same(Right(()), VersionedTrie.checkValue(k, atLimit)))
   }
 

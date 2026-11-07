@@ -29,7 +29,10 @@ object ReplicaWorkSuite extends SimpleIOSuite with Checkers {
   /** The reference: the head of `state` and `history`, both rebuilt from scratch, over sorted lists. */
   private def headOf(version: Long, state: List[(StateKey, CanonicalValue)], history: List[(Long, Digest[H])]): Head[Long, H] = {
     val stateRoot = get(
-      Trie.fromEntries[H](get(VersionedTrie.stateMode), state.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v) })
+      Trie.fromEntries[H](
+        get(VersionedTrie.stateMode),
+        state.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v).fold(e => sys.error(e.toString), identity) }
+      )
     ).root
     Head(version, stateRoot, historyRoot(history :+ (version -> stateRoot)))
   }
@@ -275,7 +278,7 @@ object ReplicaWorkSuite extends SimpleIOSuite with Checkers {
   test("the deliberate regression: a rebuild per delta is over the bound") {
     val keys = families.head._2
     val (_, m) = start.delta(1L, keys.zipWithIndex.map { case (k, i) => k -> int(i) }, Nil)
-    val entries = m.state.toList.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v) }
+    val entries = m.state.toList.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v).fold(e => sys.error(e.toString), identity) }
     IO((new Counting, new Comparisons)).flatMap {
       case (hashing, order) =>
         counted(hashing, order)(get(Trie.fromEntries[H](get(VersionedTrie.stateMode), entries)(using hashing))).map {

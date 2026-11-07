@@ -84,7 +84,7 @@ object PureOps {
       case Merge     => Option(merge(op, args))
       case In        => Option(binary(op, args)(contains(op)))
       case Intersect => Option(binary(op, args)(subset(op, kernels)))
-      case Unique    => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, distinct(vs, kernels)))))
+      case Unique    => Option(unary(op, args)(v => arr(op, v).flatMap(distinct(op, _, kernels)).flatMap(array(op, _))))
       case Reverse   => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, vs.reverse))))
       case Flatten   => Option(unary(op, args)(v => arr(op, v).flatMap(vs => array(op, vs.flatMap(spread)))))
       case Slice     => Option(slice(op, args))
@@ -427,14 +427,20 @@ object PureOps {
       case (CNull, _)         => bool(true).asRight
       case (CArray(_), CNull) => bool(false).asRight
       case (a, b) =>
-        (arr(op, a), arr(op, b)).mapN((xs, ys) =>
-          bool(kernels.dedup.subset(xs.iterator.map(kernels.key), ys.map(kernels.key))(using kernels.values))
-        )
+        (arr(op, a), arr(op, b)).tupled.flatMap { (xs, ys) =>
+          ys.traverse(keyOf(op, kernels))
+            .flatMap(kernels.dedup.subset(xs.iterator.map(keyOf(op, kernels)), _)(using kernels.values))
+            .map(bool)
+        }
     }
 
   /** `vs` without repeats, keeping each value's first occurrence, in order, compared in the canonical value order. */
-  private def distinct(vs: Vector[CanonicalValue], kernels: Kernels): Vector[CanonicalValue] =
-    kernels.dedup.distinct(vs.map(kernels.key))(using kernels.values).map(_.value)
+  private def distinct(op: Op, vs: Vector[CanonicalValue], kernels: Kernels): Either[JlvmError, Vector[CanonicalValue]] =
+    vs.traverse(keyOf(op, kernels)).map(keys => kernels.dedup.distinct(keys)(using kernels.values).map(_.value))
+
+  /** A value's sort key; an encoding past the JVM's largest array is a [[JlvmError.Limit]] (`Values.sortKey`). */
+  private def keyOf(op: Op, kernels: Kernels)(v: CanonicalValue): Either[JlvmError, Values.SortKey] =
+    kernels.key(v).leftMap(e => JlvmError.Limit(s"${op.wire}: a value's encoding is over ${e.limit} bytes"))
 
   /** `[array, start]` or `[array, start, end]`, with JavaScript bounds. */
   private def slice(op: Op, args: Vector[CanonicalValue]): Result =

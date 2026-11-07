@@ -649,6 +649,11 @@ a 4096-bit rational result.
   pays for walking them.
 - **Deduplicating** (`unique`, `intersect`) sorts by a total order instead of hashing: kinds, then scalars structurally
   and collections by their canonical encoding. O(n log n), at the operations' calibrated rates, whatever the values.
+  A collection's encoding is built once, within 32 bytes per unit of its weight (no encoding is longer) and never
+  past 2^31 - 9 bytes (the reference's encoding ceiling, `conformance.md` §4): on every backend, a collection whose
+  encoding would be longer is a `Limit`, refused from its weight when the weight is over 2^31 - 9. `intersect` keys
+  its second array whole, then its first only up to the first element missing from the second. `jlvm_v1.json` pins
+  both, past the ceiling.
 
 GasCalibration measures these with the argument `metering`.
 

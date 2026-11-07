@@ -235,15 +235,28 @@ object Values {
         case _                            => unsigned(a.encoding, b.encoding)
       }
 
-  def sortKey(v: CanonicalValue): SortKey = v match {
-    case CNull        => SortKey(0, v, ByteVector.empty)
-    case CBool(_)     => SortKey(1, v, ByteVector.empty)
-    case CInt(_)      => SortKey(2, v, ByteVector.empty)
-    case CRational(_) => SortKey(3, v, ByteVector.empty)
-    case CText(_)     => SortKey(4, v, ByteVector.empty)
-    case CBytes(b)    => SortKey(5, v, ByteVector.view(b.toArrayUnsafe))
-    case CArray(_)    => SortKey(6, v, Cbor.encode(v).compact)
-    case CMap(_)      => SortKey(7, v, Cbor.encode(v).compact)
+  /**
+   * `v`'s sort key. An array's or a map's encoding is budgeted by its weight, which the operation has paid for: no
+   * encoding is longer than `Cbor.EncodingPerWeight` bytes per unit of weight, so it is written at once, unmeasured,
+   * and only an encoding past `Cbor.MaxEncodedBytes`, the JVM's largest array, is refused, as `TooLarge`; so is a byte
+   * string longer than that, which is its own key.
+   */
+  def sortKey(v: CanonicalValue): Either[Cbor.TooLarge, SortKey] = {
+    def encoded(rank: Int): Either[Cbor.TooLarge, SortKey] =
+      // no overflow: a weight past the ceiling is the ceiling, which budgets past the ceiling all the same
+      Cbor.encodeWithin(v, v.weight.min(Cbor.MaxEncodedBytes) * Cbor.EncodingPerWeight).map(e => SortKey(rank, v, e))
+    v match {
+      case CNull        => SortKey(0, v, ByteVector.empty).asRight
+      case CBool(_)     => SortKey(1, v, ByteVector.empty).asRight
+      case CInt(_)      => SortKey(2, v, ByteVector.empty).asRight
+      case CRational(_) => SortKey(3, v, ByteVector.empty).asRight
+      case CText(_)     => SortKey(4, v, ByteVector.empty).asRight
+      // a byte string is its own key, read as one array: one longer than the ceiling (a host's lazy view) is refused
+      case CBytes(b) =>
+        Either.cond(b.size <= Cbor.MaxEncodedBytes, SortKey(5, v, ByteVector.view(b.toArrayUnsafe)), Cbor.TooLarge(Cbor.MaxEncodedBytes))
+      case CArray(_) => encoded(6)
+      case CMap(_)   => encoded(7)
+    }
   }
 
   /**

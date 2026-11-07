@@ -239,6 +239,72 @@ object CanonicalVectors {
     rational(1, BigInt(5).pow(14306))
   )
 
+  /**
+   * Budgeted calls (canonical-encoding.md §2, §3): `Cbor.encodeWithin` ("cbor") or `CanonicalJson.renderWithin`
+   * ("json") of a value within a limit, each at the output's length and one byte under it, refused from the weight or
+   * as measured; and JSON's first fault in writing order, a part past the limit or what JSON cannot write.
+   */
+  val limitCases: List[(String, String, CanonicalValue, List[Long])] = {
+    def at(encoding: String, v: CanonicalValue): List[Long] = {
+      val length =
+        if (encoding == "cbor") CanonicalGens.encoded(v).size
+        else CanonicalJson.render(v).fold(e => sys.error(s"$v does not render: $e"), _.getBytes(UTF_8).length.toLong)
+      List(length, length - 1)
+    }
+    val abc = text("abc")
+    val nested = parsed("""{"b":[1,0.5,true,null,"é"],"a":{"k":-18446744073709551617}}""")
+    val escaped = text("a\"\\\n\u0001é😀")
+    val withBytes = array(CanonicalValue.CInt(1), CanonicalValue.CBytes(hex"01"))
+    List(
+      ("cbor: a text, its weight past one byte under its length", "cbor", abc, at("cbor", abc)),
+      (
+        "cbor: 2^32 - 1, weight 1 in 5 bytes, measured past one byte under",
+        "cbor",
+        CanonicalValue.CInt((1L << 32) - 1),
+        at("cbor", CanonicalValue.CInt((1L << 32) - 1))
+      ),
+      ("cbor: a nested value", "cbor", nested, at("cbor", nested)),
+      ("cbor: null within 0 bytes", "cbor", CanonicalValue.CNull, List(0L)),
+      (
+        "cbor: bytes, within their length and one under",
+        "cbor",
+        CanonicalValue.CBytes(hex"0102030405"),
+        at("cbor", CanonicalValue.CBytes(hex"0102030405"))
+      ),
+      ("json: a text, measured past one byte under its length", "json", abc, at("json", abc)),
+      ("json: an escaped text, longer than its weight", "json", escaped, at("json", escaped)),
+      ("json: a nested value, members in code-point order", "json", nested, at("json", nested)),
+      ("json: bytes after a part that fits: TooLarge within 4, NotJsonRepresentable within 5", "json", withBytes, List(4L, 5L)),
+      ("json: a non-terminating rational: TooLarge from its weight, else NotJsonRepresentable", "json", rational(1, 3), List(1L, 1000L))
+    )
+  }
+
+  /** A budgeted call's outcome: its output, or its refusal by kind and, for `TooLarge`, its limit. */
+  private def limitCase(name: String, encoding: String, v: CanonicalValue, maxBytes: Long): VectorJson = {
+    val result: Either[List[(String, VectorJson)], String] =
+      if (encoding == "cbor") Cbor.encodeWithin(v, maxBytes).left.map(e => tooLarge(e.limit)).map(_.toHex)
+      else
+        CanonicalJson.renderWithin(v, maxBytes).left.map {
+          case CanonicalJson.RenderError.TooLarge(limit) => tooLarge(limit)
+          case CanonicalJson.RenderError.Canonical(e)    => List("kind" -> errorKind(e))
+        }
+    obj(
+      List(
+        "name"     -> str(name),
+        "encoding" -> str(encoding),
+        "value"    -> str(CanonicalGens.encoded(v).toHex),
+        "maxBytes" -> num(maxBytes),
+        "outcome"  -> result.fold(fields => obj(fields*), _ => str("accepted"))
+      ) ++ result.toOption.map(o => "output" -> str(o)).toList*
+    )
+  }
+
+  private def tooLarge(limit: Long): List[(String, VectorJson)] = List("kind" -> str("TooLarge"), "limit" -> num(limit))
+
+  private def text(s:      String): CanonicalValue = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
+  private def parsed(json: String): CanonicalValue = CanonicalJson.parse(json).fold(e => sys.error(e.toString), identity)
+  private def array(vs:    CanonicalValue*): CanonicalValue = CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)
+
   val cborRejections: List[ByteVector] = List(
     hex"1817",
     hex"780161",
@@ -501,7 +567,7 @@ object CanonicalVectors {
     "json" -> arr(jsonInputs.map { in =>
       CanonicalJson.parse(in) match {
         case Right(v) =>
-          val bytes = Cbor.encode(v)
+          val bytes = xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v)
           obj(
             "json"        -> str(in),
             "cbor"        -> str(bytes.toHex),
@@ -514,12 +580,17 @@ object CanonicalVectors {
     }),
     "model" -> arr(modelInputs.map {
       case (name, v) =>
-        val bytes = Cbor.encode(v)
+        val bytes = xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v)
         obj("value" -> str(name), "cbor" -> str(bytes.toHex), "contentHash" -> str(sha256(bytes).hex))
     }),
     "renderRejections" -> arr(renderRejections.map { v =>
-      CanonicalJson.render(v).fold(e => obj(("cbor" -> str(Cbor.encode(v).toHex)) :: refusal(e)*), r => sys.error(s"$v renders as $r"))
+      CanonicalJson.render(v) match {
+        case Left(CanonicalJson.RenderError.Canonical(e)) =>
+          obj(("cbor" -> str(xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v).toHex)) :: refusal(e)*)
+        case other => sys.error(s"$v renders as $other")
+      }
     }),
+    "limits" -> arr(limitCases.flatMap { case (name, encoding, v, limits) => limits.map(limitCase(name, encoding, v, _)) }),
     "cborRejections" -> arr(cborRejections.map { b =>
       Cbor.decode(b).fold(e => obj(("cbor" -> str(b.toHex)) :: refusal(e)*), v => sys.error(s"${b.toHex} decodes as $v"))
     }),

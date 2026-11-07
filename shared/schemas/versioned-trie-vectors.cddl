@@ -21,9 +21,14 @@ versioned-trie-vectors = {
 }
 
 ; The default version key (section 2) at its edges. "key" is "version" as 8 unsigned big-endian bytes, the JLVM's
-; int_to_bytes [version, 8]; "valid" says whether the version key accepts it (versions 0..2^63-1), encoding the
-; version and decoding the key alike.
-vt-version-key = { "version": uint, "key": hex, "valid": bool }
+; int_to_bytes [version, 8]; "outcome" is the version key's, encoding the version and decoding the key alike:
+; "accepted" (versions 0..2^63-1), or refused by its kind.
+vt-version-key = { "version": uint, "key": hex, "outcome": vt-version-key-outcome }
+
+; "accepted", or the refusal of a version past the cap: InvalidVersion, a versioned-trie refusal with no normative field.
+vt-version-key-outcome = vt-version-key-refusal / "accepted"
+
+vt-version-key-refusal = { "kind": "InvalidVersion" }
 
 ; A candidate state key: whether the generated codec of versioned-trie.cddl's state-key pattern encodes it ("schema":
 ; "accepted", or TypeMismatch, the typed encoder's CanonicalError; its decoder refuses the same texts), and the

@@ -3,6 +3,7 @@ package xyz.kd5ujc.core.canonical
 import java.nio.charset.StandardCharsets.UTF_8
 
 import cats.syntax.either._
+import cats.syntax.functor._
 
 import scala.annotation.tailrec
 
@@ -45,16 +46,96 @@ object Cbor {
   // ------------------------------------------------------------------ encoding
 
   /**
-   * Total: every canonical value has exactly one encoding. Stack-safe for any nesting depth. The result is flat: one
-   * array ([[FlatBytes]]), so reading or slicing it never walks a rope.
+   * The longest encoding [[encode]] builds, in bytes: 2^31 - 9, the JVM's largest array (`Int.MaxValue - 8`, the
+   * length the JDK's own growable arrays stop at), and the TypeScript SDK's ceiling too (`cbor.MAX_ENCODED_BYTES`). A
+   * longer encoding is refused as [[TooLarge]], never an exception for want of an array (below it, memory may still
+   * run out: that is the host's, as for any allocation).
    */
-  def encode(value: CanonicalValue): FlatBytes = FlatBytes(write(value, ByteSink.emptyBuffer))
+  val MaxEncodedBytes: Long = Int.MaxValue.toLong - 8
 
   /**
-   * The encoding of `value`, not yet built: written into a buffer it is [[encode]]; into a hash, it is hashed as it is
-   * written, and never held whole (`Hasher.digestOf`).
+   * A value whose canonical encoding is longer than a limit: the limit only, never how far past it the encoding goes
+   * (docs/specs/conformance.md §3, the byte budgets' `TooLarge`).
    */
-  def source(value: CanonicalValue): ByteSource =
+  final case class TooLarge(limit: Long)
+
+  /**
+   * No canonical encoding is longer than this many bytes per unit of its value's weight: a head is at most 9 bytes for
+   * a node of weight at least 1, a text or byte string adds its length (which its weight counts), and a number of `l`
+   * whole limbs takes at most `8 (l + 1)` bytes and its tags' heads, for a weight of at least `1 + l`. The Rust JLVM's
+   * `ENCODING_PER_WEIGHT`.
+   */
+  private[kd5ujc] val EncodingPerWeight: Long = 32L
+
+  /**
+   * The canonical encoding of `value`: [[encodeWithin]] at [[MaxEncodedBytes]]. Every value has exactly one, but a
+   * value built with shared parts (`[x, x]` nested `k` deep weighs about `2^k`) can encode to far more than it
+   * occupies: past the ceiling, that is [[TooLarge]], from the weight alone when the weight is over. Stack-safe for any
+   * nesting depth. The result is flat: one array ([[FlatBytes]]), so reading or slicing it never walks a rope.
+   */
+  def encode(value: CanonicalValue): Either[TooLarge, FlatBytes] = encodeWithin(value, MaxEncodedBytes)
+
+  /**
+   * The canonical encoding of `value`, if it is at most `maxBytes` long (a negative limit is 0, and no limit is above
+   * [[MaxEncodedBytes]]); past it, [[TooLarge]] with the limit as applied, before a byte is written.
+   *
+   * O(min(weight, `maxBytes`)): a value's encoding is never shorter than its weight, so a weight over the limit is
+   * refused in O(1); a weight within `1 / `[[EncodingPerWeight]] of it cannot encode past it, so the value is written
+   * at once; between the two, its length is measured first ([[encodedLength]], O(weight)) and nothing is written
+   * unless it fits. So the buffer never holds more than the limit, and a refusal allocates nothing.
+   */
+  def encodeWithin(value: CanonicalValue, maxBytes: Long): Either[TooLarge, FlatBytes] =
+    encodeInto(value, maxBytes, ByteSink.emptyBuffer).map(FlatBytes(_))
+
+  /**
+   * The length of `value`'s canonical encoding, if it is at most `maxBytes`, measured without encoding it, with the
+   * bounds and the refusal of [[encodeWithin]].
+   */
+  def encodedLengthWithin(value: CanonicalValue, maxBytes: Long): Either[TooLarge, Long] = {
+    val max = budget(maxBytes)
+    if (value.weight > max) TooLarge(max).asLeft
+    else {
+      val length = encodedLength(value)
+      Either.cond(length <= max, length, TooLarge(max))
+    }
+  }
+
+  /** [[encodeWithin]] into any sink: nothing reaches it unless the whole encoding fits. */
+  private[kd5ujc] def encodeInto[S](value: CanonicalValue, maxBytes: Long, s: S)(implicit sink: ByteSink[S]): Either[TooLarge, S] =
+    fits(value, maxBytes).map(_ => write(value, s))
+
+  /**
+   * Whether `value`'s encoding is at most `maxBytes` long (as applied): from the weight alone when it is over the limit
+   * (O(1)) or within `1 / `[[EncodingPerWeight]] of it, and otherwise measured ([[encodedLength]], O(weight)).
+   */
+  private def fits(value: CanonicalValue, maxBytes: Long): Either[TooLarge, Unit] = {
+    val max = budget(maxBytes)
+    if (value.weight <= max / EncodingPerWeight) ().asRight else encodedLengthWithin(value, max).void
+  }
+
+  /** A caller's limit as it is applied: from 0 to [[MaxEncodedBytes]]. */
+  private def budget(maxBytes: Long): Long = maxBytes.max(0L).min(MaxEncodedBytes)
+
+  /**
+   * The encoding of `value`, not yet built: [[sourceWithin]] at [[MaxEncodedBytes]], the ceiling [[encode]] builds
+   * within, so a hash and a buffer refuse the same values. Into a hash it is hashed as it is written, and never held
+   * whole (`Hasher.digestOf`).
+   */
+  def source(value: CanonicalValue): Either[TooLarge, ByteSource] = sourceWithin(value, MaxEncodedBytes)
+
+  /**
+   * [[source]], if the encoding is at most `maxBytes` long, with the bounds and refusal of [[encodeWithin]]: checked
+   * before the source exists, so a refused value is never hashed, not even in part.
+   */
+  def sourceWithin(value: CanonicalValue, maxBytes: Long): Either[TooLarge, ByteSource] =
+    fits(value, maxBytes).map(_ => recordSource(value))
+
+  /**
+   * The encoding of one of this library's own fixed-shape records (a trie node: a segment of at most the longest key's
+   * bits and three digests), whose length its shape bounds far within [[MaxEncodedBytes]]: never a caller's value,
+   * which goes through [[source]].
+   */
+  private[kd5ujc] def recordSource(value: CanonicalValue): ByteSource =
     ByteSource.of(new ByteSource.Piece {
       def writeTo[S](s: S)(implicit sink: ByteSink[S]): S = write(value, s)
     })

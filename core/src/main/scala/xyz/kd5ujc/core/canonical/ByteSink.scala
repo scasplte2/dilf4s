@@ -40,8 +40,12 @@ final class ByteSource private (private val pieces: Vector[ByteSource.Piece]) {
   /** This source's bytes, then `next`'s. */
   def ++(next: ByteSource): ByteSource = new ByteSource(pieces ++ next.pieces)
 
-  /** The bytes, built into one array: O(their length) memory, so a hash takes the source itself instead. */
-  def toByteVector: FlatBytes = FlatBytes(writeTo(ByteSink.emptyBuffer))
+  /**
+   * The bytes, built into one array: O(their length) memory, so a hash takes the source itself instead. Unbounded: a
+   * source has no weight to refuse from, so only this library's tests build one whole; a value's encoding is built
+   * within a limit by `Cbor.encodeWithin`.
+   */
+  private[canonical] def toByteVector: FlatBytes = FlatBytes(writeTo(ByteSink.emptyBuffer))
 }
 
 object ByteSource {

@@ -11,6 +11,9 @@ object CanonicalGens {
   /** The integer `n`, which a test knows is within [[CanonicalValue.MaxIntegerBits]]. */
   def int(n: BigInt): CInt = CanonicalValue.int(n).fold(e => sys.error(e.toString), identity)
 
+  /** A test value's canonical CBOR: every one is far within [[Cbor.MaxEncodedBytes]], so a refusal fails the test. */
+  def encoded(v: CanonicalValue): FlatBytes = Cbor.encode(v).fold(e => sys.error(e.toString), identity)
+
   /**
    * The CBOR of the integer `n` in canonical form, of any width: the bytes [[Cbor.encode]] writes when `n` is a value,
    * and for a bignum too wide to be one, the bytes a decoder must refuse.

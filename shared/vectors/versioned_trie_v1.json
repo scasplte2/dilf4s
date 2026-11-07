@@ -596,47 +596,53 @@
     {
       "version" : 0,
       "key" : "0000000000000000",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "version" : 1,
       "key" : "0000000000000001",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "version" : 255,
       "key" : "00000000000000ff",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "version" : 256,
       "key" : "0000000000000100",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "version" : 4294967296,
       "key" : "0000000100000000",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "version" : 9223372036854775807,
       "key" : "7fffffffffffffff",
-      "valid" : true
+      "outcome" : "accepted"
     },
     {
       "version" : 9223372036854775808,
       "key" : "8000000000000000",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidVersion"
+      }
     },
     {
       "version" : 9223372036854775809,
       "key" : "8000000000000001",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidVersion"
+      }
     },
     {
       "version" : 18446744073709551615,
       "key" : "ffffffffffffffff",
-      "valid" : false
+      "outcome" : {
+        "kind" : "InvalidVersion"
+      }
     }
   ]
 }

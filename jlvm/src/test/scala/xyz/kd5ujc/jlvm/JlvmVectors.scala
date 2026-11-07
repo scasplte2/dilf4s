@@ -6,7 +6,7 @@ import java.nio.file.{Files, Path, Paths}
 import cats.effect.{ExitCode, IO, IOApp, Resource}
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue}
 import xyz.kd5ujc.core.circe.CanonicalCirce
 import xyz.kd5ujc.core.hash.Sha256
 
@@ -88,7 +88,7 @@ object JlvmVectors {
         ),
       v =>
         Json
-          .obj("cbor" -> Cbor.encode(v).toHex.asJson)
+          .obj("cbor" -> xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v).toHex.asJson)
           .deepMerge(JsonSurface.render(v).toOption.fold(Json.obj())(t => Json.obj("json" -> t.asJson)))
     )
 

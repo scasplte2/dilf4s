@@ -6,7 +6,7 @@ import java.nio.file.{Files, Path, Paths}
 import cats.effect.{ExitCode, IO, IOApp}
 
 import xyz.kd5ujc.accumulators.ValueCommitment
-import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue}
 import xyz.kd5ujc.core.hash.Sha256
 
 import io.circe.Json
@@ -39,12 +39,16 @@ object MerkleVectors {
     Vector("\"a\"", "null", "0", "-1", "0.5", "[]", "[1,[2]]", "{\"b\":1,\"a\":[true,false]}", "18446744073709551616")
 
   private def commitment(v: CanonicalValue, m: MerkleHashing[Sha256]): Json = {
-    val c = ValueCommitment.bytes(v)
-    Json.obj("cbor" -> Cbor.encode(v).toHex.asJson, "commitment" -> c.toHex.asJson, "leafHash" -> m.leaf(c).hex.asJson)
+    val c = ValueCommitment.bytes(v).fold(e => sys.error(e.toString), identity)
+    Json.obj(
+      "cbor"       -> xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v).toHex.asJson,
+      "commitment" -> c.toHex.asJson,
+      "leafHash"   -> m.leaf(c).hex.asJson
+    )
   }
 
   private def hexOrDie(e: Either[MerkleError, xyz.kd5ujc.core.canonical.CanonicalValue]): Json =
-    e.fold(err => sys.error(err.toString), v => Cbor.encode(v).toHex.asJson)
+    e.fold(err => sys.error(err.toString), v => xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v).toHex.asJson)
 
   private def proofValue(fields: (String, CanonicalValue)*): CanonicalValue =
     CanonicalValue.map(fields).fold(e => sys.error(e.toString), identity)
@@ -80,7 +84,12 @@ object MerkleVectors {
     }
     val result = decoded.fold(_.productPrefix, _ => "ok")
     require(result == expected, s"malformed $kind $name: expected $expected, got $result")
-    Json.obj("name" -> name.asJson, "kind" -> kind.asJson, "cbor" -> Cbor.encode(proof).toHex.asJson, "error" -> result.asJson)
+    Json.obj(
+      "name"  -> name.asJson,
+      "kind"  -> kind.asJson,
+      "cbor"  -> xyz.kd5ujc.core.canonical.CanonicalGens.encoded(proof).toHex.asJson,
+      "error" -> result.asJson
+    )
   }
 
   def build: Json = {

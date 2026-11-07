@@ -401,7 +401,9 @@ object Parser {
   def fromCanonical(v: CanonicalValue): Either[JlvmError, Program] =
     W.JlvmProgram.codec.decoder.decode(v).leftMap(e => JlvmError.Malformed(e.message)).flatMap(w => fromWire(w.expr).flatMap(Program.from))
 
-  def encode(p: Program): Either[JlvmError, ByteVector] = canonical(p).map(Cbor.encode)
+  /** A program's canonical CBOR; one past `Cbor.MaxEncodedBytes` is a [[JlvmError.Limit]], never a throw. */
+  def encode(p: Program): Either[JlvmError, ByteVector] =
+    canonical(p).flatMap(Cbor.encode(_).leftMap(e => JlvmError.Limit(s"the program's encoding is over ${e.limit} bytes")))
 
   def decode(bytes: ByteVector): Either[JlvmError, Program] =
     Cbor.decode(bytes).leftMap(canonicalError).flatMap(fromCanonical)

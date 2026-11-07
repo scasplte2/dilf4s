@@ -66,7 +66,7 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
         val built = get(
           Trie.fromEntries[H](
             get(VersionedTrie.stateMode),
-            expected._2.toList.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v) }
+            expected._2.toList.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v).fold(e => sys.error(e.toString), identity) }
           )
         )
         expect.same(built.nodeCount.toLong, nodes)

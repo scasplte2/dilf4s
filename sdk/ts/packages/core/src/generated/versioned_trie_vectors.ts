@@ -279,17 +279,37 @@ export const VtVersion: c.Codec<VtVersion> = c.record<VtVersion>({
  * `vt-version-key` (`shared/schemas/versioned-trie-vectors.cddl`).
  *
  * The default version key (section 2) at its edges. "key" is "version" as 8 unsigned big-endian bytes, the JLVM's
- * int_to_bytes [version, 8]; "valid" says whether the version key accepts it (versions 0..2^63-1), encoding the
- * version and decoding the key alike.
+ * int_to_bytes [version, 8]; "outcome" is the version key's, encoding the version and decoding the key alike:
+ * "accepted" (versions 0..2^63-1), or refused by its kind.
  */
 export interface VtVersionKey {
   readonly version: bigint;
   readonly key: Hex;
-  readonly valid: boolean;
+  readonly outcome: VtVersionKeyOutcome;
 }
 
 export const VtVersionKey: c.Codec<VtVersionKey> = c.record<VtVersionKey>({
   version: c.required("version", c.uint),
   key: c.required("key", c.defer(() => Hex)),
-  valid: c.required("valid", c.bool),
+  outcome: c.required("outcome", c.defer(() => VtVersionKeyOutcome)),
+});
+
+/**
+ * `vt-version-key-outcome` (`shared/schemas/versioned-trie-vectors.cddl`).
+ *
+ * "accepted", or the refusal of a version past the cap: InvalidVersion, a versioned-trie refusal with no normative field.
+ */
+export type VtVersionKeyOutcome = VtVersionKeyRefusal | "accepted";
+
+export const VtVersionKeyOutcome: c.Codec<VtVersionKeyOutcome> = c.union<VtVersionKeyOutcome>("VtVersionKeyOutcome", [
+  c.alternative(c.defer(() => VtVersionKeyRefusal), [["kind"], ["kind"]], [["kind"], ["kind"]]),
+], ["accepted"]);
+
+/** `vt-version-key-refusal` (`shared/schemas/versioned-trie-vectors.cddl`). */
+export interface VtVersionKeyRefusal {
+  readonly kind: "InvalidVersion";
+}
+
+export const VtVersionKeyRefusal: c.Codec<VtVersionKeyRefusal> = c.record<VtVersionKeyRefusal>({
+  kind: c.required("kind", c.literalText("InvalidVersion")),
 });

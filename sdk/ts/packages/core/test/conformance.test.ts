@@ -72,6 +72,16 @@ describe("canonical_encoding_v1.json", () => {
     expect(toHex(expectOk(contentHash(contentAlgorithm, tag, value), "encodes"))).toBe(c.contentHash);
   });
 
+  it.each(vectors.limits.map((c) => [`${c.name} within ${c.maxBytes.toString()}`, c] as const))("%s: the reference's outcome", (_, c) => {
+    const v = expectOk(cbor.decode(bytes(c.value)), "decodes");
+    const max = Number(c.maxBytes);
+    const r: Result<string, json.RenderError> =
+      c.encoding === "cbor" ? ((e) => (e.ok ? { ok: true, value: toHex(e.value) } : e))(cbor.encodeWithin(v, max)) : json.renderWithin(v, max);
+    const outcome = r.ok ? "accepted" : r.error.kind === "TooLarge" ? { kind: "TooLarge", limit: BigInt(r.error.limit) } : { kind: r.error.kind };
+    expect(outcome).toEqual(c.outcome);
+    expect(r.ok ? r.value : undefined).toBe(c.output);
+  });
+
   it.each(vectors.renderRejections.map((c) => [c.cbor.slice(0, 40), c] as const))("CBOR %s does not render to JSON", (_, c) => {
     const v = expectOk(cbor.decode(bytes(c.cbor)), "decodes");
     const r = json.renderWithin(v, json.MAX_RENDER_BYTES);

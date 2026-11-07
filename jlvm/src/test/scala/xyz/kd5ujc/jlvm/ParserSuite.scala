@@ -119,7 +119,14 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   pureTest("a shared value too heavy to render is refused from its weight, before it is converted") {
     // [$, $] applied 70 times: a weight that saturates, built in 70 steps; converting it whole would never end
     val dag = (1 to 70).foldLeft(CInt(1): CanonicalValue)((v, _) => CanonicalValue.array(Vector(v, v)).toOption.get)
-    expect.same(Left(JlvmError.Malformed(xyz.kd5ujc.core.canonical.CanonicalJson.TooLongToRender.toString)), JsonSurface.render(dag))
+    expect.same(
+      Left(
+        JlvmError.Malformed(
+          xyz.kd5ujc.core.canonical.CanonicalJson.RenderError.TooLarge(xyz.kd5ujc.core.canonical.CanonicalJson.MaxRenderBytes).toString
+        )
+      ),
+      JsonSurface.render(dag)
+    )
   }
 
   pureTest("single-key objects are always operations; data is quoted") {

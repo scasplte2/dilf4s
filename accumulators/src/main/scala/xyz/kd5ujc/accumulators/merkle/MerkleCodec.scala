@@ -56,10 +56,11 @@ object MerkleCodec {
       _ <- Either.cond(size >= 0, (), MerkleError.Encoding("head.size is a tree size"))
       _ <- ProofInput.claimed(List(leaf))(MerkleError.TooLarge(_))
       p <- decodeInclusion[H](proof)
+      c <- ValueCommitment.source(leaf).leftMap(e => MerkleError.TooLarge(e.limit))
       verdict <-
         if (p.size != size) false.asRight
         else
-          MerkleVerifier.inclusion(root, M.leafOf(ValueCommitment.source(leaf)), p) match {
+          MerkleVerifier.inclusion(root, M.leafOf(c), p) match {
             case Right(())                                                          => true.asRight
             case Left(MerkleError.InvalidProof(_) | MerkleError.RootMismatch(_, _)) => false.asRight
             case Left(other)                                                        => other.asLeft

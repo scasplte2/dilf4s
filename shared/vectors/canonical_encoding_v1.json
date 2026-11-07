@@ -757,6 +757,182 @@
       "error" : "NotJsonRepresentable"
     }
   ],
+  "limits" : [
+    {
+      "name" : "cbor: a text, its weight past one byte under its length",
+      "encoding" : "cbor",
+      "value" : "63616263",
+      "maxBytes" : 4,
+      "outcome" : "accepted",
+      "output" : "63616263"
+    },
+    {
+      "name" : "cbor: a text, its weight past one byte under its length",
+      "encoding" : "cbor",
+      "value" : "63616263",
+      "maxBytes" : 3,
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 3
+      }
+    },
+    {
+      "name" : "cbor: 2^32 - 1, weight 1 in 5 bytes, measured past one byte under",
+      "encoding" : "cbor",
+      "value" : "1affffffff",
+      "maxBytes" : 5,
+      "outcome" : "accepted",
+      "output" : "1affffffff"
+    },
+    {
+      "name" : "cbor: 2^32 - 1, weight 1 in 5 bytes, measured past one byte under",
+      "encoding" : "cbor",
+      "value" : "1affffffff",
+      "maxBytes" : 4,
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 4
+      }
+    },
+    {
+      "name" : "cbor: a nested value",
+      "encoding" : "cbor",
+      "value" : "a26161a1616bc34901000000000000000061628501d81e820102f5f662c3a9",
+      "maxBytes" : 31,
+      "outcome" : "accepted",
+      "output" : "a26161a1616bc34901000000000000000061628501d81e820102f5f662c3a9"
+    },
+    {
+      "name" : "cbor: a nested value",
+      "encoding" : "cbor",
+      "value" : "a26161a1616bc34901000000000000000061628501d81e820102f5f662c3a9",
+      "maxBytes" : 30,
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 30
+      }
+    },
+    {
+      "name" : "cbor: null within 0 bytes",
+      "encoding" : "cbor",
+      "value" : "f6",
+      "maxBytes" : 0,
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 0
+      }
+    },
+    {
+      "name" : "cbor: bytes, within their length and one under",
+      "encoding" : "cbor",
+      "value" : "450102030405",
+      "maxBytes" : 6,
+      "outcome" : "accepted",
+      "output" : "450102030405"
+    },
+    {
+      "name" : "cbor: bytes, within their length and one under",
+      "encoding" : "cbor",
+      "value" : "450102030405",
+      "maxBytes" : 5,
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 5
+      }
+    },
+    {
+      "name" : "json: a text, measured past one byte under its length",
+      "encoding" : "json",
+      "value" : "63616263",
+      "maxBytes" : 5,
+      "outcome" : "accepted",
+      "output" : "\"abc\""
+    },
+    {
+      "name" : "json: a text, measured past one byte under its length",
+      "encoding" : "json",
+      "value" : "63616263",
+      "maxBytes" : 4,
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 4
+      }
+    },
+    {
+      "name" : "json: an escaped text, longer than its weight",
+      "encoding" : "json",
+      "value" : "6b61225c0a01c3a9f09f9880",
+      "maxBytes" : 21,
+      "outcome" : "accepted",
+      "output" : "\"a\\\"\\\\\\n\\u0001é😀\""
+    },
+    {
+      "name" : "json: an escaped text, longer than its weight",
+      "encoding" : "json",
+      "value" : "6b61225c0a01c3a9f09f9880",
+      "maxBytes" : 20,
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 20
+      }
+    },
+    {
+      "name" : "json: a nested value, members in code-point order",
+      "encoding" : "json",
+      "value" : "a26161a1616bc34901000000000000000061628501d81e820102f5f662c3a9",
+      "maxBytes" : 60,
+      "outcome" : "accepted",
+      "output" : "{\"a\":{\"k\":-18446744073709551617},\"b\":[1,0.5,true,null,\"é\"]}"
+    },
+    {
+      "name" : "json: a nested value, members in code-point order",
+      "encoding" : "json",
+      "value" : "a26161a1616bc34901000000000000000061628501d81e820102f5f662c3a9",
+      "maxBytes" : 59,
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 59
+      }
+    },
+    {
+      "name" : "json: bytes after a part that fits: TooLarge within 4, NotJsonRepresentable within 5",
+      "encoding" : "json",
+      "value" : "82014101",
+      "maxBytes" : 4,
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 4
+      }
+    },
+    {
+      "name" : "json: bytes after a part that fits: TooLarge within 4, NotJsonRepresentable within 5",
+      "encoding" : "json",
+      "value" : "82014101",
+      "maxBytes" : 5,
+      "outcome" : {
+        "kind" : "NotJsonRepresentable"
+      }
+    },
+    {
+      "name" : "json: a non-terminating rational: TooLarge from its weight, else NotJsonRepresentable",
+      "encoding" : "json",
+      "value" : "d81e820103",
+      "maxBytes" : 1,
+      "outcome" : {
+        "kind" : "TooLarge",
+        "limit" : 1
+      }
+    },
+    {
+      "name" : "json: a non-terminating rational: TooLarge from its weight, else NotJsonRepresentable",
+      "encoding" : "json",
+      "value" : "d81e820103",
+      "maxBytes" : 1000,
+      "outcome" : {
+        "kind" : "NotJsonRepresentable"
+      }
+    }
+  ],
   "cborRejections" : [
     {
       "cbor" : "1817",

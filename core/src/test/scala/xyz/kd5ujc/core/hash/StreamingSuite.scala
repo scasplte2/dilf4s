@@ -54,14 +54,17 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
     oneShot(make, t ++ t ++ message)
   }
 
+  /** A test value's hash or source: every one is far within `Cbor.MaxEncodedBytes`, so a refusal fails the test. */
+  private def ok[A](e: Either[?, A]): A = e.fold(err => sys.error(err.toString), identity)
+
   private def same(name: String, v: CanonicalValue): weaver.Expectations = {
     val buffered = BufferedCbor.encode(v)
-    algos.foldLeft(expect(Cbor.encode(v) == buffered, s"$name: the encoding")) { (acc, a) =>
+    algos.foldLeft(expect(xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v) == buffered, s"$name: the encoding")) { (acc, a) =>
       def check[H](a: Algo[H]): weaver.Expectations = {
         implicit val H: Hasher[H] = a.hasher
         val t = TaggedHash[H](tag)
-        expect(t.value(v).bytes == oracleTagged(a.make, buffered), s"$name: content hash under ${H.name}")
-          .and(expect(H.digestOf(Cbor.source(v)).bytes == oneShot(a.make, buffered), s"$name: plain hash under ${H.name}"))
+        expect(ok(t.value(v)).bytes == oracleTagged(a.make, buffered), s"$name: content hash under ${H.name}")
+          .and(expect(H.digestOf(ok(Cbor.source(v))).bytes == oneShot(a.make, buffered), s"$name: plain hash under ${H.name}"))
           .and(expect(H.digest(buffered).bytes == oneShot(a.make, buffered), s"$name: digest of bytes under ${H.name}"))
       }
       acc.and(check(a))
@@ -219,9 +222,9 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
           case (name, v, lent) =>
             IO(new Counting(new SHA256Digest())).map { counting =>
               val H = Hasher.bouncyCastle[Sha256]("SHA-256", () => counting)
-              val streamed = H.digestOf(Cbor.source(v))
+              val streamed = H.digestOf(ok(Cbor.source(v)))
               val length = Cbor.encodedLength(v)
-              val pieces = Cbor.source(v).writeTo(Pieces(0L, 0L))(using piecesSink(lent))
+              val pieces = ok(Cbor.source(v)).writeTo(Pieces(0L, 0L))(using piecesSink(lent))
               expect(counting.total.get == length, s"$name: every byte absorbed once")
                 .and(
                   expect(counting.longest.get <= Hasher.Window.toLong, s"$name: updates of at most the window, got ${counting.longest.get}")
@@ -243,8 +246,8 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
     // the widest integer: 4153 bytes of magnitude, past the hash's window
     val v = CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     IO(new Counting(new SHA256Digest())).map { counting =>
-      val streamed = Hasher.bouncyCastle[Sha256]("SHA-256", () => counting).digestOf(Cbor.source(v))
-      val pieces = Cbor.source(v).writeTo(Pieces(0L, 0L))(using piecesSink(Nil))
+      val streamed = Hasher.bouncyCastle[Sha256]("SHA-256", () => counting).digestOf(ok(Cbor.source(v)))
+      val pieces = ok(Cbor.source(v)).writeTo(Pieces(0L, 0L))(using piecesSink(Nil))
       expect
         .same(4153L, pieces.longestMade)
         .and(expect(counting.longest.get <= Hasher.Window.toLong))
@@ -276,7 +279,7 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
           val streamed = Hasher.bouncyCastle[Sha256]("SHA-256", () => counting).digestOf(source)
           val total = b.size + 2
           val windows = (total + Hasher.Window - 1) / Hasher.Window
-          expect(streamed.bytes == oneShot(() => new SHA256Digest(), source.toByteVector), s"$name: the digest")
+          expect(streamed.bytes == oneShot(() => new SHA256Digest(), ByteVector(0x7f) ++ b ++ ByteVector(0x7e)), s"$name: the digest")
             .and(expect(counting.total.get == total, s"$name: every byte once"))
             .and(expect(counting.longest.get <= Hasher.Window.toLong, s"$name: windows at most"))
             .and(expect(counting.calls.get <= windows, s"$name: ${counting.calls.get} updates for $windows windows"))
@@ -350,10 +353,10 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
         case (name, v) =>
           IO {
             val t = TaggedHash[Sha256](tag)
-            val warm = t.value(v)
-            val (d, bytes) = allocated(t.value(v))
+            val warm = ok(t.value(v))
+            val (d, bytes) = allocated(ok(t.value(v)))
             val wrapped = arr(Vector(v, v))
-            val (_, inArray) = allocated(t.value(wrapped))
+            val (_, inArray) = allocated(ok(t.value(wrapped)))
             // no copy of the bytes: the window, and a few small objects per window copied (scodec-bits slices the chunk)
             val size = BufferedCbor.encode(v).size
             val limit = (64L << 10) + size / 4
@@ -385,12 +388,39 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
     val asTexts = arr(keys.zipWithIndex.flatMap { case (k, i) => List(txt(k), CInt(i)) }.toVector)
     IO {
       val t = TaggedHash[Sha256](tag)
-      val (_, _) = (t.value(asMap), t.value(asTexts))
-      val (d, map) = allocated(t.value(asMap))
-      val (_, texts) = allocated(t.value(asTexts))
+      val (_, _) = (ok(t.value(asMap)), ok(t.value(asTexts)))
+      val (d, map) = allocated(ok(t.value(asMap)))
+      val (_, texts) = allocated(ok(t.value(asTexts)))
       val limit = texts + texts / 10 + (64L << 10)
       expect(d.bytes == oracleTagged(() => new SHA256Digest(), BufferedCbor.encode(asMap)), "the digest")
         .and(expect(map >= 0 && map <= limit, s"the map allocated $map bytes, its keys as texts $texts"))
+    }
+  }
+
+  test("a content hash past its limit is refused before the hash absorbs a byte: from the weight, or measured") {
+    // [x, x] nested 70 deep weighs 2^63 - 1 (saturated); a host's lazy byte string of Long.MaxValue bytes too
+    val heavy = (1 to 70).foldLeft(txt("abc"))((v, _) => arr(Vector(v, v)))
+    val lazyBytes = CBytes(ByteVector.low(Long.MaxValue))
+    val long = txt("a" * 1000) // weight 1001, encoding 1003 bytes
+    val ceiling = Left(Cbor.TooLarge(Cbor.MaxEncodedBytes))
+    IO(new Counting(new SHA256Digest())).map { counting =>
+      val H = Hasher.bouncyCastle[Sha256]("SHA-256", () => counting)
+      val t = TaggedHash[Sha256](tag)(using H)
+      def absorbed[A](f: => A): (A, Long) = {
+        val before = counting.total.get
+        val a = f
+        (a, counting.total.get - before)
+      }
+      val prefix = 2L * H.outputSize
+      expect
+        .same((ceiling, 0L), absorbed(t.value(heavy)))
+        .and(expect.same((ceiling, 0L), absorbed(t.value(lazyBytes))))
+        .and(expect.same((Left(Cbor.TooLarge(1000L)), 0L), absorbed(t.valueWithin(long, 1000L))))
+        .and(expect.same((Left(Cbor.TooLarge(1002L)), 0L), absorbed(t.valueWithin(long, 1002L))))
+        .and(expect.same(1003L + prefix, absorbed(t.valueWithin(long, 1003L))._2))
+        .and(expect.same(Right(oracleTagged(() => new SHA256Digest(), BufferedCbor.encode(long))), t.valueWithin(long, 1003L).map(_.bytes)))
+        .and(expect.same(Left(Cbor.TooLarge(0L)), Cbor.sourceWithin(CNull, -1L).map(_ => ())))
+        .and(expect.same(ceiling, Cbor.source(heavy).map(_ => ())))
     }
   }
 }

@@ -1,8 +1,9 @@
 package xyz.kd5ujc.jlvm
 
+import scala.annotation.tailrec
 import scala.collection.Searching
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
 
 /**
  * How the parser, the compiler and the evaluator order what a program chooses, and how their work is counted: binding
@@ -17,7 +18,7 @@ private[jlvm] final case class Kernels(
   names:  Ordering[String],
   keys:   Ordering[String],
   values: Ordering[Values.SortKey],
-  key:    CanonicalValue => Values.SortKey,
+  key:    CanonicalValue => Either[Cbor.TooLarge, Values.SortKey],
   dedup:  Dedup,
   steps:  Steps
 )
@@ -54,8 +55,11 @@ private[jlvm] trait Dedup {
   /** `vs` without repeats, keeping each value's first occurrence, in order. */
   def distinct[A](vs: Vector[A])(using order: Ordering[A]): Vector[A]
 
-  /** Whether every element of `xs` is in `ys`: `xs` is consumed only up to its first element missing from `ys`. */
-  def subset[A](xs: Iterator[A], ys: Vector[A])(using order: Ordering[A]): Boolean
+  /**
+   * Whether every element of `xs` is in `ys`, or the first refusal met in `xs` while reading it: `xs` is consumed only
+   * up to its first element missing from `ys`, or its first refusal.
+   */
+  def subset[E, A](xs: Iterator[Either[E, A]], ys: Vector[A])(using order: Ordering[A]): Either[E, Boolean]
 }
 
 private[jlvm] object Dedup {
@@ -71,14 +75,21 @@ private[jlvm] object Dedup {
       firsts.sorted.map(vs)
     }
 
-    def subset[A](xs: Iterator[A], ys: Vector[A])(using order: Ordering[A]): Boolean = {
+    def subset[E, A](xs: Iterator[Either[E, A]], ys: Vector[A])(using order: Ordering[A]): Either[E, Boolean] = {
       val sorted = ys.sorted
-      xs.forall(x =>
-        sorted.search(x) match {
-          case Searching.Found(_)          => true
-          case Searching.InsertionPoint(_) => false
-        }
-      )
+      @tailrec
+      def from(): Either[E, Boolean] =
+        if (!xs.hasNext) Right(true)
+        else
+          xs.next() match {
+            case Left(e) => Left(e)
+            case Right(x) =>
+              sorted.search(x) match {
+                case Searching.Found(_)          => from()
+                case Searching.InsertionPoint(_) => Right(false)
+              }
+          }
+      from()
     }
   }
 }

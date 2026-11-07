@@ -6,7 +6,7 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.accumulators.ValueCommitment
-import xyz.kd5ujc.core.canonical.{ByteSource, Canonical, CanonicalError}
+import xyz.kd5ujc.core.canonical.{ByteSource, Canonical, CanonicalError, Cbor}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
 
 import scodec.bits.ByteVector
@@ -187,12 +187,17 @@ object MerkleTree {
   def fromLeafHashes[H: MerkleHashing](leafHashes: Iterable[Digest[H]]): MerkleTree[H] = empty[H].appendAll(leafHashes)
 
   /** Leaves as typed values: each leaf hashes the canonical encoding of its value. */
-  def fromLeaves[H, A: Canonical](leaves: Iterable[A])(implicit M: MerkleHashing[H]): Either[CanonicalError, MerkleTree[H]] =
+  def fromLeaves[H, A: Canonical](leaves: Iterable[A])(
+    implicit M: MerkleHashing[H]
+  ): Either[CanonicalError | Cbor.TooLarge, MerkleTree[H]] =
     leaves.toList.traverse(leaf[H, A](_)).map(fromLeafHashes[H])
 
-  /** A value leaf's hash (docs/specs/merkle.md §2): the leaf hash of its [[ValueCommitment]] bytes. */
-  def leaf[H, A](value: A)(implicit M: MerkleHashing[H], C: Canonical[A]): Either[CanonicalError, Digest[H]] =
-    C.canonical(value).map(v => M.leafOf(ValueCommitment.source(v)))
+  /**
+   * A value leaf's hash (docs/specs/merkle.md §2): the leaf hash of its [[ValueCommitment]] bytes; a commitment past
+   * `Cbor.MaxEncodedBytes` is `TooLarge`, never hashed.
+   */
+  def leaf[H, A](value: A)(implicit M: MerkleHashing[H], C: Canonical[A]): Either[CanonicalError | Cbor.TooLarge, Digest[H]] =
+    C.canonical(value).flatMap(ValueCommitment.source).map(M.leafOf)
 
   /** Largest power of two strictly below `n` (n >= 2). */
   private[merkle] def splitPoint(n: Long): Long = java.lang.Long.highestOneBit(n - 1)

@@ -405,9 +405,8 @@ impl core::fmt::Display for NonCanonicalReason {
 /// `not-json` (`shared/schemas/codec-errors.cddl`).
 ///
 /// What JSON could not hold: a byte string; a rational whose decimal does not terminate; a number whose JSON form would
-/// pass the digit or scale bound, so it could not be read back; a rendering longer than the reference's `render` can
-/// build (MaxRenderBytes). The last is the reference's only: the Rust and TypeScript SDKs render within a limit the caller
-/// gives and refuse past it as TooLarge, not as a CanonicalError.
+/// pass the digit or scale bound, so it could not be read back. A rendering past a byte limit is no CanonicalError in any
+/// SDK: it is TooLarge, with the limit (the reference's render past MaxRenderBytes too).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NotJson {
     /// The text `bytes`.
@@ -416,8 +415,6 @@ pub enum NotJson {
     NonTerminatingRational,
     /// The text `over-long number`.
     OverLongNumber,
-    /// The text `over-long rendering`.
-    OverLongRendering,
 }
 
 impl c::Model for NotJson {
@@ -426,16 +423,14 @@ impl c::Model for NotJson {
             Self::Bytes => Ok(c::Value::text("bytes")),
             Self::NonTerminatingRational => Ok(c::Value::text("non-terminating rational")),
             Self::OverLongNumber => Ok(c::Value::text("over-long number")),
-            Self::OverLongRendering => Ok(c::Value::text("over-long rendering")),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["bytes", "non-terminating rational", "over-long number", "over-long rendering"])? {
+        match c::select_alternative(value, &[], &["bytes", "non-terminating rational", "over-long number"])? {
             c::Alternative::Text(0) => Ok(Self::Bytes),
             c::Alternative::Text(1) => Ok(Self::NonTerminatingRational),
             c::Alternative::Text(2) => Ok(Self::OverLongNumber),
-            c::Alternative::Text(3) => Ok(Self::OverLongRendering),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -443,7 +438,7 @@ impl c::Model for NotJson {
 
 impl NotJson {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 4] = [Self::Bytes, Self::NonTerminatingRational, Self::OverLongNumber, Self::OverLongRendering];
+    pub const ALL: [Self; 3] = [Self::Bytes, Self::NonTerminatingRational, Self::OverLongNumber];
 }
 
 impl core::fmt::Display for NotJson {
@@ -452,7 +447,6 @@ impl core::fmt::Display for NotJson {
             Self::Bytes => f.write_str("bytes"),
             Self::NonTerminatingRational => f.write_str("non-terminating rational"),
             Self::OverLongNumber => f.write_str("over-long number"),
-            Self::OverLongRendering => f.write_str("over-long rendering"),
         }
     }
 }

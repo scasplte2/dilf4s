@@ -1,6 +1,5 @@
 package xyz.kd5ujc.accumulators.trie
 
-import xyz.kd5ujc.core.canonical.Cbor
 import xyz.kd5ujc.models.trie.{TrieNode, TrieSegment}
 
 import org.scalacheck.Gen
@@ -29,7 +28,10 @@ object TrieWireSuite extends SimpleIOSuite with Checkers {
     forall(node) {
       case (s, v, l, r) =>
         val wire = TrieNode(TrieSegment(s.size, s.toByteVector), v, l, r)
-        expect.same(TrieNode.codec.encode(wire).map(Cbor.encode), Right(Cbor.encode(NodeCodec.branch(s, v, l, r))))
+        expect.same(
+          TrieNode.codec.encode(wire).map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded),
+          Right(xyz.kd5ujc.core.canonical.CanonicalGens.encoded(NodeCodec.branch(s, v, l, r)))
+        )
     }
   }
 
