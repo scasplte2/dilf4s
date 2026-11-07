@@ -19,6 +19,12 @@ export function expectOk<T, E>(r: Result<T, E>, what: string): T {
   return r.value;
 }
 
+/** The error of a failure; a success fails the test. */
+export function expectErr<T, E>(r: Result<T, E>, what: string): E {
+  if (r.ok) throw new Error(`${what}: expected a failure`);
+  return r.error;
+}
+
 /** A vector file parsed with core's JSON parser and decoded into its generated type. */
 export function loadVectors<T>(file: string, codec: Codec<T>): T {
   const value = expectOk(json.parse(readFileSync(vectorsDir + file, "utf8")), `${file} is canonical JSON`);

@@ -32,7 +32,7 @@ test("real outputs have the sizes of shared/schemas/crypto.cddl", () => {
   const ed = expectOk(ed25519.fromSeed(seed), "ed");
   fits(c.Ed25519SigningKey, ed.signing.bytes, "ed25519 signing key");
   fits(c.Ed25519VerifyingKey, ed.verifying.bytes, "ed25519 verifying key");
-  fits(c.Ed25519Signature, ed25519.sign(ed.signing, msg).bytes, "ed25519 signature");
+  fits(c.Ed25519Signature, expectOk(ed25519.sign(ed.signing, msg), "sign").bytes, "ed25519 signature");
 
   const root = expectOk(icarus.fromEntropy(expectOk(toEntropy("abandon ".repeat(11) + "about"), "e").entropy), "icarus");
   fits(c.Ed25519Bip32SigningKey, root.key.bytes, "ed25519-bip32 signing key");
@@ -41,11 +41,11 @@ test("real outputs have the sizes of shared/schemas/crypto.cddl", () => {
   const k1 = expectOk(secp256k1Ecdsa.fromSeed(seed), "secp256k1");
   fits(c.EcdsaSigningKey, k1.signing.bytes, "secp256k1 signing key");
   fits(c.EcdsaVerifyingKey, k1.verifying.bytes, "secp256k1 verifying key");
-  fits(c.EcdsaSignature, secp256k1Ecdsa.sign(k1.signing, msg).bytes, "secp256k1 signature");
+  fits(c.EcdsaSignature, expectOk(secp256k1Ecdsa.sign(k1.signing, msg), "sign").bytes, "secp256k1 signature");
   const p = expectOk(p256Ecdsa.fromSeed(seed), "p256");
   fits(c.EcdsaSigningKey, p.signing.bytes, "p256 signing key");
   fits(c.EcdsaVerifyingKey, p.verifying.bytes, "p256 verifying key");
-  fits(c.EcdsaSignature, p256Ecdsa.sign(p.signing, msg).bytes, "ecdsa signature");
+  fits(c.EcdsaSignature, expectOk(p256Ecdsa.sign(p.signing, msg), "sign").bytes, "ecdsa signature");
 
   const s = expectOk(bip340.fromSeed(seed), "bip340");
   const m32 = expectOk(Message32.of(new Uint8Array(32)), "m32");
@@ -64,7 +64,7 @@ test("real outputs have the sizes of shared/schemas/crypto.cddl", () => {
   const b = expectOk(blsPop.fromSeed(seed), "bls");
   fits(c.BlsSigningKey, b.signing.bytes, "bls signing key");
   fits(c.BlsVerifyingKey, b.verifying.bytes, "bls verifying key");
-  fits(c.BlsSignature, blsPop.sign(b.signing, msg).bytes, "bls signature");
+  fits(c.BlsSignature, expectOk(blsPop.sign(b.signing, msg), "sign").bytes, "bls signature");
 
   const v = expectOk(ecvrfTai.fromSeed(seed), "vrf");
   const proved = expectOk(ecvrfTai.prove(v.signing, msg), "prove");
@@ -77,6 +77,6 @@ test("real outputs have the sizes of shared/schemas/crypto.cddl", () => {
   const k = expectOk(CardanoSumKes.sum6.generate(seed), "sum6");
   fits(c.Sum6KesSigningKey, k.bytes, "sum6 signing key");
   fits(c.Sum6KesVerifyingKey, k.verifyingKey, "sum6 verifying key");
-  fits(c.Sum6KesSignature, k.sign(msg), "sum6 signature");
+  fits(c.Sum6KesSignature, expectOk(k.sign(msg), "sign"), "sum6 signature");
   fits(c.Bip39Entropy, expectOk(toEntropy("abandon ".repeat(11) + "about"), "e").entropy.bytes, "bip39 entropy");
 });

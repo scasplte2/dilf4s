@@ -155,9 +155,9 @@ describe("BIP-39", { timeout: 60_000 }, () => {
     expect(refusal(WordList.of(mixed as string[]))).toEqual({ kind: "InvalidWordList", reason: "word 5 is not a string" });
     mixed[5] = 7;
     expect(refusal(WordList.of(mixed as string[]))).toEqual({ kind: "InvalidWordList", reason: "word 5 is not a string" });
-    expect(refusal(WordList.of(["a", "b", "c"]))).toEqual({ kind: "InvalidWordList", reason: "expected 2048 distinct words without separators, got 3" });
+    expect(refusal(WordList.of(["a", "b", "c"]))).toEqual({ kind: "InvalidWordList", reason: "expected 2048 words, got 3" });
     const lying = new Proxy([...ENGLISH], { get: (t, k, r): unknown => (k === "length" ? hostile : (Reflect.get(t, k, r) as unknown)) });
-    expect(refusal(WordList.of(lying))).toEqual({ kind: "InvalidWordList", reason: "expected 2048 distinct words without separators, got no count" });
+    expect(refusal(WordList.of(lying))).toEqual({ kind: "InvalidWordList", reason: "expected 2048 words, got no count" });
     const notText = WordList.of(ENGLISH, 32 as unknown as string);
     expect(notText.ok ? undefined : notText.error, "a separator that is not a string, by its type").toEqual({ kind: "InvalidWordList", reason: "the separator is not a string" });
     const two = WordList.of(ENGLISH, "  ");
@@ -188,7 +188,7 @@ describe("BIP-39", { timeout: 60_000 }, () => {
 
   test("secrets and mnemonics are redacted", () => {
     const m = expectOk(toMnemonic(new Uint8Array(16)), "m");
-    const s = Secret.of(h("deadbeef"));
+    const s = expectOk(Secret.of(h("deadbeef")), "secret");
     const text = [String(m), JSON.stringify(m), inspect(m), String(s), JSON.stringify({ s }), inspect(s)].join(" ");
     expect(text).not.toContain("abandon");
     expect(text).not.toContain("deadbeef");
@@ -293,11 +293,11 @@ describe("BIP32 secp256k1", { timeout: 60_000 }, () => {
     const child = expectOk(bip32Secp256k1.derive(h(v.seed), path(v.path)), "child");
     expect(hexOf(child.key.bytes)).toBe(v.child.key);
     expect(hexOf(child.chainCode)).toBe(v.child.chainCode);
-    expect(hexOf(secp256k1Ecdsa.publicKey(child.key).bytes)).toBe(v.verifyingKey);
+    expect(hexOf(expectOk(secp256k1Ecdsa.publicKey(child.key), "publicKey").bytes)).toBe(v.verifyingKey);
 
     const p = v.publicDerivation;
     const parent = expectOk(bip32Secp256k1.derive(h(v.seed), path(p.parentPath)), "parent");
-    expect(hexOf(secp256k1Ecdsa.publicKey(parent.key).bytes)).toBe(p.parentVerifyingKey);
+    expect(hexOf(expectOk(secp256k1Ecdsa.publicKey(parent.key), "publicKey").bytes)).toBe(p.parentVerifyingKey);
     expect(hexOf(parent.chainCode)).toBe(p.parentChainCode);
     let acc = { key: expectOk(secp256k1Ecdsa.verifyingKey(h(p.parentVerifyingKey)), "vk"), chainCode: h(p.parentChainCode) };
     for (const i of path(p.path)) acc = expectOk(bip32Secp256k1.publicChild(acc.key, acc.chainCode, i), "public child");
@@ -315,16 +315,16 @@ describe("BIP32 secp256k1", { timeout: 60_000 }, () => {
     expect(hexOf(at("m/0'/1").key.bytes)).toBe("3c6cb8d0f6a264c91ea8b5030fadaa8e538b020f0a387421a12de9319dc93368");
     expect(hexOf(at("m/0'/1").chainCode)).toBe("2a7857631386ba23dacac34180dd1983734e444fdbf774041578e9b6adb37c19");
     const parent = at("m/0'");
-    const pub = expectOk(bip32Secp256k1.publicChild(secp256k1Ecdsa.publicKey(parent.key), parent.chainCode, expectOk(ChildIndex.soft(1), "1")), "pub");
+    const pub = expectOk(bip32Secp256k1.publicChild(expectOk(secp256k1Ecdsa.publicKey(parent.key), "publicKey"), parent.chainCode, expectOk(ChildIndex.soft(1), "1")), "pub");
     expect(hexOf(pub.key.bytes)).toBe("03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c");
-    expect(hexOf(pub.key.bytes)).toBe(hexOf(secp256k1Ecdsa.publicKey(at("m/0'/1").key).bytes));
+    expect(hexOf(pub.key.bytes)).toBe(hexOf(expectOk(secp256k1Ecdsa.publicKey(at("m/0'/1").key), "publicKey").bytes));
     expect(hexOf(pub.chainCode)).toBe(hexOf(at("m/0'/1").chainCode));
-    expect(kind(bip32Secp256k1.publicChild(secp256k1Ecdsa.publicKey(parent.key), parent.chainCode, expectOk(ChildIndex.hardened(1), "1'")))).toBe(
+    expect(kind(bip32Secp256k1.publicChild(expectOk(secp256k1Ecdsa.publicKey(parent.key), "publicKey"), parent.chainCode, expectOk(ChildIndex.hardened(1), "1'")))).toBe(
       "InvalidDerivation",
     );
     // HMAC takes a key of any length, so a chain code of the wrong length must be refused before it is used
     for (const cc of [new Uint8Array(0), parent.chainCode.subarray(0, 31), new Uint8Array(33)])
-      expect(kind(bip32Secp256k1.publicChild(secp256k1Ecdsa.publicKey(parent.key), cc, expectOk(ChildIndex.soft(1), "1"))), String(cc.length)).toBe("InvalidDerivation");
+      expect(kind(bip32Secp256k1.publicChild(expectOk(secp256k1Ecdsa.publicKey(parent.key), "publicKey"), cc, expectOk(ChildIndex.soft(1), "1"))), String(cc.length)).toBe("InvalidDerivation");
   });
 });
 
@@ -337,24 +337,24 @@ describe("BIP32-Ed25519 (Icarus)", { timeout: 60_000 }, () => {
     const account = expectOk(icarus.derive(root, path(v.accountPath)), "account");
     expect(hexOf(account.key.bytes)).toBe(v.account.key);
     expect(hexOf(account.chainCode)).toBe(v.account.chainCode);
-    expect(hexOf(ed25519Bip32.publicKey(account.key).bytes)).toBe(v.accountVerifyingKey);
+    expect(hexOf(expectOk(ed25519Bip32.publicKey(account.key), "publicKey").bytes)).toBe(v.accountVerifyingKey);
     const address = expectOk(icarus.derive(account, path(v.addressPath)), "address");
     expect(hexOf(address.key.bytes)).toBe(v.address.key);
     expect(hexOf(address.chainCode)).toBe(v.address.chainCode);
-    const addressVk = ed25519Bip32.publicKey(address.key);
+    const addressVk = expectOk(ed25519Bip32.publicKey(address.key), "publicKey");
     expect(hexOf(addressVk.bytes)).toBe(v.addressVerifyingKey);
     expect(v.signatures.length).toBe(3);
     for (const s of v.signatures) {
-      expect(hexOf(ed25519Bip32.sign(address.key, h(s.message)).bytes)).toBe(s.signature);
+      expect(hexOf(expectOk(ed25519Bip32.sign(address.key, h(s.message)), "sign").bytes)).toBe(s.signature);
       expect(ed25519Bip32.verifyBytes(addressVk.bytes, h(s.message), h(s.signature))).toEqual({ ok: true, value: true });
     }
-    let acc = { key: ed25519Bip32.publicKey(account.key), chainCode: account.chainCode };
+    let acc = { key: expectOk(ed25519Bip32.publicKey(account.key), "publicKey"), chainCode: account.chainCode };
     for (const i of path(v.addressPath)) acc = expectOk(icarus.publicChild(acc.key, acc.chainCode, i), "public child");
     expect(hexOf(acc.key.bytes)).toBe(v.addressVerifyingKey);
     expect(hexOf(acc.chainCode)).toBe(v.address.chainCode);
     const soft0 = expectOk(ChildIndex.soft(0), "0");
     for (const cc of [new Uint8Array(0), account.chainCode.subarray(0, 31), new Uint8Array(33)])
-      expect(kind(icarus.publicChild(ed25519Bip32.publicKey(account.key), cc, soft0)), String(cc.length)).toBe("InvalidDerivation");
+      expect(kind(icarus.publicChild(expectOk(ed25519Bip32.publicKey(account.key), "publicKey"), cc, soft0)), String(cc.length)).toBe("InvalidDerivation");
   });
 
   test("child key derivation (Brambl Bip32Ed25519Ckd.json), private and public", () => {
@@ -370,11 +370,11 @@ describe("BIP32-Ed25519 (Icarus)", { timeout: 60_000 }, () => {
       const p = v.inputs.path.map(([k, i]) => expectOk(k === "hard" ? ChildIndex.hardened(i) : ChildIndex.soft(i), "index"));
       const child = expectOk(icarus.derive(root, p), "child");
       expect(hexOf(child.key.bytes) + hexOf(child.chainCode)).toBe(v.outputs.childSecretKey);
-      expect(hexOf(ed25519Bip32.publicKey(child.key).bytes) + hexOf(child.chainCode)).toBe(v.outputs.childVerificationKey);
+      expect(hexOf(expectOk(ed25519Bip32.publicKey(child.key), "publicKey").bytes) + hexOf(child.chainCode)).toBe(v.outputs.childVerificationKey);
       // public derivation from the deepest hardened ancestor through the trailing soft indices
       const cut = p.map((i) => i.hardened).lastIndexOf(true) + 1;
       const anchor = expectOk(icarus.derive(root, p.slice(0, cut)), "anchor");
-      let acc = { key: ed25519Bip32.publicKey(anchor.key), chainCode: anchor.chainCode };
+      let acc = { key: expectOk(ed25519Bip32.publicKey(anchor.key), "publicKey"), chainCode: anchor.chainCode };
       for (const i of p.slice(cut)) acc = expectOk(icarus.publicChild(acc.key, acc.chainCode, i), "public");
       expect(hexOf(acc.key.bytes) + hexOf(acc.chainCode)).toBe(v.outputs.childVerificationKey);
     }
@@ -396,7 +396,7 @@ describe("BIP32-Ed25519 (Icarus)", { timeout: 60_000 }, () => {
 
   test("hardened public derivation, non-canonical keys, bad roots and unclamped keys are rejected", () => {
     const root = expectOk(icarus.fromEntropy(new Uint8Array(16)), "root");
-    const vk = ed25519Bip32.publicKey(root.key);
+    const vk = expectOk(ed25519Bip32.publicKey(root.key), "publicKey");
     expect(kind(icarus.publicChild(vk, root.chainCode, expectOk(ChildIndex.hardened(0), "0'")))).toBe("InvalidDerivation");
     // y = p + 1 decodes (to the identity) under ZIP-215 but is not canonical
     const nonCanonical = expectOk(ed25519Bip32.verifyingKey(h("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f")), "vk");

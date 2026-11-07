@@ -35,7 +35,7 @@ describe("ethereum/bls12-381-tests v0.1.2", { timeout: 120_000 }, () => {
     for (const c of cases("sign", 10)) {
       const input = c.input as { privkey: string; message: string };
       const sk = blsPop.signingKey(h(input.privkey));
-      const actual = sk.ok ? `0x${hexOf(blsPop.sign(sk.value, h(input.message)).bytes)}` : null;
+      const actual = sk.ok ? `0x${hexOf(expectOk(blsPop.sign(sk.value, h(input.message)), "sign").bytes)}` : null;
       expect(actual, c.name).toBe(c.output);
     }
   });
@@ -62,7 +62,7 @@ describe("ethereum/bls12-381-tests v0.1.2", { timeout: 120_000 }, () => {
       const input = c.input as { pubkeys: string[]; message: string; signature: string };
       const keys = input.pubkeys.map(vkOf);
       const sig = sigOf(input.signature);
-      const ok = sig !== undefined && keys.every((k) => k !== undefined) && blsPop.fastAggregateVerify(keys, h(input.message), sig);
+      const ok = sig !== undefined && keys.every((k) => k !== undefined) && expectOk(blsPop.fastAggregateVerify(keys, h(input.message), sig), "fastAggregateVerify");
       expect(ok, c.name).toBe(c.output);
     }
   });
@@ -73,7 +73,7 @@ describe("ethereum/bls12-381-tests v0.1.2", { timeout: 120_000 }, () => {
       const keys = input.pubkeys.map(vkOf);
       const sig = sigOf(input.signature);
       const pairs = keys.flatMap((k, i) => (k === undefined ? [] : [[k, h(input.messages[i] ?? "")] as const]));
-      const ok = sig !== undefined && pairs.length === keys.length && blsPop.aggregateVerify(pairs, sig);
+      const ok = sig !== undefined && pairs.length === keys.length && expectOk(blsPop.aggregateVerify(pairs, sig), "aggregateVerify");
       expect(ok, c.name).toBe(c.output);
     }
   });
@@ -86,7 +86,7 @@ describe("ethereum/bls12-381-tests v0.1.2", { timeout: 120_000 }, () => {
         const sig = sigOf(input.signatures[i] ?? "");
         return vk === undefined || sig === undefined ? [] : [[vk, h(input.messages[i] ?? ""), sig] as const];
       });
-      const ok = triples.length === input.pubkeys.length && blsPop.batchVerify(triples);
+      const ok = triples.length === input.pubkeys.length && expectOk(blsPop.batchVerify(triples), "batchVerify");
       expect(ok, c.name).toBe(c.output);
     }
   });
@@ -121,16 +121,16 @@ describe("ethereum/bls12-381-tests v0.1.2", { timeout: 120_000 }, () => {
 describe("BLS12-381-PoP", { timeout: 60_000 }, () => {
   test("tessellation-bls known answer, proof of possession, and typed key errors", () => {
     const sk = expectOk(blsPop.signingKey(h("328388aff0d4a5b7dc9205abd374e7e98f3cd9f3418edb4eafda5fb16473d216")), "sk");
-    const vk = blsPop.publicKey(sk);
+    const vk = expectOk(blsPop.publicKey(sk), "publicKey");
     expect(hexOf(vk.bytes)).toBe("b53d21a4cfd562c469cc81514d4ce5a6b577d8403d32a394dc265dd190b47fa9f829fdd7963afdf972e5e77854051f6f");
-    expect(hexOf(blsPop.sign(sk, new Uint8Array(32).fill(0xab)).bytes)).toBe(
+    expect(hexOf(expectOk(blsPop.sign(sk, new Uint8Array(32).fill(0xab)), "sign").bytes)).toBe(
       "ae82747ddeefe4fd64cf9cedb9b04ae3e8a43420cd255e3c7cd06a8d88b7c7f8638543719981c5d16fa3527c468c25f0026704a6951bde891360c7e8d12ddee0559004ccdbe6046b55bae1b257ee97f7cdb955773d7cf29adf3ccbb9975e4eb9",
     );
-    const pop = blsPop.popProve(sk);
-    const other = blsPop.publicKey(expectOk(blsPop.signingKey(bigToBE(7n, 32)), "sk7"));
-    expect(blsPop.popVerify(vk, pop)).toBe(true);
-    expect(blsPop.popVerify(other, pop), "a PoP is bound to its key").toBe(false);
-    expect(blsPop.verify(vk, vk.bytes, pop), "a PoP is not a message signature").toBe(false);
+    const pop = expectOk(blsPop.popProve(sk), "popProve");
+    const other = expectOk(blsPop.publicKey(expectOk(blsPop.signingKey(bigToBE(7n, 32)), "sk7")), "publicKey");
+    expect(expectOk(blsPop.popVerify(vk, pop), "popVerify")).toBe(true);
+    expect(expectOk(blsPop.popVerify(other, pop), "popVerify"), "a PoP is bound to its key").toBe(false);
+    expect(expectOk(blsPop.verify(vk, vk.bytes, pop), "verify"), "a PoP is not a message signature").toBe(false);
     const zero = blsPop.signingKey(new Uint8Array(32));
     expect(zero.ok ? "ok" : zero.error.kind).toBe("InvalidKey");
     const atR = blsPop.signingKey(bigToBE(R, 32));
@@ -144,20 +144,20 @@ describe("BLS12-381-PoP", { timeout: 60_000 }, () => {
     const identitySig = h(`c0${"00".repeat(95)}`);
     const sig = expectOk(blsPop.signature(identitySig), "identity decodes");
     const sk = expectOk(blsPop.signingKey(bigToBE(5n, 32)), "sk");
-    const vk = blsPop.publicKey(sk);
-    expect(blsPop.verify(vk, new Uint8Array(0), sig)).toBe(false);
-    expect(blsPop.fastAggregateVerify([vk], new Uint8Array(0), sig)).toBe(false);
-    expect(blsPop.aggregateVerify([[vk, new Uint8Array(0)]], sig)).toBe(false);
+    const vk = expectOk(blsPop.publicKey(sk), "publicKey");
+    expect(expectOk(blsPop.verify(vk, new Uint8Array(0), sig), "verify")).toBe(false);
+    expect(expectOk(blsPop.fastAggregateVerify([vk], new Uint8Array(0), sig), "fastAggregateVerify")).toBe(false);
+    expect(expectOk(blsPop.aggregateVerify([[vk, new Uint8Array(0)]], sig), "aggregateVerify")).toBe(false);
     const idKey = blsPop.verifyingKey(h(`c0${"00".repeat(47)}`));
     expect(idKey.ok ? "ok" : idKey.error.kind).toBe("InvalidKey");
     // s + (-s) aggregates to the identity, encoded with the infinity flag
-    const s = blsPop.sign(sk, utf8("m"));
+    const s = expectOk(blsPop.sign(sk, utf8("m")), "sign");
     const neg = expectOk(blsPop.signature(bls12_381.longSignatures.Signature.toBytes(bls12_381.longSignatures.Signature.fromBytes(s.bytes).negate())), "neg");
     expect(hexOf(expectOk(blsPop.aggregate([s, neg]), "aggregate").bytes)).toBe(hexOf(identitySig));
     expect(blsPop.aggregate([]).ok).toBe(false);
-    expect(blsPop.fastAggregateVerify([], utf8("m"), s)).toBe(false);
-    expect(blsPop.aggregateVerify([], s)).toBe(false);
-    expect(blsPop.batchVerify([])).toBe(false);
+    expect(expectOk(blsPop.fastAggregateVerify([], utf8("m"), s), "fastAggregateVerify")).toBe(false);
+    expect(expectOk(blsPop.aggregateVerify([], s), "aggregateVerify")).toBe(false);
+    expect(expectOk(blsPop.batchVerify([]), "batchVerify")).toBe(false);
   });
 
   test("EIP-2333 test case 0 (master and child keys)", () => {

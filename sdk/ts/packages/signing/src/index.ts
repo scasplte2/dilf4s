@@ -11,7 +11,11 @@
  */
 export type { CryptoError, InvalidPath, KesError, KeyError, PathRefusal, VrfError } from "./errors.js";
 export { Secret, Signature, SigningKey, VerifyingKey, type KeyPair, type SchemeName } from "./keys.js";
-export type { SchemeCodec, SeedDerivation, Verifier } from "./scheme.js";
+export type { CryptoRefusal, SchemeCodec, SeedDerivation, Verifier } from "./scheme.js";
+export type { Bip39Refusal } from "./bip39.js";
+export type { KeyRefusal } from "./derivation.js";
+export type { VrfRefusal } from "./vrf.js";
+export type { KesRefusal } from "./kes.js";
 
 export { ed25519, ed25519Bip32, type Ed25519Bip32Scheme, type Ed25519Scheme } from "./ed25519.js";
 export { p256Ecdsa, secp256k1Ecdsa, type EcdsaScheme, type EcdsaSchemeName } from "./ecdsa.js";

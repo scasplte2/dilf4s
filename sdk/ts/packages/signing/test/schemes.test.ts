@@ -31,18 +31,18 @@ describe("ECDSA", { timeout: 60_000 }, () => {
       const s = beToBig(b.subarray(32));
       return hexOf(b.subarray(0, 32)) + hexOf(bigToBE(s > n / 2n ? n - s : s, 32));
     };
-    expect(hexOf(p256Ecdsa.publicKey(sk).bytes)).toBe("0360fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6");
-    expect(hexOf(p256Ecdsa.sign(sk, utf8("sample")).bytes)).toBe(
+    expect(hexOf(expectOk(p256Ecdsa.publicKey(sk), "publicKey").bytes)).toBe("0360fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6");
+    expect(hexOf(expectOk(p256Ecdsa.sign(sk, utf8("sample")), "sign").bytes)).toBe(
       low("efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8"),
     );
-    expect(hexOf(p256Ecdsa.sign(sk, utf8("test")).bytes)).toBe(
+    expect(hexOf(expectOk(p256Ecdsa.sign(sk, utf8("test")), "sign").bytes)).toBe(
       low("f1abb023518351cd71d881567b1ea663ed3efcf6c5132b354f28d3b0b7d38367019f4113742a2b14bd25926b49c649155f267e60d3814b4c0cc84250e46f0083"),
     );
   });
 
   test("secp256k1: RFC 6979 known answer (key 1, \"Satoshi Nakamoto\")", () => {
     const sk = expectOk(secp256k1Ecdsa.signingKey(bigToBE(1n, 32)), "sk");
-    expect(hexOf(secp256k1Ecdsa.sign(sk, utf8("Satoshi Nakamoto")).bytes)).toBe(
+    expect(hexOf(expectOk(secp256k1Ecdsa.sign(sk, utf8("Satoshi Nakamoto")), "sign").bytes)).toBe(
       "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d82442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5",
     );
   });
@@ -54,8 +54,8 @@ describe("ECDSA", { timeout: 60_000 }, () => {
   for (const [scheme, n] of cases) {
     test(`${scheme.name}: high-S is InvalidEncoding; out-of-range keys and bad points are typed errors`, () => {
       const kp = expectOk(scheme.fromSeed(bigToBE(1234567n, 32)), "seed");
-      const sig = scheme.sign(kp.signing, h("0102")).bytes;
-      expect(scheme.verify(kp.verifying, h("0102"), expectOk(scheme.signature(sig), "sig"))).toBe(true);
+      const sig = expectOk(scheme.sign(kp.signing, h("0102")), "sign").bytes;
+      expect(expectOk(scheme.verify(kp.verifying, h("0102"), expectOk(scheme.signature(sig), "sig")), "verify")).toBe(true);
       const highS = sig.slice();
       highS.set(bigToBE(n - beToBig(sig.subarray(32)), 32), 32);
       expect(kind(scheme.signature(highS))).toBe("InvalidEncoding");
@@ -76,7 +76,7 @@ describe("ECDSA", { timeout: 60_000 }, () => {
       expect(kind(scheme.verifyingKey(badPrefix))).toBe("InvalidKey");
       // x = 5 is not on secp256k1 (5^3 + 7 = 132 is a non-residue); for P-256 pick an x with no point
       expect(kind(scheme.verifyingKey(h(`02${"ff".repeat(32)}`)))).toBe("InvalidKey");
-      expect(scheme.verify(kp.verifying, h("0103"), expectOk(scheme.signature(sig), "sig"))).toBe(false);
+      expect(expectOk(scheme.verify(kp.verifying, h("0103"), expectOk(scheme.signature(sig), "sig")), "verify")).toBe(false);
     });
   }
 });
@@ -103,7 +103,7 @@ describe("BIP-340 and tagged Schnorr", { timeout: 60_000 }, () => {
     for (const [skb, aux, msg, vkHex, sigHex] of vectors) {
       const sk = expectOk(bip340.signingKey(skb), "sk");
       const m = expectOk(Message32.of(msg), "msg");
-      expect(hexOf(bip340.publicKey(sk).bytes)).toBe(vkHex);
+      expect(hexOf(expectOk(bip340.publicKey(sk), "publicKey").bytes)).toBe(vkHex);
       expect(hexOf(expectOk(bip340.sign(sk, m, aux), "sign").bytes)).toBe(sigHex);
       expect(bip340.verifyBytes(h(vkHex), m, h(sigHex))).toEqual({ ok: true, value: true });
     }
@@ -173,10 +173,10 @@ describe("BIP-340 and tagged Schnorr", { timeout: 60_000 }, () => {
     expect(kind(bip340.signingKey(new Uint8Array(32)))).toBe("InvalidKey");
     const kp = expectOk(bip340.fromSeed(bigToBE(9n, 32)), "kp");
     const m = expectOk(Message32.of(sha256(utf8("r"))), "m");
-    const a = bip340.signRandom(kp.signing, m);
-    const b = bip340.signRandom(kp.signing, m);
+    const a = expectOk(bip340.signRandom(kp.signing, m), "signRandom");
+    const b = expectOk(bip340.signRandom(kp.signing, m), "signRandom");
     expect(hexOf(a.bytes)).not.toBe(hexOf(b.bytes));
-    expect(bip340.verify(kp.verifying, m, a) && bip340.verify(kp.verifying, m, b)).toBe(true);
+    expect(expectOk(bip340.verify(kp.verifying, m, a), "verify") && expectOk(bip340.verify(kp.verifying, m, b), "verify")).toBe(true);
   });
 });
 
@@ -187,7 +187,7 @@ describe("ristretto255 Schnorr", { timeout: 60_000 }, () => {
     const sig = h(
       "fc45655fbc66bbffad654ea4ce5fdae253a49a64ace25d9adb62010dd9fb25552164141787162e5b4cab915b4aa45d94655dbb9ed7c378a53b980a0be220a802",
     );
-    expect(hexOf(ristretto255Schnorr.publicKey(sk).bytes)).toBe(pk);
+    expect(hexOf(expectOk(ristretto255Schnorr.publicKey(sk), "publicKey").bytes)).toBe(pk);
     expect(ristretto255Schnorr.verifyBytes(h(pk), h("74657374"), sig)).toEqual({ ok: true, value: true });
     expect(ristretto255Schnorr.verifyBytes(h(pk), h("74657375"), sig)).toEqual({ ok: true, value: false });
   });
@@ -196,7 +196,7 @@ describe("ristretto255 Schnorr", { timeout: 60_000 }, () => {
     const identity = new Uint8Array(32);
     const kp = expectOk(ristretto255Schnorr.fromSeed(new Uint8Array(32).fill(1)), "kp");
     const sig = expectOk(ristretto255Schnorr.sign(kp.signing, new Uint8Array(0), new Uint8Array(32).fill(2)), "sig").bytes;
-    expect(ristretto255Schnorr.verify(kp.verifying, new Uint8Array(0), expectOk(ristretto255Schnorr.signature(sig), "sig"))).toBe(true);
+    expect(expectOk(ristretto255Schnorr.verify(kp.verifying, new Uint8Array(0), expectOk(ristretto255Schnorr.signature(sig), "sig")), "verify")).toBe(true);
     expect(kind(ristretto255Schnorr.verifyingKey(identity))).toBe("InvalidKey");
     const identityR = sig.slice();
     identityR.fill(0, 0, 32);
@@ -207,9 +207,9 @@ describe("ristretto255 Schnorr", { timeout: 60_000 }, () => {
     expect(kind(ristretto255Schnorr.signingKey(new Uint8Array(32)))).toBe("InvalidKey");
     expect(kind(ristretto255Schnorr.signingKey(bigToLE(L, 32)))).toBe("InvalidKey");
     expect(kind(ristretto255Schnorr.sign(kp.signing, new Uint8Array(0), new Uint8Array(1)))).toBe("InvalidEncoding");
-    const a = ristretto255Schnorr.signRandom(kp.signing, h("01"));
-    const b = ristretto255Schnorr.signRandom(kp.signing, h("01"));
+    const a = expectOk(ristretto255Schnorr.signRandom(kp.signing, h("01")), "signRandom");
+    const b = expectOk(ristretto255Schnorr.signRandom(kp.signing, h("01")), "signRandom");
     expect(hexOf(a.bytes)).not.toBe(hexOf(b.bytes));
-    expect(ristretto255Schnorr.verify(kp.verifying, h("01"), a) && ristretto255Schnorr.verify(kp.verifying, h("01"), b)).toBe(true);
+    expect(expectOk(ristretto255Schnorr.verify(kp.verifying, h("01"), a), "verify") && expectOk(ristretto255Schnorr.verify(kp.verifying, h("01"), b), "verify")).toBe(true);
   });
 });

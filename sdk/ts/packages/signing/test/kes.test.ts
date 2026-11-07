@@ -5,35 +5,35 @@ import { describe, expect, test } from "vitest";
 import { digest, models, parseHashAlgorithm, type HashAlgorithm, type Result } from "@kd5ujc/dilf4s-core";
 import { sha256 } from "@noble/hashes/sha2.js";
 
-import { CardanoSumKes, KesProduct, KesSum, type CardanoSumKesKey, type KesError, type KesProductKey, type KesSumKey } from "../src/index.js";
+import { CardanoSumKes, KesProduct, KesSum, type CardanoSumKesKey, type KesError, type KesProductKey, type KesRefusal, type KesSumKey } from "../src/index.js";
 import { concat } from "../src/internal/bytes.js";
 import { expectOk, h, loadVectors, readDocBytes, tsv, hexOf } from "./vectors.js";
 
 const vectors = loadVectors("kes_v1.json", models.kesVectors.KesVectors);
-const kind = <T>(r: Result<T, KesError>): string => (r.ok ? "ok" : r.error.kind);
+const kind = <T>(r: Result<T, KesRefusal>): string => (r.ok ? "ok" : r.error.kind);
 const beef = h("beef");
 
 /** One construction behind a common face, for the conformance replay. */
 interface Face {
   readonly totalPeriods: number;
-  generate(seed: Uint8Array): Result<FaceKey, KesError>;
-  load(raw: Uint8Array, period: number): Result<FaceKey, KesError>;
-  verify(vk: Uint8Array, period: number, message: Uint8Array, sig: Uint8Array): Result<boolean, KesError>;
+  generate(seed: Uint8Array): Result<FaceKey, KesRefusal>;
+  load(raw: Uint8Array, period: number): Result<FaceKey, KesRefusal>;
+  verify(vk: Uint8Array, period: number, message: Uint8Array, sig: Uint8Array): Result<boolean, KesRefusal>;
 }
 interface FaceKey {
   readonly period: number;
   readonly bytes: Uint8Array;
   readonly verifyingKey: Uint8Array;
   sign(message: Uint8Array): Uint8Array;
-  evolve(): Result<FaceKey, KesError>;
+  evolve(): Result<FaceKey, KesRefusal>;
 }
 
-function schemeOf(construction: models.kesVectors.KesConstruction, p: models.kesVectors.KesParameters): Result<Face, KesError> {
+function schemeOf(construction: models.kesVectors.KesConstruction, p: models.kesVectors.KesParameters): Result<Face, KesRefusal> {
   const hash = (name: string): HashAlgorithm => expectOk(parseHashAlgorithm(name), "a known hash function");
   const sumP = p as models.kesVectors.KesSumParameters;
   const productP = p as models.kesVectors.KesProductParameters;
   const cardanoP = p as models.kesVectors.KesCardanoParameters;
-  const wrap = <K extends { period: number; bytes: Uint8Array; verifyingKey: Uint8Array; evolve(): Result<K, KesError> }>(
+  const wrap = <K extends { period: number; bytes: Uint8Array; verifyingKey: Uint8Array; evolve(): Result<K, KesRefusal> }>(
     sign: (k: K, m: Uint8Array) => Uint8Array,
   ) => {
     const key = (k: K): FaceKey => ({
@@ -46,7 +46,7 @@ function schemeOf(construction: models.kesVectors.KesConstruction, p: models.kes
         return n.ok ? { ok: true, value: key(n.value) } : n;
       },
     });
-    return (r: Result<K, KesError>): Result<FaceKey, KesError> => (r.ok ? { ok: true, value: key(r.value) } : r);
+    return (r: Result<K, KesRefusal>): Result<FaceKey, KesRefusal> => (r.ok ? { ok: true, value: key(r.value) } : r);
   };
   switch (construction) {
     case "dilf4s-sum": {
@@ -67,7 +67,7 @@ function schemeOf(construction: models.kesVectors.KesConstruction, p: models.kes
       const r = CardanoSumKes.of(Number(cardanoP.depth));
       if (!r.ok) return r;
       const s = r.value;
-      const w = wrap<CardanoSumKesKey>((k, m) => k.sign(m));
+      const w = wrap<CardanoSumKesKey>((k, m) => expectOk(k.sign(m), "sign"));
       return { ok: true, value: { totalPeriods: s.totalPeriods, generate: (x) => w(s.generate(x)), load: (x, t) => w(s.load(x, t)), verify: (...a) => s.verify(...a) } };
     }
   }
@@ -75,13 +75,19 @@ function schemeOf(construction: models.kesVectors.KesConstruction, p: models.kes
 
 const faceOf = (v: models.kesVectors.KesVector): Face => expectOk(schemeOf(v.construction, v.parameters), "scheme");
 
+/** A refusal's kind as a vector names it: a vector's input is always of its type, so it is never a TypeMismatch. */
+const kesKind = (e: KesRefusal): models.kesVectors.KesOutcome => {
+  if (e.kind === "TypeMismatch") throw new Error(e.reason);
+  return e.kind;
+};
+
 /** What a `refusals` row's call gives. */
 function refusalOutcome(c: models.kesVectors.KesRefusal): models.kesVectors.KesOutcome {
   const face = schemeOf(c.construction, c.parameters);
-  if (!face.ok) return face.error.kind;
+  if (!face.ok) return kesKind(face.error);
   const f = face.value;
   const period = Number(c.period ?? 0n);
-  const outcome = (r: Result<unknown, KesError>): models.kesVectors.KesOutcome => (r.ok ? "accepted" : r.error.kind);
+  const outcome = (r: Result<unknown, KesRefusal>): models.kesVectors.KesOutcome => (r.ok ? "accepted" : kesKind(r.error));
   switch (c.check) {
     case "parameters":
       return "accepted";
@@ -95,7 +101,7 @@ function refusalOutcome(c: models.kesVectors.KesRefusal): models.kesVectors.KesO
     }
     case "verify": {
       const r = f.verify(h(c.verifyingKey ?? ""), period, h(c.message ?? ""), h(c.signature ?? ""));
-      return r.ok ? (r.value ? "accepted" : "rejected") : r.error.kind;
+      return r.ok ? (r.value ? "accepted" : "rejected") : kesKind(r.error);
     }
   }
 }
@@ -224,7 +230,7 @@ describe("KES properties and typed errors", { timeout: 60_000 }, () => {
     let k = expectOk(sum3.generate(new Uint8Array(32).fill(3)), "k0");
     const vk = k.verifyingKey;
     for (let t = 0; t < 8; t++) {
-      const sig = k.sign(h("cafe"));
+      const sig = expectOk(k.sign(h("cafe")), "sign");
       expect(sig.length).toBe(sum3.signatureLength);
       for (let p = 0; p < 8; p++) expect(sum3.verify(vk, p, h("cafe"), sig)).toEqual({ ok: true, value: p === t });
       expect(hexOf(k.verifyingKey)).toBe(hexOf(vk));
@@ -268,7 +274,7 @@ describe("KES properties and typed errors", { timeout: 60_000 }, () => {
     const sum6 = CardanoSumKes.sum6;
     const k = expectOk(sum6.generate(new Uint8Array(32).fill(2)), "k");
     const vk = k.verifyingKey;
-    const sig = k.sign(new Uint8Array(0));
+    const sig = expectOk(k.sign(new Uint8Array(0)), "sign");
     expect(kind(sum6.verify(vk.subarray(1), 0, new Uint8Array(0), sig))).toBe("Malformed");
     expect(kind(sum6.verify(vk, 0, new Uint8Array(0), sig.subarray(1)))).toBe("Malformed");
     expect(sum6.verify(vk, 64, new Uint8Array(0), sig)).toEqual({ ok: false, error: { kind: "PeriodOutOfRange", period: 64, total: 64 } });
@@ -318,7 +324,7 @@ describe("KES properties and typed errors", { timeout: 60_000 }, () => {
         expectOk(cardano.generate(seed), "cardano k").bytes,
         (raw) => {
           const k = expectOk(cardano.load(raw, 0), "load");
-          return { bytes: k.bytes, sign: () => k.sign(beef) };
+          return { bytes: k.bytes, sign: () => expectOk(k.sign(beef), "sign") };
         },
         (sig) => expectOk(cardano.verify(expectOk(cardano.generate(seed), "vk").verifyingKey, 0, beef, sig), "verify"),
       ],

@@ -2,12 +2,14 @@
  * ECVRF over edwards25519 with SHA-512 (`vrf.md`): RFC 9381 TAI and ELL2, and draft-03 Elligator2 as the Cardano fork
  * of libsodium implements it. The suites are distinct types, and none accepts another's proofs.
  */
-import { err, ok, type Result } from "@kd5ujc/dilf4s-core";
+import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
+import { copyBytes, mint, plainBytes } from "@kd5ujc/dilf4s-core/internal";
 import { ed25519_hasher } from "@noble/curves/ed25519.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
 import type { VrfError } from "./errors.js";
-import { SigningKey, VerifyingKey, type KeyPair } from "./keys.js";
+import { SigningKey, signingKeyBytes, VerifyingKey, verifyingKeyBytes, type KeyPair } from "./keys.js";
+import { expected, NOT_BYTES, signedOf, viewOf } from "./internal/check.js";
 import { attempt } from "./internal/attempt.js";
 import { bigToLE, concat, copy, equal, hex, leToBig, mod, powMod } from "./internal/bytes.js";
 import {
@@ -29,16 +31,27 @@ import { INTERNAL } from "./internal/token.js";
 
 export type VrfSuiteName = "ECVRF-EDWARDS25519-SHA512-TAI" | "ECVRF-EDWARDS25519-SHA512-ELL2" | "ECVRF-ED25519-SHA512-Elligator2 (draft-03)";
 
+/** A VRF refusal, or an argument of the wrong type. */
+export type VrfRefusal = VrfError | TypeMismatch;
+
+const PROOF = mint();
+let proofBytesOf!: (x: unknown) => Uint8Array | undefined;
+
 /** An 80-byte proof `Gamma (32) || c (16) || s (32)`; its fields are checked only by verification. */
 export class VrfProof<S extends VrfSuiteName> {
   readonly #bytes: Uint8Array;
   constructor(
-    _token: typeof INTERNAL,
+    token: typeof INTERNAL,
     readonly suite: S,
     bytes: Uint8Array,
   ) {
-    this.#bytes = copy(bytes);
+    this.#bytes = token === INTERNAL ? copy(bytes) : new Uint8Array(0);
+    if (token === INTERNAL) PROOF.stamp(this);
     Object.freeze(this);
+  }
+
+  static {
+    proofBytesOf = (x) => (PROOF.has(x) ? (x as VrfProof<VrfSuiteName>).#bytes : undefined);
   }
 
   get bytes(): Uint8Array {
@@ -75,18 +88,31 @@ export class VrfOutput<S extends VrfSuiteName> {
 export interface Vrf<S extends VrfSuiteName> {
   readonly name: S;
   /** 32 bytes (a seed) for the RFC 9381 suites; 64 bytes `seed || pk` for draft-03, whose `pk` must be the seed's. */
-  readonly signingKey: (bytes: Uint8Array) => Result<SigningKey<S>, VrfError>;
+  readonly signingKey: (bytes: Uint8Array) => Result<SigningKey<S>, VrfRefusal>;
   /** A key that decodes under the suite's rule and is not of small order. */
-  readonly verifyingKey: (bytes: Uint8Array) => Result<VerifyingKey<S>, VrfError>;
+  readonly verifyingKey: (bytes: Uint8Array) => Result<VerifyingKey<S>, VrfRefusal>;
   /** 80 bytes. */
-  readonly proof: (bytes: Uint8Array) => Result<VrfProof<S>, VrfError>;
-  readonly publicKey: (key: SigningKey<S>) => VerifyingKey<S>;
-  readonly prove: (key: SigningKey<S>, alpha: Uint8Array) => Result<{ readonly proof: VrfProof<S>; readonly output: VrfOutput<S> }, VrfError>;
-  readonly verify: (key: VerifyingKey<S>, alpha: Uint8Array, proof: VrfProof<S>) => Result<VrfOutput<S>, VrfError>;
-  /** Over raw encodings: a wrong length is `Malformed` (the proof's is checked first), anything else a typed rejection. */
-  readonly verifyBytes: (key: Uint8Array, alpha: Uint8Array, proof: Uint8Array) => Result<VrfOutput<S>, VrfError>;
+  readonly proof: (bytes: Uint8Array) => Result<VrfProof<S>, VrfRefusal>;
+  /** The verifying key of a signing key; one that is not this suite's `SigningKey` is a `TypeMismatch`. */
+  readonly publicKey: (key: SigningKey<S>) => Result<VerifyingKey<S>, TypeMismatch>;
+  /** A key that is not this suite's, or an `alpha` that is not bytes (read once), is a `TypeMismatch`. */
+  readonly prove: (key: SigningKey<S>, alpha: Uint8Array) => Result<{ readonly proof: VrfProof<S>; readonly output: VrfOutput<S> }, VrfRefusal>;
+  /** A key or proof that is not this suite's, or an `alpha` that is not bytes, is a `TypeMismatch`, never an output. */
+  readonly verify: (key: VerifyingKey<S>, alpha: Uint8Array, proof: VrfProof<S>) => Result<VrfOutput<S>, VrfRefusal>;
+  /**
+   * Over raw encodings: a wrong length is `Malformed` (the proof's is checked first), anything else a typed rejection;
+   * an argument that is not bytes is a `TypeMismatch`.
+   */
+  readonly verifyBytes: (key: Uint8Array, alpha: Uint8Array, proof: Uint8Array) => Result<VrfOutput<S>, VrfRefusal>;
   /** A key pair from a 32-byte seed (draft-03 keys become `seed || pk`). */
-  readonly fromSeed: (seed: Uint8Array) => Result<KeyPair<S>, VrfError>;
+  readonly fromSeed: (seed: Uint8Array) => Result<KeyPair<S>, VrfRefusal>;
+}
+
+/** The caller's bytes, measured by their internal length and copied once if it is `expected`; else `Malformed`. */
+function vrfSized(what: string, expected: number, bytes: unknown): Result<Uint8Array, VrfRefusal> {
+  const view = plainBytes(bytes);
+  if (view === undefined) return err(NOT_BYTES);
+  return view.length === expected ? ok(copyBytes(view)) : err(malformed(what, expected, view.length));
 }
 
 const malformed = (what: string, expected: number, got: number): VrfError => ({
@@ -196,7 +222,7 @@ const publicFromSeed = (seed: Uint8Array): Uint8Array => mulBase(expandSeed(seed
 
 function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
   const { name } = profile;
-  const seedOf = (key: SigningKey<S>): Uint8Array => key.bytes.subarray(0, 32);
+  const seedOf = (sk: Uint8Array): Uint8Array => sk.subarray(0, 32);
   const output = (gamma: EdPoint): VrfOutput<S> =>
     new VrfOutput(INTERNAL, name, sha512Parts(Uint8Array.of(profile.suite, 0x03), gamma.clearCofactor().toBytes(), profile.outputSuffix));
 
@@ -207,17 +233,24 @@ function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
     return isSmallOrder(pt) ? err({ kind: "SmallOrderPublicKey" }) : ok(pt);
   }
 
-  const signingKey = (bytes: Uint8Array): Result<SigningKey<S>, VrfError> => {
-    if (bytes.length !== profile.skLength) return err(malformed(`${name} signing key`, profile.skLength, bytes.length));
+  const signingKey = (given: Uint8Array): Result<SigningKey<S>, VrfRefusal> => {
+    const b = vrfSized(`${name} signing key`, profile.skLength, given);
+    if (!b.ok) return b;
+    const bytes = b.value;
     // draft-03 keys are libsodium's `seed || pk`: the stored public key must be the seed's
     return bytes.length === 32 || equal(publicFromSeed(bytes.subarray(0, 32)), bytes.subarray(32))
       ? ok(new SigningKey(INTERNAL, name, bytes))
       : err({ kind: "KeyMismatch" });
   };
 
-  const publicKey = (key: SigningKey<S>): VerifyingKey<S> => new VerifyingKey(INTERNAL, name, publicFromSeed(seedOf(key)));
+  const publicOf = (sk: Uint8Array): VerifyingKey<S> => new VerifyingKey(INTERNAL, name, publicFromSeed(seedOf(sk)));
+  const publicKey = (key: SigningKey<S>): Result<VerifyingKey<S>, TypeMismatch> => {
+    const k = signingKeyBytes(key, name);
+    return k.ok ? ok(publicOf(k.value)) : k;
+  };
 
-  const verifyBytes = (key: Uint8Array, alpha: Uint8Array, proof: Uint8Array): Result<VrfOutput<S>, VrfError> => {
+  /** The check of plain, owned or viewed bytes: the key's, the message's and the proof's. */
+  const verifyRaw = (key: Uint8Array, alpha: Uint8Array, proof: Uint8Array): Result<VrfOutput<S>, VrfError> => {
     if (proof.length !== 80) return err(malformed(`${name} proof`, 80, proof.length));
     const y = decodeKey(key);
     if (!y.ok) return y;
@@ -238,14 +271,24 @@ function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
   return Object.freeze({
     name,
     signingKey,
-    verifyingKey: (bytes: Uint8Array) => {
-      const k = decodeKey(bytes);
-      return k.ok ? ok(new VerifyingKey(INTERNAL, name, bytes)) : k;
+    verifyingKey: (bytes: Uint8Array): Result<VerifyingKey<S>, VrfRefusal> => {
+      const b = vrfSized(`${name} public key`, 32, bytes);
+      if (!b.ok) return b;
+      const k = decodeKey(b.value);
+      return k.ok ? ok(new VerifyingKey(INTERNAL, name, b.value)) : k;
     },
-    proof: (bytes: Uint8Array) => (bytes.length === 80 ? ok(new VrfProof(INTERNAL, name, bytes)) : err(malformed(`${name} proof`, 80, bytes.length))),
+    proof: (bytes: Uint8Array): Result<VrfProof<S>, VrfRefusal> => {
+      const b = vrfSized(`${name} proof`, 80, bytes);
+      return b.ok ? ok(new VrfProof(INTERNAL, name, b.value)) : b;
+    },
     publicKey,
-    prove: (key: SigningKey<S>, alpha: Uint8Array) => {
-      const { scalar: x, prefix } = expandSeed(seedOf(key));
+    prove: (key: SigningKey<S>, given: Uint8Array): Result<{ readonly proof: VrfProof<S>; readonly output: VrfOutput<S> }, VrfRefusal> => {
+      const secret = signingKeyBytes(key, name);
+      if (!secret.ok) return secret;
+      // alpha may be hashed many times (TAI tries counters): read once into memory only this thread can change
+      const alpha = signedOf(given);
+      if (alpha === undefined) return err(NOT_BYTES);
+      const { scalar: x, prefix } = expandSeed(seedOf(secret.value));
       const pk = mulBase(x).toBytes();
       const h = profile.hashToCurve(pk, alpha);
       if (h === undefined) return err<VrfError>({ kind: "HashToCurveFailed", reason: "no curve point" });
@@ -257,12 +300,30 @@ function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
       const s = mod(leToBig(c) * x + k, L);
       return ok({ proof: new VrfProof(INTERNAL, name, concat(gb, c, bigToLE(s, 32))), output: output(gamma) });
     },
-    verify: (key: VerifyingKey<S>, alpha: Uint8Array, proof: VrfProof<S>) => verifyBytes(key.bytes, alpha, proof.bytes),
-    verifyBytes,
-    fromSeed: (seed: Uint8Array) => {
-      if (seed.length !== 32) return err(malformed("VRF seed", 32, seed.length));
+    verify: (key: VerifyingKey<S>, alpha: Uint8Array, proof: VrfProof<S>): Result<VrfOutput<S>, VrfRefusal> => {
+      const k = verifyingKeyBytes(key, name);
+      if (!k.ok) return k;
+      const p = proofBytesOf(proof);
+      if (p === undefined || (proof as VrfProof<VrfSuiteName>).suite !== name) return err(expected(`a ${name} VrfProof`));
+      const a = viewOf(alpha);
+      return a === undefined ? err(NOT_BYTES) : verifyRaw(k.value, a, p);
+    },
+    verifyBytes: (key: Uint8Array, alpha: Uint8Array, proof: Uint8Array): Result<VrfOutput<S>, VrfRefusal> => {
+      const p = viewOf(proof);
+      const k = viewOf(key);
+      const a = viewOf(alpha);
+      if (p === undefined || k === undefined || a === undefined) return err(NOT_BYTES);
+      // the key and proof are read more than once: copied, so the bytes checked are the bytes used
+      return verifyRaw(Uint8Array.from(k), a, Uint8Array.from(p));
+    },
+    fromSeed: (given: Uint8Array): Result<KeyPair<S>, VrfRefusal> => {
+      const s = vrfSized("VRF seed", 32, given);
+      if (!s.ok) return s;
+      const seed = s.value;
       const sk = signingKey(profile.skLength === 32 ? seed : concat(seed, publicFromSeed(seed)));
-      return sk.ok ? ok({ signing: sk.value, verifying: publicKey(sk.value) }) : sk;
+      if (!sk.ok) return sk;
+      const k = signingKeyBytes(sk.value, name);
+      return k.ok ? ok({ signing: sk.value, verifying: publicOf(k.value) }) : k;
     },
   });
 }

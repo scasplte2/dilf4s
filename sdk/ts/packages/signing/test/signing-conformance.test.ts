@@ -21,6 +21,8 @@ import {
   toMnemonic,
   WordList,
   type KeyError,
+  type KeyRefusal,
+  type CryptoRefusal,
   type PathRefusal,
   type CryptoError,
 } from "../src/index.js";
@@ -32,8 +34,8 @@ const randomness = h(vectors.randomness);
 /** A scheme seen through bytes: derive from a seed, sign a message, verify encodings. */
 interface Adapter {
   fromSeed(seed: Uint8Array): { readonly sk: Uint8Array; readonly vk: Uint8Array; sign(message: Uint8Array): Uint8Array };
-  verifyBytes(vk: Uint8Array, message: Uint8Array, sig: Uint8Array): Result<boolean, CryptoError>;
-  verifyingKey(vk: Uint8Array): Result<unknown, CryptoError>;
+  verifyBytes(vk: Uint8Array, message: Uint8Array, sig: Uint8Array): Result<boolean, CryptoRefusal>;
+  verifyingKey(vk: Uint8Array): Result<unknown, CryptoRefusal>;
 }
 
 const m32 = (m: Uint8Array): Message32 => expectOk(Message32.of(m), "32-byte message");
@@ -42,7 +44,7 @@ const adapters: Record<string, Adapter> = {
   Ed25519: {
     fromSeed: (seed) => {
       const kp = expectOk(ed25519.fromSeed(seed), "seed");
-      return { sk: kp.signing.bytes, vk: kp.verifying.bytes, sign: (m) => ed25519.sign(kp.signing, m).bytes };
+      return { sk: kp.signing.bytes, vk: kp.verifying.bytes, sign: (m) => expectOk(ed25519.sign(kp.signing, m), "sign").bytes };
     },
     verifyBytes: ed25519.verifyBytes,
     verifyingKey: ed25519.verifyingKey,
@@ -51,7 +53,7 @@ const adapters: Record<string, Adapter> = {
   "P-256-ECDSA": {
     fromSeed: (seed) => {
       const kp = expectOk(p256Ecdsa.fromSeed(seed), "seed");
-      return { sk: kp.signing.bytes, vk: kp.verifying.bytes, sign: (m) => p256Ecdsa.sign(kp.signing, m).bytes };
+      return { sk: kp.signing.bytes, vk: kp.verifying.bytes, sign: (m) => expectOk(p256Ecdsa.sign(kp.signing, m), "sign").bytes };
     },
     verifyBytes: p256Ecdsa.verifyBytes,
     verifyingKey: p256Ecdsa.verifyingKey,
@@ -59,7 +61,7 @@ const adapters: Record<string, Adapter> = {
   "secp256k1-ECDSA": {
     fromSeed: (seed) => {
       const kp = expectOk(secp256k1Ecdsa.fromSeed(seed), "seed");
-      return { sk: kp.signing.bytes, vk: kp.verifying.bytes, sign: (m) => secp256k1Ecdsa.sign(kp.signing, m).bytes };
+      return { sk: kp.signing.bytes, vk: kp.verifying.bytes, sign: (m) => expectOk(secp256k1Ecdsa.sign(kp.signing, m), "sign").bytes };
     },
     verifyBytes: secp256k1Ecdsa.verifyBytes,
     verifyingKey: secp256k1Ecdsa.verifyingKey,
@@ -95,7 +97,7 @@ const adapters: Record<string, Adapter> = {
   "BLS12-381-PoP": {
     fromSeed: (seed) => {
       const kp = expectOk(blsPop.fromSeed(seed), "seed");
-      return { sk: kp.signing.bytes, vk: kp.verifying.bytes, sign: (m) => blsPop.sign(kp.signing, m).bytes };
+      return { sk: kp.signing.bytes, vk: kp.verifying.bytes, sign: (m) => expectOk(blsPop.sign(kp.signing, m), "sign").bytes };
     },
     verifyBytes: blsPop.verifyBytes,
     verifyingKey: blsPop.verifyingKey,
@@ -149,19 +151,23 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
         ? r.value
           ? "valid"
           : "invalid"
-        : { part: a.verifyingKey(h(c.verifyingKey)).ok ? "signature" : "verifyingKey", kind: r.error.kind };
+        : r.error.kind === "TypeMismatch"
+          ? "invalid"
+          : { part: a.verifyingKey(h(c.verifyingKey)).ok ? "signature" : "verifyingKey", kind: r.error.kind };
+      // a vector's inputs are bytes, so a TypeMismatch is a failure of this test, never a verdict
+      if (!r.ok && r.error.kind === "TypeMismatch") mismatches.push(`${c.scheme}/${c.name}: ${r.error.reason}`);
       if (JSON.stringify(actual) !== JSON.stringify(c.result)) mismatches.push(`${c.scheme}/${c.name}: expected ${JSON.stringify(c.result)}, got ${JSON.stringify(actual)}`);
     }
     expect(mismatches).toEqual([]);
   });
 
   /** What a `keyRefusals` row's call gives. */
-  const keyCall = (c: models.signingVectors.KeyRefusal): Result<unknown, KeyError> => {
-    const path = (): Result<readonly ChildIndex[], KeyError> => parsePath(c.path ?? "");
-    const publicPath = <K>(start: K, step: (k: K, i: ChildIndex) => Result<K, KeyError>): Result<unknown, KeyError> => {
+  const keyCall = (c: models.signingVectors.KeyRefusal): Result<unknown, KeyRefusal> => {
+    const path = (): Result<readonly ChildIndex[], KeyRefusal> => parsePath(c.path ?? "");
+    const publicPath = <K>(start: K, step: (k: K, i: ChildIndex) => Result<K, KeyRefusal>): Result<unknown, KeyRefusal> => {
       const p = path();
       if (!p.ok) return p;
-      let at: Result<K, KeyError> = { ok: true, value: start };
+      let at: Result<K, KeyRefusal> = { ok: true, value: start };
       for (const i of p.value) at = at.ok ? step(at.value, i) : at;
       return at;
     };
@@ -231,7 +237,7 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
   });
 
   // a signing-key decoder per scheme, and the verifying-key decoder of each (Ed25519-BIP32 keys verify as Ed25519)
-  const signingKeyOf: Record<string, (b: Uint8Array) => Result<unknown, CryptoError>> = {
+  const signingKeyOf: Record<string, (b: Uint8Array) => Result<unknown, CryptoRefusal>> = {
     Ed25519: ed25519.signingKey,
     "Ed25519-BIP32": ed25519Bip32.signingKey,
     "P-256-ECDSA": p256Ecdsa.signingKey,
@@ -268,7 +274,7 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
     const seen = new Set<PathRefusal>();
     for (const c of vectors.paths) {
       const r = parsePath(c.path);
-      const actual = r.ok ? { indices: r.value.map((i) => BigInt(i.serialized)) } : toSchema(r.error.refusal);
+      const actual = r.ok ? { indices: r.value.map((i) => BigInt(i.serialized)) } : r.error.kind === "InvalidPath" ? toSchema(r.error.refusal) : r.error.kind;
       expect(actual, JSON.stringify(c.path.slice(0, 40))).toEqual(c.result);
       if (typeof c.result === "string") seen.add(toSdk(c.result));
     }
@@ -290,12 +296,12 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
     expect(vectors.blsPop.length).toBe(3);
     for (const v of vectors.blsPop) {
       const sk = expectOk(blsPop.signingKey(h(v.signingKey)), "sk");
-      expect(hexOf(blsPop.publicKey(sk).bytes)).toBe(v.verifyingKey);
-      const proof = blsPop.popProve(sk);
+      expect(hexOf(expectOk(blsPop.publicKey(sk), "publicKey").bytes)).toBe(v.verifyingKey);
+      const proof = expectOk(blsPop.popProve(sk), "popProve");
       expect(hexOf(proof.bytes)).toBe(v.proof);
       const vk = expectOk(blsPop.verifyingKey(h(v.verifyingKey)), "vk");
-      expect(blsPop.popVerify(vk, expectOk(blsPop.signature(h(v.proof)), "proof"))).toBe(true);
-      expect(blsPop.verify(vk, h(v.verifyingKey), proof), "a PoP is not a message signature").toBe(false);
+      expect(expectOk(blsPop.popVerify(vk, expectOk(blsPop.signature(h(v.proof)), "proof")), "popVerify")).toBe(true);
+      expect(expectOk(blsPop.verify(vk, h(v.verifyingKey), proof), "verify"), "a PoP is not a message signature").toBe(false);
     }
   });
 });

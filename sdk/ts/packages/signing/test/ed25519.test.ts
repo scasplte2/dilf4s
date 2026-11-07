@@ -28,10 +28,10 @@ describe("Ed25519", { timeout: 60_000 }, () => {
     for (const v of vectors) {
       const kp = expectOk(ed25519.fromSeed(h(v.inputs.secretKey)), "seed");
       expect(hexOf(kp.verifying.bytes)).toBe(v.outputs.verificationKey);
-      const sig = ed25519.sign(kp.signing, h(v.inputs.message));
+      const sig = expectOk(ed25519.sign(kp.signing, h(v.inputs.message)), "sign");
       expect(hexOf(sig.bytes)).toBe(v.outputs.signature);
-      expect(ed25519.verify(kp.verifying, h(v.inputs.message), sig)).toBe(true);
-      expect(ed25519.verifyLibsodium(kp.verifying, h(v.inputs.message), sig)).toBe(true);
+      expect(expectOk(ed25519.verify(kp.verifying, h(v.inputs.message), sig), "verify")).toBe(true);
+      expect(expectOk(ed25519.verifyLibsodium(kp.verifying, h(v.inputs.message), sig), "verifyLibsodium")).toBe(true);
     }
   });
 
@@ -63,12 +63,12 @@ describe("Ed25519", { timeout: 60_000 }, () => {
     const r = 12345678901234567890n;
     const rPrime = Point.BASE.multiply(r).add(torsion).toBytes();
     const s = signNonce(rPrime, r);
-    expect(ed25519.verify(kp.verifying, message, expectOk(ed25519.signature(s), "sig"))).toBe(true);
+    expect(expectOk(ed25519.verify(kp.verifying, message, expectOk(ed25519.signature(s), "sig")), "verify")).toBe(true);
     expect(expectOk(ed25519.verifyLibsodiumBytes(vk, message, s), "decode")).toBe(false);
   });
 
   test("S + L is rejected by both rules; S = L is rejected", () => {
-    const sig = ed25519.sign(kp.signing, message).bytes;
+    const sig = expectOk(ed25519.sign(kp.signing, message), "sign").bytes;
     const bumped = sig.slice();
     bumped.set(bigToLE(leToBig(sig.subarray(32)) + L, 32), 32);
     expect(expectOk(ed25519.verifyBytes(vk, message, bumped), "decode")).toBe(false);
@@ -88,7 +88,7 @@ describe("Ed25519", { timeout: 60_000 }, () => {
   });
 
   test("an R that does not decode verifies false (not an error)", () => {
-    const sig = ed25519.sign(kp.signing, message).bytes;
+    const sig = expectOk(ed25519.sign(kp.signing, message), "sign").bytes;
     sig.set(h("0200000000000000000000000000000000000000000000000000000000000000"), 0);
     expect(ed25519.verifyBytes(vk, message, sig)).toEqual({ ok: true, value: false });
   });

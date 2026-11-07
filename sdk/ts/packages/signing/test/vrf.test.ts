@@ -4,7 +4,7 @@ import { models } from "@kd5ujc/dilf4s-core";
 import { expand_message_xmd, hash_to_field } from "@noble/curves/abstract/hash-to-curve.js";
 import { sha512, sha256 } from "@noble/hashes/sha2.js";
 
-import { ecvrfDraft03, ecvrfEll2, ecvrfTai, type Vrf, type VrfError, type VrfSuiteName } from "../src/index.js";
+import { ecvrfDraft03, ecvrfEll2, ecvrfTai, type Vrf, type VrfError, type VrfRefusal, type VrfSuiteName } from "../src/index.js";
 import { draft03Challenge, draft03Equation, encodeToCurveEll2, fromUniformDraft03, hashToCurveDraft03 } from "../src/vrf.js";
 import { bigToLE, concat, leToBig } from "../src/internal/bytes.js";
 import { decodeDraft03, isSmallOrder, L, P, Point } from "../src/internal/edwards.js";
@@ -21,7 +21,7 @@ const suite = (name: string): Vrf<VrfSuiteName> => {
   if (s === undefined) throw new Error(`unknown suite ${name}`);
   return s;
 };
-const kindOf = (r: { ok: true } | { ok: false; error: VrfError }): string => (r.ok ? "valid" : r.error.kind);
+const kindOf = (r: { ok: true } | { ok: false; error: VrfRefusal }): string => (r.ok ? "valid" : r.error.kind);
 
 const big = (s: string | undefined): bigint => BigInt(`0x${(s ?? "").replace(/^0x/, "")}`);
 
@@ -136,7 +136,7 @@ describe("RFC 9381 and draft-03 examples", { timeout: 60_000 }, () => {
     for (const r of rows) {
       const sk = expectOk(v.signingKey(v === (ecvrfDraft03 as Vrf<VrfSuiteName>) ? h(get(r, "SK") + get(r, "PK")) : h(get(r, "SK"))), "sk");
       const alpha = h(get(r, "alpha"));
-      expect(hexOf(v.publicKey(sk).bytes)).toBe(get(r, "PK"));
+      expect(hexOf(expectOk(v.publicKey(sk), "publicKey").bytes)).toBe(get(r, "PK"));
       const proved = expectOk(v.prove(sk, alpha), "prove");
       expect(hexOf(proved.proof.bytes)).toBe(get(r, "pi"));
       expect(hexOf(proved.output.bytes)).toBe(get(r, "beta"));
