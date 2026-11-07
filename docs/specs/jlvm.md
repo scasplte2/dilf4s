@@ -42,7 +42,9 @@ string's or a number's span is read, so reading costs at most twice the text how
   - Any other single-key object is a parse error.
   - Any other object is a map expression, whose fields are evaluated.
 - **Aliases.** `getKey`, `setKey`, `deleteKey` and `size` are accepted for `get`, `set`, `unset` and `length`. The
-  canonical form records the operation's own name, so an alias never changes a program's identity.
+  canonical form records the operation's own name, so an alias never changes a program's identity. `jlvm_v1.json`'s
+  `aliases` pin each one: the program it writes, the same program with the own name, their one canonical form and
+  its identity.
 - **Arrays** are evaluated element-wise. There are no array-form operations.
   - An array whose first element is text naming an operation, or `var`, is a parse error, so text shaped like a call
     is never read as data by accident. The error names the call form, `{"+": [...]}`.
@@ -197,7 +199,8 @@ An evaluation ends with a value or one of the following errors. **Either way it 
 `Domain` and `Crypto` its **`op`**: where it arose, the wire name of the operation that refused (its own name, never an
 alias), or `var` for the read of a computed path (§4.1: a path that is neither text nor an array, text that does not
 parse as a path, or a segment of the wrong kind or wider than 64 bits). The innermost operation that refuses names it:
-`{"+": [1, {"abs": "x"}]}` is `Type` with `op` `abs`. The vectors record the kind and the `op`. `Malformed` and
+`{"+": [1, {"abs": "x"}]}` is `Type` with `op` `abs`. The vectors record the kind, the `op` and a `Crypto` error's
+`cause` (below). `Malformed` and
 `Limit` have no normative field.
 
 `OutOfGas` is pinned by its kind and the gas used, which is the whole limit (§7). Its `available` is that limit.
@@ -211,7 +214,8 @@ refusal of the cryptographic family the operation called (`jlvm-crypto-cause`): 
 (`Signing`), a `SigmaError`, a BN254 `ZkError`, a `Groth16Error`, a `VrfError`, or a `HashError` (a Merkle head's
 root of the wrong length). It has none for the operation's own checks of its arguments' shape (a width, a count, a
 head's fields) and for the proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
-The cause is informative, as messages are: the vectors record the kind and `op` only.
+The cause is **normative**, by its family and that family's kind (the inner error's fields are informative): the
+vectors record it as `{family: kind}` (`{"sigma": "InvalidPoint"}`), present exactly when the error has one.
 
 **Operation names.** The operations of language version 1 are a closed list, `jlvm-op` in `shared/schemas/jlvm.cddl`:
 each is a rule of its own wire name (`op-not = "!"`), so every language types it, and a canonical program naming

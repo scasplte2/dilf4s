@@ -2,9 +2,9 @@ package xyz.kd5ujc.jlvm
 
 /**
  * Every way a parse or an evaluation can fail; evaluation failures are reported together with the gas they used.
- * Generated from `shared/schemas/jlvm-errors.cddl`, with the Rust SDK's kinds and fields: the kind and the `op` of the
- * operation-level kinds are normative (docs/specs/jlvm.md §3); messages, a `Crypto` error's `cause` and `required` are
- * not.
+ * Generated from `shared/schemas/jlvm-errors.cddl`, with the Rust SDK's kinds and fields: the kind, the `op` of the
+ * operation-level kinds and a `Crypto` error's `cause` (by family and kind) are normative (docs/specs/jlvm.md §3);
+ * messages and `required` are not.
  */
 export xyz.kd5ujc.models.jlvm_errors.{JlvmCryptoCause => CryptoCause, JlvmCryptoCauseKind => CryptoCauseKind, JlvmError, JlvmErrorKind}
 

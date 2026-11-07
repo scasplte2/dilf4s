@@ -131,8 +131,9 @@ impl core::fmt::Display for JlvmCryptoCauseKind {
 
 /// `jlvm-error` (`shared/schemas/jlvm-errors.cddl`). An error family: its kinds are [`JlvmErrorKind`].
 ///
-/// A parse or evaluation failure, reported with the gas it used. The kind, and the `op` of the operation-level kinds,
-/// are normative (jlvm.md section 3); messages, `cause` and `required` are not.
+/// A parse or evaluation failure, reported with the gas it used. The kind, the `op` of the operation-level kinds and a
+/// Crypto error's `cause` (its family and that family's kind) are normative (jlvm.md section 3); messages, the cause's
+/// own fields and `required` are not.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum JlvmError {
     /// Not a program of this language version: bad JSON, an unknown operation (its name previewed in the message), a
@@ -175,9 +176,9 @@ pub enum JlvmError {
         op: JlvmSite,
         /// What was wrong.
         message: String,
-        /// The typed refusal of the cryptographic family the operation called, when one refused; absent for the operation's
-        /// own checks of its arguments' shape (a width, a count, a head's fields) and for proof structures whose refusals are
-        /// not yet generated families (Merkle, trie, Poseidon).
+        /// The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and
+        /// kind); absent for the operation's own checks of its arguments' shape (a width, a count, a head's fields) and for
+        /// proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
         cause: Option<JlvmCryptoCause>,
     },
     /// A resource bound: value depth or size, program depth or size.

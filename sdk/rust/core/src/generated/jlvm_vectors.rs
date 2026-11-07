@@ -116,6 +116,52 @@ pub type Hex = String;
 /// The codec of [`Hex`].
 pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 
+/// `jlvm-alias` (`shared/schemas/jlvm-vectors.cddl`).
+///
+/// A surface alias of an operation (jlvm.md section 1): "program", which names "alias", parses to the program "own"
+/// writes with the operation's own name, "op"; its canonical form ("cbor", canonical CBOR of jlvm.cddl's jlvm-program)
+/// names "op", never the alias; and "id" is that form's identity, taggedHash_SHA-256("dilf4s/jlvm/program/v1", cbor).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmAlias {
+    /// The `alias` entry.
+    pub alias: String,
+    /// The `op` entry.
+    pub op: super::jlvm::JlvmOp,
+    /// The `program` entry.
+    pub program: String,
+    /// The `own` entry.
+    pub own: String,
+    /// The `cbor` entry.
+    pub cbor: Hex,
+    /// The `id` entry.
+    pub id: Hex,
+}
+
+impl c::Model for JlvmAlias {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("alias", &c::Text, &self.alias, inner)?,
+            c::field("op", &c::ModelOf::<super::jlvm::JlvmOp>::NEW, &self.op, inner)?,
+            c::field("program", &c::Text, &self.program, inner)?,
+            c::field("own", &c::Text, &self.own, inner)?,
+            c::field("cbor", &HEX, &self.cbor, inner)?,
+            c::field("id", &HEX, &self.id, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["alias", "op", "program", "own", "cbor", "id"])?;
+        let f0 = fields.required("alias", &c::Text)?;
+        let f1 = fields.required("op", &c::ModelOf::<super::jlvm::JlvmOp>::NEW)?;
+        let f2 = fields.required("program", &c::Text)?;
+        let f3 = fields.required("own", &c::Text)?;
+        let f4 = fields.required("cbor", &HEX)?;
+        let f5 = fields.required("id", &HEX)?;
+        Ok(Self { alias: f0, op: f1, program: f2, own: f3, cbor: f4, id: f5 })
+    }
+}
+
 /// `jlvm-case` (`shared/schemas/jlvm-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JlvmCase {
@@ -170,16 +216,64 @@ impl c::Model for JlvmCase {
     }
 }
 
+/// `jlvm-cause` (`shared/schemas/jlvm-vectors.cddl`).
+///
+/// The refusal a Crypto error wraps (jlvm-errors.cddl `jlvm-crypto-cause`): its family, as the one key, and that family's
+/// kind.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JlvmCause {
+    /// A [`JlvmSigningCause`].
+    JlvmSigningCause(JlvmSigningCause),
+    /// A [`JlvmSigmaCause`].
+    JlvmSigmaCause(JlvmSigmaCause),
+    /// A [`JlvmZkCause`].
+    JlvmZkCause(JlvmZkCause),
+    /// A [`JlvmGroth16Cause`].
+    JlvmGroth16Cause(JlvmGroth16Cause),
+    /// A [`JlvmVrfCause`].
+    JlvmVrfCause(JlvmVrfCause),
+    /// A [`JlvmHashCause`].
+    JlvmHashCause(JlvmHashCause),
+}
+
+impl c::Model for JlvmCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::JlvmSigningCause(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmSigmaCause(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmZkCause(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmGroth16Cause(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmVrfCause(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmHashCause(a) => c::Model::to_value_at(a, depth),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[(&["signing"], &["signing"]), (&["sigma"], &["sigma"]), (&["zk"], &["zk"]), (&["groth16"], &["groth16"]), (&["vrf"], &["vrf"]), (&["hash"], &["hash"])], &[])? {
+            c::Alternative::Record(0) => <JlvmSigningCause as c::Model>::from_value(value).map(Self::JlvmSigningCause),
+            c::Alternative::Record(1) => <JlvmSigmaCause as c::Model>::from_value(value).map(Self::JlvmSigmaCause),
+            c::Alternative::Record(2) => <JlvmZkCause as c::Model>::from_value(value).map(Self::JlvmZkCause),
+            c::Alternative::Record(3) => <JlvmGroth16Cause as c::Model>::from_value(value).map(Self::JlvmGroth16Cause),
+            c::Alternative::Record(4) => <JlvmVrfCause as c::Model>::from_value(value).map(Self::JlvmVrfCause),
+            c::Alternative::Record(5) => <JlvmHashCause as c::Model>::from_value(value).map(Self::JlvmHashCause),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
 /// `jlvm-error` (`shared/schemas/jlvm-vectors.cddl`).
 ///
 /// "op" is present exactly for the kinds Type, Arity, Arithmetic, Domain and Crypto: the wire name of the operation that
-/// refused (jlvm.cddl), or "var" for the read of a computed path. OutOfGas is pinned by its kind and the case's gasUsed.
+/// refused (jlvm.cddl), or "var" for the read of a computed path. "cause" is present exactly when a Crypto error wraps a
+/// cryptographic family's refusal (jlvm.md section 3). OutOfGas is pinned by its kind and the case's gasUsed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JlvmError {
     /// The `error` entry.
     pub error: JlvmErrorKind,
     /// The `op` entry.
     pub op: Option<super::jlvm_errors::JlvmSite>,
+    /// The `cause` entry.
+    pub cause: Option<JlvmCause>,
 }
 
 impl c::Model for JlvmError {
@@ -188,14 +282,16 @@ impl c::Model for JlvmError {
         c::record([
             c::field("error", &JLVM_ERROR_KIND, &self.error, inner)?,
             c::optional_field("op", &c::ModelOf::<super::jlvm_errors::JlvmSite>::NEW, self.op.as_ref(), inner)?,
+            c::optional_field("cause", &c::ModelOf::<JlvmCause>::NEW, self.cause.as_ref(), inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["error", "op"])?;
+        let fields = c::Fields::of(value, &["error", "op", "cause"])?;
         let f0 = fields.required("error", &JLVM_ERROR_KIND)?;
         let f1 = fields.optional("op", &c::ModelOf::<super::jlvm_errors::JlvmSite>::NEW)?;
-        Ok(Self { error: f0, op: f1 })
+        let f2 = fields.optional("cause", &c::ModelOf::<JlvmCause>::NEW)?;
+        Ok(Self { error: f0, op: f1, cause: f2 })
     }
 }
 
@@ -206,6 +302,50 @@ pub type JlvmErrorKind = super::jlvm_errors::JlvmErrorKind;
 
 /// The codec of [`JlvmErrorKind`].
 pub const JLVM_ERROR_KIND: c::ModelOf<super::jlvm_errors::JlvmErrorKind> = c::ModelOf::<super::jlvm_errors::JlvmErrorKind>::NEW;
+
+/// `jlvm-groth16-cause` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmGroth16Cause {
+    /// The `groth16` entry.
+    pub groth16: super::crypto_errors::Groth16ErrorKind,
+}
+
+impl c::Model for JlvmGroth16Cause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("groth16", &c::ModelOf::<super::crypto_errors::Groth16ErrorKind>::NEW, &self.groth16, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["groth16"])?;
+        let f0 = fields.required("groth16", &c::ModelOf::<super::crypto_errors::Groth16ErrorKind>::NEW)?;
+        Ok(Self { groth16: f0 })
+    }
+}
+
+/// `jlvm-hash-cause` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmHashCause {
+    /// The `hash` entry.
+    pub hash: super::hash_errors::HashErrorKind,
+}
+
+impl c::Model for JlvmHashCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("hash", &c::ModelOf::<super::hash_errors::HashErrorKind>::NEW, &self.hash, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["hash"])?;
+        let f0 = fields.required("hash", &c::ModelOf::<super::hash_errors::HashErrorKind>::NEW)?;
+        Ok(Self { hash: f0 })
+    }
+}
 
 /// `jlvm-outcome` (`shared/schemas/jlvm-vectors.cddl`).
 ///
@@ -228,11 +368,55 @@ impl c::Model for JlvmOutcome {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[(&["cbor"], &["cbor", "json"]), (&["error"], &["error", "op"])], &[])? {
+        match c::select_alternative(value, &[(&["cbor"], &["cbor", "json"]), (&["error"], &["cause", "error", "op"])], &[])? {
             c::Alternative::Record(0) => <JlvmValue as c::Model>::from_value(value).map(Self::JlvmValue),
             c::Alternative::Record(1) => <JlvmError as c::Model>::from_value(value).map(Self::JlvmError),
             other => Err(c::unknown_alternative(other)),
         }
+    }
+}
+
+/// `jlvm-sigma-cause` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmSigmaCause {
+    /// The `sigma` entry.
+    pub sigma: super::crypto_errors::SigmaErrorKind,
+}
+
+impl c::Model for JlvmSigmaCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("sigma", &c::ModelOf::<super::crypto_errors::SigmaErrorKind>::NEW, &self.sigma, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["sigma"])?;
+        let f0 = fields.required("sigma", &c::ModelOf::<super::crypto_errors::SigmaErrorKind>::NEW)?;
+        Ok(Self { sigma: f0 })
+    }
+}
+
+/// `jlvm-signing-cause` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmSigningCause {
+    /// The `signing` entry.
+    pub signing: super::crypto_errors::CryptoErrorKind,
+}
+
+impl c::Model for JlvmSigningCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("signing", &c::ModelOf::<super::crypto_errors::CryptoErrorKind>::NEW, &self.signing, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["signing"])?;
+        let f0 = fields.required("signing", &c::ModelOf::<super::crypto_errors::CryptoErrorKind>::NEW)?;
+        Ok(Self { signing: f0 })
     }
 }
 
@@ -271,6 +455,8 @@ pub struct JlvmVectors {
     pub source: String,
     /// The `cases` entry.
     pub cases: Vec<JlvmCase>,
+    /// The `aliases` entry.
+    pub aliases: Vec<JlvmAlias>,
 }
 
 impl c::Model for JlvmVectors {
@@ -283,17 +469,63 @@ impl c::Model for JlvmVectors {
             c::field("gasLimit", &c::UINT, &self.gas_limit, inner)?,
             c::field("source", &c::Text, &self.source, inner)?,
             c::field("cases", &c::VecOf { element: c::ModelOf::<JlvmCase>::NEW, min: 0, max: None }, &self.cases, inner)?,
+            c::field("aliases", &c::VecOf { element: c::ModelOf::<JlvmAlias>::NEW, min: 0, max: None }, &self.aliases, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "schedule", "gasLimit", "source", "cases"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "schedule", "gasLimit", "source", "cases", "aliases"])?;
         fields.required("spec", &c::LiteralText("docs/specs/jlvm.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         fields.required("schedule", &c::LiteralInt(1))?;
         let f3 = fields.required("gasLimit", &c::UINT)?;
         let f4 = fields.required("source", &c::Text)?;
         let f5 = fields.required("cases", &c::VecOf { element: c::ModelOf::<JlvmCase>::NEW, min: 0, max: None })?;
-        Ok(Self { gas_limit: f3, source: f4, cases: f5 })
+        let f6 = fields.required("aliases", &c::VecOf { element: c::ModelOf::<JlvmAlias>::NEW, min: 0, max: None })?;
+        Ok(Self { gas_limit: f3, source: f4, cases: f5, aliases: f6 })
+    }
+}
+
+/// `jlvm-vrf-cause` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmVrfCause {
+    /// The `vrf` entry.
+    pub vrf: super::crypto_errors::VrfErrorKind,
+}
+
+impl c::Model for JlvmVrfCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("vrf", &c::ModelOf::<super::crypto_errors::VrfErrorKind>::NEW, &self.vrf, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["vrf"])?;
+        let f0 = fields.required("vrf", &c::ModelOf::<super::crypto_errors::VrfErrorKind>::NEW)?;
+        Ok(Self { vrf: f0 })
+    }
+}
+
+/// `jlvm-zk-cause` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmZkCause {
+    /// The `zk` entry.
+    pub zk: super::crypto_errors::ZkErrorKind,
+}
+
+impl c::Model for JlvmZkCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("zk", &c::ModelOf::<super::crypto_errors::ZkErrorKind>::NEW, &self.zk, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["zk"])?;
+        let f0 = fields.required("zk", &c::ModelOf::<super::crypto_errors::ZkErrorKind>::NEW)?;
+        Ok(Self { zk: f0 })
     }
 }

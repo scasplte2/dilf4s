@@ -44,6 +44,7 @@ them. Every other field is informative. The normative fields are:
 | canonical encoding | `DuplicateKey` | `key`: the repeated key's preview, its `head` and `length` (§8) |
 | state key | `InvalidSegment`, `SegmentTooLong` | `segment`: the first refused segment's position, from 0 (`versioned-trie.md` §2) |
 | JLVM | `Type`, `Arity`, `Arithmetic`, `Domain`, `Crypto` | `op`: the operation's wire name, or `var` (`jlvm.md` §3). `OutOfGas` has none: its `required` may be summed only as far as the limit, and the gas used (the limit) is pinned |
+| JLVM | `Crypto` | `cause`, when it has one: the cryptographic family whose refusal it wraps and that family's kind (`Sigma.InvalidPoint`, §1), never the inner error's fields (`jlvm.md` §3) |
 | hash | `InvalidHex` | `offset`: the position of the first character that is not an ASCII hex digit, or the text's length when its digits are odd in number (`canonical-encoding.md` §4); every character before it is ASCII, so it is the same in UTF-8 bytes, UTF-16 units and code points |
 | hash | `InvalidExpansion` | `refusal`: `emptyDst` or `outputLength`, checked in that order (`canonical-encoding.md` §4) |
 | every other kind | | none: the kind alone |
@@ -273,8 +274,13 @@ though most names (`+`, `==`) are not identifiers, and a vector naming another `
 have a row. The Rust tests check every kind of the generated `ALL` has a row and compare every case's kind and `op`;
 an `op` is present exactly for the kinds that carry one. The TypeScript test checks the schema's side only: every
 kind, listed in a `Record` keyed by the generated union, has a row, and `op` is present exactly where it should be.
-The SP1 guest runs, besides its sample, the first case of each kind and of the `var` site, and compares kind and `op`.
-A `Crypto` error's `cause` (`jlvm.md` §3) is informative and not recorded.
+A `Crypto` error's `cause` (`jlvm.md` §3) is recorded as `{family: kind}`, present exactly when the error has one;
+the reference's vector generator writes it and its `JlvmErrorCoverageSuite` checks it appears on `Crypto` rows only,
+the Rust tests compare it on every case, and the TypeScript test checks it is on `Crypto` rows only. The SP1 guest
+runs, besides its sample, the first case of each kind, of the `var` site and of each recorded cause, and compares kind,
+`op` and `cause`. The `aliases` rows pin the surface's aliases: the reference and Rust parse each row's program and its
+own-name form to one program and check its canonical form and identity; the TypeScript test checks the form decodes to
+the own name and the identity is its tagged hash.
 
 **Limits.** Every limit the specs state (`MaxValueBytes`, `MaxChunkBytes`, `MaxProofWeight`, the depth, digit, rational,
 key, chunk, sigma, KES and JLVM limits) is defined once, in `shared/schemas/limits.cddl`, and generated into each SDK

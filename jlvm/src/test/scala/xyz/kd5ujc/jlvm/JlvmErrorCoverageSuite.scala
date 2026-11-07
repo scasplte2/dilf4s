@@ -37,6 +37,17 @@ object JlvmErrorCoverageSuite extends SimpleIOSuite {
         }
       }
 
+  test("a cause is recorded only for Crypto errors, and every cause family a vector names is one of the schema's") {
+    IO.blocking(new String(Files.readAllBytes(JlvmVectors.path), UTF_8)).flatMap(io.circe.parser.parse(_).liftTo[IO]).map { v =>
+      val outcomes = v.hcursor.downField("cases").as[List[Json]].getOrElse(Nil).map(_.hcursor.downField("outcome"))
+      val caused = outcomes.filter(_.downField("cause").succeeded)
+      val families = caused.flatMap(_.downField("cause").keys.toList.flatten).toSet
+      expect(caused.forall(_.get[String]("error").contains("Crypto")), "a cause on a kind other than Crypto")
+        .and(expect(caused.nonEmpty, "no row records a cause"))
+        .and(expect(families.subsetOf(CryptoCauseKind.values.map(_.toLowerCase).toSet), s"unknown families: $families"))
+    }
+  }
+
   /** Which kind of site a site is: an operation (`Op`) or the read of a computed path (`Var`). */
   def category(s: Site): String = s match {
     case _: Op => "Op"

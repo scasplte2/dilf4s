@@ -1,4 +1,7 @@
 ;# import jlvm-errors as errors
+;# import jlvm as jlvm
+;# import crypto-errors as crypto
+;# import hash-errors as hash
 ; Schema of shared/vectors/jlvm_v1.json (conformance vectors for docs/specs/jlvm.md, language v1, gas schedule v1).
 ; Each case is a program in the strict surface and its input data, both as JSON surface text, evaluated with the
 ; case's host bindings (none if absent; each value is JSON surface text, or, under "built", a value built with shared
@@ -12,6 +15,7 @@ jlvm-vectors = {
   "gasLimit": uint,
   "source": text,
   "cases": [* jlvm-case],
+  "aliases": [* jlvm-alias],
 }
 
 jlvm-case = {
@@ -33,8 +37,30 @@ jlvm-outcome = jlvm-value / jlvm-error
 jlvm-value = { "cbor": hex, ? "json": text }
 
 ; "op" is present exactly for the kinds Type, Arity, Arithmetic, Domain and Crypto: the wire name of the operation that
-; refused (jlvm.cddl), or "var" for the read of a computed path. OutOfGas is pinned by its kind and the case's gasUsed.
-jlvm-error = { "error": jlvm-error-kind, ? "op": errors.jlvm-site }
+; refused (jlvm.cddl), or "var" for the read of a computed path. "cause" is present exactly when a Crypto error wraps a
+; cryptographic family's refusal (jlvm.md section 3). OutOfGas is pinned by its kind and the case's gasUsed.
+jlvm-error = { "error": jlvm-error-kind, ? "op": errors.jlvm-site, ? "cause": jlvm-cause }
+
+; The refusal a Crypto error wraps (jlvm-errors.cddl `jlvm-crypto-cause`): its family, as the one key, and that family's
+; kind.
+jlvm-cause = jlvm-signing-cause / jlvm-sigma-cause / jlvm-zk-cause / jlvm-groth16-cause / jlvm-vrf-cause / jlvm-hash-cause
+
+jlvm-signing-cause = { "signing": crypto.crypto-error-kind }
+
+jlvm-sigma-cause = { "sigma": crypto.sigma-error-kind }
+
+jlvm-zk-cause = { "zk": crypto.zk-error-kind }
+
+jlvm-groth16-cause = { "groth16": crypto.groth16-error-kind }
+
+jlvm-vrf-cause = { "vrf": crypto.vrf-error-kind }
+
+jlvm-hash-cause = { "hash": hash.hash-error-kind }
+
+; A surface alias of an operation (jlvm.md section 1): "program", which names "alias", parses to the program "own"
+; writes with the operation's own name, "op"; its canonical form ("cbor", canonical CBOR of jlvm.cddl's jlvm-program)
+; names "op", never the alias; and "id" is that form's identity, taggedHash_SHA-256("dilf4s/jlvm/program/v1", cbor).
+jlvm-alias = { "alias": text, "op": jlvm.jlvm-op, "program": text, "own": text, "cbor": hex, "id": hex }
 
 ; A kind of JlvmError (jlvm-errors.cddl).
 jlvm-error-kind = errors.jlvm-error-kind

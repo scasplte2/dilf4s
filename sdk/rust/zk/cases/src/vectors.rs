@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use dilf4s_core::codec::Model;
 use dilf4s_core::generated::jlvm_errors::JlvmSite;
-use dilf4s_core::generated::jlvm_vectors::{JlvmErrorKind, JlvmOutcome, JlvmVectors};
+use dilf4s_core::generated::jlvm_vectors::{JlvmCause, JlvmErrorKind, JlvmOutcome, JlvmVectors};
 use dilf4s_core::generated::kes_vectors::{
     KesCheck, KesConstruction, KesOutcome, KesParameters, KesRefusal, KesVectors,
 };
@@ -46,8 +46,8 @@ pub enum Expect {
     Verified,
     /// A JLVM outcome: the value's canonical CBOR or the error, the gas and the number of warnings.
     Jlvm {
-        /// The canonical CBOR, or the error's kind and normative `op`.
-        result: Result<Vec<u8>, (String, Option<String>)>,
+        /// The canonical CBOR, or the error's kind, normative `op` and normative `cause` (`Family.Kind`).
+        result: Result<Vec<u8>, (String, Option<String>, Option<String>)>,
         /// The gas used.
         gas: u64,
         /// The number of warnings.
@@ -73,7 +73,7 @@ impl Expect {
             | (Self::Verified, Ok(Output::Bytes(_)))
             | (Self::SignerParity { .. }, Ok(Output::Address(_))) => true,
             (Self::Jlvm { result, gas, warnings }, Ok(Output::Jlvm { result: got, gas: g, warnings: w })) => {
-                let got = got.clone().map_err(|(kind, op, _)| (kind, op));
+                let got = got.clone().map_err(|(kind, op, cause, _)| (kind, op, cause));
                 got == *result && g == gas && w == warnings
             }
             _ => false,
@@ -494,8 +494,8 @@ pub fn vrf(suite: &str, rejections: bool) -> Result<Vec<Named>, Error> {
     Ok(out)
 }
 
-/// The index of the first case with each error kind of the schema, and of the first whose `op` is `var`: so every
-/// kind and both kinds of site run wherever the picked cases do. A kind with no row is an error (the coverage gate,
+/// The index of the first case with each error kind of the schema, of the first whose `op` is `var`, and of the first
+/// with each recorded `cause`: so every kind, both kinds of site and every cause run wherever the picked cases do. A kind with no row is an error (the coverage gate,
 /// conformance.md section 6).
 fn first_errors(v: &JlvmVectors) -> Result<Vec<usize>, Error> {
     let error = |c: &dilf4s_core::generated::jlvm_vectors::JlvmCase| match &c.outcome {
@@ -517,7 +517,29 @@ fn first_errors(v: &JlvmVectors) -> Result<Vec<usize>, Error> {
         .position(|c| error(c).is_some_and(|e| e.op == Some(JlvmSite::Var)))
         .ok_or_else(|| String::from("jlvm_v1.json: no row has op var"))?;
     firsts.push(var);
+    // and the first row of each cause a Crypto error records, so every pinned cause runs in the guest too
+    let mut causes: Vec<String> = Vec::new();
+    for (i, c) in v.cases.iter().enumerate() {
+        if let Some(name) = error(c).and_then(|e| e.cause).map(cause)
+            && !causes.contains(&name)
+        {
+            causes.push(name);
+            firsts.push(i);
+        }
+    }
     Ok(firsts)
+}
+
+/// A row's cause as `Family.Kind`, as the guest renders an error's.
+fn cause(c: JlvmCause) -> String {
+    match c {
+        JlvmCause::JlvmSigningCause(c) => format!("Signing.{}", c.signing),
+        JlvmCause::JlvmSigmaCause(c) => format!("Sigma.{}", c.sigma),
+        JlvmCause::JlvmZkCause(c) => format!("Zk.{}", c.zk),
+        JlvmCause::JlvmGroth16Cause(c) => format!("Groth16.{}", c.groth16),
+        JlvmCause::JlvmVrfCause(c) => format!("Vrf.{}", c.vrf),
+        JlvmCause::JlvmHashCause(c) => format!("Hash.{}", c.hash),
+    }
 }
 
 /// The JLVM cases `keep` picks (by index and case), and the first case of each error kind and of the `var` site, run
@@ -534,7 +556,9 @@ pub fn jlvm(
         .map(|(_, c)| {
             let result = match &c.outcome {
                 JlvmOutcome::JlvmValue(x) => Ok(bytes(&x.cbor)?),
-                JlvmOutcome::JlvmError(e) => Err((e.error.to_string(), e.op.map(|s| s.to_string()))),
+                JlvmOutcome::JlvmError(e) => {
+                    Err((e.error.to_string(), e.op.map(|s| s.to_string()), e.cause.clone().map(cause)))
+                }
             };
             let case = Case::Jlvm {
                 program: c.program.clone(),

@@ -18,11 +18,15 @@ use std::path::PathBuf;
 
 use common::{Step, build};
 use dilf4s_core::codec::Model;
-use dilf4s_core::generated::jlvm_vectors::{BuiltStep, BuiltValue, JlvmCase, JlvmErrorKind, JlvmOutcome, JlvmVectors};
+use dilf4s_core::generated::jlvm_vectors::{
+    BuiltStep, BuiltValue, JlvmCase, JlvmCause, JlvmErrorKind, JlvmGroth16Cause, JlvmHashCause, JlvmOutcome,
+    JlvmSigmaCause, JlvmSigningCause, JlvmVectors, JlvmVrfCause, JlvmZkCause,
+};
+use dilf4s_core::hash::HashAlgorithm;
 use dilf4s_core::{cbor, hex, json};
 use dilf4s_jlvm::{
-    Compiled, Config, ErrorSite, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Outcome, Site, Value, parse,
-    parse_value,
+    Compiled, Config, CryptoCause, ErrorSite, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Op, OpClass,
+    Outcome, Site, Value, parse, parse_value,
 };
 
 fn load() -> JlvmVectors {
@@ -78,14 +82,45 @@ fn run(jlvm: &Jlvm<Native>, case: &JlvmCase, default_limit: u64) -> Outcome {
 fn expected(case: &JlvmCase) -> String {
     match &case.outcome {
         JlvmOutcome::JlvmValue(v) => format!("value {}", v.cbor),
-        JlvmOutcome::JlvmError(e) => format!("error {:?} op {:?}", e.error, e.op),
+        JlvmOutcome::JlvmError(e) => format!("error {:?} op {:?} cause {:?}", e.error, e.op, e.cause),
     }
 }
 
 fn actual(o: &Outcome) -> String {
     match &o.result {
         Ok(v) => format!("value {}", hex::encode(&cbor::encode(v))),
-        Err(e) => format!("error {:?} op {:?}", e.kind(), e.site()),
+        Err(e) => format!("error {:?} op {:?} cause {:?}", e.kind(), e.site(), cause(e)),
+    }
+}
+
+/// A Crypto error's cause as the vectors record it: its family and that family's kind.
+fn cause(e: &JlvmError) -> Option<JlvmCause> {
+    let JlvmError::Crypto { cause: Some(c), .. } = e else { return None };
+    Some(match c {
+        CryptoCause::Signing { error } => JlvmCause::JlvmSigningCause(JlvmSigningCause { signing: error.kind() }),
+        CryptoCause::Sigma { error } => JlvmCause::JlvmSigmaCause(JlvmSigmaCause { sigma: error.kind() }),
+        CryptoCause::Zk { error } => JlvmCause::JlvmZkCause(JlvmZkCause { zk: error.kind() }),
+        CryptoCause::Groth16 { error } => JlvmCause::JlvmGroth16Cause(JlvmGroth16Cause { groth16: error.kind() }),
+        CryptoCause::Vrf { error } => JlvmCause::JlvmVrfCause(JlvmVrfCause { vrf: error.kind() }),
+        CryptoCause::Hash { error } => JlvmCause::JlvmHashCause(JlvmHashCause { hash: error.kind() }),
+    })
+}
+
+/// Each alias row (jlvm.md section 1): the alias parses to the program its own name writes, whose canonical form names
+/// the operation, and whose identity is the row's.
+#[test]
+fn aliases_parse_to_their_operations() {
+    let vectors = load();
+    assert_eq!(vectors.aliases.len(), 4, "one row per alias");
+    for row in &vectors.aliases {
+        let alias = parse(&row.program).unwrap_or_else(|e| panic!("{}: {e}", row.alias));
+        let own = parse(&row.own).unwrap_or_else(|e| panic!("{}: {e}", row.op));
+        assert_eq!(alias, own, "{} parses as {}", row.alias, row.op);
+        assert_eq!(Op::from_name(&row.alias), Some(row.op), "{} names {}", row.alias, row.op);
+        assert_eq!(hex::encode(&alias.encode().unwrap()), row.cbor, "{}: canonical form", row.alias);
+        assert_eq!(hex::encode(&alias.id(HashAlgorithm::Sha256).unwrap()), row.id, "{}: identity", row.alias);
+        let written = hex::encode(row.alias.as_bytes());
+        assert!(!row.cbor.contains(&written), "{}: the canonical form never names the alias", row.alias);
     }
 }
 
@@ -179,6 +214,7 @@ fn every_jlvm_error_kind_has_a_row() {
     }
     for (name, e) in &errors {
         assert_eq!(has_site(e.error), e.op.is_some(), "{name}: {:?} with op {:?}", e.error, e.op);
+        assert!(e.cause.is_none() || e.error == JlvmErrorKind::Crypto, "{name}: a cause on {:?}", e.error);
     }
     assert!(errors.iter().any(|(_, e)| e.op == Some(Site::Var)), "no row has op var");
 }

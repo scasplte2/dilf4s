@@ -8,6 +8,7 @@ import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.circe.CanonicalCirce
+import xyz.kd5ujc.core.hash.Sha256
 
 import io.circe.syntax._
 import io.circe.{Decoder, Json}
@@ -81,12 +82,56 @@ object JlvmVectors {
 
   private def outcome(o: Outcome): Json =
     o.result.fold(
-      e => Json.fromFields(List("error" -> (e.kind: String).asJson) ++ e.site.map(s => "op" -> s.wire.asJson)),
+      e =>
+        Json.fromFields(
+          List("error" -> (e.kind: String).asJson) ++ e.site.map(s => "op" -> s.wire.asJson) ++ cause(e).map("cause" -> _)
+        ),
       v =>
         Json
           .obj("cbor" -> Cbor.encode(v).toHex.asJson)
           .deepMerge(JsonSurface.render(v).toOption.fold(Json.obj())(t => Json.obj("json" -> t.asJson)))
     )
+
+  /** A Crypto error's cause as the vectors record it: `{family: kind}`, the family's name in lower case. */
+  def cause(e: JlvmError): Option[Json] = e match {
+    case JlvmError.Crypto(_, _, Some(c)) =>
+      val kind: String = c match {
+        case CryptoCause.Signing(x) => x.kind
+        case CryptoCause.Sigma(x)   => x.kind
+        case CryptoCause.Zk(x)      => x.kind
+        case CryptoCause.Groth16(x) => x.kind
+        case CryptoCause.Vrf(x)     => x.kind
+        case CryptoCause.Hash(x)    => x.kind
+      }
+      Some(Json.obj((c.kind: String).toLowerCase -> kind.asJson))
+    case _ => None
+  }
+
+  /** The arguments each aliased operation's row applies it to. */
+  private def aliasArgs(op: Op): String = op match {
+    case Op.Get    => """[{"var": "m"}, "k"]"""
+    case Op.Set    => """[{"var": "m"}, "k", 1]"""
+    case Op.Unset  => """[{"var": "m"}, "k"]"""
+    case Op.Length => """[{"var": "xs"}]"""
+    case other     => sys.error(s"no alias row for ${other.wire}")
+  }
+
+  /** Each alias of [[Ops.Aliases]]: what it parses to, its canonical form (the own name) and that form's identity. */
+  def aliases: List[Json] =
+    Ops.Aliases.toList.sortBy(_._1).map {
+      case (alias, op) =>
+        val program = s"""{"$alias": ${aliasArgs(op)}}"""
+        val own = s"""{"${op.wire}": ${aliasArgs(op)}}"""
+        val parsed = Parser.parse(program).fold(e => sys.error(s"$alias: ${e.message}"), identity)
+        Json.obj(
+          "alias"   -> alias.asJson,
+          "op"      -> op.wire.asJson,
+          "program" -> program.asJson,
+          "own"     -> own.asJson,
+          "cbor"    -> Parser.encode(parsed).fold(e => sys.error(e.message), _.toHex).asJson,
+          "id"      -> Parser.id[Sha256](parsed).fold(e => sys.error(e.message), _.bytes.toHex).asJson
+        )
+    }
 
   def render(jlvm: Jlvm, in: Inputs): String =
     Json
@@ -105,7 +150,8 @@ object JlvmVectors {
             i.gasLimit.map(l => "gasLimit" -> l.asJson) ++
             List("outcome" -> outcome(o), "gasUsed" -> o.gasUsed.value.asJson, "warnings" -> o.warnings.size.asJson)
           )
-        }.asJson
+        }.asJson,
+        "aliases" -> aliases.asJson
       )
       .spaces2 + "\n"
 }
@@ -129,6 +175,32 @@ object JlvmVectorsSuite extends IOSuite {
           committed == JlvmVectors.render(jlvm, in),
           s"${JlvmVectors.path} is stale; regenerate with: sbt \"jlvm/Test/runMain xyz.kd5ujc.jlvm.JlvmVectorGen\""
         )
+      }
+  }
+
+  test("each alias row: the alias parses to the program its own name writes, whose canonical form names the operation") {
+    case (_, _) =>
+      IO.blocking(new String(Files.readAllBytes(JlvmVectors.path), UTF_8)).flatMap(io.circe.parser.parse(_).liftTo[IO]).map { v =>
+        val rows = v.hcursor.downField("aliases").as[List[Json]].getOrElse(Nil)
+        rows.foldLeft(expect.same(Ops.Aliases.size, rows.size)) { (acc, row) =>
+          val c = row.hcursor
+          val field = (k: String) => c.get[String](k).getOrElse("")
+          val (alias, own) = (Parser.parse(field("program")), Parser.parse(field("own")))
+          // the recorded form decodes to the program the own name writes
+          val decoded = scodec.bits.ByteVector.fromHex(field("cbor")).toRight(JlvmError.Malformed("hex")).flatMap(Parser.decode)
+          acc
+            .and(expect(alias.isRight && alias == own, s"${field("alias")} parses as ${field("op")}"))
+            .and(expect.same(Ops.named(field("alias")).map(_.wire), Some(field("op"))))
+            .and(expect.same(Right(field("cbor")), alias.flatMap(Parser.encode).map(_.toHex)))
+            .and(expect(decoded.isRight && decoded == own, s"${field("alias")}: the recorded form is the own name's program"))
+            .and(expect.same(Right(field("id")), alias.flatMap(Parser.id[Sha256]).map(_.bytes.toHex)))
+            .and(
+              expect(
+                !field("cbor").contains(scodec.bits.ByteVector(field("alias").getBytes(UTF_8)).toHex),
+                "the form never names the alias"
+              )
+            )
+        }
       }
   }
 

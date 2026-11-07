@@ -55,8 +55,9 @@ export const JlvmCryptoCauseKind: c.Codec<JlvmCryptoCauseKind> = c.union<JlvmCry
 /**
  * `jlvm-error` (`shared/schemas/jlvm-errors.cddl`): an error family, by `kind` (`JlvmErrorKind`).
  *
- * A parse or evaluation failure, reported with the gas it used. The kind, and the `op` of the operation-level kinds,
- * are normative (jlvm.md section 3); messages, `cause` and `required` are not.
+ * A parse or evaluation failure, reported with the gas it used. The kind, the `op` of the operation-level kinds and a
+ * Crypto error's `cause` (its family and that family's kind) are normative (jlvm.md section 3); messages, the cause's
+ * own fields and `required` are not.
  */
 export type JlvmError =
   /**
@@ -108,9 +109,9 @@ export type JlvmError =
       /** What was wrong. */
       readonly message: string;
       /**
-       * The typed refusal of the cryptographic family the operation called, when one refused; absent for the operation's
-       * own checks of its arguments' shape (a width, a count, a head's fields) and for proof structures whose refusals are
-       * not yet generated families (Merkle, trie, Poseidon).
+       * The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and
+       * kind); absent for the operation's own checks of its arguments' shape (a width, a count, a head's fields) and for
+       * proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
        */
       readonly cause?: JlvmCryptoCause;
     }
