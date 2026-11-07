@@ -262,7 +262,7 @@ object TrieSuite extends SimpleIOSuite with Checkers {
         val proof = t.prove(queries, List(hex"01")).toOption.get
         val decoded = TrieProofs
           .encode(proof)
-          .map(Cbor.encode)
+          .map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded)
           .flatMap(b => Cbor.decode(b).leftMap(e => TrieError.Encoding(e.toString)))
           .flatMap(TrieProofs.decode[Sha256])
         expect.same(Right(proof), decoded)
@@ -350,7 +350,8 @@ object TrieSuite extends SimpleIOSuite with Checkers {
     forall(Gen.zip(opsGen(fixed2), Gen.listOfN(4, keyGen(fixed2)))) {
       case (ops, keys) =>
         val t = build(fixed2, ops)
-        val size = (p: TrieProof[Sha256]) => TrieProofs.encode(p).map(v => Cbor.encode(v).size).toOption.get
+        val size =
+          (p: TrieProof[Sha256]) => TrieProofs.encode(p).map(v => xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v).size).toOption.get
         val batch = size(t.prove(keys).toOption.get)
         val separate = keys.map(k => size(t.prove(List(k)).toOption.get)).sum
         expect(batch <= separate, s"batch $batch > separate $separate")

@@ -32,7 +32,7 @@ object KeyOrderingSuite extends SimpleIOSuite with Checkers {
       val m = CanonicalValue
         .map(keys.zipWithIndex.map { case (k, i) => k -> CanonicalValue.CInt(i) }.toMap)
         .fold(e => sys.error(e.toString), identity)
-      expect(Cbor.encode(m) == BufferedCbor.encode(m))
+      expect(CanonicalGens.encoded(m) == BufferedCbor.encode(m))
     }
   }
 }

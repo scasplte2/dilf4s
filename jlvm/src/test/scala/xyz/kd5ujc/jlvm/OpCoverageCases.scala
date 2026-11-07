@@ -478,6 +478,46 @@ object OpCoverageCases extends IOApp {
   }
 
   /**
+   * Sort keys past the encoding ceiling (jlvm.md §7): a collection heavier than 2^31 - 9 bytes, the JVM's largest array,
+   * is a `Limit` in `unique` and `intersect`, refused from its weight on every backend, never an allocation. `intersect`
+   * keys its second array whole, and its first only up to the first element missing from the second.
+   */
+  val sortKeyCeiling: List[Case] = {
+    val heavy = BuiltValues.ofWeight(xyz.kd5ujc.core.canonical.Cbor.MaxEncodedBytes + 1)
+    val limit = Option(1L << 40)
+    List(
+      Case(
+        "dilf4s unique: an element past the sort-key ceiling is Limit",
+        """{"unique": {"var": "$xs"}}""",
+        CNull,
+        limit,
+        Map("xs" -> heavy.copies(1))
+      ),
+      Case(
+        "dilf4s intersect: an element past the sort-key ceiling in the second array is Limit",
+        """{"intersect": [{"var": "a"}, {"var": "$xs"}]}""",
+        m("a" -> a(int(1))),
+        limit,
+        Map("xs" -> heavy.copies(1))
+      ),
+      Case(
+        "dilf4s intersect: an element past the sort-key ceiling after one missing from the second array is not keyed: false",
+        """{"intersect": [{"var": "$xs"}, {"var": "b"}]}""",
+        m("b" -> a(int(1))),
+        limit,
+        Map("xs" -> heavy.wrap(a(int(0), BuiltValues.Hole)))
+      ),
+      Case(
+        "dilf4s intersect: an element past the sort-key ceiling before one missing from the second array is Limit",
+        """{"intersect": [{"var": "$xs"}, {"var": "b"}]}""",
+        m("b" -> a(int(1))),
+        limit,
+        Map("xs" -> heavy.wrap(a(BuiltValues.Hole, int(0))))
+      )
+    )
+  }
+
+  /**
    * Error rows the sweep does not reach (jlvm.md §3): each refusal a computed `var` path gives, whose site is `var`
    * rather than an operation; a nested refusal, whose `op` is the inner operation's; and a spread that runs out of gas
    * while its elements are sized, where `OutOfGas` is pinned by its kind and the gas used (the whole limit) alone.
@@ -520,7 +560,7 @@ object OpCoverageCases extends IOApp {
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
       .mapN((secp, mk, tr) =>
         sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ proofWeight(mk) ++ tries(tr) ++ sigmaBounds ++
-        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites
+        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites ++ sortKeyCeiling
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)

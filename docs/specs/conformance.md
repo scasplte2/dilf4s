@@ -64,11 +64,22 @@ A refusal costs no more than the spec says, whatever the input:
   limit)). An implementation may keep counters internally, but they are not part of the refusal.
 - **Depth.** A value deeper than a limit is refused from its cached depth, in O(1).
 - **Implementation ceilings.** An SDK whose runtime cannot hold an encoding of any length budgets its unbudgeted forms
-  at a ceiling of its own and refuses past it as `TooLarge`, never with an exception: the TypeScript SDK encodes,
-  commits and content-hashes within 2^31 - 1 bytes (`cbor.MAX_ENCODED_BYTES`, the largest array the JVM reference can
-  build), and renders JSON only within a limit the caller names (at most 2^29 - 24 bytes, its string ceiling). Its
-  public leaf and value hashing refuse a commitment past that ceiling as `TooLarge` with the ceiling as its limit. Values
-  that large are far past every limit these specs set (§5 caps every claim at 2^24), so no vector depends on a ceiling.
+  at a ceiling of its own and refuses past it as `TooLarge`, never with an exception.
+  - **Encodings: 2^31 - 9 bytes** (`MaxEncodedBytes`), the largest array the JVM builds (`Int.MaxValue - 8`). The
+    reference's `Cbor.encode` is `Cbor.encodeWithin` at it, and so is its built value commitment
+    (`ValueCommitment.bytes`); each of its own callers refuses past it in its family's kind (a store's `Codec`, the
+    JLVM's `Limit`), never with a throw. The TypeScript SDK encodes, commits and content-hashes within the same ceiling
+    (`cbor.MAX_ENCODED_BYTES`), and its public leaf and value hashing refuse a commitment past it as `TooLarge` with the
+    ceiling as its limit. The reference hashes an encoding as it streams it, never building it, and the Rust SDK
+    holds an encoding of any length: neither has an encoding ceiling.
+  - **JSON: 2^29 - 24 bytes** (`MaxRenderBytes`) in UTF-8: V8's longest string is 2^29 - 24 UTF-16 units, and a
+    rendering has no more units than UTF-8 bytes; the reference's builder stays within the JVM's largest array however
+    it grows. The reference's `CanonicalJson.render` is `renderWithin` at it, refusing past it as `TooLarge` with that
+    limit; the TypeScript SDK renders only within a limit the caller names, and a limit above the ceiling is the
+    ceiling. The Rust SDK renders only within a limit the caller names, and has no ceiling.
+
+  Values that large are far past every limit these specs set (§5 caps every claim at 2^24), so no vector depends on a
+  ceiling; `canonical_encoding_v1.json`'s `limits` pin the budgets below them (`canonical-encoding.md` §2, §3).
 - **Verifier inputs** are bounded by weight before they are decoded (§5).
 - **Listing checks.** `trie_prefix_verify` and `trie_range_verify` do work linear in the proof's weight plus the
   lengths of the prefix or bounds and of the claimed keys (`trie.md` §4). They never rebuild each key from the top, never
@@ -151,14 +162,14 @@ refusal kind a spec defines must have a row. The gated families, and where their
 
 | Family | Error type | Rows |
 |---|---|---|
-| Merkle tree, trie, Poseidon tree, versioned trie | `MerkleError`, `TrieError`, `PoseidonMerkleError`, `VersionedTrieError` | `refusals_v1.json`; the `malformed` sections of `merkle_v1.json` and `trie_v1.json` |
+| Merkle tree, trie, Poseidon tree, versioned trie | `MerkleError`, `TrieError`, `PoseidonMerkleError`, `VersionedTrieError` | `refusals_v1.json`; the `malformed` sections of `merkle_v1.json` and `trie_v1.json`; the `outcome` of `versioned_trie_v1.json`'s `versionKeys` (`InvalidVersion`, encoding the version and decoding the key alike) |
 | signatures and their keys | `CryptoError` | `signing_v1.json`: `keyDecoding` (the kind of each key decoding) and `verification` (the part refused, `verifyingKey` or `signature`, and its kind) |
 | key derivation | `KeyError`, `PathRefusal` | `signing_v1.json`: `keyRefusals` (BIP-39 entropy and phrases, word lists, SLIP-10, BIP32 and public derivation) and `paths` (`InvalidPath`, by refusal) |
 | VRF | `VrfError` | `vrf_v1.json`: `rejections` (verification) and `keyDecoding` (signing keys) |
 | KES | `KesError` | `kes_v1.json`: `refusals` (parameters, generation, loading, evolution, verification) |
 | sigma | `SigmaError` | `sigma_refusals_v1.json`: `cases`, and the reference's outcome on every case of `sigma_v1.json` and `sigma_dilf4s_v1.json` (whose own verdicts are Ergo's) |
 | zk | `ZkError`, `Groth16Error` | `zk_v1.json` |
-| canonical codecs | `CanonicalError` | `canonical_encoding_v1.json`: `json`, `renderRejections` and `cborRejections` (each kind with its normative `limit`); `TypeMismatch`, a typed encoder's refusal, by the `schema` outcome of `versioned_trie_v1.json`'s `stateKeys` |
+| canonical codecs | `CanonicalError` | `canonical_encoding_v1.json`: `json`, `renderRejections` and `cborRejections` (each kind with its normative `limit`), and `limits` (the byte budgets of encoding and rendering: `TooLarge` with its `limit`, or the kind JSON refuses first); `TypeMismatch`, a typed encoder's refusal, by the `schema` outcome of `versioned_trie_v1.json`'s `stateKeys` |
 | state keys | `StateKeyError` | `versioned_trie_v1.json`: `stateKeys`, `stateKeyBytes` and `namespaces` (each kind with its normative `segment`); `refusals_v1.json`'s `Key.` kinds |
 | JLVM | `JlvmError` and its `Site` (`jlvm-errors.cddl`) | `jlvm_v1.json`: each failing case's `outcome` (`error`, and `op` where the kind has one) |
 | hashing | `HashError` | `canonical_encoding_v1.json`: `domainTags`, `algorithms` (names), `digestHex` (digest lengths and hex, `InvalidHex` with its normative `offset`) and `expansions` (`expand_message_xmd`, `InvalidExpansion` with its normative `refusal`) |
@@ -256,9 +267,9 @@ the `Scale` saturated at the 32-bit range, each with its `limit`) and `Unsupport
 float or simple value by its additional information, a simple value, an indefinite length, reserved additional
 information, a tag by its number, a non-text key). Of a number past both digit bounds, `Digits` counts the
 significand's. `InvalidNumber`'s `length` and `offset` are absent only where the reference's circe bridge converts a
-number circe holds without its text. `not-json`'s `over-long rendering` is the reference's `render` alone, past the
-longest rendering it can build: the Rust and TypeScript SDKs render within a limit the caller gives, and refuse past it
-as `TooLarge`, which is not a `CanonicalError` in any SDK. The state keys' `schema` records `TypeMismatch`
+number circe holds without its text. A rendering past a byte limit is no `not-json` reason: every SDK refuses it as
+`TooLarge` with the limit (§4), which is not a `CanonicalError` in any SDK, the reference's `render` past
+`MaxRenderBytes` included. The state keys' `schema` records `TypeMismatch`
 (`vt-schema-outcome`). The reference's `CodecRefusalCoverageSuite` gates `CanonicalError` as above, reading the rows
 through their generated models; the Rust (`core/tests/conformance.rs`) and TypeScript (`core/test/conformance.test.ts`)
 tests check each row's kind and `limit`, and that every kind has a row. `state-key-error-kind` lists every kind of

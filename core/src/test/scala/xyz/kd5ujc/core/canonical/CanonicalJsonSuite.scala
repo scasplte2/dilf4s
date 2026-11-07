@@ -25,7 +25,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
         Left(RationalTooWide(CanonicalValue.MaxRationalBits)),
         Ratio.of(BigInt(1) << 1000000, BigInt(3)).toOption.map(CanonicalValue.number).get
       )
-      .and(expect.same(Left(refusal), CanonicalJson.render(third)))
+      .and(expect.same(Left(CanonicalJson.RenderError.Canonical(refusal)), CanonicalJson.render(third)))
       .and(expect.same(Right(huge.value.toString), CanonicalJson.render(huge)))
   }
 
@@ -84,8 +84,8 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("integers above 2^53 stay distinct, with distinct encodings") {
-    val a = parse("9007199254740992").map(Cbor.encode)
-    val b = parse("9007199254740993").map(Cbor.encode)
+    val a = parse("9007199254740992").map(CanonicalGens.encoded)
+    val b = parse("9007199254740993").map(CanonicalGens.encoded)
     expect(a.isRight && b.isRight && a != b, s"$a and $b must differ")
   }
 
@@ -151,17 +151,17 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("array nulls are positional: removing one changes the encoding") {
-    expect(parse("[null,1]").map(Cbor.encode) != parse("[1]").map(Cbor.encode), "[null,1] and [1] must differ")
+    expect(parse("[null,1]").map(CanonicalGens.encoded) != parse("[1]").map(CanonicalGens.encoded), "[null,1] and [1] must differ")
   }
 
   pureTest("nulls inside objects nested in arrays are still dropped") {
-    expect.same(parse("""[{"a":null,"b":1}]""").map(Cbor.encode), parse("""[{"b":1}]""").map(Cbor.encode))
+    expect.same(parse("""[{"a":null,"b":1}]""").map(CanonicalGens.encoded), parse("""[{"b":1}]""").map(CanonicalGens.encoded))
   }
 
   test("encoded-key order is a strict total order on distinct keys") {
     forall(org.scalacheck.Gen.zip(CanonicalGens.text, CanonicalGens.text)) {
       case (a, b) =>
-        val enc = (s: String) => Cbor.encode(CanonicalValue.text(s).toOption.get)
+        val enc = (s: String) => CanonicalGens.encoded(CanonicalValue.text(s).toOption.get)
         val (ab, ba) = (Cbor.compareBytes(enc(a), enc(b)), Cbor.compareBytes(enc(b), enc(a)))
         expect((a == b) == (ab == 0), s"compare($a, $b) = $ab must be 0 exactly when equal")
           .and(expect(math.signum(ab) == -math.signum(ba), "the order must be antisymmetric"))

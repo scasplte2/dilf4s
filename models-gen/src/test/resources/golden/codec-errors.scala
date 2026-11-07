@@ -241,27 +241,25 @@ object NonCanonicalReason {
 
 /**
  * What JSON could not hold: a byte string; a rational whose decimal does not terminate; a number whose JSON form would
- * pass the digit or scale bound, so it could not be read back; a rendering longer than the reference's `render` can
- * build (MaxRenderBytes). The last is the reference's only: the Rust and TypeScript SDKs render within a limit the caller
- * gives and refuse past it as TooLarge, not as a CanonicalError.
+ * pass the digit or scale bound, so it could not be read back. A rendering past a byte limit is no CanonicalError in any
+ * SDK: it is TooLarge, with the limit (the reference's render past MaxRenderBytes too).
  */
-type NotJson = "bytes" | "non-terminating rational" | "over-long number" | "over-long rendering"
+type NotJson = "bytes" | "non-terminating rational" | "over-long number"
 
 object NotJson {
   /** Every alternative, in schema order. */
-  val values: Vector[NotJson] = Vector("bytes", "non-terminating rational", "over-long number", "over-long rendering")
+  val values: Vector[NotJson] = Vector("bytes", "non-terminating rational", "over-long number")
 
   lazy val codec: Codec[NotJson] = Codec(
     {
       case "bytes" => Codec.literalText["bytes"]("bytes").encode("bytes")
       case "non-terminating rational" => Codec.literalText["non-terminating rational"]("non-terminating rational").encode("non-terminating rational")
       case "over-long number" => Codec.literalText["over-long number"]("over-long number").encode("over-long number")
-      case "over-long rendering" => Codec.literalText["over-long rendering"]("over-long rendering").encode("over-long rendering")
     },
     (v: CanonicalValue) =>
       Codec.selectAlternative[NotJson](v, List(
 
-      ), List(("bytes", "bytes": NotJson), ("non-terminating rational", "non-terminating rational": NotJson), ("over-long number", "over-long number": NotJson), ("over-long rendering", "over-long rendering": NotJson)))
+      ), List(("bytes", "bytes": NotJson), ("non-terminating rational", "non-terminating rational": NotJson), ("over-long number", "over-long number": NotJson)))
   )
 }
 

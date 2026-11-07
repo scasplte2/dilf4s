@@ -179,12 +179,13 @@ object TrieStore {
 
     private def nodeKey(h: Digest[H]): ByteVector = nodeNs ++ h.bytes
 
-    private def encodeEntry(n: Node[H], count: Int): ByteVector = {
+    // a record is a segment of at most the longest key's bits and three digests: far within the encoding ceiling
+    private def encodeEntry(n: Node[H], count: Int): Either[Cbor.TooLarge, ByteVector] = {
       val record = n match {
         case l: Leaf[H]   => NodeCodec.leaf(l.segment, l.value)
         case b: Branch[H] => NodeCodec.branch(b.segment, b.value.map(_.bytes), b.left.map(_.bytes), b.right.map(_.bytes))
       }
-      ByteVector.fromInt(count) ++ Cbor.encode(record)
+      Cbor.encode(record).map(ByteVector.fromInt(count) ++ _)
     }
 
     /** The generated `trie-node` decoder checks the record's shape; this classifies it and checks the invariant. */
@@ -210,11 +211,16 @@ object TrieStore {
 
     private def node(h: Digest[H]): F[Node[H]] = entry(h).flatMap(_.fold(failT[Node[H]](TrieError.MissingNode(h.hex)))(e => e._1.pure[F]))
 
-    private def planBatch(plan: RefCounting.Plan[H]): RawBatch =
-      plan.foldLeft(RawBatch.empty) {
-        case (acc, (h, Some((n, c)))) => acc ++ RawBatch.put(nodeKey(h), encodeEntry(n, c))
-        case (acc, (h, None))         => acc ++ RawBatch.delete(nodeKey(h))
+    // every record is encoded first, and one refusal, if any, is raised once
+    private def planBatch(plan: RefCounting.Plan[H]): F[RawBatch] =
+      plan.toList.traverse {
+        case (h, Some((n, c))) => encodeEntry(n, c).map(RawBatch.put(nodeKey(h), _))
+        case (h, None)         => RawBatch.delete(nodeKey(h)).asRight[Cbor.TooLarge]
       }
+        .fold(
+          e => failS[RawBatch](StoreError.Codec("node record", s"its encoding is over ${e.limit} bytes")),
+          batches => batches.foldLeft(RawBatch.empty)(_ ++ _).pure[F]
+        )
 
     /**
      * latest ‖ floor ‖ generation. The generation advances with every mutation and never repeats, so a stage staged
@@ -306,10 +312,11 @@ object TrieStore {
         delta   <- TrieEngine.apply[F, H](lookup, top, trieOps)
         plan    <- RefCounting.plan[F, H](view, delta, retainNewRoot = true, release = Nil)
         rootRec <- roots.encodeBatch(Batch.put(next, delta.root.fold(ByteVector.empty)(_.bytes)))
+        nodes   <- planBatch(plan)
       } yield
         Staged(
           guards,
-          below ++ planBatch(plan) ++ rootRec ++ RawBatch.put(stateKey, stateRecord(next, floor, generation)),
+          below ++ nodes ++ rootRec ++ RawBatch.put(stateKey, stateRecord(next, floor, generation)),
           Version.unsafe(next),
           delta.root.getOrElse(T.empty),
           delta.root,
@@ -326,20 +333,22 @@ object TrieStore {
         else if (trie.mode != mode) failT[Staged[H]](TrieError.InvalidKey(s"a $mode store cannot hold a ${trie.mode} trie"))
         else if (at.value < 1L) failS[Staged[H]](StoreError.UnknownVersion(at.value, 0L))
         else
-          roots.encodeBatch(Batch.put(at.value, trie.rootOption.fold(ByteVector.empty)(_.bytes))).map { rootRec =>
+          roots.encodeBatch(Batch.put(at.value, trie.rootOption.fold(ByteVector.empty)(_.bytes))).flatMap { rootRec =>
             // rebuilt in this store's order: a trie built elsewhere may key its nodes in another
             val plan: RefCounting.Plan[H] = trie.storedNodes.foldLeft(noNodes) { case (acc, (h, e)) => acc.updated(h, Option(e)) }
-            Staged(
-              List(stateKey -> None),
-              planBatch(plan) ++ rootRec ++ RawBatch.put(stateKey, stateRecord(at.value, at.value, 1L)),
-              at,
-              trie.root,
-              trie.rootOption,
-              0L,
-              1L,
-              at.value,
-              plan
-            )
+            planBatch(plan).map { nodes =>
+              Staged(
+                List(stateKey -> None),
+                nodes ++ rootRec ++ RawBatch.put(stateKey, stateRecord(at.value, at.value, 1L)),
+                at,
+                trie.root,
+                trie.rootOption,
+                0L,
+                1L,
+                at.value,
+                plan
+              )
+            }
           }
       }
 
@@ -350,10 +359,11 @@ object TrieStore {
         plan     <- RefCounting.plan[F, H](entry, TrieDelta[H](None, TreeMap.empty(using order)), retainNewRoot = false, release = released)
         deletes  <- roots.encodeBatch(Batch.deletes(versions))
         top      <- rootHash(newLatest)
+        nodes    <- planBatch(plan)
       } yield
         Staged(
           List(stateKey -> s.raw),
-          planBatch(plan) ++ deletes ++ RawBatch.put(stateKey, stateRecord(newLatest, newFloor, s.generation + 1)),
+          nodes ++ deletes ++ RawBatch.put(stateKey, stateRecord(newLatest, newFloor, s.generation + 1)),
           Version.unsafe(newLatest),
           top.getOrElse(T.empty),
           top,

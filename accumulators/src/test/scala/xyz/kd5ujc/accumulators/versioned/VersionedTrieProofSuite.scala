@@ -294,7 +294,7 @@ object VersionedTrieProofSuite extends SimpleIOSuite {
         def again(p: VersionedTrieProof[Long, H]) =
           VersionedTrieWire
             .encodeProof(p)
-            .map(Cbor.encode)
+            .map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded)
             .flatMap(bs => Cbor.decode(bs).leftMap(e => VersionedTrieError.Malformed(e.toString)))
             .flatMap(VersionedTrieWire.decodeProof[Long, H])
         List(a, b, c, d)

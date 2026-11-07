@@ -103,4 +103,14 @@ object KeyCodecSuite extends SimpleIOSuite with Checkers {
       .and(expect(Namespace("x" * 256).isLeft, "names over 255 bytes are rejected"))
       .and(expect.same(Left(StoreError.Codec("namespace", "1048576 characters, more than 255 UTF-8 bytes")), Namespace("x" * (1 << 20))))
   }
+
+  pureTest("a canonical value whose encoding is past the ceiling is a Codec failure naming the limit, never a throw") {
+    val abc = CanonicalValue.text("abc").fold(e => sys.error(e.toString), identity)
+    val heavy =
+      (1 to 70).foldLeft[CanonicalValue](abc)((x, _) => CanonicalValue.array(Vector(x, x)).fold(e => sys.error(e.toString), identity))
+    val refused = Left(StoreError.Codec("value", s"its encoding is over ${xyz.kd5ujc.core.canonical.Cbor.MaxEncodedBytes} bytes"))
+    expect
+      .same(refused, ValueCodec[CanonicalValue].encode(heavy))
+      .and(expect.same(Right(ByteVector(0x63, 0x61, 0x62, 0x63)), ValueCodec[CanonicalValue].encode(abc)))
+  }
 }

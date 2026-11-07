@@ -22,7 +22,7 @@ object StreamedCommitmentSuite extends SimpleIOSuite with Checkers {
     val buffered = BufferedCbor.commitment(v)
     val tagged = MerkleHashing.tagged[Sha256]
     val rfc = MerkleHashing.rfc6962[Keccak256]
-    expect(ValueCommitment.bytes(v) == buffered, s"$name: the commitment")
+    expect(ValueCommitment.bytes(v) == Right(buffered), s"$name: the commitment")
       .and(expect(MerkleTree.leaf[Sha256, CanonicalValue](v) == Right(tagged.leaf(buffered)), s"$name: a tagged leaf"))
       .and(expect(rfc.leafOf(ValueCommitment.source(v)) == rfc.leaf(buffered), s"$name: an RFC 6962 leaf"))
       .and(expect(TrieHashing[Sha256].valueOf(ValueCommitment.source(v)) == TrieHashing[Sha256].value(buffered), s"$name: a trie value"))

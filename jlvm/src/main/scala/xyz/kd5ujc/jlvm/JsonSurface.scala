@@ -2,6 +2,8 @@ package xyz.kd5ujc.jlvm
 
 import cats.syntax.all._
 
+import scala.annotation.tailrec
+
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue}
 
@@ -23,38 +25,60 @@ object JsonSurface {
       case _             => None
     }
 
-  /** Strings in `0x`-hex form become bytes, everywhere in the value; depth is bounded by the canonical model (256). */
+  /**
+   * Strings in `0x`-hex form become bytes, everywhere in the value (map keys stay text). Total, and stack-safe at any
+   * depth: an explicit stack, each container rebuilt once. O(weight): a part shared in `v` is rebuilt each time it
+   * occurs, so this is for values read from text (which share nothing), or bounded by weight first.
+   */
   def fromCanonicalJson(v: CanonicalValue): CanonicalValue =
-    v match {
-      case CText(s)   => hexBytes(s).fold(v)(CBytes(_))
-      case CArray(vs) => CanonicalValue.array(vs.map(fromCanonicalJson)).getOrElse(v)
-      case CMap(m)    => CanonicalValue.map(m.toList.map { case (k, x) => k -> fromCanonicalJson(x) }).getOrElse(v)
-      case other      => other
+    CanonicalValue.mapScalars(v) {
+      case t: CText => hexBytes(t.value).fold[Scalar](t)(CBytes(_))
+      case other    => other
     }
 
-  def toCanonicalJson(v: CanonicalValue): CanonicalValue =
-    v match {
-      case CBytes(b)  => CanonicalValue.text("0x" + b.toHex).getOrElse(v)
-      case CArray(vs) => CanonicalValue.array(vs.map(toCanonicalJson)).getOrElse(v)
-      case CMap(m)    => CanonicalValue.map(m.toList.map { case (k, x) => k -> toCanonicalJson(x) }).getOrElse(v)
-      case other      => other
-    }
+  /**
+   * Bytes become text in `0x`-hex form, everywhere in the value: what [[render]] writes, as a value. Stack-safe at any
+   * depth, as [[fromCanonicalJson]]. A value heavier than `CanonicalJson.MaxRenderBytes` has no rendering, and is
+   * refused from its weight before anything is built: converting it would rebuild a shared part each time it occurs.
+   */
+  def toCanonicalJson(v: CanonicalValue): Either[JlvmError, CanonicalValue] =
+    renderable(v).map(CanonicalValue.mapScalars(_) {
+      case CBytes(b) => CanonicalValue.hexText(b)
+      case other     => other
+    })
 
   /** Input data from JSON text: the strict canonical parser (duplicate keys, depth, exact numbers), then bytes. */
   def parse(text: String): Either[JlvmError, CanonicalValue] =
     CanonicalJson.parse(text).bimap(e => JlvmError.Malformed(e.toString), fromCanonicalJson)
 
   /**
-   * A value as JSON text that [[parse]] reads back as the same value. Text in `0x`-hex form anywhere in the value (it
-   * would read back as bytes) and a non-terminating rational have no rendering, and are errors. A value too heavy to
-   * render is refused from its weight, before it is converted: converting walks it whole, its shared parts each time.
+   * A value as JSON text that [[parse]] reads back as the same value: bytes are written in `0x`-hex form, and the value
+   * is never converted or copied. Its rendering is bounded by `CanonicalJson.MaxRenderBytes`, refused from the weight
+   * when the weight is over it; a non-terminating rational has none; and text in `0x`-hex form anywhere in the value (it
+   * would read back as bytes) has none either, found by one walk once the rendering, which bounds the walk, is written.
    */
   def render(v: CanonicalValue): Either[JlvmError, String] =
-    renderable(v)
-      .flatMap(w => CanonicalJson.render(toCanonicalJson(w)).leftMap(e => JlvmError.Malformed(e.toString)))
-      .flatMap(text => parse(text).filterOrElse(_ == v, JlvmError.Malformed("a value with 0x-hex text has no JSON surface form")).as(text))
+    CanonicalJson
+      .renderSurfaceWithin(v, CanonicalJson.MaxRenderBytes)
+      .leftMap(e => JlvmError.Malformed(e.toString))
+      .flatTap(_ => Either.cond(!hasHexText(List(v)), (), JlvmError.Malformed("a value with 0x-hex text has no JSON surface form")))
 
-  // converting bytes to hex text only adds weight, so a value heavier than the ceiling renders past it
+  // a value's rendering is never shorter than its weight
   private def renderable(v: CanonicalValue): Either[JlvmError, CanonicalValue] =
-    Either.cond(v.weight <= CanonicalJson.MaxRenderBytes, v, JlvmError.Malformed(CanonicalJson.TooLongToRender.toString))
+    Either.cond(
+      v.weight <= CanonicalJson.MaxRenderBytes,
+      v,
+      JlvmError.Malformed(CanonicalJson.RenderError.TooLarge(CanonicalJson.MaxRenderBytes).toString)
+    )
+
+  /** Whether a text value (not a map key) in `todo` has the `0x`-hex form, which reads back as bytes. */
+  @tailrec
+  private def hasHexText(todo: List[CanonicalValue]): Boolean =
+    todo match {
+      case Nil                => false
+      case CText(s) :: rest   => HexBytes.matches(s) || hasHexText(rest)
+      case CArray(vs) :: rest => hasHexText(vs.toList ::: rest)
+      case (m: CMap) :: rest  => hasHexText(m.entries.valuesIterator.toList ::: rest)
+      case _ :: rest          => hasHexText(rest)
+    }
 }

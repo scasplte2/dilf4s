@@ -25,7 +25,7 @@ object VersionedTrieVectors {
   val path: Path = Paths.get("shared", "vectors", "versioned_trie_v1.json")
 
   private def hex(b:      ByteVector): Json = b.toHex.asJson
-  private def cbor(v:     CanonicalValue): Json = hex(Cbor.encode(v))
+  private def cbor(v:     CanonicalValue): Json = hex(xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v))
   private def orDie[A](e: Either[VersionedTrieError, A]): IO[A] = e.leftMap(err => new IllegalStateException(err.toString)).liftTo[IO]
 
   val commits: List[(Long, Batch[StateKey, CanonicalValue])] = List(
@@ -61,8 +61,8 @@ object VersionedTrieVectors {
 
   /**
    * The default version key at its edges: `key` is `int_to_bytes [version, 8]` (a JLVM program builds those bytes for
-   * any version below 2^64), and `valid` says whether the version key accepts it, encoding and decoding alike. It
-   * stops at 2^63 - 1 (section 2).
+   * any version below 2^64), and `outcome` is the version key's, encoding and decoding alike: `"accepted"`, or the
+   * refusal's kind. It stops at 2^63 - 1 (section 2).
    */
   val versionKeyCases: List[BigInt] =
     List(
@@ -84,7 +84,9 @@ object VersionedTrieVectors {
       Option.when(v.isValidLong)(v.toLong).toRight(VersionedTrieError.InvalidVersion("not a Long")).flatMap(VersionKey.long.encode)
     require(decoded.isRight == encoded.isRight, s"version $v: decoding and encoding disagree")
     require(decoded.forall(d => BigInt(d) == v) && encoded.forall(_ == key), s"version $v: the key does not round-trip")
-    Json.obj("version" -> v.asJson, "key" -> hex(key), "valid" -> decoded.isRight.asJson)
+    val outcome = decoded.fold(e => Json.obj("kind" -> e.productPrefix.asJson), _ => "accepted".asJson)
+    require(encoded.swap.toOption.map(_.productPrefix) == decoded.swap.toOption.map(_.productPrefix), s"version $v: the kinds differ")
+    Json.obj("version" -> v.asJson, "key" -> hex(key), "outcome" -> outcome)
   }
 
   private def entry(k: StateKey, v: CanonicalValue): Json = Json.obj("key" -> k.value.asJson, "value" -> cbor(v))

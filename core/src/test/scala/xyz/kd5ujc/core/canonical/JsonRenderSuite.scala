@@ -16,7 +16,7 @@ import weaver.scalacheck.Checkers
  */
 object JsonRenderSuite extends SimpleIOSuite with Checkers {
 
-  private def get[A](e: Either[CanonicalError, A]): A = e.fold(err => sys.error(err.toString), identity)
+  private def get[A](e: Either[Any, A]): A = e.fold(err => sys.error(err.toString), identity)
 
   /** What reached the sink, as counts alone: characters, appends, and the longest append. */
   final private case class Count(chars: Long, appends: Long, longest: Int)
@@ -48,7 +48,7 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
         case CNull        => Eval.now("null".asRight)
         case CBool(b)     => Eval.now(b.toString.asRight)
         case i: CInt      => Eval.now(CanonicalJson.integerText(i).asRight)
-        case r: CRational => Eval.now(CanonicalJson.render(r))
+        case r: CRational => Eval.now(CanonicalJson.rationalText(r))
         case t: CText     => Eval.now(quote(t.value).asRight)
         case CBytes(_)    => Eval.now(NotJsonRepresentable("bytes").asLeft)
         case CArray(vs)   => Eval.defer(vs.traverse(go)).map(_.sequence.map(_.mkString("[", ",", "]")))
@@ -79,7 +79,7 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
 
   test("the one-pass renderer writes what rendering level by level wrote, refusals included") {
     forall(CanonicalGens.value(4)) { v =>
-      expect.same(byLevels(v), CanonicalJson.render(v))
+      expect.same(byLevels(v).leftMap(RenderError.Canonical(_)), CanonicalJson.render(v))
     }
   }
 
@@ -133,7 +133,7 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Left(RenderError.TooLarge(1000L)), CanonicalJson.renderWithin(dag, 1000L)))
       .and(
         expect.same(
-          Left(NotJsonRepresentable("over-long rendering")),
+          Left(RenderError.TooLarge(CanonicalJson.MaxRenderBytes)),
           CanonicalJson.render(dag)
         )
       )

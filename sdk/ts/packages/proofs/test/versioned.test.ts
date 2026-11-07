@@ -336,13 +336,16 @@ describe("snapshots and replicas", () => {
 describe("versioned_trie_v1.json version keys", () => {
   it("the default key is int_to_bytes [v, 8], and stops at 2^63 - 1 both ways", () => {
     const k = versioned.VersionKey.long;
-    expect(vectors.versionKeys.some((c) => !c.valid)).toBe(true);
+    const kind = (c: (typeof vectors.versionKeys)[number]): string => (c.outcome === "accepted" ? "accepted" : c.outcome.kind);
+    expect(vectors.versionKeys.some((c) => kind(c) === "InvalidVersion")).toBe(true);
+    expect(vectors.versionKeys.some((c) => kind(c) === "accepted")).toBe(true);
     for (const c of vectors.versionKeys) {
       const encoded = k.encode(c.version);
       const decoded = k.decode(bytes(c.key));
+      const accepted = kind(c) === "accepted";
       expect(c.key, `version ${c.version.toString()}`).toBe(c.version.toString(16).padStart(16, "0"));
-      expect(encoded.ok ? toHex(encoded.value) : "refused", `encode ${c.version.toString()}`).toBe(c.valid ? c.key : "refused");
-      expect(decoded.ok ? decoded.value : "refused", `decode ${c.key}`).toBe(c.valid ? c.version : "refused");
+      expect(encoded.ok ? toHex(encoded.value) : encoded.error.kind, `encode ${c.version.toString()}`).toBe(accepted ? c.key : kind(c));
+      expect(decoded.ok ? decoded.value : decoded.error.kind, `decode ${c.key}`).toBe(accepted ? c.version : kind(c));
     }
   });
 });

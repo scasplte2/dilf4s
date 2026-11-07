@@ -15,7 +15,7 @@ object MerkleVerifyLeafSuite extends SimpleIOSuite {
   implicit private val M: MerkleHashing[Sha256] = MerkleHashing.tagged[Sha256]
 
   private val leaf = CanonicalValue.CInt(1)
-  private val tree = MerkleTree.fromLeafHashes[Sha256](List(M.leaf(ValueCommitment.bytes(leaf))))
+  private val tree = MerkleTree.fromLeafHashes[Sha256](List(M.leafOf(ValueCommitment.source(leaf))))
   private val proof = tree.inclusionProof(0L).flatMap(MerkleCodec.encodeInclusion(_)).toOption.get
   private val heavy = BuiltValues.build(BuiltValues.ofWeight(ProofInput.MaxProofWeight + 1)).toOption.get
 

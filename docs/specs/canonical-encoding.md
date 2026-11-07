@@ -158,6 +158,15 @@ Further rules:
 
   After the top-level item, any byte left is `TrailingBytes`. `canonical_encoding_v1.json`'s `cborRejections` pin
   each kind and each pair of faults that an order could otherwise answer differently.
+- **Encoding within a limit.** `encodeWithin(v, maxBytes)` is the encoding when it is at most `maxBytes` bytes long,
+  and otherwise refuses with `TooLarge` and the limit as applied (`conformance.md` §3, §4): a negative limit is 0, and
+  a limit past an implementation ceiling is that ceiling. Nothing past the limit is written first. No encoding is
+  shorter than its value's weight (`jlvm.md` §2), so a weight over the limit is refused at once, in O(1); otherwise the
+  work is O(min(weight, limit)). `encodedLengthWithin` measures the same length, with the same refusal, without
+  encoding. An SDK that builds an encoding in one array encodes within its ceiling, and its `encode` is
+  `encodeWithin` at it: 2^31 - 9 bytes (`MaxEncodedBytes`, the JVM's largest array) in the reference and the
+  TypeScript SDK (`conformance.md` §4). `canonical_encoding_v1.json`'s `limits` pin an encoding at its length and one
+  byte under it, refused from the weight and refused as measured.
 
 ## 3. JSON mapping
 
@@ -223,6 +232,15 @@ Converting back to JSON (for display only) works as follows:
   divisions and exponentiations whatever the denominator, never one division per factor. A scale past the bound
   (`1/2^33218`, `1/5^14306`) is refused then.
 - Bytes can't be written as JSON, and conversion fails.
+- **Rendering within a limit.** `renderWithin(v, maxBytes)` is the rendering when it is at most `maxBytes` UTF-8 bytes
+  long. It writes once, in order, and refuses at the first fault it meets: a part that would pass the limit is
+  `TooLarge` with the limit as applied (a negative limit is 0, and none is above `MaxRenderBytes`), and what JSON cannot
+  write is its `CanonicalError` kind (`NotJsonRepresentable`), so `[1, h'01']` is `TooLarge` within 4 bytes and
+  `NotJsonRepresentable` within 5. A rendering is never shorter than its value's weight, so a part whose weight is over
+  what is left is refused at once. `MaxRenderBytes` is 2^29 - 24 bytes: V8's longest string is 2^29 - 24 UTF-16
+  units, and a rendering has no more units than UTF-8 bytes. The reference's `render` is `renderWithin` at it
+  (`conformance.md` §4). `canonical_encoding_v1.json`'s `limits` pin a rendering at its length and one byte under it,
+  an escaped text, and both orders of the first fault.
 
 ## 4. Tagged hashing
 

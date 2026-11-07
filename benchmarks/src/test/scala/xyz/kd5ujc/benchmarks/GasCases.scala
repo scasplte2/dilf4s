@@ -645,7 +645,7 @@ object GasCases {
       val trie = get(
         Trie.fromEntries[Sha256](
           mode,
-          keys.zipWithIndex.map { case (k, i) => k -> TrieHashing[Sha256].value(ValueCommitment.bytes(CBytes(value(i)))) }
+          keys.zipWithIndex.map { case (k, i) => k -> TrieHashing[Sha256].valueOf(ValueCommitment.source(CBytes(value(i)))) }
         )
       )
       val md = m("variable" -> int(65535))
@@ -674,7 +674,7 @@ object GasCases {
       val trie = get(
         Trie.fromEntries[Sha256](
           mode,
-          keys.zipWithIndex.map { case (k, i) => k -> TrieHashing[Sha256].value(ValueCommitment.bytes(CBytes(value(i)))) }
+          keys.zipWithIndex.map { case (k, i) => k -> TrieHashing[Sha256].valueOf(ValueCommitment.source(CBytes(value(i)))) }
         )
       )
       val md = m("variable" -> int(65535))
@@ -709,7 +709,7 @@ object GasCases {
         val mode = get(KeyMode.variable(65535))
         val keys = List.tabulate(n)(i => ByteVector.fill((i * step).toLong)(1) :+ 0.toByte)
         val target = ByteVector.fill((n * step).toLong)(1)
-        def commit(i: Int) = TrieHashing[Sha256].value(ValueCommitment.bytes(CBytes(ByteVector.fromInt(i))))
+        def commit(i: Int) = TrieHashing[Sha256].valueOf(ValueCommitment.source(CBytes(ByteVector.fromInt(i))))
         val trie = get(Trie.fromEntries[Sha256](mode, (target -> commit(n)) :: keys.zipWithIndex.map { case (k, i) => k -> commit(i) }))
         val proof = get(trie.prove(List(target)).flatMap(TrieProofs.encode(_)))
         op(

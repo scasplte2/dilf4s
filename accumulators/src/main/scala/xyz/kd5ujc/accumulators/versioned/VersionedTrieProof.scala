@@ -136,10 +136,9 @@ object VersionedTrieWire {
         vs.traverse { case (u, s) => VersionKey[V].encode(u).map(W.VersionedTrieVersion(_, s.bytes)) }
           .map(W.VersionedTrieSnapshotHistory(_))
     }
-    wire.flatMap(W.VersionedTrieSnapshotChunk.codec.encode(_).leftMap(malformed)).flatMap { v =>
-      val fits = v.weight <= VersionedTrie.MaxChunkBytes && Cbor.encodedLength(v) <= VersionedTrie.MaxChunkBytes
-      Either.cond(fits, Cbor.encode(v), tooLargeChunk)
-    }
+    wire
+      .flatMap(W.VersionedTrieSnapshotChunk.codec.encode(_).leftMap(malformed))
+      .flatMap(Cbor.encodeWithin(_, VersionedTrie.MaxChunkBytes).leftMap(_ => tooLargeChunk))
   }
 
   private val tooLargeChunk: VersionedTrieError = VersionedTrieError.TooLarge("a snapshot chunk", VersionedTrie.MaxChunkBytes)

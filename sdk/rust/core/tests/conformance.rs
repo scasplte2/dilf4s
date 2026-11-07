@@ -16,7 +16,10 @@ mod common;
 use common::{bytes, load};
 use dilf4s_core::codec::Codec;
 use dilf4s_core::commitment::{value_commitment, value_commitment_into};
-use dilf4s_core::generated::canonical_vectors::{CanonicalErrorKind, CanonicalJsonCase, CanonicalVectors, HashOutcome};
+use dilf4s_core::generated::canonical_vectors::{
+    CanonicalErrorKind, CanonicalJsonCase, CanonicalLimitEncoding, CanonicalLimitKind, CanonicalLimitOutcome,
+    CanonicalLimitRefusal, CanonicalVectors, HashOutcome,
+};
 use dilf4s_core::generated::merkle_vectors::MerkleVectors;
 use dilf4s_core::generated::versioned_trie::STATE_KEY;
 use dilf4s_core::generated::versioned_trie_vectors::{VersionedTrieVectors, VtSchemaOutcome};
@@ -114,6 +117,44 @@ fn render_rejections() {
         }
     });
     eprintln!("renderRejections: {n} cases");
+}
+
+/// The budgeted calls (canonical-encoding.md sections 2 and 3): `encode_within` or `render_within` of each value at
+/// each row's limit gives the row's outcome, by kind and limit, and the row's output exactly when it is accepted.
+#[test]
+fn limits() {
+    let (v, _, _) = vectors();
+    let n = run(&v.limits, |c| {
+        let value = cbor::decode(&bytes(&c.value)).map_err(|e| format!("{}: {e}", c.name))?;
+        let max = usize::try_from(c.max_bytes).map_err(|e| format!("{}: {e}", c.name))?;
+        let too_large = |limit: usize| CanonicalLimitRefusal {
+            kind: CanonicalLimitKind::TooLarge,
+            limit: Some(u64::try_from(limit).unwrap_or(u64::MAX)),
+        };
+        let (outcome, output) = match c.encoding {
+            CanonicalLimitEncoding::Cbor => match cbor::encode_within(&value, max) {
+                Ok(b) => (CanonicalLimitOutcome::Accepted, Some(hex::encode(&b))),
+                Err(e) => (CanonicalLimitOutcome::CanonicalLimitRefusal(too_large(e.limit)), None),
+            },
+            CanonicalLimitEncoding::Json => match json::render_within(&value, max) {
+                Ok(text) => (CanonicalLimitOutcome::Accepted, Some(text)),
+                Err(json::RenderError::TooLarge(e)) => {
+                    (CanonicalLimitOutcome::CanonicalLimitRefusal(too_large(e.limit)), None)
+                }
+                Err(json::RenderError::Canonical(e)) => {
+                    let kind = CanonicalLimitKind::CanonicalErrorKind(e.kind());
+                    (CanonicalLimitOutcome::CanonicalLimitRefusal(CanonicalLimitRefusal { kind, limit: None }), None)
+                }
+            },
+        };
+        if outcome == c.outcome && output == c.output {
+            Ok(())
+        } else {
+            Err(format!("{}: expected {:?} {:?}, got {outcome:?} {output:?}", c.name, c.outcome, c.output))
+        }
+    });
+    assert!(n >= 19, "limits: {n} cases");
+    eprintln!("limits: {n} cases");
 }
 
 #[test]

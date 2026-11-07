@@ -123,10 +123,14 @@ object ValueCodec {
   }
 
   implicit val canonicalValue: ValueCodec[CanonicalValue] = new ValueCodec[CanonicalValue] {
-    def encode(value: CanonicalValue): Either[StoreError, ByteVector] = Cbor.encode(value).asRight
+    def encode(value: CanonicalValue): Either[StoreError, ByteVector] = encoded(value)
     def decode(bytes: ByteVector): Either[StoreError, CanonicalValue] =
       Cbor.decode(bytes).leftMap(e => StoreError.Codec("value", e.toString))
   }
+
+  /** A value's canonical CBOR; one past `Cbor.MaxEncodedBytes` is a `Codec` failure naming the limit, never a throw. */
+  private def encoded(value: CanonicalValue): Either[StoreError, ByteVector] =
+    Cbor.encode(value).leftMap(e => StoreError.Codec("value", s"its encoding is over ${e.limit} bytes"))
 
   /**
    * Canonical CBOR through a [[Codec]]: a generated model's, or `CanonicalCirce.codec` (module `circeInterop`) for a
@@ -134,7 +138,7 @@ object ValueCodec {
    */
   def fromCodec[V](codec: Codec[V]): ValueCodec[V] = new ValueCodec[V] {
     def encode(value: V): Either[StoreError, ByteVector] =
-      codec.encode(value).bimap(e => StoreError.Codec("value", e.toString), Cbor.encode)
+      codec.encode(value).leftMap(e => StoreError.Codec("value", e.toString)).flatMap(encoded)
     def decode(bytes: ByteVector): Either[StoreError, V] =
       Cbor
         .decode(bytes)

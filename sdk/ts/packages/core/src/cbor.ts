@@ -285,11 +285,12 @@ function write(out: Out, value: Value): boolean {
 }
 
 /**
- * The longest encoding {@link encode} produces: 2^31 - 1 bytes, the largest array the JVM reference can build, and
- * within every engine's typed-array limit. A longer encoding is a typed refusal, never an allocation failure (below it,
- * memory may still run out: that is the host's, as for any allocation).
+ * The longest encoding {@link encode} produces: 2^31 - 9 bytes, the largest array the JVM reference can build
+ * (`Int.MaxValue - 8`, its `Cbor.MaxEncodedBytes`), and within every engine's typed-array limit. A longer encoding is a
+ * typed refusal, never an allocation failure (below it, memory may still run out: that is the host's, as for any
+ * allocation).
  */
-export const MAX_ENCODED_BYTES = 2 ** 31 - 1;
+export const MAX_ENCODED_BYTES = 2 ** 31 - 9;
 
 /**
  * Why a value was not encoded: its encoding is longer than the limit (`TooLarge`), or an argument is not of its type
@@ -319,8 +320,8 @@ function within(value: Value, limit: number, target: Target | undefined): Result
 }
 
 /**
- * The canonical encoding of `value`, if it is at most `maxBytes` long (see `byteLimit` for odd limits); it never holds
- * more than `maxBytes`.
+ * The canonical encoding of `value`, if it is at most `maxBytes` long (see `byteLimit` for odd limits; no limit is above
+ * {@link MAX_ENCODED_BYTES}, the longest array an encoding is built in); it never holds more than the limit.
  *
  * O(min(weight, `maxBytes`)), and no allocation beyond the output: every encoding is at least as long as its value's
  * weight (each node's head is a byte, text and byte strings add their length, a number of `l` whole limbs takes at
@@ -330,7 +331,7 @@ function within(value: Value, limit: number, target: Target | undefined): Result
  * `number`, is a `TypeMismatch`, checked in O(1) before anything is allocated.
  */
 export function encodeWithin(value: Value, maxBytes: number): Result<Uint8Array, EncodeError> {
-  const limit = checkedLimit(value, maxBytes);
+  const limit = encodingLimit(value, maxBytes);
   if (!limit.ok) return limit;
   const kept = new Growing(limit.value);
   const w = within(value, limit.value, kept);
@@ -342,8 +343,14 @@ export function encodeWithin(value: Value, maxBytes: number): Result<Uint8Array,
  * and refusals of {@link encodeWithin}.
  */
 export function encodedLengthWithin(value: Value, maxBytes: number): Result<number, EncodeError> {
-  const limit = checkedLimit(value, maxBytes);
+  const limit = encodingLimit(value, maxBytes);
   return limit.ok ? within(value, limit.value, undefined) : limit;
+}
+
+/** `maxBytes` as `checkedLimit` applies it, and at most {@link MAX_ENCODED_BYTES}: a limit past the ceiling is it. */
+function encodingLimit(value: Value, maxBytes: number): Result<number, TypeMismatch> {
+  const limit = checkedLimit(value, maxBytes);
+  return limit.ok ? ok(Math.min(limit.value, MAX_ENCODED_BYTES)) : limit;
 }
 
 /**
@@ -353,7 +360,7 @@ export function encodedLengthWithin(value: Value, maxBytes: number): Result<numb
  * Its arguments are not checked: its callers check them first (`checkedLimit`).
  */
 export function encodeIntoWithin(feeding: Feeding, value: Value, maxBytes: number): Result<number, TooLarge> {
-  const w = within(value, byteLimit(maxBytes), feeding);
+  const w = within(value, Math.min(byteLimit(maxBytes), MAX_ENCODED_BYTES), feeding);
   feeding.flush();
   return w;
 }

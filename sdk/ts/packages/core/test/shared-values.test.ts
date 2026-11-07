@@ -185,7 +185,14 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
   it("refuses a saturated weight with the limit alone", () => {
     const saturated = doubled(text("a"), MAX_DEPTH);
     expect(saturated.weight).toBe(MAX_WEIGHT);
-    expect(cbor.encodeWithin(saturated, Number.MAX_SAFE_INTEGER)).toEqual({ ok: false, error: { kind: "TooLarge", limit: Number.MAX_SAFE_INTEGER } });
+    // a limit past the ceiling is the ceiling: an encoding is built in one array
+    expect(cbor.encodeWithin(saturated, Number.MAX_SAFE_INTEGER)).toEqual({ ok: false, error: { kind: "TooLarge", limit: cbor.MAX_ENCODED_BYTES } });
+    expect(cbor.encodedLengthWithin(saturated, Infinity)).toEqual({ ok: false, error: { kind: "TooLarge", limit: cbor.MAX_ENCODED_BYTES } });
+    expect(valueCommitmentWithin(saturated, 2 ** 40)).toEqual({ ok: false, error: { kind: "TooLarge", limit: cbor.MAX_ENCODED_BYTES } });
+    expect(cbor.MAX_ENCODED_BYTES).toBe(2 ** 31 - 9);
+    // and so is a content hash's, streamed or not: refused from the weight before anything is hashed
+    const tag = expectOk(DomainTag.of("dilf4s/test/v1"), "tag");
+    expect(TaggedHash.of("SHA-256", tag).contentWithin(saturated, Infinity)).toEqual({ ok: false, error: { kind: "TooLarge", limit: cbor.MAX_ENCODED_BYTES } });
     expect(valueCommitmentWithin(saturated, 100)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 100 } });
   });
 

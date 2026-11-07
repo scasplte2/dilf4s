@@ -40,7 +40,7 @@ object SigmaRefusalVectors {
     require(actual == expected, s"$name: expected $expected, got $actual")
     Json.obj(
       "name"        -> name.asJson,
-      "proposition" -> Cbor.encode(proposition).toHex.asJson,
+      "proposition" -> Cbor.encode(proposition).fold(e => sys.error(e.toString), _.toHex).asJson,
       "proof"       -> proof.toHex.asJson,
       "message"     -> message.toHex.asJson,
       "outcome"     -> actual.asJson

@@ -57,9 +57,9 @@ object BuiltValues {
   /** The recipe as the schemas' `built-value`. */
   def model(b: Built): BuiltValue =
     BuiltValue(
-      Cbor.encode(b.leaf).toHex,
+      CanonicalGens.encoded(b.leaf).toHex,
       Option.when(b.steps.nonEmpty)(b.steps.toVector.map {
-        case Wrap(t, n) => BuiltWrap(Cbor.encode(t).toHex, BigInt(n))
+        case Wrap(t, n) => BuiltWrap(CanonicalGens.encoded(t).toHex, BigInt(n))
         case Copies(n)  => BuiltCopies(BigInt(n))
       })
     )

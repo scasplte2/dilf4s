@@ -194,19 +194,32 @@ object FlatBytesSuite extends IOSuite {
     )
   }
 
+  test("a byte string longer than the encoding ceiling has no sort key: TooLarge, never a thrown array allocation") { _ =>
+    // a host's lazy view: its bytes are never read
+    val huge = CBytes(ByteVector.low(Long.MaxValue))
+    val ceiling = Left(xyz.kd5ujc.core.canonical.Cbor.TooLarge(xyz.kd5ujc.core.canonical.Cbor.MaxEncodedBytes))
+    IO.pure(expect.same(ceiling, Values.sortKey(huge).map(_.rank)))
+  }
+
   test("a byte string's sort key is one whole array, so comparing two never copies either") { _ =>
     // a slice of a decoded buffer, and a rope: both used to be copied on every comparison of a sort
     val sources = List("slice" -> ByteVector(0, 1, 2, 3).slice(1, 3), "rope" -> (ByteVector(1) ++ ByteVector(2)))
     IO.pure(sources.foldMap {
       case (name, b) =>
-        val key = Values.sortKey(CBytes(b))
-        expect(key.encoding.toArrayUnsafe eq key.encoding.toArrayUnsafe, s"$name: the key's bytes are read in place")
-          .and(expect.same(b, key.encoding))
+        Values
+          .sortKey(CBytes(b))
+          .fold(
+            e => failure(s"$name: $e"),
+            key =>
+              expect(key.encoding.toArrayUnsafe eq key.encoding.toArrayUnsafe, s"$name: the key's bytes are read in place")
+                .and(expect.same(b, key.encoding))
+          )
     })
   }
 
   test("bytes decoded from a flat buffer are flat: CBOR data, and 0x literals and data") { jlvm =>
-    val encoded = Cbor.encode(arr(Vector(CBytes(ByteVector(1, 2, 3)), obj("k" -> CBytes(ByteVector(4)))))).compact
+    val encoded =
+      xyz.kd5ujc.core.canonical.CanonicalGens.encoded(arr(Vector(CBytes(ByteVector(1, 2, 3)), obj("k" -> CBytes(ByteVector(4)))))).compact
     val decoded = Cbor.decode(encoded).map {
       case CArray(Vector(a, CMap(m))) => isFlat(a) && m.get("k").exists(isFlat)
       case _                          => false

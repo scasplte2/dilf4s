@@ -27,7 +27,12 @@ object CanonicalCirceSuite extends SimpleIOSuite with Checkers {
     expect
       .same(Left(NotJsonRepresentable("non-terminating rational")), CanonicalCirce.toCirce(third))
       .and(expect.same(Right(Json.fromBigInt(huge.value)), CanonicalCirce.toCirce(huge)))
-      .and(expect.same(CanonicalJson.render(third).map(_ => ()), CanonicalCirce.toCirce(third).map(_ => ())))
+      .and(
+        expect.same(
+          CanonicalJson.render(third).map(_ => ()),
+          CanonicalCirce.toCirce(third).map(_ => ()).left.map(CanonicalJson.RenderError.Canonical(_))
+        )
+      )
   }
 
   pureTest("a number refused for its scale is named by its size, never its digits") {
@@ -100,9 +105,18 @@ object CanonicalCirceSuite extends SimpleIOSuite with Checkers {
     val codec = CanonicalCirce.codec[Note]
     forall(gen) { note =>
       val viaDecode =
-        CanonicalCirce.fromEncoder[Note].canonical(note).map(Cbor.encode).flatMap(Cbor.decode(_)).flatMap(CanonicalCirce.decode[Note])
+        CanonicalCirce
+          .fromEncoder[Note]
+          .canonical(note)
+          .map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded)
+          .flatMap(Cbor.decode(_))
+          .flatMap(CanonicalCirce.decode[Note])
       val viaCodec =
-        codec.encode(note).map(Cbor.encode).flatMap(Cbor.decode(_)).flatMap(codec.decoder.decode(_).left.map(f => TypeMismatch(f.message)))
+        codec
+          .encode(note)
+          .map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded)
+          .flatMap(Cbor.decode(_))
+          .flatMap(codec.decoder.decode(_).left.map(f => TypeMismatch(f.message)))
       expect.same(Right(note), viaDecode).and(expect.same(Right(note), viaCodec))
     }
   }

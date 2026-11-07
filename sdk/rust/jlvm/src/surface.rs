@@ -68,7 +68,7 @@ impl Json<'_> {
 
     /// The canonical value of this JSON, with `0x`-hex strings as bytes (`JsonSurface.value`).
     fn value(&self, r: &Spans) -> Result<Value, JlvmError> {
-        r.read(self.span).map(from_canonical_json).map_err(|e| JlvmError::malformed(alloc::format!("{e}")))
+        r.read(self.span).and_then(from_canonical_json).map_err(|e| JlvmError::malformed(alloc::format!("{e}")))
     }
 }
 
@@ -167,7 +167,7 @@ pub(crate) fn parse_counted(text: &str, r: &Spans) -> Result<Program, JlvmError>
 /// Parses input data or a host binding from JSON surface text (`JsonSurface.parse`): the strict parser, then `0x`-hex
 /// strings as bytes.
 pub fn parse_value(text: &str) -> Result<Value, JlvmError> {
-    strict(text, false).map(from_canonical_json)
+    strict(text, false).and_then(|v| from_canonical_json(v).map_err(|e| JlvmError::malformed(alloc::format!("{e}"))))
 }
 
 fn malformed<A>(m: impl Into<String>) -> Result<A, JlvmError> {

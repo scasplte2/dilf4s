@@ -67,7 +67,7 @@ object RationalWidthSuite extends SimpleIOSuite {
     val (n, d) = fibonacci(Max)
     val k = 8
     val maximal = CanonicalValue.array(Vector.fill(k)(rational(n, d))).fold(e => sys.error(e.toString), identity)
-    val bytes = Cbor.encode(maximal)
+    val bytes = CanonicalGens.encoded(maximal)
     counted(bytes).map {
       case (decoded, calls, widest) =>
         expect

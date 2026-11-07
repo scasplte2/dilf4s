@@ -146,7 +146,7 @@ object CollidingKeysSuite extends SimpleIOSuite {
 
   test("decode: one insertion per key, in encoded order, and no key measured again") {
     def decoding(keys: Vector[String]) = {
-      val bytes = Cbor.encode(get(CanonicalValue.map(keys.map(_ -> CInt(1)))))
+      val bytes = CanonicalGens.encoded(get(CanonicalValue.map(keys.map(_ -> CInt(1)))))
       counting(o => (Cbor.decode(bytes, Cbor.DefaultMaxDepth, o), o, bytes))
     }
     (decoding(colliding(K)), decoding(control(K))).mapN {
@@ -158,7 +158,7 @@ object CollidingKeysSuite extends SimpleIOSuite {
           .and(expect.same(inserting(keysOf(get(plain))), plainComparisons))
           .and(expect.same(0L, measures))
           .and(ordered("decode", v, o))
-          .and(expect.same(bytes, Cbor.encode(v)))
+          .and(expect.same(bytes, CanonicalGens.encoded(v)))
     }
   }
 

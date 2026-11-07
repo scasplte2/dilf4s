@@ -56,7 +56,7 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
 
   private def same(name: String, v: CanonicalValue): weaver.Expectations = {
     val buffered = BufferedCbor.encode(v)
-    algos.foldLeft(expect(Cbor.encode(v) == buffered, s"$name: the encoding")) { (acc, a) =>
+    algos.foldLeft(expect(xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v) == buffered, s"$name: the encoding")) { (acc, a) =>
       def check[H](a: Algo[H]): weaver.Expectations = {
         implicit val H: Hasher[H] = a.hasher
         val t = TaggedHash[H](tag)
@@ -276,7 +276,7 @@ object StreamingSuite extends SimpleIOSuite with Checkers {
           val streamed = Hasher.bouncyCastle[Sha256]("SHA-256", () => counting).digestOf(source)
           val total = b.size + 2
           val windows = (total + Hasher.Window - 1) / Hasher.Window
-          expect(streamed.bytes == oneShot(() => new SHA256Digest(), source.toByteVector), s"$name: the digest")
+          expect(streamed.bytes == oneShot(() => new SHA256Digest(), ByteVector(0x7f) ++ b ++ ByteVector(0x7e)), s"$name: the digest")
             .and(expect(counting.total.get == total, s"$name: every byte once"))
             .and(expect(counting.longest.get <= Hasher.Window.toLong, s"$name: windows at most"))
             .and(expect(counting.calls.get <= windows, s"$name: ${counting.calls.get} updates for $windows windows"))

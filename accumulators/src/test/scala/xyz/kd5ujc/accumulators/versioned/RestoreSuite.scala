@@ -307,7 +307,7 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
               Right(delta),
               VersionedTrieWire
                 .encodeDelta(delta)
-                .map(xyz.kd5ujc.core.canonical.Cbor.encode)
+                .map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded)
                 .flatMap(b => xyz.kd5ujc.core.canonical.Cbor.decode(b).leftMap(e => VersionedTrieError.Malformed(e.toString)))
                 .flatMap(VersionedTrieWire.decodeDelta[Long, H])
             )

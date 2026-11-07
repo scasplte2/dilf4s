@@ -164,6 +164,63 @@ export const CanonicalJsonRejected: c.Codec<CanonicalJsonRejected> = c.record<Ca
   limit: c.optional("limit", c.uint),
 });
 
+/**
+ * `canonical-limit-case` (`shared/schemas/canonical-vectors.cddl`).
+ *
+ * A budgeted call (sections 2 and 3): cbor.encodeWithin ("cbor") or json.renderWithin ("json") of "value" (its
+ * canonical CBOR) within "maxBytes". "output" is its result, exactly when it is accepted: the encoding's hex, or the
+ * JSON text.
+ */
+export interface CanonicalLimitCase {
+  readonly name: string;
+  readonly encoding: CanonicalLimitEncoding;
+  readonly value: Hex;
+  readonly maxBytes: bigint;
+  readonly outcome: CanonicalLimitOutcome;
+  readonly output?: string;
+}
+
+export const CanonicalLimitCase: c.Codec<CanonicalLimitCase> = c.record<CanonicalLimitCase>({
+  name: c.required("name", c.text),
+  encoding: c.required("encoding", c.defer(() => CanonicalLimitEncoding)),
+  value: c.required("value", c.defer(() => Hex)),
+  maxBytes: c.required("maxBytes", c.uint),
+  outcome: c.required("outcome", c.defer(() => CanonicalLimitOutcome)),
+  output: c.optional("output", c.text),
+});
+
+/** `canonical-limit-encoding` (`shared/schemas/canonical-vectors.cddl`). */
+export type CanonicalLimitEncoding = "cbor" | "json";
+
+export const CanonicalLimitEncoding: c.Codec<CanonicalLimitEncoding> = c.union<CanonicalLimitEncoding>("CanonicalLimitEncoding", [], ["cbor", "json"]);
+
+/** `canonical-limit-kind` (`shared/schemas/canonical-vectors.cddl`). */
+export type CanonicalLimitKind = "TooLarge" | codecErrors.CanonicalErrorKind;
+
+export const CanonicalLimitKind: c.Codec<CanonicalLimitKind> = c.union<CanonicalLimitKind>("CanonicalLimitKind", [], ["TooLarge", "UnpairedSurrogate", "DuplicateKey", "RationalTooWide", "IntegerTooWide", "JsonSyntax", "InvalidNumber", "NotJsonRepresentable", "TypeMismatch", "UnexpectedEnd", "TrailingBytes", "DepthExceeded", "NonCanonical", "Unsupported", "InvalidUtf8"]);
+
+/**
+ * `canonical-limit-outcome` (`shared/schemas/canonical-vectors.cddl`).
+ *
+ * "accepted", or a refusal: its kind, and "limit" exactly when the kind is TooLarge (conformance.md section 3).
+ */
+export type CanonicalLimitOutcome = CanonicalLimitRefusal | "accepted";
+
+export const CanonicalLimitOutcome: c.Codec<CanonicalLimitOutcome> = c.union<CanonicalLimitOutcome>("CanonicalLimitOutcome", [
+  c.alternative(c.defer(() => CanonicalLimitRefusal), [["kind"], ["kind", "limit"]], [["kind"], ["kind", "limit"]]),
+], ["accepted"]);
+
+/** `canonical-limit-refusal` (`shared/schemas/canonical-vectors.cddl`). */
+export interface CanonicalLimitRefusal {
+  readonly kind: CanonicalLimitKind;
+  readonly limit?: bigint;
+}
+
+export const CanonicalLimitRefusal: c.Codec<CanonicalLimitRefusal> = c.record<CanonicalLimitRefusal>({
+  kind: c.required("kind", c.defer(() => CanonicalLimitKind)),
+  limit: c.optional("limit", c.uint),
+});
+
 /** `canonical-model-case` (`shared/schemas/canonical-vectors.cddl`). */
 export interface CanonicalModelCase {
   readonly value: string;
@@ -216,6 +273,7 @@ export interface CanonicalVectors {
   readonly json: readonly CanonicalJsonCase[];
   readonly model: readonly CanonicalModelCase[];
   readonly renderRejections: readonly CanonicalRenderRejection[];
+  readonly limits: readonly CanonicalLimitCase[];
   readonly cborRejections: readonly CanonicalCborRejection[];
   readonly taggedHash: readonly CanonicalTaggedHash[];
   readonly digests: readonly CanonicalDigest[];
@@ -233,6 +291,7 @@ export const CanonicalVectors: c.Codec<CanonicalVectors> = c.record<CanonicalVec
   json: c.required("json", c.vector(c.defer(() => CanonicalJsonCase), 0, null)),
   model: c.required("model", c.vector(c.defer(() => CanonicalModelCase), 0, null)),
   renderRejections: c.required("renderRejections", c.vector(c.defer(() => CanonicalRenderRejection), 0, null)),
+  limits: c.required("limits", c.vector(c.defer(() => CanonicalLimitCase), 0, null)),
   cborRejections: c.required("cborRejections", c.vector(c.defer(() => CanonicalCborRejection), 0, null)),
   taggedHash: c.required("taggedHash", c.vector(c.defer(() => CanonicalTaggedHash), 0, null)),
   digests: c.required("digests", c.vector(c.defer(() => CanonicalDigest), 0, null)),

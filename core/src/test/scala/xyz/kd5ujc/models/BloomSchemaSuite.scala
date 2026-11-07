@@ -1,7 +1,6 @@
 package xyz.kd5ujc.models
 
 import xyz.kd5ujc.core.bloom.{BloomFilter, BloomParams}
-import xyz.kd5ujc.core.canonical.Cbor
 import xyz.kd5ujc.core.hash.Sha256
 import xyz.kd5ujc.models.bloom.{BloomFilter => Wire}
 
@@ -28,7 +27,10 @@ object BloomSchemaSuite extends SimpleIOSuite with Checkers {
         val handWritten = BloomFilter.encode(f)
         val viaSchema = Wire.codec.encode(Wire(p.bits, p.hashes, f.bits.bytes))
         expect
-          .same(viaSchema.map(Cbor.encode), Right(Cbor.encode(handWritten)))
+          .same(
+            viaSchema.map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded),
+            Right(xyz.kd5ujc.core.canonical.CanonicalGens.encoded(handWritten))
+          )
           .and(expect.same(Right(Wire(p.bits, p.hashes, f.bits.bytes)), Wire.codec.decoder.decode(handWritten).left.map(_.message)))
           .and(expect.same(Right(f), BloomFilter.decode[Sha256](handWritten)))
     }

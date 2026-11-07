@@ -46,7 +46,7 @@ object SchemaConformanceSuite extends SimpleIOSuite {
       value <- Cbor.decode(bytes).leftMap(_.toString)
       a     <- codec.decoder.decode(value).leftMap(_.message)
       again <- codec.encode(a).leftMap(_.toString)
-    } yield Cbor.encode(again)
+    } yield xyz.kd5ujc.core.canonical.CanonicalGens.encoded(again)
 
   pureTest("every Merkle proof in merkle_v1.json round-trips byte-identically and stays valid for the domain decoder") {
     val trees = json("shared", "vectors", "merkle_v1.json").hcursor.downField("trees").as[List[Json]].toOption.get

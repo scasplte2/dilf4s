@@ -172,7 +172,8 @@ object CanonicalValue {
 
   /** A byte string, flat by construction ([[FlatBytes]]): no rope or buffer reaches a canonical value. */
   sealed abstract case class CBytes(value: FlatBytes) extends Scalar {
-    final val weight: Long = 1L + value.size
+    // saturating: a host's lazy view (`ByteVector.low`) can be as long as `Long.MaxValue`
+    final val weight: Long = Weight.add(1L, value.size)
   }
 
   object CBytes {
@@ -347,6 +348,54 @@ object CanonicalValue {
   /** For the strict decoder, which bounds depth and has verified unique, ordered text keys and non-null values. */
   private[canonical] def decodedArray(values: Vector[CanonicalValue]): CArray = new CArray(values) {}
   private[canonical] def decodedMap(entries:  Vector[(CText, CanonicalValue)], keys: KeyOrder): CMap = ofText(entries, keys)
+
+  /**
+   * `v` with every scalar `s` in it (map keys aside) replaced by `f(s)`, each container rebuilt once, through an explicit
+   * stack: stack-safe at any depth. Total: a scalar in place of a scalar changes no depth and no key, so every rebuilt
+   * container is valid; a map's value that `f` makes null drops its entry, as in every map. O(weight) time and memory:
+   * a part shared in `v` is rebuilt each time it occurs, so bound the weight first.
+   */
+  private[kd5ujc] def mapScalars(v: CanonicalValue)(f: Scalar => Scalar): CanonicalValue =
+    rebuilt(Rebuild.Open(v), Nil, f)
+
+  /** "0x" and the lowercase hex of `b`: ASCII, so it is well-formed text (the JLVM's JSON surface form of bytes). */
+  private[kd5ujc] def hexText(b: ByteVector): CText = new CText("0x" + b.toHex) {}
+
+  /** [[mapScalars]]'s next step: a value to open, a value rebuilt, or an open container to advance. */
+  sealed private trait Rebuild
+
+  /** A container [[mapScalars]] has open: its parts, the next to rebuild, and those rebuilt. */
+  sealed private trait Opened
+
+  private object Rebuild {
+    final case class Open(value: CanonicalValue) extends Rebuild
+    final case class Done(value: CanonicalValue) extends Rebuild
+    final case class Advance(container: Opened) extends Rebuild
+    final case class Items(items: Vector[CanonicalValue], next: Int, built: Vector[CanonicalValue]) extends Opened
+    final case class Entries(m: CMap, entries: Vector[(String, CanonicalValue)], next: Int, built: Vector[(String, CanonicalValue)])
+        extends Opened
+  }
+
+  /** One step of [[mapScalars]], with the containers open around it, innermost first. */
+  @tailrec
+  private def rebuilt(step: Rebuild, open: List[Opened], f: Scalar => Scalar): CanonicalValue = {
+    import Rebuild._
+    (step, open) match {
+      case (Open(CArray(vs)), _) => rebuilt(Advance(Items(vs, 0, Vector.empty)), open, f)
+      case (Open(m: CMap), _)    => rebuilt(Advance(Entries(m, m.entries.toVector, 0, Vector.empty)), open, f)
+      case (Open(s: Scalar), _)  => rebuilt(Done(f(s)), open, f)
+      case (Advance(Items(items, next, built)), _) =>
+        if (next < items.size) rebuilt(Open(items(next)), Items(items, next + 1, built) :: open, f)
+        else rebuilt(Done(new CArray(built) {}), open, f)
+      case (Advance(Entries(m, entries, next, built)), _) =>
+        if (next < entries.size) rebuilt(Open(entries(next)._2), Entries(m, entries, next + 1, built) :: open, f)
+        else rebuilt(Done(mapOf(CanonicalEntries.inserted(built.iterator.filter(_._2 != CNull), m.keys), m.keys)), open, f)
+      case (Done(x), Nil)                               => x
+      case (Done(x), Items(items, next, built) :: rest) => rebuilt(Advance(Items(items, next, built :+ x)), rest, f)
+      case (Done(x), Entries(m, entries, next, built) :: rest) =>
+        rebuilt(Advance(Entries(m, entries, next, built :+ (entries(next - 1)._1 -> x))), rest, f)
+    }
+  }
 
   private def withinDepth[A <: CanonicalValue](v: A): Either[CanonicalError, A] =
     Either.cond(v.depth <= MaxDepth, v, CanonicalError.DepthExceeded(MaxDepth))

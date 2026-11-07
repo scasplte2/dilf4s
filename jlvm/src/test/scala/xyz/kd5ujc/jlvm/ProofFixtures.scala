@@ -63,7 +63,7 @@ object ProofFixtures {
     get(
       Trie.fromEntries[Sha256](
         keyMode(fx),
-        values(fx).toList.map { case (k, v) => hex(k) -> TrieHashing[Sha256].value(ValueCommitment.bytes(CBytes(v))) }
+        values(fx).toList.map { case (k, v) => hex(k) -> TrieHashing[Sha256].valueOf(ValueCommitment.source(CBytes(v))) }
       )
     )
 

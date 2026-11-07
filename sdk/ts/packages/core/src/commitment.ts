@@ -32,14 +32,14 @@ export function valueCommitment(value: Value): Result<Uint8Array, EncodeError> {
 
 /**
  * {@link valueCommitment}, if it is at most `maxBytes` long (tag included; a fraction rounds down, `NaN` or a negative
- * limit is 0), with the bounds of `cbor.encodeWithin`: O(min(weight, `maxBytes`)), refused at once when the weight is
+ * limit is 0, and no limit is above `cbor.MAX_ENCODED_BYTES`), with the bounds of `cbor.encodeWithin`: O(min(weight, `maxBytes`)), refused at once when the weight is
  * over the limit (a commitment is longer than its value's weight), and never holding more than the limit. A value that
  * is not a canonical value, or a limit that is not a `number`, is a `TypeMismatch`, checked first, in O(1).
  */
 export function valueCommitmentWithin(value: Value, maxBytes: number): Result<Uint8Array, EncodeError> {
   const checked = checkedLimit(value, maxBytes);
   if (!checked.ok) return checked;
-  const limit = checked.value;
+  const limit = Math.min(checked.value, MAX_ENCODED_BYTES);
   if (value.kind === "bytes") return value.length < limit ? ok(tagged(BYTES_TAG, bytesView(value))) : err(tooLarge(limit));
   if (limit === 0) return err(tooLarge(limit));
   // the body is budgeted one byte short, for the tag; the refusal names the caller's limit
@@ -102,7 +102,7 @@ export function valueCommitmentInto(hash: Absorber, value: Value): Result<void, 
 export function valueCommitmentIntoWithin(hash: Absorber, value: Value, maxBytes: number): Result<void, EncodeError> {
   const checked = checkedLimit(value, maxBytes);
   if (!checked.ok) return checked;
-  const limit = checked.value;
+  const limit = Math.min(checked.value, MAX_ENCODED_BYTES);
   if (value.kind === "bytes") {
     if (value.length >= limit) return err(tooLarge(limit));
     const staged = new Feeding(hash);

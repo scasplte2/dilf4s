@@ -1,6 +1,8 @@
 package xyz.kd5ujc.accumulators
 
-import xyz.kd5ujc.core.canonical.{ByteSource, CanonicalValue, Cbor}
+import cats.syntax.bifunctor._
+
+import xyz.kd5ujc.core.canonical.{ByteSink, ByteSource, CanonicalValue, Cbor, FlatBytes}
 
 import scodec.bits.ByteVector
 
@@ -23,6 +25,26 @@ object ValueCommitment {
       case other                    => ByteSource.byte(CborTag.toInt) ++ Cbor.source(other)
     }
 
-  /** The commitment, built: O(its length) memory. */
-  def bytes(v: CanonicalValue): ByteVector = source(v).toByteVector
+  /**
+   * The commitment, built: [[bytesWithin]] at `Cbor.MaxEncodedBytes`, the longest array a value's encoding is built
+   * into. O(its length) memory: to hash it, stream it ([[source]]).
+   */
+  def bytes(v: CanonicalValue): Either[Cbor.TooLarge, ByteVector] = bytesWithin(v, Cbor.MaxEncodedBytes)
+
+  /**
+   * The commitment, if it is at most `maxBytes` long, tag included (a negative limit is 0, and no limit is above
+   * `Cbor.MaxEncodedBytes`), with the bounds of `Cbor.encodeWithin`: refused before a byte is written, and the refusal
+   * names the limit as applied. A byte string's commitment is its bytes and the tag; any other value's body is budgeted
+   * a byte short, for the tag.
+   */
+  def bytesWithin(v: CanonicalValue, maxBytes: Long): Either[Cbor.TooLarge, ByteVector] = {
+    val limit = maxBytes.max(0L).min(Cbor.MaxEncodedBytes)
+    val refused = Cbor.TooLarge(limit)
+    v match {
+      case CanonicalValue.CBytes(b) => Either.cond(b.size < limit, FlatBytes(ByteVector(BytesTag) ++ b), refused)
+      case other =>
+        if (limit == 0L) Left(refused)
+        else Cbor.encodeInto(other, limit - 1, ByteSink.emptyBuffer :+ CborTag).bimap(_ => refused, FlatBytes(_))
+    }
+  }
 }

@@ -143,9 +143,9 @@ object TrieHashing {
     private val branchTag = TaggedHash[H](tag(BranchTag))
     val empty: Digest[H] = TaggedHash[H](tag(EmptyTag)).apply(ByteVector.empty)
     def valueOf(bytes: ByteSource): Digest[H] = valueTag.of(bytes)
-    def leaf(segment:  BitVector, value: Digest[H]): Digest[H] = leafTag(Cbor.encode(NodeCodec.leaf(segment, value)))
+    def leaf(segment:  BitVector, value: Digest[H]): Digest[H] = leafTag.of(Cbor.source(NodeCodec.leaf(segment, value)))
     def branch(segment: BitVector, value: Option[Digest[H]], left: Option[Digest[H]], right: Option[Digest[H]]): Digest[H] =
-      branchTag(Cbor.encode(NodeCodec.branch(segment, value.map(_.bytes), left.map(_.bytes), right.map(_.bytes))))
+      branchTag.of(Cbor.source(NodeCodec.branch(segment, value.map(_.bytes), left.map(_.bytes), right.map(_.bytes))))
   }
 }
 

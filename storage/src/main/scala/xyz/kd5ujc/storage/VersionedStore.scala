@@ -187,7 +187,12 @@ object VersionedStore {
     // ---- records: shared/schemas/storage.cddl `versioned-record`; an absent field means "no value"
 
     private def record(before: Option[ByteVector], after: Option[ByteVector]): F[ByteVector] =
-      liftE(VersionedRecord.codec.encode(VersionedRecord(before, after)).bimap(e => StoreError.Corrupt(s"record: $e"), Cbor.encode))
+      liftE(
+        VersionedRecord.codec
+          .encode(VersionedRecord(before, after))
+          .leftMap(e => StoreError.Corrupt(s"record: $e"))
+          .flatMap(Cbor.encode(_).leftMap(e => StoreError.Codec("record", s"its encoding is over ${e.limit} bytes")))
+      )
 
     private def readRecord(bytes: ByteVector): F[(Option[ByteVector], Option[ByteVector])] =
       liftE(

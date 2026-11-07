@@ -45,7 +45,7 @@ object FlatBytesSuite extends SimpleIOSuite {
 
   pureTest("decoding a rope input gives flat byte strings, views of one array") {
     val value = CanonicalValue.array(Vector(CBytes(ByteVector.fill(5000L)(7)), CBytes(prepended(300)))).toOption.get
-    val encoded = Cbor.encode(value)
+    val encoded = CanonicalGens.encoded(value)
     val rope = encoded.grouped(7L).foldLeft(ByteVector.empty)(_ ++ _)
     Cbor.decode(rope) match {
       case Right(decoded @ CArray(Vector(CBytes(a), CBytes(b)))) =>
@@ -58,7 +58,7 @@ object FlatBytesSuite extends SimpleIOSuite {
 
   pureTest("an encoding is one array") {
     val value = CanonicalValue.array(Vector.fill(100)(CBytes(prepended(50)))).toOption.get
-    expect(FlatBytes.isFlat(Cbor.encode(value)))
+    expect(FlatBytes.isFlat(CanonicalGens.encoded(value)))
   }
 
   pureTest("concat copies its parts once, end to end") {
