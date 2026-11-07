@@ -5,6 +5,7 @@ pub mod canonical_vectors;
 pub mod crypto;
 pub mod crypto_errors;
 pub mod diagnostic_vectors;
+pub mod hash_errors;
 pub mod jlvm;
 pub mod jlvm_vectors;
 pub mod kes_vectors;

@@ -51,14 +51,17 @@ object PoseidonMerkleProof {
 
   /**
    * The schema fixes shape and field ranges; this adds the invariant it cannot state (`position < 2^depth`). A proof
-   * heavier than `ProofInput.MaxProofWeight` is `Encoding`, refused before it is decoded.
+   * heavier than `ProofInput.MaxProofWeight` is `Encoding`, refused before it is decoded. A sibling not below `r` is
+   * named by its position and bit length, never its digits (docs/specs/conformance.md §2).
    */
   def fromCanonical(v: CanonicalValue): Either[PoseidonMerkleError, PoseidonMerkleProof] =
     for {
-      _        <- ProofInput.bounded(v)(PoseidonMerkleError.Encoding(_))
-      w        <- Wire.codec.decoder.decode(v).leftMap(e => PoseidonMerkleError.Encoding(e.message))
-      siblings <- w.siblings.traverse(Fr.from).leftMap(e => PoseidonMerkleError.Encoding(e.toString))
-      proof    <- from(w.position, siblings)
+      _ <- ProofInput.bounded(v)(PoseidonMerkleError.Encoding(_))
+      w <- Wire.codec.decoder.decode(v).leftMap(e => PoseidonMerkleError.Encoding(e.message))
+      siblings <- w.siblings.zipWithIndex.traverse {
+        case (x, i) => Fr.from(x).leftMap(_ => PoseidonMerkleError.Encoding(s"sibling $i is not below r (${x.bitLength} bits)"))
+      }
+      proof <- from(w.position, siblings)
     } yield proof
 }
 

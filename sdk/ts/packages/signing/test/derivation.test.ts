@@ -3,7 +3,7 @@ import { inspect } from "node:util";
 
 import { describe, expect, test, vi } from "vitest";
 
-import { digest, models, toHex, type Result } from "@kd5ujc/dilf4s-core";
+import { digest, models, Preview, toHex, type Result } from "@kd5ujc/dilf4s-core";
 
 import {
   bip32Secp256k1,
@@ -142,8 +142,26 @@ describe("BIP-39", { timeout: 60_000 }, () => {
     expect(kind(WordList.of(ENGLISH.slice(1)))).toBe("InvalidWordList");
     expect(kind(WordList.of([...ENGLISH.slice(1), "ability"]))).toBe("InvalidWordList");
     expect(kind(WordList.of([...ENGLISH.slice(1), "two words"]))).toBe("InvalidWordList");
-    expect(kind(WordList.of(ENGLISH, ","))).toBe("InvalidWordList");
-    expect(kind(WordList.of(ENGLISH, "  "))).toBe("InvalidWordList");
+    // the caller's separator is held as a preview (conformance.md section 8), never as reason text
+    const comma = WordList.of(ENGLISH, ",");
+    expect(comma.ok ? undefined : comma.error).toEqual({ kind: "InvalidWordList", reason: "the separator is not one phrases are split on", separator: Preview.of(",") });
+    // a JavaScript caller's words of the wrong type are refused by their type, never converted or echoed
+    const hostile = { toString: (): string => { throw new Error("read"); } };
+    const refusal = (r: ReturnType<typeof WordList.of>): unknown => (r.ok ? undefined : r.error);
+    expect(refusal(WordList.of({ length: 2048 } as unknown as string[]))).toEqual({ kind: "InvalidWordList", reason: "the words are not an array" });
+    expect(refusal(WordList.of("abandon " as unknown as string[]))).toEqual({ kind: "InvalidWordList", reason: "the words are not an array" });
+    const mixed: unknown[] = [...ENGLISH];
+    mixed[5] = hostile;
+    expect(refusal(WordList.of(mixed as string[]))).toEqual({ kind: "InvalidWordList", reason: "word 5 is not a string" });
+    mixed[5] = 7;
+    expect(refusal(WordList.of(mixed as string[]))).toEqual({ kind: "InvalidWordList", reason: "word 5 is not a string" });
+    expect(refusal(WordList.of(["a", "b", "c"]))).toEqual({ kind: "InvalidWordList", reason: "expected 2048 distinct words without separators, got 3" });
+    const lying = new Proxy([...ENGLISH], { get: (t, k, r): unknown => (k === "length" ? hostile : (Reflect.get(t, k, r) as unknown)) });
+    expect(refusal(WordList.of(lying))).toEqual({ kind: "InvalidWordList", reason: "expected 2048 distinct words without separators, got no count" });
+    const notText = WordList.of(ENGLISH, 32 as unknown as string);
+    expect(notText.ok ? undefined : notText.error, "a separator that is not a string, by its type").toEqual({ kind: "InvalidWordList", reason: "the separator is not a string" });
+    const two = WordList.of(ENGLISH, "  ");
+    expect(two.ok ? undefined : two.error, "a longer one by its length alone").toEqual({ kind: "InvalidWordList", reason: "a separator of 2 characters is not one phrases are split on" });
     // conformance.md section 8: a long separator is refused by its length, unread and never echoed
     const reads = vi.spyOn(String.prototype, "codePointAt");
     const long = WordList.of(ENGLISH, " ".repeat(1 << 20));

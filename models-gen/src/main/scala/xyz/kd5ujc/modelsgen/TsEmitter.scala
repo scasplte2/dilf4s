@@ -51,6 +51,8 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
     case FieldType.Vec(e, min, max) =>
       val (et, ec) = ts(rule, e)
       (s"readonly ${if (et.contains(" ")) s"($et)" else et}[]", s"c.vector($ec, $min, ${max.fold("null")(_.toString)})")
+    // an error's field only (Profile refuses it in a wire type): the core's Preview, imported as a type
+    case FieldType.Preview => (PreviewType, "")
   }
 
   private def doc(rule: QName): String = s"/** `${rule.name}` (`shared/schemas/${rule.module}.cddl`). */"
@@ -178,6 +180,12 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
        |export const ${RustEmitter.constName(rule)} = ${if (v <= MaxSafeInteger) v.toString else s"${v}n"};
        |""".stripMargin
 
+  /** Whether an error family of these rules holds a preview, so the module imports the core's `Preview`. */
+  private def usesPreview(rules: Vector[(QName, ModelRule)]): Boolean = rules.exists {
+    case (_, ModelRule.ErrorFamily(_, cases)) => cases.exists(_.fields.exists(_.tpe == FieldType.Preview))
+    case _                                    => false
+  }
+
   /** The source of one module. */
   def module(name: String): Either[GenError, String] = {
     val rules = models.toVector.collect { case (q, m) if q.module == name => q -> m }.sortBy(_._1.name)
@@ -186,6 +194,9 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
       .collectFirst { case (t, qs) if qs.size > 1 => GenError.NameClash(name, t, qs.map(_._1.name)) }
       .orElse(rules.collectFirst {
         case (q, _) if reservedTypes(typeName(q)) => GenError.ReservedName(name, Language.TypeScript, typeName(q))
+        // a module whose errors hold previews imports the core's Preview, which a generated type would shadow
+        case (q, m) if typeName(q) == PreviewType && m != ModelRule.PreviewType && usesPreview(rules) =>
+          GenError.ReservedName(name, Language.TypeScript, PreviewType)
       })
       .orElse(
         Option
@@ -193,19 +204,21 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
       )
     problem.toLeft(()).flatMap { _ =>
       rules.traverse {
-        case (q, ModelRule.Record(fs))             => record(q, fs)
-        case (q, ModelRule.Enumeration(cs))        => enumeration(q, cs).asRight
-        case (q, ModelRule.Union(as, texts, cs))   => union(q, as, texts, cs)
-        case (q, ModelRule.ErrorFamily(ks, cases)) => errorFamily(q, ks, cases)
-        case (q, ModelRule.Alias(t))               => alias(q, t).asRight
-        case (q, ModelRule.Constant(v))            => constant(q, v).asRight
+        case (q, ModelRule.Record(fs))             => record(q, fs).map(Some(_))
+        case (q, ModelRule.Enumeration(cs))        => Some(enumeration(q, cs)).asRight
+        case (q, ModelRule.Union(as, texts, cs))   => union(q, as, texts, cs).map(Some(_))
+        case (q, ModelRule.ErrorFamily(ks, cases)) => errorFamily(q, ks, cases).map(Some(_))
+        case (q, ModelRule.Alias(t))               => Some(alias(q, t)).asRight
+        case (q, ModelRule.Constant(v))            => Some(constant(q, v)).asRight
+        case (_, ModelRule.PreviewType)            => None.asRight
       }.map { bodies =>
-        val code = bodies.mkString("\n")
+        val code = bodies.flatten.mkString("\n")
         val others = models.keys.collect {
           case q if q.module != name && code.contains(s"${namespace(q.module)}.${typeName(q)}") => q.module
         }.toList.distinct.sorted
         val imports =
           Option.when("(?<![A-Za-z0-9_$.])c\\.".r.findFirstIn(code).isDefined)(s"""import * as c from "../codec.js";""").toList ++
+          Option.when(usesPreview(rules))(s"""import type { $PreviewType } from "../preview.js";""").toList ++
           others.map { m =>
             // a module named only in types (a choice of its texts) is imported as types: its codecs are not used
             val ns = namespace(m)
@@ -228,6 +241,9 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
 }
 
 object TsEmitter {
+
+  /** The core's preview type, which an error's preview field holds (imported from `../preview.js`). */
+  private val PreviewType = "Preview"
 
   /** Global types the generated code refers to, which a generated type must not shadow. */
   private val reservedTypes = Set("Readonly", "Record", "ReadonlyMap", "Uint8Array")

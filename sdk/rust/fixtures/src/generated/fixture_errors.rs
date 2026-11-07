@@ -24,6 +24,11 @@ pub enum Failure {
         /// Its `type`.
         r#type: String,
     },
+    /// The kind `Unknown`.
+    Unknown {
+        /// Its `name`.
+        name: c::Preview,
+    },
 }
 
 impl Failure {
@@ -33,6 +38,7 @@ impl Failure {
             Self::Broken { .. } => FailureKind::Broken,
             Self::Gone => FailureKind::Gone,
             Self::Refused { .. } => FailureKind::Refused,
+            Self::Unknown { .. } => FailureKind::Unknown,
         }
     }
 }
@@ -43,6 +49,7 @@ impl core::fmt::Display for Failure {
             Self::Broken { what: a0, size: a1, limit: a2 } => write!(f, "Broken (what: {a0}, size: {a1}, limit: {a2:?})"),
             Self::Gone => f.write_str("Gone"),
             Self::Refused { why: a0, r#type: a1 } => write!(f, "Refused (why: {a0:?}, type: {a1})"),
+            Self::Unknown { name: a0 } => write!(f, "Unknown (name: {a0})"),
         }
     }
 }
@@ -58,6 +65,8 @@ pub enum FailureKind {
     Gone,
     /// The text `Refused`.
     Refused,
+    /// The text `Unknown`.
+    Unknown,
 }
 
 impl c::Model for FailureKind {
@@ -66,14 +75,16 @@ impl c::Model for FailureKind {
             Self::Broken => Ok(c::Value::text("Broken")),
             Self::Gone => Ok(c::Value::text("Gone")),
             Self::Refused => Ok(c::Value::text("Refused")),
+            Self::Unknown => Ok(c::Value::text("Unknown")),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["Broken", "Gone", "Refused"])? {
+        match c::select_alternative(value, &[], &["Broken", "Gone", "Refused", "Unknown"])? {
             c::Alternative::Text(0) => Ok(Self::Broken),
             c::Alternative::Text(1) => Ok(Self::Gone),
             c::Alternative::Text(2) => Ok(Self::Refused),
+            c::Alternative::Text(3) => Ok(Self::Unknown),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -81,7 +92,7 @@ impl c::Model for FailureKind {
 
 impl FailureKind {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 3] = [Self::Broken, Self::Gone, Self::Refused];
+    pub const ALL: [Self; 4] = [Self::Broken, Self::Gone, Self::Refused, Self::Unknown];
 }
 
 /// `outcome` (`shared/schemas/fixture-errors.cddl`).
@@ -102,11 +113,12 @@ impl c::Model for Outcome {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["fine", "Broken", "Gone", "Refused"])? {
+        match c::select_alternative(value, &[], &["fine", "Broken", "Gone", "Refused", "Unknown"])? {
             c::Alternative::Text(0) => Ok(Self::Fine),
             c::Alternative::Text(1) => Ok(Self::FailureKind(FailureKind::Broken)),
             c::Alternative::Text(2) => Ok(Self::FailureKind(FailureKind::Gone)),
             c::Alternative::Text(3) => Ok(Self::FailureKind(FailureKind::Refused)),
+            c::Alternative::Text(4) => Ok(Self::FailureKind(FailureKind::Unknown)),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -114,7 +126,7 @@ impl c::Model for Outcome {
 
 impl Outcome {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 4] = [Self::Fine, Self::FailureKind(FailureKind::Broken), Self::FailureKind(FailureKind::Gone), Self::FailureKind(FailureKind::Refused)];
+    pub const ALL: [Self; 5] = [Self::Fine, Self::FailureKind(FailureKind::Broken), Self::FailureKind(FailureKind::Gone), Self::FailureKind(FailureKind::Refused), Self::FailureKind(FailureKind::Unknown)];
 }
 
 /// `why` (`shared/schemas/fixture-errors.cddl`).

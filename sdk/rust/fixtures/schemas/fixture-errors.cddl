@@ -1,14 +1,18 @@
-; Emitter fixture (not a dilf4s format): an error family whose fields are text, integers, an optional integer and a
-; kind, beside a choice that names its kinds.
+; Emitter fixture (not a dilf4s format): an error family whose fields are text, integers, an optional integer, a kind
+; and a preview of caller text, beside a choice that names its kinds.
 
-failure-kind = "Broken" / "Gone" / "Refused"
+failure-kind = "Broken" / "Gone" / "Refused" / "Unknown"
 
 failure = {
   "kind": "Broken", "what": text, "size": uint .le 9223372036854775807, ? "limit": 0..1024 //
   "kind": "Gone" //
-  "kind": "Refused", "why": why, "type": text
+  "kind": "Refused", "why": why, "type": text //
+  "kind": "Unknown", "name": preview
 }
 
 why = "early" / "late"
 
 outcome = "fine" / failure-kind
+
+; The SDK's Preview (conformance.md section 8): not generated, but an error's field may hold one.
+preview = { "head": text, "length": uint }

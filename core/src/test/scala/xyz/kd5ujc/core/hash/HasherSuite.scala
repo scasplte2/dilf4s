@@ -3,7 +3,9 @@ package xyz.kd5ujc.core.hash
 import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
 
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import cats.syntax.all._
+
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor, Preview}
 
 import scodec.bits.ByteVector
 import weaver.SimpleIOSuite
@@ -71,7 +73,36 @@ object HasherSuite extends SimpleIOSuite with Checkers {
     expect(Digest.fromBytes[Sha256](ByteVector.fill(32)(0)).isRight, "32 bytes is a SHA-256 digest")
       .and(expect(Digest.fromBytes[Sha256](ByteVector.fill(31)(0)).isLeft, "31 bytes is not"))
       .and(expect(Digest.fromBytes[Sha3_512](ByteVector.fill(32)(0)).isLeft, "32 bytes is not a SHA3-512 digest"))
-      .and(expect(Digest.fromHex[Sha256]("zz").isLeft, "invalid hex is rejected"))
+      .and(expect.same(Left(HashError.InvalidLength("SHA-256", 32, 31)), Digest.fromBytes[Sha256](ByteVector.fill(31)(0))))
+      .and(expect.same(Left(HashError.InvalidHex(0)), Digest.fromHex[Sha256]("zz")))
       .and(expect.same(Left(HashError.InvalidLength("SHA-256", 32, 1L << 19)), Digest.fromHex[Sha256]("ab" * (1 << 19))))
+  }
+
+  pureTest("digest hex is an optional 0x and exactly the width's ASCII hex digits, in either case") {
+    val d = "ab" * 32
+    val bytes = Right(ByteVector.fill(32)(0xab))
+    def hex(s: String) = Digest.fromHex[Sha256](s).map(_.bytes)
+    expect
+      .same(bytes, hex(d))
+      .and(expect.same(bytes, hex(d.toUpperCase)))
+      .and(expect.same(bytes, hex("0x" + d)))
+      .and(expect.same(Left(HashError.InvalidHex(1)), hex("0X" + d)))
+      .and(expect.same(Left(HashError.InvalidHex(2)), hex("ab cd" + d.drop(4))))
+      .and(expect.same(Left(HashError.InvalidHex(1)), hex("a_" + d.drop(2))))
+      .and(expect.same(Left(HashError.InvalidHex(0)), hex("１" + d.drop(1)))) // a fullwidth digit is not a hex digit
+      .and(expect.same(Left(HashError.InvalidHex(63)), hex(d.drop(1)))) // an odd number of digits, at the text's end
+      .and(expect.same(Left(HashError.InvalidHex(65)), hex("0x" + d.drop(1)))) // the offset counts the prefix
+      .and(expect.same(Left(HashError.InvalidLength("SHA-256", 32, 31)), hex(d.drop(2))))
+      .and(expect.same(Left(HashError.InvalidLength("SHA-256", 32, 33)), hex(d + "a"))) // one digit past the width
+      .and(expect.same(Left(HashError.InvalidHex(64)), hex(d + "é"))) // a non-digit within one past the width
+      .and(expect.same(Left(HashError.InvalidLength("SHA-256", 32, 0)), hex("0x")))
+  }
+
+  pureTest("a hash function by name; any other name is UnknownAlgorithm, previewed") {
+    val names = List("SHA-256", "SHA-512", "SHA3-256", "SHA3-512", "Keccak-256", "BLAKE2b-256", "BLAKE2b-512")
+    expect
+      .same(names, Hasher.all.map(_.name).toList)
+      .and(names.foldMap(n => expect.same(Right(n), Hasher.named(n).map(_.name))))
+      .and(expect.same(Left(HashError.UnknownAlgorithm(Preview.of("sha-256"))), Hasher.named("sha-256").map(_.name)))
   }
 }

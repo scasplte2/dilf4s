@@ -55,13 +55,13 @@ object WordList {
     Either.cond(
       words.size == 2048 && words.distinct.size == 2048,
       new WordList(language, words),
-      KeyError.InvalidWordList(s"${language.name}: expected 2048 distinct words, got ${words.size}")
+      KeyError.InvalidWordList(s"${language.name}: expected 2048 distinct words, got ${words.size}", None)
     )
 
   /** Loads a bundled word list (`bip-0039/<name>.txt`); reading a resource is an effect. */
   def load[F[_]: Sync](language: Bip39.Language): F[Either[KeyError, WordList]] =
     Sync[F].blocking(Option(getClass.getResourceAsStream(s"/bip-0039/${language.name}.txt"))).flatMap {
-      case None => (KeyError.InvalidWordList(s"missing resource for ${language.name}"): KeyError).asLeft[WordList].pure[F]
+      case None => (KeyError.InvalidWordList(s"missing resource for ${language.name}", None): KeyError).asLeft[WordList].pure[F]
       case Some(stream) =>
         Resource.fromAutoCloseable(Sync[F].pure(stream)).use(in => Sync[F].blocking(new String(in.readAllBytes(), UTF_8))).map { text =>
           apply(language, text.split("\n").toVector.map(w => Normalizer.normalize(w.trim, Normalizer.Form.NFKD)).filter(_.nonEmpty))

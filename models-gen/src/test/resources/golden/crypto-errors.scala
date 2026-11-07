@@ -149,7 +149,7 @@ object KeyError {
     def kind: KeyErrorKind = "InvalidMnemonic"
   }
 
-  final case class InvalidWordList(reason: String) extends KeyError {
+  final case class InvalidWordList(reason: String, separator: Option[xyz.kd5ujc.core.canonical.Preview]) extends KeyError {
     def kind: KeyErrorKind = "InvalidWordList"
   }
 

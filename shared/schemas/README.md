@@ -24,6 +24,7 @@ After changing a schema, regenerate them with
 | `versioned-trie.cddl` | versioned-trie heads, proofs and deltas (wire) | `docs/specs/versioned-trie.md` §5 (embedded) |
 | `limits.cddl` | every spec limit, as constants (see "constants" below) | each limit's own spec; `docs/specs/conformance.md` §6 |
 | `crypto-errors.cddl` | the crypto error families and their kinds (see "error families" below) | `docs/specs/conformance.md` §6 |
+| `hash-errors.cddl` | the hash error family and its kinds, and the `preview` rule | `docs/specs/conformance.md` §6, `docs/specs/canonical-encoding.md` §4 |
 | `*-vectors.cddl` | The conformance vector files in `shared/vectors/` | the matching spec |
 
 Every vector file in `shared/vectors/` must have a schema here. `VectorSchemasSuite` checks this, and checks that each
@@ -51,7 +52,13 @@ file round-trips through its schema without loss.
     (`kes-error = { "kind": "Malformed", "what": text, "reason": text // "kind": "Exhausted", ... }`), beside a rule
     `kes-error-kind` that lists the same kinds in order. It is an error type (Scala a sealed trait, Rust an enum with
     `kind()`, `Display` and `Error`, TypeScript a union on `kind`), never a wire type: no codec is generated, and no
-    field or alternative may hold one. Its fields are text, integers (TypeScript: `number`), booleans or kinds;
+    field or alternative may hold one. Its fields are text, integers (TypeScript: `number`), booleans, kinds or
+    previews;
+  - **previews**: a rule named `preview`, whose body must be `{ "head": text, "length": uint }` (the preview's
+    normative fields, `docs/specs/conformance.md` §8), is each SDK's own `Preview` (Scala
+    `xyz.kd5ujc.core.canonical.Preview`, Rust `c::Preview`, TypeScript `Preview` from `preview.ts`). It is not
+    generated; an error's field naming it holds a Preview, so caller text in an error is typed, never raw text. No wire
+    type (record, alias, element or choice alternative) may hold one;
   - **constants**: a rule whose whole body is a `uint` literal (`max-depth = 256`). A constant is a value, not a type:
     a range or `.size` bound may name it (`0..max-depth`, `bytes .size (0..max-value-bytes)`), a field or element may
     not. Each language gets it as a constant: Scala a `final val` (`Int`, else `Long`, else `BigInt`), TypeScript an

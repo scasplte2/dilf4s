@@ -84,7 +84,11 @@ impl PoseidonMerkleProof {
         let siblings = w
             .siblings
             .iter()
-            .map(|s| fr_from_int(s).map_err(|e| encoding(alloc::format!("{e}"))))
+            .enumerate()
+            // a caller's number by its position and bit length, never its digits (conformance.md section 2)
+            .map(|(i, s)| {
+                fr_from_int(s).map_err(|_| encoding(alloc::format!("sibling {i} is not below r ({} bits)", s.bits())))
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let position = w.position.to_biguint().ok_or_else(|| encoding(String::from("a negative position")))?;
         Self::new(position, siblings)

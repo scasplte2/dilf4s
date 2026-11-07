@@ -14,9 +14,7 @@ use alloc::vec::Vec;
 use num_bigint::BigUint;
 use subtle::{Choice, ConstantTimeEq as _};
 
-use super::{
-    Fe, J, SQRT_M_J2, SQRT_M1, encode_to_curve_ell2, expand_message_xmd_sha512_48, from_uniform, map_to_curve_ell2,
-};
+use super::{Fe, J, SQRT_M_J2, SQRT_M1, encode_to_curve_ell2, from_uniform, map_to_curve_ell2};
 
 /// The previous `num-bigint` field and maps, unchanged apart from visibility and `encode_to_curve_ell2` split where
 /// `u` is computed, so either half can be driven directly.
@@ -372,13 +370,14 @@ fn the_48_byte_reduction_agrees_with_the_reference() {
     }
 }
 
+/// The core's `expand_message_xmd`, which the ELL2 map now takes its 48 bytes from, against the reference's.
 #[test]
 fn expand_message_xmd_agrees_with_the_reference() {
     for (msg, dst) in [(&b""[..], &b"Q"[..]), (b"abc", b"QUUX-V01-CS02-with-expander-SHA512-256"), (b"x", &[7u8; 255])]
     {
         assert_eq!(
-            expand_message_xmd_sha512_48(&[msg], dst).to_vec(),
-            reference::expand_message_xmd_sha512(&[msg], dst, 48)
+            dilf4s_core::hash::HashAlgorithm::Sha512.expand_message_xmd(&[msg], dst, 48).ok(),
+            Some(reference::expand_message_xmd_sha512(&[msg], dst, 48))
         );
     }
 }
@@ -468,8 +467,8 @@ fn ell2_encode_to_curve_agrees_with_the_reference() {
     for (i, m) in stream("ell2", 500).iter().enumerate() {
         let dst: &[u8] = if i % 2 == 0 { b"ECVRF_edwards25519_XMD:SHA-512_ELL2_NU_\x04" } else { b"D" };
         assert_eq!(
-            encode(&encode_to_curve_ell2(&[m, &m[..i % 32]], dst)),
-            encode(&reference::encode_to_curve_ell2(&[m, &m[..i % 32]], dst)),
+            encode_to_curve_ell2(&[m, &m[..i % 32]], dst).map(|p| encode(&p)),
+            Some(encode(&reference::encode_to_curve_ell2(&[m, &m[..i % 32]], dst))),
             "encode_to_curve_ell2 #{i}"
         );
     }

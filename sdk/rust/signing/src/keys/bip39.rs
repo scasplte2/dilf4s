@@ -11,6 +11,8 @@ use core::fmt;
 use unicode_normalization::UnicodeNormalization as _;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
+use dilf4s_core::Preview;
+
 use crate::error::KeyError;
 use crate::secret::{Secret, SecretBytes};
 use crate::util::sha256;
@@ -46,12 +48,17 @@ impl WordList {
     /// must be one that parsing splits on, so that every generated phrase parses back.
     pub fn new(words: Vec<String>, separator: char) -> Result<Self, KeyError> {
         if !is_separator(separator) {
-            return Err(KeyError::InvalidWordList { reason: format!("{separator:?} is not a phrase separator") });
+            let mut buf = [0u8; 4];
+            return Err(KeyError::InvalidWordList {
+                reason: "the separator is not one phrases are split on".into(),
+                separator: Some(Preview::of(separator.encode_utf8(&mut buf))),
+            });
         }
         // the count is checked before any word is normalised or indexed
         if words.len() != 2048 {
             return Err(KeyError::InvalidWordList {
                 reason: format!("expected 2048 distinct words without separators, got {}", words.len()),
+                separator: None,
             });
         }
         let words: Vec<String> = words.into_iter().map(|w| nfkd(&w)).collect();
@@ -66,6 +73,7 @@ impl WordList {
                     words.len(),
                     index.len()
                 ),
+                separator: None,
             })
         }
     }

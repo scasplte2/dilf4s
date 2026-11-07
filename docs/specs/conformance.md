@@ -44,6 +44,8 @@ them. Every other field is informative. The normative fields are:
 | canonical encoding | `DuplicateKey` | `key`: the repeated key's preview, its `head` and `length` (§8) |
 | state key | `InvalidSegment`, `SegmentTooLong` | `segment`: the first refused segment's position, from 0 (`versioned-trie.md` §2) |
 | JLVM | `Type`, `Arity`, `Arithmetic`, `Domain`, `Crypto` | `op`: the operation's wire name, or `var` (`jlvm.md` §3). `OutOfGas` has none: its `required` may be summed only as far as the limit, and the gas used (the limit) is pinned |
+| hash | `InvalidHex` | `offset`: the position of the first character that is not an ASCII hex digit, or the text's length when its digits are odd in number (`canonical-encoding.md` §4); every character before it is ASCII, so it is the same in UTF-8 bytes, UTF-16 units and code points |
+| hash | `InvalidExpansion` | `refusal`: `emptyDst` or `outputLength`, checked in that order (`canonical-encoding.md` §4) |
 | every other kind | | none: the kind alone |
 
 A field is normative only when every implementation can produce it exactly at no more cost than the refusal itself:
@@ -158,6 +160,7 @@ refusal kind a spec defines must have a row. The gated families, and where their
 | canonical codecs | `CanonicalError` | `canonical_encoding_v1.json`: `json`, `renderRejections` and `cborRejections` (each kind with its normative `limit`); `TypeMismatch`, a typed encoder's refusal, by the `schema` outcome of `versioned_trie_v1.json`'s `stateKeys` |
 | state keys | `StateKeyError` | `versioned_trie_v1.json`: `stateKeys`, `stateKeyBytes` and `namespaces` (each kind with its normative `segment`); `refusals_v1.json`'s `Key.` kinds |
 | JLVM | `JlvmError` and its `Site` | `jlvm_v1.json`: each failing case's `outcome` (`error`, and `op` where the kind has one) |
+| hashing | `HashError` | `canonical_encoding_v1.json`: `domainTags`, `algorithms` (names), `digestHex` (digest lengths and hex, `InvalidHex` with its normative `offset`) and `expansions` (`expand_message_xmd`, `InvalidExpansion` with its normative `refusal`) |
 
 Each kind of these families has a row, except the kinds below, which no input reaches through an SDK's verifier.
 
@@ -195,11 +198,32 @@ family as each language's error type, and the kinds as a closed type:
 
 Every SDK names a family as the reference does (`CryptoError`, not `SigningError`), and a kind added to the schema is a
 new case in every language. An error is a value, not a wire format: no codec is generated for a family, and no wire
-type may hold one. **Fields** are informative (§2, §3): a field holds text (`what`, `reason`, which the implementation
-writes, naming caller input only by size or position, or by a preview, §8), an integer (a size or period, `uint .le
-2^63 - 1`: Scala `Long`, Rust `u64`, TypeScript `number`, the type of the SDK's own sizes and periods), a boolean or a
-kind; the generator refuses bytes, collections and records in an error. A kind with a normative field (§3) would
-carry it as a field the vectors pin; no crypto kind has one.
+type may hold one. **Fields** are informative (§2, §3) unless §3 names them: a field holds text (`what`, `reason`,
+which the implementation writes, naming caller input only by size or position, or by a preview, §8), an integer (a size,
+offset or period, `uint .le 2^63 - 1`: Scala `Long`, Rust `u64`, TypeScript `number`, the type of the SDK's own sizes
+and periods), a boolean, a kind, or a **preview**; the generator refuses bytes, collections and records in an error. A
+field naming the rule `preview` (`{ "head": text, "length": uint }`, the preview's normative fields, §8) holds the
+SDK's own `Preview` (Scala `xyz.kd5ujc.core.canonical.Preview`, Rust `dilf4s_core::Preview`, TypeScript `Preview`):
+caller text in an error is typed as a preview, never as text. The rule itself is not generated, and no wire type may
+hold a preview. No crypto kind has a normative field, and no crypto `what` or `reason` holds caller text: the one caller
+text a crypto family names, a BIP-39 phrase separator parsing does not split on, is `InvalidWordList`'s `separator`, a
+preview.
+
+**The hash family.** `shared/schemas/hash-errors.cddl` defines `hash-error` the same way, in every language the hash
+API's one error type (Scala `xyz.kd5ujc.core.hash.HashError`, Rust `dilf4s_core::hash::HashError`, TypeScript
+`HashError`; a TypeScript function refusing only some kinds returns `HashErrorOf<K>`, its members of those kinds):
+
+| Kind | Fields | Raised by |
+|---|---|---|
+| `InvalidLength` | `algorithm`, `expected` (the output size), `actual` | a digest from bytes or hex of another length; in TypeScript, until its result types widen to a kind for an argument of the wrong type (#116), also bytes that are not a `Uint8Array` (`actual` 0) |
+| `InvalidHex` | `offset` (normative, §3) | hex decoding, and a digest from hex |
+| `InvalidDomainTag` | `tag`, a preview | a domain tag outside the grammar |
+| `InvalidExpansion` | `refusal` (normative, §3), `algorithm`, `limit` (the most bytes it expands to) | `expand_message_xmd`; in TypeScript, until #116, `emptyDst` also for a DST that is not a `Uint8Array` |
+| `UnknownAlgorithm` | `name`, a preview | a hash function by name |
+
+For a digest's hex longer than its width, `actual` is half the text's length after the prefix, rounded up, in the
+language's own string units (UTF-16 in Scala and TypeScript, UTF-8 in Rust): the text is refused before it is read
+whole, so its length is not measured in other units; the outcome and the kind are the same everywhere.
 
 **Kinds in the schemas.** Every kind field of these files names its family's kind choice from `crypto-errors.cddl`,
 beside its results (`kes-outcome = "accepted" / "rejected" / errors.kes-error-kind`): a choice that names a choice of
@@ -208,8 +232,18 @@ the kind enum). So each SDK's model of a vector is the error's own kind type, an
 not list does not load. A section that only one check fills may name any kind of the family; the gate asks for each
 kind's row in whichever section reaches it.
 
-**The codec families.** `canonical-error-kind` lists every kind of `CanonicalError`; the domain tags of
-`canonical_encoding_v1.json` record `InvalidDomainTag` (`domain-tag-outcome`) and the state keys' `schema` records
+**The hash gate.** The hash rows of `canonical_encoding_v1.json` record `"accepted"` or a kind of
+`hash-error-kind` (`hash-outcome`), with `offset` exactly for `InvalidHex` and `refusal` exactly for
+`InvalidExpansion`. The reference's `HashRefusalCoverageSuite` lists `HashError`'s cases through the compiler and the
+expansion refusals through their generated `values`, and fails if one has no row; the Rust (`core/tests/conformance.rs`)
+and TypeScript (`core/test/conformance.test.ts`) tests check every row's kind and normative field, and that every kind
+of `HashErrorKind` (Rust `ALL`, TypeScript a `Record` on the kind) and every expansion refusal has a row. Every kind is
+reachable from shared input in every language: each SDK has the four operations that produce them (a digest from hex,
+which decodes the hex, a domain tag, a hash function by name, and `expand_message_xmd`). The Rust and TypeScript SDKs
+also expose hex decoding itself (`hex::decode`, `fromHex`), refusing with the same `InvalidHex`; the reference keeps its
+hex reader private to the digest.
+
+**The codec families.** `canonical-error-kind` lists every kind of `CanonicalError`; the state keys' `schema` records
 `TypeMismatch` (`vt-schema-outcome`). The reference's `CodecRefusalCoverageSuite` gates `CanonicalError` as above,
 reading the rows through their generated models; the Rust (`core/tests/conformance.rs`) and TypeScript
 (`core/test/conformance.test.ts`) tests map the SDK's error onto `canonical-error-kind` exhaustively, check each row's
@@ -303,7 +337,9 @@ is a fresh copy, never a view of the caller's text (an engine may keep a slice's
 | canonical `UnpairedSurrogate` | none | the kind alone |
 | `DecodeFailure` | `path` | each segment (a map key, possibly the caller's, or `[i]`), previewed |
 | `DecodeFailure` | `reason` | unknown keys as their count and the first in canonical order (shorter UTF-8 first, then by code point), previewed; a map no alternative fits as its key count; a text that is not the literal, pattern or alternative expected, previewed |
-| `InvalidDomainTag`, `UnknownAlgorithm` | `tag`, `name` | previewed |
+| hash `InvalidDomainTag`, `UnknownAlgorithm` | `tag`, `name` | previewed: the generated field is the SDK's `Preview` (§6) |
+| hash `InvalidHex`, `InvalidLength` | `offset`, `actual` | a position and a size, never the text |
+| key `InvalidWordList` | `separator` | a phrase separator parsing does not split on, previewed; a separator of more than one character by its length alone, in `reason` |
 | versioned trie `StateKeyError` | `key`, `namespace` | the key or namespace, previewed; none for `Empty`, for `TooLong` (refused by its length before it is read) or for `NotUtf8` |
 | JLVM `Malformed` | message | operation names, var paths and binding names, previewed |
 | JLVM warning `AmbiguousPath` | `path` | the path, previewed: long paths sharing a preview are one warning |
@@ -318,7 +354,9 @@ is a fresh copy, never a view of the caller's text (an engine may keep a slice's
 **Refused before converting.** An input over a length limit is refused by its length before it is split, decoded as
 text or hex-encoded: a state key over 256 characters before it is split into segments, trie-key bytes over 256 before
 they are read as UTF-8 or ASCII, a storage namespace over 255 characters and a word-list separator of more than one
-before they are encoded, a digest's hex longer than its width's digits (and an `0x` prefix) before it is decoded, a
+before they are encoded, a digest's hex with more digits than its width (after an optional `0x`) before it is decoded,
+reading at most one digit past the width (a character that is not a hex digit within that reach is `InvalidHex` at its
+offset, so the outcome does not depend on how a language measures the rest of the text), a
 word list of other than 2048 words before any word is normalised, and an integer wider than a field element before
 its bytes are taken. Such a refusal holds the length alone, never a preview, since measuring a preview's
 length reads the whole text. A state-key refusal names a segment by its position, never its text.
@@ -334,9 +372,10 @@ configuration, not the caller's choice.
   a `RootMismatch`'s `expected` (built at its call sites by `rootText`, the digest's hex or a wrong width's length),
   stay strings: the type guarantee covers the fields in the table above, and a message quotes caller text only by
   rendering one of them, which every SDK's diagnostics tests check on 1 MiB inputs through the public decoding APIs. A
-  codec's expected literal is a schema constant, quoted as it is. The crypto families' error types are generated from
-  `crypto-errors.cddl` (§6), which admits text, integers, booleans and kinds as fields and never bytes or collections;
-  their `what` and `reason` stay informative text, written by the implementation from sizes, positions and previews.
+  codec's expected literal is a schema constant, quoted as it is. The crypto and hash families' error types are
+  generated from `crypto-errors.cddl` and `hash-errors.cddl` (§6), which admit text, integers, booleans, kinds and
+  previews as fields and never bytes or collections; caller text is a `preview` field, and `what` and `reason` stay
+  informative text, written by the implementation from sizes, positions and previews.
   The codec families' free text closes when their error types are generated too (conformance step 2, part B).
 - *Bit lengths in TypeScript.* A refused integer is named by its bit length, never its digits. JavaScript has no
   constant-time bit length of a `bigint`, so the TypeScript SDK measures one in a single linear pass over the integer

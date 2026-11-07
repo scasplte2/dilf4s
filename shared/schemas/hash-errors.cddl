@@ -1,0 +1,31 @@
+; The hash error family (docs/specs/canonical-encoding.md section 4; conformance.md sections 6 and 8), defined once as
+; crypto-errors.cddl defines the crypto families: `hash-error` is a choice of maps, each led by a distinct "kind"
+; literal, and `hash-error-kind` lists the same kinds in the same order. Each SDK gets the family as its error type
+; (Scala `xyz.kd5ujc.core.hash.HashError`, Rust `dilf4s_core::hash::HashError`, TypeScript `HashError`) and the kinds
+; as a closed type, which canonical-vectors.cddl names. No codec is generated for a family.
+
+; Sizes, offsets and limits are `uint .le 9223372036854775807` (Scala `Long`, Rust `u64`, TypeScript `number`).
+; Caller text is held as a preview, never as itself.
+
+; A digest of the wrong length (`expected`, the algorithm's output size, and `actual`); text that is not hexadecimal
+; (`offset`: the first character that is not an ASCII hex digit, or the text's length when its digits are odd in
+; number); a domain tag outside the grammar; an `expand_message_xmd` the reference refuses (`refusal`, and `limit`,
+; the most bytes the algorithm expands to); a hash function name that is not one of the seven.
+hash-error-kind = "InvalidLength" / "InvalidHex" / "InvalidDomainTag" / "InvalidExpansion" / "UnknownAlgorithm"
+
+hash-error = {
+  "kind": "InvalidLength", "algorithm": text, "expected": uint .le 9223372036854775807,
+    "actual": uint .le 9223372036854775807 //
+  "kind": "InvalidHex", "offset": uint .le 9223372036854775807 //
+  "kind": "InvalidDomainTag", "tag": preview //
+  "kind": "InvalidExpansion", "refusal": expansion-refusal, "algorithm": text, "limit": uint .le 9223372036854775807 //
+  "kind": "UnknownAlgorithm", "name": preview
+}
+
+; Why `expand_message_xmd` (RFC 9380 section 5.3.1) is refused, checked in this order: "emptyDst" (the domain
+; separation tag is empty), "outputLength" (the length asked for is not 1 to `limit`).
+expansion-refusal = "emptyDst" / "outputLength"
+
+; Caller text as an error holds it: each SDK's own Preview (conformance.md section 8), whose normative fields these
+; are. It is not generated; an error's field naming it holds the SDK's Preview.
+preview = { "head": text, "length": uint }
