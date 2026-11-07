@@ -5,7 +5,9 @@
  *
  * **Public data only**: the arithmetic is variable time. Never hash secrets here.
  */
-import { describeFailure, err, models, ok, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { describeFailure, err, models, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
+
+import { bigintArg, expected, expectedAt, isObject, NOT_A_NUMBER, readIterable, readPair, valueArg } from "./check.js";
 
 import { bitsOf, decodeInput } from "./input.js";
 import { FULL_ROUNDS, WIDTH2, WIDTH3, WIDTH4, WIDTH5, type PoseidonParams } from "./poseidon-constants.js";
@@ -15,6 +17,11 @@ export const FR_MODULUS = 218882428718392752222464057452572750885483644004160343
 
 export type PoseidonError = { readonly kind: "InputCount"; readonly count: number; readonly max: number } | { readonly kind: "NonCanonical"; readonly bits: number };
 
+let isFr!: (x: unknown) => x is Fr;
+let reduceOf!: (value: bigint) => Fr;
+
+const NOT_AN_FR = expected("an Fr");
+
 /** An element of the BN254 scalar field, `0 <= value < r`, valid by construction. */
 export class Fr {
   readonly #value: bigint;
@@ -23,25 +30,36 @@ export class Fr {
     Object.freeze(this);
   }
 
-  static readonly zero: Fr = new Fr(0n);
-
-  /** The element `value`, if canonical: a value `>= r` is malformed, never reduced. */
-  static of(value: bigint): Result<Fr, PoseidonError> {
-    return value >= 0n && value < FR_MODULUS ? ok(new Fr(value)) : err({ kind: "NonCanonical", bits: bitsOf(value) });
+  static {
+    isFr = (x): x is Fr => isObject(x) && #value in x;
+    reduceOf = (value) => {
+      const m = value % FR_MODULUS;
+      return new Fr(m < 0n ? m + FR_MODULUS : m);
+    };
   }
 
-  /** `value mod r`. */
-  static reduce(value: bigint): Fr {
-    const m = value % FR_MODULUS;
-    return new Fr(m < 0n ? m + FR_MODULUS : m);
+  static readonly zero: Fr = new Fr(0n);
+
+  /** The element `value`, if canonical: a value `>= r` is malformed, never reduced. What is not a `bigint` is a `TypeMismatch`. */
+  static of(value: bigint): Result<Fr, PoseidonError | TypeMismatch> {
+    const v = bigintArg(value);
+    if (!v.ok) return v;
+    return v.value >= 0n && v.value < FR_MODULUS ? ok(new Fr(v.value)) : err({ kind: "NonCanonical", bits: bitsOf(v.value) });
+  }
+
+  /** `value mod r`; what is not a `bigint` is a `TypeMismatch`. */
+  static reduce(value: bigint): Result<Fr, TypeMismatch> {
+    const v = bigintArg(value);
+    return v.ok ? ok(reduceOf(v.value)) : v;
   }
 
   get value(): bigint {
     return this.#value;
   }
 
+  /** Whether `other` is the same element; something that is not an `Fr` equals nothing (it is never read). */
   equals(other: Fr): boolean {
-    return this.#value === other.#value;
+    return isFr(other) && this.#value === other.#value;
   }
 
   toString(): string {
@@ -89,20 +107,46 @@ function permute(f: PoseidonParams, inputs: readonly Fr[]): Fr {
   const tail = (HALF + 1) * t + f.partialRounds;
   for (let r = 0; r < HALF - 1; r++) s = fullRound(f, f.mds, s, tail + r * t);
   // the last round adds no constant, and only element 0 of its output is read
-  return Fr.reduce(dot(f.mds[0] ?? [], s.map(pow5)));
+  return reduceOf(dot(f.mds[0] ?? [], s.map(pow5)));
 }
 
 const BY_INPUTS: readonly PoseidonParams[] = [WIDTH2, WIDTH3, WIDTH4, WIDTH5];
 
-/** `poseidon([x1..xn])` for 1 to 4 inputs: width `n + 1`, state `[0, x1, ..]`, output `state[0]`. */
-export function hash(inputs: readonly Fr[]): Result<Fr, PoseidonError> {
-  const params = inputs.length >= 1 ? BY_INPUTS[inputs.length - 1] : undefined;
-  return params === undefined ? err({ kind: "InputCount", count: inputs.length, max: MAX_INPUTS }) : ok(permute(params, inputs));
+/**
+ * A caller's array of `Fr`s: `Array.isArray`, its length read once and checked against `max` before any item is read
+ * (`tooMany` then), each item read once, by index.
+ */
+function frsArg<E>(x: unknown, what: string, max: number, tooMany: (count: number) => E): Result<Fr[], E | TypeMismatch> {
+  if (!Array.isArray(x)) return err(expected(what));
+  const count: unknown = (x as readonly unknown[]).length;
+  if (typeof count !== "number") return err(expected(what));
+  if (count > max) return err(tooMany(count));
+  const out: Fr[] = [];
+  for (let i = 0; i < count; i++) {
+    const f: unknown = (x as readonly unknown[])[i];
+    if (!isFr(f)) return err(expectedAt("an Fr", i));
+    out.push(f);
+  }
+  return ok(out);
 }
 
-/** Two-to-one compression for Merkle nodes: `poseidon([l, r])`. */
-export function compress(left: Fr, right: Fr): Fr {
-  return permute(WIDTH3, [left, right]);
+/**
+ * `poseidon([x1..xn])` for 1 to 4 inputs: width `n + 1`, state `[0, x1, ..]`, output `state[0]`. Inputs that are not an
+ * array of `Fr`s are a `TypeMismatch`; more than four are refused by their count before any is read.
+ */
+export function hash(inputs: readonly Fr[]): Result<Fr, PoseidonError | TypeMismatch> {
+  const xs = frsArg<PoseidonError>(inputs, "an array of Fr", MAX_INPUTS, (count) => ({ kind: "InputCount", count, max: MAX_INPUTS }));
+  if (!xs.ok) return xs;
+  const params = xs.value.length >= 1 ? BY_INPUTS[xs.value.length - 1] : undefined;
+  return params === undefined ? err({ kind: "InputCount", count: xs.value.length, max: MAX_INPUTS }) : ok(permute(params, xs.value));
+}
+
+/** Two-to-one compression for Merkle nodes, unchecked. */
+const compressOf = (left: Fr, right: Fr): Fr => permute(WIDTH3, [left, right]);
+
+/** Two-to-one compression for Merkle nodes: `poseidon([l, r])`. What is not an `Fr` is a `TypeMismatch`. */
+export function compress(left: Fr, right: Fr): Result<Fr, TypeMismatch> {
+  return isFr(left) && isFr(right) ? ok(compressOf(left, right)) : err(NOT_AN_FR);
 }
 
 // ------------------------------------------------------------------ the Merkle tree (section 4)
@@ -116,6 +160,10 @@ export type PoseidonMerkleError =
 
 export const MAX_DEPTH = models.limits.POSEIDON_MAX_DEPTH;
 
+let isMerkleProof!: (x: unknown) => x is PoseidonMerkleProof;
+let siblingsOf!: (p: PoseidonMerkleProof) => readonly Fr[];
+let createMerkleProof!: (position: bigint, siblings: readonly Fr[]) => PoseidonMerkleProof;
+
 /** A path of siblings, root-first, with `0 <= position < 2^depth` (depth = the number of siblings). */
 export class PoseidonMerkleProof {
   readonly #siblings: readonly Fr[];
@@ -127,6 +175,12 @@ export class PoseidonMerkleProof {
     Object.freeze(this);
   }
 
+  static {
+    isMerkleProof = (x): x is PoseidonMerkleProof => isObject(x) && #siblings in x;
+    siblingsOf = (p) => p.#siblings;
+    createMerkleProof = (position, siblings) => new PoseidonMerkleProof(position, siblings);
+  }
+
   get siblings(): readonly Fr[] {
     return this.#siblings;
   }
@@ -135,18 +189,26 @@ export class PoseidonMerkleProof {
     return this.#siblings.length;
   }
 
-  /** The depth is checked first, so the capacity `2^depth` it is compared with never exceeds `2^MAX_DEPTH`. */
-  static of(position: bigint, siblings: readonly Fr[]): Result<PoseidonMerkleProof, PoseidonMerkleError> {
-    const depth = siblings.length;
-    return depth <= MAX_DEPTH && position >= 0n && position < 1n << BigInt(depth) ? ok(new PoseidonMerkleProof(position, siblings)) : err({ kind: "Position", positionBits: bitsOf(position), depth });
+  /**
+   * The depth is checked first, so the capacity `2^depth` it is compared with never exceeds `2^MAX_DEPTH`. A position
+   * that is not a `bigint`, or siblings that are not an array of `Fr`s (its length read once and bounded by `MAX_DEPTH`
+   * before any is read, each read once), are a `TypeMismatch`.
+   */
+  static of(position: bigint, siblings: readonly Fr[]): Result<PoseidonMerkleProof, PoseidonMerkleError | TypeMismatch> {
+    const p = bigintArg(position);
+    if (!p.ok) return p;
+    const xs = frsArg<PoseidonMerkleError>(siblings, "an array of Fr", MAX_DEPTH, (depth) => ({ kind: "Position", positionBits: bitsOf(p.value), depth }));
+    return xs.ok ? merkleProofOf(p.value, xs.value) : xs;
   }
 
   /**
    * A proof from its canonical value (`poseidon-merkle-proof`): field elements below `r`, `position < 2^depth`. A value
    * heavier than `MAX_PROOF_WEIGHT` is `Encoding`, refused before it is decoded.
    */
-  static decode(value: Value): Result<PoseidonMerkleProof, PoseidonMerkleError> {
-    const w = decodeInput(models.poseidon.PoseidonMerkleProof, value);
+  static decode(value: Value): Result<PoseidonMerkleProof, PoseidonMerkleError | TypeMismatch> {
+    const v = valueArg(value);
+    if (!v.ok) return v;
+    const w = decodeInput(models.poseidon.PoseidonMerkleProof, v.value);
     if (!w.ok) return err({ kind: "Encoding", reason: describeFailure(w.error) });
     const siblings: Fr[] = [];
     for (const [i, x] of w.value.siblings.entries()) {
@@ -155,7 +217,7 @@ export class PoseidonMerkleProof {
       if (!f.ok) return err({ kind: "Encoding", reason: `sibling ${i.toString()} is not below r (${bitsOf(x).toString()} bits)` });
       siblings.push(f.value);
     }
-    return PoseidonMerkleProof.of(w.value.position, siblings);
+    return merkleProofOf(w.value.position, siblings);
   }
 
   /** The canonical value. */
@@ -165,33 +227,57 @@ export class PoseidonMerkleProof {
   }
 }
 
-/** The root a leaf and its path fold to: at level `i` from the leaf, bit `i` of the position marks a right child. */
-export function computeRoot(leaf: Fr, proof: PoseidonMerkleProof): Fr {
+/** {@link PoseidonMerkleProof.of} of a checked position and siblings. */
+const merkleProofOf = (position: bigint, siblings: readonly Fr[]): Result<PoseidonMerkleProof, PoseidonMerkleError> => {
+  const depth = siblings.length;
+  return depth <= MAX_DEPTH && position >= 0n && position < 1n << BigInt(depth) ? ok(createMerkleProof(position, siblings)) : err({ kind: "Position", positionBits: bitsOf(position), depth });
+};
+
+/** {@link computeRoot} of checked arguments. */
+function rootOf(leaf: Fr, proof: PoseidonMerkleProof): Fr {
   let cur = leaf;
-  const siblings = proof.siblings;
+  const siblings = siblingsOf(proof);
   for (let level = 0; level < siblings.length; level++) {
     const sib = siblings[siblings.length - 1 - level] ?? Fr.zero;
-    cur = ((proof.position >> BigInt(level)) & 1n) === 1n ? compress(sib, cur) : compress(cur, sib);
+    cur = ((proof.position >> BigInt(level)) & 1n) === 1n ? compressOf(sib, cur) : compressOf(cur, sib);
   }
   return cur;
 }
 
-export function verifyInclusion(leaf: Fr, proof: PoseidonMerkleProof, root: Fr): boolean {
-  return computeRoot(leaf, proof).equals(root);
+const NOT_A_PROOF = expected("a PoseidonMerkleProof");
+
+/**
+ * The root a leaf and its path fold to: at level `i` from the leaf, bit `i` of the position marks a right child. A leaf
+ * that is not an `Fr`, or a proof that is not a `PoseidonMerkleProof`, is a `TypeMismatch`.
+ */
+export function computeRoot(leaf: Fr, proof: PoseidonMerkleProof): Result<Fr, TypeMismatch> {
+  if (!isFr(leaf)) return err(NOT_AN_FR);
+  return isMerkleProof(proof) ? ok(rootOf(leaf, proof)) : err(NOT_A_PROOF);
 }
 
-/** An absence proof is an inclusion proof of 0. */
-export function verifyAbsence(proof: PoseidonMerkleProof, root: Fr): boolean {
+/** Whether `leaf` folds along `proof` to `root`. What is not an `Fr` or a `PoseidonMerkleProof` is a `TypeMismatch`, never `false`. */
+export function verifyInclusion(leaf: Fr, proof: PoseidonMerkleProof, root: Fr): Result<boolean, TypeMismatch> {
+  if (!isFr(root)) return err(NOT_AN_FR);
+  const r = computeRoot(leaf, proof);
+  return r.ok ? ok(r.value.equals(root)) : r;
+}
+
+/** An absence proof is an inclusion proof of 0; arguments are checked as {@link verifyInclusion} checks them. */
+export function verifyAbsence(proof: PoseidonMerkleProof, root: Fr): Result<boolean, TypeMismatch> {
   return verifyInclusion(Fr.zero, proof, root);
 }
 
-/** `zero_0 = 0`, `zero_{i+1} = poseidon(zero_i, zero_i)`, for `i <= depth`. */
-export function zeroHashes(depth: number): Result<readonly Fr[], PoseidonMerkleError> {
+/**
+ * `zero_0 = 0`, `zero_{i+1} = poseidon(zero_i, zero_i)`, for `i <= depth`: a depth outside `1..MAX_DEPTH` is `Depth`,
+ * and one that is not a number is a `TypeMismatch`.
+ */
+export function zeroHashes(depth: number): Result<readonly Fr[], PoseidonMerkleError | TypeMismatch> {
+  if (typeof (depth as unknown) !== "number") return err(NOT_A_NUMBER);
   if (!Number.isInteger(depth) || depth < 1 || depth > MAX_DEPTH) return err({ kind: "Depth", depth });
   const out = [Fr.zero];
   for (let i = 0; i < depth; i++) {
     const prev = out[i] ?? Fr.zero;
-    out.push(compress(prev, prev));
+    out.push(compressOf(prev, prev));
   }
   return ok(out);
 }
@@ -205,17 +291,23 @@ const byPosition = (a: Placed, b: Placed): number => (a[0] < b[0] ? -1 : a[0] > 
  * a position replaces an earlier one, and a leaf of 0 is empty. Positions are the caller's and V8 hashes a bigint by its
  * low 64 bits, so they are only ever compared: one stable sort, then each level pairs neighbours in one pass. O(n log n)
  * comparisons and O(n · depth) compressions. A `Map` is an iterable of entries, so it may be passed as before.
+ * `leaves` is read once, as `for...of` reads it (its iterator closed on a refusal); an entry that is not a
+ * `[bigint, Fr]` array (read by index) is a `TypeMismatch`, as is a depth that is not a number.
  */
-export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, PoseidonMerkleError> {
+export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, PoseidonMerkleError | TypeMismatch> {
   const zeros = zeroHashes(depth);
   if (!zeros.ok) return zeros;
   const capacity = 1n << BigInt(depth);
-  const entries: Placed[] = [];
   // each entry is copied as it is read: an iterable may yield one tuple again with new contents
-  for (const [p, leaf] of leaves) {
-    if (p < 0n || p >= capacity) return err({ kind: "Position", positionBits: bitsOf(p), depth });
-    entries.push([p, leaf]);
-  }
+  const read = readIterable<Placed, PoseidonMerkleError | TypeMismatch>(leaves, (e, i) => {
+    const pair = readPair(e);
+    if (pair === undefined) return err(expectedAt("a [position, leaf] array", i));
+    const [p, leaf] = pair;
+    if (typeof p !== "bigint" || !isFr(leaf)) return err(expectedAt("a [bigint, Fr] array", i));
+    return p < 0n || p >= capacity ? err({ kind: "Position", positionBits: bitsOf(p), depth }) : ok([p, leaf] as const);
+  });
+  if (!read.ok) return read;
+  const entries = read.value;
   // the sort is stable, so the last of a position's run of entries is its latest
   entries.sort(byPosition);
   let level: Placed[] = entries.filter((e, i) => entries[i + 1]?.[0] !== e[0] && !e[1].equals(Fr.zero));
@@ -225,11 +317,11 @@ export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, Po
     for (let j = 0; j < level.length; j++) {
       const [p, node] = level[j] ?? [0n, zero];
       const right = level[j + 1];
-      if ((p & 1n) === 1n) up.push([p >> 1n, compress(zero, node)]);
+      if ((p & 1n) === 1n) up.push([p >> 1n, compressOf(zero, node)]);
       else if (right?.[0] === (p | 1n)) {
-        up.push([p >> 1n, compress(node, right[1])]);
+        up.push([p >> 1n, compressOf(node, right[1])]);
         j++;
-      } else up.push([p >> 1n, compress(node, zero)]);
+      } else up.push([p >> 1n, compressOf(node, zero)]);
     }
     level = up;
   }

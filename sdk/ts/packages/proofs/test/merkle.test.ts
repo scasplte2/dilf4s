@@ -6,8 +6,8 @@ import { merkle } from "../src/index.js";
 import { bytes, bytesValue, expectErr, expectOk, loadVectors, valueOf, hexOf } from "./vectors.js";
 
 const vectors = loadVectors("merkle_v1.json", models.merkleVectors.MerkleVectors);
-const tagged = merkle.TaggedMerkleHashing.of("SHA-256");
-const rfc = merkle.Rfc6962MerkleHashing.of("SHA-256");
+const tagged = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
+const rfc = expectOk(merkle.Rfc6962MerkleHashing.of("SHA-256"), "Rfc6962MerkleHashing.of");
 const leaves = vectors.leaves.map(bytes);
 const leafHashes = vectors.leafHashes.map(bytes);
 

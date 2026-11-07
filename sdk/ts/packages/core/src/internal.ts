@@ -4,7 +4,7 @@
  * with any release, and nothing here checks its arguments (the `...Of` forms are the unchecked counterparts of the
  * public functions of the same name).
  */
-export { copyBytes, isBytes, isLocalBuffer, plainBytes, takeBytes } from "./bytes.js";
+export { bytesLength, copyBytes, isBytes, isLocalBuffer, plainBytes, takeBytes } from "./bytes.js";
 export { bitLengthOf } from "./bigint.js";
 export { blockSizeOf, digestOf, hashPartsOf, isAlgorithm, isDomainTag, outputSizeOf, startHashOf, typeMismatch, type RawHash } from "./hash.js";
 export { toHexOf } from "./hex.js";

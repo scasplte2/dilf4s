@@ -8,7 +8,7 @@ import { bytesEqual, compareBytes } from "../src/bytes.js";
 import * as L from "../src/listing.js";
 import { expectOk, int, hexOf } from "./vectors.js";
 
-const T = trie.TrieHashing.of("SHA-256");
+const T = expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of");
 
 // ------------------------------------------------------------------ the walks as they were before (trie.md section 4)
 

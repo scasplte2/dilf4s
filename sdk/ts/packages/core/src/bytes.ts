@@ -41,6 +41,18 @@ export function plainBytes(x: unknown): Uint8Array | undefined {
 }
 
 /**
+ * `x`'s internal length, if it is bytes (see {@link isBytes}), in O(1) and with nothing allocated: read through
+ * `%TypedArray%.prototype`'s own getter, never its `length` property. Code that reads only `x`'s indices up to this
+ * length can use `x` itself without a view: a typed array's indexed reads go to its memory, and no subclass, own
+ * property or prototype can change them (a detached or out-of-bounds array has length 0).
+ */
+export function bytesLength(x: unknown): number | undefined {
+  if (!isBytes(x)) return undefined;
+  const length: unknown = typedArrayLength?.call(x);
+  return typeof length === "number" ? length : new Uint8Array(x).length;
+}
+
+/**
  * Whether `view`'s memory is an `ArrayBuffer` of this realm, which only code running in this thread can change: not a
  * `SharedArrayBuffer` (another thread may write it at any time) nor another realm's buffer. It reads the buffer through
  * `%TypedArray%.prototype`'s own getter and compares its prototype, so nothing throws and no caller code runs. A

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Value } from "@kd5ujc/dilf4s-core";
 
 import { trie, versioned } from "../src/index.js";
+import { TRIE } from "../src/trie-internal.js";
 import { expectErr, expectOk, int, hexOf } from "./vectors.js";
 
 // The replica's tries (docs/specs/versioned-trie.md section 7): updated incrementally, equal to a full rebuild after
@@ -37,7 +38,7 @@ function step(m: Model, version: bigint, upserts: readonly (readonly [versioned.
   const stateRoot = expectOk(trie.trieRoot(vt.hashing, vt.stateMode, [...state.values()].map(([k, v]) => [k.bytes(), expectOk(vt.valueHash(v), "hash")] as const)), "state root");
   const history = new Map(m.history);
   history.set(hex(vkey(version)), [version, stateRoot]);
-  const historyRoot = expectOk(trie.trieRoot(vt.hashing, vt.historyMode, [...history.values()].map(([v, s]) => [vkey(v), vt.bytesHash(s)] as const)), "history root");
+  const historyRoot = expectOk(trie.trieRoot(vt.hashing, vt.historyMode, [...history.values()].map(([v, s]) => [vkey(v), expectOk(vt.bytesHash(s), "bytes hash")] as const)), "history root");
   const head: Head = { version, stateRoot, historyRoot };
   const delta: Delta = { ...(m.head === undefined ? {} : { parent: m.head }), head, upserts, removes };
   return [delta, { state, history, head }];
@@ -71,7 +72,7 @@ describe("a replica's incremental roots", { timeout: 60_000 }, () => {
     for (let seed = 1n; seed <= 8n; seed++) {
       const next = rng(seed * 0x9e3779b97f4a7c15n);
       let model = emptyModel;
-      let replica = versioned.Replica.empty(vt);
+      let replica = expectOk(versioned.Replica.empty(vt), "Replica.empty");
       for (let i = 1; i <= 80; i++) {
         const version = BigInt(i * 3);
         // every 20th delta empties the state; the next ones re-insert into it. A remove may name an absent key, which
@@ -101,7 +102,7 @@ describe("a replica's incremental roots", { timeout: 60_000 }, () => {
         expect(replica.head).toEqual(model.head);
         expect(entriesOf(replica)).toEqual(sortedState(model).map(([k, v]) => [k.value, v]));
         expect(replica.size).toBe(model.state.size);
-        for (const k of universe) expect(replica.get(k)).toEqual(model.state.get(k.value)?.[1]);
+        for (const k of universe) expect(expectOk(replica.get(k), "get")).toEqual(model.state.get(k.value)?.[1]);
         expect(replica.history().map(([v, s]) => [v, hex(s)])).toEqual([...model.history.values()].map(([v, s]) => [v, hex(s)]));
         if (i % 20 === 0) expect([replica.size, hex(replica.head?.stateRoot ?? new Uint8Array(0))]).toEqual([0, hex(vt.hashing.empty)]);
         if (i % 7 === 0) {
@@ -127,7 +128,7 @@ describe("a replica's work per delta", { timeout: 60_000 }, () => {
     vi.restoreAllMocks();
   });
 
-  const watchNodes = () => [vi.spyOn(trie.TrieHashing.prototype, "leafBits"), vi.spyOn(trie.TrieHashing.prototype, "branchBits")];
+  const watchNodes = () => [vi.spyOn(TRIE, "leafBits"), vi.spyOn(TRIE, "branchBits")];
   const calls = (spies: readonly { readonly mock: { readonly calls: readonly unknown[] } }[]): number => spies.reduce((t, s) => t + s.mock.calls.length, 0);
 
   /** Bit positions at which `keys` do not all agree (past a key's end counts): every branch on a path sits at one. */
@@ -216,8 +217,8 @@ describe("a replica's work per delta", { timeout: 60_000 }, () => {
     const watch = [vi.spyOn(Map.prototype, "get"), vi.spyOn(Map.prototype, "set"), vi.spyOn(Map.prototype, "has"), vi.spyOn(Set.prototype, "add"), vi.spyOn(Set.prototype, "has")];
     const replica = expectOk(versioned.Replica.fromSnapshot(vt, delta.head, snapshotOf(model)), "restores");
     const applied = expectOk(replica.applyDelta(next), "applies");
-    expect(applied.get(keys[0] ?? key("a"))).toEqual(int(-1n));
-    expect(applied.get(keys[64] ?? key("a"))).toBeUndefined();
+    expect(expectOk(applied.get(keys[0] ?? key("a")), "get")).toEqual(int(-1n));
+    expect(expectOk(applied.get(keys[64] ?? key("a")), "get")).toBeUndefined();
     expect(applied.size).toBe(n - 64);
     const hashed = watch.reduce((t, s) => t + s.mock.calls.filter((args) => isPeerKey(args[0])).length, 0);
     expect(hashed).toBe(0);

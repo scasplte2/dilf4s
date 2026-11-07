@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { fromHex, models, Value } from "@kd5ujc/dilf4s-core";
+import { fromHex, models, Value, type TypeMismatch } from "@kd5ujc/dilf4s-core";
 
 import { MAX_PROOF_WEIGHT, merkle, poseidon, trie, versioned } from "../src/index.js";
 import { bytes, expectOk, loadVectors, valueOf } from "./vectors.js";
@@ -35,7 +35,7 @@ function built(b: models.refusalVectors.BuiltValue): Value {
 /** An outcome as the vectors record it. */
 const accepted: Outcome = "accepted";
 
-function versionedOutcome(e: versioned.VersionedTrieError): Outcome {
+function versionedOutcome(e: versioned.VersionedRefusal): Outcome {
   if (e.kind === "TooLarge") return { kind: e.kind, limit: BigInt(e.limit) };
   if (e.kind === "TooDeep") return { kind: e.kind, limit: BigInt(e.limit), depth: BigInt(e.depth) };
   if (e.kind === "RootMismatch") return { kind: e.kind, component: e.component };
@@ -84,7 +84,7 @@ function run(c: Case): Outcome {
       return v(s.ok ? s.value.lookup(stateKey()) : s);
     }
     case "vt-replica": {
-      let replica = versioned.Replica.empty(vt);
+      let replica = expectOk(versioned.Replica.empty(vt), "Replica.empty");
       for (const d of c.inputs ?? []) {
         const delta = vt.decodeDelta(built(d));
         if (!delta.ok) return v(delta);
@@ -95,18 +95,18 @@ function run(c: Case): Outcome {
       return accepted;
     }
     case "merkle-inclusion": {
-      const hashing = merkle.TaggedMerkleHashing.of("SHA-256");
+      const hashing = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
       const p = merkle.InclusionProof.decode(hashing, input());
       return of(byKind)(p.ok ? merkle.checkInclusion(hashing, root(), bytes(c.leafHash ?? ""), p.value) : p);
     }
     case "merkle-consistency": {
-      const hashing = merkle.TaggedMerkleHashing.of("SHA-256");
+      const hashing = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
       const p = merkle.ConsistencyProof.decode(hashing, input());
       return of(byKind)(p.ok ? merkle.checkConsistency(hashing, bytes(c.oldRoot ?? ""), root(), p.value) : p);
     }
     case "trie-lookup": {
       const mode = modeOf(c.mode);
-      const hashing = trie.TrieHashing.of("SHA-256");
+      const hashing = expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of");
       const p = trie.TrieProof.decode(hashing, input());
       if (!p.ok) return byKind(p.error);
       const verified = trie.check(hashing, mode, root(), p.value);
@@ -134,20 +134,20 @@ function run(c: Case): Outcome {
       return accepted;
     }
     case "merkle-verify": {
-      const hashing = merkle.TaggedMerkleHashing.of("SHA-256");
+      const hashing = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
       const head = { root: root(), size: c.size ?? 0n };
       return of(byKind)(merkle.merkleVerify(hashing, head, built(c.claim ?? { leaf: "" }), input()));
     }
     case "trie-verify": {
       const claim = c.claim === undefined ? null : built(c.claim);
-      return of(byKind)(trie.trieVerify(trie.TrieHashing.of("SHA-256"), modeOf(c.mode), root(), bytes(c.key ?? ""), claim, input()));
+      return of(byKind)(trie.trieVerify(expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of"), modeOf(c.mode), root(), bytes(c.key ?? ""), claim, input()));
     }
     case "trie-prefix-verify": {
       const entries: readonly trie.ClaimedEntry[] = (c.entries ?? []).map((e) => [bytes(e.key), built(e.value)] as const);
-      return of(byKind)(trie.triePrefixVerify(trie.TrieHashing.of("SHA-256"), modeOf(c.mode), root(), bytes(c.prefix ?? ""), entries, input()));
+      return of(byKind)(trie.triePrefixVerify(expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of"), modeOf(c.mode), root(), bytes(c.prefix ?? ""), entries, input()));
     }
     case "poseidon-proof":
-      return of((e: poseidon.PoseidonMerkleError): Outcome => (e.kind === "Position" ? { kind: e.kind, depth: BigInt(e.depth) } : byKind(e)))(poseidon.PoseidonMerkleProof.decode(input()));
+      return of((e: poseidon.PoseidonMerkleError | TypeMismatch): Outcome => (e.kind === "Position" ? { kind: e.kind, depth: BigInt(e.depth) } : byKind(e)))(poseidon.PoseidonMerkleProof.decode(input()));
   }
 }
 

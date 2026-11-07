@@ -35,12 +35,12 @@ describe("poseidon_v1.json", () => {
     const proof = expectOk(poseidon.PoseidonMerkleProof.of(BigInt(p.position), p.siblings.map(fr)), "proof");
     expect(proof.depth).toBe(depth);
     const leaf = leaves.get(BigInt(p.position)) ?? poseidon.Fr.zero;
-    expect(poseidon.verifyInclusion(leaf, proof, root)).toBe(true);
-    expect(poseidon.verifyInclusion(poseidon.Fr.reduce(leaf.value + 1n), proof, root), "a tampered leaf").toBe(false);
-    expect(poseidon.verifyAbsence(proof, root), "absence holds exactly when the leaf is empty").toBe(leaf.equals(poseidon.Fr.zero));
+    expect(expectOk(poseidon.verifyInclusion(leaf, proof, root), "verifyInclusion")).toBe(true);
+    expect(expectOk(poseidon.verifyInclusion(expectOk(poseidon.Fr.reduce(leaf.value + 1n), "Fr.reduce"), proof, root), "verifyInclusion"), "a tampered leaf").toBe(false);
+    expect(expectOk(poseidon.verifyAbsence(proof, root), "verifyAbsence"), "absence holds exactly when the leaf is empty").toBe(leaf.equals(poseidon.Fr.zero));
     const siblings = [...proof.siblings];
-    siblings[3] = poseidon.Fr.reduce((siblings[3]?.value ?? 0n) + 1n);
-    expect(poseidon.verifyInclusion(leaf, expectOk(poseidon.PoseidonMerkleProof.of(proof.position, siblings), "proof"), root), "a tampered sibling").toBe(false);
+    siblings[3] = expectOk(poseidon.Fr.reduce((siblings[3]?.value ?? 0n) + 1n), "Fr.reduce");
+    expect(expectOk(poseidon.verifyInclusion(leaf, expectOk(poseidon.PoseidonMerkleProof.of(proof.position, siblings), "proof"), root), "verifyInclusion"), "a tampered sibling").toBe(false);
     const decoded = expectOk(poseidon.PoseidonMerkleProof.decode(expectOk(proof.encode(), "encodes")), "decodes");
     expect(decoded.position).toBe(proof.position);
     expect(decoded.siblings.map((s) => s.value)).toEqual(proof.siblings.map((s) => s.value));
@@ -60,14 +60,14 @@ describe("Poseidon", () => {
     const sparse: poseidon.Fr[] = [];
     sparse.length = 2 ** 32 - 1;
     expect(expectErr(poseidon.PoseidonMerkleProof.of(0n, sparse), "too deep")).toEqual({ kind: "Position", positionBits: 0, depth: 2 ** 32 - 1 });
-    expect(poseidon.Fr.reduce(poseidon.FR_MODULUS + 5n).value).toBe(5n);
-    expect(poseidon.compress(fr(1n), fr(2n)).value).toBe(expectOk(poseidon.hash([fr(1n), fr(2n)]), "hash").value);
+    expect(expectOk(poseidon.Fr.reduce(poseidon.FR_MODULUS + 5n), "Fr.reduce").value).toBe(5n);
+    expect(expectOk(poseidon.compress(fr(1n), fr(2n)), "compress").value).toBe(expectOk(poseidon.hash([fr(1n), fr(2n)]), "hash").value);
   });
 
   it("zero hashes chain, and the empty tree's root is zero(depth)", () => {
     const z = expectOk(poseidon.zeroHashes(8), "zeros");
     expect(z).toHaveLength(9);
-    for (let i = 0; i < 8; i++) expect(poseidon.compress(z[i] ?? poseidon.Fr.zero, z[i] ?? poseidon.Fr.zero).equals(z[i + 1] ?? poseidon.Fr.zero)).toBe(true);
+    for (let i = 0; i < 8; i++) expect(expectOk(poseidon.compress(z[i] ?? poseidon.Fr.zero, z[i] ?? poseidon.Fr.zero), "compress").equals(z[i + 1] ?? poseidon.Fr.zero)).toBe(true);
     expect(expectOk(poseidon.treeRoot(8, new Map()), "root").equals(z[8] ?? poseidon.Fr.zero)).toBe(true);
     expect(expectErr(poseidon.zeroHashes(0), "depth 0").kind).toBe("Depth");
     expect(expectErr(poseidon.zeroHashes(257), "depth 257").kind).toBe("Depth");
@@ -131,7 +131,7 @@ describe("treeRoot: caller-chosen positions are compared, never hashed", () => {
       const next = new Map<bigint, poseidon.Fr>();
       for (const p of level.keys()) {
         const parent = p >> 1n;
-        if (!next.has(parent)) next.set(parent, poseidon.compress(level.get(parent << 1n) ?? zero, level.get((parent << 1n) | 1n) ?? zero));
+        if (!next.has(parent)) next.set(parent, expectOk(poseidon.compress(level.get(parent << 1n) ?? zero, level.get((parent << 1n) | 1n) ?? zero), "compress"));
       }
       level = next;
     }

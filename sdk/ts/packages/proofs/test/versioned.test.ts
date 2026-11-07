@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { cbor, models, Value } from "@kd5ujc/dilf4s-core";
+import { cbor, models, Value, type TypeMismatch } from "@kd5ujc/dilf4s-core";
 
 import { versioned } from "../src/index.js";
 import { bytes, bytesValue, expectErr, expectOk, int, loadVectors, valueOf, hexOf } from "./vectors.js";
@@ -17,9 +17,11 @@ const finalHead = expectOk(vt.decodeHead(valueOf(vectors.head.cbor)), "head deco
 const entriesHex = (es: readonly versioned.StateEntry[]): unknown => es.map(([k, h]) => [k.value, hexOf(h)]);
 
 /** A state-key outcome as the vectors record it: "accepted", or the kind and its normative segment. */
-function keyOutcome(r: { readonly ok: true } | { readonly ok: false; readonly error: versioned.StateKeyError }): models.versionedTrieVectors.VtStateKeyOutcome {
+function keyOutcome(r: { readonly ok: true } | { readonly ok: false; readonly error: versioned.StateKeyError | TypeMismatch }): models.versionedTrieVectors.VtStateKeyOutcome {
   if (r.ok) return "accepted";
   const e = r.error;
+  // a vector's key is text, so its parse is never a TypeMismatch
+  if (e.kind === "TypeMismatch") throw new Error(e.reason);
   return e.kind === "InvalidSegment" || e.kind === "SegmentTooLong" ? { kind: e.kind, segment: BigInt(e.segment) } : { kind: e.kind };
 }
 
@@ -39,7 +41,7 @@ describe("versioned_trie_v1.json", () => {
   });
 
   it("every commit's delta replays through a replica to its roots", () => {
-    let replica = versioned.Replica.empty(vt);
+    let replica = expectOk(versioned.Replica.empty(vt), "Replica.empty");
     for (const c of vectors.commits) {
       const delta = expectOk(vt.decodeDelta(valueOf(c.delta)), `delta ${c.version.toString()}`);
       expect(delta.upserts.map(([k, v]) => [k.value, hexOf(expectOk(cbor.encode(v), "encodes"))])).toEqual(c.upserts.map((u) => [u.key, u.value]));
@@ -62,7 +64,7 @@ describe("versioned_trie_v1.json", () => {
     const replica = expectOk(versioned.Replica.restore(vt, finalHead, chunks), "restores");
     expect(hexOf(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(vectors.root);
     expect(replica.history().map(([v]) => v)).toEqual(vectors.commits.map((c) => c.version));
-    expect(replica.get(key("oracle/a/b"))).toEqual(expectOk(Value.text("a"), "text"));
+    expect(expectOk(replica.get(key("oracle/a/b")), "get")).toEqual(expectOk(Value.text("a"), "text"));
   });
 
   it.each(vectors.stateKeys.map((c) => [JSON.stringify(c.key).slice(0, 40), c] as const))("state key %s", (_, c) => {
@@ -216,8 +218,8 @@ describe("versioned trie checks", () => {
     expect(versioned.StateNamespace.parse(Array.from({ length: 16 }, () => "a").join("/")).ok).toBe(false);
     expect(versioned.StateNamespace.parse(Array.from({ length: 15 }, () => "a").join("/")).ok).toBe(true);
     expect(versioned.StateNamespace.parse("x".repeat(64) + "/" + "x".repeat(64) + "/" + "x".repeat(64) + "/" + "x".repeat(61)).ok).toBe(false);
-    expect(ns("fiber").contains(key("fiber/1"))).toBe(true);
-    expect(ns("fiber").contains(key("fiberx/1"))).toBe(false);
+    expect(expectOk(ns("fiber").contains(key("fiber/1")), "contains")).toBe(true);
+    expect(expectOk(ns("fiber").contains(key("fiberx/1")), "contains")).toBe(false);
   });
 
   // conformance.md section 8: a 1 MiB key or trie key is refused by its length, as a preview or a size
@@ -259,8 +261,8 @@ describe("versioned trie checks", () => {
 
 describe("snapshots and replicas", () => {
   const chunks = vectors.snapshot.chunks.map(bytes);
-  const feedAll = (cs: readonly Uint8Array[]): versioned.VersionedTrieError | undefined => {
-    let reader = versioned.SnapshotReader.start(vt, finalHead);
+  const feedAll = (cs: readonly Uint8Array[]): versioned.VersionedRefusal | undefined => {
+    let reader = expectOk(versioned.SnapshotReader.start(vt, finalHead), "SnapshotReader.start");
     for (const c of cs) {
       const r = reader.feedBytes(c);
       if (!r.ok) return r.error;
@@ -269,7 +271,7 @@ describe("snapshots and replicas", () => {
     const f = reader.finish();
     return f.ok ? undefined : f.error;
   };
-  const reason = (e: versioned.VersionedTrieError | undefined): string => (e?.kind === "Malformed" ? e.reason : JSON.stringify(e?.kind));
+  const reason = (e: versioned.VersionedRefusal | undefined): string => (e?.kind === "Malformed" ? e.reason : JSON.stringify(e?.kind));
 
   it("the reader refuses reordered, truncated, foreign and doubled snapshots at the first bad chunk", () => {
     expect(feedAll(chunks)).toBeUndefined();
@@ -283,7 +285,7 @@ describe("snapshots and replicas", () => {
     const stateChunks = rest.filter((c) => expectOk(vt.decodeChunk(c), "decodes").kind === "state");
     if (stateChunks.length > 1) expect(reason(feedAll([head, stateChunks[1] ?? head, stateChunks[0] ?? head]))).toMatch(/does not follow/);
     const other = { ...finalHead, stateRoot: vt.hashing.empty };
-    const foreign = versioned.SnapshotReader.start(vt, other).feedBytes(head);
+    const foreign = expectOk(versioned.SnapshotReader.start(vt, other), "SnapshotReader.start").feedBytes(head);
     expect(reason(foreign.ok ? undefined : foreign.error)).toMatch(/not the trusted head/);
   });
 
@@ -295,7 +297,7 @@ describe("snapshots and replicas", () => {
   it("a replica owns its roots: mutating what goes in or comes out leaves it intact", () => {
     const [d1, d2] = vectors.commits.map((c) => expectOk(vt.decodeDelta(valueOf(c.delta)), "delta"));
     if (d1 === undefined || d2 === undefined) throw new Error("two deltas");
-    const one = expectOk(versioned.Replica.empty(vt).applyDelta(d1), "first");
+    const one = expectOk(expectOk(versioned.Replica.empty(vt), "empty").applyDelta(d1), "first");
     const root = expectOk(one.root(), "root");
     // the caller's delta head, the head getter and the history listing are all the caller's to scribble on
     d1.head.stateRoot.fill(0);
@@ -314,7 +316,7 @@ describe("snapshots and replicas", () => {
     const deltas = vectors.commits.map((c) => expectOk(vt.decodeDelta(valueOf(c.delta)), "delta"));
     const [d1, d2] = deltas;
     if (d1 === undefined || d2 === undefined) throw new Error("two deltas");
-    const empty = versioned.Replica.empty(vt);
+    const empty = expectOk(versioned.Replica.empty(vt), "Replica.empty");
     expect(expectErr(empty.applyDelta(d2), "gap")).toMatchObject({ kind: "RootMismatch", component: "parent" });
     const one = expectOk(empty.applyDelta(d1), "first");
     expect(expectErr(one.applyDelta(d1), "replay")).toMatchObject({ kind: "RootMismatch", component: "parent" });

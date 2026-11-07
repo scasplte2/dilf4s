@@ -5,14 +5,20 @@
  * root of a trie built from its entries.
  *
  * Every walk uses an explicit stack, never recursion: a proof's depth is bounded only by the mode (up to 524280 bits).
+ *
+ * Every exported function and method checks its arguments once before it reads them, in O(1) each (an array: once per
+ * item): an argument of the wrong type is core's `TypeMismatch` (check.ts). A caller's key or bound is read through
+ * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
-import { BYTES_TAG, describeFailure, err, models, ok, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
-import { outputSizeOf, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { BYTES_TAG, describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
+import { bytesLength, outputSizeOf, plainBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_NUMBER, NOT_BYTES, readArray, readIterable, readPair, valueArg } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
+import { TRIE } from "./trie-internal.js";
 
 /**
  * Why a trie operation failed, by Scala's `TrieError` names, plus `NotCovered`: the JLVM's "not covered" (a proof that
@@ -28,6 +34,9 @@ export type TrieError =
   /** Over `limit` in weight (`MAX_PROOF_WEIGHT`, or this SDK's commitment ceiling): claims, or a proof to emit. */
   | { readonly kind: "TooLarge"; readonly limit: number };
 
+/** A trie refusal, or an argument of the wrong type: what the exported functions here may refuse with. */
+type Refusal = TrieError | TypeMismatch;
+
 /** Claims together within `MAX_PROOF_WEIGHT`, from their weights, before any is hashed. */
 const claimsWithin = (values: readonly Value[]): Result<undefined, TrieError> =>
   values.reduce((t, v) => t + v.weight, 0n) <= MAX_PROOF_WEIGHT ? ok(undefined) : err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
@@ -40,8 +49,14 @@ const invalidProof = (reason: string): Result<never, TrieError> => err({ kind: "
 export const MAX_FIXED_BYTES = models.limits.TRIE_MAX_FIXED_KEY_BYTES;
 export const MAX_VARIABLE_BYTES = models.limits.TRIE_MAX_VARIABLE_KEY_BYTES;
 
+let isMode!: (x: unknown) => x is KeyMode;
+
+/** `x` if it is a {@link KeyMode} made here (a private-brand check: no Proxy trap or caller code runs). */
+const modeArg = (x: unknown): Result<KeyMode, TypeMismatch> => (isMode(x) ? ok(x) : err(expected("a KeyMode")));
+
 /** How keys are validated: `fixed(n)`, exactly `n` bytes, or `variable(max)`, at most `max` bytes. */
 export class KeyMode {
+  readonly #brand = true;
   private constructor(
     readonly kind: "fixed" | "variable",
     /** The key length (fixed) or the longest key (variable), in bytes. */
@@ -50,13 +65,21 @@ export class KeyMode {
     Object.freeze(this);
   }
 
-  static fixed(bytes: number): Result<KeyMode, TrieError> {
+  static {
+    isMode = (x): x is KeyMode => isObject(x) && #brand in x;
+  }
+
+  /** Keys of exactly `bytes` bytes, `1..MAX_FIXED_BYTES` (`InvalidKey`); a length that is not a number is a `TypeMismatch`. */
+  static fixed(bytes: number): Result<KeyMode, Refusal> {
+    if (typeof (bytes as unknown) !== "number") return err(NOT_A_NUMBER);
     return Number.isInteger(bytes) && bytes >= 1 && bytes <= MAX_FIXED_BYTES
       ? ok(new KeyMode("fixed", bytes))
       : err({ kind: "InvalidKey", reason: `fixed key length must be 1..${MAX_FIXED_BYTES.toString()}` });
   }
 
-  static variable(maxBytes: number): Result<KeyMode, TrieError> {
+  /** Keys of at most `maxBytes` bytes, `0..MAX_VARIABLE_BYTES` (`InvalidKey`); a limit that is not a number is a `TypeMismatch`. */
+  static variable(maxBytes: number): Result<KeyMode, Refusal> {
+    if (typeof (maxBytes as unknown) !== "number") return err(NOT_A_NUMBER);
     return Number.isInteger(maxBytes) && maxBytes >= 0 && maxBytes <= MAX_VARIABLE_BYTES
       ? ok(new KeyMode("variable", maxBytes))
       : err({ kind: "InvalidKey", reason: `variable key limit must be 0..${MAX_VARIABLE_BYTES.toString()}` });
@@ -71,11 +94,13 @@ export class KeyMode {
     return this.kind === "variable";
   }
 
-  /** `undefined` if `key` is valid in this mode, else why not. */
-  checkKey(key: Uint8Array): Result<undefined, TrieError> {
-    if (this.kind === "fixed")
-      return key.length === this.bytes ? ok(undefined) : err({ kind: "InvalidKey", reason: `fixed(${this.bytes.toString()}) mode needs ${this.bytes.toString()}-byte keys, got ${key.length.toString()}` });
-    return key.length <= this.bytes ? ok(undefined) : err({ kind: "InvalidKey", reason: `variable(${this.bytes.toString()}) mode allows at most ${this.bytes.toString()} bytes, got ${key.length.toString()}` });
+  /**
+   * `undefined` if `key` is valid in this mode, else why not (`InvalidKey`), by the key's internal length; what is not a
+   * `Uint8Array` is a `TypeMismatch`.
+   */
+  checkKey(key: Uint8Array): Result<undefined, Refusal> {
+    const n = bytesLength(key);
+    return n === undefined ? err(NOT_BYTES) : checkKeyLength(this, n);
   }
 
   toString(): string {
@@ -83,9 +108,21 @@ export class KeyMode {
   }
 }
 
+const VALID: Result<undefined, never> = ok(undefined);
+
+/** {@link KeyMode.checkKey} of a key of `n` bytes (its internal length). */
+function checkKeyLength(mode: KeyMode, n: number): Result<undefined, TrieError> {
+  if (mode.kind === "fixed") return n === mode.bytes ? VALID : err({ kind: "InvalidKey", reason: `fixed(${mode.bytes.toString()}) mode needs ${mode.bytes.toString()}-byte keys, got ${n.toString()}` });
+  return n <= mode.bytes ? VALID : err({ kind: "InvalidKey", reason: `variable(${mode.bytes.toString()}) mode allows at most ${mode.bytes.toString()} bytes, got ${n.toString()}` });
+}
+
+/** {@link KeyMode.checkKey} of a plain key. */
+const checkKey = (mode: KeyMode, key: Uint8Array): Result<undefined, TrieError> => checkKeyLength(mode, key.length);
+
 // ------------------------------------------------------------------ segments and hashing (sections 2, 3)
 
 let segmentBitsOf!: (s: Segment) => B.Bits;
+let isSegment!: (x: unknown) => x is Segment;
 
 /** A node's segment: `length` bits, MSB-first in `bytes`, padded with zero bits to a whole byte. */
 export class Segment {
@@ -95,9 +132,16 @@ export class Segment {
     Object.freeze(this);
   }
 
-  /** The segment of the wire form `{n, b}`: `len(b) == ceil(n / 8)` and zero padding bits. */
-  static of(n: bigint, b: Uint8Array): Result<Segment, TrieError> {
-    const bits = segmentBits(n, b);
+  /**
+   * The segment of the wire form `{n, b}`: `len(b) == ceil(n / 8)` and zero padding bits (`Encoding`). A count that is
+   * not a `bigint`, or bytes that are not a `Uint8Array`, are a `TypeMismatch`; the bytes are copied.
+   */
+  static of(n: bigint, b: Uint8Array): Result<Segment, Refusal> {
+    const count = bigintArg(n);
+    if (!count.ok) return count;
+    const bytes = bytesArg(b);
+    if (!bytes.ok) return bytes;
+    const bits = segmentBits(count.value, bytes.value);
     return bits.ok ? ok(new Segment(bits.value)) : bits;
   }
 
@@ -112,6 +156,7 @@ export class Segment {
 
   static {
     segmentBitsOf = (s) => s.#bits;
+    isSegment = (x): x is Segment => isObject(x) && #bits in x;
   }
 }
 
@@ -154,6 +199,16 @@ function cborSegment(s: B.Bits): Uint8Array {
   return concatBytes([Uint8Array.of(0xa2), cborKey("b"), cborBytes(s.bytes.subarray(0, (s.length + 7) >> 3)), cborKey("n"), cborHead(0, s.length)]);
 }
 
+let isHashing!: (x: unknown) => x is TrieHashing;
+
+/** `x` if it is a {@link TrieHashing} made here (a private-brand check: no Proxy trap or caller code runs). */
+const hashingArg = (x: unknown): Result<TrieHashing, TypeMismatch> => (isHashing(x) ? ok(x) : err(expected("a TrieHashing")));
+
+/** An optional digest: `undefined`, or a `Uint8Array` (a plain view). */
+function optionalBytes(x: unknown): Result<Uint8Array | undefined, TypeMismatch> {
+  return x === undefined ? ok(undefined) : bytesArg(x);
+}
+
 /** Hashing and node commitments over one hash algorithm (trie.md section 3). */
 export class TrieHashing {
   /** The digest size in bytes. */
@@ -171,8 +226,36 @@ export class TrieHashing {
     Object.freeze(this);
   }
 
-  static of(algorithm: HashAlgorithm): TrieHashing {
-    return new TrieHashing(algorithm);
+  static {
+    isHashing = (x): x is TrieHashing => isObject(x) && #value in x;
+    TRIE.valueHash = (h, value) => {
+      const c = h.#value.commitment(value);
+      if (c.ok) return c;
+      // the value is checked first, so the commitment can only be too large
+      return err(c.error.kind === "TooLarge" ? { kind: "TooLarge", limit: c.error.limit } : { kind: "Encoding", reason: c.error.reason });
+    };
+    TRIE.bytesHash = (h, b) => h.#value.hashParts([Uint8Array.of(BYTES_TAG), b]);
+    TRIE.leafBits = (h, segment, valueHash) =>
+      // {"s": segment, "v": valueHash}
+      h.#leaf.hash(concatBytes([Uint8Array.of(0xa2), cborKey("s"), cborSegment(segment), cborKey("v"), cborBytes(valueHash)]));
+    TRIE.branchBits = (h, segment, valueHash, left, right) => {
+      // canonical key order: "l", "r", "s", "v"
+      const parts: Uint8Array[] = [];
+      if (left !== undefined) parts.push(cborKey("l"), cborBytes(left));
+      if (right !== undefined) parts.push(cborKey("r"), cborBytes(right));
+      parts.push(cborKey("s"), cborSegment(segment));
+      if (valueHash !== undefined) parts.push(cborKey("v"), cborBytes(valueHash));
+      const count = 1 + (left === undefined ? 0 : 1) + (right === undefined ? 0 : 1) + (valueHash === undefined ? 0 : 1);
+      return h.#branch.hash(concatBytes([cborHead(5, count), ...parts]));
+    };
+    TRIE.rootText = rootText;
+    TRIE.checkKey = checkKey;
+  }
+
+  /** The hashing over `algorithm`; one that is not a `HashAlgorithm` (from a JavaScript caller) is a `TypeMismatch`. */
+  static of(algorithm: HashAlgorithm): Result<TrieHashing, TypeMismatch> {
+    const a = algorithmArg(algorithm);
+    return a.ok ? ok(new TrieHashing(a.value)) : a;
   }
 
   /** The root of the empty trie. */
@@ -183,46 +266,39 @@ export class TrieHashing {
   /**
    * The hash a trie commits for a value: `valueHash(commit(v))`, as a JLVM program claims it. O(min(weight, the
    * ceiling)), as `valueCommitment`: a value whose commitment is over `cbor.MAX_ENCODED_BYTES` (2^31 - 9, this SDK's
-   * ceiling; Scala and Rust hash without one) is `TooLarge`, and what is not a canonical value is `Encoding`. The commitment is
-   * streamed into the hash, never built.
+   * ceiling; Scala and Rust hash without one) is `TooLarge`, and what is not a canonical value is a `TypeMismatch`. The
+   * commitment is streamed into the hash, never built.
    */
-  valueHash(value: Value): Result<Uint8Array, TrieError> {
-    const c = this.#value.commitment(value);
-    if (c.ok) return c;
-    return err(c.error.kind === "TooLarge" ? { kind: "TooLarge", limit: c.error.limit } : { kind: "Encoding", reason: c.error.reason });
+  valueHash(value: Value): Result<Uint8Array, Refusal> {
+    const v = valueArg(value);
+    return v.ok ? TRIE.valueHash(this, v.value) : v;
   }
 
-  /** The hash a trie commits for a byte string, `valueHash(commit(b))`: linear in `b`, which the caller holds. */
-  bytesHash(b: Uint8Array): Uint8Array {
-    return this.#value.hashParts([Uint8Array.of(BYTES_TAG), b]);
+  /**
+   * The hash a trie commits for a byte string, `valueHash(commit(b))`: linear in `b`, which the caller holds. What is
+   * not a `Uint8Array` is a `TypeMismatch`.
+   */
+  bytesHash(b: Uint8Array): Result<Uint8Array, TypeMismatch> {
+    const bytes = bytesArg(b);
+    return bytes.ok ? ok(TRIE.bytesHash(this, bytes.value)) : bytes;
   }
 
-  /** A leaf's hash. */
-  leafHash(segment: Segment, valueHash: Uint8Array): Uint8Array {
-    return this.leafBits(segmentBitsOf(segment), valueHash);
+  /** A leaf's hash; a segment not made by `Segment.of`, or a digest that is not a `Uint8Array`, is a `TypeMismatch`. */
+  leafHash(segment: Segment, valueHash: Uint8Array): Result<Uint8Array, TypeMismatch> {
+    if (!isSegment(segment)) return err(expected("a Segment"));
+    const v = bytesArg(valueHash);
+    return v.ok ? ok(TRIE.leafBits(this, segmentBitsOf(segment), v.value)) : v;
   }
 
-  /** A branch's hash; absent fields are omitted. */
-  branchHash(segment: Segment, valueHash: Uint8Array | undefined, left: Uint8Array | undefined, right: Uint8Array | undefined): Uint8Array {
-    return this.branchBits(segmentBitsOf(segment), valueHash, left, right);
-  }
-
-  /** @internal */
-  leafBits(segment: B.Bits, valueHash: Uint8Array): Uint8Array {
-    // {"s": segment, "v": valueHash}
-    return this.#leaf.hash(concatBytes([Uint8Array.of(0xa2), cborKey("s"), cborSegment(segment), cborKey("v"), cborBytes(valueHash)]));
-  }
-
-  /** @internal */
-  branchBits(segment: B.Bits, valueHash: Uint8Array | undefined, left: Uint8Array | undefined, right: Uint8Array | undefined): Uint8Array {
-    // canonical key order: "l", "r", "s", "v"
-    const parts: Uint8Array[] = [];
-    if (left !== undefined) parts.push(cborKey("l"), cborBytes(left));
-    if (right !== undefined) parts.push(cborKey("r"), cborBytes(right));
-    parts.push(cborKey("s"), cborSegment(segment));
-    if (valueHash !== undefined) parts.push(cborKey("v"), cborBytes(valueHash));
-    const count = 1 + (left === undefined ? 0 : 1) + (right === undefined ? 0 : 1) + (valueHash === undefined ? 0 : 1);
-    return this.#branch.hash(concatBytes([cborHead(5, count), ...parts]));
+  /** A branch's hash; absent fields are omitted. Arguments are checked as {@link leafHash} checks them. */
+  branchHash(segment: Segment, valueHash: Uint8Array | undefined, left: Uint8Array | undefined, right: Uint8Array | undefined): Result<Uint8Array, TypeMismatch> {
+    if (!isSegment(segment)) return err(expected("a Segment"));
+    const v = optionalBytes(valueHash);
+    if (!v.ok) return v;
+    const l = optionalBytes(left);
+    if (!l.ok) return l;
+    const r = optionalBytes(right);
+    return r.ok ? ok(TRIE.branchBits(this, segmentBitsOf(segment), v.value, l.value, r.value)) : r;
   }
 }
 
@@ -248,6 +324,11 @@ interface Open {
 }
 
 let topOf!: (p: TrieProof) => ProofNode | undefined;
+let isProof!: (x: unknown) => x is TrieProof;
+let createProof!: (top: ProofNode | undefined) => TrieProof;
+
+/** `x` if it is a {@link TrieProof} made here (a private-brand check: no Proxy trap or caller code runs). */
+const proofArg = (x: unknown): Result<TrieProof, TypeMismatch> => (isProof(x) ? ok(x) : err(expected("a TrieProof")));
 
 /** A decoded, well-formed partial trie (not yet checked against a root). An empty proof is the proof of the empty trie. */
 export class TrieProof {
@@ -264,46 +345,33 @@ export class TrieProof {
 
   static {
     topOf = (p) => p.#top;
+    isProof = (x): x is TrieProof => isObject(x) && #top in x;
+    createProof = (top) => new TrieProof(top);
   }
 
   /**
    * A proof from its canonical value: the flat pre-order array of `trie-proof` records (trie.md section 5). A value
-   * heavier than `MAX_PROOF_WEIGHT` is `Encoding`, refused before it is decoded.
+   * heavier than `MAX_PROOF_WEIGHT` is `Encoding`, refused before it is decoded. What is not a `TrieHashing` or a
+   * canonical value is a `TypeMismatch`.
    */
-  static decode(hashing: TrieHashing, value: Value): Result<TrieProof, TrieError> {
-    const w = decodeInput(models.trie.TrieProof, value);
-    return w.ok ? TrieProof.fromRecords(hashing, w.value) : encoding(describeFailure(w.error));
+  static decode(hashing: TrieHashing, value: Value): Result<TrieProof, Refusal> {
+    const h = hashingArg(hashing);
+    if (!h.ok) return h;
+    const v = valueArg(value);
+    return v.ok ? decodeProof(h.value, v.value) : v;
   }
 
   /**
    * A proof from its typed records, rebuilt with an explicit stack: trailing records, missing children, a mask
-   * inconsistent with the branch invariant, bad segments and digests of the wrong size are `Encoding` errors.
+   * inconsistent with the branch invariant, bad segments and digests of the wrong size are `Encoding` errors. The
+   * records are the caller's: an array read by index, each record's fields read once (a field of the wrong type is a
+   * `TypeMismatch`), its bytes read through plain views and copied as the proof keeps them.
    */
-  static fromRecords(hashing: TrieHashing, records: models.trie.TrieProof): Result<TrieProof, TrieError> {
-    if (records.length === 0) return ok(new TrieProof(undefined));
-    const stack: Open[] = [];
-    for (const [i, r] of records.entries()) {
-      const rec = record(hashing, r);
-      if (!rec.ok) return rec;
-      if ("wantLeft" in rec.value) {
-        stack.push(rec.value);
-        continue;
-      }
-      // give the finished node to the innermost open branch, closing branches that become complete
-      let node: ProofNode = rec.value;
-      for (;;) {
-        const o = stack.pop();
-        if (o === undefined) return i === records.length - 1 ? ok(new TrieProof(node)) : encoding("trailing proof records");
-        if (o.wantLeft && o.left === undefined) {
-          if (o.wantRight) {
-            stack.push({ ...o, left: node });
-            break;
-          }
-          node = { kind: "branch", segment: o.segment, value: o.value, left: node, right: undefined };
-        } else node = { kind: "branch", segment: o.segment, value: o.value, left: o.left, right: node };
-      }
-    }
-    return encoding("proof ended with unfinished branches");
+  static fromRecords(hashing: TrieHashing, records: models.trie.TrieProof): Result<TrieProof, Refusal> {
+    const h = hashingArg(hashing);
+    if (!h.ok) return h;
+    const rs = readArray(records, "an array of trie records", recordArg);
+    return rs.ok ? fromRecords(h.value, rs.value) : rs;
   }
 
   /** The canonical value: pre-order records, each branch followed by its present children, left first. */
@@ -331,6 +399,62 @@ export class TrieProof {
     // a proof every verifier would refuse is never emitted
     return v.value.weight <= MAX_PROOF_WEIGHT ? v : err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
   }
+}
+
+function decodeProof(h: TrieHashing, value: Value): Result<TrieProof, TrieError> {
+  const w = decodeInput(models.trie.TrieProof, value);
+  return w.ok ? fromRecords(h, w.value) : encoding(describeFailure(w.error));
+}
+
+/** {@link TrieProof.fromRecords} of checked records: plain arrays, copied where the proof keeps them. */
+function fromRecords(hashing: TrieHashing, records: models.trie.TrieProof): Result<TrieProof, TrieError> {
+  if (records.length === 0) return ok(createProof(undefined));
+  const stack: Open[] = [];
+  for (const [i, r] of records.entries()) {
+    const rec = record(hashing, r);
+    if (!rec.ok) return rec;
+    if ("wantLeft" in rec.value) {
+      stack.push(rec.value);
+      continue;
+    }
+    // give the finished node to the innermost open branch, closing branches that become complete
+    let node: ProofNode = rec.value;
+    for (;;) {
+      const o = stack.pop();
+      if (o === undefined) return i === records.length - 1 ? ok(createProof(node)) : encoding("trailing proof records");
+      if (o.wantLeft && o.left === undefined) {
+        if (o.wantRight) {
+          stack.push({ ...o, left: node });
+          break;
+        }
+        node = { kind: "branch", segment: o.segment, value: o.value, left: node, right: undefined };
+      } else node = { kind: "branch", segment: o.segment, value: o.value, left: o.left, right: node };
+    }
+  }
+  return encoding("proof ended with unfinished branches");
+}
+
+/** A caller's trie record, its fields read once: a stub `{h}`, a leaf `{s, v}` or a branch `{s, v?, c}`. */
+function recordArg(r: unknown, i: number): Result<models.trie.TrieRecord, TypeMismatch> {
+  const bad = err(expectedAt("a trie record of its types", i));
+  if (!isObject(r)) return bad;
+  const h: unknown = Reflect.get(r, "h");
+  if (h !== undefined) {
+    const hb = plainBytes(h);
+    return hb === undefined ? bad : ok({ h: hb });
+  }
+  const s: unknown = Reflect.get(r, "s");
+  if (!isObject(s)) return bad;
+  const n: unknown = Reflect.get(s, "n");
+  const b = plainBytes(Reflect.get(s, "b"));
+  if (typeof n !== "bigint" || b === undefined) return bad;
+  const v: unknown = Reflect.get(r, "v");
+  const vb = v === undefined ? undefined : plainBytes(v);
+  if (v !== undefined && vb === undefined) return bad;
+  const c: unknown = Reflect.get(r, "c");
+  if (c === undefined) return vb === undefined ? bad : ok({ s: { n, b }, v: vb });
+  if (c !== "left" && c !== "right" && c !== "both") return bad;
+  return ok(vb === undefined ? { s: { n, b }, c } : { s: { n, b }, v: vb, c });
 }
 
 const wireSegment = (s: B.Bits): models.trie.TrieSegment => ({ n: BigInt(s.length), b: s.bytes.slice(0, (s.length + 7) >> 3) });
@@ -373,7 +497,7 @@ function hashProof(hashing: TrieHashing, mode: KeyMode, top: ProofNode): Result<
       const b = t.combine;
       const right = pop(b.right !== undefined);
       const left = pop(b.left !== undefined);
-      done.push(hashing.branchBits(b.segment, b.value, left, right));
+      done.push(TRIE.branchBits(hashing, b.segment, b.value, left, right));
       continue;
     }
     const node = t.visit;
@@ -385,7 +509,7 @@ function hashProof(hashing: TrieHashing, mode: KeyMode, top: ProofNode): Result<
         const bits = t.depth + node.segment.length;
         const lengthOk = mode.kind === "fixed" ? bits === mode.maxBits : bits <= mode.maxBits && bits % 8 === 0;
         if (!lengthOk) return invalidProof(`leaf ends at bit ${bits.toString()}, invalid for ${mode.toString()}`);
-        done.push(hashing.leafBits(node.segment, node.value));
+        done.push(TRIE.leafBits(hashing, node.segment, node.value));
         break;
       }
       case "branch": {
@@ -409,12 +533,32 @@ function hashProof(hashing: TrieHashing, mode: KeyMode, top: ProofNode): Result<
  * A trusted root as a `RootMismatch` names it: its hex when it has the digest's `width`, otherwise its length, so a
  * caller's root of any length is never hex-encoded whole (docs/specs/conformance.md section 8).
  */
-export function rootText(root: Uint8Array, width: number): string {
+function rootText(root: Uint8Array, width: number): string {
   return root.length === width ? toHexOf(root) : `a root of ${root.length.toString()} bytes`;
 }
 
-/** {@link verify} with a root mismatch as the error `RootMismatch` (as Scala's `TrieProofs.verify`), for composed checks. */
-export function check(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: TrieProof): Result<VerifiedTrieProof, TrieError> {
+/** The checked arguments of a check against a root: a hashing, a mode, a root (a plain view) and a proof. */
+function checkArgs(hashing: unknown, mode: unknown, root: unknown, proof: unknown): Result<readonly [TrieHashing, KeyMode, Uint8Array, TrieProof], TypeMismatch> {
+  const h = hashingArg(hashing);
+  if (!h.ok) return h;
+  const m = modeArg(mode);
+  if (!m.ok) return m;
+  const r = bytesArg(root);
+  if (!r.ok) return r;
+  const p = proofArg(proof);
+  return p.ok ? ok([h.value, m.value, r.value, p.value]) : p;
+}
+
+/**
+ * {@link verify} with a root mismatch as the error `RootMismatch` (as Scala's `TrieProofs.verify`), for composed checks.
+ * What is not a `TrieHashing`, a `KeyMode`, a `Uint8Array` root or a `TrieProof` is a `TypeMismatch`.
+ */
+export function check(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: TrieProof): Result<VerifiedTrieProof, Refusal> {
+  const a = checkArgs(hashing, mode, root, proof);
+  return a.ok ? checkOf(...a.value) : a;
+}
+
+function checkOf(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: TrieProof): Result<VerifiedTrieProof, TrieError> {
   const top = topOf(proof);
   const computed = top === undefined ? ok(hashing.empty) : hashProof(hashing, mode, top);
   if (!computed.ok) return computed;
@@ -423,9 +567,10 @@ export function check(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, pro
 
 /**
  * Checks a proof against a trusted root (section 4): the verified proof; `null` when it is a well-formed proof of
- * another trie (a root mismatch, the JLVM's `false`); an error when it breaks the structure or the mode.
+ * another trie (a root mismatch, the JLVM's `false`); an error when it breaks the structure or the mode. Arguments are
+ * checked as {@link check} checks them.
  */
-export function verify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: TrieProof): Result<VerifiedTrieProof | null, TrieError> {
+export function verify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: TrieProof): Result<VerifiedTrieProof | null, Refusal> {
   const r = check(hashing, mode, root, proof);
   return !r.ok && r.error.kind === "RootMismatch" ? ok(null) : r;
 }
@@ -447,6 +592,21 @@ const NOT_COVERED: Lookup & Listing = { kind: "notCovered" };
 const listed = (entries: readonly TrieEntry[]): Listing => ({ kind: "listed", entries });
 
 let createVerified!: (mode: KeyMode, top: ProofNode | undefined) => VerifiedTrieProof;
+/** A lookup of `key`, whose internal length is `n`, read by index only. */
+let lookupOf!: (v: VerifiedTrieProof, key: Uint8Array, n: number) => Result<Lookup, TrieError>;
+let verifiedTop!: (v: VerifiedTrieProof) => ProofNode | undefined;
+
+/** An optional bound: `undefined`, or a `Uint8Array` (a plain view). */
+const boundArg = optionalBytes;
+
+/** A caller's claimed listing: an array of `{key, valueHash}` objects, each field read once, as plain views. */
+const claimedArg = (claimed: unknown): Result<TrieEntry[], TypeMismatch> =>
+  readArray(claimed, "an array of TrieEntry", (e, i) => {
+    if (!isObject(e)) return err(expectedAt("a TrieEntry", i));
+    const key = plainBytes(Reflect.get(e, "key"));
+    const valueHash = plainBytes(Reflect.get(e, "valueHash"));
+    return key === undefined || valueHash === undefined ? err(expectedAt("a TrieEntry of Uint8Arrays", i)) : ok({ key, valueHash });
+  });
 
 /** What a partial trie proves once its root has been checked: only {@link verify} makes one. */
 export class VerifiedTrieProof {
@@ -461,62 +621,90 @@ export class VerifiedTrieProof {
 
   static {
     createVerified = (mode, top) => new VerifiedTrieProof(mode, top);
+    verifiedTop = (v) => v.#top;
+    lookupOf = (v, key, n) => {
+      const valid = checkKeyLength(v.mode, n);
+      // the walk reads the key by index only, up to its internal length: no view of it is needed
+      return valid.ok ? ok(lookupPath(v.#top, { bytes: key, length: n * 8 })) : valid;
+    };
+    TRIE.lookup = (v, key) => lookupOf(v, key, key.length);
+    TRIE.prefix = (v, prefix) => listingOf(L.listPrefix(v.#top, prefix));
+    TRIE.range = (v, from, until) => listingOf(L.listRange(v.#top, from, until));
   }
 
-  /** The value hash at `key`, its absence, or not covered; a key invalid for the mode is `InvalidKey`. */
-  lookup(key: Uint8Array): Result<Lookup, TrieError> {
-    const valid = this.mode.checkKey(key);
-    return valid.ok ? ok(this.lookupPath(B.bitsOf(key))) : valid;
-  }
-
-  private lookupPath(path: B.Bits): Lookup {
-    let node = this.#top;
-    let at = 0;
-    while (node !== undefined) {
-      switch (node.kind) {
-        case "stub":
-          return NOT_COVERED;
-        case "leaf":
-          return node.segment.length === path.length - at && B.startsWithAt(path, at, node.segment) ? { kind: "present", valueHash: copyBytes(node.value) } : ABSENT;
-        case "branch": {
-          if (!B.startsWithAt(path, at, node.segment)) return ABSENT;
-          at += node.segment.length;
-          if (at === path.length) return node.value === undefined ? ABSENT : { kind: "present", valueHash: copyBytes(node.value) };
-          const next: ProofNode | undefined = B.bit(path, at) ? node.right : node.left;
-          if (next === undefined) return ABSENT;
-          node = next;
-          at += 1;
-        }
-      }
-    }
-    return ABSENT;
+  /**
+   * The value hash at `key`, its absence, or not covered; a key invalid for the mode is `InvalidKey`, and what is not a
+   * `Uint8Array` is a `TypeMismatch`. The key's internal length (never its `length` property) decides both its
+   * validity and the walk, which reads it by index only: O(1) to check, and nothing allocated.
+   */
+  lookup(key: Uint8Array): Result<Lookup, Refusal> {
+    const n = bytesLength(key);
+    return n === undefined ? err(NOT_BYTES) : lookupOf(this, key, n);
   }
 
   /** Every entry whose key starts with `prefix`, in key order, if the proof covers the whole subtree. */
-  prefix(prefix: Uint8Array): Listing {
-    return listingOf(L.listPrefix(this.#top, prefix));
+  prefix(prefix: Uint8Array): Result<Listing, TypeMismatch> {
+    const p = bytesArg(prefix);
+    return p.ok ? ok(TRIE.prefix(this, p.value)) : p;
   }
 
   /**
    * Every entry with `from <= key < until` (bitwise order, a prefix first; no `until` is unbounded), if no stub meets
-   * the range. A covered listing is complete, including an empty one.
+   * the range. A covered listing is complete, including an empty one. Bounds that are not `Uint8Array`s (an absent
+   * `until` aside) are a `TypeMismatch`.
    */
-  range(from: Uint8Array, until?: Uint8Array): Listing {
-    return listingOf(L.listRange(this.#top, from, until));
+  range(from: Uint8Array, until?: Uint8Array): Result<Listing, TypeMismatch> {
+    const f = bytesArg(from);
+    if (!f.ok) return f;
+    const u = boundArg(until);
+    return u.ok ? ok(TRIE.range(this, f.value, u.value)) : u;
   }
 
   /**
    * Whether `claimed`, in key order, is exactly the listing under `prefix`, compared entry by entry as the walk reaches
-   * each key, without building the listing; `NotCovered` if a stub lies under the prefix.
+   * each key, without building the listing; `NotCovered` if a stub lies under the prefix. A claim that is not an array
+   * of `TrieEntry` objects of `Uint8Array`s (each read once, by index) is a `TypeMismatch`.
    */
-  listsPrefix(prefix: Uint8Array, claimed: readonly TrieEntry[]): Result<boolean, TrieError> {
-    return verdictOf(L.listsPrefix(this.#top, prefix, claimed));
+  listsPrefix(prefix: Uint8Array, claimed: readonly TrieEntry[]): Result<boolean, Refusal> {
+    const p = bytesArg(prefix);
+    if (!p.ok) return p;
+    const c = claimedArg(claimed);
+    return c.ok ? verdictOf(L.listsPrefix(this.#top, p.value, c.value)) : c;
   }
 
   /** Whether `claimed`, in key order, is exactly the listing of `[from, until)`, as {@link listsPrefix} compares it. */
-  listsRange(from: Uint8Array, until: Uint8Array | undefined, claimed: readonly TrieEntry[]): Result<boolean, TrieError> {
-    return verdictOf(L.listsRange(this.#top, from, until, claimed));
+  listsRange(from: Uint8Array, until: Uint8Array | undefined, claimed: readonly TrieEntry[]): Result<boolean, Refusal> {
+    const f = bytesArg(from);
+    if (!f.ok) return f;
+    const u = boundArg(until);
+    if (!u.ok) return u;
+    const c = claimedArg(claimed);
+    return c.ok ? verdictOf(L.listsRange(this.#top, f.value, u.value, c.value)) : c;
   }
+}
+
+/** The lookup of a plain path, already checked against the mode. */
+function lookupPath(top: ProofNode | undefined, path: B.Bits): Lookup {
+  let node = top;
+  let at = 0;
+  while (node !== undefined) {
+    switch (node.kind) {
+      case "stub":
+        return NOT_COVERED;
+      case "leaf":
+        return node.segment.length === path.length - at && B.startsWithAt(path, at, node.segment) ? { kind: "present", valueHash: copyBytes(node.value) } : ABSENT;
+      case "branch": {
+        if (!B.startsWithAt(path, at, node.segment)) return ABSENT;
+        at += node.segment.length;
+        if (at === path.length) return node.value === undefined ? ABSENT : { kind: "present", valueHash: copyBytes(node.value) };
+        const next: ProofNode | undefined = B.bit(path, at) ? node.right : node.left;
+        if (next === undefined) return ABSENT;
+        node = next;
+        at += 1;
+      }
+    }
+  }
+  return ABSENT;
 }
 
 const listingOf = (entries: readonly TrieEntry[] | undefined): Listing => (entries === undefined ? NOT_COVERED : listed(entries));
@@ -529,68 +717,115 @@ const verdictOf = (v: boolean | undefined): Result<boolean, TrieError> =>
 /** A claimed entry: a key and its value (never null), committed by `commit(v)`. */
 export type ClaimedEntry = readonly [Uint8Array, Value];
 
+/** The checked profile and inputs every JLVM operation starts from: a hashing, a mode, a root and a proof value. */
+function opArgs(hashing: unknown, mode: unknown, root: unknown, proof: unknown): Result<readonly [TrieHashing, KeyMode, Uint8Array, Value], TypeMismatch> {
+  const h = hashingArg(hashing);
+  if (!h.ok) return h;
+  const m = modeArg(mode);
+  if (!m.ok) return m;
+  const r = bytesArg(root);
+  if (!r.ok) return r;
+  const p = valueArg(proof);
+  return p.ok ? ok([h.value, m.value, r.value, p.value]) : p;
+}
+
 function verified(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: Value): Result<VerifiedTrieProof | null, TrieError> {
   const r = digestOf(hashing, root);
   if (!r.ok) return r;
-  const p = TrieProof.decode(hashing, proof);
-  return p.ok ? verify(hashing, mode, r.value, p.value) : p;
+  const p = decodeProof(hashing, proof);
+  if (!p.ok) return p;
+  const v = checkOf(hashing, mode, r.value, p.value);
+  return !v.ok && v.error.kind === "RootMismatch" ? ok(null) : v;
 }
+
+/** A claimed value: `null` (absence), or a canonical value; anything else is a `TypeMismatch`. */
+const claimArg = (value: unknown): Result<Value | null, TypeMismatch> => (value === null ? ok(null) : valueArg(value));
 
 const isAbsence = (v: Value | null): boolean => v === null || v.kind === "null";
 
 /**
  * `trie_verify [mode, root, key, value, proof]`: whether `key` holds `value` (a null value claims absence). A
  * well-formed proof of another trie is `false`; malformed input, and a proof that does not reach the key, are errors.
+ * Every argument's type is checked first: the key is read by its internal length, and a value that is neither `null`
+ * nor a canonical value (an object posing as a null value included) is a `TypeMismatch`, never a claim of absence.
  */
-export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, key: Uint8Array, value: Value | null, proof: Value): Result<boolean, TrieError> {
-  const k = mode.checkKey(key);
-  if (!k.ok) return k;
-  const c = claimsWithin(value === null || isAbsence(value) ? [] : [value]);
+export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, key: Uint8Array, value: Value | null, proof: Value): Result<boolean, Refusal> {
+  const a = opArgs(hashing, mode, root, proof);
+  if (!a.ok) return a;
+  const [h, m, r, p] = a.value;
+  const n = bytesLength(key);
+  if (n === undefined) return err(NOT_BYTES);
+  const claim = claimArg(value);
+  if (!claim.ok) return claim;
+  const valid = checkKeyLength(m, n);
+  if (!valid.ok) return valid;
+  const c = claimsWithin(claim.value === null || claim.value.kind === "null" ? [] : [claim.value]);
   if (!c.ok) return c;
-  const v = verified(hashing, mode, root, proof);
+  const v = verified(h, m, r, p);
   if (!v.ok || v.value === null) return v.ok ? ok(false) : v;
-  const l = v.value.lookup(key);
+  const l = lookupOf(v.value, key, n);
   if (!l.ok) return l;
   switch (l.value.kind) {
     case "present": {
-      if (value === null || isAbsence(value)) return ok(false);
-      const h = hashing.valueHash(value);
-      return h.ok ? ok(bytesEqual(h.value, l.value.valueHash)) : h;
+      if (claim.value === null || isAbsence(claim.value)) return ok(false);
+      const vh = TRIE.valueHash(h, claim.value);
+      return vh.ok ? ok(bytesEqual(vh.value, l.value.valueHash)) : vh;
     }
     case "absent":
-      return ok(isAbsence(value));
+      return ok(isAbsence(claim.value));
     case "notCovered":
       return err({ kind: "NotCovered", what: "the proof does not reach this key" });
   }
 }
 
-function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly ClaimedEntry[]): Result<readonly TrieEntry[], TrieError> {
+/** A caller's claimed entries: an array of `[key, value]` arrays, read by index, keys as plain views. */
+const entriesArg = (entries: unknown): Result<(readonly [Uint8Array, Value])[], TypeMismatch> =>
+  readArray(entries, "an array of [key, value] entries", (e, i) => {
+    const pair = readPair(e);
+    if (pair === undefined) return err(expectedAt("a [key, value] array", i));
+    const key = plainBytes(pair[0]);
+    if (key === undefined) return err(expectedAt("a Uint8Array key", i));
+    const value = valueArg(pair[1]);
+    return value.ok ? ok([key, value.value] as const) : err(expectedAt("a canonical value", i));
+  });
+
+function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly (readonly [Uint8Array, Value])[]): Result<readonly TrieEntry[], TrieError> {
   for (const [key, value] of entries) {
     if (value.kind === "null") return encoding("an entry is [key, value], with a value");
-    const k = mode.checkKey(key);
+    const k = checkKey(mode, key);
     if (!k.ok) return k;
   }
   const c = claimsWithin(entries.map(([, value]) => value));
   if (!c.ok) return c;
   const out: TrieEntry[] = [];
   for (const [key, value] of entries) {
-    const h = hashing.valueHash(value);
+    const h = TRIE.valueHash(hashing, value);
     if (!h.ok) return h;
     out.push({ key, valueHash: h.value });
   }
   return ok(out);
 }
 
-/** `trie_prefix_verify [mode, root, prefix, entries, proof]`: whether `entries`, in key order, are exactly the trie's under `prefix`. */
-export function triePrefixVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, prefix: Uint8Array, entries: readonly ClaimedEntry[], proof: Value): Result<boolean, TrieError> {
-  const claimed = claimedEntries(hashing, mode, entries);
+/**
+ * `trie_prefix_verify [mode, root, prefix, entries, proof]`: whether `entries`, in key order, are exactly the trie's
+ * under `prefix`. Every argument's type is checked first; the entries are read by index, once each.
+ */
+export function triePrefixVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, prefix: Uint8Array, entries: readonly ClaimedEntry[], proof: Value): Result<boolean, Refusal> {
+  const a = opArgs(hashing, mode, root, proof);
+  if (!a.ok) return a;
+  const [h, m, r, p] = a.value;
+  const pre = bytesArg(prefix);
+  if (!pre.ok) return pre;
+  const given = entriesArg(entries);
+  if (!given.ok) return given;
+  const claimed = claimedEntries(h, m, given.value);
   if (!claimed.ok) return claimed;
-  const v = verified(hashing, mode, root, proof);
+  const v = verified(h, m, r, p);
   if (!v.ok || v.value === null) return v.ok ? ok(false) : v;
-  return v.value.listsPrefix(prefix, claimed.value);
+  return verdictOf(L.listsPrefix(verifiedTop(v.value), pre.value, claimed.value));
 }
 
-/** `trie_range_verify [mode, root, from, until, entries, proof]`: `until` null is unbounded. */
+/** `trie_range_verify [mode, root, from, until, entries, proof]`: `until` null is unbounded. Checked as {@link triePrefixVerify}. */
 export function trieRangeVerify(
   hashing: TrieHashing,
   mode: KeyMode,
@@ -599,12 +834,21 @@ export function trieRangeVerify(
   until: Uint8Array | null,
   entries: readonly ClaimedEntry[],
   proof: Value,
-): Result<boolean, TrieError> {
-  const claimed = claimedEntries(hashing, mode, entries);
+): Result<boolean, Refusal> {
+  const a = opArgs(hashing, mode, root, proof);
+  if (!a.ok) return a;
+  const [h, m, r, p] = a.value;
+  const f = bytesArg(from);
+  if (!f.ok) return f;
+  const u = until === null ? ok(undefined) : bytesArg(until);
+  if (!u.ok) return u;
+  const given = entriesArg(entries);
+  if (!given.ok) return given;
+  const claimed = claimedEntries(h, m, given.value);
   if (!claimed.ok) return claimed;
-  const v = verified(hashing, mode, root, proof);
+  const v = verified(h, m, r, p);
   if (!v.ok || v.value === null) return v.ok ? ok(false) : v;
-  return v.value.listsRange(from, until ?? undefined, claimed.value);
+  return verdictOf(L.listsRange(verifiedTop(v.value), f.value, u.value, claimed.value));
 }
 
 // ------------------------------------------------------------------ building
@@ -613,16 +857,33 @@ type BuildTask = { readonly lo: number; readonly hi: number; readonly offset: nu
 
 /**
  * The root of the trie holding `entries` (later duplicates win): the same root as inserting them in any order, since
- * the shape is a function of the key set. Built bottom-up over the sorted keys with an explicit stack.
+ * the shape is a function of the key set. Built bottom-up over the sorted keys with an explicit stack. `entries` is
+ * read once, as `for...of` reads it (its iterator closed on a refusal); each entry must be a `[key, valueHash]` array of
+ * `Uint8Array`s (read by index, each copied), and anything else is a `TypeMismatch`.
  */
-export function trieRoot(hashing: TrieHashing, mode: KeyMode, entries: Iterable<readonly [Uint8Array, Uint8Array]>): Result<Uint8Array, TrieError> {
+export function trieRoot(hashing: TrieHashing, mode: KeyMode, entries: Iterable<readonly [Uint8Array, Uint8Array]>): Result<Uint8Array, Refusal> {
+  const h = hashingArg(hashing);
+  if (!h.ok) return h;
+  const m = modeArg(mode);
+  if (!m.ok) return m;
+  const given = readIterable(entries, (e, i) => {
+    const pair = readPair(e);
+    const key = pair === undefined ? undefined : plainBytes(pair[0]);
+    const valueHash = pair === undefined ? undefined : plainBytes(pair[1]);
+    return key === undefined || valueHash === undefined ? err(expectedAt("a [key, valueHash] array of Uint8Arrays", i)) : ok([copyBytes(key), valueHash] as const);
+  });
+  return given.ok ? trieRootOf(h.value, m.value, given.value) : given;
+}
+
+/** {@link trieRoot} of plain entries, their keys owned. */
+function trieRootOf(hashing: TrieHashing, mode: KeyMode, entries: readonly (readonly [Uint8Array, Uint8Array])[]): Result<Uint8Array, TrieError> {
   const given: (readonly [Uint8Array, Uint8Array])[] = [];
   for (const [key, valueHash] of entries) {
-    const k = mode.checkKey(key);
+    const k = checkKey(mode, key);
     if (!k.ok) return k;
     const v = digestOf(hashing, valueHash);
     if (!v.ok) return v;
-    given.push([copyBytes(key), v.value]);
+    given.push([key, v.value]);
   }
   // for byte strings, bitwise order with a prefix first is unsigned lexicographic byte order; the sort is stable, so
   // the last of a run of equal keys is the latest
@@ -641,12 +902,12 @@ export function trieRoot(hashing: TrieHashing, mode: KeyMode, entries: Iterable<
     if ("segment" in t) {
       const right = t.right ? done.pop() : undefined;
       const left = t.left ? done.pop() : undefined;
-      done.push(hashing.branchBits(t.segment, t.value, left, right));
+      done.push(TRIE.branchBits(hashing, t.segment, t.value, left, right));
       continue;
     }
     const first = keyAt(t.lo);
     if (t.hi - t.lo === 1) {
-      done.push(hashing.leafBits(B.drop(first, t.offset), values[t.lo] ?? new Uint8Array(0)));
+      done.push(TRIE.leafBits(hashing, B.drop(first, t.offset), values[t.lo] ?? new Uint8Array(0)));
       continue;
     }
     // sorted keys share what the first and last share; a key ending there sorts first, then bit 0, then bit 1
@@ -663,3 +924,8 @@ export function trieRoot(hashing: TrieHashing, mode: KeyMode, entries: Iterable<
   const root = done.pop();
   return root === undefined ? err({ kind: "InvalidNode", reason: "no root" }) : ok(root);
 }
+
+TRIE.fromRecords = fromRecords;
+TRIE.isProof = isProof;
+TRIE.check = checkOf;
+TRIE.trieRoot = trieRootOf;

@@ -63,9 +63,9 @@ describe("versioned values built with shared parts", { timeout: 60_000 }, () => 
     const empty = vt.hashing.empty;
     const ms = elapsed(() => {
       const delta = { head: { version: 1n, stateRoot: empty, historyRoot: empty }, upserts: [[k, dag] as const], removes: [] };
-      expect(expectErr(versioned.Replica.empty(vt).applyDelta(delta), "delta").kind).toBe("TooLarge");
+      expect(expectErr(expectOk(versioned.Replica.empty(vt), "empty").applyDelta(delta), "delta").kind).toBe("TooLarge");
       const head = { version: 1n, stateRoot: empty, historyRoot: empty };
-      const reader = expectOk(versioned.SnapshotReader.start(vt, head).feed({ kind: "head", head }), "head");
+      const reader = expectOk(expectOk(versioned.SnapshotReader.start(vt, head), "start").feed({ kind: "head", head }), "head");
       expect(expectErr(reader.feed({ kind: "state", entries: [[k, dag]] }), "chunk").kind).toBe("TooLarge");
     });
     expect(ms).toBeLessThan(HANG);
@@ -79,16 +79,16 @@ describe("claims built with shared parts", { timeout: 60_000 }, () => {
     const ms = elapsed(() => {
       const ceiling = { kind: "TooLarge", limit: cbor.MAX_ENCODED_BYTES };
       const capped = { kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) };
-      expect(expectErr(merkle.TaggedMerkleHashing.of("SHA-256").leaf(heavy), "leaf")).toEqual(ceiling);
-      const T = trie.TrieHashing.of("SHA-256");
+      expect(expectErr(expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "hashing").leaf(heavy), "leaf")).toEqual(ceiling);
+      const T = expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of");
       expect(expectErr(T.valueHash(heavy), "value hash")).toEqual(ceiling);
       const mode = expectOk(trie.KeyMode.fixed(1), "mode");
-      const root = expectOk(trie.trieRoot(T, mode, [[Uint8Array.of(1), T.bytesHash(Uint8Array.of(1))]]), "root");
+      const root = expectOk(trie.trieRoot(T, mode, [[Uint8Array.of(1), expectOk(T.bytesHash(Uint8Array.of(1)), "bytes hash")]]), "root");
       const entries: readonly trie.ClaimedEntry[] = [[Uint8Array.of(1), heavy]];
       expect(expectErr(trie.triePrefixVerify(T, mode, root, new Uint8Array(0), entries, Value.null), "entries")).toEqual(capped);
       expect(expectErr(trie.trieVerify(T, mode, root, Uint8Array.of(1), heavy, Value.null), "claim")).toEqual(capped);
-      const head = { root: merkle.TaggedMerkleHashing.of("SHA-256").empty, size: 0n };
-      expect(expectErr(merkle.merkleVerify(merkle.TaggedMerkleHashing.of("SHA-256"), head, heavy, Value.null), "leaf claim")).toEqual(capped);
+      const head = { root: expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of").empty, size: 0n };
+      expect(expectErr(merkle.merkleVerify(expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of"), head, heavy, Value.null), "leaf claim")).toEqual(capped);
     });
     expect(ms).toBeLessThan(HANG);
   });
