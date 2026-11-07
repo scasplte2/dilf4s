@@ -448,6 +448,33 @@ describe("the versioned trie refuses an argument of the wrong type as TypeMismat
     expect(expectErr(vt.verifyState(trusted, bad(swapping)), "the root given, all zeros").kind).toBe("RootMismatch");
   });
 
+  it("verifyVersions: a claim's getter cannot swap the trusted root either", () => {
+    const p = vectors.proofs.find((x) => x.kind === "versions");
+    if (p === undefined) throw new Error("a versions fixture");
+    const vproof = expectOk(vt.decodeProof(valueOf(p.cbor)), "proof");
+    const right = bytes(vectors.root);
+    const claims = (p.versions ?? []).map((v) => [v.version ?? -1n, bytes(v.stateRoot ?? "")] as const);
+    expect(expectOk(vt.verifyVersions(right, vproof, p.at ?? -1n, p.until ?? null, claims), "verifies")).toBe(true);
+    const trusted = new Uint8Array(right.length);
+    const swapping: unknown[] = [...claims];
+    Object.defineProperty(swapping, 0, {
+      get: () => {
+        trusted.set(right);
+        return claims[0];
+      },
+    });
+    expect(expectErr(vt.verifyVersions(trusted, vproof, p.at ?? -1n, p.until ?? null, bad(swapping)), "the root given, all zeros").kind).toBe("RootMismatch");
+  });
+
+  it("a profile built by calling its constructor from outside verifies nothing", () => {
+    const forged = Reflect.construct(versioned.VersionedTrie as unknown as new (...a: unknown[]) => object, [Symbol("dilf4s-proofs"), vt.hashing, vt.versionKey, [variable, variable, variable]]) as versioned.VersionedTrie<bigint>;
+    const stateProof = expectOk(vt.decodeProof(valueOf(vectors.proofs.find((x) => x.name === "current-keys")?.cbor ?? "")), "a state proof");
+    expect(forged.verifyState(bytes(vectors.root), stateProof)).toEqual(mismatch("expected a VersionedTrie"));
+    expect(forged.verifyHistoricalKey(bytes(vectors.root), stateProof, 1n)).toEqual(mismatch("expected a VersionedTrie"));
+    expect(forged.root(finalHead)).toEqual(mismatch("expected a VersionedTrie"));
+    expect(forged.decodeDelta(int(1n))).toEqual(mismatch("expected a VersionedTrie"));
+  });
+
   it("a verified state, a reader or a replica built by calling a constructor from outside answers nothing", () => {
     const forge = (c: unknown, args: readonly unknown[]): unknown => Reflect.construct(c as new (...a: unknown[]) => object, [Symbol("dilf4s-proofs"), ...args]);
     const fakeVerified = Reflect.construct(trie.VerifiedTrieProof as unknown as new (...a: unknown[]) => object, [Symbol("dilf4s-proofs"), variable, undefined]);

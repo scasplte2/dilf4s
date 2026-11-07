@@ -539,6 +539,8 @@ const sameEntries = (listing: readonly trie.TrieEntry[], expected: readonly trie
   listing.length === expected.length && listing.every((x, i) => bytesEqual(x.key, expected[i]?.key ?? new Uint8Array(0)) && bytesEqual(x.valueHash, expected[i]?.valueHash ?? new Uint8Array(0)));
 
 let isProfile!: (x: unknown) => x is VersionedTrie<unknown>;
+/** The refusal of a profile method called on a profile built by calling the constructor from outside. */
+const NOT_A_PROFILE = expected("a VersionedTrie");
 
 /** `x` if it is a {@link VersionedTrie} made by `VersionedTrie.of` (a private-brand check). */
 const profileArg = <V>(x: unknown): Result<VersionedTrie<V>, TypeMismatch> => (isProfile(x) ? ok(x as VersionedTrie<V>) : err(expected("a VersionedTrie")));
@@ -590,12 +592,14 @@ export class VersionedTrie<V> {
 
   /** The hash a trie commits for a value: `valueHash(commit(v))`; one too large to commit is `Trie.TooLarge`. */
   valueHash(value: Value): C<Uint8Array> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const v = valueArg(value);
     return v.ok ? viaTrie(TRIE.valueHash(this.hashing, v.value)) : v;
   }
 
   /** The hash a trie commits for a byte string: the top trie's slots and the history trie's state roots. */
   bytesHash(b: Uint8Array): Result<Uint8Array, TypeMismatch> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const bytes = bytesArg(b);
     return bytes.ok ? ok(TRIE.bytesHash(this.hashing, bytes.value)) : bytes;
   }
@@ -611,6 +615,7 @@ export class VersionedTrie<V> {
    * is not a `StateKey`, or a value that is not a canonical value, is a `TypeMismatch`, before either is read.
    */
   checkValue(key: StateKey, value: Value): C<undefined> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const k = keyArg(key);
     if (!k.ok) return k;
     const v = valueArg(value);
@@ -619,6 +624,7 @@ export class VersionedTrie<V> {
 
   /** The root a head commits to: the top trie of `0x00 -> vkey`, `0x01 -> stateRoot`, `0x02 -> historyRoot`. */
   root(head: Head<V>): C<Uint8Array> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const h = headArg<V>(head, "the head");
     return h.ok ? this.#root(h.value) : h;
   }
@@ -637,6 +643,7 @@ export class VersionedTrie<V> {
 
   /** Whether two heads are equal: the same version key and roots. Heads are checked as {@link root} checks one. */
   sameHead(a: Head<V>, b: Head<V>): C<boolean> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const x = headArg<V>(a, "the first head");
     if (!x.ok) return x;
     const y = headArg<V>(b, "the second head");
@@ -669,6 +676,7 @@ export class VersionedTrie<V> {
 
   /** A head from its canonical value (`versioned-trie-head`); one heavier than `MAX_PROOF_WEIGHT` is `Malformed`. */
   decodeHead(value: Value): C<Head<V>> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const v = valueArg(value);
     if (!v.ok) return v;
     const w = decodeInput(models.versionedTrie.VersionedTrieHead, v.value);
@@ -677,6 +685,7 @@ export class VersionedTrie<V> {
 
   /** A head's canonical value; a head is checked as {@link root} checks one. */
   encodeHead(head: Head<V>): C<Value> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const h = headArg<V>(head, "the head");
     if (!h.ok) return h;
     const v = this.versionKey.encode(h.value.version);
@@ -687,8 +696,8 @@ export class VersionedTrie<V> {
 
   /** A proof from its canonical value (`versioned-trie-proof`); one heavier than `MAX_PROOF_WEIGHT` is `Malformed`. */
   decodeProof(value: Value): C<VersionedTrieProof<V>> {
-    // a profile built by calling the constructor from outside holds the caller's hashing: it never mints a proof
-    if (!PROFILE.has(this)) return err(expected("a VersionedTrie"));
+    // a profile built by calling the constructor from outside holds the caller's hashing and modes: it never mints a proof
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const v = valueArg(value);
     if (!v.ok) return v;
     const w = decodeInput(models.versionedTrie.VersionedTrieProof, v.value);
@@ -726,6 +735,7 @@ export class VersionedTrie<V> {
    * refused before it is decoded (its values are its own, so the whole delta is bounded).
    */
   decodeDelta(value: Value): C<Delta<V>> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const v = valueArg(value);
     if (!v.ok) return v;
     const w = decodeInput(models.versionedTrie.VersionedTrieDelta, v.value);
@@ -754,6 +764,7 @@ export class VersionedTrie<V> {
    * not a `Uint8Array` is a `TypeMismatch`; the bytes are measured by their internal length.
    */
   decodeChunk(bytes: Uint8Array): C<SnapshotChunk<V>> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const b = bytesArg(bytes);
     return b.ok ? this.#decodeChunk(b.value) : b;
   }
@@ -870,6 +881,7 @@ export class VersionedTrie<V> {
    * `Uint8Array`, or a proof that is not a `VersionedTrieProof` (its fields read once each), is a `TypeMismatch`.
    */
   verifyHead(root: Uint8Array, proof: VersionedTrieProof<V>): C<Head<V>> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const a = this.#args(root, proof);
     if (!a.ok) return a;
     const [r, p] = a.value;
@@ -888,6 +900,7 @@ export class VersionedTrie<V> {
 
   /** Rule 2: a proof about the current state, checked against the head's state root. Arguments as {@link verifyHead}. */
   verifyState(root: Uint8Array, proof: VersionedTrieProof<V>): C<VerifiedState> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const a = this.#args(root, proof);
     if (!a.ok) return a;
     const [r, p] = a.value;
@@ -903,6 +916,7 @@ export class VersionedTrie<V> {
    * {@link verifyHead}; `u` is checked by the version key.
    */
   verifyVersion(root: Uint8Array, proof: VersionedTrieProof<V>, u: V): C<Uint8Array | null> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const a = this.#args(root, proof);
     if (!a.ok) return a;
     const [r, p] = a.value;
@@ -912,6 +926,7 @@ export class VersionedTrie<V> {
 
   /** Rule 4: the state of a past version `u`, its root taken from the history trie. Arguments as {@link verifyVersion}. */
   verifyHistoricalKey(root: Uint8Array, proof: VersionedTrieProof<V>, u: V): C<VerifiedState> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const a = this.#args(root, proof);
     if (!a.ok) return a;
     const [r, p] = a.value;
@@ -931,10 +946,13 @@ export class VersionedTrie<V> {
    * Arguments as {@link verifyVersion}; `claimed` must be an array of `[version, Uint8Array]` arrays (read by index).
    */
   verifyVersions(root: Uint8Array, proof: VersionedTrieProof<V>, from: V, until: V | null, claimed: readonly (readonly [V, Uint8Array])[]): C<boolean> {
-    // the claims first (reading them may run caller code), then the proof and the root
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
+    // the trusted root copied before anything else is read: the claims' and the proof's getters are caller code
+    const trusted = takeBytes(root);
+    if (trusted === undefined) return err(NOT_BYTES);
     const given = versionsArg<V>(claimed, "an array of [version, Uint8Array] claims");
     if (!given.ok) return given;
-    const a = this.#args(root, proof);
+    const a = this.#args(trusted, proof);
     if (!a.ok) return a;
     const [r, p] = a.value;
     const head = this.#bind(r, p);
@@ -961,6 +979,7 @@ export class VersionedTrie<V> {
    * `t`. The history part lists `[vkey(p), vkey(t) || 0x00)` as exactly `p`. Arguments as {@link verifyVersion}.
    */
   verifyAsOf(root: Uint8Array, proof: VersionedTrieProof<V>, t: V): C<{ readonly version: V; readonly stateRoot: Uint8Array } | null> {
+    if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
     const a = this.#args(root, proof);
     if (!a.ok) return a;
     const [r, p] = a.value;
