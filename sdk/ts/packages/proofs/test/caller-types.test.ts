@@ -878,6 +878,16 @@ describe("a versioned query is encoded before the claims or the proof are read: 
     expect(ot.verifyVersions(root, proof, from, { n: 300n }, bad(moving)), "the query as given, [3, 300)").toEqual({ ok: true, value: false });
   });
 
+  it("the head's version is encoded once: a version that revokes itself after its first read gives a verdict, never a throw", () => {
+    for (const name of ["current-keys", "head"]) {
+      const proof = proofNamed(name);
+      const once = (): versioned.VersionedTrieProof<Ver> =>
+        bad({ ...proof, head: { ...proof.head, version: revokingAfterFirstRead({ ...proof.head.version }) } });
+      expect(ot.verifyHead(root, once()).ok, `${name}: verifyHead`).toBe(name === "head");
+      if (name === "current-keys") expect(ot.verifyState(root, once()).ok, `${name}: verifyState`).toBe(true);
+    }
+  });
+
   it("verifyVersions: a later claim's getter cannot rewrite an earlier claim's version", () => {
     const p = vectors.proofs.find((x) => x.name === "versions-2-until-300");
     if (p === undefined) throw new Error("the versions fixture");

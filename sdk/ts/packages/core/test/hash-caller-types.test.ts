@@ -222,7 +222,7 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     expect(h.digest(), "the same digest again").toEqual(first);
     expectOk(h.update(Uint8Array.of(3)), "absorbs after a digest");
     expect(h.digest()).toEqual(expectOk(digest(sha, Uint8Array.of(1, 2, 3)), "1, 2, 3"));
-    const t = expectOk(TaggedHash.of(sha, tag), "tagged").start();
+    const t = expectOk(expectOk(TaggedHash.of(sha, tag), "tagged").start(), "starts");
     expectOk(t.update(message), "absorbs");
     expect(t.digest()).toEqual(expectOk(taggedHash(sha, tag, message), "tagged"));
   });
@@ -272,6 +272,10 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     expect(forged.hash(message), "hash").toEqual(notATaggedHash);
     expect(forged.content(int(1n)), "content").toEqual(notATaggedHash);
     expect(forged.contentWithin(int(1n), 64), "contentWithin").toEqual(notATaggedHash);
+    expect(forged.start(), "start: no stream over a tag outside the grammar").toEqual(notATaggedHash);
+    // borrowed onto another receiver, start refuses it the same way
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- the point is a method borrowed onto another receiver
+    expect(Reflect.apply(TaggedHash.prototype.start, { algorithm: "SHA-256" }, []), "borrowed start").toEqual(notATaggedHash);
     expect(isDomainTagOf(forged.tag), "its tag is no DomainTag").toBe(false);
     const fakeTag = Reflect.construct(DomainTag as unknown as new (...a: unknown[]) => object, [Symbol("key"), "Not A Tag"]) as DomainTag;
     expect(fakeTag.value, "a forged tag keeps nothing").toBe("");

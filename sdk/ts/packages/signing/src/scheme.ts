@@ -76,12 +76,6 @@ export interface MessageReader<M> {
 /** A message to verify, as a plain view (see `viewOf`); what is not a `Uint8Array` is a `TypeMismatch`. */
 export const verifiedMessage: MessageReader<Uint8Array> = Object.freeze({ read: viewOf, refusal: NOT_BYTES });
 
-/** A message to sign, read once into memory only this thread can change (see `signedOf`), or a `TypeMismatch`. */
-export const signedMessage = (m: unknown): Result<Uint8Array, TypeMismatch> => {
-  const own = signedOf(m);
-  return own === undefined ? err(NOT_BYTES) : ok(own);
-};
-
 /** A verification over the scheme's key, message and signature bytes, each already checked. */
 export type RawVerify<M> = (key: Uint8Array, message: M, signature: Uint8Array) => boolean;
 

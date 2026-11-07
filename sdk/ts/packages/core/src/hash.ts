@@ -414,11 +414,11 @@ export class TaggedHash {
 
   /**
    * An incremental hash with the prefix `H(tag) || H(tag)` absorbed: absorb a message, then digest, for its tagged hash.
-   * It has no room for a refusal: on an instance built from outside it is the hash its reported (default) algorithm and
-   * tag name, never one of the caller's.
+   * An instance built by calling the constructor from outside (no `TaggedHash.of`) is a `TypeMismatch`: it starts no
+   * hash, as its other methods hash nothing.
    */
-  start(): Hashing {
-    return new CheckedHashing(this.#start());
+  start(): Result<Hashing, TypeMismatch> {
+    return TAGGED_HASH.has(this) ? ok(new CheckedHashing(this.#start())) : err(NOT_A_TAGGED_HASH);
   }
 
   /** `start`, bound to this instance: borrowed onto another receiver, it fails at `#tagHash` before anything is hashed. */

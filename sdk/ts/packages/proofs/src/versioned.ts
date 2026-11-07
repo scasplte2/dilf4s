@@ -661,10 +661,14 @@ export class VersionedTrie<V> {
 
   #root(head: Head<V>): C<Uint8Array> {
     const vkey = this.versionKey.encode(head.version);
-    if (!vkey.ok) return vkey;
+    return vkey.ok ? this.#rootOf(vkey.value, head) : vkey;
+  }
+
+  /** The root of a head whose version is already encoded (`vkey`, bytes the module owns): no version is read again. */
+  #rootOf(vkey: Uint8Array, head: Head<V>): R<Uint8Array> {
     return viaTrie(
       TRIE.trieRoot(this.hashing, this.topMode, [
-        [SLOTS.version, this.#bytesHash(vkey.value)],
+        [SLOTS.version, this.#bytesHash(vkey)],
         [SLOTS.state, this.#bytesHash(head.stateRoot)],
         [SLOTS.history, this.#bytesHash(head.historyRoot)],
       ]),
@@ -862,15 +866,18 @@ export class VersionedTrie<V> {
    * with its version's key, encoded once here and used as these bytes from then on.
    */
   #bind(root: Uint8Array, proof: VersionedTrieProof<V>): C<{ readonly head: Head<V>; readonly vkey: Uint8Array }> {
-    const claimed = this.#root(proof.head);
+    // the head's version encoded once: its root, its slot and every history check after use these bytes, so a version
+    // (a caller's object, a Proxy) is never read again
+    const encoded = this.versionKey.encode(proof.head.version);
+    if (!encoded.ok) return encoded;
+    const vkey = encoded.value;
+    const claimed = this.#rootOf(vkey, proof.head);
     if (!claimed.ok) return claimed;
     if (!bytesEqual(claimed.value, root)) return mismatch("root", root, claimed.value);
     const top = this.#verified(this.topMode, root, "top", proof.top);
     if (!top.ok) return top;
-    const vkey = this.versionKey.encode(proof.head.version);
-    if (!vkey.ok) return vkey;
     const slots: readonly (readonly [Uint8Array, Uint8Array])[] = [
-      [SLOTS.version, vkey.value],
+      [SLOTS.version, vkey],
       [SLOTS.state, proof.head.stateRoot],
       [SLOTS.history, proof.head.historyRoot],
     ];
@@ -880,7 +887,7 @@ export class VersionedTrie<V> {
       if (l.value.kind === "notCovered") return notCovered(`top slot ${slotName(slot)}`);
       if (l.value.kind !== "present" || !bytesEqual(l.value.valueHash, this.#bytesHash(value))) return malformed(`top slot ${slotName(slot)} does not hold the head's value`);
     }
-    return ok({ head: proof.head, vkey: vkey.value });
+    return ok({ head: proof.head, vkey });
   }
 
   #history(head: Head<V>, proof: VersionedTrieProof<V>): R<trie.VerifiedTrieProof> {

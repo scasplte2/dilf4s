@@ -79,7 +79,7 @@ value read as another type. Each argument is checked in O(1) before it is read:
 - the hash API (§4): `digest`, `hashParts`, `startHash` and its hash's `update`, `outputSize`, `blockSize`,
   `expansionLimit`, `parseHashAlgorithm`, `digestFromBytes`, `digestFromHex`, `expandMessageXmd` (its output length
   too: a non-number is a `TypeMismatch`, a number out of range `outputLength`), `DomainTag.of`, `TaggedHash.of` and its
-  `hash`, `content` and `contentWithin`, `taggedHash`, `contentHash`, `toHex` and `fromHex`. An algorithm that is not
+  `start`, `hash`, `content` and `contentWithin`, `taggedHash`, `contentHash`, `toHex` and `fromHex`. An algorithm that is not
   a string is a `TypeMismatch`; a string naming none is `UnknownAlgorithm`, as in every SDK.
 
 Where a result has no room for a refusal, the answer is still defined and reads nothing of the argument: `equals` is

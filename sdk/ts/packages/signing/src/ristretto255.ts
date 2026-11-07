@@ -1,11 +1,13 @@
 /** ristretto255 Schnorr, the single-signer form of FROST(ristretto255, SHA-512), RFC 9591 (`signing.md` 1.5). */
-import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
+import { err, ok, type Err, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
+import { copyBytes, plainBytes } from "@kd5ujc/dilf4s-core/internal";
 import { ristretto255 } from "@noble/curves/ed25519.js";
 import { sha512 } from "@noble/hashes/sha2.js";
 import { randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
-import { invalidEncoding, invalidKey } from "./errors.js";
-import { signingKeyBytes, type Signature, type SigningKey } from "./keys.js";
+import { invalidEncoding, invalidKey, lengthError } from "./errors.js";
+import { ownSigningKey, type Signature, type SigningKey } from "./keys.js";
+import { expected, NOT_BYTES, signedOf } from "./internal/check.js";
 import { attempt } from "./internal/attempt.js";
 import { concat, leToBig, mod } from "./internal/bytes.js";
 import { L, scalarBytes } from "./internal/edwards.js";
@@ -13,7 +15,6 @@ import {
   checkedPublicKey,
   checkedVerify,
   signatureOf,
-  signedMessage,
   signingKeyOf,
   sized,
   verifiedMessage,
@@ -84,17 +85,35 @@ function signWith(sk: Uint8Array, message: Uint8Array, randomness: Uint8Array): 
   return signatureOf(NAME, concat(r, scalarBytes(k + c * x)));
 }
 
+const NOT_A_KEY: Err<TypeMismatch> = Object.freeze(err(expected(`a ${NAME} SigningKey`)));
+const NOT_A_MESSAGE: Err<TypeMismatch> = Object.freeze(err(NOT_BYTES));
+
 /**
- * A signature by `key` over `message` (each checked: the key must be the scheme's, the message is read once) with the
- * nonce randomness `randomness` gives.
+ * The caller's 32 bytes of nonce randomness, measured by their internal length and copied from their own memory (the
+ * copy itself, no wrapper around it), or the refusal: `TypeMismatch` for what is not bytes, `InvalidEncoding` for
+ * another length.
  */
-function signChecked<E>(key: unknown, message: unknown, randomness: () => Result<Uint8Array, E>): Result<Signature<typeof NAME>, TypeMismatch | E> {
-  const k = signingKeyBytes(key, NAME);
-  if (!k.ok) return k;
-  const m = signedMessage(message);
-  if (!m.ok) return m;
-  const r = randomness();
-  return r.ok ? ok(signWith(k.value, m.value, r.value)) : r;
+function randomnessOf(x: unknown): Uint8Array | Err<CryptoRefusal> {
+  const view = plainBytes(x);
+  if (view === undefined) return NOT_A_MESSAGE;
+  return view.length === 32 ? copyBytes(view) : err(lengthError("nonce randomness", 32, view.length));
+}
+
+/** Fresh nonce randomness from `@noble/hashes` `randomBytes`: it has nothing of the caller's to check. */
+const freshRandomness = (): Uint8Array | Err<never> => randomBytes(32);
+
+/**
+ * A signature by `key` over `message` with the nonce randomness `randomness` reads from `given`, each checked in turn:
+ * the key must be the scheme's (its own bytes read), the message is copied once, then the randomness. The functions
+ * are the module's own, made once: a passing check allocates the two copies and no wrapper or closure.
+ */
+function signChecked<E>(key: unknown, message: unknown, given: unknown, randomness: (x: unknown) => Uint8Array | Err<E>): Result<Signature<typeof NAME>, TypeMismatch | E> {
+  const k = ownSigningKey(key, NAME);
+  if (k === undefined) return NOT_A_KEY;
+  const m = signedOf(message);
+  if (m === undefined) return NOT_A_MESSAGE;
+  const r = randomness(given);
+  return r instanceof Uint8Array ? ok(signWith(k, m, r)) : r;
 }
 
 const verify = (kb: Uint8Array, message: Uint8Array, sb: Uint8Array): boolean => {
@@ -115,8 +134,8 @@ export interface Ristretto255Scheme extends SchemeCodec<typeof NAME>, Verifier<t
 
 export const ristretto255Schnorr: Ristretto255Scheme = Object.freeze({
   ...codec,
-  sign: (key: SigningKey<typeof NAME>, message: Uint8Array, randomness: Uint8Array) => signChecked(key, message, () => sized("nonce randomness", 32, randomness)),
-  signRandom: (key: SigningKey<typeof NAME>, message: Uint8Array) => signChecked(key, message, (): Result<Uint8Array, never> => ok(randomBytes(32))),
+  sign: (key: SigningKey<typeof NAME>, message: Uint8Array, randomness: Uint8Array) => signChecked(key, message, randomness, randomnessOf),
+  signRandom: (key: SigningKey<typeof NAME>, message: Uint8Array) => signChecked(key, message, undefined, freshRandomness),
   verify: checkedVerify(NAME, verifiedMessage, verify),
   verifyBytes: verifyBytesWith(codec, verifiedMessage, verify),
   /** `SHA-512(seed) mod L`, rejecting the (negligible) zero scalar. */

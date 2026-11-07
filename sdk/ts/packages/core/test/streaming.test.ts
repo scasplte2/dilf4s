@@ -19,7 +19,7 @@ const bufferedContent = (t: TaggedHash, v: Value): Uint8Array => expectOk(t.hash
 const bufferedCommitment = (t: TaggedHash, v: Value): Uint8Array => expectOk(t.hash(expectOk(valueCommitment(v), "commits")), "hashes");
 
 function streamedCommitment(t: TaggedHash, v: Value): Uint8Array {
-  const h = t.start();
+  const h = expectOk(t.start(), "starts");
   expectOk(valueCommitmentInto(h, v), "commits");
   return h.digest();
 }
@@ -164,7 +164,7 @@ describe("streamed hashing refuses as the buffered path does", { timeout: 60_000
       if (streamed.ok && buffered.ok) expect(hexOf(streamed.value)).toBe(hexOf(t.hash(buffered.value)));
 
       const committed = valueCommitmentWithin(v, limit);
-      const h = t.start();
+      const h = expectOk(t.start(), "starts");
       const fed = valueCommitmentIntoWithin(h, v, limit);
       expect(fed.ok, `commitment within ${String(limit)}`).toBe(committed.ok);
       if (!fed.ok && !committed.ok) expect(fed.error, `commitment refusal within ${String(limit)}`).toEqual(committed.error);
