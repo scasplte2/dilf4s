@@ -4,6 +4,9 @@ use alloc::vec::Vec;
 use crate::codec as c;
 
 /// `versioned-record` (`shared/schemas/storage.cddl`).
+///
+/// A VersionedStore history record: the value of one key before and after the write at one version. An absent
+/// field means the key had no value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VersionedRecord {
     /// The `b` entry.

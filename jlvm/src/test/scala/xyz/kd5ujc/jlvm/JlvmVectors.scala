@@ -8,7 +8,6 @@ import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue, Cbor}
 import xyz.kd5ujc.core.circe.CanonicalCirce
-import xyz.kd5ujc.models.jlvm_vectors.JlvmErrorKind
 
 import io.circe.syntax._
 import io.circe.{Decoder, Json}
@@ -54,18 +53,6 @@ object JlvmVectors {
   val inputs: IO[Inputs] =
     files.traverse(read).map(all => Inputs(all.map(_.source).mkString("; "), all.flatMap(_.cases)))
 
-  /** The error's kind, as the schema's closed choice (`jlvm-error-kind`): a new case does not compile until it is mapped. */
-  def kind(e: JlvmError): JlvmErrorKind = e match {
-    case _: JlvmError.Malformed  => "Malformed"
-    case _: JlvmError.Type       => "Type"
-    case _: JlvmError.Arity      => "Arity"
-    case _: JlvmError.Arithmetic => "Arithmetic"
-    case _: JlvmError.Domain     => "Domain"
-    case _: JlvmError.Crypto     => "Crypto"
-    case _: JlvmError.Limit      => "Limit"
-    case _: JlvmError.OutOfGas   => "OutOfGas"
-  }
-
   def run(jlvm: Jlvm, i: Input, driver: Config.Driver = Config.Driver.Direct): Outcome =
     (
       Parser.parse(i.program),
@@ -94,7 +81,7 @@ object JlvmVectors {
 
   private def outcome(o: Outcome): Json =
     o.result.fold(
-      e => Json.fromFields(List("error" -> (kind(e): String).asJson) ++ JlvmError.site(e).map(s => "op" -> s.wire.asJson)),
+      e => Json.fromFields(List("error" -> (e.kind: String).asJson) ++ e.site.map(s => "op" -> s.wire.asJson)),
       v =>
         Json
           .obj("cbor" -> Cbor.encode(v).toHex.asJson)

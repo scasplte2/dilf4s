@@ -93,7 +93,7 @@ object CddlParser:
   private def choiceOf(alts: NonEmptyList[Ty]): Ty =
     if alts.tail.isEmpty then alts.head else Ty.Choice(alts.toList.toVector)
 
-  private val ty1: Parser[Ty] = Parser.recursive[Ty] { self =>
+  private def ty1(docAt: Int => Vector[String]): Parser[Ty] = Parser.recursive[Ty] { self =>
     val ty: Parser[Ty] = self.repSep(slashChoice).map(choiceOf)
     val genericArgs: Parser[Vector[Ty]] =
       (Parser.char('<') *> sp *> ty.repSep(tok(",")) <* tok(">")).map(_.toList.toVector)
@@ -121,7 +121,7 @@ object CddlParser:
           val value = if rest.isEmpty then first else Ty.Choice(first +: rest.toVector)
           Entry(o.getOrElse(Occ.Once), None, value)
       }
-    val entry: Parser[Entry] = keyed.backtrack | typeKeyOrPlain
+    val entry: Parser[Entry] = (Parser.index.with1 ~ (keyed.backtrack | typeKeyOrPlain)).map((at, e) => e.copy(doc = docAt(at)))
     val choice: Parser0[Vector[Entry]] = (entry <* comma.?).rep0.map(_.toVector)
     val grp: Parser0[Group] =
       (choice ~ (groupSep *> choice).rep0).map((h, t) => Group(h +: t.toVector))
@@ -135,8 +135,8 @@ object CddlParser:
     val mapP = (Parser.char('{') *> sp *> grp <* sp <* Parser.char('}')).map(Ty.MapT(_))
     val paren: Parser[Ty] = (Parser.char('(') *> sp *> grp <* sp <* Parser.char(')')).map { g =>
       g.choices match
-        case Vector(Vector(Entry(o, None, t))) if o.isOnce => t
-        case _                                             => Ty.GroupT(g)
+        case Vector(Vector(Entry(o, None, t, _))) if o.isOnce => t
+        case _                                                => Ty.GroupT(g)
     }
     val enumP = (Parser.char('&') *> sp *> (paren | nameRef)).map(Ty.Enumeration(_))
     val unwrapP = (Parser.char('~') *> sp *> nameRef).map(Ty.Unwrap(_))
@@ -152,24 +152,43 @@ object CddlParser:
     (ty2 ~ tail.?).map((a, t) => t.fold(a)(_(a)))
   }
 
-  private val tyAll: Parser[Ty] = ty1.repSep(slashChoice).map(choiceOf)
+  private def tyAll(docAt: Int => Vector[String]): Parser[Ty] = ty1(docAt).repSep(slashChoice).map(choiceOf)
 
   private val assign: Parser[Assign] =
     tok("//=").as(Assign.GroupChoice) | tok("/=").as(Assign.TypeChoice) | tok("=").as(Assign.Eq)
   private val params: Parser[Vector[String]] =
     (Parser.char('<') *> sp *> lexeme(ident).repSep(tok(",")) <* Parser.char('>'))
       .map(_.toList.toVector)
-  private val rule: Parser[Rule] =
-    (ident ~ params.? <* sp).flatMap {
-      case (n, ps) =>
-        (assign ~ tyAll).map((a, b) => Rule(n, ps.getOrElse(Vector.empty), a, b))
+  private def rule(docAt: Int => Vector[String]): Parser[Rule] =
+    (Parser.index.with1 ~ (ident ~ params.? <* sp)).flatMap {
+      case (at, (n, ps)) =>
+        (assign ~ tyAll(docAt)).map((a, b) => Rule(n, ps.getOrElse(Vector.empty), a, b, docAt(at)))
     }
-  private val fileP: Parser0[Vector[Rule]] = sp *> rule.rep0.map(_.toVector) <* Parser.end
+  private def fileP(docAt: Int => Vector[String]): Parser0[Vector[Rule]] = sp *> rule(docAt).rep0.map(_.toVector) <* Parser.end
+
+  /**
+   * The documentation of what starts at `offset`: when it is the first thing on its line, the `;` comment lines directly
+   * above it (no blank line between, a `;#` pragma ending the block), each without its `;` and one following space.
+   * Anything else (a comment after code on a line, a block a blank line separates) documents nothing.
+   */
+  def docs(text: String, offset: Int): Vector[String] = {
+    val lineStart = text.lastIndexOf('\n', offset - 1) + 1
+    @scala.annotation.tailrec
+    def above(end: Int, acc: List[String]): Vector[String] =
+      if (end <= 0) acc.toVector
+      else {
+        val start = text.lastIndexOf('\n', end - 2) + 1
+        val line = text.substring(start, end - 1).trim
+        if (line.startsWith(";") && !line.startsWith(";#")) above(start, line.drop(1).stripPrefix(" ") :: acc)
+        else acc.toVector
+      }
+    if (text.substring(lineStart, offset).forall(_.isWhitespace)) above(lineStart, Nil) else Vector.empty
+  }
 
   private val pragmaRe = """(?m)^;#\s*(import|include)\s+(\S+)\s+as\s+(\S+)\s*$""".r
 
   def parse(text: String): Either[ParseFailure, File] =
-    fileP.parse(text) match
+    fileP(docs(text, _)).parse(text) match
       case Right((_, rules)) =>
         val pragmas =
           pragmaRe

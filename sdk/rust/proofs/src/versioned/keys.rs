@@ -8,97 +8,23 @@ use dilf4s_core::Preview;
 
 use super::VersionedTrieError;
 
-/// Why a state key or namespace was refused, by Scala's `StateKeyError` names, in the order of
-/// docs/specs/versioned-trie.md section 2. The input appears as a [`Preview`], or not at all when it was refused
-/// before it was read, and a segment by its position, never its text (docs/specs/conformance.md section 8).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum StateKeyError {
-    /// The empty text.
-    Empty,
-    /// More than `limit` ([`StateKey::MAX_LENGTH`]) UTF-8 bytes, refused by its length before it is read.
-    TooLong {
-        /// The limit.
-        limit: usize,
-    },
-    /// Trie-key bytes that are not well-formed UTF-8.
-    NotUtf8,
-    /// More than `limit` ([`StateKey::MAX_SEGMENTS`]) segments.
-    TooManySegments {
-        /// The key, previewed.
-        key: Preview,
-        /// The limit.
-        limit: usize,
-    },
-    /// Segment `segment` (from 0) does not match `[a-z0-9][a-z0-9._-]*`.
-    InvalidSegment {
-        /// The key, previewed.
-        key: Preview,
-        /// The segment's position (normative).
-        segment: usize,
-    },
-    /// Segment `segment` (from 0) is longer than `limit` ([`StateKey::MAX_SEGMENT_LENGTH`]) characters.
-    SegmentTooLong {
-        /// The key, previewed.
-        key: Preview,
-        /// The segment's position (normative).
-        segment: usize,
-        /// The limit.
-        limit: usize,
-    },
-    /// A namespace that leaves no room for one more segment: over 254 characters, or 16 segments already.
-    NamespaceFull {
-        /// The namespace, previewed.
-        namespace: Preview,
-    },
-}
+pub use dilf4s_core::generated::codec_errors::{StateKeyError, StateKeyErrorKind};
 
-impl StateKeyError {
-    /// The error's kind as the conformance vectors name it.
-    pub const fn kind(&self) -> &'static str {
-        match self {
-            Self::Empty => "Empty",
-            Self::TooLong { .. } => "TooLong",
-            Self::NotUtf8 => "NotUtf8",
-            Self::TooManySegments { .. } => "TooManySegments",
-            Self::InvalidSegment { .. } => "InvalidSegment",
-            Self::SegmentTooLong { .. } => "SegmentTooLong",
-            Self::NamespaceFull { .. } => "NamespaceFull",
-        }
-    }
-
-    /// The input, previewed; `None` for one refused before it was read.
-    pub fn input(&self) -> Option<&Preview> {
-        match self {
-            Self::Empty | Self::TooLong { .. } | Self::NotUtf8 => None,
-            Self::TooManySegments { key, .. } | Self::InvalidSegment { key, .. } | Self::SegmentTooLong { key, .. } => {
-                Some(key)
-            }
-            Self::NamespaceFull { namespace } => Some(namespace),
-        }
+/// A refusal's input, previewed; `None` for one refused before it was read (empty, too long, or not UTF-8).
+pub fn input(e: &StateKeyError) -> Option<&Preview> {
+    match e {
+        StateKeyError::Empty | StateKeyError::TooLong { .. } | StateKeyError::NotUtf8 => None,
+        StateKeyError::TooManySegments { key, .. }
+        | StateKeyError::InvalidSegment { key, .. }
+        | StateKeyError::SegmentTooLong { key, .. } => Some(key),
+        StateKeyError::NamespaceFull { namespace } => Some(namespace),
     }
 }
 
-impl fmt::Display for StateKeyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("invalid state key: empty"),
-            Self::TooLong { limit } => write!(f, "invalid state key: longer than {limit} UTF-8 bytes"),
-            Self::NotUtf8 => f.write_str("invalid state key: not UTF-8"),
-            Self::TooManySegments { key, limit } => write!(f, "invalid state key {key}: more than {limit} segments"),
-            Self::InvalidSegment { key, segment } => {
-                write!(f, "invalid state key {key}: segment {segment} does not match [a-z0-9][a-z0-9._-]*")
-            }
-            Self::SegmentTooLong { key, segment, limit } => {
-                write!(f, "invalid state key {key}: segment {segment} is longer than {limit} characters")
-            }
-            Self::NamespaceFull { namespace } => {
-                write!(f, "invalid namespace {namespace}: no room for one more segment")
-            }
-        }
-    }
+/// A size or position as a refusal holds it.
+fn size(n: usize) -> u64 {
+    u64::try_from(n).unwrap_or(u64::MAX)
 }
-
-impl core::error::Error for StateKeyError {}
 
 /// A key of a versioned trie's state: `segment *("/" segment)`, each segment `[a-z0-9][a-z0-9._-]*` of at most 64
 /// characters, at most 16 segments and 256 characters. Its trie key is its UTF-8 bytes; the alphabet is ASCII, so byte
@@ -124,10 +50,10 @@ impl StateKey {
         }
         // refused by its length alone, as Scala and TypeScript, whose previews would measure the whole text
         if s.len() > Self::MAX_LENGTH {
-            return Err(StateKeyError::TooLong { limit: Self::MAX_LENGTH });
+            return Err(StateKeyError::TooLong { limit: size(Self::MAX_LENGTH) });
         }
         if s.split('/').count() > Self::MAX_SEGMENTS {
-            return Err(StateKeyError::TooManySegments { key: Preview::of(s), limit: Self::MAX_SEGMENTS });
+            return Err(StateKeyError::TooManySegments { key: Preview::of(s), limit: size(Self::MAX_SEGMENTS) });
         }
         let lower_digit = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
         let grammar = |segment: &str| {
@@ -138,9 +64,13 @@ impl StateKey {
         // the grammar is ASCII, so a segment that passes it has as many characters as bytes
         let refusal = s.split('/').enumerate().find_map(|(segment, text)| {
             if !grammar(text) {
-                Some(StateKeyError::InvalidSegment { key: Preview::of(s), segment })
+                Some(StateKeyError::InvalidSegment { key: Preview::of(s), segment: size(segment) })
             } else if text.len() > Self::MAX_SEGMENT_LENGTH {
-                Some(StateKeyError::SegmentTooLong { key: Preview::of(s), segment, limit: Self::MAX_SEGMENT_LENGTH })
+                Some(StateKeyError::SegmentTooLong {
+                    key: Preview::of(s),
+                    segment: size(segment),
+                    limit: size(Self::MAX_SEGMENT_LENGTH),
+                })
             } else {
                 None
             }
@@ -152,7 +82,7 @@ impl StateKey {
     /// before they are read as text; then bytes that are not UTF-8; then [`Self::parse`].
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, StateKeyError> {
         if bytes.len() > Self::MAX_LENGTH {
-            return Err(StateKeyError::TooLong { limit: Self::MAX_LENGTH });
+            return Err(StateKeyError::TooLong { limit: size(Self::MAX_LENGTH) });
         }
         core::str::from_utf8(bytes).map_err(|_| StateKeyError::NotUtf8).and_then(Self::parse)
     }

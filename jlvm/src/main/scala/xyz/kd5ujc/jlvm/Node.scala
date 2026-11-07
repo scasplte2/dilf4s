@@ -25,7 +25,7 @@ enum Node {
   /** An operation on evaluated arguments ([[PureOps]]). */
   case Strict(op: Op, args: Vector[Node])
 
-  /** A [[Op.Variadic]] strict operation on the elements of one array value. */
+  /** A [[Ops.Variadic]] strict operation on the elements of one array value. */
   case Spread(op: Op, arg: Node)
 
   /** `if`: the first branch whose condition is truthy, else `otherwise` (null when the program gives no else). */

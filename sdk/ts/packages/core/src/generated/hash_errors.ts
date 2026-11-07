@@ -2,12 +2,24 @@
 import * as c from "../codec.js";
 import type { Preview } from "../preview.js";
 
-/** `expansion-refusal` (`shared/schemas/hash-errors.cddl`). */
+/**
+ * `expansion-refusal` (`shared/schemas/hash-errors.cddl`).
+ *
+ * Why `expand_message_xmd` (RFC 9380 section 5.3.1) is refused, checked in this order: "emptyDst" (the domain
+ * separation tag is empty), "outputLength" (the length asked for is not 1 to `limit`).
+ */
 export type ExpansionRefusal = "emptyDst" | "outputLength";
 
 export const ExpansionRefusal: c.Codec<ExpansionRefusal> = c.union<ExpansionRefusal>("ExpansionRefusal", [], ["emptyDst", "outputLength"]);
 
-/** `hash-error` (`shared/schemas/hash-errors.cddl`): an error family, by `kind` (`HashErrorKind`). */
+/**
+ * `hash-error` (`shared/schemas/hash-errors.cddl`): an error family, by `kind` (`HashErrorKind`).
+ *
+ * A digest of the wrong length (`expected`, the algorithm's output size, and `actual`); text that is not hexadecimal
+ * (`offset`: the first character that is not an ASCII hex digit, or the text's length when its digits are odd in
+ * number); a domain tag outside the grammar; an `expand_message_xmd` the reference refuses (`refusal`, and `limit`,
+ * the most bytes the algorithm expands to); a hash function name that is not one of the seven.
+ */
 export type HashError =
   | { readonly kind: "InvalidLength"; readonly algorithm: string; readonly expected: number; readonly actual: number }
   | { readonly kind: "InvalidHex"; readonly offset: number }

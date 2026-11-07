@@ -1,3 +1,4 @@
+;# import codec-errors as codec
 ; Schema of shared/vectors/versioned_trie_v1.json (conformance vectors for docs/specs/versioned-trie.md).
 ; "cbor" fields are hex of canonical CBOR: proofs and deltas in the shape of shared/schemas/versioned-trie.cddl,
 ; values as canonical values. Every proof is against the final commit's root.
@@ -43,8 +44,8 @@ vt-state-key-outcome = vt-state-key-refusal / "accepted"
 
 vt-state-key-refusal = { "kind": state-key-error-kind, ? "segment": uint }
 
-; Every kind of StateKeyError (versioned-trie.md section 2).
-state-key-error-kind = "Empty" / "TooLong" / "NotUtf8" / "TooManySegments" / "InvalidSegment" / "SegmentTooLong" / "NamespaceFull"
+; A kind of StateKeyError (codec-errors.cddl; versioned-trie.md section 2).
+state-key-error-kind = codec.state-key-error-kind
 
 ; The final commit's snapshot, in chunks of at most "chunkEntries" items: each is the hex of a canonical
 ; versioned-trie-snapshot-chunk. Restoring it into an empty store reproduces "root".

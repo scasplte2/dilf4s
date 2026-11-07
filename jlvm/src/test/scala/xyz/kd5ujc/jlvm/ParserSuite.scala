@@ -170,11 +170,11 @@ object ParserSuite extends SimpleIOSuite with Checkers {
       .and(expect(Op.values.forall(o => !o.wire.startsWith(Parser.DataPrefix)), "no operation name starts with _"))
       .and(
         expect(
-          (Op.values.map(_.wire).toSet ++ Op.Aliases.keySet).intersect(Set(Parser.Literal, Parser.Variable, Parser.ObjectKey)).isEmpty,
+          (Op.values.map(_.wire).toSet ++ Ops.Aliases.keySet).intersect(Set(Parser.Literal, Parser.Variable, Parser.ObjectKey)).isEmpty,
           "the surface keywords are not operations"
         )
       )
-      .and(expect(Op.Aliases.keySet.intersect(Op.values.map(_.wire).toSet).isEmpty, "aliases do not shadow operations"))
+      .and(expect(Ops.Aliases.keySet.intersect(Op.values.map(_.wire).toSet).isEmpty, "aliases do not shadow operations"))
   }
 
   pureTest("spreading is decided by the syntax: a variadic operation with a non-array argument") {
@@ -248,7 +248,7 @@ object ParserSuite extends SimpleIOSuite with Checkers {
         },
         1 -> Gen
           .zip(
-            Gen.oneOf(Op.Variadic.toList),
+            Gen.oneOf(Ops.Variadic.toList),
             // an array expression would be an argument list (Program.from rejects it): spread its values instead
             sub.map {
               case a @ Expr.Arr(_) => Expr.Apply(Op.Values, Vector(a))

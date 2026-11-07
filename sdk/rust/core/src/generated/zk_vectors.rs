@@ -93,6 +93,9 @@ impl c::Model for ZkBoolResult {
 }
 
 /// `zk-failure` (`shared/schemas/zk-vectors.cddl`).
+///
+/// Malformed: a wrong length or a coordinate not below p. InvalidPoint: off the curve or twist, or a G2 point outside
+/// the order-r subgroup.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ZkFailure {
     /// The `error` entry.
@@ -115,7 +118,10 @@ impl c::Model for ZkFailure {
 }
 
 /// `zk-groth16-result` (`shared/schemas/zk-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// "verified": the proof verifies. Rejected: SP1's framing (selector, exit code, VK root). InvalidProof: a point off
+/// the curve, outside the subgroup or the identity, or an input not in Fr.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ZkGroth16Result {
     /// The text `verified`.
     Verified,
@@ -146,6 +152,15 @@ impl c::Model for ZkGroth16Result {
 impl ZkGroth16Result {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 5] = [Self::Verified, Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::Malformed), Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::InvalidProof), Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::PairingCheckFailed), Self::Groth16ErrorKind(super::crypto_errors::Groth16ErrorKind::Rejected)];
+}
+
+impl core::fmt::Display for ZkGroth16Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Verified => f.write_str("verified"),
+            Self::Groth16ErrorKind(a) => core::fmt::Display::fmt(a, f),
+        }
+    }
 }
 
 /// `zk-mul` (`shared/schemas/zk-vectors.cddl`).
@@ -209,6 +224,8 @@ impl c::Model for ZkPair {
 }
 
 /// `zk-pairing` (`shared/schemas/zk-vectors.cddl`).
+///
+/// The product of e(g1, g2) over the pairs is one; no pairs is true.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ZkPairing {
     /// The `name` entry.

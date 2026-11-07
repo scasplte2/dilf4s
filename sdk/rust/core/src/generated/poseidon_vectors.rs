@@ -18,6 +18,9 @@ pub type DecimalLeaves = BTreeMap<String, Decimal>;
 pub const DECIMAL_LEAVES: c::TextMapOf<c::Matching> = c::TextMapOf(DECIMAL);
 
 /// `poseidon-build-vector` (`shared/schemas/poseidon-vectors.cddl`).
+///
+/// A tree built from entries applied in order (zk.md section 4): a later entry for a position replaces an earlier one,
+/// and a later 0 empties it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PoseidonBuildVector {
     /// The `depth` entry.

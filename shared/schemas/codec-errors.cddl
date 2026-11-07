@@ -1,0 +1,190 @@
+;# import hash-errors as hash
+; The codec error families (docs/specs/canonical-encoding.md, versioned-trie.md section 2; conformance.md sections 1,
+; 3 and 6), defined once as crypto-errors.cddl defines the crypto families: each `x-error` is a choice of maps, each
+; led by a distinct "kind" literal, and `x-error-kind` lists the same kinds in the same order. Each SDK gets the family
+; as its error type (Scala `xyz.kd5ujc.core.canonical.CanonicalError` and `xyz.kd5ujc.accumulators.versioned.StateKeyError`,
+; Rust `dilf4s_core::CanonicalError` and `dilf4s_proofs::versioned::StateKeyError`, TypeScript `CanonicalError` and
+; `StateKeyError`) and the kinds as a closed type, which the vector schemas name. No codec is generated for a family.
+
+; Sizes, offsets and limits are `uint .le 9223372036854775807` (Scala `Long`, Rust `u64`, TypeScript `number`).
+; Caller input is described by its size or position, or held as a preview, never as itself (conformance.md section 8).
+
+; Why a canonical value, encoding or JSON text was refused. Offsets count bytes of CBOR and UTF-16 code units of JSON
+; text (the reference's and TypeScript's strings; Rust's JSON offsets count UTF-8 bytes). TypeMismatch is a typed
+; encoder's or decoder's refusal of a value outside its schema; it is also each SDK's refusal of an argument that is not
+; of its static type.
+canonical-error = {
+  ; Text with an unpaired UTF-16 surrogate; only JSON `\u` escapes can produce one.
+  "kind": "UnpairedSurrogate" //
+  ; A map or JSON object with the same key twice.
+  "kind": "DuplicateKey",
+  ; The repeated key.
+  "key": hash.preview //
+  ; A rational whose numerator or denominator is wider than the data model allows.
+  "kind": "RationalTooWide",
+  ; The bound, in bits (MaxRationalBits).
+  "limit": uint .le 9223372036854775807 //
+  ; An integer wider than the data model allows.
+  "kind": "IntegerTooWide",
+  ; The bound, in bits (MaxIntegerBits).
+  "limit": uint .le 9223372036854775807 //
+  ; JSON text that is not RFC 8259 syntax.
+  "kind": "JsonSyntax",
+  ; Where the rule failed.
+  "offset": uint .le 9223372036854775807,
+  ; The rule that failed.
+  "reason": json-syntax-reason //
+  ; A JSON number that is malformed, or outside the digit or scale bound.
+  "kind": "InvalidNumber",
+  ; The number's length: never its text, whose size the caller chose. Absent only where the reference's circe bridge
+  ; converts a number circe holds without its text.
+  ? "length": uint .le 9223372036854775807,
+  ; Where the number starts, absent with its length.
+  ? "offset": uint .le 9223372036854775807,
+  ; The bound it exceeds, when that is the problem; absent for a malformed number.
+  ? "bound": number-bound //
+  ; A value with no JSON form.
+  "kind": "NotJsonRepresentable",
+  ; What JSON could not hold.
+  "what": not-json //
+  ; A typed value outside its schema (a range, a size, a pattern, a literal), or an argument not of its static type.
+  "kind": "TypeMismatch",
+  ; What does not fit, never the value itself.
+  "reason": text //
+  ; The input ended inside an item.
+  "kind": "UnexpectedEnd",
+  ; Where more input was needed.
+  "offset": uint .le 9223372036854775807 //
+  ; Bytes after the top-level item.
+  "kind": "TrailingBytes",
+  ; The first trailing byte.
+  "offset": uint .le 9223372036854775807 //
+  ; Arrays and maps nested deeper than the limit.
+  "kind": "DepthExceeded",
+  ; The limit in force.
+  "limit": uint .le 9223372036854775807 //
+  ; A well-formed CBOR item that is not the canonical encoding of its value.
+  "kind": "NonCanonical",
+  ; The item.
+  "offset": uint .le 9223372036854775807,
+  ; Which rule it breaks.
+  "reason": non-canonical-reason //
+  ; CBOR outside the data model: floats, indefinite lengths, other simple values or tags.
+  "kind": "Unsupported",
+  ; The item.
+  "offset": uint .le 9223372036854775807,
+  ; What it is.
+  "item": unsupported-item //
+  ; A CBOR text string that is not well-formed UTF-8.
+  "kind": "InvalidUtf8",
+  ; The string's content.
+  "offset": uint .le 9223372036854775807
+}
+
+; Every kind of CanonicalError, in the family's order.
+canonical-error-kind = "UnpairedSurrogate" / "DuplicateKey" / "RationalTooWide" / "IntegerTooWide" / "JsonSyntax" / "InvalidNumber" / "NotJsonRepresentable" / "TypeMismatch" / "UnexpectedEnd" / "TrailingBytes" / "DepthExceeded" / "NonCanonical" / "Unsupported" / "InvalidUtf8"
+
+; The JSON syntax rule that failed: a value, a member name, `:`, `,` or `]`, `,` or `}` expected; content after the
+; top-level value; a string with no closing quote; a control character inside a string; an unknown or truncated escape.
+json-syntax-reason =
+  "expectedValue" / "expectedMemberName" / "expectedColon" / "expectedCommaOrBracket" / "expectedCommaOrBrace" /
+  "trailingContent" / "unterminatedString" / "controlCharacter" / "invalidEscape"
+
+; A JSON number bound (canonical-encoding.md section 3) that a number exceeds.
+number-bound = {
+  ; More significant digits than the bound, counted on its text (significand or exponent) before any conversion.
+  "kind": "Digits",
+  ; Its significant digits (the reference's circe bridge: one more than the bound, for a coefficient too wide to count).
+  "digits": uint .le 9223372036854775807,
+  ; The most accepted.
+  "limit": uint .le 9223372036854775807 //
+  ; A scale outside -limit..limit.
+  "kind": "Scale",
+  ; Fraction digits minus the exponent, saturated at the 32-bit signed range.
+  "scale": -2147483648..2147483647,
+  ; The largest accepted magnitude.
+  "limit": uint .le 9223372036854775807
+}
+
+number-bound-kind = "Digits" / "Scale"
+
+; What JSON could not hold: a byte string; a rational whose decimal does not terminate; a number whose JSON form would
+; pass the digit or scale bound, so it could not be read back; a rendering longer than the reference's `render` can
+; build (MaxRenderBytes). The last is the reference's only: the Rust and TypeScript SDKs render within a limit the caller
+; gives and refuse past it as TooLarge, not as a CanonicalError.
+not-json = "bytes" / "non-terminating rational" / "over-long number" / "over-long rendering"
+
+; The deterministic-encoding rule a CBOR item breaks: an argument not in its shortest form; map keys not unique or not
+; in ascending encoded order; a null map value (null and absent are the same value); a bignum magnitude that is empty
+; or has a leading zero byte; a bignum for a value that fits major type 0 or 1; tag 2 or 3 around something other than
+; a byte string; tag 30 around something other than a 2-element array; a rational part that is not an integer; a
+; denominator below 2; a rational not in lowest terms.
+non-canonical-reason =
+  "nonShortestArgument" / "keyOrder" / "nullMapValue" / "bignumLeadingZero" / "bignumInRange" / "bignumNotBytes" /
+  "rationalNotPair" / "rationalNotInteger" / "rationalDenominator" / "rationalNotReduced"
+
+; A CBOR item outside the data model.
+unsupported-item = {
+  ; A float, or a simple value with a one-byte argument (major type 7, additional information 24 to 31).
+  "kind": "FloatOrSimple",
+  ; Its additional information.
+  "info": uint .le 255 //
+  ; A simple value other than false, true and null.
+  "kind": "SimpleValue",
+  ; Its number.
+  "value": uint .le 255 //
+  ; An indefinite-length item.
+  "kind": "IndefiniteLength" //
+  ; Reserved additional information 28 to 30.
+  "kind": "ReservedInfo",
+  ; The additional information.
+  "info": uint .le 255 //
+  ; A tag other than 2, 3 and 30.
+  "kind": "Tag",
+  ; Its number.
+  "tag": uint //
+  ; A map key that is not text.
+  "kind": "NonTextKey"
+}
+
+unsupported-item-kind = "FloatOrSimple" / "SimpleValue" / "IndefiniteLength" / "ReservedInfo" / "Tag" / "NonTextKey"
+
+; Why a state key or namespace was refused, in the order of versioned-trie.md section 2. The input appears as a preview,
+; or not at all when it was refused before it was read, and a segment by its position, never its text.
+state-key-error = {
+  ; The empty text.
+  "kind": "Empty" //
+  ; Longer than the limit in UTF-8 bytes, refused by its length before it is read.
+  "kind": "TooLong",
+  ; The most UTF-8 bytes a key holds (StateKeyMaxLength).
+  "limit": uint .le 9223372036854775807 //
+  ; Trie-key bytes that are not well-formed UTF-8.
+  "kind": "NotUtf8" //
+  ; More segments than the limit.
+  "kind": "TooManySegments",
+  ; The key.
+  "key": hash.preview,
+  ; The most segments a key holds (StateKeyMaxSegments).
+  "limit": uint .le 9223372036854775807 //
+  ; A segment that does not match `[a-z0-9][a-z0-9._-]*`.
+  "kind": "InvalidSegment",
+  ; The key.
+  "key": hash.preview,
+  ; The segment's position, from 0 (normative).
+  "segment": uint .le 9223372036854775807 //
+  ; A segment longer than the limit.
+  "kind": "SegmentTooLong",
+  ; The key.
+  "key": hash.preview,
+  ; The segment's position, from 0 (normative).
+  "segment": uint .le 9223372036854775807,
+  ; The most characters a segment holds (StateKeyMaxSegmentLength).
+  "limit": uint .le 9223372036854775807 //
+  ; A namespace that leaves no room for one more segment: over 254 characters, or as many segments as a key holds.
+  "kind": "NamespaceFull",
+  ; The namespace.
+  "namespace": hash.preview
+}
+
+; Every kind of StateKeyError, in the family's order.
+state-key-error-kind = "Empty" / "TooLong" / "NotUtf8" / "TooManySegments" / "InvalidSegment" / "SegmentTooLong" / "NamespaceFull"

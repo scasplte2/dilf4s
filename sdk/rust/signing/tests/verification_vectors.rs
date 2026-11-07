@@ -116,7 +116,7 @@ fn every_signing_error_kind_has_a_row() {
     let v: SigningVectors = load("signing_v1.json");
     let exempt = |k: &CryptoErrorKind| *k == CryptoErrorKind::BackendFailure;
     for kind in CryptoErrorKind::ALL {
-        let decoded = v.key_decoding.iter().any(|c| c.result == KeyDecodingResult::CryptoErrorKind(kind.clone()));
+        let decoded = v.key_decoding.iter().any(|c| c.result == KeyDecodingResult::CryptoErrorKind(kind));
         let verified = v
             .verification
             .iter()

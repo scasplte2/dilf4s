@@ -38,8 +38,8 @@ object SdkSources {
         val modules = parsed.map(_._1)
         modules.flatTraverse(m => profile.module(m)).flatMap { rules =>
           val models = rules.toMap
-          val ts = new TsEmitter(models)
-          val rs = new RustEmitter(models)
+          val ts = new TsEmitter(models, profile.schema.doc)
+          val rs = new RustEmitter(models, profile.schema.doc)
           (
             modules.traverse(m => ts.module(m).map(s"${CanonicalEmitter.packageSegment(m)}.ts" -> _)),
             modules.traverse(m => rs.module(m).map(s"${CanonicalEmitter.packageSegment(m)}.rs" -> _))

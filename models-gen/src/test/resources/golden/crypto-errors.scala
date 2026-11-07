@@ -3,7 +3,12 @@ package xyz.kd5ujc.models.crypto_errors
 
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Codec}
 
-/** `crypto-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[CryptoErrorKind]]). */
+/**
+ * `crypto-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[CryptoErrorKind]]).
+ *
+ * A signing key, verifying key or signature that its scheme does not accept (signing.md section 4). BackendFailure is
+ * a JVM provider's own failure: no SDK produces it.
+ */
 sealed trait CryptoError extends Product with Serializable {
 
   /** This error's kind. */
@@ -43,7 +48,12 @@ object CryptoErrorKind {
   )
 }
 
-/** `groth16-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[Groth16ErrorKind]]). */
+/**
+ * `groth16-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[Groth16ErrorKind]]).
+ *
+ * A Groth16 refusal (zk.md section 2): a wrong shape; a point off the curve, outside the subgroup or the identity, or
+ * an input not in Fr; the pairing equation failing; or a wrapper's framing (SP1's selector, exit code or VK root).
+ */
 sealed trait Groth16Error extends Product with Serializable {
 
   /** This error's kind. */
@@ -88,7 +98,12 @@ object Groth16ErrorKind {
   )
 }
 
-/** `kes-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[KesErrorKind]]). */
+/**
+ * `kes-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[KesErrorKind]]).
+ *
+ * A KES refusal (kes.md section 5): a wrong size, a period outside [0, total), a key at its last period asked to
+ * evolve, or a key whose parts disagree.
+ */
 sealed trait KesError extends Product with Serializable {
 
   /** This error's kind. */
@@ -133,7 +148,14 @@ object KesErrorKind {
   )
 }
 
-/** `key-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[KeyErrorKind]]). */
+/**
+ * `key-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[KeyErrorKind]]).
+ *
+ * A key derivation the reference refuses (signing.md sections 2 and 3). InvalidPath carries the first rule the path
+ * breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
+ * (a separator of more than one character is refused by its length, before it is read, and has none); the reference's
+ * word lists are its own languages', so it never names one.
+ */
 sealed trait KeyError extends Product with Serializable {
 
   /** This error's kind. */
@@ -183,6 +205,11 @@ object KeyErrorKind {
   )
 }
 
+/**
+ * Why a derivation path is refused (signing.md section 3), its segments checked in order: "missingMaster" (it is not
+ * `m` and does not start with `m/`), "malformed" (a segment is not ASCII digits and an optional `'` or `h`),
+ * "leadingZero", "tooManyDigits" (more than 10), "outOfRange" (2^31 or more), "tooDeep" (a 256th segment).
+ */
 type PathRefusal = "missingMaster" | "malformed" | "leadingZero" | "tooManyDigits" | "outOfRange" | "tooDeep"
 
 object PathRefusal {
@@ -205,7 +232,11 @@ object PathRefusal {
   )
 }
 
-/** `sigma-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[SigmaErrorKind]]). */
+/**
+ * `sigma-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[SigmaErrorKind]]).
+ *
+ * Malformed sigma input (sigma.md section 6). A well-formed proof that fails is a result (false), never one of these.
+ */
 sealed trait SigmaError extends Product with Serializable {
 
   /** This error's kind. */
@@ -250,7 +281,12 @@ object SigmaErrorKind {
   )
 }
 
-/** `vrf-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[VrfErrorKind]]). */
+/**
+ * `vrf-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[VrfErrorKind]]).
+ *
+ * A VRF refusal (vrf.md section 3). Malformed is a wrong length; KeyMismatch a draft-03 signing key whose stored
+ * public key is not its seed's; HashToCurveFailed is TAI finding no point in 256 counters (probability about 2^-256).
+ */
 sealed trait VrfError extends Product with Serializable {
 
   /** This error's kind. */
@@ -315,7 +351,12 @@ object VrfErrorKind {
   )
 }
 
-/** `zk-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[ZkErrorKind]]). */
+/**
+ * `zk-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[ZkErrorKind]]).
+ *
+ * A BN254 operation's refusal (zk.md section 1): a wrong length or a coordinate not below p; or a point off the curve
+ * or twist, or a G2 point outside the order-r subgroup.
+ */
 sealed trait ZkError extends Product with Serializable {
 
   /** This error's kind. */

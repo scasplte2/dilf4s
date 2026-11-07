@@ -1,246 +1,44 @@
-//! The operations of language version 1, by wire name (`Ast.scala` `Op`). A program naming anything else does not
+//! The operations of language version 1, by wire name: [`Op`] is generated from `shared/schemas/jlvm.cddl`
+//! (`jlvm-op`), with its `wire()`, `from_wire` (its own names only) and `ALL`. A program naming anything else does not
 //! parse, so adding an operation in a later version never changes what an existing program means.
 
-macro_rules! ops {
-    ($($(#[$doc:meta])* $name:ident => $wire:literal,)*) => {
-        /// An operation of language version 1.
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub enum Op {
-            $($(#[$doc])* $name,)*
-        }
+pub use dilf4s_core::generated::jlvm::JlvmOp as Op;
 
-        impl Op {
-            /// Every operation, in declaration order.
-            pub const ALL: &'static [Self] = &[$(Self::$name,)*];
-
-            /// The operation's own name (the canonical form records only this).
-            pub const fn wire(self) -> &'static str {
-                match self {
-                    $(Self::$name => $wire,)*
-                }
-            }
-
-            /// The operation with this own name; aliases are not accepted (the canonical form).
-            pub fn from_canonical(name: &str) -> Option<Self> {
-                match name {
-                    $($wire => Some(Self::$name),)*
-                    _ => None,
-                }
-            }
-        }
-    };
-}
-
-ops! {
-    /// `if`
-    If => "if",
-    /// `and`
-    And => "and",
-    /// `or`
-    Or => "or",
-    /// `!`
-    Not => "!",
-    /// `!!`
-    Truthy => "!!",
-    /// `default`
-    Default => "default",
-    /// `let`
-    Let => "let",
-    /// `==`
-    Eq => "==",
-    /// `!=`
-    Ne => "!=",
-    /// `===`
-    StrictEq => "===",
-    /// `!==`
-    StrictNe => "!==",
-    /// `<`
-    Lt => "<",
-    /// `<=`
-    Le => "<=",
-    /// `>`
-    Gt => ">",
-    /// `>=`
-    Ge => ">=",
-    /// `+`
-    Add => "+",
-    /// `-`
-    Sub => "-",
-    /// `*`
-    Mul => "*",
-    /// `/`
-    Div => "/",
-    /// `%`
-    Mod => "%",
-    /// `min`
-    Min => "min",
-    /// `max`
-    Max => "max",
-    /// `abs`
-    Abs => "abs",
-    /// `round`
-    Round => "round",
-    /// `round_half_up`
-    RoundHalfUp => "round_half_up",
-    /// `floor`
-    Floor => "floor",
-    /// `ceil`
-    Ceil => "ceil",
-    /// `pow`
-    Pow => "pow",
-    /// `map`
-    Map => "map",
-    /// `filter`
-    Filter => "filter",
-    /// `reduce`
-    Reduce => "reduce",
-    /// `all`
-    All => "all",
-    /// `some`
-    Some => "some",
-    /// `none`
-    None => "none",
-    /// `find`
-    Find => "find",
-    /// `count`
-    Count => "count",
-    /// `merge`
-    Merge => "merge",
-    /// `in`
-    In => "in",
-    /// `intersect`
-    Intersect => "intersect",
-    /// `unique`
-    Unique => "unique",
-    /// `slice`
-    Slice => "slice",
-    /// `reverse`
-    Reverse => "reverse",
-    /// `flatten`
-    Flatten => "flatten",
-    /// `length`
-    Length => "length",
-    /// `cat`
-    Cat => "cat",
-    /// `substr`
-    Substr => "substr",
-    /// `lower`
-    Lower => "lower",
-    /// `upper`
-    Upper => "upper",
-    /// `join`
-    Join => "join",
-    /// `split`
-    Split => "split",
-    /// `trim`
-    Trim => "trim",
-    /// `startsWith`
-    StartsWith => "startsWith",
-    /// `endsWith`
-    EndsWith => "endsWith",
-    /// `keys`
-    Keys => "keys",
-    /// `values`
-    Values => "values",
-    /// `entries`
-    Entries => "entries",
-    /// `get`
-    Get => "get",
-    /// `has`
-    Has => "has",
-    /// `set`
-    Set => "set",
-    /// `unset`
-    Unset => "unset",
-    /// `exists`
-    Exists => "exists",
-    /// `missing`
-    Missing => "missing",
-    /// `missing_some`
-    MissingSome => "missing_some",
-    /// `typeof`
-    TypeOf => "typeof",
-    /// `hex`
-    Hex => "hex",
-    /// `unhex`
-    Unhex => "unhex",
-    /// `hex_to_int`
-    HexToInt => "hex_to_int",
-    /// `bytes_to_int`
-    BytesToInt => "bytes_to_int",
-    /// `int_to_bytes`
-    IntToBytes => "int_to_bytes",
-    /// `sha256`
-    Sha256 => "sha256",
-    /// `sha3_256`
-    Sha3_256 => "sha3_256",
-    /// `keccak256`
-    Keccak256 => "keccak256",
-    /// `blake2b256`
-    Blake2b256 => "blake2b256",
-    /// `ed25519_verify`
-    Ed25519Verify => "ed25519_verify",
-    /// `secp256k1_verify`
-    Secp256k1Verify => "secp256k1_verify",
-    /// `bip340_verify`
-    Bip340Verify => "bip340_verify",
-    /// `ecrecover`
-    Ecrecover => "ecrecover",
-    /// `bls_verify`
-    BlsVerify => "bls_verify",
-    /// `bls_aggregate_verify`
-    BlsAggregateVerify => "bls_aggregate_verify",
-    /// `poseidon`
-    Poseidon => "poseidon",
-    /// `pmt_verify`
-    PmtVerify => "pmt_verify",
-    /// `groth16_verify`
-    Groth16Verify => "groth16_verify",
-    /// `ecvrf_verify`
-    EcvrfVerify => "ecvrf_verify",
-    /// `bn254_add`
-    Bn254Add => "bn254_add",
-    /// `bn254_mul`
-    Bn254Mul => "bn254_mul",
-    /// `bn254_pairing`
-    Bn254Pairing => "bn254_pairing",
-    /// `schnorr_verify`
-    SchnorrVerify => "schnorr_verify",
-    /// `sigma_verify`
-    SigmaVerify => "sigma_verify",
-    /// `merkle_verify`
-    MerkleVerify => "merkle_verify",
-    /// `merkle_consistency_verify`
-    MerkleConsistencyVerify => "merkle_consistency_verify",
-    /// `trie_verify`
-    TrieVerify => "trie_verify",
-    /// `trie_prefix_verify`
-    TriePrefixVerify => "trie_prefix_verify",
-    /// `trie_range_verify`
-    TrieRangeVerify => "trie_range_verify",
-}
-
-impl Op {
+/// What the evaluator knows of each operation beyond its name (`Op` in `Ast.scala`).
+pub trait OpClass: Copy {
     /// The operation a surface name denotes: its own name, or one of the aliases `getKey`, `setKey`, `deleteKey` and
     /// `size`, which the parser normalises so they never change a program's identity.
-    pub fn from_wire(name: &str) -> Option<Self> {
+    fn from_name(name: &str) -> Option<Self>;
+
+    /// The operations written with a single non-array argument to take that value's elements as their arguments
+    /// (`{"+": {"values": x}}`). Whether an operation spreads is fixed by the syntax, never by an evaluated value.
+    fn is_variadic(self) -> bool;
+
+    /// The cryptographic operations, which the machine hands to a [`crate::CryptoBackend`] (`CryptoOps.scala`).
+    fn is_crypto(self) -> bool;
+
+    /// Whether the operation applies to evaluated arguments (`PureOps.apply` is defined): everything except the lazy
+    /// and binding forms, the callbacks, the lookups and the cryptographic operations. `count` is also a callback when
+    /// written with two arguments; the compiler decides that by syntax.
+    fn is_strict(self) -> bool;
+}
+
+impl OpClass for Op {
+    fn from_name(name: &str) -> Option<Self> {
         match name {
             "getKey" => Some(Self::Get),
             "setKey" => Some(Self::Set),
             "deleteKey" => Some(Self::Unset),
             "size" => Some(Self::Length),
-            other => Self::from_canonical(other),
+            other => Self::from_wire(other),
         }
     }
 
-    /// The operations written with a single non-array argument to take that value's elements as their arguments
-    /// (`{"+": {"values": x}}`). Whether an operation spreads is fixed by the syntax, never by an evaluated value.
-    pub const fn is_variadic(self) -> bool {
+    fn is_variadic(self) -> bool {
         matches!(self, Self::Add | Self::Mul | Self::Min | Self::Max | Self::Cat | Self::Merge)
     }
 
-    /// The cryptographic operations, which the machine hands to a [`crate::CryptoBackend`] (`CryptoOps.scala`).
-    pub const fn is_crypto(self) -> bool {
+    fn is_crypto(self) -> bool {
         matches!(
             self,
             Self::Ed25519Verify
@@ -266,10 +64,7 @@ impl Op {
         )
     }
 
-    /// Whether the operation applies to evaluated arguments (`PureOps.apply` is defined): everything except the lazy
-    /// and binding forms, the callbacks, the lookups and the cryptographic operations. `count` is also a callback when
-    /// written with two arguments; the compiler decides that by syntax.
-    pub const fn is_strict(self) -> bool {
+    fn is_strict(self) -> bool {
         !self.is_crypto()
             && !matches!(
                 self,
@@ -307,5 +102,57 @@ pub(crate) fn removed(name: &str) -> Option<&'static str> {
 
 /// Names that may not head an array, which would read as a call: `["+", 1, 2]`, `["var", "a"]` (`Parser.callName`).
 pub(crate) fn call_name(s: &str) -> bool {
-    s == "var" || Op::from_wire(s).is_some() || removed(s).is_some()
+    s == "var" || Op::from_name(s).is_some() || removed(s).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use super::{Op, OpClass};
+    use crate::error::JlvmError;
+
+    /// The forms the compiler builds itself (`node::compile`): the lazy and binding forms, the callbacks and the lookups.
+    const FORMS: [Op; 14] = [
+        Op::If,
+        Op::And,
+        Op::Or,
+        Op::Default,
+        Op::Let,
+        Op::Map,
+        Op::Filter,
+        Op::Reduce,
+        Op::All,
+        Op::Some,
+        Op::None,
+        Op::Find,
+        Op::Missing,
+        Op::MissingSome,
+    ];
+
+    /// The generated `ALL` is exactly the operations the evaluator dispatches: each is a form, strict or cryptographic,
+    /// never two, and the strict and cryptographic dispatchers each have an arm for every one of theirs.
+    #[test]
+    fn every_operation_has_one_handler() {
+        let backend = crate::Native::new().unwrap();
+        for op in Op::ALL {
+            let classes = [op.is_strict(), op.is_crypto(), FORMS.contains(&op)].into_iter().filter(|c| *c).count();
+            assert_eq!(classes, 1, "{op:?} is in {classes} classes");
+            if op.is_strict() {
+                let r = crate::ops::apply(op, Vec::new());
+                assert!(
+                    !matches!(&r, Err(JlvmError::Malformed { message }) if message.ends_with("has no strict form")),
+                    "{op:?} has no strict handler"
+                );
+            }
+            if op.is_crypto() {
+                let r = crate::crypto::apply(&backend, op, &[]);
+                assert!(
+                    !matches!(&r, Err(JlvmError::Crypto { message, .. }) if message == "not a cryptographic operation"),
+                    "{op:?} has no cryptographic handler"
+                );
+            }
+        }
+        assert!(FORMS.iter().all(|f| Op::ALL.contains(f)));
+    }
 }

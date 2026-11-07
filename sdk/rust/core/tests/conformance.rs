@@ -25,26 +25,6 @@ use dilf4s_core::hash::{
 };
 use dilf4s_core::{CanonicalError, cbor, hex, json};
 
-/// The schema's kind of a refusal. Exhaustive: a variant the SDK adds does not compile until it is mapped.
-const fn schema_kind(e: &CanonicalError) -> CanonicalErrorKind {
-    match e {
-        CanonicalError::UnpairedSurrogate => CanonicalErrorKind::UnpairedSurrogate,
-        CanonicalError::RationalTooWide { .. } => CanonicalErrorKind::RationalTooWide,
-        CanonicalError::IntegerTooWide { .. } => CanonicalErrorKind::IntegerTooWide,
-        CanonicalError::DuplicateKey { .. } => CanonicalErrorKind::DuplicateKey,
-        CanonicalError::JsonSyntax { .. } => CanonicalErrorKind::JsonSyntax,
-        CanonicalError::InvalidNumber { .. } => CanonicalErrorKind::InvalidNumber,
-        CanonicalError::NotJsonRepresentable { .. } => CanonicalErrorKind::NotJsonRepresentable,
-        CanonicalError::TypeMismatch { .. } => CanonicalErrorKind::TypeMismatch,
-        CanonicalError::UnexpectedEnd { .. } => CanonicalErrorKind::UnexpectedEnd,
-        CanonicalError::TrailingBytes { .. } => CanonicalErrorKind::TrailingBytes,
-        CanonicalError::DepthExceeded { .. } => CanonicalErrorKind::DepthExceeded,
-        CanonicalError::NonCanonical { .. } => CanonicalErrorKind::NonCanonical,
-        CanonicalError::Unsupported { .. } => CanonicalErrorKind::Unsupported,
-        CanonicalError::InvalidUtf8 { .. } => CanonicalErrorKind::InvalidUtf8,
-    }
-}
-
 /// A refusal's normative limit (conformance.md section 3): `RationalTooWide` and `IntegerTooWide` carry one.
 const fn normative_limit(e: &CanonicalError) -> Option<u64> {
     match e {
@@ -56,12 +36,12 @@ const fn normative_limit(e: &CanonicalError) -> Option<u64> {
 /// A refusal as a row records it: its kind and its normative limit.
 fn refused(
     case: &str,
-    kind: &CanonicalErrorKind,
+    kind: CanonicalErrorKind,
     limit: Option<u64>,
     actual: Option<&CanonicalError>,
 ) -> Result<(), String> {
-    let actual = actual.map(|e| (schema_kind(e), normative_limit(e)));
-    if actual.as_ref().is_some_and(|(k, l)| k == kind && *l == limit) {
+    let actual = actual.map(|e| (e.kind(), normative_limit(e)));
+    if actual.as_ref().is_some_and(|(k, l)| *k == kind && *l == limit) {
         Ok(())
     } else {
         Err(format!("{case}: expected {kind:?} (limit {limit:?}), got {actual:?}"))
@@ -105,7 +85,7 @@ fn json_cases() {
             same("decode then encode", &c.json, &c.cbor, &hex::encode(&cbor::encode(&decoded)))
         }
         CanonicalJsonCase::CanonicalJsonRejected(c) => {
-            refused(&c.json, &c.error, c.limit, json::parse(&c.json).err().as_ref())
+            refused(&c.json, c.error, c.limit, json::parse(&c.json).err().as_ref())
         }
     });
     eprintln!("json: {n} cases");
@@ -129,7 +109,7 @@ fn render_rejections() {
     let n = run(&v.render_rejections, |c| {
         let value = cbor::decode(&bytes(&c.cbor)).map_err(|e| format!("{}: {e}", c.cbor))?;
         match json::render_within(&value, usize::MAX) {
-            Err(json::RenderError::Canonical(e)) => refused(&c.cbor, &c.error, None, Some(&e)),
+            Err(json::RenderError::Canonical(e)) => refused(&c.cbor, c.error, None, Some(&e)),
             other => Err(format!("{}: expected {:?}, got {other:?}", c.cbor, c.error)),
         }
     });
@@ -140,19 +120,18 @@ fn render_rejections() {
 fn cbor_rejections() {
     let (v, _, _) = vectors();
     let n =
-        run(&v.cbor_rejections, |c| refused(&c.cbor, &c.error, c.limit, cbor::decode(&bytes(&c.cbor)).err().as_ref()));
+        run(&v.cbor_rejections, |c| refused(&c.cbor, c.error, c.limit, cbor::decode(&bytes(&c.cbor)).err().as_ref()));
     eprintln!("cborRejections: {n} cases");
 }
 
 /// The coverage gate (conformance.md section 6) for `CanonicalError`: every kind of the schema's `canonical-error-kind`
-/// has a row. [`schema_kind`] maps every SDK variant onto a schema kind (exhaustively, so a new variant does not compile
-/// until it is mapped), so every SDK kind has a row too.
+/// has a row. The SDK's error is generated from the same schema (`codec-errors.cddl`), so its kinds are these.
 #[test]
 fn every_canonical_error_kind_has_a_row() {
     let (v, _, _) = vectors();
     let vt: VersionedTrieVectors = load("versioned_trie_v1.json");
     let json = v.json.iter().filter_map(|c| match c {
-        CanonicalJsonCase::CanonicalJsonRejected(r) => Some(r.error.clone()),
+        CanonicalJsonCase::CanonicalJsonRejected(r) => Some(r.error),
         CanonicalJsonCase::CanonicalJsonAccepted(_) => None,
     });
     let typed = vt.state_keys.iter().filter_map(|c| match c.schema {
@@ -160,8 +139,8 @@ fn every_canonical_error_kind_has_a_row() {
         VtSchemaOutcome::Accepted => None,
     });
     let pinned: Vec<CanonicalErrorKind> = json
-        .chain(v.render_rejections.iter().map(|c| c.error.clone()))
-        .chain(v.cbor_rejections.iter().map(|c| c.error.clone()))
+        .chain(v.render_rejections.iter().map(|c| c.error))
+        .chain(v.cbor_rejections.iter().map(|c| c.error))
         .chain(typed)
         .collect();
     for kind in CanonicalErrorKind::ALL {
@@ -202,7 +181,7 @@ fn hash_outcome<T>(r: &Result<T, HashError>) -> (HashOutcome, Option<u64>, Optio
                 _ => None,
             },
             match e {
-                HashError::InvalidExpansion { refusal, .. } => Some(refusal.clone()),
+                HashError::InvalidExpansion { refusal, .. } => Some(*refusal),
                 _ => None,
             },
         ),
@@ -304,7 +283,7 @@ fn every_hash_error_kind_has_a_row() {
         .chain(v.expansions.iter().map(|c| &c.outcome))
         .collect();
     for kind in HashErrorKind::ALL {
-        assert!(pinned.contains(&&HashOutcome::HashErrorKind(kind.clone())), "no row pins {kind:?}");
+        assert!(pinned.contains(&&HashOutcome::HashErrorKind(kind)), "no row pins {kind:?}");
     }
     for refusal in ExpansionRefusal::ALL {
         assert!(v.expansions.iter().any(|c| c.refusal.as_ref() == Some(&refusal)), "no row pins {refusal:?}");
@@ -318,7 +297,7 @@ fn state_keys() {
         let decoded = STATE_KEY.decode(&dilf4s_core::Value::text(c.key.clone())).is_ok();
         let encoded = match STATE_KEY.encode(&c.key) {
             Ok(_) => Some(VtSchemaOutcome::Accepted),
-            Err(e) => match schema_kind(&e) {
+            Err(e) => match e.kind() {
                 CanonicalErrorKind::TypeMismatch => Some(VtSchemaOutcome::TypeMismatch),
                 _ => None,
             },

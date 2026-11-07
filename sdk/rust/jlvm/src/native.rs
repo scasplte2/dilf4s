@@ -16,12 +16,73 @@ use dilf4s_signing::{bls, ecdsa, ecrecover, ed25519, schnorr, sigma};
 use num_bigint::Sign;
 
 use crate::crypto::{CryptoBackend, CryptoFailure, KeyMode, MerkleProfile, TrieEntry};
+use crate::error::CryptoCause;
 
 type R<T> = Result<T, CryptoFailure>;
 
-#[allow(clippy::needless_pass_by_value, reason = "the error types are passed straight from `map_err`")]
-fn fail(e: impl ToString) -> CryptoFailure {
-    CryptoFailure(e.to_string())
+/// A refusal as a `Crypto` error holds it: a generated cryptographic family's refusal is its typed cause; any other
+/// (the Merkle, trie and Poseidon structures, whose refusals are not generated families) is its message alone.
+trait Failure: ToString {
+    fn cause(self) -> Option<CryptoCause>;
+}
+
+impl Failure for dilf4s_signing::CryptoError {
+    fn cause(self) -> Option<CryptoCause> {
+        Some(CryptoCause::Signing { error: self })
+    }
+}
+
+impl Failure for dilf4s_signing::SigmaError {
+    fn cause(self) -> Option<CryptoCause> {
+        Some(CryptoCause::Sigma { error: self })
+    }
+}
+
+impl Failure for zk::ZkError {
+    fn cause(self) -> Option<CryptoCause> {
+        Some(CryptoCause::Zk { error: self })
+    }
+}
+
+impl Failure for groth16::Groth16Error {
+    fn cause(self) -> Option<CryptoCause> {
+        Some(CryptoCause::Groth16 { error: self })
+    }
+}
+
+impl Failure for dilf4s_signing::VrfError {
+    fn cause(self) -> Option<CryptoCause> {
+        Some(CryptoCause::Vrf { error: self })
+    }
+}
+
+impl Failure for dilf4s_core::hash::HashError {
+    fn cause(self) -> Option<CryptoCause> {
+        Some(CryptoCause::Hash { error: self })
+    }
+}
+
+impl Failure for merkle::MerkleError {
+    fn cause(self) -> Option<CryptoCause> {
+        None
+    }
+}
+
+impl Failure for trie::TrieError {
+    fn cause(self) -> Option<CryptoCause> {
+        None
+    }
+}
+
+impl Failure for poseidon::PoseidonError {
+    fn cause(self) -> Option<CryptoCause> {
+        None
+    }
+}
+
+fn fail(e: impl Failure) -> CryptoFailure {
+    let message = e.to_string();
+    CryptoFailure { cause: e.cause(), message }
 }
 
 /// The native backend. It holds what is decoded once: SP1's Groth16 verifying key, and the Merkle and trie hashings.
@@ -118,7 +179,7 @@ impl CryptoBackend for Native {
         let sibs = siblings.iter().map(|b| fr(b)).collect::<R<Vec<_>>>()?;
         let depth = sibs.len();
         // decided on the borrowed index, before any copy, and never rendered: it may be millions of bits
-        let out_of_range = || CryptoFailure(alloc::format!("index is out of range for depth {depth}"));
+        let out_of_range = || CryptoFailure::new(alloc::format!("index is out of range for depth {depth}"));
         let fits = u64::try_from(depth).is_ok_and(|d| index.bits() <= d);
         if index.sign() == Sign::Minus || !fits {
             return Err(out_of_range());
@@ -131,7 +192,7 @@ impl CryptoBackend for Native {
     fn groth16_verify(&self, vkey: &[u8], public_values: &[u8], proof: &[u8]) -> R<bool> {
         match groth16::sp1::verify_with(&self.groth16, vkey, public_values, proof) {
             Ok(()) => Ok(true),
-            Err(groth16::Groth16Error::Malformed { reason }) => Err(CryptoFailure(reason)),
+            Err(e @ groth16::Groth16Error::Malformed { .. }) => Err(fail(e)),
             Err(
                 groth16::Groth16Error::InvalidProof { .. }
                 | groth16::Groth16Error::PairingCheckFailed

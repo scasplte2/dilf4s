@@ -35,14 +35,14 @@ object ProofOpsSuite extends IOSuite {
   }
 
   private def isCrypto(r: Either[JlvmError, CanonicalValue]): Boolean = r match {
-    case Left(JlvmError.Crypto(_, _)) => true
-    case _                            => false
+    case Left(JlvmError.Crypto(_, _, _)) => true
+    case _                               => false
   }
 
   /** Not covered is a `Crypto` error (jlvm.md §6) carrying the typed `TrieError.NotCovered`. */
   private def notCovered(r: Either[JlvmError, CanonicalValue]): Boolean = r match {
-    case Left(JlvmError.Crypto(_, m)) => m.startsWith("NotCovered(")
-    case _                            => false
+    case Left(JlvmError.Crypto(_, m, _)) => m.startsWith("NotCovered(")
+    case _                               => false
   }
 
   // ---- Merkle

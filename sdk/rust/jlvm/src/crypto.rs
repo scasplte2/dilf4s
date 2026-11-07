@@ -7,7 +7,7 @@
 //! is the same: where the reference decodes something cryptographic before checking a later argument's kind (a sigma
 //! proposition, a Merkle proof), the backend is called at that point. Every backend failure is a `Crypto` error.
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use dilf4s_core::value::Text;
@@ -16,7 +16,7 @@ use dilf4s_proofs::MAX_PROOF_WEIGHT;
 use num_bigint::Sign;
 use num_traits::{Signed, ToPrimitive};
 
-use crate::error::JlvmError;
+use crate::error::{CryptoCause, JlvmError, Raise};
 use crate::op::Op;
 use crate::values::{self, kind};
 
@@ -25,12 +25,23 @@ type Result<T> = core::result::Result<T, JlvmError>;
 /// Why a backend refused its input: malformed cryptographic input (a well-formed proof that does not verify is
 /// `false`, not a failure). Reported as a `Crypto` error.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CryptoFailure(pub String);
+pub struct CryptoFailure {
+    /// The cryptographic family's typed refusal, when one refused (the `Crypto` error's `cause`).
+    pub cause: Option<CryptoCause>,
+    /// What was wrong.
+    pub message: String,
+}
 
 impl CryptoFailure {
-    /// A failure with this message.
+    /// A failure with this message and no typed cause.
     pub fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
+        Self { cause: None, message: message.into() }
+    }
+
+    /// A failure a family's typed refusal caused, with the refusal's message.
+    pub fn of(cause: CryptoCause) -> Self {
+        let message = cause.to_string();
+        Self { cause: Some(cause), message }
     }
 }
 
@@ -208,13 +219,12 @@ const G1_BYTES: usize = 64;
 const G2_BYTES: usize = 128;
 const VRF_KEY_BYTES: usize = 32;
 const VRF_PROOF_BYTES: usize = 80;
-const DIGEST_BYTES: usize = 32;
 
 /// Runs cryptographic operation `op` on its evaluated arguments.
 #[allow(clippy::too_many_lines, reason = "one arm per operation")]
 pub(crate) fn apply(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> {
     let w = op.wire();
-    let fail = |e: CryptoFailure| JlvmError::crypto(op, e.0);
+    let fail = |e: CryptoFailure| JlvmError::crypto(op, e.cause, e.message);
     match op {
         Op::Ed25519Verify => {
             triple(op, args).and_then(|(k, m, s)| backend.ed25519_verify(k, m, s).map(Value::Bool).map_err(fail))
@@ -313,7 +323,7 @@ pub(crate) fn apply(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Resu
         Op::TrieVerify => trie(backend, op, args),
         Op::TriePrefixVerify => trie_prefix(backend, op, args),
         Op::TrieRangeVerify => trie_range(backend, op, args),
-        _ => Err(JlvmError::crypto(op, "not a cryptographic operation")),
+        _ => Err(JlvmError::crypto(op, None, "not a cryptographic operation")),
     }
 }
 
@@ -341,7 +351,7 @@ fn sized<'v>(op: Op, role: &str, v: &'v Value, width: usize) -> Result<&'v [u8]>
     if b.len() == width {
         Ok(b)
     } else {
-        Err(JlvmError::crypto(op, alloc::format!("{role}: expected {width} bytes, got {}", b.len())))
+        Err(JlvmError::crypto(op, None, alloc::format!("{role}: expected {width} bytes, got {}", b.len())))
     }
 }
 
@@ -352,7 +362,11 @@ fn fr<'v>(op: Op, role: &str, v: &'v Value) -> Result<&'v [u8]> {
     if BigInt::from_bytes_be(Sign::Plus, b) < r {
         Ok(b)
     } else {
-        Err(JlvmError::crypto(op, alloc::format!("{role}: not a canonical BN254 scalar field element (must be < r)")))
+        Err(JlvmError::crypto(
+            op,
+            None,
+            alloc::format!("{role}: not a canonical BN254 scalar field element (must be < r)"),
+        ))
     }
 }
 
@@ -375,7 +389,7 @@ fn poseidon(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value
     }
     let xs =
         inputs.iter().enumerate().map(|(i, v)| fr(op, &alloc::format!("input[{i}]"), v)).collect::<Result<Vec<_>>>()?;
-    let digest = backend.poseidon(&xs).map_err(|e| JlvmError::crypto(op, e.0))?;
+    let digest = backend.poseidon(&xs).map_err(|e| JlvmError::crypto(op, e.cause, e.message))?;
     values::bounded(op.wire(), Value::bytes(digest))
 }
 
@@ -395,6 +409,7 @@ fn pmt(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> {
     if raw.items().len() > MAX_SIBLINGS {
         return Err(JlvmError::crypto(
             op,
+            None,
             alloc::format!("at most {MAX_SIBLINGS} siblings, got {}", raw.items().len()),
         ));
     }
@@ -404,7 +419,10 @@ fn pmt(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> {
         .enumerate()
         .map(|(i, v)| fr(op, &alloc::format!("sibling[{i}]"), v))
         .collect::<Result<Vec<_>>>()?;
-    backend.pmt_verify(root, leaf, index, &siblings).map(Value::Bool).map_err(|e| JlvmError::crypto(op, e.0))
+    backend
+        .pmt_verify(root, leaf, index, &siblings)
+        .map(Value::Bool)
+        .map_err(|e| JlvmError::crypto(op, e.cause, e.message))
 }
 
 /// `bn254_pairing [[g1, g2], ..]` or `[[[g1, g2], ..]]`: a single argument whose elements are all arrays is the list.
@@ -414,7 +432,7 @@ fn pairing(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value>
         _ => args,
     };
     if pairs.len() > MAX_PAIRS {
-        return Err(JlvmError::crypto(op, alloc::format!("at most {MAX_PAIRS} pairs, got {}", pairs.len())));
+        return Err(JlvmError::crypto(op, None, alloc::format!("at most {MAX_PAIRS} pairs, got {}", pairs.len())));
     }
     let ps = pairs
         .iter()
@@ -427,6 +445,7 @@ fn pairing(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value>
                 )),
                 other => Err(JlvmError::crypto(
                     op,
+                    None,
                     alloc::format!("pair[{i}]: expected [g1, g2], got {} elements", other.len()),
                 )),
             },
@@ -435,7 +454,7 @@ fn pairing(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value>
             }
         })
         .collect::<Result<Vec<_>>>()?;
-    backend.bn254_pairing(&ps).map(Value::Bool).map_err(|e| JlvmError::crypto(op, e.0))
+    backend.bn254_pairing(&ps).map(Value::Bool).map_err(|e| JlvmError::crypto(op, e.cause, e.message))
 }
 
 // ---- Merkle trees (merkle.md)
@@ -448,16 +467,19 @@ fn digest<'v>(op: Op, what: &str, v: &'v Value) -> Result<&'v [u8]> {
             return Err(JlvmError::type_error(op, alloc::format!("{what} is bytes, got {}", kind(other))));
         }
     };
-    if b.len() == DIGEST_BYTES {
-        Ok(b)
-    } else {
-        Err(JlvmError::crypto(op, alloc::format!("{what}: expected {DIGEST_BYTES} bytes, got {}", b.len())))
+    // a digest of the wrong length is the hash family's refusal, as the reference's `Digest.fromBytes` makes it
+    match dilf4s_core::hash::Digest::<dilf4s_core::hash::Sha256>::from_slice(b) {
+        Ok(_) => Ok(b),
+        Err(e) => {
+            let message = alloc::format!("{what}: {e}");
+            Err(JlvmError::crypto(op, Some(CryptoCause::Hash { error: e }), message))
+        }
     }
 }
 
 /// A trusted tree head `{root, size}`.
 fn head<'v>(op: Op, what: &str, v: &'v Value) -> Result<(&'v [u8], u64)> {
-    let crypto = |m: String| JlvmError::crypto(op, m);
+    let crypto = |m: String| JlvmError::crypto(op, None, m);
     let Value::Map(m) = v else {
         return Err(crypto(alloc::format!("{what} is a tree head {{root, size}}")));
     };
@@ -491,7 +513,7 @@ fn profile(op: Op, rest: &[Value]) -> Result<MerkleProfile> {
 fn claims<'a>(op: Op, values: impl IntoIterator<Item = &'a Value>) -> Result<()> {
     let total = values.into_iter().fold(0u64, |t, v| t.saturating_add(v.weight()));
     if total > MAX_PROOF_WEIGHT {
-        return Err(JlvmError::crypto(op, alloc::format!("the claims weigh over {MAX_PROOF_WEIGHT}")));
+        return Err(JlvmError::crypto(op, None, alloc::format!("the claims weigh over {MAX_PROOF_WEIGHT}")));
     }
     Ok(())
 }
@@ -500,7 +522,7 @@ fn merkle(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> 
     let [h, leaf, proof, rest @ ..] = args else {
         return Err(arity(op, String::from("takes [head, leaf, proof] or [head, leaf, proof, profile]")));
     };
-    let fail = |e: CryptoFailure| JlvmError::crypto(op, e.0);
+    let fail = |e: CryptoFailure| JlvmError::crypto(op, e.cause, e.message);
     let (root, size) = head(op, "head", h)?;
     let p = profile(op, rest)?;
     claims(op, [leaf])?;
@@ -519,7 +541,7 @@ fn consistency(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Va
     let [o, n, proof, rest @ ..] = args else {
         return Err(arity(op, String::from("takes [oldHead, newHead, proof] or [oldHead, newHead, proof, profile]")));
     };
-    let fail = |e: CryptoFailure| JlvmError::crypto(op, e.0);
+    let fail = |e: CryptoFailure| JlvmError::crypto(op, e.cause, e.message);
     let (old_root, old_size) = head(op, "oldHead", o)?;
     let (new_root, new_size) = head(op, "newHead", n)?;
     let p = profile(op, rest)?;
@@ -570,7 +592,7 @@ fn key_path(op: Op, m: KeyMode, v: &Value) -> Result<&[u8]> {
     if m.admits(b) {
         Ok(b)
     } else {
-        Err(JlvmError::crypto(op, alloc::format!("a key invalid for the mode {m:?}: {} bytes", b.len())))
+        Err(JlvmError::crypto(op, None, alloc::format!("a key invalid for the mode {m:?}: {} bytes", b.len())))
     }
 }
 
@@ -600,7 +622,7 @@ fn trie(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> {
     let claimed = (*value != Value::Null).then_some(value);
     claims(op, claimed)?;
     let r = digest(op, "root", root)?;
-    backend.trie_verify(m, r, k, claimed, proof).map(Value::Bool).map_err(|e| JlvmError::crypto(op, e.0))
+    backend.trie_verify(m, r, k, claimed, proof).map(Value::Bool).map_err(|e| JlvmError::crypto(op, e.cause, e.message))
 }
 
 fn trie_prefix(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> {
@@ -617,7 +639,10 @@ fn trie_prefix(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Va
     let claimed = entries(op, m, es)?;
     claims(op, claimed.iter().map(|(_, v)| *v))?;
     let r = digest(op, "root", root)?;
-    backend.trie_prefix_verify(m, r, pre, &claimed, proof).map(Value::Bool).map_err(|e| JlvmError::crypto(op, e.0))
+    backend
+        .trie_prefix_verify(m, r, pre, &claimed, proof)
+        .map(Value::Bool)
+        .map_err(|e| JlvmError::crypto(op, e.cause, e.message))
 }
 
 fn trie_range(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> {
@@ -637,5 +662,8 @@ fn trie_range(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Val
     let claimed = entries(op, m, es)?;
     claims(op, claimed.iter().map(|(_, v)| *v))?;
     let r = digest(op, "root", root)?;
-    backend.trie_range_verify(m, r, lo, hi, &claimed, proof).map(Value::Bool).map_err(|e| JlvmError::crypto(op, e.0))
+    backend
+        .trie_range_verify(m, r, lo, hi, &claimed, proof)
+        .map(Value::Bool)
+        .map_err(|e| JlvmError::crypto(op, e.cause, e.message))
 }

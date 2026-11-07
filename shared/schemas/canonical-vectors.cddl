@@ -1,5 +1,6 @@
 ; Schema of shared/vectors/canonical_encoding_v1.json (conformance vectors for docs/specs/canonical-encoding.md).
 ;# import hash-errors as errors
+;# import codec-errors as codec
 
 canonical-vectors = {
   "spec": "docs/specs/canonical-encoding.md",
@@ -34,9 +35,9 @@ canonical-render-rejection = { "cbor": hex, "error": canonical-error-kind }
 
 canonical-cbor-rejection = { "cbor": hex, "error": canonical-error-kind, ? "limit": uint }
 
-; Every kind of CanonicalError (conformance.md section 1). TypeMismatch, a typed encoder's refusal, is pinned by the
-; "schema" outcome of versioned_trie_v1.json's state keys.
-canonical-error-kind = "UnpairedSurrogate" / "DuplicateKey" / "RationalTooWide" / "IntegerTooWide" / "JsonSyntax" / "InvalidNumber" / "NotJsonRepresentable" / "TypeMismatch" / "UnexpectedEnd" / "TrailingBytes" / "DepthExceeded" / "NonCanonical" / "Unsupported" / "InvalidUtf8"
+; A kind of CanonicalError (codec-errors.cddl; conformance.md section 1). TypeMismatch, a typed encoder's refusal, is
+; pinned by the "schema" outcome of versioned_trie_v1.json's state keys.
+canonical-error-kind = codec.canonical-error-kind
 
 canonical-tagged-hash = { "algorithm": text, "tag": text, "message": hex, "digest": hex }
 

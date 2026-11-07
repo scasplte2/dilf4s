@@ -53,6 +53,12 @@ impl c::Model for BuiltStep {
 }
 
 /// `built-value` (`shared/schemas/refusal-vectors.cddl`).
+///
+/// A canonical value given by how it is built, so that a value with shared parts, far heavier than its description,
+/// fits in the file (canonical CBOR has no sharing). Start from "leaf" (canonical CBOR); then apply each step in order:
+/// {"template": t, "times": n} replaces, n times over, every text "$" in the canonical value t by the value so far;
+/// {"copies": n} makes an array of n of it. Every occurrence is the one value, shared: a built value can weigh up to
+/// 2^63 - 1 (its weight saturates), so a loader builds it with sharing and never encodes, renders or copies it whole.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BuiltValue {
     /// The `leaf` entry.
@@ -111,6 +117,12 @@ pub type Hex = String;
 pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 
 /// `refusal-case` (`shared/schemas/refusal-vectors.cddl`).
+///
+/// One call. "check" names the entry point and the arguments it reads (conformance.md section 6); a case carries only
+/// those. "input" is the caller's value (a proof, delta or value); "inputs" are deltas a replica applies in order;
+/// "zeros" is a byte input of that many zero bytes, "chunk" one given as hex. "claim" is a claimed value (a Merkle leaf, a trie value; absent
+/// claims absence), "entries" a claimed listing, "batch" the writes of a commit at version 1. "stateKey" is a versioned-trie state key; "key" a trie key; "at" a
+/// version; "size" a Merkle tree size.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefusalCase {
     /// The `name` entry.
@@ -205,7 +217,7 @@ impl c::Model for RefusalCase {
 }
 
 /// `refusal-check` (`shared/schemas/refusal-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RefusalCheck {
     /// The text `vt-value`.
     VtValue,
@@ -285,6 +297,28 @@ impl c::Model for RefusalCheck {
 impl RefusalCheck {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 15] = [Self::VtValue, Self::VtChunk, Self::VtDelta, Self::VtProof, Self::VtState, Self::VtHistorical, Self::VtReplica, Self::MerkleInclusion, Self::MerkleConsistency, Self::TrieLookup, Self::PoseidonProof, Self::MerkleVerify, Self::TrieVerify, Self::TriePrefixVerify, Self::VtCommit];
+}
+
+impl core::fmt::Display for RefusalCheck {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::VtValue => f.write_str("vt-value"),
+            Self::VtChunk => f.write_str("vt-chunk"),
+            Self::VtDelta => f.write_str("vt-delta"),
+            Self::VtProof => f.write_str("vt-proof"),
+            Self::VtState => f.write_str("vt-state"),
+            Self::VtHistorical => f.write_str("vt-historical"),
+            Self::VtReplica => f.write_str("vt-replica"),
+            Self::MerkleInclusion => f.write_str("merkle-inclusion"),
+            Self::MerkleConsistency => f.write_str("merkle-consistency"),
+            Self::TrieLookup => f.write_str("trie-lookup"),
+            Self::PoseidonProof => f.write_str("poseidon-proof"),
+            Self::MerkleVerify => f.write_str("merkle-verify"),
+            Self::TrieVerify => f.write_str("trie-verify"),
+            Self::TriePrefixVerify => f.write_str("trie-prefix-verify"),
+            Self::VtCommit => f.write_str("vt-commit"),
+        }
+    }
 }
 
 /// `refusal-entry` (`shared/schemas/refusal-vectors.cddl`).
@@ -396,6 +430,9 @@ impl c::Model for RefusalMode {
 }
 
 /// `refusal-outcome` (`shared/schemas/refusal-vectors.cddl`).
+///
+/// "accepted", or a refusal: its kind (a nested kind as "Outer.Inner", e.g. "Trie.Encoding") and the fields
+/// conformance.md section 3 names normative for it, each present exactly when the kind has it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefusalOutcome {
     /// A [`RefusalError`].
@@ -427,6 +464,8 @@ impl RefusalOutcome {
 }
 
 /// `refusal-upsert` (`shared/schemas/refusal-vectors.cddl`).
+///
+/// A write in a commit's batch: a state key and its value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefusalUpsert {
     /// The `stateKey` entry.

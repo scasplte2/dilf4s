@@ -159,7 +159,7 @@ refusal kind a spec defines must have a row. The gated families, and where their
 | zk | `ZkError`, `Groth16Error` | `zk_v1.json` |
 | canonical codecs | `CanonicalError` | `canonical_encoding_v1.json`: `json`, `renderRejections` and `cborRejections` (each kind with its normative `limit`); `TypeMismatch`, a typed encoder's refusal, by the `schema` outcome of `versioned_trie_v1.json`'s `stateKeys` |
 | state keys | `StateKeyError` | `versioned_trie_v1.json`: `stateKeys`, `stateKeyBytes` and `namespaces` (each kind with its normative `segment`); `refusals_v1.json`'s `Key.` kinds |
-| JLVM | `JlvmError` and its `Site` | `jlvm_v1.json`: each failing case's `outcome` (`error`, and `op` where the kind has one) |
+| JLVM | `JlvmError` and its `Site` (`jlvm-errors.cddl`) | `jlvm_v1.json`: each failing case's `outcome` (`error`, and `op` where the kind has one) |
 | hashing | `HashError` | `canonical_encoding_v1.json`: `domainTags`, `algorithms` (names), `digestHex` (digest lengths and hex, `InvalidHex` with its normative `offset`) and `expansions` (`expand_message_xmd`, `InvalidExpansion` with its normative `refusal`) |
 
 Each kind of these families has a row, except the kinds below, which no input reaches through an SDK's verifier.
@@ -243,24 +243,38 @@ which decodes the hex, a domain tag, a hash function by name, and `expand_messag
 also expose hex decoding itself (`hex::decode`, `fromHex`), refusing with the same `InvalidHex`; the reference keeps its
 hex reader private to the digest.
 
-**The codec families.** `canonical-error-kind` lists every kind of `CanonicalError`; the state keys' `schema` records
-`TypeMismatch` (`vt-schema-outcome`). The reference's `CodecRefusalCoverageSuite` gates `CanonicalError` as above,
-reading the rows through their generated models; the Rust (`core/tests/conformance.rs`) and TypeScript
-(`core/test/conformance.test.ts`) tests map the SDK's error onto `canonical-error-kind` exhaustively, check each row's
-kind and `limit`, and check that every kind has a row. `state-key-error-kind` lists every kind of `StateKeyError`: the
-reference's `RefusalCoverageSuite` gates it with the verifier families, and the Rust (`proofs/tests/versioned.rs`)
-and TypeScript (`proofs/test/versioned.test.ts`) tests do the same with its `segment`.
+**The codec families.** `shared/schemas/codec-errors.cddl` defines `canonical-error` (`CanonicalError`) and
+`state-key-error` (`StateKeyError`) as `crypto-errors.cddl` defines the crypto families, so each is generated in
+every language with the same kinds and fields (Scala `xyz.kd5ujc.core.canonical.CanonicalError` and
+`xyz.kd5ujc.accumulators.versioned.StateKeyError`, Rust `dilf4s_core::CanonicalError` and
+`dilf4s_proofs::versioned::StateKeyError`, TypeScript `CanonicalError` and `StateKeyError`); the vector schemas name
+their kinds (`canonical-error-kind`, `state-key-error-kind`). A canonical refusal's reasons are closed types too:
+`JsonSyntax`'s `reason` (`json-syntax-reason`), `NonCanonical`'s (`non-canonical-reason`), `NotJsonRepresentable`'s
+`what` (`not-json`), and two families nested in it, `InvalidNumber`'s `bound` (`number-bound`: the `Digits` counted, or
+the `Scale` saturated at the 32-bit range, each with its `limit`) and `Unsupported`'s `item` (`unsupported-item`: a
+float or simple value by its additional information, a simple value, an indefinite length, reserved additional
+information, a tag by its number, a non-text key). Of a number past both digit bounds, `Digits` counts the
+significand's. `InvalidNumber`'s `length` and `offset` are absent only where the reference's circe bridge converts a
+number circe holds without its text. `not-json`'s `over-long rendering` is the reference's `render` alone, past the
+longest rendering it can build: the Rust and TypeScript SDKs render within a limit the caller gives, and refuse past it
+as `TooLarge`, which is not a `CanonicalError` in any SDK. The state keys' `schema` records `TypeMismatch`
+(`vt-schema-outcome`). The reference's `CodecRefusalCoverageSuite` gates `CanonicalError` as above, reading the rows
+through their generated models; the Rust (`core/tests/conformance.rs`) and TypeScript (`core/test/conformance.test.ts`)
+tests check each row's kind and `limit`, and that every kind has a row. `state-key-error-kind` lists every kind of
+`StateKeyError`: the reference's `RefusalCoverageSuite` gates it with the verifier families, and the Rust
+(`proofs/tests/versioned.rs`) and TypeScript (`proofs/test/versioned.test.ts`) tests do the same with its `segment`.
 
-**The JLVM's gate.** The reference's `JlvmErrorCoverageSuite` lists `JlvmError`'s cases and `Site`'s (an operation,
-or `var`) through the compiler and fails if one has no row, or if a row's `op` names no site. The Rust tests map
-`JlvmError` onto `jlvm-error-kind` with an exhaustive `match`, check every kind of the generated `ALL` has a row, and
-compare every case's kind and `op`; an `op` is present exactly for the kinds that carry one. The TypeScript SDK has no
-JLVM evaluator, so its test checks the schema's side only: every kind, listed in a `Record` keyed by the generated
-union, has a row, and `op` is present exactly where it should be. The SP1 guest runs, besides its sample, the first
-case of each kind and of the `var` site, and compares kind and `op`. `jlvm-error-kind` is a closed choice of texts,
-so a vector naming another kind does not load; the `op` is text, since most operation names (`+`, `==`) have no
-identifier form for the generated types, and these gates check that each names a site. A JLVM `Crypto` error does
-not yet name the refusal it wraps (§1, `jlvm.md` §3).
+**The JLVM's gate.** `shared/schemas/jlvm-errors.cddl` defines `jlvm-error` (`JlvmError`, generated in every
+language; the TypeScript SDK, which has no evaluator, gets the type) and its `op`, `jlvm-site`: an operation of the
+closed list `jlvm-op` of `jlvm.cddl`, or `var`. Each operation is a rule of its own text (`op-not = "!"`), so every
+language types the `op` (Scala an enum, Rust an enum with `wire()` and `from_wire`, TypeScript a union of the names)
+though most names (`+`, `==`) are not identifiers, and a vector naming another `op` does not load. The reference's
+`JlvmErrorCoverageSuite` checks every kind of the generated `JlvmErrorKind` and both kinds of site (an operation, `var`)
+have a row. The Rust tests check every kind of the generated `ALL` has a row and compare every case's kind and `op`;
+an `op` is present exactly for the kinds that carry one. The TypeScript test checks the schema's side only: every
+kind, listed in a `Record` keyed by the generated union, has a row, and `op` is present exactly where it should be.
+The SP1 guest runs, besides its sample, the first case of each kind and of the `var` site, and compares kind and `op`.
+A `Crypto` error's `cause` (`jlvm.md` §3) is informative and not recorded.
 
 **Limits.** Every limit the specs state (`MaxValueBytes`, `MaxChunkBytes`, `MaxProofWeight`, the depth, digit, rational,
 key, chunk, sigma, KES and JLVM limits) is defined once, in `shared/schemas/limits.cddl`, and generated into each SDK
@@ -333,7 +347,7 @@ is a fresh copy, never a view of the caller's text (an engine may keep a slice's
 | Error | Field | Holds |
 |---|---|---|
 | canonical `DuplicateKey` | `key` | the repeated key, previewed |
-| canonical `InvalidNumber` | `length`, `offset` (Scala: a `NumberSource`), and a bound's `scale` saturated at the 32-bit range (Rust: `i128`) | the number's size and place, never its digits |
+| canonical `InvalidNumber` | `length`, `offset`, and its `bound`'s `digits` or `scale` (saturated at the 32-bit range) | the number's size and place, never its digits |
 | canonical `UnpairedSurrogate` | none | the kind alone |
 | `DecodeFailure` | `path` | each segment (a map key, possibly the caller's, or `[i]`), previewed |
 | `DecodeFailure` | `reason` | unknown keys as their count and the first in canonical order (shorter UTF-8 first, then by code point), previewed; a map no alternative fits as its key count; a text that is not the literal, pattern or alternative expected, previewed |

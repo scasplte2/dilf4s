@@ -10,6 +10,8 @@ pub type Bip340Message = [u8; 32];
 pub const BIP340_MESSAGE: c::FixedBytes<32> = c::FixedBytes::<32>;
 
 /// `bip39-entropy` (`shared/schemas/crypto.cddl`).
+///
+/// BIP-39 entropy (16, 20, 24, 28 or 32 bytes; the step of 4 is checked by the domain)
 pub type Bip39Entropy = Vec<u8>;
 
 /// The codec of [`Bip39Entropy`].
@@ -22,6 +24,8 @@ pub type BlsSignature = [u8; 96];
 pub const BLS_SIGNATURE: c::FixedBytes<96> = c::FixedBytes::<96>;
 
 /// `bls-signing-key` (`shared/schemas/crypto.cddl`).
+///
+/// BLS12-381, Ethereum PoP profile (keys in G1, signatures in G2, compressed)
 pub type BlsSigningKey = [u8; 32];
 
 /// The codec of [`BlsSigningKey`].
@@ -46,6 +50,8 @@ pub type EcdsaSignature = [u8; 64];
 pub const ECDSA_SIGNATURE: c::FixedBytes<64> = c::FixedBytes::<64>;
 
 /// `ecdsa-signing-key` (`shared/schemas/crypto.cddl`).
+///
+/// ECDSA over P-256 and secp256k1: compressed SEC1 keys, compact low-S r || s
 pub type EcdsaSigningKey = [u8; 32];
 
 /// The codec of [`EcdsaSigningKey`].
@@ -58,6 +64,8 @@ pub type EcdsaVerifyingKey = [u8; 33];
 pub const ECDSA_VERIFYING_KEY: c::FixedBytes<33> = c::FixedBytes::<33>;
 
 /// `ed25519-bip32-signing-key` (`shared/schemas/crypto.cddl`).
+///
+/// Ed25519-BIP32 (Icarus / CIP-0003): kL || kR, and an extended key's chain code
 pub type Ed25519Bip32SigningKey = [u8; 64];
 
 /// The codec of [`Ed25519Bip32SigningKey`].
@@ -70,6 +78,8 @@ pub type Ed25519Signature = [u8; 64];
 pub const ED25519_SIGNATURE: c::FixedBytes<64> = c::FixedBytes::<64>;
 
 /// `ed25519-signing-key` (`shared/schemas/crypto.cddl`).
+///
+/// Ed25519 (RFC 8032; ZIP-215 verification)
 pub type Ed25519SigningKey = [u8; 32];
 
 /// The codec of [`Ed25519SigningKey`].
@@ -82,6 +92,8 @@ pub type Ed25519VerifyingKey = [u8; 32];
 pub const ED25519_VERIFYING_KEY: c::FixedBytes<32> = c::FixedBytes::<32>;
 
 /// `groth16-proof` (`shared/schemas/crypto.cddl`).
+///
+/// Groth16 over BN254 (EIP-197 layout) and the SP1 v6.1.0 wrapper
 pub type Groth16Proof = [u8; 256];
 
 /// The codec of [`Groth16Proof`].
@@ -94,6 +106,8 @@ pub type Ristretto255Signature = [u8; 64];
 pub const RISTRETTO255_SIGNATURE: c::FixedBytes<64> = c::FixedBytes::<64>;
 
 /// `ristretto255-signing-key` (`shared/schemas/crypto.cddl`).
+///
+/// ristretto255 Schnorr (FROST ciphersuite)
 pub type Ristretto255SigningKey = [u8; 32];
 
 /// The codec of [`Ristretto255SigningKey`].
@@ -112,6 +126,8 @@ pub type SchnorrSignature = [u8; 64];
 pub const SCHNORR_SIGNATURE: c::FixedBytes<64> = c::FixedBytes::<64>;
 
 /// `schnorr-signing-key` (`shared/schemas/crypto.cddl`).
+///
+/// BIP-340 and dilf4s tagged Schnorr over secp256k1: x-only keys
 pub type SchnorrSigningKey = [u8; 32];
 
 /// The codec of [`SchnorrSigningKey`].
@@ -142,6 +158,8 @@ pub type Sum6KesSignature = [u8; 448];
 pub const SUM6_KES_SIGNATURE: c::FixedBytes<448> = c::FixedBytes::<448>;
 
 /// `sum6-kes-signing-key` (`shared/schemas/crypto.cddl`).
+///
+/// Cardano Sum6KES (the Praos hot key); other depths are 32 + 96 d (key) and 64 + 64 d (signature)
 pub type Sum6KesSigningKey = [u8; 608];
 
 /// The codec of [`Sum6KesSigningKey`].
@@ -172,6 +190,8 @@ pub type VrfProof = [u8; 80];
 pub const VRF_PROOF: c::FixedBytes<80> = c::FixedBytes::<80>;
 
 /// `vrf-signing-key` (`shared/schemas/crypto.cddl`).
+///
+/// ECVRF (RFC 9381 TAI and ELL2: 32-byte seed keys; Cardano draft-03: 64-byte seed || pk)
 pub type VrfSigningKey = [u8; 32];
 
 /// The codec of [`VrfSigningKey`].

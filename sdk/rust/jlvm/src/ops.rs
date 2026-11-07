@@ -18,7 +18,7 @@ use dilf4s_core::{BigInt, Value};
 use num_bigint::Sign;
 use num_traits::{Signed, ToPrimitive, Zero};
 
-use crate::error::JlvmError;
+use crate::error::{JlvmError, Raise};
 use crate::op::Op;
 use crate::ratio::Ratio;
 use crate::values::{

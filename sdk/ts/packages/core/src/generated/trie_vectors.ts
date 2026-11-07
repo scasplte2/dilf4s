@@ -113,7 +113,15 @@ export const TrieLookupResult: c.Codec<TrieLookupResult> = c.union<TrieLookupRes
   c.alternative(c.defer(() => TriePresent), [["present"], ["present"]], [["present"], ["present"]]),
 ], ["absent", "notCovered"]);
 
-/** `trie-malformed` (`shared/schemas/trie-vectors.cddl`). */
+/**
+ * `trie-malformed` (`shared/schemas/trie-vectors.cddl`).
+ *
+ * A refused proof (canonical CBOR) and the kind of its error (section 4). Decoding refuses, as "Encoding", what a
+ * reader sees without the mode: the record shapes, segment lengths and padding, the branch invariant, the pre-order
+ * structure and trailing records. Verification refuses, as "InvalidProof", what the mode decides: where leaves and
+ * branch values may end, and the key-length bound. "root" is what the records hash to, so only those rules refuse an
+ * "InvalidProof" case; it is the empty root for the "Encoding" cases.
+ */
 export interface TrieMalformed {
   readonly name: string;
   readonly mode: TrieMode;
@@ -174,7 +182,12 @@ export const TriePresent: c.Codec<TriePresent> = c.record<TriePresent>({
   present: c.required("present", c.defer(() => Hex)),
 });
 
-/** `trie-proof-vector` (`shared/schemas/trie-vectors.cddl`). */
+/**
+ * `trie-proof-vector` (`shared/schemas/trie-vectors.cddl`).
+ *
+ * The proof covers "keys", "prefixes" and "ranges". "rangeListings" answers each of "ranges", then further range
+ * probes, some of which the proof does not cover.
+ */
 export interface TrieProofVector {
   readonly keys: readonly Hex[];
   readonly prefixes: readonly Hex[];
@@ -195,7 +208,12 @@ export const TrieProofVector: c.Codec<TrieProofVector> = c.record<TrieProofVecto
   rangeListings: c.required("rangeListings", c.vector(c.defer(() => TrieRangeListing), 0, null)),
 });
 
-/** `trie-range` (`shared/schemas/trie-vectors.cddl`). */
+/**
+ * `trie-range` (`shared/schemas/trie-vectors.cddl`).
+ *
+ * [from, until) in bitwise key order, a proper prefix before its extensions; no "until" is unbounded. The bounds are
+ * byte strings that need not be keys.
+ */
 export interface TrieRange {
   readonly from: Hex;
   readonly until?: Hex;

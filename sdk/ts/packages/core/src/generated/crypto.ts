@@ -6,7 +6,11 @@ export type Bip340Message = Uint8Array;
 
 export const Bip340Message: c.Codec<Bip340Message> = c.sizedBytes(32, 32);
 
-/** `bip39-entropy` (`shared/schemas/crypto.cddl`). */
+/**
+ * `bip39-entropy` (`shared/schemas/crypto.cddl`).
+ *
+ * BIP-39 entropy (16, 20, 24, 28 or 32 bytes; the step of 4 is checked by the domain)
+ */
 export type Bip39Entropy = Uint8Array;
 
 export const Bip39Entropy: c.Codec<Bip39Entropy> = c.sizedBytes(16, 32);
@@ -16,7 +20,11 @@ export type BlsSignature = Uint8Array;
 
 export const BlsSignature: c.Codec<BlsSignature> = c.sizedBytes(96, 96);
 
-/** `bls-signing-key` (`shared/schemas/crypto.cddl`). */
+/**
+ * `bls-signing-key` (`shared/schemas/crypto.cddl`).
+ *
+ * BLS12-381, Ethereum PoP profile (keys in G1, signatures in G2, compressed)
+ */
 export type BlsSigningKey = Uint8Array;
 
 export const BlsSigningKey: c.Codec<BlsSigningKey> = c.sizedBytes(32, 32);
@@ -36,7 +44,11 @@ export type EcdsaSignature = Uint8Array;
 
 export const EcdsaSignature: c.Codec<EcdsaSignature> = c.sizedBytes(64, 64);
 
-/** `ecdsa-signing-key` (`shared/schemas/crypto.cddl`). */
+/**
+ * `ecdsa-signing-key` (`shared/schemas/crypto.cddl`).
+ *
+ * ECDSA over P-256 and secp256k1: compressed SEC1 keys, compact low-S r || s
+ */
 export type EcdsaSigningKey = Uint8Array;
 
 export const EcdsaSigningKey: c.Codec<EcdsaSigningKey> = c.sizedBytes(32, 32);
@@ -46,7 +58,11 @@ export type EcdsaVerifyingKey = Uint8Array;
 
 export const EcdsaVerifyingKey: c.Codec<EcdsaVerifyingKey> = c.sizedBytes(33, 33);
 
-/** `ed25519-bip32-signing-key` (`shared/schemas/crypto.cddl`). */
+/**
+ * `ed25519-bip32-signing-key` (`shared/schemas/crypto.cddl`).
+ *
+ * Ed25519-BIP32 (Icarus / CIP-0003): kL || kR, and an extended key's chain code
+ */
 export type Ed25519Bip32SigningKey = Uint8Array;
 
 export const Ed25519Bip32SigningKey: c.Codec<Ed25519Bip32SigningKey> = c.sizedBytes(64, 64);
@@ -56,7 +72,11 @@ export type Ed25519Signature = Uint8Array;
 
 export const Ed25519Signature: c.Codec<Ed25519Signature> = c.sizedBytes(64, 64);
 
-/** `ed25519-signing-key` (`shared/schemas/crypto.cddl`). */
+/**
+ * `ed25519-signing-key` (`shared/schemas/crypto.cddl`).
+ *
+ * Ed25519 (RFC 8032; ZIP-215 verification)
+ */
 export type Ed25519SigningKey = Uint8Array;
 
 export const Ed25519SigningKey: c.Codec<Ed25519SigningKey> = c.sizedBytes(32, 32);
@@ -66,7 +86,11 @@ export type Ed25519VerifyingKey = Uint8Array;
 
 export const Ed25519VerifyingKey: c.Codec<Ed25519VerifyingKey> = c.sizedBytes(32, 32);
 
-/** `groth16-proof` (`shared/schemas/crypto.cddl`). */
+/**
+ * `groth16-proof` (`shared/schemas/crypto.cddl`).
+ *
+ * Groth16 over BN254 (EIP-197 layout) and the SP1 v6.1.0 wrapper
+ */
 export type Groth16Proof = Uint8Array;
 
 export const Groth16Proof: c.Codec<Groth16Proof> = c.sizedBytes(256, 256);
@@ -76,7 +100,11 @@ export type Ristretto255Signature = Uint8Array;
 
 export const Ristretto255Signature: c.Codec<Ristretto255Signature> = c.sizedBytes(64, 64);
 
-/** `ristretto255-signing-key` (`shared/schemas/crypto.cddl`). */
+/**
+ * `ristretto255-signing-key` (`shared/schemas/crypto.cddl`).
+ *
+ * ristretto255 Schnorr (FROST ciphersuite)
+ */
 export type Ristretto255SigningKey = Uint8Array;
 
 export const Ristretto255SigningKey: c.Codec<Ristretto255SigningKey> = c.sizedBytes(32, 32);
@@ -91,7 +119,11 @@ export type SchnorrSignature = Uint8Array;
 
 export const SchnorrSignature: c.Codec<SchnorrSignature> = c.sizedBytes(64, 64);
 
-/** `schnorr-signing-key` (`shared/schemas/crypto.cddl`). */
+/**
+ * `schnorr-signing-key` (`shared/schemas/crypto.cddl`).
+ *
+ * BIP-340 and dilf4s tagged Schnorr over secp256k1: x-only keys
+ */
 export type SchnorrSigningKey = Uint8Array;
 
 export const SchnorrSigningKey: c.Codec<SchnorrSigningKey> = c.sizedBytes(32, 32);
@@ -116,7 +148,11 @@ export type Sum6KesSignature = Uint8Array;
 
 export const Sum6KesSignature: c.Codec<Sum6KesSignature> = c.sizedBytes(448, 448);
 
-/** `sum6-kes-signing-key` (`shared/schemas/crypto.cddl`). */
+/**
+ * `sum6-kes-signing-key` (`shared/schemas/crypto.cddl`).
+ *
+ * Cardano Sum6KES (the Praos hot key); other depths are 32 + 96 d (key) and 64 + 64 d (signature)
+ */
 export type Sum6KesSigningKey = Uint8Array;
 
 export const Sum6KesSigningKey: c.Codec<Sum6KesSigningKey> = c.sizedBytes(608, 608);
@@ -141,7 +177,11 @@ export type VrfProof = Uint8Array;
 
 export const VrfProof: c.Codec<VrfProof> = c.sizedBytes(80, 80);
 
-/** `vrf-signing-key` (`shared/schemas/crypto.cddl`). */
+/**
+ * `vrf-signing-key` (`shared/schemas/crypto.cddl`).
+ *
+ * ECVRF (RFC 9381 TAI and ELL2: 32-byte seed keys; Cardano draft-03: 64-byte seed || pk)
+ */
 export type VrfSigningKey = Uint8Array;
 
 export const VrfSigningKey: c.Codec<VrfSigningKey> = c.sizedBytes(32, 32);

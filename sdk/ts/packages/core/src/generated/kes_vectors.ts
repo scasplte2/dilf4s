@@ -66,7 +66,15 @@ export const KesProductParameters: c.Codec<KesProductParameters> = c.record<KesP
   subHeight: c.required("subHeight", c.uint),
 });
 
-/** `kes-refusal` (`shared/schemas/kes-vectors.cddl`). */
+/**
+ * `kes-refusal` (`shared/schemas/kes-vectors.cddl`).
+ *
+ * A call and its outcome (kes.md section 5). "check" names it: "parameters" (the construction of these parameters),
+ * "generate" (the period-0 key of "seed"), "load" (the encoded "key" at "period"), "evolve" (load, then evolve once),
+ * "verify" ("signature" on "message" by "verifyingKey" at "period"; its checks run in that order: the key's length,
+ * the signature's, then the period). Every check but "parameters" uses valid parameters. The outcome is "accepted"
+ * (a key, or a signature that verifies), "rejected" (a well-formed signature that does not), or the KesError kind.
+ */
 export interface KesRefusal {
   readonly name: string;
   readonly check: KesCheck;

@@ -18,7 +18,7 @@ import cats.syntax.all._
  *
  * Codecs never throw: they return the core's `Result`.
  */
-final class TsEmitter(models: Map[QName, ModelRule]) {
+final class TsEmitter(models: Map[QName, ModelRule], docs: QName => Vector[String] = _ => Vector.empty) {
 
   import TsEmitter._
 
@@ -55,7 +55,20 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
     case FieldType.Preview => (PreviewType, "")
   }
 
-  private def doc(rule: QName): String = s"/** `${rule.name}` (`shared/schemas/${rule.module}.cddl`). */"
+  /** A rule's TSDoc: where it is defined (and `more`), then its CDDL comment. */
+  private def doc(rule: QName, more: String = ""): String = {
+    val first = s"`${rule.name}` (`shared/schemas/${rule.module}.cddl`)$more."
+    val text = docs(rule)
+    if (text.isEmpty) s"/** $first */" else CanonicalEmitter.comment(first +: "" +: text, "").stripSuffix("\n")
+  }
+
+  /** A member's or field's TSDoc at `indent`, ending in a newline, or nothing when it has none. */
+  private def memberDoc(text: Vector[String], indent: String): String =
+    text match {
+      case Vector()     => ""
+      case Vector(line) => s"$indent/** ${line.replace("*/", "*\\/")} */\n"
+      case _            => CanonicalEmitter.comment(text, indent)
+    }
 
   private final case class Field(key: String, name: String, tpe: String, codec: String, optional: Boolean)
 
@@ -76,7 +89,11 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
       val n = typeName(rule)
       val tpe =
         if (fs.isEmpty) s"export type $n = Readonly<Record<string, never>>;"
-        else s"export interface $n {\n${fs.map(f => s"  readonly ${f.name}${if (f.optional) "?" else ""}: ${f.tpe};").mkString("\n")}\n}"
+        else
+          s"export interface $n {\n${fs
+              .zip(profiled)
+              .map((f, p) => s"${memberDoc(p.doc, "  ")}  readonly ${f.name}${if (f.optional) "?" else ""}: ${f.tpe};")
+              .mkString("\n")}\n}"
       // in schema order, which an object literal keeps: the profile gives every field an identifier, never an index
       val body = fs.map(f => s"  ${f.name}: c.${if (f.optional) "optional" else "required"}(${string(f.key)}, ${f.codec}),\n").mkString
       s"""${doc(rule)}
@@ -131,10 +148,14 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
     }
   }
 
-  /** Whether an error field is an integer, directly or through aliases. */
+  /**
+   * Whether an error field is an integer held as a `number`, directly or through aliases: one within the signed 64-bit
+   * range (the SDK's sizes, offsets and limits). A wider one (a plain `uint`, such as a CBOR tag) stays a `bigint`, so it
+   * is exact.
+   */
   @scala.annotation.tailrec
   private def integer(t: FieldType): Boolean = t match {
-    case FieldType.Uint | FieldType.Int | FieldType.Nint | FieldType.IntRange(_, _) => true
+    case FieldType.IntRange(lo, hi) => lo >= Long.MinValue && hi <= Long.MaxValue
     case FieldType.Ref(q) =>
       models.get(q) match {
         case Some(ModelRule.Alias(target)) => integer(target)
@@ -155,14 +176,31 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
       .map { withFields =>
         val members = withFields.map {
           case (c, fs) =>
-            val props = s"readonly kind: ${string(c.kind)}" +: fs.map(f => s"readonly ${f.name}${if (f.optional) "?" else ""}: ${f.tpe}")
-            s"  | { ${props.mkString("; ")} }"
+            val documented = c.fields.exists(_.doc.nonEmpty)
+            val props = s"readonly kind: ${string(c.kind)}" +: fs.zip(c.fields).map { (f, p) =>
+              val field = s"readonly ${f.name}${if (f.optional) "?" else ""}: ${f.tpe}"
+              if (documented) s"${memberDoc(p.doc, "      ")}      $field" else field
+            }
+            val shape =
+              if (documented) s"{\n${props.map(p => if (p.startsWith(" ")) p else s"      $p").mkString(";\n")};\n    }"
+              else s"{ ${props.mkString("; ")} }"
+            s"${memberDoc(c.doc, "  ")}  | $shape"
         }
         // members start with `|`, which stripMargin would take for the margin: they are appended after it
-        s"""/** `${rule.name}` (`shared/schemas/${rule.module}.cddl`): an error family, by `kind` (`${qualified(rule.module, kinds)}`). */
+        s"""${doc(rule, s": an error family, by `kind` (`${qualified(rule.module, kinds)}`)")}
          |export type ${typeName(rule)} =
          |""".stripMargin + members.mkString("\n") + ";\n"
       }
+
+  /** A union of the members' texts (TypeScript names no members), each with its documentation. */
+  private def namedTexts(rule: QName, members: Vector[NamedText]): String = {
+    val n = typeName(rule)
+    // members start with `|`, which stripMargin would take for the margin: they are appended after it
+    s"""${doc(rule)}
+       |export type $n =
+       |""".stripMargin + members.map(m => s"${memberDoc(m.doc, "  ")}  | ${string(m.text)}").mkString("\n") +
+    s""";\n\nexport const $n: c.Codec<$n> = c.union<$n>(${string(n)}, [], [${members.map(m => string(m.text)).mkString(", ")}]);\n"""
+  }
 
   private def alias(rule: QName, t: FieldType): String = {
     val (tpe, codec) = ts(rule, t)
@@ -211,6 +249,8 @@ final class TsEmitter(models: Map[QName, ModelRule]) {
         case (q, ModelRule.Alias(t))               => Some(alias(q, t)).asRight
         case (q, ModelRule.Constant(v))            => Some(constant(q, v)).asRight
         case (_, ModelRule.PreviewType)            => None.asRight
+        case (q, ModelRule.NamedTexts(ms))         => Some(namedTexts(q, ms)).asRight
+        case (_, ModelRule.TextMember(_))          => None.asRight
       }.map { bodies =>
         val code = bodies.flatten.mkString("\n")
         val others = models.keys.collect {

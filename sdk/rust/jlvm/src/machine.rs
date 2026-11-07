@@ -17,7 +17,7 @@ use dilf4s_core::value::{Array, MapShape, Text};
 
 use crate::ast::VarRef;
 use crate::crypto::{self, CryptoBackend};
-use crate::error::{JlvmError, Site};
+use crate::error::{JlvmError, Raise, Site};
 use crate::gas::{Gas, GasSchedule};
 use crate::node::{self, Iteration, Logical, Node, Segments};
 use crate::op::Op;

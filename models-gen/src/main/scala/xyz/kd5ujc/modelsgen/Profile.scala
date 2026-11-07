@@ -14,7 +14,11 @@ import xyz.kd5ujc.modelsgen.Ast.Occ
  *     required key of one alternative is outside the other, for every pair), which is checked here. A choice may also
  *     name a choice of text literals (an error family's kinds), whose texts it then takes as its own
  *   - a choice of inline maps, each led by a distinct `"kind"` text literal, is a [[ModelRule.ErrorFamily]]: an error
- *     type, not a wire format, with its kinds in the rule named like it with `-kind`
+ *     type, not a wire format, with its kinds in the rule named like it with `-kind`. An error's field may hold
+ *     another error family, never one that holds it back
+ *   - a choice of rules that are each one text literal is a [[ModelRule.NamedTexts]]: a closed type whose members are
+ *     named by their rules ([[ModelRule.TextMember]]), so a text need not be an identifier
+ *   - the `;` comment directly above a rule, an error kind or a field is its documentation ([[CddlParser.docs]])
  *   - a rule whose whole body is an unsigned integer literal (`max-depth = 256`) is a [[ModelRule.Constant]]: a named
  *     value, not a type. Range bounds and sizes may name it (`0..max-depth`); a field or element may not
  *   - a rule named `preview` is [[ModelRule.PreviewType]]: each SDK's `Preview` (caller text as an error holds it,
@@ -56,17 +60,24 @@ enum FieldType {
   case Preview
 }
 
-/** A record field: its wire key, whether it may be absent, and its type. */
-final case class ProfileField(key: String, optional: Boolean, tpe: FieldType)
+/** A record field: its wire key, whether it may be absent, its type, and its documentation (the CDDL comment above it). */
+final case class ProfileField(key: String, optional: Boolean, tpe: FieldType, doc: Vector[String] = Vector.empty)
 
 /** A record alternative of a union, with the keys it requires and the keys it allows. */
 final case class UnionAlternative(rule: QName, required: Set[String], allowed: Set[String])
 
-/** A choice of text literals that a union names, whose texts are among the union's. */
-final case class TextChoice(rule: QName, texts: Vector[String])
+/**
+ * A choice of text literals that a union names, whose texts are among the union's: each text with its member's name
+ * in the choice's own type (the text in PascalCase, or for a [[ModelRule.NamedTexts]] its rule's name), and whether
+ * the choice is a [[ModelRule.NamedTexts]], whose members are not the texts themselves in Scala.
+ */
+final case class TextChoice(rule: QName, texts: Vector[String], names: Vector[String], named: Boolean = false)
 
-/** One kind of an error family, with its fields in schema order. */
-final case class ErrorCase(kind: String, fields: Vector[ProfileField])
+/** One kind of an error family, with its fields in schema order and its documentation (the CDDL comment above it). */
+final case class ErrorCase(kind: String, fields: Vector[ProfileField], doc: Vector[String] = Vector.empty)
+
+/** One member of a [[ModelRule.NamedTexts]]: its identifier (from its rule's name), its text, and its documentation. */
+final case class NamedText(name: String, text: String, doc: Vector[String])
 
 enum ModelRule {
   case Record(fields: Vector[ProfileField])
@@ -85,14 +96,27 @@ enum ModelRule {
 
   /** The rule `preview`: the SDK's own `Preview` type, which an error's field may hold. Nothing is emitted for it. */
   case PreviewType
+
+  /**
+   * A choice of rules that are each one text literal (`op = op-not / op-eq`, `op-not = "!"`): a closed type whose
+   * members are named by their rules, not their texts, so a text need not be an identifier. Scala an enum carrying
+   * `wire`, Rust an enum with `wire()`, `from_wire` and `ALL`, TypeScript a union of the texts.
+   */
+  case NamedTexts(members: Vector[NamedText])
+
+  /** A rule that is one text literal: a member of a [[NamedTexts]], or a literal a field names. Nothing is emitted. */
+  case TextMember(text: String)
 }
 
 final class Profile(val schema: Schema) {
 
   private def outside(rule: QName, what: String): GenError = GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile(what))
 
-  /** A type in field, element or alias position. */
-  def fieldType(rule: QName, t: RT): Either[GenError, FieldType] = t match {
+  /**
+   * A type in field, element or alias position. Only an error family's field (`inError`) may name another error
+   * family, which nests one error in another (a reason with fields of its own).
+   */
+  def fieldType(rule: QName, t: RT, inError: Boolean = false): Either[GenError, FieldType] = t match {
     case RT.Prim(PrimKind.Uint)  => FieldType.Uint.asRight
     case RT.Prim(PrimKind.Int)   => FieldType.Int.asRight
     case RT.Prim(PrimKind.Nint)  => FieldType.Nint.asRight
@@ -107,10 +131,12 @@ final class Profile(val schema: Schema) {
       schema.rule(q).flatMap {
         case RuleDef(_, RuleBody.Type(RT.LitInt(_))) =>
           outside(rule, s"constant ${q.name} in field position (a constant is a value: name it in a range or size bound)").asLeft
-        case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(_))) =>
+        case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(_))) if !inError =>
           outside(rule, s"error family ${q.name} in field position (an error is not a wire type: name its kinds)").asLeft
-        case _ if q.name == Profile.PreviewRule => FieldType.Preview.asRight
-        case _                                  => FieldType.Ref(q).asRight
+        // a rule that is one text literal stands for its text
+        case RuleDef(_, RuleBody.Type(RT.LitText(v))) => FieldType.LitText(v).asRight
+        case _ if q.name == Profile.PreviewRule       => FieldType.Preview.asRight
+        case _                                        => FieldType.Ref(q).asRight
       }
     case RT.LitInt(v) if v >= Int.MinValue && v <= Int.MaxValue => FieldType.LitInt(v.toInt).asRight
     case RT.LitText(v)                                          => FieldType.LitText(v).asRight
@@ -124,7 +150,7 @@ final class Profile(val schema: Schema) {
         )
       )
     case Profile.TextMapOf(value) => fieldType(rule, value).map(FieldType.TextMap(_))
-    case RT.Arr(Vector(REntry(occ, _, None, element))) if occ != Occ.Once && occ != Occ.Optional =>
+    case RT.Arr(Vector(REntry(occ, _, None, element, _))) if occ != Occ.Once && occ != Occ.Optional =>
       fieldType(rule, element).map(FieldType.Vec(_, occ.min, occ.max))
     case other => outside(rule, s"${SyntaxSummary(other)} in field position (name it as its own rule)").asLeft
   }
@@ -133,11 +159,11 @@ final class Profile(val schema: Schema) {
    * The fields of a record. Two keys that any emitter would give the same name (camelCase in Scala and TypeScript,
    * snake_case in Rust) are a [[GenError.NameClash]] for every language, so all of them accept the same schemas.
    */
-  def fields(rule: QName, entries: Vector[REntry]): Either[GenError, Vector[ProfileField]] =
+  def fields(rule: QName, entries: Vector[REntry], inError: Boolean = false): Either[GenError, Vector[ProfileField]] =
     entries.traverse {
-      case REntry(occ, _, Some(RKey.TextKey(key)), value) if occ == Occ.Once || occ == Occ.Optional =>
-        fieldType(rule, value).map(ProfileField(key, occ == Occ.Optional, _))
-      case REntry(_, _, key, _) =>
+      case e @ REntry(occ, _, Some(RKey.TextKey(key)), value, _) if occ == Occ.Once || occ == Occ.Optional =>
+        fieldType(rule, value, inError).map(ProfileField(key, occ == Occ.Optional, _, e.doc))
+      case REntry(_, _, key, _, _) =>
         outside(rule, s"map entry with key ${key.fold("<none>")(_.toString)} (text-literal keys, once or optional)").asLeft
     }.flatMap { fs =>
       val clash = Profile.Namings.collectFirst(Function.unlift { (_, name) =>
@@ -185,15 +211,57 @@ final class Profile(val schema: Schema) {
       case _ => outside(alt, "choice alternative that is not a map rule").asLeft
     }
 
-  /** The texts of a choice of text literals only, which a union may name as one of its alternatives. */
+  /**
+   * The texts of a choice of text literals only, or of rules that are each one ([[ModelRule.NamedTexts]]), which a union
+   * may name as one of its alternatives.
+   */
   private def textChoice(alt: QName): Either[GenError, Option[TextChoice]] =
-    schema.rule(alt).map {
+    schema.rule(alt).flatMap {
       case RuleDef(_, RuleBody.Type(RT.Choice(as))) =>
         as.traverse {
           case RT.LitText(t) => Some(t)
           case _             => None
-        }.map(TextChoice(alt, _))
-      case _ => None
+        }.map(ts => TextChoice(alt, ts, ts.map(CanonicalEmitter.pascal)))
+          .fold(namedTexts(alt, as).map(_.map(ms => TextChoice(alt, ms.map(_.text), ms.map(_.name), named = true))))(_.some.asRight)
+      case _ => none[TextChoice].asRight
+    }
+
+  /** The text of a rule that is one text literal, with its documentation. */
+  private def textMember(q: QName): Either[GenError, Option[String]] =
+    schema.rule(q).map {
+      case RuleDef(_, RuleBody.Type(RT.LitText(t))) => Some(t)
+      case _                                        => None
+    }
+
+  /**
+   * A choice whose alternatives are all rules of one text literal: their names, the prefix they share up to a `-`
+   * (`op-` of `op-not`) removed, become the members' identifiers (`Not`; words are split at `-` only, so `op-sha3_256`
+   * is `Sha3_256`). `None` when no alternative is such a rule; a choice mixing them with anything else is refused.
+   */
+  private def namedTexts(q: QName, alts: Vector[RT]): Either[GenError, Option[Vector[NamedText]]] =
+    alts.traverse {
+      case RT.Ref(a) => textMember(a).map(_.map(a -> _))
+      case _         => none[(QName, String)].asRight
+    }.flatMap { found =>
+      if (found.forall(_.isEmpty)) none[Vector[NamedText]].asRight
+      else
+        found.sequence.toRight(outside(q, "choice mixing rules of one text literal with other alternatives")).flatMap { members =>
+          val names = members.map(_._1.name)
+          val shared = names.reduceLeftOption((a, b) => a.zip(b).takeWhile((x, y) => x == y).map(_._1).mkString).getOrElse("")
+          val prefix = shared.take(shared.lastIndexOf('-') + 1)
+          val named = members.map { case (r, t) => NamedText(Profile.memberName(r.name.drop(prefix.length)), t, schema.doc(r)) }
+          val texts = named.map(_.text)
+          val ids = named.map(_.name)
+          if (texts.distinct.size != texts.size)
+            outside(q, s"choice with repeated texts: ${texts.diff(texts.distinct).map(CanonicalEmitter.literal).mkString(", ")}").asLeft
+          else
+            ids
+              .diff(ids.distinct)
+              .headOption
+              .map(id => GenError.NameClash(q.toString, id, names))
+              .orElse(named.find(m => !Profile.isIdentifier(m.name)).map(m => outside(q, s"member ${m.name} has no identifier form")))
+              .toLeft(named.some)
+        }
     }
 
   private def union(rule: QName, refs: Vector[QName], texts: Vector[String]): Either[GenError, ModelRule] =
@@ -230,24 +298,59 @@ final class Profile(val schema: Schema) {
     case FieldType.Preview                                                                 => ().asRight
     case FieldType.Ref(q) if seen(q) => outside(rule, s"alias cycle through ${q.name}").asLeft
     case FieldType.Ref(q) =>
-      this.rule(q).flatMap {
-        case ModelRule.Alias(target)                => errorField(rule, target, seen + q)
-        case ModelRule.Enumeration(_)               => ().asRight
-        case ModelRule.Union(Vector(), _, Vector()) => ().asRight
-        case _ => outside(rule, s"error field of type ${q.name} (text, an integer, a boolean or a kind)").asLeft
+      schema.rule(q).flatMap {
+        // another error family, nested: checked on its own, and never back to this one
+        case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(_))) =>
+          Either.cond(!nests(q, rule), (), outside(rule, s"error family ${q.name} nests ${rule.name} (an error cannot hold itself)"))
+        case _ =>
+          this.rule(q).flatMap {
+            case ModelRule.Alias(target)         => errorField(rule, target, seen + q)
+            case ModelRule.Enumeration(_)        => ().asRight
+            case ModelRule.NamedTexts(_)         => ().asRight
+            case ModelRule.Union(Vector(), _, _) => ().asRight
+            case _ => outside(rule, s"error field of type ${q.name} (text, an integer, a boolean, a kind or an error)").asLeft
+          }
       }
-    case other => outside(rule, s"error field of type $other (text, an integer, a boolean or a kind)").asLeft
+    case other => outside(rule, s"error field of type $other (text, an integer, a boolean, a kind or an error)").asLeft
+  }
+
+  /** The error families an error family's fields name directly. */
+  private def nested(q: QName): Set[QName] =
+    schema.rule(q).toOption.fold(Set.empty[QName]) {
+      case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(alternatives))) =>
+        alternatives.flatten.collect {
+          case REntry(_, _, _, RT.Ref(r), _) if schema.rule(r).toOption.exists {
+                case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(_))) => true
+                case _                                                   => false
+              } =>
+            r
+        }.toSet
+      case _ => Set.empty
+    }
+
+  /** Whether family `from` reaches family `to` through nested fields (itself included). */
+  private def nests(from: QName, to: QName): Boolean = {
+    @scala.annotation.tailrec
+    def go(frontier: List[QName], seen: Set[QName]): Boolean = frontier match {
+      case Nil                  => false
+      case q :: _ if q == to    => true
+      case q :: rest if seen(q) => go(rest, seen)
+      case q :: rest            => go(nested(q).toList.sortBy(_.toString) ++ rest, seen + q)
+    }
+    go(List(from), Set.empty)
   }
 
   private def errorFamily(q: QName, alternatives: Vector[Vector[REntry]]): Either[GenError, ModelRule] = {
     val kindRule = QName(q.module, s"${q.name}-kind")
     alternatives.traverse { es =>
-      es.collect { case REntry(occ, _, Some(RKey.TextKey("kind")), RT.LitText(k)) if occ == Occ.Once => k } match {
-        case Vector(k) if k.matches("[A-Z][A-Za-z0-9]*") =>
-          fields(q, es.filterNot(_.key.contains(RKey.TextKey("kind"))))
-            .flatMap(fs => fs.traverse_(f => errorField(q, f.tpe, Set.empty)).as(ErrorCase(k, fs)))
-        case Vector(k) => outside(q, s"error kind ${CanonicalEmitter.literal(k)} (a kind is a PascalCase identifier)").asLeft
-        case _         => outside(q, "error family alternative without one required \"kind\" text literal").asLeft
+      // every "kind" entry is the discriminator: a second one, or one that is not a literal, would be lost
+      es.filter(_.key.contains(RKey.TextKey("kind"))) match {
+        case Vector(e @ REntry(occ, _, _, RT.LitText(k), _)) if occ == Occ.Once && k.matches("[A-Z][A-Za-z0-9]*") =>
+          fields(q, es.filterNot(_.key.contains(RKey.TextKey("kind"))), inError = true)
+            .flatMap(fs => fs.traverse_(f => errorField(q, f.tpe, Set.empty)).as(ErrorCase(k, fs, e.doc)))
+        case Vector(REntry(occ, _, _, RT.LitText(k), _)) if occ == Occ.Once =>
+          outside(q, s"error kind ${CanonicalEmitter.literal(k)} (a kind is a PascalCase identifier)").asLeft
+        case _ => outside(q, "error family alternative without exactly one \"kind\", a required text literal").asLeft
       }
     }.flatMap { cases =>
       val kinds = cases.map(_.kind)
@@ -270,7 +373,8 @@ final class Profile(val schema: Schema) {
         val shape = outside(q, "preview that is not { \"head\": text, \"length\": uint }")
         body match {
           case RuleBody.Type(RT.MapT(es)) =>
-            fields(q, es).flatMap(fs => Either.cond(fs == Profile.PreviewFields, ModelRule.PreviewType, shape))
+            fields(q, es)
+              .flatMap(fs => Either.cond(fs.map(_.copy(doc = Vector.empty)) == Profile.PreviewFields, ModelRule.PreviewType, shape))
           case _ => shape.asLeft
         }
       case RuleDef(_, RuleBody.Type(t @ Profile.TextMapOf(_))) => fieldType(q, t).flatTap(wire(q, _)).map(ModelRule.Alias(_))
@@ -279,8 +383,11 @@ final class Profile(val schema: Schema) {
       case RuleDef(_, RuleBody.Type(RT.LitInt(v))) =>
         Either.cond(v >= 0 && v <= Profile.UintMax, ModelRule.Constant(v), outside(q, s"constant $v (a constant is a uint, 0..2^64-1)"))
       case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(alternatives))) => errorFamily(q, alternatives)
+      case RuleDef(_, RuleBody.Type(RT.LitText(t)))                       => ModelRule.TextMember(t).asRight
+      case RuleDef(_, RuleBody.Type(RT.Choice(alts))) if namedTexts(q, alts).exists(_.isDefined) =>
+        namedTexts(q, alts).map(ms => ModelRule.NamedTexts(ms.getOrElse(Vector.empty)))
       case RuleDef(_, RuleBody.Type(RT.Choice(alts))) =>
-        alts.traverse {
+        namedTexts(q, alts) >> alts.traverse {
           case RT.Ref(a)     => Left(a).some
           case RT.LitText(t) => Right(t).some
           case _             => none[Either[QName, String]]
@@ -305,6 +412,9 @@ object Profile {
    * The `.regexp` patterns of the profile. Each SDK implements these as named validators instead of carrying a
    * regular-expression engine; adding one means adding it to every SDK core.
    */
+  /** A [[ModelRule.NamedTexts]] member's identifier from its rule's name (prefix removed): words split at `-` only. */
+  def memberName(s: String): String = s.split("-").toList.filter(_.nonEmpty).map(w => w.take(1).toUpperCase + w.drop(1)).mkString
+
   /** Whether `s` is an identifier in every target language (ASCII letters, digits and `_`, not starting with a digit). */
   def isIdentifier(s: String): Boolean = s != "_" && s.matches("[A-Za-z_][A-Za-z0-9_]*")
 
@@ -361,7 +471,7 @@ object Profile {
   /** `{ * text => T }`: a map with arbitrary text keys. */
   object TextMapOf {
     def unapply(t: RT): Option[RT] = t match {
-      case RT.MapT(Vector(REntry(occ, _, Some(RKey.OfType(RT.Prim(PrimKind.Text), _)), value))) if occ.min == 0 && occ.max.isEmpty =>
+      case RT.MapT(Vector(REntry(occ, _, Some(RKey.OfType(RT.Prim(PrimKind.Text), _)), value, _))) if occ.min == 0 && occ.max.isEmpty =>
         Some(value)
       case _ => None
     }

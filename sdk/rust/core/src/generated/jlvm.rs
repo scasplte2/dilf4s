@@ -10,7 +10,7 @@ use crate::codec as c;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JlvmApply {
     /// The `op` entry.
-    pub op: String,
+    pub op: JlvmOp,
     /// The `args` entry.
     pub args: Vec<JlvmExpr>,
 }
@@ -19,14 +19,14 @@ impl c::Model for JlvmApply {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         let inner = c::nested(depth)?;
         c::record([
-            c::field("op", &c::Text, &self.op, inner)?,
+            c::field("op", &c::ModelOf::<JlvmOp>::NEW, &self.op, inner)?,
             c::field("args", &c::VecOf { element: c::ModelOf::<JlvmExpr>::NEW, min: 0, max: None }, &self.args, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["op", "args"])?;
-        let f0 = fields.required("op", &c::Text)?;
+        let f0 = fields.required("op", &c::ModelOf::<JlvmOp>::NEW)?;
         let f1 = fields.required("args", &c::VecOf { element: c::ModelOf::<JlvmExpr>::NEW, min: 0, max: None })?;
         Ok(Self { op: f0, args: f1 })
     }
@@ -155,6 +155,8 @@ impl c::Model for JlvmMap {
 }
 
 /// `jlvm-null` (`shared/schemas/jlvm.cddl`).
+///
+/// Canonical maps drop null values, so the null literal is the empty record.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JlvmNull;
 
@@ -166,6 +168,424 @@ impl c::Model for JlvmNull {
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         c::Fields::of(value, &[]).map(|_| Self)
+    }
+}
+
+/// `jlvm-op` (`shared/schemas/jlvm.cddl`).
+///
+/// The operations of language version 1, by wire name (jlvm.md section 5): a closed list, each named by its own rule, so a
+/// name that is not an identifier (`!`, `===`) is still a typed member (`Not`, `StrictEq`). Grouped as the spec groups
+/// them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum JlvmOp {
+    /// The first branch whose condition is truthy, else the last argument (or null): lazy.
+    If,
+    /// The first falsy value, else the last: lazy.
+    And,
+    /// The first truthy value, else the last: lazy.
+    Or,
+    /// Negated truthiness.
+    Not,
+    /// Truthiness.
+    Truthy,
+    /// The first truthy value, else null: lazy.
+    Default,
+    /// Binds names to values for its body.
+    Let,
+    /// Structural equality.
+    Eq,
+    /// Structural inequality.
+    Ne,
+    /// Structural equality (the same as `==`: there is no coercion).
+    StrictEq,
+    /// Structural inequality (the same as `!=`).
+    StrictNe,
+    /// Less than.
+    Lt,
+    /// Less than or equal.
+    Le,
+    /// Greater than.
+    Gt,
+    /// Greater than or equal.
+    Ge,
+    /// Exact sum; of no arguments, 0. Variadic.
+    Add,
+    /// Negation (one argument) or difference (two).
+    Sub,
+    /// Exact product; of no arguments, 1. Variadic.
+    Mul,
+    /// Exact division; by zero, an Arithmetic error.
+    Div,
+    /// Truncating remainder, with the sign of the dividend.
+    Mod,
+    /// Exact minimum of at least one argument. Variadic.
+    Min,
+    /// Exact maximum of at least one argument. Variadic.
+    Max,
+    /// Absolute value.
+    Abs,
+    /// Rounds half to even.
+    Round,
+    /// Rounds half away from zero.
+    RoundHalfUp,
+    /// Floor.
+    Floor,
+    /// Ceiling.
+    Ceil,
+    /// Integer exponent in -999..999, its result size checked before it is computed.
+    Pow,
+    /// Each element through a callback.
+    Map,
+    /// The elements a callback keeps.
+    Filter,
+    /// Folds the elements through a callback.
+    Reduce,
+    /// Whether a callback holds for every element: stops early.
+    All,
+    /// Whether a callback holds for some element: stops early.
+    Some,
+    /// Whether a callback holds for no element: stops early.
+    None,
+    /// The first element a callback holds for.
+    Find,
+    /// An array's length, or with a callback, how many elements it holds for.
+    Count,
+    /// Objects merged left to right; otherwise arrays concatenated and other values appended. Variadic.
+    Merge,
+    /// Substring, byte substring or array membership.
+    In,
+    /// Whether every element of the first array is in the second.
+    Intersect,
+    /// First occurrences, in order.
+    Unique,
+    /// A slice, with JavaScript bounds.
+    Slice,
+    /// The array reversed.
+    Reverse,
+    /// Flattens one level.
+    Flatten,
+    /// Code points, elements, bytes or entries.
+    Length,
+    /// Concatenated text, arrays or bytes. Variadic.
+    Cat,
+    /// A substring, in code points.
+    Substr,
+    /// ASCII lower case.
+    Lower,
+    /// ASCII upper case.
+    Upper,
+    /// The pieces joined by a separator.
+    Join,
+    /// Every piece between separators.
+    Split,
+    /// Without leading and trailing Unicode White_Space.
+    Trim,
+    /// A prefix test.
+    StartsWith,
+    /// A suffix test.
+    EndsWith,
+    /// An object's keys, in code-point order.
+    Keys,
+    /// An object's values, in key order.
+    Values,
+    /// An object's entries, in key order.
+    Entries,
+    /// The value at a key, else null or a default.
+    Get,
+    /// Whether a key is present.
+    Has,
+    /// The object with a key set (null removes it).
+    Set,
+    /// The object without a key.
+    Unset,
+    /// Whether no argument is null.
+    Exists,
+    /// The data paths that are absent.
+    Missing,
+    /// The absent data paths, when fewer than a minimum are present.
+    MissingSome,
+    /// The value's type name.
+    TypeOf,
+    /// Bytes as `0x` text.
+    Hex,
+    /// Bytes, or `0x` lowercase hex text, as bytes.
+    Unhex,
+    /// Hex read as an unsigned big-endian integer.
+    HexToInt,
+    /// Bytes read as an unsigned big-endian integer.
+    BytesToInt,
+    /// An unsigned integer as big-endian bytes, minimal or padded to a width.
+    IntToBytes,
+    /// SHA-256.
+    Sha256,
+    /// SHA3-256.
+    Sha3_256,
+    /// Ethereum's Keccak-256.
+    Keccak256,
+    /// BLAKE2b-256.
+    Blake2b256,
+    /// Ed25519 under ZIP-215 rules.
+    Ed25519Verify,
+    /// ECDSA on secp256k1 over SHA-256, low-S.
+    Secp256k1Verify,
+    /// BIP-340 Schnorr.
+    Bip340Verify,
+    /// Ethereum's signer recovery, to a 20-byte address.
+    Ecrecover,
+    /// BLS12-381, minimal-pubkey-size, proof-of-possession ciphersuite.
+    BlsVerify,
+    /// BLS fast aggregate verification: one message, every key.
+    BlsAggregateVerify,
+    /// Poseidon over BN254 of 1 to 4 field elements.
+    Poseidon,
+    /// A Poseidon Merkle proof.
+    PmtVerify,
+    /// An SP1 Groth16 proof.
+    Groth16Verify,
+    /// ECVRF (RFC 9381, Edwards25519 TAI).
+    EcvrfVerify,
+    /// BN254 G1 addition.
+    Bn254Add,
+    /// BN254 G1 scalar multiplication.
+    Bn254Mul,
+    /// A BN254 pairing check.
+    Bn254Pairing,
+    /// A one-leaf sigma_verify of a dlog proposition (Ergo's P2PK signature).
+    SchnorrVerify,
+    /// A sigma proof of a proposition, Ergo-compatible.
+    SigmaVerify,
+    /// A Merkle inclusion proof.
+    MerkleVerify,
+    /// A Merkle consistency proof.
+    MerkleConsistencyVerify,
+    /// A trie lookup proof.
+    TrieVerify,
+    /// A trie prefix listing proof.
+    TriePrefixVerify,
+    /// A trie range listing proof.
+    TrieRangeVerify,
+}
+
+impl JlvmOp {
+    /// Every member, in schema order.
+    pub const ALL: [Self; 93] = [Self::If, Self::And, Self::Or, Self::Not, Self::Truthy, Self::Default, Self::Let, Self::Eq, Self::Ne, Self::StrictEq, Self::StrictNe, Self::Lt, Self::Le, Self::Gt, Self::Ge, Self::Add, Self::Sub, Self::Mul, Self::Div, Self::Mod, Self::Min, Self::Max, Self::Abs, Self::Round, Self::RoundHalfUp, Self::Floor, Self::Ceil, Self::Pow, Self::Map, Self::Filter, Self::Reduce, Self::All, Self::Some, Self::None, Self::Find, Self::Count, Self::Merge, Self::In, Self::Intersect, Self::Unique, Self::Slice, Self::Reverse, Self::Flatten, Self::Length, Self::Cat, Self::Substr, Self::Lower, Self::Upper, Self::Join, Self::Split, Self::Trim, Self::StartsWith, Self::EndsWith, Self::Keys, Self::Values, Self::Entries, Self::Get, Self::Has, Self::Set, Self::Unset, Self::Exists, Self::Missing, Self::MissingSome, Self::TypeOf, Self::Hex, Self::Unhex, Self::HexToInt, Self::BytesToInt, Self::IntToBytes, Self::Sha256, Self::Sha3_256, Self::Keccak256, Self::Blake2b256, Self::Ed25519Verify, Self::Secp256k1Verify, Self::Bip340Verify, Self::Ecrecover, Self::BlsVerify, Self::BlsAggregateVerify, Self::Poseidon, Self::PmtVerify, Self::Groth16Verify, Self::EcvrfVerify, Self::Bn254Add, Self::Bn254Mul, Self::Bn254Pairing, Self::SchnorrVerify, Self::SigmaVerify, Self::MerkleVerify, Self::MerkleConsistencyVerify, Self::TrieVerify, Self::TriePrefixVerify, Self::TrieRangeVerify];
+
+    /// The text this member is written as.
+    pub const fn wire(self) -> &'static str {
+        match self {
+            Self::If => "if",
+            Self::And => "and",
+            Self::Or => "or",
+            Self::Not => "!",
+            Self::Truthy => "!!",
+            Self::Default => "default",
+            Self::Let => "let",
+            Self::Eq => "==",
+            Self::Ne => "!=",
+            Self::StrictEq => "===",
+            Self::StrictNe => "!==",
+            Self::Lt => "<",
+            Self::Le => "<=",
+            Self::Gt => ">",
+            Self::Ge => ">=",
+            Self::Add => "+",
+            Self::Sub => "-",
+            Self::Mul => "*",
+            Self::Div => "/",
+            Self::Mod => "%",
+            Self::Min => "min",
+            Self::Max => "max",
+            Self::Abs => "abs",
+            Self::Round => "round",
+            Self::RoundHalfUp => "round_half_up",
+            Self::Floor => "floor",
+            Self::Ceil => "ceil",
+            Self::Pow => "pow",
+            Self::Map => "map",
+            Self::Filter => "filter",
+            Self::Reduce => "reduce",
+            Self::All => "all",
+            Self::Some => "some",
+            Self::None => "none",
+            Self::Find => "find",
+            Self::Count => "count",
+            Self::Merge => "merge",
+            Self::In => "in",
+            Self::Intersect => "intersect",
+            Self::Unique => "unique",
+            Self::Slice => "slice",
+            Self::Reverse => "reverse",
+            Self::Flatten => "flatten",
+            Self::Length => "length",
+            Self::Cat => "cat",
+            Self::Substr => "substr",
+            Self::Lower => "lower",
+            Self::Upper => "upper",
+            Self::Join => "join",
+            Self::Split => "split",
+            Self::Trim => "trim",
+            Self::StartsWith => "startsWith",
+            Self::EndsWith => "endsWith",
+            Self::Keys => "keys",
+            Self::Values => "values",
+            Self::Entries => "entries",
+            Self::Get => "get",
+            Self::Has => "has",
+            Self::Set => "set",
+            Self::Unset => "unset",
+            Self::Exists => "exists",
+            Self::Missing => "missing",
+            Self::MissingSome => "missing_some",
+            Self::TypeOf => "typeof",
+            Self::Hex => "hex",
+            Self::Unhex => "unhex",
+            Self::HexToInt => "hex_to_int",
+            Self::BytesToInt => "bytes_to_int",
+            Self::IntToBytes => "int_to_bytes",
+            Self::Sha256 => "sha256",
+            Self::Sha3_256 => "sha3_256",
+            Self::Keccak256 => "keccak256",
+            Self::Blake2b256 => "blake2b256",
+            Self::Ed25519Verify => "ed25519_verify",
+            Self::Secp256k1Verify => "secp256k1_verify",
+            Self::Bip340Verify => "bip340_verify",
+            Self::Ecrecover => "ecrecover",
+            Self::BlsVerify => "bls_verify",
+            Self::BlsAggregateVerify => "bls_aggregate_verify",
+            Self::Poseidon => "poseidon",
+            Self::PmtVerify => "pmt_verify",
+            Self::Groth16Verify => "groth16_verify",
+            Self::EcvrfVerify => "ecvrf_verify",
+            Self::Bn254Add => "bn254_add",
+            Self::Bn254Mul => "bn254_mul",
+            Self::Bn254Pairing => "bn254_pairing",
+            Self::SchnorrVerify => "schnorr_verify",
+            Self::SigmaVerify => "sigma_verify",
+            Self::MerkleVerify => "merkle_verify",
+            Self::MerkleConsistencyVerify => "merkle_consistency_verify",
+            Self::TrieVerify => "trie_verify",
+            Self::TriePrefixVerify => "trie_prefix_verify",
+            Self::TrieRangeVerify => "trie_range_verify",
+        }
+    }
+
+    /// The member written as `wire`, if any.
+    pub fn from_wire(wire: &str) -> Option<Self> {
+        match wire {
+            "if" => Some(Self::If),
+            "and" => Some(Self::And),
+            "or" => Some(Self::Or),
+            "!" => Some(Self::Not),
+            "!!" => Some(Self::Truthy),
+            "default" => Some(Self::Default),
+            "let" => Some(Self::Let),
+            "==" => Some(Self::Eq),
+            "!=" => Some(Self::Ne),
+            "===" => Some(Self::StrictEq),
+            "!==" => Some(Self::StrictNe),
+            "<" => Some(Self::Lt),
+            "<=" => Some(Self::Le),
+            ">" => Some(Self::Gt),
+            ">=" => Some(Self::Ge),
+            "+" => Some(Self::Add),
+            "-" => Some(Self::Sub),
+            "*" => Some(Self::Mul),
+            "/" => Some(Self::Div),
+            "%" => Some(Self::Mod),
+            "min" => Some(Self::Min),
+            "max" => Some(Self::Max),
+            "abs" => Some(Self::Abs),
+            "round" => Some(Self::Round),
+            "round_half_up" => Some(Self::RoundHalfUp),
+            "floor" => Some(Self::Floor),
+            "ceil" => Some(Self::Ceil),
+            "pow" => Some(Self::Pow),
+            "map" => Some(Self::Map),
+            "filter" => Some(Self::Filter),
+            "reduce" => Some(Self::Reduce),
+            "all" => Some(Self::All),
+            "some" => Some(Self::Some),
+            "none" => Some(Self::None),
+            "find" => Some(Self::Find),
+            "count" => Some(Self::Count),
+            "merge" => Some(Self::Merge),
+            "in" => Some(Self::In),
+            "intersect" => Some(Self::Intersect),
+            "unique" => Some(Self::Unique),
+            "slice" => Some(Self::Slice),
+            "reverse" => Some(Self::Reverse),
+            "flatten" => Some(Self::Flatten),
+            "length" => Some(Self::Length),
+            "cat" => Some(Self::Cat),
+            "substr" => Some(Self::Substr),
+            "lower" => Some(Self::Lower),
+            "upper" => Some(Self::Upper),
+            "join" => Some(Self::Join),
+            "split" => Some(Self::Split),
+            "trim" => Some(Self::Trim),
+            "startsWith" => Some(Self::StartsWith),
+            "endsWith" => Some(Self::EndsWith),
+            "keys" => Some(Self::Keys),
+            "values" => Some(Self::Values),
+            "entries" => Some(Self::Entries),
+            "get" => Some(Self::Get),
+            "has" => Some(Self::Has),
+            "set" => Some(Self::Set),
+            "unset" => Some(Self::Unset),
+            "exists" => Some(Self::Exists),
+            "missing" => Some(Self::Missing),
+            "missing_some" => Some(Self::MissingSome),
+            "typeof" => Some(Self::TypeOf),
+            "hex" => Some(Self::Hex),
+            "unhex" => Some(Self::Unhex),
+            "hex_to_int" => Some(Self::HexToInt),
+            "bytes_to_int" => Some(Self::BytesToInt),
+            "int_to_bytes" => Some(Self::IntToBytes),
+            "sha256" => Some(Self::Sha256),
+            "sha3_256" => Some(Self::Sha3_256),
+            "keccak256" => Some(Self::Keccak256),
+            "blake2b256" => Some(Self::Blake2b256),
+            "ed25519_verify" => Some(Self::Ed25519Verify),
+            "secp256k1_verify" => Some(Self::Secp256k1Verify),
+            "bip340_verify" => Some(Self::Bip340Verify),
+            "ecrecover" => Some(Self::Ecrecover),
+            "bls_verify" => Some(Self::BlsVerify),
+            "bls_aggregate_verify" => Some(Self::BlsAggregateVerify),
+            "poseidon" => Some(Self::Poseidon),
+            "pmt_verify" => Some(Self::PmtVerify),
+            "groth16_verify" => Some(Self::Groth16Verify),
+            "ecvrf_verify" => Some(Self::EcvrfVerify),
+            "bn254_add" => Some(Self::Bn254Add),
+            "bn254_mul" => Some(Self::Bn254Mul),
+            "bn254_pairing" => Some(Self::Bn254Pairing),
+            "schnorr_verify" => Some(Self::SchnorrVerify),
+            "sigma_verify" => Some(Self::SigmaVerify),
+            "merkle_verify" => Some(Self::MerkleVerify),
+            "merkle_consistency_verify" => Some(Self::MerkleConsistencyVerify),
+            "trie_verify" => Some(Self::TrieVerify),
+            "trie_prefix_verify" => Some(Self::TriePrefixVerify),
+            "trie_range_verify" => Some(Self::TrieRangeVerify),
+            _ => None,
+        }
+    }
+}
+
+impl core::fmt::Display for JlvmOp {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.wire())
+    }
+}
+
+impl c::Model for JlvmOp {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        Ok(c::Value::text(self.wire()))
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["if", "and", "or", "!", "!!", "default", "let", "==", "!=", "===", "!==", "<", "<=", ">", ">=", "+", "-", "*", "/", "%", "min", "max", "abs", "round", "round_half_up", "floor", "ceil", "pow", "map", "filter", "reduce", "all", "some", "none", "find", "count", "merge", "in", "intersect", "unique", "slice", "reverse", "flatten", "length", "cat", "substr", "lower", "upper", "join", "split", "trim", "startsWith", "endsWith", "keys", "values", "entries", "get", "has", "set", "unset", "exists", "missing", "missing_some", "typeof", "hex", "unhex", "hex_to_int", "bytes_to_int", "int_to_bytes", "sha256", "sha3_256", "keccak256", "blake2b256", "ed25519_verify", "secp256k1_verify", "bip340_verify", "ecrecover", "bls_verify", "bls_aggregate_verify", "poseidon", "pmt_verify", "groth16_verify", "ecvrf_verify", "bn254_add", "bn254_mul", "bn254_pairing", "schnorr_verify", "sigma_verify", "merkle_verify", "merkle_consistency_verify", "trie_verify", "trie_prefix_verify", "trie_range_verify"])? {
+            c::Alternative::Text(i) => Self::ALL.get(i).copied().ok_or_else(|| c::unknown_alternative(c::Alternative::Text(i))),
+            record @ c::Alternative::Record(_) => Err(c::unknown_alternative(record)),
+        }
     }
 }
 
@@ -194,10 +614,14 @@ impl c::Model for JlvmProgram {
 }
 
 /// `jlvm-spread` (`shared/schemas/jlvm.cddl`).
+///
+/// A variadic operation (`+`, `*`, `min`, `max`, `cat`, `merge`) whose arguments are the elements of one array value. The
+/// argument is never a jlvm-array. That the operation is variadic is the domain decoder's check (jlvm.md section 1), as
+/// the argument's shape is: the schema types it as any operation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JlvmSpread {
     /// The `spread` entry.
-    pub spread: String,
+    pub spread: JlvmOp,
     /// The `arg` entry.
     pub arg: Box<JlvmExpr>,
 }
@@ -206,20 +630,22 @@ impl c::Model for JlvmSpread {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         let inner = c::nested(depth)?;
         c::record([
-            c::field("spread", &c::Text, &self.spread, inner)?,
+            c::field("spread", &c::ModelOf::<JlvmOp>::NEW, &self.spread, inner)?,
             c::field("arg", &c::Boxed(c::ModelOf::<JlvmExpr>::NEW), &self.arg, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["spread", "arg"])?;
-        let f0 = fields.required("spread", &c::Text)?;
+        let f0 = fields.required("spread", &c::ModelOf::<JlvmOp>::NEW)?;
         let f1 = fields.required("arg", &c::Boxed(c::ModelOf::<JlvmExpr>::NEW))?;
         Ok(Self { spread: f0, arg: f1 })
     }
 }
 
 /// `jlvm-var` (`shared/schemas/jlvm.cddl`).
+///
+/// "$name.path" reads a binding (host, let or callback); any other path reads the input data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JlvmVar {
     /// The `var` entry.
@@ -246,6 +672,8 @@ impl c::Model for JlvmVar {
 }
 
 /// `jlvm-var-at` (`shared/schemas/jlvm.cddl`).
+///
+/// A path computed at run time: text is read as a var path, an array as the exact segments of a data path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JlvmVarAt {
     /// The `path` entry.

@@ -4,7 +4,10 @@ use alloc::string::String;
 use crate::codec as c;
 
 /// `expansion-refusal` (`shared/schemas/hash-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Why `expand_message_xmd` (RFC 9380 section 5.3.1) is refused, checked in this order: "emptyDst" (the domain
+/// separation tag is empty), "outputLength" (the length asked for is not 1 to `limit`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ExpansionRefusal {
     /// The text `emptyDst`.
     EmptyDst,
@@ -34,7 +37,21 @@ impl ExpansionRefusal {
     pub const ALL: [Self; 2] = [Self::EmptyDst, Self::OutputLength];
 }
 
+impl core::fmt::Display for ExpansionRefusal {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::EmptyDst => f.write_str("emptyDst"),
+            Self::OutputLength => f.write_str("outputLength"),
+        }
+    }
+}
+
 /// `hash-error` (`shared/schemas/hash-errors.cddl`). An error family: its kinds are [`HashErrorKind`].
+///
+/// A digest of the wrong length (`expected`, the algorithm's output size, and `actual`); text that is not hexadecimal
+/// (`offset`: the first character that is not an ASCII hex digit, or the text's length when its digits are odd in
+/// number); a domain tag outside the grammar; an `expand_message_xmd` the reference refuses (`refusal`, and `limit`,
+/// the most bytes the algorithm expands to); a hash function name that is not one of the seven.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HashError {
     /// The kind `InvalidLength`.
@@ -100,7 +117,7 @@ impl core::fmt::Display for HashError {
 impl core::error::Error for HashError {}
 
 /// `hash-error-kind` (`shared/schemas/hash-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HashErrorKind {
     /// The text `InvalidLength`.
     InvalidLength,
@@ -140,4 +157,16 @@ impl c::Model for HashErrorKind {
 impl HashErrorKind {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 5] = [Self::InvalidLength, Self::InvalidHex, Self::InvalidDomainTag, Self::InvalidExpansion, Self::UnknownAlgorithm];
+}
+
+impl core::fmt::Display for HashErrorKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidLength => f.write_str("InvalidLength"),
+            Self::InvalidHex => f.write_str("InvalidHex"),
+            Self::InvalidDomainTag => f.write_str("InvalidDomainTag"),
+            Self::InvalidExpansion => f.write_str("InvalidExpansion"),
+            Self::UnknownAlgorithm => f.write_str("UnknownAlgorithm"),
+        }
+    }
 }

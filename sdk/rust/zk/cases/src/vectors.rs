@@ -3,12 +3,13 @@
 extern crate std;
 
 use alloc::borrow::ToOwned as _;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use std::path::PathBuf;
 
 use dilf4s_core::codec::Model;
+use dilf4s_core::generated::jlvm_errors::JlvmSite;
 use dilf4s_core::generated::jlvm_vectors::{JlvmErrorKind, JlvmOutcome, JlvmVectors};
 use dilf4s_core::generated::kes_vectors::{
     KesCheck, KesConstruction, KesOutcome, KesParameters, KesRefusal, KesVectors,
@@ -262,7 +263,7 @@ fn proposition_value(p: &SigmaProposition) -> Result<Value, Error> {
 }
 
 /// What a sigma outcome of `sigma_refusals_v1.json` says a case gives.
-fn sigma_expect(o: &SigmaOutcome) -> Expect {
+fn sigma_expect(o: SigmaOutcome) -> Expect {
     match o {
         SigmaOutcome::Accepted => Expect::Output(Output::Bool(true)),
         SigmaOutcome::Rejected => Expect::Output(Output::Bool(false)),
@@ -287,7 +288,7 @@ pub fn sigma(file: &str) -> Result<Vec<Named>, Error> {
         .iter()
         .zip(outcomes)
         .map(|(c, outcome)| {
-            let expect = sigma_expect(outcome);
+            let expect = sigma_expect(*outcome);
             let case = Case::Sigma {
                 proposition: cbor::encode(&proposition_value(&c.proposition)?),
                 proof: bytes(&c.proof)?,
@@ -299,7 +300,7 @@ pub fn sigma(file: &str) -> Result<Vec<Named>, Error> {
 }
 
 /// The guest's form of a KES construction and its parameters.
-fn kes_scheme(construction: &KesConstruction, parameters: &KesParameters) -> Result<KesScheme, Error> {
+fn kes_scheme(construction: KesConstruction, parameters: &KesParameters) -> Result<KesScheme, Error> {
     match (construction, parameters) {
         (KesConstruction::Dilf4sSum, KesParameters::KesSumParameters(p)) => {
             Ok(KesScheme::Sum { hash: p.hash.clone(), height: p.height })
@@ -320,7 +321,7 @@ pub fn kes() -> Result<Vec<Named>, Error> {
     let v: KesVectors = load("kes_v1.json")?;
     let mut out = Vec::new();
     for (i, vector) in v.vectors.iter().enumerate() {
-        let scheme = kes_scheme(&vector.construction, &vector.parameters)?;
+        let scheme = kes_scheme(vector.construction, &vector.parameters)?;
         for p in &vector.periods {
             let case = Case::KesVerify {
                 scheme: scheme.clone(),
@@ -345,7 +346,7 @@ pub fn kes() -> Result<Vec<Named>, Error> {
         };
         let field = |f: &Option<String>| bytes(f.as_deref().unwrap_or_default());
         let case = Case::KesVerify {
-            scheme: kes_scheme(&c.construction, &c.parameters)?,
+            scheme: kes_scheme(c.construction, &c.parameters)?,
             key: field(&c.verifying_key)?,
             period: c.period.unwrap_or_default(),
             message: field(&c.message)?,
@@ -367,7 +368,7 @@ pub fn sigma_refusals() -> Result<Vec<Named>, Error> {
                 proof: bytes(&c.proof)?,
                 message: bytes(&c.message)?,
             };
-            Ok(named(format!("sigma refusal {}", c.name), case, sigma_expect(&c.outcome)))
+            Ok(named(format!("sigma refusal {}", c.name), case, sigma_expect(c.outcome)))
         })
         .collect()
 }
@@ -513,7 +514,7 @@ fn first_errors(v: &JlvmVectors) -> Result<Vec<usize>, Error> {
     let var = v
         .cases
         .iter()
-        .position(|c| error(c).is_some_and(|e| e.op.as_deref() == Some("var")))
+        .position(|c| error(c).is_some_and(|e| e.op == Some(JlvmSite::Var)))
         .ok_or_else(|| String::from("jlvm_v1.json: no row has op var"))?;
     firsts.push(var);
     Ok(firsts)
@@ -533,7 +534,7 @@ pub fn jlvm(
         .map(|(_, c)| {
             let result = match &c.outcome {
                 JlvmOutcome::JlvmValue(x) => Ok(bytes(&x.cbor)?),
-                JlvmOutcome::JlvmError(e) => Err((format!("{:?}", e.error), e.op.clone())),
+                JlvmOutcome::JlvmError(e) => Err((e.error.to_string(), e.op.map(|s| s.to_string()))),
             };
             let case = Case::Jlvm {
                 program: c.program.clone(),

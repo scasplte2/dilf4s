@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero, pow};
 
-use crate::error::{CanonicalError, DigitsOutOfRange, JsonSyntaxError, NotJson, NumberBound, ScaleOutOfRange};
+use crate::error::{CanonicalError, JsonSyntaxReason, NotJson, NumberBound, size};
 use crate::preview::Preview;
 use crate::value::{Array, MAX_DEPTH, Map, Rational, Text, Value};
 
@@ -67,8 +67,8 @@ struct Parser<'a> {
     max_scale: u32,
 }
 
-fn syntax(offset: usize, reason: JsonSyntaxError) -> CanonicalError {
-    CanonicalError::JsonSyntax { offset, reason }
+fn syntax(offset: usize, reason: JsonSyntaxReason) -> CanonicalError {
+    CanonicalError::JsonSyntax { offset: size(offset), reason }
 }
 
 impl Parser<'_> {
@@ -111,7 +111,9 @@ impl Parser<'_> {
         match self.at(p) {
             // a container opened inside MAX_DEPTH open ones is refused at its bracket, an empty one too
             // (canonical-encoding.md section 3): the first fault in reading order
-            Some(b'{' | b'[') if stack.len() >= MAX_DEPTH => Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH }),
+            Some(b'{' | b'[') if stack.len() >= MAX_DEPTH => {
+                Err(CanonicalError::DepthExceeded { limit: size(MAX_DEPTH) })
+            }
             Some(open @ (b'{' | b'[')) => {
                 let q = self.skip_ws(p.saturating_add(1));
                 let is_object = open == b'{';
@@ -131,25 +133,25 @@ impl Parser<'_> {
                 }
             }
             Some(_) => self.scalar(p).map(|(v, next)| (State::Deliver(v), next)),
-            None => Err(syntax(p, JsonSyntaxError::ExpectedValue)),
+            None => Err(syntax(p, JsonSyntaxReason::ExpectedValue)),
         }
     }
 
     fn expect_key(&self, stack: &mut [Frame], pos: usize) -> Result<(State, usize), CanonicalError> {
         let p = self.skip_ws(pos);
         if self.at(p) != Some(b'"') {
-            return Err(syntax(p, JsonSyntaxError::ExpectedMemberName));
+            return Err(syntax(p, JsonSyntaxReason::ExpectedMemberName));
         }
         let (name, next) = self.string(p)?;
         let Some(Frame::InObject { seen, key, .. }) = stack.last_mut() else {
-            return Err(syntax(p, JsonSyntaxError::ExpectedValue));
+            return Err(syntax(p, JsonSyntaxReason::ExpectedValue));
         };
         if seen.contains(&name) {
             return Err(CanonicalError::DuplicateKey { key: Preview::of_wtf8(&name) });
         }
         let colon = self.skip_ws(next);
         if self.at(colon) != Some(b':') {
-            return Err(syntax(colon, JsonSyntaxError::ExpectedColon));
+            return Err(syntax(colon, JsonSyntaxReason::ExpectedColon));
         }
         seen.insert(name.clone());
         *key = name;
@@ -162,31 +164,31 @@ impl Parser<'_> {
         let after = p.saturating_add(1);
         match (stack.last_mut(), self.at(p)) {
             (None, _) if p == self.bytes.len() => Ok(Delivered::Done(v)),
-            (None, _) => Err(syntax(p, JsonSyntaxError::TrailingContent)),
+            (None, _) => Err(syntax(p, JsonSyntaxReason::TrailingContent)),
             (Some(Frame::InArray(items)), Some(b',')) => {
                 items.push(v);
                 Ok(Delivered::Next(State::ExpectValue, after))
             }
             (Some(Frame::InArray(_)), Some(b']')) => {
                 let Some(Frame::InArray(mut items)) = stack.pop() else {
-                    return Err(syntax(p, JsonSyntaxError::ExpectedCommaOrBracket));
+                    return Err(syntax(p, JsonSyntaxReason::ExpectedCommaOrBracket));
                 };
                 items.push(v);
                 Ok(Delivered::Next(State::Deliver(Value::Array(Array::new(items)?)), after))
             }
-            (Some(Frame::InArray(_)), _) => Err(syntax(p, JsonSyntaxError::ExpectedCommaOrBracket)),
+            (Some(Frame::InArray(_)), _) => Err(syntax(p, JsonSyntaxReason::ExpectedCommaOrBracket)),
             (Some(Frame::InObject { entries, key, .. }), Some(b',')) => {
                 entries.push((core::mem::take(key), v));
                 Ok(Delivered::Next(State::ExpectKey, after))
             }
             (Some(Frame::InObject { .. }), Some(b'}')) => {
                 let Some(Frame::InObject { mut entries, key, .. }) = stack.pop() else {
-                    return Err(syntax(p, JsonSyntaxError::ExpectedCommaOrBrace));
+                    return Err(syntax(p, JsonSyntaxReason::ExpectedCommaOrBrace));
                 };
                 entries.push((key, v));
                 Ok(Delivered::Next(State::Deliver(Value::Map(object(entries)?)), after))
             }
-            (Some(Frame::InObject { .. }), _) => Err(syntax(p, JsonSyntaxError::ExpectedCommaOrBrace)),
+            (Some(Frame::InObject { .. }), _) => Err(syntax(p, JsonSyntaxReason::ExpectedCommaOrBrace)),
         }
     }
 
@@ -201,7 +203,7 @@ impl Parser<'_> {
             Some(b'f') if rest.starts_with("false") => Ok((Value::Bool(false), p.saturating_add(5))),
             Some(b'n') if rest.starts_with("null") => Ok((Value::Null, p.saturating_add(4))),
             Some(c) if c == b'-' || c.is_ascii_digit() => self.number(p),
-            _ => Err(syntax(p, JsonSyntaxError::ExpectedValue)),
+            _ => Err(syntax(p, JsonSyntaxReason::ExpectedValue)),
         }
     }
 
@@ -223,7 +225,11 @@ impl Parser<'_> {
         };
         let end = if has_exp { self.digits(exp_start) } else { frac_end };
         let slice = |a: usize, b: usize| self.text.get(a..b).unwrap_or("");
-        let invalid = |bound| CanonicalError::InvalidNumber { length: end.saturating_sub(p), offset: p, bound };
+        let invalid = |bound| CanonicalError::InvalidNumber {
+            length: Some(size(end.saturating_sub(p))),
+            offset: Some(size(p)),
+            bound,
+        };
         let bounded = |bound| invalid(Some(bound));
         let int_digits = slice(int_start, int_end);
         let frac_digits = if has_frac { slice(int_end.saturating_add(1), frac_end) } else { "" };
@@ -243,7 +249,7 @@ impl Parser<'_> {
         };
         let exponent_digits = exp_digits.trim_start_matches('0').len();
         if let Some(digits) = [significand, exponent_digits].into_iter().find(|d| *d > MAX_DIGITS) {
-            return Err(bounded(NumberBound::Digits(DigitsOutOfRange { digits, max_digits: MAX_DIGITS })));
+            return Err(bounded(NumberBound::Digits { digits: size(digits), limit: size(MAX_DIGITS) }));
         }
         // saturating: any exponent past i128 is far outside every accepted scale
         let magnitude = exp_digits
@@ -253,7 +259,10 @@ impl Parser<'_> {
         let scale = i128::try_from(frac_digits.len()).unwrap_or(i128::MAX).saturating_sub(exponent);
         let max = i128::from(self.max_scale);
         if scale.saturating_abs() > max {
-            return Err(bounded(NumberBound::Scale(ScaleOutOfRange { scale, max_scale: self.max_scale })));
+            return Err(bounded(NumberBound::Scale {
+                scale: i32::try_from(scale).unwrap_or(if scale < 0 { i32::MIN } else { i32::MAX }),
+                limit: u64::from(self.max_scale),
+            }));
         }
         let mut all_digits = String::with_capacity(int_digits.len().saturating_add(frac_digits.len()));
         all_digits.push_str(int_digits);
@@ -277,11 +286,11 @@ impl Parser<'_> {
         let mut i = open.saturating_add(1);
         loop {
             let Some(b) = self.at(i) else {
-                return Err(syntax(i, JsonSyntaxError::UnterminatedString));
+                return Err(syntax(i, JsonSyntaxReason::UnterminatedString));
             };
             match b {
                 b'"' => return Ok((out.finish(), i.saturating_add(1))),
-                0x00..=0x1f => return Err(syntax(i, JsonSyntaxError::ControlCharacter)),
+                0x00..=0x1f => return Err(syntax(i, JsonSyntaxReason::ControlCharacter)),
                 b'\\' => {
                     let simple = match self.at(i.saturating_add(1)) {
                         Some(b'"') => Some(b'"'),
@@ -293,7 +302,7 @@ impl Parser<'_> {
                         Some(b'r') => Some(b'\r'),
                         Some(b't') => Some(b'\t'),
                         Some(b'u') => None,
-                        _ => return Err(syntax(i, JsonSyntaxError::InvalidEscape)),
+                        _ => return Err(syntax(i, JsonSyntaxReason::InvalidEscape)),
                     };
                     if let Some(c) = simple {
                         out.byte(c);
@@ -302,11 +311,11 @@ impl Parser<'_> {
                         let hex = self
                             .bytes
                             .get(i.saturating_add(2)..i.saturating_add(6))
-                            .ok_or_else(|| syntax(i, JsonSyntaxError::InvalidEscape))?;
+                            .ok_or_else(|| syntax(i, JsonSyntaxReason::InvalidEscape))?;
                         let unit = hex
                             .iter()
                             .try_fold(0u16, |acc, &h| hex_digit(h).map(|d| acc.wrapping_shl(4) | u16::from(d)));
-                        out.unit(unit.ok_or_else(|| syntax(i, JsonSyntaxError::InvalidEscape))?);
+                        out.unit(unit.ok_or_else(|| syntax(i, JsonSyntaxReason::InvalidEscape))?);
                         i = i.saturating_add(6);
                     }
                 }
@@ -522,10 +531,10 @@ fn write_json<O: TextOut>(out: &mut Budget<O>, value: &Value) -> Result<(), Rend
             Some(Value::Bool(b)) => out.push(if *b { "true" } else { "false" })?,
             Some(Value::Int(n)) => out.push(&integer_text(n))?,
             Some(Value::Rational(r)) => {
-                out.push(&decimal(r).map_err(|kind| CanonicalError::NotJsonRepresentable { kind })?)?;
+                out.push(&decimal(r).map_err(|what| CanonicalError::NotJsonRepresentable { what })?)?;
             }
             Some(Value::Text(s)) => out.quote(s)?,
-            Some(Value::Bytes(_)) => return Err(CanonicalError::NotJsonRepresentable { kind: NotJson::Bytes }.into()),
+            Some(Value::Bytes(_)) => return Err(CanonicalError::NotJsonRepresentable { what: NotJson::Bytes }.into()),
             Some(Value::Array(a)) => {
                 out.push("[")?;
                 stack.push(Open::Items { items: a.items().iter(), started: false });
@@ -673,7 +682,7 @@ pub(crate) fn twos_and_fives(d: &BigInt) -> (Option<(u64, u64)>, u32) {
 }
 
 /// The exact decimal of `r`, within the bounds [`parse`] accepts: [`NotJson::NonTerminatingRational`] when its
-/// denominator has prime factors other than 2 and 5, [`NotJson::OverLong`] past the bounds, both found from the
+/// denominator has prime factors other than 2 and 5, [`NotJson::OverLongNumber`] past the bounds, both found from the
 /// denominator's factors ([`twos_and_fives`]) before any digit is produced.
 pub fn decimal(r: &Rational) -> Result<String, NotJson> {
     let d = r.denominator();
@@ -681,7 +690,7 @@ pub fn decimal(r: &Rational) -> Result<String, NotJson> {
     let scale = usize::try_from(twos.max(fives))
         .ok()
         .filter(|s| u32::try_from(*s).is_ok_and(|s| s <= DEFAULT_MAX_SCALE))
-        .ok_or(NotJson::OverLong)?;
+        .ok_or(NotJson::OverLongNumber)?;
     // 10^scale is a multiple of d, so the division is exact
     let scaled = r.numerator() * (pow(BigInt::from(10u8), scale) / d);
     let digits = scaled.abs().to_string();
@@ -689,7 +698,7 @@ pub fn decimal(r: &Rational) -> Result<String, NotJson> {
     padded.push_str(&digits);
     let (int_part, frac_part) = padded.split_at(padded.len().saturating_sub(scale));
     let sign = if scaled.is_negative() { "-" } else { "" };
-    within(alloc::format!("{sign}{int_part}.{frac_part}")).ok_or(NotJson::OverLong)
+    within(alloc::format!("{sign}{int_part}.{frac_part}")).ok_or(NotJson::OverLongNumber)
 }
 
 #[cfg(test)]
@@ -791,7 +800,7 @@ mod tests {
         // past the scale bound, refused from the factors, before any digit is produced
         for d in [pow(BigInt::from(2u8), 33_218), pow(five, 14_306)] {
             let Ok(crate::Value::Rational(r)) = crate::Value::number(&BigInt::one(), &d) else { panic!("a rational") };
-            assert_eq!(super::decimal(&r), Err(crate::error::NotJson::OverLong), "{} bits", d.bits());
+            assert_eq!(super::decimal(&r), Err(crate::error::NotJson::OverLongNumber), "{} bits", d.bits());
         }
     }
 }

@@ -39,7 +39,7 @@ enum Kes {
 }
 
 /// The scheme of a construction and its parameters, or its refusal.
-fn scheme_of(construction: &KesConstruction, parameters: &KesParameters) -> Result<Kes, KesError> {
+fn scheme_of(construction: KesConstruction, parameters: &KesParameters) -> Result<Kes, KesError> {
     let height = |h: u64| u32::try_from(h).unwrap();
     match (construction, parameters) {
         (KesConstruction::Dilf4sSum, KesParameters::KesSumParameters(p)) => {
@@ -57,7 +57,7 @@ fn scheme_of(construction: &KesConstruction, parameters: &KesParameters) -> Resu
 }
 
 fn scheme(v: &KesVector) -> Kes {
-    scheme_of(&v.construction, &v.parameters).unwrap()
+    scheme_of(v.construction, &v.parameters).unwrap()
 }
 
 /// The schema's outcome of a refusal: its kind, the type the schema's outcomes name.
@@ -73,7 +73,7 @@ fn outcome<T>(r: Result<T, KesError>) -> KesOutcome {
 /// What a `refusals` row's call gives, or `None` for a key operation without the `sign` feature.
 fn refusal_outcome(c: &KesRefusal) -> Option<KesOutcome> {
     let field = |f: &Option<String>| bytes(f.as_deref().unwrap_or_default());
-    let kes = match scheme_of(&c.construction, &c.parameters) {
+    let kes = match scheme_of(c.construction, &c.parameters) {
         Err(e) => return Some(kes_outcome(&e)),
         Ok(kes) => kes,
     };
@@ -85,14 +85,14 @@ fn refusal_outcome(c: &KesRefusal) -> Option<KesOutcome> {
                 .map_or_else(|e| kes_outcome(&e), |ok| if ok { KesOutcome::Accepted } else { KesOutcome::Rejected }),
         ),
         KesCheck::Generate | KesCheck::Load | KesCheck::Evolve => {
-            keyed(&kes, &c.check, &field(&c.seed), &field(&c.key), period)
+            keyed(&kes, c.check, &field(&c.seed), &field(&c.key), period)
         }
     }
 }
 
 /// Generating, loading or evolving a key, which needs the `sign` feature.
 #[cfg(feature = "sign")]
-fn keyed(kes: &Kes, check: &KesCheck, seed: &[u8], key: &[u8], period: u64) -> Option<KesOutcome> {
+fn keyed(kes: &Kes, check: KesCheck, seed: &[u8], key: &[u8], period: u64) -> Option<KesOutcome> {
     Some(match (kes, check) {
         (Kes::Sum(k), KesCheck::Generate) => outcome(k.generate(seed)),
         (Kes::Sum(k), KesCheck::Load) => outcome(k.load(key, period)),
@@ -107,7 +107,7 @@ fn keyed(kes: &Kes, check: &KesCheck, seed: &[u8], key: &[u8], period: u64) -> O
 }
 
 #[cfg(not(feature = "sign"))]
-const fn keyed(_: &Kes, _: &KesCheck, _: &[u8], _: &[u8], _: u64) -> Option<KesOutcome> {
+const fn keyed(_: &Kes, _: KesCheck, _: &[u8], _: &[u8], _: u64) -> Option<KesOutcome> {
     None
 }
 

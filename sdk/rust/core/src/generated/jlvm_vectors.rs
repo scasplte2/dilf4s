@@ -54,6 +54,11 @@ impl c::Model for BuiltStep {
 }
 
 /// `built-value` (`shared/schemas/jlvm-vectors.cddl`).
+///
+/// A host binding too heavy to write out (refusal-vectors.cddl defines the same rule): start from "leaf" (canonical
+/// CBOR); then apply each step in order: {"template": t, "times": n} replaces, n times over, every text "$" in the
+/// canonical value t by the value so far; {"copies": n} makes an array of n of it. Every occurrence is the one value,
+/// shared, so a loader builds it with sharing and never encodes, renders or copies it whole.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BuiltValue {
     /// The `leaf` entry.
@@ -166,87 +171,46 @@ impl c::Model for JlvmCase {
 }
 
 /// `jlvm-error` (`shared/schemas/jlvm-vectors.cddl`).
+///
+/// "op" is present exactly for the kinds Type, Arity, Arithmetic, Domain and Crypto: the wire name of the operation that
+/// refused (jlvm.cddl), or "var" for the read of a computed path. OutOfGas is pinned by its kind and the case's gasUsed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JlvmError {
     /// The `error` entry.
     pub error: JlvmErrorKind,
     /// The `op` entry.
-    pub op: Option<String>,
+    pub op: Option<super::jlvm_errors::JlvmSite>,
 }
 
 impl c::Model for JlvmError {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         let inner = c::nested(depth)?;
         c::record([
-            c::field("error", &c::ModelOf::<JlvmErrorKind>::NEW, &self.error, inner)?,
-            c::optional_field("op", &c::Text, self.op.as_ref(), inner)?,
+            c::field("error", &JLVM_ERROR_KIND, &self.error, inner)?,
+            c::optional_field("op", &c::ModelOf::<super::jlvm_errors::JlvmSite>::NEW, self.op.as_ref(), inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["error", "op"])?;
-        let f0 = fields.required("error", &c::ModelOf::<JlvmErrorKind>::NEW)?;
-        let f1 = fields.optional("op", &c::Text)?;
+        let f0 = fields.required("error", &JLVM_ERROR_KIND)?;
+        let f1 = fields.optional("op", &c::ModelOf::<super::jlvm_errors::JlvmSite>::NEW)?;
         Ok(Self { error: f0, op: f1 })
     }
 }
 
 /// `jlvm-error-kind` (`shared/schemas/jlvm-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum JlvmErrorKind {
-    /// The text `Malformed`.
-    Malformed,
-    /// The text `Type`.
-    Type,
-    /// The text `Arity`.
-    Arity,
-    /// The text `Arithmetic`.
-    Arithmetic,
-    /// The text `Domain`.
-    Domain,
-    /// The text `Crypto`.
-    Crypto,
-    /// The text `Limit`.
-    Limit,
-    /// The text `OutOfGas`.
-    OutOfGas,
-}
+///
+/// A kind of JlvmError (jlvm-errors.cddl).
+pub type JlvmErrorKind = super::jlvm_errors::JlvmErrorKind;
 
-impl c::Model for JlvmErrorKind {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
-        match self {
-            Self::Malformed => Ok(c::Value::text("Malformed")),
-            Self::Type => Ok(c::Value::text("Type")),
-            Self::Arity => Ok(c::Value::text("Arity")),
-            Self::Arithmetic => Ok(c::Value::text("Arithmetic")),
-            Self::Domain => Ok(c::Value::text("Domain")),
-            Self::Crypto => Ok(c::Value::text("Crypto")),
-            Self::Limit => Ok(c::Value::text("Limit")),
-            Self::OutOfGas => Ok(c::Value::text("OutOfGas")),
-        }
-    }
-
-    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["Malformed", "Type", "Arity", "Arithmetic", "Domain", "Crypto", "Limit", "OutOfGas"])? {
-            c::Alternative::Text(0) => Ok(Self::Malformed),
-            c::Alternative::Text(1) => Ok(Self::Type),
-            c::Alternative::Text(2) => Ok(Self::Arity),
-            c::Alternative::Text(3) => Ok(Self::Arithmetic),
-            c::Alternative::Text(4) => Ok(Self::Domain),
-            c::Alternative::Text(5) => Ok(Self::Crypto),
-            c::Alternative::Text(6) => Ok(Self::Limit),
-            c::Alternative::Text(7) => Ok(Self::OutOfGas),
-            other => Err(c::unknown_alternative(other)),
-        }
-    }
-}
-
-impl JlvmErrorKind {
-    /// Every alternative, in schema order.
-    pub const ALL: [Self; 8] = [Self::Malformed, Self::Type, Self::Arity, Self::Arithmetic, Self::Domain, Self::Crypto, Self::Limit, Self::OutOfGas];
-}
+/// The codec of [`JlvmErrorKind`].
+pub const JLVM_ERROR_KIND: c::ModelOf<super::jlvm_errors::JlvmErrorKind> = c::ModelOf::<super::jlvm_errors::JlvmErrorKind>::NEW;
 
 /// `jlvm-outcome` (`shared/schemas/jlvm-vectors.cddl`).
+///
+/// A value as its canonical CBOR (canonical-encoding.md), with its JSON surface text when it has one; or an error by
+/// its kind and normative fields (jlvm.md section 3). Messages are not part of conformance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum JlvmOutcome {
     /// A [`JlvmValue`].

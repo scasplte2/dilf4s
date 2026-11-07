@@ -11,7 +11,10 @@ pub type Hex = String;
 pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 
 /// `sigma-outcome` (`shared/schemas/sigma-refusal-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// "accepted" (the proof verifies), "rejected" (a well-formed proof that does not), or the SigmaError kind. The
+/// proposition is decoded first, then the proof's length, then its responses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SigmaOutcome {
     /// The text `accepted`.
     Accepted,
@@ -46,6 +49,16 @@ impl c::Model for SigmaOutcome {
 impl SigmaOutcome {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 6] = [Self::Accepted, Self::Rejected, Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::InvalidProposition), Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::InvalidPoint), Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::ProofLength), Self::SigmaErrorKind(super::crypto_errors::SigmaErrorKind::ResponseOutOfRange)];
+}
+
+impl core::fmt::Display for SigmaOutcome {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Accepted => f.write_str("accepted"),
+            Self::Rejected => f.write_str("rejected"),
+            Self::SigmaErrorKind(a) => core::fmt::Display::fmt(a, f),
+        }
+    }
 }
 
 /// `sigma-refusal` (`shared/schemas/sigma-refusal-vectors.cddl`).

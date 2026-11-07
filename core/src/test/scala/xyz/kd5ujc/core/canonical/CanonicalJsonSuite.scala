@@ -2,7 +2,7 @@ package xyz.kd5ujc.core.canonical
 
 import xyz.kd5ujc.core.canonical.CanonicalError._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.numerics.{ArithmeticError, Ratio}
+import xyz.kd5ujc.numerics.Ratio
 
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
@@ -17,7 +17,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
     def rational(n: BigInt, d: BigInt) =
       Ratio.of(n, d).fold(e => sys.error(e.toString), r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity))
     val third = rational(BigInt(1) << 30000, BigInt(3))
-    val refusal = NotJsonRepresentable("non-terminating rational of 30001/2 bits")
+    val refusal = NotJsonRepresentable("non-terminating rational")
     // a rational that wide is no value (CanonicalValue.MaxRationalBits); the widest integer is, and renders
     val huge = CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect
@@ -32,7 +32,6 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
   pureTest("numbers are read and written within 10,000 significant digits, counted before any conversion") {
     def digits(n: Int) = "9" * n
     val ones = "1" * 10000
-    val rejectedDigits = (n: Int) => NumberSource.Text(n, 0)
     expect
       .same(Right(CanonicalGens.int(BigInt(ones))), parse(ones))
       .and(expect.same(Right(ones), parse(ones).flatMap(CanonicalJson.render)))
@@ -40,9 +39,13 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Left(IntegerTooWide(CanonicalValue.MaxIntegerBits)), parse(digits(10000))))
       .and(expect.same(Right(CInt(100)), parse("1e" + "0" * 20000 + "2")))
       .and(parse(digits(10001)) match {
-        case Left(InvalidNumber(source, Some(ArithmeticError.DigitsOutOfRange(10001, 10000)))) =>
-          expect.same(rejectedDigits(10001), source)
-        case other => failure(s"expected a digit refusal, got ${other.isRight}")
+        case Left(e) => expect.same(InvalidNumber(Some(10001L), Some(0L), Some(NumberBound.Digits(10001L, 10000L))), e)
+        case other   => failure(s"expected a digit refusal, got ${other.isRight}")
+      })
+      // both past the bound: the significand's count, as every SDK reports it
+      .and(parse("1" * 10002 + "e" + "1" * 10001) match {
+        case Left(InvalidNumber(_, _, Some(NumberBound.Digits(digits, _)))) => expect.same(10002L, digits)
+        case other                                                          => failure(s"expected a digit refusal, got ${other.isRight}")
       })
       .and(expect(parse("0." + digits(10001)).isLeft, "10,001 fraction digits"))
       .and(expect(parse("1e" + digits(10001)).isLeft, "an exponent of 10,001 digits"))
@@ -59,10 +62,11 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
       "-" + nines + "e+" -> 10004
     ).map {
       case (text, length) =>
-        val expected = NumberSource.Text(length, 1)
         parse(s"[$text]") match {
-          case Left(e @ InvalidNumber(source, _)) =>
-            expect.same(expected, source).and(expect(!e.toString.contains("99999"), s"its diagnostic keeps no digits: $e"))
+          case Left(e @ InvalidNumber(len, offset, _)) =>
+            expect
+              .same((Some(length.toLong), Some(1L)), (len, offset))
+              .and(expect(!e.toString.contains("99999"), s"its diagnostic keeps no digits: $e"))
           case other => failure(s"expected a refusal of a $length-character number, got ${other.isRight}")
         }
     }.reduce(_ and _)
@@ -93,8 +97,8 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
 
   pureTest("extreme exponents are rejected by bound, without materialising 10^scale") {
     parse("1e-2000000000") match {
-      case Left(InvalidNumber(_, Some(_))) => success
-      case other                           => failure(s"expected a bounded-scale rejection, got $other")
+      case Left(InvalidNumber(_, _, Some(NumberBound.Scale(scale, 10000L)))) => expect.same(2000000000, scale)
+      case other                                                             => failure(s"expected a bounded-scale rejection, got $other")
     }
   }
 

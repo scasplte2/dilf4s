@@ -14,8 +14,8 @@ use core::cell::Cell;
 use dilf4s_core::{CanonicalError, Preview, Value, json};
 
 use crate::ast::{Expr, Program, VarRef, canonical_error};
-use crate::error::JlvmError;
-use crate::op::{Op, call_name, removed};
+use crate::error::{JlvmError, Raise};
+use crate::op::{Op, OpClass, call_name, removed};
 use crate::values::from_canonical_json;
 
 /// A JSON node of text the strict parser has accepted, with its source span.

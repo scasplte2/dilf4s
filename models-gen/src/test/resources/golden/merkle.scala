@@ -48,6 +48,10 @@ object MerkleInclusion {
   given CanonicalDecoder[MerkleInclusion] = codec.decoder
 }
 
+/**
+ * The persistent Merkle log's state record (section 5): tree size and a generation counter that every commit
+ * increments. Commits compare-and-write this record, so concurrent writers cannot both succeed.
+ */
 final case class MerkleLogState(size: TreeIndex, generation: TreeIndex)
 
 object MerkleLogState {

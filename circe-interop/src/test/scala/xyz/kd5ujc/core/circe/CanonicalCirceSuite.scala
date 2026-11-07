@@ -2,9 +2,9 @@ package xyz.kd5ujc.core.circe
 
 import xyz.kd5ujc.core.canonical.CanonicalError._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalGens, CanonicalJson, CanonicalValue, Cbor, NumberSource}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalGens, CanonicalJson, CanonicalValue, Cbor, NumberBound}
 import xyz.kd5ujc.core.vectors.CanonicalVectors
-import xyz.kd5ujc.numerics.{ArithmeticError, Ratio}
+import xyz.kd5ujc.numerics.Ratio
 
 import io.circe.syntax._
 import io.circe.{Json, parser}
@@ -16,7 +16,7 @@ object CanonicalCirceSuite extends SimpleIOSuite with Checkers {
   private def parse(s: String) = CanonicalJson.parse(s)
 
   private def viaCirce(text: String): Either[CanonicalError, CanonicalValue] =
-    parser.parse(text).left.map(e => JsonSyntax(0, e.message)).flatMap(CanonicalCirce.fromCirce(_))
+    parser.parse(text).left.map(_ => JsonSyntax(0, "expectedValue")).flatMap(CanonicalCirce.fromCirce(_))
 
   pureTest("a refused rational is named by its size, never its digits, as render names it") {
     def rational(n: BigInt, d: BigInt) =
@@ -25,7 +25,7 @@ object CanonicalCirceSuite extends SimpleIOSuite with Checkers {
     // a rational that wide is no value (CanonicalValue.MaxRationalBits); the widest integer is, and converts
     val huge = xyz.kd5ujc.core.canonical.CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect
-      .same(Left(NotJsonRepresentable("non-terminating rational of 30001/2 bits")), CanonicalCirce.toCirce(third))
+      .same(Left(NotJsonRepresentable("non-terminating rational")), CanonicalCirce.toCirce(third))
       .and(expect.same(Right(Json.fromBigInt(huge.value)), CanonicalCirce.toCirce(huge)))
       .and(expect.same(CanonicalJson.render(third).map(_ => ()), CanonicalCirce.toCirce(third).map(_ => ())))
   }
@@ -33,8 +33,9 @@ object CanonicalCirceSuite extends SimpleIOSuite with Checkers {
   pureTest("a number refused for its scale is named by its size, never its digits") {
     val wide = Json.fromBigDecimal(BigDecimal(new java.math.BigDecimal((BigInt(1) << 1000000).bigInteger, 10001)))
     CanonicalCirce.fromCirce(wide) match {
-      case Left(InvalidNumber(source, Some(_))) =>
-        expect.same(NumberSource.Decimal(10001, 1000001), source)
+      case Left(e @ InvalidNumber(_, _, Some(_))) =>
+        // a converted number has no text: no length or offset; its coefficient is past the digit bound before its scale
+        expect.same(InvalidNumber(None, None, Some(NumberBound.Digits(10001L, 10000L))), e)
       case other => failure(s"expected a scale refusal, got ${other.isRight}")
     }
   }
@@ -42,8 +43,8 @@ object CanonicalCirceSuite extends SimpleIOSuite with Checkers {
   pureTest("a converted number of 10,001 digits is refused by its width, before it is rendered") {
     val wide = Json.fromBigInt(BigInt(10).pow(10000))
     CanonicalCirce.fromCirce(wide) match {
-      case Left(InvalidNumber(_, Some(ArithmeticError.DigitsOutOfRange(10001, 10000)))) => success
-      case other                                                                        => failure(s"expected a digit refusal, got $other")
+      case Left(InvalidNumber(_, _, Some(NumberBound.Digits(10001L, 10000L)))) => success
+      case other                                                               => failure(s"expected a digit refusal, got $other")
     }
   }
 
@@ -55,7 +56,7 @@ object CanonicalCirceSuite extends SimpleIOSuite with Checkers {
       .reduce(_ and _)
     expect
       .same(
-        Left(InvalidNumber(NumberSource.Text(640000, 0), Some(ArithmeticError.DigitsOutOfRange(640000, 10000)))),
+        Left(InvalidNumber(Some(640000L), Some(0L), Some(NumberBound.Digits(640000L, 10000L)))),
         viaCirce("9" * 640000)
       )
       .and(expect(viaCirce("0e" + "1" * 10001).isLeft, "a zero with a 10,001-digit exponent is refused, as the parser refuses it"))

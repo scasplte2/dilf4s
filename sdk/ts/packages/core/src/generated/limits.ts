@@ -6,10 +6,18 @@ export const BLOOM_MAX_BITS = 16777216;
 /** `bloom-max-hashes` (`shared/schemas/limits.cddl`). */
 export const BLOOM_MAX_HASHES = 32;
 
-/** `bloom-min-bits` (`shared/schemas/limits.cddl`). */
+/**
+ * `bloom-min-bits` (`shared/schemas/limits.cddl`).
+ *
+ * Bloom filters (bloom.md)
+ */
 export const BLOOM_MIN_BITS = 64;
 
-/** `canonical-max-depth` (`shared/schemas/limits.cddl`). */
+/**
+ * `canonical-max-depth` (`shared/schemas/limits.cddl`).
+ *
+ * The canonical data model (canonical-encoding.md)
+ */
 export const CANONICAL_MAX_DEPTH = 256;
 
 /** `canonical-max-digit-bits` (`shared/schemas/limits.cddl`). */
@@ -18,10 +26,19 @@ export const CANONICAL_MAX_DIGIT_BITS = 33220;
 /** `canonical-max-digits` (`shared/schemas/limits.cddl`). */
 export const CANONICAL_MAX_DIGITS = 10000;
 
-/** `canonical-max-integer-bits` (`shared/schemas/limits.cddl`). */
+/**
+ * `canonical-max-integer-bits` (`shared/schemas/limits.cddl`).
+ *
+ * canonical-max-digits digits (a bound checked before converting one)
+ */
 export const CANONICAL_MAX_INTEGER_BITS = 33219;
 
-/** `canonical-max-rational-bits` (`shared/schemas/limits.cddl`). */
+/**
+ * `canonical-max-rational-bits` (`shared/schemas/limits.cddl`).
+ *
+ * canonical-max-digits digits (2^33219 < 10^10000 < 2^33220), so every
+ * integer renders as JSON; 8e9999 is within it, 9e9999 is not
+ */
 export const CANONICAL_MAX_RATIONAL_BITS = 33219;
 
 /** `canonical-max-scale` (`shared/schemas/limits.cddl`). */
@@ -45,7 +62,11 @@ export const JLVM_MAX_NUMBER_BITS = 4096;
 /** `jlvm-max-pairs` (`shared/schemas/limits.cddl`). */
 export const JLVM_MAX_PAIRS = 64;
 
-/** `jlvm-max-program-depth` (`shared/schemas/limits.cddl`). */
+/**
+ * `jlvm-max-program-depth` (`shared/schemas/limits.cddl`).
+ *
+ * JLVM (jlvm.md)
+ */
 export const JLVM_MAX_PROGRAM_DEPTH = 256;
 
 /** `jlvm-max-program-size` (`shared/schemas/limits.cddl`). */
@@ -57,31 +78,55 @@ export const JLVM_MAX_VALUE_WEIGHT = 16777216;
 /** `jlvm-max-warnings` (`shared/schemas/limits.cddl`). */
 export const JLVM_MAX_WARNINGS = 64;
 
-/** `kes-max-height` (`shared/schemas/limits.cddl`). */
+/**
+ * `kes-max-height` (`shared/schemas/limits.cddl`).
+ *
+ * KES (kes.md)
+ */
 export const KES_MAX_HEIGHT = 30;
 
-/** `max-proof-weight` (`shared/schemas/limits.cddl`). */
+/**
+ * `max-proof-weight` (`shared/schemas/limits.cddl`).
+ *
+ * Verifier input (conformance.md section 5)
+ */
 export const MAX_PROOF_WEIGHT = 16777216;
 
-/** `merkle-max-tree-index` (`shared/schemas/limits.cddl`). */
+/**
+ * `merkle-max-tree-index` (`shared/schemas/limits.cddl`).
+ *
+ * Merkle tree (merkle.md)
+ */
 export const MERKLE_MAX_TREE_INDEX = 9223372036854775807n;
 
 /** `path-max-depth` (`shared/schemas/limits.cddl`). */
 export const PATH_MAX_DEPTH = 255;
 
-/** `path-max-segment-digits` (`shared/schemas/limits.cddl`). */
+/**
+ * `path-max-segment-digits` (`shared/schemas/limits.cddl`).
+ *
+ * Derivation paths (signing.md section 3)
+ */
 export const PATH_MAX_SEGMENT_DIGITS = 10;
 
 /** `poseidon-max-depth` (`shared/schemas/limits.cddl`). */
 export const POSEIDON_MAX_DEPTH = 256;
 
-/** `poseidon-max-inputs` (`shared/schemas/limits.cddl`). */
+/**
+ * `poseidon-max-inputs` (`shared/schemas/limits.cddl`).
+ *
+ * Poseidon (zk.md section 4)
+ */
 export const POSEIDON_MAX_INPUTS = 4;
 
 /** `sigma-max-children` (`shared/schemas/limits.cddl`). */
 export const SIGMA_MAX_CHILDREN = 255;
 
-/** `sigma-max-depth` (`shared/schemas/limits.cddl`). */
+/**
+ * `sigma-max-depth` (`shared/schemas/limits.cddl`).
+ *
+ * Sigma propositions (sigma.md section 3)
+ */
 export const SIGMA_MAX_DEPTH = 64;
 
 /** `sigma-max-leaves` (`shared/schemas/limits.cddl`). */
@@ -102,7 +147,11 @@ export const STATE_KEY_MAX_SEGMENTS = 16;
 /** `state-namespace-max-length` (`shared/schemas/limits.cddl`). */
 export const STATE_NAMESPACE_MAX_LENGTH = 254;
 
-/** `trie-max-fixed-key-bytes` (`shared/schemas/limits.cddl`). */
+/**
+ * `trie-max-fixed-key-bytes` (`shared/schemas/limits.cddl`).
+ *
+ * Patricia trie key modes (trie.md section 1)
+ */
 export const TRIE_MAX_FIXED_KEY_BYTES = 1024;
 
 /** `trie-max-variable-key-bytes` (`shared/schemas/limits.cddl`). */
@@ -114,7 +163,11 @@ export const VERSIONED_MAX_CHUNK_BYTES = 4194304;
 /** `versioned-max-chunk-entries` (`shared/schemas/limits.cddl`). */
 export const VERSIONED_MAX_CHUNK_ENTRIES = 1024;
 
-/** `versioned-max-value-bytes` (`shared/schemas/limits.cddl`). */
+/**
+ * `versioned-max-value-bytes` (`shared/schemas/limits.cddl`).
+ *
+ * Versioned trie (versioned-trie.md)
+ */
 export const VERSIONED_MAX_VALUE_BYTES = 1048576;
 
 /** `versioned-max-value-depth` (`shared/schemas/limits.cddl`). */

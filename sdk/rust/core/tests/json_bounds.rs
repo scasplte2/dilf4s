@@ -9,7 +9,7 @@
     reason = "tests fail by panicking, and run with std"
 )]
 
-use dilf4s_core::error::{DigitsOutOfRange, NotJson, NumberBound};
+use dilf4s_core::error::{CanonicalErrorKind, NotJson, NumberBound};
 use dilf4s_core::value::Rational;
 use dilf4s_core::{BigInt, CanonicalError, NumberError, Value, json};
 
@@ -50,14 +50,29 @@ fn more_digits_are_refused_by_their_length() {
     assert_eq!(
         refused,
         CanonicalError::InvalidNumber {
-            length: 10_001,
-            offset: 0,
-            bound: Some(NumberBound::Digits(DigitsOutOfRange { digits: 10_001, max_digits: 10_000 })),
+            length: Some(10_001),
+            offset: Some(0),
+            bound: Some(NumberBound::Digits { digits: 10_001, limit: 10_000 }),
         }
     );
-    assert_eq!(json::parse(&format!("0.{}e1", "1".repeat(10_001))).unwrap_err().kind(), "InvalidNumber");
-    assert_eq!(json::parse(&format!("1e{}", "1".repeat(10_001))).unwrap_err().kind(), "InvalidNumber");
-    assert_eq!(json::parse(&format!("1e{}", "9".repeat(20))).unwrap_err().kind(), "InvalidNumber");
+    assert_eq!(
+        json::parse(&format!("0.{}e1", "1".repeat(10_001))).unwrap_err().kind(),
+        CanonicalErrorKind::InvalidNumber
+    );
+    assert_eq!(
+        json::parse(&format!("1e{}", "1".repeat(10_001))).unwrap_err().kind(),
+        CanonicalErrorKind::InvalidNumber
+    );
+    assert_eq!(json::parse(&format!("1e{}", "9".repeat(20))).unwrap_err().kind(), CanonicalErrorKind::InvalidNumber);
+    // both past the bound: the significand's count, as every SDK reports it; a scale saturates at the 32-bit range
+    let both = json::parse(&format!("{}e{}", "1".repeat(10_002), "1".repeat(10_001))).unwrap_err();
+    assert!(matches!(
+        both,
+        CanonicalError::InvalidNumber { bound: Some(NumberBound::Digits { digits: 10_002, .. }), .. }
+    ));
+    let scale = json::parse(&format!("1e{}", "9".repeat(20))).unwrap_err();
+    let saturated = NumberBound::Scale { scale: i32::MIN, limit: 10_000 };
+    assert!(matches!(&scale, CanonicalError::InvalidNumber { bound: Some(b), .. } if *b == saturated), "{scale:?}");
 }
 
 #[test]
@@ -72,7 +87,7 @@ fn malformed_numbers_are_described_by_length_and_offset_never_their_text() {
     for (text, length) in cases {
         let e = json::parse(&text).unwrap_err();
         let CanonicalError::InvalidNumber { length: l, offset, .. } = &e else { panic!("an invalid number, got {e}") };
-        assert_eq!((*l, *offset), (length, 1));
+        assert_eq!((*l, *offset), (Some(length), Some(1)));
         assert!(!e.to_string().contains("99999"), "Display keeps no digits");
         assert!(!format!("{e:?}").contains("99999"), "Debug keeps no digits");
     }
@@ -80,7 +95,8 @@ fn malformed_numbers_are_described_by_length_and_offset_never_their_text() {
 
 #[test]
 fn rendering_refuses_what_would_not_read_back() {
-    let over_long = Err(json::RenderError::Canonical(CanonicalError::NotJsonRepresentable { kind: NotJson::OverLong }));
+    let over_long =
+        Err(json::RenderError::Canonical(CanonicalError::NotJsonRepresentable { what: NotJson::OverLongNumber }));
     // every integer renders: the widest, of either sign, has 10,000 digits
     let edge = BigInt::from(1u8) << dilf4s_core::MAX_INTEGER_BITS;
     for n in [&edge - 1u8, -edge] {
@@ -96,7 +112,7 @@ fn rendering_refuses_what_would_not_read_back() {
     );
     let wide = Value::number(&BigInt::from(1u8), &num_traits::pow(five, 14_306)).unwrap();
     let Value::Rational(r) = &wide else { panic!("a rational") };
-    assert_eq!(json::decimal(r), Err(NotJson::OverLong));
+    assert_eq!(json::decimal(r), Err(NotJson::OverLongNumber));
     assert_eq!(json::render_within(&wide, usize::MAX), over_long);
     let third: Rational = match Value::number(&BigInt::from(1u8), &BigInt::from(3u8)).unwrap() {
         Value::Rational(r) => r,

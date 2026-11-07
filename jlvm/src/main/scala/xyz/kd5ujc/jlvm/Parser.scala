@@ -17,7 +17,7 @@ import scodec.bits.ByteVector
  *
  * Surface rules:
  *   - a single-key object whose key is an operation is that operation. An array value is its argument list. Any other
- *     value is one argument, except that a [[Op.Variadic]] operation takes the elements of that value's array
+ *     value is one argument, except that a [[Ops.Variadic]] operation takes the elements of that value's array
  *     (`{"+": {"values": x}}`);
  *   - `{"literal": x}` quotes `x`; `{"object": {...}}` is a map expression with any keys; `{"var": p}` and
  *     `{"var": [p, default]}` read a variable, with `p` a path or an expression computing one;
@@ -58,7 +58,7 @@ object Parser {
   )
 
   /** Names that may not head an array, which would read as a call: `["+", 1, 2]`, `["var", "a"]`. */
-  def callName(s: String): Boolean = s == Variable || Op.fromWire(s).isDefined || Removed.contains(s)
+  def callName(s: String): Boolean = s == Variable || Ops.named(s).isDefined || Removed.contains(s)
 
   private def malformed[A](m: String): Either[JlvmError, A] = JlvmError.Malformed(m).asLeft
 
@@ -140,7 +140,8 @@ object Parser {
       case removed if Removed.contains(removed) =>
         malformed(s"\"$removed\" is not an operation: ${Removed.getOrElse(removed, "")}")
       case name =>
-        Op.fromWire(name)
+        Ops
+          .named(name)
           .fold(
             malformed[Expr](s"unknown operation ${Preview.of(name)}: write single-key data as {\"object\": {...}} or {\"literal\": {...}}")
           )(operation(_, arg))
@@ -150,9 +151,9 @@ object Parser {
     arg.kind match {
       case Kind.Arr(Vector(bindings, body)) if op == Op.Let =>
         (letBindings(bindings), expression(body)).mapN((b, x) => Expr.Apply(op, Vector(b, x)))
-      case Kind.Arr(items)               => items.traverse(expression).map(Expr.Apply(op, _))
-      case _ if Op.Variadic.contains(op) => expression(arg).map(Expr.Spread(op, _))
-      case _                             => expression(arg).map(a => Expr.Apply(op, Vector(a)))
+      case Kind.Arr(items)                => items.traverse(expression).map(Expr.Apply(op, _))
+      case _ if Ops.Variadic.contains(op) => expression(arg).map(Expr.Spread(op, _))
+      case _                              => expression(arg).map(a => Expr.Apply(op, Vector(a)))
     }
 
   /**
@@ -368,8 +369,8 @@ object Parser {
       case Expr.Lit(v)                    => W.JlvmLit(v)
       case Expr.Var(ref, default)         => W.JlvmVar(ref.render, default)
       case Expr.VarAt(path, default)      => W.JlvmVarAt(toWire(path), default)
-      case Expr.Apply(op, args)           => W.JlvmApply(op.wire, args.map(toWire))
-      case Expr.Spread(op, arg)           => W.JlvmSpread(op.wire, toWire(arg))
+      case Expr.Apply(op, args)           => W.JlvmApply(op, args.map(toWire))
+      case Expr.Spread(op, arg)           => W.JlvmSpread(op, toWire(arg))
       case Expr.Arr(items)                => W.JlvmArray(items.map(toWire))
       case Expr.Obj(fields) =>
         W.JlvmMap(fields.foldLeft(CanonicalEntries.empty[W.JlvmExpr]) { case (acc, (k, v)) => acc.updated(k, toWire(v)) })
@@ -381,16 +382,12 @@ object Parser {
       case W.JlvmLit(v)        => Expr.Lit(v).asRight
       case W.JlvmVar(p, d)     => VarRef.parse(p).map(Expr.Var(_, d))
       case W.JlvmVarAt(p, d)   => fromWire(p).map(Expr.VarAt(_, d))
-      case W.JlvmApply(op, as) => wireOp(op).flatMap(o => as.traverse(fromWire).map(Expr.Apply(o, _)))
-      case W.JlvmSpread(op, a) => (wireOp(op), fromWire(a)).mapN(Expr.Spread(_, _))
+      case W.JlvmApply(op, as) => as.traverse(fromWire).map(Expr.Apply(op, _))
+      case W.JlvmSpread(op, a) => fromWire(a).map(Expr.Spread(op, _))
       case W.JlvmArray(items)  => items.traverse(fromWire).map(Expr.Arr(_))
       case W.JlvmMap(fields) =>
         fields.toList.traverse { case (k, v) => fromWire(v).map(k -> _) }.map(fs => Expr.Obj(TreeMap.from(fs)(using Kernels.CodePoints)))
     }
-
-  /** The canonical form names operations by their own names only; aliases are a surface convenience. */
-  private def wireOp(name: String): Either[JlvmError, Op] =
-    Op.values.find(_.wire == name).toRight(JlvmError.Malformed(s"unknown operation ${Preview.of(name)}"))
 
   def canonical(p: Program): Either[JlvmError, CanonicalValue] =
     W.JlvmProgram.codec.encode(W.JlvmProgram(1, toWire(p.expr))).leftMap(canonicalError)

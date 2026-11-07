@@ -4,6 +4,9 @@ use alloc::string::String;
 use crate::codec as c;
 
 /// `crypto-error` (`shared/schemas/crypto-errors.cddl`). An error family: its kinds are [`CryptoErrorKind`].
+///
+/// A signing key, verifying key or signature that its scheme does not accept (signing.md section 4). BackendFailure is
+/// a JVM provider's own failure: no SDK produces it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CryptoError {
     /// The kind `InvalidEncoding`.
@@ -51,7 +54,7 @@ impl core::fmt::Display for CryptoError {
 impl core::error::Error for CryptoError {}
 
 /// `crypto-error-kind` (`shared/schemas/crypto-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CryptoErrorKind {
     /// The text `InvalidEncoding`.
     InvalidEncoding,
@@ -85,7 +88,20 @@ impl CryptoErrorKind {
     pub const ALL: [Self; 3] = [Self::InvalidEncoding, Self::InvalidKey, Self::BackendFailure];
 }
 
+impl core::fmt::Display for CryptoErrorKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidEncoding => f.write_str("InvalidEncoding"),
+            Self::InvalidKey => f.write_str("InvalidKey"),
+            Self::BackendFailure => f.write_str("BackendFailure"),
+        }
+    }
+}
+
 /// `groth16-error` (`shared/schemas/crypto-errors.cddl`). An error family: its kinds are [`Groth16ErrorKind`].
+///
+/// A Groth16 refusal (zk.md section 2): a wrong shape; a point off the curve, outside the subgroup or the identity, or
+/// an input not in Fr; the pairing equation failing; or a wrapper's framing (SP1's selector, exit code or VK root).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Groth16Error {
     /// The kind `Malformed`.
@@ -133,7 +149,7 @@ impl core::fmt::Display for Groth16Error {
 impl core::error::Error for Groth16Error {}
 
 /// `groth16-error-kind` (`shared/schemas/crypto-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Groth16ErrorKind {
     /// The text `Malformed`.
     Malformed,
@@ -171,7 +187,21 @@ impl Groth16ErrorKind {
     pub const ALL: [Self; 4] = [Self::Malformed, Self::InvalidProof, Self::PairingCheckFailed, Self::Rejected];
 }
 
+impl core::fmt::Display for Groth16ErrorKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Malformed => f.write_str("Malformed"),
+            Self::InvalidProof => f.write_str("InvalidProof"),
+            Self::PairingCheckFailed => f.write_str("PairingCheckFailed"),
+            Self::Rejected => f.write_str("Rejected"),
+        }
+    }
+}
+
 /// `kes-error` (`shared/schemas/crypto-errors.cddl`). An error family: its kinds are [`KesErrorKind`].
+///
+/// A KES refusal (kes.md section 5): a wrong size, a period outside \[0, total), a key at its last period asked to
+/// evolve, or a key whose parts disagree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KesError {
     /// The kind `Malformed`.
@@ -226,7 +256,7 @@ impl core::fmt::Display for KesError {
 impl core::error::Error for KesError {}
 
 /// `kes-error-kind` (`shared/schemas/crypto-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KesErrorKind {
     /// The text `Malformed`.
     Malformed,
@@ -264,7 +294,23 @@ impl KesErrorKind {
     pub const ALL: [Self; 4] = [Self::Malformed, Self::PeriodOutOfRange, Self::Exhausted, Self::InconsistentKey];
 }
 
+impl core::fmt::Display for KesErrorKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Malformed => f.write_str("Malformed"),
+            Self::PeriodOutOfRange => f.write_str("PeriodOutOfRange"),
+            Self::Exhausted => f.write_str("Exhausted"),
+            Self::InconsistentKey => f.write_str("InconsistentKey"),
+        }
+    }
+}
+
 /// `key-error` (`shared/schemas/crypto-errors.cddl`). An error family: its kinds are [`KeyErrorKind`].
+///
+/// A key derivation the reference refuses (signing.md sections 2 and 3). InvalidPath carries the first rule the path
+/// breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
+/// (a separator of more than one character is refused by its length, before it is read, and has none); the reference's
+/// word lists are its own languages', so it never names one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KeyError {
     /// The kind `InvalidEntropy`.
@@ -326,7 +372,7 @@ impl core::fmt::Display for KeyError {
 impl core::error::Error for KeyError {}
 
 /// `key-error-kind` (`shared/schemas/crypto-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KeyErrorKind {
     /// The text `InvalidEntropy`.
     InvalidEntropy,
@@ -368,8 +414,24 @@ impl KeyErrorKind {
     pub const ALL: [Self; 5] = [Self::InvalidEntropy, Self::InvalidMnemonic, Self::InvalidWordList, Self::InvalidDerivation, Self::InvalidPath];
 }
 
+impl core::fmt::Display for KeyErrorKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidEntropy => f.write_str("InvalidEntropy"),
+            Self::InvalidMnemonic => f.write_str("InvalidMnemonic"),
+            Self::InvalidWordList => f.write_str("InvalidWordList"),
+            Self::InvalidDerivation => f.write_str("InvalidDerivation"),
+            Self::InvalidPath => f.write_str("InvalidPath"),
+        }
+    }
+}
+
 /// `path-refusal` (`shared/schemas/crypto-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Why a derivation path is refused (signing.md section 3), its segments checked in order: "missingMaster" (it is not
+/// `m` and does not start with `m/`), "malformed" (a segment is not ASCII digits and an optional `'` or `h`),
+/// "leadingZero", "tooManyDigits" (more than 10), "outOfRange" (2^31 or more), "tooDeep" (a 256th segment).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PathRefusal {
     /// The text `missingMaster`.
     MissingMaster,
@@ -415,7 +477,22 @@ impl PathRefusal {
     pub const ALL: [Self; 6] = [Self::MissingMaster, Self::Malformed, Self::LeadingZero, Self::TooManyDigits, Self::OutOfRange, Self::TooDeep];
 }
 
+impl core::fmt::Display for PathRefusal {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::MissingMaster => f.write_str("missingMaster"),
+            Self::Malformed => f.write_str("malformed"),
+            Self::LeadingZero => f.write_str("leadingZero"),
+            Self::TooManyDigits => f.write_str("tooManyDigits"),
+            Self::OutOfRange => f.write_str("outOfRange"),
+            Self::TooDeep => f.write_str("tooDeep"),
+        }
+    }
+}
+
 /// `sigma-error` (`shared/schemas/crypto-errors.cddl`). An error family: its kinds are [`SigmaErrorKind`].
+///
+/// Malformed sigma input (sigma.md section 6). A well-formed proof that fails is a result (false), never one of these.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SigmaError {
     /// The kind `InvalidProposition`.
@@ -467,7 +544,7 @@ impl core::fmt::Display for SigmaError {
 impl core::error::Error for SigmaError {}
 
 /// `sigma-error-kind` (`shared/schemas/crypto-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SigmaErrorKind {
     /// The text `InvalidProposition`.
     InvalidProposition,
@@ -505,7 +582,21 @@ impl SigmaErrorKind {
     pub const ALL: [Self; 4] = [Self::InvalidProposition, Self::InvalidPoint, Self::ProofLength, Self::ResponseOutOfRange];
 }
 
+impl core::fmt::Display for SigmaErrorKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidProposition => f.write_str("InvalidProposition"),
+            Self::InvalidPoint => f.write_str("InvalidPoint"),
+            Self::ProofLength => f.write_str("ProofLength"),
+            Self::ResponseOutOfRange => f.write_str("ResponseOutOfRange"),
+        }
+    }
+}
+
 /// `vrf-error` (`shared/schemas/crypto-errors.cddl`). An error family: its kinds are [`VrfErrorKind`].
+///
+/// A VRF refusal (vrf.md section 3). Malformed is a wrong length; KeyMismatch a draft-03 signing key whose stored
+/// public key is not its seed's; HashToCurveFailed is TAI finding no point in 256 counters (probability about 2^-256).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VrfError {
     /// The kind `Malformed`.
@@ -568,7 +659,7 @@ impl core::fmt::Display for VrfError {
 impl core::error::Error for VrfError {}
 
 /// `vrf-error-kind` (`shared/schemas/crypto-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VrfErrorKind {
     /// The text `Malformed`.
     Malformed,
@@ -622,7 +713,25 @@ impl VrfErrorKind {
     pub const ALL: [Self; 8] = [Self::Malformed, Self::InvalidPublicKey, Self::SmallOrderPublicKey, Self::InvalidGamma, Self::NonCanonicalScalar, Self::ChallengeMismatch, Self::KeyMismatch, Self::HashToCurveFailed];
 }
 
+impl core::fmt::Display for VrfErrorKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Malformed => f.write_str("Malformed"),
+            Self::InvalidPublicKey => f.write_str("InvalidPublicKey"),
+            Self::SmallOrderPublicKey => f.write_str("SmallOrderPublicKey"),
+            Self::InvalidGamma => f.write_str("InvalidGamma"),
+            Self::NonCanonicalScalar => f.write_str("NonCanonicalScalar"),
+            Self::ChallengeMismatch => f.write_str("ChallengeMismatch"),
+            Self::KeyMismatch => f.write_str("KeyMismatch"),
+            Self::HashToCurveFailed => f.write_str("HashToCurveFailed"),
+        }
+    }
+}
+
 /// `zk-error` (`shared/schemas/crypto-errors.cddl`). An error family: its kinds are [`ZkErrorKind`].
+///
+/// A BN254 operation's refusal (zk.md section 1): a wrong length or a coordinate not below p; or a point off the curve
+/// or twist, or a G2 point outside the order-r subgroup.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ZkError {
     /// The kind `Malformed`.
@@ -659,7 +768,7 @@ impl core::fmt::Display for ZkError {
 impl core::error::Error for ZkError {}
 
 /// `zk-error-kind` (`shared/schemas/crypto-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ZkErrorKind {
     /// The text `Malformed`.
     Malformed,
@@ -687,4 +796,13 @@ impl c::Model for ZkErrorKind {
 impl ZkErrorKind {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 2] = [Self::Malformed, Self::InvalidPoint];
+}
+
+impl core::fmt::Display for ZkErrorKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Malformed => f.write_str("Malformed"),
+            Self::InvalidPoint => f.write_str("InvalidPoint"),
+        }
+    }
 }

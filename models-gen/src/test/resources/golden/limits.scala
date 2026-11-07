@@ -7,10 +7,18 @@ final val BloomMaxBits = 16777216
 /** `bloom-max-hashes` (`shared/schemas/limits.cddl`). */
 final val BloomMaxHashes = 32
 
-/** `bloom-min-bits` (`shared/schemas/limits.cddl`). */
+/**
+ * `bloom-min-bits` (`shared/schemas/limits.cddl`).
+ *
+ * Bloom filters (bloom.md)
+ */
 final val BloomMinBits = 64
 
-/** `canonical-max-depth` (`shared/schemas/limits.cddl`). */
+/**
+ * `canonical-max-depth` (`shared/schemas/limits.cddl`).
+ *
+ * The canonical data model (canonical-encoding.md)
+ */
 final val CanonicalMaxDepth = 256
 
 /** `canonical-max-digit-bits` (`shared/schemas/limits.cddl`). */
@@ -19,10 +27,19 @@ final val CanonicalMaxDigitBits = 33220
 /** `canonical-max-digits` (`shared/schemas/limits.cddl`). */
 final val CanonicalMaxDigits = 10000
 
-/** `canonical-max-integer-bits` (`shared/schemas/limits.cddl`). */
+/**
+ * `canonical-max-integer-bits` (`shared/schemas/limits.cddl`).
+ *
+ * canonical-max-digits digits (a bound checked before converting one)
+ */
 final val CanonicalMaxIntegerBits = 33219
 
-/** `canonical-max-rational-bits` (`shared/schemas/limits.cddl`). */
+/**
+ * `canonical-max-rational-bits` (`shared/schemas/limits.cddl`).
+ *
+ * canonical-max-digits digits (2^33219 < 10^10000 < 2^33220), so every
+ * integer renders as JSON; 8e9999 is within it, 9e9999 is not
+ */
 final val CanonicalMaxRationalBits = 33219
 
 /** `canonical-max-scale` (`shared/schemas/limits.cddl`). */
@@ -46,7 +63,11 @@ final val JlvmMaxNumberBits = 4096
 /** `jlvm-max-pairs` (`shared/schemas/limits.cddl`). */
 final val JlvmMaxPairs = 64
 
-/** `jlvm-max-program-depth` (`shared/schemas/limits.cddl`). */
+/**
+ * `jlvm-max-program-depth` (`shared/schemas/limits.cddl`).
+ *
+ * JLVM (jlvm.md)
+ */
 final val JlvmMaxProgramDepth = 256
 
 /** `jlvm-max-program-size` (`shared/schemas/limits.cddl`). */
@@ -58,31 +79,55 @@ final val JlvmMaxValueWeight = 16777216
 /** `jlvm-max-warnings` (`shared/schemas/limits.cddl`). */
 final val JlvmMaxWarnings = 64
 
-/** `kes-max-height` (`shared/schemas/limits.cddl`). */
+/**
+ * `kes-max-height` (`shared/schemas/limits.cddl`).
+ *
+ * KES (kes.md)
+ */
 final val KesMaxHeight = 30
 
-/** `max-proof-weight` (`shared/schemas/limits.cddl`). */
+/**
+ * `max-proof-weight` (`shared/schemas/limits.cddl`).
+ *
+ * Verifier input (conformance.md section 5)
+ */
 final val MaxProofWeight = 16777216
 
-/** `merkle-max-tree-index` (`shared/schemas/limits.cddl`). */
+/**
+ * `merkle-max-tree-index` (`shared/schemas/limits.cddl`).
+ *
+ * Merkle tree (merkle.md)
+ */
 final val MerkleMaxTreeIndex = 9223372036854775807L
 
 /** `path-max-depth` (`shared/schemas/limits.cddl`). */
 final val PathMaxDepth = 255
 
-/** `path-max-segment-digits` (`shared/schemas/limits.cddl`). */
+/**
+ * `path-max-segment-digits` (`shared/schemas/limits.cddl`).
+ *
+ * Derivation paths (signing.md section 3)
+ */
 final val PathMaxSegmentDigits = 10
 
 /** `poseidon-max-depth` (`shared/schemas/limits.cddl`). */
 final val PoseidonMaxDepth = 256
 
-/** `poseidon-max-inputs` (`shared/schemas/limits.cddl`). */
+/**
+ * `poseidon-max-inputs` (`shared/schemas/limits.cddl`).
+ *
+ * Poseidon (zk.md section 4)
+ */
 final val PoseidonMaxInputs = 4
 
 /** `sigma-max-children` (`shared/schemas/limits.cddl`). */
 final val SigmaMaxChildren = 255
 
-/** `sigma-max-depth` (`shared/schemas/limits.cddl`). */
+/**
+ * `sigma-max-depth` (`shared/schemas/limits.cddl`).
+ *
+ * Sigma propositions (sigma.md section 3)
+ */
 final val SigmaMaxDepth = 64
 
 /** `sigma-max-leaves` (`shared/schemas/limits.cddl`). */
@@ -103,7 +148,11 @@ final val StateKeyMaxSegments = 16
 /** `state-namespace-max-length` (`shared/schemas/limits.cddl`). */
 final val StateNamespaceMaxLength = 254
 
-/** `trie-max-fixed-key-bytes` (`shared/schemas/limits.cddl`). */
+/**
+ * `trie-max-fixed-key-bytes` (`shared/schemas/limits.cddl`).
+ *
+ * Patricia trie key modes (trie.md section 1)
+ */
 final val TrieMaxFixedKeyBytes = 1024
 
 /** `trie-max-variable-key-bytes` (`shared/schemas/limits.cddl`). */
@@ -115,7 +164,11 @@ final val VersionedMaxChunkBytes = 4194304
 /** `versioned-max-chunk-entries` (`shared/schemas/limits.cddl`). */
 final val VersionedMaxChunkEntries = 1024
 
-/** `versioned-max-value-bytes` (`shared/schemas/limits.cddl`). */
+/**
+ * `versioned-max-value-bytes` (`shared/schemas/limits.cddl`).
+ *
+ * Versioned trie (versioned-trie.md)
+ */
 final val VersionedMaxValueBytes = 1048576
 
 /** `versioned-max-value-depth` (`shared/schemas/limits.cddl`). */

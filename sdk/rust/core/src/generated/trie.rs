@@ -98,6 +98,10 @@ impl c::Model for TrieLeaf {
 }
 
 /// `trie-node` (`shared/schemas/trie.cddl`).
+///
+/// A node commitment (hashed under the leaf or branch tag, section 3) and a stored node record (section 6). A leaf
+/// has exactly "s" and "v"; a branch has "s" and either two of "l"/"r", or one of them and "v". The shape cannot tell
+/// the two apart, and need not: the hash tag (or, in storage, the presence of children) does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrieNode {
     /// The `s` entry.

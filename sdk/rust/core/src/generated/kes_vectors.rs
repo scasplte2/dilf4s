@@ -33,7 +33,7 @@ impl c::Model for KesCardanoParameters {
 }
 
 /// `kes-check` (`shared/schemas/kes-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KesCheck {
     /// The text `parameters`.
     Parameters,
@@ -75,8 +75,20 @@ impl KesCheck {
     pub const ALL: [Self; 5] = [Self::Parameters, Self::Generate, Self::Load, Self::Evolve, Self::Verify];
 }
 
+impl core::fmt::Display for KesCheck {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Parameters => f.write_str("parameters"),
+            Self::Generate => f.write_str("generate"),
+            Self::Load => f.write_str("load"),
+            Self::Evolve => f.write_str("evolve"),
+            Self::Verify => f.write_str("verify"),
+        }
+    }
+}
+
 /// `kes-construction` (`shared/schemas/kes-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KesConstruction {
     /// The text `dilf4s-sum`.
     Dilf4sSum,
@@ -110,8 +122,18 @@ impl KesConstruction {
     pub const ALL: [Self; 3] = [Self::Dilf4sSum, Self::Dilf4sProduct, Self::CardanoSum];
 }
 
+impl core::fmt::Display for KesConstruction {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Dilf4sSum => f.write_str("dilf4s-sum"),
+            Self::Dilf4sProduct => f.write_str("dilf4s-product"),
+            Self::CardanoSum => f.write_str("cardano-sum"),
+        }
+    }
+}
+
 /// `kes-outcome` (`shared/schemas/kes-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KesOutcome {
     /// The text `accepted`.
     Accepted,
@@ -146,6 +168,16 @@ impl c::Model for KesOutcome {
 impl KesOutcome {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 6] = [Self::Accepted, Self::Rejected, Self::KesErrorKind(super::crypto_errors::KesErrorKind::Malformed), Self::KesErrorKind(super::crypto_errors::KesErrorKind::PeriodOutOfRange), Self::KesErrorKind(super::crypto_errors::KesErrorKind::Exhausted), Self::KesErrorKind(super::crypto_errors::KesErrorKind::InconsistentKey)];
+}
+
+impl core::fmt::Display for KesOutcome {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Accepted => f.write_str("accepted"),
+            Self::Rejected => f.write_str("rejected"),
+            Self::KesErrorKind(a) => core::fmt::Display::fmt(a, f),
+        }
+    }
 }
 
 /// `kes-parameters` (`shared/schemas/kes-vectors.cddl`).
@@ -239,6 +271,12 @@ impl c::Model for KesProductParameters {
 }
 
 /// `kes-refusal` (`shared/schemas/kes-vectors.cddl`).
+///
+/// A call and its outcome (kes.md section 5). "check" names it: "parameters" (the construction of these parameters),
+/// "generate" (the period-0 key of "seed"), "load" (the encoded "key" at "period"), "evolve" (load, then evolve once),
+/// "verify" ("signature" on "message" by "verifyingKey" at "period"; its checks run in that order: the key's length,
+/// the signature's, then the period). Every check but "parameters" uses valid parameters. The outcome is "accepted"
+/// (a key, or a signature that verifies), "rejected" (a well-formed signature that does not), or the KesError kind.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KesRefusal {
     /// The `name` entry.

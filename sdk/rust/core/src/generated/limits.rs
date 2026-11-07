@@ -7,9 +7,13 @@ pub const BLOOM_MAX_BITS: u64 = 16_777_216;
 pub const BLOOM_MAX_HASHES: u64 = 32;
 
 /// `bloom-min-bits` (`shared/schemas/limits.cddl`).
+///
+/// Bloom filters (bloom.md)
 pub const BLOOM_MIN_BITS: u64 = 64;
 
 /// `canonical-max-depth` (`shared/schemas/limits.cddl`).
+///
+/// The canonical data model (canonical-encoding.md)
 pub const CANONICAL_MAX_DEPTH: u64 = 256;
 
 /// `canonical-max-digit-bits` (`shared/schemas/limits.cddl`).
@@ -19,9 +23,14 @@ pub const CANONICAL_MAX_DIGIT_BITS: u64 = 33_220;
 pub const CANONICAL_MAX_DIGITS: u64 = 10_000;
 
 /// `canonical-max-integer-bits` (`shared/schemas/limits.cddl`).
+///
+/// canonical-max-digits digits (a bound checked before converting one)
 pub const CANONICAL_MAX_INTEGER_BITS: u64 = 33_219;
 
 /// `canonical-max-rational-bits` (`shared/schemas/limits.cddl`).
+///
+/// canonical-max-digits digits (2^33219 < 10^10000 < 2^33220), so every
+/// integer renders as JSON; 8e9999 is within it, 9e9999 is not
 pub const CANONICAL_MAX_RATIONAL_BITS: u64 = 33_219;
 
 /// `canonical-max-scale` (`shared/schemas/limits.cddl`).
@@ -46,6 +55,8 @@ pub const JLVM_MAX_NUMBER_BITS: u64 = 4096;
 pub const JLVM_MAX_PAIRS: u64 = 64;
 
 /// `jlvm-max-program-depth` (`shared/schemas/limits.cddl`).
+///
+/// JLVM (jlvm.md)
 pub const JLVM_MAX_PROGRAM_DEPTH: u64 = 256;
 
 /// `jlvm-max-program-size` (`shared/schemas/limits.cddl`).
@@ -58,30 +69,42 @@ pub const JLVM_MAX_VALUE_WEIGHT: u64 = 16_777_216;
 pub const JLVM_MAX_WARNINGS: u64 = 64;
 
 /// `kes-max-height` (`shared/schemas/limits.cddl`).
+///
+/// KES (kes.md)
 pub const KES_MAX_HEIGHT: u64 = 30;
 
 /// `max-proof-weight` (`shared/schemas/limits.cddl`).
+///
+/// Verifier input (conformance.md section 5)
 pub const MAX_PROOF_WEIGHT: u64 = 16_777_216;
 
 /// `merkle-max-tree-index` (`shared/schemas/limits.cddl`).
+///
+/// Merkle tree (merkle.md)
 pub const MERKLE_MAX_TREE_INDEX: u64 = 9_223_372_036_854_775_807;
 
 /// `path-max-depth` (`shared/schemas/limits.cddl`).
 pub const PATH_MAX_DEPTH: u64 = 255;
 
 /// `path-max-segment-digits` (`shared/schemas/limits.cddl`).
+///
+/// Derivation paths (signing.md section 3)
 pub const PATH_MAX_SEGMENT_DIGITS: u64 = 10;
 
 /// `poseidon-max-depth` (`shared/schemas/limits.cddl`).
 pub const POSEIDON_MAX_DEPTH: u64 = 256;
 
 /// `poseidon-max-inputs` (`shared/schemas/limits.cddl`).
+///
+/// Poseidon (zk.md section 4)
 pub const POSEIDON_MAX_INPUTS: u64 = 4;
 
 /// `sigma-max-children` (`shared/schemas/limits.cddl`).
 pub const SIGMA_MAX_CHILDREN: u64 = 255;
 
 /// `sigma-max-depth` (`shared/schemas/limits.cddl`).
+///
+/// Sigma propositions (sigma.md section 3)
 pub const SIGMA_MAX_DEPTH: u64 = 64;
 
 /// `sigma-max-leaves` (`shared/schemas/limits.cddl`).
@@ -103,6 +126,8 @@ pub const STATE_KEY_MAX_SEGMENTS: u64 = 16;
 pub const STATE_NAMESPACE_MAX_LENGTH: u64 = 254;
 
 /// `trie-max-fixed-key-bytes` (`shared/schemas/limits.cddl`).
+///
+/// Patricia trie key modes (trie.md section 1)
 pub const TRIE_MAX_FIXED_KEY_BYTES: u64 = 1024;
 
 /// `trie-max-variable-key-bytes` (`shared/schemas/limits.cddl`).
@@ -115,6 +140,8 @@ pub const VERSIONED_MAX_CHUNK_BYTES: u64 = 4_194_304;
 pub const VERSIONED_MAX_CHUNK_ENTRIES: u64 = 1024;
 
 /// `versioned-max-value-bytes` (`shared/schemas/limits.cddl`).
+///
+/// Versioned trie (versioned-trie.md)
 pub const VERSIONED_MAX_VALUE_BYTES: u64 = 1_048_576;
 
 /// `versioned-max-value-depth` (`shared/schemas/limits.cddl`).

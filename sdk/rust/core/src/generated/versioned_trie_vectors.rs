@@ -11,55 +11,12 @@ pub type Hex = String;
 pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 
 /// `state-key-error-kind` (`shared/schemas/versioned-trie-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum StateKeyErrorKind {
-    /// The text `Empty`.
-    Empty,
-    /// The text `TooLong`.
-    TooLong,
-    /// The text `NotUtf8`.
-    NotUtf8,
-    /// The text `TooManySegments`.
-    TooManySegments,
-    /// The text `InvalidSegment`.
-    InvalidSegment,
-    /// The text `SegmentTooLong`.
-    SegmentTooLong,
-    /// The text `NamespaceFull`.
-    NamespaceFull,
-}
+///
+/// A kind of StateKeyError (codec-errors.cddl; versioned-trie.md section 2).
+pub type StateKeyErrorKind = super::codec_errors::StateKeyErrorKind;
 
-impl c::Model for StateKeyErrorKind {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
-        match self {
-            Self::Empty => Ok(c::Value::text("Empty")),
-            Self::TooLong => Ok(c::Value::text("TooLong")),
-            Self::NotUtf8 => Ok(c::Value::text("NotUtf8")),
-            Self::TooManySegments => Ok(c::Value::text("TooManySegments")),
-            Self::InvalidSegment => Ok(c::Value::text("InvalidSegment")),
-            Self::SegmentTooLong => Ok(c::Value::text("SegmentTooLong")),
-            Self::NamespaceFull => Ok(c::Value::text("NamespaceFull")),
-        }
-    }
-
-    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["Empty", "TooLong", "NotUtf8", "TooManySegments", "InvalidSegment", "SegmentTooLong", "NamespaceFull"])? {
-            c::Alternative::Text(0) => Ok(Self::Empty),
-            c::Alternative::Text(1) => Ok(Self::TooLong),
-            c::Alternative::Text(2) => Ok(Self::NotUtf8),
-            c::Alternative::Text(3) => Ok(Self::TooManySegments),
-            c::Alternative::Text(4) => Ok(Self::InvalidSegment),
-            c::Alternative::Text(5) => Ok(Self::SegmentTooLong),
-            c::Alternative::Text(6) => Ok(Self::NamespaceFull),
-            other => Err(c::unknown_alternative(other)),
-        }
-    }
-}
-
-impl StateKeyErrorKind {
-    /// Every alternative, in schema order.
-    pub const ALL: [Self; 7] = [Self::Empty, Self::TooLong, Self::NotUtf8, Self::TooManySegments, Self::InvalidSegment, Self::SegmentTooLong, Self::NamespaceFull];
-}
+/// The codec of [`StateKeyErrorKind`].
+pub const STATE_KEY_ERROR_KIND: c::ModelOf<super::codec_errors::StateKeyErrorKind> = c::ModelOf::<super::codec_errors::StateKeyErrorKind>::NEW;
 
 /// `versioned-trie-vectors` (`shared/schemas/versioned-trie-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -130,6 +87,8 @@ impl c::Model for VersionedTrieVectors {
 }
 
 /// `vt-claim` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// A key's value (canonical CBOR) or, with no "value", its absence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtClaim {
     /// The `key` entry.
@@ -228,6 +187,8 @@ impl c::Model for VtEntry {
 }
 
 /// `vt-head-kat` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// The top trie for one head, slot by slot: "root" is the commitment root.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtHeadKat {
     /// The `version` entry.
@@ -270,7 +231,7 @@ impl c::Model for VtHeadKat {
 }
 
 /// `vt-kind` (`shared/schemas/versioned-trie-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VtKind {
     /// The text `state`.
     State,
@@ -316,6 +277,19 @@ impl VtKind {
     pub const ALL: [Self; 6] = [Self::State, Self::Historical, Self::Version, Self::AsOf, Self::Head, Self::Versions];
 }
 
+impl core::fmt::Display for VtKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::State => f.write_str("state"),
+            Self::Historical => f.write_str("historical"),
+            Self::Version => f.write_str("version"),
+            Self::AsOf => f.write_str("asOf"),
+            Self::Head => f.write_str("head"),
+            Self::Versions => f.write_str("versions"),
+        }
+    }
+}
+
 /// `vt-listing` (`shared/schemas/versioned-trie-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtListing {
@@ -343,6 +317,8 @@ impl c::Model for VtListing {
 }
 
 /// `vt-namespace` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// A candidate namespace: a state key that leaves room for one more segment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtNamespace {
     /// The `namespace` entry.
@@ -369,6 +345,9 @@ impl c::Model for VtNamespace {
 }
 
 /// `vt-proof` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// "at" is the version a historical, version or as-of query names, or the start of a "versions" query: the committed
+/// versions in \[at, until), no "until" being unbounded, are exactly "versions" (each with both fields).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtProof {
     /// The `name` entry.
@@ -423,7 +402,7 @@ impl c::Model for VtProof {
 }
 
 /// `vt-schema-outcome` (`shared/schemas/versioned-trie-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VtSchemaOutcome {
     /// The text `accepted`.
     Accepted,
@@ -453,7 +432,19 @@ impl VtSchemaOutcome {
     pub const ALL: [Self; 2] = [Self::Accepted, Self::TypeMismatch];
 }
 
+impl core::fmt::Display for VtSchemaOutcome {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Accepted => f.write_str("accepted"),
+            Self::TypeMismatch => f.write_str("TypeMismatch"),
+        }
+    }
+}
+
 /// `vt-snapshot` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// The final commit's snapshot, in chunks of at most "chunkEntries" items: each is the hex of a canonical
+/// versioned-trie-snapshot-chunk. Restoring it into an empty store reproduces "root".
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtSnapshot {
     /// The `chunkEntries` entry.
@@ -480,6 +471,10 @@ impl c::Model for VtSnapshot {
 }
 
 /// `vt-state-key` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// A candidate state key: whether the generated codec of versioned-trie.cddl's state-key pattern encodes it ("schema":
+/// "accepted", or TypeMismatch, the typed encoder's CanonicalError; its decoder refuses the same texts), and the
+/// outcome of the full grammar of section 2, with its length and segment limits ("outcome").
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtStateKey {
     /// The `key` entry.
@@ -510,6 +505,8 @@ impl c::Model for VtStateKey {
 }
 
 /// `vt-state-key-bytes` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// Trie-key bytes read as a state key: the length, then UTF-8, then the grammar of a text key.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtStateKeyBytes {
     /// The `bytes` entry.
@@ -536,6 +533,9 @@ impl c::Model for VtStateKeyBytes {
 }
 
 /// `vt-state-key-outcome` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// "accepted", or a refusal: its kind, and the segment (from 0) exactly when the kind names one (InvalidSegment,
+/// SegmentTooLong).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VtStateKeyOutcome {
     /// A [`VtStateKeyRefusal`].
@@ -579,20 +579,22 @@ impl c::Model for VtStateKeyRefusal {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         let inner = c::nested(depth)?;
         c::record([
-            c::field("kind", &c::ModelOf::<StateKeyErrorKind>::NEW, &self.kind, inner)?,
+            c::field("kind", &STATE_KEY_ERROR_KIND, &self.kind, inner)?,
             c::optional_field("segment", &c::UINT, self.segment.as_ref(), inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["kind", "segment"])?;
-        let f0 = fields.required("kind", &c::ModelOf::<StateKeyErrorKind>::NEW)?;
+        let f0 = fields.required("kind", &STATE_KEY_ERROR_KIND)?;
         let f1 = fields.optional("segment", &c::UINT)?;
         Ok(Self { kind: f0, segment: f1 })
     }
 }
 
 /// `vt-version` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// A version answer: a version and its state root, or, empty, "none" / "not committed".
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtVersion {
     /// The `version` entry.
@@ -619,6 +621,10 @@ impl c::Model for VtVersion {
 }
 
 /// `vt-version-key` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// The default version key (section 2) at its edges. "key" is "version" as 8 unsigned big-endian bytes, the JLVM's
+/// int_to_bytes \[version, 8\]; "valid" says whether the version key accepts it (versions 0..2^63-1), encoding the
+/// version and decoding the key alike.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VtVersionKey {
     /// The `version` entry.

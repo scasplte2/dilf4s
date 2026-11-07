@@ -39,7 +39,12 @@ export const ZkBoolResult: c.Codec<ZkBoolResult> = c.union<ZkBoolResult>("ZkBool
   c.alternative(c.defer(() => ZkFailure), [["error"], ["error"]], [["error"], ["error"]]),
 ], []);
 
-/** `zk-failure` (`shared/schemas/zk-vectors.cddl`). */
+/**
+ * `zk-failure` (`shared/schemas/zk-vectors.cddl`).
+ *
+ * Malformed: a wrong length or a coordinate not below p. InvalidPoint: off the curve or twist, or a G2 point outside
+ * the order-r subgroup.
+ */
 export interface ZkFailure {
   readonly error: cryptoErrors.ZkErrorKind;
 }
@@ -48,7 +53,12 @@ export const ZkFailure: c.Codec<ZkFailure> = c.record<ZkFailure>({
   error: c.required("error", c.defer(() => cryptoErrors.ZkErrorKind)),
 });
 
-/** `zk-groth16-result` (`shared/schemas/zk-vectors.cddl`). */
+/**
+ * `zk-groth16-result` (`shared/schemas/zk-vectors.cddl`).
+ *
+ * "verified": the proof verifies. Rejected: SP1's framing (selector, exit code, VK root). InvalidProof: a point off
+ * the curve, outside the subgroup or the identity, or an input not in Fr.
+ */
 export type ZkGroth16Result = "verified" | cryptoErrors.Groth16ErrorKind;
 
 export const ZkGroth16Result: c.Codec<ZkGroth16Result> = c.union<ZkGroth16Result>("ZkGroth16Result", [], ["verified", "Malformed", "InvalidProof", "PairingCheckFailed", "Rejected"]);
@@ -79,7 +89,11 @@ export const ZkPair: c.Codec<ZkPair> = c.record<ZkPair>({
   g2: c.required("g2", c.defer(() => Hex)),
 });
 
-/** `zk-pairing` (`shared/schemas/zk-vectors.cddl`). */
+/**
+ * `zk-pairing` (`shared/schemas/zk-vectors.cddl`).
+ *
+ * The product of e(g1, g2) over the pairs is one; no pairs is true.
+ */
 export interface ZkPairing {
   readonly name: string;
   readonly pairs: readonly ZkPair[];

@@ -1,3 +1,4 @@
+;# import jlvm-errors as errors
 ; Schema of shared/vectors/jlvm_v1.json (conformance vectors for docs/specs/jlvm.md, language v1, gas schedule v1).
 ; Each case is a program in the strict surface and its input data, both as JSON surface text, evaluated with the
 ; case's host bindings (none if absent; each value is JSON surface text, or, under "built", a value built with shared
@@ -33,9 +34,10 @@ jlvm-value = { "cbor": hex, ? "json": text }
 
 ; "op" is present exactly for the kinds Type, Arity, Arithmetic, Domain and Crypto: the wire name of the operation that
 ; refused (jlvm.cddl), or "var" for the read of a computed path. OutOfGas is pinned by its kind and the case's gasUsed.
-jlvm-error = { "error": jlvm-error-kind, ? "op": text }
+jlvm-error = { "error": jlvm-error-kind, ? "op": errors.jlvm-site }
 
-jlvm-error-kind = "Malformed" / "Type" / "Arity" / "Arithmetic" / "Domain" / "Crypto" / "Limit" / "OutOfGas"
+; A kind of JlvmError (jlvm-errors.cddl).
+jlvm-error-kind = errors.jlvm-error-kind
 
 ; A host binding too heavy to write out (refusal-vectors.cddl defines the same rule): start from "leaf" (canonical
 ; CBOR); then apply each step in order: {"template": t, "times": n} replaces, n times over, every text "$" in the

@@ -39,7 +39,7 @@ object ProofOps {
       case _                          => scala.None
     }
 
-  private def crypto(op: Op)(message: String): JlvmError = JlvmError.Crypto(op, message)
+  private def crypto(op: Op)(message: String): JlvmError = JlvmError.Crypto(op, message, None)
 
   /**
    * Claims (a leaf, a value, a listing's values) together at most `ProofInput.MaxProofWeight`, checked from their
@@ -56,7 +56,7 @@ object ProofOps {
     }
 
   private def digest(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, Digest[H]] =
-    bytes(op, what)(v).flatMap(Digest.fromBytes[H](_).leftMap(e => crypto(op)(s"$what: $e")))
+    bytes(op, what)(v).flatMap(Digest.fromBytes[H](_).leftMap(e => JlvmError.Crypto(op, s"$what: $e", Some(CryptoCause.Hash(e)))))
 
   /** The bytes a leaf or value commits to: tagged, so bytes and a value whose CBOR equals them never coincide. */
   private def committed(v: CanonicalValue): ByteSource = ValueCommitment.source(v)

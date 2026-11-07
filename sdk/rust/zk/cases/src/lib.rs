@@ -16,14 +16,14 @@ pub mod vectors;
 
 use alloc::collections::BTreeMap;
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::cell::OnceCell;
 use core::fmt::Debug;
 
 use dilf4s_core::hash::HashAlgorithm;
 use dilf4s_core::{built, cbor};
-use dilf4s_jlvm::{Config, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, parse, parse_value};
+use dilf4s_jlvm::{Config, ErrorSite, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, parse, parse_value};
 use dilf4s_proofs::poseidon::merkle::{PoseidonMerkleProof, compute_root};
 use dilf4s_proofs::poseidon::{self, Fr, fr_from_be_bytes, fr_to_be_bytes};
 use dilf4s_proofs::zk::{self, groth16};
@@ -336,7 +336,7 @@ fn jlvm_case(
     Ok(Output::Jlvm {
         result: result
             .map(|v| cbor::encode(&v))
-            .map_err(|e| (String::from(e.kind()), e.site().map(|s| String::from(s.wire())), debug(&e))),
+            .map_err(|e| (e.kind().to_string(), e.site().map(|s| s.to_string()), debug(&e))),
         gas: gas.value(),
         warnings: u64::try_from(warnings).unwrap_or(u64::MAX),
     })

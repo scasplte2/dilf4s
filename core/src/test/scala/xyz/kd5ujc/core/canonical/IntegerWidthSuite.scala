@@ -137,7 +137,7 @@ object IntegerWidthSuite extends SimpleIOSuite {
   }
 
   pureTest("a rational whose decimal scale is past the bound is refused from its denominator's factors") {
-    val overLong = NotJsonRepresentable("a number of more than 10000 digits or a scale above 10000")
+    val overLong = NotJsonRepresentable("over-long number")
     def rational(d: BigInt) = CanonicalValue.number(Ratio.of(1, d).fold(e => sys.error(e.toString), identity))
     expect
       .same(

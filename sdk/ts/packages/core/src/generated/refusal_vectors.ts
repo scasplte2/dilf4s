@@ -18,7 +18,15 @@ export const BuiltStep: c.Codec<BuiltStep> = c.union<BuiltStep>("BuiltStep", [
   c.alternative(c.defer(() => BuiltCopies), [["copies"], ["copies"]], [["copies"], ["copies"]]),
 ], []);
 
-/** `built-value` (`shared/schemas/refusal-vectors.cddl`). */
+/**
+ * `built-value` (`shared/schemas/refusal-vectors.cddl`).
+ *
+ * A canonical value given by how it is built, so that a value with shared parts, far heavier than its description,
+ * fits in the file (canonical CBOR has no sharing). Start from "leaf" (canonical CBOR); then apply each step in order:
+ * {"template": t, "times": n} replaces, n times over, every text "$" in the canonical value t by the value so far;
+ * {"copies": n} makes an array of n of it. Every occurrence is the one value, shared: a built value can weigh up to
+ * 2^63 - 1 (its weight saturates), so a loader builds it with sharing and never encodes, renders or copies it whole.
+ */
 export interface BuiltValue {
   readonly leaf: Hex;
   readonly steps?: readonly BuiltStep[];
@@ -45,7 +53,15 @@ export type Hex = string;
 
 export const Hex: c.Codec<Hex> = c.matching("([0-9a-f]{2})*");
 
-/** `refusal-case` (`shared/schemas/refusal-vectors.cddl`). */
+/**
+ * `refusal-case` (`shared/schemas/refusal-vectors.cddl`).
+ *
+ * One call. "check" names the entry point and the arguments it reads (conformance.md section 6); a case carries only
+ * those. "input" is the caller's value (a proof, delta or value); "inputs" are deltas a replica applies in order;
+ * "zeros" is a byte input of that many zero bytes, "chunk" one given as hex. "claim" is a claimed value (a Merkle leaf, a trie value; absent
+ * claims absence), "entries" a claimed listing, "batch" the writes of a commit at version 1. "stateKey" is a versioned-trie state key; "key" a trie key; "at" a
+ * version; "size" a Merkle tree size.
+ */
 export interface RefusalCase {
   readonly name: string;
   readonly check: RefusalCheck;
@@ -138,14 +154,23 @@ export const RefusalMode: c.Codec<RefusalMode> = c.union<RefusalMode>("RefusalMo
   c.alternative(c.defer(() => RefusalVariableMode), [["variable"], ["variable"]], [["variable"], ["variable"]]),
 ], []);
 
-/** `refusal-outcome` (`shared/schemas/refusal-vectors.cddl`). */
+/**
+ * `refusal-outcome` (`shared/schemas/refusal-vectors.cddl`).
+ *
+ * "accepted", or a refusal: its kind (a nested kind as "Outer.Inner", e.g. "Trie.Encoding") and the fields
+ * conformance.md section 3 names normative for it, each present exactly when the kind has it.
+ */
 export type RefusalOutcome = RefusalError | "accepted";
 
 export const RefusalOutcome: c.Codec<RefusalOutcome> = c.union<RefusalOutcome>("RefusalOutcome", [
   c.alternative(c.defer(() => RefusalError), [["kind"], ["component", "depth", "kind", "limit"]], [["kind"], ["component", "depth", "kind", "limit"]]),
 ], ["accepted"]);
 
-/** `refusal-upsert` (`shared/schemas/refusal-vectors.cddl`). */
+/**
+ * `refusal-upsert` (`shared/schemas/refusal-vectors.cddl`).
+ *
+ * A write in a commit's batch: a state key and its value.
+ */
 export interface RefusalUpsert {
   readonly stateKey: string;
   readonly value: BuiltValue;

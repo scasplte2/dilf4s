@@ -299,7 +299,7 @@ impl Map {
     pub(crate) fn from_sorted(entries: Vec<(Text, Value)>) -> Result<Self, CanonicalError> {
         let depth = entries.iter().map(|(_, v)| v.depth()).max().unwrap_or(0).saturating_add(1);
         if depth > MAX_DEPTH {
-            return Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH });
+            return Err(CanonicalError::DepthExceeded { limit: crate::error::size(MAX_DEPTH) });
         }
         let len = entries.len();
         Ok(Self { root: build(&mut entries.into_iter(), len), len })
@@ -312,7 +312,7 @@ impl Map {
             return Ok(self.removed(&key));
         }
         if value.depth() >= MAX_DEPTH {
-            return Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH });
+            return Err(CanonicalError::DepthExceeded { limit: crate::error::size(MAX_DEPTH) });
         }
         let (root, added) = insert(&self.root, key, value);
         let len = if added { self.len.saturating_add(1) } else { self.len };

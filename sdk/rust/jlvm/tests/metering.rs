@@ -55,7 +55,7 @@ fn gas(o: &Outcome) -> u64 {
 }
 
 fn is_limit(o: &Outcome) -> bool {
-    matches!(o.result, Err(JlvmError::Limit(_)))
+    matches!(o.result, Err(JlvmError::Limit { .. }))
 }
 
 /// `2^k` distinct strings of length `2k` with one Java hash code: every combination of "Aa" and "BB".
@@ -319,7 +319,7 @@ fn get_has_set_and_unset_pay_for_long_keys() {
 
 #[test]
 fn programs_are_bounded_in_size_before_compilation() {
-    let limit = |text: &str| matches!(parse(text), Err(JlvmError::Limit(_)));
+    let limit = |text: &str| matches!(parse(text), Err(JlvmError::Limit { .. }));
     let nulls = |n: usize| format!("[{}]", vec!["null"; n].join(","));
     // each element counts once, and the array itself once
     assert!(limit(&nulls(1 << 18)), "one past the bound");
@@ -342,7 +342,10 @@ fn deep_programs_and_data_run_on_the_explicit_stack() {
     }
     assert_eq!(eval(&p, &Value::Null).result, Ok(int(128)));
     let too_deep = format!(r#"{{"+": [{p}, 1]}}"#);
-    assert!(matches!(parse(&too_deep), Err(JlvmError::Limit(_))), "128 nested operations exceed the canonical depth");
+    assert!(
+        matches!(parse(&too_deep), Err(JlvmError::Limit { .. })),
+        "128 nested operations exceed the canonical depth"
+    );
     // data 255 arrays deep, read whole and compared
     let mut d = String::from("1");
     for _ in 0..255 {
@@ -373,7 +376,7 @@ fn host_bindings_are_shadowed_by_let_and_callbacks() {
     let o = jlvm().evaluate(&p, &Value::Null, &env, &Config::default());
     assert_eq!(o.result, Ok(parse_value("[15]").unwrap()));
     let unbound = eval(r#"{"var": "$nope"}"#, &Value::Null);
-    assert!(matches!(unbound.result, Err(JlvmError::Malformed(_))));
+    assert!(matches!(unbound.result, Err(JlvmError::Malformed { .. })));
 }
 
 #[test]

@@ -19,10 +19,7 @@ use crate::value::Value;
 /// the reference's and the TypeScript SDK's are. Caller text is held as a [`Preview`], never as itself.
 pub use crate::generated::hash_errors::{ExpansionRefusal, HashError, HashErrorKind};
 
-/// A size as an error holds it.
-fn size(n: usize) -> u64 {
-    u64::try_from(n).unwrap_or(u64::MAX)
-}
+use crate::error::size;
 
 /// A hash function with a fixed output.
 pub trait Hasher {

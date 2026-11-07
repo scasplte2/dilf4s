@@ -1,53 +1,37 @@
 package xyz.kd5ujc.jlvm
 
 /**
- * Every way a parse or an evaluation can fail; evaluation failures are reported together with the gas they used. The
- * kind and the `op` of the operation-level kinds are normative (docs/specs/jlvm.md §3); messages and `required` are not.
+ * Every way a parse or an evaluation can fail; evaluation failures are reported together with the gas they used.
+ * Generated from `shared/schemas/jlvm-errors.cddl`, with the Rust SDK's kinds and fields: the kind and the `op` of the
+ * operation-level kinds are normative (docs/specs/jlvm.md §3); messages, a `Crypto` error's `cause` and `required` are
+ * not.
  */
-sealed trait JlvmError extends Product with Serializable {
-  def message: String
-}
+export xyz.kd5ujc.models.jlvm_errors.{JlvmCryptoCause => CryptoCause, JlvmCryptoCauseKind => CryptoCauseKind, JlvmError, JlvmErrorKind}
 
-object JlvmError {
+/** What the evaluator asks of an error beyond its generated fields. */
+extension (e: JlvmError) {
 
-  /** Not a program of this language version: bad JSON, unknown operation, malformed var, too deep or too large. */
-  final case class Malformed(message: String) extends JlvmError
-
-  /** An operation received a value of the wrong kind. */
-  final case class Type(op: Site, message: String) extends JlvmError
-
-  /** An operation received the wrong number of arguments. */
-  final case class Arity(op: Site, message: String) extends JlvmError
-
-  /** Division by zero, an exponent out of range, a non-terminating rational where text is required, ... */
-  final case class Arithmetic(op: Site, message: String) extends JlvmError
-
-  /** A value of the right kind outside the operation's domain: malformed hex, an empty separator, an integer too wide. */
-  final case class Domain(op: Site, message: String) extends JlvmError
-
-  /** Malformed cryptographic input (a well-formed but invalid proof is `false`, not an error). */
-  final case class Crypto(op: Site, message: String) extends JlvmError
-
-  /** A resource bound: value depth or size, evaluation depth. */
-  final case class Limit(message: String) extends JlvmError
-
-  /**
-   * The gas limit was reached: `available` is the limit, and `required` the gas used with the refused charge, summed
-   * only as far as the implementation needs to see that it is over (informative).
-   */
-  final case class OutOfGas(required: Long, available: Long) extends JlvmError {
-    def message: String = s"out of gas: $required required, $available available"
+  /** What was wrong; for `OutOfGas`, the gas it would have used and the limit. */
+  def message: String = e match {
+    case JlvmError.Malformed(m)           => m
+    case JlvmError.Type(_, m)             => m
+    case JlvmError.Arity(_, m)            => m
+    case JlvmError.Arithmetic(_, m)       => m
+    case JlvmError.Domain(_, m)           => m
+    case JlvmError.Crypto(_, m, _)        => m
+    case JlvmError.Limit(m)               => m
+    case JlvmError.OutOfGas(required, at) => s"out of gas: $required required, $at available"
   }
 
   /** The site of an operation-level error, if the error has one (its normative `op`). */
-  def site(e: JlvmError): Option[Site] = e match {
-    case Type(op, _)       => Some(op)
-    case Arity(op, _)      => Some(op)
-    case Arithmetic(op, _) => Some(op)
-    case Domain(op, _)     => Some(op)
-    case Crypto(op, _)     => Some(op)
-    case _: Malformed      => None
-    case _: Limit          => None
-    case _: OutOfGas       => None
+  def site: Option[Site] = e match {
+    case JlvmError.Type(op, _)       => Some(op)
+    case JlvmError.Arity(op, _)      => Some(op)
+    case JlvmError.Arithmetic(op, _) => Some(op)
+    case JlvmError.Domain(op, _)     => Some(op)
+    case JlvmError.Crypto(op, _, _)  => Some(op)
+    case _: JlvmError.Malformed      => None
+    case _: JlvmError.Limit          => None
+    case _: JlvmError.OutOfGas       => None
   }
 }

@@ -1,0 +1,99 @@
+;# import jlvm as jlvm
+;# import crypto-errors as crypto
+;# import hash-errors as hash
+; The JLVM's error family (docs/specs/jlvm.md section 3; conformance.md sections 1 and 6), defined as crypto-errors.cddl
+; defines the crypto families: `jlvm-error` is a choice of maps, each led by a distinct "kind" literal, and
+; `jlvm-error-kind` lists the same kinds in the same order. The reference and the Rust SDK evaluate programs with it as
+; their error type (Scala `xyz.kd5ujc.jlvm.JlvmError`, Rust `dilf4s_jlvm::JlvmError`); the TypeScript SDK, which has no
+; evaluator, gets the type and its kinds. No codec is generated for a family.
+
+; A parse or evaluation failure, reported with the gas it used. The kind, and the `op` of the operation-level kinds,
+; are normative (jlvm.md section 3); messages, `cause` and `required` are not.
+jlvm-error = {
+  ; Not a program of this language version: bad JSON, an unknown operation (its name previewed in the message), a
+  ; malformed var, an unbound `$name`, too deep or too large.
+  "kind": "Malformed",
+  ; What was wrong.
+  "message": text //
+  ; An operation received a value of the wrong kind.
+  "kind": "Type",
+  ; Where it arose (normative).
+  "op": jlvm-site,
+  ; What was wrong.
+  "message": text //
+  ; An operation received the wrong number of arguments.
+  "kind": "Arity",
+  ; Where it arose (normative).
+  "op": jlvm-site,
+  ; What was wrong.
+  "message": text //
+  ; Division by zero, an exponent out of range, a non-terminating rational where text is required.
+  "kind": "Arithmetic",
+  ; Where it arose (normative).
+  "op": jlvm-site,
+  ; What was wrong.
+  "message": text //
+  ; A value of the right kind outside the operation's domain: malformed hex, an empty separator, a wide integer.
+  "kind": "Domain",
+  ; Where it arose (normative).
+  "op": jlvm-site,
+  ; What was wrong.
+  "message": text //
+  ; Malformed cryptographic input (a well-formed but invalid proof is false, not an error).
+  "kind": "Crypto",
+  ; Where it arose (normative).
+  "op": jlvm-site,
+  ; What was wrong.
+  "message": text,
+  ; The typed refusal of the cryptographic family the operation called, when one refused; absent for the operation's
+  ; own checks of its arguments' shape (a width, a count, a head's fields) and for proof structures whose refusals are
+  ; not yet generated families (Merkle, trie, Poseidon).
+  ? "cause": jlvm-crypto-cause //
+  ; A resource bound: value depth or size, program depth or size.
+  "kind": "Limit",
+  ; What was wrong.
+  "message": text //
+  ; The gas limit was reached.
+  "kind": "OutOfGas",
+  ; The gas the evaluation would have used with the refused charge (saturating), summed only as far as it takes to
+  ; pass the limit: informative.
+  "required": uint .le 9223372036854775807,
+  ; The limit.
+  "available": uint .le 9223372036854775807
+}
+
+jlvm-error-kind = "Malformed" / "Type" / "Arity" / "Arithmetic" / "Domain" / "Crypto" / "Limit" / "OutOfGas"
+
+; Where an operation-level error arose: an operation, by its own wire name (never an alias), or `var`, the read of a
+; computed path (jlvm.md section 4.1).
+jlvm-site = jlvm.jlvm-op / "var"
+
+; The refusal a Crypto error wraps (conformance.md section 1): the family that refused, and its typed error.
+jlvm-crypto-cause = {
+  ; A signature scheme's key or signature decoding.
+  "kind": "Signing",
+  ; The refusal.
+  "error": crypto.crypto-error //
+  ; A sigma proposition or proof.
+  "kind": "Sigma",
+  ; The refusal.
+  "error": crypto.sigma-error //
+  ; A BN254 point or scalar.
+  "kind": "Zk",
+  ; The refusal.
+  "error": crypto.zk-error //
+  ; A Groth16 proof or verifying key.
+  "kind": "Groth16",
+  ; The refusal.
+  "error": crypto.groth16-error //
+  ; A VRF proof or key.
+  "kind": "Vrf",
+  ; The refusal.
+  "error": crypto.vrf-error //
+  ; A digest or hash input.
+  "kind": "Hash",
+  ; The refusal.
+  "error": hash.hash-error
+}
+
+jlvm-crypto-cause-kind = "Signing" / "Sigma" / "Zk" / "Groth16" / "Vrf" / "Hash"

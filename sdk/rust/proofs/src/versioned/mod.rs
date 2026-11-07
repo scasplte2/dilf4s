@@ -20,7 +20,7 @@ mod trie_map;
 mod verifier;
 mod wire;
 
-pub use keys::{BytesKey, StateKey, StateKeyError, StateNamespace, U64Key, VersionKey};
+pub use keys::{BytesKey, StateKey, StateKeyError, StateKeyErrorKind, StateNamespace, U64Key, VersionKey, input};
 pub use replica::Replica;
 pub use snapshot::{Snapshot, SnapshotChunk, SnapshotReader};
 pub use verifier::VerifiedState;

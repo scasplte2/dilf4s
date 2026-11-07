@@ -21,7 +21,8 @@ use dilf4s_core::codec::Model;
 use dilf4s_core::generated::jlvm_vectors::{BuiltStep, BuiltValue, JlvmCase, JlvmErrorKind, JlvmOutcome, JlvmVectors};
 use dilf4s_core::{cbor, hex, json};
 use dilf4s_jlvm::{
-    Compiled, Config, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Op, Outcome, Site, Value, parse, parse_value,
+    Compiled, Config, ErrorSite, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Outcome, Site, Value, parse,
+    parse_value,
 };
 
 fn load() -> JlvmVectors {
@@ -73,32 +74,18 @@ fn run(jlvm: &Jlvm<Native>, case: &JlvmCase, default_limit: u64) -> Outcome {
     jlvm.evaluate(&program, &data, &env, &config)
 }
 
-/// The schema's kind of an SDK error. Exhaustive, so a new variant does not compile until it is mapped.
-const fn kind(e: &JlvmError) -> JlvmErrorKind {
-    match e {
-        JlvmError::Malformed(_) => JlvmErrorKind::Malformed,
-        JlvmError::Type { .. } => JlvmErrorKind::Type,
-        JlvmError::Arity { .. } => JlvmErrorKind::Arity,
-        JlvmError::Arithmetic { .. } => JlvmErrorKind::Arithmetic,
-        JlvmError::Domain { .. } => JlvmErrorKind::Domain,
-        JlvmError::Crypto { .. } => JlvmErrorKind::Crypto,
-        JlvmError::Limit(_) => JlvmErrorKind::Limit,
-        JlvmError::OutOfGas { .. } => JlvmErrorKind::OutOfGas,
-    }
-}
-
 /// What a case's outcome must be, rendered for comparison: a value, or an error's kind and normative `op`.
 fn expected(case: &JlvmCase) -> String {
     match &case.outcome {
         JlvmOutcome::JlvmValue(v) => format!("value {}", v.cbor),
-        JlvmOutcome::JlvmError(e) => format!("error {:?} op {:?}", e.error, e.op.as_deref()),
+        JlvmOutcome::JlvmError(e) => format!("error {:?} op {:?}", e.error, e.op),
     }
 }
 
 fn actual(o: &Outcome) -> String {
     match &o.result {
         Ok(v) => format!("value {}", hex::encode(&cbor::encode(v))),
-        Err(e) => format!("error {:?} op {:?}", kind(e), e.site().map(Site::wire)),
+        Err(e) => format!("error {:?} op {:?}", e.kind(), e.site()),
     }
 }
 
@@ -162,7 +149,7 @@ fn conformance_vectors() {
 }
 
 /// Whether a kind carries a normative `op` (jlvm.md section 3). Exhaustive, so a new kind must decide.
-const fn has_site(k: &JlvmErrorKind) -> bool {
+const fn has_site(k: JlvmErrorKind) -> bool {
     match k {
         JlvmErrorKind::Type
         | JlvmErrorKind::Arity
@@ -191,12 +178,9 @@ fn every_jlvm_error_kind_has_a_row() {
         assert!(errors.iter().any(|(_, e)| e.error == k), "no jlvm_v1.json row has error {k:?}");
     }
     for (name, e) in &errors {
-        assert_eq!(has_site(&e.error), e.op.is_some(), "{name}: {:?} with op {:?}", e.error, e.op);
-        if let Some(op) = &e.op {
-            assert!(op == Site::Var.wire() || Op::from_canonical(op).is_some(), "{name}: op {op:?} is not a site");
-        }
+        assert_eq!(has_site(e.error), e.op.is_some(), "{name}: {:?} with op {:?}", e.error, e.op);
     }
-    assert!(errors.iter().any(|(_, e)| e.op.as_deref() == Some(Site::Var.wire())), "no row has op var");
+    assert!(errors.iter().any(|(_, e)| e.op == Some(Site::Var)), "no row has op var");
 }
 
 #[test]

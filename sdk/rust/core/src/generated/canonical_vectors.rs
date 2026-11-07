@@ -5,6 +5,8 @@ use alloc::vec::Vec;
 use crate::codec as c;
 
 /// `canonical-algorithm` (`shared/schemas/canonical-vectors.cddl`).
+///
+/// Whether a name is one of the hash functions of section 4.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalAlgorithm {
     /// The `name` entry.
@@ -46,7 +48,7 @@ impl c::Model for CanonicalCborRejection {
         let inner = c::nested(depth)?;
         c::record([
             c::field("cbor", &HEX, &self.cbor, inner)?,
-            c::field("error", &c::ModelOf::<CanonicalErrorKind>::NEW, &self.error, inner)?,
+            c::field("error", &CANONICAL_ERROR_KIND, &self.error, inner)?,
             c::optional_field("limit", &c::UINT, self.limit.as_ref(), inner)?,
         ])
     }
@@ -54,13 +56,15 @@ impl c::Model for CanonicalCborRejection {
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["cbor", "error", "limit"])?;
         let f0 = fields.required("cbor", &HEX)?;
-        let f1 = fields.required("error", &c::ModelOf::<CanonicalErrorKind>::NEW)?;
+        let f1 = fields.required("error", &CANONICAL_ERROR_KIND)?;
         let f2 = fields.optional("limit", &c::UINT)?;
         Ok(Self { cbor: f0, error: f1, limit: f2 })
     }
 }
 
 /// `canonical-digest` (`shared/schemas/canonical-vectors.cddl`).
+///
+/// A plain (untagged) digest of each hash function the specs use.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalDigest {
     /// The `algorithm` entry.
@@ -91,6 +95,9 @@ impl c::Model for CanonicalDigest {
 }
 
 /// `canonical-digest-hex` (`shared/schemas/canonical-vectors.cddl`).
+///
+/// A digest of `algorithm` from its hex (section 4): accepted (its bytes are the hex's), or refused by its kind, with
+/// "offset" exactly when the kind is InvalidHex (conformance.md section 3).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalDigestHex {
     /// The `algorithm` entry.
@@ -125,6 +132,8 @@ impl c::Model for CanonicalDigestHex {
 }
 
 /// `canonical-domain-tag` (`shared/schemas/canonical-vectors.cddl`).
+///
+/// Whether a candidate tag matches the DomainTag grammar of section 4.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalDomainTag {
     /// The `tag` entry.
@@ -151,85 +160,18 @@ impl c::Model for CanonicalDomainTag {
 }
 
 /// `canonical-error-kind` (`shared/schemas/canonical-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CanonicalErrorKind {
-    /// The text `UnpairedSurrogate`.
-    UnpairedSurrogate,
-    /// The text `DuplicateKey`.
-    DuplicateKey,
-    /// The text `RationalTooWide`.
-    RationalTooWide,
-    /// The text `IntegerTooWide`.
-    IntegerTooWide,
-    /// The text `JsonSyntax`.
-    JsonSyntax,
-    /// The text `InvalidNumber`.
-    InvalidNumber,
-    /// The text `NotJsonRepresentable`.
-    NotJsonRepresentable,
-    /// The text `TypeMismatch`.
-    TypeMismatch,
-    /// The text `UnexpectedEnd`.
-    UnexpectedEnd,
-    /// The text `TrailingBytes`.
-    TrailingBytes,
-    /// The text `DepthExceeded`.
-    DepthExceeded,
-    /// The text `NonCanonical`.
-    NonCanonical,
-    /// The text `Unsupported`.
-    Unsupported,
-    /// The text `InvalidUtf8`.
-    InvalidUtf8,
-}
+///
+/// A kind of CanonicalError (codec-errors.cddl; conformance.md section 1). TypeMismatch, a typed encoder's refusal, is
+/// pinned by the "schema" outcome of versioned_trie_v1.json's state keys.
+pub type CanonicalErrorKind = super::codec_errors::CanonicalErrorKind;
 
-impl c::Model for CanonicalErrorKind {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
-        match self {
-            Self::UnpairedSurrogate => Ok(c::Value::text("UnpairedSurrogate")),
-            Self::DuplicateKey => Ok(c::Value::text("DuplicateKey")),
-            Self::RationalTooWide => Ok(c::Value::text("RationalTooWide")),
-            Self::IntegerTooWide => Ok(c::Value::text("IntegerTooWide")),
-            Self::JsonSyntax => Ok(c::Value::text("JsonSyntax")),
-            Self::InvalidNumber => Ok(c::Value::text("InvalidNumber")),
-            Self::NotJsonRepresentable => Ok(c::Value::text("NotJsonRepresentable")),
-            Self::TypeMismatch => Ok(c::Value::text("TypeMismatch")),
-            Self::UnexpectedEnd => Ok(c::Value::text("UnexpectedEnd")),
-            Self::TrailingBytes => Ok(c::Value::text("TrailingBytes")),
-            Self::DepthExceeded => Ok(c::Value::text("DepthExceeded")),
-            Self::NonCanonical => Ok(c::Value::text("NonCanonical")),
-            Self::Unsupported => Ok(c::Value::text("Unsupported")),
-            Self::InvalidUtf8 => Ok(c::Value::text("InvalidUtf8")),
-        }
-    }
-
-    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["UnpairedSurrogate", "DuplicateKey", "RationalTooWide", "IntegerTooWide", "JsonSyntax", "InvalidNumber", "NotJsonRepresentable", "TypeMismatch", "UnexpectedEnd", "TrailingBytes", "DepthExceeded", "NonCanonical", "Unsupported", "InvalidUtf8"])? {
-            c::Alternative::Text(0) => Ok(Self::UnpairedSurrogate),
-            c::Alternative::Text(1) => Ok(Self::DuplicateKey),
-            c::Alternative::Text(2) => Ok(Self::RationalTooWide),
-            c::Alternative::Text(3) => Ok(Self::IntegerTooWide),
-            c::Alternative::Text(4) => Ok(Self::JsonSyntax),
-            c::Alternative::Text(5) => Ok(Self::InvalidNumber),
-            c::Alternative::Text(6) => Ok(Self::NotJsonRepresentable),
-            c::Alternative::Text(7) => Ok(Self::TypeMismatch),
-            c::Alternative::Text(8) => Ok(Self::UnexpectedEnd),
-            c::Alternative::Text(9) => Ok(Self::TrailingBytes),
-            c::Alternative::Text(10) => Ok(Self::DepthExceeded),
-            c::Alternative::Text(11) => Ok(Self::NonCanonical),
-            c::Alternative::Text(12) => Ok(Self::Unsupported),
-            c::Alternative::Text(13) => Ok(Self::InvalidUtf8),
-            other => Err(c::unknown_alternative(other)),
-        }
-    }
-}
-
-impl CanonicalErrorKind {
-    /// Every alternative, in schema order.
-    pub const ALL: [Self; 14] = [Self::UnpairedSurrogate, Self::DuplicateKey, Self::RationalTooWide, Self::IntegerTooWide, Self::JsonSyntax, Self::InvalidNumber, Self::NotJsonRepresentable, Self::TypeMismatch, Self::UnexpectedEnd, Self::TrailingBytes, Self::DepthExceeded, Self::NonCanonical, Self::Unsupported, Self::InvalidUtf8];
-}
+/// The codec of [`CanonicalErrorKind`].
+pub const CANONICAL_ERROR_KIND: c::ModelOf<super::codec_errors::CanonicalErrorKind> = c::ModelOf::<super::codec_errors::CanonicalErrorKind>::NEW;
 
 /// `canonical-expansion` (`shared/schemas/canonical-vectors.cddl`).
+///
+/// `expand_message_xmd` (RFC 9380 section 5.3.1) of `message` under `dst` to `length` bytes with `algorithm`: accepted
+/// with its "output", or refused by its kind, with "refusal" exactly when the kind is InvalidExpansion.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalExpansion {
     /// The `algorithm` entry.
@@ -276,6 +218,8 @@ impl c::Model for CanonicalExpansion {
 }
 
 /// `canonical-json-accepted` (`shared/schemas/canonical-vectors.cddl`).
+///
+/// "render" is the display JSON of section 3 (compact, keys in code-point order).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalJsonAccepted {
     /// The `json` entry.
@@ -336,6 +280,9 @@ impl c::Model for CanonicalJsonCase {
 }
 
 /// `canonical-json-rejected` (`shared/schemas/canonical-vectors.cddl`).
+///
+/// A refusal: its kind, and "limit" exactly when the kind has one (RationalTooWide, IntegerTooWide: conformance.md
+/// section 3). A DuplicateKey's normative preview is pinned by diagnostics_v1.json.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalJsonRejected {
     /// The `json` entry.
@@ -351,7 +298,7 @@ impl c::Model for CanonicalJsonRejected {
         let inner = c::nested(depth)?;
         c::record([
             c::field("json", &c::Text, &self.json, inner)?,
-            c::field("error", &c::ModelOf::<CanonicalErrorKind>::NEW, &self.error, inner)?,
+            c::field("error", &CANONICAL_ERROR_KIND, &self.error, inner)?,
             c::optional_field("limit", &c::UINT, self.limit.as_ref(), inner)?,
         ])
     }
@@ -359,7 +306,7 @@ impl c::Model for CanonicalJsonRejected {
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["json", "error", "limit"])?;
         let f0 = fields.required("json", &c::Text)?;
-        let f1 = fields.required("error", &c::ModelOf::<CanonicalErrorKind>::NEW)?;
+        let f1 = fields.required("error", &CANONICAL_ERROR_KIND)?;
         let f2 = fields.optional("limit", &c::UINT)?;
         Ok(Self { json: f0, error: f1, limit: f2 })
     }
@@ -396,6 +343,8 @@ impl c::Model for CanonicalModelCase {
 }
 
 /// `canonical-render-rejection` (`shared/schemas/canonical-vectors.cddl`).
+///
+/// A value with a CBOR form whose JSON form would exceed the bounds of section 3, so rendering it fails.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalRenderRejection {
     /// The `cbor` entry.
@@ -409,14 +358,14 @@ impl c::Model for CanonicalRenderRejection {
         let inner = c::nested(depth)?;
         c::record([
             c::field("cbor", &HEX, &self.cbor, inner)?,
-            c::field("error", &c::ModelOf::<CanonicalErrorKind>::NEW, &self.error, inner)?,
+            c::field("error", &CANONICAL_ERROR_KIND, &self.error, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
         let fields = c::Fields::of(value, &["cbor", "error"])?;
         let f0 = fields.required("cbor", &HEX)?;
-        let f1 = fields.required("error", &c::ModelOf::<CanonicalErrorKind>::NEW)?;
+        let f1 = fields.required("error", &CANONICAL_ERROR_KIND)?;
         Ok(Self { cbor: f0, error: f1 })
     }
 }
@@ -526,7 +475,9 @@ impl c::Model for CanonicalVectors {
 }
 
 /// `hash-outcome` (`shared/schemas/canonical-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// The outcome of a hash call of section 4: "accepted", or refused by its kind (conformance.md section 6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HashOutcome {
     /// The text `accepted`.
     Accepted,
@@ -558,6 +509,15 @@ impl c::Model for HashOutcome {
 impl HashOutcome {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 6] = [Self::Accepted, Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidLength), Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidHex), Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidDomainTag), Self::HashErrorKind(super::hash_errors::HashErrorKind::InvalidExpansion), Self::HashErrorKind(super::hash_errors::HashErrorKind::UnknownAlgorithm)];
+}
+
+impl core::fmt::Display for HashOutcome {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Accepted => f.write_str("accepted"),
+            Self::HashErrorKind(a) => core::fmt::Display::fmt(a, f),
+        }
+    }
 }
 
 /// `hex` (`shared/schemas/canonical-vectors.cddl`).

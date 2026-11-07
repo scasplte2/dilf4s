@@ -1,7 +1,7 @@
 /** The dilf4s deterministic CBOR profile (docs/specs/canonical-encoding.md section 2). */
 import { byteLimit, checkedLimit, Meter, tooLarge } from "./budget.js";
 import { isLocalBuffer, plainBytes } from "./bytes.js";
-import type { CanonicalError, TooLarge, TypeMismatch } from "./error.js";
+import type { CanonicalError, NonCanonicalReason, TooLarge, TypeMismatch, UnsupportedItem } from "./error.js";
 import { toHex } from "./hex.js";
 import { err, ok, type Result } from "./result.js";
 import { compareBytes, utf8Text } from "./utf8.js";
@@ -380,8 +380,8 @@ type Frame =
   | { readonly map: false; remaining: number; readonly items: Value[] }
   | { readonly map: true; remaining: number; readonly entries: [string, Value][]; lastKey: Uint8Array | undefined; pending: PendingKey | undefined };
 
-const nonCanonical = (offset: number, reason: string): CanonicalError => ({ kind: "NonCanonical", offset, reason });
-const unsupported = (offset: number, reason: string): CanonicalError => ({ kind: "Unsupported", offset, reason });
+const nonCanonical = (offset: number, reason: NonCanonicalReason): CanonicalError => ({ kind: "NonCanonical", offset, reason });
+const unsupported = (offset: number, item: UnsupportedItem): CanonicalError => ({ kind: "Unsupported", offset, item });
 const unexpectedEnd = (offset: number): CanonicalError => ({ kind: "UnexpectedEnd", offset });
 
 /**
@@ -451,15 +451,15 @@ class Decoder {
         frame.items.push(current);
         frame.remaining--;
       } else if (frame.pending === undefined) {
-        if (current.kind !== "text") return err(unsupported(from, "map keys must be text"));
+        if (current.kind !== "text") return err(unsupported(from, { kind: "NonTextKey" }));
         const keyBytes = this.input.subarray(from, end);
         if (frame.lastKey !== undefined && compareBytes(frame.lastKey, keyBytes) >= 0) {
-          return err(nonCanonical(from, "map keys must be unique and in ascending encoded order"));
+          return err(nonCanonical(from, "keyOrder"));
         }
         frame.pending = { key: current.value, start: from, end };
         return ok({ done: false, pos: end });
       } else {
-        if (current.kind === "null") return err(nonCanonical(from, "map values must not be null (null and absent are the same value)"));
+        if (current.kind === "null") return err(nonCanonical(from, "nullMapValue"));
         frame.entries.push([frame.pending.key, current]);
         frame.lastKey = this.input.subarray(frame.pending.start, frame.pending.end);
         frame.pending = undefined;
@@ -518,7 +518,7 @@ class Decoder {
           case 22n:
             return scalar(NullValue.instance, end);
           default:
-            return err(unsupported(pos, `simple value ${argument.toString()}`));
+            return err(unsupported(pos, { kind: "SimpleValue", value: Number(argument) }));
         }
     }
   }
@@ -533,10 +533,10 @@ class Decoder {
       if (!s.ok) return s;
       let n = 0n;
       for (const b of s.value.bytes) n = (n << 8n) | BigInt(b);
-      return n < minimum ? err(nonCanonical(pos, `argument ${n.toString()} not in shortest form`)) : ok({ major, argument: n, end: s.value.end });
+      return n < minimum ? err(nonCanonical(pos, "nonShortestArgument")) : ok({ major, argument: n, end: s.value.end });
     };
     if (info < 24) return ok({ major, argument: BigInt(info), end: pos + 1 });
-    if (major === 7) return err(unsupported(pos, `floating point or simple value (additional information ${info.toString()})`));
+    if (major === 7) return err(unsupported(pos, { kind: "FloatOrSimple", info }));
     switch (info) {
       case 24:
         return sized(1, 24n);
@@ -547,9 +547,9 @@ class Decoder {
       case 27:
         return sized(8, 0x100000000n);
       case 31:
-        return err(unsupported(pos, "indefinite length"));
+        return err(unsupported(pos, { kind: "IndefiniteLength" }));
       default:
-        return err(unsupported(pos, `reserved additional information ${info.toString()}`));
+        return err(unsupported(pos, { kind: "ReservedInfo", info }));
     }
   }
 
@@ -561,7 +561,7 @@ class Decoder {
       return n.ok ? ok({ value: n.value, end: b.value.end }) : n;
     }
     if (tag === TAG_RATIONAL) return this.readRational(pos, end);
-    return err(unsupported(pos, `tag ${tag.toString()}`));
+    return err(unsupported(pos, { kind: "Tag", tag }));
   }
 
   /**
@@ -577,12 +577,12 @@ class Decoder {
   ): Result<{ readonly value: bigint; readonly end: number }, CanonicalError> {
     const h = this.readHead(end);
     if (!h.ok) return h;
-    if (h.value.major !== 2) return err(nonCanonical(pos, "bignum tag must wrap a byte string"));
+    if (h.value.major !== 2) return err(nonCanonical(pos, "bignumNotBytes"));
     const s = this.span(h.value.end, h.value.argument);
     if (!s.ok) return s;
     const b = s.value.bytes;
-    if (b.length === 0 || b[0] === 0) return err(nonCanonical(pos, "bignum magnitude must be non-empty without leading zeros"));
-    if (b.length <= 8) return err(nonCanonical(pos, "bignum used for a value that fits major type 0/1"));
+    if (b.length === 0 || b[0] === 0) return err(nonCanonical(pos, "bignumLeadingZero"));
+    if (b.length <= 8) return err(nonCanonical(pos, "bignumInRange"));
     if (magnitudeBits(b) > limit) return err(tooWide);
     const magnitude = bignums.magnitude(b);
     return ok({ value: tag === TAG_POSITIVE_BIGNUM ? magnitude : -1n - magnitude, end: s.value.end });
@@ -596,14 +596,14 @@ class Decoder {
   private readRational(pos: number, end: number): Result<{ readonly value: Value; readonly end: number }, CanonicalError> {
     const pair = this.readHead(end);
     if (!pair.ok) return pair;
-    if (pair.value.major !== 4 || pair.value.argument !== 2n) return err(nonCanonical(pos, "rational must wrap a 2-element array"));
+    if (pair.value.major !== 4 || pair.value.argument !== 2n) return err(nonCanonical(pos, "rationalNotPair"));
     const num = this.readPart(pair.value.end);
     if (!num.ok) return num;
     const den = this.readPart(num.value.end);
     if (!den.ok) return den;
-    if (den.value.value < 2n) return err(nonCanonical(pos, "rational denominator must be >= 2"));
+    if (den.value.value < 2n) return err(nonCanonical(pos, "rationalDenominator"));
     const r = RationalValue.of(num.value.value, den.value.value);
-    return r === undefined ? err(nonCanonical(pos, "rational must be reduced")) : ok({ value: r, end: den.value.end });
+    return r === undefined ? err(nonCanonical(pos, "rationalNotReduced")) : ok({ value: r, end: den.value.end });
   }
 
   /**
@@ -618,7 +618,7 @@ class Decoder {
     if (major === 1) return ok({ value: -1n - argument, end });
     if (major === 6 && (argument === TAG_POSITIVE_BIGNUM || argument === TAG_NEGATIVE_BIGNUM))
       return this.readBignum(pos, argument, end, MAX_RATIONAL_BITS, { kind: "RationalTooWide", limit: MAX_RATIONAL_BITS });
-    return err(nonCanonical(pos, "expected an integer"));
+    return err(nonCanonical(pos, "rationalNotInteger"));
   }
 
   /** `len` bytes from `pos`, and the offset after them. */

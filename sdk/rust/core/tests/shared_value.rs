@@ -140,7 +140,11 @@ fn a_doubling_dag_weighs_its_logical_size_and_saturates() {
     assert_eq!(v.weight(), MAX_WEIGHT, "saturated, not wrapped");
     // never format or compare the DAG itself: either walks all 2^256 leaves
     let too_deep = Value::array(vec![v.clone(), v]).map(|_| ());
-    assert_eq!(too_deep, Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH }), "one doubling too many");
+    assert_eq!(
+        too_deep,
+        Err(CanonicalError::DepthExceeded { limit: u64::try_from(MAX_DEPTH).unwrap() }),
+        "one doubling too many"
+    );
 
     // maps add one per entry and the key's bytes: {a: x, b: x} weighs 1 + 2(2 + w)
     let mut m = Value::Null;

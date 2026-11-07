@@ -160,8 +160,8 @@ fn vrf_v1_signing_key_decoding() {
 fn every_vrf_error_kind_has_a_row() {
     let v: dilf4s_core::generated::vrf_vectors::VrfVectors = common::load("vrf_v1.json");
     for kind in VrfErrorKind::ALL {
-        let pinned = v.rejections.iter().any(|r| r.result == VrfResult::VrfErrorKind(kind.clone()))
-            || v.key_decoding.iter().any(|c| c.result == VrfKeyResult::VrfErrorKind(kind.clone()));
+        let pinned = v.rejections.iter().any(|r| r.result == VrfResult::VrfErrorKind(kind))
+            || v.key_decoding.iter().any(|c| c.result == VrfKeyResult::VrfErrorKind(kind));
         if kind == VrfErrorKind::HashToCurveFailed {
             assert!(!pinned, "{kind:?} is exempt, but has a row");
         } else {

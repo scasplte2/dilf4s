@@ -11,8 +11,8 @@ use dilf4s_core::value::{MapShape, Text};
 use dilf4s_core::{Preview, Value};
 
 use crate::ast::{Expr, Program, VarRef};
-use crate::error::JlvmError;
-use crate::op::Op;
+use crate::error::{JlvmError, Raise};
+use crate::op::{Op, OpClass};
 use crate::values::{kind, segment_count};
 
 /// `and`, `or`, `default`.

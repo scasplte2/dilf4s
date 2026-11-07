@@ -11,7 +11,13 @@ export type MerkleDecodeError = "IndexOutOfRange" | "InvalidSizes" | "Encoding";
 
 export const MerkleDecodeError: c.Codec<MerkleDecodeError> = c.union<MerkleDecodeError>("MerkleDecodeError", [], ["IndexOutOfRange", "InvalidSizes", "Encoding"]);
 
-/** `merkle-malformed` (`shared/schemas/merkle-vectors.cddl`). */
+/**
+ * `merkle-malformed` (`shared/schemas/merkle-vectors.cddl`).
+ *
+ * A proof (canonical CBOR) the decoder refuses, and the kind of its error: an inclusion index not below the size is
+ * "IndexOutOfRange", a consistency proof whose old size exceeds its new size is "InvalidSizes", and a shape the
+ * schema refuses, or a path entry that is not a digest, is "Encoding".
+ */
 export interface MerkleMalformed {
   readonly name: string;
   readonly kind: MerkleProofKind;
@@ -31,7 +37,11 @@ export type MerkleProofKind = "inclusion" | "consistency";
 
 export const MerkleProofKind: c.Codec<MerkleProofKind> = c.union<MerkleProofKind>("MerkleProofKind", [], ["inclusion", "consistency"]);
 
-/** `merkle-value-commitment` (`shared/schemas/merkle-vectors.cddl`). */
+/**
+ * `merkle-value-commitment` (`shared/schemas/merkle-vectors.cddl`).
+ *
+ * A value (as its canonical CBOR), its commitment bytes commit(v) and the leaf hash of those bytes (section 2).
+ */
 export interface MerkleValueCommitment {
   readonly cbor: Hex;
   readonly commitment: Hex;
@@ -44,7 +54,13 @@ export const MerkleValueCommitment: c.Codec<MerkleValueCommitment> = c.record<Me
   leafHash: c.required("leafHash", c.defer(() => Hex)),
 });
 
-/** `merkle-vector-tree` (`shared/schemas/merkle-vectors.cddl`). */
+/**
+ * `merkle-vector-tree` (`shared/schemas/merkle-vectors.cddl`).
+ *
+ * "inclusion" and "consistency" are the tagged profile's proofs; "rfc6962Inclusion" and "rfc6962Consistency" are the
+ * same proofs under the rfc6962 profile, whose leaves are the raw "leaves". Each lists one proof per leaf index, then
+ * one per old size 0..size.
+ */
 export interface MerkleVectorTree {
   readonly size: bigint;
   readonly root: Hex;
