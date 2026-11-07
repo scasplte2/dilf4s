@@ -3,7 +3,8 @@
  * `docs/specs/signing.md`, `vrf.md` and `kes.md`; the conformance vectors in `shared/vectors` are part of them.
  *
  * Malformed input (a wrong length, a key that does not decode) is a typed error; a well-formed input that fails
- * verification is `false`. No function throws.
+ * verification is `false`. An argument of the wrong type (from JavaScript, or a cast) is core's `TypeMismatch`, never a
+ * verdict. No function throws.
  *
  * Not side-channel hardened: JavaScript gives no constant-time guarantee, and part of the secret-key arithmetic
  * (BIP32 and Icarus child keys, VRF and ristretto255 responses) is plain `bigint`. Verification is unaffected; sign

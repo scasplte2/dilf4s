@@ -66,6 +66,7 @@ export interface Ed25519Scheme extends SchemeCodec<"Ed25519">, Verifier<"Ed25519
   readonly sign: (key: SigningKey<"Ed25519">, message: Uint8Array) => Result<Signature<"Ed25519">, TypeMismatch>;
   /** libsodium's rule (Cardano KES leaves); `verify` is ZIP-215. */
   readonly verifyLibsodium: (key: VerifyingKey<"Ed25519">, message: Uint8Array, signature: Signature<"Ed25519">) => Result<boolean, TypeMismatch>;
+  /** libsodium's rule over raw encodings, decoded as `verifyBytes` decodes them. */
   readonly verifyLibsodiumBytes: (key: Uint8Array, message: Uint8Array, signature: Uint8Array) => Result<boolean, CryptoRefusal>;
 }
 

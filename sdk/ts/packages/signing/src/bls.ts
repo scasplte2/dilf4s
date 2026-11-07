@@ -182,6 +182,7 @@ export interface BlsScheme extends SchemeCodec<typeof NAME>, Verifier<typeof NAM
   readonly batchVerify: (triples: readonly (readonly [VerifyingKey<typeof NAME>, Uint8Array, Signature<typeof NAME>])[]) => Result<boolean, TypeMismatch>;
   /** A signature over the public key under DST `BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`. */
   readonly popProve: (key: SigningKey<typeof NAME>) => Result<Signature<typeof NAME>, TypeMismatch>;
+  /** Whether `proof` is `key`'s proof of possession; a key or proof not of this scheme is a `TypeMismatch`. */
   readonly popVerify: (key: VerifyingKey<typeof NAME>, proof: Signature<typeof NAME>) => Result<boolean, TypeMismatch>;
   /** `hash_to_curve` into G2 under `dst` (1 to 255 bytes), uncompressed `x.c1 || x.c0 || y.c1 || y.c0` (192 bytes). */
   readonly hashToG2: (message: Uint8Array, dst: Uint8Array) => Result<Uint8Array, CryptoRefusal>;

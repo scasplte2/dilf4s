@@ -360,6 +360,13 @@ describe("the versioned trie refuses an argument of the wrong type as TypeMismat
     expect(junk.root(head)).toEqual(mismatch("expected a version key's result to be a Result of its type"));
     const short = expectOk(versioned.VersionedTrie.of<bigint>("SHA-256", { width: 8, encode: () => ({ ok: true, value: new Uint8Array(3) }), decode: () => ({ ok: true, value: 1n }) }), "profile");
     expect(short.root(head), "an encoding of another width").toEqual(mismatch("expected a version key's result to be a Result of its type"));
+    // a caller's error is copied into a refusal of the module's, never handed on as it is
+    const refusing = expectOk(
+      versioned.VersionedTrie.of<bigint>("SHA-256", { width: 8, encode: () => bad({ ok: false, error: { kind: "Trie", error: null } }), decode: () => bad({ ok: false, error: { kind: "InvalidVersion", reason: "no" } }) }),
+      "profile",
+    );
+    expect(refusing.root(head)).toEqual({ ok: false, error: { kind: "InvalidVersion", reason: "the version key refused the version" } });
+    expect(refusing.decodeHead(valueOf(vectors.head.cbor))).toEqual({ ok: false, error: { kind: "InvalidVersion", reason: "no" } });
     // a well-behaved custom key gives what VersionKey.long gives
     const custom = expectOk(
       versioned.VersionedTrie.of<bigint>("SHA-256", { width: 8, encode: (v) => versioned.VersionKey.long.encode(v), decode: (b) => versioned.VersionKey.long.decode(b) }),

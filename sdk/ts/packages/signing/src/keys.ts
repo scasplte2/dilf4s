@@ -222,8 +222,11 @@ function branded(of: (x: unknown) => Uint8Array | undefined, x: unknown, scheme:
 /** The scheme of `x` if it is a `SigningKey` this package made (a brand check first), else `undefined`. */
 export const signingKeySchemeOf = (x: unknown): string | undefined => (signingOf(x) === undefined ? undefined : (x as SigningKey<string>).scheme);
 
+/** A signing key's own bytes, if `x` is a `SigningKey` of `scheme` this package made; else a `TypeMismatch`. */
 export const signingKeyBytes = (x: unknown, scheme: string): Result<Uint8Array, TypeMismatch> => branded(signingOf, x, scheme, "SigningKey");
+/** A verifying key's own bytes, as {@link signingKeyBytes}. */
 export const verifyingKeyBytes = (x: unknown, scheme: string): Result<Uint8Array, TypeMismatch> => branded(verifyingOf, x, scheme, "VerifyingKey");
+/** A signature's own bytes, as {@link signingKeyBytes}. */
 export const signatureBytes = (x: unknown, scheme: string): Result<Uint8Array, TypeMismatch> => branded(signatureBytesOf, x, scheme, "Signature");
 
 /**

@@ -20,8 +20,11 @@ export type CryptoRefusal = CryptoError | TypeMismatch;
 /** Validating decoders: a wrong length is `InvalidEncoding`; a key failing the scheme's rules is `InvalidKey`. */
 export interface SchemeCodec<S extends SchemeName> {
   readonly name: S;
+  /** A signing key from its encoding, measured by its internal length and copied; non-bytes are a `TypeMismatch`. */
   readonly signingKey: (bytes: Uint8Array) => Result<SigningKey<S>, CryptoRefusal>;
+  /** A verifying key from its encoding, as `signingKey` reads it. */
   readonly verifyingKey: (bytes: Uint8Array) => Result<VerifyingKey<S>, CryptoRefusal>;
+  /** A signature from its encoding, as `signingKey` reads it. */
   readonly signature: (bytes: Uint8Array) => Result<Signature<S>, CryptoRefusal>;
   /** The verifying key of a signing key; one that is not this scheme's `SigningKey` is a `TypeMismatch`. */
   readonly publicKey: (key: SigningKey<S>) => Result<VerifyingKey<S>, TypeMismatch>;
@@ -32,12 +35,15 @@ export interface SchemeCodec<S extends SchemeName> {
  * key or signature of the wrong type is a `TypeMismatch`, never `false` and never `true`.
  */
 export interface Verifier<S extends SchemeName, M = Uint8Array> {
+  /** The verdict over a decoded key and signature of this scheme. */
   readonly verify: (key: VerifyingKey<S>, message: M, signature: Signature<S>) => Result<boolean, TypeMismatch>;
+  /** The verdict over raw encodings: the message's type checked, then the key decoded, then the signature. */
   readonly verifyBytes: (key: Uint8Array, message: M, signature: Uint8Array) => Result<boolean, CryptoRefusal>;
 }
 
 /** Deterministic key derivation from a 32-byte seed (`signing.md` section 1.7). */
 export interface SeedDerivation<S extends SchemeName> {
+  /** The key pair of a seed; a seed that is not a `Uint8Array` is a `TypeMismatch`. */
   readonly fromSeed: (seed: Uint8Array) => Result<KeyPair<S>, CryptoRefusal>;
 }
 

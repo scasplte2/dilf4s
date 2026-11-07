@@ -10,7 +10,7 @@
  * checked before it is used.
  */
 import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { mint, plainBytes, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { mint, plainBytes, takeBytes, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
@@ -206,7 +206,9 @@ export class StateNamespace {
  */
 export interface VersionKey<V> {
   readonly width: number;
+  /** The version's key: exactly `width` bytes; a version of the wrong type is a `TypeMismatch`. */
   encode(version: V): C<Uint8Array>;
+  /** The version of a key; bytes that are not a `Uint8Array` are a `TypeMismatch`. */
   decode(bytes: Uint8Array): C<V>;
 }
 
@@ -255,7 +257,7 @@ export const VersionKey = {
   long: bigEndian(8, 2n ** 63n - 1n),
 } as const;
 
-/** What a caller's version key method gave, as a result this module can trust: a `Result`, its error passed on. */
+/** A caller's version key result, checked: a `Result` of its type, its error copied into one of this module's. */
 function keyResult<T>(r: unknown, value: (v: unknown) => T | undefined): C<T> {
   const bad = expected("a version key's result to be a Result of its type");
   if (!isObject(r)) return err(bad);
@@ -265,8 +267,12 @@ function keyResult<T>(r: unknown, value: (v: unknown) => T | undefined): C<T> {
     return v === undefined ? err(bad) : ok(v);
   }
   if (isOk !== false) return err(bad);
+  // the caller's error is never handed on as it is: its kind and reason are read once, into a refusal of this module's
   const e: unknown = Reflect.get(r, "error");
-  return isObject(e) && typeof Reflect.get(e, "kind") === "string" ? err(e as VersionedRefusal) : err(bad);
+  const kind: unknown = isObject(e) ? Reflect.get(e, "kind") : undefined;
+  const reason: unknown = isObject(e) ? Reflect.get(e, "reason") : undefined;
+  if (kind === "TypeMismatch" && typeof reason === "string") return err(typeMismatch(reason));
+  return err({ kind: "InvalidVersion", reason: kind === "InvalidVersion" && typeof reason === "string" ? reason : "the version key refused the version" });
 }
 
 /**

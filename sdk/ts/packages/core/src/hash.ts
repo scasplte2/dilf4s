@@ -80,8 +80,11 @@ function refuseAlgorithm(x: unknown): Err<AlgorithmError> | undefined {
 
 /** An incremental hash of this package's own (noble's): it throws on input that is not bytes and on a second digest. */
 export interface RawHash {
+  /** Absorbs plain bytes (noble throws on anything else). */
   update(data: Uint8Array): unknown;
+  /** Finishes the hash: a second call throws. */
   digest(): Uint8Array;
+  /** An independent copy of the state so far. */
   clone(): RawHash;
 }
 
@@ -162,6 +165,7 @@ class CheckedHashing implements Hashing {
     Object.freeze(this);
   }
 
+  /** {@link Hashing.update}: the data checked and read through a plain view. */
   update(data: Uint8Array): Result<Hashing, TypeMismatch> {
     const view = plainBytes(data);
     if (view === undefined) return err(NOT_BYTES);
@@ -169,6 +173,7 @@ class CheckedHashing implements Hashing {
     return ok(this);
   }
 
+  /** {@link Hashing.digest}. */
   digest(): Uint8Array {
     // a copy is finished, never the hash itself, so this may be called again and absorbing may go on
     return this.#hash.clone().digest();

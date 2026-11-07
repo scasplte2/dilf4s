@@ -148,7 +148,9 @@ export interface TaggedSchnorrScheme
   extends SchemeCodec<"secp256k1-tagged-Schnorr">,
     Verifier<"secp256k1-tagged-Schnorr">,
     SeedDerivation<"secp256k1-tagged-Schnorr"> {
+  /** With caller-supplied 32-byte auxiliary randomness; arguments of the wrong type are a `TypeMismatch`. */
   readonly sign: (key: SigningKey<"secp256k1-tagged-Schnorr">, message: Uint8Array, aux: Uint8Array) => Result<Signature<"secp256k1-tagged-Schnorr">, CryptoRefusal>;
+  /** With fresh auxiliary randomness from `@noble/hashes` `randomBytes`. */
   readonly signRandom: (key: SigningKey<"secp256k1-tagged-Schnorr">, message: Uint8Array) => Result<Signature<"secp256k1-tagged-Schnorr">, TypeMismatch>;
 }
 

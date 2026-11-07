@@ -63,4 +63,5 @@ export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: 
 /** A verdict without an allocation: the two successes of a boolean check, shared and frozen. */
 export const TRUE: Result<boolean, never> = Object.freeze({ ok: true, value: true });
 export const FALSE: Result<boolean, never> = Object.freeze({ ok: true, value: false });
+/** The shared result of a boolean verdict. */
 export const verdict = (b: boolean): Result<boolean, never> => (b ? TRUE : FALSE);
