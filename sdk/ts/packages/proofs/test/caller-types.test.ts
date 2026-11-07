@@ -878,6 +878,27 @@ describe("a versioned query is encoded before the claims or the proof are read: 
     expect(ot.verifyVersions(root, proof, from, { n: 300n }, bad(moving)), "the query as given, [3, 300)").toEqual({ ok: true, value: false });
   });
 
+  it("verifyVersions: a later claim's getter cannot rewrite an earlier claim's version", () => {
+    const p = vectors.proofs.find((x) => x.name === "versions-2-until-300");
+    if (p === undefined) throw new Error("the versions fixture");
+    const proof = proofNamed("versions-2-until-300");
+    const roots = (p.versions ?? []).map((v) => bytes(v.stateRoot ?? ""));
+    // [2, 300) holds 2, 255 and 256: a claim whose first version is 3 is false
+    const first = { n: 3n };
+    const claim = (): unknown[] => [[first, roots[0]], [{ n: 255n }, roots[1]], [{ n: 256n }, roots[2]]];
+    expect(ot.verifyVersions(root, proof, { n: 2n }, { n: 300n }, bad(claim())), "the claim as read").toEqual({ ok: true, value: false });
+    const rewriting = claim();
+    const second: unknown[] = [{ n: 255n }];
+    Object.defineProperty(second, 1, {
+      get: () => {
+        first.n = 2n;
+        return roots[1];
+      },
+    });
+    rewriting[1] = second;
+    expect(ot.verifyVersions(root, proof, { n: 2n }, { n: 300n }, bad(rewriting)), "version 3 was read, and encoded, first").toEqual({ ok: true, value: false });
+  });
+
   it("verifyVersion, verifyHistoricalKey and verifyAsOf: a proof's getter cannot change the version asked about", () => {
     const v255 = proofNamed("version-255");
     expect(ot.verifyVersion(root, v255, { n: 255n }).ok, "version 255, asked as 255").toBe(true);
@@ -959,6 +980,26 @@ describe("an iterator's next is called directly, never through bind", () => {
       });
       // nothing reads its length or name, so it is never revoked, and the empty iterable gives the empty trie's root
       expect(trie.trieRoot(T, variable, bad({ [Symbol.iterator]: () => ({ next }) })), property).toEqual({ ok: true, value: T.empty });
+    }
+  });
+});
+
+describe("a snapshot chunk's size bound is checked before any of its items is read", () => {
+  it("state and history chunks past MAX_CHUNK_ENTRIES, or empty, read no item", { timeout: 5_000 }, () => {
+    const reader = expectOk(versioned.SnapshotReader.start(vt, finalHead), "reader");
+    for (const length of [versioned.MAX_CHUNK_ENTRIES + 1, 2 ** 32 - 1, 0]) {
+      let reads = 0;
+      const items = new Proxy([], {
+        get: (t, name) => {
+          if (name === "length") return length;
+          if (typeof name === "string" && /^[0-9]+$/.test(name)) reads += 1;
+          return Reflect.get(t, name) as unknown;
+        },
+      });
+      for (const chunk of [{ kind: "state", entries: items }, { kind: "history", versions: items }]) {
+        expect(expectErr(reader.feed(bad(chunk)), `${chunk.kind} ${length.toString()}`).kind).toBe("Malformed");
+      }
+      expect(reads, `no item read at length ${length.toString()}`).toBe(0);
     }
   });
 });

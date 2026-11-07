@@ -50,11 +50,15 @@ export const isObject = (x: unknown): x is object => ((typeof x === "object" && 
 /**
  * A caller's array, read by index: `isArrayGuarded` first (no trap runs on a Proxy for it, and a revoked Proxy is refused), then its length once and
  * each item once, each given to `item`, whose first refusal is the result. `what` names the array in a refusal.
+ * `bound`, when given, refuses the length (read once) before any item is read: an array with a size limit is never
+ * walked past it.
  */
-export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: number) => Result<T, E>): Result<T[], E | TypeMismatch> {
+export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: number) => Result<T, E>, bound?: (length: number) => E | undefined): Result<T[], E | TypeMismatch> {
   if (!isArrayGuarded(x)) return err(expected(what));
   const length: unknown = (x as readonly unknown[]).length;
   if (!isArrayLength(length)) return err(expected(what));
+  const outside = bound?.(length);
+  if (outside !== undefined) return err(outside);
   const out: T[] = [];
   for (let i = 0; i < length; i++) {
     // guarded: an earlier read (the length's, an item's: a Proxy's trap) may have revoked the array

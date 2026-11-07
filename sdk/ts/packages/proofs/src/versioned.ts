@@ -430,25 +430,35 @@ function proofArg<V>(x: unknown): Result<VersionedTrieProof<V>, TypeMismatch> {
 }
 
 /** A caller's entries: an array of `[StateKey, Value]` arrays, read by index, each item once. */
-const entriesArg = (x: unknown, what: string): Result<(readonly [StateKey, Value])[], TypeMismatch> =>
-  readArray(x, what, (e, i) => {
+const entriesArg = <E = never>(x: unknown, what: string, bound?: (length: number) => E | undefined): Result<(readonly [StateKey, Value])[], E | TypeMismatch> =>
+  readArray<readonly [StateKey, Value], E | TypeMismatch>(
+    x,
+    what,
+    (e, i) => {
     const pair = readPair(e);
     if (pair === undefined) return err(expectedAt("a [StateKey, Value] array", i));
     const k: unknown = readGuarded(pair, 0);
     const v: unknown = readGuarded(pair, 1);
     return isKey(k) && isValue(v) ? ok([k, v] as const) : err(expectedAt("a [StateKey, Value] array", i));
-  });
+    },
+    bound,
+  );
 
 /** A caller's versions: an array of `[V, Uint8Array]` arrays, read by index, each root copied. */
-const versionsArg = <V>(x: unknown, what: string): Result<(readonly [V, Uint8Array])[], TypeMismatch> =>
-  readArray(x, what, (e, i) => {
+const versionsArg = <V, E = never>(x: unknown, what: string, bound?: (length: number) => E | undefined): Result<(readonly [V, Uint8Array])[], E | TypeMismatch> =>
+  readArray<readonly [V, Uint8Array], E | TypeMismatch>(
+    x,
+    what,
+    (e, i) => {
     const pair = readPair(e);
     // the version first, then the root, copied as read: nothing read after it can change it
     const version: unknown = pair === undefined ? undefined : readGuarded(pair, 0);
     const root = pair === undefined ? undefined : takeBytes(readGuarded(pair, 1));
     // a version is any value, checked when encoded: REVOKED is refused here, never kept as one
     return pair === undefined || root === undefined || version === REVOKED ? err(expectedAt("a [version, Uint8Array] array", i)) : ok([version as V, root] as const);
-  });
+    },
+    bound,
+  );
 
 /** {@link VersionedTrie.checkValue} of a key and a value already checked to be of their types. */
 function checkValue(key: StateKey, value: Value): R<undefined> {
@@ -987,15 +997,21 @@ export class VersionedTrie<V> {
     const [r, fk] = q.value;
     const uk = until === null ? ok(undefined) : this.versionKey.encode(until);
     if (!uk.ok) return uk;
-    // each claim encoded as it is read, before the proof's getters run
-    const given = versionsArg<V>(claimed, "an array of [version, Uint8Array] claims");
-    if (!given.ok) return given;
-    const expected: trie.TrieEntry[] = [];
-    for (const [v, s] of given.value) {
-      const k = this.versionKey.encode(v);
+    // each claim's version encoded as soon as it is read, before its root or a later claim is read (their getters, or
+    // the proof's, may change a version object read before), and its root copied: only these bytes are compared
+    const claims = readArray(claimed, "an array of [version, Uint8Array] claims", (e, i): C<trie.TrieEntry> => {
+      const bad = err(expectedAt("a [version, Uint8Array] array", i));
+      const pair = readPair(e);
+      if (pair === undefined) return bad;
+      const version: unknown = readGuarded(pair, 0);
+      if (version === REVOKED) return bad;
+      const k = this.versionKey.encode(version as V);
       if (!k.ok) return k;
-      expected.push({ key: k.value, valueHash: this.#bytesHash(s) });
-    }
+      const s = takeBytes(readGuarded(pair, 1));
+      return s === undefined ? bad : ok({ key: k.value, valueHash: this.#bytesHash(s) });
+    });
+    if (!claims.ok) return claims;
+    const expected = claims.value;
     const p = proofArg<V>(proof);
     if (!p.ok) return p;
     const bound = this.#bind(r, p.value);
@@ -1045,8 +1061,17 @@ export class VersionedTrie<V> {
 
 type Stage = "head" | "state" | "history" | "done";
 
+/**
+ * A chunk's size bound, checked on its length (read once) before any item is read, as {@link SnapshotReader.feed}
+ * refuses a chunk outside it: a caller's array is never walked past `MAX_CHUNK_ENTRIES`.
+ */
+const chunkBound =
+  (kind: "state" | "history") =>
+  (length: number): VersionedTrieError | undefined =>
+    length >= 1 && length <= MAX_CHUNK_ENTRIES ? undefined : { kind: "Malformed", reason: `snapshot: a ${kind} chunk holds 1..${MAX_CHUNK_ENTRIES.toString()} items, not ${length.toString()}` };
+
 /** A caller's chunk, its fields read once into a frozen copy: its kind, then its head, entries or versions. */
-function chunkArg<V>(x: unknown): Result<SnapshotChunk<V>, TypeMismatch> {
+function chunkArg<V>(x: unknown): C<SnapshotChunk<V>> {
   if (!isObject(x)) return err(expected("a SnapshotChunk"));
   const kind: unknown = readGuarded(x, "kind");
   switch (kind) {
@@ -1055,11 +1080,11 @@ function chunkArg<V>(x: unknown): Result<SnapshotChunk<V>, TypeMismatch> {
       return head.ok ? ok(Object.freeze({ kind, head: head.value })) : head;
     }
     case "state": {
-      const entries = entriesArg(readGuarded(x, "entries"), "the chunk's entries");
+      const entries = entriesArg(readGuarded(x, "entries"), "the chunk's entries", chunkBound("state"));
       return entries.ok ? ok(Object.freeze({ kind, entries: entries.value })) : entries;
     }
     case "history": {
-      const versions = versionsArg<V>(readGuarded(x, "versions"), "the chunk's versions");
+      const versions = versionsArg<V, VersionedTrieError>(readGuarded(x, "versions"), "the chunk's versions", chunkBound("history"));
       return versions.ok ? ok(Object.freeze({ kind, versions: versions.value })) : versions;
     }
     default:
