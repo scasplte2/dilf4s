@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { models, Value } from "@kd5ujc/dilf4s-core";
 
 import { merkle, poseidon, trie, versioned } from "../src/index.js";
-import { expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
+import { bytes, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
 const bad = (x: unknown): never => x as never;
@@ -430,6 +430,36 @@ describe("the versioned trie refuses an argument of the wrong type as TypeMismat
     };
     expect(expectOk(vt.root(head), "root")).toEqual(expectOk(vt.root(finalHead), "root"));
     expect(reads).toEqual(["version", "stateRoot", "historyRoot"]);
+  });
+
+  it("the trusted root is the one given: a proof's getter cannot swap it for another commit's", () => {
+    const stateProof = expectOk(vt.decodeProof(valueOf(vectors.proofs.find((p) => p.name === "current-keys")?.cbor ?? "")), "a state proof");
+    const right = bytes(vectors.root);
+    expect(vt.verifyState(right, stateProof).ok, "it verifies against its root").toBe(true);
+    const trusted = new Uint8Array(right.length);
+    const swapping = {
+      get head(): unknown {
+        trusted.set(right);
+        return stateProof.head;
+      },
+      top: stateProof.top,
+      ...(stateProof.state === undefined ? {} : { state: stateProof.state }),
+    };
+    expect(expectErr(vt.verifyState(trusted, bad(swapping)), "the root given, all zeros").kind).toBe("RootMismatch");
+  });
+
+  it("a verified state, a reader or a replica built by calling a constructor from outside answers nothing", () => {
+    const forge = (c: unknown, args: readonly unknown[]): unknown => Reflect.construct(c as new (...a: unknown[]) => object, [Symbol("dilf4s-proofs"), ...args]);
+    const fakeVerified = Reflect.construct(trie.VerifiedTrieProof as unknown as new (...a: unknown[]) => object, [Symbol("dilf4s-proofs"), variable, undefined]);
+    const state = forge(versioned.VerifiedState, [fakeVerified, T]) as versioned.VerifiedState;
+    // it held a proof no root was checked against, and its holds(key, null) claimed absence: true
+    expect(state.holds(key("fiber/1"), null)).toEqual(mismatch("expected a VerifiedState"));
+    expect(state.lookup(key("fiber/1"))).toEqual(mismatch("expected a VerifiedState"));
+    const reader = forge(versioned.SnapshotReader, [vt, finalHead, "done", undefined, undefined, [], []]) as versioned.SnapshotReader<bigint>;
+    expect(reader.finish()).toEqual(mismatch("expected a SnapshotReader"));
+    const replica = forge(versioned.Replica, [vt, finalHead, {}, {}]) as versioned.Replica<bigint>;
+    expect(replica.root()).toEqual(mismatch("expected a Replica"));
+    expect(replica.get(key("fiber/1"))).toEqual(mismatch("expected a Replica"));
   });
 
   it("verified state: a key that is not a StateKey, and a value posing as null, are refused, never answered", () => {

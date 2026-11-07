@@ -13,7 +13,7 @@ import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, u
 import { mint, plainBytes, takeBytes, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
-import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
+import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
 import { bitsOf, decodeInput } from "./input.js";
 import * as trie from "./trie.js";
 import { TRIE } from "./trie-internal.js";
@@ -66,6 +66,9 @@ const SEGMENT = /^[a-z0-9][a-z0-9._-]*$/;
 const KEY = mint();
 const NAMESPACE = mint();
 const PROFILE = mint();
+const STATE = mint();
+const READER = mint();
+const REPLICA = mint();
 
 let isKey!: (x: unknown) => x is StateKey;
 let createKey!: (s: string) => StateKey;
@@ -443,23 +446,27 @@ function checkValue(key: StateKey, value: Value): R<undefined> {
 export type StateEntry = readonly [StateKey, Uint8Array];
 
 let createState!: (p: trie.VerifiedTrieProof, h: trie.TrieHashing) => VerifiedState;
+const NOT_A_STATE = expected("a VerifiedState");
 
 /** A state proof checked against its state root: what it shows about keys, namespaces and ranges. */
 export class VerifiedState {
   readonly #proof: trie.VerifiedTrieProof;
   readonly #hashing: trie.TrieHashing;
-  private constructor(proof: trie.VerifiedTrieProof, hashing: trie.TrieHashing) {
+  private constructor(token: Token, proof: trie.VerifiedTrieProof, hashing: trie.TrieHashing) {
     this.#proof = proof;
     this.#hashing = hashing;
+    // without the token no method answers: a state built from outside never stands for a verified proof
+    if (token === TOKEN) STATE.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    createState = (p, h) => new VerifiedState(p, h);
+    createState = (p, h) => new VerifiedState(TOKEN, p, h);
   }
 
   /** The key's value hash, or `null` if it is proven absent; not covered is an error. What is not a `StateKey` is a `TypeMismatch`. */
   lookup(key: StateKey): C<Uint8Array | null> {
+    if (!STATE.has(this)) return err(NOT_A_STATE);
     const k = keyArg(key);
     return k.ok ? this.#lookup(k.value) : k;
   }
@@ -485,6 +492,7 @@ export class VerifiedState {
    * `null` nor a canonical value (an object posing as a null value included), is a `TypeMismatch`, never a claim.
    */
   holds(key: StateKey, value: Value | null): C<boolean> {
+    if (!STATE.has(this)) return err(NOT_A_STATE);
     const k = keyArg(key);
     if (!k.ok) return k;
     const v = value === null ? ok(null) : valueArg(value);
@@ -500,12 +508,14 @@ export class VerifiedState {
 
   /** Every entry under the namespace, complete; what is not a `StateNamespace` is a `TypeMismatch`. */
   namespace(ns: StateNamespace): C<readonly StateEntry[]> {
+    if (!STATE.has(this)) return err(NOT_A_STATE);
     if (!isNamespace(ns)) return err(expected("a StateNamespace"));
     return keyed(`namespace ${ns.preview().short()}`, TRIE.prefix(this.#proof, ns.prefix()));
   }
 
   /** Every entry in `[from, until)`, complete; no `until` is unbounded. Bounds that are not `StateKey`s are a `TypeMismatch`. */
   range(from: StateKey, until?: StateKey): C<readonly StateEntry[]> {
+    if (!STATE.has(this)) return err(NOT_A_STATE);
     const f = keyArg(from);
     if (!f.ok) return f;
     const u = until === undefined ? ok(undefined) : keyArg(until);
@@ -787,11 +797,11 @@ export class VersionedTrie<V> {
 
   /** The checked arguments every rule starts from: a root (a plain view) and a proof (a frozen copy). */
   #args(root: unknown, proof: unknown): Result<readonly [Uint8Array, VersionedTrieProof<V>], TypeMismatch> {
-    // the proof first: its getters are caller code, and the root's view is taken after the last of them
+    // the trusted root copied first: the proof's getters, and a caller's version key later, are caller code
+    const r = takeBytes(root);
+    if (r === undefined) return err(NOT_BYTES);
     const p = proofArg<V>(proof);
-    if (!p.ok) return p;
-    const r = bytesArg(root);
-    return r.ok ? ok([r.value, p.value]) : r;
+    return p.ok ? ok([r, p.value]) : p;
   }
 
   /** Rule 1: the head binds to `root`, and the proof's top trie holds the head's values in slots 0x00..0x02. */
@@ -1004,6 +1014,7 @@ function chunkArg<V>(x: unknown): Result<SnapshotChunk<V>, TypeMismatch> {
   }
 }
 
+const NOT_A_READER = expected("a SnapshotReader");
 let startReader!: <V>(profile: VersionedTrie<V>, trusted: Head<V>) => SnapshotReader<V>;
 let feedChunk!: <V>(r: SnapshotReader<V>, chunk: SnapshotChunk<V>) => C<SnapshotReader<V>>;
 let finishReader!: <V>(r: SnapshotReader<V>) => R<Snapshot<V>>;
@@ -1017,6 +1028,7 @@ let finishReader!: <V>(r: SnapshotReader<V>) => R<Snapshot<V>>;
  */
 export class SnapshotReader<V> {
   private constructor(
+    token: Token,
     readonly profile: VersionedTrie<V>,
     readonly trusted: Head<V>,
     private readonly stage: Stage,
@@ -1025,11 +1037,12 @@ export class SnapshotReader<V> {
     private readonly stateChunks: readonly (readonly (readonly [StateKey, Value])[])[],
     private readonly historyChunks: readonly (readonly (readonly [V, Uint8Array])[])[],
   ) {
+    if (token === TOKEN) READER.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    startReader = <V>(profile: VersionedTrie<V>, trusted: Head<V>) => new SnapshotReader(profile, trusted, "head", undefined, undefined, [], []);
+    startReader = <V>(profile: VersionedTrie<V>, trusted: Head<V>) => new SnapshotReader(TOKEN, profile, trusted, "head", undefined, undefined, [], []);
     feedChunk = (r, chunk) => r.#feed(chunk);
     finishReader = (r) => r.#finish();
   }
@@ -1053,6 +1066,7 @@ export class SnapshotReader<V> {
     readonly history?: readonly (readonly [V, Uint8Array])[];
   }): SnapshotReader<V> {
     return new SnapshotReader(
+      TOKEN,
       this.profile,
       this.trusted,
       changes.stage ?? this.stage,
@@ -1065,12 +1079,14 @@ export class SnapshotReader<V> {
 
   /** Decodes and feeds one chunk of canonical CBOR; what is not a `Uint8Array` is a `TypeMismatch`. */
   feedBytes(bytes: Uint8Array): C<SnapshotReader<V>> {
+    if (!READER.has(this)) return err(NOT_A_READER);
     const c = this.profile.decodeChunk(bytes);
     return c.ok ? this.#feed(c.value) : c;
   }
 
   /** Feeds one chunk; one that is not a `SnapshotChunk` (its fields read once into a copy) is a `TypeMismatch`. */
   feed(chunk: SnapshotChunk<V>): C<SnapshotReader<V>> {
+    if (!READER.has(this)) return err(NOT_A_READER);
     const c = chunkArg<V>(chunk);
     return c.ok ? this.#feed(c.value) : c;
   }
@@ -1128,8 +1144,8 @@ export class SnapshotReader<V> {
   }
 
   /** The snapshot, once its history has reached the head version. */
-  finish(): R<Snapshot<V>> {
-    return this.#finish();
+  finish(): C<Snapshot<V>> {
+    return READER.has(this) ? this.#finish() : err(NOT_A_READER);
   }
 
   #finish(): R<Snapshot<V>> {
@@ -1200,6 +1216,7 @@ function deltaArg<V>(x: unknown): Result<Delta<V>, TypeMismatch> {
   return ok(Object.freeze({ ...(parent.value === undefined ? {} : { parent: parent.value }), head: head.value, upserts: upserts.value, removes: removes.value }));
 }
 
+const NOT_A_REPLICA = expected("a Replica");
 let replicaOf!: <V>(profile: VersionedTrie<V>, head: Head<V>, state: TrieMap<StateSlot>, versions: TrieMap<VersionSlot<V>>) => Replica<V>;
 
 /**
@@ -1216,12 +1233,14 @@ export class Replica<V> {
   readonly #head: Head<V> | null;
 
   private constructor(
+    token: Token,
     readonly profile: VersionedTrie<V>,
     head: Head<V> | null,
     private readonly state: TrieMap<StateSlot>,
     private readonly versions: TrieMap<VersionSlot<V>>,
   ) {
     this.#head = head === null ? null : copyHead(head);
+    if (token === TOKEN) REPLICA.stamp(this);
     Object.freeze(this);
   }
 
@@ -1233,16 +1252,18 @@ export class Replica<V> {
   /** An empty replica under `profile`; one that is not a `VersionedTrie` is a `TypeMismatch`. */
   static empty<V>(profile: VersionedTrie<V>): Result<Replica<V>, TypeMismatch> {
     const p = profileArg<V>(profile);
-    return p.ok ? ok(new Replica(p.value, null, TrieMap.empty(p.value.hashing, p.value.stateMode), TrieMap.empty(p.value.hashing, p.value.historyMode))) : p;
+    return p.ok ? ok(new Replica(TOKEN, p.value, null, TrieMap.empty(p.value.hashing, p.value.stateMode), TrieMap.empty(p.value.hashing, p.value.historyMode))) : p;
   }
 
   /** The commitment root of the head, or `null` before the first delta. */
   root(): C<Uint8Array | null> {
+    if (!REPLICA.has(this)) return err(NOT_A_REPLICA);
     return this.#head === null ? ok(null) : this.profile.root(this.#head);
   }
 
   /** The current value of `key`, if any: one walk down its path. What is not a `StateKey` is a `TypeMismatch`. */
   get(key: StateKey): Result<Value | undefined, TypeMismatch> {
+    if (!REPLICA.has(this)) return err(NOT_A_REPLICA);
     const k = keyArg(key);
     return k.ok ? ok(this.state.get(k.value.bytes())?.value) : k;
   }
@@ -1297,6 +1318,7 @@ export class Replica<V> {
    * its keys `StateKey`s and its values canonical values) is a `TypeMismatch`.
    */
   applyDelta(delta: Delta<V>): C<Replica<V>> {
+    if (!REPLICA.has(this)) return err(NOT_A_REPLICA);
     const d = deltaArg<V>(delta);
     return d.ok ? this.#apply(d.value) : d;
   }
@@ -1344,11 +1366,11 @@ export class Replica<V> {
     if (!versions.ok) return versions;
     const h = versions.value.root;
     if (!bytesEqual(h, delta.head.historyRoot)) return mismatch("history", delta.head.historyRoot, h);
-    return ok(new Replica(p, delta.head, state, versions.value));
+    return ok(new Replica(TOKEN, p, delta.head, state, versions.value));
   }
 
   static {
-    replicaOf = (profile, head, state, versions) => new Replica(profile, head, state, versions);
+    replicaOf = (profile, head, state, versions) => new Replica(TOKEN, profile, head, state, versions);
   }
 }
 
