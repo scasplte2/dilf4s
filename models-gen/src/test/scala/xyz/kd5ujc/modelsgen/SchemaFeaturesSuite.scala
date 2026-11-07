@@ -80,6 +80,22 @@ object SchemaFeaturesSuite extends FunSuite {
       .and(lacks(out, "after the entry"))
   }
 
+  test("a comment's own delimiters never open or close a generated comment: Scala's comments nest") {
+    val cddl =
+      "; Paths under data/* and a /* block */ example, closed */ early.\n" +
+      "r = {\n  ; Each of data/** too.\n  \"x\": uint,\n}\n" +
+      "e-kind = \"A\" / \"B\"\n" +
+      "e = {\n  ; Kind data/*.\n  \"kind\": \"A\" //\n  \"kind\": \"B\"\n}\n" +
+      "o = o-a / o-b\n; Member data/*.\no-a = \"a\"\no-b = \"b\"\n"
+    val out = gen(cddl)
+    // every comment the generated Scala opens is closed once: no opener or closer inside the prose
+    def balanced(s: String) = "/\\*".r.findAllMatchIn(s).size == "\\*/".r.findAllMatchIn(s).size
+    expect(out.exists(o => balanced(o.scala)), out.fold(_.message, _.scala))
+      .and(has(out, _.scala, "Paths under data/&#42; and a /&#42; block *\\/ example, closed *\\/ early."))
+      // TypeScript's comments do not nest: only the closer is escaped
+      .and(has(out, _.ts, "Paths under data/* and a /* block *\\/ example, closed *\\/ early."))
+  }
+
   test("CddlParser.docs takes the comment block directly above a line's first token, and nothing else") {
     val text = ";# import a as b\n; one\n;two\n  x = 1 ; trailing\ny = 2\n\n; apart\n\nz = 3\n"
     expect

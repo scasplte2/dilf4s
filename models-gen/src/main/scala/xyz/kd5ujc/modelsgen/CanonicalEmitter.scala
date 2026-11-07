@@ -62,7 +62,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
       case (p, f) if p.doc.nonEmpty => s"@param ${f.name.stripPrefix("`").stripSuffix("`")} ${p.doc.mkString(" ")}"
     }
     val ruleDoc = schema.doc(rule)
-    comment(ruleDoc ++ (if (ruleDoc.nonEmpty && params.nonEmpty) Vector("") else Vector.empty) ++ params, "")
+    scaladoc(ruleDoc ++ (if (ruleDoc.nonEmpty && params.nonEmpty) Vector("") else Vector.empty) ++ params, "")
   }
 
   private def bound(hi: Int, suffix: String): String = if (hi == Int.MaxValue) "None" else s"Some($hi$suffix)"
@@ -190,12 +190,12 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
           val params = c.fields.zip(fs).collect {
             case (p, f) if p.doc.nonEmpty => s"@param ${f.name.stripPrefix("`").stripSuffix("`")} ${p.doc.mkString(" ")}"
           }
-          val scaladoc = comment(c.doc ++ (if (c.doc.nonEmpty && params.nonEmpty) Vector("") else Vector.empty) ++ params, "  ")
-          if (fs.isEmpty) s"$scaladoc  case object ${c.kind}$body"
+          val kindDoc = scaladoc(c.doc ++ (if (c.doc.nonEmpty && params.nonEmpty) Vector("") else Vector.empty) ++ params, "  ")
+          if (fs.isEmpty) s"$kindDoc  case object ${c.kind}$body"
           else
-            s"$scaladoc  final case class ${c.kind}(${fs.map(f => s"${f.name}: ${if (f.optional) s"Option[${f.tpe}]" else f.tpe}").mkString(", ")})$body"
+            s"$kindDoc  final case class ${c.kind}(${fs.map(f => s"${f.name}: ${if (f.optional) s"Option[${f.tpe}]" else f.tpe}").mkString(", ")})$body"
       }
-      s"""${comment(
+      s"""${scaladoc(
           Vector(s"`${rule.name}` (`shared/schemas/${rule.module}.cddl`): an error family, by kind ([[$k]]).") ++ paragraph(
             schema.doc(rule)
           ),
@@ -219,7 +219,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     members.collectFirst {
       case m if reservedCases(m.name) || reservedNamed(m.name) => GenError.ReservedName(rule.toString, Language.Scala, m.name)
     }.toLeft {
-      val cases = members.map(m => s"${comment(m.doc, "  ")}  case ${m.name} extends $n(${literal(m.text)})").mkString("\n")
+      val cases = members.map(m => s"${scaladoc(m.doc, "  ")}  case ${m.name} extends $n(${literal(m.text)})").mkString("\n")
       val alts = members.map(m => s"(${literal(m.text)}, $n.${m.name})").mkString(", ")
       s"""${doc(rule)}enum $n(val wire: String) {
          |$cases
@@ -259,7 +259,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
       if (v <= Int.MaxValue) s"final val $n = $v"
       else if (v <= Long.MaxValue) s"final val $n = ${v}L"
       else s"""val $n: BigInt = BigInt("$v")"""
-    s"""${comment(Vector(s"`${rule.name}` (`shared/schemas/${rule.module}.cddl`).") ++ paragraph(schema.doc(rule)), "")}$value
+    s"""${scaladoc(Vector(s"`${rule.name}` (`shared/schemas/${rule.module}.cddl`).") ++ paragraph(schema.doc(rule)), "")}$value
        |""".stripMargin
   }
 
@@ -277,7 +277,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
   }
 
   /** A rule's documentation (its CDDL comment) as a Scaladoc comment, or nothing. */
-  private def doc(rule: QName): String = comment(schema.doc(rule), "")
+  private def doc(rule: QName): String = scaladoc(schema.doc(rule), "")
 
   /** The source of one module, or the first profile violation. */
   def module(name: String): Either[GenError, String] =
@@ -408,6 +408,12 @@ object CanonicalEmitter {
   def paragraph(lines: Vector[String]): Vector[String] = if (lines.isEmpty) lines else "" +: lines
 
   /** `lines` as a Scaladoc or TSDoc comment at `indent`, ending in a newline; nothing for no lines. */
+  /**
+   * [[comment]] for Scala, whose comments nest: a slash and a star in the prose (a glob path) would open a comment the
+   * generated source never closes, so the star is written as an entity Scaladoc renders as a star.
+   */
+  def scaladoc(lines: Vector[String], indent: String): String = comment(lines.map(_.replace("/*", "/&#42;")), indent)
+
   def comment(lines: Vector[String], indent: String): String =
     lines match {
       case Vector()     => ""
