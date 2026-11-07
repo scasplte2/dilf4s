@@ -58,6 +58,13 @@ const signedMessageOf = (m: unknown): Result<Uint8Array, TypeMismatch> => {
 const keyArg = <K>(brand: Mint, x: unknown, what: string): Result<K, TypeMismatch> => (brand.has(x) ? ok(x as K) : err(expected(what)));
 
 const SUM_KEY = mint();
+const SUM = mint();
+const PRODUCT = mint();
+const CARDANO = mint();
+/** The refusal of a scheme method called on a scheme built by calling its constructor from outside. */
+const NOT_SUM = expected("a KesSum");
+const NOT_PRODUCT = expected("a KesProduct");
+const NOT_CARDANO = expected("a CardanoSumKes");
 const SUM_KEY_OF = "a KesSumKey";
 const PRODUCT_KEY_OF = "a KesProductKey";
 const CARDANO_KEY_OF = "a CardanoSumKesKey";
@@ -309,13 +316,17 @@ export class KesSum {
   readonly keyLength: number;
 
   private constructor(
+    token: Internal,
     readonly hash: HashAlgorithm,
     readonly height: number,
   ) {
-    this.#ops = new MerkleKesOps(hash);
-    this.totalPeriods = 2 ** height;
-    this.signatureLength = this.#ops.signatureLength(height);
-    this.keyLength = this.#ops.encodedLength(height);
+    // without the token nothing of the caller's is computed with, and no method of the scheme answers
+    this.#ops = new MerkleKesOps(token === INTERNAL ? hash : "SHA-256");
+    const h = token === INTERNAL ? height : 0;
+    this.totalPeriods = 2 ** h;
+    this.signatureLength = this.#ops.signatureLength(h);
+    this.keyLength = this.#ops.encodedLength(h);
+    if (token === INTERNAL) SUM.stamp(this);
     Object.freeze(this);
   }
 
@@ -325,12 +336,13 @@ export class KesSum {
     if (!h.ok) return h;
     if (typeof (height as unknown) !== "number") return err(NOT_A_NUMBER);
     return Number.isInteger(height) && height >= 0 && height <= MAX_HEIGHT
-      ? ok(new KesSum(hash, height))
+      ? ok(new KesSum(INTERNAL, hash, height))
       : err(malformed("KES height", `expected 0..${String(MAX_HEIGHT)}, got ${String(height)}`));
   }
 
   /** The period-0 key of a 32-byte seed; what is not a `Uint8Array` is a `TypeMismatch`. */
   generate(seed: Uint8Array): Result<KesSumKey, KesRefusal> {
+    if (!SUM.has(this)) return err(NOT_SUM);
     const s = kesSized("KES seed", 32, seed);
     return s.ok ? ok(new KesSumKey(INTERNAL, this, this.#ops, this.#ops.gen(s.value, this.height), 0)) : s;
   }
@@ -340,6 +352,7 @@ export class KesSum {
    * that is not a number, is a `TypeMismatch`.
    */
   load(input: Uint8Array, period: number): Result<KesSumKey, KesRefusal> {
+    if (!SUM.has(this)) return err(NOT_SUM);
     // decoding retains slices of the input: it is measured by its internal length, then copied once, so a wrong-sized
     // input is refused without copying it, and the bytes decoded are the bytes measured
     const raw = kesSized("KES key", this.keyLength, input);
@@ -383,6 +396,7 @@ export class KesSum {
    * wrong type are a `TypeMismatch`, never a verdict.
    */
   verify(vk: Uint8Array, period: number, message: Uint8Array, signature: Uint8Array): Result<boolean, KesRefusal> {
+    if (!SUM.has(this)) return err(NOT_SUM);
     const a = verifyArgs(this.#ops.n, this.signatureLength, this.totalPeriods, vk, period, message, signature);
     if (!a.ok) return a;
     const [k, p, m, s] = a.value;
@@ -479,14 +493,18 @@ export class KesProduct {
   readonly keyLength: number;
 
   private constructor(
+    token: Internal,
     readonly hash: HashAlgorithm,
     readonly superHeight: number,
     readonly subHeight: number,
   ) {
-    this.#ops = new MerkleKesOps(hash);
-    this.totalPeriods = 2 ** (superHeight + subHeight);
-    this.signatureLength = this.#ops.signatureLength(superHeight) + this.#ops.n + this.#ops.signatureLength(subHeight);
-    this.keyLength = this.#ops.encodedLength(superHeight) + this.#ops.encodedLength(subHeight) + 32 + this.#ops.signatureLength(superHeight);
+    // without the token nothing of the caller's is computed with, and no method of the scheme answers
+    this.#ops = new MerkleKesOps(token === INTERNAL ? hash : "SHA-256");
+    const [sup, sub] = token === INTERNAL ? [superHeight, subHeight] : [0, 0];
+    this.totalPeriods = 2 ** (sup + sub);
+    this.signatureLength = this.#ops.signatureLength(sup) + this.#ops.n + this.#ops.signatureLength(sub);
+    this.keyLength = this.#ops.encodedLength(sup) + this.#ops.encodedLength(sub) + 32 + this.#ops.signatureLength(sup);
+    if (token === INTERNAL) PRODUCT.stamp(this);
     Object.freeze(this);
   }
 
@@ -497,12 +515,13 @@ export class KesProduct {
     if (typeof (superHeight as unknown) !== "number" || typeof (subHeight as unknown) !== "number") return err(NOT_A_NUMBER);
     const valid = Number.isInteger(superHeight) && Number.isInteger(subHeight) && superHeight >= 0 && subHeight >= 0 && superHeight + subHeight <= MAX_HEIGHT;
     return valid
-      ? ok(new KesProduct(hash, superHeight, subHeight))
+      ? ok(new KesProduct(INTERNAL, hash, superHeight, subHeight))
       : err(malformed("KES heights", `expected non-negative heights summing to at most ${String(MAX_HEIGHT)}, got (${String(superHeight)}, ${String(subHeight)})`));
   }
 
   /** The period-0 key of a 32-byte seed; what is not a `Uint8Array` is a `TypeMismatch`. */
   generate(seed: Uint8Array): Result<KesProductKey, KesRefusal> {
+    if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
     const s = kesSized("KES seed", 32, seed);
     if (!s.ok) return s;
     const [superSeed, chainSeed] = this.#ops.expand(s.value);
@@ -514,6 +533,7 @@ export class KesProduct {
    * that is not a `Uint8Array`, or a period that is not a number, is a `TypeMismatch`.
    */
   load(input: Uint8Array, period: number): Result<KesProductKey, KesRefusal> {
+    if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
     const given = kesSized("KES key", this.keyLength, input);
     if (!given.ok) return given;
     const raw = given.value;
@@ -565,6 +585,7 @@ export class KesProduct {
    * `subRoot`. Arguments of the wrong type are a `TypeMismatch`, never a verdict.
    */
   verify(vk: Uint8Array, period: number, message: Uint8Array, signature: Uint8Array): Result<boolean, KesRefusal> {
+    if (!PRODUCT.has(this)) return err(NOT_PRODUCT);
     const ops = this.#ops;
     const a = verifyArgs(ops.n, this.signatureLength, this.totalPeriods, vk, period, message, signature);
     if (!a.ok) return a;
@@ -693,24 +714,31 @@ export class CardanoSumKes {
   readonly signingKeyLength: number;
   readonly signatureLength: number;
 
-  private constructor(readonly depth: number) {
-    this.totalPeriods = 2 ** depth;
-    this.signingKeyLength = skLen(depth);
-    this.signatureLength = 64 + 64 * depth;
+  private constructor(
+    token: Internal,
+    readonly depth: number,
+  ) {
+    // without the token nothing of the caller's is computed with, and no method of the scheme answers
+    const d = token === INTERNAL ? depth : 0;
+    this.totalPeriods = 2 ** d;
+    this.signingKeyLength = skLen(d);
+    this.signatureLength = 64 + 64 * d;
+    if (token === INTERNAL) CARDANO.stamp(this);
     Object.freeze(this);
   }
 
   /** `SumKES` of depth 0 to 7 (`Sum0KES` to `Sum7KES`); a depth that is not a number is a `TypeMismatch`. */
   static of(depth: number): Result<CardanoSumKes, KesRefusal> {
     if (typeof (depth as unknown) !== "number") return err(NOT_A_NUMBER);
-    return Number.isInteger(depth) && depth >= 0 && depth <= CARDANO_MAX_DEPTH ? ok(new CardanoSumKes(depth)) : err(malformed("KES depth", `expected 0..${String(CARDANO_MAX_DEPTH)}, got ${String(depth)}`));
+    return Number.isInteger(depth) && depth >= 0 && depth <= CARDANO_MAX_DEPTH ? ok(new CardanoSumKes(INTERNAL, depth)) : err(malformed("KES depth", `expected 0..${String(CARDANO_MAX_DEPTH)}, got ${String(depth)}`));
   }
 
   /** `Sum6KES`: 64 periods, 448-byte signatures, 608-byte keys. */
-  static readonly sum6: CardanoSumKes = new CardanoSumKes(6);
+  static readonly sum6: CardanoSumKes = new CardanoSumKes(INTERNAL, 6);
 
   /** The period-0 key for a 32-byte seed (`genKeyKES`); what is not a `Uint8Array` is a `TypeMismatch`. */
   generate(seed: Uint8Array): Result<CardanoSumKesKey, KesRefusal> {
+    if (!CARDANO.has(this)) return err(NOT_CARDANO);
     const s = kesSized("KES seed", 32, seed);
     return s.ok ? ok(new CardanoSumKesKey(INTERNAL, this, cardanoGen(s.value, this.depth), 0)) : s;
   }
@@ -720,6 +748,7 @@ export class CardanoSumKes {
    * not a `Uint8Array`, or a period that is not a number, is a `TypeMismatch`.
    */
   load(input: Uint8Array, period: number): Result<CardanoSumKesKey, KesRefusal> {
+    if (!CARDANO.has(this)) return err(NOT_CARDANO);
     // the key keeps the encoding itself, so it must own it: measured, then copied once
     const raw = kesSized("KES signing key", this.signingKeyLength, input);
     if (!raw.ok) return raw;
@@ -756,6 +785,7 @@ export class CardanoSumKes {
 
   /** `verifyKES` of `signature` under root key `vk` at relative `period`; arguments of the wrong type are a `TypeMismatch`. */
   verify(vk: Uint8Array, period: number, message: Uint8Array, signature: Uint8Array): Result<boolean, KesRefusal> {
+    if (!CARDANO.has(this)) return err(NOT_CARDANO);
     const a = verifyArgs(32, this.signatureLength, this.totalPeriods, vk, period, message, signature);
     if (!a.ok) return a;
     const [k, p, m, s] = a.value;

@@ -508,12 +508,13 @@ export interface MerkleHead {
 }
 
 /**
- * A caller's head, its fields read once each: an object whose `root` is a `Uint8Array` (a plain view) and whose `size`
+ * A caller's head, its fields read once each: an object whose `root` is a `Uint8Array` (copied) and whose `size`
  * is a `bigint`, or a `TypeMismatch`.
  */
 function headArg(head: unknown, what: string): Result<MerkleHead, TypeMismatch> {
   if (!isObject(head)) return err(expected(`${what} to be a MerkleHead`));
-  const root = plainBytes(Reflect.get(head, "root"));
+  // copied as read: the size's getter, or the other head's, may run caller code that changes or detaches it
+  const root = takeBytes(Reflect.get(head, "root"));
   if (root === undefined) return err(expected(`${what}.root to be a Uint8Array`));
   const size: unknown = Reflect.get(head, "size");
   return typeof size === "bigint" ? ok({ root, size }) : err(NOT_A_BIGINT);

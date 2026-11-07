@@ -402,7 +402,7 @@ describe("the versioned trie refuses an argument of the wrong type as TypeMismat
   it("heads, proofs and roots that are not of their types, read once each", () => {
     for (const x of notBytesCases()) {
       expect(vt.root({ ...finalHead, stateRoot: bad(x) }), label(x)).toEqual(mismatch("expected the head's roots to be Uint8Arrays"));
-      expect(vt.verifyHead(bad(x), bad({})), label(x)).toEqual(notBytes);
+      expect(vt.verifyHead(bad(x), { head: finalHead, top: proof }), label(x)).toEqual(notBytes);
     }
     expect(vt.root(bad(null))).toEqual(mismatch("expected the head to be a Head"));
     expect(vt.verifyHead(new Uint8Array(32), bad(null))).toEqual(mismatch("expected a VersionedTrieProof"));
@@ -531,6 +531,21 @@ describe("what a constructor builds when JavaScript calls it from outside is ref
     expect(fake.listsRange(empty, undefined, [])).toEqual(mismatch("expected a VerifiedTrieProof"));
     const profile = forge(versioned.VersionedTrie, [{ size: 1 }, versioned.VersionKey.long, [variable, variable, variable]]) as versioned.VersionedTrie<bigint>;
     expect(profile.decodeProof(int(1n))).toEqual(mismatch("expected a VersionedTrie"));
+  });
+
+  it("a record's getter that detaches a field read before it changes nothing read: each field is copied as read", () => {
+    const b = Uint8Array.of(0x61);
+    const record = {
+      s: { n: 8n, b },
+      get v(): Uint8Array {
+        // detach the segment's bytes, already read
+        structuredClone(b.buffer, { transfer: [b.buffer] });
+        return v1;
+      },
+    };
+    const p = expectOk(trie.TrieProof.fromRecords(T, bad([record])), "a one-leaf proof");
+    const leafOnly = expectOk(trie.trieRoot(T, expectOk(trie.KeyMode.fixed(1), "fixed(1)"), [[Uint8Array.of(0x61), v1]]), "root");
+    expect(expectOk(trie.verify(T, expectOk(trie.KeyMode.fixed(1), "fixed(1)"), leafOnly, p), "verifies")).not.toBeNull();
   });
 
   it("an iterable Proxy of an array reporting a length no array has is refused", { timeout: 5_000 }, () => {

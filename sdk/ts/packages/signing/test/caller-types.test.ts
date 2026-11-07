@@ -409,3 +409,18 @@ describe("a KES key built by calling its constructor from outside never signs, a
     expect(ran, "no operation of the caller's ran").toBe(0);
   });
 });
+
+describe("a KES scheme built by calling its constructor from outside mints no key and computes with nothing of the caller's", () => {
+  it("sum, product and Cardano schemes", () => {
+    const sum = Reflect.construct(KesSum, [Symbol("token"), "SHA-256", 0]) as KesSum;
+    const product = Reflect.construct(KesProduct, [Symbol("token"), "SHA-256", 0, 0]) as KesProduct;
+    const cardano = Reflect.construct(CardanoSumKes, [Symbol("token"), -1]) as CardanoSumKes;
+    expect(sum.generate(seed)).toEqual(mismatch("expected a KesSum"));
+    expect(sum.load(new Uint8Array(sum.keyLength), 0)).toEqual(mismatch("expected a KesSum"));
+    expect(sum.verify(new Uint8Array(32), 0, empty, new Uint8Array(sum.signatureLength))).toEqual(mismatch("expected a KesSum"));
+    expect(product.generate(seed)).toEqual(mismatch("expected a KesProduct"));
+    // a depth of -1 used to recurse without end: the caller's depth is never computed with
+    expect(cardano.generate(seed)).toEqual(mismatch("expected a CardanoSumKes"));
+    expect(() => Reflect.construct(KesSum, [Symbol("token"), {}, -1]) as unknown).not.toThrow();
+  });
+});

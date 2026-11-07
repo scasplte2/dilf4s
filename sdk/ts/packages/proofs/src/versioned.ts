@@ -784,10 +784,11 @@ export class VersionedTrie<V> {
 
   /** The checked arguments every rule starts from: a root (a plain view) and a proof (a frozen copy). */
   #args(root: unknown, proof: unknown): Result<readonly [Uint8Array, VersionedTrieProof<V>], TypeMismatch> {
-    const r = bytesArg(root);
-    if (!r.ok) return r;
+    // the proof first: its getters are caller code, and the root's view is taken after the last of them
     const p = proofArg<V>(proof);
-    return p.ok ? ok([r.value, p.value]) : p;
+    if (!p.ok) return p;
+    const r = bytesArg(root);
+    return r.ok ? ok([r.value, p.value]) : r;
   }
 
   /** Rule 1: the head binds to `root`, and the proof's top trie holds the head's values in slots 0x00..0x02. */
@@ -917,11 +918,12 @@ export class VersionedTrie<V> {
    * Arguments as {@link verifyVersion}; `claimed` must be an array of `[version, Uint8Array]` arrays (read by index).
    */
   verifyVersions(root: Uint8Array, proof: VersionedTrieProof<V>, from: V, until: V | null, claimed: readonly (readonly [V, Uint8Array])[]): C<boolean> {
+    // the claims first (reading them may run caller code), then the proof and the root
+    const given = versionsArg<V>(claimed, "an array of [version, Uint8Array] claims");
+    if (!given.ok) return given;
     const a = this.#args(root, proof);
     if (!a.ok) return a;
     const [r, p] = a.value;
-    const given = versionsArg<V>(claimed, "an array of [version, Uint8Array] claims");
-    if (!given.ok) return given;
     const head = this.#bind(r, p);
     if (!head.ok) return head;
     const hist = this.#history(head.value, p);

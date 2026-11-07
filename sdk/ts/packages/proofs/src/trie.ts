@@ -149,9 +149,10 @@ export class Segment {
   static of(n: bigint, b: Uint8Array): Result<Segment, Refusal> {
     const count = bigintArg(n);
     if (!count.ok) return count;
-    const bytes = bytesArg(b);
-    if (!bytes.ok) return bytes;
-    const bits = segmentBits(count.value, bytes.value);
+    // copied before its padding is checked: the bytes validated are the bytes the segment keeps
+    const bytes = takeBytes(b);
+    if (bytes === undefined) return err(NOT_BYTES);
+    const bits = segmentBits(count.value, bytes);
     return bits.ok ? ok(new Segment(TOKEN, bits.value)) : bits;
   }
 
@@ -449,22 +450,25 @@ function fromRecords(hashing: TrieHashing, records: models.trie.TrieProof): Resu
   return encoding("proof ended with unfinished branches");
 }
 
-/** A caller's trie record, its fields read once: a stub `{h}`, a leaf `{s, v}` or a branch `{s, v?, c}`. */
+/**
+ * A caller's trie record, its fields read once: a stub `{h}`, a leaf `{s, v}` or a branch `{s, v?, c}`. Each byte field
+ * is copied as it is read, before the next getter runs: caller code a later read runs cannot change or detach it.
+ */
 function recordArg(r: unknown, i: number): Result<models.trie.TrieRecord, TypeMismatch> {
   const bad = err(expectedAt("a trie record of its types", i));
   if (!isObject(r)) return bad;
   const h: unknown = Reflect.get(r, "h");
   if (h !== undefined) {
-    const hb = plainBytes(h);
+    const hb = takeBytes(h);
     return hb === undefined ? bad : ok({ h: hb });
   }
   const s: unknown = Reflect.get(r, "s");
   if (!isObject(s)) return bad;
   const n: unknown = Reflect.get(s, "n");
-  const b = plainBytes(Reflect.get(s, "b"));
+  const b = takeBytes(Reflect.get(s, "b"));
   if (typeof n !== "bigint" || b === undefined) return bad;
   const v: unknown = Reflect.get(r, "v");
-  const vb = v === undefined ? undefined : plainBytes(v);
+  const vb = v === undefined ? undefined : takeBytes(v);
   if (v !== undefined && vb === undefined) return bad;
   const c: unknown = Reflect.get(r, "c");
   if (c === undefined) return vb === undefined ? bad : ok({ s: { n, b }, v: vb });
@@ -685,21 +689,23 @@ export class VerifiedTrieProof {
    */
   listsPrefix(prefix: Uint8Array, claimed: readonly TrieEntry[]): Result<boolean, Refusal> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
-    const p = bytesArg(prefix);
-    if (!p.ok) return p;
+    // the claim first: reading it may run caller code, and no view of a bound is held across it
     const c = claimedArg(claimed);
-    return c.ok ? verdictOf(L.listsPrefix(this.#top, p.value, c.value)) : c;
+    if (!c.ok) return c;
+    const p = bytesArg(prefix);
+    return p.ok ? verdictOf(L.listsPrefix(this.#top, p.value, c.value)) : p;
   }
 
   /** Whether `claimed`, in key order, is exactly the listing of `[from, until)`, as {@link listsPrefix} compares it. */
   listsRange(from: Uint8Array, until: Uint8Array | undefined, claimed: readonly TrieEntry[]): Result<boolean, Refusal> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
+    // the claim first: reading it may run caller code, and no view of a bound is held across it
+    const c = claimedArg(claimed);
+    if (!c.ok) return c;
     const f = bytesArg(from);
     if (!f.ok) return f;
     const u = boundArg(until);
-    if (!u.ok) return u;
-    const c = claimedArg(claimed);
-    return c.ok ? verdictOf(L.listsRange(this.#top, f.value, u.value, c.value)) : c;
+    return u.ok ? verdictOf(L.listsRange(this.#top, f.value, u.value, c.value)) : u;
   }
 }
 
@@ -840,10 +846,11 @@ export function triePrefixVerify(hashing: TrieHashing, mode: KeyMode, root: Uint
   const p = proof;
   const r = plainBytes(root);
   if (r === undefined) return err(NOT_BYTES);
-  const pre = bytesArg(prefix);
-  if (!pre.ok) return pre;
+  // the entries first: reading them may run caller code, and no view of a bound is held across it
   const given = entriesArg(entries);
   if (!given.ok) return given;
+  const pre = bytesArg(prefix);
+  if (!pre.ok) return pre;
   const claimed = claimedEntries(h, m, given.value);
   if (!claimed.ok) return claimed;
   const v = verified(h, m, r, p);
@@ -868,12 +875,12 @@ export function trieRangeVerify(
   const p = proof;
   const r = plainBytes(root);
   if (r === undefined) return err(NOT_BYTES);
+  const given = entriesArg(entries);
+  if (!given.ok) return given;
   const f = bytesArg(from);
   if (!f.ok) return f;
   const u = until === null ? ok(undefined) : bytesArg(until);
   if (!u.ok) return u;
-  const given = entriesArg(entries);
-  if (!given.ok) return given;
   const claimed = claimedEntries(h, m, given.value);
   if (!claimed.ok) return claimed;
   const v = verified(h, m, r, p);
