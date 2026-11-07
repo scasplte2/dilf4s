@@ -10,7 +10,7 @@
  * checked before it is used.
  */
 import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { isRevokedProxy, mint, plainBytes, takeBytes, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isRevokedProxy, mint, plainBytes, readGuarded, REVOKED, takeBytes, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
@@ -264,16 +264,22 @@ export const VersionKey = Object.freeze({
 function keyResult<T>(r: unknown, value: (v: unknown) => T | undefined): C<T> {
   const bad = expected("a version key's result to be a Result of its type");
   if (!isObject(r)) return err(bad);
-  const isOk: unknown = Reflect.get(r, "ok");
+  const isOk: unknown = readGuarded(r, "ok");
+  // every read after the first guarded: a getter run by an earlier one may have revoked what is read next, and a
+  // REVOKED value, kind or reason is refused, never kept
   if (isOk === true) {
-    const v = value(Reflect.get(r, "value"));
+    const read: unknown = readGuarded(r, "value");
+    const v = read === REVOKED ? undefined : value(read);
     return v === undefined ? err(bad) : ok(v);
   }
   if (isOk !== false) return err(bad);
   // the caller's error is never handed on as it is: its kind and reason are read once, into a refusal of this module's
-  const e: unknown = Reflect.get(r, "error");
-  const kind: unknown = isObject(e) ? Reflect.get(e, "kind") : undefined;
-  const reason: unknown = isObject(e) ? Reflect.get(e, "reason") : undefined;
+  const e: unknown = readGuarded(r, "error");
+  // asked once: the kind's getter may revoke the error, whose reason is then REVOKED, never taken for absent
+  const isError = isObject(e);
+  const kind: unknown = isError ? readGuarded(e, "kind") : undefined;
+  const reason: unknown = isError ? readGuarded(e, "reason") : undefined;
+  if (e === REVOKED || kind === REVOKED || reason === REVOKED) return err(bad);
   if (kind === "TypeMismatch" && typeof reason === "string") return err(typeMismatch(reason));
   return err({ kind: "InvalidVersion", reason: kind === "InvalidVersion" && typeof reason === "string" ? reason : "the version key refused the version" });
 }
@@ -287,9 +293,9 @@ function versionKeyArg<V>(x: unknown): Result<VersionKey<V>, TypeMismatch> {
   if (isObject(x) && OWN_KEYS.has(x)) return ok(x as VersionKey<V>);
   const bad = expected("a VersionKey");
   if (!isObject(x)) return err(bad);
-  const width: unknown = Reflect.get(x, "width");
-  const encode: unknown = Reflect.get(x, "encode");
-  const decode: unknown = Reflect.get(x, "decode");
+  const width: unknown = readGuarded(x, "width");
+  const encode: unknown = readGuarded(x, "encode");
+  const decode: unknown = readGuarded(x, "decode");
   if (typeof width !== "number" || !Number.isInteger(width) || width < 1 || width > MAX_KEY_LENGTH) return err(bad);
   if (typeof encode !== "function" || typeof decode !== "function" || isRevokedProxy(encode) || isRevokedProxy(decode)) return err(bad);
   return ok(
@@ -372,9 +378,10 @@ const slotName = (slot: Uint8Array): string => toHexOf(slot);
 /** A caller's head, its fields read once into a frozen copy: the version (checked when encoded) and two roots (copied). */
 function headArg<V>(x: unknown, what: string): Result<Head<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected(`${what} to be a Head`));
-  const version: unknown = Reflect.get(x, "version");
-  const stateRoot = takeBytes(Reflect.get(x, "stateRoot"));
-  const historyRoot = takeBytes(Reflect.get(x, "historyRoot"));
+  // each read guarded: a getter run by an earlier read may have revoked the head
+  const version: unknown = readGuarded(x, "version");
+  const stateRoot = takeBytes(readGuarded(x, "stateRoot"));
+  const historyRoot = takeBytes(readGuarded(x, "historyRoot"));
   if (stateRoot === undefined || historyRoot === undefined) return err(expected(`${what}'s roots to be Uint8Arrays`));
   return ok(Object.freeze({ version: version as V, stateRoot, historyRoot }));
 }
@@ -387,20 +394,21 @@ function optionalProof(x: unknown, what: string): Result<trie.TrieProof | undefi
 /** A caller's proof, its fields read once into a frozen copy: a head, the top `TrieProof`, and the optional parts. */
 function proofArg<V>(x: unknown): Result<VersionedTrieProof<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected("a VersionedTrieProof"));
-  const head = headArg<V>(Reflect.get(x, "head"), "the proof's head");
+  const head = headArg<V>(readGuarded(x, "head"), "the proof's head");
   if (!head.ok) return head;
-  const top: unknown = Reflect.get(x, "top");
+  const top: unknown = readGuarded(x, "top");
   if (!TRIE.isProof(top)) return err(expected("the proof's top to be a TrieProof"));
-  const history = optionalProof(Reflect.get(x, "history"), "the proof's history");
+  const history = optionalProof(readGuarded(x, "history"), "the proof's history");
   if (!history.ok) return history;
-  const state = optionalProof(Reflect.get(x, "state"), "the proof's state");
+  const state = optionalProof(readGuarded(x, "state"), "the proof's state");
   if (!state.ok) return state;
-  const atField: unknown = Reflect.get(x, "at");
+  const atField: unknown = readGuarded(x, "at");
   let at: At<V> | undefined;
   if (atField !== undefined) {
     if (!isObject(atField)) return err(expected("the proof's at to be an At"));
-    const version: unknown = Reflect.get(atField, "version");
-    const s: unknown = Reflect.get(atField, "stateRoot");
+    const version: unknown = readGuarded(atField, "version");
+    const s: unknown = readGuarded(atField, "stateRoot");
+    if (version === REVOKED || s === REVOKED) return err(expected("the proof's at to be an At"));
     const stateRoot = s === undefined ? undefined : takeBytes(s);
     if (s !== undefined && stateRoot === undefined) return err(expected("the proof's at.stateRoot to be a Uint8Array"));
     at = Object.freeze(stateRoot === undefined ? { version: version as V } : { version: version as V, stateRoot });
@@ -421,8 +429,8 @@ const entriesArg = (x: unknown, what: string): Result<(readonly [StateKey, Value
   readArray(x, what, (e, i) => {
     const pair = readPair(e);
     if (pair === undefined) return err(expectedAt("a [StateKey, Value] array", i));
-    const k: unknown = pair[0];
-    const v: unknown = pair[1];
+    const k: unknown = readGuarded(pair, 0);
+    const v: unknown = readGuarded(pair, 1);
     return isKey(k) && isValue(v) ? ok([k, v] as const) : err(expectedAt("a [StateKey, Value] array", i));
   });
 
@@ -431,9 +439,10 @@ const versionsArg = <V>(x: unknown, what: string): Result<(readonly [V, Uint8Arr
   readArray(x, what, (e, i) => {
     const pair = readPair(e);
     // the version first, then the root, copied as read: nothing read after it can change it
-    const version: unknown = pair?.[0];
-    const root = pair === undefined ? undefined : takeBytes(pair[1]);
-    return pair === undefined || root === undefined ? err(expectedAt("a [version, Uint8Array] array", i)) : ok([version as V, root] as const);
+    const version: unknown = pair === undefined ? undefined : readGuarded(pair, 0);
+    const root = pair === undefined ? undefined : takeBytes(readGuarded(pair, 1));
+    // a version is any value, checked when encoded: REVOKED is refused here, never kept as one
+    return pair === undefined || root === undefined || version === REVOKED ? err(expectedAt("a [version, Uint8Array] array", i)) : ok([version as V, root] as const);
   });
 
 /** {@link VersionedTrie.checkValue} of a key and a value already checked to be of their types. */
@@ -1017,18 +1026,18 @@ type Stage = "head" | "state" | "history" | "done";
 /** A caller's chunk, its fields read once into a frozen copy: its kind, then its head, entries or versions. */
 function chunkArg<V>(x: unknown): Result<SnapshotChunk<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected("a SnapshotChunk"));
-  const kind: unknown = Reflect.get(x, "kind");
+  const kind: unknown = readGuarded(x, "kind");
   switch (kind) {
     case "head": {
-      const head = headArg<V>(Reflect.get(x, "head"), "the chunk's head");
+      const head = headArg<V>(readGuarded(x, "head"), "the chunk's head");
       return head.ok ? ok(Object.freeze({ kind, head: head.value })) : head;
     }
     case "state": {
-      const entries = entriesArg(Reflect.get(x, "entries"), "the chunk's entries");
+      const entries = entriesArg(readGuarded(x, "entries"), "the chunk's entries");
       return entries.ok ? ok(Object.freeze({ kind, entries: entries.value })) : entries;
     }
     case "history": {
-      const versions = versionsArg<V>(Reflect.get(x, "versions"), "the chunk's versions");
+      const versions = versionsArg<V>(readGuarded(x, "versions"), "the chunk's versions");
       return versions.ok ? ok(Object.freeze({ kind, versions: versions.value })) : versions;
     }
     default:
@@ -1215,25 +1224,25 @@ function holds(keys: readonly Uint8Array[], key: Uint8Array): boolean {
 /** A caller's snapshot, its fields read once into a frozen copy: a head, entries and versions. */
 function snapshotArg<V>(x: unknown): Result<Snapshot<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected("a Snapshot"));
-  const head = headArg<V>(Reflect.get(x, "head"), "the snapshot's head");
+  const head = headArg<V>(readGuarded(x, "head"), "the snapshot's head");
   if (!head.ok) return head;
-  const entries = entriesArg(Reflect.get(x, "entries"), "the snapshot's entries");
+  const entries = entriesArg(readGuarded(x, "entries"), "the snapshot's entries");
   if (!entries.ok) return entries;
-  const history = versionsArg<V>(Reflect.get(x, "history"), "the snapshot's history");
+  const history = versionsArg<V>(readGuarded(x, "history"), "the snapshot's history");
   return history.ok ? ok(Object.freeze({ head: head.value, entries: entries.value, history: history.value })) : history;
 }
 
 /** A caller's delta, its fields read once into a frozen copy: an optional parent head, a head, upserts and removes. */
 function deltaArg<V>(x: unknown): Result<Delta<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected("a Delta"));
-  const parentField: unknown = Reflect.get(x, "parent");
+  const parentField: unknown = readGuarded(x, "parent");
   const parent = parentField === undefined ? ok(undefined) : headArg<V>(parentField, "the delta's parent");
   if (!parent.ok) return parent;
-  const head = headArg<V>(Reflect.get(x, "head"), "the delta's head");
+  const head = headArg<V>(readGuarded(x, "head"), "the delta's head");
   if (!head.ok) return head;
-  const upserts = entriesArg(Reflect.get(x, "upserts"), "the delta's upserts");
+  const upserts = entriesArg(readGuarded(x, "upserts"), "the delta's upserts");
   if (!upserts.ok) return upserts;
-  const removes = readArray(Reflect.get(x, "removes"), "the delta's removes", (k, i) => (isKey(k) ? ok(k) : err(expectedAt("a StateKey", i))));
+  const removes = readArray(readGuarded(x, "removes"), "the delta's removes", (k, i) => (isKey(k) ? ok(k) : err(expectedAt("a StateKey", i))));
   if (!removes.ok) return removes;
   return ok(Object.freeze({ ...(parent.value === undefined ? {} : { parent: parent.value }), head: head.value, upserts: upserts.value, removes: removes.value }));
 }

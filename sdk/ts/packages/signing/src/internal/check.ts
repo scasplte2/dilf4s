@@ -5,7 +5,7 @@
  * schemes work on plain, owned data.
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { isArrayGuarded, isArrayLength, isRevokedProxy, plainBytes, takeBytes, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, isArrayLength, isRevokedProxy, plainBytes, readGuarded, REVOKED, takeBytes, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 export const NOT_BYTES = typeMismatch("expected a Uint8Array");
 export const NOT_A_NUMBER = typeMismatch("expected a number");
@@ -53,7 +53,10 @@ export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: 
   if (!isArrayLength(length)) return err(expected(what));
   const out: T[] = [];
   for (let i = 0; i < length; i++) {
-    const r = item((x as readonly unknown[])[i], i);
+    // guarded: an earlier read (the length's, an item's: a Proxy's trap) may have revoked the array
+    const v: unknown = readGuarded(x, i);
+    if (v === REVOKED) return err(expected(what));
+    const r = item(v, i);
     if (!r.ok) return r;
     out.push(r.value);
   }

@@ -247,6 +247,15 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     revoke();
     expect(hashParts(sha, bad(proxy))).toEqual(mismatch("expected an array of Uint8Arrays"));
     expect(hashParts(sha, bad([message, proxy]))).toEqual(mismatch("expected a Uint8Array at index 1"));
+    // revoked by its own trap as its length is read: the parts' reads are refused, never thrown on
+    const { proxy: revoking, revoke: revokeParts } = Proxy.revocable([message, message], {
+      get: (t, name) => {
+        const v: unknown = Reflect.get(t, name);
+        revokeParts();
+        return v;
+      },
+    });
+    expect(hashParts(sha, bad(revoking))).toEqual(mismatch("expected a Uint8Array at index 0"));
     expect(digest(sha, bad(proxy))).toEqual(notBytes);
   });
 

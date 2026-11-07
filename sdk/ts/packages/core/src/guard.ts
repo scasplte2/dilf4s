@@ -34,3 +34,20 @@ export function isRevokedProxy(x: unknown): boolean {
     return true;
   }
 }
+
+/**
+ * What {@link readGuarded} gives for a read of an object that is now a revoked Proxy: a symbol of this module's own,
+ * which no check of a caller's value accepts as a type the SDK takes. A reader that takes any value (a version, a
+ * decoded value, a field handed to a codec) compares with it before keeping what it read.
+ */
+export const REVOKED: unique symbol = Symbol("dilf4s: a revoked Proxy");
+
+/**
+ * `o[key]`, read once (`Reflect.get`), or {@link REVOKED} when `o` is now a revoked Proxy: caller code an earlier read
+ * ran (a getter, a Proxy's trap) may have revoked `o`, and the engine would throw a `TypeError` for the read. Every
+ * read of a caller's object after its first check goes through this, so such an object is refused as a
+ * `TypeMismatch`, never a throw. O(1): the guard's one `Array.isArray`, then the read, the only caller code it runs.
+ */
+export function readGuarded(o: object, key: PropertyKey): unknown {
+  return isRevokedProxy(o) ? REVOKED : Reflect.get(o, key);
+}

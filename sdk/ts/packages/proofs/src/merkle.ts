@@ -8,7 +8,7 @@
  * view of their own memory, and what a proof keeps is copied; the walks run on that plain, owned data.
  */
 import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { digestOf, hashPartsOf, mint, outputSizeOf, plainBytes, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { digestOf, hashPartsOf, mint, outputSizeOf, plainBytes, readGuarded, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
 import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Token } from "./check.js";
@@ -516,7 +516,8 @@ function headArg(head: unknown, what: string): Result<MerkleHead, TypeMismatch> 
   // copied as read: the size's getter, or the other head's, may run caller code that changes or detaches it
   const root = takeBytes(Reflect.get(head, "root"));
   if (root === undefined) return err(expected(`${what}.root to be a Uint8Array`));
-  const size: unknown = Reflect.get(head, "size");
+  // guarded: the root's getter may have revoked the head; REVOKED is no bigint
+  const size: unknown = readGuarded(head, "size");
   return typeof size === "bigint" ? ok({ root, size }) : err(NOT_A_BIGINT);
 }
 

@@ -1,4 +1,4 @@
-import { isArrayGuarded, isRevokedProxy } from "./guard.js";
+import { isArrayGuarded, isRevokedProxy, readGuarded } from "./guard.js";
 import { isArrayLength } from "./iterator.js";
 import { isPreview, Preview } from "./preview.js";
 
@@ -65,12 +65,13 @@ export function describeFailure(failure: DecodeFailure): string {
   const given: unknown = failure;
   if (typeof given !== "object" || given === null || isRevokedProxy(given)) return NOT_A_FAILURE;
   const path: unknown = Reflect.get(given, "path");
-  const reason: unknown = Reflect.get(given, "reason");
+  // guarded, as is each segment's read: a getter run by an earlier read may have revoked what is read next
+  const reason: unknown = readGuarded(given, "reason");
   const length: unknown = isArrayGuarded(path) ? (path as readonly unknown[]).length : undefined;
   if (!isArrayLength(length) || typeof reason !== "string") return NOT_A_FAILURE;
   const segments: Preview[] = [];
   for (let i = 0; i < length; i++) {
-    const p: unknown = (path as readonly unknown[])[i];
+    const p: unknown = readGuarded(path as readonly unknown[], i);
     if (!isPreview(p)) return NOT_A_FAILURE;
     segments.push(p);
   }

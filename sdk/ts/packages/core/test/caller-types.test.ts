@@ -653,3 +653,42 @@ describe("a revoked Proxy is refused as a TypeMismatch, never thrown on", () => 
     expect(record.encode(revoked())).toEqual(mismatch("expected a record"));
   });
 });
+
+/** A Proxy of `target` that revokes itself as its first read returns: every later read of it would throw. */
+function revokingAfterFirstRead<T extends object>(target: T): T {
+  const { proxy, revoke } = Proxy.revocable(target, {
+    get: (t, name) => {
+      const v: unknown = Reflect.get(t, name);
+      revoke();
+      return v;
+    },
+  });
+  return proxy;
+}
+
+describe("an object or array a getter revokes while it is read is refused as a TypeMismatch, never thrown on", () => {
+  const notAResult = mismatch("an iterator's next() gave a result that is not an object");
+  const resultRevoking = (value: unknown): never => bad({ [Symbol.iterator]: () => ({ next: () => revokingAfterFirstRead({ done: false, value }) }) });
+
+  it("arrays, maps and their entries, and an iterator's result revoked by its own done getter", () => {
+    expect(hashCommitment("SHA-256", bad(revokingAfterFirstRead([Uint8Array.of(1), Uint8Array.of(2)])), int(1n))).toEqual(mismatch("expected an array of Uint8Arrays"));
+    expect(Value.array(revokingAfterFirstRead([int(1n), int(2n)]))).toEqual(mismatch("expected a canonical value at index 0"));
+    expect(Value.map(bad(revokingAfterFirstRead([["a", int(1n)]])))).toMatchObject({ ok: false, error: { kind: "TypeMismatch" } });
+    expect(Value.map(bad([revokingAfterFirstRead(["a", int(1n)])]))).toEqual(mismatch("expected a canonical value at index 0"));
+    expect(Value.map(resultRevoking(["a", int(1n)]))).toEqual(notAResult);
+  });
+
+  it("the encoder's arrays, records, map entries and iterator results; failures and schema names", () => {
+    expect(codec.vector(codec.uint, 0, null).encode(revokingAfterFirstRead([1n, 2n]))).toEqual(mismatch("expected an array"));
+    const record = codec.record<{ readonly a: bigint; readonly b: bigint }>({ a: codec.required("a", codec.uint), b: codec.required("b", codec.uint) });
+    expect(record.encode(revokingAfterFirstRead({ a: 1n, b: 2n }))).toEqual(mismatch("expected a record"));
+    const map = codec.textMap(codec.uint);
+    expect(map.encode(bad([revokingAfterFirstRead(["a", 1n])]))).toEqual(mismatch("expected a map entry (a [key, value] array)"));
+    expect(map.encode(resultRevoking(["a", 1n]))).toEqual(notAResult);
+    expect(codec.hasFields(revokingAfterFirstRead({ a: 1n, b: 2n }), ["a", "b"], ["a", "b"], ["a", "b"])).toBe(false);
+    expect(describeFailure(bad(revokingAfterFirstRead({ path: [], reason: "r" })))).toBe("<not a decode failure>");
+    expect(describeFailure(bad({ path: revokingAfterFirstRead([Preview.of("a"), Preview.of("b")]), reason: "r" }))).toBe("<not a decode failure>");
+    const names = codec.selectAlternative(int(1n), bad(revokingAfterFirstRead([[["a"], ["a"]]])), []);
+    expect(names.ok ? "selected" : names.error.reason).toBe("the schema's names are not arrays of strings");
+  });
+});

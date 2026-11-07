@@ -1,6 +1,6 @@
 /** BIP-39 (`signing.md` 2.1): entropy to mnemonic and back, and mnemonic to seed. */
 import { err, ok, Preview, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { isArrayGuarded, isRevokedProxy, mint } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, isRevokedProxy, mint, readGuarded } from "@kd5ujc/dilf4s-core/internal";
 import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -69,7 +69,8 @@ export class WordList {
     // each word is read by its index, once: one that is not a string is refused by its type, never converted
     const normalised: string[] = [];
     for (let i = 0; i < 2048; i++) {
-      const w: unknown = words[i];
+      // guarded: an earlier word's read (a Proxy's trap) may have revoked the array; REVOKED is no string
+      const w: unknown = readGuarded(words, i);
       if (typeof w !== "string") return err({ kind: "InvalidWordList", reason: `word ${i.toString()} is not a string` });
       normalised.push(nfkd(w));
     }

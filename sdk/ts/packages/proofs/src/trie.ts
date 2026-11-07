@@ -11,7 +11,7 @@
  * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
 import { BYTES_TAG, describeFailure, err, isValue, models, ok, type Err, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { bytesLength, mint, outputSizeOf, plainBytes, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, mint, outputSizeOf, plainBytes, readGuarded, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
@@ -457,20 +457,21 @@ function fromRecords(hashing: TrieHashing, records: models.trie.TrieProof): Resu
 function recordArg(r: unknown, i: number): Result<models.trie.TrieRecord, TypeMismatch> {
   const bad = err(expectedAt("a trie record of its types", i));
   if (!isObject(r)) return bad;
-  const h: unknown = Reflect.get(r, "h");
+  // each read guarded: a getter run by an earlier read may have revoked the record; no field's check takes REVOKED
+  const h: unknown = readGuarded(r, "h");
   if (h !== undefined) {
     const hb = takeBytes(h);
     return hb === undefined ? bad : ok({ h: hb });
   }
-  const s: unknown = Reflect.get(r, "s");
+  const s: unknown = readGuarded(r, "s");
   if (!isObject(s)) return bad;
-  const n: unknown = Reflect.get(s, "n");
-  const b = takeBytes(Reflect.get(s, "b"));
+  const n: unknown = readGuarded(s, "n");
+  const b = takeBytes(readGuarded(s, "b"));
   if (typeof n !== "bigint" || b === undefined) return bad;
-  const v: unknown = Reflect.get(r, "v");
+  const v: unknown = readGuarded(r, "v");
   const vb = v === undefined ? undefined : takeBytes(v);
   if (v !== undefined && vb === undefined) return bad;
-  const c: unknown = Reflect.get(r, "c");
+  const c: unknown = readGuarded(r, "c");
   if (c === undefined) return vb === undefined ? bad : ok({ s: { n, b }, v: vb });
   if (c !== "left" && c !== "right" && c !== "both") return bad;
   return ok(vb === undefined ? { s: { n, b }, c } : { s: { n, b }, v: vb, c });
@@ -615,13 +616,27 @@ let verifiedTop!: (v: VerifiedTrieProof) => ProofNode | undefined;
 /** An optional bound: `undefined`, or a `Uint8Array` (a plain view). */
 const boundArg = optionalBytes;
 
+/**
+ * A query's prefix or bound, copied (`takeBytes`) before its claim is read: caller code a claim's getter (or a Proxy's
+ * trap) runs cannot change the query the claim is compared with. A prefix or bound is a key's length at most.
+ */
+function queryArg(x: unknown): Result<Uint8Array, TypeMismatch> {
+  const own = takeBytes(x);
+  return own === undefined ? err(NOT_BYTES) : ok(own);
+}
+
+/** An optional query bound, `undefined` or copied as {@link queryArg} copies one. */
+function optionalQueryArg(x: unknown): Result<Uint8Array | undefined, TypeMismatch> {
+  return x === undefined ? ok(undefined) : queryArg(x);
+}
+
 /** A caller's claimed listing: an array of `{key, valueHash}` objects, each field read once, as plain views. */
 const claimedArg = (claimed: unknown): Result<TrieEntry[], TypeMismatch> =>
   readArray(claimed, "an array of TrieEntry", (e, i) => {
     if (!isObject(e)) return err(expectedAt("a TrieEntry", i));
     // copied as read: caller code run by a later read (a getter, a Proxy's trap) cannot change an earlier entry
-    const key = takeBytes(Reflect.get(e, "key"));
-    const valueHash = takeBytes(Reflect.get(e, "valueHash"));
+    const key = takeBytes(readGuarded(e, "key"));
+    const valueHash = takeBytes(readGuarded(e, "valueHash"));
     return key === undefined || valueHash === undefined ? err(expectedAt("a TrieEntry of Uint8Arrays", i)) : ok({ key, valueHash });
   });
 
@@ -690,23 +705,23 @@ export class VerifiedTrieProof {
    */
   listsPrefix(prefix: Uint8Array, claimed: readonly TrieEntry[]): Result<boolean, Refusal> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
-    // the claim first: reading it may run caller code, and no view of a bound is held across it
+    // the prefix copied first: reading the claim may run caller code, which cannot then change the query
+    const p = queryArg(prefix);
+    if (!p.ok) return p;
     const c = claimedArg(claimed);
-    if (!c.ok) return c;
-    const p = bytesArg(prefix);
-    return p.ok ? verdictOf(L.listsPrefix(this.#top, p.value, c.value)) : p;
+    return c.ok ? verdictOf(L.listsPrefix(this.#top, p.value, c.value)) : c;
   }
 
   /** Whether `claimed`, in key order, is exactly the listing of `[from, until)`, as {@link listsPrefix} compares it. */
   listsRange(from: Uint8Array, until: Uint8Array | undefined, claimed: readonly TrieEntry[]): Result<boolean, Refusal> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
-    // the claim first: reading it may run caller code, and no view of a bound is held across it
-    const c = claimedArg(claimed);
-    if (!c.ok) return c;
-    const f = bytesArg(from);
+    // the bounds copied first: reading the claim may run caller code, which cannot then change the query
+    const f = queryArg(from);
     if (!f.ok) return f;
-    const u = boundArg(until);
-    return u.ok ? verdictOf(L.listsRange(this.#top, f.value, u.value, c.value)) : u;
+    const u = optionalQueryArg(until);
+    if (!u.ok) return u;
+    const c = claimedArg(claimed);
+    return c.ok ? verdictOf(L.listsRange(this.#top, f.value, u.value, c.value)) : c;
   }
 }
 
@@ -813,9 +828,9 @@ const entriesArg = (entries: unknown): Result<(readonly [Uint8Array, Value])[], 
   readArray(entries, "an array of [key, value] entries", (e, i) => {
     const pair = readPair(e);
     if (pair === undefined) return err(expectedAt("a [key, value] array", i));
-    const key = takeBytes(pair[0]);
+    const key = takeBytes(readGuarded(pair, 0));
     if (key === undefined) return err(expectedAt("a Uint8Array key", i));
-    const value = valueArg(pair[1]);
+    const value = valueArg(readGuarded(pair, 1));
     return value.ok ? ok([key, value.value] as const) : err(expectedAt("a canonical value", i));
   });
 
@@ -849,11 +864,11 @@ export function triePrefixVerify(hashing: TrieHashing, mode: KeyMode, root: Uint
   // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
   const r = takeBytes(root);
   if (r === undefined) return err(NOT_BYTES);
-  // the entries first: reading them may run caller code, and no view of a bound is held across it
+  // the prefix copied before the entries are read: caller code reading them runs cannot then change the query
+  const pre = queryArg(prefix);
+  if (!pre.ok) return pre;
   const given = entriesArg(entries);
   if (!given.ok) return given;
-  const pre = bytesArg(prefix);
-  if (!pre.ok) return pre;
   const claimed = claimedEntries(h, m, given.value);
   if (!claimed.ok) return claimed;
   const v = verified(h, m, r, p);
@@ -879,12 +894,13 @@ export function trieRangeVerify(
   // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
   const r = takeBytes(root);
   if (r === undefined) return err(NOT_BYTES);
+  // the bounds copied before the entries are read, as triePrefixVerify copies its prefix
+  const f = queryArg(from);
+  if (!f.ok) return f;
+  const u = until === null ? ok(undefined) : queryArg(until);
+  if (!u.ok) return u;
   const given = entriesArg(entries);
   if (!given.ok) return given;
-  const f = bytesArg(from);
-  if (!f.ok) return f;
-  const u = until === null ? ok(undefined) : bytesArg(until);
-  if (!u.ok) return u;
   const claimed = claimedEntries(h, m, given.value);
   if (!claimed.ok) return claimed;
   const v = verified(h, m, r, p);
@@ -909,8 +925,8 @@ export function trieRoot(hashing: TrieHashing, mode: KeyMode, entries: Iterable<
   if (!m.ok) return m;
   const given = readIterable(entries, (e, i) => {
     const pair = readPair(e);
-    const key = pair === undefined ? undefined : takeBytes(pair[0]);
-    const valueHash = pair === undefined ? undefined : takeBytes(pair[1]);
+    const key = pair === undefined ? undefined : takeBytes(readGuarded(pair, 0));
+    const valueHash = pair === undefined ? undefined : takeBytes(readGuarded(pair, 1));
     // both copied as read: an iterator may hand out one buffer again with new contents
     return key === undefined || valueHash === undefined ? err(expectedAt("a [key, valueHash] array of Uint8Arrays", i)) : ok([key, valueHash] as const);
   });

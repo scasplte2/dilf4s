@@ -7,7 +7,7 @@
  */
 import { describeFailure, err, models, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
 
-import { isArrayGuarded, isArrayLength, mint } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, isArrayLength, mint, readGuarded } from "@kd5ujc/dilf4s-core/internal";
 
 import { bigintArg, expected, expectedAt, NOT_A_NUMBER, readIterable, readPair, TOKEN, valueArg, type Token } from "./check.js";
 
@@ -129,7 +129,8 @@ function frsArg<E>(x: unknown, what: string, max: number, tooMany: (count: numbe
   if (count > max) return err(tooMany(count));
   const out: Fr[] = [];
   for (let i = 0; i < count; i++) {
-    const f: unknown = (x as readonly unknown[])[i];
+    // guarded: an earlier read (a Proxy's trap) may have revoked the array; REVOKED is no Fr
+    const f: unknown = readGuarded(x, i);
     if (!isFr(f)) return err(expectedAt("an Fr", i));
     out.push(f);
   }
@@ -310,8 +311,8 @@ export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, Po
   const read = readIterable<Placed, PoseidonMerkleError | TypeMismatch>(leaves, (e, i) => {
     const pair = readPair(e);
     if (pair === undefined) return err(expectedAt("a [position, leaf] array", i));
-    const p: unknown = pair[0];
-    const leaf: unknown = pair[1];
+    const p: unknown = readGuarded(pair, 0);
+    const leaf: unknown = readGuarded(pair, 1);
     if (typeof p !== "bigint" || !isFr(leaf)) return err(expectedAt("a [bigint, Fr] array", i));
     return p < 0n || p >= capacity ? err({ kind: "Position", positionBits: bitsOf(p), depth }) : ok([p, leaf] as const);
   });

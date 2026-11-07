@@ -3,7 +3,7 @@ import { checkedLimit, tooLarge } from "./budget.js";
 import { encodeIntoWithin, encodeWithin, Feeding, MAX_ENCODED_BYTES, type Absorber, type EncodeError } from "./cbor.js";
 import type { TypeMismatch } from "./error.js";
 import { isAlgorithm, startHashOf, type HashAlgorithm } from "./hash.js";
-import { isArrayGuarded } from "./guard.js";
+import { isArrayGuarded, readGuarded } from "./guard.js";
 import { isArrayLength } from "./iterator.js";
 import { err, ok, type Result } from "./result.js";
 import { takeBytes } from "./bytes.js";
@@ -62,7 +62,8 @@ function prefixParts(prefix: unknown): readonly Uint8Array[] | undefined {
   if (!isArrayLength(length) || !isArrayGuarded(prefix)) return undefined;
   const parts: Uint8Array[] = [];
   for (let i = 0; i < length; i++) {
-    const part = takeBytes(prefix[i]);
+    // guarded: an earlier part's read (a Proxy's trap) may have revoked the array
+    const part = takeBytes(readGuarded(prefix, i));
     if (part === undefined) return undefined;
     parts.push(part);
   }

@@ -728,3 +728,104 @@ describe("a revoked Proxy is refused as a TypeMismatch at every array and object
     expect(expectErr(trie.trieRoot(T, variable, bad(iterable)), "a revoked next").kind).toBe("TypeMismatch");
   });
 });
+
+/** A Proxy of `target` that revokes itself as its first read returns: every later read of it would throw. */
+function revokingAfterFirstRead<T extends object>(target: T): T {
+  const { proxy, revoke } = Proxy.revocable(target, {
+    get: (t, name) => {
+      const v: unknown = Reflect.get(t, name);
+      revoke();
+      return v;
+    },
+  });
+  return proxy;
+}
+
+describe("a query is fixed before its claim is read: a claim's getter cannot rewrite the prefix or bounds", () => {
+  // the claim [ab -> 2] is the listing under "ab" and of ["ab", ...), never under "cb" or of ["cb", ...)
+  // the getter rewrites the query to `to`: "ab" for a prefix or lower bound, 0xff for an upper bound
+  const rewritingPairs = (query: Uint8Array, to: readonly number[] = [0x61, 0x62]): unknown[] => {
+    const entries: unknown[] = [];
+    Object.defineProperty(entries, 0, {
+      get: () => {
+        query.set(to);
+        return [Uint8Array.of(0x61, 0x62), int(2n)];
+      },
+    });
+    entries.length = 1;
+    return entries;
+  };
+  const rewritingClaim = (query: Uint8Array, to: readonly number[] = [0x61, 0x62]): unknown[] => [
+    {
+      get key(): Uint8Array {
+        query.set(to);
+        return Uint8Array.of(0x61, 0x62);
+      },
+      valueHash: v2,
+    },
+  ];
+  const cb = (): Uint8Array => Uint8Array.of(0x63, 0x62);
+
+  it("triePrefixVerify and trieRangeVerify", () => {
+    expect(trie.triePrefixVerify(T, variable, root, Uint8Array.of(0x61, 0x62), bad([[Uint8Array.of(0x61, 0x62), int(2n)]]), full), "the claim, unrewritten").toEqual({ ok: true, value: true });
+    expect(trie.triePrefixVerify(T, variable, root, cb(), bad(rewritingPairs(cb())), full)).toEqual({ ok: true, value: false });
+    const prefix = cb();
+    expect(trie.triePrefixVerify(T, variable, root, prefix, bad(rewritingPairs(prefix)), full), "the prefix rewritten by the claim's getter").toEqual({ ok: true, value: false });
+    const from = cb();
+    expect(trie.trieRangeVerify(T, variable, root, from, null, bad(rewritingPairs(from)), full), "the lower bound rewritten").toEqual({ ok: true, value: false });
+    // ["ab", "a") is empty ("a" sorts first); ["ab", 0xff) holds ab
+    const until = Uint8Array.of(0x61);
+    expect(trie.trieRangeVerify(T, variable, root, Uint8Array.of(0x61, 0x62), until, bad(rewritingPairs(until, [0xff])), full), "the upper bound rewritten").toEqual({ ok: true, value: false });
+  });
+
+  it("VerifiedTrieProof.listsPrefix and listsRange", () => {
+    const v = verified();
+    expect(v.listsPrefix(Uint8Array.of(0x61, 0x62), [{ key: Uint8Array.of(0x61, 0x62), valueHash: v2 }]), "the claim, unrewritten").toEqual({ ok: true, value: true });
+    const prefix = cb();
+    expect(v.listsPrefix(prefix, bad(rewritingClaim(prefix))), "the prefix rewritten by the claim's getter").toEqual({ ok: true, value: false });
+    const from = cb();
+    expect(v.listsRange(from, undefined, bad(rewritingClaim(from))), "the lower bound rewritten").toEqual({ ok: true, value: false });
+    const until = Uint8Array.of(0x61);
+    expect(v.listsRange(Uint8Array.of(0x61, 0x62), until, bad(rewritingClaim(until, [0xff]))), "the upper bound rewritten").toEqual({ ok: true, value: false });
+  });
+});
+
+describe("an object or array a getter revokes while it is read is refused as a TypeMismatch, never thrown on", () => {
+  const leaf = Uint8Array.of(0x61);
+  const notIterable = mismatch("expected an iterable (its Symbol.iterator, iterator or next is not of the protocol's type)");
+
+  it("merkle paths and heads, trie entries, records, claims and iterator results", () => {
+    expect(merkle.InclusionProof.of(0n, 2n, revokingAfterFirstRead([leaf]))).toEqual(mismatch("expected an array of Uint8Arrays"));
+    expect(merkle.merkleVerify(tagged, revokingAfterFirstRead({ root: mroot, size: 3n }), int(2n), inclusionValue)).toEqual(mismatch("expected a bigint"));
+    expect(trie.trieRoot(T, variable, revokingAfterFirstRead([[leaf, v1]]))).toEqual(notIterable);
+    expect(trie.trieRoot(T, variable, bad([revokingAfterFirstRead([leaf, v1])]))).toEqual(mismatch("expected a [key, valueHash] array of Uint8Arrays at index 0"));
+    const result = bad({ [Symbol.iterator]: () => ({ next: () => revokingAfterFirstRead({ done: false, value: [leaf, v1] }) }) });
+    expect(trie.trieRoot(T, variable, result)).toEqual(mismatch("an iterator's next() gave a result that is not an object"));
+    expect(trie.TrieProof.fromRecords(T, bad([revokingAfterFirstRead({ s: { n: 8n, b: leaf }, v: v1 })]))).toEqual(mismatch("expected a trie record of its types at index 0"));
+    expect(trie.triePrefixVerify(T, variable, root, empty, bad(revokingAfterFirstRead([[leaf, int(1n)]])), full)).toEqual(mismatch("expected an array of [key, value] entries"));
+    expect(trie.triePrefixVerify(T, variable, root, empty, bad([revokingAfterFirstRead([leaf, int(1n)])]), full)).toEqual(mismatch("expected a canonical value at index 0"));
+    expect(verified().listsPrefix(empty, bad([revokingAfterFirstRead({ key: leaf, valueHash: v1 })]))).toEqual(mismatch("expected a TrieEntry of Uint8Arrays at index 0"));
+  });
+
+  it("Poseidon inputs and leaves", () => {
+    const one = expectOk(poseidon.Fr.of(1n), "fr");
+    expect(poseidon.hash(revokingAfterFirstRead([one, one]))).toEqual(mismatch("expected an Fr at index 0"));
+    expect(poseidon.treeRoot(4, bad([revokingAfterFirstRead([1n, one])]))).toEqual(mismatch("expected a [bigint, Fr] array at index 0"));
+  });
+
+  it("versioned heads, proofs, deltas and a version key's results", () => {
+    expect(vt.root(revokingAfterFirstRead({ ...finalHead }))).toEqual(mismatch("expected the head's roots to be Uint8Arrays"));
+    expect(vt.verifyState(bytes(vectors.root), revokingAfterFirstRead({ head: finalHead, top: proof }))).toEqual(mismatch("expected the proof's top to be a TrieProof"));
+    const key = versioned.VersionKey.long;
+    const revokingResult = expectOk(
+      versioned.VersionedTrie.of<bigint>("SHA-256", { width: 8, encode: (v) => revokingAfterFirstRead({ ...key.encode(v) }), decode: (b) => key.decode(b) }),
+      "profile",
+    );
+    expect(revokingResult.root(finalHead)).toEqual(mismatch("expected a version key's result to be a Result of its type"));
+    const revokingError = expectOk(
+      versioned.VersionedTrie.of<bigint>("SHA-256", { width: 8, encode: () => ({ ok: false, error: revokingAfterFirstRead({ kind: "TypeMismatch", reason: "r" }) }), decode: (b) => key.decode(b) }),
+      "profile",
+    );
+    expect(revokingError.root(finalHead)).toEqual(mismatch("expected a version key's result to be a Result of its type"));
+  });
+});

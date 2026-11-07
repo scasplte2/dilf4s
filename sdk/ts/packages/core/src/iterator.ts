@@ -4,7 +4,7 @@
  * does not throw. Caller code it runs (a getter, an iterator's methods) may throw. Internal to this package.
  */
 
-import { isArrayGuarded, isRevokedProxy } from "./guard.js";
+import { isArrayGuarded, isRevokedProxy, readGuarded, REVOKED } from "./guard.js";
 
 /** The greatest length an array can have: `2^32 - 1`. */
 const MAX_ARRAY_LENGTH = 2 ** 32 - 1;
@@ -51,8 +51,9 @@ export function open<T>(iterable: object): Reader<T> | undefined {
 
 /** {@link open}, given the iterator method already read from `iterable` (once, as `for...of` reads it). */
 export function openWith<T>(iterable: object, method: unknown): Reader<T> | undefined {
-  // a revoked Proxy of a function is a function no code can call: refused as for...of's TypeError would be
-  if (typeof method !== "function" || isRevokedProxy(method)) return undefined;
+  // a revoked Proxy of a function is a function no code can call, and an iterable revoked while its method was read
+  // (by its own trap) is one no iterator can read: each refused as for...of's TypeError would be
+  if (typeof method !== "function" || isRevokedProxy(method) || isRevokedProxy(iterable)) return undefined;
   const iterator: unknown = Reflect.apply(method, iterable, NO_ARGUMENTS);
   if (!isResult(iterator)) return undefined;
   const next: unknown = Reflect.get(iterator, "next");
@@ -62,6 +63,24 @@ export function openWith<T>(iterable: object, method: unknown): Reader<T> | unde
   // reader refuses as it refuses any result that is not an object
   const bound: () => unknown = Reflect.apply(bind, next, [iterator]);
   return { iterator: iterator as Iterator<T>, next: () => (isRevokedProxy(next) ? undefined : bound()) };
+}
+
+/** An iterator result, read as `for...of` reads it: `done` (any truthy value ends it), then `value` while not done. */
+export type Step<T> = { readonly done: true } | { readonly done: false; readonly value: T };
+
+const DONE: Step<never> = Object.freeze({ done: true });
+
+/**
+ * `r`, an iterator's result, read as `for...of` reads it (`done` once, then `value` once unless done), or `undefined`
+ * where `for...of` would throw a `TypeError`: a result that is not an object, or one its own `done` getter revoked (a
+ * Proxy whose trap revokes it), whose `value` no code can read.
+ */
+export function readStep(r: unknown): Step<unknown> | undefined {
+  if (!isResult(r)) return undefined;
+  const done: unknown = Reflect.get(r, "done");
+  if (done) return DONE;
+  const value: unknown = readGuarded(r, "value");
+  return value === REVOKED ? undefined : { done: false, value };
 }
 
 /** The intrinsic array iterator: `Array.prototype[Symbol.iterator]`, and its iterators' `next`, as this module loaded. */

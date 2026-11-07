@@ -17,7 +17,7 @@ import { encodeIntoWithin, Feeding, MAX_ENCODED_BYTES, type EncodeError } from "
 import type { TypeMismatch } from "./error.js";
 import type { ExpansionRefusal, HashError, HashErrorKind } from "./generated/hash_errors.js";
 import { firstNonDigit, fromHex } from "./hex.js";
-import { isArrayGuarded } from "./guard.js";
+import { isArrayGuarded, readGuarded } from "./guard.js";
 import { isArrayLength } from "./iterator.js";
 import { mint } from "./mint.js";
 import { Preview } from "./preview.js";
@@ -313,7 +313,8 @@ export function hashParts(algorithm: HashAlgorithm, parts: readonly Uint8Array[]
   if (!isArrayLength(count)) return err(NOT_PARTS);
   const h = startHashOf(algorithm);
   for (let i = 0; i < count; i++) {
-    const part = plainBytes(parts[i]);
+    // guarded: an earlier part's read (a Proxy's trap) may have revoked the array
+    const part = plainBytes(readGuarded(parts, i));
     if (part === undefined) return err(typeMismatch(`expected a Uint8Array at index ${i.toString()}`));
     h.update(part);
   }

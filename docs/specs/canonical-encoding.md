@@ -96,15 +96,18 @@ claimed value that is not a canonical value (an object shaped like the null valu
 absence. A key, signature, proof, profile, mode or index must be one the package made (a private brand, stamped only
 by a constructor given the package's token, so one built by calling a constructor from JavaScript fails the check)
 and, for keys and signatures, of the scheme at hand. A plain object a caller passes (a Merkle or versioned head, a
-proof, delta, chunk or snapshot) has each field read once into a copy the package owns. Where a result has no room for
-a refusal, `equals` is false for anything not of its class. A message to sign is copied once before it is read, since
+proof, delta, chunk or snapshot) has each field read once into a copy the package owns. The query of a listing check
+(a prefix, or a range's bounds) is copied before the claim is read, so a claim's getter cannot change what it is
+compared with. Where a result has no room for a refusal, `equals` is false for anything not of its class. A message to sign is copied once before it is read, since
 a signer reads it more than once and shared memory cannot be told apart reliably.
 
 A revoked Proxy (or a Proxy whose target is one) is refused like any other argument of the wrong type, as a
 `TypeMismatch`, in all three packages: every array and object reader first asks `Array.isArray` through core's one
 guard, whose catch sees only the engine's refusal of such an object (the call runs no caller code), and a function a
 caller passes (an iterator's methods, a version key's, a source of randomness) is checked the same way each time it is
-called, since caller code may revoke it meanwhile. It and signing's
+called, since caller code may revoke it meanwhile. For the same reason every read of a caller's object or array after
+its first goes through the guard too (a getter or trap an earlier read ran may have revoked it), and what such a read
+gives is refused, never kept or taken for an absent field. It and signing's
 boundary around noble are the SDK's only catches. A check that passes allocates at most one O(1) plain view of each
 caller byte argument (the view is what keeps a library such as noble from reading a subclass's own `length` or
 `subarray`) and the copies of what is kept; refusals and boolean verdicts are shared, frozen results.

@@ -467,3 +467,29 @@ describe("a revoked Proxy is refused as a TypeMismatch at every array argument, 
     expect(generateMnemonic(16, WordList.english, random)).toEqual(mismatch("expected a function"));
   });
 });
+
+/** A Proxy of `target` that revokes itself as its first read returns: every later read of it would throw. */
+function revokingAfterFirstRead<T extends object>(target: T): T {
+  const { proxy, revoke } = Proxy.revocable(target, {
+    get: (t, name) => {
+      const v: unknown = Reflect.get(t, name);
+      revoke();
+      return v;
+    },
+  });
+  return proxy;
+}
+
+describe("an array or tuple a getter revokes while it is read is refused, never thrown on", () => {
+  it("BLS aggregates and tuples, derivation paths and word lists", () => {
+    const b = expectOk(blsPop.fromSeed(seed), "bls");
+    const sig = expectOk(blsPop.sign(b.signing, empty), "sig");
+    expect(blsPop.aggregate(revokingAfterFirstRead([sig, sig]))).toEqual(mismatch("expected an array of BLS12-381-PoP Signatures"));
+    expect(blsPop.fastAggregateVerify(revokingAfterFirstRead([b.verifying]), empty, sig)).toEqual(mismatch("expected an array of BLS12-381-PoP VerifyingKeys"));
+    expect(blsPop.aggregateVerify(bad([revokingAfterFirstRead([b.verifying, empty])]), sig)).toEqual(mismatch("expected a [VerifyingKey, Uint8Array] pair at index 0"));
+    expect(blsPop.batchVerify(bad([revokingAfterFirstRead([b.verifying, empty, sig])]))).toEqual(mismatch("expected a [VerifyingKey, Uint8Array, Signature] triple at index 0"));
+    const index = expectOk(ChildIndex.hardened(0), "index");
+    expect(slip10Ed25519.derive(seed, revokingAfterFirstRead([index]))).toEqual(mismatch("expected an array of ChildIndex"));
+    expect(WordList.of(revokingAfterFirstRead([...Array<string>(2048).keys()].map((i) => `w${i.toString()}`)))).toEqual({ ok: false, error: { kind: "InvalidWordList", reason: "word 0 is not a string" } });
+  });
+});

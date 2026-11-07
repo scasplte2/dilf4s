@@ -5,7 +5,7 @@
  * the package.
  */
 import { err, isValue, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, plainBytes, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
+import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, plainBytes, readGuarded, readStep, REVOKED, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
 import type { HashAlgorithm } from "@kd5ujc/dilf4s-core";
 
 /**
@@ -57,7 +57,10 @@ export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: 
   if (!isArrayLength(length)) return err(expected(what));
   const out: T[] = [];
   for (let i = 0; i < length; i++) {
-    const r = item((x as readonly unknown[])[i], i);
+    // guarded: an earlier read (the length's, an item's: a Proxy's trap) may have revoked the array
+    const v: unknown = readGuarded(x, i);
+    if (v === REVOKED) return err(expected(what));
+    const r = item(v, i);
     if (!r.ok) return r;
     out.push(r.value);
   }
@@ -84,10 +87,13 @@ export function foldIterable<S, E>(x: unknown, init: S, step: (s: S, v: unknown,
   let state = init;
   if (walksAsArray(x, method)) {
     // a Proxy of an array walks as one, and may report any length: only one an array can have is read up to
-    const length: unknown = x.length;
+    // each read guarded: the iterator method's read, or an item's, may have revoked the array (a Proxy's trap)
+    const length: unknown = readGuarded(x, "length");
     if (!isArrayLength(length)) return err(typeMismatch(NOT_ITERABLE));
     for (let i = 0; i < length; i++) {
-      const r = step(state, x[i], i);
+      const v: unknown = readGuarded(x, i);
+      if (v === REVOKED) return err(typeMismatch(NOT_ITERABLE));
+      const r = step(state, v, i);
       if (!r.ok) return r;
       state = r.value;
     }
@@ -98,8 +104,8 @@ export function foldIterable<S, E>(x: unknown, init: S, step: (s: S, v: unknown,
   let reading = false;
   try {
     for (let i = 0; ; i++) {
-      const r: unknown = read.next();
-      if (!isResult(r)) return err(typeMismatch(NOT_A_RESULT));
+      const r = readStep(read.next());
+      if (r === undefined) return err(typeMismatch(NOT_A_RESULT));
       if (r.done) return ok(state);
       const v: unknown = r.value;
       reading = true;

@@ -7,7 +7,7 @@
 export { bytesLength, copyBytes, isBytes, isLocalBuffer, plainBytes, takeBytes } from "./bytes.js";
 export { bitLengthOf } from "./bigint.js";
 export { blockSizeOf, digestOf, hashPartsOf, isAlgorithm, isDomainTag, outputSizeOf, startHashOf, typeMismatch, type RawHash } from "./hash.js";
-export { isArrayGuarded, isRevokedProxy } from "./guard.js";
+export { isArrayGuarded, isRevokedProxy, readGuarded, REVOKED } from "./guard.js";
 export { toHexOf } from "./hex.js";
 export { mint, type Mint } from "./mint.js";
-export { close, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, open, openWith, walksAsArray, type Reader } from "./iterator.js";
+export { close, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, open, openWith, readStep, walksAsArray, type Reader, type Step } from "./iterator.js";
