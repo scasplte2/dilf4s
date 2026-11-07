@@ -11,6 +11,9 @@ pub type Hex0x = String;
 pub const HEX0X: c::Matching = c::Matching(c::TextPattern::Hex0x);
 
 /// `sigma-case` (`shared/schemas/sigma-vectors.cddl`).
+///
+/// A proof and one of its tamperings; "ergo" is Ergo's verdict. dilf4s agrees, except that a proof of the wrong length
+/// (trailing-byte, truncated) is malformed input.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SigmaCase {
     /// The `name` entry.
@@ -57,7 +60,7 @@ impl c::Model for SigmaCase {
 }
 
 /// `sigma-kind` (`shared/schemas/sigma-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SigmaKind {
     /// The text `valid`.
     Valid,
@@ -103,7 +106,23 @@ impl SigmaKind {
     pub const ALL: [Self; 6] = [Self::Valid, Self::OtherMessage, Self::FlippedResponse, Self::FlippedChallenge, Self::TrailingByte, Self::Truncated];
 }
 
+impl core::fmt::Display for SigmaKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Valid => f.write_str("valid"),
+            Self::OtherMessage => f.write_str("other-message"),
+            Self::FlippedResponse => f.write_str("flipped-response"),
+            Self::FlippedChallenge => f.write_str("flipped-challenge"),
+            Self::TrailingByte => f.write_str("trailing-byte"),
+            Self::Truncated => f.write_str("truncated"),
+        }
+    }
+}
+
 /// `sigma-proposition` (`shared/schemas/sigma-vectors.cddl`).
+///
+/// The JLVM form of a proposition (docs/specs/sigma.md section 3). Shape only: which fields each type takes is checked
+/// by the domain decoder (SigmaProp.fromCanonical).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SigmaProposition {
     /// The `type` entry.
@@ -154,7 +173,7 @@ impl c::Model for SigmaProposition {
 }
 
 /// `sigma-type` (`shared/schemas/sigma-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SigmaType {
     /// The text `dlog`.
     Dlog,
@@ -194,6 +213,18 @@ impl c::Model for SigmaType {
 impl SigmaType {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 5] = [Self::Dlog, Self::Dhtuple, Self::And, Self::Or, Self::Threshold];
+}
+
+impl core::fmt::Display for SigmaType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Dlog => f.write_str("dlog"),
+            Self::Dhtuple => f.write_str("dhtuple"),
+            Self::And => f.write_str("and"),
+            Self::Or => f.write_str("or"),
+            Self::Threshold => f.write_str("threshold"),
+        }
+    }
 }
 
 /// `sigma-vectors` (`shared/schemas/sigma-vectors.cddl`).

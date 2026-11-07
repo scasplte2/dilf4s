@@ -8,7 +8,7 @@
  */
 import { twosAndFives } from "./bigint.js";
 import { byteLimit, Meter } from "./budget.js";
-import type { CanonicalError, TooLarge, TypeMismatch } from "./error.js";
+import type { CanonicalError, JsonSyntaxReason, NotJson, TooLarge, TypeMismatch } from "./error.js";
 import { CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
 import { KeySet } from "./keyset.js";
 import { Preview } from "./preview.js";
@@ -35,7 +35,7 @@ type Frame = { readonly object: false; readonly items: Value[] } | { readonly ob
 
 type State = { readonly step: "value" } | { readonly step: "key" } | { readonly step: "deliver"; readonly value: Value };
 
-const syntax = (offset: number, reason: string): CanonicalError => ({ kind: "JsonSyntax", offset, reason });
+const syntax = (offset: number, reason: JsonSyntaxReason): CanonicalError => ({ kind: "JsonSyntax", offset, reason });
 
 const isDigit = (c: string | undefined): boolean => c !== undefined && c >= "0" && c <= "9";
 
@@ -106,20 +106,20 @@ class Parser {
             state = { step: "deliver", value: v.value.value };
             pos = v.value.end;
           } else {
-            return err(syntax(p, "expected a value"));
+            return err(syntax(p, "expectedValue"));
           }
           break;
         }
         case "key": {
           const p = this.skipWs(pos);
-          if (this.s[p] !== '"') return err(syntax(p, "expected a member name"));
+          if (this.s[p] !== '"') return err(syntax(p, "expectedMemberName"));
           const k = this.string(p);
           if (!k.ok) return k;
           const frame = stack.at(-1);
-          if (!frame?.object) return err(syntax(p, "expected a value"));
+          if (!frame?.object) return err(syntax(p, "expectedValue"));
           if (frame.seen.has(k.value.text)) return err({ kind: "DuplicateKey", key: Preview.of(k.value.text) });
           const colon = this.skipWs(k.value.end);
-          if (this.s[colon] !== ":") return err(syntax(colon, "expected ':'"));
+          if (this.s[colon] !== ":") return err(syntax(colon, "expectedColon"));
           frame.seen.add(k.value.text);
           frame.key = k.value.text;
           state = { step: "value" };
@@ -130,9 +130,9 @@ class Parser {
           const p = this.skipWs(pos);
           const frame = stack.at(-1);
           const c = this.s[p];
-          if (frame === undefined) return p === this.s.length ? ok(state.value) : err(syntax(p, "unexpected trailing content"));
+          if (frame === undefined) return p === this.s.length ? ok(state.value) : err(syntax(p, "trailingContent"));
           if (!frame.object) {
-            if (c !== "," && c !== "]") return err(syntax(p, "expected ',' or ']'"));
+            if (c !== "," && c !== "]") return err(syntax(p, "expectedCommaOrBracket"));
             frame.items.push(state.value);
             if (c === ",") {
               state = { step: "value" };
@@ -143,7 +143,7 @@ class Parser {
               state = { step: "deliver", value: arr.value };
             }
           } else {
-            if (c !== "," && c !== "}") return err(syntax(p, "expected ',' or '}'"));
+            if (c !== "," && c !== "}") return err(syntax(p, "expectedCommaOrBrace"));
             frame.entries.push([frame.key, state.value]);
             if (c === ",") {
               state = { step: "key" };
@@ -173,7 +173,7 @@ class Parser {
     if (c === "f" && this.s.startsWith("false", p)) return ok({ value: BoolValue.false, end: p + 5 });
     if (c === "n" && this.s.startsWith("null", p)) return ok({ value: NullValue.instance, end: p + 4 });
     if (c === "-" || isDigit(c)) return this.number(p);
-    return err(syntax(p, "expected a value"));
+    return err(syntax(p, "expectedValue"));
   }
 
   /**
@@ -202,13 +202,14 @@ class Parser {
     // the integer digits have no leading zeros but a lone 0, after which the fraction's leading zeros are not counted
     const significand = intDigits === "0" ? fracDigits.length - leadingZeros(fracDigits) : intDigits.length + fracDigits.length;
     const exponentDigits = expDigits.length - leadingZeros(expDigits);
-    const digits = Math.max(significand, exponentDigits);
-    if (digits > MAX_DIGITS) return err({ kind: "InvalidNumber", ...described, digits });
+    // the significand's digits first, then the exponent's, as every SDK reports them
+    const digits = significand > MAX_DIGITS ? significand : exponentDigits;
+    if (digits > MAX_DIGITS) return err({ kind: "InvalidNumber", ...described, bound: { kind: "Digits", digits, limit: MAX_DIGITS } });
     // an exponent of more than 18 digits is past every scale a text this long can reach: saturate rather than convert
     const magnitude = exponentDigits > 18 ? 10n ** 19n : BigInt(expDigits);
     const exponent = magnitude * (hasExp && expSign === "-" ? -1n : 1n);
     const scale = BigInt(fracDigits.length) - exponent;
-    if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", ...described, scale: Number(scale > INT32_MAX ? INT32_MAX : scale < INT32_MIN ? INT32_MIN : scale) });
+    if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", ...described, bound: { kind: "Scale", scale: Number(scale > INT32_MAX ? INT32_MAX : scale < INT32_MIN ? INT32_MIN : scale), limit: this.maxScale } });
     const unscaled = BigInt(intDigits + fracDigits) * (negative ? -1n : 1n);
     // a decimal's denominator is 10^scale: reduced by its primes 2 and 5 alone, never by a general gcd
     // a positive exponent can take an integer past MAX_INTEGER_BITS (9e9999): refused, as every producer does
@@ -224,12 +225,12 @@ class Parser {
     let i = open + 1;
     for (;;) {
       const c = s[i];
-      if (c === undefined) return err(syntax(i, "unterminated string"));
+      if (c === undefined) return err(syntax(i, "unterminatedString"));
       if (c === '"') {
         parts.push(s.slice(segment, i));
         return ok({ text: parts.join(""), end: i + 1 });
       }
-      if (c < " ") return err(syntax(i, "unescaped control character in string"));
+      if (c < " ") return err(syntax(i, "controlCharacter"));
       if (c !== "\\") {
         i++;
         continue;
@@ -245,7 +246,7 @@ class Parser {
         parts.push(String.fromCharCode(Number.parseInt(s.slice(i + 2, i + 6), 16)));
         i += 6;
       } else {
-        return err(syntax(i, "invalid escape"));
+        return err(syntax(i, "invalidEscape"));
       }
       segment = i;
     }
@@ -275,7 +276,7 @@ function integerText(n: IntValue): string {
 /** Why a rational has no JSON decimal: none terminates, or it is past the bounds {@link parse} accepts. */
 export interface NoDecimal {
   readonly kind: "NotJsonRepresentable";
-  readonly what: "non-terminating rational" | "over-long number";
+  readonly what: Extract<NotJson, "non-terminating rational" | "over-long number">;
 }
 
 /** Why {@link decimal} gave no decimal: the rational has none, or the argument is not a rational. */

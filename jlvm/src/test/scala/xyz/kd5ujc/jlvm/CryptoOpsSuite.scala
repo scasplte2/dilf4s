@@ -40,8 +40,8 @@ object CryptoOpsSuite extends IOSuite with Checkers {
   }
 
   private def crypto(r: Either[JlvmError, CanonicalValue]): Boolean = r match {
-    case Left(JlvmError.Crypto(_, _)) => true
-    case _                            => false
+    case Left(JlvmError.Crypto(_, _, _)) => true
+    case _                               => false
   }
 
   /** A good signature verifies; another message gives false; a truncated signature is malformed input. */
@@ -51,6 +51,24 @@ object CryptoOpsSuite extends IOSuite with Checkers {
       .and(expect.same(Right(False), verify(jlvm, op, CBytes(pk), other, sig)))
       .and(expect(crypto(verify(jlvm, op, CBytes(pk), msg, sig.dropRight(1))), s"${op.wire}: short signature"))
       .and(expect(verify(jlvm, op, CInt(1), msg, sig).isLeft, "a number is not a key"))
+
+  test("a Crypto error names the typed refusal it wraps; the operation's own shape checks name none") { b =>
+    IO {
+      def cause(r: Either[JlvmError, CanonicalValue]): Option[CryptoCause] = r match {
+        case Left(JlvmError.Crypto(_, _, c)) => c
+        case _                               => None
+      }
+      val shortKey = verify(b.jlvm, Op.Ed25519Verify, CBytes(ByteVector.fill(31)(1)), message, ByteVector.fill(64)(0))
+      val badPoint = verify(b.jlvm, Op.SchnorrVerify, CBytes(ByteVector.fill(33)(9)), message, ByteVector.fill(56)(0))
+      val badG1 = b.ops(Op.Bn254Add, Vector(CBytes(ByteVector.fill(64)(1)), CBytes(ByteVector.fill(64)(0))))
+      val shortG1 = b.ops(Op.Bn254Add, Vector(CBytes(ByteVector.fill(63)(0)), CBytes(ByteVector.fill(64)(0))))
+      expect(cause(shortKey).exists(_.kind == "Signing"), s"$shortKey")
+        .and(expect(cause(shortKey).exists { case CryptoCause.Signing(e) => e.kind == "InvalidEncoding"; case _ => false }, s"$shortKey"))
+        .and(expect(cause(badPoint).exists { case CryptoCause.Sigma(e) => e.kind == "InvalidPoint"; case _ => false }, s"$badPoint"))
+        .and(expect(badG1.flatMap(r => cause(r)).exists(_.kind == "Zk"), s"$badG1"))
+        .and(expect(shortG1.exists(r => crypto(r) && cause(r).isEmpty), s"a width the operation checks itself: $shortG1"))
+    }
+  }
 
   test("ed25519_verify") { b =>
     IO {

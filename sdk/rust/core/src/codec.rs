@@ -652,7 +652,7 @@ impl<C: Codec> Codec for Boxed<C> {
 /// The nesting level inside a container at `depth`, if a container fits there.
 pub fn nested(depth: usize) -> Result<usize, CanonicalError> {
     if depth >= MAX_DEPTH {
-        Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH })
+        Err(CanonicalError::DepthExceeded { limit: crate::error::size(MAX_DEPTH) })
     } else {
         Ok(depth.saturating_add(1))
     }

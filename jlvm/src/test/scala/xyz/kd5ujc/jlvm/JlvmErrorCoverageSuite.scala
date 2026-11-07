@@ -37,16 +37,33 @@ object JlvmErrorCoverageSuite extends SimpleIOSuite {
         }
       }
 
-  /** The `Site` case a recorded `op` names: `Op` for an operation's own wire name, `Var` for `var`. */
-  def site(op: String): Option[String] =
-    if (op == Site.Var.wire) Some("Var") else Op.values.find(_.wire == op).as("Op")
+  test("a cause is recorded only for Crypto errors, and every cause family a vector names is one of the schema's") {
+    IO.blocking(new String(Files.readAllBytes(JlvmVectors.path), UTF_8)).flatMap(io.circe.parser.parse(_).liftTo[IO]).map { v =>
+      val outcomes = v.hcursor.downField("cases").as[List[Json]].getOrElse(Nil).map(_.hcursor.downField("outcome"))
+      val caused = outcomes.filter(_.downField("cause").succeeded)
+      val families = caused.flatMap(_.downField("cause").keys.toList.flatten).toSet
+      expect(caused.forall(_.get[String]("error").contains("Crypto")), "a cause on a kind other than Crypto")
+        .and(expect(caused.nonEmpty, "no row records a cause"))
+        .and(expect(families.subsetOf(CryptoCauseKind.values.map(_.toLowerCase).toSet), s"unknown families: $families"))
+    }
+  }
+
+  /** Which kind of site a site is: an operation (`Op`) or the read of a computed path (`Var`). */
+  def category(s: Site): String = s match {
+    case _: Op => "Op"
+    case _     => "Var"
+  }
+
+  /** The kind of site a recorded `op` names: one of the generated `Site.values`, by its wire name. */
+  def site(op: String): Option[String] = Site.values.find(_.wire == op).map(category)
 
   test("every JLVM error kind has a vector row") {
     errors.map { es =>
       val pinned = es.map(_._1).toSet
-      val all = kinds[JlvmError]
+      val all = JlvmErrorKind.values.toList.map(identity[String])
       expect(uncovered(all, pinned).isEmpty, s"no jlvm_v1.json row pins ${uncovered(all, pinned).mkString(", ")}")
         .and(expect(pinned.subsetOf(all.toSet), s"rows name kinds JlvmError does not have: ${pinned -- all}"))
+        .and(expect.same(all, kinds[JlvmError]))
     }
   }
 
@@ -55,8 +72,10 @@ object JlvmErrorCoverageSuite extends SimpleIOSuite {
       val ops = es.flatMap(_._2)
       val unknown = ops.filter(site(_).isEmpty).distinct
       val pinned = ops.flatMap(site).toSet
-      expect(unknown.isEmpty, s"ops that name no site: ${unknown.mkString(", ")}")
-        .and(expect(uncovered(kinds[Site], pinned).isEmpty, s"no row pins the site ${uncovered(kinds[Site], pinned).mkString(", ")}"))
+      expect(unknown.isEmpty, s"ops that name no site: ${unknown.mkString(", ")}").and {
+        val sites = Site.values.map(category).distinct.toList
+        expect(uncovered(sites, pinned).isEmpty, s"no row pins the site ${uncovered(sites, pinned).mkString(", ")}")
+      }
     }
   }
 
@@ -68,15 +87,15 @@ object JlvmErrorCoverageSuite extends SimpleIOSuite {
       JlvmError.Arity(Op.Add, ""),
       JlvmError.Arithmetic(Op.Add, ""),
       JlvmError.Domain(Site.Var, ""),
-      JlvmError.Crypto(Op.Add, ""),
+      JlvmError.Crypto(Op.Add, "", None),
       JlvmError.Limit(""),
       JlvmError.OutOfGas(1, 0)
     )
     errors.map { es =>
       val wrong = es.filter { case (k, op) => withSite(k) != op.isDefined }
       expect(wrong.isEmpty, s"rows whose op does not match their kind: ${wrong.take(5)}")
-        .and(expect.same(kinds[JlvmError], sample.map(JlvmVectors.kind(_): String)))
-        .and(expect.same(sample.map(e => withSite(JlvmVectors.kind(e))), sample.map(JlvmError.site(_).isDefined)))
+        .and(expect.same(kinds[JlvmError], sample.map(_.kind: String)))
+        .and(expect.same(sample.map(e => withSite(e.kind)), sample.map(_.site.isDefined)))
     }
   }
 

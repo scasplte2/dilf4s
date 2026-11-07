@@ -133,7 +133,7 @@ fn encoding_a_model_nested_past_the_depth_limit_is_a_typed_error() {
     let kind = std::thread::Builder::new()
         .stack_size(1 << 20)
         .spawn(move || {
-            let kind = expr.to_value().map_or_else(|e| e.kind(), |_| "encoded");
+            let kind = expr.to_value().err().map(|e| e.kind());
             // drop the chain one level at a time
             let mut next = Some(expr);
             while let Some(JlvmExpr::JlvmVarAt(at)) = next {
@@ -144,7 +144,7 @@ fn encoding_a_model_nested_past_the_depth_limit_is_a_typed_error() {
         .expect("a thread")
         .join()
         .expect("no stack overflow");
-    assert_eq!(kind, "DepthExceeded");
+    assert_eq!(kind, Some(dilf4s_core::error::CanonicalErrorKind::DepthExceeded));
 }
 
 #[test]

@@ -9,40 +9,22 @@ import cats.syntax.all._
 import scala.compiletime.constValueTuple
 import scala.deriving.Mirror
 
-import xyz.kd5ujc.models.canonical_vectors.{CanonicalErrorKind, CanonicalJsonRejected, CanonicalVectors}
+import xyz.kd5ujc.models.canonical_vectors.{CanonicalJsonRejected, CanonicalVectors}
 import xyz.kd5ujc.models.versioned_trie_vectors.VersionedTrieVectors
 
 import weaver.SimpleIOSuite
 
 /**
- * The coverage gate of docs/specs/conformance.md §6 for the canonical codecs: every case of [[CanonicalError]] has a
- * vector row pinning it by kind. The cases come from the compiler (`Mirror.SumOf`), so a new case fails this suite
- * until it is pinned; the pinned kinds come from the committed vector files, read through their generated models, so
- * a row naming a kind the schema's `canonical-error-kind` does not list does not load.
+ * The coverage gate of docs/specs/conformance.md §6 for the canonical codecs: every kind of [[CanonicalError]] (the
+ * generated `CanonicalErrorKind.values`, and the family's cases through the compiler, `Mirror.SumOf`) has a vector row
+ * pinning it. The pinned kinds come from the committed vector files, read through their generated models, so a row
+ * naming a kind the schema's `canonical-error-kind` does not list does not load.
  */
 object CodecRefusalCoverageSuite extends SimpleIOSuite {
 
   /** The case names of a sealed type, in declaration order. */
   inline def kinds[T](using m: Mirror.SumOf[T]): List[String] =
     constValueTuple[m.MirroredElemLabels].productIterator.map(_.toString).toList
-
-  /** The schema's kind of each case: exhaustive, so a new case does not compile until it is mapped. */
-  def schemaKind(e: CanonicalError): CanonicalErrorKind = e match {
-    case CanonicalError.UnpairedSurrogate       => "UnpairedSurrogate"
-    case _: CanonicalError.DuplicateKey         => "DuplicateKey"
-    case _: CanonicalError.RationalTooWide      => "RationalTooWide"
-    case _: CanonicalError.IntegerTooWide       => "IntegerTooWide"
-    case _: CanonicalError.JsonSyntax           => "JsonSyntax"
-    case _: CanonicalError.InvalidNumber        => "InvalidNumber"
-    case _: CanonicalError.NotJsonRepresentable => "NotJsonRepresentable"
-    case _: CanonicalError.TypeMismatch         => "TypeMismatch"
-    case _: CanonicalError.UnexpectedEnd        => "UnexpectedEnd"
-    case _: CanonicalError.TrailingBytes        => "TrailingBytes"
-    case _: CanonicalError.DepthExceeded        => "DepthExceeded"
-    case _: CanonicalError.NonCanonical         => "NonCanonical"
-    case _: CanonicalError.Unsupported          => "Unsupported"
-    case _: CanonicalError.InvalidUtf8          => "InvalidUtf8"
-  }
 
   private def load[A](file: String, codec: Codec[A]): IO[A] =
     IO.blocking(new String(Files.readAllBytes(Paths.get("shared", "vectors", file)), UTF_8)).flatMap { text =>
@@ -66,9 +48,10 @@ object CodecRefusalCoverageSuite extends SimpleIOSuite {
 
   test("every CanonicalError kind has a vector row, and every row names one of its kinds") {
     pinned.map { rows =>
-      val all = kinds[CanonicalError]
+      val all = CanonicalErrorKind.values.toList.map(identity[String])
       expect(all.filterNot(rows).isEmpty, s"no vector row pins ${all.filterNot(rows).mkString(", ")}")
         .and(expect((rows -- all).isEmpty, s"rows name kinds CanonicalError does not have: ${rows -- all}"))
+        .and(expect.same(all, kinds[CanonicalError]))
     }
   }
 
@@ -78,20 +61,20 @@ object CodecRefusalCoverageSuite extends SimpleIOSuite {
       CanonicalError.DuplicateKey(Preview.of("k")),
       CanonicalError.RationalTooWide(1),
       CanonicalError.IntegerTooWide(1),
-      CanonicalError.JsonSyntax(0, ""),
-      CanonicalError.InvalidNumber(NumberSource.NoDecimal, None),
-      CanonicalError.NotJsonRepresentable(""),
+      CanonicalError.JsonSyntax(0, "expectedValue"),
+      CanonicalError.InvalidNumber(None, None, None),
+      CanonicalError.NotJsonRepresentable("bytes"),
       CanonicalError.TypeMismatch(""),
       CanonicalError.UnexpectedEnd(0),
       CanonicalError.TrailingBytes(0),
       CanonicalError.DepthExceeded(1),
-      CanonicalError.NonCanonical(0, ""),
-      CanonicalError.Unsupported(0, ""),
+      CanonicalError.NonCanonical(0, "keyOrder"),
+      CanonicalError.Unsupported(0, UnsupportedItem.NonTextKey),
       CanonicalError.InvalidUtf8(0)
     )
     expect
       .same(kinds[CanonicalError], samples.map(_.productPrefix))
-      .and(samples.foldMap(e => expect.same(e.productPrefix, schemaKind(e): String)))
+      .and(samples.foldMap(e => expect.same(e.productPrefix, e.kind: String)))
   }
 
   sealed trait Probe

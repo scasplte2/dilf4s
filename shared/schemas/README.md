@@ -25,6 +25,9 @@ After changing a schema, regenerate them with
 | `limits.cddl` | every spec limit, as constants (see "constants" below) | each limit's own spec; `docs/specs/conformance.md` §6 |
 | `crypto-errors.cddl` | the crypto error families and their kinds (see "error families" below) | `docs/specs/conformance.md` §6 |
 | `hash-errors.cddl` | the hash error family and its kinds, and the `preview` rule | `docs/specs/conformance.md` §6, `docs/specs/canonical-encoding.md` §4 |
+| `codec-errors.cddl` | the canonical codecs' and state keys' error families (`CanonicalError`, `StateKeyError`) and their reasons | `docs/specs/conformance.md` §6, `docs/specs/canonical-encoding.md` |
+| `jlvm.cddl` (`jlvm-op`) | the JLVM's operations, a closed list of named texts | `docs/specs/jlvm.md` §3 |
+| `jlvm-errors.cddl` | the JLVM's error family, its sites and a `Crypto` error's cause | `docs/specs/jlvm.md` §3, `docs/specs/conformance.md` §6 |
 | `*-vectors.cddl` | The conformance vector files in `shared/vectors/` | the matching spec |
 
 Every vector file in `shared/vectors/` must have a schema here. `VectorSchemasSuite` checks this, and checks that each
@@ -52,8 +55,15 @@ file round-trips through its schema without loss.
     (`kes-error = { "kind": "Malformed", "what": text, "reason": text // "kind": "Exhausted", ... }`), beside a rule
     `kes-error-kind` that lists the same kinds in order. It is an error type (Scala a sealed trait, Rust an enum with
     `kind()`, `Display` and `Error`, TypeScript a union on `kind`), never a wire type: no codec is generated, and no
-    field or alternative may hold one. Its fields are text, integers (TypeScript: `number`), booleans, kinds or
-    previews;
+    wire type may hold one. Its fields are text, integers (TypeScript: a `number` within the signed 64-bit range, a
+    `bigint` past it, such as a plain `uint`), booleans, kinds, previews, or another error family (a reason with fields
+    of its own, `InvalidNumber`'s `bound`), never one that holds the family back;
+  - **named texts**: a choice of rules that are each one text literal (`jlvm-op = op-not / op-eq`, `op-not = "!"`) is a
+    closed type whose members are named by their rules, the prefix they all share up to a `-` removed and the rest
+    split at `-` (`op-strict-eq` is `StrictEq`, `op-sha3_256` `Sha3_256`), so a text need not be an identifier: Scala an
+    `enum` carrying `wire` (and `fromWire`), Rust an enum with `wire()`, `from_wire` and `ALL`, TypeScript a union of
+    the texts. A choice mixing such rules with anything else is refused; a field naming one of the rules is its
+    literal. Nothing is emitted for the member rules themselves;
   - **previews**: a rule named `preview`, whose body must be `{ "head": text, "length": uint }` (the preview's
     normative fields, `docs/specs/conformance.md` §8), is each SDK's own `Preview` (Scala
     `xyz.kd5ujc.core.canonical.Preview`, Rust `c::Preview`, TypeScript `Preview` from `preview.ts`). It is not
@@ -65,6 +75,10 @@ file round-trips through its schema without loss.
     `export const` (a `number` up to 2^53 − 1, else a `bigint`), Rust a `u64` plus the same value in each narrower type
     it fits (`as_u16`, `as_u32`, and `as_usize` up to 2^32 − 1), so no site casts. CDDL occurrence bounds
     (`[1*1024 x]`) take literals only, so a bound that is a limit there is pinned by a test against the constant.
+- **Comments are documentation.** The `;` comment lines directly above a rule, or above a map entry that starts its
+  line (an error kind's `"kind"` entry, or a field), become that type's, kind's or field's documentation in every
+  language (Scaladoc, Rust doc comments, TSDoc). A blank line or a `;#` pragma ends the block, and a comment after code
+  on its line documents nothing, so a file's header is not the first rule's documentation.
 - **Rejected at generation time:** integer map keys, floats, tags, groups, inline choices and ambiguous alternatives.
 - **What generated decoders check:** shape and ranges only. Domain invariants, such as trie segment padding or Poseidon
   `position < 2^depth`, stay with the domain decoders and types.

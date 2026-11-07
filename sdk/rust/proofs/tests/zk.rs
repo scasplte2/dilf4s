@@ -87,13 +87,13 @@ fn sp1_groth16() {
 fn every_zk_error_kind_has_a_row() {
     let v = vectors();
     let failures = |r: &ZkPointResult| match r {
-        ZkPointResult::ZkFailure(f) => Some(f.error.clone()),
+        ZkPointResult::ZkFailure(f) => Some(f.error),
         ZkPointResult::ZkPoint(_) => None,
     };
     let mut pinned: Vec<ZkErrorKind> =
         v.add.iter().map(|c| &c.result).chain(v.mul.iter().map(|c| &c.result)).filter_map(failures).collect();
     pinned.extend(v.pairing.iter().filter_map(|c| match &c.result {
-        ZkBoolResult::ZkFailure(f) => Some(f.error.clone()),
+        ZkBoolResult::ZkFailure(f) => Some(f.error),
         ZkBoolResult::ZkBool(_) => None,
     }));
     for k in ZkErrorKind::ALL {

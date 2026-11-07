@@ -7,12 +7,12 @@
 ; Sizes, offsets and limits are `uint .le 9223372036854775807` (Scala `Long`, Rust `u64`, TypeScript `number`).
 ; Caller text is held as a preview, never as itself.
 
+hash-error-kind = "InvalidLength" / "InvalidHex" / "InvalidDomainTag" / "InvalidExpansion" / "UnknownAlgorithm"
+
 ; A digest of the wrong length (`expected`, the algorithm's output size, and `actual`); text that is not hexadecimal
 ; (`offset`: the first character that is not an ASCII hex digit, or the text's length when its digits are odd in
 ; number); a domain tag outside the grammar; an `expand_message_xmd` the reference refuses (`refusal`, and `limit`,
 ; the most bytes the algorithm expands to); a hash function name that is not one of the seven.
-hash-error-kind = "InvalidLength" / "InvalidHex" / "InvalidDomainTag" / "InvalidExpansion" / "UnknownAlgorithm"
-
 hash-error = {
   "kind": "InvalidLength", "algorithm": text, "expected": uint .le 9223372036854775807,
     "actual": uint .le 9223372036854775807 //

@@ -54,7 +54,7 @@ final class ZkOps(engine: Bn254Engine) {
         JlvmError.Arity(op, s"takes 1 to ${PoseidonHash.MaxInputs} field elements, got ${inputs.size}")
       )
       xs     <- inputs.zipWithIndex.traverse { case (v, i) => fr(op, s"input[$i]", v) }
-      digest <- PoseidonHash.hash(xs).leftMap(e => JlvmError.Crypto(op, e.toString))
+      digest <- PoseidonHash.hash(xs).leftMap(e => crypto(op, e.toString))
       out    <- Values.bytesValue(op, FlatBytes(Bn254.be32(digest.value)))
     } yield out
   }
@@ -87,8 +87,8 @@ final class ZkOps(engine: Bn254Engine) {
           pubVals <- bytes(op, "publicValues", publicV)
           proof   <- bytes(op, "proof", proofV)
           valid <- Sp1Groth16.verify(engine)(vkey, pubVals, proof) match {
-            case Right(())                            => true.asRight
-            case Left(Groth16Error.Malformed(reason)) => crypto(op, reason).asLeft
+            case Right(())                                => true.asRight
+            case Left(e @ Groth16Error.Malformed(reason)) => JlvmError.Crypto(op, reason, Some(CryptoCause.Groth16(e))).asLeft
             case Left(Groth16Error.InvalidProof(_) | Groth16Error.PairingCheckFailed | Groth16Error.Rejected(_)) => false.asRight
           }
         } yield Values.bool(valid)
@@ -106,7 +106,7 @@ final class ZkOps(engine: Bn254Engine) {
           proof <- sized(op, "proof", proofV, Vrf.ProofLength)
           out <- Vrf[EcVrfTai].verifyBytes(pk, alpha, proof) match {
             case Right(beta) => Values.map(op, List("valid" -> True, "beta" -> Values.bytes(FlatBytes(beta.bytes))))
-            case Left(VrfError.Malformed(what, reason)) => crypto(op, s"$what: $reason").asLeft
+            case Left(e @ VrfError.Malformed(what, reason)) => JlvmError.Crypto(op, s"$what: $reason", Some(CryptoCause.Vrf(e))).asLeft
             case Left(
                   VrfError.InvalidPublicKey | VrfError.SmallOrderPublicKey | VrfError.InvalidGamma | VrfError.NonCanonicalScalar |
                   VrfError.ChallengeMismatch | VrfError.KeyMismatch | VrfError.HashToCurveFailed(_)
@@ -168,7 +168,7 @@ final class ZkOps(engine: Bn254Engine) {
 
   // ---- argument decoding
 
-  private def crypto(op: Op, message: String): JlvmError = JlvmError.Crypto(op, message)
+  private def crypto(op: Op, message: String): JlvmError = JlvmError.Crypto(op, message, None)
 
   private def isArray(v: CanonicalValue): Boolean = v match {
     case CArray(_) => true
@@ -208,8 +208,8 @@ final class ZkOps(engine: Bn254Engine) {
 
   /** For the curve operations a point off the curve or outside the subgroup is malformed input, as in metakit. */
   private def zkError(op: Op, role: String)(e: ZkError): JlvmError = e match {
-    case ZkError.Malformed(reason)    => crypto(op, s"$role: $reason")
-    case ZkError.InvalidPoint(reason) => crypto(op, s"$role: $reason")
+    case ZkError.Malformed(reason)    => JlvmError.Crypto(op, s"$role: $reason", Some(CryptoCause.Zk(e)))
+    case ZkError.InvalidPoint(reason) => JlvmError.Crypto(op, s"$role: $reason", Some(CryptoCause.Zk(e)))
   }
 }
 

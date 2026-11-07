@@ -6,7 +6,7 @@ use core::fmt;
 use num_bigint::{BigInt, Sign};
 use num_traits::One;
 
-use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem};
+use crate::error::{CanonicalError, NonCanonicalReason, UnsupportedItem, size};
 use crate::hash::{Hasher, Hashing};
 use crate::value::{
     Array, Entries, MAX_DEPTH, MAX_INTEGER_BITS, MAX_RATIONAL_BITS, MAX_WEIGHT, Map, Rational, Text, Value, bit_length,
@@ -431,7 +431,7 @@ impl Decoder<'_> {
             let value = match item {
                 Item::Scalar(v) => v,
                 _ if self.stack.len() >= self.max_depth => {
-                    return Err(CanonicalError::DepthExceeded { limit: self.max_depth });
+                    return Err(CanonicalError::DepthExceeded { limit: size(self.max_depth) });
                 }
                 Item::OpenArray(0) => Value::Array(Array::new(Vec::new())?),
                 Item::OpenMap(0) => Value::Map(Map::from_sorted(Vec::new())?),
@@ -460,7 +460,7 @@ impl Decoder<'_> {
                 return if end == self.input.len() {
                     Ok(Next::Done(value))
                 } else {
-                    Err(CanonicalError::TrailingBytes { offset: end })
+                    Err(CanonicalError::TrailingBytes { offset: size(end) })
                 };
             };
             let complete = match frame {
@@ -471,12 +471,15 @@ impl Decoder<'_> {
                 }
                 Frame::Map { pending: pending @ None, last_key, .. } => {
                     let Value::Text(key) = value else {
-                        return Err(CanonicalError::Unsupported { offset: start, item: UnsupportedItem::NonTextKey });
+                        return Err(CanonicalError::Unsupported {
+                            offset: size(start),
+                            item: UnsupportedItem::NonTextKey,
+                        });
                     };
                     let ordered = last_key.is_none_or(|(ls, le)| self.input.get(ls..le) < self.input.get(start..end));
                     if !ordered {
                         return Err(CanonicalError::NonCanonical {
-                            offset: start,
+                            offset: size(start),
                             reason: NonCanonicalReason::KeyOrder,
                         });
                     }
@@ -486,7 +489,7 @@ impl Decoder<'_> {
                 Frame::Map { remaining, entries, last_key, pending } => {
                     if value == Value::Null {
                         return Err(CanonicalError::NonCanonical {
-                            offset: start,
+                            offset: size(start),
                             reason: NonCanonicalReason::NullMapValue,
                         });
                     }
@@ -504,7 +507,7 @@ impl Decoder<'_> {
             value = match self.stack.pop() {
                 Some(Frame::Array { items, .. }) => Value::Array(Array::new(items)?),
                 Some(Frame::Map { entries, .. }) => Value::Map(Map::from_sorted(entries)?),
-                None => return Err(CanonicalError::UnexpectedEnd { offset: end }),
+                None => return Err(CanonicalError::UnexpectedEnd { offset: size(end) }),
             };
             // the start of a closed container is not tracked; only a key's start is ever used, and a container
             // delivered as a key is rejected before its offset matters
@@ -520,7 +523,7 @@ impl Decoder<'_> {
             MAJOR_BYTES => self.span(end, argument).map(|(b, e)| (Item::Scalar(Value::bytes(b)), e)),
             MAJOR_TEXT => {
                 let (b, e) = self.span(end, argument)?;
-                let text = core::str::from_utf8(b).map_err(|_| CanonicalError::InvalidUtf8 { offset: end })?;
+                let text = core::str::from_utf8(b).map_err(|_| CanonicalError::InvalidUtf8 { offset: size(end) })?;
                 Ok((Item::Scalar(Value::text(text)), e))
             }
             MAJOR_ARRAY => self.count(end, argument, 1).map(|n| (Item::OpenArray(n), end)),
@@ -531,22 +534,22 @@ impl Decoder<'_> {
                 21 => Ok((Item::Scalar(Value::Bool(true)), end)),
                 22 => Ok((Item::Scalar(Value::Null), end)),
                 s => Err(CanonicalError::Unsupported {
-                    offset: pos,
-                    item: UnsupportedItem::SimpleValue(u8::try_from(s).unwrap_or(u8::MAX)),
+                    offset: size(pos),
+                    item: UnsupportedItem::SimpleValue { value: u32::try_from(s).unwrap_or(u32::MAX) },
                 }),
             },
         }
     }
 
     fn read_head(&self, pos: usize) -> Result<Head, CanonicalError> {
-        let initial = *self.input.get(pos).ok_or(CanonicalError::UnexpectedEnd { offset: pos })?;
+        let initial = *self.input.get(pos).ok_or(CanonicalError::UnexpectedEnd { offset: size(pos) })?;
         let (major, info) = (initial >> 5, initial & 0x1f);
         let next = pos.saturating_add(1);
         let sized = |len: u64, minimum: u64| -> Result<Head, CanonicalError> {
             let (b, end) = self.span(next, len)?;
             let argument = b.iter().fold(0u64, |acc, &x| acc.wrapping_shl(8) | u64::from(x));
             if argument < minimum {
-                Err(CanonicalError::NonCanonical { offset: pos, reason: NonCanonicalReason::NonShortestArgument })
+                Err(CanonicalError::NonCanonical { offset: size(pos), reason: NonCanonicalReason::NonShortestArgument })
             } else {
                 Ok(Head { major, argument, end })
             }
@@ -554,15 +557,21 @@ impl Decoder<'_> {
         if info < 24 {
             Ok(Head { major, argument: u64::from(info), end: next })
         } else if major == MAJOR_SIMPLE {
-            Err(CanonicalError::Unsupported { offset: pos, item: UnsupportedItem::FloatOrSimple(info) })
+            Err(CanonicalError::Unsupported {
+                offset: size(pos),
+                item: UnsupportedItem::FloatOrSimple { info: u32::from(info) },
+            })
         } else {
             match info {
                 24 => sized(1, 24),
                 25 => sized(2, 0x100),
                 26 => sized(4, 0x1_0000),
                 27 => sized(8, 0x1_0000_0000),
-                31 => Err(CanonicalError::Unsupported { offset: pos, item: UnsupportedItem::IndefiniteLength }),
-                _ => Err(CanonicalError::Unsupported { offset: pos, item: UnsupportedItem::ReservedInfo(info) }),
+                31 => Err(CanonicalError::Unsupported { offset: size(pos), item: UnsupportedItem::IndefiniteLength }),
+                _ => Err(CanonicalError::Unsupported {
+                    offset: size(pos),
+                    item: UnsupportedItem::ReservedInfo { info: u32::from(info) },
+                }),
             }
         }
     }
@@ -575,7 +584,7 @@ impl Decoder<'_> {
                 Ok((Value::integer(n)?, e))
             }
             TAG_RATIONAL => self.read_rational(pos, end),
-            _ => Err(CanonicalError::Unsupported { offset: pos, item: UnsupportedItem::Tag(tag) }),
+            _ => Err(CanonicalError::Unsupported { offset: size(pos), item: UnsupportedItem::Tag { tag } }),
         }
     }
 
@@ -591,13 +600,13 @@ impl Decoder<'_> {
     ) -> Result<(BigInt, usize), CanonicalError> {
         let body = self.read_head(end)?;
         if body.major != MAJOR_BYTES {
-            return Err(CanonicalError::NonCanonical { offset: pos, reason: NonCanonicalReason::BignumNotBytes });
+            return Err(CanonicalError::NonCanonical { offset: size(pos), reason: NonCanonicalReason::BignumNotBytes });
         }
         let (b, e) = self.span(body.end, body.argument)?;
         if b.first().is_none_or(|&first| first == 0) {
-            Err(CanonicalError::NonCanonical { offset: pos, reason: NonCanonicalReason::BignumLeadingZero })
+            Err(CanonicalError::NonCanonical { offset: size(pos), reason: NonCanonicalReason::BignumLeadingZero })
         } else if b.len() <= 8 {
-            Err(CanonicalError::NonCanonical { offset: pos, reason: NonCanonicalReason::BignumInRange })
+            Err(CanonicalError::NonCanonical { offset: size(pos), reason: NonCanonicalReason::BignumInRange })
         } else if magnitude_bits(b) > limit {
             Err(too_wide)
         } else {
@@ -609,7 +618,7 @@ impl Decoder<'_> {
     /// In order: the pair, the numerator and its width, the denominator and its width, the denominator's range, and
     /// last the one gcd that checks lowest terms (docs/specs/conformance.md section 5).
     fn read_rational(&self, pos: usize, end: usize) -> Result<(Value, usize), CanonicalError> {
-        let non_canonical = |reason| CanonicalError::NonCanonical { offset: pos, reason };
+        let non_canonical = |reason| CanonicalError::NonCanonical { offset: size(pos), reason };
         let pair = self.read_head(end)?;
         if pair.major != MAJOR_ARRAY || pair.argument != 2 {
             return Err(non_canonical(NonCanonicalReason::RationalNotPair));
@@ -635,13 +644,15 @@ impl Decoder<'_> {
                 let too_wide = CanonicalError::RationalTooWide { limit: MAX_RATIONAL_BITS };
                 self.read_bignum(pos, t, end, MAX_RATIONAL_BITS, too_wide)
             }
-            _ => Err(CanonicalError::NonCanonical { offset: pos, reason: NonCanonicalReason::RationalNotInteger }),
+            _ => {
+                Err(CanonicalError::NonCanonical { offset: size(pos), reason: NonCanonicalReason::RationalNotInteger })
+            }
         }
     }
 
     /// `len` bytes from `pos`, and the offset after them.
     fn span(&self, pos: usize, len: u64) -> Result<(&[u8], usize), CanonicalError> {
-        let truncated = CanonicalError::UnexpectedEnd { offset: pos };
+        let truncated = CanonicalError::UnexpectedEnd { offset: size(pos) };
         let available = self.input.len().saturating_sub(pos);
         let len = usize::try_from(len).ok().filter(|&l| l <= available).ok_or_else(|| truncated.clone())?;
         let end = pos.saturating_add(len);
@@ -652,7 +663,7 @@ impl Decoder<'_> {
     fn count(&self, pos: usize, n: u64, per_entry: u64) -> Result<u64, CanonicalError> {
         let available = length(self.input.len().saturating_sub(pos));
         if n > available.checked_div(per_entry).unwrap_or(0) {
-            Err(CanonicalError::UnexpectedEnd { offset: pos })
+            Err(CanonicalError::UnexpectedEnd { offset: size(pos) })
         } else {
             Ok(n)
         }

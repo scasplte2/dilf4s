@@ -1,6 +1,7 @@
 ; dilf4s JLVM programs, canonical form v1 (docs/specs/jlvm.md). Normative.
 ; A program is this tagged syntax tree, not its JSON authoring surface; its identity is the content hash of the
-; record. Operation names are those of language version "jlvm"; an unknown name is invalid.
+; record. Operation names are those of language version 1, the closed list `jlvm-op` below; an unknown name is invalid,
+; and adding one changes this schema.
 
 jlvm-program = {
   "jlvm": 1,
@@ -20,13 +21,333 @@ jlvm-var = { "var": text, ? "default": any }
 ; A path computed at run time: text is read as a var path, an array as the exact segments of a data path.
 jlvm-var-at = { "path": jlvm-expr, ? "default": any }
 
-jlvm-apply = { "op": text, "args": [* jlvm-expr] }
+jlvm-apply = { "op": jlvm-op, "args": [* jlvm-expr] }
 
-; A variadic operation whose arguments are the elements of one array value. The argument is never a jlvm-array.
-jlvm-spread = { "spread": text, "arg": jlvm-expr }
+; A variadic operation (`+`, `*`, `min`, `max`, `cat`, `merge`) whose arguments are the elements of one array value. The
+; argument is never a jlvm-array. That the operation is variadic is the domain decoder's check (jlvm.md section 1), as
+; the argument's shape is: the schema types it as any operation.
+jlvm-spread = { "spread": jlvm-op, "arg": jlvm-expr }
 
 jlvm-array = { "arr": [* jlvm-expr] }
 
 jlvm-map = { "map": jlvm-fields }
 
 jlvm-fields = { * tstr => jlvm-expr }
+
+; The operations of language version 1, by wire name (jlvm.md section 5): a closed list, each named by its own rule, so a
+; name that is not an identifier (`!`, `===`) is still a typed member (`Not`, `StrictEq`). Grouped as the spec groups
+; them.
+jlvm-op = op-if / op-and / op-or / op-not / op-truthy / op-default / op-let / op-eq / op-ne / op-strict-eq /
+  op-strict-ne / op-lt / op-le / op-gt / op-ge / op-add / op-sub / op-mul / op-div / op-mod / op-min / op-max / op-abs /
+  op-round / op-round-half-up / op-floor / op-ceil / op-pow / op-map / op-filter / op-reduce / op-all / op-some /
+  op-none / op-find / op-count / op-merge / op-in / op-intersect / op-unique / op-slice / op-reverse / op-flatten /
+  op-length / op-cat / op-substr / op-lower / op-upper / op-join / op-split / op-trim / op-starts-with / op-ends-with /
+  op-keys / op-values / op-entries / op-get / op-has / op-set / op-unset / op-exists / op-missing / op-missing-some /
+  op-type-of / op-hex / op-unhex / op-hex-to-int / op-bytes-to-int / op-int-to-bytes / op-sha256 / op-sha3_256 /
+  op-keccak256 / op-blake2b256 / op-ed25519-verify / op-secp256k1-verify / op-bip340-verify / op-ecrecover /
+  op-bls-verify / op-bls-aggregate-verify / op-poseidon / op-pmt-verify / op-groth16-verify / op-ecvrf-verify /
+  op-bn254-add / op-bn254-mul / op-bn254-pairing / op-schnorr-verify / op-sigma-verify / op-merkle-verify /
+  op-merkle-consistency-verify / op-trie-verify / op-trie-prefix-verify / op-trie-range-verify
+
+;; control and logic
+
+; The first branch whose condition is truthy, else the last argument (or null): lazy.
+op-if = "if"
+
+; The first falsy value, else the last: lazy.
+op-and = "and"
+
+; The first truthy value, else the last: lazy.
+op-or = "or"
+
+; Negated truthiness.
+op-not = "!"
+
+; Truthiness.
+op-truthy = "!!"
+
+; The first truthy value, else null: lazy.
+op-default = "default"
+
+; Binds names to values for its body.
+op-let = "let"
+
+;; comparison
+
+; Structural equality.
+op-eq = "=="
+
+; Structural inequality.
+op-ne = "!="
+
+; Structural equality (the same as `==`: there is no coercion).
+op-strict-eq = "==="
+
+; Structural inequality (the same as `!=`).
+op-strict-ne = "!=="
+
+; Less than.
+op-lt = "<"
+
+; Less than or equal.
+op-le = "<="
+
+; Greater than.
+op-gt = ">"
+
+; Greater than or equal.
+op-ge = ">="
+
+;; arithmetic
+
+; Exact sum; of no arguments, 0. Variadic.
+op-add = "+"
+
+; Negation (one argument) or difference (two).
+op-sub = "-"
+
+; Exact product; of no arguments, 1. Variadic.
+op-mul = "*"
+
+; Exact division; by zero, an Arithmetic error.
+op-div = "/"
+
+; Truncating remainder, with the sign of the dividend.
+op-mod = "%"
+
+; Exact minimum of at least one argument. Variadic.
+op-min = "min"
+
+; Exact maximum of at least one argument. Variadic.
+op-max = "max"
+
+; Absolute value.
+op-abs = "abs"
+
+; Rounds half to even.
+op-round = "round"
+
+; Rounds half away from zero.
+op-round-half-up = "round_half_up"
+
+; Floor.
+op-floor = "floor"
+
+; Ceiling.
+op-ceil = "ceil"
+
+; Integer exponent in -999..999, its result size checked before it is computed.
+op-pow = "pow"
+
+;; arrays (callbacks bind $current, $accumulator, $index)
+
+; Each element through a callback.
+op-map = "map"
+
+; The elements a callback keeps.
+op-filter = "filter"
+
+; Folds the elements through a callback.
+op-reduce = "reduce"
+
+; Whether a callback holds for every element: stops early.
+op-all = "all"
+
+; Whether a callback holds for some element: stops early.
+op-some = "some"
+
+; Whether a callback holds for no element: stops early.
+op-none = "none"
+
+; The first element a callback holds for.
+op-find = "find"
+
+; An array's length, or with a callback, how many elements it holds for.
+op-count = "count"
+
+; Objects merged left to right; otherwise arrays concatenated and other values appended. Variadic.
+op-merge = "merge"
+
+; Substring, byte substring or array membership.
+op-in = "in"
+
+; Whether every element of the first array is in the second.
+op-intersect = "intersect"
+
+; First occurrences, in order.
+op-unique = "unique"
+
+; A slice, with JavaScript bounds.
+op-slice = "slice"
+
+; The array reversed.
+op-reverse = "reverse"
+
+; Flattens one level.
+op-flatten = "flatten"
+
+; Code points, elements, bytes or entries.
+op-length = "length"
+
+;; text
+
+; Concatenated text, arrays or bytes. Variadic.
+op-cat = "cat"
+
+; A substring, in code points.
+op-substr = "substr"
+
+; ASCII lower case.
+op-lower = "lower"
+
+; ASCII upper case.
+op-upper = "upper"
+
+; The pieces joined by a separator.
+op-join = "join"
+
+; Every piece between separators.
+op-split = "split"
+
+; Without leading and trailing Unicode White_Space.
+op-trim = "trim"
+
+; A prefix test.
+op-starts-with = "startsWith"
+
+; A suffix test.
+op-ends-with = "endsWith"
+
+;; maps
+
+; An object's keys, in code-point order.
+op-keys = "keys"
+
+; An object's values, in key order.
+op-values = "values"
+
+; An object's entries, in key order.
+op-entries = "entries"
+
+; The value at a key, else null or a default.
+op-get = "get"
+
+; Whether a key is present.
+op-has = "has"
+
+; The object with a key set (null removes it).
+op-set = "set"
+
+; The object without a key.
+op-unset = "unset"
+
+;; utility
+
+; Whether no argument is null.
+op-exists = "exists"
+
+; The data paths that are absent.
+op-missing = "missing"
+
+; The absent data paths, when fewer than a minimum are present.
+op-missing-some = "missing_some"
+
+; The value's type name.
+op-type-of = "typeof"
+
+;; bytes and hashing
+
+; Bytes as `0x` text.
+op-hex = "hex"
+
+; Bytes, or `0x` lowercase hex text, as bytes.
+op-unhex = "unhex"
+
+; Hex read as an unsigned big-endian integer.
+op-hex-to-int = "hex_to_int"
+
+; Bytes read as an unsigned big-endian integer.
+op-bytes-to-int = "bytes_to_int"
+
+; An unsigned integer as big-endian bytes, minimal or padded to a width.
+op-int-to-bytes = "int_to_bytes"
+
+; SHA-256.
+op-sha256 = "sha256"
+
+; SHA3-256.
+op-sha3_256 = "sha3_256"
+
+; Ethereum's Keccak-256.
+op-keccak256 = "keccak256"
+
+; BLAKE2b-256.
+op-blake2b256 = "blake2b256"
+
+;; signatures
+
+; Ed25519 under ZIP-215 rules.
+op-ed25519-verify = "ed25519_verify"
+
+; ECDSA on secp256k1 over SHA-256, low-S.
+op-secp256k1-verify = "secp256k1_verify"
+
+; BIP-340 Schnorr.
+op-bip340-verify = "bip340_verify"
+
+; Ethereum's signer recovery, to a 20-byte address.
+op-ecrecover = "ecrecover"
+
+; BLS12-381, minimal-pubkey-size, proof-of-possession ciphersuite.
+op-bls-verify = "bls_verify"
+
+; BLS fast aggregate verification: one message, every key.
+op-bls-aggregate-verify = "bls_aggregate_verify"
+
+;; zk
+
+; Poseidon over BN254 of 1 to 4 field elements.
+op-poseidon = "poseidon"
+
+; A Poseidon Merkle proof.
+op-pmt-verify = "pmt_verify"
+
+; An SP1 Groth16 proof.
+op-groth16-verify = "groth16_verify"
+
+; ECVRF (RFC 9381, Edwards25519 TAI).
+op-ecvrf-verify = "ecvrf_verify"
+
+; BN254 G1 addition.
+op-bn254-add = "bn254_add"
+
+; BN254 G1 scalar multiplication.
+op-bn254-mul = "bn254_mul"
+
+; A BN254 pairing check.
+op-bn254-pairing = "bn254_pairing"
+
+;; sigma protocols over secp256k1, Ergo-compatible (docs/specs/sigma.md)
+
+; A one-leaf sigma_verify of a dlog proposition (Ergo's P2PK signature).
+op-schnorr-verify = "schnorr_verify"
+
+; A sigma proof of a proposition, Ergo-compatible.
+op-sigma-verify = "sigma_verify"
+
+;; authenticated data structures (dilf4s formats: docs/specs/merkle.md, trie.md)
+
+; A Merkle inclusion proof.
+op-merkle-verify = "merkle_verify"
+
+; A Merkle consistency proof.
+op-merkle-consistency-verify = "merkle_consistency_verify"
+
+; A trie lookup proof.
+op-trie-verify = "trie_verify"
+
+; A trie prefix listing proof.
+op-trie-prefix-verify = "trie_prefix_verify"
+
+; A trie range listing proof.
+op-trie-range-verify = "trie_range_verify"

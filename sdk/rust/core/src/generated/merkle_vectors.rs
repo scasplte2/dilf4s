@@ -11,7 +11,7 @@ pub type Hex = String;
 pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 
 /// `merkle-decode-error` (`shared/schemas/merkle-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MerkleDecodeError {
     /// The text `IndexOutOfRange`.
     IndexOutOfRange,
@@ -45,7 +45,21 @@ impl MerkleDecodeError {
     pub const ALL: [Self; 3] = [Self::IndexOutOfRange, Self::InvalidSizes, Self::Encoding];
 }
 
+impl core::fmt::Display for MerkleDecodeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::IndexOutOfRange => f.write_str("IndexOutOfRange"),
+            Self::InvalidSizes => f.write_str("InvalidSizes"),
+            Self::Encoding => f.write_str("Encoding"),
+        }
+    }
+}
+
 /// `merkle-malformed` (`shared/schemas/merkle-vectors.cddl`).
+///
+/// A proof (canonical CBOR) the decoder refuses, and the kind of its error: an inclusion index not below the size is
+/// "IndexOutOfRange", a consistency proof whose old size exceeds its new size is "InvalidSizes", and a shape the
+/// schema refuses, or a path entry that is not a digest, is "Encoding".
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MerkleMalformed {
     /// The `name` entry.
@@ -80,7 +94,7 @@ impl c::Model for MerkleMalformed {
 }
 
 /// `merkle-proof-kind` (`shared/schemas/merkle-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MerkleProofKind {
     /// The text `inclusion`.
     Inclusion,
@@ -110,7 +124,18 @@ impl MerkleProofKind {
     pub const ALL: [Self; 2] = [Self::Inclusion, Self::Consistency];
 }
 
+impl core::fmt::Display for MerkleProofKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Inclusion => f.write_str("inclusion"),
+            Self::Consistency => f.write_str("consistency"),
+        }
+    }
+}
+
 /// `merkle-value-commitment` (`shared/schemas/merkle-vectors.cddl`).
+///
+/// A value (as its canonical CBOR), its commitment bytes commit(v) and the leaf hash of those bytes (section 2).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MerkleValueCommitment {
     /// The `cbor` entry.
@@ -141,6 +166,10 @@ impl c::Model for MerkleValueCommitment {
 }
 
 /// `merkle-vector-tree` (`shared/schemas/merkle-vectors.cddl`).
+///
+/// "inclusion" and "consistency" are the tagged profile's proofs; "rfc6962Inclusion" and "rfc6962Consistency" are the
+/// same proofs under the rfc6962 profile, whose leaves are the raw "leaves". Each lists one proof per leaf index, then
+/// one per old size 0..size.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MerkleVectorTree {
     /// The `size` entry.

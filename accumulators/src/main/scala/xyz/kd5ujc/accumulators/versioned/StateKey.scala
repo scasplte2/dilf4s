@@ -11,62 +11,36 @@ import xyz.kd5ujc.storage.{KeyCodec, StoreError}
 import scodec.bits.ByteVector
 
 /**
- * Why a state key or namespace was refused, by kind, in the order docs/specs/versioned-trie.md §2 gives. A refusal
- * names the input by a [[Preview]], or not at all when it was refused before it was read (too long, or bytes that are
- * not UTF-8), and a segment by its position, never its text (docs/specs/conformance.md §8).
+ * Why a state key or namespace was refused, by kind, in the order docs/specs/versioned-trie.md §2 gives: generated from
+ * `shared/schemas/codec-errors.cddl`, with the Rust and TypeScript SDKs' kinds and fields. A refusal names the input by
+ * a [[Preview]], or not at all when it was refused before it was read (too long, or bytes that are not UTF-8), and a
+ * segment by its position, never its text (docs/specs/conformance.md §8).
  */
-sealed trait StateKeyError extends Product with Serializable {
+export xyz.kd5ujc.models.codec_errors.{StateKeyError, StateKeyErrorKind}
+
+extension (e: StateKeyError) {
 
   /** The input, previewed; none for one refused before it was read. */
-  def input: Option[Preview]
+  def input: Option[Preview] = e match {
+    case StateKeyError.TooManySegments(key, _)                                    => Some(key)
+    case StateKeyError.InvalidSegment(key, _)                                     => Some(key)
+    case StateKeyError.SegmentTooLong(key, _, _)                                  => Some(key)
+    case StateKeyError.NamespaceFull(namespace)                                   => Some(namespace)
+    case StateKeyError.Empty | StateKeyError.NotUtf8 | (_: StateKeyError.TooLong) => None
+  }
 }
 
-object StateKeyError {
-
-  /** The empty text. */
-  case object Empty extends StateKeyError {
-    def input: Option[Preview] = None
-  }
-
-  /** More than `limit` UTF-8 bytes ([[StateKey.MaxLength]]), refused by its length before it is read. */
-  final case class TooLong(limit: Int) extends StateKeyError {
-    def input: Option[Preview] = None
-  }
-
-  /** Trie-key bytes that are not well-formed UTF-8. */
-  case object NotUtf8 extends StateKeyError {
-    def input: Option[Preview] = None
-  }
-
-  /** More than `limit` segments ([[StateKey.MaxSegments]]). */
-  final case class TooManySegments(key: Preview, limit: Int) extends StateKeyError {
-    def input: Option[Preview] = Some(key)
-  }
-
-  /** Segment `segment` (from 0) does not match `[a-z0-9][a-z0-9._-]*`. */
-  final case class InvalidSegment(key: Preview, segment: Int) extends StateKeyError {
-    def input: Option[Preview] = Some(key)
-  }
-
-  /** Segment `segment` (from 0) is longer than `limit` characters ([[StateKey.MaxSegmentLength]]). */
-  final case class SegmentTooLong(key: Preview, segment: Int, limit: Int) extends StateKeyError {
-    def input: Option[Preview] = Some(key)
-  }
-
-  /** A namespace that leaves no room for one more segment: over 254 characters, or 16 segments already. */
-  final case class NamespaceFull(namespace: Preview) extends StateKeyError {
-    def input: Option[Preview] = Some(namespace)
-  }
+object StateKeyErrors {
 
   /** A short message for logs and store errors; the kind and the normative fields are what conformance compares. */
   def describe(e: StateKeyError): String = e match {
-    case Empty                        => "empty key"
-    case TooLong(limit)               => s"longer than $limit UTF-8 bytes"
-    case NotUtf8                      => "not UTF-8"
-    case TooManySegments(k, limit)    => s"$k has more than $limit segments"
-    case InvalidSegment(k, at)        => s"$k: segment $at does not match [a-z0-9][a-z0-9._-]*"
-    case SegmentTooLong(k, at, limit) => s"$k: segment $at is longer than $limit characters"
-    case NamespaceFull(ns)            => s"namespace $ns leaves no room for one more segment"
+    case StateKeyError.Empty                        => "empty key"
+    case StateKeyError.TooLong(limit)               => s"longer than $limit UTF-8 bytes"
+    case StateKeyError.NotUtf8                      => "not UTF-8"
+    case StateKeyError.TooManySegments(k, limit)    => s"$k has more than $limit segments"
+    case StateKeyError.InvalidSegment(k, at)        => s"$k: segment $at does not match [a-z0-9][a-z0-9._-]*"
+    case StateKeyError.SegmentTooLong(k, at, limit) => s"$k: segment $at is longer than $limit characters"
+    case StateKeyError.NamespaceFull(ns)            => s"namespace $ns leaves no room for one more segment"
   }
 }
 
@@ -99,15 +73,15 @@ object StateKey {
    */
   def parse(s: String): Either[StateKeyError, StateKey] =
     if (s.isEmpty) StateKeyError.Empty.asLeft
-    else if (s.length > MaxLength || utf8Length(s) > MaxLength) StateKeyError.TooLong(MaxLength).asLeft
+    else if (s.length > MaxLength || utf8Length(s) > MaxLength) StateKeyError.TooLong(MaxLength.toLong).asLeft
     else {
       // a limit of -1 keeps empty trailing segments, so "a/" is rejected rather than read as "a"
       val segments = s.split("/", -1).toList
-      if (segments.size > MaxSegments) StateKeyError.TooManySegments(Preview.of(s), MaxSegments).asLeft
+      if (segments.size > MaxSegments) StateKeyError.TooManySegments(Preview.of(s), MaxSegments.toLong).asLeft
       else
         segments.zipWithIndex.collectFirst {
-          case (seg, at) if !segment.matches(seg)         => StateKeyError.InvalidSegment(Preview.of(s), at)
-          case (seg, at) if seg.length > MaxSegmentLength => StateKeyError.SegmentTooLong(Preview.of(s), at, MaxSegmentLength)
+          case (seg, at) if !segment.matches(seg)         => StateKeyError.InvalidSegment(Preview.of(s), at.toLong)
+          case (seg, at) if seg.length > MaxSegmentLength => StateKeyError.SegmentTooLong(Preview.of(s), at.toLong, MaxSegmentLength.toLong)
         }.toLeft(new StateKey(s) {})
     }
 
@@ -131,7 +105,7 @@ object StateKey {
 
   /** Bytes longer than [[MaxLength]] are refused by their length, before they are read as text; then UTF-8, then [[parse]]. */
   def fromBytes(bytes: ByteVector): Either[StateKeyError, StateKey] =
-    if (bytes.size > MaxLength) StateKeyError.TooLong(MaxLength).asLeft
+    if (bytes.size > MaxLength) StateKeyError.TooLong(MaxLength.toLong).asLeft
     else Either.cond(Utf8.isWellFormed(bytes.toArray), new String(bytes.toArray, UTF_8), StateKeyError.NotUtf8).flatMap(parse)
 
   /** Byte order, which for this grammar's ASCII alphabet is also string order: the trie's key order. */
@@ -140,7 +114,7 @@ object StateKey {
   implicit val stateKeyShow: Show[StateKey] = Show.show(_.value)
 
   implicit val stateKeyCodec: KeyCodec[StateKey] =
-    KeyCodec.instance(_.bytes, b => fromBytes(b).leftMap(e => StoreError.Codec("state key", StateKeyError.describe(e))))
+    KeyCodec.instance(_.bytes, b => fromBytes(b).leftMap(e => StoreError.Codec("state key", StateKeyErrors.describe(e))))
 }
 
 /**

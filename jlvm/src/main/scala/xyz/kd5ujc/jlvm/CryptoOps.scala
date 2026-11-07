@@ -38,7 +38,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
       case _                     => ProofOps(op, args).orElse(zk(op, args))
     }
 
-  private def crypto[A](op: Op)(e: CryptoError): JlvmError = JlvmError.Crypto(op, e.toString)
+  private def crypto[A](op: Op)(e: CryptoError): JlvmError = JlvmError.Crypto(op, e.toString, Some(CryptoCause.Signing(e)))
 
   private def raw(op: Op, v: CanonicalValue): Either[JlvmError, ByteVector] =
     v match {
@@ -93,8 +93,13 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
           case (digest, sig) =>
             Ecrecover
               .recover(digest, sig)
-              .flatMap(_.toRight("the signature recovers no key (r or s out of range, high s, or r not an x-coordinate)"))
-              .bimap(JlvmError.Crypto(op, _), address => Values.bytes(FlatBytes(address)))
+              .leftMap(reason => crypto(op)(CryptoError.InvalidEncoding("ecrecover", reason)))
+              .flatMap(
+                _.toRight(
+                  JlvmError.Crypto(op, "the signature recovers no key (r or s out of range, high s, or r not an x-coordinate)", None)
+                )
+              )
+              .map(address => Values.bytes(FlatBytes(address)))
         }
       case _ => JlvmError.Arity(op, s"takes [digest, signature], got ${args.size} arguments").asLeft
     }
@@ -109,8 +114,8 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
       case _ => JlvmError.Arity(op, s"takes [proposition, proof, message], got ${args.size} arguments").asLeft
     }
 
-  /** A sigma refusal is the JLVM's `Crypto`, its message the refusal's (docs/specs/jlvm.md section 6). */
-  private def sigmaRefusal(op: Site)(e: SigmaError): JlvmError = JlvmError.Crypto(op, e.message)
+  /** A sigma refusal is the JLVM's `Crypto`, its message the refusal's and its cause the refusal (jlvm.md section 3). */
+  private def sigmaRefusal(op: Site)(e: SigmaError): JlvmError = JlvmError.Crypto(op, e.message, Some(CryptoCause.Sigma(e)))
 
   /** `[key33, message, proof56]`: a single-key sigma proof, Ergo's P2PK signature. */
   private def schnorr(op: Op, args: Vector[CanonicalValue]): Result =
@@ -118,7 +123,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
       case (k, m, s) =>
         Secp256k1Group
           .decode(k)
-          .leftMap(JlvmError.Crypto(op, _))
+          .leftMap(reason => sigmaRefusal(op)(SigmaError.InvalidPoint("pk", reason)))
           .flatMap(SigmaProp.dlog(_).flatMap(Sigma.check(_, s, m)).bimap(sigmaRefusal(op), Values.bool))
     }
 

@@ -21,10 +21,12 @@ describe("JSON number bounds", () => {
   });
 
   it("more digits are refused by their length", () => {
-    expect(json.parse(digits(10001))).toEqual({ ok: false, error: { kind: "InvalidNumber", length: 10001, offset: 0, digits: 10001 } });
-    expect(json.parse(`0.${"1".repeat(10001)}e1`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber", digits: 10001 } });
-    expect(json.parse(`1e${"1".repeat(10001)}`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber", digits: 10001 } });
-    expect(json.parse(`1e${"9".repeat(20)}`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber" } });
+    expect(json.parse(digits(10001))).toEqual({ ok: false, error: { kind: "InvalidNumber", length: 10001, offset: 0, bound: { kind: "Digits", digits: 10001, limit: 10000 } } });
+    expect(json.parse(`0.${"1".repeat(10001)}e1`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber", bound: { kind: "Digits", digits: 10001 } } });
+    expect(json.parse(`1e${"1".repeat(10001)}`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber", bound: { kind: "Digits", digits: 10001 } } });
+    // both past the bound: the significand's count, as every SDK reports it
+    expect(json.parse(`${"1".repeat(10002)}e${"1".repeat(10001)}`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber", bound: { kind: "Digits", digits: 10002 } } });
+    expect(json.parse(`1e${"9".repeat(20)}`)).toMatchObject({ ok: false, error: { kind: "InvalidNumber", bound: { kind: "Scale", scale: -2147483648, limit: 10000 } } });
   });
 
   it("rendering refuses what would not read back", () => {

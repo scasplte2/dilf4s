@@ -9,7 +9,7 @@ use dilf4s_core::value::Text;
 use dilf4s_core::{BigInt, Value, cbor};
 use num_traits::{Signed, Zero};
 
-use crate::error::JlvmError;
+use crate::error::{JlvmError, Raise};
 use crate::op::Op;
 use crate::ratio::Ratio;
 

@@ -14,8 +14,8 @@ use core::cell::Cell;
 use dilf4s_core::{CanonicalError, Preview, Value, json};
 
 use crate::ast::{Expr, Program, VarRef, canonical_error};
-use crate::error::JlvmError;
-use crate::op::{Op, call_name, removed};
+use crate::error::{JlvmError, Raise};
+use crate::op::{Op, OpClass, call_name, removed};
 use crate::values::from_canonical_json;
 
 /// A JSON node of text the strict parser has accepted, with its source span.
@@ -243,7 +243,7 @@ fn single(key: &String, arg: &Json<'_>, r: &Spans) -> Result<Expr, JlvmError> {
             _ => malformed("object takes an object: {\"object\": {key: expression, ...}}"),
         },
         data if data.starts_with('_') => map_expr(core::iter::once((key, arg)), r),
-        name => match (removed(name), Op::from_wire(name)) {
+        name => match (removed(name), Op::from_name(name)) {
             (Some(hint), _) => malformed(alloc::format!("\"{name}\" is not an operation: {hint}")),
             (None, Some(op)) => operation(op, arg, r),
             (None, None) => malformed(alloc::format!(

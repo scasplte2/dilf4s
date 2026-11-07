@@ -11,25 +11,10 @@ import * as trie from "./trie.js";
 import { TrieMap } from "./trie-map.js";
 
 /**
- * Why a state key or namespace was refused, by Scala's `StateKeyError` names, in the order of
- * docs/specs/versioned-trie.md section 2. The input appears as a `Preview`, or not at all when it was refused before it
- * was read, and a segment by its position, never its text (docs/specs/conformance.md section 8).
+ * Why a state key or namespace was refused, in the order of docs/specs/versioned-trie.md section 2: generated from
+ * `shared/schemas/codec-errors.cddl` (`models.codecErrors`), with the reference's and the Rust SDK's kinds and fields.
  */
-export type StateKeyError =
-  /** The empty text. */
-  | { readonly kind: "Empty" }
-  /** More than `limit` (`MAX_KEY_LENGTH`) UTF-8 bytes, refused by its length before it is read. */
-  | { readonly kind: "TooLong"; readonly limit: number }
-  /** Trie-key bytes that are not well-formed UTF-8. */
-  | { readonly kind: "NotUtf8" }
-  /** More than `limit` (`MAX_SEGMENTS`) segments. */
-  | { readonly kind: "TooManySegments"; readonly key: Preview; readonly limit: number }
-  /** Segment `segment` (from 0) does not match `[a-z0-9][a-z0-9._-]*`. */
-  | { readonly kind: "InvalidSegment"; readonly key: Preview; readonly segment: number }
-  /** Segment `segment` (from 0) is longer than `limit` (`MAX_SEGMENT_LENGTH`) characters. */
-  | { readonly kind: "SegmentTooLong"; readonly key: Preview; readonly segment: number; readonly limit: number }
-  /** A namespace that leaves no room for one more segment: over 254 characters, or 16 segments already. */
-  | { readonly kind: "NamespaceFull"; readonly namespace: Preview };
+export type StateKeyError = models.codecErrors.StateKeyError;
 
 /**
  * Typed failures of the versioned trie, by Scala's `VersionedTrieError` names. Versions appear as their version keys.

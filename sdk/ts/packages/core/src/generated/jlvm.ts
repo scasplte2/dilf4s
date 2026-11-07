@@ -3,12 +3,12 @@ import * as c from "../codec.js";
 
 /** `jlvm-apply` (`shared/schemas/jlvm.cddl`). */
 export interface JlvmApply {
-  readonly op: string;
+  readonly op: JlvmOp;
   readonly args: readonly JlvmExpr[];
 }
 
 export const JlvmApply: c.Codec<JlvmApply> = c.record<JlvmApply>({
-  op: c.required("op", c.text),
+  op: c.required("op", c.defer(() => JlvmOp)),
   args: c.required("args", c.vector(c.defer(() => JlvmExpr), 0, null)),
 });
 
@@ -58,10 +58,211 @@ export const JlvmMap: c.Codec<JlvmMap> = c.record<JlvmMap>({
   map: c.required("map", c.defer(() => JlvmFields)),
 });
 
-/** `jlvm-null` (`shared/schemas/jlvm.cddl`). */
+/**
+ * `jlvm-null` (`shared/schemas/jlvm.cddl`).
+ *
+ * Canonical maps drop null values, so the null literal is the empty record.
+ */
 export type JlvmNull = Readonly<Record<string, never>>;
 
 export const JlvmNull: c.Codec<JlvmNull> = c.record<JlvmNull>({});
+
+/**
+ * `jlvm-op` (`shared/schemas/jlvm.cddl`).
+ *
+ * The operations of language version 1, by wire name (jlvm.md section 5): a closed list, each named by its own rule, so a
+ * name that is not an identifier (`!`, `===`) is still a typed member (`Not`, `StrictEq`). Grouped as the spec groups
+ * them.
+ */
+export type JlvmOp =
+  /** The first branch whose condition is truthy, else the last argument (or null): lazy. */
+  | "if"
+  /** The first falsy value, else the last: lazy. */
+  | "and"
+  /** The first truthy value, else the last: lazy. */
+  | "or"
+  /** Negated truthiness. */
+  | "!"
+  /** Truthiness. */
+  | "!!"
+  /** The first truthy value, else null: lazy. */
+  | "default"
+  /** Binds names to values for its body. */
+  | "let"
+  /** Structural equality. */
+  | "=="
+  /** Structural inequality. */
+  | "!="
+  /** Structural equality (the same as `==`: there is no coercion). */
+  | "==="
+  /** Structural inequality (the same as `!=`). */
+  | "!=="
+  /** Less than. */
+  | "<"
+  /** Less than or equal. */
+  | "<="
+  /** Greater than. */
+  | ">"
+  /** Greater than or equal. */
+  | ">="
+  /** Exact sum; of no arguments, 0. Variadic. */
+  | "+"
+  /** Negation (one argument) or difference (two). */
+  | "-"
+  /** Exact product; of no arguments, 1. Variadic. */
+  | "*"
+  /** Exact division; by zero, an Arithmetic error. */
+  | "/"
+  /** Truncating remainder, with the sign of the dividend. */
+  | "%"
+  /** Exact minimum of at least one argument. Variadic. */
+  | "min"
+  /** Exact maximum of at least one argument. Variadic. */
+  | "max"
+  /** Absolute value. */
+  | "abs"
+  /** Rounds half to even. */
+  | "round"
+  /** Rounds half away from zero. */
+  | "round_half_up"
+  /** Floor. */
+  | "floor"
+  /** Ceiling. */
+  | "ceil"
+  /** Integer exponent in -999..999, its result size checked before it is computed. */
+  | "pow"
+  /** Each element through a callback. */
+  | "map"
+  /** The elements a callback keeps. */
+  | "filter"
+  /** Folds the elements through a callback. */
+  | "reduce"
+  /** Whether a callback holds for every element: stops early. */
+  | "all"
+  /** Whether a callback holds for some element: stops early. */
+  | "some"
+  /** Whether a callback holds for no element: stops early. */
+  | "none"
+  /** The first element a callback holds for. */
+  | "find"
+  /** An array's length, or with a callback, how many elements it holds for. */
+  | "count"
+  /** Objects merged left to right; otherwise arrays concatenated and other values appended. Variadic. */
+  | "merge"
+  /** Substring, byte substring or array membership. */
+  | "in"
+  /** Whether every element of the first array is in the second. */
+  | "intersect"
+  /** First occurrences, in order. */
+  | "unique"
+  /** A slice, with JavaScript bounds. */
+  | "slice"
+  /** The array reversed. */
+  | "reverse"
+  /** Flattens one level. */
+  | "flatten"
+  /** Code points, elements, bytes or entries. */
+  | "length"
+  /** Concatenated text, arrays or bytes. Variadic. */
+  | "cat"
+  /** A substring, in code points. */
+  | "substr"
+  /** ASCII lower case. */
+  | "lower"
+  /** ASCII upper case. */
+  | "upper"
+  /** The pieces joined by a separator. */
+  | "join"
+  /** Every piece between separators. */
+  | "split"
+  /** Without leading and trailing Unicode White_Space. */
+  | "trim"
+  /** A prefix test. */
+  | "startsWith"
+  /** A suffix test. */
+  | "endsWith"
+  /** An object's keys, in code-point order. */
+  | "keys"
+  /** An object's values, in key order. */
+  | "values"
+  /** An object's entries, in key order. */
+  | "entries"
+  /** The value at a key, else null or a default. */
+  | "get"
+  /** Whether a key is present. */
+  | "has"
+  /** The object with a key set (null removes it). */
+  | "set"
+  /** The object without a key. */
+  | "unset"
+  /** Whether no argument is null. */
+  | "exists"
+  /** The data paths that are absent. */
+  | "missing"
+  /** The absent data paths, when fewer than a minimum are present. */
+  | "missing_some"
+  /** The value's type name. */
+  | "typeof"
+  /** Bytes as `0x` text. */
+  | "hex"
+  /** Bytes, or `0x` lowercase hex text, as bytes. */
+  | "unhex"
+  /** Hex read as an unsigned big-endian integer. */
+  | "hex_to_int"
+  /** Bytes read as an unsigned big-endian integer. */
+  | "bytes_to_int"
+  /** An unsigned integer as big-endian bytes, minimal or padded to a width. */
+  | "int_to_bytes"
+  /** SHA-256. */
+  | "sha256"
+  /** SHA3-256. */
+  | "sha3_256"
+  /** Ethereum's Keccak-256. */
+  | "keccak256"
+  /** BLAKE2b-256. */
+  | "blake2b256"
+  /** Ed25519 under ZIP-215 rules. */
+  | "ed25519_verify"
+  /** ECDSA on secp256k1 over SHA-256, low-S. */
+  | "secp256k1_verify"
+  /** BIP-340 Schnorr. */
+  | "bip340_verify"
+  /** Ethereum's signer recovery, to a 20-byte address. */
+  | "ecrecover"
+  /** BLS12-381, minimal-pubkey-size, proof-of-possession ciphersuite. */
+  | "bls_verify"
+  /** BLS fast aggregate verification: one message, every key. */
+  | "bls_aggregate_verify"
+  /** Poseidon over BN254 of 1 to 4 field elements. */
+  | "poseidon"
+  /** A Poseidon Merkle proof. */
+  | "pmt_verify"
+  /** An SP1 Groth16 proof. */
+  | "groth16_verify"
+  /** ECVRF (RFC 9381, Edwards25519 TAI). */
+  | "ecvrf_verify"
+  /** BN254 G1 addition. */
+  | "bn254_add"
+  /** BN254 G1 scalar multiplication. */
+  | "bn254_mul"
+  /** A BN254 pairing check. */
+  | "bn254_pairing"
+  /** A one-leaf sigma_verify of a dlog proposition (Ergo's P2PK signature). */
+  | "schnorr_verify"
+  /** A sigma proof of a proposition, Ergo-compatible. */
+  | "sigma_verify"
+  /** A Merkle inclusion proof. */
+  | "merkle_verify"
+  /** A Merkle consistency proof. */
+  | "merkle_consistency_verify"
+  /** A trie lookup proof. */
+  | "trie_verify"
+  /** A trie prefix listing proof. */
+  | "trie_prefix_verify"
+  /** A trie range listing proof. */
+  | "trie_range_verify";
+
+export const JlvmOp: c.Codec<JlvmOp> = c.union<JlvmOp>("JlvmOp", [], ["if", "and", "or", "!", "!!", "default", "let", "==", "!=", "===", "!==", "<", "<=", ">", ">=", "+", "-", "*", "/", "%", "min", "max", "abs", "round", "round_half_up", "floor", "ceil", "pow", "map", "filter", "reduce", "all", "some", "none", "find", "count", "merge", "in", "intersect", "unique", "slice", "reverse", "flatten", "length", "cat", "substr", "lower", "upper", "join", "split", "trim", "startsWith", "endsWith", "keys", "values", "entries", "get", "has", "set", "unset", "exists", "missing", "missing_some", "typeof", "hex", "unhex", "hex_to_int", "bytes_to_int", "int_to_bytes", "sha256", "sha3_256", "keccak256", "blake2b256", "ed25519_verify", "secp256k1_verify", "bip340_verify", "ecrecover", "bls_verify", "bls_aggregate_verify", "poseidon", "pmt_verify", "groth16_verify", "ecvrf_verify", "bn254_add", "bn254_mul", "bn254_pairing", "schnorr_verify", "sigma_verify", "merkle_verify", "merkle_consistency_verify", "trie_verify", "trie_prefix_verify", "trie_range_verify"]);
 
 /** `jlvm-program` (`shared/schemas/jlvm.cddl`). */
 export interface JlvmProgram {
@@ -74,18 +275,28 @@ export const JlvmProgram: c.Codec<JlvmProgram> = c.record<JlvmProgram>({
   expr: c.required("expr", c.defer(() => JlvmExpr)),
 });
 
-/** `jlvm-spread` (`shared/schemas/jlvm.cddl`). */
+/**
+ * `jlvm-spread` (`shared/schemas/jlvm.cddl`).
+ *
+ * A variadic operation (`+`, `*`, `min`, `max`, `cat`, `merge`) whose arguments are the elements of one array value. The
+ * argument is never a jlvm-array. That the operation is variadic is the domain decoder's check (jlvm.md section 1), as
+ * the argument's shape is: the schema types it as any operation.
+ */
 export interface JlvmSpread {
-  readonly spread: string;
+  readonly spread: JlvmOp;
   readonly arg: JlvmExpr;
 }
 
 export const JlvmSpread: c.Codec<JlvmSpread> = c.record<JlvmSpread>({
-  spread: c.required("spread", c.text),
+  spread: c.required("spread", c.defer(() => JlvmOp)),
   arg: c.required("arg", c.defer(() => JlvmExpr)),
 });
 
-/** `jlvm-var` (`shared/schemas/jlvm.cddl`). */
+/**
+ * `jlvm-var` (`shared/schemas/jlvm.cddl`).
+ *
+ * "$name.path" reads a binding (host, let or callback); any other path reads the input data.
+ */
 export interface JlvmVar {
   readonly var: string;
   readonly default?: c.Value;
@@ -96,7 +307,11 @@ export const JlvmVar: c.Codec<JlvmVar> = c.record<JlvmVar>({
   default: c.optional("default", c.any),
 });
 
-/** `jlvm-var-at` (`shared/schemas/jlvm.cddl`). */
+/**
+ * `jlvm-var-at` (`shared/schemas/jlvm.cddl`).
+ *
+ * A path computed at run time: text is read as a var path, an array as the exact segments of a data path.
+ */
 export interface JlvmVarAt {
   readonly path: JlvmExpr;
   readonly default?: c.Value;

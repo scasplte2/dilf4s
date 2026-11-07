@@ -6,7 +6,12 @@ export type Hex0x = string;
 
 export const Hex0x: c.Codec<Hex0x> = c.matching("0x([0-9a-f]{2})*");
 
-/** `sigma-case` (`shared/schemas/sigma-vectors.cddl`). */
+/**
+ * `sigma-case` (`shared/schemas/sigma-vectors.cddl`).
+ *
+ * A proof and one of its tamperings; "ergo" is Ergo's verdict. dilf4s agrees, except that a proof of the wrong length
+ * (trailing-byte, truncated) is malformed input.
+ */
 export interface SigmaCase {
   readonly name: string;
   readonly kind: SigmaKind;
@@ -32,7 +37,12 @@ export type SigmaKind = "valid" | "other-message" | "flipped-response" | "flippe
 
 export const SigmaKind: c.Codec<SigmaKind> = c.union<SigmaKind>("SigmaKind", [], ["valid", "other-message", "flipped-response", "flipped-challenge", "trailing-byte", "truncated"]);
 
-/** `sigma-proposition` (`shared/schemas/sigma-vectors.cddl`). */
+/**
+ * `sigma-proposition` (`shared/schemas/sigma-vectors.cddl`).
+ *
+ * The JLVM form of a proposition (docs/specs/sigma.md section 3). Shape only: which fields each type takes is checked
+ * by the domain decoder (SigmaProp.fromCanonical).
+ */
 export interface SigmaProposition {
   readonly type: SigmaType;
   readonly pk?: Hex0x;

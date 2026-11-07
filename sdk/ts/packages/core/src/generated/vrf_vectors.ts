@@ -22,7 +22,13 @@ export const VrfKey: c.Codec<VrfKey> = c.record<VrfKey>({
   proofs: c.required("proofs", c.vector(c.defer(() => VrfProof), 0, null)),
 });
 
-/** `vrf-key-case` (`shared/schemas/vrf-vectors.cddl`). */
+/**
+ * `vrf-key-case` (`shared/schemas/vrf-vectors.cddl`).
+ *
+ * How a suite's decoder classifies an encoded signing key: "accepted", or its VrfError kind. A wrong length is
+ * "Malformed"; a draft-03 key (seed || pk) whose pk is not its seed's is "KeyMismatch". Verification decodes the
+ * verifying keys, so the rejections pin those.
+ */
 export interface VrfKeyCase {
   readonly suite: string;
   readonly name: string;
@@ -55,7 +61,12 @@ export const VrfProof: c.Codec<VrfProof> = c.record<VrfProof>({
   beta: c.required("beta", c.defer(() => Hex)),
 });
 
-/** `vrf-rejection` (`shared/schemas/vrf-vectors.cddl`). */
+/**
+ * `vrf-rejection` (`shared/schemas/vrf-vectors.cddl`).
+ *
+ * A verification verdict: "valid", or the VrfError kind (vrf.md section 3). "Malformed" is a wrong length (the
+ * proof's is checked before the key's). "suite" is a suite name of the suites list.
+ */
 export interface VrfRejection {
   readonly suite: string;
   readonly name: string;

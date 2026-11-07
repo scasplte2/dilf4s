@@ -236,7 +236,7 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
           base(op),
           () =>
             all(args, scope) { vs =>
-              Charge(sized(op, vs), () => crypto(op, vs).fold(Fail(JlvmError.Crypto(op, "not available yet")))(result))
+              Charge(sized(op, vs), () => crypto(op, vs).fold(Fail(JlvmError.Crypto(op, "not available yet", None)))(result))
             }
         )
     }

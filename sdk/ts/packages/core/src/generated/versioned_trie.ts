@@ -63,7 +63,15 @@ export const VersionedTrieProof: c.Codec<VersionedTrieProof> = c.record<Versione
   state: c.optional("state", c.defer(() => trie.TrieProof)),
 });
 
-/** `versioned-trie-snapshot-chunk` (`shared/schemas/versioned-trie.cddl`). */
+/**
+ * `versioned-trie-snapshot-chunk` (`shared/schemas/versioned-trie.cddl`).
+ *
+ * A snapshot is a stream of chunks, each one canonical CBOR record of at most 4194304 bytes: one head chunk, then state
+ * chunks whose keys strictly increase across all of them, then history chunks whose versions strictly increase across
+ * all of them and end at the head version, with the head's state root. Values are at most 1048576 bytes of canonical
+ * CBOR, at most 253 levels deep, and never null. A receiver checks each chunk as it arrives, and the roots once the
+ * history reaches the head.
+ */
 export type VersionedTrieSnapshotChunk = VersionedTrieSnapshotHead | VersionedTrieSnapshotState | VersionedTrieSnapshotHistory;
 
 export const VersionedTrieSnapshotChunk: c.Codec<VersionedTrieSnapshotChunk> = c.union<VersionedTrieSnapshotChunk>("VersionedTrieSnapshotChunk", [
@@ -99,7 +107,12 @@ export const VersionedTrieSnapshotState: c.Codec<VersionedTrieSnapshotState> = c
   state: c.required("state", c.vector(c.defer(() => VersionedTrieUpsert), 1, 1024)),
 });
 
-/** `versioned-trie-upsert` (`shared/schemas/versioned-trie.cddl`). */
+/**
+ * `versioned-trie-upsert` (`shared/schemas/versioned-trie.cddl`).
+ *
+ * A value is at most 253 levels deep, so that this record inside a delta or a snapshot chunk (a map, an array and a
+ * map around it) stays within the canonical depth limit of 256.
+ */
 export interface VersionedTrieUpsert {
   readonly k: StateKey;
   readonly v: c.Value;
@@ -110,7 +123,11 @@ export const VersionedTrieUpsert: c.Codec<VersionedTrieUpsert> = c.record<Versio
   v: c.required("v", c.any),
 });
 
-/** `versioned-trie-version` (`shared/schemas/versioned-trie.cddl`). */
+/**
+ * `versioned-trie-version` (`shared/schemas/versioned-trie.cddl`).
+ *
+ * A committed version (its version key) and its state root.
+ */
 export interface VersionedTrieVersion {
   readonly v: Uint8Array;
   readonly s: Uint8Array;

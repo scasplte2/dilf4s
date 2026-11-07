@@ -46,11 +46,11 @@ pub use crypto::{
     CryptoBackend, CryptoFailure, KeyMode, MAX_FIXED_KEY_BYTES, MAX_VARIABLE_KEY_BYTES, MerkleProfile, TrieEntry,
 };
 pub use dilf4s_core::Value;
-pub use error::{JlvmError, Site};
+pub use error::{AtSite, CryptoCause, CryptoCauseKind, ErrorSite, JlvmError, JlvmErrorKind, Site};
 pub use gas::{GCD_LIMBS, Gas, GasLimit, GasSchedule, Merging, OpCost, RENDER_LIMBS, Rate, Search, SizeUnit};
 pub use machine::{MAX_WARNINGS, Warning};
 pub use native::Native;
-pub use op::Op;
+pub use op::{Op, OpClass};
 pub use surface::{parse, parse_value};
 pub use values::{MAX_NUMBER_BITS, MAX_WEIGHT};
 

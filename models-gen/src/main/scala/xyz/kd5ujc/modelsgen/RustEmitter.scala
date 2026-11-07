@@ -19,7 +19,7 @@ import cats.syntax.all._
  *
  * Output is deterministic and clippy-clean; it is not rustfmt-formatted (the parent module is `#[rustfmt::skip]`).
  */
-final class RustEmitter(models: Map[QName, ModelRule]) {
+final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[String] = _ => Vector.empty) {
 
   import RustEmitter._
 
@@ -115,9 +115,21 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
   private def element(rule: QName, r: Rs): Either[GenError, Unit] =
     Either.cond(r.tpe != "()", (), outside(rule, "literal outside a required record field"))
 
-  private def doc(rule: QName): String = s"/// `${rule.name}` (`shared/schemas/${rule.module}.cddl`)."
+  /** A rule's doc comment: where it is defined (and `more`), then its CDDL comment. */
+  private def doc(rule: QName, more: String = ""): String =
+    (s"/// `${rule.name}` (`shared/schemas/${rule.module}.cddl`).$more" +: Vector(lines(CanonicalEmitter.paragraph(docs(rule)), ""))
+      .filter(_.nonEmpty))
+      .mkString("\n")
 
-  private final case class Field(key: String, name: String, rs: Rs, optional: Boolean, boxed: Boolean)
+  /** Rust doc comment lines at `indent`, one per line: brackets escaped, so prose never reads as an intra-doc link. */
+  private def lines(text: Vector[String], indent: String): String =
+    text.map(l => if (l.isEmpty) s"$indent///" else s"$indent/// ${l.replace("[", "\\[").replace("]", "\\]")}").mkString("\n")
+
+  /** Documentation from the schema when it has some, else `fallback` (written as is: it may hold an intra-doc link). */
+  private def documented(text: Vector[String], fallback: String, indent: String): String =
+    if (text.isEmpty) s"$indent/// $fallback" else lines(text, indent)
+
+  private final case class Field(key: String, name: String, rs: Rs, optional: Boolean, boxed: Boolean, doc: Vector[String])
 
   private def fields(rule: QName, profiled: Vector[ProfileField]): Either[GenError, Vector[Field]] =
     profiled.traverse { f =>
@@ -133,7 +145,8 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
             fieldName(f.key),
             if (boxed) Rs(s"Box<${r.tpe}>", s"c::Boxed<${r.codecType}>", s"c::Boxed(${r.codec})") else r,
             f.optional,
-            boxed
+            boxed,
+            f.doc
           ).asRight
       }
     }.flatMap { fs =>
@@ -153,7 +166,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
         else
           s"pub struct $n {\n${data.map { f =>
               val t = if (f.optional) s"Option<${f.rs.tpe}>" else f.rs.tpe
-              s"    /// The `${string(f.key).drop(1).dropRight(1)}` entry.\n    pub ${f.name}: $t,"
+              s"${documented(f.doc, s"The `${string(f.key).drop(1).dropRight(1)}` entry.", "    ")}\n    pub ${f.name}: $t,"
             }.mkString("\n")}\n}"
       val enc = fs.map { f =>
         if (f.rs.tpe == "()") s"            c::field(${string(f.key)}, &${f.rs.codec}, &(), inner)?,"
@@ -242,7 +255,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
     val textVariants = texts.map(t => CanonicalEmitter.pascal(t) -> t)
     // a named choice of texts is one variant holding its enum; each of its texts selects that variant
     val choiceVariants = choices.map(ch => (typeName(ch.rule), path(rule.module, ch.rule, typeName(ch.rule)), ch.texts))
-    val choiceTexts = choiceVariants.flatMap { case (v, t, ts) => ts.map(x => (v, s"$t::${CanonicalEmitter.pascal(x)}", x)) }
+    val choiceTexts = choiceVariants.zip(choices).flatMap { case ((v, t, ts), ch) => ts.zip(ch.names).map((x, m) => (v, s"$t::$m", x)) }
     // each variant with the alternative it comes from: a rule name, or a text literal as written in CDDL
     val sources =
       alts.map(a => typeName(a.rule) -> a.rule.name) ++ texts.map(t => CanonicalEmitter.pascal(t) -> CanonicalEmitter.literal(t)) ++
@@ -284,8 +297,23 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
              |""".stripMargin
         )
         .getOrElse("")
+      // a choice of texts alone shows as its text, as written
+      val display = Option
+        .when(recordVariants.isEmpty)(
+          s"""
+             |impl core::fmt::Display for $n {
+             |    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+             |        match self {
+             |${(textVariants.map { case (v, t) => s"            Self::$v => f.write_str(${string(t)})," } ++
+            choiceVariants.map { case (v, _, _) => s"            Self::$v(a) => core::fmt::Display::fmt(a, f)," }).mkString("\n")}
+             |        }
+             |    }
+             |}
+             |""".stripMargin
+        )
+        .getOrElse("")
       s"""${doc(rule)}
-         |#[derive(Clone, Debug, PartialEq, Eq)]
+         |#[derive(${if (recordVariants.isEmpty) "Clone, Copy, Debug, PartialEq, Eq, Hash" else "Clone, Debug, PartialEq, Eq"})]
          |pub enum $n {
          |${variants.mkString("\n")}
          |}
@@ -306,7 +334,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
          |        }
          |    }
          |}
-         |$all""".stripMargin
+         |$all$display""".stripMargin
     }
   }
 
@@ -335,12 +363,15 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
             val body =
               if (fs.isEmpty) ""
               else
-                s" {\n${fs.map { f =>
-                    s"        /// Its `${string(f.key).drop(1).dropRight(1)}`.\n        ${f.name}: ${
-                        if (f.optional) s"Option<${f.rs.tpe}>" else f.rs.tpe
-                      },"
-                  }.mkString("\n")}\n    }"
-            s"    /// The kind `${c.kind}`.\n    ${c.kind}$body,"
+                s" {\n${fs
+                    .zip(c.fields)
+                    .map { (f, p) =>
+                      s"${documented(p.doc, s"Its `${string(f.key).drop(1).dropRight(1)}`.", "        ")}\n        ${f.name}: ${
+                          if (f.optional) s"Option<${f.rs.tpe}>" else f.rs.tpe
+                        },"
+                    }
+                    .mkString("\n")}\n    }"
+            s"${documented(c.doc, s"The kind `${c.kind}`.", "    ")}\n    ${c.kind}$body,"
         }
         val kindArms = withFields.map {
           case (c, fs) => s"            Self::${c.kind}${if (fs.isEmpty) "" else " { .. }"} => $k::${CanonicalEmitter.pascal(c.kind)},"
@@ -356,7 +387,7 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
             }
             s"""            Self::${c.kind} { $bindings } => write!(f, "${c.kind} (${shown.mkString(", ")})"),"""
         }
-        s"""${doc(rule)} An error family: its kinds are [`$k`].
+        s"""${doc(rule, s" An error family: its kinds are [`$k`].")}
            |#[derive(Clone, Debug, PartialEq, Eq)]
            |pub enum $n {
            |${variants.mkString("\n")}
@@ -382,6 +413,60 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
            |impl core::error::Error for $n {}
            |""".stripMargin
       }
+  }
+
+  /** A fieldless enum named by the members' rules, each written as its text: `wire()`, `from_wire`, `ALL`. */
+  private def namedTexts(rule: QName, members: Vector[NamedText]): Either[GenError, String] = {
+    val n = typeName(rule)
+    members.collectFirst { case m if m.name == "Self" => GenError.ReservedName(rule.toString, Language.Rust, m.name) }.toLeft {
+      val variants =
+        members.map(m => s"${documented(m.doc, s"The text `${string(m.text).drop(1).dropRight(1)}`.", "    ")}\n    ${m.name},")
+      s"""${doc(rule)}
+         |#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+         |pub enum $n {
+         |${variants.mkString("\n")}
+         |}
+         |
+         |impl $n {
+         |    /// Every member, in schema order.
+         |    pub const ALL: [Self; ${members.size}] = [${members.map(m => s"Self::${m.name}").mkString(", ")}];
+         |
+         |    /// The text this member is written as.
+         |    pub const fn wire(self) -> &'static str {
+         |        match self {
+         |${members.map(m => s"            Self::${m.name} => ${string(m.text)},").mkString("\n")}
+         |        }
+         |    }
+         |
+         |    /// The member written as `wire`, if any.
+         |    pub fn from_wire(wire: &str) -> Option<Self> {
+         |        match wire {
+         |${members.map(m => s"            ${string(m.text)} => Some(Self::${m.name}),").mkString("\n")}
+         |            _ => None,
+         |        }
+         |    }
+         |}
+         |
+         |impl core::fmt::Display for $n {
+         |    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+         |        f.write_str(self.wire())
+         |    }
+         |}
+         |
+         |impl c::Model for $n {
+         |    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+         |        Ok(c::Value::text(self.wire()))
+         |    }
+         |
+         |    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+         |        match c::select_alternative(value, &[], &[${members.map(m => string(m.text)).mkString(", ")}])? {
+         |            c::Alternative::Text(i) => Self::ALL.get(i).copied().ok_or_else(|| c::unknown_alternative(c::Alternative::Text(i))),
+         |            record @ c::Alternative::Record(_) => Err(c::unknown_alternative(record)),
+         |        }
+         |    }
+         |}
+         |""".stripMargin
+    }
   }
 
   private def alias(rule: QName, t: FieldType): Either[GenError, String] =
@@ -460,6 +545,8 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
         case (q, ModelRule.Alias(t))               => alias(q, t).map(Some(_))
         case (q, ModelRule.Constant(v))            => Some(constant(q, v)).asRight
         case (_, ModelRule.PreviewType)            => None.asRight
+        case (q, ModelRule.NamedTexts(ms))         => namedTexts(q, ms).map(Some(_))
+        case (_, ModelRule.TextMember(_))          => None.asRight
       }.map { bodies =>
         val constants = rules.collect { case (q, ModelRule.Constant(v)) => q -> v }
         val code = (bodies.flatten ++ narrowed(constants)).mkString("\n")
@@ -483,6 +570,9 @@ final class RustEmitter(models: Map[QName, ModelRule]) {
   /** `generated/mod.rs`, declaring every module. */
   def index(modules: Vector[String]): String =
     s"""//! The wire models of `shared/schemas`, one module per schema file. GENERATED by models-gen. Do not edit.
+       |
+       |// the schemas' comments are prose, which names kinds and types without code spans
+       |#![allow(clippy::doc_markdown)]
        |
        |${modules.sorted.map(m => s"pub mod ${CanonicalEmitter.packageSegment(m)};").mkString("\n")}
        |""".stripMargin

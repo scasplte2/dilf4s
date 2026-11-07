@@ -43,11 +43,11 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
 
   /** The outcome's category: `value`, or the error's kind. */
   private def kind(r: Either[JlvmError, CanonicalValue]): String = r match {
-    case Left(JlvmError.Type(_, _))   => "Type"
-    case Left(JlvmError.Arity(_, _))  => "Arity"
-    case Left(JlvmError.Crypto(_, _)) => "Crypto"
-    case Left(other)                  => other.getClass.getSimpleName
-    case Right(_)                     => "value"
+    case Left(JlvmError.Type(_, _))      => "Type"
+    case Left(JlvmError.Arity(_, _))     => "Arity"
+    case Left(JlvmError.Crypto(_, _, _)) => "Crypto"
+    case Left(other)                     => other.getClass.getSimpleName
+    case Right(_)                        => "value"
   }
 
   // ---- metakit conformance vectors (jlvm/src/test/resources/vectors/jlvm_zk_from_metakit.json)
@@ -195,7 +195,7 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
   zkTest("pmt_verify: an index of any size is refused without rendering it") {
     val huge = xyz.kd5ujc.core.canonical.CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect.same(
-      Left(JlvmError.Crypto(Op.PmtVerify, "index is out of range for depth 1")),
+      Left(JlvmError.Crypto(Op.PmtVerify, "index is out of range for depth 1", None)),
       run(Op.PmtVerify, one, one, huge, a(one))
     )
   }

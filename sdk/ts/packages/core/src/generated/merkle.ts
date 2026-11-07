@@ -27,7 +27,12 @@ export const MerkleInclusion: c.Codec<MerkleInclusion> = c.record<MerkleInclusio
   path: c.required("path", c.vector(c.bytes, 0, null)),
 });
 
-/** `merkle-log-state` (`shared/schemas/merkle.cddl`). */
+/**
+ * `merkle-log-state` (`shared/schemas/merkle.cddl`).
+ *
+ * The persistent Merkle log's state record (section 5): tree size and a generation counter that every commit
+ * increments. Commits compare-and-write this record, so concurrent writers cannot both succeed.
+ */
 export interface MerkleLogState {
   readonly size: TreeIndex;
   readonly generation: TreeIndex;

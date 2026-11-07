@@ -7,7 +7,12 @@ export type Hex = string;
 
 export const Hex: c.Codec<Hex> = c.matching("([0-9a-f]{2})*");
 
-/** `sigma-outcome` (`shared/schemas/sigma-refusal-vectors.cddl`). */
+/**
+ * `sigma-outcome` (`shared/schemas/sigma-refusal-vectors.cddl`).
+ *
+ * "accepted" (the proof verifies), "rejected" (a well-formed proof that does not), or the SigmaError kind. The
+ * proposition is decoded first, then the proof's length, then its responses.
+ */
 export type SigmaOutcome = "accepted" | "rejected" | cryptoErrors.SigmaErrorKind;
 
 export const SigmaOutcome: c.Codec<SigmaOutcome> = c.union<SigmaOutcome>("SigmaOutcome", [], ["accepted", "rejected", "InvalidProposition", "InvalidPoint", "ProofLength", "ResponseOutOfRange"]);

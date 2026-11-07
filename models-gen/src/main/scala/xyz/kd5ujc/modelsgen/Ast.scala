@@ -47,7 +47,11 @@ object Ast:
     case Value(lit: Lit)
     case OfType(ty: Ty, cut: Boolean)
 
-  final case class Entry(occ: Occ, key: Option[Key], value: Ty)
+  /**
+   * `doc` is the `;` comment block directly above the entry, when the entry starts its line (see [[CddlParser.docs]]):
+   * it becomes the generated field's or kind's documentation.
+   */
+  final case class Entry(occ: Occ, key: Option[Key], value: Ty, doc: Vector[String] = Vector.empty)
 
   /** A group: alternatives (`//`), each a sequence of entries. */
   final case class Group(choices: Vector[Vector[Entry]])
@@ -55,7 +59,8 @@ object Ast:
   enum Assign:
     case Eq, TypeChoice, GroupChoice
 
-  final case class Rule(name: String, params: Vector[String], assign: Assign, body: Ty)
+  /** `doc` is the `;` comment block directly above the rule: the generated type's documentation. */
+  final case class Rule(name: String, params: Vector[String], assign: Assign, body: Ty, doc: Vector[String] = Vector.empty)
 
   /** `;# import|include <module> as <alias>` directives (ouroboros specs and the ledger cddl). */
   final case class Pragma(kind: String, module: String, alias: String)

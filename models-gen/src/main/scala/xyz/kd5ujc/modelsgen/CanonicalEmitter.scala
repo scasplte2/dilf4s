@@ -56,6 +56,15 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     case FieldType.Preview => ("xyz.kd5ujc.core.canonical.Preview", "")
   }
 
+  /** A record's documentation: its rule's, then each documented field's as a Scaladoc `@param`. */
+  private def recordDoc(rule: QName, profiled: Vector[ProfileField], fs: Vector[Field]): String = {
+    val params = profiled.zip(fs).collect {
+      case (p, f) if p.doc.nonEmpty => s"@param ${f.name.stripPrefix("`").stripSuffix("`")} ${p.doc.mkString(" ")}"
+    }
+    val ruleDoc = schema.doc(rule)
+    scaladoc(ruleDoc ++ (if (ruleDoc.nonEmpty && params.nonEmpty) Vector("") else Vector.empty) ++ params, "")
+  }
+
   private def bound(hi: Int, suffix: String): String = if (hi == Int.MaxValue) "None" else s"Some($hi$suffix)"
 
   private final case class Field(key: String, name: String, tpe: String, codec: String, optional: Boolean)
@@ -87,7 +96,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
       val body =
         if (fs.isEmpty) s"scala.util.Right($n())"
         else s"for {\n$dec\n      } yield $n(${fs.map(_.name).mkString(", ")})"
-      s"""final case class $n($params)
+      s"""${recordDoc(rule, profiled, fs)}final case class $n($params)
          |
          |object $n {
          |  lazy val codec: Codec[$n] = Codec(
@@ -110,7 +119,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     cases.collectFirst {
       case (l, _) if reservedCases(pascal(l)) => GenError.ReservedName(rule.toString, Language.Scala, pascal(l))
     }.toLeft {
-      s"""enum $n(val wire: BigInt) {
+      s"""${doc(rule)}enum $n(val wire: BigInt) {
        |${cases.map { case (l, v) => s"""  case ${pascal(l)} extends $n(BigInt("$v"))""" }.mkString("\n")}
        |}
        |
@@ -128,20 +137,28 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
 
   private def union(rule: QName, ks: Vector[UnionAlternative], texts: Vector[String], choices: Vector[TextChoice]): String = {
     val n = typeName(rule)
-    val names = ks.map(a => qualified(rule.module, a.rule))
-    val allTexts = texts ++ choices.flatMap(_.texts)
+    // a choice of named texts is an enum, encoded as itself; the other texts are their own literal types
+    val (named, plain) = choices.partition(_.named)
+    val names = ks.map(a => qualified(rule.module, a.rule)) ++ named.map(c => qualified(rule.module, c.rule))
+    val literals = texts ++ plain.flatMap(_.texts)
     val enc = (names.map(t => s"      case a: $t => $t.codec.encode(a)") ++
-      allTexts.map(t => s"      case ${literal(t)} => Codec.literalText[${literal(t)}](${literal(t)}).encode(${literal(t)})"))
+      literals.map(t => s"      case ${literal(t)} => Codec.literalText[${literal(t)}](${literal(t)}).encode(${literal(t)})"))
       .mkString("\n")
-    val textAlts = allTexts.map(t => s"(${literal(t)}, ${literal(t)}: $n)").mkString(", ")
+    // every text, with the value it decodes to, in schema order
+    val members = texts.map(t => t -> literal(t)) ++ choices.flatMap { c =>
+      if (c.named) c.texts.zip(c.names).map((t, m) => t -> s"${qualified(rule.module, c.rule)}.$m") else c.texts.map(t => t -> literal(t))
+    }
+    val textAlts = members.map((t, v) => s"(${literal(t)}, $v: $n)").mkString(", ")
     val values =
       if (ks.nonEmpty) ""
-      else s"\n  /** Every alternative, in schema order. */\n  val values: Vector[$n] = Vector(${allTexts.map(literal).mkString(", ")})\n"
+      else s"\n  /** Every alternative, in schema order. */\n  val values: Vector[$n] = Vector(${members.map(_._2).mkString(", ")})\n"
     def set(s: Set[String]) = s"Set(${s.toList.sorted.map(k => s""""$k"""").mkString(", ")})"
     val sel = ks.map { a =>
       s"        (${set(a.required)}, ${set(a.allowed)}, ${qualified(rule.module, a.rule)}.codec.decoder.map(x => x: $n))"
     }.mkString(",\n")
-    s"""type $n = ${(names ++ texts.map(literal) ++ choices.map(c => qualified(rule.module, c.rule))).mkString(" | ")}
+    s"""${doc(rule)}type $n = ${(ks.map(a => qualified(rule.module, a.rule)) ++ texts.map(literal) ++ choices.map(c =>
+        qualified(rule.module, c.rule)
+      )).mkString(" | ")}
        |
        |object $n {$values
        |  lazy val codec: Codec[$n] = Codec(
@@ -169,12 +186,21 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
       val members = withFields.map {
         case (c, fs) =>
           val body = s" extends $n {\n    def kind: $k = ${literal(c.kind)}\n  }"
-          if (fs.isEmpty) s"  case object ${c.kind}$body"
+          // the kind's documentation, then each documented field's
+          val params = c.fields.zip(fs).collect {
+            case (p, f) if p.doc.nonEmpty => s"@param ${f.name.stripPrefix("`").stripSuffix("`")} ${p.doc.mkString(" ")}"
+          }
+          val kindDoc = scaladoc(c.doc ++ (if (c.doc.nonEmpty && params.nonEmpty) Vector("") else Vector.empty) ++ params, "  ")
+          if (fs.isEmpty) s"$kindDoc  case object ${c.kind}$body"
           else
-            s"  final case class ${c.kind}(${fs.map(f => s"${f.name}: ${if (f.optional) s"Option[${f.tpe}]" else f.tpe}").mkString(", ")})$body"
+            s"$kindDoc  final case class ${c.kind}(${fs.map(f => s"${f.name}: ${if (f.optional) s"Option[${f.tpe}]" else f.tpe}").mkString(", ")})$body"
       }
-      s"""/** `${rule.name}` (`shared/schemas/${rule.module}.cddl`): an error family, by kind ([[$k]]). */
-         |sealed trait $n extends Product with Serializable {
+      s"""${scaladoc(
+          Vector(s"`${rule.name}` (`shared/schemas/${rule.module}.cddl`): an error family, by kind ([[$k]]).") ++ paragraph(
+            schema.doc(rule)
+          ),
+          ""
+        )}sealed trait $n extends Product with Serializable {
          |
          |  /** This error's kind. */
          |  def kind: $k
@@ -187,10 +213,38 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     }
   }
 
+  /** An enum carrying each member's text, encoded as that text; its members are named by their rules. */
+  private def namedTexts(rule: QName, members: Vector[NamedText]): Either[GenError, String] = {
+    val n = typeName(rule)
+    members.collectFirst {
+      case m if reservedCases(m.name) || reservedNamed(m.name) => GenError.ReservedName(rule.toString, Language.Scala, m.name)
+    }.toLeft {
+      val cases = members.map(m => s"${scaladoc(m.doc, "  ")}  case ${m.name} extends $n(${literal(m.text)})").mkString("\n")
+      val alts = members.map(m => s"(${literal(m.text)}, $n.${m.name})").mkString(", ")
+      s"""${doc(rule)}enum $n(val wire: String) {
+         |$cases
+         |}
+         |
+         |object $n {
+         |
+         |  private lazy val byWire = $n.values.iterator.map(m => m.wire -> m).toMap
+         |
+         |  /** The member written as `wire`, if any. */
+         |  def fromWire(wire: String): Option[$n] = byWire.get(wire)
+         |
+         |  lazy val codec: Codec[$n] = Codec(
+         |    m => Codec.text.encode(m.wire),
+         |    (v: CanonicalValue) => Codec.selectAlternative[$n](v, List(), List($alts))
+         |  )
+         |}
+         |""".stripMargin
+    }
+  }
+
   private def alias(rule: QName, t: FieldType): String = {
     val (tpe, codec) = tc(rule, t)
     val n = typeName(rule)
-    s"""type $n = $tpe
+    s"""${doc(rule)}type $n = $tpe
        |
        |object $n {
        |  lazy val codec: Codec[$n] = $codec
@@ -205,8 +259,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
       if (v <= Int.MaxValue) s"final val $n = $v"
       else if (v <= Long.MaxValue) s"final val $n = ${v}L"
       else s"""val $n: BigInt = BigInt("$v")"""
-    s"""/** `${rule.name}` (`shared/schemas/${rule.module}.cddl`). */
-       |$value
+    s"""${scaladoc(Vector(s"`${rule.name}` (`shared/schemas/${rule.module}.cddl`).") ++ paragraph(schema.doc(rule)), "")}$value
        |""".stripMargin
   }
 
@@ -219,7 +272,12 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     case ModelRule.Alias(t)                    => Some(alias(q, t)).asRight
     case ModelRule.Constant(v)                 => Some(constant(q, v)).asRight
     case ModelRule.PreviewType                 => None.asRight
+    case ModelRule.NamedTexts(members)         => namedTexts(q, members).map(Some(_))
+    case ModelRule.TextMember(_)               => None.asRight
   }
+
+  /** A rule's documentation (its CDDL comment) as a Scaladoc comment, or nothing. */
+  private def doc(rule: QName): String = scaladoc(schema.doc(rule), "")
 
   /** The source of one module, or the first profile violation. */
   def module(name: String): Either[GenError, String] =
@@ -342,6 +400,30 @@ object CanonicalEmitter {
     "productPrefix",
     "wait"
   )
+
+  /** Case names the generated named-texts enum body would shadow (`Option` in `fromWire`, its own `values`). */
+  private val reservedNamed = Set("Option", "String", "values", "wire")
+
+  /** Blank-line-led documentation lines, or nothing: a paragraph after a comment's first line. */
+  def paragraph(lines: Vector[String]): Vector[String] = if (lines.isEmpty) lines else "" +: lines
+
+  /** `lines` as a Scaladoc or TSDoc comment at `indent`, ending in a newline; nothing for no lines. */
+  /**
+   * [[comment]] for Scala, whose comments nest: a slash and a star in the prose (a glob path) would open a comment the
+   * generated source never closes, so the star is written as an entity Scaladoc renders as a star.
+   */
+  def scaladoc(lines: Vector[String], indent: String): String = comment(lines.map(_.replace("/*", "/&#42;")), indent)
+
+  def comment(lines: Vector[String], indent: String): String =
+    lines match {
+      case Vector()     => ""
+      case Vector(line) => s"$indent/** ${line.replace("*/", "*\\/")} */\n"
+      case _            => block(lines, indent)
+    }
+
+  private def block(lines: Vector[String], indent: String): String =
+    (s"$indent/**" +: lines.map(l => if (l.isEmpty) s"$indent *" else s"$indent * ${l.replace("*/", "*\\/")}") :+ s"$indent */")
+      .mkString("", "\n", "\n")
 
   private def words(s: String): List[String] = s.split("[-_ .]+").toList.filter(_.nonEmpty)
 

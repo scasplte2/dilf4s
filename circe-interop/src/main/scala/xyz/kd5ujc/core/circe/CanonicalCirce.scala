@@ -7,7 +7,7 @@ import cats.syntax.traverse._
 import xyz.kd5ujc.core.canonical.CanonicalError._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical._
-import xyz.kd5ujc.numerics.{ArithmeticError, Ratio}
+import xyz.kd5ujc.numerics.Ratio
 
 import io.circe.DecodingFailure.Reason
 import io.circe.syntax._
@@ -56,23 +56,20 @@ object CanonicalCirce {
     io.circe.CirceNumberSource(n).fold(convertedNumber(n, maxScale)) { text =>
       CanonicalJson.parse(text, maxScale).flatMap {
         case v @ (CInt(_) | CRational(_)) => v.asRight
-        case _                            => InvalidNumber(NumberSource.Text(text.length, 0), None).asLeft
+        case _                            => InvalidNumber(Some(text.length.toLong), Some(0L), None).asLeft
       }
     }
 
   private def convertedNumber(n: JsonNumber, maxScale: Int): Either[CanonicalError, CanonicalValue] =
     n.toBigDecimal
-      .toRight(InvalidNumber(NumberSource.NoDecimal, None))
+      .toRight(InvalidNumber(None, None, None))
       .flatMap { bd =>
         val unscaled = BigInt(bd.bigDecimal.unscaledValue)
         val digits = if (unscaled.bitLength > MaxDigitBits) CanonicalJson.MaxDigits + 1 else unscaled.abs.toString.length
         if (digits > CanonicalJson.MaxDigits)
-          InvalidNumber(sized(bd), Some(ArithmeticError.DigitsOutOfRange(digits, CanonicalJson.MaxDigits))).asLeft
-        else Ratio.fromBigDecimal(bd, maxScale).leftMap(e => InvalidNumber(sized(bd), Some(e))).flatMap(CanonicalValue.number)
+          InvalidNumber(None, None, Some(NumberBound.Digits(digits.toLong, CanonicalJson.MaxDigits.toLong))).asLeft
+        else Ratio.fromBigDecimal(bd, maxScale).leftMap(e => InvalidNumber(None, None, NumberBounds.of(e))).flatMap(CanonicalValue.number)
       }
-
-  // a decimal-backed number is described by its size: rendering its coefficient is superlinear and unpaid
-  private def sized(bd: BigDecimal): NumberSource = NumberSource.Decimal(bd.scale, bd.bigDecimal.unscaledValue.bitLength)
 
   /**
    * The inverse bridge, for decoding into typed data. Numbers stay exact; fails where [[CanonicalJson.render]] fails,

@@ -44,8 +44,8 @@ object LimitsSuite extends FunSuite {
     List("versioned-trie-snapshot-state" -> "state", "versioned-trie-snapshot-history" -> "history").foldLeft(success) {
       case (acc, (rule, key)) =>
         val bound = profile.rule(QName("versioned-trie", rule)) match {
-          case Right(ModelRule.Record(Vector(ProfileField(`key`, false, FieldType.Vec(_, min, max))))) => Some((min, max))
-          case _                                                                                       => None
+          case Right(ModelRule.Record(Vector(ProfileField(`key`, false, FieldType.Vec(_, min, max), _)))) => Some((min, max))
+          case _                                                                                          => None
         }
         acc.and(expect.same(Some((1, Some(limits.VersionedMaxChunkEntries))), bound))
     }

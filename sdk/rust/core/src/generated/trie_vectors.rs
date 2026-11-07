@@ -278,6 +278,12 @@ impl TrieLookupResult {
 }
 
 /// `trie-malformed` (`shared/schemas/trie-vectors.cddl`).
+///
+/// A refused proof (canonical CBOR) and the kind of its error (section 4). Decoding refuses, as "Encoding", what a
+/// reader sees without the mode: the record shapes, segment lengths and padding, the branch invariant, the pre-order
+/// structure and trailing records. Verification refuses, as "InvalidProof", what the mode decides: where leaves and
+/// branch values may end, and the key-length bound. "root" is what the records hash to, so only those rules refuse an
+/// "InvalidProof" case; it is the empty root for the "Encoding" cases.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrieMalformed {
     /// The `name` entry.
@@ -316,7 +322,7 @@ impl c::Model for TrieMalformed {
 }
 
 /// `trie-malformed-error` (`shared/schemas/trie-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TrieMalformedError {
     /// The text `Encoding`.
     Encoding,
@@ -344,6 +350,15 @@ impl c::Model for TrieMalformedError {
 impl TrieMalformedError {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 2] = [Self::Encoding, Self::InvalidProof];
+}
+
+impl core::fmt::Display for TrieMalformedError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Encoding => f.write_str("Encoding"),
+            Self::InvalidProof => f.write_str("InvalidProof"),
+        }
+    }
 }
 
 /// `trie-mode` (`shared/schemas/trie-vectors.cddl`).
@@ -447,6 +462,9 @@ impl c::Model for TriePresent {
 }
 
 /// `trie-proof-vector` (`shared/schemas/trie-vectors.cddl`).
+///
+/// The proof covers "keys", "prefixes" and "ranges". "rangeListings" answers each of "ranges", then further range
+/// probes, some of which the proof does not cover.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrieProofVector {
     /// The `keys` entry.
@@ -493,6 +511,9 @@ impl c::Model for TrieProofVector {
 }
 
 /// `trie-range` (`shared/schemas/trie-vectors.cddl`).
+///
+/// \[from, until) in bitwise key order, a proper prefix before its extensions; no "until" is unbounded. The bounds are
+/// byte strings that need not be keys.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrieRange {
     /// The `from` entry.

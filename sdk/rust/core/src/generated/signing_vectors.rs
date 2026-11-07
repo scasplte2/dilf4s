@@ -5,6 +5,8 @@ use alloc::vec::Vec;
 use crate::codec as c;
 
 /// `bip32-public-derivation` (`shared/schemas/signing-vectors.cddl`).
+///
+/// CKDpub along the soft "path" from the key at "parentPath" (a prefix of the private path), reaching the child.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bip32PublicDerivation {
     /// The `parentPath` entry.
@@ -123,6 +125,8 @@ impl c::Model for Bip39Vector {
 }
 
 /// `bls-pop-vector` (`shared/schemas/signing-vectors.cddl`).
+///
+/// PopProve of each seed's BLS key (DST BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlsPopVector {
     /// The `signingKey` entry.
@@ -243,7 +247,7 @@ impl c::Model for IcarusVector {
 }
 
 /// `key-check` (`shared/schemas/signing-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KeyCheck {
     /// The text `bip39-entropy`.
     Bip39Entropy,
@@ -293,7 +297,26 @@ impl KeyCheck {
     pub const ALL: [Self; 7] = [Self::Bip39Entropy, Self::Bip39Phrase, Self::WordList, Self::Slip10, Self::Bip32, Self::Bip32Public, Self::IcarusPublic];
 }
 
+impl core::fmt::Display for KeyCheck {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Bip39Entropy => f.write_str("bip39-entropy"),
+            Self::Bip39Phrase => f.write_str("bip39-phrase"),
+            Self::WordList => f.write_str("word-list"),
+            Self::Slip10 => f.write_str("slip10"),
+            Self::Bip32 => f.write_str("bip32"),
+            Self::Bip32Public => f.write_str("bip32-public"),
+            Self::IcarusPublic => f.write_str("icarus-public"),
+        }
+    }
+}
+
 /// `key-decoding-case` (`shared/schemas/signing-vectors.cddl`).
+///
+/// How a scheme's decoder classifies an encoded signing or verifying key: "accepted", or the kind of its typed
+/// error (CryptoError, crypto-errors.cddl). A wrong length is "InvalidEncoding"; bytes of the right length that are not
+/// a key are "InvalidKey".
+/// "Ed25519-BIP32" has signing keys only (its verifying keys are Ed25519's).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyDecodingCase {
     /// The `scheme` entry.
@@ -332,7 +355,7 @@ impl c::Model for KeyDecodingCase {
 }
 
 /// `key-decoding-result` (`shared/schemas/signing-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KeyDecodingResult {
     /// The text `accepted`.
     Accepted,
@@ -364,8 +387,17 @@ impl KeyDecodingResult {
     pub const ALL: [Self; 4] = [Self::Accepted, Self::CryptoErrorKind(super::crypto_errors::CryptoErrorKind::InvalidEncoding), Self::CryptoErrorKind(super::crypto_errors::CryptoErrorKind::InvalidKey), Self::CryptoErrorKind(super::crypto_errors::CryptoErrorKind::BackendFailure)];
 }
 
+impl core::fmt::Display for KeyDecodingResult {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Accepted => f.write_str("accepted"),
+            Self::CryptoErrorKind(a) => core::fmt::Display::fmt(a, f),
+        }
+    }
+}
+
 /// `key-part` (`shared/schemas/signing-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KeyPart {
     /// The text `signingKey`.
     SigningKey,
@@ -395,7 +427,22 @@ impl KeyPart {
     pub const ALL: [Self; 2] = [Self::SigningKey, Self::VerifyingKey];
 }
 
+impl core::fmt::Display for KeyPart {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::SigningKey => f.write_str("signingKey"),
+            Self::VerifyingKey => f.write_str("verifyingKey"),
+        }
+    }
+}
+
 /// `key-refusal` (`shared/schemas/signing-vectors.cddl`).
+///
+/// A key-derivation call the reference refuses, with its KeyError kind (signing.md sections 2 and 3). "check" names it:
+/// "bip39-entropy" (BIP-39 entropy to a mnemonic: "entropy"), "bip39-phrase" (a phrase to its entropy, English list:
+/// "phrase"), "word-list" (a word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
+/// "bip32-public" and "icarus-public" (public derivation from "verifyingKey" and "chainCode" along "path"). Every
+/// path given parses; a refused path is a "paths" row (InvalidPath).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyRefusal {
     /// The `name` entry.
@@ -454,6 +501,8 @@ impl c::Model for KeyRefusal {
 }
 
 /// `path-case` (`shared/schemas/signing-vectors.cddl`).
+///
+/// A derivation path (section 3) and its serialised indices (bit 31 set when hardened), or why it is refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PathCase {
     /// The `path` entry.
@@ -502,6 +551,8 @@ impl c::Model for PathIndices {
 }
 
 /// `path-result` (`shared/schemas/signing-vectors.cddl`).
+///
+/// A refusal names the first rule the path breaks (PathRefusal, crypto-errors.cddl).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PathResult {
     /// A [`PathIndices`].
@@ -724,6 +775,11 @@ impl c::Model for Slip10Vector {
 }
 
 /// `verification-case` (`shared/schemas/signing-vectors.cddl`).
+///
+/// A verdict to reproduce. The verifying key is decoded first, then the signature: a malformed one is a typed error,
+/// recorded as the part refused and its CryptoError kind; a decoded pair verifies ("valid") or not ("invalid").
+/// "scheme" is a scheme of the signing list; "Ed25519" verifies under ZIP-215 and "Ed25519-libsodium" under libsodium's
+/// rule.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerificationCase {
     /// The `scheme` entry.
@@ -766,7 +822,7 @@ impl c::Model for VerificationCase {
 }
 
 /// `verification-part` (`shared/schemas/signing-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VerificationPart {
     /// The text `verifyingKey`.
     VerifyingKey,
@@ -794,6 +850,15 @@ impl c::Model for VerificationPart {
 impl VerificationPart {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 2] = [Self::VerifyingKey, Self::Signature];
+}
+
+impl core::fmt::Display for VerificationPart {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::VerifyingKey => f.write_str("verifyingKey"),
+            Self::Signature => f.write_str("signature"),
+        }
+    }
 }
 
 /// `verification-refusal` (`shared/schemas/signing-vectors.cddl`).

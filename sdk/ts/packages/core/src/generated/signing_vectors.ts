@@ -2,7 +2,11 @@
 import * as c from "../codec.js";
 import * as cryptoErrors from "./crypto_errors.js";
 
-/** `bip32-public-derivation` (`shared/schemas/signing-vectors.cddl`). */
+/**
+ * `bip32-public-derivation` (`shared/schemas/signing-vectors.cddl`).
+ *
+ * CKDpub along the soft "path" from the key at "parentPath" (a prefix of the private path), reaching the child.
+ */
 export interface Bip32PublicDerivation {
   readonly parentPath: string;
   readonly parentVerifyingKey: Hex;
@@ -55,7 +59,11 @@ export const Bip39Vector: c.Codec<Bip39Vector> = c.record<Bip39Vector>({
   seed: c.required("seed", c.defer(() => Hex)),
 });
 
-/** `bls-pop-vector` (`shared/schemas/signing-vectors.cddl`). */
+/**
+ * `bls-pop-vector` (`shared/schemas/signing-vectors.cddl`).
+ *
+ * PopProve of each seed's BLS key (DST BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_).
+ */
 export interface BlsPopVector {
   readonly signingKey: Hex;
   readonly verifyingKey: Hex;
@@ -116,7 +124,14 @@ export type KeyCheck = "bip39-entropy" | "bip39-phrase" | "word-list" | "slip10"
 
 export const KeyCheck: c.Codec<KeyCheck> = c.union<KeyCheck>("KeyCheck", [], ["bip39-entropy", "bip39-phrase", "word-list", "slip10", "bip32", "bip32-public", "icarus-public"]);
 
-/** `key-decoding-case` (`shared/schemas/signing-vectors.cddl`). */
+/**
+ * `key-decoding-case` (`shared/schemas/signing-vectors.cddl`).
+ *
+ * How a scheme's decoder classifies an encoded signing or verifying key: "accepted", or the kind of its typed
+ * error (CryptoError, crypto-errors.cddl). A wrong length is "InvalidEncoding"; bytes of the right length that are not
+ * a key are "InvalidKey".
+ * "Ed25519-BIP32" has signing keys only (its verifying keys are Ed25519's).
+ */
 export interface KeyDecodingCase {
   readonly scheme: string;
   readonly name: string;
@@ -143,7 +158,15 @@ export type KeyPart = "signingKey" | "verifyingKey";
 
 export const KeyPart: c.Codec<KeyPart> = c.union<KeyPart>("KeyPart", [], ["signingKey", "verifyingKey"]);
 
-/** `key-refusal` (`shared/schemas/signing-vectors.cddl`). */
+/**
+ * `key-refusal` (`shared/schemas/signing-vectors.cddl`).
+ *
+ * A key-derivation call the reference refuses, with its KeyError kind (signing.md sections 2 and 3). "check" names it:
+ * "bip39-entropy" (BIP-39 entropy to a mnemonic: "entropy"), "bip39-phrase" (a phrase to its entropy, English list:
+ * "phrase"), "word-list" (a word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
+ * "bip32-public" and "icarus-public" (public derivation from "verifyingKey" and "chainCode" along "path"). Every
+ * path given parses; a refused path is a "paths" row (InvalidPath).
+ */
 export interface KeyRefusal {
   readonly name: string;
   readonly check: KeyCheck;
@@ -170,7 +193,11 @@ export const KeyRefusal: c.Codec<KeyRefusal> = c.record<KeyRefusal>({
   kind: c.required("kind", c.defer(() => cryptoErrors.KeyErrorKind)),
 });
 
-/** `path-case` (`shared/schemas/signing-vectors.cddl`). */
+/**
+ * `path-case` (`shared/schemas/signing-vectors.cddl`).
+ *
+ * A derivation path (section 3) and its serialised indices (bit 31 set when hardened), or why it is refused.
+ */
 export interface PathCase {
   readonly path: string;
   readonly result: PathResult;
@@ -190,7 +217,11 @@ export const PathIndices: c.Codec<PathIndices> = c.record<PathIndices>({
   indices: c.required("indices", c.vector(c.uint, 0, null)),
 });
 
-/** `path-result` (`shared/schemas/signing-vectors.cddl`). */
+/**
+ * `path-result` (`shared/schemas/signing-vectors.cddl`).
+ *
+ * A refusal names the first rule the path breaks (PathRefusal, crypto-errors.cddl).
+ */
 export type PathResult = PathIndices | cryptoErrors.PathRefusal;
 
 export const PathResult: c.Codec<PathResult> = c.union<PathResult>("PathResult", [
@@ -282,7 +313,14 @@ export const Slip10Vector: c.Codec<Slip10Vector> = c.record<Slip10Vector>({
   child: c.required("child", c.defer(() => ExtendedKey)),
 });
 
-/** `verification-case` (`shared/schemas/signing-vectors.cddl`). */
+/**
+ * `verification-case` (`shared/schemas/signing-vectors.cddl`).
+ *
+ * A verdict to reproduce. The verifying key is decoded first, then the signature: a malformed one is a typed error,
+ * recorded as the part refused and its CryptoError kind; a decoded pair verifies ("valid") or not ("invalid").
+ * "scheme" is a scheme of the signing list; "Ed25519" verifies under ZIP-215 and "Ed25519-libsodium" under libsodium's
+ * rule.
+ */
 export interface VerificationCase {
   readonly scheme: string;
   readonly name: string;

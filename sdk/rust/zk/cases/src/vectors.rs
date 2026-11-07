@@ -3,13 +3,14 @@
 extern crate std;
 
 use alloc::borrow::ToOwned as _;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use std::path::PathBuf;
 
 use dilf4s_core::codec::Model;
-use dilf4s_core::generated::jlvm_vectors::{JlvmErrorKind, JlvmOutcome, JlvmVectors};
+use dilf4s_core::generated::jlvm_errors::JlvmSite;
+use dilf4s_core::generated::jlvm_vectors::{JlvmCause, JlvmErrorKind, JlvmOutcome, JlvmVectors};
 use dilf4s_core::generated::kes_vectors::{
     KesCheck, KesConstruction, KesOutcome, KesParameters, KesRefusal, KesVectors,
 };
@@ -45,8 +46,8 @@ pub enum Expect {
     Verified,
     /// A JLVM outcome: the value's canonical CBOR or the error, the gas and the number of warnings.
     Jlvm {
-        /// The canonical CBOR, or the error's kind and normative `op`.
-        result: Result<Vec<u8>, (String, Option<String>)>,
+        /// The canonical CBOR, or the error's kind, normative `op` and normative `cause` (`Family.Kind`).
+        result: Result<Vec<u8>, (String, Option<String>, Option<String>)>,
         /// The gas used.
         gas: u64,
         /// The number of warnings.
@@ -72,7 +73,7 @@ impl Expect {
             | (Self::Verified, Ok(Output::Bytes(_)))
             | (Self::SignerParity { .. }, Ok(Output::Address(_))) => true,
             (Self::Jlvm { result, gas, warnings }, Ok(Output::Jlvm { result: got, gas: g, warnings: w })) => {
-                let got = got.clone().map_err(|(kind, op, _)| (kind, op));
+                let got = got.clone().map_err(|(kind, op, cause, _)| (kind, op, cause));
                 got == *result && g == gas && w == warnings
             }
             _ => false,
@@ -262,7 +263,7 @@ fn proposition_value(p: &SigmaProposition) -> Result<Value, Error> {
 }
 
 /// What a sigma outcome of `sigma_refusals_v1.json` says a case gives.
-fn sigma_expect(o: &SigmaOutcome) -> Expect {
+fn sigma_expect(o: SigmaOutcome) -> Expect {
     match o {
         SigmaOutcome::Accepted => Expect::Output(Output::Bool(true)),
         SigmaOutcome::Rejected => Expect::Output(Output::Bool(false)),
@@ -287,7 +288,7 @@ pub fn sigma(file: &str) -> Result<Vec<Named>, Error> {
         .iter()
         .zip(outcomes)
         .map(|(c, outcome)| {
-            let expect = sigma_expect(outcome);
+            let expect = sigma_expect(*outcome);
             let case = Case::Sigma {
                 proposition: cbor::encode(&proposition_value(&c.proposition)?),
                 proof: bytes(&c.proof)?,
@@ -299,7 +300,7 @@ pub fn sigma(file: &str) -> Result<Vec<Named>, Error> {
 }
 
 /// The guest's form of a KES construction and its parameters.
-fn kes_scheme(construction: &KesConstruction, parameters: &KesParameters) -> Result<KesScheme, Error> {
+fn kes_scheme(construction: KesConstruction, parameters: &KesParameters) -> Result<KesScheme, Error> {
     match (construction, parameters) {
         (KesConstruction::Dilf4sSum, KesParameters::KesSumParameters(p)) => {
             Ok(KesScheme::Sum { hash: p.hash.clone(), height: p.height })
@@ -320,7 +321,7 @@ pub fn kes() -> Result<Vec<Named>, Error> {
     let v: KesVectors = load("kes_v1.json")?;
     let mut out = Vec::new();
     for (i, vector) in v.vectors.iter().enumerate() {
-        let scheme = kes_scheme(&vector.construction, &vector.parameters)?;
+        let scheme = kes_scheme(vector.construction, &vector.parameters)?;
         for p in &vector.periods {
             let case = Case::KesVerify {
                 scheme: scheme.clone(),
@@ -345,7 +346,7 @@ pub fn kes() -> Result<Vec<Named>, Error> {
         };
         let field = |f: &Option<String>| bytes(f.as_deref().unwrap_or_default());
         let case = Case::KesVerify {
-            scheme: kes_scheme(&c.construction, &c.parameters)?,
+            scheme: kes_scheme(c.construction, &c.parameters)?,
             key: field(&c.verifying_key)?,
             period: c.period.unwrap_or_default(),
             message: field(&c.message)?,
@@ -367,7 +368,7 @@ pub fn sigma_refusals() -> Result<Vec<Named>, Error> {
                 proof: bytes(&c.proof)?,
                 message: bytes(&c.message)?,
             };
-            Ok(named(format!("sigma refusal {}", c.name), case, sigma_expect(&c.outcome)))
+            Ok(named(format!("sigma refusal {}", c.name), case, sigma_expect(c.outcome)))
         })
         .collect()
 }
@@ -493,8 +494,8 @@ pub fn vrf(suite: &str, rejections: bool) -> Result<Vec<Named>, Error> {
     Ok(out)
 }
 
-/// The index of the first case with each error kind of the schema, and of the first whose `op` is `var`: so every
-/// kind and both kinds of site run wherever the picked cases do. A kind with no row is an error (the coverage gate,
+/// The index of the first case with each error kind of the schema, of the first whose `op` is `var`, and of the first
+/// with each recorded `cause`: so every kind, both kinds of site and every cause run wherever the picked cases do. A kind with no row is an error (the coverage gate,
 /// conformance.md section 6).
 fn first_errors(v: &JlvmVectors) -> Result<Vec<usize>, Error> {
     let error = |c: &dilf4s_core::generated::jlvm_vectors::JlvmCase| match &c.outcome {
@@ -513,10 +514,32 @@ fn first_errors(v: &JlvmVectors) -> Result<Vec<usize>, Error> {
     let var = v
         .cases
         .iter()
-        .position(|c| error(c).is_some_and(|e| e.op.as_deref() == Some("var")))
+        .position(|c| error(c).is_some_and(|e| e.op == Some(JlvmSite::Var)))
         .ok_or_else(|| String::from("jlvm_v1.json: no row has op var"))?;
     firsts.push(var);
+    // and the first row of each cause a Crypto error records, so every pinned cause runs in the guest too
+    let mut causes: Vec<String> = Vec::new();
+    for (i, c) in v.cases.iter().enumerate() {
+        if let Some(name) = error(c).and_then(|e| e.cause).map(cause)
+            && !causes.contains(&name)
+        {
+            causes.push(name);
+            firsts.push(i);
+        }
+    }
     Ok(firsts)
+}
+
+/// A row's cause as `Family.Kind`, as the guest renders an error's.
+fn cause(c: JlvmCause) -> String {
+    match c {
+        JlvmCause::JlvmSigningCause(c) => format!("Signing.{}", c.signing),
+        JlvmCause::JlvmSigmaCause(c) => format!("Sigma.{}", c.sigma),
+        JlvmCause::JlvmZkCause(c) => format!("Zk.{}", c.zk),
+        JlvmCause::JlvmGroth16Cause(c) => format!("Groth16.{}", c.groth16),
+        JlvmCause::JlvmVrfCause(c) => format!("Vrf.{}", c.vrf),
+        JlvmCause::JlvmHashCause(c) => format!("Hash.{}", c.hash),
+    }
 }
 
 /// The JLVM cases `keep` picks (by index and case), and the first case of each error kind and of the `var` site, run
@@ -533,7 +556,9 @@ pub fn jlvm(
         .map(|(_, c)| {
             let result = match &c.outcome {
                 JlvmOutcome::JlvmValue(x) => Ok(bytes(&x.cbor)?),
-                JlvmOutcome::JlvmError(e) => Err((format!("{:?}", e.error), e.op.clone())),
+                JlvmOutcome::JlvmError(e) => {
+                    Err((e.error.to_string(), e.op.map(|s| s.to_string()), e.cause.clone().map(cause)))
+                }
             };
             let case = Case::Jlvm {
                 program: c.program.clone(),

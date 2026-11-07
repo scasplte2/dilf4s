@@ -11,8 +11,8 @@ use dilf4s_core::generated::jlvm as w;
 use dilf4s_core::hash::{DomainTag, HashAlgorithm};
 use dilf4s_core::{CanonicalError, Preview, Value, cbor};
 
-use crate::error::JlvmError;
-use crate::op::{Op, call_name};
+use crate::error::{JlvmError, Raise};
+use crate::op::{Op, OpClass, call_name};
 use crate::values::utf16_len;
 
 /// A `var` path: `$name.path` reads a binding (host, `let` or callback); any other path reads the data.
@@ -395,13 +395,10 @@ fn to_wire(e: &Expr) -> w::JlvmExpr {
         Expr::Lit(v) => w::JlvmExpr::JlvmLit(w::JlvmLit { lit: v.clone() }),
         Expr::Var(r, d) => w::JlvmExpr::JlvmVar(w::JlvmVar { var: r.render(), default: d.clone() }),
         Expr::VarAt(p, d) => w::JlvmExpr::JlvmVarAt(w::JlvmVarAt { path: Box::new(to_wire(p)), default: d.clone() }),
-        Expr::Apply(op, args) => w::JlvmExpr::JlvmApply(w::JlvmApply {
-            op: String::from(op.wire()),
-            args: args.iter().map(to_wire).collect(),
-        }),
-        Expr::Spread(op, a) => {
-            w::JlvmExpr::JlvmSpread(w::JlvmSpread { spread: String::from(op.wire()), arg: Box::new(to_wire(a)) })
+        Expr::Apply(op, args) => {
+            w::JlvmExpr::JlvmApply(w::JlvmApply { op: *op, args: args.iter().map(to_wire).collect() })
         }
+        Expr::Spread(op, a) => w::JlvmExpr::JlvmSpread(w::JlvmSpread { spread: *op, arg: Box::new(to_wire(a)) }),
         Expr::Arr(items) => w::JlvmExpr::JlvmArray(w::JlvmArray { arr: items.iter().map(to_wire).collect() }),
         Expr::Obj(fields) => w::JlvmExpr::JlvmMap(w::JlvmMap {
             map: fields.iter().map(|(k, x)| (k.clone(), to_wire(x))).collect::<BTreeMap<_, _>>(),

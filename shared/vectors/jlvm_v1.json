@@ -6310,7 +6310,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "schnorr_verify"
+        "op" : "schnorr_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 77949,
       "warnings" : 0
@@ -6363,7 +6366,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 76701,
       "warnings" : 0
@@ -6374,7 +6380,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 169464,
       "warnings" : 0
@@ -6385,7 +6394,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 274608,
       "warnings" : 0
@@ -6396,7 +6408,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 252642,
       "warnings" : 0
@@ -6407,7 +6422,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 261684,
       "warnings" : 0
@@ -6418,7 +6436,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 390333,
       "warnings" : 0
@@ -6987,7 +7008,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bn254_add"
+        "op" : "bn254_add",
+        "cause" : {
+          "zk" : "InvalidPoint"
+        }
       },
       "gasUsed" : 720,
       "warnings" : 0
@@ -7042,7 +7066,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bn254_mul"
+        "op" : "bn254_mul",
+        "cause" : {
+          "zk" : "InvalidPoint"
+        }
       },
       "gasUsed" : 14520,
       "warnings" : 0
@@ -7119,7 +7146,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bn254_pairing"
+        "op" : "bn254_pairing",
+        "cause" : {
+          "zk" : "InvalidPoint"
+        }
       },
       "gasUsed" : 226702,
       "warnings" : 0
@@ -7130,7 +7160,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bn254_pairing"
+        "op" : "bn254_pairing",
+        "cause" : {
+          "zk" : "InvalidPoint"
+        }
       },
       "gasUsed" : 226702,
       "warnings" : 0
@@ -7196,7 +7229,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "schnorr_verify"
+        "op" : "schnorr_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 77949,
       "warnings" : 0
@@ -7207,7 +7243,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "schnorr_verify"
+        "op" : "schnorr_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 77949,
       "warnings" : 0
@@ -7218,7 +7257,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "schnorr_verify"
+        "op" : "schnorr_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 77949,
       "warnings" : 0
@@ -7229,7 +7271,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "schnorr_verify"
+        "op" : "schnorr_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 77949,
       "warnings" : 0
@@ -7240,7 +7285,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "schnorr_verify"
+        "op" : "schnorr_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 77949,
       "warnings" : 0
@@ -7251,7 +7299,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "schnorr_verify"
+        "op" : "schnorr_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 35649,
       "warnings" : 0
@@ -7383,7 +7434,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "groth16_verify"
+        "op" : "groth16_verify",
+        "cause" : {
+          "groth16" : "Malformed"
+        }
       },
       "gasUsed" : 480549,
       "warnings" : 0
@@ -7416,7 +7470,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bls_verify"
+        "op" : "bls_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 290204,
       "warnings" : 0
@@ -7427,7 +7484,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bls_verify"
+        "op" : "bls_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 290203,
       "warnings" : 0
@@ -7438,7 +7498,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bls_verify"
+        "op" : "bls_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 290203,
       "warnings" : 0
@@ -7471,7 +7534,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bls_aggregate_verify"
+        "op" : "bls_aggregate_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 415132,
       "warnings" : 0
@@ -7482,7 +7548,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bls_aggregate_verify"
+        "op" : "bls_aggregate_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 415132,
       "warnings" : 0
@@ -7673,7 +7742,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 76701,
       "warnings" : 0
@@ -7684,7 +7756,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 169464,
       "warnings" : 0
@@ -7695,7 +7770,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 274608,
       "warnings" : 0
@@ -7706,7 +7784,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 180945,
       "warnings" : 0
@@ -7717,7 +7798,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 252642,
       "warnings" : 0
@@ -7728,7 +7812,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 261684,
       "warnings" : 0
@@ -7739,7 +7826,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 333381,
       "warnings" : 0
@@ -7750,7 +7840,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 390333,
       "warnings" : 0
@@ -7761,7 +7854,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 180945,
       "warnings" : 0
@@ -7772,7 +7868,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 180945,
       "warnings" : 0
@@ -7783,7 +7882,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 261684,
       "warnings" : 0
@@ -7794,7 +7896,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 181849,
       "warnings" : 0
@@ -7805,7 +7910,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 274608,
       "warnings" : 0
@@ -7816,7 +7924,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 76701,
       "warnings" : 0
@@ -7827,7 +7938,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 76701,
       "warnings" : 0
@@ -7838,7 +7952,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 76701,
       "warnings" : 0
@@ -7849,7 +7966,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 110148,
       "warnings" : 0
@@ -7860,7 +7980,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 189987,
       "warnings" : 0
@@ -7871,7 +7994,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 78051,
       "warnings" : 0
@@ -7882,7 +8008,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 145761,
       "warnings" : 0
@@ -7893,7 +8022,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 63651,
       "warnings" : 0
@@ -7904,7 +8036,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 76690,
       "warnings" : 0
@@ -7915,7 +8050,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 80322,
       "warnings" : 0
@@ -7926,7 +8064,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 80322,
       "warnings" : 0
@@ -7937,7 +8078,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 116835,
       "warnings" : 0
@@ -7948,7 +8092,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 80783,
       "warnings" : 0
@@ -8641,7 +8788,10 @@
       "gasLimit" : 90004,
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 76701,
       "warnings" : 0
@@ -28911,7 +29061,10 @@
       "data" : "{\"a0\":\"0x01\",\"a1\":\"0x01\",\"a2\":\"0x01\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "ed25519_verify"
+        "op" : "ed25519_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 20228,
       "warnings" : 0
@@ -29186,7 +29339,10 @@
       "data" : "{\"a0\":\"0x01\",\"a1\":\"0x01\",\"a2\":\"0x01\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "secp256k1_verify"
+        "op" : "secp256k1_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 7428,
       "warnings" : 0
@@ -29461,7 +29617,10 @@
       "data" : "{\"a0\":\"0x01\",\"a1\":\"0x01\",\"a2\":\"0x01\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bip340_verify"
+        "op" : "bip340_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 9228,
       "warnings" : 0
@@ -29648,7 +29807,10 @@
       "data" : "{\"a0\":\"0x01\",\"a1\":\"0x01\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "ecrecover"
+        "op" : "ecrecover",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 32648,
       "warnings" : 0
@@ -30011,7 +30173,10 @@
       "data" : "{\"a0\":\"0x01\",\"a1\":\"0x01\",\"a2\":\"0x01\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bls_verify"
+        "op" : "bls_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 290228,
       "warnings" : 0
@@ -32486,7 +32651,10 @@
       "data" : "{\"a0\":\"0x01\",\"a1\":\"0x01\",\"a2\":\"0x01\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "schnorr_verify"
+        "op" : "schnorr_verify",
+        "cause" : {
+          "sigma" : "InvalidPoint"
+        }
       },
       "gasUsed" : 7024,
       "warnings" : 0
@@ -32706,7 +32874,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 6123,
       "warnings" : 0
@@ -32717,7 +32888,10 @@
       "data" : "{\"a0\":false,\"a1\":false,\"a2\":false}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 6123,
       "warnings" : 0
@@ -32728,7 +32902,10 @@
       "data" : "{\"a0\":7,\"a1\":7,\"a2\":7}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 6123,
       "warnings" : 0
@@ -32739,7 +32916,10 @@
       "data" : "{\"a0\":2.5,\"a1\":2.5,\"a2\":2.5}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 7024,
       "warnings" : 0
@@ -32750,7 +32930,10 @@
       "data" : "{\"a0\":\"ab\",\"a1\":\"ab\",\"a2\":\"ab\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 7925,
       "warnings" : 0
@@ -32761,7 +32944,10 @@
       "data" : "{\"a0\":\"0x01\",\"a1\":\"0x01\",\"a2\":\"0x01\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 7024,
       "warnings" : 0
@@ -32772,7 +32958,10 @@
       "data" : "{\"a0\":[1,2],\"a1\":[1,2],\"a2\":[1,2]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 7925,
       "warnings" : 0
@@ -32783,7 +32972,10 @@
       "data" : "{\"a0\":{\"k\":1},\"a1\":{\"k\":1},\"a2\":{\"k\":1}}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 8826,
       "warnings" : 0
@@ -34796,7 +34988,10 @@
       "data" : "{\"a0\":\"0x8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c\",\"a1\":\"0x7472616e7366657220313020746f20626f62\",\"a2\":\"0x667ff2539c0a67f2c1e0f1db4dc4e194ce2672aba8c4ba294b1fd603106aeaf9243c4ec2215d75c81434117cd63261494537ca58b290f6d69d3e261e5ee9cc\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "ed25519_verify"
+        "op" : "ed25519_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 20338,
       "warnings" : 0
@@ -34840,7 +35035,10 @@
       "data" : "{\"a0\":\"0x024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766\",\"a1\":\"0x7472616e7366657220313020746f20626f62\",\"a2\":\"0xc318b82b06e5974f2641ce82a7774c10d1c27b60bb1697c670488c7c4169640947d474aad18aef03eb3860fc3f86d638c232a7f9b7e0a24ebf11e14ef00419\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "secp256k1_verify"
+        "op" : "secp256k1_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 7539,
       "warnings" : 0
@@ -34884,7 +35082,10 @@
       "data" : "{\"a0\":\"0x531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337\",\"a1\":\"0x0707070707070707070707070707070707070707070707070707070707070707\",\"a2\":\"0x7490acf84b919d4439b51a748a510c41e9e88f4b771ee49b12498a402d00c5535e55d609ea34510bf2a4b57405a0837e1fa3ac89117300b13d50be81284bc1\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bip340_verify"
+        "op" : "bip340_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 9352,
       "warnings" : 0
@@ -34906,7 +35107,10 @@
       "data" : "{\"a0\":\"0x531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337\",\"a1\":\"0x7472616e7366657220313020746f20626f62\",\"a2\":\"0x7490acf84b919d4439b51a748a510c41e9e88f4b771ee49b12498a402d00c5535e55d609ea34510bf2a4b57405a0837e1fa3ac89117300b13d50be81284bc1b5\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "bip340_verify"
+        "op" : "bip340_verify",
+        "cause" : {
+          "signing" : "InvalidEncoding"
+        }
       },
       "gasUsed" : 9339,
       "warnings" : 0
@@ -36054,7 +36258,10 @@
       "data" : "{\"bad\":{\"pk\":\"0x020000000000000000000000000000000000000000000000000000000000000005\",\"type\":\"dlog\"},\"good\":{\"pk\":\"0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"type\":\"dlog\"},\"message\":\"0x00\",\"proof\":\"0x00\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 5566462,
       "warnings" : 0
@@ -36066,7 +36273,10 @@
       "gasLimit" : 134217728,
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 88677675,
       "warnings" : 0
@@ -36078,7 +36288,10 @@
       "gasLimit" : 4294967296,
       "outcome" : {
         "error" : "Crypto",
-        "op" : "sigma_verify"
+        "op" : "sigma_verify",
+        "cause" : {
+          "sigma" : "InvalidProposition"
+        }
       },
       "gasUsed" : 4010804315,
       "warnings" : 0
@@ -36922,6 +37135,40 @@
       },
       "gasUsed" : 210,
       "warnings" : 0
+    }
+  ],
+  "aliases" : [
+    {
+      "alias" : "deleteKey",
+      "op" : "unset",
+      "program" : "{\"deleteKey\": [{\"var\": \"m\"}, \"k\"]}",
+      "own" : "{\"unset\": [{\"var\": \"m\"}, \"k\"]}",
+      "cbor" : "a26465787072a2626f7065756e736574646172677382a163766172616da1636c6974616b646a6c766d01",
+      "id" : "19e96ba5f462b81219b1a2f48d700d9763f997cbe02aa4f2218f7840b32339ae"
+    },
+    {
+      "alias" : "getKey",
+      "op" : "get",
+      "program" : "{\"getKey\": [{\"var\": \"m\"}, \"k\"]}",
+      "own" : "{\"get\": [{\"var\": \"m\"}, \"k\"]}",
+      "cbor" : "a26465787072a2626f7063676574646172677382a163766172616da1636c6974616b646a6c766d01",
+      "id" : "eb871bd48d04b8d38fefb454aff1b8943a78ed55e57e3d74c9fbd23df1dee69d"
+    },
+    {
+      "alias" : "setKey",
+      "op" : "set",
+      "program" : "{\"setKey\": [{\"var\": \"m\"}, \"k\", 1]}",
+      "own" : "{\"set\": [{\"var\": \"m\"}, \"k\", 1]}",
+      "cbor" : "a26465787072a2626f7063736574646172677383a163766172616da1636c6974616ba1636c697401646a6c766d01",
+      "id" : "6cea309fb9ea924e613432b08de241455aeb6bd124412e25d8186877f6c7b2dc"
+    },
+    {
+      "alias" : "size",
+      "op" : "length",
+      "program" : "{\"size\": [{\"var\": \"xs\"}]}",
+      "own" : "{\"length\": [{\"var\": \"xs\"}]}",
+      "cbor" : "a26465787072a2626f70666c656e677468646172677381a163766172627873646a6c766d01",
+      "id" : "fc9c65b8674e2f532b0788f0aec64cbabff4aa06c5b5536e74a7d9d5ac4c0ac8"
     }
   ]
 }

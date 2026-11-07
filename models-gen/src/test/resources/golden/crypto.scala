@@ -10,6 +10,7 @@ object Bip340Message {
   lazy val codec: Codec[Bip340Message] = Codec.sizedBytes(32L, Some(32L))
 }
 
+/** BIP-39 entropy (16, 20, 24, 28 or 32 bytes; the step of 4 is checked by the domain) */
 type Bip39Entropy = ByteVector
 
 object Bip39Entropy {
@@ -22,6 +23,7 @@ object BlsSignature {
   lazy val codec: Codec[BlsSignature] = Codec.sizedBytes(96L, Some(96L))
 }
 
+/** BLS12-381, Ethereum PoP profile (keys in G1, signatures in G2, compressed) */
 type BlsSigningKey = ByteVector
 
 object BlsSigningKey {
@@ -46,6 +48,7 @@ object EcdsaSignature {
   lazy val codec: Codec[EcdsaSignature] = Codec.sizedBytes(64L, Some(64L))
 }
 
+/** ECDSA over P-256 and secp256k1: compressed SEC1 keys, compact low-S r || s */
 type EcdsaSigningKey = ByteVector
 
 object EcdsaSigningKey {
@@ -58,6 +61,7 @@ object EcdsaVerifyingKey {
   lazy val codec: Codec[EcdsaVerifyingKey] = Codec.sizedBytes(33L, Some(33L))
 }
 
+/** Ed25519-BIP32 (Icarus / CIP-0003): kL || kR, and an extended key's chain code */
 type Ed25519Bip32SigningKey = ByteVector
 
 object Ed25519Bip32SigningKey {
@@ -70,6 +74,7 @@ object Ed25519Signature {
   lazy val codec: Codec[Ed25519Signature] = Codec.sizedBytes(64L, Some(64L))
 }
 
+/** Ed25519 (RFC 8032; ZIP-215 verification) */
 type Ed25519SigningKey = ByteVector
 
 object Ed25519SigningKey {
@@ -82,6 +87,7 @@ object Ed25519VerifyingKey {
   lazy val codec: Codec[Ed25519VerifyingKey] = Codec.sizedBytes(32L, Some(32L))
 }
 
+/** Groth16 over BN254 (EIP-197 layout) and the SP1 v6.1.0 wrapper */
 type Groth16Proof = ByteVector
 
 object Groth16Proof {
@@ -94,6 +100,7 @@ object Ristretto255Signature {
   lazy val codec: Codec[Ristretto255Signature] = Codec.sizedBytes(64L, Some(64L))
 }
 
+/** ristretto255 Schnorr (FROST ciphersuite) */
 type Ristretto255SigningKey = ByteVector
 
 object Ristretto255SigningKey {
@@ -112,6 +119,7 @@ object SchnorrSignature {
   lazy val codec: Codec[SchnorrSignature] = Codec.sizedBytes(64L, Some(64L))
 }
 
+/** BIP-340 and dilf4s tagged Schnorr over secp256k1: x-only keys */
 type SchnorrSigningKey = ByteVector
 
 object SchnorrSigningKey {
@@ -142,6 +150,7 @@ object Sum6KesSignature {
   lazy val codec: Codec[Sum6KesSignature] = Codec.sizedBytes(448L, Some(448L))
 }
 
+/** Cardano Sum6KES (the Praos hot key); other depths are 32 + 96 d (key) and 64 + 64 d (signature) */
 type Sum6KesSigningKey = ByteVector
 
 object Sum6KesSigningKey {
@@ -172,6 +181,7 @@ object VrfProof {
   lazy val codec: Codec[VrfProof] = Codec.sizedBytes(80L, Some(80L))
 }
 
+/** ECVRF (RFC 9381 TAI and ELL2: 32-byte seed keys; Cardano draft-03: 64-byte seed || pk) */
 type VrfSigningKey = ByteVector
 
 object VrfSigningKey {

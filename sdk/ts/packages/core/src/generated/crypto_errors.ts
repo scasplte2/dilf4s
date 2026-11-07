@@ -2,7 +2,12 @@
 import * as c from "../codec.js";
 import type { Preview } from "../preview.js";
 
-/** `crypto-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`CryptoErrorKind`). */
+/**
+ * `crypto-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`CryptoErrorKind`).
+ *
+ * A signing key, verifying key or signature that its scheme does not accept (signing.md section 4). BackendFailure is
+ * a JVM provider's own failure: no SDK produces it.
+ */
 export type CryptoError =
   | { readonly kind: "InvalidEncoding"; readonly what: string; readonly reason: string }
   | { readonly kind: "InvalidKey"; readonly reason: string }
@@ -13,7 +18,12 @@ export type CryptoErrorKind = "InvalidEncoding" | "InvalidKey" | "BackendFailure
 
 export const CryptoErrorKind: c.Codec<CryptoErrorKind> = c.union<CryptoErrorKind>("CryptoErrorKind", [], ["InvalidEncoding", "InvalidKey", "BackendFailure"]);
 
-/** `groth16-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`Groth16ErrorKind`). */
+/**
+ * `groth16-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`Groth16ErrorKind`).
+ *
+ * A Groth16 refusal (zk.md section 2): a wrong shape; a point off the curve, outside the subgroup or the identity, or
+ * an input not in Fr; the pairing equation failing; or a wrapper's framing (SP1's selector, exit code or VK root).
+ */
 export type Groth16Error =
   | { readonly kind: "Malformed"; readonly reason: string }
   | { readonly kind: "InvalidProof"; readonly reason: string }
@@ -25,7 +35,12 @@ export type Groth16ErrorKind = "Malformed" | "InvalidProof" | "PairingCheckFaile
 
 export const Groth16ErrorKind: c.Codec<Groth16ErrorKind> = c.union<Groth16ErrorKind>("Groth16ErrorKind", [], ["Malformed", "InvalidProof", "PairingCheckFailed", "Rejected"]);
 
-/** `kes-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`KesErrorKind`). */
+/**
+ * `kes-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`KesErrorKind`).
+ *
+ * A KES refusal (kes.md section 5): a wrong size, a period outside [0, total), a key at its last period asked to
+ * evolve, or a key whose parts disagree.
+ */
 export type KesError =
   | { readonly kind: "Malformed"; readonly what: string; readonly reason: string }
   | { readonly kind: "PeriodOutOfRange"; readonly period: number; readonly total: number }
@@ -37,7 +52,14 @@ export type KesErrorKind = "Malformed" | "PeriodOutOfRange" | "Exhausted" | "Inc
 
 export const KesErrorKind: c.Codec<KesErrorKind> = c.union<KesErrorKind>("KesErrorKind", [], ["Malformed", "PeriodOutOfRange", "Exhausted", "InconsistentKey"]);
 
-/** `key-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`KeyErrorKind`). */
+/**
+ * `key-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`KeyErrorKind`).
+ *
+ * A key derivation the reference refuses (signing.md sections 2 and 3). InvalidPath carries the first rule the path
+ * breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
+ * (a separator of more than one character is refused by its length, before it is read, and has none); the reference's
+ * word lists are its own languages', so it never names one.
+ */
 export type KeyError =
   | { readonly kind: "InvalidEntropy"; readonly reason: string }
   | { readonly kind: "InvalidMnemonic"; readonly reason: string }
@@ -50,12 +72,22 @@ export type KeyErrorKind = "InvalidEntropy" | "InvalidMnemonic" | "InvalidWordLi
 
 export const KeyErrorKind: c.Codec<KeyErrorKind> = c.union<KeyErrorKind>("KeyErrorKind", [], ["InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidDerivation", "InvalidPath"]);
 
-/** `path-refusal` (`shared/schemas/crypto-errors.cddl`). */
+/**
+ * `path-refusal` (`shared/schemas/crypto-errors.cddl`).
+ *
+ * Why a derivation path is refused (signing.md section 3), its segments checked in order: "missingMaster" (it is not
+ * `m` and does not start with `m/`), "malformed" (a segment is not ASCII digits and an optional `'` or `h`),
+ * "leadingZero", "tooManyDigits" (more than 10), "outOfRange" (2^31 or more), "tooDeep" (a 256th segment).
+ */
 export type PathRefusal = "missingMaster" | "malformed" | "leadingZero" | "tooManyDigits" | "outOfRange" | "tooDeep";
 
 export const PathRefusal: c.Codec<PathRefusal> = c.union<PathRefusal>("PathRefusal", [], ["missingMaster", "malformed", "leadingZero", "tooManyDigits", "outOfRange", "tooDeep"]);
 
-/** `sigma-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`SigmaErrorKind`). */
+/**
+ * `sigma-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`SigmaErrorKind`).
+ *
+ * Malformed sigma input (sigma.md section 6). A well-formed proof that fails is a result (false), never one of these.
+ */
 export type SigmaError =
   | { readonly kind: "InvalidProposition"; readonly reason: string }
   | { readonly kind: "InvalidPoint"; readonly what: string; readonly reason: string }
@@ -67,7 +99,12 @@ export type SigmaErrorKind = "InvalidProposition" | "InvalidPoint" | "ProofLengt
 
 export const SigmaErrorKind: c.Codec<SigmaErrorKind> = c.union<SigmaErrorKind>("SigmaErrorKind", [], ["InvalidProposition", "InvalidPoint", "ProofLength", "ResponseOutOfRange"]);
 
-/** `vrf-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`VrfErrorKind`). */
+/**
+ * `vrf-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`VrfErrorKind`).
+ *
+ * A VRF refusal (vrf.md section 3). Malformed is a wrong length; KeyMismatch a draft-03 signing key whose stored
+ * public key is not its seed's; HashToCurveFailed is TAI finding no point in 256 counters (probability about 2^-256).
+ */
 export type VrfError =
   | { readonly kind: "Malformed"; readonly what: string; readonly reason: string }
   | { readonly kind: "InvalidPublicKey" }
@@ -83,7 +120,12 @@ export type VrfErrorKind = "Malformed" | "InvalidPublicKey" | "SmallOrderPublicK
 
 export const VrfErrorKind: c.Codec<VrfErrorKind> = c.union<VrfErrorKind>("VrfErrorKind", [], ["Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch", "KeyMismatch", "HashToCurveFailed"]);
 
-/** `zk-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`ZkErrorKind`). */
+/**
+ * `zk-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`ZkErrorKind`).
+ *
+ * A BN254 operation's refusal (zk.md section 1): a wrong length or a coordinate not below p; or a point off the curve
+ * or twist, or a G2 point outside the order-r subgroup.
+ */
 export type ZkError =
   | { readonly kind: "Malformed"; readonly reason: string }
   | { readonly kind: "InvalidPoint"; readonly reason: string };

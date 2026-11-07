@@ -4,6 +4,10 @@ package xyz.kd5ujc.models.storage
 import scodec.bits.ByteVector
 import xyz.kd5ujc.core.canonical.{Canonical, CanonicalDecoder, Codec}
 
+/**
+ * A VersionedStore history record: the value of one key before and after the write at one version. An absent
+ * field means the key had no value.
+ */
 final case class VersionedRecord(b: Option[ByteVector], a: Option[ByteVector])
 
 object VersionedRecord {

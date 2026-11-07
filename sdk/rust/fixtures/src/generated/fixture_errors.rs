@@ -57,7 +57,7 @@ impl core::fmt::Display for Failure {
 impl core::error::Error for Failure {}
 
 /// `failure-kind` (`shared/schemas/fixture-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FailureKind {
     /// The text `Broken`.
     Broken,
@@ -95,8 +95,19 @@ impl FailureKind {
     pub const ALL: [Self; 4] = [Self::Broken, Self::Gone, Self::Refused, Self::Unknown];
 }
 
+impl core::fmt::Display for FailureKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Broken => f.write_str("Broken"),
+            Self::Gone => f.write_str("Gone"),
+            Self::Refused => f.write_str("Refused"),
+            Self::Unknown => f.write_str("Unknown"),
+        }
+    }
+}
+
 /// `outcome` (`shared/schemas/fixture-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Outcome {
     /// The text `fine`.
     Fine,
@@ -129,8 +140,17 @@ impl Outcome {
     pub const ALL: [Self; 5] = [Self::Fine, Self::FailureKind(FailureKind::Broken), Self::FailureKind(FailureKind::Gone), Self::FailureKind(FailureKind::Refused), Self::FailureKind(FailureKind::Unknown)];
 }
 
+impl core::fmt::Display for Outcome {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Fine => f.write_str("fine"),
+            Self::FailureKind(a) => core::fmt::Display::fmt(a, f),
+        }
+    }
+}
+
 /// `why` (`shared/schemas/fixture-errors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Why {
     /// The text `early`.
     Early,
@@ -158,4 +178,13 @@ impl c::Model for Why {
 impl Why {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 2] = [Self::Early, Self::Late];
+}
+
+impl core::fmt::Display for Why {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Early => f.write_str("early"),
+            Self::Late => f.write_str("late"),
+        }
+    }
 }

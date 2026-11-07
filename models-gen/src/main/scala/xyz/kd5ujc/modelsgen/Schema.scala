@@ -51,7 +51,7 @@ enum RKey:
 /**
  * An array or map entry. `label` is the CDDL member name (a comment in arrays, the key in maps).
  */
-final case class REntry(occ: Occ, label: Option[String], key: Option[RKey], value: RT)
+final case class REntry(occ: Occ, label: Option[String], key: Option[RKey], value: RT, doc: Vector[String] = Vector.empty)
 
 enum RuleBody:
   case Type(ty: RT)
@@ -74,6 +74,9 @@ final class Schema(val modules: Map[String, Module]):
     modules.get(q.module).flatMap(_.rules.get(q.name))
 
   def rule(q: QName): Either[GenError, RuleDef] = resolveRule(q).value.value
+
+  /** The `;` comment block directly above a rule's (first) definition: its documentation. */
+  def doc(q: QName): Vector[String] = lookup(q).flatMap(_._1.headOption).fold(Vector.empty[String])(_.doc)
 
   private def resolveRule(q: QName): GenResult[RuleDef] = deferred {
     lookup(q) match
@@ -258,8 +261,8 @@ final class Schema(val modules: Map[String, Module]):
         of match
           case Ast.Ty.GroupT(Ast.Group(Vector(only))) =>
             val labelled = only.traverse {
-              case Ast.Entry(_, Some(Ast.Key.Bare(label)), Ast.Ty.Literal(Ast.Lit.IntL(n))) => Some(label -> n)
-              case _                                                                        => None
+              case Ast.Entry(_, Some(Ast.Key.Bare(label)), Ast.Ty.Literal(Ast.Lit.IntL(n)), _) => Some(label -> n)
+              case _                                                                           => None
             }
             labelled.filter(_.nonEmpty) match
               case Some(cases) => success(RT.IntEnum(cases))
@@ -408,7 +411,7 @@ final class Schema(val modules: Map[String, Module]):
     for
       v <- ty(e.value, scope, env, ctx, expanding)
       k <- key
-    yield REntry(e.occ, k._1, k._2, v)
+    yield REntry(e.occ, k._1, k._2, v, e.doc)
 
 object Schema:
   def build(modules: Vector[(String, Vector[Ast.File])]): Schema =

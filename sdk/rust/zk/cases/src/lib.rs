@@ -16,14 +16,14 @@ pub mod vectors;
 
 use alloc::collections::BTreeMap;
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::cell::OnceCell;
 use core::fmt::Debug;
 
 use dilf4s_core::hash::HashAlgorithm;
 use dilf4s_core::{built, cbor};
-use dilf4s_jlvm::{Config, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, parse, parse_value};
+use dilf4s_jlvm::{Config, ErrorSite, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, parse, parse_value};
 use dilf4s_proofs::poseidon::merkle::{PoseidonMerkleProof, compute_root};
 use dilf4s_proofs::poseidon::{self, Fr, fr_from_be_bytes, fr_to_be_bytes};
 use dilf4s_proofs::zk::{self, groth16};
@@ -250,15 +250,18 @@ pub enum Output {
     Unit,
     /// A JLVM outcome: the value's canonical CBOR or the error, the gas and the number of warnings.
     Jlvm {
-        /// The value's canonical CBOR, or the error's kind, its normative `op` (jlvm.md section 3) and its `Debug`
-        /// rendering.
-        result: Result<Vec<u8>, (String, Option<String>, String)>,
+        /// The value's canonical CBOR, or the error's kind, its normative `op` and `cause` (jlvm.md section 3, the
+        /// cause as `Family.Kind`) and its `Debug` rendering.
+        result: Result<Vec<u8>, JlvmFailure>,
         /// The gas used.
         gas: u64,
         /// The number of warnings.
         warnings: u64,
     },
 }
+
+/// A JLVM error as a case reports it: its kind, its `op`, its `cause` (`Family.Kind`) and its `Debug` rendering.
+pub type JlvmFailure = (String, Option<String>, Option<String>, String);
 
 /// A case's outcome: its output, or its error rendered with `Debug`.
 pub type Outcome = Result<Output, String>;
@@ -293,6 +296,20 @@ pub enum Body {
     Run(Vec<Outcome>),
     /// What [`leaves::commit`] gives.
     Leaves(Result<Vec<Vec<u8>>, String>),
+}
+
+/// A `Crypto` error's normative cause as `Family.Kind` (`Sigma.InvalidPoint`), as [`vectors`] renders a row's.
+fn cause(e: &JlvmError) -> Option<String> {
+    let JlvmError::Crypto { cause: Some(c), .. } = e else { return None };
+    let kind = match c {
+        dilf4s_jlvm::CryptoCause::Signing { error } => error.kind().to_string(),
+        dilf4s_jlvm::CryptoCause::Sigma { error } => error.kind().to_string(),
+        dilf4s_jlvm::CryptoCause::Zk { error } => error.kind().to_string(),
+        dilf4s_jlvm::CryptoCause::Groth16 { error } => error.kind().to_string(),
+        dilf4s_jlvm::CryptoCause::Vrf { error } => error.kind().to_string(),
+        dilf4s_jlvm::CryptoCause::Hash { error } => error.kind().to_string(),
+    };
+    Some(format!("{}.{kind}", c.kind()))
 }
 
 fn debug(e: impl Debug) -> String {
@@ -336,7 +353,7 @@ fn jlvm_case(
     Ok(Output::Jlvm {
         result: result
             .map(|v| cbor::encode(&v))
-            .map_err(|e| (String::from(e.kind()), e.site().map(|s| String::from(s.wire())), debug(&e))),
+            .map_err(|e| (e.kind().to_string(), e.site().map(|s| s.to_string()), cause(&e), debug(&e))),
         gas: gas.value(),
         warnings: u64::try_from(warnings).unwrap_or(u64::MAX),
     })

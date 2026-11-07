@@ -37,21 +37,15 @@ use dilf4s_proofs::versioned::{
 type H = Sha256;
 type Vt = VersionedTrie<U64Key, H>;
 
-/// The schema's outcome of a state-key refusal: its kind and normative segment. Exhaustive: a variant the SDK adds does
-/// not compile until it is mapped.
+/// The schema's outcome of a state-key refusal: its kind (the SDK's error is generated from the schema's family, so its
+/// kind is the schema's) and normative segment.
 fn key_outcome<T>(r: &Result<T, StateKeyError>) -> VtStateKeyOutcome {
     let Err(e) = r else { return VtStateKeyOutcome::Accepted };
-    let position = |at: &usize| Some(u64::try_from(*at).unwrap());
-    let (kind, segment) = match e {
-        StateKeyError::Empty => (StateKeyErrorKind::Empty, None),
-        StateKeyError::TooLong { .. } => (StateKeyErrorKind::TooLong, None),
-        StateKeyError::NotUtf8 => (StateKeyErrorKind::NotUtf8, None),
-        StateKeyError::TooManySegments { .. } => (StateKeyErrorKind::TooManySegments, None),
-        StateKeyError::InvalidSegment { segment, .. } => (StateKeyErrorKind::InvalidSegment, position(segment)),
-        StateKeyError::SegmentTooLong { segment, .. } => (StateKeyErrorKind::SegmentTooLong, position(segment)),
-        StateKeyError::NamespaceFull { .. } => (StateKeyErrorKind::NamespaceFull, None),
+    let segment = match e {
+        StateKeyError::InvalidSegment { segment, .. } | StateKeyError::SegmentTooLong { segment, .. } => Some(*segment),
+        _ => None,
     };
-    VtStateKeyOutcome::VtStateKeyRefusal(VtStateKeyRefusal { kind, segment })
+    VtStateKeyOutcome::VtStateKeyRefusal(VtStateKeyRefusal { kind: e.kind(), segment })
 }
 
 fn d(hex: &str) -> Digest<H> {
@@ -299,7 +293,7 @@ fn every_state_key_error_kind_has_a_row() {
         .chain(v.namespaces.iter().map(|c| &c.outcome));
     let pinned: Vec<StateKeyErrorKind> = outcomes
         .filter_map(|o| match o {
-            VtStateKeyOutcome::VtStateKeyRefusal(r) => Some(r.kind.clone()),
+            VtStateKeyOutcome::VtStateKeyRefusal(r) => Some(r.kind),
             VtStateKeyOutcome::Accepted => None,
         })
         .collect();
@@ -318,7 +312,10 @@ fn a_huge_state_key_is_refused_with_a_bounded_error() {
     for e in [&text, &bytes, &namespace] {
         let rendered = format!("{e}{e:?}");
         assert!(rendered.len() <= 1024, "the refusal renders {} bytes", rendered.len());
-        assert!(e.input().is_none_or(|p| p.head().chars().count() <= 32), "a preview of at most 32 code points");
+        assert!(
+            dilf4s_proofs::versioned::input(e).is_none_or(|p| p.head().chars().count() <= 32),
+            "a preview of at most 32 code points"
+        );
     }
     assert_eq!(text, StateKeyError::TooLong { limit: 256 });
     assert_eq!(bytes, StateKeyError::TooLong { limit: 256 });

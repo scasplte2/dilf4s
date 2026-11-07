@@ -6,7 +6,7 @@ import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalError._
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.numerics.{ArithmeticError, Ratio}
+import xyz.kd5ujc.numerics.Ratio
 
 /**
  * The JSON mapping (docs/specs/canonical-encoding.md §3). [[parse]] is a strict, stack-safe RFC 8259 parser that reads
@@ -77,25 +77,25 @@ object CanonicalJson {
               case Right((v, next)) => run(s, maxScale, keys, Deliver(v, next, stack, depth))
               case Left(e)          => e.asLeft
             }
-          case None => syntax(p, "expected a value").asLeft
+          case None => syntax(p, "expectedValue").asLeft
         }
 
       case ExpectKey(p0, acc, seen, stack, depth) =>
         val p = skipWs(s, p0)
-        if (!charAt(s, p).contains('"')) syntax(p, "expected a member name").asLeft
+        if (!charAt(s, p).contains('"')) syntax(p, "expectedMemberName").asLeft
         else
           string(s, p) match {
             case Left(e)                               => e.asLeft
             case Right((key, _)) if seen.contains(key) => DuplicateKey(Preview.of(key)).asLeft
             case Right((key, next)) =>
               val colon = skipWs(s, next)
-              if (!charAt(s, colon).contains(':')) syntax(colon, "expected ':'").asLeft
+              if (!charAt(s, colon).contains(':')) syntax(colon, "expectedColon").asLeft
               else run(s, maxScale, keys, ExpectValue(colon + 1, InObject(acc, seen.added(key), key) :: stack, depth))
           }
 
       case Deliver(v, p0, Nil, _) =>
         val p = skipWs(s, p0)
-        Either.cond(p == s.length, v, syntax(p, "unexpected trailing content"))
+        Either.cond(p == s.length, v, syntax(p, "trailingContent"))
 
       case Deliver(v, p0, InArray(acc) :: rest, depth) =>
         val p = skipWs(s, p0)
@@ -106,7 +106,7 @@ object CanonicalJson {
               case Right(arr) => run(s, maxScale, keys, Deliver(arr, p + 1, rest, depth - 1))
               case Left(e)    => e.asLeft
             }
-          case _ => syntax(p, "expected ',' or ']'").asLeft
+          case _ => syntax(p, "expectedCommaOrBracket").asLeft
         }
 
       case Deliver(v, p0, InObject(acc, seen, key) :: rest, depth) =>
@@ -118,7 +118,7 @@ object CanonicalJson {
               case Right(m) => run(s, maxScale, keys, Deliver(m, p + 1, rest, depth - 1))
               case Left(e)  => e.asLeft
             }
-          case _ => syntax(p, "expected ',' or '}'").asLeft
+          case _ => syntax(p, "expectedCommaOrBrace").asLeft
         }
     }
 
@@ -129,7 +129,7 @@ object CanonicalJson {
       case Some('f') if s.startsWith("false", p) => (False, p + 5).asRight
       case Some('n') if s.startsWith("null", p)  => (CNull, p + 4).asRight
       case Some(c) if c == '-' || isDigit(c)     => parseNumber(s, p, maxScale)
-      case _                                     => syntax(p, "expected a value").asLeft
+      case _                                     => syntax(p, "expectedValue").asLeft
     }
 
   /**
@@ -146,7 +146,7 @@ object CanonicalJson {
     val hasExp = charAt(s, fracEnd).exists(c => c == 'e' || c == 'E')
     val expSignEnd = if (hasExp && charAt(s, fracEnd + 1).exists(c => c == '+' || c == '-')) fracEnd + 2 else fracEnd + 1
     val end = if (hasExp) digits(s, expSignEnd) else fracEnd
-    val described = NumberSource.Text(end - p, p)
+    def described(bound: Option[NumberBound]): CanonicalError = InvalidNumber(Some((end - p).toLong), Some(p.toLong), bound)
     val intDigits = s.substring(intStart, intEnd)
     val fracDigits = if (hasFrac) s.substring(intEnd + 1, fracEnd) else ""
     val expDigits = if (hasExp) s.substring(expSignEnd, end) else "0"
@@ -156,8 +156,8 @@ object CanonicalJson {
     // the integer digits have no leading zeros but a lone 0, after which the fraction's leading zeros are not counted
     val significand = if (intDigits == "0") fracDigits.dropWhile(_ == '0').length else intDigits.length + fracDigits.length
     val exponentDigits = expDigits.dropWhile(_ == '0').length
-    def tooLong(digits: Int): CanonicalError = InvalidNumber(described, Some(ArithmeticError.DigitsOutOfRange(digits, MaxDigits)))
-    if (malformed) InvalidNumber(described, None).asLeft
+    def tooLong(digits: Int): CanonicalError = described(Some(NumberBound.Digits(digits.toLong, MaxDigits.toLong)))
+    if (malformed) described(None).asLeft
     else if (significand > MaxDigits) tooLong(significand).asLeft
     else if (exponentDigits > MaxDigits) tooLong(exponentDigits).asLeft
     else {
@@ -167,7 +167,7 @@ object CanonicalJson {
       val scale = BigInt(fracDigits.length) - exponent
       if (scale.abs > BigInt(maxScale)) {
         val saturated = scale.max(BigInt(Int.MinValue)).min(BigInt(Int.MaxValue)).toInt
-        InvalidNumber(described, Some(ArithmeticError.ScaleOutOfRange(saturated, maxScale))).asLeft
+        described(Some(NumberBound.Scale(saturated, maxScale.toLong))).asLeft
       } else {
         val unscaled = BigInt(intDigits + fracDigits) * (if (negative) -1 else 1)
         // the digit and scale bounds keep the work bounded, not the value: an integer of 10,000 digits can be wider than
@@ -175,7 +175,7 @@ object CanonicalJson {
         // 10,000, whose denominator is 10^10000), and number refuses them
         Ratio
           .fromDecimal(unscaled, scale.toInt, maxScale)
-          .leftMap(e => InvalidNumber(described, Some(e)))
+          .leftMap(e => described(NumberBounds.of(e)))
           .flatMap(r => number(r).map((_, end)))
       }
     }
@@ -186,9 +186,9 @@ object CanonicalJson {
     @tailrec
     def go(i: Int, segment: Int, acc: Vector[String]): Either[CanonicalError, (String, Int)] =
       charAt(s, i) match {
-        case None               => syntax(i, "unterminated string").asLeft
+        case None               => syntax(i, "unterminatedString").asLeft
         case Some('"')          => ((acc :+ s.substring(segment, i)).mkString, i + 1).asRight
-        case Some(c) if c < ' ' => syntax(i, "unescaped control character in string").asLeft
+        case Some(c) if c < ' ' => syntax(i, "controlCharacter").asLeft
         case Some('\\') =>
           val prefix = acc :+ s.substring(segment, i)
           charAt(s, i + 1) match {
@@ -202,7 +202,7 @@ object CanonicalJson {
             case Some('t')  => go(i + 2, i + 2, prefix :+ "\t")
             case Some('u') if i + 6 <= s.length && s.substring(i + 2, i + 6).forall(isHex) =>
               go(i + 6, i + 6, prefix :+ Integer.parseInt(s.substring(i + 2, i + 6), 16).toChar.toString)
-            case _ => syntax(i, "invalid escape").asLeft
+            case _ => syntax(i, "invalidEscape").asLeft
           }
         case Some(_) => go(i + 1, segment, acc)
       }
@@ -222,16 +222,11 @@ object CanonicalJson {
   private def charAt(s:      String, i:   Int): Option[Char] = Option.when(i >= 0 && i < s.length)(s.charAt(i))
   private def isDigit(c:     Char): Boolean = c >= '0' && c <= '9'
   private def isHex(c:       Char): Boolean = isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
-  private def syntax(offset: Int, reason: String): CanonicalError = JsonSyntax(offset, reason)
+  private def syntax(offset: Int, reason: JsonSyntaxReason): CanonicalError = JsonSyntax(offset.toLong, reason)
 
-  // its size, never its digits: a decoded rational can be far larger than the cost of rendering it allows
-  private def nonTerminating(r: CRational): CanonicalError =
-    NotJsonRepresentable(
-      s"non-terminating rational of ${r.value.numerator.bitLength}/${r.value.denominator.bitLength} bits"
-    )
+  private val nonTerminating: CanonicalError = NotJsonRepresentable("non-terminating rational")
 
-  private val overLong: CanonicalError =
-    NotJsonRepresentable(s"a number of more than $MaxDigits digits or a scale above $MaxScale")
+  private val overLong: CanonicalError = NotJsonRepresentable("over-long number")
 
   /**
    * An integer's JSON text, which [[parse]] reads back: total, since every integer is within
@@ -245,9 +240,9 @@ object CanonicalJson {
    */
   private def rationalText(r: CRational): Either[CanonicalError, String] =
     r.value.decimalScale match {
-      case scala.None                    => nonTerminating(r).asLeft
+      case scala.None                    => nonTerminating.asLeft
       case scala.Some(s) if s > MaxScale => overLong.asLeft
-      case scala.Some(_)                 => r.value.toDecimalString.toRight(nonTerminating(r)).flatMap(within)
+      case scala.Some(_)                 => r.value.toDecimalString.toRight(nonTerminating).flatMap(within)
     }
 
   // the digits of `text`, a plain decimal, leading zeros aside, and the digits after its point
@@ -295,7 +290,7 @@ object CanonicalJson {
    * [[render]]'s refusal of a value whose JSON is longer than [[MaxRenderBytes]]: every value heavier than that, since
    * a value's JSON is never shorter than its weight.
    */
-  val TooLongToRender: CanonicalError = NotJsonRepresentable(s"a rendering of more than $MaxRenderBytes bytes")
+  val TooLongToRender: CanonicalError = NotJsonRepresentable("over-long rendering")
 
   /**
    * [[render]], if the JSON is at most `maxBytes` long in UTF-8 (a negative limit is 0, and no limit is above

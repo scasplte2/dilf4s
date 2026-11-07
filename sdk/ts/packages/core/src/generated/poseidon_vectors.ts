@@ -11,7 +11,12 @@ export type DecimalLeaves = ReadonlyMap<string, Decimal>;
 
 export const DecimalLeaves: c.Codec<DecimalLeaves> = c.textMap(c.defer(() => Decimal));
 
-/** `poseidon-build-vector` (`shared/schemas/poseidon-vectors.cddl`). */
+/**
+ * `poseidon-build-vector` (`shared/schemas/poseidon-vectors.cddl`).
+ *
+ * A tree built from entries applied in order (zk.md section 4): a later entry for a position replaces an earlier one,
+ * and a later 0 empties it.
+ */
 export interface PoseidonBuildVector {
   readonly depth: bigint;
   readonly entries: readonly PoseidonEntry[];

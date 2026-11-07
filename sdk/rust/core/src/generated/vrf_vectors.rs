@@ -45,6 +45,10 @@ impl c::Model for VrfKey {
 }
 
 /// `vrf-key-case` (`shared/schemas/vrf-vectors.cddl`).
+///
+/// How a suite's decoder classifies an encoded signing key: "accepted", or its VrfError kind. A wrong length is
+/// "Malformed"; a draft-03 key (seed || pk) whose pk is not its seed's is "KeyMismatch". Verification decodes the
+/// verifying keys, so the rejections pin those.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VrfKeyCase {
     /// The `suite` entry.
@@ -79,7 +83,7 @@ impl c::Model for VrfKeyCase {
 }
 
 /// `vrf-key-result` (`shared/schemas/vrf-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VrfKeyResult {
     /// The text `accepted`.
     Accepted,
@@ -116,6 +120,15 @@ impl VrfKeyResult {
     pub const ALL: [Self; 9] = [Self::Accepted, Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::Malformed), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidPublicKey), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::SmallOrderPublicKey), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidGamma), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::NonCanonicalScalar), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::ChallengeMismatch), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::KeyMismatch), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::HashToCurveFailed)];
 }
 
+impl core::fmt::Display for VrfKeyResult {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Accepted => f.write_str("accepted"),
+            Self::VrfErrorKind(a) => core::fmt::Display::fmt(a, f),
+        }
+    }
+}
+
 /// `vrf-proof` (`shared/schemas/vrf-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VrfProof {
@@ -147,6 +160,9 @@ impl c::Model for VrfProof {
 }
 
 /// `vrf-rejection` (`shared/schemas/vrf-vectors.cddl`).
+///
+/// A verification verdict: "valid", or the VrfError kind (vrf.md section 3). "Malformed" is a wrong length (the
+/// proof's is checked before the key's). "suite" is a suite name of the suites list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VrfRejection {
     /// The `suite` entry.
@@ -189,7 +205,7 @@ impl c::Model for VrfRejection {
 }
 
 /// `vrf-result` (`shared/schemas/vrf-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VrfResult {
     /// The text `valid`.
     Valid,
@@ -224,6 +240,15 @@ impl c::Model for VrfResult {
 impl VrfResult {
     /// Every alternative, in schema order.
     pub const ALL: [Self; 9] = [Self::Valid, Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::Malformed), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidPublicKey), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::SmallOrderPublicKey), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::InvalidGamma), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::NonCanonicalScalar), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::ChallengeMismatch), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::KeyMismatch), Self::VrfErrorKind(super::crypto_errors::VrfErrorKind::HashToCurveFailed)];
+}
+
+impl core::fmt::Display for VrfResult {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Valid => f.write_str("valid"),
+            Self::VrfErrorKind(a) => core::fmt::Display::fmt(a, f),
+        }
+    }
 }
 
 /// `vrf-suite` (`shared/schemas/vrf-vectors.cddl`).

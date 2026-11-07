@@ -548,8 +548,8 @@ object EvaluatorSuite extends IOSuite with Checkers {
     val starved = eval(program, data, limit = total - 1)
     expect(
       full.result match {
-        case Left(JlvmError.Crypto(_, _)) => true
-        case _                            => false
+        case Left(JlvmError.Crypto(_, _, _)) => true
+        case _                               => false
       },
       s"with enough gas the pairing runs and rejects the points: ${full.result}"
     )

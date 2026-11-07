@@ -133,7 +133,7 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Left(RenderError.TooLarge(1000L)), CanonicalJson.renderWithin(dag, 1000L)))
       .and(
         expect.same(
-          Left(NotJsonRepresentable(s"a rendering of more than ${CanonicalJson.MaxRenderBytes} bytes")),
+          Left(NotJsonRepresentable("over-long rendering")),
           CanonicalJson.render(dag)
         )
       )

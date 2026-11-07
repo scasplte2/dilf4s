@@ -735,7 +735,7 @@ impl Array {
     pub fn new(items: Vec<Value>) -> Result<Self, CanonicalError> {
         let depth = items.iter().map(Value::depth).max().unwrap_or(0).saturating_add(1);
         if depth > MAX_DEPTH {
-            Err(CanonicalError::DepthExceeded { limit: MAX_DEPTH })
+            Err(CanonicalError::DepthExceeded { limit: crate::error::size(MAX_DEPTH) })
         } else {
             let weight = items.iter().fold(1, |w, v| add_weight(w, v.weight()));
             Ok(Self { items: Some(Arc::new(items.into_boxed_slice())), depth, weight })
