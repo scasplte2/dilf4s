@@ -10,7 +10,7 @@
  * checked before it is used.
  */
 import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { mint, plainBytes, takeBytes, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isRevokedProxy, mint, plainBytes, takeBytes, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
@@ -291,16 +291,19 @@ function versionKeyArg<V>(x: unknown): Result<VersionKey<V>, TypeMismatch> {
   const encode: unknown = Reflect.get(x, "encode");
   const decode: unknown = Reflect.get(x, "decode");
   if (typeof width !== "number" || !Number.isInteger(width) || width < 1 || width > MAX_KEY_LENGTH) return err(bad);
-  if (typeof encode !== "function" || typeof decode !== "function") return err(bad);
+  if (typeof encode !== "function" || typeof decode !== "function" || isRevokedProxy(encode) || isRevokedProxy(decode)) return err(bad);
   return ok(
     Object.freeze({
       width,
       encode: (v: V): C<Uint8Array> =>
-        keyResult(Reflect.apply(encode, x, [v]), (b) => {
-          const own = takeBytes(b);
-          return own?.length === width ? own : undefined;
-        }),
-      decode: (b: Uint8Array): C<V> => keyResult(Reflect.apply(decode, x, [copyBytes(b)]), (v) => v as V),
+        // checked again at each call: caller code may have revoked a Proxy of the function since
+        isRevokedProxy(encode)
+          ? err(bad)
+          : keyResult(Reflect.apply(encode, x, [v]), (b) => {
+              const own = takeBytes(b);
+              return own?.length === width ? own : undefined;
+            }),
+      decode: (b: Uint8Array): C<V> => (isRevokedProxy(decode) ? err(bad) : keyResult(Reflect.apply(decode, x, [copyBytes(b)]), (v) => v as V)),
     }),
   );
 }

@@ -1,6 +1,6 @@
 /** BIP-39 (`signing.md` 2.1): entropy to mnemonic and back, and mnemonic to seed. */
 import { err, ok, Preview, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { isArrayGuarded, mint } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, isRevokedProxy, mint } from "@kd5ujc/dilf4s-core/internal";
 import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -186,7 +186,7 @@ export function generateMnemonic(
   if (typeof (entropyBytes as unknown) !== "number") return err(NOT_A_NUMBER);
   const list = wordListArg(words);
   if (!list.ok) return list;
-  if (typeof (random as unknown) !== "function") return err(expected("a function"));
+  if (typeof (random as unknown) !== "function" || isRevokedProxy(random)) return err(expected("a function"));
   if (!ENTROPY_SIZES.includes(entropyBytes)) return err(invalidEntropy(`entropy must be 16..32 bytes in steps of 4, got ${String(entropyBytes)}`));
   const ent = secretBytes(random(entropyBytes));
   if (ent === undefined) return err(expected("random bytes"));

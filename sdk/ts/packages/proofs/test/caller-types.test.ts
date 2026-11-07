@@ -694,4 +694,37 @@ describe("a revoked Proxy is refused as a TypeMismatch at every array and object
     expect(vt.root(revoked())).toEqual(mismatch("expected the head to be a Head"));
     expect(versioned.VersionedTrie.of("SHA-256", revoked())).toEqual(mismatch("expected a VersionKey"));
   });
+
+  it("a revoked Proxy of a function: a version key's methods, an iterable's iterator, next and return", () => {
+    const revokedFn = (): (() => never) => {
+      const { proxy, revoke } = Proxy.revocable(() => bad(undefined), {});
+      revoke();
+      return proxy;
+    };
+    const key = versioned.VersionKey.long;
+    expect(versioned.VersionedTrie.of<bigint>("SHA-256", { width: 8, encode: revokedFn(), decode: (b) => key.decode(b) })).toEqual(mismatch("expected a VersionKey"));
+    // revoked after the profile was made: refused at the call
+    const { proxy: encode, revoke } = Proxy.revocable((v: bigint) => key.encode(v), {});
+    const later = expectOk(versioned.VersionedTrie.of<bigint>("SHA-256", { width: 8, encode, decode: (b) => key.decode(b) }), "profile");
+    revoke();
+    expect(later.root(finalHead)).toEqual(mismatch("expected a VersionKey"));
+    expect(trie.trieRoot(T, variable, bad({ [Symbol.iterator]: revokedFn() }))).toEqual(mismatch("expected an iterable (its Symbol.iterator, iterator or next is not of the protocol's type)"));
+    expect(trie.trieRoot(T, variable, bad({ [Symbol.iterator]: () => ({ next: revokedFn() }) }))).toEqual(mismatch("expected an iterable (its Symbol.iterator, iterator or next is not of the protocol's type)"));
+    // next itself a Proxy, revoked by caller code (an entry's getter) mid-iteration; return revoked too
+    let revokeNext = (): void => undefined;
+    const entry = (): unknown[] => {
+      const e: unknown[] = [Uint8Array.of(0x61)];
+      Object.defineProperty(e, 1, {
+        get: () => {
+          revokeNext();
+          return v1;
+        },
+      });
+      return e;
+    };
+    const { proxy: next, revoke: revokeIt } = Proxy.revocable(() => ({ done: false, value: entry() }), {});
+    revokeNext = revokeIt;
+    const iterable = { [Symbol.iterator]: () => ({ next, return: revokedFn() }) };
+    expect(expectErr(trie.trieRoot(T, variable, bad(iterable)), "a revoked next").kind).toBe("TypeMismatch");
+  });
 });

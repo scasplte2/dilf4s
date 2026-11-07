@@ -462,5 +462,8 @@ describe("a revoked Proxy is refused as a TypeMismatch at every array argument, 
     expect(blsPop.batchVerify(bad([revoked()]))).toEqual(mismatch("expected a [VerifyingKey, Uint8Array, Signature] triple at index 0"));
     expect(slip10Ed25519.derive(seed, revoked())).toEqual(mismatch("expected an array of ChildIndex"));
     expect(WordList.of(revoked())).toEqual({ ok: false, error: { kind: "InvalidWordList", reason: "the words are not an array" } });
+    const { proxy: random, revoke } = Proxy.revocable((n: number) => new Uint8Array(n), {});
+    revoke();
+    expect(generateMnemonic(16, WordList.english, random)).toEqual(mismatch("expected a function"));
   });
 });

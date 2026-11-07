@@ -102,7 +102,9 @@ a signer reads it more than once and shared memory cannot be told apart reliably
 
 A revoked Proxy (or a Proxy whose target is one) is refused like any other argument of the wrong type, as a
 `TypeMismatch`, in all three packages: every array and object reader first asks `Array.isArray` through core's one
-guard, whose catch sees only the engine's refusal of such an object (the call runs no caller code). It and signing's
+guard, whose catch sees only the engine's refusal of such an object (the call runs no caller code), and a function a
+caller passes (an iterator's methods, a version key's, a source of randomness) is checked the same way each time it is
+called, since caller code may revoke it meanwhile. It and signing's
 boundary around noble are the SDK's only catches. A check that passes allocates at most one O(1) plain view of each
 caller byte argument (the view is what keeps a library such as noble from reading a subclass's own `length` or
 `subarray`) and the copies of what is kept; refusals and boolean verdicts are shared, frozen results.
