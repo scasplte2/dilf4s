@@ -27,7 +27,7 @@ import { bitLengthOf } from "./bigint.js";
 import { copyBytes, takeBytes } from "./bytes.js";
 import type { CanonicalError, TypeMismatch } from "./error.js";
 import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_DIGITS, CANONICAL_MAX_INTEGER_BITS, CANONICAL_MAX_RATIONAL_BITS, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
-import { toHex } from "./hex.js";
+import { toHexOf } from "./hex.js";
 import { close, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, walksAsArray } from "./iterator.js";
 import { KeySet, search } from "./keyset.js";
 import { Preview } from "./preview.js";
@@ -895,7 +895,7 @@ function scalarText(v: NullValue | BoolValue | IntValue | RationalValue | TextVa
     case "text":
       return JSON.stringify(v.value);
     case "bytes":
-      return `h'${toHex(bytesOf(v))}'`;
+      return `h'${toHexOf(bytesOf(v))}'`;
   }
 }
 

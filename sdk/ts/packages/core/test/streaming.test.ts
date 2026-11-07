@@ -1,29 +1,13 @@
+import { sha256 } from "@noble/hashes/sha2.js";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import * as cborModule from "../src/cbor.js";
 import { Feeding, STAGED_BYTES, encodeIntoWithin, type Absorber } from "../src/cbor.js";
 import { valueCommitmentInto, valueCommitmentIntoWithin } from "../src/commitment.js";
 import * as core from "../src/index.js";
-import {
-  cbor,
-  DomainTag,
-  fromHex,
-  HASH_ALGORITHMS,
-  hashCommitment,
-  hashParts,
-  json,
-  MAX_DEPTH,
-  models,
-  startHash,
-  TaggedHash,
-  toHex,
-  Value,
-  valueCommitment,
-  valueCommitmentWithin,
-  type HashAlgorithm,
-} from "../src/index.js";
+import { cbor, DomainTag, fromHex, HASH_ALGORITHMS, hashCommitment, hashParts, json, MAX_DEPTH, models, startHash, TaggedHash, Value, valueCommitment, valueCommitmentWithin, type HashAlgorithm } from "../src/index.js";
 import { bytesView, utf8View, type TextValue } from "../src/value.js";
-import { boolValue, bytesValue, expectOk, int, loadVectors } from "./vectors.js";
+import { boolValue, bytesValue, expectOk, int, loadVectors, hexOf } from "./vectors.js";
 
 const tag = expectOk(DomainTag.of("dilf4s/test/streaming/v1"), "tag");
 const text = (s: string): TextValue => expectOk(Value.text(s), "text");
@@ -31,8 +15,8 @@ const array = (items: readonly Value[]): Value => expectOk(Value.array(items), "
 const map = (entries: readonly (readonly [string, Value])[]): Value => expectOk(Value.map(entries), "map");
 
 /** The old path, kept here only as the oracle: the whole encoding (or commitment) built, then hashed. */
-const bufferedContent = (t: TaggedHash, v: Value): Uint8Array => t.hash(expectOk(cbor.encode(v), "encodes"));
-const bufferedCommitment = (t: TaggedHash, v: Value): Uint8Array => t.hash(expectOk(valueCommitment(v), "commits"));
+const bufferedContent = (t: TaggedHash, v: Value): Uint8Array => expectOk(t.hash(expectOk(cbor.encode(v), "encodes")), "hashes");
+const bufferedCommitment = (t: TaggedHash, v: Value): Uint8Array => expectOk(t.hash(expectOk(valueCommitment(v), "commits")), "hashes");
 
 function streamedCommitment(t: TaggedHash, v: Value): Uint8Array {
   const h = t.start();
@@ -42,9 +26,9 @@ function streamedCommitment(t: TaggedHash, v: Value): Uint8Array {
 
 function checkAll(name: string, v: Value): void {
   for (const a of HASH_ALGORITHMS) {
-    const t = TaggedHash.of(a, tag);
-    expect(toHex(expectOk(t.content(v), "hashes")), `${name}: content hash under ${a}`).toBe(toHex(bufferedContent(t, v)));
-    expect(toHex(streamedCommitment(t, v)), `${name}: commitment hash under ${a}`).toBe(toHex(bufferedCommitment(t, v)));
+    const t = expectOk(TaggedHash.of(a, tag), "a tagged hash");
+    expect(hexOf(expectOk(t.content(v), "hashes")), `${name}: content hash under ${a}`).toBe(hexOf(bufferedContent(t, v)));
+    expect(hexOf(streamedCommitment(t, v)), `${name}: commitment hash under ${a}`).toBe(hexOf(bufferedCommitment(t, v)));
   }
 }
 
@@ -170,21 +154,21 @@ describe("streamed hashing refuses as the buffered path does", { timeout: 60_000
     ["null", Value.null],
   ];
   it.each(cases)("for %s, at every limit around its length", (_, v) => {
-    const t = TaggedHash.of("SHA-256", tag);
+    const t = expectOk(TaggedHash.of("SHA-256", tag), "a tagged hash");
     const length = expectOk(cbor.encode(v), "encodes").length;
     for (const limit of [0, 1, length - 2, length - 1, length, length + 1, length + 2, 0.5, -1, Number.NaN, Infinity]) {
       const buffered = cbor.encodeWithin(v, limit);
       const streamed = t.contentWithin(v, limit);
       expect(streamed.ok, `content within ${String(limit)}`).toBe(buffered.ok);
       if (!streamed.ok && !buffered.ok) expect(streamed.error, `content refusal within ${String(limit)}`).toEqual(buffered.error);
-      if (streamed.ok && buffered.ok) expect(toHex(streamed.value)).toBe(toHex(t.hash(buffered.value)));
+      if (streamed.ok && buffered.ok) expect(hexOf(streamed.value)).toBe(hexOf(t.hash(buffered.value)));
 
       const committed = valueCommitmentWithin(v, limit);
       const h = t.start();
       const fed = valueCommitmentIntoWithin(h, v, limit);
       expect(fed.ok, `commitment within ${String(limit)}`).toBe(committed.ok);
       if (!fed.ok && !committed.ok) expect(fed.error, `commitment refusal within ${String(limit)}`).toEqual(committed.error);
-      if (fed.ok && committed.ok) expect(toHex(h.digest())).toBe(toHex(t.hash(committed.value)));
+      if (fed.ok && committed.ok) expect(hexOf(h.digest())).toBe(hexOf(t.hash(committed.value)));
     }
   });
 });
@@ -239,9 +223,9 @@ describe("the hashing path's memory is bounded", { timeout: 60_000 }, () => {
   it("and hashing the commitment of a large value matches a plain hash", () => {
     const a: HashAlgorithm = "SHA-256";
     const v = bytesValue(new Uint8Array(1 << 20).fill(3));
-    const h = startHash(a);
+    const h = expectOk(startHash(a), "a hash");
     expectOk(valueCommitmentInto(h, v), "commits");
-    expect(toHex(h.digest())).toBe(toHex(hashParts(a, [expectOk(valueCommitment(v), "commits")])));
+    expect(hexOf(h.digest())).toBe(hexOf(hashParts(a, [expectOk(valueCommitment(v), "commits")])));
   });
 });
 
@@ -271,11 +255,12 @@ describe("the streaming internals stay internal", () => {
       expect(() => Reflect.apply(borrowed, receiver, [v, cbor.MAX_ENCODED_BYTES]), "refused at the brand check").toThrow(TypeError);
       expect(writes.length, "nothing reached the caller's hash").toBe(0);
     }
-    expect(toHex(bytes.bytes), "the value is unchanged").toBe("07".repeat(2048));
+    expect(hexOf(bytes.bytes), "the value is unchanged").toBe("07".repeat(2048));
   });
 
   it("a hash whose prototype a caller replaced still never sees a value's own bytes", () => {
-    const proto = Object.getPrototypeOf(startHash("SHA-256")) as { update: (d: Uint8Array) => unknown };
+    // the prototype of the hash this package creates inside (noble's), not of the checked wrapper startHash returns
+    const proto = Object.getPrototypeOf(sha256.create()) as { update: (d: Uint8Array) => unknown };
     const original = proto.update;
     const seen: Uint8Array[] = [];
     proto.update = function (this: unknown, d: Uint8Array) {
@@ -289,7 +274,7 @@ describe("the streaming internals stay internal", () => {
     const long = text("t".repeat(4096));
     const own = [bytesView(bytes), utf8View(long)];
     for (const v of [bytes, long, array([bytes, long])]) {
-      expectOk(TaggedHash.of("SHA-256", tag).content(v), "hashes");
+      expectOk(expectOk(TaggedHash.of("SHA-256", tag), "a tagged hash").content(v), "hashes");
       expectOk(hashCommitment("SHA-256", [], v), "commits");
     }
     expect(seen.length, "the replaced update ran").toBeGreaterThan(0);
@@ -301,7 +286,7 @@ describe("the streaming internals stay internal", () => {
     for (const [name, v] of edgeCases()) {
       for (const a of HASH_ALGORITHMS) {
         const buffered = hashParts(a, [...prefix, expectOk(valueCommitment(v), "commits")]);
-        expect(toHex(expectOk(hashCommitment(a, prefix, v), "hashes")), `${name} under ${a}`).toBe(toHex(buffered));
+        expect(hexOf(expectOk(hashCommitment(a, prefix, v), "hashes")), `${name} under ${a}`).toBe(hexOf(buffered));
       }
     }
   });

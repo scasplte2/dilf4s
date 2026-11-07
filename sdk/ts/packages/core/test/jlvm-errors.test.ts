@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { codec, DomainTag, fromHex, models, taggedHash, toHex } from "../src/index.js";
-import { expectOk, loadVectors } from "./vectors.js";
+import { codec, DomainTag, fromHex, models, taggedHash } from "../src/index.js";
+import { expectOk, hexOf, loadVectors } from "./vectors.js";
 
 type JlvmErrorKind = models.jlvmVectors.JlvmErrorKind;
 
@@ -55,7 +55,7 @@ describe("every JLVM error kind has a vector row", { timeout: 60_000 }, () => {
       const form = expectOk(fromHex(a.cbor), "hex");
       const program = expectOk(codec.fromCbor(models.jlvm.JlvmProgram, form), a.alias);
       expect("op" in program.expr ? program.expr.op : undefined, a.alias).toBe(a.op);
-      expect(toHex(taggedHash("SHA-256", tag, form)), a.alias).toBe(a.id);
+      expect(hexOf(taggedHash("SHA-256", tag, form)), a.alias).toBe(a.id);
       expect(a.program.includes(`"${a.alias}"`) && a.own.includes(`"${a.op}"`), a.alias).toBe(true);
     }
   });

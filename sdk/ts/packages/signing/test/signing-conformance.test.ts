@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { models, toHex, type Result } from "@kd5ujc/dilf4s-core";
+import { models, type Result } from "@kd5ujc/dilf4s-core";
 
 import {
   bip32Secp256k1,
@@ -24,7 +24,7 @@ import {
   type PathRefusal,
   type CryptoError,
 } from "../src/index.js";
-import { expectOk, h, loadVectors } from "./vectors.js";
+import { expectOk, h, loadVectors, hexOf } from "./vectors.js";
 
 const vectors = loadVectors("signing_v1.json", models.signingVectors.SigningVectors);
 const randomness = h(vectors.randomness);
@@ -127,11 +127,11 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
       expect(scheme.keys.length).toBe(3);
       for (const key of scheme.keys) {
         const derived = a.fromSeed(h(key.seed));
-        expect(toHex(derived.sk)).toBe(key.signingKey);
-        expect(toHex(derived.vk)).toBe(key.verifyingKey);
+        expect(hexOf(derived.sk)).toBe(key.signingKey);
+        expect(hexOf(derived.vk)).toBe(key.verifyingKey);
         expect(key.signatures.length).toBe(3);
         for (const s of key.signatures) {
-          expect(toHex(derived.sign(h(s.message))), `${scheme.scheme} re-sign`).toBe(s.signature);
+          expect(hexOf(derived.sign(h(s.message))), `${scheme.scheme} re-sign`).toBe(s.signature);
           expect(a.verifyBytes(h(key.verifyingKey), h(s.message), h(s.signature))).toEqual({ ok: true, value: true });
         }
       }
@@ -290,9 +290,9 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
     expect(vectors.blsPop.length).toBe(3);
     for (const v of vectors.blsPop) {
       const sk = expectOk(blsPop.signingKey(h(v.signingKey)), "sk");
-      expect(toHex(blsPop.publicKey(sk).bytes)).toBe(v.verifyingKey);
+      expect(hexOf(blsPop.publicKey(sk).bytes)).toBe(v.verifyingKey);
       const proof = blsPop.popProve(sk);
-      expect(toHex(proof.bytes)).toBe(v.proof);
+      expect(hexOf(proof.bytes)).toBe(v.proof);
       const vk = expectOk(blsPop.verifyingKey(h(v.verifyingKey)), "vk");
       expect(blsPop.popVerify(vk, expectOk(blsPop.signature(h(v.proof)), "proof"))).toBe(true);
       expect(blsPop.verify(vk, h(v.verifyingKey), proof), "a PoP is not a message signature").toBe(false);

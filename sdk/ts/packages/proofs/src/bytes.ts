@@ -1,5 +1,6 @@
 /** Byte-string helpers shared by the verifiers. */
-import { type cbor, digest, hashCommitment, hashParts, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { type cbor, hashCommitment, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { digestOf, hashPartsOf } from "@kd5ujc/dilf4s-core/internal";
 
 /** A fresh plain copy: `slice` on a Node `Buffer` would share memory. */
 export function copyBytes(bytes: Uint8Array): Uint8Array {
@@ -65,7 +66,7 @@ export class ConstantTag {
     readonly algorithm: HashAlgorithm,
     readonly tag: string,
   ) {
-    this.#tagHash = digest(algorithm, ascii(tag));
+    this.#tagHash = digestOf(algorithm, ascii(tag));
     Object.freeze(this);
   }
 
@@ -76,7 +77,7 @@ export class ConstantTag {
 
   hash(message: Uint8Array): Uint8Array {
     const t = this.#tag();
-    return hashParts(this.algorithm, [t, t, message]);
+    return hashPartsOf(this.algorithm, [t, t, message]);
   }
 
   /**
@@ -91,6 +92,6 @@ export class ConstantTag {
 
   hashParts(parts: readonly Uint8Array[]): Uint8Array {
     const t = this.#tag();
-    return hashParts(this.algorithm, [t, t, ...parts]);
+    return hashPartsOf(this.algorithm, [t, t, ...parts]);
   }
 }

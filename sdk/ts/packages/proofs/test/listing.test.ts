@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { models, toHex } from "@kd5ujc/dilf4s-core";
+import { models } from "@kd5ujc/dilf4s-core";
 
 import { trie } from "../src/index.js";
 import * as B from "../src/bits.js";
 import { bytesEqual, compareBytes } from "../src/bytes.js";
 import * as L from "../src/listing.js";
-import { expectOk, int } from "./vectors.js";
+import { expectOk, int, hexOf } from "./vectors.js";
 
 const T = trie.TrieHashing.of("SHA-256");
 
@@ -118,7 +118,7 @@ const same = (a: Entries, b: readonly L.KeyedHash[]): boolean =>
   a.length === b.length && a.every((x, i) => bytesEqual(x.key, b[i]?.key ?? new Uint8Array(0)) && bytesEqual(x.valueHash, b[i]?.valueHash ?? new Uint8Array(0)));
 const oldLists = (listing: Entries | undefined, claimed: readonly L.KeyedHash[]): boolean | undefined => (listing === undefined ? undefined : same(listing, claimed));
 
-const hexed = (es: readonly L.KeyedHash[] | undefined): unknown => es?.map((e) => [toHex(e.key), toHex(e.valueHash)]) ?? "notCovered";
+const hexed = (es: readonly L.KeyedHash[] | undefined): unknown => es?.map((e) => [hexOf(e.key), hexOf(e.valueHash)]) ?? "notCovered";
 
 // ------------------------------------------------------------------ random partial tries
 
@@ -198,7 +198,7 @@ describe("listing walks answer as the old ones did", { timeout: 60_000 }, () => 
         const w = { built: 0, compared: 0 };
         const range = oldRange(top, from, until, w);
         const prefix = oldPrefix(top, from, w);
-        const what = `round ${round.toString()}, [${toHex(from)}, ${until === undefined ? "" : toHex(until)})`;
+        const what = `round ${round.toString()}, [${hexOf(from)}, ${until === undefined ? "" : hexOf(until)})`;
         expect(hexed(L.listRange(top, from, until)), `${what}: range`).toEqual(hexed(range));
         expect(hexed(L.listPrefix(top, from)), `${what}: prefix`).toEqual(hexed(prefix));
         for (const c of claimsNear(range ?? [], whole)) expect(L.listsRange(top, from, until, c), `${what}: range check`).toBe(oldLists(range, c));

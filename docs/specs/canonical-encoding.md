@@ -75,15 +75,18 @@ value read as another type. Each argument is checked in O(1) before it is read:
   `encode` and `codec.toCbor` (a hand-made codec that gives what is not a value is refused by its place),
   `json.renderWithin` and `json.renderInto` (its sink too), `valueCommitment`, `valueCommitmentWithin` and
   `hashCommitment` (its algorithm and prefix too);
-- helpers: `json.decimal`, `cbor.magnitudeBytes`, `bitLength` and `utf8Length`.
+- helpers: `json.decimal`, `cbor.magnitudeBytes`, `bitLength` and `utf8Length`;
+- the hash API (§4): `digest`, `hashParts`, `startHash` and its hash's `update`, `outputSize`, `blockSize`,
+  `expansionLimit`, `parseHashAlgorithm`, `digestFromBytes`, `digestFromHex`, `expandMessageXmd` (its output length
+  too: a non-number is a `TypeMismatch`, a number out of range `outputLength`), `DomainTag.of`, `TaggedHash.of` and its
+  `hash`, `content` and `contentWithin`, `taggedHash`, `contentHash`, `toHex` and `fromHex`. An algorithm that is not
+  a string is a `TypeMismatch`; a string naming none is `UnknownAlgorithm`, as in every SDK.
 
 Where a result has no room for a refusal, the answer is still defined and reads nothing of the argument: `equals` is
 false when either side is not a value, `MapValue.get` finds nothing for a key that is not text, `decodeUtf8` gives
 `undefined` for what is not bytes, and the diagnostics `inspect`, `describeFailure` and `Preview.of` give fixed
 placeholders (`<not a canonical value>`, `<not a decode failure>`, and a preview with the head `<not text>` and a
-length of 0). One exception remains: `contentHash`, `TaggedHash.content` and `TaggedHash.contentWithin` still throw
-on an argument that is not a value, until the hash API is converted in a later change, with the proofs and signing
-packages' caller input.
+length of 0).
 
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the

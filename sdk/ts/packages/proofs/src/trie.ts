@@ -6,7 +6,8 @@
  *
  * Every walk uses an explicit stack, never recursion: a proof's depth is bounded only by the mode (up to 524280 bits).
  */
-import { BYTES_TAG, describeFailure, err, models, ok, outputSize, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { BYTES_TAG, describeFailure, err, models, ok, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { outputSizeOf, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
@@ -162,7 +163,7 @@ export class TrieHashing {
   readonly #branch: ConstantTag;
   readonly #empty: Uint8Array;
   private constructor(readonly algorithm: HashAlgorithm) {
-    this.size = outputSize(algorithm);
+    this.size = outputSizeOf(algorithm);
     this.#value = new ConstantTag(algorithm, VALUE_TAG);
     this.#leaf = new ConstantTag(algorithm, LEAF_TAG);
     this.#branch = new ConstantTag(algorithm, BRANCH_TAG);
@@ -409,7 +410,7 @@ function hashProof(hashing: TrieHashing, mode: KeyMode, top: ProofNode): Result<
  * caller's root of any length is never hex-encoded whole (docs/specs/conformance.md section 8).
  */
 export function rootText(root: Uint8Array, width: number): string {
-  return root.length === width ? toHex(root) : `a root of ${root.length.toString()} bytes`;
+  return root.length === width ? toHexOf(root) : `a root of ${root.length.toString()} bytes`;
 }
 
 /** {@link verify} with a root mismatch as the error `RootMismatch` (as Scala's `TrieProofs.verify`), for composed checks. */
@@ -417,7 +418,7 @@ export function check(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, pro
   const top = topOf(proof);
   const computed = top === undefined ? ok(hashing.empty) : hashProof(hashing, mode, top);
   if (!computed.ok) return computed;
-  return bytesEqual(computed.value, root) ? ok(createVerified(mode, top)) : err({ kind: "RootMismatch", expected: rootText(root, computed.value.length), computed: toHex(computed.value) });
+  return bytesEqual(computed.value, root) ? ok(createVerified(mode, top)) : err({ kind: "RootMismatch", expected: rootText(root, computed.value.length), computed: toHexOf(computed.value) });
 }
 
 /**

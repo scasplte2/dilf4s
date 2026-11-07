@@ -5,13 +5,13 @@ import { sha512 } from "@noble/hashes/sha2.js";
 import { concatBytes } from "@noble/hashes/utils.js";
 import { describe, expect, test } from "vitest";
 
-import { toHex } from "@kd5ujc/dilf4s-core";
+
 
 import { ed25519, ed25519Bip32 } from "../src/index.js";
 import { signExtended } from "../src/ed25519.js";
 import { L } from "../src/internal/edwards.js";
 import { bigToLE, leToBig } from "../src/internal/bytes.js";
-import { expectOk, h, readDoc, utf8 } from "./vectors.js";
+import { expectOk, h, readDoc, utf8, hexOf } from "./vectors.js";
 
 interface BramblVector {
   readonly inputs: { readonly secretKey: string; readonly message: string };
@@ -27,9 +27,9 @@ describe("Ed25519", { timeout: 60_000 }, () => {
     expect(vectors.length).toBeGreaterThan(0);
     for (const v of vectors) {
       const kp = expectOk(ed25519.fromSeed(h(v.inputs.secretKey)), "seed");
-      expect(toHex(kp.verifying.bytes)).toBe(v.outputs.verificationKey);
+      expect(hexOf(kp.verifying.bytes)).toBe(v.outputs.verificationKey);
       const sig = ed25519.sign(kp.signing, h(v.inputs.message));
-      expect(toHex(sig.bytes)).toBe(v.outputs.signature);
+      expect(hexOf(sig.bytes)).toBe(v.outputs.signature);
       expect(ed25519.verify(kp.verifying, h(v.inputs.message), sig)).toBe(true);
       expect(ed25519.verifyLibsodium(kp.verifying, h(v.inputs.message), sig)).toBe(true);
     }
@@ -123,10 +123,10 @@ describe("Ed25519-BIP32", { timeout: 60_000 }, () => {
       const msg = h(v.inputs.message);
       const sig = signExtended(skb.subarray(0, 32), skb.subarray(32, 64), msg);
       const vkb = h(v.outputs.verificationKey).subarray(0, 32);
-      expect(toHex(Point.BASE.multiply(leToBig(skb.subarray(0, 32)) % L).toBytes())).toBe(toHex(vkb));
+      expect(hexOf(Point.BASE.multiply(leToBig(skb.subarray(0, 32)) % L).toBytes())).toBe(hexOf(vkb));
       expect(expectOk(ed25519Bip32.verifyBytes(vkb, msg, sig), "decode")).toBe(true);
       if (i === 2) expect(expectOk(ed25519Bip32.verifyBytes(vkb, msg, h(v.outputs.signature)), "decode")).toBe(true);
-      else expect(toHex(sig)).toBe(v.outputs.signature);
+      else expect(hexOf(sig)).toBe(v.outputs.signature);
     });
     const unclamped = ed25519Bip32.signingKey(h(vectors[0]?.inputs.secretKey ?? "").subarray(0, 64));
     expect(unclamped.ok ? "ok" : unclamped.error.kind).toBe("InvalidKey");

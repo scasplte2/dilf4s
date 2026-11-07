@@ -2,8 +2,8 @@ import { Buffer } from "node:buffer";
 
 import { describe, expect, it } from "vitest";
 
-import { cbor, codec, toHex } from "../src/index.js";
-import { bytesValue, expectOk } from "./vectors.js";
+import { cbor, codec } from "../src/index.js";
+import { bytesValue, expectOk, hexOf } from "./vectors.js";
 
 // Buffer#slice and Buffer#subarray share memory, so a Buffer must be copied into a plain Uint8Array.
 describe("byte strings own their bytes", () => {
@@ -11,14 +11,14 @@ describe("byte strings own their bytes", () => {
     const source = Buffer.from([1, 2]);
     const v = bytesValue(source);
     source[0] = 9;
-    expect(toHex(v.bytes)).toBe("0102");
+    expect(hexOf(v.bytes)).toBe("0102");
   });
 
   it("the bytes getter hands out a copy, even from a Buffer", () => {
     const v = bytesValue(Buffer.from([1, 2]));
     const out = v.bytes;
     out[0] = 9;
-    expect(toHex(v.bytes)).toBe("0102");
+    expect(hexOf(v.bytes)).toBe("0102");
     expect(Buffer.isBuffer(out), "a plain Uint8Array").toBe(false);
   });
 
@@ -26,7 +26,7 @@ describe("byte strings own their bytes", () => {
     const input = Buffer.from([0x42, 0x01, 0x02]);
     const v = expectOk(cbor.decode(input), "decodes");
     input[1] = 9;
-    expect(toHex(expectOk(cbor.encode(v), "encodes"))).toBe("420102");
+    expect(hexOf(expectOk(cbor.encode(v), "encodes"))).toBe("420102");
   });
 
   it("a codec's encoded and decoded bytes are independent of the caller's", () => {
@@ -35,6 +35,6 @@ describe("byte strings own their bytes", () => {
     source[0] = 9;
     const decoded = expectOk(codec.bytes.decode(v), "decodes");
     decoded[1] = 9;
-    expect(toHex(expectOk(cbor.encode(v), "encodes"))).toBe("420102");
+    expect(hexOf(expectOk(cbor.encode(v), "encodes"))).toBe("420102");
   });
 });

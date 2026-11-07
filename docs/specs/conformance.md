@@ -232,11 +232,16 @@ API's one error type (Scala `xyz.kd5ujc.core.hash.HashError`, Rust `dilf4s_core:
 
 | Kind | Fields | Raised by |
 |---|---|---|
-| `InvalidLength` | `algorithm`, `expected` (the output size), `actual` | a digest from bytes or hex of another length; in TypeScript, until its result types widen to a kind for an argument of the wrong type (#116), also bytes that are not a `Uint8Array` (`actual` 0) |
+| `InvalidLength` | `algorithm`, `expected` (the output size), `actual` | a digest from bytes or hex of another length |
 | `InvalidHex` | `offset` (normative, §3) | hex decoding, and a digest from hex |
 | `InvalidDomainTag` | `tag`, a preview | a domain tag outside the grammar |
-| `InvalidExpansion` | `refusal` (normative, §3), `algorithm`, `limit` (the most bytes it expands to) | `expand_message_xmd`; in TypeScript, until #116, `emptyDst` also for a DST that is not a `Uint8Array` |
+| `InvalidExpansion` | `refusal` (normative, §3), `algorithm`, `limit` (the most bytes it expands to) | `expand_message_xmd` |
 | `UnknownAlgorithm` | `name`, a preview | a hash function by name |
+
+In TypeScript, an argument of the wrong type (from JavaScript, or a cast) is none of these kinds: it is core's
+`TypeMismatch` (canonical-encoding.md §1), which the TypeScript hash API's result types admit beside this family, and
+which no vector pins (Scala's and Rust's types rule such an argument out). A string naming no algorithm is still
+`UnknownAlgorithm`; an algorithm that is not a string is a `TypeMismatch`.
 
 For a digest's hex longer than its width, `actual` is half the text's length after the prefix, rounded up, in the
 language's own string units (UTF-16 in Scala and TypeScript, UTF-8 in Rust): the text is refused before it is read

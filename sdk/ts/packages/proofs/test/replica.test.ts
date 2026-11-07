@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { toHex, type Value } from "@kd5ujc/dilf4s-core";
+import { type Value } from "@kd5ujc/dilf4s-core";
 
 import { trie, versioned } from "../src/index.js";
-import { expectErr, expectOk, int } from "./vectors.js";
+import { expectErr, expectOk, int, hexOf } from "./vectors.js";
 
 // The replica's tries (docs/specs/versioned-trie.md section 7): updated incrementally, equal to a full rebuild after
 // every delta (deletes, re-inserts, an emptied state, refused deltas), hashing only the changed keys' paths whatever
@@ -13,7 +13,7 @@ import { expectErr, expectOk, int } from "./vectors.js";
 const vt = expectOk(versioned.VersionedTrie.of("SHA-256", versioned.VersionKey.long), "profile");
 const key = (s: string): versioned.StateKey => expectOk(versioned.StateKey.parse(s), `state key ${s}`);
 const vkey = (v: bigint): Uint8Array => expectOk(vt.versionKey.encode(v), "vkey");
-const hex = (b: Uint8Array): string => toHex(b);
+const hex = (b: Uint8Array): string => hexOf(b);
 
 type Delta = versioned.Delta<bigint>;
 type Head = versioned.Head<bigint>;

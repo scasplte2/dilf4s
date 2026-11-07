@@ -2,7 +2,7 @@
 import { byteLimit, checkedLimit, Meter, tooLarge } from "./budget.js";
 import { isLocalBuffer, plainBytes } from "./bytes.js";
 import type { CanonicalError, NonCanonicalReason, TooLarge, TypeMismatch, UnsupportedItem } from "./error.js";
-import { toHex } from "./hex.js";
+import { toHexOf } from "./hex.js";
 import { err, ok, type Result } from "./result.js";
 import { compareBytes, utf8Text } from "./utf8.js";
 import {
@@ -31,7 +31,7 @@ export { MAX_INTEGER_BITS, MAX_RATIONAL_BITS } from "./value.js";
  * hexadecimal, linear in the length (shifting in a byte at a time would be quadratic). A test counts its calls.
  */
 export const bignums = {
-  magnitude: (b: Uint8Array): bigint => BigInt(`0x${toHex(b)}`),
+  magnitude: (b: Uint8Array): bigint => BigInt(`0x${toHexOf(b)}`),
 };
 
 /**

@@ -3,7 +3,8 @@
  * profile (any core hash algorithm) or the RFC 6962 profile, proof decoding from canonical values, and the JLVM's
  * `merkle_verify` / `merkle_consistency_verify` over a trusted head `{root, size}` (jlvm.md section 6).
  */
-import { describeFailure, digest, err, hashParts, models, ok, outputSize, toHex, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { digestOf, hashPartsOf, outputSizeOf, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
@@ -60,7 +61,7 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
   readonly #node: ConstantTag;
   readonly #empty: Uint8Array;
   private constructor(readonly algorithm: HashAlgorithm) {
-    this.size = outputSize(algorithm);
+    this.size = outputSizeOf(algorithm);
     this.#leaf = new ConstantTag(algorithm, LEAF_TAG);
     this.#node = new ConstantTag(algorithm, NODE_TAG);
     this.#empty = new ConstantTag(algorithm, EMPTY_TAG).hash(new Uint8Array(0));
@@ -101,7 +102,7 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
   readonly profile = "rfc6962";
   readonly size: number;
   private constructor(readonly algorithm: HashAlgorithm) {
-    this.size = outputSize(algorithm);
+    this.size = outputSizeOf(algorithm);
     Object.freeze(this);
   }
 
@@ -110,11 +111,11 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
   }
 
   get empty(): Uint8Array {
-    return digest(this.algorithm, new Uint8Array(0));
+    return digestOf(this.algorithm, new Uint8Array(0));
   }
 
   leaf(data: Uint8Array): Result<Uint8Array, MerkleError> {
-    return ok(hashParts(this.algorithm, [Uint8Array.of(0), data]));
+    return ok(hashPartsOf(this.algorithm, [Uint8Array.of(0), data]));
   }
 
   leafWeight(data: Uint8Array): bigint {
@@ -122,7 +123,7 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
   }
 
   node(left: Uint8Array, right: Uint8Array): Uint8Array {
-    return hashParts(this.algorithm, [Uint8Array.of(1), left, right]);
+    return hashPartsOf(this.algorithm, [Uint8Array.of(1), left, right]);
   }
 }
 
@@ -224,7 +225,7 @@ function digests(hashing: MerkleHashing<unknown>, path: readonly Uint8Array[]): 
 }
 
 const invalid = (reason: string): Result<never, MerkleError> => err({ kind: "InvalidProof", reason });
-const mismatch = (expected: Uint8Array, computed: Uint8Array): Result<never, MerkleError> => err({ kind: "RootMismatch", expected: toHex(expected), computed: toHex(computed) });
+const mismatch = (expected: Uint8Array, computed: Uint8Array): Result<never, MerkleError> => err({ kind: "RootMismatch", expected: toHexOf(expected), computed: toHexOf(computed) });
 
 /** Right-shifts both until `fn` is odd or zero. */
 function shiftUntilOddOrZero(fn: bigint, sn: bigint): readonly [bigint, bigint] {

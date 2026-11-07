@@ -118,7 +118,7 @@ describe("bounded refusals", () => {
   it("a 1 MiB domain tag is a preview", () => {
     const r = DomainTag.of("X".repeat(HUGE));
     expect(r.ok).toBe(false);
-    if (!r.ok) {
+    if (!r.ok && r.error.kind === "InvalidDomainTag") {
       kept(r.error.tag);
       bounded("InvalidDomainTag", rendered(r.error));
     }
@@ -127,7 +127,7 @@ describe("bounded refusals", () => {
   it("a 1 MiB hash function name is a preview", () => {
     const r = parseHashAlgorithm("X".repeat(HUGE));
     expect(r.ok).toBe(false);
-    if (!r.ok) {
+    if (!r.ok && r.error.kind === "UnknownAlgorithm") {
       kept(r.error.name);
       bounded("UnknownAlgorithm", rendered(r.error));
     }

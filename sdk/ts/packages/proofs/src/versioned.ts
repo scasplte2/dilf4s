@@ -3,7 +3,8 @@
  * head to one root, every check of Scala's `VersionedTrieVerifier`, proof / delta / snapshot-chunk decoding, the
  * chunk-by-chunk snapshot reader against a trusted head, and a replica that follows deltas.
  */
-import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, toHex, utf8Length, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type Value } from "@kd5ujc/dilf4s-core";
+import { toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { bitsOf, decodeInput } from "./input.js";
@@ -39,7 +40,7 @@ const notCovered = (what: string): R<never> => err({ kind: "NotCovered", what })
 const viaTrie = <T>(r: Result<T, trie.TrieError>): R<T> => (r.ok ? r : err({ kind: "Trie", error: r.error }));
 // a trusted root of the wrong width is the caller's: named by its length, never hex-encoded whole (conformance.md section 8)
 const mismatch = (component: string, expected: Uint8Array, computed: Uint8Array): R<never> =>
-  err({ kind: "RootMismatch", component, expected: trie.rootText(expected, computed.length), computed: toHex(computed) });
+  err({ kind: "RootMismatch", component, expected: trie.rootText(expected, computed.length), computed: toHexOf(computed) });
 
 // ------------------------------------------------------------------ keys (section 2)
 
@@ -166,7 +167,7 @@ function bigEndian(width: number, max: bigint): VersionKey<bigint> {
       if (b.length !== width) return err({ kind: "InvalidVersion", reason: `a version key is ${width.toString()} bytes, got ${b.length.toString()}` });
       let v = 0n;
       for (const x of b) v = (v << 8n) | BigInt(x);
-      return v <= max ? ok(v) : err({ kind: "InvalidVersion", reason: `version ${toHex(b)} exceeds ${max.toString()}` });
+      return v <= max ? ok(v) : err({ kind: "InvalidVersion", reason: `version ${toHexOf(b)} exceeds ${max.toString()}` });
     },
   });
 }
@@ -242,7 +243,7 @@ export const VERSION_SLOT = Uint8Array.of(0x00);
 export const STATE_SLOT = Uint8Array.of(0x01);
 export const HISTORY_SLOT = Uint8Array.of(0x02);
 
-const slotName = (slot: Uint8Array): string => toHex(slot);
+const slotName = (slot: Uint8Array): string => toHexOf(slot);
 
 /** {@link VersionedTrie.checkValue}, which needs no profile. */
 function checkValue(key: StateKey, value: Value): R<undefined> {
@@ -561,7 +562,7 @@ export class VersionedTrie<V> {
     if (!a.ok) return a;
     const b = this.versionKey.encode(u);
     if (!b.ok) return b;
-    return bytesEqual(a.value, b.value) ? ok(at) : malformed(`the proof is about version ${toHex(a.value)}, not ${toHex(b.value)}`);
+    return bytesEqual(a.value, b.value) ? ok(at) : malformed(`the proof is about version ${toHexOf(a.value)}, not ${toHexOf(b.value)}`);
   }
 
   /** The state root of `u` per the history trie: the root if committed, `null` if proven never committed. */
@@ -574,7 +575,7 @@ export class VersionedTrie<V> {
     if (!vkey.ok) return vkey;
     const l = viaTrie(hist.value.lookup(vkey.value));
     if (!l.ok) return l;
-    const k = toHex(vkey.value);
+    const k = toHexOf(vkey.value);
     const s = at.value.stateRoot;
     switch (l.value.kind) {
       case "notCovered":
@@ -644,7 +645,7 @@ export class VersionedTrie<V> {
     const uk = until === null ? ok(undefined) : this.versionKey.encode(until);
     if (!uk.ok) return uk;
     const listing = hist.value.range(fk.value, uk.value);
-    if (listing.kind === "notCovered") return notCovered(`versions [${toHex(fk.value)}, ${uk.value === undefined ? "" : toHex(uk.value)})`);
+    if (listing.kind === "notCovered") return notCovered(`versions [${toHexOf(fk.value)}, ${uk.value === undefined ? "" : toHexOf(uk.value)})`);
     const expected: trie.TrieEntry[] = [];
     for (const [v, s] of claimed) {
       const k = this.versionKey.encode(v);
@@ -672,13 +673,13 @@ export class VersionedTrie<V> {
       if (!pkey.ok) return pkey;
       const s = proof.at.stateRoot;
       if (s === undefined) return malformed("an as-of answer names its state root");
-      if (compareBytes(pkey.value, tkey.value) > 0) return malformed(`the answer ${toHex(pkey.value)} is after ${toHex(tkey.value)}`);
+      if (compareBytes(pkey.value, tkey.value) > 0) return malformed(`the answer ${toHexOf(pkey.value)} is after ${toHexOf(tkey.value)}`);
       found = { pkey: pkey.value, version: proof.at.version, stateRoot: s };
     }
     const listing = hist.value.range(found?.pkey ?? new Uint8Array(0), bound);
-    if (listing.kind === "notCovered") return notCovered(`history up to ${toHex(tkey.value)}`);
+    if (listing.kind === "notCovered") return notCovered(`history up to ${toHexOf(tkey.value)}`);
     const expected = found === undefined ? [] : [{ key: found.pkey, valueHash: this.bytesHash(found.stateRoot) }];
-    if (!sameEntries(listing.entries, expected)) return malformed(`the history up to ${toHex(tkey.value)} is not the claimed answer`);
+    if (!sameEntries(listing.entries, expected)) return malformed(`the history up to ${toHexOf(tkey.value)} is not the claimed answer`);
     return ok(found === undefined ? null : { version: found.version, stateRoot: found.stateRoot });
   }
 }
@@ -755,7 +756,7 @@ export class SnapshotReader<V> {
       let previous = this.lastKey;
       for (const [k] of es) {
         const b = k.bytes();
-        if (previous !== undefined && compareBytes(previous, b) >= 0) return bad(`key ${Preview.of(toHex(b)).short()} does not follow ${Preview.of(toHex(previous)).short()}`);
+        if (previous !== undefined && compareBytes(previous, b) >= 0) return bad(`key ${Preview.of(toHexOf(b)).short()} does not follow ${Preview.of(toHexOf(previous)).short()}`);
         previous = b;
       }
       return ok(this.next({ ...(previous === undefined ? {} : { lastKey: previous }), state: es }));
@@ -774,12 +775,12 @@ export class SnapshotReader<V> {
     if (!hk.ok) return hk;
     let previous = this.lastVersion;
     for (const k of keys) {
-      if (previous !== undefined && compareBytes(previous, k) >= 0) return bad(`version ${Preview.of(toHex(k)).short()} does not follow ${Preview.of(toHex(previous)).short()}`);
+      if (previous !== undefined && compareBytes(previous, k) >= 0) return bad(`version ${Preview.of(toHexOf(k)).short()} does not follow ${Preview.of(toHexOf(previous)).short()}`);
       previous = k;
     }
     for (const [i, k] of keys.entries()) {
       const s = vs[i]?.[1] ?? new Uint8Array(0);
-      if (compareBytes(k, hk.value) > 0) return bad(`version ${toHex(k)} is after the head`);
+      if (compareBytes(k, hk.value) > 0) return bad(`version ${toHexOf(k)} is after the head`);
       if (bytesEqual(k, hk.value) && !bytesEqual(s, this.trusted.stateRoot)) return bad("the head version has another state root");
     }
     const last = keys[keys.length - 1];
@@ -951,7 +952,7 @@ export class Replica<V> {
     const claimed = delta.parent === undefined ? ok(null) : p.root(delta.parent);
     if (!claimed.ok) return claimed;
     const same = parent.value === null || claimed.value === null ? parent.value === claimed.value : bytesEqual(parent.value, claimed.value);
-    if (!same) return err({ kind: "RootMismatch", component: "parent", expected: parent.value === null ? "none" : toHex(parent.value), computed: claimed.value === null ? "none" : toHex(claimed.value) });
+    if (!same) return err({ kind: "RootMismatch", component: "parent", expected: parent.value === null ? "none" : toHexOf(parent.value), computed: claimed.value === null ? "none" : toHexOf(claimed.value) });
     const nk = p.versionKey.encode(delta.head.version);
     if (!nk.ok) return nk;
     if (this.#head !== null) {

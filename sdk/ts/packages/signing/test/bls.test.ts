@@ -1,12 +1,12 @@
 import { describe, expect, test } from "vitest";
 
-import { toHex } from "@kd5ujc/dilf4s-core";
+
 import { bls12_381 } from "@noble/curves/bls12-381.js";
 
 import { blsPop, type Signature, type VerifyingKey } from "../src/index.js";
 import { R } from "../src/bls.js";
 import { bigToBE } from "../src/internal/bytes.js";
-import { expectOk, h, readDoc, utf8 } from "./vectors.js";
+import { expectOk, h, readDoc, utf8, hexOf } from "./vectors.js";
 
 interface Case {
   readonly name: string;
@@ -35,7 +35,7 @@ describe("ethereum/bls12-381-tests v0.1.2", { timeout: 120_000 }, () => {
     for (const c of cases("sign", 10)) {
       const input = c.input as { privkey: string; message: string };
       const sk = blsPop.signingKey(h(input.privkey));
-      const actual = sk.ok ? `0x${toHex(blsPop.sign(sk.value, h(input.message)).bytes)}` : null;
+      const actual = sk.ok ? `0x${hexOf(blsPop.sign(sk.value, h(input.message)).bytes)}` : null;
       expect(actual, c.name).toBe(c.output);
     }
   });
@@ -53,7 +53,7 @@ describe("ethereum/bls12-381-tests v0.1.2", { timeout: 120_000 }, () => {
       const sigs = (c.input as string[]).map((s) => sigOf(s));
       const defined = sigs.filter((s) => s !== undefined);
       const r = defined.length === sigs.length ? blsPop.aggregate(defined) : undefined;
-      expect(r?.ok === true ? `0x${toHex(r.value.bytes)}` : null, c.name).toBe(c.output);
+      expect(r?.ok === true ? `0x${hexOf(r.value.bytes)}` : null, c.name).toBe(c.output);
     }
   });
 
@@ -113,7 +113,7 @@ describe("ethereum/bls12-381-tests v0.1.2", { timeout: 120_000 }, () => {
       // the vectors write Fp2 as "c0,c1"; the uncompressed encoding puts c1 first
       const coord = (s: string) => s.split(",").map((p) => p.slice(2)).reverse().join("");
       const r = expectOk(blsPop.hashToG2(utf8((c.input as { msg: string }).msg), dst), c.name);
-      expect(toHex(r), c.name).toBe(coord(out.x) + coord(out.y));
+      expect(hexOf(r), c.name).toBe(coord(out.x) + coord(out.y));
     }
   });
 });
@@ -122,8 +122,8 @@ describe("BLS12-381-PoP", { timeout: 60_000 }, () => {
   test("tessellation-bls known answer, proof of possession, and typed key errors", () => {
     const sk = expectOk(blsPop.signingKey(h("328388aff0d4a5b7dc9205abd374e7e98f3cd9f3418edb4eafda5fb16473d216")), "sk");
     const vk = blsPop.publicKey(sk);
-    expect(toHex(vk.bytes)).toBe("b53d21a4cfd562c469cc81514d4ce5a6b577d8403d32a394dc265dd190b47fa9f829fdd7963afdf972e5e77854051f6f");
-    expect(toHex(blsPop.sign(sk, new Uint8Array(32).fill(0xab)).bytes)).toBe(
+    expect(hexOf(vk.bytes)).toBe("b53d21a4cfd562c469cc81514d4ce5a6b577d8403d32a394dc265dd190b47fa9f829fdd7963afdf972e5e77854051f6f");
+    expect(hexOf(blsPop.sign(sk, new Uint8Array(32).fill(0xab)).bytes)).toBe(
       "ae82747ddeefe4fd64cf9cedb9b04ae3e8a43420cd255e3c7cd06a8d88b7c7f8638543719981c5d16fa3527c468c25f0026704a6951bde891360c7e8d12ddee0559004ccdbe6046b55bae1b257ee97f7cdb955773d7cf29adf3ccbb9975e4eb9",
     );
     const pop = blsPop.popProve(sk);
@@ -153,7 +153,7 @@ describe("BLS12-381-PoP", { timeout: 60_000 }, () => {
     // s + (-s) aggregates to the identity, encoded with the infinity flag
     const s = blsPop.sign(sk, utf8("m"));
     const neg = expectOk(blsPop.signature(bls12_381.longSignatures.Signature.toBytes(bls12_381.longSignatures.Signature.fromBytes(s.bytes).negate())), "neg");
-    expect(toHex(expectOk(blsPop.aggregate([s, neg]), "aggregate").bytes)).toBe(toHex(identitySig));
+    expect(hexOf(expectOk(blsPop.aggregate([s, neg]), "aggregate").bytes)).toBe(hexOf(identitySig));
     expect(blsPop.aggregate([]).ok).toBe(false);
     expect(blsPop.fastAggregateVerify([], utf8("m"), s)).toBe(false);
     expect(blsPop.aggregateVerify([], s)).toBe(false);
@@ -165,9 +165,9 @@ describe("BLS12-381-PoP", { timeout: 60_000 }, () => {
       "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04",
     );
     const master = expectOk(blsPop.deriveMasterSk(seed), "master");
-    expect(toHex(master.bytes)).toBe(toHex(bigToBE(6083874454709270928345386274498605044986640685124978867557563392430687146096n, 32)));
+    expect(hexOf(master.bytes)).toBe(hexOf(bigToBE(6083874454709270928345386274498605044986640685124978867557563392430687146096n, 32)));
     const child = expectOk(blsPop.deriveChildSk(master, 0), "child");
-    expect(toHex(child.bytes)).toBe(toHex(bigToBE(20397789859736650942317412262472558107875392172444076792671091975210932703118n, 32)));
+    expect(hexOf(child.bytes)).toBe(hexOf(bigToBE(20397789859736650942317412262472558107875392172444076792671091975210932703118n, 32)));
     expect(blsPop.deriveMasterSk(new Uint8Array(31)).ok).toBe(false);
     expect(blsPop.deriveChildSk(master, 2 ** 32).ok).toBe(false);
   });

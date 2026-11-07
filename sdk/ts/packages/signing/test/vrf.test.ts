@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { models, toHex } from "@kd5ujc/dilf4s-core";
+import { models } from "@kd5ujc/dilf4s-core";
 import { expand_message_xmd, hash_to_field } from "@noble/curves/abstract/hash-to-curve.js";
 import { sha512, sha256 } from "@noble/hashes/sha2.js";
 
@@ -8,7 +8,7 @@ import { ecvrfDraft03, ecvrfEll2, ecvrfTai, type Vrf, type VrfError, type VrfSui
 import { draft03Challenge, draft03Equation, encodeToCurveEll2, fromUniformDraft03, hashToCurveDraft03 } from "../src/vrf.js";
 import { bigToLE, concat, leToBig } from "../src/internal/bytes.js";
 import { decodeDraft03, isSmallOrder, L, P, Point } from "../src/internal/edwards.js";
-import { expectOk, h, loadVectors, readDoc, readDocBytes, tsv, utf8 } from "./vectors.js";
+import { expectOk, h, loadVectors, readDoc, readDocBytes, tsv, utf8, hexOf } from "./vectors.js";
 
 const vectors = loadVectors("vrf_v1.json", models.vrfVectors.VrfVectors);
 const suites: Record<string, Vrf<VrfSuiteName>> = {
@@ -29,7 +29,7 @@ const big = (s: string | undefined): bigint => BigInt(`0x${(s ?? "").replace(/^0
 const affine = (x: bigint, y: bigint): string => {
   const b = bigToLE(y, 32);
   b[31] = (b[31] ?? 0) | (x & 1n ? 0x80 : 0);
-  return toHex(b);
+  return hexOf(b);
 };
 
 describe("vrf_v1.json", { timeout: 60_000 }, () => {
@@ -43,15 +43,15 @@ describe("vrf_v1.json", { timeout: 60_000 }, () => {
       expect(s.keys.length).toBe(3);
       for (const key of s.keys) {
         const kp = expectOk(v.fromSeed(h(key.seed)), "seed");
-        expect(toHex(kp.signing.bytes)).toBe(key.signingKey);
-        expect(toHex(kp.verifying.bytes)).toBe(key.verifyingKey);
+        expect(hexOf(kp.signing.bytes)).toBe(key.signingKey);
+        expect(hexOf(kp.verifying.bytes)).toBe(key.verifyingKey);
         const sk = expectOk(v.signingKey(h(key.signingKey)), "sk");
         expect(key.proofs.length).toBe(3);
         for (const p of key.proofs) {
           const proved = expectOk(v.prove(sk, h(p.alpha)), "prove");
-          expect(toHex(proved.proof.bytes)).toBe(p.pi);
-          expect(toHex(proved.output.bytes)).toBe(p.beta);
-          expect(toHex(expectOk(v.verifyBytes(h(key.verifyingKey), h(p.alpha), h(p.pi)), "verify").bytes)).toBe(p.beta);
+          expect(hexOf(proved.proof.bytes)).toBe(p.pi);
+          expect(hexOf(proved.output.bytes)).toBe(p.beta);
+          expect(hexOf(expectOk(v.verifyBytes(h(key.verifyingKey), h(p.alpha), h(p.pi)), "verify").bytes)).toBe(p.beta);
         }
       }
     });
@@ -107,7 +107,7 @@ describe("RFC 9380 J.5.2, edwards25519_XMD:SHA-512_ELL2_NU_", { timeout: 60_000 
     expect(sec?.vectors.length).toBeGreaterThan(0);
     for (const v of sec?.vectors ?? []) {
       const out = expand_message_xmd(utf8(v["msg"] ?? ""), utf8(sec?.header.DST ?? ""), Number(v["len_in_bytes"]), sha512);
-      expect(toHex(out)).toBe(v["uniform_bytes"]);
+      expect(hexOf(out)).toBe(v["uniform_bytes"]);
     }
   });
 
@@ -120,7 +120,7 @@ describe("RFC 9380 J.5.2, edwards25519_XMD:SHA-512_ELL2_NU_", { timeout: 60_000 
       const [u] = hash_to_field(msg, 1, { DST: dst, p: P, m: 1, k: 128, expand: "xmd", hash: sha512 });
       expect(u?.[0]).toBe(big(v["u[0]"]));
       const pt = encodeToCurveEll2(msg, dst);
-      expect(pt === undefined ? "" : toHex(pt.toBytes())).toBe(affine(big(v["P.x"]), big(v["P.y"])));
+      expect(pt === undefined ? "" : hexOf(pt.toBytes())).toBe(affine(big(v["P.x"]), big(v["P.y"])));
     }
   });
 });
@@ -136,13 +136,13 @@ describe("RFC 9381 and draft-03 examples", { timeout: 60_000 }, () => {
     for (const r of rows) {
       const sk = expectOk(v.signingKey(v === (ecvrfDraft03 as Vrf<VrfSuiteName>) ? h(get(r, "SK") + get(r, "PK")) : h(get(r, "SK"))), "sk");
       const alpha = h(get(r, "alpha"));
-      expect(toHex(v.publicKey(sk).bytes)).toBe(get(r, "PK"));
+      expect(hexOf(v.publicKey(sk).bytes)).toBe(get(r, "PK"));
       const proved = expectOk(v.prove(sk, alpha), "prove");
-      expect(toHex(proved.proof.bytes)).toBe(get(r, "pi"));
-      expect(toHex(proved.output.bytes)).toBe(get(r, "beta"));
+      expect(hexOf(proved.proof.bytes)).toBe(get(r, "pi"));
+      expect(hexOf(proved.output.bytes)).toBe(get(r, "beta"));
       const vk = expectOk(v.verifyingKey(h(get(r, "PK"))), "vk");
       const pi = expectOk(v.proof(h(get(r, "pi"))), "pi");
-      expect(toHex(expectOk(v.verify(vk, alpha, pi), "verify").bytes)).toBe(get(r, "beta"));
+      expect(hexOf(expectOk(v.verify(vk, alpha, pi), "verify").bytes)).toBe(get(r, "beta"));
       expect(kindOf(v.verify(vk, concat(alpha, Uint8Array.of(0)), pi))).toBe("ChallengeMismatch");
       const tampered = pi.bytes;
       tampered[40] = (tampered[40] ?? 0) ^ 1;
@@ -161,13 +161,13 @@ describe("RFC 9381 and draft-03 examples", { timeout: 60_000 }, () => {
       const msg = concat(h(get(r, "PK")), h(get(r, "alpha")));
       const [u] = hash_to_field(msg, 1, { DST: dst, p: P, m: 1, k: 128, expand: "xmd", hash: sha512 });
       expect(u?.[0]).toBe(leToBig(h(get(r, "u"))));
-      expect(toHex(encodeToCurveEll2(msg, dst)?.toBytes() ?? new Uint8Array(0))).toBe(get(r, "H"));
+      expect(hexOf(encodeToCurveEll2(msg, dst)?.toBytes() ?? new Uint8Array(0))).toBe(get(r, "H"));
     });
   });
 
   test("draft-irtf-cfrg-vrf-03 A.4: Elligator2 examples (with intermediate H)", () => {
     examples(ecvrfDraft03 as Vrf<VrfSuiteName>, draft["examples"] ?? [], (r) => {
-      expect(toHex(hashToCurveDraft03(h(get(r, "PK")), h(get(r, "alpha")))?.toBytes() ?? new Uint8Array(0))).toBe(get(r, "H"));
+      expect(hexOf(hashToCurveDraft03(h(get(r, "PK")), h(get(r, "alpha")))?.toBytes() ?? new Uint8Array(0))).toBe(get(r, "H"));
     });
   });
 });
@@ -178,13 +178,13 @@ describe("draft-03 libsodium oracle corpus (normative)", { timeout: 300_000 }, (
   test("corpus files match their recorded SHA-256 sums", () => {
     const sums = tsv(`${dir}SHA256SUMS`).map((r) => (r[0] ?? "").split("  "));
     expect(sums.length).toBe(6);
-    for (const [sum, name] of sums) expect(toHex(sha256(readDocBytes(dir + (name ?? ""))))).toBe(sum);
+    for (const [sum, name] of sums) expect(hexOf(sha256(readDocBytes(dir + (name ?? ""))))).toBe(sum);
   });
 
   const outcome = (row: string[]): string => {
     if (row.includes("NULL")) return "MALFORMED";
     const r = ecvrfDraft03.verifyBytes(h(row[1] ?? ""), h(row[3] ?? ""), h(row[2] ?? ""));
-    if (r.ok) return `VALID:${toHex(r.value.bytes)}`;
+    if (r.ok) return `VALID:${hexOf(r.value.bytes)}`;
     return r.error.kind === "Malformed" ? "MALFORMED" : "INVALID";
   };
 
@@ -207,7 +207,7 @@ describe("draft-03 libsodium oracle corpus (normative)", { timeout: 300_000 }, (
   replay("original corpus", "vectors.tsv", "expected.tsv", 2048, 3, 27);
   replay("additional corpus", "additional.tsv", "additional-results.tsv", 2338, 3, 0);
 
-  const b = (p: { toBytes(): Uint8Array }): string => toHex(p.toBytes());
+  const b = (p: { toBytes(): Uint8Array }): string => hexOf(p.toBytes());
 
   /** The four helper kinds, evaluated with the production functions (the oracle helper's output formats). */
   const helper = (row: string[]): string => {
@@ -241,7 +241,7 @@ describe("draft-03 libsodium oracle corpus (normative)", { timeout: 300_000 }, (
         const u = draft03Equation(y, Point.BASE, c, s);
         const v = draft03Equation(gamma, hp, c, s);
         const beta = sha512(concat(Uint8Array.of(4, 3), gamma.clearCofactor().toBytes()));
-        return b(hp) + b(u) + b(v) + toHex(draft03Challenge(input, hp.toBytes(), gb, u.toBytes(), v.toBytes())) + toHex(beta);
+        return b(hp) + b(u) + b(v) + hexOf(draft03Challenge(input, hp.toBytes(), gb, u.toBytes(), v.toBytes())) + hexOf(beta);
       }
     }
   };
@@ -273,7 +273,7 @@ describe("VRF properties and typed errors", { timeout: 60_000 }, () => {
         const proved = expectOk(v.prove(kp.signing, alpha), "prove");
         expect(proved.proof.bytes.length).toBe(80);
         expect(proved.output.bytes.length).toBe(64);
-        expect(toHex(expectOk(v.verify(kp.verifying, alpha, proved.proof), "verify").bytes)).toBe(toHex(proved.output.bytes));
+        expect(hexOf(expectOk(v.verify(kp.verifying, alpha, proved.proof), "verify").bytes)).toBe(hexOf(proved.output.bytes));
       }
     }
   });

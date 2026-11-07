@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { models, toHex, Value, type Result } from "@kd5ujc/dilf4s-core";
+import { models, Value, type Result } from "@kd5ujc/dilf4s-core";
 
 import { MAX_PROOF_WEIGHT, trie } from "../src/index.js";
-import { boolValue, bytes, bytesValue, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
+import { boolValue, bytes, bytesValue, expectErr, expectOk, int, loadVectors, valueOf, hexOf } from "./vectors.js";
 
 const vectors = loadVectors("trie_v1.json", models.trieVectors.TrieVectors);
 const T = trie.TrieHashing.of("SHA-256");
@@ -11,9 +11,9 @@ const T = trie.TrieHashing.of("SHA-256");
 const modeOf = (m: models.trieVectors.TrieMode): trie.KeyMode =>
   expectOk("fixed" in m ? trie.KeyMode.fixed(Number(m.fixed)) : trie.KeyMode.variable(Number(m.variable)), "mode");
 
-const listingHex = (l: trie.Listing): unknown => (l.kind === "listed" ? l.entries.map((e) => ({ key: toHex(e.key), valueHash: toHex(e.valueHash) })) : "notCovered");
+const listingHex = (l: trie.Listing): unknown => (l.kind === "listed" ? l.entries.map((e) => ({ key: hexOf(e.key), valueHash: hexOf(e.valueHash) })) : "notCovered");
 
-const lookupHex = (l: trie.Lookup): unknown => (l.kind === "present" ? { present: toHex(l.valueHash) } : l.kind);
+const lookupHex = (l: trie.Lookup): unknown => (l.kind === "present" ? { present: hexOf(l.valueHash) } : l.kind);
 
 const verifiedOf = (mode: trie.KeyMode, root: Uint8Array, proof: trie.TrieProof): trie.VerifiedTrieProof => {
   const v = expectOk(trie.verify(T, mode, root, proof), "verifies");
@@ -23,15 +23,15 @@ const verifiedOf = (mode: trie.KeyMode, root: Uint8Array, proof: trie.TrieProof)
 
 describe("trie_v1.json", () => {
   it("the empty root", () => {
-    expect(toHex(T.empty)).toBe(vectors.emptyRoot);
+    expect(hexOf(T.empty)).toBe(vectors.emptyRoot);
   });
 
   it("node hashes", () => {
     const { leaf, branch } = vectors.nodeHashes;
     const ls = expectOk(trie.Segment.of(leaf.segment.bits, bytes(leaf.segment.bytes)), "segment");
-    expect(toHex(T.leafHash(ls, bytes(leaf.valueHash)))).toBe(leaf.hash);
+    expect(hexOf(T.leafHash(ls, bytes(leaf.valueHash)))).toBe(leaf.hash);
     const bs = expectOk(trie.Segment.of(branch.segment.bits, bytes(branch.segment.bytes)), "segment");
-    expect(toHex(T.branchHash(bs, bytes(branch.valueHash), bytes(branch.left), undefined))).toBe(branch.hash);
+    expect(hexOf(T.branchHash(bs, bytes(branch.valueHash), bytes(branch.left), undefined))).toBe(branch.hash);
   });
 
   describe.each(vectors.fixtures.map((f) => [f.name, f] as const))("%s", (_, f) => {
@@ -41,9 +41,9 @@ describe("trie_v1.json", () => {
 
     it("entries hash as the reference does, and build the root", () => {
       const built = expectOk(trie.trieRoot(T, mode, f.entries.map((e) => [bytes(e.key), bytes(e.valueHash)] as const)), "builds");
-      expect(toHex(built)).toBe(f.root);
+      expect(hexOf(built)).toBe(f.root);
       const reversed = expectOk(trie.trieRoot(T, mode, [...f.entries].reverse().map((e) => [bytes(e.key), bytes(e.valueHash)] as const)), "builds");
-      expect(toHex(reversed), "independent of order").toBe(f.root);
+      expect(hexOf(reversed), "independent of order").toBe(f.root);
     });
 
     it("the proof re-encodes to the same records", () => {
@@ -132,14 +132,14 @@ describe("JLVM trie operations", () => {
   it("a hand-built proof decodes and verifies", () => {
     const p = expectOk(trie.TrieProof.decode(T, full), "decodes");
     const v = verifiedOf(variable, root, p);
-    expect(lookupHex(expectOk(v.lookup(Uint8Array.of(0x61, 0x62)), "lookup"))).toEqual({ present: toHex(v2) });
+    expect(lookupHex(expectOk(v.lookup(Uint8Array.of(0x61, 0x62)), "lookup"))).toEqual({ present: hexOf(v2) });
     expect(lookupHex(expectOk(v.lookup(Uint8Array.of(0x61, 0x63)), "lookup"))).toBe("absent");
     expect(listingHex(v.prefix(new Uint8Array(0)))).toEqual([
-      { key: "61", valueHash: toHex(v1) },
-      { key: "6162", valueHash: toHex(v2) },
+      { key: "61", valueHash: hexOf(v1) },
+      { key: "6162", valueHash: hexOf(v2) },
     ]);
-    expect(listingHex(v.range(Uint8Array.of(0x61, 0x00)))).toEqual([{ key: "6162", valueHash: toHex(v2) }]);
-    expect(listingHex(v.range(new Uint8Array(0), Uint8Array.of(0x61, 0x62)))).toEqual([{ key: "61", valueHash: toHex(v1) }]);
+    expect(listingHex(v.range(Uint8Array.of(0x61, 0x00)))).toEqual([{ key: "6162", valueHash: hexOf(v2) }]);
+    expect(listingHex(v.range(new Uint8Array(0), Uint8Array.of(0x61, 0x62)))).toEqual([{ key: "61", valueHash: hexOf(v1) }]);
   });
 
   it("trie_verify: present, absent, wrong value, null value, wrong root", () => {
@@ -243,7 +243,7 @@ describe("JLVM trie operations", () => {
     const r = expectOk(trie.trieRoot(T, mode, Array.from({ length: n + 1 }, (_, i) => [new Uint8Array(i + 1), i === n ? v2 : v1] as const)), "root");
     const p = expectOk(trie.TrieProof.decode(T, records(recs)), "decodes");
     const v = verifiedOf(mode, r, p);
-    expect(lookupHex(expectOk(v.lookup(new Uint8Array(n + 1)), "lookup"))).toEqual({ present: toHex(v2) });
+    expect(lookupHex(expectOk(v.lookup(new Uint8Array(n + 1)), "lookup"))).toEqual({ present: hexOf(v2) });
     const all = v.prefix(new Uint8Array(0));
     expect(all.kind === "listed" ? all.entries.length : -1).toBe(n + 1);
     const tail = v.range(new Uint8Array(n));

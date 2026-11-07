@@ -2,12 +2,12 @@ import { inspect } from "node:util";
 
 import { describe, expect, test } from "vitest";
 
-import { digest, models, parseHashAlgorithm, toHex, type HashAlgorithm, type Result } from "@kd5ujc/dilf4s-core";
+import { digest, models, parseHashAlgorithm, type HashAlgorithm, type Result } from "@kd5ujc/dilf4s-core";
 import { sha256 } from "@noble/hashes/sha2.js";
 
 import { CardanoSumKes, KesProduct, KesSum, type CardanoSumKesKey, type KesError, type KesProductKey, type KesSumKey } from "../src/index.js";
 import { concat } from "../src/internal/bytes.js";
-import { expectOk, h, loadVectors, readDocBytes, tsv } from "./vectors.js";
+import { expectOk, h, loadVectors, readDocBytes, tsv, hexOf } from "./vectors.js";
 
 const vectors = loadVectors("kes_v1.json", models.kesVectors.KesVectors);
 const kind = <T>(r: Result<T, KesError>): string => (r.ok ? "ok" : r.error.kind);
@@ -130,21 +130,21 @@ describe("kes_v1.json", { timeout: 60_000 }, () => {
       const msg = h(v.message);
       expect(v.periods.length).toBe(face.totalPeriods);
       let key = expectOk(face.generate(h(v.seed)), "generate");
-      expect(toHex(key.verifyingKey)).toBe(v.verifyingKey);
+      expect(hexOf(key.verifyingKey)).toBe(v.verifyingKey);
       v.periods.forEach((p, t) => {
         expect(Number(p.period)).toBe(t);
         expect(key.period).toBe(t);
-        expect(toHex(key.bytes), `key at ${String(t)}`).toBe(p.key);
-        expect(toHex(key.sign(msg)), `signature at ${String(t)}`).toBe(p.signature);
-        expect(toHex(key.verifyingKey)).toBe(v.verifyingKey);
+        expect(hexOf(key.bytes), `key at ${String(t)}`).toBe(p.key);
+        expect(hexOf(key.sign(msg)), `signature at ${String(t)}`).toBe(p.signature);
+        expect(hexOf(key.verifyingKey)).toBe(v.verifyingKey);
         for (let q = 0; q < face.totalPeriods; q++)
           expect(face.verify(h(v.verifyingKey), q, msg, h(p.signature)), `verify at ${String(q)}`).toEqual({ ok: true, value: q === t });
         expect(face.verify(h(v.verifyingKey), t, concat(msg, Uint8Array.of(0)), h(p.signature))).toEqual({ ok: true, value: false });
         const loaded = expectOk(face.load(h(p.key), t), "load");
-        expect(toHex(loaded.sign(msg))).toBe(p.signature);
+        expect(hexOf(loaded.sign(msg))).toBe(p.signature);
         if (t + 1 < face.totalPeriods) {
           const next = expectOk(key.evolve(), "evolve");
-          expect(toHex(expectOk(loaded.evolve(), "evolve loaded").bytes)).toBe(toHex(next.bytes));
+          expect(hexOf(expectOk(loaded.evolve(), "evolve loaded").bytes)).toBe(hexOf(next.bytes));
           // a key does not load at another period
           expect(face.load(h(p.key), t + 1).ok).toBe(false);
           key = next;
@@ -163,7 +163,7 @@ describe("Cardano Sum6 KES fixtures", { timeout: 300_000 }, () => {
   test("fixture files match their recorded SHA-256 sums", () => {
     const sums = tsv(`${dir}SHA256SUMS`).map((r) => (r[0] ?? "").split("  "));
     expect(sums.length).toBe(3);
-    for (const [sum, name] of sums) expect(toHex(sha256(readDocBytes(dir + (name ?? ""))))).toBe(sum);
+    for (const [sum, name] of sums) expect(hexOf(sha256(readDocBytes(dir + (name ?? ""))))).toBe(sum);
   });
 
   test("cardano-cli key-gen-KES: the depth-5 tree regenerated from r1 has root vk1, and vk = H(vk0 || vk1)", () => {
@@ -171,8 +171,8 @@ describe("Cardano Sum6 KES fixtures", { timeout: 300_000 }, () => {
     const rows = tsv(`${dir}keygen.tsv`);
     expect(rows.length).toBe(3);
     for (const [, r1, vk1, vk0, vk] of rows) {
-      expect(toHex(expectOk(depth5.generate(h(r1 ?? "")), "gen").verifyingKey)).toBe(vk1);
-      expect(toHex(digest("BLAKE2b-256", concat(h(vk0 ?? ""), h(vk1 ?? ""))))).toBe(vk);
+      expect(hexOf(expectOk(depth5.generate(h(r1 ?? "")), "gen").verifyingKey)).toBe(vk1);
+      expect(hexOf(digest("BLAKE2b-256", concat(h(vk0 ?? ""), h(vk1 ?? ""))))).toBe(vk);
     }
   });
 
@@ -227,7 +227,7 @@ describe("KES properties and typed errors", { timeout: 60_000 }, () => {
       const sig = k.sign(h("cafe"));
       expect(sig.length).toBe(sum3.signatureLength);
       for (let p = 0; p < 8; p++) expect(sum3.verify(vk, p, h("cafe"), sig)).toEqual({ ok: true, value: p === t });
-      expect(toHex(k.verifyingKey)).toBe(toHex(vk));
+      expect(hexOf(k.verifyingKey)).toBe(hexOf(vk));
       if (t < 7) k = expectOk(k.evolve(), "evolve");
     }
     expect(k.evolve()).toEqual({ ok: false, error: { kind: "Exhausted", period: 7 } });
@@ -240,11 +240,11 @@ describe("KES properties and typed errors", { timeout: 60_000 }, () => {
     const reloaded = expectOk(sum6.load(k40.bytes, 40), "reload");
     expect(k0.bytes.length).toBe(608);
     expect(sum6.signatureLength).toBe(448);
-    expect(toHex(reloaded.sign(h("01")))).toBe(toHex(k40.sign(h("01"))));
-    expect(toHex(expectOk(reloaded.evolve(), "e").bytes)).toBe(toHex(expectOk(k40.evolve(), "e").bytes));
-    expect(toHex(k40.bytes.subarray(512, 544))).toBe("00".repeat(32));
+    expect(hexOf(reloaded.sign(h("01")))).toBe(hexOf(k40.sign(h("01"))));
+    expect(hexOf(expectOk(reloaded.evolve(), "e").bytes)).toBe(hexOf(expectOk(k40.evolve(), "e").bytes));
+    expect(hexOf(k40.bytes.subarray(512, 544))).toBe("00".repeat(32));
     const text = [String(k0), JSON.stringify({ k0 }), inspect(k0)].join(" ");
-    expect(text).not.toContain(toHex(k0.bytes).slice(0, 16));
+    expect(text).not.toContain(hexOf(k0.bytes).slice(0, 16));
     expect(text).toContain("redacted");
   });
 
@@ -284,7 +284,7 @@ describe("KES properties and typed errors", { timeout: 60_000 }, () => {
     const sum = expectOk(KesSum.of("BLAKE2b-256", 0), "sum");
     const k = expectOk(sum.generate(new Uint8Array(32)), "k");
     const loaded = expectOk(sum.load(k.bytes, 0), "load");
-    expect(toHex(loaded.bytes)).toBe(toHex(k.bytes));
+    expect(hexOf(loaded.bytes)).toBe(hexOf(k.bytes));
     expect(sum.verify(k.verifyingKey, 0, beef, expectOk(loaded.sign(beef), "sign"))).toEqual({ ok: true, value: true });
   });
 
@@ -327,7 +327,7 @@ describe("KES properties and typed errors", { timeout: 60_000 }, () => {
       const buffer = Buffer.from(encoded);
       const key = load(buffer);
       buffer.fill(0);
-      expect(toHex(key.bytes), name).toBe(toHex(encoded));
+      expect(hexOf(key.bytes), name).toBe(hexOf(encoded));
       expect(verifies(key.sign()), name).toBe(true);
     }
   });
@@ -340,22 +340,22 @@ describe("KES properties and typed errors", { timeout: 60_000 }, () => {
       const sig = expectOk(k.sign(beef), "sign");
       expect(k.bytes.length).toBe(sum.keyLength);
       for (let p = 0; p < 8; p++) expect(sum.verify(k.verifyingKey, p, beef, sig)).toEqual({ ok: true, value: p === t });
-      expect(toHex(expectOk(sum.load(k.bytes, t), "load").bytes)).toBe(toHex(k.bytes));
+      expect(hexOf(expectOk(sum.load(k.bytes, t), "load").bytes)).toBe(hexOf(k.bytes));
       if (t < 7) k = expectOk(k.evolve(), "evolve");
     }
     expect(kind(k.evolve())).toBe("Exhausted");
     expect(kind(sum.evolve(k))).toBe("Exhausted");
-    expect(toHex(sum.verifyingKey(k))).toBe(toHex(k.verifyingKey));
-    expect(toHex(expectOk(sum.sign(k, beef), "scheme sign"))).toBe(toHex(expectOk(k.sign(beef), "key sign")));
+    expect(hexOf(sum.verifyingKey(k))).toBe(hexOf(k.verifyingKey));
+    expect(hexOf(expectOk(sum.sign(k, beef), "scheme sign"))).toBe(hexOf(expectOk(k.sign(beef), "key sign")));
 
     const prod = expectOk(KesProduct.of("BLAKE2b-256", 2, 2), "prod");
     const p0 = expectOk(prod.generate(new Uint8Array(32).fill(4)), "p0");
     const p5 = expectOk(p0.evolveTo(5), "p5");
-    expect(toHex(p5.verifyingKey)).toBe(toHex(p0.verifyingKey));
+    expect(hexOf(p5.verifyingKey)).toBe(hexOf(p0.verifyingKey));
     expect(prod.verify(p0.verifyingKey, 5, beef, expectOk(p5.sign(beef), "sign"))).toEqual({ ok: true, value: true });
     expect(prod.verify(p0.verifyingKey, 4, beef, expectOk(p5.sign(beef), "sign"))).toEqual({ ok: true, value: false });
     // the super tree's active leaf is erased: its seed bytes are zero in the encoding
-    expect(toHex(p0.bytes.subarray(0, 32))).toBe("00".repeat(32));
+    expect(hexOf(p0.bytes.subarray(0, 32))).toBe("00".repeat(32));
     const forged = p5.bytes;
     forged[forged.length - 1] = (forged[forged.length - 1] ?? 0) ^ 1;
     expect(kind(prod.load(forged, 5))).toBe("InconsistentKey");

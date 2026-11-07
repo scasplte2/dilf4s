@@ -20,8 +20,8 @@ describe("canonical values only come from their factories", () => {
     // @ts-expect-error nor is a DomainTag: only DomainTag.of validates the grammar
     const t: DomainTag = { value: "Not A Tag" };
     const forged: unknown[] = [r, a, i, b, n, t];
-    // @ts-expect-error so an unchecked tag cannot reach a hash
-    expect(taggedHash("SHA-256", { value: "Not A Tag" }, new Uint8Array()).length).toBe(32);
+    // @ts-expect-error so an unchecked tag cannot reach a hash, and one cast past the types is refused at run time
+    expect(taggedHash("SHA-256", { value: "Not A Tag" }, new Uint8Array())).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "expected a DomainTag" } });
     expect(forged.some((x) => x instanceof RationalValue)).toBe(false);
   });
 

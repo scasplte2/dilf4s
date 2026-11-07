@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { cbor, models, toHex, Value } from "@kd5ujc/dilf4s-core";
+import { cbor, models, Value } from "@kd5ujc/dilf4s-core";
 
 import { versioned } from "../src/index.js";
-import { bytes, bytesValue, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
+import { bytes, bytesValue, expectErr, expectOk, int, loadVectors, valueOf, hexOf } from "./vectors.js";
 
 const vectors = loadVectors("versioned_trie_v1.json", models.versionedTrieVectors.VersionedTrieVectors);
 const versionKey = expectOk(versioned.VersionKey.unsignedLong(Number(vectors.width)), "version key");
@@ -14,7 +14,7 @@ const ns = (s: string): versioned.StateNamespace => expectOk(versioned.StateName
 const proofOf = (hex: string): versioned.VersionedTrieProof<bigint> => expectOk(vt.decodeProof(valueOf(hex)), "proof decodes");
 const finalHead = expectOk(vt.decodeHead(valueOf(vectors.head.cbor)), "head decodes");
 
-const entriesHex = (es: readonly versioned.StateEntry[]): unknown => es.map(([k, h]) => [k.value, toHex(h)]);
+const entriesHex = (es: readonly versioned.StateEntry[]): unknown => es.map(([k, h]) => [k.value, hexOf(h)]);
 
 /** A state-key outcome as the vectors record it: "accepted", or the kind and its normative segment. */
 function keyOutcome(r: { readonly ok: true } | { readonly ok: false; readonly error: versioned.StateKeyError }): models.versionedTrieVectors.VtStateKeyOutcome {
@@ -25,16 +25,16 @@ function keyOutcome(r: { readonly ok: true } | { readonly ok: false; readonly er
 
 describe("versioned_trie_v1.json", () => {
   it("the empty state root", () => {
-    expect(toHex(vt.hashing.empty)).toBe(vectors.emptyStateRoot);
+    expect(hexOf(vt.hashing.empty)).toBe(vectors.emptyStateRoot);
   });
 
   it("the head KAT: the head's wire form and its top-trie root", () => {
     const h = vectors.head;
     expect(finalHead.version).toBe(h.version);
-    expect(toHex(expectOk(versionKey.encode(h.version), "vkey"))).toBe(h.vkey);
-    expect([toHex(finalHead.stateRoot), toHex(finalHead.historyRoot)]).toEqual([h.stateRoot, h.historyRoot]);
-    expect(toHex(expectOk(cbor.encode(expectOk(vt.encodeHead(finalHead), "encodes")), "encodes"))).toBe(h.cbor);
-    expect(toHex(expectOk(vt.root(finalHead), "root"))).toBe(h.root);
+    expect(hexOf(expectOk(versionKey.encode(h.version), "vkey"))).toBe(h.vkey);
+    expect([hexOf(finalHead.stateRoot), hexOf(finalHead.historyRoot)]).toEqual([h.stateRoot, h.historyRoot]);
+    expect(hexOf(expectOk(cbor.encode(expectOk(vt.encodeHead(finalHead), "encodes")), "encodes"))).toBe(h.cbor);
+    expect(hexOf(expectOk(vt.root(finalHead), "root"))).toBe(h.root);
     expect(h.root).toBe(vectors.root);
   });
 
@@ -42,15 +42,15 @@ describe("versioned_trie_v1.json", () => {
     let replica = versioned.Replica.empty(vt);
     for (const c of vectors.commits) {
       const delta = expectOk(vt.decodeDelta(valueOf(c.delta)), `delta ${c.version.toString()}`);
-      expect(delta.upserts.map(([k, v]) => [k.value, toHex(expectOk(cbor.encode(v), "encodes"))])).toEqual(c.upserts.map((u) => [u.key, u.value]));
+      expect(delta.upserts.map(([k, v]) => [k.value, hexOf(expectOk(cbor.encode(v), "encodes"))])).toEqual(c.upserts.map((u) => [u.key, u.value]));
       expect(delta.removes.map((k) => k.value)).toEqual(c.removes);
       replica = expectOk(replica.applyDelta(delta), `applies ${c.version.toString()}`);
       expect(replica.head?.version).toBe(c.version);
-      expect(toHex(replica.head?.stateRoot ?? new Uint8Array(0))).toBe(c.stateRoot);
-      expect(toHex(replica.head?.historyRoot ?? new Uint8Array(0))).toBe(c.historyRoot);
-      expect(toHex(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(c.root);
+      expect(hexOf(replica.head?.stateRoot ?? new Uint8Array(0))).toBe(c.stateRoot);
+      expect(hexOf(replica.head?.historyRoot ?? new Uint8Array(0))).toBe(c.historyRoot);
+      expect(hexOf(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(c.root);
     }
-    expect(toHex(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(vectors.root);
+    expect(hexOf(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(vectors.root);
   });
 
   it("the snapshot restores, chunk by chunk, to the root", () => {
@@ -60,7 +60,7 @@ describe("versioned_trie_v1.json", () => {
       if (decoded.kind !== "head") expect(decoded.kind === "state" ? decoded.entries.length : decoded.versions.length).toBeLessThanOrEqual(Number(vectors.snapshot.chunkEntries));
     }
     const replica = expectOk(versioned.Replica.restore(vt, finalHead, chunks), "restores");
-    expect(toHex(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(vectors.root);
+    expect(hexOf(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(vectors.root);
     expect(replica.history().map(([v]) => v)).toEqual(vectors.commits.map((c) => c.version));
     expect(replica.get(key("oracle/a/b"))).toEqual(expectOk(Value.text("a"), "text"));
   });
@@ -115,25 +115,25 @@ describe("versioned_trie_v1.json", () => {
             const claimed = c.value === undefined ? null : valueOf(c.value);
             expect(expectOk(state.holds(key(c.key), claimed), "holds"), c.key).toBe(true);
             const looked = expectOk(state.lookup(key(c.key)), "lookup");
-            expect(looked === null ? null : toHex(looked)).toBe(claimed === null ? null : toHex(expectOk(vt.valueHash(claimed), "encodes")));
+            expect(looked === null ? null : hexOf(looked)).toBe(claimed === null ? null : hexOf(expectOk(vt.valueHash(claimed), "encodes")));
             if (claimed !== null) expect(expectOk(state.holds(key(c.key), int(424242n)), "holds"), "another value").toBe(false);
           }
           for (const l of p.listings ?? []) {
-            expect(entriesHex(expectOk(state.namespace(ns(l.namespace)), "listing")), l.namespace).toEqual(l.entries.map((e) => [e.key, toHex(expectOk(vt.valueHash(valueOf(e.value)), "encodes"))]));
+            expect(entriesHex(expectOk(state.namespace(ns(l.namespace)), "listing")), l.namespace).toEqual(l.entries.map((e) => [e.key, hexOf(expectOk(vt.valueHash(valueOf(e.value)), "encodes"))]));
           }
         });
         break;
       case "version":
         it("answers whether the version was committed", () => {
           const r = expectOk(vt.verifyVersion(root, proof, at ?? -1n), "verifies");
-          expect(r === null ? undefined : toHex(r)).toBe(p.answer?.stateRoot);
+          expect(r === null ? undefined : hexOf(r)).toBe(p.answer?.stateRoot);
           expect(expectErr(vt.verifyVersion(root, proof, (at ?? 0n) + 1n), "another version").kind).toBe("Malformed");
         });
         break;
       case "asOf":
         it("answers the latest version at or before its time", () => {
           const r = expectOk(vt.verifyAsOf(root, proof, at ?? -1n), "verifies");
-          expect(r === null ? {} : { version: r.version, stateRoot: toHex(r.stateRoot) }).toEqual(p.answer);
+          expect(r === null ? {} : { version: r.version, stateRoot: hexOf(r.stateRoot) }).toEqual(p.answer);
         });
         break;
       case "head":
@@ -244,11 +244,11 @@ describe("versioned trie checks", () => {
   });
 
   it("version keys", () => {
-    expect(toHex(expectOk(versioned.VersionKey.long.encode(300n), "encodes"))).toBe("000000000000012c");
+    expect(hexOf(expectOk(versioned.VersionKey.long.encode(300n), "encodes"))).toBe("000000000000012c");
     expect(expectErr(versioned.VersionKey.long.encode(2n ** 63n), "too big").kind).toBe("InvalidVersion");
     expect(expectErr(versioned.VersionKey.long.encode(-1n), "negative").kind).toBe("InvalidVersion");
     const w2 = expectOk(versioned.VersionKey.unsignedLong(2), "width 2");
-    expect(toHex(expectOk(w2.encode(65535n), "encodes"))).toBe("ffff");
+    expect(hexOf(expectOk(w2.encode(65535n), "encodes"))).toBe("ffff");
     expect(expectErr(w2.encode(65536n), "too big").kind).toBe("InvalidVersion");
     expect(expectErr(versioned.VersionKey.long.decode(bytes("8000000000000000")), "top bit set").kind).toBe("InvalidVersion");
     expect(expectOk(versioned.VersionKey.long.decode(bytes("7fffffffffffffff")), "decodes")).toBe(2n ** 63n - 1n);
@@ -344,7 +344,7 @@ describe("versioned_trie_v1.json version keys", () => {
       const decoded = k.decode(bytes(c.key));
       const accepted = kind(c) === "accepted";
       expect(c.key, `version ${c.version.toString()}`).toBe(c.version.toString(16).padStart(16, "0"));
-      expect(encoded.ok ? toHex(encoded.value) : encoded.error.kind, `encode ${c.version.toString()}`).toBe(accepted ? c.key : kind(c));
+      expect(encoded.ok ? hexOf(encoded.value) : encoded.error.kind, `encode ${c.version.toString()}`).toBe(accepted ? c.key : kind(c));
       expect(decoded.ok ? decoded.value : decoded.error.kind, `decode ${c.key}`).toBe(accepted ? c.version : kind(c));
     }
   });

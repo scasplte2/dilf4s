@@ -2,7 +2,8 @@
  * Key-evolving signatures (`kes.md`): the dilf4s sum and product compositions over a hash `H`, and Cardano's SumKES.
  * Keys are immutable values: evolving returns a new key. Their bytes never print.
  */
-import { err, models, ok, outputSize, type HashAlgorithm, type Result } from "@kd5ujc/dilf4s-core";
+import { err, models, ok, type HashAlgorithm, type Result } from "@kd5ujc/dilf4s-core";
+import { outputSizeOf } from "@kd5ujc/dilf4s-core/internal";
 import { ed25519 as noble } from "@noble/curves/ed25519.js";
 import { blake2b } from "@noble/hashes/blake2.js";
 
@@ -72,7 +73,7 @@ class MerkleKesOps {
   readonly #productHash: (m: Uint8Array) => Uint8Array;
 
   constructor(hash: HashAlgorithm) {
-    this.n = outputSize(hash);
+    this.n = outputSizeOf(hash);
     this.#seedHash = literalTaggedHash(hash, TAGS.kesSeed);
     this.#leafHash = literalTaggedHash(hash, TAGS.kesLeaf);
     this.#nodeHash = literalTaggedHash(hash, TAGS.kesNode);
@@ -184,7 +185,7 @@ class MerkleKesOps {
 }
 
 function hashCheck(hash: HashAlgorithm): Result<HashAlgorithm, KesError> {
-  return outputSize(hash) >= 32 ? ok(hash) : err(malformed("KES hash", `${hash} has an output below 32 bytes`));
+  return outputSizeOf(hash) >= 32 ? ok(hash) : err(malformed("KES hash", `${hash} has an output below 32 bytes`));
 }
 
 function evolveTo<K extends KesKey>(key: K, target: number, total: number, evolve: (k: K) => Result<K, KesError>): Result<K, KesError> {

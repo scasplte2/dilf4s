@@ -3,7 +3,8 @@
  * `DomainTag`, which only a fallible factory builds; these literals are fixed, so the construction is spelled out here
  * and a test checks every literal against the grammar and against core's `TaggedHash`.
  */
-import { digest, hashParts, type HashAlgorithm } from "@kd5ujc/dilf4s-core";
+import type { HashAlgorithm } from "@kd5ujc/dilf4s-core";
+import { digestOf, hashPartsOf } from "@kd5ujc/dilf4s-core/internal";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
 export const TAGS = {
@@ -20,9 +21,9 @@ export const TAGS = {
  * would change every later hash under this tag.
  */
 export function literalTaggedHash(algorithm: HashAlgorithm, tag: string): (message: Uint8Array) => Uint8Array {
-  const t = digest(algorithm, utf8ToBytes(tag));
+  const t = digestOf(algorithm, utf8ToBytes(tag));
   return (message) => {
     const copy = Uint8Array.from(t);
-    return hashParts(algorithm, [copy, copy, message]);
+    return hashPartsOf(algorithm, [copy, copy, message]);
   };
 }

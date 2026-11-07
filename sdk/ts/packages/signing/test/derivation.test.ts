@@ -3,7 +3,7 @@ import { inspect } from "node:util";
 
 import { describe, expect, test, vi } from "vitest";
 
-import { digest, models, Preview, toHex, type Result } from "@kd5ujc/dilf4s-core";
+import { digest, models, Preview, type Result } from "@kd5ujc/dilf4s-core";
 
 import {
   bip32Secp256k1,
@@ -24,7 +24,7 @@ import {
   type PathRefusal,
 } from "../src/index.js";
 import { ENGLISH } from "../src/wordlists/english.js";
-import { expectOk, h, loadVectors, readDoc, readResource, resourcesDir, utf8 } from "./vectors.js";
+import { expectOk, h, loadVectors, readDoc, readResource, resourcesDir, utf8, hexOf } from "./vectors.js";
 
 const vectors = loadVectors("signing_v1.json", models.signingVectors.SigningVectors);
 const kind = <T>(r: Result<T, KeyError | { kind: string }>): string => (r.ok ? "ok" : r.error.kind);
@@ -43,7 +43,7 @@ function wordList(language: string): WordList {
 describe("BIP-39", { timeout: 60_000 }, () => {
   test("the embedded English list is crypto/src/main/resources/bip-0039/english.txt, byte for byte", () => {
     const file = readResource("bip-0039/english.txt");
-    expect(toHex(digest("SHA-256", utf8(ENGLISH.join("\n"))))).toBe(toHex(digest("SHA-256", utf8(file))));
+    expect(hexOf(digest("SHA-256", utf8(ENGLISH.join("\n"))))).toBe(hexOf(digest("SHA-256", utf8(file))));
     expect(WordList.english.words.length).toBe(2048);
   });
 
@@ -52,8 +52,8 @@ describe("BIP-39", { timeout: 60_000 }, () => {
     for (const v of vectors.bip39) {
       const m = expectOk(toMnemonic(h(v.entropy)), "mnemonic");
       expect(m.phrase).toBe(v.mnemonic);
-      expect(toHex(expectOk(toEntropy(v.mnemonic), "entropy").entropy.bytes)).toBe(v.entropy);
-      expect(toHex(expectOk(mnemonicToSeed(m, v.passphrase), "seed").bytes)).toBe(v.seed);
+      expect(hexOf(expectOk(toEntropy(v.mnemonic), "entropy").entropy.bytes)).toBe(v.entropy);
+      expect(hexOf(expectOk(mnemonicToSeed(m, v.passphrase), "seed").bytes)).toBe(v.seed);
     }
   });
 
@@ -78,8 +78,8 @@ describe("BIP-39", { timeout: 60_000 }, () => {
     for (const [entropy, phrase, seed] of trezor) {
       const m = expectOk(toMnemonic(h(entropy)), "m");
       expect(m.phrase).toBe(phrase);
-      expect(toHex(expectOk(toEntropy(phrase), "e").entropy.bytes)).toBe(entropy);
-      expect(toHex(expectOk(mnemonicToSeed(m, "TREZOR"), "seed").bytes)).toBe(seed);
+      expect(hexOf(expectOk(toEntropy(phrase), "e").entropy.bytes)).toBe(entropy);
+      expect(hexOf(expectOk(mnemonicToSeed(m, "TREZOR"), "seed").bytes)).toBe(seed);
     }
   });
 
@@ -107,9 +107,9 @@ describe("BIP-39", { timeout: 60_000 }, () => {
       const m = expectOk(toMnemonic(h(entropy), words), "m");
       expect(m.phrase).toBe(phrase.split("　").map(nfkd).join("　"));
       const parsed = expectOk(toEntropy(phrase, words), "e");
-      expect(toHex(parsed.entropy.bytes)).toBe(entropy);
-      expect(toHex(expectOk(mnemonicToSeed(parsed.mnemonic, pass), "seed").bytes)).toBe(seed);
-      expect(toHex(expectOk(mnemonicToSeed(m, pass), "seed").bytes)).toBe(seed);
+      expect(hexOf(parsed.entropy.bytes)).toBe(entropy);
+      expect(hexOf(expectOk(mnemonicToSeed(parsed.mnemonic, pass), "seed").bytes)).toBe(seed);
+      expect(hexOf(expectOk(mnemonicToSeed(m, pass), "seed").bytes)).toBe(seed);
     }
   });
 
@@ -119,14 +119,14 @@ describe("BIP-39", { timeout: 60_000 }, () => {
     for (const f of languages) {
       const words = wordList(f.replace(".txt", ""));
       const m = expectOk(toMnemonic(h("7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f"), words), f);
-      expect(toHex(expectOk(toEntropy(m.phrase, words), f).entropy.bytes)).toBe("7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f");
+      expect(hexOf(expectOk(toEntropy(m.phrase, words), f).entropy.bytes)).toBe("7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f");
     }
   });
 
   test("mnemonic to entropy (BramblSc Bip39MnemonicToEntropy.json)", () => {
     const vs = JSON.parse(readDoc("Bip39MnemonicToEntropy.json")) as { inputs: { mnemonic: string }; outputs: { entropy: string } }[];
     expect(vs.length).toBe(25);
-    for (const v of vs) expect(toHex(expectOk(toEntropy(v.inputs.mnemonic), v.inputs.mnemonic).entropy.bytes)).toBe(v.outputs.entropy);
+    for (const v of vs) expect(hexOf(expectOk(toEntropy(v.inputs.mnemonic), v.inputs.mnemonic).entropy.bytes)).toBe(v.outputs.entropy);
   });
 
   test("bad checksum, unknown word, wrong length, bad entropy, bad lists and lone surrogates are typed errors", () => {
@@ -263,21 +263,21 @@ describe("SLIP-10 Ed25519", { timeout: 60_000 }, () => {
   test("signing_v1.json slip10Ed25519", () => {
     const v = vectors.slip10Ed25519;
     const master = expectOk(slip10Ed25519.master(h(v.seed)), "master");
-    expect(toHex(master.key.bytes)).toBe(v.master.key);
-    expect(toHex(master.chainCode)).toBe(v.master.chainCode);
+    expect(hexOf(master.key.bytes)).toBe(v.master.key);
+    expect(hexOf(master.chainCode)).toBe(v.master.chainCode);
     const child = expectOk(slip10Ed25519.derive(h(v.seed), path(v.path)), "child");
-    expect(toHex(child.key.bytes)).toBe(v.child.key);
-    expect(toHex(child.chainCode)).toBe(v.child.chainCode);
+    expect(hexOf(child.key.bytes)).toBe(v.child.key);
+    expect(hexOf(child.chainCode)).toBe(v.child.chainCode);
   });
 
   test("SLIP-10 test vector 1; soft indices and bad seeds are rejected", () => {
     const seed = h("000102030405060708090a0b0c0d0e0f");
     const m = expectOk(slip10Ed25519.derive(seed, []), "m");
-    expect(toHex(m.key.bytes)).toBe("2b4be7f19ee27bbf30c667b642d5f4aa69fd169872f8fc3059c08ebae2eb19e7");
-    expect(toHex(m.chainCode)).toBe("90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb");
+    expect(hexOf(m.key.bytes)).toBe("2b4be7f19ee27bbf30c667b642d5f4aa69fd169872f8fc3059c08ebae2eb19e7");
+    expect(hexOf(m.chainCode)).toBe("90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb");
     const c = expectOk(slip10Ed25519.derive(seed, path("m/0'")), "m/0'");
-    expect(toHex(c.key.bytes)).toBe("68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3");
-    expect(toHex(c.chainCode)).toBe("8b59aa11380b624e81507a27fedda59fea6d0b779a778918a2fd3590e16e9c69");
+    expect(hexOf(c.key.bytes)).toBe("68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3");
+    expect(hexOf(c.chainCode)).toBe("8b59aa11380b624e81507a27fedda59fea6d0b779a778918a2fd3590e16e9c69");
     expect(kind(slip10Ed25519.derive(seed, path("m/0")))).toBe("InvalidDerivation");
     expect(kind(slip10Ed25519.master(new Uint8Array(15)))).toBe("InvalidDerivation");
     expect(kind(slip10Ed25519.master(new Uint8Array(65)))).toBe("InvalidDerivation");
@@ -288,37 +288,37 @@ describe("BIP32 secp256k1", { timeout: 60_000 }, () => {
   test("signing_v1.json bip32Secp256k1, private and public derivation", () => {
     const v = vectors.bip32Secp256k1;
     const master = expectOk(bip32Secp256k1.master(h(v.seed)), "master");
-    expect(toHex(master.key.bytes)).toBe(v.master.key);
-    expect(toHex(master.chainCode)).toBe(v.master.chainCode);
+    expect(hexOf(master.key.bytes)).toBe(v.master.key);
+    expect(hexOf(master.chainCode)).toBe(v.master.chainCode);
     const child = expectOk(bip32Secp256k1.derive(h(v.seed), path(v.path)), "child");
-    expect(toHex(child.key.bytes)).toBe(v.child.key);
-    expect(toHex(child.chainCode)).toBe(v.child.chainCode);
-    expect(toHex(secp256k1Ecdsa.publicKey(child.key).bytes)).toBe(v.verifyingKey);
+    expect(hexOf(child.key.bytes)).toBe(v.child.key);
+    expect(hexOf(child.chainCode)).toBe(v.child.chainCode);
+    expect(hexOf(secp256k1Ecdsa.publicKey(child.key).bytes)).toBe(v.verifyingKey);
 
     const p = v.publicDerivation;
     const parent = expectOk(bip32Secp256k1.derive(h(v.seed), path(p.parentPath)), "parent");
-    expect(toHex(secp256k1Ecdsa.publicKey(parent.key).bytes)).toBe(p.parentVerifyingKey);
-    expect(toHex(parent.chainCode)).toBe(p.parentChainCode);
+    expect(hexOf(secp256k1Ecdsa.publicKey(parent.key).bytes)).toBe(p.parentVerifyingKey);
+    expect(hexOf(parent.chainCode)).toBe(p.parentChainCode);
     let acc = { key: expectOk(secp256k1Ecdsa.verifyingKey(h(p.parentVerifyingKey)), "vk"), chainCode: h(p.parentChainCode) };
     for (const i of path(p.path)) acc = expectOk(bip32Secp256k1.publicChild(acc.key, acc.chainCode, i), "public child");
-    expect(toHex(acc.key.bytes)).toBe(p.verifyingKey);
-    expect(toHex(acc.chainCode)).toBe(p.chainCode);
+    expect(hexOf(acc.key.bytes)).toBe(p.verifyingKey);
+    expect(hexOf(acc.chainCode)).toBe(p.chainCode);
   });
 
   test("BIP32 test vector 1, and CKDpub matches CKDpriv", () => {
     const seed = h("000102030405060708090a0b0c0d0e0f");
     const at = (p: string) => expectOk(bip32Secp256k1.derive(seed, path(p)), p);
-    expect(toHex(at("m").key.bytes)).toBe("e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35");
-    expect(toHex(at("m").chainCode)).toBe("873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508");
-    expect(toHex(at("m/0'").key.bytes)).toBe("edb2e14f9ee77d26dd93b4ecede8d16ed408ce149b6cd80b0715a2d911a0afea");
-    expect(toHex(at("m/0'").chainCode)).toBe("47fdacbd0f1097043b78c63c20c34ef4ed9a111d980047ad16282c7ae6236141");
-    expect(toHex(at("m/0'/1").key.bytes)).toBe("3c6cb8d0f6a264c91ea8b5030fadaa8e538b020f0a387421a12de9319dc93368");
-    expect(toHex(at("m/0'/1").chainCode)).toBe("2a7857631386ba23dacac34180dd1983734e444fdbf774041578e9b6adb37c19");
+    expect(hexOf(at("m").key.bytes)).toBe("e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35");
+    expect(hexOf(at("m").chainCode)).toBe("873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508");
+    expect(hexOf(at("m/0'").key.bytes)).toBe("edb2e14f9ee77d26dd93b4ecede8d16ed408ce149b6cd80b0715a2d911a0afea");
+    expect(hexOf(at("m/0'").chainCode)).toBe("47fdacbd0f1097043b78c63c20c34ef4ed9a111d980047ad16282c7ae6236141");
+    expect(hexOf(at("m/0'/1").key.bytes)).toBe("3c6cb8d0f6a264c91ea8b5030fadaa8e538b020f0a387421a12de9319dc93368");
+    expect(hexOf(at("m/0'/1").chainCode)).toBe("2a7857631386ba23dacac34180dd1983734e444fdbf774041578e9b6adb37c19");
     const parent = at("m/0'");
     const pub = expectOk(bip32Secp256k1.publicChild(secp256k1Ecdsa.publicKey(parent.key), parent.chainCode, expectOk(ChildIndex.soft(1), "1")), "pub");
-    expect(toHex(pub.key.bytes)).toBe("03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c");
-    expect(toHex(pub.key.bytes)).toBe(toHex(secp256k1Ecdsa.publicKey(at("m/0'/1").key).bytes));
-    expect(toHex(pub.chainCode)).toBe(toHex(at("m/0'/1").chainCode));
+    expect(hexOf(pub.key.bytes)).toBe("03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c");
+    expect(hexOf(pub.key.bytes)).toBe(hexOf(secp256k1Ecdsa.publicKey(at("m/0'/1").key).bytes));
+    expect(hexOf(pub.chainCode)).toBe(hexOf(at("m/0'/1").chainCode));
     expect(kind(bip32Secp256k1.publicChild(secp256k1Ecdsa.publicKey(parent.key), parent.chainCode, expectOk(ChildIndex.hardened(1), "1'")))).toBe(
       "InvalidDerivation",
     );
@@ -332,26 +332,26 @@ describe("BIP32-Ed25519 (Icarus)", { timeout: 60_000 }, () => {
   test("signing_v1.json ed25519Bip32: root, account, address, keys, signatures and public derivation", () => {
     const v = vectors.ed25519Bip32;
     const root = expectOk(icarus.fromEntropy(h(v.entropy), v.passphrase), "root");
-    expect(toHex(root.key.bytes)).toBe(v.root.key);
-    expect(toHex(root.chainCode)).toBe(v.root.chainCode);
+    expect(hexOf(root.key.bytes)).toBe(v.root.key);
+    expect(hexOf(root.chainCode)).toBe(v.root.chainCode);
     const account = expectOk(icarus.derive(root, path(v.accountPath)), "account");
-    expect(toHex(account.key.bytes)).toBe(v.account.key);
-    expect(toHex(account.chainCode)).toBe(v.account.chainCode);
-    expect(toHex(ed25519Bip32.publicKey(account.key).bytes)).toBe(v.accountVerifyingKey);
+    expect(hexOf(account.key.bytes)).toBe(v.account.key);
+    expect(hexOf(account.chainCode)).toBe(v.account.chainCode);
+    expect(hexOf(ed25519Bip32.publicKey(account.key).bytes)).toBe(v.accountVerifyingKey);
     const address = expectOk(icarus.derive(account, path(v.addressPath)), "address");
-    expect(toHex(address.key.bytes)).toBe(v.address.key);
-    expect(toHex(address.chainCode)).toBe(v.address.chainCode);
+    expect(hexOf(address.key.bytes)).toBe(v.address.key);
+    expect(hexOf(address.chainCode)).toBe(v.address.chainCode);
     const addressVk = ed25519Bip32.publicKey(address.key);
-    expect(toHex(addressVk.bytes)).toBe(v.addressVerifyingKey);
+    expect(hexOf(addressVk.bytes)).toBe(v.addressVerifyingKey);
     expect(v.signatures.length).toBe(3);
     for (const s of v.signatures) {
-      expect(toHex(ed25519Bip32.sign(address.key, h(s.message)).bytes)).toBe(s.signature);
+      expect(hexOf(ed25519Bip32.sign(address.key, h(s.message)).bytes)).toBe(s.signature);
       expect(ed25519Bip32.verifyBytes(addressVk.bytes, h(s.message), h(s.signature))).toEqual({ ok: true, value: true });
     }
     let acc = { key: ed25519Bip32.publicKey(account.key), chainCode: account.chainCode };
     for (const i of path(v.addressPath)) acc = expectOk(icarus.publicChild(acc.key, acc.chainCode, i), "public child");
-    expect(toHex(acc.key.bytes)).toBe(v.addressVerifyingKey);
-    expect(toHex(acc.chainCode)).toBe(v.address.chainCode);
+    expect(hexOf(acc.key.bytes)).toBe(v.addressVerifyingKey);
+    expect(hexOf(acc.chainCode)).toBe(v.address.chainCode);
     const soft0 = expectOk(ChildIndex.soft(0), "0");
     for (const cc of [new Uint8Array(0), account.chainCode.subarray(0, 31), new Uint8Array(33)])
       expect(kind(icarus.publicChild(ed25519Bip32.publicKey(account.key), cc, soft0)), String(cc.length)).toBe("InvalidDerivation");
@@ -369,14 +369,14 @@ describe("BIP32-Ed25519 (Icarus)", { timeout: 60_000 }, () => {
       const root = expectOk(ExtendedKey.of(expectOk(ed25519Bip32.signingKey(rootBytes.subarray(0, 64)), "root"), rootBytes.subarray(64)), "root");
       const p = v.inputs.path.map(([k, i]) => expectOk(k === "hard" ? ChildIndex.hardened(i) : ChildIndex.soft(i), "index"));
       const child = expectOk(icarus.derive(root, p), "child");
-      expect(toHex(child.key.bytes) + toHex(child.chainCode)).toBe(v.outputs.childSecretKey);
-      expect(toHex(ed25519Bip32.publicKey(child.key).bytes) + toHex(child.chainCode)).toBe(v.outputs.childVerificationKey);
+      expect(hexOf(child.key.bytes) + hexOf(child.chainCode)).toBe(v.outputs.childSecretKey);
+      expect(hexOf(ed25519Bip32.publicKey(child.key).bytes) + hexOf(child.chainCode)).toBe(v.outputs.childVerificationKey);
       // public derivation from the deepest hardened ancestor through the trailing soft indices
       const cut = p.map((i) => i.hardened).lastIndexOf(true) + 1;
       const anchor = expectOk(icarus.derive(root, p.slice(0, cut)), "anchor");
       let acc = { key: ed25519Bip32.publicKey(anchor.key), chainCode: anchor.chainCode };
       for (const i of p.slice(cut)) acc = expectOk(icarus.publicChild(acc.key, acc.chainCode, i), "public");
-      expect(toHex(acc.key.bytes) + toHex(acc.chainCode)).toBe(v.outputs.childVerificationKey);
+      expect(hexOf(acc.key.bytes) + hexOf(acc.chainCode)).toBe(v.outputs.childVerificationKey);
     }
   });
 
@@ -386,10 +386,10 @@ describe("BIP32-Ed25519 (Icarus)", { timeout: 60_000 }, () => {
     for (const v of vs) {
       const entropy = expectOk(toEntropy(v.inputs.mnemonic), "entropy").entropy;
       const key = expectOk(icarus.fromEntropy(entropy, v.inputs.password), "icarus");
-      expect(toHex(key.key.bytes) + toHex(key.chainCode)).toBe(v.outputs.extendedEd25519);
+      expect(hexOf(key.key.bytes) + hexOf(key.chainCode)).toBe(v.outputs.extendedEd25519);
     }
     const cip3 = expectOk(icarus.fromEntropy(expectOk(toEntropy("eight country switch draw meat scout mystery blade tip drift useless good keep usage title"), "e").entropy), "cip3");
-    expect(toHex(cip3.key.bytes) + toHex(cip3.chainCode)).toBe(
+    expect(hexOf(cip3.key.bytes) + hexOf(cip3.chainCode)).toBe(
       "c065afd2832cd8b087c4d9ab7011f481ee1e0721e78ea5dd609f3ab3f156d245d176bd8fd4ec60b4731c3918a2a72a0226c0cd119ec35b47e4d55884667f552a23f7fdcd4a10c6cd2c7393ac61d877873e248f417634aa3d812af327ffe9d620",
     );
   });
@@ -405,8 +405,8 @@ describe("BIP32-Ed25519 (Icarus)", { timeout: 60_000 }, () => {
     const raw = new Uint8Array(96).fill(0xff);
     const clamped = expectOk(icarus.root(raw), "clamped");
     expect(raw[0]).toBe(0xff);
-    expect(toHex(clamped.key.bytes.subarray(0, 1)) + toHex(clamped.key.bytes.subarray(31, 32))).toBe("f85f");
+    expect(hexOf(clamped.key.bytes.subarray(0, 1)) + hexOf(clamped.key.bytes.subarray(31, 32))).toBe("f85f");
     expect(kind(ExtendedKey.of(root.key, new Uint8Array(31)))).toBe("InvalidDerivation");
-    expect(String(root)).not.toContain(toHex(root.chainCode));
+    expect(String(root)).not.toContain(hexOf(root.chainCode));
   });
 });

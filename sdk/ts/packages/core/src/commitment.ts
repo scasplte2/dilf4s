@@ -2,7 +2,7 @@
 import { checkedLimit, tooLarge } from "./budget.js";
 import { encodeIntoWithin, encodeWithin, Feeding, MAX_ENCODED_BYTES, type Absorber, type EncodeError } from "./cbor.js";
 import type { TypeMismatch } from "./error.js";
-import { HASH_ALGORITHMS, startHash, type HashAlgorithm } from "./hash.js";
+import { isAlgorithm, startHashOf, type HashAlgorithm } from "./hash.js";
 import { err, ok, type Result } from "./result.js";
 import { takeBytes } from "./bytes.js";
 import { bytesView, type Value } from "./value.js";
@@ -75,12 +75,12 @@ function prefixParts(prefix: unknown): readonly Uint8Array[] | undefined {
  * before anything is hashed.
  */
 export function hashCommitment(algorithm: HashAlgorithm, prefix: readonly Uint8Array[], value: Value): Result<Uint8Array, EncodeError> {
-  if (!HASH_ALGORITHMS.includes(algorithm)) return err(notAnAlgorithm);
+  if (!isAlgorithm(algorithm)) return err(notAnAlgorithm);
   const parts = prefixParts(prefix);
   if (parts === undefined) return err(notAPrefix);
   const checked = checkedLimit(value, MAX_ENCODED_BYTES);
   if (!checked.ok) return checked;
-  const h = startHash(algorithm);
+  const h = startHashOf(algorithm);
   for (const p of parts) h.update(p);
   const c = valueCommitmentInto(h, value);
   return c.ok ? ok(h.digest()) : c;
