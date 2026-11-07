@@ -8,7 +8,7 @@
  * view of their own memory, and what a proof keeps is copied; the walks run on that plain, owned data.
  */
 import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { digestOf, hashPartsOf, mint, outputSizeOf, plainBytes, readGuarded, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { digestOf, hashPartsOf, MAX_OUTPUT_SIZE, mint, outputSizeOf, plainBytes, readGuarded, takeBytes, takeBytesWithin, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
 import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Token } from "./check.js";
@@ -524,7 +524,8 @@ export interface MerkleHead {
 function headArg(head: unknown, what: string): Result<MerkleHead, TypeMismatch> {
   if (!isObject(head)) return err(expected(`${what} to be a MerkleHead`));
   // copied as read: the size's getter, or the other head's, may run caller code that changes or detaches it
-  const root = takeBytes(Reflect.get(head, "root"));
+  // owned if it can be a digest, else kept as a view checkHead refuses by its size: never a copy of an oversized one
+  const root = takeBytesWithin(Reflect.get(head, "root"), MAX_OUTPUT_SIZE);
   if (root === undefined) return err(expected(`${what}.root to be a Uint8Array`));
   // guarded: the root's getter may have revoked the head; REVOKED is no bigint
   const size: unknown = readGuarded(head, "size");

@@ -75,6 +75,17 @@ export function takeBytes(x: unknown): Uint8Array | undefined {
   return typedArrayLength?.call(x) === 0 ? new Uint8Array(0) : new Uint8Array(x);
 }
 
+/**
+ * {@link takeBytes} of an argument of a bounded width (a root, a key, a proof): a copy when its internal length is at
+ * most `max`, else its plain view, uncopied, which is refused later by its length. An oversized argument costs O(1),
+ * never a copy of all it holds; one that fits is owned as `takeBytes` owns it. `undefined` if it is not bytes.
+ */
+export function takeBytesWithin(x: unknown, max: number): Uint8Array | undefined {
+  const length = bytesLength(x);
+  if (length === undefined) return undefined;
+  return length <= max ? takeBytes(x) : plainBytes(x);
+}
+
 /** A fresh copy of one of this package's own plain arrays (never a caller's: see {@link takeBytes}). */
 export function copyBytes(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(bytes);

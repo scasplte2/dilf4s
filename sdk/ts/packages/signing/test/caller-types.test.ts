@@ -161,6 +161,10 @@ describe("a message that is not bytes is a TypeMismatch, never read as empty and
         expect(vrf.verifyBytes(kp.verifying.bytes, bad(a), proved.proof.bytes), `${vrf.name}: ${label(a)}`).toEqual(notBytes);
         expect(vrf.prove(kp.signing, bad(a)), `${vrf.name}: ${label(a)}`).toEqual(notBytes);
       }
+      // an oversized key or proof is refused by its length (never copied whole first); a well-sized one still verifies
+      expect(expectErr(vrf.verifyBytes(kp.verifying.bytes, empty, new Uint8Array(8 << 20)), "an 8 MiB proof").kind).toBe("Malformed");
+      expect(expectErr(vrf.verifyBytes(new Uint8Array(1 << 20), empty, proved.proof.bytes), "a 1 MiB key").kind).toBe("Malformed");
+      expect(vrf.verifyBytes(kp.verifying.bytes, empty, proved.proof.bytes).ok, "the well-sized pair").toBe(true);
       expect(vrf.verify(kp.verifying, empty, bad({ suite: vrf.name, bytes: proved.proof.bytes }))).toEqual(mismatch(`expected a ${vrf.name} VrfProof`));
       expect(expectErr(vrf.verify(bad({ scheme: vrf.name, bytes: kp.verifying.bytes }), empty, proved.proof), "fake key").kind).toBe("TypeMismatch");
       expect(vrf.publicKey(bad({ bytes: seed }))).toEqual(mismatch(`expected a ${vrf.name} SigningKey`));

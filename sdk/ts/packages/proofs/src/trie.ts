@@ -11,7 +11,7 @@
  * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
 import { BYTES_TAG, describeFailure, err, isValue, models, ok, type Err, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { bytesLength, mint, outputSizeOf, plainBytes, readGuarded, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, MAX_OUTPUT_SIZE, mint, outputSizeOf, plainBytes, readGuarded, takeBytes, takeBytesWithin, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
@@ -806,7 +806,7 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
   const m = mode;
   const p = proof;
   // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
-  const r = takeBytes(root);
+  const r = takeBytesWithin(root, MAX_OUTPUT_SIZE);
   if (r === undefined) return err(NOT_BYTES);
   const n = bytesLength(key);
   if (n === undefined) return err(NOT_BYTES);
@@ -872,7 +872,7 @@ export function triePrefixVerify(hashing: TrieHashing, mode: KeyMode, root: Uint
   const m = mode;
   const p = proof;
   // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
-  const r = takeBytes(root);
+  const r = takeBytesWithin(root, MAX_OUTPUT_SIZE);
   if (r === undefined) return err(NOT_BYTES);
   // the prefix copied before the entries are read: caller code reading them runs cannot then change the query
   const pre = queryArg(prefix);
@@ -902,7 +902,7 @@ export function trieRangeVerify(
   const m = mode;
   const p = proof;
   // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
-  const r = takeBytes(root);
+  const r = takeBytesWithin(root, MAX_OUTPUT_SIZE);
   if (r === undefined) return err(NOT_BYTES);
   // the bounds copied before the entries are read, as triePrefixVerify copies its prefix
   const f = queryArg(from);

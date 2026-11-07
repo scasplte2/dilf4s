@@ -25,7 +25,7 @@ import {
   type HashAlgorithm,
   type Hashing,
 } from "../src/index.js";
-import { isDomainTag as isDomainTagOf } from "../src/internal.js";
+import { isDomainTag as isDomainTagOf, MAX_OUTPUT_SIZE, takeBytesWithin } from "../src/internal.js";
 import { expectOk, int } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
@@ -294,6 +294,29 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     }
     expect(ran, "no method of the caller's ran").toBe(0);
     expect(genuine.digest(), "the genuine stream absorbed nothing either").toEqual(expectOk(digest(sha, new Uint8Array(0)), "empty"));
+  });
+
+  it("content checks its receiver before reading anything of it: null, a revoked Proxy, a forged receiver", () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- the point is a method borrowed onto another receiver
+    const content = TaggedHash.prototype.content;
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    const forged = { contentWithin: () => ({ ok: true, value: new Uint8Array(32) }) };
+    for (const [name, receiver] of [["null", null], ["undefined", undefined], ["a revoked Proxy", proxy], ["a forged receiver", forged]] as const) {
+      expect(Reflect.apply(content, receiver, [int(1n)]), name).toEqual(mismatch("expected a TaggedHash"));
+    }
+  });
+
+  it("a bounded argument longer than its width is never copied: its view is kept, and refused by its length", () => {
+    const big = new Uint8Array(65);
+    const kept = takeBytesWithin(big, MAX_OUTPUT_SIZE);
+    big[0] = 9;
+    expect(kept?.[0], "a view of the caller's memory, not a copy").toBe(9);
+    const small = new Uint8Array(64);
+    const owned = takeBytesWithin(small, MAX_OUTPUT_SIZE);
+    small[0] = 9;
+    expect(owned?.[0], "a copy, owned").toBe(0);
+    expect(MAX_OUTPUT_SIZE, "the longest digest").toBe(64);
   });
 
   it("the algorithm list cannot be extended by a caller", () => {

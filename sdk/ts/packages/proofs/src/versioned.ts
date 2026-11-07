@@ -10,7 +10,7 @@
  * checked before it is used.
  */
 import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { isRevokedProxy, mint, plainBytes, readGuarded, REVOKED, takeBytes, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isRevokedProxy, MAX_OUTPUT_SIZE, mint, plainBytes, readGuarded, REVOKED, takeBytes, takeBytesWithin, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
@@ -385,8 +385,9 @@ function headArg<V>(x: unknown, what: string): Result<Head<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected(`${what} to be a Head`));
   // each read guarded: a getter run by an earlier read may have revoked the head
   const version: unknown = readGuarded(x, "version");
-  const stateRoot = takeBytes(readGuarded(x, "stateRoot"));
-  const historyRoot = takeBytes(readGuarded(x, "historyRoot"));
+  // each root owned if it can be a digest, else kept as a view its size check refuses: never a copy of an oversized one
+  const stateRoot = takeBytesWithin(readGuarded(x, "stateRoot"), MAX_OUTPUT_SIZE);
+  const historyRoot = takeBytesWithin(readGuarded(x, "historyRoot"), MAX_OUTPUT_SIZE);
   if (stateRoot === undefined || historyRoot === undefined) return err(expected(`${what}'s roots to be Uint8Arrays`));
   return ok(Object.freeze({ version: version as V, stateRoot, historyRoot }));
 }
@@ -843,7 +844,7 @@ export class VersionedTrie<V> {
   /** The checked arguments every rule starts from: a root (a plain view) and a proof (a frozen copy). */
   #args(root: unknown, proof: unknown): Result<readonly [Uint8Array, VersionedTrieProof<V>], TypeMismatch> {
     // the trusted root copied first: the proof's getters, and a caller's version key later, are caller code
-    const r = takeBytes(root);
+    const r = takeBytesWithin(root, MAX_OUTPUT_SIZE);
     if (r === undefined) return err(NOT_BYTES);
     const p = proofArg<V>(proof);
     return p.ok ? ok([r, p.value]) : p;
@@ -855,7 +856,7 @@ export class VersionedTrie<V> {
    * bytes from then on.
    */
   #asking(root: unknown, u: V): C<readonly [Uint8Array, Uint8Array]> {
-    const r = takeBytes(root);
+    const r = takeBytesWithin(root, MAX_OUTPUT_SIZE);
     if (r === undefined) return err(NOT_BYTES);
     const k = this.versionKey.encode(u);
     return k.ok ? ok([r, k.value]) : k;

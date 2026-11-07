@@ -3,7 +3,7 @@
  * of libsodium implements it. The suites are distinct types, and none accepts another's proofs.
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { copyBytes, mint, plainBytes } from "@kd5ujc/dilf4s-core/internal";
+import { copyBytes, mint, plainBytes, takeBytesWithin } from "@kd5ujc/dilf4s-core/internal";
 import { ed25519_hasher } from "@noble/curves/ed25519.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
@@ -313,12 +313,13 @@ function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
       return a === undefined ? err(NOT_BYTES) : verifyRaw(k.value, a, p);
     },
     verifyBytes: (key: Uint8Array, alpha: Uint8Array, proof: Uint8Array): Result<VrfOutput<S>, VrfRefusal> => {
-      const p = viewOf(proof);
-      const k = viewOf(key);
+      // the key and proof are read more than once: copied, so the bytes checked are the bytes used; one longer than its
+      // width (32, 80) is kept as a view that verifyRaw refuses by its length, never copied whole
+      const p = takeBytesWithin(proof, 80);
+      const k = takeBytesWithin(key, 32);
       const a = viewOf(alpha);
       if (p === undefined || k === undefined || a === undefined) return err(NOT_BYTES);
-      // the key and proof are read more than once: copied, so the bytes checked are the bytes used
-      return verifyRaw(Uint8Array.from(k), a, Uint8Array.from(p));
+      return verifyRaw(k, a, p);
     },
     fromSeed: (given: Uint8Array): Result<KeyPair<S>, VrfRefusal> => {
       const s = vrfSized("VRF seed", 32, given);

@@ -145,6 +145,9 @@ export function blockSizeOf(algorithm: HashAlgorithm): number {
   }
 }
 
+/** The longest digest of any of {@link HASH_ALGORITHMS}, in bytes: no root or digest a caller passes is longer. */
+export const MAX_OUTPUT_SIZE: number = Math.max(...HASH_ALGORITHMS.map(outputSizeOf));
+
 /** {@link expansionLimit}, unchecked. */
 const expansionLimitOf = (algorithm: HashAlgorithm): number => Math.min(255 * outputSizeOf(algorithm), 65535);
 
@@ -463,6 +466,8 @@ export class TaggedHash {
    * `cbor.MAX_ENCODED_BYTES`, as `cbor.encode`: an encoding longer is `TooLarge`.
    */
   content(value: Value): Result<Uint8Array, EncodeError> {
+    // the receiver checked before anything of it is read: a forged one, null or a revoked Proxy is a TypeMismatch
+    if (!TAGGED_HASH.has(this)) return err(NOT_A_TAGGED_HASH);
     return this.contentWithin(value, MAX_ENCODED_BYTES);
   }
 
