@@ -8,10 +8,10 @@
  * view of their own memory, and what a proof keeps is copied; the walks run on that plain, owned data.
  */
 import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { digestOf, hashPartsOf, outputSizeOf, plainBytes, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { digestOf, hashPartsOf, mint, outputSizeOf, plainBytes, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_BIGINT, NOT_BYTES, readArray, valueArg } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Token } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
 declare const INT64: unique symbol;
@@ -67,6 +67,11 @@ export interface MerkleHashing<L> {
 /** One of this module's profiles: the only hashing a function here computes with. */
 type Profile = TaggedMerkleHashing | Rfc6962MerkleHashing;
 
+const TAGGED = mint();
+const RFC = mint();
+const INCLUSION = mint();
+const CONSISTENCY = mint();
+
 let isTagged!: (x: unknown) => x is TaggedMerkleHashing;
 let taggedNode!: (h: TaggedMerkleHashing, left: Uint8Array, right: Uint8Array) => Uint8Array;
 let taggedLeaf!: (h: TaggedMerkleHashing, value: Value) => Result<Uint8Array, MerkleError>;
@@ -118,16 +123,22 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
   readonly #leaf: ConstantTag;
   readonly #node: ConstantTag;
   readonly #empty: Uint8Array;
-  private constructor(readonly algorithm: HashAlgorithm) {
-    this.size = outputSizeOf(algorithm);
-    this.#leaf = new ConstantTag(algorithm, LEAF_TAG);
-    this.#node = new ConstantTag(algorithm, NODE_TAG);
-    this.#empty = new ConstantTag(algorithm, EMPTY_TAG).hash(new Uint8Array(0));
+  private constructor(
+    token: Token,
+    readonly algorithm: HashAlgorithm,
+  ) {
+    // without the token, nothing of the caller's is read: its algorithm is never hashed with
+    const a: HashAlgorithm = token === TOKEN ? algorithm : "SHA-256";
+    this.size = outputSizeOf(a);
+    this.#leaf = new ConstantTag(a, LEAF_TAG);
+    this.#node = new ConstantTag(a, NODE_TAG);
+    this.#empty = new ConstantTag(a, EMPTY_TAG).hash(new Uint8Array(0));
+    if (token === TOKEN) TAGGED.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isTagged = (x): x is TaggedMerkleHashing => isObject(x) && #node in x;
+    isTagged = (x): x is TaggedMerkleHashing => TAGGED.has(x);
     taggedNode = (h, left, right) => h.#node.hashParts([left, right]);
     taggedLeaf = (h, value) => {
       const c = h.#leaf.commitment(value);
@@ -141,7 +152,7 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
   /** The profile over `algorithm`; one that is not a `HashAlgorithm` (from a JavaScript caller) is a `TypeMismatch`. */
   static of(algorithm: HashAlgorithm): Result<TaggedMerkleHashing, TypeMismatch> {
     const a = algorithmArg(algorithm);
-    return a.ok ? ok(new TaggedMerkleHashing(a.value)) : a;
+    return a.ok ? ok(new TaggedMerkleHashing(TOKEN, a.value)) : a;
   }
 
   get empty(): Uint8Array {
@@ -175,20 +186,23 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
 export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
   readonly profile = "rfc6962";
   readonly size: number;
-  readonly #brand = true;
-  private constructor(readonly algorithm: HashAlgorithm) {
-    this.size = outputSizeOf(algorithm);
+  private constructor(
+    token: Token,
+    readonly algorithm: HashAlgorithm,
+  ) {
+    this.size = token === TOKEN ? outputSizeOf(algorithm) : 0;
+    if (token === TOKEN) RFC.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isRfc = (x): x is Rfc6962MerkleHashing => isObject(x) && #brand in x;
+    isRfc = (x): x is Rfc6962MerkleHashing => RFC.has(x);
   }
 
   /** The profile over `algorithm`; one that is not a `HashAlgorithm` (from a JavaScript caller) is a `TypeMismatch`. */
   static of(algorithm: HashAlgorithm): Result<Rfc6962MerkleHashing, TypeMismatch> {
     const a = algorithmArg(algorithm);
-    return a.ok ? ok(new Rfc6962MerkleHashing(a.value)) : a;
+    return a.ok ? ok(new Rfc6962MerkleHashing(TOKEN, a.value)) : a;
   }
 
   get empty(): Uint8Array {
@@ -234,17 +248,19 @@ let inclusionPath!: (p: InclusionProof) => readonly Uint8Array[];
 export class InclusionProof {
   readonly #path: readonly Uint8Array[];
   private constructor(
+    token: Token,
     readonly index: bigint,
     readonly size: bigint,
     path: readonly Uint8Array[],
   ) {
-    this.#path = Object.freeze(path);
+    this.#path = token === TOKEN ? Object.freeze(path) : [];
+    if (token === TOKEN) INCLUSION.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isInclusion = (x): x is InclusionProof => isObject(x) && #path in x;
-    createInclusion = (index, size, path) => new InclusionProof(index, size, path);
+    isInclusion = (x): x is InclusionProof => INCLUSION.has(x);
+    createInclusion = (index, size, path) => new InclusionProof(TOKEN, index, size, path);
     inclusionPath = (p) => p.#path;
   }
 
@@ -306,17 +322,19 @@ let consistencyPath!: (p: ConsistencyProof) => readonly Uint8Array[];
 export class ConsistencyProof {
   readonly #path: readonly Uint8Array[];
   private constructor(
+    token: Token,
     readonly oldSize: bigint,
     readonly newSize: bigint,
     path: readonly Uint8Array[],
   ) {
-    this.#path = Object.freeze(path);
+    this.#path = token === TOKEN ? Object.freeze(path) : [];
+    if (token === TOKEN) CONSISTENCY.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isConsistency = (x): x is ConsistencyProof => isObject(x) && #path in x;
-    createConsistency = (oldSize, newSize, path) => new ConsistencyProof(oldSize, newSize, path);
+    isConsistency = (x): x is ConsistencyProof => CONSISTENCY.has(x);
+    createConsistency = (oldSize, newSize, path) => new ConsistencyProof(TOKEN, oldSize, newSize, path);
     consistencyPath = (p) => p.#path;
   }
 

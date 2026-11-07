@@ -11,12 +11,12 @@
  * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
 import { BYTES_TAG, describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { bytesLength, outputSizeOf, plainBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, mint, outputSizeOf, plainBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_NUMBER, NOT_BYTES, readArray, readIterable, readPair, valueArg } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_NUMBER, NOT_BYTES, readArray, readIterable, readPair, TOKEN, valueArg, type Token } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 import { TRIE } from "./trie-internal.js";
 
@@ -49,6 +49,11 @@ const invalidProof = (reason: string): Result<never, TrieError> => err({ kind: "
 export const MAX_FIXED_BYTES = models.limits.TRIE_MAX_FIXED_KEY_BYTES;
 export const MAX_VARIABLE_BYTES = models.limits.TRIE_MAX_VARIABLE_KEY_BYTES;
 
+const MODE = mint();
+const SEGMENT = mint();
+const HASHING = mint();
+const PROOF = mint();
+
 let isMode!: (x: unknown) => x is KeyMode;
 
 /** `x` if it is a {@link KeyMode} made here (a private-brand check: no Proxy trap or caller code runs). */
@@ -56,24 +61,25 @@ const modeArg = (x: unknown): Result<KeyMode, TypeMismatch> => (isMode(x) ? ok(x
 
 /** How keys are validated: `fixed(n)`, exactly `n` bytes, or `variable(max)`, at most `max` bytes. */
 export class KeyMode {
-  readonly #brand = true;
   private constructor(
+    token: Token,
     readonly kind: "fixed" | "variable",
     /** The key length (fixed) or the longest key (variable), in bytes. */
     readonly bytes: number,
   ) {
+    if (token === TOKEN) MODE.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isMode = (x): x is KeyMode => isObject(x) && #brand in x;
+    isMode = (x): x is KeyMode => MODE.has(x);
   }
 
   /** Keys of exactly `bytes` bytes, `1..MAX_FIXED_BYTES` (`InvalidKey`); a length that is not a number is a `TypeMismatch`. */
   static fixed(bytes: number): Result<KeyMode, Refusal> {
     if (typeof (bytes as unknown) !== "number") return err(NOT_A_NUMBER);
     return Number.isInteger(bytes) && bytes >= 1 && bytes <= MAX_FIXED_BYTES
-      ? ok(new KeyMode("fixed", bytes))
+      ? ok(new KeyMode(TOKEN, "fixed", bytes))
       : err({ kind: "InvalidKey", reason: `fixed key length must be 1..${MAX_FIXED_BYTES.toString()}` });
   }
 
@@ -81,7 +87,7 @@ export class KeyMode {
   static variable(maxBytes: number): Result<KeyMode, Refusal> {
     if (typeof (maxBytes as unknown) !== "number") return err(NOT_A_NUMBER);
     return Number.isInteger(maxBytes) && maxBytes >= 0 && maxBytes <= MAX_VARIABLE_BYTES
-      ? ok(new KeyMode("variable", maxBytes))
+      ? ok(new KeyMode(TOKEN, "variable", maxBytes))
       : err({ kind: "InvalidKey", reason: `variable key limit must be 0..${MAX_VARIABLE_BYTES.toString()}` });
   }
 
@@ -127,8 +133,9 @@ let isSegment!: (x: unknown) => x is Segment;
 /** A node's segment: `length` bits, MSB-first in `bytes`, padded with zero bits to a whole byte. */
 export class Segment {
   readonly #bits: B.Bits;
-  private constructor(bits: B.Bits) {
+  private constructor(token: Token, bits: B.Bits) {
     this.#bits = bits;
+    if (token === TOKEN) SEGMENT.stamp(this);
     Object.freeze(this);
   }
 
@@ -142,7 +149,7 @@ export class Segment {
     const bytes = bytesArg(b);
     if (!bytes.ok) return bytes;
     const bits = segmentBits(count.value, bytes.value);
-    return bits.ok ? ok(new Segment(bits.value)) : bits;
+    return bits.ok ? ok(new Segment(TOKEN, bits.value)) : bits;
   }
 
   get length(): number {
@@ -156,7 +163,7 @@ export class Segment {
 
   static {
     segmentBitsOf = (s) => s.#bits;
-    isSegment = (x): x is Segment => isObject(x) && #bits in x;
+    isSegment = (x): x is Segment => SEGMENT.has(x);
   }
 }
 
@@ -217,17 +224,23 @@ export class TrieHashing {
   readonly #leaf: ConstantTag;
   readonly #branch: ConstantTag;
   readonly #empty: Uint8Array;
-  private constructor(readonly algorithm: HashAlgorithm) {
-    this.size = outputSizeOf(algorithm);
-    this.#value = new ConstantTag(algorithm, VALUE_TAG);
-    this.#leaf = new ConstantTag(algorithm, LEAF_TAG);
-    this.#branch = new ConstantTag(algorithm, BRANCH_TAG);
-    this.#empty = new ConstantTag(algorithm, EMPTY_TAG).hash(new Uint8Array(0));
+  private constructor(
+    token: Token,
+    readonly algorithm: HashAlgorithm,
+  ) {
+    // without the token, nothing of the caller's is read: its algorithm is never hashed with
+    const a: HashAlgorithm = token === TOKEN ? algorithm : "SHA-256";
+    this.size = outputSizeOf(a);
+    this.#value = new ConstantTag(a, VALUE_TAG);
+    this.#leaf = new ConstantTag(a, LEAF_TAG);
+    this.#branch = new ConstantTag(a, BRANCH_TAG);
+    this.#empty = new ConstantTag(a, EMPTY_TAG).hash(new Uint8Array(0));
+    if (token === TOKEN) HASHING.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isHashing = (x): x is TrieHashing => isObject(x) && #value in x;
+    isHashing = (x): x is TrieHashing => HASHING.has(x);
     TRIE.valueHash = (h, value) => {
       const c = h.#value.commitment(value);
       if (c.ok) return c;
@@ -255,7 +268,7 @@ export class TrieHashing {
   /** The hashing over `algorithm`; one that is not a `HashAlgorithm` (from a JavaScript caller) is a `TypeMismatch`. */
   static of(algorithm: HashAlgorithm): Result<TrieHashing, TypeMismatch> {
     const a = algorithmArg(algorithm);
-    return a.ok ? ok(new TrieHashing(a.value)) : a;
+    return a.ok ? ok(new TrieHashing(TOKEN, a.value)) : a;
   }
 
   /** The root of the empty trie. */
@@ -333,8 +346,9 @@ const proofArg = (x: unknown): Result<TrieProof, TypeMismatch> => (isProof(x) ? 
 /** A decoded, well-formed partial trie (not yet checked against a root). An empty proof is the proof of the empty trie. */
 export class TrieProof {
   readonly #top: ProofNode | undefined;
-  private constructor(top: ProofNode | undefined) {
-    this.#top = top;
+  private constructor(token: Token, top: ProofNode | undefined) {
+    this.#top = token === TOKEN ? top : undefined;
+    if (token === TOKEN) PROOF.stamp(this);
     Object.freeze(this);
   }
 
@@ -345,8 +359,8 @@ export class TrieProof {
 
   static {
     topOf = (p) => p.#top;
-    isProof = (x): x is TrieProof => isObject(x) && #top in x;
-    createProof = (top) => new TrieProof(top);
+    isProof = (x): x is TrieProof => PROOF.has(x);
+    createProof = (top) => new TrieProof(TOKEN, top);
   }
 
   /**

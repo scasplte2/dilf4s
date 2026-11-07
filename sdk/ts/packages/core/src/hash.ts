@@ -17,6 +17,7 @@ import { encodeIntoWithin, Feeding, MAX_ENCODED_BYTES, type EncodeError } from "
 import type { TypeMismatch } from "./error.js";
 import type { ExpansionRefusal, HashError, HashErrorKind } from "./generated/hash_errors.js";
 import { firstNonDigit, fromHex } from "./hex.js";
+import { mint } from "./mint.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Err, type Result } from "./result.js";
 import { encodeUtf8 } from "./utf8.js";
@@ -328,17 +329,23 @@ const DOMAIN_TAG = /^[a-z0-9]+(\/[a-z0-9][a-z0-9._-]*)*\/v[0-9]+$/;
 
 let isTag!: (x: unknown) => x is DomainTag;
 
+/** The key `DomainTag`'s constructor takes, private to this module: without it, what a constructor call builds is no tag. */
+const TAG_KEY: unique symbol = Symbol("dilf4s domain tag");
+const TAG = mint();
+
 /** A versioned domain-separation tag, such as `dilf4s/mpt/leaf/v1`. */
 export class DomainTag {
   // #private state makes the class nominal: only DomainTag.of can produce one, so no unchecked tag reaches a hash
   readonly #value: string;
-  private constructor(value: string) {
+  private constructor(key: typeof TAG_KEY, value: string) {
     this.#value = value;
+    // a JavaScript caller can call a private constructor; without the key it builds an object no check accepts
+    if (key === TAG_KEY) TAG.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isTag = (x): x is DomainTag => typeof x === "object" && x !== null && #value in x;
+    isTag = (x): x is DomainTag => TAG.has(x);
   }
 
   /** The tag text. */
@@ -352,13 +359,13 @@ export class DomainTag {
    */
   static of(tag: string): Result<DomainTag, HashErrorOf<"InvalidDomainTag"> | TypeMismatch> {
     if (typeof (tag as unknown) !== "string") return err(NOT_A_STRING);
-    return DOMAIN_TAG.test(tag) ? ok(new DomainTag(tag)) : err({ kind: "InvalidDomainTag", tag: Preview.of(tag) });
+    return DOMAIN_TAG.test(tag) ? ok(new DomainTag(TAG_KEY, tag)) : err({ kind: "InvalidDomainTag", tag: Preview.of(tag) });
   }
 }
 
 /**
  * Whether `x` is a {@link DomainTag} made by `DomainTag.of`, in O(1): a private-brand check, which runs no Proxy trap
- * and which an object built on its prototype fails.
+ * and which an object built on its prototype, or by calling the constructor from outside, fails.
  */
 export const isDomainTag = (x: unknown): x is DomainTag => isTag(x);
 

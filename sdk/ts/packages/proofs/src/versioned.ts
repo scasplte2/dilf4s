@@ -10,10 +10,10 @@
  * checked before it is used.
  */
 import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { plainBytes, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { mint, plainBytes, takeBytes, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
-import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, readArray, readPair, valueArg } from "./check.js";
+import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
 import { bitsOf, decodeInput } from "./input.js";
 import * as trie from "./trie.js";
 import { TRIE } from "./trie-internal.js";
@@ -63,6 +63,10 @@ export const MAX_KEY_LENGTH = models.limits.STATE_KEY_MAX_LENGTH;
 
 const SEGMENT = /^[a-z0-9][a-z0-9._-]*$/;
 
+const KEY = mint();
+const NAMESPACE = mint();
+const PROFILE = mint();
+
 let isKey!: (x: unknown) => x is StateKey;
 let createKey!: (s: string) => StateKey;
 
@@ -71,14 +75,17 @@ const keyArg = (x: unknown): Result<StateKey, TypeMismatch> => (isKey(x) ? ok(x)
 
 /** A state key: `segment *("/" segment)`, each segment `[a-z0-9][a-z0-9._-]*`, within the length limits. */
 export class StateKey {
-  readonly #brand = true;
-  private constructor(readonly value: string) {
+  private constructor(
+    token: Token,
+    readonly value: string,
+  ) {
+    if (token === TOKEN) KEY.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isKey = (x): x is StateKey => isObject(x) && #brand in x;
-    createKey = (s) => new StateKey(s);
+    isKey = (x): x is StateKey => KEY.has(x);
+    createKey = (s) => new StateKey(TOKEN, s);
   }
 
   /**
@@ -146,13 +153,16 @@ let isNamespace!: (x: unknown) => x is StateNamespace;
 
 /** A namespace `ns`, naming the keys below `ns/`; its prefix is `utf8(ns + "/")`. */
 export class StateNamespace {
-  readonly #brand = true;
-  private constructor(readonly value: string) {
+  private constructor(
+    token: Token,
+    readonly value: string,
+  ) {
+    if (token === TOKEN) NAMESPACE.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isNamespace = (x): x is StateNamespace => isObject(x) && #brand in x;
+    isNamespace = (x): x is StateNamespace => NAMESPACE.has(x);
   }
 
   static readonly MAX_LENGTH = models.limits.STATE_NAMESPACE_MAX_LENGTH;
@@ -163,7 +173,7 @@ export class StateNamespace {
     const k = parseKey(s);
     if (!k.ok) return k;
     const slashes = s.split("/").length - 1;
-    return s.length <= StateNamespace.MAX_LENGTH && slashes < MAX_SEGMENTS - 1 ? ok(new StateNamespace(s)) : err({ kind: "NamespaceFull", namespace: Preview.of(s) });
+    return s.length <= StateNamespace.MAX_LENGTH && slashes < MAX_SEGMENTS - 1 ? ok(new StateNamespace(TOKEN, s)) : err({ kind: "NamespaceFull", namespace: Preview.of(s) });
   }
 
   prefix(): Uint8Array {
@@ -524,19 +534,20 @@ export class VersionedTrie<V> {
   readonly topMode: trie.KeyMode;
   readonly stateMode: trie.KeyMode;
   readonly historyMode: trie.KeyMode;
-  readonly #brand = true;
   private constructor(
+    token: Token,
     hashing: trie.TrieHashing,
     readonly versionKey: VersionKey<V>,
     modes: readonly [trie.KeyMode, trie.KeyMode, trie.KeyMode],
   ) {
     this.hashing = hashing;
-    [this.topMode, this.stateMode, this.historyMode] = modes;
+    [this.topMode, this.stateMode, this.historyMode] = token === TOKEN ? modes : [modes[0], modes[0], modes[0]];
+    if (token === TOKEN) PROFILE.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isProfile = (x): x is VersionedTrie<unknown> => isObject(x) && #brand in x;
+    isProfile = (x): x is VersionedTrie<unknown> => PROFILE.has(x);
   }
 
   /**
@@ -555,7 +566,7 @@ export class VersionedTrie<V> {
     const history = trie.KeyMode.fixed(k.value.width);
     // every argument is this module's own, checked above: none of these refuses
     if (!hashing.ok || !top.ok || !state.ok || !history.ok) return malformed("the profile's tries");
-    return ok(new VersionedTrie(hashing.value, k.value, [top.value, state.value, history.value]));
+    return ok(new VersionedTrie(TOKEN, hashing.value, k.value, [top.value, state.value, history.value]));
   }
 
   /** The hash a trie commits for a value: `valueHash(commit(v))`; one too large to commit is `Trie.TooLarge`. */

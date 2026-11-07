@@ -226,6 +226,15 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     expect(t.digest()).toEqual(expectOk(taggedHash(sha, tag, message), "tagged"));
   });
 
+  it("a DomainTag built by calling its constructor from outside is not one: no tag outside the grammar reaches a hash", () => {
+    const forged = Reflect.construct(DomainTag, [Symbol("dilf4s domain tag"), "Not A Tag!"]) as unknown;
+    const keyless = Reflect.construct(DomainTag, [undefined, "Not A Tag!"]) as unknown;
+    for (const t of [forged, keyless]) {
+      expect(TaggedHash.of(sha, bad(t))).toEqual(mismatch("expected a DomainTag"));
+      expect(taggedHash(sha, bad(t), message)).toEqual(mismatch("expected a DomainTag"));
+    }
+  });
+
   it("the algorithm list cannot be extended by a caller", () => {
     expect(Object.isFrozen(HASH_ALGORITHMS)).toBe(true);
     expect(() => (HASH_ALGORITHMS as HashAlgorithm[]).push(bad("MD5"))).toThrow(TypeError);

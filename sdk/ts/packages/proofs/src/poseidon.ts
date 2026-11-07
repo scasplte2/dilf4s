@@ -7,7 +7,9 @@
  */
 import { describeFailure, err, models, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
 
-import { bigintArg, expected, expectedAt, isObject, NOT_A_NUMBER, readIterable, readPair, valueArg } from "./check.js";
+import { mint } from "@kd5ujc/dilf4s-core/internal";
+
+import { bigintArg, expected, expectedAt, NOT_A_NUMBER, readIterable, readPair, TOKEN, valueArg, type Token } from "./check.js";
 
 import { bitsOf, decodeInput } from "./input.js";
 import { FULL_ROUNDS, WIDTH2, WIDTH3, WIDTH4, WIDTH5, type PoseidonParams } from "./poseidon-constants.js";
@@ -17,6 +19,9 @@ export const FR_MODULUS = 218882428718392752222464057452572750885483644004160343
 
 export type PoseidonError = { readonly kind: "InputCount"; readonly count: number; readonly max: number } | { readonly kind: "NonCanonical"; readonly bits: number };
 
+const FR = mint();
+const MERKLE_PROOF = mint();
+
 let isFr!: (x: unknown) => x is Fr;
 let reduceOf!: (value: bigint) => Fr;
 
@@ -25,26 +30,27 @@ const NOT_AN_FR = expected("an Fr");
 /** An element of the BN254 scalar field, `0 <= value < r`, valid by construction. */
 export class Fr {
   readonly #value: bigint;
-  private constructor(value: bigint) {
-    this.#value = value;
+  private constructor(token: Token, value: bigint) {
+    this.#value = token === TOKEN ? value : 0n;
+    if (token === TOKEN) FR.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isFr = (x): x is Fr => isObject(x) && #value in x;
+    isFr = (x): x is Fr => FR.has(x);
     reduceOf = (value) => {
       const m = value % FR_MODULUS;
-      return new Fr(m < 0n ? m + FR_MODULUS : m);
+      return new Fr(TOKEN, m < 0n ? m + FR_MODULUS : m);
     };
   }
 
-  static readonly zero: Fr = new Fr(0n);
+  static readonly zero: Fr = new Fr(TOKEN, 0n);
 
   /** The element `value`, if canonical: a value `>= r` is malformed, never reduced. What is not a `bigint` is a `TypeMismatch`. */
   static of(value: bigint): Result<Fr, PoseidonError | TypeMismatch> {
     const v = bigintArg(value);
     if (!v.ok) return v;
-    return v.value >= 0n && v.value < FR_MODULUS ? ok(new Fr(v.value)) : err({ kind: "NonCanonical", bits: bitsOf(v.value) });
+    return v.value >= 0n && v.value < FR_MODULUS ? ok(new Fr(TOKEN, v.value)) : err({ kind: "NonCanonical", bits: bitsOf(v.value) });
   }
 
   /** `value mod r`; what is not a `bigint` is a `TypeMismatch`. */
@@ -168,17 +174,19 @@ let createMerkleProof!: (position: bigint, siblings: readonly Fr[]) => PoseidonM
 export class PoseidonMerkleProof {
   readonly #siblings: readonly Fr[];
   private constructor(
+    token: Token,
     readonly position: bigint,
     siblings: readonly Fr[],
   ) {
-    this.#siblings = Object.freeze([...siblings]);
+    this.#siblings = Object.freeze(token === TOKEN ? [...siblings] : []);
+    if (token === TOKEN) MERKLE_PROOF.stamp(this);
     Object.freeze(this);
   }
 
   static {
-    isMerkleProof = (x): x is PoseidonMerkleProof => isObject(x) && #siblings in x;
+    isMerkleProof = (x): x is PoseidonMerkleProof => MERKLE_PROOF.has(x);
     siblingsOf = (p) => p.#siblings;
-    createMerkleProof = (position, siblings) => new PoseidonMerkleProof(position, siblings);
+    createMerkleProof = (position, siblings) => new PoseidonMerkleProof(TOKEN, position, siblings);
   }
 
   get siblings(): readonly Fr[] {

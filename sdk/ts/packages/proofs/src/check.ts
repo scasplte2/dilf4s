@@ -8,6 +8,14 @@ import { err, isValue, ok, type Result, type TypeMismatch, type Value } from "@k
 import { close, isAlgorithm, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, plainBytes, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
 import type { HashAlgorithm } from "@kd5ujc/dilf4s-core";
 
+/**
+ * The token this package's constructors take, private to the package. A constructor is private to TypeScript alone, so
+ * JavaScript can call one (`new`, `Reflect.construct`); without the token it reads nothing it is given and stamps no
+ * brand (core's `mint`), so no check here accepts what it builds.
+ */
+export const TOKEN: unique symbol = Symbol("dilf4s-proofs");
+export type Token = typeof TOKEN;
+
 export const NOT_BYTES = typeMismatch("expected a Uint8Array");
 export const NOT_A_VALUE = typeMismatch("expected a canonical value");
 export const NOT_A_BIGINT = typeMismatch("expected a bigint");

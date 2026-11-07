@@ -88,6 +88,18 @@ false when either side is not a value, `MapValue.get` finds nothing for a key th
 placeholders (`<not a canonical value>`, `<not a decode failure>`, and a preview with the head `<not text>` and a
 length of 0).
 
+The TypeScript proofs and signing packages (`@kd5ujc/dilf4s-proofs`, `@kd5ujc/dilf4s-signing`) hold every exported
+function and method to the same rule: each argument is checked once, in O(1) (an array once per item, read by index),
+and one of the wrong type is a `TypeMismatch` in the function's result, beside the function's own error family. A
+verification never answers for such an argument: a message that is not bytes is refused, never read as empty, and a
+claimed value that is not a canonical value (an object shaped like the null value included) is never a claim of
+absence. A key, signature, proof, profile, mode or index must be one the package made (a private brand, stamped only
+by a constructor given the package's token, so one built by calling a constructor from JavaScript fails the check)
+and, for keys and signatures, of the scheme at hand. A plain object a caller passes (a Merkle or versioned head, a
+proof, delta, chunk or snapshot) has each field read once into a copy the package owns. Where a result has no room for
+a refusal, `equals` is false for anything not of its class. A message a signer reads more than once is copied first
+when its memory is a `SharedArrayBuffer` or another realm's.
+
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the
 caller's realm, which nothing can change while the decoder runs, and copies it once first when it is a

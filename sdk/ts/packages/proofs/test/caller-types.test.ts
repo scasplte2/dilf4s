@@ -473,3 +473,37 @@ describe("Poseidon refuses an argument of the wrong type as TypeMismatch", () =>
     expect(expectOk(poseidon.treeRoot(8, new Map([[1n, fr(1n)]])), "a Map").equals(expectOk(poseidon.treeRoot(8, [[1n, fr(1n)]]), "an array"))).toBe(true);
   });
 });
+
+describe("what a constructor builds when JavaScript calls it from outside is refused by every check", () => {
+  /** A constructor call without the package's token: TypeScript's `private` does not stop JavaScript. */
+  const forge = (c: unknown, args: readonly unknown[]): unknown => Reflect.construct(c as new (...a: unknown[]) => object, [Symbol("dilf4s-proofs"), ...args]);
+
+  it("trie: a mode, segment, hashing or proof", () => {
+    const mode = forge(trie.KeyMode, ["variable", 8]);
+    const hashing = forge(trie.TrieHashing, ["SHA-256"]);
+    const forgedProof = forge(trie.TrieProof, [undefined]);
+    const segment = forge(trie.Segment, [{ bytes: Uint8Array.of(0x61), length: 8 }]);
+    expect(trie.check(T, bad(mode), root, proof)).toEqual(mismatch("expected a KeyMode"));
+    expect(trie.check(bad(hashing), variable, root, proof)).toEqual(mismatch("expected a TrieHashing"));
+    // the forged proof of the empty trie would have verified against the empty root
+    expect(trie.check(T, variable, T.empty, bad(forgedProof))).toEqual(mismatch("expected a TrieProof"));
+    expect(T.leafHash(bad(segment), v1)).toEqual(mismatch("expected a Segment"));
+    // a forged constructor reads nothing it is given: a junk algorithm is never hashed with
+    expect(() => forge(trie.TrieHashing, [{}])).not.toThrow();
+  });
+
+  it("merkle, versioned and poseidon", () => {
+    const tagged2 = forge(merkle.TaggedMerkleHashing, ["SHA-256"]);
+    expect(merkle.merkleRoot(bad(tagged2), [])).toEqual(mismatch("expected a TaggedMerkleHashing or an Rfc6962MerkleHashing"));
+    const p = forge(merkle.InclusionProof, [2n, 3n, [l01]]);
+    expect(merkle.verifyInclusion(tagged, mroot, leafHashes[2] ?? new Uint8Array(0), bad(p))).toEqual(mismatch("expected an InclusionProof"));
+    const k = forge(versioned.StateKey, ["fiber/1"]);
+    expect(vt.checkValue(bad(k), int(1n))).toEqual(mismatch("expected a StateKey"));
+    const profile = forge(versioned.VersionedTrie, [T, versioned.VersionKey.long, [variable, variable, variable]]);
+    expect(versioned.Replica.empty(bad(profile))).toEqual(mismatch("expected a VersionedTrie"));
+    const fr = forge(poseidon.Fr, [5n]);
+    expect(poseidon.compress(bad(fr), bad(fr))).toEqual(mismatch("expected an Fr"));
+    expect(expectOk(poseidon.Fr.of(0n), "zero").equals(bad(forge(poseidon.Fr, [0n])))).toBe(false);
+    expect(() => forge(poseidon.PoseidonMerkleProof, [0n, 5])).not.toThrow();
+  });
+});
