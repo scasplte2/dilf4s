@@ -5,7 +5,7 @@
  * the package.
  */
 import { err, isValue, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { close, isAlgorithm, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, plainBytes, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
+import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, plainBytes, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
 import type { HashAlgorithm } from "@kd5ujc/dilf4s-core";
 
 /**
@@ -45,14 +45,14 @@ export const bigintArg = (x: unknown): Result<bigint, TypeMismatch> => (typeof x
 export const algorithmArg = (x: unknown): Result<HashAlgorithm, TypeMismatch> => (isAlgorithm(x) ? ok(x) : err(NOT_AN_ALGORITHM));
 
 /** Whether `x` may have its properties read: an object (a Proxy's `get` traps are the caller's own code). */
-export const isObject = (x: unknown): x is object => (typeof x === "object" && x !== null) || typeof x === "function";
+export const isObject = (x: unknown): x is object => ((typeof x === "object" && x !== null) || typeof x === "function") && !isRevokedProxy(x);
 
 /**
- * A caller's array, read by index: `Array.isArray` first (no trap runs on a Proxy for it), then its length once and
+ * A caller's array, read by index: `isArrayGuarded` first (no trap runs on a Proxy for it, and a revoked Proxy is refused), then its length once and
  * each item once, each given to `item`, whose first refusal is the result. `what` names the array in a refusal.
  */
 export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: number) => Result<T, E>): Result<T[], E | TypeMismatch> {
-  if (!Array.isArray(x)) return err(expected(what));
+  if (!isArrayGuarded(x)) return err(expected(what));
   const length: unknown = (x as readonly unknown[]).length;
   if (!isArrayLength(length)) return err(expected(what));
   const out: T[] = [];
@@ -69,7 +69,7 @@ export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: 
  * bytes is copied before the next is read, since reading it (a getter, a Proxy's trap) may run caller code.
  */
 export function readPair(x: unknown): readonly unknown[] | undefined {
-  return Array.isArray(x) ? (x as readonly unknown[]) : undefined;
+  return isArrayGuarded(x) ? x : undefined;
 }
 
 /**

@@ -242,6 +242,14 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     }
   });
 
+  it("a revoked Proxy is refused, never thrown on", () => {
+    const { proxy, revoke } = Proxy.revocable([], {});
+    revoke();
+    expect(hashParts(sha, bad(proxy))).toEqual(mismatch("expected an array of Uint8Arrays"));
+    expect(hashParts(sha, bad([message, proxy]))).toEqual(mismatch("expected a Uint8Array at index 1"));
+    expect(digest(sha, bad(proxy))).toEqual(notBytes);
+  });
+
   it("the algorithm list cannot be extended by a caller", () => {
     expect(Object.isFrozen(HASH_ALGORITHMS)).toBe(true);
     expect(() => (HASH_ALGORITHMS as HashAlgorithm[]).push(bad("MD5"))).toThrow(TypeError);

@@ -7,7 +7,7 @@
  */
 import { describeFailure, err, models, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
 
-import { isArrayLength, mint } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, isArrayLength, mint } from "@kd5ujc/dilf4s-core/internal";
 
 import { bigintArg, expected, expectedAt, NOT_A_NUMBER, readIterable, readPair, TOKEN, valueArg, type Token } from "./check.js";
 
@@ -123,7 +123,7 @@ const BY_INPUTS: readonly PoseidonParams[] = [WIDTH2, WIDTH3, WIDTH4, WIDTH5];
  * (`tooMany` then), each item read once, by index.
  */
 function frsArg<E>(x: unknown, what: string, max: number, tooMany: (count: number) => E): Result<Fr[], E | TypeMismatch> {
-  if (!Array.isArray(x)) return err(expected(what));
+  if (!isArrayGuarded(x)) return err(expected(what));
   const count: unknown = (x as readonly unknown[]).length;
   if (!isArrayLength(count)) return err(expected(what));
   if (count > max) return err(tooMany(count));

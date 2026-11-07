@@ -12,7 +12,7 @@ import { invalidEncoding, invalidKey, lengthError, type CryptoError } from "./er
 import { signatureBytes, signingKeyBytes, verifyingKeyBytes } from "./keys.js";
 import { expectedAt, NOT_A_NUMBER, NOT_BYTES, readArray, verdict, viewOf } from "./internal/check.js";
 import type { KeyPair, Signature, SigningKey, VerifyingKey } from "./keys.js";
-import { takeBytes } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, takeBytes } from "@kd5ujc/dilf4s-core/internal";
 
 import { attempt } from "./internal/attempt.js";
 import { beToBig, bigToBE, concat, u32be } from "./internal/bytes.js";
@@ -126,7 +126,7 @@ const keysArg = (keys: unknown): Result<Uint8Array[], TypeMismatch> =>
 /** A caller's array of tuples, each read by index: its items checked by `items`, in order, refused by its place. */
 function tuplesArg<T>(x: unknown, what: string, items: (tuple: readonly unknown[]) => T | undefined): Result<T[], TypeMismatch> {
   return readArray(x, `an array of ${what}`, (t, i) => {
-    const checked = Array.isArray(t) ? items(t as readonly unknown[]) : undefined;
+    const checked = isArrayGuarded(t) ? items(t) : undefined;
     return checked === undefined ? { ok: false, error: expectedAt(what, i) } : { ok: true, value: checked };
   });
 }

@@ -1,6 +1,6 @@
 /** BIP-39 (`signing.md` 2.1): entropy to mnemonic and back, and mnemonic to seed. */
 import { err, ok, Preview, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { mint } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, mint } from "@kd5ujc/dilf4s-core/internal";
 import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -59,7 +59,7 @@ export class WordList {
     if (separator.length !== 1) return err({ kind: "InvalidWordList", reason: `a separator of ${separator.length.toString()} characters is not one phrases are split on` });
     if (!SEPARATORS.test(separator)) return err({ kind: "InvalidWordList", reason: "the separator is not one phrases are split on", separator: Preview.of(separator) });
     // a JavaScript caller's words that are not an array are refused by their type, in O(1) and unread
-    if (!Array.isArray(words)) return err({ kind: "InvalidWordList", reason: "the words are not an array" });
+    if (!isArrayGuarded(words)) return err({ kind: "InvalidWordList", reason: "the words are not an array" });
     // the count is checked before any word is normalised, read once and written only as a number (a Proxy's array
     // could answer anything): never the caller's text
     const count: unknown = words.length;

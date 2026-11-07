@@ -5,7 +5,7 @@
  * schemes work on plain, owned data.
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { isArrayLength, plainBytes, takeBytes, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, isArrayLength, isRevokedProxy, plainBytes, takeBytes, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 export const NOT_BYTES = typeMismatch("expected a Uint8Array");
 export const NOT_A_NUMBER = typeMismatch("expected a number");
@@ -18,7 +18,7 @@ export const expected = (what: string): TypeMismatch => typeMismatch(`expected $
 export const expectedAt = (what: string, i: number): TypeMismatch => typeMismatch(`expected ${what} at index ${i.toString()}`);
 
 /** Whether `x` may have its properties read: an object (a Proxy's `get` traps are the caller's own code). */
-export const isObject = (x: unknown): x is object => (typeof x === "object" && x !== null) || typeof x === "function";
+export const isObject = (x: unknown): x is object => ((typeof x === "object" && x !== null) || typeof x === "function") && !isRevokedProxy(x);
 
 /**
  * Bytes to verify: a plain view of the caller's memory (its own `length` not believed), read once by the check that
@@ -44,11 +44,11 @@ export const bytesArg = (x: unknown): Result<Uint8Array, TypeMismatch> => {
 };
 
 /**
- * A caller's array, read by index: `Array.isArray` first (no trap runs on a Proxy for it), then its length once and
+ * A caller's array, read by index: `isArrayGuarded` first (no trap runs on a Proxy for it, and a revoked Proxy is refused), then its length once and
  * each item once, each given to `item`, whose first refusal is the result.
  */
 export function readArray<T, E>(x: unknown, what: string, item: (v: unknown, i: number) => Result<T, E>): Result<T[], E | TypeMismatch> {
-  if (!Array.isArray(x)) return err(expected(what));
+  if (!isArrayGuarded(x)) return err(expected(what));
   const length: unknown = (x as readonly unknown[]).length;
   if (!isArrayLength(length)) return err(expected(what));
   const out: T[] = [];

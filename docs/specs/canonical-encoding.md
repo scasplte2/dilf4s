@@ -97,8 +97,15 @@ absence. A key, signature, proof, profile, mode or index must be one the package
 by a constructor given the package's token, so one built by calling a constructor from JavaScript fails the check)
 and, for keys and signatures, of the scheme at hand. A plain object a caller passes (a Merkle or versioned head, a
 proof, delta, chunk or snapshot) has each field read once into a copy the package owns. Where a result has no room for
-a refusal, `equals` is false for anything not of its class. A message a signer reads more than once is copied first
-when its memory is a `SharedArrayBuffer` or another realm's.
+a refusal, `equals` is false for anything not of its class. A message to sign is copied once before it is read, since
+a signer reads it more than once and shared memory cannot be told apart reliably.
+
+A revoked Proxy (or a Proxy whose target is one) is refused like any other argument of the wrong type, as a
+`TypeMismatch`, in all three packages: every array and object reader first asks `Array.isArray` through core's one
+guard, whose catch sees only the engine's refusal of such an object (the call runs no caller code). It and signing's
+boundary around noble are the SDK's only catches. A check that passes allocates at most one O(1) plain view of each
+caller byte argument (the view is what keeps a library such as noble from reading a subclass's own `length` or
+`subarray`) and the copies of what is kept; refusals and boolean verdicts are shared, frozen results.
 
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the

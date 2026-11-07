@@ -4,6 +4,8 @@
  * does not throw. Caller code it runs (a getter, an iterator's methods) may throw. Internal to this package.
  */
 
+import { isArrayGuarded, isRevokedProxy } from "./guard.js";
+
 /** The greatest length an array can have: `2^32 - 1`. */
 const MAX_ARRAY_LENGTH = 2 ** 32 - 1;
 
@@ -29,7 +31,8 @@ export const NOT_A_RESULT = "an iterator's next() gave a result that is not an o
 
 /** Whether `r` may be read as an iterator or an iterator result: an object, a function included, as `for...of` requires. */
 export function isResult(r: unknown): r is { readonly done?: unknown; readonly value?: unknown } {
-  return (typeof r === "object" && r !== null) || typeof r === "function";
+  // a revoked Proxy is an object every read of which throws: it is no object to read
+  return ((typeof r === "object" && r !== null) || typeof r === "function") && !isRevokedProxy(r);
 }
 
 const NO_ARGUMENTS: readonly unknown[] = Object.freeze([]);
@@ -74,7 +77,7 @@ const ARRAY_NEXT: unknown = Reflect.get(ARRAY_ITERATOR, "next");
  * through the iterator. The array iterator's internal steps (reading `length`, then the index) are the language's own.
  */
 export function walksAsArray(iterable: object, method: unknown): iterable is readonly unknown[] {
-  return method === ARRAY_VALUES && Array.isArray(iterable) && Reflect.get(ARRAY_ITERATOR, "next") === ARRAY_NEXT;
+  return method === ARRAY_VALUES && isArrayGuarded(iterable) && Reflect.get(ARRAY_ITERATOR, "next") === ARRAY_NEXT;
 }
 
 /**

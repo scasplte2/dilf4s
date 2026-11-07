@@ -445,3 +445,22 @@ describe("a shared refusal cannot be changed into a verdict", () => {
     expect(Object.isFrozen(ed25519.verify(ed.verifying, empty, sig))).toBe(true);
   });
 });
+
+describe("a revoked Proxy is refused as a TypeMismatch at every array argument, never thrown on", () => {
+  const revoked = (): never => {
+    const { proxy, revoke } = Proxy.revocable([], {});
+    revoke();
+    return bad(proxy);
+  };
+
+  it("BLS aggregates, derivation paths and word lists", () => {
+    const b = expectOk(blsPop.fromSeed(seed), "bls");
+    const sig = expectOk(blsPop.sign(b.signing, empty), "sig");
+    expect(blsPop.aggregate(revoked())).toEqual(mismatch("expected an array of BLS12-381-PoP Signatures"));
+    expect(blsPop.fastAggregateVerify(revoked(), empty, sig)).toEqual(mismatch("expected an array of BLS12-381-PoP VerifyingKeys"));
+    expect(blsPop.aggregateVerify(revoked(), sig)).toEqual(mismatch("expected an array of a [VerifyingKey, Uint8Array] pair"));
+    expect(blsPop.batchVerify(bad([revoked()]))).toEqual(mismatch("expected a [VerifyingKey, Uint8Array, Signature] triple at index 0"));
+    expect(slip10Ed25519.derive(seed, revoked())).toEqual(mismatch("expected an array of ChildIndex"));
+    expect(WordList.of(revoked())).toEqual({ ok: false, error: { kind: "InvalidWordList", reason: "the words are not an array" } });
+  });
+});

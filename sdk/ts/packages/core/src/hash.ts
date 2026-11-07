@@ -17,6 +17,7 @@ import { encodeIntoWithin, Feeding, MAX_ENCODED_BYTES, type EncodeError } from "
 import type { TypeMismatch } from "./error.js";
 import type { ExpansionRefusal, HashError, HashErrorKind } from "./generated/hash_errors.js";
 import { firstNonDigit, fromHex } from "./hex.js";
+import { isArrayGuarded } from "./guard.js";
 import { isArrayLength } from "./iterator.js";
 import { mint } from "./mint.js";
 import { Preview } from "./preview.js";
@@ -308,7 +309,7 @@ export function expandMessageXmd(
 export function hashParts(algorithm: HashAlgorithm, parts: readonly Uint8Array[]): Result<Uint8Array, AlgorithmError> {
   const refused = refuseAlgorithm(algorithm);
   if (refused !== undefined) return refused;
-  const count: unknown = Array.isArray(parts) ? parts.length : undefined;
+  const count: unknown = isArrayGuarded(parts) ? parts.length : undefined;
   if (!isArrayLength(count)) return err(NOT_PARTS);
   const h = startHashOf(algorithm);
   for (let i = 0; i < count; i++) {

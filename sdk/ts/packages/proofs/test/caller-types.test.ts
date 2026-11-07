@@ -672,3 +672,26 @@ describe("what a constructor builds when JavaScript calls it from outside is ref
     expect(() => forge(poseidon.PoseidonMerkleProof, [0n, 5])).not.toThrow();
   });
 });
+
+describe("a revoked Proxy is refused as a TypeMismatch at every array and object argument, never thrown on", () => {
+  const revoked = (): never => {
+    const { proxy, revoke } = Proxy.revocable([], {});
+    revoke();
+    return bad(proxy);
+  };
+
+  it("merkle, trie, poseidon and versioned", () => {
+    expect(merkle.InclusionProof.of(0n, 1n, revoked())).toEqual(mismatch("expected an array of Uint8Arrays"));
+    expect(merkle.merkleRoot(tagged, revoked())).toEqual(mismatch("expected an array of Uint8Arrays"));
+    expect(merkle.merkleVerify(tagged, revoked(), int(2n), inclusionValue)).toEqual(mismatch("expected head to be a MerkleHead"));
+    expect(trie.trieRoot(T, variable, revoked())).toEqual(mismatch("expected an iterable (its Symbol.iterator, iterator or next is not of the protocol's type)"));
+    expect(trie.trieRoot(T, variable, bad([revoked()]))).toEqual(mismatch("expected a [key, valueHash] array of Uint8Arrays at index 0"));
+    expect(trie.triePrefixVerify(T, variable, root, new Uint8Array(0), revoked(), full)).toEqual(mismatch("expected an array of [key, value] entries"));
+    expect(trie.TrieProof.fromRecords(T, bad([revoked()]))).toEqual(mismatch("expected a trie record of its types at index 0"));
+    expect(poseidon.hash(revoked())).toEqual(mismatch("expected an array of Fr"));
+    expect(poseidon.treeRoot(4, revoked()).ok).toBe(false);
+    expect(vt.verifyState(bytes(vectors.root), revoked())).toEqual(mismatch("expected a VersionedTrieProof"));
+    expect(vt.root(revoked())).toEqual(mismatch("expected the head to be a Head"));
+    expect(versioned.VersionedTrie.of("SHA-256", revoked())).toEqual(mismatch("expected a VersionKey"));
+  });
+});

@@ -28,6 +28,7 @@ import { copyBytes, takeBytes } from "./bytes.js";
 import type { CanonicalError, TypeMismatch } from "./error.js";
 import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_DIGITS, CANONICAL_MAX_INTEGER_BITS, CANONICAL_MAX_RATIONAL_BITS, CANONICAL_MAX_WEIGHT } from "./generated/limits.js";
 import { toHexOf } from "./hex.js";
+import { isArrayGuarded } from "./guard.js";
 import { close, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, walksAsArray } from "./iterator.js";
 import { KeySet, search } from "./keyset.js";
 import { Preview } from "./preview.js";
@@ -581,7 +582,7 @@ export class ArrayValue {
    */
   static of(items: readonly Value[]): Result<ArrayValue, CanonicalError> {
     // the length read once: a real array's is a number, a Proxy's need not be (and comparing a symbol throws)
-    const length: unknown = Array.isArray(items) ? items.length : undefined;
+    const length: unknown = isArrayGuarded(items) ? items.length : undefined;
     if (!isArrayLength(length)) return err(notAnArray);
     const kept: Value[] = [];
     let [deepest, weight] = [0, 1n];
@@ -701,7 +702,7 @@ export class MapValue {
 
   /** Checks and keeps the `i`th entry read: a `[string, Value]` array (read by index), with a key not seen before. */
   private static entry(seen: KeySet, kept: Entry[], entry: unknown, i: number): CanonicalError | undefined {
-    if (!Array.isArray(entry)) return expected(`a [key, value] array at index ${i.toString()}`);
+    if (!isArrayGuarded(entry)) return expected(`a [key, value] array at index ${i.toString()}`);
     const key: unknown = entry[0];
     const value: unknown = entry[1];
     if (typeof key !== "string") return expected(`a string key at index ${i.toString()}`);

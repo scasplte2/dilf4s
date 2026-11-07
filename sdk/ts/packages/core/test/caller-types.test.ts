@@ -632,3 +632,24 @@ describe("forged previews and schema arguments of the wrong type", () => {
     expect(expectOk(codec.intRange(0n, null).encode(1n), "valid bounds").kind).toBe("int");
   });
 });
+
+describe("a revoked Proxy is refused as a TypeMismatch, never thrown on", () => {
+  /** An array Proxy, revoked: every question the engine is asked about it throws, Array.isArray included. */
+  const revoked = (): never => {
+    const { proxy, revoke } = Proxy.revocable([], {});
+    revoke();
+    return bad(proxy);
+  };
+
+  it("at the array entry points, and where an object is read", () => {
+    expect(hashCommitment("SHA-256", revoked(), int(1n))).toEqual(mismatch("expected an array of Uint8Arrays"));
+    expect(Value.array(revoked())).toEqual(mismatch("expected an array"));
+    expect(Value.map(revoked())).toEqual(mismatch("expected an iterable of [key, value] entries"));
+    expect(Value.map(bad([revoked()]))).toEqual(mismatch("expected a [key, value] array at index 0"));
+    expect(codec.vector(codec.uint, 0, null).encode(revoked())).toEqual(mismatch("expected an array"));
+    expect(describeFailure(revoked())).toBe("<not a decode failure>");
+    expect(describeFailure(bad({ path: revoked(), reason: "r" }))).toBe("<not a decode failure>");
+    const record = codec.record<{ readonly a: bigint }>({ a: codec.required("a", codec.uint) });
+    expect(record.encode(revoked())).toEqual(mismatch("expected a record"));
+  });
+});
