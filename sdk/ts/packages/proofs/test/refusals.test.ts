@@ -41,7 +41,8 @@ const unexpected = (e: TypeMismatch): Outcome => ({ unexpected: e.reason }) as u
 /** A versioned-trie refusal as the vectors record it: its kind, the kind it wraps, and its normative fields. */
 function versionedOutcome(e: versioned.VersionedRefusal): Outcome {
   if (e.kind === "TypeMismatch") return unexpected(e);
-  const cause = e.kind === "Trie" ? { trie: e.error.kind } : e.kind === "Key" ? { stateKey: e.error.kind } : undefined;
+  const segment = e.kind === "Key" && (e.error.kind === "InvalidSegment" || e.error.kind === "SegmentTooLong") ? BigInt(e.error.segment) : undefined;
+  const cause = e.kind === "Trie" ? { trie: e.error.kind } : e.kind === "Key" ? { stateKey: e.error.kind, segment } : undefined;
   const limit = e.kind === "TooLarge" || e.kind === "TooDeep" ? BigInt(e.limit) : undefined;
   const depth = e.kind === "TooDeep" ? BigInt(e.depth) : undefined;
   const component = e.kind === "RootMismatch" ? e.component : undefined;

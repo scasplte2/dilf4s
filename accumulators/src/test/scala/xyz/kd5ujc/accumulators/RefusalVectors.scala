@@ -49,8 +49,8 @@ object RefusalVectors {
     case _: String => "accepted".asJson
     case VtRefusal(k, cause, l, d, c) =>
       val causeJson = cause.map {
-        case VtTrieCause(t) => Json.obj("trie" -> Json.fromString(t))
-        case VtKeyCause(k)  => Json.obj("stateKey" -> Json.fromString(k))
+        case VtTrieCause(t)   => Json.obj("trie" -> Json.fromString(t))
+        case VtKeyCause(k, s) => Json.fromFields(List("stateKey" -> Json.fromString(k)) ++ s.map("segment" -> _.asJson))
       }
       Json.fromFields(
         List("versionedTrie" -> Json.fromString(k)) ++ causeJson.map("cause" -> _) ++ l.map("limit" -> _.asJson) ++ d.map(
@@ -71,8 +71,14 @@ object RefusalVectors {
     }
     val cause = e match {
       case VersionedTrieError.Trie(t) => Some(VtTrieCause(t.kind))
-      case VersionedTrieError.Key(k)  => Some(VtKeyCause(k.kind))
-      case _                          => None
+      case VersionedTrieError.Key(k) =>
+        val segment = k match {
+          case StateKeyError.InvalidSegment(_, s)    => Some(BigInt(s))
+          case StateKeyError.SegmentTooLong(_, s, _) => Some(BigInt(s))
+          case _                                     => None
+        }
+        Some(VtKeyCause(k.kind, segment))
+      case _ => None
     }
     val component = e match {
       case VersionedTrieError.RootMismatch(c, _, _) => Some(c)

@@ -92,18 +92,23 @@ object JlvmVectors {
           .deepMerge(JsonSurface.render(v).toOption.fold(Json.obj())(t => Json.obj("json" -> t.asJson)))
     )
 
-  /** A Crypto error's cause as the vectors record it: `{family: kind}`, the family's name in lower case. */
+  /** A Crypto error's cause as the vectors record it: `{family: kind}`, the family's name in lower camel case. */
   def cause(e: JlvmError): Option[Json] = e match {
     case JlvmError.Crypto(_, _, Some(c)) =>
       val kind: String = c match {
-        case CryptoCause.Signing(x) => x.kind
-        case CryptoCause.Sigma(x)   => x.kind
-        case CryptoCause.Zk(x)      => x.kind
-        case CryptoCause.Groth16(x) => x.kind
-        case CryptoCause.Vrf(x)     => x.kind
-        case CryptoCause.Hash(x)    => x.kind
+        case CryptoCause.Signing(x)        => x.kind
+        case CryptoCause.Sigma(x)          => x.kind
+        case CryptoCause.Zk(x)             => x.kind
+        case CryptoCause.Groth16(x)        => x.kind
+        case CryptoCause.Vrf(x)            => x.kind
+        case CryptoCause.Hash(x)           => x.kind
+        case CryptoCause.Merkle(x)         => x.kind
+        case CryptoCause.Trie(x)           => x.kind
+        case CryptoCause.Poseidon(x)       => x.kind
+        case CryptoCause.PoseidonMerkle(x) => x.kind
       }
-      Some(Json.obj((c.kind: String).toLowerCase -> kind.asJson))
+      val family: String = c.kind
+      Some(Json.obj((family.take(1).toLowerCase + family.drop(1)) -> kind.asJson))
     case _ => None
   }
 

@@ -101,9 +101,9 @@ object RefusalCoverageSuite extends SimpleIOSuite {
       refusals
     ).mapN { (r, merkle, trie, vt, rows) =>
       val causes = r.cases.toList.flatMap(_.outcome match {
-        case VtRefusal(_, Some(VtTrieCause(t)), _, _, _) => List("trie" -> (t: String))
-        case VtRefusal(_, Some(VtKeyCause(k)), _, _, _)  => List("state keys" -> (k: String))
-        case _                                           => Nil
+        case VtRefusal(_, Some(VtTrieCause(t)), _, _, _)   => List("trie" -> (t: String))
+        case VtRefusal(_, Some(VtKeyCause(k, _)), _, _, _) => List("state keys" -> (k: String))
+        case _                                             => Nil
       })
       val keyRows = (vt.stateKeys.map(_.outcome) ++ vt.stateKeyBytes.map(_.outcome) ++ vt.namespaces.map(_.outcome)).toList.collect {
         case k: VtStateKeyRefusal => "state keys" -> (k.kind: String)
@@ -124,6 +124,17 @@ object RefusalCoverageSuite extends SimpleIOSuite {
     refusals.map(_.foldMap {
       case (byCheck, byKey, kind) =>
         expect(byCheck == byKey, s"a $byCheck check's row is a $byKey refusal ($kind)")
+    })
+  }
+
+  test("a state-key cause records its normative segment exactly for the kinds that name one (conformance.md §3)") {
+    load("refusals_v1.json", RefusalVectors.codec).map(_.cases.toList.foldMap { c =>
+      c.outcome match {
+        case VtRefusal(_, Some(VtKeyCause(k, segment)), _, _, _) =>
+          val names = k == "InvalidSegment" || k == "SegmentTooLong"
+          expect(segment.isDefined == names, s"${c.name}: $k ${if (names) "without" else "with"} a segment")
+        case _ => success
+      }
     })
   }
 

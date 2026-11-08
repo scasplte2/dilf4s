@@ -236,22 +236,26 @@ export const TrieRefusal: c.Codec<TrieRefusal> = c.record<TrieRefusal>({
 /**
  * `vt-cause` (`shared/schemas/refusal-vectors.cddl`).
  *
- * The refusal a versioned trie's Trie or Key refusal wraps: the trie's kind, or the state key's.
+ * The refusal a versioned trie's Trie or Key refusal wraps: the trie's kind, or the state key's, each with the fields
+ * conformance.md section 3 names normative for that kind: a state key's "segment" exactly for InvalidSegment and
+ * SegmentTooLong. (A trie refusal the versioned trie wraps has none: its TooLarge is the versioned trie's own.)
  */
 export type VtCause = VtTrieCause | VtKeyCause;
 
 export const VtCause: c.Codec<VtCause> = c.union<VtCause>("VtCause", [
   c.alternative(c.defer(() => VtTrieCause), [["trie"], ["trie"]], [["trie"], ["trie"]]),
-  c.alternative(c.defer(() => VtKeyCause), [["stateKey"], ["stateKey"]], [["stateKey"], ["stateKey"]]),
+  c.alternative(c.defer(() => VtKeyCause), [["stateKey"], ["segment", "stateKey"]], [["stateKey"], ["segment", "stateKey"]]),
 ], []);
 
 /** `vt-key-cause` (`shared/schemas/refusal-vectors.cddl`). */
 export interface VtKeyCause {
   readonly stateKey: codecErrors.StateKeyErrorKind;
+  readonly segment?: bigint;
 }
 
 export const VtKeyCause: c.Codec<VtKeyCause> = c.record<VtKeyCause>({
   stateKey: c.required("stateKey", c.defer(() => codecErrors.StateKeyErrorKind)),
+  segment: c.optional("segment", c.uint),
 });
 
 /** `vt-refusal` (`shared/schemas/refusal-vectors.cddl`). */

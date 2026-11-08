@@ -41,12 +41,23 @@ object ProofOps {
 
   private def crypto(op: Op)(message: String): JlvmError = JlvmError.Crypto(op, message, None)
 
+  /** A Merkle refusal, as the `Crypto` error's cause (jlvm.md §3). */
+  private def merkleFailure(op: Op)(e: MerkleError): JlvmError = JlvmError.Crypto(op, e.toString, Some(CryptoCause.Merkle(e)))
+
+  /** A trie refusal, as the `Crypto` error's cause (jlvm.md §3). */
+  private def trieFailure(op: Op)(e: TrieError): JlvmError = JlvmError.Crypto(op, e.toString, Some(CryptoCause.Trie(e)))
+
+  /** How each structure refuses claims over a limit: its own `TooLarge`, as its verifiers do (conformance.md §3). */
+  private def merkleTooLarge(op: Op)(limit: Long): JlvmError = merkleFailure(op)(MerkleError.TooLarge(limit))
+  private def trieTooLarge(op:   Op)(limit: Long): JlvmError = trieFailure(op)(TrieError.TooLarge(limit))
+
   /**
    * Claims (a leaf, a value, a listing's values) together at most `ProofInput.MaxProofWeight`, checked from their
-   * weights before any is hashed and before the proof is decoded: heavier is `Crypto` (docs/specs/conformance.md §5).
+   * weights before any is hashed and before the proof is decoded: heavier is `Crypto` (docs/specs/conformance.md §5),
+   * caused by the structure's `TooLarge`.
    */
-  private def claims(op: Op)(values: Iterable[CanonicalValue]): Either[JlvmError, Unit] =
-    ProofInput.claimed(values)(limit => crypto(op)(s"the claims weigh over $limit"))
+  private def claims(tooLarge: Long => JlvmError)(values: Iterable[CanonicalValue]): Either[JlvmError, Unit] =
+    ProofInput.claimed(values)(tooLarge)
 
   /** Every proof operation charges its arguments by weight, which pays for flattening bytes that are not ([[FlatBytes]]). */
   private def bytes(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, FlatBytes] =
@@ -63,8 +74,8 @@ object ProofOps {
    * commitment past `Cbor.MaxEncodedBytes` is `Crypto`, as every refused claim is, and never hashed: a claim reaches it
    * only past `MaxProofWeight`, refused first.
    */
-  private def committed(op: Op)(v: CanonicalValue): Either[JlvmError, ByteSource] =
-    ValueCommitment.source(v).leftMap(e => crypto(op)(s"a claim's commitment is over ${e.limit} bytes"))
+  private def committed(tooLarge: Long => JlvmError)(v: CanonicalValue): Either[JlvmError, ByteSource] =
+    ValueCommitment.source(v).leftMap(e => tooLarge(e.limit))
 
   // ---- Merkle trees (merkle.md)
 
@@ -91,7 +102,7 @@ object ProofOps {
     rest: Vector[CanonicalValue]
   ): Either[JlvmError, (MerkleHashing[H], CanonicalValue => Either[JlvmError, ByteSource])] =
     rest match {
-      case Vector() => (MerkleHashing.tagged[H], committed(op)).asRight
+      case Vector() => (MerkleHashing.tagged[H], committed(merkleTooLarge(op))).asRight
       case Vector(CText("rfc6962")) =>
         (MerkleHashing.rfc6962[H], (v: CanonicalValue) => bytes(op, "an rfc6962 leaf")(v).map(ByteSource.bytes)).asRight
       case _ => JlvmError.Domain(op, "the only optional profile is \"rfc6962\"").asLeft
@@ -102,7 +113,7 @@ object ProofOps {
     r match {
       case Right(())                                                          => True.asRight
       case Left(MerkleError.InvalidProof(_) | MerkleError.RootMismatch(_, _)) => False.asRight
-      case Left(other)                                                        => crypto(op)(other.toString).asLeft
+      case Left(other)                                                        => merkleFailure(op)(other).asLeft
     }
 
   private def merkle(op: Op, args: Vector[CanonicalValue]): Result =
@@ -114,7 +125,7 @@ object ProofOps {
         ).tupled.flatMap {
           case (hd, pr) =>
             // in order, each step only after the last succeeds: the proof is not decoded once the claim is refused
-            claims(op)(List(leaf)) >> MerkleCodec.decodeInclusion[H](proof).bimap(e => crypto(op)(e.toString), (hd, pr, _))
+            claims(merkleTooLarge(op))(List(leaf)) >> MerkleCodec.decodeInclusion[H](proof).bimap(merkleFailure(op), (hd, pr, _))
         }.flatMap {
           case ((root, size), (m, leafBytes), p) =>
             // the size comes from the trusted head: a smaller tree's root can satisfy a proof claiming a larger size
@@ -132,7 +143,7 @@ object ProofOps {
           head(op, "oldHead")(o),
           head(op, "newHead")(n),
           profile(op, rest),
-          MerkleCodec.decodeConsistency[H](proof).leftMap(e => crypto(op)(e.toString))
+          MerkleCodec.decodeConsistency[H](proof).leftMap(merkleFailure(op))
         ).tupled.flatMap {
           case ((oldRoot, oldSize), (newRoot, newSize), (m, _), p) =>
             if (p.oldSize != oldSize || p.newSize != newSize) False.asRight
@@ -157,20 +168,20 @@ object ProofOps {
     }
 
   /** A claimed value's hash, by its [[ValueCommitment]] bytes: bytes and a value whose CBOR equals them differ. */
-  private def valueHash(op: Op)(v: CanonicalValue): Either[JlvmError, Digest[H]] = committed(op)(v).map(T.valueOf)
+  private def valueHash(op: Op)(v: CanonicalValue): Either[JlvmError, Digest[H]] = committed(trieTooLarge(op))(v).map(T.valueOf)
 
   private def path(op: Op, m: KeyMode)(key: CanonicalValue): Either[JlvmError, BitVector] =
-    bytes(op, "a key")(key).flatMap(m.path(_).leftMap(e => crypto(op)(s"a key invalid for the mode: $e")))
+    bytes(op, "a key")(key).flatMap(m.path(_).leftMap(trieFailure(op)))
 
   /** Checks the proof against the root: a mismatch is a well-formed proof of another trie, so `None`. */
   private def verified(op: Op, m: KeyMode, root: CanonicalValue, proof: CanonicalValue): Either[JlvmError, Option[VerifiedProof[H]]] =
     // the root first, and the proof decoded only once it is valid
-    digest(op, "root")(root).flatMap(r => TrieProofs.decode[H](proof).bimap(e => crypto(op)(e.toString), r -> _)).flatMap {
+    digest(op, "root")(root).flatMap(r => TrieProofs.decode[H](proof).bimap(trieFailure(op), r -> _)).flatMap {
       case (r, p) =>
         TrieProofs.verify(m, r, p)(using T) match {
           case Right(v)                           => Option(v).asRight
           case Left(TrieError.RootMismatch(_, _)) => scala.None.asRight
-          case Left(other)                        => crypto(op)(other.toString).asLeft
+          case Left(other)                        => trieFailure(op)(other).asLeft
         }
     }
 
@@ -181,7 +192,7 @@ object ProofOps {
           .flatMap(m =>
             for {
               p <- path(op, m)(key)
-              _ <- claims(op)(List(value).filter(_ != CNull))
+              _ <- claims(trieTooLarge(op))(List(value).filter(_ != CNull))
               v <- verified(op, m, root, proof)
             } yield (p, v)
           )
@@ -191,7 +202,7 @@ object ProofOps {
               Option
                 .when(value != CNull)(value)
                 .traverse(valueHash(op))
-                .flatMap(claim => v.holds(p, claim).bimap(e => crypto(op)(e.toString), Values.bool))
+                .flatMap(claim => v.holds(p, claim).bimap(trieFailure(op), Values.bool))
           }
       case _ => JlvmError.Arity(op, "takes [mode, root, key, value, proof]").asLeft
     }
@@ -203,13 +214,13 @@ object ProofOps {
           case CArray(Vector(k, x)) if x != CNull => path(op, m)(k).map(_ -> x)
           case _                                  => JlvmError.Type(op, "an entry is [key, value], with a value").asLeft
         }
-          .flatTap(pxs => claims(op)(pxs.map(_._2)))
+          .flatTap(pxs => claims(trieTooLarge(op))(pxs.map(_._2)))
           .flatMap(_.traverse { case (p, x) => valueHash(op)(x).map(p -> _) })
       case other => JlvmError.Type(op, s"entries is an array, got ${Values.kind(other)}").asLeft
     }
 
   /** Whether the claimed entries, in key order, are exactly the proven listing; one that reaches a stub is no answer. */
-  private def listing(op: Op)(lists: Either[TrieError, Boolean]): Result = lists.bimap(e => crypto(op)(e.toString), Values.bool)
+  private def listing(op: Op)(lists: Either[TrieError, Boolean]): Result = lists.bimap(trieFailure(op), Values.bool)
 
   private def triePrefix(op: Op, args: Vector[CanonicalValue]): Result =
     args match {

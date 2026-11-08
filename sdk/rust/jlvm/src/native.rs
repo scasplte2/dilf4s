@@ -20,8 +20,8 @@ use crate::error::CryptoCause;
 
 type R<T> = Result<T, CryptoFailure>;
 
-/// A refusal as a `Crypto` error holds it: a generated cryptographic family's refusal is its typed cause; any other
-/// (the Merkle, trie and Poseidon structures, whose refusals are not generated families) is its message alone.
+/// A refusal as a `Crypto` error holds it: every family's refusal (the signature schemes', sigma's, zk's, Groth16's,
+/// VRF's, the hash's, and the Merkle, trie and Poseidon structures') is its typed cause.
 trait Failure: ToString {
     fn cause(self) -> Option<CryptoCause>;
 }
@@ -64,20 +64,32 @@ impl Failure for dilf4s_core::hash::HashError {
 
 impl Failure for merkle::MerkleError {
     fn cause(self) -> Option<CryptoCause> {
-        None
+        Some(CryptoCause::Merkle { error: self })
     }
 }
 
 impl Failure for trie::TrieError {
     fn cause(self) -> Option<CryptoCause> {
-        None
+        Some(CryptoCause::Trie { error: self })
     }
 }
 
 impl Failure for poseidon::PoseidonError {
     fn cause(self) -> Option<CryptoCause> {
-        None
+        Some(CryptoCause::Poseidon { error: self })
     }
+}
+
+impl Failure for pmt::PoseidonMerkleError {
+    fn cause(self) -> Option<CryptoCause> {
+        Some(CryptoCause::PoseidonMerkle { error: self })
+    }
+}
+
+/// An index's bit length as the reference's `BigInt.bitLength` gives it: a negative index's is that of `-n - 1`.
+fn bit_length(n: &BigInt) -> u64 {
+    let m = n.magnitude();
+    if n.sign() == Sign::Minus && m.count_ones() == 1 { m.bits().saturating_sub(1) } else { m.bits() }
 }
 
 fn fail(e: impl Failure) -> CryptoFailure {
@@ -178,14 +190,23 @@ impl CryptoBackend for Native {
         let (root, leaf) = (fr(root)?, fr(leaf)?);
         let sibs = siblings.iter().map(|b| fr(b)).collect::<R<Vec<_>>>()?;
         let depth = sibs.len();
-        // decided on the borrowed index, before any copy, and never rendered: it may be millions of bits
-        let out_of_range = || CryptoFailure::new(alloc::format!("index is out of range for depth {depth}"));
+        // decided on the borrowed index, before any copy, and never rendered: it may be millions of bits; the cause is
+        // the Poseidon tree's Position, by the index's bit length, as the reference's PoseidonMerkleProof.from gives it
+        let out_of_range = || CryptoFailure {
+            cause: Some(CryptoCause::PoseidonMerkle {
+                error: pmt::PoseidonMerkleError::Position {
+                    position_bits: bit_length(index),
+                    depth: u64::try_from(depth).unwrap_or(u64::MAX),
+                },
+            }),
+            message: alloc::format!("index is out of range for depth {depth}"),
+        };
         let fits = u64::try_from(depth).is_ok_and(|d| index.bits() <= d);
         if index.sign() == Sign::Minus || !fits {
             return Err(out_of_range());
         }
         let position = index.magnitude().clone();
-        let proof = pmt::PoseidonMerkleProof::new(position, sibs).map_err(|_| out_of_range())?;
+        let proof = pmt::PoseidonMerkleProof::new(position, sibs).map_err(fail)?;
         Ok(pmt::verify_inclusion(leaf, &proof, root))
     }
 

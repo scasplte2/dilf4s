@@ -604,7 +604,9 @@ impl c::Model for TrieRefusal {
 
 /// `vt-cause` (`shared/schemas/refusal-vectors.cddl`).
 ///
-/// The refusal a versioned trie's Trie or Key refusal wraps: the trie's kind, or the state key's.
+/// The refusal a versioned trie's Trie or Key refusal wraps: the trie's kind, or the state key's, each with the fields
+/// conformance.md section 3 names normative for that kind: a state key's "segment" exactly for InvalidSegment and
+/// SegmentTooLong. (A trie refusal the versioned trie wraps has none: its TooLarge is the versioned trie's own.)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VtCause {
     /// A [`VtTrieCause`].
@@ -622,7 +624,7 @@ impl c::Model for VtCause {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[(&["trie"], &["trie"]), (&["stateKey"], &["stateKey"])], &[])? {
+        match c::select_alternative(value, &[(&["trie"], &["trie"]), (&["stateKey"], &["segment", "stateKey"])], &[])? {
             c::Alternative::Record(0) => <VtTrieCause as c::Model>::from_value(value).map(Self::VtTrieCause),
             c::Alternative::Record(1) => <VtKeyCause as c::Model>::from_value(value).map(Self::VtKeyCause),
             other => Err(c::unknown_alternative(other)),
@@ -635,6 +637,8 @@ impl c::Model for VtCause {
 pub struct VtKeyCause {
     /// The `stateKey` entry.
     pub state_key: super::codec_errors::StateKeyErrorKind,
+    /// The `segment` entry.
+    pub segment: Option<u64>,
 }
 
 impl c::Model for VtKeyCause {
@@ -642,13 +646,15 @@ impl c::Model for VtKeyCause {
         let inner = c::nested(depth)?;
         c::record([
             c::field("stateKey", &c::ModelOf::<super::codec_errors::StateKeyErrorKind>::NEW, &self.state_key, inner)?,
+            c::optional_field("segment", &c::UINT, self.segment.as_ref(), inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["stateKey"])?;
+        let fields = c::Fields::of(value, &["stateKey", "segment"])?;
         let f0 = fields.required("stateKey", &c::ModelOf::<super::codec_errors::StateKeyErrorKind>::NEW)?;
-        Ok(Self { state_key: f0 })
+        let f1 = fields.optional("segment", &c::UINT)?;
+        Ok(Self { state_key: f0, segment: f1 })
     }
 }
 

@@ -361,7 +361,8 @@
       "outcome" : {
         "versionedTrie" : "Key",
         "cause" : {
-          "stateKey" : "SegmentTooLong"
+          "stateKey" : "SegmentTooLong",
+          "segment" : 0
         }
       },
       "name" : "delta: a key the schema pattern accepts but the grammar refuses (a 65-byte segment)",

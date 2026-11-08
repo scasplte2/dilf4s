@@ -54,7 +54,7 @@ final class ZkOps(engine: Bn254Engine) {
         JlvmError.Arity(op, s"takes 1 to ${PoseidonHash.MaxInputs} field elements, got ${inputs.size}")
       )
       xs     <- inputs.zipWithIndex.traverse { case (v, i) => fr(op, s"input[$i]", v) }
-      digest <- PoseidonHash.hash(xs).leftMap(e => crypto(op, e.toString))
+      digest <- PoseidonHash.hash(xs).leftMap(e => JlvmError.Crypto(op, e.toString, Some(CryptoCause.Poseidon(e))))
       out    <- Values.bytesValue(op, FlatBytes(Bn254.be32(digest.value)))
     } yield out
   }
@@ -72,7 +72,9 @@ final class ZkOps(engine: Bn254Engine) {
           _     <- Either.cond(raw.size <= MaxSiblings, (), crypto(op, s"at most $MaxSiblings siblings, got ${raw.size}"))
           sibs  <- raw.zipWithIndex.traverse { case (v, i) => fr(op, s"sibling[$i]", v) }
           // the index is charged as one element, whatever its size: the error never renders it
-          proof <- PoseidonMerkleProof.from(index, sibs).leftMap(_ => crypto(op, s"index is out of range for depth ${sibs.size}"))
+          proof <- PoseidonMerkleProof
+            .from(index, sibs)
+            .leftMap(e => JlvmError.Crypto(op, s"index is out of range for depth ${sibs.size}", Some(CryptoCause.PoseidonMerkle(e))))
         } yield Values.bool(PoseidonMerkleTree.verifyInclusion(leaf, proof, root))
       case _ => JlvmError.Arity(op, s"takes [root, leaf, index, siblings], got ${args.size} arguments").asLeft
     }
@@ -203,7 +205,10 @@ final class ZkOps(engine: Bn254Engine) {
   /** 32 bytes, big-endian, below the BN254 scalar field modulus r. */
   private def fr(op: Op, role: String, v: CanonicalValue): Either[JlvmError, Fr] =
     sized(op, role, v, FieldBytes).flatMap(b =>
-      Fr.from(BigInt(1, b.toArray)).leftMap(_ => crypto(op, s"$role: not a canonical BN254 scalar field element (must be < r)"))
+      Fr.from(BigInt(1, b.toArray))
+        .leftMap(e =>
+          JlvmError.Crypto(op, s"$role: not a canonical BN254 scalar field element (must be < r)", Some(CryptoCause.Poseidon(e)))
+        )
     )
 
   /** For the curve operations a point off the curve or outside the subgroup is malformed input, as in metakit. */

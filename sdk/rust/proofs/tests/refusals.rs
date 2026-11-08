@@ -30,7 +30,7 @@ use dilf4s_proofs::merkle::{self, ConsistencyProof, InclusionProof, MerkleError,
 use dilf4s_proofs::poseidon::merkle::{PoseidonMerkleError, PoseidonMerkleErrorKind, PoseidonMerkleProof};
 use dilf4s_proofs::trie::{self, KeyMode, Lookup, TrieError, TrieErrorKind, TrieHashing, TrieProof};
 use dilf4s_proofs::versioned::{
-    MAX_VALUE_BYTES, MAX_VALUE_DEPTH, Replica, StateKey, U64Key, VersionedTrie, VersionedTrieError,
+    MAX_VALUE_BYTES, MAX_VALUE_DEPTH, Replica, StateKey, StateKeyError, U64Key, VersionedTrie, VersionedTrieError,
     VersionedTrieErrorKind, check_value,
 };
 
@@ -46,7 +46,15 @@ fn vt(e: &VersionedTrieError) -> RefusalOutcome {
     };
     let cause = match e {
         VersionedTrieError::Trie { error } => Some(VtCause::VtTrieCause(VtTrieCause { trie: error.kind() })),
-        VersionedTrieError::Key { error } => Some(VtCause::VtKeyCause(VtKeyCause { state_key: error.kind() })),
+        VersionedTrieError::Key { error } => {
+            let segment = match error {
+                StateKeyError::InvalidSegment { segment, .. } | StateKeyError::SegmentTooLong { segment, .. } => {
+                    Some(*segment)
+                }
+                _ => None,
+            };
+            Some(VtCause::VtKeyCause(VtKeyCause { state_key: error.kind(), segment }))
+        }
         _ => None,
     };
     let component = match e {

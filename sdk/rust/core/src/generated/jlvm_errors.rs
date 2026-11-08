@@ -38,6 +38,27 @@ pub enum JlvmCryptoCause {
         /// The refusal.
         error: super::hash_errors::HashError,
     },
+    /// A Merkle proof, or claims over the proof weight (merkle_verify, merkle_consistency_verify).
+    Merkle {
+        /// The refusal.
+        error: super::proofs_errors::MerkleError,
+    },
+    /// A trie proof, a key the mode refuses, or claims over the proof weight (trie_verify, trie_prefix_verify,
+    /// trie_range_verify).
+    Trie {
+        /// The refusal.
+        error: super::proofs_errors::TrieError,
+    },
+    /// A BN254 scalar field element that is not canonical (poseidon, pmt_verify).
+    Poseidon {
+        /// The refusal.
+        error: super::proofs_errors::PoseidonError,
+    },
+    /// A Poseidon Merkle path whose index does not fit its depth (pmt_verify).
+    PoseidonMerkle {
+        /// The refusal.
+        error: super::proofs_errors::PoseidonMerkleError,
+    },
 }
 
 impl JlvmCryptoCause {
@@ -50,6 +71,10 @@ impl JlvmCryptoCause {
             Self::Groth16 { .. } => JlvmCryptoCauseKind::Groth16,
             Self::Vrf { .. } => JlvmCryptoCauseKind::Vrf,
             Self::Hash { .. } => JlvmCryptoCauseKind::Hash,
+            Self::Merkle { .. } => JlvmCryptoCauseKind::Merkle,
+            Self::Trie { .. } => JlvmCryptoCauseKind::Trie,
+            Self::Poseidon { .. } => JlvmCryptoCauseKind::Poseidon,
+            Self::PoseidonMerkle { .. } => JlvmCryptoCauseKind::PoseidonMerkle,
         }
     }
 }
@@ -63,6 +88,10 @@ impl core::fmt::Display for JlvmCryptoCause {
             Self::Groth16 { error: a0 } => write!(f, "Groth16 (error: {a0:?})"),
             Self::Vrf { error: a0 } => write!(f, "Vrf (error: {a0:?})"),
             Self::Hash { error: a0 } => write!(f, "Hash (error: {a0:?})"),
+            Self::Merkle { error: a0 } => write!(f, "Merkle (error: {a0:?})"),
+            Self::Trie { error: a0 } => write!(f, "Trie (error: {a0:?})"),
+            Self::Poseidon { error: a0 } => write!(f, "Poseidon (error: {a0:?})"),
+            Self::PoseidonMerkle { error: a0 } => write!(f, "PoseidonMerkle (error: {a0:?})"),
         }
     }
 }
@@ -105,6 +134,30 @@ impl From<super::hash_errors::HashError> for JlvmCryptoCause {
     }
 }
 
+impl From<super::proofs_errors::MerkleError> for JlvmCryptoCause {
+    fn from(error: super::proofs_errors::MerkleError) -> Self {
+        Self::Merkle { error }
+    }
+}
+
+impl From<super::proofs_errors::PoseidonError> for JlvmCryptoCause {
+    fn from(error: super::proofs_errors::PoseidonError) -> Self {
+        Self::Poseidon { error }
+    }
+}
+
+impl From<super::proofs_errors::PoseidonMerkleError> for JlvmCryptoCause {
+    fn from(error: super::proofs_errors::PoseidonMerkleError) -> Self {
+        Self::PoseidonMerkle { error }
+    }
+}
+
+impl From<super::proofs_errors::TrieError> for JlvmCryptoCause {
+    fn from(error: super::proofs_errors::TrieError) -> Self {
+        Self::Trie { error }
+    }
+}
+
 /// `jlvm-crypto-cause-kind` (`shared/schemas/jlvm-errors.cddl`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum JlvmCryptoCauseKind {
@@ -120,6 +173,14 @@ pub enum JlvmCryptoCauseKind {
     Vrf,
     /// The text `Hash`.
     Hash,
+    /// The text `Merkle`.
+    Merkle,
+    /// The text `Trie`.
+    Trie,
+    /// The text `Poseidon`.
+    Poseidon,
+    /// The text `PoseidonMerkle`.
+    PoseidonMerkle,
 }
 
 impl c::Model for JlvmCryptoCauseKind {
@@ -131,17 +192,25 @@ impl c::Model for JlvmCryptoCauseKind {
             Self::Groth16 => Ok(c::Value::text("Groth16")),
             Self::Vrf => Ok(c::Value::text("Vrf")),
             Self::Hash => Ok(c::Value::text("Hash")),
+            Self::Merkle => Ok(c::Value::text("Merkle")),
+            Self::Trie => Ok(c::Value::text("Trie")),
+            Self::Poseidon => Ok(c::Value::text("Poseidon")),
+            Self::PoseidonMerkle => Ok(c::Value::text("PoseidonMerkle")),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["Signing", "Sigma", "Zk", "Groth16", "Vrf", "Hash"])? {
+        match c::select_alternative(value, &[], &["Signing", "Sigma", "Zk", "Groth16", "Vrf", "Hash", "Merkle", "Trie", "Poseidon", "PoseidonMerkle"])? {
             c::Alternative::Text(0) => Ok(Self::Signing),
             c::Alternative::Text(1) => Ok(Self::Sigma),
             c::Alternative::Text(2) => Ok(Self::Zk),
             c::Alternative::Text(3) => Ok(Self::Groth16),
             c::Alternative::Text(4) => Ok(Self::Vrf),
             c::Alternative::Text(5) => Ok(Self::Hash),
+            c::Alternative::Text(6) => Ok(Self::Merkle),
+            c::Alternative::Text(7) => Ok(Self::Trie),
+            c::Alternative::Text(8) => Ok(Self::Poseidon),
+            c::Alternative::Text(9) => Ok(Self::PoseidonMerkle),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -149,7 +218,7 @@ impl c::Model for JlvmCryptoCauseKind {
 
 impl JlvmCryptoCauseKind {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 6] = [Self::Signing, Self::Sigma, Self::Zk, Self::Groth16, Self::Vrf, Self::Hash];
+    pub const ALL: [Self; 10] = [Self::Signing, Self::Sigma, Self::Zk, Self::Groth16, Self::Vrf, Self::Hash, Self::Merkle, Self::Trie, Self::Poseidon, Self::PoseidonMerkle];
 }
 
 impl core::fmt::Display for JlvmCryptoCauseKind {
@@ -161,6 +230,10 @@ impl core::fmt::Display for JlvmCryptoCauseKind {
             Self::Groth16 => f.write_str("Groth16"),
             Self::Vrf => f.write_str("Vrf"),
             Self::Hash => f.write_str("Hash"),
+            Self::Merkle => f.write_str("Merkle"),
+            Self::Trie => f.write_str("Trie"),
+            Self::Poseidon => f.write_str("Poseidon"),
+            Self::PoseidonMerkle => f.write_str("PoseidonMerkle"),
         }
     }
 }
@@ -213,8 +286,7 @@ pub enum JlvmError {
         /// What was wrong.
         message: String,
         /// The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and
-        /// kind); absent for the operation's own checks of its arguments' shape (a width, a count, a head's fields) and for
-        /// the proof structures' refusals (Merkle, trie, Poseidon: proofs-errors.cddl), which are not yet a cause.
+        /// kind); absent for the operation's own checks of its arguments' shape (a type, a width, a count, a head's fields).
         cause: Option<JlvmCryptoCause>,
     },
     /// A resource bound: value depth or size, program depth or size.

@@ -19,8 +19,9 @@ use std::path::PathBuf;
 use common::{Step, build};
 use dilf4s_core::codec::Model;
 use dilf4s_core::generated::jlvm_vectors::{
-    BuiltStep, BuiltValue, JlvmCase, JlvmCause, JlvmErrorKind, JlvmGroth16Cause, JlvmHashCause, JlvmOutcome,
-    JlvmSigmaCause, JlvmSigningCause, JlvmVectors, JlvmVrfCause, JlvmZkCause,
+    BuiltStep, BuiltValue, JlvmCase, JlvmCause, JlvmErrorKind, JlvmGroth16Cause, JlvmHashCause, JlvmMerkleCause,
+    JlvmOutcome, JlvmPoseidonCause, JlvmPoseidonMerkleCause, JlvmSigmaCause, JlvmSigningCause, JlvmTrieCause,
+    JlvmVectors, JlvmVrfCause, JlvmZkCause,
 };
 use dilf4s_core::hash::HashAlgorithm;
 use dilf4s_core::{cbor, hex, json};
@@ -103,6 +104,12 @@ fn cause(e: &JlvmError) -> Option<JlvmCause> {
         CryptoCause::Groth16 { error } => JlvmCause::JlvmGroth16Cause(JlvmGroth16Cause { groth16: error.kind() }),
         CryptoCause::Vrf { error } => JlvmCause::JlvmVrfCause(JlvmVrfCause { vrf: error.kind() }),
         CryptoCause::Hash { error } => JlvmCause::JlvmHashCause(JlvmHashCause { hash: error.kind() }),
+        CryptoCause::Merkle { error } => JlvmCause::JlvmMerkleCause(JlvmMerkleCause { merkle: error.kind() }),
+        CryptoCause::Trie { error } => JlvmCause::JlvmTrieCause(JlvmTrieCause { trie: error.kind() }),
+        CryptoCause::Poseidon { error } => JlvmCause::JlvmPoseidonCause(JlvmPoseidonCause { poseidon: error.kind() }),
+        CryptoCause::PoseidonMerkle { error } => {
+            JlvmCause::JlvmPoseidonMerkleCause(JlvmPoseidonMerkleCause { poseidon_merkle: error.kind() })
+        }
     })
 }
 

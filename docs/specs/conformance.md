@@ -157,7 +157,8 @@ at its head or bracket (an empty one too), and the one deferred check is a JSON 
 its object's close. A state key is refused in the order `versioned-trie.md` §2 gives. `canonical_encoding_v1.json` and
 `versioned_trie_v1.json` pin each kind and each pair of faults an order could otherwise answer differently. A nested
 refusal in `refusals_v1.json` (`Key.SegmentTooLong`, `Trie.Encoding`) records both kinds, the inner one as its
-`cause`; its inner kind's normative fields are pinned by that family's own rows.
+`cause` with the inner kind's normative fields (a state key's `segment`), exactly as that family's own rows record
+them.
 
 What a verifier refuses, no producer emits. A trie proof heavier than `MaxProofWeight` is `TooLarge` where it would be
 emitted: `Trie.prove` and `TrieProofs.encode` in Scala, `TrieProof::to_value` in Rust and `TrieProof.encode` in
@@ -307,7 +308,8 @@ builder, so `Empty`, `VersionConflict`, `CommitRewrite`, `NotRetained`, `Store`,
 generated kinds: `merkle_v1.json`'s and `trie_v1.json`'s `malformed` rows by `merkle-error-kind` and
 `trie-error-kind`, and `refusals_v1.json`'s outcomes by family: `{"versionedTrie": kind}`, `{"merkle": kind}`,
 `{"trie": kind}` or `{"poseidonMerkle": kind}`, with its normative fields and, for `Trie` and `Key`, the `cause`
-(`{"trie": kind}` or `{"stateKey": kind}`). The Rust (`proofs/tests/refusals.rs`) and TypeScript
+(`{"trie": kind}`, or `{"stateKey": kind}` with its `segment` exactly for `InvalidSegment` and `SegmentTooLong`). A
+JLVM `Crypto` error from a proof operation carries these families as its `cause` too (`jlvm.md` §3). The Rust (`proofs/tests/refusals.rs`) and TypeScript
 (`proofs/test/refusals.test.ts`) tests compare every case's outcome whole, and check every kind of each family (Rust
 `ALL`, TypeScript a `Record` keyed by the kind union) has a row exactly when it is not exempt, and every row is of its
 check's family. `versioned_trie_v1.json`'s `versionErrors` pin the keys `VersionNotIncreasing` and `UnknownVersion` name,
