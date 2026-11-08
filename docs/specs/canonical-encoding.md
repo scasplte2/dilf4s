@@ -182,7 +182,9 @@ their profiles, derivations, version keys, literal tags, the BIP-39 word list, t
 refusal or verdict they give more than one caller. Freezing is shallow, so what an instance keeps (a replica's tries and
 their nodes, a snapshot reader's accepted chunks and trusted head) is held in runtime-private (`#`) fields, never
 TypeScript `private` ones, which JavaScript reads as any other property, and what it hands out (a replica's head and
-history, a reader's trusted head and finished snapshot) is a copy, byte versions included. The trie's table of unchecked operations, which the replica and the
+history, a reader's trusted head and finished snapshot) is a copy. A byte version (`VersionKey.bytes`) is copied as it
+is read in, from its internal slots, as roots are (one longer than any version key's is never copied, and is refused
+by its length), and again as it is handed out. The trie's table of unchecked operations, which the replica and the
 versioned trie call, is filled as `trie.ts` loads, then defined whole on the table its other modules import and frozen:
 a slot code loaded earlier put there is replaced, or, if it cannot be, the package does not load, so none of its code
 runs with one. Bytes cannot be frozen, so no module exports a typed array that holds any: the versioned trie's slots

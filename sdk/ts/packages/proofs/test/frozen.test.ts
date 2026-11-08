@@ -307,6 +307,34 @@ describe("a populated replica and a finished snapshot reader hold state no calle
     });
   }
 
+  it("a byte version a caller passed in, changed afterwards, changes nothing kept, whatever its realm or accessors", () => {
+    const foreign = runInNewContext("new Uint8Array([0, 0, 0, 7])") as Uint8Array;
+    const odd = Uint8Array.of(0, 0, 0, 8);
+    Object.defineProperty(odd, Symbol.iterator, { get: () => 123 });
+    const { keys, replica, reader } = populated(byBytes, [foreign, odd], 4);
+    const probe = (): unknown => [replica.head, replica.root(), replica.history(), reader.trusted, reader.finish(), keys.map((k) => replica.get(k))];
+    const before = structuredClone(probe());
+    foreign[3] = 0x77;
+    odd[3] = 0x78;
+    const head = replica.head;
+    if (head === null) throw new Error("a head");
+    head.version[3] = 0x79;
+    expect(structuredClone(probe()), "the replica and the reader").toEqual(before);
+    const restored = versioned.Replica.fromSnapshot(byBytes, replica.head ?? head, { head: replica.head ?? head, entries: replica.entries(), history: replica.history() });
+    expect(restored.ok, "the replica restores from what it hands out").toBe(true);
+  });
+
+  it("a byte version longer than any version key's is never copied: it is refused by its length", () => {
+    const huge = new Uint8Array(16 << 20);
+    const head = { version: huge, stateRoot: new Uint8Array(32), historyRoot: new Uint8Array(32) };
+    const before = process.memoryUsage().arrayBuffers;
+    const reader = versioned.SnapshotReader.start(byBytes, head);
+    const delta = expectOk(versioned.Replica.empty(byBytes), "empty").applyDelta({ head, upserts: [], removes: [] });
+    expect(process.memoryUsage().arrayBuffers - before, "no copy of the 16 MiB version").toBeLessThan(1 << 20);
+    expect(reader.ok, "the reader starts: the version is encoded when the history is read").toBe(true);
+    expect(delta, "the delta").toMatchObject({ ok: false, error: { kind: "InvalidVersion" } });
+  });
+
   checks("a bigint-versioned trie", populated(vt, [7n, 8n], 40));
   checks("a byte-versioned trie", populated(byBytes, [Uint8Array.of(0, 0, 0, 7), Uint8Array.of(0, 0, 0, 8)], 40));
 });

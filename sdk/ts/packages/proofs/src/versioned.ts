@@ -10,7 +10,7 @@
  * checked before it is used.
  */
 import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { isRevokedProxy, mint, ownBytes, ownCopy, readGuarded, REVOKED, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isBytes, isRevokedProxy, mint, ownBytes, ownCopy, readGuarded, REVOKED, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isMeasuredBytes, isObject, isSized, measured, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Measured, type Token } from "./check.js";
@@ -491,11 +491,25 @@ let sameHeadOf!: <V>(p: VersionedTrie<V>, a: MeasuredHead<V>, b: MeasuredHead<V>
 let rootOfHead!: <V>(p: VersionedTrie<V>, h: MeasuredHead<V>) => C<Uint8Array>;
 let sizedHeadOf!: <V>(p: VersionedTrie<V>, h: MeasuredHead<V>) => R<Head<V>>;
 
+/**
+ * A version as it is read in or handed out: one that is bytes (a `VersionKey.bytes` version, from any realm) copied
+ * once, from its internal slots, as every root is, so nothing the caller does to the array it passed, or was given,
+ * changes one kept; any other (a `bigint`, a caller's own version key's value) as it is, to be checked when encoded.
+ * Only bytes a version key can have (at most `trie.MAX_FIXED_BYTES`) are copied: longer ones, which every key refuses
+ * by their length when it encodes them, are never copied. `isBytes` and the copy read internal slots alone: no Proxy
+ * trap, subclass accessor or iterator runs.
+ */
+const ownVersion = <V>(v: V): V => {
+  if (!isBytes(v)) return v;
+  const own = ownCopy(v, trie.MAX_FIXED_BYTES);
+  return (typeof own === "object" ? own : v) as V;
+};
+
 /** A caller's head, its fields read once into a frozen copy: the version (checked when encoded) and two roots (copied). */
 function headArg<V>(x: unknown, what: string, size: number): Result<MeasuredHead<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected(`${what} to be a Head`));
-  // each read guarded: a getter run by an earlier read may have revoked the head
-  const version: unknown = readGuarded(x, "version");
+  // each read guarded: a getter run by an earlier read may have revoked the head; a byte version copied as read
+  const version: unknown = ownVersion(readGuarded(x, "version"));
   // each root owned within the profile's size, else Oversized (never copied), which its size check refuses
   const stateRoot = digestField(readGuarded(x, "stateRoot"), size);
   const historyRoot = digestField(readGuarded(x, "historyRoot"), size);
@@ -523,7 +537,7 @@ function proofArg<V>(x: unknown, size: number): Result<MeasuredProof<V>, TypeMis
   let at: MeasuredAt<V> | undefined;
   if (atField !== undefined) {
     if (!isObject(atField)) return err(expected("the proof's at to be an At"));
-    const version: unknown = readGuarded(atField, "version");
+    const version: unknown = ownVersion(readGuarded(atField, "version"));
     const s: unknown = readGuarded(atField, "stateRoot");
     if (version === REVOKED || s === REVOKED) return err(expected("the proof's at to be an At"));
     const stateRoot = s === undefined ? undefined : digestField(s, size);
@@ -564,7 +578,7 @@ const versionsArg = <V, E = never>(x: unknown, what: string, size: number, bound
     (e, i) => {
     const pair = readPair(e);
     // the version first, then the root, copied as read: nothing read after it can change it
-    const version: unknown = pair === undefined ? undefined : readGuarded(pair, 0);
+    const version: unknown = pair === undefined ? undefined : ownVersion(readGuarded(pair, 0));
     // owned within the profile's size, else Oversized (never copied), which the reader's size check refuses
     const root = pair === undefined ? undefined : digestField(readGuarded(pair, 1), size);
     // a version is any value, checked when encoded: REVOKED is refused here, never kept as one
@@ -1469,12 +1483,6 @@ interface VersionSlot<V> {
   readonly version: V;
   readonly stateRoot: Uint8Array;
 }
-
-/**
- * A version handed out or kept: a byte version (`VersionKey.bytes`) copied, as every root is; any other (a `bigint`, a
- * caller's own version key's value) as it is. `ArrayBuffer.isView` reads an internal slot first, so no Proxy trap runs.
- */
-const ownVersion = <V>(v: V): V => (ArrayBuffer.isView(v) && v instanceof Uint8Array ? copyBytes(v) : v) as V;
 
 const copyHead = <V>(h: Head<V>): Head<V> => Object.freeze({ version: ownVersion(h.version), stateRoot: copyBytes(h.stateRoot), historyRoot: copyBytes(h.historyRoot) });
 
