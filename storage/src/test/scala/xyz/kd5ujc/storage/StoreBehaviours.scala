@@ -155,7 +155,7 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
   test(s"$backend: a batch that fails to encode writes nothing") {
     val refuse13: ValueCodec[Int] = new ValueCodec[Int] {
       def encode(v: Int): Either[StoreError, ByteVector] =
-        if (v == 13) StoreError.Codec("value", "13 is refused").asLeft else intValue.encode(v)
+        if (v == 13) StoreError.Encoding("value", "13 is refused").asLeft else intValue.encode(v)
       def decode(b: ByteVector): Either[StoreError, Int] = intValue.decode(b)
     }
     expectOk { implicit h =>

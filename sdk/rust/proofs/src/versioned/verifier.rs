@@ -11,7 +11,7 @@ use dilf4s_core::value::Value;
 use super::wire::{At, VersionedTrieProof};
 use super::{
     HISTORY_SLOT, Head, STATE_SLOT, StateKey, StateNamespace, VERSION_SLOT, Version, VersionKey, VersionedTrie,
-    VersionedTrieError, check_value, malformed, mismatch,
+    VersionedTrieError, VtRootComponent, check_value, malformed, mismatch, version_hex,
 };
 use crate::trie::{KeyMode, Lookup, TrieHashing, TrieProof, VerifiedProof};
 
@@ -108,7 +108,7 @@ impl<K: VersionKey, H: Hasher> VersionedTrie<K, H> {
     ) -> Result<&'p Head<K::Version, H>, VersionedTrieError> {
         let claimed = self.root(&proof.head)?;
         if &claimed != root {
-            return Err(mismatch("root", root, &claimed));
+            return Err(mismatch(VtRootComponent::Root, root, &claimed));
         }
         let top = self.checked(self.top, root, "top", Some(&proof.top))?;
         let vkey = self.vkey(&proof.head.version)?;
@@ -237,7 +237,9 @@ impl<K: VersionKey, H: Hasher> VersionedTrie<K, H> {
     ) -> Result<VerifiedState<'p, H>, VersionedTrieError> {
         let head = self.bind(root, proof)?;
         let uk = self.vkey(u)?;
-        let s = self.version_root(head, proof, u)?.ok_or(VersionedTrieError::UnknownVersion { version: uk })?;
+        let s = self
+            .version_root(head, proof, u)?
+            .ok_or(VersionedTrieError::UnknownVersion { version: version_hex(&uk) })?;
         let p = proof.state.as_ref().ok_or_else(|| malformed("the proof has no state proof"))?;
         let state = p.check(&self.hashing, self.state, &s)?;
         Ok(VerifiedState { proof: state, hashing: &self.hashing })

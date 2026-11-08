@@ -69,6 +69,42 @@ impl core::fmt::Display for JlvmCryptoCause {
 
 impl core::error::Error for JlvmCryptoCause {}
 
+impl From<super::crypto_errors::CryptoError> for JlvmCryptoCause {
+    fn from(error: super::crypto_errors::CryptoError) -> Self {
+        Self::Signing { error }
+    }
+}
+
+impl From<super::crypto_errors::Groth16Error> for JlvmCryptoCause {
+    fn from(error: super::crypto_errors::Groth16Error) -> Self {
+        Self::Groth16 { error }
+    }
+}
+
+impl From<super::crypto_errors::SigmaError> for JlvmCryptoCause {
+    fn from(error: super::crypto_errors::SigmaError) -> Self {
+        Self::Sigma { error }
+    }
+}
+
+impl From<super::crypto_errors::VrfError> for JlvmCryptoCause {
+    fn from(error: super::crypto_errors::VrfError) -> Self {
+        Self::Vrf { error }
+    }
+}
+
+impl From<super::crypto_errors::ZkError> for JlvmCryptoCause {
+    fn from(error: super::crypto_errors::ZkError) -> Self {
+        Self::Zk { error }
+    }
+}
+
+impl From<super::hash_errors::HashError> for JlvmCryptoCause {
+    fn from(error: super::hash_errors::HashError) -> Self {
+        Self::Hash { error }
+    }
+}
+
 /// `jlvm-crypto-cause-kind` (`shared/schemas/jlvm-errors.cddl`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum JlvmCryptoCauseKind {
@@ -178,7 +214,7 @@ pub enum JlvmError {
         message: String,
         /// The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and
         /// kind); absent for the operation's own checks of its arguments' shape (a width, a count, a head's fields) and for
-        /// proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
+        /// the proof structures' refusals (Merkle, trie, Poseidon: proofs-errors.cddl), which are not yet a cause.
         cause: Option<JlvmCryptoCause>,
     },
     /// A resource bound: value depth or size, program depth or size.

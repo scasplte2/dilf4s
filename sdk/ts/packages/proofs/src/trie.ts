@@ -21,18 +21,12 @@ import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 import { TRIE } from "./trie-internal.js";
 
 /**
- * Why a trie operation failed, by Scala's `TrieError` names, plus `NotCovered`: the JLVM's "not covered" (a proof that
- * does not reach the queried key, or reaches a stub inside the queried prefix or range), which is an error, never false.
+ * Why a trie operation failed: generated from `shared/schemas/proofs-errors.cddl` (`models.proofsErrors`), with the
+ * reference's and the Rust SDK's kinds and fields. `NotCovered` is the JLVM's "not covered" (a proof that does not
+ * reach the queried key, or reaches a stub inside the queried prefix or range), an error, never false. `MissingNode`
+ * and `InvalidNode` are a store's, which this SDK does not have.
  */
-export type TrieError =
-  | { readonly kind: "InvalidKey"; readonly reason: string }
-  | { readonly kind: "InvalidNode"; readonly reason: string }
-  | { readonly kind: "InvalidProof"; readonly reason: string }
-  | { readonly kind: "RootMismatch"; readonly expected: string; readonly computed: string }
-  | { readonly kind: "Encoding"; readonly reason: string }
-  | { readonly kind: "NotCovered"; readonly what: string }
-  /** Over `limit` in weight (`MAX_PROOF_WEIGHT`, or this SDK's commitment ceiling): claims, or a proof to emit. */
-  | { readonly kind: "TooLarge"; readonly limit: number };
+export type TrieError = models.proofsErrors.TrieError;
 
 /** A trie refusal, or an argument of the wrong type: what the exported functions here may refuse with. */
 type Refusal = TrieError | TypeMismatch;

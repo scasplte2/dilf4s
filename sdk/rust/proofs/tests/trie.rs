@@ -23,12 +23,11 @@ use common::{bytes, load};
 use dilf4s_core::cbor;
 use dilf4s_core::codec::{Codec, Model};
 use dilf4s_core::generated::trie::{TRIE_PROOF, TrieBranch, TrieChildren, TrieLeaf, TrieRecord, TrieSegment, TrieStub};
-use dilf4s_core::generated::trie_vectors::{
-    TrieLookupResult, TrieMalformedError, TrieMode, TrieRangeResult, TrieVectors,
-};
+use dilf4s_core::generated::trie_vectors::{TrieLookupResult, TrieMode, TrieRangeResult, TrieVectors};
 use dilf4s_core::hash::{Digest, DomainTag, Sha256, TaggedHash};
 use dilf4s_core::value::Value;
 use dilf4s_proofs::Bits;
+use dilf4s_proofs::trie::TrieErrorKind;
 use dilf4s_proofs::trie::{
     self, KeyMode, Lookup, TrieError, TrieHashing, TrieProof, root_from_entries, trie_prefix_verify, trie_range_verify,
     trie_verify,
@@ -169,7 +168,7 @@ fn fixtures() {
         }
         // another root is a root mismatch: None, never an error
         assert!(proof.verify(&t, mode, &t.empty()).unwrap().is_none());
-        assert_eq!(proof.check(&t, mode, &t.empty()).unwrap_err().kind(), "RootMismatch");
+        assert_eq!(proof.check(&t, mode, &t.empty()).unwrap_err().kind(), TrieErrorKind::RootMismatch);
     }
     eprintln!("trie: {} fixtures, {lookups} lookups, {prefixes} prefix and {ranges} range listings", v.fixtures.len());
 }
@@ -306,19 +305,40 @@ fn jlvm_trie_verify() {
     let other = vec![0u8; 32];
     assert!(!trie_verify(&t, c.mode, &other, b"a", &Value::bytes(vec![0x61, 0x61]), &full).unwrap());
     // a key too long for the mode, a root of the wrong length, an undecodable proof: errors
-    assert_eq!(trie_verify(&t, c.mode, &c.root, b"abcde", &Value::Null, &full).unwrap_err().kind(), "InvalidKey");
-    assert_eq!(trie_verify(&t, c.mode, &c.root[1..], b"a", &Value::Null, &full).unwrap_err().kind(), "Encoding");
-    assert_eq!(trie_verify(&t, c.mode, &c.root, b"a", &Value::Null, &Value::int(1)).unwrap_err().kind(), "Encoding");
+    assert_eq!(
+        trie_verify(&t, c.mode, &c.root, b"abcde", &Value::Null, &full).unwrap_err().kind(),
+        TrieErrorKind::InvalidKey
+    );
+    assert_eq!(
+        trie_verify(&t, c.mode, &c.root[1..], b"a", &Value::Null, &full).unwrap_err().kind(),
+        TrieErrorKind::Encoding
+    );
+    assert_eq!(
+        trie_verify(&t, c.mode, &c.root, b"a", &Value::Null, &Value::int(1)).unwrap_err().kind(),
+        TrieErrorKind::Encoding
+    );
     // a stub on the key's path: not covered, an error; elsewhere: still answers
     let stubbed = c.proof(&[bits(b"ab")]);
-    assert_eq!(trie_verify(&t, c.mode, &c.root, b"abc", &Value::int(3), &stubbed).unwrap_err().kind(), "NotCovered");
+    assert_eq!(
+        trie_verify(&t, c.mode, &c.root, b"abc", &Value::int(3), &stubbed).unwrap_err().kind(),
+        TrieErrorKind::NotCovered
+    );
     assert!(trie_verify(&t, c.mode, &c.root, b"ba", &Value::array(vec![Value::int(1)]).unwrap(), &stubbed).unwrap());
     // the wrong mode: fixed keys of another length, or a structure the mode forbids
     let fixed = KeyMode::fixed(2).unwrap();
-    assert_eq!(trie_verify(&t, fixed, &c.root, b"a", &Value::Null, &full).unwrap_err().kind(), "InvalidKey");
-    assert_eq!(trie_verify(&t, fixed, &c.root, b"ab", &Value::Null, &full).unwrap_err().kind(), "InvalidProof");
+    assert_eq!(
+        trie_verify(&t, fixed, &c.root, b"a", &Value::Null, &full).unwrap_err().kind(),
+        TrieErrorKind::InvalidKey
+    );
+    assert_eq!(
+        trie_verify(&t, fixed, &c.root, b"ab", &Value::Null, &full).unwrap_err().kind(),
+        TrieErrorKind::InvalidProof
+    );
     let narrow = KeyMode::variable(2).unwrap();
-    assert_eq!(trie_verify(&t, narrow, &c.root, b"ab", &Value::Null, &full).unwrap_err().kind(), "InvalidProof");
+    assert_eq!(
+        trie_verify(&t, narrow, &c.root, b"ab", &Value::Null, &full).unwrap_err().kind(),
+        TrieErrorKind::InvalidProof
+    );
 }
 
 #[test]
@@ -365,10 +385,13 @@ fn jlvm_listings() {
     let stubbed = c.proof(&[bits(b"ab")]);
     let es = under(b"a");
     let claim: Vec<(&[u8], &Value)> = es.iter().map(|(k, v)| (k.as_slice(), v)).collect();
-    assert_eq!(trie_prefix_verify(&t, c.mode, &c.root, b"a", &claim, &stubbed).unwrap_err().kind(), "NotCovered");
+    assert_eq!(
+        trie_prefix_verify(&t, c.mode, &c.root, b"a", &claim, &stubbed).unwrap_err().kind(),
+        TrieErrorKind::NotCovered
+    );
     assert_eq!(
         trie_range_verify(&t, c.mode, &c.root, b"a", Some(b"b"), &claim, &stubbed).unwrap_err().kind(),
-        "NotCovered"
+        TrieErrorKind::NotCovered
     );
     let es = under(b"b");
     let claim: Vec<(&[u8], &Value)> = es.iter().map(|(k, v)| (k.as_slice(), v)).collect();
@@ -376,11 +399,14 @@ fn jlvm_listings() {
     assert!(trie_range_verify(&t, c.mode, &c.root, b"b", Some(b"c"), &claim, &stubbed).unwrap());
     // a null value in a claim, or a key invalid for the mode, is malformed
     let null = Value::Null;
-    assert_eq!(trie_prefix_verify(&t, c.mode, &c.root, b"b", &[(b"b", &null)], &full).unwrap_err().kind(), "Encoding");
+    assert_eq!(
+        trie_prefix_verify(&t, c.mode, &c.root, b"b", &[(b"b", &null)], &full).unwrap_err().kind(),
+        TrieErrorKind::Encoding
+    );
     let x = Value::int(1);
     assert_eq!(
         trie_prefix_verify(&t, c.mode, &c.root, b"b", &[(b"bbbbbb", &x)], &full).unwrap_err().kind(),
-        "InvalidKey"
+        TrieErrorKind::InvalidKey
     );
 }
 
@@ -401,8 +427,8 @@ fn malformed_records() {
     // trailing records, missing children
     let mut trailing = full.clone();
     trailing.push(full[full.len() - 1].clone());
-    assert_eq!(decode(&trailing).unwrap_err().kind(), "Encoding");
-    assert_eq!(decode(&full[..full.len() - 1]).unwrap_err().kind(), "Encoding");
+    assert_eq!(decode(&trailing).unwrap_err().kind(), TrieErrorKind::Encoding);
+    assert_eq!(decode(&full[..full.len() - 1]).unwrap_err().kind(), TrieErrorKind::Encoding);
     // a branch whose mask breaks the invariant: one child, no value
     let bad_mask = full
         .iter()
@@ -413,22 +439,25 @@ fn malformed_records() {
             other => other.clone(),
         })
         .collect::<Vec<_>>();
-    assert_eq!(decode(&bad_mask).unwrap_err().kind(), "Encoding");
+    assert_eq!(decode(&bad_mask).unwrap_err().kind(), TrieErrorKind::Encoding);
     // segments: non-zero padding, and len(b) != ceil(n/8)
     let leaf = |n: u64, b: Vec<u8>| vec![TrieRecord::TrieLeaf(TrieLeaf { s: TrieSegment { n, b }, v: vec![0; 32] })];
     assert!(decode(&leaf(3, vec![0b1110_0000])).is_ok());
-    assert_eq!(decode(&leaf(3, vec![0b1110_0001])).unwrap_err().kind(), "Encoding");
-    assert_eq!(decode(&leaf(3, vec![0b1110_0000, 0])).unwrap_err().kind(), "Encoding");
-    assert_eq!(decode(&leaf(9, vec![0xff])).unwrap_err().kind(), "Encoding");
-    assert_eq!(decode(&leaf(0, vec![0])).unwrap_err().kind(), "Encoding");
+    assert_eq!(decode(&leaf(3, vec![0b1110_0001])).unwrap_err().kind(), TrieErrorKind::Encoding);
+    assert_eq!(decode(&leaf(3, vec![0b1110_0000, 0])).unwrap_err().kind(), TrieErrorKind::Encoding);
+    assert_eq!(decode(&leaf(9, vec![0xff])).unwrap_err().kind(), TrieErrorKind::Encoding);
+    assert_eq!(decode(&leaf(0, vec![0])).unwrap_err().kind(), TrieErrorKind::Encoding);
     // digests of the wrong length
-    assert_eq!(decode(&[TrieRecord::TrieStub(TrieStub { h: vec![0; 31] })]).unwrap_err().kind(), "Encoding");
+    assert_eq!(
+        decode(&[TrieRecord::TrieStub(TrieStub { h: vec![0; 31] })]).unwrap_err().kind(),
+        TrieErrorKind::Encoding
+    );
     // a record matching none of the shapes, and a non-array
     let odd =
         Value::array(vec![Value::map([("h".into(), Value::bytes(vec![0; 32])), ("s".into(), Value::int(1))]).unwrap()])
             .unwrap();
-    assert_eq!(TrieProof::<H>::from_value(&odd).unwrap_err().kind(), "Encoding");
-    assert_eq!(TrieProof::<H>::from_value(&Value::int(0)).unwrap_err().kind(), "Encoding");
+    assert_eq!(TrieProof::<H>::from_value(&odd).unwrap_err().kind(), TrieErrorKind::Encoding);
+    assert_eq!(TrieProof::<H>::from_value(&Value::int(0)).unwrap_err().kind(), TrieErrorKind::Encoding);
 }
 
 #[test]
@@ -460,13 +489,13 @@ fn structural_checks() {
         })
     };
     let p = decode(&[branch(8, true), leaf(7)]).unwrap();
-    assert_eq!(p.verify(&t, fixed2, &root).unwrap_err().kind(), "InvalidProof");
+    assert_eq!(p.verify(&t, fixed2, &root).unwrap_err().kind(), TrieErrorKind::InvalidProof);
     assert!(p.verify(&t, KeyMode::variable(2).unwrap(), &root).unwrap().is_none());
     let p = decode(&[branch(7, true), leaf(0)]).unwrap();
-    assert_eq!(p.verify(&t, KeyMode::variable(2).unwrap(), &root).unwrap_err().kind(), "InvalidProof");
+    assert_eq!(p.verify(&t, KeyMode::variable(2).unwrap(), &root).unwrap_err().kind(), TrieErrorKind::InvalidProof);
     // a branch whose children would pass the key length
     let p = decode(&[branch(16, false), leaf(0), leaf(0)]).unwrap();
-    assert_eq!(p.verify(&t, fixed2, &root).unwrap_err().kind(), "InvalidProof");
+    assert_eq!(p.verify(&t, fixed2, &root).unwrap_err().kind(), TrieErrorKind::InvalidProof);
     // a valid two-leaf fixed proof, recomputed
     let p = decode(&[branch(3, false), leaf(12), leaf(12)]).unwrap();
     let r = p.compute_root(&t, fixed2).unwrap();
@@ -503,13 +532,13 @@ fn modes() {
     assert!(KeyMode::fixed(1025).is_err());
     assert!(KeyMode::fixed(1024).is_ok());
     assert!(KeyMode::variable(65535).is_ok());
-    assert_eq!(KeyMode::variable(65536).unwrap_err().kind(), "InvalidKey");
+    assert_eq!(KeyMode::variable(65536).unwrap_err().kind(), TrieErrorKind::InvalidKey);
     let m = |k: &str, n: i64| Value::map([(k.into(), Value::int(n))]).unwrap();
     assert_eq!(KeyMode::from_value(&m("fixed", 8)).unwrap(), KeyMode::fixed(8).unwrap());
     assert_eq!(KeyMode::from_value(&m("variable", 256)).unwrap(), KeyMode::variable(256).unwrap());
-    assert_eq!(KeyMode::from_value(&m("fixed", 0)).unwrap_err().kind(), "InvalidKey");
-    assert_eq!(KeyMode::from_value(&m("fixed", -1)).unwrap_err().kind(), "InvalidKey");
-    assert_eq!(KeyMode::from_value(&m("other", 1)).unwrap_err().kind(), "Encoding");
+    assert_eq!(KeyMode::from_value(&m("fixed", 0)).unwrap_err().kind(), TrieErrorKind::InvalidKey);
+    assert_eq!(KeyMode::from_value(&m("fixed", -1)).unwrap_err().kind(), TrieErrorKind::InvalidKey);
+    assert_eq!(KeyMode::from_value(&m("other", 1)).unwrap_err().kind(), TrieErrorKind::Encoding);
     let _ = TrieRecord::to_value(&TrieRecord::TrieStub(TrieStub { h: vec![] }));
 }
 
@@ -550,12 +579,9 @@ fn malformed_vectors() {
     for c in &v.malformed {
         let kind = TrieProof::<H>::from_value(&cbor::decode(&bytes(&c.cbor)).unwrap())
             .and_then(|p| p.verify(&t, mode_of(&c.mode), &d(&c.root)).map(|_| ()))
-            .map_or_else(|e| e.kind(), |()| "accepted");
-        let expected = match c.error {
-            TrieMalformedError::Encoding => "Encoding",
-            TrieMalformedError::InvalidProof => "InvalidProof",
-        };
-        assert_eq!(kind, expected, "{}", c.name);
+            .err()
+            .map(|e| e.kind());
+        assert_eq!(kind, Some(c.error), "{}", c.name);
     }
 }
 

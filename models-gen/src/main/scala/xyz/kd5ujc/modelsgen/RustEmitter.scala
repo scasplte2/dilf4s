@@ -57,6 +57,16 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
     go(List(from), Set.empty)
   }
 
+  /** Whether a field holds an error family directly (not through an alias). */
+  private def family(t: FieldType): Boolean = t match {
+    case FieldType.Ref(q) =>
+      models.get(q) match {
+        case Some(ModelRule.ErrorFamily(_, _)) => true
+        case _                                 => false
+      }
+    case _ => false
+  }
+
   /** Rust type, codec type and codec expression of a field or element type. */
   private final case class Rs(tpe: String, codecType: String, codec: String)
 
@@ -387,6 +397,21 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
             }
             s"""            Self::${c.kind} { $bindings } => write!(f, "${c.kind} (${shown.mkString(", ")})"),"""
         }
+        // a kind that is only another family wraps it: `?` lifts the inner error (Rust's orphan rule keeps the
+        // conversion beside both types, so it is generated), unless two kinds wrap the same family
+        val wrapping = withFields.collect {
+          case (c, Vector(f)) if !f.optional && !f.boxed && c.fields.exists(p => family(p.tpe)) => (c, f)
+        }
+        val froms = wrapping.groupBy(_._2.rs.tpe).toVector.sortBy(_._1).collect {
+          case (inner, Vector((c, f))) =>
+            s"""
+               |impl From<$inner> for $n {
+               |    fn from(${f.name}: $inner) -> Self {
+               |        Self::${c.kind} { ${f.name} }
+               |    }
+               |}
+               |""".stripMargin
+        }
         s"""${doc(rule, s" An error family: its kinds are [`$k`].")}
            |#[derive(Clone, Debug, PartialEq, Eq)]
            |pub enum $n {
@@ -411,7 +436,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
            |}
            |
            |impl core::error::Error for $n {}
-           |""".stripMargin
+           |${froms.mkString}""".stripMargin
       }
   }
 

@@ -9,6 +9,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.accumulators.versioned.Harness._
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.core.hash.Digest
 import xyz.kd5ujc.storage.Batch
 
 import io.circe.Json
@@ -189,131 +190,253 @@ object VersionedTrieVectors {
   private def stateKeyCase(k: String): Json =
     Json.obj("key" -> k.asJson, "schema" -> schemaOutcome(k).asJson, "outcome" -> keyOutcome(StateKey.parse(k)))
 
-  def build: IO[Json] =
+  // ---------------------------------------------------------------------------------------------------- version errors
+
+  /**
+   * The widths of `versionErrors`: the default key's 8 bytes, a wide bytes key, and the widest, `KeyMode.MaxFixedBytes`
+   * (1024). A version's key is never truncated in a refusal, at any of them.
+   */
+  val versionErrorWidths: List[Int] = List(8, 32, xyz.kd5ujc.accumulators.trie.KeyMode.MaxFixedBytes)
+
+  /** The version key of `width`: the default key at 8 bytes, the bytes key at any other width. */
+  private def withKey[A](width: Int)(long: VersionKey[Long] => A, bytes: VersionKey[ByteVector] => A): Either[VersionedTrieError, A] =
+    if (width == VersionKey.long.width) long(VersionKey.long).asRight else VersionKey.bytes(width).map(bytes)
+
+  /**
+   * Three versions `a < b < c` of `width` bytes whose keys differ in their first byte and repeat a pattern to the last,
+   * so a truncated key could not pass for the full one: a and c are committed, b never is.
+   */
+  private def versionKeys(width: Int): (ByteVector, ByteVector, ByteVector) = {
+    val tail = ByteVector((1 until width).map(i => (0x30 + i % 0x4f).toByte)*)
+    (ByteVector(0x01) ++ tail, ByteVector(0x02) ++ tail, ByteVector(0x03) ++ tail)
+  }
+
+  /** The two cases of one width, from a store of that width with versions a and c committed. */
+  private def versionErrorCases[V](width: Int, of: ByteVector => Either[VersionedTrieError, V])(implicit V: VersionKey[V]): IO[List[Json]] =
     attempt { implicit h =>
+      val (ka, kb, kc) = versionKeys(width)
       for {
-        s <- fresh
-        store = s._2
-        heads <- commitAll(store, commits)
-        root  <- orDie(VersionedTrie.root(heads.last))
-        commitJson <- commits.zip(heads).traverse {
-          case ((v, b), hd) =>
-            (orDie(VersionedTrie.root(hd)), store.delta(v).flatMap(d => orDie(VersionedTrieWire.encodeDelta(d)))).mapN { (r, d) =>
-              Json.obj(
-                "version"     -> v.asJson,
-                "upserts"     -> b.last.collect { case (k, Some(x)) => entry(k, x) }.asJson,
-                "removes"     -> b.last.collect { case (k, None) => k.value.asJson }.asJson,
-                "stateRoot"   -> hex(hd.stateRoot.bytes),
-                "historyRoot" -> hex(hd.historyRoot.bytes),
-                "root"        -> hex(r.bytes),
-                "delta"       -> cbor(d)
-              )
-            }
-        }
-        current <- store.proveState(StateQuery.keys(key("fiber/1"), key("fiber/2"), key("oracle/a/b"), key("nope")))
-        currentJ <- proofJson(
-          "current-keys",
-          "state",
-          None,
-          current,
-          Json.obj(
-            "claims" -> List(
-              claim(key("fiber/1"), Some(int(2))),
-              claim(key("fiber/2"), None),
-              claim(key("oracle/a/b"), Some(text("a"))),
-              claim(key("nope"), None)
-            ).asJson
-          )
-        )
-        nsProof <- store.proveState(StateQuery.namespaces(ns("fiber"), ns("absent")))
-        nsJ <- proofJson(
-          "namespace-fiber",
-          "state",
-          None,
-          nsProof,
-          Json.obj(
-            "listings" -> List(
-              Json.obj(
-                "namespace" -> "fiber".asJson,
-                "entries" -> List(
-                  entry(key("fiber/1"), int(2)),
-                  entry(key("fiber/3"), get(CanonicalValue.array(Vector(int(1), CanonicalValue.CNull))))
-                ).asJson
-              ),
-              Json.obj("namespace" -> "absent".asJson, "entries" -> List.empty[Json].asJson)
-            ).asJson
-          )
-        )
-        past <- store.proveState(StateQuery.keys(key("fiber/2"), key("oracle/a/b"), key("meta")), Some(1L))
-        pastJ <- proofJson(
-          "key-at-version-1",
-          "historical",
-          Some(1L),
-          past,
-          Json.obj(
-            "claims" -> List(
-              claim(key("fiber/2"), Some(text("x"))),
-              claim(key("oracle/a/b"), Some(CanonicalValue.bytes(ByteVector(0x61, 0x61)))),
-              claim(key("meta"), None)
-            ).asJson
-          )
-        )
-        v255   <- store.proveVersion(255L)
-        v255J  <- proofJson("version-255", "version", Some(255L), v255, Json.obj("answer" -> answer(Some(255L -> heads(2).stateRoot))))
-        v3     <- store.proveVersion(3L)
-        v3J    <- proofJson("version-3-never-committed", "version", Some(3L), v3, Json.obj("answer" -> answer(None)))
-        as299  <- store.proveAsOf(299L)
-        as299J <- proofJson("as-of-299", "asOf", Some(299L), as299, Json.obj("answer" -> answer(Some(256L -> heads(3).stateRoot))))
-        as0    <- store.proveAsOf(0L)
-        as0J   <- proofJson("as-of-0-none", "asOf", Some(0L), as0, Json.obj("answer" -> answer(None)))
-        hp     <- store.proveHead
-        hpJ    <- proofJson("head", "head", None, hp, Json.obj())
-        vs     <- store.proveVersions(2L, Some(300L))
-        vsJ <- proofJson(
-          "versions-2-until-300",
-          "versions",
-          Some(2L),
-          vs,
-          Json.obj(
-            "until" -> 300L.asJson,
-            "versions" -> List(2L -> heads(1), 255L -> heads(2), 256L -> heads(3)).map {
-              case (v, hd) => answer(Some(v -> hd.stateRoot))
-            }.asJson
-          )
-        )
-        vt <- store.proveVersions(256L, None)
-        vtJ <- proofJson(
-          "versions-from-256",
-          "versions",
-          Some(256L),
-          vt,
-          Json.obj("versions" -> List(256L -> heads(3), 300L -> heads(4)).map { case (v, hd) => answer(Some(v -> hd.stateRoot)) }.asJson)
-        )
-        kat    <- headJson(heads.last)
-        chunks <- store.snapshot(2).compile.toList
-        wire   <- orDie(chunks.traverse(VersionedTrieWire.encodeChunk[Long, H]))
+        a     <- orDie(of(ka))
+        b     <- orDie(of(kb))
+        c     <- orDie(of(kc))
+        raw   <- xyz.kd5ujc.storage.RawStore.inMemory[IO]
+        store <- VersionedTrieStore.make[IO, V, H](raw, "w")
+        heads <- List(a -> Batch.put(key("w/1"), int(1)), c -> Batch.put(key("w/1"), int(2)))
+          .foldLeftM((Option.empty[V], List.empty[Head[V, H]])) {
+            case ((prev, acc), (v, bt)) =>
+              store.commit(prev, v, bt).map(hd => (Some(v), acc :+ hd))
+          }
+          .map(_._2)
+        root <- orDie(VersionedTrie.root(heads.last))
+        da   <- store.delta(a).flatMap(d => orDie(VersionedTrieWire.encodeDelta(d)))
+        dc   <- store.delta(c).flatMap(d => orDie(VersionedTrieWire.encodeDelta(d)))
+        // version a again, chaining from c: below the replica's head
+        back <- orDie(VersionedTrieWire.encodeDelta(Delta[V, H](Some(heads.last), heads.head, Nil, Nil)))
+        pb   <- store.proveVersion(b).flatMap(p => orDie(VersionedTrieWire.encodeProof(p)))
       } yield
-        Json.obj(
-          "spec"           -> "docs/specs/versioned-trie.md".asJson,
-          "version"        -> 1.asJson,
-          "hash"           -> "SHA-256".asJson,
-          "width"          -> VersionKey.long.width.asJson,
-          "emptyStateRoot" -> hex(T.empty.bytes),
-          "head"           -> kat,
-          "commits"        -> commitJson.asJson,
-          "root"           -> hex(root.bytes),
-          "proofs"         -> List(currentJ, nsJ, pastJ, v255J, v3J, as299J, as0J, hpJ, vsJ, vtJ).asJson,
-          "snapshot"       -> Json.obj("chunkEntries" -> 2.asJson, "chunks" -> wire.map(hex).asJson),
-          "stateKeys"      -> stateKeyCases.map(stateKeyCase).asJson,
-          "stateKeyBytes" -> stateKeyBytesCases
-            .map(b => Json.obj("bytes" -> hex(b), "outcome" -> keyOutcome(StateKey.fromBytes(b))))
-            .asJson,
-          "namespaces" -> namespaceCases
-            .map(n => Json.obj("namespace" -> n.asJson, "outcome" -> keyOutcome(StateNamespace.parse(n))))
-            .asJson,
-          "versionKeys" -> versionKeyCases.map(versionKeyCase).asJson
+        List(
+          Json.obj(
+            "name"   -> s"replica: version a after c, width $width".asJson,
+            "width"  -> width.asJson,
+            "check"  -> "replica".asJson,
+            "deltas" -> List(cbor(da), cbor(dc), cbor(back)).asJson
+          ),
+          Json.obj(
+            "name"  -> s"historical: version b was never committed, width $width".asJson,
+            "width" -> width.asJson,
+            "check" -> "historical".asJson,
+            "root"  -> hex(root.bytes),
+            "proof" -> cbor(pb),
+            "at"    -> hex(kb)
+          )
         )
     }.flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO])
+
+  /** A version error's outcome as the schema's `vt-version-error`: the refusal and the keys it names, in full. */
+  def versionErrorJson(e: VersionedTrieError): Either[String, Json] = e match {
+    case VersionedTrieError.VersionNotIncreasing(head, next) =>
+      Json.obj("kind" -> "VersionNotIncreasing".asJson, "head" -> head.asJson, "next" -> next.asJson).asRight
+    case VersionedTrieError.UnknownVersion(version) => Json.obj("kind" -> "UnknownVersion".asJson, "version" -> version.asJson).asRight
+    case other                                      => s"not a version error: $other".asLeft
+  }
+
+  private def runVersionError[V](c: io.circe.ACursor)(implicit V: VersionKey[V]): Either[String, VersionedTrieError] = {
+    def bytes(name: String): Either[String, ByteVector] = c.get[String](name).leftMap(_.toString).flatMap(ByteVector.fromHexDescriptive(_))
+    def value(b:    ByteVector) = Cbor.decode(b).leftMap(_.toString)
+    c.get[String]("check").leftMap(_.toString).flatMap {
+      case "replica" =>
+        c.get[List[String]]("deltas")
+          .leftMap(_.toString)
+          .flatMap(_.traverse(d => ByteVector.fromHexDescriptive(d).flatMap(value)))
+          .map { ds =>
+            Replica
+              .empty[V, H]
+              .flatMap(r0 => ds.foldLeftM(r0)((r, d) => VersionedTrieWire.decodeDelta[V, H](d).flatMap(Replica.applyDelta(r, _))))
+          }
+          .flatMap(_.swap.leftMap(_ => "accepted"))
+      case "historical" =>
+        (bytes("root").flatMap(Digest.fromBytes[H](_).leftMap(_.toString)), bytes("proof").flatMap(value), bytes("at")).tupled.flatMap {
+          case (root, proof, at) =>
+            (VersionedTrieWire.decodeProof[V, H](proof), V.decode(at)).tupled.flatMap {
+              case (pr, u) => VersionedTrieVerifier.verifyHistoricalKey(root, pr, u)
+            }.swap
+              .leftMap(_ => "accepted")
+        }
+      case other => s"unknown check $other".asLeft
+    }
+  }
+
+  /** A `versionErrors` case's outcome, read from its JSON as an SDK loader reads it. */
+  def versionErrorOutcome(c: io.circe.ACursor): Either[String, Json] =
+    c.get[Int]("width")
+      .leftMap(_.toString)
+      .flatMap(w =>
+        withKey(w)(implicit k => runVersionError[Long](c), implicit k => runVersionError[ByteVector](c)).leftMap(_.toString).flatten
+      )
+      .flatMap(versionErrorJson)
+
+  def versionErrors: IO[List[Json]] =
+    versionErrorWidths
+      .flatTraverse(w =>
+        withKey(w)(k => versionErrorCases[Long](w, k.decode)(using k), k => versionErrorCases[ByteVector](w, k.decode)(using k))
+          .leftMap(e => new IllegalStateException(e.toString))
+          .liftTo[IO]
+          .flatten
+      )
+      .flatMap(
+        _.traverse(j =>
+          versionErrorOutcome(j.hcursor).map(o => j.deepMerge(Json.obj("outcome" -> o))).leftMap(new IllegalStateException(_)).liftTo[IO]
+        )
+      )
+
+  def build: IO[Json] =
+    versionErrors.flatMap { versionErrorRows =>
+      attempt { implicit h =>
+        for {
+          s <- fresh
+          store = s._2
+          heads <- commitAll(store, commits)
+          root  <- orDie(VersionedTrie.root(heads.last))
+          commitJson <- commits.zip(heads).traverse {
+            case ((v, b), hd) =>
+              (orDie(VersionedTrie.root(hd)), store.delta(v).flatMap(d => orDie(VersionedTrieWire.encodeDelta(d)))).mapN { (r, d) =>
+                Json.obj(
+                  "version"     -> v.asJson,
+                  "upserts"     -> b.last.collect { case (k, Some(x)) => entry(k, x) }.asJson,
+                  "removes"     -> b.last.collect { case (k, None) => k.value.asJson }.asJson,
+                  "stateRoot"   -> hex(hd.stateRoot.bytes),
+                  "historyRoot" -> hex(hd.historyRoot.bytes),
+                  "root"        -> hex(r.bytes),
+                  "delta"       -> cbor(d)
+                )
+              }
+          }
+          current <- store.proveState(StateQuery.keys(key("fiber/1"), key("fiber/2"), key("oracle/a/b"), key("nope")))
+          currentJ <- proofJson(
+            "current-keys",
+            "state",
+            None,
+            current,
+            Json.obj(
+              "claims" -> List(
+                claim(key("fiber/1"), Some(int(2))),
+                claim(key("fiber/2"), None),
+                claim(key("oracle/a/b"), Some(text("a"))),
+                claim(key("nope"), None)
+              ).asJson
+            )
+          )
+          nsProof <- store.proveState(StateQuery.namespaces(ns("fiber"), ns("absent")))
+          nsJ <- proofJson(
+            "namespace-fiber",
+            "state",
+            None,
+            nsProof,
+            Json.obj(
+              "listings" -> List(
+                Json.obj(
+                  "namespace" -> "fiber".asJson,
+                  "entries" -> List(
+                    entry(key("fiber/1"), int(2)),
+                    entry(key("fiber/3"), get(CanonicalValue.array(Vector(int(1), CanonicalValue.CNull))))
+                  ).asJson
+                ),
+                Json.obj("namespace" -> "absent".asJson, "entries" -> List.empty[Json].asJson)
+              ).asJson
+            )
+          )
+          past <- store.proveState(StateQuery.keys(key("fiber/2"), key("oracle/a/b"), key("meta")), Some(1L))
+          pastJ <- proofJson(
+            "key-at-version-1",
+            "historical",
+            Some(1L),
+            past,
+            Json.obj(
+              "claims" -> List(
+                claim(key("fiber/2"), Some(text("x"))),
+                claim(key("oracle/a/b"), Some(CanonicalValue.bytes(ByteVector(0x61, 0x61)))),
+                claim(key("meta"), None)
+              ).asJson
+            )
+          )
+          v255   <- store.proveVersion(255L)
+          v255J  <- proofJson("version-255", "version", Some(255L), v255, Json.obj("answer" -> answer(Some(255L -> heads(2).stateRoot))))
+          v3     <- store.proveVersion(3L)
+          v3J    <- proofJson("version-3-never-committed", "version", Some(3L), v3, Json.obj("answer" -> answer(None)))
+          as299  <- store.proveAsOf(299L)
+          as299J <- proofJson("as-of-299", "asOf", Some(299L), as299, Json.obj("answer" -> answer(Some(256L -> heads(3).stateRoot))))
+          as0    <- store.proveAsOf(0L)
+          as0J   <- proofJson("as-of-0-none", "asOf", Some(0L), as0, Json.obj("answer" -> answer(None)))
+          hp     <- store.proveHead
+          hpJ    <- proofJson("head", "head", None, hp, Json.obj())
+          vs     <- store.proveVersions(2L, Some(300L))
+          vsJ <- proofJson(
+            "versions-2-until-300",
+            "versions",
+            Some(2L),
+            vs,
+            Json.obj(
+              "until" -> 300L.asJson,
+              "versions" -> List(2L -> heads(1), 255L -> heads(2), 256L -> heads(3)).map {
+                case (v, hd) => answer(Some(v -> hd.stateRoot))
+              }.asJson
+            )
+          )
+          vt <- store.proveVersions(256L, None)
+          vtJ <- proofJson(
+            "versions-from-256",
+            "versions",
+            Some(256L),
+            vt,
+            Json.obj("versions" -> List(256L -> heads(3), 300L -> heads(4)).map { case (v, hd) => answer(Some(v -> hd.stateRoot)) }.asJson)
+          )
+          kat    <- headJson(heads.last)
+          chunks <- store.snapshot(2).compile.toList
+          wire   <- orDie(chunks.traverse(VersionedTrieWire.encodeChunk[Long, H]))
+        } yield
+          Json.obj(
+            "spec"           -> "docs/specs/versioned-trie.md".asJson,
+            "version"        -> 1.asJson,
+            "hash"           -> "SHA-256".asJson,
+            "width"          -> VersionKey.long.width.asJson,
+            "emptyStateRoot" -> hex(T.empty.bytes),
+            "head"           -> kat,
+            "commits"        -> commitJson.asJson,
+            "root"           -> hex(root.bytes),
+            "proofs"         -> List(currentJ, nsJ, pastJ, v255J, v3J, as299J, as0J, hpJ, vsJ, vtJ).asJson,
+            "snapshot"       -> Json.obj("chunkEntries" -> 2.asJson, "chunks" -> wire.map(hex).asJson),
+            "stateKeys"      -> stateKeyCases.map(stateKeyCase).asJson,
+            "stateKeyBytes" -> stateKeyBytesCases
+              .map(b => Json.obj("bytes" -> hex(b), "outcome" -> keyOutcome(StateKey.fromBytes(b))))
+              .asJson,
+            "namespaces" -> namespaceCases
+              .map(n => Json.obj("namespace" -> n.asJson, "outcome" -> keyOutcome(StateNamespace.parse(n))))
+              .asJson,
+            "versionKeys"   -> versionKeyCases.map(versionKeyCase).asJson,
+            "versionErrors" -> versionErrorRows.asJson
+          )
+      }.flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO])
+    }
 
   def render: IO[String] = build.map(_.spaces2 + "\n")
 }
@@ -348,6 +471,29 @@ object VersionedTrieVectorsSuite extends SimpleIOSuite {
     VersionedTrieVectors.stateKeyCases.foldMap { k =>
       val expected = if (k.matches(VersionedTrieVectors.StateKeyPattern)) "accepted" else "TypeMismatch"
       expect.same(expected, VersionedTrieVectors.schemaOutcome(k))
+    }
+  }
+
+  test("every version error names its versions by their full keys: 2w hex characters, at every width") {
+    IO(new String(Files.readAllBytes(VersionedTrieVectors.path), UTF_8)).map { text =>
+      val rows = get(get(io.circe.parser.parse(text)).hcursor.downField("versionErrors").as[List[Json]])
+      val widths = rows.flatMap(_.hcursor.get[Int]("width").toOption).toSet
+      rows.foldMap { r =>
+        val c = r.hcursor
+        val w = get(c.get[Int]("width"))
+        val keys = List("head", "next", "version").flatMap(k => c.downField("outcome").get[String](k).toOption)
+        expect
+          .same(Right(get(c.downField("outcome").as[Json])), VersionedTrieVectors.versionErrorOutcome(c))
+          .and(
+            expect(keys.nonEmpty && keys.forall(k => k.length == 2 * w && k.matches("([0-9a-f]{2})*")), s"keys of $w bytes in full: $keys")
+          )
+      }.and(expect.same(Set(8, 32, 1024), widths))
+        .and(
+          expect.same(
+            List("UnknownVersion", "VersionNotIncreasing"),
+            rows.flatMap(_.hcursor.downField("outcome").get[String]("kind").toOption).distinct.sorted
+          )
+        )
     }
   }
 

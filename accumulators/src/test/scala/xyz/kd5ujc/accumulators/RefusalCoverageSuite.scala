@@ -9,18 +9,23 @@ import cats.syntax.all._
 import scala.compiletime.constValueTuple
 import scala.deriving.Mirror
 
-import xyz.kd5ujc.accumulators.merkle.MerkleError
-import xyz.kd5ujc.accumulators.poseidon.PoseidonMerkleError
-import xyz.kd5ujc.accumulators.trie.TrieError
-import xyz.kd5ujc.accumulators.versioned.{StateKeyError, VersionedTrieError}
+import xyz.kd5ujc.accumulators.merkle.{MerkleError, MerkleErrorKind}
+import xyz.kd5ujc.accumulators.poseidon.{PoseidonMerkleError, PoseidonMerkleErrorKind}
+import xyz.kd5ujc.accumulators.trie.{TrieError, TrieErrorKind}
+import xyz.kd5ujc.accumulators.versioned.{StateKeyError, StateKeyErrorKind, VersionedTrieError, VersionedTrieErrorKind}
+import xyz.kd5ujc.core.canonical.{CanonicalJson, Codec}
+import xyz.kd5ujc.models.merkle_vectors.MerkleVectors
+import xyz.kd5ujc.models.refusal_vectors.{MerkleRefusal, PoseidonRefusal, RefusalVectors, TrieRefusal, VtKeyCause, VtRefusal, VtTrieCause}
+import xyz.kd5ujc.models.trie_vectors.TrieVectors
+import xyz.kd5ujc.models.versioned_trie_vectors.{VersionedTrieVectors, VtStateKeyRefusal, VtUnknownVersion, VtVersionNotIncreasing}
 
-import io.circe.Json
 import weaver.SimpleIOSuite
 
 /**
- * The coverage gate of docs/specs/conformance.md §6: every case of the verifiers' and the versioned trie's error types
- * has a vector row pinning it, or an exemption with its reason. The cases come from the compiler (`Mirror.SumOf`), so a
- * new case fails this suite until it is pinned or exempted; the pinned kinds come from the committed vector files.
+ * The coverage gate of docs/specs/conformance.md §6: every kind of the verifiers' and the versioned trie's error types
+ * (their generated `values`, which the compiler's `Mirror.SumOf` of each family must equal) has a vector row pinning it,
+ * or an exemption with its reason. The pinned kinds come from the committed vector files, read through their generated
+ * models, so a row naming a kind its family does not have does not load, and a check whose family is another's fails.
  */
 object RefusalCoverageSuite extends SimpleIOSuite {
 
@@ -28,26 +33,40 @@ object RefusalCoverageSuite extends SimpleIOSuite {
   inline def kinds[T](using m: Mirror.SumOf[T]): List[String] =
     constValueTuple[m.MirroredElemLabels].productIterator.map(_.toString).toList
 
-  final case class Family(name: String, kinds: List[String], exempt: Map[String, String])
+  final case class Family(name: String, kinds: List[String], cases: List[String], exempt: Map[String, String])
 
   val families: List[Family] = List(
     Family(
       "versioned trie",
+      VersionedTrieErrorKind.values.toList,
       kinds[VersionedTrieError],
       List("Empty", "VersionConflict", "CommitRewrite", "NotRetained", "Store").map(_ -> "the store's own refusal").toMap
     ),
-    Family("merkle", kinds[MerkleError], Map.empty),
-    Family("trie", kinds[TrieError], List("MissingNode", "InvalidNode").map(_ -> "a store read").toMap),
-    Family("poseidon", kinds[PoseidonMerkleError], List("Depth", "OccupiedPosition").map(_ -> "building a tree").toMap),
-    Family("state keys", kinds[StateKeyError], Map.empty)
+    Family("merkle", MerkleErrorKind.values.toList, kinds[MerkleError], Map.empty),
+    Family("trie", TrieErrorKind.values.toList, kinds[TrieError], List("MissingNode", "InvalidNode").map(_ -> "a store read").toMap),
+    Family(
+      "poseidon",
+      PoseidonMerkleErrorKind.values.toList,
+      kinds[PoseidonMerkleError],
+      List("Depth", "OccupiedPosition").map(_ -> "building a tree").toMap
+    ),
+    Family("state keys", StateKeyErrorKind.values.toList, kinds[StateKeyError], Map.empty)
   )
 
   /** A family's kinds with neither a row nor an exemption. */
   def uncovered(f: Family, pinned: Set[String]): List[String] = f.kinds.filterNot(k => pinned(k) || f.exempt.contains(k))
 
-  private def read(file: String): IO[Json] =
-    IO.blocking(new String(Files.readAllBytes(Paths.get("shared", "vectors", file)), UTF_8)).flatMap(io.circe.parser.parse(_).liftTo[IO])
+  private def load[A](file: String, codec: Codec[A]): IO[A] =
+    IO.blocking(new String(Files.readAllBytes(Paths.get("shared", "vectors", file)), UTF_8)).flatMap { text =>
+      CanonicalJson
+        .parse(text)
+        .leftMap(_.toString)
+        .flatMap(codec.decoder.decode(_).leftMap(_.message))
+        .leftMap(e => new IllegalStateException(s"$file: $e"))
+        .liftTo[IO]
+    }
 
+  /** The family a check refuses as (conformance.md §6). */
   private def family(check: String): String =
     if (check.startsWith("vt-")) "versioned trie"
     else if (check.startsWith("merkle-")) "merkle"
@@ -55,29 +74,62 @@ object RefusalCoverageSuite extends SimpleIOSuite {
     else if (check.startsWith("poseidon-")) "poseidon"
     else check
 
+  /** Each refusal row's family (by its key) and kind, and the check's family: the two must agree. */
+  val refusals: IO[List[(String, String, String)]] =
+    load("refusals_v1.json", RefusalVectors.codec).map(_.cases.toList.flatMap { c =>
+      val f = family(c.check)
+      c.outcome match {
+        case _: String          => Nil
+        case r: VtRefusal       => List((f, "versioned trie", r.versionedTrie: String))
+        case r: MerkleRefusal   => List((f, "merkle", r.merkle: String))
+        case r: TrieRefusal     => List((f, "trie", r.trie: String))
+        case r: PoseidonRefusal => List((f, "poseidon", r.poseidonMerkle: String))
+      }
+    })
+
   /**
-   * The kinds each family's rows pin; a nested kind (`Trie.Encoding`) pins its outer kind, and `Key.InvalidSegment` a
-   * state-key kind too. State keys are pinned by the outcomes of `versioned_trie_v1.json`'s keys, bytes and namespaces.
+   * The kinds each family's rows pin: the refusal rows, a versioned trie's cause (`Key`'s state-key kind, `Trie`'s trie
+   * kind), the `malformed` rows of merkle_v1.json and trie_v1.json, and versioned_trie_v1.json's state keys, bytes,
+   * namespaces and version errors.
    */
   val pinned: IO[Map[String, Set[String]]] =
-    (read("refusals_v1.json"), read("merkle_v1.json"), read("trie_v1.json"), read("versioned_trie_v1.json")).mapN {
-      (refusals, merkle, trie, vt) =>
-        val kinds = refusals.hcursor.downField("cases").as[List[Json]].getOrElse(Nil).flatMap { c =>
-          (c.hcursor.get[String]("check").toOption, c.hcursor.downField("outcome").get[String]("kind").toOption).tupled
-        }
-        val rows = kinds.map { case (check, kind) => family(check) -> kind.takeWhile(_ != '.') }
-        val nestedKeys = kinds.collect { case (_, kind) if kind.startsWith("Key.") => "state keys" -> kind.stripPrefix("Key.") }
-        def malformed(name: String, j: Json) =
-          j.hcursor.downField("malformed").as[List[Json]].getOrElse(Nil).flatMap(_.hcursor.get[String]("error").toOption).map(name -> _)
-        val keyRows = List("stateKeys", "stateKeyBytes", "namespaces").flatMap { section =>
-          vt.hcursor.downField(section).as[List[Json]].getOrElse(Nil).flatMap(_.hcursor.downField("outcome").get[String]("kind").toOption)
-        }
-        (rows ++ nestedKeys ++ keyRows.map("state keys" -> _) ++ malformed("merkle", merkle) ++ malformed("trie", trie))
-          .groupMap(_._1)(_._2)
-          .view
-          .mapValues(_.toSet)
-          .toMap
+    (
+      load("refusals_v1.json", RefusalVectors.codec),
+      load("merkle_v1.json", MerkleVectors.codec),
+      load("trie_v1.json", TrieVectors.codec),
+      load("versioned_trie_v1.json", VersionedTrieVectors.codec),
+      refusals
+    ).mapN { (r, merkle, trie, vt, rows) =>
+      val causes = r.cases.toList.flatMap(_.outcome match {
+        case VtRefusal(_, Some(VtTrieCause(t)), _, _, _) => List("trie" -> (t: String))
+        case VtRefusal(_, Some(VtKeyCause(k)), _, _, _)  => List("state keys" -> (k: String))
+        case _                                           => Nil
+      })
+      val keyRows = (vt.stateKeys.map(_.outcome) ++ vt.stateKeyBytes.map(_.outcome) ++ vt.namespaces.map(_.outcome)).toList.collect {
+        case k: VtStateKeyRefusal => "state keys" -> (k.kind: String)
+      }
+      val versionRows = vt.versionErrors.toList.map(_.outcome match {
+        case _: VtVersionNotIncreasing => "versioned trie" -> "VersionNotIncreasing"
+        case _: VtUnknownVersion       => "versioned trie" -> "UnknownVersion"
+      })
+      (rows.map((_, f, k) => f -> k) ++ causes ++ keyRows ++ versionRows ++ merkle.malformed.toList.map("merkle" -> _.error) ++
+      trie.malformed.toList.map("trie" -> _.error))
+        .groupMap(_._1)(_._2)
+        .view
+        .mapValues(_.toSet)
+        .toMap
     }
+
+  test("every refusal row is of its check's family") {
+    refusals.map(_.foldMap {
+      case (byCheck, byKey, kind) =>
+        expect(byCheck == byKey, s"a $byCheck check's row is a $byKey refusal ($kind)")
+    })
+  }
+
+  test("every family's generated kinds are its cases, in order") {
+    IO.pure(families.foldMap(f => expect.same(f.kinds, f.cases)))
+  }
 
   test("every refusal kind of the verifiers and the versioned trie has a vector row, or is exempt with a reason") {
     pinned.map { p =>
@@ -109,7 +161,7 @@ object RefusalCoverageSuite extends SimpleIOSuite {
   }
 
   pureTest("the gate finds a case with no row: the cases come from the compiler, not from a list") {
-    val probe = Family("probe", kinds[Probe], Map("Exempted" -> "a reason"))
+    val probe = Family("probe", kinds[Probe], kinds[Probe], Map("Exempted" -> "a reason"))
     expect
       .same(List("Pinned", "Unpinned", "Exempted"), probe.kinds)
       .and(expect.same(List("Unpinned"), uncovered(probe, Set("Pinned"))))

@@ -1,4 +1,5 @@
 ;# import codec-errors as codec
+;# import proofs-errors as errors
 ; Schema of shared/vectors/versioned_trie_v1.json (conformance vectors for docs/specs/versioned-trie.md).
 ; "cbor" fields are hex of canonical CBOR: proofs and deltas in the shape of shared/schemas/versioned-trie.cddl,
 ; values as canonical values. Every proof is against the final commit's root.
@@ -18,6 +19,7 @@ versioned-trie-vectors = {
   "stateKeyBytes": [* vt-state-key-bytes],
   "namespaces": [* vt-namespace],
   "versionKeys": [* vt-version-key],
+  "versionErrors": [* vt-version-error-case],
 }
 
 ; The default version key (section 2) at its edges. "key" is "version" as 8 unsigned big-endian bytes, the JLVM's
@@ -29,6 +31,33 @@ vt-version-key = { "version": uint, "key": hex, "outcome": vt-version-key-outcom
 vt-version-key-outcome = vt-version-key-refusal / "accepted"
 
 vt-version-key-refusal = { "kind": "InvalidVersion" }
+
+; A refusal that names versions (section 2; conformance.md section 3), each as its version key's full lowercase hex
+; (proofs-errors.cddl `version-key-hex`): never truncated, at the case's "width" w (1..1024). At width 8 the versions
+; are the default key's (below 2^63); at any other width they are the bytes version key's, whose version is its key.
+; "replica" applies "deltas" (each the hex of a canonical versioned-trie-delta) in order to an empty replica;
+; "historical" decodes "proof" (a versioned-trie-proof) and verifies the state at the version keyed "at" against
+; "root". Every proof and delta is SHA-256.
+vt-version-error-case = {
+  "name": text,
+  "width": uint,
+  "check": vt-version-check,
+  ? "deltas": [* hex],
+  ? "root": hex,
+  ? "proof": hex,
+  ? "at": hex,
+  "outcome": vt-version-error,
+}
+
+vt-version-check = "replica" / "historical"
+
+vt-version-error = vt-version-not-increasing / vt-unknown-version
+
+; A delta whose version is not above the replica's head: the head's key and the delta's.
+vt-version-not-increasing = { "kind": "VersionNotIncreasing", "head": errors.version-key-hex, "next": errors.version-key-hex }
+
+; A version the proof shows was never committed.
+vt-unknown-version = { "kind": "UnknownVersion", "version": errors.version-key-hex }
 
 ; A candidate state key: whether the generated codec of versioned-trie.cddl's state-key pattern encodes it ("schema":
 ; "accepted", or TypeMismatch, the typed encoder's CanonicalError; its decoder refuses the same texts), and the

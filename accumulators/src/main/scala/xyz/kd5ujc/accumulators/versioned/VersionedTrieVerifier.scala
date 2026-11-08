@@ -58,7 +58,7 @@ final class VerifiedState[H] private[versioned] (proof: VerifiedProof[H])(implic
  */
 object VersionedTrieVerifier {
 
-  private def mismatch(component: String, expected: Digest[?], computed: Digest[?]): VersionedTrieError =
+  private def mismatch(component: VtRootComponent, expected: Digest[?], computed: Digest[?]): VersionedTrieError =
     VersionedTrieError.RootMismatch(component, expected.hex, computed.hex)
 
   private def verified[H: TrieHashing](mode: Either[VersionedTrieError, KeyMode], root: Digest[H], what: String)(
@@ -76,7 +76,7 @@ object VersionedTrieVerifier {
       claimed <- VersionedTrie.root(proof.head)
       _       <- Either.cond(claimed == root, (), mismatch("root", root, claimed))
       top     <- verified(VersionedTrie.topMode, root, "top")(Some(proof.top))
-      vkey    <- VersionKey[V].encode(proof.head.version)
+      vkey    <- VersionKey[V].keyOf(proof.head.version)
       _ <- List(
         VersionedTrie.VersionSlot -> vkey,
         VersionedTrie.StateSlot   -> proof.head.stateRoot.bytes,
@@ -99,7 +99,7 @@ object VersionedTrieVerifier {
 
   private def asked[V, H](proof: VersionedTrieProof[V, H], u: V)(implicit V: VersionKey[V]): Either[VersionedTrieError, At[V, H]] =
     proof.at.toRight(VersionedTrieError.Malformed("the proof names no version")).flatMap { at =>
-      (V.encode(at.version), V.encode(u)).tupled.flatMap {
+      (V.keyOf(at.version), V.keyOf(u)).tupled.flatMap {
         case (a, b) => Either.cond(a == b, at, VersionedTrieError.Malformed(s"the proof is about version ${a.toHex}, not ${b.toHex}"))
       }
     }
@@ -112,7 +112,7 @@ object VersionedTrieVerifier {
     for {
       at   <- asked(proof, u)
       hist <- history(head, proof)
-      vkey <- V.encode(u)
+      vkey <- V.keyOf(u)
       root <- (hist.lookup(vkey.bits), at.stateRoot) match {
         case (Lookup.Present(h), Some(s)) =>
           Either.cond(
@@ -140,7 +140,7 @@ object VersionedTrieVerifier {
     for {
       head <- bind(root, proof)
       hist <- history(head, proof)
-      vkey <- V.encode(head.version)
+      vkey <- V.keyOf(head.version)
       tail <- hist.range(vkey.bits, None).toRight(VersionedTrieError.NotCovered("history from the head version up"))
       _ <- Either.cond(
         tail == List(vkey.bits -> VersionedTrie.bytesHash[H](head.stateRoot.bytes)),
@@ -176,8 +176,8 @@ object VersionedTrieVerifier {
   ): Either[VersionedTrieError, VerifiedState[H]] =
     for {
       head  <- bind(root, proof)
-      uk    <- VersionKey[V].encode(u)
-      s     <- versionRoot(head, proof, u).flatMap(_.toRight(VersionedTrieError.UnknownVersion(uk)))
+      uk    <- VersionKey[V].keyOf(u)
+      s     <- versionRoot(head, proof, u).flatMap(_.toRight(VersionedTrieError.UnknownVersion(versionHex(uk))))
       state <- verified(VersionedTrie.stateMode, s, "state")(proof.state)
     } yield new VerifiedState[H](state)
 
@@ -192,12 +192,12 @@ object VersionedTrieVerifier {
     for {
       head <- bind(root, proof)
       hist <- history(head, proof)
-      fk   <- V.encode(from)
-      uk   <- until.traverse(V.encode)
+      fk   <- V.keyOf(from)
+      uk   <- until.traverse(V.keyOf)
       listing <- hist
         .range(fk.bits, uk.map(_.bits))
         .toRight(VersionedTrieError.NotCovered(s"versions [${fk.toHex}, ${uk.fold("")(_.toHex)})"))
-      expected <- claimed.traverse { case (v, s) => V.encode(v).map(k => k.bits -> VersionedTrie.bytesHash[H](s.bytes)) }
+      expected <- claimed.traverse { case (v, s) => V.keyOf(v).map(k => k.bits -> VersionedTrie.bytesHash[H](s.bytes)) }
     } yield listing == expected
 
   /**
@@ -212,10 +212,10 @@ object VersionedTrieVerifier {
     for {
       head <- bind(root, proof)
       hist <- history(head, proof)
-      tkey <- V.encode(t)
+      tkey <- V.keyOf(t)
       bound = (tkey :+ 0x00.toByte).bits
       found <- proof.at.traverse { at =>
-        (V.encode(at.version), at.stateRoot.toRight(VersionedTrieError.Malformed("an as-of answer names its state root"))).tupled.flatMap {
+        (V.keyOf(at.version), at.stateRoot.toRight(VersionedTrieError.Malformed("an as-of answer names its state root"))).tupled.flatMap {
           case (pkey, s) =>
             Either.cond(
               xyz.kd5ujc.core.canonical.Cbor.compareBytes(pkey, tkey) <= 0,

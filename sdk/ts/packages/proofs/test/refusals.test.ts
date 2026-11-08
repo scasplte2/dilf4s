@@ -35,13 +35,17 @@ function built(b: models.refusalVectors.BuiltValue): Value {
 /** An outcome as the vectors record it. */
 const accepted: Outcome = "accepted";
 
+/** A refusal of no family the vectors know (a `TypeMismatch`): equal to no row, so the case fails and shows it. */
+const unexpected = (e: TypeMismatch): Outcome => ({ unexpected: e.reason }) as unknown as Outcome;
+
+/** A versioned-trie refusal as the vectors record it: its kind, the kind it wraps, and its normative fields. */
 function versionedOutcome(e: versioned.VersionedRefusal): Outcome {
-  if (e.kind === "TooLarge") return { kind: e.kind, limit: BigInt(e.limit) };
-  if (e.kind === "TooDeep") return { kind: e.kind, limit: BigInt(e.limit), depth: BigInt(e.depth) };
-  if (e.kind === "RootMismatch") return { kind: e.kind, component: e.component };
-  if (e.kind === "Trie") return { kind: `Trie.${e.error.kind}` };
-  if (e.kind === "Key") return { kind: `Key.${e.error.kind}` };
-  return { kind: e.kind };
+  if (e.kind === "TypeMismatch") return unexpected(e);
+  const cause = e.kind === "Trie" ? { trie: e.error.kind } : e.kind === "Key" ? { stateKey: e.error.kind } : undefined;
+  const limit = e.kind === "TooLarge" || e.kind === "TooDeep" ? BigInt(e.limit) : undefined;
+  const depth = e.kind === "TooDeep" ? BigInt(e.depth) : undefined;
+  const component = e.kind === "RootMismatch" ? e.component : undefined;
+  return { versionedTrie: e.kind, cause, limit, depth, component };
 }
 
 const of =
@@ -49,7 +53,11 @@ const of =
   (r: { readonly ok: true } | { readonly ok: false; readonly error: E }): Outcome =>
     r.ok ? accepted : outcome(r.error);
 
-const byKind = (e: { readonly kind: string; readonly limit?: number }): Outcome => (e.limit === undefined ? { kind: e.kind } : { kind: e.kind, limit: BigInt(e.limit) });
+const merkleOutcome = (e: merkle.MerkleError | TypeMismatch): Outcome =>
+  e.kind === "TypeMismatch" ? unexpected(e) : { merkle: e.kind, limit: e.kind === "TooLarge" ? BigInt(e.limit) : undefined };
+
+const trieOutcome = (e: trie.TrieError | TypeMismatch): Outcome =>
+  e.kind === "TypeMismatch" ? unexpected(e) : { trie: e.kind, limit: e.kind === "TooLarge" ? BigInt(e.limit) : undefined };
 
 const modeOf = (m: models.refusalVectors.RefusalMode | undefined): trie.KeyMode => {
   const x = m ?? { fixed: 0n };
@@ -97,23 +105,23 @@ function run(c: Case, rootOverride?: Uint8Array): Outcome {
     case "merkle-inclusion": {
       const hashing = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
       const p = merkle.InclusionProof.decode(hashing, input());
-      return of(byKind)(p.ok ? merkle.checkInclusion(hashing, root(), bytes(c.leafHash ?? ""), p.value) : p);
+      return of(merkleOutcome)(p.ok ? merkle.checkInclusion(hashing, root(), bytes(c.leafHash ?? ""), p.value) : p);
     }
     case "merkle-consistency": {
       const hashing = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
       const p = merkle.ConsistencyProof.decode(hashing, input());
-      return of(byKind)(p.ok ? merkle.checkConsistency(hashing, bytes(c.oldRoot ?? ""), root(), p.value) : p);
+      return of(merkleOutcome)(p.ok ? merkle.checkConsistency(hashing, bytes(c.oldRoot ?? ""), root(), p.value) : p);
     }
     case "trie-lookup": {
       const mode = modeOf(c.mode);
       const hashing = expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of");
       const p = trie.TrieProof.decode(hashing, input());
-      if (!p.ok) return byKind(p.error);
+      if (!p.ok) return trieOutcome(p.error);
       const verified = trie.check(hashing, mode, root(), p.value);
-      if (!verified.ok) return byKind(verified.error);
+      if (!verified.ok) return trieOutcome(verified.error);
       const found = verified.value.lookup(bytes(c.key ?? ""));
-      if (!found.ok) return byKind(found.error);
-      return found.value.kind === "notCovered" ? { kind: "NotCovered" } : accepted;
+      if (!found.ok) return trieOutcome(found.error);
+      return found.value.kind === "notCovered" ? { trie: "NotCovered" } : accepted;
     }
     case "vt-commit": {
       // the weight of the delta it would serve at version 1 (no parent; the head's version key and roots at their
@@ -126,7 +134,7 @@ function run(c: Case, rootOverride?: Uint8Array): Outcome {
       }
       const head = { v: expectOk(fromHex("0000000000000001"), "vkey"), s: new Uint8Array(32), h: new Uint8Array(32) };
       const delta = expectOk(models.versionedTrie.VersionedTrieDelta.encode({ head, upserts, removes: [] }), "delta");
-      if (delta.weight > MAX_PROOF_WEIGHT) return { kind: "TooLarge", limit: MAX_PROOF_WEIGHT };
+      if (delta.weight > MAX_PROOF_WEIGHT) return { versionedTrie: "TooLarge", limit: MAX_PROOF_WEIGHT };
       for (const u of upserts) {
         const checked = vt.checkValue(expectOk(versioned.StateKey.parse(u.k), "state key"), u.v);
         if (!checked.ok) return v(checked);
@@ -136,18 +144,20 @@ function run(c: Case, rootOverride?: Uint8Array): Outcome {
     case "merkle-verify": {
       const hashing = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
       const head = { root: root(), size: c.size ?? 0n };
-      return of(byKind)(merkle.merkleVerify(hashing, head, built(c.claim ?? { leaf: "" }), input()));
+      return of(merkleOutcome)(merkle.merkleVerify(hashing, head, built(c.claim ?? { leaf: "" }), input()));
     }
     case "trie-verify": {
       const claim = c.claim === undefined ? null : built(c.claim);
-      return of(byKind)(trie.trieVerify(expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of"), modeOf(c.mode), root(), bytes(c.key ?? ""), claim, input()));
+      return of(trieOutcome)(trie.trieVerify(expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of"), modeOf(c.mode), root(), bytes(c.key ?? ""), claim, input()));
     }
     case "trie-prefix-verify": {
       const entries: readonly trie.ClaimedEntry[] = (c.entries ?? []).map((e) => [bytes(e.key), built(e.value)] as const);
-      return of(byKind)(trie.triePrefixVerify(expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of"), modeOf(c.mode), root(), bytes(c.prefix ?? ""), entries, input()));
+      return of(trieOutcome)(trie.triePrefixVerify(expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of"), modeOf(c.mode), root(), bytes(c.prefix ?? ""), entries, input()));
     }
     case "poseidon-proof":
-      return of((e: poseidon.PoseidonMerkleError | TypeMismatch): Outcome => (e.kind === "Position" ? { kind: e.kind, depth: BigInt(e.depth) } : byKind(e)))(poseidon.PoseidonMerkleProof.decode(input()));
+      return of((e: poseidon.PoseidonMerkleError | TypeMismatch): Outcome =>
+        e.kind === "TypeMismatch" ? unexpected(e) : { poseidonMerkle: e.kind, depth: e.kind === "Position" ? BigInt(e.depth) : undefined },
+      )(poseidon.PoseidonMerkleProof.decode(input()));
   }
 }
 
@@ -178,4 +188,86 @@ describe("refusals_v1.json", { timeout: 120_000 }, () => {
       expect(process.memoryUsage().arrayBuffers - before, `${c.name}: the 64 MiB root was not copied`).toBeLessThan(1 << 20);
     }
   });
+});
+
+/**
+ * The gate of conformance.md section 6, total over each family's generated kinds: a `Record` keyed by the kind union,
+ * so a kind added to the schema does not compile until it is listed, as pinned by a row or exempt (a kind no input
+ * reaches through an SDK's verifier). The rows are refusals_v1.json's (each of its check's family), the `malformed`
+ * rows of merkle_v1.json and trie_v1.json, a versioned trie's `Trie` cause, and versioned_trie_v1.json's version errors.
+ */
+describe("every kind of the proof families has a row, or is exempt", () => {
+  type Pin = "row" | "exempt";
+  const vtKinds: Readonly<Record<versioned.VersionedTrieError["kind"], Pin>> = {
+    Key: "row",
+    InvalidVersion: "row",
+    Empty: "exempt",
+    VersionNotIncreasing: "row",
+    VersionConflict: "exempt",
+    CommitRewrite: "exempt",
+    NotRetained: "exempt",
+    UnknownVersion: "row",
+    RootMismatch: "row",
+    NotCovered: "row",
+    Malformed: "row",
+    TooLarge: "row",
+    TooDeep: "row",
+    Store: "exempt",
+    Trie: "row",
+  };
+  const merkleKinds: Readonly<Record<merkle.MerkleError["kind"], Pin>> = {
+    IndexOutOfRange: "row",
+    InvalidSizes: "row",
+    InvalidProof: "row",
+    RootMismatch: "row",
+    Encoding: "row",
+    TooLarge: "row",
+  };
+  const trieKinds: Readonly<Record<trie.TrieError["kind"], Pin>> = {
+    InvalidKey: "row",
+    MissingNode: "exempt",
+    InvalidNode: "exempt",
+    InvalidProof: "row",
+    RootMismatch: "row",
+    Encoding: "row",
+    NotCovered: "row",
+    TooLarge: "row",
+  };
+  const poseidonKinds: Readonly<Record<poseidon.PoseidonMerkleError["kind"], Pin>> = {
+    Position: "row",
+    Depth: "exempt",
+    OccupiedPosition: "exempt",
+    Encoding: "row",
+  };
+  const merkleRows = loadVectors("merkle_v1.json", models.merkleVectors.MerkleVectors).malformed.map((r) => r.error);
+  const trieRows = loadVectors("trie_v1.json", models.trieVectors.TrieVectors).malformed.map((r) => r.error);
+  const versionRows = loadVectors("versioned_trie_v1.json", models.versionedTrieVectors.VersionedTrieVectors).versionErrors.map((r) => r.outcome.kind);
+  const outcomes = vectors.cases.map((c) => [c.check, c.outcome] as const);
+  const family = (check: string): string => (check.startsWith("vt-") ? "versionedTrie" : check.startsWith("merkle-") ? "merkle" : check.startsWith("trie-") ? "trie" : "poseidonMerkle");
+
+  it("every row is of its check's family", () => {
+    for (const [check, o] of outcomes) if (o !== "accepted") expect(Object.keys(o), check).toContain(family(check));
+  });
+
+  const refused = outcomes.flatMap(([, o]) => (o === "accepted" ? [] : [o]));
+  const vtRows = new Set<string>([...refused.flatMap((o) => ("versionedTrie" in o ? [o.versionedTrie] : [])), ...versionRows]);
+  const merklePinned = new Set<string>([...refused.flatMap((o) => ("merkle" in o ? [o.merkle] : [])), ...merkleRows]);
+  const triePinned = new Set<string>([
+    ...refused.flatMap((o) => ("trie" in o ? [o.trie] : [])),
+    ...refused.flatMap((o) => ("versionedTrie" in o && o.cause !== undefined && "trie" in o.cause ? [o.cause.trie] : [])),
+    ...trieRows,
+  ]);
+  const poseidonPinned = new Set<string>(refused.flatMap((o) => ("poseidonMerkle" in o ? [o.poseidonMerkle] : [])));
+  const families: readonly (readonly [string, Readonly<Record<string, Pin>>, Set<string>])[] = [
+    ["versioned trie", vtKinds, vtRows],
+    ["merkle", merkleKinds, merklePinned],
+    ["trie", trieKinds, triePinned],
+    ["poseidon", poseidonKinds, poseidonPinned],
+  ];
+  for (const [name, kinds, rows] of families) {
+    it(`${name}: a row exactly for each kind not exempt`, () => {
+      expect(Object.entries(kinds).filter(([k, pin]) => (pin === "row") !== rows.has(k))).toEqual([]);
+      expect([...rows].filter((k) => !(k in kinds))).toEqual([]);
+    });
+  }
 });

@@ -111,7 +111,7 @@ export type JlvmError =
       /**
        * The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and
        * kind); absent for the operation's own checks of its arguments' shape (a width, a count, a head's fields) and for
-       * proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
+       * the proof structures' refusals (Merkle, trie, Poseidon: proofs-errors.cddl), which are not yet a cause.
        */
       readonly cause?: JlvmCryptoCause;
     }

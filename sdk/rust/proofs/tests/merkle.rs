@@ -20,9 +20,10 @@ mod common;
 use common::{bytes, load};
 use dilf4s_core::cbor;
 use dilf4s_core::commitment::value_commitment;
-use dilf4s_core::generated::merkle_vectors::{MerkleDecodeError, MerkleProofKind, MerkleVectors};
+use dilf4s_core::generated::merkle_vectors::{MerkleProofKind, MerkleVectors};
 use dilf4s_core::hash::{Digest, DomainTag, Sha256, TaggedHash};
 use dilf4s_core::value::Value;
+use dilf4s_proofs::merkle::MerkleErrorKind;
 use dilf4s_proofs::merkle::{
     self, ConsistencyProof, InclusionProof, MerkleError, MerkleHashing, Rfc6962, Tagged, TreeHead,
     merkle_consistency_verify, merkle_verify, verify_consistency, verify_inclusion,
@@ -210,11 +211,11 @@ fn tampered_and_malformed_proofs() {
     }
     let out_of_range = Value::map(m.clone()).unwrap();
     let e = InclusionProof::<H>::from_value(&out_of_range).unwrap_err();
-    assert_eq!(e.kind(), "IndexOutOfRange");
+    assert_eq!(e.kind(), MerkleErrorKind::IndexOutOfRange);
     let head = TreeHead { root: root.clone(), size: 7 };
     assert_eq!(
         merkle_verify(&Rfc6962::<H>::new(), &head, &[][..], &out_of_range).unwrap_err().kind(),
-        "IndexOutOfRange"
+        MerkleErrorKind::IndexOutOfRange
     );
     for (k, x) in &mut m {
         if k == "index" {
@@ -224,9 +225,9 @@ fn tampered_and_malformed_proofs() {
             *x = Value::array(vec![Value::bytes(vec![0; 31])]).unwrap();
         }
     }
-    assert_eq!(InclusionProof::<H>::from_value(&Value::map(m).unwrap()).unwrap_err().kind(), "Encoding");
-    assert_eq!(InclusionProof::<H>::from_value(&Value::int(1)).unwrap_err().kind(), "Encoding");
-    assert_eq!(InclusionProof::<H>::new(0, 0, vec![]).unwrap_err().kind(), "IndexOutOfRange");
+    assert_eq!(InclusionProof::<H>::from_value(&Value::map(m).unwrap()).unwrap_err().kind(), MerkleErrorKind::Encoding);
+    assert_eq!(InclusionProof::<H>::from_value(&Value::int(1)).unwrap_err().kind(), MerkleErrorKind::Encoding);
+    assert_eq!(InclusionProof::<H>::new(0, 0, vec![]).unwrap_err().kind(), MerkleErrorKind::IndexOutOfRange);
 
     // consistency: old > new is InvalidSizes at decode (as Scala); the empty-tree rules; a wrong-size head is false
     let c = value(&t.consistency[3]);
@@ -239,7 +240,10 @@ fn tampered_and_malformed_proofs() {
             *x = Value::int(8);
         }
     }
-    assert_eq!(ConsistencyProof::<H>::from_value(&Value::map(cm).unwrap()).unwrap_err().kind(), "InvalidSizes");
+    assert_eq!(
+        ConsistencyProof::<H>::from_value(&Value::map(cm).unwrap()).unwrap_err().kind(),
+        MerkleErrorKind::InvalidSizes
+    );
     let zero = ConsistencyProof::<H>::new(0, 7, vec![]).unwrap();
     assert!(verify_consistency(&tagged, &tagged.empty_hash(), &root, &zero).unwrap());
     assert!(!verify_consistency(&tagged, &root, &root, &zero).unwrap());
@@ -257,11 +261,11 @@ fn heads_decode_from_values() {
     let head = TreeHead::<H>::from_value(&ok).unwrap();
     assert_eq!((head.root.as_bytes(), head.size), (root.as_slice(), 5));
     let negative = Value::map([("root".into(), Value::bytes(root.clone())), ("size".into(), Value::int(-1))]).unwrap();
-    assert_eq!(TreeHead::<H>::from_value(&negative).unwrap_err().kind(), "Encoding");
+    assert_eq!(TreeHead::<H>::from_value(&negative).unwrap_err().kind(), MerkleErrorKind::Encoding);
     let extra =
         Value::map([("root".into(), Value::bytes(root)), ("size".into(), Value::int(1)), ("x".into(), Value::int(1))])
             .unwrap();
-    assert_eq!(TreeHead::<H>::from_value(&extra).unwrap_err().kind(), "Encoding");
+    assert_eq!(TreeHead::<H>::from_value(&extra).unwrap_err().kind(), MerkleErrorKind::Encoding);
 }
 
 /// Every `malformed` row: the decoder refuses it with the kind the vectors record.
@@ -275,13 +279,9 @@ fn malformed_vectors() {
             MerkleProofKind::Inclusion => InclusionProof::<H>::from_value(&proof).map(|_| ()),
             MerkleProofKind::Consistency => ConsistencyProof::<H>::from_value(&proof).map(|_| ()),
         }
-        .map_or_else(|e| e.kind(), |()| "accepted");
-        let expected = match c.error {
-            MerkleDecodeError::IndexOutOfRange => "IndexOutOfRange",
-            MerkleDecodeError::InvalidSizes => "InvalidSizes",
-            MerkleDecodeError::Encoding => "Encoding",
-        };
-        assert_eq!(kind, expected, "{}", c.name);
+        .err()
+        .map(|e| e.kind());
+        assert_eq!(kind, Some(c.error), "{}", c.name);
     }
 }
 
@@ -293,10 +293,16 @@ fn merkle_verify_checks_the_head_before_the_claim() {
     let small = Value::int(1);
     let heavy = (0..30).fold(Value::Null, |v, _| Value::array(vec![v.clone(), v]).unwrap());
     for leaf in [&small, &heavy] {
-        assert_eq!(merkle::merkle_verify(&tagged, &head, leaf, &Value::Null).map_err(|e| e.kind()), Err("Encoding"));
+        assert_eq!(
+            merkle::merkle_verify(&tagged, &head, leaf, &Value::Null).map_err(|e| e.kind()),
+            Err(MerkleErrorKind::Encoding)
+        );
     }
     let ok_head = TreeHead::<H> { root: tagged.empty_hash(), size: 0 };
-    assert_eq!(merkle::merkle_verify(&tagged, &ok_head, &heavy, &Value::Null).map_err(|e| e.kind()), Err("TooLarge"));
+    assert_eq!(
+        merkle::merkle_verify(&tagged, &ok_head, &heavy, &Value::Null).map_err(|e| e.kind()),
+        Err(MerkleErrorKind::TooLarge)
+    );
 }
 
 /// The constructors take the schema's `tree-index` range (sizes up to 2^63 - 1), as Scala's `Long` and TypeScript's
@@ -307,12 +313,12 @@ fn constructors_refuse_sizes_past_2_63_minus_1() {
     let inclusion = |index, size| InclusionProof::<H>::new(index, size, Vec::new()).map_err(|e| e.kind());
     let consistency = |old, new| ConsistencyProof::<H>::new(old, new, Vec::new()).map_err(|e| e.kind());
     assert!(inclusion(max - 1, max).is_ok());
-    assert_eq!(inclusion(max, 1 << 63).err(), Some("IndexOutOfRange"));
-    assert_eq!(inclusion(0, u64::MAX).err(), Some("IndexOutOfRange"));
+    assert_eq!(inclusion(max, 1 << 63).err(), Some(MerkleErrorKind::IndexOutOfRange));
+    assert_eq!(inclusion(0, u64::MAX).err(), Some(MerkleErrorKind::IndexOutOfRange));
     assert!(consistency(max, max).is_ok());
     assert!(consistency(0, max).is_ok());
-    assert_eq!(consistency(0, 1 << 63).err(), Some("InvalidSizes"));
-    assert_eq!(consistency(1 << 63, u64::MAX).err(), Some("InvalidSizes"));
+    assert_eq!(consistency(0, 1 << 63).err(), Some(MerkleErrorKind::InvalidSizes));
+    assert_eq!(consistency(1 << 63, u64::MAX).err(), Some(MerkleErrorKind::InvalidSizes));
     // every proof a constructor accepts encodes
     assert!(InclusionProof::<H>::new(max - 1, max, Vec::new()).unwrap().to_value().is_ok());
     assert!(ConsistencyProof::<H>::new(max, max, Vec::new()).unwrap().to_value().is_ok());

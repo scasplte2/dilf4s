@@ -198,6 +198,17 @@ object SchemaFeaturesSuite extends FunSuite {
       .and(expect(refused(nested + "r = { \"e\": inner }\n"), "a family in a wire type"))
   }
 
+  test("Rust lifts a family into the one kind that is only that family; never two kinds' family, or an optional one") {
+    val out = gen(nested)
+    val twice = gen(
+      "inner-kind = \"X\" / \"Y\"\ninner = { \"kind\": \"X\" // \"kind\": \"Y\" }\n" +
+      "outer-kind = \"P\" / \"Q\"\nouter = { \"kind\": \"P\", \"a\": inner // \"kind\": \"Q\", \"b\": inner }\n"
+    )
+    has(out, _.rust, "impl From<Inner> for Outer {\n    fn from(cause: Inner) -> Self {\n        Self::P { cause }\n    }\n}")
+      .and(expect(out.exists(_.rust.split("impl From<").length == 2), "one conversion: Q's inner is optional"))
+      .and(expect(twice.exists(o => !o.rust.contains("impl From<")), "two kinds wrap inner: no conversion picks one"))
+  }
+
   test("an error family has exactly one \"kind\", a literal") {
     expect(refused("e-kind = \"A\" / \"B\"\ne = { \"kind\": text // \"kind\": \"B\" }\n"), "a kind that is not a literal")
       .and(expect(refused("e-kind = \"A\" / \"B\"\ne = { \"kind\": \"A\", ? \"kind\": text // \"kind\": \"B\" }\n"), "a second kind"))

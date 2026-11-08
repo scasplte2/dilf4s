@@ -8,7 +8,6 @@
 //! **Public data only**: the arithmetic is variable time.
 
 use ark_ff::{AdditiveGroup, BigInt, BigInteger, Field, PrimeField};
-use core::fmt;
 
 pub mod merkle;
 
@@ -23,30 +22,9 @@ pub const MAX_INPUTS: usize = dilf4s_core::generated::limits::as_usize::POSEIDON
 /// Full rounds.
 pub const FULL_ROUNDS: usize = 8;
 
-/// Why hashing or a field element failed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PoseidonError {
-    /// Not 1 to 4 inputs.
-    InputCount {
-        /// The inputs given.
-        count: usize,
-        /// The most allowed.
-        max: usize,
-    },
-    /// A value outside `[0, r)`: malformed, never reduced.
-    NonCanonical,
-}
-
-impl fmt::Display for PoseidonError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InputCount { count, max } => write!(f, "{count} inputs, expected 1 to {max}"),
-            Self::NonCanonical => f.write_str("not a canonical field element"),
-        }
-    }
-}
-
-impl core::error::Error for PoseidonError {}
+/// Why hashing or a field element failed: generated from `shared/schemas/proofs-errors.cddl`, with the reference's and
+/// the TypeScript SDK's kinds and fields.
+pub use dilf4s_core::generated::proofs_errors::{PoseidonError, PoseidonErrorKind};
 
 /// One width's optimised constants. `T` is the width, `RP` the partial rounds and `N = T - 1` the inputs (checked when
 /// the width is evaluated).
@@ -197,20 +175,34 @@ pub fn hash(inputs: &[Fr]) -> Result<Fr, PoseidonError> {
         [a, b] => Ok(hash2(a, b)),
         [a, b, c] => Ok(hash3(a, b, c)),
         [a, b, c, d] => Ok(hash4(a, b, c, d)),
-        _ => Err(PoseidonError::InputCount { count: inputs.len(), max: MAX_INPUTS }),
+        _ => Err(PoseidonError::InputCount { count: len64(inputs.len()), max: len64(MAX_INPUTS) }),
     }
 }
 
-/// A field element from 32 big-endian bytes, which must be below `r`.
+/// A count as an error holds it (`usize` is at most 64 bits on every supported target).
+fn len64(n: usize) -> u64 {
+    u64::try_from(n).unwrap_or(u64::MAX)
+}
+
+/// The bit length of the unsigned big-endian integer `bytes` encode: what a refusal names, never the value's digits.
+fn be_bits(bytes: &[u8]) -> u64 {
+    bytes.iter().position(|b| *b != 0).and_then(|i| bytes.get(i).map(|b| (i, *b))).map_or(0, |(i, b)| {
+        let rest = len64(bytes.len().saturating_sub(i).saturating_sub(1));
+        rest.saturating_mul(8).saturating_add(u64::from(8u32.saturating_sub(b.leading_zeros())))
+    })
+}
+
+/// A field element from 32 big-endian bytes, which must be below `r`; a refusal names the integer's bit length.
 pub fn fr_from_be_bytes(bytes: &[u8]) -> Result<Fr, PoseidonError> {
-    let array: &[u8; 32] = bytes.try_into().map_err(|_| PoseidonError::NonCanonical)?;
+    let refused = || PoseidonError::NonCanonical { bits: be_bits(bytes) };
+    let array: &[u8; 32] = bytes.try_into().map_err(|_| refused())?;
     let mut limbs = [0u64; 4];
     for (limb, chunk) in limbs.iter_mut().zip(array.rchunks_exact(8)) {
         let mut word = [0u8; 8];
         word.copy_from_slice(chunk);
         *limb = u64::from_be_bytes(word);
     }
-    Fr::from_bigint(BigInt::new(limbs)).ok_or(PoseidonError::NonCanonical)
+    Fr::from_bigint(BigInt::new(limbs)).ok_or_else(refused)
 }
 
 /// A field element's 32 big-endian bytes.
@@ -227,11 +219,11 @@ pub fn fr_to_be_bytes(x: Fr) -> [u8; 32] {
 /// A negative or wider integer is refused before it is converted.
 pub fn fr_from_int(n: &num_bigint::BigInt) -> Result<Fr, PoseidonError> {
     if n.sign() == num_bigint::Sign::Minus || n.bits() > 256 {
-        return Err(PoseidonError::NonCanonical);
+        return Err(PoseidonError::NonCanonical { bits: n.bits() });
     }
     let (sign, magnitude) = n.to_bytes_be();
     if sign == num_bigint::Sign::Minus || magnitude.len() > 32 {
-        return Err(PoseidonError::NonCanonical);
+        return Err(PoseidonError::NonCanonical { bits: n.bits() });
     }
     let mut padded = [0u8; 32];
     for (o, b) in padded.iter_mut().rev().zip(magnitude.iter().rev()) {

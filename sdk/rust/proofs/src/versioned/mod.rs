@@ -2,7 +2,6 @@
 //! binds a head to one root, proof decoding and every check of §6, the chunked snapshot reader, and a replica that
 //! follows deltas (§7).
 
-use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -11,7 +10,7 @@ use dilf4s_core::hash::{Digest, Hasher};
 use dilf4s_core::value::Value;
 
 use crate::tag::hex;
-use crate::trie::{KeyMode, TrieError, TrieHashing, root_from_entries};
+use crate::trie::{KeyMode, TrieHashing, root_from_entries};
 
 mod keys;
 mod replica;
@@ -26,126 +25,18 @@ pub use snapshot::{Snapshot, SnapshotChunk, SnapshotReader};
 pub use verifier::VerifiedState;
 pub use wire::{At, Delta, VersionedTrieProof};
 
-/// Typed failures of a versioned trie, named as Scala's `VersionedTrieError`. Versions appear as their version keys.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum VersionedTrieError {
-    /// A state key or namespace that breaks the grammar.
-    Key(StateKeyError),
-    /// A version the version key cannot encode, or bytes it cannot decode.
-    InvalidVersion {
-        /// Why.
-        reason: String,
-    },
-    /// A delta whose version is not above the replica's head.
-    VersionNotIncreasing {
-        /// The head's version key.
-        head: Vec<u8>,
-        /// The delta's version key.
-        next: Vec<u8>,
-    },
-    /// The version was never committed.
-    UnknownVersion {
-        /// Its version key.
-        version: Vec<u8>,
-    },
-    /// A recomputed root differs from the claimed or trusted one; `component` names which.
-    RootMismatch {
-        /// `root`, `state`, `history` or `parent`.
-        component: &'static str,
-        /// The trusted or claimed root, hex (or `none`).
-        expected: String,
-        /// The recomputed root, hex (or `none`).
-        computed: String,
-    },
-    /// A proof that does not reach the queried key, prefix, range or slot.
-    NotCovered {
-        /// What was queried.
-        what: String,
-    },
-    /// A proof, delta or snapshot whose shape or contents are inconsistent with what it claims.
-    Malformed {
-        /// Why.
-        reason: String,
-    },
-    /// A value or snapshot chunk over its limit, in canonical CBOR bytes. It carries the limit only: how far past it
-    /// the value goes is never measured (docs/specs/conformance.md).
-    TooLarge {
-        /// What (not normative).
-        what: String,
-        /// The limit: [`MAX_VALUE_BYTES`] or [`MAX_CHUNK_BYTES`].
-        limit: u64,
-    },
-    /// A value nested deeper than every wire format can carry.
-    TooDeep {
-        /// What (not normative).
-        what: String,
-        /// Its depth.
-        depth: usize,
-        /// The limit: [`MAX_VALUE_DEPTH`].
-        limit: usize,
-    },
-    /// A trie failure, including a trie root mismatch.
-    Trie(TrieError),
-}
+/// Typed failures of a versioned trie: generated from `shared/schemas/proofs-errors.cddl`, with the reference's and the
+/// TypeScript SDK's kinds and fields. Versions appear as their version keys' full lowercase hex ([`version_hex`]); a
+/// recomputed root's component is a [`VtRootComponent`]. `Empty`, `VersionConflict`, `CommitRewrite`, `NotRetained` and
+/// `Store` are the reference store's: this SDK has no store, so they never arise here.
+pub use dilf4s_core::generated::proofs_errors::{
+    VersionKeyHex, VersionedTrieError, VersionedTrieErrorKind, VtRootComponent,
+};
 
-impl VersionedTrieError {
-    /// The Scala case-class name of this kind.
-    pub const fn kind(&self) -> &'static str {
-        match self {
-            Self::Key(_) => "Key",
-            Self::InvalidVersion { .. } => "InvalidVersion",
-            Self::VersionNotIncreasing { .. } => "VersionNotIncreasing",
-            Self::UnknownVersion { .. } => "UnknownVersion",
-            Self::RootMismatch { .. } => "RootMismatch",
-            Self::NotCovered { .. } => "NotCovered",
-            Self::Malformed { .. } => "Malformed",
-            Self::TooLarge { .. } => "TooLarge",
-            Self::TooDeep { .. } => "TooDeep",
-            Self::Trie(_) => "Trie",
-        }
-    }
-}
-
-impl fmt::Display for VersionedTrieError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Key(e) => write!(f, "{e}"),
-            Self::InvalidVersion { reason } => write!(f, "invalid version: {reason}"),
-            Self::VersionNotIncreasing { head, next } => {
-                write!(
-                    f,
-                    "version {} is not above the head {}",
-                    dilf4s_core::hex::encode(next),
-                    dilf4s_core::hex::encode(head)
-                )
-            }
-            Self::UnknownVersion { version } => {
-                write!(f, "version {} was never committed", dilf4s_core::hex::encode(version))
-            }
-            Self::RootMismatch { component, expected, computed } => {
-                write!(f, "{component} root mismatch: expected {expected}, computed {computed}")
-            }
-            Self::NotCovered { what } => write!(f, "the proof does not cover {what}"),
-            Self::Malformed { reason } => write!(f, "malformed: {reason}"),
-            Self::TooLarge { what, limit } => write!(f, "{what} is over {limit} bytes"),
-            Self::TooDeep { what, depth, limit } => write!(f, "{what} is {depth} levels deep, over {limit}"),
-            Self::Trie(e) => write!(f, "{e}"),
-        }
-    }
-}
-
-impl core::error::Error for VersionedTrieError {}
-
-impl From<TrieError> for VersionedTrieError {
-    fn from(e: TrieError) -> Self {
-        Self::Trie(e)
-    }
-}
-
-impl From<StateKeyError> for VersionedTrieError {
-    fn from(e: StateKeyError) -> Self {
-        Self::Key(e)
-    }
+/// A version key as a refusal names it: its full lowercase hex, never truncated. Every key reaching a refusal has been
+/// checked at its version key's width (at most [`crate::trie::MAX_FIXED_BYTES`]), so it is at most twice that long.
+pub fn version_hex(key: &[u8]) -> VersionKeyHex {
+    dilf4s_core::hex::encode(key)
 }
 
 pub(crate) fn malformed(reason: impl fmt::Display) -> VersionedTrieError {
@@ -153,7 +44,7 @@ pub(crate) fn malformed(reason: impl fmt::Display) -> VersionedTrieError {
 }
 
 pub(crate) fn mismatch<H: Hasher>(
-    component: &'static str,
+    component: VtRootComponent,
     expected: &Digest<H>,
     computed: &Digest<H>,
 ) -> VersionedTrieError {
@@ -226,7 +117,11 @@ impl<V: fmt::Debug, H: Hasher> fmt::Debug for Head<V, H> {
 pub fn check_value(key: &StateKey, value: &Value) -> Result<(), VersionedTrieError> {
     let what = || alloc::format!("the value of {}", key.preview().short());
     if value.depth() > MAX_VALUE_DEPTH {
-        return Err(VersionedTrieError::TooDeep { what: what(), depth: value.depth(), limit: MAX_VALUE_DEPTH });
+        return Err(VersionedTrieError::TooDeep {
+            what: what(),
+            depth: u64::try_from(value.depth()).unwrap_or(u64::MAX),
+            limit: dilf4s_core::generated::limits::VERSIONED_MAX_VALUE_DEPTH,
+        });
     }
     let max = usize::try_from(MAX_VALUE_BYTES).unwrap_or(usize::MAX);
     cbor::encoded_len_within(value, max)
@@ -294,9 +189,18 @@ impl<K: VersionKey, H: Hasher> VersionedTrie<K, H> {
         self.history
     }
 
-    /// `vkey(v)`.
+    /// `vkey(v)`, checked: the version key's bytes, refused as `InvalidVersion` unless they are exactly its width (which
+    /// [`VersionedTrie::new`] bounds by [`crate::trie::MAX_FIXED_BYTES`]). Every path of this module encodes through it, so
+    /// a caller's own version key never lengthens the key a refusal names ([`version_hex`]).
     pub fn vkey(&self, version: &K::Version) -> Result<Vec<u8>, VersionedTrieError> {
-        self.key.encode(version)
+        let k = self.key.encode(version)?;
+        if k.len() == usize::from(self.key.width()) {
+            Ok(k)
+        } else {
+            Err(VersionedTrieError::InvalidVersion {
+                reason: alloc::format!("a version key is {} bytes, got {}", self.key.width(), k.len()),
+            })
+        }
     }
 
     /// The hash a trie commits for a value: `valueHash(commit(v))`.

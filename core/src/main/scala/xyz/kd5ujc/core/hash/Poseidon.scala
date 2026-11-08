@@ -4,15 +4,12 @@ import cats.{Eq, Show}
 
 import scala.annotation.tailrec
 
-sealed trait PoseidonError extends Product with Serializable
-
-object PoseidonError {
-  final case class InputCount(count: Int, max: Int) extends PoseidonError
-  // a caller's value can be any size: it is held and shown by its bit length, never its digits (conformance.md §8)
-  final case class NonCanonical(bits: Int) extends PoseidonError {
-    override def toString: String = s"NonCanonical(a $bits-bit value)"
-  }
-}
+/**
+ * Why Poseidon hashing or a field element was refused: generated from `shared/schemas/proofs-errors.cddl`, with the
+ * Rust and TypeScript SDKs' kinds and fields. A caller's value can be any size: it is held by its bit length, never
+ * its digits (docs/specs/conformance.md §8).
+ */
+export xyz.kd5ujc.models.proofs_errors.{PoseidonError, PoseidonErrorKind}
 
 /**
  * An element of the BN254 scalar field, `0 <= value < r`, valid by construction: values enter only through

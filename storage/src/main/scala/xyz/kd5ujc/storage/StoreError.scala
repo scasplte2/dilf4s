@@ -4,35 +4,14 @@ import xyz.kd5ujc.core.canonical.Preview
 
 import scodec.bits.ByteVector
 
-/** Typed storage failures, raised through `cats.mtl.Raise[F, StoreError]`. */
-sealed trait StoreError extends Product with Serializable
+/**
+ * Typed storage failures, raised through `cats.mtl.Raise[F, StoreError]`: generated from
+ * `shared/schemas/store-errors.cddl`, so a versioned trie's `Store` kind holds the same type in every SDK.
+ */
+export xyz.kd5ujc.models.store_errors.{StoreError, StoreErrorKind}
 
-object StoreError {
-
-  /** A key or value failed to encode or decode. */
-  final case class Codec(context: String, reason: String) extends StoreError
-
-  /**
-   * No value at a key: the key's length in bytes, and the hex of at most its first 16 bytes as a preview, so a
-   * caller's key of any length is never hex-encoded or kept whole (docs/specs/conformance.md §8).
-   */
-  final case class NotFound(keyBytes: Long, prefix: Preview) extends StoreError
-
-  object NotFound {
-    def of(key: ByteVector): NotFound = NotFound(key.size, Preview.of(key.take(16).toHex))
-  }
-
-  /** Optimistic concurrency: the caller committed against a version that is no longer the latest. */
-  final case class VersionConflict(expected: Long, actual: Long) extends StoreError
-
-  final case class UnknownVersion(requested: Long, latest: Long) extends StoreError
-
-  /** The requested version is older than the pruning floor, so its history is gone. */
-  final case class Pruned(requested: Long, floor: Long) extends StoreError
-
-  /** The backend reported a failure (I/O, corruption, lock contention). */
-  final case class Backend(operation: String, reason: String) extends StoreError
-
-  /** Stored bytes violate the layout this library wrote. */
-  final case class Corrupt(reason: String) extends StoreError
-}
+/**
+ * No value at `key`: the key's length in bytes, and the hex of at most its first 16 bytes as a preview, so a caller's
+ * key of any length is never hex-encoded or kept whole (docs/specs/conformance.md §8).
+ */
+def notFound(key: ByteVector): StoreError = StoreError.NotFound(key.size, Preview.of(key.take(16).toHex))

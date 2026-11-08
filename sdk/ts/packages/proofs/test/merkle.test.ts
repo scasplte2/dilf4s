@@ -96,10 +96,12 @@ describe("bounded Merkle refusals", () => {
     expect(expectErr(merkle.ConsistencyProof.of(0n, 1n << 63n, []), "past the range").kind).toBe("InvalidSizes");
   });
 
-  it("an error cannot be built with an unbounded integer", () => {
-    // @ts-expect-error an index is an Int64, which only the module's saturating factory makes
-    const forged: merkle.MerkleError = { kind: "IndexOutOfRange", index: 1n << 100_000n, size: 0n };
-    expect(forged.kind).toBe("IndexOutOfRange");
+  it("a refusal holds a caller's unbounded integer saturated at the signed 64-bit range, never whole", () => {
+    const max = (1n << 63n) - 1n;
+    const wide = expectErr(merkle.InclusionProof.of(1n << 100_000n, -(1n << 100_000n), []), "out of range");
+    expect(wide).toEqual({ kind: "IndexOutOfRange", index: max, size: -max - 1n });
+    const sizes = expectErr(merkle.ConsistencyProof.of(1n << 100_000n, 0n, []), "out of order");
+    expect(sizes).toEqual({ kind: "InvalidSizes", oldSize: max, newSize: 0n });
   });
 });
 

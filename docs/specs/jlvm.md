@@ -213,7 +213,8 @@ of the closed list in `jlvm.cddl` (below), or `var`. A `Crypto` error also carri
 refusal of the cryptographic family the operation called (`jlvm-crypto-cause`): a signature scheme's `CryptoError`
 (`Signing`), a `SigmaError`, a BN254 `ZkError`, a `Groth16Error`, a `VrfError`, or a `HashError` (a Merkle head's
 root of the wrong length). It has none for the operation's own checks of its arguments' shape (a width, a count, a
-head's fields) and for the proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
+head's fields) and for the proof structures' refusals (Merkle, trie, Poseidon), which are generated families
+(`proofs-errors.cddl`) but not yet a cause: carrying them would add a cause to `jlvm_v1.json`'s rows that have none.
 The cause is **normative**, by its family and that family's kind (the inner error's fields are informative): the
 vectors record it as `{family: kind}` (`{"sigma": "InvalidPoint"}`), present exactly when the error has one.
 

@@ -27,6 +27,7 @@ use common::load;
 use dilf4s_core::generated::poseidon_vectors::PoseidonVectors;
 use dilf4s_core::hash::{Digest, Hasher, Sha256};
 use dilf4s_core::value::Value;
+use dilf4s_proofs::poseidon::merkle::PoseidonMerkleErrorKind;
 use dilf4s_proofs::poseidon::merkle::{
     PoseidonMerkleProof, compute_root, verify_absence, verify_inclusion, zero_hashes,
 };
@@ -265,10 +266,11 @@ fn field_elements_are_canonical() {
         b[32 - rb.len()..].copy_from_slice(&rb);
         b
     };
-    assert_eq!(fr_from_be_bytes(&r_bytes).unwrap_err(), PoseidonError::NonCanonical);
-    assert_eq!(fr_from_be_bytes(&[0u8; 31]).unwrap_err(), PoseidonError::NonCanonical);
-    assert_eq!(fr_from_int(&BigInt::from(-1)).unwrap_err(), PoseidonError::NonCanonical);
-    assert_eq!(fr_from_int(&BigInt::from(r())).unwrap_err(), PoseidonError::NonCanonical);
+    assert_eq!(fr_from_be_bytes(&r_bytes).unwrap_err(), PoseidonError::NonCanonical { bits: 254 });
+    assert_eq!(fr_from_be_bytes(&[0u8; 31]).unwrap_err(), PoseidonError::NonCanonical { bits: 0 });
+    assert_eq!(fr_from_be_bytes(&[0x7f; 40]).unwrap_err(), PoseidonError::NonCanonical { bits: 319 });
+    assert_eq!(fr_from_int(&BigInt::from(-1)).unwrap_err(), PoseidonError::NonCanonical { bits: 1 });
+    assert_eq!(fr_from_int(&BigInt::from(r())).unwrap_err(), PoseidonError::NonCanonical { bits: 254 });
     let x = fr("123456789");
     assert_eq!(fr_from_be_bytes(&fr_to_be_bytes(x)).unwrap(), x);
 }
@@ -351,10 +353,16 @@ fn merkle_vectors() {
 #[test]
 fn malformed_merkle_proofs() {
     let s = fr("7");
-    assert_eq!(PoseidonMerkleProof::new(BigUint::from(4u32), vec![s, s]).unwrap_err().kind(), "Position");
+    assert_eq!(
+        PoseidonMerkleProof::new(BigUint::from(4u32), vec![s, s]).unwrap_err().kind(),
+        PoseidonMerkleErrorKind::Position
+    );
     assert!(PoseidonMerkleProof::new(BigUint::from(3u32), vec![s, s]).is_ok());
     assert!(PoseidonMerkleProof::new(BigUint::from(0u32), vec![]).is_ok());
-    assert_eq!(PoseidonMerkleProof::new(BigUint::from(1u32), vec![]).unwrap_err().kind(), "Position");
+    assert_eq!(
+        PoseidonMerkleProof::new(BigUint::from(1u32), vec![]).unwrap_err().kind(),
+        PoseidonMerkleErrorKind::Position
+    );
     let wire = |position: BigInt, siblings: Vec<BigInt>| {
         Value::map([
             ("position".into(), Value::integer(position).unwrap()),
@@ -367,22 +375,31 @@ fn malformed_merkle_proofs() {
     };
     assert_eq!(
         PoseidonMerkleProof::from_value(&wire(BigInt::from(2), vec![BigInt::from(1)])).unwrap_err().kind(),
-        "Position"
+        PoseidonMerkleErrorKind::Position
     );
-    assert_eq!(PoseidonMerkleProof::from_value(&wire(BigInt::from(-1), vec![])).unwrap_err().kind(), "Encoding");
+    assert_eq!(
+        PoseidonMerkleProof::from_value(&wire(BigInt::from(-1), vec![])).unwrap_err().kind(),
+        PoseidonMerkleErrorKind::Encoding
+    );
     assert_eq!(
         PoseidonMerkleProof::from_value(&wire(BigInt::from(0), vec![BigInt::from(r())])).unwrap_err().kind(),
-        "Encoding"
+        PoseidonMerkleErrorKind::Encoding
     );
-    assert_eq!(PoseidonMerkleProof::from_value(&Value::int(0)).unwrap_err().kind(), "Encoding");
+    assert_eq!(PoseidonMerkleProof::from_value(&Value::int(0)).unwrap_err().kind(), PoseidonMerkleErrorKind::Encoding);
     let deep = vec![BigInt::from(0); 257];
-    assert_eq!(PoseidonMerkleProof::from_value(&wire(BigInt::from(0), deep)).unwrap_err().kind(), "Encoding");
-    assert_eq!(PoseidonMerkleProof::new(BigUint::from(0u32), vec![s; 257]).unwrap_err().kind(), "Position");
+    assert_eq!(
+        PoseidonMerkleProof::from_value(&wire(BigInt::from(0), deep)).unwrap_err().kind(),
+        PoseidonMerkleErrorKind::Encoding
+    );
+    assert_eq!(
+        PoseidonMerkleProof::new(BigUint::from(0u32), vec![s; 257]).unwrap_err().kind(),
+        PoseidonMerkleErrorKind::Position
+    );
 }
 
 #[test]
 fn a_refused_position_is_shown_by_its_size_never_its_digits() {
     let e = PoseidonMerkleProof::new(BigUint::from(1u8) << 1_000_000u32, Vec::new()).unwrap_err();
-    assert_eq!(e.to_string(), "a position of 1000001 bits is out of range for depth 0");
+    assert_eq!(e.to_string(), "Position (positionBits: 1000001, depth: 0)");
     assert_eq!(format!("{e:?}"), "Position { position_bits: 1000001, depth: 0 }");
 }

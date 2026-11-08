@@ -28,6 +28,8 @@ object CanonicalEmitterSuite extends FunSuite {
         "codec-errors",
         "jlvm",
         "jlvm-errors",
+        "store-errors",
+        "proofs-errors",
         "limits"
       )
     val out = Main.generate(modules.toVector.map(m => m -> read(s"shared/schemas/$m.cddl")), "xyz.kd5ujc.models").map(_.toMap)

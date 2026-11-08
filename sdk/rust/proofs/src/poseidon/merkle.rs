@@ -3,7 +3,6 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::fmt;
 
 use ark_ff::AdditiveGroup;
 use dilf4s_core::codec::Model;
@@ -16,46 +15,10 @@ use super::{Fr, compress, fr_from_int, fr_to_int};
 /// The deepest tree.
 pub const MAX_DEPTH: usize = dilf4s_core::generated::limits::as_usize::POSEIDON_MAX_DEPTH;
 
-/// Why a Poseidon Merkle proof is malformed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PoseidonMerkleError {
-    /// A position outside `[0, 2^depth)`, or more than 256 siblings.
-    Position {
-        /// The position's bit length, never the position, whose size the caller chose: informative
-        /// (docs/specs/conformance.md section 8).
-        position_bits: u64,
-        /// The depth (the number of siblings, or the tree's depth): normative (docs/specs/conformance.md section 3).
-        depth: usize,
-    },
-    /// A proof that does not decode, or a sibling outside `[0, r)`.
-    Encoding {
-        /// Why.
-        reason: String,
-    },
-}
-
-impl fmt::Display for PoseidonMerkleError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Position { position_bits, depth } => {
-                write!(f, "a position of {position_bits} bits is out of range for depth {depth}")
-            }
-            Self::Encoding { reason } => write!(f, "encoding: {reason}"),
-        }
-    }
-}
-
-impl core::error::Error for PoseidonMerkleError {}
-
-impl PoseidonMerkleError {
-    /// The Scala case-class name of this kind.
-    pub const fn kind(&self) -> &'static str {
-        match self {
-            Self::Position { .. } => "Position",
-            Self::Encoding { .. } => "Encoding",
-        }
-    }
-}
+/// Why a Poseidon Merkle proof is malformed: generated from `shared/schemas/proofs-errors.cddl`, with the reference's
+/// and the TypeScript SDK's kinds and fields. `Depth` and `OccupiedPosition` are a tree's, which this SDK does not
+/// build.
+pub use dilf4s_core::generated::proofs_errors::{PoseidonMerkleError, PoseidonMerkleErrorKind};
 
 /// A path of siblings, root-first, with `position < 2^depth` and at most 256 siblings.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,7 +35,10 @@ impl PoseidonMerkleProof {
         if depth <= MAX_DEPTH && fits {
             Ok(Self { position, siblings })
         } else {
-            Err(PoseidonMerkleError::Position { position_bits: position.bits(), depth })
+            Err(PoseidonMerkleError::Position {
+                position_bits: position.bits(),
+                depth: u64::try_from(depth).unwrap_or(u64::MAX),
+            })
         }
     }
 

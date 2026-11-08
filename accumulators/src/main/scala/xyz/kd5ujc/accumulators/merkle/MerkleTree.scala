@@ -49,18 +49,11 @@ object MerkleHashing {
   }
 }
 
-sealed trait MerkleError extends Product with Serializable
-
-object MerkleError {
-  final case class IndexOutOfRange(index: Long, size: Long) extends MerkleError
-  final case class InvalidSizes(oldSize: Long, newSize: Long) extends MerkleError
-  final case class InvalidProof(reason: String) extends MerkleError
-  final case class RootMismatch(expected: String, computed: String) extends MerkleError
-  final case class Encoding(reason: String) extends MerkleError
-
-  /** A claimed leaf heavier than `limit` (`ProofInput.MaxProofWeight`), refused before it is hashed. */
-  final case class TooLarge(limit: Long) extends MerkleError
-}
+/**
+ * Why a Merkle proof failed: generated from `shared/schemas/proofs-errors.cddl`, with the Rust and TypeScript SDKs'
+ * kinds and fields. A claimed leaf heavier than `ProofInput.MaxProofWeight` is `TooLarge`, refused before it is hashed.
+ */
+export xyz.kd5ujc.models.proofs_errors.{MerkleError, MerkleErrorKind}
 
 /** An audit path for leaf `index` of a tree of `size` leaves; `0 <= index < size` by construction. */
 final case class InclusionProof[H] private[merkle] (index: Long, size: Long, path: Vector[Digest[H]])

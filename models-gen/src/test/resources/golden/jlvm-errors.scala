@@ -161,7 +161,7 @@ object JlvmError {
    *
    * @param op Where it arose (normative).
    * @param message What was wrong.
-   * @param cause The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and kind); absent for the operation's own checks of its arguments' shape (a width, a count, a head's fields) and for proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
+   * @param cause The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and kind); absent for the operation's own checks of its arguments' shape (a width, a count, a head's fields) and for the proof structures' refusals (Merkle, trie, Poseidon: proofs-errors.cddl), which are not yet a cause.
    */
   final case class Crypto(op: JlvmSite, message: String, cause: Option[JlvmCryptoCause]) extends JlvmError {
     def kind: JlvmErrorKind = "Crypto"

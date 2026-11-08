@@ -220,7 +220,7 @@ object ReplicaSuite extends SimpleIOSuite with Checkers {
         val lagging = follow(empty, early).map(_.last)
         val reseeded = Replica.fromSnapshot(heads.last, snap)
         expect
-          .same(Left(VersionedTrieError.NotRetained(vk(3L))), evicted)
+          .same(Left(VersionedTrieError.NotRetained(versionHex(vk(3L)))), evicted)
           .and(expect(lagging.isRight, "the replica followed up to version 2"))
           .and(expect.same(Right(head), reseeded.flatMap(Replica.applyDelta(_, resumed)).map(_.head)))
     }
@@ -240,6 +240,6 @@ object ReplicaSuite extends SimpleIOSuite with Checkers {
           .compile
           .drain
       } yield ()
-    }.map(r => expect.same(Left(VersionedTrieError.VersionConflict(Some(vk(1L)), Some(vk(2L)))), r))
+    }.map(r => expect.same(Left(VersionedTrieError.VersionConflict(Some(versionHex(vk(1L))), Some(versionHex(vk(2L))))), r))
   }
 }

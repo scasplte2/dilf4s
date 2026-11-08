@@ -115,8 +115,8 @@ final case class SnapshotReader[V, H] private (
       case (_, SnapshotChunk.History(vs)) =>
         for {
           _    <- sized(vs.size, "history")
-          keys <- vs.traverse { case (u, _) => V.encode(u) }
-          hk   <- V.encode(trusted.version)
+          keys <- vs.traverse { case (u, _) => V.keyOf(u) }
+          hk   <- V.keyOf(trusted.version)
           _    <- increasing(lastVersion, keys, "version")
           // the head version may only come last, and with the head's state root
           _ <- keys.zip(vs).traverse_ {

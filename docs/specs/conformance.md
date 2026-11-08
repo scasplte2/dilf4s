@@ -12,7 +12,8 @@ a refusal is compared across implementations, and how much work may come before 
 
 - Every refusal has a **kind**: the name of its case in the reference's error type (`VersionedTrieError.TooLarge` is
   `TooLarge`). A refusal that wraps another names both, outer first: `Trie.Encoding` is a versioned-trie refusal
-  carrying a trie `Encoding`.
+  carrying a trie `Encoding`. A vector records the inner one as the outer one's `cause`, by its family and kind
+  (`{"versionedTrie": "Trie", "cause": {"trie": "Encoding"}}`), never as text.
 - Implementations must use the same kinds. A language may spell them its own way (Rust enum variants, TS `kind`
   strings), but each must map one-to-one onto the reference's names.
 - A spec that defines a refusal names its kind. A malformed input is a refusal; a well-formed input that proves
@@ -36,7 +37,9 @@ them. Every other field is informative. The normative fields are:
 | any byte budget | `TooLarge` | `limit`: the limit that was passed: a spec constant, or the caller's own limit as the implementation applies it (a limit past an implementation ceiling is that ceiling) |
 | versioned trie | `TooLarge` | `limit`: `MaxValueBytes` (2^20) or `MaxChunkBytes` (2^22) in bytes, or `MaxProofWeight` (2^24) in weight, for a delta or proof the store would produce (§5) |
 | versioned trie | `TooDeep` | `depth` (the value's depth) and `limit`: `MaxValueDepth` (253) |
-| versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` |
+| versioned trie | `RootMismatch` | `component`: `root`, `state`, `history` or `parent` (a closed choice, `vt-root-component`) |
+| versioned trie | `VersionNotIncreasing` | `head` and `next`: the head's and the refused version's keys, each its full lowercase hex (`version-key-hex`, `versioned-trie.md` §2) |
+| versioned trie | `UnknownVersion` | `version`: the version's key, its full lowercase hex |
 | Merkle tree, trie | `TooLarge` | `limit`: `MaxProofWeight` (2^24), for claims (§5) or a trie proof a producer would emit |
 | Poseidon tree | `Position` | `depth`: the number of siblings (or the tree's depth); the position, held as its bit length (§8), is informative |
 | canonical value | `RationalTooWide` | `limit`: `MaxRationalBits` (33219), for a rational part wider than it, from any producer (`canonical-encoding.md` §1); the part's width is not reported |
@@ -71,7 +74,7 @@ A refusal costs no more than the spec says, whatever the input:
     refuses: the content hash (`TaggedHash.value`, `content`, and `valueWithin` for a caller's own limit) and the
     commitment a Merkle leaf or trie value hashes (`ValueCommitment.source`) refuse past it as `TooLarge` with the
     ceiling as its limit, checked before the hash absorbs a byte (from the weight when it is over, else measured).
-    Each of its own callers passes the refusal on in its family's kind (a store's `Codec`; a trie's, a Merkle tree's or
+    Each of its own callers passes the refusal on in its family's kind (a store's `Encoding`; a trie's, a Merkle tree's or
     a versioned trie's `TooLarge`; the JLVM's `Limit`, or `Crypto` for a claim), never with a throw. The TypeScript SDK
     encodes, commits and content-hashes within the same ceiling (`cbor.MAX_ENCODED_BYTES`), and a limit it is given
     past the ceiling is the ceiling. The Rust SDK holds and hashes an encoding of any length: it has no ceiling, so a
@@ -153,8 +156,8 @@ one pass in reading order, the first fault met is the refusal, a container that 
 at its head or bracket (an empty one too), and the one deferred check is a JSON member name's unpaired surrogate, at
 its object's close. A state key is refused in the order `versioned-trie.md` §2 gives. `canonical_encoding_v1.json` and
 `versioned_trie_v1.json` pin each kind and each pair of faults an order could otherwise answer differently. A nested
-refusal in `refusals_v1.json` (`Key.SegmentTooLong`, `Trie.Encoding`) records both kinds; its inner kind's normative
-fields are pinned by that family's own rows.
+refusal in `refusals_v1.json` (`Key.SegmentTooLong`, `Trie.Encoding`) records both kinds, the inner one as its
+`cause`; its inner kind's normative fields are pinned by that family's own rows.
 
 What a verifier refuses, no producer emits. A trie proof heavier than `MaxProofWeight` is `TooLarge` where it would be
 emitted: `Trie.prove` and `TrieProofs.encode` in Scala, `TrieProof::to_value` in Rust and `TrieProof.encode` in
@@ -167,7 +170,7 @@ refusal kind a spec defines must have a row. The gated families, and where their
 
 | Family | Error type | Rows |
 |---|---|---|
-| Merkle tree, trie, Poseidon tree, versioned trie | `MerkleError`, `TrieError`, `PoseidonMerkleError`, `VersionedTrieError` | `refusals_v1.json`; the `malformed` sections of `merkle_v1.json` and `trie_v1.json`; the `outcome` of `versioned_trie_v1.json`'s `versionKeys` (`InvalidVersion`, encoding the version and decoding the key alike) |
+| Merkle tree, trie, Poseidon tree, versioned trie | `MerkleError`, `TrieError`, `PoseidonMerkleError`, `VersionedTrieError` (`proofs-errors.cddl`) | `refusals_v1.json`; the `malformed` sections of `merkle_v1.json` and `trie_v1.json`; the `outcome` of `versioned_trie_v1.json`'s `versionKeys` (`InvalidVersion`, encoding the version and decoding the key alike) and its `versionErrors` (`VersionNotIncreasing` and `UnknownVersion`, with their keys' hex) |
 | signatures and their keys | `CryptoError` | `signing_v1.json`: `keyDecoding` (the kind of each key decoding) and `verification` (the part refused, `verifyingKey` or `signature`, and its kind) |
 | key derivation | `KeyError`, `PathRefusal` | `signing_v1.json`: `keyRefusals` (BIP-39 entropy and phrases, word lists, SLIP-10, BIP32 and public derivation) and `paths` (`InvalidPath`, by refusal) |
 | VRF | `VrfError` | `vrf_v1.json`: `rejections` (verification) and `keyDecoding` (signing keys) |
@@ -175,7 +178,7 @@ refusal kind a spec defines must have a row. The gated families, and where their
 | sigma | `SigmaError` | `sigma_refusals_v1.json`: `cases`, and the reference's outcome on every case of `sigma_v1.json` and `sigma_dilf4s_v1.json` (whose own verdicts are Ergo's) |
 | zk | `ZkError`, `Groth16Error` | `zk_v1.json` |
 | canonical codecs | `CanonicalError` | `canonical_encoding_v1.json`: `json`, `renderRejections` and `cborRejections` (each kind with its normative `limit`), and `limits` (the byte budgets of encoding and rendering: `TooLarge` with its `limit`, or the kind JSON refuses first); `TypeMismatch`, a typed encoder's refusal, by the `schema` outcome of `versioned_trie_v1.json`'s `stateKeys` |
-| state keys | `StateKeyError` | `versioned_trie_v1.json`: `stateKeys`, `stateKeyBytes` and `namespaces` (each kind with its normative `segment`); `refusals_v1.json`'s `Key.` kinds |
+| state keys | `StateKeyError` | `versioned_trie_v1.json`: `stateKeys`, `stateKeyBytes` and `namespaces` (each kind with its normative `segment`); the `cause` of `refusals_v1.json`'s `Key` rows |
 | JLVM | `JlvmError` and its `Site` (`jlvm-errors.cddl`) | `jlvm_v1.json`: each failing case's `outcome` (`error`, and `op` where the kind has one) |
 | hashing | `HashError` | `canonical_encoding_v1.json`: `domainTags`, `algorithms` (names), `digestHex` (digest lengths and hex, `InvalidHex` with its normative `offset`) and `expansions` (`expand_message_xmd`, `InvalidExpansion` with its normative `refusal`) |
 
@@ -192,8 +195,9 @@ Each kind of these families has a row, except the kinds below, which no input re
 **The gate, in every language.** The reference's `RefusalCoverageSuite` (the verifier families) and
 `CryptoRefusalCoverageSuite` (the others) list each error type's cases through the compiler (`Mirror.SumOf`; the path
 refusals, a choice of texts, through their generated `values`) and fail if a kind has neither a row nor an entry here.
-The crypto families' error types are generated in every language (below), so the SDK's kinds are the schema's: the
-Rust tests check that every kind of the generated kind enum (`ALL`) has a row, but the exempt ones, which have none;
+Every family of these tables is generated in every language (below), so the SDK's kinds are the schema's, and
+`RefusalCoverageSuite` checks each verifier family's generated `values` are its cases, reads the rows through their
+generated models and checks every row of `refusals_v1.json` is of its check's family. The Rust tests check that every kind of the generated kind enum (`ALL`) has a row, but the exempt ones, which have none;
 the TypeScript tests list each error's kinds in a `Record` keyed by its `kind` union, so a kind added to the schema does
 not compile until it is listed, and check its row. The SP1 guest harness runs every verification call of these files in
 the guest and checks each refusal by its exact kind: signatures, VRF verification, KES verification and parameters,
@@ -285,6 +289,31 @@ through their generated models; the Rust (`core/tests/conformance.rs`) and TypeS
 tests check each row's kind and `limit`, and that every kind has a row. `state-key-error-kind` lists every kind of
 `StateKeyError`: the reference's `RefusalCoverageSuite` gates it with the verifier families, and the Rust
 (`proofs/tests/versioned.rs`) and TypeScript (`proofs/test/versioned.test.ts`) tests do the same with its `segment`.
+
+**The proof families.** `shared/schemas/proofs-errors.cddl` defines `merkle-error` (`MerkleError`), `trie-error`
+(`TrieError`), `versioned-trie-error` (`VersionedTrieError`), `poseidon-error` (`PoseidonError`) and
+`poseidon-merkle-error` (`PoseidonMerkleError`) as `crypto-errors.cddl` defines the crypto families, so each is
+generated in every language with the same kinds and fields (Scala under `xyz.kd5ujc.accumulators.merkle`, `.trie`,
+`.versioned` and `.poseidon`, and `xyz.kd5ujc.core.hash` for `PoseidonError`; Rust `dilf4s_proofs::merkle`, `::trie`,
+`::versioned` and `::poseidon`; TypeScript the proofs package's `merkle`, `trie`, `versioned` and `poseidon`, all from
+`models.proofsErrors`). A versioned trie's `Key`, `Trie` and `Store` hold the state key's, the trie's and the store's
+refusal (`store-errors.cddl`'s `store-error`, the reference store's `StoreError`, which no SDK raises); Rust converts
+each into its kind with `From`. A versioned-trie refusal names a version by its key's full lowercase hex
+(`version-key-hex`, at most 2048 characters) and a recomputed root by a closed `component` (`vt-root-component`).
+Merkle indexes and sizes are `merkle-position` (`int`), so a caller's index is held exactly in every SDK. The kinds no
+SDK verifier reaches are the exemptions above; besides them, the Rust and TypeScript SDKs have no store or tree
+builder, so `Empty`, `VersionConflict`, `CommitRewrite`, `NotRetained`, `Store`, `MissingNode`, `InvalidNode` and
+`OccupiedPosition` never arise there (TypeScript's `zeroHashes` does raise `Depth`). The vector schemas name the
+generated kinds: `merkle_v1.json`'s and `trie_v1.json`'s `malformed` rows by `merkle-error-kind` and
+`trie-error-kind`, and `refusals_v1.json`'s outcomes by family: `{"versionedTrie": kind}`, `{"merkle": kind}`,
+`{"trie": kind}` or `{"poseidonMerkle": kind}`, with its normative fields and, for `Trie` and `Key`, the `cause`
+(`{"trie": kind}` or `{"stateKey": kind}`). The Rust (`proofs/tests/refusals.rs`) and TypeScript
+(`proofs/test/refusals.test.ts`) tests compare every case's outcome whole, and check every kind of each family (Rust
+`ALL`, TypeScript a `Record` keyed by the kind union) has a row exactly when it is not exempt, and every row is of its
+check's family. `versioned_trie_v1.json`'s `versionErrors` pin the keys `VersionNotIncreasing` and `UnknownVersion` name,
+at the default width (8), at 32 and at 1024 bytes; the reference's `VersionedTrieVectorsSuite`, Rust's
+`proofs/tests/versioned.rs` and TypeScript's `proofs/test/versioned.test.ts` run each case and compare the refusal and
+its keys, each `2w` hex characters.
 
 **The JLVM's gate.** `shared/schemas/jlvm-errors.cddl` defines `jlvm-error` (`JlvmError`, generated in every
 language; the TypeScript SDK, which has no evaluator, gets the type) and its `op`, `jlvm-site`: an operation of the
@@ -385,9 +414,10 @@ is a fresh copy, never a view of the caller's text (an engine may keep a slice's
 | JLVM `Malformed` | message | operation names, var paths and binding names, previewed |
 | JLVM warning `AmbiguousPath` | `path` | the path, previewed: long paths sharing a preview are one warning |
 | JLVM `Arithmetic` (`cat`, `join`) | message | a rational with no decimal form by its numerator and denominator bit lengths |
-| Poseidon `NonCanonical`, `Position`, `OccupiedPosition` | `bits`, `positionBits` (Rust: `position_bits`; its `NonCanonical` has no field) | the value's or position's bit length, never the number |
+| Poseidon `NonCanonical`, `Position`, `OccupiedPosition` | `bits`, `positionBits` (Rust: `position_bits`) | the value's or position's bit length, never the number |
 | versioned-trie messages (`NotCovered`, `TooLarge`, `TooDeep`, `Malformed`) | `what`, `reason` | a state key or namespace previewed, in its path-segment form |
-| Merkle `IndexOutOfRange`, `InvalidSizes` | `index`, `size`, `oldSize`, `newSize` | 64-bit, as the reference's `Long`: TypeScript saturates a wider caller value |
+| Merkle `IndexOutOfRange`, `InvalidSizes` | `index`, `size`, `oldSize`, `newSize` (`merkle-position`: Scala `BigInt`, Rust `i128`, TypeScript `bigint`) | within the signed 64-bit range, as the reference's `Long`: TypeScript saturates a wider caller value |
+| versioned trie `VersionNotIncreasing`, `UnknownVersion`, `CommitRewrite`, `NotRetained`, `VersionConflict` | `head`, `next`, `version`, `expected`, `actual` | a version key's full lowercase hex: at most 2048 characters, the width being the verifier's configuration (below) |
 | trie and versioned-trie `RootMismatch` | `expected` | the trusted root's hex at the digest's width; any other width by its length |
 | storage `NotFound` (Scala) | `keyBytes`, `prefix` | the key's length, and the hex of at most its first 16 bytes, previewed |
 | signing paths (`signing.md` §3) | message | a segment by its position and, past the digit bound, its length |
@@ -404,7 +434,10 @@ length reads the whole text. A state-key refusal names a segment by its position
 
 **Fixed-width keys.** Version keys and top-trie slots have the width the verifier trusts (at most 1024 bytes,
 `versioned-trie.md` §3), checked before they are read, so a message may name one in hex: its size is the verifier's
-configuration, not the caller's choice.
+configuration, not the caller's choice. A versioned-trie refusal naming a version holds its key's full lowercase hex
+(`version-key-hex`), never truncated and never the bytes: every SDK checks a key it encodes against the width (a
+version key of the caller's own included: Scala's `VersionKey.keyOf`, Rust's `VersionedTrie::vkey`, TypeScript's
+checked wrapper of a caller's key) before a refusal names it.
 
 **Exemptions.** Three things are outside the guarantee, each for a stated reason.
 

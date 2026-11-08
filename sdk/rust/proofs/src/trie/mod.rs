@@ -1,7 +1,6 @@
 //! The binary Patricia Merkle trie (docs/specs/trie.md): key modes, node hashing, proofs (partial tries) and their
 //! verification, a root builder, and the JLVM-shaped verifiers.
 
-use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -29,82 +28,11 @@ pub const BRANCH_TAG: &str = "dilf4s/trie/branch/v1";
 /// The empty-trie tag.
 pub const EMPTY_TAG: &str = "dilf4s/trie/empty/v1";
 
-/// Why a trie operation failed. `RootMismatch` is a well-formed proof of another trie; `NotCovered` a proof that does
-/// not reach the query; the rest are malformed input.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TrieError {
-    /// A key, or a key mode, invalid for the mode's limits.
-    InvalidKey {
-        /// Why.
-        reason: String,
-    },
-    /// A node that breaks the branch invariant.
-    InvalidNode {
-        /// Why.
-        reason: String,
-    },
-    /// A partial trie that breaks the mode's structural rules (docs/specs/trie.md §4 step 2).
-    InvalidProof {
-        /// Why.
-        reason: String,
-    },
-    /// The partial trie hashes to another root.
-    RootMismatch {
-        /// The trusted root, hex.
-        expected: String,
-        /// The recomputed root, hex.
-        computed: String,
-    },
-    /// A proof that reaches a stub where the query needs an answer: neither presence nor absence is established.
-    NotCovered {
-        /// What was queried.
-        what: String,
-    },
-    /// Records, segments, digests or arguments that do not decode.
-    Encoding {
-        /// Why.
-        reason: String,
-    },
-    /// Over [`crate::MAX_PROOF_WEIGHT`] in weight: claimed values a verifier would hash, or a proof a producer would
-    /// emit that every verifier refuses.
-    TooLarge {
-        /// The limit: [`crate::MAX_PROOF_WEIGHT`] (normative).
-        limit: u64,
-    },
-}
-
-impl TrieError {
-    /// The Scala case-class name of this kind.
-    pub const fn kind(&self) -> &'static str {
-        match self {
-            Self::InvalidKey { .. } => "InvalidKey",
-            Self::InvalidNode { .. } => "InvalidNode",
-            Self::InvalidProof { .. } => "InvalidProof",
-            Self::RootMismatch { .. } => "RootMismatch",
-            Self::NotCovered { .. } => "NotCovered",
-            Self::Encoding { .. } => "Encoding",
-            Self::TooLarge { .. } => "TooLarge",
-        }
-    }
-}
-
-impl fmt::Display for TrieError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidKey { reason } => write!(f, "invalid key: {reason}"),
-            Self::InvalidNode { reason } => write!(f, "invalid node: {reason}"),
-            Self::InvalidProof { reason } => write!(f, "invalid proof: {reason}"),
-            Self::RootMismatch { expected, computed } => {
-                write!(f, "root mismatch: expected {expected}, computed {computed}")
-            }
-            Self::NotCovered { what } => write!(f, "the proof does not cover {what}"),
-            Self::Encoding { reason } => write!(f, "encoding: {reason}"),
-            Self::TooLarge { limit } => write!(f, "over weight {limit}"),
-        }
-    }
-}
-
-impl core::error::Error for TrieError {}
+/// Why a trie operation failed: generated from `shared/schemas/proofs-errors.cddl`, with the reference's and the
+/// TypeScript SDK's kinds and fields. `RootMismatch` is a well-formed proof of another trie; `NotCovered` a proof that
+/// does not reach the query; `MissingNode` and `InvalidNode` are a store's (no SDK has one); the rest are malformed
+/// input.
+pub use dilf4s_core::generated::proofs_errors::{TrieError, TrieErrorKind};
 
 pub(crate) fn encoding(reason: impl fmt::Display) -> TrieError {
     TrieError::Encoding { reason: alloc::format!("{reason}") }

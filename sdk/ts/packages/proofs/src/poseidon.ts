@@ -17,7 +17,8 @@ import { FULL_ROUNDS, WIDTH2, WIDTH3, WIDTH4, WIDTH5, type PoseidonParams } from
 /** The BN254 scalar field modulus `r`. */
 export const FR_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
-export type PoseidonError = { readonly kind: "InputCount"; readonly count: number; readonly max: number } | { readonly kind: "NonCanonical"; readonly bits: number };
+/** Why hashing or a field element was refused: generated from `shared/schemas/proofs-errors.cddl`. */
+export type PoseidonError = models.proofsErrors.PoseidonError;
 
 const FR = mint();
 const MERKLE_PROOF = mint();
@@ -158,12 +159,12 @@ export function compress(left: Fr, right: Fr): Result<Fr, TypeMismatch> {
 
 // ------------------------------------------------------------------ the Merkle tree (section 4)
 
-export type PoseidonMerkleError =
-  /** `depth` (the number of siblings, or the tree's depth) is normative; the position echoes the caller's input. */
-  // a caller's position or value can be any size: it is held by its bit length, never itself (conformance.md section 8)
-  | { readonly kind: "Position"; readonly positionBits: number; readonly depth: number }
-  | { readonly kind: "Depth"; readonly depth: number }
-  | { readonly kind: "Encoding"; readonly reason: string };
+/**
+ * Why a Poseidon Merkle proof or tree was refused: generated from `shared/schemas/proofs-errors.cddl`. `Position`'s
+ * `depth` is normative; a caller's position can be any size, so it is held by its bit length, never itself
+ * (conformance.md section 8). `OccupiedPosition` is the reference tree's insertion refusal, which this SDK does not have.
+ */
+export type PoseidonMerkleError = models.proofsErrors.PoseidonMerkleError;
 
 export const MAX_DEPTH = models.limits.POSEIDON_MAX_DEPTH;
 

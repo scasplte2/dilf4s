@@ -283,7 +283,8 @@ impl TrieLookupResult {
 /// reader sees without the mode: the record shapes, segment lengths and padding, the branch invariant, the pre-order
 /// structure and trailing records. Verification refuses, as "InvalidProof", what the mode decides: where leaves and
 /// branch values may end, and the key-length bound. "root" is what the records hash to, so only those rules refuse an
-/// "InvalidProof" case; it is the empty root for the "Encoding" cases.
+/// "InvalidProof" case; it is the empty root for the "Encoding" cases. "error" is a kind of TrieError
+/// (proofs-errors.cddl).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrieMalformed {
     /// The `name` entry.
@@ -295,7 +296,7 @@ pub struct TrieMalformed {
     /// The `cbor` entry.
     pub cbor: Hex,
     /// The `error` entry.
-    pub error: TrieMalformedError,
+    pub error: super::proofs_errors::TrieErrorKind,
 }
 
 impl c::Model for TrieMalformed {
@@ -306,7 +307,7 @@ impl c::Model for TrieMalformed {
             c::field("mode", &c::ModelOf::<TrieMode>::NEW, &self.mode, inner)?,
             c::field("root", &HEX, &self.root, inner)?,
             c::field("cbor", &HEX, &self.cbor, inner)?,
-            c::field("error", &c::ModelOf::<TrieMalformedError>::NEW, &self.error, inner)?,
+            c::field("error", &c::ModelOf::<super::proofs_errors::TrieErrorKind>::NEW, &self.error, inner)?,
         ])
     }
 
@@ -316,48 +317,8 @@ impl c::Model for TrieMalformed {
         let f1 = fields.required("mode", &c::ModelOf::<TrieMode>::NEW)?;
         let f2 = fields.required("root", &HEX)?;
         let f3 = fields.required("cbor", &HEX)?;
-        let f4 = fields.required("error", &c::ModelOf::<TrieMalformedError>::NEW)?;
+        let f4 = fields.required("error", &c::ModelOf::<super::proofs_errors::TrieErrorKind>::NEW)?;
         Ok(Self { name: f0, mode: f1, root: f2, cbor: f3, error: f4 })
-    }
-}
-
-/// `trie-malformed-error` (`shared/schemas/trie-vectors.cddl`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum TrieMalformedError {
-    /// The text `Encoding`.
-    Encoding,
-    /// The text `InvalidProof`.
-    InvalidProof,
-}
-
-impl c::Model for TrieMalformedError {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
-        match self {
-            Self::Encoding => Ok(c::Value::text("Encoding")),
-            Self::InvalidProof => Ok(c::Value::text("InvalidProof")),
-        }
-    }
-
-    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["Encoding", "InvalidProof"])? {
-            c::Alternative::Text(0) => Ok(Self::Encoding),
-            c::Alternative::Text(1) => Ok(Self::InvalidProof),
-            other => Err(c::unknown_alternative(other)),
-        }
-    }
-}
-
-impl TrieMalformedError {
-    /// Every alternative, in schema order.
-    pub const ALL: [Self; 2] = [Self::Encoding, Self::InvalidProof];
-}
-
-impl core::fmt::Display for TrieMalformedError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Encoding => f.write_str("Encoding"),
-            Self::InvalidProof => f.write_str("InvalidProof"),
-        }
     }
 }
 

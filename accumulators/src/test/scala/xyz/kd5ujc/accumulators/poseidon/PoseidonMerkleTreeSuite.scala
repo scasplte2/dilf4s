@@ -6,7 +6,7 @@ import java.nio.file.{Files, Path, Paths}
 import cats.effect.{ExitCode, IO, IOApp}
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.hash.{Fr, Poseidon}
+import xyz.kd5ujc.core.hash.{Fr, Poseidon, PoseidonError}
 
 import io.circe.Json
 import io.circe.syntax._
@@ -27,9 +27,12 @@ object PoseidonMerkleTreeSuite extends SimpleIOSuite with Checkers {
 
   pureTest("refused positions and field values are shown by their size, never their digits") {
     val huge = BigInt(1) << 1000000
+    // the generated fields are the bit lengths themselves (positionBits, bits), so a rendering holds no digit of the value
     expect
-      .same(Left("Position(a 1000001-bit position, depth 0)"), PoseidonMerkleProof.from(huge, Vector.empty).left.map(_.toString))
-      .and(expect.same(Left("NonCanonical(a 1000001-bit value)"), Fr.from(huge).left.map(_.toString)))
+      .same(Left(PoseidonMerkleError.Position(1000001L, 0L)), PoseidonMerkleProof.from(huge, Vector.empty))
+      .and(expect.same(Left("Position(1000001,0)"), PoseidonMerkleProof.from(huge, Vector.empty).left.map(_.toString)))
+      .and(expect.same(Left(PoseidonError.NonCanonical(1000001L)), Fr.from(huge)))
+      .and(expect.same(Left("NonCanonical(1000001)"), Fr.from(huge).left.map(_.toString)))
   }
 
   pureTest("zero hashes chain, and the empty root is zero(depth)") {

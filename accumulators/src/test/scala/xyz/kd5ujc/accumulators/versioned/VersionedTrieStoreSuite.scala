@@ -233,11 +233,11 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
       case (h2, same, rewrite, subset, older, again, stale, head) =>
         expect
           .same(h2, same)
-          .and(expect.same(Left(VersionedTrieError.CommitRewrite(vk(2L))), rewrite))
-          .and(expect.same(Left(VersionedTrieError.CommitRewrite(vk(2L))), subset))
-          .and(expect.same(Left(VersionedTrieError.VersionNotIncreasing(vk(2L), vk(1L))), older))
-          .and(expect.same(Left(VersionedTrieError.VersionNotIncreasing(vk(2L), vk(2L))), again))
-          .and(expect.same(Left(VersionedTrieError.VersionConflict(Some(vk(1L)), Some(vk(2L)))), stale))
+          .and(expect.same(Left(VersionedTrieError.CommitRewrite(versionHex(vk(2L)))), rewrite))
+          .and(expect.same(Left(VersionedTrieError.CommitRewrite(versionHex(vk(2L)))), subset))
+          .and(expect.same(Left(VersionedTrieError.VersionNotIncreasing(versionHex(vk(2L)), versionHex(vk(1L)))), older))
+          .and(expect.same(Left(VersionedTrieError.VersionNotIncreasing(versionHex(vk(2L)), versionHex(vk(2L)))), again))
+          .and(expect.same(Left(VersionedTrieError.VersionConflict(Some(versionHex(vk(1L))), Some(versionHex(vk(2L))))), stale))
           .and(expect.same(Some(h2), head))
     }
   }
@@ -256,7 +256,7 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
         expect
           .same(1000L, gap.version)
           .and(expect(neg.left.exists(_.isInstanceOf[VersionedTrieError.InvalidVersion]), s"$neg"))
-          .and(expect.same(Left(VersionedTrieError.VersionConflict(Some(vk(3L)), None)), first))
+          .and(expect.same(Left(VersionedTrieError.VersionConflict(Some(versionHex(vk(3L))), None)), first))
     }
   }
 
@@ -332,8 +332,8 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
         expect
           .same(List(Some(int(1)), Some(int(5)), None), at)
           .and(expect.same(None, now))
-          .and(expect.same(Left(VersionedTrieError.UnknownVersion(vk(3L))), gap))
-          .and(expect.same(Left(VersionedTrieError.NotRetained(vk(1L))), pruned))
+          .and(expect.same(Left(VersionedTrieError.UnknownVersion(versionHex(vk(3L)))), gap))
+          .and(expect.same(Left(VersionedTrieError.NotRetained(versionHex(vk(1L)))), pruned))
           .and(expect.same(Some(int(5)), kept))
     }
   }
@@ -386,12 +386,15 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
       case (heads, before, evicted, kept, oldHead, version, state) =>
         val root = get(VersionedTrie.root(heads.last))
         expect
-          .same(List(Left(VersionedTrieError.NotRetained(vk(2L))), Left(VersionedTrieError.NotRetained(vk(5L)))), evicted)
+          .same(
+            List(Left(VersionedTrieError.NotRetained(versionHex(vk(2L)))), Left(VersionedTrieError.NotRetained(versionHex(vk(5L))))),
+            evicted
+          )
           .and(expect.same(Some(heads(4)), kept.parent).and(expect.same(heads(5), kept.head)))
-          .and(expect.same(Left(VersionedTrieError.NotRetained(vk(3L))), oldHead))
+          .and(expect.same(Left(VersionedTrieError.NotRetained(versionHex(vk(3L)))), oldHead))
           .and(expect.same(Right(Some(heads(1).stateRoot)), VersionedTrieVerifier.verifyVersion(root, version, 2L)))
           .and(expect.same(Right(Some(heads(1).stateRoot)), VersionedTrieVerifier.verifyVersion(root, before, 2L)))
-          .and(expect.same(Left(VersionedTrieError.NotRetained(vk(3L))), state))
+          .and(expect.same(Left(VersionedTrieError.NotRetained(versionHex(vk(3L)))), state))
     }
   }
 

@@ -114,7 +114,7 @@ object StateKey {
   implicit val stateKeyShow: Show[StateKey] = Show.show(_.value)
 
   implicit val stateKeyCodec: KeyCodec[StateKey] =
-    KeyCodec.instance(_.bytes, b => fromBytes(b).leftMap(e => StoreError.Codec("state key", StateKeyErrors.describe(e))))
+    KeyCodec.instance(_.bytes, b => fromBytes(b).leftMap(e => StoreError.Encoding("state key", StateKeyErrors.describe(e))))
 }
 
 /**

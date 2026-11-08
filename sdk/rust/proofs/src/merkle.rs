@@ -25,82 +25,14 @@ pub const NODE_TAG: &str = "dilf4s/merkle/node/v1";
 /// The empty-tree tag.
 pub const EMPTY_TAG: &str = "dilf4s/merkle/empty/v1";
 
-/// Why a Merkle proof failed. `InvalidProof` and `RootMismatch` are a well-formed proof that proves something else;
-/// the other kinds are malformed input.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum MerkleError {
-    /// A leaf index (or an old size) outside its tree.
-    IndexOutOfRange {
-        /// The index.
-        index: u64,
-        /// The tree size.
-        size: u64,
-    },
-    /// Consistency sizes with `old > new`.
-    InvalidSizes {
-        /// The old size.
-        old_size: u64,
-        /// The new size.
-        new_size: u64,
-    },
-    /// A path of the wrong length for its sizes, or an empty-tree case that does not hold.
-    InvalidProof {
-        /// Why.
-        reason: &'static str,
-    },
-    /// The recomputed root differs from the trusted one.
-    RootMismatch {
-        /// The trusted root, hex.
-        expected: String,
-        /// The recomputed root, hex.
-        computed: String,
-    },
-    /// A proof or head whose encoding does not decode.
-    Encoding {
-        /// Why.
-        reason: String,
-    },
-    /// A claimed leaf heavier than [`crate::MAX_PROOF_WEIGHT`], refused before it is hashed.
-    TooLarge {
-        /// The limit: [`crate::MAX_PROOF_WEIGHT`] (normative).
-        limit: u64,
-    },
-}
+/// Why a Merkle proof failed: generated from `shared/schemas/proofs-errors.cddl`, with the reference's and the
+/// TypeScript SDK's kinds and fields. `InvalidProof` and `RootMismatch` are a well-formed proof that proves something
+/// else; the other kinds are malformed input.
+pub use dilf4s_core::generated::proofs_errors::{MerkleError, MerkleErrorKind};
 
-impl fmt::Display for MerkleError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::IndexOutOfRange { index, size } => write!(f, "index {index} out of range for size {size}"),
-            Self::InvalidSizes { old_size, new_size } => write!(f, "invalid sizes {old_size} > {new_size}"),
-            Self::InvalidProof { reason } => write!(f, "invalid proof: {reason}"),
-            Self::RootMismatch { expected, computed } => {
-                write!(f, "root mismatch: expected {expected}, computed {computed}")
-            }
-            Self::Encoding { reason } => write!(f, "encoding: {reason}"),
-            Self::TooLarge { limit } => write!(f, "the leaf weighs over {limit}"),
-        }
-    }
-}
-
-impl core::error::Error for MerkleError {}
-
-impl MerkleError {
-    /// The Scala case-class name of this kind.
-    pub const fn kind(&self) -> &'static str {
-        match self {
-            Self::IndexOutOfRange { .. } => "IndexOutOfRange",
-            Self::InvalidSizes { .. } => "InvalidSizes",
-            Self::InvalidProof { .. } => "InvalidProof",
-            Self::RootMismatch { .. } => "RootMismatch",
-            Self::Encoding { .. } => "Encoding",
-            Self::TooLarge { .. } => "TooLarge",
-        }
-    }
-
-    /// Whether this is a verification failure (`false`) rather than malformed input.
-    pub const fn is_invalid(&self) -> bool {
-        matches!(self, Self::InvalidProof { .. } | Self::RootMismatch { .. })
-    }
+/// Whether a refusal is a verification failure (`false`) rather than malformed input.
+const fn is_invalid(e: &MerkleError) -> bool {
+    matches!(e, MerkleError::InvalidProof { .. } | MerkleError::RootMismatch { .. })
 }
 
 /// A Merkle profile: how leaves, nodes and the empty tree hash (docs/specs/merkle.md §2).
@@ -230,7 +162,7 @@ impl<H: Hasher> InclusionProof<H> {
         if index < size && size <= MAX_TREE_INDEX {
             Ok(Self { index, size, path })
         } else {
-            Err(MerkleError::IndexOutOfRange { index, size })
+            Err(MerkleError::IndexOutOfRange { index: i128::from(index), size: i128::from(size) })
         }
     }
 
@@ -284,7 +216,7 @@ impl<H: Hasher> ConsistencyProof<H> {
         if old_size <= new_size && new_size <= MAX_TREE_INDEX {
             Ok(Self { old_size, new_size, path })
         } else {
-            Err(MerkleError::InvalidSizes { old_size, new_size })
+            Err(MerkleError::InvalidSizes { old_size: i128::from(old_size), new_size: i128::from(new_size) })
         }
     }
 
@@ -358,14 +290,14 @@ pub fn check_inclusion<H: Hasher, M: MerkleHashing<H>>(
     proof: &InclusionProof<H>,
 ) -> Result<(), MerkleError> {
     if proof.index >= proof.size {
-        return Err(MerkleError::IndexOutOfRange { index: proof.index, size: proof.size });
+        return Err(MerkleError::IndexOutOfRange { index: i128::from(proof.index), size: i128::from(proof.size) });
     }
     let mut f = proof.index;
     let mut s = proof.size.saturating_sub(1);
     let mut r = leaf_hash.clone();
     for p in &proof.path {
         if s == 0 {
-            return Err(MerkleError::InvalidProof { reason: "path is too long for the tree size" });
+            return Err(MerkleError::InvalidProof { reason: String::from("path is too long for the tree size") });
         }
         if f % 2 == 1 || f == s {
             r = profile.node_hash(p, &r);
@@ -377,7 +309,7 @@ pub fn check_inclusion<H: Hasher, M: MerkleHashing<H>>(
         s /= 2;
     }
     if s != 0 {
-        return Err(MerkleError::InvalidProof { reason: "path is too short for the tree size" });
+        return Err(MerkleError::InvalidProof { reason: String::from("path is too short for the tree size") });
     }
     if &r == root { Ok(()) } else { Err(MerkleError::RootMismatch { expected: hex(root), computed: hex(&r) }) }
 }
@@ -401,26 +333,26 @@ pub fn check_consistency<H: Hasher, M: MerkleHashing<H>>(
 ) -> Result<(), MerkleError> {
     let (m, n) = (proof.old_size, proof.new_size);
     if m > n {
-        return Err(MerkleError::InvalidSizes { old_size: m, new_size: n });
+        return Err(MerkleError::InvalidSizes { old_size: i128::from(m), new_size: i128::from(n) });
     }
     if m == 0 {
         return if proof.path.is_empty() && *old_root == profile.empty_hash() {
             Ok(())
         } else {
-            Err(MerkleError::InvalidProof { reason: "size 0 needs an empty proof and the empty root" })
+            Err(MerkleError::InvalidProof { reason: String::from("size 0 needs an empty proof and the empty root") })
         };
     }
     if m == n {
         return if proof.path.is_empty() && old_root == new_root {
             Ok(())
         } else {
-            Err(MerkleError::InvalidProof { reason: "equal sizes need an empty proof and equal roots" })
+            Err(MerkleError::InvalidProof { reason: String::from("equal sizes need an empty proof and equal roots") })
         };
     }
     let mut path = proof.path.iter();
     let first = if m.is_power_of_two() { Some(old_root) } else { path.next() };
     let Some(first) = first else {
-        return Err(MerkleError::InvalidProof { reason: "empty consistency path" });
+        return Err(MerkleError::InvalidProof { reason: String::from("empty consistency path") });
     };
     // shift while odd
     let (mut f, mut s) = (m.saturating_sub(1), n.saturating_sub(1));
@@ -432,7 +364,7 @@ pub fn check_consistency<H: Hasher, M: MerkleHashing<H>>(
     let mut sr = first.clone();
     for c in path {
         if s == 0 {
-            return Err(MerkleError::InvalidProof { reason: "path is too long for the sizes" });
+            return Err(MerkleError::InvalidProof { reason: String::from("path is too long for the sizes") });
         }
         if f % 2 == 1 || f == s {
             (f, s) = shift_until_odd_or_zero(f, s);
@@ -445,7 +377,7 @@ pub fn check_consistency<H: Hasher, M: MerkleHashing<H>>(
         s /= 2;
     }
     if s != 0 {
-        return Err(MerkleError::InvalidProof { reason: "path is too short for the sizes" });
+        return Err(MerkleError::InvalidProof { reason: String::from("path is too short for the sizes") });
     }
     if &fr != old_root {
         return Err(MerkleError::RootMismatch { expected: hex(old_root), computed: hex(&fr) });
@@ -470,7 +402,7 @@ pub fn verify_consistency<H: Hasher, M: MerkleHashing<H>>(
 fn verdict(r: Result<(), MerkleError>) -> Result<bool, MerkleError> {
     match r {
         Ok(()) => Ok(true),
-        Err(e) if e.is_invalid() => Ok(false),
+        Err(e) if is_invalid(&e) => Ok(false),
         Err(e) => Err(e),
     }
 }

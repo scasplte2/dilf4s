@@ -43,6 +43,8 @@ pub struct VersionedTrieVectors {
     pub namespaces: Vec<VtNamespace>,
     /// The `versionKeys` entry.
     pub version_keys: Vec<VtVersionKey>,
+    /// The `versionErrors` entry.
+    pub version_errors: Vec<VtVersionErrorCase>,
 }
 
 impl c::Model for VersionedTrieVectors {
@@ -63,11 +65,12 @@ impl c::Model for VersionedTrieVectors {
             c::field("stateKeyBytes", &c::VecOf { element: c::ModelOf::<VtStateKeyBytes>::NEW, min: 0, max: None }, &self.state_key_bytes, inner)?,
             c::field("namespaces", &c::VecOf { element: c::ModelOf::<VtNamespace>::NEW, min: 0, max: None }, &self.namespaces, inner)?,
             c::field("versionKeys", &c::VecOf { element: c::ModelOf::<VtVersionKey>::NEW, min: 0, max: None }, &self.version_keys, inner)?,
+            c::field("versionErrors", &c::VecOf { element: c::ModelOf::<VtVersionErrorCase>::NEW, min: 0, max: None }, &self.version_errors, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys", "stateKeyBytes", "namespaces", "versionKeys"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "hash", "width", "emptyStateRoot", "head", "commits", "root", "proofs", "snapshot", "stateKeys", "stateKeyBytes", "namespaces", "versionKeys", "versionErrors"])?;
         fields.required("spec", &c::LiteralText("docs/specs/versioned-trie.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         fields.required("hash", &c::LiteralText("SHA-256"))?;
@@ -82,7 +85,8 @@ impl c::Model for VersionedTrieVectors {
         let f11 = fields.required("stateKeyBytes", &c::VecOf { element: c::ModelOf::<VtStateKeyBytes>::NEW, min: 0, max: None })?;
         let f12 = fields.required("namespaces", &c::VecOf { element: c::ModelOf::<VtNamespace>::NEW, min: 0, max: None })?;
         let f13 = fields.required("versionKeys", &c::VecOf { element: c::ModelOf::<VtVersionKey>::NEW, min: 0, max: None })?;
-        Ok(Self { width: f3, empty_state_root: f4, head: f5, commits: f6, root: f7, proofs: f8, snapshot: f9, state_keys: f10, state_key_bytes: f11, namespaces: f12, version_keys: f13 })
+        let f14 = fields.required("versionErrors", &c::VecOf { element: c::ModelOf::<VtVersionErrorCase>::NEW, min: 0, max: None })?;
+        Ok(Self { width: f3, empty_state_root: f4, head: f5, commits: f6, root: f7, proofs: f8, snapshot: f9, state_keys: f10, state_key_bytes: f11, namespaces: f12, version_keys: f13, version_errors: f14 })
     }
 }
 
@@ -592,6 +596,32 @@ impl c::Model for VtStateKeyRefusal {
     }
 }
 
+/// `vt-unknown-version` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// A version the proof shows was never committed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtUnknownVersion {
+    /// The `version` entry.
+    pub version: super::proofs_errors::VersionKeyHex,
+}
+
+impl c::Model for VtUnknownVersion {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("kind", &c::LiteralText("UnknownVersion"), &(), inner)?,
+            c::field("version", &super::proofs_errors::VERSION_KEY_HEX, &self.version, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["kind", "version"])?;
+        fields.required("kind", &c::LiteralText("UnknownVersion"))?;
+        let f1 = fields.required("version", &super::proofs_errors::VERSION_KEY_HEX)?;
+        Ok(Self { version: f1 })
+    }
+}
+
 /// `vt-version` (`shared/schemas/versioned-trie-vectors.cddl`).
 ///
 /// A version answer: a version and its state root, or, empty, "none" / "not committed".
@@ -617,6 +647,129 @@ impl c::Model for VtVersion {
         let f0 = fields.optional("version", &c::UINT)?;
         let f1 = fields.optional("stateRoot", &HEX)?;
         Ok(Self { version: f0, state_root: f1 })
+    }
+}
+
+/// `vt-version-check` (`shared/schemas/versioned-trie-vectors.cddl`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum VtVersionCheck {
+    /// The text `replica`.
+    Replica,
+    /// The text `historical`.
+    Historical,
+}
+
+impl c::Model for VtVersionCheck {
+    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::Replica => Ok(c::Value::text("replica")),
+            Self::Historical => Ok(c::Value::text("historical")),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[], &["replica", "historical"])? {
+            c::Alternative::Text(0) => Ok(Self::Replica),
+            c::Alternative::Text(1) => Ok(Self::Historical),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+impl VtVersionCheck {
+    /// Every alternative, in schema order.
+    pub const ALL: [Self; 2] = [Self::Replica, Self::Historical];
+}
+
+impl core::fmt::Display for VtVersionCheck {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Replica => f.write_str("replica"),
+            Self::Historical => f.write_str("historical"),
+        }
+    }
+}
+
+/// `vt-version-error` (`shared/schemas/versioned-trie-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VtVersionError {
+    /// A [`VtVersionNotIncreasing`].
+    VtVersionNotIncreasing(VtVersionNotIncreasing),
+    /// A [`VtUnknownVersion`].
+    VtUnknownVersion(VtUnknownVersion),
+}
+
+impl c::Model for VtVersionError {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::VtVersionNotIncreasing(a) => c::Model::to_value_at(a, depth),
+            Self::VtUnknownVersion(a) => c::Model::to_value_at(a, depth),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[(&["head", "kind", "next"], &["head", "kind", "next"]), (&["kind", "version"], &["kind", "version"])], &[])? {
+            c::Alternative::Record(0) => <VtVersionNotIncreasing as c::Model>::from_value(value).map(Self::VtVersionNotIncreasing),
+            c::Alternative::Record(1) => <VtUnknownVersion as c::Model>::from_value(value).map(Self::VtUnknownVersion),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+/// `vt-version-error-case` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// A refusal that names versions (section 2; conformance.md section 3), each as its version key's full lowercase hex
+/// (proofs-errors.cddl `version-key-hex`): never truncated, at the case's "width" w (1..1024). At width 8 the versions
+/// are the default key's (below 2^63); at any other width they are the bytes version key's, whose version is its key.
+/// "replica" applies "deltas" (each the hex of a canonical versioned-trie-delta) in order to an empty replica;
+/// "historical" decodes "proof" (a versioned-trie-proof) and verifies the state at the version keyed "at" against
+/// "root". Every proof and delta is SHA-256.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtVersionErrorCase {
+    /// The `name` entry.
+    pub name: String,
+    /// The `width` entry.
+    pub width: u64,
+    /// The `check` entry.
+    pub check: VtVersionCheck,
+    /// The `deltas` entry.
+    pub deltas: Option<Vec<Hex>>,
+    /// The `root` entry.
+    pub root: Option<Hex>,
+    /// The `proof` entry.
+    pub proof: Option<Hex>,
+    /// The `at` entry.
+    pub at: Option<Hex>,
+    /// The `outcome` entry.
+    pub outcome: VtVersionError,
+}
+
+impl c::Model for VtVersionErrorCase {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("width", &c::UINT, &self.width, inner)?,
+            c::field("check", &c::ModelOf::<VtVersionCheck>::NEW, &self.check, inner)?,
+            c::optional_field("deltas", &c::VecOf { element: HEX, min: 0, max: None }, self.deltas.as_ref(), inner)?,
+            c::optional_field("root", &HEX, self.root.as_ref(), inner)?,
+            c::optional_field("proof", &HEX, self.proof.as_ref(), inner)?,
+            c::optional_field("at", &HEX, self.at.as_ref(), inner)?,
+            c::field("outcome", &c::ModelOf::<VtVersionError>::NEW, &self.outcome, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["name", "width", "check", "deltas", "root", "proof", "at", "outcome"])?;
+        let f0 = fields.required("name", &c::Text)?;
+        let f1 = fields.required("width", &c::UINT)?;
+        let f2 = fields.required("check", &c::ModelOf::<VtVersionCheck>::NEW)?;
+        let f3 = fields.optional("deltas", &c::VecOf { element: HEX, min: 0, max: None })?;
+        let f4 = fields.optional("root", &HEX)?;
+        let f5 = fields.optional("proof", &HEX)?;
+        let f6 = fields.optional("at", &HEX)?;
+        let f7 = fields.required("outcome", &c::ModelOf::<VtVersionError>::NEW)?;
+        Ok(Self { name: f0, width: f1, check: f2, deltas: f3, root: f4, proof: f5, at: f6, outcome: f7 })
     }
 }
 
@@ -703,5 +856,35 @@ impl c::Model for VtVersionKeyRefusal {
         let fields = c::Fields::of(value, &["kind"])?;
         fields.required("kind", &c::LiteralText("InvalidVersion"))?;
         Ok(Self)
+    }
+}
+
+/// `vt-version-not-increasing` (`shared/schemas/versioned-trie-vectors.cddl`).
+///
+/// A delta whose version is not above the replica's head: the head's key and the delta's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtVersionNotIncreasing {
+    /// The `head` entry.
+    pub head: super::proofs_errors::VersionKeyHex,
+    /// The `next` entry.
+    pub next: super::proofs_errors::VersionKeyHex,
+}
+
+impl c::Model for VtVersionNotIncreasing {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("kind", &c::LiteralText("VersionNotIncreasing"), &(), inner)?,
+            c::field("head", &super::proofs_errors::VERSION_KEY_HEX, &self.head, inner)?,
+            c::field("next", &super::proofs_errors::VERSION_KEY_HEX, &self.next, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["kind", "head", "next"])?;
+        fields.required("kind", &c::LiteralText("VersionNotIncreasing"))?;
+        let f1 = fields.required("head", &super::proofs_errors::VERSION_KEY_HEX)?;
+        let f2 = fields.required("next", &super::proofs_errors::VERSION_KEY_HEX)?;
+        Ok(Self { head: f1, next: f2 })
     }
 }

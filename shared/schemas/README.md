@@ -27,6 +27,8 @@ After changing a schema, regenerate them with
 | `hash-errors.cddl` | the hash error family and its kinds, and the `preview` rule | `docs/specs/conformance.md` §6, `docs/specs/canonical-encoding.md` §4 |
 | `codec-errors.cddl` | the canonical codecs' and state keys' error families (`CanonicalError`, `StateKeyError`) and their reasons | `docs/specs/conformance.md` §6, `docs/specs/canonical-encoding.md` |
 | `jlvm.cddl` (`jlvm-op`) | the JLVM's operations, a closed list of named texts | `docs/specs/jlvm.md` §3 |
+| `proofs-errors.cddl` | the proof structures' error families (`MerkleError`, `TrieError`, `VersionedTrieError`, `PoseidonError`, `PoseidonMerkleError`), `version-key-hex` and `vt-root-component` | `docs/specs/conformance.md` §3, §6 and §8, `docs/specs/versioned-trie.md` §2 |
+| `store-errors.cddl` | the reference store's error family (`StoreError`), which a versioned trie's `Store` holds | `docs/specs/storage.md`, `docs/specs/conformance.md` §6 |
 | `jlvm-errors.cddl` | the JLVM's error family, its sites and a `Crypto` error's cause | `docs/specs/jlvm.md` §3, `docs/specs/conformance.md` §6 |
 | `*-vectors.cddl` | The conformance vector files in `shared/vectors/` | the matching spec |
 

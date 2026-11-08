@@ -60,25 +60,12 @@ object KeyMode {
     )
 }
 
-sealed trait TrieError extends Product with Serializable
-
-object TrieError {
-  final case class InvalidKey(reason: String) extends TrieError
-  final case class MissingNode(hash: String) extends TrieError
-  final case class InvalidNode(reason: String) extends TrieError
-  final case class InvalidProof(reason: String) extends TrieError
-  final case class RootMismatch(expected: String, computed: String) extends TrieError
-  final case class Encoding(reason: String) extends TrieError
-
-  /** A verified proof that does not reach the query: it establishes neither presence nor absence. */
-  final case class NotCovered(what: String) extends TrieError
-
-  /**
-   * Over `limit` (`ProofInput.MaxProofWeight`) in weight: claimed values a verifier would hash, or a proof a producer
-   * would emit that every verifier refuses.
-   */
-  final case class TooLarge(limit: Long) extends TrieError
-}
+/**
+ * Why a trie operation failed: generated from `shared/schemas/proofs-errors.cddl`, with the Rust and TypeScript SDKs'
+ * kinds and fields. `TooLarge` is over `ProofInput.MaxProofWeight` in weight: claimed values a verifier would hash, or
+ * a proof a producer would emit that every verifier refuses.
+ */
+export xyz.kd5ujc.models.proofs_errors.{TrieError, TrieErrorKind}
 
 /** A stored trie node; children are referenced by hash (docs/specs/trie.md §2). */
 sealed trait Node[H] extends Product with Serializable {

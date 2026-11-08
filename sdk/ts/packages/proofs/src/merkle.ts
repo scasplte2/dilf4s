@@ -14,23 +14,12 @@ import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
 import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Measured, type Token } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
-declare const INT64: unique symbol;
-
 /**
- * A refusal's size or index: 64-bit, as Scala's `Long`. The brand's symbol is not exported, so only this module's
- * saturating `int64` makes one, and a caller's wider value is never kept whole (docs/specs/conformance.md section 8).
+ * Why a Merkle proof could not be checked: generated from `shared/schemas/proofs-errors.cddl` (`models.proofsErrors`),
+ * with the reference's and the Rust SDK's kinds and fields. An index or size is held saturated at the signed 64-bit
+ * range, so a caller's wider value is never kept whole (docs/specs/conformance.md section 8); a claimed leaf over `MAX_PROOF_WEIGHT`, or this SDK's commitment ceiling, is `TooLarge`.
  */
-export type Int64 = bigint & { readonly [INT64]: true };
-
-/** Why a Merkle proof could not be checked, by Scala's `MerkleError` names. */
-export type MerkleError =
-  | { readonly kind: "IndexOutOfRange"; readonly index: Int64; readonly size: Int64 }
-  | { readonly kind: "InvalidSizes"; readonly oldSize: Int64; readonly newSize: Int64 }
-  | { readonly kind: "InvalidProof"; readonly reason: string }
-  | { readonly kind: "RootMismatch"; readonly expected: string; readonly computed: string }
-  | { readonly kind: "Encoding"; readonly reason: string }
-  /** A claimed leaf over `limit` (`MAX_PROOF_WEIGHT`, or this SDK's commitment ceiling), refused before it is hashed. */
-  | { readonly kind: "TooLarge"; readonly limit: number };
+export type MerkleError = models.proofsErrors.MerkleError;
 
 /** A Merkle refusal, or an argument of the wrong type: what every exported function here may refuse with. */
 type Refusal = MerkleError | TypeMismatch;
@@ -251,8 +240,8 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
 const withinIndex = (n: bigint): boolean => n >= 0n && n <= MAX_TREE_INDEX;
 
 const INT64_MAX = (1n << 63n) - 1n;
-// the one way to an Int64: a wider caller value is saturated
-const int64 = (n: bigint): Int64 => (n > INT64_MAX ? INT64_MAX : n < -INT64_MAX - 1n ? -INT64_MAX - 1n : n) as Int64;
+// how every refusal here holds an index or size: a wider caller value is saturated at the signed 64-bit range
+const int64 = (n: bigint): bigint => (n > INT64_MAX ? INT64_MAX : n < -INT64_MAX - 1n ? -INT64_MAX - 1n : n);
 
 /**
  * A caller's path: an array of `Uint8Array`s, read by index, each copied from its own memory (a proof keeps the path it
