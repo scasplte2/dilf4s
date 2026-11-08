@@ -478,3 +478,23 @@ describe("a reference resolves once, for good; a hand-made codec's methods are c
     expect(items.decode(v)).toEqual({ ok: true, value: ["a"] });
   });
 });
+
+describe("a reference that uses itself while it first resolves", () => {
+  it("keeps the answer its inner resolution settled, for that use and every later one", () => {
+    let calls = 0;
+    const seen: unknown[] = [];
+    const ref: Codec<unknown> = codec.defer((): Codec<unknown> => {
+      calls++;
+      if (calls === 1) {
+        seen.push(ref.decode(int(3n)));
+        return codec.text;
+      }
+      return codec.uint;
+    });
+    seen.push(ref.decode(int(3n)));
+    seen.push(ref.decode(int(3n)));
+    expect(seen, "the inner use, then two later ones").toEqual([{ ok: true, value: 3n }, { ok: true, value: 3n }, { ok: true, value: 3n }]);
+    expect((ref.shape as CodecShape & { readonly kind: "defer" }).resolve(), "the inner answer").toBe(codec.uint);
+    expect(calls).toBe(2);
+  });
+});

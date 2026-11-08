@@ -414,12 +414,14 @@ function enumOf<L extends string>(name: string, cases: readonly (readonly [L, bi
 export function defer<T>(codec: () => Codec<T>): Codec<T> {
   if (!isFunction(codec)) return refusing(NOT_FUNCTIONS);
   // written once, by the first resolution that returns (whatever it returns, a JavaScript caller's `undefined` included,
-  // which is then refused as not a codec): a reference's target is fixed from then on
+  // which is then refused as not a codec): a reference's target is fixed from then on. A resolution that uses the
+  // reference itself, before it returns, settles it first: the outer one then keeps that answer, never its own
   let resolved: Codec<unknown> | typeof UNRESOLVED = UNRESOLVED;
-  const resolve = (): Codec<unknown> => {
-    if (resolved === UNRESOLVED) resolved = isRevokedProxy(codec) ? refusing(REVOKED_FUNCTION) : codec();
+  const settle = (answer: Codec<unknown>): Codec<unknown> => {
+    if (resolved === UNRESOLVED) resolved = answer;
     return resolved;
   };
+  const resolve = (): Codec<unknown> => (resolved === UNRESOLVED ? settle(isRevokedProxy(codec) ? refusing(REVOKED_FUNCTION) : codec()) : resolved);
   return codecOf({ kind: "defer", resolve });
 }
 
