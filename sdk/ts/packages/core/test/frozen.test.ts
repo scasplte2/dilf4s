@@ -444,3 +444,37 @@ describe("a caller's function or codec revoked after a codec is built is refused
     expect(viaMethod.encode(["a"])).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: notACodec } });
   });
 });
+
+describe("a reference resolves once, for good; a hand-made codec's methods are called as they are", () => {
+  it("a resolution that returns nothing is kept, and refused, however the function's answer changes", () => {
+    const target: { codec?: Codec<string> } = {};
+    let calls = 0;
+    const ref = codec.defer(() => {
+      calls++;
+      return bad(target.codec);
+    });
+    expect(ref.decode(textValue("a"))).toEqual({ ok: false, error: { path: [], reason: "the schema's codec is not a codec" } });
+    Object.assign(target, { codec: codec.text });
+    expect(ref.decode(textValue("a")).ok, "the first answer is kept").toBe(false);
+    expect(ref.encode("a").ok).toBe(false);
+    expect(calls, "the function is called once").toBe(1);
+  });
+
+  it("a resolution that throws resolves nothing, so the next use resolves", () => {
+    const early: { readonly codec?: Codec<string> } = {};
+    const ref = codec.defer(() => early.codec ?? bad((null as unknown as { x: never }).x));
+    expect(() => ref.encode("a"), "the caller's own TypeError").toThrow(TypeError);
+    Object.assign(early, { codec: codec.text });
+    expect(ref.encode("a").ok).toBe(true);
+  });
+
+  it("a method whose own call property is replaced is still called", () => {
+    const encode = (v: string): ReturnType<typeof codec.text.encode> => codec.text.encode(v);
+    const decode = (v: Value): ReturnType<typeof codec.text.decode> => codec.text.decode(v);
+    Object.assign(encode, { call: null, apply: null });
+    Object.assign(decode, { call: null, apply: null });
+    const items = codec.vector({ encode, decode, shape: codec.text.shape }, 0, null);
+    const v = expectOk(items.encode(["a"]), "encodes");
+    expect(items.decode(v)).toEqual({ ok: true, value: ["a"] });
+  });
+});

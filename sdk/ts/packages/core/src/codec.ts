@@ -413,10 +413,18 @@ function enumOf<L extends string>(name: string, cases: readonly (readonly [L, bi
  */
 export function defer<T>(codec: () => Codec<T>): Codec<T> {
   if (!isFunction(codec)) return refusing(NOT_FUNCTIONS);
-  // written once, by the first resolution: a reference's target is fixed from then on
-  let resolved: Codec<unknown> | undefined;
-  return codecOf({ kind: "defer", resolve: () => (resolved ??= isRevokedProxy(codec) ? refusing(REVOKED_FUNCTION) : codec()) });
+  // written once, by the first resolution that returns (whatever it returns, a JavaScript caller's `undefined` included,
+  // which is then refused as not a codec): a reference's target is fixed from then on
+  let resolved: Codec<unknown> | typeof UNRESOLVED = UNRESOLVED;
+  const resolve = (): Codec<unknown> => {
+    if (resolved === UNRESOLVED) resolved = isRevokedProxy(codec) ? refusing(REVOKED_FUNCTION) : codec();
+    return resolved;
+  };
+  return codecOf({ kind: "defer", resolve });
 }
+
+/** A reference not yet resolved: a symbol of this module's own, which no resolution returns. */
+const UNRESOLVED: unique symbol = Symbol("dilf4s: an unresolved reference");
 
 /**
  * A homogeneous array of `min` to `max` elements (`max` unbounded when `null`). An explicit wider `T` is unchecked and acts
@@ -792,13 +800,14 @@ function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
  */
 function encodeForeign(c: unknown, value: unknown, depth: number): Result<Value, CanonicalError> {
   const f: unknown = isObject(c) ? readGuarded(c, "encode") : undefined;
-  return isFunction(f) ? (f as (this: unknown, v: unknown, d: number) => Result<Value, CanonicalError>).call(c, value, depth) : typeMismatch(NOT_A_CODEC);
+  // Reflect.apply, never the method's own (replaceable) `call`
+  return isFunction(f) ? (Reflect.apply(f as (v: unknown, d: number) => unknown, c, [value, depth]) as Result<Value, CanonicalError>) : typeMismatch(NOT_A_CODEC);
 }
 
 /** `c.decode(value)` for a codec this module did not make, as {@link encodeForeign} calls its `encode`. */
 function decodeForeign(c: unknown, value: Value): Result<unknown, DecodeFailure> {
   const f: unknown = isObject(c) ? readGuarded(c, "decode") : undefined;
-  return isFunction(f) ? (f as (this: unknown, v: Value) => Result<unknown, DecodeFailure>).call(c, value) : decodeFailure(NOT_A_CODEC);
+  return isFunction(f) ? (Reflect.apply(f as (v: Value) => unknown, c, [value]) as Result<unknown, DecodeFailure>) : decodeFailure(NOT_A_CODEC);
 }
 
 const isObject = (x: unknown): x is object => (typeof x === "object" && x !== null) || typeof x === "function";
