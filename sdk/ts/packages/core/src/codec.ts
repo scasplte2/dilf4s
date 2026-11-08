@@ -93,23 +93,51 @@ interface RecordField {
 }
 
 /**
- * The codecs this module's combinators made, whose `shape` is what they do. Any other object with a codec's methods
- * (one spread from a codec, its methods replaced, say) is called through its methods, so composing it keeps its checks.
+ * The codecs this module's combinators made, each with its plan: what the walks read, the same as its `shape` but held
+ * here alone, so no caller can reach it. Its arrays are plain, as V8 runs `find`, `every` and `filter` over a frozen
+ * array many times slower; `shape` is a frozen copy. Any other object with a codec's methods (one spread from a codec,
+ * its methods replaced, say) is called through its methods, so composing it keeps its checks.
  */
-const made = new WeakSet<Codec<unknown>>();
+const plans = new WeakMap<Codec<unknown>, CodecShape>();
 
-/** A codec of `shape`, which the combinator built and holds alone, every array and object in it already frozen. */
-function codecOf<T>(shape: CodecShape): Codec<T> {
+/** A codec of `plan`, which the combinator built from copies and gives to no one: its `shape` is a frozen copy. */
+function codecOf<T>(plan: CodecShape): Codec<T> {
   const codec: Codec<T> = Object.freeze({
-    shape: Object.freeze(shape),
+    shape: snapshot(plan),
     encode: (value: T, depth = 0) =>
       Number.isSafeInteger(depth) && depth >= 0 ? encodeWith(codec, value, depth) : typeMismatch("the depth is not a safe integer from 0"),
     // the combinators that built `shape` keep its parts' types, so what it decodes is a `T`
     decode: (value: Value) => (isValue(value) ? (decodeWith(codec, value) as Result<T, DecodeFailure>) : notAValue()),
   });
-  made.add(codec);
+  plans.set(codec, plan);
   return codec;
 }
+
+/** `plan` as a codec's `shape` shows it: copied, with every array and object in it frozen. */
+function snapshot(plan: CodecShape): CodecShape {
+  switch (plan.kind) {
+    case "record":
+      return Object.freeze({ kind: "record", fields: Object.freeze(plan.fields.map((f) => Object.freeze({ ...f }))), allowed: Object.freeze([...plan.allowed]) });
+    case "union":
+      return Object.freeze({
+        kind: "union",
+        name: plan.name,
+        alternatives: Object.freeze(plan.alternatives.map((a) => Object.freeze({ codec: a.codec, required: Object.freeze([...a.required]), allowed: Object.freeze([...a.allowed]), keys: frozenPair(a.keys) }))),
+        known: Object.freeze([...plan.known]),
+        keys: Object.freeze(plan.keys.map(frozenPair)),
+        texts: Object.freeze([...plan.texts]),
+      });
+    // no arrays: the plan itself, frozen
+    case "leaf":
+    case "defer":
+    case "vector":
+    case "textMap":
+      return Object.freeze(plan);
+  }
+}
+
+const frozenPair = (p: readonly [readonly string[], readonly string[]]): readonly [readonly string[], readonly string[]] =>
+  Object.freeze([Object.freeze([...p[0]]), Object.freeze([...p[1]])] as const);
 
 /**
  * A codec that reads and writes a value whole, calling no other codec. Functions that are not functions (from a
@@ -362,7 +390,8 @@ export function oneOfText(t: string, texts: readonly string[]): Result<Value, Ca
 /** A labelled integer enumeration: each label is written as its integer. */
 export function intEnum<L extends string>(name: string, cases: readonly (readonly [L, bigint])[]): Codec<L> {
   if (!isString(name)) return refusing(NOT_A_NAME);
-  // a copy, frozen: the caller's array is read once, here, so changing it later changes nothing
+  // a copy, which only the codec's functions can reach: the caller's array is read once, here, so changing it later
+  // changes nothing
   const copied = enumCases(cases);
   // the labels are the caller's, as given: the type says they are `L`s
   return copied === undefined ? refusing(NOT_CASES) : enumOf(name, copied as readonly (readonly [L, bigint])[]);
@@ -370,7 +399,7 @@ export function intEnum<L extends string>(name: string, cases: readonly (readonl
 
 const NOT_CASES = "the schema's enumeration cases are not [label, bigint] pairs";
 
-/** `x` as a frozen copy of `[label, integer]` pairs, read by index as {@link stringList} reads, or `undefined`. */
+/** `x` as a copy of `[label, integer]` pairs, read by index as {@link stringList} reads, or `undefined`. */
 function enumCases(x: unknown): readonly (readonly [string, bigint])[] | undefined {
   const length: unknown = isArrayGuarded(x) ? (x as readonly unknown[]).length : undefined;
   if (!isArrayLength(length)) return undefined;
@@ -380,12 +409,12 @@ function enumCases(x: unknown): readonly (readonly [string, bigint])[] | undefin
     const label: unknown = isArrayGuarded(pair) ? readGuarded(pair, 0) : undefined;
     const wire: unknown = isArrayGuarded(pair) ? readGuarded(pair, 1) : undefined;
     if (!isString(label) || !isBigint(wire)) return undefined;
-    out.push(Object.freeze([label, wire] as const));
+    out.push([label, wire]);
   }
-  return Object.freeze(out);
+  return out;
 }
 
-/** {@link intEnum} of a name and frozen cases this module holds. */
+/** {@link intEnum} of a name and cases this module holds alone. */
 function enumOf<L extends string>(name: string, cases: readonly (readonly [L, bigint])[]): Codec<L> {
   return leafOf(
     (label) => {
@@ -534,15 +563,15 @@ export type RecordFields<T> = { readonly [K in keyof Required<T>]: undefined ext
  * first field missing or refused, under its key.
  */
 export function record<T>(fields: RecordFields<T>): Codec<T> {
-  // a copy, frozen: the caller's object and fields are read once, here, so changing them later changes nothing
+  // a copy: the caller's object and fields are read once, here, so changing them later changes nothing
   const list = fieldList(fields);
-  return list === undefined ? refusing(NOT_FIELDS) : codecOf({ kind: "record", fields: list, allowed: Object.freeze(list.map((f) => f.key)) });
+  return list === undefined ? refusing(NOT_FIELDS) : codecOf({ kind: "record", fields: list, allowed: list.map((f) => f.key) });
 }
 
 const NOT_FIELDS = "the schema's fields are not an object of record fields";
 
 /**
- * `x`'s own enumerable properties, in their order, as frozen record fields (each read once: its key a string, its
+ * `x`'s own enumerable properties, in their order, copied as record fields (each read once: its key a string, its
  * `optional` a boolean), or `undefined` if `x` is not an object of such fields.
  */
 function fieldList(x: unknown): readonly RecordField[] | undefined {
@@ -557,9 +586,9 @@ function fieldList(x: unknown): readonly RecordField[] | undefined {
     const optional: unknown = readGuarded(f, "optional");
     if (!isString(key) || codec === REVOKED || typeof optional !== "boolean") return undefined;
     // the field's codec is the caller's, as given: the type says it is one
-    out.push(Object.freeze({ prop, key, codec: codec as Codec<unknown>, optional }));
+    out.push({ prop, key, codec: codec as Codec<unknown>, optional });
   }
-  return Object.freeze(out);
+  return out;
 }
 
 /**
@@ -632,29 +661,28 @@ export interface Alternative<A> {
  */
 export function alternative<A>(codec: Codec<A>, names: readonly [readonly string[], readonly string[]], keys: readonly [readonly string[], readonly string[]]): Alternative<A> {
   // copies, frozen; names or keys that are not arrays of strings are left absent (past the types), for union to refuse
-  const named = namePair(names);
-  const keyed = namePair(keys);
+  const named = stringPair(names);
+  const keyed = stringPair(keys);
   const absent = undefined as never;
-  return Object.freeze({ codec, required: named?.[0] ?? absent, allowed: named?.[1] ?? absent, keys: keyed ?? absent });
+  return Object.freeze({
+    codec,
+    required: named === undefined ? absent : Object.freeze(named[0]),
+    allowed: named === undefined ? absent : Object.freeze(named[1]),
+    keys: keyed === undefined ? absent : frozenPair(keyed),
+  });
 }
 
-/** `x` as a frozen copy of an array of strings ({@link stringList}), or `undefined`. */
-function frozenStrings(x: unknown): readonly string[] | undefined {
-  const list = stringList(x);
-  return list === undefined ? undefined : Object.freeze(list);
-}
-
-/** `x` as a frozen `[required, allowed]` pair of frozen string arrays, or `undefined`. */
-function namePair(x: unknown): readonly [readonly string[], readonly string[]] | undefined {
+/** `x` as a `[required, allowed]` pair of copied string arrays, or `undefined`. */
+function stringPair(x: unknown): readonly [readonly string[], readonly string[]] | undefined {
   if (!isArrayGuarded(x)) return undefined;
-  const required = frozenStrings(readGuarded(x, 0));
-  const allowed = frozenStrings(readGuarded(x, 1));
-  return required === undefined || allowed === undefined ? undefined : Object.freeze([required, allowed] as const);
+  const required = stringList(readGuarded(x, 0));
+  const allowed = stringList(readGuarded(x, 1));
+  return required === undefined || allowed === undefined ? undefined : [required, allowed];
 }
 
 /**
- * `x` as a frozen copy of union alternatives, each read once and copied as {@link alternative} copies (whether or not
- * it made them), or `undefined` if `x` is not an array of alternatives with string arrays for names.
+ * `x` as a copy of union alternatives, each read once and copied as {@link alternative} copies (whether or not it made
+ * them), or `undefined` if `x` is not an array of alternatives with string arrays for names.
  */
 function alternativeList(x: unknown): readonly Alternative<unknown>[] | undefined {
   const length: unknown = isArrayGuarded(x) ? (x as readonly unknown[]).length : undefined;
@@ -664,14 +692,14 @@ function alternativeList(x: unknown): readonly Alternative<unknown>[] | undefine
     const a: unknown = readGuarded(x as readonly unknown[], i);
     if (typeof a !== "object" || a === null || isRevokedProxy(a)) return undefined;
     const codec: unknown = readGuarded(a, "codec");
-    const required = frozenStrings(readGuarded(a, "required"));
-    const allowed = frozenStrings(readGuarded(a, "allowed"));
-    const keys = namePair(readGuarded(a, "keys"));
+    const required = stringList(readGuarded(a, "required"));
+    const allowed = stringList(readGuarded(a, "allowed"));
+    const keys = stringPair(readGuarded(a, "keys"));
     if (codec === REVOKED || required === undefined || allowed === undefined || keys === undefined) return undefined;
     // the alternative's codec is the caller's, as given: the type says it is one
-    out.push(Object.freeze({ codec: codec as Codec<unknown>, required, allowed, keys }));
+    out.push({ codec: codec as Codec<unknown>, required, allowed, keys });
   }
-  return Object.freeze(out);
+  return out;
 }
 
 /**
@@ -682,14 +710,14 @@ function alternativeList(x: unknown): readonly Alternative<unknown>[] | undefine
  */
 export function union<U>(name: string, alternatives: readonly Alternative<U>[], texts: readonly Extract<U, string>[]): Codec<U> {
   if (!isString(name)) return refusing(NOT_A_NAME);
-  // copies, frozen: the caller's arrays and alternatives are read once, here, so changing them later changes nothing
+  // copies: the caller's arrays and alternatives are read once, here, so changing them later changes nothing
   const alts = alternativeList(alternatives);
-  const own = frozenStrings(texts);
+  const own = stringList(texts);
   if (alts === undefined || own === undefined) return refusing(NOT_NAMES);
   // read in UTF-16 order, once each: a getter may observe the order the fields are read in
   const names = alts.flatMap((a) => a.allowed);
-  const known = Object.freeze(names.filter((k, i) => names.indexOf(k) === i).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
-  return codecOf({ kind: "union", name, alternatives: alts, known, keys: Object.freeze(alts.map((a) => a.keys)), texts: own });
+  const known = names.filter((k, i) => names.indexOf(k) === i).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return codecOf({ kind: "union", name, alternatives: alts, known, keys: alts.map((a) => a.keys), texts: own });
 }
 
 /**
@@ -765,8 +793,8 @@ function follow<V, D>(
   // by identity, in O(1) a step: the shapes are the schema's, never caller data
   let passed: Set<CodecShape> | undefined;
   for (let c = codec; ; ) {
-    if (!made.has(c)) return { foreign: c };
-    const s = c.shape;
+    const s = plans.get(c);
+    if (s === undefined) return { foreign: c };
     if (s.kind !== "defer" && s.kind !== "union") return { reading: s };
     passed ??= new Set();
     if (passed.has(s)) return { done: circular };
