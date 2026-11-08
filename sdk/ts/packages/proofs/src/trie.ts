@@ -11,7 +11,7 @@
  * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
 import { BYTES_TAG, describeFailure, err, isValue, models, ok, type Err, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { bytesLength, MAX_OUTPUT_SIZE, mint, outputSizeOf, plainBytes, readGuarded, takeBytes, takeBytesWithin, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, isLocalBuffer, MAX_OUTPUT_SIZE, mint, outputSizeOf, plainBytes, readGuarded, takeBytes, takeBytesWithin, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
@@ -629,9 +629,6 @@ let createVerified!: (mode: KeyMode, top: ProofNode | undefined) => VerifiedTrie
 let lookupOf!: (v: VerifiedTrieProof, key: Uint8Array, n: number) => Result<Lookup, TrieError>;
 let verifiedTop!: (v: VerifiedTrieProof) => ProofNode | undefined;
 
-/** An optional bound: `undefined`, or a `Uint8Array` (a plain view). */
-const boundArg = optionalBytes;
-
 /**
  * A query's prefix or bound, copied (`takeBytes`) before its claim is read: caller code a claim's getter (or a Proxy's
  * trap) runs cannot change the query the claim is compared with. A prefix or bound is a key's length at most.
@@ -675,8 +672,16 @@ export class VerifiedTrieProof {
     verifiedTop = (v) => v.#top;
     lookupOf = (v, key, n) => {
       const valid = checkKeyLength(v.mode, n);
-      // the walk reads the key by index only, up to its internal length: no view of it is needed
-      return valid.ok ? ok(lookupPath(v.#top, { bytes: key, length: n * 8 })) : valid;
+      if (!valid.ok) return valid;
+      // memory only this thread can change (an ArrayBuffer of this realm) is walked in place, by index up to its
+      // internal length, nothing allocated: no caller code runs during the walk. Memory another thread may write (a
+      // SharedArrayBuffer), or another realm's, is copied once first, within the mode's bound, so a byte the walk reads
+      // twice (a branch bit, then its segment) cannot differ between the reads; a buffer resized meanwhile is checked
+      // again as copied, and one grown past the bound is refused, never copied or walked
+      if (isLocalBuffer(key)) return ok(lookupPath(v.#top, { bytes: key, length: n * 8 }));
+      const own = takeBytesWithin(key, v.mode.bytes) ?? new Uint8Array(0);
+      const again = checkKeyLength(v.mode, own.length);
+      return again.ok ? ok(lookupPath(v.#top, { bytes: own, length: own.length * 8 })) : again;
     };
     TRIE.lookup = (v, key) => lookupOf(v, key, key.length);
     TRIE.prefix = (v, prefix) => listingOf(L.listPrefix(v.#top, prefix));
@@ -697,7 +702,8 @@ export class VerifiedTrieProof {
   /** Every entry whose key starts with `prefix`, in key order, if the proof covers the whole subtree. */
   prefix(prefix: Uint8Array): Result<Listing, TypeMismatch> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
-    const p = bytesArg(prefix);
+    // copied: the walk reads the prefix's bytes more than once, and shared memory could change between the reads
+    const p = queryArg(prefix);
     return p.ok ? ok(TRIE.prefix(this, p.value)) : p;
   }
 
@@ -708,9 +714,10 @@ export class VerifiedTrieProof {
    */
   range(from: Uint8Array, until?: Uint8Array): Result<Listing, TypeMismatch> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
-    const f = bytesArg(from);
+    // copied, as a prefix is: the walk reads each bound's bytes more than once
+    const f = queryArg(from);
     if (!f.ok) return f;
-    const u = boundArg(until);
+    const u = optionalQueryArg(until);
     return u.ok ? ok(TRIE.range(this, f.value, u.value)) : u;
   }
 
@@ -939,12 +946,25 @@ export function trieRoot(hashing: TrieHashing, mode: KeyMode, entries: Iterable<
   if (!h.ok) return h;
   const m = modeArg(mode);
   if (!m.ok) return m;
-  const given = readIterable(entries, (e, i) => {
+  const notEntry = (i: number): Err<TypeMismatch> => err(expectedAt("a [key, valueHash] array of Uint8Arrays", i));
+  // each entry checked in full as it is read, before the next is: a key invalid for the mode, or a digest not of the
+  // hashing's size, is refused by its internal length (never copied) and the iterator closed, with nothing more read
+  const given = readIterable<readonly [Uint8Array, Uint8Array], Refusal>(entries, (e, i) => {
     const pair = readPair(e);
-    const key = pair === undefined ? undefined : takeBytes(readGuarded(pair, 0));
-    const valueHash = pair === undefined ? undefined : takeBytes(readGuarded(pair, 1));
-    // both copied as read: an iterator may hand out one buffer again with new contents
-    return key === undefined || valueHash === undefined ? err(expectedAt("a [key, valueHash] array of Uint8Arrays", i)) : ok([key, valueHash] as const);
+    if (pair === undefined) return notEntry(i);
+    const k: unknown = readGuarded(pair, 0);
+    const kn = bytesLength(k);
+    if (kn === undefined) return notEntry(i);
+    const valid = checkKeyLength(m.value, kn);
+    if (!valid.ok) return valid;
+    // copied as read: an iterator may hand out one buffer again with new contents
+    const key = takeBytes(k);
+    const vh: unknown = readGuarded(pair, 1);
+    const vn = bytesLength(vh);
+    if (key === undefined || vn === undefined) return notEntry(i);
+    if (vn !== h.value.size) return encoding(`a digest is ${h.value.size.toString()} bytes, got ${vn.toString()}`);
+    const valueHash = takeBytes(vh);
+    return valueHash === undefined ? notEntry(i) : ok([key, valueHash] as const);
   });
   return given.ok ? trieRootOf(h.value, m.value, given.value) : given;
 }

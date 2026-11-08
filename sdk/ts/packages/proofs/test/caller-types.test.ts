@@ -1,4 +1,6 @@
+import { once } from "node:events";
 import { runInNewContext } from "node:vm";
+import { Worker } from "node:worker_threads";
 
 import { describe, expect, it } from "vitest";
 
@@ -1037,5 +1039,64 @@ describe("a digest of the wrong size is refused without being copied", () => {
     expect(expectErr(trie.TrieProof.fromRecords(T, bad([{ s: { n: 8n, b: Uint8Array.of(0x61) }, v: big }])), "a 64 MiB value").kind, "a leaf's value").toBe("Encoding");
     expect(expectErr(trie.TrieProof.fromRecords(T, bad([{ s: { n: 8n, b: big }, v: v1 }])), "a 64 MiB segment").kind, "a segment").toBe("Encoding");
     expect(held() - before, "no copy of the 64 MiB buffer was made").toBeLessThan(1 << 20);
+  });
+});
+
+describe("a lookup reads one snapshot of its key: memory another thread writes cannot prove a present key absent", () => {
+  // fixed(1) holding 0x00 and 0xff: a root branch (no segment, both children), then each leaf's remaining seven bits
+  const fixed1 = expectOk(trie.KeyMode.fixed(1), "fixed(1)");
+  const both = expectOk(trie.trieRoot(T, fixed1, [[Uint8Array.of(0x00), v1], [Uint8Array.of(0xff), v2]]), "root");
+  const records: Value = expectOk(
+    models.trie.TrieProof.encode([
+      { s: { n: 0n, b: new Uint8Array(0) }, c: "both" },
+      { s: { n: 7n, b: Uint8Array.of(0x00) }, v: v1 },
+      { s: { n: 7n, b: Uint8Array.of(0xfe) }, v: v2 },
+    ]),
+    "records",
+  );
+
+  it("trieVerify and VerifiedTrieProof.lookup, while a worker alternates a shared key byte between the two keys", { timeout: 30_000 }, async () => {
+    const v = expectOk(trie.verify(T, fixed1, both, expectOk(trie.TrieProof.decode(T, records), "proof")), "verifies");
+    if (v === null) throw new Error("the proof's root is the trie's");
+    expect(expectOk(v.lookup(Uint8Array.of(0xff)), "0xff").kind, "both keys are present").toBe("present");
+    const shared = new SharedArrayBuffer(1);
+    const worker = new Worker("const a = new Uint8Array(require('node:worker_threads').workerData); for (;;) { a[0] = 0x00; a[0] = 0xff; }", { eval: true, workerData: shared });
+    await once(worker, "online");
+    const key = new Uint8Array(shared);
+    let absent = 0;
+    let absentLookups = 0;
+    for (let i = 0; i < 2000; i++) {
+      if (expectOk(trie.trieVerify(T, fixed1, both, key, null, records), "a verdict")) absent += 1;
+      if (expectOk(v.lookup(key), "a lookup").kind !== "present") absentLookups += 1;
+    }
+    await worker.terminate();
+    expect(absent, "trieVerify never proves either present key absent").toBe(0);
+    expect(absentLookups, "lookup never answers absent for either present key").toBe(0);
+  });
+});
+
+describe("trieRoot checks each entry as it reads it: the first invalid one stops the reading, uncopied", () => {
+  it("a key invalid for the mode, or a digest of the wrong size, closes the iterator at once", () => {
+    const fixed1 = expectOk(trie.KeyMode.fixed(1), "fixed(1)");
+    for (const [name, first, kind] of [
+      ["a two-byte key", [Uint8Array.of(1, 2), v1], "InvalidKey"],
+      ["a short digest", [Uint8Array.of(1), Uint8Array.of(1)], "Encoding"],
+    ] as const) {
+      let reads = 0;
+      let closed = 0;
+      const entries = {
+        [Symbol.iterator]: () => ({
+          next: () => ((reads += 1), { done: false, value: reads === 1 ? first : [Uint8Array.of(reads & 0xff), v1] }),
+          return: () => ((closed += 1), { done: true }),
+        }),
+      };
+      expect(expectErr(trie.trieRoot(T, fixed1, bad(entries)), name).kind, name).toBe(kind);
+      expect([reads, closed], `${name}: one entry read, the iterator closed`).toEqual([1, 1]);
+    }
+    const big = new Uint8Array(64 << 20);
+    const before = process.memoryUsage().arrayBuffers;
+    expect(expectErr(trie.trieRoot(T, fixed1, [[big, v1]]), "a 64 MiB key").kind).toBe("InvalidKey");
+    expect(expectErr(trie.trieRoot(T, fixed1, [[Uint8Array.of(1), big]]), "a 64 MiB digest").kind).toBe("Encoding");
+    expect(process.memoryUsage().arrayBuffers - before, "neither was copied").toBeLessThan(1 << 20);
   });
 });
