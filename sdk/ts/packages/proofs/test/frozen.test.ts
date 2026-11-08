@@ -2,7 +2,7 @@
 // Poseidon tables, the version keys) and the refusals it shares are frozen when their modules load
 // (canonical-encoding.md section 1, "Immutable models"), as core's are (core/test/frozen.test.ts, whose walk and write
 // attempts this repeats).
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
@@ -114,6 +114,20 @@ describe("the proofs package's classes, their prototypes and its exported object
 
   it("the versioned trie's slots are the bytes of their keys, as numbers", () => {
     expect([versioned.VERSION_SLOT, versioned.STATE_SLOT, versioned.HISTORY_SLOT]).toEqual([0, 1, 2]);
+  });
+
+  it("no class in proofs or signing keeps state in a TypeScript-private field, which JavaScript reads as any other", () => {
+    // `private x` is a property of the frozen instance, its value as reachable as a public one's; `#x` is not
+    const tsPrivate = /^\s*(?:private|protected)\s+(?:readonly\s+)?\w+\s*[:;?=]/m;
+    const sources = ["../src/", "../../signing/src/"].flatMap((dir) => {
+      const base = new URL(dir, import.meta.url);
+      return readdirSync(base, { recursive: true, encoding: "utf8" })
+        .filter((f) => f.endsWith(".ts"))
+        .map((f) => [`${dir}${f}`, readFileSync(new URL(f, base), "utf8")] as const);
+    });
+    expect(sources.length, "the two packages' modules").toBeGreaterThan(20);
+    expect(sources.filter(([, text]) => tsPrivate.test(text)).map(([f]) => f)).toEqual([]);
+    expect(tsPrivate.test("  private readonly top: Node | undefined,"), "the scan finds one").toBe(true);
   });
 });
 
@@ -228,4 +242,71 @@ describe("a refusal the package gives more than one caller cannot change what th
     expect(absent, "absent").toEqual({ kind: "absent" });
     expect(Object.isFrozen(absent), "the shared absent answer").toBe(true);
   });
+});
+
+describe("a populated replica and a finished snapshot reader hold state no caller can reach or change", { timeout: 60_000 }, () => {
+  /**
+   * A replica of `n` keys at `versions[0]`, then one key changed at `versions[1]` (so the two share every other subtree),
+   * and a reader that has read the second's snapshot.
+   */
+  function populated<V>(profile: versioned.VersionedTrie<V>, versions: readonly [V, V], n: number) {
+    const keys = Array.from({ length: n }, (_, i) => expectOk(versioned.StateKey.parse(`k/${i.toString().padStart(3, "0")}`), "a key"));
+    const int = (i: number): Value => expectOk(Value.int(BigInt(i)), "a value");
+    const states = [keys.map((k, i) => [k, int(i)] as const), keys.map((k, i) => [k, int(i === 0 ? -1 : i)] as const)] as const;
+    const roots = states.map((s) => expectOk(trie.trieRoot(profile.hashing, profile.stateMode, s.map(([k, v]) => [k.bytes(), expectOk(profile.valueHash(v), "a hash")] as const)), "state root"));
+    const history = versions.map((u, i) => [u, roots[i] ?? new Uint8Array(0)] as const);
+    const heads = versions.map((version, i) => ({
+      version,
+      stateRoot: roots[i] ?? new Uint8Array(0),
+      historyRoot: expectOk(trie.trieRoot(profile.hashing, profile.historyMode, history.slice(0, i + 1).map(([u, s]) => [expectOk(profile.versionKey.encode(u), "a key"), expectOk(profile.bytesHash(s), "a hash")] as const)), "history root"),
+    }));
+    const [first, second] = [heads[0], heads[1]];
+    if (first === undefined || second === undefined) throw new Error("two heads");
+    const older = expectOk(expectOk(versioned.Replica.empty(profile), "empty").applyDelta({ head: first, upserts: states[0], removes: [] }), "a populated replica");
+    const replica = expectOk(older.applyDelta({ parent: first, head: second, upserts: [states[1][0] ?? [keys[0] ?? expectOk(versioned.StateKey.parse("k"), "k"), int(0)]], removes: [] }), "the next");
+    const chunks: readonly versioned.SnapshotChunk<V>[] = [
+      { kind: "head", head: second },
+      { kind: "state", entries: states[1] },
+      { kind: "history", versions: history },
+    ];
+    const reader = chunks.reduce((r, c) => expectOk(r.feed(c), "a chunk"), expectOk(versioned.SnapshotReader.start(profile, second), "a reader"));
+    return { keys, replica, reader };
+  }
+
+  const bytesKey = expectOk(versioned.VersionKey.bytes(4), "a byte version key");
+  const byBytes = expectOk(versioned.VersionedTrie.of("SHA-256", bytesKey), "a byte-versioned trie");
+  /** The checks, for one profile's replica and reader. */
+  function checks<V>(what: string, { keys, replica, reader }: ReturnType<typeof populated<V>>): void {
+    it(`${what}: every object reachable from them is frozen`, () => {
+      // a finished snapshot is the one caller's own copy (its arrays and bytes fresh each time), as a result is
+      const reached = reachable([replica, reader]);
+      expect(reached.filter((o) => !Object.isFrozen(o)).map((o) => Object.prototype.toString.call(o))).toEqual([]);
+    });
+
+    it(`${what}: changing what they hand out changes nothing they answer`, () => {
+      const probe = (): unknown => [replica.head, replica.root(), keys.map((k) => replica.get(k)), replica.history(), replica.entries(), reader.trusted, reader.finish()];
+      const before = structuredClone(probe());
+      const flip = (b: unknown): void => {
+        if (b instanceof Uint8Array && b.length > 0) b[0] = (b[0] ?? 0) ^ 0xff;
+      };
+      const head = replica.head;
+      flip(head?.stateRoot);
+      flip(head?.version);
+      const [u, s] = replica.history()[0] ?? [];
+      flip(u);
+      flip(s);
+      flip(reader.trusted.stateRoot);
+      flip(reader.trusted.version);
+      const snapshot = expectOk(reader.finish(), "a snapshot");
+      flip(snapshot.head.historyRoot);
+      flip(snapshot.history[0]?.[1]);
+      flip(snapshot.history[0]?.[0]);
+      expect(Object.isFrozen(snapshot.entries[0]), "a snapshot's entry").toBe(true);
+      expect(Reflect.set(snapshot.entries[0] ?? [], 1, Value.null), "an entry's value").toBe(false);
+      expect(structuredClone(probe())).toEqual(before);
+    });
+  }
+
+  checks("a bigint-versioned trie", populated(vt, [7n, 8n], 40));
+  checks("a byte-versioned trie", populated(byBytes, [Uint8Array.of(0, 0, 0, 7), Uint8Array.of(0, 0, 0, 8)], 40));
 });

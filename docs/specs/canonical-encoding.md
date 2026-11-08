@@ -179,7 +179,10 @@ proofs, trie hashings, modes, segments, proofs and verified proofs, Poseidon ele
 namespaces, versioned tries, verified states, snapshot readers and replicas, and their internal ones), its prototype
 and every instance a caller is given are frozen, as are the objects they export or share: the schemes, VRF suites and
 their profiles, derivations, version keys, literal tags, the BIP-39 word list, the Poseidon tables and every
-refusal or verdict they give more than one caller. The trie's table of unchecked operations, which the replica and the
+refusal or verdict they give more than one caller. Freezing is shallow, so what an instance keeps (a replica's tries and
+their nodes, a snapshot reader's accepted chunks and trusted head) is held in runtime-private (`#`) fields, never
+TypeScript `private` ones, which JavaScript reads as any other property, and what it hands out (a replica's head and
+history, a reader's trusted head and finished snapshot) is a copy, byte versions included. The trie's table of unchecked operations, which the replica and the
 versioned trie call, is filled as `trie.ts` loads, then defined whole on the table its other modules import and frozen:
 a slot code loaded earlier put there is replaced, or, if it cannot be, the package does not load, so none of its code
 runs with one. Bytes cannot be frozen, so no module exports a typed array that holds any: the versioned trie's slots

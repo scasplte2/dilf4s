@@ -1272,27 +1272,51 @@ let readerKeys!: <V>(r: SnapshotReader<V>) => readonly Uint8Array[];
  * {@link Replica.fromSnapshot} once the reader has finished.
  */
 export class SnapshotReader<V> {
+  // runtime-private: the trusted head's roots, the keys and the chunks the reader has accepted are its own (shared with
+  // the readers it was fed from), reachable through no property; `trusted` and `finish` hand out copies
+  readonly #trusted: Head<V>;
+  readonly #stage: Stage;
+  readonly #lastKey: Uint8Array | undefined;
+  readonly #lastVersion: Uint8Array | undefined;
+  readonly #stateChunks: readonly (readonly (readonly [StateKey, Value])[])[];
+  readonly #historyChunks: readonly (readonly (readonly [V, Uint8Array])[])[];
+  readonly #historyKeys: readonly (readonly Uint8Array[])[];
+  readonly #headKey: Uint8Array | undefined;
+
   private constructor(
     token: Token,
     readonly profile: VersionedTrie<V>,
-    readonly trusted: Head<V>,
-    private readonly stage: Stage,
-    private readonly lastKey: Uint8Array | undefined,
-    private readonly lastVersion: Uint8Array | undefined,
-    private readonly stateChunks: readonly (readonly (readonly [StateKey, Value])[])[],
-    private readonly historyChunks: readonly (readonly (readonly [V, Uint8Array])[])[],
-    private readonly historyKeys: readonly (readonly Uint8Array[])[],
-    private readonly headKey: Uint8Array | undefined,
+    trusted: Head<V>,
+    stage: Stage,
+    lastKey: Uint8Array | undefined,
+    lastVersion: Uint8Array | undefined,
+    stateChunks: readonly (readonly (readonly [StateKey, Value])[])[],
+    historyChunks: readonly (readonly (readonly [V, Uint8Array])[])[],
+    historyKeys: readonly (readonly Uint8Array[])[],
+    headKey: Uint8Array | undefined,
   ) {
+    this.#trusted = trusted;
+    this.#stage = stage;
+    this.#lastKey = lastKey;
+    this.#lastVersion = lastVersion;
+    this.#stateChunks = stateChunks;
+    this.#historyChunks = historyChunks;
+    this.#historyKeys = historyKeys;
+    this.#headKey = headKey;
     if (token === TOKEN) READER.stamp(this);
     Object.freeze(this);
+  }
+
+  /** The head the reader checks the snapshot against (a copy). */
+  get trusted(): Head<V> {
+    return copyHead(this.#trusted);
   }
 
   static {
     startReader = <V>(profile: VersionedTrie<V>, trusted: Head<V>) => new SnapshotReader(TOKEN, profile, trusted, "head", undefined, undefined, [], [], [], undefined);
     feedChunk = (r, chunk) => r.#feed(chunk);
     finishReader = (r) => r.#finish();
-    readerKeys = (r) => r.historyKeys.flat();
+    readerKeys = (r) => r.#historyKeys.flat();
   }
 
   /**
@@ -1321,14 +1345,14 @@ export class SnapshotReader<V> {
     return new SnapshotReader(
       TOKEN,
       this.profile,
-      this.trusted,
-      changes.stage ?? this.stage,
-      changes.lastKey ?? this.lastKey,
-      changes.lastVersion ?? this.lastVersion,
-      changes.state === undefined ? this.stateChunks : [...this.stateChunks, changes.state],
-      changes.history === undefined ? this.historyChunks : [...this.historyChunks, changes.history],
-      changes.keys === undefined ? this.historyKeys : [...this.historyKeys, changes.keys],
-      changes.headKey ?? this.headKey,
+      this.#trusted,
+      changes.stage ?? this.#stage,
+      changes.lastKey ?? this.#lastKey,
+      changes.lastVersion ?? this.#lastVersion,
+      changes.state === undefined ? this.#stateChunks : [...this.#stateChunks, changes.state],
+      changes.history === undefined ? this.#historyChunks : [...this.#historyChunks, changes.history],
+      changes.keys === undefined ? this.#historyKeys : [...this.#historyKeys, changes.keys],
+      changes.headKey ?? this.#headKey,
     );
   }
 
@@ -1349,15 +1373,15 @@ export class SnapshotReader<V> {
   #feed(chunk: MeasuredChunk<V>): C<SnapshotReader<V>> {
     const bad = (reason: string): R<never> => malformed(`snapshot: ${reason}`);
     const key = this.profile.versionKey;
-    if (this.stage === "head") {
+    if (this.#stage === "head") {
       if (chunk.kind !== "head") return bad("it starts with its head");
       // the trusted head itself (as a restore from a snapshot feeds it) is the same head, its version never read again
-      const same = chunk.head === this.trusted ? ok(true) : sameHeadOf(this.profile, chunk.head, this.trusted);
+      const same = chunk.head === this.#trusted ? ok(true) : sameHeadOf(this.profile, chunk.head, this.#trusted);
       if (!same.ok) return same;
       return same.value ? ok(this.#next({ stage: "state" })) : bad("its head is not the trusted head");
     }
     if (chunk.kind === "head") return bad("it has one head");
-    if (this.stage === "state" && chunk.kind === "state") {
+    if (this.#stage === "state" && chunk.kind === "state") {
       const es = chunk.entries;
       if (es.length < 1 || es.length > MAX_CHUNK_ENTRIES) return bad(`a state chunk holds 1..${MAX_CHUNK_ENTRIES.toString()} items, not ${es.length.toString()}`);
       for (const [k, v] of es) {
@@ -1365,7 +1389,7 @@ export class SnapshotReader<V> {
         const c = checkValue(k, v);
         if (!c.ok) return c;
       }
-      let previous = this.lastKey;
+      let previous = this.#lastKey;
       for (const [k] of es) {
         const b = k.bytes();
         if (previous !== undefined && compareBytes(previous, b) >= 0) return bad(`key ${Preview.of(toHexOf(b)).short()} does not follow ${Preview.of(toHexOf(previous)).short()}`);
@@ -1373,7 +1397,7 @@ export class SnapshotReader<V> {
       }
       return ok(this.#next({ ...(previous === undefined ? {} : { lastKey: previous }), state: es }));
     }
-    if (this.stage === "done") return bad("nothing follows the head version");
+    if (this.#stage === "done") return bad("nothing follows the head version");
     if (chunk.kind === "state") return bad("state entries precede the history");
     const vs = chunk.versions;
     if (vs.length < 1 || vs.length > MAX_CHUNK_ENTRIES) return bad(`a history chunk holds 1..${MAX_CHUNK_ENTRIES.toString()} items, not ${vs.length.toString()}`);
@@ -1392,9 +1416,9 @@ export class SnapshotReader<V> {
       sized.push([u, s]);
     }
     // the trusted head's version encoded once, for the first history chunk, and carried: never read again
-    const hk = this.headKey === undefined ? key.encode(this.trusted.version) : ok(this.headKey);
+    const hk = this.#headKey === undefined ? key.encode(this.#trusted.version) : ok(this.#headKey);
     if (!hk.ok) return hk;
-    let previous = this.lastVersion;
+    let previous = this.#lastVersion;
     for (const k of keys) {
       if (previous !== undefined && compareBytes(previous, k) >= 0) return bad(`version ${versionHex(k)} does not follow ${versionHex(previous)}`);
       previous = k;
@@ -1402,7 +1426,7 @@ export class SnapshotReader<V> {
     for (const [i, k] of keys.entries()) {
       const s = sized[i]?.[1] ?? new Uint8Array(0);
       if (compareBytes(k, hk.value) > 0) return bad(`version ${versionHex(k)} is after the head`);
-      if (bytesEqual(k, hk.value) && !bytesEqual(s, this.trusted.stateRoot)) return bad("the head version has another state root");
+      if (bytesEqual(k, hk.value) && !bytesEqual(s, this.#trusted.stateRoot)) return bad("the head version has another state root");
     }
     const last = keys[keys.length - 1];
     return ok(
@@ -1412,12 +1436,23 @@ export class SnapshotReader<V> {
 
   /** The snapshot, once its history has reached the head version. */
   finish(): C<Snapshot<V>> {
-    return READER.has(this) ? this.#finish() : err(NOT_A_READER);
+    if (!READER.has(this)) return err(NOT_A_READER);
+    const done = this.#finish();
+    if (!done.ok) return done;
+    // the caller's own copy: changing it changes nothing the reader holds, or gives a later finish
+    const { head, entries, history } = done.value;
+    return ok(
+      Object.freeze({
+        head: copyHead(head),
+        entries: entries.map(([k, v]) => Object.freeze([k, v] as const)),
+        history: history.map(([u, s]) => Object.freeze([ownVersion(u), copyBytes(s)] as const)),
+      }),
+    );
   }
 
   #finish(): R<Snapshot<V>> {
-    if (this.stage !== "done") return malformed("snapshot: it ends before the head version");
-    return ok(Object.freeze({ head: this.trusted, entries: this.stateChunks.flat(), history: this.historyChunks.flat() }));
+    if (this.#stage !== "done") return malformed("snapshot: it ends before the head version");
+    return ok(Object.freeze({ head: this.#trusted, entries: this.#stateChunks.flat(), history: this.#historyChunks.flat() }));
   }
 }
 Object.freeze(SnapshotReader);
@@ -1435,7 +1470,13 @@ interface VersionSlot<V> {
   readonly stateRoot: Uint8Array;
 }
 
-const copyHead = <V>(h: Head<V>): Head<V> => Object.freeze({ version: h.version, stateRoot: copyBytes(h.stateRoot), historyRoot: copyBytes(h.historyRoot) });
+/**
+ * A version handed out or kept: a byte version (`VersionKey.bytes`) copied, as every root is; any other (a `bigint`, a
+ * caller's own version key's value) as it is. `ArrayBuffer.isView` reads an internal slot first, so no Proxy trap runs.
+ */
+const ownVersion = <V>(v: V): V => (ArrayBuffer.isView(v) && v instanceof Uint8Array ? copyBytes(v) : v) as V;
+
+const copyHead = <V>(h: Head<V>): Head<V> => Object.freeze({ version: ownVersion(h.version), stateRoot: copyBytes(h.stateRoot), historyRoot: copyBytes(h.historyRoot) });
 
 const chunked = <T>(xs: readonly T[], n: number): T[][] => {
   const out: T[][] = [];
@@ -1500,14 +1541,20 @@ export class Replica<V> {
   // the replica owns every root it holds: heads and roots come in from callers and go out as copies, so no caller can
   // change a verified replica through a shared array
   readonly #head: Head<V> | null;
+  // runtime-private, as the head is: the tries' nodes and slots are the replica's own, shared with the replicas it was
+  // built from and the ones built from it, and reachable through no property
+  readonly #state: TrieMap<StateSlot>;
+  readonly #versions: TrieMap<VersionSlot<V>>;
 
   private constructor(
     token: Token,
     readonly profile: VersionedTrie<V>,
     head: Head<V> | null,
-    private readonly state: TrieMap<StateSlot>,
-    private readonly versions: TrieMap<VersionSlot<V>>,
+    state: TrieMap<StateSlot>,
+    versions: TrieMap<VersionSlot<V>>,
   ) {
+    this.#state = state;
+    this.#versions = versions;
     // without the token the caller's head is never read, and the replica's views answer as an empty one's
     this.#head = token !== TOKEN || head === null ? null : copyHead(head);
     if (token === TOKEN) REPLICA.stamp(this);
@@ -1535,22 +1582,22 @@ export class Replica<V> {
   get(key: StateKey): Result<Value | undefined, TypeMismatch> {
     if (!REPLICA.has(this)) return err(NOT_A_REPLICA);
     const k = keyArg(key);
-    return k.ok ? ok(this.state.get(k.value.bytes())?.value) : k;
+    return k.ok ? ok(this.#state.get(k.value.bytes())?.value) : k;
   }
 
   /** The number of current entries. */
   get size(): number {
-    return REPLICA.has(this) ? this.state.size : 0;
+    return REPLICA.has(this) ? this.#state.size : 0;
   }
 
   /** Every current entry, in key order (none for a replica built from outside). */
   entries(): readonly (readonly [StateKey, Value])[] {
-    return REPLICA.has(this) ? this.state.values().map((s) => [s.key, s.value] as const) : [];
+    return REPLICA.has(this) ? this.#state.values().map((s) => [s.key, s.value] as const) : [];
   }
 
   /** Every committed version with its state root, in order (none for a replica built from outside). */
   history(): readonly (readonly [V, Uint8Array])[] {
-    return REPLICA.has(this) ? this.versions.values().map((s) => [s.version, copyBytes(s.stateRoot)] as const) : [];
+    return REPLICA.has(this) ? this.#versions.values().map((s) => [ownVersion(s.version), copyBytes(s.stateRoot)] as const) : [];
   }
 
   /**
@@ -1620,7 +1667,7 @@ export class Replica<V> {
       if (!c.ok) return c;
     }
     // new tries sharing every untouched subtree with this replica's, which stay as they are
-    let state = this.state;
+    let state = this.#state;
     for (const k of delta.removes) {
       const next = viaTrie(state.delete(k.bytes()));
       if (!next.ok) return next;
@@ -1637,7 +1684,7 @@ export class Replica<V> {
     // the claimed roots compared as bytes: one past the digest's size (Oversized) matches no root
     const claimedState = delta.head.stateRoot;
     if (!isMeasuredBytes(claimedState) || !bytesEqual(s, claimedState)) return mismatch("state", claimedState, s);
-    const versions = viaTrie(this.versions.set(nk.value, { version: delta.head.version, stateRoot: s }, TRIE.bytesHash(p.hashing, s)));
+    const versions = viaTrie(this.#versions.set(nk.value, { version: delta.head.version, stateRoot: s }, TRIE.bytesHash(p.hashing, s)));
     if (!versions.ok) return versions;
     const h = versions.value.root;
     const claimedHistory = delta.head.historyRoot;
