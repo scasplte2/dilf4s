@@ -1,4 +1,6 @@
+import { once } from "node:events";
 import { runInNewContext } from "node:vm";
+import { Worker } from "node:worker_threads";
 
 import { describe, expect, it } from "vitest";
 
@@ -690,5 +692,26 @@ describe("an object or array a getter revokes while it is read is refused as a T
     expect(describeFailure(bad({ path: revokingAfterFirstRead([Preview.of("a"), Preview.of("b")]), reason: "r" }))).toBe("<not a decode failure>");
     const names = codec.selectAlternative(int(1n), bad(revokingAfterFirstRead([[["a"], ["a"]]])), []);
     expect(names.ok ? "selected" : names.error.reason).toBe("the schema's names are not arrays of strings");
+  });
+});
+
+describe("decodeUtf8 validates and decodes one snapshot of shared memory", () => {
+  it("a worker alternating four shared bytes between a valid and an invalid sequence never makes it throw", { timeout: 30_000 }, async () => {
+    const shared = new SharedArrayBuffer(4);
+    const worker = new Worker(
+      "const a = new Uint8Array(require('node:worker_threads').workerData); for (;;) { a[0] = 0xf4; a[1] = 0x8f; a[2] = 0xbf; a[3] = 0xbf; a.fill(0xff); }",
+      { eval: true, workerData: shared },
+    );
+    await once(worker, "online");
+    const bytes = new Uint8Array(shared);
+    let wrong = 0;
+    for (let i = 0; i < 50_000; i++) {
+      const text = decodeUtf8(bytes);
+      // a valid snapshot decodes to U+10FFFF (or, before the worker's first write, four NULs); every other is refused,
+      // never a code point out of range
+      if (text !== undefined && text !== "\u{10ffff}" && text !== "\0\0\0\0") wrong += 1;
+    }
+    await worker.terminate();
+    expect(wrong, "only U+10FFFF or a refusal").toBe(0);
   });
 });

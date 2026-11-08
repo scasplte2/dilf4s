@@ -206,14 +206,19 @@ export interface PublicChild<S extends SchemeName> {
 const extended = <S extends SchemeName>(key: SigningKey<S>, chainCode: Uint8Array): ExtendedKey<S> => new ExtendedKey(INTERNAL, key, chainCode);
 const hmac512 = (key: Uint8Array, data: Uint8Array): Uint8Array => hmac(sha512, key, data);
 
-/** Secret input: a `Secret` or a `Uint8Array` (copied from its own memory), or a `TypeMismatch`. */
-const secretArg = (x: unknown): Result<Uint8Array, TypeMismatch> => {
-  const b = secretBytes(x);
-  return b === undefined ? err(expected("a Uint8Array or a Secret")) : ok(b);
+/**
+ * Secret input: a `Secret` or a `Uint8Array` (copied through core's boundary), or a `TypeMismatch`. With `max` (a seed's
+ * or a root's bound), longer input is refused as `too` words it, by its length, uncopied.
+ */
+const secretArg = (x: unknown, max?: number, too?: string): Result<Uint8Array, KeyRefusal> => {
+  const b = secretBytes(x, max);
+  if (b === undefined) return err(expected("a Uint8Array or a Secret"));
+  return typeof b === "number" ? err(invalid(too ?? "secret input is too long")) : ok(b);
 };
+const SEED_RANGE = "seed must be 16..64 bytes";
 
 function seedRange(seed: Uint8Array): Result<Uint8Array, KeyError> {
-  return seed.length >= 16 && seed.length <= 64 ? ok(seed) : err(invalid("seed must be 16..64 bytes"));
+  return seed.length >= 16 && seed.length <= 64 ? ok(seed) : err(invalid(SEED_RANGE));
 }
 
 /** The derivation along a checked path from a start key, each step by `child`. */
@@ -258,7 +263,7 @@ function slip10Split(i: Uint8Array): Result<Parts<"Ed25519">, KeyRefusal> {
 }
 
 const slip10Master = (seed: unknown): Result<Parts<"Ed25519">, KeyRefusal> => {
-  const b = secretArg(seed);
+  const b = secretArg(seed, 64, SEED_RANGE);
   if (!b.ok) return b;
   const s = seedRange(b.value);
   return s.ok ? slip10Split(hmac512(ED25519_SEED, s.value)) : s;
@@ -292,7 +297,7 @@ function scalarKey(d: bigint): Result<SigningKey<"secp256k1-ECDSA">, KeyError> {
 }
 
 const bip32Master = (seed: unknown): Result<Parts<"secp256k1-ECDSA">, KeyRefusal> => {
-  const b = secretArg(seed);
+  const b = secretArg(seed, 64, SEED_RANGE);
   if (!b.ok) return b;
   const s = seedRange(b.value);
   if (!s.ok) return s;
@@ -391,7 +396,7 @@ function icarusRoot(b: Uint8Array): Result<Parts<"Ed25519-BIP32">, KeyRefusal> {
 export const icarus = Object.freeze({
   /** A root from 96 bytes `kL || kR || chainCode`, clamped (a copy); what is neither bytes nor a `Secret` is a `TypeMismatch`. */
   root: (secret: Uint8Array | Secret): Result<ExtendedKey<"Ed25519-BIP32">, KeyRefusal> => {
-    const b = secretArg(secret);
+    const b = secretArg(secret, 96, "root secret must be 96 bytes");
     return b.ok ? foldPath(icarusRoot(copy(b.value)), [], icarusChild) : b;
   },
   /**

@@ -3,7 +3,7 @@
  * `TextDecoder` drops a leading byte-order mark, either of which would change bytes without an error.
  */
 
-import { plainBytes } from "./bytes.js";
+import { ownAny } from "./bytes.js";
 import type { TypeMismatch } from "./error.js";
 import { err, ok, type Result } from "./result.js";
 
@@ -76,11 +76,12 @@ function sequenceWidth(a: Uint8Array, i: number): number {
 
 /**
  * The text of well-formed UTF-8, or `undefined` if `a` is not well-formed, or not a `Uint8Array` at all (from a
- * JavaScript caller, or a cast). The bytes are read through their own slots (`plainBytes`), so a subclass's `length`
- * is not believed.
+ * JavaScript caller, or a cast). The bytes pass through core's byte boundary (`ownAny`): measured by their own slots
+ * (a subclass's `length` is not believed), and a view of stable memory or else one copy, so the validation and the
+ * decoding read one snapshot.
  */
 export function decodeUtf8(a: Uint8Array): string | undefined {
-  const bytes = plainBytes(a);
+  const bytes = ownAny(a);
   return bytes === undefined ? undefined : utf8Text(bytes);
 }
 

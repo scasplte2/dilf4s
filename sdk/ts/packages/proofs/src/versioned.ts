@@ -10,7 +10,7 @@
  * checked before it is used.
  */
 import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { isRevokedProxy, MAX_OUTPUT_SIZE, mint, ownAny, ownCopy, readGuarded, REVOKED, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isRevokedProxy, MAX_OUTPUT_SIZE, mint, ownBytes, ownCopy, readGuarded, REVOKED, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
@@ -110,8 +110,10 @@ export class StateKey {
    * `TypeMismatch`; the bytes are read through a plain view of their own memory, their own `length` not believed.
    */
   static fromBytes(bytes: Uint8Array): Result<StateKey, StateKeyError | TypeMismatch> {
-    const b = bytesArg(bytes);
-    return b.ok ? keyFromBytes(b.value) : b;
+    // within the key's bound: longer bytes are refused by their length, uncopied
+    const b = ownBytes(bytes, MAX_KEY_LENGTH);
+    if (b === undefined) return err(NOT_BYTES);
+    return typeof b === "number" ? err({ kind: "TooLong", limit: MAX_KEY_LENGTH }) : keyFromBytes(b);
   }
 
   /** The trie key: the UTF-8 (here ASCII) bytes. */
@@ -238,9 +240,11 @@ function bigEndian(width: number, max: bigint): VersionKey<bigint> {
       return ok(out);
     },
     decode: (bytes: Uint8Array): C<bigint> => {
-      const b = ownAny(bytes);
+      // within the key's width: longer bytes are refused by their length, uncopied
+      const b = ownBytes(bytes, width);
       if (b === undefined) return err(expected("a Uint8Array"));
-      if (b.length !== width) return err({ kind: "InvalidVersion", reason: `a version key is ${width.toString()} bytes, got ${b.length.toString()}` });
+      const got = typeof b === "number" ? b : b.length;
+      if (typeof b === "number" || got !== width) return err({ kind: "InvalidVersion", reason: `a version key is ${width.toString()} bytes, got ${got.toString()}` });
       let v = 0n;
       for (const x of b) v = (v << 8n) | BigInt(x);
       return v <= max ? ok(v) : err({ kind: "InvalidVersion", reason: `version ${toHexOf(b)} exceeds ${max.toString()}` });
@@ -812,8 +816,10 @@ export class VersionedTrie<V> {
    */
   decodeChunk(bytes: Uint8Array): C<SnapshotChunk<V>> {
     if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
-    const b = bytesArg(bytes);
-    return b.ok ? this.#decodeChunk(b.value) : b;
+    // within the chunk bound: a longer chunk is refused by its length, uncopied
+    const b = ownBytes(bytes, MAX_CHUNK_BYTES);
+    if (b === undefined) return err(NOT_BYTES);
+    return typeof b === "number" ? err({ kind: "TooLarge", what: "a snapshot chunk", limit: MAX_CHUNK_BYTES }) : this.#decodeChunk(b);
   }
 
   #decodeChunk(bytes: Uint8Array): C<SnapshotChunk<V>> {

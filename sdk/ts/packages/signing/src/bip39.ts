@@ -159,8 +159,10 @@ const wordListArg = (x: unknown): Result<WordList, TypeMismatch> => {
  * two-word mnemonic); what is neither, or a word list not made by `WordList.of`, is a `TypeMismatch`.
  */
 export function toMnemonic(entropy: Uint8Array | Secret, words: WordList = WordList.english): Result<Mnemonic, Bip39Refusal> {
-  const ent = secretBytes(entropy);
+  // within the longest entropy: longer bytes are refused by their length, uncopied
+  const ent = secretBytes(entropy, 32);
   if (ent === undefined) return err(expected("a Uint8Array or a Secret"));
+  if (typeof ent === "number") return err(invalidEntropy(`entropy must be 16..32 bytes in steps of 4, got ${String(ent)}`));
   const list = wordListArg(words);
   if (!list.ok) return list;
   return mnemonicOf(ent, list.value);
@@ -193,8 +195,9 @@ export function generateMnemonic(
   if (!list.ok) return list;
   if (typeof (random as unknown) !== "function" || isRevokedProxy(random)) return err(expected("a function"));
   if (!ENTROPY_SIZES.includes(entropyBytes)) return err(invalidEntropy(`entropy must be 16..32 bytes in steps of 4, got ${String(entropyBytes)}`));
-  const ent = secretBytes(random(entropyBytes));
+  const ent = secretBytes(random(entropyBytes), entropyBytes);
   if (ent === undefined) return err(expected("random bytes"));
+  if (typeof ent === "number") return err(invalidEntropy(`the randomness is ${String(ent)} bytes, not ${String(entropyBytes)}`));
   return ent.length === entropyBytes ? mnemonicOf(ent, list.value) : err(invalidEntropy(`the randomness is ${String(ent.length)} bytes, not ${String(entropyBytes)}`));
 }
 

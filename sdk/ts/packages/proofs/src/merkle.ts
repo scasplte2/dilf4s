@@ -8,7 +8,7 @@
  * view of their own memory, and what a proof keeps is copied; the walks run on that plain, owned data.
  */
 import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { digestOf, hashPartsOf, mint, outputSizeOf, ownAny, ownCopy, ownCopyAny, readGuarded, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { digestOf, hashPartsOf, mint, outputSizeOf, ownAny, ownBytes, ownCopy, ownCopyAny, readGuarded, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
 import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Token } from "./check.js";
@@ -405,6 +405,9 @@ function decodeConsistency(h: Profile, value: Value): Result<ConsistencyProof, M
   return sized.ok ? consistencyOf(w.value.old, w.value.new, w.value.path.map(copyBytes)) : sized;
 }
 
+/** The refusal of a digest longer than the profile's, measured at the boundary and never copied: as {@link sized} words it. */
+const longer = (what: string, length: number, size: number): Result<never, MerkleError> => err({ kind: "Encoding", reason: `${what} is ${length.toString()} bytes, not ${size.toString()}` });
+
 function sized(h: Profile, what: string, d: Uint8Array): Result<undefined, MerkleError> {
   return d.length === h.size ? ok(undefined) : err({ kind: "Encoding", reason: `${what} is ${d.length.toString()} bytes, not ${h.size.toString()}` });
 }
@@ -438,9 +441,12 @@ const NOT_A_CONSISTENCY = expected("a ConsistencyProof");
 export function checkInclusion(hashing: MerkleHashing<unknown>, root: Uint8Array, leafHash: Uint8Array, proof: InclusionProof): Result<undefined, Refusal> {
   // each check allocates nothing but the two digests' plain views; a refusal is a shared constant
   if (!isTagged(hashing) && !isRfc(hashing)) return err(NOT_A_PROFILE);
-  const r = ownAny(root);
-  const l = ownAny(leafHash);
+  // within the profile's digest size: a longer root or leaf hash is refused as the size check words it, uncopied
+  const r = ownBytes(root, hashing.size);
+  const l = ownBytes(leafHash, hashing.size);
   if (r === undefined || l === undefined) return err(NOT_BYTES);
+  if (typeof r === "number") return longer("root", r, hashing.size);
+  if (typeof l === "number") return longer("leaf hash", l, hashing.size);
   return isInclusion(proof) ? inclusionCheck(hashing, r, l, proof) : err(NOT_AN_INCLUSION);
 }
 
@@ -470,9 +476,11 @@ function inclusionCheck(h: Profile, root: Uint8Array, leafHash: Uint8Array, proo
  */
 export function checkConsistency(hashing: MerkleHashing<unknown>, oldRoot: Uint8Array, newRoot: Uint8Array, proof: ConsistencyProof): Result<undefined, Refusal> {
   if (!isTagged(hashing) && !isRfc(hashing)) return err(NOT_A_PROFILE);
-  const o = ownAny(oldRoot);
-  const n = ownAny(newRoot);
+  const o = ownBytes(oldRoot, hashing.size);
+  const n = ownBytes(newRoot, hashing.size);
   if (o === undefined || n === undefined) return err(NOT_BYTES);
+  if (typeof o === "number") return longer("old root", o, hashing.size);
+  if (typeof n === "number") return longer("new root", n, hashing.size);
   return isConsistency(proof) ? consistencyCheck(hashing, o, n, proof) : err(NOT_A_CONSISTENCY);
 }
 

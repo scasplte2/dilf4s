@@ -21,7 +21,7 @@ function sources(dir: string): string[] {
 const scanned = (): string[] => [
   ...sources(join(packages, "proofs", "src")),
   ...sources(join(packages, "signing", "src")),
-  ...["hash.ts", "hex.ts", "commitment.ts"].map((f) => join(packages, "core", "src", f)),
+  ...["hash.ts", "hex.ts", "commitment.ts", "utf8.ts"].map((f) => join(packages, "core", "src", f)),
 ];
 
 /** The code of `text` without its comments (a comment may name what the code must not use). */

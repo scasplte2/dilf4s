@@ -1154,3 +1154,18 @@ describe("versioned byte fields are measured before they are copied", () => {
     expect(held() - before, "none of them was copied").toBeLessThan(1 << 20);
   });
 });
+
+describe("an argument with a known bound is refused past it uncopied, even in shared memory", () => {
+  it("Merkle roots and leaf hashes, a state key, a version key's bytes and a snapshot chunk", () => {
+    const big = new Uint8Array(new SharedArrayBuffer(16 << 20));
+    const chunk = new Uint8Array(new SharedArrayBuffer(versioned.MAX_CHUNK_BYTES + 1));
+    const before = process.memoryUsage().arrayBuffers;
+    expect(expectErr(merkle.checkInclusion(tagged, big, leafHashes[2] ?? empty, inclusion2), "a 16 MiB root").kind).toBe("Encoding");
+    expect(expectErr(merkle.checkInclusion(tagged, mroot, big, inclusion2), "a 16 MiB leaf hash").kind).toBe("Encoding");
+    expect(expectErr(merkle.checkConsistency(tagged, big, mroot, expectOk(merkle.ConsistencyProof.of(3n, 3n, []), "proof")), "a 16 MiB old root").kind).toBe("Encoding");
+    expect(expectErr(versioned.StateKey.fromBytes(big), "a 16 MiB key").kind).toBe("TooLong");
+    expect(expectErr(versioned.VersionKey.long.decode(big), "a 16 MiB version key").kind).toBe("InvalidVersion");
+    expect(expectErr(vt.decodeChunk(chunk), "an oversized chunk").kind).toBe("TooLarge");
+    expect(process.memoryUsage().arrayBuffers - before, "nothing was copied").toBeLessThan(1 << 20);
+  });
+});

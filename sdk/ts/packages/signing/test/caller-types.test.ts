@@ -615,3 +615,15 @@ describe("a message in memory another thread writes is signed from one snapshot"
     }
   });
 });
+
+describe("secret input with a known bound is refused past it uncopied, even in shared memory", () => {
+  it("mnemonic entropy, BIP32 and SLIP-10 seeds, and an Icarus root secret", () => {
+    const big = new Uint8Array(new SharedArrayBuffer(16 << 20));
+    const before = process.memoryUsage().arrayBuffers;
+    expect(expectErr(toMnemonic(big), "16 MiB of entropy").kind).toBe("InvalidEntropy");
+    expect(expectErr(bip32Secp256k1.master(big), "a 16 MiB seed").kind).toBe("InvalidDerivation");
+    expect(expectErr(slip10Ed25519.master(big), "a 16 MiB seed").kind).toBe("InvalidDerivation");
+    expect(expectErr(icarus.root(big), "a 16 MiB root").kind).toBe("InvalidDerivation");
+    expect(process.memoryUsage().arrayBuffers - before, "nothing was copied").toBeLessThan(1 << 20);
+  });
+});
