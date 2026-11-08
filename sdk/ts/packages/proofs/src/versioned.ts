@@ -10,7 +10,7 @@
  * checked before it is used.
  */
 import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { isRevokedProxy, MAX_OUTPUT_SIZE, mint, plainBytes, readGuarded, REVOKED, takeBytes, takeBytesWithin, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isRevokedProxy, MAX_OUTPUT_SIZE, mint, plainBytes, readGuarded, REVOKED, takeBytesWithin, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
@@ -311,7 +311,8 @@ function versionKeyArg<V>(x: unknown): Result<VersionKey<V>, TypeMismatch> {
         isRevokedProxy(encode)
           ? err(bad)
           : keyResult(Reflect.apply(encode, x, [v]), (b) => {
-              const own = takeBytes(b);
+              // measured before it is copied: an encoding of another width is refused, never copied whole
+              const own = takeBytesWithin(b, width);
               return own?.length === width ? own : undefined;
             }),
       decode: (b: Uint8Array): C<V> => (isRevokedProxy(decode) ? err(bad) : keyResult(Reflect.apply(decode, x, [copyBytes(b)]), (v) => v as V)),
@@ -415,7 +416,7 @@ function proofArg<V>(x: unknown): Result<VersionedTrieProof<V>, TypeMismatch> {
     const version: unknown = readGuarded(atField, "version");
     const s: unknown = readGuarded(atField, "stateRoot");
     if (version === REVOKED || s === REVOKED) return err(expected("the proof's at to be an At"));
-    const stateRoot = s === undefined ? undefined : takeBytes(s);
+    const stateRoot = s === undefined ? undefined : takeBytesWithin(s, MAX_OUTPUT_SIZE);
     if (s !== undefined && stateRoot === undefined) return err(expected("the proof's at.stateRoot to be a Uint8Array"));
     at = Object.freeze(stateRoot === undefined ? { version: version as V } : { version: version as V, stateRoot });
   }
@@ -454,7 +455,8 @@ const versionsArg = <V, E = never>(x: unknown, what: string, bound?: (length: nu
     const pair = readPair(e);
     // the version first, then the root, copied as read: nothing read after it can change it
     const version: unknown = pair === undefined ? undefined : readGuarded(pair, 0);
-    const root = pair === undefined ? undefined : takeBytes(readGuarded(pair, 1));
+    // owned if it can be a digest; a longer one is kept as a view the reader refuses by its size, never copied
+    const root = pair === undefined ? undefined : takeBytesWithin(readGuarded(pair, 1), MAX_OUTPUT_SIZE);
     // a version is any value, checked when encoded: REVOKED is refused here, never kept as one
     return pair === undefined || root === undefined || version === REVOKED ? err(expectedAt("a [version, Uint8Array] array", i)) : ok([version as V, root] as const);
     },
@@ -1015,7 +1017,8 @@ export class VersionedTrie<V> {
       if (version === REVOKED) return bad;
       const k = this.versionKey.encode(version as V);
       if (!k.ok) return k;
-      const s = takeBytes(readGuarded(pair, 1));
+      // hashed, never kept: a root longer than any digest is hashed in place (it matches no listing), never copied
+      const s = takeBytesWithin(readGuarded(pair, 1), MAX_OUTPUT_SIZE);
       return s === undefined ? bad : ok({ key: k.value, valueHash: this.#bytesHash(s) });
     });
     if (!claims.ok) return claims;
@@ -1217,6 +1220,9 @@ export class SnapshotReader<V> {
     if (chunk.kind === "state") return bad("state entries precede the history");
     const vs = chunk.versions;
     if (vs.length < 1 || vs.length > MAX_CHUNK_ENTRIES) return bad(`a history chunk holds 1..${MAX_CHUNK_ENTRIES.toString()} items, not ${vs.length.toString()}`);
+    // every state root of the hashing's size, checked before any is kept or hashed
+    const size = this.profile.hashing.size;
+    for (const [, s] of vs) if (s.length !== size) return bad(`a state root is ${size.toString()} bytes, got ${s.length.toString()}`);
     const keys: Uint8Array[] = [];
     for (const [u] of vs) {
       const k = key.encode(u);

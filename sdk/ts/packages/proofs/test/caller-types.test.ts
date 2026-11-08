@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import { models, Value } from "@kd5ujc/dilf4s-core";
 
+import { takeBytesWithin } from "@kd5ujc/dilf4s-core/internal";
+
 import { merkle, poseidon, trie, versioned } from "../src/index.js";
 import { bytes, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
 
@@ -1102,5 +1104,52 @@ describe("trieRoot checks each entry as it reads it: the first invalid one stops
     expect(expectErr(trie.trieRoot(T, fixed1, [[big, v1]]), "a 64 MiB key").kind).toBe("InvalidKey");
     expect(expectErr(trie.trieRoot(T, fixed1, [[Uint8Array.of(1), big]]), "a 64 MiB digest").kind).toBe("Encoding");
     expect(process.memoryUsage().arrayBuffers - before, "neither was copied").toBeLessThan(1 << 20);
+  });
+});
+
+describe("a bounded copy copies the one view whose length it checked", () => {
+  it("a view tracking a growable SharedArrayBuffer that a worker grows is never copied past the bound", { timeout: 30_000 }, async () => {
+    const worker = new Worker(
+      "const { parentPort } = require('node:worker_threads'); parentPort.on('message', (sab) => { for (let n = 2; n <= sab.maxByteLength; n *= 2) sab.grow(n); parentPort.postMessage('grown'); });",
+      { eval: true },
+    );
+    await once(worker, "online");
+    let tooLong = 0;
+    for (let round = 0; round < 50; round++) {
+      // a growable SharedArrayBuffer (ES2024, in Node 20+), which this package's TypeScript lib does not yet type
+      const Growable = SharedArrayBuffer as unknown as new (length: number, options: { maxByteLength: number }) => SharedArrayBuffer;
+      const sab = new Growable(1, { maxByteLength: 1 << 16 });
+      const tracking = new Uint8Array(sab);
+      const grown = once(worker, "message");
+      worker.postMessage(sab);
+      for (let i = 0; i < 2000; i++) {
+        const got = takeBytesWithin(tracking, 1);
+        // a copy is owned memory: it must hold at most the bound; past it, only a view of the caller's buffer comes back
+        if (got !== undefined && got.buffer !== sab && got.length > 1) tooLong += 1;
+      }
+      await grown;
+    }
+    await worker.terminate();
+    expect(tooLong, "no copy past the bound").toBe(0);
+  });
+});
+
+describe("versioned byte fields are measured before they are copied", () => {
+  const held = (): number => process.memoryUsage().arrayBuffers;
+  const big = new Uint8Array(16 << 20);
+
+  it("an at.stateRoot, a version key's encoding and a snapshot's history root of the wrong size are refused, uncopied", () => {
+    const p = vectors.proofs.find((x) => x.name === "version-255");
+    if (p === undefined) throw new Error("the version fixture");
+    const proof = expectOk(vt.decodeProof(valueOf(p.cbor)), "proof");
+    const before = held();
+    const withBig = bad({ ...proof, at: { version: 255n, stateRoot: big } });
+    expect(vt.verifyVersion(bytes(vectors.root), withBig, 255n).ok, "a 16 MiB at.stateRoot").toBe(false);
+    const huge = expectOk(versioned.VersionedTrie.of<bigint>("SHA-256", { width: 8, encode: () => ({ ok: true, value: big }), decode: (b) => versioned.VersionKey.long.decode(b) }), "profile");
+    expect(huge.root(finalHead).ok, "a 16 MiB encoding").toBe(false);
+    const reader = expectOk(versioned.SnapshotReader.start(vt, finalHead), "reader");
+    const state = expectOk(reader.feedBytes(bytes(vectors.snapshot.chunks[0] ?? "")), "the head chunk");
+    expect(expectErr(state.feed(bad({ kind: "history", versions: [[1n, big]] })), "a 16 MiB history root").kind).toBe("Malformed");
+    expect(held() - before, "none of them was copied").toBeLessThan(1 << 20);
   });
 });

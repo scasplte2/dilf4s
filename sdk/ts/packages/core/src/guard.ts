@@ -55,6 +55,8 @@ export function readGuarded(o: object, key: PropertyKey): unknown {
   return isRevokedProxy(o) ? REVOKED : Reflect.get(o, key);
 }
 
+const NO_ARGUMENTS: readonly unknown[] = Object.freeze([]);
+
 /** `ArrayBuffer.prototype`'s own `byteLength` getter, read once when this module loads. */
 const arrayBufferByteLength: unknown = Reflect.get(Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, "byteLength") ?? {}, "get");
 
@@ -63,12 +65,12 @@ const arrayBufferByteLength: unknown = Reflect.get(Object.getOwnPropertyDescript
  * cannot fake: `ArrayBuffer.prototype`'s `byteLength` getter throws a `TypeError` for anything else, a
  * `SharedArrayBuffer` given `ArrayBuffer.prototype` included. The getter runs no caller code (it reads internal slots),
  * so the catch below sees only that refusal: the guard's second engine-only catch, nothing else placed inside it.
- * O(1), nothing allocated.
+ * O(1), nothing allocated (its argument list is one frozen array).
  */
 export function isArrayBufferBranded(x: unknown): boolean {
   if (typeof arrayBufferByteLength !== "function" || typeof x !== "object" || x === null) return false;
   try {
-    Reflect.apply(arrayBufferByteLength, x, []);
+    Reflect.apply(arrayBufferByteLength, x, NO_ARGUMENTS);
     return true;
   } catch {
     return false;

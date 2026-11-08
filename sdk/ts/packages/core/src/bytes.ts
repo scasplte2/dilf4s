@@ -84,9 +84,11 @@ export function takeBytes(x: unknown): Uint8Array | undefined {
  * never a copy of all it holds; one that fits is owned as `takeBytes` owns it. `undefined` if it is not bytes.
  */
 export function takeBytesWithin(x: unknown, max: number): Uint8Array | undefined {
-  const length = bytesLength(x);
-  if (length === undefined) return undefined;
-  return length <= max ? takeBytes(x) : plainBytes(x);
+  // one fixed-length view, whose length is checked and which is then copied: a view that tracks a growable buffer's
+  // length cannot grow between the check and the copy
+  const view = plainBytes(x);
+  if (view === undefined) return undefined;
+  return view.length <= max ? copyBytes(view) : view;
 }
 
 /** A fresh copy of one of this package's own plain arrays (never a caller's: see {@link takeBytes}). */
