@@ -11,7 +11,7 @@
  * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
 import { BYTES_TAG, describeFailure, err, isValue, models, ok, type Err, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { bytesLength, mint, outputSizeOf, ownAny, ownBytes, ownCopy, ownCopyAny, readGuarded, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, mint, outputSizeOf, ownBytes, ownCopy, ownCopyAny, readGuarded, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
@@ -175,13 +175,14 @@ export class Segment {
   }
 }
 
+/** A segment's count of bits as a refusal names it: one too wide for 64 bits by its size (its digits are superlinear and unpaid). */
+const countText = (n: bigint): string => (bitsOf(n) <= 64 ? `${n.toString()} bits` : `a ${bitsOf(n).toString()}-bit count of bits`);
+
 function segmentBits(n: bigint, b: Uint8Array): Result<B.Bits, TrieError> {
   const len = BigInt(b.length);
   // bigint division truncates toward zero, so a negative length would pass the byte count: refuse it first
   if (n < 0n || n > len * 8n || len !== (n + 7n) / 8n) {
-    // a count too wide for 64 bits is named by its size: its digits are superlinear and unpaid
-    const count = bitsOf(n) <= 64 ? `${n.toString()} bits` : `a ${bitsOf(n).toString()}-bit count of bits`;
-    return encoding(`segment of ${count} in ${b.length.toString()} bytes`);
+    return encoding(`segment of ${countText(n)} in ${b.length.toString()} bytes`);
   }
   const bits = Number(n);
   const rem = bits % 8;
@@ -482,10 +483,13 @@ const recordArg =
   const s: unknown = readGuarded(r, "s");
   if (!isObject(s)) return bad;
   const n: unknown = readGuarded(s, "n");
-  // kept: copied once, as the segment it becomes keeps it (a segment's size is checked against its count; one longer
-  // than a mode allows is refused when the proof is checked, and one too heavy to encode when it is encoded)
-  const b = ownCopyAny(readGuarded(s, "b"));
-  if (typeof n !== "bigint" || b === undefined) return bad;
+  // kept: copied once, as the segment it becomes keeps it, within the byte width its count allows (bytes past it are
+  // refused by their length as segmentBits words it, uncopied; one longer than a mode allows is refused when the proof
+  // is checked, and one too heavy to encode when it is encoded)
+  const width = typeof n === "bigint" && n >= 0n ? (n + 7n) / 8n : 0n;
+  const b = ownCopy(readGuarded(s, "b"), width > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(width));
+  if (typeof b === "number" && typeof n === "bigint") return encoding(`segment of ${countText(n)} in ${b.toString()} bytes`);
+  if (typeof n !== "bigint" || b === undefined || typeof b === "number") return bad;
   const v: unknown = readGuarded(r, "v");
   const vb = v === undefined ? undefined : ownCopy(v, size);
   if (typeof vb === "number") return longDigest(size, vb);
@@ -588,16 +592,20 @@ export function check(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, pro
   // each check allocates nothing but the root's plain view; a refusal is a shared constant
   if (!isHashing(hashing)) return err(NOT_A_HASHING);
   if (!isMode(mode)) return err(NOT_A_MODE);
-  const r = ownAny(root);
+  // within the digest size: a longer root (which matches no proof) is measured, never copied
+  const r = ownBytes(root, hashing.size);
   if (r === undefined) return err(NOT_BYTES);
   return isProof(proof) ? checkOf(hashing, mode, r, proof) : err(NOT_A_PROOF);
 }
 
-function checkOf(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: TrieProof): Result<VerifiedTrieProof, TrieError> {
+/** A proof checked against a root: owned bytes, or the length of one longer than any digest of the hashing (no match). */
+function checkOf(hashing: TrieHashing, mode: KeyMode, root: Uint8Array | number, proof: TrieProof): Result<VerifiedTrieProof, TrieError> {
   const top = topOf(proof);
   const computed = top === undefined ? ok(hashing.empty) : hashProof(hashing, mode, top);
   if (!computed.ok) return computed;
-  return bytesEqual(computed.value, root) ? ok(createVerified(mode, top)) : err({ kind: "RootMismatch", expected: rootText(root, computed.value.length), computed: toHexOf(computed.value) });
+  if (typeof root !== "number" && bytesEqual(computed.value, root)) return ok(createVerified(mode, top));
+  const expected = typeof root === "number" ? `a root of ${root.toString()} bytes` : rootText(root, computed.value.length);
+  return err({ kind: "RootMismatch", expected, computed: toHexOf(computed.value) });
 }
 
 /**

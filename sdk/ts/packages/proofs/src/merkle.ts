@@ -96,13 +96,18 @@ interface Leaf {
   readonly weight: bigint;
 }
 
-function leafArg(h: Profile, input: unknown): Result<Leaf, TypeMismatch> {
+/** The longest raw leaf a verification takes: its weight (its length plus one) at most `MAX_PROOF_WEIGHT`. */
+const MAX_RAW_LEAF = Number(MAX_PROOF_WEIGHT) - 1;
+
+function leafArg(h: Profile, input: unknown): Result<Leaf, Refusal> {
   if (h.profile === "tagged") {
     const v = valueArg(input);
     return v.ok ? ok({ input: v.value, weight: v.value.weight }) : v;
   }
-  const b = bytesArg(input);
-  return b.ok ? ok({ input: b.value, weight: BigInt(b.value.length) + 1n }) : b;
+  // within the weight bound: a longer leaf is refused by its length as the weight check words it, uncopied
+  const b = ownBytes(input, MAX_RAW_LEAF);
+  if (b === undefined) return err(NOT_BYTES);
+  return typeof b === "number" ? err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) }) : ok({ input: b, weight: BigInt(b.length) + 1n });
 }
 
 /** A checked leaf's hash. */

@@ -319,7 +319,15 @@ function versionKeyArg<V>(x: unknown): Result<VersionKey<V>, TypeMismatch> {
               const own = ownCopy(b, width);
               return typeof own !== "number" && own?.length === width ? own : undefined;
             }),
-      decode: (b: Uint8Array): C<V> => (isRevokedProxy(decode) ? err(bad) : keyResult(Reflect.apply(decode, x, [copyBytes(b)]), (v) => v as V)),
+      decode: (b: Uint8Array): C<V> => {
+        // exposed as the profile's versionKey: its input is a caller's too, so it passes core's boundary within the
+        // key's width (owned, measured by its internal length) before the caller's decoder sees a copy of its own
+        const own = ownCopy(b, width);
+        if (own === undefined) return err(expected("a Uint8Array"));
+        const got = typeof own === "number" ? own : own.length;
+        if (typeof own === "number" || got !== width) return err({ kind: "InvalidVersion", reason: `a version key is ${width.toString()} bytes, got ${got.toString()}` });
+        return isRevokedProxy(decode) ? err(bad) : keyResult(Reflect.apply(decode, x, [own]), (v) => v as V);
+      },
     }),
   );
 }

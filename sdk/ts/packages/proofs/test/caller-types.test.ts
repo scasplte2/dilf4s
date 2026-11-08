@@ -1169,3 +1169,33 @@ describe("an argument with a known bound is refused past it uncopied, even in sh
     expect(process.memoryUsage().arrayBuffers - before, "nothing was copied").toBeLessThan(1 << 20);
   });
 });
+
+describe("the profile's exposed version key decodes caller bytes through the boundary", () => {
+  it("a subclass's iterator is not believed, and what is not bytes is refused, never thrown on", () => {
+    class Lying extends Uint8Array {
+      override *[Symbol.iterator](): ArrayIterator<number> {
+        yield 99;
+        return undefined;
+      }
+    }
+    const key = versioned.VersionKey.long;
+    const wrapped = expectOk(versioned.VersionedTrie.of<bigint>("SHA-256", { width: 8, encode: (v) => key.encode(v), decode: (b) => key.decode(b) }), "profile").versionKey;
+    const one = new Lying(8);
+    one[7] = 1;
+    expect(wrapped.decode(one), "its own bytes, 1").toEqual({ ok: true, value: 1n });
+    expect(wrapped.decode(bad(null)), "null").toEqual(mismatch("expected a Uint8Array"));
+    expect(expectErr(wrapped.decode(new Uint8Array(9)), "nine bytes").kind).toBe("InvalidVersion");
+  });
+});
+
+describe("a fixed-width proof field is refused past its width uncopied, even in shared memory", () => {
+  it("a trie check's root, an RFC 6962 leaf past the weight bound, a segment past its count's width", () => {
+    const big = new Uint8Array(new SharedArrayBuffer(64 << 20));
+    const rfc6962 = expectOk(merkle.Rfc6962MerkleHashing.of("SHA-256"), "rfc");
+    const before = process.memoryUsage().arrayBuffers;
+    expect(expectErr(trie.check(T, variable, big, proof), "a 64 MiB root").kind).toBe("RootMismatch");
+    expect(expectErr(merkle.merkleVerify(rfc6962, { root: mroot, size: 3n }, big, inclusionValue), "a 64 MiB leaf").kind).toBe("TooLarge");
+    expect(expectErr(trie.TrieProof.fromRecords(T, bad([{ s: { n: 0n, b: big }, v: v1 }])), "64 MiB for a zero-bit segment").kind).toBe("Encoding");
+    expect(process.memoryUsage().arrayBuffers - before, "nothing was copied").toBeLessThan(1 << 20);
+  });
+});
