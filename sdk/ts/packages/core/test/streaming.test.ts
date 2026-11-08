@@ -232,13 +232,13 @@ describe("the hashing path's memory is bounded", { timeout: 60_000 }, () => {
 describe("the streaming internals stay internal", () => {
   it("the public API hands no caller's hash a value's own bytes", () => {
     const names = new Set([...Object.keys(core), ...Object.keys(cbor)]);
-    for (const internal of ["Feeding", "encodeIntoWithin", "valueCommitmentInto", "valueCommitmentIntoWithin", "STAGED_BYTES", "bignums"]) {
+    for (const internal of ["Feeding", "encodeIntoWithin", "valueCommitmentInto", "valueCommitmentIntoWithin", "STAGED_BYTES", "bignums", "rationals"]) {
       expect(names.has(internal), `${internal} is not exported`).toBe(false);
     }
   });
 
   it("the public cbor namespace is everything cbor.ts exports but the streaming internals", () => {
-    const internals = new Set(["Feeding", "encodeIntoWithin", "STAGED_BYTES", "bignums"]);
+    const internals = new Set(["Feeding", "encodeIntoWithin", "STAGED_BYTES", "bignums", "rationals"]);
     const expected = Object.keys(cborModule).filter((k) => !internals.has(k)).sort();
     expect(Object.keys(cbor).sort()).toEqual(expected);
   });

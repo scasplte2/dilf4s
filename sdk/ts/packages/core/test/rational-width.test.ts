@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { twosAndFives } from "../src/bigint.js";
 import { cbor, json, RationalValue, Value, type CanonicalError, type Result } from "../src/index.js";
 import { bitLengthOf } from "../src/bigint.js";
+import { rationals } from "../src/cbor.js";
 import { gcdSteps } from "../src/value.js";
 import { expectOk, int, integerBytes } from "./vectors.js";
 
@@ -49,7 +50,7 @@ describe("rational width", () => {
     const maximal = expectOk(Value.array(Array.from({ length: k }, () => rational(n, d))), "array");
     const bytes = expectOk(cbor.encode(maximal), "encodes");
     expect(bytes.length).toBeGreaterThan(k * 8300);
-    const of = vi.spyOn(RationalValue, "of");
+    const of = vi.spyOn(rationals, "of");
     const decoded = expectOk(cbor.decode(bytes), "decodes");
     expect(Value.equals(decoded, maximal)).toBe(true);
     expect(of).toHaveBeenCalledTimes(k);
@@ -100,7 +101,7 @@ describe("rational width", () => {
   });
 
   it("a part one bit too wide is refused before any gcd, even when the rational is not in lowest terms either", () => {
-    const of = vi.spyOn(RationalValue, "of");
+    const of = vi.spyOn(rationals, "of");
     for (const [n, d] of [
       [edge * 2n, edge + 2n],
       [2n, edge * 2n],

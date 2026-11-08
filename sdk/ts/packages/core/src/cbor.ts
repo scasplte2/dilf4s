@@ -35,6 +35,14 @@ export const bignums = {
 };
 
 /**
+ * How a decoder builds a rational from its parts, once their widths and the denominator are checked: one
+ * {@link RationalValue.of}, whose gcd a test counts. Internal, as {@link bignums} is: the public classes are frozen.
+ */
+export const rationals = {
+  of: (n: bigint, d: bigint): RationalValue | undefined => RationalValue.of(n, d),
+};
+
+/**
  * The Java `bitLength` of a bignum's integer from its magnitude's bytes, `b[0]` non-zero: 8 bits per byte after the
  * first, and the first byte's own. `m` and `-1 - m` have the same `bitLength`, so it holds for either tag.
  */
@@ -83,6 +91,8 @@ class Growing implements Target {
     return this.#len === this.#buf.length ? this.#buf : this.#buf.slice(0, this.#len);
   }
 }
+Object.freeze(Growing);
+Object.freeze(Growing.prototype);
 
 /** Where encoded bytes go: room for `n` more is asked before they are produced, and a refusal stops the encoding. */
 interface Out {
@@ -143,6 +153,8 @@ export class Feeding implements Target {
     this.#len = 0;
   }
 }
+Object.freeze(Feeding);
+Object.freeze(Feeding.prototype);
 
 /** Bytes counted against a limit, and kept only when there is somewhere to keep them (never more than the limit). */
 class Budgeted implements Out {
@@ -160,6 +172,8 @@ class Budgeted implements Out {
     this.out?.bytes(b);
   }
 }
+Object.freeze(Budgeted);
+Object.freeze(Budgeted.prototype);
 
 /** The value of a lowercase hexadecimal digit's character code. */
 const nibble = (c: number): number => (c <= 0x39 ? c - 0x30 : c - 0x57);
@@ -609,7 +623,7 @@ class Decoder {
     const den = this.readPart(num.value.end);
     if (!den.ok) return den;
     if (den.value.value < 2n) return err(nonCanonical(pos, "rationalDenominator"));
-    const r = RationalValue.of(num.value.value, den.value.value);
+    const r = rationals.of(num.value.value, den.value.value);
     return r === undefined ? err(nonCanonical(pos, "rationalNotReduced")) : ok({ value: r, end: den.value.end });
   }
 
@@ -635,3 +649,5 @@ class Decoder {
     return ok({ bytes: this.input.subarray(pos, end), end });
   }
 }
+Object.freeze(Decoder);
+Object.freeze(Decoder.prototype);

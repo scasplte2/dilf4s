@@ -254,3 +254,103 @@ describe("schema arguments that are not of their types make a codec that refuses
     refuses(intEnum("E", bad({ length: 1, 0: ["a", 1n] })), "the schema's enumeration cases are not [label, bigint] pairs");
   });
 });
+
+/** The realm's own prototypes (`Object.prototype`, `Map.prototype`, the iterators'...), where a walk of core's objects stops. */
+const intrinsics: ReadonlySet<unknown> = new Set([
+  Object.getPrototypeOf([].values()),
+  Object.getPrototypeOf(Object.getPrototypeOf([].values())),
+  ...Object.getOwnPropertyNames(globalThis).flatMap((name): unknown[] => {
+    const g: unknown = Reflect.get(globalThis, name);
+    const p: unknown = typeof g === "function" ? Reflect.get(g, "prototype") : undefined;
+    return typeof p === "object" && p !== null ? [p, Object.getPrototypeOf(p) as unknown] : [];
+  }),
+]);
+
+/** Whether `f` is a class: its `prototype` is fixed, as a class's is and a plain function's is not. */
+const isClass = (f: unknown): boolean => typeof f === "function" && Object.getOwnPropertyDescriptor(f, "prototype")?.writable === false;
+
+/**
+ * Every object and class reachable from `roots` through own properties (values and accessors), prototypes and a
+ * class's superclass, up to the realm's own: iterative, with a visited set. A plain function is not entered.
+ */
+function reachableWithClasses(roots: readonly unknown[]): readonly object[] {
+  const seen = new Set<object>();
+  const todo = [...roots];
+  while (todo.length > 0) {
+    const x = todo.pop();
+    const entered = (typeof x === "object" && x !== null) || isClass(x);
+    if (!entered || seen.has(x as object) || intrinsics.has(x)) continue;
+    const o = x as object;
+    seen.add(o);
+    todo.push(Object.getPrototypeOf(o));
+    for (const key of Reflect.ownKeys(o)) {
+      const d = Object.getOwnPropertyDescriptor(o, key);
+      if (d !== undefined) todo.push(d.value, Reflect.get(d, "get"), Reflect.get(d, "set"));
+    }
+  }
+  return [...seen];
+}
+
+describe("core's classes, their prototypes and its exported objects are frozen", () => {
+  it("every object and class reachable from core's public and internal entry points", async () => {
+    const internal = await import("../src/internal.js");
+    const core = await import("../src/index.js");
+    const decoded = expectOk(codec.fromJson(codec.textMap(codec.uint), '{"a":1}'), "a text map");
+    const roots = [...Object.values(core), ...Object.values(internal), decoded, expectOk(Value.text("x"), "text")];
+    const reached = reachableWithClasses(roots);
+    expect(reached.filter(isClass).length, "core's classes").toBeGreaterThanOrEqual(12);
+    // a module namespace (cbor, codec, models...) is not frozen, but no code can write to it
+    const namespace = (o: object): boolean => Object.prototype.toString.call(o) === "[object Module]";
+    expect(reached.filter((o) => !Object.isFrozen(o) && !namespace(o)).map((o) => (isClass(o) ? `class ${(o as { name: string }).name}` : Object.prototype.toString.call(o)))).toEqual([]);
+    expect(Object.isFrozen(Object.getPrototypeOf(decoded)), "a decoded text map's private class").toBe(true);
+  });
+
+  it("replacing a value class's factory or accessor changes nothing a codec accepts or produces", async () => {
+    const { IntValue } = await import("../src/index.js");
+    const probe = (): unknown => [jlvm.JlvmProgram.encode({ jlvm: 1n, expr: {} }), codec.fromJson(jlvm.JlvmProgram, '{"jlvm":2,"expr":{}}')];
+    const before = probe();
+    for (const mode of ["strict", "sloppy"] as const) {
+      for (const w of writes) {
+        expect(attempt(mode, w.body, IntValue, "of", () => IntValue.of(2n)), `${w.name} on IntValue.of, ${mode}`).toBe(w[mode]);
+        expect(attempt(mode, w.body, IntValue.prototype, "value", 1n), `${w.name} on IntValue.prototype.value, ${mode}`).toBe(w[mode]);
+        expect(attempt(mode, w.body, Value, "int", () => IntValue.of(2n)), `${w.name} on Value.int, ${mode}`).toBe(w[mode]);
+      }
+    }
+    expect(probe()).toEqual(before);
+  });
+});
+
+describe("schema arguments of the wrong type for a leaf or literal make a codec that refuses everything", () => {
+  const refuses = (c: Codec<unknown>, reason: string): void => {
+    expect(c.encode("a"), "encoding").toEqual({ ok: false, error: { kind: "TypeMismatch", reason } });
+    expect(c.decode(textValue("a")), "decoding").toEqual({ ok: false, error: { path: [], reason } });
+  };
+
+  it("literals, patterns, leaves and references", () => {
+    const circular: Record<string, unknown> = {};
+    const literal = codec.literalText(bad(circular));
+    circular["self"] = circular;
+    refuses(literal, "the schema's literal is not a string");
+    refuses(codec.literalText(bad(1n)), "the schema's literal is not a string");
+    refuses(codec.literalInt(bad(null)), "the schema's literal is not a bigint");
+    refuses(codec.literalInt(bad("1")), "the schema's literal is not a bigint");
+    refuses(codec.matching(bad("[a-z]+")), "the schema's pattern is not one of the shared patterns");
+    refuses(codec.matching(bad({ toString: () => "([0-9a-f]{2})*" })), "the schema's pattern is not one of the shared patterns");
+    refuses(codec.leaf(bad(1), bad(2)), "the schema's functions are not functions");
+    refuses(codec.defer(bad(null)), "the schema's functions are not functions");
+    const revoked = Proxy.revocable(() => codec.text, {});
+    revoked.revoke();
+    refuses(codec.defer(bad(revoked.proxy)), "the schema's functions are not functions");
+  });
+
+  it("a part that is not a codec is refused where it is used, never called", () => {
+    const notACodec = "the schema's codec is not a codec";
+    const items = codec.vector<unknown>(bad(undefined), 0, null);
+    expect(items.encode([1])).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: notACodec } });
+    const decoded = codec.fromJson(items, "[1]");
+    expect(decoded.ok ? undefined : decoded.error.kind === "Decode" ? decoded.error.error.reason : undefined).toBe(notACodec);
+    const field = codec.record<{ readonly x: number }>({ x: required("x", bad({ encode: 1, decode: null })) });
+    expect(field.encode({ x: 1 })).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: notACodec } });
+    expect(codec.defer(() => bad(42)).decode(int(1n))).toEqual({ ok: false, error: { path: [], reason: notACodec } });
+  });
+});

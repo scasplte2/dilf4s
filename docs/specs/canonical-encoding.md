@@ -143,18 +143,21 @@ any caller code runs), so it is refused as a `TypeMismatch`, as above.
 
 **Immutable models.** The TypeScript models generated from `shared/schemas` (`core/src/generated`) and every codec
 core's combinators build (`codec.ts`: `leaf`, `record`, `required`, `optional`, `alternative`, `union`, `vector`,
-`textMap`, `defer`, `intEnum`, the literals and the rest) are immutable at run time, as their `readonly` types say.
-Each combinator copies the arrays and objects it is given (field lists, alternatives, key names, texts, enumeration
-cases), reading each once, and freezes the copy, its `shape` and the codec before returning it; schema arguments of the
-wrong type make a codec that refuses every value, both ways. A generated module exports only such codecs and number or
-`bigint` constants, so every value it exports is frozen once the module has loaded, before any importing code runs:
-no caller, before or after importing them, can change what a codec accepts or produces for every other caller.
-Freezing is done once, when a codec is built; encoding and decoding do no work for it. What a combinator is given as
-code stays the caller's own: a leaf's functions, a deferred reference's function (each generated one reads an
-exported constant, which no importer can reassign) and a codec made otherwise, which is called through its methods.
-The realm's built-ins (`Array.prototype` and the like) are outside this guarantee, as for any JavaScript library. A
-test walks every generated export and fails on any object it reaches that is not frozen. Scala's and Rust's models
-are immutable values by construction, so this is the TypeScript SDK's alone and has no conformance vector.
+`textMap`, `defer`, `intEnum`, the literals and the rest) are immutable at run time, as their `readonly` types say. Each
+combinator copies the arrays and objects it is given (field lists, alternatives, key names, texts, enumeration cases),
+reading each once, and freezes the copy, its `shape` and the codec before returning it; schema arguments of the wrong
+type (a literal, pattern, name, bound or function that is not of its type) make a codec that refuses every value, both
+ways, and a part that is not a codec is refused where it is used, never called. Core's classes (the value classes,
+`Preview`, `DomainTag`, `TaggedHash` and its internal ones), their prototypes and its exported objects (`Value`) are
+frozen too, so no caller can replace a factory or accessor a codec relies on. A generated module exports only such
+codecs and number or `bigint` constants, so every value it exports is frozen once the module has loaded, before any
+importing code runs: no caller, before or after importing them, can change what a codec accepts or produces for every
+other caller. Freezing is done once, when a codec is built; encoding and decoding do no work for it. What a combinator
+is given as code stays the caller's own: a leaf's functions, a deferred reference's function (each generated one reads
+an exported constant, which no importer can reassign) and a codec made otherwise, which is called through its methods.
+The realm's built-ins (`Array.prototype` and the like) are outside this guarantee, as for any JavaScript library. A test
+walks every generated export and fails on any object it reaches that is not frozen. Scala's and Rust's models are
+immutable values by construction, so this is the TypeScript SDK's alone and has no conformance vector.
 
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the

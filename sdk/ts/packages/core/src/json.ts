@@ -252,6 +252,8 @@ class Parser {
     }
   }
 }
+Object.freeze(Parser);
+Object.freeze(Parser.prototype);
 
 // ------------------------------------------------------------------------------------------------ render
 

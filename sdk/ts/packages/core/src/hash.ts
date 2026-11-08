@@ -203,6 +203,8 @@ class CheckedHashing implements Hashing {
     return HASHING.has(this) ? this.#hash.clone().digest() : new Uint8Array(0);
   }
 }
+Object.freeze(CheckedHashing);
+Object.freeze(CheckedHashing.prototype);
 
 /**
  * A fresh incremental hash under `algorithm`. An algorithm that is not a string is a `TypeMismatch`; a string that is
@@ -401,6 +403,8 @@ export class DomainTag {
     return DOMAIN_TAG.test(tag) ? ok(new DomainTag(TAG_KEY, tag)) : err({ kind: "InvalidDomainTag", tag: Preview.of(tag) });
   }
 }
+Object.freeze(DomainTag);
+Object.freeze(DomainTag.prototype);
 
 /**
  * Whether `x` is a {@link DomainTag} made by `DomainTag.of`, in O(1): a private-brand check, which runs no Proxy trap
@@ -495,6 +499,8 @@ export class TaggedHash {
     return e.ok ? ok(h.digest()) : e;
   }
 }
+Object.freeze(TaggedHash);
+Object.freeze(TaggedHash.prototype);
 
 /** `taggedHash(tag, message)` with `algorithm`, refused as {@link TaggedHash.of} and {@link TaggedHash.hash} refuse. */
 export function taggedHash(algorithm: HashAlgorithm, tag: DomainTag, message: Uint8Array): Result<Uint8Array, AlgorithmError> {

@@ -55,3 +55,5 @@ export class Meter {
     return tooLarge(this.limit);
   }
 }
+Object.freeze(Meter);
+Object.freeze(Meter.prototype);

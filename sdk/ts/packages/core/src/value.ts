@@ -71,6 +71,8 @@ class Identity {
     return o;
   }
 }
+Object.freeze(Identity);
+Object.freeze(Identity.prototype);
 
 /** `#minted in x`: set once, by {@link Minted}'s static block. */
 let minted!: (x: object) => boolean;
@@ -88,6 +90,8 @@ class Minted extends Identity {
     minted = (x) => #minted in x;
   }
 }
+Object.freeze(Minted);
+Object.freeze(Minted.prototype);
 
 /** Brands `o` as a value: its constructor calls this, before it freezes, only when it was given {@link KEY}. */
 const stamp = (o: object): void => {
@@ -175,6 +179,8 @@ export class NullValue {
     return inspect(this);
   }
 }
+Object.freeze(NullValue);
+Object.freeze(NullValue.prototype);
 
 export class BoolValue {
   readonly kind = "bool";
@@ -202,6 +208,8 @@ export class BoolValue {
     return inspect(this);
   }
 }
+Object.freeze(BoolValue);
+Object.freeze(BoolValue.prototype);
 
 /**
  * The widest integer, in Java `bitLength` bits (docs/specs/canonical-encoding.md section 1): the widest whose every
@@ -256,6 +264,8 @@ export class IntValue {
     return inspect(this);
   }
 }
+Object.freeze(IntValue);
+Object.freeze(IntValue.prototype);
 
 const abs = (n: bigint): bigint => (n < 0n ? -n : n);
 
@@ -451,6 +461,8 @@ export class RationalValue {
     return inspect(this);
   }
 }
+Object.freeze(RationalValue);
+Object.freeze(RationalValue.prototype);
 
 export class TextValue {
   readonly kind = "text";
@@ -492,6 +504,8 @@ export class TextValue {
     return inspect(this);
   }
 }
+Object.freeze(TextValue);
+Object.freeze(TextValue.prototype);
 
 export class BytesValue {
   readonly kind = "bytes";
@@ -537,6 +551,8 @@ export class BytesValue {
     return inspect(this);
   }
 }
+Object.freeze(BytesValue);
+Object.freeze(BytesValue.prototype);
 
 /** The depth (one more than its deepest part's) and weight (one plus each part's) of a container of `parts`. */
 function measure<T>(parts: readonly T[], part: (p: T) => readonly [number, bigint]): readonly [number, bigint] {
@@ -611,6 +627,8 @@ export class ArrayValue {
     return inspect(this);
   }
 }
+Object.freeze(ArrayValue);
+Object.freeze(ArrayValue.prototype);
 
 /** A map entry: its key, the key's UTF-8, and its value. */
 export interface Entry {
@@ -775,6 +793,8 @@ export class MapValue {
     return inspect(this);
   }
 }
+Object.freeze(MapValue);
+Object.freeze(MapValue.prototype);
 
 // ------------------------------------------------------------------------------------------------ equality
 
@@ -802,6 +822,8 @@ class Proven {
     else with_.add(b);
   }
 }
+Object.freeze(Proven);
+Object.freeze(Proven.prototype);
 
 /** Two containers whose parts are being compared, in order, and the next index. */
 type Comparing =
@@ -964,7 +986,7 @@ export function inspect(value: Value): string {
 }
 
 /** Factories for every kind of value, and equality. */
-export const Value = {
+export const Value = Object.freeze({
   null: NullValue.instance,
   /** The boolean `b`; a value that is not a boolean (from a JavaScript caller, or a cast) is a `TypeMismatch`. */
   bool: (b: boolean): Result<BoolValue, TypeMismatch> => BoolValue.of(b),
@@ -981,4 +1003,4 @@ export const Value = {
   /** The map of `entries` ({@link MapValue.of}): an entry that is not a `[string, Value]` array is a `TypeMismatch`. */
   map: (entries: Iterable<readonly [string, Value]>): Result<MapValue, CanonicalError> => MapValue.of(entries),
   equals: (a: Value, b: Value): boolean => equals(a, b),
-} as const;
+} as const);

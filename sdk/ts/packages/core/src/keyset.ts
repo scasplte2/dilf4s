@@ -25,6 +25,8 @@ export class KeySet {
     return true;
   }
 }
+Object.freeze(KeySet);
+Object.freeze(KeySet.prototype);
 
 function found(run: readonly string[], key: string): boolean {
   let lo = 0;
