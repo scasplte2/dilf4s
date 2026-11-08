@@ -11,7 +11,13 @@ import { blake2b } from "@noble/hashes/blake2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { keccak_256, sha3_256, sha3_512 } from "@noble/hashes/sha3.js";
 
-import { ownAny, ownCopy, ownCopyAny } from "./bytes.js";
+import { ownBytes, ownCopy, UNBOUNDED } from "./bytes.js";
+
+/** {@link ownBytes} of data to hash: it has no length bound of its own. */
+const dataOf = (x: unknown): Uint8Array | undefined => {
+  const b = ownBytes(x, UNBOUNDED);
+  return typeof b === "number" ? undefined : b;
+};
 import { checkedLimit } from "./budget.js";
 import { encodeIntoWithin, Feeding, MAX_ENCODED_BYTES, type EncodeError } from "./cbor.js";
 import type { TypeMismatch } from "./error.js";
@@ -185,7 +191,7 @@ class CheckedHashing implements Hashing {
   /** {@link Hashing.update}: the data checked and read through a plain view; a stream not made here is a `TypeMismatch`. */
   update(data: Uint8Array): Result<Hashing, TypeMismatch> {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
-    const view = ownAny(data);
+    const view = dataOf(data);
     if (view === undefined) return err(NOT_BYTES);
     this.#hash.update(view);
     return ok(this);
@@ -291,9 +297,11 @@ export function expandMessageXmd(
 ): Result<Uint8Array, HashErrorOf<"InvalidExpansion" | "UnknownAlgorithm"> | TypeMismatch> {
   const refusedAlgorithm = refuseAlgorithm(algorithm);
   if (refusedAlgorithm !== undefined) return refusedAlgorithm;
-  const msg = ownAny(message);
+  const msg = dataOf(message);
   if (msg === undefined) return err(NOT_BYTES);
-  const own = ownCopyAny(dst);
+  // a DST of any length: one past 255 bytes is hashed first (RFC 9380 section 5.3.3)
+  const dstOwn = ownCopy(dst, UNBOUNDED);
+  const own = typeof dstOwn === "number" ? undefined : dstOwn;
   if (own === undefined) return err(NOT_BYTES);
   if (typeof (length as unknown) !== "number") return err(NOT_A_LENGTH);
   const limit = expansionLimitOf(algorithm);
@@ -331,7 +339,7 @@ export function hashParts(algorithm: HashAlgorithm, parts: readonly Uint8Array[]
   const h = startHashOf(algorithm);
   for (let i = 0; i < count; i++) {
     // guarded: an earlier part's read (a Proxy's trap) may have revoked the array
-    const part = ownAny(readGuarded(parts, i));
+    const part = dataOf(readGuarded(parts, i));
     if (part === undefined) return err(typeMismatch(`expected a Uint8Array at index ${i.toString()}`));
     h.update(part);
   }
@@ -345,7 +353,7 @@ export function hashParts(algorithm: HashAlgorithm, parts: readonly Uint8Array[]
 export function digest(algorithm: HashAlgorithm, data: Uint8Array): Result<Uint8Array, AlgorithmError> {
   const refused = refuseAlgorithm(algorithm);
   if (refused !== undefined) return refused;
-  const view = ownAny(data);
+  const view = dataOf(data);
   return view === undefined ? err(NOT_BYTES) : ok(digestOf(algorithm, view));
 }
 
@@ -455,7 +463,7 @@ export class TaggedHash {
   /** The tagged hash of `message`; what is not a `Uint8Array` is a `TypeMismatch`. Read once, through a plain view. */
   hash(message: Uint8Array): Result<Uint8Array, TypeMismatch> {
     if (!TAGGED_HASH.has(this)) return err(NOT_A_TAGGED_HASH);
-    const view = ownAny(message);
+    const view = dataOf(message);
     if (view === undefined) return err(NOT_BYTES);
     const h = this.#start();
     h.update(view);

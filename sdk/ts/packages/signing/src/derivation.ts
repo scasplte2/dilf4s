@@ -6,7 +6,7 @@
  * extended keys and indices must be this package's own, of the scheme at hand.
  */
 import { err, models, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { mint, ownBytes } from "@kd5ujc/dilf4s-core/internal";
+import { mint, ownBytes, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hmac } from "@noble/hashes/hmac.js";
 import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
@@ -210,10 +210,10 @@ const hmac512 = (key: Uint8Array, data: Uint8Array): Uint8Array => hmac(sha512, 
  * Secret input: a `Secret` or a `Uint8Array` (copied through core's boundary), or a `TypeMismatch`. With `max` (a seed's
  * or a root's bound), longer input is refused as `too` words it, by its length, uncopied.
  */
-const secretArg = (x: unknown, max?: number, too?: string): Result<Uint8Array, KeyRefusal> => {
+const secretArg = (x: unknown, max: number, too: string): Result<Uint8Array, KeyRefusal> => {
   const b = secretBytes(x, max);
   if (b === undefined) return err(expected("a Uint8Array or a Secret"));
-  return typeof b === "number" ? err(invalid(too ?? "secret input is too long")) : ok(b);
+  return typeof b === "number" ? err(invalid(too)) : ok(b);
 };
 const SEED_RANGE = "seed must be 16..64 bytes";
 
@@ -404,7 +404,8 @@ export const icarus = Object.freeze({
    * passphrase that is not a string, is a `TypeMismatch`.
    */
   fromEntropy: (entropy: Uint8Array | Secret, passphrase = ""): Result<ExtendedKey<"Ed25519-BIP32">, KeyRefusal> => {
-    const e = secretArg(entropy);
+    // PBKDF2's salt: entropy of any length is stretched
+    const e = secretArg(entropy, UNBOUNDED, "");
     if (!e.ok) return e;
     if (typeof (passphrase as unknown) !== "string") return err(NOT_A_STRING);
     return wellFormed(passphrase) ? foldPath(icarusRoot(pbkdf2(sha512, utf8ToBytes(passphrase), e.value, { c: 4096, dkLen: 96 })), [], icarusChild) : err(invalid("passphrase is not well-formed Unicode"));

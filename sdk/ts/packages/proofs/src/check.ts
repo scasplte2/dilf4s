@@ -6,7 +6,7 @@
  * Internal: not exported from the package.
  */
 import { err, isValue, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, ownAny, readGuarded, readStep, REVOKED, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
+import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, ownBytes, readGuarded, readStep, REVOKED, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
 import type { HashAlgorithm } from "@kd5ujc/dilf4s-core";
 
 /**
@@ -31,13 +31,14 @@ export const expected = (what: string): TypeMismatch => typeMismatch(`expected $
 export const expectedAt = (what: string, i: number): TypeMismatch => typeMismatch(`expected ${what} at index ${i.toString()}`);
 
 /**
- * `x` through core's byte boundary (`ownAny`: measured by its internal length, a view of stable memory or else one
- * copy), or a refusal. For bytes read before any caller code runs again; bytes kept, or in use while caller code runs,
- * take `ownCopy` or `ownCopyAny`.
+ * `x` through core's byte boundary within `max` bytes (`ownBytes`: measured by its internal length, a view of stable
+ * memory or else one copy), or a refusal; past `max`, uncopied. For bytes read before any caller code runs again;
+ * bytes kept, or in use while caller code runs, take `ownCopy`.
  */
-export const bytesArg = (x: unknown): Result<Uint8Array, TypeMismatch> => {
-  const view = ownAny(x);
-  return view === undefined ? err(NOT_BYTES) : ok(view);
+export const bytesArg = (x: unknown, max: number): Result<Uint8Array, TypeMismatch> => {
+  const view = ownBytes(x, max);
+  if (view === undefined) return err(NOT_BYTES);
+  return typeof view === "number" ? err(typeMismatch(`expected a Uint8Array of at most ${max.toString()} bytes`)) : ok(view);
 };
 
 /** `x` if it is a canonical value made by core (`isValue`, one private-brand check: no Proxy trap runs). */

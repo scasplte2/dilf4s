@@ -3,13 +3,13 @@
  * of libsodium implements it. The suites are distinct types, and none accepts another's proofs.
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { mint, ownAny, ownBytes, ownCopy } from "@kd5ujc/dilf4s-core/internal";
+import { mint, ownBytes, ownCopy } from "@kd5ujc/dilf4s-core/internal";
 import { ed25519_hasher } from "@noble/curves/ed25519.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
 import type { VrfError } from "./errors.js";
 import { SigningKey, signingKeyBytes, VerifyingKey, verifyingKeyBytes, type KeyPair } from "./keys.js";
-import { expected, NOT_BYTES, signedOf } from "./internal/check.js";
+import { expected, NOT_BYTES, signedOf, viewOf } from "./internal/check.js";
 import { attempt } from "./internal/attempt.js";
 import { bigToLE, concat, copy, equal, hex, leToBig, mod, powMod } from "./internal/bytes.js";
 import {
@@ -312,7 +312,7 @@ function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
       if (p === undefined || (proof as VrfProof<VrfSuiteName>).suite !== name) return err(expected(`a ${name} VrfProof`));
       // owned (a view of stable memory, else one copy): a TAI verification hashes alpha once per try-and-increment
       // counter, and every try must read one message
-      const a = ownAny(alpha);
+      const a = viewOf(alpha);
       return a === undefined ? err(NOT_BYTES) : verifyRaw(k.value, a, p);
     },
     verifyBytes: (key: Uint8Array, alpha: Uint8Array, proof: Uint8Array): Result<VrfOutput<S>, VrfRefusal> => {
@@ -320,7 +320,7 @@ function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
       // verifyRaw words it), alpha whole: every byte read more than once is read from one snapshot
       const p = ownBytes(proof, 80);
       const k = ownBytes(key, 32);
-      const a = ownAny(alpha);
+      const a = viewOf(alpha);
       if (p === undefined || k === undefined || a === undefined) return err(NOT_BYTES);
       if (typeof p === "number") return err(malformed(`${name} proof`, 80, p));
       if (typeof k === "number") return err(malformed(`${name} public key`, 32, k));

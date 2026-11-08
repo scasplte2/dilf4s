@@ -11,7 +11,7 @@
  * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
 import { BYTES_TAG, describeFailure, err, isValue, models, ok, type Err, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { bytesLength, mint, outputSizeOf, ownBytes, ownCopy, ownCopyAny, readGuarded, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, MAX_OUTPUT_SIZE, mint, outputSizeOf, ownBytes, ownCopy, ownCopyPrefix, readGuarded, toHexOf, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
@@ -153,9 +153,11 @@ export class Segment {
   static of(n: bigint, b: Uint8Array): Result<Segment, Refusal> {
     const count = bigintArg(n);
     if (!count.ok) return count;
-    // copied before its padding is checked: the bytes validated are the bytes the segment keeps
-    const bytes = ownCopyAny(b);
+    // the count first, then the bytes within the width it allows (bytes past it refused by their length, uncopied),
+    // copied before their padding is checked: the bytes validated are the bytes the segment keeps
+    const bytes = ownCopy(b, segmentWidth(count.value));
     if (bytes === undefined) return err(NOT_BYTES);
+    if (typeof bytes === "number") return encoding(`segment of ${countText(count.value)} in ${bytes.toString()} bytes`);
     const bits = segmentBits(count.value, bytes);
     return bits.ok ? ok(new Segment(TOKEN, bits.value)) : bits;
   }
@@ -174,6 +176,12 @@ export class Segment {
     isSegment = (x): x is Segment => SEGMENT.has(x);
   }
 }
+
+/** The byte width a segment of `n` bits has, `ceil(n / 8)` (0 for a negative count, which is refused), as a number. */
+const segmentWidth = (n: bigint): number => {
+  const w = n >= 0n ? (n + 7n) / 8n : 0n;
+  return w > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(w);
+};
 
 /** A segment's count of bits as a refusal names it: one too wide for 64 bits by its size (its digits are superlinear and unpaid). */
 const countText = (n: bigint): string => (bitsOf(n) <= 64 ? `${n.toString()} bits` : `a ${bitsOf(n).toString()}-bit count of bits`);
@@ -220,9 +228,9 @@ let isHashing!: (x: unknown) => x is TrieHashing;
 /** `x` if it is a {@link TrieHashing} made here (a private-brand check: no Proxy trap or caller code runs). */
 const hashingArg = (x: unknown): Result<TrieHashing, TypeMismatch> => (isHashing(x) ? ok(x) : err(expected("a TrieHashing")));
 
-/** An optional digest: `undefined`, or a `Uint8Array` (a plain view). */
-function optionalBytes(x: unknown): Result<Uint8Array | undefined, TypeMismatch> {
-  return x === undefined ? ok(undefined) : bytesArg(x);
+/** An optional digest: `undefined`, or a `Uint8Array` within `size` bytes (through core's boundary). */
+function optionalBytes(x: unknown, size: number): Result<Uint8Array | undefined, TypeMismatch> {
+  return x === undefined ? ok(undefined) : bytesArg(x, size);
 }
 
 /** Hashing and node commitments over one hash algorithm (trie.md section 3). */
@@ -305,7 +313,8 @@ export class TrieHashing {
    */
   bytesHash(b: Uint8Array): Result<Uint8Array, TypeMismatch> {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
-    const bytes = bytesArg(b);
+    // a byte string of any length is committed
+    const bytes = bytesArg(b, UNBOUNDED);
     return bytes.ok ? ok(TRIE.bytesHash(this, bytes.value)) : bytes;
   }
 
@@ -313,7 +322,7 @@ export class TrieHashing {
   leafHash(segment: Segment, valueHash: Uint8Array): Result<Uint8Array, TypeMismatch> {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
     if (!isSegment(segment)) return err(expected("a Segment"));
-    const v = bytesArg(valueHash);
+    const v = bytesArg(valueHash, this.size);
     return v.ok ? ok(TRIE.leafBits(this, segmentBitsOf(segment), v.value)) : v;
   }
 
@@ -321,11 +330,11 @@ export class TrieHashing {
   branchHash(segment: Segment, valueHash: Uint8Array | undefined, left: Uint8Array | undefined, right: Uint8Array | undefined): Result<Uint8Array, TypeMismatch> {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
     if (!isSegment(segment)) return err(expected("a Segment"));
-    const v = optionalBytes(valueHash);
+    const v = optionalBytes(valueHash, this.size);
     if (!v.ok) return v;
-    const l = optionalBytes(left);
+    const l = optionalBytes(left, this.size);
     if (!l.ok) return l;
-    const r = optionalBytes(right);
+    const r = optionalBytes(right, this.size);
     return r.ok ? ok(TRIE.branchBits(this, segmentBitsOf(segment), v.value, l.value, r.value)) : r;
   }
 }
@@ -486,8 +495,7 @@ const recordArg =
   // kept: copied once, as the segment it becomes keeps it, within the byte width its count allows (bytes past it are
   // refused by their length as segmentBits words it, uncopied; one longer than a mode allows is refused when the proof
   // is checked, and one too heavy to encode when it is encoded)
-  const width = typeof n === "bigint" && n >= 0n ? (n + 7n) / 8n : 0n;
-  const b = ownCopy(readGuarded(s, "b"), width > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(width));
+  const b = ownCopy(readGuarded(s, "b"), typeof n === "bigint" ? segmentWidth(n) : 0);
   if (typeof b === "number" && typeof n === "bigint") return encoding(`segment of ${countText(n)} in ${b.toString()} bytes`);
   if (typeof n !== "bigint" || b === undefined || typeof b === "number") return bad;
   const v: unknown = readGuarded(r, "v");
@@ -641,11 +649,13 @@ let lookupOf!: (v: VerifiedTrieProof, key: Uint8Array) => Result<Lookup, TrieErr
 let verifiedTop!: (v: VerifiedTrieProof) => ProofNode | undefined;
 
 /**
- * A query's prefix or bound, copied (`takeBytes`) before its claim is read: caller code a claim's getter (or a Proxy's
- * trap) runs cannot change the query the claim is compared with. A prefix or bound is a key's length at most.
+ * A query's prefix or bound, copied before its claim is read: caller code a claim's getter (or a Proxy's trap) runs
+ * cannot change the query the claim is compared with. Every key of `mode` is at most `mode.bytes` long, so bytes past
+ * the first `mode.bytes + 1` decide no comparison with one (a prefix that long matches none; a bound that long is
+ * after every key it begins): only those are copied.
  */
-function queryArg(x: unknown): Result<Uint8Array, TypeMismatch> {
-  const own = ownCopyAny(x);
+function queryArg(mode: KeyMode, x: unknown): Result<Uint8Array, TypeMismatch> {
+  const own = ownCopyPrefix(x, mode.bytes + 1);
   return own === undefined ? err(NOT_BYTES) : ok(own);
 }
 
@@ -671,17 +681,21 @@ function keyArg(mode: KeyMode, key: unknown): Result<Uint8Array, Refusal> {
 }
 
 /** An optional query bound, `undefined` or copied as {@link queryArg} copies one. */
-function optionalQueryArg(x: unknown): Result<Uint8Array | undefined, TypeMismatch> {
-  return x === undefined ? ok(undefined) : queryArg(x);
+function optionalQueryArg(mode: KeyMode, x: unknown): Result<Uint8Array | undefined, TypeMismatch> {
+  return x === undefined ? ok(undefined) : queryArg(mode, x);
 }
 
-/** A caller's claimed listing: an array of `{key, valueHash}` objects, each field read once, as plain views. */
-const claimedArg = (claimed: unknown): Result<TrieEntry[], TypeMismatch> =>
+/**
+ * A caller's claimed listing: an array of `{key, valueHash}` objects, each field read once, copied as read. A claimed
+ * key is compared with keys of at most `mode.bytes`, and a claimed digest with digests of at most `MAX_OUTPUT_SIZE`, so
+ * only the bytes that decide those comparisons (one past each bound) are copied: a longer claim compares as it would.
+ */
+const claimedArg = (mode: KeyMode, claimed: unknown): Result<TrieEntry[], TypeMismatch> =>
   readArray(claimed, "an array of TrieEntry", (e, i) => {
     if (!isObject(e)) return err(expectedAt("a TrieEntry", i));
     // copied as read: caller code run by a later read (a getter, a Proxy's trap) cannot change an earlier entry
-    const key = ownCopyAny(readGuarded(e, "key"));
-    const valueHash = ownCopyAny(readGuarded(e, "valueHash"));
+    const key = ownCopyPrefix(readGuarded(e, "key"), mode.bytes + 1);
+    const valueHash = ownCopyPrefix(readGuarded(e, "valueHash"), MAX_OUTPUT_SIZE + 1);
     return key === undefined || valueHash === undefined ? err(expectedAt("a TrieEntry of Uint8Arrays", i)) : ok({ key, valueHash });
   });
 
@@ -733,7 +747,7 @@ export class VerifiedTrieProof {
   prefix(prefix: Uint8Array): Result<Listing, TypeMismatch> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
     // copied: the walk reads the prefix's bytes more than once, and shared memory could change between the reads
-    const p = queryArg(prefix);
+    const p = queryArg(this.mode, prefix);
     return p.ok ? ok(TRIE.prefix(this, p.value)) : p;
   }
 
@@ -745,9 +759,9 @@ export class VerifiedTrieProof {
   range(from: Uint8Array, until?: Uint8Array): Result<Listing, TypeMismatch> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
     // copied, as a prefix is: the walk reads each bound's bytes more than once
-    const f = queryArg(from);
+    const f = queryArg(this.mode, from);
     if (!f.ok) return f;
-    const u = optionalQueryArg(until);
+    const u = optionalQueryArg(this.mode, until);
     return u.ok ? ok(TRIE.range(this, f.value, u.value)) : u;
   }
 
@@ -759,9 +773,9 @@ export class VerifiedTrieProof {
   listsPrefix(prefix: Uint8Array, claimed: readonly TrieEntry[]): Result<boolean, Refusal> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
     // the prefix copied first: reading the claim may run caller code, which cannot then change the query
-    const p = queryArg(prefix);
+    const p = queryArg(this.mode, prefix);
     if (!p.ok) return p;
-    const c = claimedArg(claimed);
+    const c = claimedArg(this.mode, claimed);
     return c.ok ? verdictOf(L.listsPrefix(this.#top, p.value, c.value)) : c;
   }
 
@@ -769,11 +783,11 @@ export class VerifiedTrieProof {
   listsRange(from: Uint8Array, until: Uint8Array | undefined, claimed: readonly TrieEntry[]): Result<boolean, Refusal> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
     // the bounds copied first: reading the claim may run caller code, which cannot then change the query
-    const f = queryArg(from);
+    const f = queryArg(this.mode, from);
     if (!f.ok) return f;
-    const u = optionalQueryArg(until);
+    const u = optionalQueryArg(this.mode, until);
     if (!u.ok) return u;
-    const c = claimedArg(claimed);
+    const c = claimedArg(this.mode, claimed);
     return c.ok ? verdictOf(L.listsRange(this.#top, f.value, u.value, c.value)) : c;
   }
 }
@@ -873,27 +887,37 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
   }
 }
 
-/** A caller's claimed entries: an array of `[key, value]` arrays, read by index, each key copied before its value is read. */
-const entriesArg = (entries: unknown): Result<(readonly [Uint8Array, Value])[], TypeMismatch> =>
+/** A claimed entry as read: its key copied, or the length of one longer than the mode allows (never copied). */
+type ClaimedRead = readonly [Uint8Array | number, Value];
+
+/**
+ * A caller's claimed entries: an array of `[key, value]` arrays, read by index. Each key is copied within the mode's
+ * bound: a longer one is kept as its length alone, never copied, and refused as `InvalidKey` where every key is
+ * checked, in the order the refusals are pinned across SDKs (every entry's types first, then each entry's null value
+ * before its key, refusals_v1.json).
+ */
+const entriesArg = (mode: KeyMode, entries: unknown): Result<ClaimedRead[], TypeMismatch> =>
   readArray(entries, "an array of [key, value] entries", (e, i) => {
     const pair = readPair(e);
     if (pair === undefined) return err(expectedAt("a [key, value] array", i));
-    const key = ownCopyAny(readGuarded(pair, 0));
+    const key = ownCopy(readGuarded(pair, 0), mode.bytes);
     if (key === undefined) return err(expectedAt("a Uint8Array key", i));
     const value = valueArg(readGuarded(pair, 1));
     return value.ok ? ok([key, value.value] as const) : err(expectedAt("a canonical value", i));
   });
 
-function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly (readonly [Uint8Array, Value])[]): Result<readonly TrieEntry[], TrieError> {
+function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly ClaimedRead[]): Result<readonly TrieEntry[], TrieError> {
+  const owned: (readonly [Uint8Array, Value])[] = [];
   for (const [key, value] of entries) {
     if (value.kind === "null") return encoding("an entry is [key, value], with a value");
-    const k = checkKey(mode, key);
+    const k = checkKeyLength(mode, typeof key === "number" ? key : key.length);
     if (!k.ok) return k;
+    if (typeof key !== "number") owned.push([key, value]);
   }
-  const c = claimsWithin(entries.map(([, value]) => value));
+  const c = claimsWithin(owned.map(([, value]) => value));
   if (!c.ok) return c;
   const out: TrieEntry[] = [];
-  for (const [key, value] of entries) {
+  for (const [key, value] of owned) {
     const h = TRIE.valueHash(hashing, value);
     if (!h.ok) return h;
     out.push({ key, valueHash: h.value });
@@ -916,9 +940,9 @@ export function triePrefixVerify(hashing: TrieHashing, mode: KeyMode, root: Uint
   if (!rr.ok) return rr;
   const r = rr.value;
   // the prefix copied before the entries are read: caller code reading them runs cannot then change the query
-  const pre = queryArg(prefix);
+  const pre = queryArg(m, prefix);
   if (!pre.ok) return pre;
-  const given = entriesArg(entries);
+  const given = entriesArg(m, entries);
   if (!given.ok) return given;
   const claimed = claimedEntries(h, m, given.value);
   if (!claimed.ok) return claimed;
@@ -947,11 +971,11 @@ export function trieRangeVerify(
   if (!rr.ok) return rr;
   const r = rr.value;
   // the bounds copied before the entries are read, as triePrefixVerify copies its prefix
-  const f = queryArg(from);
+  const f = queryArg(m, from);
   if (!f.ok) return f;
-  const u = until === null ? ok(undefined) : queryArg(until);
+  const u = until === null ? ok(undefined) : queryArg(m, until);
   if (!u.ok) return u;
-  const given = entriesArg(entries);
+  const given = entriesArg(m, entries);
   if (!given.ok) return given;
   const claimed = claimedEntries(h, m, given.value);
   if (!claimed.ok) return claimed;

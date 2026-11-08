@@ -10,7 +10,7 @@
  * checked before it is used.
  */
 import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { isRevokedProxy, MAX_OUTPUT_SIZE, mint, ownBytes, ownCopy, readGuarded, REVOKED, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isRevokedProxy, MAX_OUTPUT_SIZE, mint, ownBytes, ownCopy, readGuarded, REVOKED, toHexOf, typeMismatch, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
@@ -655,7 +655,8 @@ export class VersionedTrie<V> {
   /** The hash a trie commits for a byte string: the top trie's slots and the history trie's state roots. */
   bytesHash(b: Uint8Array): Result<Uint8Array, TypeMismatch> {
     if (!PROFILE.has(this)) return err(NOT_A_PROFILE);
-    const bytes = bytesArg(b);
+    // a byte string of any length is committed
+    const bytes = bytesArg(b, UNBOUNDED);
     return bytes.ok ? ok(TRIE.bytesHash(this.hashing, bytes.value)) : bytes;
   }
 

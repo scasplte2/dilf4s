@@ -8,7 +8,7 @@
  * view of their own memory, and what a proof keeps is copied; the walks run on that plain, owned data.
  */
 import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { digestOf, hashPartsOf, mint, outputSizeOf, ownAny, ownBytes, ownCopy, ownCopyAny, readGuarded, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, digestOf, hashPartsOf, MAX_OUTPUT_SIZE, mint, outputSizeOf, ownBytes, ownCopy, readGuarded, toHexOf, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
 import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Token } from "./check.js";
@@ -116,9 +116,11 @@ const leafOf = (h: Profile, leaf: Leaf): Result<Uint8Array, MerkleError> =>
 
 /** Two digests checked as bytes, and hashed as a node. */
 function checkedNode(h: Profile, left: unknown, right: unknown): Result<Uint8Array, TypeMismatch> {
-  const l = ownAny(left);
-  const r = ownAny(right);
-  return l === undefined || r === undefined ? err(NOT_BYTES) : ok(nodeOf(h, l, r));
+  // digests, within the profile's size: a longer one is refused uncopied
+  const l = ownBytes(left, h.size);
+  const r = ownBytes(right, h.size);
+  if (l === undefined || r === undefined) return err(NOT_BYTES);
+  return typeof l === "number" || typeof r === "number" ? err(expected(`digests of at most ${h.size.toString()} bytes`)) : ok(nodeOf(h, l, r));
 }
 
 /** The dilf4s profile: tagged hashes per role, leaves committed by `commit(v)`. */
@@ -221,15 +223,17 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
   /** A raw leaf's hash, `H(0x00 || data)`; what is not a `Uint8Array` is a `TypeMismatch`. */
   leaf(data: Uint8Array): Result<Uint8Array, Refusal> {
     if (!isRfc(this)) return err(NOT_A_PROFILE);
-    const b = bytesArg(data);
+    // a raw leaf of any length is hashed
+    const b = bytesArg(data, UNBOUNDED);
     return b.ok ? ok(hashPartsOf(this.algorithm, [Uint8Array.of(0), b.value])) : b;
   }
 
   /** Raw bytes weigh one more than their length (their own, never their `length` property's). */
   leafWeight(data: Uint8Array): Result<bigint, TypeMismatch> {
     if (!isRfc(this)) return err(NOT_A_PROFILE);
-    const b = bytesArg(data);
-    return b.ok ? ok(BigInt(b.value.length) + 1n) : b;
+    // measured only, by its internal length: nothing of it is read
+    const n = bytesLength(data);
+    return n === undefined ? err(NOT_BYTES) : ok(BigInt(n) + 1n);
   }
 
   /** A node's hash, `H(0x01 || left || right)`; digests that are not `Uint8Array`s are a `TypeMismatch`. */
@@ -252,7 +256,10 @@ const int64 = (n: bigint): Int64 => (n > INT64_MAX ? INT64_MAX : n < -INT64_MAX 
 const pathArg = (path: unknown, width?: number): Result<Uint8Array[], TypeMismatch | MerkleError> =>
   readArray<Uint8Array, TypeMismatch | MerkleError>(path, "an array of Uint8Arrays", (d, i) => {
     if (width === undefined) {
-      const own = ownCopyAny(d);
+      // a proof's digest, sized when the proof is checked: none is longer than the longest digest, so a longer one is
+      // refused here, uncopied
+      const own = ownCopy(d, MAX_OUTPUT_SIZE);
+      if (typeof own === "number") return err(expectedAt(`a digest of at most ${MAX_OUTPUT_SIZE.toString()} bytes`, i));
       return own === undefined ? err(expectedAt("a Uint8Array", i)) : ok(own);
     }
     // measured before it is copied: a digest longer than the profile's is refused here, uncopied, as `digests` words it

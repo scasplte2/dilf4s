@@ -1,6 +1,6 @@
 /** Keys and signatures: nominal per scheme, immutable, with secret bytes that never print. */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { mint, ownCopy, ownCopyAny, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
+import { mint, ownCopy, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
 
 import { expected, NOT_BYTES } from "./internal/check.js";
 import { copy, ctEqual, equal, hex } from "./internal/bytes.js";
@@ -176,8 +176,9 @@ export class Secret {
    * What is not a `Uint8Array` is a `TypeMismatch`.
    */
   static of(bytes: Uint8Array): Result<Secret, TypeMismatch> {
-    const own = ownCopyAny(bytes);
-    return own === undefined ? err(NOT_BYTES) : ok(new Secret(INTERNAL, own));
+    // a secret of any length is held
+    const own = ownCopy(bytes, UNBOUNDED);
+    return own === undefined || typeof own === "number" ? err(NOT_BYTES) : ok(new Secret(INTERNAL, own));
   }
 
   /** A copy of the secret bytes. */
@@ -254,7 +255,7 @@ export const signatureBytes = (x: unknown, scheme: string): Result<Uint8Array, T
  * Secret input as bytes: a `Secret`'s own bytes, or a copy of a `Uint8Array`'s own memory, or `undefined` for anything
  * else.
  */
-export function secretBytes(x: unknown, max: number = UNBOUNDED): Uint8Array | number | undefined {
+export function secretBytes(x: unknown, max: number): Uint8Array | number | undefined {
   // a Secret's own bytes, or the caller's bytes through core's boundary, copied: past `max`, only their length
   const own = secretOf(x);
   if (own !== undefined) return own.length > max ? own.length : own;

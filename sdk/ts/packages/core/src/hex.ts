@@ -1,5 +1,5 @@
 /** Hexadecimal text, as the conformance vectors write bytes. */
-import { ownAny } from "./bytes.js";
+import { ownBytes, UNBOUNDED } from "./bytes.js";
 import type { TypeMismatch } from "./error.js";
 import type { HashErrorOf } from "./hash.js";
 import { err, ok, type Result } from "./result.js";
@@ -21,8 +21,9 @@ export function toHexOf(bytes: Uint8Array): string {
  * not believed). What is not a `Uint8Array` (from a JavaScript caller, or a cast) is a `TypeMismatch`, unread.
  */
 export function toHex(bytes: Uint8Array): Result<string, TypeMismatch> {
-  const view = ownAny(bytes);
-  return view === undefined ? err(NOT_BYTES) : ok(toHexOf(view));
+  // bytes of any length render
+  const view = ownBytes(bytes, UNBOUNDED);
+  return view === undefined || typeof view === "number" ? err(NOT_BYTES) : ok(toHexOf(view));
 }
 
 /** The value of an ASCII hex digit's code unit, or -1. */

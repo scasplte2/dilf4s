@@ -1199,3 +1199,34 @@ describe("a fixed-width proof field is refused past its width uncopied, even in 
     expect(process.memoryUsage().arrayBuffers - before, "nothing was copied").toBeLessThan(1 << 20);
   });
 });
+
+describe("a segment's bytes and a claimed entry's key are measured at their bound before anything is copied", () => {
+  it("Segment.of past its count's width, and a claimed key past the mode's bound, refused with no copy", () => {
+    const big = new Uint8Array(new SharedArrayBuffer(64 << 20));
+    let valueReads = 0;
+    const pair: unknown[] = [big];
+    Object.defineProperty(pair, 1, {
+      get: () => {
+        valueReads += 1;
+        return int(1n);
+      },
+    });
+    const before = process.memoryUsage().arrayBuffers;
+    expect(expectErr(trie.Segment.of(8n, big), "64 MiB for an 8-bit segment").kind).toBe("Encoding");
+    expect(expectErr(trie.triePrefixVerify(T, variable, root, empty, bad([pair]), full), "a 64 MiB claimed key").kind).toBe("InvalidKey");
+    expect(expectErr(trie.trieRangeVerify(T, variable, root, empty, null, bad([pair]), full), "a 64 MiB claimed key").kind).toBe("InvalidKey");
+    expect(process.memoryUsage().arrayBuffers - before, "nothing was copied").toBeLessThan(1 << 20);
+    // the entry's value is still read, once per call: every entry's types are checked before a key is (refusals_v1.json)
+    expect(valueReads, "each value read once").toBe(2);
+  });
+
+  it("a query or claim longer than any key of the mode compares as it would, from its first bytes", () => {
+    const v = verified();
+    const longPrefix = new Uint8Array(new SharedArrayBuffer(64 << 20));
+    const before = process.memoryUsage().arrayBuffers;
+    expect(v.prefix(longPrefix), "no key is that long: an empty listing").toMatchObject({ ok: true, value: { kind: "listed", entries: [] } });
+    expect(expectOk(v.listsPrefix(longPrefix, []), "the empty claim"), "the empty claim is the listing").toBe(true);
+    expect(expectOk(v.listsPrefix(empty, bad([{ key: longPrefix, valueHash: v1 }])), "a claim of a key no mode holds"), "never the listing").toBe(false);
+    expect(process.memoryUsage().arrayBuffers - before, "only the deciding bytes were copied").toBeLessThan(1 << 20);
+  });
+});

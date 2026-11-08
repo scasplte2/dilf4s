@@ -12,7 +12,13 @@ import { invalidEncoding, invalidKey, lengthError, type CryptoError } from "./er
 import { signatureBytes, signingKeyBytes, verifyingKeyBytes } from "./keys.js";
 import { expectedAt, NOT_A_NUMBER, NOT_BYTES, readArray, verdict, viewOf } from "./internal/check.js";
 import type { KeyPair, Signature, SigningKey, VerifyingKey } from "./keys.js";
-import { isArrayGuarded, ownBytes, ownCopyAny, readGuarded } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, ownBytes, ownCopy, readGuarded, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
+
+/** A message copied (kept, or in use while caller code runs): a message has no length bound in the spec. */
+function messageCopy(x: unknown): Uint8Array | undefined {
+  const b = ownCopy(x, UNBOUNDED);
+  return typeof b === "number" ? undefined : b;
+}
 
 import { attempt } from "./internal/attempt.js";
 import { beToBig, bigToBE, concat, u32be } from "./internal/bytes.js";
@@ -226,7 +232,7 @@ export const blsPop: BlsScheme = Object.freeze({
   },
   fastAggregateVerify: (keys: readonly VerifyingKey<typeof NAME>[], message: Uint8Array, signature: Signature<typeof NAME>) => {
     // the message copied before the keys are read: their getters (caller code) cannot change what is verified
-    const m = ownCopyAny(message);
+    const m = messageCopy(message);
     if (m === undefined) return err(NOT_BYTES);
     const ks = keysArg(keys);
     if (!ks.ok) return ks;
@@ -242,7 +248,7 @@ export const blsPop: BlsScheme = Object.freeze({
       // each read guarded (a Proxy's trap may revoke the tuple); copied as read: caller code run by a later read
       // cannot change an earlier message
       const k = keyIn(readGuarded(t, 0));
-      const m = ownCopyAny(readGuarded(t, 1));
+      const m = messageCopy(readGuarded(t, 1));
       return k === undefined || m === undefined ? undefined : ([k, m] as const);
     });
     if (!given.ok) return given;
@@ -261,7 +267,7 @@ export const blsPop: BlsScheme = Object.freeze({
   batchVerify: (triples: readonly (readonly [VerifyingKey<typeof NAME>, Uint8Array, Signature<typeof NAME>])[]) => {
     const given = tuplesArg(triples, "a [VerifyingKey, Uint8Array, Signature] triple", (t) => {
       const k = keyIn(readGuarded(t, 0));
-      const m = ownCopyAny(readGuarded(t, 1));
+      const m = messageCopy(readGuarded(t, 1));
       const s = signatureIn(readGuarded(t, 2));
       return k === undefined || m === undefined || s === undefined ? undefined : ([k, m, s] as const);
     });

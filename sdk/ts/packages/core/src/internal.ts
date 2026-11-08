@@ -5,7 +5,7 @@
  * public functions of the same name).
  */
 // the boundary for caller byte arguments: proofs and signing take their bytes through these alone (a test scans for it)
-export { bytesLength, copyBytes, isBytes, isLocalBuffer, isStableBuffer, ownAny, ownBytes, ownCopy, ownCopyAny, UNBOUNDED } from "./bytes.js";
+export { bytesLength, copyBytes, isBytes, isLocalBuffer, isStableBuffer, ownAny, ownBytes, ownCopy, ownCopyAny, ownCopyPrefix, UNBOUNDED } from "./bytes.js";
 export { bitLengthOf } from "./bigint.js";
 export { blockSizeOf, digestOf, hashPartsOf, isAlgorithm, isDomainTag, MAX_OUTPUT_SIZE, outputSizeOf, startHashOf, typeMismatch, type RawHash } from "./hash.js";
 export { isArrayGuarded, isRevokedProxy, readGuarded, REVOKED } from "./guard.js";

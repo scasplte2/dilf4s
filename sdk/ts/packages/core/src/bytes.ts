@@ -136,6 +136,17 @@ export function ownCopy(x: unknown, max: number): Uint8Array | number | undefine
   return view.length > max ? view.length : copyBytes(view);
 }
 
+/**
+ * The first `n` bytes of `x` at most, copied once from one view of what was measured, or `undefined` for what is not a
+ * `Uint8Array`: for a query compared with keys of at most `n - 1` bytes (a prefix, a range bound, a claimed key or
+ * digest), whose bytes past the `n`th decide nothing, so a longer one is never copied whole.
+ */
+export function ownCopyPrefix(x: unknown, n: number): Uint8Array | undefined {
+  const view = plainBytes(x);
+  if (view === undefined) return undefined;
+  return copyBytes(view.length > n ? view.subarray(0, n) : view);
+}
+
 /** {@link ownBytes} with no bound: the bytes, or `undefined` for what is not a `Uint8Array`. */
 export function ownAny(x: unknown): Uint8Array | undefined {
   const b = ownBytes(x, UNBOUNDED);

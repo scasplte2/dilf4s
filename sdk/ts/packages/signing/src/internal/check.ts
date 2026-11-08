@@ -6,7 +6,13 @@
  * randomness) propagates unchanged: `docs/specs/canonical-encoding.md` §1, "Caller code".
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { isArrayGuarded, isArrayLength, isRevokedProxy, ownAny, readGuarded, REVOKED, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, isArrayLength, isRevokedProxy, ownBytes, readGuarded, REVOKED, typeMismatch, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
+
+/** A message, through core's boundary: a message to sign or verify has no length bound in any scheme's spec. */
+function messageBytes(x: unknown): Uint8Array | undefined {
+  const b = ownBytes(x, UNBOUNDED);
+  return typeof b === "number" ? undefined : b;
+}
 
 export const NOT_BYTES = typeMismatch("expected a Uint8Array");
 export const NOT_A_NUMBER = typeMismatch("expected a number");
@@ -22,14 +28,14 @@ export const expectedAt = (what: string, i: number): TypeMismatch => typeMismatc
 export const isObject = (x: unknown): x is object => ((typeof x === "object" && x !== null) || typeof x === "function") && !isRevokedProxy(x);
 
 /**
- * Bytes to verify, through core's byte boundary (`ownAny`): measured by their internal length, then a view of stable
+ * Bytes to verify, through core's byte boundary (`ownBytes`, unbounded): measured by their internal length, then a view of stable
  * memory (this realm's own unshared, non-resizable `ArrayBuffer`) or else one copy, so a check that reads them more than
  * once reads one snapshot; `undefined` if they are not a `Uint8Array`.
  */
-export const viewOf = (x: unknown): Uint8Array | undefined => ownAny(x);
+export const viewOf = (x: unknown): Uint8Array | undefined => messageBytes(x);
 
 /**
- * Bytes to sign, through core's byte boundary (`ownAny`). Signing reads a message more than once (Ed25519 hashes it
+ * Bytes to sign, through core's byte boundary (`ownBytes`, unbounded). Signing reads a message more than once (Ed25519 hashes it
  * for the nonce and again for the challenge, BIP-340 likewise): another thread rewriting it between the reads would
  * give two signatures with one nonce over two messages, which reveals the key. So memory another thread can write (a
  * `SharedArrayBuffer`, told apart by the engine's brand check, never by a prototype), a resizable buffer or another
@@ -37,12 +43,12 @@ export const viewOf = (x: unknown): Uint8Array | undefined => ownAny(x);
  * (it calls no caller code), is read in place.
  */
 export function signedOf(x: unknown): Uint8Array | undefined {
-  return ownAny(x);
+  return messageBytes(x);
 }
 
 /** {@link viewOf} as a `Result`. */
 export const bytesArg = (x: unknown): Result<Uint8Array, TypeMismatch> => {
-  const view = ownAny(x);
+  const view = messageBytes(x);
   return view === undefined ? err(NOT_BYTES) : ok(view);
 };
 
