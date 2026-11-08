@@ -1,8 +1,9 @@
 /**
  * Checks of what a caller passes past the types (from JavaScript, or a cast), made once at each public entry point, in
  * O(1) for each argument, before it is read: an argument of the wrong type is core's `TypeMismatch`, never a throw or an
- * argument read as another type. Past the check the verifiers work on plain, owned data. Internal: not exported from
- * the package.
+ * argument read as another type. Past the check the verifiers work on plain, owned data. An exception from caller code
+ * (a getter, a Proxy's trap or handler, an iterator's methods) propagates unchanged: `docs/specs/canonical-encoding.md` §1, "Caller code".
+ * Internal: not exported from the package.
  */
 import { err, isValue, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
 import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, plainBytes, readGuarded, readStep, REVOKED, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";

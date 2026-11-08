@@ -114,6 +114,15 @@ boundary around noble are the SDK's only catches. A check that passes allocates 
 caller byte argument (the view is what keeps a library such as noble from reading a subclass's own `length` or
 `subarray`) and the copies of what is kept; refusals and boolean verdicts are shared, frozen results.
 
+**Caller code.** An exception raised by the caller's own code propagates unchanged, in all three packages: a getter,
+a Proxy's trap, a Proxy whose handler is itself revoked or otherwise unusable (the engine throws while running the
+caller's handler), an iterator's methods, a version key's functions, a source of randomness. The SDK does not catch
+it, so no verdict or value comes back, and an iterator the SDK opened is closed first, as leaving `for...of` early
+closes it. What the SDK guarantees is about the data a caller passes: however it is shaped, it never makes the SDK
+throw an error of its own, hang, do unbounded work, read caller data twice where the two reads can disagree, or give a
+wrong verdict or value. A revoked Proxy is data of the wrong shape (the engine refuses it at the first check, before
+any caller code runs), so it is refused as a `TypeMismatch`, as above.
+
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the
 caller's realm, which nothing can change while the decoder runs, and copies it once first when it is a

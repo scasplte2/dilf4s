@@ -1,7 +1,8 @@
 /**
  * Reading a caller's iterable as `for...of` does, where what `for...of` throws a `TypeError` for (an iterator method,
  * iterator, `next` or result not of the protocol's type) is found instead, to be refused as a typed error: library code
- * does not throw. Caller code it runs (a getter, an iterator's methods) may throw. Internal to this package.
+ * does not throw. Caller code it runs (a getter, an iterator's methods) may throw, and that exception propagates, the
+ * iterator closed first (`docs/specs/canonical-encoding.md` §1, "Caller code"). Internal to this package.
  */
 
 import { isArrayGuarded, isRevokedProxy, readGuarded, REVOKED } from "./guard.js";

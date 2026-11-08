@@ -4,7 +4,9 @@
  * target is one), and no other question can be put to such an object without the engine throwing too: reading a
  * property, its prototype or its keys all throw. `Array.isArray` runs no caller code (a Proxy's traps are not called
  * for it), so the catch below can only ever see the engine's own refusal, never a caller's exception, and nothing else
- * is ever placed inside it. Internal to this SDK, through `@kd5ujc/dilf4s-core/internal`.
+ * is ever placed inside it. An exception from caller code (a getter, a trap, a Proxy whose handler is unusable)
+ * propagates, by the rule of `docs/specs/canonical-encoding.md` §1, "Caller code". Internal to this SDK, through
+ * `@kd5ujc/dilf4s-core/internal`.
  */
 
 /**

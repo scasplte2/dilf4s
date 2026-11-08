@@ -24,6 +24,7 @@ import {
   type ExpansionRefusal,
   type HashAlgorithm,
   type Hashing,
+  Value,
 } from "../src/index.js";
 import { isDomainTag as isDomainTagOf, MAX_OUTPUT_SIZE, takeBytesWithin } from "../src/internal.js";
 import { expectOk, int } from "./vectors.js";
@@ -317,6 +318,35 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     small[0] = 9;
     expect(owned?.[0], "a copy, owned").toBe(0);
     expect(MAX_OUTPUT_SIZE, "the longest digest").toBe(64);
+  });
+
+  it("an exception from caller code propagates, with no verdict, and an iterator opened is closed (canonical-encoding.md §1)", () => {
+    // a getter that throws: the caller's own exception, unchanged
+    const throwing: unknown[] = [message];
+    Object.defineProperty(throwing, 1, {
+      get: (): never => {
+        throw new RangeError("the caller's own");
+      },
+    });
+    expect(() => hashParts(sha, bad(throwing)), "a throwing getter").toThrow(new RangeError("the caller's own"));
+    // a Proxy whose handler is a revoked Proxy: the engine throws while running the caller's handler, at the length read
+    const { proxy: handler, revoke } = Proxy.revocable({}, {});
+    revoke();
+    const broken = new Proxy([message], handler);
+    expect(() => hashParts(sha, bad(broken)), "a revoked handler").toThrow(TypeError);
+    // an iterable whose entry's getter throws: the exception propagates, and the iterator is closed first
+    let closed = 0;
+    const entry: unknown[] = ["a"];
+    Object.defineProperty(entry, 1, {
+      get: (): never => {
+        throw new RangeError("the caller's own");
+      },
+    });
+    const iterable = {
+      [Symbol.iterator]: () => ({ next: () => ({ done: false, value: entry }), return: () => ((closed += 1), { done: true }) }),
+    };
+    expect(() => Value.map(bad(iterable)), "a throwing entry").toThrow(new RangeError("the caller's own"));
+    expect(closed, "the iterator was closed").toBe(1);
   });
 
   it("the algorithm list cannot be extended by a caller", () => {

@@ -2,7 +2,8 @@
  * Checks of what a caller passes past the types (from JavaScript, or a cast), made once at each public entry point, in
  * O(1) for each argument, before it is read: an argument of the wrong type is core's `TypeMismatch`, never a throw, an
  * argument read as another type, or (the reverted attempt's second regression) bytes read as empty. Past the check the
- * schemes work on plain, owned data.
+ * schemes work on plain, owned data. An exception from caller code (a getter, a Proxy's trap or handler, a source of
+ * randomness) propagates unchanged: `docs/specs/canonical-encoding.md` §1, "Caller code".
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
 import { isArrayGuarded, isArrayLength, isRevokedProxy, plainBytes, readGuarded, REVOKED, takeBytes, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
