@@ -1,6 +1,6 @@
 [package]
 name = "dilf4s-zk-host"
-description = "Executes the dilf4s SP1 guest (execute mode, no proving) and checks it against native code and the vectors"
+description = "Executes the dilf4s SP1 guests and checks them against native code and the vectors; proves a JLVM call locally"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.96"
@@ -10,8 +10,19 @@ publish = false
 # Its own root, with no patches: the native side is the crates.io releases dilf4s-signing and dilf4s-proofs ship.
 [workspace]
 
+[features]
+# the CUDA prover (sp1-sdk's, through sp1-gpu-server) for `prove`; the CPU prover otherwise
+cuda = ["sp1-sdk/cuda"]
+# the CPU prover's Groth16 step in gnark built natively (Go and libclang), not in Docker; the CUDA prover's server
+# has gnark built in (README.md, "Proving a JLVM call")
+native-gnark = ["sp1-sdk/native-gnark"]
+
 [dependencies]
 dilf4s-zk-cases = { path = "../cases", features = ["vectors"] }
+# the statement's types and digests, and dilf4s's own SP1 Groth16 verifier
+dilf4s-core = { path = "../../core" }
+dilf4s-jlvm = { path = "../../jlvm" }
+dilf4s-proofs = { path = "../../proofs" }
 # its syscall codes
 sp1-core-executor = "=6.10.0"
 sp1-sdk = "=6.10.0"

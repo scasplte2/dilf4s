@@ -30,6 +30,7 @@ After changing a schema, regenerate them with
 | `proofs-errors.cddl` | the proof structures' error families (`MerkleError`, `TrieError`, `VersionedTrieError`, `PoseidonError`, `PoseidonMerkleError`), `version-key-hex` and `vt-root-component` | `docs/specs/conformance.md` §3, §6 and §8, `docs/specs/versioned-trie.md` §2 |
 | `store-errors.cddl` | the reference store's error family (`StoreError`), which a versioned trie's `Store` holds | `docs/specs/storage.md`, `docs/specs/conformance.md` §6 |
 | `jlvm-errors.cddl` | the JLVM's error family, its sites and a `Crypto` error's cause | `docs/specs/jlvm.md` §3, `docs/specs/conformance.md` §6 |
+| `zk-jlvm.cddl` | the statement the SP1 guest commits for a proved JLVM call | `docs/specs/zk-jlvm.md` §2 (embedded) |
 | `*-vectors.cddl` | The conformance vector files in `shared/vectors/` | the matching spec |
 
 Every vector file in `shared/vectors/` must have a schema here. `VectorSchemasSuite` checks this, and checks that each

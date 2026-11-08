@@ -1,0 +1,28 @@
+;# import jlvm-vectors as jv
+; dilf4s SP1 JLVM call statement, v1 (docs/specs/zk-jlvm.md). Normative for shape. The SP1 guest dilf4s-zk-jlvm-call
+; commits exactly the canonical CBOR of one statement as its public values. Digests are SHA-256 tagged hashes
+; (canonical-encoding.md section 4) of value commitments (merkle.md section 2), never raw values.
+
+zk-jlvm-statement = {
+  "version": 1,
+  ; the JLVM language version the call ran under (jlvm.md)
+  "language": uint,
+  ; the gas schedule version the call ran under (jlvm.md section 7)
+  "schedule": uint,
+  ; the program's identity, taggedHash_SHA-256("dilf4s/jlvm/program/v1", cbor(program)) (jlvm.md section 1)
+  "program": bytes .size 32,
+  ; taggedHash_SHA-256("dilf4s/zk/jlvm/input/v1", commit(data))
+  "input": bytes .size 32,
+  ; the host bindings: taggedHash_SHA-256("dilf4s/zk/jlvm/bindings/v1", e1 || ... || en) over the bindings in name
+  ; order, each ei = taggedHash_SHA-256("dilf4s/zk/jlvm/binding/v1", cbor(name) || commit(value))
+  "bindings": bytes .size 32,
+  "gasLimit": uint,
+  "gasUsed": uint,
+  "outcome": zk-jlvm-outcome,
+}
+
+; A value by its digest, or an error by its kind and normative fields, as jlvm_v1.json records it (jlvm.md section 3).
+zk-jlvm-outcome = zk-jlvm-result / jv.jlvm-error
+
+; taggedHash_SHA-256("dilf4s/zk/jlvm/result/v1", commit(value))
+zk-jlvm-result = { "result": bytes .size 32 }

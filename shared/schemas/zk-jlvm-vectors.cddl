@@ -1,0 +1,45 @@
+;# import jlvm-vectors as jv
+; Schema of shared/vectors/zk_jlvm_v1.json (conformance vectors for docs/specs/zk-jlvm.md). Each call is a row of
+; jlvm_v1.json, by name, with its program and data as JSON surface text, its host bindings (each JSON surface text)
+; and its gas limit; its statement (zk-jlvm.cddl, with digests as hex); and the public values the SP1 guest commits
+; for it, the statement's canonical CBOR. "programVKey" is the guest's SP1 verifying-key hash (bytes32), "elfSha256"
+; the SHA-256 of the guest ELF it was computed from. A call with "proofBytes" carries a real SP1 Groth16 proof
+; (zk.md section 2, SP1VerifierGroth16.sol circuit "circuit") of its public values under "programVKey".
+
+zk-jlvm-vectors = {
+  "spec": "docs/specs/zk-jlvm.md",
+  "version": 1,
+  "sp1": text,
+  "circuit": text,
+  "programVKey": hex,
+  "elfSha256": hex,
+  "calls": [* zk-jlvm-call],
+}
+
+zk-jlvm-call = {
+  "name": text,
+  "program": text,
+  "data": text,
+  ? "env": { * text => text },
+  "gasLimit": uint,
+  "statement": zk-jlvm-statement-hex,
+  "publicValues": hex,
+  ? "proofBytes": hex,
+}
+
+zk-jlvm-statement-hex = {
+  "language": uint,
+  "schedule": uint,
+  "program": hex,
+  "input": hex,
+  "bindings": hex,
+  "gasLimit": uint,
+  "gasUsed": uint,
+  "outcome": zk-jlvm-outcome-hex,
+}
+
+zk-jlvm-outcome-hex = zk-jlvm-result-hex / jv.jlvm-error
+
+zk-jlvm-result-hex = { "result": hex }
+
+hex = text .regexp "([0-9a-f]{2})*"

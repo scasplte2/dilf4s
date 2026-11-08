@@ -33,6 +33,7 @@ object VectorSchemasSuite extends SimpleIOSuite {
     "sigma_dilf4s_v1.json"       -> sigma_vectors.SigmaVectors.codec,
     "sigma_refusals_v1.json"     -> sigma_refusal_vectors.SigmaRefusalVectors.codec,
     "versioned_trie_v1.json"     -> versioned_trie_vectors.VersionedTrieVectors.codec,
+    "zk_jlvm_v1.json"            -> zk_jlvm_vectors.ZkJlvmVectors.codec,
     "zk_v1.json"                 -> zk_vectors.ZkVectors.codec
   )
 

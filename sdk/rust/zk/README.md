@@ -1,8 +1,13 @@
 # dilf4s SP1 guest harness
 
-An SP1 v6 guest that runs the Rust SDK (`dilf4s-proofs`, `dilf4s-signing` without `sign`, and `dilf4s-jlvm`) on
-`riscv64im-succinct-zkvm-elf`, built with every SP1 patch. A host executes it over the shared vectors and checks the
-outcomes. The host uses execute mode only: nothing is proved.
+SP1 v6 guests that run the Rust SDK (`dilf4s-proofs`, `dilf4s-signing` without `sign`, and `dilf4s-jlvm`) on
+`riscv64im-succinct-zkvm-elf`, built with every SP1 patch:
+
+- `dilf4s-zk-guest`, the harness. The host executes it over the shared vectors and checks the outcomes.
+- `dilf4s-zk-jlvm-call`, one JLVM call. It commits the call's statement (`docs/specs/zk-jlvm.md`), and is the program
+  that is proved: see "Proving a JLVM call".
+
+Tests and CI use execute mode only: nothing is proved there.
 
 The SDK's own CI build targets `riscv64imac-unknown-none-elf`. That target has `target_os = "none"`, so it never
 compiles the patches' `target_os = "zkvm"` code. This harness compiles that code and runs it.
@@ -13,9 +18,21 @@ There are three cargo roots, each with its own `[workspace]` and `Cargo.lock`:
 
 | Directory | What it is |
 |---|---|
-| `cases/` | `dilf4s-zk-cases`, a `no_std` crate. It holds what is computed (`run`, plus the issue #33 leaf forms). With the `vectors` feature it also reads each case and its expected outcome from `shared/vectors`. Both the guest and the host build it. |
-| `guest/` | The SP1 program. Its `Cargo.toml` has the `[patch.crates-io]` section, so the patches reach only the guest. |
-| `host/` | Builds the guest with `sp1-build`, `--locked`, from `build.rs`. Executes it with `sp1-sdk`'s light prover. Has no patches, so its native side builds the same crates.io releases that `sdk/rust` uses. |
+| `cases/` | `dilf4s-zk-cases`, a `no_std` crate. It holds what is computed (`run`, the issue #33 leaf forms, and `call`: a JLVM call's statement). With the `vectors` feature it also reads each case and its expected outcome from `shared/vectors`. Both the guest and the host build it. |
+| `guest/` | The SP1 programs, `src/main.rs` (the harness) and `src/bin/jlvm_call.rs`. Its workspace root is `sdk/` (`sdk/Cargo.toml`), which holds the `[patch.crates-io]` section, so the patches reach only the guest, and its lock, `sdk/Cargo.lock`. |
+| `host/` | Builds the guest with `sp1-build`, `--locked`, from `build.rs`. Executes it with `sp1-sdk`'s light prover, and proves a JLVM call (`src/bin/dilf4s-zk-jlvm.rs`). Has no patches, so its native side builds the same crates.io releases that `sdk/rust` uses. |
+
+**The guest's ELF is reproducible.** The JLVM call's verifying key is a hash of its ELF, and
+`shared/vectors/zk_jlvm_v1.json` pins it, so CI, a developer and the prover must build the same bytes wherever they
+check out the repository and whatever their `CARGO_HOME`:
+
+- `host/build.rs` remaps the checkout to `/dilf4s` and `CARGO_HOME` to `/cargo` in the paths the ELF embeds (panic
+  locations).
+- The guest's workspace root is `sdk/` because it contains every path dependency (`sdk/rust/{core,proofs,signing,jlvm}`
+  and `cases/`). Cargo hashes a path package into its symbol names by its path relative to the workspace root when it
+  is inside it, and by its absolute path otherwise, which made the ELF differ between checkouts.
+
+Two checkouts at different paths, one with a fresh `CARGO_HOME`, built byte-identical ELFs.
 
 The roots are kept separate on purpose. If the patches applied to the host, the native comparison would compile the
 patched crates too. Any change a patch makes off the zkVM would then appear on both sides and hide.
@@ -80,15 +97,167 @@ For each family the test asserts four things:
 
 `host/tests/guest_lock.rs` checks the patches themselves:
 
-- `guest/Cargo.lock` resolves every patched crate to its `sp1-patches` tag and to nothing else. Cargo only warns when a `[patch]` entry does not apply, so this needs a test.
+- `sdk/Cargo.lock` resolves every patched crate to its `sp1-patches` tag and to nothing else. Cargo only warns when a `[patch]` entry does not apply, so this needs a test.
 - k256 pulls in the ecdsa fork.
 - `sp1-lib` and `sp1-zkvm` are both 6.10.0.
 
+`host/tests/jlvm_call.rs` checks the JLVM call guest (`docs/specs/zk-jlvm.md`), in execute mode:
+
+- **Guest against native.** For each call of `shared/vectors/zk_jlvm_v1.json`, the guest exits 0 and commits exactly
+  the canonical CBOR of the statement native code computes, and that statement agrees with the call's `jlvm_v1.json`
+  row (outcome and gas). The calls are a success that calls `ecrecover` twice (the one proved), a `Crypto` error from
+  `ecrecover`, `OutOfGas` with a host binding, a sigma threshold, a binding read, a `Type` and an `Arithmetic` error,
+  and a `Crypto` error with a cause. The proved call must reach the secp256k1 and Keccak precompiles.
+- **No statement.** A call whose program or binding does not parse, or that names a binding twice, halts with exit
+  code 1 and commits nothing.
+- **Injectivity.** A binding to null and an unbound name, two names, the bytes `0x6161` and the text `"a"`, and two
+  gas limits all give different statements; a program written with other whitespace gives the same one.
+- **The vector file is current, strictly** (the policy, user decision 2026-11-08):
+  - the guest's verifying key (SP1 `setup` on the light prover, about 20 s) must be the key `zk_jlvm_v1.json` pins.
+    Any change to the code the guest links (`sdk/rust/{core,proofs,signing,jlvm}`, `cases/`, `guest/`,
+    `sdk/Cargo.lock`) changes it, and the gate fails with both keys and the command that proves the call again;
+  - the pinned proof of the proved call must verify under the pinned key, with `dilf4s-proofs`' SP1 Groth16 verifier.
+    It is never dropped: `vector` refuses to write a file without it, or with one that no longer verifies;
+  - the rest of the file must be what the native statements give: a changed call is fixed with `vector`, which keeps
+    the proof while it verifies.
+- **A proof fixture** (ignored by default): `DILF4S_ZK_PROOF=<dir>/proof-groth16.bin cargo test --release
+  --manifest-path host/Cargo.toml --test jlvm_call -- --ignored` checks a fresh proof before it goes into the file.
+
+`sdk/rust/jlvm/tests/zk_jlvm.rs` and the Scala `ZkJlvmVectorsSuite` recompute each statement from the spec alone and
+verify the pinned proof through `groth16_verify` (and that it proves nothing else); both fail if there is none. So
+the `rust` and `scala` CI jobs check the proof too.
+
+**Proving is not CI's job.** Only euler proves (below). GitHub's free hosted runner cannot: a core proof of
+`{"+": [1, 2]}` was OOM-killed there at a 15 GB cap, with every SP1 worker pool at 1 (measured 2026-11-08); on
+cavendish it peaks at 24 GB (core) and 30 GB (compressed). A change that moves the key is therefore proved again on
+euler, and its PR carries the new `zk_jlvm_v1.json`. When two such PRs are open, the one that merges second proves
+again after its rebase.
+
+## Proving a JLVM call
+
+`host/src/bin/dilf4s-zk-jlvm.rs` proves a call with `sp1-sdk` v6.10.0 on a local prover, never a network one (the
+SDK's `network` feature is off):
+
+```sh
+cargo run --release --manifest-path host/Cargo.toml --bin dilf4s-zk-jlvm -- execute --case "<name>"   # or --call <file>
+cargo run --release --manifest-path host/Cargo.toml --bin dilf4s-zk-jlvm -- prove --case "<name>" --mode core|compressed|groth16 --out <dir>
+cargo run --release --manifest-path host/Cargo.toml --bin dilf4s-zk-jlvm -- vector [--proof "<name>=<dir>/proof-groth16.bin"]
+```
+
+- **A call** is a `zk_jlvm_v1.json` call by name, or a JSON file `{"program": text, "data": text, "env": {name: text},
+  "gasLimit": n}` of JLVM surface texts.
+- **`prove`** writes `proof-<mode>.bin` (`SP1ProofWithPublicValues::save`), `public-values.hex`, `vkey.txt`,
+  `elf-sha256.txt` and, for Groth16, `proof-bytes.hex` (`SP1ProofWithPublicValues::bytes`, what `groth16_verify`
+  takes). It executes the call first, and checks the proof with SP1's own verifier and its public values against the
+  execution.
+- **Modes.** In sp1-sdk v6.10.0 a request's mode decides how far it goes (`ProveRequest::core`, `compressed`,
+  `groth16`, `src/prover/prove.rs`), and each request proves from the start: `groth16` is the core proof, compressed,
+  shrunk, wrapped and proved in gnark in one request (`sp1-prover` `worker/prover/recursion.rs`, `run_groth16`).
+  The SDK has no call that wraps an earlier compressed proof.
+- **Provers.** Built with `--features cuda`, `prove` uses the CUDA prover (`ProverClient::builder().cuda()`), unless
+  `--cpu`. The whole request, Groth16 included, then runs in `sp1-gpu-server` (`sp1-cuda` `client.rs`,
+  `Request::ProveWithMode`), which `sp1-cuda` downloads to `$HOME/.sp1/bin` and starts (`server.rs`). The CUDA
+  toolkit is not needed to build.
+  - **The server needs no Docker.** The v6.10.0 release binary (`sp1_gpu_server_v6.10.0_x86_64.tar.gz`, inspected,
+    not run) is a Go and cgo build with gnark linked in, and no reference to Docker or icicle.
+  - **It needs the CUDA runtime, `libcudart.so.12`,** dynamically linked, besides the driver's `libcuda.so` that WSL
+    provides in `/usr/lib/wsl/lib`. The runbook checks for it first.
+- **The CPU prover** runs gnark in Docker, or, with `--features native-gnark`, built from Go with cgo and bindgen
+  (which needs libclang) (`sp1-recursion-gnark-ffi` `build.rs`, `src/ffi/`).
+- **`vector`** rewrites `shared/vectors/zk_jlvm_v1.json`: each call's native statement and public values, the
+  guest's key, and each `--proof` (checked to verify under that key and to state its call) or the committed proof.
+  It refuses to write the file without a proof of the proved call that verifies.
+
+The circuit artifacts (about 8 GB, `sp1-prover` `build.rs`, `try_install_circuit_artifacts`) download on first use
+to `$SP1_GROTH16_CIRCUIT_PATH`, by default `$HOME/.sp1/circuits/groth16/v6.1.0`, unless that directory has its
+`.complete` marker.
+
+### On euler (CUDA, RTX 5090)
+
+euler is the user's own machine; dilf4s uses its defaults, without a duplicate toolchain:
+- `~/.sp1` is dilf4s's: SP1 v6.10.0 (`cargo-prove`, the `succinct` toolchain, `sp1-gpu-server`, which `sp1-cuda`
+  downloads to `$HOME/.sp1/bin` on first use) and the one set of Groth16 circuit artifacts, `~/.sp1/circuits/groth16/
+  v6.1.0` (about 8 GB; its `groth16_vk.bin` is byte for byte the one sp1-verifier 6.10.0 ships).
+- `~/.rustup` and `~/.cargo` are the user's own: rustup adds only the 1.99.1 toolchain `rust-toolchain.toml` pins, and
+  `sp1up` replaces the `succinct` toolchain in place.
+- The code is euler's one checkout of dilf4s, `~/repos/dilf4s`: no second checkout or worktree. It builds into one
+  `CARGO_TARGET_DIR` inside it, `target` (the guest into its `elf-compilation`). Logs go to `/tmp/dilf4s-logs`, and
+  the proof to `/tmp/dilf4s-out` until its vector is committed.
+
+No `sudo`, apt or Docker: the CUDA prover needs none. The GPU must be free: ollama runs there, and a loaded model (up
+to 22 GB) leaves too little of the 5090's 32 GB, so check first and never unload someone else's model. Run one proof
+at a time. Wrap each remote command in `timeout` (`nvidia-smi` can hang right after a boot), and run long steps under
+`setsid nohup` with a log: euler's SSH drops for seconds at a time. Each check below stops the run; report what it
+says rather than working around it.
+
+```sh
+# 0. on cavendish: ship the branch (no remote is needed on euler)
+git bundle create /tmp/dilf4s.bundle rebuild/sp1-e2e
+scp /tmp/dilf4s.bundle euler:/tmp/dilf4s.bundle
+
+# 1. on euler, in every shell: the PATH (non-interactive shells lack ~/.cargo/bin) and one target dir
+mkdir -p /tmp/dilf4s-logs /tmp/dilf4s-out
+export PATH="$HOME/.sp1/bin:$HOME/.cargo/bin:/usr/lib/wsl/lib:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export PROTOC=/home/linuxbrew/.linuxbrew/bin/protoc CARGO_TARGET_DIR="$HOME/repos/dilf4s/target"
+timeout 15 nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv || { echo "the GPU does not answer: stop"; exit 1; }
+[ "$(curl -s -m 5 localhost:11434/api/ps)" = '{"models":[]}' ] || { echo "ollama holds a model on the GPU: stop"; exit 1; }
+pgrep -x sp1-gpu-server && { echo "another sp1-gpu-server holds /tmp/sp1-cuda-0: stop"; exit 1; }
+command -v git curl tar gcc >/dev/null || { echo "missing git, curl, tar or gcc: stop"; exit 1; }
+[ -f "$(dirname "$(readlink -f "$PROTOC")")/../include/google/protobuf/empty.proto" ] \
+  || { echo "protoc has no well-known types: stop"; exit 1; }
+ldconfig -p | grep -q 'libcudart.so.12 ' || { echo "no libcudart.so.12, which sp1-gpu-server links: stop"; exit 1; }
+
+# 2. once: SP1 v6.10.0 into ~/.sp1, by the sp1up script at the v6.10.0 commit (Rust 1.99.1 comes with the first build)
+curl -sSfL https://raw.githubusercontent.com/succinctlabs/sp1/d83ed91f96701209613720708f36ffce0e98ed33/sp1up/sp1up -o /tmp/sp1up
+timeout 1800 bash /tmp/sp1up --version v6.10.0 && rm /tmp/sp1up
+
+# 3. the code, in the one checkout: only if it has no tracked changes and no rebase or merge in progress. The bundle's
+#    head is checked out detached, so the same commands work on every run, and the head is checked
+cd ~/repos/dilf4s || { echo "no ~/repos/dilf4s: stop"; exit 1; }
+[ -z "$(git status --porcelain | grep -v '^??')" ] && [ ! -d .git/rebase-merge ] && [ ! -d .git/rebase-apply ] \
+  && [ ! -f .git/MERGE_HEAD ] || { echo "~/repos/dilf4s has work in progress: stop"; exit 1; }
+git fetch /tmp/dilf4s.bundle rebuild/sp1-e2e && git checkout --detach FETCH_HEAD \
+  || { echo "the bundle did not check out: stop"; exit 1; }
+git log --oneline -1   # must be the head the bundle was made from
+rm /tmp/dilf4s.bundle
+cd sdk/rust/zk && ./check-toolchain.sh || { echo "the toolchain is not SP1 v6.10.0's: stop"; exit 1; }
+
+# 4. euler must build the guest CI builds, or the proof is of another program. EXPECT is that key without 0x: after a
+#    change to the guest, the one the failing gate names as "the guest built here"; otherwise the pinned programVKey
+EXPECT=${EXPECT:-$(sed -n 's/.*"programVKey": "\([0-9a-f]*\)".*/\1/p' ../../../shared/vectors/zk_jlvm_v1.json)}
+V=$(timeout 7200 cargo run --release --features cuda --manifest-path host/Cargo.toml --bin dilf4s-zk-jlvm -- vkey \
+  | sed -n 's/^vkey 0x//p')
+echo "vkey $V, expected $EXPECT"
+[ -n "$V" ] && [ "$V" = "$EXPECT" ] || { echo "euler's guest key is not the expected one: stop"; exit 1; }
+
+# 5. prove (the tiny call first, the first time), then check the proof with dilf4s's verifier
+C="contract multisig_wallet: 2 of 3 owners sign"
+timeout 14400 cargo run --release --features cuda --manifest-path host/Cargo.toml --bin dilf4s-zk-jlvm -- \
+  prove --case "$C" --mode groth16 --out /tmp/dilf4s-out || { echo "the proof failed: stop (and run step 7)"; exit 1; }
+DILF4S_ZK_PROOF=/tmp/dilf4s-out/proof-groth16.bin timeout 3600 cargo test --release --features cuda \
+  --manifest-path host/Cargo.toml --test jlvm_call -- --ignored --nocapture a_proof_fixture \
+  || { echo "dilf4s does not verify the proof: stop (and run step 7)"; exit 1; }
+
+# 6. the vector; copy it back, and commit it on cavendish
+timeout 3600 cargo run --release --features cuda --manifest-path host/Cargo.toml --bin dilf4s-zk-jlvm -- \
+  vector --proof "$C=/tmp/dilf4s-out/proof-groth16.bin" || { echo "the vector was not written: stop (and run step 7)"; exit 1; }
+#    on cavendish: scp "euler:repos/dilf4s/shared/vectors/zk_jlvm_v1.json" shared/vectors/
+
+# 7. clean up: nothing may keep running. sp1-cuda starts its server as a child that is killed when the prover exits
+#    (kill_on_drop, server.rs); stop a leftover only if it is this run's binary. The toolchains, the checkout and its
+#    target dir stay, so the next proof is quick; the proof files go once the vector is committed.
+for pid in $(pgrep -x sp1-gpu-server); do
+  [ "$(readlink -f "/proc/$pid/exe")" = "$(readlink -f "$HOME/.sp1/bin/sp1-gpu-server")" ] && kill "$pid"
+done
+rm -rf /tmp/dilf4s-out
+du -sh ~/repos/dilf4s/target ~/.sp1
+```
+
 ## The patches
 
-The patches are pinned in `guest/Cargo.toml` at their SP1 6.10.0 tags. One exception is bls12_381:
-`dilf4s-signing` already depends on that patch's source directly. Commits are shown as resolved in
-`guest/Cargo.lock`.
+The patches are pinned in `sdk/Cargo.toml`, the guest's workspace root, at their SP1 6.10.0 tags. One exception is
+bls12_381: `dilf4s-signing` already depends on that patch's source directly. Commits are shown as resolved in
+`sdk/Cargo.lock`.
 
 | Crate | Tag | Commit | Native build uses |
 |---|---|---|---|
