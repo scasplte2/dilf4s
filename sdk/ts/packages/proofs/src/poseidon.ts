@@ -280,12 +280,17 @@ export function verifyAbsence(proof: PoseidonMerkleProof, root: Fr): Result<bool
 }
 
 /**
- * `zero_0 = 0`, `zero_{i+1} = poseidon(zero_i, zero_i)`, for `i <= depth`: a depth outside `1..MAX_DEPTH` is `Depth`,
+ * `zero_0 = 0`, `zero_{i+1} = poseidon(zero_i, zero_i)`, for `i <= depth`: an integer depth outside `1..MAX_DEPTH`
+ * is `Depth` (its field a signed 64-bit integer, as the schema's), and a number that is not a safe integer (`NaN`,
+ * `Infinity`, `1.5`, `1e30`) a `TypeMismatch`,
  * and one that is not a number is a `TypeMismatch`.
  */
+const NOT_AN_INTEGER_DEPTH = expected("a depth that is a safe integer");
+
 export function zeroHashes(depth: number): Result<readonly Fr[], PoseidonMerkleError | TypeMismatch> {
   if (typeof (depth as unknown) !== "number") return err(NOT_A_NUMBER);
-  if (!Number.isInteger(depth) || depth < 1 || depth > MAX_DEPTH) return err({ kind: "Depth", depth });
+  if (!Number.isSafeInteger(depth)) return err(NOT_AN_INTEGER_DEPTH);
+  if (depth < 1 || depth > MAX_DEPTH) return err({ kind: "Depth", depth });
   const out = [Fr.zero];
   for (let i = 0; i < depth; i++) {
     const prev = out[i] ?? Fr.zero;
@@ -304,7 +309,7 @@ const byPosition = (a: Placed, b: Placed): number => (a[0] < b[0] ? -1 : a[0] > 
  * low 64 bits, so they are only ever compared: one stable sort, then each level pairs neighbours in one pass. O(n log n)
  * comparisons and O(n · depth) compressions. A `Map` is an iterable of entries, so it may be passed as before.
  * `leaves` is read once, as `for...of` reads it (its iterator closed on a refusal); an entry that is not a
- * `[bigint, Fr]` array (read by index) is a `TypeMismatch`, as is a depth that is not a number.
+ * `[bigint, Fr]` array (read by index) is a `TypeMismatch`, as is a depth that is not a safe integer.
  */
 export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, PoseidonMerkleError | TypeMismatch> {
   const zeros = zeroHashes(depth);

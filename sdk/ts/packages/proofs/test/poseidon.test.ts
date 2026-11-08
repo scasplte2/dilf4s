@@ -73,6 +73,12 @@ describe("Poseidon", () => {
     expect(expectOk(poseidon.treeRoot(8, new Map()), "root").equals(z[8] ?? poseidon.Fr.zero)).toBe(true);
     expect(expectErr(poseidon.zeroHashes(0), "depth 0").kind).toBe("Depth");
     expect(expectErr(poseidon.zeroHashes(257), "depth 257").kind).toBe("Depth");
+    expect(expectErr(poseidon.zeroHashes(-3), "depth -3")).toEqual({ kind: "Depth", depth: -3 });
+    // the schema's Depth holds a signed 64-bit integer: a number that is not a safe integer is a TypeMismatch
+    for (const d of [Number.NaN, Number.POSITIVE_INFINITY, 1.5, 1e30]) {
+      expect(expectErr(poseidon.zeroHashes(d), d.toString()).kind).toBe("TypeMismatch");
+      expect(expectErr(poseidon.treeRoot(d, []), d.toString()).kind).toBe("TypeMismatch");
+    }
     expect(expectErr(poseidon.treeRoot(8, new Map([[256n, fr(1n)]])), "position").kind).toBe("Position");
   });
 
