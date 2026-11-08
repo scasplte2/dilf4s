@@ -116,8 +116,11 @@ verdicts are shared, frozen results.
 
 **Caller bytes.** Every caller byte argument of a public function in core's hash API, proofs and signing passes once
 through core's one boundary (`ownBytes` and its forms, in `core/src/bytes.ts`). It is measured by its internal length
-through one fixed-length view (never its own `length`, so a subclass is not believed) and refused past its bound
-without anything copied: a fixed field's width, a key's bound, or none for a message or data to hash. Then it is that
+through one fixed-length view (never its own `length`, so a subclass is not believed) against its bound: a fixed
+field's width, a key's bound, or none for a message or data to hash. Past the bound nothing is copied, and the boundary
+refuses nothing: the length flows on to the check that refused such bytes before (a digest's size, a key's mode, a
+leaf's weight), at the stage the specs and `refusals_v1.json` pin, so an oversized argument is refused exactly where a
+shorter wrong-sized one is. The boundary refuses only what is not bytes, as a `TypeMismatch`. Within the bound it is that
 view when its memory is stable (this realm's own `ArrayBuffer`, unshared and not resizable by the engine's brand
 checks, never by a prototype), which nothing changes while the SDK runs without calling caller code, so nothing is
 copied; and otherwise one copy of that view, so shared, resizable or another realm's memory is read from one snapshot.

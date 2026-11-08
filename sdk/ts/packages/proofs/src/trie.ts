@@ -11,12 +11,12 @@
  * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
 import { BYTES_TAG, describeFailure, err, isValue, models, ok, type Err, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { bytesLength, MAX_OUTPUT_SIZE, mint, outputSizeOf, ownBytes, ownCopy, ownCopyPrefix, readGuarded, toHexOf, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, MAX_OUTPUT_SIZE, mint, outputSizeOf, ownBytes, ownCopy, ownCopyPrefix, readGuarded, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_NUMBER, NOT_A_VALUE, NOT_BYTES, readArray, readIterable, readPair, TOKEN, valueArg, type Token } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, lengthOf, NOT_A_NUMBER, NOT_A_VALUE, NOT_BYTES, passed, readArray, readIterable, readPair, TOKEN, valueArg, type Measured, type Token } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 import { TRIE } from "./trie-internal.js";
 
@@ -186,12 +186,14 @@ const segmentWidth = (n: bigint): number => {
 /** A segment's count of bits as a refusal names it: one too wide for 64 bits by its size (its digits are superlinear and unpaid). */
 const countText = (n: bigint): string => (bitsOf(n) <= 64 ? `${n.toString()} bits` : `a ${bitsOf(n).toString()}-bit count of bits`);
 
-function segmentBits(n: bigint, b: Uint8Array): Result<B.Bits, TrieError> {
-  const len = BigInt(b.length);
+function segmentBits(n: bigint, measured: Measured): Result<B.Bits, TrieError> {
+  const len = BigInt(lengthOf(measured));
   // bigint division truncates toward zero, so a negative length would pass the byte count: refuse it first
   if (n < 0n || n > len * 8n || len !== (n + 7n) / 8n) {
-    return encoding(`segment of ${countText(n)} in ${b.length.toString()} bytes`);
+    return encoding(`segment of ${countText(n)} in ${lengthOf(measured).toString()} bytes`);
   }
+  // bytes past their bound (a length) never pass the count check above
+  const b = passed(measured);
   const bits = Number(n);
   const rem = bits % 8;
   const last = b[b.length - 1] ?? 0;
@@ -228,9 +230,9 @@ let isHashing!: (x: unknown) => x is TrieHashing;
 /** `x` if it is a {@link TrieHashing} made here (a private-brand check: no Proxy trap or caller code runs). */
 const hashingArg = (x: unknown): Result<TrieHashing, TypeMismatch> => (isHashing(x) ? ok(x) : err(expected("a TrieHashing")));
 
-/** An optional digest: `undefined`, or a `Uint8Array` within `size` bytes (through core's boundary). */
-function optionalBytes(x: unknown, size: number): Result<Uint8Array | undefined, TypeMismatch> {
-  return x === undefined ? ok(undefined) : bytesArg(x, size);
+/** An optional digest: `undefined`, or a `Uint8Array` (through core's boundary), hashed as given. */
+function optionalBytes(x: unknown): Result<Uint8Array | undefined, TypeMismatch> {
+  return x === undefined ? ok(undefined) : bytesArg(x);
 }
 
 /** Hashing and node commitments over one hash algorithm (trie.md section 3). */
@@ -314,7 +316,7 @@ export class TrieHashing {
   bytesHash(b: Uint8Array): Result<Uint8Array, TypeMismatch> {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
     // a byte string of any length is committed
-    const bytes = bytesArg(b, UNBOUNDED);
+    const bytes = bytesArg(b);
     return bytes.ok ? ok(TRIE.bytesHash(this, bytes.value)) : bytes;
   }
 
@@ -322,7 +324,7 @@ export class TrieHashing {
   leafHash(segment: Segment, valueHash: Uint8Array): Result<Uint8Array, TypeMismatch> {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
     if (!isSegment(segment)) return err(expected("a Segment"));
-    const v = bytesArg(valueHash, this.size);
+    const v = bytesArg(valueHash);
     return v.ok ? ok(TRIE.leafBits(this, segmentBitsOf(segment), v.value)) : v;
   }
 
@@ -330,11 +332,11 @@ export class TrieHashing {
   branchHash(segment: Segment, valueHash: Uint8Array | undefined, left: Uint8Array | undefined, right: Uint8Array | undefined): Result<Uint8Array, TypeMismatch> {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
     if (!isSegment(segment)) return err(expected("a Segment"));
-    const v = optionalBytes(valueHash, this.size);
+    const v = optionalBytes(valueHash);
     if (!v.ok) return v;
-    const l = optionalBytes(left, this.size);
+    const l = optionalBytes(left);
     if (!l.ok) return l;
-    const r = optionalBytes(right, this.size);
+    const r = optionalBytes(right);
     return r.ok ? ok(TRIE.branchBits(this, segmentBitsOf(segment), v.value, l.value, r.value)) : r;
   }
 }
@@ -443,7 +445,7 @@ function decodeProof(h: TrieHashing, value: Value): Result<TrieProof, TrieError>
 }
 
 /** {@link TrieProof.fromRecords} of checked records: plain arrays, copied where the proof keeps them. */
-function fromRecords(hashing: TrieHashing, records: models.trie.TrieProof): Result<TrieProof, TrieError> {
+function fromRecords(hashing: TrieHashing, records: readonly MeasuredRecord[]): Result<TrieProof, TrieError> {
   if (records.length === 0) return ok(createProof(undefined));
   const stack: Open[] = [];
   for (const [i, r] of records.entries()) {
@@ -473,20 +475,18 @@ function fromRecords(hashing: TrieHashing, records: models.trie.TrieProof): Resu
 /**
  * A caller's trie record, its fields read once: a stub `{h}`, a leaf `{s, v}` or a branch `{s, v?, c}`. Each byte field
  * is copied as it is read, before the next getter runs: caller code a later read runs cannot change or detach it. A
- * digest longer than the hashing's `size` is refused by its length, never copied.
+ * digest longer than the hashing's `size`, or segment bytes longer than their count's width, is kept as its length
+ * (never copied), which the records' checks refuse after every record's types, as they refuse any wrong size.
  */
-const longDigest = (size: number, length: number): Result<never, TrieError> => encoding(`a digest is ${size.toString()} bytes, got ${length.toString()}`);
-
 const recordArg =
   (size: number) =>
-  (r: unknown, i: number): Result<models.trie.TrieRecord, Refusal> => {
+  (r: unknown, i: number): Result<MeasuredRecord, TypeMismatch> => {
   const bad = err(expectedAt("a trie record of its types", i));
   if (!isObject(r)) return bad;
   // each read guarded: a getter run by an earlier read may have revoked the record; no field's check takes REVOKED
   const h: unknown = readGuarded(r, "h");
   if (h !== undefined) {
     const hb = ownCopy(h, size);
-    if (typeof hb === "number") return longDigest(size, hb);
     return hb === undefined ? bad : ok({ h: hb });
   }
   const s: unknown = readGuarded(r, "s");
@@ -496,11 +496,9 @@ const recordArg =
   // refused by their length as segmentBits words it, uncopied; one longer than a mode allows is refused when the proof
   // is checked, and one too heavy to encode when it is encoded)
   const b = ownCopy(readGuarded(s, "b"), typeof n === "bigint" ? segmentWidth(n) : 0);
-  if (typeof b === "number" && typeof n === "bigint") return encoding(`segment of ${countText(n)} in ${b.toString()} bytes`);
-  if (typeof n !== "bigint" || b === undefined || typeof b === "number") return bad;
+  if (typeof n !== "bigint" || b === undefined) return bad;
   const v: unknown = readGuarded(r, "v");
   const vb = v === undefined ? undefined : ownCopy(v, size);
-  if (typeof vb === "number") return longDigest(size, vb);
   if (v !== undefined && vb === undefined) return bad;
   const c: unknown = readGuarded(r, "c");
   if (c === undefined) return vb === undefined ? bad : ok({ s: { n, b }, v: vb });
@@ -510,12 +508,23 @@ const recordArg =
 
 const wireSegment = (s: B.Bits): models.trie.TrieSegment => ({ n: BigInt(s.length), b: s.bytes.slice(0, (s.length + 7) >> 3) });
 
-function digestOf(hashing: TrieHashing, b: Uint8Array): Result<Uint8Array, TrieError> {
-  return b.length === hashing.size ? ok(copyBytes(b)) : encoding(`a digest is ${hashing.size.toString()} bytes, got ${b.length.toString()}`);
+/** A digest of the hashing's size, copied, or `Encoding`: measured, so a length (one past its bound, never copied) is refused here. */
+function digestOf(hashing: TrieHashing, b: Measured): Result<Uint8Array, TrieError> {
+  const n = lengthOf(b);
+  return n === hashing.size ? ok(copyBytes(passed(b))) : encoding(`a digest is ${hashing.size.toString()} bytes, got ${n.toString()}`);
 }
 
+/** The refusal of a digest not of the hashing's size, by its measured length (trieRoot refuses each entry as it reads it, as before). */
+const longDigest = (size: number, length: number): Result<never, TrieError> => encoding(`a digest is ${size.toString()} bytes, got ${length.toString()}`);
+
+/** A trie record as a caller's object is read: each byte field copied, or the length of one past its bound. */
+type MeasuredRecord =
+  | { readonly h: Measured }
+  | { readonly s: { readonly n: bigint; readonly b: Measured }; readonly v: Measured }
+  | { readonly s: { readonly n: bigint; readonly b: Measured }; readonly v?: Measured; readonly c: "left" | "right" | "both" };
+
 /** One typed record: a finished node, or an open branch awaiting children. */
-function record(hashing: TrieHashing, r: models.trie.TrieRecord): Result<ProofNode | Open, TrieError> {
+function record(hashing: TrieHashing, r: MeasuredRecord): Result<ProofNode | Open, TrieError> {
   if ("h" in r) {
     const h = digestOf(hashing, r.h);
     return h.ok ? ok({ kind: "stub", hash: h.value }) : h;
@@ -660,24 +669,13 @@ function queryArg(mode: KeyMode, x: unknown): Result<Uint8Array, TypeMismatch> {
 }
 
 /**
- * A trusted root, copied through core's boundary (caller code a later read runs cannot change it); one longer than the
- * hashing's digest is refused uncopied, as the root's check words it.
+ * A trusted root, copied through core's boundary (caller code a later read runs cannot change it): one longer than the
+ * hashing's digest is kept as its length (never copied), which the root's check refuses at its own stage, after the
+ * key's and the claims' checks, as refusals_v1.json pins.
  */
-function rootArg(h: TrieHashing, root: unknown): Result<Uint8Array, Refusal> {
+function rootArg(h: TrieHashing, root: unknown): Result<Measured, TypeMismatch> {
   const own = ownCopy(root, h.size);
-  if (own === undefined) return err(NOT_BYTES);
-  return typeof own === "number" ? encoding(`a digest is ${h.size.toString()} bytes, got ${own.toString()}`) : ok(own);
-}
-
-/**
- * A key to look up, through core's boundary within the mode's bound: a view of stable memory or else one copy, so the
- * walk reads one snapshot; one longer than the mode allows is `InvalidKey`, uncopied.
- */
-function keyArg(mode: KeyMode, key: unknown): Result<Uint8Array, Refusal> {
-  const own = ownBytes(key, mode.bytes);
-  if (own === undefined) return err(NOT_BYTES);
-  const valid = checkKeyLength(mode, typeof own === "number" ? own : own.length);
-  return valid.ok && typeof own !== "number" ? ok(own) : valid.ok ? err(NOT_BYTES) : valid;
+  return own === undefined ? err(NOT_BYTES) : ok(own);
 }
 
 /** An optional query bound, `undefined` or copied as {@link queryArg} copies one. */
@@ -836,7 +834,7 @@ function refuseOp(hashing: unknown, mode: unknown, proof: unknown): Err<TypeMism
   return isValue(proof) ? undefined : err(NOT_A_VALUE);
 }
 
-function verified(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, proof: Value): Result<VerifiedTrieProof | null, TrieError> {
+function verified(hashing: TrieHashing, mode: KeyMode, root: Measured, proof: Value): Result<VerifiedTrieProof | null, TrieError> {
   const r = digestOf(hashing, root);
   if (!r.ok) return r;
   const p = decodeProof(hashing, proof);
@@ -864,15 +862,19 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
   const p = proof;
   const r = rootArg(h, root);
   if (!r.ok) return r;
-  const k = keyArg(m, key);
-  if (!k.ok) return k;
+  // the key through core's boundary within the mode's bound (a view of stable memory, else one copy, so the walk reads
+  // one snapshot; a longer one kept as its length): its length checked after the claim's type, as before
+  const k = ownBytes(key, m.bytes);
+  if (k === undefined) return err(NOT_BYTES);
   const claim = claimArg(value);
   if (!claim.ok) return claim;
+  const valid = checkKeyLength(m, lengthOf(k));
+  if (!valid.ok) return valid;
   const c = claimsWithin(claim.value === null || claim.value.kind === "null" ? [] : [claim.value]);
   if (!c.ok) return c;
   const v = verified(h, m, r.value, p);
   if (!v.ok || v.value === null) return v.ok ? ok(false) : v;
-  const l = lookupOf(v.value, k.value);
+  const l = lookupOf(v.value, passed(k));
   if (!l.ok) return l;
   switch (l.value.kind) {
     case "present": {

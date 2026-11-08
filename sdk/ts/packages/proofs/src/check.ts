@@ -6,7 +6,7 @@
  * Internal: not exported from the package.
  */
 import { err, isValue, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, ownBytes, readGuarded, readStep, REVOKED, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
+import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, ownBytes, readGuarded, UNBOUNDED, readStep, REVOKED, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
 import type { HashAlgorithm } from "@kd5ujc/dilf4s-core";
 
 /**
@@ -35,11 +35,28 @@ export const expectedAt = (what: string, i: number): TypeMismatch => typeMismatc
  * memory or else one copy), or a refusal; past `max`, uncopied. For bytes read before any caller code runs again;
  * bytes kept, or in use while caller code runs, take `ownCopy`.
  */
-export const bytesArg = (x: unknown, max: number): Result<Uint8Array, TypeMismatch> => {
-  const view = ownBytes(x, max);
-  if (view === undefined) return err(NOT_BYTES);
-  return typeof view === "number" ? err(typeMismatch(`expected a Uint8Array of at most ${max.toString()} bytes`)) : ok(view);
+export const bytesArg = (x: unknown): Result<Uint8Array, TypeMismatch> => {
+  // bytes with no bound of their own (data to hash, to commit): the boundary refuses only what is not bytes
+  const view = ownBytes(x, UNBOUNDED);
+  return view === undefined || typeof view === "number" ? err(NOT_BYTES) : ok(view);
 };
+
+/**
+ * A caller's bytes as the boundary measured them against a field's bound: the owned bytes, or the length of ones longer
+ * (never copied). The boundary refuses nothing past the bound: the length flows on to the check that refused such
+ * bytes before (a digest's size, a key's mode, a leaf's weight), at the stage the specs pin.
+ */
+export type Measured = Uint8Array | number;
+
+/** The length of measured bytes: their own, or the length of ones longer than their bound. */
+export const lengthOf = (m: Measured): number => (typeof m === "number" ? m : m.length);
+
+/**
+ * The bytes of `m`, once a check of its size has passed: a length (bytes longer than their bound) never passes one, so
+ * this gives the empty array only where no caller reaches.
+ */
+export const passed = (m: Measured): Uint8Array => (typeof m === "number" ? EMPTY : m);
+const EMPTY: Uint8Array = new Uint8Array(0);
 
 /** `x` if it is a canonical value made by core (`isValue`, one private-brand check: no Proxy trap runs). */
 export const valueArg = (x: unknown): Result<Value, TypeMismatch> => (isValue(x) ? ok(x) : err(NOT_A_VALUE));

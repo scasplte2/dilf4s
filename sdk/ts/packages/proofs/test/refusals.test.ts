@@ -57,10 +57,10 @@ const modeOf = (m: models.refusalVectors.RefusalMode | undefined): trie.KeyMode 
 };
 
 /** The case's outcome, by its check (conformance.md section 6): the first refusal, or "accepted". */
-function run(c: Case): Outcome {
+function run(c: Case, rootOverride?: Uint8Array): Outcome {
   const input = (): Value => built(c.input ?? { leaf: "" });
   const stateKey = (): versioned.StateKey => expectOk(versioned.StateKey.parse(c.stateKey ?? ""), "state key");
-  const root = (): Uint8Array => bytes(c.root ?? "");
+  const root = (): Uint8Array => rootOverride ?? bytes(c.root ?? "");
   const v = of(versionedOutcome);
   switch (c.check) {
     case "vt-value":
@@ -163,4 +163,19 @@ describe("refusals_v1.json", { timeout: 120_000 }, () => {
       expect(performance.now() - start, "bounded work").toBeLessThan(20_000);
     });
   }
+
+  // the boundary refuses nothing past a bound: a root longer than the digest is refused where a shorter wrong-sized one
+  // is, so each precedence a short root pins holds for a long one too, even one too long to copy
+  it("each precedence pinned with a 31-byte root holds with a 33-byte root and with a 64 MiB shared one, uncopied", () => {
+    const pinned = vectors.cases.filter((c) => c.name.includes("31-byte root") && (c.check === "trie-verify" || c.check === "merkle-verify"));
+    expect(pinned.length, "the cases pinning it").toBeGreaterThanOrEqual(3);
+    const huge = new Uint8Array(new SharedArrayBuffer(64 << 20));
+    for (const c of pinned) {
+      const long = Uint8Array.from([...bytes(c.root ?? ""), 0, 0]);
+      expect(run(c, long), `${c.name}, 33 bytes`).toEqual(c.outcome);
+      const before = process.memoryUsage().arrayBuffers;
+      expect(run(c, huge), `${c.name}, 64 MiB`).toEqual(c.outcome);
+      expect(process.memoryUsage().arrayBuffers - before, `${c.name}: the 64 MiB root was not copied`).toBeLessThan(1 << 20);
+    }
+  });
 });

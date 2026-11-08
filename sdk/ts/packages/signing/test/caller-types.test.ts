@@ -627,3 +627,11 @@ describe("secret input with a known bound is refused past it uncopied, even in s
     expect(process.memoryUsage().arrayBuffers - before, "nothing was copied").toBeLessThan(1 << 20);
   });
 });
+
+describe("entropy past its bound is refused at the stage its size always was", () => {
+  it("toMnemonic checks the word list's type before the entropy's size", () => {
+    const big = new Uint8Array(new SharedArrayBuffer(16 << 20));
+    expect(toMnemonic(big, bad({})), "the word list first").toEqual(mismatch("expected a WordList"));
+    expect(expectErr(toMnemonic(big), "then the entropy").kind).toBe("InvalidEntropy");
+  });
+});

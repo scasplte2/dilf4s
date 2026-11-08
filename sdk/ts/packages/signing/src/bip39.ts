@@ -159,12 +159,13 @@ const wordListArg = (x: unknown): Result<WordList, TypeMismatch> => {
  * two-word mnemonic); what is neither, or a word list not made by `WordList.of`, is a `TypeMismatch`.
  */
 export function toMnemonic(entropy: Uint8Array | Secret, words: WordList = WordList.english): Result<Mnemonic, Bip39Refusal> {
-  // within the longest entropy: longer bytes are refused by their length, uncopied
+  // within the longest entropy: longer bytes are kept as their length (never copied), which the entropy's size check
+  // refuses after the word list's type, as before
   const ent = secretBytes(entropy, 32);
   if (ent === undefined) return err(expected("a Uint8Array or a Secret"));
-  if (typeof ent === "number") return err(invalidEntropy(`entropy must be 16..32 bytes in steps of 4, got ${String(ent)}`));
   const list = wordListArg(words);
   if (!list.ok) return list;
+  if (typeof ent === "number") return err(invalidEntropy(`entropy must be 16..32 bytes in steps of 4, got ${String(ent)}`));
   return mnemonicOf(ent, list.value);
 }
 

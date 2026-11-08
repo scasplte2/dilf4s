@@ -8,7 +8,7 @@ import { models, Value } from "@kd5ujc/dilf4s-core";
 
 import { ownBytes, ownCopy } from "@kd5ujc/dilf4s-core/internal";
 
-import { merkle, poseidon, trie, versioned } from "../src/index.js";
+import { MAX_PROOF_WEIGHT, merkle, poseidon, trie, versioned } from "../src/index.js";
 import { bytes, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
@@ -1149,8 +1149,8 @@ describe("versioned byte fields are measured before they are copied", () => {
     expect(huge.root(finalHead).ok, "a 16 MiB encoding").toBe(false);
     const reader = expectOk(versioned.SnapshotReader.start(vt, finalHead), "reader");
     const state = expectOk(reader.feedBytes(bytes(vectors.snapshot.chunks[0] ?? "")), "the head chunk");
-    // a root longer than any digest is not a digest: refused as such, uncopied
-    expect(expectErr(state.feed(bad({ kind: "history", versions: [[1n, big]] })), "a 16 MiB history root").kind).toBe("TypeMismatch");
+    // a root longer than the profile's digest: refused by the chunk's size check, after the versions, uncopied
+    expect(expectErr(state.feed(bad({ kind: "history", versions: [[1n, big]] })), "a 16 MiB history root").kind).toBe("Malformed");
     expect(held() - before, "none of them was copied").toBeLessThan(1 << 20);
   });
 });
@@ -1228,5 +1228,33 @@ describe("a segment's bytes and a claimed entry's key are measured at their boun
     expect(expectOk(v.listsPrefix(longPrefix, []), "the empty claim"), "the empty claim is the listing").toBe(true);
     expect(expectOk(v.listsPrefix(empty, bad([{ key: longPrefix, valueHash: v1 }])), "a claim of a key no mode holds"), "never the listing").toBe(false);
     expect(process.memoryUsage().arrayBuffers - before, "only the deciding bytes were copied").toBeLessThan(1 << 20);
+  });
+});
+
+describe("an oversized argument is refused at the stage its size always was, after what the specs check first", () => {
+  it("an RFC 6962 leaf past the weight bound with a 31-byte root: the head is checked first", () => {
+    const rfc6962 = expectOk(merkle.Rfc6962MerkleHashing.of("SHA-256"), "rfc");
+    const leaf = new Uint8Array(new SharedArrayBuffer(Number(MAX_PROOF_WEIGHT) + 1));
+    const before = process.memoryUsage().arrayBuffers;
+    expect(expectErr(merkle.merkleVerify(rfc6962, { root: mroot.subarray(0, 31), size: 3n }, leaf, inclusionValue), "a bad head").kind, "the head first").toBe("Encoding");
+    expect(expectErr(merkle.merkleVerify(rfc6962, { root: mroot, size: 3n }, leaf, inclusionValue), "a good head").kind, "then the leaf's weight").toBe("TooLarge");
+    expect(process.memoryUsage().arrayBuffers - before, "the leaf was not copied").toBeLessThan(1 << 20);
+  });
+
+  it("a versioned head's root past the profile's size never binds, roots, encodes or compares: Malformed, after its version", () => {
+    const wide = { ...finalHead, stateRoot: new Uint8Array(64) };
+    expect(expectErr(vt.root(wide), "root").kind).toBe("Malformed");
+    expect(expectErr(vt.encodeHead(wide), "encodeHead").kind).toBe("Malformed");
+    expect(expectErr(vt.sameHead(wide, wide), "sameHead").kind).toBe("Malformed");
+    const p = vectors.proofs.find((x) => x.name === "head");
+    if (p === undefined) throw new Error("the head fixture");
+    const proofOf = expectOk(vt.decodeProof(valueOf(p.cbor)), "proof");
+    expect(expectErr(vt.verifyHead(bytes(vectors.root), bad({ ...proofOf, head: { ...proofOf.head, stateRoot: new Uint8Array(33) } })), "verifyHead").kind).toBe("Malformed");
+    // the version is checked first, as the wire form orders them
+    expect(expectErr(vt.root(bad({ ...wide, version: -1n })), "a bad version too").kind).toBe("InvalidVersion");
+    const huge = new Uint8Array(new SharedArrayBuffer(64 << 20));
+    const before = process.memoryUsage().arrayBuffers;
+    expect(expectErr(vt.root({ ...finalHead, historyRoot: huge }), "a 64 MiB root").kind).toBe("Malformed");
+    expect(process.memoryUsage().arrayBuffers - before, "not copied").toBeLessThan(1 << 20);
   });
 });

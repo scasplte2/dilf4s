@@ -8,10 +8,10 @@
  * view of their own memory, and what a proof keeps is copied; the walks run on that plain, owned data.
  */
 import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { bytesLength, digestOf, hashPartsOf, MAX_OUTPUT_SIZE, mint, outputSizeOf, ownBytes, ownCopy, readGuarded, toHexOf, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, digestOf, hashPartsOf, mint, outputSizeOf, ownBytes, ownCopy, readGuarded, toHexOf, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Token } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, lengthOf, NOT_A_BIGINT, NOT_BYTES, passed, readArray, TOKEN, valueArg, type Measured, type Token } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
 declare const INT64: unique symbol;
@@ -92,35 +92,37 @@ const emptyOf = (h: Profile): Uint8Array => (h.profile === "tagged" ? taggedEmpt
 
 /** A leaf as its profile takes it: a canonical value (tagged), or raw bytes (a plain view), and its weight. */
 interface Leaf {
-  readonly input: Value | Uint8Array;
+  readonly input: Value | Measured;
   readonly weight: bigint;
 }
 
 /** The longest raw leaf a verification takes: its weight (its length plus one) at most `MAX_PROOF_WEIGHT`. */
 const MAX_RAW_LEAF = Number(MAX_PROOF_WEIGHT) - 1;
 
-function leafArg(h: Profile, input: unknown): Result<Leaf, Refusal> {
+function leafArg(h: Profile, input: unknown): Result<Leaf, TypeMismatch> {
   if (h.profile === "tagged") {
     const v = valueArg(input);
     return v.ok ? ok({ input: v.value, weight: v.value.weight }) : v;
   }
-  // within the weight bound: a longer leaf is refused by its length as the weight check words it, uncopied
+  // within the weight bound: a longer leaf is kept as its length (never copied), whose weight the weight check refuses,
+  // after the head, as the specs order them
   const b = ownBytes(input, MAX_RAW_LEAF);
   if (b === undefined) return err(NOT_BYTES);
-  return typeof b === "number" ? err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) }) : ok({ input: b, weight: BigInt(b.length) + 1n });
+  return ok({ input: b, weight: BigInt(lengthOf(b)) + 1n });
 }
 
 /** A checked leaf's hash. */
 const leafOf = (h: Profile, leaf: Leaf): Result<Uint8Array, MerkleError> =>
-  h.profile === "tagged" ? taggedLeaf(h, leaf.input as Value) : ok(hashPartsOf(h.algorithm, [Uint8Array.of(0), leaf.input as Uint8Array]));
+  // a raw leaf reaches here only past the weight check, which a length (a leaf past its bound) never passes
+  h.profile === "tagged" ? taggedLeaf(h, leaf.input as Value) : ok(hashPartsOf(h.algorithm, [Uint8Array.of(0), passed(leaf.input as Measured)]));
 
 /** Two digests checked as bytes, and hashed as a node. */
 function checkedNode(h: Profile, left: unknown, right: unknown): Result<Uint8Array, TypeMismatch> {
-  // digests, within the profile's size: a longer one is refused uncopied
-  const l = ownBytes(left, h.size);
-  const r = ownBytes(right, h.size);
-  if (l === undefined || r === undefined) return err(NOT_BYTES);
-  return typeof l === "number" || typeof r === "number" ? err(expected(`digests of at most ${h.size.toString()} bytes`)) : ok(nodeOf(h, l, r));
+  // a node hashes the two digests it is given, of any length, as it always has
+  const l = bytesArg(left);
+  if (!l.ok) return l;
+  const r = bytesArg(right);
+  return r.ok ? ok(nodeOf(h, l.value, r.value)) : r;
 }
 
 /** The dilf4s profile: tagged hashes per role, leaves committed by `commit(v)`. */
@@ -224,7 +226,7 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
   leaf(data: Uint8Array): Result<Uint8Array, Refusal> {
     if (!isRfc(this)) return err(NOT_A_PROFILE);
     // a raw leaf of any length is hashed
-    const b = bytesArg(data, UNBOUNDED);
+    const b = bytesArg(data);
     return b.ok ? ok(hashPartsOf(this.algorithm, [Uint8Array.of(0), b.value])) : b;
   }
 
@@ -249,23 +251,23 @@ const INT64_MAX = (1n << 63n) - 1n;
 const int64 = (n: bigint): Int64 => (n > INT64_MAX ? INT64_MAX : n < -INT64_MAX - 1n ? -INT64_MAX - 1n : n) as Int64;
 
 /**
- * A caller's path: an array of `Uint8Array`s, read by index, each copied from its own memory. With `width` (the
- * profile's digest size, for a caller that checks every digest's size before using any), a digest of another size is
- * kept as its plain view, never copied, and refused by that check: an oversized one costs O(1), not a copy.
+ * A caller's path: an array of `Uint8Array`s, read by index, each copied from its own memory (a proof keeps the path it
+ * is given, of any digests, and sizes them when it is checked).
  */
-const pathArg = (path: unknown, width?: number): Result<Uint8Array[], TypeMismatch | MerkleError> =>
-  readArray<Uint8Array, TypeMismatch | MerkleError>(path, "an array of Uint8Arrays", (d, i) => {
-    if (width === undefined) {
-      // a proof's digest, sized when the proof is checked: none is longer than the longest digest, so a longer one is
-      // refused here, uncopied
-      const own = ownCopy(d, MAX_OUTPUT_SIZE);
-      if (typeof own === "number") return err(expectedAt(`a digest of at most ${MAX_OUTPUT_SIZE.toString()} bytes`, i));
-      return own === undefined ? err(expectedAt("a Uint8Array", i)) : ok(own);
-    }
-    // measured before it is copied: a digest longer than the profile's is refused here, uncopied, as `digests` words it
+const pathArg = (path: unknown): Result<Uint8Array[], TypeMismatch> =>
+  readArray(path, "an array of Uint8Arrays", (d, i) => {
+    const own = ownCopy(d, UNBOUNDED);
+    return own === undefined || typeof own === "number" ? err(expectedAt("a Uint8Array", i)) : ok(own);
+  });
+
+/**
+ * A caller's digests, read by index, each measured against the profile's `width`: copied if they fit, else kept as their
+ * length (never copied), which `digests` refuses with every other size, after the whole array's types.
+ */
+const digestsArg = (path: unknown, width: number): Result<Measured[], TypeMismatch> =>
+  readArray(path, "an array of Uint8Arrays", (d, i) => {
     const own = ownCopy(d, width);
-    if (own === undefined) return err(expectedAt("a Uint8Array", i));
-    return typeof own === "number" ? err({ kind: "Encoding", reason: `path[${i.toString()}] is ${own.toString()} bytes, not ${width.toString()}` }) : ok(own);
+    return own === undefined ? err(expectedAt("a Uint8Array", i)) : ok(own);
   });
 
 let isInclusion!: (x: unknown) => x is InclusionProof;
@@ -417,14 +419,13 @@ function decodeConsistency(h: Profile, value: Value): Result<ConsistencyProof, M
   return sized.ok ? consistencyOf(w.value.old, w.value.new, w.value.path.map(copyBytes)) : sized;
 }
 
-/** The refusal of a digest longer than the profile's, measured at the boundary and never copied: as {@link sized} words it. */
-const longer = (what: string, length: number, size: number): Result<never, MerkleError> => err({ kind: "Encoding", reason: `${what} is ${length.toString()} bytes, not ${size.toString()}` });
-
-function sized(h: Profile, what: string, d: Uint8Array): Result<undefined, MerkleError> {
-  return d.length === h.size ? ok(undefined) : err({ kind: "Encoding", reason: `${what} is ${d.length.toString()} bytes, not ${h.size.toString()}` });
+/** A digest of the profile's size, or `Encoding`: measured, so a length (one past its bound, never copied) is refused here. */
+function sized(h: Profile, what: string, d: Measured): Result<undefined, MerkleError> {
+  const n = lengthOf(d);
+  return n === h.size ? ok(undefined) : err({ kind: "Encoding", reason: `${what} is ${n.toString()} bytes, not ${h.size.toString()}` });
 }
 
-function digests(h: Profile, path: readonly Uint8Array[]): Result<undefined, MerkleError> {
+function digests(h: Profile, path: readonly Measured[]): Result<undefined, MerkleError> {
   for (const [i, d] of path.entries()) {
     const s = sized(h, `path[${i.toString()}]`, d);
     if (!s.ok) return s;
@@ -453,19 +454,19 @@ const NOT_A_CONSISTENCY = expected("a ConsistencyProof");
 export function checkInclusion(hashing: MerkleHashing<unknown>, root: Uint8Array, leafHash: Uint8Array, proof: InclusionProof): Result<undefined, Refusal> {
   // each check allocates nothing but the two digests' plain views; a refusal is a shared constant
   if (!isTagged(hashing) && !isRfc(hashing)) return err(NOT_A_PROFILE);
-  // within the profile's digest size: a longer root or leaf hash is refused as the size check words it, uncopied
+  // measured within the profile's digest size: a longer root or leaf hash is kept as its length (never copied), which
+  // the size checks below refuse, after the proof's type, as before
   const r = ownBytes(root, hashing.size);
   const l = ownBytes(leafHash, hashing.size);
   if (r === undefined || l === undefined) return err(NOT_BYTES);
-  if (typeof r === "number") return longer("root", r, hashing.size);
-  if (typeof l === "number") return longer("leaf hash", l, hashing.size);
   return isInclusion(proof) ? inclusionCheck(hashing, r, l, proof) : err(NOT_AN_INCLUSION);
 }
 
-function inclusionCheck(h: Profile, root: Uint8Array, leafHash: Uint8Array, proof: InclusionProof): Result<undefined, MerkleError> {
+function inclusionCheck(h: Profile, measuredRoot: Measured, measuredLeaf: Measured, proof: InclusionProof): Result<undefined, MerkleError> {
   const path = inclusionPath(proof);
-  const lengths = [sized(h, "root", root), sized(h, "leaf hash", leafHash), digests(h, path)].find((r) => !r.ok);
+  const lengths = [sized(h, "root", measuredRoot), sized(h, "leaf hash", measuredLeaf), digests(h, path)].find((r) => !r.ok);
   if (lengths !== undefined) return lengths;
+  const [root, leafHash] = [passed(measuredRoot), passed(measuredLeaf)];
   if (proof.index < 0n || proof.index >= proof.size) return err({ kind: "IndexOutOfRange", index: int64(proof.index), size: int64(proof.size) });
   let fn = proof.index;
   let sn = proof.size - 1n;
@@ -488,18 +489,18 @@ function inclusionCheck(h: Profile, root: Uint8Array, leafHash: Uint8Array, proo
  */
 export function checkConsistency(hashing: MerkleHashing<unknown>, oldRoot: Uint8Array, newRoot: Uint8Array, proof: ConsistencyProof): Result<undefined, Refusal> {
   if (!isTagged(hashing) && !isRfc(hashing)) return err(NOT_A_PROFILE);
+  // measured as checkInclusion measures its digests: a longer one refused by the size checks, after the proof's type
   const o = ownBytes(oldRoot, hashing.size);
   const n = ownBytes(newRoot, hashing.size);
   if (o === undefined || n === undefined) return err(NOT_BYTES);
-  if (typeof o === "number") return longer("old root", o, hashing.size);
-  if (typeof n === "number") return longer("new root", n, hashing.size);
   return isConsistency(proof) ? consistencyCheck(hashing, o, n, proof) : err(NOT_A_CONSISTENCY);
 }
 
-function consistencyCheck(h: Profile, oldRoot: Uint8Array, newRoot: Uint8Array, proof: ConsistencyProof): Result<undefined, MerkleError> {
+function consistencyCheck(h: Profile, measuredOld: Measured, measuredNew: Measured, proof: ConsistencyProof): Result<undefined, MerkleError> {
   const given = consistencyPath(proof);
-  const lengths = [sized(h, "old root", oldRoot), sized(h, "new root", newRoot), digests(h, given)].find((r) => !r.ok);
+  const lengths = [sized(h, "old root", measuredOld), sized(h, "new root", measuredNew), digests(h, given)].find((r) => !r.ok);
   if (lengths !== undefined) return lengths;
+  const [oldRoot, newRoot] = [passed(measuredOld), passed(measuredNew)];
   const [m, n] = [proof.oldSize, proof.newSize];
   if (m < 0n || m > n) return err({ kind: "InvalidSizes", oldSize: int64(m), newSize: int64(n) });
   if (m === 0n) return given.length === 0 && bytesEqual(oldRoot, emptyOf(h)) ? ok(undefined) : invalid("size 0 needs an empty proof and the empty root");
@@ -551,19 +552,24 @@ export interface MerkleHead {
  * A caller's head, its fields read once each: an object whose `root` is a `Uint8Array` (copied) and whose `size`
  * is a `bigint`, or a `TypeMismatch`.
  */
-function headArg(h: Profile, head: unknown, what: string): Result<MerkleHead, TypeMismatch | MerkleError> {
+/** A caller's head as read: its root copied, or the length of one longer than the profile's digest (never copied). */
+interface HeadArg {
+  readonly root: Measured;
+  readonly size: bigint;
+}
+
+function headArg(h: Profile, head: unknown, what: string): Result<HeadArg, TypeMismatch> {
   if (!isObject(head)) return err(expected(`${what} to be a MerkleHead`));
   // copied as read: the size's getter, or the other head's, may run caller code that changes or detaches it; one
-  // longer than the profile's digest is refused uncopied, as checkHead words it
+  // longer than the profile's digest is kept as its length, which checkHead refuses after every argument's type
   const root = ownCopy(Reflect.get(head, "root"), h.size);
   if (root === undefined) return err(expected(`${what}.root to be a Uint8Array`));
-  if (typeof root === "number") return err({ kind: "Encoding", reason: `${what}.root is ${root.toString()} bytes, not ${h.size.toString()}` });
   // guarded: the root's getter may have revoked the head; REVOKED is no bigint
   const size: unknown = readGuarded(head, "size");
   return typeof size === "bigint" ? ok({ root, size }) : err(NOT_A_BIGINT);
 }
 
-function checkHead(h: Profile, what: string, head: MerkleHead): Result<undefined, MerkleError> {
+function checkHead(h: Profile, what: string, head: HeadArg): Result<undefined, MerkleError> {
   if (!withinIndex(head.size)) return err({ kind: "Encoding", reason: `${what}.size of ${bitsOf(head.size).toString()} bits is not a tree size` });
   return sized(h, `${what}.root`, head.root);
 }
@@ -591,7 +597,7 @@ export function merkleVerify<L>(hashing: MerkleHashing<L>, head: MerkleHead, lea
   if (!p.ok) return p;
   if (p.value.size !== hd.value.size) return ok(false);
   const lh = leafOf(h.value, l.value);
-  return lh.ok ? outcome(inclusionCheck(h.value, hd.value.root, lh.value, p.value)) : lh;
+  return lh.ok ? outcome(inclusionCheck(h.value, passed(hd.value.root), lh.value, p.value)) : lh;
 }
 
 /**
@@ -614,7 +620,7 @@ export function merkleConsistencyVerify(hashing: MerkleHashing<unknown>, oldHead
   const p = decodeConsistency(h.value, v.value);
   if (!p.ok) return p;
   if (p.value.oldSize !== oh.value.size || p.value.newSize !== nh.value.size) return ok(false);
-  return outcome(consistencyCheck(h.value, oh.value.root, nh.value.root, p.value));
+  return outcome(consistencyCheck(h.value, passed(oh.value.root), passed(nh.value.root), p.value));
 }
 
 /**
@@ -624,12 +630,13 @@ export function merkleConsistencyVerify(hashing: MerkleHashing<unknown>, oldHead
 export function merkleRoot(hashing: MerkleHashing<unknown>, leafHashes: readonly Uint8Array[]): Result<Uint8Array, Refusal> {
   const h = profileArg(hashing);
   if (!h.ok) return h;
-  // each leaf hash owned if it has the digest's size; one of another size is refused below, uncopied
-  const given = pathArg(leafHashes, h.value.size);
+  // each leaf hash copied if it has at most the digest's size, else kept as its length (never copied); every size is
+  // checked after the whole array's types, as before
+  const given = digestsArg(leafHashes, h.value.size);
   if (!given.ok) return given;
   const lengths = digests(h.value, given.value);
   if (!lengths.ok) return lengths;
-  let level = given.value;
+  let level = given.value.map(passed);
   if (level.length === 0) return ok(emptyOf(h.value));
   while (level.length > 1) {
     const next: Uint8Array[] = [];
