@@ -10,6 +10,7 @@ import { Value } from "@kd5ujc/dilf4s-core";
 
 import { merkle, poseidon, trie, versioned } from "../src/index.js";
 import { WIDTH3 } from "../src/poseidon-constants.js";
+import { Oversized } from "../src/check.js";
 import { TRIE } from "../src/trie-internal.js";
 import { expectOk } from "./vectors.js";
 
@@ -197,6 +198,47 @@ describe("no write to a proof class, its prototype or the package's tables chang
       }
     }
     expect(probe(), "what the proofs answer").toEqual(before);
+  });
+});
+
+describe("no shipped module gives a caller what builds a genuine instance", () => {
+  it("no symbol any module exports is a constructor's token: what a constructor builds with one is refused", async () => {
+    const base = new URL("../src/", import.meta.url);
+    const files = readdirSync(base, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts"));
+    const modules = await Promise.all(files.map(async (f) => (await import(/* @vite-ignore */ new URL(f, base).href)) as Record<string, unknown>));
+    const symbols = modules.flatMap((m) => Object.values(m)).filter((x): x is symbol => typeof x === "symbol");
+    const node = { kind: "leaf", segment: { bytes: Uint8Array.of(1), length: 8 }, value: valueHash };
+    for (const token of [...symbols, Symbol("dilf4s-proofs")]) {
+      const forged = Reflect.construct(trie.TrieProof, [token, node]) as trie.TrieProof;
+      expect(trie.check(hashing, mode, trieRoot, forged), `a TrieProof built with ${String(token)}`).toMatchObject({ ok: false, error: { kind: "TypeMismatch" } });
+      const path = [leafB];
+      const inclusionForged = Reflect.construct(merkle.InclusionProof, [token, 0n, 2n, path]) as merkle.InclusionProof;
+      expect(merkle.verifyInclusion(sha256, merkleRoot, leafA, inclusionForged), `an InclusionProof built with ${String(token)}`).toMatchObject({ ok: false, error: { kind: "TypeMismatch" } });
+    }
+  });
+
+  it("the trie's table builds a proof from copies of a caller's records: changing them afterwards changes no lookup", () => {
+    const segment = Uint8Array.of(1);
+    const v = Uint8Array.from(valueHash);
+    const built = TRIE.fromRecords(hashing, [{ s: { n: 8n, b: segment }, v }]);
+    expect(built.ok, "a proof").toBe(true);
+    if (!built.ok) return;
+    const verified = expectOk(trie.check(hashing, mode, trieRoot, built.value), "verified");
+    segment[0] = 2;
+    v.fill(0);
+    expect(verified.lookup(Uint8Array.of(1)), "the key it verified").toEqual({ ok: true, value: { kind: "present", valueHash } });
+    expect(verified.lookup(Uint8Array.of(2)), "the key the caller wrote").toEqual({ ok: true, value: { kind: "absent" } });
+  });
+
+  it("an Oversized built from outside is none: a version of it is refused, never thrown on or kept as bytes", () => {
+    const fromOutside = (length: unknown): unknown => Reflect.construct(Oversized, [Symbol("dilf4s-proofs: a measured length"), length]);
+    const bytesKey = expectOk(versioned.VersionKey.bytes(4), "a byte version key");
+    for (const length of [Uint8Array.of(0, 0, 0, 7), null, 4]) {
+      const forged = fromOutside(length);
+      expect(Oversized.is(forged), "no Oversized").toBe(false);
+      expect(Reflect.get(forged as object, "length"), "no length of the caller's").toBe(0);
+      expect(bytesKey.encode(bad(forged)), "the key refuses it").toEqual({ ok: false, error: { kind: "TypeMismatch", reason: "expected a Uint8Array" } });
+    }
   });
 });
 

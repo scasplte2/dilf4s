@@ -11,8 +11,16 @@ import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type
 import { bytesLength, digestOf, hashPartsOf, mint, outputSizeOf, ownBytes, ownCopy, readGuarded, toHexOf, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Measured, type Token } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_BIGINT, NOT_BYTES, readArray, valueArg, type Measured } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
+
+/**
+ * The token this module's constructors take, private to it (no other module, shipped file or not, can reach it): a
+ * constructor is private to TypeScript alone, so JavaScript can call one (`new`, `Reflect.construct`); without the
+ * token it reads nothing it is given and stamps no brand (core's `mint`), so no check here accepts what it builds.
+ */
+const TOKEN: unique symbol = Symbol("dilf4s-proofs: merkle");
+type Token = typeof TOKEN;
 
 /**
  * Why a Merkle proof could not be checked: generated from `shared/schemas/proofs-errors.cddl` (`models.proofsErrors`),

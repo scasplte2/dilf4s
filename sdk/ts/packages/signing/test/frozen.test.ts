@@ -44,6 +44,7 @@ import {
 } from "../src/index.js";
 import type { Result } from "@kd5ujc/dilf4s-core";
 
+import * as keys from "../src/keys.js";
 import { expectOk } from "./vectors.js";
 
 /** `x` as a `T`, past the types, as a JavaScript caller passes it. */
@@ -202,6 +203,33 @@ describe("no write to a key class or its prototype changes a verdict", () => {
       }
     }
     expect(probe(), "what the keys and the scheme answer").toEqual(before);
+  });
+});
+
+describe("the shipped keys module gives no instance's own bytes, nor keeps a caller's, even to a caller importing it by URL", () => {
+  it("each byte reader gives a copy: writing it changes no key, signature, secret or verdict", () => {
+    const secret = expectOk(Secret.of(seed), "a secret");
+    const probe = (): unknown => [ed25519.verify(ed.verifying, message, edSignature), ed.verifying.bytes, edSignature.bytes, ed.signing.bytes, secret.bytes];
+    const before = probe();
+    const given: readonly (Uint8Array | number | undefined)[] = [
+      keys.ownVerifyingKey(ed.verifying, "Ed25519"),
+      keys.ownSigningKey(ed.signing, "Ed25519"),
+      keys.ownSignature(edSignature, "Ed25519"),
+      expectOk(keys.verifyingKeyBytes(ed.verifying, "Ed25519"), "the key's bytes"),
+      expectOk(keys.signingKeyBytes(ed.signing, "Ed25519"), "the secret key's bytes"),
+      expectOk(keys.signatureBytes(edSignature, "Ed25519"), "the signature's bytes"),
+      keys.secretBytes(secret, 64),
+    ];
+    for (const b of given) if (b instanceof Uint8Array) b.fill(0xee);
+    expect(given.every((b) => b instanceof Uint8Array), "every reader gave bytes").toBe(true);
+    expect(probe(), "what the keys hold and answer").toEqual(before);
+  });
+
+  it("a secret it makes holds a copy of the bytes it is given", () => {
+    const bytes = new Uint8Array(32).fill(1);
+    const secret = keys.ownSecret(bytes);
+    bytes.fill(2);
+    expect(secret.bytes).toEqual(new Uint8Array(32).fill(1));
   });
 });
 

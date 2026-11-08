@@ -185,7 +185,11 @@ TypeScript `private` ones, which JavaScript reads as any other property, and wha
 history, a reader's trusted head and finished snapshot) is a copy. A byte version (`VersionKey.bytes`) is copied as it
 is read in, from its internal slots, as roots are (one longer than its key's width is kept as that length alone, never
 copied, and refused by it), and again as it is handed out; a caller's own version key's versions are the caller's own
-values, which the key checks as it encodes them. The trie's table of unchecked operations, which the replica and the
+values, which the key checks as it encodes them. Every export of a shipped module, entry point or not, is reachable by
+a caller importing the file by its URL, so none gives out an instance's own memory: proofs' constructor tokens are
+each module's own, and signing's key, signature and secret readers give copies. Signing's keys are built by each
+scheme's module, through a token and factories its keys module exports; they copy what they are given, so a key built
+from outside that way holds no caller memory, but it has not passed its scheme's decoding. The trie's table of unchecked operations, which the replica and the
 versioned trie call, is filled as `trie.ts` loads, then defined whole on the table its other modules import and frozen:
 a slot code loaded earlier put there is replaced, or, if it cannot be, the package does not load, so none of its code
 runs with one. Bytes cannot be frozen, so no module exports a typed array that holds any: the versioned trie's slots

@@ -13,11 +13,19 @@ import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, u
 import { isRevokedProxy, mint, ownBytes, ownCopy, readGuarded, REVOKED, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
-import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isMeasuredBytes, isObject, isSized, measured, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, Oversized, readArray, readPair, TOKEN, valueArg, type Measured, type Token } from "./check.js";
+import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isMeasuredBytes, isObject, isSized, measured, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, Oversized, readArray, readPair, valueArg, type Measured } from "./check.js";
 import { bitsOf, decodeInput } from "./input.js";
 import * as trie from "./trie.js";
 import { TRIE } from "./trie-internal.js";
 import { TrieMap } from "./trie-map.js";
+
+/**
+ * The token this module's constructors take, private to it (no other module, shipped file or not, can reach it): a
+ * constructor is private to TypeScript alone, so JavaScript can call one (`new`, `Reflect.construct`); without the
+ * token it reads nothing it is given and stamps no brand (core's `mint`), so no check here accepts what it builds.
+ */
+const TOKEN: unique symbol = Symbol("dilf4s-proofs: versioned");
+type Token = typeof TOKEN;
 
 /**
  * Why a state key or namespace was refused, in the order of docs/specs/versioned-trie.md section 2: generated from

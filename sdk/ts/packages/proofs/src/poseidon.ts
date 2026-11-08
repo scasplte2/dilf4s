@@ -9,10 +9,18 @@ import { describeFailure, err, models, ok, type Result, type TypeMismatch, type 
 
 import { isArrayGuarded, isArrayLength, mint, readGuarded } from "@kd5ujc/dilf4s-core/internal";
 
-import { bigintArg, expected, expectedAt, NOT_A_NUMBER, readIterable, readPair, TOKEN, valueArg, type Token } from "./check.js";
+import { bigintArg, expected, expectedAt, NOT_A_NUMBER, readIterable, readPair, valueArg } from "./check.js";
 
 import { bitsOf, decodeInput } from "./input.js";
 import { FULL_ROUNDS, WIDTH2, WIDTH3, WIDTH4, WIDTH5, type PoseidonParams } from "./poseidon-constants.js";
+
+/**
+ * The token this module's constructors take, private to it (no other module, shipped file or not, can reach it): a
+ * constructor is private to TypeScript alone, so JavaScript can call one (`new`, `Reflect.construct`); without the
+ * token it reads nothing it is given and stamps no brand (core's `mint`), so no check here accepts what it builds.
+ */
+const TOKEN: unique symbol = Symbol("dilf4s-proofs: poseidon");
+type Token = typeof TOKEN;
 
 /** The BN254 scalar field modulus `r`. */
 export const FR_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;

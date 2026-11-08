@@ -16,9 +16,17 @@ import { bytesLength, MAX_OUTPUT_SIZE, mint, outputSizeOf, ownBytes, ownCopy, ow
 import * as B from "./bits.js";
 import * as L from "./listing.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_NUMBER, NOT_A_VALUE, NOT_BYTES, readArray, readIterable, readPair, TOKEN, valueArg, type Measured, type Token } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_NUMBER, NOT_A_VALUE, NOT_BYTES, readArray, readIterable, readPair, valueArg, type Measured } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 import { TRIE, type TrieInternals } from "./trie-internal.js";
+
+/**
+ * The token this module's constructors take, private to it (no other module, shipped file or not, can reach it): a
+ * constructor is private to TypeScript alone, so JavaScript can call one (`new`, `Reflect.construct`); without the
+ * token it reads nothing it is given and stamps no brand (core's `mint`), so no check here accepts what it builds.
+ */
+const TOKEN: unique symbol = Symbol("dilf4s-proofs: trie");
+type Token = typeof TOKEN;
 
 /**
  * The trie's unchecked operations, filled as this module's classes load (from their private fields) and read here
@@ -1084,6 +1092,8 @@ function trieRootOf(hashing: TrieHashing, mode: KeyMode, entries: readonly (read
   return root === undefined ? err({ kind: "InvalidNode", reason: "no root" }) : ok(root);
 }
 
+// a caller importing trie-internal.js by its URL can call this: a node keeps copies of a record's bytes (segmentBits,
+// digestOf), never the caller's arrays
 internals.fromRecords = fromRecords;
 internals.isProof = isProof;
 internals.check = checkOf;

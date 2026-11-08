@@ -9,14 +9,6 @@ import { err, isValue, ok, type Result, type TypeMismatch, type Value } from "@k
 import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, ownBytes, readGuarded, UNBOUNDED, readStep, REVOKED, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
 import type { HashAlgorithm } from "@kd5ujc/dilf4s-core";
 
-/**
- * The token this package's constructors take, private to the package. A constructor is private to TypeScript alone, so
- * JavaScript can call one (`new`, `Reflect.construct`); without the token it reads nothing it is given and stamps no
- * brand (core's `mint`), so no check here accepts what it builds.
- */
-export const TOKEN: unique symbol = Symbol("dilf4s-proofs");
-export type Token = typeof TOKEN;
-
 export const NOT_BYTES = typeMismatch("expected a Uint8Array");
 export const NOT_A_VALUE = typeMismatch("expected a canonical value");
 export const NOT_A_BIGINT = typeMismatch("expected a bigint");
@@ -42,6 +34,8 @@ export const bytesArg = (x: unknown): Result<Uint8Array, TypeMismatch> => {
 };
 
 let oversizedOf!: (length: number) => Oversized;
+/** The key `measured` builds an {@link Oversized} with: this module's alone. */
+const MEASURED: unique symbol = Symbol("dilf4s-proofs: a measured length");
 
 /**
  * Bytes a caller passed that are longer than their field's bound: their length alone, never their bytes (they are
@@ -50,18 +44,23 @@ let oversizedOf!: (length: number) => Oversized;
  * check that narrows it ({@link isMeasuredBytes}, {@link isSized}), made at the stage the specs pin for its size.
  */
 export class Oversized {
-  readonly #oversized = true;
-  private constructor(readonly length: number) {
+  // true only for one `measured` made: a constructor called from outside (JavaScript can) builds one that is no
+  // Oversized, and keeps no length of the caller's, so none can stand for bytes or carry another value
+  readonly #oversized: boolean;
+  readonly length: number;
+  private constructor(key: typeof MEASURED, length: number) {
+    this.#oversized = key === MEASURED;
+    this.length = key === MEASURED ? length : 0;
     Object.freeze(this);
   }
 
-  /** Whether `x` is one: one private-brand check. */
+  /** Whether `x` is one this module made: one private-brand check, and its mark. */
   static is(x: unknown): x is Oversized {
-    return typeof x === "object" && x !== null && #oversized in x;
+    return typeof x === "object" && x !== null && #oversized in x && x.#oversized;
   }
 
   static {
-    oversizedOf = (length) => new Oversized(length);
+    oversizedOf = (length) => new Oversized(MEASURED, length);
   }
 }
 Object.freeze(Oversized);
