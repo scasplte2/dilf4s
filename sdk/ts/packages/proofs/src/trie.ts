@@ -16,7 +16,7 @@ import { bytesLength, MAX_OUTPUT_SIZE, mint, outputSizeOf, ownBytes, ownCopy, ow
 import * as B from "./bits.js";
 import * as L from "./listing.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, lengthOf, NOT_A_NUMBER, NOT_A_VALUE, NOT_BYTES, passed, readArray, readIterable, readPair, TOKEN, valueArg, type Measured, type Token } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_NUMBER, NOT_A_VALUE, NOT_BYTES, readArray, readIterable, readPair, TOKEN, valueArg, type Measured, type Token } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 import { TRIE } from "./trie-internal.js";
 
@@ -186,14 +186,13 @@ const segmentWidth = (n: bigint): number => {
 /** A segment's count of bits as a refusal names it: one too wide for 64 bits by its size (its digits are superlinear and unpaid). */
 const countText = (n: bigint): string => (bitsOf(n) <= 64 ? `${n.toString()} bits` : `a ${bitsOf(n).toString()}-bit count of bits`);
 
-function segmentBits(n: bigint, measured: Measured): Result<B.Bits, TrieError> {
-  const len = BigInt(lengthOf(measured));
-  // bigint division truncates toward zero, so a negative length would pass the byte count: refuse it first
-  if (n < 0n || n > len * 8n || len !== (n + 7n) / 8n) {
-    return encoding(`segment of ${countText(n)} in ${lengthOf(measured).toString()} bytes`);
+function segmentBits(n: bigint, b: Measured): Result<B.Bits, TrieError> {
+  const len = BigInt(b.length);
+  // bigint division truncates toward zero, so a negative length would pass the byte count: refuse it first; bytes
+  // past their bound (an Oversized) never pass the count, and are refused with it
+  if (n < 0n || n > len * 8n || len !== (n + 7n) / 8n || !isMeasuredBytes(b)) {
+    return encoding(`segment of ${countText(n)} in ${b.length.toString()} bytes`);
   }
-  // bytes past their bound (a length) never pass the count check above
-  const b = passed(measured);
   const bits = Number(n);
   const rem = bits % 8;
   const last = b[b.length - 1] ?? 0;
@@ -487,7 +486,7 @@ const recordArg =
   const h: unknown = readGuarded(r, "h");
   if (h !== undefined) {
     const hb = ownCopy(h, size);
-    return hb === undefined ? bad : ok({ h: hb });
+    return hb === undefined ? bad : ok({ h: measured(hb) });
   }
   const s: unknown = readGuarded(r, "s");
   if (!isObject(s)) return bad;
@@ -501,17 +500,17 @@ const recordArg =
   const vb = v === undefined ? undefined : ownCopy(v, size);
   if (v !== undefined && vb === undefined) return bad;
   const c: unknown = readGuarded(r, "c");
-  if (c === undefined) return vb === undefined ? bad : ok({ s: { n, b }, v: vb });
+  const seg = { n, b: measured(b) };
+  if (c === undefined) return vb === undefined ? bad : ok({ s: seg, v: measured(vb) });
   if (c !== "left" && c !== "right" && c !== "both") return bad;
-  return ok(vb === undefined ? { s: { n, b }, c } : { s: { n, b }, v: vb, c });
+  return ok(vb === undefined ? { s: seg, c } : { s: seg, v: measured(vb), c });
 };
 
 const wireSegment = (s: B.Bits): models.trie.TrieSegment => ({ n: BigInt(s.length), b: s.bytes.slice(0, (s.length + 7) >> 3) });
 
 /** A digest of the hashing's size, copied, or `Encoding`: measured, so a length (one past its bound, never copied) is refused here. */
 function digestOf(hashing: TrieHashing, b: Measured): Result<Uint8Array, TrieError> {
-  const n = lengthOf(b);
-  return n === hashing.size ? ok(copyBytes(passed(b))) : encoding(`a digest is ${hashing.size.toString()} bytes, got ${n.toString()}`);
+  return isSized(b, hashing.size) ? ok(copyBytes(b)) : encoding(`a digest is ${hashing.size.toString()} bytes, got ${b.length.toString()}`);
 }
 
 /** The refusal of a digest not of the hashing's size, by its measured length (trieRoot refuses each entry as it reads it, as before). */
@@ -675,7 +674,7 @@ function queryArg(mode: KeyMode, x: unknown): Result<Uint8Array, TypeMismatch> {
  */
 function rootArg(h: TrieHashing, root: unknown): Result<Measured, TypeMismatch> {
   const own = ownCopy(root, h.size);
-  return own === undefined ? err(NOT_BYTES) : ok(own);
+  return own === undefined ? err(NOT_BYTES) : ok(measured(own));
 }
 
 /** An optional query bound, `undefined` or copied as {@link queryArg} copies one. */
@@ -864,17 +863,20 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
   if (!r.ok) return r;
   // the key through core's boundary within the mode's bound (a view of stable memory, else one copy, so the walk reads
   // one snapshot; a longer one kept as its length): its length checked after the claim's type, as before
-  const k = ownBytes(key, m.bytes);
-  if (k === undefined) return err(NOT_BYTES);
+  const own = ownBytes(key, m.bytes);
+  if (own === undefined) return err(NOT_BYTES);
+  const k = measured(own);
   const claim = claimArg(value);
   if (!claim.ok) return claim;
-  const valid = checkKeyLength(m, lengthOf(k));
+  const valid = checkKeyLength(m, k.length);
   if (!valid.ok) return valid;
+  // a key past the mode's bound never passes the length check above: this narrows it to bytes
+  if (!isMeasuredBytes(k)) return err(NOT_BYTES);
   const c = claimsWithin(claim.value === null || claim.value.kind === "null" ? [] : [claim.value]);
   if (!c.ok) return c;
   const v = verified(h, m, r.value, p);
   if (!v.ok || v.value === null) return v.ok ? ok(false) : v;
-  const l = lookupOf(v.value, passed(k));
+  const l = lookupOf(v.value, k);
   if (!l.ok) return l;
   switch (l.value.kind) {
     case "present": {
@@ -890,7 +892,7 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
 }
 
 /** A claimed entry as read: its key copied, or the length of one longer than the mode allows (never copied). */
-type ClaimedRead = readonly [Uint8Array | number, Value];
+type ClaimedRead = readonly [Measured, Value];
 
 /**
  * A caller's claimed entries: an array of `[key, value]` arrays, read by index. Each key is copied within the mode's
@@ -905,16 +907,17 @@ const entriesArg = (mode: KeyMode, entries: unknown): Result<ClaimedRead[], Type
     const key = ownCopy(readGuarded(pair, 0), mode.bytes);
     if (key === undefined) return err(expectedAt("a Uint8Array key", i));
     const value = valueArg(readGuarded(pair, 1));
-    return value.ok ? ok([key, value.value] as const) : err(expectedAt("a canonical value", i));
+    return value.ok ? ok([measured(key), value.value] as const) : err(expectedAt("a canonical value", i));
   });
 
 function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly ClaimedRead[]): Result<readonly TrieEntry[], TrieError> {
   const owned: (readonly [Uint8Array, Value])[] = [];
   for (const [key, value] of entries) {
     if (value.kind === "null") return encoding("an entry is [key, value], with a value");
-    const k = checkKeyLength(mode, typeof key === "number" ? key : key.length);
+    const k = checkKeyLength(mode, key.length);
     if (!k.ok) return k;
-    if (typeof key !== "number") owned.push([key, value]);
+    // a key past the mode's bound never passes the length check above
+    if (isMeasuredBytes(key)) owned.push([key, value]);
   }
   const c = claimsWithin(owned.map(([, value]) => value));
   if (!c.ok) return c;

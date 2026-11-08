@@ -41,22 +41,44 @@ export const bytesArg = (x: unknown): Result<Uint8Array, TypeMismatch> => {
   return view === undefined || typeof view === "number" ? err(NOT_BYTES) : ok(view);
 };
 
-/**
- * A caller's bytes as the boundary measured them against a field's bound: the owned bytes, or the length of ones longer
- * (never copied). The boundary refuses nothing past the bound: the length flows on to the check that refused such
- * bytes before (a digest's size, a key's mode, a leaf's weight), at the stage the specs pin.
- */
-export type Measured = Uint8Array | number;
-
-/** The length of measured bytes: their own, or the length of ones longer than their bound. */
-export const lengthOf = (m: Measured): number => (typeof m === "number" ? m : m.length);
+let oversizedOf!: (length: number) => Oversized;
 
 /**
- * The bytes of `m`, once a check of its size has passed: a length (bytes longer than their bound) never passes one, so
- * this gives the empty array only where no caller reaches.
+ * Bytes a caller passed that are longer than their field's bound: their length alone, never their bytes (they are
+ * never copied). A class of its own, with a private brand, so the compiler keeps it apart from bytes: nothing that
+ * hashes, compares, encodes or returns bytes takes one, and the only way from a {@link Measured} value to bytes is a
+ * check that narrows it ({@link isMeasuredBytes}, {@link isSized}), made at the stage the specs pin for its size.
  */
-export const passed = (m: Measured): Uint8Array => (typeof m === "number" ? EMPTY : m);
-const EMPTY: Uint8Array = new Uint8Array(0);
+export class Oversized {
+  readonly #oversized = true;
+  private constructor(readonly length: number) {}
+
+  /** Whether `x` is one: one private-brand check. */
+  static is(x: unknown): x is Oversized {
+    return typeof x === "object" && x !== null && #oversized in x;
+  }
+
+  static {
+    oversizedOf = (length) => new Oversized(length);
+  }
+}
+
+/**
+ * A caller's bytes as the boundary measured them against a field's bound: the owned bytes, or an {@link Oversized}
+ * for ones longer (never copied). The boundary refuses nothing past the bound: the oversized value flows on to the
+ * check that refused such bytes before (a digest's size, a key's mode, a leaf's weight), at the stage the specs pin.
+ * Both have a `length`, the bytes' own.
+ */
+export type Measured = Uint8Array | Oversized;
+
+/** What core's boundary gives (bytes, or the length of bytes past the bound) as a {@link Measured} value. */
+export const measured = (b: Uint8Array | number): Measured => (typeof b === "number" ? oversizedOf(b) : b);
+
+/** Whether measured bytes are bytes (within their bound): the narrowing every use of them as bytes takes. */
+export const isMeasuredBytes = (m: Measured): m is Uint8Array => !Oversized.is(m);
+
+/** Whether measured bytes are bytes of exactly `size` (a digest of its profile's size). */
+export const isSized = (m: Measured, size: number): m is Uint8Array => !Oversized.is(m) && m.length === size;
 
 /** `x` if it is a canonical value made by core (`isValue`, one private-brand check: no Proxy trap runs). */
 export const valueArg = (x: unknown): Result<Value, TypeMismatch> => (isValue(x) ? ok(x) : err(NOT_A_VALUE));

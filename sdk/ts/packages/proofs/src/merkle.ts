@@ -11,7 +11,7 @@ import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type
 import { bytesLength, digestOf, hashPartsOf, mint, outputSizeOf, ownBytes, ownCopy, readGuarded, toHexOf, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, lengthOf, NOT_A_BIGINT, NOT_BYTES, passed, readArray, TOKEN, valueArg, type Measured, type Token } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Measured, type Token } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
 
 declare const INT64: unique symbol;
@@ -108,13 +108,17 @@ function leafArg(h: Profile, input: unknown): Result<Leaf, TypeMismatch> {
   // after the head, as the specs order them
   const b = ownBytes(input, MAX_RAW_LEAF);
   if (b === undefined) return err(NOT_BYTES);
-  return ok({ input: b, weight: BigInt(lengthOf(b)) + 1n });
+  const m = measured(b);
+  return ok({ input: m, weight: BigInt(m.length) + 1n });
 }
 
 /** A checked leaf's hash. */
-const leafOf = (h: Profile, leaf: Leaf): Result<Uint8Array, MerkleError> =>
-  // a raw leaf reaches here only past the weight check, which a length (a leaf past its bound) never passes
-  h.profile === "tagged" ? taggedLeaf(h, leaf.input as Value) : ok(hashPartsOf(h.algorithm, [Uint8Array.of(0), passed(leaf.input as Measured)]));
+function leafOf(h: Profile, leaf: Leaf): Result<Uint8Array, MerkleError> {
+  if (h.profile === "tagged") return taggedLeaf(h, leaf.input as Value);
+  const raw = leaf.input as Measured;
+  // a raw leaf reaches here past the weight check, which one past its bound never passes: refused as that check does
+  return isMeasuredBytes(raw) ? ok(hashPartsOf(h.algorithm, [Uint8Array.of(0), raw])) : err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
+}
 
 /** Two digests checked as bytes, and hashed as a node. */
 function checkedNode(h: Profile, left: unknown, right: unknown): Result<Uint8Array, TypeMismatch> {
@@ -267,7 +271,7 @@ const pathArg = (path: unknown): Result<Uint8Array[], TypeMismatch> =>
 const digestsArg = (path: unknown, width: number): Result<Measured[], TypeMismatch> =>
   readArray(path, "an array of Uint8Arrays", (d, i) => {
     const own = ownCopy(d, width);
-    return own === undefined ? err(expectedAt("a Uint8Array", i)) : ok(own);
+    return own === undefined ? err(expectedAt("a Uint8Array", i)) : ok(measured(own));
   });
 
 let isInclusion!: (x: unknown) => x is InclusionProof;
@@ -343,7 +347,7 @@ function decodeInclusion(h: Profile, value: Value): Result<InclusionProof, Merkl
   const w = decodeInput(models.merkle.MerkleInclusion, value);
   if (!w.ok) return err({ kind: "Encoding", reason: describeFailure(w.error) });
   const sized = digests(h, w.value.path);
-  return sized.ok ? inclusionOf(w.value.index, w.value.size, w.value.path.map(copyBytes)) : sized;
+  return sized ?? inclusionOf(w.value.index, w.value.size, w.value.path.map(copyBytes));
 }
 
 let isConsistency!: (x: unknown) => x is ConsistencyProof;
@@ -416,22 +420,20 @@ function decodeConsistency(h: Profile, value: Value): Result<ConsistencyProof, M
   const w = decodeInput(models.merkle.MerkleConsistency, value);
   if (!w.ok) return err({ kind: "Encoding", reason: describeFailure(w.error) });
   const sized = digests(h, w.value.path);
-  return sized.ok ? consistencyOf(w.value.old, w.value.new, w.value.path.map(copyBytes)) : sized;
+  return sized ?? consistencyOf(w.value.old, w.value.new, w.value.path.map(copyBytes));
 }
 
-/** A digest of the profile's size, or `Encoding`: measured, so a length (one past its bound, never copied) is refused here. */
-function sized(h: Profile, what: string, d: Measured): Result<undefined, MerkleError> {
-  const n = lengthOf(d);
-  return n === h.size ? ok(undefined) : err({ kind: "Encoding", reason: `${what} is ${n.toString()} bytes, not ${h.size.toString()}` });
+/** The refusal of a digest not of the profile's size (an oversized one by its length, never copied). */
+const unsized = (h: Profile, what: string, d: Measured): Result<never, MerkleError> => err({ kind: "Encoding", reason: `${what} is ${d.length.toString()} bytes, not ${h.size.toString()}` });
+
+/** The first digest of `path` not of the profile's size, refused; `undefined` when every one is. */
+function digests(h: Profile, path: readonly Measured[]): Result<never, MerkleError> | undefined {
+  for (const [i, d] of path.entries()) if (!isSized(d, h.size)) return unsized(h, `path[${i.toString()}]`, d);
+  return undefined;
 }
 
-function digests(h: Profile, path: readonly Measured[]): Result<undefined, MerkleError> {
-  for (const [i, d] of path.entries()) {
-    const s = sized(h, `path[${i.toString()}]`, d);
-    if (!s.ok) return s;
-  }
-  return ok(undefined);
-}
+/** Whether every digest of `path` is of the profile's size: the narrowing to bytes, after {@link digests} found none. */
+const allSized = (h: Profile, path: readonly Measured[]): path is readonly Uint8Array[] => path.every((d) => isSized(d, h.size));
 
 const invalid = (reason: string): Result<never, MerkleError> => err({ kind: "InvalidProof", reason });
 const mismatch = (expected: Uint8Array, computed: Uint8Array): Result<never, MerkleError> => err({ kind: "RootMismatch", expected: toHexOf(expected), computed: toHexOf(computed) });
@@ -459,14 +461,15 @@ export function checkInclusion(hashing: MerkleHashing<unknown>, root: Uint8Array
   const r = ownBytes(root, hashing.size);
   const l = ownBytes(leafHash, hashing.size);
   if (r === undefined || l === undefined) return err(NOT_BYTES);
-  return isInclusion(proof) ? inclusionCheck(hashing, r, l, proof) : err(NOT_AN_INCLUSION);
+  return isInclusion(proof) ? inclusionCheck(hashing, measured(r), measured(l), proof) : err(NOT_AN_INCLUSION);
 }
 
-function inclusionCheck(h: Profile, measuredRoot: Measured, measuredLeaf: Measured, proof: InclusionProof): Result<undefined, MerkleError> {
+function inclusionCheck(h: Profile, root: Measured, leafHash: Measured, proof: InclusionProof): Result<undefined, MerkleError> {
   const path = inclusionPath(proof);
-  const lengths = [sized(h, "root", measuredRoot), sized(h, "leaf hash", measuredLeaf), digests(h, path)].find((r) => !r.ok);
+  if (!isSized(root, h.size)) return unsized(h, "root", root);
+  if (!isSized(leafHash, h.size)) return unsized(h, "leaf hash", leafHash);
+  const lengths = digests(h, path);
   if (lengths !== undefined) return lengths;
-  const [root, leafHash] = [passed(measuredRoot), passed(measuredLeaf)];
   if (proof.index < 0n || proof.index >= proof.size) return err({ kind: "IndexOutOfRange", index: int64(proof.index), size: int64(proof.size) });
   let fn = proof.index;
   let sn = proof.size - 1n;
@@ -493,14 +496,15 @@ export function checkConsistency(hashing: MerkleHashing<unknown>, oldRoot: Uint8
   const o = ownBytes(oldRoot, hashing.size);
   const n = ownBytes(newRoot, hashing.size);
   if (o === undefined || n === undefined) return err(NOT_BYTES);
-  return isConsistency(proof) ? consistencyCheck(hashing, o, n, proof) : err(NOT_A_CONSISTENCY);
+  return isConsistency(proof) ? consistencyCheck(hashing, measured(o), measured(n), proof) : err(NOT_A_CONSISTENCY);
 }
 
-function consistencyCheck(h: Profile, measuredOld: Measured, measuredNew: Measured, proof: ConsistencyProof): Result<undefined, MerkleError> {
+function consistencyCheck(h: Profile, oldRoot: Measured, newRoot: Measured, proof: ConsistencyProof): Result<undefined, MerkleError> {
   const given = consistencyPath(proof);
-  const lengths = [sized(h, "old root", measuredOld), sized(h, "new root", measuredNew), digests(h, given)].find((r) => !r.ok);
+  if (!isSized(oldRoot, h.size)) return unsized(h, "old root", oldRoot);
+  if (!isSized(newRoot, h.size)) return unsized(h, "new root", newRoot);
+  const lengths = digests(h, given);
   if (lengths !== undefined) return lengths;
-  const [oldRoot, newRoot] = [passed(measuredOld), passed(measuredNew)];
   const [m, n] = [proof.oldSize, proof.newSize];
   if (m < 0n || m > n) return err({ kind: "InvalidSizes", oldSize: int64(m), newSize: int64(n) });
   if (m === 0n) return given.length === 0 && bytesEqual(oldRoot, emptyOf(h)) ? ok(undefined) : invalid("size 0 needs an empty proof and the empty root");
@@ -562,16 +566,19 @@ function headArg(h: Profile, head: unknown, what: string): Result<HeadArg, TypeM
   if (!isObject(head)) return err(expected(`${what} to be a MerkleHead`));
   // copied as read: the size's getter, or the other head's, may run caller code that changes or detaches it; one
   // longer than the profile's digest is kept as its length, which checkHead refuses after every argument's type
-  const root = ownCopy(Reflect.get(head, "root"), h.size);
-  if (root === undefined) return err(expected(`${what}.root to be a Uint8Array`));
+  const own = ownCopy(Reflect.get(head, "root"), h.size);
+  if (own === undefined) return err(expected(`${what}.root to be a Uint8Array`));
+  const root = measured(own);
   // guarded: the root's getter may have revoked the head; REVOKED is no bigint
   const size: unknown = readGuarded(head, "size");
   return typeof size === "bigint" ? ok({ root, size }) : err(NOT_A_BIGINT);
 }
 
-function checkHead(h: Profile, what: string, head: HeadArg): Result<undefined, MerkleError> {
+/** A caller's head checked: a tree size and a root of the profile's size, narrowed to bytes; or `Encoding`. */
+function checkHead(h: Profile, what: string, head: HeadArg): Result<MerkleHead, MerkleError> {
   if (!withinIndex(head.size)) return err({ kind: "Encoding", reason: `${what}.size of ${bitsOf(head.size).toString()} bits is not a tree size` });
-  return sized(h, `${what}.root`, head.root);
+  const root = head.root;
+  return isSized(root, h.size) ? ok({ root, size: head.size }) : unsized(h, `${what}.root`, root);
 }
 
 /**
@@ -597,7 +604,7 @@ export function merkleVerify<L>(hashing: MerkleHashing<L>, head: MerkleHead, lea
   if (!p.ok) return p;
   if (p.value.size !== hd.value.size) return ok(false);
   const lh = leafOf(h.value, l.value);
-  return lh.ok ? outcome(inclusionCheck(h.value, passed(hd.value.root), lh.value, p.value)) : lh;
+  return lh.ok ? outcome(inclusionCheck(h.value, c.value.root, lh.value, p.value)) : lh;
 }
 
 /**
@@ -620,7 +627,7 @@ export function merkleConsistencyVerify(hashing: MerkleHashing<unknown>, oldHead
   const p = decodeConsistency(h.value, v.value);
   if (!p.ok) return p;
   if (p.value.oldSize !== oh.value.size || p.value.newSize !== nh.value.size) return ok(false);
-  return outcome(consistencyCheck(h.value, passed(oh.value.root), passed(nh.value.root), p.value));
+  return outcome(consistencyCheck(h.value, o.value.root, n.value.root, p.value));
 }
 
 /**
@@ -635,8 +642,9 @@ export function merkleRoot(hashing: MerkleHashing<unknown>, leafHashes: readonly
   const given = digestsArg(leafHashes, h.value.size);
   if (!given.ok) return given;
   const lengths = digests(h.value, given.value);
-  if (!lengths.ok) return lengths;
-  let level = given.value.map(passed);
+  if (lengths !== undefined) return lengths;
+  if (!allSized(h.value, given.value)) return err({ kind: "Encoding", reason: "a leaf hash is not of the digest's size" });
+  let level: readonly Uint8Array[] = given.value;
   if (level.length === 0) return ok(emptyOf(h.value));
   while (level.length > 1) {
     const next: Uint8Array[] = [];

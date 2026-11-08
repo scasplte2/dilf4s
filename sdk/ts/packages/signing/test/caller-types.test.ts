@@ -167,6 +167,13 @@ describe("a message that is not bytes is a TypeMismatch, never read as empty and
       expect(expectErr(vrf.verifyBytes(kp.verifying.bytes, empty, new Uint8Array(8 << 20)), "an 8 MiB proof").kind).toBe("Malformed");
       expect(expectErr(vrf.verifyBytes(new Uint8Array(1 << 20), empty, proved.proof.bytes), "a 1 MiB key").kind).toBe("Malformed");
       expect(vrf.verifyBytes(kp.verifying.bytes, empty, proved.proof.bytes).ok, "the well-sized pair").toBe(true);
+      // both lengths wrong: the proof's is refused first, whether it is short, or past its bound, and the key's past its bound
+      const hugeKey = new Uint8Array(new SharedArrayBuffer(1 << 20));
+      for (const [name, proof] of [["a 79-byte proof", new Uint8Array(79)], ["an 81-byte proof", new Uint8Array(81)], ["an 8 MiB proof", new Uint8Array(8 << 20)]] as const) {
+        expect(vrf.verifyBytes(hugeKey, empty, proof), `${vrf.name}: ${name} with a 1 MiB key`).toMatchObject({ ok: false, error: { kind: "Malformed", what: `${vrf.name} proof` } });
+        expect(vrf.verifyBytes(new Uint8Array(31), empty, proof), `${vrf.name}: ${name} with a 31-byte key`).toMatchObject({ ok: false, error: { kind: "Malformed", what: `${vrf.name} proof` } });
+      }
+      expect(vrf.verifyBytes(hugeKey, empty, proved.proof.bytes), `${vrf.name}: a good proof with a 1 MiB key`).toMatchObject({ ok: false, error: { kind: "Malformed", what: `${vrf.name} public key` } });
       expect(vrf.verify(kp.verifying, empty, bad({ suite: vrf.name, bytes: proved.proof.bytes }))).toEqual(mismatch(`expected a ${vrf.name} VrfProof`));
       expect(expectErr(vrf.verify(bad({ scheme: vrf.name, bytes: kp.verifying.bytes }), empty, proved.proof), "fake key").kind).toBe("TypeMismatch");
       expect(vrf.publicKey(bad({ bytes: seed }))).toEqual(mismatch(`expected a ${vrf.name} SigningKey`));

@@ -13,7 +13,7 @@ import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, u
 import { isRevokedProxy, mint, ownBytes, ownCopy, readGuarded, REVOKED, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
-import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
+import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isMeasuredBytes, isObject, isSized, measured, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Measured, type Token } from "./check.js";
 import { bitsOf, decodeInput } from "./input.js";
 import * as trie from "./trie.js";
 import { TRIE } from "./trie-internal.js";
@@ -52,14 +52,11 @@ const malformed = (reason: string): R<never> => err({ kind: "Malformed", reason 
 const notCovered = (what: string): R<never> => err({ kind: "NotCovered", what });
 const viaTrie = <T>(r: Result<T, trie.TrieError>): R<T> => (r.ok ? r : err({ kind: "Trie", error: r.error }));
 // a trusted root of the wrong width is the caller's: named by its length, never hex-encoded whole (conformance.md section 8)
-const mismatch = (component: string, expected: Uint8Array, computed: Uint8Array): R<never> =>
+const mismatch = (component: string, expected: Measured, computed: Uint8Array): R<never> =>
   err({ kind: "RootMismatch", component, expected: rootText(expected, computed.length), computed: toHexOf(computed) });
 
-/** A root as a refusal names it: its hex at the digest's width, otherwise its (measured) length. */
-const rootText = (root: Uint8Array, width: number): string => {
-  const n = digestLength(root);
-  return n === width ? toHexOf(root) : `a root of ${n.toString()} bytes`;
-};
+/** A root as a refusal names it: its hex at the digest's width, otherwise its length (an oversized one's, uncopied). */
+const rootText = (root: Measured, width: number): string => (isSized(root, width) ? toHexOf(root) : `a root of ${root.length.toString()} bytes`);
 
 // ------------------------------------------------------------------ keys (section 2)
 
@@ -399,33 +396,71 @@ const SLOTS = { version: Uint8Array.of(0x00), state: Uint8Array.of(0x01), histor
 
 const slotName = (slot: Uint8Array): string => toHexOf(slot);
 
-/** The real lengths of the stand-ins {@link digestField} gives for digests longer than the profile's. */
-const OVERSIZED = new WeakMap<Uint8Array, number>();
-
-/** A digest's length as the caller passed it: a stand-in's recorded length, else its own. */
-const digestLength = (b: Uint8Array): number => OVERSIZED.get(b) ?? b.length;
-
 /**
- * A digest a caller passes (a root, a head's or a claim's), copied through core's boundary within the profile's `size`;
- * `undefined` for what is not a `Uint8Array`. The boundary refuses nothing past the bound: a longer one is never
- * copied, and stands in as `size + 1` zero bytes of the module's own, recording its real length (a head carries its
- * roots as bytes). Being no digest of the profile, a stand-in fails every size check (each reports the recorded
- * length) and matches no root or hash, so it is refused at the stage any wrong-sized digest always was, and never kept.
+ * A digest a caller passes (a root, a head's or a claim's), copied through core's boundary within the profile's `size`,
+ * as a {@link Measured} value (an `Oversized` past the bound, never copied); `undefined` for what is not a `Uint8Array`.
+ * The boundary refuses nothing past the bound: a digest is hashed, compared, encoded or returned only once a size check
+ * has narrowed it to bytes, at the stage the wire form checks it.
  */
-function digestField(x: unknown, size: number): Uint8Array | undefined {
+function digestField(x: unknown, size: number): Measured | undefined {
   const own = ownCopy(x, size);
-  if (typeof own !== "number") return own;
-  const standIn = new Uint8Array(size + 1);
-  OVERSIZED.set(standIn, own);
-  return standIn;
+  return own === undefined ? undefined : measured(own);
 }
 
+/** A head as a caller passes it, its roots measured: a {@link Head} only once both are sized ({@link VersionedTrie}'s `#sizedHead`). */
+interface MeasuredHead<V> {
+  readonly version: V;
+  readonly stateRoot: Measured;
+  readonly historyRoot: Measured;
+}
+
+/** A version asked about, as a caller's proof gives it: its state root measured. */
+interface MeasuredAt<V> {
+  readonly version: V;
+  readonly stateRoot?: Measured;
+}
+
+/** A caller's proof as read: its head and its `at` measured, its tries this package's own. */
+interface MeasuredProof<V> {
+  readonly head: MeasuredHead<V>;
+  readonly top: trie.TrieProof;
+  readonly at?: MeasuredAt<V>;
+  readonly history?: trie.TrieProof;
+  readonly state?: trie.TrieProof;
+}
+
+/** A caller's delta as read: its heads measured. */
+interface MeasuredDelta<V> {
+  readonly parent?: MeasuredHead<V>;
+  readonly head: MeasuredHead<V>;
+  readonly upserts: readonly (readonly [StateKey, Value])[];
+  readonly removes: readonly StateKey[];
+}
+
+/** A snapshot chunk as read: a head, or versions, with their roots measured. */
+type MeasuredChunk<V> =
+  | { readonly kind: "head"; readonly head: MeasuredHead<V> }
+  | { readonly kind: "state"; readonly entries: readonly (readonly [StateKey, Value])[] }
+  | { readonly kind: "history"; readonly versions: readonly (readonly [V, Measured])[] };
+
+/** A caller's snapshot as read: its head and its versions' roots measured. */
+interface MeasuredSnapshot<V> {
+  readonly head: MeasuredHead<V>;
+  readonly entries: readonly (readonly [StateKey, Value])[];
+  readonly history: readonly (readonly [V, Measured])[];
+}
+
+/** The profile's own checks of measured heads, for the reader and the replica. */
+let sameHeadOf!: <V>(p: VersionedTrie<V>, a: MeasuredHead<V>, b: MeasuredHead<V>) => C<boolean>;
+let rootOfHead!: <V>(p: VersionedTrie<V>, h: MeasuredHead<V>) => C<Uint8Array>;
+let sizedHeadOf!: <V>(p: VersionedTrie<V>, h: MeasuredHead<V>) => R<Head<V>>;
+
 /** A caller's head, its fields read once into a frozen copy: the version (checked when encoded) and two roots (copied). */
-function headArg<V>(x: unknown, what: string, size: number): Result<Head<V>, TypeMismatch> {
+function headArg<V>(x: unknown, what: string, size: number): Result<MeasuredHead<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected(`${what} to be a Head`));
   // each read guarded: a getter run by an earlier read may have revoked the head
   const version: unknown = readGuarded(x, "version");
-  // each root owned within the profile's size, else a stand-in its size check refuses: never a copy of an oversized one
+  // each root owned within the profile's size, else Oversized (never copied), which its size check refuses
   const stateRoot = digestField(readGuarded(x, "stateRoot"), size);
   const historyRoot = digestField(readGuarded(x, "historyRoot"), size);
   if (stateRoot === undefined || historyRoot === undefined) return err(expected(`${what}'s roots to be Uint8Arrays`));
@@ -438,7 +473,7 @@ function optionalProof(x: unknown, what: string): Result<trie.TrieProof | undefi
 }
 
 /** A caller's proof, its fields read once into a frozen copy: a head, the top `TrieProof`, and the optional parts. */
-function proofArg<V>(x: unknown, size: number): Result<VersionedTrieProof<V>, TypeMismatch> {
+function proofArg<V>(x: unknown, size: number): Result<MeasuredProof<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected("a VersionedTrieProof"));
   const head = headArg<V>(readGuarded(x, "head"), "the proof's head", size);
   if (!head.ok) return head;
@@ -449,7 +484,7 @@ function proofArg<V>(x: unknown, size: number): Result<VersionedTrieProof<V>, Ty
   const state = optionalProof(readGuarded(x, "state"), "the proof's state");
   if (!state.ok) return state;
   const atField: unknown = readGuarded(x, "at");
-  let at: At<V> | undefined;
+  let at: MeasuredAt<V> | undefined;
   if (atField !== undefined) {
     if (!isObject(atField)) return err(expected("the proof's at to be an At"));
     const version: unknown = readGuarded(atField, "version");
@@ -486,15 +521,15 @@ const entriesArg = <E = never>(x: unknown, what: string, bound?: (length: number
   );
 
 /** A caller's versions: an array of `[V, Uint8Array]` arrays, read by index, each root copied. */
-const versionsArg = <V, E = never>(x: unknown, what: string, size: number, bound?: (length: number) => E | undefined): Result<(readonly [V, Uint8Array])[], E | TypeMismatch> =>
-  readArray<readonly [V, Uint8Array], E | TypeMismatch>(
+const versionsArg = <V, E = never>(x: unknown, what: string, size: number, bound?: (length: number) => E | undefined): Result<(readonly [V, Measured])[], E | TypeMismatch> =>
+  readArray<readonly [V, Measured], E | TypeMismatch>(
     x,
     what,
     (e, i) => {
     const pair = readPair(e);
     // the version first, then the root, copied as read: nothing read after it can change it
     const version: unknown = pair === undefined ? undefined : readGuarded(pair, 0);
-    // owned if it can be a digest; a longer one is kept as a view the reader refuses by its size, never copied
+    // owned within the profile's size, else Oversized (never copied), which the reader's size check refuses
     const root = pair === undefined ? undefined : digestField(readGuarded(pair, 1), size);
     // a version is any value, checked when encoded: REVOKED is refused here, never kept as one
     return pair === undefined || root === undefined || version === REVOKED ? err(expectedAt("a [version, Uint8Array] array", i)) : ok([version as V, root] as const);
@@ -641,6 +676,9 @@ export class VersionedTrie<V> {
 
   static {
     isProfile = (x): x is VersionedTrie<unknown> => PROFILE.has(x);
+    sameHeadOf = (p, a, b) => p.#sameHead(a, b);
+    rootOfHead = (p, h) => p.#root(h);
+    sizedHeadOf = (p, h) => p.#sizedHead(h);
   }
 
   /**
@@ -702,24 +740,23 @@ export class VersionedTrie<V> {
     return h.ok ? this.#root(h.value) : h;
   }
 
-  #root(head: Head<V>): C<Uint8Array> {
+  #root(head: MeasuredHead<V>): C<Uint8Array> {
     const vkey = this.versionKey.encode(head.version);
     if (!vkey.ok) return vkey;
-    const sized = this.#sizedRoots(head);
-    return sized.ok ? this.#rootOf(vkey.value, head) : sized;
+    const sized = this.#sizedHead(head);
+    return sized.ok ? this.#rootOf(vkey.value, sized.value) : sized;
   }
 
   /**
-   * A head's roots of the profile's digest size, or `Malformed` as the wire form refuses them (after the version): a
-   * head is committed, encoded or compared only with roots a decoded head could have.
+   * A measured head as a {@link Head}: both roots of the profile's digest size, or `Malformed` as the wire form refuses
+   * them (after the version). The one way from a caller's head to one that is committed, encoded, compared or kept.
    */
-  #sizedRoots(head: Head<V>): R<undefined> {
+  #sizedHead(head: MeasuredHead<V>): R<Head<V>> {
     const size = this.hashing.size;
-    for (const r of [head.stateRoot, head.historyRoot]) {
-      const n = digestLength(r);
-      if (n !== size) return malformed(`a digest is ${size.toString()} bytes, got ${n.toString()}`);
-    }
-    return ok(undefined);
+    const { stateRoot, historyRoot } = head;
+    if (!isSized(stateRoot, size)) return malformed(`a digest is ${size.toString()} bytes, got ${stateRoot.length.toString()}`);
+    if (!isSized(historyRoot, size)) return malformed(`a digest is ${size.toString()} bytes, got ${historyRoot.length.toString()}`);
+    return ok(Object.freeze({ version: head.version, stateRoot, historyRoot }));
   }
 
   /** The root of a head whose version is already encoded (`vkey`, bytes the module owns): no version is read again. */
@@ -742,16 +779,16 @@ export class VersionedTrie<V> {
     return y.ok ? this.#sameHead(x.value, y.value) : y;
   }
 
-  #sameHead(a: Head<V>, b: Head<V>): C<boolean> {
-    const ka = this.versionKey.encode(a.version);
+  #sameHead(ma: MeasuredHead<V>, mb: MeasuredHead<V>): C<boolean> {
+    const ka = this.versionKey.encode(ma.version);
     if (!ka.ok) return ka;
-    const kb = this.versionKey.encode(b.version);
+    const kb = this.versionKey.encode(mb.version);
     if (!kb.ok) return kb;
-    const sa = this.#sizedRoots(a);
-    if (!sa.ok) return sa;
-    const sb = this.#sizedRoots(b);
-    if (!sb.ok) return sb;
-    return ok(bytesEqual(ka.value, kb.value) && bytesEqual(a.stateRoot, b.stateRoot) && bytesEqual(a.historyRoot, b.historyRoot));
+    const a = this.#sizedHead(ma);
+    if (!a.ok) return a;
+    const b = this.#sizedHead(mb);
+    if (!b.ok) return b;
+    return ok(bytesEqual(ka.value, kb.value) && bytesEqual(a.value.stateRoot, b.value.stateRoot) && bytesEqual(a.value.historyRoot, b.value.historyRoot));
   }
 
   // ---------------------------------------------------------------- wire forms
@@ -786,9 +823,9 @@ export class VersionedTrie<V> {
     if (!h.ok) return h;
     const v = this.versionKey.encode(h.value.version);
     if (!v.ok) return v;
-    const sized = this.#sizedRoots(h.value);
+    const sized = this.#sizedHead(h.value);
     if (!sized.ok) return sized;
-    const e = models.versionedTrie.VersionedTrieHead.encode({ v: v.value, s: h.value.stateRoot, h: h.value.historyRoot });
+    const e = models.versionedTrie.VersionedTrieHead.encode({ v: v.value, s: sized.value.stateRoot, h: sized.value.historyRoot });
     return e.ok ? e : malformed(e.error.kind);
   }
 
@@ -907,7 +944,7 @@ export class VersionedTrie<V> {
   }
 
   /** The checked arguments every rule starts from: a root (a plain view) and a proof (a frozen copy). */
-  #args(root: unknown, proof: unknown): Result<readonly [Uint8Array, VersionedTrieProof<V>], TypeMismatch> {
+  #args(root: unknown, proof: unknown): Result<readonly [Measured, MeasuredProof<V>], TypeMismatch> {
     // the trusted root copied first: the proof's getters, and a caller's version key later, are caller code
     const r = digestField(root, this.hashing.size);
     if (r === undefined) return err(NOT_BYTES);
@@ -920,7 +957,7 @@ export class VersionedTrie<V> {
    * proof's fields are read: a proof's getter (caller code) cannot change the query, which is only ever used as these
    * bytes from then on.
    */
-  #asking(root: unknown, u: V): C<readonly [Uint8Array, Uint8Array]> {
+  #asking(root: unknown, u: V): C<readonly [Measured, Uint8Array]> {
     const r = digestField(root, this.hashing.size);
     if (r === undefined) return err(NOT_BYTES);
     const k = this.versionKey.encode(u);
@@ -931,24 +968,26 @@ export class VersionedTrie<V> {
    * Rule 1: the head binds to `root`, and the proof's top trie holds the head's values in slots 0x00..0x02. The head,
    * with its version's key, encoded once here and used as these bytes from then on.
    */
-  #bind(root: Uint8Array, proof: VersionedTrieProof<V>): C<{ readonly head: Head<V>; readonly vkey: Uint8Array }> {
+  #bind(root: Measured, proof: MeasuredProof<V>): C<{ readonly head: Head<V>; readonly vkey: Uint8Array }> {
     // the head's version encoded once: its root, its slot and every history check after use these bytes, so a version
     // (a caller's object, a Proxy) is never read again
     const encoded = this.versionKey.encode(proof.head.version);
     if (!encoded.ok) return encoded;
     const vkey = encoded.value;
     // a head binds only with roots of the profile's size (the wire form refuses others after the version)
-    const sized = this.#sizedRoots(proof.head);
+    const sized = this.#sizedHead(proof.head);
     if (!sized.ok) return sized;
-    const claimed = this.#rootOf(vkey, proof.head);
+    const head = sized.value;
+    const claimed = this.#rootOf(vkey, head);
     if (!claimed.ok) return claimed;
-    if (!bytesEqual(claimed.value, root)) return mismatch("root", root, claimed.value);
+    // a trusted root past the digest's size (Oversized) matches no head's root
+    if (!isMeasuredBytes(root) || !bytesEqual(claimed.value, root)) return mismatch("root", root, claimed.value);
     const top = this.#verified(this.topMode, root, "top", proof.top);
     if (!top.ok) return top;
     const slots: readonly (readonly [Uint8Array, Uint8Array])[] = [
       [SLOTS.version, vkey],
-      [SLOTS.state, proof.head.stateRoot],
-      [SLOTS.history, proof.head.historyRoot],
+      [SLOTS.state, head.stateRoot],
+      [SLOTS.history, head.historyRoot],
     ];
     for (const [slot, value] of slots) {
       const l = viaTrie(TRIE.lookup(top.value, slot));
@@ -956,15 +995,15 @@ export class VersionedTrie<V> {
       if (l.value.kind === "notCovered") return notCovered(`top slot ${slotName(slot)}`);
       if (l.value.kind !== "present" || !bytesEqual(l.value.valueHash, this.#bytesHash(value))) return malformed(`top slot ${slotName(slot)} does not hold the head's value`);
     }
-    return ok({ head: proof.head, vkey });
+    return ok({ head, vkey });
   }
 
-  #history(head: Head<V>, proof: VersionedTrieProof<V>): R<trie.VerifiedTrieProof> {
+  #history(head: Head<V>, proof: MeasuredProof<V>): R<trie.VerifiedTrieProof> {
     return this.#verified(this.historyMode, head.historyRoot, "history", proof.history);
   }
 
   /** The proof's `at`, if it names the version asked about, whose key (`ukey`) the rule encoded before reading the proof. */
-  #asked(proof: VersionedTrieProof<V>, ukey: Uint8Array): C<At<V>> {
+  #asked(proof: MeasuredProof<V>, ukey: Uint8Array): C<MeasuredAt<V>> {
     const at = proof.at;
     if (at === undefined) return malformed("the proof names no version");
     const a = this.versionKey.encode(at.version);
@@ -973,7 +1012,7 @@ export class VersionedTrie<V> {
   }
 
   /** The state root of the version keyed `ukey` per the history trie: the root if committed, `null` if proven never committed. */
-  #versionRoot(head: Head<V>, proof: VersionedTrieProof<V>, ukey: Uint8Array): C<Uint8Array | null> {
+  #versionRoot(head: Head<V>, proof: MeasuredProof<V>, ukey: Uint8Array): C<Uint8Array | null> {
     const at = this.#asked(proof, ukey);
     if (!at.ok) return at;
     const hist = this.#history(head, proof);
@@ -987,6 +1026,8 @@ export class VersionedTrie<V> {
         return notCovered(`version ${k}`);
       case "present":
         if (s === undefined) return malformed(`version ${k} is committed; the proof claims it is not`);
+        // only a state root of the profile's size is hashed, and returned: a committed root has that size
+        if (!isSized(s, this.hashing.size)) return malformed(`a digest is ${this.hashing.size.toString()} bytes, got ${s.length.toString()}`);
         return bytesEqual(l.value.valueHash, this.#bytesHash(s)) ? ok(s) : malformed(`history holds another state root for ${k}`);
       case "absent":
         return s === undefined ? ok(null) : malformed(`version ${k} is not committed; the proof claims a state`);
@@ -1075,7 +1116,7 @@ export class VersionedTrie<V> {
     if (!uk.ok) return uk;
     // each claim's version encoded as soon as it is read, before its root or a later claim is read (their getters, or
     // the proof's, may change a version object read before), and its root copied: only these bytes are compared
-    const claims = readArray(claimed, "an array of [version, Uint8Array] claims", (e, i): C<trie.TrieEntry> => {
+    const claims = readArray(claimed, "an array of [version, Uint8Array] claims", (e, i): C<trie.TrieEntry | null> => {
       const bad = err(expectedAt("a [version, Uint8Array] array", i));
       const pair = readPair(e);
       if (pair === undefined) return bad;
@@ -1083,12 +1124,15 @@ export class VersionedTrie<V> {
       if (version === REVOKED) return bad;
       const k = this.versionKey.encode(version as V);
       if (!k.ok) return k;
-      // hashed, never kept: a root longer than any digest is hashed in place (it matches no listing), never copied
+      // hashed only if it is a digest of the profile's size: any other claim of a root matches no listing
       const s = digestField(readGuarded(pair, 1), this.hashing.size);
-      return s === undefined ? bad : ok({ key: k.value, valueHash: this.#bytesHash(s) });
+      if (s === undefined) return bad;
+      return ok(isSized(s, this.hashing.size) ? { key: k.value, valueHash: this.#bytesHash(s) } : null);
     });
     if (!claims.ok) return claims;
-    const expected = claims.value;
+    const sizedClaims = claims.value.filter((c): c is trie.TrieEntry => c !== null);
+    // a claim whose root is not a digest of the profile's size is never the listing (decided after the proof's checks)
+    const unmatched = sizedClaims.length !== claims.value.length;
     const p = proofArg<V>(proof, this.hashing.size);
     if (!p.ok) return p;
     const bound = this.#bind(r, p.value);
@@ -1097,7 +1141,7 @@ export class VersionedTrie<V> {
     if (!hist.ok) return hist;
     const listing = TRIE.range(hist.value, fk, uk.value);
     if (listing.kind === "notCovered") return notCovered(`versions [${toHexOf(fk)}, ${uk.value === undefined ? "" : toHexOf(uk.value)})`);
-    return ok(sameEntries(listing.entries, expected));
+    return ok(!unmatched && sameEntries(listing.entries, sizedClaims));
   }
 
   /**
@@ -1117,7 +1161,7 @@ export class VersionedTrie<V> {
     const hist = this.#history(b.value.head, p);
     if (!hist.ok) return hist;
     const bound = concatBytes([tkey, Uint8Array.of(0)]);
-    let found: { readonly pkey: Uint8Array; readonly version: V; readonly stateRoot: Uint8Array } | undefined;
+    let found: { readonly pkey: Uint8Array; readonly version: V; readonly stateRoot: Measured } | undefined;
     if (p.at !== undefined) {
       const pkey = this.versionKey.encode(p.at.version);
       if (!pkey.ok) return pkey;
@@ -1128,9 +1172,13 @@ export class VersionedTrie<V> {
     }
     const listing = TRIE.range(hist.value, found?.pkey ?? new Uint8Array(0), bound);
     if (listing.kind === "notCovered") return notCovered(`history up to ${toHexOf(tkey)}`);
-    const expected = found === undefined ? [] : [{ key: found.pkey, valueHash: this.#bytesHash(found.stateRoot) }];
-    if (!sameEntries(listing.entries, expected)) return malformed(`the history up to ${toHexOf(tkey)} is not the claimed answer`);
-    return ok(found === undefined ? null : { version: found.version, stateRoot: found.stateRoot });
+    const notTheAnswer = malformed(`the history up to ${toHexOf(tkey)} is not the claimed answer`);
+    if (found === undefined) return sameEntries(listing.entries, []) ? ok(null) : notTheAnswer;
+    // only a state root of the profile's size is hashed, and returned: an answer with any other is never the history's
+    const answer = found.stateRoot;
+    if (!isSized(answer, this.hashing.size)) return notTheAnswer;
+    if (!sameEntries(listing.entries, [{ key: found.pkey, valueHash: this.#bytesHash(answer) }])) return notTheAnswer;
+    return ok({ version: found.version, stateRoot: answer });
   }
 }
 
@@ -1148,7 +1196,7 @@ const chunkBound =
     length >= 1 && length <= MAX_CHUNK_ENTRIES ? undefined : { kind: "Malformed", reason: `snapshot: a ${kind} chunk holds 1..${MAX_CHUNK_ENTRIES.toString()} items, not ${length.toString()}` };
 
 /** A caller's chunk, its fields read once into a frozen copy: its kind, then its head, entries or versions. */
-function chunkArg<V>(x: unknown, size: number): C<SnapshotChunk<V>> {
+function chunkArg<V>(x: unknown, size: number): C<MeasuredChunk<V>> {
   if (!isObject(x)) return err(expected("a SnapshotChunk"));
   const kind: unknown = readGuarded(x, "kind");
   switch (kind) {
@@ -1171,7 +1219,7 @@ function chunkArg<V>(x: unknown, size: number): C<SnapshotChunk<V>> {
 
 const NOT_A_READER = expected("a SnapshotReader");
 let startReader!: <V>(profile: VersionedTrie<V>, trusted: Head<V>) => SnapshotReader<V>;
-let feedChunk!: <V>(r: SnapshotReader<V>, chunk: SnapshotChunk<V>) => C<SnapshotReader<V>>;
+let feedChunk!: <V>(r: SnapshotReader<V>, chunk: MeasuredChunk<V>) => C<SnapshotReader<V>>;
 let finishReader!: <V>(r: SnapshotReader<V>) => R<Snapshot<V>>;
 /** The keys of a reader's history versions, in order, each encoded once as it was fed: no version is encoded again. */
 let readerKeys!: <V>(r: SnapshotReader<V>) => readonly Uint8Array[];
@@ -1211,11 +1259,14 @@ export class SnapshotReader<V> {
    * A reader against `trusted` under `profile`. A profile that is not a `VersionedTrie`, or a head that is not a `Head`
    * (its fields read once, its roots copied), is a `TypeMismatch`.
    */
-  static start<V>(profile: VersionedTrie<V>, trusted: Head<V>): Result<SnapshotReader<V>, TypeMismatch> {
+  static start<V>(profile: VersionedTrie<V>, trusted: Head<V>): C<SnapshotReader<V>> {
     const p = profileArg<V>(profile);
     if (!p.ok) return p;
     const h = headArg<V>(trusted, "the trusted head", p.value.hashing.size);
-    return h.ok ? ok(startReader(p.value, h.value)) : h;
+    if (!h.ok) return h;
+    // the reader keeps the trusted head: only one with roots of the profile's size (Malformed otherwise)
+    const sized = sizedHeadOf(p.value, h.value);
+    return sized.ok ? ok(startReader(p.value, sized.value)) : sized;
   }
 
   #next(changes: {
@@ -1255,13 +1306,13 @@ export class SnapshotReader<V> {
     return c.ok ? this.#feed(c.value) : c;
   }
 
-  #feed(chunk: SnapshotChunk<V>): C<SnapshotReader<V>> {
+  #feed(chunk: MeasuredChunk<V>): C<SnapshotReader<V>> {
     const bad = (reason: string): R<never> => malformed(`snapshot: ${reason}`);
     const key = this.profile.versionKey;
     if (this.stage === "head") {
       if (chunk.kind !== "head") return bad("it starts with its head");
       // the trusted head itself (as a restore from a snapshot feeds it) is the same head, its version never read again
-      const same = chunk.head === this.trusted ? ok(true) : this.profile.sameHead(chunk.head, this.trusted);
+      const same = chunk.head === this.trusted ? ok(true) : sameHeadOf(this.profile, chunk.head, this.trusted);
       if (!same.ok) return same;
       return same.value ? ok(this.#next({ stage: "state" })) : bad("its head is not the trusted head");
     }
@@ -1292,9 +1343,14 @@ export class SnapshotReader<V> {
       if (!k.ok) return k;
       keys.push(k.value);
     }
-    // every state root of the hashing's size, after the versions (as the wire form orders them), before any is kept
+    // every state root of the hashing's size, after the versions (as the wire form orders them), narrowed to bytes before
+    // any is compared or kept
     const size = this.profile.hashing.size;
-    for (const [, s] of vs) if (digestLength(s) !== size) return bad(`a state root is ${size.toString()} bytes, got ${digestLength(s).toString()}`);
+    const sized: (readonly [V, Uint8Array])[] = [];
+    for (const [u, s] of vs) {
+      if (!isSized(s, size)) return bad(`a state root is ${size.toString()} bytes, got ${s.length.toString()}`);
+      sized.push([u, s]);
+    }
     // the trusted head's version encoded once, for the first history chunk, and carried: never read again
     const hk = this.headKey === undefined ? key.encode(this.trusted.version) : ok(this.headKey);
     if (!hk.ok) return hk;
@@ -1304,13 +1360,13 @@ export class SnapshotReader<V> {
       previous = k;
     }
     for (const [i, k] of keys.entries()) {
-      const s = vs[i]?.[1] ?? new Uint8Array(0);
+      const s = sized[i]?.[1] ?? new Uint8Array(0);
       if (compareBytes(k, hk.value) > 0) return bad(`version ${toHexOf(k)} is after the head`);
       if (bytesEqual(k, hk.value) && !bytesEqual(s, this.trusted.stateRoot)) return bad("the head version has another state root");
     }
     const last = keys[keys.length - 1];
     return ok(
-      this.#next({ stage: last !== undefined && bytesEqual(last, hk.value) ? "done" : "history", ...(last === undefined ? {} : { lastVersion: last }), history: vs, keys, headKey: hk.value }),
+      this.#next({ stage: last !== undefined && bytesEqual(last, hk.value) ? "done" : "history", ...(last === undefined ? {} : { lastVersion: last }), history: sized, keys, headKey: hk.value }),
     );
   }
 
@@ -1362,7 +1418,7 @@ function holds(keys: readonly Uint8Array[], key: Uint8Array): boolean {
 }
 
 /** A caller's snapshot, its fields read once into a frozen copy: a head, entries and versions. */
-function snapshotArg<V>(x: unknown, size: number): Result<Snapshot<V>, TypeMismatch> {
+function snapshotArg<V>(x: unknown, size: number): Result<MeasuredSnapshot<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected("a Snapshot"));
   const head = headArg<V>(readGuarded(x, "head"), "the snapshot's head", size);
   if (!head.ok) return head;
@@ -1373,7 +1429,7 @@ function snapshotArg<V>(x: unknown, size: number): Result<Snapshot<V>, TypeMisma
 }
 
 /** A caller's delta, its fields read once into a frozen copy: an optional parent head, a head, upserts and removes. */
-function deltaArg<V>(x: unknown, size: number): Result<Delta<V>, TypeMismatch> {
+function deltaArg<V>(x: unknown, size: number): Result<MeasuredDelta<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected("a Delta"));
   const parentField: unknown = readGuarded(x, "parent");
   const parent = parentField === undefined ? ok(undefined) : headArg<V>(parentField, "the delta's parent", size);
@@ -1466,7 +1522,10 @@ export class Replica<V> {
     const t = headArg<V>(trusted, "the trusted head", p.value.hashing.size);
     if (!t.ok) return t;
     const s = snapshotArg<V>(snapshot, p.value.hashing.size);
-    return s.ok ? fromSnapshot(p.value, t.value, s.value) : s;
+    if (!s.ok) return s;
+    // the trusted head is kept: only one with roots of the profile's size, after every argument's type
+    const sized = sizedHeadOf(p.value, t.value);
+    return sized.ok ? fromSnapshot(p.value, sized.value, s.value) : sized;
   }
 
   /**
@@ -1495,11 +1554,11 @@ export class Replica<V> {
     return d.ok ? this.#apply(d.value) : d;
   }
 
-  #apply(delta: Delta<V>): C<Replica<V>> {
+  #apply(delta: MeasuredDelta<V>): C<Replica<V>> {
     const p = this.profile;
     const parent = this.root();
     if (!parent.ok) return parent;
-    const claimed = delta.parent === undefined ? ok(null) : p.root(delta.parent);
+    const claimed = delta.parent === undefined ? ok(null) : rootOfHead(p, delta.parent);
     if (!claimed.ok) return claimed;
     const same = parent.value === null || claimed.value === null ? parent.value === claimed.value : bytesEqual(parent.value, claimed.value);
     if (!same) return err({ kind: "RootMismatch", component: "parent", expected: parent.value === null ? "none" : toHexOf(parent.value), computed: claimed.value === null ? "none" : toHexOf(claimed.value) });
@@ -1533,12 +1592,15 @@ export class Replica<V> {
       state = next.value;
     }
     const s = state.root;
-    if (!bytesEqual(s, delta.head.stateRoot)) return mismatch("state", delta.head.stateRoot, s);
+    // the claimed roots compared as bytes: one past the digest's size (Oversized) matches no root
+    const claimedState = delta.head.stateRoot;
+    if (!isMeasuredBytes(claimedState) || !bytesEqual(s, claimedState)) return mismatch("state", claimedState, s);
     const versions = viaTrie(this.versions.set(nk.value, { version: delta.head.version, stateRoot: s }, TRIE.bytesHash(p.hashing, s)));
     if (!versions.ok) return versions;
     const h = versions.value.root;
-    if (!bytesEqual(h, delta.head.historyRoot)) return mismatch("history", delta.head.historyRoot, h);
-    return ok(new Replica(TOKEN, p, delta.head, state, versions.value));
+    const claimedHistory = delta.head.historyRoot;
+    if (!isMeasuredBytes(claimedHistory) || !bytesEqual(h, claimedHistory)) return mismatch("history", claimedHistory, h);
+    return ok(new Replica(TOKEN, p, Object.freeze({ version: delta.head.version, stateRoot: s, historyRoot: h }), state, versions.value));
   }
 
   static {
@@ -1547,8 +1609,8 @@ export class Replica<V> {
 }
 
 /** {@link Replica.fromSnapshot} of checked, owned arguments. */
-function fromSnapshot<V>(profile: VersionedTrie<V>, trusted: Head<V>, snapshot: Snapshot<V>): C<Replica<V>> {
-  const chunks: SnapshotChunk<V>[] = [
+function fromSnapshot<V>(profile: VersionedTrie<V>, trusted: Head<V>, snapshot: MeasuredSnapshot<V>): C<Replica<V>> {
+  const chunks: MeasuredChunk<V>[] = [
     { kind: "head", head: trusted },
     ...chunked(snapshot.entries, MAX_CHUNK_ENTRIES).map((entries) => ({ kind: "state" as const, entries })),
     ...chunked(snapshot.history, MAX_CHUNK_ENTRIES).map((versions) => ({ kind: "history" as const, versions })),

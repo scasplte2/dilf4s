@@ -322,7 +322,8 @@ function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
       const k = ownBytes(key, 32);
       const a = viewOf(alpha);
       if (p === undefined || k === undefined || a === undefined) return err(NOT_BYTES);
-      if (typeof p === "number") return err(malformed(`${name} proof`, 80, p));
+      // the proof's length first, any length but 80 (shorter or past the bound), then the key's, as verifyRaw orders them
+      if (typeof p === "number" || p.length !== 80) return err(malformed(`${name} proof`, 80, typeof p === "number" ? p : p.length));
       if (typeof k === "number") return err(malformed(`${name} public key`, 32, k));
       return verifyRaw(k, a, p);
     },

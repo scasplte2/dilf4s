@@ -120,7 +120,9 @@ through one fixed-length view (never its own `length`, so a subclass is not beli
 field's width, a key's bound, or none for a message or data to hash. Past the bound nothing is copied, and the boundary
 refuses nothing: the length flows on to the check that refused such bytes before (a digest's size, a key's mode, a
 leaf's weight), at the stage the specs and `refusals_v1.json` pin, so an oversized argument is refused exactly where a
-shorter wrong-sized one is. The boundary refuses only what is not bytes, as a `TypeMismatch`. Within the bound it is that
+shorter wrong-sized one is. It flows as an `Oversized` value, a type of its own that the compiler keeps apart from
+bytes: nothing hashes, compares, encodes or returns one, and only a size check narrows a measured value to bytes. The
+boundary refuses only what is not bytes, as a `TypeMismatch`. Within the bound it is that
 view when its memory is stable (this realm's own `ArrayBuffer`, unshared and not resizable by the engine's brand
 checks, never by a prototype), which nothing changes while the SDK runs without calling caller code, so nothing is
 copied; and otherwise one copy of that view, so shared, resizable or another realm's memory is read from one snapshot.

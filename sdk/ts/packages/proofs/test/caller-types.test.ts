@@ -9,6 +9,8 @@ import { models, Value } from "@kd5ujc/dilf4s-core";
 import { ownBytes, ownCopy } from "@kd5ujc/dilf4s-core/internal";
 
 import { MAX_PROOF_WEIGHT, merkle, poseidon, trie, versioned } from "../src/index.js";
+import { bytesEqual } from "../src/bytes.js";
+import { isSized, measured, type Measured, type Oversized } from "../src/check.js";
 import { bytes, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
@@ -1256,5 +1258,71 @@ describe("an oversized argument is refused at the stage its size always was, aft
     const before = process.memoryUsage().arrayBuffers;
     expect(expectErr(vt.root({ ...finalHead, historyRoot: huge }), "a 64 MiB root").kind).toBe("Malformed");
     expect(process.memoryUsage().arrayBuffers - before, "not copied").toBeLessThan(1 << 20);
+  });
+});
+
+describe("an oversized digest is a type of its own: never hashed, compared or returned as bytes", () => {
+  it("the compiler keeps an Oversized from bytes, and only a size check narrows a Measured to them", () => {
+    const long: Measured = measured(100);
+    const oversized = long as Oversized;
+    // compile-time checks, never run: the compiler refuses each
+    const refused = [
+      // @ts-expect-error an Oversized is no bytes: it cannot be compared as one
+      () => bytesEqual(oversized, new Uint8Array(32)),
+      // @ts-expect-error nor hashed
+      () => vt.bytesHash(oversized),
+      // @ts-expect-error nor can a Measured value be used as bytes before a size check narrows it
+      () => bytesEqual(long, new Uint8Array(32)),
+    ];
+    expect(refused.length).toBe(3);
+    expect(isSized(long, 32), "an Oversized is never of a digest's size").toBe(false);
+    const digest: Measured = measured(new Uint8Array(32));
+    if (isSized(digest, 32)) expect(bytesEqual(digest, new Uint8Array(32)), "narrowed to bytes by the size check").toBe(true);
+  });
+
+  // a history committing to bytesHash(33 zero bytes): what a stand-in of size + 1 zero bytes would have hashed to
+  const T32 = vt.hashing;
+  const fixed1 = expectOk(trie.KeyMode.fixed(1), "fixed(1)");
+  const fixed8 = expectOk(trie.KeyMode.fixed(8), "fixed(8)");
+  const vkey5 = expectOk(versioned.VersionKey.long.encode(5n), "vkey 5");
+  const standInHash = expectOk(vt.bytesHash(new Uint8Array(33)), "the stand-in's hash");
+  const historyRoot = expectOk(trie.trieRoot(T32, fixed8, [[vkey5, standInHash]]), "history root");
+  const history = expectOk(trie.TrieProof.fromRecords(T32, [{ s: { n: 64n, b: vkey5 }, v: standInHash }]), "history proof");
+  const stateRoot = new Uint8Array(32);
+  const slot = (b: Uint8Array): Uint8Array => expectOk(vt.bytesHash(b), "slot hash");
+  const topRoot = expectOk(
+    trie.trieRoot(T32, fixed1, [
+      [versioned.VERSION_SLOT, slot(vkey5)],
+      [versioned.STATE_SLOT, slot(stateRoot)],
+      [versioned.HISTORY_SLOT, slot(historyRoot)],
+    ]),
+    "top root",
+  );
+  const top = expectOk(
+    trie.TrieProof.fromRecords(T32, [
+      { s: { n: 6n, b: Uint8Array.of(0) }, c: "both" },
+      { s: { n: 0n, b: new Uint8Array(0) }, c: "both" },
+      { s: { n: 0n, b: new Uint8Array(0) }, v: slot(vkey5) },
+      { s: { n: 0n, b: new Uint8Array(0) }, v: slot(stateRoot) },
+      { s: { n: 1n, b: Uint8Array.of(0) }, v: slot(historyRoot) },
+    ]),
+    "top proof",
+  );
+  const head = { version: 5n, stateRoot, historyRoot };
+  const long = new Uint8Array(100).fill(7);
+
+  it("the crafted commitment is well formed: its proofs verify against its root", () => {
+    expect(expectOk(trie.verify(T32, fixed1, topRoot, top), "top"), "the top trie binds").not.toBeNull();
+    expect(expectOk(trie.verify(T32, fixed8, historyRoot, history), "history"), "the history trie binds").not.toBeNull();
+    expect(expectOk(vt.root(head), "the head's root"), "the head commits to the top root").toEqual(topRoot);
+  });
+
+  it("verifyVersions, verifyVersion and verifyAsOf never take a 100-byte root for the committed one", () => {
+    const proof = bad({ head, top, history });
+    expect(vt.verifyVersions(topRoot, proof, 0n, null, bad([[5n, long]])), "verifyVersions: never true").toEqual({ ok: true, value: false });
+    const at = bad({ head, top, history, at: { version: 5n, stateRoot: long } });
+    expect(expectErr(vt.verifyVersion(topRoot, at, 5n), "verifyVersion: never a root").kind).toBe("Malformed");
+    expect(expectErr(vt.verifyAsOf(topRoot, at, 5n), "verifyAsOf: never an answer").kind).toBe("Malformed");
+    expect(expectErr(vt.verifyHistoricalKey(topRoot, at, 5n), "verifyHistoricalKey: never a state").kind).toBe("Malformed");
   });
 });
