@@ -95,3 +95,5 @@ export class ConstantTag {
     return hashPartsOf(this.algorithm, [t, t, ...parts]);
   }
 }
+Object.freeze(ConstantTag);
+Object.freeze(ConstantTag.prototype);

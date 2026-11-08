@@ -73,6 +73,8 @@ export class ChildIndex {
     return this.hardened ? this.value + HARDENED : this.value;
   }
 }
+Object.freeze(ChildIndex);
+Object.freeze(ChildIndex.prototype);
 
 // ASCII digits, then an optional hardening mark; a leading zero is refused separately
 const SEGMENT = /^([0-9]+)(['h]?)$/;
@@ -185,6 +187,8 @@ export class ExtendedKey<S extends SchemeName> {
     return this.toString();
   }
 }
+Object.freeze(ExtendedKey);
+Object.freeze(ExtendedKey.prototype);
 
 /** The parts of `x` if it is an `ExtendedKey` of this package's whose key is of `scheme`. */
 function extendedArg<S extends SchemeName>(x: unknown, scheme: S): Result<Parts<S>, TypeMismatch> {

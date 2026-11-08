@@ -48,7 +48,7 @@ function canonicalScalar(b: Uint8Array): bigint | undefined {
 
 const mulBase = (s: bigint): RistrettoPoint => (s === 0n ? RPoint.ZERO : RPoint.BASE.multiply(s));
 
-const codec: SchemeCodec<typeof NAME> = {
+const codec = Object.freeze<SchemeCodec<typeof NAME>>({
   name: NAME,
   signingKey: (bytes) => {
     const b = sized("ristretto255 signing key", 32, bytes);
@@ -71,7 +71,7 @@ const codec: SchemeCodec<typeof NAME> = {
       : err(invalidEncoding("ristretto255 signature", "expected R (non-identity element) || z (canonical scalar)"));
   },
   publicKey: checkedPublicKey(NAME, (sk) => publicOf(sk)),
-};
+});
 
 /** The public key of a secret scalar's bytes. */
 const publicOf = (sk: Uint8Array): Uint8Array => mulBase(leToBig(sk)).toBytes();

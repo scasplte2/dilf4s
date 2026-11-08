@@ -51,7 +51,9 @@ let oversizedOf!: (length: number) => Oversized;
  */
 export class Oversized {
   readonly #oversized = true;
-  private constructor(readonly length: number) {}
+  private constructor(readonly length: number) {
+    Object.freeze(this);
+  }
 
   /** Whether `x` is one: one private-brand check. */
   static is(x: unknown): x is Oversized {
@@ -62,6 +64,8 @@ export class Oversized {
     oversizedOf = (length) => new Oversized(length);
   }
 }
+Object.freeze(Oversized);
+Object.freeze(Oversized.prototype);
 
 /**
  * A caller's bytes as the boundary measured them against a field's bound: the owned bytes, or an {@link Oversized}

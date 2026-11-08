@@ -73,6 +73,8 @@ export class Fr {
     return this.#value.toString();
   }
 }
+Object.freeze(Fr);
+Object.freeze(Fr.prototype);
 
 export const MAX_INPUTS = models.limits.POSEIDON_MAX_INPUTS;
 
@@ -238,6 +240,8 @@ export class PoseidonMerkleProof {
     return v.ok ? v : err({ kind: "Encoding", reason: v.error.kind });
   }
 }
+Object.freeze(PoseidonMerkleProof);
+Object.freeze(PoseidonMerkleProof.prototype);
 
 /** {@link PoseidonMerkleProof.of} of a checked position and siblings. */
 const merkleProofOf = (position: bigint, siblings: readonly Fr[]): Result<PoseidonMerkleProof, PoseidonMerkleError> => {

@@ -185,6 +185,8 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
     return isTagged(this) ? checkedNode(this, left, right) : err(NOT_A_PROFILE);
   }
 }
+Object.freeze(TaggedMerkleHashing);
+Object.freeze(TaggedMerkleHashing.prototype);
 
 /** RFC 6962's one-byte prefixes, for external logs: leaves are raw bytes. */
 export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
@@ -236,6 +238,8 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
     return isRfc(this) ? checkedNode(this, left, right) : err(NOT_A_PROFILE);
   }
 }
+Object.freeze(Rfc6962MerkleHashing);
+Object.freeze(Rfc6962MerkleHashing.prototype);
 
 const withinIndex = (n: bigint): boolean => n >= 0n && n <= MAX_TREE_INDEX;
 
@@ -325,6 +329,8 @@ export class InclusionProof {
     return v.ok ? v : err({ kind: "Encoding", reason: v.error.kind });
   }
 }
+Object.freeze(InclusionProof);
+Object.freeze(InclusionProof.prototype);
 
 /** {@link InclusionProof.of} over checked arguments, the path owned (kept as it is). */
 const inclusionOf = (index: bigint, size: bigint, path: readonly Uint8Array[]): Result<InclusionProof, MerkleError> =>
@@ -398,6 +404,8 @@ export class ConsistencyProof {
     return v.ok ? v : err({ kind: "Encoding", reason: v.error.kind });
   }
 }
+Object.freeze(ConsistencyProof);
+Object.freeze(ConsistencyProof.prototype);
 
 /** {@link ConsistencyProof.of} over checked arguments, the path owned (kept as it is). */
 const consistencyOf = (oldSize: bigint, newSize: bigint, path: readonly Uint8Array[]): Result<ConsistencyProof, MerkleError> =>

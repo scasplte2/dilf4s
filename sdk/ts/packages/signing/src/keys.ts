@@ -81,6 +81,8 @@ export class SigningKey<S extends string> {
     return this.toString();
   }
 }
+Object.freeze(SigningKey);
+Object.freeze(SigningKey.prototype);
 
 /** A decoded, validated verifying key of scheme `S`. */
 export class VerifyingKey<S extends string> {
@@ -116,6 +118,8 @@ export class VerifyingKey<S extends string> {
     return `VerifyingKey(${this.scheme}, ${hex(this.#bytes)})`;
   }
 }
+Object.freeze(VerifyingKey);
+Object.freeze(VerifyingKey.prototype);
 
 /** A decoded signature of scheme `S` (its decoder's checks passed). */
 export class Signature<S extends string> {
@@ -151,6 +155,8 @@ export class Signature<S extends string> {
     return `Signature(${this.scheme}, ${hex(this.#bytes)})`;
   }
 }
+Object.freeze(Signature);
+Object.freeze(Signature.prototype);
 
 export interface KeyPair<S extends string> {
   readonly signing: SigningKey<S>;
@@ -208,6 +214,8 @@ export class Secret {
     return this.toString();
   }
 }
+Object.freeze(Secret);
+Object.freeze(Secret.prototype);
 
 /** A secret of bytes this package owns (no copy is taken). */
 export const ownSecret = (bytes: Uint8Array): Secret => secretFrom(bytes);

@@ -109,6 +109,8 @@ abstract class KesKey {
     return this.toString();
   }
 }
+Object.freeze(KesKey);
+Object.freeze(KesKey.prototype);
 
 // ------------------------------------------------------------------ the MMM sum tree over H
 
@@ -238,6 +240,8 @@ class MerkleKesOps {
     return ok({ leaf: false, active: active.value, rightSeed: period < half ? seed : undefined, left, right });
   }
 }
+Object.freeze(MerkleKesOps);
+Object.freeze(MerkleKesOps.prototype);
 
 /** A hash of at least 32 bytes of output; one that is not a `HashAlgorithm` (from a JavaScript caller) is a `TypeMismatch`. */
 function hashCheck(hash: HashAlgorithm): Result<HashAlgorithm, KesRefusal> {
@@ -310,6 +314,8 @@ export class KesSumKey extends KesKey {
     return `KesSumKey(${this.scheme.hash}, height=${String(this.scheme.height)}, period=${String(this.period)}, <redacted>)`;
   }
 }
+Object.freeze(KesSumKey);
+Object.freeze(KesSumKey.prototype);
 
 
 /** The dilf4s sum composition over `H`: `2^height` periods, signatures `vk || Ed25519 sig || Merkle path`. */
@@ -408,6 +414,8 @@ export class KesSum {
     verifySum = (scheme, k, p, m, s) => scheme.#ops.verify(k, scheme.height, p, m, s);
   }
 }
+Object.freeze(KesSum);
+Object.freeze(KesSum.prototype);
 
 // ------------------------------------------------------------------ product composition
 
@@ -490,6 +498,8 @@ export class KesProductKey extends KesKey {
     return `KesProductKey(${hash}, heights=(${String(superHeight)},${String(subHeight)}), period=${String(this.period)}, <redacted>)`;
   }
 }
+Object.freeze(KesProductKey);
+Object.freeze(KesProductKey.prototype);
 
 
 /** The dilf4s product composition: a super sum tree certifies `2^superHeight` successive sub sum trees. */
@@ -608,6 +618,8 @@ export class KesProduct {
     };
   }
 }
+Object.freeze(KesProduct);
+Object.freeze(KesProduct.prototype);
 
 // ------------------------------------------------------------------ Cardano SumKES (Blake2b-256 over Ed25519, depths 0..7)
 
@@ -714,6 +726,8 @@ export class CardanoSumKesKey extends KesKey {
     return `CardanoSumKesKey(depth=${String(this.scheme.depth)}, period=${String(this.period)}, <redacted>)`;
   }
 }
+Object.freeze(CardanoSumKesKey);
+Object.freeze(CardanoSumKesKey.prototype);
 
 
 /**
@@ -800,3 +814,5 @@ export class CardanoSumKes {
     return verifyChecked(this, 32, this.signatureLength, this.totalPeriods, verifyCardano, vk, period, message, signature);
   }
 }
+Object.freeze(CardanoSumKes);
+Object.freeze(CardanoSumKes.prototype);

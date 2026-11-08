@@ -2,8 +2,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type Value } from "@kd5ujc/dilf4s-core";
 
+// The trie's operations table and its classes are frozen, so a node hash cannot be spied on there: this file's bytes
+// module gives a constant tag whose `hash` counts each hash under the trie's leaf and branch tags, the node hashes
+const nodeHashes = vi.hoisted(() => ({ count: 0 }));
+vi.mock(import("../src/bytes.js"), async (original) => {
+  const m = await original();
+  const nodeTags: readonly string[] = ["dilf4s/trie/leaf/v1", "dilf4s/trie/branch/v1"];
+  class Counting extends m.ConstantTag {
+    override hash(message: Uint8Array): Uint8Array {
+      if (nodeTags.includes(this.tag)) nodeHashes.count++;
+      return super.hash(message);
+    }
+  }
+  return { ...m, ConstantTag: Counting };
+});
+
 import { trie, versioned } from "../src/index.js";
-import { TRIE } from "../src/trie-internal.js";
 import { expectErr, expectOk, int, hexOf } from "./vectors.js";
 
 // The replica's tries (docs/specs/versioned-trie.md section 7): updated incrementally, equal to a full rebuild after
@@ -128,8 +142,9 @@ describe("a replica's work per delta", { timeout: 60_000 }, () => {
     vi.restoreAllMocks();
   });
 
-  const watchNodes = () => [vi.spyOn(TRIE, "leafBits"), vi.spyOn(TRIE, "branchBits")];
-  const calls = (spies: readonly { readonly mock: { readonly calls: readonly unknown[] } }[]): number => spies.reduce((t, s) => t + s.mock.calls.length, 0);
+  /** The node hashes made so far, which {@link calls} counts on from. */
+  const watchNodes = (): number => nodeHashes.count;
+  const calls = (from: number): number => nodeHashes.count - from;
 
   /** Bit positions at which `keys` do not all agree (past a key's end counts): every branch on a path sits at one. */
   const varyingBits = (keys: readonly Uint8Array[]): number => {

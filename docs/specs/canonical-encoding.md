@@ -173,6 +173,21 @@ fails on any object or class it reaches that is not frozen.
 Scala's and Rust's models are immutable values by construction, so this is the TypeScript SDK's alone and has no
 conformance vector.
 
+The signing and proofs packages are held to the same rule. Every class in them (keys, signatures, secrets, messages,
+VRF proofs and outputs, KES schemes and keys, extended keys, indices, word lists and mnemonics; Merkle profiles and
+proofs, trie hashings, modes, segments, proofs and verified proofs, Poseidon elements and proofs, state keys,
+namespaces, versioned tries, verified states, snapshot readers and replicas, and their internal ones), its prototype
+and every instance a caller is given are frozen, as are the objects they export or share: the schemes, VRF suites and
+their profiles, derivations, version keys, literal tags, the BIP-39 word list, the Poseidon tables and every
+refusal or verdict they give more than one caller. The trie's table of unchecked operations, which the replica and the
+versioned trie call, is filled as `trie.ts` loads, then defined whole on the table its other modules import and frozen:
+a slot code loaded earlier put there is replaced, or, if it cannot be, the package does not load, so none of its code
+runs with one. Bytes cannot be frozen, so no module exports a typed array that holds any: the versioned trie's slots
+(`VERSION_SLOT`, `STATE_SLOT`, `HISTORY_SLOT`) are the one byte of each key, as numbers, as Rust's are `u8`s. A test in
+each package walks the exports of every module, entry point or not, and an instance of each class, and fails on any
+object or class it reaches that is not frozen; another tries every write on a key class's and a proof class's
+prototype, and on the tables, in strict and in sloppy code, and checks that no verdict changes.
+
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the
 caller's realm (by the engine's brand check, so a `SharedArrayBuffer` given `ArrayBuffer.prototype` is not one), which

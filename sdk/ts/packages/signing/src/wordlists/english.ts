@@ -131,3 +131,4 @@ export const ENGLISH: readonly string[] = [
 ]
   .join(" ")
   .split(" ");
+Object.freeze(ENGLISH);

@@ -1,7 +1,7 @@
 /**
  * The trie's unchecked operations, for this package's own modules (the replica's trie map and the versioned trie),
  * which call them on data they own or have already checked: `trie.ts` fills this table as it loads, from functions and
- * private fields its public API does not expose. Internal: not exported from the package.
+ * private fields its public API does not expose, then freezes it. Internal: not exported from the package.
  */
 import type { Result, Value } from "@kd5ujc/dilf4s-core";
 
@@ -41,5 +41,5 @@ export interface TrieInternals {
   defaultMode: KeyMode;
 }
 
-/** Filled by `trie.ts` when it loads, before any of this package's functions can run. */
+/** Filled by `trie.ts` when it loads, before any of this package's functions can run, and frozen then. */
 export const TRIE = {} as TrieInternals;

@@ -70,6 +70,16 @@ lines = [
     "",
     "export const FULL_ROUNDS = 8;",
     "",
+    "/** `p` and every table in it frozen, when this module loads: a module's constants, which every caller shares. */",
+    "const frozen = (p: PoseidonParams): PoseidonParams =>",
+    "  Object.freeze({",
+    "    ...p,",
+    "    constants: Object.freeze(p.constants),",
+    "    sparse: Object.freeze(p.sparse),",
+    "    mds: Object.freeze(p.mds.map((row) => Object.freeze(row))),",
+    "    preSparse: Object.freeze(p.preSparse.map((row) => Object.freeze(row))),",
+    "  });",
+    "",
 ]
 
 
@@ -79,7 +89,7 @@ def arr(xs, indent):
 
 
 for (t, rp, c, s, mds, pre) in widths:
-    lines.append(f"export const WIDTH{t}: PoseidonParams = {{")
+    lines.append(f"export const WIDTH{t}: PoseidonParams = frozen({{")
     lines.append(f"  t: {t},")
     lines.append(f"  partialRounds: {rp},")
     lines.append(f"  constants: {arr(c, 2)},")
@@ -92,7 +102,7 @@ for (t, rp, c, s, mds, pre) in widths:
     for r in pre:
         lines.append(f"    {arr(r, 4)},")
     lines.append("  ],")
-    lines.append("};")
+    lines.append("});")
     lines.append("")
 
 open(out_path, "w", encoding="utf-8").write("\n".join(lines))

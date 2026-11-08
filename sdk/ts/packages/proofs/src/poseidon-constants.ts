@@ -14,7 +14,17 @@ export interface PoseidonParams {
 
 export const FULL_ROUNDS = 8;
 
-export const WIDTH2: PoseidonParams = {
+/** `p` and every table in it frozen, when this module loads: a module's constants, which every caller shares. */
+const frozen = (p: PoseidonParams): PoseidonParams =>
+  Object.freeze({
+    ...p,
+    constants: Object.freeze(p.constants),
+    sparse: Object.freeze(p.sparse),
+    mds: Object.freeze(p.mds.map((row) => Object.freeze(row))),
+    preSparse: Object.freeze(p.preSparse.map((row) => Object.freeze(row))),
+  });
+
+export const WIDTH2: PoseidonParams = frozen({
   t: 2,
   partialRounds: 56,
   constants: [
@@ -281,9 +291,9 @@ export const WIDTH2: PoseidonParams = {
       7527312705817953459920138003796377030820958175883853967715612380516078993222n,
     ],
   ],
-};
+});
 
-export const WIDTH3: PoseidonParams = {
+export const WIDTH3: PoseidonParams = frozen({
   t: 3,
   partialRounds: 57,
   constants: [
@@ -690,9 +700,9 @@ export const WIDTH3: PoseidonParams = {
       15428267695360211473228142908425586842453705255249103144570280918777118090173n,
     ],
   ],
-};
+});
 
-export const WIDTH4: PoseidonParams = {
+export const WIDTH4: PoseidonParams = frozen({
   t: 4,
   partialRounds: 56,
   constants: [
@@ -1231,9 +1241,9 @@ export const WIDTH4: PoseidonParams = {
       10936049757440664316304266313740303505981633272820388610540392640560764966725n,
     ],
   ],
-};
+});
 
-export const WIDTH5: PoseidonParams = {
+export const WIDTH5: PoseidonParams = frozen({
   t: 5,
   partialRounds: 60,
   constants: [
@@ -1954,4 +1964,4 @@ export const WIDTH5: PoseidonParams = {
       10707592455436577386278848783580995469308889465285933509232651911896187170727n,
     ],
   ],
-};
+});

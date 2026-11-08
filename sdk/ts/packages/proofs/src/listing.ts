@@ -70,6 +70,8 @@ class Path {
     this.#length = n;
   }
 }
+Object.freeze(Path);
+Object.freeze(Path.prototype);
 
 /** Where a path of `depth` bits stands against `bounds`, after `s`. */
 function extendBoth(from: B.Side, until: B.Side, depth: number, s: B.Bits, bounds: Bounds, work: Work): readonly [B.Side, B.Side] {

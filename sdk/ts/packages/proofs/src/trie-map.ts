@@ -227,3 +227,5 @@ export class TrieMap<P> {
     return top === undefined ? err({ kind: "InvalidNode", reason: "no root" }) : ok(new TrieMap(hashing, mode, top, keys.length));
   }
 }
+Object.freeze(TrieMap);
+Object.freeze(TrieMap.prototype);

@@ -135,6 +135,8 @@ export class StateKey {
     return this.value;
   }
 }
+Object.freeze(StateKey);
+Object.freeze(StateKey.prototype);
 
 /** {@link StateKey.parse} of a string. */
 function parseKey(s: string): Result<StateKey, StateKeyError> {
@@ -210,6 +212,8 @@ export class StateNamespace {
     return this.value;
   }
 }
+Object.freeze(StateNamespace);
+Object.freeze(StateNamespace.prototype);
 
 // ------------------------------------------------------------------ version keys
 
@@ -415,11 +419,16 @@ export const MAX_CHUNK_ENTRIES = models.limits.VERSIONED_MAX_CHUNK_ENTRIES;
 /** The largest snapshot chunk, refused before it is decoded. */
 export const MAX_CHUNK_BYTES = models.limits.VERSIONED_MAX_CHUNK_BYTES;
 
-/** The top trie's slots (copies: the module keeps its own, which no caller can change). */
-export const VERSION_SLOT = Uint8Array.of(0x00);
-export const STATE_SLOT = Uint8Array.of(0x01);
-export const HISTORY_SLOT = Uint8Array.of(0x02);
-const SLOTS = { version: Uint8Array.of(0x00), state: Uint8Array.of(0x01), history: Uint8Array.of(0x02) } as const;
+/**
+ * The top trie's slots: each the one byte of its key, as a number (as Rust's `u8`s), since a module's bytes would be
+ * shared with every caller and no typed array of any elements can be frozen. The module keeps its own keys.
+ */
+export const VERSION_SLOT = 0x00;
+/** The state root's slot. */
+export const STATE_SLOT = 0x01;
+/** The history root's slot. */
+export const HISTORY_SLOT = 0x02;
+const SLOTS = Object.freeze({ version: Uint8Array.of(VERSION_SLOT), state: Uint8Array.of(STATE_SLOT), history: Uint8Array.of(HISTORY_SLOT) });
 
 const slotName = (slot: Uint8Array): string => toHexOf(slot);
 
@@ -654,6 +663,8 @@ export class VerifiedState {
     return keyed(`range [${f.value.preview().short()}, ${u.value?.preview().short() ?? ""})`, TRIE.range(this.#proof, f.value.bytes(), u.value?.bytes()));
   }
 }
+Object.freeze(VerifiedState);
+Object.freeze(VerifiedState.prototype);
 
 function keyed(what: string, listing: trie.Listing): R<readonly StateEntry[]> {
   if (listing.kind === "notCovered") return notCovered(what);
@@ -1208,6 +1219,8 @@ export class VersionedTrie<V> {
     return ok({ version: found.version, stateRoot: answer });
   }
 }
+Object.freeze(VersionedTrie);
+Object.freeze(VersionedTrie.prototype);
 
 // ------------------------------------------------------------------ snapshots (section 7)
 
@@ -1407,6 +1420,8 @@ export class SnapshotReader<V> {
     return ok(Object.freeze({ head: this.trusted, entries: this.stateChunks.flat(), history: this.historyChunks.flat() }));
   }
 }
+Object.freeze(SnapshotReader);
+Object.freeze(SnapshotReader.prototype);
 
 // ------------------------------------------------------------------ replicas
 
@@ -1634,6 +1649,8 @@ export class Replica<V> {
     replicaOf = (profile, head, state, versions) => new Replica(TOKEN, profile, head, state, versions);
   }
 }
+Object.freeze(Replica);
+Object.freeze(Replica.prototype);
 
 /** {@link Replica.fromSnapshot} of checked, owned arguments. */
 function fromSnapshot<V>(profile: VersionedTrie<V>, trusted: Head<V>, snapshot: MeasuredSnapshot<V>): C<Replica<V>> {
