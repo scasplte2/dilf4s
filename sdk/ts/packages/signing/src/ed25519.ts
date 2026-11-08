@@ -1,8 +1,8 @@
 /** Ed25519 (`signing.md` 1.1) and Ed25519-BIP32 signing (1.2). */
-import { err, ok, type Result } from "@kd5ujc/dilf4s-core";
+import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
 import { ed25519 as noble } from "@noble/curves/ed25519.js";
 
-import { invalidKey, type CryptoError } from "./errors.js";
+import { invalidKey } from "./errors.js";
 import type { Signature, SigningKey, VerifyingKey } from "./keys.js";
 import { equal, leToBig } from "./internal/bytes.js";
 import {
@@ -17,12 +17,17 @@ import {
   scalarBytes,
 } from "./internal/edwards.js";
 import {
+  checkedPublicKey,
+  checkedSign,
+  checkedVerify,
   seedIsKey,
   signatureOf,
   signingKeyOf,
   sized,
+  verifiedMessage,
   verifyBytesWith,
   verifyingKeyOf,
+  type CryptoRefusal,
   type SchemeCodec,
   type SeedDerivation,
   type Verifier,
@@ -33,7 +38,7 @@ const SIG = 64;
 /**
  * ZIP-215: `A` and `R` decode with non-canonical `y` and negative zero accepted, `S < L`, and the cofactored equation
  * `[8]([S]B - R - [k]A) = 0` with `k` over the encodings as given. This is noble's `zip215: true` rule, which the tests
- * pin case by case.
+ * pin case by case. Over this package's own plain bytes, unchecked.
  */
 export function verifyZip215(key: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean {
   return key.length === 32 && signature.length === SIG && noble.verify(signature, message, key, { zip215: true });
@@ -42,7 +47,7 @@ export function verifyZip215(key: Uint8Array, message: Uint8Array, signature: Ui
 /**
  * libsodium's `crypto_sign_ed25519_verify_detached`: `S < L`; `A` with canonical `y` and not of small order; and the
  * cofactorless `[S]B - [k]A` encodes exactly to `R` and is not of small order. noble has no such rule, so it is built
- * on `Point`.
+ * on `Point`. Over this package's own plain bytes, unchecked.
  */
 export function verifyLibsodiumRule(key: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean {
   if (key.length !== 32 || signature.length !== SIG || !canonicalY(key)) return false;
@@ -57,11 +62,12 @@ export function verifyLibsodiumRule(key: Uint8Array, message: Uint8Array, signat
 }
 
 export interface Ed25519Scheme extends SchemeCodec<"Ed25519">, Verifier<"Ed25519">, SeedDerivation<"Ed25519"> {
-  /** RFC 8032 section 5.1.6 (pure Ed25519). */
-  readonly sign: (key: SigningKey<"Ed25519">, message: Uint8Array) => Signature<"Ed25519">;
+  /** RFC 8032 section 5.1.6 (pure Ed25519). A key that is not an Ed25519 `SigningKey`, or a message that is not bytes, is a `TypeMismatch`. */
+  readonly sign: (key: SigningKey<"Ed25519">, message: Uint8Array) => Result<Signature<"Ed25519">, TypeMismatch>;
   /** libsodium's rule (Cardano KES leaves); `verify` is ZIP-215. */
-  readonly verifyLibsodium: (key: VerifyingKey<"Ed25519">, message: Uint8Array, signature: Signature<"Ed25519">) => boolean;
-  readonly verifyLibsodiumBytes: (key: Uint8Array, message: Uint8Array, signature: Uint8Array) => Result<boolean, CryptoError>;
+  readonly verifyLibsodium: (key: VerifyingKey<"Ed25519">, message: Uint8Array, signature: Signature<"Ed25519">) => Result<boolean, TypeMismatch>;
+  /** libsodium's rule over raw encodings, decoded as `verifyBytes` decodes them. */
+  readonly verifyLibsodiumBytes: (key: Uint8Array, message: Uint8Array, signature: Uint8Array) => Result<boolean, CryptoRefusal>;
 }
 
 const edCodec: SchemeCodec<"Ed25519"> = {
@@ -74,29 +80,24 @@ const edCodec: SchemeCodec<"Ed25519"> = {
   verifyingKey: (bytes) => {
     const b = sized("Ed25519 verifying key", 32, bytes);
     if (!b.ok) return b;
-    return decodeZip215(bytes) === undefined ? err(invalidKey("Ed25519 verifying key is not a curve point")) : ok(verifyingKeyOf("Ed25519", bytes));
+    return decodeZip215(b.value) === undefined ? err(invalidKey("Ed25519 verifying key is not a curve point")) : ok(verifyingKeyOf("Ed25519", b.value));
   },
   // only the length: a non-canonical S, or an R that does not decode, verifies false
   signature: (bytes) => {
     const b = sized("Ed25519 signature", SIG, bytes);
     return b.ok ? ok(signatureOf("Ed25519", b.value)) : b;
   },
-  publicKey: (key) => verifyingKeyOf("Ed25519", noble.getPublicKey(key.bytes)),
+  publicKey: checkedPublicKey("Ed25519", (sk) => noble.getPublicKey(sk)),
 };
-
-const zip215 = (key: VerifyingKey<"Ed25519">, message: Uint8Array, signature: Signature<"Ed25519">): boolean =>
-  verifyZip215(key.bytes, message, signature.bytes);
-const libsodium = (key: VerifyingKey<"Ed25519">, message: Uint8Array, signature: Signature<"Ed25519">): boolean =>
-  verifyLibsodiumRule(key.bytes, message, signature.bytes);
 
 export const ed25519: Ed25519Scheme = Object.freeze({
   ...edCodec,
   ...seedIsKey(edCodec),
-  sign: (key: SigningKey<"Ed25519">, message: Uint8Array) => signatureOf("Ed25519", noble.sign(message, key.bytes)),
-  verify: zip215,
-  verifyBytes: verifyBytesWith(edCodec, zip215),
-  verifyLibsodium: libsodium,
-  verifyLibsodiumBytes: verifyBytesWith(edCodec, libsodium),
+  sign: checkedSign("Ed25519", (sk, message) => noble.sign(message, sk)),
+  verify: checkedVerify("Ed25519", verifiedMessage, verifyZip215),
+  verifyBytes: verifyBytesWith(edCodec, verifiedMessage, verifyZip215),
+  verifyLibsodium: checkedVerify("Ed25519", verifiedMessage, verifyLibsodiumRule),
+  verifyLibsodiumBytes: verifyBytesWith(edCodec, verifiedMessage, verifyLibsodiumRule),
 });
 
 // ------------------------------------------------------------------ Ed25519-BIP32 (Icarus, CIP-0003)
@@ -121,7 +122,8 @@ export function signExtended(kL: Uint8Array, kR: Uint8Array, message: Uint8Array
 }
 
 export interface Ed25519Bip32Scheme extends SchemeCodec<"Ed25519-BIP32">, Verifier<"Ed25519-BIP32"> {
-  readonly sign: (key: SigningKey<"Ed25519-BIP32">, message: Uint8Array) => Signature<"Ed25519-BIP32">;
+  /** A key that is not an Ed25519-BIP32 `SigningKey`, or a message that is not bytes, is a `TypeMismatch`. */
+  readonly sign: (key: SigningKey<"Ed25519-BIP32">, message: Uint8Array) => Result<Signature<"Ed25519-BIP32">, TypeMismatch>;
 }
 
 const bip32Codec: SchemeCodec<"Ed25519-BIP32"> = {
@@ -129,30 +131,23 @@ const bip32Codec: SchemeCodec<"Ed25519-BIP32"> = {
   signingKey: (bytes) => {
     const b = sized("Ed25519-BIP32 signing key", 64, bytes);
     if (!b.ok) return b;
-    return validKL(bytes.subarray(0, 32))
-      ? ok(signingKeyOf("Ed25519-BIP32", bytes))
-      : err(invalidKey("kL must be a multiple of 8 with bit 255 clear"));
+    return validKL(b.value.subarray(0, 32)) ? ok(signingKeyOf("Ed25519-BIP32", b.value)) : err(invalidKey("kL must be a multiple of 8 with bit 255 clear"));
   },
   verifyingKey: (bytes) => {
-    const k = edCodec.verifyingKey(bytes);
-    return k.ok ? ok(verifyingKeyOf("Ed25519-BIP32", bytes)) : k;
+    const b = sized("Ed25519 verifying key", 32, bytes);
+    if (!b.ok) return b;
+    return decodeZip215(b.value) === undefined ? err(invalidKey("Ed25519 verifying key is not a curve point")) : ok(verifyingKeyOf("Ed25519-BIP32", b.value));
   },
   signature: (bytes) => {
-    const s = edCodec.signature(bytes);
-    return s.ok ? ok(signatureOf("Ed25519-BIP32", bytes)) : s;
+    const b = sized("Ed25519 signature", SIG, bytes);
+    return b.ok ? ok(signatureOf("Ed25519-BIP32", b.value)) : b;
   },
-  publicKey: (key) => verifyingKeyOf("Ed25519-BIP32", extendedPublicKey(key.bytes.subarray(0, 32))),
+  publicKey: checkedPublicKey("Ed25519-BIP32", (sk) => extendedPublicKey(sk.subarray(0, 32))),
 };
-
-const bip32Verify = (key: VerifyingKey<"Ed25519-BIP32">, message: Uint8Array, signature: Signature<"Ed25519-BIP32">): boolean =>
-  verifyZip215(key.bytes, message, signature.bytes);
 
 export const ed25519Bip32: Ed25519Bip32Scheme = Object.freeze({
   ...bip32Codec,
-  sign: (key: SigningKey<"Ed25519-BIP32">, message: Uint8Array) => {
-    const b = key.bytes;
-    return signatureOf("Ed25519-BIP32", signExtended(b.subarray(0, 32), b.subarray(32, 64), message));
-  },
-  verify: bip32Verify,
-  verifyBytes: verifyBytesWith(bip32Codec, bip32Verify),
+  sign: checkedSign("Ed25519-BIP32", (sk, message) => signExtended(sk.subarray(0, 32), sk.subarray(32, 64), message)),
+  verify: checkedVerify("Ed25519-BIP32", verifiedMessage, verifyZip215),
+  verifyBytes: verifyBytesWith(bip32Codec, verifiedMessage, verifyZip215),
 });

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { type BoolValue, type BytesValue, cbor, type codec, describeFailure, fromHex, type IntValue, json, type Result, Value } from "@kd5ujc/dilf4s-core";
+import { type BoolValue, type BytesValue, cbor, type codec, describeFailure, fromHex, type IntValue, json, type Result, Value, toHex } from "@kd5ujc/dilf4s-core";
 
 type Codec<T> = codec.Codec<T>;
 
@@ -43,3 +43,6 @@ export const bytes = (hex: string): Uint8Array => expectOk(fromHex(hex), "hex");
 
 /** The canonical value of hex CBOR. */
 export const valueOf = (hex: string): Value => expectOk(cbor.decode(bytes(hex)), "canonical CBOR");
+
+/** Lowercase hex of bytes, or of a success's bytes; a failure (or what `toHex` refuses) fails the test. */
+export const hexOf = (b: Uint8Array | Result<Uint8Array, unknown>): string => expectOk(toHex(b instanceof Uint8Array ? b : expectOk(b, "bytes")), "hex");

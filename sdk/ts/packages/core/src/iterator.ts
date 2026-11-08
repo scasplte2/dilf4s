@@ -1,8 +1,21 @@
 /**
  * Reading a caller's iterable as `for...of` does, where what `for...of` throws a `TypeError` for (an iterator method,
  * iterator, `next` or result not of the protocol's type) is found instead, to be refused as a typed error: library code
- * does not throw. Caller code it runs (a getter, an iterator's methods) may throw. Internal to this package.
+ * does not throw. Caller code it runs (a getter, an iterator's methods) may throw, and that exception propagates, the
+ * iterator closed first (`docs/specs/canonical-encoding.md` §1, "Caller code"). Internal to this package.
  */
+
+import { isArrayGuarded, isRevokedProxy, readGuarded, REVOKED } from "./guard.js";
+
+/** The greatest length an array can have: `2^32 - 1`. */
+const MAX_ARRAY_LENGTH = 2 ** 32 - 1;
+
+/**
+ * Whether `n`, read once from what a caller passes as an array, is a length an array can have: an integer from 0 to
+ * `2^32 - 1`. A real array's always is; a Proxy of one can report anything (`Infinity`, a fraction, a symbol), and a
+ * loop up to such a length would never end, or would compare a symbol and throw.
+ */
+export const isArrayLength = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= MAX_ARRAY_LENGTH;
 
 /** An iterator and its `next`, read once when it is opened, as `for...of` reads it. */
 export interface Reader<T> {
@@ -19,13 +32,11 @@ export const NOT_A_RESULT = "an iterator's next() gave a result that is not an o
 
 /** Whether `r` may be read as an iterator or an iterator result: an object, a function included, as `for...of` requires. */
 export function isResult(r: unknown): r is { readonly done?: unknown; readonly value?: unknown } {
-  return (typeof r === "object" && r !== null) || typeof r === "function";
+  // a revoked Proxy is an object every read of which throws: it is no object to read
+  return ((typeof r === "object" && r !== null) || typeof r === "function") && !isRevokedProxy(r);
 }
 
 const NO_ARGUMENTS: readonly unknown[] = Object.freeze([]);
-
-/** `Function.prototype.bind`, read once when this module loads: a function's own `bind` may be the caller's. */
-const bind = Reflect.get(Function.prototype, "bind") as (this: unknown, self: unknown) => () => unknown;
 
 /**
  * `iterable`'s iterator, opened as `for...of` opens it (its `Symbol.iterator` method read and called once, then the
@@ -38,13 +49,35 @@ export function open<T>(iterable: object): Reader<T> | undefined {
 
 /** {@link open}, given the iterator method already read from `iterable` (once, as `for...of` reads it). */
 export function openWith<T>(iterable: object, method: unknown): Reader<T> | undefined {
-  if (typeof method !== "function") return undefined;
+  // a revoked Proxy of a function is a function no code can call, and an iterable revoked while its method was read
+  // (by its own trap) is one no iterator can read: each refused as for...of's TypeError would be
+  if (typeof method !== "function" || isRevokedProxy(method) || isRevokedProxy(iterable)) return undefined;
   const iterator: unknown = Reflect.apply(method, iterable, NO_ARGUMENTS);
   if (!isResult(iterator)) return undefined;
   const next: unknown = Reflect.get(iterator, "next");
-  // bound once, through Function.prototype's own bind (never the function's own `bind` or `call`, which may be the
-  // caller's), so each step is one direct call
-  return typeof next === "function" ? { iterator: iterator as Iterator<T>, next: Reflect.apply(bind, next, [iterator]) } : undefined;
+  if (typeof next !== "function" || isRevokedProxy(next)) return undefined;
+  // each step one Reflect.apply: never the function's own `call` or `bind` (which may be the caller's), and never
+  // Function.prototype.bind, which reads the function's length and name (a Proxy's traps, which may revoke it). A
+  // `next` revoked since (by caller code) gives no result, which a reader refuses as any result not an object
+  return { iterator: iterator as Iterator<T>, next: (): unknown => (isRevokedProxy(next) ? undefined : (Reflect.apply(next, iterator, NO_ARGUMENTS) as unknown)) };
+}
+
+/** An iterator result, read as `for...of` reads it: `done` (any truthy value ends it), then `value` while not done. */
+export type Step<T> = { readonly done: true } | { readonly done: false; readonly value: T };
+
+const DONE: Step<never> = Object.freeze({ done: true });
+
+/**
+ * `r`, an iterator's result, read as `for...of` reads it (`done` once, then `value` once unless done), or `undefined`
+ * where `for...of` would throw a `TypeError`: a result that is not an object, or one its own `done` getter revoked (a
+ * Proxy whose trap revokes it), whose `value` no code can read.
+ */
+export function readStep(r: unknown): Step<unknown> | undefined {
+  if (!isResult(r)) return undefined;
+  const done: unknown = Reflect.get(r, "done");
+  if (done) return DONE;
+  const value: unknown = readGuarded(r, "value");
+  return value === REVOKED ? undefined : { done: false, value };
 }
 
 /** The intrinsic array iterator: `Array.prototype[Symbol.iterator]`, and its iterators' `next`, as this module loaded. */
@@ -64,7 +97,7 @@ const ARRAY_NEXT: unknown = Reflect.get(ARRAY_ITERATOR, "next");
  * through the iterator. The array iterator's internal steps (reading `length`, then the index) are the language's own.
  */
 export function walksAsArray(iterable: object, method: unknown): iterable is readonly unknown[] {
-  return method === ARRAY_VALUES && Array.isArray(iterable) && Reflect.get(ARRAY_ITERATOR, "next") === ARRAY_NEXT;
+  return method === ARRAY_VALUES && isArrayGuarded(iterable) && Reflect.get(ARRAY_ITERATOR, "next") === ARRAY_NEXT;
 }
 
 /**
@@ -73,6 +106,8 @@ export function walksAsArray(iterable: object, method: unknown): iterable is rea
  * object), this does nothing instead; an error `return` itself throws propagates.
  */
 export function close(r: Reader<unknown>): void {
+  // an iterator, or its `return`, revoked by caller code meanwhile has nothing to close
+  if (isRevokedProxy(r.iterator)) return;
   const ret: unknown = Reflect.get(r.iterator, "return");
-  if (typeof ret === "function") Reflect.apply(ret, r.iterator, NO_ARGUMENTS);
+  if (typeof ret === "function" && !isRevokedProxy(ret)) Reflect.apply(ret, r.iterator, NO_ARGUMENTS);
 }

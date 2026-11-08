@@ -2,26 +2,8 @@ import { inspect as nodeInspect } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  cbor,
-  DEBUG_BUDGET,
-  DEBUG_DEPTH,
-  DomainTag,
-  equals,
-  fromHex,
-  inspect,
-  json,
-  MAX_DEPTH,
-  MAX_INTEGER_BITS,
-  MAX_WEIGHT,
-  models,
-  TaggedHash,
-  toHex,
-  Value,
-  valueCommitment,
-  valueCommitmentWithin,
-} from "../src/index.js";
-import { boolValue, bytesValue, expectOk, int, loadVectors, readVectors } from "./vectors.js";
+import { cbor, DEBUG_BUDGET, DEBUG_DEPTH, DomainTag, equals, fromHex, inspect, json, MAX_DEPTH, MAX_INTEGER_BITS, MAX_WEIGHT, models, TaggedHash, Value, valueCommitment, valueCommitmentWithin } from "../src/index.js";
+import { boolValue, bytesValue, expectOk, int, loadVectors, readVectors, hexOf } from "./vectors.js";
 
 const bytes = (hex: string): Uint8Array => expectOk(fromHex(hex), "hex");
 const text = (s: string): Value => expectOk(Value.text(s), "text");
@@ -152,9 +134,9 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
     for (const v of vectorValues()) {
       const full = expectOk(cbor.encode(v), "encodes");
       const n = full.length;
-      expect(BigInt(n) >= v.weight, `${toHex(full)}: ${n.toString()} bytes under weight ${v.weight.toString()}`).toBe(true);
+      expect(BigInt(n) >= v.weight, `${hexOf(full)}: ${n.toString()} bytes under weight ${v.weight.toString()}`).toBe(true);
       const within = expectOk(cbor.encodeWithin(v, n), "at the exact length");
-      expect(toHex(within)).toBe(toHex(full));
+      expect(hexOf(within)).toBe(hexOf(full));
       expect(within.buffer.byteLength, "no more than the limit is held").toBeLessThanOrEqual(n);
       expect(expectOk(cbor.encodedLengthWithin(v, n), "length")).toBe(n);
       const over = cbor.encodeWithin(v, n - 1);
@@ -192,7 +174,7 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
     expect(cbor.MAX_ENCODED_BYTES).toBe(2 ** 31 - 9);
     // and so is a content hash's, streamed or not: refused from the weight before anything is hashed
     const tag = expectOk(DomainTag.of("dilf4s/test/v1"), "tag");
-    expect(TaggedHash.of("SHA-256", tag).contentWithin(saturated, Infinity)).toEqual({ ok: false, error: { kind: "TooLarge", limit: cbor.MAX_ENCODED_BYTES } });
+    expect(expectOk(TaggedHash.of("SHA-256", tag), "tagged").contentWithin(saturated, Infinity)).toEqual({ ok: false, error: { kind: "TooLarge", limit: cbor.MAX_ENCODED_BYTES } });
     expect(valueCommitmentWithin(saturated, 100)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 100 } });
   });
 
@@ -204,11 +186,11 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
     const ms = elapsed(() => {
       expect(cbor.encode(dag)).toEqual(refused);
       expect(valueCommitment(dag)).toEqual(refused);
-      expect(TaggedHash.of("SHA-256", tag).content(dag)).toEqual(refused);
+      expect(expectOk(TaggedHash.of("SHA-256", tag), "a tagged hash").content(dag)).toEqual(refused);
     });
     expect(ms).toBeLessThan(HANG);
     // and a small value encodes as before
-    expect(toHex(expectOk(cbor.encode(text("a")), "encodes"))).toBe("6161");
+    expect(hexOf(expectOk(cbor.encode(text("a")), "encodes"))).toBe("6161");
   });
 
   it("reads an odd limit as a whole number of bytes, never as unbounded", () => {
@@ -238,14 +220,14 @@ describe("budgeted encoding", { timeout: 60_000 }, () => {
       const hex = m.toString(16);
       const body = hex.length % 2 === 0 ? hex : `0${hex}`;
       const length = expectOk(cbor.encodeWithin(bytesValue(bytes(body)), Number.MAX_SAFE_INTEGER), "bytes");
-      return (negative ? "c3" : "c2") + toHex(length);
+      return (negative ? "c3" : "c2") + hexOf(length);
     };
     for (let e = 0n; e <= 4096n; e += e < 80n ? 1n : 61n) {
       for (const n of [2n ** e - 1n, 2n ** e, 2n ** e + 1n, -(2n ** e) + 1n, -(2n ** e), -(2n ** e) - 1n]) {
         const v = int(n);
-        const encoded = toHex(expectOk(cbor.encode(v), "encodes"));
+        const encoded = hexOf(expectOk(cbor.encode(v), "encodes"));
         expect(encoded, `±2^${e.toString()}`).toBe(reference(n));
-        expect(toHex(expectOk(cbor.encodeWithin(v, encoded.length / 2), "budgeted"))).toBe(encoded);
+        expect(hexOf(expectOk(cbor.encodeWithin(v, encoded.length / 2), "budgeted"))).toBe(encoded);
         const back = expectOk(cbor.decode(expectOk(cbor.encode(v), "encodes")), "decodes");
         expect(back.kind === "int" && back.value === n, "round trip").toBe(true);
       }
@@ -289,7 +271,7 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
       const r = json.renderWithin(dag, json.MAX_RENDER_BYTES);
       expect(!r.ok && r.error.kind, "the default limit holds too").toBe("TooLarge");
       expect(valueCommitmentWithin(dag, 1 << 20)).toEqual({ ok: false, error: { kind: "TooLarge", limit: 1 << 20 } });
-      expect(TaggedHash.of("SHA-256", tag).contentWithin(dag, 1 << 20).ok).toBe(false);
+      expect(expectOk(TaggedHash.of("SHA-256", tag), "a tagged hash").contentWithin(dag, 1 << 20).ok).toBe(false);
       // a doubling under the weight bound but over in JSON (each 2^64 - 1 weighs 2 and takes 20 digits)
       const ints = doubled(int(2n ** 64n - 1n), 16);
       expect(ints.weight < 1n << 20n, "passes the weight check").toBe(true);
@@ -325,14 +307,14 @@ describe("rendering and commitments", { timeout: 60_000 }, () => {
 
   it("a budgeted commitment is the commitment, within its limit, tag included", () => {
     const tag = expectOk(DomainTag.of("dilf4s/test/v1"), "tag");
-    const h = TaggedHash.of("SHA-256", tag);
+    const h = expectOk(TaggedHash.of("SHA-256", tag), "a tagged hash");
     for (const v of [text("a"), bytesValue(Uint8Array.of(1, 2, 3)), array([int(1n), Value.null]), bytesValue(new Uint8Array(0))]) {
       const c = expectOk(valueCommitment(v), "encodes");
-      expect(toHex(expectOk(valueCommitmentWithin(v, c.length), "fits"))).toBe(toHex(c));
+      expect(hexOf(expectOk(valueCommitmentWithin(v, c.length), "fits"))).toBe(hexOf(c));
       const over = valueCommitmentWithin(v, c.length - 1);
       expect(over, "the caller's limit, tag included").toEqual({ ok: false, error: { kind: "TooLarge", limit: c.length - 1 } });
       const n = expectOk(cbor.encode(v), "encodes").length;
-      expect(toHex(expectOk(h.contentWithin(v, n), "content"))).toBe(toHex(expectOk(h.content(v), "encodes")));
+      expect(hexOf(expectOk(h.contentWithin(v, n), "content"))).toBe(hexOf(expectOk(h.content(v), "encodes")));
       expect(h.contentWithin(v, n - 1).ok).toBe(false);
     }
   });
@@ -344,7 +326,7 @@ describe("equality", { timeout: 60_000 }, () => {
     for (const v of values) expect(equals(v, expectOk(cbor.decode(expectOk(cbor.encode(v), "encodes")), "copy")), inspect(v)).toBe(true);
     for (const [i, a] of values.entries()) {
       const b = values[(i * 7919 + 13) % values.length] ?? a;
-      expect(equals(a, b), `${inspect(a)} = ${inspect(b)}`).toBe(toHex(expectOk(cbor.encode(a), "encodes")) === toHex(expectOk(cbor.encode(b), "encodes")));
+      expect(equals(a, b), `${inspect(a)} = ${inspect(b)}`).toBe(hexOf(expectOk(cbor.encode(a), "encodes")) === hexOf(expectOk(cbor.encode(b), "encodes")));
     }
     expect(Value.equals(array([text("x"), int(1n)]), array([text("x"), int(1n)]))).toBe(true);
     expect(equals(array([text("x"), int(1n)]), array([text("x"), int(2n)]))).toBe(false);

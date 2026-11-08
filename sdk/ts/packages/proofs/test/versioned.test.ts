@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { cbor, models, toHex, Value } from "@kd5ujc/dilf4s-core";
+import { cbor, models, Value, type TypeMismatch } from "@kd5ujc/dilf4s-core";
 
 import { versioned } from "../src/index.js";
-import { bytes, bytesValue, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
+import { bytes, bytesValue, expectErr, expectOk, int, loadVectors, valueOf, hexOf } from "./vectors.js";
 
 const vectors = loadVectors("versioned_trie_v1.json", models.versionedTrieVectors.VersionedTrieVectors);
 const versionKey = expectOk(versioned.VersionKey.unsignedLong(Number(vectors.width)), "version key");
@@ -14,43 +14,45 @@ const ns = (s: string): versioned.StateNamespace => expectOk(versioned.StateName
 const proofOf = (hex: string): versioned.VersionedTrieProof<bigint> => expectOk(vt.decodeProof(valueOf(hex)), "proof decodes");
 const finalHead = expectOk(vt.decodeHead(valueOf(vectors.head.cbor)), "head decodes");
 
-const entriesHex = (es: readonly versioned.StateEntry[]): unknown => es.map(([k, h]) => [k.value, toHex(h)]);
+const entriesHex = (es: readonly versioned.StateEntry[]): unknown => es.map(([k, h]) => [k.value, hexOf(h)]);
 
 /** A state-key outcome as the vectors record it: "accepted", or the kind and its normative segment. */
-function keyOutcome(r: { readonly ok: true } | { readonly ok: false; readonly error: versioned.StateKeyError }): models.versionedTrieVectors.VtStateKeyOutcome {
+function keyOutcome(r: { readonly ok: true } | { readonly ok: false; readonly error: versioned.StateKeyError | TypeMismatch }): models.versionedTrieVectors.VtStateKeyOutcome {
   if (r.ok) return "accepted";
   const e = r.error;
+  // a vector's key is text, so its parse is never a TypeMismatch
+  if (e.kind === "TypeMismatch") throw new Error(e.reason);
   return e.kind === "InvalidSegment" || e.kind === "SegmentTooLong" ? { kind: e.kind, segment: BigInt(e.segment) } : { kind: e.kind };
 }
 
 describe("versioned_trie_v1.json", () => {
   it("the empty state root", () => {
-    expect(toHex(vt.hashing.empty)).toBe(vectors.emptyStateRoot);
+    expect(hexOf(vt.hashing.empty)).toBe(vectors.emptyStateRoot);
   });
 
   it("the head KAT: the head's wire form and its top-trie root", () => {
     const h = vectors.head;
     expect(finalHead.version).toBe(h.version);
-    expect(toHex(expectOk(versionKey.encode(h.version), "vkey"))).toBe(h.vkey);
-    expect([toHex(finalHead.stateRoot), toHex(finalHead.historyRoot)]).toEqual([h.stateRoot, h.historyRoot]);
-    expect(toHex(expectOk(cbor.encode(expectOk(vt.encodeHead(finalHead), "encodes")), "encodes"))).toBe(h.cbor);
-    expect(toHex(expectOk(vt.root(finalHead), "root"))).toBe(h.root);
+    expect(hexOf(expectOk(versionKey.encode(h.version), "vkey"))).toBe(h.vkey);
+    expect([hexOf(finalHead.stateRoot), hexOf(finalHead.historyRoot)]).toEqual([h.stateRoot, h.historyRoot]);
+    expect(hexOf(expectOk(cbor.encode(expectOk(vt.encodeHead(finalHead), "encodes")), "encodes"))).toBe(h.cbor);
+    expect(hexOf(expectOk(vt.root(finalHead), "root"))).toBe(h.root);
     expect(h.root).toBe(vectors.root);
   });
 
   it("every commit's delta replays through a replica to its roots", () => {
-    let replica = versioned.Replica.empty(vt);
+    let replica = expectOk(versioned.Replica.empty(vt), "Replica.empty");
     for (const c of vectors.commits) {
       const delta = expectOk(vt.decodeDelta(valueOf(c.delta)), `delta ${c.version.toString()}`);
-      expect(delta.upserts.map(([k, v]) => [k.value, toHex(expectOk(cbor.encode(v), "encodes"))])).toEqual(c.upserts.map((u) => [u.key, u.value]));
+      expect(delta.upserts.map(([k, v]) => [k.value, hexOf(expectOk(cbor.encode(v), "encodes"))])).toEqual(c.upserts.map((u) => [u.key, u.value]));
       expect(delta.removes.map((k) => k.value)).toEqual(c.removes);
       replica = expectOk(replica.applyDelta(delta), `applies ${c.version.toString()}`);
       expect(replica.head?.version).toBe(c.version);
-      expect(toHex(replica.head?.stateRoot ?? new Uint8Array(0))).toBe(c.stateRoot);
-      expect(toHex(replica.head?.historyRoot ?? new Uint8Array(0))).toBe(c.historyRoot);
-      expect(toHex(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(c.root);
+      expect(hexOf(replica.head?.stateRoot ?? new Uint8Array(0))).toBe(c.stateRoot);
+      expect(hexOf(replica.head?.historyRoot ?? new Uint8Array(0))).toBe(c.historyRoot);
+      expect(hexOf(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(c.root);
     }
-    expect(toHex(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(vectors.root);
+    expect(hexOf(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(vectors.root);
   });
 
   it("the snapshot restores, chunk by chunk, to the root", () => {
@@ -60,9 +62,9 @@ describe("versioned_trie_v1.json", () => {
       if (decoded.kind !== "head") expect(decoded.kind === "state" ? decoded.entries.length : decoded.versions.length).toBeLessThanOrEqual(Number(vectors.snapshot.chunkEntries));
     }
     const replica = expectOk(versioned.Replica.restore(vt, finalHead, chunks), "restores");
-    expect(toHex(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(vectors.root);
+    expect(hexOf(expectOk(replica.root(), "root") ?? new Uint8Array(0))).toBe(vectors.root);
     expect(replica.history().map(([v]) => v)).toEqual(vectors.commits.map((c) => c.version));
-    expect(replica.get(key("oracle/a/b"))).toEqual(expectOk(Value.text("a"), "text"));
+    expect(expectOk(replica.get(key("oracle/a/b")), "get")).toEqual(expectOk(Value.text("a"), "text"));
   });
 
   it.each(vectors.stateKeys.map((c) => [JSON.stringify(c.key).slice(0, 40), c] as const))("state key %s", (_, c) => {
@@ -115,25 +117,25 @@ describe("versioned_trie_v1.json", () => {
             const claimed = c.value === undefined ? null : valueOf(c.value);
             expect(expectOk(state.holds(key(c.key), claimed), "holds"), c.key).toBe(true);
             const looked = expectOk(state.lookup(key(c.key)), "lookup");
-            expect(looked === null ? null : toHex(looked)).toBe(claimed === null ? null : toHex(expectOk(vt.valueHash(claimed), "encodes")));
+            expect(looked === null ? null : hexOf(looked)).toBe(claimed === null ? null : hexOf(expectOk(vt.valueHash(claimed), "encodes")));
             if (claimed !== null) expect(expectOk(state.holds(key(c.key), int(424242n)), "holds"), "another value").toBe(false);
           }
           for (const l of p.listings ?? []) {
-            expect(entriesHex(expectOk(state.namespace(ns(l.namespace)), "listing")), l.namespace).toEqual(l.entries.map((e) => [e.key, toHex(expectOk(vt.valueHash(valueOf(e.value)), "encodes"))]));
+            expect(entriesHex(expectOk(state.namespace(ns(l.namespace)), "listing")), l.namespace).toEqual(l.entries.map((e) => [e.key, hexOf(expectOk(vt.valueHash(valueOf(e.value)), "encodes"))]));
           }
         });
         break;
       case "version":
         it("answers whether the version was committed", () => {
           const r = expectOk(vt.verifyVersion(root, proof, at ?? -1n), "verifies");
-          expect(r === null ? undefined : toHex(r)).toBe(p.answer?.stateRoot);
+          expect(r === null ? undefined : hexOf(r)).toBe(p.answer?.stateRoot);
           expect(expectErr(vt.verifyVersion(root, proof, (at ?? 0n) + 1n), "another version").kind).toBe("Malformed");
         });
         break;
       case "asOf":
         it("answers the latest version at or before its time", () => {
           const r = expectOk(vt.verifyAsOf(root, proof, at ?? -1n), "verifies");
-          expect(r === null ? {} : { version: r.version, stateRoot: toHex(r.stateRoot) }).toEqual(p.answer);
+          expect(r === null ? {} : { version: r.version, stateRoot: hexOf(r.stateRoot) }).toEqual(p.answer);
         });
         break;
       case "head":
@@ -216,8 +218,8 @@ describe("versioned trie checks", () => {
     expect(versioned.StateNamespace.parse(Array.from({ length: 16 }, () => "a").join("/")).ok).toBe(false);
     expect(versioned.StateNamespace.parse(Array.from({ length: 15 }, () => "a").join("/")).ok).toBe(true);
     expect(versioned.StateNamespace.parse("x".repeat(64) + "/" + "x".repeat(64) + "/" + "x".repeat(64) + "/" + "x".repeat(61)).ok).toBe(false);
-    expect(ns("fiber").contains(key("fiber/1"))).toBe(true);
-    expect(ns("fiber").contains(key("fiberx/1"))).toBe(false);
+    expect(expectOk(ns("fiber").contains(key("fiber/1")), "contains")).toBe(true);
+    expect(expectOk(ns("fiber").contains(key("fiberx/1")), "contains")).toBe(false);
   });
 
   // conformance.md section 8: a 1 MiB key or trie key is refused by its length, as a preview or a size
@@ -244,11 +246,11 @@ describe("versioned trie checks", () => {
   });
 
   it("version keys", () => {
-    expect(toHex(expectOk(versioned.VersionKey.long.encode(300n), "encodes"))).toBe("000000000000012c");
+    expect(hexOf(expectOk(versioned.VersionKey.long.encode(300n), "encodes"))).toBe("000000000000012c");
     expect(expectErr(versioned.VersionKey.long.encode(2n ** 63n), "too big").kind).toBe("InvalidVersion");
     expect(expectErr(versioned.VersionKey.long.encode(-1n), "negative").kind).toBe("InvalidVersion");
     const w2 = expectOk(versioned.VersionKey.unsignedLong(2), "width 2");
-    expect(toHex(expectOk(w2.encode(65535n), "encodes"))).toBe("ffff");
+    expect(hexOf(expectOk(w2.encode(65535n), "encodes"))).toBe("ffff");
     expect(expectErr(w2.encode(65536n), "too big").kind).toBe("InvalidVersion");
     expect(expectErr(versioned.VersionKey.long.decode(bytes("8000000000000000")), "top bit set").kind).toBe("InvalidVersion");
     expect(expectOk(versioned.VersionKey.long.decode(bytes("7fffffffffffffff")), "decodes")).toBe(2n ** 63n - 1n);
@@ -259,8 +261,8 @@ describe("versioned trie checks", () => {
 
 describe("snapshots and replicas", () => {
   const chunks = vectors.snapshot.chunks.map(bytes);
-  const feedAll = (cs: readonly Uint8Array[]): versioned.VersionedTrieError | undefined => {
-    let reader = versioned.SnapshotReader.start(vt, finalHead);
+  const feedAll = (cs: readonly Uint8Array[]): versioned.VersionedRefusal | undefined => {
+    let reader = expectOk(versioned.SnapshotReader.start(vt, finalHead), "SnapshotReader.start");
     for (const c of cs) {
       const r = reader.feedBytes(c);
       if (!r.ok) return r.error;
@@ -269,7 +271,7 @@ describe("snapshots and replicas", () => {
     const f = reader.finish();
     return f.ok ? undefined : f.error;
   };
-  const reason = (e: versioned.VersionedTrieError | undefined): string => (e?.kind === "Malformed" ? e.reason : JSON.stringify(e?.kind));
+  const reason = (e: versioned.VersionedRefusal | undefined): string => (e?.kind === "Malformed" ? e.reason : JSON.stringify(e?.kind));
 
   it("the reader refuses reordered, truncated, foreign and doubled snapshots at the first bad chunk", () => {
     expect(feedAll(chunks)).toBeUndefined();
@@ -283,7 +285,7 @@ describe("snapshots and replicas", () => {
     const stateChunks = rest.filter((c) => expectOk(vt.decodeChunk(c), "decodes").kind === "state");
     if (stateChunks.length > 1) expect(reason(feedAll([head, stateChunks[1] ?? head, stateChunks[0] ?? head]))).toMatch(/does not follow/);
     const other = { ...finalHead, stateRoot: vt.hashing.empty };
-    const foreign = versioned.SnapshotReader.start(vt, other).feedBytes(head);
+    const foreign = expectOk(versioned.SnapshotReader.start(vt, other), "SnapshotReader.start").feedBytes(head);
     expect(reason(foreign.ok ? undefined : foreign.error)).toMatch(/not the trusted head/);
   });
 
@@ -295,7 +297,7 @@ describe("snapshots and replicas", () => {
   it("a replica owns its roots: mutating what goes in or comes out leaves it intact", () => {
     const [d1, d2] = vectors.commits.map((c) => expectOk(vt.decodeDelta(valueOf(c.delta)), "delta"));
     if (d1 === undefined || d2 === undefined) throw new Error("two deltas");
-    const one = expectOk(versioned.Replica.empty(vt).applyDelta(d1), "first");
+    const one = expectOk(expectOk(versioned.Replica.empty(vt), "empty").applyDelta(d1), "first");
     const root = expectOk(one.root(), "root");
     // the caller's delta head, the head getter and the history listing are all the caller's to scribble on
     d1.head.stateRoot.fill(0);
@@ -314,7 +316,7 @@ describe("snapshots and replicas", () => {
     const deltas = vectors.commits.map((c) => expectOk(vt.decodeDelta(valueOf(c.delta)), "delta"));
     const [d1, d2] = deltas;
     if (d1 === undefined || d2 === undefined) throw new Error("two deltas");
-    const empty = versioned.Replica.empty(vt);
+    const empty = expectOk(versioned.Replica.empty(vt), "Replica.empty");
     expect(expectErr(empty.applyDelta(d2), "gap")).toMatchObject({ kind: "RootMismatch", component: "parent" });
     const one = expectOk(empty.applyDelta(d1), "first");
     expect(expectErr(one.applyDelta(d1), "replay")).toMatchObject({ kind: "RootMismatch", component: "parent" });
@@ -344,7 +346,7 @@ describe("versioned_trie_v1.json version keys", () => {
       const decoded = k.decode(bytes(c.key));
       const accepted = kind(c) === "accepted";
       expect(c.key, `version ${c.version.toString()}`).toBe(c.version.toString(16).padStart(16, "0"));
-      expect(encoded.ok ? toHex(encoded.value) : encoded.error.kind, `encode ${c.version.toString()}`).toBe(accepted ? c.key : kind(c));
+      expect(encoded.ok ? hexOf(encoded.value) : encoded.error.kind, `encode ${c.version.toString()}`).toBe(accepted ? c.key : kind(c));
       expect(decoded.ok ? decoded.value : decoded.error.kind, `decode ${c.key}`).toBe(accepted ? c.version : kind(c));
     }
   });

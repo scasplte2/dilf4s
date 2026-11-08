@@ -570,6 +570,18 @@ object RefusalVectors {
           input(literal(inclusion))
         )
       ),
+      // and a root past the digest's size is checked at the same stage: an SDK that measures caller bytes at a bound
+      // refuses nothing there, so the head still answers before the claim
+      Case(
+        "merkle verify: a leaf over the cap with a 33-byte root: the head is checked first",
+        "merkle-verify",
+        List(
+          "root"  -> hex(one.root.bytes ++ ByteVector(0x00)),
+          "size"  -> 1.asJson,
+          "claim" -> builtJson(BuiltValues.ofWeight(cap + 1)),
+          input(literal(inclusion))
+        )
+      ),
       claim("absence claimed", None),
       claim("a value of weight exactly 2^24", Some(BuiltValues.ofWeight(cap))),
       claim("a value of weight 2^24 + 1, refused before it is hashed", Some(BuiltValues.ofWeight(cap + 1))),
@@ -590,6 +602,27 @@ object RefusalVectors {
         fields = List(
           "mode" -> Json.obj("fixed" -> 1.asJson),
           "root" -> hex(t.root.bytes.take(31)),
+          "key"  -> hex(ByteVector(0x01)),
+          input(literal(proof))
+        )
+      ),
+      // a root past the digest's size is read at the same stage as a short one: the claim still answers first
+      Case(
+        "trie verify: a claim over the cap with a 33-byte root: the claim is refused first",
+        "trie-verify",
+        List(
+          "mode" -> Json.obj("fixed" -> 1.asJson),
+          "root" -> hex(t.root.bytes ++ ByteVector(0x00)),
+          "key"  -> hex(ByteVector(0x01)),
+          input(literal(proof)),
+          "claim" -> builtJson(BuiltValues.ofWeight(cap + 1))
+        )
+      ),
+      claim("a value within the cap with a 33-byte root", None).copy(
+        name = "trie verify: a 33-byte root, with no claim to refuse first",
+        fields = List(
+          "mode" -> Json.obj("fixed" -> 1.asJson),
+          "root" -> hex(t.root.bytes ++ ByteVector(0x00)),
           "key"  -> hex(ByteVector(0x01)),
           input(literal(proof))
         )

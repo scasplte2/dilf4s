@@ -12,6 +12,7 @@ import { err, ok, type Result } from "@kd5ujc/dilf4s-core";
 import * as B from "./bits.js";
 import { compareBytes, copyBytes } from "./bytes.js";
 import type { KeyMode, TrieError, TrieHashing } from "./trie.js";
+import { TRIE } from "./trie-internal.js";
 
 /** A value: the caller's payload and the value hash the trie commits. */
 interface Slot<P> {
@@ -30,7 +31,7 @@ interface Node<P> {
 
 /** A node with its hash; `value` must be present when there are no children. */
 function node<P>(h: TrieHashing, segment: B.Bits, value: Slot<P> | undefined, left: Node<P> | undefined, right: Node<P> | undefined): Node<P> {
-  const hash = value !== undefined && left === undefined && right === undefined ? h.leafBits(segment, value.hash) : h.branchBits(segment, value?.hash, left?.hash, right?.hash);
+  const hash = value !== undefined && left === undefined && right === undefined ? TRIE.leafBits(h, segment, value.hash) : TRIE.branchBits(h, segment, value?.hash, left?.hash, right?.hash);
   return { segment, value, left, right, hash };
 }
 
@@ -87,7 +88,7 @@ export class TrieMap<P> {
 
   /** The payload at `key`, if any: one walk down its path. */
   get(key: Uint8Array): P | undefined {
-    if (!this.mode.checkKey(key).ok) return undefined;
+    if (!TRIE.checkKey(this.mode, key).ok) return undefined;
     const path = B.bitsOf(key);
     let at = this.top;
     let offset = 0;
@@ -103,7 +104,7 @@ export class TrieMap<P> {
 
   /** The trie with `key` holding `payload` committed as `hash`; this trie is unchanged. */
   set(key: Uint8Array, payload: P, hash: Uint8Array): Result<TrieMap<P>, TrieError> {
-    const checked = this.mode.checkKey(key);
+    const checked = TRIE.checkKey(this.mode, key);
     if (!checked.ok) return checked;
     const h = this.hashing;
     const path = B.bitsOf(copyBytes(key));
@@ -142,7 +143,7 @@ export class TrieMap<P> {
 
   /** The trie without `key` (this trie itself if the key is absent); this trie is unchanged. */
   delete(key: Uint8Array): Result<TrieMap<P>, TrieError> {
-    const checked = this.mode.checkKey(key);
+    const checked = TRIE.checkKey(this.mode, key);
     if (!checked.ok) return checked;
     const h = this.hashing;
     const path = B.bitsOf(key);
@@ -187,7 +188,7 @@ export class TrieMap<P> {
     const slots: Slot<P>[] = [];
     let previous: Uint8Array | undefined;
     for (const [key, payload, hash] of entries) {
-      const checked = mode.checkKey(key);
+      const checked = TRIE.checkKey(mode, key);
       if (!checked.ok) return checked;
       // for byte strings, bitwise order with a prefix first is unsigned lexicographic byte order
       if (previous !== undefined && compareBytes(previous, key) >= 0) return err({ kind: "InvalidKey", reason: "keys must strictly increase" });

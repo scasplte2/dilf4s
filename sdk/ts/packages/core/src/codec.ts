@@ -12,7 +12,8 @@ import { bitLengthOf } from "./bigint.js";
 import { plainBytes } from "./bytes.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
 import { decodeFailure as failure, type CanonicalError, type DecodeFailure, type TooLarge } from "./error.js";
-import { close as closeIterator, isResult, NOT_A_RESULT, NOT_ITERABLE, open, type Reader } from "./iterator.js";
+import { isArrayGuarded, isRevokedProxy, readGuarded, REVOKED } from "./guard.js";
+import { close as closeIterator, isArrayLength, NOT_A_RESULT, NOT_ITERABLE, open, readStep, type Reader } from "./iterator.js";
 import { parse as parseJson } from "./json.js";
 import { Preview } from "./preview.js";
 import { search } from "./keyset.js";
@@ -484,11 +485,12 @@ const NOT_NAMES = "the schema's names are not arrays of strings";
  * or its own methods), or `undefined` if it is not an array of strings.
  */
 function stringList(x: unknown): readonly string[] | undefined {
-  const length: unknown = Array.isArray(x) ? (x as readonly unknown[]).length : undefined;
-  if (typeof length !== "number") return undefined;
+  const length: unknown = isArrayGuarded(x) ? (x as readonly unknown[]).length : undefined;
+  if (!isArrayLength(length)) return undefined;
   const out: string[] = [];
   for (let i = 0; i < length; i++) {
-    const s: unknown = (x as readonly unknown[])[i];
+    // guarded: an earlier item's read (a Proxy's trap) may have revoked the array; REVOKED is no string
+    const s: unknown = readGuarded(x as readonly unknown[], i);
     if (typeof s !== "string") return undefined;
     out.push(s);
   }
@@ -497,13 +499,13 @@ function stringList(x: unknown): readonly string[] | undefined {
 
 /** `x` as an array of `[required, allowed]` pairs of string arrays, copied as {@link stringList} copies, or `undefined`. */
 function recordList(x: unknown): readonly (readonly [readonly string[], readonly string[]])[] | undefined {
-  const length: unknown = Array.isArray(x) ? (x as readonly unknown[]).length : undefined;
-  if (typeof length !== "number") return undefined;
+  const length: unknown = isArrayGuarded(x) ? (x as readonly unknown[]).length : undefined;
+  if (!isArrayLength(length)) return undefined;
   const out: (readonly [readonly string[], readonly string[]])[] = [];
   for (let i = 0; i < length; i++) {
-    const pair: unknown = (x as readonly unknown[])[i];
-    const required = Array.isArray(pair) ? stringList((pair as readonly unknown[])[0]) : undefined;
-    const allowed = Array.isArray(pair) ? stringList((pair as readonly unknown[])[1]) : undefined;
+    const pair: unknown = readGuarded(x as readonly unknown[], i);
+    const required = isArrayGuarded(pair) ? stringList(readGuarded(pair, 0)) : undefined;
+    const allowed = isArrayGuarded(pair) ? stringList(readGuarded(pair, 1)) : undefined;
     if (required === undefined || allowed === undefined) return undefined;
     out.push([required, allowed]);
   }
@@ -553,9 +555,10 @@ export function hasFields(a: object, required: readonly string[], allowed: reado
 /** {@link hasFields} with a schema this package holds, unchecked. */
 function hasFieldsOf(a: object, required: readonly string[], allowed: readonly string[], known: readonly string[]): boolean {
   const x: unknown = a;
-  if ((typeof x !== "object" || x === null) && typeof x !== "function") return false;
-  const present = known.filter((k) => Reflect.get(a, k) !== undefined);
-  return required.every((k) => present.includes(k)) && present.every((k) => allowed.includes(k));
+  if (((typeof x !== "object" || x === null) && typeof x !== "function") || isRevokedProxy(x)) return false;
+  const present = known.filter((k) => readGuarded(a, k) !== undefined);
+  // a record a getter revoked while its fields were read has no fields to fit
+  return !isRevokedProxy(a) && required.every((k) => present.includes(k)) && present.every((k) => allowed.includes(k));
 }
 
 /**
@@ -703,22 +706,22 @@ function openEncoding(codec: Codec<unknown>, value: unknown, depth: number, stac
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
       // read as ArrayValue.of reads one: the length once (a Proxy's need not be a number), then each item by index,
       // never through the array's iterator, so the size checked is the size written
-      const length: unknown = Array.isArray(value) ? (value as readonly unknown[]).length : undefined;
-      if (typeof length !== "number") return { done: typeMismatch("expected an array") };
+      const length: unknown = isArrayGuarded(value) ? (value as readonly unknown[]).length : undefined;
+      if (!isArrayLength(length)) return { done: typeMismatch("expected an array") };
       if (length < s.min || (s.max !== null && length > s.max)) return { done: typeMismatch(`array of ${length.toString()} elements outside the schema size`) };
       return opened({ kind: "vector", items: value as readonly unknown[], length, at: 0, element: s.element, depth: depth + 1, out: [] }, stack);
     }
     case "textMap": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
       // its iterator method is read once, by open (an `in` check first would run a Proxy's has trap and read it twice)
-      if (typeof value !== "object" || value === null) return { done: typeMismatch("expected a map") };
+      if (typeof value !== "object" || value === null || isRevokedProxy(value)) return { done: typeMismatch("expected a map") };
       const entries = open<unknown>(value);
       if (entries === undefined) return { done: typeMismatch(NOT_ITERABLE) };
       return opened({ kind: "textMap", entries, key: "", value: s.value, depth: depth + 1, out: [] }, stack);
     }
     case "record": {
       if (depth >= MAX_DEPTH) return { done: depthExceeded() };
-      if (typeof value !== "object" || value === null) return { done: typeMismatch("expected a record") };
+      if (typeof value !== "object" || value === null || isRevokedProxy(value)) return { done: typeMismatch("expected a record") };
       return opened({ kind: "record", fields: s.fields, of: value, depth: depth + 1, at: 0, out: [] }, stack);
     }
   }
@@ -770,21 +773,24 @@ function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack
       stack.pop();
       return { done: arrayOfValues(top.out) };
     }
-    const value: unknown = top.items[top.at++];
-    return { codec: top.element, value, depth: top.depth };
+    // guarded: encoding an earlier element (a getter, a Proxy's trap) may have revoked the array
+    const value: unknown = readGuarded(top.items, top.at++);
+    return value === REVOKED ? { done: notA("an array") } : { codec: top.element, value, depth: top.depth };
   }
   stack.pop();
-  const entry: unknown = top.entries.next();
-  if (!isResult(entry)) return { done: typeMismatch(NOT_A_RESULT) };
+  const entry = readStep(top.entries.next());
+  if (entry === undefined) return { done: typeMismatch(NOT_A_RESULT) };
   if (entry.done) return { done: mapOfValues(top.out) };
   const pair: unknown = entry.value;
   stack.push(top);
   // read by index, never destructured: an entry that is not an array, which destructuring throws a TypeError for, is
   // refused (and its iterator closed, as that TypeError would close it)
-  if (!Array.isArray(pair)) return { done: notA("a map entry (a [key, value] array)") };
-  const key: unknown = pair[0];
-  const x: unknown = pair[1];
+  if (!isArrayGuarded(pair)) return { done: notA("a map entry (a [key, value] array)") };
+  // guarded: the key's read (a Proxy's trap) may have revoked the entry
+  const key: unknown = readGuarded(pair, 0);
+  const x: unknown = readGuarded(pair, 1);
   if (!isString(key)) return { done: notA("a text map key (a string)") };
+  if (x === REVOKED) return { done: notA("a map entry (a [key, value] array)") };
   top.key = key;
   return { codec: top.value, value: x, depth: top.depth };
 }
@@ -792,7 +798,9 @@ function nextPart(top: Encoding & { readonly kind: "vector" | "textMap" }, stack
 /** The next field of an open record with a value (an absent optional field is left out), or the record's map. */
 function nextField(top: Encoding & { readonly kind: "record" }, stack: Encoding[]): EncodeStep {
   for (let f = top.fields[top.at]; f !== undefined; f = top.fields[++top.at]) {
-    const x: unknown = Reflect.get(top.of, f.prop);
+    // guarded: an earlier field's read (a getter, a Proxy's trap) may have revoked the record
+    const x: unknown = readGuarded(top.of, f.prop);
+    if (x === REVOKED) return { done: notA("a record") };
     if (x !== undefined || !f.optional) return { codec: f.codec, value: x, depth: top.depth };
   }
   stack.pop();

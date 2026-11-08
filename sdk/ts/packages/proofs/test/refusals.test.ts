@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { fromHex, models, Value } from "@kd5ujc/dilf4s-core";
+import { fromHex, models, Value, type TypeMismatch } from "@kd5ujc/dilf4s-core";
 
 import { MAX_PROOF_WEIGHT, merkle, poseidon, trie, versioned } from "../src/index.js";
 import { bytes, expectOk, loadVectors, valueOf } from "./vectors.js";
@@ -35,7 +35,7 @@ function built(b: models.refusalVectors.BuiltValue): Value {
 /** An outcome as the vectors record it. */
 const accepted: Outcome = "accepted";
 
-function versionedOutcome(e: versioned.VersionedTrieError): Outcome {
+function versionedOutcome(e: versioned.VersionedRefusal): Outcome {
   if (e.kind === "TooLarge") return { kind: e.kind, limit: BigInt(e.limit) };
   if (e.kind === "TooDeep") return { kind: e.kind, limit: BigInt(e.limit), depth: BigInt(e.depth) };
   if (e.kind === "RootMismatch") return { kind: e.kind, component: e.component };
@@ -57,10 +57,10 @@ const modeOf = (m: models.refusalVectors.RefusalMode | undefined): trie.KeyMode 
 };
 
 /** The case's outcome, by its check (conformance.md section 6): the first refusal, or "accepted". */
-function run(c: Case): Outcome {
+function run(c: Case, rootOverride?: Uint8Array): Outcome {
   const input = (): Value => built(c.input ?? { leaf: "" });
   const stateKey = (): versioned.StateKey => expectOk(versioned.StateKey.parse(c.stateKey ?? ""), "state key");
-  const root = (): Uint8Array => bytes(c.root ?? "");
+  const root = (): Uint8Array => rootOverride ?? bytes(c.root ?? "");
   const v = of(versionedOutcome);
   switch (c.check) {
     case "vt-value":
@@ -84,7 +84,7 @@ function run(c: Case): Outcome {
       return v(s.ok ? s.value.lookup(stateKey()) : s);
     }
     case "vt-replica": {
-      let replica = versioned.Replica.empty(vt);
+      let replica = expectOk(versioned.Replica.empty(vt), "Replica.empty");
       for (const d of c.inputs ?? []) {
         const delta = vt.decodeDelta(built(d));
         if (!delta.ok) return v(delta);
@@ -95,18 +95,18 @@ function run(c: Case): Outcome {
       return accepted;
     }
     case "merkle-inclusion": {
-      const hashing = merkle.TaggedMerkleHashing.of("SHA-256");
+      const hashing = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
       const p = merkle.InclusionProof.decode(hashing, input());
       return of(byKind)(p.ok ? merkle.checkInclusion(hashing, root(), bytes(c.leafHash ?? ""), p.value) : p);
     }
     case "merkle-consistency": {
-      const hashing = merkle.TaggedMerkleHashing.of("SHA-256");
+      const hashing = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
       const p = merkle.ConsistencyProof.decode(hashing, input());
       return of(byKind)(p.ok ? merkle.checkConsistency(hashing, bytes(c.oldRoot ?? ""), root(), p.value) : p);
     }
     case "trie-lookup": {
       const mode = modeOf(c.mode);
-      const hashing = trie.TrieHashing.of("SHA-256");
+      const hashing = expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of");
       const p = trie.TrieProof.decode(hashing, input());
       if (!p.ok) return byKind(p.error);
       const verified = trie.check(hashing, mode, root(), p.value);
@@ -134,20 +134,20 @@ function run(c: Case): Outcome {
       return accepted;
     }
     case "merkle-verify": {
-      const hashing = merkle.TaggedMerkleHashing.of("SHA-256");
+      const hashing = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
       const head = { root: root(), size: c.size ?? 0n };
       return of(byKind)(merkle.merkleVerify(hashing, head, built(c.claim ?? { leaf: "" }), input()));
     }
     case "trie-verify": {
       const claim = c.claim === undefined ? null : built(c.claim);
-      return of(byKind)(trie.trieVerify(trie.TrieHashing.of("SHA-256"), modeOf(c.mode), root(), bytes(c.key ?? ""), claim, input()));
+      return of(byKind)(trie.trieVerify(expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of"), modeOf(c.mode), root(), bytes(c.key ?? ""), claim, input()));
     }
     case "trie-prefix-verify": {
       const entries: readonly trie.ClaimedEntry[] = (c.entries ?? []).map((e) => [bytes(e.key), built(e.value)] as const);
-      return of(byKind)(trie.triePrefixVerify(trie.TrieHashing.of("SHA-256"), modeOf(c.mode), root(), bytes(c.prefix ?? ""), entries, input()));
+      return of(byKind)(trie.triePrefixVerify(expectOk(trie.TrieHashing.of("SHA-256"), "TrieHashing.of"), modeOf(c.mode), root(), bytes(c.prefix ?? ""), entries, input()));
     }
     case "poseidon-proof":
-      return of((e: poseidon.PoseidonMerkleError): Outcome => (e.kind === "Position" ? { kind: e.kind, depth: BigInt(e.depth) } : byKind(e)))(poseidon.PoseidonMerkleProof.decode(input()));
+      return of((e: poseidon.PoseidonMerkleError | TypeMismatch): Outcome => (e.kind === "Position" ? { kind: e.kind, depth: BigInt(e.depth) } : byKind(e)))(poseidon.PoseidonMerkleProof.decode(input()));
   }
 }
 
@@ -163,4 +163,19 @@ describe("refusals_v1.json", { timeout: 120_000 }, () => {
       expect(performance.now() - start, "bounded work").toBeLessThan(20_000);
     });
   }
+
+  // the boundary refuses nothing past a bound: a root longer than the digest is refused where a shorter wrong-sized one
+  // is, so each precedence a short root pins holds for a long one too, even one too long to copy
+  it("each precedence pinned with a 31-byte root holds with a 33-byte root and with a 64 MiB shared one, uncopied", () => {
+    const pinned = vectors.cases.filter((c) => c.name.includes("31-byte root") && (c.check === "trie-verify" || c.check === "merkle-verify"));
+    expect(pinned.length, "the cases pinning it").toBeGreaterThanOrEqual(3);
+    const huge = new Uint8Array(new SharedArrayBuffer(64 << 20));
+    for (const c of pinned) {
+      const long = Uint8Array.from([...bytes(c.root ?? ""), 0, 0]);
+      expect(run(c, long), `${c.name}, 33 bytes`).toEqual(c.outcome);
+      const before = process.memoryUsage().arrayBuffers;
+      expect(run(c, huge), `${c.name}, 64 MiB`).toEqual(c.outcome);
+      expect(process.memoryUsage().arrayBuffers - before, `${c.name}: the 64 MiB root was not copied`).toBeLessThan(1 << 20);
+    }
+  });
 });

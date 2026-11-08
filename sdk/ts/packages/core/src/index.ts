@@ -38,6 +38,7 @@ export {
   outputSize,
   TaggedHash,
   taggedHash,
+  type AlgorithmError,
   type ExpansionRefusal,
   type HashAlgorithm,
   type HashError,

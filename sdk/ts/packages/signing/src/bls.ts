@@ -2,17 +2,40 @@
  * BLS12-381, Ethereum consensus profile (`signing.md` 1.6): minimal-pubkey-size (keys in G1, 48 bytes; signatures in
  * G2, 96 bytes), ciphersuite `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`, over noble's long-signature variant.
  */
-import { err, ok, type Result } from "@kd5ujc/dilf4s-core";
+import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
 import { bls12_381 } from "@noble/curves/bls12-381.js";
 import { expand, extract } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
 import { invalidEncoding, invalidKey, lengthError, type CryptoError } from "./errors.js";
+import { signatureBytes, signingKeyBytes, verifyingKeyBytes } from "./keys.js";
+import { expectedAt, NOT_A_NUMBER, NOT_BYTES, readArray, verdict, viewOf } from "./internal/check.js";
 import type { KeyPair, Signature, SigningKey, VerifyingKey } from "./keys.js";
+import { isArrayGuarded, ownBytes, ownCopy, readGuarded, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
+
+/** A message copied (kept, or in use while caller code runs): a message has no length bound in the spec. */
+function messageCopy(x: unknown): Uint8Array | undefined {
+  const b = ownCopy(x, UNBOUNDED);
+  return typeof b === "number" ? undefined : b;
+}
+
 import { attempt } from "./internal/attempt.js";
 import { beToBig, bigToBE, concat, u32be } from "./internal/bytes.js";
-import { signatureOf, signingKeyOf, sized, verifyBytesWith, verifyingKeyOf, type SchemeCodec, type Verifier } from "./scheme.js";
+import {
+  checkedPublicKey,
+  checkedSign,
+  checkedVerify,
+  signatureOf,
+  signingKeyOf,
+  sized,
+  verifiedMessage,
+  verifyBytesWith,
+  verifyingKeyOf,
+  type CryptoRefusal,
+  type SchemeCodec,
+  type Verifier,
+} from "./scheme.js";
 
 const NAME = "BLS12-381-PoP";
 export const SIGNATURE_DST = "BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
@@ -55,22 +78,29 @@ const codec: SchemeCodec<typeof NAME> = {
   signingKey: (bytes) => {
     const b = sized("BLS signing key", 32, bytes);
     if (!b.ok) return b;
-    const x = beToBig(bytes);
-    return x > 0n && x < R ? ok(signingKeyOf(NAME, bytes)) : err(invalidKey("BLS secret key must be a 32-byte scalar in [1, r)"));
+    const x = beToBig(b.value);
+    return x > 0n && x < R ? ok(signingKeyOf(NAME, b.value)) : err(invalidKey("BLS secret key must be a 32-byte scalar in [1, r)"));
   },
   verifyingKey: (bytes) => {
-    const p = g1(bytes);
-    return p.ok ? ok(verifyingKeyOf(NAME, bytes)) : p;
+    const b = sized("BLS public key", 48, bytes);
+    if (!b.ok) return b;
+    const p = g1(b.value);
+    return p.ok ? ok(verifyingKeyOf(NAME, b.value)) : p;
   },
   signature: (bytes) => {
-    const p = g2(bytes);
-    return p.ok ? ok(signatureOf(NAME, bytes)) : p;
+    const b = sized("BLS signature", 96, bytes);
+    if (!b.ok) return b;
+    const p = g2(b.value);
+    return p.ok ? ok(signatureOf(NAME, b.value)) : p;
   },
-  publicKey: (key) => verifyingKeyOf(NAME, G1.BASE.multiply(beToBig(key.bytes)).toBytes(true)),
+  publicKey: checkedPublicKey(NAME, (sk) => publicOf(sk)),
 };
 
-const signWith = (key: SigningKey<typeof NAME>, message: Uint8Array, dst: Uint8Array): Signature<typeof NAME> =>
-  signatureOf(NAME, encodeG2(sigs.sign(sigs.hash(message, dst), key.bytes)));
+/** The compressed public key of a secret key's bytes. */
+const publicOf = (sk: Uint8Array): Uint8Array => G1.BASE.multiply(beToBig(sk)).toBytes(true);
+
+/** A signature's bytes by the secret `sk` over `message` under `dst`, all owned and checked. */
+const signRaw = (sk: Uint8Array, message: Uint8Array, dst: Uint8Array): Uint8Array => encodeG2(sigs.sign(sigs.hash(message, dst), sk));
 
 function verifyWith(key: Uint8Array, message: Uint8Array, signature: Uint8Array, dst: Uint8Array): boolean {
   const pk = g1(key);
@@ -80,18 +110,42 @@ function verifyWith(key: Uint8Array, message: Uint8Array, signature: Uint8Array,
   return attempt(() => sigs.verify(sig.value, sigs.hash(message, dst), pk.value)) === true;
 }
 
-const verify = (key: VerifyingKey<typeof NAME>, message: Uint8Array, signature: Signature<typeof NAME>): boolean =>
-  verifyWith(key.bytes, message, signature.bytes, SIGNATURE_DST_BYTES);
+const verifyRaw = (key: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean => verifyWith(key, message, signature, SIGNATURE_DST_BYTES);
 
-function sumG1(keys: readonly VerifyingKey<typeof NAME>[]): G1Point | undefined {
+function sumG1(keys: readonly Uint8Array[]): G1Point | undefined {
   let acc = G1.ZERO;
   for (const k of keys) {
-    const p = g1(k.bytes);
+    const p = g1(k);
     if (!p.ok) return undefined;
     acc = acc.add(p.value);
   }
   return acc;
 }
+
+/** A caller's keys: an array of this scheme's `VerifyingKey`s, read by index, each key's own bytes. */
+const keysArg = (keys: unknown): Result<Uint8Array[], TypeMismatch> =>
+  readArray(keys, "an array of BLS12-381-PoP VerifyingKeys", (k, i) => {
+    const b = verifyingKeyBytes(k, NAME);
+    return b.ok ? b : { ok: false, error: expectedAt("a BLS12-381-PoP VerifyingKey", i) };
+  });
+
+/** A caller's array of tuples, each read by index: its items checked by `items`, in order, refused by its place. */
+function tuplesArg<T>(x: unknown, what: string, items: (tuple: readonly unknown[]) => T | undefined): Result<T[], TypeMismatch> {
+  return readArray(x, `an array of ${what}`, (t, i) => {
+    const checked = isArrayGuarded(t) ? items(t) : undefined;
+    return checked === undefined ? { ok: false, error: expectedAt(what, i) } : { ok: true, value: checked };
+  });
+}
+
+/** The bytes of a key, message or signature in a tuple: this scheme's key or signature, or a message's plain view. */
+const keyIn = (x: unknown): Uint8Array | undefined => {
+  const b = verifyingKeyBytes(x, NAME);
+  return b.ok ? b.value : undefined;
+};
+const signatureIn = (x: unknown): Uint8Array | undefined => {
+  const b = signatureBytes(x, NAME);
+  return b.ok ? b.value : undefined;
+};
 
 // ------------------------------------------------------------------ EIP-2333
 
@@ -118,82 +172,140 @@ function lamportPublicKey(parent: Uint8Array, index: number): Uint8Array {
 }
 
 export interface BlsScheme extends SchemeCodec<typeof NAME>, Verifier<typeof NAME> {
-  readonly sign: (key: SigningKey<typeof NAME>, message: Uint8Array) => Signature<typeof NAME>;
-  /** The sum of one or more signatures; an empty list is an error. */
-  readonly aggregate: (signatures: readonly Signature<typeof NAME>[]) => Result<Signature<typeof NAME>, CryptoError>;
-  /** One message signed by every key (the keys must carry proofs of possession); no keys verifies false. */
-  readonly fastAggregateVerify: (keys: readonly VerifyingKey<typeof NAME>[], message: Uint8Array, signature: Signature<typeof NAME>) => boolean;
-  /** `prod e(pk_i, H(m_i)) == e(g1, sig)`; no pairs, or the identity signature, verifies false. */
+  /** A key that is not this scheme's `SigningKey`, or a message that is not bytes, is a `TypeMismatch`. */
+  readonly sign: (key: SigningKey<typeof NAME>, message: Uint8Array) => Result<Signature<typeof NAME>, TypeMismatch>;
+  /** The sum of one or more signatures; an empty list is an error. Signatures not this scheme's are a `TypeMismatch`. */
+  readonly aggregate: (signatures: readonly Signature<typeof NAME>[]) => Result<Signature<typeof NAME>, CryptoRefusal>;
+  /**
+   * One message signed by every key (the keys must carry proofs of possession); no keys verifies false. Keys, a message
+   * or a signature of the wrong type are a `TypeMismatch`, never a verdict.
+   */
+  readonly fastAggregateVerify: (keys: readonly VerifyingKey<typeof NAME>[], message: Uint8Array, signature: Signature<typeof NAME>) => Result<boolean, TypeMismatch>;
+  /** `prod e(pk_i, H(m_i)) == e(g1, sig)`; no pairs, or the identity signature, verifies false. Checked as above. */
   readonly aggregateVerify: (
     pairs: readonly (readonly [VerifyingKey<typeof NAME>, Uint8Array])[],
     signature: Signature<typeof NAME>,
-  ) => boolean;
-  /** Every (key, message, signature) triple verifies; an empty list verifies false. */
-  readonly batchVerify: (triples: readonly (readonly [VerifyingKey<typeof NAME>, Uint8Array, Signature<typeof NAME>])[]) => boolean;
+  ) => Result<boolean, TypeMismatch>;
+  /** Every (key, message, signature) triple verifies; an empty list verifies false. Every triple is checked first. */
+  readonly batchVerify: (triples: readonly (readonly [VerifyingKey<typeof NAME>, Uint8Array, Signature<typeof NAME>])[]) => Result<boolean, TypeMismatch>;
   /** A signature over the public key under DST `BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`. */
-  readonly popProve: (key: SigningKey<typeof NAME>) => Signature<typeof NAME>;
-  readonly popVerify: (key: VerifyingKey<typeof NAME>, proof: Signature<typeof NAME>) => boolean;
+  readonly popProve: (key: SigningKey<typeof NAME>) => Result<Signature<typeof NAME>, TypeMismatch>;
+  /** Whether `proof` is `key`'s proof of possession; a key or proof not of this scheme is a `TypeMismatch`. */
+  readonly popVerify: (key: VerifyingKey<typeof NAME>, proof: Signature<typeof NAME>) => Result<boolean, TypeMismatch>;
   /** `hash_to_curve` into G2 under `dst` (1 to 255 bytes), uncompressed `x.c1 || x.c0 || y.c1 || y.c0` (192 bytes). */
-  readonly hashToG2: (message: Uint8Array, dst: Uint8Array) => Result<Uint8Array, CryptoError>;
+  readonly hashToG2: (message: Uint8Array, dst: Uint8Array) => Result<Uint8Array, CryptoRefusal>;
   /** EIP-2333 `derive_master_SK` (seeds of at least 32 bytes). */
-  readonly deriveMasterSk: (seed: Uint8Array) => Result<SigningKey<typeof NAME>, CryptoError>;
-  /** EIP-2333 `derive_child_SK` (32-bit indices). */
-  readonly deriveChildSk: (parent: SigningKey<typeof NAME>, index: number) => Result<SigningKey<typeof NAME>, CryptoError>;
+  readonly deriveMasterSk: (seed: Uint8Array) => Result<SigningKey<typeof NAME>, CryptoRefusal>;
+  /** EIP-2333 `derive_child_SK` (32-bit indices). A parent not this scheme's, or an index not a number, is a `TypeMismatch`. */
+  readonly deriveChildSk: (parent: SigningKey<typeof NAME>, index: number) => Result<SigningKey<typeof NAME>, CryptoRefusal>;
   /** Key pairs from a seed through EIP-2333 `derive_master_SK` (`signing.md` 1.7). */
-  readonly fromSeed: (seed: Uint8Array) => Result<KeyPair<typeof NAME>, CryptoError>;
+  readonly fromSeed: (seed: Uint8Array) => Result<KeyPair<typeof NAME>, CryptoRefusal>;
 }
 
-const deriveMasterSk = (seed: Uint8Array): Result<SigningKey<typeof NAME>, CryptoError> =>
-  seed.length >= 32 ? codec.signingKey(bigToBE(hkdfModR(seed), 32)) : err(invalidKey("EIP-2333 seeds are at least 32 bytes"));
+/** EIP-2333 `derive_master_SK`: the seed measured by its internal length, and read once, as a copy. */
+function deriveMasterSk(seed: Uint8Array): Result<SigningKey<typeof NAME>, CryptoRefusal> {
+  const view = viewOf(seed);
+  if (view === undefined) return err(NOT_BYTES);
+  return view.length >= 32 ? codec.signingKey(bigToBE(hkdfModR(Uint8Array.from(view)), 32)) : err(invalidKey("EIP-2333 seeds are at least 32 bytes"));
+}
+
 
 export const blsPop: BlsScheme = Object.freeze({
   ...codec,
-  sign: (key: SigningKey<typeof NAME>, message: Uint8Array) => signWith(key, message, SIGNATURE_DST_BYTES),
-  verify,
-  verifyBytes: verifyBytesWith(codec, verify),
+  sign: checkedSign(NAME, (sk, message) => signRaw(sk, message, SIGNATURE_DST_BYTES)),
+  verify: checkedVerify(NAME, verifiedMessage, verifyRaw),
+  verifyBytes: verifyBytesWith(codec, verifiedMessage, verifyRaw),
   aggregate: (signatures: readonly Signature<typeof NAME>[]) => {
-    if (signatures.length === 0) return err(invalidEncoding("BLS aggregate", "at least one signature is required"));
+    const given = readArray(signatures, "an array of BLS12-381-PoP Signatures", (s, i) => {
+      const b = signatureBytes(s, NAME);
+      return b.ok ? b : { ok: false as const, error: expectedAt("a BLS12-381-PoP Signature", i) };
+    });
+    if (!given.ok) return given;
+    if (given.value.length === 0) return err(invalidEncoding("BLS aggregate", "at least one signature is required"));
     let acc = G2.ZERO;
-    for (const s of signatures) {
-      const p = g2(s.bytes);
+    for (const s of given.value) {
+      const p = g2(s);
       if (!p.ok) return p;
       acc = acc.add(p.value);
     }
     return ok(signatureOf(NAME, encodeG2(acc)));
   },
   fastAggregateVerify: (keys: readonly VerifyingKey<typeof NAME>[], message: Uint8Array, signature: Signature<typeof NAME>) => {
-    const sum = keys.length === 0 ? undefined : sumG1(keys);
-    const sig = g2(signature.bytes);
-    if (sum === undefined || sum.is0() || !sig.ok || sig.value.is0()) return false;
-    return attempt(() => sigs.verify(sig.value, sigs.hash(message, SIGNATURE_DST_BYTES), sum)) === true;
+    // the message copied before the keys are read: their getters (caller code) cannot change what is verified
+    const m = messageCopy(message);
+    if (m === undefined) return err(NOT_BYTES);
+    const ks = keysArg(keys);
+    if (!ks.ok) return ks;
+    const sb = signatureBytes(signature, NAME);
+    if (!sb.ok) return sb;
+    const sum = ks.value.length === 0 ? undefined : sumG1(ks.value);
+    const sig = g2(sb.value);
+    if (sum === undefined || sum.is0() || !sig.ok || sig.value.is0()) return verdict(false);
+    return verdict(attempt(() => sigs.verify(sig.value, sigs.hash(m, SIGNATURE_DST_BYTES), sum)) === true);
   },
   aggregateVerify: (pairs: readonly (readonly [VerifyingKey<typeof NAME>, Uint8Array])[], signature: Signature<typeof NAME>) => {
-    const sig = g2(signature.bytes);
-    if (pairs.length === 0 || !sig.ok || sig.value.is0()) return false;
+    const given = tuplesArg(pairs, "a [VerifyingKey, Uint8Array] pair", (t) => {
+      // each read guarded (a Proxy's trap may revoke the tuple); copied as read: caller code run by a later read
+      // cannot change an earlier message
+      const k = keyIn(readGuarded(t, 0));
+      const m = messageCopy(readGuarded(t, 1));
+      return k === undefined || m === undefined ? undefined : ([k, m] as const);
+    });
+    if (!given.ok) return given;
+    const sb = signatureBytes(signature, NAME);
+    if (!sb.ok) return sb;
+    const sig = g2(sb.value);
+    if (given.value.length === 0 || !sig.ok || sig.value.is0()) return verdict(false);
     const items: { message: G2Point; publicKey: G1Point }[] = [];
-    for (const [k, m] of pairs) {
-      const pk = g1(k.bytes);
-      if (!pk.ok) return false;
+    for (const [k, m] of given.value) {
+      const pk = g1(k);
+      if (!pk.ok) return verdict(false);
       items.push({ message: sigs.hash(m, SIGNATURE_DST_BYTES), publicKey: pk.value });
     }
-    return attempt(() => sigs.verifyBatch(sig.value, items)) === true;
+    return verdict(attempt(() => sigs.verifyBatch(sig.value, items)) === true);
   },
-  batchVerify: (triples: readonly (readonly [VerifyingKey<typeof NAME>, Uint8Array, Signature<typeof NAME>])[]) =>
-    triples.length > 0 && triples.every(([k, m, s]) => verify(k, m, s)),
-  popProve: (key: SigningKey<typeof NAME>) => signWith(key, codec.publicKey(key).bytes, POP_DST_BYTES),
-  popVerify: (key: VerifyingKey<typeof NAME>, proof: Signature<typeof NAME>) => verifyWith(key.bytes, key.bytes, proof.bytes, POP_DST_BYTES),
+  batchVerify: (triples: readonly (readonly [VerifyingKey<typeof NAME>, Uint8Array, Signature<typeof NAME>])[]) => {
+    const given = tuplesArg(triples, "a [VerifyingKey, Uint8Array, Signature] triple", (t) => {
+      const k = keyIn(readGuarded(t, 0));
+      const m = messageCopy(readGuarded(t, 1));
+      const s = signatureIn(readGuarded(t, 2));
+      return k === undefined || m === undefined || s === undefined ? undefined : ([k, m, s] as const);
+    });
+    if (!given.ok) return given;
+    return verdict(given.value.length > 0 && given.value.every(([k, m, s]) => verifyRaw(k, m, s)));
+  },
+  popProve: (key: SigningKey<typeof NAME>) => {
+    const k = signingKeyBytes(key, NAME);
+    return k.ok ? ok(signatureOf(NAME, signRaw(k.value, publicOf(k.value), POP_DST_BYTES))) : k;
+  },
+  popVerify: (key: VerifyingKey<typeof NAME>, proof: Signature<typeof NAME>) => {
+    const k = verifyingKeyBytes(key, NAME);
+    if (!k.ok) return k;
+    const p = signatureBytes(proof, NAME);
+    return p.ok ? verdict(verifyWith(k.value, k.value, p.value, POP_DST_BYTES)) : p;
+  },
   hashToG2: (message: Uint8Array, dst: Uint8Array) => {
-    if (dst.length === 0 || dst.length > 255) return err(invalidEncoding("hash-to-curve DST", "must be 1 to 255 bytes"));
-    const p = bls12_381.G2.hashToCurve(message, { DST: dst });
+    const m = viewOf(message);
+    // within its bound: a DST longer than 255 bytes is refused uncopied
+    const d = ownBytes(dst, 255);
+    if (m === undefined || d === undefined) return err(NOT_BYTES);
+    if (typeof d === "number" || d.length === 0) return err(invalidEncoding("hash-to-curve DST", "must be 1 to 255 bytes"));
+    const p = bls12_381.G2.hashToCurve(m, { DST: Uint8Array.from(d) });
     return ok(p.toBytes(false));
   },
   deriveMasterSk,
-  deriveChildSk: (parent: SigningKey<typeof NAME>, index: number) =>
-    Number.isInteger(index) && index >= 0 && index < 2 ** 32
-      ? codec.signingKey(bigToBE(hkdfModR(lamportPublicKey(parent.bytes, index)), 32))
-      : err(invalidKey("EIP-2333 indices are 32-bit")),
+  deriveChildSk: (parent: SigningKey<typeof NAME>, index: number) => {
+    const k = signingKeyBytes(parent, NAME);
+    if (!k.ok) return k;
+    if (typeof (index as unknown) !== "number") return err(NOT_A_NUMBER);
+    return Number.isInteger(index) && index >= 0 && index < 2 ** 32
+      ? codec.signingKey(bigToBE(hkdfModR(lamportPublicKey(k.value, index)), 32))
+      : err(invalidKey("EIP-2333 indices are 32-bit"));
+  },
   fromSeed: (seed: Uint8Array) => {
     const sk = deriveMasterSk(seed);
-    return sk.ok ? ok({ signing: sk.value, verifying: codec.publicKey(sk.value) }) : sk;
+    if (!sk.ok) return sk;
+    const vk = codec.publicKey(sk.value);
+    return vk.ok ? ok({ signing: sk.value, verifying: vk.value }) : vk;
   },
 });

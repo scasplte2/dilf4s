@@ -75,20 +75,77 @@ value read as another type. Each argument is checked in O(1) before it is read:
   `encode` and `codec.toCbor` (a hand-made codec that gives what is not a value is refused by its place),
   `json.renderWithin` and `json.renderInto` (its sink too), `valueCommitment`, `valueCommitmentWithin` and
   `hashCommitment` (its algorithm and prefix too);
-- helpers: `json.decimal`, `cbor.magnitudeBytes`, `bitLength` and `utf8Length`.
+- helpers: `json.decimal`, `cbor.magnitudeBytes`, `bitLength` and `utf8Length`;
+- the hash API (§4): `digest`, `hashParts`, `startHash` and its hash's `update`, `outputSize`, `blockSize`,
+  `expansionLimit`, `parseHashAlgorithm`, `digestFromBytes`, `digestFromHex`, `expandMessageXmd` (its output length
+  too: a non-number is a `TypeMismatch`, a number out of range `outputLength`), `DomainTag.of`, `TaggedHash.of` and its
+  `start`, `hash`, `content` and `contentWithin`, `taggedHash`, `contentHash`, `toHex` and `fromHex`. An algorithm that is not
+  a string is a `TypeMismatch`; a string naming none is `UnknownAlgorithm`, as in every SDK.
 
 Where a result has no room for a refusal, the answer is still defined and reads nothing of the argument: `equals` is
 false when either side is not a value, `MapValue.get` finds nothing for a key that is not text, `decodeUtf8` gives
 `undefined` for what is not bytes, and the diagnostics `inspect`, `describeFailure` and `Preview.of` give fixed
 placeholders (`<not a canonical value>`, `<not a decode failure>`, and a preview with the head `<not text>` and a
-length of 0). One exception remains: `contentHash`, `TaggedHash.content` and `TaggedHash.contentWithin` still throw
-on an argument that is not a value, until the hash API is converted in a later change, with the proofs and signing
-packages' caller input.
+length of 0).
+
+The TypeScript proofs and signing packages (`@kd5ujc/dilf4s-proofs`, `@kd5ujc/dilf4s-signing`) hold every exported
+function and method to the same rule: each argument is checked once, in O(1) (an array once per item, read by index),
+and one of the wrong type is a `TypeMismatch` in the function's result, beside the function's own error family. A
+verification never answers for such an argument: a message that is not bytes is refused, never read as empty, and a
+claimed value that is not a canonical value (an object shaped like the null value included) is never a claim of
+absence. A key, signature, proof, profile, mode or index must be one the package made (a private brand, stamped only
+by a constructor given the package's token, so one built by calling a constructor from JavaScript fails the check)
+and, for keys and signatures, of the scheme at hand. Such a built instance keeps none of its arguments (every field
+is a fixed default, so it never reports a caller's algorithm or scheme), and each of its methods with room for a
+refusal refuses it. A plain object a caller passes (a Merkle or versioned head, a
+proof, delta, chunk or snapshot) has each field read once into a copy the package owns. The query of a listing check
+(a prefix, or a range's bounds; for a versioned trie, the version asked about or a range's versions, encoded once)
+is copied before the claim or the proof is read, so their getters cannot change what is asked. Where a result has no room for a refusal, `equals` is false for anything not of its class. Every caller byte argument is read as
+"Caller bytes" below states.
+
+A revoked Proxy (or a Proxy whose target is one) is refused like any other argument of the wrong type, as a
+`TypeMismatch`, in all three packages: every array and object reader first asks `Array.isArray` through core's one
+guard, whose catch sees only the engine's refusal of such an object (the call runs no caller code), and a function a
+caller passes (an iterator's methods, a version key's, a source of randomness) is checked the same way each time it is
+called, since caller code may revoke it meanwhile. For the same reason every read of a caller's object or array after
+its first goes through the guard too (a getter or trap an earlier read ran may have revoked it), and what such a read
+gives is refused, never kept or taken for an absent field. The guard (`guard.ts`) holds two catches, around
+`Array.isArray` and around `ArrayBuffer`'s own brand check, each of which runs no caller code and so sees only the
+engine's refusal; they and signing's boundary around noble are the SDK's only catches. Refusals and boolean
+verdicts are shared, frozen results.
+
+**Caller bytes.** Every caller byte argument of a public function in core's hash API, proofs and signing passes once
+through core's one boundary (`ownBytes` and its forms, in `core/src/bytes.ts`). It is measured by its internal length
+through one fixed-length view (never its own `length`, so a subclass is not believed) against its bound: a fixed
+field's width, a key's bound, or none for a message or data to hash. Past the bound nothing is copied, and the boundary
+refuses nothing: the length flows on to the check that refused such bytes before (a digest's size, a key's mode, a
+leaf's weight), at the stage the specs and `refusals_v1.json` pin, so an oversized argument is refused exactly where a
+shorter wrong-sized one is. It flows as an `Oversized` value, a type of its own that the compiler keeps apart from
+bytes: nothing hashes, compares, encodes or returns one, and only a size check narrows a measured value to bytes. The
+boundary refuses only what is not bytes, as a `TypeMismatch`. Within the bound it is that
+view when its memory is stable (this realm's own `ArrayBuffer`, unshared and not resizable by the engine's brand
+checks, never by a prototype), which nothing changes while the SDK runs without calling caller code, so nothing is
+copied; and otherwise one copy of that view, so shared, resizable or another realm's memory is read from one snapshot.
+Bytes kept, or still in use while caller code may run (a later getter, a caller's function), are always copied once.
+Past the boundary, internals read only what it gave, never the caller's object again, so no byte read twice (a signer's
+nonce and challenge, a try-and-increment hash's tries, a trie walk's branch bit and segment) can differ between the
+reads. A test scans the sources, and fails on a planted violation, so no public-facing code reads caller bytes around
+the boundary.
+
+**Caller code.** An exception raised by the caller's own code propagates unchanged, in all three packages: a getter,
+a Proxy's trap, a Proxy whose handler is itself revoked or otherwise unusable (the engine throws while running the
+caller's handler), an iterator's methods, a version key's functions, a source of randomness. The SDK does not catch
+it, so no verdict or value comes back, and an iterator the SDK opened is closed first, as leaving `for...of` early
+closes it. What the SDK guarantees is about the data a caller passes: however it is shaped, it never makes the SDK
+throw an error of its own, hang, do unbounded work, read caller data twice where the two reads can disagree, or give a
+wrong verdict or value. A revoked Proxy is data of the wrong shape (the engine refuses it at the first check, before
+any caller code runs), so it is refused as a `TypeMismatch`, as above.
 
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the
-caller's realm, which nothing can change while the decoder runs, and copies it once first when it is a
-`SharedArrayBuffer` (another thread may write it) or another realm's; each decoded byte string is copied once into its
+caller's realm (by the engine's brand check, so a `SharedArrayBuffer` given `ArrayBuffer.prototype` is not one), which
+nothing can change while the decoder runs, and copies it once first when it is a `SharedArrayBuffer` (another thread
+may write it) or another realm's; each decoded byte string is copied once into its
 value, which holds no view of the input. Scala's and Rust's types rule these arguments out, so this refusal is the
 TypeScript SDK's alone and has no conformance vector.
 

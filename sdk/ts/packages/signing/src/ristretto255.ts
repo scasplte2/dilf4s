@@ -1,20 +1,26 @@
 /** ristretto255 Schnorr, the single-signer form of FROST(ristretto255, SHA-512), RFC 9591 (`signing.md` 1.5). */
-import { err, ok, type Result } from "@kd5ujc/dilf4s-core";
+import { err, ok, type Err, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
+import { ownCopy } from "@kd5ujc/dilf4s-core/internal";
 import { ristretto255 } from "@noble/curves/ed25519.js";
 import { sha512 } from "@noble/hashes/sha2.js";
 import { randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
-import { invalidEncoding, invalidKey, type CryptoError } from "./errors.js";
-import type { Signature, SigningKey, VerifyingKey } from "./keys.js";
+import { invalidEncoding, invalidKey, lengthError } from "./errors.js";
+import { ownSigningKey, type Signature, type SigningKey } from "./keys.js";
+import { expected, NOT_BYTES, signedOf } from "./internal/check.js";
 import { attempt } from "./internal/attempt.js";
 import { concat, leToBig, mod } from "./internal/bytes.js";
 import { L, scalarBytes } from "./internal/edwards.js";
 import {
+  checkedPublicKey,
+  checkedVerify,
   signatureOf,
   signingKeyOf,
   sized,
+  verifiedMessage,
   verifyBytesWith,
   verifyingKeyOf,
+  type CryptoRefusal,
   type SchemeCodec,
   type SeedDerivation,
   type Verifier,
@@ -47,38 +53,71 @@ const codec: SchemeCodec<typeof NAME> = {
   signingKey: (bytes) => {
     const b = sized("ristretto255 signing key", 32, bytes);
     if (!b.ok) return b;
-    const s = canonicalScalar(bytes);
-    return s !== undefined && s !== 0n ? ok(signingKeyOf(NAME, bytes)) : err(invalidKey("ristretto255 secret key must be a canonical non-zero scalar"));
+    const s = canonicalScalar(b.value);
+    return s !== undefined && s !== 0n ? ok(signingKeyOf(NAME, b.value)) : err(invalidKey("ristretto255 secret key must be a canonical non-zero scalar"));
   },
   verifyingKey: (bytes) => {
     const b = sized("ristretto255 verifying key", 32, bytes);
     if (!b.ok) return b;
-    return element(bytes) === undefined
+    return element(b.value) === undefined
       ? err(invalidKey("ristretto255 verifying key is not a canonical non-identity element"))
-      : ok(verifyingKeyOf(NAME, bytes));
+      : ok(verifyingKeyOf(NAME, b.value));
   },
   signature: (bytes) => {
     const b = sized("ristretto255 signature", 64, bytes);
     if (!b.ok) return b;
-    return element(bytes.subarray(0, 32)) !== undefined && canonicalScalar(bytes.subarray(32)) !== undefined
-      ? ok(signatureOf(NAME, bytes))
+    return element(b.value.subarray(0, 32)) !== undefined && canonicalScalar(b.value.subarray(32)) !== undefined
+      ? ok(signatureOf(NAME, b.value))
       : err(invalidEncoding("ristretto255 signature", "expected R (non-identity element) || z (canonical scalar)"));
   },
-  publicKey: (key) => verifyingKeyOf(NAME, mulBase(leToBig(key.bytes)).toBytes()),
+  publicKey: checkedPublicKey(NAME, (sk) => publicOf(sk)),
 };
 
-function signWith(key: SigningKey<typeof NAME>, message: Uint8Array, randomness: Uint8Array): Signature<typeof NAME> {
-  const sk = key.bytes;
+/** The public key of a secret scalar's bytes. */
+const publicOf = (sk: Uint8Array): Uint8Array => mulBase(leToBig(sk)).toBytes();
+
+/** A signature by the secret `sk` over a message read once, with 32 bytes of nonce randomness, all owned and checked. */
+function signWith(sk: Uint8Array, message: Uint8Array, randomness: Uint8Array): Signature<typeof NAME> {
   const x = leToBig(sk);
   const k = hashToScalar(H3, randomness, sk);
   const r = mulBase(k).toBytes();
-  const c = hashToScalar(H2, r, codec.publicKey(key).bytes, message);
+  const c = hashToScalar(H2, r, publicOf(sk), message);
   return signatureOf(NAME, concat(r, scalarBytes(k + c * x)));
 }
 
-const verify = (key: VerifyingKey<typeof NAME>, message: Uint8Array, signature: Signature<typeof NAME>): boolean => {
-  const kb = key.bytes;
-  const sb = signature.bytes;
+const NOT_A_KEY: Err<TypeMismatch> = Object.freeze(err(expected(`a ${NAME} SigningKey`)));
+const NOT_A_MESSAGE: Err<TypeMismatch> = Object.freeze(err(NOT_BYTES));
+
+/**
+ * The caller's 32 bytes of nonce randomness, measured by their internal length and copied from their own memory (the
+ * copy itself, no wrapper around it), or the refusal: `TypeMismatch` for what is not bytes, `InvalidEncoding` for
+ * another length.
+ */
+function randomnessOf(x: unknown): Uint8Array | Err<CryptoRefusal> {
+  const own = ownCopy(x, 32);
+  if (own === undefined) return NOT_A_MESSAGE;
+  const got = typeof own === "number" ? own : own.length;
+  return typeof own !== "number" && got === 32 ? own : err(lengthError("nonce randomness", 32, got));
+}
+
+/** Fresh nonce randomness from `@noble/hashes` `randomBytes`: it has nothing of the caller's to check. */
+const freshRandomness = (): Uint8Array | Err<never> => randomBytes(32);
+
+/**
+ * A signature by `key` over `message` with the nonce randomness `randomness` reads from `given`, each checked in turn:
+ * the key must be the scheme's (its own bytes read), the message is copied once, then the randomness. The functions
+ * are the module's own, made once: a passing check allocates the two copies and no wrapper or closure.
+ */
+function signChecked<E>(key: unknown, message: unknown, given: unknown, randomness: (x: unknown) => Uint8Array | Err<E>): Result<Signature<typeof NAME>, TypeMismatch | E> {
+  const k = ownSigningKey(key, NAME);
+  if (k === undefined) return NOT_A_KEY;
+  const m = signedOf(message);
+  if (m === undefined) return NOT_A_MESSAGE;
+  const r = randomness(given);
+  return r instanceof Uint8Array ? ok(signWith(k, m, r)) : r;
+}
+
+const verify = (kb: Uint8Array, message: Uint8Array, sb: Uint8Array): boolean => {
   const pk = element(kb);
   const r = element(sb.subarray(0, 32));
   const z = canonicalScalar(sb.subarray(32));
@@ -89,25 +128,24 @@ const verify = (key: VerifyingKey<typeof NAME>, message: Uint8Array, signature: 
 
 export interface Ristretto255Scheme extends SchemeCodec<typeof NAME>, Verifier<typeof NAME>, SeedDerivation<typeof NAME> {
   /** `k = H3(randomness || sk)`: caller-supplied 32 bytes of nonce randomness (known answers, external RNGs). */
-  readonly sign: (key: SigningKey<typeof NAME>, message: Uint8Array, randomness: Uint8Array) => Result<Signature<typeof NAME>, CryptoError>;
+  readonly sign: (key: SigningKey<typeof NAME>, message: Uint8Array, randomness: Uint8Array) => Result<Signature<typeof NAME>, CryptoRefusal>;
   /** With fresh randomness from `@noble/hashes` `randomBytes`. */
-  readonly signRandom: (key: SigningKey<typeof NAME>, message: Uint8Array) => Signature<typeof NAME>;
+  readonly signRandom: (key: SigningKey<typeof NAME>, message: Uint8Array) => Result<Signature<typeof NAME>, TypeMismatch>;
 }
 
 export const ristretto255Schnorr: Ristretto255Scheme = Object.freeze({
   ...codec,
-  sign: (key: SigningKey<typeof NAME>, message: Uint8Array, randomness: Uint8Array) => {
-    const r = sized("nonce randomness", 32, randomness);
-    return r.ok ? ok(signWith(key, message, r.value)) : r;
-  },
-  signRandom: (key: SigningKey<typeof NAME>, message: Uint8Array) => signWith(key, message, randomBytes(32)),
-  verify,
-  verifyBytes: verifyBytesWith(codec, verify),
+  sign: (key: SigningKey<typeof NAME>, message: Uint8Array, randomness: Uint8Array) => signChecked(key, message, randomness, randomnessOf),
+  signRandom: (key: SigningKey<typeof NAME>, message: Uint8Array) => signChecked(key, message, undefined, freshRandomness),
+  verify: checkedVerify(NAME, verifiedMessage, verify),
+  verifyBytes: verifyBytesWith(codec, verifiedMessage, verify),
   /** `SHA-512(seed) mod L`, rejecting the (negligible) zero scalar. */
   fromSeed: (seed: Uint8Array) => {
     const s = sized("ristretto255 seed", 32, seed);
     if (!s.ok) return s;
-    const sk = codec.signingKey(scalarBytes(leToBig(sha512(seed))));
-    return sk.ok ? ok({ signing: sk.value, verifying: codec.publicKey(sk.value) }) : sk;
+    const sk = codec.signingKey(scalarBytes(leToBig(sha512(s.value))));
+    if (!sk.ok) return sk;
+    const vk = codec.publicKey(sk.value);
+    return vk.ok ? ok({ signing: sk.value, verifying: vk.value }) : vk;
   },
 });

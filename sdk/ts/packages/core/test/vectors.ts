@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { type BoolValue, type BytesValue, cbor, type IntValue, json, type Result, Value } from "../src/index.js";
+import { type BoolValue, type BytesValue, cbor, type IntValue, json, type Result, Value, toHex } from "../src/index.js";
 import type { Codec } from "../src/codec.js";
 import { describeFailure } from "../src/error.js";
 
@@ -44,3 +44,6 @@ export function loadVectors<T>(file: string, codec: Codec<T>): T {
   if (!decoded.ok) throw new Error(`${file} does not fit its schema: ${describeFailure(decoded.error)}`);
   return decoded.value;
 }
+
+/** Lowercase hex of bytes, or of a success's bytes; a failure (or what `toHex` refuses) fails the test. */
+export const hexOf = (b: Uint8Array | Result<Uint8Array, unknown>): string => expectOk(toHex(b instanceof Uint8Array ? b : expectOk(b, "bytes")), "hex");

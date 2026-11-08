@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { type codec, describeFailure, fromHex, json, type Result } from "@kd5ujc/dilf4s-core";
+import { type codec, describeFailure, fromHex, json, type Result, toHex } from "@kd5ujc/dilf4s-core";
 type Codec<T> = codec.Codec<T>;
 
 /** The repository's shared/vectors and docs/test-vectors, read at test time. */
@@ -17,6 +17,12 @@ export const readResource = (path: string): string => readFileSync(resourcesDir 
 export function expectOk<T, E>(r: Result<T, E>, what: string): T {
   if (!r.ok) throw new Error(`${what}: ${JSON.stringify(r.error, (_, x: unknown) => (typeof x === "bigint" ? x.toString() : x))}`);
   return r.value;
+}
+
+/** The error of a failure; a success fails the test. */
+export function expectErr<T, E>(r: Result<T, E>, what: string): E {
+  if (r.ok) throw new Error(`${what}: expected a failure`);
+  return r.error;
 }
 
 /** A vector file parsed with core's JSON parser and decoded into its generated type. */
@@ -40,3 +46,6 @@ export const tsv = (path: string): string[][] =>
     .split("\n")
     .filter((l) => l.length > 0)
     .map((l) => l.split("\t"));
+
+/** Lowercase hex of bytes, or of a success's bytes; a failure (or what `toHex` refuses) fails the test. */
+export const hexOf = (b: Uint8Array | Result<Uint8Array, unknown>): string => expectOk(toHex(b instanceof Uint8Array ? b : expectOk(b, "bytes")), "hex");

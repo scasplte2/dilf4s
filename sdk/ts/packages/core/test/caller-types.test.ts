@@ -1,4 +1,6 @@
+import { once } from "node:events";
 import { runInNewContext } from "node:vm";
+import { Worker } from "node:worker_threads";
 
 import { describe, expect, it } from "vitest";
 
@@ -159,6 +161,23 @@ describe("the constructors refuse a value of the wrong type, never reading it as
       expect(TextValue.of(bad(x)), label(x)).toEqual(mismatch("expected a string"));
     }
     expect(TextValue.of("\uD800")).toEqual({ ok: false, error: { kind: "UnpairedSurrogate" } });
+  });
+});
+
+describe("a Proxy of an array reporting a length no array has is refused, never looped over", () => {
+  it("Value.array, a codec's vector, describeFailure and hashCommitment's prefix", { timeout: 5_000 }, () => {
+    const one = int(1n);
+    for (const length of [Number.POSITIVE_INFINITY, 2 ** 53, 1.5, -1]) {
+      const proxy = (item: unknown): never =>
+        bad(new Proxy([], { get: (t, name) => (name === "length" ? length : typeof name === "string" && /^[0-9]+$/.test(name) ? item : (Reflect.get(t, name) as unknown)) }));
+      expect(Value.array(proxy(one)), String(length)).toEqual(mismatch("expected an array"));
+      expect(codec.vector(codec.uint, 0, null).encode(proxy(1n)), String(length)).toEqual(mismatch("expected an array"));
+      expect(describeFailure(bad({ path: proxy(Preview.of("a")), reason: "r" })), String(length)).toBe("<not a decode failure>");
+      expect(hashCommitment("SHA-256", proxy(Uint8Array.of(1)), one), String(length)).toEqual(mismatch("expected an array of Uint8Arrays"));
+      // a Proxy of an array walks as an array: its length is read each step, and refused when no array has it
+      const entries = new Proxy([["a", one]], { get: (t, name) => (name === "length" ? length : (Reflect.get(t, name) as unknown)) });
+      expect(Value.map(bad(entries)), String(length)).toEqual(mismatch("expected an iterable of [key, value] entries"));
+    }
   });
 });
 
@@ -613,5 +632,86 @@ describe("forged previews and schema arguments of the wrong type", () => {
       expect(codec.intRange(bad(lo), bad(hi)).decode(int(1n))).toEqual({ ok: false, error: { path: [], reason: ints } });
     }
     expect(expectOk(codec.intRange(0n, null).encode(1n), "valid bounds").kind).toBe("int");
+  });
+});
+
+describe("a revoked Proxy is refused as a TypeMismatch, never thrown on", () => {
+  /** An array Proxy, revoked: every question the engine is asked about it throws, Array.isArray included. */
+  const revoked = (): never => {
+    const { proxy, revoke } = Proxy.revocable([], {});
+    revoke();
+    return bad(proxy);
+  };
+
+  it("at the array entry points, and where an object is read", () => {
+    expect(hashCommitment("SHA-256", revoked(), int(1n))).toEqual(mismatch("expected an array of Uint8Arrays"));
+    expect(Value.array(revoked())).toEqual(mismatch("expected an array"));
+    expect(Value.map(revoked())).toEqual(mismatch("expected an iterable of [key, value] entries"));
+    expect(Value.map(bad([revoked()]))).toEqual(mismatch("expected a [key, value] array at index 0"));
+    expect(codec.vector(codec.uint, 0, null).encode(revoked())).toEqual(mismatch("expected an array"));
+    expect(describeFailure(revoked())).toBe("<not a decode failure>");
+    expect(describeFailure(bad({ path: revoked(), reason: "r" }))).toBe("<not a decode failure>");
+    const record = codec.record<{ readonly a: bigint }>({ a: codec.required("a", codec.uint) });
+    expect(record.encode(revoked())).toEqual(mismatch("expected a record"));
+  });
+});
+
+/** A Proxy of `target` that revokes itself as its first read returns: every later read of it would throw. */
+function revokingAfterFirstRead<T extends object>(target: T): T {
+  const { proxy, revoke } = Proxy.revocable(target, {
+    get: (t, name) => {
+      const v: unknown = Reflect.get(t, name);
+      revoke();
+      return v;
+    },
+  });
+  return proxy;
+}
+
+describe("an object or array a getter revokes while it is read is refused as a TypeMismatch, never thrown on", () => {
+  const notAResult = mismatch("an iterator's next() gave a result that is not an object");
+  const resultRevoking = (value: unknown): never => bad({ [Symbol.iterator]: () => ({ next: () => revokingAfterFirstRead({ done: false, value }) }) });
+
+  it("arrays, maps and their entries, and an iterator's result revoked by its own done getter", () => {
+    expect(hashCommitment("SHA-256", bad(revokingAfterFirstRead([Uint8Array.of(1), Uint8Array.of(2)])), int(1n))).toEqual(mismatch("expected an array of Uint8Arrays"));
+    expect(Value.array(revokingAfterFirstRead([int(1n), int(2n)]))).toEqual(mismatch("expected a canonical value at index 0"));
+    expect(Value.map(bad(revokingAfterFirstRead([["a", int(1n)]])))).toMatchObject({ ok: false, error: { kind: "TypeMismatch" } });
+    expect(Value.map(bad([revokingAfterFirstRead(["a", int(1n)])]))).toEqual(mismatch("expected a canonical value at index 0"));
+    expect(Value.map(resultRevoking(["a", int(1n)]))).toEqual(notAResult);
+  });
+
+  it("the encoder's arrays, records, map entries and iterator results; failures and schema names", () => {
+    expect(codec.vector(codec.uint, 0, null).encode(revokingAfterFirstRead([1n, 2n]))).toEqual(mismatch("expected an array"));
+    const record = codec.record<{ readonly a: bigint; readonly b: bigint }>({ a: codec.required("a", codec.uint), b: codec.required("b", codec.uint) });
+    expect(record.encode(revokingAfterFirstRead({ a: 1n, b: 2n }))).toEqual(mismatch("expected a record"));
+    const map = codec.textMap(codec.uint);
+    expect(map.encode(bad([revokingAfterFirstRead(["a", 1n])]))).toEqual(mismatch("expected a map entry (a [key, value] array)"));
+    expect(map.encode(resultRevoking(["a", 1n]))).toEqual(notAResult);
+    expect(codec.hasFields(revokingAfterFirstRead({ a: 1n, b: 2n }), ["a", "b"], ["a", "b"], ["a", "b"])).toBe(false);
+    expect(describeFailure(bad(revokingAfterFirstRead({ path: [], reason: "r" })))).toBe("<not a decode failure>");
+    expect(describeFailure(bad({ path: revokingAfterFirstRead([Preview.of("a"), Preview.of("b")]), reason: "r" }))).toBe("<not a decode failure>");
+    const names = codec.selectAlternative(int(1n), bad(revokingAfterFirstRead([[["a"], ["a"]]])), []);
+    expect(names.ok ? "selected" : names.error.reason).toBe("the schema's names are not arrays of strings");
+  });
+});
+
+describe("decodeUtf8 validates and decodes one snapshot of shared memory", () => {
+  it("a worker alternating four shared bytes between a valid and an invalid sequence never makes it throw", { timeout: 30_000 }, async () => {
+    const shared = new SharedArrayBuffer(4);
+    const worker = new Worker(
+      "const a = new Uint8Array(require('node:worker_threads').workerData); for (;;) { a[0] = 0xf4; a[1] = 0x8f; a[2] = 0xbf; a[3] = 0xbf; a.fill(0xff); }",
+      { eval: true, workerData: shared },
+    );
+    await once(worker, "online");
+    const bytes = new Uint8Array(shared);
+    let wrong = 0;
+    for (let i = 0; i < 50_000; i++) {
+      const text = decodeUtf8(bytes);
+      // a valid snapshot decodes to U+10FFFF (or, before the worker's first write, four NULs); every other is refused,
+      // never a code point out of range
+      if (text !== undefined && text !== "\u{10ffff}" && text !== "\0\0\0\0") wrong += 1;
+    }
+    await worker.terminate();
+    expect(wrong, "only U+10FFFF or a refusal").toBe(0);
   });
 });

@@ -2,9 +2,11 @@
 import { checkedLimit, tooLarge } from "./budget.js";
 import { encodeIntoWithin, encodeWithin, Feeding, MAX_ENCODED_BYTES, type Absorber, type EncodeError } from "./cbor.js";
 import type { TypeMismatch } from "./error.js";
-import { HASH_ALGORITHMS, startHash, type HashAlgorithm } from "./hash.js";
+import { isAlgorithm, startHashOf, type HashAlgorithm } from "./hash.js";
+import { isArrayGuarded, readGuarded } from "./guard.js";
+import { isArrayLength } from "./iterator.js";
 import { err, ok, type Result } from "./result.js";
-import { takeBytes } from "./bytes.js";
+import { ownCopy, UNBOUNDED } from "./bytes.js";
 import { bytesView, type Value } from "./value.js";
 
 /** The commitment tag of a byte string. */
@@ -56,12 +58,14 @@ const notAPrefix: TypeMismatch = { kind: "TypeMismatch", reason: "expected an ar
  * `undefined` if it is not an array of `Uint8Array`s. A prefix is a few tags, so copying them costs nothing that matters.
  */
 function prefixParts(prefix: unknown): readonly Uint8Array[] | undefined {
-  const length: unknown = Array.isArray(prefix) ? prefix.length : undefined;
-  if (typeof length !== "number" || !Array.isArray(prefix)) return undefined;
+  const length: unknown = isArrayGuarded(prefix) ? prefix.length : undefined;
+  if (!isArrayLength(length) || !isArrayGuarded(prefix)) return undefined;
   const parts: Uint8Array[] = [];
   for (let i = 0; i < length; i++) {
-    const part = takeBytes(prefix[i]);
-    if (part === undefined) return undefined;
+    // guarded: an earlier part's read (a Proxy's trap) may have revoked the array
+    // a prefix part is the caller's own bytes, hashed: it has no bound of its own
+    const part = ownCopy(readGuarded(prefix, i), UNBOUNDED);
+    if (part === undefined || typeof part === "number") return undefined;
     parts.push(part);
   }
   return parts;
@@ -75,12 +79,12 @@ function prefixParts(prefix: unknown): readonly Uint8Array[] | undefined {
  * before anything is hashed.
  */
 export function hashCommitment(algorithm: HashAlgorithm, prefix: readonly Uint8Array[], value: Value): Result<Uint8Array, EncodeError> {
-  if (!HASH_ALGORITHMS.includes(algorithm)) return err(notAnAlgorithm);
+  if (!isAlgorithm(algorithm)) return err(notAnAlgorithm);
   const parts = prefixParts(prefix);
   if (parts === undefined) return err(notAPrefix);
   const checked = checkedLimit(value, MAX_ENCODED_BYTES);
   if (!checked.ok) return checked;
-  const h = startHash(algorithm);
+  const h = startHashOf(algorithm);
   for (const p of parts) h.update(p);
   const c = valueCommitmentInto(h, value);
   return c.ok ? ok(h.digest()) : c;

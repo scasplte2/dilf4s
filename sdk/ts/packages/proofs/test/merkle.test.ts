@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { cbor, models, toHex, Value, valueCommitment } from "@kd5ujc/dilf4s-core";
+import { cbor, models, Value, valueCommitment } from "@kd5ujc/dilf4s-core";
 
 import { merkle } from "../src/index.js";
-import { bytes, bytesValue, expectErr, expectOk, loadVectors, valueOf } from "./vectors.js";
+import { bytes, bytesValue, expectErr, expectOk, loadVectors, valueOf, hexOf } from "./vectors.js";
 
 const vectors = loadVectors("merkle_v1.json", models.merkleVectors.MerkleVectors);
-const tagged = merkle.TaggedMerkleHashing.of("SHA-256");
-const rfc = merkle.Rfc6962MerkleHashing.of("SHA-256");
+const tagged = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "TaggedMerkleHashing.of");
+const rfc = expectOk(merkle.Rfc6962MerkleHashing.of("SHA-256"), "Rfc6962MerkleHashing.of");
 const leaves = vectors.leaves.map(bytes);
 const leafHashes = vectors.leafHashes.map(bytes);
 
@@ -24,8 +24,8 @@ const rfcRoot = (n: number): Uint8Array =>
 
 describe("merkle_v1.json", () => {
   it("the empty roots", () => {
-    expect(toHex(taggedRoot(0))).toBe(vectors.trees[0]?.root);
-    expect(toHex(rfc.empty)).toBe(vectors.trees[0]?.rfc6962Root);
+    expect(hexOf(taggedRoot(0))).toBe(vectors.trees[0]?.root);
+    expect(hexOf(rfc.empty)).toBe(vectors.trees[0]?.rfc6962Root);
   });
 
   describe.each(vectors.trees.map((t) => [Number(t.size), t] as const))("tree of %i leaves", (size, tree) => {
@@ -35,7 +35,7 @@ describe("merkle_v1.json", () => {
     ] as const;
 
     it.each(profiles.map((p) => [p.name, p] as const))("%s root from the leaves", (_, p) => {
-      expect(toHex(p.root(size))).toBe(p.treeRoot);
+      expect(hexOf(p.root(size))).toBe(p.treeRoot);
     });
 
     it.each(profiles.map((p) => [p.name, p] as const))("%s inclusion proofs verify, and fail for any other leaf", (_, p) => {
@@ -45,7 +45,7 @@ describe("merkle_v1.json", () => {
         const proof = expectOk(merkle.InclusionProof.decode(p.hashing, valueOf(hex)), `proof ${i.toString()}`);
         expect(proof.index).toBe(BigInt(i));
         expect(proof.size).toBe(BigInt(size));
-        expect(toHex(expectOk(cbor.encode(expectOk(proof.encode(), "encodes")), "encodes")), "re-encodes").toBe(hex);
+        expect(hexOf(expectOk(cbor.encode(expectOk(proof.encode(), "encodes")), "encodes")), "re-encodes").toBe(hex);
         const leafHash = p.leafHash(i) ?? new Uint8Array(0);
         expect(expectOk(merkle.verifyInclusion(p.hashing, root, leafHash, proof), "verifies"), `leaf ${i.toString()}`).toBe(true);
         const other = p.leafHash((i + 1) % 8) ?? new Uint8Array(0);
@@ -59,7 +59,7 @@ describe("merkle_v1.json", () => {
       for (const [m, hex] of p.consistency.entries()) {
         const proof = expectOk(merkle.ConsistencyProof.decode(p.hashing, valueOf(hex)), `proof from ${m.toString()}`);
         expect([proof.oldSize, proof.newSize]).toEqual([BigInt(m), BigInt(size)]);
-        expect(toHex(expectOk(cbor.encode(expectOk(proof.encode(), "encodes")), "encodes"))).toBe(hex);
+        expect(hexOf(expectOk(cbor.encode(expectOk(proof.encode(), "encodes")), "encodes"))).toBe(hex);
         const oldRoot = p.root(m);
         expect(expectOk(merkle.verifyConsistency(p.hashing, oldRoot, newRoot, proof), "verifies"), `from ${m.toString()}`).toBe(true);
         expect(expectOk(merkle.merkleConsistencyVerify(p.hashing, { root: oldRoot, size: BigInt(m) }, { root: newRoot, size: BigInt(size) }, valueOf(hex)), "jlvm")).toBe(true);
@@ -73,8 +73,8 @@ describe("merkle_v1.json", () => {
 
   it("value commitments hash as the leaf of a value", () => {
     for (const c of vectors.valueCommitments) {
-      expect(toHex(expectOk(valueCommitment(valueOf(c.cbor)), "encodes")), "commit(v)").toBe(c.commitment);
-      expect(toHex(expectOk(tagged.leaf(valueOf(c.cbor)), "encodes")), "leaf hash").toBe(c.leafHash);
+      expect(hexOf(expectOk(valueCommitment(valueOf(c.cbor)), "encodes")), "commit(v)").toBe(c.commitment);
+      expect(hexOf(expectOk(tagged.leaf(valueOf(c.cbor)), "encodes")), "leaf hash").toBe(c.leafHash);
     }
   });
 });
