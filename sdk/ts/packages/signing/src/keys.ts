@@ -81,6 +81,8 @@ export class SigningKey<S extends string> {
     return this.toString();
   }
 }
+Object.freeze(SigningKey);
+Object.freeze(SigningKey.prototype);
 
 /** A decoded, validated verifying key of scheme `S`. */
 export class VerifyingKey<S extends string> {
@@ -116,6 +118,8 @@ export class VerifyingKey<S extends string> {
     return `VerifyingKey(${this.scheme}, ${hex(this.#bytes)})`;
   }
 }
+Object.freeze(VerifyingKey);
+Object.freeze(VerifyingKey.prototype);
 
 /** A decoded signature of scheme `S` (its decoder's checks passed). */
 export class Signature<S extends string> {
@@ -151,6 +155,8 @@ export class Signature<S extends string> {
     return `Signature(${this.scheme}, ${hex(this.#bytes)})`;
   }
 }
+Object.freeze(Signature);
+Object.freeze(Signature.prototype);
 
 export interface KeyPair<S extends string> {
   readonly signing: SigningKey<S>;
@@ -208,56 +214,61 @@ export class Secret {
     return this.toString();
   }
 }
+Object.freeze(Secret);
+Object.freeze(Secret.prototype);
 
-/** A secret of bytes this package owns (no copy is taken). */
-export const ownSecret = (bytes: Uint8Array): Secret => secretFrom(bytes);
+/**
+ * A secret of a copy of `bytes`. Every export of this module is reachable by a caller importing the shipped file by its
+ * URL, so none keeps a caller's memory in an instance or gives out an instance's own (see {@link branded}).
+ */
+export const ownSecret = (bytes: Uint8Array): Secret => secretFrom(copy(bytes));
 
 /**
  * The bytes of `x` if it is a key or signature of this package's of the class's kind and of `scheme`: a private-brand
- * check (no Proxy trap or caller code runs), then the frozen instance's `scheme`. The bytes are the instance's own, for
- * this package to read and never to change or hand out.
+ * check (no Proxy trap or caller code runs), then the frozen instance's `scheme`. A copy of the bytes: this module is
+ * shipped, so a caller importing it by its URL can call this, and must never reach (and change) an instance's memory.
  */
 function branded(of: (x: unknown) => Uint8Array | undefined, x: unknown, scheme: string, what: string): Result<Uint8Array, TypeMismatch> {
   const b = of(x);
   // a key of another scheme is refused: verifying under the wrong scheme's rules could accept what this scheme does not
-  return b !== undefined && (x as { readonly scheme: unknown }).scheme === scheme ? ok(b) : err(expected(`a ${scheme} ${what}`));
+  return b !== undefined && (x as { readonly scheme: unknown }).scheme === scheme ? ok(copy(b)) : err(expected(`a ${scheme} ${what}`));
 }
 
 /** The scheme of `x` if it is a `SigningKey` this package made (a brand check first), else `undefined`. */
 export const signingKeySchemeOf = (x: unknown): string | undefined => (signingOf(x) === undefined ? undefined : (x as SigningKey<string>).scheme);
 
-/** A verifying key's own bytes, if `x` is a `VerifyingKey` of `scheme` this package made, else `undefined`: nothing allocated. */
+/** A copy of a verifying key's bytes (see {@link branded}), if `x` is a `VerifyingKey` of `scheme` this package made, else `undefined`. */
 export function ownVerifyingKey(x: unknown, scheme: string): Uint8Array | undefined {
   const b = verifyingOf(x);
-  return b !== undefined && (x as { readonly scheme: unknown }).scheme === scheme ? b : undefined;
+  return b !== undefined && (x as { readonly scheme: unknown }).scheme === scheme ? copy(b) : undefined;
 }
 
-/** A signing key's own bytes, as {@link ownVerifyingKey}. */
+/** A copy of a signing key's bytes, as {@link ownVerifyingKey}. */
 export function ownSigningKey(x: unknown, scheme: string): Uint8Array | undefined {
   const b = signingOf(x);
-  return b !== undefined && (x as { readonly scheme: unknown }).scheme === scheme ? b : undefined;
+  return b !== undefined && (x as { readonly scheme: unknown }).scheme === scheme ? copy(b) : undefined;
 }
 
-/** A signature's own bytes, as {@link ownVerifyingKey}. */
+/** A copy of a signature's bytes, as {@link ownVerifyingKey}. */
 export function ownSignature(x: unknown, scheme: string): Uint8Array | undefined {
   const b = signatureBytesOf(x);
-  return b !== undefined && (x as { readonly scheme: unknown }).scheme === scheme ? b : undefined;
+  return b !== undefined && (x as { readonly scheme: unknown }).scheme === scheme ? copy(b) : undefined;
 }
 
-/** A signing key's own bytes, if `x` is a `SigningKey` of `scheme` this package made; else a `TypeMismatch`. */
+/** A copy of a signing key's bytes, if `x` is a `SigningKey` of `scheme` this package made; else a `TypeMismatch`. */
 export const signingKeyBytes = (x: unknown, scheme: string): Result<Uint8Array, TypeMismatch> => branded(signingOf, x, scheme, "SigningKey");
-/** A verifying key's own bytes, as {@link signingKeyBytes}. */
+/** A copy of a verifying key's bytes, as {@link signingKeyBytes}. */
 export const verifyingKeyBytes = (x: unknown, scheme: string): Result<Uint8Array, TypeMismatch> => branded(verifyingOf, x, scheme, "VerifyingKey");
-/** A signature's own bytes, as {@link signingKeyBytes}. */
+/** A copy of a signature's bytes, as {@link signingKeyBytes}. */
 export const signatureBytes = (x: unknown, scheme: string): Result<Uint8Array, TypeMismatch> => branded(signatureBytesOf, x, scheme, "Signature");
 
 /**
- * Secret input as bytes: a `Secret`'s own bytes, or a copy of a `Uint8Array`'s own memory, or `undefined` for anything
+ * Secret input as bytes: a copy of a `Secret`'s bytes, or of a `Uint8Array`'s own memory, or `undefined` for anything
  * else.
  */
 export function secretBytes(x: unknown, max: number): Uint8Array | number | undefined {
-  // a Secret's own bytes, or the caller's bytes through core's boundary, copied: past `max`, only their length
+  // a Secret's bytes or the caller's through core's boundary, copied either way: past `max`, only their length
   const own = secretOf(x);
-  if (own !== undefined) return own.length > max ? own.length : own;
+  if (own !== undefined) return own.length > max ? own.length : copy(own);
   return ownCopy(x, max);
 }

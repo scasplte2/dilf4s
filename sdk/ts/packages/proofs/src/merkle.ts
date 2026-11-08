@@ -11,8 +11,16 @@ import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type
 import { bytesLength, digestOf, hashPartsOf, mint, outputSizeOf, ownBytes, ownCopy, readGuarded, toHexOf, UNBOUNDED } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Measured, type Token } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_BIGINT, NOT_BYTES, readArray, valueArg, type Measured } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
+
+/**
+ * The token this module's constructors take, private to it (no other module, shipped file or not, can reach it): a
+ * constructor is private to TypeScript alone, so JavaScript can call one (`new`, `Reflect.construct`); without the
+ * token it reads nothing it is given and stamps no brand (core's `mint`), so no check here accepts what it builds.
+ */
+const TOKEN: unique symbol = Symbol("dilf4s-proofs: merkle");
+type Token = typeof TOKEN;
 
 /**
  * Why a Merkle proof could not be checked: generated from `shared/schemas/proofs-errors.cddl` (`models.proofsErrors`),
@@ -185,6 +193,8 @@ export class TaggedMerkleHashing implements MerkleHashing<Value> {
     return isTagged(this) ? checkedNode(this, left, right) : err(NOT_A_PROFILE);
   }
 }
+Object.freeze(TaggedMerkleHashing);
+Object.freeze(TaggedMerkleHashing.prototype);
 
 /** RFC 6962's one-byte prefixes, for external logs: leaves are raw bytes. */
 export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
@@ -236,6 +246,8 @@ export class Rfc6962MerkleHashing implements MerkleHashing<Uint8Array> {
     return isRfc(this) ? checkedNode(this, left, right) : err(NOT_A_PROFILE);
   }
 }
+Object.freeze(Rfc6962MerkleHashing);
+Object.freeze(Rfc6962MerkleHashing.prototype);
 
 const withinIndex = (n: bigint): boolean => n >= 0n && n <= MAX_TREE_INDEX;
 
@@ -325,6 +337,8 @@ export class InclusionProof {
     return v.ok ? v : err({ kind: "Encoding", reason: v.error.kind });
   }
 }
+Object.freeze(InclusionProof);
+Object.freeze(InclusionProof.prototype);
 
 /** {@link InclusionProof.of} over checked arguments, the path owned (kept as it is). */
 const inclusionOf = (index: bigint, size: bigint, path: readonly Uint8Array[]): Result<InclusionProof, MerkleError> =>
@@ -398,6 +412,8 @@ export class ConsistencyProof {
     return v.ok ? v : err({ kind: "Encoding", reason: v.error.kind });
   }
 }
+Object.freeze(ConsistencyProof);
+Object.freeze(ConsistencyProof.prototype);
 
 /** {@link ConsistencyProof.of} over checked arguments, the path owned (kept as it is). */
 const consistencyOf = (oldSize: bigint, newSize: bigint, path: readonly Uint8Array[]): Result<ConsistencyProof, MerkleError> =>

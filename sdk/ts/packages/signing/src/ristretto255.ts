@@ -48,7 +48,7 @@ function canonicalScalar(b: Uint8Array): bigint | undefined {
 
 const mulBase = (s: bigint): RistrettoPoint => (s === 0n ? RPoint.ZERO : RPoint.BASE.multiply(s));
 
-const codec: SchemeCodec<typeof NAME> = {
+const codec = Object.freeze<SchemeCodec<typeof NAME>>({
   name: NAME,
   signingKey: (bytes) => {
     const b = sized("ristretto255 signing key", 32, bytes);
@@ -71,7 +71,7 @@ const codec: SchemeCodec<typeof NAME> = {
       : err(invalidEncoding("ristretto255 signature", "expected R (non-identity element) || z (canonical scalar)"));
   },
   publicKey: checkedPublicKey(NAME, (sk) => publicOf(sk)),
-};
+});
 
 /** The public key of a secret scalar's bytes. */
 const publicOf = (sk: Uint8Array): Uint8Array => mulBase(leToBig(sk)).toBytes();
@@ -105,8 +105,8 @@ const freshRandomness = (): Uint8Array | Err<never> => randomBytes(32);
 
 /**
  * A signature by `key` over `message` with the nonce randomness `randomness` reads from `given`, each checked in turn:
- * the key must be the scheme's (its own bytes read), the message is copied once, then the randomness. The functions
- * are the module's own, made once: a passing check allocates the two copies and no wrapper or closure.
+ * the key must be the scheme's (a copy of its bytes read), the message is copied once, then the randomness. The
+ * functions are the module's own, made once: a passing check allocates the three copies and no wrapper or closure.
  */
 function signChecked<E>(key: unknown, message: unknown, given: unknown, randomness: (x: unknown) => Uint8Array | Err<E>): Result<Signature<typeof NAME>, TypeMismatch | E> {
   const k = ownSigningKey(key, NAME);

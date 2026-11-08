@@ -95,6 +95,8 @@ export class WordList {
     return this.#index.get(word);
   }
 }
+Object.freeze(WordList);
+Object.freeze(WordList.prototype);
 
 /** A BIP-39 mnemonic phrase: secret, so it never prints. */
 export class Mnemonic {
@@ -136,6 +138,8 @@ export class Mnemonic {
     return this.toString();
   }
 }
+Object.freeze(Mnemonic);
+Object.freeze(Mnemonic.prototype);
 
 const ENTROPY_SIZES = [16, 20, 24, 28, 32];
 const WORD_COUNTS = [12, 15, 18, 21, 24];

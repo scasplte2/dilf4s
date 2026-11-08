@@ -158,12 +158,45 @@ what a codec accepts or produces for every other caller. Freezing is done once, 
 decoding do no work for it. A deferred reference calls its function once, when first followed, and keeps what it gives
 for good (each generated one reads an exported constant, which no importer can reassign). What a combinator is given as
 code stays the caller's own (a hand-made leaf's functions, a codec made otherwise, called through its methods), checked
-each time it is called as every caller function is above: one revoked since is refused, never called. A codec built from
-core's combinators alone, as every generated one is, does no such check. The realm's built-ins (`Array.prototype` and
-the like) are outside this guarantee, as for any JavaScript library. A test walks the exports of every core module and
-generated model (no test hook is a mutable export), and fails on any object or class it reaches that is not frozen.
+each time it is called as every caller function is above: one revoked since is refused, never called. What such code
+gives is checked as a `Result` before anything of it is read, in O(1): an object (not a revoked Proxy) whose `ok`, read
+once, is `true` or `false`, then its `value` or `error`, read once (an encode refusal must be an object with a string
+`kind`, and a decode refusal a decode failure, its `reason` a string and its `path` an array of previews, read by
+index). Anything else (`undefined`, a number, `{ ok: "yes" }`) is a `TypeMismatch` when encoding, and a decode failure
+when decoding, never a throw; `toCbor`, `fromCbor`, `fromJson` and `decodeWithin` check a hand-made codec they are
+given in the same way. A codec built from core's combinators alone, as every generated one is, does none of these
+checks. The realm's built-ins
+(`Array.prototype` and the like) are outside this guarantee, as for any JavaScript library, and so are the SDK's
+dependencies (noble's curves and hashes, which signing and proofs call), whose objects are as mutable as the
+built-ins. A test walks the exports of every core module and generated model (no test hook is a mutable export), and
+fails on any object or class it reaches that is not frozen.
 Scala's and Rust's models are immutable values by construction, so this is the TypeScript SDK's alone and has no
 conformance vector.
+
+The signing and proofs packages are held to the same rule. Every class in them (keys, signatures, secrets, messages,
+VRF proofs and outputs, KES schemes and keys, extended keys, indices, word lists and mnemonics; Merkle profiles and
+proofs, trie hashings, modes, segments, proofs and verified proofs, Poseidon elements and proofs, state keys,
+namespaces, versioned tries, verified states, snapshot readers and replicas, and their internal ones), its prototype
+and every instance a caller is given are frozen, as are the objects they export or share: the schemes, VRF suites and
+their profiles, derivations, version keys, literal tags, the BIP-39 word list, the Poseidon tables and every
+refusal or verdict they give more than one caller. Freezing is shallow, so what an instance keeps (a replica's tries and
+their nodes, a snapshot reader's accepted chunks and trusted head) is held in runtime-private (`#`) fields, never
+TypeScript `private` ones, which JavaScript reads as any other property, and what it hands out (a replica's head and
+history, a reader's trusted head and finished snapshot) is a copy. A byte version (`VersionKey.bytes`) is copied as it
+is read in, from its internal slots, as roots are (one longer than its key's width is kept as that length alone, never
+copied, and refused by it), and again as it is handed out; a caller's own version key's versions are the caller's own
+values, which the key checks as it encodes them. Every export of a shipped module, entry point or not, is reachable by
+a caller importing the file by its URL, so none gives out an instance's own memory: proofs' constructor tokens are
+each module's own, and signing's key, signature and secret readers give copies. Signing's keys are built by each
+scheme's module, through a token and factories its keys module exports; they copy what they are given, so a key built
+from outside that way holds no caller memory, but it has not passed its scheme's decoding. The trie's table of unchecked operations, which the replica and the
+versioned trie call, is filled as `trie.ts` loads, then defined whole on the table its other modules import and frozen:
+a slot code loaded earlier put there is replaced, or, if it cannot be, the package does not load, so none of its code
+runs with one. Bytes cannot be frozen, so no module exports a typed array that holds any: the versioned trie's slots
+(`VERSION_SLOT`, `STATE_SLOT`, `HISTORY_SLOT`) are the one byte of each key, as numbers, as Rust's are `u8`s. A test in
+each package walks the exports of every module, entry point or not, and an instance of each class, and fails on any
+object or class it reaches that is not frozen; another tries every write on a key class's and a proof class's
+prototype, and on the tables, in strict and in sloppy code, and checks that no verdict changes.
 
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the

@@ -60,6 +60,8 @@ export class Message32 {
     return copy(this.#bytes);
   }
 }
+Object.freeze(Message32);
+Object.freeze(Message32.prototype);
 
 const NOT_A_MESSAGE32 = expected("a Message32");
 

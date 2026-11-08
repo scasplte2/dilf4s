@@ -8,7 +8,8 @@ export interface Bits {
   readonly length: number;
 }
 
-export const EMPTY_BITS: Bits = { bytes: new Uint8Array(0), length: 0 };
+// frozen, its empty bytes too (a typed array of no elements can be): a module's constant, shared by every caller
+export const EMPTY_BITS: Bits = Object.freeze({ bytes: Object.freeze(new Uint8Array(0)), length: 0 });
 
 /** The bits of a byte string (shares `bytes`: callers pass bytes they own). */
 export function bitsOf(bytes: Uint8Array): Bits {

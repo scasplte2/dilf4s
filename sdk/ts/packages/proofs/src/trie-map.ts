@@ -67,13 +67,16 @@ type BuildTask<P> = { readonly lo: number; readonly hi: number; readonly offset:
 
 /** A persistent trie of payloads in one key mode. */
 export class TrieMap<P> {
+  // runtime-private: the nodes are plain objects, shared with the maps this one was built from, so no caller may reach them
+  readonly #top: Node<P> | undefined;
   private constructor(
     readonly hashing: TrieHashing,
     readonly mode: KeyMode,
-    private readonly top: Node<P> | undefined,
+    top: Node<P> | undefined,
     /** The number of entries. */
     readonly size: number,
   ) {
+    this.#top = top;
     Object.freeze(this);
   }
 
@@ -83,14 +86,14 @@ export class TrieMap<P> {
 
   /** The root (a copy). */
   get root(): Uint8Array {
-    return this.top === undefined ? this.hashing.empty : copyBytes(this.top.hash);
+    return this.#top === undefined ? this.hashing.empty : copyBytes(this.#top.hash);
   }
 
   /** The payload at `key`, if any: one walk down its path. */
   get(key: Uint8Array): P | undefined {
     if (!TRIE.checkKey(this.mode, key).ok) return undefined;
     const path = B.bitsOf(key);
-    let at = this.top;
+    let at = this.#top;
     let offset = 0;
     while (at !== undefined) {
       if (!B.startsWithAt(path, offset, at.segment)) return undefined;
@@ -111,7 +114,7 @@ export class TrieMap<P> {
     const slot: Slot<P> = { payload, hash: copyBytes(hash) };
     const leaf = (from: number): Node<P> => node(h, B.slice(path, from, path.length), slot, undefined, undefined);
     const frames: (readonly [Node<P>, boolean])[] = [];
-    let at = this.top;
+    let at = this.#top;
     let offset = 0;
     for (;;) {
       if (at === undefined) return ok(this.next(rebuild(h, frames, leaf(offset)), true));
@@ -148,7 +151,7 @@ export class TrieMap<P> {
     const h = this.hashing;
     const path = B.bitsOf(key);
     const frames: (readonly [Node<P>, boolean])[] = [];
-    let at = this.top;
+    let at = this.#top;
     let offset = 0;
     while (at !== undefined) {
       if (!B.startsWithAt(path, offset, at.segment)) break;
@@ -173,7 +176,7 @@ export class TrieMap<P> {
   /** Every payload, in key order (a key before its extensions, then bit 0 before bit 1). */
   values(): P[] {
     const out: P[] = [];
-    const todo: Node<P>[] = this.top === undefined ? [] : [this.top];
+    const todo: Node<P>[] = this.#top === undefined ? [] : [this.#top];
     for (let n = todo.pop(); n !== undefined; n = todo.pop()) {
       if (n.value !== undefined) out.push(n.value.payload);
       if (n.right !== undefined) todo.push(n.right);
@@ -227,3 +230,5 @@ export class TrieMap<P> {
     return top === undefined ? err({ kind: "InvalidNode", reason: "no root" }) : ok(new TrieMap(hashing, mode, top, keys.length));
   }
 }
+Object.freeze(TrieMap);
+Object.freeze(TrieMap.prototype);

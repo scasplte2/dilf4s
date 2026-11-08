@@ -73,7 +73,7 @@ function g2(bytes: Uint8Array): Result<G2Point, CryptoError> {
 
 const encodeG2 = (p: G2Point): Uint8Array => (p.is0() ? G2_INFINITY.slice() : sigs.Signature.toBytes(p));
 
-const codec: SchemeCodec<typeof NAME> = {
+const codec = Object.freeze<SchemeCodec<typeof NAME>>({
   name: NAME,
   signingKey: (bytes) => {
     const b = sized("BLS signing key", 32, bytes);
@@ -94,7 +94,7 @@ const codec: SchemeCodec<typeof NAME> = {
     return p.ok ? ok(signatureOf(NAME, b.value)) : p;
   },
   publicKey: checkedPublicKey(NAME, (sk) => publicOf(sk)),
-};
+});
 
 /** The compressed public key of a secret key's bytes. */
 const publicOf = (sk: Uint8Array): Uint8Array => G1.BASE.multiply(beToBig(sk)).toBytes(true);

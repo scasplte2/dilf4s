@@ -64,6 +64,8 @@ export class VrfProof<S extends VrfSuiteName> {
     return `VrfProof(${this.suite}, ${hex(this.#bytes)})`;
   }
 }
+Object.freeze(VrfProof);
+Object.freeze(VrfProof.prototype);
 
 /** The 64-byte output `beta`: only ever produced by proving or by a successful verification. */
 export class VrfOutput<S extends VrfSuiteName> {
@@ -87,6 +89,8 @@ export class VrfOutput<S extends VrfSuiteName> {
     return `VrfOutput(${this.suite}, ${hex(this.#bytes)})`;
   }
 }
+Object.freeze(VrfOutput);
+Object.freeze(VrfOutput.prototype);
 
 /** Proving and verification for one suite. */
 export interface Vrf<S extends VrfSuiteName> {
@@ -180,7 +184,7 @@ interface Profile<S extends VrfSuiteName> {
 
 /** RFC 9381: strict decoding, `Y` in the challenge, trailing zero octets, the literal `s B - c Y`. */
 function rfc9381<S extends VrfSuiteName>(name: S, suite: number, hashToCurve: Profile<S>["hashToCurve"]): Profile<S> {
-  return {
+  return Object.freeze<Profile<S>>({
     name,
     suite,
     skLength: 32,
@@ -189,7 +193,7 @@ function rfc9381<S extends VrfSuiteName>(name: S, suite: number, hashToCurve: Pr
     challenge: (pk, h, gamma, u, v) => sha512Parts(Uint8Array.of(suite, 0x02), pk, h, gamma, u, v, Uint8Array.of(0)).slice(0, 16),
     equation: (p, q, c, s) => mulPublic(q, s).subtract(mulPublic(p, c)),
     outputSuffix: Uint8Array.of(0),
-  };
+  });
 }
 
 const TAI = rfc9381("ECVRF-EDWARDS25519-SHA512-TAI", 0x03, (pk, alpha) => {
@@ -208,7 +212,7 @@ const ELL2 = rfc9381("ECVRF-EDWARDS25519-SHA512-ELL2", 0x04, (pk, alpha) => enco
  * draft-03 as libsodium: canonical-`y` decoding that admits negative zero, no `Y` in the challenge, no trailing
  * octets, and `U = (-c mod L) Y + s B` (the integer `L - c`, which differs from `s B - c Y` on mixed-order points).
  */
-const DRAFT03: Profile<"ECVRF-ED25519-SHA512-Elligator2 (draft-03)"> = {
+const DRAFT03 = Object.freeze<Profile<"ECVRF-ED25519-SHA512-Elligator2 (draft-03)">>({
   name: "ECVRF-ED25519-SHA512-Elligator2 (draft-03)",
   suite: 0x04,
   skLength: 64,
@@ -217,7 +221,7 @@ const DRAFT03: Profile<"ECVRF-ED25519-SHA512-Elligator2 (draft-03)"> = {
   challenge: (_pk, h, gamma, u, v) => sha512Parts(Uint8Array.of(0x04, 0x02), h, gamma, u, v).slice(0, 16),
   equation: (p, q, c, s) => mulPublic(p, mod(L - c, L)).add(mulPublic(q, s)),
   outputSuffix: new Uint8Array(0),
-};
+});
 
 /** Exposed for the intermediate-step tests (the libsodium helper corpus). */
 export const draft03Equation = DRAFT03.equation;

@@ -82,9 +82,9 @@ export const verifiedMessage: MessageReader<Uint8Array> = Object.freeze({ read: 
 export type RawVerify<M> = (key: Uint8Array, message: M, signature: Uint8Array) => boolean;
 
 /**
- * `verify` for a scheme: the key and signature must be this scheme's (their own bytes are read, never copied), and the
- * message is read by `messages`. The checks allocate nothing (a refusal is a shared constant), the verdict is one of
- * two shared results, and the one allocation is the message's plain view, where `messages` makes one.
+ * `verify` for a scheme: the key and signature must be this scheme's (a copy of their bytes is read, as `keys.ts` gives
+ * no instance's own), and the message is read by `messages`. A refusal is a shared constant, the verdict one of two
+ * shared results; a passing check allocates the two copies and the message's plain view, where `messages` makes one.
  */
 export function checkedVerify<S extends SchemeName, M>(
   scheme: S,
@@ -136,8 +136,8 @@ export function checkedPublicKey<S extends SchemeName>(scheme: S, of: (secret: U
 }
 
 /**
- * `sign` for a scheme: the key must be this scheme's `SigningKey` (its own bytes read, nothing allocated to check it),
- * and the message is copied once (see `signedOf`), the one allocation a passing check makes.
+ * `sign` for a scheme: the key must be this scheme's `SigningKey` (a copy of its bytes read, as `keys.ts` gives no
+ * instance's own), and the message is copied once (see `signedOf`): the two allocations a passing check makes.
  */
 export function checkedSign<S extends SchemeName>(scheme: S, raw: (secret: Uint8Array, message: Uint8Array) => Uint8Array): (key: SigningKey<S>, message: Uint8Array) => Result<Signature<S>, TypeMismatch> {
   const notKey = Object.freeze(err(expected(`a ${scheme} SigningKey`)));

@@ -16,9 +16,23 @@ import { bytesLength, MAX_OUTPUT_SIZE, mint, outputSizeOf, ownBytes, ownCopy, ow
 import * as B from "./bits.js";
 import * as L from "./listing.js";
 import { bytesEqual, compareBytes, ConstantTag, copyBytes, concatBytes } from "./bytes.js";
-import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_NUMBER, NOT_A_VALUE, NOT_BYTES, readArray, readIterable, readPair, TOKEN, valueArg, type Measured, type Token } from "./check.js";
+import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isMeasuredBytes, isObject, isSized, measured, NOT_A_NUMBER, NOT_A_VALUE, NOT_BYTES, readArray, readIterable, readPair, valueArg, type Measured } from "./check.js";
 import { bitsOf, decodeInput, MAX_PROOF_WEIGHT } from "./input.js";
-import { TRIE } from "./trie-internal.js";
+import { TRIE, type TrieInternals } from "./trie-internal.js";
+
+/**
+ * The token this module's constructors take, private to it (no other module, shipped file or not, can reach it): a
+ * constructor is private to TypeScript alone, so JavaScript can call one (`new`, `Reflect.construct`); without the
+ * token it reads nothing it is given and stamps no brand (core's `mint`), so no check here accepts what it builds.
+ */
+const TOKEN: unique symbol = Symbol("dilf4s-proofs: trie");
+type Token = typeof TOKEN;
+
+/**
+ * The trie's unchecked operations, filled as this module's classes load (from their private fields) and read here
+ * alone; published to {@link TRIE}, whole and frozen, once the module has loaded (at its end).
+ */
+const internals = {} as TrieInternals;
 
 /**
  * Why a trie operation failed: generated from `shared/schemas/proofs-errors.cddl` (`models.proofsErrors`), with the
@@ -72,7 +86,7 @@ export class KeyMode {
 
   static {
     isMode = (x): x is KeyMode => MODE.has(x);
-    TRIE.defaultMode = new KeyMode(TOKEN, "fixed", 1);
+    internals.defaultMode = new KeyMode(TOKEN, "fixed", 1);
   }
 
   /** Keys of exactly `bytes` bytes, `1..MAX_FIXED_BYTES` (`InvalidKey`); a length that is not a number is a `TypeMismatch`. */
@@ -114,6 +128,8 @@ export class KeyMode {
     return `${this.kind}(${this.bytes.toString()})`;
   }
 }
+Object.freeze(KeyMode);
+Object.freeze(KeyMode.prototype);
 
 const VALID: Result<undefined, never> = Object.freeze(ok(undefined));
 
@@ -170,6 +186,8 @@ export class Segment {
     isSegment = (x): x is Segment => SEGMENT.has(x);
   }
 }
+Object.freeze(Segment);
+Object.freeze(Segment.prototype);
 
 /** The byte width a segment of `n` bits has, `ceil(n / 8)` (0 for a negative count, which is refused), as a number. */
 const segmentWidth = (n: bigint): number => {
@@ -254,17 +272,17 @@ export class TrieHashing {
 
   static {
     isHashing = (x): x is TrieHashing => HASHING.has(x);
-    TRIE.valueHash = (h, value) => {
+    internals.valueHash = (h, value) => {
       const c = h.#value.commitment(value);
       if (c.ok) return c;
       // the value is checked first, so the commitment can only be too large
       return err(c.error.kind === "TooLarge" ? { kind: "TooLarge", limit: c.error.limit } : { kind: "Encoding", reason: c.error.reason });
     };
-    TRIE.bytesHash = (h, b) => h.#value.hashParts([Uint8Array.of(BYTES_TAG), b]);
-    TRIE.leafBits = (h, segment, valueHash) =>
+    internals.bytesHash = (h, b) => h.#value.hashParts([Uint8Array.of(BYTES_TAG), b]);
+    internals.leafBits = (h, segment, valueHash) =>
       // {"s": segment, "v": valueHash}
       h.#leaf.hash(concatBytes([Uint8Array.of(0xa2), cborKey("s"), cborSegment(segment), cborKey("v"), cborBytes(valueHash)]));
-    TRIE.branchBits = (h, segment, valueHash, left, right) => {
+    internals.branchBits = (h, segment, valueHash, left, right) => {
       // canonical key order: "l", "r", "s", "v"
       const parts: Uint8Array[] = [];
       if (left !== undefined) parts.push(cborKey("l"), cborBytes(left));
@@ -274,9 +292,9 @@ export class TrieHashing {
       const count = 1 + (left === undefined ? 0 : 1) + (right === undefined ? 0 : 1) + (valueHash === undefined ? 0 : 1);
       return h.#branch.hash(concatBytes([cborHead(5, count), ...parts]));
     };
-    TRIE.rootText = rootText;
-    TRIE.checkKey = checkKey;
-    TRIE.defaultHashing = new TrieHashing(TOKEN, "SHA-256");
+    internals.rootText = rootText;
+    internals.checkKey = checkKey;
+    internals.defaultHashing = new TrieHashing(TOKEN, "SHA-256");
   }
 
   /** The hashing over `algorithm`; one that is not a `HashAlgorithm` (from a JavaScript caller) is a `TypeMismatch`. */
@@ -299,7 +317,7 @@ export class TrieHashing {
   valueHash(value: Value): Result<Uint8Array, Refusal> {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
     const v = valueArg(value);
-    return v.ok ? TRIE.valueHash(this, v.value) : v;
+    return v.ok ? internals.valueHash(this, v.value) : v;
   }
 
   /**
@@ -310,7 +328,7 @@ export class TrieHashing {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
     // a byte string of any length is committed
     const bytes = bytesArg(b);
-    return bytes.ok ? ok(TRIE.bytesHash(this, bytes.value)) : bytes;
+    return bytes.ok ? ok(internals.bytesHash(this, bytes.value)) : bytes;
   }
 
   /** A leaf's hash; a segment not made by `Segment.of`, or a digest that is not a `Uint8Array`, is a `TypeMismatch`. */
@@ -318,7 +336,7 @@ export class TrieHashing {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
     if (!isSegment(segment)) return err(expected("a Segment"));
     const v = bytesArg(valueHash);
-    return v.ok ? ok(TRIE.leafBits(this, segmentBitsOf(segment), v.value)) : v;
+    return v.ok ? ok(internals.leafBits(this, segmentBitsOf(segment), v.value)) : v;
   }
 
   /** A branch's hash; absent fields are omitted. Arguments are checked as {@link leafHash} checks them. */
@@ -330,9 +348,11 @@ export class TrieHashing {
     const l = optionalBytes(left);
     if (!l.ok) return l;
     const r = optionalBytes(right);
-    return r.ok ? ok(TRIE.branchBits(this, segmentBitsOf(segment), v.value, l.value, r.value)) : r;
+    return r.ok ? ok(internals.branchBits(this, segmentBitsOf(segment), v.value, l.value, r.value)) : r;
   }
 }
+Object.freeze(TrieHashing);
+Object.freeze(TrieHashing.prototype);
 
 // ------------------------------------------------------------------ partial tries (section 4)
 
@@ -431,6 +451,8 @@ export class TrieProof {
     return v.value.weight <= MAX_PROOF_WEIGHT ? v : err({ kind: "TooLarge", limit: Number(MAX_PROOF_WEIGHT) });
   }
 }
+Object.freeze(TrieProof);
+Object.freeze(TrieProof.prototype);
 
 function decodeProof(h: TrieHashing, value: Value): Result<TrieProof, TrieError> {
   const w = decodeInput(models.trie.TrieProof, value);
@@ -550,7 +572,7 @@ function hashProof(hashing: TrieHashing, mode: KeyMode, top: ProofNode): Result<
       const b = t.combine;
       const right = pop(b.right !== undefined);
       const left = pop(b.left !== undefined);
-      done.push(TRIE.branchBits(hashing, b.segment, b.value, left, right));
+      done.push(internals.branchBits(hashing, b.segment, b.value, left, right));
       continue;
     }
     const node = t.visit;
@@ -562,7 +584,7 @@ function hashProof(hashing: TrieHashing, mode: KeyMode, top: ProofNode): Result<
         const bits = t.depth + node.segment.length;
         const lengthOk = mode.kind === "fixed" ? bits === mode.maxBits : bits <= mode.maxBits && bits % 8 === 0;
         if (!lengthOk) return invalidProof(`leaf ends at bit ${bits.toString()}, invalid for ${mode.toString()}`);
-        done.push(TRIE.leafBits(hashing, node.segment, node.value));
+        done.push(internals.leafBits(hashing, node.segment, node.value));
         break;
       }
       case "branch": {
@@ -713,9 +735,9 @@ export class VerifiedTrieProof {
       const valid = checkKeyLength(v.mode, key.length);
       return valid.ok ? ok(lookupPath(v.#top, { bytes: key, length: key.length * 8 })) : valid;
     };
-    TRIE.lookup = (v, key) => lookupOf(v, key);
-    TRIE.prefix = (v, prefix) => listingOf(L.listPrefix(v.#top, prefix));
-    TRIE.range = (v, from, until) => listingOf(L.listRange(v.#top, from, until));
+    internals.lookup = (v, key) => lookupOf(v, key);
+    internals.prefix = (v, prefix) => listingOf(L.listPrefix(v.#top, prefix));
+    internals.range = (v, from, until) => listingOf(L.listRange(v.#top, from, until));
   }
 
   /**
@@ -739,7 +761,7 @@ export class VerifiedTrieProof {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
     // copied: the walk reads the prefix's bytes more than once, and shared memory could change between the reads
     const p = queryArg(this.mode, prefix);
-    return p.ok ? ok(TRIE.prefix(this, p.value)) : p;
+    return p.ok ? ok(internals.prefix(this, p.value)) : p;
   }
 
   /**
@@ -753,7 +775,7 @@ export class VerifiedTrieProof {
     const f = queryArg(this.mode, from);
     if (!f.ok) return f;
     const u = optionalQueryArg(this.mode, until);
-    return u.ok ? ok(TRIE.range(this, f.value, u.value)) : u;
+    return u.ok ? ok(internals.range(this, f.value, u.value)) : u;
   }
 
   /**
@@ -782,6 +804,8 @@ export class VerifiedTrieProof {
     return c.ok ? verdictOf(L.listsRange(this.#top, f.value, u.value, c.value)) : c;
   }
 }
+Object.freeze(VerifiedTrieProof);
+Object.freeze(VerifiedTrieProof.prototype);
 
 /** The lookup of a plain path, already checked against the mode. */
 function lookupPath(top: ProofNode | undefined, path: B.Bits): Lookup {
@@ -875,7 +899,7 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
   switch (l.value.kind) {
     case "present": {
       if (claim.value === null || isAbsence(claim.value)) return ok(false);
-      const vh = TRIE.valueHash(h, claim.value);
+      const vh = internals.valueHash(h, claim.value);
       return vh.ok ? ok(bytesEqual(vh.value, l.value.valueHash)) : vh;
     }
     case "absent":
@@ -917,7 +941,7 @@ function claimedEntries(hashing: TrieHashing, mode: KeyMode, entries: readonly C
   if (!c.ok) return c;
   const out: TrieEntry[] = [];
   for (const [key, value] of owned) {
-    const h = TRIE.valueHash(hashing, value);
+    const h = internals.valueHash(hashing, value);
     if (!h.ok) return h;
     out.push({ key, valueHash: h.value });
   }
@@ -1045,12 +1069,12 @@ function trieRootOf(hashing: TrieHashing, mode: KeyMode, entries: readonly (read
     if ("segment" in t) {
       const right = t.right ? done.pop() : undefined;
       const left = t.left ? done.pop() : undefined;
-      done.push(TRIE.branchBits(hashing, t.segment, t.value, left, right));
+      done.push(internals.branchBits(hashing, t.segment, t.value, left, right));
       continue;
     }
     const first = keyAt(t.lo);
     if (t.hi - t.lo === 1) {
-      done.push(TRIE.leafBits(hashing, B.drop(first, t.offset), values[t.lo] ?? new Uint8Array(0)));
+      done.push(internals.leafBits(hashing, B.drop(first, t.offset), values[t.lo] ?? new Uint8Array(0)));
       continue;
     }
     // sorted keys share what the first and last share; a key ending there sorts first, then bit 0, then bit 1
@@ -1068,7 +1092,14 @@ function trieRootOf(hashing: TrieHashing, mode: KeyMode, entries: readonly (read
   return root === undefined ? err({ kind: "InvalidNode", reason: "no root" }) : ok(root);
 }
 
-TRIE.fromRecords = fromRecords;
-TRIE.isProof = isProof;
-TRIE.check = checkOf;
-TRIE.trieRoot = trieRootOf;
+// a caller importing trie-internal.js by its URL can call this: a node keeps copies of a record's bytes (segmentBits,
+// digestOf), never the caller's arrays
+internals.fromRecords = fromRecords;
+internals.isProof = isProof;
+internals.check = checkOf;
+internals.trieRoot = trieRootOf;
+
+// Published whole, then frozen, so no code (a module importing trie-internal.ts by its URL included) can replace an
+// operation the replica and the versioned trie call. Each slot is defined, never assigned: one a module loaded earlier
+// put there (an accessor, say) is replaced, or, if it cannot be, this module fails to load and nothing runs.
+Object.freeze(Object.defineProperties(TRIE, Object.getOwnPropertyDescriptors(internals)));

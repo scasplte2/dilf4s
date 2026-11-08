@@ -13,9 +13,9 @@ import { plainBytes } from "./bytes.js";
 import { decode as decodeCbor, encode as encodeCbor } from "./cbor.js";
 import { decodeFailure as failure, type CanonicalError, type DecodeFailure, type TooLarge } from "./error.js";
 import { isArrayGuarded, isRevokedProxy, readGuarded, REVOKED } from "./guard.js";
-import { close as closeIterator, isArrayLength, NOT_A_RESULT, NOT_ITERABLE, open, readStep, type Reader } from "./iterator.js";
+import { close as closeIterator, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, open, readStep, type Reader } from "./iterator.js";
 import { parse as parseJson } from "./json.js";
-import { Preview } from "./preview.js";
+import { isPreview, Preview } from "./preview.js";
 import { search } from "./keyset.js";
 import { err, ok, type Err, type Result } from "./result.js";
 import { encodeUtf8, utf8LengthOf } from "./utf8.js";
@@ -149,9 +149,10 @@ const frozenPair = (p: readonly [readonly string[], readonly string[]]): readonl
  */
 export function leaf<T>(encode: (value: T) => Result<Value, CanonicalError>, decode: (value: Value) => Result<T, DecodeFailure>): Codec<T> {
   if (!isFunction(encode) || !isFunction(decode)) return refusing(NOT_FUNCTIONS);
-  return leafOf(
-    (v) => (isRevokedProxy(encode) ? typeMismatch(REVOKED_FUNCTION) : encode(v)),
-    (v) => (isRevokedProxy(decode) ? decodeFailure(REVOKED_FUNCTION) : decode(v)),
+  // each result checked as a Result before the walk reads it: the functions are the caller's, and may give anything
+  return leafOf<T>(
+    (v) => (isRevokedProxy(encode) ? typeMismatch(REVOKED_FUNCTION) : encodedBy(encode(v))),
+    (v) => (isRevokedProxy(decode) ? decodeFailure(REVOKED_FUNCTION) : (decodedBy(decode(v)) as Result<T, DecodeFailure>)),
   );
 }
 
@@ -178,12 +179,19 @@ export function decodeWithin<T>(codec: Codec<T>, value: Value, maxWeight: bigint
   if (!isValue(value)) return notAValue();
   if (!isBigint(maxWeight)) return decodeFailure("the weight budget is not a bigint");
   const budget = maxWeight < 0n ? 0n : maxWeight > MAX_WEIGHT ? MAX_WEIGHT : maxWeight;
-  return value.weight > budget ? err(failure(`the value weighs over ${budget.toString()}`)) : codec.decode(value);
+  return value.weight > budget ? err(failure(`the value weighs over ${budget.toString()}`)) : decodeAny(codec, value);
 }
+
+// The entry points walk `codec` themselves, never through its own methods: one of this module's is walked as its
+// `encode` and `decode` walk it (the value and depth already checked), at no extra cost, and a codec made otherwise is
+// called as a part of one is, its result checked ({@link encodedBy}), so it cannot make them throw.
+const encodeAny = <T>(codec: Codec<T>, value: T): Result<Value, CanonicalError> => encodeWith(codec, value, 0);
+// the combinators that built `codec` keep its parts' types, so what it decodes is a `T`, as its own `decode` says
+const decodeAny = <T>(codec: Codec<T>, value: Value): Result<T, DecodeFailure> => decodeWith(codec, value) as Result<T, DecodeFailure>;
 
 /** The canonical CBOR of `value`, as `cbor.encode`: a model holding caller values (`any`) may share parts. */
 export function toCbor<T>(codec: Codec<T>, value: T): Result<Uint8Array, CanonicalError | TooLarge> {
-  const v = codec.encode(value);
+  const v = encodeAny(codec, value);
   return v.ok ? encodeCbor(v.value) : v;
 }
 
@@ -192,7 +200,7 @@ export function fromCbor<T>(codec: Codec<T>, bytes: Uint8Array): Result<T, Model
   // cbor.decode refuses what is not bytes, and reads them through their own slots (plainBytes)
   const v = decodeCbor(bytes);
   if (!v.ok) return err({ kind: "Canonical", error: v.error });
-  const d = codec.decode(v.value);
+  const d = decodeAny(codec, v.value);
   return d.ok ? d : err({ kind: "Decode", error: d.error });
 }
 
@@ -200,7 +208,7 @@ export function fromCbor<T>(codec: Codec<T>, bytes: Uint8Array): Result<T, Model
 export function fromJson<T>(codec: Codec<T>, text: string): Result<T, ModelError> {
   const v = parseJson(text);
   if (!v.ok) return err({ kind: "Canonical", error: v.error });
-  const d = codec.decode(v.value);
+  const d = decodeAny(codec, v.value);
   return d.ok ? d : err({ kind: "Decode", error: d.error });
 }
 
@@ -833,14 +841,69 @@ function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
 function encodeForeign(c: unknown, value: unknown, depth: number): Result<Value, CanonicalError> {
   const f: unknown = isObject(c) ? readGuarded(c, "encode") : undefined;
   // Reflect.apply, never the method's own (replaceable) `call`
-  return isFunction(f) ? (Reflect.apply(f as (v: unknown, d: number) => unknown, c, [value, depth]) as Result<Value, CanonicalError>) : typeMismatch(NOT_A_CODEC);
+  return isFunction(f) ? encodedBy(Reflect.apply(f as (v: unknown, d: number) => unknown, c, [value, depth])) : typeMismatch(NOT_A_CODEC);
 }
 
 /** `c.decode(value)` for a codec this module did not make, as {@link encodeForeign} calls its `encode`. */
 function decodeForeign(c: unknown, value: Value): Result<unknown, DecodeFailure> {
   const f: unknown = isObject(c) ? readGuarded(c, "decode") : undefined;
-  return isFunction(f) ? (Reflect.apply(f as (v: Value) => unknown, c, [value]) as Result<unknown, DecodeFailure>) : decodeFailure(NOT_A_CODEC);
+  return isFunction(f) ? decodedBy(Reflect.apply(f as (v: Value) => unknown, c, [value])) : decodeFailure(NOT_A_CODEC);
 }
+
+/**
+ * What a hand-made part (a {@link leaf}'s function, a codec made otherwise) gave from `encode`, as a result of this
+ * module's own: an object (not a revoked Proxy) whose `ok`, read once, is `true` or `false`, then its `value` or
+ * `error`, read once; a refusal must be an object with a string `kind`. Anything else (`undefined`, a number,
+ * `{ ok: "yes" }`), which the walk would throw on, is a `TypeMismatch`. O(1); the value is checked where it is placed,
+ * as every part's is.
+ */
+function encodedBy(r: unknown): Result<Value, CanonicalError> {
+  const read = readResult(r);
+  if (read === undefined) return typeMismatch(NOT_A_RESULT_GIVEN);
+  if (read.ok) return read as Result<Value, CanonicalError>;
+  // a refusal is passed on as given, so it must be one at least: an object with a kind (read once)
+  const e = read.error;
+  return isObject(e) && isString(readGuarded(e, "kind")) ? (read as Result<Value, CanonicalError>) : typeMismatch(NOT_A_RESULT_GIVEN);
+}
+
+/**
+ * {@link encodedBy} for `decode`. A refusal must be a decode failure too, as the walk places it under the containers
+ * open: its `reason` a string and its `path` an array of previews, read as `describeFailure` reads one (the length once,
+ * each segment once, by index) into a copy, so what the walk reads is what was checked. Anything else is a decode
+ * failure of its own.
+ */
+function decodedBy(r: unknown): Result<unknown, DecodeFailure> {
+  const read = readResult(r);
+  if (read === undefined) return decodeFailure(NOT_A_RESULT_GIVEN);
+  if (read.ok) return read;
+  const e = read.error;
+  if (!isObject(e) || isRevokedProxy(e)) return decodeFailure(NOT_A_RESULT_GIVEN);
+  // guarded, as each segment's read: a getter run by an earlier read may have revoked what is read next
+  const path: unknown = readGuarded(e, "path");
+  const reason: unknown = readGuarded(e, "reason");
+  const length: unknown = isArrayGuarded(path) ? (path as readonly unknown[]).length : undefined;
+  if (!isArrayLength(length) || !isString(reason)) return decodeFailure(NOT_A_RESULT_GIVEN);
+  const segments: Preview[] = [];
+  for (let i = 0; i < length; i++) {
+    const p: unknown = readGuarded(path as readonly unknown[], i);
+    if (!isPreview(p)) return decodeFailure(NOT_A_RESULT_GIVEN);
+    segments.push(p);
+  }
+  return err({ path: segments, reason });
+}
+
+/** `r`'s `ok`, then its `value` or `error`, each read once, in a fresh result; `undefined` when `r` is no result. */
+function readResult(r: unknown): Result<unknown, unknown> | undefined {
+  // a revoked Proxy is no object to read, and a getter the first read runs may revoke it before the second
+  if (!isResult(r)) return undefined;
+  const tag: unknown = readGuarded(r, "ok");
+  if (tag !== true && tag !== false) return undefined;
+  const x: unknown = readGuarded(r, tag ? "value" : "error");
+  if (x === REVOKED) return undefined;
+  return tag ? ok(x) : err(x);
+}
+
+const NOT_A_RESULT_GIVEN = "a hand-made codec gave what is not a Result";
 
 const isObject = (x: unknown): x is object => (typeof x === "object" && x !== null) || typeof x === "function";
 const NOT_A_CODEC = "the schema's codec is not a codec";

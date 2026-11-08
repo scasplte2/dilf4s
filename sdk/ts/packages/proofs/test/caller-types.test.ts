@@ -1292,9 +1292,9 @@ describe("an oversized digest is a type of its own: never hashed, compared or re
   const slot = (b: Uint8Array): Uint8Array => expectOk(vt.bytesHash(b), "slot hash");
   const topRoot = expectOk(
     trie.trieRoot(T32, fixed1, [
-      [versioned.VERSION_SLOT, slot(vkey5)],
-      [versioned.STATE_SLOT, slot(stateRoot)],
-      [versioned.HISTORY_SLOT, slot(historyRoot)],
+      [Uint8Array.of(versioned.VERSION_SLOT), slot(vkey5)],
+      [Uint8Array.of(versioned.STATE_SLOT), slot(stateRoot)],
+      [Uint8Array.of(versioned.HISTORY_SLOT), slot(historyRoot)],
     ]),
     "top root",
   );

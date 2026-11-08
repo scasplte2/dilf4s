@@ -7,13 +7,13 @@ import type { HashAlgorithm } from "@kd5ujc/dilf4s-core";
 import { digestOf, hashPartsOf } from "@kd5ujc/dilf4s-core/internal";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
-export const TAGS = {
+export const TAGS = Object.freeze({
   schnorr: "dilf4s/sig/bip340/v1",
   kesSeed: "dilf4s/kes/seed/v1",
   kesLeaf: "dilf4s/kes/leaf/v1",
   kesNode: "dilf4s/kes/node/v1",
   kesProduct: "dilf4s/kes/product/v1",
-} as const;
+} as const);
 
 /**
  * `m => H(H(tag) || H(tag) || m)`, hashing the tag once. Each call hands the hash a copy of the tag hash, never the

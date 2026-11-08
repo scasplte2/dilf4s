@@ -70,7 +70,7 @@ export interface Ed25519Scheme extends SchemeCodec<"Ed25519">, Verifier<"Ed25519
   readonly verifyLibsodiumBytes: (key: Uint8Array, message: Uint8Array, signature: Uint8Array) => Result<boolean, CryptoRefusal>;
 }
 
-const edCodec: SchemeCodec<"Ed25519"> = {
+const edCodec = Object.freeze<SchemeCodec<"Ed25519">>({
   name: "Ed25519",
   signingKey: (bytes) => {
     const b = sized("Ed25519 signing key", 32, bytes);
@@ -88,7 +88,7 @@ const edCodec: SchemeCodec<"Ed25519"> = {
     return b.ok ? ok(signatureOf("Ed25519", b.value)) : b;
   },
   publicKey: checkedPublicKey("Ed25519", (sk) => noble.getPublicKey(sk)),
-};
+});
 
 export const ed25519: Ed25519Scheme = Object.freeze({
   ...edCodec,
@@ -126,7 +126,7 @@ export interface Ed25519Bip32Scheme extends SchemeCodec<"Ed25519-BIP32">, Verifi
   readonly sign: (key: SigningKey<"Ed25519-BIP32">, message: Uint8Array) => Result<Signature<"Ed25519-BIP32">, TypeMismatch>;
 }
 
-const bip32Codec: SchemeCodec<"Ed25519-BIP32"> = {
+const bip32Codec = Object.freeze<SchemeCodec<"Ed25519-BIP32">>({
   name: "Ed25519-BIP32",
   signingKey: (bytes) => {
     const b = sized("Ed25519-BIP32 signing key", 64, bytes);
@@ -143,7 +143,7 @@ const bip32Codec: SchemeCodec<"Ed25519-BIP32"> = {
     return b.ok ? ok(signatureOf("Ed25519-BIP32", b.value)) : b;
   },
   publicKey: checkedPublicKey("Ed25519-BIP32", (sk) => extendedPublicKey(sk.subarray(0, 32))),
-};
+});
 
 export const ed25519Bip32: Ed25519Bip32Scheme = Object.freeze({
   ...bip32Codec,
