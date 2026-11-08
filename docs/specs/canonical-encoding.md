@@ -157,9 +157,9 @@ accepts or produces for every other caller. Freezing is done once, when a codec 
 work for it. What a combinator is given as code stays the caller's own: a leaf's functions, a deferred reference's
 function (each generated one reads an exported constant, which no importer can reassign) and a codec made otherwise,
 which is called through its methods. The realm's built-ins (`Array.prototype` and the like) are outside this guarantee,
-as for any JavaScript library. A test walks every generated export and fails on any object it reaches that is not
-frozen. Scala's and Rust's models are immutable values by construction, so this is the TypeScript SDK's alone and has no
-conformance vector.
+as for any JavaScript library. A test walks the exports of every core module and generated model (no test hook is a
+mutable export), and fails on any object or class it reaches that is not frozen. Scala's and Rust's models are immutable
+values by construction, so this is the TypeScript SDK's alone and has no conformance vector.
 
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the

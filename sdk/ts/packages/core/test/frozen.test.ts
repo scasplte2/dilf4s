@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
@@ -292,11 +293,13 @@ function reachableWithClasses(roots: readonly unknown[]): readonly object[] {
 }
 
 describe("core's classes, their prototypes and its exported objects are frozen", () => {
-  it("every object and class reachable from core's public and internal entry points", async () => {
-    const internal = await import("../src/internal.js");
-    const core = await import("../src/index.js");
+  it("every object and class reachable from any of core's modules, as shipped (entry points or not)", async () => {
+    // each module's exports, as a caller importing the shipped file by its URL gets them
+    const files = readdirSync(new URL("../src/", import.meta.url)).filter((f) => f.endsWith(".ts"));
+    expect(files, "core's modules").toContain("cbor.ts");
+    const modules = await Promise.all(files.map(async (f) => (await import(/* @vite-ignore */ new URL(`../src/${f}`, import.meta.url).href)) as Record<string, unknown>));
     const decoded = expectOk(codec.fromJson(codec.textMap(codec.uint), '{"a":1}'), "a text map");
-    const roots = [...Object.values(core), ...Object.values(internal), decoded, expectOk(Value.text("x"), "text")];
+    const roots = [...modules.flatMap((m) => Object.values(m)), decoded, expectOk(Value.text("x"), "text")];
     const reached = reachableWithClasses(roots);
     expect(reached.filter(isClass).length, "core's classes").toBeGreaterThanOrEqual(12);
     // a module namespace (cbor, codec, models...) is not frozen, but no code can write to it

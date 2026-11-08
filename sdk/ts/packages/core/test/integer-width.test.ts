@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { bignums } from "../src/cbor.js";
 import { cbor, codec, IntValue, json, MAX_INTEGER_BITS, MAX_RATIONAL_BITS, Value, type CanonicalError, type Result } from "../src/index.js";
 import { bitLengthOf } from "../src/bigint.js";
 import { expectOk, int, integerBytes } from "./vectors.js";
+
+// a bignum's magnitude is built by one toHexOf of its bytes, which this file's hex module notes
+const toHexOf = vi.hoisted(() => vi.fn<(b: Uint8Array) => string>());
+vi.mock(import("../src/hex.js"), async (original) => {
+  const m = await original();
+  toHexOf.mockImplementation(m.toHexOf);
+  return { ...m, toHexOf };
+});
 
 // An integer is at most MAX_INTEGER_BITS wide (canonical-encoding.md section 1), for either sign: the only constructor
 // checks it, and a decoder refuses a wider bignum from its length, before it builds the integer. Work is counted, never
@@ -40,7 +47,7 @@ describe("integer width", () => {
   });
 
   it("refuses a bignum one bit too wide, for either tag, before building its magnitude", () => {
-    const magnitude = vi.spyOn(bignums, "magnitude");
+    const magnitude = toHexOf.mockClear();
     for (const n of [...refused, edge * 255n]) expect(cbor.decode(integerBytes(n))).toEqual(tooWide);
     expect(magnitude).not.toHaveBeenCalled();
   });
@@ -50,7 +57,7 @@ describe("integer width", () => {
     const array = expectOk(Value.array(values), "an array");
     const bytes = expectOk(cbor.encode(array), "encodes");
     expect(accepted.map((n) => Array.from(integerBytes(n)))).toEqual(accepted.map((n) => Array.from(expectOk(cbor.encode(int(n)), "encodes"))));
-    const magnitude = vi.spyOn(bignums, "magnitude");
+    const magnitude = toHexOf.mockClear();
     const decoded = expectOk(cbor.decode(bytes), "decodes");
     expect(Value.equals(decoded, array)).toBe(true);
     expect(magnitude).toHaveBeenCalledTimes(values.length);
@@ -58,7 +65,7 @@ describe("integer width", () => {
   });
 
   it("checks a bignum's form and length before its width", () => {
-    const magnitude = vi.spyOn(bignums, "magnitude");
+    const magnitude = toHexOf.mockClear();
     // 4154 bytes, the first zero: non-canonical, though a length alone would call it too wide
     const leadingZero = Uint8Array.from([0xc2, 0x59, 0x10, 0x3a, 0x00, ...new Uint8Array(4153).fill(0xff)]);
     expect(kind(cbor.decode(leadingZero))).toBe("NonCanonical");
@@ -74,7 +81,7 @@ describe("integer width", () => {
   });
 
   it("refuses a rational part too wide as RationalTooWide, from its length", () => {
-    const magnitude = vi.spyOn(bignums, "magnitude");
+    const magnitude = toHexOf.mockClear();
     const bytes = Uint8Array.from([0xd8, 0x1e, 0x82, ...integerBytes(edge), 0x03]);
     expect(cbor.decode(bytes)).toEqual({ ok: false, error: { kind: "RationalTooWide", limit: MAX_RATIONAL_BITS } });
     expect(magnitude).not.toHaveBeenCalled();

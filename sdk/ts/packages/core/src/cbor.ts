@@ -28,19 +28,10 @@ export { MAX_INTEGER_BITS, MAX_RATIONAL_BITS } from "./value.js";
 
 /**
  * How a decoder builds a bignum's magnitude from its bytes, once their form and width are checked: one conversion from
- * hexadecimal, linear in the length (shifting in a byte at a time would be quadratic). A test counts its calls.
+ * hexadecimal, linear in the length (shifting in a byte at a time would be quadratic). A test counts its `toHexOf`
+ * calls. Module-private, so no caller can replace it.
  */
-export const bignums = {
-  magnitude: (b: Uint8Array): bigint => BigInt(`0x${toHexOf(b)}`),
-};
-
-/**
- * How a decoder builds a rational from its parts, once their widths and the denominator are checked: one
- * {@link RationalValue.of}, whose gcd a test counts. Internal, as {@link bignums} is: the public classes are frozen.
- */
-export const rationals = {
-  of: (n: bigint, d: bigint): RationalValue | undefined => RationalValue.of(n, d),
-};
+const magnitudeOf = (b: Uint8Array): bigint => BigInt(`0x${toHexOf(b)}`);
 
 /**
  * The Java `bitLength` of a bignum's integer from its magnitude's bytes, `b[0]` non-zero: 8 bits per byte after the
@@ -605,7 +596,7 @@ class Decoder {
     if (b.length === 0 || b[0] === 0) return err(nonCanonical(pos, "bignumLeadingZero"));
     if (b.length <= 8) return err(nonCanonical(pos, "bignumInRange"));
     if (magnitudeBits(b) > limit) return err(tooWide);
-    const magnitude = bignums.magnitude(b);
+    const magnitude = magnitudeOf(b);
     return ok({ value: tag === TAG_POSITIVE_BIGNUM ? magnitude : -1n - magnitude, end: s.value.end });
   }
 
@@ -623,7 +614,7 @@ class Decoder {
     const den = this.readPart(num.value.end);
     if (!den.ok) return den;
     if (den.value.value < 2n) return err(nonCanonical(pos, "rationalDenominator"));
-    const r = rationals.of(num.value.value, den.value.value);
+    const r = RationalValue.of(num.value.value, den.value.value);
     return r === undefined ? err(nonCanonical(pos, "rationalNotReduced")) : ok({ value: r, end: den.value.end });
   }
 
