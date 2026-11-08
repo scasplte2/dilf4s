@@ -269,7 +269,10 @@ fn field_elements_are_canonical() {
     assert_eq!(fr_from_be_bytes(&r_bytes).unwrap_err(), PoseidonError::NonCanonical { bits: 254 });
     assert_eq!(fr_from_be_bytes(&[0u8; 31]).unwrap_err(), PoseidonError::NonCanonical { bits: 0 });
     assert_eq!(fr_from_be_bytes(&[0x7f; 40]).unwrap_err(), PoseidonError::NonCanonical { bits: 319 });
-    assert_eq!(fr_from_int(&BigInt::from(-1)).unwrap_err(), PoseidonError::NonCanonical { bits: 1 });
+    assert_eq!(fr_from_int(&BigInt::from(-1)).unwrap_err(), PoseidonError::NonCanonical { bits: 0 });
+    assert_eq!(fr_from_int(&BigInt::from(-2)).unwrap_err(), PoseidonError::NonCanonical { bits: 1 });
+    assert_eq!(fr_from_int(&BigInt::from(-256)).unwrap_err(), PoseidonError::NonCanonical { bits: 8 });
+    assert_eq!(fr_from_int(&BigInt::from(-257)).unwrap_err(), PoseidonError::NonCanonical { bits: 9 });
     assert_eq!(fr_from_int(&BigInt::from(r())).unwrap_err(), PoseidonError::NonCanonical { bits: 254 });
     let x = fr("123456789");
     assert_eq!(fr_from_be_bytes(&fr_to_be_bytes(x)).unwrap(), x);

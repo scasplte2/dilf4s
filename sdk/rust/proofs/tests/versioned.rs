@@ -549,3 +549,23 @@ fn a_version_key_of_another_width_is_refused_before_a_refusal_names_it() {
     assert_eq!(VersionedTrie::<Lying, H>::new(Lying(8, 8)).unwrap().vkey(&1).unwrap(), vec![0xab; 8]);
     assert!(VersionedTrie::<Lying, H>::new(Lying(1025, 1025)).is_err(), "a width past 1024");
 }
+
+/// A snapshot's out-of-order versions are named by their full keys: keys differing only in their last byte, at 32 and
+/// 1024 bytes, which a truncated rendering could not tell apart.
+#[test]
+fn snapshot_ordering_names_full_version_keys() {
+    for w in [32u16, 1024] {
+        let vt = VersionedTrie::<BytesKey, H>::new(BytesKey::new(w).unwrap()).unwrap();
+        let (mut a, mut b) = (vec![0u8; usize::from(w)], vec![0u8; usize::from(w)]);
+        a[usize::from(w) - 1] = 1;
+        b[usize::from(w) - 1] = 2;
+        let root = vt.hashing().empty();
+        let head = Head { version: b.clone(), state_root: root.clone(), history_root: root.clone() };
+        let mut reader = vt.snapshot_reader(head.clone());
+        reader.feed(SnapshotChunk::Head(head)).unwrap();
+        let e = reader.feed(SnapshotChunk::History(vec![(b.clone(), root.clone()), (a.clone(), root)])).unwrap_err();
+        let expected =
+            format!("version {} does not follow {}", dilf4s_core::hex::encode(&a), dilf4s_core::hex::encode(&b));
+        assert!(e.to_string().contains(&expected), "{w}: {e}");
+    }
+}

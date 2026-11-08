@@ -411,3 +411,20 @@ describe("versioned_trie_v1.json versionErrors: a refusal names versions by thei
     expect(expectErr(expectOk(versioned.VersionKey.bytes(4), "bytes key").encode(new Uint8Array(5)), "5 bytes").kind).toBe("InvalidVersion");
   });
 });
+
+describe("a snapshot's out-of-order versions are named by their full keys", () => {
+  for (const w of [32, 1024]) {
+    it(`at ${w.toString()} bytes, keys differing only in their last byte`, () => {
+      const key = expectOk(versioned.VersionKey.bytes(w), "bytes key");
+      const p = expectOk(versioned.VersionedTrie.of("SHA-256", key), "profile");
+      const [a, b] = [new Uint8Array(w), new Uint8Array(w)];
+      a[w - 1] = 1;
+      b[w - 1] = 2;
+      const root = p.hashing.empty;
+      const head = { version: b, stateRoot: root, historyRoot: root };
+      const reader = expectOk(expectOk(versioned.SnapshotReader.start(p, head), "start").feed({ kind: "head", head }), "head");
+      const e = expectErr(reader.feed({ kind: "history", versions: [[b, root], [a, root]] }), "out of order");
+      expect(e.kind === "Malformed" ? e.reason : e.kind).toContain(`version ${hexOf(a)} does not follow ${hexOf(b)}`);
+    });
+  }
+});

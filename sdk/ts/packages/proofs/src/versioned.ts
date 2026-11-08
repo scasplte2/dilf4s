@@ -1383,12 +1383,12 @@ export class SnapshotReader<V> {
     if (!hk.ok) return hk;
     let previous = this.lastVersion;
     for (const k of keys) {
-      if (previous !== undefined && compareBytes(previous, k) >= 0) return bad(`version ${Preview.of(toHexOf(k)).short()} does not follow ${Preview.of(toHexOf(previous)).short()}`);
+      if (previous !== undefined && compareBytes(previous, k) >= 0) return bad(`version ${versionHex(k)} does not follow ${versionHex(previous)}`);
       previous = k;
     }
     for (const [i, k] of keys.entries()) {
       const s = sized[i]?.[1] ?? new Uint8Array(0);
-      if (compareBytes(k, hk.value) > 0) return bad(`version ${toHexOf(k)} is after the head`);
+      if (compareBytes(k, hk.value) > 0) return bad(`version ${versionHex(k)} is after the head`);
       if (bytesEqual(k, hk.value) && !bytesEqual(s, this.trusted.stateRoot)) return bad("the head version has another state root");
     }
     const last = keys[keys.length - 1];

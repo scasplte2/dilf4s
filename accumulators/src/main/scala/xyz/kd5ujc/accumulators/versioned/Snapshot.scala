@@ -88,11 +88,19 @@ final case class SnapshotReader[V, H] private (
     if (n < 1 || n > VersionedTrie.MaxChunkEntries) malformed(s"a $what chunk holds 1..${VersionedTrie.MaxChunkEntries} items, not $n")
     else ().asRight
 
-  private def increasing(previous: Option[ByteVector], keys: Vector[ByteVector], what: String): Either[VersionedTrieError, Unit] =
+  /**
+   * Keys in strictly increasing order, each named by `show` when one does not follow: a state key by a preview of its
+   * hex, a version by its key's full hex ([[versionHex]], bounded by the width).
+   */
+  private def increasing(
+    previous: Option[ByteVector],
+    keys:     Vector[ByteVector],
+    what:     String,
+    show:     ByteVector => String
+  ): Either[VersionedTrieError, Unit] =
     (previous.toVector ++ keys).sliding(2).toVector.traverse_ {
-      case Vector(a, b) if Cbor.compareBytes(a, b) >= 0 =>
-        malformed[Unit](s"$what ${Preview.of(b.toHex).short} does not follow ${Preview.of(a.toHex).short}")
-      case _ => ().asRight[VersionedTrieError]
+      case Vector(a, b) if Cbor.compareBytes(a, b) >= 0 => malformed[Unit](s"$what ${show(b)} does not follow ${show(a)}")
+      case _                                            => ().asRight[VersionedTrieError]
     }
 
   def feed(chunk: SnapshotChunk[V, H]): Either[VersionedTrieError, SnapshotReader[V, H]] =
@@ -108,7 +116,7 @@ final case class SnapshotReader[V, H] private (
             case (k, v) => if (v == CNull) malformed[Unit](s"${k.preview.short} is null") else VersionedTrie.checkValue(k, v)
           }
           keys = es.map(_._1.bytes)
-          _ <- increasing(lastKey, keys, "key")
+          _ <- increasing(lastKey, keys, "key", k => Preview.of(k.toHex).short)
         } yield copy(lastKey = keys.lastOption.orElse(lastKey), entries = entries ++ es)
       case (Stage.Done, _)                         => malformed("nothing follows the head version")
       case (Stage.History, SnapshotChunk.State(_)) => malformed("state entries precede the history")
@@ -117,11 +125,11 @@ final case class SnapshotReader[V, H] private (
           _    <- sized(vs.size, "history")
           keys <- vs.traverse { case (u, _) => V.keyOf(u) }
           hk   <- V.keyOf(trusted.version)
-          _    <- increasing(lastVersion, keys, "version")
+          _    <- increasing(lastVersion, keys, "version", versionHex)
           // the head version may only come last, and with the head's state root
           _ <- keys.zip(vs).traverse_ {
             case (k, (_, s)) =>
-              if (Cbor.compareBytes(k, hk) > 0) malformed[Unit](s"version ${k.toHex} is after the head")
+              if (Cbor.compareBytes(k, hk) > 0) malformed[Unit](s"version ${versionHex(k)} is after the head")
               else if (k == hk && s != trusted.stateRoot) malformed[Unit]("the head version has another state root")
               else ().asRight[VersionedTrieError]
           }

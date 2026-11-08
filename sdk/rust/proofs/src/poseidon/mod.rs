@@ -179,6 +179,18 @@ pub fn hash(inputs: &[Fr]) -> Result<Fr, PoseidonError> {
     }
 }
 
+/// The bit length a refusal names, as the reference's (Java's `BigInteger.bitLength`) and TypeScript's: a negative
+/// integer's is that of `-n - 1`, so `-1` has 0 bits and `-2^k` has `k`.
+fn bit_length(n: &num_bigint::BigInt) -> u64 {
+    if n.sign() == num_bigint::Sign::Minus {
+        // -n - 1 is the magnitude less one: one bit shorter exactly when the magnitude is a power of two
+        let m = n.magnitude();
+        if m.count_ones() == 1 { m.bits().saturating_sub(1) } else { m.bits() }
+    } else {
+        n.bits()
+    }
+}
+
 /// A count as an error holds it (`usize` is at most 64 bits on every supported target).
 fn len64(n: usize) -> u64 {
     u64::try_from(n).unwrap_or(u64::MAX)
@@ -219,11 +231,11 @@ pub fn fr_to_be_bytes(x: Fr) -> [u8; 32] {
 /// A negative or wider integer is refused before it is converted.
 pub fn fr_from_int(n: &num_bigint::BigInt) -> Result<Fr, PoseidonError> {
     if n.sign() == num_bigint::Sign::Minus || n.bits() > 256 {
-        return Err(PoseidonError::NonCanonical { bits: n.bits() });
+        return Err(PoseidonError::NonCanonical { bits: bit_length(n) });
     }
     let (sign, magnitude) = n.to_bytes_be();
     if sign == num_bigint::Sign::Minus || magnitude.len() > 32 {
-        return Err(PoseidonError::NonCanonical { bits: n.bits() });
+        return Err(PoseidonError::NonCanonical { bits: bit_length(n) });
     }
     let mut padded = [0u8; 32];
     for (o, b) in padded.iter_mut().rev().zip(magnitude.iter().rev()) {

@@ -133,7 +133,7 @@ object PoseidonError {
   /**
    * A value outside `[0, r)`: malformed, never reduced.
    *
-   * @param bits The value's bit length, never its digits, whose size the caller chose.
+   * @param bits The value's bit length, never its digits, whose size the caller chose; a negative value's is that of -v - 1 (Java's BigInteger.bitLength), so -1 has 0 bits and -2^k has k.
    */
   final case class NonCanonical(bits: Long) extends PoseidonError {
     def kind: PoseidonErrorKind = "NonCanonical"

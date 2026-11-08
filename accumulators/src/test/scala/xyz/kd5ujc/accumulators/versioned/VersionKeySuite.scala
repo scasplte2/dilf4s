@@ -39,6 +39,19 @@ object VersionKeySuite extends SimpleIOSuite {
       .and(expect.same(Right(k), ByteVector.fromHexDescriptive(hex)))
   }
 
+  pureTest("a snapshot's out-of-order versions are named by their full keys, at 32 and 1024 bytes") {
+    List(32, KeyMode.MaxFixedBytes).foldMap { w =>
+      implicit val key: VersionKey[ByteVector] = get(VersionKey.bytes(w))
+      // keys that differ only in their last byte: a truncated rendering could not tell them apart
+      val (k1, k2) = (ByteVector.fill(w.toLong)(0) :+ 1.toByte, ByteVector.fill(w.toLong)(0) :+ 2.toByte)
+      val (a, b) = (k1.drop(1), k2.drop(1))
+      val root = T.empty
+      val head = VersionedTrie.Head[ByteVector, H](b, root, root)
+      val read = Snapshot.read(head, List(SnapshotChunk.Top(head), SnapshotChunk.History(Vector(b -> root, a -> root))))
+      expect.same(Left(VersionedTrieError.Malformed(s"snapshot: version ${versionHex(a)} does not follow ${versionHex(b)}")), read)
+    }
+  }
+
   pureTest("the bytes key is its own version at every width from 1 to 1024, and refuses another length") {
     List(1, 8, 32, KeyMode.MaxFixedBytes).foldMap { w =>
       val key = get(VersionKey.bytes(w))
