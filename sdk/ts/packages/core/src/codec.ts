@@ -35,8 +35,9 @@ export { ok } from "./result.js";
  *
  * Decoding walks the value as the schema reads it, so a value built with shared parts costs up to its weight, and every
  * byte string read is copied each time it occurs: decode a caller's value with {@link decodeWithin}. Neither direction
- * recurses: both walk {@link shape} with an explicit stack. A codec made otherwise than by this module's combinators
- * is called through its own `encode` and `decode` wherever it is composed, and recurses as it does.
+ * recurses: both walk the codec's description (its plan, of which {@link shape} is a copy) with an explicit stack. A
+ * codec made otherwise than by this module's combinators is called through its own `encode` and `decode` wherever it is
+ * composed, and recurses as it does.
  *
  * `encode` and `decode` are methods, so TypeScript compares a codec's type parameter bivariantly: a `Codec<"x">` is
  * accepted where a `Codec<string>` is expected. An explicit type argument to a combinator that is wider than its codec's
@@ -44,21 +45,22 @@ export { ok } from "./result.js";
  * acts as a cast; a narrower one is refused, as `decode`'s result is still checked. Let inference pick it: the record
  * and union combinators then check each part against its property's type.
  *
- * A codec this module's combinators make is immutable at run time, as its `readonly` types say: the codec, its `shape`
- * and every array and object the shape holds are frozen when the combinator returns, and each combinator copies
- * the arrays and objects it is given (field lists, alternatives, key names, texts, enumeration cases) before freezing,
- * so changing them afterwards changes nothing; so are core's classes and prototypes, which the codecs call. Schema
- * arguments of the wrong type make a codec that refuses every value. No caller, before or after a module that builds
- * codecs finishes loading, can change what such a codec accepts or produces. Freezing happens once, when the codec is
- * built: encoding and decoding do no work for it. A deferred reference resolves once, for good ({@link defer}). What a
- * combinator is given as code stays the caller's (a hand-made {@link leaf}'s functions, a codec made otherwise, called
- * through its own methods), checked each time it is called: one revoked since is refused, never called. A codec of
- * core's combinators alone, as every generated one is, does no such check.
+ * A codec this module's combinators make is immutable at run time, as its `readonly` types say. Each combinator copies
+ * the arrays and objects it is given (field lists, alternatives, key names, texts, enumeration cases), so changing them
+ * afterwards changes nothing. The walks read that copy, the codec's plan, which this module holds alone; the codec and
+ * its `shape`, a second copy of the plan with every array and object in it frozen, are frozen when the combinator
+ * returns. Core's classes and prototypes, which the codecs call, are frozen too. Schema arguments of the wrong type
+ * make a codec that refuses every value. No caller, before or after a module that builds codecs finishes loading, can
+ * change what such a codec accepts or produces. Freezing happens once, when the codec is built: encoding and decoding
+ * do no work for it. A deferred reference resolves once, for good ({@link defer}). What a combinator is given as code
+ * stays the caller's (a hand-made {@link leaf}'s functions, a codec made otherwise, called through its own methods),
+ * checked each time it is called: one revoked since is refused, never called. A codec of core's combinators alone, as
+ * every generated one is, does no such check.
  */
 export interface Codec<T> {
   encode(value: T, depth?: number): Result<Value, CanonicalError>;
   decode(value: Value): Result<T, DecodeFailure>;
-  /** How the codec is built: read by this module's encoder and decoder alone. */
+  /** How the codec is built: a frozen copy of what this module's encoder and decoder walk, which no caller can reach. */
   readonly shape: CodecShape;
 }
 
@@ -106,7 +108,7 @@ function codecOf<T>(plan: CodecShape): Codec<T> {
     shape: snapshot(plan),
     encode: (value: T, depth = 0) =>
       Number.isSafeInteger(depth) && depth >= 0 ? encodeWith(codec, value, depth) : typeMismatch("the depth is not a safe integer from 0"),
-    // the combinators that built `shape` keep its parts' types, so what it decodes is a `T`
+    // the combinators that built `plan` keep its parts' types, so what it decodes is a `T`
     decode: (value: Value) => (isValue(value) ? (decodeWith(codec, value) as Result<T, DecodeFailure>) : notAValue()),
   });
   plans.set(codec, plan);
@@ -790,7 +792,7 @@ function follow<V, D>(
   choose: (s: Choosing, v: V) => { readonly to: Codec<unknown> } | { readonly done: D },
   circular: D,
 ): { readonly reading: Reading } | { readonly foreign: Codec<unknown> } | { readonly done: D } {
-  // by identity, in O(1) a step: the shapes are the schema's, never caller data
+  // by identity, in O(1) a step: the plans are the schema's, never caller data
   let passed: Set<CodecShape> | undefined;
   for (let c = codec; ; ) {
     const s = plans.get(c);
