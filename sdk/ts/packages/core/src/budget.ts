@@ -9,8 +9,8 @@ import { isValue } from "./value.js";
  */
 export const byteLimit = (maxBytes: number): number => (Number.isNaN(maxBytes) || maxBytes <= 0 ? 0 : Math.min(Math.floor(maxBytes), Number.MAX_SAFE_INTEGER));
 
-const notAValue: TypeMismatch = { kind: "TypeMismatch", reason: "expected a canonical value" };
-const notALimit: TypeMismatch = { kind: "TypeMismatch", reason: "the byte limit is not a number" };
+const notAValue: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: "expected a canonical value" });
+const notALimit: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: "the byte limit is not a number" });
 
 /**
  * `maxBytes` as a limit ({@link byteLimit}), once `value` and `maxBytes` are checked to be what a walk that expands a

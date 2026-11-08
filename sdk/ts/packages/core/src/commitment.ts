@@ -49,8 +49,8 @@ export function valueCommitmentWithin(value: Value, maxBytes: number): Result<Ui
   return body.ok ? ok(tagged(CBOR_TAG, body.value)) : err(tooLarge(limit));
 }
 
-const notAnAlgorithm: TypeMismatch = { kind: "TypeMismatch", reason: "expected a HashAlgorithm" };
-const notAPrefix: TypeMismatch = { kind: "TypeMismatch", reason: "expected an array of Uint8Arrays" };
+const notAnAlgorithm: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: "expected a HashAlgorithm" });
+const notAPrefix: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: "expected an array of Uint8Arrays" });
 
 /**
  * `prefix`'s parts, each a fresh copy taken from its own slots (`takeBytes`: its own `length` is not believed, and it

@@ -1,7 +1,7 @@
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
-import { codec, models, Value } from "../src/index.js";
+import { codec, hashCommitment, json, models, Value, valueCommitmentWithin, type Result } from "../src/index.js";
 import type { Codec, CodecShape } from "../src/codec.js";
 import { expectOk, int } from "./vectors.js";
 
@@ -353,4 +353,45 @@ describe("schema arguments of the wrong type for a leaf or literal make a codec 
     expect(field.encode({ x: 1 })).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: notACodec } });
     expect(codec.defer(() => bad(42)).decode(int(1n))).toEqual({ ok: false, error: { path: [], reason: notACodec } });
   });
+});
+
+describe("a refusal one caller is given cannot change what the next caller is given", () => {
+  /** `n` arrays around null, built one level at a time: past the depth limit, the shared DepthExceeded. */
+  const nested = (n: number): Result<unknown, unknown> =>
+    Array.from({ length: n }).reduce<Result<Value, unknown>>((inner) => (inner.ok ? Value.array([inner.value]) : inner), { ok: true, value: Value.null });
+  const probes: readonly (readonly [string, () => Result<unknown, unknown>])[] = [
+    ["a bool codec's refusal", () => codec.bool.encode(bad(null))],
+    ["a generated record's refusal of a bool field", () => models.jlvmVectors.JlvmVectors.encode(bad({ cases: null }))],
+    ["an integer too wide", () => Value.int(1n << 40_000n)],
+    ["a rational too wide", () => Value.number(1n << 40_000n, 3n)],
+    ["not a bigint", () => Value.int(bad(1))],
+    ["not an array", () => Value.array(bad(1))],
+    ["not entries", () => Value.map(bad(1))],
+    ["the depth limit", () => nested(300)],
+    ["a non-terminating decimal", () => json.decimal(bad(expectOk(Value.number(1n, 3n), "1/3")))],
+    ["not a value to commit", () => valueCommitmentWithin(bad(1), 10)],
+    ["not a byte limit", () => valueCommitmentWithin(Value.null, bad("10"))],
+    ["not an algorithm", () => hashCommitment(bad("MD5"), [], Value.null)],
+    ["not a prefix", () => hashCommitment("SHA-256", bad(1), Value.null)],
+  ];
+
+  for (const [what, probe] of probes) {
+    it(what, () => {
+      const first = probe();
+      const again = probe();
+      expect(first.ok, "a refusal").toBe(false);
+      const error: unknown = first.ok ? undefined : first.error;
+      if (typeof error !== "object" || error === null) return;
+      const shared = !again.ok && again.error === error;
+      expect(!shared || Object.isFrozen(error), "an error given to every caller is frozen").toBe(true);
+      const before = structuredClone(error);
+      for (const mode of ["strict", "sloppy"] as const) {
+        for (const w of writes) attempt(mode, w.body, error, "kind", "Poisoned");
+        attempt(mode, "(t.reason = x, t.limit = x, 'done')", error, "reason", "poisoned");
+      }
+      expect(again.ok ? undefined : again.error, "what the next caller is given").toEqual(before);
+      const third = probe();
+      expect(third.ok ? undefined : third.error).toEqual(before);
+    });
+  }
 });

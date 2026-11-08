@@ -109,20 +109,20 @@ export function isValue(x: unknown): x is Value {
   return typeof x === "object" && x !== null && minted(x);
 }
 
-const depthExceeded: CanonicalError = { kind: "DepthExceeded", limit: MAX_DEPTH };
+const depthExceeded: CanonicalError = Object.freeze({ kind: "DepthExceeded", limit: MAX_DEPTH });
 
 // What a caller passes past the types (from JavaScript, or a cast) is checked in O(1) before it is read, and refused as
 // a TypeMismatch naming what was expected, never what was given.
-const expected = (what: string): TypeMismatch => ({ kind: "TypeMismatch", reason: `expected ${what}` });
+const expected = (what: string): TypeMismatch => Object.freeze({ kind: "TypeMismatch", reason: `expected ${what}` });
 const notABoolean = expected("a boolean");
 const notABigint = expected("a bigint");
 const notAString = expected("a string");
 const notBytes = expected("a Uint8Array");
 const notAnArray = expected("an array");
 const notEntries = expected("an iterable of [key, value] entries");
-const notIterable: TypeMismatch = { kind: "TypeMismatch", reason: NOT_ITERABLE };
-const notAResult: TypeMismatch = { kind: "TypeMismatch", reason: NOT_A_RESULT };
-const scaleNotInteger: TypeMismatch = { kind: "TypeMismatch", reason: "the scale is not an integer" };
+const notIterable: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: NOT_ITERABLE });
+const notAResult: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: NOT_A_RESULT });
+const scaleNotInteger: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: "the scale is not an integer" });
 
 /** Node's `util.inspect` hook, so a value prints through {@link inspect}, within its budget. */
 const INSPECT: unique symbol = Symbol.for("nodejs.util.inspect.custom");
@@ -224,7 +224,7 @@ export const MAX_INTEGER_BITS = CANONICAL_MAX_INTEGER_BITS;
 /** An integer past {@link MAX_INTEGER_BITS}. */
 export type IntegerTooWide = Extract<CanonicalError, { readonly kind: "IntegerTooWide" }>;
 
-const integerTooWide: IntegerTooWide = { kind: "IntegerTooWide", limit: MAX_INTEGER_BITS };
+const integerTooWide: IntegerTooWide = Object.freeze({ kind: "IntegerTooWide", limit: MAX_INTEGER_BITS });
 
 /** An integer within {@link MAX_INTEGER_BITS}. */
 export class IntValue {
@@ -333,7 +333,7 @@ export const MAX_RATIONAL_BITS = CANONICAL_MAX_RATIONAL_BITS;
 /** A rational past {@link MAX_RATIONAL_BITS}. */
 export type RationalTooWide = Extract<CanonicalError, { readonly kind: "RationalTooWide" }>;
 
-const tooWide: RationalTooWide = { kind: "RationalTooWide", limit: MAX_RATIONAL_BITS };
+const tooWide: RationalTooWide = Object.freeze({ kind: "RationalTooWide", limit: MAX_RATIONAL_BITS });
 
 /**
  * Why {@link RationalValue.number} has no value: a zero denominator, an integer or a rational too wide, or a part that
