@@ -46,6 +46,20 @@ object SdkSourcesSuite extends SimpleIOSuite {
     generated.flatMap(g => compare("TypeScript", SdkSources.TypeScriptDir, ".ts", g.typescript))
   }
 
+  // core's combinators freeze every codec they build, with its shape (codec.ts), so a module exporting only these holds
+  // nothing a caller can change; core's frozen.test.ts walks the committed modules at run time
+  test("TypeScript: every emitted constant is a codec built by core's combinators, or a number, so all are frozen") {
+    generated.map { g =>
+      val exported = g.typescript.flatMap { case (file, src) => src.linesIterator.filter(_.startsWith("export ")).map(file -> _) }
+      val constant =
+        """export const [A-Za-z][A-Za-z0-9_]*(?:: c\.Codec<[A-Za-z][A-Za-z0-9_]*>)? = (?:c\.[a-z][A-Za-z]*\b.*|-?[0-9]+n?;)""".r
+      val declaration = """export (?:interface|type) .*|export \* as [A-Za-z][A-Za-z0-9]* from .*""".r
+      val loose = exported.filterNot { case (_, line) => constant.matches(line) || declaration.matches(line) }
+      expect(loose.isEmpty, s"exports neither a combinator's codec, a number nor a type: ${loose.take(5).mkString(", ")}")
+        .and(expect(exported.count { case (_, line) => constant.matches(line) } > 250, "the constants of every schema were read"))
+    }
+  }
+
   test("committed Rust models match shared/schemas") {
     generated.flatMap(g => compare("Rust", SdkSources.RustDir, ".rs", g.rust))
   }
