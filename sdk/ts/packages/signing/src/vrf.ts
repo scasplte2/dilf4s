@@ -3,13 +3,13 @@
  * of libsodium implements it. The suites are distinct types, and none accepts another's proofs.
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { copyBytes, mint, plainBytes, takeBytesWithin } from "@kd5ujc/dilf4s-core/internal";
+import { copyBytes, mint, plainBytes, takeBytes, takeBytesWithin } from "@kd5ujc/dilf4s-core/internal";
 import { ed25519_hasher } from "@noble/curves/ed25519.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
 import type { VrfError } from "./errors.js";
 import { SigningKey, signingKeyBytes, VerifyingKey, verifyingKeyBytes, type KeyPair } from "./keys.js";
-import { expected, NOT_BYTES, signedOf, viewOf } from "./internal/check.js";
+import { expected, NOT_BYTES, signedOf } from "./internal/check.js";
 import { attempt } from "./internal/attempt.js";
 import { bigToLE, concat, copy, equal, hex, leToBig, mod, powMod } from "./internal/bytes.js";
 import {
@@ -309,7 +309,8 @@ function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
       if (!k.ok) return k;
       const p = proofBytesOf(proof);
       if (p === undefined || (proof as VrfProof<VrfSuiteName>).suite !== name) return err(expected(`a ${name} VrfProof`));
-      const a = viewOf(alpha);
+      // copied: a TAI verification hashes alpha once per try-and-increment counter, and every try must read one message
+      const a = takeBytes(alpha);
       return a === undefined ? err(NOT_BYTES) : verifyRaw(k.value, a, p);
     },
     verifyBytes: (key: Uint8Array, alpha: Uint8Array, proof: Uint8Array): Result<VrfOutput<S>, VrfRefusal> => {
@@ -317,7 +318,8 @@ function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
       // width (32, 80) is kept as a view that verifyRaw refuses by its length, never copied whole
       const p = takeBytesWithin(proof, 80);
       const k = takeBytesWithin(key, 32);
-      const a = viewOf(alpha);
+      // copied, as verify copies it: every try-and-increment hash reads one message
+      const a = takeBytes(alpha);
       if (p === undefined || k === undefined || a === undefined) return err(NOT_BYTES);
       return verifyRaw(k, a, p);
     },

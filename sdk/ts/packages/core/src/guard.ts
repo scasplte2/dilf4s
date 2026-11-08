@@ -1,6 +1,7 @@
 /**
- * The SDK's one sanctioned catch in its own code (signing's `internal/attempt.ts` is the other, around noble): asking
- * whether a caller's object is an array. `Array.isArray` throws a `TypeError` for a revoked Proxy (or a Proxy whose
+ * The SDK's sanctioned catches in its own code (signing's `internal/attempt.ts` is the other, around noble), each
+ * around one intrinsic call that runs no caller code: asking whether a caller's object is an array, and whether a
+ * buffer is an unshared `ArrayBuffer` ({@link isArrayBufferBranded}). `Array.isArray` throws a `TypeError` for a revoked Proxy (or a Proxy whose
  * target is one), and no other question can be put to such an object without the engine throwing too: reading a
  * property, its prototype or its keys all throw. `Array.isArray` runs no caller code (a Proxy's traps are not called
  * for it), so the catch below can only ever see the engine's own refusal, never a caller's exception, and nothing else
@@ -52,4 +53,24 @@ export const REVOKED: unique symbol = Symbol("dilf4s: a revoked Proxy");
  */
 export function readGuarded(o: object, key: PropertyKey): unknown {
   return isRevokedProxy(o) ? REVOKED : Reflect.get(o, key);
+}
+
+/** `ArrayBuffer.prototype`'s own `byteLength` getter, read once when this module loads. */
+const arrayBufferByteLength: unknown = Reflect.get(Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, "byteLength") ?? {}, "get");
+
+/**
+ * Whether `x` is an `ArrayBuffer`, never a `SharedArrayBuffer`, by the engine's own brand check, which a prototype
+ * cannot fake: `ArrayBuffer.prototype`'s `byteLength` getter throws a `TypeError` for anything else, a
+ * `SharedArrayBuffer` given `ArrayBuffer.prototype` included. The getter runs no caller code (it reads internal slots),
+ * so the catch below sees only that refusal: the guard's second engine-only catch, nothing else placed inside it.
+ * O(1), nothing allocated.
+ */
+export function isArrayBufferBranded(x: unknown): boolean {
+  if (typeof arrayBufferByteLength !== "function" || typeof x !== "object" || x === null) return false;
+  try {
+    Reflect.apply(arrayBufferByteLength, x, []);
+    return true;
+  } catch {
+    return false;
+  }
 }

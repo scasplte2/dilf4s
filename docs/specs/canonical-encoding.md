@@ -101,7 +101,10 @@ refusal refuses it. A plain object a caller passes (a Merkle or versioned head, 
 proof, delta, chunk or snapshot) has each field read once into a copy the package owns. The query of a listing check
 (a prefix, or a range's bounds; for a versioned trie, the version asked about or a range's versions, encoded once)
 is copied before the claim or the proof is read, so their getters cannot change what is asked. Where a result has no room for a refusal, `equals` is false for anything not of its class. A message to sign is copied once before it is read, since
-a signer reads it more than once and shared memory cannot be told apart reliably.
+a signer reads it more than once; a VRF verification copies its message too, as a try-and-increment hash reads it once
+per try. A lookup's key, walked in place when it is this realm's unshared `ArrayBuffer` (told apart by the engine's
+brand check, never by a prototype), is copied once first when it is shared or another realm's memory, so a byte read
+twice by the walk cannot differ between the reads.
 
 A revoked Proxy (or a Proxy whose target is one) is refused like any other argument of the wrong type, as a
 `TypeMismatch`, in all three packages: every array and object reader first asks `Array.isArray` through core's one
@@ -109,8 +112,9 @@ guard, whose catch sees only the engine's refusal of such an object (the call ru
 caller passes (an iterator's methods, a version key's, a source of randomness) is checked the same way each time it is
 called, since caller code may revoke it meanwhile. For the same reason every read of a caller's object or array after
 its first goes through the guard too (a getter or trap an earlier read ran may have revoked it), and what such a read
-gives is refused, never kept or taken for an absent field. It and signing's
-boundary around noble are the SDK's only catches. A check that passes allocates at most one O(1) plain view of each
+gives is refused, never kept or taken for an absent field. The guard (`guard.ts`) holds two catches, around
+`Array.isArray` and around `ArrayBuffer`'s own brand check, each of which runs no caller code and so sees only the
+engine's refusal; they and signing's boundary around noble are the SDK's only catches. A check that passes allocates at most one O(1) plain view of each
 caller byte argument (the view is what keeps a library such as noble from reading a subclass's own `length` or
 `subarray`) and the copies of what is kept; refusals and boolean verdicts are shared, frozen results.
 
@@ -125,8 +129,9 @@ any caller code runs), so it is refused as a `TypeMismatch`, as above.
 
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the
-caller's realm, which nothing can change while the decoder runs, and copies it once first when it is a
-`SharedArrayBuffer` (another thread may write it) or another realm's; each decoded byte string is copied once into its
+caller's realm (by the engine's brand check, so a `SharedArrayBuffer` given `ArrayBuffer.prototype` is not one), which
+nothing can change while the decoder runs, and copies it once first when it is a `SharedArrayBuffer` (another thread
+may write it) or another realm's; each decoded byte string is copied once into its
 value, which holds no view of the input. Scala's and Rust's types rule these arguments out, so this refusal is the
 TypeScript SDK's alone and has no conformance vector.
 

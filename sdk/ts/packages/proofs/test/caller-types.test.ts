@@ -1059,19 +1059,23 @@ describe("a lookup reads one snapshot of its key: memory another thread writes c
     const v = expectOk(trie.verify(T, fixed1, both, expectOk(trie.TrieProof.decode(T, records), "proof")), "verifies");
     if (v === null) throw new Error("the proof's root is the trie's");
     expect(expectOk(v.lookup(Uint8Array.of(0xff)), "0xff").kind, "both keys are present").toBe("present");
-    const shared = new SharedArrayBuffer(1);
-    const worker = new Worker("const a = new Uint8Array(require('node:worker_threads').workerData); for (;;) { a[0] = 0x00; a[0] = 0xff; }", { eval: true, workerData: shared });
-    await once(worker, "online");
-    const key = new Uint8Array(shared);
-    let absent = 0;
-    let absentLookups = 0;
-    for (let i = 0; i < 2000; i++) {
-      if (expectOk(trie.trieVerify(T, fixed1, both, key, null, records), "a verdict")) absent += 1;
-      if (expectOk(v.lookup(key), "a lookup").kind !== "present") absentLookups += 1;
+    // shared memory as it is, and given ArrayBuffer's prototype: the engine's brand check still tells it is shared
+    for (const spoofed of [false, true]) {
+      const shared = new SharedArrayBuffer(1);
+      if (spoofed) Object.setPrototypeOf(shared, ArrayBuffer.prototype);
+      const worker = new Worker("const a = new Uint8Array(require('node:worker_threads').workerData); for (;;) { a[0] = 0x00; a[0] = 0xff; }", { eval: true, workerData: shared });
+      await once(worker, "online");
+      const key = new Uint8Array(shared);
+      let absent = 0;
+      let absentLookups = 0;
+      for (let i = 0; i < 2000; i++) {
+        if (expectOk(trie.trieVerify(T, fixed1, both, key, null, records), "a verdict")) absent += 1;
+        if (expectOk(v.lookup(key), "a lookup").kind !== "present") absentLookups += 1;
+      }
+      await worker.terminate();
+      expect(absent, `trieVerify never proves either present key absent (prototype spoofed: ${String(spoofed)})`).toBe(0);
+      expect(absentLookups, `lookup never answers absent for either present key (prototype spoofed: ${String(spoofed)})`).toBe(0);
     }
-    await worker.terminate();
-    expect(absent, "trieVerify never proves either present key absent").toBe(0);
-    expect(absentLookups, "lookup never answers absent for either present key").toBe(0);
   });
 });
 

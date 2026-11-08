@@ -4,6 +4,8 @@
  * iterator are its own, so each is read from the array's internal slots, never from its properties.
  */
 
+import { isArrayBufferBranded } from "./guard.js";
+
 /** `%TypedArray%.prototype`, which every typed array's prototype inherits from. */
 const typedArrayPrototype: object = Object.getPrototypeOf(Uint8Array.prototype) as object;
 
@@ -55,12 +57,13 @@ export function bytesLength(x: unknown): number | undefined {
 /**
  * Whether `view`'s memory is an `ArrayBuffer` of this realm, which only code running in this thread can change: not a
  * `SharedArrayBuffer` (another thread may write it at any time) nor another realm's buffer. It reads the buffer through
- * `%TypedArray%.prototype`'s own getter and compares its prototype, so nothing throws and no caller code runs. A
- * `SharedArrayBuffer` given `ArrayBuffer.prototype` passes: only the caller's own threads can race on it.
+ * `%TypedArray%.prototype`'s own getter, compares its prototype, and asks the engine's own `ArrayBuffer` brand check
+ * (core's guard), so a `SharedArrayBuffer` given `ArrayBuffer.prototype` is shared memory still. Nothing throws and no
+ * caller code runs.
  */
 export function isLocalBuffer(view: Uint8Array): boolean {
   const buffer: unknown = typedArrayBuffer === undefined ? undefined : typedArrayBuffer.call(view);
-  return typeof buffer === "object" && buffer !== null && Object.getPrototypeOf(buffer) === ArrayBuffer.prototype;
+  return typeof buffer === "object" && buffer !== null && Object.getPrototypeOf(buffer) === ArrayBuffer.prototype && isArrayBufferBranded(buffer);
 }
 
 /**

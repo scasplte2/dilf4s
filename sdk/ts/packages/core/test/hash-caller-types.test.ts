@@ -26,7 +26,7 @@ import {
   type Hashing,
   Value,
 } from "../src/index.js";
-import { isDomainTag as isDomainTagOf, MAX_OUTPUT_SIZE, takeBytesWithin } from "../src/internal.js";
+import { isDomainTag as isDomainTagOf, isLocalBuffer, MAX_OUTPUT_SIZE, takeBytesWithin } from "../src/internal.js";
 import { expectOk, int } from "./vectors.js";
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
@@ -347,6 +347,15 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     };
     expect(() => Value.map(bad(iterable)), "a throwing entry").toThrow(new RangeError("the caller's own"));
     expect(closed, "the iterator was closed").toBe(1);
+  });
+
+  it("shared memory is told apart by the engine's brand check, never by its prototype", () => {
+    expect(isLocalBuffer(new Uint8Array(4)), "this realm's ArrayBuffer").toBe(true);
+    expect(isLocalBuffer(new Uint8Array(new SharedArrayBuffer(4))), "a SharedArrayBuffer").toBe(false);
+    const spoofed = new SharedArrayBuffer(4);
+    Object.setPrototypeOf(spoofed, ArrayBuffer.prototype);
+    expect(isLocalBuffer(new Uint8Array(spoofed)), "a SharedArrayBuffer given ArrayBuffer's prototype").toBe(false);
+    expect(isLocalBuffer(runInNewContext("Uint8Array.of(1, 2)") as Uint8Array), "another realm's").toBe(false);
   });
 
   it("the algorithm list cannot be extended by a caller", () => {

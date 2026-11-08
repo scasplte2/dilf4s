@@ -30,9 +30,9 @@ export const viewOf = (x: unknown): Uint8Array | undefined => plainBytes(x);
 /**
  * Bytes to sign: always a copy, taken once from the caller's memory. Signing reads a message more than once (Ed25519
  * hashes it for the nonce and again for the challenge, BIP-340 likewise): another thread rewriting it between the
- * reads would give two signatures with one nonce over two messages, which reveals the key. Whether memory is shared
- * cannot be told for certain (a `SharedArrayBuffer` can be given `ArrayBuffer`'s prototype), so it is never trusted:
- * the copy is linear in the message, beside a signature's fixed cost.
+ * reads would give two signatures with one nonce over two messages, which reveals the key. The copy is taken whatever
+ * the memory (core's `isLocalBuffer` could tell an unshared `ArrayBuffer` apart, but a message is never trusted to stay
+ * unshared): it is linear in the message, beside a signature's fixed cost.
  */
 export function signedOf(x: unknown): Uint8Array | undefined {
   return takeBytes(x);
