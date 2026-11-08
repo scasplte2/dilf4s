@@ -35,25 +35,39 @@ export { ok } from "./result.js";
  *
  * Decoding walks the value as the schema reads it, so a value built with shared parts costs up to its weight, and every
  * byte string read is copied each time it occurs: decode a caller's value with {@link decodeWithin}. Neither direction
- * recurses: both walk {@link shape} with an explicit stack. A codec made otherwise than by this module's combinators
- * is called through its own `encode` and `decode` wherever it is composed, and recurses as it does.
+ * recurses: both walk the codec's description (its plan, of which {@link shape} is a copy) with an explicit stack. A
+ * codec made otherwise than by this module's combinators is called through its own `encode` and `decode` wherever it is
+ * composed, and recurses as it does.
  *
  * `encode` and `decode` are methods, so TypeScript compares a codec's type parameter bivariantly: a `Codec<"x">` is
  * accepted where a `Codec<string>` is expected. An explicit type argument to a combinator that is wider than its codec's
  * type (`required<string>(key, literalText("x"))`, `vector<string>(literalText("x"), ...)`) is therefore unchecked and
  * acts as a cast; a narrower one is refused, as `decode`'s result is still checked. Let inference pick it: the record
  * and union combinators then check each part against its property's type.
+ *
+ * A codec this module's combinators make is immutable at run time, as its `readonly` types say. Each combinator copies
+ * the arrays and objects it is given (field lists, alternatives, key names, texts, enumeration cases), so changing them
+ * afterwards changes nothing. The walks read that copy, the codec's plan, which this module holds alone; the codec and
+ * its `shape`, a second copy of the plan with every array and object in it frozen, are frozen when the combinator
+ * returns. Core's classes and prototypes, which the codecs call, are frozen too. Schema arguments of the wrong type
+ * make a codec that refuses every value. No caller, before or after a module that builds codecs finishes loading, can
+ * change what such a codec accepts or produces. Freezing happens once, when the codec is built: encoding and decoding
+ * do no work for it. A deferred reference resolves once, for good ({@link defer}). What a combinator is given as code
+ * stays the caller's (a hand-made {@link leaf}'s functions, a codec made otherwise, called through its own methods),
+ * checked each time it is called: one revoked since is refused, never called. A codec of core's combinators alone, as
+ * every generated one is, does no such check.
  */
 export interface Codec<T> {
   encode(value: T, depth?: number): Result<Value, CanonicalError>;
   decode(value: Value): Result<T, DecodeFailure>;
-  /** How the codec is built: read by this module's encoder and decoder alone. */
+  /** How the codec is built: a frozen copy of what this module's encoder and decoder walk, which no caller can reach. */
   readonly shape: CodecShape;
 }
 
 /**
  * What a codec is, for the one encoder and the one decoder: a leaf reads or writes a value whole, never another codec;
- * the others are walked by them. Built only by this module's combinators, which keep each part's type.
+ * the others are walked by them. Built only by this module's combinators, which keep each part's type, and frozen when
+ * built, with every array and object it holds (see {@link Codec}).
  */
 export type CodecShape =
   | { readonly kind: "leaf"; encode(value: unknown): Result<Value, CanonicalError>; decode(value: Value): Result<unknown, DecodeFailure> }
@@ -81,27 +95,75 @@ interface RecordField {
 }
 
 /**
- * The codecs this module's combinators made, whose `shape` is what they do. Any other object with a codec's methods
- * (one spread from a codec, its methods replaced, say) is called through its methods, so composing it keeps its checks.
+ * The codecs this module's combinators made, each with its plan: what the walks read, the same as its `shape` but held
+ * here alone, so no caller can reach it. Its arrays are plain, as V8 runs `find`, `every` and `filter` over a frozen
+ * array many times slower; `shape` is a frozen copy. Any other object with a codec's methods (one spread from a codec,
+ * its methods replaced, say) is called through its methods, so composing it keeps its checks.
  */
-const made = new WeakSet<Codec<unknown>>();
+const plans = new WeakMap<Codec<unknown>, CodecShape>();
 
-function codecOf<T>(shape: CodecShape): Codec<T> {
+/** A codec of `plan`, which the combinator built from copies and gives to no one: its `shape` is a frozen copy. */
+function codecOf<T>(plan: CodecShape): Codec<T> {
   const codec: Codec<T> = Object.freeze({
-    shape,
+    shape: snapshot(plan),
     encode: (value: T, depth = 0) =>
       Number.isSafeInteger(depth) && depth >= 0 ? encodeWith(codec, value, depth) : typeMismatch("the depth is not a safe integer from 0"),
-    // the combinators that built `shape` keep its parts' types, so what it decodes is a `T`
+    // the combinators that built `plan` keep its parts' types, so what it decodes is a `T`
     decode: (value: Value) => (isValue(value) ? (decodeWith(codec, value) as Result<T, DecodeFailure>) : notAValue()),
   });
-  made.add(codec);
+  plans.set(codec, plan);
   return codec;
 }
 
-/** A codec that reads and writes a value whole, calling no other codec. */
+/** `plan` as a codec's `shape` shows it: copied, with every array and object in it frozen. */
+function snapshot(plan: CodecShape): CodecShape {
+  switch (plan.kind) {
+    case "record":
+      return Object.freeze({ kind: "record", fields: Object.freeze(plan.fields.map((f) => Object.freeze({ ...f }))), allowed: Object.freeze([...plan.allowed]) });
+    case "union":
+      return Object.freeze({
+        kind: "union",
+        name: plan.name,
+        alternatives: Object.freeze(plan.alternatives.map((a) => Object.freeze({ codec: a.codec, required: Object.freeze([...a.required]), allowed: Object.freeze([...a.allowed]), keys: frozenPair(a.keys) }))),
+        known: Object.freeze([...plan.known]),
+        keys: Object.freeze(plan.keys.map(frozenPair)),
+        texts: Object.freeze([...plan.texts]),
+      });
+    // no arrays: the plan itself, frozen
+    case "leaf":
+    case "defer":
+    case "vector":
+    case "textMap":
+      return Object.freeze(plan);
+  }
+}
+
+const frozenPair = (p: readonly [readonly string[], readonly string[]]): readonly [readonly string[], readonly string[]] =>
+  Object.freeze([Object.freeze([...p[0]]), Object.freeze([...p[1]])] as const);
+
+/**
+ * A codec that reads and writes a value whole, calling no other codec. Functions that are not functions (from a
+ * JavaScript caller, or a cast) make a codec that refuses every value, as for {@link intRange}. The functions are the
+ * caller's, so each is checked each time it is called, as canonical-encoding.md section 1 has every caller function
+ * checked: one revoked since (a Proxy's) is refused, never called.
+ */
 export function leaf<T>(encode: (value: T) => Result<Value, CanonicalError>, decode: (value: Value) => Result<T, DecodeFailure>): Codec<T> {
+  if (!isFunction(encode) || !isFunction(decode)) return refusing(NOT_FUNCTIONS);
+  return leafOf(
+    (v) => (isRevokedProxy(encode) ? typeMismatch(REVOKED_FUNCTION) : encode(v)),
+    (v) => (isRevokedProxy(decode) ? decodeFailure(REVOKED_FUNCTION) : decode(v)),
+  );
+}
+
+/** A leaf of functions this module made, which no caller can revoke: called directly. */
+function leafOf<T>(encode: (value: T) => Result<Value, CanonicalError>, decode: (value: Value) => Result<T, DecodeFailure>): Codec<T> {
   return codecOf({ kind: "leaf", encode, decode });
 }
+
+/** Whether `f` is a function a codec can call: a revoked Proxy of one is not. */
+const isFunction = (f: unknown): boolean => typeof f === "function" && !isRevokedProxy(f);
+const NOT_FUNCTIONS = "the schema's functions are not functions";
+const REVOKED_FUNCTION = "the schema's function is a revoked Proxy";
 
 /** Why bytes or text are not a model: not canonical, or not the model's shape. */
 export type ModelError = { readonly kind: "Canonical"; readonly error: CanonicalError } | { readonly kind: "Decode"; readonly error: DecodeFailure };
@@ -162,12 +224,12 @@ const notA = (what: string): Err<CanonicalError> => typeMismatch(`expected ${wha
 const notAValue = (): Err<DecodeFailure> => decodeFailure("expected a canonical value");
 
 /** Any canonical value, unchanged (CDDL `any`). */
-export const any: Codec<Value> = leaf(
+export const any: Codec<Value> = leafOf(
   (v) => (isValue(v) ? ok(v) : notA("a canonical value")),
   (v) => ok(v),
 );
 
-export const bool: Codec<boolean> = leaf(
+export const bool: Codec<boolean> = leafOf(
   (b) => BoolValue.of(b),
   (v) => (v.kind === "bool" ? ok(v.value) : expected("bool", v)),
 );
@@ -175,7 +237,7 @@ export const bool: Codec<boolean> = leaf(
 const show = (b: bigint | null): string => (b === null ? "" : b.toString());
 
 /** A codec that refuses everything, both ways, for a schema built from bounds of the wrong type. */
-const refusing = <T>(reason: string): Codec<T> => leaf<T>(() => typeMismatch(reason), () => decodeFailure(reason));
+const refusing = <T>(reason: string): Codec<T> => leafOf<T>(() => typeMismatch(reason), () => decodeFailure(reason));
 
 /** Whether `lo` and `hi` are size bounds: `lo` a number, `hi` a number or `null`, neither `NaN`. */
 const sizeBounds = (lo: unknown, hi: unknown): boolean =>
@@ -190,7 +252,7 @@ export function intRange(lo: bigint | null, hi: bigint | null): Codec<bigint> {
   const bound = (b: unknown): boolean => b === null || typeof b === "bigint";
   if (!bound(lo) || !bound(hi)) return refusing("the schema's integer bounds are not bigints");
   const within = (n: bigint): boolean => (lo === null || n >= lo) && (hi === null || n <= hi);
-  return leaf(
+  return leafOf(
     (n) => {
       if (!isBigint(n)) return notA("a bigint");
       return within(n) ? IntValue.of(n) : typeMismatch(`integer of ${bitLengthOf(n).toString()} bits outside ${show(lo)}..${show(hi)}`);
@@ -218,7 +280,7 @@ export const nint: Codec<bigint> = intRange(-(2n ** 64n), -1n);
 export function sizedBytes(lo: number, hi: number | null): Codec<Uint8Array> {
   if (!sizeBounds(lo, hi)) return refusing(NOT_SIZE_BOUNDS);
   const fits = (n: number): boolean => n >= lo && (hi === null || n <= hi);
-  return leaf(
+  return leafOf(
     (b) => {
       // the array's own length, never a subclass's `length`
       const view = plainBytes(b);
@@ -241,7 +303,7 @@ export const bytes: Codec<Uint8Array> = sizedBytes(0, null);
 export function sizedText(lo: number, hi: number | null): Codec<string> {
   if (!sizeBounds(lo, hi)) return refusing(NOT_SIZE_BOUNDS);
   const fits = (s: string): boolean => utf8LengthOf(s) >= lo && (hi === null || utf8LengthOf(s) <= hi);
-  return leaf(
+  return leafOf(
     (s) => {
       if (!isString(s)) return notA("a string");
       const t = TextValue.of(s);
@@ -263,6 +325,8 @@ export const text: Codec<string> = sizedText(0, null);
  */
 export type TextPattern = "([0-9a-f]{2})*" | "0x([0-9a-f]{2})*" | "0|[1-9][0-9]*" | "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*";
 
+const PATTERNS: readonly unknown[] = Object.freeze(["([0-9a-f]{2})*", "0x([0-9a-f]{2})*", "0|[1-9][0-9]*", "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*"] satisfies TextPattern[]);
+
 const lowerHex = (s: string): boolean => s.length % 2 === 0 && /^[0-9a-f]*$/.test(s);
 
 /** Whether the whole of `text` matches `pattern`. */
@@ -282,7 +346,8 @@ export function matches(pattern: TextPattern, text: string): boolean {
 
 /** Text matching a {@link TextPattern} (CDDL `text .regexp`). */
 export function matching(pattern: TextPattern): Codec<string> {
-  return leaf(
+  if (!PATTERNS.includes(pattern)) return refusing("the schema's pattern is not one of the shared patterns");
+  return leafOf(
     (s) => {
       if (!isString(s)) return notA("a string");
       return matches(pattern, s) ? TextValue.of(s) : typeMismatch(`text does not match ${pattern}`);
@@ -296,7 +361,8 @@ export function matching(pattern: TextPattern): Codec<string> {
 
 /** Exactly the text `literal`, as its literal type: any other value is refused, as decoding refuses it. */
 export function literalText<S extends string>(literal: S): Codec<S> {
-  return leaf(
+  if (!isString(literal)) return refusing("the schema's literal is not a string");
+  return leafOf(
     (s) => ((s as unknown) === literal ? TextValue.of(literal) : notA(JSON.stringify(literal))),
     (v) => {
       if (v.kind !== "text") return expected("text", v);
@@ -307,7 +373,8 @@ export function literalText<S extends string>(literal: S): Codec<S> {
 
 /** Exactly the integer `literal`, as its literal type: any other value is refused, as decoding refuses it. */
 export function literalInt<N extends bigint>(literal: N): Codec<N> {
-  return leaf(
+  if (!isBigint(literal)) return refusing("the schema's literal is not a bigint");
+  return leafOf(
     (n) => ((n as unknown) === literal ? IntValue.of(literal) : notA(literal.toString())),
     (v) => {
       if (v.kind !== "int") return expected("int", v);
@@ -324,7 +391,34 @@ export function oneOfText(t: string, texts: readonly string[]): Result<Value, Ca
 
 /** A labelled integer enumeration: each label is written as its integer. */
 export function intEnum<L extends string>(name: string, cases: readonly (readonly [L, bigint])[]): Codec<L> {
-  return leaf(
+  if (!isString(name)) return refusing(NOT_A_NAME);
+  // a copy, which only the codec's functions can reach: the caller's array is read once, here, so changing it later
+  // changes nothing
+  const copied = enumCases(cases);
+  // the labels are the caller's, as given: the type says they are `L`s
+  return copied === undefined ? refusing(NOT_CASES) : enumOf(name, copied as readonly (readonly [L, bigint])[]);
+}
+
+const NOT_CASES = "the schema's enumeration cases are not [label, bigint] pairs";
+
+/** `x` as a copy of `[label, integer]` pairs, read by index as {@link stringList} reads, or `undefined`. */
+function enumCases(x: unknown): readonly (readonly [string, bigint])[] | undefined {
+  const length: unknown = isArrayGuarded(x) ? (x as readonly unknown[]).length : undefined;
+  if (!isArrayLength(length)) return undefined;
+  const out: (readonly [string, bigint])[] = [];
+  for (let i = 0; i < length; i++) {
+    const pair: unknown = readGuarded(x as readonly unknown[], i);
+    const label: unknown = isArrayGuarded(pair) ? readGuarded(pair, 0) : undefined;
+    const wire: unknown = isArrayGuarded(pair) ? readGuarded(pair, 1) : undefined;
+    if (!isString(label) || !isBigint(wire)) return undefined;
+    out.push([label, wire]);
+  }
+  return out;
+}
+
+/** {@link intEnum} of a name and cases this module holds alone. */
+function enumOf<L extends string>(name: string, cases: readonly (readonly [L, bigint])[]): Codec<L> {
+  return leafOf(
     (label) => {
       if (!isString(label)) return notA(`a ${name} label`);
       const c = cases.find(([l]) => l === label);
@@ -341,12 +435,29 @@ export function intEnum<L extends string>(name: string, cases: readonly (readonl
 // ------------------------------------------------------------------------------------------------ containers
 
 /**
- * A codec referenced by name and resolved on use, so rules may refer to each other in any order, recursively. An
+ * A codec referenced by name and resolved on first use, so rules may refer to each other in any order, recursively. An
  * explicit wider `T` is unchecked and acts as a cast (see {@link Codec}): let inference pick it.
+ *
+ * `codec` is called once, when the reference is first followed (checked then, as {@link leaf} checks its functions: a
+ * revoked one resolves to a codec refusing everything), and what it gives is the reference's for good, so no later
+ * change to what `codec` would give changes it. A call that throws (a constant not yet initialized) resolves nothing.
  */
 export function defer<T>(codec: () => Codec<T>): Codec<T> {
-  return codecOf({ kind: "defer", resolve: codec });
+  if (!isFunction(codec)) return refusing(NOT_FUNCTIONS);
+  // written once, by the first resolution that returns (whatever it returns, a JavaScript caller's `undefined` included,
+  // which is then refused as not a codec): a reference's target is fixed from then on. A resolution that uses the
+  // reference itself, before it returns, settles it first: the outer one then keeps that answer, never its own
+  let resolved: Codec<unknown> | typeof UNRESOLVED = UNRESOLVED;
+  const settle = (answer: Codec<unknown>): Codec<unknown> => {
+    if (resolved === UNRESOLVED) resolved = answer;
+    return resolved;
+  };
+  const resolve = (): Codec<unknown> => (resolved === UNRESOLVED ? settle(isRevokedProxy(codec) ? refusing(REVOKED_FUNCTION) : codec()) : resolved);
+  return codecOf({ kind: "defer", resolve });
 }
+
+/** A reference not yet resolved: a symbol of this module's own, which no resolution returns. */
+const UNRESOLVED: unique symbol = Symbol("dilf4s: an unresolved reference");
 
 /**
  * A homogeneous array of `min` to `max` elements (`max` unbounded when `null`). An explicit wider `T` is unchecked and acts
@@ -404,6 +515,8 @@ class TextMap<T> implements ReadonlyMap<string, T> {
     return search(this.#entries, (e) => e[1], encodeUtf8(key), canonicalKeyOrder);
   }
 }
+Object.freeze(TextMap);
+Object.freeze(TextMap.prototype);
 
 // ------------------------------------------------------------------------------------------------ records and unions
 
@@ -434,12 +547,12 @@ export interface OptionalField<V> {
  * `required<string>(key, literalText("x"))` compiles, and the literal codec then refuses any other value when encoding.
  */
 export function required<V>(key: string, codec: Codec<V>): RequiredField<V> {
-  return { key, codec, optional: false };
+  return Object.freeze({ key, codec, optional: false });
 }
 
 /** An optional field of a record. As with {@link required}, an explicit wider `V` is unchecked and acts as a cast. */
 export function optional<V>(key: string, codec: Codec<V>): OptionalField<V> {
-  return { key, codec, optional: true };
+  return Object.freeze({ key, codec, optional: true });
 }
 
 /** Every property of `T`, each with the field that reads and writes it: an optional property has an optional field. */
@@ -452,9 +565,32 @@ export type RecordFields<T> = { readonly [K in keyof Required<T>]: undefined ext
  * first field missing or refused, under its key.
  */
 export function record<T>(fields: RecordFields<T>): Codec<T> {
-  const spec: Readonly<Record<string, { readonly key: string; readonly codec: Codec<unknown>; readonly optional: boolean }>> = fields;
-  const list = Object.entries(spec).map(([prop, f]): RecordField => ({ prop, key: f.key, codec: f.codec, optional: f.optional }));
-  return codecOf({ kind: "record", fields: list, allowed: list.map((f) => f.key) });
+  // a copy: the caller's object and fields are read once, here, so changing them later changes nothing
+  const list = fieldList(fields);
+  return list === undefined ? refusing(NOT_FIELDS) : codecOf({ kind: "record", fields: list, allowed: list.map((f) => f.key) });
+}
+
+const NOT_FIELDS = "the schema's fields are not an object of record fields";
+
+/**
+ * `x`'s own enumerable properties, in their order, copied as record fields (each read once: its key a string, its
+ * `optional` a boolean), or `undefined` if `x` is not an object of such fields.
+ */
+function fieldList(x: unknown): readonly RecordField[] | undefined {
+  if (typeof x !== "object" || x === null || isRevokedProxy(x)) return undefined;
+  const out: RecordField[] = [];
+  for (const prop of Object.keys(x)) {
+    // guarded: an earlier field's read (a getter, a Proxy's trap) may have revoked the object
+    const f: unknown = readGuarded(x, prop);
+    if (typeof f !== "object" || f === null || isRevokedProxy(f)) return undefined;
+    const key: unknown = readGuarded(f, "key");
+    const codec: unknown = readGuarded(f, "codec");
+    const optional: unknown = readGuarded(f, "optional");
+    if (!isString(key) || codec === REVOKED || typeof optional !== "boolean") return undefined;
+    // the field's codec is the caller's, as given: the type says it is one
+    out.push({ prop, key, codec: codec as Codec<unknown>, optional });
+  }
+  return out;
 }
 
 /**
@@ -479,6 +615,7 @@ function fieldsOf(v: Value, allowed: readonly string[]): Result<MapValue, Decode
 
 /** The refusal of a schema argument (key names, alternatives) that is not of its type. */
 const NOT_NAMES = "the schema's names are not arrays of strings";
+const NOT_A_NAME = "the schema's name is not a string";
 
 /**
  * `x` as an array of strings, copied: read by index, its length once and each item once (never through its iterator
@@ -525,7 +662,46 @@ export interface Alternative<A> {
  * explicit wider `A` is unchecked and acts as a cast (see {@link Codec}); {@link union} checks that `A` is one of its members.
  */
 export function alternative<A>(codec: Codec<A>, names: readonly [readonly string[], readonly string[]], keys: readonly [readonly string[], readonly string[]]): Alternative<A> {
-  return { codec, required: names[0], allowed: names[1], keys };
+  // copies, frozen; names or keys that are not arrays of strings are left absent (past the types), for union to refuse
+  const named = stringPair(names);
+  const keyed = stringPair(keys);
+  const absent = undefined as never;
+  return Object.freeze({
+    codec,
+    required: named === undefined ? absent : Object.freeze(named[0]),
+    allowed: named === undefined ? absent : Object.freeze(named[1]),
+    keys: keyed === undefined ? absent : frozenPair(keyed),
+  });
+}
+
+/** `x` as a `[required, allowed]` pair of copied string arrays, or `undefined`. */
+function stringPair(x: unknown): readonly [readonly string[], readonly string[]] | undefined {
+  if (!isArrayGuarded(x)) return undefined;
+  const required = stringList(readGuarded(x, 0));
+  const allowed = stringList(readGuarded(x, 1));
+  return required === undefined || allowed === undefined ? undefined : [required, allowed];
+}
+
+/**
+ * `x` as a copy of union alternatives, each read once and copied as {@link alternative} copies (whether or not it made
+ * them), or `undefined` if `x` is not an array of alternatives with string arrays for names.
+ */
+function alternativeList(x: unknown): readonly Alternative<unknown>[] | undefined {
+  const length: unknown = isArrayGuarded(x) ? (x as readonly unknown[]).length : undefined;
+  if (!isArrayLength(length)) return undefined;
+  const out: Alternative<unknown>[] = [];
+  for (let i = 0; i < length; i++) {
+    const a: unknown = readGuarded(x as readonly unknown[], i);
+    if (typeof a !== "object" || a === null || isRevokedProxy(a)) return undefined;
+    const codec: unknown = readGuarded(a, "codec");
+    const required = stringList(readGuarded(a, "required"));
+    const allowed = stringList(readGuarded(a, "allowed"));
+    const keys = stringPair(readGuarded(a, "keys"));
+    if (codec === REVOKED || required === undefined || allowed === undefined || keys === undefined) return undefined;
+    // the alternative's codec is the caller's, as given: the type says it is one
+    out.push({ codec: codec as Codec<unknown>, required, allowed, keys });
+  }
+  return out;
 }
 
 /**
@@ -535,10 +711,15 @@ export function alternative<A>(codec: Codec<A>, names: readonly [readonly string
  * union's type, given explicitly by the generated models; each alternative's codec must decode to a member of it.
  */
 export function union<U>(name: string, alternatives: readonly Alternative<U>[], texts: readonly Extract<U, string>[]): Codec<U> {
+  if (!isString(name)) return refusing(NOT_A_NAME);
+  // copies: the caller's arrays and alternatives are read once, here, so changing them later changes nothing
+  const alts = alternativeList(alternatives);
+  const own = stringList(texts);
+  if (alts === undefined || own === undefined) return refusing(NOT_NAMES);
   // read in UTF-16 order, once each: a getter may observe the order the fields are read in
-  const names = alternatives.flatMap((a) => a.allowed);
+  const names = alts.flatMap((a) => a.allowed);
   const known = names.filter((k, i) => names.indexOf(k) === i).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return codecOf({ kind: "union", name, alternatives, known, keys: alternatives.map((a) => a.keys), texts });
+  return codecOf({ kind: "union", name, alternatives: alts, known, keys: alts.map((a) => a.keys), texts: own });
 }
 
 /**
@@ -611,11 +792,11 @@ function follow<V, D>(
   choose: (s: Choosing, v: V) => { readonly to: Codec<unknown> } | { readonly done: D },
   circular: D,
 ): { readonly reading: Reading } | { readonly foreign: Codec<unknown> } | { readonly done: D } {
-  // by identity, in O(1) a step: the shapes are the schema's, never caller data
+  // by identity, in O(1) a step: the plans are the schema's, never caller data
   let passed: Set<CodecShape> | undefined;
   for (let c = codec; ; ) {
-    if (!made.has(c)) return { foreign: c };
-    const s = c.shape;
+    const s = plans.get(c);
+    if (s === undefined) return { foreign: c };
     if (s.kind !== "defer" && s.kind !== "union") return { reading: s };
     passed ??= new Set();
     if (passed.has(s)) return { done: circular };
@@ -644,6 +825,25 @@ function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
     close(stack, i - 1);
   }
 }
+
+/**
+ * `c.encode(value, depth)` for a codec this module did not make, its method read once; one that is not an object with
+ * that method (a schema argument past the types, a revoked Proxy) is refused, never called.
+ */
+function encodeForeign(c: unknown, value: unknown, depth: number): Result<Value, CanonicalError> {
+  const f: unknown = isObject(c) ? readGuarded(c, "encode") : undefined;
+  // Reflect.apply, never the method's own (replaceable) `call`
+  return isFunction(f) ? (Reflect.apply(f as (v: unknown, d: number) => unknown, c, [value, depth]) as Result<Value, CanonicalError>) : typeMismatch(NOT_A_CODEC);
+}
+
+/** `c.decode(value)` for a codec this module did not make, as {@link encodeForeign} calls its `encode`. */
+function decodeForeign(c: unknown, value: Value): Result<unknown, DecodeFailure> {
+  const f: unknown = isObject(c) ? readGuarded(c, "decode") : undefined;
+  return isFunction(f) ? (Reflect.apply(f as (v: Value) => unknown, c, [value]) as Result<unknown, DecodeFailure>) : decodeFailure(NOT_A_CODEC);
+}
+
+const isObject = (x: unknown): x is object => (typeof x === "object" && x !== null) || typeof x === "function";
+const NOT_A_CODEC = "the schema's codec is not a codec";
 
 /** A part still to encode, at `depth`, or the outcome of the part just encoded. */
 type EncodeStep = { readonly codec: Codec<unknown>; readonly value: unknown; readonly depth: number; readonly done?: undefined } | { readonly done: Result<Value, CanonicalError> };
@@ -697,7 +897,7 @@ function openEncoding(codec: Codec<unknown>, value: unknown, depth: number, stac
     typeMismatch("the codec refers to itself without writing a container"),
   );
   if ("done" in followed) return followed;
-  if ("foreign" in followed) return { done: followed.foreign.encode(value, depth) };
+  if ("foreign" in followed) return { done: encodeForeign(followed.foreign, value, depth) };
   const s = followed.reading;
   switch (s.kind) {
     case "leaf":
@@ -859,7 +1059,7 @@ function openDecoding(codec: Codec<unknown>, value: Value, stack: Decoding[]): D
     decodeFailure("the codec refers to itself without reading a container"),
   );
   if ("done" in followed) return followed;
-  if ("foreign" in followed) return { done: followed.foreign.decode(value) };
+  if ("foreign" in followed) return { done: decodeForeign(followed.foreign, value) };
   const s = followed.reading;
   switch (s.kind) {
     case "leaf":

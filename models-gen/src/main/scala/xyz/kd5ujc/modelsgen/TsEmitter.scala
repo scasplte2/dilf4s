@@ -15,6 +15,8 @@ import cats.syntax.all._
  *   - every reference is deferred, so modules may refer to rules in any order, recursively
  *   - a codec is a description (`c.record`, `c.union`, `c.vector`, ...) that the runtime's one encoder and one decoder
  *     walk iteratively, so no schema's nesting reaches the native stack
+ *   - every exported constant is such a codec, which the combinators freeze with its shape when they build it, or a
+ *     number: a module exports nothing a caller can change (no array or object literal of its own)
  *
  * Codecs never throw: they return the core's `Result`.
  */

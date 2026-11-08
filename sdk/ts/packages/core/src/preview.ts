@@ -95,3 +95,5 @@ export class Preview {
     return `"${escaped(this.head)}"${this.truncated ? "…" : ""} (UTF-8 length ${this.length.toString()})`;
   }
 }
+Object.freeze(Preview);
+Object.freeze(Preview.prototype);

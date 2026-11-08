@@ -13,6 +13,8 @@ class Identity {
     return o;
   }
 }
+Object.freeze(Identity);
+Object.freeze(Identity.prototype);
 
 /** A brand: `stamp` installs it on an object (before the object is frozen), `has` checks it in O(1). */
 export interface Mint {

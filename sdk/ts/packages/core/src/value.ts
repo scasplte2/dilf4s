@@ -71,6 +71,8 @@ class Identity {
     return o;
   }
 }
+Object.freeze(Identity);
+Object.freeze(Identity.prototype);
 
 /** `#minted in x`: set once, by {@link Minted}'s static block. */
 let minted!: (x: object) => boolean;
@@ -88,6 +90,8 @@ class Minted extends Identity {
     minted = (x) => #minted in x;
   }
 }
+Object.freeze(Minted);
+Object.freeze(Minted.prototype);
 
 /** Brands `o` as a value: its constructor calls this, before it freezes, only when it was given {@link KEY}. */
 const stamp = (o: object): void => {
@@ -105,20 +109,20 @@ export function isValue(x: unknown): x is Value {
   return typeof x === "object" && x !== null && minted(x);
 }
 
-const depthExceeded: CanonicalError = { kind: "DepthExceeded", limit: MAX_DEPTH };
+const depthExceeded: CanonicalError = Object.freeze({ kind: "DepthExceeded", limit: MAX_DEPTH });
 
 // What a caller passes past the types (from JavaScript, or a cast) is checked in O(1) before it is read, and refused as
 // a TypeMismatch naming what was expected, never what was given.
-const expected = (what: string): TypeMismatch => ({ kind: "TypeMismatch", reason: `expected ${what}` });
+const expected = (what: string): TypeMismatch => Object.freeze({ kind: "TypeMismatch", reason: `expected ${what}` });
 const notABoolean = expected("a boolean");
 const notABigint = expected("a bigint");
 const notAString = expected("a string");
 const notBytes = expected("a Uint8Array");
 const notAnArray = expected("an array");
 const notEntries = expected("an iterable of [key, value] entries");
-const notIterable: TypeMismatch = { kind: "TypeMismatch", reason: NOT_ITERABLE };
-const notAResult: TypeMismatch = { kind: "TypeMismatch", reason: NOT_A_RESULT };
-const scaleNotInteger: TypeMismatch = { kind: "TypeMismatch", reason: "the scale is not an integer" };
+const notIterable: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: NOT_ITERABLE });
+const notAResult: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: NOT_A_RESULT });
+const scaleNotInteger: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: "the scale is not an integer" });
 
 /** Node's `util.inspect` hook, so a value prints through {@link inspect}, within its budget. */
 const INSPECT: unique symbol = Symbol.for("nodejs.util.inspect.custom");
@@ -175,6 +179,8 @@ export class NullValue {
     return inspect(this);
   }
 }
+Object.freeze(NullValue);
+Object.freeze(NullValue.prototype);
 
 export class BoolValue {
   readonly kind = "bool";
@@ -202,6 +208,8 @@ export class BoolValue {
     return inspect(this);
   }
 }
+Object.freeze(BoolValue);
+Object.freeze(BoolValue.prototype);
 
 /**
  * The widest integer, in Java `bitLength` bits (docs/specs/canonical-encoding.md section 1): the widest whose every
@@ -216,7 +224,7 @@ export const MAX_INTEGER_BITS = CANONICAL_MAX_INTEGER_BITS;
 /** An integer past {@link MAX_INTEGER_BITS}. */
 export type IntegerTooWide = Extract<CanonicalError, { readonly kind: "IntegerTooWide" }>;
 
-const integerTooWide: IntegerTooWide = { kind: "IntegerTooWide", limit: MAX_INTEGER_BITS };
+const integerTooWide: IntegerTooWide = Object.freeze({ kind: "IntegerTooWide", limit: MAX_INTEGER_BITS });
 
 /** An integer within {@link MAX_INTEGER_BITS}. */
 export class IntValue {
@@ -256,6 +264,8 @@ export class IntValue {
     return inspect(this);
   }
 }
+Object.freeze(IntValue);
+Object.freeze(IntValue.prototype);
 
 const abs = (n: bigint): bigint => (n < 0n ? -n : n);
 
@@ -323,7 +333,7 @@ export const MAX_RATIONAL_BITS = CANONICAL_MAX_RATIONAL_BITS;
 /** A rational past {@link MAX_RATIONAL_BITS}. */
 export type RationalTooWide = Extract<CanonicalError, { readonly kind: "RationalTooWide" }>;
 
-const tooWide: RationalTooWide = { kind: "RationalTooWide", limit: MAX_RATIONAL_BITS };
+const tooWide: RationalTooWide = Object.freeze({ kind: "RationalTooWide", limit: MAX_RATIONAL_BITS });
 
 /**
  * Why {@link RationalValue.number} has no value: a zero denominator, an integer or a rational too wide, or a part that
@@ -451,6 +461,8 @@ export class RationalValue {
     return inspect(this);
   }
 }
+Object.freeze(RationalValue);
+Object.freeze(RationalValue.prototype);
 
 export class TextValue {
   readonly kind = "text";
@@ -492,6 +504,8 @@ export class TextValue {
     return inspect(this);
   }
 }
+Object.freeze(TextValue);
+Object.freeze(TextValue.prototype);
 
 export class BytesValue {
   readonly kind = "bytes";
@@ -537,6 +551,8 @@ export class BytesValue {
     return inspect(this);
   }
 }
+Object.freeze(BytesValue);
+Object.freeze(BytesValue.prototype);
 
 /** The depth (one more than its deepest part's) and weight (one plus each part's) of a container of `parts`. */
 function measure<T>(parts: readonly T[], part: (p: T) => readonly [number, bigint]): readonly [number, bigint] {
@@ -611,6 +627,8 @@ export class ArrayValue {
     return inspect(this);
   }
 }
+Object.freeze(ArrayValue);
+Object.freeze(ArrayValue.prototype);
 
 /** A map entry: its key, the key's UTF-8, and its value. */
 export interface Entry {
@@ -775,6 +793,8 @@ export class MapValue {
     return inspect(this);
   }
 }
+Object.freeze(MapValue);
+Object.freeze(MapValue.prototype);
 
 // ------------------------------------------------------------------------------------------------ equality
 
@@ -802,6 +822,8 @@ class Proven {
     else with_.add(b);
   }
 }
+Object.freeze(Proven);
+Object.freeze(Proven.prototype);
 
 /** Two containers whose parts are being compared, in order, and the next index. */
 type Comparing =
@@ -964,7 +986,7 @@ export function inspect(value: Value): string {
 }
 
 /** Factories for every kind of value, and equality. */
-export const Value = {
+export const Value = Object.freeze({
   null: NullValue.instance,
   /** The boolean `b`; a value that is not a boolean (from a JavaScript caller, or a cast) is a `TypeMismatch`. */
   bool: (b: boolean): Result<BoolValue, TypeMismatch> => BoolValue.of(b),
@@ -981,4 +1003,4 @@ export const Value = {
   /** The map of `entries` ({@link MapValue.of}): an entry that is not a `[string, Value]` array is a `TypeMismatch`. */
   map: (entries: Iterable<readonly [string, Value]>): Result<MapValue, CanonicalError> => MapValue.of(entries),
   equals: (a: Value, b: Value): boolean => equals(a, b),
-} as const;
+} as const);

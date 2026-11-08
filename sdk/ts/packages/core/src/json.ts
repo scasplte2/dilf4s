@@ -252,6 +252,8 @@ class Parser {
     }
   }
 }
+Object.freeze(Parser);
+Object.freeze(Parser.prototype);
 
 // ------------------------------------------------------------------------------------------------ render
 
@@ -282,8 +284,8 @@ export interface NoDecimal {
 /** Why {@link decimal} gave no decimal: the rational has none, or the argument is not a rational. */
 export type DecimalError = NoDecimal | TypeMismatch;
 
-const nonTerminating: NoDecimal = { kind: "NotJsonRepresentable", what: "non-terminating rational" };
-const overLong: NoDecimal = { kind: "NotJsonRepresentable", what: "over-long number" };
+const nonTerminating: NoDecimal = Object.freeze({ kind: "NotJsonRepresentable", what: "non-terminating rational" });
+const overLong: NoDecimal = Object.freeze({ kind: "NotJsonRepresentable", what: "over-long number" });
 
 /** {@link decimal} of a rational this package holds, unchecked: what {@link renderInto} writes. */
 function decimalText(r: RationalValue): Result<string, NoDecimal> {

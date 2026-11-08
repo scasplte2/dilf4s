@@ -4,6 +4,20 @@ import { twosAndFives } from "../src/bigint.js";
 import { cbor, json, RationalValue, Value, type CanonicalError, type Result } from "../src/index.js";
 import { bitLengthOf } from "../src/bigint.js";
 import { gcdSteps } from "../src/value.js";
+
+// RationalValue is frozen, so it cannot be spied on: this file's value module gives a subclass that notes each `of`
+const rationalOf = vi.hoisted(() => vi.fn());
+vi.mock(import("../src/value.js"), async (original) => {
+  const m = await original();
+  const Real = m.RationalValue;
+  class Counting extends (Real as unknown as new () => object) {
+    static of(n: bigint, d: bigint): unknown {
+      rationalOf(n, d);
+      return Real.of(n, d);
+    }
+  }
+  return { ...m, RationalValue: Counting as unknown as typeof Real };
+});
 import { expectOk, int, integerBytes } from "./vectors.js";
 
 // A rational's numerator and denominator are at most cbor.MAX_RATIONAL_BITS wide (canonical-encoding.md section 1), so
@@ -49,7 +63,7 @@ describe("rational width", () => {
     const maximal = expectOk(Value.array(Array.from({ length: k }, () => rational(n, d))), "array");
     const bytes = expectOk(cbor.encode(maximal), "encodes");
     expect(bytes.length).toBeGreaterThan(k * 8300);
-    const of = vi.spyOn(RationalValue, "of");
+    const of = rationalOf.mockClear();
     const decoded = expectOk(cbor.decode(bytes), "decodes");
     expect(Value.equals(decoded, maximal)).toBe(true);
     expect(of).toHaveBeenCalledTimes(k);
@@ -100,7 +114,7 @@ describe("rational width", () => {
   });
 
   it("a part one bit too wide is refused before any gcd, even when the rational is not in lowest terms either", () => {
-    const of = vi.spyOn(RationalValue, "of");
+    const of = rationalOf.mockClear();
     for (const [n, d] of [
       [edge * 2n, edge + 2n],
       [2n, edge * 2n],
