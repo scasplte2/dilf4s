@@ -398,3 +398,49 @@ describe("a refusal one caller is given cannot change what the next caller is gi
     });
   }
 });
+
+describe("a caller's function or codec revoked after a codec is built is refused, never called", () => {
+  const revoked = "the schema's function is a revoked Proxy";
+  const notACodec = "the schema's codec is not a codec";
+  const textEncode = (v: string): ReturnType<typeof codec.text.encode> => codec.text.encode(v);
+  const textDecode = (v: Value): ReturnType<typeof codec.text.decode> => codec.text.decode(v);
+
+  it("a leaf's functions", () => {
+    const encode = Proxy.revocable(textEncode, {});
+    const decode = Proxy.revocable(textDecode, {});
+    const L = codec.leaf(encode.proxy, decode.proxy);
+    expect(L.encode("a").ok, "before").toBe(true);
+    encode.revoke();
+    decode.revoke();
+    expect(L.encode("a")).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: revoked } });
+    expect(L.decode(textValue("a"))).toEqual({ ok: false, error: { path: [], reason: revoked } });
+  });
+
+  it("a reference's function, before and after it first resolves", () => {
+    const early = Proxy.revocable(() => codec.text, {});
+    const unresolved = codec.defer(early.proxy);
+    early.revoke();
+    expect(unresolved.encode("a")).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: revoked } });
+    expect(unresolved.decode(textValue("a"))).toEqual({ ok: false, error: { path: [], reason: revoked } });
+    const late = Proxy.revocable(() => codec.text, {});
+    const resolved = codec.defer(late.proxy);
+    expect(resolved.encode("a").ok, "resolved before the revocation").toBe(true);
+    late.revoke();
+    expect(resolved.encode("a").ok, "its target is kept").toBe(true);
+    expect(resolved.decode(textValue("a"))).toEqual({ ok: true, value: "a" });
+  });
+
+  it("a hand-made codec, or its methods", () => {
+    const whole = Proxy.revocable({ encode: textEncode, decode: textDecode, shape: codec.text.shape }, {});
+    const method = Proxy.revocable(textEncode, {});
+    const viaWhole = codec.vector(whole.proxy, 0, null);
+    const viaMethod = codec.vector({ encode: method.proxy, decode: textDecode, shape: codec.text.shape }, 0, null);
+    expect([viaWhole.encode(["a"]).ok, viaMethod.encode(["a"]).ok], "before").toEqual([true, true]);
+    whole.revoke();
+    method.revoke();
+    expect(viaWhole.encode(["a"])).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: notACodec } });
+    const decoded = viaWhole.decode(expectOk(Value.array([textValue("a")]), "an array"));
+    expect(decoded.ok ? undefined : decoded.error.reason).toBe(notACodec);
+    expect(viaMethod.encode(["a"])).toEqual({ ok: false, error: { kind: "TypeMismatch", reason: notACodec } });
+  });
+});

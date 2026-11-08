@@ -50,9 +50,10 @@ export { ok } from "./result.js";
  * so changing them afterwards changes nothing; so are core's classes and prototypes, which the codecs call. Schema
  * arguments of the wrong type make a codec that refuses every value. No caller, before or after a module that builds
  * codecs finishes loading, can change what such a codec accepts or produces. Freezing happens once, when the codec is
- * built: encoding and decoding do no work for it. What a combinator is given as code stays the caller's: a leaf's
- * functions, a deferred reference's function (the generated ones read an exported constant, which no importer can
- * reassign) and a codec made otherwise, which is called through its own methods.
+ * built: encoding and decoding do no work for it. A deferred reference resolves once, for good ({@link defer}). What a
+ * combinator is given as code stays the caller's (a hand-made {@link leaf}'s functions, a codec made otherwise, called
+ * through its own methods), checked each time it is called: one revoked since is refused, never called. A codec of
+ * core's combinators alone, as every generated one is, does no such check.
  */
 export interface Codec<T> {
   encode(value: T, depth?: number): Result<Value, CanonicalError>;
@@ -112,15 +113,27 @@ function codecOf<T>(shape: CodecShape): Codec<T> {
 
 /**
  * A codec that reads and writes a value whole, calling no other codec. Functions that are not functions (from a
- * JavaScript caller, or a cast) make a codec that refuses every value, as for {@link intRange}.
+ * JavaScript caller, or a cast) make a codec that refuses every value, as for {@link intRange}. The functions are the
+ * caller's, so each is checked each time it is called, as canonical-encoding.md section 1 has every caller function
+ * checked: one revoked since (a Proxy's) is refused, never called.
  */
 export function leaf<T>(encode: (value: T) => Result<Value, CanonicalError>, decode: (value: Value) => Result<T, DecodeFailure>): Codec<T> {
-  return isFunction(encode) && isFunction(decode) ? codecOf({ kind: "leaf", encode, decode }) : refusing(NOT_FUNCTIONS);
+  if (!isFunction(encode) || !isFunction(decode)) return refusing(NOT_FUNCTIONS);
+  return leafOf(
+    (v) => (isRevokedProxy(encode) ? typeMismatch(REVOKED_FUNCTION) : encode(v)),
+    (v) => (isRevokedProxy(decode) ? decodeFailure(REVOKED_FUNCTION) : decode(v)),
+  );
+}
+
+/** A leaf of functions this module made, which no caller can revoke: called directly. */
+function leafOf<T>(encode: (value: T) => Result<Value, CanonicalError>, decode: (value: Value) => Result<T, DecodeFailure>): Codec<T> {
+  return codecOf({ kind: "leaf", encode, decode });
 }
 
 /** Whether `f` is a function a codec can call: a revoked Proxy of one is not. */
 const isFunction = (f: unknown): boolean => typeof f === "function" && !isRevokedProxy(f);
 const NOT_FUNCTIONS = "the schema's functions are not functions";
+const REVOKED_FUNCTION = "the schema's function is a revoked Proxy";
 
 /** Why bytes or text are not a model: not canonical, or not the model's shape. */
 export type ModelError = { readonly kind: "Canonical"; readonly error: CanonicalError } | { readonly kind: "Decode"; readonly error: DecodeFailure };
@@ -181,12 +194,12 @@ const notA = (what: string): Err<CanonicalError> => typeMismatch(`expected ${wha
 const notAValue = (): Err<DecodeFailure> => decodeFailure("expected a canonical value");
 
 /** Any canonical value, unchanged (CDDL `any`). */
-export const any: Codec<Value> = leaf(
+export const any: Codec<Value> = leafOf(
   (v) => (isValue(v) ? ok(v) : notA("a canonical value")),
   (v) => ok(v),
 );
 
-export const bool: Codec<boolean> = leaf(
+export const bool: Codec<boolean> = leafOf(
   (b) => BoolValue.of(b),
   (v) => (v.kind === "bool" ? ok(v.value) : expected("bool", v)),
 );
@@ -194,7 +207,7 @@ export const bool: Codec<boolean> = leaf(
 const show = (b: bigint | null): string => (b === null ? "" : b.toString());
 
 /** A codec that refuses everything, both ways, for a schema built from bounds of the wrong type. */
-const refusing = <T>(reason: string): Codec<T> => leaf<T>(() => typeMismatch(reason), () => decodeFailure(reason));
+const refusing = <T>(reason: string): Codec<T> => leafOf<T>(() => typeMismatch(reason), () => decodeFailure(reason));
 
 /** Whether `lo` and `hi` are size bounds: `lo` a number, `hi` a number or `null`, neither `NaN`. */
 const sizeBounds = (lo: unknown, hi: unknown): boolean =>
@@ -209,7 +222,7 @@ export function intRange(lo: bigint | null, hi: bigint | null): Codec<bigint> {
   const bound = (b: unknown): boolean => b === null || typeof b === "bigint";
   if (!bound(lo) || !bound(hi)) return refusing("the schema's integer bounds are not bigints");
   const within = (n: bigint): boolean => (lo === null || n >= lo) && (hi === null || n <= hi);
-  return leaf(
+  return leafOf(
     (n) => {
       if (!isBigint(n)) return notA("a bigint");
       return within(n) ? IntValue.of(n) : typeMismatch(`integer of ${bitLengthOf(n).toString()} bits outside ${show(lo)}..${show(hi)}`);
@@ -237,7 +250,7 @@ export const nint: Codec<bigint> = intRange(-(2n ** 64n), -1n);
 export function sizedBytes(lo: number, hi: number | null): Codec<Uint8Array> {
   if (!sizeBounds(lo, hi)) return refusing(NOT_SIZE_BOUNDS);
   const fits = (n: number): boolean => n >= lo && (hi === null || n <= hi);
-  return leaf(
+  return leafOf(
     (b) => {
       // the array's own length, never a subclass's `length`
       const view = plainBytes(b);
@@ -260,7 +273,7 @@ export const bytes: Codec<Uint8Array> = sizedBytes(0, null);
 export function sizedText(lo: number, hi: number | null): Codec<string> {
   if (!sizeBounds(lo, hi)) return refusing(NOT_SIZE_BOUNDS);
   const fits = (s: string): boolean => utf8LengthOf(s) >= lo && (hi === null || utf8LengthOf(s) <= hi);
-  return leaf(
+  return leafOf(
     (s) => {
       if (!isString(s)) return notA("a string");
       const t = TextValue.of(s);
@@ -304,7 +317,7 @@ export function matches(pattern: TextPattern, text: string): boolean {
 /** Text matching a {@link TextPattern} (CDDL `text .regexp`). */
 export function matching(pattern: TextPattern): Codec<string> {
   if (!PATTERNS.includes(pattern)) return refusing("the schema's pattern is not one of the shared patterns");
-  return leaf(
+  return leafOf(
     (s) => {
       if (!isString(s)) return notA("a string");
       return matches(pattern, s) ? TextValue.of(s) : typeMismatch(`text does not match ${pattern}`);
@@ -319,7 +332,7 @@ export function matching(pattern: TextPattern): Codec<string> {
 /** Exactly the text `literal`, as its literal type: any other value is refused, as decoding refuses it. */
 export function literalText<S extends string>(literal: S): Codec<S> {
   if (!isString(literal)) return refusing("the schema's literal is not a string");
-  return leaf(
+  return leafOf(
     (s) => ((s as unknown) === literal ? TextValue.of(literal) : notA(JSON.stringify(literal))),
     (v) => {
       if (v.kind !== "text") return expected("text", v);
@@ -331,7 +344,7 @@ export function literalText<S extends string>(literal: S): Codec<S> {
 /** Exactly the integer `literal`, as its literal type: any other value is refused, as decoding refuses it. */
 export function literalInt<N extends bigint>(literal: N): Codec<N> {
   if (!isBigint(literal)) return refusing("the schema's literal is not a bigint");
-  return leaf(
+  return leafOf(
     (n) => ((n as unknown) === literal ? IntValue.of(literal) : notA(literal.toString())),
     (v) => {
       if (v.kind !== "int") return expected("int", v);
@@ -374,7 +387,7 @@ function enumCases(x: unknown): readonly (readonly [string, bigint])[] | undefin
 
 /** {@link intEnum} of a name and frozen cases this module holds. */
 function enumOf<L extends string>(name: string, cases: readonly (readonly [L, bigint])[]): Codec<L> {
-  return leaf(
+  return leafOf(
     (label) => {
       if (!isString(label)) return notA(`a ${name} label`);
       const c = cases.find(([l]) => l === label);
@@ -391,11 +404,18 @@ function enumOf<L extends string>(name: string, cases: readonly (readonly [L, bi
 // ------------------------------------------------------------------------------------------------ containers
 
 /**
- * A codec referenced by name and resolved on use, so rules may refer to each other in any order, recursively. An
+ * A codec referenced by name and resolved on first use, so rules may refer to each other in any order, recursively. An
  * explicit wider `T` is unchecked and acts as a cast (see {@link Codec}): let inference pick it.
+ *
+ * `codec` is called once, when the reference is first followed (checked then, as {@link leaf} checks its functions: a
+ * revoked one resolves to a codec refusing everything), and what it gives is the reference's for good, so no later
+ * change to what `codec` would give changes it. A call that throws (a constant not yet initialized) resolves nothing.
  */
 export function defer<T>(codec: () => Codec<T>): Codec<T> {
-  return isFunction(codec) ? codecOf({ kind: "defer", resolve: codec }) : refusing(NOT_FUNCTIONS);
+  if (!isFunction(codec)) return refusing(NOT_FUNCTIONS);
+  // written once, by the first resolution: a reference's target is fixed from then on
+  let resolved: Codec<unknown> | undefined;
+  return codecOf({ kind: "defer", resolve: () => (resolved ??= isRevokedProxy(codec) ? refusing(REVOKED_FUNCTION) : codec()) });
 }
 
 /**
@@ -772,13 +792,13 @@ function close(stack: readonly Encoding[], i: number = stack.length - 1): void {
  */
 function encodeForeign(c: unknown, value: unknown, depth: number): Result<Value, CanonicalError> {
   const f: unknown = isObject(c) ? readGuarded(c, "encode") : undefined;
-  return typeof f === "function" && !isRevokedProxy(f) ? (Reflect.apply(f, c, [value, depth]) as Result<Value, CanonicalError>) : typeMismatch(NOT_A_CODEC);
+  return isFunction(f) ? (f as (this: unknown, v: unknown, d: number) => Result<Value, CanonicalError>).call(c, value, depth) : typeMismatch(NOT_A_CODEC);
 }
 
 /** `c.decode(value)` for a codec this module did not make, as {@link encodeForeign} calls its `encode`. */
 function decodeForeign(c: unknown, value: Value): Result<unknown, DecodeFailure> {
   const f: unknown = isObject(c) ? readGuarded(c, "decode") : undefined;
-  return typeof f === "function" && !isRevokedProxy(f) ? (Reflect.apply(f, c, [value]) as Result<unknown, DecodeFailure>) : decodeFailure(NOT_A_CODEC);
+  return isFunction(f) ? (f as (this: unknown, v: Value) => Result<unknown, DecodeFailure>).call(c, value) : decodeFailure(NOT_A_CODEC);
 }
 
 const isObject = (x: unknown): x is object => (typeof x === "object" && x !== null) || typeof x === "function";

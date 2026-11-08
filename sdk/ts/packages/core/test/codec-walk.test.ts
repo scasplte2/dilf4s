@@ -289,7 +289,7 @@ describe("what the walks read and refuse", () => {
     expect(closed).toEqual(["inner", "outer"]);
   });
 
-  it("a chain of 10,000 references is followed once per reference, each way", () => {
+  it("a chain of 10,000 references resolves each reference once, for good, whichever way it is first walked", () => {
     let resolved = 0;
     const chain = Array.from({ length: 10_000 }).reduce<Codec<bigint>>(
       (inner) =>
@@ -302,7 +302,7 @@ describe("what the walks read and refuse", () => {
     const v = expectOk(chain.encode(5n), "encodes");
     expect(resolved).toBe(10_000);
     expect(expectOk(chain.decode(v), "decodes")).toBe(5n);
-    expect(resolved).toBe(20_000);
+    expect(resolved, "a reference resolved once is not resolved again").toBe(10_000);
   });
 
   it("a reference to itself, through no container, is refused instead of looping", () => {

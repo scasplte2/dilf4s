@@ -154,12 +154,14 @@ one caller (a shared `TypeMismatch`, `IntegerTooWide` or `DepthExceeded`), so no
 generated module exports only such codecs and number or `bigint` constants, so every value it exports is frozen once the
 module has loaded, before any importing code runs: no caller, before or after importing them, can change what a codec
 accepts or produces for every other caller. Freezing is done once, when a codec is built; encoding and decoding do no
-work for it. What a combinator is given as code stays the caller's own: a leaf's functions, a deferred reference's
-function (each generated one reads an exported constant, which no importer can reassign) and a codec made otherwise,
-which is called through its methods. The realm's built-ins (`Array.prototype` and the like) are outside this guarantee,
-as for any JavaScript library. A test walks the exports of every core module and generated model (no test hook is a
-mutable export), and fails on any object or class it reaches that is not frozen. Scala's and Rust's models are immutable
-values by construction, so this is the TypeScript SDK's alone and has no conformance vector.
+work for it. A deferred reference calls its function once, when first followed, and keeps what it gives for good (each
+generated one reads an exported constant, which no importer can reassign). What a combinator is given as code stays the
+caller's own (a hand-made leaf's functions, a codec made otherwise, called through its methods), checked each time it is
+called as every caller function is above: one revoked since is refused, never called. A codec built from core's
+combinators alone, as every generated one is, does no such check. The realm's built-ins (`Array.prototype` and the like)
+are outside this guarantee, as for any JavaScript library. A test walks the exports of every core module and generated
+model (no test hook is a mutable export), and fails on any object or class it reaches that is not frozen. Scala's and
+Rust's models are immutable values by construction, so this is the TypeScript SDK's alone and has no conformance vector.
 
 Caller bytes are read through the typed array's internal slots, so a subclass that overrides `length`, its accessors
 or its iterator is not believed. `cbor.decode` reads its input in place when its memory is an `ArrayBuffer` of the
