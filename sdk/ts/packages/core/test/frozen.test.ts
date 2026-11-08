@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
-import { codec, hashCommitment, json, models, Value, valueCommitmentWithin, type Result } from "../src/index.js";
+import { codec, hashCommitment, json, models, Preview, Value, valueCommitmentWithin, type Result } from "../src/index.js";
 import type { Codec, CodecShape } from "../src/codec.js";
 import { expectOk, int } from "./vectors.js";
 
@@ -476,6 +476,80 @@ describe("a reference resolves once, for good; a hand-made codec's methods are c
     const items = codec.vector({ encode, decode, shape: codec.text.shape }, 0, null);
     const v = expectOk(items.encode(["a"]), "encodes");
     expect(items.decode(v)).toEqual({ ok: true, value: ["a"] });
+  });
+});
+
+describe("a hand-made codec or leaf that gives what is not a Result is refused, never thrown on", () => {
+  const notAResult = "a hand-made codec gave what is not a Result";
+  const revoked = Proxy.revocable({ ok: true, value: Value.null }, {});
+  revoked.revoke();
+  const given: readonly (readonly [string, unknown])[] = [
+    ["undefined", undefined],
+    ["a number", 42],
+    ['{ ok: "yes" }', { ok: "yes", value: Value.null }],
+    ["{ ok: 1 }", { ok: 1, value: Value.null }],
+    ["a revoked Proxy", revoked.proxy],
+  ];
+  const encodeRefusal = { ok: false, error: { kind: "TypeMismatch", reason: notAResult } };
+  const decodeRefusal = { ok: false, error: { path: [], reason: notAResult } };
+  const nestedDecodeRefusal = { ok: false, error: { path: [Preview.of("[0]")], reason: notAResult } };
+
+  for (const [what, r] of given) {
+    it(`${what}, from a leaf, a codec made otherwise, nested or at the root`, () => {
+      const L = codec.leaf<string>(() => bad(r), () => bad(r));
+      const H: Codec<string> = { encode: () => bad(r), decode: () => bad(r), shape: codec.text.shape };
+      expect(L.encode("a"), "the leaf's own encode").toEqual(encodeRefusal);
+      expect(L.decode(textValue("a")), "the leaf's own decode").toEqual(decodeRefusal);
+      for (const [name, c] of [["a leaf", L], ["a codec made otherwise", H]] as const) {
+        const items = codec.vector(c, 0, null);
+        expect(items.encode(["a"]), `${name} in a vector, encoding`).toEqual(encodeRefusal);
+        expect(items.decode(expectOk(Value.array([textValue("a")]), "an array")), `${name} in a vector, decoding`).toEqual(nestedDecodeRefusal);
+        expect(codec.toCbor(c, "a"), `toCbor with ${name}`).toEqual(encodeRefusal);
+        expect(codec.fromJson(c, '"a"'), `fromJson with ${name}`).toEqual({ ok: false, error: { kind: "Decode", error: decodeRefusal.error } });
+        expect(codec.fromCbor(c, Uint8Array.of(0x61, 0x61)), `fromCbor with ${name}`).toEqual({ ok: false, error: { kind: "Decode", error: decodeRefusal.error } });
+        expect(codec.decodeWithin(c, textValue("a"), 10n), `decodeWithin with ${name}`).toEqual(decodeRefusal);
+      }
+    });
+  }
+
+  it("a decode refusal that is not a decode failure, nested where its path is read", () => {
+    const failures: readonly unknown[] = [null, 1, { reason: "r" }, { path: 1, reason: "r" }, { path: [], reason: 1 }, { path: ["x"], reason: "r" }, { path: { length: 1, 0: Preview.of("x") }, reason: "r" }];
+    const array = expectOk(Value.array([textValue("a")]), "an array");
+    for (const error of failures) {
+      const items = codec.vector(codec.leaf<string>((s) => codec.text.encode(s), () => bad({ ok: false, error })), 0, null);
+      expect(items.decode(array), JSON.stringify(error)).toEqual(nestedDecodeRefusal);
+    }
+  });
+
+  it("an encode refusal that is no refusal (no string kind), and one that is, passed on as given", () => {
+    for (const error of [null, 1, "TypeMismatch", {}, { kind: 1 }]) {
+      const items = codec.vector(codec.leaf<string>(() => bad({ ok: false, error }), (v) => codec.text.decode(v)), 0, null);
+      expect(items.encode(["a"]), JSON.stringify(error)).toEqual(encodeRefusal);
+    }
+    const own = { kind: "TypeMismatch", reason: "mine" };
+    const L = codec.leaf<string>(() => bad({ ok: false, error: own }), (v) => codec.text.decode(v));
+    const given = codec.vector(L, 0, null).encode(["a"]);
+    expect(given.ok ? undefined : given.error, "the leaf's own refusal").toBe(own);
+  });
+
+  it("a Result is read once, its tag then its value or error, and passed on as given", () => {
+    let reads = 0;
+    const counted = (o: object): object =>
+      new Proxy(o, {
+        get: (t, k) => {
+          reads++;
+          return Reflect.get(t, k) as unknown;
+        },
+      });
+    const L = codec.leaf<string>(
+      (s) => bad(counted({ ok: true, value: expectOk(Value.text(s), "text") })),
+      () => bad(counted({ ok: false, error: { path: [Preview.of("k")], reason: "mine" } })),
+    );
+    const items = codec.vector(L, 0, null);
+    expect(items.encode(["a"])).toEqual({ ok: true, value: expectOk(Value.array([textValue("a")]), "an array") });
+    expect(reads, "ok, then value").toBe(2);
+    expect(items.decode(expectOk(Value.array([textValue("a")]), "an array"))).toEqual({ ok: false, error: { path: [Preview.of("[0]"), Preview.of("k")], reason: "mine" } });
+    expect(reads, "ok, then error").toBe(4);
   });
 });
 

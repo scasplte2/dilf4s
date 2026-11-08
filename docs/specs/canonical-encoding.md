@@ -158,10 +158,18 @@ what a codec accepts or produces for every other caller. Freezing is done once, 
 decoding do no work for it. A deferred reference calls its function once, when first followed, and keeps what it gives
 for good (each generated one reads an exported constant, which no importer can reassign). What a combinator is given as
 code stays the caller's own (a hand-made leaf's functions, a codec made otherwise, called through its methods), checked
-each time it is called as every caller function is above: one revoked since is refused, never called. A codec built from
-core's combinators alone, as every generated one is, does no such check. The realm's built-ins (`Array.prototype` and
-the like) are outside this guarantee, as for any JavaScript library. A test walks the exports of every core module and
-generated model (no test hook is a mutable export), and fails on any object or class it reaches that is not frozen.
+each time it is called as every caller function is above: one revoked since is refused, never called. What such code
+gives is checked as a `Result` before anything of it is read, in O(1): an object (not a revoked Proxy) whose `ok`, read
+once, is `true` or `false`, then its `value` or `error`, read once (an encode refusal must be an object with a string
+`kind`, and a decode refusal a decode failure, its `reason` a string and its `path` an array of previews, read by
+index). Anything else (`undefined`, a number, `{ ok: "yes" }`) is a `TypeMismatch` when encoding, and a decode failure
+when decoding, never a throw; `toCbor`, `fromCbor`, `fromJson` and `decodeWithin` check a hand-made codec they are
+given in the same way. A codec built from core's combinators alone, as every generated one is, does none of these
+checks. The realm's built-ins
+(`Array.prototype` and the like) are outside this guarantee, as for any JavaScript library, and so are the SDK's
+dependencies (noble's curves and hashes, which signing and proofs call), whose objects are as mutable as the
+built-ins. A test walks the exports of every core module and generated model (no test hook is a mutable export), and
+fails on any object or class it reaches that is not frozen.
 Scala's and Rust's models are immutable values by construction, so this is the TypeScript SDK's alone and has no
 conformance vector.
 
