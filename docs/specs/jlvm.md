@@ -94,6 +94,23 @@ non-terminating rational, has no surface form and is an error.
   compared and never hashed, so compilation is O(n log n) rather than linear in this size. The largest conformance
   program is under 2^14. The host bounds the JSON text itself.
 
+**Reading a canonical form.** A program is read back from its canonical form (`Parser.fromCanonical`), or from
+that form's CBOR (`Parser.decode`). The refusals come in this order, which is normative:
+1. Bytes only: CBOR decoding (`canonical-encoding.md`). A depth error is `Limit`; anything else is `Malformed`.
+2. A form heavier than `jlvm-max-canonical-weight` (2^24, `limits.cddl`) is `Limit`, from its cached weight, before
+   anything reads it. A program's canonical form weighs at most 40 per unit of its size (an operation's node, the
+   heaviest, writes 38 besides its arguments), so 64 per unit of `Program.MaxSize` is past every program's form. A
+   value built with shared parts can weigh far more than it occupies, and reading it would expand it.
+3. A value that is not a `jlvm-program` of `jlvm.cddl`, anywhere in it (a root that is not a map, a version other
+   than 1, an unknown operation), is `Malformed`.
+4. A `var` path that does not parse is `Malformed`.
+5. The depth and size bounds (above) are `Limit`.
+6. The shapes the canonical form rejects (a spread of a non-variadic operation, or of an array expression; a null
+   default) are `Malformed`.
+7. The rendered surface's depth, and the canonical form itself, as for every program.
+
+`jlvm_v1.json`'s `decodings` pin the order, each a form built with shared parts.
+
 **Compilation.** Before evaluation, a program is checked into its evaluation form. These are parse errors
 (`Malformed`), reported with no gas used:
 - the shape of `if`, `let` and every callback form;
@@ -151,6 +168,12 @@ The number bound is far inside the data model's (33219 bits for an integer and f
 `Limit` first. An operand is read against the number bound before any arithmetic, so data or a literal as wide as the
 data model allows (`8e9999`) is `Limit` to every operation that reads it as a number, and only passes through those
 that do not (`var`, `if`, `==`).
+
+The result-weight bound applies to every value an operation builds, a map it updates included (`set`, `unset`,
+`merge`, whichever way a key is removed). It does not apply to the input data or to the host bindings, which the host
+bounds: a read (`var`), and an operation that returns one of its arguments, or a part of one, as it is (`get`, `if`,
+`and`, `or`, `default`, `find`, `min`, `max`, `reduce`'s accumulator), passes a heavier value through unchanged. So
+only the input data or a host binding can carry a value heavier than 2^24 (§6).
 
 **Truthiness.** The falsy values are null, `false`, `0`, `""`, empty bytes, `[]` and `{}`. Every other value is truthy,
 including every non-integer rational.

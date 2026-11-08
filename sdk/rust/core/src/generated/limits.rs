@@ -42,6 +42,9 @@ pub const CANONICAL_MAX_WEIGHT: u64 = 9_223_372_036_854_775_807;
 /// `cardano-kes-max-depth` (`shared/schemas/limits.cddl`).
 pub const CARDANO_KES_MAX_DEPTH: u64 = 7;
 
+/// `jlvm-max-canonical-weight` (`shared/schemas/limits.cddl`).
+pub const JLVM_MAX_CANONICAL_WEIGHT: u64 = 16_777_216;
+
 /// `jlvm-max-exponent` (`shared/schemas/limits.cddl`).
 pub const JLVM_MAX_EXPONENT: u64 = 999;
 
@@ -275,6 +278,9 @@ pub mod as_u32 {
     /// [`super::CARDANO_KES_MAX_DEPTH`] as a `u32`.
     pub const CARDANO_KES_MAX_DEPTH: u32 = 7;
 
+    /// [`super::JLVM_MAX_CANONICAL_WEIGHT`] as a `u32`.
+    pub const JLVM_MAX_CANONICAL_WEIGHT: u32 = 16_777_216;
+
     /// [`super::JLVM_MAX_EXPONENT`] as a `u32`.
     pub const JLVM_MAX_EXPONENT: u32 = 999;
 
@@ -391,6 +397,9 @@ pub mod as_usize {
 
     /// [`super::CARDANO_KES_MAX_DEPTH`] as a `usize`.
     pub const CARDANO_KES_MAX_DEPTH: usize = 7;
+
+    /// [`super::JLVM_MAX_CANONICAL_WEIGHT`] as a `usize`.
+    pub const JLVM_MAX_CANONICAL_WEIGHT: usize = 16_777_216;
 
     /// [`super::JLVM_MAX_EXPONENT`] as a `usize`.
     pub const JLVM_MAX_EXPONENT: usize = 999;

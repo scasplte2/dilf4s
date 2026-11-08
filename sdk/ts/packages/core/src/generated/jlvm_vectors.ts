@@ -129,6 +129,25 @@ export const JlvmCause: c.Codec<JlvmCause> = c.union<JlvmCause>("JlvmCause", [
 ], []);
 
 /**
+ * `jlvm-decoding` (`shared/schemas/jlvm-vectors.cddl`).
+ *
+ * A canonical form read as a program (jlvm.md section 1, "Reading a canonical form"): "form", a value built with
+ * shared parts so that a heavy one stays small here, read by fromCanonical. The outcome is the error it is refused with,
+ * by kind (the order of the refusals is normative), or the program's canonical CBOR.
+ */
+export interface JlvmDecoding {
+  readonly name: string;
+  readonly form: BuiltValue;
+  readonly outcome: JlvmOutcome;
+}
+
+export const JlvmDecoding: c.Codec<JlvmDecoding> = c.record<JlvmDecoding>({
+  name: c.required("name", c.text),
+  form: c.required("form", c.defer(() => BuiltValue)),
+  outcome: c.required("outcome", c.defer(() => JlvmOutcome)),
+});
+
+/**
  * `jlvm-error` (`shared/schemas/jlvm-vectors.cddl`).
  *
  * "op" is present exactly for the kinds Type, Arity, Arithmetic, Domain and Crypto: the wire name of the operation that
@@ -261,6 +280,7 @@ export interface JlvmVectors {
   readonly source: string;
   readonly cases: readonly JlvmCase[];
   readonly aliases: readonly JlvmAlias[];
+  readonly decodings: readonly JlvmDecoding[];
 }
 
 export const JlvmVectors: c.Codec<JlvmVectors> = c.record<JlvmVectors>({
@@ -271,6 +291,7 @@ export const JlvmVectors: c.Codec<JlvmVectors> = c.record<JlvmVectors>({
   source: c.required("source", c.text),
   cases: c.required("cases", c.vector(c.defer(() => JlvmCase), 0, null)),
   aliases: c.required("aliases", c.vector(c.defer(() => JlvmAlias), 0, null)),
+  decodings: c.required("decodings", c.vector(c.defer(() => JlvmDecoding), 0, null)),
 });
 
 /** `jlvm-vrf-cause` (`shared/schemas/jlvm-vectors.cddl`). */

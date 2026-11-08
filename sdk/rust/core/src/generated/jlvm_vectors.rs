@@ -277,6 +277,40 @@ impl c::Model for JlvmCause {
     }
 }
 
+/// `jlvm-decoding` (`shared/schemas/jlvm-vectors.cddl`).
+///
+/// A canonical form read as a program (jlvm.md section 1, "Reading a canonical form"): "form", a value built with
+/// shared parts so that a heavy one stays small here, read by fromCanonical. The outcome is the error it is refused with,
+/// by kind (the order of the refusals is normative), or the program's canonical CBOR.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmDecoding {
+    /// The `name` entry.
+    pub name: String,
+    /// The `form` entry.
+    pub form: BuiltValue,
+    /// The `outcome` entry.
+    pub outcome: JlvmOutcome,
+}
+
+impl c::Model for JlvmDecoding {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("name", &c::Text, &self.name, inner)?,
+            c::field("form", &c::ModelOf::<BuiltValue>::NEW, &self.form, inner)?,
+            c::field("outcome", &c::ModelOf::<JlvmOutcome>::NEW, &self.outcome, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["name", "form", "outcome"])?;
+        let f0 = fields.required("name", &c::Text)?;
+        let f1 = fields.required("form", &c::ModelOf::<BuiltValue>::NEW)?;
+        let f2 = fields.required("outcome", &c::ModelOf::<JlvmOutcome>::NEW)?;
+        Ok(Self { name: f0, form: f1, outcome: f2 })
+    }
+}
+
 /// `jlvm-error` (`shared/schemas/jlvm-vectors.cddl`).
 ///
 /// "op" is present exactly for the kinds Type, Arity, Arithmetic, Domain and Crypto: the wire name of the operation that
@@ -561,6 +595,8 @@ pub struct JlvmVectors {
     pub cases: Vec<JlvmCase>,
     /// The `aliases` entry.
     pub aliases: Vec<JlvmAlias>,
+    /// The `decodings` entry.
+    pub decodings: Vec<JlvmDecoding>,
 }
 
 impl c::Model for JlvmVectors {
@@ -574,11 +610,12 @@ impl c::Model for JlvmVectors {
             c::field("source", &c::Text, &self.source, inner)?,
             c::field("cases", &c::VecOf { element: c::ModelOf::<JlvmCase>::NEW, min: 0, max: None }, &self.cases, inner)?,
             c::field("aliases", &c::VecOf { element: c::ModelOf::<JlvmAlias>::NEW, min: 0, max: None }, &self.aliases, inner)?,
+            c::field("decodings", &c::VecOf { element: c::ModelOf::<JlvmDecoding>::NEW, min: 0, max: None }, &self.decodings, inner)?,
         ])
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["spec", "version", "schedule", "gasLimit", "source", "cases", "aliases"])?;
+        let fields = c::Fields::of(value, &["spec", "version", "schedule", "gasLimit", "source", "cases", "aliases", "decodings"])?;
         fields.required("spec", &c::LiteralText("docs/specs/jlvm.md"))?;
         fields.required("version", &c::LiteralInt(1))?;
         fields.required("schedule", &c::LiteralInt(1))?;
@@ -586,7 +623,8 @@ impl c::Model for JlvmVectors {
         let f4 = fields.required("source", &c::Text)?;
         let f5 = fields.required("cases", &c::VecOf { element: c::ModelOf::<JlvmCase>::NEW, min: 0, max: None })?;
         let f6 = fields.required("aliases", &c::VecOf { element: c::ModelOf::<JlvmAlias>::NEW, min: 0, max: None })?;
-        Ok(Self { gas_limit: f3, source: f4, cases: f5, aliases: f6 })
+        let f7 = fields.required("decodings", &c::VecOf { element: c::ModelOf::<JlvmDecoding>::NEW, min: 0, max: None })?;
+        Ok(Self { gas_limit: f3, source: f4, cases: f5, aliases: f6, decodings: f7 })
     }
 }
 

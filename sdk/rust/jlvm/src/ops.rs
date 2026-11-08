@@ -95,7 +95,8 @@ pub(crate) fn apply(op: Op, args: Vec<Value>) -> Result<Value> {
         Op::Unset => binary(op, args, |m, k| {
             let o = record(op, m)?;
             let key = text_key(op, k)?;
-            Ok(Value::Map(o.removed(&key)))
+            // the map it builds is a result, bounded as set's is (jlvm.md section 2)
+            bounded(op.wire(), Value::Map(o.removed(&key)))
         }),
         Op::Exists => Ok(Value::Bool(!args.contains(&Value::Null))),
         Op::TypeOf => unary(op, args, |v| text(op, String::from(kind(&v)))),
