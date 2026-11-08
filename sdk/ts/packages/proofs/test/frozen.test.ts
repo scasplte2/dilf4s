@@ -335,6 +335,34 @@ describe("a populated replica and a finished snapshot reader hold state no calle
     expect(delta, "the delta").toMatchObject({ ok: false, error: { kind: "InvalidVersion" } });
   });
 
+  it("a byte version in a resizable buffer, resized while its head is read or afterwards, is judged and kept as first measured", () => {
+    const Resizable = ArrayBuffer as unknown as new (length: number, options: { maxByteLength: number }) => ArrayBuffer & { resize(length: number): void };
+    const roots = { stateRoot: new Uint8Array(32), historyRoot: new Uint8Array(32) };
+    const shrinking = (): { readonly head: object; readonly version: Uint8Array } => {
+      const buffer = new Resizable(1025, { maxByteLength: 2048 });
+      const version = new Uint8Array(buffer);
+      const head = {
+        version,
+        get stateRoot(): Uint8Array {
+          buffer.resize(4);
+          version.set([0, 0, 0, 7]);
+          return roots.stateRoot;
+        },
+        historyRoot: roots.historyRoot,
+      };
+      return { head, version };
+    };
+    const delta = expectOk(versioned.Replica.empty(byBytes), "empty").applyDelta({ head: bad(shrinking().head), upserts: [], removes: [] });
+    expect(delta, "refused by the length first measured").toEqual({ ok: false, error: { kind: "InvalidVersion", reason: "a version key is 4 bytes, got 1025" } });
+    const { head, version } = shrinking();
+    const reader = expectOk(versioned.SnapshotReader.start(byBytes, bad(head)), "a reader");
+    const kept = reader.trusted.version;
+    expect(kept, "never the caller's array").not.toBe(version);
+    version.set([0, 0, 0, 8]);
+    expect(reader.trusted.version, "what the reader keeps").toEqual(kept);
+    expect(reader.feed({ kind: "head", head: bad(head) }).ok, "the version, measured at 1025 bytes, is no 4-byte key").toBe(false);
+  });
+
   checks("a bigint-versioned trie", populated(vt, [7n, 8n], 40));
   checks("a byte-versioned trie", populated(byBytes, [Uint8Array.of(0, 0, 0, 7), Uint8Array.of(0, 0, 0, 8)], 40));
 });
