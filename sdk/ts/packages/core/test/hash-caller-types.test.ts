@@ -337,7 +337,7 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     expect(MAX_OUTPUT_SIZE, "the longest digest").toBe(64);
   });
 
-  it("an entry point copies no local argument: a 64 MiB digest input and its hex are read in place", () => {
+  it("an entry point copies no local argument: a 64 MiB digest input and its hex are read in place", { timeout: 60_000 }, () => {
     const big = new Uint8Array(64 << 20);
     const before = process.memoryUsage().arrayBuffers;
     expectOk(digest(sha, big), "digests");

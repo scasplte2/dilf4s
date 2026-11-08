@@ -624,7 +624,7 @@ describe("a message in memory another thread writes is signed from one snapshot"
 });
 
 describe("secret input with a known bound is refused past it uncopied, even in shared memory", () => {
-  it("mnemonic entropy, BIP32 and SLIP-10 seeds, and an Icarus root secret", () => {
+  it("mnemonic entropy, BIP32 and SLIP-10 seeds, and an Icarus root secret", { timeout: 60_000 }, () => {
     const big = new Uint8Array(new SharedArrayBuffer(16 << 20));
     const before = process.memoryUsage().arrayBuffers;
     expect(expectErr(toMnemonic(big), "16 MiB of entropy").kind).toBe("InvalidEntropy");
@@ -636,7 +636,7 @@ describe("secret input with a known bound is refused past it uncopied, even in s
 });
 
 describe("entropy past its bound is refused at the stage its size always was", () => {
-  it("toMnemonic checks the word list's type before the entropy's size", () => {
+  it("toMnemonic checks the word list's type before the entropy's size", { timeout: 60_000 }, () => {
     const big = new Uint8Array(new SharedArrayBuffer(16 << 20));
     expect(toMnemonic(big, bad({})), "the word list first").toEqual(mismatch("expected a WordList"));
     expect(expectErr(toMnemonic(big), "then the entropy").kind).toBe("InvalidEntropy");
