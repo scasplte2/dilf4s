@@ -44,7 +44,12 @@ object JlvmErrorCoverageSuite extends SimpleIOSuite {
       val families = caused.flatMap(_.downField("cause").keys.toList.flatten).toSet
       expect(caused.forall(_.get[String]("error").contains("Crypto")), "a cause on a kind other than Crypto")
         .and(expect(caused.nonEmpty, "no row records a cause"))
-        .and(expect(families.subsetOf(CryptoCauseKind.values.map(_.toLowerCase).toSet), s"unknown families: $families"))
+        .and(
+          expect(
+            families.subsetOf(CryptoCauseKind.values.map(k => k.take(1).toLowerCase + k.drop(1)).toSet),
+            s"unknown families: $families"
+          )
+        )
     }
   }
 

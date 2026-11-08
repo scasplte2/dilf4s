@@ -67,6 +67,16 @@ encode one, or to decode a key whose top bit is set, as `InvalidVersion`. The JL
 `2^63 ≤ v < 2^64` is therefore never in a history trie, so a program's proof about such a version shows it absent, or
 does not cover it. It is never a committed version. The `versionKeys` vectors pin both sides of the cap.
 
+**A version in a refusal** (`VersionNotIncreasing`'s `head` and `next`, `UnknownVersion`'s `version`, and the
+reference store's `CommitRewrite`, `NotRetained` and `VersionConflict`) is its version key's **full lowercase hex**,
+with no `0x`, never truncated and never the bytes (`proofs-errors.cddl`, `version-key-hex`). It is bounded: every
+implementation checks each key it encodes is exactly `w` bytes, `w` at most 1024 (the history trie is `fixed(w)`,
+`trie.md` §1), a version key of the caller's own included, before a refusal names it, so the text is at most 2048
+characters and no caller can lengthen it. The fields of `VersionNotIncreasing` and `UnknownVersion` are normative
+(`conformance.md` §3); the `versionErrors` vectors pin them at widths 8, 32 and 1024. Besides the default key, every
+implementation has the **bytes key** of a width `w` from 1 to 1024, whose version is its own key (Scala
+`VersionKey.bytes`, Rust `BytesKey`, TypeScript `VersionKey.bytes`), which those vectors use at the wide widths.
+
 ## 3. The root
 
 The root is the root of a trie in mode `fixed(1)`, the **top trie**, with three entries:

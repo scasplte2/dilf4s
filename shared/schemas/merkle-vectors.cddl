@@ -1,3 +1,4 @@
+;# import proofs-errors as errors
 ; Schema of shared/vectors/merkle_v1.json (conformance vectors for docs/specs/merkle.md).
 ; Proofs are hex of their canonical CBOR, whose shape is shared/schemas/merkle.cddl.
 
@@ -14,12 +15,11 @@ merkle-vectors = {
 
 ; A proof (canonical CBOR) the decoder refuses, and the kind of its error: an inclusion index not below the size is
 ; "IndexOutOfRange", a consistency proof whose old size exceeds its new size is "InvalidSizes", and a shape the
-; schema refuses, or a path entry that is not a digest, is "Encoding".
-merkle-malformed = { "name": text, "kind": merkle-proof-kind, "cbor": hex, "error": merkle-decode-error }
+; schema refuses, or a path entry that is not a digest, is "Encoding". "error" is a kind of MerkleError
+; (proofs-errors.cddl).
+merkle-malformed = { "name": text, "kind": merkle-proof-kind, "cbor": hex, "error": errors.merkle-error-kind }
 
 merkle-proof-kind = "inclusion" / "consistency"
-
-merkle-decode-error = "IndexOutOfRange" / "InvalidSizes" / "Encoding"
 
 ; "inclusion" and "consistency" are the tagged profile's proofs; "rfc6962Inclusion" and "rfc6962Consistency" are the
 ; same proofs under the rfc6962 profile, whose leaves are the raw "leaves". Each lists one proof per leaf index, then

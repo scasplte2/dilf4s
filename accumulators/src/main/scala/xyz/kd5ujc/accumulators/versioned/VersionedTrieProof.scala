@@ -52,7 +52,7 @@ object VersionedTrieWire {
   private def digest[H: Hasher](b: ByteVector): Either[VersionedTrieError, Digest[H]] = Digest.fromBytes[H](b).leftMap(malformed)
 
   def head[V, H](h: Head[V, H])(implicit V: VersionKey[V]): Either[VersionedTrieError, W.VersionedTrieHead] =
-    V.encode(h.version).map(W.VersionedTrieHead(_, h.stateRoot.bytes, h.historyRoot.bytes))
+    V.keyOf(h.version).map(W.VersionedTrieHead(_, h.stateRoot.bytes, h.historyRoot.bytes))
 
   def fromHead[V, H: Hasher](w: W.VersionedTrieHead)(implicit V: VersionKey[V]): Either[VersionedTrieError, Head[V, H]] =
     (V.decode(w.v), digest[H](w.s), digest[H](w.h)).mapN(Head(_, _, _))
@@ -74,7 +74,7 @@ object VersionedTrieWire {
     (
       head(p.head),
       trieProof(p.top),
-      p.at.traverse(a => VersionKey[V].encode(a.version).map(W.VersionedTrieAt(_, a.stateRoot.map(_.bytes)))),
+      p.at.traverse(a => VersionKey[V].keyOf(a.version).map(W.VersionedTrieAt(_, a.stateRoot.map(_.bytes)))),
       p.history.traverse(trieProof),
       p.state.traverse(trieProof)
     ).mapN(W.VersionedTrieProof(_, _, _, _, _))
@@ -133,7 +133,7 @@ object VersionedTrieWire {
       case SnapshotChunk.State(es) =>
         W.VersionedTrieSnapshotState(es.map { case (k, v) => W.VersionedTrieUpsert(k.value, v) }).asRight
       case SnapshotChunk.History(vs) =>
-        vs.traverse { case (u, s) => VersionKey[V].encode(u).map(W.VersionedTrieVersion(_, s.bytes)) }
+        vs.traverse { case (u, s) => VersionKey[V].keyOf(u).map(W.VersionedTrieVersion(_, s.bytes)) }
           .map(W.VersionedTrieSnapshotHistory(_))
     }
     wire

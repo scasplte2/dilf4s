@@ -44,7 +44,7 @@ object KeyCodec {
       val width: Long = w
       def encode(key: K): ByteVector = enc(key)
       def decode(bytes: ByteVector): Either[StoreError, K] =
-        Either.cond(bytes.size == w, bytes, StoreError.Codec("key", s"expected $w bytes, got ${bytes.size}")).flatMap(dec)
+        Either.cond(bytes.size == w, bytes, StoreError.Encoding("key", s"expected $w bytes, got ${bytes.size}")).flatMap(dec)
     }
 
   implicit val bytesKey: KeyCodec[ByteVector] = instance(identity, _.asRight)
@@ -58,8 +58,8 @@ object KeyCodec {
     t => ByteVector(t.value.getBytes(UTF_8)),
     b =>
       Either
-        .cond(Utf8.isWellFormed(b.toArray), new String(b.toArray, UTF_8), StoreError.Codec("key", "invalid UTF-8"))
-        .flatMap(s => CanonicalValue.text(s).leftMap(_ => StoreError.Codec("key", "invalid UTF-8")))
+        .cond(Utf8.isWellFormed(b.toArray), new String(b.toArray, UTF_8), StoreError.Encoding("key", "invalid UTF-8"))
+        .flatMap(s => CanonicalValue.text(s).leftMap(_ => StoreError.Encoding("key", "invalid UTF-8")))
   )
 
   /** Big-endian with the sign bit flipped, so negative values sort before positive ones. */
@@ -68,7 +68,7 @@ object KeyCodec {
   implicit val intKey: Fixed[Int] = fixed(4L, i => ByteVector.fromInt(i ^ Int.MinValue), b => (b.toInt() ^ Int.MinValue).asRight)
 
   implicit def digestKey[H](implicit H: Hasher[H]): Fixed[Digest[H]] =
-    fixed(H.outputSize, _.bytes, b => Digest.fromBytes[H](b).leftMap(e => StoreError.Codec("key", e.toString)))
+    fixed(H.outputSize, _.bytes, b => Digest.fromBytes[H](b).leftMap(e => StoreError.Encoding("key", e.toString)))
 
   /** Composite key led by a fixed-width component: plain concatenation preserves the lexicographic order of pairs. */
   implicit def tuple2Key[A, B](implicit A: Fixed[A], B: KeyCodec[B]): KeyCodec[(A, B)] =
@@ -99,10 +99,10 @@ object KeyCodec {
     @tailrec
     private def unescape(in: ByteVector, i: Long, acc: ByteVector): Either[StoreError, (ByteVector, ByteVector)] =
       in.indexOfSlice(ByteVector(0), i) match {
-        case -1                                               => StoreError.Codec("key", "unterminated component").asLeft
+        case -1                                               => StoreError.Encoding("key", "unterminated component").asLeft
         case j if j + 1 < in.size && in(j + 1) == 0xff.toByte => unescape(in, j + 2, acc ++ in.slice(i, j) ++ ByteVector(0))
         case j if j + 1 < in.size && in(j + 1) == 0           => (acc ++ in.slice(i, j), in.drop(j + 2)).asRight
-        case _                                                => StoreError.Codec("key", "invalid escape").asLeft
+        case _                                                => StoreError.Encoding("key", "invalid escape").asLeft
       }
   }
 }
@@ -125,12 +125,12 @@ object ValueCodec {
   implicit val canonicalValue: ValueCodec[CanonicalValue] = new ValueCodec[CanonicalValue] {
     def encode(value: CanonicalValue): Either[StoreError, ByteVector] = encoded(value)
     def decode(bytes: ByteVector): Either[StoreError, CanonicalValue] =
-      Cbor.decode(bytes).leftMap(e => StoreError.Codec("value", e.toString))
+      Cbor.decode(bytes).leftMap(e => StoreError.Encoding("value", e.toString))
   }
 
   /** A value's canonical CBOR; one past `Cbor.MaxEncodedBytes` is a `Codec` failure naming the limit, never a throw. */
   private def encoded(value: CanonicalValue): Either[StoreError, ByteVector] =
-    Cbor.encode(value).leftMap(e => StoreError.Codec("value", s"its encoding is over ${e.limit} bytes"))
+    Cbor.encode(value).leftMap(e => StoreError.Encoding("value", s"its encoding is over ${e.limit} bytes"))
 
   /**
    * Canonical CBOR through a [[Codec]]: a generated model's, or `CanonicalCirce.codec` (module `circeInterop`) for a
@@ -138,11 +138,11 @@ object ValueCodec {
    */
   def fromCodec[V](codec: Codec[V]): ValueCodec[V] = new ValueCodec[V] {
     def encode(value: V): Either[StoreError, ByteVector] =
-      codec.encode(value).leftMap(e => StoreError.Codec("value", e.toString)).flatMap(encoded)
+      codec.encode(value).leftMap(e => StoreError.Encoding("value", e.toString)).flatMap(encoded)
     def decode(bytes: ByteVector): Either[StoreError, V] =
       Cbor
         .decode(bytes)
-        .leftMap(e => StoreError.Codec("value", e.toString))
-        .flatMap(codec.decoder.decode(_).leftMap(f => StoreError.Codec("value", f.message)))
+        .leftMap(e => StoreError.Encoding("value", e.toString))
+        .flatMap(codec.decoder.decode(_).leftMap(f => StoreError.Encoding("value", f.message)))
   }
 }

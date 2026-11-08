@@ -16,6 +16,7 @@ import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue}
 import xyz.kd5ujc.core.circe.CanonicalCirce
 import xyz.kd5ujc.core.hash.{Digest, Sha256}
+import xyz.kd5ujc.models.refusal_vectors.{MerkleRefusal, PoseidonRefusal, RefusalOutcome, TrieRefusal, VtKeyCause, VtRefusal, VtTrieCause}
 import xyz.kd5ujc.storage.Batch
 
 import io.circe.syntax._
@@ -37,45 +38,71 @@ object RefusalVectors {
 
   // ---------------------------------------------------------------------------------------------------- outcomes
 
-  sealed trait Outcome extends Product with Serializable
-  case object Accepted extends Outcome
-
-  /** A refusal: its kind, and the fields conformance.md §3 names normative for it. */
-  final case class Refused(kind: String, limit: Option[Long] = None, depth: Option[Int] = None, component: Option[String] = None)
-      extends Outcome
+  /**
+   * A case's outcome, as the generated model of refusal-vectors.cddl: "accepted", or a refusal by its family and that
+   * family's generated kind, with the fields conformance.md §3 names normative for it.
+   */
+  type Outcome = RefusalOutcome
+  val Accepted: Outcome = "accepted"
 
   def outcomeJson(o: Outcome): Json = o match {
-    case Accepted => "accepted".asJson
-    case Refused(k, l, d, c) =>
+    case _: String => "accepted".asJson
+    case VtRefusal(k, cause, l, d, c) =>
+      val causeJson = cause.map {
+        case VtTrieCause(t)   => Json.obj("trie" -> Json.fromString(t))
+        case VtKeyCause(k, s) => Json.fromFields(List("stateKey" -> Json.fromString(k)) ++ s.map("segment" -> _.asJson))
+      }
       Json.fromFields(
-        List("kind" -> k.asJson) ++ l.map("limit" -> _.asJson) ++ d.map("depth" -> _.asJson) ++ c.map("component" -> _.asJson)
+        List("versionedTrie" -> Json.fromString(k)) ++ causeJson.map("cause" -> _) ++ l.map("limit" -> _.asJson) ++ d.map(
+          "depth" -> _.asJson
+        ) ++
+        c.map(x => "component" -> Json.fromString(x))
       )
+    case MerkleRefusal(k, l)   => Json.fromFields(List("merkle" -> Json.fromString(k)) ++ l.map("limit" -> _.asJson))
+    case TrieRefusal(k, l)     => Json.fromFields(List("trie" -> Json.fromString(k)) ++ l.map("limit" -> _.asJson))
+    case PoseidonRefusal(k, d) => Json.fromFields(List("poseidonMerkle" -> Json.fromString(k)) ++ d.map("depth" -> _.asJson))
   }
 
-  def versioned(e: VersionedTrieError): Refused = e match {
-    case VersionedTrieError.TooLarge(_, limit)       => Refused("TooLarge", limit = Some(limit))
-    case VersionedTrieError.TooDeep(_, depth, limit) => Refused("TooDeep", limit = Some(limit.toLong), depth = Some(depth))
-    case VersionedTrieError.RootMismatch(c, _, _)    => Refused("RootMismatch", component = Some(c))
-    case VersionedTrieError.Trie(t)                  => Refused(s"Trie.${t.productPrefix}")
-    case VersionedTrieError.Key(k)                   => Refused(s"Key.${k.productPrefix}")
-    case other                                       => Refused(other.productPrefix)
+  def versioned(e: VersionedTrieError): Outcome = {
+    val (limit, depth) = e match {
+      case VersionedTrieError.TooLarge(_, limit)       => (Some(BigInt(limit)), None)
+      case VersionedTrieError.TooDeep(_, depth, limit) => (Some(BigInt(limit)), Some(BigInt(depth)))
+      case _                                           => (None, None)
+    }
+    val cause = e match {
+      case VersionedTrieError.Trie(t) => Some(VtTrieCause(t.kind))
+      case VersionedTrieError.Key(k) =>
+        val segment = k match {
+          case StateKeyError.InvalidSegment(_, s)    => Some(BigInt(s))
+          case StateKeyError.SegmentTooLong(_, s, _) => Some(BigInt(s))
+          case _                                     => None
+        }
+        Some(VtKeyCause(k.kind, segment))
+      case _ => None
+    }
+    val component = e match {
+      case VersionedTrieError.RootMismatch(c, _, _) => Some(c)
+      case _                                        => None
+    }
+    VtRefusal(e.kind, cause, limit, depth, component)
   }
 
-  def merkle(e: MerkleError): Refused = e match {
-    case MerkleError.TooLarge(limit) => Refused("TooLarge", limit = Some(limit))
-    case other                       => Refused(other.productPrefix)
+  def merkle(e: MerkleError): Outcome = e match {
+    case MerkleError.TooLarge(limit) => MerkleRefusal(e.kind, Some(BigInt(limit)))
+    case _                           => MerkleRefusal(e.kind, None)
   }
 
-  def trie(e: TrieError): Refused = e match {
-    case TrieError.TooLarge(limit) => Refused("TooLarge", limit = Some(limit))
-    case other                     => Refused(other.productPrefix)
-  }
-  def poseidon(e: PoseidonMerkleError): Refused = e match {
-    case PoseidonMerkleError.Position(_, depth) => Refused("Position", depth = Some(depth))
-    case other                                  => Refused(other.productPrefix)
+  def trie(e: TrieError): Outcome = e match {
+    case TrieError.TooLarge(limit) => TrieRefusal(e.kind, Some(BigInt(limit)))
+    case _                         => TrieRefusal(e.kind, None)
   }
 
-  private def outcome[E, A](r: Either[E, A])(refused: E => Refused): Outcome = r.fold(refused, _ => Accepted)
+  def poseidon(e: PoseidonMerkleError): Outcome = e match {
+    case PoseidonMerkleError.Position(_, depth) => PoseidonRefusal(e.kind, Some(BigInt(depth)))
+    case _                                      => PoseidonRefusal(e.kind, None)
+  }
+
+  private def outcome[E, A](r: Either[E, A])(refused: E => Outcome): Outcome = r.fold(refused, _ => Accepted)
 
   // ---------------------------------------------------------------------------------------------------- reading
 
@@ -158,7 +185,7 @@ object RefusalVectors {
           Digest
             .fromBytes[H](rb)
             .fold(
-              _ => Refused("Encoding"),
+              _ => MerkleRefusal("Encoding", None),
               r => outcome(MerkleCodec.verifyLeaf[H](r, n, leaf, v)(using summon[xyz.kd5ujc.core.hash.Hasher[H]], M))(merkle)
             )
         }

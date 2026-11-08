@@ -31,7 +31,7 @@ final case class Replica[V, H] private (
 
 object Replica {
 
-  private def mismatch(component: String, expected: Digest[?], computed: Digest[?]): VersionedTrieError =
+  private def mismatch(component: VtRootComponent, expected: Digest[?], computed: Digest[?]): VersionedTrieError =
     VersionedTrieError.RootMismatch(component, expected.hex, computed.hex)
 
   /**
@@ -70,7 +70,7 @@ object Replica {
       modes <- (VersionedTrie.stateMode, VersionedTrie.historyMode[V]).tupled
       // every structural check of the incremental reader: order, sizes, no nulls, the history ending at the head
       checked <- Snapshot.read(trusted, Snapshot.chunks(snapshot.copy(head = trusted)))
-      keys    <- checked.history.traverse { case (u, _) => V.encode(u) }
+      keys    <- checked.history.traverse { case (u, _) => V.keyOf(u) }
       hashed  <- checked.entries.traverse { case (k, v) => VersionedTrie.valueHash[H](v).map(k.bytes -> _) }
       state   <- VersionedTrie.trie(Trie.fromEntries[H](modes._1, hashed))
       _       <- Either.cond(state.root == trusted.stateRoot, (), mismatch("state", trusted.stateRoot, state.root))
@@ -97,11 +97,14 @@ object Replica {
         (),
         VersionedTrieError.RootMismatch("parent", parent.fold("none")(_.hex), claimed.fold("none")(_.hex))
       )
-      nk <- V.encode(delta.head.version)
-      hk <- r.head.traverse(h => V.encode(h.version))
-      _  <- hk.filterNot(Cbor.compareBytes(nk, _) > 0).toLeft(()).leftMap(VersionedTrieError.VersionNotIncreasing(_, nk))
-      _  <- Either.cond(delta.removes.forall(k => !written(k)), (), VersionedTrieError.Malformed("a key is both written and removed"))
-      _  <- Either.cond(written.size == delta.upserts.size, (), VersionedTrieError.Malformed("a key is written twice"))
+      nk <- V.keyOf(delta.head.version)
+      hk <- r.head.traverse(h => V.keyOf(h.version))
+      _ <- hk
+        .filterNot(Cbor.compareBytes(nk, _) > 0)
+        .toLeft(())
+        .leftMap(hk => VersionedTrieError.VersionNotIncreasing(versionHex(hk), versionHex(nk)))
+      _ <- Either.cond(delta.removes.forall(k => !written(k)), (), VersionedTrieError.Malformed("a key is both written and removed"))
+      _ <- Either.cond(written.size == delta.upserts.size, (), VersionedTrieError.Malformed("a key is written twice"))
       // the limits a commit and a snapshot enforce, so no replication path accepts a value another refuses
       _ <- delta.upserts.traverse_ {
         case (k, v) =>

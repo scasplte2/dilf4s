@@ -218,7 +218,7 @@ object TrieStore {
         case (h, None)         => RawBatch.delete(nodeKey(h)).asRight[Cbor.TooLarge]
       }
         .fold(
-          e => failS[RawBatch](StoreError.Codec("node record", s"its encoding is over ${e.limit} bytes")),
+          e => failS[RawBatch](StoreError.Encoding("node record", s"its encoding is over ${e.limit} bytes")),
           batches => batches.foldLeft(RawBatch.empty)(_ ++ _).pure[F]
         )
 

@@ -2,6 +2,8 @@ package xyz.kd5ujc.accumulators.versioned
 
 import cats.syntax.all._
 
+import xyz.kd5ujc.accumulators.trie.KeyMode
+
 import scodec.bits.ByteVector
 
 /**
@@ -16,6 +18,17 @@ trait VersionKey[V] {
   def width: Int
   def encode(v:     V): Either[VersionedTrieError, ByteVector]
   def decode(bytes: ByteVector): Either[VersionedTrieError, V]
+
+  /**
+   * `vkey(v)`, checked: [[encode]]'s bytes, refused as `InvalidVersion` unless they are exactly `width` bytes and the
+   * width is one the history trie keys (1 to `KeyMode.MaxFixedBytes`). Every path of this package encodes through it,
+   * so a version key of the caller's own never lengthens the key a refusal names (its [[versionHex]], at most twice
+   * `KeyMode.MaxFixedBytes` characters).
+   */
+  final def keyOf(v: V): Either[VersionedTrieError, ByteVector] =
+    if (width < 1 || width > KeyMode.MaxFixedBytes)
+      VersionedTrieError.InvalidVersion(s"a version key's width must be 1..${KeyMode.MaxFixedBytes}, not $width").asLeft
+    else encode(v).ensureOr(k => VersionedTrieError.InvalidVersion(s"a version key is $width bytes, got ${k.size}"))(_.size == width.toLong)
 }
 
 object VersionKey {
@@ -25,6 +38,26 @@ object VersionKey {
   /** Non-negative `Long` as `width` unsigned big-endian bytes, `1 <= width <= 8`; values must fit. */
   def unsignedLong(width: Int): Either[VersionedTrieError, VersionKey[Long]] =
     Either.cond(width >= 1 && width <= 8, longOf(width), VersionedTrieError.InvalidVersion(s"a Long version key is 1..8 bytes, not $width"))
+
+  /**
+   * A version that is its own key: `width` bytes (1 to `KeyMode.MaxFixedBytes`), in unsigned byte order. The Rust SDK's
+   * `BytesKey` and the TypeScript SDK's `VersionKey.bytes`; the conformance vectors' wide version keys.
+   */
+  def bytes(width: Int): Either[VersionedTrieError, VersionKey[ByteVector]] =
+    Either.cond(
+      width >= 1 && width <= KeyMode.MaxFixedBytes,
+      bytesOf(width),
+      VersionedTrieError.InvalidVersion(s"a bytes version key is 1..${KeyMode.MaxFixedBytes} bytes, not $width")
+    )
+
+  private def bytesOf(w: Int): VersionKey[ByteVector] = new VersionKey[ByteVector] {
+    val width: Int = w
+
+    def encode(v: ByteVector): Either[VersionedTrieError, ByteVector] =
+      Either.cond(v.size == w.toLong, v, VersionedTrieError.InvalidVersion(s"a version key is $w bytes, got ${v.size}"))
+
+    def decode(bytes: ByteVector): Either[VersionedTrieError, ByteVector] = encode(bytes)
+  }
 
   private def longOf(w: Int): VersionKey[Long] = new VersionKey[Long] {
     val width: Int = w

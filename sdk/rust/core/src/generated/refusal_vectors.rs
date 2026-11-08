@@ -116,6 +116,58 @@ pub type Hex = String;
 /// The codec of [`Hex`].
 pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 
+/// `merkle-refusal` (`shared/schemas/refusal-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MerkleRefusal {
+    /// The `merkle` entry.
+    pub merkle: super::proofs_errors::MerkleErrorKind,
+    /// The `limit` entry.
+    pub limit: Option<u64>,
+}
+
+impl c::Model for MerkleRefusal {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("merkle", &c::ModelOf::<super::proofs_errors::MerkleErrorKind>::NEW, &self.merkle, inner)?,
+            c::optional_field("limit", &c::UINT, self.limit.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["merkle", "limit"])?;
+        let f0 = fields.required("merkle", &c::ModelOf::<super::proofs_errors::MerkleErrorKind>::NEW)?;
+        let f1 = fields.optional("limit", &c::UINT)?;
+        Ok(Self { merkle: f0, limit: f1 })
+    }
+}
+
+/// `poseidon-refusal` (`shared/schemas/refusal-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PoseidonRefusal {
+    /// The `poseidonMerkle` entry.
+    pub poseidon_merkle: super::proofs_errors::PoseidonMerkleErrorKind,
+    /// The `depth` entry.
+    pub depth: Option<u64>,
+}
+
+impl c::Model for PoseidonRefusal {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("poseidonMerkle", &c::ModelOf::<super::proofs_errors::PoseidonMerkleErrorKind>::NEW, &self.poseidon_merkle, inner)?,
+            c::optional_field("depth", &c::UINT, self.depth.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["poseidonMerkle", "depth"])?;
+        let f0 = fields.required("poseidonMerkle", &c::ModelOf::<super::proofs_errors::PoseidonMerkleErrorKind>::NEW)?;
+        let f1 = fields.optional("depth", &c::UINT)?;
+        Ok(Self { poseidon_merkle: f0, depth: f1 })
+    }
+}
+
 /// `refusal-case` (`shared/schemas/refusal-vectors.cddl`).
 ///
 /// One call. "check" names the entry point and the arguments it reads (conformance.md section 6); a case carries only
@@ -347,40 +399,6 @@ impl c::Model for RefusalEntry {
     }
 }
 
-/// `refusal-error` (`shared/schemas/refusal-vectors.cddl`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RefusalError {
-    /// The `kind` entry.
-    pub kind: String,
-    /// The `limit` entry.
-    pub limit: Option<u64>,
-    /// The `depth` entry.
-    pub depth: Option<u64>,
-    /// The `component` entry.
-    pub component: Option<String>,
-}
-
-impl c::Model for RefusalError {
-    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
-        let inner = c::nested(depth)?;
-        c::record([
-            c::field("kind", &c::Text, &self.kind, inner)?,
-            c::optional_field("limit", &c::UINT, self.limit.as_ref(), inner)?,
-            c::optional_field("depth", &c::UINT, self.depth.as_ref(), inner)?,
-            c::optional_field("component", &c::Text, self.component.as_ref(), inner)?,
-        ])
-    }
-
-    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["kind", "limit", "depth", "component"])?;
-        let f0 = fields.required("kind", &c::Text)?;
-        let f1 = fields.optional("limit", &c::UINT)?;
-        let f2 = fields.optional("depth", &c::UINT)?;
-        let f3 = fields.optional("component", &c::Text)?;
-        Ok(Self { kind: f0, limit: f1, depth: f2, component: f3 })
-    }
-}
-
 /// `refusal-fixed-mode` (`shared/schemas/refusal-vectors.cddl`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefusalFixedMode {
@@ -431,12 +449,23 @@ impl c::Model for RefusalMode {
 
 /// `refusal-outcome` (`shared/schemas/refusal-vectors.cddl`).
 ///
-/// "accepted", or a refusal: its kind (a nested kind as "Outer.Inner", e.g. "Trie.Encoding") and the fields
-/// conformance.md section 3 names normative for it, each present exactly when the kind has it.
+/// "accepted", or a refusal: its family as the one key naming a kind, that family's kind (proofs-errors.cddl), and the
+/// fields conformance.md section 3 names normative for it, each present exactly when the kind has it. A check's family
+/// is fixed: "vt-" checks refuse as the versioned trie, "merkle-" checks as the Merkle tree, "trie-" checks as the
+/// trie, and "poseidon-proof" as the Poseidon tree. A refusal that wraps another (a versioned trie's Trie and Key) names
+/// the inner one as its "cause", by its family and kind, as conformance.md section 1 describes. The versions a
+/// VersionNotIncreasing or UnknownVersion refusal names are pinned by versioned_trie_v1.json's "versionErrors", not
+/// here.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefusalOutcome {
-    /// A [`RefusalError`].
-    RefusalError(RefusalError),
+    /// A [`VtRefusal`].
+    VtRefusal(VtRefusal),
+    /// A [`MerkleRefusal`].
+    MerkleRefusal(MerkleRefusal),
+    /// A [`TrieRefusal`].
+    TrieRefusal(TrieRefusal),
+    /// A [`PoseidonRefusal`].
+    PoseidonRefusal(PoseidonRefusal),
     /// The text `accepted`.
     Accepted,
 }
@@ -444,14 +473,20 @@ pub enum RefusalOutcome {
 impl c::Model for RefusalOutcome {
     fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
         match self {
-            Self::RefusalError(a) => c::Model::to_value_at(a, depth),
+            Self::VtRefusal(a) => c::Model::to_value_at(a, depth),
+            Self::MerkleRefusal(a) => c::Model::to_value_at(a, depth),
+            Self::TrieRefusal(a) => c::Model::to_value_at(a, depth),
+            Self::PoseidonRefusal(a) => c::Model::to_value_at(a, depth),
             Self::Accepted => Ok(c::Value::text("accepted")),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[(&["kind"], &["component", "depth", "kind", "limit"])], &["accepted"])? {
-            c::Alternative::Record(0) => <RefusalError as c::Model>::from_value(value).map(Self::RefusalError),
+        match c::select_alternative(value, &[(&["versionedTrie"], &["cause", "component", "depth", "limit", "versionedTrie"]), (&["merkle"], &["limit", "merkle"]), (&["trie"], &["limit", "trie"]), (&["poseidonMerkle"], &["depth", "poseidonMerkle"])], &["accepted"])? {
+            c::Alternative::Record(0) => <VtRefusal as c::Model>::from_value(value).map(Self::VtRefusal),
+            c::Alternative::Record(1) => <MerkleRefusal as c::Model>::from_value(value).map(Self::MerkleRefusal),
+            c::Alternative::Record(2) => <TrieRefusal as c::Model>::from_value(value).map(Self::TrieRefusal),
+            c::Alternative::Record(3) => <PoseidonRefusal as c::Model>::from_value(value).map(Self::PoseidonRefusal),
             c::Alternative::Text(0) => Ok(Self::Accepted),
             other => Err(c::unknown_alternative(other)),
         }
@@ -538,5 +573,147 @@ impl c::Model for RefusalVectors {
         fields.required("hash", &c::LiteralText("SHA-256"))?;
         let f3 = fields.required("cases", &c::VecOf { element: c::ModelOf::<RefusalCase>::NEW, min: 0, max: None })?;
         Ok(Self { cases: f3 })
+    }
+}
+
+/// `trie-refusal` (`shared/schemas/refusal-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrieRefusal {
+    /// The `trie` entry.
+    pub trie: super::proofs_errors::TrieErrorKind,
+    /// The `limit` entry.
+    pub limit: Option<u64>,
+}
+
+impl c::Model for TrieRefusal {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("trie", &c::ModelOf::<super::proofs_errors::TrieErrorKind>::NEW, &self.trie, inner)?,
+            c::optional_field("limit", &c::UINT, self.limit.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["trie", "limit"])?;
+        let f0 = fields.required("trie", &c::ModelOf::<super::proofs_errors::TrieErrorKind>::NEW)?;
+        let f1 = fields.optional("limit", &c::UINT)?;
+        Ok(Self { trie: f0, limit: f1 })
+    }
+}
+
+/// `vt-cause` (`shared/schemas/refusal-vectors.cddl`).
+///
+/// The refusal a versioned trie's Trie or Key refusal wraps: the trie's kind, or the state key's, each with the fields
+/// conformance.md section 3 names normative for that kind: a state key's "segment" exactly for InvalidSegment and
+/// SegmentTooLong. (A trie refusal the versioned trie wraps has none: its TooLarge is the versioned trie's own.)
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VtCause {
+    /// A [`VtTrieCause`].
+    VtTrieCause(VtTrieCause),
+    /// A [`VtKeyCause`].
+    VtKeyCause(VtKeyCause),
+}
+
+impl c::Model for VtCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        match self {
+            Self::VtTrieCause(a) => c::Model::to_value_at(a, depth),
+            Self::VtKeyCause(a) => c::Model::to_value_at(a, depth),
+        }
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        match c::select_alternative(value, &[(&["trie"], &["trie"]), (&["stateKey"], &["segment", "stateKey"])], &[])? {
+            c::Alternative::Record(0) => <VtTrieCause as c::Model>::from_value(value).map(Self::VtTrieCause),
+            c::Alternative::Record(1) => <VtKeyCause as c::Model>::from_value(value).map(Self::VtKeyCause),
+            other => Err(c::unknown_alternative(other)),
+        }
+    }
+}
+
+/// `vt-key-cause` (`shared/schemas/refusal-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtKeyCause {
+    /// The `stateKey` entry.
+    pub state_key: super::codec_errors::StateKeyErrorKind,
+    /// The `segment` entry.
+    pub segment: Option<u64>,
+}
+
+impl c::Model for VtKeyCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("stateKey", &c::ModelOf::<super::codec_errors::StateKeyErrorKind>::NEW, &self.state_key, inner)?,
+            c::optional_field("segment", &c::UINT, self.segment.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["stateKey", "segment"])?;
+        let f0 = fields.required("stateKey", &c::ModelOf::<super::codec_errors::StateKeyErrorKind>::NEW)?;
+        let f1 = fields.optional("segment", &c::UINT)?;
+        Ok(Self { state_key: f0, segment: f1 })
+    }
+}
+
+/// `vt-refusal` (`shared/schemas/refusal-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtRefusal {
+    /// The `versionedTrie` entry.
+    pub versioned_trie: super::proofs_errors::VersionedTrieErrorKind,
+    /// The `cause` entry.
+    pub cause: Option<VtCause>,
+    /// The `limit` entry.
+    pub limit: Option<u64>,
+    /// The `depth` entry.
+    pub depth: Option<u64>,
+    /// The `component` entry.
+    pub component: Option<super::proofs_errors::VtRootComponent>,
+}
+
+impl c::Model for VtRefusal {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("versionedTrie", &c::ModelOf::<super::proofs_errors::VersionedTrieErrorKind>::NEW, &self.versioned_trie, inner)?,
+            c::optional_field("cause", &c::ModelOf::<VtCause>::NEW, self.cause.as_ref(), inner)?,
+            c::optional_field("limit", &c::UINT, self.limit.as_ref(), inner)?,
+            c::optional_field("depth", &c::UINT, self.depth.as_ref(), inner)?,
+            c::optional_field("component", &c::ModelOf::<super::proofs_errors::VtRootComponent>::NEW, self.component.as_ref(), inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["versionedTrie", "cause", "limit", "depth", "component"])?;
+        let f0 = fields.required("versionedTrie", &c::ModelOf::<super::proofs_errors::VersionedTrieErrorKind>::NEW)?;
+        let f1 = fields.optional("cause", &c::ModelOf::<VtCause>::NEW)?;
+        let f2 = fields.optional("limit", &c::UINT)?;
+        let f3 = fields.optional("depth", &c::UINT)?;
+        let f4 = fields.optional("component", &c::ModelOf::<super::proofs_errors::VtRootComponent>::NEW)?;
+        Ok(Self { versioned_trie: f0, cause: f1, limit: f2, depth: f3, component: f4 })
+    }
+}
+
+/// `vt-trie-cause` (`shared/schemas/refusal-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VtTrieCause {
+    /// The `trie` entry.
+    pub trie: super::proofs_errors::TrieErrorKind,
+}
+
+impl c::Model for VtTrieCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("trie", &c::ModelOf::<super::proofs_errors::TrieErrorKind>::NEW, &self.trie, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["trie"])?;
+        let f0 = fields.required("trie", &c::ModelOf::<super::proofs_errors::TrieErrorKind>::NEW)?;
+        Ok(Self { trie: f0 })
     }
 }

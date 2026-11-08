@@ -130,8 +130,8 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
           .and(expect(empty.isEmpty, "nothing landed"))
           .and(expect.same((1, 0), (writeIfs, writes)))
           .and(expect.same(head, restored))
-          .and(expect.same(Left(VersionedTrieError.VersionConflict(None, Some(vk(4L)))), again))
-          .and(expect.same(Left(VersionedTrieError.VersionConflict(None, Some(vk(4L)))), busy))
+          .and(expect.same(Left(VersionedTrieError.VersionConflict(None, Some(versionHex(vk(4L))))), again))
+          .and(expect.same(Left(VersionedTrieError.VersionConflict(None, Some(versionHex(vk(4L))))), busy))
     }
   }
 

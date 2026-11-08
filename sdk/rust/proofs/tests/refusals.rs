@@ -7,6 +7,7 @@
     clippy::panic,
     clippy::std_instead_of_alloc,
     clippy::std_instead_of_core,
+    clippy::too_many_lines,
     reason = "tests fail by panicking, and run with std"
 )]
 
@@ -16,64 +17,71 @@ mod common;
 use common::{Step, build, bytes, load};
 use dilf4s_core::codec::Model;
 use dilf4s_core::generated::refusal_vectors::{
-    BuiltStep, BuiltValue, RefusalCase, RefusalCheck, RefusalMode, RefusalOutcome, RefusalVectors,
+    BuiltStep, BuiltValue, MerkleRefusal, PoseidonRefusal, RefusalCase, RefusalCheck, RefusalMode, RefusalOutcome,
+    RefusalVectors, TrieRefusal, VtCause, VtKeyCause, VtRefusal, VtTrieCause,
 };
 use dilf4s_core::generated::versioned_trie as w;
+use dilf4s_core::generated::versioned_trie_vectors::{VersionedTrieVectors, VtVersionError};
+use dilf4s_core::generated::{merkle_vectors::MerkleVectors, trie_vectors::TrieVectors};
 use dilf4s_core::hash::{Digest, Sha256};
 use dilf4s_core::value::Value;
 use dilf4s_proofs::MAX_PROOF_WEIGHT;
-use dilf4s_proofs::merkle::{self, ConsistencyProof, InclusionProof, MerkleError, Tagged, TreeHead};
-use dilf4s_proofs::poseidon::merkle::{PoseidonMerkleError, PoseidonMerkleProof};
-use dilf4s_proofs::trie::{self, KeyMode, Lookup, TrieError, TrieHashing, TrieProof};
+use dilf4s_proofs::merkle::{self, ConsistencyProof, InclusionProof, MerkleError, MerkleErrorKind, Tagged, TreeHead};
+use dilf4s_proofs::poseidon::merkle::{PoseidonMerkleError, PoseidonMerkleErrorKind, PoseidonMerkleProof};
+use dilf4s_proofs::trie::{self, KeyMode, Lookup, TrieError, TrieErrorKind, TrieHashing, TrieProof};
 use dilf4s_proofs::versioned::{
-    MAX_VALUE_BYTES, MAX_VALUE_DEPTH, Replica, StateKey, U64Key, VersionedTrie, VersionedTrieError, check_value,
+    MAX_VALUE_BYTES, MAX_VALUE_DEPTH, Replica, StateKey, StateKeyError, U64Key, VersionedTrie, VersionedTrieError,
+    VersionedTrieErrorKind, check_value,
 };
 
 type H = Sha256;
 type Vt = VersionedTrie<U64Key, H>;
 
-/// An outcome as the vectors record it: `None` for "accepted", else the kind and its normative fields.
-#[derive(Debug, PartialEq, Eq)]
-struct Refused {
-    kind: String,
-    limit: Option<u64>,
-    depth: Option<u64>,
-    component: Option<String>,
-}
-
-fn kind(kind: &str) -> Refused {
-    Refused { kind: kind.into(), limit: None, depth: None, component: None }
-}
-
-fn versioned(e: &VersionedTrieError) -> Refused {
-    match e {
-        VersionedTrieError::TooLarge { limit, .. } => Refused { limit: Some(*limit), ..kind("TooLarge") },
-        VersionedTrieError::TooDeep { depth, limit, .. } => Refused {
-            limit: Some(u64::try_from(*limit).unwrap()),
-            depth: Some(u64::try_from(*depth).unwrap()),
-            ..kind("TooDeep")
-        },
-        VersionedTrieError::RootMismatch { component, .. } => {
-            Refused { component: Some((*component).into()), ..kind("RootMismatch") }
+/// A refusal as the vectors record it: its family and that family's kind, and its normative fields.
+fn vt(e: &VersionedTrieError) -> RefusalOutcome {
+    let (limit, depth) = match e {
+        VersionedTrieError::TooLarge { limit, .. } => (Some(*limit), None),
+        VersionedTrieError::TooDeep { depth, limit, .. } => (Some(*limit), Some(*depth)),
+        _ => (None, None),
+    };
+    let cause = match e {
+        VersionedTrieError::Trie { error } => Some(VtCause::VtTrieCause(VtTrieCause { trie: error.kind() })),
+        VersionedTrieError::Key { error } => {
+            let segment = match error {
+                StateKeyError::InvalidSegment { segment, .. } | StateKeyError::SegmentTooLong { segment, .. } => {
+                    Some(*segment)
+                }
+                _ => None,
+            };
+            Some(VtCause::VtKeyCause(VtKeyCause { state_key: error.kind(), segment }))
         }
-        VersionedTrieError::Trie(t) => kind(&format!("Trie.{}", t.kind())),
-        VersionedTrieError::Key(k) => kind(&format!("Key.{}", k.kind())),
-        other => kind(other.kind()),
-    }
+        _ => None,
+    };
+    let component = match e {
+        VersionedTrieError::RootMismatch { component, .. } => Some(*component),
+        _ => None,
+    };
+    RefusalOutcome::VtRefusal(VtRefusal { versioned_trie: e.kind(), cause, limit, depth, component })
 }
 
-fn merkle_kind(e: &MerkleError) -> Refused {
-    match e {
-        MerkleError::TooLarge { limit } => Refused { limit: Some(*limit), ..kind("TooLarge") },
-        other => kind(other.kind()),
-    }
+fn versioned(e: &VersionedTrieError) -> RefusalOutcome {
+    vt(e)
 }
 
-fn trie_kind(e: &TrieError) -> Refused {
-    match e {
-        TrieError::TooLarge { limit } => Refused { limit: Some(*limit), ..kind("TooLarge") },
-        other => kind(other.kind()),
-    }
+fn merkle_kind(e: &MerkleError) -> RefusalOutcome {
+    let limit = match e {
+        MerkleError::TooLarge { limit } => Some(*limit),
+        _ => None,
+    };
+    RefusalOutcome::MerkleRefusal(MerkleRefusal { merkle: e.kind(), limit })
+}
+
+fn trie_kind(e: &TrieError) -> RefusalOutcome {
+    let limit = match e {
+        TrieError::TooLarge { limit } => Some(*limit),
+        _ => None,
+    };
+    RefusalOutcome::TrieRefusal(TrieRefusal { trie: e.kind(), limit })
 }
 
 fn mode_of(m: Option<&RefusalMode>) -> KeyMode {
@@ -84,13 +92,12 @@ fn mode_of(m: Option<&RefusalMode>) -> KeyMode {
     .unwrap()
 }
 
-fn poseidon_kind(e: &PoseidonMerkleError) -> Refused {
-    match e {
-        PoseidonMerkleError::Position { depth, .. } => {
-            Refused { depth: Some(u64::try_from(*depth).unwrap()), ..kind("Position") }
-        }
-        PoseidonMerkleError::Encoding { .. } => kind(e.kind()),
-    }
+fn poseidon_kind(e: &PoseidonMerkleError) -> RefusalOutcome {
+    let depth = match e {
+        PoseidonMerkleError::Position { depth, .. } => Some(*depth),
+        _ => None,
+    };
+    RefusalOutcome::PoseidonRefusal(PoseidonRefusal { poseidon_merkle: e.kind(), depth })
 }
 
 fn built(b: &BuiltValue) -> Value {
@@ -112,7 +119,7 @@ fn digest(hex: Option<&String>) -> Digest<H> {
 
 /// `vt-commit`: the weight of the delta it would serve at version 1 (no parent; the head's version key and roots at
 /// their widths), checked first, then each value as a commit checks it, as the store refuses before writing.
-fn commit(c: &RefusalCase) -> Option<Refused> {
+fn commit(c: &RefusalCase) -> Option<RefusalOutcome> {
     let upserts: Vec<w::VersionedTrieUpsert> = c
         .batch
         .iter()
@@ -131,13 +138,19 @@ fn commit(c: &RefusalCase) -> Option<Refused> {
     let delta =
         w::VersionedTrieDelta { parent: None, head, upserts: upserts.clone(), removes: vec![] }.to_value().unwrap();
     if delta.weight() > MAX_PROOF_WEIGHT {
-        return Some(Refused { limit: Some(MAX_PROOF_WEIGHT), ..kind("TooLarge") });
+        return Some(RefusalOutcome::VtRefusal(VtRefusal {
+            versioned_trie: VersionedTrieErrorKind::TooLarge,
+            cause: None,
+            limit: Some(MAX_PROOF_WEIGHT),
+            depth: None,
+            component: None,
+        }));
     }
     upserts.iter().find_map(check)
 }
 
 /// The case's outcome, by its check (conformance.md section 6): the first refusal, or `None`.
-fn run(vt: &Vt, c: &RefusalCase) -> Option<Refused> {
+fn run(vt: &Vt, c: &RefusalCase) -> Option<RefusalOutcome> {
     let input = || built(c.input.as_ref().expect("an input"));
     let state_key = || StateKey::parse(c.state_key.as_deref().expect("a state key")).unwrap();
     let root = || digest(c.root.as_ref());
@@ -207,7 +220,10 @@ fn run(vt: &Vt, c: &RefusalCase) -> Option<Refused> {
         RefusalCheck::MerkleVerify => {
             // the trusted head is parsed by the caller, before the claim: a root of the wrong length is Encoding
             let Ok(root) = Digest::<H>::from_slice(&bytes(c.root.as_ref().expect("a root"))) else {
-                return Some(kind("Encoding"));
+                return Some(RefusalOutcome::MerkleRefusal(MerkleRefusal {
+                    merkle: MerkleErrorKind::Encoding,
+                    limit: None,
+                }));
             };
             let head = TreeHead::<H> { root, size: c.size.expect("a size") };
             let leaf = built(c.claim.as_ref().expect("a leaf"));
@@ -249,12 +265,77 @@ fn every_refusal_case_gives_its_kind_and_normative_fields() {
     for c in &v.cases {
         let expected = match &c.outcome {
             RefusalOutcome::Accepted => None,
-            RefusalOutcome::RefusalError(e) => {
-                Some(Refused { kind: e.kind.clone(), limit: e.limit, depth: e.depth, component: e.component.clone() })
-            }
+            refused => Some(refused.clone()),
         };
         let start = std::time::Instant::now();
         assert_eq!(run(&vt, c), expected, "{}", c.name);
         assert!(start.elapsed().as_secs() < 20, "{}: took {:?}", c.name, start.elapsed());
+    }
+}
+
+/// The kinds no input reaches through this SDK's verifiers (conformance.md section 6), each with its reason.
+const EXEMPT_VT: [VersionedTrieErrorKind; 5] = [
+    VersionedTrieErrorKind::Empty,
+    VersionedTrieErrorKind::VersionConflict,
+    VersionedTrieErrorKind::CommitRewrite,
+    VersionedTrieErrorKind::NotRetained,
+    VersionedTrieErrorKind::Store,
+];
+const EXEMPT_TRIE: [TrieErrorKind; 2] = [TrieErrorKind::MissingNode, TrieErrorKind::InvalidNode];
+const EXEMPT_POSEIDON: [PoseidonMerkleErrorKind; 2] =
+    [PoseidonMerkleErrorKind::Depth, PoseidonMerkleErrorKind::OccupiedPosition];
+
+/// The gate of conformance.md section 6, total over each family's generated kinds (`ALL`): every kind has a row in
+/// `refusals_v1.json`, the malformed sections of `merkle_v1.json` and `trie_v1.json`, or `versioned_trie_v1.json`'s
+/// version errors, or is exempt; no exempt kind has one; and every row is of its check's family.
+#[test]
+fn every_kind_of_the_proof_families_has_a_row_or_is_exempt() {
+    let v: RefusalVectors = load("refusals_v1.json");
+    let m: MerkleVectors = load("merkle_v1.json");
+    let t: TrieVectors = load("trie_v1.json");
+    let vtv: VersionedTrieVectors = load("versioned_trie_v1.json");
+    let (mut vts, mut merkles, mut tries, mut poseidons) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for c in &v.cases {
+        let check = c.check.to_string();
+        match &c.outcome {
+            RefusalOutcome::VtRefusal(r) => {
+                assert!(check.starts_with("vt-"), "{}: a {check} row is a versioned-trie refusal", c.name);
+                vts.push(r.versioned_trie);
+                if let Some(VtCause::VtTrieCause(cause)) = &r.cause {
+                    tries.push(cause.trie);
+                }
+            }
+            RefusalOutcome::MerkleRefusal(r) => {
+                assert!(check.starts_with("merkle-"), "{}: a {check} row is a Merkle refusal", c.name);
+                merkles.push(r.merkle);
+            }
+            RefusalOutcome::TrieRefusal(r) => {
+                assert!(check.starts_with("trie-"), "{}: a {check} row is a trie refusal", c.name);
+                tries.push(r.trie);
+            }
+            RefusalOutcome::PoseidonRefusal(r) => {
+                assert!(check.starts_with("poseidon-"), "{}: a {check} row is a Poseidon refusal", c.name);
+                poseidons.push(r.poseidon_merkle);
+            }
+            RefusalOutcome::Accepted => {}
+        }
+    }
+    merkles.extend(m.malformed.iter().map(|r| r.error));
+    tries.extend(t.malformed.iter().map(|r| r.error));
+    vts.extend(vtv.version_errors.iter().map(|r| match &r.outcome {
+        VtVersionError::VtVersionNotIncreasing(_) => VersionedTrieErrorKind::VersionNotIncreasing,
+        VtVersionError::VtUnknownVersion(_) => VersionedTrieErrorKind::UnknownVersion,
+    }));
+    for k in VersionedTrieErrorKind::ALL {
+        assert_ne!(vts.contains(&k), EXEMPT_VT.contains(&k), "versioned trie {k}: a row exactly when not exempt");
+    }
+    for k in MerkleErrorKind::ALL {
+        assert!(merkles.contains(&k), "Merkle {k} has no row");
+    }
+    for k in TrieErrorKind::ALL {
+        assert_ne!(tries.contains(&k), EXEMPT_TRIE.contains(&k), "trie {k}: a row exactly when not exempt");
+    }
+    for k in PoseidonMerkleErrorKind::ALL {
+        assert_ne!(poseidons.contains(&k), EXEMPT_POSEIDON.contains(&k), "Poseidon {k}: a row exactly when not exempt");
     }
 }

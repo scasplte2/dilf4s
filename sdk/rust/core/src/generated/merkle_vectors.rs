@@ -10,56 +10,12 @@ pub type Hex = String;
 /// The codec of [`Hex`].
 pub const HEX: c::Matching = c::Matching(c::TextPattern::Hex);
 
-/// `merkle-decode-error` (`shared/schemas/merkle-vectors.cddl`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum MerkleDecodeError {
-    /// The text `IndexOutOfRange`.
-    IndexOutOfRange,
-    /// The text `InvalidSizes`.
-    InvalidSizes,
-    /// The text `Encoding`.
-    Encoding,
-}
-
-impl c::Model for MerkleDecodeError {
-    fn to_value_at(&self, _depth: usize) -> Result<c::Value, c::CanonicalError> {
-        match self {
-            Self::IndexOutOfRange => Ok(c::Value::text("IndexOutOfRange")),
-            Self::InvalidSizes => Ok(c::Value::text("InvalidSizes")),
-            Self::Encoding => Ok(c::Value::text("Encoding")),
-        }
-    }
-
-    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["IndexOutOfRange", "InvalidSizes", "Encoding"])? {
-            c::Alternative::Text(0) => Ok(Self::IndexOutOfRange),
-            c::Alternative::Text(1) => Ok(Self::InvalidSizes),
-            c::Alternative::Text(2) => Ok(Self::Encoding),
-            other => Err(c::unknown_alternative(other)),
-        }
-    }
-}
-
-impl MerkleDecodeError {
-    /// Every alternative, in schema order.
-    pub const ALL: [Self; 3] = [Self::IndexOutOfRange, Self::InvalidSizes, Self::Encoding];
-}
-
-impl core::fmt::Display for MerkleDecodeError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::IndexOutOfRange => f.write_str("IndexOutOfRange"),
-            Self::InvalidSizes => f.write_str("InvalidSizes"),
-            Self::Encoding => f.write_str("Encoding"),
-        }
-    }
-}
-
 /// `merkle-malformed` (`shared/schemas/merkle-vectors.cddl`).
 ///
 /// A proof (canonical CBOR) the decoder refuses, and the kind of its error: an inclusion index not below the size is
 /// "IndexOutOfRange", a consistency proof whose old size exceeds its new size is "InvalidSizes", and a shape the
-/// schema refuses, or a path entry that is not a digest, is "Encoding".
+/// schema refuses, or a path entry that is not a digest, is "Encoding". "error" is a kind of MerkleError
+/// (proofs-errors.cddl).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MerkleMalformed {
     /// The `name` entry.
@@ -69,7 +25,7 @@ pub struct MerkleMalformed {
     /// The `cbor` entry.
     pub cbor: Hex,
     /// The `error` entry.
-    pub error: MerkleDecodeError,
+    pub error: super::proofs_errors::MerkleErrorKind,
 }
 
 impl c::Model for MerkleMalformed {
@@ -79,7 +35,7 @@ impl c::Model for MerkleMalformed {
             c::field("name", &c::Text, &self.name, inner)?,
             c::field("kind", &c::ModelOf::<MerkleProofKind>::NEW, &self.kind, inner)?,
             c::field("cbor", &HEX, &self.cbor, inner)?,
-            c::field("error", &c::ModelOf::<MerkleDecodeError>::NEW, &self.error, inner)?,
+            c::field("error", &c::ModelOf::<super::proofs_errors::MerkleErrorKind>::NEW, &self.error, inner)?,
         ])
     }
 
@@ -88,7 +44,7 @@ impl c::Model for MerkleMalformed {
         let f0 = fields.required("name", &c::Text)?;
         let f1 = fields.required("kind", &c::ModelOf::<MerkleProofKind>::NEW)?;
         let f2 = fields.required("cbor", &HEX)?;
-        let f3 = fields.required("error", &c::ModelOf::<MerkleDecodeError>::NEW)?;
+        let f3 = fields.required("error", &c::ModelOf::<super::proofs_errors::MerkleErrorKind>::NEW)?;
         Ok(Self { name: f0, kind: f1, cbor: f2, error: f3 })
     }
 }

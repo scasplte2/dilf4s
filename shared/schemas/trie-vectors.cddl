@@ -1,3 +1,4 @@
+;# import proofs-errors as errors
 ; Schema of shared/vectors/trie_v1.json (conformance vectors for docs/specs/trie.md).
 ; "cbor" is hex of a canonical proof, whose shape is shared/schemas/trie.cddl.
 
@@ -15,10 +16,9 @@ trie-vectors = {
 ; reader sees without the mode: the record shapes, segment lengths and padding, the branch invariant, the pre-order
 ; structure and trailing records. Verification refuses, as "InvalidProof", what the mode decides: where leaves and
 ; branch values may end, and the key-length bound. "root" is what the records hash to, so only those rules refuse an
-; "InvalidProof" case; it is the empty root for the "Encoding" cases.
-trie-malformed = { "name": text, "mode": trie-mode, "root": hex, "cbor": hex, "error": trie-malformed-error }
-
-trie-malformed-error = "Encoding" / "InvalidProof"
+; "InvalidProof" case; it is the empty root for the "Encoding" cases. "error" is a kind of TrieError
+; (proofs-errors.cddl).
+trie-malformed = { "name": text, "mode": trie-mode, "root": hex, "cbor": hex, "error": errors.trie-error-kind }
 
 trie-node-hashes = {
   "leaf": trie-leaf-hash,

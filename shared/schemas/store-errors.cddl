@@ -1,0 +1,57 @@
+;# import hash-errors as hash
+; The reference store's error family (docs/specs/storage.md), defined as crypto-errors.cddl defines the crypto
+; families: `store-error` is a choice of maps, each led by a distinct "kind" literal, and `store-error-kind` lists the
+; same kinds in the same order. The reference raises it (Scala `xyz.kd5ujc.storage.StoreError`), and a versioned
+; trie's `Store` kind holds it (proofs-errors.cddl), so every SDK gets the type; no SDK has a store, and no vector pins
+; it. No codec is generated for a family.
+
+; Versions and generations are the store's own signed 64-bit counters (Scala `Long`, Rust `i64`, TypeScript `number`).
+; A caller's key appears as its length and a preview of its first bytes' hex, never as itself (conformance.md section
+; 8).
+
+; Typed storage failures, raised through `cats.mtl.Raise[F, StoreError]`.
+store-error = {
+  ; A key or value failed to encode or decode.
+  "kind": "Encoding",
+  ; What was being encoded or decoded.
+  "context": text,
+  ; Why.
+  "reason": text //
+  ; No value at a key.
+  "kind": "NotFound",
+  ; The key's length in bytes.
+  "keyBytes": uint .le 9223372036854775807,
+  ; The hex of at most the key's first 16 bytes.
+  "prefix": hash.preview //
+  ; Optimistic concurrency: the caller committed against a version that is no longer the latest.
+  "kind": "VersionConflict",
+  ; The version the caller committed against.
+  "expected": -9223372036854775808..9223372036854775807,
+  ; The latest version.
+  "actual": -9223372036854775808..9223372036854775807 //
+  ; A version above the latest.
+  "kind": "UnknownVersion",
+  ; The version asked for.
+  "requested": -9223372036854775808..9223372036854775807,
+  ; The latest version.
+  "latest": -9223372036854775808..9223372036854775807 //
+  ; The requested version is older than the pruning floor, so its history is gone.
+  "kind": "Pruned",
+  ; The version asked for.
+  "requested": -9223372036854775808..9223372036854775807,
+  ; The floor.
+  "floor": -9223372036854775808..9223372036854775807 //
+  ; The backend reported a failure (I/O, corruption, lock contention).
+  "kind": "Backend",
+  ; The operation that failed.
+  "operation": text,
+  ; Why.
+  "reason": text //
+  ; Stored bytes violate the layout this library wrote.
+  "kind": "Corrupt",
+  ; Why.
+  "reason": text
+}
+
+; Every kind of StoreError, in the family's order.
+store-error-kind = "Encoding" / "NotFound" / "VersionConflict" / "UnknownVersion" / "Pruned" / "Backend" / "Corrupt"

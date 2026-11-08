@@ -68,13 +68,50 @@ object JlvmCryptoCause {
   final case class Hash(error: xyz.kd5ujc.models.hash_errors.HashError) extends JlvmCryptoCause {
     def kind: JlvmCryptoCauseKind = "Hash"
   }
+
+  /**
+   * A Merkle proof, or claims over the proof weight (merkle_verify, merkle_consistency_verify).
+   *
+   * @param error The refusal.
+   */
+  final case class Merkle(error: xyz.kd5ujc.models.proofs_errors.MerkleError) extends JlvmCryptoCause {
+    def kind: JlvmCryptoCauseKind = "Merkle"
+  }
+
+  /**
+   * A trie proof, a key the mode refuses, or claims over the proof weight (trie_verify, trie_prefix_verify,
+   * trie_range_verify).
+   *
+   * @param error The refusal.
+   */
+  final case class Trie(error: xyz.kd5ujc.models.proofs_errors.TrieError) extends JlvmCryptoCause {
+    def kind: JlvmCryptoCauseKind = "Trie"
+  }
+
+  /**
+   * A BN254 scalar field element that is not canonical (poseidon, pmt_verify).
+   *
+   * @param error The refusal.
+   */
+  final case class Poseidon(error: xyz.kd5ujc.models.proofs_errors.PoseidonError) extends JlvmCryptoCause {
+    def kind: JlvmCryptoCauseKind = "Poseidon"
+  }
+
+  /**
+   * A Poseidon Merkle path whose index does not fit its depth (pmt_verify).
+   *
+   * @param error The refusal.
+   */
+  final case class PoseidonMerkle(error: xyz.kd5ujc.models.proofs_errors.PoseidonMerkleError) extends JlvmCryptoCause {
+    def kind: JlvmCryptoCauseKind = "PoseidonMerkle"
+  }
 }
 
-type JlvmCryptoCauseKind = "Signing" | "Sigma" | "Zk" | "Groth16" | "Vrf" | "Hash"
+type JlvmCryptoCauseKind = "Signing" | "Sigma" | "Zk" | "Groth16" | "Vrf" | "Hash" | "Merkle" | "Trie" | "Poseidon" | "PoseidonMerkle"
 
 object JlvmCryptoCauseKind {
   /** Every alternative, in schema order. */
-  val values: Vector[JlvmCryptoCauseKind] = Vector("Signing", "Sigma", "Zk", "Groth16", "Vrf", "Hash")
+  val values: Vector[JlvmCryptoCauseKind] = Vector("Signing", "Sigma", "Zk", "Groth16", "Vrf", "Hash", "Merkle", "Trie", "Poseidon", "PoseidonMerkle")
 
   lazy val codec: Codec[JlvmCryptoCauseKind] = Codec(
     {
@@ -84,11 +121,15 @@ object JlvmCryptoCauseKind {
       case "Groth16" => Codec.literalText["Groth16"]("Groth16").encode("Groth16")
       case "Vrf" => Codec.literalText["Vrf"]("Vrf").encode("Vrf")
       case "Hash" => Codec.literalText["Hash"]("Hash").encode("Hash")
+      case "Merkle" => Codec.literalText["Merkle"]("Merkle").encode("Merkle")
+      case "Trie" => Codec.literalText["Trie"]("Trie").encode("Trie")
+      case "Poseidon" => Codec.literalText["Poseidon"]("Poseidon").encode("Poseidon")
+      case "PoseidonMerkle" => Codec.literalText["PoseidonMerkle"]("PoseidonMerkle").encode("PoseidonMerkle")
     },
     (v: CanonicalValue) =>
       Codec.selectAlternative[JlvmCryptoCauseKind](v, List(
 
-      ), List(("Signing", "Signing": JlvmCryptoCauseKind), ("Sigma", "Sigma": JlvmCryptoCauseKind), ("Zk", "Zk": JlvmCryptoCauseKind), ("Groth16", "Groth16": JlvmCryptoCauseKind), ("Vrf", "Vrf": JlvmCryptoCauseKind), ("Hash", "Hash": JlvmCryptoCauseKind)))
+      ), List(("Signing", "Signing": JlvmCryptoCauseKind), ("Sigma", "Sigma": JlvmCryptoCauseKind), ("Zk", "Zk": JlvmCryptoCauseKind), ("Groth16", "Groth16": JlvmCryptoCauseKind), ("Vrf", "Vrf": JlvmCryptoCauseKind), ("Hash", "Hash": JlvmCryptoCauseKind), ("Merkle", "Merkle": JlvmCryptoCauseKind), ("Trie", "Trie": JlvmCryptoCauseKind), ("Poseidon", "Poseidon": JlvmCryptoCauseKind), ("PoseidonMerkle", "PoseidonMerkle": JlvmCryptoCauseKind)))
   )
 }
 
@@ -161,7 +202,7 @@ object JlvmError {
    *
    * @param op Where it arose (normative).
    * @param message What was wrong.
-   * @param cause The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and kind); absent for the operation's own checks of its arguments' shape (a width, a count, a head's fields) and for proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
+   * @param cause The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and kind); absent for the operation's own checks of its arguments' shape (a type, a width, a count, a head's fields).
    */
   final case class Crypto(op: JlvmSite, message: String, cause: Option[JlvmCryptoCause]) extends JlvmError {
     def kind: JlvmErrorKind = "Crypto"

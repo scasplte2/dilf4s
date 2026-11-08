@@ -84,12 +84,12 @@ object VersionedTrie {
    */
   private[versioned] def bytesHash[H](b: ByteVector)(implicit T: TrieHashing[H]): Digest[H] = T.valueOf(ValueCommitment.ofBytes(b))
 
-  def trie[A](e: Either[TrieError, A]): Either[VersionedTrieError, A] = e.leftMap(VersionedTrieError.fromTrie)
+  def trie[A](e: Either[TrieError, A]): Either[VersionedTrieError, A] = e.leftMap(fromTrie)
 
   def top[V, H](head: Head[V, H])(implicit V: VersionKey[V], T: TrieHashing[H]): Either[VersionedTrieError, Trie[H]] =
     for {
       mode <- topMode
-      vkey <- V.encode(head.version)
+      vkey <- V.keyOf(head.version)
       t <- trie(
         Trie.fromEntries[H](
           mode,

@@ -1,7 +1,10 @@
 # dilf4s storage formats (v1)
 
 Status: normative for record values; informative for key layout.
-Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`.
+Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`. The reference store's
+refusals are `StoreError` (`shared/schemas/store-errors.cddl`): `Encoding` (a key or value that does not encode or
+decode), `NotFound`, `VersionConflict`, `UnknownVersion`, `Pruned`, `Backend` and `Corrupt`; a versioned trie's
+`Store` kind holds one. No SDK has a store, and no vector pins it.
 
 ## 1. Keys
 

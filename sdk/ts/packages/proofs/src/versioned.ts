@@ -26,20 +26,15 @@ import { TrieMap } from "./trie-map.js";
 export type StateKeyError = models.codecErrors.StateKeyError;
 
 /**
- * Typed failures of the versioned trie, by Scala's `VersionedTrieError` names. Versions appear as their version keys.
- * The store-only kinds (`Empty`, `VersionConflict`, `CommitRewrite`, `NotRetained`, `Store`) do not arise here.
+ * Typed failures of the versioned trie: generated from `shared/schemas/proofs-errors.cddl` (`models.proofsErrors`),
+ * with the reference's and the Rust SDK's kinds and fields. Versions appear as their version keys' full lowercase hex,
+ * never as bytes. The store-only kinds (`Empty`, `VersionConflict`, `CommitRewrite`, `NotRetained`, `Store`) do not
+ * arise here: this SDK has no store.
  */
-export type VersionedTrieError =
-  | { readonly kind: "Key"; readonly error: StateKeyError }
-  | { readonly kind: "InvalidVersion"; readonly reason: string }
-  | { readonly kind: "VersionNotIncreasing"; readonly head: Uint8Array; readonly next: Uint8Array }
-  | { readonly kind: "UnknownVersion"; readonly version: Uint8Array }
-  | { readonly kind: "RootMismatch"; readonly component: string; readonly expected: string; readonly computed: string }
-  | { readonly kind: "NotCovered"; readonly what: string }
-  | { readonly kind: "Malformed"; readonly reason: string }
-  | { readonly kind: "TooLarge"; readonly what: string; readonly limit: number }
-  | { readonly kind: "TooDeep"; readonly what: string; readonly depth: number; readonly limit: number }
-  | { readonly kind: "Trie"; readonly error: trie.TrieError };
+export type VersionedTrieError = models.proofsErrors.VersionedTrieError;
+
+/** Which recomputed root a `RootMismatch` names. */
+type Component = models.proofsErrors.VtRootComponent;
 
 /** A versioned-trie refusal, or an argument of the wrong type: what the exported functions here may refuse with. */
 export type VersionedRefusal = VersionedTrieError | TypeMismatch;
@@ -52,8 +47,15 @@ const malformed = (reason: string): R<never> => err({ kind: "Malformed", reason 
 const notCovered = (what: string): R<never> => err({ kind: "NotCovered", what });
 const viaTrie = <T>(r: Result<T, trie.TrieError>): R<T> => (r.ok ? r : err({ kind: "Trie", error: r.error }));
 // a trusted root of the wrong width is the caller's: named by its length, never hex-encoded whole (conformance.md section 8)
-const mismatch = (component: string, expected: Measured, computed: Uint8Array): R<never> =>
+const mismatch = (component: Component, expected: Measured, computed: Uint8Array): R<never> =>
   err({ kind: "RootMismatch", component, expected: rootText(expected, computed.length), computed: toHexOf(computed) });
+
+/**
+ * A version key as a refusal names it: its full lowercase hex, never truncated. Every key reaching a refusal is checked
+ * at its version key's width, at most `trie.MAX_FIXED_BYTES` (1024), so the text is at most 2048 characters
+ * (versioned-trie.md section 2).
+ */
+const versionHex = (key: Uint8Array): models.proofsErrors.VersionKeyHex => toHexOf(key);
 
 /** A root as a refusal names it: its hex at the digest's width, otherwise its length (an oversized one's, uncopied). */
 const rootText = (root: Measured, width: number): string => (isSized(root, width) ? toHexOf(root) : `a root of ${root.length.toString()} bytes`);
@@ -270,7 +272,31 @@ export const VersionKey = Object.freeze({
 
   /** The default, Scala's `VersionKey.long`: 8 bytes, `0..2^63 - 1` (the JLVM's `int_to_bytes [v, 8]`). */
   long: bigEndian(8, 2n ** 63n - 1n),
+
+  /**
+   * A version that is its own key: `width` bytes (1 to `trie.MAX_FIXED_BYTES`), in unsigned byte order; Scala's
+   * `VersionKey.bytes` and the Rust SDK's `BytesKey`. A width that is not a number is a `TypeMismatch`; a version that
+   * is not bytes is one too, and bytes of another length are `InvalidVersion`, refused by their length, uncopied.
+   */
+  bytes(width: number): C<VersionKey<Uint8Array>> {
+    if (typeof (width as unknown) !== "number") return err(NOT_A_NUMBER);
+    if (!Number.isInteger(width) || width < 1 || width > trie.MAX_FIXED_BYTES) return err({ kind: "InvalidVersion", reason: `a bytes version key is 1..${trie.MAX_FIXED_BYTES.toString()} bytes, not ${width.toString()}` });
+    return ok(bytesKey(width));
+  },
 } as const);
+
+/** {@link VersionKey.bytes}: encoding and decoding alike copy bytes of exactly `width`. */
+function bytesKey(width: number): VersionKey<Uint8Array> {
+  const own = (bytes: Uint8Array): C<Uint8Array> => {
+    const b = ownCopy(bytes, width);
+    if (b === undefined) return err(NOT_BYTES);
+    const got = typeof b === "number" ? b : b.length;
+    return typeof b === "number" || got !== width ? err({ kind: "InvalidVersion", reason: `a version key is ${width.toString()} bytes, got ${got.toString()}` }) : ok(b);
+  };
+  const key: VersionKey<Uint8Array> = Object.freeze({ width, encode: own, decode: own });
+  OWN_KEYS.add(key);
+  return key;
+}
 
 /** A caller's version key result, checked: a `Result` of its type, its error copied into one of this module's. */
 function keyResult<T>(r: unknown, value: (v: unknown) => T | undefined): C<T> {
@@ -297,7 +323,8 @@ function keyResult<T>(r: unknown, value: (v: unknown) => T | undefined): C<T> {
 }
 
 /**
- * A caller's version key, checked once (an object whose `width` is an integer from 1 to `MAX_KEY_LENGTH` and whose
+ * A caller's version key, checked once (an object whose `width` is an integer from 1 to `trie.MAX_FIXED_BYTES`, the
+ * widest the history trie keys, and whose
  * `encode` and `decode` are functions, each read once), as a frozen key whose every result is checked: an encoding
  * must be bytes of `width` (copied), a decoding any value. This module's own keys are used as they are.
  */
@@ -308,7 +335,7 @@ function versionKeyArg<V>(x: unknown): Result<VersionKey<V>, TypeMismatch> {
   const width: unknown = readGuarded(x, "width");
   const encode: unknown = readGuarded(x, "encode");
   const decode: unknown = readGuarded(x, "decode");
-  if (typeof width !== "number" || !Number.isInteger(width) || width < 1 || width > MAX_KEY_LENGTH) return err(bad);
+  if (typeof width !== "number" || !Number.isInteger(width) || width < 1 || width > trie.MAX_FIXED_BYTES) return err(bad);
   if (typeof encode !== "function" || typeof decode !== "function" || isRevokedProxy(encode) || isRevokedProxy(decode)) return err(bad);
   return ok(
     Object.freeze({
@@ -683,7 +710,7 @@ export class VersionedTrie<V> {
 
   /**
    * The profile over `algorithm` and `versionKey`. An algorithm that is not a `HashAlgorithm`, or a version key that is
-   * not an object with an integer `width` (1 to `MAX_KEY_LENGTH`) and `encode` and `decode` functions, is a
+   * not an object with an integer `width` (1 to `trie.MAX_FIXED_BYTES`) and `encode` and `decode` functions, is a
    * `TypeMismatch`; a caller's version key is wrapped so that what it returns is checked (see {@link VersionKey}).
    */
   static of<V>(algorithm: HashAlgorithm, versionKey: VersionKey<V>): C<VersionedTrie<V>> {
@@ -1096,7 +1123,7 @@ export class VersionedTrie<V> {
     if (!bound.ok) return bound;
     const s = this.#versionRoot(bound.value.head, p.value, ukey);
     if (!s.ok) return s;
-    if (s.value === null) return err({ kind: "UnknownVersion", version: ukey });
+    if (s.value === null) return err({ kind: "UnknownVersion", version: versionHex(ukey) });
     const state = this.#verified(this.stateMode, s.value, "state", p.value.state);
     return state.ok ? ok(createState(state.value, this.hashing)) : state;
   }
@@ -1356,12 +1383,12 @@ export class SnapshotReader<V> {
     if (!hk.ok) return hk;
     let previous = this.lastVersion;
     for (const k of keys) {
-      if (previous !== undefined && compareBytes(previous, k) >= 0) return bad(`version ${Preview.of(toHexOf(k)).short()} does not follow ${Preview.of(toHexOf(previous)).short()}`);
+      if (previous !== undefined && compareBytes(previous, k) >= 0) return bad(`version ${versionHex(k)} does not follow ${versionHex(previous)}`);
       previous = k;
     }
     for (const [i, k] of keys.entries()) {
       const s = sized[i]?.[1] ?? new Uint8Array(0);
-      if (compareBytes(k, hk.value) > 0) return bad(`version ${toHexOf(k)} is after the head`);
+      if (compareBytes(k, hk.value) > 0) return bad(`version ${versionHex(k)} is after the head`);
       if (bytesEqual(k, hk.value) && !bytesEqual(s, this.trusted.stateRoot)) return bad("the head version has another state root");
     }
     const last = keys[keys.length - 1];
@@ -1567,7 +1594,7 @@ export class Replica<V> {
     if (this.#head !== null) {
       const hk = p.versionKey.encode(this.#head.version);
       if (!hk.ok) return hk;
-      if (compareBytes(nk.value, hk.value) <= 0) return err({ kind: "VersionNotIncreasing", head: hk.value, next: nk.value });
+      if (compareBytes(nk.value, hk.value) <= 0) return err({ kind: "VersionNotIncreasing", head: versionHex(hk.value), next: versionHex(nk.value) });
     }
     const written = delta.upserts.map(([k]) => k.bytes()).sort(compareBytes);
     if (delta.removes.some((k) => holds(written, k.bytes()))) return malformed("a key is both written and removed");

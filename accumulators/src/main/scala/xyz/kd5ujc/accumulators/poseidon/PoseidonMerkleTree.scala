@@ -10,22 +10,12 @@ import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.hash.{Fr, Poseidon}
 import xyz.kd5ujc.models.poseidon.{PoseidonMerkleProof => Wire}
 
-sealed trait PoseidonMerkleError extends Product with Serializable
-
-object PoseidonMerkleError {
-
-  /**
-   * A position outside `[0, 2^depth)`, or more than `MaxDepth` siblings. `depth` (the number of siblings, or the
-   * tree's depth) is normative (docs/specs/conformance.md §3); the position echoes the caller's input and is not.
-   */
-  // a caller's position can be any size: it is held and shown by its bit length, never its digits (conformance.md §8)
-  final case class Position(positionBits: Int, depth: Int) extends PoseidonMerkleError {
-    override def toString: String = s"Position(a $positionBits-bit position, depth $depth)"
-  }
-  final case class Depth(depth: Int) extends PoseidonMerkleError
-  final case class OccupiedPosition(positionBits: Int) extends PoseidonMerkleError
-  final case class Encoding(reason: String) extends PoseidonMerkleError
-}
+/**
+ * Why a Poseidon Merkle proof or tree operation was refused: generated from `shared/schemas/proofs-errors.cddl`, with
+ * the Rust and TypeScript SDKs' kinds and fields. A caller's position can be any size: it is held by its bit length,
+ * never its digits (docs/specs/conformance.md §8); `Position`'s `depth` is normative (§3).
+ */
+export xyz.kd5ujc.models.proofs_errors.{PoseidonMerkleError, PoseidonMerkleErrorKind}
 
 /**
  * A path of sibling digests, **root-first** (the order the SP1 shielded-transfer circuit consumes), valid by

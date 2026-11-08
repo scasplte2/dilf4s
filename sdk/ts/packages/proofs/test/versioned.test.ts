@@ -357,3 +357,74 @@ describe("refusals name a number by its size", () => {
     expect(expectErr(versioned.VersionKey.long.encode(1n << 1_000_000n), "refused")).toMatchObject({ reason: "version of 1000001 bits is outside 0..9223372036854775807" });
   });
 });
+
+/** A `versionErrors` case under `key`: the refusal its check gives, or "accepted". */
+function versionError<V>(key: versioned.VersionKey<V>, c: models.versionedTrieVectors.VtVersionErrorCase): versioned.VersionedRefusal | "accepted" {
+  const p = expectOk(versioned.VersionedTrie.of("SHA-256", key), "profile");
+  if (c.check === "replica") {
+    let replica = expectOk(versioned.Replica.empty(p), "Replica.empty");
+    for (const d of c.deltas ?? []) {
+      const delta = p.decodeDelta(valueOf(d));
+      if (!delta.ok) return delta.error;
+      const next = replica.applyDelta(delta.value);
+      if (!next.ok) return next.error;
+      replica = next.value;
+    }
+    return "accepted";
+  }
+  const proof = expectOk(p.decodeProof(valueOf(c.proof ?? "")), "proof");
+  const at = expectOk(key.decode(bytes(c.at ?? "")), "at");
+  const s = p.verifyHistoricalKey(bytes(c.root ?? ""), proof, at);
+  return s.ok ? "accepted" : s.error;
+}
+
+describe("versioned_trie_v1.json versionErrors: a refusal names versions by their full keys", () => {
+  const rows = vectors.versionErrors;
+
+  it("covers the default width, a wide one and the widest", () => {
+    expect([...new Set(rows.map((c) => c.width))]).toEqual([8n, 32n, 1024n]);
+  });
+
+  for (const c of rows) {
+    it(c.name, () => {
+      const w = Number(c.width);
+      const e = w === 8 ? versionError(versioned.VersionKey.long, c) : versionError(expectOk(versioned.VersionKey.bytes(w), "bytes key"), c);
+      const got =
+        e === "accepted" || e.kind === "TypeMismatch"
+          ? e
+          : e.kind === "VersionNotIncreasing"
+            ? { kind: e.kind, head: e.head, next: e.next }
+            : e.kind === "UnknownVersion"
+              ? { kind: e.kind, version: e.version }
+              : e;
+      expect(got).toEqual(c.outcome);
+      const keys: readonly string[] = "version" in c.outcome ? [c.outcome.version] : [c.outcome.head, c.outcome.next];
+      expect(keys.every((k) => k.length === 2 * w && /^([0-9a-f]{2})*$/.test(k))).toBe(true);
+    });
+  }
+
+  it("a caller's version key wider than the history trie keys is a TypeMismatch; up to 1024 bytes it is accepted", () => {
+    const own = (width: number): versioned.VersionKey<Uint8Array> => ({ width, encode: (v) => ({ ok: true, value: v }), decode: (b) => ({ ok: true, value: b }) });
+    expect(versioned.VersionedTrie.of("SHA-256", own(1024)).ok).toBe(true);
+    expect(expectErr(versioned.VersionedTrie.of("SHA-256", own(1025)), "width 1025").kind).toBe("TypeMismatch");
+    expect(expectErr(versioned.VersionKey.bytes(1025), "bytes key 1025").kind).toBe("InvalidVersion");
+    expect(expectErr(expectOk(versioned.VersionKey.bytes(4), "bytes key").encode(new Uint8Array(5)), "5 bytes").kind).toBe("InvalidVersion");
+  });
+});
+
+describe("a snapshot's out-of-order versions are named by their full keys", () => {
+  for (const w of [32, 1024]) {
+    it(`at ${w.toString()} bytes, keys differing only in their last byte`, () => {
+      const key = expectOk(versioned.VersionKey.bytes(w), "bytes key");
+      const p = expectOk(versioned.VersionedTrie.of("SHA-256", key), "profile");
+      const [a, b] = [new Uint8Array(w), new Uint8Array(w)];
+      a[w - 1] = 1;
+      b[w - 1] = 2;
+      const root = p.hashing.empty;
+      const head = { version: b, stateRoot: root, historyRoot: root };
+      const reader = expectOk(expectOk(versioned.SnapshotReader.start(p, head), "start").feed({ kind: "head", head }), "head");
+      const e = expectErr(reader.feed({ kind: "history", versions: [[b, root], [a, root]] }), "out of order");
+      expect(e.kind === "Malformed" ? e.reason : e.kind).toContain(`version ${hexOf(a)} does not follow ${hexOf(b)}`);
+    });
+  }
+});

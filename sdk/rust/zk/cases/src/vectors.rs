@@ -539,6 +539,10 @@ fn cause(c: JlvmCause) -> String {
         JlvmCause::JlvmGroth16Cause(c) => format!("Groth16.{}", c.groth16),
         JlvmCause::JlvmVrfCause(c) => format!("Vrf.{}", c.vrf),
         JlvmCause::JlvmHashCause(c) => format!("Hash.{}", c.hash),
+        JlvmCause::JlvmMerkleCause(c) => format!("Merkle.{}", c.merkle),
+        JlvmCause::JlvmTrieCause(c) => format!("Trie.{}", c.trie),
+        JlvmCause::JlvmPoseidonCause(c) => format!("Poseidon.{}", c.poseidon),
+        JlvmCause::JlvmPoseidonMerkleCause(c) => format!("PoseidonMerkle.{}", c.poseidon_merkle),
     }
 }
 

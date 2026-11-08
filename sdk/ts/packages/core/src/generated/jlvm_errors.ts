@@ -3,6 +3,7 @@ import * as c from "../codec.js";
 import type * as cryptoErrors from "./crypto_errors.js";
 import type * as hashErrors from "./hash_errors.js";
 import type * as jlvm from "./jlvm.js";
+import type * as proofsErrors from "./proofs_errors.js";
 
 /**
  * `jlvm-crypto-cause` (`shared/schemas/jlvm-errors.cddl`): an error family, by `kind` (`JlvmCryptoCauseKind`).
@@ -45,12 +46,39 @@ export type JlvmCryptoCause =
       readonly kind: "Hash";
       /** The refusal. */
       readonly error: hashErrors.HashError;
+    }
+  /** A Merkle proof, or claims over the proof weight (merkle_verify, merkle_consistency_verify). */
+  | {
+      readonly kind: "Merkle";
+      /** The refusal. */
+      readonly error: proofsErrors.MerkleError;
+    }
+  /**
+   * A trie proof, a key the mode refuses, or claims over the proof weight (trie_verify, trie_prefix_verify,
+   * trie_range_verify).
+   */
+  | {
+      readonly kind: "Trie";
+      /** The refusal. */
+      readonly error: proofsErrors.TrieError;
+    }
+  /** A BN254 scalar field element that is not canonical (poseidon, pmt_verify). */
+  | {
+      readonly kind: "Poseidon";
+      /** The refusal. */
+      readonly error: proofsErrors.PoseidonError;
+    }
+  /** A Poseidon Merkle path whose index does not fit its depth (pmt_verify). */
+  | {
+      readonly kind: "PoseidonMerkle";
+      /** The refusal. */
+      readonly error: proofsErrors.PoseidonMerkleError;
     };
 
 /** `jlvm-crypto-cause-kind` (`shared/schemas/jlvm-errors.cddl`). */
-export type JlvmCryptoCauseKind = "Signing" | "Sigma" | "Zk" | "Groth16" | "Vrf" | "Hash";
+export type JlvmCryptoCauseKind = "Signing" | "Sigma" | "Zk" | "Groth16" | "Vrf" | "Hash" | "Merkle" | "Trie" | "Poseidon" | "PoseidonMerkle";
 
-export const JlvmCryptoCauseKind: c.Codec<JlvmCryptoCauseKind> = c.union<JlvmCryptoCauseKind>("JlvmCryptoCauseKind", [], ["Signing", "Sigma", "Zk", "Groth16", "Vrf", "Hash"]);
+export const JlvmCryptoCauseKind: c.Codec<JlvmCryptoCauseKind> = c.union<JlvmCryptoCauseKind>("JlvmCryptoCauseKind", [], ["Signing", "Sigma", "Zk", "Groth16", "Vrf", "Hash", "Merkle", "Trie", "Poseidon", "PoseidonMerkle"]);
 
 /**
  * `jlvm-error` (`shared/schemas/jlvm-errors.cddl`): an error family, by `kind` (`JlvmErrorKind`).
@@ -110,8 +138,7 @@ export type JlvmError =
       readonly message: string;
       /**
        * The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and
-       * kind); absent for the operation's own checks of its arguments' shape (a width, a count, a head's fields) and for
-       * proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
+       * kind); absent for the operation's own checks of its arguments' shape (a type, a width, a count, a head's fields).
        */
       readonly cause?: JlvmCryptoCause;
     }

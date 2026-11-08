@@ -1,3 +1,5 @@
+;# import proofs-errors as errors
+;# import codec-errors as codec
 ; Schema of shared/vectors/refusals_v1.json (conformance vectors for docs/specs/conformance.md): calls into the
 ; verifiers and the versioned trie, each with its outcome, a refusal by its kind and its normative fields
 ; (conformance.md section 3), or "accepted". Free text is never part of a vector.
@@ -49,16 +51,37 @@ refusal-fixed-mode = { "fixed": uint }
 
 refusal-variable-mode = { "variable": uint }
 
-; "accepted", or a refusal: its kind (a nested kind as "Outer.Inner", e.g. "Trie.Encoding") and the fields
-; conformance.md section 3 names normative for it, each present exactly when the kind has it.
-refusal-outcome = refusal-error / "accepted"
+; "accepted", or a refusal: its family as the one key naming a kind, that family's kind (proofs-errors.cddl), and the
+; fields conformance.md section 3 names normative for it, each present exactly when the kind has it. A check's family
+; is fixed: "vt-" checks refuse as the versioned trie, "merkle-" checks as the Merkle tree, "trie-" checks as the
+; trie, and "poseidon-proof" as the Poseidon tree. A refusal that wraps another (a versioned trie's Trie and Key) names
+; the inner one as its "cause", by its family and kind, as conformance.md section 1 describes. The versions a
+; VersionNotIncreasing or UnknownVersion refusal names are pinned by versioned_trie_v1.json's "versionErrors", not
+; here.
+refusal-outcome = vt-refusal / merkle-refusal / trie-refusal / poseidon-refusal / "accepted"
 
-refusal-error = {
-  "kind": text,
+vt-refusal = {
+  "versionedTrie": errors.versioned-trie-error-kind,
+  ? "cause": vt-cause,
   ? "limit": uint,
   ? "depth": uint,
-  ? "component": text,
+  ? "component": errors.vt-root-component,
 }
+
+; The refusal a versioned trie's Trie or Key refusal wraps: the trie's kind, or the state key's, each with the fields
+; conformance.md section 3 names normative for that kind: a state key's "segment" exactly for InvalidSegment and
+; SegmentTooLong. (A trie refusal the versioned trie wraps has none: its TooLarge is the versioned trie's own.)
+vt-cause = vt-trie-cause / vt-key-cause
+
+vt-trie-cause = { "trie": errors.trie-error-kind }
+
+vt-key-cause = { "stateKey": codec.state-key-error-kind, ? "segment": uint }
+
+merkle-refusal = { "merkle": errors.merkle-error-kind, ? "limit": uint }
+
+trie-refusal = { "trie": errors.trie-error-kind, ? "limit": uint }
+
+poseidon-refusal = { "poseidonMerkle": errors.poseidon-merkle-error-kind, ? "depth": uint }
 
 ; A canonical value given by how it is built, so that a value with shared parts, far heavier than its description,
 ; fits in the file (canonical CBOR has no sharing). Start from "leaf" (canonical CBOR); then apply each step in order:

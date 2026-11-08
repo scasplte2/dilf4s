@@ -1,6 +1,7 @@
 //! Snapshots (docs/specs/versioned-trie.md §7): chunks decoded from canonical CBOR, and a reader that checks them one
 //! by one against a head the caller already trusts.
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use dilf4s_core::Preview;
@@ -70,17 +71,20 @@ fn sized(n: usize, what: &str) -> Result<(), VersionedTrieError> {
     }
 }
 
-fn increasing(previous: Option<&Vec<u8>>, keys: &[Vec<u8>], what: &str) -> Result<(), VersionedTrieError> {
+/// Keys in strictly increasing order, each named by `show` when one does not follow: a state key by a preview of its
+/// hex, a version by its key's full hex ([`super::version_hex`], bounded by the width).
+fn increasing(
+    previous: Option<&Vec<u8>>,
+    keys: &[Vec<u8>],
+    what: &str,
+    show: fn(&[u8]) -> String,
+) -> Result<(), VersionedTrieError> {
     let mut last = previous;
     for k in keys {
         if let Some(a) = last
             && a >= k
         {
-            return refuse(&alloc::format!(
-                "{what} {} does not follow {}",
-                Preview::of(&dilf4s_core::hex::encode(k)).short(),
-                Preview::of(&dilf4s_core::hex::encode(a)).short()
-            ));
+            return refuse(&alloc::format!("{what} {} does not follow {}", show(k), show(a)));
         }
         last = Some(k);
     }
@@ -167,7 +171,9 @@ impl<K: VersionKey, H: Hasher> SnapshotReader<'_, K, H> {
                     check_value(k, v)?;
                 }
                 let keys: Vec<Vec<u8>> = es.iter().map(|(k, _)| k.as_bytes().to_vec()).collect();
-                increasing(self.last_key.as_ref(), &keys, "key")?;
+                increasing(self.last_key.as_ref(), &keys, "key", |k| {
+                    alloc::string::ToString::to_string(&Preview::of(&dilf4s_core::hex::encode(k)).short())
+                })?;
                 if let Some(k) = keys.last() {
                     self.last_key = Some(k.clone());
                 }
@@ -180,10 +186,10 @@ impl<K: VersionKey, H: Hasher> SnapshotReader<'_, K, H> {
                 sized(vs.len(), "history")?;
                 let keys = vs.iter().map(|(u, _)| self.vt.vkey(u)).collect::<Result<Vec<_>, _>>()?;
                 let hk = self.vt.vkey(&self.trusted.version)?;
-                increasing(self.last_version.as_ref(), &keys, "version")?;
+                increasing(self.last_version.as_ref(), &keys, "version", super::version_hex)?;
                 for (k, (_, s)) in keys.iter().zip(&vs) {
                     if *k > hk {
-                        return refuse(&alloc::format!("version {} is after the head", dilf4s_core::hex::encode(k)));
+                        return refuse(&alloc::format!("version {} is after the head", super::version_hex(k)));
                     }
                     if *k == hk && *s != self.trusted.state_root {
                         return refuse("the head version has another state root");

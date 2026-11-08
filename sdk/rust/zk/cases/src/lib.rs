@@ -308,6 +308,10 @@ fn cause(e: &JlvmError) -> Option<String> {
         dilf4s_jlvm::CryptoCause::Groth16 { error } => error.kind().to_string(),
         dilf4s_jlvm::CryptoCause::Vrf { error } => error.kind().to_string(),
         dilf4s_jlvm::CryptoCause::Hash { error } => error.kind().to_string(),
+        dilf4s_jlvm::CryptoCause::Merkle { error } => error.kind().to_string(),
+        dilf4s_jlvm::CryptoCause::Trie { error } => error.kind().to_string(),
+        dilf4s_jlvm::CryptoCause::Poseidon { error } => error.kind().to_string(),
+        dilf4s_jlvm::CryptoCause::PoseidonMerkle { error } => error.kind().to_string(),
     };
     Some(format!("{}.{kind}", c.kind()))
 }

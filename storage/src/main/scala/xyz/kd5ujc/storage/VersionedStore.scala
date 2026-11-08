@@ -191,7 +191,7 @@ object VersionedStore {
         VersionedRecord.codec
           .encode(VersionedRecord(before, after))
           .leftMap(e => StoreError.Corrupt(s"record: $e"))
-          .flatMap(Cbor.encode(_).leftMap(e => StoreError.Codec("record", s"its encoding is over ${e.limit} bytes")))
+          .flatMap(Cbor.encode(_).leftMap(e => StoreError.Encoding("record", s"its encoding is over ${e.limit} bytes")))
       )
 
     private def readRecord(bytes: ByteVector): F[(Option[ByteVector], Option[ByteVector])] =

@@ -211,11 +211,23 @@ different values.
 The errors are generated from `shared/schemas/jlvm-errors.cddl` in every language, and `op` is typed: an operation
 of the closed list in `jlvm.cddl` (below), or `var`. A `Crypto` error also carries, as its **`cause`**, the typed
 refusal of the cryptographic family the operation called (`jlvm-crypto-cause`): a signature scheme's `CryptoError`
-(`Signing`), a `SigmaError`, a BN254 `ZkError`, a `Groth16Error`, a `VrfError`, or a `HashError` (a Merkle head's
-root of the wrong length). It has none for the operation's own checks of its arguments' shape (a width, a count, a
-head's fields) and for the proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
-The cause is **normative**, by its family and that family's kind (the inner error's fields are informative): the
-vectors record it as `{family: kind}` (`{"sigma": "InvalidPoint"}`), present exactly when the error has one.
+(`Signing`), a `SigmaError`, a BN254 `ZkError`, a `Groth16Error`, a `VrfError`, a `HashError` (a root or a Merkle
+head's root of the wrong length), or a proof structure's refusal (`proofs-errors.cddl`):
+
+- `Merkle` (`merkle_verify`, `merkle_consistency_verify`): a proof that does not decode (`Encoding`), and a leaf claim
+  over `MaxProofWeight` (`TooLarge`, as the Merkle verifiers refuse it);
+- `Trie` (`trie_verify`, `trie_prefix_verify`, `trie_range_verify`): a key the mode does not admit (`InvalidKey`),
+  claims over `MaxProofWeight` (`TooLarge`), a proof that does not decode or breaks the mode's rules (`Encoding`,
+  `InvalidProof`), and a proof that does not reach the query (`NotCovered`);
+- `Poseidon` (`poseidon`, `pmt_verify`): a 32-byte field element not below `r` (`NonCanonical`, by its bit length);
+- `PoseidonMerkle` (`pmt_verify`): an index outside `[0, 2^depth)` (`Position`, by the index's bit length and the
+  depth).
+
+It has none for the operation's own checks of its arguments' shape (a type, a width, a count, a head's fields, at most
+256 siblings). A well-formed proof that proves something else is `false`, never a cause. The cause is
+**normative**, by its family and that family's kind (the inner error's fields are informative): the vectors record it
+as `{family: kind}`, the family in lower camel case (`{"sigma": "InvalidPoint"}`, `{"poseidonMerkle": "Position"}`),
+present exactly when the error has one.
 
 **Operation names.** The operations of language version 1 are a closed list, `jlvm-op` in `shared/schemas/jlvm.cddl`:
 each is a rule of its own wire name (`op-not = "!"`), so every language types it, and a canonical program naming

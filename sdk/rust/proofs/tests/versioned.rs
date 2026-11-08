@@ -25,11 +25,12 @@ use dilf4s_core::codec::{Model, TextPattern};
 use dilf4s_core::generated::trie::TrieRecord;
 use dilf4s_core::generated::versioned_trie_vectors::{
     StateKeyErrorKind, VersionedTrieVectors, VtKind, VtProof, VtSchemaOutcome, VtStateKeyOutcome, VtStateKeyRefusal,
-    VtVersionKeyOutcome,
+    VtUnknownVersion, VtVersionCheck, VtVersionError, VtVersionErrorCase, VtVersionKeyOutcome, VtVersionNotIncreasing,
 };
 use dilf4s_core::hash::{Digest, Sha256};
 use dilf4s_core::value::Value;
-use dilf4s_proofs::trie::TrieProof;
+use dilf4s_proofs::trie::{TrieErrorKind, TrieProof};
+use dilf4s_proofs::versioned::VersionedTrieErrorKind;
 use dilf4s_proofs::versioned::{
     BytesKey, Head, Replica, SnapshotChunk, StateKey, StateKeyError, StateNamespace, U64Key, VersionKey, VersionedTrie,
     VersionedTrieError, VersionedTrieProof,
@@ -122,7 +123,7 @@ fn proofs() {
                 for (k, x) in &claims {
                     assert!(state.holds(k, x.as_ref()).unwrap(), "{}: {k}", p.name);
                 }
-                assert_eq!(vt.verify_state(&root, &pr).unwrap_err().kind(), "Malformed");
+                assert_eq!(vt.verify_state(&root, &pr).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
                 "historical"
             }
             VtKind::Version => {
@@ -133,9 +134,15 @@ fn proofs() {
                     "{}",
                     p.name
                 );
-                assert_eq!(vt.verify_version(&root, &pr, &(at + 1)).unwrap_err().kind(), "Malformed");
+                assert_eq!(
+                    vt.verify_version(&root, &pr, &(at + 1)).unwrap_err().kind(),
+                    VersionedTrieErrorKind::Malformed
+                );
                 if answer.unwrap().is_none() {
-                    assert_eq!(vt.verify_historical_key(&root, &pr, &at).unwrap_err().kind(), "UnknownVersion");
+                    assert_eq!(
+                        vt.verify_historical_key(&root, &pr, &at).unwrap_err().kind(),
+                        VersionedTrieErrorKind::UnknownVersion
+                    );
                 }
                 "version"
             }
@@ -167,7 +174,7 @@ fn proofs() {
         *counts.entry(kind).or_default() += 1;
         // against another root, every check is a root mismatch
         let other = vt.hashing().empty();
-        assert_eq!(vt.verify_head(&other, &pr).unwrap_err().kind(), "RootMismatch", "{}", p.name);
+        assert_eq!(vt.verify_head(&other, &pr).unwrap_err().kind(), VersionedTrieErrorKind::RootMismatch, "{}", p.name);
     }
     eprintln!("versioned trie: {} proofs {counts:?}", v.proofs.len());
     assert!(counts.contains_key("versions"), "the vectors carry versions proofs");
@@ -192,7 +199,7 @@ fn deltas_replay_through_a_replica() {
         assert_eq!((&head.state_root, &head.history_root), (&d(&c.state_root), &d(&c.history_root)));
         assert_eq!(replica.root().unwrap(), Some(d(&c.root)));
         let again = replica.apply_delta(&delta).unwrap_err();
-        assert_eq!(again.kind(), "RootMismatch", "a replayed delta");
+        assert_eq!(again.kind(), VersionedTrieErrorKind::RootMismatch, "a replayed delta");
         assert_ne!(before, replica.root().unwrap());
     }
     assert_eq!(replica.root().unwrap(), Some(d(&v.root)));
@@ -229,31 +236,37 @@ fn snapshot_restores_the_root() {
 
     // refusals: another trusted head, reordered, truncated, a second head, state after history
     let other = Head { version: trusted.version + 1, ..trusted.clone() };
-    assert_eq!(vt.read_snapshot(other, chunks.clone()).unwrap_err().kind(), "Malformed");
+    assert_eq!(vt.read_snapshot(other, chunks.clone()).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
     let mut swapped = chunks.clone();
     swapped.swap(1, 2);
-    assert_eq!(vt.read_snapshot(trusted.clone(), swapped).unwrap_err().kind(), "Malformed");
+    assert_eq!(vt.read_snapshot(trusted.clone(), swapped).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
     let truncated = chunks[..chunks.len() - 1].to_vec();
-    assert_eq!(vt.read_snapshot(trusted.clone(), truncated).unwrap_err().kind(), "Malformed");
+    assert_eq!(vt.read_snapshot(trusted.clone(), truncated).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
     let mut extra = chunks.clone();
     extra.push(chunks[0].clone());
-    assert_eq!(vt.read_snapshot(trusted.clone(), extra).unwrap_err().kind(), "Malformed");
+    assert_eq!(vt.read_snapshot(trusted.clone(), extra).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
     let first_state = chunks.iter().position(|c| matches!(c, SnapshotChunk::State(_))).unwrap();
     let mut late = chunks[..chunks.len() - 1].to_vec();
     late.push(chunks[first_state].clone());
-    assert_eq!(vt.read_snapshot(trusted.clone(), late).unwrap_err().kind(), "Malformed");
+    assert_eq!(vt.read_snapshot(trusted.clone(), late).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
     // a null value, an empty chunk
     let mut reader = vt.snapshot_reader(trusted.clone());
     reader.feed(chunks[0].clone()).unwrap();
-    assert_eq!(reader.feed(SnapshotChunk::State(vec![(key("a"), Value::Null)])).unwrap_err().kind(), "Malformed");
-    assert_eq!(reader.feed(SnapshotChunk::State(vec![])).unwrap_err().kind(), "Malformed");
+    assert_eq!(
+        reader.feed(SnapshotChunk::State(vec![(key("a"), Value::Null)])).unwrap_err().kind(),
+        VersionedTrieErrorKind::Malformed
+    );
+    assert_eq!(reader.feed(SnapshotChunk::State(vec![])).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
     // a self-consistent snapshot of another state does not rebuild the trusted roots
     let mut forged = snapshot.clone();
     forged.entries[0].1 = Value::int(12345);
-    assert_eq!(Replica::from_snapshot(vt.clone(), trusted.clone(), &forged).err().unwrap().kind(), "RootMismatch");
+    assert_eq!(
+        Replica::from_snapshot(vt.clone(), trusted.clone(), &forged).err().unwrap().kind(),
+        VersionedTrieErrorKind::RootMismatch
+    );
     // a chunk over 4 MiB is refused before decoding
-    assert_eq!(vt.decode_chunk(&vec![0u8; (1 << 22) + 1]).unwrap_err().kind(), "TooLarge");
-    assert_eq!(vt.decode_chunk(&[0xff]).unwrap_err().kind(), "Malformed");
+    assert_eq!(vt.decode_chunk(&vec![0u8; (1 << 22) + 1]).unwrap_err().kind(), VersionedTrieErrorKind::TooLarge);
+    assert_eq!(vt.decode_chunk(&[0xff]).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
     eprintln!("versioned trie: snapshot of {} chunks restored", chunks.len());
 }
 
@@ -332,9 +345,9 @@ fn version_keys() {
     let k = U64Key::default();
     assert_eq!(k.encode(&258).unwrap(), vec![0, 0, 0, 0, 0, 0, 1, 2]);
     assert_eq!(k.decode(&[0, 0, 0, 0, 0, 0, 1, 2]).unwrap(), 258);
-    assert_eq!(k.encode(&u64::MAX).unwrap_err().kind(), "InvalidVersion");
-    assert_eq!(k.decode(&[0xff; 8]).unwrap_err().kind(), "InvalidVersion");
-    assert_eq!(k.decode(&[0; 7]).unwrap_err().kind(), "InvalidVersion");
+    assert_eq!(k.encode(&u64::MAX).unwrap_err().kind(), VersionedTrieErrorKind::InvalidVersion);
+    assert_eq!(k.decode(&[0xff; 8]).unwrap_err().kind(), VersionedTrieErrorKind::InvalidVersion);
+    assert_eq!(k.decode(&[0; 7]).unwrap_err().kind(), VersionedTrieErrorKind::InvalidVersion);
     let two = U64Key::new(2).unwrap();
     assert_eq!(two.encode(&0xffff).unwrap(), vec![0xff, 0xff]);
     assert!(two.encode(&0x1_0000).is_err());
@@ -365,14 +378,17 @@ fn refusals() {
     let state = proof(&vt, find(VtKind::State));
     // a tampered top trie no longer hashes to the root: a trie root mismatch, an error here
     let e = vt.verify_state(&root, &tamper_top(&state)).err().unwrap();
-    assert!(matches!(e, VersionedTrieError::Trie(ref t) if t.kind() == "RootMismatch"), "{e:?}");
+    assert!(
+        matches!(e, VersionedTrieError::Trie { ref error } if error.kind() == TrieErrorKind::RootMismatch),
+        "{e:?}"
+    );
     // a head claiming another state root does not bind
     let mut forged = state.clone();
     forged.head.state_root = forged.head.history_root.clone();
-    assert_eq!(vt.verify_state(&root, &forged).err().unwrap().kind(), "RootMismatch");
+    assert_eq!(vt.verify_state(&root, &forged).err().unwrap().kind(), VersionedTrieErrorKind::RootMismatch);
     // no state part
     let none = VersionedTrieProof { state: None, ..state.clone() };
-    assert_eq!(vt.verify_state(&root, &none).err().unwrap().kind(), "Malformed");
+    assert_eq!(vt.verify_state(&root, &none).err().unwrap().kind(), VersionedTrieErrorKind::Malformed);
     // a key the state proof does not reach
     let s = vt.verify_state(&root, &state).unwrap();
     let far = key("zzz/never/proven");
@@ -391,7 +407,7 @@ fn refusals() {
     let head = proof(&vt, find(VtKind::Head));
     assert!(vt.verify_head(&root, &head).is_ok());
     let no_history = VersionedTrieProof { history: None, ..head.clone() };
-    assert_eq!(vt.verify_head(&root, &no_history).unwrap_err().kind(), "Malformed");
+    assert_eq!(vt.verify_head(&root, &no_history).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
     // an as-of answer of another version, or after t
     let as_of = v
         .proofs
@@ -401,15 +417,15 @@ fn refusals() {
     let mut pr = proof(&vt, as_of);
     let t = as_of.at.unwrap();
     pr.at.as_mut().unwrap().version = t + 1;
-    assert_eq!(vt.verify_as_of(&root, &pr, &t).unwrap_err().kind(), "Malformed");
+    assert_eq!(vt.verify_as_of(&root, &pr, &t).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
     pr.at.as_mut().unwrap().version = 1;
     assert_eq!(
         vt.verify_as_of(&root, &pr, &t).unwrap_err().kind(),
-        "NotCovered",
+        VersionedTrieErrorKind::NotCovered,
         "an earlier answer needs history the proof does not reach"
     );
     // a malformed proof value
-    assert_eq!(vt.decode_proof(&Value::int(1)).unwrap_err().kind(), "Malformed");
+    assert_eq!(vt.decode_proof(&Value::int(1)).unwrap_err().kind(), VersionedTrieErrorKind::Malformed);
 }
 
 /// The default version key stops at `2^63 - 1`: `key` is `int_to_bytes [version, 8]`, and the codec's outcome, both
@@ -419,30 +435,20 @@ fn version_key_vectors() {
     let (v, _) = setup();
     let k = U64Key::default();
     let kind = |o: &VtVersionKeyOutcome| match o {
-        VtVersionKeyOutcome::Accepted => "accepted",
-        VtVersionKeyOutcome::VtVersionKeyRefusal(_) => "InvalidVersion",
+        VtVersionKeyOutcome::Accepted => None,
+        VtVersionKeyOutcome::VtVersionKeyRefusal(_) => Some(VersionedTrieErrorKind::InvalidVersion),
     };
-    assert!(v.version_keys.iter().any(|c| kind(&c.outcome) != "accepted"));
-    assert!(v.version_keys.iter().any(|c| kind(&c.outcome) == "accepted"));
+    assert!(v.version_keys.iter().any(|c| kind(&c.outcome).is_some()));
+    assert!(v.version_keys.iter().any(|c| kind(&c.outcome).is_none()));
     for c in &v.version_keys {
         let key = bytes(&c.key);
         let expected = kind(&c.outcome);
         assert_eq!(key, c.version.to_be_bytes().to_vec(), "version {}: int_to_bytes [v, 8]", c.version);
         let encoded = k.encode(&c.version);
-        assert_eq!(
-            encoded.as_ref().map_or_else(VersionedTrieError::kind, |_| "accepted"),
-            expected,
-            "encode {}",
-            c.version
-        );
+        assert_eq!(encoded.as_ref().err().map(VersionedTrieError::kind), expected, "encode {}", c.version);
         assert!(encoded.is_err() || encoded.ok() == Some(key.clone()), "encode {}: the key", c.version);
         let decoded = k.decode(&key);
-        assert_eq!(
-            decoded.as_ref().map_or_else(VersionedTrieError::kind, |_| "accepted"),
-            expected,
-            "decode {}",
-            c.version
-        );
+        assert_eq!(decoded.as_ref().err().map(VersionedTrieError::kind), expected, "decode {}", c.version);
         assert!(decoded.is_err() || decoded.ok() == Some(c.version), "decode {}: the version", c.version);
     }
 }
@@ -465,4 +471,101 @@ fn check_value_refuses_a_shared_expansion_without_expanding_it() {
     // the limit itself is exact: a byte string with a 5-byte head
     assert!(check_value(&k, &Value::bytes(vec![0u8; max - 5])).is_ok(), "exactly at the limit");
     assert_eq!(check_value(&k, &Value::bytes(vec![0u8; max - 4])), refused, "one over");
+}
+
+/// A `versionErrors` case under version key `key`: the refusal its check gives.
+fn version_error<K: VersionKey + Clone>(key: K, c: &VtVersionErrorCase) -> VersionedTrieError {
+    let vt = VersionedTrie::<K, H>::new(key).unwrap();
+    match c.check {
+        VtVersionCheck::Replica => {
+            let mut replica = Replica::empty(vt.clone());
+            c.deltas
+                .iter()
+                .flatten()
+                .try_for_each(|d| vt.decode_delta(&value(d)).and_then(|d| replica.apply_delta(&d)))
+                .unwrap_err()
+        }
+        VtVersionCheck::Historical => {
+            let proof = vt.decode_proof(&value(c.proof.as_ref().unwrap())).unwrap();
+            let at = vt.version_key().decode(&bytes(c.at.as_ref().unwrap())).unwrap();
+            vt.verify_historical_key(&d(c.root.as_ref().unwrap()), &proof, &at).err().unwrap()
+        }
+    }
+}
+
+/// The versions a refusal names are their keys' full lowercase hex, at the default width and at wide ones up to 1024
+/// bytes (conformance.md section 3): each case gives exactly its recorded refusal and keys.
+#[test]
+fn version_errors_name_full_keys() {
+    let (v, _) = setup();
+    let mut widths: Vec<u64> = v.version_errors.iter().map(|c| c.width).collect();
+    widths.dedup();
+    assert_eq!(widths, vec![8, 32, 1024]);
+    for c in &v.version_errors {
+        let e = if c.width == 8 {
+            version_error(U64Key::default(), c)
+        } else {
+            version_error(BytesKey::new(u16::try_from(c.width).unwrap()).unwrap(), c)
+        };
+        let got = match e {
+            VersionedTrieError::VersionNotIncreasing { head, next } => {
+                VtVersionError::VtVersionNotIncreasing(VtVersionNotIncreasing { head, next })
+            }
+            VersionedTrieError::UnknownVersion { version } => {
+                VtVersionError::VtUnknownVersion(VtUnknownVersion { version })
+            }
+            other => panic!("{}: {other:?}", c.name),
+        };
+        assert_eq!(got, c.outcome, "{}", c.name);
+        let keys = match &got {
+            VtVersionError::VtVersionNotIncreasing(r) => vec![r.head.clone(), r.next.clone()],
+            VtVersionError::VtUnknownVersion(r) => vec![r.version.clone()],
+        };
+        assert!(keys.iter().all(|k| k.len() as u64 == 2 * c.width), "{}: keys in full", c.name);
+    }
+}
+
+/// A caller's version key whose encoding ignores its width.
+struct Lying(u16, usize);
+
+impl VersionKey for Lying {
+    type Version = u64;
+    fn width(&self) -> u16 {
+        self.0
+    }
+    fn encode(&self, _: &u64) -> Result<Vec<u8>, VersionedTrieError> {
+        Ok(vec![0xab; self.1])
+    }
+    fn decode(&self, _: &[u8]) -> Result<u64, VersionedTrieError> {
+        Ok(0)
+    }
+}
+
+/// `vkey` checks every key at its width, so a caller's version key never lengthens the key a refusal names.
+#[test]
+fn a_version_key_of_another_width_is_refused_before_a_refusal_names_it() {
+    let lying = VersionedTrie::<Lying, H>::new(Lying(8, 1 << 20)).unwrap();
+    assert_eq!(lying.vkey(&1).unwrap_err().kind(), VersionedTrieErrorKind::InvalidVersion);
+    assert_eq!(VersionedTrie::<Lying, H>::new(Lying(8, 8)).unwrap().vkey(&1).unwrap(), vec![0xab; 8]);
+    assert!(VersionedTrie::<Lying, H>::new(Lying(1025, 1025)).is_err(), "a width past 1024");
+}
+
+/// A snapshot's out-of-order versions are named by their full keys: keys differing only in their last byte, at 32 and
+/// 1024 bytes, which a truncated rendering could not tell apart.
+#[test]
+fn snapshot_ordering_names_full_version_keys() {
+    for w in [32u16, 1024] {
+        let vt = VersionedTrie::<BytesKey, H>::new(BytesKey::new(w).unwrap()).unwrap();
+        let (mut a, mut b) = (vec![0u8; usize::from(w)], vec![0u8; usize::from(w)]);
+        a[usize::from(w) - 1] = 1;
+        b[usize::from(w) - 1] = 2;
+        let root = vt.hashing().empty();
+        let head = Head { version: b.clone(), state_root: root.clone(), history_root: root.clone() };
+        let mut reader = vt.snapshot_reader(head.clone());
+        reader.feed(SnapshotChunk::Head(head)).unwrap();
+        let e = reader.feed(SnapshotChunk::History(vec![(b.clone(), root.clone()), (a.clone(), root)])).unwrap_err();
+        let expected =
+            format!("version {} does not follow {}", dilf4s_core::hex::encode(&a), dilf4s_core::hex::encode(&b));
+        assert!(e.to_string().contains(&expected), "{w}: {e}");
+    }
 }

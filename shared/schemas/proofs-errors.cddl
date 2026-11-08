@@ -1,0 +1,239 @@
+;# import codec-errors as codec
+;# import store-errors as store
+; The proof structures' error families (docs/specs/merkle.md, trie.md, zk.md sections 3 and 4, versioned-trie.md;
+; conformance.md sections 1, 3 and 6), defined once as crypto-errors.cddl defines the crypto families: each `x-error`
+; is a choice of maps, each led by a distinct "kind" literal, and `x-error-kind` lists the same kinds in the same order.
+; Each SDK gets the family as its error type (Scala `xyz.kd5ujc.accumulators.merkle.MerkleError`,
+; `xyz.kd5ujc.accumulators.trie.TrieError`, `xyz.kd5ujc.accumulators.versioned.VersionedTrieError`,
+; `xyz.kd5ujc.core.hash.PoseidonError` and `xyz.kd5ujc.accumulators.poseidon.PoseidonMerkleError`; Rust
+; `dilf4s_proofs::merkle::MerkleError`, `dilf4s_proofs::trie::TrieError`, `dilf4s_proofs::versioned::VersionedTrieError`,
+; `dilf4s_proofs::poseidon::PoseidonError` and `PoseidonMerkleError`; TypeScript `MerkleError`, `TrieError`,
+; `VersionedTrieError`, `PoseidonError` and `PoseidonMerkleError`) and the kinds as a closed type, which the vector
+; schemas name. No codec is generated for a family.
+
+; Sizes, depths and limits are `uint .le 9223372036854775807` (Scala `Long`, Rust `u64`, TypeScript `number`). Caller
+; input is described by its size, position or bit length, never as itself (conformance.md section 8). A version is
+; named by its version key's full hex (`version-key-hex`), digests by their hex.
+
+; A tree size or index as a Merkle refusal names it: the caller's, which may be negative in Scala (a `Long`) and wider
+; than 64 bits in TypeScript (a bigint, saturated at the signed 64-bit range before it is held), so every SDK holds it
+; exactly (Scala `BigInt`, Rust `i128`, TypeScript `bigint`).
+merkle-position = int
+
+; Why a Merkle proof failed. InvalidProof and RootMismatch are a well-formed proof that proves something else; the
+; other kinds are malformed input.
+merkle-error = {
+  ; A leaf index (or an old size) outside its tree.
+  "kind": "IndexOutOfRange",
+  ; The index.
+  "index": merkle-position,
+  ; The tree size.
+  "size": merkle-position //
+  ; Consistency sizes with `old > new`.
+  "kind": "InvalidSizes",
+  ; The old size.
+  "oldSize": merkle-position,
+  ; The new size.
+  "newSize": merkle-position //
+  ; A path of the wrong length for its sizes, or an empty-tree case that does not hold.
+  "kind": "InvalidProof",
+  ; Why.
+  "reason": text //
+  ; The recomputed root differs from the trusted one.
+  "kind": "RootMismatch",
+  ; The trusted root, hex.
+  "expected": text,
+  ; The recomputed root, hex.
+  "computed": text //
+  ; A proof or head whose encoding does not decode.
+  "kind": "Encoding",
+  ; Why.
+  "reason": text //
+  ; A claimed leaf heavier than the limit, refused before it is hashed.
+  "kind": "TooLarge",
+  ; The limit: MaxProofWeight (normative), or an SDK's own lower commitment ceiling.
+  "limit": uint .le 9223372036854775807
+}
+
+; Every kind of MerkleError, in the family's order.
+merkle-error-kind = "IndexOutOfRange" / "InvalidSizes" / "InvalidProof" / "RootMismatch" / "Encoding" / "TooLarge"
+
+; Why a trie operation failed. RootMismatch is a well-formed proof of another trie; NotCovered a proof that does not
+; reach the query; the rest are malformed input, but MissingNode and InvalidNode, a store read's.
+trie-error = {
+  ; A key, or a key mode, invalid for the mode's limits.
+  "kind": "InvalidKey",
+  ; Why.
+  "reason": text //
+  ; A store read that finds no node under a hash.
+  "kind": "MissingNode",
+  ; The node's hash, hex.
+  "hash": text //
+  ; A node that breaks the branch invariant.
+  "kind": "InvalidNode",
+  ; Why.
+  "reason": text //
+  ; A partial trie that breaks the mode's structural rules (trie.md section 4 step 2).
+  "kind": "InvalidProof",
+  ; Why.
+  "reason": text //
+  ; The partial trie hashes to another root.
+  "kind": "RootMismatch",
+  ; The trusted root, hex.
+  "expected": text,
+  ; The recomputed root, hex.
+  "computed": text //
+  ; Records, segments, digests or arguments that do not decode.
+  "kind": "Encoding",
+  ; Why.
+  "reason": text //
+  ; A verified proof that reaches a stub where the query needs an answer: neither presence nor absence is established.
+  "kind": "NotCovered",
+  ; What was queried.
+  "what": text //
+  ; Over the limit in weight: claimed values a verifier would hash, or a proof a producer would emit that every
+  ; verifier refuses.
+  "kind": "TooLarge",
+  ; The limit: MaxProofWeight (normative), or an SDK's own lower commitment ceiling.
+  "limit": uint .le 9223372036854775807
+}
+
+; Every kind of TrieError, in the family's order.
+trie-error-kind = "InvalidKey" / "MissingNode" / "InvalidNode" / "InvalidProof" / "RootMismatch" / "Encoding" / "NotCovered" / "TooLarge"
+
+; Why Poseidon hashing or a field element was refused (zk.md section 3).
+poseidon-error = {
+  ; Not 1 to `max` inputs.
+  "kind": "InputCount",
+  ; The inputs given.
+  "count": uint .le 9223372036854775807,
+  ; The most allowed (PoseidonMaxInputs).
+  "max": uint .le 9223372036854775807 //
+  ; A value outside `[0, r)`: malformed, never reduced.
+  "kind": "NonCanonical",
+  ; The value's bit length, never its digits, whose size the caller chose; a negative value's is that of -v - 1 (Java's
+  ; BigInteger.bitLength), so -1 has 0 bits and -2^k has k.
+  "bits": uint .le 9223372036854775807
+}
+
+; Every kind of PoseidonError, in the family's order.
+poseidon-error-kind = "InputCount" / "NonCanonical"
+
+; Why a Poseidon Merkle proof or tree operation was refused (zk.md section 4).
+poseidon-merkle-error = {
+  ; A position outside `[0, 2^depth)`, or more siblings than PoseidonMaxDepth.
+  "kind": "Position",
+  ; The position's bit length, never the position, whose size the caller chose: informative.
+  "positionBits": uint .le 9223372036854775807,
+  ; The depth (the number of siblings, or the tree's depth): normative (conformance.md section 3).
+  "depth": uint .le 9223372036854775807 //
+  ; A tree depth outside 1 to PoseidonMaxDepth.
+  "kind": "Depth",
+  ; The depth asked for, which may be negative.
+  "depth": -9223372036854775808..9223372036854775807 //
+  ; A position that already holds a leaf, where an insertion needs an empty one.
+  "kind": "OccupiedPosition",
+  ; The position's bit length.
+  "positionBits": uint .le 9223372036854775807 //
+  ; A proof that does not decode, or a sibling outside `[0, r)`.
+  "kind": "Encoding",
+  ; Why.
+  "reason": text
+}
+
+; Every kind of PoseidonMerkleError, in the family's order.
+poseidon-merkle-error-kind = "Position" / "Depth" / "OccupiedPosition" / "Encoding"
+
+; A version as a versioned-trie refusal names it: its version key's full lowercase hex, never truncated and with no
+; `0x`. A version key is exactly the configured width `w` bytes, at most 1024 (the history trie is `fixed(w)`,
+; trie.md section 1), and a version is encoded at that width before a refusal names it, so this is at most 2048
+; characters, a bound no caller can lengthen (versioned-trie.md section 2).
+version-key-hex = text .regexp "([0-9a-f]{2})*"
+
+; Which recomputed root differs from the claimed or trusted one: the commitment root, the state trie's, the history
+; trie's, or a delta's parent.
+vt-root-component = "root" / "state" / "history" / "parent"
+
+; Typed failures of a versioned trie (versioned-trie.md). Versions appear as their version keys (`version-key-hex`),
+; so the type does not depend on the version type. Empty, VersionConflict, CommitRewrite, NotRetained and Store are
+; the reference store's own refusals; no SDK verifier reaches them.
+versioned-trie-error = {
+  ; A commit key or namespace that breaks the grammar.
+  "kind": "Key",
+  ; The state key's refusal.
+  "error": codec.state-key-error //
+  ; A version the version key cannot encode, or bytes it cannot decode.
+  "kind": "InvalidVersion",
+  ; Why.
+  "reason": text //
+  ; Nothing has been committed yet, so there is no head to read or prove against.
+  "kind": "Empty" //
+  ; A commit's or delta's version is not above the head's (and is not an identical re-commit of the head).
+  "kind": "VersionNotIncreasing",
+  ; The head's version key (normative).
+  "head": version-key-hex,
+  ; The refused version's key (normative).
+  "next": version-key-hex //
+  ; Optimistic concurrency: the caller expected another head (absent: nothing committed).
+  "kind": "VersionConflict",
+  ; The head the caller expected, by its version key.
+  ? "expected": version-key-hex,
+  ; The store's head, by its version key.
+  ? "actual": version-key-hex //
+  ; The head version committed again with a batch that gives a different state.
+  "kind": "CommitRewrite",
+  ; Its version key.
+  "version": version-key-hex //
+  ; The version was committed, but what was asked of it is below the prune floor.
+  "kind": "NotRetained",
+  ; Its version key.
+  "version": version-key-hex //
+  ; The version was never committed.
+  "kind": "UnknownVersion",
+  ; Its version key (normative).
+  "version": version-key-hex //
+  ; A recomputed root differs from the claimed or trusted one.
+  "kind": "RootMismatch",
+  ; Which root (normative).
+  "component": vt-root-component,
+  ; The trusted or claimed root, hex (or `none`).
+  "expected": text,
+  ; The recomputed root, hex (or `none`).
+  "computed": text //
+  ; A proof that does not reach the queried key, prefix, range or slot: neither presence nor absence is proven.
+  "kind": "NotCovered",
+  ; What was queried.
+  "what": text //
+  ; A proof, delta or snapshot whose shape or contents are inconsistent with what it claims.
+  "kind": "Malformed",
+  ; Why.
+  "reason": text //
+  ; A value, snapshot chunk, delta or proof over its limit (versioned-trie.md section 7). It carries the limit only,
+  ; never a measured size: a value is measured no further than the limit.
+  "kind": "TooLarge",
+  ; What (not normative).
+  "what": text,
+  ; The limit (normative): MaxValueBytes or MaxChunkBytes in bytes, or MaxProofWeight in weight.
+  "limit": uint .le 9223372036854775807 //
+  ; A value nested deeper than every wire format can carry (versioned-trie.md section 4).
+  "kind": "TooDeep",
+  ; What (not normative).
+  "what": text,
+  ; The value's depth (normative).
+  "depth": uint .le 9223372036854775807,
+  ; The limit (normative): MaxValueDepth.
+  "limit": uint .le 9223372036854775807 //
+  ; The reference store's storage failure.
+  "kind": "Store",
+  ; The store's refusal.
+  "error": store.store-error //
+  ; A trie failure. A trie proof over MaxProofWeight is this family's TooLarge with that limit, never Trie.
+  "kind": "Trie",
+  ; The trie's refusal.
+  "error": trie-error
+}
+
+; Every kind of VersionedTrieError, in the family's order.
+versioned-trie-error-kind =
+  "Key" / "InvalidVersion" / "Empty" / "VersionNotIncreasing" / "VersionConflict" / "CommitRewrite" / "NotRetained" /
+  "UnknownVersion" / "RootMismatch" / "NotCovered" / "Malformed" / "TooLarge" / "TooDeep" / "Store" / "Trie"

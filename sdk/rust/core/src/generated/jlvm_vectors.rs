@@ -234,6 +234,14 @@ pub enum JlvmCause {
     JlvmVrfCause(JlvmVrfCause),
     /// A [`JlvmHashCause`].
     JlvmHashCause(JlvmHashCause),
+    /// A [`JlvmMerkleCause`].
+    JlvmMerkleCause(JlvmMerkleCause),
+    /// A [`JlvmTrieCause`].
+    JlvmTrieCause(JlvmTrieCause),
+    /// A [`JlvmPoseidonCause`].
+    JlvmPoseidonCause(JlvmPoseidonCause),
+    /// A [`JlvmPoseidonMerkleCause`].
+    JlvmPoseidonMerkleCause(JlvmPoseidonMerkleCause),
 }
 
 impl c::Model for JlvmCause {
@@ -245,17 +253,25 @@ impl c::Model for JlvmCause {
             Self::JlvmGroth16Cause(a) => c::Model::to_value_at(a, depth),
             Self::JlvmVrfCause(a) => c::Model::to_value_at(a, depth),
             Self::JlvmHashCause(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmMerkleCause(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmTrieCause(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmPoseidonCause(a) => c::Model::to_value_at(a, depth),
+            Self::JlvmPoseidonMerkleCause(a) => c::Model::to_value_at(a, depth),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[(&["signing"], &["signing"]), (&["sigma"], &["sigma"]), (&["zk"], &["zk"]), (&["groth16"], &["groth16"]), (&["vrf"], &["vrf"]), (&["hash"], &["hash"])], &[])? {
+        match c::select_alternative(value, &[(&["signing"], &["signing"]), (&["sigma"], &["sigma"]), (&["zk"], &["zk"]), (&["groth16"], &["groth16"]), (&["vrf"], &["vrf"]), (&["hash"], &["hash"]), (&["merkle"], &["merkle"]), (&["trie"], &["trie"]), (&["poseidon"], &["poseidon"]), (&["poseidonMerkle"], &["poseidonMerkle"])], &[])? {
             c::Alternative::Record(0) => <JlvmSigningCause as c::Model>::from_value(value).map(Self::JlvmSigningCause),
             c::Alternative::Record(1) => <JlvmSigmaCause as c::Model>::from_value(value).map(Self::JlvmSigmaCause),
             c::Alternative::Record(2) => <JlvmZkCause as c::Model>::from_value(value).map(Self::JlvmZkCause),
             c::Alternative::Record(3) => <JlvmGroth16Cause as c::Model>::from_value(value).map(Self::JlvmGroth16Cause),
             c::Alternative::Record(4) => <JlvmVrfCause as c::Model>::from_value(value).map(Self::JlvmVrfCause),
             c::Alternative::Record(5) => <JlvmHashCause as c::Model>::from_value(value).map(Self::JlvmHashCause),
+            c::Alternative::Record(6) => <JlvmMerkleCause as c::Model>::from_value(value).map(Self::JlvmMerkleCause),
+            c::Alternative::Record(7) => <JlvmTrieCause as c::Model>::from_value(value).map(Self::JlvmTrieCause),
+            c::Alternative::Record(8) => <JlvmPoseidonCause as c::Model>::from_value(value).map(Self::JlvmPoseidonCause),
+            c::Alternative::Record(9) => <JlvmPoseidonMerkleCause as c::Model>::from_value(value).map(Self::JlvmPoseidonMerkleCause),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -347,6 +363,28 @@ impl c::Model for JlvmHashCause {
     }
 }
 
+/// `jlvm-merkle-cause` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmMerkleCause {
+    /// The `merkle` entry.
+    pub merkle: super::proofs_errors::MerkleErrorKind,
+}
+
+impl c::Model for JlvmMerkleCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("merkle", &c::ModelOf::<super::proofs_errors::MerkleErrorKind>::NEW, &self.merkle, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["merkle"])?;
+        let f0 = fields.required("merkle", &c::ModelOf::<super::proofs_errors::MerkleErrorKind>::NEW)?;
+        Ok(Self { merkle: f0 })
+    }
+}
+
 /// `jlvm-outcome` (`shared/schemas/jlvm-vectors.cddl`).
 ///
 /// A value as its canonical CBOR (canonical-encoding.md), with its JSON surface text when it has one; or an error by
@@ -373,6 +411,50 @@ impl c::Model for JlvmOutcome {
             c::Alternative::Record(1) => <JlvmError as c::Model>::from_value(value).map(Self::JlvmError),
             other => Err(c::unknown_alternative(other)),
         }
+    }
+}
+
+/// `jlvm-poseidon-cause` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmPoseidonCause {
+    /// The `poseidon` entry.
+    pub poseidon: super::proofs_errors::PoseidonErrorKind,
+}
+
+impl c::Model for JlvmPoseidonCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("poseidon", &c::ModelOf::<super::proofs_errors::PoseidonErrorKind>::NEW, &self.poseidon, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["poseidon"])?;
+        let f0 = fields.required("poseidon", &c::ModelOf::<super::proofs_errors::PoseidonErrorKind>::NEW)?;
+        Ok(Self { poseidon: f0 })
+    }
+}
+
+/// `jlvm-poseidon-merkle-cause` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmPoseidonMerkleCause {
+    /// The `poseidonMerkle` entry.
+    pub poseidon_merkle: super::proofs_errors::PoseidonMerkleErrorKind,
+}
+
+impl c::Model for JlvmPoseidonMerkleCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("poseidonMerkle", &c::ModelOf::<super::proofs_errors::PoseidonMerkleErrorKind>::NEW, &self.poseidon_merkle, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["poseidonMerkle"])?;
+        let f0 = fields.required("poseidonMerkle", &c::ModelOf::<super::proofs_errors::PoseidonMerkleErrorKind>::NEW)?;
+        Ok(Self { poseidon_merkle: f0 })
     }
 }
 
@@ -417,6 +499,28 @@ impl c::Model for JlvmSigningCause {
         let fields = c::Fields::of(value, &["signing"])?;
         let f0 = fields.required("signing", &c::ModelOf::<super::crypto_errors::CryptoErrorKind>::NEW)?;
         Ok(Self { signing: f0 })
+    }
+}
+
+/// `jlvm-trie-cause` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmTrieCause {
+    /// The `trie` entry.
+    pub trie: super::proofs_errors::TrieErrorKind,
+}
+
+impl c::Model for JlvmTrieCause {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("trie", &c::ModelOf::<super::proofs_errors::TrieErrorKind>::NEW, &self.trie, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["trie"])?;
+        let f0 = fields.required("trie", &c::ModelOf::<super::proofs_errors::TrieErrorKind>::NEW)?;
+        Ok(Self { trie: f0 })
     }
 }
 

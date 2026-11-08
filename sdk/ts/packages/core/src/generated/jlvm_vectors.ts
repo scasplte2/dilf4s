@@ -4,6 +4,7 @@ import * as cryptoErrors from "./crypto_errors.js";
 import * as hashErrors from "./hash_errors.js";
 import * as jlvm from "./jlvm.js";
 import * as jlvmErrors from "./jlvm_errors.js";
+import * as proofsErrors from "./proofs_errors.js";
 
 /** `built-copies` (`shared/schemas/jlvm-vectors.cddl`). */
 export interface BuiltCopies {
@@ -112,7 +113,7 @@ export const JlvmCase: c.Codec<JlvmCase> = c.record<JlvmCase>({
  * The refusal a Crypto error wraps (jlvm-errors.cddl `jlvm-crypto-cause`): its family, as the one key, and that family's
  * kind.
  */
-export type JlvmCause = JlvmSigningCause | JlvmSigmaCause | JlvmZkCause | JlvmGroth16Cause | JlvmVrfCause | JlvmHashCause;
+export type JlvmCause = JlvmSigningCause | JlvmSigmaCause | JlvmZkCause | JlvmGroth16Cause | JlvmVrfCause | JlvmHashCause | JlvmMerkleCause | JlvmTrieCause | JlvmPoseidonCause | JlvmPoseidonMerkleCause;
 
 export const JlvmCause: c.Codec<JlvmCause> = c.union<JlvmCause>("JlvmCause", [
   c.alternative(c.defer(() => JlvmSigningCause), [["signing"], ["signing"]], [["signing"], ["signing"]]),
@@ -121,6 +122,10 @@ export const JlvmCause: c.Codec<JlvmCause> = c.union<JlvmCause>("JlvmCause", [
   c.alternative(c.defer(() => JlvmGroth16Cause), [["groth16"], ["groth16"]], [["groth16"], ["groth16"]]),
   c.alternative(c.defer(() => JlvmVrfCause), [["vrf"], ["vrf"]], [["vrf"], ["vrf"]]),
   c.alternative(c.defer(() => JlvmHashCause), [["hash"], ["hash"]], [["hash"], ["hash"]]),
+  c.alternative(c.defer(() => JlvmMerkleCause), [["merkle"], ["merkle"]], [["merkle"], ["merkle"]]),
+  c.alternative(c.defer(() => JlvmTrieCause), [["trie"], ["trie"]], [["trie"], ["trie"]]),
+  c.alternative(c.defer(() => JlvmPoseidonCause), [["poseidon"], ["poseidon"]], [["poseidon"], ["poseidon"]]),
+  c.alternative(c.defer(() => JlvmPoseidonMerkleCause), [["poseidonMerkle"], ["poseidonMerkle"]], [["poseidonMerkle"], ["poseidonMerkle"]]),
 ], []);
 
 /**
@@ -169,6 +174,15 @@ export const JlvmHashCause: c.Codec<JlvmHashCause> = c.record<JlvmHashCause>({
   hash: c.required("hash", c.defer(() => hashErrors.HashErrorKind)),
 });
 
+/** `jlvm-merkle-cause` (`shared/schemas/jlvm-vectors.cddl`). */
+export interface JlvmMerkleCause {
+  readonly merkle: proofsErrors.MerkleErrorKind;
+}
+
+export const JlvmMerkleCause: c.Codec<JlvmMerkleCause> = c.record<JlvmMerkleCause>({
+  merkle: c.required("merkle", c.defer(() => proofsErrors.MerkleErrorKind)),
+});
+
 /**
  * `jlvm-outcome` (`shared/schemas/jlvm-vectors.cddl`).
  *
@@ -181,6 +195,24 @@ export const JlvmOutcome: c.Codec<JlvmOutcome> = c.union<JlvmOutcome>("JlvmOutco
   c.alternative(c.defer(() => JlvmValue), [["cbor"], ["cbor", "json"]], [["cbor"], ["cbor", "json"]]),
   c.alternative(c.defer(() => JlvmError), [["error"], ["cause", "error", "op"]], [["error"], ["cause", "error", "op"]]),
 ], []);
+
+/** `jlvm-poseidon-cause` (`shared/schemas/jlvm-vectors.cddl`). */
+export interface JlvmPoseidonCause {
+  readonly poseidon: proofsErrors.PoseidonErrorKind;
+}
+
+export const JlvmPoseidonCause: c.Codec<JlvmPoseidonCause> = c.record<JlvmPoseidonCause>({
+  poseidon: c.required("poseidon", c.defer(() => proofsErrors.PoseidonErrorKind)),
+});
+
+/** `jlvm-poseidon-merkle-cause` (`shared/schemas/jlvm-vectors.cddl`). */
+export interface JlvmPoseidonMerkleCause {
+  readonly poseidonMerkle: proofsErrors.PoseidonMerkleErrorKind;
+}
+
+export const JlvmPoseidonMerkleCause: c.Codec<JlvmPoseidonMerkleCause> = c.record<JlvmPoseidonMerkleCause>({
+  poseidonMerkle: c.required("poseidonMerkle", c.defer(() => proofsErrors.PoseidonMerkleErrorKind)),
+});
 
 /** `jlvm-sigma-cause` (`shared/schemas/jlvm-vectors.cddl`). */
 export interface JlvmSigmaCause {
@@ -198,6 +230,15 @@ export interface JlvmSigningCause {
 
 export const JlvmSigningCause: c.Codec<JlvmSigningCause> = c.record<JlvmSigningCause>({
   signing: c.required("signing", c.defer(() => cryptoErrors.CryptoErrorKind)),
+});
+
+/** `jlvm-trie-cause` (`shared/schemas/jlvm-vectors.cddl`). */
+export interface JlvmTrieCause {
+  readonly trie: proofsErrors.TrieErrorKind;
+}
+
+export const JlvmTrieCause: c.Codec<JlvmTrieCause> = c.record<JlvmTrieCause>({
+  trie: c.required("trie", c.defer(() => proofsErrors.TrieErrorKind)),
 });
 
 /** `jlvm-value` (`shared/schemas/jlvm-vectors.cddl`). */

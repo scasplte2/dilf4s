@@ -13,6 +13,9 @@ use alloc::vec::Vec;
 use dilf4s_core::value::Text;
 use dilf4s_core::{BigInt, Value};
 use dilf4s_proofs::MAX_PROOF_WEIGHT;
+use dilf4s_proofs::merkle::MerkleError;
+use dilf4s_proofs::poseidon::PoseidonError;
+use dilf4s_proofs::trie::TrieError;
 use num_bigint::Sign;
 use num_traits::{Signed, ToPrimitive};
 
@@ -359,12 +362,13 @@ fn sized<'v>(op: Op, role: &str, v: &'v Value, width: usize) -> Result<&'v [u8]>
 fn fr<'v>(op: Op, role: &str, v: &'v Value) -> Result<&'v [u8]> {
     let b = sized(op, role, v, FIELD_BYTES)?;
     let r = BigInt::parse_bytes(BN254_R.as_bytes(), 10).unwrap_or_default();
-    if BigInt::from_bytes_be(Sign::Plus, b) < r {
+    let x = BigInt::from_bytes_be(Sign::Plus, b);
+    if x < r {
         Ok(b)
     } else {
         Err(JlvmError::crypto(
             op,
-            None,
+            Some(CryptoCause::Poseidon { error: PoseidonError::NonCanonical { bits: x.bits() } }),
             alloc::format!("{role}: not a canonical BN254 scalar field element (must be < r)"),
         ))
     }
@@ -509,13 +513,28 @@ fn profile(op: Op, rest: &[Value]) -> Result<MerkleProfile> {
 }
 
 /// Claims (a leaf, a value, a listing's values) together at most [`MAX_PROOF_WEIGHT`], from their weights, before any
-/// is hashed and before the proof is decoded: heavier is `Crypto` (docs/specs/conformance.md section 5).
-fn claims<'a>(op: Op, values: impl IntoIterator<Item = &'a Value>) -> Result<()> {
+/// is hashed and before the proof is decoded: heavier is `Crypto` (docs/specs/conformance.md section 5), caused by the
+/// structure's own `TooLarge` (`too_large`, given the limit), as its verifiers refuse it.
+fn claims<'a>(op: Op, too_large: fn(u64) -> CryptoCause, values: impl IntoIterator<Item = &'a Value>) -> Result<()> {
     let total = values.into_iter().fold(0u64, |t, v| t.saturating_add(v.weight()));
     if total > MAX_PROOF_WEIGHT {
-        return Err(JlvmError::crypto(op, None, alloc::format!("the claims weigh over {MAX_PROOF_WEIGHT}")));
+        return Err(JlvmError::crypto(
+            op,
+            Some(too_large(MAX_PROOF_WEIGHT)),
+            alloc::format!("the claims weigh over {MAX_PROOF_WEIGHT}"),
+        ));
     }
     Ok(())
+}
+
+/// A Merkle claim over the weight cap: the Merkle tree's `TooLarge`.
+fn merkle_too_large(limit: u64) -> CryptoCause {
+    CryptoCause::Merkle { error: MerkleError::TooLarge { limit } }
+}
+
+/// A trie claim over the weight cap: the trie's `TooLarge`.
+fn trie_too_large(limit: u64) -> CryptoCause {
+    CryptoCause::Trie { error: TrieError::TooLarge { limit } }
 }
 
 fn merkle(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> {
@@ -525,7 +544,7 @@ fn merkle(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> 
     let fail = |e: CryptoFailure| JlvmError::crypto(op, e.cause, e.message);
     let (root, size) = head(op, "head", h)?;
     let p = profile(op, rest)?;
-    claims(op, [leaf])?;
+    claims(op, merkle_too_large, [leaf])?;
     let claimed = backend.merkle_inclusion_size(proof).map_err(fail)?;
     if p == MerkleProfile::Rfc6962 && !matches!(leaf, Value::Bytes(_)) {
         return Err(JlvmError::type_error(op, alloc::format!("an rfc6962 leaf is bytes, got {}", kind(leaf))));
@@ -592,7 +611,10 @@ fn key_path(op: Op, m: KeyMode, v: &Value) -> Result<&[u8]> {
     if m.admits(b) {
         Ok(b)
     } else {
-        Err(JlvmError::crypto(op, None, alloc::format!("a key invalid for the mode {m:?}: {} bytes", b.len())))
+        // the trie's refusal of a key its mode does not admit, as the reference's `KeyMode.path` makes it
+        let reason = alloc::format!("a key invalid for the mode {m:?}: {} bytes", b.len());
+        let cause = CryptoCause::Trie { error: TrieError::InvalidKey { reason: reason.clone() } };
+        Err(JlvmError::crypto(op, Some(cause), reason))
     }
 }
 
@@ -620,7 +642,7 @@ fn trie(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Value> {
     let m = mode(op, md)?;
     let k = key_path(op, m, key)?;
     let claimed = (*value != Value::Null).then_some(value);
-    claims(op, claimed)?;
+    claims(op, trie_too_large, claimed)?;
     let r = digest(op, "root", root)?;
     backend.trie_verify(m, r, k, claimed, proof).map(Value::Bool).map_err(|e| JlvmError::crypto(op, e.cause, e.message))
 }
@@ -637,7 +659,7 @@ fn trie_prefix(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Va
         }
     };
     let claimed = entries(op, m, es)?;
-    claims(op, claimed.iter().map(|(_, v)| *v))?;
+    claims(op, trie_too_large, claimed.iter().map(|(_, v)| *v))?;
     let r = digest(op, "root", root)?;
     backend
         .trie_prefix_verify(m, r, pre, &claimed, proof)
@@ -660,7 +682,7 @@ fn trie_range(backend: &dyn CryptoBackend, op: Op, args: &[Value]) -> Result<Val
         other => return Err(JlvmError::type_error(op, alloc::format!("until is bytes, got {}", kind(other)))),
     };
     let claimed = entries(op, m, es)?;
-    claims(op, claimed.iter().map(|(_, v)| *v))?;
+    claims(op, trie_too_large, claimed.iter().map(|(_, v)| *v))?;
     let r = digest(op, "root", root)?;
     backend
         .trie_range_verify(m, r, lo, hi, &claimed, proof)

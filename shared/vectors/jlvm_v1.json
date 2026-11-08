@@ -6560,7 +6560,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "poseidon"
+        "op" : "poseidon",
+        "cause" : {
+          "poseidon" : "NonCanonical"
+        }
       },
       "gasUsed" : 5710,
       "warnings" : 0
@@ -6571,7 +6574,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "poseidon"
+        "op" : "poseidon",
+        "cause" : {
+          "poseidon" : "NonCanonical"
+        }
       },
       "gasUsed" : 5710,
       "warnings" : 0
@@ -6670,7 +6676,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "pmt_verify"
+        "op" : "pmt_verify",
+        "cause" : {
+          "poseidonMerkle" : "Position"
+        }
       },
       "gasUsed" : 122208,
       "warnings" : 0
@@ -6692,7 +6701,10 @@
       "data" : "{}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "pmt_verify"
+        "op" : "pmt_verify",
+        "cause" : {
+          "poseidon" : "NonCanonical"
+        }
       },
       "gasUsed" : 122208,
       "warnings" : 0
@@ -35176,7 +35188,10 @@
       "data" : "{\"a0\":{\"root\":\"0x59c04ec13f9fba50a5bff434a4c0f69ea391381e23ab52d15065b5f83fd58275\",\"size\":2},\"a1\":{\"root\":\"0x1c702077ae5a63db9b6911b4ca96cdc039fa85babeb67b46208cbe6dded5dda0\",\"size\":5},\"a2\":\"0x00\"}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "merkle_consistency_verify"
+        "op" : "merkle_consistency_verify",
+        "cause" : {
+          "merkle" : "Encoding"
+        }
       },
       "gasUsed" : 1458,
       "warnings" : 0
@@ -35228,7 +35243,10 @@
       "gasLimit" : 1073741824,
       "outcome" : {
         "error" : "Crypto",
-        "op" : "merkle_verify"
+        "op" : "merkle_verify",
+        "cause" : {
+          "merkle" : "Encoding"
+        }
       },
       "gasUsed" : 134219350,
       "warnings" : 0
@@ -35363,7 +35381,10 @@
       "gasLimit" : 1073741824,
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "Encoding"
+        }
       },
       "gasUsed" : 251659721,
       "warnings" : 0
@@ -35585,7 +35606,10 @@
       "gasLimit" : 1073741824,
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "TooLarge"
+        }
       },
       "gasUsed" : 251659785,
       "warnings" : 0
@@ -35696,7 +35720,10 @@
       "gasLimit" : 1073741824,
       "outcome" : {
         "error" : "Crypto",
-        "op" : "merkle_verify"
+        "op" : "merkle_verify",
+        "cause" : {
+          "merkle" : "TooLarge"
+        }
       },
       "gasUsed" : 134219478,
       "warnings" : 0
@@ -35840,7 +35867,10 @@
       "data" : "{\"a0\":{\"fixed\":2},\"a1\":\"0x59d57e6061990371229fbd750e18141bb5d557f3fbc9d59ddc30841ce9378a07\",\"a2\":\"0x0000\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"c\":3,\"s\":{\"b\":\"0x00\",\"n\":6}},{\"c\":3,\"s\":{\"b\":\"0x00\",\"n\":6}},{\"h\":\"0x53e902eea1f4e010982a98b1ce341284cb649132f7b032f64a32603e73db29b0\"},{\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"h\":\"0xeedc867c4553b87507394bc7c9e9901da67e74321e4f78878c8b243a4758d3d6\"},{\"h\":\"0xb62c5cbb32cb2c1f3653a7d257078ce6cd23e54689bb4a5e55019d3aa185f7e6\"},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"s\":{\"b\":\"0x0000\",\"n\":14},\"v\":\"0x3978285376d9f7c23f4e8b9d564d9536f7133d694e29fe0280edb56f68701ab0\"},{\"h\":\"0x1fb9b7ef856f41073fbc40b495efa2504589f480114540d3d67407ddabc07578\"}]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "NotCovered"
+        }
       },
       "gasUsed" : 6105,
       "warnings" : 0
@@ -35851,7 +35881,10 @@
       "data" : "{\"a0\":{\"fixed\":2},\"a1\":\"0x59d57e6061990371229fbd750e18141bb5d557f3fbc9d59ddc30841ce9378a07\",\"a2\":\"0x0000\",\"a3\":\"0x01\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"c\":3,\"s\":{\"b\":\"0x00\",\"n\":6}},{\"c\":3,\"s\":{\"b\":\"0x00\",\"n\":6}},{\"h\":\"0x53e902eea1f4e010982a98b1ce341284cb649132f7b032f64a32603e73db29b0\"},{\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"h\":\"0xeedc867c4553b87507394bc7c9e9901da67e74321e4f78878c8b243a4758d3d6\"},{\"h\":\"0xb62c5cbb32cb2c1f3653a7d257078ce6cd23e54689bb4a5e55019d3aa185f7e6\"},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"s\":{\"b\":\"0x0000\",\"n\":14},\"v\":\"0x3978285376d9f7c23f4e8b9d564d9536f7133d694e29fe0280edb56f68701ab0\"},{\"h\":\"0x1fb9b7ef856f41073fbc40b495efa2504589f480114540d3d67407ddabc07578\"}]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "NotCovered"
+        }
       },
       "gasUsed" : 6120,
       "warnings" : 0
@@ -35884,7 +35917,10 @@
       "data" : "{\"a0\":{\"fixed\":2},\"a1\":\"0x59d57e6061990371229fbd750e18141bb5d557f3fbc9d59ddc30841ce9378a07\",\"a2\":\"0xffff\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"c\":3,\"s\":{\"b\":\"0x00\",\"n\":6}},{\"c\":3,\"s\":{\"b\":\"0x00\",\"n\":6}},{\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0xdd8a3d4359f1491f81e473db5a8f87ec72b85d106029d3710110c0db312708a0\"},{\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"s\":{\"b\":\"0xfe\",\"n\":7},\"v\":\"0x664422827544527150be39dd68a79e31e02d9cbbbb2694c084f8708b8f073550\"},{\"h\":\"0xb62c5cbb32cb2c1f3653a7d257078ce6cd23e54689bb4a5e55019d3aa185f7e6\"},{\"h\":\"0x371dbaa61d653a54196b882c2d3e995d89b7971c5154ab97ab9f7fbee142eb04\"}]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "NotCovered"
+        }
       },
       "gasUsed" : 5490,
       "warnings" : 0
@@ -35895,7 +35931,10 @@
       "data" : "{\"a0\":{\"fixed\":2},\"a1\":\"0x59d57e6061990371229fbd750e18141bb5d557f3fbc9d59ddc30841ce9378a07\",\"a2\":\"0xffff\",\"a3\":\"0x01\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"c\":3,\"s\":{\"b\":\"0x00\",\"n\":6}},{\"c\":3,\"s\":{\"b\":\"0x00\",\"n\":6}},{\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0xdd8a3d4359f1491f81e473db5a8f87ec72b85d106029d3710110c0db312708a0\"},{\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"s\":{\"b\":\"0xfe\",\"n\":7},\"v\":\"0x664422827544527150be39dd68a79e31e02d9cbbbb2694c084f8708b8f073550\"},{\"h\":\"0xb62c5cbb32cb2c1f3653a7d257078ce6cd23e54689bb4a5e55019d3aa185f7e6\"},{\"h\":\"0x371dbaa61d653a54196b882c2d3e995d89b7971c5154ab97ab9f7fbee142eb04\"}]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "NotCovered"
+        }
       },
       "gasUsed" : 5505,
       "warnings" : 0
@@ -35972,7 +36011,10 @@
       "data" : "{\"a0\":{\"variable\":3},\"a1\":\"0x7f5a8273d59651840ff1e68c9f0b4912b9e21c1e6b764df7eacf9547c250715a\",\"a2\":\"0xff\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0xdd8a3d4359f1491f81e473db5a8f87ec72b85d106029d3710110c0db312708a0\"},{\"c\":3,\"s\":{\"b\":\"0xc0\",\"n\":5}},{\"c\":1,\"s\":{\"b\":\"0x80\",\"n\":1},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"h\":\"0x61fe7aab99f528dc03e2fcf941aacf4bb8f2bdc686113747435a81191c2eb342\"},{\"c\":1,\"s\":{\"b\":\"0x88\",\"n\":6},\"v\":\"0x664422827544527150be39dd68a79e31e02d9cbbbb2694c084f8708b8f073550\"},{\"h\":\"0xb82150d3892a14eb066b9b6b0bb6daacb6331508accca65f537497af7804fdcb\"},{\"h\":\"0x44f514d8a5a382914fc3900edc702d56ec6e9e151f1c9f321ae7cfba7710f538\"},{\"h\":\"0x03c77b7b5d0eea5e68f45b5bf681af8368e36f9ebdfbd194db40417cc0e0f638\"}]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "NotCovered"
+        }
       },
       "gasUsed" : 6345,
       "warnings" : 0
@@ -35983,7 +36025,10 @@
       "data" : "{\"a0\":{\"variable\":3},\"a1\":\"0x7f5a8273d59651840ff1e68c9f0b4912b9e21c1e6b764df7eacf9547c250715a\",\"a2\":\"0xff\",\"a3\":\"0x01\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0xdd8a3d4359f1491f81e473db5a8f87ec72b85d106029d3710110c0db312708a0\"},{\"c\":3,\"s\":{\"b\":\"0xc0\",\"n\":5}},{\"c\":1,\"s\":{\"b\":\"0x80\",\"n\":1},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"h\":\"0x61fe7aab99f528dc03e2fcf941aacf4bb8f2bdc686113747435a81191c2eb342\"},{\"c\":1,\"s\":{\"b\":\"0x88\",\"n\":6},\"v\":\"0x664422827544527150be39dd68a79e31e02d9cbbbb2694c084f8708b8f073550\"},{\"h\":\"0xb82150d3892a14eb066b9b6b0bb6daacb6331508accca65f537497af7804fdcb\"},{\"h\":\"0x44f514d8a5a382914fc3900edc702d56ec6e9e151f1c9f321ae7cfba7710f538\"},{\"h\":\"0x03c77b7b5d0eea5e68f45b5bf681af8368e36f9ebdfbd194db40417cc0e0f638\"}]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "NotCovered"
+        }
       },
       "gasUsed" : 6360,
       "warnings" : 0
@@ -36016,7 +36061,10 @@
       "data" : "{\"a0\":{\"variable\":3},\"a1\":\"0x7f5a8273d59651840ff1e68c9f0b4912b9e21c1e6b764df7eacf9547c250715a\",\"a2\":\"0x62\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0xdd8a3d4359f1491f81e473db5a8f87ec72b85d106029d3710110c0db312708a0\"},{\"c\":3,\"s\":{\"b\":\"0xc0\",\"n\":5}},{\"c\":1,\"s\":{\"b\":\"0x80\",\"n\":1},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"s\":{\"b\":\"0x00\",\"n\":6},\"v\":\"0xfe7293e7e2e45fd895722cac5a082a12f2ad05f7c80e96789a8d6b301836cde5\"},{\"c\":1,\"s\":{\"b\":\"0x88\",\"n\":6},\"v\":\"0x664422827544527150be39dd68a79e31e02d9cbbbb2694c084f8708b8f073550\"},{\"s\":{\"b\":\"0xc6\",\"n\":7},\"v\":\"0x3978285376d9f7c23f4e8b9d564d9536f7133d694e29fe0280edb56f68701ab0\"},{\"h\":\"0x44f514d8a5a382914fc3900edc702d56ec6e9e151f1c9f321ae7cfba7710f538\"},{\"h\":\"0x03c77b7b5d0eea5e68f45b5bf681af8368e36f9ebdfbd194db40417cc0e0f638\"}]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "NotCovered"
+        }
       },
       "gasUsed" : 6645,
       "warnings" : 0
@@ -36027,7 +36075,10 @@
       "data" : "{\"a0\":{\"variable\":3},\"a1\":\"0x7f5a8273d59651840ff1e68c9f0b4912b9e21c1e6b764df7eacf9547c250715a\",\"a2\":\"0x62\",\"a3\":\"0x01\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0xdd8a3d4359f1491f81e473db5a8f87ec72b85d106029d3710110c0db312708a0\"},{\"c\":3,\"s\":{\"b\":\"0xc0\",\"n\":5}},{\"c\":1,\"s\":{\"b\":\"0x80\",\"n\":1},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"s\":{\"b\":\"0x00\",\"n\":6},\"v\":\"0xfe7293e7e2e45fd895722cac5a082a12f2ad05f7c80e96789a8d6b301836cde5\"},{\"c\":1,\"s\":{\"b\":\"0x88\",\"n\":6},\"v\":\"0x664422827544527150be39dd68a79e31e02d9cbbbb2694c084f8708b8f073550\"},{\"s\":{\"b\":\"0xc6\",\"n\":7},\"v\":\"0x3978285376d9f7c23f4e8b9d564d9536f7133d694e29fe0280edb56f68701ab0\"},{\"h\":\"0x44f514d8a5a382914fc3900edc702d56ec6e9e151f1c9f321ae7cfba7710f538\"},{\"h\":\"0x03c77b7b5d0eea5e68f45b5bf681af8368e36f9ebdfbd194db40417cc0e0f638\"}]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "NotCovered"
+        }
       },
       "gasUsed" : 6660,
       "warnings" : 0
@@ -36126,7 +36177,10 @@
       "data" : "{\"a0\":{\"variable\":3},\"a1\":\"0x7f5a8273d59651840ff1e68c9f0b4912b9e21c1e6b764df7eacf9547c250715a\",\"a2\":\"0xff\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0xdd8a3d4359f1491f81e473db5a8f87ec72b85d106029d3710110c0db312708a0\"},{\"c\":3,\"s\":{\"b\":\"0xc0\",\"n\":5}},{\"c\":1,\"s\":{\"b\":\"0x80\",\"n\":1},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"s\":{\"b\":\"0x00\",\"n\":6},\"v\":\"0xfe7293e7e2e45fd895722cac5a082a12f2ad05f7c80e96789a8d6b301836cde5\"},{\"c\":1,\"s\":{\"b\":\"0x88\",\"n\":6},\"v\":\"0x664422827544527150be39dd68a79e31e02d9cbbbb2694c084f8708b8f073550\"},{\"s\":{\"b\":\"0xc6\",\"n\":7},\"v\":\"0x3978285376d9f7c23f4e8b9d564d9536f7133d694e29fe0280edb56f68701ab0\"},{\"h\":\"0x44f514d8a5a382914fc3900edc702d56ec6e9e151f1c9f321ae7cfba7710f538\"},{\"h\":\"0x03c77b7b5d0eea5e68f45b5bf681af8368e36f9ebdfbd194db40417cc0e0f638\"}]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "NotCovered"
+        }
       },
       "gasUsed" : 6645,
       "warnings" : 0
@@ -36137,7 +36191,10 @@
       "data" : "{\"a0\":{\"variable\":3},\"a1\":\"0x7f5a8273d59651840ff1e68c9f0b4912b9e21c1e6b764df7eacf9547c250715a\",\"a2\":\"0xff\",\"a3\":\"0x01\",\"a4\":[{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0},\"v\":\"0xdd8a3d4359f1491f81e473db5a8f87ec72b85d106029d3710110c0db312708a0\"},{\"c\":3,\"s\":{\"b\":\"0xc0\",\"n\":5}},{\"c\":1,\"s\":{\"b\":\"0x80\",\"n\":1},\"v\":\"0x6d60757c22a1b009fb376980f7b35fd0dc23791d4940def9487ed648d0a1a98e\"},{\"c\":3,\"s\":{\"b\":\"0x\",\"n\":0}},{\"s\":{\"b\":\"0x00\",\"n\":6},\"v\":\"0xfe7293e7e2e45fd895722cac5a082a12f2ad05f7c80e96789a8d6b301836cde5\"},{\"c\":1,\"s\":{\"b\":\"0x88\",\"n\":6},\"v\":\"0x664422827544527150be39dd68a79e31e02d9cbbbb2694c084f8708b8f073550\"},{\"s\":{\"b\":\"0xc6\",\"n\":7},\"v\":\"0x3978285376d9f7c23f4e8b9d564d9536f7133d694e29fe0280edb56f68701ab0\"},{\"h\":\"0x44f514d8a5a382914fc3900edc702d56ec6e9e151f1c9f321ae7cfba7710f538\"},{\"h\":\"0x03c77b7b5d0eea5e68f45b5bf681af8368e36f9ebdfbd194db40417cc0e0f638\"}]}",
       "outcome" : {
         "error" : "Crypto",
-        "op" : "trie_verify"
+        "op" : "trie_verify",
+        "cause" : {
+          "trie" : "NotCovered"
+        }
       },
       "gasUsed" : 6660,
       "warnings" : 0

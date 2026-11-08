@@ -17,7 +17,8 @@ import { FULL_ROUNDS, WIDTH2, WIDTH3, WIDTH4, WIDTH5, type PoseidonParams } from
 /** The BN254 scalar field modulus `r`. */
 export const FR_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
-export type PoseidonError = { readonly kind: "InputCount"; readonly count: number; readonly max: number } | { readonly kind: "NonCanonical"; readonly bits: number };
+/** Why hashing or a field element was refused: generated from `shared/schemas/proofs-errors.cddl`. */
+export type PoseidonError = models.proofsErrors.PoseidonError;
 
 const FR = mint();
 const MERKLE_PROOF = mint();
@@ -158,12 +159,12 @@ export function compress(left: Fr, right: Fr): Result<Fr, TypeMismatch> {
 
 // ------------------------------------------------------------------ the Merkle tree (section 4)
 
-export type PoseidonMerkleError =
-  /** `depth` (the number of siblings, or the tree's depth) is normative; the position echoes the caller's input. */
-  // a caller's position or value can be any size: it is held by its bit length, never itself (conformance.md section 8)
-  | { readonly kind: "Position"; readonly positionBits: number; readonly depth: number }
-  | { readonly kind: "Depth"; readonly depth: number }
-  | { readonly kind: "Encoding"; readonly reason: string };
+/**
+ * Why a Poseidon Merkle proof or tree was refused: generated from `shared/schemas/proofs-errors.cddl`. `Position`'s
+ * `depth` is normative; a caller's position can be any size, so it is held by its bit length, never itself
+ * (conformance.md section 8). `OccupiedPosition` is the reference tree's insertion refusal, which this SDK does not have.
+ */
+export type PoseidonMerkleError = models.proofsErrors.PoseidonMerkleError;
 
 export const MAX_DEPTH = models.limits.POSEIDON_MAX_DEPTH;
 
@@ -279,12 +280,17 @@ export function verifyAbsence(proof: PoseidonMerkleProof, root: Fr): Result<bool
 }
 
 /**
- * `zero_0 = 0`, `zero_{i+1} = poseidon(zero_i, zero_i)`, for `i <= depth`: a depth outside `1..MAX_DEPTH` is `Depth`,
+ * `zero_0 = 0`, `zero_{i+1} = poseidon(zero_i, zero_i)`, for `i <= depth`: an integer depth outside `1..MAX_DEPTH`
+ * is `Depth` (its field a signed 64-bit integer, as the schema's), and a number that is not a safe integer (`NaN`,
+ * `Infinity`, `1.5`, `1e30`) a `TypeMismatch`,
  * and one that is not a number is a `TypeMismatch`.
  */
+const NOT_AN_INTEGER_DEPTH = expected("a depth that is a safe integer");
+
 export function zeroHashes(depth: number): Result<readonly Fr[], PoseidonMerkleError | TypeMismatch> {
   if (typeof (depth as unknown) !== "number") return err(NOT_A_NUMBER);
-  if (!Number.isInteger(depth) || depth < 1 || depth > MAX_DEPTH) return err({ kind: "Depth", depth });
+  if (!Number.isSafeInteger(depth)) return err(NOT_AN_INTEGER_DEPTH);
+  if (depth < 1 || depth > MAX_DEPTH) return err({ kind: "Depth", depth });
   const out = [Fr.zero];
   for (let i = 0; i < depth; i++) {
     const prev = out[i] ?? Fr.zero;
@@ -303,7 +309,7 @@ const byPosition = (a: Placed, b: Placed): number => (a[0] < b[0] ? -1 : a[0] > 
  * low 64 bits, so they are only ever compared: one stable sort, then each level pairs neighbours in one pass. O(n log n)
  * comparisons and O(n · depth) compressions. A `Map` is an iterable of entries, so it may be passed as before.
  * `leaves` is read once, as `for...of` reads it (its iterator closed on a refusal); an entry that is not a
- * `[bigint, Fr]` array (read by index) is a `TypeMismatch`, as is a depth that is not a number.
+ * `[bigint, Fr]` array (read by index) is a `TypeMismatch`, as is a depth that is not a safe integer.
  */
 export function treeRoot(depth: number, leaves: Iterable<Placed>): Result<Fr, PoseidonMerkleError | TypeMismatch> {
   const zeros = zeroHashes(depth);

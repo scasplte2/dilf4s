@@ -53,6 +53,8 @@ describe("Poseidon", () => {
     expect(expectErr(poseidon.hash([1n, 2n, 3n, 4n, 5n].map(fr)), "five inputs").kind).toBe("InputCount");
     expect(expectErr(poseidon.Fr.of(poseidon.FR_MODULUS), "r").kind).toBe("NonCanonical");
     expect(expectErr(poseidon.Fr.of(-1n), "negative").kind).toBe("NonCanonical");
+    // a negative value's bit length is that of -v - 1, as the reference's and Rust's (proofs-errors.cddl)
+    for (const [v, bits] of [[-1n, 0], [-2n, 1], [-256n, 8], [-257n, 9]] as const) expect(expectErr(poseidon.Fr.of(v), v.toString())).toEqual({ kind: "NonCanonical", bits });
     // conformance.md section 8: a refused value or position is held by its bit length, never itself
     expect(expectErr(poseidon.Fr.of(1n << 1_000_000n), "huge")).toEqual({ kind: "NonCanonical", bits: 1_000_001 });
     expect(expectErr(poseidon.PoseidonMerkleProof.of(1n << 1_000_000n, []), "huge")).toEqual({ kind: "Position", positionBits: 1_000_001, depth: 0 });
@@ -71,6 +73,12 @@ describe("Poseidon", () => {
     expect(expectOk(poseidon.treeRoot(8, new Map()), "root").equals(z[8] ?? poseidon.Fr.zero)).toBe(true);
     expect(expectErr(poseidon.zeroHashes(0), "depth 0").kind).toBe("Depth");
     expect(expectErr(poseidon.zeroHashes(257), "depth 257").kind).toBe("Depth");
+    expect(expectErr(poseidon.zeroHashes(-3), "depth -3")).toEqual({ kind: "Depth", depth: -3 });
+    // the schema's Depth holds a signed 64-bit integer: a number that is not a safe integer is a TypeMismatch
+    for (const d of [Number.NaN, Number.POSITIVE_INFINITY, 1.5, 1e30]) {
+      expect(expectErr(poseidon.zeroHashes(d), d.toString()).kind).toBe("TypeMismatch");
+      expect(expectErr(poseidon.treeRoot(d, []), d.toString()).kind).toBe("TypeMismatch");
+    }
     expect(expectErr(poseidon.treeRoot(8, new Map([[256n, fr(1n)]])), "position").kind).toBe("Position");
   });
 

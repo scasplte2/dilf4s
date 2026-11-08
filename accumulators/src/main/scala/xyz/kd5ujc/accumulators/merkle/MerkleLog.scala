@@ -88,7 +88,7 @@ object MerkleLog {
       MerkleLogState.codec
         .encode(MerkleLogState(newSize, generation + 1))
         .leftMap(e => StoreError.Corrupt(s"Merkle log state: $e"))
-        .flatMap(Cbor.encode(_).leftMap(e => StoreError.Codec("Merkle log state", s"its encoding is over ${e.limit} bytes")))
+        .flatMap(Cbor.encode(_).leftMap(e => StoreError.Encoding("Merkle log state", s"its encoding is over ${e.limit} bytes")))
   }
 
   final private class Persistent[F[_]: Concurrent, H](

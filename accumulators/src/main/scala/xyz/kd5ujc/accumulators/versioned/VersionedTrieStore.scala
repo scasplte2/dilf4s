@@ -124,7 +124,7 @@ object VersionedTrieStore {
     R:          Handle[F, VersionedTrieError]
   ): F[VersionedTrieStore[F, V, H]] = {
     implicit val rs: Raise[F, StoreError] = via[F, StoreError](VersionedTrieError.Store(_))
-    implicit val rt: Raise[F, TrieError] = via[F, TrieError](VersionedTrieError.fromTrie)
+    implicit val rt: Raise[F, TrieError] = via[F, TrieError](fromTrie)
     def lift[A](e: Either[VersionedTrieError, A]): F[A] = e.fold(R.raise[VersionedTrieError, A], _.pure[F])
     for {
       modes   <- lift((VersionedTrie.stateMode, VersionedTrie.historyMode[V]).tupled)
@@ -160,7 +160,7 @@ object VersionedTrieStore {
     private def fail[A](e:         VersionedTrieError): F[A] = R.raise[VersionedTrieError, A](e)
     private def lift[A](e:         Either[VersionedTrieError, A]): F[A] = e.fold(fail[A], _.pure[F])
     private def corrupt[A](reason: String): F[A] = fail(VersionedTrieError.Store(StoreError.Corrupt(reason)))
-    private def vkey(v:            V): F[ByteVector] = lift(V.encode(v))
+    private def vkey(v:            V): F[ByteVector] = lift(V.keyOf(v))
     private def version(n:         Long): Version = Version.unsafe(n)
     private def after(a:           ByteVector, b: ByteVector): Boolean = Cbor.compareBytes(a, b) > 0
 
@@ -187,12 +187,12 @@ object VersionedTrieStore {
       entryAt(n).flatMap(_.fold(corrupt[(ByteVector, Digest[H])](s"no index entry for sequence $n"))(_.pure[F]))
 
     private def requireSeq(vk: ByteVector): F[Long] =
-      seqOf(vk).flatMap(_.fold(fail[Long](VersionedTrieError.UnknownVersion(vk)))(_.pure[F]))
+      seqOf(vk).flatMap(_.fold(fail[Long](VersionedTrieError.UnknownVersion(versionHex(vk))))(_.pure[F]))
 
     /** The sequence of a committed version whose state is retained. */
     private def retainedSeq(vk: ByteVector): F[Long] =
       (requireSeq(vk), state.floor).tupled.flatMap {
-        case (n, f) => if (n < f.value) fail(VersionedTrieError.NotRetained(vk)) else n.pure[F]
+        case (n, f) => if (n < f.value) fail(VersionedTrieError.NotRetained(versionHex(vk))) else n.pure[F]
       }
 
     private def headOfSeq(n: Long): F[Option[Head[V, H]]] =
@@ -219,7 +219,8 @@ object VersionedTrieStore {
     /** The head's key for a conflict report; a read that a concurrent mutation breaks reports no head. */
     private def reportedHead: F[Option[ByteVector]] = R.attempt(headKey).map(_.toOption.flatten)
 
-    private def moved[A](was: Option[ByteVector]): F[A] = reportedHead.flatMap(now => fail[A](VersionedTrieError.VersionConflict(was, now)))
+    private def moved[A](was: Option[ByteVector]): F[A] =
+      reportedHead.flatMap(now => fail[A](VersionedTrieError.VersionConflict(was.map(versionHex), now.map(versionHex))))
 
     /**
      * Runs `fa`, whose reads all follow `rev`. A failure while the store moved past `rev` is a version conflict: a read
@@ -273,7 +274,9 @@ object VersionedTrieStore {
       stable(
         vkey(v).flatMap(vk =>
           seqOf(vk).flatMap(_.flatTraverse { n =>
-            history.floor.flatMap(f => if (n < f.value) fail[Option[Head[V, H]]](VersionedTrieError.NotRetained(vk)) else headOfSeq(n))
+            history.floor.flatMap(f =>
+              if (n < f.value) fail[Option[Head[V, H]]](VersionedTrieError.NotRetained(versionHex(vk))) else headOfSeq(n)
+            )
           })
         )
       )
@@ -380,8 +383,10 @@ object VersionedTrieStore {
           nk  <- vkey(next)
           n   <- state.latest
           cur <- headKey
-          _   <- cur.filterNot(after(nk, _)).traverse_(k => fail[Unit](VersionedTrieError.VersionNotIncreasing(k, nk)))
-          d   <- stageOnDisk(rev, n.value, cur, next, nk, batch)
+          _ <- cur
+            .filterNot(after(nk, _))
+            .traverse_(k => fail[Unit](VersionedTrieError.VersionNotIncreasing(versionHex(k), versionHex(nk))))
+          d <- stageOnDisk(rev, n.value, cur, next, nk, batch)
         } yield d
       }
 
@@ -390,7 +395,7 @@ object VersionedTrieStore {
         for {
           nk <- vkey(next)
           dk <- vkey(d.head.version)
-          _  <- if (after(nk, dk)) ().pure[F] else fail[Unit](VersionedTrieError.VersionNotIncreasing(dk, nk))
+          _  <- if (after(nk, dk)) ().pure[F] else fail[Unit](VersionedTrieError.VersionNotIncreasing(versionHex(dk), versionHex(nk)))
           fs = finals(batch)
           // staged on a draft: it is the parent
           _   <- checkBatch(hasParent = true, next, fs)
@@ -424,9 +429,10 @@ object VersionedTrieStore {
           ck  <- cur.traverse(h => vkey(h.version))
           result <- (cur, ck) match {
             case (Some(h), Some(k)) if k == nk && !ek.contains(k) => recommit(rev, n.value, h, nk, ek, batch)
-            case _ if ek != ck => unchangedSince(rev, ck) >> fail[Head[V, H]](VersionedTrieError.VersionConflict(ek, ck))
+            case _ if ek != ck =>
+              unchangedSince(rev, ck) >> fail[Head[V, H]](VersionedTrieError.VersionConflict(ek.map(versionHex), ck.map(versionHex)))
             case (_, Some(k)) if !after(nk, k) =>
-              unchangedSince(rev, ck) >> fail[Head[V, H]](VersionedTrieError.VersionNotIncreasing(k, nk))
+              unchangedSince(rev, ck) >> fail[Head[V, H]](VersionedTrieError.VersionNotIncreasing(versionHex(k), versionHex(nk)))
             case _ => stageOnDisk(rev, n.value, ck, next, nk, batch).flatMap(commitDraft)
           }
         } yield result
@@ -443,14 +449,14 @@ object VersionedTrieStore {
     ): F[Head[V, H]] =
       for {
         parent <- if (n <= 1L) Option.empty[ByteVector].pure[F] else requireEntry(n - 1).map(e => Option(e._1))
-        _      <- if (ek == parent) ().pure[F] else fail[Unit](VersionedTrieError.VersionConflict(ek, Some(nk)))
+        _      <- if (ek == parent) ().pure[F] else fail[Unit](VersionedTrieError.VersionConflict(ek.map(versionHex), Some(versionHex(nk))))
         floor  <- state.floor
-        _      <- if (n - 1 < floor.value) fail[Unit](VersionedTrieError.NotRetained(nk)) else ().pure[F]
+        _      <- if (n - 1 < floor.value) fail[Unit](VersionedTrieError.NotRetained(versionHex(nk))) else ().pure[F]
         ops    <- trieOps(finals(batch))
         root   <- state.rootAfter(version(n - 1), ops)
         // every answer above is of one revision only if the store did not move while they were read
         _ <- unchangedSince(rev, Some(nk))
-        _ <- if (root == h.stateRoot) ().pure[F] else fail[Unit](VersionedTrieError.CommitRewrite(nk))
+        _ <- if (root == h.stateRoot) ().pure[F] else fail[Unit](VersionedTrieError.CommitRewrite(versionHex(nk)))
       } yield h
 
     // ---- proofs
@@ -536,7 +542,7 @@ object VersionedTrieStore {
           vk      <- vkey(v)
           n       <- requireSeq(vk)
           floor   <- values.floor
-          _       <- if (floor.value > 0L && n <= floor.value) fail[Unit](VersionedTrieError.NotRetained(vk)) else ().pure[F]
+          _       <- if (floor.value > 0L && n <= floor.value) fail[Unit](VersionedTrieError.NotRetained(versionHex(vk))) else ().pure[F]
           parent  <- headOfSeq(n - 1)
           h       <- headOfSeq(n).flatMap(_.fold(corrupt[Head[V, H]](s"no head at sequence $n"))(_.pure[F]))
           changes <- values.changes(version(n))
@@ -586,7 +592,7 @@ object VersionedTrieStore {
         mutation { rev =>
           for {
             now <- headKey
-            _   <- now.traverse_(k => fail[Unit](VersionedTrieError.VersionConflict(None, Some(k))))
+            _   <- now.traverse_(k => fail[Unit](VersionedTrieError.VersionConflict(None, Some(versionHex(k)))))
             // the base gets the sequence it would have had: one per committed version, so the index is dense and real
             at = version(snapshot.history.size.toLong)
             s     <- state.stageRestore(replica.state, at)

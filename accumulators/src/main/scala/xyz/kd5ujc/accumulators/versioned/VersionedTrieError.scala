@@ -1,72 +1,31 @@
 package xyz.kd5ujc.accumulators.versioned
 
 import xyz.kd5ujc.accumulators.trie.TrieError
-import xyz.kd5ujc.storage.StoreError
 
 import scodec.bits.ByteVector
 
 /**
  * Typed failures of a versioned trie (docs/specs/versioned-trie.md), raised through `cats.mtl.Raise[F, VersionedTrieError]`
- * or returned in `Either` by the pure verifiers. Versions appear as their version keys (`VersionKey.encode`), so the
- * type does not depend on the version type.
+ * or returned in `Either` by the pure verifiers: generated from `shared/schemas/proofs-errors.cddl`, with the Rust and
+ * TypeScript SDKs' kinds and fields. Versions appear as their version keys' full lowercase hex ([[VersionKeyHex]],
+ * [[versionHex]]), so the type does not depend on the version type; a recomputed root's `component` is a closed
+ * [[VtRootComponent]].
  */
-sealed trait VersionedTrieError extends Product with Serializable
+export xyz.kd5ujc.models.proofs_errors.{VersionKeyHex, VersionedTrieError, VersionedTrieErrorKind, VtRootComponent}
 
-object VersionedTrieError {
+/**
+ * A version key as a refusal names it: its full lowercase hex, never truncated. Every key reaching a refusal has been
+ * encoded at the version key's width (at most `Trie.MaxFixedBytes`, the history trie being `fixed(width)`), so the text
+ * is at most twice that long (docs/specs/versioned-trie.md §2).
+ */
+def versionHex(key: ByteVector): VersionKeyHex = key.toHex
 
-  /** A commit key or namespace that breaks the grammar. */
-  final case class Key(error: StateKeyError) extends VersionedTrieError
-
-  /** A version the version key cannot encode, or bytes it cannot decode. */
-  final case class InvalidVersion(reason: String) extends VersionedTrieError
-
-  /** Nothing has been committed yet, so there is no head to read or prove against. */
-  case object Empty extends VersionedTrieError
-
-  /** A commit's version is not above the head's (and is not an identical re-commit of the head). */
-  final case class VersionNotIncreasing(head: ByteVector, next: ByteVector) extends VersionedTrieError
-
-  /** Optimistic concurrency: the caller expected another head (`None`: nothing committed). */
-  final case class VersionConflict(expected: Option[ByteVector], actual: Option[ByteVector]) extends VersionedTrieError
-
-  /** The head version committed again with a batch that gives a different state. */
-  final case class CommitRewrite(version: ByteVector) extends VersionedTrieError
-
-  /** The version was committed, but what was asked of it is below the prune floor. */
-  final case class NotRetained(version: ByteVector) extends VersionedTrieError
-
-  /** The version was never committed. */
-  final case class UnknownVersion(version: ByteVector) extends VersionedTrieError
-
-  /** A recomputed root differs from the claimed or trusted one; `component` names which. */
-  final case class RootMismatch(component: String, expected: String, computed: String) extends VersionedTrieError
-
-  /** A proof that does not reach the queried key, prefix, range or slot: neither presence nor absence is proven. */
-  final case class NotCovered(what: String) extends VersionedTrieError
-
-  /** A proof, delta or snapshot whose shape or contents are inconsistent with what it claims. */
-  final case class Malformed(reason: String) extends VersionedTrieError
-
-  /**
-   * A value or snapshot chunk over its limit (docs/specs/versioned-trie.md §7), in canonical CBOR bytes:
-   * `VersionedTrie.MaxValueBytes` or `VersionedTrie.MaxChunkBytes`. It carries the limit only, never a measured size
-   * (docs/specs/conformance.md): a value is measured no further than the limit. `what` is not normative.
-   */
-  final case class TooLarge(what: String, limit: Long) extends VersionedTrieError
-
-  /** A value nested deeper than every wire format can carry (docs/specs/versioned-trie.md §4); `what` is not normative. */
-  final case class TooDeep(what: String, depth: Int, limit: Int) extends VersionedTrieError
-
-  final case class Store(error: StoreError) extends VersionedTrieError
-  final case class Trie(error: TrieError) extends VersionedTrieError
-
-  /**
-   * A trie failure as the versioned trie reports it: a trie proof over `ProofInput.MaxProofWeight`, which no producer
-   * emits, is this family's `TooLarge` with that limit (docs/specs/conformance.md §3), whether it was one embedded
-   * proof or the whole record that passed the cap; every other trie failure is wrapped as `Trie`.
-   */
-  def fromTrie(e: TrieError): VersionedTrieError = e match {
-    case TrieError.TooLarge(limit) => TooLarge("the proof", limit)
-    case other                     => Trie(other)
-  }
+/**
+ * A trie failure as the versioned trie reports it: a trie proof over `ProofInput.MaxProofWeight`, which no producer
+ * emits, is this family's `TooLarge` with that limit (docs/specs/conformance.md §3), whether it was one embedded proof
+ * or the whole record that passed the cap; every other trie failure is wrapped as `Trie`.
+ */
+def fromTrie(e: TrieError): VersionedTrieError = e match {
+  case TrieError.TooLarge(limit) => VersionedTrieError.TooLarge("the proof", limit)
+  case other                     => VersionedTrieError.Trie(other)
 }

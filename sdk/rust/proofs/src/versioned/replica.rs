@@ -15,7 +15,8 @@ use super::snapshot::{Snapshot, SnapshotChunk};
 use super::trie_map::TrieMap;
 use super::wire::Delta;
 use super::{
-    Head, MAX_CHUNK_ENTRIES, StateKey, VersionKey, VersionedTrie, VersionedTrieError, check_value, malformed, mismatch,
+    Head, MAX_CHUNK_ENTRIES, StateKey, VersionKey, VersionedTrie, VersionedTrieError, VtRootComponent, check_value,
+    malformed, mismatch, version_hex,
 };
 
 /// A replica of a versioned trie.
@@ -57,7 +58,7 @@ impl<K: VersionKey, H: Hasher> Replica<K, H> {
         let state = TrieMap::from_sorted(vt.hashing(), vt.state_mode(), entries)?;
         let state_root = state.root(vt.hashing());
         if state_root != trusted.state_root {
-            return Err(mismatch("state", &trusted.state_root, &state_root));
+            return Err(mismatch(VtRootComponent::State, &trusted.state_root, &state_root));
         }
         let mut versions = Vec::with_capacity(checked.history.len());
         for (u, s) in &checked.history {
@@ -66,7 +67,7 @@ impl<K: VersionKey, H: Hasher> Replica<K, H> {
         let history = TrieMap::from_sorted(vt.hashing(), vt.history_mode(), versions)?;
         let history_root = history.root(vt.hashing());
         if history_root != trusted.history_root {
-            return Err(mismatch("history", &trusted.history_root, &history_root));
+            return Err(mismatch(VtRootComponent::History, &trusted.history_root, &history_root));
         }
         Ok(Self { vt, head: Some(trusted), state, history })
     }
@@ -114,7 +115,7 @@ impl<K: VersionKey, H: Hasher> Replica<K, H> {
         let claimed = delta.parent.as_ref().map(|h| self.vt.root(h)).transpose()?;
         if parent != claimed {
             return Err(VersionedTrieError::RootMismatch {
-                component: "parent",
+                component: VtRootComponent::Parent,
                 expected: none_or(parent.as_ref()),
                 computed: none_or(claimed.as_ref()),
             });
@@ -123,7 +124,10 @@ impl<K: VersionKey, H: Hasher> Replica<K, H> {
         if let Some(h) = &self.head {
             let hk = self.vt.vkey(&h.version)?;
             if nk <= hk {
-                return Err(VersionedTrieError::VersionNotIncreasing { head: hk, next: nk });
+                return Err(VersionedTrieError::VersionNotIncreasing {
+                    head: version_hex(&hk),
+                    next: version_hex(&nk),
+                });
             }
         }
         let written: BTreeSet<&StateKey> = delta.upserts.iter().map(|(k, _)| k).collect();
@@ -150,12 +154,12 @@ impl<K: VersionKey, H: Hasher> Replica<K, H> {
         }
         let state_root = state.root(hashing);
         if state_root != delta.head.state_root {
-            return Err(mismatch("state", &delta.head.state_root, &state_root));
+            return Err(mismatch(VtRootComponent::State, &delta.head.state_root, &state_root));
         }
         let history = self.history.insert(hashing, &nk, (), self.vt.bytes_hash(state_root.as_bytes()))?;
         let history_root = history.root(hashing);
         if history_root != delta.head.history_root {
-            return Err(mismatch("history", &delta.head.history_root, &history_root));
+            return Err(mismatch(VtRootComponent::History, &delta.head.history_root, &history_root));
         }
         self.state = state;
         self.history = history;

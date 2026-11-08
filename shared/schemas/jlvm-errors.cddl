@@ -1,6 +1,7 @@
 ;# import jlvm as jlvm
 ;# import crypto-errors as crypto
 ;# import hash-errors as hash
+;# import proofs-errors as proofs
 ; The JLVM's error family (docs/specs/jlvm.md section 3; conformance.md sections 1 and 6), defined as crypto-errors.cddl
 ; defines the crypto families: `jlvm-error` is a choice of maps, each led by a distinct "kind" literal, and
 ; `jlvm-error-kind` lists the same kinds in the same order. The reference and the Rust SDK evaluate programs with it as
@@ -47,8 +48,7 @@ jlvm-error = {
   ; What was wrong.
   "message": text,
   ; The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and
-  ; kind); absent for the operation's own checks of its arguments' shape (a width, a count, a head's fields) and for
-  ; proof structures whose refusals are not yet generated families (Merkle, trie, Poseidon).
+  ; kind); absent for the operation's own checks of its arguments' shape (a type, a width, a count, a head's fields).
   ? "cause": jlvm-crypto-cause //
   ; A resource bound: value depth or size, program depth or size.
   "kind": "Limit",
@@ -94,7 +94,24 @@ jlvm-crypto-cause = {
   ; A digest or hash input.
   "kind": "Hash",
   ; The refusal.
-  "error": hash.hash-error
+  "error": hash.hash-error //
+  ; A Merkle proof, or claims over the proof weight (merkle_verify, merkle_consistency_verify).
+  "kind": "Merkle",
+  ; The refusal.
+  "error": proofs.merkle-error //
+  ; A trie proof, a key the mode refuses, or claims over the proof weight (trie_verify, trie_prefix_verify,
+  ; trie_range_verify).
+  "kind": "Trie",
+  ; The refusal.
+  "error": proofs.trie-error //
+  ; A BN254 scalar field element that is not canonical (poseidon, pmt_verify).
+  "kind": "Poseidon",
+  ; The refusal.
+  "error": proofs.poseidon-error //
+  ; A Poseidon Merkle path whose index does not fit its depth (pmt_verify).
+  "kind": "PoseidonMerkle",
+  ; The refusal.
+  "error": proofs.poseidon-merkle-error
 }
 
-jlvm-crypto-cause-kind = "Signing" / "Sigma" / "Zk" / "Groth16" / "Vrf" / "Hash"
+jlvm-crypto-cause-kind = "Signing" / "Sigma" / "Zk" / "Groth16" / "Vrf" / "Hash" / "Merkle" / "Trie" / "Poseidon" / "PoseidonMerkle"

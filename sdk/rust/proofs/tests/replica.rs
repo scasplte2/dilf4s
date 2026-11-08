@@ -22,6 +22,7 @@ use std::collections::BTreeMap;
 use dilf4s_core::hash::{Digest, Hasher, Sha256};
 use dilf4s_core::value::Value;
 use dilf4s_proofs::trie::{BRANCH_TAG, LEAF_TAG, root_from_entries};
+use dilf4s_proofs::versioned::VersionedTrieErrorKind;
 use dilf4s_proofs::versioned::{Delta, Head, Replica, Snapshot, StateKey, U64Key, VersionKey, VersionedTrie};
 
 thread_local! {
@@ -204,12 +205,12 @@ fn incremental_roots_equal_a_full_rebuild_for_every_delta() {
             let forged_history = Delta { head: Head { history_root: other, ..delta.head.clone() }, ..delta.clone() };
             assert_eq!(
                 replica.apply_delta(&forged_state).unwrap_err().kind(),
-                "RootMismatch",
+                VersionedTrieErrorKind::RootMismatch,
                 "seed {seed} step {step}"
             );
             assert_eq!(
                 replica.apply_delta(&forged_history).unwrap_err().kind(),
-                "RootMismatch",
+                VersionedTrieErrorKind::RootMismatch,
                 "seed {seed} step {step}"
             );
             assert_eq!((replica.root().unwrap(), entries(&replica), replica.len()), before, "seed {seed} step {step}");

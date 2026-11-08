@@ -2,6 +2,7 @@
 ;# import jlvm as jlvm
 ;# import crypto-errors as crypto
 ;# import hash-errors as hash
+;# import proofs-errors as proofs
 ; Schema of shared/vectors/jlvm_v1.json (conformance vectors for docs/specs/jlvm.md, language v1, gas schedule v1).
 ; Each case is a program in the strict surface and its input data, both as JSON surface text, evaluated with the
 ; case's host bindings (none if absent; each value is JSON surface text, or, under "built", a value built with shared
@@ -43,7 +44,9 @@ jlvm-error = { "error": jlvm-error-kind, ? "op": errors.jlvm-site, ? "cause": jl
 
 ; The refusal a Crypto error wraps (jlvm-errors.cddl `jlvm-crypto-cause`): its family, as the one key, and that family's
 ; kind.
-jlvm-cause = jlvm-signing-cause / jlvm-sigma-cause / jlvm-zk-cause / jlvm-groth16-cause / jlvm-vrf-cause / jlvm-hash-cause
+jlvm-cause =
+  jlvm-signing-cause / jlvm-sigma-cause / jlvm-zk-cause / jlvm-groth16-cause / jlvm-vrf-cause / jlvm-hash-cause /
+  jlvm-merkle-cause / jlvm-trie-cause / jlvm-poseidon-cause / jlvm-poseidon-merkle-cause
 
 jlvm-signing-cause = { "signing": crypto.crypto-error-kind }
 
@@ -56,6 +59,14 @@ jlvm-groth16-cause = { "groth16": crypto.groth16-error-kind }
 jlvm-vrf-cause = { "vrf": crypto.vrf-error-kind }
 
 jlvm-hash-cause = { "hash": hash.hash-error-kind }
+
+jlvm-merkle-cause = { "merkle": proofs.merkle-error-kind }
+
+jlvm-trie-cause = { "trie": proofs.trie-error-kind }
+
+jlvm-poseidon-cause = { "poseidon": proofs.poseidon-error-kind }
+
+jlvm-poseidon-merkle-cause = { "poseidonMerkle": proofs.poseidon-merkle-error-kind }
 
 ; A surface alias of an operation (jlvm.md section 1): "program", which names "alias", parses to the program "own"
 ; writes with the operation's own name, "op"; its canonical form ("cbor", canonical CBOR of jlvm.cddl's jlvm-program)
