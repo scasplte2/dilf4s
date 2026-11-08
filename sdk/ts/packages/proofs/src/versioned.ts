@@ -10,7 +10,7 @@
  * checked before it is used.
  */
 import { cbor, decodeUtf8, describeFailure, err, isValue, models, ok, Preview, utf8Length, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { isRevokedProxy, MAX_OUTPUT_SIZE, mint, plainBytes, readGuarded, REVOKED, takeBytesWithin, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isRevokedProxy, MAX_OUTPUT_SIZE, mint, ownAny, ownCopy, readGuarded, REVOKED, toHexOf, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 import { ascii, bytesEqual, compareBytes, concatBytes, copyBytes, fromAscii, isAscii } from "./bytes.js";
 import { algorithmArg, bytesArg, expected, expectedAt, foldIterable, isObject, NOT_A_BIGINT, NOT_A_NUMBER, NOT_A_STRING, NOT_BYTES, readArray, readPair, TOKEN, valueArg, type Token } from "./check.js";
@@ -238,7 +238,7 @@ function bigEndian(width: number, max: bigint): VersionKey<bigint> {
       return ok(out);
     },
     decode: (bytes: Uint8Array): C<bigint> => {
-      const b = plainBytes(bytes);
+      const b = ownAny(bytes);
       if (b === undefined) return err(expected("a Uint8Array"));
       if (b.length !== width) return err({ kind: "InvalidVersion", reason: `a version key is ${width.toString()} bytes, got ${b.length.toString()}` });
       let v = 0n;
@@ -312,8 +312,8 @@ function versionKeyArg<V>(x: unknown): Result<VersionKey<V>, TypeMismatch> {
           ? err(bad)
           : keyResult(Reflect.apply(encode, x, [v]), (b) => {
               // measured before it is copied: an encoding of another width is refused, never copied whole
-              const own = takeBytesWithin(b, width);
-              return own?.length === width ? own : undefined;
+              const own = ownCopy(b, width);
+              return typeof own !== "number" && own?.length === width ? own : undefined;
             }),
       decode: (b: Uint8Array): C<V> => (isRevokedProxy(decode) ? err(bad) : keyResult(Reflect.apply(decode, x, [copyBytes(b)]), (v) => v as V)),
     }),
@@ -381,14 +381,24 @@ const SLOTS = { version: Uint8Array.of(0x00), state: Uint8Array.of(0x01), histor
 
 const slotName = (slot: Uint8Array): string => toHexOf(slot);
 
+/**
+ * A digest a caller passes (a root, a head's or a claim's), copied through core's boundary: one longer than any digest
+ * (`MAX_OUTPUT_SIZE`) is refused as not of its type, uncopied, as is what is not a `Uint8Array` (`undefined` for both);
+ * a shorter one of the wrong size is refused where its size is checked.
+ */
+function digestField(x: unknown): Uint8Array | undefined {
+  const own = ownCopy(x, MAX_OUTPUT_SIZE);
+  return typeof own === "number" ? undefined : own;
+}
+
 /** A caller's head, its fields read once into a frozen copy: the version (checked when encoded) and two roots (copied). */
 function headArg<V>(x: unknown, what: string): Result<Head<V>, TypeMismatch> {
   if (!isObject(x)) return err(expected(`${what} to be a Head`));
   // each read guarded: a getter run by an earlier read may have revoked the head
   const version: unknown = readGuarded(x, "version");
   // each root owned if it can be a digest, else kept as a view its size check refuses: never a copy of an oversized one
-  const stateRoot = takeBytesWithin(readGuarded(x, "stateRoot"), MAX_OUTPUT_SIZE);
-  const historyRoot = takeBytesWithin(readGuarded(x, "historyRoot"), MAX_OUTPUT_SIZE);
+  const stateRoot = digestField(readGuarded(x, "stateRoot"));
+  const historyRoot = digestField(readGuarded(x, "historyRoot"));
   if (stateRoot === undefined || historyRoot === undefined) return err(expected(`${what}'s roots to be Uint8Arrays`));
   return ok(Object.freeze({ version: version as V, stateRoot, historyRoot }));
 }
@@ -416,7 +426,7 @@ function proofArg<V>(x: unknown): Result<VersionedTrieProof<V>, TypeMismatch> {
     const version: unknown = readGuarded(atField, "version");
     const s: unknown = readGuarded(atField, "stateRoot");
     if (version === REVOKED || s === REVOKED) return err(expected("the proof's at to be an At"));
-    const stateRoot = s === undefined ? undefined : takeBytesWithin(s, MAX_OUTPUT_SIZE);
+    const stateRoot = s === undefined ? undefined : digestField(s);
     if (s !== undefined && stateRoot === undefined) return err(expected("the proof's at.stateRoot to be a Uint8Array"));
     at = Object.freeze(stateRoot === undefined ? { version: version as V } : { version: version as V, stateRoot });
   }
@@ -456,7 +466,7 @@ const versionsArg = <V, E = never>(x: unknown, what: string, bound?: (length: nu
     // the version first, then the root, copied as read: nothing read after it can change it
     const version: unknown = pair === undefined ? undefined : readGuarded(pair, 0);
     // owned if it can be a digest; a longer one is kept as a view the reader refuses by its size, never copied
-    const root = pair === undefined ? undefined : takeBytesWithin(readGuarded(pair, 1), MAX_OUTPUT_SIZE);
+    const root = pair === undefined ? undefined : digestField(readGuarded(pair, 1));
     // a version is any value, checked when encoded: REVOKED is refused here, never kept as one
     return pair === undefined || root === undefined || version === REVOKED ? err(expectedAt("a [version, Uint8Array] array", i)) : ok([version as V, root] as const);
     },
@@ -846,7 +856,7 @@ export class VersionedTrie<V> {
   /** The checked arguments every rule starts from: a root (a plain view) and a proof (a frozen copy). */
   #args(root: unknown, proof: unknown): Result<readonly [Uint8Array, VersionedTrieProof<V>], TypeMismatch> {
     // the trusted root copied first: the proof's getters, and a caller's version key later, are caller code
-    const r = takeBytesWithin(root, MAX_OUTPUT_SIZE);
+    const r = digestField(root);
     if (r === undefined) return err(NOT_BYTES);
     const p = proofArg<V>(proof);
     return p.ok ? ok([r, p.value]) : p;
@@ -858,7 +868,7 @@ export class VersionedTrie<V> {
    * bytes from then on.
    */
   #asking(root: unknown, u: V): C<readonly [Uint8Array, Uint8Array]> {
-    const r = takeBytesWithin(root, MAX_OUTPUT_SIZE);
+    const r = digestField(root);
     if (r === undefined) return err(NOT_BYTES);
     const k = this.versionKey.encode(u);
     return k.ok ? ok([r, k.value]) : k;
@@ -1018,7 +1028,7 @@ export class VersionedTrie<V> {
       const k = this.versionKey.encode(version as V);
       if (!k.ok) return k;
       // hashed, never kept: a root longer than any digest is hashed in place (it matches no listing), never copied
-      const s = takeBytesWithin(readGuarded(pair, 1), MAX_OUTPUT_SIZE);
+      const s = digestField(readGuarded(pair, 1));
       return s === undefined ? bad : ok({ key: k.value, valueHash: this.#bytesHash(s) });
     });
     if (!claims.ok) return claims;

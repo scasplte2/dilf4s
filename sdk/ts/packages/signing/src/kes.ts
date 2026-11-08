@@ -3,7 +3,7 @@
  * Keys are immutable values: evolving returns a new key. Their bytes never print.
  */
 import { err, models, ok, type Err, type HashAlgorithm, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { copyBytes, isAlgorithm, mint, outputSizeOf, plainBytes } from "@kd5ujc/dilf4s-core/internal";
+import { isAlgorithm, mint, outputSizeOf, ownCopy } from "@kd5ujc/dilf4s-core/internal";
 import { ed25519 as noble } from "@noble/curves/ed25519.js";
 import { blake2b } from "@noble/hashes/blake2.js";
 
@@ -39,9 +39,10 @@ export type KesRefusal = KesError | TypeMismatch;
  * wrapper around it); else the refusal: `TypeMismatch` for what is not a `Uint8Array`, `Malformed` for another size.
  */
 function sized(what: string, expected: number, bytes: unknown): Uint8Array | Err<KesRefusal> {
-  const view = plainBytes(bytes);
-  if (view === undefined) return err(NOT_BYTES);
-  return view.length === expected ? copyBytes(view) : err(sizeError(what, expected, view.length));
+  const own = ownCopy(bytes, expected);
+  if (own === undefined) return err(NOT_BYTES);
+  const got = typeof own === "number" ? own : own.length;
+  return typeof own !== "number" && got === expected ? own : err(sizeError(what, expected, got));
 }
 
 /** A scheme's verification of checked arguments: a key and a signature of their lengths (copies), a period in range, a message's plain view. */

@@ -11,7 +11,7 @@
  * one plain view of its own memory, used for the check and the walk alike, so its own `length` is never believed.
  */
 import { BYTES_TAG, describeFailure, err, isValue, models, ok, type Err, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { bytesLength, isLocalBuffer, MAX_OUTPUT_SIZE, mint, outputSizeOf, plainBytes, readGuarded, takeBytes, takeBytesWithin, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { bytesLength, mint, outputSizeOf, ownAny, ownBytes, ownCopy, ownCopyAny, readGuarded, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import * as B from "./bits.js";
 import * as L from "./listing.js";
@@ -48,8 +48,6 @@ const invalidProof = (reason: string): Result<never, TrieError> => err({ kind: "
 
 export const MAX_FIXED_BYTES = models.limits.TRIE_MAX_FIXED_KEY_BYTES;
 export const MAX_VARIABLE_BYTES = models.limits.TRIE_MAX_VARIABLE_KEY_BYTES;
-/** The longest key any mode allows, in bytes: a segment or a key longer is refused, by its length, wherever it is checked. */
-const MAX_KEY_BYTES = Math.max(MAX_FIXED_BYTES, MAX_VARIABLE_BYTES);
 
 const MODE = mint();
 const SEGMENT = mint();
@@ -156,7 +154,7 @@ export class Segment {
     const count = bigintArg(n);
     if (!count.ok) return count;
     // copied before its padding is checked: the bytes validated are the bytes the segment keeps
-    const bytes = takeBytes(b);
+    const bytes = ownCopyAny(b);
     if (bytes === undefined) return err(NOT_BYTES);
     const bits = segmentBits(count.value, bytes);
     return bits.ok ? ok(new Segment(TOKEN, bits.value)) : bits;
@@ -465,27 +463,32 @@ function fromRecords(hashing: TrieHashing, records: models.trie.TrieProof): Resu
 /**
  * A caller's trie record, its fields read once: a stub `{h}`, a leaf `{s, v}` or a branch `{s, v?, c}`. Each byte field
  * is copied as it is read, before the next getter runs: caller code a later read runs cannot change or detach it. A
- * digest longer than the hashing's `size`, or segment bytes longer than any key, is kept as its plain view, never
- * copied: the records' checks refuse it by its length before anything of it is kept.
+ * digest longer than the hashing's `size` is refused by its length, never copied.
  */
+const longDigest = (size: number, length: number): Result<never, TrieError> => encoding(`a digest is ${size.toString()} bytes, got ${length.toString()}`);
+
 const recordArg =
   (size: number) =>
-  (r: unknown, i: number): Result<models.trie.TrieRecord, TypeMismatch> => {
+  (r: unknown, i: number): Result<models.trie.TrieRecord, Refusal> => {
   const bad = err(expectedAt("a trie record of its types", i));
   if (!isObject(r)) return bad;
   // each read guarded: a getter run by an earlier read may have revoked the record; no field's check takes REVOKED
   const h: unknown = readGuarded(r, "h");
   if (h !== undefined) {
-    const hb = takeBytesWithin(h, size);
+    const hb = ownCopy(h, size);
+    if (typeof hb === "number") return longDigest(size, hb);
     return hb === undefined ? bad : ok({ h: hb });
   }
   const s: unknown = readGuarded(r, "s");
   if (!isObject(s)) return bad;
   const n: unknown = readGuarded(s, "n");
-  const b = takeBytesWithin(readGuarded(s, "b"), MAX_KEY_BYTES);
+  // kept: copied once, as the segment it becomes keeps it (a segment's size is checked against its count; one longer
+  // than a mode allows is refused when the proof is checked, and one too heavy to encode when it is encoded)
+  const b = ownCopyAny(readGuarded(s, "b"));
   if (typeof n !== "bigint" || b === undefined) return bad;
   const v: unknown = readGuarded(r, "v");
-  const vb = v === undefined ? undefined : takeBytesWithin(v, size);
+  const vb = v === undefined ? undefined : ownCopy(v, size);
+  if (typeof vb === "number") return longDigest(size, vb);
   if (v !== undefined && vb === undefined) return bad;
   const c: unknown = readGuarded(r, "c");
   if (c === undefined) return vb === undefined ? bad : ok({ s: { n, b }, v: vb });
@@ -585,7 +588,7 @@ export function check(hashing: TrieHashing, mode: KeyMode, root: Uint8Array, pro
   // each check allocates nothing but the root's plain view; a refusal is a shared constant
   if (!isHashing(hashing)) return err(NOT_A_HASHING);
   if (!isMode(mode)) return err(NOT_A_MODE);
-  const r = plainBytes(root);
+  const r = ownAny(root);
   if (r === undefined) return err(NOT_BYTES);
   return isProof(proof) ? checkOf(hashing, mode, r, proof) : err(NOT_A_PROOF);
 }
@@ -625,8 +628,8 @@ const NOT_COVERED: Lookup & Listing = Object.freeze({ kind: "notCovered" });
 const listed = (entries: readonly TrieEntry[]): Listing => ({ kind: "listed", entries });
 
 let createVerified!: (mode: KeyMode, top: ProofNode | undefined) => VerifiedTrieProof;
-/** A lookup of `key`, whose internal length is `n`, read by index only. */
-let lookupOf!: (v: VerifiedTrieProof, key: Uint8Array, n: number) => Result<Lookup, TrieError>;
+/** A lookup of an owned `key` (through core's boundary), read by index only. */
+let lookupOf!: (v: VerifiedTrieProof, key: Uint8Array) => Result<Lookup, TrieError>;
 let verifiedTop!: (v: VerifiedTrieProof) => ProofNode | undefined;
 
 /**
@@ -634,8 +637,29 @@ let verifiedTop!: (v: VerifiedTrieProof) => ProofNode | undefined;
  * trap) runs cannot change the query the claim is compared with. A prefix or bound is a key's length at most.
  */
 function queryArg(x: unknown): Result<Uint8Array, TypeMismatch> {
-  const own = takeBytes(x);
+  const own = ownCopyAny(x);
   return own === undefined ? err(NOT_BYTES) : ok(own);
+}
+
+/**
+ * A trusted root, copied through core's boundary (caller code a later read runs cannot change it); one longer than the
+ * hashing's digest is refused uncopied, as the root's check words it.
+ */
+function rootArg(h: TrieHashing, root: unknown): Result<Uint8Array, Refusal> {
+  const own = ownCopy(root, h.size);
+  if (own === undefined) return err(NOT_BYTES);
+  return typeof own === "number" ? encoding(`a digest is ${h.size.toString()} bytes, got ${own.toString()}`) : ok(own);
+}
+
+/**
+ * A key to look up, through core's boundary within the mode's bound: a view of stable memory or else one copy, so the
+ * walk reads one snapshot; one longer than the mode allows is `InvalidKey`, uncopied.
+ */
+function keyArg(mode: KeyMode, key: unknown): Result<Uint8Array, Refusal> {
+  const own = ownBytes(key, mode.bytes);
+  if (own === undefined) return err(NOT_BYTES);
+  const valid = checkKeyLength(mode, typeof own === "number" ? own : own.length);
+  return valid.ok && typeof own !== "number" ? ok(own) : valid.ok ? err(NOT_BYTES) : valid;
 }
 
 /** An optional query bound, `undefined` or copied as {@link queryArg} copies one. */
@@ -648,8 +672,8 @@ const claimedArg = (claimed: unknown): Result<TrieEntry[], TypeMismatch> =>
   readArray(claimed, "an array of TrieEntry", (e, i) => {
     if (!isObject(e)) return err(expectedAt("a TrieEntry", i));
     // copied as read: caller code run by a later read (a getter, a Proxy's trap) cannot change an earlier entry
-    const key = takeBytes(readGuarded(e, "key"));
-    const valueHash = takeBytes(readGuarded(e, "valueHash"));
+    const key = ownCopyAny(readGuarded(e, "key"));
+    const valueHash = ownCopyAny(readGuarded(e, "valueHash"));
     return key === undefined || valueHash === undefined ? err(expectedAt("a TrieEntry of Uint8Arrays", i)) : ok({ key, valueHash });
   });
 
@@ -670,20 +694,13 @@ export class VerifiedTrieProof {
   static {
     createVerified = (mode, top) => new VerifiedTrieProof(TOKEN, mode, top);
     verifiedTop = (v) => v.#top;
-    lookupOf = (v, key, n) => {
-      const valid = checkKeyLength(v.mode, n);
-      if (!valid.ok) return valid;
-      // memory only this thread can change (an ArrayBuffer of this realm) is walked in place, by index up to its
-      // internal length, nothing allocated: no caller code runs during the walk. Memory another thread may write (a
-      // SharedArrayBuffer), or another realm's, is copied once first, within the mode's bound, so a byte the walk reads
-      // twice (a branch bit, then its segment) cannot differ between the reads; a buffer resized meanwhile is checked
-      // again as copied, and one grown past the bound is refused, never copied or walked
-      if (isLocalBuffer(key)) return ok(lookupPath(v.#top, { bytes: key, length: n * 8 }));
-      const own = takeBytesWithin(key, v.mode.bytes) ?? new Uint8Array(0);
-      const again = checkKeyLength(v.mode, own.length);
-      return again.ok ? ok(lookupPath(v.#top, { bytes: own, length: own.length * 8 })) : again;
+    lookupOf = (v, key) => {
+      // the key is owned (core's boundary: a view of stable memory, else one copy), so the walk, which reads a byte
+      // twice (a branch bit, then its segment), reads one snapshot
+      const valid = checkKeyLength(v.mode, key.length);
+      return valid.ok ? ok(lookupPath(v.#top, { bytes: key, length: key.length * 8 })) : valid;
     };
-    TRIE.lookup = (v, key) => lookupOf(v, key, key.length);
+    TRIE.lookup = (v, key) => lookupOf(v, key);
     TRIE.prefix = (v, prefix) => listingOf(L.listPrefix(v.#top, prefix));
     TRIE.range = (v, from, until) => listingOf(L.listRange(v.#top, from, until));
   }
@@ -695,8 +712,13 @@ export class VerifiedTrieProof {
    */
   lookup(key: Uint8Array): Result<Lookup, Refusal> {
     if (!VERIFIED.has(this)) return err(NOT_VERIFIED);
-    const n = bytesLength(key);
-    return n === undefined ? err(NOT_BYTES) : lookupOf(this, key, n);
+    // through core's boundary within the mode's bound, with no wrapper allocated: the walk reads one snapshot
+    const k = ownBytes(key, this.mode.bytes);
+    if (k === undefined) return err(NOT_BYTES);
+    if (typeof k !== "number") return lookupOf(this, k);
+    // longer than the mode allows: refused as the mode words it, uncopied
+    const refused = checkKeyLength(this.mode, k);
+    return refused.ok ? err(NOT_BYTES) : refused;
   }
 
   /** Every entry whose key starts with `prefix`, in key order, if the proof covers the whole subtree. */
@@ -818,20 +840,17 @@ export function trieVerify(hashing: TrieHashing, mode: KeyMode, root: Uint8Array
   const h = hashing;
   const m = mode;
   const p = proof;
-  // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
-  const r = takeBytesWithin(root, MAX_OUTPUT_SIZE);
-  if (r === undefined) return err(NOT_BYTES);
-  const n = bytesLength(key);
-  if (n === undefined) return err(NOT_BYTES);
+  const r = rootArg(h, root);
+  if (!r.ok) return r;
+  const k = keyArg(m, key);
+  if (!k.ok) return k;
   const claim = claimArg(value);
   if (!claim.ok) return claim;
-  const valid = checkKeyLength(m, n);
-  if (!valid.ok) return valid;
   const c = claimsWithin(claim.value === null || claim.value.kind === "null" ? [] : [claim.value]);
   if (!c.ok) return c;
-  const v = verified(h, m, r, p);
+  const v = verified(h, m, r.value, p);
   if (!v.ok || v.value === null) return v.ok ? ok(false) : v;
-  const l = lookupOf(v.value, key, n);
+  const l = lookupOf(v.value, k.value);
   if (!l.ok) return l;
   switch (l.value.kind) {
     case "present": {
@@ -851,7 +870,7 @@ const entriesArg = (entries: unknown): Result<(readonly [Uint8Array, Value])[], 
   readArray(entries, "an array of [key, value] entries", (e, i) => {
     const pair = readPair(e);
     if (pair === undefined) return err(expectedAt("a [key, value] array", i));
-    const key = takeBytes(readGuarded(pair, 0));
+    const key = ownCopyAny(readGuarded(pair, 0));
     if (key === undefined) return err(expectedAt("a Uint8Array key", i));
     const value = valueArg(readGuarded(pair, 1));
     return value.ok ? ok([key, value.value] as const) : err(expectedAt("a canonical value", i));
@@ -885,8 +904,9 @@ export function triePrefixVerify(hashing: TrieHashing, mode: KeyMode, root: Uint
   const m = mode;
   const p = proof;
   // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
-  const r = takeBytesWithin(root, MAX_OUTPUT_SIZE);
-  if (r === undefined) return err(NOT_BYTES);
+  const rr = rootArg(h, root);
+  if (!rr.ok) return rr;
+  const r = rr.value;
   // the prefix copied before the entries are read: caller code reading them runs cannot then change the query
   const pre = queryArg(prefix);
   if (!pre.ok) return pre;
@@ -915,8 +935,9 @@ export function trieRangeVerify(
   const m = mode;
   const p = proof;
   // copied: caller code that later reads run (an entry's getter, a Proxy's trap) cannot change the trusted root
-  const r = takeBytesWithin(root, MAX_OUTPUT_SIZE);
-  if (r === undefined) return err(NOT_BYTES);
+  const rr = rootArg(h, root);
+  if (!rr.ok) return rr;
+  const r = rr.value;
   // the bounds copied before the entries are read, as triePrefixVerify copies its prefix
   const f = queryArg(from);
   if (!f.ok) return f;
@@ -952,19 +973,16 @@ export function trieRoot(hashing: TrieHashing, mode: KeyMode, entries: Iterable<
   const given = readIterable<readonly [Uint8Array, Uint8Array], Refusal>(entries, (e, i) => {
     const pair = readPair(e);
     if (pair === undefined) return notEntry(i);
-    const k: unknown = readGuarded(pair, 0);
-    const kn = bytesLength(k);
-    if (kn === undefined) return notEntry(i);
-    const valid = checkKeyLength(m.value, kn);
+    // copied as read (an iterator may hand out one buffer again with new contents), within the mode's bound
+    const key = ownCopy(readGuarded(pair, 0), m.value.bytes);
+    if (key === undefined) return notEntry(i);
+    const valid = checkKeyLength(m.value, typeof key === "number" ? key : key.length);
     if (!valid.ok) return valid;
-    // copied as read: an iterator may hand out one buffer again with new contents
-    const key = takeBytes(k);
-    const vh: unknown = readGuarded(pair, 1);
-    const vn = bytesLength(vh);
-    if (key === undefined || vn === undefined) return notEntry(i);
-    if (vn !== h.value.size) return encoding(`a digest is ${h.value.size.toString()} bytes, got ${vn.toString()}`);
-    const valueHash = takeBytes(vh);
-    return valueHash === undefined ? notEntry(i) : ok([key, valueHash] as const);
+    const valueHash = ownCopy(readGuarded(pair, 1), h.value.size);
+    if (valueHash === undefined || typeof key === "number") return notEntry(i);
+    const vn = typeof valueHash === "number" ? valueHash : valueHash.length;
+    if (typeof valueHash === "number" || vn !== h.value.size) return longDigest(h.value.size, vn);
+    return ok([key, valueHash] as const);
   });
   return given.ok ? trieRootOf(h.value, m.value, given.value) : given;
 }

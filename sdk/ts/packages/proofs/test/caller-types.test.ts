@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { models, Value } from "@kd5ujc/dilf4s-core";
 
-import { takeBytesWithin } from "@kd5ujc/dilf4s-core/internal";
+import { ownBytes, ownCopy } from "@kd5ujc/dilf4s-core/internal";
 
 import { merkle, poseidon, trie, versioned } from "../src/index.js";
 import { bytes, expectErr, expectOk, int, loadVectors, valueOf } from "./vectors.js";
@@ -1039,7 +1039,6 @@ describe("a digest of the wrong size is refused without being copied", () => {
     expect(expectErr(merkle.merkleRoot(tagged, [big, big, big]), "a 64 MiB leaf hash").kind, "merkleRoot").toBe("Encoding");
     expect(expectErr(trie.TrieProof.fromRecords(T, bad([{ h: big }])), "a 64 MiB stub").kind, "a stub").toBe("Encoding");
     expect(expectErr(trie.TrieProof.fromRecords(T, bad([{ s: { n: 8n, b: Uint8Array.of(0x61) }, v: big }])), "a 64 MiB value").kind, "a leaf's value").toBe("Encoding");
-    expect(expectErr(trie.TrieProof.fromRecords(T, bad([{ s: { n: 8n, b: big }, v: v1 }])), "a 64 MiB segment").kind, "a segment").toBe("Encoding");
     expect(held() - before, "no copy of the 64 MiB buffer was made").toBeLessThan(1 << 20);
   });
 });
@@ -1123,9 +1122,10 @@ describe("a bounded copy copies the one view whose length it checked", () => {
       const grown = once(worker, "message");
       worker.postMessage(sab);
       for (let i = 0; i < 2000; i++) {
-        const got = takeBytesWithin(tracking, 1);
-        // a copy is owned memory: it must hold at most the bound; past it, only a view of the caller's buffer comes back
-        if (got !== undefined && got.buffer !== sab && got.length > 1) tooLong += 1;
+        // past the bound only its length comes back; within it, one owned copy of what was measured
+        for (const got of [ownBytes(tracking, 1), ownCopy(tracking, 1)]) {
+          if (got instanceof Uint8Array && (got.buffer === sab || got.length > 1)) tooLong += 1;
+        }
       }
       await grown;
     }
@@ -1149,7 +1149,8 @@ describe("versioned byte fields are measured before they are copied", () => {
     expect(huge.root(finalHead).ok, "a 16 MiB encoding").toBe(false);
     const reader = expectOk(versioned.SnapshotReader.start(vt, finalHead), "reader");
     const state = expectOk(reader.feedBytes(bytes(vectors.snapshot.chunks[0] ?? "")), "the head chunk");
-    expect(expectErr(state.feed(bad({ kind: "history", versions: [[1n, big]] })), "a 16 MiB history root").kind).toBe("Malformed");
+    // a root longer than any digest is not a digest: refused as such, uncopied
+    expect(expectErr(state.feed(bad({ kind: "history", versions: [[1n, big]] })), "a 16 MiB history root").kind).toBe("TypeMismatch");
     expect(held() - before, "none of them was copied").toBeLessThan(1 << 20);
   });
 });

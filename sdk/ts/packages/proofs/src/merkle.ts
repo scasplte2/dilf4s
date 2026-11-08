@@ -8,7 +8,7 @@
  * view of their own memory, and what a proof keeps is copied; the walks run on that plain, owned data.
  */
 import { describeFailure, err, models, ok, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { digestOf, hashPartsOf, MAX_OUTPUT_SIZE, mint, outputSizeOf, plainBytes, readGuarded, takeBytes, takeBytesWithin, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { digestOf, hashPartsOf, mint, outputSizeOf, ownAny, ownCopy, ownCopyAny, readGuarded, toHexOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { bytesEqual, ConstantTag, copyBytes } from "./bytes.js";
 import { algorithmArg, bigintArg, bytesArg, expected, expectedAt, isObject, NOT_A_BIGINT, NOT_BYTES, readArray, TOKEN, valueArg, type Token } from "./check.js";
@@ -111,8 +111,8 @@ const leafOf = (h: Profile, leaf: Leaf): Result<Uint8Array, MerkleError> =>
 
 /** Two digests checked as bytes, and hashed as a node. */
 function checkedNode(h: Profile, left: unknown, right: unknown): Result<Uint8Array, TypeMismatch> {
-  const l = plainBytes(left);
-  const r = plainBytes(right);
+  const l = ownAny(left);
+  const r = ownAny(right);
   return l === undefined || r === undefined ? err(NOT_BYTES) : ok(nodeOf(h, l, r));
 }
 
@@ -244,10 +244,16 @@ const int64 = (n: bigint): Int64 => (n > INT64_MAX ? INT64_MAX : n < -INT64_MAX 
  * profile's digest size, for a caller that checks every digest's size before using any), a digest of another size is
  * kept as its plain view, never copied, and refused by that check: an oversized one costs O(1), not a copy.
  */
-const pathArg = (path: unknown, width?: number): Result<Uint8Array[], TypeMismatch> =>
-  readArray(path, "an array of Uint8Arrays", (d, i) => {
-    const own = width === undefined ? takeBytes(d) : takeBytesWithin(d, width);
-    return own === undefined ? err(expectedAt("a Uint8Array", i)) : ok(own);
+const pathArg = (path: unknown, width?: number): Result<Uint8Array[], TypeMismatch | MerkleError> =>
+  readArray<Uint8Array, TypeMismatch | MerkleError>(path, "an array of Uint8Arrays", (d, i) => {
+    if (width === undefined) {
+      const own = ownCopyAny(d);
+      return own === undefined ? err(expectedAt("a Uint8Array", i)) : ok(own);
+    }
+    // measured before it is copied: a digest longer than the profile's is refused here, uncopied, as `digests` words it
+    const own = ownCopy(d, width);
+    if (own === undefined) return err(expectedAt("a Uint8Array", i));
+    return typeof own === "number" ? err({ kind: "Encoding", reason: `path[${i.toString()}] is ${own.toString()} bytes, not ${width.toString()}` }) : ok(own);
   });
 
 let isInclusion!: (x: unknown) => x is InclusionProof;
@@ -432,8 +438,8 @@ const NOT_A_CONSISTENCY = expected("a ConsistencyProof");
 export function checkInclusion(hashing: MerkleHashing<unknown>, root: Uint8Array, leafHash: Uint8Array, proof: InclusionProof): Result<undefined, Refusal> {
   // each check allocates nothing but the two digests' plain views; a refusal is a shared constant
   if (!isTagged(hashing) && !isRfc(hashing)) return err(NOT_A_PROFILE);
-  const r = plainBytes(root);
-  const l = plainBytes(leafHash);
+  const r = ownAny(root);
+  const l = ownAny(leafHash);
   if (r === undefined || l === undefined) return err(NOT_BYTES);
   return isInclusion(proof) ? inclusionCheck(hashing, r, l, proof) : err(NOT_AN_INCLUSION);
 }
@@ -464,8 +470,8 @@ function inclusionCheck(h: Profile, root: Uint8Array, leafHash: Uint8Array, proo
  */
 export function checkConsistency(hashing: MerkleHashing<unknown>, oldRoot: Uint8Array, newRoot: Uint8Array, proof: ConsistencyProof): Result<undefined, Refusal> {
   if (!isTagged(hashing) && !isRfc(hashing)) return err(NOT_A_PROFILE);
-  const o = plainBytes(oldRoot);
-  const n = plainBytes(newRoot);
+  const o = ownAny(oldRoot);
+  const n = ownAny(newRoot);
   if (o === undefined || n === undefined) return err(NOT_BYTES);
   return isConsistency(proof) ? consistencyCheck(hashing, o, n, proof) : err(NOT_A_CONSISTENCY);
 }
@@ -525,12 +531,13 @@ export interface MerkleHead {
  * A caller's head, its fields read once each: an object whose `root` is a `Uint8Array` (copied) and whose `size`
  * is a `bigint`, or a `TypeMismatch`.
  */
-function headArg(head: unknown, what: string): Result<MerkleHead, TypeMismatch> {
+function headArg(h: Profile, head: unknown, what: string): Result<MerkleHead, TypeMismatch | MerkleError> {
   if (!isObject(head)) return err(expected(`${what} to be a MerkleHead`));
-  // copied as read: the size's getter, or the other head's, may run caller code that changes or detaches it
-  // owned if it can be a digest, else kept as a view checkHead refuses by its size: never a copy of an oversized one
-  const root = takeBytesWithin(Reflect.get(head, "root"), MAX_OUTPUT_SIZE);
+  // copied as read: the size's getter, or the other head's, may run caller code that changes or detaches it; one
+  // longer than the profile's digest is refused uncopied, as checkHead words it
+  const root = ownCopy(Reflect.get(head, "root"), h.size);
   if (root === undefined) return err(expected(`${what}.root to be a Uint8Array`));
+  if (typeof root === "number") return err({ kind: "Encoding", reason: `${what}.root is ${root.toString()} bytes, not ${h.size.toString()}` });
   // guarded: the root's getter may have revoked the head; REVOKED is no bigint
   const size: unknown = readGuarded(head, "size");
   return typeof size === "bigint" ? ok({ root, size }) : err(NOT_A_BIGINT);
@@ -550,7 +557,7 @@ function checkHead(h: Profile, what: string, head: MerkleHead): Result<undefined
 export function merkleVerify<L>(hashing: MerkleHashing<L>, head: MerkleHead, leaf: L, proof: Value): Result<boolean, Refusal> {
   const h = profileArg(hashing);
   if (!h.ok) return h;
-  const hd = headArg(head, "head");
+  const hd = headArg(h.value, head, "head");
   if (!hd.ok) return hd;
   const l = leafArg(h.value, leaf);
   if (!l.ok) return l;
@@ -574,9 +581,9 @@ export function merkleVerify<L>(hashing: MerkleHashing<L>, head: MerkleHead, lea
 export function merkleConsistencyVerify(hashing: MerkleHashing<unknown>, oldHead: MerkleHead, newHead: MerkleHead, proof: Value): Result<boolean, Refusal> {
   const h = profileArg(hashing);
   if (!h.ok) return h;
-  const oh = headArg(oldHead, "oldHead");
+  const oh = headArg(h.value, oldHead, "oldHead");
   if (!oh.ok) return oh;
-  const nh = headArg(newHead, "newHead");
+  const nh = headArg(h.value, newHead, "newHead");
   if (!nh.ok) return nh;
   const v = valueArg(proof);
   if (!v.ok) return v;

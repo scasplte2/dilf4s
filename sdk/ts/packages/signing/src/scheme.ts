@@ -7,7 +7,7 @@
  * check, then its scheme): a key of another scheme is refused, not verified under rules it was not decoded by.
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { copyBytes, plainBytes } from "@kd5ujc/dilf4s-core/internal";
+import { ownCopy } from "@kd5ujc/dilf4s-core/internal";
 
 import { lengthError, type CryptoError } from "./errors.js";
 import { ownSignature, ownSigningKey, ownVerifyingKey, Signature, SigningKey, VerifyingKey, type KeyPair, type SchemeName } from "./keys.js";
@@ -59,9 +59,11 @@ export const signatureOf = <S extends SchemeName>(scheme: S, bytes: Uint8Array):
  * memory, so the bytes a decoder validates are the bytes it keeps, whatever another thread or a subclass does.
  */
 export function sized(what: string, expected: number, bytes: Uint8Array): Result<Uint8Array, CryptoRefusal> {
-  const view = plainBytes(bytes);
-  if (view === undefined) return err(NOT_BYTES);
-  return view.length === expected ? ok(copyBytes(view)) : err(lengthError(what, expected, view.length));
+  // measured before it is copied: bytes longer are refused uncopied, shorter ones once copied (they are short)
+  const own = ownCopy(bytes, expected);
+  if (own === undefined) return err(NOT_BYTES);
+  const got = typeof own === "number" ? own : own.length;
+  return typeof own !== "number" && got === expected ? ok(own) : err(lengthError(what, expected, got));
 }
 
 /**

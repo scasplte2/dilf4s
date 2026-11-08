@@ -1,6 +1,6 @@
 /** ristretto255 Schnorr, the single-signer form of FROST(ristretto255, SHA-512), RFC 9591 (`signing.md` 1.5). */
 import { err, ok, type Err, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { copyBytes, plainBytes } from "@kd5ujc/dilf4s-core/internal";
+import { ownCopy } from "@kd5ujc/dilf4s-core/internal";
 import { ristretto255 } from "@noble/curves/ed25519.js";
 import { sha512 } from "@noble/hashes/sha2.js";
 import { randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -94,9 +94,10 @@ const NOT_A_MESSAGE: Err<TypeMismatch> = Object.freeze(err(NOT_BYTES));
  * another length.
  */
 function randomnessOf(x: unknown): Uint8Array | Err<CryptoRefusal> {
-  const view = plainBytes(x);
-  if (view === undefined) return NOT_A_MESSAGE;
-  return view.length === 32 ? copyBytes(view) : err(lengthError("nonce randomness", 32, view.length));
+  const own = ownCopy(x, 32);
+  if (own === undefined) return NOT_A_MESSAGE;
+  const got = typeof own === "number" ? own : own.length;
+  return typeof own !== "number" && got === 32 ? own : err(lengthError("nonce randomness", 32, got));
 }
 
 /** Fresh nonce randomness from `@noble/hashes` `randomBytes`: it has nothing of the caller's to check. */

@@ -3,7 +3,7 @@
  * neither accepts the other's signatures, and the types keep them apart.
  */
 import { err, ok, type Err, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { copyBytes, mint, plainBytes } from "@kd5ujc/dilf4s-core/internal";
+import { mint, ownCopy } from "@kd5ujc/dilf4s-core/internal";
 import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
 import { randomBytes } from "@noble/hashes/utils.js";
 
@@ -108,9 +108,10 @@ const NOT_AUX_BYTES: Err<CryptoRefusal> = Object.freeze(err(NOT_BYTES));
  * another length.
  */
 function auxOf(aux: unknown): Uint8Array | Err<CryptoRefusal> {
-  const view = plainBytes(aux);
-  if (view === undefined) return NOT_AUX_BYTES;
-  return view.length === 32 ? copyBytes(view) : err(lengthError("BIP-340 auxiliary randomness", 32, view.length));
+  const own = ownCopy(aux, 32);
+  if (own === undefined) return NOT_AUX_BYTES;
+  const got = typeof own === "number" ? own : own.length;
+  return typeof own !== "number" && got === 32 ? own : err(lengthError("BIP-340 auxiliary randomness", 32, got));
 }
 
 /** Fresh auxiliary randomness from `@noble/hashes` `randomBytes`: it has nothing of the caller's to check. */

@@ -3,7 +3,7 @@
  * of libsodium implements it. The suites are distinct types, and none accepts another's proofs.
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { copyBytes, mint, plainBytes, takeBytes, takeBytesWithin } from "@kd5ujc/dilf4s-core/internal";
+import { mint, ownAny, ownBytes, ownCopy } from "@kd5ujc/dilf4s-core/internal";
 import { ed25519_hasher } from "@noble/curves/ed25519.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
@@ -114,9 +114,10 @@ export interface Vrf<S extends VrfSuiteName> {
 
 /** The caller's bytes, measured by their internal length and copied once if it is `expected`; else `Malformed`. */
 function vrfSized(what: string, expected: number, bytes: unknown): Result<Uint8Array, VrfRefusal> {
-  const view = plainBytes(bytes);
-  if (view === undefined) return err(NOT_BYTES);
-  return view.length === expected ? ok(copyBytes(view)) : err(malformed(what, expected, view.length));
+  const own = ownCopy(bytes, expected);
+  if (own === undefined) return err(NOT_BYTES);
+  const got = typeof own === "number" ? own : own.length;
+  return typeof own !== "number" && got === expected ? ok(own) : err(malformed(what, expected, got));
 }
 
 const malformed = (what: string, expected: number, got: number): VrfError => ({
@@ -309,18 +310,20 @@ function vrf<S extends VrfSuiteName>(profile: Profile<S>): Vrf<S> {
       if (!k.ok) return k;
       const p = proofBytesOf(proof);
       if (p === undefined || (proof as VrfProof<VrfSuiteName>).suite !== name) return err(expected(`a ${name} VrfProof`));
-      // copied: a TAI verification hashes alpha once per try-and-increment counter, and every try must read one message
-      const a = takeBytes(alpha);
+      // owned (a view of stable memory, else one copy): a TAI verification hashes alpha once per try-and-increment
+      // counter, and every try must read one message
+      const a = ownAny(alpha);
       return a === undefined ? err(NOT_BYTES) : verifyRaw(k.value, a, p);
     },
     verifyBytes: (key: Uint8Array, alpha: Uint8Array, proof: Uint8Array): Result<VrfOutput<S>, VrfRefusal> => {
-      // the key and proof are read more than once: copied, so the bytes checked are the bytes used; one longer than its
-      // width (32, 80) is kept as a view that verifyRaw refuses by its length, never copied whole
-      const p = takeBytesWithin(proof, 80);
-      const k = takeBytesWithin(key, 32);
-      // copied, as verify copies it: every try-and-increment hash reads one message
-      const a = takeBytes(alpha);
+      // each through core's boundary, the key and proof within their widths (a longer one refused uncopied, as
+      // verifyRaw words it), alpha whole: every byte read more than once is read from one snapshot
+      const p = ownBytes(proof, 80);
+      const k = ownBytes(key, 32);
+      const a = ownAny(alpha);
       if (p === undefined || k === undefined || a === undefined) return err(NOT_BYTES);
+      if (typeof p === "number") return err(malformed(`${name} proof`, 80, p));
+      if (typeof k === "number") return err(malformed(`${name} public key`, 32, k));
       return verifyRaw(k, a, p);
     },
     fromSeed: (given: Uint8Array): Result<KeyPair<S>, VrfRefusal> => {

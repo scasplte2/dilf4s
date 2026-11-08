@@ -4,7 +4,8 @@
  * with any release, and nothing here checks its arguments (the `...Of` forms are the unchecked counterparts of the
  * public functions of the same name).
  */
-export { bytesLength, copyBytes, isBytes, isLocalBuffer, plainBytes, takeBytes, takeBytesWithin } from "./bytes.js";
+// the boundary for caller byte arguments: proofs and signing take their bytes through these alone (a test scans for it)
+export { bytesLength, copyBytes, isBytes, isLocalBuffer, isStableBuffer, ownAny, ownBytes, ownCopy, ownCopyAny, UNBOUNDED } from "./bytes.js";
 export { bitLengthOf } from "./bigint.js";
 export { blockSizeOf, digestOf, hashPartsOf, isAlgorithm, isDomainTag, MAX_OUTPUT_SIZE, outputSizeOf, startHashOf, typeMismatch, type RawHash } from "./hash.js";
 export { isArrayGuarded, isRevokedProxy, readGuarded, REVOKED } from "./guard.js";

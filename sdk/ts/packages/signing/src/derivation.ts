@@ -6,7 +6,7 @@
  * extended keys and indices must be this package's own, of the scheme at hand.
  */
 import { err, models, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { mint } from "@kd5ujc/dilf4s-core/internal";
+import { mint, ownBytes } from "@kd5ujc/dilf4s-core/internal";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hmac } from "@noble/hashes/hmac.js";
 import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
@@ -20,7 +20,7 @@ import { INSPECT, secretBytes, signingKeyBytes, signingKeySchemeOf, verifyingKey
 import { secp256k1Ecdsa } from "./ecdsa.js";
 import { attempt } from "./internal/attempt.js";
 import { beToBig, bigToBE, bigToLE, concat, copy, leToBig, u32be, u32le } from "./internal/bytes.js";
-import { expected, expectedAt, NOT_A_NUMBER, NOT_A_STRING, readArray, viewOf } from "./internal/check.js";
+import { expected, expectedAt, NOT_A_NUMBER, NOT_A_STRING, readArray } from "./internal/check.js";
 import { decodeStrict, mulBase } from "./internal/edwards.js";
 import { extendedPublicKey } from "./ed25519.js";
 import { verifyingKeyOf } from "./scheme.js";
@@ -162,9 +162,10 @@ export class ExtendedKey<S extends SchemeName> {
    */
   static of<S extends SchemeName>(key: SigningKey<S>, chainCode: Uint8Array): Result<ExtendedKey<S>, KeyRefusal> {
     if (signingKeySchemeOf(key) === undefined) return err(expected("a SigningKey"));
-    const view = viewOf(chainCode);
+    // within its width: a longer one is refused uncopied
+    const view = ownBytes(chainCode, 32);
     if (view === undefined) return err(expected("a Uint8Array chain code"));
-    return view.length === 32 ? ok(new ExtendedKey(INTERNAL, key, view)) : err(invalid(CHAIN_CODE));
+    return typeof view !== "number" && view.length === 32 ? ok(new ExtendedKey(INTERNAL, key, view)) : err(invalid(CHAIN_CODE));
   }
 
   get chainCode(): Uint8Array {
@@ -314,12 +315,12 @@ function bip32Child(parent: Parts<"secp256k1-ECDSA">, index: ChildIndex): Result
 function publicChildArgs(scheme: SchemeName, key: unknown, chainCode: unknown, index: unknown): Result<readonly [Uint8Array, Uint8Array, ChildIndex], KeyRefusal> {
   const k = verifyingKeyBytes(key, scheme);
   if (!k.ok) return k;
-  const view = viewOf(chainCode);
+  const view = ownBytes(chainCode, 32);
   if (view === undefined) return err(expected("a Uint8Array chain code"));
   const i = indexArg(index);
   if (!i.ok) return i;
   if (i.value.hardened) return err(invalid("hardened children need the private key"));
-  return view.length === 32 ? ok([k.value, Uint8Array.from(view), i.value]) : err(invalid(CHAIN_CODE));
+  return typeof view !== "number" && view.length === 32 ? ok([k.value, Uint8Array.from(view), i.value]) : err(invalid(CHAIN_CODE));
 }
 
 /** BIP32 for secp256k1 (private CKDpriv and public CKDpub). */

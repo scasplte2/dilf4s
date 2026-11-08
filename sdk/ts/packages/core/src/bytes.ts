@@ -78,17 +78,74 @@ export function takeBytes(x: unknown): Uint8Array | undefined {
   return typedArrayLength?.call(x) === 0 ? new Uint8Array(0) : new Uint8Array(x);
 }
 
+/** `ArrayBuffer.prototype`'s own `resizable` getter (ES2024), read once when this module loads; absent in older engines. */
+const arrayBufferResizable: unknown = Reflect.get(Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, "resizable") ?? {}, "get");
+const NO_ARGUMENTS: readonly unknown[] = Object.freeze([]);
+
 /**
- * {@link takeBytes} of an argument of a bounded width (a root, a key, a proof): a copy when its internal length is at
- * most `max`, else its plain view, uncopied, which is refused later by its length. An oversized argument costs O(1),
- * never a copy of all it holds; one that fits is owned as `takeBytes` owns it. `undefined` if it is not bytes.
+ * Whether `view`'s memory nothing but this thread's own code can change, nor resize: an `ArrayBuffer` of this realm
+ * ({@link isLocalBuffer}: the engine's brand check, never a prototype, so no `SharedArrayBuffer`) that is not
+ * resizable. A view of it keeps its bytes and its length while the SDK runs without calling caller code.
  */
-export function takeBytesWithin(x: unknown, max: number): Uint8Array | undefined {
-  // one fixed-length view, whose length is checked and which is then copied: a view that tracks a growable buffer's
-  // length cannot grow between the check and the copy
+export function isStableBuffer(view: Uint8Array): boolean {
+  const buffer: unknown = typedArrayBuffer?.call(view);
+  if (typeof buffer !== "object" || buffer === null || Object.getPrototypeOf(buffer) !== ArrayBuffer.prototype) return false;
+  // a buffer's brand and resizability are fixed when it is made: one found stable once is stable for good, so its
+  // later arguments take one WeakSet lookup instead of the brand checks
+  if (STABLE.has(buffer)) return true;
+  if (!isArrayBufferBranded(buffer)) return false;
+  // an ArrayBuffer (brand-checked above), for which the getter only reads an internal slot
+  const stable = typeof arrayBufferResizable !== "function" || Reflect.apply(arrayBufferResizable, buffer, NO_ARGUMENTS) === false;
+  if (stable) STABLE.add(buffer);
+  return stable;
+}
+
+/** The buffers {@link isStableBuffer} has found stable: held weakly, never keeping one alive. */
+const STABLE = new WeakSet();
+
+/** The bound of a caller byte argument with no length limit of its own (a message, data to hash). */
+export const UNBOUNDED: number = Number.MAX_SAFE_INTEGER;
+
+/**
+ * **The boundary** through which public code turns a caller's byte argument into bytes it reads
+ * (docs/specs/canonical-encoding.md section 1, "Caller bytes"): `x` measured by its internal length (one fixed-length
+ * view of its memory, never its own `length`), refused past `max` without anything copied, and then
+ * - the view itself when its memory is stable ({@link isStableBuffer}: this realm's own, unshared, non-resizable
+ *   `ArrayBuffer`), which nothing changes while the SDK runs without calling caller code: nothing copied;
+ * - else one copy of that same view (shared, resizable or another realm's memory), so every later read sees one
+ *   snapshot.
+ * The result is `undefined` for what is not a `Uint8Array`, the length (a number) for one longer than `max`, and else
+ * the bytes, which internals read from then on, never the caller's object. A caller whose code may run while the bytes
+ * are still in use (a getter read later, a function called) takes {@link ownCopy} instead.
+ */
+export function ownBytes(x: unknown, max: number): Uint8Array | number | undefined {
   const view = plainBytes(x);
   if (view === undefined) return undefined;
-  return view.length <= max ? copyBytes(view) : view;
+  if (view.length > max) return view.length;
+  // an empty view is a fresh array of its own (plainBytes makes one): nothing in it can change
+  return view.length === 0 || isStableBuffer(view) ? view : copyBytes(view);
+}
+
+/**
+ * {@link ownBytes} for bytes kept, or still in use while caller code runs (a later getter or trap, a caller's
+ * function): always one copy of the one view measured, so nothing the caller does afterwards changes them.
+ */
+export function ownCopy(x: unknown, max: number): Uint8Array | number | undefined {
+  const view = plainBytes(x);
+  if (view === undefined) return undefined;
+  return view.length > max ? view.length : copyBytes(view);
+}
+
+/** {@link ownBytes} with no bound: the bytes, or `undefined` for what is not a `Uint8Array`. */
+export function ownAny(x: unknown): Uint8Array | undefined {
+  const b = ownBytes(x, UNBOUNDED);
+  return typeof b === "number" ? undefined : b;
+}
+
+/** {@link ownCopy} with no bound: a copy, or `undefined` for what is not a `Uint8Array`. */
+export function ownCopyAny(x: unknown): Uint8Array | undefined {
+  const b = ownCopy(x, UNBOUNDED);
+  return typeof b === "number" ? undefined : b;
 }
 
 /** A fresh copy of one of this package's own plain arrays (never a caller's: see {@link takeBytes}). */

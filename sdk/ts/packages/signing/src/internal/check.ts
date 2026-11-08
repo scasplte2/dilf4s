@@ -6,7 +6,7 @@
  * randomness) propagates unchanged: `docs/specs/canonical-encoding.md` §1, "Caller code".
  */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { isArrayGuarded, isArrayLength, isRevokedProxy, plainBytes, readGuarded, REVOKED, takeBytes, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
+import { isArrayGuarded, isArrayLength, isRevokedProxy, ownAny, readGuarded, REVOKED, typeMismatch } from "@kd5ujc/dilf4s-core/internal";
 
 export const NOT_BYTES = typeMismatch("expected a Uint8Array");
 export const NOT_A_NUMBER = typeMismatch("expected a number");
@@ -22,25 +22,27 @@ export const expectedAt = (what: string, i: number): TypeMismatch => typeMismatc
 export const isObject = (x: unknown): x is object => ((typeof x === "object" && x !== null) || typeof x === "function") && !isRevokedProxy(x);
 
 /**
- * Bytes to verify: a plain view of the caller's memory (its own `length` not believed), read once by the check that
- * uses it, or `undefined` if they are not a `Uint8Array`.
+ * Bytes to verify, through core's byte boundary (`ownAny`): measured by their internal length, then a view of stable
+ * memory (this realm's own unshared, non-resizable `ArrayBuffer`) or else one copy, so a check that reads them more than
+ * once reads one snapshot; `undefined` if they are not a `Uint8Array`.
  */
-export const viewOf = (x: unknown): Uint8Array | undefined => plainBytes(x);
+export const viewOf = (x: unknown): Uint8Array | undefined => ownAny(x);
 
 /**
- * Bytes to sign: always a copy, taken once from the caller's memory. Signing reads a message more than once (Ed25519
- * hashes it for the nonce and again for the challenge, BIP-340 likewise): another thread rewriting it between the
- * reads would give two signatures with one nonce over two messages, which reveals the key. The copy is taken whatever
- * the memory (core's `isLocalBuffer` could tell an unshared `ArrayBuffer` apart, but a message is never trusted to stay
- * unshared): it is linear in the message, beside a signature's fixed cost.
+ * Bytes to sign, through core's byte boundary (`ownAny`). Signing reads a message more than once (Ed25519 hashes it
+ * for the nonce and again for the challenge, BIP-340 likewise): another thread rewriting it between the reads would
+ * give two signatures with one nonce over two messages, which reveals the key. So memory another thread can write (a
+ * `SharedArrayBuffer`, told apart by the engine's brand check, never by a prototype), a resizable buffer or another
+ * realm's is copied once; this realm's own unshared, fixed `ArrayBuffer`, which nothing changes while the signer runs
+ * (it calls no caller code), is read in place.
  */
 export function signedOf(x: unknown): Uint8Array | undefined {
-  return takeBytes(x);
+  return ownAny(x);
 }
 
 /** {@link viewOf} as a `Result`. */
 export const bytesArg = (x: unknown): Result<Uint8Array, TypeMismatch> => {
-  const view = plainBytes(x);
+  const view = ownAny(x);
   return view === undefined ? err(NOT_BYTES) : ok(view);
 };
 

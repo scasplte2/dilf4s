@@ -6,7 +6,7 @@ import { isAlgorithm, startHashOf, type HashAlgorithm } from "./hash.js";
 import { isArrayGuarded, readGuarded } from "./guard.js";
 import { isArrayLength } from "./iterator.js";
 import { err, ok, type Result } from "./result.js";
-import { takeBytes } from "./bytes.js";
+import { ownCopyAny } from "./bytes.js";
 import { bytesView, type Value } from "./value.js";
 
 /** The commitment tag of a byte string. */
@@ -63,7 +63,7 @@ function prefixParts(prefix: unknown): readonly Uint8Array[] | undefined {
   const parts: Uint8Array[] = [];
   for (let i = 0; i < length; i++) {
     // guarded: an earlier part's read (a Proxy's trap) may have revoked the array
-    const part = takeBytes(readGuarded(prefix, i));
+    const part = ownCopyAny(readGuarded(prefix, i));
     if (part === undefined) return undefined;
     parts.push(part);
   }

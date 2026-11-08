@@ -6,7 +6,7 @@
  * Internal: not exported from the package.
  */
 import { err, isValue, ok, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, plainBytes, readGuarded, readStep, REVOKED, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
+import { close, isAlgorithm, isArrayGuarded, isArrayLength, isResult, isRevokedProxy, NOT_A_RESULT, NOT_ITERABLE, openWith, ownAny, readGuarded, readStep, REVOKED, typeMismatch, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
 import type { HashAlgorithm } from "@kd5ujc/dilf4s-core";
 
 /**
@@ -30,9 +30,13 @@ export const expected = (what: string): TypeMismatch => typeMismatch(`expected $
 /** The refusal of an item of a caller's array that is not `what`, at index `i`. */
 export const expectedAt = (what: string, i: number): TypeMismatch => typeMismatch(`expected ${what} at index ${i.toString()}`);
 
-/** `x` as a plain view of its own memory (see core's `plainBytes`: its own `length` is not believed), or a refusal. */
+/**
+ * `x` through core's byte boundary (`ownAny`: measured by its internal length, a view of stable memory or else one
+ * copy), or a refusal. For bytes read before any caller code runs again; bytes kept, or in use while caller code runs,
+ * take `ownCopy` or `ownCopyAny`.
+ */
 export const bytesArg = (x: unknown): Result<Uint8Array, TypeMismatch> => {
-  const view = plainBytes(x);
+  const view = ownAny(x);
   return view === undefined ? err(NOT_BYTES) : ok(view);
 };
 

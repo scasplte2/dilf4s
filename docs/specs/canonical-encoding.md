@@ -100,11 +100,8 @@ is a fixed default, so it never reports a caller's algorithm or scheme), and eac
 refusal refuses it. A plain object a caller passes (a Merkle or versioned head, a
 proof, delta, chunk or snapshot) has each field read once into a copy the package owns. The query of a listing check
 (a prefix, or a range's bounds; for a versioned trie, the version asked about or a range's versions, encoded once)
-is copied before the claim or the proof is read, so their getters cannot change what is asked. Where a result has no room for a refusal, `equals` is false for anything not of its class. A message to sign is copied once before it is read, since
-a signer reads it more than once; a VRF verification copies its message too, as a try-and-increment hash reads it once
-per try. A lookup's key, walked in place when it is this realm's unshared `ArrayBuffer` (told apart by the engine's
-brand check, never by a prototype), is copied once first when it is shared or another realm's memory, so a byte read
-twice by the walk cannot differ between the reads.
+is copied before the claim or the proof is read, so their getters cannot change what is asked. Where a result has no room for a refusal, `equals` is false for anything not of its class. Every caller byte argument is read as
+"Caller bytes" below states.
 
 A revoked Proxy (or a Proxy whose target is one) is refused like any other argument of the wrong type, as a
 `TypeMismatch`, in all three packages: every array and object reader first asks `Array.isArray` through core's one
@@ -114,9 +111,21 @@ called, since caller code may revoke it meanwhile. For the same reason every rea
 its first goes through the guard too (a getter or trap an earlier read ran may have revoked it), and what such a read
 gives is refused, never kept or taken for an absent field. The guard (`guard.ts`) holds two catches, around
 `Array.isArray` and around `ArrayBuffer`'s own brand check, each of which runs no caller code and so sees only the
-engine's refusal; they and signing's boundary around noble are the SDK's only catches. A check that passes allocates at most one O(1) plain view of each
-caller byte argument (the view is what keeps a library such as noble from reading a subclass's own `length` or
-`subarray`) and the copies of what is kept; refusals and boolean verdicts are shared, frozen results.
+engine's refusal; they and signing's boundary around noble are the SDK's only catches. Refusals and boolean
+verdicts are shared, frozen results.
+
+**Caller bytes.** Every caller byte argument of a public function in core's hash API, proofs and signing passes once
+through core's one boundary (`ownBytes` and its forms, in `core/src/bytes.ts`). It is measured by its internal length
+through one fixed-length view (never its own `length`, so a subclass is not believed) and refused past its bound
+without anything copied: a fixed field's width, a key's bound, or none for a message or data to hash. Then it is that
+view when its memory is stable (this realm's own `ArrayBuffer`, unshared and not resizable by the engine's brand
+checks, never by a prototype), which nothing changes while the SDK runs without calling caller code, so nothing is
+copied; and otherwise one copy of that view, so shared, resizable or another realm's memory is read from one snapshot.
+Bytes kept, or still in use while caller code may run (a later getter, a caller's function), are always copied once.
+Past the boundary, internals read only what it gave, never the caller's object again, so no byte read twice (a signer's
+nonce and challenge, a try-and-increment hash's tries, a trie walk's branch bit and segment) can differ between the
+reads. A test scans the sources, and fails on a planted violation, so no public-facing code reads caller bytes around
+the boundary.
 
 **Caller code.** An exception raised by the caller's own code propagates unchanged, in all three packages: a getter,
 a Proxy's trap, a Proxy whose handler is itself revoked or otherwise unusable (the engine throws while running the

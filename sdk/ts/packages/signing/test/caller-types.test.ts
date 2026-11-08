@@ -1,4 +1,6 @@
+import { once } from "node:events";
 import { runInNewContext } from "node:vm";
+import { Worker } from "node:worker_threads";
 
 import { describe, expect, it } from "vitest";
 
@@ -317,20 +319,21 @@ describe("bytes are read by their internal length; another realm's and shared by
     expect(expectOk(ed25519.sign(ed.signing, shared([1, 2])), "shared").equals(sig)).toBe(true);
   });
 
-  it("a message to sign is read once, as a copy only this thread can change, wherever it lives", () => {
+  it("a message to sign is read from one snapshot: memory another thread can write is copied, stable memory read in place", () => {
     const s = shared([1, 2, 3]);
     const own = signedOf(s);
     expect(own?.buffer instanceof SharedArrayBuffer, "copied out of the shared buffer").toBe(false);
     s.fill(9);
     expect(Array.from(own ?? []), "the bytes as they were when read").toEqual([1, 2, 3]);
-    // a SharedArrayBuffer given ArrayBuffer's prototype looks local: no memory is trusted, every message is copied
+    // a SharedArrayBuffer given ArrayBuffer's prototype is still shared memory by the engine's brand check: copied
     const disguised = shared([1, 2, 3]);
     Object.setPrototypeOf(disguised.buffer, ArrayBuffer.prototype);
     const copied = signedOf(disguised);
     disguised.fill(9);
     expect(Array.from(copied ?? []), "a disguised shared buffer is copied too").toEqual([1, 2, 3]);
+    // this realm's own fixed ArrayBuffer, which nothing changes while the signer runs: read in place, nothing copied
     const local = Uint8Array.of(1, 2, 3);
-    expect(signedOf(local)?.buffer === local.buffer, "local memory is copied as well").toBe(false);
+    expect(signedOf(local)?.buffer === local.buffer, "local memory is read in place").toBe(true);
     const other = foreign([1, 2, 3]);
     expect(signedOf(other)?.buffer instanceof ArrayBuffer, "another realm's memory is copied into this realm's").toBe(true);
   });
@@ -558,5 +561,57 @@ describe("a BLS query is owned before caller code runs: a key's getter cannot ch
     });
     keys.length = 1;
     expect(blsPop.fastAggregateVerify(bad(keys), message, sig), "the message as given, [2]").toEqual({ ok: true, value: false });
+  });
+});
+
+describe("a key decoded from a shared buffer a worker grows is measured and copied from one view", () => {
+  it("Ed25519 verifying keys from a growable SharedArrayBuffer (and one given ArrayBuffer's prototype): 32 owned bytes or a refusal", { timeout: 60_000 }, async () => {
+    const Growable = SharedArrayBuffer as unknown as new (length: number, options: { maxByteLength: number }) => SharedArrayBuffer;
+    const vk = expectOk(ed25519.fromSeed(seed), "ed").verifying.bytes;
+    const worker = new Worker(
+      "const { parentPort } = require('node:worker_threads'); parentPort.on('message', (sab) => { for (let n = 33; n <= sab.maxByteLength; n *= 2) sab.grow(n); parentPort.postMessage('grown'); });",
+      { eval: true },
+    );
+    await once(worker, "online");
+    let wrong = 0;
+    for (let round = 0; round < 40; round++) {
+      const sab = new Growable(32, { maxByteLength: 1 << 16 });
+      if (round % 2 === 1) Object.setPrototypeOf(sab, ArrayBuffer.prototype);
+      new Uint8Array(sab).set(vk);
+      const grown = once(worker, "message");
+      worker.postMessage(sab);
+      for (let i = 0; i < 300; i++) {
+        const r = ed25519.verifyingKey(new Uint8Array(sab));
+        if (r.ok && (r.value.bytes.length !== 32 || r.value.bytes.buffer === sab)) wrong += 1;
+      }
+      await grown;
+    }
+    await worker.terminate();
+    expect(wrong, "every key decoded holds 32 bytes of its own").toBe(0);
+  });
+});
+
+describe("a message in memory another thread writes is signed from one snapshot", () => {
+  // an invariant check: noble also copies a message before hashing it, so this alone would pass for a signer that did not
+  it("Ed25519 signs a shared message (or one given ArrayBuffer's prototype) a worker alternates: each signature verifies one of the two", { timeout: 60_000 }, async () => {
+    const kp = expectOk(ed25519.fromSeed(seed), "ed");
+    // one byte, so the snapshot the signer takes is one of the two messages; a signer reading it twice without a
+    // snapshot (the nonce, then the challenge) would sign over both, and its signature would verify neither
+    const zero = Uint8Array.of(0);
+    const one = Uint8Array.of(1);
+    for (const spoofed of [false, true]) {
+      const shared = new SharedArrayBuffer(1);
+      if (spoofed) Object.setPrototypeOf(shared, ArrayBuffer.prototype);
+      const worker = new Worker("const a = new Uint8Array(require('node:worker_threads').workerData); for (;;) { a[0] = 0; a[0] = 1; }", { eval: true, workerData: shared });
+      await once(worker, "online");
+      let neither = 0;
+      for (let i = 0; i < 300; i++) {
+        const sig = expectOk(ed25519.sign(kp.signing, new Uint8Array(shared)), "signs");
+        const verifies = (m: Uint8Array): boolean => expectOk(ed25519.verify(kp.verifying, m, sig), "a verdict");
+        if (!verifies(zero) && !verifies(one)) neither += 1;
+      }
+      await worker.terminate();
+      expect(neither, `every signature is over one message (prototype spoofed: ${String(spoofed)})`).toBe(0);
+    }
   });
 });

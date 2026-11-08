@@ -1,5 +1,5 @@
 /** Hexadecimal text, as the conformance vectors write bytes. */
-import { plainBytes } from "./bytes.js";
+import { ownAny } from "./bytes.js";
 import type { TypeMismatch } from "./error.js";
 import type { HashErrorOf } from "./hash.js";
 import { err, ok, type Result } from "./result.js";
@@ -21,7 +21,7 @@ export function toHexOf(bytes: Uint8Array): string {
  * not believed). What is not a `Uint8Array` (from a JavaScript caller, or a cast) is a `TypeMismatch`, unread.
  */
 export function toHex(bytes: Uint8Array): Result<string, TypeMismatch> {
-  const view = plainBytes(bytes);
+  const view = ownAny(bytes);
   return view === undefined ? err(NOT_BYTES) : ok(toHexOf(view));
 }
 

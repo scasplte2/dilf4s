@@ -1,4 +1,6 @@
+import { once } from "node:events";
 import { runInNewContext } from "node:vm";
+import { Worker } from "node:worker_threads";
 
 import { describe, expect, it } from "vitest";
 
@@ -26,8 +28,12 @@ import {
   type Hashing,
   Value,
 } from "../src/index.js";
-import { isDomainTag as isDomainTagOf, isLocalBuffer, MAX_OUTPUT_SIZE, takeBytesWithin } from "../src/internal.js";
+import { isDomainTag as isDomainTagOf, isLocalBuffer, isStableBuffer, MAX_OUTPUT_SIZE, ownBytes, ownCopy } from "../src/internal.js";
 import { expectOk, int } from "./vectors.js";
+
+/** A growable SharedArrayBuffer and a resizable ArrayBuffer (ES2024, in Node 20+), which the TypeScript lib does not yet type. */
+const Growable = SharedArrayBuffer as unknown as new (length: number, options: { maxByteLength: number }) => SharedArrayBuffer;
+const Resizable = ArrayBuffer as unknown as new (length: number, options: { maxByteLength: number }) => ArrayBuffer;
 
 /** What a JavaScript caller, or a cast, can pass past the types. */
 const bad = (x: unknown): never => x as never;
@@ -308,16 +314,58 @@ describe("the hash API refuses an argument of the wrong type as TypeMismatch, ne
     }
   });
 
-  it("a bounded argument longer than its width is never copied: its view is kept, and refused by its length", () => {
-    const big = new Uint8Array(65);
-    const kept = takeBytesWithin(big, MAX_OUTPUT_SIZE);
-    big[0] = 9;
-    expect(kept?.[0], "a view of the caller's memory, not a copy").toBe(9);
-    const small = new Uint8Array(64);
-    const owned = takeBytesWithin(small, MAX_OUTPUT_SIZE);
-    small[0] = 9;
-    expect(owned?.[0], "a copy, owned").toBe(0);
+  it("the byte boundary: measured first, refused past its bound uncopied, a view of stable memory, else one copy", () => {
+    const local = new Uint8Array(64);
+    expect(ownBytes(new Uint8Array(65), MAX_OUTPUT_SIZE), "past the bound: its length, nothing copied").toBe(65);
+    expect(ownCopy(new Uint8Array(65), MAX_OUTPUT_SIZE), "past the bound, for a copy too").toBe(65);
+    expect(ownBytes(5, 64), "not bytes").toBeUndefined();
+    const view = ownBytes(local, MAX_OUTPUT_SIZE) as Uint8Array;
+    expect(view.buffer, "this realm's own fixed ArrayBuffer: a view, nothing copied").toBe(local.buffer);
+    expect((ownCopy(local, 64) as Uint8Array).buffer === local.buffer, "ownCopy always copies").toBe(false);
+    const spoofed = new SharedArrayBuffer(4);
+    Object.setPrototypeOf(spoofed, ArrayBuffer.prototype);
+    for (const [name, memory] of [
+      ["a SharedArrayBuffer", new Uint8Array(new SharedArrayBuffer(4))],
+      ["a SharedArrayBuffer given ArrayBuffer's prototype", new Uint8Array(spoofed)],
+      ["a resizable ArrayBuffer", new Uint8Array(new Resizable(4, { maxByteLength: 8 }))],
+      ["another realm's", runInNewContext("new Uint8Array(4)") as Uint8Array],
+    ] as const) {
+      const got = ownBytes(memory, 64) as Uint8Array;
+      expect(got.buffer === memory.buffer, `${name}: copied once`).toBe(false);
+      expect(isStableBuffer(memory), `${name} is not stable memory`).toBe(false);
+    }
     expect(MAX_OUTPUT_SIZE, "the longest digest").toBe(64);
+  });
+
+  it("an entry point copies no local argument: a 64 MiB digest input and its hex are read in place", () => {
+    const big = new Uint8Array(64 << 20);
+    const before = process.memoryUsage().arrayBuffers;
+    expectOk(digest(sha, big), "digests");
+    expectOk(hashParts(sha, [big, big]), "hashes the parts");
+    expect(process.memoryUsage().arrayBuffers - before, "no copy of the 64 MiB input").toBeLessThan(1 << 20);
+  });
+
+  it("digestFromBytes owns what it returns: a shared buffer a worker grows, or one given ArrayBuffer's prototype", { timeout: 30_000 }, async () => {
+    const worker = new Worker(
+      "const { parentPort } = require('node:worker_threads'); parentPort.on('message', (sab) => { const a = new Uint8Array(sab); for (let n = 33; n <= sab.maxByteLength; n *= 2) { sab.grow(n); a[0] ^= 1; } parentPort.postMessage('grown'); });",
+      { eval: true },
+    );
+    await once(worker, "online");
+    let wrong = 0;
+    for (let round = 0; round < 40; round++) {
+      const sab = new Growable(32, { maxByteLength: 1 << 16 });
+      if (round % 2 === 1) Object.setPrototypeOf(sab, ArrayBuffer.prototype);
+      const grown = once(worker, "message");
+      worker.postMessage(sab);
+      for (let i = 0; i < 500; i++) {
+        const r = digestFromBytes(sha, new Uint8Array(sab));
+        // a digest returned is 32 bytes of memory of its own; anything longer is refused, never copied past the bound
+        if (r.ok && (r.value.length !== 32 || r.value.buffer === sab)) wrong += 1;
+      }
+      await grown;
+    }
+    await worker.terminate();
+    expect(wrong, "every digest returned is an owned 32-byte copy").toBe(0);
   });
 
   it("an exception from caller code propagates, with no verdict, and an iterator opened is closed (canonical-encoding.md §1)", () => {

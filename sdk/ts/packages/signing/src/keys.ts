@@ -1,6 +1,6 @@
 /** Keys and signatures: nominal per scheme, immutable, with secret bytes that never print. */
 import { err, ok, type Result, type TypeMismatch } from "@kd5ujc/dilf4s-core";
-import { mint, takeBytes } from "@kd5ujc/dilf4s-core/internal";
+import { mint, ownCopyAny } from "@kd5ujc/dilf4s-core/internal";
 
 import { expected, NOT_BYTES } from "./internal/check.js";
 import { copy, ctEqual, equal, hex } from "./internal/bytes.js";
@@ -176,7 +176,7 @@ export class Secret {
    * What is not a `Uint8Array` is a `TypeMismatch`.
    */
   static of(bytes: Uint8Array): Result<Secret, TypeMismatch> {
-    const own = takeBytes(bytes);
+    const own = ownCopyAny(bytes);
     return own === undefined ? err(NOT_BYTES) : ok(new Secret(INTERNAL, own));
   }
 
@@ -255,5 +255,5 @@ export const signatureBytes = (x: unknown, scheme: string): Result<Uint8Array, T
  * else.
  */
 export function secretBytes(x: unknown): Uint8Array | undefined {
-  return secretOf(x) ?? takeBytes(x);
+  return secretOf(x) ?? ownCopyAny(x);
 }

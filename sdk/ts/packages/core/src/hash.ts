@@ -11,7 +11,7 @@ import { blake2b } from "@noble/hashes/blake2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { keccak_256, sha3_256, sha3_512 } from "@noble/hashes/sha3.js";
 
-import { copyBytes, plainBytes, takeBytes } from "./bytes.js";
+import { ownAny, ownCopy, ownCopyAny } from "./bytes.js";
 import { checkedLimit } from "./budget.js";
 import { encodeIntoWithin, Feeding, MAX_ENCODED_BYTES, type EncodeError } from "./cbor.js";
 import type { TypeMismatch } from "./error.js";
@@ -185,7 +185,7 @@ class CheckedHashing implements Hashing {
   /** {@link Hashing.update}: the data checked and read through a plain view; a stream not made here is a `TypeMismatch`. */
   update(data: Uint8Array): Result<Hashing, TypeMismatch> {
     if (!HASHING.has(this)) return err(NOT_A_HASHING);
-    const view = plainBytes(data);
+    const view = ownAny(data);
     if (view === undefined) return err(NOT_BYTES);
     this.#hash.update(view);
     return ok(this);
@@ -235,11 +235,12 @@ export function parseHashAlgorithm(name: string): Result<HashAlgorithm, Algorith
 export function digestFromBytes(algorithm: HashAlgorithm, bytes: Uint8Array): Result<Uint8Array, HashErrorOf<"InvalidLength" | "UnknownAlgorithm"> | TypeMismatch> {
   const refused = refuseAlgorithm(algorithm);
   if (refused !== undefined) return refused;
-  const view = plainBytes(bytes);
-  if (view === undefined) return err(NOT_BYTES);
   const expected = outputSizeOf(algorithm);
-  // measured before it is copied: bytes of any other length are refused unread
-  return view.length === expected ? ok(copyBytes(view)) : err({ kind: "InvalidLength", algorithm, expected, actual: view.length });
+  // measured before it is copied: bytes longer are refused uncopied, and the digest returned is the caller's own copy
+  const own = ownCopy(bytes, expected);
+  if (own === undefined) return err(NOT_BYTES);
+  const actual = typeof own === "number" ? own : own.length;
+  return typeof own !== "number" && actual === expected ? ok(own) : err({ kind: "InvalidLength", algorithm, expected, actual });
 }
 
 /**
@@ -290,9 +291,9 @@ export function expandMessageXmd(
 ): Result<Uint8Array, HashErrorOf<"InvalidExpansion" | "UnknownAlgorithm"> | TypeMismatch> {
   const refusedAlgorithm = refuseAlgorithm(algorithm);
   if (refusedAlgorithm !== undefined) return refusedAlgorithm;
-  const msg = plainBytes(message);
+  const msg = ownAny(message);
   if (msg === undefined) return err(NOT_BYTES);
-  const own = takeBytes(dst);
+  const own = ownCopyAny(dst);
   if (own === undefined) return err(NOT_BYTES);
   if (typeof (length as unknown) !== "number") return err(NOT_A_LENGTH);
   const limit = expansionLimitOf(algorithm);
@@ -330,7 +331,7 @@ export function hashParts(algorithm: HashAlgorithm, parts: readonly Uint8Array[]
   const h = startHashOf(algorithm);
   for (let i = 0; i < count; i++) {
     // guarded: an earlier part's read (a Proxy's trap) may have revoked the array
-    const part = plainBytes(readGuarded(parts, i));
+    const part = ownAny(readGuarded(parts, i));
     if (part === undefined) return err(typeMismatch(`expected a Uint8Array at index ${i.toString()}`));
     h.update(part);
   }
@@ -344,7 +345,7 @@ export function hashParts(algorithm: HashAlgorithm, parts: readonly Uint8Array[]
 export function digest(algorithm: HashAlgorithm, data: Uint8Array): Result<Uint8Array, AlgorithmError> {
   const refused = refuseAlgorithm(algorithm);
   if (refused !== undefined) return refused;
-  const view = plainBytes(data);
+  const view = ownAny(data);
   return view === undefined ? err(NOT_BYTES) : ok(digestOf(algorithm, view));
 }
 
@@ -454,7 +455,7 @@ export class TaggedHash {
   /** The tagged hash of `message`; what is not a `Uint8Array` is a `TypeMismatch`. Read once, through a plain view. */
   hash(message: Uint8Array): Result<Uint8Array, TypeMismatch> {
     if (!TAGGED_HASH.has(this)) return err(NOT_A_TAGGED_HASH);
-    const view = plainBytes(message);
+    const view = ownAny(message);
     if (view === undefined) return err(NOT_BYTES);
     const h = this.#start();
     h.update(view);
