@@ -23,6 +23,9 @@ export type VrfError = models.cryptoErrors.VrfError;
 /** A KES failure. */
 export type KesError = models.cryptoErrors.KesError;
 
+/** Malformed sigma input (`sigma.md` section 6); a well-formed proof that fails is `false`, never one of these. */
+export type SigmaError = models.cryptoErrors.SigmaError;
+
 export const invalidEncoding = (what: string, reason: string): CryptoError => ({ kind: "InvalidEncoding", what, reason });
 export const invalidKey = (reason: string): CryptoError => ({ kind: "InvalidKey", reason });
 export const lengthError = (what: string, expected: number, got: number): CryptoError =>
