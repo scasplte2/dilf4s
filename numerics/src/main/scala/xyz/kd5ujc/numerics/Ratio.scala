@@ -4,6 +4,10 @@
  *
  * Changes: construction is only possible through a reducing smart constructor (no public apply/copy), partial
  * operations return ArithmeticError instead of throwing, and decimal conversion bounds the scale.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not
+ * distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/. The rest of dilf4s is Apache-2.0
+ * (NOTICE).
  */
 package xyz.kd5ujc.numerics
 
