@@ -269,7 +269,7 @@ describe("JLVM trie operations", () => {
 
 describe("trie_v1.json malformed proofs", () => {
   it("decoding refuses the mode-free rules (Encoding); verification the mode's (InvalidProof)", () => {
-    expect(vectors.malformed.length).toBeGreaterThan(10);
+    expect(vectors.malformed.length).toBe(15);
     for (const c of vectors.malformed) {
       const p = trie.TrieProof.decode(T, valueOf(c.cbor));
       const r = p.ok ? trie.verify(T, modeOf(c.mode), bytes(c.root), p.value) : p;

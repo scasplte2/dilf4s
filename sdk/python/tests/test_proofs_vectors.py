@@ -122,7 +122,7 @@ def test_merkle_verify_through_a_value_leaf() -> None:
 
 
 def test_merkle_malformed_rows() -> None:
-    assert len(MERKLE["malformed"]) >= 10
+    assert len(MERKLE["malformed"]) == 12
     for c in MERKLE["malformed"]:
         form = value_of(c["cbor"])
         got = InclusionProof.decode(TAGGED, form) if c["kind"] == "inclusion" else ConsistencyProof.decode(TAGGED, form)
@@ -224,7 +224,7 @@ def test_trie_malformed_rows() -> None:
         got = trie_verify_proof(T, mode_of(c["mode"]), bytes.fromhex(c["root"]), value_of(c["cbor"]))
         return None if isinstance(got, Err) and kind_of(got.error) == c["error"] else f"{c['name']}: {got}"
 
-    assert failures(TRIE["malformed"], check) >= 10
+    assert failures(TRIE["malformed"], check) == 15
 
 
 # ------------------------------------------------------------------------------------------------ Poseidon

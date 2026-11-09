@@ -64,7 +64,7 @@ fn verification_verdicts() {
         })
         .collect();
     assert!(failures.is_empty(), "{} failures:\n{}", failures.len(), failures.join("\n"));
-    assert!(v.verification.len() >= 400, "{} verification cases", v.verification.len());
+    assert_eq!(v.verification.len(), 453, "verification cases");
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn verifying_key_decoding() {
         })
         .collect();
     assert!(failures.is_empty(), "{} failures:\n{}", failures.len(), failures.join("\n"));
-    assert!(rows.len() >= 40, "{} verifying-key rows", rows.len());
+    assert_eq!(rows.len(), 53, "verifying-key rows");
 }
 
 /// Every `paths` row: nothing trimmed, ASCII digits only, no empty segment or leading zero, at most ten digits and 255
@@ -156,7 +156,7 @@ fn verifying_key_decoding() {
 #[test]
 fn path_strictness() {
     let v: SigningVectors = load("signing_v1.json");
-    assert!(v.paths.len() >= 54, "{} path rows", v.paths.len());
+    assert_eq!(v.paths.len(), 54, "path rows");
     for c in &v.paths {
         let actual = path::parse(&c.path).map_or_else(
             |e| PathResult::PathRefusal(e.refusal),

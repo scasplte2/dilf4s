@@ -455,7 +455,7 @@ fn refusals_by_kind() {
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert!(v.cases.len() >= 20, "{} cases", v.cases.len());
+    assert_eq!(v.cases.len(), 20, "refusal cases");
 }
 
 /// The reference's outcome on every case of the two Ergo-checked files, in order: exact where those files allow

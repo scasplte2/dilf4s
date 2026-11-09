@@ -179,7 +179,7 @@ describe("refusals_v1.json", { timeout: 120_000 }, () => {
   // is, so each precedence a short root pins holds for a long one too, even one too long to copy
   it("each precedence pinned with a 31-byte root holds with a 33-byte root and with a 64 MiB shared one, uncopied", () => {
     const pinned = vectors.cases.filter((c) => c.name.includes("31-byte root") && (c.check === "trie-verify" || c.check === "merkle-verify"));
-    expect(pinned.length, "the cases pinning it").toBeGreaterThanOrEqual(3);
+    expect(pinned.length, "the cases pinning it").toBe(3);
     const huge = new Uint8Array(new SharedArrayBuffer(64 << 20));
     for (const c of pinned) {
       const long = Uint8Array.from([...bytes(c.root ?? ""), 0, 0]);

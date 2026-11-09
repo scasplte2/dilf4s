@@ -130,7 +130,7 @@ fn refusals_by_kind() {
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert!(checked >= if cfg!(feature = "sign") { 60 } else { 30 }, "{checked} refusal rows");
+    assert_eq!(checked, if cfg!(feature = "sign") { 66 } else { 36 }, "refusal rows");
 }
 
 /// The coverage gate (conformance.md section 6) for `KesError`: every outcome of the schema has a row. The outcomes are

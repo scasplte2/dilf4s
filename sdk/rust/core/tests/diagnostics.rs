@@ -40,7 +40,7 @@ fn text(s: &str) -> Value {
 #[test]
 fn a_preview_keeps_the_first_32_code_points_and_the_utf8_length() {
     let v: DiagnosticVectors = common::load("diagnostics_v1.json");
-    assert!(v.previews.len() >= 11, "every row of the spec's table");
+    assert_eq!(v.previews.len(), 11, "every row of the spec's table");
     for c in &v.previews {
         let Err(CanonicalError::DuplicateKey { key: p }) = json::parse(&c.json) else {
             panic!("{}: expected a duplicate key", c.json)

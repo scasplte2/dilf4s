@@ -575,7 +575,7 @@ fn deep_proofs_do_not_recurse() {
 fn malformed_vectors() {
     let v: TrieVectors = load("trie_v1.json");
     let t = TrieHashing::<H>::new();
-    assert!(v.malformed.len() >= 10, "{} malformed rows", v.malformed.len());
+    assert_eq!(v.malformed.len(), 15, "malformed rows");
     for c in &v.malformed {
         let kind = TrieProof::<H>::from_value(&cbor::decode(&bytes(&c.cbor)).unwrap())
             .and_then(|p| p.verify(&t, mode_of(&c.mode), &d(&c.root)).map(|_| ()))

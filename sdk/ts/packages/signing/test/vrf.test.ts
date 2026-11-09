@@ -58,7 +58,7 @@ describe("vrf_v1.json", { timeout: 60_000 }, () => {
   }
 
   test("rejections: every verdict and error kind", () => {
-    expect(vectors.rejections.length).toBeGreaterThan(30);
+    expect(vectors.rejections.length).toBe(33);
     const mismatches = vectors.rejections.flatMap((r) => {
       const actual = kindOf(suite(r.suite).verifyBytes(h(r.verifyingKey), h(r.alpha), h(r.pi)));
       return actual === r.result ? [] : [`${r.suite}/${r.name}: expected ${r.result}, got ${actual}`];
@@ -67,7 +67,7 @@ describe("vrf_v1.json", { timeout: 60_000 }, () => {
   });
 
   test("signing-key decoding: a wrong length is Malformed, a draft-03 key holding another seed's public key KeyMismatch", () => {
-    expect(vectors.keyDecoding.length).toBeGreaterThanOrEqual(13);
+    expect(vectors.keyDecoding.length).toBe(13);
     const mismatches = vectors.keyDecoding.flatMap((c) => {
       const r = suite(c.suite).signingKey(h(c.bytes));
       const actual = r.ok ? "accepted" : r.error.kind;

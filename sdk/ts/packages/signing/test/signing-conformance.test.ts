@@ -142,7 +142,7 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
   }
 
   test("verification verdicts: valid, invalid, or the part refused and its kind", { timeout: 60_000 }, () => {
-    expect(vectors.verification.length).toBeGreaterThan(400);
+    expect(vectors.verification.length).toBe(453);
     const mismatches: string[] = [];
     for (const c of vectors.verification) {
       const a = adapter(c.scheme);
@@ -209,7 +209,7 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
   };
 
   test("key-derivation refusals: each row's call is refused with its KeyError kind", () => {
-    expect(vectors.keyRefusals.length).toBeGreaterThanOrEqual(16);
+    expect(vectors.keyRefusals.length).toBe(16);
     const mismatches = vectors.keyRefusals.flatMap((c) => {
       const r = keyCall(c);
       const actual = r.ok ? "accepted" : r.error.kind;
@@ -255,7 +255,7 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
   };
 
   test("key decoding: a wrong length is InvalidEncoding, a well-sized non-key InvalidKey", () => {
-    expect(vectors.keyDecoding.length).toBeGreaterThan(90);
+    expect(vectors.keyDecoding.length).toBe(101);
     const mismatches: string[] = [];
     for (const c of vectors.keyDecoding) {
       const a = adapters[c.scheme];
@@ -276,7 +276,7 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
     type SchemaRefusal = Exclude<models.signingVectors.PathResult, models.signingVectors.PathIndices>;
     const toSdk = (r: SchemaRefusal): PathRefusal => r;
     const toSchema = (r: PathRefusal): SchemaRefusal => r;
-    expect(vectors.paths.length).toBeGreaterThanOrEqual(54);
+    expect(vectors.paths.length).toBe(54);
     const seen = new Set<PathRefusal>();
     for (const c of vectors.paths) {
       const r = parsePath(c.path);

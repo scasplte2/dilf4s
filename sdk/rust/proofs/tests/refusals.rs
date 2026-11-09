@@ -261,7 +261,7 @@ fn run(vt: &Vt, c: &RefusalCase) -> Option<RefusalOutcome> {
 fn every_refusal_case_gives_its_kind_and_normative_fields() {
     let v: RefusalVectors = load("refusals_v1.json");
     let vt = Vt::new(U64Key::new(8).unwrap()).unwrap();
-    assert!(v.cases.len() >= 30, "{} cases", v.cases.len());
+    assert_eq!(v.cases.len(), 66, "refusal cases");
     for c in &v.cases {
         let expected = match &c.outcome {
             RefusalOutcome::Accepted => None,

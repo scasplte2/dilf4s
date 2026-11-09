@@ -42,7 +42,7 @@ def test_vrf_keys_proofs_and_outputs() -> None:
                 pi, out = ok(sk.prove(alpha), f"{name} prove")
                 assert (pi.hex(), out.hex()) == (p["pi"], p["beta"]), f"{name} prove {p['alpha']}"
                 count += 1
-    assert count > 0
+    assert count == 27
     assert {s["suite"] for s in VRF["suites"]} == set(VRF_SUITES), "every suite has keys"
 
 
@@ -127,7 +127,7 @@ def refusal_outcome(c: Json) -> str:
 def test_kes_refusals_by_kind() -> None:
     rows = KES["refusals"]
     failures(rows, lambda c: None if refusal_outcome(c) == c["outcome"] else f"{c['name']}: {refusal_outcome(c)}")
-    assert len(rows) >= 60
+    assert len(rows) == 66
     outcomes = {c["outcome"] for c in rows}
     assert {"accepted", "rejected", *get_args(kes_errors.KesErrorKind)} <= outcomes, "every outcome has a row"
 
@@ -260,6 +260,6 @@ def test_sigma_refusals_by_kind() -> None:
         got = sigma_outcome(sigma_verify(prop, bytes.fromhex(c["proof"]), bytes.fromhex(c["message"])))
         return None if got == c["outcome"] else f"{c['name']}: expected {c['outcome']}, got {got}"
 
-    assert failures(SIGMA_REFUSALS["cases"], check) >= 20
+    assert failures(SIGMA_REFUSALS["cases"], check) == 20
     outcomes = {c["outcome"] for c in SIGMA_REFUSALS["cases"]}
     assert {"accepted", "rejected", *get_args(sigma_errors.SigmaErrorKind)} <= outcomes, "every outcome has a row"

@@ -247,7 +247,7 @@ fn signing_key_decoding() {
             Err(format!("{} {}: expected {:?}, got {actual:?}", c.scheme, c.name, c.result))
         }
     });
-    assert!(n >= 40, "{n} signing-key rows");
+    assert_eq!(n, 48, "signing-key rows");
 }
 
 /// What a `keyRefusals` row's call gives: `Ok` when it is accepted, else the error.
@@ -292,7 +292,7 @@ fn key_derivation_refusals() {
         Err(e) if e.kind() == c.kind => Ok(()),
         Err(e) => Err(format!("{:?} {}: expected {:?}, got {:?}", c.check, c.name, c.kind, e.kind())),
     });
-    assert!(n >= 16, "{n} key refusal rows");
+    assert_eq!(n, 16, "key refusal rows");
 }
 
 /// The coverage gate (conformance.md section 6) for `KeyError`: every kind of the schema has a `keyRefusals` row, but

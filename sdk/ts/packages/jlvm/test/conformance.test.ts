@@ -87,7 +87,7 @@ describe("jlvm_v1.json", { timeout: 600_000 }, () => {
   });
 
   it("every canonical form is read as its row says, its refusals in the normative order (jlvm.md section 1)", () => {
-    expect(vectors.decodings.length).toBeGreaterThanOrEqual(6);
+    expect(vectors.decodings.length).toBe(6);
     for (const row of vectors.decodings) {
       const r = fromCanonical(built(row.form));
       const got = r.ok ? `cbor ${hex(expectOk(r.value.encode(), "encodes"))}` : `error ${r.error.kind}`;

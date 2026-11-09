@@ -122,7 +122,7 @@ fn vrf_v1_rejections() {
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert!(v.rejections.len() > 10, "{} rejection cases", v.rejections.len());
+    assert_eq!(v.rejections.len(), 33, "rejection cases");
     assert!(v.rejections.iter().all(|r| SuiteId::from_name(&r.suite).is_some()));
 }
 
@@ -150,7 +150,7 @@ fn vrf_v1_signing_key_decoding() {
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert!(v.key_decoding.len() >= 13, "{} key rows", v.key_decoding.len());
+    assert_eq!(v.key_decoding.len(), 13, "key rows");
 }
 
 /// The coverage gate (conformance.md section 6) for `VrfError`: every kind of the schema has a `rejections` or a

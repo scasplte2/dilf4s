@@ -108,7 +108,7 @@ function refusalOutcome(c: models.kesVectors.KesRefusal): models.kesVectors.KesO
 
 describe("kes_v1.json refusals", { timeout: 60_000 }, () => {
   test("every row's call gives its outcome, by kind (issue #92: heights that wrap as 32-bit sums among them)", () => {
-    expect(vectors.refusals.length).toBeGreaterThanOrEqual(60);
+    expect(vectors.refusals.length).toBe(66);
     const mismatches = vectors.refusals.flatMap((c) => {
       const actual = refusalOutcome(c);
       return actual === c.outcome ? [] : [`${c.construction} ${c.check} ${c.name}: expected ${c.outcome}, got ${actual}`];

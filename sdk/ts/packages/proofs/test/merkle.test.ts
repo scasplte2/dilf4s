@@ -172,7 +172,7 @@ describe("JLVM merkle_verify", () => {
 
 describe("merkle_v1.json malformed proofs", () => {
   it("each is refused at decode with the recorded kind", () => {
-    expect(vectors.malformed.length).toBeGreaterThan(10);
+    expect(vectors.malformed.length).toBe(12);
     for (const c of vectors.malformed) {
       const proof = valueOf(c.cbor);
       const r = c.kind === "inclusion" ? merkle.InclusionProof.decode(tagged, proof) : merkle.ConsistencyProof.decode(tagged, proof);

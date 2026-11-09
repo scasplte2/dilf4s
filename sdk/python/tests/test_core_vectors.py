@@ -58,7 +58,7 @@ def test_json_cases() -> None:
         bad = [f"{c['json']}: {what} expected {want}, got {got}" for what, want, got in problems if want != got]
         return "; ".join(bad) or None
 
-    assert failures(V["json"], check) >= 100
+    assert failures(V["json"], check) == 132
 
 
 def test_model_cases() -> None:
@@ -98,7 +98,7 @@ def test_limits() -> None:
             return None
         return f"{c['name']}: expected {c['outcome']} {c.get('output')}, got {outcome} {output}"
 
-    assert failures(V["limits"], check) >= 19
+    assert failures(V["limits"], check) == 19
 
 
 def test_cbor_rejections() -> None:
@@ -165,7 +165,7 @@ def test_every_hash_error_kind_has_a_row() -> None:
 
 def test_a_preview_keeps_the_first_32_code_points_and_the_utf8_length() -> None:
     rows = load("diagnostics_v1.json")["previews"]
-    assert len(rows) >= 11
+    assert len(rows) == 11
     for c in rows:
         e = err(json_parse(c["json"]), c["json"])
         assert isinstance(e, canonical.DuplicateKey), c["json"]

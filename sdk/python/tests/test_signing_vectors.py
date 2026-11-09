@@ -94,7 +94,7 @@ def verdict(c: Json) -> Json:
 def test_verification_verdicts() -> None:
     rows = VECTORS["verification"]
     failures(rows, lambda c: None if verdict(c) == c["result"] else f"{c['scheme']} {c['name']}: {verdict(c)}")
-    assert len(rows) >= 400, f"{len(rows)} verification cases"
+    assert len(rows) == 453, f"{len(rows)} verification cases"
 
 
 def test_verifying_key_decoding() -> None:
@@ -105,7 +105,7 @@ def test_verifying_key_decoding() -> None:
         got = "accepted" if isinstance(r, Ok) else kind_of(r.error)
         return None if got == c["result"] else f"{c['scheme']} {c['name']}: expected {c['result']}, got {got}"
 
-    assert failures(rows, check) >= 40
+    assert failures(rows, check) == 53
 
 
 def test_signing_key_decoding() -> None:
@@ -116,7 +116,7 @@ def test_signing_key_decoding() -> None:
         got = "accepted" if isinstance(r, Ok) else kind_of(r.error)
         return None if got == c["result"] else f"{c['scheme']} {c['name']}: expected {c['result']}, got {got}"
 
-    assert failures(rows, check) >= 40
+    assert failures(rows, check) == 48
 
 
 def test_every_signing_error_kind_has_a_row_but_backend_failure() -> None:
@@ -208,7 +208,7 @@ def test_path_strictness() -> None:
             got = parsed.error.refusal if isinstance(parsed.error, key.InvalidPath) else kind_of(parsed.error)
         return None if got == c["result"] else f"path {c['path'][:40]!r}: expected {c['result']}, got {got}"
 
-    assert failures(rows, check) >= 54
+    assert failures(rows, check) == 54
     refusals = {c["result"] for c in rows if isinstance(c["result"], str)}
     assert refusals == set(get_args(key.PathRefusal)), "every path refusal has a row"
 
@@ -255,7 +255,7 @@ def test_key_derivation_refusals() -> None:
             return f"{c['check']} {c['name']}: accepted, expected {c['kind']}"
         return None if kind_of(r.error) == c["kind"] else f"{c['check']} {c['name']}: got {kind_of(r.error)}"
 
-    assert failures(rows, check) >= 16
+    assert failures(rows, check) == 16
     pinned = {c["kind"] for c in rows}
     assert set(get_args(key.KeyErrorKind)) - pinned == {"InvalidPath"}, (
         "every key error kind, the paths rows pinning InvalidPath"

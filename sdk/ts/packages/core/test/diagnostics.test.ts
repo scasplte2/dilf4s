@@ -26,7 +26,7 @@ describe("a preview keeps the first 32 code points and the UTF-8 length, the sam
   // `DuplicateKey` with the preview given
   const vectors = loadVectors("diagnostics_v1.json", models.diagnosticVectors.DiagnosticVectors);
   it("holds every row of the spec's table", () => {
-    expect(vectors.previews.length).toBeGreaterThanOrEqual(11);
+    expect(vectors.previews.length).toBe(11);
   });
   it.each(vectors.previews.map((c) => [c.json, c] as const))("%s", (_, c) => {
     const r = json.parse(c.json);

@@ -272,7 +272,7 @@ fn heads_decode_from_values() {
 #[test]
 fn malformed_vectors() {
     let v: MerkleVectors = load("merkle_v1.json");
-    assert!(v.malformed.len() >= 10, "{} malformed rows", v.malformed.len());
+    assert_eq!(v.malformed.len(), 12, "malformed rows");
     for c in &v.malformed {
         let proof = value(&c.cbor);
         let kind = match c.kind {

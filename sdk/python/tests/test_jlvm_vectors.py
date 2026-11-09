@@ -94,7 +94,7 @@ def mismatch(case: Json) -> str | None:
 
 def test_every_case_gives_its_outcome_gas_and_warnings() -> None:
     n = failures(VECTORS["cases"], mismatch)
-    assert n == len(VECTORS["cases"]) >= 3339
+    assert n == len(VECTORS["cases"]) == 3361
 
 
 def test_the_file_is_the_version_and_schedule_this_sdk_runs() -> None:
@@ -135,7 +135,7 @@ def read_as(r: Ok[Program] | Err[JlvmError | TypeMismatch]) -> str:
 def test_every_canonical_form_is_read_as_its_row_says() -> None:
     """`decodings` (jlvm.md section 1): a form built with shared parts, read by `from_canonical`, and by `decode`."""
     rows = VECTORS["decodings"]
-    assert len(rows) >= 6, f"{len(rows)} decodings rows"
+    assert len(rows) == 6, f"{len(rows)} decodings rows"
     for row in rows:
         form = built(row["form"])
         out = row["outcome"]
@@ -161,7 +161,7 @@ def test_every_program_round_trips_through_its_canonical_form() -> None:
         assert ok(back.id(), text) == ok(p.id(), text), f"{text}: identity"
         assert ok(from_canonical(ok(p.canonical(), text)), text) == p, f"{text}: from its form"
         programs += 1
-    assert programs > 3000, f"{programs} programs round-trip"
+    assert programs == 3303, f"{programs} programs round-trip"
 
 
 def test_compiled_programs_evaluate_alike() -> None:

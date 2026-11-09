@@ -153,7 +153,7 @@ fn limits() {
             Err(format!("{}: expected {:?} {:?}, got {outcome:?} {output:?}", c.name, c.outcome, c.output))
         }
     });
-    assert!(n >= 19, "limits: {n} cases");
+    assert_eq!(n, 19, "limits cases");
     eprintln!("limits: {n} cases");
 }
 
@@ -288,7 +288,7 @@ fn typed_digest_hex() {
         let dynamic = HashAlgorithm::Sha256.digest_from_hex(&c.hex);
         if typed == dynamic { Ok(()) } else { Err(format!("{:?}: {typed:?} and {dynamic:?}", c.hex)) }
     });
-    assert!(n > 20, "{n} SHA-256 rows");
+    assert_eq!(n, 33, "SHA-256 rows");
 }
 
 #[test]

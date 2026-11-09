@@ -173,7 +173,7 @@ describe("sigma_refusals_v1.json", { timeout: 60_000 }, () => {
     expect([...schema].sort()).toEqual(Object.values(coverage).sort());
     const pinned = new Set<string>(refusals.cases.map((c) => c.outcome));
     expect(Object.values(coverage).filter((k) => !pinned.has(k))).toEqual([]);
-    expect(refusals.cases.length).toBeGreaterThanOrEqual(20);
+    expect(refusals.cases.length).toBe(20);
   });
 });
 

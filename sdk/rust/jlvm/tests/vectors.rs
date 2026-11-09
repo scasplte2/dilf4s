@@ -241,7 +241,7 @@ fn read_as(r: Result<dilf4s_jlvm::Program, JlvmError>) -> String {
 #[test]
 fn every_canonical_form_is_read_as_its_row_says() {
     let vectors = load();
-    assert!(vectors.decodings.len() >= 6, "{} decodings rows", vectors.decodings.len());
+    assert_eq!(vectors.decodings.len(), 6, "decodings rows");
     for row in &vectors.decodings {
         let form = built(&row.form);
         let want = match &row.outcome {
@@ -274,7 +274,7 @@ fn every_vector_program_round_trips_through_its_canonical_form() {
         assert_eq!(from_canonical(&p.canonical().unwrap()).as_ref(), Ok(&p), "{text}: from its form");
         programs += 1;
     }
-    assert!(programs > 3000, "{programs} programs round-trip");
+    assert_eq!(programs, 3303, "programs round-trip");
     for row in &vectors.aliases {
         let p = decode(&hex::decode(&row.cbor).unwrap()).unwrap_or_else(|e| panic!("{}: {e}", row.alias));
         assert_eq!(hex::encode(&p.id(HashAlgorithm::Sha256).unwrap()), row.id, "{}: identity", row.alias);
