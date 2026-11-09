@@ -27,7 +27,7 @@ use dilf4s_core::hash::HashAlgorithm;
 use dilf4s_core::{cbor, hex, json};
 use dilf4s_jlvm::{
     Compiled, Config, CryptoCause, ErrorSite, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Op, OpClass,
-    Outcome, Site, Value, parse, parse_value,
+    Outcome, Site, Value, decode, from_canonical, parse, parse_value,
 };
 
 fn load() -> JlvmVectors {
@@ -226,17 +226,60 @@ fn every_jlvm_error_kind_has_a_row() {
     assert!(errors.iter().any(|(_, e)| e.op == Some(Site::Var)), "no row has op var");
 }
 
-/// The canonical-form rows (`decodings`, jlvm.md section 1, "Reading a canonical form") need a decoder of a program's
-/// canonical form, which this crate does not have yet: they are skipped here, and gated in Scala and TypeScript.
+/// What reading a form gave, rendered for comparison with a `decodings` row: the program's canonical CBOR, or the
+/// error's kind (the order of the refusals is normative, jlvm.md section 1).
+fn read_as(r: Result<dilf4s_jlvm::Program, JlvmError>) -> String {
+    match r {
+        Ok(p) => format!("cbor {}", hex::encode(&p.encode().unwrap_or_else(|e| panic!("{e}")))),
+        Err(e) => format!("error {:?}", e.kind()),
+    }
+}
+
+/// Each canonical-form row (`decodings`, jlvm.md section 1, "Reading a canonical form"), a form built with shared
+/// parts, is read by `from_canonical` as the row says: the program's canonical CBOR, or the error kind the normative
+/// order of the refusals gives. A form light enough to write out is read from its CBOR by `decode` alike.
 #[test]
-#[allow(clippy::print_stdout, reason = "reports the skipped section")]
-fn canonical_form_rows_are_skipped_until_this_crate_decodes_canonical_forms() {
+fn every_canonical_form_is_read_as_its_row_says() {
     let vectors = load();
-    assert!(!vectors.decodings.is_empty(), "jlvm_v1.json has canonical-form rows");
-    println!(
-        "skipped {} canonical-form rows (decodings): the Rust JLVM has no canonical-form decoder yet, issue #127",
-        vectors.decodings.len()
-    );
+    assert!(vectors.decodings.len() >= 6, "{} decodings rows", vectors.decodings.len());
+    for row in &vectors.decodings {
+        let form = built(&row.form);
+        let want = match &row.outcome {
+            JlvmOutcome::JlvmValue(v) => format!("cbor {}", v.cbor),
+            JlvmOutcome::JlvmError(e) => format!("error {:?}", e.error),
+        };
+        assert_eq!(read_as(from_canonical(&form)), want, "{}", row.name);
+        if form.weight() <= 1 << 20 {
+            assert_eq!(read_as(decode(&cbor::encode(&form))), want, "{}, from its CBOR", row.name);
+        }
+    }
+}
+
+/// Every program the vectors hold (each case that parses, and each alias row's two texts) round-trips through its
+/// canonical form and that form's CBOR: decoding gives the program back, with its CBOR and its identity; and each
+/// alias row's CBOR decodes to the program its own name writes, with the row's identity.
+#[test]
+fn every_vector_program_round_trips_through_its_canonical_form() {
+    let vectors = load();
+    let texts = vectors.cases.iter().map(|c| c.program.as_str());
+    let aliases = vectors.aliases.iter().flat_map(|a| [a.program.as_str(), a.own.as_str()]);
+    let mut programs = 0usize;
+    for text in texts.chain(aliases) {
+        let Ok(p) = parse(text) else { continue };
+        let bytes = p.encode().unwrap();
+        let back = decode(&bytes).unwrap_or_else(|e| panic!("{text}: {e}"));
+        assert_eq!(back, p, "{text}: decoded");
+        assert_eq!(back.encode().unwrap(), bytes, "{text}: re-encoded");
+        assert_eq!(back.id(HashAlgorithm::Sha256).unwrap(), p.id(HashAlgorithm::Sha256).unwrap(), "{text}: identity");
+        assert_eq!(from_canonical(&p.canonical().unwrap()).as_ref(), Ok(&p), "{text}: from its form");
+        programs += 1;
+    }
+    assert!(programs > 3000, "{programs} programs round-trip");
+    for row in &vectors.aliases {
+        let p = decode(&hex::decode(&row.cbor).unwrap()).unwrap_or_else(|e| panic!("{}: {e}", row.alias));
+        assert_eq!(hex::encode(&p.id(HashAlgorithm::Sha256).unwrap()), row.id, "{}: identity", row.alias);
+        assert_eq!(p, parse(&row.own).unwrap(), "{}: the program its own name writes", row.alias);
+    }
 }
 
 #[test]

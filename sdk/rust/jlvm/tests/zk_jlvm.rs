@@ -26,7 +26,7 @@ use dilf4s_core::generated::zk_jlvm_vectors::{
 use dilf4s_core::hash::{DomainTag, HashAlgorithm, Sha256, TaggedHash};
 use dilf4s_core::{Value, cbor, hex, json};
 use dilf4s_jlvm::{
-    Config, CryptoCause, ErrorSite as _, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, VERSION, parse,
+    Config, CryptoCause, ErrorSite as _, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, VERSION, decode, parse,
     parse_value,
 };
 use dilf4s_proofs::zk::groth16;
@@ -142,6 +142,19 @@ fn each_statement_is_its_calls_and_the_public_values_are_its_encoding() {
         let decoded = ZkJlvmStatement::from_value(&cbor::decode(&public).unwrap()).unwrap();
         assert_eq!(as_hex(&decoded), c.statement, "{}: the public values decode to the statement", c.name);
         assert_eq!(cbor::encode(&decoded.to_value().unwrap()), public, "{}: canonical, once", c.name);
+    }
+}
+
+/// The guest reads each call's program in canonical form (zk-jlvm.md section 1): the form of the call's text decodes
+/// to the program the text parses to, whose identity is the statement's.
+#[test]
+fn each_calls_program_read_from_its_canonical_form_has_the_statements_identity() {
+    let v = load();
+    for c in &v.calls {
+        let parsed = parse(&c.program).unwrap();
+        let decoded = decode(&parsed.encode().unwrap()).unwrap();
+        assert_eq!(decoded, parsed, "{}: the program", c.name);
+        assert_eq!(hex::encode(&decoded.id(HashAlgorithm::Sha256).unwrap()), c.statement.program, "{}", c.name);
     }
 }
 

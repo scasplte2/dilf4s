@@ -14,8 +14,10 @@
     reason = "tests fail by panicking and report by printing"
 )]
 
+use dilf4s_core::codec::Model as _;
+use dilf4s_core::generated::jlvm::{JlvmExpr, JlvmOp, JlvmProgram, JlvmSpread, JlvmVar};
 use dilf4s_zk_cases::call::{Call, decode_statement, jlvm, public_values, statement};
-use dilf4s_zk_host::{execute_call, guest_key, vector};
+use dilf4s_zk_host::{GuestKey, execute_call, guest_key, vector};
 use sp1_core_executor::SyscallCode;
 use sp1_sdk::{SP1Proof, SP1ProofWithPublicValues};
 
@@ -37,21 +39,32 @@ async fn the_guest_commits_the_native_statement_of_each_call() {
     }
 }
 
+/// The call of surface texts, its data null, in canonical form.
 fn call(program: &str, env: &[(&str, &str)]) -> Call {
-    Call {
-        program: program.into(),
-        data: "null".into(),
-        env: env.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(),
-        gas_limit: 1_000_000,
-    }
+    let env: Vec<(String, String)> = env.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect();
+    Call::of_surface(program, "null", &env, 1_000_000).unwrap()
+}
+
+/// `call` with one part replaced by bytes no surface text gives.
+fn with(mut c: Call, change: impl FnOnce(&mut Call)) -> Call {
+    change(&mut c);
+    c
 }
 
 #[tokio::test]
 async fn a_call_with_no_statement_halts_with_exit_code_1_and_commits_nothing() {
     let jlvm = jlvm().unwrap();
+    let base = || call("{\"var\": \"$x\"}", &[("x", "1")]);
+    // a spread of a non-variadic operation: a jlvm-program by the schema, but no surface writes it (jlvm.md section 1)
+    let var = JlvmExpr::JlvmVar(JlvmVar { var: "xs".into(), default: None });
+    let spread = JlvmProgram { expr: JlvmExpr::JlvmSpread(JlvmSpread { spread: JlvmOp::Sub, arg: Box::new(var) }) };
     for (what, c) in [
-        ("a program that does not parse", call("{\"+\": [1", &[])),
-        ("a binding that does not parse", call("{\"var\": \"$x\"}", &[("x", "{")])),
+        ("a program's bytes that are not CBOR", with(base(), |c| c.program = vec![0xff])),
+        ("a program's form that is no program", with(base(), |c| c.program = vec![0xa0])),
+        ("a program's form no surface writes", with(base(), |c| c.program = spread.to_cbor().unwrap())),
+        ("a program's form with trailing bytes", with(base(), |c| c.program.push(0xf6))),
+        ("data that is not canonical CBOR", with(base(), |c| c.data = vec![0x18, 0x01])),
+        ("a binding that is not CBOR", with(base(), |c| c.env[0].value = vec![0xff])),
         ("a binding named twice", call("{\"var\": \"$x\"}", &[("x", "1"), ("x", "2")])),
     ] {
         assert!(statement(&jlvm, &c).is_err(), "{what}: natively, no statement");
@@ -86,9 +99,27 @@ fn the_gas_limit_and_the_program_are_in_the_statement() {
     let b = statement(&jlvm, &c).unwrap();
     assert_eq!(a.outcome, b.outcome);
     assert_ne!(a, b, "another limit is another call");
-    // the surface text is transport: a program written another way is the same program
-    let spaced = statement(&jlvm, &call("{ \"+\" : [ 1 , 2 ] }", &[])).unwrap();
-    assert_eq!(spaced, a);
+    // the surface text is transport: a program written another way is the same program, in the same canonical form
+    let spaced = call("{ \"+\" : [ 1 , 2 ] }", &[]);
+    assert_eq!(spaced.program, c.program);
+    assert_eq!(statement(&jlvm, &spaced).unwrap(), a);
+}
+
+/// The file's calls, statements and public values are what native code makes them under the key the file pins, with
+/// its pinned proof: checked whatever the guest built here, so a stale statement shows even while the guest's key
+/// moves (the strict check below then fails first, on the key).
+#[test]
+fn the_committed_calls_are_current_under_the_pinned_key() {
+    let committed = vector::committed().unwrap();
+    let file = committed.as_ref().unwrap_or_else(|| panic!("{} is missing", vector::path().display()));
+    let pinned = GuestKey { vkey: format!("0x{}", file.program_vkey), elf_sha256: file.elf_sha256.clone() };
+    let expected = vector::expected(&pinned, committed.as_ref(), &[]).unwrap_or_else(|e| panic!("{e}"));
+    let text = std::fs::read_to_string(vector::path()).unwrap();
+    assert!(
+        text == vector::render(&expected).unwrap(),
+        "{} is stale against the calls' statements under its pinned key",
+        vector::path().display()
+    );
 }
 
 #[tokio::test]

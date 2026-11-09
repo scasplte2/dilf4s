@@ -7,7 +7,8 @@
 //! succeeds or fails.
 //!
 //! - [`parse`] reads a program's JSON surface into a [`Program`], bounded in size and depth, with exactly one canonical
-//!   form; [`Compiled::new`] checks its special forms.
+//!   form; [`from_canonical`] and [`decode`] read that form back, from its value or its CBOR; [`Compiled::new`] checks
+//!   its special forms.
 //! - [`Jlvm::evaluate`] runs it on an explicit continuation stack, charging every unit of work before doing it.
 //! - The cryptographic operations go through a [`CryptoBackend`]; [`Native`] implements it on `dilf4s-signing` and
 //!   `dilf4s-proofs`.
@@ -25,6 +26,7 @@
 extern crate alloc;
 
 mod ast;
+mod canonical;
 mod crypto;
 mod error;
 mod gas;
@@ -41,7 +43,8 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-pub use ast::{MAX_DEPTH, MAX_SIZE, MAX_SURFACE_DEPTH, PROGRAM_TAG, Program, VERSION};
+pub use ast::{MAX_CANONICAL_WEIGHT, MAX_DEPTH, MAX_SIZE, MAX_SURFACE_DEPTH, PROGRAM_TAG, Program, VERSION};
+pub use canonical::{decode, from_canonical};
 pub use crypto::{
     CryptoBackend, CryptoFailure, KeyMode, MAX_FIXED_KEY_BYTES, MAX_VARIABLE_KEY_BYTES, MerkleProfile, TrieEntry,
 };
