@@ -21,6 +21,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@kd5ujc/dilf4s-core": "0.1.0"
+    "@kd5ujc/dilf4s-core": "0.1.0",
+    "@kd5ujc/dilf4s-proofs": "0.1.0",
+    "@kd5ujc/dilf4s-signing": "0.1.0"
   }
 }

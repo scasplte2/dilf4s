@@ -17,9 +17,10 @@ export type JlvmErrorKind = models.jlvmErrors.JlvmErrorKind;
 export type JlvmSite = models.jlvmErrors.JlvmSite;
 
 /**
- * A cryptographic or proof operation (jlvm.md section 6) that this package does not run yet. The evaluation reached
- * it: its base, its arguments and its size charge were all paid, in the order section 7 gives, and it stopped there,
- * where an implementation calls the operation. It is not a language error, and no conforming evaluation ends with it.
+ * A cryptographic or proof operation (jlvm.md section 6) that this package does not run yet (`sigma_verify`,
+ * `schnorr_verify` and `groth16_verify`, whose primitives the TypeScript SDK lacks). The evaluation reached it: its
+ * base, its arguments and its size charge were all paid, in the order section 7 gives, and it stopped there, where an
+ * implementation calls the operation. It is not a language error, and no conforming evaluation ends with it.
  */
 export interface Unimplemented {
   readonly kind: "Unimplemented";

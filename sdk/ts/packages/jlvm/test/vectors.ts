@@ -3,7 +3,16 @@ import { fileURLToPath } from "node:url";
 
 import { ArrayValue, cbor, type codec, describeFailure, fromHex, json, MapValue, type models, type Result, toHex, type Value } from "@kd5ujc/dilf4s-core";
 
+import type { CryptoOp } from "../src/index.js";
+
 type Codec<T> = codec.Codec<T>;
+
+/**
+ * The section 6 operations this package does not run, because the TypeScript SDK has no primitive for them: sigma
+ * protocols (`sigma_verify`, and `schnorr_verify`, a one-leaf sigma proof) and SP1's Groth16 verifier. Every other
+ * operation runs, and a vector reaching one of these is the only case the conformance test skips.
+ */
+export const UNIMPLEMENTED: ReadonlySet<CryptoOp> = new Set(["groth16_verify", "schnorr_verify", "sigma_verify"]);
 
 /** The repository root, for the shared vectors and the specification. */
 export const repoDir = fileURLToPath(new URL("../../../../../", import.meta.url));

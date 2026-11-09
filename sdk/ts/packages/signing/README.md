@@ -2,7 +2,9 @@
 
 dilf4s signatures, key derivation, VRFs and key-evolving signatures. The normative specifications are
 [`signing.md`](../../../../docs/specs/signing.md), [`vrf.md`](../../../../docs/specs/vrf.md) and
-[`kes.md`](../../../../docs/specs/kes.md); the conformance vectors in `shared/vectors` are part of them.
+[`kes.md`](../../../../docs/specs/kes.md); the conformance vectors in `shared/vectors` are part of them. `ecrecover`
+is Ethereum's signer recovery as the JLVM's `ecrecover` defines it ([`jlvm.md`](../../../../docs/specs/jlvm.md)
+section 6): a high-`s` signature recovers nothing.
 
 ## Side channels
 

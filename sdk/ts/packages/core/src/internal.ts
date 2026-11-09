@@ -11,4 +11,7 @@ export { blockSizeOf, digestOf, hashPartsOf, isAlgorithm, isDomainTag, MAX_OUTPU
 export { isArrayGuarded, isRevokedProxy, readGuarded, REVOKED } from "./guard.js";
 export { toHexOf } from "./hex.js";
 export { mint, type Mint } from "./mint.js";
+// the JLVM's operations read a byte string they own without copying it: a fixed-width argument charged per argument,
+// not by its size, is measured before signing or proofs copy it, so a longer one is never copied (jlvm.md section 7)
+export { bytesView } from "./value.js";
 export { close, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, open, openWith, readStep, walksAsArray, type Reader, type Step } from "./iterator.js";
