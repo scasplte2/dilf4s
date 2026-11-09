@@ -56,6 +56,9 @@ export const JLVM_MAX_CANONICAL_WEIGHT = 16777216;
 /** `jlvm-max-exponent` (`shared/schemas/limits.cddl`). */
 export const JLVM_MAX_EXPONENT = 999;
 
+/** `jlvm-max-gas-limit` (`shared/schemas/limits.cddl`). */
+export const JLVM_MAX_GAS_LIMIT = 9007199254740991;
+
 /** `jlvm-max-int-bytes` (`shared/schemas/limits.cddl`). */
 export const JLVM_MAX_INT_BYTES = 1024;
 

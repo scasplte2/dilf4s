@@ -48,6 +48,9 @@ pub const JLVM_MAX_CANONICAL_WEIGHT: u64 = 16_777_216;
 /// `jlvm-max-exponent` (`shared/schemas/limits.cddl`).
 pub const JLVM_MAX_EXPONENT: u64 = 999;
 
+/// `jlvm-max-gas-limit` (`shared/schemas/limits.cddl`).
+pub const JLVM_MAX_GAS_LIMIT: u64 = 9_007_199_254_740_991;
+
 /// `jlvm-max-int-bytes` (`shared/schemas/limits.cddl`).
 pub const JLVM_MAX_INT_BYTES: u64 = 1024;
 

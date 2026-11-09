@@ -13194,6 +13194,24 @@
       "gasLimit" : 210
     },
     {
+      "name" : "dilf4s gas limit: 2^53 - 1, the largest, is metered like any other",
+      "program" : "{\"+\": [1, 2]}",
+      "data" : "null",
+      "gasLimit" : 9007199254740991
+    },
+    {
+      "name" : "dilf4s gas limit: 2^53 is Limit, with no gas used",
+      "program" : "{\"+\": [1, 2]}",
+      "data" : "null",
+      "gasLimit" : 9007199254740992
+    },
+    {
+      "name" : "dilf4s gas limit: 2^53 is Limit before the program is compiled",
+      "program" : "{\"let\": [[[\"x\", 1], [\"x\", 2]], 1]}",
+      "data" : "null",
+      "gasLimit" : 9007199254740992
+    },
+    {
       "name" : "dilf4s unique: an element past the sort-key ceiling is Limit",
       "program" : "{\"unique\": {\"var\": \"$xs\"}}",
       "data" : "null",

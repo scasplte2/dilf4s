@@ -121,7 +121,7 @@ impl<B: CryptoBackend> Jlvm<B> {
     }
 
     /// Evaluates `compiled` against `data`. `env` holds the host bindings, read as `$name`; `let` and callback bindings
-    /// shadow them.
+    /// shadow them. A limit over [`GasLimit::MAX`] is `Limit`, with no gas used.
     pub fn evaluate_compiled(
         &self,
         compiled: &Compiled,
@@ -129,7 +129,7 @@ impl<B: CryptoBackend> Jlvm<B> {
         env: &BTreeMap<String, Value>,
         config: &Config,
     ) -> Outcome {
-        self.run(&compiled.root, data, env, config)
+        config.limit.refusal().map_or_else(|| self.run(&compiled.root, data, env, config), refused)
     }
 
     fn run(&self, root: &node::Node, data: &Value, env: &BTreeMap<String, Value>, config: &Config) -> Outcome {
@@ -137,11 +137,17 @@ impl<B: CryptoBackend> Jlvm<B> {
         Outcome { gas_used: ran.used, result: ran.result, warnings: ran.warnings }
     }
 
-    /// Compiles and evaluates, borrowing the program; a program that does not compile uses no gas.
+    /// Compiles and evaluates, borrowing the program; a program that does not compile uses no gas. The limit is
+    /// checked first: a limit over [`GasLimit::MAX`] is `Limit`, whatever the program.
     pub fn evaluate(&self, program: &Program, data: &Value, env: &BTreeMap<String, Value>, config: &Config) -> Outcome {
-        match node::compile(program) {
+        match config.limit.refusal().map_or_else(|| node::compile(program), Err) {
             Ok(root) => self.run(&root, data, env, config),
-            Err(e) => Outcome { gas_used: Gas::ZERO, result: Err(e), warnings: Vec::new() },
+            Err(e) => refused(e),
         }
     }
+}
+
+/// An evaluation refused before any work: no gas used.
+fn refused(e: JlvmError) -> Outcome {
+    Outcome { gas_used: Gas::ZERO, result: Err(e), warnings: Vec::new() }
 }

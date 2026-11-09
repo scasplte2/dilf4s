@@ -65,7 +65,8 @@ final class Jlvm private (crypto: CryptoOps) {
 
   /**
    * Evaluates `compiled` against `data`. `env` holds the host bindings, read as `$name` (e.g. `$ordinal`); `let` and
-   * callback bindings shadow them. Out of gas, the whole limit is used.
+   * callback bindings shadow them. Out of gas, the whole limit is used. A limit over [[GasLimit.Max]] is `Limit`, with
+   * no gas used.
    *
    * Every byte string in `data`, `env` and a program's literals is flat ([[FlatBytes]]: core's `CBytes` compacts what it
    * is given, once, when the host builds the value), so none is a rope. A host's lazy view (`ByteVector.viewAt`, `map`,
@@ -86,7 +87,11 @@ final class Jlvm private (crypto: CryptoOps) {
     env:      Map[String, CanonicalValue],
     config:   Config,
     kernels:  Kernels
-  ): Outcome = {
+  ): Outcome = GasLimit.refusal(config.limit).fold(run(compiled, data, env, config, kernels))(refused)
+
+  private def refused(e: JlvmError): Outcome = Outcome(Gas.Zero, Left(e))
+
+  private def run(compiled: Compiled, data: CanonicalValue, env: Map[String, CanonicalValue], config: Config, kernels: Kernels): Outcome = {
     val semantics = new Semantics(config.schedule, crypto, kernels)
     val first = semantics.start(compiled.root, Scope(data, TreeMap.from(env)(using kernels.names)))
     val start = Meter(Gas.Zero, config.limit.amount)
@@ -98,9 +103,12 @@ final class Jlvm private (crypto: CryptoOps) {
     Outcome(meter.used, result, meter.warnings)
   }
 
-  /** Compiles and evaluates; a program that does not compile uses no gas. */
+  /**
+   * Compiles and evaluates; a program that does not compile uses no gas. The limit is checked first: a limit over
+   * [[GasLimit.Max]] is `Limit`, whatever the program.
+   */
   def evaluate(program: Program, data: CanonicalValue, env: Map[String, CanonicalValue], config: Config): Outcome =
-    Compiled(program).fold(e => Outcome(Gas.Zero, Left(e)), evaluate(_, data, env, config))
+    GasLimit.refusal(config.limit).fold(Compiled(program).fold(refused, evaluate(_, data, env, config)))(refused)
 }
 
 object Jlvm {

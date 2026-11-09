@@ -39,7 +39,8 @@ are run and then encoded.
   Groth16 wrapper carries the exit code as a public input, and `groth16_verify` refuses any exit code but 0 (`zk.md`
   §2), so no such run has a proof that verifies.
 - **Every evaluation has one.** A program that decodes but does not compile, an error, and running out of gas are
-  outcomes like a value (§2), committed with exit code 0.
+  outcomes like a value (§2), committed with exit code 0. So is a gas limit over 2^53 − 1, which the guest reads as
+  any 64-bit unsigned integer: it is `Limit` with no gas used, whatever the program (`jlvm.md` §7).
 - **The input is transport.** The statement holds the program's identity, the tagged hash of its canonical form
   (`jlvm.md` §1), and digests of the data and the bindings (§2), never the bytes the guest read. A program has one
   canonical form and a value one canonical encoding, so any texts that parse to one program and one input give one
@@ -100,8 +101,8 @@ message is informative and never committed. `OutOfGas` is pinned by its kind and
 | `program` | the program's identity, `taggedHash_SHA-256("dilf4s/jlvm/program/v1", cbor(program))` |
 | `input` | `taggedHash_SHA-256("dilf4s/zk/jlvm/input/v1", commit(data))` |
 | `bindings` | `taggedHash_SHA-256("dilf4s/zk/jlvm/bindings/v1", e₁ ‖ … ‖ eₙ)`, the bindings in name order (UTF-8 byte order), each `eᵢ = taggedHash_SHA-256("dilf4s/zk/jlvm/binding/v1", cbor(nameᵢ) ‖ commit(valueᵢ))`; no bindings is the tagged hash of nothing |
-| `gasLimit` | the call's gas limit |
-| `gasUsed` | the gas the evaluation used (`jlvm.md` §7); 0 for a program that does not compile |
+| `gasLimit` | the call's gas limit, as the guest read it, even one over the maximum |
+| `gasUsed` | the gas the evaluation used (`jlvm.md` §7); 0 for a program that does not compile, and for a gas limit over the maximum |
 | `outcome` | `{"result": taggedHash_SHA-256("dilf4s/zk/jlvm/result/v1", commit(value))}`, or the error record |
 
 `commit(v)` is the value commitment of `merkle.md` §2: `0x00 ‖ b` for a byte string `b`, `0x01 ‖ cbor(v)` for any

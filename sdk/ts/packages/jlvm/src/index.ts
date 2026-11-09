@@ -20,7 +20,7 @@ import { isRevokedProxy, readGuarded } from "@kd5ujc/dilf4s-core/internal";
 
 import { decodeProgram, fromCanonicalValue, isProgram, Program } from "./ast.js";
 import { Bindings, isBindings } from "./bindings.js";
-import { siteOf } from "./error.js";
+import { limit as limitError, siteOf } from "./error.js";
 import { ALL_OPS, CRYPTO_OPS, FORM_OPS, isCrypto, isForm, isStrict, isVariadic, opFromWire, opNamed } from "./op.js";
 import type { JlvmError } from "./error.js";
 import { DEFAULT_GAS_LIMIT, LATEST_SCHEDULE, MAX_GAS_LIMIT, SCHEDULE_V1, type GasSchedule } from "./gas.js";
@@ -129,7 +129,7 @@ export interface EvaluateOptions {
    * names it holds, none of them to null. Either way names are compared, never hashed.
    */
   readonly env?: Bindings | MapValue;
-  /** The gas limit: a whole number from 0 to {@link MAX_GAS_LIMIT}; {@link DEFAULT_GAS_LIMIT} unless given. */
+  /** The gas limit: a whole number, {@link DEFAULT_GAS_LIMIT} unless given. One over {@link MAX_GAS_LIMIT} is `Limit`, with no gas used. */
   readonly gasLimit?: number;
   /** The gas schedule: one of the published schedules, {@link LATEST_SCHEDULE} unless given. */
   readonly schedule?: GasSchedule;
@@ -150,8 +150,9 @@ const SCHEDULES: readonly GasSchedule[] = [SCHEDULE_V1];
 /**
  * Evaluates `program` against `data`. A program that does not compile uses no gas. An argument of the wrong type (a
  * `program` that is neither a {@link Program} nor a {@link Compiled}, `data` or `env` that is not a canonical value,
- * a gas limit that is not a whole number in range, an unpublished schedule) is a `TypeMismatch`, before anything is
- * evaluated.
+ * a gas limit that is not a non-negative whole number, an unpublished schedule) is a `TypeMismatch`, before anything is
+ * evaluated. A gas limit over {@link MAX_GAS_LIMIT} is an outcome, `Limit` with no gas used, found before the program
+ * is compiled (jlvm.md section 7).
  */
 export function evaluate(program: Program | Compiled, data: Value, options: EvaluateOptions = {}): Result<Outcome, TypeMismatch> {
   if (!isProgram(program) && !isCompiled(program)) return notA("a Program or a Compiled program");
@@ -165,9 +166,13 @@ export function evaluate(program: Program | Compiled, data: Value, options: Eval
   const gasLimit = limit === undefined ? DEFAULT_GAS_LIMIT : limit;
   const schedule = chosen === undefined ? LATEST_SCHEDULE : chosen;
   if (bindings !== undefined && !isBindings(bindings) && (!isValue(bindings) || bindings.kind !== "map")) return notA("the host bindings as Bindings or a canonical map");
-  if (typeof gasLimit !== "number" || !Number.isSafeInteger(gasLimit) || gasLimit < 0 || gasLimit > MAX_GAS_LIMIT) return notA(`a gas limit from 0 to ${MAX_GAS_LIMIT.toString()}`);
+  if (typeof gasLimit !== "number" || !Number.isInteger(gasLimit)) return notA("a gas limit as a whole number");
   const published = SCHEDULES.find((s) => s === schedule);
   if (published === undefined) return notA("a published gas schedule");
+  // a limit outside [0, 2^53 - 1] is Limit, as in every language, checked before the program is compiled: a negative
+  // one (a host's arithmetic gone below zero), or one over the maximum, named by its bit length
+  if (gasLimit < 0) return { ok: true, value: { gasUsed: 0, result: { ok: false, error: limitError("a gas limit is negative") }, warnings: [] } };
+  if (gasLimit > MAX_GAS_LIMIT) return { ok: true, value: { gasUsed: 0, result: { ok: false, error: limitError(`a gas limit of ${BigInt(gasLimit).toString(2).length.toString()} bits is over 2^53 - 1`) }, warnings: [] } };
   let root: Node;
   if (isCompiled(program)) root = rootOf(program);
   else {

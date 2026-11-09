@@ -6,7 +6,7 @@ import { ArrayValue, MapValue, models, Value, type Value as V } from "@kd5ujc/di
 import { treeStats, unsharedNodes } from "@kd5ujc/dilf4s-core/internal";
 import { describe, expect, it } from "vitest";
 
-import { Bindings, DEFAULT_GAS_LIMIT, evaluate, parse, parseValue, SCHEDULE_V1 } from "../src/index.js";
+import { Bindings, DEFAULT_GAS_LIMIT, evaluate, MAX_GAS_LIMIT, parse, parseValue, SCHEDULE_V1 } from "../src/index.js";
 import { run } from "../src/machine.js";
 import { compile } from "../src/node.js";
 import { built, expectOk, loadVectors } from "./vectors.js";
@@ -38,11 +38,13 @@ describe("steps are linear in gas", { timeout: 600_000 }, () => {
       const d = parseValue(c.data);
       if (!p.ok || !d.ok) continue;
       const root = compile(p.value);
-      if (!root.ok) continue;
+      const limit = Number(c.gasLimit ?? vectors.gasLimit);
+      // a limit over the maximum is refused before anything runs
+      if (!root.ok || limit > MAX_GAS_LIMIT) continue;
       const env: [string, V][] = [];
       for (const [k, v] of c.env ?? []) env.push([k, expectOk(parseValue(v), "a binding")]);
       for (const [k, b] of c.built ?? []) env.push([k, built(b)]);
-      const r = run(SCHEDULE_V1, root.value, d.value, expectOk(Bindings.of(env), "env"), Number(c.gasLimit ?? vectors.gasLimit));
+      const r = run(SCHEDULE_V1, root.value, d.value, expectOk(Bindings.of(env), "env"), limit);
       expect(r.used, `${c.name}: the vector's gas`).toBe(Number(c.gasUsed));
       expect(r.steps, `${c.name}: ${r.steps.toString()} steps for ${r.used.toString()} gas`).toBeLessThanOrEqual(STEPS_PER_GAS * r.used + 2);
       worst = Math.max(worst, r.steps / Math.max(r.used, 1));

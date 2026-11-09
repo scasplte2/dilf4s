@@ -4,13 +4,16 @@ import xyz.kd5ujc.core.canonical.CanonicalValue
 
 /**
  * An amount of gas: non-negative, and saturating at `Long.MaxValue` instead of overflowing (metakit used unchecked
- * `Long` arithmetic), so a pathological cost can only ever exceed the limit, never wrap around below it.
+ * `Long` arithmetic), so a pathological cost can only ever exceed the limit, never wrap around below it. The
+ * saturation point lies above every limit ([[GasLimit.Max]]), so a limit at the maximum is metered like any other.
  */
 opaque type Gas = Long
 
 object Gas {
 
   val Zero: Gas = 0L
+
+  /** The saturation point, above every limit: never a limit itself. */
   val Max: Gas = Long.MaxValue
 
   def apply(amount: Long): Gas = if (amount < 0) 0L else amount
@@ -351,13 +354,41 @@ object GasSchedule {
   val Latest: GasSchedule = V1
 }
 
-/** A gas limit for one evaluation. */
-final case class GasLimit(amount: Gas)
+/**
+ * A gas limit for one evaluation: an amount from 0 to [[GasLimit.Max]]. Evaluation refuses one outside that range (a
+ * negative one, or a larger one) as `Limit`, with no gas used, before it compiles the program (jlvm.md §7).
+ */
+final case class GasLimit private (requested: Long) {
+
+  /** The limit as an amount of gas, once [[GasLimit.refusal]] has accepted it. */
+  def amount: Gas = Gas(requested)
+}
 
 object GasLimit {
 
+  /** A limit of `amount` gas (never negative: [[Gas]] is not). */
+  @scala.annotation.targetName("ofGas")
+  def apply(amount: Gas): GasLimit = new GasLimit(amount.value)
+
+  /**
+   * The limit a host asks for, as given: a negative one is kept, so [[refusal]] refuses it (a host's arithmetic gone
+   * below zero) instead of its being taken as 0.
+   */
+  def of(requested: Long): GasLimit = new GasLimit(requested)
+
   /** 2^24, Ethereum's per-transaction cap (EIP-7825): about 70 ms of work on the JVM, 140 ms on Rust (jlvm.md §7). */
-  val Default: GasLimit = GasLimit(Gas(1L << 24))
+  val Default: GasLimit = new GasLimit(1L << 24)
+
+  /** 2^53 - 1, the largest limit: exact in every language. */
+  val Max: GasLimit = new GasLimit(xyz.kd5ujc.models.limits.JlvmMaxGasLimit)
+
+  /** The refusal of a limit outside [0, [[Max]]]: a negative one, or one over the maximum, named by its bit length. */
+  def refusal(limit: GasLimit): Option[JlvmError] =
+    if (limit.requested < 0) Some(JlvmError.Limit("a gas limit is negative"))
+    else
+      Option.unless(limit.requested <= Max.requested)(
+        JlvmError.Limit(s"a gas limit of ${64 - java.lang.Long.numberOfLeadingZeros(limit.requested)} bits is over 2^53 - 1")
+      )
 }
 
 /** The result of an evaluation: the gas it used, **whether it succeeded or failed**, and the value or the error. */
