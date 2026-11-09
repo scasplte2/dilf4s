@@ -29,7 +29,8 @@ object FlatBytesSuite extends SimpleIOSuite {
         acc
           .and(expect(!FlatBytes.isFlat(b), s"$name: not flat to begin with"))
           .and(expect(FlatBytes.isFlat(v.value), s"$name: flat"))
-          .and(expect(v.value == b, s"$name: the same bytes"))
+          // the bytes as `toArray` reads them, in order: `==` reads a rope by index, recursing once per level
+          .and(expect(java.util.Arrays.equals(v.value.toArray, b.toArray), s"$name: the same bytes"))
     }
   }
 

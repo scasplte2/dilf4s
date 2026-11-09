@@ -469,4 +469,69 @@ object ParserSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Right("""{"0xab":"0xab"}"""), JsonSurface.render(CanonicalValue.map(List("0xab" -> CBytes(hex"ab"))).toOption.get)))
       .and(expect.same(Right("\"0xAB\""), JsonSurface.render(t("0xAB"))))
   }
+
+  // ------------------------------------------------------------------ the canonical form, against the generated codec
+
+  /** `v` with its `n`th map, in pre-order, made `f` of it; how many maps were left to count (negative once it is made). */
+  private def atMap(v: CanonicalValue, n: Int, f: CMap => CanonicalValue): (CanonicalValue, Int) =
+    v match {
+      case m: CMap if n == 0 => (f(m), -1)
+      case m: CMap =>
+        m.entries.toList.foldLeft((m: CanonicalValue, n - 1)) {
+          case ((acc: CMap, k), (key, x)) if k >= 0 =>
+            val (y, left) = atMap(x, k, f)
+            (if (left < 0) CanonicalValue.updated(acc, CanonicalValue.text(key).toOption.get, y).toOption.get else acc, left)
+          case (done, _) => done
+        }
+      case CArray(xs) =>
+        xs.zipWithIndex.foldLeft((v, n)) {
+          case ((acc: CArray, k), (x, i)) if k >= 0 =>
+            val (y, left) = atMap(x, k, f)
+            (if (left < 0) CanonicalValue.array(acc.values.updated(i, y)).toOption.get else acc, left)
+          case (done, _) => done
+        }
+      case other => (other, n)
+    }
+
+  private val replacements: List[CanonicalValue] = List(
+    CInt(1),
+    CanonicalValue.text("x").toOption.get,
+    CanonicalValue.text("+").toOption.get,
+    CanonicalValue.text("getKey").toOption.get,
+    CanonicalValue.text("a..b").toOption.get,
+    CanonicalValue.text("$").toOption.get,
+    CBool(true),
+    CanonicalValue.bytes(hex"00"),
+    EmptyArray,
+    CanonicalValue.array(Vector(EmptyMap, CInt(1))).toOption.get,
+    EmptyMap,
+    CanonicalValue.map(List("lit" -> CInt(1))).toOption.get,
+    CanonicalValue.map(List("var" -> CInt(1))).toOption.get,
+    CanonicalValue.map(List("arr" -> EmptyMap)).toOption.get
+  )
+
+  /** A map changed: a key added, its first key removed, or its first key's value replaced. */
+  private val mutations: Vector[CMap => CanonicalValue] =
+    Vector[CMap => CanonicalValue](
+      m => CanonicalValue.updated(m, CanonicalValue.text("x").toOption.get, CInt(1)).toOption.get,
+      m => m.entries.keys.headOption.fold(m: CanonicalValue)(k => CanonicalValue.removed(m, CanonicalValue.text(k).toOption.get))
+    ) ++ replacements.map { r => (m: CMap) =>
+      m.entries.keys.headOption.fold(m: CanonicalValue)(k => CanonicalValue.updated(m, CanonicalValue.text(k).toOption.get, r).toOption.get)
+    }
+
+  test("the canonical form is the generated codec's both ways, and so is every refusal of a changed one, path and all") {
+    forall(Gen.zip(exprs, Gen.choose(0, 24), Gen.choose(0, mutations.size - 1))) {
+      case (e, n, which) =>
+        val mutation = mutations(which)
+        val wire = Parser.toWire(e)
+        val generated = xyz.kd5ujc.models.jlvm.JlvmProgram.codec.encode(xyz.kd5ujc.models.jlvm.JlvmProgram(1, wire))
+        val changed = generated.map(atMap(_, n, mutation)._1)
+        def decoded(f: CanonicalValue) = xyz.kd5ujc.models.jlvm.JlvmProgram.codec.decoder.decode(f).map(_.expr).left.map(_.message)
+        val written = CanonicalForm.write(wire)
+        val read = changed.map(f => CanonicalForm.read(f).left.map(_.message))
+        expect(written == generated, s"written\n$written\ngenerated\n$generated")
+          .and(expect(read == changed.map(decoded), s"read\n$read\ndecoded\n${changed.map(decoded)}"))
+          .and(expect(generated.map(f => CanonicalForm.read(f)) == generated.map(_ => Right(wire)), "the form reads back as its tree"))
+    }
+  }
 }

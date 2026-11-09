@@ -80,15 +80,90 @@ object Parser {
   private def value(j: SurfaceTree)(using src: Source): Either[JlvmError, CanonicalValue] =
     src.value(j).bimap(e => JlvmError.Malformed(e.toString), JsonSurface.fromCanonicalJson)
 
+  /** The program's expression, read from the surface tree by [[run]]: an explicit stack, so no depth overflows it. */
+  private def expression(j: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] = run(node(j), Nil)
+
+  /** A sub-tree still to read: as an expression, as a plain list of them (a `let` pair, a literal path), or as bindings. */
+  private enum Part {
+    case Expression(j: SurfaceTree)
+    case Elements(items: Vector[SurfaceTree])
+    case Bindings(j: SurfaceTree)
+  }
+
+  /** What reading one node gives: an expression or a refusal, or the parts to read next and how to make it of them. */
+  private enum Read {
+    case Done(result: Either[JlvmError, Expr])
+    case One(part: Part, make: Expr => Expr)
+
+    /** `whole`: every part is read even after one is refused, and the first refusal is the result (as `mapN` reads). */
+    case Many(parts: List[Part], make: Vector[Expr] => Expr, whole: Boolean)
+  }
+
+  /** A node whose parts are being read, innermost on top of the stack. */
+  private enum Frame {
+    case One(make: Expr => Expr)
+    case Many(rest: List[Part], built: Vector[Expr], make: Vector[Expr] => Expr, whole: Boolean, refused: Option[JlvmError])
+  }
+
   /**
-   * One step per JSON value read. Depth is bounded by the canonical parser that validated the text (256), so this
-   * recursion is bounded too.
+   * Reads `next`, then hands its result to the frame on top: depth first, left to right, each node counted and each span
+   * read back in the order a recursive reading takes them, and a refusal stops the reading where it would.
    */
-  private def expression(j: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] = {
+  @tailrec
+  private def run(next: Read, open: List[Frame])(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+    next match {
+      case Read.One(part, make) => run(read(part), Frame.One(make) :: open)
+      case Read.Many(parts, make, whole) =>
+        val (n, o) = advance(Frame.Many(parts, Vector.empty, make, whole, scala.None), open)
+        run(n, o)
+      case Read.Done(r) =>
+        (r, open) match {
+          case (_, Nil)                          => r
+          case (Right(e), Frame.One(make) :: up) => run(Read.Done(Right(make(e))), up)
+          case (Right(e), (m: Frame.Many) :: up) =>
+            val (n, o) = advance(m.copy(built = m.built :+ e), up)
+            run(n, o)
+          case (Left(e), (m: Frame.Many) :: up) if m.whole =>
+            val (n, o) = advance(m.copy(refused = m.refused.orElse(scala.Some(e))), up)
+            run(n, o)
+          case (Left(_), _ :: up) => run(next, up)
+        }
+    }
+
+  /** The frame's next part, or the frame done. */
+  private def advance(m: Frame.Many, up: List[Frame])(using src: Source, kernels: Kernels): (Read, List[Frame]) =
+    m.rest match {
+      case p :: ps => (read(p), m.copy(rest = ps) :: up)
+      case Nil     => (Read.Done(m.refused.toLeft(m.make(m.built))), up)
+    }
+
+  private def read(part: Part)(using src: Source, kernels: Kernels): Read =
+    part match {
+      case Part.Expression(j)   => node(j)
+      case Part.Elements(items) => elements(items)
+      // a `let`'s `[name, expression]` pairs: a name is never code, so a pair is exempt from the array check
+      case Part.Bindings(j) =>
+        j.kind match {
+          case Kind.Arr(pairs) =>
+            val parts = pairs.toList.map { pair =>
+              pair.kind match {
+                case Kind.Arr(items) => Part.Elements(items)
+                case _               => Part.Expression(pair)
+              }
+            }
+            Read.Many(parts, Expr.Arr(_), whole = false)
+          case _ => node(j)
+        }
+    }
+
+  private def expressions(items: Vector[SurfaceTree]): List[Part] = items.toList.map(Part.Expression(_))
+
+  /** One step per JSON value read as an expression: its own reading, its sub-expressions left to [[run]]. */
+  private def node(j: SurfaceTree)(using src: Source, kernels: Kernels): Read = {
     kernels.steps.step()
     j.kind match {
-      case Kind.Null                    => Expr.Lit(CanonicalValue.CNull).asRight
-      case Kind.Scalar | Kind.Str       => value(j).map(Expr.Lit(_))
+      case Kind.Null                    => Read.Done(Expr.Lit(CanonicalValue.CNull).asRight)
+      case Kind.Scalar | Kind.Str       => Read.Done(value(j).map(Expr.Lit(_)))
       case Kind.Arr(items)              => array(items)
       case Kind.Obj(Vector((key, arg))) => single(key, arg)
       case Kind.Obj(fields)             => mapExpr(fields)
@@ -96,88 +171,86 @@ object Parser {
   }
 
   /** An array headed by a call's name is rejected, so text shaped like a call is never read as data by accident. */
-  private def array(items: Vector[SurfaceTree])(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+  private def array(items: Vector[SurfaceTree])(using src: Source): Read =
     items.headOption.flatMap(src.string).filter(callName) match {
       case Some(name) =>
         val call = Removed.get(name).fold(s"write the call as {\"$name\": [...]}")(hint => s"\"$name\" is not an operation: $hint")
-        malformed(
-          s"an array may not start with \"$name\", which reads as a call: $call; quote data as {\"literal\": [...]}, or " +
-          s"start it with {\"literal\": \"$name\"}"
+        Read.Done(
+          malformed(
+            s"an array may not start with \"$name\", which reads as a call: $call; quote data as {\"literal\": [...]}, or " +
+            s"start it with {\"literal\": \"$name\"}"
+          )
         )
       case scala.None => elements(items)
     }
 
-  private def elements(items: Vector[SurfaceTree])(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
-    items.traverse(expression).map(Expr.Arr(_))
-
-  /** A `let`'s `[name, expression]` pairs: a name is never code, so a pair is exempt from the array check. */
-  private def letBindings(j: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
-    j.kind match {
-      case Kind.Arr(pairs) =>
-        pairs.traverse { pair =>
-          pair.kind match {
-            case Kind.Arr(items) => elements(items)
-            case _               => expression(pair)
-          }
-        }.map(Expr.Arr(_))
-      case _ => expression(j)
-    }
+  private def elements(items: Vector[SurfaceTree]): Read = Read.Many(expressions(items), Expr.Arr(_), whole = false)
 
   /** The fields in [[Kernels.keys]] order: keys a program chooses are compared, never hashed. */
-  private def mapExpr(fields: Vector[(String, SurfaceTree)])(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
-    fields.traverse { case (k, v) => expression(v).map(k -> _) }.map(fs => Expr.Obj(TreeMap.from(fs)(using kernels.keys)))
+  private def mapExpr(fields: Vector[(String, SurfaceTree)])(using kernels: Kernels): Read =
+    Read.Many(
+      fields.toList.map { case (_, v) => Part.Expression(v) },
+      xs => Expr.Obj(TreeMap.from(fields.map(_._1).zip(xs))(using kernels.keys)),
+      whole = false
+    )
 
-  private def single(key: String, arg: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+  private def single(key: String, arg: SurfaceTree)(using src: Source, kernels: Kernels): Read =
     key match {
-      case Literal  => value(arg).map(Expr.Lit(_))
+      case Literal  => Read.Done(value(arg).map(Expr.Lit(_)))
       case Variable => variable(arg)
       case ObjectKey =>
         arg.kind match {
           case Kind.Obj(fields) => mapExpr(fields)
-          case _                => malformed("object takes an object: {\"object\": {key: expression, ...}}")
+          case _                => Read.Done(malformed("object takes an object: {\"object\": {key: expression, ...}}"))
         }
       case data if data.startsWith(DataPrefix) => mapExpr(Vector(data -> arg))
       case removed if Removed.contains(removed) =>
-        malformed(s"\"$removed\" is not an operation: ${Removed.getOrElse(removed, "")}")
+        Read.Done(malformed(s"\"$removed\" is not an operation: ${Removed.getOrElse(removed, "")}"))
       case name =>
         Ops
           .named(name)
           .fold(
-            malformed[Expr](s"unknown operation ${Preview.of(name)}: write single-key data as {\"object\": {...}} or {\"literal\": {...}}")
+            Read.Done(
+              malformed[Expr](
+                s"unknown operation ${Preview.of(name)}: write single-key data as {\"object\": {...}} or {\"literal\": {...}}"
+              )
+            )
           )(operation(_, arg))
     }
 
-  private def operation(op: Op, arg: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+  private def operation(op: Op, arg: SurfaceTree): Read =
     arg.kind match {
+      // the bindings and the body are both read, and a refusal in the bindings comes first
       case Kind.Arr(Vector(bindings, body)) if op == Op.Let =>
-        (letBindings(bindings), expression(body)).mapN((b, x) => Expr.Apply(op, Vector(b, x)))
-      case Kind.Arr(items)                => items.traverse(expression).map(Expr.Apply(op, _))
-      case _ if Ops.Variadic.contains(op) => expression(arg).map(Expr.Spread(op, _))
-      case _                              => expression(arg).map(a => Expr.Apply(op, Vector(a)))
+        Read.Many(List(Part.Bindings(bindings), Part.Expression(body)), Expr.Apply(op, _), whole = true)
+      case Kind.Arr(items)                => Read.Many(expressions(items), Expr.Apply(op, _), whole = false)
+      case _ if Ops.Variadic.contains(op) => Read.One(Part.Expression(arg), Expr.Spread(op, _))
+      case _                              => Read.One(Part.Expression(arg), a => Expr.Apply(op, Vector(a)))
     }
 
   /**
    * A path is text or an integer; an object or an array is an expression computing the path. Only a string's or a
    * number's span is read back, so a nested computed path is read once, not once per level.
    */
-  private def path(j: SurfaceTree, default: Option[CanonicalValue])(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+  private def path(j: SurfaceTree, default: Option[CanonicalValue])(using src: Source): Read =
     src.string(j).orElse(src.integer(j).map(_.toString)) match {
-      case Some(p) => VarRef.parse(p).map(Expr.Var(_, default))
+      case Some(p) => Read.Done(VarRef.parse(p).map(Expr.Var(_, default)))
       case scala.None =>
         j.kind match {
-          case Kind.Obj(_) => expression(j).map(Expr.VarAt(_, default))
+          case Kind.Obj(_) => Read.One(Part.Expression(j), Expr.VarAt(_, default))
           // a literal array here is the path's segments, not code, so it is exempt from the array check
-          case Kind.Arr(items) => elements(items).map(Expr.VarAt(_, default))
-          case _               => malformed("a var path is text, an integer, or an expression computing one")
+          case Kind.Arr(items) => Read.One(Part.Elements(items), Expr.VarAt(_, default))
+          case _               => Read.Done(malformed("a var path is text, an integer, or an expression computing one"))
         }
     }
 
-  private def variable(arg: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] =
+  private def variable(arg: SurfaceTree)(using src: Source): Read =
     arg.kind match {
-      case Kind.Arr(Vector(p))          => path(p, None)
-      case Kind.Arr(Vector(p, default)) => defaultValue(default).flatMap(d => path(p, Some(d).filter(_ != CanonicalValue.CNull)))
-      case Kind.Arr(_)                  => malformed("var takes a path, or [path, default]")
-      case _                            => path(arg, None)
+      case Kind.Arr(Vector(p)) => path(p, None)
+      case Kind.Arr(Vector(p, default)) =>
+        defaultValue(default).fold(e => Read.Done(e.asLeft), d => path(p, Some(d).filter(_ != CanonicalValue.CNull)))
+      case Kind.Arr(_) => Read.Done(malformed("var takes a path, or [path, default]"))
+      case _           => path(arg, None)
     }
 
   /**
@@ -363,34 +436,53 @@ object Parser {
 
   // ------------------------------------------------------------------ canonical program form (shared/schemas/jlvm.cddl)
 
-  def toWire(e: Expr): W.JlvmExpr =
+  /** A node's sub-expressions, in the order [[toWire]] writes them. */
+  private def subexpressions(e: Expr): Vector[Expr] =
     e match {
-      case Expr.Lit(CanonicalValue.CNull) => W.JlvmNull()
-      case Expr.Lit(v)                    => W.JlvmLit(v)
-      case Expr.Var(ref, default)         => W.JlvmVar(ref.render, default)
-      case Expr.VarAt(path, default)      => W.JlvmVarAt(toWire(path), default)
-      case Expr.Apply(op, args)           => W.JlvmApply(op, args.map(toWire))
-      case Expr.Spread(op, arg)           => W.JlvmSpread(op, toWire(arg))
-      case Expr.Arr(items)                => W.JlvmArray(items.map(toWire))
-      case Expr.Obj(fields) =>
-        W.JlvmMap(fields.foldLeft(CanonicalEntries.empty[W.JlvmExpr]) { case (acc, (k, v)) => acc.updated(k, toWire(v)) })
+      case Expr.VarAt(p, _)             => Vector(p)
+      case Expr.Apply(_, as)            => as
+      case Expr.Spread(_, a)            => Vector(a)
+      case Expr.Arr(items)              => items
+      case Expr.Obj(fields)             => fields.values.toVector
+      case Expr.Lit(_) | Expr.Var(_, _) => Vector.empty
     }
 
+  /** The wire tree of `e`, built bottom-up on an explicit stack ([[CanonicalForm.fold]]). */
+  def toWire(e: Expr): W.JlvmExpr =
+    CanonicalForm
+      .fold[Expr, Expr, W.JlvmExpr, Nothing](e)(x => (x, subexpressions(x)).asRight) { (x, ws) =>
+        val one = ws.headOption.getOrElse(W.JlvmNull())
+        (x match {
+          case Expr.Lit(CanonicalValue.CNull) => W.JlvmNull()
+          case Expr.Lit(v)                    => W.JlvmLit(v)
+          case Expr.Var(ref, default)         => W.JlvmVar(ref.render, default)
+          case Expr.VarAt(_, default)         => W.JlvmVarAt(one, default)
+          case Expr.Apply(op, _)              => W.JlvmApply(op, ws)
+          case Expr.Spread(op, _)             => W.JlvmSpread(op, one)
+          case Expr.Arr(_)                    => W.JlvmArray(ws)
+          case Expr.Obj(fields) =>
+            W.JlvmMap(fields.keys.zip(ws).foldLeft(CanonicalEntries.empty[W.JlvmExpr]) { case (acc, (k, w)) => acc.updated(k, w) })
+        }).asRight
+      }
+      .fold(identity, identity)
+
+  /** The expression a wire tree denotes, built bottom-up on an explicit stack: the first `var` path that does not parse is the error. */
   def fromWire(w: W.JlvmExpr): Either[JlvmError, Expr] =
-    w match {
-      case W.JlvmNull()        => Expr.Lit(CanonicalValue.CNull).asRight
-      case W.JlvmLit(v)        => Expr.Lit(v).asRight
-      case W.JlvmVar(p, d)     => VarRef.parse(p).map(Expr.Var(_, d))
-      case W.JlvmVarAt(p, d)   => fromWire(p).map(Expr.VarAt(_, d))
-      case W.JlvmApply(op, as) => as.traverse(fromWire).map(Expr.Apply(op, _))
-      case W.JlvmSpread(op, a) => fromWire(a).map(Expr.Spread(op, _))
-      case W.JlvmArray(items)  => items.traverse(fromWire).map(Expr.Arr(_))
-      case W.JlvmMap(fields) =>
-        fields.toList.traverse { case (k, v) => fromWire(v).map(k -> _) }.map(fs => Expr.Obj(TreeMap.from(fs)(using Kernels.CodePoints)))
+    CanonicalForm.fold[W.JlvmExpr, W.JlvmExpr, Expr, JlvmError](w)(x => (x, CanonicalForm.parts(x)).asRight) { (x, es) =>
+      def one(make: Expr => Expr) = es.headOption.toRight(JlvmError.Malformed("a node without its sub-expression")).map(make)
+      x match {
+        case W.JlvmNull()        => Expr.Lit(CanonicalValue.CNull).asRight
+        case W.JlvmLit(v)        => Expr.Lit(v).asRight
+        case W.JlvmVar(p, d)     => VarRef.parse(p).map(Expr.Var(_, d))
+        case W.JlvmVarAt(_, d)   => one(Expr.VarAt(_, d))
+        case W.JlvmApply(op, _)  => Expr.Apply(op, es).asRight
+        case W.JlvmSpread(op, _) => one(Expr.Spread(op, _))
+        case W.JlvmArray(_)      => Expr.Arr(es).asRight
+        case W.JlvmMap(fields)   => Expr.Obj(TreeMap.from(fields.keys.zip(es))(using Kernels.CodePoints)).asRight
+      }
     }
 
-  def canonical(p: Program): Either[JlvmError, CanonicalValue] =
-    W.JlvmProgram.codec.encode(W.JlvmProgram(1, toWire(p.expr))).leftMap(canonicalError)
+  def canonical(p: Program): Either[JlvmError, CanonicalValue] = CanonicalForm.write(toWire(p.expr)).leftMap(canonicalError)
 
   /** A depth bound is a [[JlvmError.Limit]], however it is reached; anything else malformed is [[JlvmError.Malformed]]. */
   private def canonicalError(e: CanonicalError): JlvmError = e match {
@@ -413,10 +505,10 @@ object Parser {
   def fromCanonical(v: CanonicalValue): Either[JlvmError, Program] =
     if (v.weight > MaxCanonicalWeight) Left(JlvmError.Limit(s"the form weighs more than any program's, $MaxCanonicalWeight"))
     else
-      W.JlvmProgram.codec.decoder
-        .decode(v)
+      CanonicalForm
+        .read(v)
         .leftMap(e => JlvmError.Malformed(e.message))
-        .flatMap(w => fromWire(w.expr).flatMap(Program.from))
+        .flatMap(w => fromWire(w).flatMap(Program.from))
 
   /** A program's canonical CBOR; one past `Cbor.MaxEncodedBytes` is a [[JlvmError.Limit]], never a throw. */
   def encode(p: Program): Either[JlvmError, ByteVector] =
