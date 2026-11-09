@@ -69,6 +69,7 @@ value read as another type. Each argument is checked in O(1) before it is read:
   `BytesValue.of`, `Value.text` and `TextValue.of`, `Value.number` and `RationalValue.number`, and
   `RationalValue.decimal`, whose scale must be an integer. `Value.array` and `Value.map` check each item or entry in
   the one pass that reads it;
+- updating a map: `MapValue.set` (the map it is called on too: one built by calling the constructor is none);
 - decoding and parsing: `cbor.decode`, `codec.fromCbor`, `codec.fromJson`, `json.parse` (and its scale bound), and
   each codec's `decode`, `decodeWithin`, `fields` and `selectAlternative`;
 - encoding, rendering and committing: `cbor.encode`, `cbor.encodeWithin`, `cbor.encodedLengthWithin`, each codec's
@@ -83,10 +84,10 @@ value read as another type. Each argument is checked in O(1) before it is read:
   a string is a `TypeMismatch`; a string naming none is `UnknownAlgorithm`, as in every SDK.
 
 Where a result has no room for a refusal, the answer is still defined and reads nothing of the argument: `equals` is
-false when either side is not a value, `MapValue.get` finds nothing for a key that is not text, `decodeUtf8` gives
-`undefined` for what is not bytes, and the diagnostics `inspect`, `describeFailure` and `Preview.of` give fixed
-placeholders (`<not a canonical value>`, `<not a decode failure>`, and a preview with the head `<not text>` and a
-length of 0).
+false when either side is not a value, `MapValue.get` and `MapValue.has` find nothing for a key that is not text and
+`MapValue.delete` gives back the map as it is, `decodeUtf8` gives `undefined` for what is not bytes, and the
+diagnostics `inspect`, `describeFailure` and `Preview.of` give fixed placeholders (`<not a canonical value>`,
+`<not a decode failure>`, and a preview with the head `<not text>` and a length of 0).
 
 The TypeScript proofs and signing packages (`@kd5ujc/dilf4s-proofs`, `@kd5ujc/dilf4s-signing`) hold every exported
 function and method to the same rule: each argument is checked once, in O(1) (an array once per item, read by index),

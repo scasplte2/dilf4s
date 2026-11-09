@@ -11,7 +11,8 @@
  * Values are immutable and share their parts by reference, so a value may occur many times inside another without
  * being copied: `[x, x]` nested `k` deep holds `2^k` leaves in `k` arrays. Each value's `weight` (its logical, unshared
  * size, see {@link MAX_WEIGHT}) and `depth` are computed once, at construction, from its parts' cached ones, so reading
- * either is O(1). So:
+ * either is O(1); a map is a persistent tree (tree.ts) whose nodes keep them, so {@link MapValue.set} and
+ * {@link MapValue.delete} keep them exact in O(log n). So:
  * - anything that expands a value (`cbor.encode`, hashing, commitments, decoding into typed models) costs O(weight),
  *   not O(memory): bound the weight of a value not known to be small first, or use the budgeted `cbor.encodeWithin`,
  *   `cbor.encodedLengthWithin`, `json.renderWithin` and `valueCommitmentWithin`;
@@ -30,13 +31,16 @@ import { CANONICAL_MAX_DEPTH, CANONICAL_MAX_DIGITS, CANONICAL_MAX_INTEGER_BITS, 
 import { toHexOf } from "./hex.js";
 import { isArrayGuarded, readGuarded } from "./guard.js";
 import { close, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, readStep, walksAsArray } from "./iterator.js";
-import { KeySet, search } from "./keyset.js";
+import { KeySet } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
+import { ABSENT, built, canonicalKeyOrder, codePointOrder, cursor, found, inserted, listed, nodes, removed, type Entry, type Node } from "./tree.js";
 import { compareBytes, encodeUtf8, isWellFormed } from "./utf8.js";
 
 // the typed-array helpers live in bytes.ts, re-exported for the modules that import them from here
 export { isBytes, plainBytes, takeBytes } from "./bytes.js";
+// and the map's entry and key order live in tree.ts
+export { canonicalKeyOrder, type Entry } from "./tree.js";
 
 /** The nesting limit: a scalar has depth 0, an array or map one more than its deepest element (1 when empty). */
 export const MAX_DEPTH = CANONICAL_MAX_DEPTH;
@@ -120,6 +124,9 @@ const notAString = expected("a string");
 const notBytes = expected("a Uint8Array");
 const notAnArray = expected("an array");
 const notEntries = expected("an iterable of [key, value] entries");
+const notAKey = expected("a string key");
+const notAMap = expected("a canonical map");
+const notAValue = expected("a canonical value");
 const notIterable: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: NOT_ITERABLE });
 const notAResult: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: NOT_A_RESULT });
 const scaleNotInteger: TypeMismatch = Object.freeze({ kind: "TypeMismatch", reason: "the scale is not an integer" });
@@ -132,10 +139,16 @@ const INSPECT: unique symbol = Symbol.for("nodejs.util.inspect.custom");
 let utf8Of!: (t: TextValue) => Uint8Array;
 let bytesOf!: (b: BytesValue) => Uint8Array;
 let entriesOf!: (m: MapValue) => readonly Entry[];
+let cursorOf!: (m: MapValue) => () => Entry | undefined;
+let codePointOf!: (m: MapValue) => readonly Entry[];
+let keyTextOf!: (e: Entry) => TextValue;
+let statsOf!: (m: MapValue) => TreeStats;
+let rootOf!: (m: MapValue) => Node | undefined;
 
 let bytesOfOwn!: (bytes: Uint8Array) => BytesValue;
 let arrayOfOwn!: (items: readonly Value[]) => Result<ArrayValue, CanonicalError>;
 let mapOfOwn!: (entries: readonly (readonly [string, Value])[]) => Result<MapValue, CanonicalError>;
+let mapOfSorted!: (entries: readonly Entry[]) => Result<MapValue, CanonicalError>;
 
 /**
  * A byte string holding a copy of `bytes`, a plain array this package holds (the CBOR decoder's input): {@link
@@ -152,13 +165,70 @@ export const arrayOfValues = (items: readonly Value[]): Result<ArrayValue, Canon
  * values they made. Internal to this package.
  */
 export const mapOfValues = (entries: readonly (readonly [string, Value])[]): Result<MapValue, CanonicalError> => mapOfOwn(entries);
+/**
+ * The map of `entries`, which are already unique, well-formed, non-null and in canonical key order (the strict CBOR
+ * decoder has checked all four): built in O(n), with no key compared, measured or encoded again. The map takes the
+ * array, frozen, as its list of entries. Internal to this package.
+ */
+export const mapOfCanonical = (entries: readonly Entry[]): Result<MapValue, CanonicalError> => mapOfSorted(entries);
 
 /** The stored UTF-8 of `t`, uncopied: internal to this package, and never written. */
 export const utf8View = (t: TextValue): Uint8Array => utf8Of(t);
 /** The stored bytes of `b`, uncopied: internal to this package, and never written. */
 export const bytesView = (b: BytesValue): Uint8Array => bytesOf(b);
-/** The stored entries of `m` in canonical key order, uncopied: internal to this package. */
+/**
+ * The entries of `m` in canonical key order: the list it was built from, uncopied, or else listed from its tree, O(n),
+ * and not kept. Internal to this package.
+ */
 export const entriesView = (m: MapValue): readonly Entry[] => entriesOf(m);
+/**
+ * The entries of `m` in canonical key order, one at each call, then `undefined`: from its list, or else a walk of its
+ * tree holding O(height), so a walk of a map an update made lists nothing. Internal to this package (the encoder).
+ */
+export const entryCursor = (m: MapValue): (() => Entry | undefined) => cursorOf(m);
+/**
+ * The entries of `m` in code-point order of their keys (the order of their UTF-8 bytes), uncopied and never written
+ * (a key's UTF-8 may be its text value's own): found from the canonical order in time linear in `m`'s weight
+ * (`codePointOrder`), and kept only by a map that holds its list. Internal to this package (the JSON rendering): an
+ * entry and its key's bytes are the map's own, so they never leave it; other packages read {@link codePointKeys} and
+ * {@link codePointValues}.
+ */
+export const codePointView = (m: MapValue): readonly Entry[] => codePointOf(m);
+/**
+ * The keys of `m` as text values, in {@link codePointView}'s order: each shares its entry's UTF-8, which a text value
+ * never hands out (`utf8()` copies), so none is checked or encoded again (a map's keys are well-formed, and their
+ * UTF-8 is theirs). O(n), a fresh array at each call. Internal to this SDK: the JLVM's `keys` and `entries`.
+ */
+export const codePointKeys = (m: MapValue): readonly TextValue[] => codePointOf(m).map(keyTextOf);
+/** The values of `m` in {@link codePointView}'s order: O(n), a fresh array at each call. Internal to this SDK. */
+export const codePointValues = (m: MapValue): readonly Value[] => codePointOf(m).map((e) => e.value);
+
+/** What a test reads of a map's tree: its height, and whether it holds a list of its entries, in either order. */
+export interface TreeStats {
+  readonly height: number;
+  readonly listed: boolean;
+  readonly listedByCodePoint: boolean;
+}
+
+/** For tests: `m`'s tree's height, and which lists of its entries it holds. O(1); internal to this SDK. */
+export const treeStats = (m: MapValue): TreeStats => statsOf(m);
+
+/**
+ * For tests: how many nodes of `b`'s tree `a`'s does not hold, so an update's own nodes can be counted. O(the size of
+ * both): `a`'s nodes are collected, then `b`'s walked, skipping every subtree it shares (a node is never changed, so a
+ * shared node shares its subtree). Internal to this SDK.
+ */
+export function unsharedNodes(a: MapValue, b: MapValue): number {
+  const theirs = new Set<object>(nodes(rootOf(a)));
+  let fresh = 0;
+  const todo: (Node | undefined)[] = [rootOf(b)];
+  for (let t = todo.pop(); todo.length > 0 || t !== undefined; t = todo.pop()) {
+    if (t === undefined || theirs.has(t)) continue;
+    fresh++;
+    todo.push(t.left, t.right);
+  }
+  return fresh;
+}
 
 export class NullValue {
   readonly kind = "null";
@@ -365,7 +435,7 @@ export class RationalValue {
    * The only way to build one: callers have checked that it is reduced and not an integer, and this checks the width,
    * so no wider rational exists.
    */
-  private static checked(numerator: bigint, denominator: bigint): RationalValue | undefined {
+  static #checked(numerator: bigint, denominator: bigint): RationalValue | undefined {
     const [n, d] = [bitLengthOf(numerator), bitLengthOf(denominator)];
     return n <= MAX_RATIONAL_BITS && d <= MAX_RATIONAL_BITS ? new RationalValue(KEY, numerator, denominator, n, d) : undefined;
   }
@@ -397,7 +467,7 @@ export class RationalValue {
   static of(numerator: bigint, denominator: bigint): RationalValue | undefined {
     if (typeof (numerator as unknown) !== "bigint" || typeof (denominator as unknown) !== "bigint") return undefined;
     const valid = denominator >= 2n && bitLengthOf(numerator) <= MAX_RATIONAL_BITS && bitLengthOf(denominator) <= MAX_RATIONAL_BITS;
-    return valid && gcd(numerator, denominator) === 1n ? RationalValue.checked(numerator, denominator) : undefined;
+    return valid && gcd(numerator, denominator) === 1n ? RationalValue.#checked(numerator, denominator) : undefined;
   }
 
   /**
@@ -415,7 +485,7 @@ export class RationalValue {
     const n = sn / g;
     const d = sd / g;
     if (d === 1n) return IntValue.of(n);
-    const r = RationalValue.checked(n, d);
+    const r = RationalValue.#checked(n, d);
     return r === undefined ? err(tooWide) : ok(r);
   }
 
@@ -451,7 +521,7 @@ export class RationalValue {
     );
     const d = 5n ** BigInt(scale - fives) << BigInt(scale - twos);
     if (d === 1n) return IntValue.of(sign * rest);
-    const r = RationalValue.checked(sign * rest, d);
+    const r = RationalValue.#checked(sign * rest, d);
     return r === undefined ? err(tooWide) : ok(r);
   }
   toString(): string {
@@ -471,15 +541,17 @@ export class TextValue {
   readonly weight: bigint;
   /** The UTF-8 encoding. */
   readonly #utf8: Uint8Array;
-  private constructor(key: symbol, readonly value: string) {
+  /** `utf8`, when given, is `value`'s UTF-8 already, which the text then shares (a map's key: see `codePointKeys`). */
+  private constructor(key: symbol, readonly value: string, utf8?: Uint8Array) {
     if (key === KEY) stamp(this);
-    this.#utf8 = encodeUtf8(value);
+    this.#utf8 = utf8 ?? encodeUtf8(value);
     this.weight = 1n + BigInt(this.#utf8.length);
     Object.freeze(this);
   }
 
   static {
     utf8Of = (t) => t.#utf8;
+    keyTextOf = (e) => new TextValue(KEY, e.key, e.utf8);
   }
 
   /** Text, if it has no unpaired surrogates; a value that is not a string is a `TypeMismatch`. */
@@ -554,18 +626,6 @@ export class BytesValue {
 Object.freeze(BytesValue);
 Object.freeze(BytesValue.prototype);
 
-/** The depth (one more than its deepest part's) and weight (one plus each part's) of a container of `parts`. */
-function measure<T>(parts: readonly T[], part: (p: T) => readonly [number, bigint]): readonly [number, bigint] {
-  const [deepest, weight] = parts.reduce<readonly [number, bigint]>(
-    ([d, w], p) => {
-      const [pd, pw] = part(p);
-      return [Math.max(d, pd), w + pw];
-    },
-    [0, 1n],
-  );
-  return [deepest + 1, saturated(weight)];
-}
-
 export class ArrayValue {
   readonly kind = "array";
   readonly #items: readonly Value[];
@@ -615,9 +675,18 @@ export class ArrayValue {
 
   static {
     arrayOfOwn = (items) => {
-      const kept = Object.freeze([...items]);
-      const [depth, weight] = measure(kept, (v) => [v.depth, v.weight]);
-      return depth > MAX_DEPTH ? err(depthExceeded) : ok(new ArrayValue(KEY, kept, depth, weight));
+      // each item read once, by index, into an array of this module's own, and checked there: every caller holds values
+      // this module made, so the check is O(1) and never refuses, but nothing else is ever minted into an array
+      const kept: Value[] = [];
+      let [deepest, weight] = [0, 1n];
+      for (let i = 0; i < items.length; i++) {
+        const v: unknown = items[i];
+        if (!isValue(v)) return err(expected(`a canonical value at index ${i.toString()}`));
+        kept.push(v);
+        if (v.depth > deepest) deepest = v.depth;
+        weight += v.weight;
+      }
+      return deepest >= MAX_DEPTH ? err(depthExceeded) : ok(new ArrayValue(KEY, Object.freeze(kept), deepest + 1, saturated(weight)));
     };
   }
   toString(): string {
@@ -630,39 +699,89 @@ export class ArrayValue {
 Object.freeze(ArrayValue);
 Object.freeze(ArrayValue.prototype);
 
-/** A map entry: its key, the key's UTF-8, and its value. */
-export interface Entry {
-  readonly key: string;
-  readonly utf8: Uint8Array;
-  readonly value: Value;
-}
+/** A map's weight: one, plus its entries' exact sum, saturated at {@link MAX_WEIGHT} only here. */
+const mapWeight = (root: Node | undefined): bigint => saturated(BigInt(root?.weight ?? 0) + 1n);
 
 /**
- * The order of keys in an encoded map: their encodings compared bytewise (RFC 8949 section 4.2.1). For text keys that
- * is shorter UTF-8 first, then bytewise, because the head encodes the length in increasing order.
+ * A map: its entries in canonical key order, as a persistent AVL tree (tree.ts), the order Rust's `Map` keeps. Keys are
+ * compared, never hashed (see keyset.ts).
+ *
+ * {@link get} and {@link has} search the tree, O(log n) comparisons. {@link set} and {@link delete} return a new map in
+ * O(log n): they build one node per level of the search and share every other one with this map, which they leave as
+ * it is. The depth and weight are kept by the tree, so they are O(1) and exact through any updates.
+ *
+ * A map holds nothing but its tree, and the list of entries it was built from, if it was (decoded, or from
+ * {@link of}): never a listing made later, so versions that share their nodes share their memory too, however many are
+ * walked. Encoding, hashing and counting, equality and inspection walk the list, or the tree itself, one entry at a
+ * time (stopping where they stop: at a difference, at the budget); {@link entries} and the codecs list the entries
+ * afresh. The code-point order (JSON rendering, the JLVM's listings) is found from the canonical one at each use, in
+ * time linear in the weight, and kept only beside a list the map holds: a map built from entries keeps it once found.
  */
-export function canonicalKeyOrder(a: Uint8Array, b: Uint8Array): number {
-  return a.length !== b.length ? a.length - b.length : compareBytes(a, b);
-}
-
-/** A map: its entries in canonical key order, found by binary search. Keys are compared, never hashed (see keyset.ts). */
 export class MapValue {
   readonly kind = "map";
-  readonly #entries: readonly Entry[];
+  readonly #root: Node | undefined;
+  readonly #size: number;
+  /** The entries in canonical key order it was built from, if it was: never a listing made later. */
+  readonly #canonical: readonly Entry[] | undefined;
+  /**
+   * Beside {@link #canonical} alone, the entries in code-point order of their keys, once found: a cache, written once,
+   * of a pure function of the map, which at most doubles the memory of the list it was found from.
+   */
+  #codePoint: readonly Entry[] | undefined;
   private constructor(
     key: symbol,
-    entries: readonly Entry[],
+    root: Node | undefined,
+    size: number,
+    canonical: readonly Entry[] | undefined,
     readonly depth: number,
     /** One plus each entry's `1 + key UTF-8 length + value weight`. */
     readonly weight: bigint,
   ) {
     if (key === KEY) stamp(this);
-    this.#entries = entries;
+    this.#root = root;
+    this.#size = size;
+    this.#canonical = canonical;
     Object.freeze(this);
   }
 
+  /** The map of the tree `root`, of `size` entries, nesting within the limit. */
+  static #rooted(root: Node | undefined, size: number, canonical?: readonly Entry[]): MapValue {
+    return new MapValue(KEY, root, size, canonical, (root?.deepest ?? 0) + 1, mapWeight(root));
+  }
+
+  /** The empty map. */
+  static readonly empty: MapValue = MapValue.#rooted(undefined, 0, Object.freeze([]));
+
+  /**
+   * Whether `m` is a map this module minted: only then is its tree read. One built by calling the constructor from
+   * outside holds a tree its caller chose (of anything, weighing anything), so it reads as empty, and nothing is ever
+   * built from it.
+   */
+  static #isMinted(m: object): m is MapValue {
+    return minted(m) && #root in m;
+  }
+
   static {
-    entriesOf = (m) => m.#entries;
+    const none: readonly Entry[] = Object.freeze([]);
+    entriesOf = (m) => (MapValue.#isMinted(m) ? (m.#canonical ?? Object.freeze(listed(m.#root))) : none);
+    codePointOf = (m) => {
+      if (!MapValue.#isMinted(m)) return none;
+      const list = m.#canonical;
+      return list === undefined ? Object.freeze(codePointOrder(listed(m.#root))) : (m.#codePoint ??= Object.freeze(codePointOrder(list)));
+    };
+    rootOf = (m) => (MapValue.#isMinted(m) ? m.#root : undefined);
+    // the list when the map has one (read in the order its entries lie in memory), else a walk of the tree that makes
+    // none: for the walks that read one entry at a time (encoding, equality, inspection), each holding O(height)
+    cursorOf = (m) => {
+      const list = MapValue.#isMinted(m) ? m.#canonical : none;
+      if (list === undefined) return cursor(m.#root);
+      let i = 0;
+      return () => list[i++];
+    };
+    statsOf = (m) => {
+      const own = MapValue.#isMinted(m);
+      return Object.freeze({ height: rootOf(m)?.height ?? 0, listed: own && m.#canonical !== undefined, listedByCodePoint: own && m.#codePoint !== undefined });
+    };
   }
 
   /**
@@ -694,10 +813,10 @@ export class MapValue {
         const length: unknown = readGuarded(given, "length");
         if (!isArrayLength(length)) return err(notEntries);
         if (i >= length) break;
-        const refused = MapValue.entry(seen, kept, readGuarded(given, i), i);
+        const refused = MapValue.#entry(seen, kept, readGuarded(given, i), i);
         if (refused !== undefined) return err(refused);
       }
-      return MapValue.closed(kept);
+      return MapValue.#closed(kept);
     }
     const read = openWith<unknown>(given, method);
     if (read === undefined) return err(notIterable);
@@ -708,10 +827,10 @@ export class MapValue {
       for (let i = 0; ; i++) {
         const r = readStep(read.next());
         if (r === undefined) return err(notAResult);
-        if (r.done) return MapValue.closed(kept);
+        if (r.done) return MapValue.#closed(kept);
         const entry: unknown = r.value;
         reading = true;
-        const refused = MapValue.entry(seen, kept, entry, i);
+        const refused = MapValue.#entry(seen, kept, entry, i);
         if (refused !== undefined) return err(refused);
         reading = false;
       }
@@ -721,18 +840,18 @@ export class MapValue {
   }
 
   /** Checks and keeps the `i`th entry read: a `[string, Value]` array (read by index), with a key not seen before. */
-  private static entry(seen: KeySet, kept: Entry[], entry: unknown, i: number): CanonicalError | undefined {
+  static #entry(seen: KeySet, kept: Entry[], entry: unknown, i: number): CanonicalError | undefined {
     if (!isArrayGuarded(entry)) return expected(`a [key, value] array at index ${i.toString()}`);
     // guarded: the key's read (a Proxy's trap) may have revoked the entry; neither check takes REVOKED
     const key: unknown = readGuarded(entry, 0);
     const value: unknown = readGuarded(entry, 1);
     if (typeof key !== "string") return expected(`a string key at index ${i.toString()}`);
     if (!isValue(value)) return expected(`a canonical value at index ${i.toString()}`);
-    return MapValue.add(seen, kept, key, value);
+    return MapValue.#add(seen, kept, key, value);
   }
 
   /** Keeps the entry `key: value`, unless its key repeats one already seen or is not well-formed (why, then). */
-  private static add(seen: KeySet, kept: Entry[], key: string, value: Value): CanonicalError | undefined {
+  static #add(seen: KeySet, kept: Entry[], key: string, value: Value): CanonicalError | undefined {
     if (!seen.add(key)) return { kind: "DuplicateKey", key: Preview.of(key) };
     if (!isWellFormed(key)) return { kind: "UnpairedSurrogate" };
     if (value.kind !== "null") kept.push({ key, utf8: encodeUtf8(key), value });
@@ -740,10 +859,16 @@ export class MapValue {
   }
 
   /** The map of the entries kept, in canonical key order, if within the depth limit. */
-  private static closed(kept: Entry[]): Result<MapValue, CanonicalError> {
+  static #closed(kept: Entry[]): Result<MapValue, CanonicalError> {
     kept.sort((a, b) => canonicalKeyOrder(a.utf8, b.utf8));
-    const [depth, weight] = measure(kept, (e) => [e.value.depth, 1n + BigInt(e.utf8.length) + e.value.weight]);
-    return depth > MAX_DEPTH ? err(depthExceeded) : ok(new MapValue(KEY, Object.freeze(kept), depth, weight));
+    return MapValue.#sorted(kept);
+  }
+
+  /** The map of `entries` (unique, non-null, in canonical key order), if within the depth limit: O(n), from the bottom up. */
+  static #sorted(entries: readonly Entry[]): Result<MapValue, CanonicalError> {
+    const root = built(entries);
+    const depth = (root?.deepest ?? 0) + 1;
+    return depth > MAX_DEPTH ? err(depthExceeded) : ok(new MapValue(KEY, root, entries.length, Object.freeze(entries), depth, mapWeight(root)));
   }
 
   static {
@@ -751,11 +876,12 @@ export class MapValue {
       const seen = new KeySet();
       const kept: Entry[] = [];
       for (const [key, value] of entries) {
-        const refused = MapValue.add(seen, kept, key, value);
+        const refused = MapValue.#add(seen, kept, key, value);
         if (refused !== undefined) return err(refused);
       }
-      return MapValue.closed(kept);
+      return MapValue.#closed(kept);
     };
+    mapOfSorted = (entries) => MapValue.#sorted(entries);
   }
 
   /**
@@ -764,27 +890,66 @@ export class MapValue {
    * never read.
    */
   get(key: string): Value | undefined {
-    if (typeof (key as unknown) !== "string") return undefined;
-    return this.#entries[search(this.#entries, (e) => e.utf8, encodeUtf8(key), canonicalKeyOrder)]?.value;
+    if (typeof (key as unknown) !== "string" || !MapValue.#isMinted(this)) return undefined;
+    return found(this.#root, encodeUtf8(key))?.value;
+  }
+
+  /** Whether the map holds `key`: {@link get}'s search, and like it, false for a key that is not a string. */
+  has(key: string): boolean {
+    return this.get(key) !== undefined;
+  }
+
+  /**
+   * This map with `key` set to `value`, or without `key` when `value` is null (a map never holds null, as in
+   * {@link of}): O(|key| + log n), building one node per level of the search and sharing every other one with this
+   * map, which is unchanged. Refused, in this order: a map this module did not mint (one built by calling the
+   * constructor from JavaScript, whose tree its caller chose), a key that is not a string, or a value that is not a
+   * canonical value (see {@link isValue}), as a `TypeMismatch`, none read further; a key with an unpaired surrogate as
+   * `UnpairedSurrogate`, null value or not, as {@link of} refuses it; and a value of depth {@link MAX_DEPTH} or more as
+   * `DepthExceeded`, since the map would nest one deeper.
+   */
+  set(key: string, value: Value): Result<MapValue, CanonicalError> {
+    if (!MapValue.#isMinted(this)) return err(notAMap);
+    if (typeof (key as unknown) !== "string") return err(notAKey);
+    if (!isValue(value)) return err(notAValue);
+    if (!isWellFormed(key)) return err({ kind: "UnpairedSurrogate" });
+    if (value.kind === "null") return ok(this.delete(key));
+    if (value.depth >= MAX_DEPTH) return err(depthExceeded);
+    const [root, added] = inserted(this.#root, { key, utf8: encodeUtf8(key), value });
+    return ok(MapValue.#rooted(root, added ? this.#size + 1 : this.#size));
+  }
+
+  /**
+   * This map without `key`: O(|key| + log n), building one node per level of the search and sharing every other one
+   * with this map, which is unchanged. A key the map does not hold gives this map itself; so does a key that is not a
+   * string (from a JavaScript caller, or a cast), which is never read, and one with an unpaired surrogate, which no map
+   * holds. Removing never deepens a map, so nothing is refused. A map this module did not mint is given back as it is,
+   * its tree never read: nothing is built from it.
+   */
+  delete(key: string): MapValue {
+    if (typeof (key as unknown) !== "string" || !MapValue.#isMinted(this)) return this;
+    const root = removed(this.#root, encodeUtf8(key));
+    return root === ABSENT ? this : MapValue.#rooted(root, this.#size - 1);
   }
 
   /** The entries in canonical key order. */
   entries(): readonly (readonly [string, Value])[] {
-    return this.#entries.map((e) => [e.key, e.value] as const);
+    return entriesOf(this).map((e) => [e.key, e.value] as const);
   }
 
   /** The keys in canonical key order. */
   keys(): readonly string[] {
-    return this.#entries.map((e) => e.key);
+    return entriesOf(this).map((e) => e.key);
   }
 
   /** Each key's UTF-8 and value, in canonical key order. */
   encodedEntries(): readonly (readonly [Uint8Array, Value])[] {
-    return this.#entries.map((e) => [copyBytes(e.utf8), e.value] as const);
+    return entriesOf(this).map((e) => [copyBytes(e.utf8), e.value] as const);
   }
 
+  /** The number of entries. O(1). */
   get size(): number {
-    return this.#entries.length;
+    return this.#size;
   }
   toString(): string {
     return inspect(this);
@@ -795,6 +960,77 @@ export class MapValue {
 }
 Object.freeze(MapValue);
 Object.freeze(MapValue.prototype);
+
+/**
+ * The keys of a map, checked once, and their canonical order: a map with exactly these keys is then built from their
+ * values in O(n), with no key compared, measured or encoded (as Rust's `MapShape`). For the JLVM's object literals,
+ * whose keys are known when a program compiles and whose map is built at every evaluation. Internal to this SDK. What
+ * it builds is checked as {@link MapValue.of} checks it (keys distinct, well-formed strings, values canonical, each in
+ * O(1) at build time), and only a shape {@link MapShape.of} made builds anything, so no map is minted from anything
+ * else.
+ */
+export class MapShape {
+  /** Each key and its UTF-8, in canonical key order, with the position of its value. */
+  readonly #order: readonly (readonly [string, Uint8Array, number])[];
+  /** Whether {@link MapShape.of} made this shape: one built by calling the constructor from outside builds nothing. */
+  readonly #made: boolean;
+  private constructor(key: symbol, order: readonly (readonly [string, Uint8Array, number])[]) {
+    this.#made = key === KEY;
+    this.#order = order;
+    Object.freeze(this);
+  }
+
+  static #isMade(x: object): x is MapShape {
+    return #made in x && x.#made;
+  }
+
+  /** The number of keys. */
+  get size(): number {
+    return MapShape.#isMade(this) ? this.#order.length : 0;
+  }
+
+  /**
+   * The shape of `keys`, in the order their values will be given: O(n log n), once. `keys` that is not an array, or a
+   * key that is not a string, is a `TypeMismatch`; a key with an unpaired surrogate is `UnpairedSurrogate` (both the
+   * first in the given order); a key given twice is `DuplicateKey`.
+   */
+  static of(keys: readonly string[]): Result<MapShape, CanonicalError> {
+    if (!isArrayGuarded(keys)) return err(notAnArray);
+    const order: (readonly [string, Uint8Array, number])[] = [];
+    for (let i = 0; i < keys.length; i++) {
+      const key: unknown = keys[i];
+      if (typeof key !== "string") return err(expected(`a string key at index ${i.toString()}`));
+      if (!isWellFormed(key)) return err({ kind: "UnpairedSurrogate" });
+      order.push([key, encodeUtf8(key), i]);
+    }
+    order.sort((a, b) => canonicalKeyOrder(a[1], b[1]));
+    for (let i = 1; i < order.length; i++) {
+      const [before, here] = [order[i - 1], order[i]];
+      if (before !== undefined && here !== undefined && canonicalKeyOrder(before[1], here[1]) === 0) return err({ kind: "DuplicateKey", key: Preview.of(here[0]) });
+    }
+    return ok(new MapShape(KEY, Object.freeze(order)));
+  }
+
+  /**
+   * The map of these keys to `values`, given in the keys' order (a missing one is null), with null values dropped:
+   * O(n). `values` that is not an array, a value that is not a canonical value (see {@link isValue}), or a shape
+   * {@link MapShape.of} did not make, is a `TypeMismatch`; a value that nests too deep for a map is `DepthExceeded`.
+   */
+  map(values: readonly Value[]): Result<MapValue, CanonicalError> {
+    if (!MapShape.#isMade(this)) return err(expected("a map shape"));
+    if (!isArrayGuarded(values)) return err(notAnArray);
+    const entries: Entry[] = [];
+    for (const [key, utf8, i] of this.#order) {
+      const value: unknown = values[i];
+      if (value === undefined) continue;
+      if (!isValue(value)) return err(expected(`a canonical value at index ${i.toString()}`));
+      if (value.kind !== "null") entries.push({ key, utf8, value });
+    }
+    return mapOfSorted(entries);
+  }
+}
+Object.freeze(MapShape);
+Object.freeze(MapShape.prototype);
 
 // ------------------------------------------------------------------------------------------------ equality
 
@@ -828,7 +1064,7 @@ Object.freeze(Proven.prototype);
 /** Two containers whose parts are being compared, in order, and the next index. */
 type Comparing =
   | { readonly map: false; readonly a: ArrayValue; readonly b: ArrayValue; at: number }
-  | { readonly map: true; readonly a: MapValue; readonly b: MapValue; readonly x: readonly Entry[]; readonly y: readonly Entry[]; at: number };
+  | { readonly map: true; readonly a: MapValue; readonly b: MapValue; readonly x: () => Entry | undefined; readonly y: () => Entry | undefined; at: number };
 
 /** Two scalars of one kind: a large pair already proven equal, or compared now (and a large pair recorded when equal). */
 function scalar(proven: Proven, a: object, b: object, large: boolean, same: () => boolean): boolean {
@@ -861,7 +1097,7 @@ function compare(proven: Proven, stack: Comparing[], a: Value, b: Value): boolea
       return true;
     case "map":
       if (b.kind !== "map" || a.size !== b.size) return false;
-      if (!proven.has(a, b)) stack.push({ map: true, a, b, x: entriesOf(a), y: entriesOf(b), at: 0 });
+      if (!proven.has(a, b)) stack.push({ map: true, a, b, x: cursorOf(a), y: cursorOf(b), at: 0 });
       return true;
   }
 }
@@ -879,9 +1115,9 @@ export function equals(a: Value, b: Value): boolean {
   if (!compare(proven, stack, a, b)) return false;
   for (let top = stack.at(-1); top !== undefined; top = stack.at(-1)) {
     const i = top.at++;
-    // the lengths are equal, so both sides end together
+    // the lengths are equal, so both sides end together; a map's entries are walked only as far as the comparison goes
     if (top.map) {
-      const [x, y] = [top.x[i], top.y[i]];
+      const [x, y] = [top.x(), top.y()];
       if (x === undefined || y === undefined) {
         stack.pop();
         proven.add(top.a, top.b);
@@ -929,7 +1165,7 @@ function scalarText(v: NullValue | BoolValue | IntValue | RationalValue | TextVa
   }
 }
 
-type Showing = { readonly map: false; readonly items: readonly Value[]; at: number } | { readonly map: true; readonly entries: readonly Entry[]; at: number };
+type Showing = { readonly map: false; readonly items: readonly Value[]; at: number } | { readonly map: true; readonly next: () => Entry | undefined; readonly size: number; at: number };
 
 /** What {@link inspect} shows for something that is not a canonical value: fixed, so the input is never read. */
 export const NOT_A_VALUE = "<not a canonical value>";
@@ -959,12 +1195,13 @@ export function inspect(value: Value): string {
       out.push(ELIDED);
     } else {
       out.push(v.kind === "array" ? "[" : "{");
-      stack.push(v.kind === "array" ? { map: false, items: v.items, at: 0 } : { map: true, entries: entriesOf(v), at: 0 });
+      // a map's entries are read only as far as the budget goes, and never all listed for it
+      stack.push(v.kind === "array" ? { map: false, items: v.items, at: 0 } : { map: true, next: cursorOf(v), size: v.size, at: 0 });
     }
   };
   show(value);
   for (let top = stack.at(-1); top !== undefined; top = stack.at(-1)) {
-    const length = top.map ? top.entries.length : top.items.length;
+    const length = top.map ? top.size : top.items.length;
     const i = top.at++;
     if (i >= length) {
       out.push(top.map ? "}" : "]");
@@ -972,7 +1209,7 @@ export function inspect(value: Value): string {
       continue;
     }
     if (i > 0) out.push(", ");
-    const entry = top.map ? top.entries[i] : undefined;
+    const entry = top.map ? top.next() : undefined;
     const item = top.map ? entry?.value : top.items[i];
     if (item === undefined || units === 0n || (entry !== undefined && !spend(1n + BigInt(entry.utf8.length)))) {
       out.push(ELIDED);

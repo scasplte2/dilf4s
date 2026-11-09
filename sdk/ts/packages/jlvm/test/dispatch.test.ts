@@ -9,7 +9,6 @@ import { describe, expect, it } from "vitest";
 
 import { CRYPTO } from "../src/crypto.js";
 import { ALL_OPS, CRYPTO_OPS, evaluate, FORM_OPS, isCrypto, isForm, isStrict, NOT_A_JLVM_ERROR, opFromWire, opNamed, parse, SCHEDULE_V1, siteOf, type JlvmOp, type OpCost, type Rate, type SizeUnit } from "../src/index.js";
-import { Heap } from "../src/jvalue.js";
 import { STRICT } from "../src/ops.js";
 import { readRepoFile } from "./vectors.js";
 
@@ -34,14 +33,13 @@ describe("dispatch", () => {
     const strict = ALL_OPS.filter(isStrict);
     expect(Object.keys(STRICT).sort()).toEqual([...strict].sort());
     expect(Object.keys(CRYPTO).sort()).toEqual([...CRYPTO_OPS].sort());
-    const heap = new Heap();
     for (const op of strict) {
       // with no arguments, a handler refuses or answers: it never falls through to another operation's
-      const r = STRICT[op]([], heap);
+      const r = STRICT[op]([]);
       if (!r.ok && "op" in r.error) expect(r.error.op, op).toBe(op);
     }
     for (const op of CRYPTO_OPS) {
-      const r = CRYPTO[op]([], heap);
+      const r = CRYPTO[op]([]);
       // with no arguments, every cryptographic handler runs and refuses the arity at its own operation (no pairs is a
       // pairing's true): none is a stub, and the handler type admits no outcome but a value or a JLVM error
       if (!r.ok) expect({ kind: r.error.kind, op: siteOf(r.error) }, op).toEqual({ kind: "Arity", op });

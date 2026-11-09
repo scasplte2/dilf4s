@@ -2,11 +2,10 @@
  * Value-level semantics shared by every operation (`Values.scala`): truthiness, kinds, numbers, bounds, paths,
  * ordering, text, substring search and deduplication.
  */
-import { BoolValue, BytesValue, cbor, equals, IntValue, models, NullValue, TextValue, type RationalValue } from "@kd5ujc/dilf4s-core";
+import { ArrayValue, BoolValue, BytesValue, cbor, equals, IntValue, models, NullValue, TextValue, type CanonicalError, type MapValue, type RationalValue, type Result, type Value } from "@kd5ujc/dilf4s-core";
 import { compareBytes, compareCodePoints } from "@kd5ujc/dilf4s-core/internal";
 
 import { limit, typeError, type JlvmError } from "./error.js";
-import { JArray, type AnyArray, type Heap, type JMap, type JValue } from "./jvalue.js";
 import type { JlvmOp } from "./op.js";
 
 /** The largest number, in bits of the numerator and of the denominator (jlvm.md section 2). */
@@ -22,10 +21,10 @@ export const KEY_BLOCK = 32;
 export const SEARCH_BLOCK = 128;
 
 /** A result: a value, or a language error. */
-export type Out<T = JValue> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: JlvmError };
+export type Out<T = Value> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: JlvmError };
 
 export const good = <T>(value: T): Out<T> => ({ ok: true, value });
-export const bad = <T = JValue>(error: JlvmError): Out<T> => ({ ok: false, error });
+export const bad = <T = Value>(error: JlvmError): Out<T> => ({ ok: false, error });
 
 export const NULL: NullValue = NullValue.instance;
 export const TRUE: BoolValue = BoolValue.true;
@@ -44,7 +43,7 @@ export function count(n: number | bigint): Out<IntValue> {
 }
 
 /** JsonLogic truthiness: null, false, 0, "", empty bytes, [] and {} are falsy. */
-export function truthy(v: JValue): boolean {
+export function truthy(v: Value): boolean {
   switch (v.kind) {
     case "null":
       return false;
@@ -66,7 +65,7 @@ export function truthy(v: JValue): boolean {
 }
 
 /** The kind name `typeof` reports. There is one number kind. */
-export function kindName(v: JValue): string {
+export function kindName(v: Value): string {
   switch (v.kind) {
     case "null":
       return "null";
@@ -89,7 +88,7 @@ export function kindName(v: JValue): string {
 /** A number: core's integer or reduced rational. */
 export type Num = IntValue | RationalValue;
 
-export const isNumber = (v: JValue): v is Num => v.kind === "int" || v.kind === "rational";
+export const isNumber = (v: Value): v is Num => v.kind === "int" || v.kind === "rational";
 
 /** The `Limit` of a number past {@link MAX_NUMBER_BITS}. */
 export const tooLarge = (op: JlvmOp): JlvmError => limit(`${op}: a number exceeds ${MAX_NUMBER_BITS.toString()} bits`);
@@ -100,13 +99,13 @@ export function fits(x: Num): boolean {
 }
 
 /** A number operand, within {@link MAX_NUMBER_BITS}: checked from its cached bit lengths, before any arithmetic. */
-export function numeric(op: JlvmOp, v: JValue): Out<Num> {
+export function numeric(op: JlvmOp, v: Value): Out<Num> {
   if (!isNumber(v)) return bad(typeError(op, `expected a number, got ${kindName(v)}`));
   return fits(v) ? good(v) : bad(tooLarge(op));
 }
 
 /** An integer operand, within {@link MAX_NUMBER_BITS}. */
-export function integer(op: JlvmOp, v: JValue): Out<IntValue> {
+export function integer(op: JlvmOp, v: Value): Out<IntValue> {
   if (v.kind !== "int") return bad(typeError(op, `expected an integer, got ${kindName(v)}`));
   return v.bitLength <= MAX_NUMBER_BITS ? good(v) : bad(tooLarge(op));
 }
@@ -117,7 +116,7 @@ export function num(op: JlvmOp, x: Num): Out<Num> {
 }
 
 /** `v`, if its weight is within {@link MAX_RESULT_WEIGHT}: O(1), from its cached weight. `place` names the construct. */
-export function bounded<T extends JValue>(place: string, v: T): Out<T> {
+export function bounded<T extends Value>(place: string, v: T): Out<T> {
   return v.weight <= MAX_RESULT_WEIGHT ? good(v) : bad(limit(`${place}: the result exceeds weight ${MAX_RESULT_WEIGHT.toString()}`));
 }
 
@@ -133,19 +132,26 @@ export function bytes(place: string, b: Uint8Array): Out<BytesValue> {
   return v.ok ? bounded(place, v.value) : bad(limit(`${place}: not bytes`));
 }
 
-/** An array result: depth, then weight. */
-export function array(place: string, items: readonly JValue[]): Out<JArray> {
-  const a = JArray.of(items);
-  return a === undefined ? bad(limit(`${place}: nests deeper than ${models.limits.CANONICAL_MAX_DEPTH.toString()}`)) : bounded(place, a);
+/** The `Limit` of a container that would nest deeper than the data model allows. */
+const tooDeep = (place: string): JlvmError => limit(`${place}: nests deeper than ${models.limits.CANONICAL_MAX_DEPTH.toString()}`);
+
+/**
+ * An array result: depth, then weight. Core's own constructor builds it, as for any caller: a copy of `items`, each
+ * read once and checked a value (which every value the machine holds is), O(n), as the elements were paid for. Its
+ * one refusal for them is the depth.
+ */
+export function array(place: string, items: readonly Value[]): Out<ArrayValue> {
+  const a = ArrayValue.of(items);
+  return a.ok ? bounded(place, a.value) : bad(tooDeep(place));
 }
 
-/** A map result: depth, then weight. */
-export function mapResult(place: string, m: JMap | undefined): Out<JMap> {
-  return m === undefined ? bad(limit(`${place}: nests deeper than ${models.limits.CANONICAL_MAX_DEPTH.toString()}`)) : bounded(place, m);
+/** A map result: depth (the only refusal a map the machine builds can meet), then weight. */
+export function mapResult(place: string, m: Result<MapValue, CanonicalError>): Out<MapValue> {
+  return m.ok ? bounded(place, m.value) : bad(tooDeep(place));
 }
 
 /** The elements of an array. */
-export const itemsOf = (a: AnyArray): readonly JValue[] => a.items;
+export const itemsOf = (a: ArrayValue): readonly Value[] => a.items;
 
 /** `0|[1-9][0-9]{0,8}`, as an index. */
 function index(seg: string): number | undefined {
@@ -162,10 +168,10 @@ function index(seg: string): number | undefined {
 }
 
 /** The value at `path`: an object segment is a key; an array segment is a decimal index without leading zeros. Anything absent is null. */
-export function at(v: JValue, path: readonly string[]): JValue {
+export function at(v: Value, path: readonly string[]): Value {
   let here = v;
   for (const seg of path) {
-    let next: JValue | undefined;
+    let next: Value | undefined;
     if (here.kind === "map") next = here.get(seg);
     else if (here.kind === "array") {
       const i = index(seg);
@@ -193,7 +199,7 @@ export function compareNumbers(a: Num, b: Num): number {
 }
 
 /** Text compares by Unicode code point; numbers numerically; anything else cannot be ordered. */
-export function compare(op: JlvmOp, a: JValue, b: JValue): Out<number> {
+export function compare(op: JlvmOp, a: Value, b: Value): Out<number> {
   if (a.kind === "text" && b.kind === "text") return good(compareCodePoints(a.value, b.value));
   if (isNumber(a) && isNumber(b)) {
     const x = numeric(op, a);
@@ -260,7 +266,7 @@ export function codePointOffset(s: string, k: number): number {
 }
 
 /** The bits of a number's decimal expansion, bounded from its size alone (`Values.renderedBits`); 0 for anything else. */
-export function renderedBits(v: JValue): number {
+export function renderedBits(v: Value): number {
   if (v.kind === "int") return v.bitLength;
   if (v.kind === "rational") return v.numeratorBitLength + Math.floor((7 * v.denominatorBitLength + 2) / 3);
   return 0;
@@ -270,10 +276,10 @@ export function renderedBits(v: JValue): number {
 export const segmentCount = (s: string): number => Math.floor(s.length / KEY_BLOCK) + 1;
 
 /** A computed path's segment: text as {@link segmentCount}, anything else (an index) as one. */
-export const pathSegments = (v: JValue): number => (v.kind === "text" ? segmentCount(v.value) : 1);
+export const pathSegments = (v: Value): number => (v.kind === "text" ? segmentCount(v.value) : 1);
 
 /** Top-level size: entries of arrays and maps, 1 for anything else. */
-export function elements(v: JValue): number {
+export function elements(v: Value): number {
   return v.kind === "array" ? v.length : v.kind === "map" ? v.size : 1;
 }
 
@@ -329,17 +335,17 @@ const MAX_KEY_BYTES = cbor.MAX_ENCODED_BYTES;
 /** A sort key for deduplicating: kinds first; scalars then compare structurally, and arrays and maps by their canonical encoding. */
 interface SortKey {
   readonly rank: number;
-  readonly value: JValue;
+  readonly value: Value;
   readonly encoding: Uint8Array | undefined;
 }
 
-const RANKS: Readonly<Record<JValue["kind"], number>> = { null: 0, bool: 1, int: 2, rational: 3, text: 4, bytes: 5, array: 6, map: 7 };
+const RANKS: Readonly<Record<Value["kind"], number>> = { null: 0, bool: 1, int: 2, rational: 3, text: 4, bytes: 5, array: 6, map: 7 };
 
 /**
  * The sort key of `value`. A collection's encoding is budgeted by its weight, which the operation has paid for, and
  * capped at {@link MAX_KEY_BYTES}: a value heavier than the cap is refused from its weight, before anything is written.
  */
-function sortKey(heap: Heap, op: JlvmOp, value: JValue): Out<SortKey> {
+function sortKey(op: JlvmOp, value: Value): Out<SortKey> {
   const rank = RANKS[value.kind];
   if (value.kind === "bytes" && value.length > MAX_KEY_BYTES) return bad(limit(`${op}: a byte string past ${MAX_KEY_BYTES.toString()} bytes`));
   // a byte string is its own key, copied out once rather than at every comparison
@@ -347,9 +353,7 @@ function sortKey(heap: Heap, op: JlvmOp, value: JValue): Out<SortKey> {
   if (value.kind !== "array" && value.kind !== "map") return good({ rank, value, encoding: undefined });
   const budget = value.weight * ENCODING_PER_WEIGHT;
   const cap = budget > BigInt(MAX_KEY_BYTES) ? MAX_KEY_BYTES : Number(budget);
-  const core = heap.value(value);
-  if (core === undefined) return bad(limit(`${op}: a value nests too deep`));
-  const e = cbor.encodeWithin(core, cap);
+  const e = cbor.encodeWithin(value, cap);
   return e.ok ? good({ rank, value, encoding: e.value }) : bad(limit(`${op}: the encoding exceeds ${cap.toString()} bytes`));
 }
 
@@ -367,10 +371,10 @@ function compareKeys(x: SortKey, y: SortKey): number {
 }
 
 /** `vs` without repeats, keeping each value's first occurrence, in order: a stable sort and a scan, O(n log n). */
-export function distinct(heap: Heap, op: JlvmOp, vs: readonly JValue[]): Out<readonly JValue[]> {
+export function distinct(op: JlvmOp, vs: readonly Value[]): Out<readonly Value[]> {
   const keyed: (readonly [SortKey, number])[] = [];
   for (const [i, v] of vs.entries()) {
-    const k = sortKey(heap, op, v);
+    const k = sortKey(op, v);
     if (!k.ok) return k;
     keyed.push([k.value, i]);
   }
@@ -386,16 +390,16 @@ export function distinct(heap: Heap, op: JlvmOp, vs: readonly JValue[]): Out<rea
 }
 
 /** Whether every element of `xs` is in `ys`: a binary search of `ys` in that order, O((m + n) log n). */
-export function subset(heap: Heap, op: JlvmOp, xs: readonly JValue[], ys: readonly JValue[]): Out<boolean> {
+export function subset(op: JlvmOp, xs: readonly Value[], ys: readonly Value[]): Out<boolean> {
   const sorted: SortKey[] = [];
   for (const y of ys) {
-    const k = sortKey(heap, op, y);
+    const k = sortKey(op, y);
     if (!k.ok) return k;
     sorted.push(k.value);
   }
   sorted.sort(compareKeys);
   for (const x of xs) {
-    const k = sortKey(heap, op, x);
+    const k = sortKey(op, x);
     if (!k.ok) return k;
     let [lo, hi] = [0, sorted.length];
     for (; lo < hi; ) {
@@ -413,16 +417,10 @@ export function subset(heap: Heap, op: JlvmOp, xs: readonly JValue[], ys: readon
 // ---- equality
 
 /**
- * Structural equality of canonical values: O(1) when the kinds, weights or depths differ; otherwise both sides as core
- * values (each container converted once), compared by core's `equals`, which never expands a shared part twice.
+ * Structural equality of canonical values, by core's `equals`: O(1) when the kinds, weights or depths differ, and it
+ * never expands a shared part twice.
  */
-export function equal(heap: Heap, a: JValue, b: JValue): boolean {
-  if (a === b) return true;
-  if (a.kind !== b.kind || a.weight !== b.weight || a.depth !== b.depth) return false;
-  const x = heap.value(a);
-  const y = heap.value(b);
-  return x !== undefined && y !== undefined && equals(x, y);
-}
+export const equal = (a: Value, b: Value): boolean => equals(a, b);
 
 // ---- the JSON surface's bytes
 

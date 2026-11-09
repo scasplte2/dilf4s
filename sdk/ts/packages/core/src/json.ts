@@ -13,8 +13,7 @@ import { CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js
 import { KeySet } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
-import { compareCodePoints } from "./utf8.js";
-import { arrayOfValues, BoolValue, entriesView, IntValue, isValue, mapOfValues, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
+import { arrayOfValues, BoolValue, codePointView, IntValue, isValue, mapOfValues, MAX_DEPTH, NullValue, RationalValue, TextValue, type Entry, type Value } from "./value.js";
 
 const INT32_MAX = 2n ** 31n - 1n;
 const INT32_MIN = -(2n ** 31n);
@@ -373,7 +372,8 @@ export type RenderError = CanonicalError | TooLarge;
  * string can hold the text). Fails for bytes, non-terminating rationals and over-long numbers, and with `TooLarge` at
  * the first part found past the limit, whichever comes first.
  *
- * O(min(weight, `maxBytes`)) apart from sorting object members: a value's JSON is at least as long in UTF-8 as its
+ * O(min(weight, `maxBytes`)) apart from putting each object's members in order, which is linear in the object's weight
+ * (its code-point view, which a map built from entries keeps): a value's JSON is at least as long in UTF-8 as its
  * weight (each node writes at least a byte, a text or key its UTF-8 and quotes, a number of `l` whole limbs more than
  * `l` digits), so each part is refused in O(1) when its weight is over what is left, and every part rendered fits.
  * Iterative, with an explicit stack of at most {@link MAX_DEPTH} open containers.
@@ -441,7 +441,8 @@ export function renderInto<S>(value: Value, maxBytes: number, s: S, sink: TextSi
         return undefined;
       case "map":
         if (!ascii("{")) return meter.refusal();
-        stack.push({ object: true, members: [...entriesView(v)].sort((a, b) => compareCodePoints(a.key, b.key)), at: 0 });
+        // members in code-point order of their names, the map's own view of its entries (linear in its weight)
+        stack.push({ object: true, members: codePointView(v), at: 0 });
         return undefined;
     }
   };

@@ -7,11 +7,10 @@
  * right), so the first error is the same. {@link STRICT} has exactly one handler per strict operation: its type is a
  * record over every {@link StrictOp}, so a missing or extra one does not compile.
  */
-import { cbor, json, models, type HashAlgorithm } from "@kd5ujc/dilf4s-core";
-import { bitLengthOf, digestOf, toHexOf, utf8LengthOf } from "@kd5ujc/dilf4s-core/internal";
+import { cbor, json, MapValue, models, type HashAlgorithm, type Value } from "@kd5ujc/dilf4s-core";
+import { bitLengthOf, codePointKeys, codePointValues, digestOf, toHexOf, utf8LengthOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { arithmetic, arity, domain, limit, typeError, type JlvmError } from "./error.js";
-import { JMap, type AnyMap, type Heap, type JValue } from "./jvalue.js";
 import type { StrictOp } from "./op.js";
 import * as ratio from "./ratio.js";
 import {
@@ -58,22 +57,22 @@ export const MAX_EXPONENT = models.limits.JLVM_MAX_EXPONENT;
 /** The largest `int_to_bytes` width. */
 export const MAX_INT_BYTES = models.limits.JLVM_MAX_INT_BYTES;
 
-/** A strict operation's handler: its evaluated arguments, and the evaluation's heap. */
-export type Handler = (args: readonly JValue[], heap: Heap) => Out;
+/** A strict operation's handler: its evaluated arguments. */
+export type Handler = (args: readonly Value[]) => Out;
 
 // ---- argument shapes
 
-function unary(op: StrictOp, args: readonly JValue[], f: (a: JValue) => Out): Out {
+function unary(op: StrictOp, args: readonly Value[], f: (a: Value) => Out): Out {
   const [a] = args;
   return args.length === 1 && a !== undefined ? f(a) : bad(arity(op, `takes 1 argument, got ${args.length.toString()}`));
 }
 
-function binary(op: StrictOp, args: readonly JValue[], f: (a: JValue, b: JValue) => Out): Out {
+function binary(op: StrictOp, args: readonly Value[], f: (a: Value, b: Value) => Out): Out {
   const [a, b] = args;
   return args.length === 2 && a !== undefined && b !== undefined ? f(a, b) : bad(arity(op, `takes 2 arguments, got ${args.length.toString()}`));
 }
 
-const numUnary = (op: StrictOp, args: readonly JValue[], f: (x: Num) => Out<Num>): Out =>
+const numUnary = (op: StrictOp, args: readonly Value[], f: (x: Num) => Out<Num>): Out =>
   unary(op, args, (v) => {
     const x = numeric(op, v);
     if (!x.ok) return x;
@@ -81,7 +80,7 @@ const numUnary = (op: StrictOp, args: readonly JValue[], f: (x: Num) => Out<Num>
     return r.ok ? num(op, r.value) : r;
   });
 
-const numBinary = (op: StrictOp, args: readonly JValue[], f: (x: Num, y: Num) => Out<Num>): Out =>
+const numBinary = (op: StrictOp, args: readonly Value[], f: (x: Num, y: Num) => Out<Num>): Out =>
   binary(op, args, (a, b) => {
     const x = numeric(op, a);
     if (!x.ok) return x;
@@ -96,30 +95,30 @@ const integerOf = (op: StrictOp, n: bigint): Out<Num> => {
   return r.ok ? r : bad(tooLarge(op));
 };
 
-const expected = (op: StrictOp, what: string, v: JValue): Out<never> => bad(typeError(op, `expected ${what}, got ${kindName(v)}`));
+const expected = (op: StrictOp, what: string, v: Value): Out<never> => bad(typeError(op, `expected ${what}, got ${kindName(v)}`));
 
-function str(op: StrictOp, v: JValue): Out<string> {
+function str(op: StrictOp, v: Value): Out<string> {
   return v.kind === "text" ? good(v.value) : expected(op, "a string", v);
 }
 
-function arr(op: StrictOp, v: JValue): Out<readonly JValue[]> {
+function arr(op: StrictOp, v: Value): Out<readonly Value[]> {
   return v.kind === "array" ? good(v.items) : expected(op, "an array", v);
 }
 
-function obj(op: StrictOp, v: JValue): Out<AnyMap> {
+function obj(op: StrictOp, v: Value): Out<MapValue> {
   return v.kind === "map" ? good(v) : expected(op, "an object", v);
 }
 
-function textKey(op: StrictOp, v: JValue): Out<string> {
+function textKey(op: StrictOp, v: Value): Out<string> {
   return v.kind === "text" ? good(v.value) : expected(op, "a string key", v);
 }
 
-function rawBytes(op: StrictOp, v: JValue): Out<Uint8Array> {
+function rawBytes(op: StrictOp, v: Value): Out<Uint8Array> {
   return v.kind === "bytes" ? good(v.bytes) : expected(op, "bytes", v);
 }
 
 /** An integer index; any integer, since every use clamps it to a collection's size. */
-function index(op: StrictOp, v: JValue): Out<bigint> {
+function index(op: StrictOp, v: Value): Out<bigint> {
   return v.kind === "int" ? good(v.value) : expected(op, "an integer", v);
 }
 
@@ -128,14 +127,14 @@ function index(op: StrictOp, v: JValue): Out<bigint> {
  * arguments' cached weights first, so one past the bound is a `Limit` before any element is copied (a spread of
  * shared arrays could otherwise ask for more elements than memory holds).
  */
-function spreading(op: StrictOp, vs: readonly JValue[]): Out {
+function spreading(op: StrictOp, vs: readonly Value[]): Out {
   const weight = vs.reduce((w, v) => w + (v.kind === "array" ? v.weight - 1n : v.weight), 1n);
   return weight > MAX_RESULT_WEIGHT ? bad(limit(`${op}: the result exceeds weight ${MAX_RESULT_WEIGHT.toString()}`)) : array(op, spreadAll(vs));
 }
 
 /** Arrays' elements spread, and other values appended, in order. */
-function spreadAll(vs: readonly JValue[]): JValue[] {
-  const out: JValue[] = [];
+function spreadAll(vs: readonly Value[]): Value[] {
+  const out: Value[] = [];
   for (const v of vs) {
     if (v.kind === "array") for (const x of v.items) out.push(x);
     else out.push(v);
@@ -153,7 +152,7 @@ function bound(i: bigint, n: number): number {
 // ---- comparison and arithmetic
 
 /** `<` and `<=` also take three arguments, meaning "between". */
-function ordering(op: StrictOp, args: readonly JValue[], holds: (c: number) => boolean, between: boolean): Out {
+function ordering(op: StrictOp, args: readonly Value[], holds: (c: number) => boolean, between: boolean): Out {
   const [a, b, c] = args;
   if (args.length === 2 && a !== undefined && b !== undefined) {
     const x = compare(op, a, b);
@@ -169,7 +168,7 @@ function ordering(op: StrictOp, args: readonly JValue[], holds: (c: number) => b
 }
 
 /** Every argument as a number within the bound, in order. */
-export function operands(op: StrictOp, args: readonly JValue[]): Out<readonly Num[]> {
+export function operands(op: StrictOp, args: readonly Value[]): Out<readonly Num[]> {
   const out: Num[] = [];
   for (const v of args) {
     const x = numeric(op, v);
@@ -183,7 +182,7 @@ export function operands(op: StrictOp, args: readonly JValue[]): Out<readonly Nu
  * `min` or `max`: the argument `keep` chooses, returned as it is. It is already a canonical number, so it is not
  * rebuilt (which would reduce a rational again, through a gcd).
  */
-function fold(op: StrictOp, args: readonly JValue[], keep: (c: number) => boolean): Out {
+function fold(op: StrictOp, args: readonly Value[], keep: (c: number) => boolean): Out {
   const rs = operands(op, args);
   if (!rs.ok) return rs;
   const [first, ...rest] = rs.value;
@@ -203,7 +202,7 @@ export function combine(op: "+" | "*", acc: Num, x: Num): Out<Num> {
 }
 
 /** `+` and `*` uncharged, from their identities (the machine folds them in charged steps instead). */
-function total(op: "+" | "*", args: readonly JValue[]): Out {
+function total(op: "+" | "*", args: readonly Value[]): Out {
   const rs = operands(op, args);
   if (!rs.ok) return rs;
   let acc = identity(op);
@@ -214,7 +213,7 @@ function total(op: "+" | "*", args: readonly JValue[]): Out {
   return acc;
 }
 
-function subtract(op: StrictOp, args: readonly JValue[]): Out {
+function subtract(op: StrictOp, args: readonly Value[]): Out {
   const rs = operands(op, args);
   if (!rs.ok) return rs;
   const [a, b] = rs.value;
@@ -236,7 +235,7 @@ function power(op: StrictOp, base: Num, exponent: Num): Out<Num> {
 // ---- text
 
 /** A piece of `cat` or `join`: a string, a number (exact decimal, paid for by the rendering charge) or a boolean; null is empty. */
-function piece(op: "cat" | "join", v: JValue): Out<string> {
+function piece(op: "cat" | "join", v: Value): Out<string> {
   switch (v.kind) {
     case "text":
       return good(v.value);
@@ -272,17 +271,17 @@ function fitting(op: "cat" | "join", weight: bigint): JlvmError | undefined {
   return weight <= MAX_RESULT_WEIGHT ? undefined : limit(`${op}: the result would exceed weight ${MAX_RESULT_WEIGHT.toString()}`);
 }
 
-const allOf = (args: readonly JValue[], kind: JValue["kind"]): boolean => args.length > 0 && args.every((v) => v.kind === kind);
+const allOf = (args: readonly Value[], kind: Value["kind"]): boolean => args.length > 0 && args.every((v) => v.kind === kind);
 
 /** The values `cat` or `join` renders as decimal text: their numbers, priced before rendering. */
-export function rendered(op: "cat" | "join", args: readonly JValue[]): readonly JValue[] {
+export function rendered(op: "cat" | "join", args: readonly Value[]): readonly Value[] {
   if (op === "cat") return allOf(args, "array") || allOf(args, "bytes") ? [] : args.filter(isNumber);
   const [a] = args;
   return args.length === 2 && a?.kind === "array" ? a.items.filter(isNumber) : [];
 }
 
 /** Concatenates text; when every argument is an array, or every one is bytes, concatenates those instead. */
-export function cat(args: readonly JValue[]): Out {
+export function cat(args: readonly Value[]): Out {
   const op = "cat";
   if (allOf(args, "array")) return spreading(op, args);
   if (allOf(args, "bytes")) {
@@ -309,7 +308,7 @@ export function cat(args: readonly JValue[]): Out {
 }
 
 /** `[text, start]` or `[text, start, length]`, counted in code points; a negative length drops from the end. */
-function substr(args: readonly JValue[]): Out {
+function substr(args: readonly Value[]): Out {
   const op = "substr";
   const [s, start, len] = args;
   if (args.length < 2 || args.length > 3 || s === undefined || start === undefined) return bad(arity(op, "takes [text, start] or [text, start, length]"));
@@ -328,7 +327,7 @@ function substr(args: readonly JValue[]): Out {
 }
 
 /** Null on either side means "not present" and gives `false`. */
-function affix(op: "startsWith" | "endsWith", args: readonly JValue[]): Out {
+function affix(op: "startsWith" | "endsWith", args: readonly Value[]): Out {
   const [s, p] = args;
   if (args.length !== 2 || s === undefined || p === undefined) return bad(arity(op, `takes 2 arguments, got ${args.length.toString()}`));
   if (s.kind === "null" || (s.kind === "text" && p.kind === "null")) return good(FALSE);
@@ -352,7 +351,7 @@ export function separatorBytes(j: Joining): number {
 }
 
 /** Validates and renders a `join`'s pieces, and rejects a result past the weight bound, without building it. */
-export function joining(args: readonly JValue[]): Out<Joining> {
+export function joining(args: readonly Value[]): Out<Joining> {
   const op = "join";
   const [a, sep] = args;
   if (args.length !== 2 || a === undefined || sep === undefined) return bad(arity(op, `takes 2 arguments, got ${args.length.toString()}`));
@@ -376,7 +375,7 @@ export function joined(j: Joining): Out {
   return text("join", j.pieces.join(j.separator));
 }
 
-function split(args: readonly JValue[]): Out {
+function split(args: readonly Value[]): Out {
   const op = "split";
   return binary(op, args, (a, b) => {
     const t = str(op, a);
@@ -384,7 +383,7 @@ function split(args: readonly JValue[]): Out {
     const s = str(op, b);
     if (!s.ok) return s;
     if (s.value.length === 0) return bad(domain(op, "the separator must not be empty"));
-    const pieces: JValue[] = [];
+    const pieces: Value[] = [];
     for (const p of t.value.split(s.value)) {
       const x = text(op, p);
       if (!x.ok) return x;
@@ -395,7 +394,7 @@ function split(args: readonly JValue[]): Out {
 }
 
 /** Code points of a string, elements of an array, bytes of a byte string, entries of an object. */
-function length(v: JValue): Out {
+function length(v: Value): Out {
   const op = "length";
   switch (v.kind) {
     case "text":
@@ -416,37 +415,41 @@ function length(v: JValue): Out {
 
 // ---- collections
 
-/** Objects merge left to right (last wins); otherwise arrays are concatenated and other values appended. */
-function merge(args: readonly JValue[], heap: Heap): Out {
+/**
+ * Objects merge left to right (last wins); otherwise arrays are concatenated and other values appended. Merging maps
+ * sets each entry of the later maps over the first, one O(log n) update each (as gas charges them: levels times the
+ * entries merged in), sharing the rest of the first map, however large: never a pass over all of its entries.
+ */
+function merge(args: readonly Value[]): Out {
   const op = "merge";
-  const maps = args.filter((v): v is AnyMap => v.kind === "map");
+  const maps = args.filter((v): v is MapValue => v.kind === "map");
   if (maps.length !== args.length) return spreading(op, args);
   const [first, ...rest] = maps;
-  if (first === undefined) return good(JMap.empty);
+  if (first === undefined) return good(MapValue.empty);
   if (rest.length === 0) return bounded(op, first);
-  // the first map, then each later entry set over it (last wins) in O(log n), sharing the rest
-  let acc = heap.own(first);
+  let acc = first;
   for (const m of rest) {
-    for (const [k, x] of heap.own(m).entries()) {
+    // in the later map's own order: each of its keys is set once, so the order changes nothing
+    for (const [k, x] of m.entries()) {
       const next = acc.set(k, x);
-      if (next === undefined) return mapResult(op, undefined);
-      acc = next;
+      if (!next.ok) return mapResult(op, next);
+      acc = next.value;
     }
   }
-  return mapResult(op, acc);
+  return bounded(op, acc);
 }
 
 /** Substring, byte substring, or array membership; a null needle is never present. */
-function contains(n: JValue, h: JValue, heap: Heap): Out {
+function contains(n: Value, h: Value): Out {
   if (n.kind === "null") return good(FALSE);
   if (n.kind === "text" && h.kind === "text") return good(bool(containsText(h.value, n.value)));
   if (n.kind === "bytes" && h.kind === "bytes") return good(bool(containsBytes(h.bytes, n.bytes)));
-  if (h.kind === "array") return good(bool(h.items.some((x) => equal(heap, x, n))));
+  if (h.kind === "array") return good(bool(h.items.some((x) => equal(x, n))));
   return bad(typeError("in", `cannot look for ${kindName(n)} in ${kindName(h)}`));
 }
 
 /** Whether every element of the first array is in the second; null is the empty set. */
-function intersect(a: JValue, b: JValue, heap: Heap): Out {
+function intersect(a: Value, b: Value): Out {
   const op = "intersect";
   if (a.kind === "null") return good(bool(true));
   if (a.kind === "array" && b.kind === "null") return good(FALSE);
@@ -454,12 +457,12 @@ function intersect(a: JValue, b: JValue, heap: Heap): Out {
   if (!xs.ok) return xs;
   const ys = arr(op, b);
   if (!ys.ok) return ys;
-  const r = subset(heap, op, xs.value, ys.value);
+  const r = subset(op, xs.value, ys.value);
   return r.ok ? good(bool(r.value)) : r;
 }
 
 /** `[array, start]` or `[array, start, end]`, with JavaScript bounds. */
-function slice(args: readonly JValue[]): Out {
+function slice(args: readonly Value[]): Out {
   const op = "slice";
   const [a = NULL, s = NULL, e] = args;
   if (args.length < 2 || args.length > 3) return bad(arity(op, "takes [array, start] or [array, start, end]"));
@@ -477,25 +480,27 @@ function slice(args: readonly JValue[]): Out {
 
 // ---- objects
 
-/** Keys, values or `[key, value]` pairs in code-point key order; null gives null. */
-function listing(op: "keys" | "values" | "entries", args: readonly JValue[], heap: Heap): Out {
+/**
+ * Keys, values or `[key, value]` pairs in code-point key order; null gives null. The map's code-point view puts its
+ * entries in that order (the order of their UTF-8 bytes) in time linear in its weight, which the size charge pays
+ * for (a map built from entries, a host map's or a literal's, keeps it). Its keys come as text values sharing their UTF-8,
+ * so none is checked or encoded again; each is still bounded, as every text a listing builds is.
+ */
+function listing(op: "keys" | "values" | "entries", args: readonly Value[]): Out {
   return unary(op, args, (v) => {
     if (v.kind === "null") return good(NULL);
     const m = obj(op, v);
     if (!m.ok) return m;
-    // in code-point order of the keys, the order of their UTF-8 bytes: the machine's own maps keep it
-    const entries = m.value instanceof JMap ? m.value.entries() : heap.own(m.value).entries();
-    const out: JValue[] = [];
-    for (const [k, x] of entries) {
-      if (op === "values") {
-        out.push(x);
-        continue;
-      }
-      const key = text(op, k);
+    const values = codePointValues(m.value);
+    if (op === "values") return array(op, values);
+    const keys = codePointKeys(m.value);
+    const out: Value[] = [];
+    for (const [i, k] of keys.entries()) {
+      const key = bounded(op, k);
       if (!key.ok) return key;
       if (op === "keys") out.push(key.value);
       else {
-        const pair = array(op, [key.value, x]);
+        const pair = array(op, [key.value, values[i] ?? NULL]);
         if (!pair.ok) return pair;
         out.push(pair.value);
       }
@@ -504,7 +509,7 @@ function listing(op: "keys" | "values" | "entries", args: readonly JValue[], hea
   });
 }
 
-function get(args: readonly JValue[]): Out {
+function get(args: readonly Value[]): Out {
   const op = "get";
   const [m, k, d] = args;
   if (args.length < 2 || args.length > 3 || m === undefined || k === undefined) return bad(arity(op, "takes [object, key] or [object, key, default]"));
@@ -516,7 +521,7 @@ function get(args: readonly JValue[]): Out {
 }
 
 /** Setting a key to null removes it: canonical maps never hold nulls. */
-function set(args: readonly JValue[], heap: Heap): Out {
+function set(args: readonly Value[]): Out {
   const op = "set";
   const [m, k, v] = args;
   if (args.length !== 3 || m === undefined || k === undefined || v === undefined) return bad(arity(op, `takes [object, key, value], got ${args.length.toString()} arguments`));
@@ -524,14 +529,15 @@ function set(args: readonly JValue[], heap: Heap): Out {
   if (!o.ok) return o;
   const key = textKey(op, k);
   if (!key.ok) return key;
-  // O(log n), sharing every untouched subtree; a null value removes the key
-  return mapResult(op, heap.own(o.value).set(key.value, v));
+  // O(log n), sharing every untouched subtree; a null value removes the key. The key is text, so well-formed, and the
+  // value one the machine holds: its depth is the one refusal left
+  return mapResult(op, o.value.set(key.value, v));
 }
 
 // ---- bytes
 
 /** Bytes, or text of the form `0x` + lowercase hex. */
-function hexInput(op: StrictOp, v: JValue): Out<Uint8Array> {
+function hexInput(op: StrictOp, v: Value): Out<Uint8Array> {
   if (v.kind === "bytes") return good(v.bytes);
   if (v.kind === "text") {
     const b = hexBytes(v.value);
@@ -541,7 +547,7 @@ function hexInput(op: StrictOp, v: JValue): Out<Uint8Array> {
 }
 
 /** Hashes bytes, or the UTF-8 encoding of a string. */
-function hashed(op: StrictOp, algorithm: HashAlgorithm, args: readonly JValue[]): Out {
+function hashed(op: StrictOp, algorithm: HashAlgorithm, args: readonly Value[]): Out {
   return unary(op, args, (v) => {
     // the bytes are a value's own copy, and the algorithm one of core's: hashed as they are
     if (v.kind === "bytes") return bytes(op, digestOf(algorithm, v.bytes));
@@ -561,9 +567,9 @@ function unsignedInt(op: StrictOp, b: Uint8Array): Out {
 }
 
 /** Big-endian and unsigned: minimal (`0` is empty), or left-padded to a fixed width. */
-function intToBytes(args: readonly JValue[]): Out {
+function intToBytes(args: readonly Value[]): Out {
   const op = "int_to_bytes";
-  const unsigned = (v: JValue): Out<Uint8Array> => {
+  const unsigned = (v: Value): Out<Uint8Array> => {
     const i = integer(op, v);
     if (!i.ok) return i;
     // core's minimal big-endian bytes (empty for 0), which refuse only a negative integer
@@ -595,10 +601,10 @@ function intToBytes(args: readonly JValue[]): Out {
 export const STRICT: Readonly<Record<StrictOp, Handler>> = Object.freeze({
   "!": (args) => unary("!", args, (v) => good(bool(!truthy(v)))),
   "!!": (args) => unary("!!", args, (v) => good(bool(truthy(v)))),
-  "==": (args, heap) => binary("==", args, (a, b) => good(bool(equal(heap, a, b)))),
-  "===": (args, heap) => binary("===", args, (a, b) => good(bool(equal(heap, a, b)))),
-  "!=": (args, heap) => binary("!=", args, (a, b) => good(bool(!equal(heap, a, b)))),
-  "!==": (args, heap) => binary("!==", args, (a, b) => good(bool(!equal(heap, a, b)))),
+  "==": (args) => binary("==", args, (a, b) => good(bool(equal(a, b)))),
+  "===": (args) => binary("===", args, (a, b) => good(bool(equal(a, b)))),
+  "!=": (args) => binary("!=", args, (a, b) => good(bool(!equal(a, b)))),
+  "!==": (args) => binary("!==", args, (a, b) => good(bool(!equal(a, b)))),
   "<": (args) => ordering("<", args, (c) => c < 0, true),
   "<=": (args) => ordering("<=", args, (c) => c <= 0, true),
   ">": (args) => ordering(">", args, (c) => c > 0, false),
@@ -641,14 +647,14 @@ export const STRICT: Readonly<Record<StrictOp, Handler>> = Object.freeze({
   },
   split: (args) => split(args),
   length: (args) => unary("length", args, length),
-  merge: (args, heap) => merge(args, heap),
-  in: (args, heap) => binary("in", args, (n, h) => contains(n, h, heap)),
-  intersect: (args, heap) => binary("intersect", args, (a, b) => intersect(a, b, heap)),
-  unique: (args, heap) =>
+  merge: (args) => merge(args),
+  in: (args) => binary("in", args, (n, h) => contains(n, h)),
+  intersect: (args) => binary("intersect", args, (a, b) => intersect(a, b)),
+  unique: (args) =>
     unary("unique", args, (v) => {
       const vs = arr("unique", v);
       if (!vs.ok) return vs;
-      const d = distinct(heap, "unique", vs.value);
+      const d = distinct("unique", vs.value);
       return d.ok ? array("unique", d.value) : d;
     }),
   reverse: (args) =>
@@ -667,26 +673,26 @@ export const STRICT: Readonly<Record<StrictOp, Handler>> = Object.freeze({
       const vs = arr("count", v);
       return vs.ok ? count(vs.value.length) : vs;
     }),
-  keys: (args, heap) => listing("keys", args, heap),
-  values: (args, heap) => listing("values", args, heap),
-  entries: (args, heap) => listing("entries", args, heap),
+  keys: (args) => listing("keys", args),
+  values: (args) => listing("values", args),
+  entries: (args) => listing("entries", args),
   get: (args) => get(args),
   has: (args) =>
     binary("has", args, (m, k) => {
       const o = obj("has", m);
       if (!o.ok) return o;
       const key = str("has", k);
-      return key.ok ? good(bool(o.value.get(key.value) !== undefined)) : key;
+      return key.ok ? good(bool(o.value.has(key.value))) : key;
     }),
-  set: (args, heap) => set(args, heap),
-  unset: (args, heap) =>
+  set: (args) => set(args),
+  unset: (args) =>
     binary("unset", args, (m, k) => {
       const o = obj("unset", m);
       if (!o.ok) return o;
       const key = textKey("unset", k);
       // the map it builds is a result, bounded as set's is (jlvm.md section 2): removing a key from a host map heavier
       // than the bound leaves a map that may be heavier still
-      return key.ok ? bounded("unset", heap.own(o.value).removed(key.value)) : key;
+      return key.ok ? bounded("unset", o.value.delete(key.value)) : key;
     }),
   exists: (args) => good(bool(!args.some((v) => v.kind === "null"))),
   typeof: (args) => unary("typeof", args, (v) => text("typeof", kindName(v))),
