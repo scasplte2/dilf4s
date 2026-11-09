@@ -9,8 +9,10 @@
  *   canonical form; {@link fromCanonical} and {@link decode} read that form back. {@link compile} checks its special
  *   forms.
  * - {@link evaluate} runs it on an explicit continuation stack, charging every unit of work before doing it.
- * - The cryptographic and proof operations (section 6) are not implemented yet: an evaluation that reaches one ends
- *   with {@link Unimplemented}, after paying for it as section 7 says.
+ * - The cryptographic and proof operations (section 6) run on `@kd5ujc/dilf4s-signing`, `@kd5ujc/dilf4s-proofs` and
+ *   core's hashing, but three whose primitives the TypeScript SDK lacks (`sigma_verify`, `schnorr_verify`,
+ *   `groth16_verify`): an evaluation that reaches one of those ends with {@link Unimplemented}, after paying for it as
+ *   section 7 says.
  *
  * Library functions never throw: every failure is a typed result, and an argument of the wrong type (from JavaScript,
  * or a cast) is a `TypeMismatch`, checked before it is read.

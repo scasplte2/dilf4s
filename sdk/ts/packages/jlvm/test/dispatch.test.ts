@@ -2,7 +2,7 @@
  * Every operation has exactly one handler (Scala's `OpDispatchSuite`, Rust's `every_operation_has_one_handler`), and the
  * gas table of `docs/specs/jlvm.md` section 7 is this package's schedule, row for row (Rust's `gas_table.rs`): the
  * reference generates the table from its own schedule, so the implementations and the spec agree on every operation,
- * not only on those the vectors reach (the section 6 rows, which the vectors skip here, included).
+ * not only on those the vectors reach.
  */
 import { models, Value } from "@kd5ujc/dilf4s-core";
 import { describe, expect, it } from "vitest";
@@ -11,7 +11,7 @@ import { CRYPTO } from "../src/crypto.js";
 import { ALL_OPS, CRYPTO_OPS, evaluate, FORM_OPS, isCrypto, isForm, isStrict, NOT_A_JLVM_ERROR, opFromWire, opNamed, parse, SCHEDULE_V1, siteOf, type JlvmOp, type OpCost, type Rate, type SizeUnit } from "../src/index.js";
 import { Heap } from "../src/jvalue.js";
 import { STRICT } from "../src/ops.js";
-import { readRepoFile } from "./vectors.js";
+import { readRepoFile, UNIMPLEMENTED } from "./vectors.js";
 
 describe("dispatch", () => {
   it("the operations are exactly the generated JlvmOp's, each a form, strict or cryptographic, never two", () => {
@@ -40,7 +40,22 @@ describe("dispatch", () => {
       const r = STRICT[op]([], heap);
       if (!r.ok && "op" in r.error) expect(r.error.op, op).toBe(op);
     }
-    for (const op of CRYPTO_OPS) expect(CRYPTO[op]([], heap)).toEqual({ ok: false, error: { kind: "Unimplemented", op } });
+    for (const op of CRYPTO_OPS) {
+      const r = CRYPTO[op]([], heap);
+      if (UNIMPLEMENTED.has(op)) expect(r, op).toEqual({ ok: false, error: { kind: "Unimplemented", op } });
+      // with no arguments, a cryptographic handler refuses at its own operation (no pairs is a pairing's true)
+      else if (!r.ok) expect(r.error.kind === "Unimplemented" ? r.error : { op: siteOf(r.error) }, op).toEqual({ op });
+      else expect(op, "only bn254_pairing answers no arguments").toBe("bn254_pairing");
+    }
+  });
+
+  it("every cryptographic operation runs but the three whose primitives the TypeScript SDK lacks", () => {
+    const missing = CRYPTO_OPS.filter((op) => {
+      const r = CRYPTO[op]([], new Heap());
+      return !r.ok && r.error.kind === "Unimplemented";
+    });
+    expect(missing).toEqual(CRYPTO_OPS.filter((op) => UNIMPLEMENTED.has(op)));
+    expect([...UNIMPLEMENTED].sort()).toEqual(["groth16_verify", "schnorr_verify", "sigma_verify"]);
   });
 
   it("the aliases name their operations, and are not wire names", () => {

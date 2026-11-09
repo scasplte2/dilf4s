@@ -23,6 +23,7 @@ export { p256Ecdsa, secp256k1Ecdsa, type EcdsaScheme, type EcdsaSchemeName } fro
 export { bip340, Message32, taggedSchnorr, type Bip340Scheme, type TaggedSchnorrScheme } from "./schnorr.js";
 export { ristretto255Schnorr, type Ristretto255Scheme } from "./ristretto255.js";
 export { blsPop, POP_DST, SIGNATURE_DST, type BlsScheme } from "./bls.js";
+export { ECRECOVER_ADDRESS_BYTES, ECRECOVER_DIGEST_BYTES, ecrecover, ECRECOVER_SIGNATURE_BYTES } from "./ecrecover.js";
 
 export { generateMnemonic, Mnemonic, mnemonicToSeed, toEntropy, toMnemonic, WordList } from "./bip39.js";
 export {
