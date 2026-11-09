@@ -118,8 +118,7 @@ public class SigningVectorsTest {
   void bip39() throws IOException {
     final Bip39.WordList words = english();
     final List<Value.Map> rows = rows(signing, "bip39");
-    // a floor, so rows another change adds never break this test
-    assertTrue(rows.size() >= 7, rows.size() + " bip39 rows");
+    assertEquals(7, rows.size(), "bip39 rows");
     assertAll(rows.stream().map(r -> () -> {
       final Bip39.Mnemonic m = ok(Bip39.toMnemonic(hexAt(r, "entropy"), words), "mnemonic");
       assertEquals(str(r, "mnemonic"), m.phrase(), "the phrase");

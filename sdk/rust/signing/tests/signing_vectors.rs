@@ -147,8 +147,7 @@ fn bip39_mnemonics_and_seeds() {
         let seed = bip39::seed(&parsed, &c.passphrase).map_err(|e| e.to_string())?;
         same("seed", &c.seed, &hex::encode(seed.expose()))
     });
-    // counted as a floor, so rows another change adds never break this test
-    assert!(n >= 7, "{n} bip39 rows");
+    assert_eq!(n, 7, "bip39 rows");
 }
 
 #[test]

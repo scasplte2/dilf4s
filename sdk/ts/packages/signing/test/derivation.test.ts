@@ -48,8 +48,7 @@ describe("BIP-39", { timeout: 60_000 }, () => {
   });
 
   test("signing_v1.json bip39: entropy to phrase to entropy, and the seed", () => {
-    // a floor, so rows another change adds never break this test
-    expect(vectors.bip39.length).toBeGreaterThanOrEqual(7);
+    expect(vectors.bip39.length, "bip39 rows").toBe(7);
     for (const v of vectors.bip39) {
       const m = expectOk(toMnemonic(h(v.entropy)), "mnemonic");
       expect(m.phrase).toBe(v.mnemonic);

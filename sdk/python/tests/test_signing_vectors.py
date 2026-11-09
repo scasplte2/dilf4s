@@ -148,7 +148,7 @@ def test_bip39_mnemonics_and_seeds() -> None:
         assert ok(mnemonic_from_entropy(entropy, english), "mnemonic, the list named") == c["mnemonic"]
         assert ok(mnemonic_to_entropy(c["mnemonic"]), "entropy").hex() == c["entropy"]
         assert ok(mnemonic_to_seed(c["mnemonic"], c["passphrase"]), "seed").hex() == c["seed"]
-    assert len(VECTORS["bip39"]) >= 7, "a floor: rows another change adds never break this test"
+    assert len(VECTORS["bip39"]) == 7, "bip39 rows"
 
 
 def test_slip10_bip32_and_icarus_derivations() -> None:
