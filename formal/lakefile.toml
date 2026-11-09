@@ -1,0 +1,13 @@
+name = "jlvm"
+version = "0.1.0"
+defaultTargets = ["Jlvm", "vectorcheck"]
+
+[leanOptions]
+autoImplicit = false
+
+[[lean_lib]]
+name = "Jlvm"
+
+[[lean_exe]]
+name = "vectorcheck"
+root = "VectorCheck"
