@@ -49,7 +49,8 @@ object CanonicalCirce {
 
   /**
    * A number circe parsed keeps its source text, which [[CanonicalJson.parse]] reads before circe converts anything:
-   * so the bridge accepts and refuses exactly what the parser does. A number built from a converted value has its
+   * so the bridge accepts and refuses each number exactly as the parser does. The parser's exponent budget is a whole
+   * text's, for text a caller chose, which this bridge does not take. A number built from a converted value has its
    * coefficient's width checked before it is ever rendered.
    */
   private def circeNumber(n: JsonNumber, maxScale: Int): Either[CanonicalError, CanonicalValue] =

@@ -294,23 +294,34 @@ object NumberBound {
   final case class Scale(scale: Int, limit: Long) extends NumberBound {
     def kind: NumberBoundKind = "Scale"
   }
+
+  /**
+   * The text's exponents, summed up to and including this number's, past the exponent budget.
+   *
+   * @param exponents The sum: each number's exponent magnitude, at most one past the scale bound.
+   * @param limit The budget (limits.cddl canonical-max-json-exponents).
+   */
+  final case class Exponents(exponents: Long, limit: Long) extends NumberBound {
+    def kind: NumberBoundKind = "Exponents"
+  }
 }
 
-type NumberBoundKind = "Digits" | "Scale"
+type NumberBoundKind = "Digits" | "Scale" | "Exponents"
 
 object NumberBoundKind {
   /** Every alternative, in schema order. */
-  val values: Vector[NumberBoundKind] = Vector("Digits", "Scale")
+  val values: Vector[NumberBoundKind] = Vector("Digits", "Scale", "Exponents")
 
   lazy val codec: Codec[NumberBoundKind] = Codec(
     {
       case "Digits" => Codec.literalText["Digits"]("Digits").encode("Digits")
       case "Scale" => Codec.literalText["Scale"]("Scale").encode("Scale")
+      case "Exponents" => Codec.literalText["Exponents"]("Exponents").encode("Exponents")
     },
     (v: CanonicalValue) =>
       Codec.selectAlternative[NumberBoundKind](v, List(
 
-      ), List(("Digits", "Digits": NumberBoundKind), ("Scale", "Scale": NumberBoundKind)))
+      ), List(("Digits", "Digits": NumberBoundKind), ("Scale", "Scale": NumberBoundKind), ("Exponents", "Exponents": NumberBoundKind)))
   )
 }
 

@@ -138,3 +138,52 @@ fn worst_case_parse_time() {
         eprintln!("{name}: {:?} per parse", start.elapsed() / runs);
     }
 }
+
+/// A text's exponents together spend at most 2^24 (canonical-encoding.md section 3): 1677 exponents of 9999 and one of
+/// 8893 spend it exactly, and the number that passes it is refused before it is converted, even one too wide.
+#[test]
+fn the_exponent_budget() {
+    assert_eq!(json::MAX_JSON_EXPONENTS, 1 << 24, "2^24");
+    let full: Vec<&str> = core::iter::repeat_n("8e9999", 1677).chain(["8e8893"]).collect();
+    let array = |items: &[&str]| format!("[{}]", items.join(","));
+    assert!(json::parse(&array(&full)).is_ok(), "a text that spends it exactly is read");
+    let mut over = full.clone();
+    over.push("1e1");
+    let text = array(&over);
+    assert_eq!(
+        json::parse(&text),
+        Err(CanonicalError::InvalidNumber {
+            length: Some(3),
+            offset: Some(u64::try_from(text.len() - "1e1]".len()).expect("an offset")),
+            bound: Some(NumberBound::Exponents { exponents: (1 << 24) + 1, limit: 1 << 24 }),
+        }),
+        "passed by one"
+    );
+    let mut wide = full.clone();
+    wide.push("9e9999");
+    assert!(
+        matches!(
+            json::parse(&array(&wide)),
+            Err(CanonicalError::InvalidNumber { bound: Some(NumberBound::Exponents { .. }), .. })
+        ),
+        "the budget comes before the width"
+    );
+    // an exponent costs at most one past the largest scale: 0.(10,000 zeros)1e10005 is 10^4 and costs 10,001
+    let capped = format!("0.{}1e10005", "0".repeat(10_000));
+    let before: Vec<&str> = core::iter::repeat_n("8e9999", 1676).collect();
+    let mut fits = before.clone();
+    fits.extend(["8e8890", capped.as_str()]);
+    assert!(json::parse(&array(&fits)).is_ok(), "a capped exponent fits as 10,001");
+    let mut passes = before;
+    passes.extend(["8e8892", capped.as_str()]);
+    assert!(
+        matches!(
+            json::parse(&array(&passes)),
+            Err(CanonicalError::InvalidNumber { bound: Some(NumberBound::Exponents { exponents, .. }), .. }) if exponents == (1 << 24) + 1
+        ),
+        "and passes the budget by one after one more"
+    );
+    // digits written out spend nothing: 18 MiB of 8-digit numbers
+    let long = format!("[{}]", vec!["12345678"; 1 << 21].join(","));
+    assert!(long.len() > 1 << 24 && json::parse(&long).is_ok(), "a long text without exponents is read");
+}

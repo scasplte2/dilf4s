@@ -26,6 +26,13 @@ object CanonicalJson {
   /** The largest accepted `|fraction digits - exponent|` of a JSON number, bounding the `10^scale` it materialises. */
   val MaxScale: Int = xyz.kd5ujc.models.limits.CanonicalMaxScale
 
+  /**
+   * The most a text's numbers may spend on their exponents, summed: each costs its exponent's magnitude, at most
+   * [[MaxScale]] + 1. An exponent makes a short text stand for a long value (`8e9999` is six characters and 10,000
+   * digits), so this bounds what exponents add to the work of reading a text; digits written out cost nothing here.
+   */
+  val MaxJsonExponents: Long = xyz.kd5ujc.models.limits.CanonicalMaxJsonExponents.toLong
+
   // ------------------------------------------------------------------ parse
 
   /**
@@ -42,7 +49,7 @@ object CanonicalJson {
 
   /** [[parse]] building maps, and checking for repeated member names, in `keys`'s order: production passes [[KeyOrder.Default]]. */
   private[canonical] def parse(text: String, maxScale: Int, keys: KeyOrder): Either[CanonicalError, CanonicalValue] =
-    run(text, maxScale, keys, ExpectValue(0, Nil, 0))
+    run(text, maxScale, keys, ExpectValue(0, Nil, 0), 0L)
 
   sealed private trait Frame
   final private case class InArray(acc: Vector[CanonicalValue]) extends Frame
@@ -56,7 +63,7 @@ object CanonicalJson {
   final private case class Deliver(value: CanonicalValue, pos: Int, stack: List[Frame], depth: Int) extends Step
 
   @tailrec
-  private def run(s: String, maxScale: Int, keys: KeyOrder, step: Step): Either[CanonicalError, CanonicalValue] =
+  private def run(s: String, maxScale: Int, keys: KeyOrder, step: Step, spent: Long): Either[CanonicalError, CanonicalValue] =
     step match {
       case ExpectValue(p0, stack, depth) =>
         val p = skipWs(s, p0)
@@ -66,16 +73,16 @@ object CanonicalJson {
           case Some('{' | '[') if depth >= MaxDepth => DepthExceeded(MaxDepth).asLeft
           case Some('{') =>
             val q = skipWs(s, p + 1)
-            if (charAt(s, q).contains('}')) run(s, maxScale, keys, Deliver(EmptyMap, q + 1, stack, depth))
-            else run(s, maxScale, keys, ExpectKey(q, Vector.empty, CanonicalKeys.emptyIn(keys), stack, depth + 1))
+            if (charAt(s, q).contains('}')) run(s, maxScale, keys, Deliver(EmptyMap, q + 1, stack, depth), spent)
+            else run(s, maxScale, keys, ExpectKey(q, Vector.empty, CanonicalKeys.emptyIn(keys), stack, depth + 1), spent)
           case Some('[') =>
             val q = skipWs(s, p + 1)
-            if (charAt(s, q).contains(']')) run(s, maxScale, keys, Deliver(EmptyArray, q + 1, stack, depth))
-            else run(s, maxScale, keys, ExpectValue(q, InArray(Vector.empty) :: stack, depth + 1))
+            if (charAt(s, q).contains(']')) run(s, maxScale, keys, Deliver(EmptyArray, q + 1, stack, depth), spent)
+            else run(s, maxScale, keys, ExpectValue(q, InArray(Vector.empty) :: stack, depth + 1), spent)
           case Some(_) =>
-            scalar(s, p, maxScale) match {
-              case Right((v, next)) => run(s, maxScale, keys, Deliver(v, next, stack, depth))
-              case Left(e)          => e.asLeft
+            scalar(s, p, maxScale, spent) match {
+              case Right((v, next, now)) => run(s, maxScale, keys, Deliver(v, next, stack, depth), now)
+              case Left(e)               => e.asLeft
             }
           case None => syntax(p, "expectedValue").asLeft
         }
@@ -90,7 +97,7 @@ object CanonicalJson {
             case Right((key, next)) =>
               val colon = skipWs(s, next)
               if (!charAt(s, colon).contains(':')) syntax(colon, "expectedColon").asLeft
-              else run(s, maxScale, keys, ExpectValue(colon + 1, InObject(acc, seen.added(key), key) :: stack, depth))
+              else run(s, maxScale, keys, ExpectValue(colon + 1, InObject(acc, seen.added(key), key) :: stack, depth), spent)
           }
 
       case Deliver(v, p0, Nil, _) =>
@@ -100,10 +107,10 @@ object CanonicalJson {
       case Deliver(v, p0, InArray(acc) :: rest, depth) =>
         val p = skipWs(s, p0)
         charAt(s, p) match {
-          case Some(',') => run(s, maxScale, keys, ExpectValue(p + 1, InArray(acc :+ v) :: rest, depth))
+          case Some(',') => run(s, maxScale, keys, ExpectValue(p + 1, InArray(acc :+ v) :: rest, depth), spent)
           case Some(']') =>
             CanonicalValue.array(acc :+ v) match {
-              case Right(arr) => run(s, maxScale, keys, Deliver(arr, p + 1, rest, depth - 1))
+              case Right(arr) => run(s, maxScale, keys, Deliver(arr, p + 1, rest, depth - 1), spent)
               case Left(e)    => e.asLeft
             }
           case _ => syntax(p, "expectedCommaOrBracket").asLeft
@@ -112,32 +119,33 @@ object CanonicalJson {
       case Deliver(v, p0, InObject(acc, seen, key) :: rest, depth) =>
         val p = skipWs(s, p0)
         charAt(s, p) match {
-          case Some(',') => run(s, maxScale, keys, ExpectKey(p + 1, acc :+ (key -> v), seen, rest, depth))
+          case Some(',') => run(s, maxScale, keys, ExpectKey(p + 1, acc :+ (key -> v), seen, rest, depth), spent)
           case Some('}') =>
             CanonicalValue.map(acc :+ (key -> v), keys) match {
-              case Right(m) => run(s, maxScale, keys, Deliver(m, p + 1, rest, depth - 1))
+              case Right(m) => run(s, maxScale, keys, Deliver(m, p + 1, rest, depth - 1), spent)
               case Left(e)  => e.asLeft
             }
           case _ => syntax(p, "expectedCommaOrBrace").asLeft
         }
     }
 
-  private def scalar(s: String, p: Int, maxScale: Int): Either[CanonicalError, (CanonicalValue, Int)] =
+  /** A scalar, and what the text has spent on exponents once it is read. */
+  private def scalar(s: String, p: Int, maxScale: Int, spent: Long): Either[CanonicalError, (CanonicalValue, Int, Long)] =
     charAt(s, p) match {
-      case Some('"')                             => string(s, p).flatMap { case (v, next) => text(v).map(t => (t, next)) }
-      case Some('t') if s.startsWith("true", p)  => (True, p + 4).asRight
-      case Some('f') if s.startsWith("false", p) => (False, p + 5).asRight
-      case Some('n') if s.startsWith("null", p)  => (CNull, p + 4).asRight
-      case Some(c) if c == '-' || isDigit(c)     => parseNumber(s, p, maxScale)
+      case Some('"')                             => string(s, p).flatMap { case (v, next) => text(v).map(t => (t, next, spent)) }
+      case Some('t') if s.startsWith("true", p)  => (True, p + 4, spent).asRight
+      case Some('f') if s.startsWith("false", p) => (False, p + 5, spent).asRight
+      case Some('n') if s.startsWith("null", p)  => (CNull, p + 4, spent).asRight
+      case Some(c) if c == '-' || isDigit(c)     => parseNumber(s, p, maxScale, spent)
       case _                                     => syntax(p, "expectedValue").asLeft
     }
 
   /**
    * `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`, converted exactly. Its digits are counted, then its scale
-   * bounded, before any conversion. A refusal describes the number by its length and offset, never its text, whose
-   * size the caller chose.
+   * bounded, then its exponent charged to the text's budget ([[MaxJsonExponents]], `spent` so far), before any
+   * conversion. A refusal describes the number by its length and offset, never its text, whose size the caller chose.
    */
-  private def parseNumber(s: String, p: Int, maxScale: Int): Either[CanonicalError, (CanonicalValue, Int)] = {
+  private def parseNumber(s: String, p: Int, maxScale: Int, spent: Long): Either[CanonicalError, (CanonicalValue, Int, Long)] = {
     val negative = charAt(s, p).contains('-')
     val intStart = if (negative) p + 1 else p
     val intEnd = digits(s, intStart)
@@ -165,10 +173,13 @@ object CanonicalJson {
       val magnitude = if (exponentDigits > 18) Long.MaxValue else expDigits.toLong
       val exponent = if (hasExp && charAt(s, fracEnd + 1).contains('-')) -BigInt(magnitude) else BigInt(magnitude)
       val scale = BigInt(fracDigits.length) - exponent
+      // its exponent's magnitude, at most one past the largest scale: what it may add to the value's digits
+      val total = spent + magnitude.min(MaxScale.toLong + 1)
       if (scale.abs > BigInt(maxScale)) {
         val saturated = scale.max(BigInt(Int.MinValue)).min(BigInt(Int.MaxValue)).toInt
         described(Some(NumberBound.Scale(saturated, maxScale.toLong))).asLeft
-      } else {
+      } else if (total > MaxJsonExponents) described(Some(NumberBound.Exponents(total, MaxJsonExponents))).asLeft
+      else {
         val unscaled = BigInt(intDigits + fracDigits) * (if (negative) -1 else 1)
         // the digit and scale bounds keep the work bounded, not the value: an integer of 10,000 digits can be wider than
         // CanonicalValue.MaxIntegerBits (9e9999, 10,000 nines), and so can a rational's parts (0.000...1 at scale
@@ -176,7 +187,7 @@ object CanonicalJson {
         Ratio
           .fromDecimal(unscaled, scale.toInt, maxScale)
           .leftMap(e => described(NumberBounds.of(e)))
-          .flatMap(r => number(r).map((_, end)))
+          .flatMap(r => number(r).map((_, end, total)))
       }
     }
   }

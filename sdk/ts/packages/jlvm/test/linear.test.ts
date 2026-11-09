@@ -42,7 +42,10 @@ describe("steps are linear in gas", { timeout: 600_000 }, () => {
       // a limit over the maximum is refused before anything runs
       if (!root.ok || limit > MAX_GAS_LIMIT) continue;
       const env: [string, V][] = [];
-      for (const [k, v] of c.env ?? []) env.push([k, expectOk(parseValue(v), "a binding")]);
+      // a binding refused as it is read (one past the JSON exponent budget) runs nothing
+      const bindings = [...(c.env ?? [])].map(([k, v]) => [k, parseValue(v)] as const);
+      if (bindings.some(([, v]) => !v.ok)) continue;
+      for (const [k, v] of bindings) env.push([k, expectOk(v, "a binding")]);
       for (const [k, b] of c.built ?? []) env.push([k, built(b)]);
       const r = run(SCHEDULE_V1, root.value, d.value, expectOk(Bindings.of(env), "env"), limit);
       expect(r.used, `${c.name}: the vector's gas`).toBe(Number(c.gasUsed));

@@ -301,6 +301,12 @@ JSON is the human-facing and API format. It converts to the data model as follow
   the digit and scale bounds, which bound the work but not the value: `9e9999` and 10000 nines are too wide an
   integer, and `0.` then 9999 zeros then `1` (1/10^10000) too wide a denominator, while `0.` then 9999 zeros then `2`
   (1/(2^9999 5^10000)) is within it; `1e10001` is past the scale bound (`InvalidNumber`).
+- **The exponent budget.** An exponent lets a short text stand for a long value: `8e9999` is six characters and a
+  10,000-digit integer. A text's numbers together may spend at most 2^24 (`canonical-max-json-exponents`) on their
+  exponents. Each number costs its exponent's magnitude, at most 10,001 (one past the scale bound), so `8e9999` and
+  `1e-9999` cost 9,999 each and `1.5` costs nothing. The number whose cost takes the total past the budget is refused
+  (`InvalidNumber`, bound `Exponents`), before it is converted. Digits written out cost nothing here, whatever the
+  text's length: the budget bounds what exponents add, not the text.
 
 **Strings** become text. A string containing unpaired surrogates is rejected.
 
@@ -323,7 +329,8 @@ one exception, a member name's surrogates (the last item):
    decoder counts depth (§2);
 3. a number, once its text `-? digits (. digits)? ([eE] [+-]? digits)?` is read: malformed (`01`, `1.`, `-`:
    `InvalidNumber`), then its significand's digits, its exponent's digits and its scale (each `InvalidNumber`), then
-   its value's width (`IntegerTooWide`, `RationalTooWide`);
+   the exponent budget (`InvalidNumber`), then its value's width (`IntegerTooWide`, `RationalTooWide`). The budget
+   counts the numbers before it in reading order, so a fault after the number that passes it is never reached;
 4. a string value's unpaired surrogate (`UnpairedSurrogate`), at its closing quote;
 5. a member name repeated in its object (`DuplicateKey`), as soon as the repeat is read, before its `:`. Names are
    compared as the text their escapes decode to, unpaired surrogates included (`"a"` repeats `"a"`);

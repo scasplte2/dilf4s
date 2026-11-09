@@ -72,6 +72,53 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
     }.reduce(_ and _)
   }
 
+  pureTest("a text's exponents together spend at most 2^24, and the number that passes the budget is refused unconverted") {
+    val budget = CanonicalJson.MaxJsonExponents
+    // 1677 exponents of 9999 and one of 8893 spend the budget exactly
+    val full = List.fill(1677)("8e9999") :+ "8e8893"
+    val over = (full :+ "1e1").mkString("[", ",", "]")
+    val offset = over.length - "1e1]".length
+    expect(budget == (1L << 24), s"the budget is 2^24, got $budget")
+      .and(expect(parse(full.mkString("[", ",", "]")).isRight, "a text that spends it exactly is read"))
+      .and(
+        expect.same(
+          Left(InvalidNumber(Some(3L), Some(offset.toLong), Some(NumberBound.Exponents(budget + 1, budget)))),
+          parse(over)
+        )
+      )
+      .and(
+        // the passing number is refused before it is converted: never IntegerTooWide, however wide it is
+        expect(parse((full :+ "9e9999").mkString("[", ",", "]")) match {
+          case Left(InvalidNumber(_, _, Some(NumberBound.Exponents(_, `budget`)))) => true
+          case _                                                                   => false
+        })
+      )
+      .and {
+        // an exponent costs at most one past the largest scale (10,001): 0.(10,000 zeros)1e10005 is 10^4, its exponent
+        // 10,005; after 2^24 - 10,002 it fits only as 10,001, and after one more it passes the budget by one
+        val capped = "0." + "0" * 10000 + "1e10005"
+        val before = List.fill(1676)("8e9999")
+        expect(parse((before :+ "8e8890" :+ capped).mkString("[", ",", "]")).isRight, "a capped exponent fits as 10,001")
+          .and(
+            expect(
+              parse((before :+ "8e8892" :+ capped).mkString("[", ",", "]")) match {
+                case Left(InvalidNumber(_, _, Some(NumberBound.Exponents(spent, _)))) => spent == budget + 1
+                case _                                                                => false
+              },
+              "and passes the budget by exactly one after one more"
+            )
+          )
+      }
+  }
+
+  pureTest("digits written out spend nothing of the budget, however long the text") {
+    // 2^21 numbers of 8 digits: 18 MiB of text, well past 2^24 characters, and no exponent
+    val numbers = List.fill(1 << 21)("12345678").mkString("[", ",", "]")
+    expect(numbers.length > (1 << 24), s"the text is longer than 2^24 characters: ${numbers.length}")
+      .and(expect(parse(numbers).isRight, "a long text without exponents is read"))
+      .and(expect(parse(List.fill(1 << 14)("1.5e3").mkString("[", ",", "]")).isRight, "small exponents spend little"))
+  }
+
   pureTest("numbers are read exactly from source text") {
     expect
       .same(Right(ratio(1, 10)), parse("0.1"))

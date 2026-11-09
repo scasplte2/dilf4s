@@ -3,6 +3,8 @@ package core
 import (
 	"errors"
 	"math/big"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -282,4 +284,50 @@ func TestAnEscapedLengthStopsAtTheLimit(t *testing.T) {
 	if n, fits := quotedLenWithin(strings.Repeat("\x00", 1_000_000), 10); fits || n > 16 {
 		t.Errorf("far over: counted to %d", n)
 	}
+}
+
+// A text's exponents together spend at most 2^24 (canonical-encoding.md section 3): 1677 exponents of 9999 and one of
+// 8893 spend it exactly, and the number that passes it is refused before it is converted, even one too wide.
+func TestTheExponentBudget(t *testing.T) {
+	if MaxJSONExponents != 1<<24 {
+		t.Fatalf("the budget is 2^24, got %d", MaxJSONExponents)
+	}
+	array := func(items []string) string { return "[" + strings.Join(items, ",") + "]" }
+	full := append(slices.Repeat([]string{"8e9999"}, 1677), "8e8893")
+	if _, err := ParseJSON(array(full)); err != nil {
+		t.Fatalf("a text that spends it exactly is read: %v", err)
+	}
+	over := array(append(slices.Clone(full), "1e1"))
+	_, err := ParseJSON(over)
+	want := CanonicalErrorInvalidNumber{Length: Some(uint64(3)), Offset: Some(uint64(len(over) - len("1e1]"))), Bound: Some[NumberBound](NumberBoundExponents{Exponents: 1<<24 + 1, Limit: 1 << 24})}
+	if !reflect.DeepEqual(err, want) {
+		t.Fatalf("passed by one: got %#v, want %#v", err, want)
+	}
+	_, err = ParseJSON(array(append(slices.Clone(full), "9e9999")))
+	var e CanonicalErrorInvalidNumber
+	if !errors.As(err, &e) {
+		t.Fatalf("the budget comes before the width: got %#v", err)
+	}
+	if b, _ := e.Bound.Get(); !isExponents(b) {
+		t.Fatalf("the budget comes before the width: got %#v", e.Bound)
+	}
+	// an exponent costs at most one past the largest scale: 0.(10,000 zeros)1e10005 is 10^4 and costs 10,001
+	capped := "0." + strings.Repeat("0", 10000) + "1e10005"
+	before := slices.Repeat([]string{"8e9999"}, 1676)
+	if _, err := ParseJSON(array(append(slices.Clone(before), "8e8890", capped))); err != nil {
+		t.Fatalf("a capped exponent fits as 10,001: %v", err)
+	}
+	if _, err := ParseJSON(array(append(slices.Clone(before), "8e8892", capped))); err == nil {
+		t.Fatal("and passes the budget after one more")
+	}
+	// the text's length spends nothing: a 17 MiB string beside numbers without exponents
+	long := `["` + strings.Repeat("a", 17<<20) + `",12345678,2.5]`
+	if _, err := ParseJSON(long); err != nil {
+		t.Fatalf("a long text without exponents is read: %v", err)
+	}
+}
+
+func isExponents(b NumberBound) bool {
+	_, ok := b.(NumberBoundExponents)
+	return ok
 }

@@ -8,6 +8,8 @@
 canonical-max-depth = 256                    ; nesting levels of a value
 canonical-max-digits = 10000                 ; significant digits of a JSON number's significand or exponent
 canonical-max-scale = 10000                  ; a JSON decimal's effective scale
+canonical-max-json-exponents = 16777216      ; 2^24: a JSON text's numbers' exponent magnitudes, summed (each at most
+                                             ; canonical-max-scale + 1), so exponents cannot make a short text long
 canonical-max-digit-bits = 33220             ; 10^10000's bit length: an integer any wider has more than
                                              ; canonical-max-digits digits (a bound checked before converting one)
 canonical-max-integer-bits = 33219           ; bits of an integer: the widest whose every integer has at most

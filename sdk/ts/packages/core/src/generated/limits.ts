@@ -20,7 +20,11 @@ export const BLOOM_MIN_BITS = 64;
  */
 export const CANONICAL_MAX_DEPTH = 256;
 
-/** `canonical-max-digit-bits` (`shared/schemas/limits.cddl`). */
+/**
+ * `canonical-max-digit-bits` (`shared/schemas/limits.cddl`).
+ *
+ * canonical-max-scale + 1), so exponents cannot make a short text long
+ */
 export const CANONICAL_MAX_DIGIT_BITS = 33220;
 
 /** `canonical-max-digits` (`shared/schemas/limits.cddl`). */
@@ -32,6 +36,9 @@ export const CANONICAL_MAX_DIGITS = 10000;
  * canonical-max-digits digits (a bound checked before converting one)
  */
 export const CANONICAL_MAX_INTEGER_BITS = 33219;
+
+/** `canonical-max-json-exponents` (`shared/schemas/limits.cddl`). */
+export const CANONICAL_MAX_JSON_EXPONENTS = 16777216;
 
 /**
  * `canonical-max-rational-bits` (`shared/schemas/limits.cddl`).

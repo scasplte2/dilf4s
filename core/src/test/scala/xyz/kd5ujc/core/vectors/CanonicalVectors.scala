@@ -170,7 +170,24 @@ object CanonicalVectors {
     "1 2",
     "{1:2}",
     "[1]x"
-  )
+  ) ++ exponentBudget
+
+  /**
+   * The exponent budget (canonical-encoding.md section 3), 2^24: 1677 numbers of exponent 9999 and one of 8893 spend it
+   * exactly. The number that passes it is InvalidNumber before it is converted, even one too wide, and nothing after it
+   * is read; at it, the text goes on to its next fault. A text at the budget is ~7 MB of value, so no row accepts one.
+   */
+  def exponentBudget: List[String] = {
+    val full = List.fill(1677)("8e9999") :+ "8e8893"
+    List(
+      List.fill(1678)("8e9999").mkString("[", ",", "]"),
+      (full :+ "1e1").mkString("[", ",", "]"),
+      full.mkString("[", ",", ",]"),
+      (full :+ "9e9999").mkString("[", ",", "]"),
+      List.fill(1678)("1e-9999").mkString("[", ",", "]"),
+      List.fill(1678)("8e9999").mkString("[", ",", ",\"x")
+    )
+  }
 
   /** Values with no JSON form, given directly in the data model. */
   val modelInputs: List[(String, CanonicalValue)] = List(

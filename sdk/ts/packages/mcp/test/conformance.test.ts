@@ -40,12 +40,20 @@ function expected(c: Case): string {
   return `${outcome} gas ${c.gasUsed.toString()} warnings ${c.warnings.toString()}`;
 }
 
+/** Whether every text of a case is within the server's measure: its UTF-8 length plus its numbers' exponents. */
+function fits(c: Case): boolean {
+  return [c.program, c.data, ...(c.env ?? new Map<string, string>()).values()].every((t) => measure(t, MAX_TEXT_BYTES) <= MAX_TEXT_BYTES);
+}
+
 /**
- * What the server answers for a case: a limit past its highest cap never reaches the JLVM. One past 2^53 is not a whole
- * number JSON carries exactly, so it is `InvalidArguments`; one past the cap is `GasLimitOutOfRange` (server.test.ts).
+ * What the server answers for a case: a text past its measure, or a limit past its highest cap, never reaches the
+ * JLVM. A text past the measure is `InputTooLarge`; a limit past 2^53 is not a whole number JSON carries exactly, so it
+ * is `InvalidArguments`; one past the cap is `GasLimitOutOfRange` (server.test.ts).
  */
 function expectedOf(c: Case, limit: bigint): string {
   const refused = (kind: string): string => `error ${kind} op none cause none gas 0 warnings 0`;
+  // a text past the server's measure is refused before anything is read
+  if (!fits(c)) return refused("InputTooLarge");
   if (limit > BigInt(Number.MAX_SAFE_INTEGER)) return refused("InvalidArguments");
   if (limit > BigInt(GAS_CAP_CEILING)) return refused("GasLimitOutOfRange");
   return expected(c);
@@ -90,9 +98,9 @@ describe("jlvm_v1.json through jlvm_evaluate", { timeout: 600_000 }, () => {
     expect(sample.length, "the sample").toBe(Math.ceil(textual.length / STRIDE));
   });
 
-  it("every text of every case a text carries is within the server's caps", () => {
-    const over = textual.flatMap((c) => [c.program, c.data, ...[...(c.env ?? new Map<string, string>()).values()]].filter((t) => measure(t, MAX_TEXT_BYTES) > MAX_TEXT_BYTES).map(() => c.name));
-    expect(over).toEqual([]);
+  it("every text of every case a text carries is within the server's caps, but the rows past the exponent budget", () => {
+    // their exponents pass core's 2^24 budget, so they pass the server's measure (which counts exponents) by far
+    expect(textual.filter((c) => !fits(c)).map((c) => c.name)).toEqual(["dilf4s JSON exponent budget: a program past it is refused", "dilf4s JSON exponent budget: a binding past it is refused"]);
   });
 
   it("each sampled case gives the vector's outcome, gas and warnings, its value's JSON included", async () => {

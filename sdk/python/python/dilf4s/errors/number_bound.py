@@ -6,7 +6,7 @@ A JSON number bound (canonical-encoding.md section 3) that a number exceeds.
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias, final
 
-NumberBoundKind: TypeAlias = Literal["Digits", "Scale"]
+NumberBoundKind: TypeAlias = Literal["Digits", "Scale", "Exponents"]
 
 
 @final
@@ -40,4 +40,19 @@ class Scale:
     kind: Literal["Scale"] = field(default="Scale", init=False)
 
 
-NumberBound: TypeAlias = Digits | Scale
+@final
+@dataclass(frozen=True, slots=True)
+class Exponents:
+    """The text's exponents, summed up to and including this number's, past the exponent budget.
+
+    Attributes:
+        exponents: The sum: each number's exponent magnitude, at most one past the scale bound.
+        limit: The budget (limits.cddl canonical-max-json-exponents).
+    """
+
+    exponents: int
+    limit: int
+    kind: Literal["Exponents"] = field(default="Exponents", init=False)
+
+
+NumberBound: TypeAlias = Digits | Scale | Exponents
