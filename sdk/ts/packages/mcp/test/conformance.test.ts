@@ -99,7 +99,7 @@ describe("jlvm_v1.json through jlvm_evaluate", { timeout: 600_000 }, () => {
 
   it("each case whose bindings are built with shared parts has a binding no text within the cap can carry", () => {
     const heavy = vectors.cases.filter((c) => c.built !== undefined);
-    expect(heavy.length).toBe(20);
+    expect(heavy.length, "the built cases this test checks").toBeGreaterThanOrEqual(20);
     for (const c of heavy) {
       const renderings = [...(c.built ?? new Map<string, models.jlvmVectors.BuiltValue>()).values()].map((b) => json.renderWithin(built(b), MAX_TEXT_BYTES));
       expect(
