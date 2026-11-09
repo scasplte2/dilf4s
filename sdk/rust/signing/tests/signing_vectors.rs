@@ -144,9 +144,10 @@ fn bip39_mnemonics_and_seeds() {
         same("mnemonic", &c.mnemonic, &mnemonic.phrase())?;
         let (parsed, back) = bip39::to_entropy(&c.mnemonic, &english).map_err(|e| e.to_string())?;
         same("entropy", &c.entropy, &hex::encode(back.expose()))?;
-        same("seed", &c.seed, &hex::encode(bip39::seed(&parsed, &c.passphrase).expose()))
+        let seed = bip39::seed(&parsed, &c.passphrase).map_err(|e| e.to_string())?;
+        same("seed", &c.seed, &hex::encode(seed.expose()))
     });
-    assert_eq!(n, 6);
+    assert_eq!(n, 7, "bip39 rows");
 }
 
 #[test]
@@ -257,6 +258,9 @@ fn key_call(c: &KeyRefusal) -> Result<(), KeyError> {
     match c.check {
         KeyCheck::Bip39Entropy => bip39::to_mnemonic(&bytes(&field(&c.entropy)), &english).map(|_| ()),
         KeyCheck::Bip39Phrase => bip39::to_entropy(&field(&c.phrase), &english).map(|_| ()),
+        KeyCheck::Bip39Seed => bip39::to_entropy(&field(&c.phrase), &english)
+            .and_then(|(m, _)| bip39::seed(&m, &field(&c.passphrase)))
+            .map(|_| ()),
         KeyCheck::WordList => bip39::WordList::new(c.words.clone().unwrap_or_default(), ' ').map(|_| ()),
         KeyCheck::Slip10 => slip10::derive(&bytes(&field(&c.seed)), &parsed()?).map(|_| ()),
         KeyCheck::Bip32 => bip32::derive(&bytes(&field(&c.seed)), &parsed()?).map(|_| ()),

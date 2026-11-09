@@ -65,7 +65,8 @@ verification-part = "verifyingKey" / "signature"
 
 ; A key-derivation call the reference refuses, with its KeyError kind (signing.md sections 2 and 3). "check" names it:
 ; "bip39-entropy" (BIP-39 entropy to a mnemonic: "entropy"), "bip39-phrase" (a phrase to its entropy, English list:
-; "phrase"), "word-list" (a word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
+; "phrase"), "bip39-seed" (a valid "phrase", English list, and "passphrase" to the seed), "word-list" (an English
+; word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
 ; "bip32-public" and "icarus-public" (public derivation from "verifyingKey" and "chainCode" along "path"). Every
 ; path given parses; a refused path is a "paths" row (InvalidPath).
 key-refusal = {
@@ -73,6 +74,7 @@ key-refusal = {
   "check": key-check,
   ? "entropy": hex,
   ? "phrase": text,
+  ? "passphrase": text,
   ? "words": [* text],
   ? "seed": hex,
   ? "verifyingKey": hex,
@@ -81,7 +83,8 @@ key-refusal = {
   "kind": errors.key-error-kind,
 }
 
-key-check = "bip39-entropy" / "bip39-phrase" / "word-list" / "slip10" / "bip32" / "bip32-public" / "icarus-public"
+key-check =
+  "bip39-entropy" / "bip39-phrase" / "bip39-seed" / "word-list" / "slip10" / "bip32" / "bip32-public" / "icarus-public"
 
 signing-scheme = { "scheme": text, "keys": [* signing-key] }
 

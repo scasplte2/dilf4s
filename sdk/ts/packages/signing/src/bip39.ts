@@ -9,6 +9,7 @@ import type { KeyError } from "./errors.js";
 import { INSPECT, ownSecret, secretBytes, type Secret } from "./keys.js";
 import { expected, NOT_A_NUMBER, NOT_A_STRING } from "./internal/check.js";
 import { INTERNAL, type Internal } from "./internal/token.js";
+import { assignedText } from "./unicode15.js";
 import { ENGLISH } from "./wordlists/english.js";
 
 const nfkd = (s: string): string => s.normalize("NFKD");
@@ -24,6 +25,18 @@ const SEPARATORS = /[ \t\n\v\f\r\u3000]+/;
 export type Bip39Refusal = KeyError | TypeMismatch;
 
 const invalidMnemonic = (reason: string): KeyError => ({ kind: "InvalidMnemonic", reason });
+
+/**
+ * Whether text normalises here as it does under Unicode 15.0 or later (signing.md section 2.1): always for ASCII, whose
+ * NFKD no version changes, and for any text when this runtime's NFKD is 15.0's or later (U+1E030, new in 15.0, maps to
+ * U+0430). npm's `engines` is advisory, so a runtime older than Node 22.12 may load this package: there only ASCII is
+ * read, and other text is refused rather than normalised differently.
+ */
+function normalisesAsUnicode15(s: string): boolean {
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) > 0x7f) return "\u{1E030}".normalize("NFKD") === "\u0430";
+  return true;
+}
+const OLD_UNICODE = "this runtime normalises with a Unicode version older than 15.0, so only ASCII is read";
 
 const WORD_LIST = mint();
 const MNEMONIC = mint();
@@ -74,6 +87,9 @@ export class WordList {
       // guarded: an earlier word's read (a Proxy's trap) may have revoked the array; REVOKED is no string
       const w: unknown = readGuarded(words, i);
       if (typeof w !== "string") return err({ kind: "InvalidWordList", reason: `word ${i.toString()} is not a string` });
+      // only code points Unicode 15.0 assigns, so every runtime normalises the word alike (signing.md section 2.1)
+      if (!assignedText(w)) return err({ kind: "InvalidWordList", reason: `word ${i.toString()} holds a code point Unicode 15.0 does not assign` });
+      if (!normalisesAsUnicode15(w)) return err({ kind: "InvalidWordList", reason: OLD_UNICODE });
       normalised.push(nfkd(w));
     }
     const valid = normalised.every((w) => w.length > 0 && wellFormed(w) && !SEPARATORS.test(w));
@@ -219,7 +235,9 @@ export function toEntropy(phrase: string, words: WordList = WordList.english): R
 }
 
 function entropyOf(phrase: string, words: WordList): Result<{ readonly mnemonic: Mnemonic; readonly entropy: Secret }, KeyError> {
-  if (!wellFormed(phrase)) return err(invalidMnemonic("phrase is not well-formed Unicode"));
+  // only code points Unicode 15.0 assigns (a lone surrogate is none), so every runtime normalises alike (signing.md 2.1)
+  if (!assignedText(phrase)) return err(invalidMnemonic("the phrase holds a code point Unicode 15.0 does not assign"));
+  if (!normalisesAsUnicode15(phrase)) return err(invalidMnemonic(OLD_UNICODE));
   const tokens = nfkd(phrase)
     .split(SEPARATORS)
     .filter((t) => t.length > 0);
@@ -241,13 +259,15 @@ function entropyOf(phrase: string, words: WordList): Result<{ readonly mnemonic:
 
 /**
  * The 64-byte seed: `PBKDF2-HMAC-SHA512(NFKD(words joined by " "), "mnemonic" || NFKD(passphrase), 2048, 64)`. A
- * mnemonic not made by this package, or a passphrase that is not a string, is a `TypeMismatch`.
+ * mnemonic not made by this package, or a passphrase that is not a string, is a `TypeMismatch`; a passphrase holding a
+ * code point Unicode 15.0 does not assign is `InvalidPassphrase` (signing.md section 2.1).
  */
 export function mnemonicToSeed(mnemonic: Mnemonic, passphrase = ""): Result<Secret, Bip39Refusal> {
   const words = mnemonicWords(mnemonic);
   if (words === undefined) return err(expected("a Mnemonic"));
   if (typeof (passphrase as unknown) !== "string") return err(NOT_A_STRING);
-  if (!wellFormed(passphrase)) return err(invalidMnemonic("passphrase is not well-formed Unicode"));
+  if (!assignedText(passphrase)) return err({ kind: "InvalidPassphrase", reason: "the passphrase holds a code point Unicode 15.0 does not assign" });
+  if (!normalisesAsUnicode15(passphrase)) return err({ kind: "InvalidPassphrase", reason: OLD_UNICODE });
   const password = utf8ToBytes(nfkd(words.join(" ")));
   const salt = utf8ToBytes(`mnemonic${nfkd(passphrase)}`);
   return ok(ownSecret(pbkdf2(sha512, password, salt, { c: 2048, dkLen: 64 })));

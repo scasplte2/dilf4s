@@ -200,6 +200,9 @@ lazy val crypto = project.in(file("crypto"))
     name := "dilf4s-crypto",
     commonSettings,
     licenceTexts := Seq("MIT-BIP-39.txt"), // the BIP-39 word lists are MIT (NOTICE)
+    // Java 21 bytecode, so no JVM older than 21 loads it: BIP-39 normalises with the JVM's NFKD, which must be Unicode
+    // 15.0's or later (Java 21's; signing.md section 2.1), or a code point 15.0 assigns could normalise differently
+    scalacOptions ++= Seq("-java-output-version", "21"),
     commonTestSettings,
     libraryDependencies ++= Seq(
       Libraries.cats,

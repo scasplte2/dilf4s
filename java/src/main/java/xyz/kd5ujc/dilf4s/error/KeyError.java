@@ -6,6 +6,7 @@ public sealed interface KeyError
     KeyError.InvalidEntropy,
     KeyError.InvalidMnemonic,
     KeyError.InvalidWordList,
+    KeyError.InvalidPassphrase,
     KeyError.InvalidDerivation,
     KeyError.InvalidPath,
     TypeMismatch {
@@ -34,6 +35,14 @@ public sealed interface KeyError
     @Override
     public String kind() {
       return "InvalidWordList";
+    }
+  }
+
+  /** {@code InvalidPassphrase}: a passphrase holding a code point Unicode 15.0 does not assign. */
+  record InvalidPassphrase(String reason) implements KeyError {
+    @Override
+    public String kind() {
+      return "InvalidPassphrase";
     }
   }
 

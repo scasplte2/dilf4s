@@ -31,7 +31,7 @@ zeroize = { version = "1.9", default-features = false, features = ["alloc", "zer
 hkdf = { version = "0.12", default-features = false, optional = true }
 hmac = { version = "0.12", optional = true }
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"], optional = true }
-unicode-normalization = { version = "0.1", default-features = false, optional = true }
+unicode-normalization = { version = "0.1.26", default-features = false, optional = true }
 rand_core = { version = "0.6", default-features = false, optional = true }
 
 [dev-dependencies]

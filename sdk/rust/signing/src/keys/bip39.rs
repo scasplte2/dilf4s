@@ -14,8 +14,13 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use dilf4s_core::Preview;
 
 use crate::error::KeyError;
+use crate::keys::unicode15::assigned_text;
 use crate::secret::{Secret, SecretBytes};
 use crate::util::sha256;
+
+// NFKD as of Unicode 15.0 at least: for a code point 15.0 assigns, the only kind BIP-39 accepts, every later version
+// normalises alike (signing.md section 2.1)
+const _: () = assert!(unicode_normalization::UNICODE_VERSION.0 >= 15, "unicode-normalization predates Unicode 15.0");
 
 const ENGLISH: &str = include_str!("bip39-english.txt");
 
@@ -58,6 +63,12 @@ impl WordList {
         if words.len() != 2048 {
             return Err(KeyError::InvalidWordList {
                 reason: format!("expected 2048 distinct words without separators, got {}", words.len()),
+                separator: None,
+            });
+        }
+        if !words.iter().all(|w| assigned_text(w)) {
+            return Err(KeyError::InvalidWordList {
+                reason: "a word holds a code point Unicode 15.0 does not assign".into(),
                 separator: None,
             });
         }
@@ -216,9 +227,15 @@ const fn is_separator(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\n' | '\u{0b}' | '\u{0c}' | '\r' | '\u{3000}')
 }
 
-/// Parses and validates a phrase: NFKD-normalised, split on whitespace (including U+3000), with a valid word count,
-/// every word in the list, and a matching checksum. Returns the mnemonic and its entropy.
+/// Parses and validates a phrase: only code points Unicode 15.0 assigns, NFKD-normalised, split on whitespace
+/// (including U+3000), with a valid word count, every word in the list, and a matching checksum. Returns the mnemonic
+/// and its entropy.
 pub fn to_entropy(phrase: &str, list: &WordList) -> Result<(Mnemonic, SecretBytes), KeyError> {
+    if !assigned_text(phrase) {
+        return Err(KeyError::InvalidMnemonic {
+            reason: "the phrase holds a code point Unicode 15.0 does not assign".into(),
+        });
+    }
     let normalised = Zeroizing::new(nfkd(phrase));
     let tokens: Vec<String> = normalised.split(is_separator).filter(|t| !t.is_empty()).map(String::from).collect();
     let mnemonic = Mnemonic { words: tokens, separator: list.separator };
@@ -247,8 +264,14 @@ pub fn to_entropy(phrase: &str, list: &WordList) -> Result<(Mnemonic, SecretByte
     Ok((mnemonic, entropy))
 }
 
-/// The 64-byte seed: `PBKDF2-HMAC-SHA512(NFKD(words joined by " "), "mnemonic" || NFKD(passphrase), 2048, 64)`.
-pub fn seed(mnemonic: &Mnemonic, passphrase: &str) -> Secret<64> {
+/// The 64-byte seed: `PBKDF2-HMAC-SHA512(NFKD(words joined by " "), "mnemonic" || NFKD(passphrase), 2048, 64)`, or
+/// `InvalidPassphrase` for a passphrase holding a code point Unicode 15.0 does not assign (signing.md section 2.1).
+pub fn seed(mnemonic: &Mnemonic, passphrase: &str) -> Result<Secret<64>, KeyError> {
+    if !assigned_text(passphrase) {
+        return Err(KeyError::InvalidPassphrase {
+            reason: "the passphrase holds a code point Unicode 15.0 does not assign".into(),
+        });
+    }
     let mut password = Zeroizing::new(String::new());
     for (i, w) in mnemonic.words.iter().enumerate() {
         if i > 0 {
@@ -263,5 +286,5 @@ pub fn seed(mnemonic: &Mnemonic, passphrase: &str) -> Secret<64> {
     pbkdf2::pbkdf2_hmac::<sha2::Sha512>(password.as_bytes(), salt.as_bytes(), 2048, &mut out);
     let secret = Secret::new(out);
     out.zeroize();
-    secret
+    Ok(secret)
 }

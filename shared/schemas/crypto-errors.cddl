@@ -22,16 +22,19 @@ crypto-error = {
   "kind": "BackendFailure", "operation": text, "reason": text
 }
 
-key-error-kind = "InvalidEntropy" / "InvalidMnemonic" / "InvalidWordList" / "InvalidDerivation" / "InvalidPath"
+key-error-kind =
+  "InvalidEntropy" / "InvalidMnemonic" / "InvalidWordList" / "InvalidPassphrase" / "InvalidDerivation" / "InvalidPath"
 
-; A key derivation the reference refuses (signing.md sections 2 and 3). InvalidPath carries the first rule the path
-; breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
+; A key derivation the reference refuses (signing.md sections 2 and 3). InvalidMnemonic, InvalidWordList and
+; InvalidPassphrase include a phrase, a word or a passphrase holding a code point Unicode 15.0 does not assign
+; (section 2.1). InvalidPath carries the first rule the path breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
 ; (a separator of more than one character is refused by its length, before it is read, and has none); the reference's
 ; word lists are its own languages', so it never names one.
 key-error = {
   "kind": "InvalidEntropy", "reason": text //
   "kind": "InvalidMnemonic", "reason": text //
   "kind": "InvalidWordList", "reason": text, ? "separator": hash.preview //
+  "kind": "InvalidPassphrase", "reason": text //
   "kind": "InvalidDerivation", "reason": text //
   "kind": "InvalidPath", "refusal": path-refusal, "reason": text
 }

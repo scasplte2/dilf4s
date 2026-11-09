@@ -15,6 +15,7 @@ import {
   parsePath,
   ristretto255Schnorr,
   secp256k1Ecdsa,
+  mnemonicToSeed,
   slip10Ed25519,
   taggedSchnorr,
   toEntropy,
@@ -176,6 +177,10 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
         return toMnemonic(h(c.entropy ?? ""));
       case "bip39-phrase":
         return toEntropy(c.phrase ?? "");
+      case "bip39-seed": {
+        const parsed = toEntropy(c.phrase ?? "");
+        return parsed.ok ? mnemonicToSeed(parsed.value.mnemonic, c.passphrase ?? "") : parsed;
+      }
       case "word-list":
         return WordList.of(c.words ?? []);
       case "slip10": {
@@ -226,6 +231,7 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
       InvalidEntropy: "keyRefusals",
       InvalidMnemonic: "keyRefusals",
       InvalidWordList: "keyRefusals",
+      InvalidPassphrase: "keyRefusals",
       InvalidDerivation: "keyRefusals",
       InvalidPath: "paths",
     };

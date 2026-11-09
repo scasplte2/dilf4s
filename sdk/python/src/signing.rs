@@ -13,6 +13,7 @@ use alloc::vec::Vec;
 use dilf4s_core::hash::HashAlgorithm;
 use dilf4s_signing::kes::{CardanoKey, CardanoSumKes, KesProduct, KesSum, ProductKey, SumKey};
 use dilf4s_signing::keys::path::{ChildIndex, HARDENED_OFFSET};
+use dilf4s_signing::keys::unicode15::assigned_text;
 use dilf4s_signing::keys::{ExtendedKey, bip32, bip39, icarus, path, slip10};
 use dilf4s_signing::sigma::{self, Proposition};
 use dilf4s_signing::vrf::{self, SuiteId};
@@ -590,8 +591,19 @@ impl PyWordList {
             let mut met: BTreeSet<usize> = BTreeSet::new();
             for w in &held {
                 if met.insert(w.as_ptr().addr()) {
-                    let t =
-                        crate::boundary::text(w)?.ok_or_else(|| mismatch(py, "expected words without surrogates"))?;
+                    // a word holding a code point Unicode 15.0 does not assign, a lone surrogate included, is refused
+                    // before it is normalised, as Rust refuses it (signing.md section 2.1)
+                    let unassigned = || {
+                        KeyError::InvalidWordList {
+                            reason: "a word holds a code point Unicode 15.0 does not assign".into(),
+                            separator: None,
+                        }
+                        .refuse(py)
+                    };
+                    let t = crate::boundary::text(w)?.ok_or_else(unassigned)?;
+                    if !assigned_text(t) {
+                        return Err(unassigned());
+                    }
                     normal.push(t.nfkd().collect());
                 }
             }
@@ -669,7 +681,8 @@ fn mnemonic_to_entropy(mnemonic: &Bound<'_, PyAny>, words: Option<&Bound<'_, PyA
     })
 }
 
-/// The BIP-39 seed of a mnemonic (checked first) and a passphrase (NFKD-normalised; a surrogate is a `TypeMismatch`).
+/// The BIP-39 seed of a mnemonic (checked first) and a passphrase (NFKD-normalised; one holding a code point Unicode
+/// 15.0 does not assign, a lone surrogate included, is `InvalidPassphrase`).
 #[pyfunction]
 #[pyo3(signature = (mnemonic, passphrase = None, words = None))]
 fn mnemonic_to_seed(
@@ -680,15 +693,23 @@ fn mnemonic_to_seed(
     let py = mnemonic.py();
     call(py, || {
         let p = phrase(mnemonic)?;
-        let pass = match passphrase.filter(|o| !o.is_none()) {
-            None => String::new(),
-            Some(o) => String::from(
-                crate::boundary::text(o)?.ok_or_else(|| mismatch(py, "expected a passphrase without surrogates"))?,
-            ),
-        };
+        // the passphrase's type is checked with the other arguments', its text once the phrase is accepted, as in
+        // every SDK: a lone surrogate is a code point Unicode 15.0 does not assign, so InvalidPassphrase
+        let pass = passphrase.filter(|o| !o.is_none()).map(crate::boundary::text).transpose()?;
         let list = word_list(words)?.unwrap_or_else(bip39::WordList::english);
         let (m, _) = bip39::to_entropy(&p, &list).map_err(key_error(py))?;
-        Ok(py_bytes(py, py.detach(|| bip39::seed(&m, &pass)).expose()))
+        let pass = match pass {
+            None => String::new(),
+            Some(Some(t)) => String::from(t),
+            Some(None) => {
+                return Err(KeyError::InvalidPassphrase {
+                    reason: "the passphrase holds a code point Unicode 15.0 does not assign".into(),
+                }
+                .refuse(py));
+            }
+        };
+        let seed = py.detach(|| bip39::seed(&m, &pass)).map_err(key_error(py))?;
+        Ok(py_bytes(py, seed.expose()))
     })
 }
 

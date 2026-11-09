@@ -153,6 +153,8 @@ object Errors {
           reason,
           separator.fold(java.util.Optional.empty[xyz.kd5ujc.dilf4s.error.Preview]())(x => java.util.Optional.of(preview(x)))
         )
+      case xyz.kd5ujc.models.crypto_errors.KeyError.InvalidPassphrase(reason) =>
+        new xyz.kd5ujc.dilf4s.error.KeyError.InvalidPassphrase(reason)
       case xyz.kd5ujc.models.crypto_errors.KeyError.InvalidDerivation(reason) =>
         new xyz.kd5ujc.dilf4s.error.KeyError.InvalidDerivation(reason)
       case xyz.kd5ujc.models.crypto_errors.KeyError.InvalidPath(refusal, reason) =>

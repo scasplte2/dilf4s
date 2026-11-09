@@ -255,7 +255,7 @@ fn bip39_trezor_vectors() {
         let (parsed, e) = bip39::to_entropy(phrase, &english()).unwrap();
         assert_eq!(hex::encode(e.expose()), entropy);
         assert_eq!(parsed, m);
-        assert_eq!(hex::encode(bip39::seed(&m, "TREZOR").expose()), seed);
+        assert_eq!(hex::encode(bip39::seed(&m, "TREZOR").unwrap().expose()), seed);
     }
 }
 
@@ -294,8 +294,8 @@ fn bip39_japanese_vectors() {
         assert_eq!(*m.phrase(), expected.join("\u{3000}"));
         let (parsed, e) = bip39::to_entropy(phrase, &japanese).unwrap();
         assert_eq!(hex::encode(e.expose()), entropy);
-        assert_eq!(hex::encode(bip39::seed(&parsed, passphrase).expose()), seed);
-        assert_eq!(hex::encode(bip39::seed(&m, passphrase).expose()), seed);
+        assert_eq!(hex::encode(bip39::seed(&parsed, passphrase).unwrap().expose()), seed);
+        assert_eq!(hex::encode(bip39::seed(&m, passphrase).unwrap().expose()), seed);
     }
 }
 

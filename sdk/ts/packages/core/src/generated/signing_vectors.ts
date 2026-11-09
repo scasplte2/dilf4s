@@ -120,9 +120,9 @@ export const IcarusVector: c.Codec<IcarusVector> = c.record<IcarusVector>({
 });
 
 /** `key-check` (`shared/schemas/signing-vectors.cddl`). */
-export type KeyCheck = "bip39-entropy" | "bip39-phrase" | "word-list" | "slip10" | "bip32" | "bip32-public" | "icarus-public";
+export type KeyCheck = "bip39-entropy" | "bip39-phrase" | "bip39-seed" | "word-list" | "slip10" | "bip32" | "bip32-public" | "icarus-public";
 
-export const KeyCheck: c.Codec<KeyCheck> = c.union<KeyCheck>("KeyCheck", [], ["bip39-entropy", "bip39-phrase", "word-list", "slip10", "bip32", "bip32-public", "icarus-public"]);
+export const KeyCheck: c.Codec<KeyCheck> = c.union<KeyCheck>("KeyCheck", [], ["bip39-entropy", "bip39-phrase", "bip39-seed", "word-list", "slip10", "bip32", "bip32-public", "icarus-public"]);
 
 /**
  * `key-decoding-case` (`shared/schemas/signing-vectors.cddl`).
@@ -163,7 +163,8 @@ export const KeyPart: c.Codec<KeyPart> = c.union<KeyPart>("KeyPart", [], ["signi
  *
  * A key-derivation call the reference refuses, with its KeyError kind (signing.md sections 2 and 3). "check" names it:
  * "bip39-entropy" (BIP-39 entropy to a mnemonic: "entropy"), "bip39-phrase" (a phrase to its entropy, English list:
- * "phrase"), "word-list" (a word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
+ * "phrase"), "bip39-seed" (a valid "phrase", English list, and "passphrase" to the seed), "word-list" (an English
+ * word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
  * "bip32-public" and "icarus-public" (public derivation from "verifyingKey" and "chainCode" along "path"). Every
  * path given parses; a refused path is a "paths" row (InvalidPath).
  */
@@ -172,6 +173,7 @@ export interface KeyRefusal {
   readonly check: KeyCheck;
   readonly entropy?: Hex;
   readonly phrase?: string;
+  readonly passphrase?: string;
   readonly words?: readonly string[];
   readonly seed?: Hex;
   readonly verifyingKey?: Hex;
@@ -185,6 +187,7 @@ export const KeyRefusal: c.Codec<KeyRefusal> = c.record<KeyRefusal>({
   check: c.required("check", c.defer(() => KeyCheck)),
   entropy: c.optional("entropy", c.defer(() => Hex)),
   phrase: c.optional("phrase", c.text),
+  passphrase: c.optional("passphrase", c.text),
   words: c.optional("words", c.vector(c.text, 0, null)),
   seed: c.optional("seed", c.defer(() => Hex)),
   verifyingKey: c.optional("verifyingKey", c.defer(() => Hex)),

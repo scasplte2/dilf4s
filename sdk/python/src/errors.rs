@@ -218,7 +218,10 @@ impl Refusal for KeyError {
         let k = self.kind().to_string();
         let m = Module::Key;
         match self {
-            Self::InvalidEntropy { reason } | Self::InvalidMnemonic { reason } | Self::InvalidDerivation { reason } => {
+            Self::InvalidEntropy { reason }
+            | Self::InvalidMnemonic { reason }
+            | Self::InvalidPassphrase { reason }
+            | Self::InvalidDerivation { reason } => {
                 kind!(py, m, &k, reason)
             }
             Self::InvalidWordList { reason, separator } => kind!(py, m, &k, reason, separator),

@@ -55,8 +55,9 @@ export const KesErrorKind: c.Codec<KesErrorKind> = c.union<KesErrorKind>("KesErr
 /**
  * `key-error` (`shared/schemas/crypto-errors.cddl`): an error family, by `kind` (`KeyErrorKind`).
  *
- * A key derivation the reference refuses (signing.md sections 2 and 3). InvalidPath carries the first rule the path
- * breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
+ * A key derivation the reference refuses (signing.md sections 2 and 3). InvalidMnemonic, InvalidWordList and
+ * InvalidPassphrase include a phrase, a word or a passphrase holding a code point Unicode 15.0 does not assign
+ * (section 2.1). InvalidPath carries the first rule the path breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
  * (a separator of more than one character is refused by its length, before it is read, and has none); the reference's
  * word lists are its own languages', so it never names one.
  */
@@ -64,13 +65,14 @@ export type KeyError =
   | { readonly kind: "InvalidEntropy"; readonly reason: string }
   | { readonly kind: "InvalidMnemonic"; readonly reason: string }
   | { readonly kind: "InvalidWordList"; readonly reason: string; readonly separator?: Preview }
+  | { readonly kind: "InvalidPassphrase"; readonly reason: string }
   | { readonly kind: "InvalidDerivation"; readonly reason: string }
   | { readonly kind: "InvalidPath"; readonly refusal: PathRefusal; readonly reason: string };
 
 /** `key-error-kind` (`shared/schemas/crypto-errors.cddl`). */
-export type KeyErrorKind = "InvalidEntropy" | "InvalidMnemonic" | "InvalidWordList" | "InvalidDerivation" | "InvalidPath";
+export type KeyErrorKind = "InvalidEntropy" | "InvalidMnemonic" | "InvalidWordList" | "InvalidPassphrase" | "InvalidDerivation" | "InvalidPath";
 
-export const KeyErrorKind: c.Codec<KeyErrorKind> = c.union<KeyErrorKind>("KeyErrorKind", [], ["InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidDerivation", "InvalidPath"]);
+export const KeyErrorKind: c.Codec<KeyErrorKind> = c.union<KeyErrorKind>("KeyErrorKind", [], ["InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidPassphrase", "InvalidDerivation", "InvalidPath"]);
 
 /**
  * `path-refusal` (`shared/schemas/crypto-errors.cddl`).

@@ -364,8 +364,9 @@ func DecodeKesErrorKind(v core.Value) (KesErrorKind, error) {
 
 // KeyError is `key-error` (shared/schemas/crypto-errors.cddl): an error family, by kind (KeyErrorKind).
 //
-// A key derivation the reference refuses (signing.md sections 2 and 3). InvalidPath carries the first rule the path
-// breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
+// A key derivation the reference refuses (signing.md sections 2 and 3). InvalidMnemonic, InvalidWordList and
+// InvalidPassphrase include a phrase, a word or a passphrase holding a code point Unicode 15.0 does not assign
+// (section 2.1). InvalidPath carries the first rule the path breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
 // (a separator of more than one character is refused by its length, before it is read, and has none); the reference's
 // word lists are its own languages', so it never names one.
 type KeyError interface {
@@ -432,6 +433,24 @@ func (e KeyErrorInvalidWordList) Error() string {
 	return fmt.Sprintf("InvalidWordList (reason: %v, separator: %v)", e.Reason, e.Separator)
 }
 
+// KeyErrorInvalidPassphrase is the kind InvalidPassphrase.
+type KeyErrorInvalidPassphrase struct {
+	// Reason is its `reason`.
+	Reason string
+}
+
+// Kind is KeyErrorKindInvalidPassphrase.
+func (KeyErrorInvalidPassphrase) Kind() KeyErrorKind {
+	return KeyErrorKindInvalidPassphrase
+}
+
+func (KeyErrorInvalidPassphrase) isKeyError() {}
+
+// Error is the kind and its fields.
+func (e KeyErrorInvalidPassphrase) Error() string {
+	return fmt.Sprintf("InvalidPassphrase (reason: %v)", e.Reason)
+}
+
 // KeyErrorInvalidDerivation is the kind InvalidDerivation.
 type KeyErrorInvalidDerivation struct {
 	// Reason is its `reason`.
@@ -483,6 +502,9 @@ const KeyErrorKindInvalidMnemonic KeyErrorKind = "InvalidMnemonic"
 // KeyErrorKindInvalidWordList is the text "InvalidWordList".
 const KeyErrorKindInvalidWordList KeyErrorKind = "InvalidWordList"
 
+// KeyErrorKindInvalidPassphrase is the text "InvalidPassphrase".
+const KeyErrorKindInvalidPassphrase KeyErrorKind = "InvalidPassphrase"
+
 // KeyErrorKindInvalidDerivation is the text "InvalidDerivation".
 const KeyErrorKindInvalidDerivation KeyErrorKind = "InvalidDerivation"
 
@@ -492,7 +514,7 @@ const KeyErrorKindInvalidPath KeyErrorKind = "InvalidPath"
 // Valid reports whether x is a member of KeyErrorKind.
 func (x KeyErrorKind) Valid() bool {
 	switch x {
-	case KeyErrorKindInvalidEntropy, KeyErrorKindInvalidMnemonic, KeyErrorKindInvalidWordList, KeyErrorKindInvalidDerivation, KeyErrorKindInvalidPath:
+	case KeyErrorKindInvalidEntropy, KeyErrorKindInvalidMnemonic, KeyErrorKindInvalidWordList, KeyErrorKindInvalidPassphrase, KeyErrorKindInvalidDerivation, KeyErrorKindInvalidPath:
 		return true
 	}
 	return false
@@ -500,7 +522,7 @@ func (x KeyErrorKind) Valid() bool {
 
 // AllKeyErrorKind is every member of KeyErrorKind, in schema order: a fresh slice.
 func AllKeyErrorKind() []KeyErrorKind {
-	return []KeyErrorKind{KeyErrorKindInvalidEntropy, KeyErrorKindInvalidMnemonic, KeyErrorKindInvalidWordList, KeyErrorKindInvalidDerivation, KeyErrorKindInvalidPath}
+	return []KeyErrorKind{KeyErrorKindInvalidEntropy, KeyErrorKindInvalidMnemonic, KeyErrorKindInvalidWordList, KeyErrorKindInvalidPassphrase, KeyErrorKindInvalidDerivation, KeyErrorKindInvalidPath}
 }
 
 // EncodeKeyErrorKind is the canonical value of x; a value that is not a member is a TypeMismatch.

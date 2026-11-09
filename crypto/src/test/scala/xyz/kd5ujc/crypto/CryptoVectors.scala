@@ -150,6 +150,15 @@ object CryptoVectors {
         ChildIndex.path(p).flatMap(_.traverse(child))
       )
     val abandon = List.fill(11)("abandon")
+    // a code point Unicode 16.0 assigns (OUTLINED LATIN CAPITAL LETTER A, NFKD "A" from 16.0 on) and a noncharacter:
+    // neither is assigned in 15.0, so each is refused before anything is normalised (signing.md section 2.1)
+    val unicode16 = Character.toString(0x1ccd6)
+    val noncharacter = "\ufdd0"
+    val valid = (abandon :+ "about").mkString(" ")
+    def seeded(name: String, passphrase: String) =
+      row(name, "bip39-seed", List("phrase" -> valid.asJson, "passphrase" -> passphrase.asJson), "InvalidPassphrase")(
+        Bip39.toEntropy(valid, english).flatMap { case (m, _) => Bip39.seed(m, passphrase) }
+      )
     val account = get(ChildIndex.path("m/44'/0'/0'").flatMap(bip32.derive(hdSeed, _)))
     val accountVk = secp.ecdsaPublicKeyOf.verifyingKey(account.key)
     val icarusAccount =
@@ -164,9 +173,19 @@ object CryptoVectors {
       phrase("checksum", (abandon :+ "abandon").mkString(" ")),
       phrase("unknown-word", (abandon :+ "dilf4s").mkString(" ")),
       phrase("empty", ""),
+      phrase("unassigned-code-point", s"$valid $unicode16"),
+      phrase("noncharacter", valid + noncharacter),
+      // NUL is no separator: at either end it joins the word next to it
+      phrase("leading-nul", "\u0000" + valid),
+      phrase("trailing-nul", valid + "\u0000"),
+      seeded("unassigned-code-point", s"dilf4s$unicode16"),
+      seeded("noncharacter", s"dilf4s$noncharacter"),
       row("two-words", "word-list", List("words" -> List("abandon", "ability").asJson), "InvalidWordList")(
         WordList(Bip39.Language.English, Vector("abandon", "ability"))
-      ),
+      ), {
+        val words = english.words.updated(0, s"abandon$unicode16")
+        row("unassigned-code-point", "word-list", List("words" -> words.asJson), "InvalidWordList")(WordList(Bip39.Language.English, words))
+      },
       derived("soft-index", "slip10", hdSeed.bytes, "m/0")(Slip10Ed25519.derive),
       derived("15-byte-seed", "slip10", seeds.head.take(15), "m")(Slip10Ed25519.derive),
       derived("65-byte-seed", "slip10", hdSeed.bytes :+ 0.toByte, "m")(Slip10Ed25519.derive),
@@ -183,17 +202,22 @@ object CryptoVectors {
     val instances = new Secp256k1.Instances(secp)
     import instances._
 
-    val bip39 = seeds.flatMap(s => List(s.take(16), s)).map { entropy =>
+    def bip39Row(entropy: ByteVector, passphrase: String): Json = {
       val mnemonic = get(Bip39.toMnemonic(Secret(entropy), english))
       Json.obj(
         "entropy"    -> entropy.toHex.asJson,
         "mnemonic"   -> mnemonic.phrase.asJson,
-        "passphrase" -> "dilf4s".asJson,
-        "seed"       -> Bip39.seed(mnemonic, "dilf4s").bytes.toHex.asJson
+        "passphrase" -> passphrase.asJson,
+        "seed"       -> get(Bip39.seed(mnemonic, passphrase)).bytes.toHex.asJson
       )
     }
+    // NFKD as of Unicode 15.0 (signing.md section 2.1): U+1E030 is new in 15.0 and NFKD maps it to U+0430, so an SDK
+    // normalising with an older version fails this row; U+1D400 and U+FB01 map to "A" and "fi"; U+E000 (private use)
+    // and U+1F6DC (new in 15.0) map to themselves
+    val unicode15 = List(0x1e030, 0x1d400, 0xfb01, 0xe000, 0x1f6dc).map(Character.toString).mkString + " dilf4s"
+    val bip39 = seeds.flatMap(s => List(s.take(16), s)).map(bip39Row(_, "dilf4s")) :+ bip39Row(seeds.head.take(16), unicode15)
 
-    val hdSeed = Bip39.seed(get(Bip39.toMnemonic(Secret(seeds.head), english)), "")
+    val hdSeed = get(Bip39.seed(get(Bip39.toMnemonic(Secret(seeds.head), english)), ""))
     val slip10Path = "m/44'/501'/0'/0'"
     val bip32Path = "m/44'/0'/0'/0/7"
     val bip32 = new Bip32Secp256k1(secp)

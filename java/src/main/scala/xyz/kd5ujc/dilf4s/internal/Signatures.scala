@@ -164,6 +164,8 @@ object Signatures {
   def toEntropy(phrase: String, words: WordList): Result[java.util.Map.Entry[Mnemonic, Array[Byte]], JKeyError] =
     keys(Bip39.toEntropy(phrase, words).map { case (m, s) => java.util.Map.entry(m, s.bytes.toArray) })
 
+  def seed(m: Mnemonic, passphrase: String): Result[Array[Byte], JKeyError] = keys(Bip39.seed(m, passphrase).map(_.bytes.toArray))
+
   def mnemonicWords(m:  Mnemonic): java.util.List[String] = m.words.asJava
   def mnemonicPhrase(m: Mnemonic): String = m.phrase
   def sameMnemonic(a:   Mnemonic, b: Mnemonic): Boolean = a == b

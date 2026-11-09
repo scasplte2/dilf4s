@@ -26,7 +26,9 @@ object Pbkdf2StackSuite extends SimpleIOSuite {
     WordList.load[IO](Bip39.Language.English).flatMap {
       case Left(e) => IO.pure(failure(s"the English word list: $e"))
       case Right(words) =>
-        StackProbe.fits("the seed")(Bip39.toMnemonic(Secret(ByteVector.low(16)), words).map(Bip39.seed(_, "TREZOR").bytes.toHex)) { seed =>
+        StackProbe.fits("the seed")(
+          Bip39.toMnemonic(Secret(ByteVector.low(16)), words).flatMap(Bip39.seed(_, "TREZOR")).map(_.bytes.toHex)
+        ) { seed =>
           expect.same(
             Right(
               "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"

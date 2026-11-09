@@ -48,7 +48,7 @@ describe("BIP-39", { timeout: 60_000 }, () => {
   });
 
   test("signing_v1.json bip39: entropy to phrase to entropy, and the seed", () => {
-    expect(vectors.bip39.length).toBe(6);
+    expect(vectors.bip39.length, "bip39 rows").toBe(7);
     for (const v of vectors.bip39) {
       const m = expectOk(toMnemonic(h(v.entropy)), "mnemonic");
       expect(m.phrase).toBe(v.mnemonic);
@@ -174,7 +174,7 @@ describe("BIP-39", { timeout: 60_000 }, () => {
     expect(normalised.mock.calls.length, "words normalised").toBe(0);
     normalised.mockRestore();
     const m = expectOk(toMnemonic(new Uint8Array(16)), "m");
-    expect(kind(mnemonicToSeed(m, "\uD800"))).toBe("InvalidMnemonic");
+    expect(kind(mnemonicToSeed(m, "\uD800"))).toBe("InvalidPassphrase");
     expect(kind(icarus.fromEntropy(new Uint8Array(16), "x\uDC00"))).toBe("InvalidDerivation");
   });
 
