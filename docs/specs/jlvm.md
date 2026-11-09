@@ -88,11 +88,11 @@ non-terminating rational, has no surface form and is an error.
   - metakit counted evaluated nodes at run time, so an untaken deep branch never counted. Here the program is bounded
     before it runs (§8 #22).
 - **Size.** Compilation uses no gas, so a program's size is bounded before anything else is done: at most 2^18
-  (`Program.MaxSize`), counting one per expression, plus the weight of each literal and default, plus the length of
-  each object key, binding name and path segment, plus one per segment. A larger program is `Limit`. `let` carries its
-  scope forward in one pass, in a sorted set of names. Checking the canonical form builds sorted maps of literal keys,
-  compared and never hashed, so compilation is O(n log n) rather than linear in this size. The largest conformance
-  program is under 2^14. The host bounds the JSON text itself.
+  (`Program.MaxSize`), counting one per expression, plus the weight of each literal and default, plus the length in
+  UTF-16 code units of each object key, binding name and path segment, plus one per segment. A larger program is
+  `Limit`. `let` carries its scope forward in one pass, in a sorted set of names. Checking the canonical form builds
+  sorted maps of literal keys, compared and never hashed, so compilation is O(n log n) rather than linear in this
+  size. The largest conformance program is under 2^14. The host bounds the JSON text itself.
 
 **Reading a canonical form.** A program is read back from its canonical form (`Parser.fromCanonical`), or from
 that form's CBOR (`Parser.decode`). The refusals come in this order, which is normative:
@@ -226,6 +226,14 @@ parse as a path, or a segment of the wrong kind or wider than 64 bits). The inne
 `cause` (below). `Malformed` and
 `Limit` have no normative field.
 
+**Which refusal comes first.** An operation checks its evaluated arguments in a fixed order, and where more than one
+check fails, the first is reported. The order is per operation, and part of the language; in particular (these
+examples are normative, though the vectors do not yet combine both failures in one case):
+- `+`, `-` and `*` check every operand's kind and width, left to right, before any arithmetic, and `-` then checks
+  its arity: `{"+": [8e9999, "a"]}` is `Limit` (the first operand is too wide), not `Type`, and
+  `{"+": [1e1233, 1e1233, "a"]}` is `Type` (the third operand is refused before the too-wide sum is formed);
+- `!`, `!!` and the equality operations take any kinds, so they check only their arity.
+
 `OutOfGas` is pinned by its kind and the gas used, which is the whole limit (§7). Its `available` is that limit.
 Its `required` is informative: it is more than `available`, but an implementation may stop adding up a charge once
 the sum is past what is left (a spread's per-element sizing, §7), so two conforming implementations can report
@@ -268,7 +276,10 @@ Arguments are evaluated left to right, depth first. Only the forms below are laz
 
 **Data paths.**
 - `{"var": "a.b.0"}` reads the input data.
-- Each segment is an object key, or an array index written in decimal without leading zeros.
+- Each segment is an object key, or an array index written in decimal without leading zeros and with at most 9
+  digits (`0|[1-9][0-9]{0,8}`). A longer run of digits is a key, so it reads nothing from an array.
+- A path is text, or an integer read as its decimal text (`{"var": 0}` is `{"var": "0"}`). Any other number,
+  such as `{"var": 1.5}`, is `Malformed`.
 - `""` is the whole data.
 - An absent value is null, and then the default if one is given.
 
@@ -283,7 +294,8 @@ then in the data:
 This is metakit's merged scope, without its silent collisions:
 - when the frame that resolved a path is not the only one that binds its first segment (an outer frame or the data
   binds it too), the evaluation records an `AmbiguousPath` warning;
-- warnings never change the result or the gas. At most 64 distinct ones are kept;
+- warnings never change the result or the gas. At most 64 distinct ones are kept, and two are the same when their
+  paths' previews are (the first 32 code points and the length in UTF-8 bytes);
 - finding ambiguity means every frame is searched for the first segment, so a read pays that segment's count once
   per enclosing frame (§7);
 - `$current`, `$index` and `$accumulator` read the same values with no ambiguity.
@@ -319,7 +331,7 @@ path:
 
 **`if`** takes `[c1, t1, (c2, t2)..., else]`, or the same without `else`: at least 2 arguments. The result is the
 first `ti` whose `ci` is truthy, otherwise `else`, or null when there is no `else` (standard JsonLogic). Only the taken
-branch is evaluated.
+branch is evaluated. A missing `else` is evaluated as the literal `null`, so it pays a literal's charge (§7).
 
 **`and`, `or`, `default`** evaluate their arguments left to right and stop early:
 
@@ -391,7 +403,7 @@ array argument; only the syntax spreads (§1).
 |---|---|
 | `!`, `!!` | Negated truthiness, truthiness. |
 | `==` `===` `!=` `!==` | Structural equality (§2). |
-| `<` `<=` `>` `>=` | Ordering (§2). |
+| `<` `<=` `>` `>=` | Ordering (§2). `<` and `<=` also take three arguments, `a < b < c` (between, as JsonLogic): both comparisons are made, so `{"<": [2, 1, "x"]}` is `Type`, not `false`. |
 | `+` `*` | Exact sum or product. Of no arguments, 0 or 1, so a spread over an empty array is defined. |
 | `min` `max` | Exact minimum or maximum, of at least 1 argument. |
 | `-` | Negation (1 argument) or difference (2). |
@@ -407,7 +419,7 @@ array argument; only the syntax spreads (§1).
 
 | Operation | Semantics |
 |---|---|
-| `cat` | Concatenates strings, numbers (§2) and booleans; null is empty. When **every** argument is an array, it concatenates the arrays instead; when every argument is bytes, the bytes (as Ethereum's `abi.encodePacked` does for byte strings). |
+| `cat` | Concatenates strings, numbers (§2) and booleans; null is empty. When **every** argument is an array, it concatenates the arrays instead; when every argument is bytes, the bytes (as Ethereum's `abi.encodePacked` does for byte strings). Of no arguments, empty text. |
 | `substr [s, start]`, `substr [s, start, len]` | Counted in code points. A negative `start` counts from the end. A negative `len` drops that many from the end. |
 | `lower` `upper` `trim` | §2. |
 | `startsWith` `endsWith` | Prefix or suffix test. |
@@ -419,7 +431,7 @@ array argument; only the syntax spreads (§1).
 
 | Operation | Semantics |
 |---|---|
-| `merge` | All objects: merged left to right, the last key wins. Otherwise array arguments are concatenated and other values appended. |
+| `merge` | All objects: merged left to right, the last key wins. Otherwise array arguments are concatenated and other values appended. Of no arguments, the empty object. |
 | `in [needle, haystack]` | Substring, byte substring or array membership. The search is linear-time. |
 | `intersect [a, b]` | Whether every element of `a` is in `b`. |
 | `unique` | First occurrences, in order. |
@@ -673,7 +685,10 @@ a 4096-bit rational result.
   for a rational `p/q` (the expansion of `p/(2^a 5^c)` is `p 2^(s-a) 5^(s-c)`, `s = max(a, c)`). The conversion is
   quadratic in the expansion, which can be far longer than the number's weight: `1/2^4095` weighs 66 and renders as
   4,097 characters. Measured at about 1 gas a unit for the widest numbers; the 6 limbs are the fixed cost of a conversion (about 100 gas
-  for a small integer).
+  for a small integer). `cat` is charged it for every number argument before the other arguments' kinds are checked,
+  so a `cat` that then fails `Type` has paid to render its numbers. `join` is charged it only for the number elements of
+  its first argument, when it has exactly two arguments and the first is an array, before it checks the separator and
+  the elements' kinds.
 - **Pieces.** `cat` also charges per element of each argument and per argument, and `join` per element of each
   argument, at the rates in the table: a piece costs a few gas besides its bytes, and `cat` walks every argument, even
   an empty array.
